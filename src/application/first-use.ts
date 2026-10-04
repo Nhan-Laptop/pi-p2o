@@ -93,8 +93,12 @@ function synthesize(owner: OnboardingReady, setup: HostAssessmentSetup, root: st
       validFrom: iso(now - 1000), expiresAt: deadlineAt, targets: [{ id: targetId, kind: source ? 'lab' : 'web', locator: scope.target.locator }], exclusions: [], allowedActions: ['read', 'analyze'] },
     budgets: { deadlineAt, maxRequests: limits.maxRequests, maxBytes: 64 * 1024 * 1024, maxToolCalls: limits.maxToolCalls,
       maxTokens: remainingTokens, maxCostUsd: remainingCost, maxAttempts: limits.maxAttempts, maxTasks: source ? 1 : 2, maxDepth: source ? 0 : 1,
-      maxConcurrency: limits.concurrency, reportReserveMs: reserveMs, targetRequestLimits: { [targetId]: limits.maxRequests } },
+      // The owner's concurrency is a ceiling, and the manifest may not declare more concurrent work than it has
+      // tasks; a run with one planned task therefore runs one worker even when the owner allows more.
+      maxConcurrency: Math.min(limits.concurrency, source ? 1 : 2), reportReserveMs: reserveMs, targetRequestLimits: { [targetId]: limits.maxRequests } },
     requestedRuntime: { adapter: 'headless', selection: { ...setup.selection }, requiredCapabilities: ['ownsLifecycle', 'canHardStop', 'attestsRuntime'] }, allowedCapabilities: [capability] };
+  // The declared per-target concurrency can never exceed the run's own admitted concurrency.
+  const runConcurrency = run.budgets.maxConcurrency;
   const inputDigest = sha(consent);
   const taskScope: Scope = { authorizationRef: run.authorization.reference, targetIds: [targetId], actor: { id: 'anonymous', privileges: [action] },
     boundary: `${scope.boundary}; owner self-attestation is not independently verified legal authorization`, isolation: 'pinned dedicated-lab container; shares host kernel, not hostile-code isolation',
@@ -118,7 +122,7 @@ function synthesize(owner: OnboardingReady, setup: HostAssessmentSetup, root: st
       exclusions: [], accounts: source ? [] : [{ id: 'anonymous', kind: 'anonymous', targetIds: [targetId], actions: [action], expiresAt: deadlineAt }],
       grantTemplates: [{ id: 'first-use-grant', taskId, role: 'worker', capabilities: [capability], targetIds: source ? [] : [targetId], actions: [action], accountIds: source ? [] : ['anonymous'], expiresAt: deadlineAt, maxCalls: limits.maxToolCalls, maxArtifactBytes: run.budgets.maxBytes }] },
     bridge: { socketPath: join(bridgeDirectory, 'bridge.sock'), controllerArtifactRootId: 'controller', brokerArtifactRootId: 'broker', inertLocalOnly: false },
-    interface: { perTargetConcurrency: { [targetId]: limits.concurrency } }, spend: { maxOutputTokens: Math.min(4096, remainingTokens) },
+    interface: { perTargetConcurrency: { [targetId]: runConcurrency } }, spend: { maxOutputTokens: Math.min(4096, remainingTokens) },
     // Source-only runs synthesize no finding: a lexical source scan is an observation, not a demonstrated issue.
     // The source receipts and the untested coverage cell stay visible with static-inference classification.
     reporting: { coverage: [{ taskId, surfaceId: targetId, actorId: 'anonymous', question: manifest.question.text, state: 'untested', basis: 'worker-asserted', reason: 'Coverage remains bounded to accepted evidence; findings are limited to owner-approved checks with an independent verifier outcome, with unsupported claims left unresolved.' }] } } satisfies ApplicationConfigWithSpend);

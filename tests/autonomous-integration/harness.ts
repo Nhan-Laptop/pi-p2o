@@ -33,7 +33,9 @@ export async function commandHarness(options: { tokens?: number; packBoundary?: 
   const controller = registerP2O(pi, { onboardingFor: input => ensureOwnerOnboarding(input, { storageRoot }), ownerStorageRoot: storageRoot });
   const ctx = { cwd, model, modelRegistry: new ModelRegistry(runtime), thinkingLevel: 'off', hasUI: true, mode: 'rpc', ui, waitForIdle: async () => {}, sessionManager: { getBranch: () => [] } } as unknown as ExtensionCommandContext;
   return { root, cwd, provider, dialogs, notifications, controller, messages,
-    async command(args: string) { const before = messages.length; await handler!(args, ctx); return messages.slice(before).at(-1)?.details as any; },
+    // A narrow token budget is a *guided* answer, because the default one-dialog path derives limits from
+    // --profile. Asking for it therefore opts into the full questionnaire, exactly like a human would.
+    async command(args: string) { const before = messages.length; await handler!(options.tokens === undefined ? args : `${args} --advanced`, ctx); return messages.slice(before).at(-1)?.details as any; },
     async wait(runId: string) { for (let i = 0; i < 400; i++) { const s: any = await controller.execute('status', { runId }, cwd); if (['completed', 'failed', 'cancelled'].includes(s.run?.state)) return s; await new Promise(r => setTimeout(r, 100)); } throw new Error('Run did not settle'); },
     async close() { await controller.close(); await provider.close(); if (!options.root) await removePrivateSourceTree(root); },
   };

@@ -24,10 +24,30 @@ container-backed execution. Both the extension host and pinned managed workers t
 ```text
 /p2o --target <local-dir|github-https-repo|http(s)-URL>
      [--purpose "..."] [--depth quick|standard|deep] [--plan-only]
-     [--budget <USD>] [--concurrency <N>]
+     [--budget <USD>] [--concurrency <N>] [--deadline <minutes>]
+     [--profile conservative|wide|ceiling] [--basis <owner|written-permission|published-program|public-source-review>]
+     [--repo-scripts] [--state-changes] [--full-rights] [--advanced]
 /p2o status|stop|resume|report [runId]
 /p2o approve <planId>
 ```
+
+**A target is the only required input.** One consent dialog then shows the exact scope, authorization basis,
+separate rights and every limit being consented to. Read/static is the default; repository scripts and state
+changes stay OFF unless this invocation requests them, and they are always displayed in that dialog before you
+approve it. `--full-rights` is the one-flag convenience for both separate rights on a target you own, never a
+third kind of grant. `--advanced` asks every question separately instead.
+
+Limits are always finite and visible, so nothing can run away with your provider spend:
+
+| profile | spend cap | deadline | requests / tokens / tool calls / attempts | concurrency |
+|---|---|---|---|---|
+| `wide` (default) | $100 | 12 h | validated maximum | 8 |
+| `conservative` | $5 | 1 h | 20 / 100k / 20 / 2 | 1 |
+| `ceiling` | validated maximum | validated maximum | validated maximum | validated maximum |
+
+An unbounded cap is not a guard, so it is not an option: the engine needs a finite number to bound provider
+spend and lease arithmetic. `--budget`, `--concurrency` and `--deadline` set an individual value inside the same
+single dialog, so no numeric prompt is ever required.
 
 One target per run, parsed without a shell: no expansion, no globbing, no `eval`; unknown or duplicate flags,
 out-of-range budgets/concurrency and ambiguous runs are refused with an explicit code. `--depth` only sets

@@ -8,6 +8,11 @@
  */
 import { InterfaceError } from './types.js';
 import type { EntryDepth } from './target-entry.js';
+import type { OnboardingProfile } from '../application/onboarding/types.js';
+
+export const PROFILES: readonly OnboardingProfile[] = ['conservative', 'wide', 'ceiling'];
+export type AuthorizationBasis = 'owner' | 'written-permission' | 'published-program' | 'public-source-review';
+export const BASES: readonly AuthorizationBasis[] = ['owner', 'written-permission', 'published-program', 'public-source-review'];
 
 export type P2OCommand =
   | { verb: 'help' }
@@ -28,6 +33,14 @@ export type P2OCommand =
     repositoryScripts?: true;
     stateChanges?: true;
     deadlineMinutes?: number;
+    /** `ceiling` profile id for the one-dialog quick consent; absent keeps the default profile. */
+    profile?: OnboardingProfile;
+    /** Human-selected authorization basis shown in the quick consent dialog. */
+    basis?: AuthorizationBasis;
+    /** Owned-target convenience: requests BOTH separate rights in one flag, still shown in the dialog. */
+    fullRights?: true;
+    /** Ask every onboarding question separately instead of the one-dialog quick consent. */
+    advanced?: true;
   };
 
 export const LIFECYCLE_VERBS = ['status', 'stop', 'resume', 'report'] as const;
@@ -134,6 +147,10 @@ function parseStart(tokens: string[]): P2OCommand {
   let repositoryScripts: true | undefined;
   let stateChanges: true | undefined;
   let deadlineMinutes: number | undefined;
+  let profile: OnboardingProfile | undefined;
+  let basis: AuthorizationBasis | undefined;
+  let fullRights: true | undefined;
+  let advanced: true | undefined;
 
   const takeValue = (name: string, inline: string | undefined, index: number): { value: string; next: number } => {
     if (seen.has(name)) throw invalid('DUPLICATE_FLAG', `${name} was given more than once`);
@@ -199,12 +216,34 @@ function parseStart(tokens: string[]): P2OCommand {
       concurrency = value;
       continue;
     }
-    if (name === '--repo-scripts' || name === '--state-changes') {
+    if (name === '--repo-scripts' || name === '--state-changes' || name === '--full-rights') {
       if (inline !== undefined) throw invalid('UNEXPECTED_ARGUMENT', `${name} takes no value; it requests a human opt-in dialog`);
       if (seen.has(name)) throw invalid('DUPLICATE_FLAG', `${name} was given more than once`);
       seen.add(name);
       if (name === '--repo-scripts') repositoryScripts = true;
-      else stateChanges = true;
+      else if (name === '--state-changes') stateChanges = true;
+      else fullRights = true;
+      continue;
+    }
+    if (name === '--profile') {
+      const taken = takeValue('--profile', inline, i);
+      i = taken.next;
+      if (!PROFILES.includes(taken.value as OnboardingProfile)) throw invalid('INVALID_PROFILE', `--profile must be one of ${PROFILES.join('|')}`);
+      profile = taken.value as OnboardingProfile;
+      continue;
+    }
+    if (name === '--basis') {
+      const taken = takeValue('--basis', inline, i);
+      i = taken.next;
+      if (!BASES.includes(taken.value as AuthorizationBasis)) throw invalid('INVALID_BASIS', `--basis must be one of ${BASES.join('|')}`);
+      basis = taken.value as AuthorizationBasis;
+      continue;
+    }
+    if (name === '--advanced') {
+      if (inline !== undefined) throw invalid('UNEXPECTED_ARGUMENT', '--advanced takes no value');
+      if (seen.has(name)) throw invalid('DUPLICATE_FLAG', '--advanced was given more than once');
+      seen.add(name);
+      advanced = true;
       continue;
     }
     if (name === '--deadline') {
@@ -227,8 +266,9 @@ function parseStart(tokens: string[]): P2OCommand {
   if (target === undefined) throw invalid('MISSING_TARGET', 'a target is required: /p2o --target <local-dir|github-https-repo|http(s)-URL>');
   return { verb: 'start', target, ...(purpose !== undefined ? { purpose } : {}), depth, planOnly,
     ...(budgetUsd !== undefined ? { budgetUsd } : {}), ...(concurrency !== undefined ? { concurrency } : {}),
-    ...(repositoryScripts ? { repositoryScripts } : {}), ...(stateChanges ? { stateChanges } : {}),
-    ...(deadlineMinutes !== undefined ? { deadlineMinutes } : {}) };
+    ...(repositoryScripts || fullRights ? { repositoryScripts: true } : {}), ...(stateChanges || fullRights ? { stateChanges: true } : {}),
+    ...(deadlineMinutes !== undefined ? { deadlineMinutes } : {}), ...(profile !== undefined ? { profile } : {}),
+    ...(basis !== undefined ? { basis } : {}), ...(fullRights ? { fullRights } : {}), ...(advanced ? { advanced } : {}) };
 }
 
 /** Parse the full `/p2o` argument string into exactly one command. */

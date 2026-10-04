@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { homedir } from 'node:os';
 import { isAbsolute, resolve } from 'node:path';
-import { OnboardingError, type OnboardingTarget, type OwnerConfiguration, type OwnerLimits, type OwnerPermissions, type OwnerScope } from './types.js';
+import { OnboardingError, type OnboardingProfile, type OnboardingTarget, type OwnerConfiguration, type OwnerLimits, type OwnerPermissions, type OwnerScope } from './types.js';
 
 const CONTROL = /[\u0000-\u001f\u007f-\u009f\u202a-\u202e\u2066-\u2069]/;
 const SECRET = /\b(?:password|passwd|api[_-]?key|access[_-]?token|token|secret|credential|authorization|cookie)\s*[:=]|\bBearer\s+\S+|\b(?:sk-[A-Za-z0-9_-]{8,}|gh[pousr]_[A-Za-z0-9_]{8,})|https?:\/\/[^/\s]*@/i;
@@ -68,6 +68,27 @@ export const LIMIT_CEILINGS: OwnerLimits = {
   maxCostUsd: 100_000, maxRequests: 1_000_000, maxTokens: 10_000_000, maxToolCalls: 1_000_000,
   maxAttempts: 10_000, deadlineMs: Number.MAX_SAFE_INTEGER, concurrency: 64,
 };
+/**
+ * Profile limits for the one-dialog quick path.
+ *
+ * `conservative` is the historic default; `wide` keeps a real money cap and a real deadline while leaving the
+ * request/tool/attempt/token ceilings at the validated maximum, so an ordinary assessment never stops on an
+ * artificial limit; `ceiling` uses the validated maxima for every field, including spend and deadline. Every
+ * profile is finite: an unbounded spend cap or deadline is not a guard at all. `deadlineMs` is absolute, so
+ * this takes the current time.
+ */
+export function profileLimits(profile: OnboardingProfile, now: number): OwnerLimits {
+  if (profile === 'conservative') {
+    return { maxCostUsd: 5, maxRequests: 20, maxTokens: 100_000, maxToolCalls: 20, maxAttempts: 2, deadlineMs: now + 60 * 60_000, concurrency: 1 };
+  }
+  if (profile === 'ceiling') {
+    return { ...LIMIT_CEILINGS };
+  }
+  return { maxCostUsd: 100, maxRequests: LIMIT_CEILINGS.maxRequests, maxTokens: LIMIT_CEILINGS.maxTokens,
+    maxToolCalls: LIMIT_CEILINGS.maxToolCalls, maxAttempts: LIMIT_CEILINGS.maxAttempts,
+    deadlineMs: now + 12 * 60 * 60_000, concurrency: 8 };
+}
+
 export function validateLimits(limits: OwnerLimits): void {
   for (const key of Object.keys(LIMIT_CEILINGS) as Array<keyof OwnerLimits>) {
     const value = limits[key];

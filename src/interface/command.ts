@@ -55,16 +55,23 @@ export function p2oHelp(currentRun?: string): string {
   const lines = [
     'p2o — one command for authorized, scoped assessments',
     '',
-    '  /p2o --target <local-dir|github-https-repo|http(s)-URL> [flags]',
-    '       [--purpose "..."] [--depth quick|standard|deep] [--plan-only]',
-    '       [--budget <USD>] [--concurrency <N>]',
-    '       [--deadline <minutes>] [--repo-scripts] [--state-changes]',
+    '  /p2o --target <local-dir|github-https-repo|http(s)-URL>', 
+    '       [flags] [--purpose "..."] [--depth quick|standard|deep] [--plan-only]',
+    '       [--budget <USD>] [--concurrency <N>] [--deadline <minutes>]',
+    '       [--profile conservative|wide|ceiling] [--basis <owner|written-permission|published-program|public-source-review>]',
+    '       [--repo-scripts] [--state-changes] [--full-rights] [--advanced]',
     '  /p2o status|stop|resume|report [runId]',
     '  /p2o approve <planId>',
     '  /p2o                                  this help',
     '',
-    'First use asks direct owner-consent UI questions; no manual JSON or environment path is required.',
-    'Read/static is the default. Script execution and state changes require separate human opt-ins.',
+    'A target is the only required input. One consent dialog then shows the exact scope, authorization',
+    'basis, separate rights and every limit being consented to; the rest is derived from --profile.',
+    'Read/static is the default. Repository scripts and state changes stay OFF unless this invocation',
+    'explicitly requests them (--repo-scripts, --state-changes, or --full-rights for a target you own),',
+    'and they are always displayed in that dialog. --advanced asks every question separately instead.',
+    'Limits are always finite and visible: --profile wide (default) keeps a real spend cap and deadline',
+    'with the remaining ceilings at the validated maximum; --profile ceiling uses the validated maxima',
+    'for every field. An unbounded cap would not be a guard, so it does not exist as an option.',
     'Saved consent is reused only within its exact scope, rights, budget and deadline; flags request',
     'review of expansions, never grant authority. The model plan still needs exact digest approval.',
     'Planning may incur explicitly selected assessment-model charges (including --plan-only); phase budget',
@@ -218,7 +225,12 @@ async function readPlan(host: P2OCommandHost, port: TargetEntryPort, planId: str
 
 async function startCommand(host: P2OCommandHost, command: Extract<P2OCommand, { verb: 'start' }>, ctx: ExtensionCommandContext): Promise<CommandOutcome> {
   const classified = classifyTargetSyntax(command.target);
+  // One-dialog quick consent is the default: the target is the only required argument, and the dialog shows the
+  // exact scope, authorization basis, separate rights and every limit that will be consented to.
   const owner = await onboardCommandTarget(ctx, classified, host.onboardingFor, command.budgetUsd, command.concurrency, {
+    mode: command.advanced ? 'guided' : 'quick',
+    ...(command.profile !== undefined ? { profile: command.profile } : {}),
+    ...(command.basis !== undefined ? { basis: command.basis } : {}),
     permissions: { ...(command.repositoryScripts ? { repositoryScripts: true } : {}), ...(command.stateChanges ? { stateChanges: true } : {}) },
     limits: command.deadlineMinutes !== undefined ? { deadlineMs: Date.now() + command.deadlineMinutes * 60_000 } : {},
   });
@@ -266,7 +278,7 @@ async function approveCommand(host: P2OCommandHost, command: Extract<P2OCommand,
   const port = await entryPort(host, ctx);
   const found = await readPlan(host, port, command.planId, ctx);
   const owner = await onboardCommandTarget(ctx, found.preparation.target, host.onboardingFor,
-    found.preparation.spend.maxCostUsd, found.preparation.concurrency);
+    found.preparation.spend.maxCostUsd, found.preparation.concurrency, { mode: 'quick' });
   await entryPort(host, ctx, owner);
   assertOwnerPreparation(owner, found.preparation, ctx.cwd);
   const summary = describePreparation(found.preparation, found.plan, owner);

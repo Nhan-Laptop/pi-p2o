@@ -6,8 +6,13 @@ import { InterfaceError } from './types.js';
 
 /** Shared human-command adapter. Never called from a p2o_* tool. */
 export async function onboardCommandTarget(ctx: ExtensionCommandContext, target: EntryTarget, handler: OnboardingHandler = ensureOwnerOnboarding,
-  budgetUsd?: number, concurrency?: number, request?: Pick<OnboardingInput, 'limits' | 'permissions'>): Promise<OnboardingReady> {
+  budgetUsd?: number, concurrency?: number,
+  request?: Pick<OnboardingInput, 'limits' | 'permissions' | 'mode' | 'profile' | 'basis' | 'reference'>): Promise<OnboardingReady> {
   const result = await handler({ target, cwd: ctx.cwd, hasUI: ctx.hasUI, ui: ctx.ui, signal: ctx.signal,
+    ...(request?.mode !== undefined ? { mode: request.mode } : {}),
+    ...(request?.profile !== undefined ? { profile: request.profile } : {}),
+    ...(request?.basis !== undefined ? { basis: request.basis } : {}),
+    ...(request?.reference !== undefined ? { reference: request.reference } : {}),
     permissions: request?.permissions,
     limits: { ...(budgetUsd !== undefined ? { maxCostUsd: budgetUsd } : {}), ...(concurrency !== undefined ? { concurrency } : {}), ...request?.limits } });
   if (result.status === 'unsupported') throw new InterfaceError(result.code, result.message);

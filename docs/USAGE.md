@@ -18,7 +18,9 @@ The supported baseline is Pi 1.0.0 for both host and managed worker. Availabilit
 /p2o --target https://github.com/owner/repo
 /p2o --target https://authorized.example
 /p2o --target ./project --purpose "Review authorization" --depth deep --budget 1
+/p2o --target ./project --profile ceiling --full-rights   # widest validated caps, both separate rights
 /p2o --target https://authorized.example --plan-only
+  /p2o --target ./project --advanced                    # ask every question separately
 /p2o approve <planId>
 /p2o status|stop|resume|report [runId]
 ```
@@ -27,7 +29,7 @@ Arguments are parsed without a shell. `--depth quick|standard|deep` changes anal
 
 ### First-use consent
 
-With no saved scope, Pi asks for the target, authorization basis, permitted actions, budgets, deadline and concurrency. You confirm these before planning. Saved consent is owner-only under `~/.p2o/onboarding/`; the bundled backend generates the application/run documents. **You do not need to edit JSON or set `P2O_APP_CONFIG`/`P2O_CONTROL_MODULE`.**
+With no saved scope, **one** consent dialog shows the exact target/scope, authorization basis (with your attestation text), separate rights and every limit being consented to. Everything else is derived from `--profile` (default `wide`: $100 cap, 12 h, validated maxima for requests/tokens/tool calls/attempts, concurrency 8). `--budget`, `--concurrency`, `--deadline`, `--profile`, `--basis` and `--full-rights` set those values inside that same dialog, so no numeric prompt is required. `--advanced` restores the full guided questionnaire. Saved consent is owner-only under `~/.p2o/onboarding/` and is reused with **zero** dialogs when it already covers the request; a wider request always re-asks the human and is labelled as a renewal/expansion. The bundled backend generates the application/run documents, so **you do not need to edit JSON or set `P2O_APP_CONFIG`/`P2O_CONTROL_MODULE`.**
 
 Public-source-review consent permits only reading/cloning and static analysis of public source. It does not authorize testing the GitHub service, executing repository scripts, or state-changing actions. Repository execution and mutation require separate rights and remain unsupported by bundled first-use even if requested.
 

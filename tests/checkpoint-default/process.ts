@@ -141,7 +141,9 @@ if (mode === 'persist' || mode === 'persist-mid' || mode === 'persist-live-contr
   const source = join(root, 'source');
   mkdirSync(source, { recursive: true });
   writeFileSync(join(source, 'index.ts'), 'export const marker = "DEFAULT_BUNDLED_CHECKPOINT_RESTART";\n');
-  const run = await harness.command(`--target ${source}`);
+  // The mid-execution scenario is about exhausting a finite budget across a restart, so it consents to the narrow
+  // profile on purpose. The default wide profile leaves enough phase budget to continue, which is a different case.
+  const run = await harness.command(`--target ${source}${mid ? ' --profile conservative' : ''}`);
   if (!run?.runId) throw new Error(`default target command did not admit a run: ${String(JSON.stringify(run)).slice(0, 400)} notifications=${String(JSON.stringify(harness.notifications)).slice(0, 1600)}`);
   const runRoot = runRootOf(), control = runRoot && join(runRoot, 'control'), statePath = join(runRoot, 'state.sqlite');
   if (mid) {

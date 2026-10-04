@@ -1,7 +1,6 @@
-import { actionsFor, boundedText, consentCovers, LIMIT_CEILINGS, onboardingScopeFor, ownerUid, validateLimits, validateOwnerConfiguration } from './configuration.js';
+import { actionsFor, boundedText, consentCovers, LIMIT_CEILINGS, onboardingScopeFor, ownerUid, profileLimits, validateLimits, validateOwnerConfiguration } from './configuration.js';
 import { assertStorageOutsideTarget, defaultOwnerStorageRoot, findOwnerConsent, ownerConfigPath, publishOwnerConsent } from './storage.js';
 import { OnboardingError, type OnboardingInput, type OnboardingOptions, type OnboardingResult, type OwnerConfiguration, type OwnerLimits } from './types.js';
-
 export const MODEL_DISCLOSURE = 'Planning uses an assessment model you explicitly select in the human UI; your parent Pi model is not assessment consent. Model calls may incur provider charges, including --plan-only. Target identifiers and approved context may be sent to the selected provider. The USD cap includes planning, workers and bounded verification; it is a ceiling, not a price estimate. No target I/O or worker execution is permitted during preparation/planning. Scope consent is not approval of a model plan; you will review its exact digest separately.';
 class Cancelled extends Error {}
 /** Honest bases only. `public-source-review` exists because a public repository is neither owned, nor covered by
@@ -14,6 +13,10 @@ const SCRIPT = ['No — keep repository scripts disabled', 'Yes — separately a
 const CHANGE = ['No — keep state changes disabled', 'Yes — separately allow state changes'];
 function abort(input: OnboardingInput): void { if (input.signal?.aborted) throw new Cancelled(); }
 
+/** Render an absolute deadline for a dialog; the validated maximum is an explicit "no expiry", not a date. */
+function deadlineText(deadlineMs: number): string {
+  return Number.isFinite(deadlineMs) && deadlineMs <= 8.64e15 ? new Date(deadlineMs).toISOString() : 'no expiry (validated maximum)';
+}
 /** First-use HUMAN UI only. This function never constructs a backend, calls a model, or reads a target. */
 export async function ensureOwnerOnboarding(input: OnboardingInput, options: OnboardingOptions = {}): Promise<OnboardingResult> {
   if (!input.hasUI || !input.ui || ['confirm', 'select', 'input'].some(method => typeof (input.ui as unknown as Record<string, unknown>)[method] !== 'function')) {
@@ -43,11 +46,25 @@ export async function ensureOwnerOnboarding(input: OnboardingInput, options: Onb
   if (input.permissions && (Object.keys(input.permissions).some(key => !['repositoryScripts', 'stateChanges'].includes(key)) ||
     Object.values(input.permissions).some(value => typeof value !== 'boolean'))) throw new OnboardingError('ONBOARDING_INVALID_INPUT', 'invalid requested permissions');
   if (scope.target.kind === 'http-url' && input.permissions?.repositoryScripts) throw new OnboardingError('ONBOARDING_INVALID_INPUT', 'repository scripts require a repository target');
+  if (input.mode !== undefined && !['quick', 'guided'].includes(input.mode)) throw new OnboardingError('ONBOARDING_INVALID_INPUT', 'unknown onboarding mode');
+  if (input.profile !== undefined && !['conservative', 'wide', 'ceiling'].includes(input.profile)) throw new OnboardingError('ONBOARDING_INVALID_INPUT', 'unknown ceiling profile');
+  if (input.basis !== undefined && !['owner', 'written-permission', 'published-program', 'public-source-review'].includes(input.basis)) throw new OnboardingError('ONBOARDING_INVALID_INPUT', 'unknown authorization basis');
+  if (input.reference !== undefined && input.basis === undefined && (input.mode ?? 'guided') === 'quick' && input.reference.trim().length === 0) throw new OnboardingError('ONBOARDING_INVALID_INPUT', 'authorization reference must not be blank');
+  const quick = (input.mode ?? 'guided') === 'quick';
+  // Quick mode derives every value from the selected profile, so the reuse decision must consider the whole
+  // profile: a wider request must never be satisfied silently by a narrower saved consent.
+  const quickProfile = profileLimits(input.profile ?? 'wide', now());
+  const quickLimits: OwnerLimits | undefined = quick ? { ...quickProfile, ...input.limits } : undefined;
+  // The profile deadline is a *default*, not a request: a repeated identical run must reuse saved consent instead of
+  // re-asking merely because "twelve hours from now" moved. An explicit deadline request is a real request.
+  const quickCaps: Partial<OwnerLimits> = { maxCostUsd: quickProfile.maxCostUsd, maxRequests: quickProfile.maxRequests,
+    maxTokens: quickProfile.maxTokens, maxToolCalls: quickProfile.maxToolCalls, maxAttempts: quickProfile.maxAttempts, concurrency: quickProfile.concurrency };
+  const requestedLimits = quick ? { ...quickCaps, ...input.limits } : input.limits;
   try {
     abort(input);
-    const previous = await findOwnerConsent(root, scope, input.limits, input.permissions, now());
+    const previous = await findOwnerConsent(root, scope, requestedLimits, input.permissions, now());
     abort(input);
-    if (previous && consentCovers(previous.configuration, scope, input.limits, input.permissions, now())) {
+    if (previous && consentCovers(previous.configuration, scope, requestedLimits, input.permissions, now())) {
       ui.notify?.(`Reusing your saved exact scope and bounds. ${MODEL_DISCLOSURE}`, 'info');
       const path = ownerConfigPath(root, previous.configuration.scope);
       return readyResult(previous.configuration, path, true);
@@ -87,6 +104,48 @@ export async function ensureOwnerOnboarding(input: OnboardingInput, options: Onb
       }
       throw new OnboardingError('ONBOARDING_INVALID_INPUT', 'invalid owner budget; no consent saved');
     };
+    // ------------------------------------------------------------------ one-dialog quick consent
+    if (quick) {
+      const basisKey = input.basis ?? (scope.target.kind === 'github-repo' ? 'public-source-review' : 'owner');
+      const publicSourceReview = basisKey === 'public-source-review';
+      if (publicSourceReview && scope.target.kind === 'http-url') {
+        throw new OnboardingError('ONBOARDING_INVALID_INPUT', 'public source review is static read/clone only; a single URL target implies host interaction and needs an owner/written-permission/published-program basis');
+      }
+      // Rights are off unless this invocation explicitly requested them, and public source review never carries them.
+      const repositoryScripts = !publicSourceReview && input.permissions?.repositoryScripts === true;
+      const stateChanges = !publicSourceReview && input.permissions?.stateChanges === true;
+      if (repositoryScripts && scope.target.kind === 'http-url') throw new OnboardingError('ONBOARDING_INVALID_INPUT', 'repository scripts require a repository target');
+      const reference = boundedText(input.reference ?? (basisKey === 'owner' ? BASIS[0] : publicSourceReview ? PUBLIC_SOURCE_REFERENCE : BASIS[1]), 'authorization reference', 512);
+      const configuration: OwnerConfiguration = validateOwnerConfiguration({
+        schemaVersion: 1, owner: { uid: ownerUid() }, scope,
+        authorization: { basis: basisKey, reference, attestation: 'human-self-attested' },
+        permissions: { readStatic: true, repositoryScripts, stateChanges },
+        allowedActions: actionsFor({ readStatic: true, repositoryScripts, stateChanges }),
+        limits: quickLimits!,
+        disclosure: { version: 1, modelCosts: true, modelDataSharing: true, planOnlyTargetIO: 0 },
+      });
+      const limits = configuration.limits;
+      const basisText = basisKey === 'owner' ? 'I own/control this target (your attestation; not independent ownership proof)'
+        : basisKey === 'written-permission' ? 'I have written permission (your attestation; keep the document)'
+        : basisKey === 'published-program' ? 'A published program authorizes this scope (your attestation)'
+        : 'Public source review only — static read/clone of public source, no host testing';
+      // A renewal/expansion is labelled as such so a wider consent is never mistaken for the first one.
+      const quickTitle = previous ? 'Scope/rights/budget renewal or expansion: save this scope, rights and limits?' : 'First-use owner consent: save this scope, rights and limits?';
+      await confirm(quickTitle,
+        `Target: ${scope.target.kind} ${scope.target.locator}\nScope: ${scope.boundary}\n`
+        + `Authorization: ${basisText}\nReference: ${reference}\n`
+        + (publicSourceReview ? 'Public source review is static read/clone and static analysis only: no host testing, no HTTP requests against the repository host, no scripts, no state changes.\n' : '')
+        + `Separate rights: repository scripts ${repositoryScripts ? 'ON' : 'OFF'}, state changes ${stateChanges ? 'ON' : 'OFF'}\n`
+        + `Your rights: ${configuration.allowedActions.join(', ')}\n`
+        + `Spend: up to $${limits.maxCostUsd}; ${limits.maxRequests} target requests, ${limits.maxTokens} model tokens, ${limits.maxToolCalls} tool calls, ${limits.maxAttempts} attempts; concurrency ${limits.concurrency}; deadline ${deadlineText(limits.deadlineMs)}\n`
+        + `${MODEL_DISCLOSURE}\n`
+        + `Save outside the target at ${root}, owner-only. Nothing is saved if you cancel this dialog.`);
+      abort(input);
+      const path = await publishOwnerConsent(root, configuration, previous?.receipt.configurationDigest ?? null, now());
+      ui.notify?.(`Saved owner configuration and scope-consent receipt: ${path}. This is not approval of a model plan.`, 'info');
+      return readyResult(configuration, path, false);
+    }
+
     const renewal = previous ? 'Scope/rights/budget renewal or expansion' : 'First-use owner consent';
     await confirm(`${renewal}: confirm target and scope?`,
       `Target: ${scope.target.kind} ${scope.target.locator}\nScope: ${scope.boundary}\nNo additional hosts, URL paths, redirects, symlink targets or repositories are included. No target has been read or contacted. Only authorize a scope you are legally entitled to assess.${scope.target.kind === 'github-repo' ? '\nRepository scope does not approve an unobserved commit/tree. Execution requires separate approval of the acquired immutable source identity.' : ''}`);

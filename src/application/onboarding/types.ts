@@ -77,6 +77,14 @@ export interface OnboardingUI {
   input(title: string, placeholder?: string, options?: { signal?: AbortSignal }): Promise<string | undefined>;
   notify?(message: string, type?: 'info' | 'warning' | 'error'): void;
 }
+/**
+ * Owner-selectable ceiling profile for the one-dialog quick path.
+ *
+ * Every profile is a finite, validated set of limits; none of them is unbounded, because an unbounded
+ * spend cap and an unbounded deadline stop being guards. `wide` is the default so that a normal run needs
+ * no questions, and `ceiling` uses the engine's validated maxima when an owner genuinely wants that.
+ */
+export type OnboardingProfile = 'conservative' | 'wide' | 'ceiling';
 export interface OnboardingInput {
   target: OnboardingTarget;
   cwd: string;
@@ -86,6 +94,18 @@ export interface OnboardingInput {
   /** Requests may narrow existing consent. Expansion always needs new human UI confirmation. */
   limits?: Partial<OwnerLimits>;
   permissions?: Partial<Pick<OwnerPermissions, 'repositoryScripts' | 'stateChanges'>>;
+  /**
+   * `quick` asks exactly one consent dialog built from the selected profile; `guided` asks every question
+   * separately. Quick mode never grants more than the profile plus these explicit requests, and the dialog
+   * always shows the exact limits, rights and authorization basis being consented to.
+   */
+  mode?: 'quick' | 'guided';
+  /** Quick-mode ceiling profile; ignored in guided mode, which asks for each value. */
+  profile?: OnboardingProfile;
+  /** Quick-mode authorization basis. Defaults per target kind and is always shown in the consent dialog. */
+  basis?: OwnerConfiguration['authorization']['basis'];
+  /** Optional authorization reference text; the basis default is used when omitted. */
+  reference?: string;
 }
 export interface OnboardingOptions {
   /** Host-only override, never taken from command arguments, model content or target files. */

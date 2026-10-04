@@ -39,6 +39,22 @@ describe('p2o grammar', () => {
     expect(parseP2OArgs('--target ./r --purpose "bad; rm -rf / $(whoami) `id`"')).toMatchObject({ purpose: 'bad; rm -rf / $(whoami) `id`' });
   });
 
+  test('the one-dialog flags are typed and bounded', () => {
+    expect(parseP2OArgs('--target ./repo --profile wide')).toMatchObject({ profile: 'wide' });
+    expect(parseP2OArgs('--target ./repo --profile ceiling --basis owner')).toMatchObject({ profile: 'ceiling', basis: 'owner' });
+    expect(parseP2OArgs('--target ./repo --full-rights')).toMatchObject({ repositoryScripts: true, stateChanges: true, fullRights: true });
+    expect(parseP2OArgs('--target ./repo --advanced')).toMatchObject({ advanced: true });
+    // --full-rights is a convenience for the two separate rights, never a third kind of grant.
+    const repoScriptsOnly = parseP2OArgs('--target ./repo --repo-scripts');
+    expect(repoScriptsOnly).toMatchObject({ repositoryScripts: true });
+    expect('stateChanges' in repoScriptsOnly).toBe(false);
+    for (const args of ['--target ./repo --profile infinite', '--target ./repo --profile', '--target ./repo --basis owner --basis owner',
+      '--target ./repo --basis yes', '--target ./repo --full-rights=true', '--target ./repo --advanced --advanced']) {
+      expect(() => parseP2OArgs(args)).toThrow();
+    }
+    expect(() => parseP2OArgs('--target ./repo --full-rights')).not.toThrow();
+  });
+
   test('unknown and duplicate flags are denied', () => {
     expect(() => parseP2OArgs('--target ./repo --scan')).toThrow(/UNKNOWN_FLAG/);
     expect(() => parseP2OArgs('--target ./repo --technique authz')).toThrow(/UNKNOWN_FLAG/);

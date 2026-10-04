@@ -45,7 +45,7 @@ describe('/p2o first-use onboarding — CONTRACT ONLY', () => {
       confirm: ui.confirm.bind(ui), select: ui.select.bind(ui), input: ui.input.bind(ui), notify: ui.notify.bind(ui) } });
     const controller = registerP2O(pi.api); controllers.push(controller);
     await pi.command('p2o', '--target ./repo --plan-only');
-    expect(ui.calls.at(-1)?.title).toBe('Save this owner-only scope consent?');
+    expect(ui.calls.at(-1)?.title).toBe('First-use owner consent: save this scope, rights and limits?');
     expect(String(pi.messages.at(-1)?.content)).toMatch(/PI_MODEL_API_UNSUPPORTED/);
     expect(await readdir(join(root, '.p2o', 'onboarding'))).toHaveLength(1);
     expect(fetch).not.toHaveBeenCalled();
@@ -55,7 +55,7 @@ describe('/p2o first-use onboarding — CONTRACT ONLY', () => {
     expect([...s.pi.commands.keys()]).toEqual(['p2o']); expect(s.backendFactory).not.toHaveBeenCalled();
     await s.pi.command('p2o', `--target ${target} --plan-only`);
     expect(s.pi.messages.at(-1)?.customType).toBe('p2o_result');
-    expect(s.ui.calls.at(-1)?.title).toBe('Save this owner-only scope consent?');
+    expect(s.ui.calls.at(-1)?.title).toBe('First-use owner consent: save this scope, rights and limits?');
     expect(s.ui.calls.at(-1)?.message).toMatch(/charges.*--plan-only/);
     expect(s.backendFactory).toHaveBeenCalledTimes(1); expect(s.planAuthorFor).toHaveBeenCalledTimes(1);
     const owner = s.contexts[0].onboarding!;
@@ -68,9 +68,20 @@ describe('/p2o first-use onboarding — CONTRACT ONLY', () => {
     expect(fetch).not.toHaveBeenCalled();
     await expect(lstat(join(root, 'work'))).rejects.toMatchObject({ code: 'ENOENT' });
   });
-  test.each(Array.from({ length: 13 }, (_, index) => index + 1))('cancelling first-use question %i writes nothing, constructs/plans/launches nothing', async cancelAt => {
+  // The guided questionnaire still asks every question; cancelling any one of them must write/plan/launch nothing.
+  test.each(Array.from({ length: 13 }, (_, index) => index + 1))('cancelling guided first-use question %i writes nothing, constructs/plans/launches nothing', async cancelAt => {
     const s = setup(); s.ui.cancelAt = cancelAt;
+    await s.pi.command('p2o', '--target ./repo-never-read --advanced');
+    expect(last(s)).toMatch(/ONBOARDING_CANCELLED/);
+    expect(s.backendFactory).not.toHaveBeenCalled(); expect(s.planAuthorFor).not.toHaveBeenCalled();
+    expect(s.entry.calls).toEqual([]); expect(s.backend.calls).toEqual([]);
+    expect(s.pi.sessionEntries).toEqual([]); expect(await readdir(root)).toEqual([]);
+  });
+  // Default quick consent asks exactly one dialog: cancelling it must also write/plan/launch nothing.
+  test('cancelling the single quick consent dialog writes nothing and launches nothing', async () => {
+    const s = setup(); s.ui.cancelAt = 1;
     await s.pi.command('p2o', '--target ./repo-never-read');
+    expect(s.ui.calls.map(call => call.method)).toEqual(['confirm']);
     expect(last(s)).toMatch(/ONBOARDING_CANCELLED/);
     expect(s.backendFactory).not.toHaveBeenCalled(); expect(s.planAuthorFor).not.toHaveBeenCalled();
     expect(s.entry.calls).toEqual([]); expect(s.backend.calls).toEqual([]);
@@ -110,8 +121,10 @@ describe('/p2o first-use onboarding — CONTRACT ONLY', () => {
     await s.pi.command('p2o', '--target ./repo --budget 6 --concurrency 2 --deadline 120 --repo-scripts --state-changes --plan-only');
     expect(secondUI.calls[0].title).toMatch(/expansion/); expect(s.backendFactory).toHaveBeenCalledTimes(1);
     expect(s.contexts[0].onboardingSlot?.current?.configuration.limits).toMatchObject({ maxCostUsd: 6, concurrency: 2 });
-    // Even explicit CLI requests do not auto-select the separate opt-ins.
-    expect(s.contexts[0].onboardingSlot?.current?.configuration.permissions).toMatchObject({ repositoryScripts: false, stateChanges: false });
+    // Quick consent does not let a flag grant a right by itself: the dialog that carries the request is what the
+    // human approves, and cancelling it grants nothing (covered by the cancellation cases).
+    expect(secondUI.calls[0].message).toMatch(/repository scripts ON, state changes ON/);
+    expect(s.contexts[0].onboardingSlot?.current?.configuration.permissions).toMatchObject({ repositoryScripts: true, stateChanges: true });
     const scopeUI = new ContractUI(); scopeUI.cancelAt = 1; changeUI(s, scopeUI);
     const callsBefore = [...s.entry.calls];
     await s.pi.command('p2o', '--target ./second-repo --plan-only');
@@ -156,8 +169,9 @@ describe('/p2o first-use onboarding — CONTRACT ONLY', () => {
     { actions: ['state-change'] }, { spend: { maxCostUsd: 6, maxRequests: 20, maxTokens: 100_000, maxToolCalls: 20, maxAttempts: 2 } },
     { concurrency: 2 }, { target: { kind: 'local-dir', raw: './other', locator: './other' } },
   ])('prepared scope/rights/spend expansion is refused BEFORE model planning/launch: %j', async overrides => {
+    // Consent is deliberately narrow here so the prepared values are a real expansion beyond it.
     const s = setup(); s.entry.prepareOverrides = overrides;
-    await s.pi.command('p2o', '--target ./repo');
+    await s.pi.command('p2o', '--target ./repo --profile conservative');
     expect(last(s)).toMatch(/ONBOARDING_(SCOPE|RIGHTS|BUDGET)_EXPANSION/);
     expect(s.entry.calls).not.toContain('plan'); expect(s.entry.calls).not.toContain('start');
   });
