@@ -20,6 +20,8 @@ import {
   ManualClock, admitRunAndTasks, admitTaskEvidence, createHarness, h2Packet, latestAttempt, submitAccepted,
   type Harness,
 } from '../orchestrator/fixtures.js';
+import type { FakeRuntimeOptions } from '../orchestrator/fake-runtime.js';
+import { ControlFiles, admitControllerReceipt } from '../../src/orchestrator/index.js';
 
 const IMPLEMENTATION = sha256('p2o-result-collector-bridge-v1');
 const CLAIM = 'Only accepted local fixture input reaches the handler';
@@ -47,7 +49,7 @@ function bridgeGrant(store: DurableStore, attempt: CollectorAttemptView): Collec
   };
 }
 
-function createEnv(): BridgeEnv {
+function createEnv(runtimeOptions: Partial<FakeRuntimeOptions> = { steps: [{ at: 0, status: 'running' }, { at: 50, status: 'settled' }] }): BridgeEnv {
   const base = mkdtempSync(join(tmpdir(), 'p2o-bridge-'));
   const staging = join(base, 'staging'), workspaceRoot = join(base, 'workspaces'), vaultRoot = join(base, 'vault');
   for (const path of [staging, workspaceRoot]) { mkdirSync(path, { recursive: true, mode: 0o700 }); chmodSync(path, 0o700); }
@@ -63,7 +65,7 @@ function createEnv(): BridgeEnv {
   });
   const harness = createHarness({
     root: base, store, clock, results: bridge,
-    runtimeOptions: { steps: [{ at: 0, status: 'running' }, { at: 50, status: 'settled' }] },
+    runtimeOptions,
   });
   return {
     base, staging, workspaceRoot, store, vault, bridge, harness,
@@ -200,6 +202,81 @@ test('the bridge admits vault-preserved bytes through the real supervisor and pu
   } finally { env.dispose(); }
 });
 
+test('an admitted packet stays publishable after the live attempt is re-observed', async () => {
+  // One live step only: the attempt keeps running across ticks, so the supervisor keeps observing it exactly
+  // like the real worker run where the admitted packet pinned an early observation and the attempt was observed
+  // again four more times before it exited.
+  const env = createEnv({ steps: [{ at: 0, status: 'running' }] });
+  try {
+    await admitRunAndTasks(env.harness, [env.harness.task('task-1')]);
+    await env.harness.supervisor.tick(env.harness.run.runId);
+    env.harness.clock.advance(50);
+    await env.harness.supervisor.tick(env.harness.run.runId);
+    const live = latestAttempt(env.harness, 'task-1');
+    const task = env.store.getTask('task-1');
+    assert.ok(task && live.observedRuntime, 'the supervisor must keep observing the live attempt');
+    const source = collect(env, live, 'bridge-source', 'source', { artifactIdentity: { digest: task.scope.inputs[0].digest, revision: task.inputRevision } });
+    const baseline = collect(env, live, 'bridge-baseline', 'baseline');
+    const packet = h2Packet({
+      runId: task.runId, taskId: task.taskId, attemptId: live.attemptId, producerId: live.ownerId,
+      scope: task.scope, question: task.question, inputRevision: task.inputRevision,
+      requestedRuntime: live.requestedRuntime, observedRuntime: live.observedRuntime,
+      evidenceIds: [source.evidenceId, baseline.evidenceId], baselineEvidenceIds: [baseline.evidenceId],
+      createdAt: env.harness.clock.iso(), untestedScope: ['production impact not assessed'],
+    });
+    writeFileSync(join(env.harness.supervisor.workspaceFor('task-1'), 'handoff.packet.json'), JSON.stringify(packet), { mode: 0o600 });
+    // The live admission path the worker bridge uses (`packet.admit`): the bridge preserves the exact bytes and
+    // imports the vault receipts first, then the supervisor admits the candidate under its lease fence.
+    const handle = env.harness.runtime.attempts.get(live.attemptId)!.handle;
+    const candidates = await env.bridge.collect(handle);
+    assert.equal(candidates.length, 1, 'exactly one preserved packet candidate');
+    const admission = await env.harness.supervisor.submitResult(live.attemptId, candidates[0]!);
+    assert.equal(admission.decision.status, 'accepted', admission.decision.reasons.map(r => r.code).join(', '));
+    const stored = env.store.listResults(env.harness.run.runId);
+    assert.equal(stored.length, 1);
+    const pinned = stored[0]!.packet.observedRuntime;
+    assert.deepEqual(pinned, live.observedRuntime, 'admission pins the observation the attempt has at that moment');
+    // The attempt is observed once more after admission, exactly as the supervisor's own lease reconciliation does
+    // it: one controller receipt plus the reconcile observation that replaces `observedRuntime`. The inert
+    // fixture runtime stops on its own, so the test drives that documented write instead of a fake clock.
+    const laterReceipt = admitControllerReceipt({
+      files: new ControlFiles(env.harness.controlRoot), store: env.store, controllerId: 'supervisor-a',
+      environmentId: task.scope.environmentId, configurationDigest: task.scope.configurationDigest,
+      inputDigests: [digestJson(task.scope.inputs), digestJson(task.question)], handle, now: env.harness.clock.iso(),
+      observation: { observation: 'live', status: 'running', adapter: handle.kind, requested: { ...handle.requested },
+        capabilities: {} as never, deadlineAt: handle.deadlineAt },
+    });
+    env.store.reconcileRun(env.harness.run.runId, [{ attemptId: live.attemptId, status: 'running', observedAt: env.harness.clock.iso(), receiptEvidenceIds: [laterReceipt], runtime: { ...pinned, observedAt: env.harness.clock.iso(), receiptEvidenceIds: [laterReceipt] } }]);
+    const later = latestAttempt(env.harness, 'task-1').observedRuntime;
+    assert.ok(later, 'the fixture must re-observe the attempt');
+    assert.notDeepEqual(later.receiptEvidenceIds, pinned.receiptEvidenceIds, 'the fixture must mint a later observation');
+    assert.notDeepEqual(later, pinned, 'the admitted packet keeps its own observation');
+    const publication = publishHandoffReviews({
+      vault: env.vault, store: env.store, runId: env.harness.run.runId, reviewerId: 'reviewer-1',
+      now: env.harness.clock.iso(), controller: env.controller,
+    });
+    assert.equal(publication.reviews[0]!.decision.status, 'accepted', publication.reviews[0]!.decision.reasons.map(r => r.code).join(', '));
+    const report = buildReport({
+      vault: env.vault, run: env.store.getRun(env.harness.run.runId), tasks: env.store.listTasks(env.harness.run.runId),
+      attempts: env.store.listAttempts(env.harness.run.runId), handoffs: publication.reviews, findings: [],
+      coveragePlan: [], coverage: [], generatedAt: env.harness.clock.iso(),
+      controllerReceipts: publication.controllerReceipts, controller: env.controller,
+    });
+    assert.ok(report.packets.some(entry => entry.packetId === packet.packetId), 'the admitted packet is reported');
+    assert.equal(report.evidence.find(e => e.evidenceId === pinned.receiptEvidenceIds[0]!)?.attestation, 'controller',
+      'the admission-time runtime receipt stays controller-attested');
+    assert.equal(report.processes[0]!.runtimeEvidenceVerified, true);
+    // Only an *accepted* packet legitimizes an earlier observation: without one the same receipt is not
+    // resolvable, so the relaxation cannot smuggle controller receipts that no decision ever pinned.
+    const unattested = buildReport({
+      vault: env.vault, run: env.store.getRun(env.harness.run.runId), tasks: env.store.listTasks(env.harness.run.runId),
+      attempts: env.store.listAttempts(env.harness.run.runId), handoffs: [], findings: [],
+      coveragePlan: [], coverage: [], generatedAt: env.harness.clock.iso(),
+      controllerReceipts: publication.controllerReceipts, controller: env.controller,
+    });
+    assert.equal(unattested.evidence.find(e => e.evidenceId === pinned.receiptEvidenceIds[0]!), undefined);
+  } finally { env.dispose(); }
+});
 test('forged references and worker-forged runtime receipts are returned for evidence and never promoted', async () => {
   const env = createEnv();
   try {

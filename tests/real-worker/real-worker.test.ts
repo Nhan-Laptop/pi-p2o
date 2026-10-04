@@ -1,7 +1,7 @@
 // Real `pi` process as the assessment worker, now also driven through the controller-owned model gateway
 // and the supervisor's model spend ledger.
 //
-// The worker is the project-pinned Pi binary (0.85.1) launched by the real headless runtime adapter in RPC
+// The worker is the project-pinned Pi binary (1.0.0) launched by the real headless runtime adapter in RPC
 // mode with only the owner-pinned bridge extension tools. The worker sees only the loopback
 // credential-owning controller gateway with a minted attempt-scoped placeholder; that gateway injects the
 // owner credential and forwards to the deterministic loopback gateway fixture, which scripts fixed model
@@ -255,7 +255,7 @@ async function launchRealWorker(options: {
   const piBinary = join(repoRoot, 'node_modules', '.bin', 'pi');
   const extensionPath = join(repoRoot, 'examples', 'local-assessment', 'bridge-extension.js');
 
-  // [T8/S3] Version AND content hash: a wrapper that merely prints 0.85.1 cannot masquerade as the worker.
+  // [T8/S3] Version AND content hash: a wrapper that merely prints 1.0.0 cannot masquerade as the worker.
   const pinModule = await import(pathToFileURL(join(realWorkerSource, 'pi-pin.mjs')).href) as { verifyPiCli(piBinary: string): { cliPath: string; packageRoot: string; version: string; sha256: string } };
   const version = spawnSync(piBinary, ['--version'], { encoding: 'utf8' });
   assert.equal(version.status, 0, `real pinned pi --version must exit 0 (stderr: ${version.stderr})`);

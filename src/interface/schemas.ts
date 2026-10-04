@@ -1,6 +1,6 @@
 import { StringEnum } from '@earendil-works/pi-ai';
 import { Type, type Static, type TSchema } from 'typebox';
-import Schema from 'typebox/schema';
+import { Compile } from 'typebox/compile';
 import { InterfaceError } from './types.js';
 
 const closed = { additionalProperties: false } as const;
@@ -85,13 +85,13 @@ export const schemas = {
 export type Action = keyof typeof schemas;
 export type Input<A extends Action> = Static<(typeof schemas)[A]>;
 
-const validators = new Map<TSchema, ReturnType<typeof Schema.Compile>>();
+const validators = new Map<TSchema, ReturnType<typeof Compile>>();
 /** Strictly validate on every call, including commands and post-tool_call mutations. No coercion. */
 export function validate<A extends Action>(action: A, input: unknown): Input<A> {
   assertPlainJson(input);
   const schema = schemas[action];
   let validator = validators.get(schema);
-  if (!validator) { validator = Schema.Compile(schema); validators.set(schema, validator); }
+  if (!validator) { validator = Compile(schema); validators.set(schema, validator); }
   if (!validator.Check(input)) throw new InterfaceError('INVALID_INPUT', `p2o_${action} arguments do not match its schema`);
   const value = input as Input<A>;
   if (action === 'dashboard') {

@@ -4,7 +4,7 @@ import fs from "node:fs";
 import path from "node:path";
 import readline from "node:readline";
 import { spawn } from "node:child_process";
-if (process.argv.includes("--version")) { console.log("0.85.1"); process.exit(0); }
+if (process.argv.includes("--version")) { console.log("1.0.0"); process.exit(0); }
 const config = JSON.parse(fs.readFileSync(process.env.P2O_CONFIG, "utf8"));
 const modeFile = path.join(config.workspace, "fixture.json");
 const mode = fs.existsSync(modeFile) ? JSON.parse(fs.readFileSync(modeFile, "utf8")) : {};

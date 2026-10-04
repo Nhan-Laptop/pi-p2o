@@ -282,7 +282,7 @@ export interface HostPiAuthorContext {
   hasUI: boolean; ui: OnboardingUI; model?: { provider: string; id: string };
   thinkingLevel?: string; modelRegistry: unknown; signal?: AbortSignal;
 }
-/** Both Pi 1.0.0 and repo 0.85.1 expose registry.complete/getApiKeyAndHeaders (checked declarations).
+/** Pi 1.0.0 exposes registry.complete/getApiKeyAndHeaders (checked declarations).
  * Only the qualified OpenAI-completions gateway path is admitted here, not arbitrary subscription protocols. */
 export function createHostPiPlanAuthor(ctx: HostPiAuthorContext): HostPiPlanAuthor {
   const registry = ctx.modelRegistry as HostRegistry;

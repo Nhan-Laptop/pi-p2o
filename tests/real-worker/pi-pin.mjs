@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // [T8/S3] Pinned identity of the project worker CLI.
 //
-// The real-worker harness must not accept a wrapper that merely prints "0.85.1": the resolved worker binary
+// The real-worker harness must not accept a wrapper that merely prints "1.0.0": the resolved worker binary
 // is the installed `@earendil-works/pi-coding-agent` package's own `bin.pi` file, and its content hash is
 // pinned here. `verifyPiCli` resolves the binary, finds the package that owns it, and checks package name,
 // version, the package's declared bin entry and the exact CLI bytes.
@@ -13,9 +13,9 @@ import { readFileSync, realpathSync } from 'node:fs';
 import { dirname, join, relative } from 'node:path';
 
 export const PI_PACKAGE = '@earendil-works/pi-coding-agent';
-export const PI_VERSION = '0.85.1';
+export const PI_VERSION = '1.0.0';
 /** SHA-256 of `dist/bundle/cli.js` in the installed pinned package. */
-export const PI_CLI_SHA256 = 'e6d7fcf36a239cf3746e67ddf4222081ac01a601b85a3ee688bdfe9c161d754c';
+export const PI_CLI_SHA256 = 'e79626f2dd6f94aa45d30f3fa63cd84319a6eefcd150b353cfaf274366926774';
 
 function fail(message) {
   throw new Error(`pinned worker identity check failed: ${message}`);

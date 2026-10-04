@@ -56,13 +56,28 @@ export function buildReport(options: ReportOptions): AssessmentReport {
   const tasks = options.tasks.map(t => taskSchema.parse(t)), attempts = options.attempts.map(a => attemptSchema.parse(a));
   requireEvidence(new Set(tasks.map(t => t.taskId)).size === tasks.length && tasks.every(t => t.runId === run.runId), 'report-identity', 'Report tasks must be unique and belong to the run');
   requireEvidence(new Set(attempts.map(a => a.attemptId)).size === attempts.length && attempts.every(a => a.runId === run.runId && tasks.some(t => t.taskId === a.taskId)), 'report-identity', 'Report attempts must belong to the declared tasks/run');
-  // Controller receipts are resolved only through their durable attempt observation and the attestation policy.
+  // Controller receipts are resolved only through a durable controller observation of their own attempt and the
+  // attestation policy. An attempt is observed repeatedly while it runs, and the packet the supervisor admitted
+  // pins the observation of that moment; both the attempt's latest observation and the ones admitted packets
+  // carry are legitimate controller attestations of the same attempt, and nothing else is.
+  const attestedByAttempt = new Map<string, Set<string>>();
+  const noteAttested = (attemptId: string | undefined, ids: readonly string[] | undefined): void => {
+    if (!attemptId || !ids?.length) return;
+    const attested = attestedByAttempt.get(attemptId) ?? new Set<string>();
+    for (const id of ids) attested.add(id);
+    attestedByAttempt.set(attemptId, attested);
+  };
+  for (const attempt of attempts) noteAttested(attempt.attemptId, attempt.observedRuntime?.receiptEvidenceIds);
+  for (const review of options.handoffs) {
+    if (review.decision.status === 'accepted') noteAttested(review.packet?.attemptId, review.packet?.observedRuntime.receiptEvidenceIds);
+  }
   const controllerById = new Map<string, EvidenceReceipt>();
   if (options.controllerReceipts?.length) {
     requireEvidence(options.controller, 'controller-policy', 'Controller-attested runtime receipts require their attestation policy');
     for (const candidate of options.controllerReceipts.slice(0, 10_000)) {
       const attempt = attempts.find(a => a.attemptId === candidate.attemptId);
-      if (!attempt || authenticateControllerReceipt(candidate, attempt, options.controller).length) continue;
+      const attested = attempt ? attestedByAttempt.get(attempt.attemptId) : undefined;
+      if (!attempt || !attested || authenticateControllerReceipt(candidate, attempt, options.controller, [...attested]).length) continue;
       controllerById.set(candidate.evidenceId, candidate);
     }
   }

@@ -27,7 +27,8 @@ try {
     const names = selected ? [selected] : suites;
     console.log(`Runtime node:test suites: ${names.join(", ")}`);
     const files = names.map((name) => path.join(build, "tests/runtime", `${name}.test.js`));
-    const result = spawnSync(process.execPath, ["--test", "--test-concurrency=1", ...files], {
+    const pattern = process.env.P2O_TEST_RUNTIME_PATTERN;
+    const result = spawnSync(process.execPath, ["--test", "--test-concurrency=1", ...(pattern ? [`--test-name-pattern=${pattern}`] : []), ...files], {
       // Runtime budgets are derived from a measured cold start and scale with host load, so the file cap
       // must exceed the largest legal sum of bounded waits; every individual wait is deadline-bounded.
       stdio: "inherit", env: { ...process.env, P2O_TEST_SOURCE_ROOT: root }, timeout: 900_000,

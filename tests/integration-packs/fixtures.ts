@@ -239,7 +239,7 @@ export async function preparePackApp(t: TestContext, options: {
       chmodSync(workerPath, 0o700);
       const runtime = config.runtime as unknown as Record<string, unknown>;
       runtime.piBinary = workerPath;
-      runtime.piVersion = '0.85.1';
+      runtime.piVersion = '1.0.0';
       runtime.startupTimeoutMs = 30_000;
       runtime.pollMs = 50;
       runtime.stopGraceMs = 300;

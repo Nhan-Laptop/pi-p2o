@@ -9,7 +9,7 @@ Use one command, `/p2o`. See [README](../README.md) for installation and skills.
 - The qualified local Docker image for container-backed execution. Assessment never pulls or re-pins it automatically.
 - An interactive Pi UI or a human-operated RPC UI for initial consent and plan approval.
 
-Qualification records the installed Pi 1.0.0 host and the pinned Pi 0.85.1 worker separately. Availability of a model in Pi does not prove its gateway protocol or pricing is supported here.
+The supported baseline is Pi 1.0.0 for both host and managed worker. Availability of a model in Pi does not prove its gateway protocol or pricing is supported here.
 
 ## Human entrypoint `/p2o`
 

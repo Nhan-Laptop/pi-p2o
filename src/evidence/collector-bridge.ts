@@ -278,8 +278,13 @@ function documentIssues(receipt: EvidenceReceipt, attempt: AttemptRecord, policy
  * Independent controller attestation of one supervisor-minted runtime receipt. Empty result means
  * the receipt is the controller's own bounded observation document for this attempt. A `worker`
  * trust receipt, an unlisted receipt or a tampered/absent document is never promoted.
+ *
+ * `attested` defaults to the attempt's *current* observation, the correct fence for live admission.
+ * Publishing or reporting an already-admitted packet instead passes the observation that packet was
+ * admitted with: the supervisor keeps re-observing a live attempt, so its latest observation is not
+ * the only legitimate one for its own earlier, controller-attested receipts.
  */
-export function authenticateControllerReceipt(receipt: EvidenceReceipt, attempt: AttemptRecord, policy: ControllerAttestationPolicy): string[] {
+export function authenticateControllerReceipt(receipt: EvidenceReceipt, attempt: AttemptRecord, policy: ControllerAttestationPolicy, attested: readonly string[] = attempt.observedRuntime?.receiptEvidenceIds ?? []): string[] {
   const issues: string[] = [];
   const parsed = evidenceSchema.safeParse(receipt);
   if (!parsed.success) return ['controller-schema'];
@@ -287,7 +292,7 @@ export function authenticateControllerReceipt(receipt: EvidenceReceipt, attempt:
   if (e.provenance.trust !== 'collector' || e.kind !== 'runtime') issues.push('controller-trust');
   if (e.runId !== attempt.runId || e.taskId !== attempt.taskId || e.attemptId !== attempt.attemptId) issues.push('controller-attempt');
   if (e.provenance.collectorId !== policy.collectorId || e.provenance.tool.name !== policy.toolName) issues.push('controller-identity');
-  if (!(attempt.observedRuntime?.receiptEvidenceIds ?? []).includes(e.evidenceId)) issues.push('controller-attestation');
+  if (!attested.includes(e.evidenceId)) issues.push('controller-attestation');
   if (checkTime(e.provenance.collectedAt) < checkTime(attempt.createdAt)) issues.push('controller-window');
   return [...issues, ...documentIssues(e, attempt, policy)];
 }
@@ -302,6 +307,31 @@ export function normalizeAttestedPacket(packet: unknown, observedRuntime: Observ
   if (!packet || typeof packet !== 'object' || Array.isArray(packet)) return packet;
   try { return { ...(packet as Record<string, unknown>), observedRuntime: JSON.parse(canonicalJson(observedRuntime)) as ObservedRuntime }; }
   catch { return packet; }
+}
+
+/**
+ * The attempt context an already-admitted result is re-published against.
+ *
+ * `attestCandidate` pins the controller's own observation into the packet at admission, while the supervisor
+ * keeps re-observing a live attempt: every later observation mints a new receipt id and replaces
+ * `attempt.observedRuntime`. An admitted packet therefore legitimately carries the observation of its own
+ * admission, not the attempt's latest one, and re-reviewing it against the latest state would contradict a
+ * decision the controller already made.
+ *
+ * The pinned observation is used only when every receipt it names is still a durable, controller-authenticated
+ * observation of the *same* attempt; anything else keeps the stored attempt, so the review fails closed exactly
+ * as before.
+ */
+function publicationAttempt(store: CollectorBridgeStore, attempt: AttemptRecord, packet: HandoffPacket | undefined, policy: ControllerAttestationPolicy): AttemptRecord {
+  const claimed = packet?.observedRuntime;
+  if (!claimed || canonicalJson(claimed) === canonicalJson(attempt.observedRuntime ?? null)) return attempt;
+  if (!claimed.receiptEvidenceIds.length) return attempt;
+  const candidate: AttemptRecord = { ...attempt, observedRuntime: claimed };
+  for (const id of new Set(claimed.receiptEvidenceIds)) {
+    const receipt = store.getEvidence(id);
+    if (!receipt || authenticateControllerReceipt(receipt, candidate, policy).length) return attempt;
+  }
+  return candidate;
 }
 
 export interface PublishHandoffReviewsOptions {
@@ -363,14 +393,24 @@ export function publishHandoffReviews(options: PublishHandoffReviewsOptions): Ha
     const candidates = preserved.get(result.attemptId) ?? [];
     const match = candidates.find(candidate => digestJson(normalizeAttestedPacket(candidate.packet, result.packet.observedRuntime)) === result.digest);
     requireEvidence(match, 'packet-not-preserved', 'Publish only packets whose bytes were preserved by the result-collector bridge; admit collected results, not direct worker submissions');
-    for (const id of attempt.observedRuntime?.receiptEvidenceIds ?? []) {
-      const receipt = store.getEvidence(id);
-      if (!receipt || authenticateControllerReceipt(receipt, attempt, options.controller).length) continue;
-      controller.set(id, receipt);
+    // Review the admitted packet against the observation it was admitted with, never against a later one.
+    const reviewed = publicationAttempt(store, attempt, result.packet, options.controller);
+    // Each observation authenticates only the receipts it lists, so both the attempt's latest observation and the
+    // one the admitted packet pinned contribute controller-attested runtime evidence.
+    const observations: Array<[AttemptRecord, readonly string[]]> = [[attempt, attempt.observedRuntime?.receiptEvidenceIds ?? []]];
+    if (reviewed !== attempt) observations.push([reviewed, reviewed.observedRuntime?.receiptEvidenceIds ?? []]);
+    for (const [context, ids] of observations) {
+      for (const id of ids) {
+        const receipt = store.getEvidence(id);
+        if (!receipt || controller.has(id) || authenticateControllerReceipt(receipt, context, options.controller).length) continue;
+        controller.set(id, receipt);
+      }
     }
-    const attested = (attempt.observedRuntime?.receiptEvidenceIds ?? []).map(id => controller.get(id)).filter((receipt): receipt is EvidenceReceipt => !!receipt);
+    // The review itself is fenced to the observation it compares against; the publication additionally reports
+    // every authenticated observation of this attempt so the report can resolve the receipt it printed.
+    const attested = (reviewed.observedRuntime?.receiptEvidenceIds ?? []).map(id => controller.get(id)).filter((receipt): receipt is EvidenceReceipt => !!receipt);
     reviews.push(reviewHandoff(vault, result.packet, {
-      authorization: run.authorization, task, attempt, reviewerId: options.reviewerId, now,
+      authorization: run.authorization, task, attempt: reviewed, reviewerId: options.reviewerId, now,
       ...(options.upstreamEvidenceIds ? { upstreamEvidenceIds: options.upstreamEvidenceIds(attempt) } : {}),
       ...(attested.length ? { controllerReceipts: attested } : {}),
     }));

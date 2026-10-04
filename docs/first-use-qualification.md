@@ -75,7 +75,7 @@ broker invocation. Inotify detects local source OPEN/ACCESS/writes, **not stat()
 or complete network telemetry**. Kernel PID/start/boot identities, exact container
 IDs/mounts, source/commit hashes, approval/lifecycle receipts, worker/provider/version
 observations, packet admission, findings classification and reports are retained.
-The host **Pi 1.0.0** and repository worker **0.85.1** are recorded independently.
+The current host and repository worker both target **Pi 1.0.0**. Older qualification artifacts below used a 0.85.1 worker and are historical, not evidence for the new worker pin.
 Assertions track the **current** production contract, not an older projection:
 packet admission reads the supervisor's own `packets[].decision.status === 'accepted'`
 bound by `attemptId` to an observed attempt, worker runtime attestation reads the

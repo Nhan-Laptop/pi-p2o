@@ -692,7 +692,7 @@ export function buildScenario(inputs: ScenarioInputs): Scenario {
       adapter: RUNTIME_ADAPTER,
       selection: { ...SELECTION },
       piBinary: inputs.inertWorkerPath,
-      piVersion: '0.85.1',
+      piVersion: '1.0.0',
       gateway: { approval: 'inert-gateway-never-called', baseUrl: 'http://127.0.0.1:9/', api: 'openai-completions', models: [{ id: SELECTION.model }] },
       startupTimeoutMs: 10_000,
       pollMs: 50,

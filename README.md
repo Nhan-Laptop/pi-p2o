@@ -16,7 +16,7 @@ Install with `pi install /absolute/path/to/pi-p2o` (user settings), `pi install 
 
 From a source checkout: `npm ci --no-audit --no-fund`, then `npm run build` (required for managed workers).
 Requires **Node >= 24.19.0**, a configured Pi model provider, and the qualified local Docker pack for
-container-backed execution. Qualification distinguishes the installed Pi 1.0.0 host from pinned Pi 0.85.1 workers.
+container-backed execution. Both the extension host and pinned managed workers target Pi 1.0.0.
 `pi --skill ./skills` loads only the method library.
 
 ## `/p2o` — the human entrypoint

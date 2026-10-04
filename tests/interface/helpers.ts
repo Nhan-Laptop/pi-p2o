@@ -109,7 +109,12 @@ export function fakePi(hasUI = true) {
   } as unknown as ExtensionCommandContext;
   return { api, tools, commands, handlers, messages, notifications, statuses, context, confirmCalls, sessionEntries,
     setConfirm(value: boolean) { confirmResult = value; },
-    async call(name: string, args: unknown, signal?: AbortSignal) { return tools.get(name)!.execute('call-1', args, signal, undefined, context); },
+    async call(name: string, args: unknown, signal?: AbortSignal) {
+      return tools.get(name)!.execute('call-1', args, signal, undefined, {
+        ...context, tools: [],
+        async executeTool() { throw new Error('Nested tool execution is not provided by this test fixture'); },
+      });
+    },
     async command(name: string, args: string) { await commands.get(name)!.handler(args, context); },
     async event(name: string) { for (const handler of handlers.get(name) ?? []) await handler({ type: name }, context); },
     setHasUI(value: boolean) { (context as unknown as { hasUI: boolean }).hasUI = value; },

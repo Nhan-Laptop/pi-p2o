@@ -56,12 +56,12 @@ function checkWorker() {
   if (!existsSync(binary)) return `pinned worker binary missing: ${binary}`;
   const pkg = join(repoRoot, 'node_modules', '@earendil-works', 'pi-coding-agent', 'package.json');
   const version = existsSync(pkg) ? JSON.parse(readFileSync(pkg, 'utf8')).version : undefined;
-  if (version !== '0.85.1') return `worker package version ${String(version)} is not the pinned 0.85.1`;
+  if (version !== '1.0.0') return `worker package version ${String(version)} is not the pinned 1.0.0`;
   return undefined;
 }
 
 async function main() {
-  for (const [check, label] of [[checkDocker, 'pinned docker engine + offline pack image + seccomp digest'], [checkWorker, 'pinned pi worker binary 0.85.1']]) {
+  for (const [check, label] of [[checkDocker, 'pinned docker engine + offline pack image + seccomp digest'], [checkWorker, 'pinned pi worker binary 1.0.0']]) {
     const detail = check();
     if (detail) skips.push(detail); else report(true, label);
   }

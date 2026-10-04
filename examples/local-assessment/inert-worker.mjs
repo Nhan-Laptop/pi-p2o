@@ -16,7 +16,7 @@ import readline from 'node:readline';
 import { createHash, randomUUID } from 'node:crypto';
 
 if (process.argv.includes('--version')) {
-  process.stdout.write('0.85.1\n');
+  process.stdout.write('1.0.0\n');
   process.exit(0);
 }
 

@@ -59,7 +59,7 @@ export const RECIPE_EXPORT = 'replay-export-missing-authorization';
 export const LIVE_SELECTION = Object.freeze({ provider: 'deepseek', model: 'deepseek-flash', thinking: 'low' as const });
 export const LIVE_UPSTREAM_BASE_URL = 'https://api.deepseek.com';
 export const LIVE_API = 'openai-completions' as const;
-export const LIVE_PI_VERSION = '0.85.1';
+export const LIVE_PI_VERSION = '1.0.0';
 export const LIVE_GATEWAY_APPROVAL = 'live-lab-owner-approved-deepseek-flash-upstream';
 
 /**

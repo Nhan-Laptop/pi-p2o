@@ -17,7 +17,7 @@ node examples/live-lab/lab-server.mjs 0        # manual poke at the vulnerable t
 |---|---|
 | Model | **Real.** `deepseek/deepseek-flash` through `https://api.deepseek.com` (`openai-completions`), requested at thinking level `low`. |
 | Credential | **Real**, resolved at runtime by `pi auth print-api-key --provider deepseek`, held only by the controller gateway process, never written, logged, printed or handed to a worker. |
-| Worker | **Real** pinned `pi` 0.85.1 launched by the managed headless runtime, `--no-builtin-tools`, only the digest-pinned bridge extension tools. |
+| Worker | **Real** pinned `pi` 1.0.0 launched by the managed headless runtime, `--no-builtin-tools`, only the digest-pinned bridge extension tools. |
 | Tool policy | **Real owner policy**: per-task grant templates, per-target request/byte/concurrency limits, `127.0.0.0/8` only, GET/HEAD read-only, credential-tier accounts whose session tokens the broker injects at dispatch. |
 | Execution sandbox | **Real pinned pack** (`containers/pack.lock.json`): docker 28.5.2+dfsg4, digest-pinned image, content-addressed rootfs layer pin, pinned seccomp profile, non-root read-only container with `--network=none`. |
 | Evidence + verifier + report | **Real**: collector-attested receipts, `trust: collector`, independent replay in a fresh lab instance, qualified report. |

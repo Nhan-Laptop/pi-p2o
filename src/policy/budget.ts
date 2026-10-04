@@ -297,7 +297,7 @@ export interface ModelSpendRequest {
 /** Legacy normalized usage (fixture receipts and existing callers). */
 export interface ModelSpendUsage { inputTokens: number; outputTokens: number; reportedCostUsd?: number }
 /**
- * [T8] The provider-reported assistant usage the real Pi 0.85.1 worker emits (`pi-ai` Usage):
+ * [T8] The provider-reported assistant usage the real Pi 1.0.0 worker emits (`pi-ai` Usage):
  * `usage.input`/`usage.output` plus `usage.cost.total`. The settlement adapter accepts this shape
  * directly so a real worker's receipt settles the ledger; a present-but-unparseable usage fails
  * explicitly (`INVALID_INPUT`) instead of ever being charged as zero.

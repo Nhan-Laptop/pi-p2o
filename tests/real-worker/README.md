@@ -9,12 +9,12 @@ spawning a worker.
 ## What is real
 
 - The **worker process** is the installed `@earendil-works/pi-coding-agent` package's own `bin.pi`
-  (`node_modules/.bin/pi`, 0.85.1), launched by the runtime's headless adapter in `--mode rpc` with
+  (`node_modules/.bin/pi`, 1.0.0), launched by the runtime's headless adapter in `--mode rpc` with
   `--no-builtin-tools --extension examples/local-assessment/bridge-extension.js
   --tools p2o_context,p2o_broker,p2o_packet` plus the runtime receipt extension (`src/runtime/pi-receipts.ts`).
 - **Worker identity is content-pinned** (`pi-pin.mjs`): the runner and the test verify that the resolved binary
   is the pinned package's declared `bin.pi` and that its bytes hash to the pinned SHA-256, so a wrapper that
-  merely prints `0.85.1` cannot masquerade as the worker.
+  merely prints `1.0.0` cannot masquerade as the worker.
 - **Pi's provider HTTP boundary**: the isolated `models.json` points the worker provider at the loopback
   **controller-owned gateway** mount with a minted attempt placeholder, so the real request build, streaming
   parse, tool-call loop, extension load and tool execution all run inside Pi, and the controller gateway injects

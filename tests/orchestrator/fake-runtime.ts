@@ -154,7 +154,7 @@ export class FakeRuntime implements RuntimeAdapter {
     return {
       ok: outcome.ok, kind: this.kind, checkedAt: this.now(), capabilities: this.capabilities,
       errors: [...(outcome.errors ?? [])], warnings: [...(outcome.warnings ?? []), 'inert fixture runtime: not a sandbox'],
-      versions: { pi: '0.85.1', protocol: 1 },
+      versions: { pi: '1.0.0', protocol: 1 },
     };
   }
 

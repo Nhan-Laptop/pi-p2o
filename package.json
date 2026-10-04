@@ -40,7 +40,8 @@
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "build": "tsc -p tsconfig.build.json",
     "check:build": "node --input-type=module -e \"for (const entry of ['./dist/src/contracts/index.js','./dist/src/store/index.js','./dist/src/policy/index.js','./dist/src/tools/index.js','./dist/src/evidence/index.js','./dist/src/reporting/index.js','./dist/src/orchestrator/index.js','./dist/src/runtime/index.js','./dist/src/interface/index.js','./dist/src/application/index.js','./dist/extensions/p2o/index.js']) await import(entry); console.log('build artifact import OK')\"",
-    "test": "npm run typecheck && npm run build && npm run check:build && npm run test:vitest && npm run test:tools && npm run test:evidence && npm run test:interface && npm run test:integration && npm run test:credentials && npm run test:budget && npm run test:orchestrator && npm run test:runtime && npm run test:real-worker && npm run test:sandbox && npm run test:e2e && npm run check:python",
+    "test": "npm run typecheck && npm run build && npm run check:build && npm run test:extension-package && npm run test:vitest && npm run test:tools && npm run test:evidence && npm run test:interface && npm run test:integration && npm run test:credentials && npm run test:budget && npm run test:orchestrator && npm run test:runtime && npm run test:real-worker && npm run test:sandbox && npm run test:e2e && npm run check:python",
+    "test:extension-package": "node tests/extension-package/run.mjs",
     "test:vitest": "vitest run",
     "test:contracts": "vitest run tests/contracts",
     "test:store": "vitest run tests/store",
@@ -70,7 +71,7 @@
     "test:pack-lifecycle": "node tests/pack-lifecycle/run.mjs",
     "test:first-use": "node tests/first-use/run.mjs",
     "test:first-use-verification": "node tests/first-use-verification/run.mjs",
-    "check:first-use": "npm run typecheck && npm run build && npm run check:build && npm run test:onboarding && npm run test:source-container && npm run test:pack-lifecycle && npm run test:first-use && npm run test:first-use-verification",
+    "check:first-use": "npm run typecheck && npm run build && npm run check:build && npm run test:extension-package && npm run test:onboarding && npm run test:source-container && npm run test:pack-lifecycle && npm run test:first-use && npm run test:first-use-verification",
     "test:model-budget": "node tests/model-budget/run.mjs",
     "test:checkpoint": "node tests/checkpoint/run.mjs",
     "test:checkpoint-default": "node tests/checkpoint-default/run.mjs",
@@ -106,10 +107,10 @@
     }
   },
   "devDependencies": {
-    "@earendil-works/pi-ai": "0.85.1",
-    "@earendil-works/pi-coding-agent": "0.85.1",
+    "@earendil-works/pi-ai": "1.0.0",
+    "@earendil-works/pi-coding-agent": "1.0.0",
     "@types/node": "^24.19.0",
-    "typebox": "1.3.7",
+    "typebox": "1.3.27",
     "typescript": "^5.9.3",
     "vitest": "^3.2.7"
   }

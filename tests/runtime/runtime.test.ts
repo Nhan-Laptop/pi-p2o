@@ -656,7 +656,7 @@ class InertHerdr {
 }
 test("owned Herdr serializes topology only, runs concurrently, erases server env and verifies stop", async (t) => {
   const s = await setup(t); const herdr = new InertHerdr(); t.after(() => { for (const child of herdr.panes.values()) child.kill("SIGKILL"); });
-  const runtime = createHerdrRuntime({ ...s.options, herdrBinary: "/inert/herdr", parentPaneId: "caller-pane", context: { HERDR_ENV: "1", HERDR_SOCKET_PATH: "/tmp/inert-no-socket", HERDR_PANE_ID: "caller-pane" }, dependencies: { command: async (binary, args, opts) => binary === fixture ? { stdout: "0.85.1", stderr: "", code: 0 } : herdr.command(binary, args, opts) } });
+  const runtime = createHerdrRuntime({ ...s.options, herdrBinary: "/inert/herdr", parentPaneId: "caller-pane", context: { HERDR_ENV: "1", HERDR_SOCKET_PATH: "/tmp/inert-no-socket", HERDR_PANE_ID: "caller-pane" }, dependencies: { command: async (binary, args, opts) => binary === fixture ? { stdout: "1.0.0", stderr: "", code: 0 } : herdr.command(binary, args, opts) } });
   const ra = await s.request("herdr-a", { hold: true }); const rb = await s.request("herdr-b", { hold: true });
   const [ha, hb] = await Promise.all([s.start(runtime, ra), s.start(runtime, rb)]);
   await waitForDeadline(async () => (await runtime.collect(ha)).outcome === "running" && (await runtime.collect(hb)).outcome === "running" ? true : undefined, ha.deadlineAt, "both owned Herdr panes running");
@@ -672,12 +672,15 @@ test("real Pi public RPC/extension compatibility with an in-process inert provid
   const runtime = createHeadlessRuntime({ ...s.options, piBinary: process.env.P2O_TEST_PI_BINARY!, startupTimeoutMs: 5000,
     hooks: { ...hooks, validateResume: async () => true },
     receiptExtensionPath: fileURLToPath(new URL("./fixtures/inert-provider.mjs", import.meta.url)) });
-  const r = await s.request("real-public-pi", {}, Date.now() + 12000); const h = await s.start(runtime, r); const c = await final(runtime, h);
+  // Two real Pi startups share ONE predeclared test deadline; never renew it on resume.
+  const pipelineMs = (await hangBound()) - Date.now();
+  const r = await s.request("real-public-pi", {}, Date.now() + 2 * pipelineMs); const h = await s.start(runtime, r); const c = await final(runtime, h);
   assert.equal(c.outcome, "completed", JSON.stringify(c)); assert.match(c.logTail, /Inert public Pi integration result/);
   assert.ok(c.observed.some((r) => r.source === "rpc-state" && r.thinking === "max" && r.matchesRequest)); assert.ok(c.handle.stopReceipt!.verified);
   const checkpoint = await runtime.checkpoint(h);
   const replacement = await runtime.resume(checkpoint, { ...r, attemptId: "two", requested: { ...r.requested, thinking: "high" } });
   s.handles.push({ runtime, handle: replacement });
+  assert.equal(replacement.deadlineAt, h.deadlineAt, 'resume must retain the original absolute deadline');
   const next = await final(runtime, replacement); assert.equal(next.outcome, "completed", JSON.stringify(next));
   assert.ok(next.observed.some((receipt) => receipt.source === "rpc-state" && receipt.thinking === "high" && receipt.matchesRequest));
   assert.equal(next.handle.provenance!.parentSessionId, h.sessionId);

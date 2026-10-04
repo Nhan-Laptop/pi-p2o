@@ -221,7 +221,7 @@ Document shape (strict; unknown fields are rejected):
                                "boundaryId": "…", "tools": ["p2o_broker", "p2o_packet"] },
                "boundaryReceipt": "…",
                "workerPlan": { /* inert fixture only */ } } ],
-  "runtime": { "adapter": "headless", "piBinary": "/abs/pinned/worker", "piVersion": "0.85.1",
+  "runtime": { "adapter": "headless", "piBinary": "/abs/pinned/worker", "piVersion": "1.0.0",
                "gateway": { "approval": "…", "baseUrl": "…", "api": "openai-completions", "models": [ … ] } },
   "sandbox": { "mode": "local-fixture", "acknowledgement": "local-fixtures-only-not-hostile-code-isolation",
                "inputRoot": "/abs/snapshot", "outputRoot": "/abs/broker",

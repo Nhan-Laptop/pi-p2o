@@ -226,7 +226,7 @@ export abstract class ManagedRuntime implements RuntimeAdapter {
       const env = cleanEnvironment(path.join(this.options.controlRoot, "probe-home"), paths(this.options).node, "", "");
       const result = await until(this.dep.command(this.options.piBinary, ["--version"], { env, deadlineAt: end, signal: r.signal, maxBytes: 4096 }), end, () => clock.now(), r.signal);
       const version = result.stdout.trim().replace(/^pi\s+/, "");
-      if (result.code !== 0 || version !== (this.options.piVersion ?? "0.85.1")) throw new Error(`Unsupported Pi version: ${version || result.stderr}`);
+      if (result.code !== 0 || version !== (this.options.piVersion ?? "1.0.0")) throw new Error(`Unsupported Pi version: ${version || result.stderr}`);
       receipt.versions = { pi: version, ...await this.extraPreflight(r) };
       if (r.toolPolicy.mode === "sandbox-extension") {
         const checked = this.options.verifySandbox?.(r.toolPolicy, r);
@@ -512,7 +512,7 @@ export abstract class ManagedRuntime implements RuntimeAdapter {
 
   /**
    * [T8] Aggregate the provider-reported usage Pi recorded for this attempt's own assistant turns.
-   * Real Pi 0.85.1 persists the `pi-ai` usage shape (`input`/`output`/`cost.total`) on every assistant
+   * Real Pi 1.0.0 persists the `pi-ai` usage shape (`input`/`output`/`cost.total`) on every assistant
    * message of its session; the runtime receipt rings only a legacy spelling. The settlement call site
    * therefore reads Pi's authoritative assistant record. A still-appending final line is skipped and the
    * next poll retries; a present-but-unparseable usage is passed through so the ledger fails explicitly
