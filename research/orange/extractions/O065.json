@@ -1,0 +1,43 @@
+{
+  "schema_version": 1,
+  "source_id": "O065",
+  "url": "https://blog.orange.tw/posts/2012-11-ms12-071-cve-2012-4775/",
+  "observed_title": "被微軟感謝了>< MS12-071 - CVE-2012-4775",
+  "retrieved_at": "2026-09-30T10:12:57Z",
+  "retrieval": {
+    "tool": "fetch_content (readable), agent_browser (DOM inspection)",
+    "response_id": "browser session orange-O065",
+    "final_url": "https://blog.orange.tw/posts/2012-11-ms12-071-cve-2012-4775/",
+    "outcome": "read",
+    "quote_verification": "In session orange-O065, exact DOM paragraph equality and body-text inclusion both returned true for E1; the full article snapshot confirmed its location."
+  },
+  "disposition": "excluded",
+  "reason": "A personal celebration of disclosure credit, explicitly framed as a boast in E1. The short article links advisories, labels a vulnerability and an exploit-result image, and mentions a possible future fuzzing effort. It provides no investigation decisions, named-tool purposes, failure analysis, validation process, or repair reasoning sufficient for two reusable method observations.",
+  "canonical_source": null,
+  "evidence": [
+    {
+      "id": "E1",
+      "locator": "First body paragraph beneath the article title and publication date",
+      "quote": "先說這是炫耀文XD",
+      "verified": true
+    }
+  ],
+  "workflow": [],
+  "tools": [],
+  "handoffs": [],
+  "limitations": [
+    "The historical vulnerability label and displayed result are author reports, not independently reproduced findings.",
+    "The article supplies no root-cause investigation, lifetime trace, harness description, controls, reproduction denominator, or fix analysis from which to extract operational guidance.",
+    "The closing fuzzing remark is a future intention, not evidence of an executed campaign or a named tool used for this finding.",
+    "The embedded exploit-result image was not used to reconstruct or execute a technique; advisory links were not followed to import missing methodology."
+  ],
+  "candidate_additions": [],
+  "related_article_urls": [],
+  "excluded_material": [
+    "Personal achievement and disclosure-credit narrative",
+    "Target-specific vulnerability labels and external advisory/security-program links",
+    "Exploit-result image and technique caption",
+    "Speculative future fuzzing and bounty remark"
+  ],
+  "worker_notes": "Readable retrieval omitted the article heading; the original DOM supplied the exact observed title and confirmed the complete short body. The fetch tool exposed no response ID, so retrieval provenance uses the explicitly named browser session. E1 is a classification quote only; no method, tool, or derived handoff was invented."
+}

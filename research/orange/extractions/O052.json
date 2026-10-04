@@ -1,0 +1,41 @@
+{
+  "schema_version": 1,
+  "source_id": "O052",
+  "url": "https://blog.orange.tw/posts/2013-12-md5-for-fun-fun-with-md5-hashes/",
+  "observed_title": "MD5 for Fun - Fun with MD5 hashes",
+  "retrieved_at": "2026-09-30T10:01:21Z",
+  "retrieval": {
+    "tool": "agent_browser",
+    "response_id": "session:orange-O052",
+    "final_url": "https://blog.orange.tw/posts/2013-12-md5-for-fun-fun-with-md5-hashes/",
+    "outcome": "read",
+    "quote_verification": "Read the complete article element in named session orange-O052. An exact DOM innerText inclusion check for E1 returned true, with one occurrence; paragraph enumeration confirmed its locator."
+  },
+  "disposition": "excluded",
+  "reason": "The complete article announces a hobby website collecting unusually patterned digests and invites submissions. It lists collection categories but describes no investigation decisions, tool purposes, search or verification procedure, failures, or remediation. This is personal/project promotion without reusable vulnerability-research method evidence.",
+  "canonical_source": null,
+  "evidence": [
+    {
+      "id": "E1",
+      "locator": "Unheaded article body, second prose paragraph, after the opening personal-record note and before the service link.",
+      "quote": "最近在整理硬碟，因為好玩寫了一個網站（服務？）",
+      "verified": true
+    }
+  ],
+  "workflow": [],
+  "tools": [],
+  "handoffs": [],
+  "limitations": [
+    "The short announcement provides no implementation, generation/search algorithm, named tool, validation result, failed attempt, or fix.",
+    "No vulnerability or security boundary is assessed; unusual digest patterns are the collection subject, not evidence of a security finding.",
+    "The hobby service's existence and purpose remain author statements. Its linked site was not visited, and no digest generation, submission, or target testing was performed."
+  ],
+  "candidate_additions": [],
+  "related_article_urls": [],
+  "excluded_material": [
+    "External hobby-service address and submission invitation",
+    "Digest-pattern collection categories without an analysis or validation workflow",
+    "Personal/promotional framing beyond the short classification quote"
+  ],
+  "worker_notes": "fetch_content readable mode failed with 'Page appears to be JavaScript-rendered (content loads dynamically)'; the actual article was then read through isolated browser session orange-O052. The article DOM contained no images, subsection headings, or related-article links. README.md and HANDOFFS.md were read at the repository root; no corresponding files exist under research/orange/."
+}

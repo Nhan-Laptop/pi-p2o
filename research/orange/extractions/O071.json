@@ -1,0 +1,96 @@
+{
+  "schema_version": 1,
+  "source_id": "O071",
+  "url": "https://blog.orange.tw/posts/2011-12-xd/",
+  "observed_title": "一百年度全國大專院校資安技能金盾獎 XD",
+  "retrieved_at": "2026-09-30T10:17:04.762Z",
+  "retrieval": {
+    "tool": "agent_browser",
+    "response_id": null,
+    "session": "orange-O071",
+    "final_url": "https://blog.orange.tw/posts/2011-12-xd/",
+    "outcome": "read",
+    "quote_verification": "After a readable fetch_content retrieval, the original article was read in session orange-O071. Each E1–E4 quotation passed an exact document.querySelector('article').innerText.includes(quote) check; the article heading and final URL were also observed."
+  },
+  "disposition": "context",
+  "reason": "Competition retrospective with a useful minimal-tool overview and a workload/coverage reflection, but insufficient primary evidence of a reusable investigation process. Its technical discussion consists chiefly of abbreviated challenge solutions. Retain contextual observations only; do not promote the solve descriptions or tool preferences into operational additions.",
+  "canonical_source": null,
+  "evidence": [
+    {
+      "id": "E1",
+      "locator": "After the 題目： list, standalone closing paragraph beginning 其實工具真的不用帶太多",
+      "quote": "其實工具真的不用帶太多，基本有了就好",
+      "verified": true
+    },
+    {
+      "id": "E2",
+      "locator": "Closing tool-summary paragraph immediately following E1, first sentence",
+      "quote": "這次其實沒用到甚麼工具大部分都是透過 Python 寫幾行 code 就可以解出來。",
+      "verified": true
+    },
+    {
+      "id": "E3",
+      "locator": "Same closing tool-summary paragraph, clause beginning Reversing 逆向部分",
+      "quote": "Reversing 逆向部分也只用到經典的 OllyDbg 以及 IDA pro",
+      "verified": true
+    },
+    {
+      "id": "E4",
+      "locator": "題目： heading, third list item, reporting tasks the team never inspected",
+      "quote": "兩個人比真的會發現題目做不完，有許多題目是我們根本都還沒看過去解的",
+      "verified": true
+    }
+  ],
+  "workflow": [
+    {
+      "decision": "The author's retrospective favors a small familiar toolkit and short scripts over carrying many tools. This is a contextual preference, not a demonstrated rule for selecting or validating an analysis method.",
+      "evidence": ["E1", "E2", "E3"]
+    },
+    {
+      "decision": "Distinguish uninspected work from attempted analysis: the reported staffing constraint left some tasks unread, so the account does not establish complete review coverage.",
+      "evidence": ["E4"]
+    }
+  ],
+  "tools": [
+    {
+      "tool": "Python",
+      "purpose": "Author reports using short scripts for most competition tasks; the closing summary does not specify their operations.",
+      "when": "Reported in the retrospective tool overview, without an explicit selection criterion or validation procedure.",
+      "attribution": "explicit",
+      "evidence": ["E2"]
+    },
+    {
+      "tool": "OllyDbg",
+      "purpose": "Author-reported reverse-engineering work.",
+      "when": "The reversing portion of the competition; no particular debugger observation or configuration is described in the retained evidence.",
+      "attribution": "explicit",
+      "evidence": ["E3"]
+    },
+    {
+      "tool": "IDA pro",
+      "purpose": "Author-reported reverse-engineering work.",
+      "when": "The reversing portion of the competition; no particular analysis slice or validation procedure is described in the retained evidence.",
+      "attribution": "explicit",
+      "evidence": ["E3"]
+    }
+  ],
+  "handoffs": [],
+  "limitations": [
+    "Historical competition recap, not a vulnerability-research report; challenge results and the claimed win remain author reports, not independent verification.",
+    "The retained tool summary gives no script contents, comparative tool evaluation, analysis options, negative controls, or reproducible validation evidence.",
+    "Some tasks were never inspected; success on discussed tasks cannot establish complete coverage.",
+    "Team task allocation is not evidence of an artifact-bearing skill handoff. No derived handoff or candidate addition is proposed from this contextual page."
+  ],
+  "candidate_additions": [],
+  "related_article_urls": [
+    "http://orange-tw.blogspot.com/2010/02/hacks-in-taiwan-conference-2009-wargame.html",
+    "http://orange-tw.blogspot.com/2011/05/project-web-security-toolkit.html"
+  ],
+  "excluded_material": [
+    "Challenge-specific solve sequences, answer/key recovery, encoded-artifact constants, and internal artifact names",
+    "Injection and unpacking solution details and the attack-tool promotion",
+    "Competition scores, timing, photographs, celebration, personal logistics, and teammate identities",
+    "Implied tool procedures or handoff contracts not supported by the article"
+  ],
+  "worker_notes": "Readable fetch_content exposed no response ID, so retrieval identity and exact quotation checks use the dedicated browser session. Related article links were recorded without being followed; no attachments, source code, or targets were executed."
+}

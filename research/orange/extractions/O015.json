@@ -1,0 +1,155 @@
+{
+  "schema_version": 1,
+  "source_id": "O015",
+  "url": "https://blog.orange.tw/posts/2019-11-HiNet-GPON-Modem-RCE/",
+  "observed_title": "你用它上網，我用它進你內網! 中華電信數據機遠端代碼執行漏洞",
+  "retrieved_at": "2026-09-30T09:18:25.645Z",
+  "retrieval": {
+    "tool": "agent_browser",
+    "response_id": null,
+    "browser_session": "orange-O015",
+    "final_url": "https://blog.orange.tw/posts/2019-11-HiNet-GPON-Modem-RCE/",
+    "outcome": "read",
+    "quote_verification": "All five quotations passed exact, unnormalized inclusion checks against the original rendered paragraph or list item and document.body.innerText using agent_browser eval in session orange-O015; their preceding headings were also observed."
+  },
+  "disposition": "included",
+  "reason": "The article supports reusable artifact-availability routing, help-based interface enumeration, function-led hypothesis selection, and review of unmatched-input routing after unsuccessful ordinary-handler analysis. Its disclosure chronology also exposes a residual manual-update cohort after reported completion. These method observations are separable from the omitted exploitation sequence.",
+  "canonical_source": null,
+  "evidence": [
+    {
+      "id": "E1",
+      "locator": "漏洞挖掘 — opening paragraph introducing analysis modes by source, executable and API-documentation availability",
+      "quote": "軟體漏洞的挖掘，根據原始碼、執行檔以及 API 文件的有無可依序分為:",
+      "verified": true
+    },
+    {
+      "id": "E2",
+      "locator": "黑箱測試 — paragraph beginning 「其中，可以透過」, advertised-function enumeration clause",
+      "quote": "其中，可以透過 HELP 指令列出所有功能",
+      "verified": true
+    },
+    {
+      "id": "E3",
+      "locator": "從灰箱進化成白箱 — opening paragraph, function-based implementation hypothesis",
+      "quote": "從功能面來看，感覺會存在命令注入相關的漏洞，因此先以功能實作為出發點開始挖掘!",
+      "verified": true
+    },
+    {
+      "id": "E4",
+      "locator": "從灰箱進化成白箱 — paragraph beginning 「研究了一段時間」, unsuccessful review followed by attention to unmatched commands",
+      "quote": "研究了一段時間，並沒有發現到什麼嚴重漏洞 :( 不過我們注意到，當所有指命都匹配失敗時，",
+      "verified": true
+    },
+    {
+      "id": "E5",
+      "locator": "通報時程 — list item reporting remaining manual updates and delayed publication, following the reported firmware-update completion item",
+      "quote": "廠商回覆部分用戶需派員更新, 延後公開時間",
+      "verified": true
+    }
+  ],
+  "workflow": [
+    {
+      "decision": "First ask which implementation and interface artifacts are available. When visibility is behavioral only, use the interface's help facility to seed an operation inventory; keep implementation questions unresolved until suitable artifacts become available.",
+      "evidence": ["E1", "E2"]
+    },
+    {
+      "decision": "Use advertised function semantics to form a concrete implementation hypothesis and prioritize its handler slice, rather than attempting undirected reconstruction of the entire artifact.",
+      "evidence": ["E2", "E3"]
+    },
+    {
+      "decision": "When ordinary-handler review yields no serious finding, record that negative result and change the review question to what happens when no advertised operation matches. Treat fallback routing as a separate behavior contract, not as evidence that the ordinary handlers are safe.",
+      "evidence": ["E4"]
+    },
+    {
+      "decision": "Reconcile a reported rollout completion with later unresolved update cohorts. Keep residual manual work and disclosure timing explicit instead of treating an earlier completion statement as universal closure.",
+      "evidence": ["E5"]
+    }
+  ],
+  "tools": [
+    {
+      "tool": "Interface-native HELP facility",
+      "purpose": "List advertised functions to seed an operation and handler-review inventory.",
+      "when": "During authorized black-box interface mapping when built-in help is available; the resulting list is not proof of exhaustive dispatch coverage.",
+      "attribution": "explicit",
+      "evidence": ["E2"]
+    }
+  ],
+  "handoffs": [
+    {
+      "producer": "attack-surface-mapping",
+      "consumer": "binary-auditing",
+      "when": "A permitted implementation artifact becomes available and the remaining question concerns how a prioritized interface operation is implemented.",
+      "packet": [
+        "Authorization, artifact provenance, revision and configuration",
+        "One unresolved implementation question and evidence classification",
+        "Actor, interface gates and advertised-operation inventory",
+        "Source, binary and interface-documentation availability",
+        "Function-semantic hypothesis and prioritized handler anchors",
+        "Negative findings, coverage gaps and bounded next-review stop condition"
+      ],
+      "acceptance_gate": "Identify the permitted artifact and one evidence-backed operation to prioritize. Actor, configuration and gates must be explicit or marked unknown; an advertised function name is not proof of its implementation or reachability.",
+      "classification": "derived",
+      "evidence": ["E1", "E2", "E3"]
+    },
+    {
+      "producer": "binary-auditing",
+      "consumer": "deserialization-and-dispatch-auditing",
+      "when": "Ordinary handler analysis is unrevealing and recovered control flow identifies a distinct unmatched-input behavior-selection path.",
+      "packet": [
+        "Scope, artifact identity and original-versus-modified environment",
+        "Unresolved behavior-selection question",
+        "Ordinary and fallback branch references with reconstruction confidence",
+        "Selector provenance, gating, validation and downstream consumer model",
+        "Actor, privilege and feature prerequisites",
+        "Negative review results and unresolved coverage",
+        "Contrasting benign observation proposal and stop conditions"
+      ],
+      "acceptance_gate": "Require evidence for an alternate selection edge, not merely absence of an ordinary-path finding. Preserve static-inference status and unknown reachability; the receiving skill must not promote a reconstructed branch into demonstrated impact.",
+      "classification": "derived",
+      "evidence": ["E3", "E4"]
+    }
+  ],
+  "limitations": [
+    "Execution, exposure and affected-population claims remain author reports, not independent verification. The population estimate covered only devices online at observation time, and the complete affected-device inventory was unavailable; no scanning or target testing was performed here.",
+    "The author's increased implementation visibility involved access to their own device. Such local management access does not establish reachability through the originally exposed interface; the access-acquisition sequence is intentionally omitted.",
+    "The unsuccessful ordinary-handler review has no supplied coverage denominator or benign differential-validation protocol. Recovered pseudocode is described as assembly-based reconstruction, not independently checked source or proof that all other handlers were safe.",
+    "The chronology records reported completion followed by remaining manual updates. It does not supply patch diffs, deployed-artifact receipts or independent confirmation of complete fix coverage."
+  ],
+  "candidate_additions": [
+    {
+      "owner": "attack-surface-mapping",
+      "kind": "workflow",
+      "guidance": "Record source, executable and interface-documentation availability before selecting the next audit mode. A built-in help listing seeds the interface inventory but does not establish complete behavior coverage.",
+      "evidence": ["E1", "E2", "E4"]
+    },
+    {
+      "owner": "binary-auditing",
+      "kind": "heuristic",
+      "guidance": "Prioritize a bounded handler slice using an explicit hypothesis drawn from operation semantics. Preserve unsuccessful review and unknown coverage rather than expanding automatically into whole-artifact reconstruction.",
+      "evidence": ["E3", "E4"]
+    },
+    {
+      "owner": "deserialization-and-dispatch-auditing",
+      "kind": "workflow",
+      "guidance": "Include unmatched-input and default-delegation branches in the behavior-selection model. Review their validation and privilege contracts independently of advertised operations; a negative ordinary-path review does not close them.",
+      "evidence": ["E4"]
+    },
+    {
+      "owner": "remediation",
+      "kind": "validation",
+      "guidance": "Track bulk-update and manual-update cohorts separately. A reported completion must not close residual groups; keep their deployment status, remaining work and disclosure constraints visible until closure is evidenced.",
+      "evidence": ["E5"]
+    }
+  ],
+  "related_article_urls": [
+    "https://devco.re/blog/2019/09/02/attacking-ssl-vpn-part-3-the-golden-Pulse-Secure-ssl-vpn-rce-chain-with-Twitter-as-case-study/"
+  ],
+  "excluded_material": [
+    "Remote-access and privilege-escalation sequence, credentials, password hashes and cracking",
+    "Target endpoints, paths, exploit-relevant command names, executable code, blacklist contents and bypass material",
+    "Internet-wide scanning, victim identification and attack demonstrations",
+    "Product-specific versions, model lists and numerical exposure constants",
+    "Recruitment, promotion and conference/media content beyond bibliographic context"
+  ],
+  "worker_notes": "Read the complete article with fetch_content readable mode, which returned no response ID; the named browser session supplied observed title, URL, headings and exact quote checks. Ghidra is mentioned as historically unavailable, not as an author-used tool. Related links were not followed. Candidates corroborate or refine existing contracts; inclusion does not establish novelty or library acceptance."
+}

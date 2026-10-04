@@ -1,0 +1,141 @@
+{
+  "schema_version": 1,
+  "source_id": "O019",
+  "url": "https://blog.orange.tw/posts/2019-07-attacking-ssl-vpn-part-1-preauth-rce-on-palo-alto/",
+  "observed_title": "Attacking SSL VPN - Part 1: PreAuth RCE on Palo Alto GlobalProtect, with Uber as Case Study!",
+  "retrieved_at": "2026-09-30T09:22:45.437Z",
+  "retrieval": {
+    "tool": "fetch_content (readable), then agent_browser",
+    "response_id": "orange-O019 (named browser session)",
+    "final_url": "https://blog.orange.tw/posts/2019-07-attacking-ssl-vpn-part-1-preauth-rce-on-palo-alto/",
+    "outcome": "read",
+    "quote_verification": "agent_browser --session orange-O019 eval checked each of E1-E5 with exact paragraph.textContent.includes(quote), without whitespace normalization; all five matched. The check also returned the observed section headings and confirmed that E5 is in a blockquote."
+  },
+  "disposition": "included",
+  "reason": "The actual article supplies reusable decisions beyond its exploit: reconsider novelty after failed reproduction, consult API documentation to choose a non-crash observation when direct output is absent, and bound impact by deployment isolation. Exploit construction and target-specific testing are excluded; proposed library contracts and additional validation controls are derived, not author usage.",
+  "canonical_source": null,
+  "evidence": [
+    {
+      "id": "E1",
+      "locator": "The story — paragraph beginning 'About the vulnerability', final sentence after the failed newer-release reproduction report",
+      "quote": "So we began to suspect if this is a known vulnerability.",
+      "verified": true
+    },
+    {
+      "id": "E2",
+      "locator": "How to verify the bug — first paragraph, final sentence following the no-output and crash-avoidance discussion",
+      "quote": "In order to avoid crashes, we need to find a way to verify the vulnerability elegantly!",
+      "verified": true
+    },
+    {
+      "id": "E3",
+      "locator": "How to verify the bug — second paragraph, opening clause containing the 'snprintf manual' link",
+      "quote": "By reading the snprintf manual",
+      "verified": true
+    },
+    {
+      "id": "E4",
+      "locator": "How to verify the bug — second paragraph, final sentence before the timing examples",
+      "quote": "We observe the response time of large repeat number to verify this vulnerability!",
+      "verified": true
+    },
+    {
+      "id": "E5",
+      "locator": "The case study — quoted deployment-owner response, second paragraph, clause explaining the infrastructure-access limitation",
+      "quote": "this would not have been able to access any of our internal infrastructure or core services.",
+      "verified": true
+    }
+  ],
+  "workflow": [
+    {
+      "decision": "When reproduction fails on a newer deployment, reopen the novelty and version-applicability hypothesis rather than assume the original finding applies everywhere. The next unresolved question is whether behavior changed through an existing fix or through another environmental difference.",
+      "evidence": ["E1"]
+    },
+    {
+      "decision": "When the suspected consumer exposes no direct output, avoid making a crash the default confirmation oracle. Consult documented API behavior and select an observable consequence; treat its interpretation and disruption budget as separate validation questions.",
+      "evidence": ["E2", "E3", "E4"]
+    },
+    {
+      "decision": "Separate a component-level capability from downstream infrastructure access. Deployment isolation can narrow the supported impact, but distinguish the owner's reported boundary from independently verified reachability.",
+      "evidence": ["E5"]
+    }
+  ],
+  "tools": [
+    {
+      "tool": "snprintf manual (API documentation)",
+      "purpose": "Understand documented consumer semantics to identify an observable alternative to crash-based confirmation.",
+      "when": "The suspected behavior has no direct output and the investigation needs a less disruptive observation design.",
+      "attribution": "explicit",
+      "evidence": ["E2", "E3", "E4"]
+    }
+  ],
+  "handoffs": [
+    {
+      "producer": "dynamic-analysis",
+      "consumer": "patch-diff-analysis",
+      "when": "Behavior differs across deployments and the outstanding question is historical applicability or an undisclosed fix, rather than stronger impact.",
+      "packet": [
+        "Authorization, actor, isolation and recovery scope",
+        "Original and comparison artifact/build identities, configurations and provenance",
+        "Falsifiable changed-behavior question and contrasting predictions",
+        "Observed difference, known-good baseline, failed attempts and unmatched variables",
+        "Disclosure and vendor-statement provenance, separately classified as reports",
+        "Untested scope, next bounded review question and stop condition"
+      ],
+      "acceptance_gate": "Identify comparable artifacts and configurations, or explicitly return the missing identity/configuration question. A failed attempt or a vendor statement is not proof of the changed invariant or a shipped fix; preserve that distinction before any patch conclusion.",
+      "classification": "derived",
+      "evidence": ["E1"]
+    },
+    {
+      "producer": "dynamic-analysis",
+      "consumer": "exploitability-assessment",
+      "when": "A limited observation supports further investigation, but the primitive and downstream deployment boundaries remain unresolved.",
+      "packet": [
+        "Authorization, actor, artifact/configuration identity and original-versus-modified environment",
+        "Observation question, benign baseline, contrasting predictions and evidence provenance",
+        "Observed effect, workload limits, controls, repetitions and unresolved confounders",
+        "Constrained capability claim, missing capabilities and collateral effects",
+        "Deployment isolation and reachable-resource claims with owner-report versus observed labels",
+        "Negative evidence, uncertainty, next harmless question and stop condition"
+      ],
+      "acceptance_gate": "A timing difference alone does not establish execution or cross-boundary access. Require a constrained primitive or an explicit hypothesis-only classification; each downstream capability edge needs prerequisites and evidence. Owner-reported isolation remains reported unless corroborated.",
+      "classification": "derived",
+      "evidence": ["E2", "E4", "E5"]
+    }
+  ],
+  "limitations": [
+    "All vulnerability, reproduction, historical fix and case-study outcomes remain author or quoted deployment-owner reports; this extraction performed no target testing or independent replication.",
+    "The failed newer-deployment attempt is not a controlled old/new artifact comparison. The article does not supply a semantic patch diff proving which change caused the behavioral difference.",
+    "The affected-release claims and the vendor's internally-fixed response are historical statements, not verification of present releases or deployed artifact contents.",
+    "Avoiding a crash does not make a work-amplifying timing observation harmless. The published examples do not establish a repetition denominator, matched load/network controls or a generally safe workload budget.",
+    "The quoted infrastructure-access limitation is the deployment owner's assessment. It bounds the reported case study, but does not independently demonstrate every possible downstream route or absence of other local impact."
+  ],
+  "candidate_additions": [
+    {
+      "owner": "patch-diff-analysis",
+      "kind": "heuristic",
+      "guidance": "If behavior differs on a newer deployment, revisit novelty and applicability before labeling the issue new or universally present. Separate unavailable public disclosure from evidence of an existing fix, and require artifact/configuration comparability before attributing the difference to a patch.",
+      "evidence": ["E1"]
+    },
+    {
+      "owner": "dynamic-analysis",
+      "kind": "validation",
+      "guidance": "When direct output is absent, use documented consumer semantics to design a benign observable rather than default to a crash. For timing-based observations, require an isolated lab, explicit workload limits, matched baselines and confounder checks; do not equate a delay with a stronger capability or with safe testing.",
+      "evidence": ["E2", "E3", "E4"]
+    },
+    {
+      "owner": "exploitability-assessment",
+      "kind": "heuristic",
+      "guidance": "Assess deployment-specific isolation and reachable assets separately from the vulnerability class. Keep owner statements, observed capabilities and untested downstream access distinct; neither broad compromise nor universal harmlessness follows from a component-level result.",
+      "evidence": ["E5"]
+    }
+  ],
+  "related_article_urls": [],
+  "excluded_material": [
+    "Executable proof-of-concept, payloads, exploit sequence, control-flow replacement and command-execution details",
+    "Target hostnames, endpoints, survey and fingerprinting procedures, version lists and target-specific constants",
+    "Case-study target identification and exploitation steps",
+    "Conference promotion, bounty discussion and unrelated historical exploit links"
+  ],
+  "worker_notes": "Read the complete assigned article in fetch_content readable mode, then verified source identity and all five quotes in the explicit orange-O019 browser session. README.md and HANDOFFS.md are repository-root baselines; copies under research/orange were absent. No related article was fetched, and no exploit attachment or external target was accessed. The tool entry is a documentation resource explicitly consulted by the authors, not an inferred runtime-tool attribution."
+}

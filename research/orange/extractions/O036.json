@@ -1,0 +1,54 @@
+{
+  "schema_version": 1,
+  "source_id": "O036",
+  "url": "https://blog.orange.tw/posts/2015-09-google-facebook-bug-bounty-get/",
+  "observed_title": "Google & Facebook Bug Bounty GET",
+  "retrieved_at": "2026-09-30T09:42:00.795Z",
+  "retrieval": {
+    "tool": "agent_browser",
+    "response_id": null,
+    "browser_session": "orange-O036",
+    "final_url": "https://blog.orange.tw/posts/2015-09-google-facebook-bug-bounty-get/",
+    "outcome": "read",
+    "quote_verification": "Read-only DOM evaluation in orange-O036 confirmed exact equality with article paragraph innerText and inclusion in the full article innerText for both quotes; lengths were 11 and 36 characters."
+  },
+  "disposition": "excluded",
+  "reason": "Personal bounty-results announcement explicitly described as a bragging post (E1). The historical-report and front-end research survey remark (E2) offers only one broad methodological observation, without primary investigation decisions, named-tool purposes, validation detail, failed hypotheses, or a fix. It does not support two reusable method observations or an operational contribution.",
+  "canonical_source": null,
+  "evidence": [
+    {
+      "id": "E1",
+      "locator": "Unsectioned article body, opening paragraph (article paragraph 1)",
+      "quote": "先說這篇純粹炫耀文xD",
+      "verified": true
+    },
+    {
+      "id": "E2",
+      "locator": "Unsectioned article body, survey paragraph immediately before the reported findings (article paragraph 8)",
+      "quote": "花了一點時間 survey 歷年出過的一些漏洞以及前端相關的一些攻擊手法",
+      "verified": true
+    }
+  ],
+  "workflow": [],
+  "tools": [],
+  "handoffs": [],
+  "limitations": [
+    "The article reports historical findings and recognition, not a documented investigation with falsifiable hypotheses and contrasting observations.",
+    "No named research tool, tool-purpose explanation, failure analysis, remediation, or configuration/version evidence is supplied.",
+    "The comparison with a linked technique is an analogy, not primary method evidence; related articles were not followed.",
+    "All reported results remain source-author reports. No target testing, exploit reproduction, or independent vulnerability verification was performed."
+  ],
+  "candidate_additions": [],
+  "related_article_urls": [
+    "http://blog.orange.tw/2013/11/yahoo-bug-bounty-part-1-yahoo-blog.html",
+    "http://blog.orange.tw/2013/11/yahoo-bug-bounty-part-2-loginyahoocom.html",
+    "https://www.alienvault.com/open-threat-exchange/blog/watering-holes-exploiting-jsonp-hijacking-to-track-users-in-china"
+  ],
+  "excluded_material": [
+    "Personal career, competition, and bounty-recognition narrative",
+    "Target-specific vulnerability claims and exploit analogy",
+    "Proof-of-concept anecdote about a reviewer account and account imagery",
+    "Hall-of-fame and thanks-page links and screenshots"
+  ],
+  "worker_notes": "Readable fetch was cross-checked against the complete article DOM in the dedicated browser session. E1 is the permitted excluded-page classification quote; E2 records the limited method remark without inventing a workflow, tool, or handoff."
+}

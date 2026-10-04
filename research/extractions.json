@@ -1,0 +1,522 @@
+[
+  {
+    "source": "B001",
+    "research_type": "Cross-service source audit and silent-patch comparison",
+    "sections": ["The Sink that Never Should’ve Been", "Uneven Processing", "Silent Patches"],
+    "observations": ["The researcher worked backward from shell-based certificate validation through upstream validators and service boundaries.", "Different branches preserved original text or reserialized parsed content; successful certificate parsing did not establish safety for a later shell consumer.", "A later release replaced the shell sink with library parsing and the previous test no longer produced the reported effect."],
+    "limitations": "One inaccessible candidate was not validated; a search of the tested files and one failed reproduction do not establish comprehensive variant coverage.",
+    "defensive_inference": "Remove unnecessary shell interpretation, consume canonical parsed values, and test every equivalent validation branch."
+  },
+  {
+    "source": "B002",
+    "research_type": "Unprivileged Linux interface and shared-state race audit",
+    "sections": ["Linux Kernel Attack Surface", "When Two Threads Call sendmsg() Concurrently", "How the Bug Was Fixed"],
+    "observations": ["Unprivileged socket reachability motivated subsystem selection before auditing internals.", "A wait helper released and reacquired the socket lock; serialized writers could therefore resume under changed coupled state.", "Concurrent progress plus an error path invalidated the relationship between an append-state flag and the tail's valid-entry count; KASAN exposed the resulting invalid access."],
+    "limitations": "The article's subsequent memory layout and impact depend on its kernel and configuration; a sanitizer crash alone is not privilege escalation.",
+    "defensive_inference": "Revalidate after waits and preserve coupled state on every partial-progress and failure path."
+  },
+  {
+    "source": "B003",
+    "research_type": "AI-assisted Linux lifetime research with manual validation",
+    "sections": ["AI usage", "The bug", "Extra requirements", "Other bugs found"],
+    "observations": ["AI accelerated candidate and test development, while manual reasoning checked ownership and actual reachability.", "The audit compared RCU-protected access with immediate freeing and final-reference ownership.", "Namespace, configuration, locking, hardware, and policy constraints changed applicability; secondary faults appeared after the intended effect."],
+    "limitations": "The reported repeated successes concern a particular machine; thermal explanations and suggested alternative optimizations were speculative. The competition machine was not demonstrated.",
+    "defensive_inference": "Treat AI output as hypotheses, verify reader/reclaimer compatibility, and assess stability after the first observed effect."
+  },
+  {
+    "source": "B004",
+    "research_type": "Constrained Windows primitive reassessment",
+    "sections": ["Patch Diff", "Bug Analysis", "Current Primitives", "Corrupting Flink"],
+    "observations": ["Patch and constructor/dispatch review reconstructed concrete object types before evaluating unsafe casts.", "The researcher separated disclosure, decrement, and a fixed-value write instead of immediately calling them arbitrary read/write.", "Debugger stepping and allocator inspection revealed cleanup side effects and uncontrolled neighboring state that made a candidate write unreliable."],
+    "limitations": "Further capability development was tested in a particular allocator/version context; the reusable finding is precise constraint characterization, not the published construction.",
+    "defensive_inference": "Validate type discriminants and include cleanup and collateral changes in primitive assessment."
+  },
+  {
+    "source": "B005",
+    "research_type": "Deployment-default and intended-capability assessment",
+    "sections": ["A group that means root", "What changed underneath everyone", "We checked every LTS from 18.04 to 26.04", "Disclosure"],
+    "observations": ["Offline image inspection compared default membership, installed packages, snap seeds, and activation units.", "Absence of an initially installed daemon did not imply absence of an activatable privileged capability.", "The service's group authority was documented as root-equivalent by design; the claim concerned default composition and operator expectations, not a code-level authentication flaw."],
+    "limitations": "Server/cloud image findings are not established for Desktop. Runtime boundary results were reported for four releases, not every image inspected; the vendor disputed the security-boundary classification.",
+    "defensive_inference": "Audit effective administrative membership and activation, distinguish intentional capability from bypass, and inspect daemon-induced hardening changes."
+  },
+  {
+    "source": "B006",
+    "research_type": "Longitudinal middleware source/patch and capability-composition audit",
+    "sections": ["The Attack Scenario: Rules of Engagement", "Target Version 1.83.7 / The Patch’s Blind Spot", "Target Version 1.83.14 / Your Own Spear", "Conclusion"],
+    "observations": ["The accepted actor and default configuration were clarified before evaluating candidate applicability.", "Authentication dependency failures, nested metadata, and create/update authorization differed across equivalent paths.", "Immediate-input restrictions did not cover stored values later interpreted as secret references.", "Merged source changes were checked against actual distributed artifacts; human threat modeling and validation remained necessary despite AI assistance."],
+    "limitations": "Some candidates required non-default settings and were outside the chosen scenario. Attribution of patch speed to other reports or hardening activity was speculative.",
+    "defensive_inference": "Fail closed, authorize fields across representations, constrain stored interpretation, and verify shipped fix contents."
+  },
+  {
+    "source": "B007",
+    "research_type": "Privileged scripting patch and behavioral-dispatch analysis",
+    "sections": ["How Adobe’s Fixes Gave It Away", "Three Polluted Primitives, One Pure Chain", "Conclusion"],
+    "observations": ["Successive releases changed global/prototype lookup to lexical-local binding in privileged scripting code.", "A data-to-source construction was replaced with closure-bound runtime values; other changes enforced primitive string types before method processing.", "Reverse engineering of a sample corroborated patch-derived hypotheses about elevated scripting and file access."],
+    "limitations": "The mapping of some patches to advisory identifiers was uncertain. Broader code execution and patch-prioritization explanations were not fully demonstrated; no specific diff/debug tool was named.",
+    "defensive_inference": "Audit inherited property and coercion behavior in privileged code; prefer locals, inert data, and fixed behavior selection."
+  },
+  {
+    "source": "B008",
+    "research_type": "Parser-identity and cross-tier runtime analysis",
+    "sections": ["Reversing the Patch", "Understanding Class Member Reparsing", "Can we Checkmate without a CHECK?"],
+    "observations": ["The patch added classifications and counter/scope handling that exposed an identity-ordering assumption across lazy reparsing.", "Runtime metadata and function identity were compared rather than relying only on source interpretation.", "Release assertions stopped an identity mismatch; the researchers disabled checks for further counterfactual exploration, and additional errors complicated interpretation."],
+    "limitations": "The page mixes original-release barriers with later modified-build exploration. It does not justify treating assertion-disabled consequences as equivalent unmodified-product exploitability. Follow-on errors remained unexplained; broader sandbox bypass was proposed, not demonstrated.",
+    "defensive_inference": "Preserve identity ordering and coupled metadata across phases; retain assertions and distinguish original from reconstructed builds."
+  },
+  {
+    "source": "B009",
+    "research_type": "Firmware patch-led serialization and runtime-version analysis",
+    "sections": ["Patch Diffing: Finding the Needle", "Background: EUQ RPC Protocol", "Vulnerability Analysis", "Conclusion"],
+    "observations": ["New length validation directed investigation to the width and semantics of packed protocol fields.", "The article illustrates different packing behavior between its legacy runtime and a modern runtime; sender length and receiver framing can consequently disagree.", "A reported downstream unsafe deserializer made the representation discrepancy security-relevant."],
+    "limitations": "Some explanations for accepting an empty destination are explicitly presented as alternative hypothetical implementations. Exact authorization behavior and historical runtime semantics are not independently reproduced by this library; timeout is not success evidence.",
+    "defensive_inference": "Validate representable lengths and exact framing, reject ambiguous empty authorization fields, and replace unsafe object decoding."
+  },
+  {
+    "source": "B014",
+    "research_type": "Hardware-assisted firmware reconstruction and binary audit",
+    "sections": ["Part 1: Acquiring the firmware", "Hardware Watchdog Timer", "Finding the Memory Map", "Part 4: Finding the Vulnerability"],
+    "observations": ["Electrical levels, flash acquisition, segmented compression, load addresses, and architecture were established before useful disassembly.", "ImHex, a format model, zlib, and IDA supported container and memory-map reconstruction.", "Unsafe header parsing and authentication/update surfaces were audited in decompiled code; a physical-device observation corroborated the reported effect.", "Normal hardware halting triggered watchdog reboots, limiting debugging."],
+    "limitations": "Some board and RAM identifications were inferred or approximate; suggested watchdog changes were not demonstrated. No emulator validation was reported.",
+    "defensive_inference": "Validate complete parser bounds, authenticate management/update operations, and keep hardware/emulator assumptions separate."
+  },
+  {
+    "source": "B017",
+    "research_type": "Backend destination and external-tool argument audit",
+    "sections": ["Technical Details", "Suggested Mitigations", "Remediation Advice"],
+    "observations": ["Outbound request behavior and response-decoding differences supplied an oracle without returning the full response body.", "Another audit followed input through argument conversion, option parsing, configuration loading, and evaluation.", "The article reports fixes without advisory identifiers, illustrating that reporting labels are not evidence of technical safety."],
+    "limitations": "The internal-service consequence assumes an available particular backend; a converter-source attribution was qualified. Specific shipped patch behavior is not shown.",
+    "defensive_inference": "Constrain final outbound destinations and tool options; rotate established exposed secrets and verify fixes beyond report labels."
+  },
+  {
+    "source": "B018",
+    "research_type": "Brief emulated-protocol fuzzing report",
+    "sections": ["The harness", "The bug"],
+    "observations": ["A QEMU-based firmware environment with a hooked network stack exposed listeners to AFL++.", "The reported crash from an unchecked length-prefixed copy reproduced on physical hardware, supplying a stronger reachability check than emulator-only results."],
+    "limitations": "This is a short report without a complete harness, coverage data, patch, or campaign details; no quantitative effectiveness or universal mitigation claim is supported.",
+    "defensive_inference": "Validate harness fidelity and hardware reachability; bound copy lengths at their consumers."
+  },
+  {
+    "source": "B021",
+    "research_type": "Windows lifecycle patch comparison",
+    "sections": ["Patch Analysis - Before vs. After", "Cleanup VS Close", "Variant Analysis"],
+    "observations": ["The patch relocated release from user-handle cleanup to final file-object close, changing the lifetime relation with pending I/O.", "Dispatch paths and crash stacks linked outstanding accesses to premature release.", "Variant review inventoried other released or modified fields rather than assuming every changed field was another bug."],
+    "limitations": "The page does not establish a symbol-free workflow or name a specific diff tool; a crash is not controlled execution and the broad fix conclusion is the author's lifecycle interpretation.",
+    "defensive_inference": "Release shared request state only at the correct final-lifetime event and regression-test outstanding-I/O paths."
+  },
+  {
+    "source": "B022",
+    "research_type": "Windows double-fetch and layered sandbox-context analysis",
+    "sections": ["The Hunt Begins: Finding the Trigger for CVE-2024-30088", "The Eureka Moment: Understanding the Race", "Roadblock #1: The Integrity Police", "Roadblock #2: The Job Object Prison"],
+    "observations": ["Call-chain reversing tracked mutable user memory written and later reused by kernel consumers.", "A public higher-integrity reproduction did not establish the same access from an untrusted renderer.", "A real write's broader footprint corrupted adjacent fields; precise debugger edits did not model that primitive.", "Job restrictions and desktop/session visibility remained distinct from elevated identity."],
+    "limitations": "Analysis used a historical OS build. Debugger/security-policy modifications are diagnostic experiments, not unmodified-context proof; no patch-diff procedure is established on the page.",
+    "defensive_inference": "Snapshot untrusted data and evaluate each active confinement layer and the complete write footprint."
+  },
+  {
+    "source": "B023",
+    "research_type": "GPU/OS portability and mitigation reassessment",
+    "sections": ["What is CONFIG_HARDENED_USERCOPY?", "Command Stream Frontend", "From Physical to Virtual: Converting Our Primitive", "Bypassing Android’s App Sandbox"],
+    "observations": ["Compiled feature differences changed API availability; unsupported operations did not imply the related defect was absent.", "Hardening checks and deferred RCU reclamation invalidated assumptions carried over from another device.", "Allocation behavior was measured across runs/reboots, and application confinement was checked separately from kernel privilege."],
+    "limitations": "Placement was not guaranteed and some explanations for address variation were speculative. Results concern the author's device/build, not all GPUs or Android contexts.",
+    "defensive_inference": "Revalidate feature, allocator, lifetime, and policy contracts whenever changing target hardware or build."
+  },
+  {
+    "source": "B024",
+    "research_type": "GPU race root-cause and diagnostic-cost investigation",
+    "sections": ["Backing pages", "‘Fix’ delay", "Bug Fix"],
+    "observations": ["A race invalidated a growth-size assumption across locking and state changes.", "Repeated warning/stack logging dominated elapsed time; inspecting kernel logs distinguished diagnostic overhead from an unsuccessful hypothesis.", "The shown patch rechecked state after locking and moved dependent size calculations."],
+    "limitations": "A diagnostic kernel module that suppressed warnings altered the environment and cannot be treated as an unprivileged capability or as remediation.",
+    "defensive_inference": "Recompute dependent state after reacquiring synchronization and measure observer/diagnostic costs explicitly."
+  },
+  {
+    "source": "B026",
+    "research_type": "Brief hypervisor selection and failed-hypothesis retrospective",
+    "sections": ["Target selection", "The primitive", "What didn’t work"],
+    "observations": ["Surface selection prioritized attacker-input density and the researchers' understanding of fuzzing attention.", "The reported DMA consumer read a checked mutable field again before use.", "An earlier overflow hypothesis failed because the production layout placed the change in unused padding."],
+    "limitations": "The hypervisor and detailed test artifacts are not identified; this is qualitative author-reported evidence, not an independently reproducible full study.",
+    "defensive_inference": "Validate checked/used shared-memory identity and production consequence before investing in stronger impact hypotheses."
+  },
+  {
+    "source": "B027",
+    "research_type": "Desktop rendering and privileged IPC boundary audit",
+    "sections": ["Vulnerability Details", "Escalating to RCE", "Suggested Mitigations", "Timeline"],
+    "observations": ["Source tracing followed untrusted formatted output into DOM insertion and compared rendering/trust branches.", "Resource admission, active-content execution, privileged IPC, and filesystem confinement were distinct policies.", "The report's later vendor timeline added an extensive user-interaction prerequisite to stronger impact."],
+    "limitations": "Some mitigations are recommendations, not shown deployed fixes. Windows/macOS testing does not establish Linux equivalence, and the later interaction caveat must accompany the original impact claim.",
+    "defensive_inference": "Use contextual safe rendering and consumer-side IPC confinement; test every trust/rendering mode and required interaction."
+  },
+  {
+    "source": "B028",
+    "research_type": "Undocumented driver surface, constrained fuzzing, and crash triage",
+    "sections": ["Auth Bypass", "Mount Operation", "Attack Plan", "Fuzz Results", "Bug Analysis", "Introduction"],
+    "observations": ["Root-object ACLs did not enforce equivalent policy on descendant opens handled by the same driver.", "A documented companion library supplied interface contracts and feature-rich valid corpus generation.", "Successful setup filtered mutations for inner operations; shallow crashes limited further exploration.", "The eventual mitigation restricted low-privilege exposure rather than repairing every underlying parser defect."],
+    "limitations": "The coarse gate is not coverage proof and can exclude setup bugs. Remaining administrator-to-kernel behavior was not treated by the vendor as the same security boundary.",
+    "defensive_inference": "Verify every object-opening route, keep separate outer/inner campaigns, and distinguish access mitigation from root-cause repair."
+  },
+  {
+    "source": "B030",
+    "research_type": "GPU page-permission and OS-policy audit",
+    "sections": ["Root Cause Analysis", "Exploitation Primitive", "Escalating to Root via init Hijacking"],
+    "observations": ["The patch related requested CPU/GPU write authority to write-authorized page pinning.", "Permission queries and denial observations separated file access, device access, execution, and domain-transition policy.", "The reported changes affected cached in-memory pages rather than durable file contents."],
+    "limitations": "The prose's both-flags description conflicts with the shown either-flag bitwise test; the library uses the invariant, not that prose formula. Broader file-permission descriptions were partly qualified.",
+    "defensive_inference": "Keep pinning, mapping, and consumer permission contracts aligned and distinguish page-cache effects from persistent storage effects."
+  },
+  {
+    "source": "B031",
+    "research_type": "RPC dispatch, dangling-context, and input-size-limit analysis",
+    "sections": ["Description of Vulnerability", "Interface Definition Language (IDL)", "ClientRequest", "Detection Guidance"],
+    "observations": ["Interface definitions and a dispatch table connected service methods to retained context and freed objects.", "Registry permissions established which inputs could control service allocations.", "A related patch changed termination and allocation arithmetic, but an external registry-value size ceiling prevented the theoretical oversized input from being created."],
+    "limitations": "The theoretical arithmetic path was not reproduced. A mitigation blocking one attempted control-flow technique did not establish general safety.",
+    "defensive_inference": "Revoke stale context references, check complete arithmetic/termination, and validate input ceilings before promoting a hypothesis."
+  },
+  {
+    "source": "B034",
+    "research_type": "Nested-format and fixed-buffer patch analysis",
+    "sections": ["Vulnerability Analysis and Patch", "Reparse Point Structure", "Obtaining a Kernel Pointer Leak", "Arbitrary Read"],
+    "observations": ["Structural checks on counts, checksums, and types did not bound a later copy into a fixed allocation.", "Decompilation comparison identified the added destination-capacity check.", "Runtime observation distinguished editing an object's data from freeing and replacing its allocation."],
+    "limitations": "The published allocator-dependent construction does not establish deterministic placement; only the parser/consumer mismatch and observed lifecycle constraints are retained.",
+    "defensive_inference": "Check every consumer's capacity independently and verify allocation identity across apparent updates."
+  },
+  {
+    "source": "B035",
+    "research_type": "Cross-session COM and filesystem-policy analysis",
+    "sections": ["Description of Vulnerability", "Exploitation", "Exploit Conditions", "Conclusion"],
+    "observations": ["COM interface/control-flow review traced operations into permissive directory creation and path resolution.", "Cross-session applicability required another active user on the same system.", "A stronger modification hypothesis failed because required resource-file access was administrator-only; the author explicitly did not complete the escalation."],
+    "limitations": "Reported filesystem behavior is not proof of successful privilege escalation; preserve the author's unsuccessful outcome despite the headline impact.",
+    "defensive_inference": "Validate path/object identity and permissions at privileged file operations, including symlinks and cross-session contexts."
+  },
+  {
+    "source": "B037",
+    "research_type": "Ruby reflection audit and impact-boundary discovery",
+    "sections": ["Discovering the Vulnerability", "In Search of Impact", "Triaging Candidate Methods", "The Actual Impact", "Suggested Mitigations"],
+    "observations": ["The researcher traced an unvalidated reflective selector and used local introspection of arity, visibility, and source locations to prioritize methods.", "Default-argument methods remained relevant after filtering; inherited/private behavior exceeded the intended API.", "Unexpected sensitive disclosure invalidated an initially low-impact assumption and testing stopped; subprocess environment inheritance amplified exposure."],
+    "limitations": "Production testing in the source is not recommended here. Further hosted-service execution was hypothetical, and enterprise-specific execution paths were not equivalent to the demonstrated hosted disclosure.",
+    "defensive_inference": "Use a fixed method registry, minimize subprocess environments, stop unexpected disclosure, and rotate established exposed secrets."
+  },
+  {
+    "source": "B039",
+    "research_type": "Router surface survey and defensive source/binary synthesis",
+    "sections": ["Attack Surface", "Other Services", "Poor Configurations", "Conclusion"],
+    "observations": ["The survey looked beyond admin panels to service listeners, execution identity, default configuration, and untrusted fields consumed by privileged code.", "Structured process execution removed shell interpretation in a described fix.", "Shared product code and upstream libraries created horizontal and vertical patch-propagation obligations."],
+    "limitations": "Examples span different historical products and configurations; the survey does not establish identical exposure or fixes in every router.",
+    "defensive_inference": "Reduce exposed privileged services, avoid shell construction, and inventory all affected downstream products and dependency versions."
+  },
+  {
+    "source": "B040",
+    "research_type": "Restricted Windows allocator/primitive and stability assessment",
+    "sections": ["Bug Analysis", "Improving Primitive", "Restrictions", "Exploit Success Rate", "Post Exploitation"],
+    "observations": ["The researcher separated input/retrieval limits from the fixed allocation and complete arithmetic expression.", "Allocator size-class/segregation and single-opportunity behavior constrained plausible adjacency.", "Repeated attempts and later cleanup faults showed that obtaining an initial effect did not imply stable success."],
+    "limitations": "Reported low reliability and collateral corruption are environment-dependent; the skill does not retain the original neighboring objects or construction.",
+    "defensive_inference": "Validate minimum/maximum sizes and assess post-effect cleanup; allocator hardening is not a bounds fix."
+  },
+  {
+    "source": "B041",
+    "research_type": "Stateful API dispatch and incomplete-patch audit",
+    "sections": ["Vulnerability Details", "Patch Analysis", "v2.6.1", "v2.8.1", "Detection Guidance:"],
+    "observations": ["The audit compared REST and stateful Socket.IO operations and traced recursive property selection into mutable connection identity.", "Removing only the root prototype left inherited behavior in nested objects/functions; a later own-property check addressed the selector contract.", "Detection review identified transport logging gaps and encoding-sensitive keyword matching."],
+    "limitations": "Different impacts had different database prerequisites. Default activity timestamps and partial logs are proposed detection signals, not proof of historical exploitation.",
+    "defensive_inference": "Use explicit own-member dispatch and stable authenticated identity; validate telemetry across WebSocket and long-polling transports."
+  },
+  {
+    "source": "B042",
+    "research_type": "Application authentication and generated-code trust-boundary audit",
+    "sections": ["Brief", "Affected products/Tested version", "Vulnerability #1: SharePoint Application Authentication Bypass", "Vulnerability #2: Code Injection in DynamicProxyGenerator.GenerateProxyAssembly()"],
+    "observations": ["Configuration/module review separated eligibility, token parsing, signature, issuer, request binding, and application membership.", "Writable metadata was traced through code generation and type instantiation; API callability was not equivalent to write permission or execution capability.", "An assumed local administrative account was not necessarily a site member; provisioning differences changed feature availability."],
+    "limitations": "The article supplies a tested patch baseline but not a general before/after diff method or comprehensive remediation verification. Capability composition depends on specific membership and permissions.",
+    "defensive_inference": "Authenticate every identity claim and validate metadata at code-generating consumers; keep composition prerequisites explicit."
+  },
+  {
+    "source": "B043",
+    "research_type": "Transaction generation, asynchronous lifetime, and N-day analysis",
+    "sections": ["Genmask System", "Control Plane, Transaction System and Transaction Worker", "nftables Dormant State Chain Hook Deactivation Bug", "Vulnerability Analysis", "Patch Analysis"],
+    "observations": ["The researcher modeled current/next generation, commit/abort, logical unlink, and deferred destruction separately.", "Equivalent lookup paths differed in generation validity checks, while control-plane and worker timing could leave stale relationships.", "An earlier inconsistent-state warning could not reach useful frees; the author rejected that stronger impact hypothesis."],
+    "limitations": "Warning-only and stale-reference findings are distinct. Published exploitation details are version-dependent and excluded from the library.",
+    "defensive_inference": "Apply state-validity checks consistently to every lookup and restore ownership invariants during abort and deferred teardown."
+  },
+  {
+    "source": "B045",
+    "research_type": "File-identity/lifetime and container-policy assessment",
+    "sections": ["The vulnerability", "Code analysis", "Testing against actual containers", "Standard Docker container"],
+    "observations": ["Source and runtime reference observations compared authorization time with later file-operation dispatch.", "Blocking/fault instrumentation had privilege and configuration prerequisites that were absent in some actual contexts.", "A standard container's AppArmor policy denied the stronger boundary outcome, whereas other tested configurations differed."],
+    "limitations": "The analyzed source revision and runtime test kernel were different and explicitly identified. Neither container-local root nor a permissive test establishes universal container escape.",
+    "defensive_inference": "Keep references and authorization context stable across blocking work and evaluate actual LSM/container policy."
+  },
+  {
+    "source": "B046",
+    "research_type": "Allocator/input/lifetime characterization of an interface",
+    "sections": ["What is prctl?", "Conclusion"],
+    "observations": ["Allocation flags, configuration enablement, input alphabet/termination, and refcount-to-free paths determined the object's constraints.", "Repeated identical names could reuse an existing object rather than cause independent allocations.", "Terminated textual output constrained what could be observed."],
+    "limitations": "Process-death lifetime and distribution-default enablement were qualified assumptions; explicit privilege requirements were not fully established. The original allocation recipe is excluded.",
+    "defensive_inference": "Measure actual allocation and lifetime effects; do not infer object counts from action counts or absence of data from truncated output."
+  },
+  {
+    "source": "B047",
+    "research_type": "Classifier branch/lifetime and allocator-failure analysis",
+    "sections": ["Vulnerability Analysis", "How to solve the unstable problem when reclaiming UAF’s chunk", "Patch Analysis"],
+    "observations": ["Comparing sibling classifier branches exposed different deactivation/unlink behavior before deferred destruction.", "Format validation did not establish lifecycle safety.", "Allocator inspection with libslub helped explain repeated failed reuse attempts; the patch removed the affected component/build entry."],
+    "limitations": "A prose branch description conflicts with the displayed code. The generalized method does not adopt that attribution; allocator-dependent failure is not proof the lifetime defect is absent.",
+    "defensive_inference": "Corroborate branch semantics with code, revoke reachability before deferred frees, and distinguish component removal from a repaired implementation."
+  },
+  {
+    "source": "B048",
+    "research_type": "WebView navigation, intent dispatch, and patch-bypass audit",
+    "sections": ["The “Old” Bug", "The “New” Bug", "The “Bypass”", "Steps to Reproduction"],
+    "observations": ["Deobfuscation/control-flow review traced URL policy through WebView callbacks, superclass delegation, and privileged internal handlers.", "One binding's origin check blocked a candidate while another handler had different policy.", "Decoded validation and original-value navigation disagreed; repeated hot-fix review found incomplete coverage."],
+    "limitations": "The reusable finding is inconsistent canonical/dispatch policy, not the article's exact links or installation sequence. Historical server-side changes do not imply present exposure.",
+    "defensive_inference": "Validate and navigate the same canonical URL and authorize privileged intent behavior on every path."
+  },
+  {
+    "source": "B049",
+    "research_type": "Nested type conversion/deserialization and patch-variant analysis",
+    "sections": ["Introduction", "The new variant", "Payload delivery"],
+    "observations": ["Conversion behavior included constructors, setters, parsing, and custom converters rather than inert value casts.", "An allowed outer type inherited callbacks containing a second deserialization boundary.", "An earlier delivery-path patch did not establish repair of the underlying deserializer."],
+    "limitations": "The reported applicability required a particular authentication method and was not viable as the described internet-facing scenario. No complete later remediation verification is shown.",
+    "defensive_inference": "Audit type restrictions transitively through callbacks and nested decoders; verify transport and root-cause fixes separately."
+  },
+  {
+    "source": "B050",
+    "research_type": "Derived-path and external-process argument source audit",
+    "sections": ["Product Background", "Decription of the Vulnerability", "Recommendations"],
+    "observations": ["Untrusted identifiers flowed into paths, writes, command construction, and process execution.", "Derived filenames, not only original parameters, required argument safety.", "The shown fix escaped command arguments, while path-confinement validation remained a separate concern."],
+    "limitations": "The affected optional conversion component was not equivalent to every installation of the base product; hosted and self-hosted remediation differed.",
+    "defensive_inference": "Use structured process APIs and independently validate path containment and every option/argument contract."
+  },
+  {
+    "source": "B051",
+    "research_type": "Message-origin and DOM-sink source audit",
+    "sections": ["Incorrect Origin Check", "DOM-based XSS", "Recommendations"],
+    "observations": ["Origin allowlisting used regex characters with broader meaning than intended host syntax.", "Message-shape and field-presence checks did not guarantee HTML safety at the DOM sink.", "CSP and authenticated-user interaction affected the reported security consequence."],
+    "limitations": "The reported identity consequence required an authenticated session and interaction; it is not a universal unauthenticated takeover claim.",
+    "defensive_inference": "Use exact parsed origin comparison and contextual rendering; test sender trust, branch reachability, and CSP together."
+  },
+  {
+    "source": "B053",
+    "research_type": "Instrumentation-environment diagnosis and snapshot-harness failure",
+    "sections": ["Anti-debuger and anti attach", "Checking of file signature", "Hiding the Debugger", "Bonus"],
+    "observations": ["Crash dumps and Procmon distinguished debugger detection, file-signature rejection, and hidden-thread breakpoint failures.", "Each environmental obstacle needed separate explanation; an initial local patch did not solve all failures.", "The snapshot-fuzzing input failed to preserve sequential partial network reads."],
+    "limitations": "The published anti-debug patch code is not included or prescribed. Modified binaries are diagnostic artifacts and must not establish unmodified-target security claims.",
+    "defensive_inference": "Maintain an instrumentation change ledger, verify normal behavior afterward, and preserve real receive/framing semantics in harnesses."
+  },
+  {
+    "source": "B054",
+    "research_type": "Source N-day, setup/deprecated-feature, and patch review",
+    "sections": ["Root Cause Analysis of CVE-2021-20617:", "Patch Analysis for CVE-2021-20617:", "Suggested Mitigations for CVE-2021-20617:", "Detection Guidance for CVE-2021-20617:"],
+    "observations": ["The audit traced request input into external commands and setup-related file writes.", "Patch review distinguished a sufficient narrow escaping/check combination from a robust API redesign.", "Deprecated/setup functionality removal and post-install access-log review were defensive lessons; character encoding complicated testing."],
+    "limitations": "Automated reproduction scripts and their success messages are not carried into this library. Runtime and encoding details remain target-specific prerequisites.",
+    "defensive_inference": "Remove setup/deprecated surfaces automatically and prefer non-shell APIs over layered ad hoc quote filtering."
+  },
+  {
+    "source": "B055",
+    "research_type": "JIT effect-inference patch reconstruction and graph comparison",
+    "sections": ["Background", "Root Cause Analysis", "Exploitation"],
+    "observations": ["Patch inspection identified a special-case effect handler that failed to invalidate map/shape reliability despite possible side effects.", "Turbolizer graph comparisons showed guard differences between reconstructed-vulnerable and corrected behavior.", "Runtime GC and optimization changed observed object/layout assumptions, complicating tests."],
+    "limitations": "The author recreated an old defect in a newer revision; this does not prove that the unmodified newer release was vulnerable. Some explanations for additional guards were tentative.",
+    "defensive_inference": "Use conservative effect invalidation when alias/escape analysis is insufficient and validate emitted guards and runtime transitions."
+  },
+  {
+    "source": "B056",
+    "research_type": "Firmware listener/input and horizontal patch audit",
+    "sections": ["DHCP command injection", "Patch analysis for DHCP command injection", "WAN exploitation chain", "Patch analysis WAN bugs"],
+    "observations": ["Firmware extraction, listener/traffic review, and source-to-execution tracing found surfaces outside the admin panel.", "A candidate argument was safely constrained by conversion from binary bytes to fixed-format text, rejecting an overbroad injection assumption.", "Shell-to-structured execution changes, TLS settings, and alternate update paths were examined together."],
+    "limitations": "A time-manipulation idea failed and some update-timing outcomes were speculative. The article's credentials and published chain are excluded.",
+    "defensive_inference": "Prove final input alphabets, verify TLS/update authenticity, and inspect all sibling products and downstream parsers."
+  },
+  {
+    "source": "B057",
+    "research_type": "Exception-state invariant and runtime-mitigation analysis",
+    "sections": ["Deep Dive into the Vulnerability", "Proof-of-Concept Analysis", "The patch"],
+    "observations": ["An exceptional return lacked initialized pending-exception state, exposing an internal sentinel to ordinary language processing.", "Patch review covered both exception-state validation and a later container-key guard.", "A memory region's apparent executable/writable metadata did not override separate protection-key enforcement."],
+    "limitations": "The demonstrated browser run used a disabled sandbox; renderer execution is not an independently demonstrated sandbox escape. Other ways to expose a sentinel remain possibilities.",
+    "defensive_inference": "Maintain exceptional-return state invariants and keep internal sentinels unobservable; validate every mitigation layer."
+  },
+  {
+    "source": "B058",
+    "research_type": "Deployed-code location, alternate-format, and backend-policy audit",
+    "sections": ["Locating the source code", "Setting up debug environment", "Bug 0x01: Post-auth XSS in API inspector", "Bug 0x03: Post-auth SSRF + LFI + Privilege Escalation"],
+    "observations": ["Listener-to-process-to-module mapping found deployed source, and the debugger matched the target language runtime.", "An alternate response formatter introduced an output-context difference missed by default JSON-only testing.", "Destination checks and constructed URLs disagreed; a response influenced file access, whose actual service identity constrained readable data.", "Backup permissions exposed a secret unavailable through the original protected file."],
+    "limitations": "The stronger consequence required existing backup state and relevant roles; browser newline behavior was not uniform across tested implementations.",
+    "defensive_inference": "Audit response representations, final destinations, file-consumer identity, and backup permissions independently."
+  },
+  {
+    "source": "B059",
+    "research_type": "Authenticated outbound-request source audit",
+    "sections": ["Overview", "Description of the Vulnerability", "Attack Conditions & Constraints"],
+    "observations": ["Required-header checks did not constrain user-controlled outbound destinations, methods, or bodies.", "A controlled callback demonstrated request reachability; response visibility depended on status handling.", "The article reports a fix without satisfying the criteria used for an advisory identifier."],
+    "limitations": "Authentication and site access were prerequisites. Internal-network scanning was discussed rather than demonstrated, and XML validation is not established by the page.",
+    "defensive_inference": "Constrain parsed destinations across redirects and egress; do not use advisory status as proof of safety."
+  },
+  {
+    "source": "B060",
+    "research_type": "Coverage-led binary reconstruction and failed-hypothesis research",
+    "sections": ["1. Attack Surface", "1 Oct 2021", "20 Oct 2021", "26 Oct 2021", "2. Details of Vulnerability"],
+    "observations": ["Added checks were initially uninterpretable without undocumented structures; LLDB and targeted coverage guided reconstruction.", "Text-language and format-feature choices changed which shaping code executed.", "A text-only fuzzing campaign found no bug but supplied useful coverage; keeping the structural font input fixed left important dimensions unexplored.", "Documentation and an open-source analogous implementation helped refine hypotheses."],
+    "limitations": "Absence of fuzzing findings was not evidence of safety. The long exploitation experiments are not reproduced; only investigation, coverage, and assumption lessons are retained.",
+    "defensive_inference": "Alternate documentation, coverage, and code review; mutate the dimensions relevant to the invariant and preserve failed approaches."
+  },
+  {
+    "source": "B061",
+    "research_type": "JIT numeric-range transfer and representation analysis",
+    "sections": ["Code Understanding", "Patch Analysis", "Proof-Of-Concept", "OOB Read Crash :D"],
+    "observations": ["Reference searches localized a range-analysis helper and its consumers to a compiler phase.", "Standalone cast experiments and patch review examined interval soundness across sign extension.", "IR/dump/log comparison connected actual representation, inferred bounds, and optimization decisions.", "Unknown/Phi facts and unexpected Double representation blocked initial hypotheses."],
+    "limitations": "Diagnostic shell functions did not prove browser usability; some representation explanations remained tentative. The skill retains no source-language trigger or primitive construction.",
+    "defensive_inference": "Keep transfer functions sound, use conservative unknown states, and test ranges and representations across phase boundaries."
+  },
+  {
+    "source": "B062",
+    "research_type": "Enumeration snapshot and state-changing callback analysis",
+    "sections": ["For…in loop", "The Vulnerability", "WebKit Garbage Collector"],
+    "observations": ["Bytecode/slow-fast path review traced cached enumeration state into direct reads.", "Potentially state-changing callbacks occurred between collecting counts and constructing the enumerator, without the necessary count revalidation.", "Garbage-collector state and conservative scanning constrained runtime object assumptions."],
+    "limitations": "The article pins an old engine revision and does not establish a patch-diff workflow; historical behavior is not current exposure.",
+    "defensive_inference": "Revalidate cached bounds/identity after callbacks and understand collector lifetime before interpreting object observations."
+  },
+  {
+    "source": "B063",
+    "research_type": "Asynchronous import-pipeline patch and controllability audit",
+    "sections": ["ENVIRONMENT SETUP & DEBUGGING", "CVE-2022-2185 ANALYSIS"],
+    "observations": ["A matching development environment and worker debugging connected incoming data to transformation and project creation.", "Patch review and caller enumeration led through sanitizing and key-conversion pipeline stages.", "Request history and isolated unit tests made investigation cheaper than repeated full-service runs.", "Generated filenames and unmet scheduling gates rejected initially promising candidates."],
+    "limitations": "The development kit differed from product validation, and some checks were disabled for debugging. Intermittent workers/breakpoints and crashes limited observation; these changes cannot prove production reachability.",
+    "defensive_inference": "Compare allowlisting and type normalization across pipeline stages and corroborate every control/scheduling prerequisite."
+  },
+  {
+    "source": "B064",
+    "research_type": "Recent-feature selection arithmetic and reservation-race audit",
+    "sections": ["Provided buffers", "io_uring bug hunting", "Conclusion"],
+    "observations": ["N-day understanding directed review toward recent buffer-selection changes.", "Index-to-page arithmetic was checked against concrete buffer boundaries.", "Selection versus completion timing allowed concurrent requests to share a buffer; masking still bounded the index."],
+    "limitations": "The author demonstrated corrupted reads but did not determine security impact and did not fully understand the maintainer's fix. The library makes no stronger memory-corruption claim.",
+    "defensive_inference": "Reserve before publication/dispatch and distinguish data races from proven security effects; verify fix semantics rather than relying on its existence."
+  },
+  {
+    "source": "B065",
+    "research_type": "Unfinished kernel-disclosure impact and failed-assumption study",
+    "sections": ["Exploitation", "Trying to achieve LPE", "What is missing ?"],
+    "observations": ["Debugger paths, object-model references, and structure inspection tested whether a read primitive reached desired data.", "A file-associated object was not equivalent to direct file-content access; newer address-space placement invalidated an older assumption.", "Transient data, concurrency, and missing key material prevented the completed escalation hypothesis."],
+    "limitations": "The author explicitly did not complete an exploit and was uncertain about the assigned advisory identifier. Cross-address-space and key-acquisition possibilities were hypotheses, not demonstrated capabilities.",
+    "defensive_inference": "Separate disclosure from escalation and record exact address-space, lifetime, and missing-capability constraints."
+  },
+  {
+    "source": "B066",
+    "research_type": "Shared-consumer deserialization variant and environment audit",
+    "sections": ["Environment Setup", "Analysis"],
+    "observations": ["A prior binder restriction motivated caller searches for every consumer of shared binary-state retrieval.", "dnSpy Analyze exposed an alternate deserialization path not protected by the original change.", "Default disabled/absent services prevented initial reproduction; feature setup was a necessary gate."],
+    "limitations": "The author's setup observations were qualified; no comprehensive post-fix validation is shown and default reachability must not be assumed.",
+    "defensive_inference": "Review all consumers and inherited callbacks of shared data, and separate environment failure from patch effectiveness."
+  },
+  {
+    "source": "B067",
+    "research_type": "Privileged IPC state and nested-resource lifetime audit",
+    "sections": ["A short glance at the Vulnerability", "Use-After-Free", "Fullchain Exploit"],
+    "observations": ["Transaction state and asynchronous callbacks were traced across browser services.", "A parent weak reference did not establish lifetime of a child object retained by a raw pointer.", "Browser-side state checks mattered even when renderer-side checks existed; later changes considered legitimate repeated requests and locally caused aborts."],
+    "limitations": "The demonstration needed manually generated/enabled bindings and fixed-address assumptions; stronger alternative primitives were possibilities, not universal guarantees.",
+    "defensive_inference": "Validate state at the privileged consumer, hold child-resource lifetime correctly, and track transition provenance before blaming an IPC peer."
+  },
+  {
+    "source": "B068",
+    "research_type": "Convention-aware source/sink review of large web codebases",
+    "sections": ["The Approach", "Moodle", "Chamilo - Cross Site Request Forgery (CSRF) leading to Remote Code Execution", "Moodle - Reflected XSS (CVE-2021-43558)"],
+    "observations": ["The audit learned framework input wrappers and ran complementary source-to-sink and sink-to-source sweeps.", "Raw input modes and output-context-specific escaping differed from generic sanitization.", "Configured replacement rules could undo earlier filename sanitization; control of those settings and separate root-directory execution policy remained gates. File operations could implicitly select format handlers and downstream object behavior.", "Role-specific storage and session prerequisites constrained capability composition."],
+    "limitations": "Implicit deserialization depends on the actual PHP/runtime/library version, not every modern file API. The original payloads, user manipulation, and published chains are not retained.",
+    "defensive_inference": "Use typed/contextual contracts and test final composed transformations, not the number of sanitizer calls."
+  },
+  {
+    "source": "B069",
+    "research_type": "Coverage-guided binary parser and validation-consumption analysis",
+    "sections": ["Understanding the Target", "Harness", "Coverage", "Vulnerability", "POC"],
+    "observations": ["A small API harness, TinyInst coverage, and Lighthouse directed inspection to reachable parser paths.", "Exception breakpoints and documentation/disassembly comparison explained rejected inputs and byte/count interpretation.", "Early validation success and a later consumer's different metadata interpretation left an unchecked resource-name read; GuardMalloc corroborated an invalid access."],
+    "limitations": "GuardMalloc has blind spots. The reported fault establishes out-of-bounds reading, not independently demonstrated information disclosure or execution; performance comparisons were limited.",
+    "defensive_inference": "Successful validation must cover every later span under identical field semantics; use coverage to interpret both acceptance and rejection."
+  },
+  {
+    "source": "B070",
+    "research_type": "Architecture-aware binary taint automation and manual triage",
+    "sections": ["Existing Tools", "Using angr symbolic execution", "Using angr’s Reaching Definition analysis", "DLink DIR-X1560", "Remarks"],
+    "observations": ["Architecture support ruled out initial tools; symbolic path explosion and memory cost failed the intended speed goal.", "Reaching Definitions and output-argument summaries converted influence questions into use-def graph traversal.", "Indirect object dispatch required manual reconstruction across abstraction layers; automated reports had substantial false positives.", "Fix review found that an alternate hardcoded credential had merely been replaced with another configuration-backed credential."],
+    "limitations": "Measured timings and hit rates belong to this custom tool/corpus, not universal benchmark claims. Graph dependence is candidate evidence, not path feasibility.",
+    "defensive_inference": "Choose analysis for the required question and architecture, model indirect/output edges, manually validate feasibility, and test semantic fix variants."
+  },
+  {
+    "source": "B071",
+    "research_type": "Regression-test provenance and release-gap monitoring",
+    "sections": ["Introduction", "How It Work"],
+    "observations": ["Regression-test paths were associated with git history, issue references, review links, and commit order.", "Upstream fixes and downstream stable releases did not always arrive together."],
+    "limitations": "Public test availability does not prove a current downstream product is vulnerable; the article's regression snippets are not copied into this library.",
+    "defensive_inference": "Use test history to identify invariants and verify the fix in actual downstream artifacts rather than operationalizing a release gap."
+  },
+  {
+    "source": "B072",
+    "research_type": "Browser automation origin/transport differential analysis",
+    "sections": ["Potential arbitrary file read via Chrome DevTools Protocol", "Reinforced REST APIs", "Splitting the body", "Takeaway"],
+    "observations": ["Control interfaces differed in Host, Origin, method, content-type, session, and local-listener policy.", "Documentation/source checks and actual browser constraints rejected some proposed cross-origin paths.", "Application logs and packet traces showed unexpected connection/framing behavior that static protocol assumptions missed."],
+    "limitations": "Historical browser implementations differed and one transport bug was fixed in a named old release. Browser content cannot be assumed to transmit arbitrary raw TCP bytes.",
+    "defensive_inference": "Treat local control planes as privileged boundaries; validate origins/authority before processing and verify framing on every connection."
+  },
+  {
+    "source": "B073",
+    "research_type": "Dependency-parser arithmetic and controllability assessment",
+    "sections": ["Vulnerability details", "Heap layout reliability", "Overflow content limitations", "Possible solutions"],
+    "observations": ["Component scoping localized a browser-adjacent defect to a font/image dependency rather than the browser core.", "Integer representations and image preprocessing affected buffer dimensions and controllable output bytes.", "Nondeterministic allocation could fault unrelated components, and a proposed alternative isolation strategy was not tested."],
+    "limitations": "The page does not establish a patch-diff narrowing workflow; layout and content constraints are specific to its historical environment.",
+    "defensive_inference": "Audit complete decoded dimensions and transformations, and do not infer controlled consequences from unrelated crashes."
+  },
+  {
+    "source": "B074",
+    "research_type": "Dynamic instrumentation methods tutorial",
+    "sections": ["Function Hooking", "Memory Allocation and Parameter Manipulation", "Cross Process Messaging and A Practical Example", "Function Tracing and Frida Stalker"],
+    "observations": ["Entry/exit hooks and decoded argument metadata revealed runtime contracts.", "Injected buffers needed retained script references to remain alive; encoding and pointer width were part of correct observation.", "Scoped Stalker tracing captured useful nested calls while limiting overhead."],
+    "limitations": "Offsets and example APIs are tied to an old application/tool version. This skill uses the technique and directs current API/version resolution, not the original scripts.",
+    "defensive_inference": "Bound instrumentation reads, maintain observer-owned buffer lifetime, and trace only the unresolved question."
+  },
+  {
+    "source": "B075",
+    "research_type": "Firmware binary comparison and on-device debugging",
+    "sections": ["Good ol Strings", "Finding the system() Call", "Setup GDB server", "Packet Under The Microscope", "Calculating The Checksum"],
+    "observations": ["Binary comparison and diagnostic-string references narrowed changes; not every low-similarity match was a function.", "Architecture/endianness-matched gdbserver and logs checked checksum, length, acceptance, and sink argument paths on the device.", "Related models shared many binaries but were not assumed wholly identical."],
+    "limitations": "The wording about system calls refers to a shell-execution function in context, not arbitrary kernel syscall exposure. The exact packet and command recipe is excluded.",
+    "defensive_inference": "Corroborate binary-diff candidates with real controllability and apply structured execution/input contracts across shared product code."
+  },
+  {
+    "source": "B076",
+    "research_type": "Emulated-device range and reallocation-initialization audit",
+    "sections": ["E1000 Out-Of-Bounds Read Vulnerability", "OHCI Controller Uninitialized Variable"],
+    "observations": ["Several local range checks did not establish the full checksum span stayed within packet capacity.", "Reallocation left fields uninitialized before later asynchronous dispatch dereferenced them."],
+    "limitations": "No particular audit/debug tool is named in the page. The published disclosure/execution construction and neighboring layout are not retained.",
+    "defensive_inference": "Check complete accessed ranges and initialize every newly exposed field before publishing asynchronous work."
+  },
+  {
+    "source": "B077",
+    "research_type": "Binary font-argument-count validation audit",
+    "sections": ["The Root Cause", "Conclusion"],
+    "observations": ["Disassembly and format tools compared the full required operand-count expression with a partial multiplication-only check.", "Debugger observations connected attacker-derived counts with accesses beyond the stack-buffer extent."],
+    "limitations": "The demonstrated parser fault and historical fix do not establish every font-path impact or current exposure; no object-lifetime defect is shown.",
+    "defensive_inference": "Validate the complete arithmetic expression, including omitted additive terms, before consuming operands."
+  },
+  {
+    "source": "B078",
+    "research_type": "Firmware patch comparison and debugger-environment diagnosis",
+    "sections": ["Bin-Diffing", "Debugging In GDB", "Fixing SIGILL", "Conclusion"],
+    "observations": ["Firmware extraction and binary diffing isolated length validation in URL processing.", "Architecture-matched debugging corroborated overwritten memory and input transformations.", "An expected unsupported-instruction probe caused a debugger startup obstacle rather than an application security bug."],
+    "limitations": "Diagnostic environment changes must be logged and do not establish equivalent security behavior in production. The original control-flow and gadget steps are omitted.",
+    "defensive_inference": "Bound processing before writing to fixed buffers and distinguish target flaws from tool/library startup behavior."
+  },
+  {
+    "source": "B079",
+    "research_type": "Debug-build reachability and shared-reference lifetime investigation",
+    "sections": ["Getting an infoleak", "DLL infoleak"],
+    "observations": ["A non-hardened symbolized build and debugger traces made the command handler observable.", "A registry/table retained a reference after another ownership path replaced and freed the object.", "Inlining/macros made a decompiler useful; invalid traversal and corrupted metadata caused collateral host failures."],
+    "limitations": "Debug-build visibility is not proof that release hardening permits the same instrumentation. The memory layouts and original construction are excluded; stable cleanup was not established.",
+    "defensive_inference": "Revoke all table/borrower references when replacing owned resources and verify correspondence with optimized binaries."
+  },
+  {
+    "source": "B080",
+    "research_type": "Allocator provenance and observation-constraint analysis",
+    "sections": ["Vulnerability"],
+    "observations": ["Debugger heap and address-region queries distinguished freed heap storage from other allocation mechanisms.", "Freed bytes could persist, while incomplete field knowledge and mitigation constraints limited interpretation."],
+    "limitations": "The article does not demonstrate the reentrancy methodology its vulnerability class might suggest; this library retains only observed allocation/provenance reasoning, not the published exploitation construction.",
+    "defensive_inference": "Use allocation history and valid lifetime evidence, not residual bytes alone, when interpreting a stale-memory observation."
+  },
+  {
+    "source": "B081",
+    "research_type": "Hypervisor source-surface discovery and harness construction",
+    "sections": ["RT_UNTRUSTED_VOLATILE_GUEST Keyword", "Guest’s Physical Memory Read/Write Handlers", "Dumb Fuzzing", "Coverage Guided Fuzzing"],
+    "observations": ["Untrusted/shared-data annotations, device registrations, and guest-memory transfer helpers selected high-yield source slices.", "Transfer direction and size determined whether a host operation could overwrite or disclose memory.", "Recorded valid device inputs, input-boundary substitution, per-iteration reset, and coverage-guided execution made a complex device consumer fuzzable."],
+    "limitations": "Custom non-hardened builds and substituted inputs change the environment; later fixed-address and allocation recipes are not generalized or retained.",
+    "defensive_inference": "Validate host/guest transfer bounds and snapshot semantics, and prove harness/reset equivalence before accepting a finding."
+  }
+]

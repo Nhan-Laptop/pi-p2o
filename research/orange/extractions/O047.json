@@ -1,0 +1,127 @@
+{
+  "schema_version": 1,
+  "source_id": "O047",
+  "url": "https://blog.orange.tw/posts/2014-05-defcon-ctf-quals-2014-nonameyet-write-up/",
+  "observed_title": "Defcon CTF Quals 2014 - Nonameyet write up",
+  "retrieved_at": "2026-09-30T09:58:44.219Z",
+  "retrieval": {
+    "tool": "fetch_content readable; agent_browser original DOM",
+    "response_id": "browser session orange-O047",
+    "final_url": "https://blog.orange.tw/posts/2014-05-defcon-ctf-quals-2014-nonameyet-write-up/",
+    "outcome": "read",
+    "quote_verification": "Exact article.innerText.includes(quote) checks, also locating each substring in its original paragraph or list item, in the explicitly named orange-O047 browser session. All four checks returned true without normalization."
+  },
+  "disposition": "included",
+  "reason": "Retained narrowly for supported capability-limit reasoning, separation of corruption from controllability, and unsuccessful exploration followed by attention to input-processing logic. These reusable decisions are separable from the challenge solve sequence, which is omitted. No exploit outcome is independently verified.",
+  "canonical_source": null,
+  "evidence": [
+    {
+      "id": "E1",
+      "locator": "Under the article's sole content heading, capability-limits paragraph immediately before the paragraph introducing the five-item investigation-findings list.",
+      "quote": "無法拿到寫入的權限以及執行命令的權限，所能做的只能讀檔",
+      "verified": true
+    },
+    {
+      "id": "E2",
+      "locator": "Under the article's sole content heading, fourth item of the five-item investigation-findings list.",
+      "quote": "會發生 Heap Overflow 但初步看下去沒有可控之處",
+      "verified": true
+    },
+    {
+      "id": "E3",
+      "locator": "Under the article's sole content heading, paragraph immediately following the five-item investigation-findings list.",
+      "quote": "發現有 Heap Overflow 後就一直再 Fuzz 有沒有方法可以控制 EIP 的",
+      "verified": true
+    },
+    {
+      "id": "E4",
+      "locator": "Under the article's sole content heading, next paragraph after the fuzzing discussion; opening clause reporting unsuccessful attempts and a later processing-stage observation.",
+      "quote": "嘗試了滿久都失敗最後發現在處理 TAG 時程式去引用時",
+      "verified": true
+    }
+  ],
+  "workflow": [
+    {
+      "decision": "Compare the available operation with the consequence being hypothesized. Preserve a narrower observed capability and record unavailable operations rather than assuming the missing capability.",
+      "evidence": ["E1"]
+    },
+    {
+      "decision": "Keep a memory-corruption observation separate from demonstrated input influence. An initially uncontrolled fault leaves its stronger consequences unresolved.",
+      "evidence": ["E2"]
+    },
+    {
+      "decision": "Preserve unsuccessful exploratory attempts and distinguish a later input-processing observation from the initial fault hypothesis. Refine the unresolved influence question around the processing stage rather than treating repeated faults as progress.",
+      "evidence": ["E2", "E3", "E4"]
+    }
+  ],
+  "tools": [],
+  "handoffs": [
+    {
+      "producer": "fuzzing",
+      "consumer": "memory-safety-auditing",
+      "when": "Exploration identifies corruption but leaves input influence unexplained, with an unresolved question about a transformation stage.",
+      "packet": [
+        "Authorized scope, artifact provenance, build and instrumentation identity, actor, and isolation constraints",
+        "One falsifiable input-influence question and contrasting expected observations",
+        "Saved seed lineage, minimized local input class, and initialization/reset state",
+        "Harness-to-consumer fidelity and coverage or rejection-path evidence",
+        "Fault logs, earliest invalid operation, and allocation or transformation context",
+        "Repetition counts, unsuccessful attempts, unresolved constraints, and evidence classification",
+        "Bounded next review and stop condition"
+      ],
+      "acceptance_gate": "Require a reproducible invariant violation under documented state and evidence that the harness is not the sole failure. A fault alone or unsuccessful influence search is insufficient; return missing first-fault or transformation evidence. This is a derived gate, not a claim that the article supplies a complete packet.",
+      "classification": "derived",
+      "evidence": ["E2", "E3", "E4"]
+    },
+    {
+      "producer": "memory-safety-auditing",
+      "consumer": "exploitability-assessment",
+      "when": "A reported memory defect needs a bounded consequence assessment, especially where available operations or controllability remain limited.",
+      "packet": [
+        "Scope, actor, artifact identity, configuration, and author-report versus independent-observation classification",
+        "Violated invariant and earliest supported invalid operation",
+        "Constrained effect: direction, extent, input-influenced subset, transformations, repetition, and lifetime scope",
+        "Permission and mitigation barriers, collateral effects, and cleanup limits",
+        "Unavailable capabilities, failed hypotheses, untested conditions, and one unresolved consequence question"
+      ],
+      "acceptance_gate": "Assess only consequences supported by the constrained effect and its prerequisites. Keep static or author-reported evidence explicitly bounded; reject automatic promotion of a crash or limited access into stronger impact.",
+      "classification": "derived",
+      "evidence": ["E1", "E2"]
+    }
+  ],
+  "limitations": [
+    "The source is a historical contest write-up. All reported defect and outcome claims remain author reports; no attachment was downloaded, no target was tested, and no exploit was reproduced.",
+    "Fuzzing is named as an activity, not a particular tool. The article text does not name a fuzzer or debugger with a stated purpose; screenshots were not used to infer tool attribution.",
+    "Campaign coverage, seed lineage, reset equivalence, and an attempt denominator are not documented in the text. No first-invalid-operation model was independently validated; the handoff fields are derived requirements, not author-completed artifacts.",
+    "Failure to meet a contest's stronger objective does not make narrower access harmless, and unsuccessful influence exploration does not prove non-exploitability. No remediation or present-day applicability is established."
+  ],
+  "candidate_additions": [
+    {
+      "owner": "exploitability-assessment",
+      "kind": "heuristic",
+      "guidance": "Keep a capability-gap ledger separating observed access, unavailable operations, and unproven consequences. Preserve the narrower finding even when it does not establish the stronger effect under investigation.",
+      "evidence": ["E1", "E2"]
+    },
+    {
+      "owner": "memory-safety-auditing",
+      "kind": "validation",
+      "guidance": "Separate fault detection from input-influence characterization. Retain an initial lack of controllability as unresolved, and attribute later evidence to its actual processing stage rather than retroactively strengthening the original fault claim.",
+      "evidence": ["E2", "E4"]
+    },
+    {
+      "owner": "fuzzing",
+      "kind": "failure",
+      "guidance": "When exploratory mutations repeatedly fail to answer the stated question, preserve the unsuccessful observations and their scope, then seek a focused review of input transformations. Repeated faults alone do not establish stronger consequences.",
+      "evidence": ["E3", "E4"]
+    }
+  ],
+  "related_article_urls": [],
+  "excluded_material": [
+    "Contest standings, team anecdotes, and dietary commentary",
+    "Challenge endpoints, paths, field values, and file-read or upload instructions",
+    "Executable attachment and target-specific format or permission constants",
+    "Challenge-specific encoding, register manipulation, and memory-placement details",
+    "Exploit construction, gadget addresses, executable chains, shellcode, request examples, reverse-shell steps, and flag text"
+  ],
+  "worker_notes": "Readable retrieval exposed no response identifier, so provenance uses the explicit browser session. The original heading, article links, and all quotations were checked in that session. No related article links were observed. Candidates mostly reinforce existing library guidance rather than establishing novel tooling or independently verified findings."
+}

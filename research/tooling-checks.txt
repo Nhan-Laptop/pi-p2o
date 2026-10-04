@@ -1,0 +1,281 @@
+2026-09-30T04:28:24.834622+00:00
+Static fallback smoke test; benign system artifact only; no target execution.
+Kuna availability: absent — optional CLI not runtime-tested
+Source: /usr/bin/true
+SHA-256: 69745c15f1bbe866f4001a30b64081161a90dc8e669922e921296021ce55ebb3
+
+$ readelf --version
+exit: 0
+GNU readelf (GNU Binutils for Debian) 2.47
+Copyright (C) 2026 Free Software Foundation, Inc.
+This program is free software; you may redistribute it under the terms of
+the GNU General Public License version 3 or (at your option) any later version.
+This program has absolutely no warranty.
+
+$ objdump --version
+exit: 0
+GNU objdump (GNU Binutils for Debian) 2.47
+Copyright (C) 2026 Free Software Foundation, Inc.
+This program is free software; you may redistribute it under the terms of
+the GNU General Public License version 3 or (at your option) any later version.
+This program has absolutely no warranty.
+
+$ strings --version
+exit: 0
+GNU strings (GNU Binutils for Debian) 2.47
+Copyright (C) 2026 Free Software Foundation, Inc.
+This program is free software; you may redistribute it under the terms of
+the GNU General Public License version 3 or (at your option) any later version.
+This program has absolutely no warranty.
+
+$ nm --version
+exit: 0
+GNU nm (GNU Binutils for Debian) 2.47
+Copyright (C) 2026 Free Software Foundation, Inc.
+This program is free software; you may redistribute it under the terms of
+the GNU General Public License version 3 or (at your option) any later version.
+This program has absolutely no warranty.
+
+$ timeout -k 1 10 file /home/nhanlaptop/project/pi-p2o/.tooling-smoke-l8ouubxp/benign-elf
+exit: 0
+/home/nhanlaptop/project/pi-p2o/.tooling-smoke-l8ouubxp/benign-elf: ELF 64-bit LSB pie executable, x86-64, version 1 (SYSV), dynamically linked, interpreter /lib64/ld-linux-x86-64.so.2, BuildID[sha1]=1b3c4931cc4177baa378869a33dfd888efd4f1c9, for GNU/Linux 3.2.0, stripped
+
+$ timeout -k 1 10 readelf -h -l -S -d /home/nhanlaptop/project/pi-p2o/.tooling-smoke-l8ouubxp/benign-elf
+exit: 0
+ELF Header:
+  Magic:   7f 45 4c 46 02 01 01 00 00 00 00 00 00 00 00 00 
+  Class:                             ELF64
+  Data:                              2's complement, little endian
+  Version:                           1 (current)
+  OS/ABI:                            UNIX - System V
+  ABI Version:                       0
+  Type:                              DYN (Position-Independent Executable file)
+  Machine:                           Advanced Micro Devices X86-64
+  Version:                           0x1
+  Entry point address:               0x27f0
+  Start of program headers:          64 (bytes into file)
+  Start of section headers:          41544 (bytes into file)
+  Flags:                             0x0
+  Size of this header:               64 (bytes)
+  Size of program headers:           56 (bytes)
+  Number of program headers:         14
+  Size of section headers:           64 (bytes)
+  Number of section headers:         30
+  Section header string table index: 29
+
+Section Headers:
+  [Nr] Name              Type             Address           Offset
+       Size              EntSize          Flags  Link  Info  Align
+  [ 0]                   NULL             0000000000000000  00000000
+       0000000000000000  0000000000000000           0     0     0
+  [ 1] .note.gnu.bu[...] NOTE             0000000000000350  00000350
+       0000000000000024  0000000000000000   A       0     0     4
+  [ 2] .interp           PROGBITS         0000000000000374  00000374
+       000000000000001c  0000000000000000   A       0     0     1
+  [ 3] .gnu.hash         GNU_HASH         0000000000000390  00000390
+       000000000000005c  0000000000000000   A       4     0     8
+  [ 4] .dynsym           DYNSYM           00000000000003f0  000003f0
+       0000000000000588  0000000000000018   A       5     1
+[log excerpt truncated; command output checked before excerpting]
+
+$ timeout -k 1 10 objdump -d --start-address=0x27f0 --stop-address=0x2830 /home/nhanlaptop/project/pi-p2o/.tooling-smoke-l8ouubxp/benign-elf
+exit: 0
+
+/home/nhanlaptop/project/pi-p2o/.tooling-smoke-l8ouubxp/benign-elf:     file format elf64-x86-64
+
+
+Disassembly of section .text:
+
+00000000000027f0 <error_at_line@@Base+0x1d5>:
+    27f0:	31 ed                	xor    %ebp,%ebp
+    27f2:	49 89 d1             	mov    %rdx,%r9
+    27f5:	5e                   	pop    %rsi
+    27f6:	48 89 e2             	mov    %rsp,%rdx
+    27f9:	48 83 e4 f0          	and    $0xfffffffffffffff0,%rsp
+    27fd:	50                   	push   %rax
+    27fe:	54                   	push   %rsp
+    27ff:	45 31 c0             	xor    %r8d,%r8d
+    2802:	31 c9                	xor    %ecx,%ecx
+    2804:	48 8d 3d 05 ff ff ff 	lea    -0xfb(%rip),%rdi        # 2710 <error_at_line@@Base+0xf5>
+    280b:	ff 15 bf 77 00 00    	call   *0x77bf(%rip)        # 9fd0 <error_at_line@@Base+0x79b5>
+    2811:	f4                   	hlt
+    2812:	66 2e 0f 1f 84 00 00 	cs nopw 0x0(%rax,%rax,1)
+    2819:	00 00 00 
+    281c:	0f 1f 40 00          	nopl   0x0(%rax)
+    2820:	48 8d 3d 79 78 00 00 	lea    0x7879(%rip),%rdi        # a0a0 <__progname@GLIBC_2.2.5>
+    2827:	48 8d 05 72 78 00 00 	lea    0x7872(%rip),%rax        # a0a0 <__progname@GLIBC_2.2.5>
+    282e:	48                   	rex.W
+    282f:	39                   	.byte 0x39
+
+$ timeout -k 1 10 strings -a -n 6 -t x /home/nhanlaptop/project/pi-p2o/.tooling-smoke-l8ouubxp/benign-elf
+exit: 0
+    374 /lib64/ld-linux-x86-64.so.2
+    979 error_message_count
+    98d program_invocation_short_name
+    9ab fputc_unlocked
+    9ba dcgettext
+    9c4 __stack_chk_fail
+    9d5 __printf_chk
+    9ed __ctype_get_mb_cur_max
+    a04 strspn
+    a0b strrchr
+    a19 strlen
+    a20 __ctype_b_loc
+    a2e __fpending
+    a39 __vfprintf_chk
+    a48 mbsinit
+    a50 fflush_unlocked
+    a60 stdout
+    a67 realloc
+    a75 bindtextdomain
+    a84 error_one_per_line
+    a97 __fprintf_chk
+    aa5 strcspn
+    aad malloc
+    ab4 __libc_start_main
+    ac6 iswprint
+    acf error_at_line
+    add stderr
+    ae4 fwrite_unlocked
+    af4 __cxa_finalize
+    b03 setlocale
+    b0d strchr
+    b14 getenv
+    b1b calloc
+    b22 memcmp
+    b29 fclose
+    b30 memset
+    b37 fputs_unlocked
+    b46 program_invocation_name
+    b5e memcpy
+    b65 strcmp
+    b6c __errno_location
+    b83 strerror_r
+    b8e mbrtoc32
+    b97 __overflow
+    ba2 error_print_progname
+    bb7 strncmp
+    bbf __progname_full
+    bcf __progname
+    bda __cxa_atexit
+    be7 libc.so.6
+    bf1 GLIBC_2.3
+    bfb GLIBC_2.14
+    c06 GLIBC_2.16
+    c11 GLIBC_2.4
+    c1b GLIBC_2.34
+    c26 GLIBC_2.3.4
+    c32 GLIBC_2.2.5
+    c3e _ITM_deregisterTMCloneTable
+    c5a __gmon_start__
+    c69 _ITM_registerTMCloneTable
+   23b4 G(H;G0r
+   246b []A\A]
+   2602 A\A]A^A_
+   260f X[]A\A]A^A_
+   2900 AWAVAUATUH
+   2b64 ([]A\A]A^A_
+   2d85 o\$ fH
+   30f8 D$(dH+
+   3199 D$(dH+
+   324a AUATUSH
+   4132 @ |$"M
+   4516 []A\A]A^A_
+   4aa0 AWAVAUATUSHc
+   4c28 D$(dH+
+   4c3d []A\A]A^A_
+   4f0e []A\A]A^A_
+   5098 T$8dH+
+   5104 T$8dH+
+   5176 T$8dH+
+   51df T$8dH+
+   527f T$8dH+
+   5322 T$8dH+
+   53ad T$8dH+
+   5439 T$8dH+
+   54c0 T$8dH+
+   5562 T$8dH+
+   55fe T$8dH+
+   56a4 T$8dH+
+   5740 T$8dH+
+   57d4 AWAVAUATM
+   593b \$(ASL
+   5942 T$(ARL
+   5949 D$(APM
+   5974 (
+[log excerpt truncated; command output checked before excerpting]
+
+$ timeout -k 1 10 nm /home/nhanlaptop/project/pi-p2o/.tooling-smoke-l8ouubxp/benign-elf
+exit: 0
+
+stderr: nm: /home/nhanlaptop/project/pi-p2o/.tooling-smoke-l8ouubxp/benign-elf: no symbols
+
+PASS: format/load orientation, artifact-derived bounded disassembly, strings, and symbol-absence handling; artifact was never executed.
+
+Final artifact checks — 2026-09-30T04:31:07Z
+
+$ python3 scripts/render_research.py --check
+PASS: research render is current
+
+$ python3 scripts/validate_library.py
+PASS: 17 skills; 81 catalog entries; 65 evidence sources; format, links, provenance, mapping, handoffs, freshness, and recipe checks
+
+$ python3 -m unittest discover -s tests -v
+test_current_skill_frontmatter (test_library.FormatTests.test_current_skill_frontmatter) ... ok
+test_duplicate_frontmatter_field (test_library.FormatTests.test_duplicate_frontmatter_field) ... ok
+test_json_browser_envelope (test_library.FormatTests.test_json_browser_envelope) ... ok
+test_missing_frontmatter (test_library.FormatTests.test_missing_frontmatter) ... ok
+test_name_format (test_library.FormatTests.test_name_format) ... ok
+test_unterminated_frontmatter (test_library.FormatTests.test_unterminated_frontmatter) ... ok
+test_yaml_plain_scalar_contract (test_library.FormatTests.test_yaml_plain_scalar_contract) ... ok
+test_broken_local_link (test_library.LibraryGateTests.test_broken_local_link) ... ok
+test_broken_reference_link (test_library.LibraryGateTests.test_broken_reference_link) ... ok
+test_broken_source_anchor (test_library.LibraryGateTests.test_broken_source_anchor) ... ok
+test_current_library (test_library.LibraryGateTests.test_current_library) ... ok
+test_duplicate_extractions (test_library.LibraryGateTests.test_duplicate_extractions) ... ok
+test_duplicate_paragraph (test_library.LibraryGateTests.test_duplicate_paragraph) ... ok
+test_duplicate_reference_paragraph (test_library.LibraryGateTests.test_duplicate_reference_paragraph) ... ok
+test_duplicate_requires_retained_canonical (test_library.LibraryGateTests.test_duplicate_requires_retained_canonical) ... ok
+test_excluded_source_cannot_be_evidence (test_library.LibraryGateTests.test_excluded_source_cannot_be_evidence) ... ok
+test_failed_http_receipt (test_library.LibraryGateTests.test_failed_http_receipt) ... ok
+test_granular_heuristic_citations (test_library.LibraryGateTests.test_granular_heuristic_citations) ... ok
+test_limitations_required (test_library.LibraryGateTests.test_limitations_required) ... ok
+test_link_cannot_escape_library (test_library.LibraryGateTests.test_link_cannot_escape_library) ... ok
+test_missing_hash_receipt (test_library.LibraryGateTests.test_missing_hash_receipt) ... ok
+test_missing_recursive_edge (test_library.LibraryGateTests.test_missing_recursive_edge) ... ok
+test_missing_required_goal (test_library.LibraryGateTests.test_missing_required_goal) ... ok
+test_name_directory_mismatch (test_library.LibraryGateTests.test_name_directory_mismatch) ... ok
+test_no_cve_specific_skill (test_library.LibraryGateTests.test_no_cve_specific_skill) ... ok
+test_no_encoded_byte_payload (test_library.LibraryGateTests.test_no_encoded_byte_payload) ... ok
+test_no_executable_fence (test_library.LibraryGateTests.test_no_executable_fence) ... ok
+test_no_external_tooling_helper (test_library.LibraryGateTests.test_no_external_tooling_helper) ... ok
+test_no_recipe_in_reference (test_library.LibraryGateTests.test_no_recipe_in_reference) ... ok
+test_no_unfinished_skill (test_library.LibraryGateTests.test_no_unfinished_skill) ... ok
+test_raw_collection_artifacts_not_deliverables (test_library.LibraryGateTests.test_raw_collection_artifacts_not_deliverables) ... ok
+test_reference_link_cannot_escape_library (test_library.LibraryGateTests.test_reference_link_cannot_escape_library) ... ok
+test_renderer_check_cli_fails_stale_output (test_library.LibraryGateTests.test_renderer_check_cli_fails_stale_output) ... ok
+test_renderer_current_and_deterministic (test_library.LibraryGateTests.test_renderer_current_and_deterministic) ... ok
+test_scaffold_requires_uncertainty_and_fields (test_library.LibraryGateTests.test_scaffold_requires_uncertainty_and_fields) ... ok
+test_stale_generated_output (test_library.LibraryGateTests.test_stale_generated_output) ... ok
+test_statistics_not_trusted (test_library.LibraryGateTests.test_statistics_not_trusted) ... ok
+test_tools_require_purpose_and_when (test_library.LibraryGateTests.test_tools_require_purpose_and_when) ... ok
+test_unknown_source (test_library.LibraryGateTests.test_unknown_source) ... ok
+test_unobserved_locator (test_library.LibraryGateTests.test_unobserved_locator) ... ok
+test_unresolved_stale_link (test_library.LibraryGateTests.test_unresolved_stale_link) ... ok
+test_unreviewed_recursive_edge (test_library.LibraryGateTests.test_unreviewed_recursive_edge) ... ok
+test_validator_cli_success (test_library.LibraryGateTests.test_validator_cli_success) ... ok
+
+----------------------------------------------------------------------
+Ran 43 tests in 7.813s
+
+OK
+
+$ native Pi loadSkills / formatSkillsForPrompt (defaults disabled)
+PASS: 17 unique local skills, zero diagnostics, 17 prompt entries; reference files do not create extra skills.
+
+$ internal guide scope / reading budget / corpus consistency
+PASS: 4 owned generic guides inside skills/, no external CTF paths/helpers, focused budgets, unchanged 65-source corpus.
+skills/binary-auditing/references/format-routing.md
+skills/binary-auditing/references/native-slices.md
+skills/data-flow-analysis/references/reduced-models.md
+skills/dynamic-analysis/references/runtime-probes.md

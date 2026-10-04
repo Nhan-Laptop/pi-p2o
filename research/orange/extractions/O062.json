@@ -1,0 +1,43 @@
+{
+  "schema_version": 1,
+  "source_id": "O062",
+  "url": "https://blog.orange.tw/posts/2013-02-cve-2013-0305-django-credit-get/",
+  "observed_title": "CVE-2013-0305 Django Credit Get",
+  "retrieved_at": "2026-09-30T10:12:21.765Z",
+  "retrieval": {
+    "tool": "fetch_content (readable and raw); agent_browser",
+    "response_id": "browser session orange-O062",
+    "final_url": "https://blog.orange.tw/posts/2013-02-cve-2013-0305-django-credit-get/",
+    "outcome": "read",
+    "quote_verification": "Exact DOM textContent.includes check in session orange-O062 returned true for E1 in the second direct prose paragraph of articleBody; quote length was 28 Unicode code points. The full article body was also inspected in readable and raw fetched text."
+  },
+  "disposition": "excluded",
+  "reason": "A short personal vulnerability-credit announcement, with only a cursory code-review origin and an access/impact caveat. It does not document investigation choices, named-tool purposes, validation, or a repair, so it is excluded rather than expanded into a reusable workflow.",
+  "canonical_source": null,
+  "evidence": [
+    {
+      "id": "E1",
+      "locator": "Article body, second direct prose paragraph beginning 原本只是想找個 Open Source; administration-interface and real-world applicability clause before the blockquotes.",
+      "quote": "基本上需要進入管理界面才可以利用，在真實環境利用程度很低",
+      "verified": true
+    }
+  ],
+  "workflow": [],
+  "tools": [],
+  "handoffs": [],
+  "limitations": [
+    "Access to the administration interface is an author-reported prerequisite; the necessary role, configuration, and actual reachability are not specified.",
+    "The information-leakage result and low real-world applicability assessment are historical author reports, not independently reproduced findings.",
+    "No source slice, named tool, probe, validation procedure, failed assumption, or repair detail is supplied. Code review is an activity, not evidence of a particular tool."
+  ],
+  "candidate_additions": [],
+  "related_article_urls": [
+    "http://www.djangoproject.com/weblog/2013/feb/19/security/"
+  ],
+  "excluded_material": [
+    "Personal commemoration and credit quotation",
+    "Vulnerability-specific discovery and exploitation narrative",
+    "External advisory and vulnerability-record contents, which were not retrieved"
+  ],
+  "worker_notes": "Readable extraction omitted the article title; raw HTML and the isolated browser confirmed it and the complete two-prose-paragraph body. The related URL is an observed external advisory pointer only; neither outbound link was followed. No operational additions or handoffs were forced from this announcement."
+}

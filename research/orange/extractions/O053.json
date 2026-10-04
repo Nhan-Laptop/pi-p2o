@@ -1,0 +1,41 @@
+{
+  "schema_version": 1,
+  "source_id": "O053",
+  "url": "https://blog.orange.tw/posts/2013-11-exptw/",
+  "observed_title": "EXP.tw - 文章投稿、駭客資訊、資安文章",
+  "retrieved_at": "2026-09-30T10:03:15.060Z",
+  "retrieval": {
+    "tool": "agent_browser",
+    "response_id": "session:orange-O053",
+    "final_url": "https://blog.orange.tw/posts/2013-11-exptw/",
+    "outcome": "read",
+    "quote_verification": "Full original body read with get text body; eval --stdin confirmed exact DOM text inclusion for E1 and returned its matching paragraph in the named session orange-O053."
+  },
+  "disposition": "excluded",
+  "reason": "A service-launch announcement listing five content/publication categories and inviting submissions. The complete article supplies no security-investigation decision process, named research-tool purpose, validation, failure analysis, or fix; its content-source overview does not establish reusable research methods.",
+  "canonical_source": null,
+  "evidence": [
+    {
+      "id": "E1",
+      "locator": "Second prose paragraph after the preview image, immediately before the feature list beginning with Exploits.",
+      "quote": "寫了兩三天，順便練練寫網頁的手感 XD 目前提供的功能如下",
+      "verified": true
+    }
+  ],
+  "workflow": [],
+  "tools": [],
+  "handoffs": [],
+  "limitations": [
+    "The 2013 post announces a service rather than reporting a vulnerability investigation; no research method or implementation detail can be reconstructed from its feature list.",
+    "Named databases, feeds, and social platforms are content sources, not evidence of security-analysis tool usage.",
+    "The announced service and linked content sources were not visited or tested. Feature descriptions remain author reports, not independently verified capabilities."
+  ],
+  "candidate_additions": [],
+  "related_article_urls": [],
+  "excluded_material": [
+    "Service promotion and submission invitations",
+    "Exploit/defacement content categories and source-site catalog",
+    "Service URL and page navigation/footer"
+  ],
+  "worker_notes": "Read the complete assigned article with fetch_content and the isolated orange-O053 browser session. Retained one short classification quote; no methods, tools, handoffs, or skill additions were inferred."
+}

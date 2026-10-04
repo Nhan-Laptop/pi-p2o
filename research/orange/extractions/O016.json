@@ -1,0 +1,139 @@
+{
+  "schema_version": 1,
+  "source_id": "O016",
+  "url": "https://blog.orange.tw/posts/2019-10-an-analysis-and-thought-about-recently/",
+  "observed_title": "An analysis and thought about recently PHP-FPM RCE (CVE-2019-11043)",
+  "retrieved_at": "2026-09-30T09:18:53.259Z",
+  "retrieval": {
+    "tool": "fetch_content (readable), followed by agent_browser DOM inspection",
+    "browser_session": "orange-O016",
+    "final_url": "https://blog.orange.tw/posts/2019-10-an-analysis-and-thought-about-recently/",
+    "outcome": "read",
+    "quote_verification": "Exact, non-normalized textContent.includes checks via agent_browser eval in orange-O016, both against the document and within each observed heading's section. All five quotations matched; lengths were 100, 83, 110, 66 and 66 characters. The same DOM inspection confirmed the article title and debugger prompt."
+  },
+  "disposition": "included",
+  "reason": "Beyond the exploit narrative, the article supports reusable methods: reject contents-only control assumptions by reviewing consumer lookup metadata; distinguish configuration semantics and input ordering; and inspect before/after runtime state. Only these method observations and bounded derived contracts are retained, not the exploitation or detection procedures.",
+  "canonical_source": null,
+  "evidence": [
+    {
+      "id": "E1",
+      "locator": "The exploitation / B. From CGI environment overwritten to Remote Code Execution: paragraph beginning 'However, although we can overwrite the environment data', sentence explaining the source-review finding.",
+      "quote": "After checking the source, we found the problem is PHP-FPM uses a hash table to manage environments.",
+      "verified": true
+    },
+    {
+      "id": "E2",
+      "locator": "Write a working exploit / A. The Nginx obstacle: numbered item 2, 'The PHP dispatcher', prose immediately following the two configuration examples.",
+      "quote": "Although the meaning looks like the same, the exploitation is absolutely different!",
+      "verified": true
+    },
+    {
+      "id": "E3",
+      "locator": "Write a working exploit / A. The Nginx obstacle: numbered item 4, 'The PATH_INFO sequential problem', paragraph immediately following the installed-configuration excerpt.",
+      "quote": "As you can see, the PATH_INFO are defined before the QUERY_STRING, so the original exploit doesn’t cover that.",
+      "verified": true
+    },
+    {
+      "id": "E4",
+      "locator": "Write a working exploit / B. Vulnerability verification problem: introductory sentence before the first memory-view image; quotation stops before the source-line reference.",
+      "quote": "This is the memory view before the environment variable is written",
+      "verified": true
+    },
+    {
+      "id": "E5",
+      "locator": "Write a working exploit / B. Vulnerability verification problem: sentence after the debugger bucket excerpt and immediately before the second memory-view image.",
+      "quote": "This is the memory view after the environment variable is written.",
+      "verified": true
+    }
+  ],
+  "workflow": [
+    {
+      "decision": "If changing stored data appears sufficient to influence a consumer, inspect the actual retrieval implementation before assigning that capability. Separately maintained indexing and lookup metadata can defeat the contents-only hypothesis; retain each consumer predicate as an additional condition requiring evidence.",
+      "evidence": ["E1"]
+    },
+    {
+      "decision": "When a prior analysis does not cover another deployment, compare dispatch-rule semantics and the order in which inputs are supplied. Similar-looking configuration does not establish equivalent behavior, and changed ordering can invalidate layout assumptions. Bound conclusions to the observed configuration rather than treating an uncovered case as proof of safety.",
+      "evidence": ["E2", "E3"]
+    },
+    {
+      "decision": "Resolve uncertainty about a predicted mutation by comparing the relevant runtime structure before and after the operation. Keep the observed state change separate from the next questions: whether the consumer accepts that state and whether the observation generalizes to another configuration.",
+      "evidence": ["E1", "E4", "E5"]
+    }
+  ],
+  "tools": [
+    {
+      "tool": "GDB with PEDA, observed as gdb-peda console transcripts",
+      "purpose": "Inspect runtime structure fields and compare before/after memory state.",
+      "when": "When source reasoning leaves the actual layout or mutation effect uncertain; the article displays debugger observations around its memory-view comparison.",
+      "attribution": "explicit",
+      "evidence": ["E4", "E5"]
+    }
+  ],
+  "handoffs": [
+    {
+      "producer": "source-code-auditing",
+      "consumer": "dynamic-analysis",
+      "when": "Source review identifies separate storage and lookup conditions, but the actual runtime state transition remains unknown.",
+      "packet": [
+        "authorization, artifact revision, build, runtime, configuration and actor",
+        "one falsifiable storage-versus-consumer question",
+        "minimal source and consumer slice with independent lookup predicates",
+        "contrasting predictions and a benign known-good control",
+        "bounded before/after observation points and permitted instrumentation changes",
+        "evidence references, collection method, timestamp and report-versus-observation classification",
+        "failed assumptions, untested scope, next bounded action and stop condition"
+      ],
+      "acceptance_gate": "The proposed observation must distinguish the hypotheses safely in the declared lab. A storage change alone cannot be accepted as evidence that the consumer recognized the changed state; author-only evidence remains labeled as such.",
+      "classification": "derived",
+      "evidence": ["E1", "E4", "E5"]
+    },
+    {
+      "producer": "dynamic-analysis",
+      "consumer": "exploitability-assessment",
+      "when": "A state change is reported or observed, but its consumer-visible capability or configuration applicability is unresolved.",
+      "packet": [
+        "authorization, actor, artifact identity, runtime and exact configuration",
+        "original-versus-instrumented environment and observation provenance",
+        "constrained change contract: direction, width, controllable subset and scope",
+        "consumer lookup requirements and separately supported semantic effects",
+        "dispatch and input-order prerequisites, failed assumptions and uncovered variants",
+        "negative evidence, collateral effects and remaining uncertainty",
+        "narrow impact question, bounded next review and stop condition"
+      ],
+      "acceptance_gate": "Reject any packet equating changed bytes or a crash with arbitrary control or execution. Each claimed consumer effect and deployment dependency needs evidence; static inference and source-author reports must not become independently demonstrated impact.",
+      "classification": "derived",
+      "evidence": ["E1", "E2", "E3", "E4", "E5"]
+    }
+  ],
+  "limitations": [
+    "This is a historical PHP-FPM/Nginx analysis. Applicability depends on feature support, dispatch semantics, file-existence gates and parameter ordering; the article is not evidence about current releases or arbitrary deployments.",
+    "Debugger views, successful effects and local improvements are author reports, not independently reproduced results. No source code was executed, exploit attachments downloaded or targets tested.",
+    "The article's final reliability improvement is described as working locally while further reliability work remained ongoing. It supplies no measured success/attempt denominator or production-equivalent guarantee.",
+    "The article suggests crash-based detection, which is neither a harmless observation nor a specific proof of the reported root cause. That procedure is excluded, not promoted into a validation oracle.",
+    "No shipped fix or regression suite is analyzed. Configuration-based exposure restrictions must not be mistaken for proof that the underlying memory invariant was repaired."
+  ],
+  "candidate_additions": [
+    {
+      "owner": "source-code-auditing",
+      "kind": "heuristic",
+      "guidance": "For indexed mutable records, distinguish storage control from consumer-visible control. Review independently stored lookup metadata and retrieval predicates before concluding that changed record contents will be recognized; preserve any failed contents-only assumption.",
+      "evidence": ["E1"]
+    },
+    {
+      "owner": "exploitability-assessment",
+      "kind": "validation",
+      "guidance": "Treat input emission order as an explicit feasibility parameter alongside dispatch and prerequisite gates. Compare configuration variants semantically, retain uncovered cases, and do not transfer layout-dependent conclusions merely because configuration snippets look equivalent.",
+      "evidence": ["E2", "E3"]
+    }
+  ],
+  "related_article_urls": [],
+  "excluded_material": [
+    "Exploit source, payload strings, crafted requests and executable configuration or command excerpts",
+    "Memory addresses, buffer offsets, sizes and target-specific numeric constants",
+    "Exploit chaining, hash-collision construction, constraint bypass and code-execution recipes",
+    "Remote verification procedures, crash induction and target testing",
+    "External exploit repository, bug-report and linked source-code contents, which were not fetched",
+    "Personal travel commentary"
+  ],
+  "worker_notes": "The readable fetch exposed no response ID, so retrieval is identified by the explicitly named browser session used for title and exact quote verification. README.md and HANDOFFS.md are repository-root files; the initially attempted research/orange paths did not exist. Debugger attribution is supported by displayed gdb-peda prompts beside the memory observations; no debugger commands are retained. Before/after observation is retained as method/tool evidence rather than a new generic debugging rule already covered by the baseline. Handoff controls, observation bounds and acceptance gates are defensive synthesis, not claims about the author's skill usage. No related blog-article pointer was observed."
+}

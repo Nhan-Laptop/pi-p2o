@@ -1,0 +1,138 @@
+{
+  "schema_version": 1,
+  "source_id": "O048",
+  "url": "https://blog.orange.tw/posts/2014-03-pwned-ctf-leaderboard-git/",
+  "observed_title": "Pw3ed CTF LeaderBoard - Git Misconfiguration & SQL Injection",
+  "retrieved_at": "2026-09-30T09:56:07.145Z",
+  "retrieval": {
+    "tool": "fetch_content (readable); agent_browser (original DOM verification)",
+    "response_id": "browser session orange-O048",
+    "final_url": "https://blog.orange.tw/posts/2014-03-pwned-ctf-leaderboard-git/",
+    "outcome": "read",
+    "quote_verification": "All five quotes passed exact inclusion checks against the original article element's innerText in session orange-O048. Matching paragraph ordinals were checked within the article. Both retained tool names were also verified in the paragraph containing E4; its executable command was omitted."
+  },
+  "disposition": "included",
+  "reason": "Although predominantly a CTF compromise narrative, the article separately supports reusable metadata-led inventory and auxiliary-interface prioritization decisions, including an unavailable upstream-source assumption. Retain only these narrow reconnaissance methods and stated tool purposes, not the challenge solution or exploitation sequence.",
+  "canonical_source": null,
+  "evidence": [
+    {
+      "id": "E1",
+      "locator": "Unheaded article body, paragraph 8, beginning with the assessment of exposed development error logs.",
+      "quote": "看到這樣子的內容暴露在網路上，可以想像整個網站的防護應該不是很完整的，因此我們繼續來深入看看",
+      "verified": true
+    },
+    {
+      "id": "E2",
+      "locator": "Unheaded article body, paragraph 15, explaining deployment of version-control working copies and metadata exposure.",
+      "quote": "許多開發者會將 Git, SVN 或者 CVS clone(checkout) 到正式上線的網站上，這時如果未將權限設置好，攻擊者可以透過這些版本控管軟體所留下的資訊，取得敏感資訊。",
+      "verified": true
+    },
+    {
+      "id": "E3",
+      "locator": "Unheaded article body, paragraph 19, beginning '從 config 可以看到'; the author qualifies why the upstream repository could not be accessed.",
+      "quote": "似乎那個 repo 是 private 的或者已經移除",
+      "verified": true
+    },
+    {
+      "id": "E4",
+      "locator": "Unheaded article body, paragraph 20, beginning '從 index 可以取得網站目錄結構'; curl and strings are named later in this same paragraph.",
+      "quote": "從 index 可以取得網站目錄結構",
+      "verified": true
+    },
+    {
+      "id": "E5",
+      "locator": "Unheaded article body, paragraph 22, beginning '從目錄結構已經可以發現些有趣的東西了'; retained clause concerns a development test page.",
+      "quote": "接著再依照剛剛的目錄結構對現有檔案做一次觀察，發現了開發者留下的測試頁面",
+      "verified": true
+    }
+  ],
+  "workflow": [
+    {
+      "decision": "Use exposed development diagnostics as a reason to reconsider deployment hygiene and overlooked artifact classes, not as proof that every interface is insecure. The remaining question is which auxiliary artifacts belong in the surface inventory.",
+      "evidence": ["E1", "E2"]
+    },
+    {
+      "decision": "Separate metadata-derived origin information, upstream-source availability, and file-inventory clues. An inaccessible origin leaves its cause unresolved but does not erase independently observed metadata; use the available inventory to narrow the next review question.",
+      "evidence": ["E2", "E3", "E4"]
+    },
+    {
+      "decision": "Use deployment inventory to identify development-only or auxiliary entries that ordinary user-facing navigation may omit. Prioritize these as candidates while carrying unresolved handler, provenance, and access-gate questions rather than treating a filename as demonstrated reachability.",
+      "evidence": ["E4", "E5"]
+    }
+  ],
+  "tools": [
+    {
+      "tool": "curl",
+      "purpose": "The author names it for obtaining repository metadata used in the directory inventory; the request and command are not retained.",
+      "when": "Only when artifact acquisition is explicitly authorized and within the agreed scope; this extraction performed no target acquisition.",
+      "attribution": "explicit",
+      "evidence": ["E4"]
+    },
+    {
+      "tool": "strings",
+      "purpose": "Extract printable filename clues from repository metadata as an initial directory-inventory aid.",
+      "when": "When examining an authorized metadata artifact; completeness and correspondence with deployed files remain separate questions.",
+      "attribution": "explicit",
+      "evidence": ["E4"]
+    }
+  ],
+  "handoffs": [
+    {
+      "producer": "attack-surface-mapping",
+      "consumer": "source-code-auditing",
+      "when": "A metadata-derived auxiliary-entry candidate is prioritized and authorized matching source becomes available.",
+      "packet": [
+        "authorization scope and artifact identity",
+        "actor, configuration, and intended boundary",
+        "metadata provenance and inventory extraction method",
+        "upstream-source availability and unresolved cause",
+        "candidate entry with confirmed versus inferred status",
+        "handler and access-gate evidence or explicit unknowns",
+        "source-to-deployment revision correspondence",
+        "one unresolved question and contrasting expectations",
+        "limitations, bounded next review, and stop condition"
+      ],
+      "acceptance_gate": "Require authorized source correspondence and either entry/gate evidence or an explicitly inferred candidate with a bounded validation question. Return missing provenance or handler questions; directory names and an inaccessible upstream repository do not constitute source recovery or reachability proof.",
+      "classification": "derived",
+      "evidence": ["E3", "E4", "E5"]
+    }
+  ],
+  "limitations": [
+    "This is a historical CTF leaderboard incident. All vulnerability, access, and disclosure outcomes remain author reports; only article text and quotation identity were checked here.",
+    "The upstream repository was unavailable to the author. Private versus removed is explicitly speculative, not a verified explanation.",
+    "The printable-text inventory method establishes neither completeness nor deployed revision correspondence. The article does not supply a systematic handler/gate inventory or source-audit record.",
+    "The initial inference from diagnostic exposure to weak overall protection is a prioritization heuristic, not a whole-site security finding or a controlled comparison.",
+    "The article states that the vulnerabilities were fixed but supplies no assessed patch, deployment receipt, or regression coverage. Remediation is therefore unverified by this extraction."
+  ],
+  "candidate_additions": [
+    {
+      "owner": "attack-surface-mapping",
+      "kind": "workflow",
+      "guidance": "Include development and deployment artifacts in the interface inventory, not only ordinary navigation. Metadata-derived auxiliary entries remain candidates until their actor, handler, and gates are established.",
+      "evidence": ["E2", "E4", "E5"]
+    },
+    {
+      "owner": "attack-surface-mapping",
+      "kind": "tool",
+      "guidance": "Printable-text extraction can provide a preliminary artifact-name inventory from supplied metadata. Preserve acquisition provenance and label completeness, source recovery, and deployment correspondence as unresolved rather than promoting readable names to confirmed interfaces.",
+      "evidence": ["E3", "E4"]
+    },
+    {
+      "owner": "source-code-auditing",
+      "kind": "handoff",
+      "guidance": "Accept metadata-led candidates only with authorized matching source and explicit provenance, or return the missing-source question. Carry upstream access failure as a limit instead of inventing source content, handlers, or the cause of unavailability.",
+      "evidence": ["E3", "E4", "E5"]
+    }
+  ],
+  "related_article_urls": [
+    "http://blog.orange.tw/2011/05/project-web-security-toolkit.html"
+  ],
+  "excluded_material": [
+    "Challenge endpoints, deployment paths, and target-specific request variants",
+    "Executable retrieval commands, injection payloads, and privilege-check sequence",
+    "Automated exploitation walkthrough and copied challenge solution",
+    "Credentials, sensitive file contents, flags, and result screenshots",
+    "Target-specific stack details and exploit constants"
+  ],
+  "worker_notes": "Only the assigned article was read; the toolkit article is an observed pointer, not a followed source. No target testing or exploit attachments were used. Tool purposes are explicit in the E4 paragraph; safe-use conditions, confidence gates, and the library handoff are derived, not author-reported practices."
+}

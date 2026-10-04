@@ -1,0 +1,49 @@
+{
+  "contract": "H2",
+  "scope": {
+    "authorization_reference": "",
+    "artifact_hashes": {},
+    "revision_build_runtime": "",
+    "configuration": {},
+    "actor_and_privileges": "",
+    "intended_boundary": "",
+    "isolation_and_recovery": ""
+  },
+  "question": "",
+  "predictions": {"if_true": "", "if_false": ""},
+  "classification": "unresolved",
+  "evidence": [],
+  "modifications": [],
+  "negative_controls": [],
+  "failed_assumptions": [],
+  "reproduction": {"successes": null, "attempts": null, "latency_observations": []},
+  "untested_scope": [],
+  "contract_specific_fields": {
+    "intermediary_role_map": [],
+    "dispatch_phase_model": [],
+    "cache_selection_contract": {},
+    "result_and_failure_contract": {},
+    "observation_stage_ledger": [],
+    "worker_and_state_history": {},
+    "failure_reset_contract": {},
+    "publication_policy_state": [],
+    "mediated_request_contract": {},
+    "producer_emission_constraints": {},
+    "provisional_owner_review": {},
+    "peer_trust_model": [],
+    "representation_ledger": [],
+    "phase_and_reentry_edges": [],
+    "effective_encoding_configuration": {},
+    "logical_vs_allocation_bounds": [],
+    "legitimate_peer_controls": [],
+    "enforcement_state": {
+      "source_change_verified": null,
+      "shipped_code_verified": null,
+      "activation_verified": null,
+      "rollout_phase": "",
+      "residual_unknowns": []
+    }
+  },
+  "next_action": "",
+  "stop_condition": ""
+}

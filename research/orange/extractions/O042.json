@@ -1,0 +1,39 @@
+{
+  "schema_version": 1,
+  "source_id": "O042",
+  "url": "https://blog.orange.tw/posts/2015-04-web/",
+  "observed_title": "Web 狗沒人權 TAT?",
+  "retrieved_at": "2026-09-30T09:51:23.358Z",
+  "retrieval": {
+    "tool": "agent_browser",
+    "response_id": "browser session orange-O042",
+    "final_url": "https://blog.orange.tw/posts/2015-04-web/",
+    "outcome": "read",
+    "quote_verification": "Exact DOM textContent.includes check in session orange-O042 against the first nonempty article paragraph; E1 matched and contained 33 Unicode characters. Article heading, both nonempty paragraphs, and article links were inspected."
+  },
+  "disposition": "excluded",
+  "reason": "A two-paragraph personal lament about web-research effort being dismissed. Its opening clause mentions information gathering and examining possible entry points individually, but does not explain any investigation technique, tool choice, hypothesis, failure, validation, or repair. It is commentary rather than a distinct reusable method account; no operational contribution is proposed.",
+  "canonical_source": null,
+  "evidence": [
+    {
+      "id": "E1",
+      "locator": "Web 狗沒人權 TAT? — first nonempty article paragraph, opening clause",
+      "quote": "花了很大力氣蒐集了許多資訊，花了幾個月模擬著可能的突破口一個個檢視",
+      "verified": true
+    }
+  ],
+  "workflow": [],
+  "tools": [],
+  "handoffs": [],
+  "limitations": [
+    "The research effort and successful outcome are anecdotal author reports, not independently verified findings.",
+    "The article supplies no artifact, actor/configuration, named-tool purpose, investigative comparison, negative control, or remediation evidence; no detailed workflow or handoff can be reconstructed from it."
+  ],
+  "candidate_additions": [],
+  "related_article_urls": [],
+  "excluded_material": [
+    "Vulnerability-class label and reported compromise outcome",
+    "Personal and social-status commentary"
+  ],
+  "worker_notes": "fetch_content readable retrieval failed with 'Page appears to be JavaScript-rendered (content loads dynamically)'. The assigned article was subsequently read and its method-only quote verified directly in the dedicated orange-O042 browser session; no linked article or target was visited."
+}

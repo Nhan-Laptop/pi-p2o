@@ -1,0 +1,125 @@
+{
+  "schema_version": 1,
+  "source_id": "O030",
+  "url": "https://blog.orange.tw/posts/2016-12-java-web/",
+  "observed_title": "[隨筆] Java Web 漏洞生態食物鏈",
+  "retrieved_at": "2026-09-30T09:38:53.477Z",
+  "retrieval": {
+    "tool": "fetch_content (readable) + agent_browser (article DOM)",
+    "response_id": null,
+    "browser_session": "orange-O030",
+    "final_url": "https://blog.orange.tw/posts/2016-12-java-web/",
+    "outcome": "read",
+    "quote_verification": "Each E1–E5 quote passed an exact article.innerText.includes(quote) check in browser session orange-O030. Matching paragraph/list elements and preceding section headings were also inspected; lengths were 56, 39, 19, 37 and 21 Unicode characters."
+  },
+  "disposition": "included",
+  "reason": "Despite its reflective framing, the article reports reusable investigation decisions: map transitive implementation layers, select source review from repair questions, and inspect bundled dependency manifests rather than trusting the enclosing application's release label. Maintenance limits provide additional context. Historical exploit examples are omitted and their applicability is not independently verified.",
+  "canonical_source": null,
+  "evidence": [
+    {
+      "id": "E1",
+      "locator": "關於 Java — opening paragraph, explaining transitive dependency layering",
+      "quote": "再加上在 Java 生態中很喜歡引用來、引用去，串來串去的結果則是當底層函示庫出包後，上方所有應用會跟著一起受害",
+      "verified": true
+    },
+    {
+      "id": "E2",
+      "locator": "關於 Java — paragraph 9, linking interest in an earlier repair to source review",
+      "quote": "在研究漏洞如何修補的同時順便對 Seam Framework 的原始碼審查一下",
+      "verified": true
+    },
+    {
+      "id": "E3",
+      "locator": "關於 Java — first of the two dependency-manifest bullets following the dependency-inspection paragraph; section list item 9",
+      "quote": "根據 MANIFEST 內容顯示版本為",
+      "verified": true
+    },
+    {
+      "id": "E4",
+      "locator": "關於 Java — paragraph 11, immediately after the two manifest bullets, contrasting parent-release and dependency currency",
+      "quote": "使用的居然不是最新版本的第三方函示庫! 透過尋找上面兩個函示庫出現過的漏洞",
+      "verified": true
+    },
+    {
+      "id": "E5",
+      "locator": "題外話 1 — opening paragraph reporting the vendor's limited maintenance response",
+      "quote": "所以除了重要或是嚴重風險的漏洞外皆不修復。",
+      "verified": true
+    }
+  ],
+  "workflow": [
+    {
+      "decision": "Map the implementation layers beneath an application before restricting review to application code. Treat dependency edges as possible propagation paths, not proof that every upstream defect is reachable.",
+      "evidence": ["E1"]
+    },
+    {
+      "decision": "Use questions about an earlier defect's cause and repair to select focused source review. The repair is an investigation clue, not a substitute for establishing the current implementation's behavior.",
+      "evidence": ["E2"]
+    },
+    {
+      "decision": "Inspect metadata from bundled dependency artifacts, distinguish enclosing-release currency from component currency, and consult component issue history to select applicability questions. Carry code and configuration checks as unresolved rather than equating an older dependency with demonstrated exposure.",
+      "evidence": ["E3", "E4"]
+    },
+    {
+      "decision": "When the maintainer reports limited repair coverage, preserve that maintenance constraint and unresolved residual risk instead of assuming disclosure will result in a complete correction.",
+      "evidence": ["E5"]
+    }
+  ],
+  "tools": [],
+  "handoffs": [
+    {
+      "producer": "attack-surface-mapping",
+      "consumer": "source-code-auditing",
+      "when": "A layered application inventory identifies a bundled component whose version or repair applicability remains unresolved.",
+      "packet": [
+        "Authorization, artifact provenance, revision/runtime, configuration, actor and intended boundary",
+        "Dependency graph with observed versus inferred edges and component-metadata locators",
+        "Prioritized interface registration, gate and handler evidence, or an explicitly inferred entry with a proposed reachability check",
+        "Component repair-history hypothesis, candidate source slice and a disconfirming observation",
+        "Evidence classification, collection time, failed assumptions, untested scope and a bounded next question with a stop condition"
+      ],
+      "acceptance_gate": "Accept only with recorded provenance and configuration, at least one prioritized entry linked to its gate/handler or explicitly marked inferred with a proposed reachability check, and issue history labeled as a hypothesis rather than confirmed application exposure.",
+      "classification": "derived",
+      "evidence": ["E1", "E3", "E4"]
+    }
+  ],
+  "limitations": [
+    "This is a historical article from 2016; its release relationships and maintenance statements do not establish current product or deployment status.",
+    "The manifest observations and vulnerability outcomes remain author reports. No dependency artifacts, source trees, fixes or target behavior were independently inspected or reproduced.",
+    "An installed dependency and its metadata do not establish enabled functionality, actor reachability, configuration prerequisites or whether downstream corrections were backported.",
+    "The article does not supply a detailed semantic patch comparison, controlled validation design or named investigation tool with a stated purpose; MANIFEST denotes artifact metadata, not a tool.",
+    "The limited maintenance policy is an author-reported vendor response, not independently checked support policy or proof of an available fix.",
+    "A later paragraph reports that a previously observed behavior stopped occurring, but its cause was unknown. Disappearance alone does not establish remediation."
+  ],
+  "candidate_additions": [
+    {
+      "owner": "attack-surface-mapping",
+      "kind": "heuristic",
+      "guidance": "Represent transitive implementation dependencies as separately versioned audit layers beneath application interfaces. Distinguish a dependency being present from its behavior being reachable, and prioritize unresolved layer boundaries using observed registration or consumption evidence.",
+      "evidence": ["E1", "E3", "E4"]
+    },
+    {
+      "owner": "source-code-auditing",
+      "kind": "workflow",
+      "guidance": "Read metadata from the artifacts actually bundled with the application and reconcile component currency and repair history independently of the enclosing release label. Record advisory applicability as unresolved until the relevant implementation and configuration are checked.",
+      "evidence": ["E3", "E4"]
+    },
+    {
+      "owner": "remediation",
+      "kind": "failure",
+      "guidance": "Record maintenance coverage and severity-limited repair policies for affected dependencies. Where correction or rollout is unverified, retain explicit residual risk; a recent parent release or maintainer response is not evidence of complete repair.",
+      "evidence": ["E4", "E5"]
+    }
+  ],
+  "related_article_urls": [
+    "http://blog.o0o.nu/2010/07/cve-2010-1871-jboss-seam-framework.html",
+    "http://security.coverity.com/advisory/2013/Oct/two-path-traversal-defects-in-oracles-jsf2-implementation.html"
+  ],
+  "excluded_material": [
+    "Published reproduction details, exploit sequences and suggested adaptations",
+    "Endpoint strings, target-identifying clues and sensitive-file examples",
+    "Exploit-oriented API details, payloads, constants and product-specific version/path lists",
+    "CTF framing, personal asides and speculative target-impact claims"
+  ],
+  "worker_notes": "The readable fetch supplied article text without a response identifier; the named browser session verified the actual title, URL and exact quotes. E3's short metadata phrase occurs twice; its locator selects the first manifest bullet. Related advisory links were recorded but not followed. No attachments, target tests or skill edits were performed."
+}

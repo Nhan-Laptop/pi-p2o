@@ -1,0 +1,48 @@
+{
+  "schema_version": 1,
+  "source_id": "O077",
+  "url": "https://blog.orange.tw/posts/2011-04-blog-post/",
+  "observed_title": "整理",
+  "retrieved_at": "2026-09-30T10:22:40.210Z",
+  "retrieval": {
+    "tool": "agent_browser",
+    "response_id": "browser session orange-O077",
+    "final_url": "https://blog.orange.tw/posts/2011-04-blog-post/",
+    "outcome": "read",
+    "quote_verification": "Exact DOM equality: the first paragraph of article [itemprop=articleBody] had textContent equal to E1.quote; article-body inclusion also returned true. Checked with agent_browser eval in session orange-O077; quote length was 15 characters."
+  },
+  "disposition": "excluded",
+  "reason": "The actual body is a personal learning-resource bibliography, introduced as a collection of recent study materials (E1). Five topic headings organize external paper, presentation, tutorial and translation links. It contains no primary investigation, tool-purpose account, failure analysis or validation decisions supporting reusable method observations; linked resource titles are not evidence of author practice.",
+  "canonical_source": null,
+  "evidence": [
+    {
+      "id": "E1",
+      "locator": "Opening paragraph before the heading About歷史：",
+      "quote": "最近的一些學習資料整理這樣XD",
+      "verified": true
+    }
+  ],
+  "workflow": [],
+  "tools": [],
+  "handoffs": [],
+  "limitations": [
+    "This 2011 post lists study resources, not an investigation with hypotheses, observations, failed assumptions or independently assessed results.",
+    "External articles, forum threads, papers, slides and tutorials were not opened or downloaded; their titles cannot establish tools used, method claims or current applicability.",
+    "Translation labels identify linked third-party resources and do not establish that O077 itself duplicates another assigned source.",
+    "Inspection verified the article text only; no exploit, target behavior or author-reported technical result was reproduced."
+  ],
+  "candidate_additions": [],
+  "related_article_urls": [
+    "http://www.abysssec.com/blog/2010/05/past-present-future-of-windows-exploitation/",
+    "http://bbs.pediy.com/showthread.php?p=776730",
+    "http://riusksk.blogbus.com/logs/73847721.html",
+    "http://bbs.pediy.com/showthread.php?t=101217"
+  ],
+  "excluded_material": [
+    "External PDF papers and presentation attachments",
+    "Third-party exploit-writing, shellcode, mitigation-bypass and ROP tutorials",
+    "Linked forum and translation content beyond the assigned article",
+    "Site navigation, analytics and page scripts"
+  ],
+  "worker_notes": "Readable and raw fetch_content inspections agreed with the live article DOM. Browser session orange-O077 supplied the observed title, final URL and exact classification-quote check because the fetch outputs exposed no response ID. Related URLs are observed bibliographic pointers only, not inspected method sources. No workflow, tool attribution, handoff or skill addition is inferred from the bibliography."
+}

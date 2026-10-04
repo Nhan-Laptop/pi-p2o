@@ -1,0 +1,43 @@
+{
+  "schema_version": 1,
+  "source_id": "O067",
+  "url": "https://blog.orange.tw/posts/2012-09-satainan-web-security/",
+  "observed_title": "Study-Area，「網頁安全 Web Security 入門」投影片",
+  "retrieved_at": "2026-09-30T10:15:12.831Z",
+  "retrieval": {
+    "tool": "agent_browser; fetch_content raw corroboration",
+    "browser_session": "orange-O067",
+    "browser_artifact": "/home/nhanlaptop/.pi/agent/sessions/--home-nhanlaptop-project-pi-p2o--/.pi-agent-browser-artifacts/01a0f1ce-1040-7265-a746-c485b3b9f29e/pi-agent-browser-snapshot-fc62f8dbc8273577.json",
+    "final_url": "https://blog.orange.tw/posts/2012-09-satainan-web-security/",
+    "outcome": "read",
+    "quote_verification": "In session orange-O067, DOM evaluation extracted the original articleBody paragraphs. E1 exactly equaled the first paragraph's textContent and articleBody.textContent.includes(E1) returned true. Raw HTML independently contained the same paragraph."
+  },
+  "disposition": "excluded",
+  "reason": "The actual article body announces presentation slides for two Study-Area talks, links an event, and labels an embedded slide deck. It supplies no narrated investigation decisions, research-tool purposes, failures, validation, or remediation. This is a slides-only post under the extraction contract; no method contribution is inferred from its security-themed title or presentation embed.",
+  "canonical_source": null,
+  "evidence": [
+    {
+      "id": "E1",
+      "locator": "Article body, first paragraph immediately below the publication metadata",
+      "quote": "在 Study-Area 台南以及台中 演講的投影片，活動鏈結：",
+      "verified": true
+    }
+  ],
+  "workflow": [],
+  "tools": [],
+  "handoffs": [],
+  "limitations": [
+    "The assigned post contains only a slide announcement, event link, and embedded presentation; its prose cannot support reusable research-method observations.",
+    "The presentation embed was identified but not mined as a separate method source; the external event link was not followed and no attachment was downloaded.",
+    "The observed publication date is 2012-09-29. No current security behavior or independent reproduction is established by reading this post."
+  ],
+  "candidate_additions": [],
+  "related_article_urls": [],
+  "excluded_material": [
+    "Talk and event logistics",
+    "Embedded presentation material",
+    "External event pointer",
+    "Site navigation and footer boilerplate"
+  ],
+  "worker_notes": "Readable fetch reported a JavaScript-rendered page; a read-only raw fetch and the dedicated browser session successfully exposed the actual article. E1 is a classification quote, not method evidence. No workflows, tools, handoffs, or skill additions were invented."
+}

@@ -1,0 +1,65 @@
+{
+  "lockVersion": 2,
+  "packVersion": "1.0.0",
+  "nodeVersion": "v22.14.0",
+  "engineVersion": "28.5.2+dfsg4",
+  "base": {
+    "tag": "node:22.14.0-bookworm-slim",
+    "indexDigest": "sha256:1c18d9ab3af4585870b92e4dbc5cac5a0dc77dd13df1a5905cea89fc720eb05b",
+    "amd64ManifestDigest": "sha256:745403dc46b5ab4c998502b07a12cbf020cf2c30645427a68ec0718f02d647de",
+    "imageRef": "node@sha256:745403dc46b5ab4c998502b07a12cbf020cf2c30645427a68ec0718f02d647de",
+    "localBaseImageId": "sha256:854cb78ac3ed2e215515e3ed78bf40a955bde16fc74114051a1850e509f602e6",
+    "rootfsLayers": [
+      "sha256:ea680fbff095473bb8a6c867938d6d851e11ef0c177fce983ccc83440172bd72",
+      "sha256:55d30492f98509e95a2bd6c5b3142cca32b348578f3d14865f54d92a2827f31e",
+      "sha256:e2ed0193d85e9dddfb2ab54a20b2b737e03c727de6aa952caa11a290a80ee946",
+      "sha256:f660a41698000beb3fbe611b1b158736c086caa3d175e4e469a18d0030430b44",
+      "sha256:ddfb49f16c671d34ef7fe09cd2e42724b5a42a7e894a8017a0d30377f4b5d840"
+    ],
+    "nodeBinarySha256": "1abce2374a485bddae3c27b17a3e3143e2780232026e627c4fe74ddde3f380a1"
+  },
+  "compiler": {
+    "entry": "node_modules/typescript/bin/tsc",
+    "kind": "Version 5.9.3",
+    "version": "5.9.3",
+    "binSha256": "8d5fa5bd883fec0979fc2004f1fe1d99aef40570155d550eadc0b03b55513bf0",
+    "libSha256": "3ae902c92cc44dace175c0e69e13a4b0899f6983c6121d76b9ab8dd5795e7675",
+    "hostNode": "v24.19.0"
+  },
+  "sources": {
+    "workerSha256": "413be216f734412df081430d3e482c4d6303495d6e900e64cc2f07ef91d782ed",
+    "sourceSha256": "3d7760b9efe3788c53f08f79952b73e8cd9671e43d8d53b35ae1c231add19f39",
+    "seccompSha256": "872f47c1582f51f6d8e4cb204404fd5eee832d93ec3c6afa013add51c6114eec"
+  },
+  "image": {
+    "pin": "sha256:d25927898c87979ef769fb4353e48bf2d2b7ea610e556a981b4196a529915533",
+    "tag": "p2o-offline-pack:22.14.0",
+    "platform": "linux/amd64",
+    "rootfsLayers": [
+      "sha256:ea680fbff095473bb8a6c867938d6d851e11ef0c177fce983ccc83440172bd72",
+      "sha256:55d30492f98509e95a2bd6c5b3142cca32b348578f3d14865f54d92a2827f31e",
+      "sha256:e2ed0193d85e9dddfb2ab54a20b2b737e03c727de6aa952caa11a290a80ee946",
+      "sha256:f660a41698000beb3fbe611b1b158736c086caa3d175e4e469a18d0030430b44",
+      "sha256:ddfb49f16c671d34ef7fe09cd2e42724b5a42a7e894a8017a0d30377f4b5d840",
+      "sha256:20a82ec64e6735f03da55c9848c5c6019c33122ad68c67d600e4f052e0b4c2db",
+      "sha256:d035734afb0d3ee997333a5e95f226b5f154fefd0275c88d02f3ffe185878184",
+      "sha256:63d0e7e1ca40955898d294405fde0529e20b0a5cfd6cb21cb4ccba726d5d999d",
+      "sha256:dd10216b68214ee19a3a71e9b9be2d00b41293084b3db4b9b39179520df76bcb",
+      "sha256:4e6cbcbf1598f3d777bb73fe12e8c731040318cacf404494f8cea8a499f09c5a",
+      "sha256:5a18c1b9d59278b934a73045dee62c2caf1e28b3088a8790ac3b39892ef8adf0",
+      "sha256:398f2dcf05e99300ed74c6d3e4649d5d15ead5760ef6c5a07da9df4bc1d4429b"
+    ],
+    "labels": {
+      "org.pi-p2o.pack.version": "1.0.0",
+      "org.pi-p2o.node.version": "22.14.0",
+      "org.pi-p2o.base.image": "node@sha256:745403dc46b5ab4c998502b07a12cbf020cf2c30645427a68ec0718f02d647de",
+      "org.pi-p2o.worker.sha256": "413be216f734412df081430d3e482c4d6303495d6e900e64cc2f07ef91d782ed",
+      "org.pi-p2o.source.sha256": "3d7760b9efe3788c53f08f79952b73e8cd9671e43d8d53b35ae1c231add19f39"
+    },
+    "inImage": {
+      "worker": "413be216f734412df081430d3e482c4d6303495d6e900e64cc2f07ef91d782ed",
+      "source": "3d7760b9efe3788c53f08f79952b73e8cd9671e43d8d53b35ae1c231add19f39"
+    }
+  },
+  "verifiedAt": "2026-10-02T16:31:17.982Z"
+}

@@ -1,0 +1,51 @@
+{
+  "schema_version": 1,
+  "source_id": "O069",
+  "url": "https://blog.orange.tw/posts/2012-07-hacks-in-taiwan-2012-web-hacking-1/",
+  "observed_title": "Hacks in Taiwan 2012 Web Hacking 1 出題詳解",
+  "retrieved_at": "2026-09-30T10:17:17.585Z",
+  "retrieval": {
+    "tool": "fetch_content (readable) and agent_browser",
+    "browser_session": "orange-O069",
+    "final_url": "https://blog.orange.tw/posts/2012-07-hacks-in-taiwan-2012-web-hacking-1/",
+    "outcome": "read",
+    "quote_verification": "Both quotations returned true for exact, unnormalized article.textContent.includes(quote) checks in orange-O069. Their complete containing paragraphs were also returned from the original article DOM; lengths were 53 and 54 characters."
+  },
+  "disposition": "excluded",
+  "reason": "This is a supplied-source CTF solution, not a distinct generic investigation method. It contains a brief language-semantics/code-review caution, but the configuration check and alternative-API discussion are embedded in the solution and restriction-bypass sequence. Those passages do not justify inventing two reusable method observations, tool recommendations, or derived handoffs after the solution material is removed.",
+  "canonical_source": null,
+  "evidence": [
+    {
+      "id": "E1",
+      "locator": "Unheaded article body, paragraph beginning 關卡的 PHP code 有提供 source 給大家 review; 10th p element in the observed article DOM.",
+      "quote": "關卡的 PHP code 有提供 source 給大家 review，並從中找出漏洞進行利用，只有短短幾行",
+      "verified": true
+    },
+    {
+      "id": "E2",
+      "locator": "Unheaded article body, paragraph beginning 基本上這不算是一個漏洞; 14th p element in the observed article DOM.",
+      "quote": "基本上這不算是一個漏洞，算是 PHP 的一個特性，但在 PHP Code Review 上卻是一個要注意的點",
+      "verified": true
+    }
+  ],
+  "workflow": [],
+  "tools": [],
+  "handoffs": [],
+  "limitations": [
+    "The article concerns a 2012 toy challenge and its configured runtime restrictions; it establishes no current-runtime or deployed-product behavior.",
+    "The code-review caution distinguishes a language feature from a vulnerability, but the article does not develop a separate audit-selection, contrasting-control, or remediation methodology.",
+    "The described successful result and participant alternatives are author reports only. No source code, payload, attachment, or target behavior was executed or independently reproduced."
+  ],
+  "candidate_additions": [],
+  "related_article_urls": [
+    "http://zone.wooyun.org/index.php?do=view&id=44"
+  ],
+  "excluded_material": [
+    "Challenge source code and language-execution demonstrations",
+    "Payloads, target URLs, generated-file paths, and ordered solution requests",
+    "Restriction-bypass API choices and the target-specific restriction list",
+    "Key retrieval, success screenshots, and participant solution snippets",
+    "Competitive commentary and participant statistics"
+  ],
+  "worker_notes": "Read the assigned article body with fetch_content, then observed the actual title and verified the quotations in the named browser session. The sole external reference is recorded only as an unvisited pointer. No other article was read and no library skill was changed."
+}

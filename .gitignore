@@ -1,0 +1,10 @@
+__pycache__/
+*.py[cod]
+
+# Root toolchain and build output (package.json / tsconfig.json / tsconfig.build.json / vitest.config.ts)
+node_modules/
+dist/
+.p2o-build/
+*.tsbuildinfo
+.vite-cache/
+coverage/

@@ -1,0 +1,42 @@
+{
+  "schema_version": 1,
+  "source_id": "O075",
+  "url": "https://blog.orange.tw/posts/2011-07-hitcon2011wargame-web-4/",
+  "observed_title": "台灣駭客年會 HITCON2011，Wargame Web 4出題心得 & 解法",
+  "retrieved_at": "2026-09-30T10:21:47Z",
+  "retrieval": {
+    "tool": "fetch_content readable; agent_browser",
+    "response_id": "browser session orange-O075",
+    "final_url": "https://blog.orange.tw/posts/2011-07-hitcon2011wargame-web-4/",
+    "outcome": "read",
+    "quote_verification": "Exact DOM text inclusion check using agent_browser --session orange-O075 eval. E1 matched the introductory paragraph inside .content.e-content; the article heading and final URL were also checked."
+  },
+  "disposition": "excluded",
+  "reason": "This is an author-written challenge solution. Output restrictions and historical feature caveats lead directly into a concrete credential-recovery and login walkthrough, rather than a distinct reusable investigation method. E1 records the challenge-setting motivation only. Its solution stages are not recast as operational workflows or derived handoffs.",
+  "canonical_source": null,
+  "evidence": [
+    {
+      "id": "E1",
+      "locator": "Opening motivation paragraph in .content.e-content, beginning 心得是現在大多數的人對於SQL injection",
+      "quote": "SQL injection其實是一門非常深的學問，就出了這題XD",
+      "verified": true
+    }
+  ],
+  "workflow": [],
+  "tools": [],
+  "handoffs": [],
+  "limitations": [
+    "The author describes a deliberately patched database binary intended to emulate an older environment by disabling metadata access; this is not evidence of ordinary or current-release behavior.",
+    "The statement ruling out other observation methods because schema names are unavailable is a challenge-specific assertion, not a general impossibility result.",
+    "All successful recovery and login claims remain author reports. No code, tool, attachment, or target behavior was independently reproduced."
+  ],
+  "candidate_additions": [],
+  "related_article_urls": [],
+  "excluded_material": [
+    "Challenge-specific solution sequence and login/answer recovery",
+    "SQL payloads, executable queries, exploitation functions, schema identifiers, and literal error outputs",
+    "Credentials, hash values, collision inputs, and answer strings",
+    "Walkthrough screenshots and exploitation-tool references lacking reusable author-usage evidence"
+  ],
+  "worker_notes": "The readable fetch exposed the article body but supplied no response ID or title, so the named browser session supplied title, URL, and exact-quote verification. E1 is classification evidence only. The legacy same-post DEBUG link was observed but not followed; no other article or target was visited."
+}

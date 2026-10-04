@@ -1,0 +1,48 @@
+{
+  "schema_version": 1,
+  "source_id": "O010",
+  "url": "https://blog.orange.tw/posts/2021-08-proxyshell-a-new-attack-surface-on-ms-exchange-part-3/",
+  "observed_title": "A New Attack Surface on MS Exchange Part 3 - ProxyShell!",
+  "retrieved_at": "2026-09-30T09:10:27.709Z",
+  "retrieval": {
+    "tool": "agent_browser; initial fetch_content readable inspection",
+    "response_id": "browser session orange-O010",
+    "final_url": "https://blog.orange.tw/posts/2021-08-proxyshell-a-new-attack-surface-on-ms-exchange-part-3/",
+    "outcome": "read",
+    "quote_verification": "agent_browser eval in session orange-O010 checked E1 by exact inclusion in the live article innerText and exact equality with an article paragraph; both returned true (61 characters)."
+  },
+  "disposition": "excluded",
+  "reason": "The assigned archive page is a guest-post announcement pointing to an externally hosted article, with series links and an embedded demonstration. Its own body contains no reusable investigation decisions, named-tool purposes, failure analysis, or validation methods. It therefore falls under the promotional/pointer-only exclusion rather than supplying two supported method observations. No methods were inferred from the title, impact claim, external article, or video.",
+  "canonical_source": null,
+  "evidence": [
+    {
+      "id": "E1",
+      "locator": "Article body: italic opening paragraph immediately after the author/date line, before the guest-post announcement.",
+      "quote": "P.S. This is a cross-post blog from Zero Day Initiative (ZDI)",
+      "verified": true
+    }
+  ],
+  "workflow": [],
+  "tools": [],
+  "handoffs": [],
+  "limitations": [
+    "The assigned page labels itself a cross-post but does not reproduce the technical guest-post body; linked material is only a pointer here.",
+    "The externally hosted article, other series articles, and embedded demonstration were not inspected. This disposition applies only to the assigned archive page.",
+    "The brief impact statement remains an author report, not independently verified behavior; no target interaction or exploit reproduction occurred.",
+    "A cross-post label alone does not establish textual duplication with another assigned source ID, so no duplicate disposition or canonical source ID is asserted."
+  ],
+  "candidate_additions": [],
+  "related_article_urls": [
+    "https://www.zerodayinitiative.com/blog/2021/8/17/from-pwn2own-2021-a-new-attack-surface-on-microsoft-exchange-proxyshell",
+    "https://blog.orange.tw/2021/08/proxylogon-a-new-attack-surface-on-ms-exchange-part-1.html",
+    "https://blog.orange.tw/2021/08/proxyoracle-a-new-attack-surface-on-ms-exchange-part-2.html",
+    "https://blog.orange.tw/2022/10/proxyrelay-a-new-attack-surface-on-ms-exchange-part-4.html"
+  ],
+  "excluded_material": [
+    "Guest-post promotion and series navigation",
+    "Unverified product-specific impact claim and target-specific numeric detail",
+    "Embedded exploit demonstration video",
+    "Unassigned linked article bodies and any associated payloads or exploit sequences"
+  ],
+  "worker_notes": "The readable fetch omitted the title; the named browser session confirmed the exact article heading, complete body, and link destinations. README.md and HANDOFFS.md were read at the repository root. No workflow, tool usage, or handoff was fabricated for this pointer-only page."
+}

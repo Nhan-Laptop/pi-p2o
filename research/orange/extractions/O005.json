@@ -1,0 +1,158 @@
+{
+  "schema_version": 1,
+  "source_id": "O005",
+  "url": "https://blog.orange.tw/posts/2024-08-confusion-attacks-en/",
+  "observed_title": "Confusion Attacks: Exploiting Hidden Semantic Ambiguity in Apache HTTP Server!",
+  "retrieved_at": "2026-09-30T09:01:58Z",
+  "retrieval": {
+    "tool": "fetch_content/readable; get_search_content; agent_browser",
+    "response_id": "munvifsbq2le3p",
+    "final_url": "https://blog.orange.tw/posts/2024-08-confusion-attacks-en/",
+    "outcome": "read",
+    "quote_verification": "E1-E5 each returned one exact match through get_search_content(responseId=munvifsbq2le3p, urlIndex=0, findMode=exact). All five also passed document.body.innerText.includes(quote) in browser session orange-O005. The article heading and final URL were observed in that session."
+  },
+  "disposition": "included",
+  "reason": "The actual research report supports reusable interaction-centered audit selection, field-semantic and phase-order reasoning, failure-path review, and incomplete-fix analysis. Its extensive exploitation demonstrations are excluded rather than normalized into recipes.",
+  "canonical_source": null,
+  "evidence": [
+    {
+      "id": "E1",
+      "locator": "A Whole New Attack — Confusion Attack: opening paragraph, first sentence",
+      "quote": "focusing on the “relationships” and “interactions” among these modules",
+      "verified": true
+    },
+    {
+      "id": "E2",
+      "locator": "A Whole New Attack — Confusion Attack: opening paragraph, sentence beginning 'Furthermore'",
+      "quote": "if the definitions or semantics of the fields are not precise enough, causing ambiguities in how modules understand the same fields",
+      "verified": true
+    },
+    {
+      "id": "E3",
+      "locator": "⚔️ Primitive 3-2. Invoke Arbitrary Handlers: specification block quotation following the phase-order obstacle and reference to local request reprocessing",
+      "quote": "This indicates to the server that it should reprocess the request using the path specified.",
+      "verified": true
+    },
+    {
+      "id": "E4",
+      "locator": "✔️ 3-1-1. Overwrite Handler to Disclose PHP Source Code: paragraph after the process diagram, beginning 'Because ModSecurity'",
+      "quote": "the internal HTTP lifecycle that should have stopped continued.",
+      "verified": true
+    },
+    {
+      "id": "E5",
+      "locator": "✔️ 3-1-1. Overwrite Handler to Disclose PHP Source Code: paragraph discussing the earlier request-parser correction and the remaining error-handling root cause",
+      "quote": "the same behavior can still be successfully reproduced if another code path",
+      "verified": true
+    }
+  ],
+  "workflow": [
+    {
+      "decision": "When individually reasonable components share mutable state, prioritize their writer-reader relationships. Compare the meanings each participant assigns to a field and form a hypothesis about one participant invalidating another's decision contract.",
+      "evidence": ["E1", "E2"]
+    },
+    {
+      "decision": "If control of a value appears too late to affect a decision, examine the governing specification and implementation for internal re-entry. Reassess phase order and inherited field provenance before accepting the timing objection or claiming influence.",
+      "evidence": ["E2", "E3"]
+    },
+    {
+      "decision": "Review failure paths separately from normal processing: a reported error need not terminate the pipeline. Follow side-effect writes to decision metadata and ask whether later behavior selection still consumes that changed state.",
+      "evidence": ["E2", "E4"]
+    },
+    {
+      "decision": "When an earlier correction blocks one entry path, separate that result from repair of the underlying error contract. Review other paths reaching the same contract and retain unresolved fix scope rather than treating one blocked example as closure.",
+      "evidence": ["E4", "E5"]
+    }
+  ],
+  "tools": [],
+  "handoffs": [
+    {
+      "producer": "source-code-auditing",
+      "consumer": "parser-differential-auditing",
+      "when": "A shared field has potentially incompatible meanings across participants or processing passes.",
+      "packet": [
+        "scope",
+        "question",
+        "evidence",
+        "classification",
+        "limits",
+        "next_action_and_stop_condition",
+        "field_writer_reader_and_semantic_role_table",
+        "value_origin_and_transformations",
+        "phase_order_and_reentry_edges",
+        "checked_versus_consumed_meaning",
+        "contrasting_predictions_and_normal_control"
+      ],
+      "acceptance_gate": "At least one field has source-linked writers, readers, ordering and a falsifiable semantic-disagreement hypothesis. Unknown reachability and re-entry edges remain explicitly unresolved; source-author reports are not promoted to independent observations.",
+      "classification": "derived",
+      "evidence": ["E1", "E2", "E3"]
+    },
+    {
+      "producer": "deserialization-and-dispatch-auditing",
+      "consumer": "remediation",
+      "when": "An error path changes behavior-selection metadata while processing that should terminate can continue.",
+      "packet": [
+        "scope",
+        "question",
+        "evidence",
+        "classification",
+        "limits",
+        "next_action_and_stop_condition",
+        "selector_provenance_and_fallback_contract",
+        "terminal_error_and_continuation_edges",
+        "affected_consumers_and_equivalent_failure_paths",
+        "normal_controls_and_regression_properties",
+        "source_vs_shipped_fix_gap"
+      ],
+      "acceptance_gate": "Identify the terminal-state invariant, metadata mutation, affected consumers and normal controls. Regression properties must distinguish safe termination and invariant repair from suppressing one input; missing consumer or deployment evidence returns a specific unresolved question.",
+      "classification": "derived",
+      "evidence": ["E2", "E4", "E5"]
+    }
+  ],
+  "limitations": [
+    "Only the public article and its DOM were inspected. All vulnerability, reproduction and fix results remain source-author reports; no target requests, exploit execution or attachment downloads were performed.",
+    "The report concerns historical Apache HTTP Server behavior. Reachability and consequences depend on loaded modules, backend integration, configuration scope, operating-system distribution and access policy; it does not establish current-release exposure.",
+    "The article narrows its broad filesystem-access discussion when default directory policy still denies access. Name resolution, authorization and available behavior remain separate capability gates, not evidence of unrestricted access.",
+    "E3 is a specification excerpt reproduced within the article, not an independently retrieved standard. The surrounding source review motivates re-entry analysis, but copied-field provenance and timing must be established for each actual implementation.",
+    "The failure-path example credits earlier third-party research, and the article reports a correction of one path without removal of the underlying error-handling problem. Other outcomes are redacted pending resolution; no present-day complete-fix or stronger-impact claim is inferred."
+  ],
+  "candidate_additions": [
+    {
+      "owner": "source-code-auditing",
+      "kind": "heuristic",
+      "guidance": "In modular pipelines, prioritize shared mutable fields with multiple writers and readers. Record each participant's assumed meaning, mutation rights and processing phase, then select a slice where those contracts may conflict.",
+      "evidence": ["E1", "E2"]
+    },
+    {
+      "owner": "parser-differential-auditing",
+      "kind": "workflow",
+      "guidance": "Track a field's semantic role and origin per processing pass, not only its bytes. Before relying on a phase-order argument, review documented internal re-entry and fields inherited by the new context; compare the checked meaning with the later consumed meaning.",
+      "evidence": ["E2", "E3"]
+    },
+    {
+      "owner": "deserialization-and-dispatch-auditing",
+      "kind": "failure",
+      "guidance": "Treat error handling as a possible writer of behavior-selection metadata. Check whether a terminal failure actually stops processing or leaves later dispatch consuming state overwritten for an error response; keep normal and failure-path contracts distinct.",
+      "evidence": ["E2", "E4"]
+    },
+    {
+      "owner": "remediation",
+      "kind": "validation",
+      "guidance": "A blocked entry path is not invariant repair. Review other callers reaching the same failure contract and require regression properties for safe termination and preserved normal behavior across affected consumers; retain unresolved variant and deployment scope.",
+      "evidence": ["E4", "E5"]
+    }
+  ],
+  "related_article_urls": [
+    "https://blog.orange.tw/2024/08/confusion-attacks-ch.html",
+    "https://www.akamai.com/blog/security-research/2024-august-apache-waf-proactive-collaboration-orange-tsai-devcore",
+    "https://www.leavesongs.com/PENETRATION/docker-php-include-getshell.html"
+  ],
+  "excluded_material": [
+    "Payloads, command transcripts, exploit source snippets and configuration recipes",
+    "Gadget inventories, endpoint and filesystem strings, credentials, secrets and exploit sequences",
+    "Target-specific testing procedures, tool commands used in demonstrations and exploitation attachments",
+    "Personal travel narrative, conference promotion and unsubstantiated redacted outcomes",
+    "Walkthroughs in related articles; pointers retained without retrieval"
+  ],
+  "worker_notes": "Read both slices of the complete fetched article. README.md and HANDOFFS.md resolve at the repository root, not under research/orange. Named command-line utilities occur in exploitation demonstrations, so no generic tool-purpose entry is inferred from them. Handoffs and candidate guidance are derived library contracts, not author use of this library or a multi-agent architecture."
+}

@@ -1,0 +1,127 @@
+{
+  "schema_version": 1,
+  "source_id": "O043",
+  "url": "https://blog.orange.tw/posts/2015-03-boston-key-parcty-ctf-2015-harvard/",
+  "observed_title": "Boston Key Party CTF 2015 [Harvard Square] [Andrew & Broadway] Write-ups",
+  "retrieved_at": "2026-09-30T09:52:29.023Z",
+  "retrieval": {
+    "tool": "fetch_content readable; agent_browser",
+    "response_id": null,
+    "browser_session": "orange-O043",
+    "final_url": "https://blog.orange.tw/posts/2015-03-boston-key-parcty-ctf-2015-harvard/",
+    "outcome": "read",
+    "quote_verification": "All five quotations passed exact, unnormalized JavaScript textContent.includes checks against paragraphs in the original article DOM in session orange-O043; heading, paragraph location and character length were also recorded."
+  },
+  "disposition": "included",
+  "reason": "Although predominantly a challenge solution, the article supplies distinct reusable investigation evidence: an overlooked companion artifact discovered after prolonged work, bounded review of a large executable through an added component, and normalization followed by input-class-dependent consumer acceptance. Retain only those decisions and their limits, not the challenge solutions.",
+  "canonical_source": null,
+  "evidence": [
+    {
+      "id": "E1",
+      "locator": "Harvard Square (Pwn 275), paragraph describing the late discovery of a supplied companion runtime binary.",
+      "quote": "嘗試了很久才發現原來題目有提供 glibc 的 Binary",
+      "verified": true
+    },
+    {
+      "id": "E2",
+      "locator": "Andrew & Broadway (Pwn 275 & Pwn 275), paragraph introducing the large executable and the impracticality of exhaustive manual review.",
+      "quote": "整個 Binary 很大如果慢慢看一定看不完",
+      "verified": true
+    },
+    {
+      "id": "E3",
+      "locator": "Andrew & Broadway (Pwn 275 & Pwn 275), next paragraph reporting discovery of an additional compiled-in module.",
+      "quote": "簡單摸索一下執行檔發現執行檔在編譯的時候多編進了一個 Nginx Module",
+      "verified": true
+    },
+    {
+      "id": "E4",
+      "locator": "Andrew & Broadway (Pwn 275 & Pwn 275), paragraph describing upstream path normalization and failure of the initially considered representation.",
+      "quote": "由於 Nginx 在處理路徑時的正規化，會將 Double Slash 轉成 Single Slash",
+      "verified": true
+    },
+    {
+      "id": "E5",
+      "locator": "Andrew & Broadway (Pwn 275 & Pwn 275), paragraph immediately after the contrasting command-line transfer-client examples, commenting on acceptance of a malformed representation.",
+      "quote": "這種錯誤的表達方式居然會被接受XD",
+      "verified": true
+    }
+  ],
+  "workflow": [
+    {
+      "decision": "Before reconstructing missing runtime information, ask whether companion artifacts already supply it. The author's late discovery motivates an initial inventory and leaves artifact compatibility and actual usefulness as questions to verify, rather than assuming an available dependency was used successfully.",
+      "evidence": ["E1"]
+    },
+    {
+      "decision": "When exhaustive review of a large executable is impractical, identify compiled-in additions and prioritize their input-handling slices. Treat that selection as a hypothesis about where review effort is useful, not proof that the baseline or the added component is respectively safe or defective.",
+      "evidence": ["E2", "E3"]
+    },
+    {
+      "decision": "After upstream normalization defeats an assumed representation, preserve that failed assumption and compare how downstream input classes interpret the transformed value. Different acceptance outcomes narrow the next question to consumer semantics; rejection of one class cannot establish universal rejection.",
+      "evidence": ["E4", "E5"]
+    }
+  ],
+  "tools": [
+    {
+      "tool": "curl",
+      "purpose": "Illustrate acceptance and rejection differences between resource-locator classes after upstream normalization.",
+      "when": "A rewrite invalidates one representation, but downstream acceptance of other semantic classes remains unresolved.",
+      "attribution": "explicit",
+      "evidence": ["E4", "E5"]
+    }
+  ],
+  "handoffs": [
+    {
+      "producer": "parser-differential-auditing",
+      "consumer": "dynamic-analysis",
+      "when": "An upstream rewrite and downstream acceptance examples suggest a semantic discrepancy, but behavior in the actual composed processing path is not independently established.",
+      "packet": [
+        "Authorized scope, artifact and parser/runtime identities, configuration, actor and intended boundary",
+        "Original, normalized and consumed representation roles, with transformation order",
+        "Rejected and accepted semantic classes, contrasting predictions and remaining uncertainty",
+        "A benign baseline, bounded observation points and an isolation/stop condition",
+        "Source-author reports separated from independent observations, plus historical and configuration limits"
+      ],
+      "acceptance_gate": "The proposed observation must distinguish whether the real consumer interprets the normalized value differently across classes, using harmless fixtures in an isolated authorized environment. Command-line illustrations alone do not prove composed-path behavior or stronger security impact.",
+      "classification": "derived",
+      "evidence": ["E4", "E5"]
+    }
+  ],
+  "limitations": [
+    "This is a 2015 CTF write-up, not a systematic product audit or current-release advisory. All reported behaviors and outcomes remain author reports, not independent reproductions.",
+    "The author discovered the supplied glibc binary late and states the final solution did not depend on it. The claimed potential time saving is retrospective, not a measured comparison.",
+    "The author's belief that the Nginx baseline was current helped prioritize an added module; it does not establish absence of baseline vulnerabilities or prove the module hypothesis by itself.",
+    "The normalization and transfer-client examples are historical and configuration-dependent. The curl examples establish an explicit illustrative tool purpose, not a recorded tool session or independent confirmation of the integrated module's behavior.",
+    "No challenge binary, exploit attachment, embedded script or target was inspected or executed. The article supplies no verified defensive fix or deployment evidence for these retained observations."
+  ],
+  "candidate_additions": [
+    {
+      "owner": "binary-auditing",
+      "kind": "failure",
+      "guidance": "Inventory supplied companion artifacts before prolonged reconstruction of runtime information. Record which dependency assumptions each artifact could resolve; availability alone does not establish compatibility or successful use.",
+      "evidence": ["E1"]
+    },
+    {
+      "owner": "binary-auditing",
+      "kind": "heuristic",
+      "guidance": "For a large executable, use added components and their input handlers to bound the initial review. Keep baseline-version confidence separate from evidence of safety, and retain the prioritization rationale and unreviewed scope.",
+      "evidence": ["E2", "E3"]
+    },
+    {
+      "owner": "parser-differential-auditing",
+      "kind": "workflow",
+      "guidance": "When normalization invalidates one structured-input class, compare downstream interpretation across semantic classes rather than assuming uniform rejection. Carry failed representations and consumer-specific acceptance evidence forward without promoting an illustrative comparison to integrated-path proof.",
+      "evidence": ["E4", "E5"]
+    }
+  ],
+  "related_article_urls": [],
+  "excluded_material": [
+    "Competition results, challenge scoring and personal practice commentary",
+    "Challenge rules, vulnerable field layouts, callback overwrite details and memory-size constants",
+    "Challenge-specific endpoint, protocol, file-path and request strings",
+    "Address disclosures, gadget chains, shell commands, payloads and exploitation order",
+    "Flag acquisition, objective-specific solve outcomes and copied solution material",
+    "Embedded exploit content, binary downloads and challenge archive links"
+  ],
+  "worker_notes": "The readable fetch exposed the article body but no response identifier; the named browser session supplied title/URL identity and exact quotation verification. Pwntools is mentioned as a learning goal, not retained as demonstrated tool usage. No related article pointers were observed. Candidates refine existing library guidance and the handoff is library synthesis, not an author-described architecture."
+}

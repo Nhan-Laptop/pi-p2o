@@ -1,0 +1,167 @@
+{
+  "schema_version": 1,
+  "source_id": "O001",
+  "url": "https://blog.orange.tw/posts/2025-08-the-art-of-php-ch/",
+  "observed_title": "(繁中) The Art of PHP — My CTF Journey and Untold Stories!",
+  "retrieved_at": "2026-09-30T09:03:58.525Z",
+  "retrieval": {
+    "tool": "fetch_content (readable), get_search_content, agent_browser",
+    "response_id": "munvieb6z372o8",
+    "final_url": "https://blog.orange.tw/posts/2025-08-the-art-of-php-ch/",
+    "outcome": "read",
+    "quote_verification": "E1–E5 each matched exactly, without normalization, in one original live paragraph and document.body.innerText using agent_browser --session orange-O001 eval at 2026-09-30T09:03:58.525Z; observed preceding headings were recorded. E1, E3 and E5 also matched get_search_content(findText, findMode=exact) against response munvieb6z372o8. E2 and E4 use DOM verification because readable markdown introduces a link and an escaped underscore respectively."
+  },
+  "disposition": "included",
+  "reason": "Although substantially a CTF retrospective, the actual article supplies distinct reusable observations about representation-changing transformations, dependency-bounded reconstruction impact, protective mechanisms with harmful error-path side effects, and producer–consumer assumptions that memory detectors may miss. Only these generic decisions and explicitly bounded tool references are retained; no challenge solution or exploit procedure is imported.",
+  "canonical_source": null,
+  "evidence": [
+    {
+      "id": "E1",
+      "locator": "2.1 - The “Serialize-Then-Replace” Pattern; opening paragraph beginning 在記憶中，我最早是從",
+      "quote": "它巧妙利用了應用程式對字串的額外操作：打破既有的序列化格式、使內容跳脫出原有的語意，並在最終被當成一個全新的物件！",
+      "verified": true
+    },
+    {
+      "id": "E2",
+      "locator": "2.3 - The “Holy Grail” of Deserialization Attacks; opening paragraph beginning 雖然前面提了不少反序列化漏洞",
+      "quote": "雖然前面提了不少反序列化漏洞，但這些問題究竟能造成多大危害，最終仍取決於環境中存在哪些類別。即使已經有著像是 PHPGGC 這樣的專案，持續在收錄、並完善更多的 POP 鏈",
+      "verified": true
+    },
+    {
+      "id": "E3",
+      "locator": "1.2 - When Security Features Make You Less Secure; paragraph beginning 當然！Philippe Dourassov, after the first illustrative code block",
+      "quote": "然而這段警告也恰巧違背了「Response Header 前不能有任何輸出」的這個假設",
+      "verified": true
+    },
+    {
+      "id": "E4",
+      "locator": "5.2 - From CTF to Real World!; paragraph beginning 儘管 d90pwn 沒能在時間內解出這道題目, describing the empty-field disagreement",
+      "quote": "Nginx 會產生一個內容為空的 PATH_INFO，而負責接收的 PHP-FPM 又始終假設該變數不能為空。",
+      "verified": true
+    },
+    {
+      "id": "E5",
+      "locator": "5.2 - From CTF to Real World!; paragraph beginning 綜觀整個 PHP 安全史, discussing fuzzing and detector limitations",
+      "quote": "PHP 所分配的連續記憶體區塊更是大大提高了像是 ASAN 這類工具的檢測難度",
+      "verified": true
+    }
+  ],
+  "workflow": [
+    {
+      "decision": "Question whether a structured record retains its meaning after an additional string transformation. Follow the changed representation to later reconstruction and compare its structural invariants with what the consumer interprets, rather than treating an earlier encoding step as a lasting guarantee.",
+      "evidence": ["E1"]
+    },
+    {
+      "decision": "Separate control of reconstruction input from its possible consequences. The environment's available types constrain behavior; a catalogue describes possibilities, not proof that the necessary dependencies or behavior are present in the inspected deployment.",
+      "evidence": ["E2"]
+    },
+    {
+      "decision": "Ask whether enforcing one protective limit changes output or state before another protection becomes effective. Trace warning and error side effects to the downstream protection's ordering assumption and assess the effective result, not merely the presence of a configured security check.",
+      "evidence": ["E3"]
+    },
+    {
+      "decision": "For unexplained cross-component behavior, compare the producer's possible outputs with the receiver's assumptions, including empty values. The reported allocation-layout limitation makes detector silence insufficient to dismiss such a contract mismatch; the remaining question is the earliest invalid consumer operation, not an assumed impact.",
+      "evidence": ["E4", "E5"]
+    }
+  ],
+  "tools": [
+    {
+      "tool": "PHPGGC",
+      "purpose": "Explicitly cited as a catalogue collecting and maintaining dependency-specific deserialization behavior. This records the project's stated purpose, not an author run, selected entry or constructed chain.",
+      "when": "Context: assessing why reconstruction consequences depend on the available classes. Catalogue coverage does not establish installed or reachable behavior.",
+      "attribution": "explicit",
+      "evidence": ["E2"]
+    },
+    {
+      "tool": "ASAN",
+      "purpose": "Explicitly discussed as a memory-error detector whose effectiveness can be limited by the allocation layout. The article supplies a detection caveat, not a documented sanitizer experiment.",
+      "when": "Context: evaluating diagnostic coverage for a defect crossing component assumptions within contiguous allocated memory; no run configuration or negative-result receipt is provided.",
+      "attribution": "explicit",
+      "evidence": ["E5"]
+    }
+  ],
+  "handoffs": [
+    {
+      "producer": "data-flow-analysis",
+      "consumer": "parser-differential-auditing",
+      "when": "A value is structurally encoded and subsequently rewritten before a later parser consumes it, leaving preservation of structure or meaning unresolved.",
+      "packet": [
+        "scope, authorization and artifact/runtime identity",
+        "one falsifiable structural-preservation question",
+        "actor control and feasible gate constraints",
+        "representation chain, including persistence and later consumption",
+        "transformation guarantees and structural invariants",
+        "evidence references, collection metadata and original-versus-modified environment",
+        "contrasting benign interpretations, negative controls and untested paths",
+        "fact-versus-inference classification and next bounded review with stop condition"
+      ],
+      "acceptance_gate": "Identify the actual consumer and each intervening transformation. Provide contrasting interpretations or explicitly mark the discrepancy as static-only with a safe validation question. The presence of an encoder or sanitizer alone is not accepted as preservation evidence.",
+      "classification": "derived",
+      "evidence": ["E1"]
+    },
+    {
+      "producer": "dynamic-analysis",
+      "consumer": "memory-safety-auditing",
+      "when": "A producer–consumer anomaly raises a native access question that generic detector coverage does not resolve.",
+      "packet": [
+        "scope, authorization and original/instrumented artifact identities",
+        "minimal producer–consumer slice and field contract",
+        "one unresolved access invariant and contrasting predictions",
+        "benign baseline and bounded observation receipts with collection metadata",
+        "first suspected or observed invalid operation, with confidence classification",
+        "logical object extent versus enclosing allocation extent, or explicit unknowns",
+        "detector coverage, layout changes and other observer limitations",
+        "negative controls, remaining constraints and next bounded review with stop condition"
+      ],
+      "acceptance_gate": "Require an identified field contract and a specific suspected or observed consumer operation, clearly separating static hypotheses from observations. A response anomaly or absence of a sanitizer finding alone cannot establish an invalid access or security impact.",
+      "classification": "derived",
+      "evidence": ["E4", "E5"]
+    }
+  ],
+  "limitations": [
+    "This is a historical retrospective combining firsthand commentary and third-party discoveries, not a controlled research log. All vulnerability, bypass and repair results remain author reports; only the article and quotations were independently inspected.",
+    "The representation example requires an additional post-encoding transformation and later reconstruction. Transfer to another system requires evidence of actor influence, transformation behavior and the real consumer; these examples do not establish such a path elsewhere.",
+    "The warning/output interaction depends on diagnostic rendering and response/output-buffer configuration. The article provides an illustrative ordering failure, not a configuration matrix or current-deployment validation.",
+    "Available reconstruction behavior is dependency-specific. PHPGGC is cited, not shown being run; ASAN appears as a detection limitation without tool version, build settings or coverage receipts. The historical producer–consumer and allocator example cannot be generalized to every integration or current release."
+  ],
+  "candidate_additions": [
+    {
+      "owner": "parser-differential-auditing",
+      "kind": "workflow",
+      "guidance": "Include post-encoding replacements and later restoration passes in the representation map. Check whether declared lengths, field boundaries and types still match the consumed structure after every transformation; prior structural encoding is not a transitive safety guarantee.",
+      "evidence": ["E1"]
+    },
+    {
+      "owner": "deserialization-and-dispatch-auditing",
+      "kind": "validation",
+      "guidance": "Keep reconstruction-input control separate from available behavior. Use catalogue references only as review leads and record installed types, reachable hooks and missing dependencies before making an impact claim; do not construct execution chains.",
+      "evidence": ["E2"]
+    },
+    {
+      "owner": "source-code-auditing",
+      "kind": "heuristic",
+      "guidance": "Review security-limit error paths as producers of output and state changes. Check whether warnings, partial results or exceptions occur before a downstream protection is committed, and whether its ordering invariant survives those side effects.",
+      "evidence": ["E3"]
+    },
+    {
+      "owner": "dynamic-analysis",
+      "kind": "failure",
+      "guidance": "When a detector is quiet, retain independently suspicious producer–consumer contracts. Document the detector's allocation and object-boundary coverage, then resolve the specific consumer assumption through source review or a bounded benign observation; absence of a finding is not evidence that the contract is safe.",
+      "evidence": ["E4", "E5"]
+    }
+  ],
+  "related_article_urls": [
+    "https://blog.orange.tw/posts/2025-08-the-art-of-php-en/",
+    "https://blog.orange.tw/posts/2021-02-a-journey-combining-web-and-binary-exploitation/",
+    "https://blog.orange.tw/posts/2018-10-hitcon-ctf-2018-one-line-php-challenge/",
+    "https://blog.orange.tw/posts/2024-08-confusion-attacks-ch/"
+  ],
+  "excluded_material": [
+    "Career anecdotes, awards, competition rankings and promotional material",
+    "Challenge solutions, payloads, exploit commands, gadget choices and execution chains",
+    "Target endpoints and paths, trigger-specific constants, flags and secret-bearing examples",
+    "Exploit attachments, generators and copied source or patch code",
+    "Product-specific attack procedures and claims of independently reproduced target behavior"
+  ],
+  "worker_notes": "Read the complete readable article in three bounded slices, then inspected the live article in the isolated orange-O001 browser session for title, locators and exact quotes. The English link is an observed language sibling, not a separately inspected or assigned article. Several candidates reinforce existing skill contracts rather than claiming novelty. Handoffs and candidate guidance are derived library synthesis, not author claims of using these skills. No target testing, source execution or exploit attachment retrieval occurred."
+}

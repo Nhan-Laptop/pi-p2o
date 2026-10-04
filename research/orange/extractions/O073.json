@@ -1,0 +1,127 @@
+{
+  "schema_version": 1,
+  "source_id": "O073",
+  "url": "https://blog.orange.tw/posts/2011-07-hitcon2011wargame-web-3/",
+  "observed_title": "台灣駭客年會 HITCON2011，Wargame Web 3出題心得 & 解法",
+  "retrieved_at": "2026-09-30T10:20:33.366Z",
+  "retrieval": {
+    "tool": "agent_browser",
+    "response_id": "session:orange-O073",
+    "final_url": "https://blog.orange.tw/posts/2011-07-hitcon2011wargame-web-3/",
+    "outcome": "read",
+    "quote_verification": "Exact String.includes checks against the original article.innerText and each enclosing paragraph/list item in session orange-O073 at 2026-09-30T10:21:11.761Z. All five quotes matched; lengths were 84, 55, 30, 26 and 62 characters. Title, URL and complete body were also read directly from the DOM."
+  },
+  "disposition": "included",
+  "reason": "Although mainly a historical challenge solution, the real-case framing and documented rejected assumptions support three distinct reusable observations: protection coverage depends on consumer context, indistinguishable output cannot resolve an internal condition, and uncertain language constraints warrant reference lookup before an infeasibility conclusion. Only these methods are retained; the solution and data-enumeration sequence are omitted.",
+  "canonical_source": null,
+  "evidence": [
+    {
+      "id": "E1",
+      "locator": "Opening paragraph beginning 心得：; clause contrasting value protection with column selection.",
+      "quote": "整個網站很安全都用Prepared statement保護SQL sentence，但是插入column name的時候就不能使用Prepared statement了",
+      "verified": true
+    },
+    {
+      "id": "E2",
+      "locator": "Opening paragraph beginning 心得：; initial infeasibility judgment followed by documentation lookup.",
+      "quote": "當初遇到時想了一下認為無法利用，但後來思考了一下查了一下msdn SQL server的一些用法找出了利用方法",
+      "verified": true
+    },
+    {
+      "id": "E3",
+      "locator": "First list item following the paragraph 在不知道整個SQL語句的狀況下 (second unordered list in the article).",
+      "quote": "一般的SQL server爆錯 -> 不行，因為不會顯示錯誤",
+      "verified": true
+    },
+    {
+      "id": "E4",
+      "locator": "Third list item following 在不知道整個SQL語句的狀況下; result-independent page-content clause.",
+      "quote": "無論SQL select出來有無資料，皆顯示空白頁面",
+      "verified": true
+    },
+    {
+      "id": "E5",
+      "locator": "Fourth list item following 在不知道整個SQL語句的狀況下; rejected timing ideas and insertion-position restriction.",
+      "quote": "Time base -> Wait for關鍵字不能用在這個地方，本來想用Heavy query延長時間但用在這個地方會失敗",
+      "verified": true
+    }
+  ],
+  "workflow": [
+    {
+      "decision": "Identify whether the influenced field is consumed as a data value or as structural selection. Match each protection's guarantee to that role rather than extrapolating from widespread use of the protection.",
+      "evidence": ["E1"]
+    },
+    {
+      "decision": "Record observability failures separately from semantic-position failures. Suppressed diagnostics and identical content across different internal outcomes cannot discriminate a hypothesis; a mechanism rejected in one position does not settle the broader question.",
+      "evidence": ["E3", "E4", "E5"]
+    },
+    {
+      "decision": "When an initial infeasibility judgment depends on uncertain language rules, consult the applicable reference and revisit that assumption while preserving the unresolved context and observation limits.",
+      "evidence": ["E2", "E5"]
+    }
+  ],
+  "tools": [
+    {
+      "tool": "MSDN documentation",
+      "purpose": "Clarify language behavior applicable to the constrained consumer context after an initial infeasibility judgment.",
+      "when": "The judgment depends on uncertain language semantics rather than an established impossibility.",
+      "attribution": "explicit",
+      "evidence": ["E2"]
+    }
+  ],
+  "handoffs": [
+    {
+      "producer": "data-flow-analysis",
+      "consumer": "dynamic-analysis",
+      "when": "A candidate input has a structural consumer role, but available feedback does not yet distinguish the proposed outcomes.",
+      "packet": [
+        "Authorized scope, artifact identity and runtime context",
+        "Actor-controlled field, annotated flow and exact consumer semantic role",
+        "Protection guarantees and uncovered roles",
+        "One unresolved hypothesis with contrasting predictions",
+        "Reported observation classes and semantic-position constraints",
+        "Bounded benign observation design and stop condition",
+        "Evidence classification, failed assumptions and untested scope"
+      ],
+      "acceptance_gate": "Reject designs whose contrasting predictions produce the same observation or whose proposed operation is invalid in the declared consumer position. Require known context, a safe distinguishing observation and explicit separation of source-author reports from independently collected evidence. This extraction supplies no runtime proof.",
+      "classification": "derived",
+      "evidence": ["E1", "E3", "E4", "E5"]
+    }
+  ],
+  "limitations": [
+    "This is a 2011 challenge write-up derived from an author-reported real case. All behavioral results remain author reports; no target testing or independent reproduction was performed.",
+    "The complete deployed query, revision and configuration are not established. The reported syntax-position and timing restrictions are historical and context-specific.",
+    "The value-versus-identifier protection claim describes the author's setup, not every structured-query API or identifier-validation layer. The opening claim that the site was safe is not a verified security assessment.",
+    "MSDN is explicitly mentioned as a reference lookup, but no documentation page or version is identified. No named debugger, proxy, scanner or automated testing framework is reported.",
+    "The article does not evaluate remediation, alternate-route coverage or deployment verification; no such author result is inferred."
+  ],
+  "candidate_additions": [
+    {
+      "owner": "source-code-auditing",
+      "kind": "heuristic",
+      "guidance": "Prioritize structural-selection fields outside an application's dominant value-protection contract. Record which semantic roles the control covers instead of declaring the entire application protected.",
+      "evidence": ["E1"]
+    },
+    {
+      "owner": "dynamic-analysis",
+      "kind": "validation",
+      "guidance": "Compare predicted observation classes before relying on a feedback channel. Hidden diagnostics or identical outputs leave internal conditions unresolved; redesign the observation rather than interpreting silence as safety.",
+      "evidence": ["E3", "E4"]
+    },
+    {
+      "owner": "data-flow-analysis",
+      "kind": "failure",
+      "guidance": "Record semantic-position incompatibility separately from missing feedback. Check the consumer's applicable language reference before carrying an initial infeasibility judgment forward.",
+      "evidence": ["E2", "E5"]
+    }
+  ],
+  "related_article_urls": [],
+  "excluded_material": [
+    "Challenge endpoint, request strings and target-specific identifiers",
+    "Query-construction example and executable query fragments",
+    "Conditional-error solution mechanism and exploit sequence",
+    "Schema and data enumeration steps, constants and key recovery",
+    "Target testing, exploit attachments and copied solution code"
+  ],
+  "worker_notes": "Readable fetch was corroborated by the original DOM in the isolated orange-O073 session. The only article-shaped link was a self-fragment, not a related article. Candidates primarily corroborate existing library rules; inclusion does not establish novelty or merge acceptance."
+}

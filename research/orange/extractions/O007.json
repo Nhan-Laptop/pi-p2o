@@ -1,0 +1,91 @@
+{
+  "schema_version": 1,
+  "source_id": "O007",
+  "url": "https://blog.orange.tw/posts/2023-08-2023-webconf-the-evolution-of-web-security/",
+  "observed_title": "從 2013 到 2023: Web Security 十年之進化與趨勢!",
+  "retrieved_at": "2026-09-30T09:08:24.288Z",
+  "retrieval": {
+    "tool": "fetch_content (readable), agent_browser (original article DOM)",
+    "response_id": "browser session orange-O007",
+    "final_url": "https://blog.orange.tw/posts/2023-08-2023-webconf-the-evolution-of-web-security/",
+    "outcome": "read",
+    "quote_verification": "agent_browser --session orange-O007 eval: each quotation passed an exact String.includes check against its original article paragraph textContent, without whitespace normalization. The preceding heading and paragraph position were checked; all five matches were true and lengths were 31–65 characters. Title and final URL were observed in the same DOM."
+  },
+  "disposition": "context",
+  "reason": "The actual article contains five substantive web-security trend reflections accompanying a developer talk, so it is not merely a slides link or announcement. It supplies useful architecture, implementation, interpretation and execution-context review lenses, but not a primary investigation with probe selection, failures or validation. Retain these as context rather than promote them into operational additions or handoff contracts.",
+  "canonical_source": null,
+  "evidence": [
+    {
+      "id": "E1",
+      "locator": "1. 架構層面的攻擊逐漸成為顯學 — opening paragraph (article paragraph 7)",
+      "quote": "原有的網頁應用、網頁伺服器如何去跟這些新角色進行搭配，這些組合的互動如何引入新的攻擊面",
+      "verified": true
+    },
+    {
+      "id": "E2",
+      "locator": "2. 對底層邏輯重新梳理的攻擊 — opening paragraph (article paragraph 8)",
+      "quote": "為了因應這個趨勢，攻擊者不得不開始往框架、甚至程式語言底層挖掘",
+      "verified": true
+    },
+    {
+      "id": "E3",
+      "locator": "3. 不一致性所造成的攻擊面 — opening paragraph, final sentence (article paragraph 11)",
+      "quote": "隨著處理資料的來源越多、各家來源對同一筆資料又存在著不同的解釋，解釋間的不一致就可能造成安全上的問題。",
+      "verified": true
+    },
+    {
+      "id": "E4",
+      "locator": "4. 跨應用組合所導致的新攻擊 — opening paragraph (article paragraph 13)",
+      "quote": "無論是跨協議的組合、跨規範的誤用、跨領域的結合，甚至把不同的 Convention 組合在一起",
+      "verified": true
+    },
+    {
+      "id": "E5",
+      "locator": "5. 當前端安全不只在前端… — third paragraph, discussing server-side rendering and automation (article paragraph 16)",
+      "quote": "以往許多需要使用者互動的 XSS 現在都可以直接在伺服器端(或自動地)觸發，這些都是讓網頁前端安全與後端安全的邊界愈加模糊的一點。",
+      "verified": true
+    }
+  ],
+  "workflow": [
+    {
+      "decision": "Contextual review lens, not a demonstrated investigation: consider interactions between components, protocols and conventions rather than assessing each component in isolation.",
+      "evidence": ["E1", "E4"]
+    },
+    {
+      "decision": "Contextual review lens: when application-level protections move the remaining risk into implementation details, consider framework and language-runtime behavior as additional review scope.",
+      "evidence": ["E2"]
+    },
+    {
+      "decision": "Contextual review lens: compare the meanings different consumers assign to the same data across its processing lifetime; disagreement suggests a security question, not proof of a violation.",
+      "evidence": ["E3"]
+    },
+    {
+      "decision": "Contextual review lens: identify the actual execution environment and automation before assuming web-content processing needs user interaction or remains a frontend-only concern.",
+      "evidence": ["E5"]
+    }
+  ],
+  "tools": [],
+  "handoffs": [],
+  "limitations": [
+    "This is an explicitly conceptual, developer-oriented overview of historical trends, presented as the author's personal view. It does not document a reproducible investigation, negative controls, failed probes or independently verified findings.",
+    "Named frameworks, runtimes and browser technologies are examples or deployment components, not reported research-tool usage. No tool attribution is inferred from their mention.",
+    "The introduction explicitly leaves defensive methods outside the talk's scope; no remediation technique or regression gate is established here.",
+    "Examples and impact claims remain source-author reports. Their underlying articles, slides and attachments were not opened, and no source code or targets were executed or tested.",
+    "Historical statements do not establish current reachability, parser behavior, runtime configuration or confinement. The contextual review lenses are not an observed step-by-step method and do not support a new handoff contract."
+  ],
+  "candidate_additions": [],
+  "related_article_urls": [
+    "https://nathandavison.com/blog/abusing-http-hop-by-hop-request-headers",
+    "https://portswigger.net/research/http-desync-attacks-request-smuggling-reborn",
+    "https://justi.cz/security/2017/11/14/couchdb-rce-npm.html",
+    "https://medium.com/intigriti/how-i-hacked-hundreds-of-companies-through-their-helpdesk-b7680ddc2d4c"
+  ],
+  "excluded_material": [
+    "Slide downloads and linked exploit walkthroughs or code",
+    "Payloads, endpoint strings, exploit sequences and target-specific constants",
+    "Product-specific vulnerability answers and exploit-chain details",
+    "Promotional framing, personal asides and unverified impact escalation",
+    "Unsupported research-tool attribution, invented validation and invented skill handoffs"
+  ],
+  "worker_notes": "The readable fetch exposed no response ID, so the named browser session supplies retrieval provenance and original-DOM quote verification. All five trend sections and the conclusion were read. Related URLs are observed pointers only; no other article was researched. Existing attack-surface, source-auditing, parser-differential and sandbox-boundary skills were reviewed; no skill edits or operational additions were made."
+}

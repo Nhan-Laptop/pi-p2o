@@ -1,0 +1,42 @@
+{
+  "schema_version": 1,
+  "source_id": "O072",
+  "url": "https://blog.orange.tw/posts/2011-08-sql-injection/",
+  "observed_title": "關於SQL Injection的那些奇淫異巧",
+  "retrieved_at": "2026-09-30T10:17:29Z",
+  "retrieval": {
+    "tool": "fetch_content(readable) + agent_browser",
+    "response_id": "browser session orange-O072",
+    "final_url": "https://blog.orange.tw/posts/2011-08-sql-injection/",
+    "outcome": "read",
+    "quote_verification": "Exact DOM verification in session orange-O072: article.innerText.includes(E1.quote) and the second article list item's innerText === E1.quote both returned true. The list was observed as an ordered list."
+  },
+  "disposition": "excluded",
+  "reason": "Slides-only presentation wrapper. The actual article contains a presentation-viewer link, embedded slide deck, byline, three topic titles, and an invitation to corrections. Its prose does not describe investigation decisions, failures, validation, or fixes; the topic list supplies no reusable decision process. E1 is a classification quote, not operational guidance.",
+  "canonical_source": null,
+  "evidence": [
+    {
+      "id": "E1",
+      "locator": "Article body: ordered list, item 2, following the author byline and presentation embed",
+      "quote": "Deep Blind SQL injection",
+      "verified": true
+    }
+  ],
+  "workflow": [],
+  "tools": [],
+  "handoffs": [],
+  "limitations": [
+    "Classification is based on the assigned article's prose and embed structure; the embedded deck was not extracted or used as method evidence, and no presentation attachment was downloaded.",
+    "The database name occurs in topic titles, not in a stated tool-purpose or investigation account; no author tool usage or derived handoff is inferred.",
+    "The page is dated 2011-08-27. No current-version applicability, target behavior, or author result was independently verified."
+  ],
+  "candidate_additions": [],
+  "related_article_urls": [],
+  "excluded_material": [
+    "External presentation-viewer link and slide-deck contents",
+    "Topic-level attack labels without method evidence",
+    "Any presentation payloads, exploit code, or exploit sequences; none imported",
+    "Author contact details"
+  ],
+  "worker_notes": "Readable retrieval and the article DOM agreed on the short presentation wrapper. DOM inspection supplied the actual title, publication date, and ordered-list locator. No related article pointers were observed; no targets were tested."
+}

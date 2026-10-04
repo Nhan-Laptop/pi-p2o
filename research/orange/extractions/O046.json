@@ -1,0 +1,133 @@
+{
+  "schema_version": 1,
+  "source_id": "O046",
+  "url": "https://blog.orange.tw/posts/2014-08-hitcon-win-2nd-in-defcon-22-ctf-final/",
+  "observed_title": "HITCON Won the 2nd in DEFCON 22 CTF Final",
+  "retrieved_at": "2026-09-30T09:54:47.585Z",
+  "retrieval": {
+    "tool": "fetch_content (readable); agent_browser (article DOM verification)",
+    "response_id": null,
+    "browser_session": "orange-O046",
+    "browser_artifact": "/home/nhanlaptop/.pi/agent/sessions/--home-nhanlaptop-project-pi-p2o--/.pi-agent-browser-artifacts/01a0f1ba-8bd2-77ea-8936-f4a46f3b4bfa/pi-agent-browser-snapshot-4f974ee2d06c0419.json",
+    "final_url": "https://blog.orange.tw/posts/2014-08-hitcon-win-2nd-in-defcon-22-ctf-final/",
+    "outcome": "read",
+    "quote_verification": "Each quotation passed exact inclusion checks against both textContent and innerText of the live article element. Matching list items and preceding headings were also checked in session orange-O046; all five quotes are at most 180 characters."
+  },
+  "disposition": "included",
+  "reason": "Predominantly a competition diary, but the explicitly described incident-response SOP provides distinct primary method evidence: time/component recording, traffic-based triage, failed-validation escalation and repair ownership. A separate earlier section describes repair-completeness review. Retain only these reusable defensive decisions, not the competition attacks or results.",
+  "canonical_source": null,
+  "evidence": [
+    {
+      "id": "E1",
+      "locator": "最後是所有隊友的合作無間! — numbered SOP list, item 1",
+      "quote": "發現被攻擊，立即記錄下何時於哪個服務失分",
+      "verified": true
+    },
+    {
+      "id": "E2",
+      "locator": "最後是所有隊友的合作無間! — numbered SOP list, opening fragment of item 2",
+      "quote": "立即有人馬分析封包流量",
+      "verified": true
+    },
+    {
+      "id": "E3",
+      "locator": "最後是所有隊友的合作無間! — numbered SOP list, item 3",
+      "quote": "如無法成功則送至另外一組人馬手上分析，",
+      "verified": true
+    },
+    {
+      "id": "E4",
+      "locator": "最後是所有隊友的合作無間! — numbered SOP list, item 4",
+      "quote": "從 exploit 大致分析為何種攻擊方式，並且交給負責的人為自己的服務上 Patch",
+      "verified": true
+    },
+    {
+      "id": "E5",
+      "locator": "百度 BCTF — numbered list after the paragraph about spare time for feasibility analysis, item 1",
+      "quote": "分析其他隊伍的修補是否完整，是否有可以繞過的地方。",
+      "verified": true
+    }
+  ],
+  "workflow": [
+    {
+      "decision": "When an unexpected outcome is reported, record its time and affected component, then examine associated recorded traffic to narrow the explanation.",
+      "evidence": ["E1", "E2"]
+    },
+    {
+      "decision": "If initial validation does not succeed, seek a second analytical perspective instead of treating the unsuccessful attempt as the final answer.",
+      "evidence": ["E3"]
+    },
+    {
+      "decision": "Use observed behavior to form a provisional fault-class hypothesis and direct defensive review to the responsible component owner.",
+      "evidence": ["E4"]
+    },
+    {
+      "decision": "Treat repair completeness as a separate review question; the presence of a patch is not itself evidence that the issue is fully addressed.",
+      "evidence": ["E5"]
+    }
+  ],
+  "tools": [],
+  "handoffs": [
+    {
+      "producer": "dynamic-analysis",
+      "consumer": "remediation",
+      "when": "Recorded observations identify an affected component and a provisional failure class that needs defensive review.",
+      "packet": [
+        "authorized scope and artifact/configuration identity",
+        "event time and affected component",
+        "sanitized observation references and collection method",
+        "proposed violated invariant and confidence classification",
+        "failed validation and remaining question",
+        "affected consumers and proposed repair scope",
+        "normal controls and regression properties",
+        "provisional mitigation versus verified repair status"
+      ],
+      "acceptance_gate": "Require evidence for the violated invariant, affected consumers and normal controls before accepting root-cause repair work. If only a symptom or rough failure category is available, return the missing cause question or classify the response as provisional mitigation. Packet fields and this gate are derived library safeguards, not author-reported practices.",
+      "classification": "derived",
+      "evidence": ["E1", "E2", "E3", "E4", "E5"]
+    }
+  ],
+  "limitations": [
+    "This is a retrospective competition account, not a documented vulnerability investigation or independently reproduced result; all event outcomes remain author reports.",
+    "The SOP's unsuccessful validation is not accompanied by retained observations, controls, environment details or an explanation of the failure. It supports escalation, not a conclusion about cause or reliability.",
+    "The repair step describes only a rough attack classification. It does not establish a confirmed invariant, a complete fix or deployment verification.",
+    "Repair-completeness review is reported in an earlier competition section. Combining that observation with the later SOP in a handoff or candidate addition is library synthesis, not an author-reported end-to-end process.",
+    "No named packet-analysis, validation or patching utility is specified for the retained method. Peripheral messaging and network-setup details are not extracted as research tooling."
+  ],
+  "candidate_additions": [
+    {
+      "owner": "dynamic-analysis",
+      "kind": "workflow",
+      "guidance": "For an unexpected runtime outcome, preserve event time and affected component alongside sanitized observation references so triage remains anchored to recorded facts.",
+      "evidence": ["E1", "E2"]
+    },
+    {
+      "owner": "dynamic-analysis",
+      "kind": "failure",
+      "guidance": "After inconclusive validation, request a second analytical perspective. As a derived evidence safeguard, carry the failed attempt and remaining question forward without promoting a suspected explanation to a confirmed result.",
+      "evidence": ["E3"]
+    },
+    {
+      "owner": "remediation",
+      "kind": "validation",
+      "guidance": "Separate a provisional symptom-based response from repair closure: identify the responsible component, retain uncertainty in the fault classification and require an explicit completeness review. This combines separate source observations as defensive synthesis.",
+      "evidence": ["E4", "E5"]
+    }
+  ],
+  "related_article_urls": [
+    "http://ddaa.logdown.com/posts/200443-defcon-22-quals-babys-first-heap",
+    "http://blog.orange.tw/2014/05/defcon-ctf-quals-2014-nonameyet-write-up.html",
+    "http://www.jeffxx.com/blog/2014/05/19/defcon-ctf-22-qual-sick-writeup/",
+    "http://blog.dm4.tw/blog/2014/07/13/secuinside-2014-final-writeup-reversing-100/",
+    "http://www.jeffxx.com/blog/2014/08/13/2014-defcon-22-final-can-sai-xin-de-shang/",
+    "http://ddaa.logdown.com/posts/220500-defcon-22-ctf-diaries"
+  ],
+  "excluded_material": [
+    "Personal travel narrative, acknowledgments, promotion, rankings and competition achievements",
+    "Challenge answers, exploitation and automated scoring sequences",
+    "Replay instructions, persistence techniques and opponent-access details",
+    "Target-specific services, network identifiers, numerical reliability claims and speculative technical explanations",
+    "Linked writeups, photographs and embedded video content"
+  ],
+  "worker_notes": "Read the assigned article only; related writeup links were recorded from its DOM but not followed. README.md and HANDOFFS.md were resolved at the repository root. The readable fetch exposed no response ID, so retrieval provenance uses the named browser session and observed snapshot artifact."
+}

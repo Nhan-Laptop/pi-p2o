@@ -1,0 +1,125 @@
+{
+  "schema_version": 1,
+  "source_id": "O074",
+  "url": "https://blog.orange.tw/posts/2011-07-hitcon2011wargame-binary-3/",
+  "observed_title": "台灣駭客年會 HITCON2011，Wargame Binary 3出題心得 & 解法",
+  "retrieved_at": "2026-09-30T10:21:36.473Z",
+  "retrieval": {
+    "tool": "fetch_content readable; agent_browser named-session DOM inspection",
+    "response_id": "browser session orange-O074",
+    "final_url": "https://blog.orange.tw/posts/2011-07-hitcon2011wargame-binary-3/",
+    "outcome": "read",
+    "quote_verification": "Exact String.includes checks against the live article.innerText and article p nodes in session orange-O074. E1/E2/E3/E4 occur in paragraph nodes 4/7/14/15, counting image-only paragraphs. All checks returned true; each quote is at most 180 characters."
+  },
+  "disposition": "included",
+  "reason": "Although primarily a challenge write-up, the article contains distinct reusable evidence about misleading entry-point-based packing classification, initialization-dependent string visibility, and an intended event-filtered tracing approach. Only those method observations are retained; the challenge solution and unpacking procedure are excluded.",
+  "canonical_source": null,
+  "evidence": [
+    {
+      "id": "E1",
+      "locator": "Article body, paragraph node 4: author explains altered entry-point metadata and packing-detector confusion.",
+      "quote": "有改過OEP，For fun，讓檢測殼軟體(Ex: Peid)混淆XD",
+      "verified": true
+    },
+    {
+      "id": "E2",
+      "locator": "Article body, paragraph node 7, immediately before the diagnostic-command list: memory-inspection option after startup.",
+      "quote": "開啟原始遊戲後可以用Winhex或者Dump memory觀察到",
+      "verified": true
+    },
+    {
+      "id": "E3",
+      "locator": "Article body, paragraph node 14: startup string transformation explains why inspecting the unexecuted file misses meaningful strings; excerpt ends before addresses and constants.",
+      "quote": "開啟遊戲時會將DEBUG String xor解碼，所以未執行直接觀察原始檔會找不到有甚麼有意義的字串",
+      "verified": true
+    },
+    {
+      "id": "E4",
+      "locator": "Article body, paragraph node 15: author's intended event-conditioned tracing method; excerpt ends before the challenge-specific control-flow change.",
+      "quote": "這題的解法當初是設想需要Condition BreakPoint Message Queue的 KeyDown Event來進行Trace",
+      "verified": true
+    }
+  ],
+  "workflow": [
+    {
+      "decision": "When executable-classification output depends on startup metadata that may have been altered, retain the classification as a hypothesis rather than treating the detector label as definitive.",
+      "evidence": ["E1"]
+    },
+    {
+      "decision": "When a disk inspection finds no meaningful diagnostic strings, consider initialization-time transformation rather than immediately concluding the strings or interface are absent. Select a bounded memory observation at the relevant lifecycle phase to distinguish these explanations.",
+      "evidence": ["E2", "E3"]
+    },
+    {
+      "decision": "For an unresolved input-consumer question, narrow tracing to the relevant semantic event with a conditional observation instead of tracing the entire program. Here this is an author-proposed approach, not a documented debugger transcript.",
+      "evidence": ["E4"]
+    }
+  ],
+  "tools": [
+    {
+      "tool": "Peid",
+      "purpose": "Executable packing detection; cited as an example of a classifier that altered entry-point metadata can confuse, not as a recorded author tool session.",
+      "when": "During preliminary artifact classification, with its output retained as a fallible lead.",
+      "attribution": "explicit",
+      "evidence": ["E1"]
+    },
+    {
+      "tool": "Winhex",
+      "purpose": "Inspect memory for diagnostic strings visible after program startup; presented as an available observation option rather than a demonstrated tool session.",
+      "when": "When initialization may produce a representation absent from the on-disk artifact.",
+      "attribution": "explicit",
+      "evidence": ["E2", "E3"]
+    }
+  ],
+  "handoffs": [
+    {
+      "producer": "binary-auditing",
+      "consumer": "dynamic-analysis",
+      "when": "Static string inspection leaves unresolved whether data is absent or only becomes meaningful during initialization.",
+      "packet": [
+        "Authorized artifact and environment identity, observation scope, and isolation constraints",
+        "Static absence evidence and the proposed initialization-time representation change",
+        "Contrasting predictions for absent data versus runtime-transformed data",
+        "Relevant lifecycle phase, bounded memory observation, and any semantic event filter",
+        "Known-good baseline, permitted observer changes, failures, and remaining questions",
+        "Explicit distinction between source-author report and independently collected evidence"
+      ],
+      "acceptance_gate": "The packet must distinguish the competing explanations, identify the observation phase and artifact, and disclose observer changes. A missing static string or an uncorrelated memory dump does not establish absence, reachability, or a recovered interface.",
+      "classification": "derived",
+      "evidence": ["E2", "E3", "E4"]
+    }
+  ],
+  "limitations": [
+    "The source describes a deliberately modified historical game challenge, not a vulnerability investigation or a current deployed system; its detector-confusion claim is configuration-specific.",
+    "The article names a packing detector as an example and a memory viewer as an option. Its prose does not establish tool versions or reproducible tool-session details; screenshots were not independently analyzed.",
+    "Event-conditioned tracing is the author's intended solving approach, not a supplied trace transcript. The closing comment about participants' solving methods is speculative and provides no independent validation.",
+    "No executable was downloaded, unpacked, run, or tested. String visibility and control-flow observations remain author reports; screenshots and challenge success were not independently reproduced. No remediation evaluation is present."
+  ],
+  "candidate_additions": [
+    {
+      "owner": "binary-auditing",
+      "kind": "heuristic",
+      "guidance": "Startup-metadata-based classification is a fallible lead when the metadata may be altered. Preserve uncertainty rather than allowing a detector label to settle artifact interpretation.",
+      "evidence": ["E1"]
+    },
+    {
+      "owner": "binary-auditing",
+      "kind": "failure",
+      "guidance": "Absence of readable strings in a disk artifact does not establish absence of the corresponding runtime data. Carry an initialization-time representation hypothesis and its lifecycle phase into a bounded observation request.",
+      "evidence": ["E2", "E3"]
+    },
+    {
+      "owner": "dynamic-analysis",
+      "kind": "workflow",
+      "guidance": "Anchor an input-consumer investigation to a narrow semantic event and condition the observation accordingly. Keep a proposed tracing method distinct from evidence that the relevant path was actually observed.",
+      "evidence": ["E4"]
+    }
+  ],
+  "related_article_urls": [],
+  "excluded_material": [
+    "Challenge executable download and external archive links",
+    "Unpacking instructions, register-specific breakpoint recipe, and entry-point recovery sequence",
+    "Diagnostic command enumeration, activation keystrokes, and challenge-key recovery",
+    "Target addresses, decoding constants, patched branch details, and solution screenshots"
+  ],
+  "worker_notes": "The readable fetch exposed no response identifier, so the named browser session records provenance and exact DOM verification. No related article pointers were observed. Candidates are derived library refinements, partly overlapping existing guidance; no skill edits or final acceptance are implied."
+}

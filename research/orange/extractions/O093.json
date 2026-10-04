@@ -1,0 +1,39 @@
+{
+  "schema_version": 1,
+  "source_id": "O093",
+  "url": "https://blog.orange.tw/posts/2010-01-blog-post_10/",
+  "observed_title": "嘿",
+  "retrieved_at": "2026-09-30T10:35:34Z",
+  "retrieval": {
+    "tool": "agent_browser",
+    "response_id": "browser session orange-O093",
+    "final_url": "https://blog.orange.tw/posts/2010-01-blog-post_10/",
+    "outcome": "read",
+    "quote_verification": "Exact equality against the original second article paragraph's DOM textContent in session orange-O093; paragraphs.includes(quote) returned true."
+  },
+  "disposition": "excluded",
+  "reason": "The actual article consists of two personal paragraphs about a birthday, an approaching examination, and English-study reading. It contains no reusable research method, tool-purpose explanation, or handoff evidence.",
+  "canonical_source": null,
+  "evidence": [
+    {
+      "id": "E1",
+      "locator": "Second and final body paragraph beneath the title 嘿 and publication date",
+      "quote": "先去趕那天殺的英文百寶書吧…..",
+      "verified": true
+    }
+  ],
+  "workflow": [],
+  "tools": [],
+  "handoffs": [],
+  "limitations": [
+    "The classification quote concerns personal study plans, not a technical method; no operational guidance is inferred.",
+    "The article supplies no investigation, validation, failure, remediation, or named research-tool evidence. No technical author result is presented or independently reproduced."
+  ],
+  "candidate_additions": [],
+  "related_article_urls": [],
+  "excluded_material": [
+    "Personal birthday and examination-preparation update",
+    "Site navigation, author-profile link, and footer"
+  ],
+  "worker_notes": "fetch_content readable mode reported that the page appeared JavaScript-rendered. A read-only retry in the dedicated orange-O093 browser session exposed the complete two-paragraph article and verified its title, final URL, and exact classification quote. No related article was opened."
+}

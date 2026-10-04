@@ -1,0 +1,122 @@
+{
+  "schema_version": 1,
+  "source_id": "O025",
+  "url": "https://blog.orange.tw/posts/2018-06-google-ctf-2018-quals-web-gcalc/",
+  "observed_title": "Google CTF 2018 Quals Web Challenge - gCalc",
+  "retrieved_at": "2026-09-30T09:29:22.576Z",
+  "retrieval": {
+    "tool": "fetch_content (readable), supplemented by agent_browser",
+    "response_id": null,
+    "browser_session": "orange-O025",
+    "final_url": "https://blog.orange.tw/posts/2018-06-google-ctf-2018-quals-web-gcalc/",
+    "outcome": "read",
+    "quote_verification": "Exact article.innerText.includes(quote) and matching paragraph checks in named browser session orange-O025 at 2026-09-30T09:31:18.686Z; E1-E4 all matched. Quote lengths: 50, 65, 67, 51 characters."
+  },
+  "disposition": "included",
+  "reason": "Although predominantly a challenge walkthrough, the article supports distinct reusable observations: analyzing a validator's grammar, diagnosing console/application disagreement through preprocessing, and recognizing independent policy restrictions after an initial runtime effect. Retain only these methods, not the solution or its bypass sequence.",
+  "canonical_source": null,
+  "evidence": [
+    {
+      "id": "E1",
+      "locator": "Unheaded paragraph beginning 'The sanitizer of expr looks like flexible.', sentence naming the rule-analysis tool.",
+      "quote": "We use regex101 to analyse the regular expression.",
+      "verified": true
+    },
+    {
+      "id": "E2",
+      "locator": "Unheaded debugging paragraph beginning 'I debug for an hour', second sentence.",
+      "quote": "I am curious about why this works in my console but fails to XSS.",
+      "verified": true
+    },
+    {
+      "id": "E3",
+      "locator": "Same debugging paragraph beginning 'I debug for an hour', root-cause sentence immediately before the abbreviated function listing.",
+      "quote": "I find the root cause that there is a toLowerCase in the first line",
+      "verified": true
+    },
+    {
+      "id": "E4",
+      "locator": "First prose paragraph after the second CSP policy listing, beginning 'We can’t use redirection', opening clause.",
+      "quote": "We can’t use redirection or load external resources",
+      "verified": true
+    }
+  ],
+  "workflow": [
+    {
+      "decision": "When a validator's accepted language is unclear, analyze its rule explicitly rather than infer its guarantees from apparent flexibility; keep syntax acceptance separate from consumer behavior.",
+      "evidence": ["E1"]
+    },
+    {
+      "decision": "When direct interactive evaluation and application behavior disagree, revisit the complete preprocessing path. A transformation before consumption can invalidate an assumption that held outside that path.",
+      "evidence": ["E2", "E3"]
+    },
+    {
+      "decision": "Treat a successful runtime effect and permitted external effects as separate questions. Preserve the remaining policy restrictions rather than infer unrestricted impact from the first observation.",
+      "evidence": ["E4"]
+    }
+  ],
+  "tools": [
+    {
+      "tool": "regex101",
+      "purpose": "Analyze the input validator's regular expression and its accepted syntax.",
+      "when": "The accepted expression grammar needs clarification before reasoning about downstream behavior.",
+      "attribution": "explicit",
+      "evidence": ["E1"]
+    }
+  ],
+  "handoffs": [
+    {
+      "producer": "parser-differential-auditing",
+      "consumer": "dynamic-analysis",
+      "when": "An interactive evaluation differs from the application path and preprocessing remains the unresolved explanation.",
+      "packet": [
+        "Scope, authorization, artifact identity, runtime and configuration",
+        "Minimal validation-to-consumer slice and ordered transformations",
+        "Benign input classes and initial versus consumer-facing representations",
+        "One unresolved mismatch, contrasting predictions and known-good control",
+        "Observation points, permitted instrumentation changes and bounded stop condition",
+        "Source-report classification, modification ledger, rejected assumptions and untested scope"
+      ],
+      "acceptance_gate": "The proposed safe lab observation distinguishes preprocessing from consumer behavior and reaches a known-good baseline without a copied payload. Console-only success is not accepted as application-path validation.",
+      "classification": "derived",
+      "evidence": ["E2", "E3"]
+    }
+  ],
+  "limitations": [
+    "This is a compact historical challenge solution, not a systematic audit, controlled experimental study or remediation report; only narrow method observations are retained.",
+    "The normalization diagnosis and runtime outcomes remain author reports. No matching benign-control trace or runtime/version matrix is supplied, and no target behavior was independently reproduced.",
+    "The content policies belong to the historical challenge configuration. The quoted external-effect restriction is an intermediate assessment, not a universal guarantee; the later allowed route is deliberately omitted.",
+    "Rule-analyzer use is explicit, but its engine settings and dialect equivalence to the application's validator are not documented. Proposed handoff fields and validation controls are library synthesis, not author procedures."
+  ],
+  "candidate_additions": [
+    {
+      "owner": "parser-differential-auditing",
+      "kind": "heuristic",
+      "guidance": "Separate a validator's accepted grammar from the consumer's interpretation, and include preprocessing order in the contract. Standalone rule analysis does not validate the end-to-end path.",
+      "evidence": ["E1", "E3"]
+    },
+    {
+      "owner": "dynamic-analysis",
+      "kind": "validation",
+      "guidance": "Treat interactive/application disagreement as an unresolved pipeline-equivalence question. Compare values at normalization, validation and consumption using harmless controls, retaining the failed case-sensitivity assumption.",
+      "evidence": ["E2", "E3"]
+    },
+    {
+      "owner": "sandbox-boundary-analysis",
+      "kind": "failure",
+      "guidance": "Preserve independent policy restrictions after a runtime capability is observed. Report remaining denied effects instead of extrapolating unrestricted impact.",
+      "evidence": ["E4"]
+    }
+  ],
+  "related_article_urls": [
+    "https://hackerone.com/reports/199779"
+  ],
+  "excluded_material": [
+    "Executable evaluator constructions, gadget expressions and all payloads",
+    "Challenge endpoints, query strings and target-specific constants",
+    "Cookie collection, data-exfiltration routing and the final exploit sequence",
+    "Flag string and screenshots as proof of success",
+    "Linked source gist and external report contents"
+  ],
+  "worker_notes": "Readable retrieval was supplemented by the original article DOM because fetch_content exposed no response ID. Only the assigned article was opened; the linked report is an observed, unread pointer. No challenge code, attachments or targets were executed or tested."
+}

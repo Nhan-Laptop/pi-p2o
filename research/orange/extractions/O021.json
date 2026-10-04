@@ -1,0 +1,142 @@
+{
+  "schema_version": 1,
+  "source_id": "O021",
+  "url": "https://blog.orange.tw/posts/2019-02-abusing-meta-programming-for-unauthenticated-rce/",
+  "observed_title": "Hacking Jenkins Part 2 - Abusing Meta Programming for Unauthenticated RCE!",
+  "retrieved_at": "2026-09-30T09:26:06.140Z",
+  "retrieval": {
+    "tool": "fetch_content readable; agent_browser",
+    "response_id": "browser-session:orange-O021",
+    "final_url": "https://blog.orange.tw/posts/2019-02-abusing-meta-programming-for-unauthenticated-rce/",
+    "outcome": "read",
+    "quote_verification": "Exact, unnormalized document.body.textContent inclusion and matching paragraph.textContent checks in the original article DOM using agent_browser --session orange-O021 eval. All four quotes matched; the figure immediately following E2 was also checked for the explicitly shown objdump disassembly. Title and section headings were checked in the DOM."
+  },
+  "disposition": "included",
+  "reason": "The article supplies distinct reusable method evidence beyond its omitted exploit: questioning parse-only safety through phase-specific side effects, using generated instructions to attribute computation to a phase, diagnosing an integrated-environment dependency failure, and distinguishing compile-time behavior from runtime sandbox coverage.",
+  "canonical_source": null,
+  "evidence": [
+    {
+      "id": "E1",
+      "locator": "How to Exploit? (How-to-Exploit), opening paragraph asking about compilation/parsing side effects",
+      "quote": "Compiling(or parsing) is a hard work with lots of tough things and hidden features. So, the idea is, is there any side effect we can leverage?",
+      "verified": true
+    },
+    {
+      "id": "E2",
+      "locator": "How to Exploit? (How-to-Exploit), paragraph after the compile-time calculation illustration and immediately before the objdump disassembly listing",
+      "quote": "From the assembly language of compiled binary, we can make sure the result is calculated at compile-time, not run-time!",
+      "verified": true
+    },
+    {
+      "id": "E3",
+      "locator": "First Attempt (First-Attempt), root-cause paragraph beginning 'With a little bit digging, we found the root cause.'",
+      "quote": "As a result, the problem become lack of corresponding library in classPath during compile-time.",
+      "verified": true
+    },
+    {
+      "id": "E4",
+      "locator": "Epilogue (Epilogue), opening paragraph contrasting the sandbox's runtime coverage with compile-time behavior",
+      "quote": "Although there is a built-in Groovy Sandbox(Script Security Plugin) on Jenkins to protect the Pipeline, it’s useless because the vulnerability is in compile-time, not in run-time!",
+      "verified": true
+    }
+  ],
+  "workflow": [
+    {
+      "decision": "When an operation is described as parse-only, ask which preparation phases can have side effects instead of equating absence of ordinary execution with inert processing. Use phase documentation and a narrow implementation slice to formulate a phase-specific hypothesis.",
+      "evidence": ["E1", "E4"]
+    },
+    {
+      "decision": "To distinguish compilation-time computation from runtime computation, inspect the generated instructions for a benign example and compare them with the expected precomputed result. Establish the phase before attributing capabilities to it.",
+      "evidence": ["E2"]
+    },
+    {
+      "decision": "If a standalone observation fails in an integrated environment, explain the first phase-specific dependency or class-loading failure. Preserve that environment difference as a prerequisite rather than treating the failure as general safety or the local success as portable proof.",
+      "evidence": ["E3"]
+    },
+    {
+      "decision": "For a claimed sandbox, map each guard to the phase it actually covers. Behavior in an earlier phase is a separate boundary question; preserve independent reachability and confinement gates instead of declaring all isolation ineffective.",
+      "evidence": ["E1", "E4"]
+    }
+  ],
+  "tools": [
+    {
+      "tool": "objdump",
+      "purpose": "Inspect generated instructions to distinguish a compilation-time computed value from runtime computation.",
+      "when": "A benign compilation illustration needs phase attribution; its disassembly does not establish service reachability or security-policy coverage.",
+      "attribution": "explicit",
+      "evidence": ["E2"]
+    }
+  ],
+  "handoffs": [
+    {
+      "producer": "source-code-auditing",
+      "consumer": "dynamic-analysis",
+      "when": "An allegedly inert validation path has an unresolved preparation-phase effect or a standalone/integrated behavior mismatch.",
+      "packet": [
+        "Authorized artifact, runtime, configuration, actor and isolation scope",
+        "Minimal validation-to-preparation source slice and proposed phase invariant",
+        "Phase-specific dependencies and original versus modified environment differences",
+        "One unresolved question with contrasting benign predictions",
+        "Observation points, instrumentation budget and stop condition",
+        "Evidence provenance, failed assumptions and untested scope"
+      ],
+      "acceptance_gate": "The benign observation must distinguish the predicted phases under a documented baseline; a configuration change cannot silently substitute for the original environment. Reject a packet that contains only an alarming API name or an unexplained dependency error.",
+      "classification": "derived",
+      "evidence": ["E1", "E2", "E3"]
+    },
+    {
+      "producer": "source-code-auditing",
+      "consumer": "sandbox-boundary-analysis",
+      "when": "The source slice suggests behavior occurs before the phase covered by the advertised execution guard.",
+      "packet": [
+        "Authorized revision, actor, reachable interface and policy context",
+        "Processing-phase map and guard locations",
+        "Behavioral hook evidence with author-report versus local-observation classification",
+        "Claimed and demonstrated capabilities, including remaining gates",
+        "Benign boundary-check question, denied control and stop condition",
+        "Configuration prerequisites, modification ledger and uncertainty"
+      ],
+      "acceptance_gate": "Identify the exact phase and enforcement location before assessing coverage. The consumer may analyze a source-only hypothesis but must not promote it to a demonstrated sandbox escape or unauthenticated impact.",
+      "classification": "derived",
+      "evidence": ["E1", "E4"]
+    }
+  ],
+  "limitations": [
+    "This is a historical 2019 Jenkins/Groovy account. Vulnerability and impact statements remain author reports; no code execution, target interaction, present-release check or shipped-fix verification was performed.",
+    "The first standalone result failed in the integrated service because a compile-time library dependency was unavailable. An administrator-controlled configuration change would alter the evaluated claim and cannot establish default-environment portability.",
+    "The explicit objdump usage belongs to a C++ compile-time calculation illustration, not a verification of the service's behavioral reachability.",
+    "Compile-time versus runtime coverage does not by itself establish unauthenticated reachability. Permission requirements and the separately linked routing issue remain distinct, unverified prerequisites; this packet retains no chain to overcome them."
+  ],
+  "candidate_additions": [
+    {
+      "owner": "source-code-auditing",
+      "kind": "heuristic",
+      "guidance": "Do not classify validation, parsing or compilation as inert merely because ordinary program execution is absent. Enumerate the processing phases and user-influenced preparation hooks, then state a falsifiable side-effect invariant.",
+      "evidence": ["E1", "E4"]
+    },
+    {
+      "owner": "dynamic-analysis",
+      "kind": "failure",
+      "guidance": "For standalone versus integrated discrepancies, locate the first phase-specific dependency failure and compare module availability and class-loading context. Record configuration changes separately; neither an unexplained failure nor a modified-environment success resolves original-environment feasibility.",
+      "evidence": ["E3"]
+    },
+    {
+      "owner": "sandbox-boundary-analysis",
+      "kind": "validation",
+      "guidance": "Make the policy-layer table phase-aware: an execution-time guard is not evidence that preparation-time behavior is constrained. Require phase-specific enforcement evidence and preserve all remaining authorization and isolation restrictions.",
+      "evidence": ["E1", "E4"]
+    }
+  ],
+  "related_article_urls": [
+    "https://blog.orange.tw/2019/01/hacking-jenkins-part-1-play-with-dynamic-routing.html",
+    "https://devco.re/blog/2019/02/19/hacking-Jenkins-part2-abusing-meta-programming-for-unauthenticated-RCE/"
+  ],
+  "excluded_material": [
+    "Executable payloads, trigger annotations and exploit source code",
+    "Request endpoints, encoded inputs, archive entry layouts and artifact-hosting commands",
+    "Exploit chains, target-testing sequences and demonstration videos/screenshots",
+    "Target-specific paths, identifiers, versions and constants used for exploitation",
+    "Exploit-release, conference-slide and social-media promotional updates"
+  ],
+  "worker_notes": "Readable article content was inspected, with title, headings, exact excerpts and the adjacent tool listing checked in the named browser session. Related links are observed pointers only; neither related article was retrieved. Handoffs and candidate guidance are derived library contracts, not author-used skills."
+}

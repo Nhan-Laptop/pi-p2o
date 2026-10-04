@@ -1,0 +1,9 @@
+{
+  "compilerOptions": {
+    "target": "ES2022", "module": "NodeNext", "moduleResolution": "NodeNext",
+    "strict": true, "skipLibCheck": true, "noEmitOnError": true,
+    "types": ["node"], "typeRoots": ["../../node_modules/@types"],
+    "rootDir": "../..", "noUnusedLocals": true, "noUnusedParameters": true
+  },
+  "include": ["../../src/runtime/**/*.ts", "../../src/tools/**/*.ts", "./**/*.ts"]
+}

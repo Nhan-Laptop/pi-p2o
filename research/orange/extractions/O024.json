@@ -1,0 +1,156 @@
+{
+  "schema_version": 1,
+  "source_id": "O024",
+  "url": "https://blog.orange.tw/posts/2018-08-how-i-chained-4-bugs-features-into-rce-on-amazon/",
+  "observed_title": "How I Chained 4 Bugs (Features?) into RCE on Amazon Collaboration System",
+  "retrieved_at": "2026-09-30T09:30:24.137Z",
+  "retrieval": {
+    "tool": "fetch_content readable; agent_browser named-session DOM inspection",
+    "response_id": "browser session orange-O024",
+    "final_url": "https://blog.orange.tw/posts/2018-08-how-i-chained-4-bugs-features-into-rce-on-amazon/",
+    "outcome": "read",
+    "quote_verification": "Exact paragraph.innerText.includes(quote) checks in orange-O024: E1-E5 each matched one original article paragraph. Unicode character counts were 129, 73, 126, 55 and 55; preceding headings were also checked."
+  },
+  "disposition": "included",
+  "reason": "The actual article supports four reusable observations: compare guard and consumer interpretations, distinguish partial reachability from valid identity, follow controllable return values into later interpretation, and assess lexical filters against semantic behavior. These methods are separable from the omitted exploit sequence and remain author reports, not independent replication.",
+  "canonical_source": null,
+  "evidence": [
+    {
+      "id": "E1",
+      "locator": "Introduction before Foreword, paragraph beginning 'It’s hard to write a well-designed parser.', final sentence",
+      "quote": "Therefore, if there is any inconsistency between the filter and the called method, the security mechanism can be easily bypassed!",
+      "verified": true
+    },
+    {
+      "id": "E2",
+      "locator": "1. Path normalization bug leads to ACL bypass, explanatory paragraph immediately after the paired response example",
+      "quote": "It’s because the servlet logic is unable to obtain a valid user principle",
+      "verified": true
+    },
+    {
+      "id": "E3",
+      "locator": "3. Double evaluation leads to EL injection, paragraph beginning 'To make things worse,' before the call-stack description",
+      "quote": "To make things worse, if the previous one returns a string, and the string looks like an EL. Seam framework will invoke again!",
+      "verified": true
+    },
+    {
+      "id": "E4",
+      "locator": "3. Double evaluation leads to EL injection, paragraph beginning 'Why we choose this?', explanation of return-value provenance",
+      "quote": "returns a string that we can control from query string!",
+      "verified": true
+    },
+    {
+      "id": "E5",
+      "locator": "4. EL blacklist bypass leads to RCE, paragraph beginning 'With a little bit studying,', description of the blacklist mechanism",
+      "quote": "we found the blacklist is just a simple string matching",
+      "verified": true
+    }
+  ],
+  "workflow": [
+    {
+      "decision": "When a guard delegates to a separate parser or router, ask whether both interpret the same input identically. Compare their actual rules and representations rather than assuming a filter preserves the downstream resource-selection policy.",
+      "evidence": ["E1"]
+    },
+    {
+      "decision": "If the usual rejection changes into a later failure, separate guard traversal from identity establishment and handler completion. Treat a missing-identity failure as evidence of an unmet prerequisite, not proof of usable privileges; the next question is which state the consumer still requires.",
+      "evidence": ["E2"]
+    },
+    {
+      "decision": "When an initially permitted operation returns a string, follow that result to its next consumer. Establish which portion the actor controls and whether it stays inert data or is interpreted again; the next question is which checks apply at that later boundary.",
+      "evidence": ["E3", "E4"]
+    },
+    {
+      "decision": "When a security rule matches text, identify the semantic operation the final consumer resolves. Ask whether the policy constrains that operation or only selected spellings, and retain unexamined equivalent meanings as unresolved coverage.",
+      "evidence": ["E1", "E5"]
+    }
+  ],
+  "tools": [],
+  "handoffs": [
+    {
+      "producer": "parser-differential-auditing",
+      "consumer": "dynamic-analysis",
+      "when": "Guard and downstream routing interpretations may disagree, but the observed failure does not establish consumer identity or completion.",
+      "packet": [
+        "authorized scope, artifact identity and runtime configuration",
+        "one unresolved question and contrasting predictions",
+        "guard-versus-consumer representation and rule table",
+        "policy decision and handler observation points",
+        "benign baseline and rejection controls",
+        "identity/state prerequisites and failure paths",
+        "source reports, inferred edges and failed assumptions",
+        "bounded next observation and stop condition"
+      ],
+      "acceptance_gate": "The packet identifies both interpretation sites and a harmless observation that distinguishes routing from required identity/state. Response behavior alone is not accepted as successful sensitive consumption; original and modified environments must remain separate.",
+      "classification": "derived",
+      "evidence": ["E1", "E2"]
+    },
+    {
+      "producer": "data-flow-analysis",
+      "consumer": "deserialization-and-dispatch-auditing",
+      "when": "An initially constrained operation may return actor-controlled data to a later interpreter.",
+      "packet": [
+        "authorized scope, artifact identity and configuration",
+        "question and expected versus unintended behavior",
+        "source-to-return-value flow and controllable subset",
+        "return type, transformations and later consumer",
+        "initial and later selection/validation guarantees",
+        "actor, identity and state gates",
+        "evidence classification and unresolved edges",
+        "benign observation plan, limits and stop condition"
+      ],
+      "acceptance_gate": "The consumer requires a documented return-value origin and later interpretation site, with each edge observed or explicitly marked inferred. Initial selection restrictions are not treated as a transitive guarantee, and no executable gadget chain is required or accepted.",
+      "classification": "derived",
+      "evidence": ["E3", "E4"]
+    }
+  ],
+  "limitations": [
+    "This is a historical public case study. Vulnerability, execution and mitigation outcomes are author reports; no target interaction, exploit execution, attachment retrieval or independent reproduction was performed.",
+    "The reported missing-identity exception limits the first observation: changed rejection behavior did not establish successful authenticated handler completion.",
+    "Interpretation differences depend on the actual application filter, container, framework and configuration. The article's broad default-exposure claim is not generalized to all deployments.",
+    "Later expression interpretation was not initially sufficient for system-level execution; additional interpreter restrictions remained. Those restrictions and their reported defeat were not independently tested.",
+    "The maintenance reply assessed impact using a prior file-upload prerequisite, while the investigation described a different return-value influence model. Prerequisites must be established from the actual flow, not inherited from that correspondence.",
+    "The fix sections report server isolation, lack of an upstream repair because of lifecycle limits, and a downstream framework override. No patch diff, shipped artifact, deployment state or regression coverage was independently reviewed."
+  ],
+  "candidate_additions": [
+    {
+      "owner": "parser-differential-auditing",
+      "kind": "workflow",
+      "guidance": "For a guard layered above a separate router or parser, compare the representation used for the guard with downstream resource selection under the actual runtime. A locally plausible normalization rule is not a transitive policy guarantee.",
+      "evidence": ["E1"]
+    },
+    {
+      "owner": "dynamic-analysis",
+      "kind": "failure",
+      "guidance": "Separate guard traversal, identity establishment and handler completion when interpreting a changed response. A missing-identity failure narrows the reachable boundary but does not establish usable authority or successful sensitive work.",
+      "evidence": ["E2"]
+    },
+    {
+      "owner": "deserialization-and-dispatch-auditing",
+      "kind": "workflow",
+      "guidance": "Review the complete lifecycle of an allowed operation's result. Record whether an actor-controlled return value remains inert data or becomes input to another interpreter, and enumerate that consumer's independent checks.",
+      "evidence": ["E3", "E4"]
+    },
+    {
+      "owner": "parser-differential-auditing",
+      "kind": "validation",
+      "guidance": "Assess a text-based security filter against the final consumer's semantic operations, not only the matched spellings. Equivalent meanings should receive the same policy decision; distinguish demonstrated coverage from unexamined variants.",
+      "evidence": ["E1", "E5"]
+    }
+  ],
+  "related_article_urls": [
+    "http://blog.orange.tw/2017/07/how-i-chained-4-vulnerabilities-on.html",
+    "https://0x09al.github.io/waf/bypass/ssl/2018/07/02/web-application-firewall-bypass.html",
+    "https://blog.orange.tw/2016/12/java-web.html",
+    "http://blog.o0o.nu/2010/07/cve-2010-1871-jboss-seam-framework.html"
+  ],
+  "excluded_material": [
+    "Target hostnames, request paths and endpoint strings",
+    "Exploit code, payloads, command syntax and execution screenshots",
+    "Ordered exploit chain and concrete reusable-expression selection",
+    "Concrete blacklist-evasion syntax and reflection-based execution details",
+    "Challenge construction and scanner-pattern history",
+    "Disclosure contact details, reward and timeline particulars",
+    "Slides and exploit attachments"
+  ],
+  "worker_notes": "Readable fetch returned the article without a usable stored response ID; the original live DOM supplied title, locators, link pointers and exact quote checks in orange-O024. Named tools in scanner history and command demonstrations were deliberately not promoted to retained workflow evidence."
+}

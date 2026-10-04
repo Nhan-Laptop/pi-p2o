@@ -1,0 +1,34 @@
+{
+  "publication_url": "https://phrack.org/issues/72/the-art-of-php-my-ctf-journey-and-untold-stories_md#article",
+  "quotes": [
+    {
+      "id": "E1",
+      "match_mode": "exact",
+      "matched": true,
+      "quote_sha256": "b67e49084b0c8295f208a37b46da45832a55053ec654261b42d147fae733747b"
+    },
+    {
+      "id": "E2",
+      "match_mode": "exact",
+      "matched": true,
+      "quote_sha256": "43a897083f210fa37f386d6571f700eb4626240cf167913997253b20b4610986"
+    },
+    {
+      "id": "E3",
+      "match_mode": "exact",
+      "matched": true,
+      "quote_sha256": "3140663057bf2e0afaeda0f148914b48aa23682069a42bba9c378ad0eb516b71"
+    },
+    {
+      "id": "E4",
+      "match_mode": "exact",
+      "matched": true,
+      "quote_sha256": "a820e8b43561dc1a66491a74990435e5f68749fe7215f83ee1752f649adf38de"
+    }
+  ],
+  "rendered_body_sha256": "e7a3154148f368dfca8364bfeee9ee5f6dab3e516db212d0694753a611b72693",
+  "retrieved_at": "2026-09-30T11:23:18.817Z",
+  "source_id": "O002",
+  "title": ".:: The Art of PHP - My CTF Journey and Untold Stories! ::.",
+  "tool": "agent_browser linked full-publication DOM; separately confirmed by fetch_content/get_search_content exact passage searches"
+}

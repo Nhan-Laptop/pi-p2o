@@ -1,0 +1,4998 @@
+{
+  "schema_version": 1,
+  "index_url": "https://starlabs.sg/blog/",
+  "retrieved_at": "2026-09-30T02:52:28.480Z",
+  "source_boundary": "Public STAR Labs blog index and relevant linked research articles; no source exploit attachments executed or retained.",
+  "evidence_boundary": "Source content and methods inspected; author runtime outcomes are not independently reproduced.",
+  "entries": [
+    {
+      "id": "B001",
+      "title": "Dirty Cert: Cisco Smart Software Manager's Silently Patched RCE",
+      "url": "https://starlabs.sg/blog/2026/09-dirty-cert-cisco-smart-software-managers-silently-patched-rce/",
+      "retrieval": {
+        "at": "2026-09-30T02:52:28.480Z",
+        "http_status": 200,
+        "final_url": "https://starlabs.sg/blog/2026/09-dirty-cert-cisco-smart-software-managers-silently-patched-rce/",
+        "response_html_bytes": 58330,
+        "response_html_sha256": "03bf8eafa2b0ea4464a1e6291f1c89ee6e2ebfdc7f8937d1d79338dc31c4b1e5"
+      },
+      "observed_sections": [
+        {
+          "text": "Introduction",
+          "anchor": "introduction"
+        },
+        {
+          "text": "Backstory",
+          "anchor": "backstory"
+        },
+        {
+          "text": "The Sink that Never Should’ve Been",
+          "anchor": "the-sink-that-never-shouldve-been"
+        },
+        {
+          "text": "Tracing through the code",
+          "anchor": "tracing-through-the-code"
+        },
+        {
+          "text": "Validator’s Validation",
+          "anchor": "validators-validation"
+        },
+        {
+          "text": "Uneven Processing",
+          "anchor": "uneven-processing"
+        },
+        {
+          "text": "Final Nail in the Coffin",
+          "anchor": "final-nail-in-the-coffin"
+        },
+        {
+          "text": "Full Exploit",
+          "anchor": "full-exploit"
+        },
+        {
+          "text": "Silent Patches",
+          "anchor": "silent-patches"
+        },
+        {
+          "text": "Timeline",
+          "anchor": "timeline"
+        },
+        {
+          "text": "Moral of the Story",
+          "anchor": "moral-of-the-story"
+        }
+      ],
+      "blog_links": [],
+      "disposition": "included",
+      "research_type": "Cross-service source audit and silent-patch comparison",
+      "reason": "Method observations retained and merged into technique owners; exploitation details excluded.",
+      "evidence_level": "method-sections-inspected",
+      "skills": [
+        "data-flow-analysis",
+        "parser-differential-auditing",
+        "remediation",
+        "source-code-auditing"
+      ]
+    },
+    {
+      "id": "B002",
+      "title": "How I Found a $113,337 AF_ALG Linux Local Privilege Escalation Before Copy Fail",
+      "url": "https://starlabs.sg/blog/2026/09-how-i-found-a-113337-af_alg-linux-local-privilege-escalation-before-copy-fail/",
+      "retrieval": {
+        "at": "2026-09-30T02:52:28.480Z",
+        "http_status": 200,
+        "final_url": "https://starlabs.sg/blog/2026/09-how-i-found-a-113337-af_alg-linux-local-privilege-escalation-before-copy-fail/",
+        "response_html_bytes": 63632,
+        "response_html_sha256": "36430a86491647021f04ea357ba2250c3e6be7f7bb30e15b9995834fb639efff"
+      },
+      "observed_sections": [
+        {
+          "text": "Linux Kernel Attack Surface",
+          "anchor": "linux-kernel-attack-surface"
+        },
+        {
+          "text": "Interacting with AF_ALG",
+          "anchor": "interacting-with-af_alg"
+        },
+        {
+          "text": "AF_ALG Internals",
+          "anchor": "af_alg-internals"
+        },
+        {
+          "text": "The Context Attached to opfd",
+          "anchor": "the-context-attached-to-opfd"
+        },
+        {
+          "text": "How the Input Is Stored",
+          "anchor": "how-the-input-is-stored"
+        },
+        {
+          "text": "Processing Inside af_alg_sendmsg()",
+          "anchor": "processing-inside-af_alg_sendmsg"
+        },
+        {
+          "text": "When Two Threads Call sendmsg() Concurrently",
+          "anchor": "when-two-threads-call-sendmsg-concurrently"
+        },
+        {
+          "text": "From Out-of-Bounds Access to Arbitrary Write",
+          "anchor": "from-out-of-bounds-access-to-arbitrary-write"
+        },
+        {
+          "text": "The Usercopy Property Behind memcpy_from_msg()",
+          "anchor": "the-usercopy-property-behind-memcpy_from_msg"
+        },
+        {
+          "text": "Why Target core_pattern?",
+          "anchor": "why-target-core_pattern"
+        },
+        {
+          "text": "How the Bug Was Fixed",
+          "anchor": "how-the-bug-was-fixed"
+        },
+        {
+          "text": "Closing: Finding a Vulnerability and Building an Exploit",
+          "anchor": "closing-finding-a-vulnerability-and-building-an-exploit"
+        }
+      ],
+      "blog_links": [],
+      "disposition": "included",
+      "research_type": "Unprivileged Linux interface and shared-state race audit",
+      "reason": "Method observations retained and merged into technique owners; exploitation details excluded.",
+      "evidence_level": "method-sections-inspected",
+      "skills": [
+        "attack-surface-mapping",
+        "race-condition-auditing"
+      ]
+    },
+    {
+      "id": "B003",
+      "title": "When AI Makes 0-Days Feel Like N-Days",
+      "url": "https://starlabs.sg/blog/2026/07-when-ai-makes-0-days-feel-like-n-days/",
+      "retrieval": {
+        "at": "2026-09-30T02:52:28.480Z",
+        "http_status": 200,
+        "final_url": "https://starlabs.sg/blog/2026/07-when-ai-makes-0-days-feel-like-n-days/",
+        "response_html_bytes": 73855,
+        "response_html_sha256": "1e87a8460a22df8e4bde337ddd932be1ec6de8b308a542f3d47c241399172efc"
+      },
+      "observed_sections": [
+        {
+          "text": "Introduction",
+          "anchor": "introduction"
+        },
+        {
+          "text": "AI usage",
+          "anchor": "ai-usage"
+        },
+        {
+          "text": "Brief conceptual overview of net/sched",
+          "anchor": "brief-conceptual-overview-of-netsched"
+        },
+        {
+          "text": "The bug",
+          "anchor": "the-bug"
+        },
+        {
+          "text": "How are these functions reached?",
+          "anchor": "how-are-these-functions-reached"
+        },
+        {
+          "text": "Extra requirements",
+          "anchor": "extra-requirements"
+        },
+        {
+          "text": "Race optimization",
+          "anchor": "race-optimization"
+        },
+        {
+          "text": "1. Binder threads",
+          "anchor": "1-binder-threads"
+        },
+        {
+          "text": "2. Deleter threads",
+          "anchor": "2-deleter-threads"
+        },
+        {
+          "text": "Final race setup",
+          "anchor": "final-race-setup"
+        },
+        {
+          "text": "kASLR leak",
+          "anchor": "kaslr-leak"
+        },
+        {
+          "text": "Exploit - primitives",
+          "anchor": "exploit---primitives"
+        },
+        {
+          "text": "Reclaim object",
+          "anchor": "reclaim-object"
+        },
+        {
+          "text": "RCU",
+          "anchor": "rcu"
+        },
+        {
+          "text": "KEYCTL_UPDATE spray",
+          "anchor": "keyctl_update-spray"
+        },
+        {
+          "text": "RIP control to arbitrary write",
+          "anchor": "rip-control-to-arbitrary-write"
+        },
+        {
+          "text": "One final, minor bug",
+          "anchor": "one-final-minor-bug"
+        },
+        {
+          "text": "Final exploit",
+          "anchor": "final-exploit"
+        },
+        {
+          "text": "Demo video",
+          "anchor": "demo-video"
+        },
+        {
+          "text": "TyphoonPwn 2026 results",
+          "anchor": "typhoonpwn-2026-results"
+        },
+        {
+          "text": "Other bugs found",
+          "anchor": "other-bugs-found"
+        },
+        {
+          "text": "Closing thoughts",
+          "anchor": "closing-thoughts"
+        }
+      ],
+      "blog_links": [],
+      "disposition": "included",
+      "research_type": "AI-assisted Linux lifetime research with manual validation",
+      "reason": "Method observations retained and merged into technique owners; exploitation details excluded.",
+      "evidence_level": "method-sections-inspected",
+      "skills": [
+        "attack-surface-mapping",
+        "exploitability-assessment",
+        "race-condition-auditing",
+        "state-and-lifetime-auditing"
+      ]
+    },
+    {
+      "id": "B004",
+      "title": "Old Bug, Harder Rules : Exploiting CVE-2023-36802 Without the Usual Shortcuts",
+      "url": "https://starlabs.sg/blog/2026/06-old-bug-harder-rules-exploiting-cve-2023-36802-without-the-usual-shortcuts/",
+      "retrieval": {
+        "at": "2026-09-30T02:52:28.480Z",
+        "http_status": 200,
+        "final_url": "https://starlabs.sg/blog/2026/06-old-bug-harder-rules-exploiting-cve-2023-36802-without-the-usual-shortcuts/",
+        "response_html_bytes": 150540,
+        "response_html_sha256": "874b41c1a6d84f99e30efc9aa37649db8d925ee8d751eb2db49b91ae584a20ca"
+      },
+      "observed_sections": [
+        {
+          "text": "Introduction",
+          "anchor": "introduction"
+        },
+        {
+          "text": "Patch Diff",
+          "anchor": "patch-diff"
+        },
+        {
+          "text": "Bug Analysis",
+          "anchor": "bug-analysis"
+        },
+        {
+          "text": "Triggering the bug",
+          "anchor": "triggering-the-bug"
+        },
+        {
+          "text": "Current Primitives",
+          "anchor": "current-primitives"
+        },
+        {
+          "text": "Leak",
+          "anchor": "leak"
+        },
+        {
+          "text": "Arbitrary Decrement",
+          "anchor": "arbitrary-decrement"
+        },
+        {
+          "text": "Arbitrary Write DWORD 2",
+          "anchor": "arbitrary-write-dword-2"
+        },
+        {
+          "text": "Improving Primitive and Final Exploitation",
+          "anchor": "improving-primitive-and-final-exploitation"
+        },
+        {
+          "text": "Leaking useful information",
+          "anchor": "leaking-useful-information"
+        },
+        {
+          "text": "Corrupting Flink",
+          "anchor": "corrupting-flink"
+        },
+        {
+          "text": "Arbitrary Read/Write",
+          "anchor": "arbitrary-readwrite"
+        },
+        {
+          "text": "Finding _EPROCESS",
+          "anchor": "finding-_eprocess"
+        },
+        {
+          "text": "Getting NT AUTHORITY\\SYSTEM shell",
+          "anchor": "getting-nt-authoritysystem-shell"
+        },
+        {
+          "text": "Acknowledgements",
+          "anchor": "acknowledgements"
+        },
+        {
+          "text": "References",
+          "anchor": "references"
+        }
+      ],
+      "blog_links": [],
+      "disposition": "included",
+      "research_type": "Constrained Windows primitive reassessment",
+      "reason": "Method observations retained and merged into technique owners; exploitation details excluded.",
+      "evidence_level": "method-sections-inspected",
+      "skills": [
+        "exploitability-assessment",
+        "memory-safety-auditing"
+      ]
+    },
+    {
+      "id": "B005",
+      "title": "Old Wine in a New Bottle: A Decade-Old lxd-Group Root, Re-Armed",
+      "url": "https://starlabs.sg/blog/2026/06-old-wine-in-a-new-bottle-a-decade-old-lxd-group-root-re-armed/",
+      "retrieval": {
+        "at": "2026-09-30T02:52:28.480Z",
+        "http_status": 200,
+        "final_url": "https://starlabs.sg/blog/2026/06-old-wine-in-a-new-bottle-a-decade-old-lxd-group-root-re-armed/",
+        "response_html_bytes": 46878,
+        "response_html_sha256": "0d617884bbfbcd08e55b7e621996e9c5b338c0ed48f0b217f467247b03ab0641"
+      },
+      "observed_sections": [
+        {
+          "text": "TL;DR",
+          "anchor": "tldr"
+        },
+        {
+          "text": "It started by accident",
+          "anchor": "it-started-by-accident"
+        },
+        {
+          "text": "A group that means root",
+          "anchor": "a-group-that-means-root"
+        },
+        {
+          "text": "We were not the first to be annoyed by this",
+          "anchor": "we-were-not-the-first-to-be-annoyed-by-this"
+        },
+        {
+          "text": "What changed underneath everyone",
+          "anchor": "what-changed-underneath-everyone"
+        },
+        {
+          "text": "We checked every LTS from 18.04 to 26.04",
+          "anchor": "we-checked-every-lts-from-1804-to-2604"
+        },
+        {
+          "text": "Precisely: what “pre-installed” means, and why 24.04 is the hinge",
+          "anchor": "precisely-what-pre-installed-means-and-why-2404-is-the-hinge"
+        },
+        {
+          "text": "The full chain",
+          "anchor": "the-full-chain"
+        },
+        {
+          "text": "A free hardening downgrade for the whole machine",
+          "anchor": "a-free-hardening-downgrade-for-the-whole-machine"
+        },
+        {
+          "text": "Disclosure",
+          "anchor": "disclosure"
+        },
+        {
+          "text": "If you run Ubuntu Server, do this today",
+          "anchor": "if-you-run-ubuntu-server-do-this-today"
+        },
+        {
+          "text": "Closing thought",
+          "anchor": "closing-thought"
+        },
+        {
+          "text": "References",
+          "anchor": "references"
+        }
+      ],
+      "blog_links": [],
+      "disposition": "included",
+      "research_type": "Deployment-default and intended-capability assessment",
+      "reason": "Method observations retained and merged into technique owners; exploitation details excluded.",
+      "evidence_level": "method-sections-inspected",
+      "skills": [
+        "attack-surface-mapping",
+        "authorization-auditing",
+        "remediation",
+        "sandbox-boundary-analysis"
+      ]
+    },
+    {
+      "id": "B006",
+      "title": "Race Against The Patch: The Evolution of Four Exploit Chains in LiteLLM",
+      "url": "https://starlabs.sg/blog/2026/05-race-against-the-patch-the-evolution-of-four-exploit-chains-in-litellm/",
+      "retrieval": {
+        "at": "2026-09-30T02:52:28.480Z",
+        "http_status": 200,
+        "final_url": "https://starlabs.sg/blog/2026/05-race-against-the-patch-the-evolution-of-four-exploit-chains-in-litellm/",
+        "response_html_bytes": 107816,
+        "response_html_sha256": "50b5176d8a9223c3d7be749b7f920d034be0ee88d2c4db06ce1aa747ba1a073d"
+      },
+      "observed_sections": [
+        {
+          "text": "The Arena and The Target",
+          "anchor": "the-arena-and-the-target"
+        },
+        {
+          "text": "The Attack Scenario: Rules of Engagement",
+          "anchor": "the-attack-scenario-rules-of-engagement"
+        },
+        {
+          "text": "The Arsenal: Four Chains Across Four Versions",
+          "anchor": "the-arsenal-four-chains-across-four-versions"
+        },
+        {
+          "text": "Target Version 1.82.3 / Where it all begin",
+          "anchor": "target-version-1823--where-it-all-begin"
+        },
+        {
+          "text": "Target Version 1.83.7 / The Patch’s Blind Spot",
+          "anchor": "target-version-1837--the-patchs-blind-spot"
+        },
+        {
+          "text": "Target Version 1.83.10 / The Gateless Gate",
+          "anchor": "target-version-18310--the-gateless-gate"
+        },
+        {
+          "text": "Target Version 1.83.14 / Your Own Spear",
+          "anchor": "target-version-18314--your-own-spear"
+        },
+        {
+          "text": "The Race, At a Glance",
+          "anchor": "the-race-at-a-glance"
+        },
+        {
+          "text": "Conclusion",
+          "anchor": "conclusion"
+        },
+        {
+          "text": "References",
+          "anchor": "references"
+        }
+      ],
+      "blog_links": [],
+      "disposition": "included",
+      "research_type": "Longitudinal middleware source/patch and capability-composition audit",
+      "reason": "Method observations retained and merged into technique owners; exploitation details excluded.",
+      "evidence_level": "method-sections-inspected",
+      "skills": [
+        "attack-surface-mapping",
+        "authorization-auditing",
+        "data-flow-analysis",
+        "exploitability-assessment",
+        "patch-diff-analysis",
+        "remediation",
+        "sandbox-boundary-analysis",
+        "source-code-auditing"
+      ]
+    },
+    {
+      "id": "B007",
+      "title": "Three Bugs Walk Into a PDF: Prototype Pollution, Served Cold",
+      "url": "https://starlabs.sg/blog/2026/04-three-bugs-walk-into-a-pdf-prototype-pollution-served-cold/",
+      "retrieval": {
+        "at": "2026-09-30T02:52:28.480Z",
+        "http_status": 200,
+        "final_url": "https://starlabs.sg/blog/2026/04-three-bugs-walk-into-a-pdf-prototype-pollution-served-cold/",
+        "response_html_bytes": 53927,
+        "response_html_sha256": "6a519f780e8e4b320c073af48b290be6c900ba918b2cbf9e652b21a8514da782"
+      },
+      "observed_sections": [
+        {
+          "text": "TL;DR",
+          "anchor": "tldr"
+        },
+        {
+          "text": "Introduction",
+          "anchor": "introduction"
+        },
+        {
+          "text": "How Adobe’s Fixes Gave It Away",
+          "anchor": "how-adobes-fixes-gave-it-away"
+        },
+        {
+          "text": "Three Polluted Primitives, One Pure Chain",
+          "anchor": "three-polluted-primitives-one-pure-chain"
+        },
+        {
+          "text": "Conclusion",
+          "anchor": "conclusion"
+        },
+        {
+          "text": "References:",
+          "anchor": "references"
+        }
+      ],
+      "blog_links": [],
+      "disposition": "included",
+      "research_type": "Privileged scripting patch and behavioral-dispatch analysis",
+      "reason": "Method observations retained and merged into technique owners; exploitation details excluded.",
+      "evidence_level": "method-sections-inspected",
+      "skills": [
+        "deserialization-and-dispatch-auditing",
+        "patch-diff-analysis"
+      ]
+    },
+    {
+      "id": "B008",
+      "title": "CHECK Removed, Context Confused, Checkmate Achieved",
+      "url": "https://starlabs.sg/blog/2026/04-check-removed-context-confused-checkmate-achieved/",
+      "retrieval": {
+        "at": "2026-09-30T02:52:28.480Z",
+        "http_status": 200,
+        "final_url": "https://starlabs.sg/blog/2026/04-check-removed-context-confused-checkmate-achieved/",
+        "response_html_bytes": 93308,
+        "response_html_sha256": "3066aabc6dad9d94a76e53a00d3b047b5e237e50c2de0e11064a5bb22fd05c5e"
+      },
+      "observed_sections": [
+        {
+          "text": "TL;DR",
+          "anchor": "tldr"
+        },
+        {
+          "text": "Introduction",
+          "anchor": "introduction"
+        },
+        {
+          "text": "Reversing the Patch",
+          "anchor": "reversing-the-patch"
+        },
+        {
+          "text": "Understanding Class Member Reparsing",
+          "anchor": "understanding-class-member-reparsing"
+        },
+        {
+          "text": "Triggering the Effects of Interleaving",
+          "anchor": "triggering-the-effects-of-interleaving"
+        },
+        {
+          "text": "Can we Checkmate without a CHECK?",
+          "anchor": "can-we-checkmate-without-a-check"
+        },
+        {
+          "text": "Conclusion",
+          "anchor": "conclusion"
+        }
+      ],
+      "blog_links": [],
+      "disposition": "included",
+      "research_type": "Parser-identity and cross-tier runtime analysis",
+      "reason": "Method observations retained and merged into technique owners; exploitation details excluded.",
+      "evidence_level": "method-sections-inspected",
+      "skills": [
+        "compiler-invariant-auditing",
+        "dynamic-analysis"
+      ]
+    },
+    {
+      "id": "B009",
+      "title": "Pickling the Mailbox: A Deep Dive into CVE-2025-20393",
+      "url": "https://starlabs.sg/blog/2026/02-pickling-the-mailbox-a-deep-dive-into-cve-2025-20393/",
+      "retrieval": {
+        "at": "2026-09-30T02:52:28.480Z",
+        "http_status": 200,
+        "final_url": "https://starlabs.sg/blog/2026/02-pickling-the-mailbox-a-deep-dive-into-cve-2025-20393/",
+        "response_html_bytes": 93894,
+        "response_html_sha256": "e731421f23035676c438d07d1cfb7a7ebd9919a17a6424bf57e36042aa28d9d6"
+      },
+      "observed_sections": [
+        {
+          "text": "TL;DR",
+          "anchor": "tldr"
+        },
+        {
+          "text": "Introduction",
+          "anchor": "introduction"
+        },
+        {
+          "text": "Patch Diffing: Finding the Needle",
+          "anchor": "patch-diffing-finding-the-needle"
+        },
+        {
+          "text": "Background: EUQ RPC Protocol",
+          "anchor": "background-euq-rpc-protocol"
+        },
+        {
+          "text": "Vulnerability Analysis",
+          "anchor": "vulnerability-analysis"
+        },
+        {
+          "text": "Exploitation Strategy: Authentication Bypass Deep Dive",
+          "anchor": "exploitation-strategy-authentication-bypass-deep-dive"
+        },
+        {
+          "text": "The Authentication Problem",
+          "anchor": "the-authentication-problem"
+        },
+        {
+          "text": "Demo",
+          "anchor": "demo"
+        },
+        {
+          "text": "Conclusion",
+          "anchor": "conclusion"
+        },
+        {
+          "text": "References",
+          "anchor": "references"
+        }
+      ],
+      "blog_links": [],
+      "disposition": "included",
+      "research_type": "Firmware patch-led serialization and runtime-version analysis",
+      "reason": "Method observations retained and merged into technique owners; exploitation details excluded.",
+      "evidence_level": "method-sections-inspected",
+      "skills": [
+        "deserialization-and-dispatch-auditing",
+        "parser-differential-auditing",
+        "patch-diff-analysis"
+      ]
+    },
+    {
+      "id": "B010",
+      "title": "8th Anniversary: Embrace the new but don't forget the old",
+      "url": "https://starlabs.sg/blog/2026/01-8th-anniversary-embrace-the-new-but-dont-forget-the-old/",
+      "disposition": "excluded",
+      "research_type": "Event/news/challenge material",
+      "reason": "Anniversary/news; no distinct validated research method.",
+      "skills": [],
+      "retrieval": null,
+      "observed_sections": []
+    },
+    {
+      "id": "B011",
+      "title": "2025: WE BROKE THINGS, WE BUILT THINGS, WE BROKE EVEN MORE THINGS",
+      "url": "https://starlabs.sg/blog/2025/12-2025-we-broke-things-we-built-things-we-broke-even-more-things/",
+      "disposition": "excluded",
+      "research_type": "Event/news/challenge material",
+      "reason": "Year-in-review/news; not primary method evidence.",
+      "skills": [],
+      "retrieval": null,
+      "observed_sections": []
+    },
+    {
+      "id": "B012",
+      "title": "HEX ADVENT 2025: Crack the Advent, Conquer the Threat 🐛",
+      "url": "https://starlabs.sg/blog/2025/11-hex-advent-2025-crack-the-advent-conquer-the-threat/",
+      "disposition": "excluded",
+      "research_type": "Event/news/challenge material",
+      "reason": "Challenge promotion; outside the research-article corpus.",
+      "skills": [],
+      "retrieval": null,
+      "observed_sections": []
+    },
+    {
+      "id": "B013",
+      "title": "HEX ADVENT 2025: Rules & Information",
+      "url": "https://starlabs.sg/blog/2025/11-hex-advent-2025-rules-information/",
+      "disposition": "excluded",
+      "research_type": "Event/news/challenge material",
+      "reason": "Challenge rules; not vulnerability-research methodology.",
+      "skills": [],
+      "retrieval": null,
+      "observed_sections": []
+    },
+    {
+      "id": "B014",
+      "title": "Breaking Into a Brother (MFC-J1010DW): Three Security Flaws in a Seemingly Innocent Printer",
+      "url": "https://starlabs.sg/blog/2025/11-breaking-into-a-brother-mfc-j1010dw-three-security-flaws-in-a-seemingly-innocent-printer/",
+      "retrieval": {
+        "at": "2026-09-30T02:52:28.480Z",
+        "http_status": 200,
+        "final_url": "https://starlabs.sg/blog/2025/11-breaking-into-a-brother-mfc-j1010dw-three-security-flaws-in-a-seemingly-innocent-printer/",
+        "response_html_bytes": 142532,
+        "response_html_sha256": "3b69f2178cf193672bc99118167268d597ddbb37a136080ebbcce92ca36120dd"
+      },
+      "observed_sections": [
+        {
+          "text": "The Target: Brother MFC-J1010DW",
+          "anchor": "the-target-brother-mfc-j1010dw"
+        },
+        {
+          "text": "TL;DR: The Vulnerability Chain",
+          "anchor": "tldr-the-vulnerability-chain"
+        },
+        {
+          "text": "Vulnerability #1: The SNMP Skeleton Key",
+          "anchor": "vulnerability-1-the-snmp-skeleton-key"
+        },
+        {
+          "text": "The Discovery",
+          "anchor": "the-discovery"
+        },
+        {
+          "text": "Why This Matters",
+          "anchor": "why-this-matters"
+        },
+        {
+          "text": "Technical Details",
+          "anchor": "technical-details"
+        },
+        {
+          "text": "Vulnerability #2: Time Travel for Printers",
+          "anchor": "vulnerability-2-time-travel-for-printers"
+        },
+        {
+          "text": "The Problem",
+          "anchor": "the-problem"
+        },
+        {
+          "text": "The Attack Scenario",
+          "anchor": "the-attack-scenario"
+        },
+        {
+          "text": "Vulnerability #3: The Buffer Overflow",
+          "anchor": "vulnerability-3-the-buffer-overflow"
+        },
+        {
+          "text": "Part 1: Acquiring the firmware",
+          "anchor": "part-1-acquiring-the-firmware"
+        },
+        {
+          "text": "Device Teardown",
+          "anchor": "device-teardown"
+        },
+        {
+          "text": "Firmware Dump",
+          "anchor": "firmware-dump"
+        },
+        {
+          "text": "SWD Debugging",
+          "anchor": "swd-debugging"
+        },
+        {
+          "text": "Hardware Watchdog Timer",
+          "anchor": "hardware-watchdog-timer"
+        },
+        {
+          "text": "Part 2. Analyzing the firmware",
+          "anchor": "part-2-analyzing-the-firmware"
+        },
+        {
+          "text": "Finding the Memory Map",
+          "anchor": "finding-the-memory-map"
+        },
+        {
+          "text": "Extracting the Firmware Components",
+          "anchor": "extracting-the-firmware-components"
+        },
+        {
+          "text": "Part 3: Loading the Firmware into IDA Pro",
+          "anchor": "part-3-loading-the-firmware-into-ida-pro"
+        },
+        {
+          "text": "Step 1: Load the Kernel Segment",
+          "anchor": "step-1-load-the-kernel-segment"
+        },
+        {
+          "text": "Step 2: Configure Memory Layout",
+          "anchor": "step-2-configure-memory-layout"
+        },
+        {
+          "text": "Step 3: Disassemble",
+          "anchor": "step-3-disassemble"
+        },
+        {
+          "text": "Step 4: Load Additional Segments",
+          "anchor": "step-4-load-additional-segments"
+        },
+        {
+          "text": "Step 5: Set Segment Permissions",
+          "anchor": "step-5-set-segment-permissions"
+        },
+        {
+          "text": "Step 6: Complete the Memory Map",
+          "anchor": "step-6-complete-the-memory-map"
+        },
+        {
+          "text": "Step 7: Reanalyze",
+          "anchor": "step-7-reanalyze"
+        },
+        {
+          "text": "Part 4: Finding the Vulnerability",
+          "anchor": "part-4-finding-the-vulnerability"
+        },
+        {
+          "text": "The Vulnerable Code",
+          "anchor": "the-vulnerable-code"
+        },
+        {
+          "text": "Understanding the Call Stack",
+          "anchor": "understanding-the-call-stack"
+        },
+        {
+          "text": "The Stack Layout",
+          "anchor": "the-stack-layout"
+        },
+        {
+          "text": "The Exploitation Strategy",
+          "anchor": "the-exploitation-strategy"
+        },
+        {
+          "text": "Part 5: Crafting the Exploit",
+          "anchor": "part-5-crafting-the-exploit"
+        },
+        {
+          "text": "The Final Exploit Payload",
+          "anchor": "the-final-exploit-payload"
+        },
+        {
+          "text": "The Result",
+          "anchor": "the-result"
+        },
+        {
+          "text": "Impact Assessment",
+          "anchor": "impact-assessment"
+        },
+        {
+          "text": "What Could an Attacker Actually Do?",
+          "anchor": "what-could-an-attacker-actually-do"
+        },
+        {
+          "text": "For Users",
+          "anchor": "for-users"
+        },
+        {
+          "text": "For Vendors",
+          "anchor": "for-vendors"
+        },
+        {
+          "text": "Conclusion",
+          "anchor": "conclusion"
+        }
+      ],
+      "blog_links": [],
+      "disposition": "included",
+      "research_type": "Hardware-assisted firmware reconstruction and binary audit",
+      "reason": "Method observations retained and merged into technique owners; exploitation details excluded.",
+      "evidence_level": "method-sections-inspected",
+      "skills": [
+        "binary-auditing"
+      ]
+    },
+    {
+      "id": "B015",
+      "title": "Summer Pwnables: lz1 Solution",
+      "url": "https://starlabs.sg/blog/2025/09-summer-pwnables-lz1-solution/",
+      "disposition": "excluded",
+      "research_type": "Event/news/challenge material",
+      "reason": "CTF solution; excluded rather than converted into a walkthrough.",
+      "skills": [],
+      "retrieval": null,
+      "observed_sections": []
+    },
+    {
+      "id": "B016",
+      "title": "Summer Pwnables: Temporal Paradox Engine Solution",
+      "url": "https://starlabs.sg/blog/2025/09-summer-pwnables-temporal-paradox-engine-solution/",
+      "disposition": "excluded",
+      "research_type": "Event/news/challenge material",
+      "reason": "CTF solution; excluded rather than converted into a walkthrough.",
+      "skills": [],
+      "retrieval": null,
+      "observed_sections": []
+    },
+    {
+      "id": "B017",
+      "title": "Lost in Translation: Apache Vulnerabilities That Don't Count (Literally)",
+      "url": "https://starlabs.sg/blog/2025/09-lost-in-translation-apache-vulnerabilities-that-dont-count-literally/",
+      "retrieval": {
+        "at": "2026-09-30T02:52:28.480Z",
+        "http_status": 200,
+        "final_url": "https://starlabs.sg/blog/2025/09-lost-in-translation-apache-vulnerabilities-that-dont-count-literally/",
+        "response_html_bytes": 59225,
+        "response_html_sha256": "c28f901b6d3ec591d01dd7e95b8e8b1861fcdb47d46f1f3d79399a3d56665539"
+      },
+      "observed_sections": [
+        {
+          "text": "Vulnerability #1: Server-Side Request Forgery in Apache Pony Mail Foal",
+          "anchor": "vulnerability-1-server-side-request-forgery-in-apache-pony-mail-foal"
+        },
+        {
+          "text": "Summary",
+          "anchor": "summary"
+        },
+        {
+          "text": "Product Overview",
+          "anchor": "product-overview"
+        },
+        {
+          "text": "Technical Details",
+          "anchor": "technical-details"
+        },
+        {
+          "text": "Proof-of-Concept",
+          "anchor": "proof-of-concept"
+        },
+        {
+          "text": "Suggested Mitigations",
+          "anchor": "suggested-mitigations"
+        },
+        {
+          "text": "Vulnerability #2: Remote Code Execution on whimsy.apache.org",
+          "anchor": "vulnerability-2-remote-code-execution-on-whimsyapacheorg"
+        },
+        {
+          "text": "Summary",
+          "anchor": "summary-1"
+        },
+        {
+          "text": "Technical Details",
+          "anchor": "technical-details-1"
+        },
+        {
+          "text": "Proof of Concept",
+          "anchor": "proof-of-concept-1"
+        },
+        {
+          "text": "Remediation Advice",
+          "anchor": "remediation-advice"
+        },
+        {
+          "text": "Credits",
+          "anchor": "credits"
+        }
+      ],
+      "blog_links": [],
+      "disposition": "included",
+      "research_type": "Backend destination and external-tool argument audit",
+      "reason": "Method observations retained and merged into technique owners; exploitation details excluded.",
+      "evidence_level": "method-sections-inspected",
+      "skills": [
+        "deserialization-and-dispatch-auditing",
+        "parser-differential-auditing",
+        "remediation"
+      ]
+    },
+    {
+      "id": "B018",
+      "title": "Fuzzing a Printer: Pre-auth RCE in a Network IoT Device",
+      "url": "https://starlabs.sg/blog/2025/09-fuzzing-a-printer-pre-auth-rce-in-a-network-iot-device/",
+      "retrieval": {
+        "at": "2026-09-30T02:52:28.480Z",
+        "http_status": 200,
+        "final_url": "https://starlabs.sg/blog/2025/09-fuzzing-a-printer-pre-auth-rce-in-a-network-iot-device/",
+        "response_html_bytes": 10691,
+        "response_html_sha256": "d22921b0ea763959507cc58890261a161429899c410fc2abc8dc6b3aba1303f7"
+      },
+      "observed_sections": [
+        {
+          "text": "The harness",
+          "anchor": "the-harness"
+        },
+        {
+          "text": "The bug",
+          "anchor": "the-bug"
+        },
+        {
+          "text": "Exploitation",
+          "anchor": "exploitation"
+        }
+      ],
+      "blog_links": [],
+      "disposition": "included",
+      "research_type": "Brief emulated-protocol fuzzing report",
+      "reason": "Method observations retained and merged into technique owners; exploitation details excluded.",
+      "evidence_level": "brief-author-report",
+      "skills": [
+        "fuzzing"
+      ]
+    },
+    {
+      "id": "B019",
+      "title": "[Updates] Summer Pwnables 🔥",
+      "url": "https://starlabs.sg/blog/2025/08-updates-summer-pwnables/",
+      "disposition": "excluded",
+      "research_type": "Event/news/challenge material",
+      "reason": "Challenge update announcement; not method evidence.",
+      "skills": [],
+      "retrieval": null,
+      "observed_sections": []
+    },
+    {
+      "id": "B020",
+      "title": "Summer Pwnables: When the Heat Rises, So Do the C-Shells 🔥",
+      "url": "https://starlabs.sg/blog/2025/08-summer-pwnables-when-the-heat-rises-so-do-the-c-shells/",
+      "disposition": "excluded",
+      "research_type": "Event/news/challenge material",
+      "reason": "Challenge promotion; not method evidence.",
+      "skills": [],
+      "retrieval": null,
+      "observed_sections": []
+    },
+    {
+      "id": "B021",
+      "title": "My `Blind Date` with CVE-2025-29824",
+      "url": "https://starlabs.sg/blog/2025/07-my-blind-date-with-cve-2025-29824/",
+      "retrieval": {
+        "at": "2026-09-30T02:52:28.480Z",
+        "http_status": 200,
+        "final_url": "https://starlabs.sg/blog/2025/07-my-blind-date-with-cve-2025-29824/",
+        "response_html_bytes": 57257,
+        "response_html_sha256": "88b3fde4b2defc2eb80b4da71b048388170a45b89c492dcf8db2e5cdc0d263c1"
+      },
+      "observed_sections": [
+        {
+          "text": "TL;DR",
+          "anchor": "tldr"
+        },
+        {
+          "text": "Technical Deep Dive Into The Vulnerability",
+          "anchor": "technical-deep-dive-into-the-vulnerability"
+        },
+        {
+          "text": "Summary:",
+          "anchor": "summary"
+        },
+        {
+          "text": "CVSSv3.1 Scoring System:",
+          "anchor": "cvssv31-scoring-system"
+        },
+        {
+          "text": "How Microsoft Fixed the Bug",
+          "anchor": "how-microsoft-fixed-the-bug"
+        },
+        {
+          "text": "Patch Analysis - Before vs. After",
+          "anchor": "patch-analysis---before-vs-after"
+        },
+        {
+          "text": "Cleanup VS Close",
+          "anchor": "cleanup-vs-close"
+        },
+        {
+          "text": "FsContext2 Structure Deep-Dive",
+          "anchor": "fscontext2-structure-deep-dive"
+        },
+        {
+          "text": "How to Trigger the Bug",
+          "anchor": "how-to-trigger-the-bug"
+        },
+        {
+          "text": "Triggering the Vulnerability",
+          "anchor": "triggering-the-vulnerability"
+        },
+        {
+          "text": "Finding the Right Functions",
+          "anchor": "finding-the-right-functions"
+        },
+        {
+          "text": "Vulnerable Functions Found",
+          "anchor": "vulnerable-functions-found"
+        },
+        {
+          "text": "Attack Vectors",
+          "anchor": "attack-vectors"
+        },
+        {
+          "text": "Step-by-Step Exploitation",
+          "anchor": "step-by-step-exploitation"
+        },
+        {
+          "text": "Proof-of-Concept",
+          "anchor": "proof-of-concept"
+        },
+        {
+          "text": "Crash Context",
+          "anchor": "crash-context"
+        },
+        {
+          "text": "Variant Analysis",
+          "anchor": "variant-analysis"
+        },
+        {
+          "text": "Enhanced Detection Strategies",
+          "anchor": "enhanced-detection-strategies"
+        },
+        {
+          "text": "Suggested Mitigations",
+          "anchor": "suggested-mitigations"
+        },
+        {
+          "text": "References:",
+          "anchor": "references"
+        }
+      ],
+      "blog_links": [],
+      "disposition": "included",
+      "research_type": "Windows lifecycle patch comparison",
+      "reason": "Method observations retained and merged into technique owners; exploitation details excluded.",
+      "evidence_level": "method-sections-inspected",
+      "skills": [
+        "patch-diff-analysis",
+        "remediation",
+        "state-and-lifetime-auditing"
+      ]
+    },
+    {
+      "id": "B022",
+      "title": "Fooling the Sandbox: A Chrome-atic Escape",
+      "url": "https://starlabs.sg/blog/2025/07-fooling-the-sandbox-a-chrome-atic-escape/",
+      "retrieval": {
+        "at": "2026-09-30T02:52:28.480Z",
+        "http_status": 200,
+        "final_url": "https://starlabs.sg/blog/2025/07-fooling-the-sandbox-a-chrome-atic-escape/",
+        "response_html_bytes": 65397,
+        "response_html_sha256": "b7f5a917b145caec684351916ccfa569b54fc838b1e67f52c0b71a5a1e8a47fd"
+      },
+      "observed_sections": [
+        {
+          "text": "The Hunt Begins: Finding the Trigger for CVE-2024-30088",
+          "anchor": "the-hunt-begins-finding-the-trigger-for-cve-2024-30088"
+        },
+        {
+          "text": "Down the Rabbit Hole: Following the Breadcrumbs",
+          "anchor": "down-the-rabbit-hole-following-the-breadcrumbs"
+        },
+        {
+          "text": "The Eureka Moment: Understanding the Race",
+          "anchor": "the-eureka-moment-understanding-the-race"
+        },
+        {
+          "text": "Weaponizing the Discovery",
+          "anchor": "weaponizing-the-discovery"
+        },
+        {
+          "text": "Entering Chrome Renderer Sandbox",
+          "anchor": "entering-chrome-renderer-sandbox"
+        },
+        {
+          "text": "Roadblock #1: The Integrity Police",
+          "anchor": "roadblock-1-the-integrity-police"
+        },
+        {
+          "text": "Roadblock #2: The Job Object Prison",
+          "anchor": "roadblock-2-the-job-object-prison"
+        },
+        {
+          "text": "Demo",
+          "anchor": "demo"
+        },
+        {
+          "text": "Summary",
+          "anchor": "summary"
+        },
+        {
+          "text": "Afterthoughts",
+          "anchor": "afterthoughts"
+        }
+      ],
+      "blog_links": [],
+      "disposition": "included",
+      "research_type": "Windows double-fetch and layered sandbox-context analysis",
+      "reason": "Method observations retained and merged into technique owners; exploitation details excluded.",
+      "evidence_level": "method-sections-inspected",
+      "skills": [
+        "dynamic-analysis",
+        "race-condition-auditing",
+        "sandbox-boundary-analysis"
+      ]
+    },
+    {
+      "id": "B023",
+      "title": "Solo: A Pixel 6 Pro Story (When one bug is all you need)",
+      "url": "https://starlabs.sg/blog/2025/06-solo-a-pixel-6-pro-story-when-one-bug-is-all-you-need/",
+      "retrieval": {
+        "at": "2026-09-30T02:52:28.480Z",
+        "http_status": 200,
+        "final_url": "https://starlabs.sg/blog/2025/06-solo-a-pixel-6-pro-story-when-one-bug-is-all-you-need/",
+        "response_html_bytes": 176934,
+        "response_html_sha256": "1211d5800be273669bda329af87d1355c9edc4b3537ed972fc9bc08369950668"
+      },
+      "observed_sections": [
+        {
+          "text": "Table of Contents",
+          "anchor": "table-of-contents"
+        },
+        {
+          "text": "Root Cause Analysis",
+          "anchor": "root-cause-analysis"
+        },
+        {
+          "text": "CVE-2023-48409",
+          "anchor": "cve-2023-48409"
+        },
+        {
+          "text": "What is CONFIG_HARDENED_USERCOPY?",
+          "anchor": "what-is-config_hardened_usercopy"
+        },
+        {
+          "text": "The Missing Piece: CVE-2023-26083",
+          "anchor": "the-missing-piece-cve-2023-26083"
+        },
+        {
+          "text": "One Bug to Root",
+          "anchor": "one-bug-to-root"
+        },
+        {
+          "text": "Physmap Spraying",
+          "anchor": "physmap-spraying"
+        },
+        {
+          "text": "Pagetable Spraying",
+          "anchor": "pagetable-spraying"
+        },
+        {
+          "text": "From Physical to Virtual: Converting Our Primitive",
+          "anchor": "from-physical-to-virtual-converting-our-primitive"
+        },
+        {
+          "text": "Android’s Unique Challenges",
+          "anchor": "androids-unique-challenges"
+        },
+        {
+          "text": "Bypassing Android’s App Sandbox",
+          "anchor": "bypassing-androids-app-sandbox"
+        },
+        {
+          "text": "Disabling SELinux Enforcement",
+          "anchor": "disabling-selinux-enforcement"
+        },
+        {
+          "text": "A Surprise Discovery",
+          "anchor": "a-surprise-discovery"
+        },
+        {
+          "text": "Understanding the Timeline Stream Leak",
+          "anchor": "understanding-the-timeline-stream-leak"
+        },
+        {
+          "text": "Command Stream Frontend",
+          "anchor": "command-stream-frontend"
+        },
+        {
+          "text": "The Golden Object: kbase_context",
+          "anchor": "the-golden-object-kbase_context"
+        },
+        {
+          "text": "Cleaning Up: Making the Exploit Practical",
+          "anchor": "cleaning-up-making-the-exploit-practical"
+        },
+        {
+          "text": "Conclusion",
+          "anchor": "conclusion"
+        },
+        {
+          "text": "References",
+          "anchor": "references"
+        }
+      ],
+      "blog_links": [
+        "https://starlabs.sg/blog/2023/07-prctl-anon_vma_name-an-amusing-heap-spray/"
+      ],
+      "disposition": "included",
+      "research_type": "GPU/OS portability and mitigation reassessment",
+      "reason": "Method observations retained and merged into technique owners; exploitation details excluded.",
+      "evidence_level": "method-sections-inspected",
+      "skills": [
+        "exploitability-assessment",
+        "sandbox-boundary-analysis",
+        "state-and-lifetime-auditing"
+      ]
+    },
+    {
+      "id": "B024",
+      "title": "Gone in 5 Seconds: How WARN_ON Stole 10 Minutes",
+      "url": "https://starlabs.sg/blog/2025/05-gone-in-5-seconds-how-warn_on-stole-10-minutes/",
+      "retrieval": {
+        "at": "2026-09-30T02:52:28.480Z",
+        "http_status": 200,
+        "final_url": "https://starlabs.sg/blog/2025/05-gone-in-5-seconds-how-warn_on-stole-10-minutes/",
+        "response_html_bytes": 73088,
+        "response_html_sha256": "3c794e1e362bfdce2a845540523a06eca94da63d22aef1be720b248d5851365d"
+      },
+      "observed_sections": [
+        {
+          "text": "Root Cause Analysis",
+          "anchor": "root-cause-analysis"
+        },
+        {
+          "text": "Backing pages",
+          "anchor": "backing-pages"
+        },
+        {
+          "text": "Mapping pages",
+          "anchor": "mapping-pages"
+        },
+        {
+          "text": "Exploit",
+          "anchor": "exploit"
+        },
+        {
+          "text": "Arbitrary R/W",
+          "anchor": "arbitrary-rw"
+        },
+        {
+          "text": "Other Pathways",
+          "anchor": "other-pathways"
+        },
+        {
+          "text": "Privilege Escalation",
+          "anchor": "privilege-escalation"
+        },
+        {
+          "text": "Bypass SELinux",
+          "anchor": "bypass-selinux"
+        },
+        {
+          "text": "Root",
+          "anchor": "root"
+        },
+        {
+          "text": "‘Fix’ delay",
+          "anchor": "fix-delay"
+        },
+        {
+          "text": "Bug Fix",
+          "anchor": "bug-fix"
+        },
+        {
+          "text": "References",
+          "anchor": "references"
+        }
+      ],
+      "blog_links": [],
+      "disposition": "included",
+      "research_type": "GPU race root-cause and diagnostic-cost investigation",
+      "reason": "Method observations retained and merged into technique owners; exploitation details excluded.",
+      "evidence_level": "method-sections-inspected",
+      "skills": [
+        "dynamic-analysis",
+        "race-condition-auditing"
+      ]
+    },
+    {
+      "id": "B025",
+      "title": "Badge & Lanyard Challenges @ OBO 2025",
+      "url": "https://starlabs.sg/blog/2025/05-badge-lanyard-challenges-@-obo-2025/",
+      "disposition": "excluded",
+      "research_type": "Event/news/challenge material",
+      "reason": "Event/badge challenges; peripheral to the research-method corpus.",
+      "skills": [],
+      "retrieval": null,
+      "observed_sections": []
+    },
+    {
+      "id": "B026",
+      "title": "Lessons From Pwn2Own Berlin 2025: Building a Hypervisor Escape",
+      "url": "https://starlabs.sg/blog/2025/05-lessons-from-pwn2own-berlin-2025-building-a-hypervisor-escape/",
+      "retrieval": {
+        "at": "2026-09-30T02:52:28.480Z",
+        "http_status": 200,
+        "final_url": "https://starlabs.sg/blog/2025/05-lessons-from-pwn2own-berlin-2025-building-a-hypervisor-escape/",
+        "response_html_bytes": 11167,
+        "response_html_sha256": "38f2986c5612a7da46301efc337f6a0bd845f7c19fd6a5252b9b2afe646f913d"
+      },
+      "observed_sections": [
+        {
+          "text": "Target selection",
+          "anchor": "target-selection"
+        },
+        {
+          "text": "The primitive",
+          "anchor": "the-primitive"
+        },
+        {
+          "text": "Shaping the exploit",
+          "anchor": "shaping-the-exploit"
+        },
+        {
+          "text": "What didn’t work",
+          "anchor": "what-didnt-work"
+        }
+      ],
+      "blog_links": [],
+      "disposition": "included",
+      "research_type": "Brief hypervisor selection and failed-hypothesis retrospective",
+      "reason": "Method observations retained and merged into technique owners; exploitation details excluded.",
+      "evidence_level": "brief-author-report",
+      "skills": [
+        "exploitability-assessment",
+        "memory-safety-auditing",
+        "race-condition-auditing"
+      ]
+    },
+    {
+      "id": "B027",
+      "title": "Breaking Out of Restricted Mode: XSS to RCE in Visual Studio Code",
+      "url": "https://starlabs.sg/blog/2025/05-breaking-out-of-restricted-mode-xss-to-rce-in-visual-studio-code/",
+      "retrieval": {
+        "at": "2026-09-30T02:52:28.480Z",
+        "http_status": 200,
+        "final_url": "https://starlabs.sg/blog/2025/05-breaking-out-of-restricted-mode-xss-to-rce-in-visual-studio-code/",
+        "response_html_bytes": 44750,
+        "response_html_sha256": "6695b9a11fce23b2401c1a3691db86e2e144397ec41a39c9cfe769df34ce7dc5"
+      },
+      "observed_sections": [
+        {
+          "text": "Vulnerability Details",
+          "anchor": "vulnerability-details"
+        },
+        {
+          "text": "Escalating to RCE",
+          "anchor": "escalating-to-rce"
+        },
+        {
+          "text": "Proof-of-Concept:",
+          "anchor": "proof-of-concept"
+        },
+        {
+          "text": "Suggested Mitigations",
+          "anchor": "suggested-mitigations"
+        },
+        {
+          "text": "Demo",
+          "anchor": "demo"
+        },
+        {
+          "text": "Timeline",
+          "anchor": "timeline"
+        }
+      ],
+      "blog_links": [],
+      "disposition": "included",
+      "research_type": "Desktop rendering and privileged IPC boundary audit",
+      "reason": "Method observations retained and merged into technique owners; exploitation details excluded.",
+      "evidence_level": "method-sections-inspected",
+      "skills": [
+        "sandbox-boundary-analysis"
+      ]
+    },
+    {
+      "id": "B028",
+      "title": "CimFS: Crashing in memory, Finding SYSTEM (Kernel Edition)",
+      "url": "https://starlabs.sg/blog/2025/03-cimfs-crashing-in-memory-finding-system-kernel-edition/",
+      "retrieval": {
+        "at": "2026-09-30T02:52:28.480Z",
+        "http_status": 200,
+        "final_url": "https://starlabs.sg/blog/2025/03-cimfs-crashing-in-memory-finding-system-kernel-edition/",
+        "response_html_bytes": 156170,
+        "response_html_sha256": "483ae0c4c466e0e649c96de06c4d602bbc52e9977eb92760075ebef282b30600"
+      },
+      "observed_sections": [
+        {
+          "text": "Introduction",
+          "anchor": "introduction"
+        },
+        {
+          "text": "The Beginning",
+          "anchor": "the-beginning"
+        },
+        {
+          "text": "Auth Bypass",
+          "anchor": "auth-bypass"
+        },
+        {
+          "text": "Mount Operation",
+          "anchor": "mount-operation"
+        },
+        {
+          "text": "Attack Plan",
+          "anchor": "attack-plan"
+        },
+        {
+          "text": "Fuzz Results",
+          "anchor": "fuzz-results"
+        },
+        {
+          "text": "Bug Analysis",
+          "anchor": "bug-analysis"
+        },
+        {
+          "text": "Exploitation",
+          "anchor": "exploitation"
+        },
+        {
+          "text": "Conclusion",
+          "anchor": "conclusion"
+        }
+      ],
+      "blog_links": [],
+      "disposition": "included",
+      "research_type": "Undocumented driver surface, constrained fuzzing, and crash triage",
+      "reason": "Method observations retained and merged into technique owners; exploitation details excluded.",
+      "evidence_level": "method-sections-inspected",
+      "skills": [
+        "attack-surface-mapping",
+        "authorization-auditing",
+        "binary-auditing",
+        "fuzzing",
+        "memory-safety-auditing",
+        "patch-diff-analysis"
+      ]
+    },
+    {
+      "id": "B029",
+      "title": "STAR Labs Windows Exploitation Challenge 2025 Writeup",
+      "url": "https://starlabs.sg/blog/2025/03-star-labs-windows-exploitation-challenge-2025-writeup/",
+      "disposition": "excluded",
+      "research_type": "Event/news/challenge material",
+      "reason": "Challenge writeup; excluded rather than converted into a walkthrough.",
+      "skills": [],
+      "retrieval": null,
+      "observed_sections": []
+    },
+    {
+      "id": "B030",
+      "title": "Mali-cious Intent: Exploiting GPU Vulnerabilities (CVE-2022-22706 / CVE-2021-39793)",
+      "url": "https://starlabs.sg/blog/2025/02-mali-cious-intent-exploiting-gpu-vulnerabilities-cve-2022-22706-/-cve-2021-39793/",
+      "retrieval": {
+        "at": "2026-09-30T02:52:28.480Z",
+        "http_status": 200,
+        "final_url": "https://starlabs.sg/blog/2025/02-mali-cious-intent-exploiting-gpu-vulnerabilities-cve-2022-22706-/-cve-2021-39793/",
+        "response_html_bytes": 80785,
+        "response_html_sha256": "042aea5208c2b06bec7c13779c2ec25a1473debc01f3193ba657da3f7ce5717f"
+      },
+      "observed_sections": [
+        {
+          "text": "Vulnerability Overview",
+          "anchor": "vulnerability-overview"
+        },
+        {
+          "text": "Affected Products",
+          "anchor": "affected-products"
+        },
+        {
+          "text": "CVSS3.1 Score",
+          "anchor": "cvss31-score"
+        },
+        {
+          "text": "Termux",
+          "anchor": "termux"
+        },
+        {
+          "text": "Root Cause Analysis",
+          "anchor": "root-cause-analysis"
+        },
+        {
+          "text": "Triggering the bug",
+          "anchor": "triggering-the-bug"
+        },
+        {
+          "text": "Exploitation Primitive",
+          "anchor": "exploitation-primitive"
+        },
+        {
+          "text": "Attack Strategy: Root Reverse Shell",
+          "anchor": "attack-strategy-root-reverse-shell"
+        },
+        {
+          "text": "Escalating to Root via init Hijacking",
+          "anchor": "escalating-to-root-via-init-hijacking"
+        },
+        {
+          "text": "Overwriting Vendor Kernel Modules",
+          "anchor": "overwriting-vendor-kernel-modules"
+        },
+        {
+          "text": "Loading Kernel Module",
+          "anchor": "loading-kernel-module"
+        },
+        {
+          "text": "Bypassing SELinux and Obtaining a Root Reverse Shell",
+          "anchor": "bypassing-selinux-and-obtaining-a-root-reverse-shell"
+        },
+        {
+          "text": "Exploit Execution: A Step-by-Step Breakdown",
+          "anchor": "exploit-execution-a-step-by-step-breakdown"
+        },
+        {
+          "text": "Closing Thoughts",
+          "anchor": "closing-thoughts"
+        },
+        {
+          "text": "References",
+          "anchor": "references"
+        }
+      ],
+      "blog_links": [],
+      "disposition": "included",
+      "research_type": "GPU page-permission and OS-policy audit",
+      "reason": "Method observations retained and merged into technique owners; exploitation details excluded.",
+      "evidence_level": "method-sections-inspected",
+      "skills": [
+        "authorization-auditing",
+        "exploitability-assessment",
+        "memory-safety-auditing",
+        "sandbox-boundary-analysis"
+      ]
+    },
+    {
+      "id": "B031",
+      "title": "CVE-2024-26230: Windows Telephony Service - It's Got Some Call-ing Issues (Elevation of Privilege)",
+      "url": "https://starlabs.sg/blog/2025/01-cve-2024-26230-windows-telephony-service-its-got-some-call-ing-issues-elevation-of-privilege/",
+      "retrieval": {
+        "at": "2026-09-30T02:52:28.480Z",
+        "http_status": 200,
+        "final_url": "https://starlabs.sg/blog/2025/01-cve-2024-26230-windows-telephony-service-its-got-some-call-ing-issues-elevation-of-privilege/",
+        "response_html_bytes": 37948,
+        "response_html_sha256": "db7a36625294f72c9b938f0f144bc8f0aaefa0302954d1dda6aaf147bf5c2a60"
+      },
+      "observed_sections": [
+        {
+          "text": "Executive Summary",
+          "anchor": "executive-summary"
+        },
+        {
+          "text": "Vulnerability Overview",
+          "anchor": "vulnerability-overview"
+        },
+        {
+          "text": "Affected Products",
+          "anchor": "affected-products"
+        },
+        {
+          "text": "CVSS3.1 Score",
+          "anchor": "cvss31-score"
+        },
+        {
+          "text": "Affected Software",
+          "anchor": "affected-software"
+        },
+        {
+          "text": "Description of Vulnerability",
+          "anchor": "description-of-vulnerability"
+        },
+        {
+          "text": "Windows Telephony Service",
+          "anchor": "windows-telephony-service"
+        },
+        {
+          "text": "Interface Definition Language (IDL)",
+          "anchor": "interface-definition-language-idl"
+        },
+        {
+          "text": "ClientRequest",
+          "anchor": "clientrequest"
+        },
+        {
+          "text": "Steps to Exploitation",
+          "anchor": "steps-to-exploitation"
+        },
+        {
+          "text": "CVE-2024-43626 - An Out-of-Bound Write bug in GetPriorityList leads to Information Leak in SetPriorityList",
+          "anchor": "cve-2024-43626---an-out-of-bound-write-bug-in-getprioritylist-leads-to-information-leak-in-setprioritylist"
+        },
+        {
+          "text": "Exploit Reproduction (Optional)",
+          "anchor": "exploit-reproduction-optional"
+        },
+        {
+          "text": "Detection Guidance",
+          "anchor": "detection-guidance"
+        },
+        {
+          "text": "Suggested Mitigations",
+          "anchor": "suggested-mitigations"
+        },
+        {
+          "text": "Proof-of-Concept",
+          "anchor": "proof-of-concept"
+        },
+        {
+          "text": "Demo",
+          "anchor": "demo"
+        },
+        {
+          "text": "References",
+          "anchor": "references"
+        }
+      ],
+      "blog_links": [],
+      "disposition": "included",
+      "research_type": "RPC dispatch, dangling-context, and input-size-limit analysis",
+      "reason": "Method observations retained and merged into technique owners; exploitation details excluded.",
+      "evidence_level": "method-sections-inspected",
+      "skills": [
+        "binary-auditing",
+        "exploitability-assessment",
+        "memory-safety-auditing",
+        "state-and-lifetime-auditing"
+      ]
+    },
+    {
+      "id": "B032",
+      "title": "Celebrating 7 Years of STAR Labs SG",
+      "url": "https://starlabs.sg/blog/2025/01-celebrating-7-years-of-star-labs-sg/",
+      "disposition": "excluded",
+      "research_type": "Event/news/challenge material",
+      "reason": "Anniversary/news; no distinct validated research method.",
+      "skills": [],
+      "retrieval": null,
+      "observed_sections": []
+    },
+    {
+      "id": "B033",
+      "title": "STAR Labs 2025 New Year Exploitation Challenge",
+      "url": "https://starlabs.sg/blog/2025/01-star-labs-2025-new-year-exploitation-challenge/",
+      "disposition": "excluded",
+      "research_type": "Event/news/challenge material",
+      "reason": "Challenge announcement; not primary method evidence.",
+      "skills": [],
+      "retrieval": null,
+      "observed_sections": []
+    },
+    {
+      "id": "B034",
+      "title": "All I Want for Christmas is a CVE-2024-30085 Exploit",
+      "url": "https://starlabs.sg/blog/2024/12-all-i-want-for-christmas-is-a-cve-2024-30085-exploit/",
+      "retrieval": {
+        "at": "2026-09-30T02:52:28.480Z",
+        "http_status": 200,
+        "final_url": "https://starlabs.sg/blog/2024/12-all-i-want-for-christmas-is-a-cve-2024-30085-exploit/",
+        "response_html_bytes": 130990,
+        "response_html_sha256": "0db4b5f25411408d510fb34c15d6bed404626de6e74206547e60694222addade"
+      },
+      "observed_sections": [
+        {
+          "text": "Table of Contents",
+          "anchor": "table-of-contents"
+        },
+        {
+          "text": "Introduction to cldflt.sys",
+          "anchor": "introduction-to-cldfltsys"
+        },
+        {
+          "text": "Vulnerability Analysis and Patch",
+          "anchor": "vulnerability-analysis-and-patch"
+        },
+        {
+          "text": "Reparse Point Structure",
+          "anchor": "reparse-point-structure"
+        },
+        {
+          "text": "Triggering the Vulnerability",
+          "anchor": "triggering-the-vulnerability"
+        },
+        {
+          "text": "Exploitation Overview",
+          "anchor": "exploitation-overview"
+        },
+        {
+          "text": "Obtaining a Kernel Pointer Leak",
+          "anchor": "obtaining-a-kernel-pointer-leak"
+        },
+        {
+          "text": "Arbitrary Read",
+          "anchor": "arbitrary-read"
+        },
+        {
+          "text": "Exploit Demo",
+          "anchor": "exploit-demo"
+        },
+        {
+          "text": "Acknowledgements",
+          "anchor": "acknowledgements"
+        },
+        {
+          "text": "References",
+          "anchor": "references"
+        }
+      ],
+      "blog_links": [],
+      "disposition": "included",
+      "research_type": "Nested-format and fixed-buffer patch analysis",
+      "reason": "Method observations retained and merged into technique owners; exploitation details excluded.",
+      "evidence_level": "method-sections-inspected",
+      "skills": [
+        "memory-safety-auditing"
+      ]
+    },
+    {
+      "id": "B035",
+      "title": "Behind the Scenes: Understanding CVE-2022-24547",
+      "url": "https://starlabs.sg/blog/2024/12-behind-the-scenes-understanding-cve-2022-24547/",
+      "retrieval": {
+        "at": "2026-09-30T02:52:28.480Z",
+        "http_status": 200,
+        "final_url": "https://starlabs.sg/blog/2024/12-behind-the-scenes-understanding-cve-2022-24547/",
+        "response_html_bytes": 26008,
+        "response_html_sha256": "1ffbbdf2e664214992f83628623a8d5a648997ddead41016fc343f3fb738311c"
+      },
+      "observed_sections": [
+        {
+          "text": "Summary",
+          "anchor": "summary"
+        },
+        {
+          "text": "CVSS3.1 Scoring System:",
+          "anchor": "cvss31-scoring-system"
+        },
+        {
+          "text": "Affected Software",
+          "anchor": "affected-software"
+        },
+        {
+          "text": "Description of Vulnerability",
+          "anchor": "description-of-vulnerability"
+        },
+        {
+          "text": "Exploitation",
+          "anchor": "exploitation"
+        },
+        {
+          "text": "Exploit Reproduction (Optional)",
+          "anchor": "exploit-reproduction-optional"
+        },
+        {
+          "text": "Exploit Conditions",
+          "anchor": "exploit-conditions"
+        },
+        {
+          "text": "Detection Guidance",
+          "anchor": "detection-guidance"
+        },
+        {
+          "text": "Suggested Mitigations",
+          "anchor": "suggested-mitigations"
+        },
+        {
+          "text": "Acknowledgements",
+          "anchor": "acknowledgements"
+        },
+        {
+          "text": "Conclusion",
+          "anchor": "conclusion"
+        }
+      ],
+      "blog_links": [],
+      "disposition": "included",
+      "research_type": "Cross-session COM and filesystem-policy analysis",
+      "reason": "Method observations retained and merged into technique owners; exploitation details excluded.",
+      "evidence_level": "method-sections-inspected",
+      "skills": [
+        "authorization-auditing",
+        "exploitability-assessment"
+      ]
+    },
+    {
+      "id": "B036",
+      "title": "#BadgeLife @ Off-By-One Conference 2024",
+      "url": "https://starlabs.sg/blog/2024/07-%23badgelife-@-off-by-one-conference-2024/",
+      "disposition": "excluded",
+      "research_type": "Event/news/challenge material",
+      "reason": "Event/badge material; peripheral to the research-method corpus.",
+      "skills": [],
+      "retrieval": null,
+      "observed_sections": []
+    },
+    {
+      "id": "B037",
+      "title": "Send()-ing Myself Belated Christmas Gifts - GitHub.com's Environment Variables & GHES Shell",
+      "url": "https://starlabs.sg/blog/2024/05-send-ing-myself-belated-christmas-gifts-github.coms-environment-variables-ghes-shell/",
+      "retrieval": {
+        "at": "2026-09-30T02:52:28.480Z",
+        "http_status": 200,
+        "final_url": "https://starlabs.sg/blog/2024/05-send-ing-myself-belated-christmas-gifts-github.coms-environment-variables-ghes-shell/",
+        "response_html_bytes": 90034,
+        "response_html_sha256": "acf14f28057745501b039cde92e12bac2405bdbdedee5df4c300441a3e4b26a5"
+      },
+      "observed_sections": [
+        {
+          "text": "Backstory",
+          "anchor": "backstory"
+        },
+        {
+          "text": "A Quick Primer on Ruby Reflections",
+          "anchor": "a-quick-primer-on-ruby-reflections"
+        },
+        {
+          "text": "Discovering the Vulnerability",
+          "anchor": "discovering-the-vulnerability"
+        },
+        {
+          "text": "In Search of Impact",
+          "anchor": "in-search-of-impact"
+        },
+        {
+          "text": "Triaging Candidate Methods",
+          "anchor": "triaging-candidate-methods"
+        },
+        {
+          "text": "Getting the Environment Variables",
+          "anchor": "getting-the-environment-variables"
+        },
+        {
+          "text": "The Actual Impact",
+          "anchor": "the-actual-impact"
+        },
+        {
+          "text": "Getting Remote Code Execution (RCE)",
+          "anchor": "getting-remote-code-execution-rce"
+        },
+        {
+          "text": "Exploit Conditions",
+          "anchor": "exploit-conditions"
+        },
+        {
+          "text": "Suggested Mitigations",
+          "anchor": "suggested-mitigations"
+        },
+        {
+          "text": "Detection Guidance",
+          "anchor": "detection-guidance"
+        },
+        {
+          "text": "Timeline",
+          "anchor": "timeline"
+        },
+        {
+          "text": "Closing Thoughts",
+          "anchor": "closing-thoughts"
+        }
+      ],
+      "blog_links": [],
+      "disposition": "included",
+      "research_type": "Ruby reflection audit and impact-boundary discovery",
+      "reason": "Method observations retained and merged into technique owners; exploitation details excluded.",
+      "evidence_level": "method-sections-inspected",
+      "skills": [
+        "deserialization-and-dispatch-auditing",
+        "exploitability-assessment",
+        "remediation",
+        "source-code-auditing"
+      ]
+    },
+    {
+      "id": "B038",
+      "title": "Send()-ing Myself Belated Christmas Gifts: GitHub.com's Environment Variables & GHES Shell",
+      "url": "https://starlabs.sg/blog/2024/04-send-ing-myself-belated-christmas-gifts-github.coms-environment-variables-ghes-shell/",
+      "retrieval": {
+        "at": "2026-09-30T02:52:28.480Z",
+        "http_status": 200,
+        "final_url": "https://starlabs.sg/blog/2024/04-send-ing-myself-belated-christmas-gifts-github.coms-environment-variables-ghes-shell/",
+        "response_html_bytes": 12086,
+        "response_html_sha256": "01a26facb0974d4eeb2dd78f40ca30b97e2aaab6badfa06b0649a6e57790aca9"
+      },
+      "observed_sections": [
+        {
+          "text": "The primitive",
+          "anchor": "the-primitive"
+        },
+        {
+          "text": "The leak",
+          "anchor": "the-leak"
+        },
+        {
+          "text": "Why so many env vars?",
+          "anchor": "why-so-many-env-vars"
+        },
+        {
+          "text": "On GHES: from read to shell",
+          "anchor": "on-ghes-from-read-to-shell"
+        },
+        {
+          "text": "Disclosure",
+          "anchor": "disclosure"
+        }
+      ],
+      "blog_links": [],
+      "disposition": "duplicate",
+      "research_type": "Brief reflection/impact overview",
+      "reason": "Merged into B037's more detailed method and scope evidence.",
+      "canonical_source": "B037",
+      "skills": []
+    },
+    {
+      "id": "B039",
+      "title": "Route to Safety: Navigating Router Pitfalls",
+      "url": "https://starlabs.sg/blog/2024/03-route-to-safety-navigating-router-pitfalls/",
+      "retrieval": {
+        "at": "2026-09-30T02:52:28.480Z",
+        "http_status": 200,
+        "final_url": "https://starlabs.sg/blog/2024/03-route-to-safety-navigating-router-pitfalls/",
+        "response_html_bytes": 128120,
+        "response_html_sha256": "588af3f1de2ea046148d0d5a02f5ca3005bdecc311d4c2019552a3f6980b8d6f"
+      },
+      "observed_sections": [
+        {
+          "text": "Introduction",
+          "anchor": "introduction"
+        },
+        {
+          "text": "Attack Surface",
+          "anchor": "attack-surface"
+        },
+        {
+          "text": "Admin Panel",
+          "anchor": "admin-panel"
+        },
+        {
+          "text": "Other Services",
+          "anchor": "other-services"
+        },
+        {
+          "text": "Poor Configurations",
+          "anchor": "poor-configurations"
+        },
+        {
+          "text": "Hardcoded Credentials",
+          "anchor": "hardcoded-credentials"
+        },
+        {
+          "text": "Services Exposed to the Internet",
+          "anchor": "services-exposed-to-the-internet"
+        },
+        {
+          "text": "Services Running as root",
+          "anchor": "services-running-as-root"
+        },
+        {
+          "text": "Password-less sudo?",
+          "anchor": "password-less-sudo"
+        },
+        {
+          "text": "Summary",
+          "anchor": "summary"
+        },
+        {
+          "text": "Vulnerability Classes",
+          "anchor": "vulnerability-classes"
+        },
+        {
+          "text": "Authentication Bypass",
+          "anchor": "authentication-bypass"
+        },
+        {
+          "text": "Command Injection",
+          "anchor": "command-injection"
+        },
+        {
+          "text": "Buffer Overflow",
+          "anchor": "buffer-overflow"
+        },
+        {
+          "text": "Format String Bug",
+          "anchor": "format-string-bug"
+        },
+        {
+          "text": "Conclusion",
+          "anchor": "conclusion"
+        }
+      ],
+      "blog_links": [
+        "https://starlabs.sg/blog/2022/12-the-last-breath-of-our-netgear-rax30-bugs-a-tragic-tale-before-pwn2own-toronto-2022/"
+      ],
+      "disposition": "included",
+      "research_type": "Router surface survey and defensive source/binary synthesis",
+      "reason": "Method observations retained and merged into technique owners; exploitation details excluded.",
+      "evidence_level": "method-sections-inspected",
+      "skills": [
+        "patch-diff-analysis",
+        "remediation"
+      ]
+    },
+    {
+      "id": "B040",
+      "title": "Exploitation of a kernel pool overflow from a restrictive chunk size (CVE-2021-31969)",
+      "url": "https://starlabs.sg/blog/2023/11-exploitation-of-a-kernel-pool-overflow-from-a-restrictive-chunk-size-cve-2021-31969/",
+      "retrieval": {
+        "at": "2026-09-30T02:52:28.480Z",
+        "http_status": 200,
+        "final_url": "https://starlabs.sg/blog/2023/11-exploitation-of-a-kernel-pool-overflow-from-a-restrictive-chunk-size-cve-2021-31969/",
+        "response_html_bytes": 137644,
+        "response_html_sha256": "657088063718f30edb036dce4cd8c82ccb1ec64e6faf36bd450e4a8c23100a9e"
+      },
+      "observed_sections": [
+        {
+          "text": "Introduction",
+          "anchor": "introduction"
+        },
+        {
+          "text": "Description",
+          "anchor": "description"
+        },
+        {
+          "text": "Affected Versions",
+          "anchor": "affected-versions"
+        },
+        {
+          "text": "Patch Diff",
+          "anchor": "patch-diff"
+        },
+        {
+          "text": "Before Patch",
+          "anchor": "before-patch"
+        },
+        {
+          "text": "After Patch",
+          "anchor": "after-patch"
+        },
+        {
+          "text": "Bug Analysis",
+          "anchor": "bug-analysis"
+        },
+        {
+          "text": "Structures",
+          "anchor": "structures"
+        },
+        {
+          "text": "Triggering Bug",
+          "anchor": "triggering-bug"
+        },
+        {
+          "text": "Restrictions",
+          "anchor": "restrictions"
+        },
+        {
+          "text": "Improving Primitive",
+          "anchor": "improving-primitive"
+        },
+        {
+          "text": "Exploitation Thoughts",
+          "anchor": "exploitation-thoughts"
+        },
+        {
+          "text": "LFH Pool Spray",
+          "anchor": "lfh-pool-spray"
+        },
+        {
+          "text": "Post Overflow",
+          "anchor": "post-overflow"
+        },
+        {
+          "text": "Arbitrary Read/Write",
+          "anchor": "arbitrary-readwrite"
+        },
+        {
+          "text": "Arbitrary Read",
+          "anchor": "arbitrary-read"
+        },
+        {
+          "text": "Arbitrary Write",
+          "anchor": "arbitrary-write"
+        },
+        {
+          "text": "Hunting EPROCESS",
+          "anchor": "hunting-eprocess"
+        },
+        {
+          "text": "Get Shell",
+          "anchor": "get-shell"
+        },
+        {
+          "text": "Exploit Success Rate",
+          "anchor": "exploit-success-rate"
+        },
+        {
+          "text": "Post Exploitation",
+          "anchor": "post-exploitation"
+        },
+        {
+          "text": "Variants",
+          "anchor": "variants"
+        },
+        {
+          "text": "Acknowledgements",
+          "anchor": "acknowledgements"
+        },
+        {
+          "text": "References",
+          "anchor": "references"
+        }
+      ],
+      "blog_links": [],
+      "disposition": "included",
+      "research_type": "Restricted Windows allocator/primitive and stability assessment",
+      "reason": "Method observations retained and merged into technique owners; exploitation details excluded.",
+      "evidence_level": "method-sections-inspected",
+      "skills": [
+        "exploitability-assessment",
+        "memory-safety-auditing"
+      ]
+    },
+    {
+      "id": "B041",
+      "title": "Analysis of NodeBB Account Takeover Vulnerability (CVE-2022-46164)",
+      "url": "https://starlabs.sg/blog/2023/09-analysis-of-nodebb-account-takeover-vulnerability-cve-2022-46164/",
+      "retrieval": {
+        "at": "2026-09-30T02:52:28.480Z",
+        "http_status": 200,
+        "final_url": "https://starlabs.sg/blog/2023/09-analysis-of-nodebb-account-takeover-vulnerability-cve-2022-46164/",
+        "response_html_bytes": 86697,
+        "response_html_sha256": "0d62ecc1b03a2573af43eea7f786e5f718d8718cdc5247b49cc54290b14d9b55"
+      },
+      "observed_sections": [
+        {
+          "text": "About CVE-2022-46164",
+          "anchor": "about-cve-2022-46164"
+        },
+        {
+          "text": "Vulnerability Details",
+          "anchor": "vulnerability-details"
+        },
+        {
+          "text": "Achieving Administrator Impersonation",
+          "anchor": "achieving-administrator-impersonation"
+        },
+        {
+          "text": "Achieving Denial-of-Service",
+          "anchor": "achieving-denial-of-service"
+        },
+        {
+          "text": "Exploit Conditions",
+          "anchor": "exploit-conditions"
+        },
+        {
+          "text": "Proof-of-Concept",
+          "anchor": "proof-of-concept"
+        },
+        {
+          "text": "Exploit Script",
+          "anchor": "exploit-script"
+        },
+        {
+          "text": "Example Usage",
+          "anchor": "example-usage"
+        },
+        {
+          "text": "Patch Analysis",
+          "anchor": "patch-analysis"
+        },
+        {
+          "text": "v2.6.1",
+          "anchor": "v261"
+        },
+        {
+          "text": "v2.8.1",
+          "anchor": "v281"
+        },
+        {
+          "text": "Suggested Mitigations:",
+          "anchor": "suggested-mitigations"
+        },
+        {
+          "text": "Detection Guidance:",
+          "anchor": "detection-guidance"
+        },
+        {
+          "text": "WebSocket Logs",
+          "anchor": "websocket-logs"
+        },
+        {
+          "text": "Socket.IO HTTP Long-polling",
+          "anchor": "socketio-http-long-polling"
+        },
+        {
+          "text": "Logs of Unsuccessful Exploitation Attempts",
+          "anchor": "logs-of-unsuccessful-exploitation-attempts"
+        },
+        {
+          "text": "Activity Timestamp",
+          "anchor": "activity-timestamp"
+        },
+        {
+          "text": "Closing Thoughts",
+          "anchor": "closing-thoughts"
+        }
+      ],
+      "blog_links": [],
+      "disposition": "included",
+      "research_type": "Stateful API dispatch and incomplete-patch audit",
+      "reason": "Method observations retained and merged into technique owners; exploitation details excluded.",
+      "evidence_level": "method-sections-inspected",
+      "skills": [
+        "authorization-auditing",
+        "deserialization-and-dispatch-auditing",
+        "patch-diff-analysis",
+        "remediation"
+      ]
+    },
+    {
+      "id": "B042",
+      "title": "[P2O Vancouver 2023] SharePoint Pre-Auth RCE chain (CVE-2023–29357 & CVE-2023–24955)",
+      "url": "https://starlabs.sg/blog/2023/09-p2o-vancouver-2023-sharepoint-pre-auth-rce-chain-cve-202329357-cve-202324955/",
+      "retrieval": {
+        "at": "2026-09-30T02:52:28.480Z",
+        "http_status": 200,
+        "final_url": "https://starlabs.sg/blog/2023/09-p2o-vancouver-2023-sharepoint-pre-auth-rce-chain-cve-202329357-cve-202324955/",
+        "response_html_bytes": 104492,
+        "response_html_sha256": "694e87e4d11edd7bf3260cb40acda50e03268938a41c1ebdcc96d905f83039ba"
+      },
+      "observed_sections": [
+        {
+          "text": "Brief",
+          "anchor": "brief"
+        },
+        {
+          "text": "Affected products/Tested version",
+          "anchor": "affected-productstested-version"
+        },
+        {
+          "text": "Vulnerability #1: SharePoint Application Authentication Bypass",
+          "anchor": "vulnerability-1-sharepoint-application-authentication-bypass"
+        },
+        {
+          "text": "Vulnerability #2: Code Injection in DynamicProxyGenerator.GenerateProxyAssembly()",
+          "anchor": "vulnerability-2-code-injection-in-dynamicproxygeneratorgenerateproxyassembly"
+        },
+        {
+          "text": "Demo",
+          "anchor": "demo"
+        }
+      ],
+      "blog_links": [],
+      "disposition": "included",
+      "research_type": "Application authentication and generated-code trust-boundary audit",
+      "reason": "Method observations retained and merged into technique owners; exploitation details excluded.",
+      "evidence_level": "method-sections-inspected",
+      "skills": [
+        "attack-surface-mapping",
+        "authorization-auditing"
+      ]
+    },
+    {
+      "id": "B043",
+      "title": "nftables Adventures: Bug Hunting and N-day Exploitation (CVE-2023-31248)",
+      "url": "https://starlabs.sg/blog/2023/09-nftables-adventures-bug-hunting-and-n-day-exploitation-cve-2023-31248/",
+      "retrieval": {
+        "at": "2026-09-30T02:52:28.480Z",
+        "http_status": 200,
+        "final_url": "https://starlabs.sg/blog/2023/09-nftables-adventures-bug-hunting-and-n-day-exploitation-cve-2023-31248/",
+        "response_html_bytes": 164137,
+        "response_html_sha256": "2a18711c17ad6d14adac020f3a1be6f4bb66a627a4250995753f572676b34ebd"
+      },
+      "observed_sections": [
+        {
+          "text": "Introduction to nftables",
+          "anchor": "introduction-to-nftables"
+        },
+        {
+          "text": "Tables",
+          "anchor": "tables"
+        },
+        {
+          "text": "Chains",
+          "anchor": "chains"
+        },
+        {
+          "text": "Rules",
+          "anchor": "rules"
+        },
+        {
+          "text": "Expressions",
+          "anchor": "expressions"
+        },
+        {
+          "text": "Genmask System",
+          "anchor": "genmask-system"
+        },
+        {
+          "text": "Control Plane, Transaction System and Transaction Worker",
+          "anchor": "control-plane-transaction-system-and-transaction-worker"
+        },
+        {
+          "text": "nftables Dormant State Chain Hook Deactivation Bug",
+          "anchor": "nftables-dormant-state-chain-hook-deactivation-bug"
+        },
+        {
+          "text": "Triggering the Bug",
+          "anchor": "triggering-the-bug"
+        },
+        {
+          "text": "Patch Analysis",
+          "anchor": "patch-analysis"
+        },
+        {
+          "text": "CVE-2023-31248",
+          "anchor": "cve-2023-31248"
+        },
+        {
+          "text": "Vulnerability Analysis",
+          "anchor": "vulnerability-analysis"
+        },
+        {
+          "text": "Triggering the bug with a single batch transaction",
+          "anchor": "triggering-the-bug-with-a-single-batch-transaction"
+        },
+        {
+          "text": "Exploitation",
+          "anchor": "exploitation"
+        },
+        {
+          "text": "Obtaining a Use-After-Free",
+          "anchor": "obtaining-a-use-after-free"
+        },
+        {
+          "text": "Obtaining a kernel text leak",
+          "anchor": "obtaining-a-kernel-text-leak"
+        },
+        {
+          "text": "Obtaining a heap leak",
+          "anchor": "obtaining-a-heap-leak"
+        },
+        {
+          "text": "Controlling RIP",
+          "anchor": "controlling-rip"
+        },
+        {
+          "text": "Patch Analysis",
+          "anchor": "patch-analysis-1"
+        },
+        {
+          "text": "Exploit Demo",
+          "anchor": "exploit-demo"
+        },
+        {
+          "text": "Acknowledgements",
+          "anchor": "acknowledgements"
+        },
+        {
+          "text": "References and Credits",
+          "anchor": "references-and-credits"
+        }
+      ],
+      "blog_links": [],
+      "disposition": "included",
+      "research_type": "Transaction generation, asynchronous lifetime, and N-day analysis",
+      "reason": "Method observations retained and merged into technique owners; exploitation details excluded.",
+      "evidence_level": "method-sections-inspected",
+      "skills": [
+        "exploitability-assessment",
+        "race-condition-auditing",
+        "remediation",
+        "state-and-lifetime-auditing"
+      ]
+    },
+    {
+      "id": "B044",
+      "title": "Under The Hood - Disassembling of IKEA-Sonos Symfonisk Speaker Lamp",
+      "url": "https://starlabs.sg/blog/2023/08-under-the-hood-disassembling-of-ikea-sonos-symfonisk-speaker-lamp/",
+      "retrieval": {
+        "at": "2026-09-30T02:52:28.480Z",
+        "http_status": 200,
+        "final_url": "https://starlabs.sg/blog/2023/08-under-the-hood-disassembling-of-ikea-sonos-symfonisk-speaker-lamp/",
+        "response_html_bytes": 32605,
+        "response_html_sha256": "5150c1b041dc8fd74df8af500ad855362266f2a27f2013a38286da7b88b08a67"
+      },
+      "observed_sections": [
+        {
+          "text": "Outer Housing",
+          "anchor": "outer-housing"
+        },
+        {
+          "text": "WiFi Antenna",
+          "anchor": "wifi-antenna"
+        },
+        {
+          "text": "Power Socket/Cable",
+          "anchor": "power-socketcable"
+        },
+        {
+          "text": "The upper side of the Main Circuit Board",
+          "anchor": "the-upper-side-of-the-main-circuit-board"
+        },
+        {
+          "text": "The lower side of the Main Circuit Board",
+          "anchor": "the-lower-side-of-the-main-circuit-board"
+        },
+        {
+          "text": "Power - Protection",
+          "anchor": "power---protection"
+        },
+        {
+          "text": "Power - EMI/RFI Filtering",
+          "anchor": "power---emirfi-filtering"
+        },
+        {
+          "text": "Power - Flyback Transformer",
+          "anchor": "power---flyback-transformer"
+        },
+        {
+          "text": "Power - TPS54335A Step-Down (Buck) Converter",
+          "anchor": "power---tps54335a-step-down-buck-converter"
+        },
+        {
+          "text": "Audio - PCM5101A Audio DAC",
+          "anchor": "audio---pcm5101a-audio-dac"
+        },
+        {
+          "text": "Metal Enclosure (TOP)",
+          "anchor": "metal-enclosure-top"
+        },
+        {
+          "text": "Memory - NT5CC128M16JR-EK 2Gb DDR3 SDRAM",
+          "anchor": "memory---nt5cc128m16jr-ek-2gb-ddr3-sdram"
+        },
+        {
+          "text": "Power - PAM2310 Step-Down (Buck) Converter",
+          "anchor": "power---pam2310-step-down-buck-converter"
+        },
+        {
+          "text": "Power - NCP303 Voltage Supervisor Reset IC",
+          "anchor": "power---ncp303-voltage-supervisor-reset-ic"
+        },
+        {
+          "text": "Processor - MCIMX6X2EVN10AC ARM Cortex A9 + M4",
+          "anchor": "processor---mcimx6x2evn10ac-arm-cortex-a9--m4"
+        },
+        {
+          "text": "Apple - Accessory Certification IC (3959)",
+          "anchor": "apple---accessory-certification-ic-3959"
+        },
+        {
+          "text": "Temperature - TMP100 Digital Temperature Sensor",
+          "anchor": "temperature---tmp100-digital-temperature-sensor"
+        },
+        {
+          "text": "Ethernet - 78Q2133 10/100BASE Transceiver",
+          "anchor": "ethernet---78q2133-10100base-transceiver"
+        },
+        {
+          "text": "Ethernet - H1601AE Network Isolation Transformer",
+          "anchor": "ethernet---h1601ae-network-isolation-transformer"
+        },
+        {
+          "text": "Memory - MT29F2G08ABAEAWP-ITE 2Gb NAND Flash",
+          "anchor": "memory---mt29f2g08abaeawp-ite-2gb-nand-flash"
+        },
+        {
+          "text": "Audio - TPA3116D2 Class D Audio Amplifier",
+          "anchor": "audio---tpa3116d2-class-d-audio-amplifier"
+        },
+        {
+          "text": "Power - Flyback Diodes",
+          "anchor": "power---flyback-diodes"
+        },
+        {
+          "text": "Power - DF08S Rectifier Bridge",
+          "anchor": "power---df08s-rectifier-bridge"
+        },
+        {
+          "text": "Power - RT7781 PWM Flyback Controller",
+          "anchor": "power---rt7781-pwm-flyback-controller"
+        },
+        {
+          "text": "Power - EL817 Photocoupler",
+          "anchor": "power---el817-photocoupler"
+        },
+        {
+          "text": "Power - Flyback Diodes",
+          "anchor": "power---flyback-diodes-1"
+        },
+        {
+          "text": "Unpopulated Connectors",
+          "anchor": "unpopulated-connectors"
+        },
+        {
+          "text": "Unpopulated Integrated Circuits (ICs)",
+          "anchor": "unpopulated-integrated-circuits-ics"
+        },
+        {
+          "text": "Concluding Remarks",
+          "anchor": "concluding-remarks"
+        }
+      ],
+      "blog_links": [],
+      "disposition": "context",
+      "research_type": "Hardware component teardown",
+      "reason": "Datasheet/component identification only; no validated bug method. B014 supplies substantive reconstruction evidence.",
+      "skills": []
+    },
+    {
+      "id": "B045",
+      "title": "A new method for container escape using file-based DirtyCred",
+      "url": "https://starlabs.sg/blog/2023/07-a-new-method-for-container-escape-using-file-based-dirtycred/",
+      "retrieval": {
+        "at": "2026-09-30T02:52:28.480Z",
+        "http_status": 200,
+        "final_url": "https://starlabs.sg/blog/2023/07-a-new-method-for-container-escape-using-file-based-dirtycred/",
+        "response_html_bytes": 74397,
+        "response_html_sha256": "7aca1dd188edf3ec9df9bf756079a9c72d7cf5d491380a65f101f197a0c42324"
+      },
+      "observed_sections": [
+        {
+          "text": "Introduction to relevant io_uring components",
+          "anchor": "introduction-to-relevant-io_uring-components"
+        },
+        {
+          "text": "Fixed files",
+          "anchor": "fixed-files"
+        },
+        {
+          "text": "Ring messages",
+          "anchor": "ring-messages"
+        },
+        {
+          "text": "The vulnerability",
+          "anchor": "the-vulnerability"
+        },
+        {
+          "text": "Immediate consequences",
+          "anchor": "immediate-consequences"
+        },
+        {
+          "text": "DirtyCred",
+          "anchor": "dirtycred"
+        },
+        {
+          "text": "The file struct",
+          "anchor": "the-file-struct"
+        },
+        {
+          "text": "Code analysis",
+          "anchor": "code-analysis"
+        },
+        {
+          "text": "Traditional DirtyCred: targeting ext4 files",
+          "anchor": "traditional-dirtycred-targeting-ext4-files"
+        },
+        {
+          "text": "Local privilege escalation",
+          "anchor": "local-privilege-escalation"
+        },
+        {
+          "text": "The rabbit hole",
+          "anchor": "the-rabbit-hole"
+        },
+        {
+          "text": "The /proc filesystem and you",
+          "anchor": "the-proc-filesystem-and-you"
+        },
+        {
+          "text": "A new target: aio_write()",
+          "anchor": "a-new-target-aio_write"
+        },
+        {
+          "text": "Slow page fault to the rescue",
+          "anchor": "slow-page-fault-to-the-rescue"
+        },
+        {
+          "text": "Putting it all together",
+          "anchor": "putting-it-all-together"
+        },
+        {
+          "text": "Testing against actual containers",
+          "anchor": "testing-against-actual-containers"
+        },
+        {
+          "text": "Standard Docker container",
+          "anchor": "standard-docker-container"
+        },
+        {
+          "text": "Docker container with apparmor=unconfined",
+          "anchor": "docker-container-with-apparmorunconfined"
+        },
+        {
+          "text": "Standard containerd container",
+          "anchor": "standard-containerd-container"
+        },
+        {
+          "text": "Demo",
+          "anchor": "demo"
+        },
+        {
+          "text": "Acknowledgements",
+          "anchor": "acknowledgements"
+        },
+        {
+          "text": "References",
+          "anchor": "references"
+        }
+      ],
+      "blog_links": [
+        "https://starlabs.sg/blog/2022/06-io_uring-new-code-new-bugs-and-a-new-exploit-technique/",
+        "https://starlabs.sg/blog/2023/07-container-escape-using-file-based-DirtyCred_old_source.zip",
+        "https://starlabs.sg/blog/2023/07-container-escape-using-file-based-DirtyCred_source.zip"
+      ],
+      "disposition": "included",
+      "research_type": "File-identity/lifetime and container-policy assessment",
+      "reason": "Method observations retained and merged into technique owners; exploitation details excluded.",
+      "evidence_level": "method-sections-inspected",
+      "skills": [
+        "exploitability-assessment",
+        "race-condition-auditing",
+        "sandbox-boundary-analysis"
+      ]
+    },
+    {
+      "id": "B046",
+      "title": "prctl anon_vma_name: An Amusing Linux Kernel Heap Spray",
+      "url": "https://starlabs.sg/blog/2023/07-prctl-anon_vma_name-an-amusing-linux-kernel-heap-spray/",
+      "retrieval": {
+        "at": "2026-09-30T02:52:28.480Z",
+        "http_status": 200,
+        "final_url": "https://starlabs.sg/blog/2023/07-prctl-anon_vma_name-an-amusing-linux-kernel-heap-spray/",
+        "response_html_bytes": 38225,
+        "response_html_sha256": "891c6a3eca72169c3cf467499cab6a28f130307d91e33f6b272dbbd23d115f25"
+      },
+      "observed_sections": [
+        {
+          "text": "TLDR",
+          "anchor": "tldr"
+        },
+        {
+          "text": "Introduction and Backstory",
+          "anchor": "introduction-and-backstory"
+        },
+        {
+          "text": "What is prctl?",
+          "anchor": "what-is-prctl"
+        },
+        {
+          "text": "How to spray anon_vma_name",
+          "anchor": "how-to-spray-anon_vma_name"
+        },
+        {
+          "text": "Conclusion",
+          "anchor": "conclusion"
+        },
+        {
+          "text": "References",
+          "anchor": "references"
+        }
+      ],
+      "blog_links": [],
+      "disposition": "included",
+      "research_type": "Allocator/input/lifetime characterization of an interface",
+      "reason": "Method observations retained and merged into technique owners; exploitation details excluded.",
+      "evidence_level": "method-sections-inspected",
+      "skills": [
+        "memory-safety-auditing"
+      ]
+    },
+    {
+      "id": "B047",
+      "title": "Breaking the Code - Exploiting and Examining CVE-2023-1829 in cls_tcindex Classifier Vulnerability",
+      "url": "https://starlabs.sg/blog/2023/06-breaking-the-code-exploiting-and-examining-cve-2023-1829-in-cls_tcindex-classifier-vulnerability/",
+      "retrieval": {
+        "at": "2026-09-30T02:52:28.480Z",
+        "http_status": 200,
+        "final_url": "https://starlabs.sg/blog/2023/06-breaking-the-code-exploiting-and-examining-cve-2023-1829-in-cls_tcindex-classifier-vulnerability/",
+        "response_html_bytes": 89880,
+        "response_html_sha256": "edfbe33c7a6caf2afed88331bf6e4805fe09108f368e8b12c3a255aa26c39dc4"
+      },
+      "observed_sections": [
+        {
+          "text": "Background",
+          "anchor": "background"
+        },
+        {
+          "text": "Netlink Overview",
+          "anchor": "netlink-overview"
+        },
+        {
+          "text": "Traffic Control",
+          "anchor": "traffic-control"
+        },
+        {
+          "text": "Queuing Disciplines",
+          "anchor": "queuing-disciplines"
+        },
+        {
+          "text": "Filters",
+          "anchor": "filters"
+        },
+        {
+          "text": "Playing with NETLINK_ROUTE",
+          "anchor": "playing-with-netlink_route"
+        },
+        {
+          "text": "Vulnerability Analysis",
+          "anchor": "vulnerability-analysis"
+        },
+        {
+          "text": "Proof-of-Concept",
+          "anchor": "proof-of-concept"
+        },
+        {
+          "text": "Exploitation",
+          "anchor": "exploitation"
+        },
+        {
+          "text": "How to solve the unstable problem when reclaiming UAF’s chunk",
+          "anchor": "how-to-solve-the-unstable-problem-when-reclaiming-uafs-chunk"
+        },
+        {
+          "text": "Steps to exploitation",
+          "anchor": "steps-to-exploitation"
+        },
+        {
+          "text": "Patch Analysis",
+          "anchor": "patch-analysis"
+        },
+        {
+          "text": "Conclusion",
+          "anchor": "conclusion"
+        },
+        {
+          "text": "References",
+          "anchor": "references"
+        }
+      ],
+      "blog_links": [],
+      "disposition": "included",
+      "research_type": "Classifier branch/lifetime and allocator-failure analysis",
+      "reason": "Method observations retained and merged into technique owners; exploitation details excluded.",
+      "evidence_level": "method-sections-inspected",
+      "skills": [
+        "state-and-lifetime-auditing"
+      ]
+    },
+    {
+      "id": "B048",
+      "title": "The Old, The New and The Bypass - One-click/Open-redirect to own Samsung S22 at Pwn2Own 2022",
+      "url": "https://starlabs.sg/blog/2023/06-the-old-the-new-and-the-bypass-one-click/open-redirect-to-own-samsung-s22-at-pwn2own-2022/",
+      "retrieval": {
+        "at": "2026-09-30T02:52:28.480Z",
+        "http_status": 200,
+        "final_url": "https://starlabs.sg/blog/2023/06-the-old-the-new-and-the-bypass-one-click/open-redirect-to-own-samsung-s22-at-pwn2own-2022/",
+        "response_html_bytes": 58139,
+        "response_html_sha256": "645adec440443a1a08862d5ba94b9881955dc1f2315227f701cf40bef9cc8c19"
+      },
+      "observed_sections": [
+        {
+          "text": "TLDR;",
+          "anchor": "tldr"
+        },
+        {
+          "text": "What is Deeplink?",
+          "anchor": "what-is-deeplink"
+        },
+        {
+          "text": "The “Old” Bug",
+          "anchor": "the-old-bug"
+        },
+        {
+          "text": "The “New” Bug",
+          "anchor": "the-new-bug"
+        },
+        {
+          "text": "Proof-of-Concept",
+          "anchor": "proof-of-concept"
+        },
+        {
+          "text": "Demo",
+          "anchor": "demo"
+        },
+        {
+          "text": "The “Bypass”",
+          "anchor": "the-bypass"
+        },
+        {
+          "text": "Steps to Reproduction",
+          "anchor": "steps-to-reproduction"
+        },
+        {
+          "text": "References",
+          "anchor": "references"
+        }
+      ],
+      "blog_links": [],
+      "disposition": "included",
+      "research_type": "WebView navigation, intent dispatch, and patch-bypass audit",
+      "reason": "Method observations retained and merged into technique owners; exploitation details excluded.",
+      "evidence_level": "method-sections-inspected",
+      "skills": [
+        "authorization-auditing",
+        "parser-differential-auditing",
+        "sandbox-boundary-analysis"
+      ]
+    },
+    {
+      "id": "B049",
+      "title": "Microsoft Exchange Powershell Remoting Deserialization leading to RCE (CVE-2023-21707)",
+      "url": "https://starlabs.sg/blog/2023/04-microsoft-exchange-powershell-remoting-deserialization-leading-to-rce-cve-2023-21707/",
+      "retrieval": {
+        "at": "2026-09-30T02:52:28.480Z",
+        "http_status": 200,
+        "final_url": "https://starlabs.sg/blog/2023/04-microsoft-exchange-powershell-remoting-deserialization-leading-to-rce-cve-2023-21707/",
+        "response_html_bytes": 34815,
+        "response_html_sha256": "60e7e2c46027dc8947c4104cf74ad44e8b52104edcadc4e3694917d74e085682"
+      },
+      "observed_sections": [
+        {
+          "text": "Introduction",
+          "anchor": "introduction"
+        },
+        {
+          "text": "The new variant",
+          "anchor": "the-new-variant"
+        },
+        {
+          "text": "Payload delivery",
+          "anchor": "payload-delivery"
+        },
+        {
+          "text": "Demo",
+          "anchor": "demo"
+        },
+        {
+          "text": "References",
+          "anchor": "references"
+        }
+      ],
+      "blog_links": [],
+      "disposition": "included",
+      "research_type": "Nested type conversion/deserialization and patch-variant analysis",
+      "reason": "Method observations retained and merged into technique owners; exploitation details excluded.",
+      "evidence_level": "method-sections-inspected",
+      "skills": [
+        "deserialization-and-dispatch-auditing",
+        "exploitability-assessment",
+        "patch-diff-analysis",
+        "remediation"
+      ]
+    },
+    {
+      "id": "B050",
+      "title": "CS-Cart PDF Plugin Unauthenticated Command Injection",
+      "url": "https://starlabs.sg/blog/2023/03-cs-cart-pdf-plugin-unauthenticated-command-injection/",
+      "retrieval": {
+        "at": "2026-09-30T02:52:28.480Z",
+        "http_status": 200,
+        "final_url": "https://starlabs.sg/blog/2023/03-cs-cart-pdf-plugin-unauthenticated-command-injection/",
+        "response_html_bytes": 28410,
+        "response_html_sha256": "9b683e09b4c226eca21fce005f8ac3a803581d769162a69df8f4a6ca4b467aa3"
+      },
+      "observed_sections": [
+        {
+          "text": "Summary",
+          "anchor": "summary"
+        },
+        {
+          "text": "Product Background",
+          "anchor": "product-background"
+        },
+        {
+          "text": "Confirmed Vulnerable Versions",
+          "anchor": "confirmed-vulnerable-versions"
+        },
+        {
+          "text": "Security Impact",
+          "anchor": "security-impact"
+        },
+        {
+          "text": "Proposed CVSS3.1 Rating",
+          "anchor": "proposed-cvss31-rating"
+        },
+        {
+          "text": "Decription of the Vulnerability",
+          "anchor": "decription-of-the-vulnerability"
+        },
+        {
+          "text": "Steps to Reproducing",
+          "anchor": "steps-to-reproducing"
+        },
+        {
+          "text": "Recommendations",
+          "anchor": "recommendations"
+        },
+        {
+          "text": "Discovery Credits",
+          "anchor": "discovery-credits"
+        },
+        {
+          "text": "Timeline",
+          "anchor": "timeline"
+        }
+      ],
+      "blog_links": [],
+      "disposition": "included",
+      "research_type": "Derived-path and external-process argument source audit",
+      "reason": "Method observations retained and merged into technique owners; exploitation details excluded.",
+      "evidence_level": "method-sections-inspected",
+      "skills": [
+        "parser-differential-auditing"
+      ]
+    },
+    {
+      "id": "B051",
+      "title": "Microsoft Azure Account Takeover via DOM-based XSS in Cosmos DB Explorer",
+      "url": "https://starlabs.sg/blog/2023/02-microsoft-azure-account-takeover-via-dom-based-xss-in-cosmos-db-explorer/",
+      "retrieval": {
+        "at": "2026-09-30T02:52:28.480Z",
+        "http_status": 200,
+        "final_url": "https://starlabs.sg/blog/2023/02-microsoft-azure-account-takeover-via-dom-based-xss-in-cosmos-db-explorer/",
+        "response_html_bytes": 35593,
+        "response_html_sha256": "9d4afc1031ac235a027d542ea9fb1026a8d27458f619358b51a9a18f5e7ec02e"
+      },
+      "observed_sections": [
+        {
+          "text": "About the DOM XSS Vulnerability",
+          "anchor": "about-the-dom-xss-vulnerability"
+        },
+        {
+          "text": "Full Technical Details – Researcher’s Point of View",
+          "anchor": "full-technical-details--researchers-point-of-view"
+        },
+        {
+          "text": "Incorrect Origin Check",
+          "anchor": "incorrect-origin-check"
+        },
+        {
+          "text": "DOM-based XSS",
+          "anchor": "dom-based-xss"
+        },
+        {
+          "text": "A Proof-of-Concept for the DOM XSS Vulnerability",
+          "anchor": "a-proof-of-concept-for-the-dom-xss-vulnerability"
+        },
+        {
+          "text": "Recommendations",
+          "anchor": "recommendations"
+        },
+        {
+          "text": "Final Thoughts",
+          "anchor": "final-thoughts"
+        }
+      ],
+      "blog_links": [],
+      "disposition": "included",
+      "research_type": "Message-origin and DOM-sink source audit",
+      "reason": "Method observations retained and merged into technique owners; exploitation details excluded.",
+      "evidence_level": "method-sections-inspected",
+      "skills": [
+        "parser-differential-auditing"
+      ]
+    },
+    {
+      "id": "B052",
+      "title": "STAR LABS SG PTE. LTD. has been authorized by the CVE Program as a CVE Numbering Authority (CNA)",
+      "url": "https://starlabs.sg/blog/2023/02-star-labs-sg-pte.-ltd.-has-been-authorized-by-the-cve-program-as-a-cve-numbering-authority-cna/",
+      "disposition": "excluded",
+      "research_type": "Event/news/challenge material",
+      "reason": "CNA announcement; reporting status is not research-method evidence.",
+      "skills": [],
+      "retrieval": null,
+      "observed_sections": []
+    },
+    {
+      "id": "B053",
+      "title": "Gotta KEP-tcha 'Em All - Bypassing Anti-Debugging methods in KEPServerEX",
+      "url": "https://starlabs.sg/blog/2023/02-gotta-kep-tcha-em-all-bypassing-anti-debugging-methods-in-kepserverex/",
+      "retrieval": {
+        "at": "2026-09-30T02:52:28.480Z",
+        "http_status": 200,
+        "final_url": "https://starlabs.sg/blog/2023/02-gotta-kep-tcha-em-all-bypassing-anti-debugging-methods-in-kepserverex/",
+        "response_html_bytes": 113978,
+        "response_html_sha256": "39c79ec00a7a7d8786aece67300b1f0962f7ed5bbdd545d07c962fc7455edcee"
+      },
+      "observed_sections": [
+        {
+          "text": "Background",
+          "anchor": "background"
+        },
+        {
+          "text": "Anti-debuger and anti attach",
+          "anchor": "anti-debuger-and-anti-attach"
+        },
+        {
+          "text": "First attempt at Bypassing of Checks",
+          "anchor": "first-attempt-at-bypassing-of-checks"
+        },
+        {
+          "text": "Checking of file signature",
+          "anchor": "checking-of-file-signature"
+        },
+        {
+          "text": "Second attempt at Bypassing of Checks",
+          "anchor": "second-attempt-at-bypassing-of-checks"
+        },
+        {
+          "text": "Hiding the Debugger",
+          "anchor": "hiding-the-debugger"
+        },
+        {
+          "text": "Third attempt at Bypassing of Checks",
+          "anchor": "third-attempt-at-bypassing-of-checks"
+        },
+        {
+          "text": "Code Patching",
+          "anchor": "code-patching"
+        },
+        {
+          "text": "Bonus",
+          "anchor": "bonus"
+        },
+        {
+          "text": "Conclusion",
+          "anchor": "conclusion"
+        },
+        {
+          "text": "References",
+          "anchor": "references"
+        }
+      ],
+      "blog_links": [],
+      "disposition": "included",
+      "research_type": "Instrumentation-environment diagnosis and snapshot-harness failure",
+      "reason": "Method observations retained and merged into technique owners; exploitation details excluded.",
+      "evidence_level": "method-sections-inspected",
+      "skills": [
+        "dynamic-analysis",
+        "fuzzing"
+      ]
+    },
+    {
+      "id": "B054",
+      "title": "Dissecting the Vulnerabilities - A Comprehensive Teardown of acmailer's N-Days",
+      "url": "https://starlabs.sg/blog/2023/02-dissecting-the-vulnerabilities-a-comprehensive-teardown-of-acmailers-n-days/",
+      "retrieval": {
+        "at": "2026-09-30T02:52:28.480Z",
+        "http_status": 200,
+        "final_url": "https://starlabs.sg/blog/2023/02-dissecting-the-vulnerabilities-a-comprehensive-teardown-of-acmailers-n-days/",
+        "response_html_bytes": 81004,
+        "response_html_sha256": "ed029fb15db7a3e38b72d3be2725f2e5c7b779991e711fc69f1e49d3aa664a24"
+      },
+      "observed_sections": [
+        {
+          "text": "Introduction",
+          "anchor": "introduction"
+        },
+        {
+          "text": "About CVE-2021-20617:",
+          "anchor": "about-cve-2021-20617"
+        },
+        {
+          "text": "Root Cause Analysis of CVE-2021-20617:",
+          "anchor": "root-cause-analysis-of-cve-2021-20617"
+        },
+        {
+          "text": "Exploit Conditions for CVE-2021-20617:",
+          "anchor": "exploit-conditions-for-cve-2021-20617"
+        },
+        {
+          "text": "Patch Analysis for CVE-2021-20617:",
+          "anchor": "patch-analysis-for-cve-2021-20617"
+        },
+        {
+          "text": "Proof-of-concept for CVE-2021-20617:",
+          "anchor": "proof-of-concept-for-cve-2021-20617"
+        },
+        {
+          "text": "Suggested Mitigations for CVE-2021-20617:",
+          "anchor": "suggested-mitigations-for-cve-2021-20617"
+        },
+        {
+          "text": "Detection Guidance for CVE-2021-20617:",
+          "anchor": "detection-guidance-for-cve-2021-20617"
+        },
+        {
+          "text": "About CVE-2021-20618:",
+          "anchor": "about-cve-2021-20618"
+        },
+        {
+          "text": "Root Cause Analysis of CVE-2021-20618:",
+          "anchor": "root-cause-analysis-of-cve-2021-20618"
+        },
+        {
+          "text": "Exploit Conditions for CVE-2021-20618:",
+          "anchor": "exploit-conditions-for-cve-2021-20618"
+        },
+        {
+          "text": "Patch Analysis for CVE-2021-20618:",
+          "anchor": "patch-analysis-for-cve-2021-20618"
+        },
+        {
+          "text": "Proof-of-concept for CVE-2021-20618:",
+          "anchor": "proof-of-concept-for-cve-2021-20618"
+        },
+        {
+          "text": "Suggested Mitigations for CVE-2021-20618:",
+          "anchor": "suggested-mitigations-for-cve-2021-20618"
+        },
+        {
+          "text": "Conclusion",
+          "anchor": "conclusion"
+        }
+      ],
+      "blog_links": [],
+      "disposition": "included",
+      "research_type": "Source N-day, setup/deprecated-feature, and patch review",
+      "reason": "Method observations retained and merged into technique owners; exploitation details excluded.",
+      "evidence_level": "method-sections-inspected",
+      "skills": [
+        "remediation"
+      ]
+    },
+    {
+      "id": "B055",
+      "title": "Deconstructing and Exploiting CVE-2020-6418",
+      "url": "https://starlabs.sg/blog/2022/12-deconstructing-and-exploiting-cve-2020-6418/",
+      "retrieval": {
+        "at": "2026-09-30T02:52:28.480Z",
+        "http_status": 200,
+        "final_url": "https://starlabs.sg/blog/2022/12-deconstructing-and-exploiting-cve-2020-6418/",
+        "response_html_bytes": 79230,
+        "response_html_sha256": "fcfb333485b2fe84965bad7a9f5b2434efd81c51d6b567e9eb89b55fddb9219b"
+      },
+      "observed_sections": [
+        {
+          "text": "Background",
+          "anchor": "background"
+        },
+        {
+          "text": "Pointer Tagging and Compression in V8",
+          "anchor": "pointer-tagging-and-compression-in-v8"
+        },
+        {
+          "text": "Root Cause Analysis",
+          "anchor": "root-cause-analysis"
+        },
+        {
+          "text": "Exploitation",
+          "anchor": "exploitation"
+        },
+        {
+          "text": "Stage 0: Triggering initial OOB write",
+          "anchor": "stage-0-triggering-initial-oob-write"
+        },
+        {
+          "text": "Stage 1: Primitives",
+          "anchor": "stage-1-primitives"
+        },
+        {
+          "text": "Stage 2: Shellcode with Immediate Numbers",
+          "anchor": "stage-2-shellcode-with-immediate-numbers"
+        },
+        {
+          "text": "Demo",
+          "anchor": "demo"
+        },
+        {
+          "text": "Conclusion",
+          "anchor": "conclusion"
+        },
+        {
+          "text": "References",
+          "anchor": "references"
+        }
+      ],
+      "blog_links": [],
+      "disposition": "included",
+      "research_type": "JIT effect-inference patch reconstruction and graph comparison",
+      "reason": "Method observations retained and merged into technique owners; exploitation details excluded.",
+      "evidence_level": "method-sections-inspected",
+      "skills": [
+        "compiler-invariant-auditing"
+      ]
+    },
+    {
+      "id": "B056",
+      "title": "The Last Breath of Our Netgear RAX30 Bugs - A Tragic Tale before Pwn2Own Toronto 2022",
+      "url": "https://starlabs.sg/blog/2022/12-the-last-breath-of-our-netgear-rax30-bugs-a-tragic-tale-before-pwn2own-toronto-2022/",
+      "retrieval": {
+        "at": "2026-09-30T02:52:28.480Z",
+        "http_status": 200,
+        "final_url": "https://starlabs.sg/blog/2022/12-the-last-breath-of-our-netgear-rax30-bugs-a-tragic-tale-before-pwn2own-toronto-2022/",
+        "response_html_bytes": 73892,
+        "response_html_sha256": "30394edecc11684ceba32d0cee818c5bc45e182181d706d33da48babcd5a29d8"
+      },
+      "observed_sections": [
+        {
+          "text": "Background",
+          "anchor": "background"
+        },
+        {
+          "text": "Analysis of the LAN Bug",
+          "anchor": "analysis-of-the-lan-bug"
+        },
+        {
+          "text": "DHCP command injection",
+          "anchor": "dhcp-command-injection"
+        },
+        {
+          "text": "Patch analysis for DHCP command injection",
+          "anchor": "patch-analysis-for-dhcp-command-injection"
+        },
+        {
+          "text": "WAN exploitation chain",
+          "anchor": "wan-exploitation-chain"
+        },
+        {
+          "text": "Netgear Router RAX30 Improper Certificate Validation",
+          "anchor": "netgear-router-rax30-improper-certificate-validation"
+        },
+        {
+          "text": "Netgear Router RAX30 Command Injection",
+          "anchor": "netgear-router-rax30-command-injection"
+        },
+        {
+          "text": "Patch analysis WAN bugs",
+          "anchor": "patch-analysis-wan-bugs"
+        },
+        {
+          "text": "Conclusion",
+          "anchor": "conclusion"
+        },
+        {
+          "text": "References",
+          "anchor": "references"
+        }
+      ],
+      "blog_links": [],
+      "disposition": "included",
+      "research_type": "Firmware listener/input and horizontal patch audit",
+      "reason": "Method observations retained and merged into technique owners; exploitation details excluded.",
+      "evidence_level": "method-sections-inspected",
+      "skills": [
+        "data-flow-analysis",
+        "parser-differential-auditing",
+        "remediation"
+      ]
+    },
+    {
+      "id": "B057",
+      "title": "TheHole New World - how a small leak will sink a great browser (CVE-2021-38003)",
+      "url": "https://starlabs.sg/blog/2022/12-thehole-new-world-how-a-small-leak-will-sink-a-great-browser-cve-2021-38003/",
+      "retrieval": {
+        "at": "2026-09-30T02:52:28.480Z",
+        "http_status": 200,
+        "final_url": "https://starlabs.sg/blog/2022/12-thehole-new-world-how-a-small-leak-will-sink-a-great-browser-cve-2021-38003/",
+        "response_html_bytes": 87360,
+        "response_html_sha256": "82d6a798370c5d172c9264efc5cfea9d2917ff1a17544c968a5f05883baf25e5"
+      },
+      "observed_sections": [
+        {
+          "text": "Introduction",
+          "anchor": "introduction"
+        },
+        {
+          "text": "Deep Dive into the Vulnerability",
+          "anchor": "deep-dive-into-the-vulnerability"
+        },
+        {
+          "text": "Proof-of-Concept Analysis",
+          "anchor": "proof-of-concept-analysis"
+        },
+        {
+          "text": "Exploitation Process",
+          "anchor": "exploitation-process"
+        },
+        {
+          "text": "Corrupting map size",
+          "anchor": "corrupting-map-size"
+        },
+        {
+          "text": "Modifying map structure",
+          "anchor": "modifying-map-structure"
+        },
+        {
+          "text": "Achieving OOB read/write with oob_arr",
+          "anchor": "achieving-oob-readwrite-with-oob_arr"
+        },
+        {
+          "text": "The addrof primitive",
+          "anchor": "the-addrof-primitive"
+        },
+        {
+          "text": "V8 heap arbitrary read/write primitive",
+          "anchor": "v8-heap-arbitrary-readwrite-primitive"
+        },
+        {
+          "text": "Arbitrary write primitive",
+          "anchor": "arbitrary-write-primitive"
+        },
+        {
+          "text": "Writing and executing our shellcode",
+          "anchor": "writing-and-executing-our-shellcode"
+        },
+        {
+          "text": "DEMO",
+          "anchor": "demo"
+        },
+        {
+          "text": "Other research",
+          "anchor": "other-research"
+        },
+        {
+          "text": "The patch",
+          "anchor": "the-patch"
+        },
+        {
+          "text": "Conclusion",
+          "anchor": "conclusion"
+        },
+        {
+          "text": "References",
+          "anchor": "references"
+        }
+      ],
+      "blog_links": [],
+      "disposition": "included",
+      "research_type": "Exception-state invariant and runtime-mitigation analysis",
+      "reason": "Method observations retained and merged into technique owners; exploitation details excluded.",
+      "evidence_level": "method-sections-inspected",
+      "skills": [
+        "compiler-invariant-auditing",
+        "sandbox-boundary-analysis"
+      ]
+    },
+    {
+      "id": "B058",
+      "title": "Multiple Vulnerabilities in Proxmox VE & Proxmox Mail Gateway",
+      "url": "https://starlabs.sg/blog/2022/12-multiple-vulnerabilities-in-proxmox-ve-proxmox-mail-gateway/",
+      "retrieval": {
+        "at": "2026-09-30T02:52:28.480Z",
+        "http_status": 200,
+        "final_url": "https://starlabs.sg/blog/2022/12-multiple-vulnerabilities-in-proxmox-ve-proxmox-mail-gateway/",
+        "response_html_bytes": 73317,
+        "response_html_sha256": "af0687d393de876e162c92dd8b7569e5876c1bc8801719f6eab5554038c9886c"
+      },
+      "observed_sections": [
+        {
+          "text": "Background",
+          "anchor": "background"
+        },
+        {
+          "text": "Locating the source code",
+          "anchor": "locating-the-source-code"
+        },
+        {
+          "text": "Setting up debug environment",
+          "anchor": "setting-up-debug-environment"
+        },
+        {
+          "text": "In IDEA",
+          "anchor": "in-idea"
+        },
+        {
+          "text": "On the PVE server",
+          "anchor": "on-the-pve-server"
+        },
+        {
+          "text": "Bug 0x01: Post-auth XSS in API inspector",
+          "anchor": "bug-0x01-post-auth-xss-in-api-inspector"
+        },
+        {
+          "text": "Further Analysis",
+          "anchor": "further-analysis"
+        },
+        {
+          "text": "Impacts, attack conditions & constraints",
+          "anchor": "impacts-attack-conditions--constraints"
+        },
+        {
+          "text": "Patch",
+          "anchor": "patch"
+        },
+        {
+          "text": "Bug 0x02: CRLF injection in response headers",
+          "anchor": "bug-0x02-crlf-injection-in-response-headers"
+        },
+        {
+          "text": "Impacts, attack conditions & constraints",
+          "anchor": "impacts-attack-conditions--constraints-1"
+        },
+        {
+          "text": "Patch",
+          "anchor": "patch-1"
+        },
+        {
+          "text": "Bug 0x03: Post-auth SSRF + LFI + Privilege Escalation",
+          "anchor": "bug-0x03-post-auth-ssrf--lfi--privilege-escalation"
+        },
+        {
+          "text": "SSRF",
+          "anchor": "ssrf"
+        },
+        {
+          "text": "Arbitrary file read",
+          "anchor": "arbitrary-file-read"
+        },
+        {
+          "text": "Privilege escalation in PMG via unsecured backup file",
+          "anchor": "privilege-escalation-in-pmg-via-unsecured-backup-file"
+        },
+        {
+          "text": "Patch",
+          "anchor": "patch-2"
+        },
+        {
+          "text": "Timeline",
+          "anchor": "timeline"
+        }
+      ],
+      "blog_links": [],
+      "disposition": "included",
+      "research_type": "Deployed-code location, alternate-format, and backend-policy audit",
+      "reason": "Method observations retained and merged into technique owners; exploitation details excluded.",
+      "evidence_level": "method-sections-inspected",
+      "skills": [
+        "attack-surface-mapping",
+        "authorization-auditing",
+        "parser-differential-auditing",
+        "remediation"
+      ]
+    },
+    {
+      "id": "B059",
+      "title": "Microsoft SharePoint Server Post-Authentication Server-Side Request Forgery vulnerability",
+      "url": "https://starlabs.sg/blog/2022/10-microsoft-sharepoint-server-post-authentication-server-side-request-forgery-vulnerability/",
+      "retrieval": {
+        "at": "2026-09-30T02:52:28.480Z",
+        "http_status": 200,
+        "final_url": "https://starlabs.sg/blog/2022/10-microsoft-sharepoint-server-post-authentication-server-side-request-forgery-vulnerability/",
+        "response_html_bytes": 29590,
+        "response_html_sha256": "46df772f901db7065722b31925e71d128fcc1dedf124fc8ac89b37e9ca6d4c17"
+      },
+      "observed_sections": [
+        {
+          "text": "Overview",
+          "anchor": "overview"
+        },
+        {
+          "text": "Affected Versions",
+          "anchor": "affected-versions"
+        },
+        {
+          "text": "Description of the Vulnerability",
+          "anchor": "description-of-the-vulnerability"
+        },
+        {
+          "text": "Attack Conditions & Constraints",
+          "anchor": "attack-conditions--constraints"
+        },
+        {
+          "text": "Proof-of-Concept",
+          "anchor": "proof-of-concept"
+        },
+        {
+          "text": "Disclosure Timeline",
+          "anchor": "disclosure-timeline"
+        }
+      ],
+      "blog_links": [],
+      "disposition": "included",
+      "research_type": "Authenticated outbound-request source audit",
+      "reason": "Method observations retained and merged into technique owners; exploitation details excluded.",
+      "evidence_level": "method-sections-inspected",
+      "skills": [
+        "parser-differential-auditing",
+        "remediation"
+      ]
+    },
+    {
+      "id": "B060",
+      "title": "Apple CoreText - An Unexpected Journey to Learn about Failure",
+      "url": "https://starlabs.sg/blog/2022/09-apple-coretext-an-unexpected-journey-to-learn-about-failure/",
+      "retrieval": {
+        "at": "2026-09-30T02:52:28.480Z",
+        "http_status": 200,
+        "final_url": "https://starlabs.sg/blog/2022/09-apple-coretext-an-unexpected-journey-to-learn-about-failure/",
+        "response_html_bytes": 291965,
+        "response_html_sha256": "bba3c689c6db8ac4ef471f938a25eb67afae23e10b094d015d9421785fa41fe6"
+      },
+      "observed_sections": [
+        {
+          "text": "1. Attack Surface",
+          "anchor": "1-attack-surface"
+        },
+        {
+          "text": "1 Oct 2021",
+          "anchor": "1-oct-2021"
+        },
+        {
+          "text": "20 Oct 2021",
+          "anchor": "20-oct-2021"
+        },
+        {
+          "text": "26 Oct 2021",
+          "anchor": "26-oct-2021"
+        },
+        {
+          "text": "2. Details of Vulnerability",
+          "anchor": "2-details-of-vulnerability"
+        },
+        {
+          "text": "1 Nov 2021",
+          "anchor": "1-nov-2021"
+        },
+        {
+          "text": "3 Nov 2021",
+          "anchor": "3-nov-2021"
+        },
+        {
+          "text": "8 Nov 2021",
+          "anchor": "8-nov-2021"
+        },
+        {
+          "text": "Part 3a : Exploit-Crash",
+          "anchor": "part-3a--exploit-crash"
+        },
+        {
+          "text": "Step 0: Trigger the crash",
+          "anchor": "step-0-trigger-the-crash"
+        },
+        {
+          "text": "LLDB setup for debugging the POC",
+          "anchor": "lldb-setup-for-debugging-the-poc"
+        },
+        {
+          "text": "How did the crash happen?",
+          "anchor": "how-did-the-crash-happen"
+        },
+        {
+          "text": "All the ideas don’t work, except one",
+          "anchor": "all-the-ideas-dont-work-except-one"
+        },
+        {
+          "text": "Part 3b : Exploit-Control-Stack",
+          "anchor": "part-3b--exploit-control-stack"
+        },
+        {
+          "text": "Attempt 1 (fail): By making many nested HTML elements",
+          "anchor": "attempt-1-fail-by-making-many-nested-html-elements"
+        },
+        {
+          "text": "Attempt 2 (success): Recursive JS function calls",
+          "anchor": "attempt-2-success-recursive-js-function-calls"
+        },
+        {
+          "text": "Now add in the poc font",
+          "anchor": "now-add-in-the-poc-font"
+        },
+        {
+          "text": "Part 3c : Exploit-OOB-Write",
+          "anchor": "part-3c--exploit-oob-write"
+        },
+        {
+          "text": "OOB Write Code Path",
+          "anchor": "oob-write-code-path"
+        },
+        {
+          "text": "Attempt 1 (fail):",
+          "anchor": "attempt-1-fail"
+        },
+        {
+          "text": "Attempt 2 (fail): DFG JIT",
+          "anchor": "attempt-2-fail-dfg-jit"
+        },
+        {
+          "text": "Attempt 3 (success): wasm",
+          "anchor": "attempt-3-success-wasm"
+        },
+        {
+          "text": "Final Notes",
+          "anchor": "final-notes"
+        },
+        {
+          "text": "Part 3d : Exploit-vtable-overwrite",
+          "anchor": "part-3d--exploit-vtable-overwrite"
+        },
+        {
+          "text": "Some statistics",
+          "anchor": "some-statistics"
+        },
+        {
+          "text": "Memory layout of tfont and glyphs",
+          "anchor": "memory-layout-of-tfont-and-glyphs"
+        },
+        {
+          "text": "Disable the vtable call (failed)",
+          "anchor": "disable-the-vtable-call-failed"
+        },
+        {
+          "text": "Exploitation steps",
+          "anchor": "exploitation-steps"
+        },
+        {
+          "text": "Some other ideas to explore",
+          "anchor": "some-other-ideas-to-explore"
+        },
+        {
+          "text": "References",
+          "anchor": "references"
+        }
+      ],
+      "blog_links": [
+        "https://starlabs.sg/blog/2021/09-analysis-of-cve-2021-1758/"
+      ],
+      "disposition": "included",
+      "research_type": "Coverage-led binary reconstruction and failed-hypothesis research",
+      "reason": "Method observations retained and merged into technique owners; exploitation details excluded.",
+      "evidence_level": "method-sections-inspected",
+      "skills": [
+        "dynamic-analysis",
+        "fuzzing",
+        "patch-diff-analysis"
+      ]
+    },
+    {
+      "id": "B061",
+      "title": "Step-by-Step Walkthrough of CVE-2022-32792 - WebKit B3ReduceStrength Out-of-Bounds Write",
+      "url": "https://starlabs.sg/blog/2022/09-step-by-step-walkthrough-of-cve-2022-32792-webkit-b3reducestrength-out-of-bounds-write/",
+      "retrieval": {
+        "at": "2026-09-30T02:52:28.480Z",
+        "http_status": 200,
+        "final_url": "https://starlabs.sg/blog/2022/09-step-by-step-walkthrough-of-cve-2022-32792-webkit-b3reducestrength-out-of-bounds-write/",
+        "response_html_bytes": 258818,
+        "response_html_sha256": "67293d15b441c5430c64ef5d78c4e39146aa737b676fa8883e768cc71589e399"
+      },
+      "observed_sections": [
+        {
+          "text": "Background",
+          "anchor": "background"
+        },
+        {
+          "text": "Just-in-time (JIT) Compilation in JavaScriptCore (JSC)",
+          "anchor": "just-in-time-jit-compilation-in-javascriptcore-jsc"
+        },
+        {
+          "text": "Strength Reduction",
+          "anchor": "strength-reduction"
+        },
+        {
+          "text": "SExt",
+          "anchor": "sext"
+        },
+        {
+          "text": "Code Understanding",
+          "anchor": "code-understanding"
+        },
+        {
+          "text": "rangeFor",
+          "anchor": "rangefor"
+        },
+        {
+          "text": "What happens to an IntRange?",
+          "anchor": "what-happens-to-an-intrange"
+        },
+        {
+          "text": "Where does an IntRange come from?",
+          "anchor": "where-does-an-intrange-come-from"
+        },
+        {
+          "text": "Patch Analysis",
+          "anchor": "patch-analysis"
+        },
+        {
+          "text": "sExt",
+          "anchor": "sext-1"
+        },
+        {
+          "text": "Proof-Of-Concept",
+          "anchor": "proof-of-concept"
+        },
+        {
+          "text": "Idea 1",
+          "anchor": "idea-1"
+        },
+        {
+          "text": "OOB Read Crash :D",
+          "anchor": "oob-read-crash-d"
+        },
+        {
+          "text": "Final Steps: Building the addrof/fakeobj primitives",
+          "anchor": "final-steps-building-the-addroffakeobj-primitives"
+        },
+        {
+          "text": "Understanding the internal structures",
+          "anchor": "understanding-the-internal-structures"
+        },
+        {
+          "text": "addrof/fakeobj primitives",
+          "anchor": "addroffakeobj-primitives"
+        },
+        {
+          "text": "Further Exploitation",
+          "anchor": "further-exploitation"
+        },
+        {
+          "text": "Proof of Concept video:",
+          "anchor": "proof-of-concept-video"
+        }
+      ],
+      "blog_links": [],
+      "disposition": "included",
+      "research_type": "JIT numeric-range transfer and representation analysis",
+      "reason": "Method observations retained and merged into technique owners; exploitation details excluded.",
+      "evidence_level": "method-sections-inspected",
+      "skills": [
+        "compiler-invariant-auditing"
+      ]
+    },
+    {
+      "id": "B062",
+      "title": "Exploiting WebKit JSPropertyNameEnumerator Out-of-Bounds Read (CVE-2021-1789)",
+      "url": "https://starlabs.sg/blog/2022/08-exploiting-webkit-jspropertynameenumerator-out-of-bounds-read-cve-2021-1789/",
+      "retrieval": {
+        "at": "2026-09-30T02:52:28.480Z",
+        "http_status": 200,
+        "final_url": "https://starlabs.sg/blog/2022/08-exploiting-webkit-jspropertynameenumerator-out-of-bounds-read-cve-2021-1789/",
+        "response_html_bytes": 90314,
+        "response_html_sha256": "19e8e25990aeeb02acbedbba164316238a2bda5272adfa32585dd2858256669a"
+      },
+      "observed_sections": [
+        {
+          "text": "Background",
+          "anchor": "background"
+        },
+        {
+          "text": "WebKit Garbage Collector",
+          "anchor": "webkit-garbage-collector"
+        },
+        {
+          "text": "For…in loop",
+          "anchor": "forin-loop"
+        },
+        {
+          "text": "The Vulnerability",
+          "anchor": "the-vulnerability"
+        },
+        {
+          "text": "The Exploitation",
+          "anchor": "the-exploitation"
+        },
+        {
+          "text": "Proof of Concept video:",
+          "anchor": "proof-of-concept-video"
+        },
+        {
+          "text": "References",
+          "anchor": "references"
+        }
+      ],
+      "blog_links": [],
+      "disposition": "included",
+      "research_type": "Enumeration snapshot and state-changing callback analysis",
+      "reason": "Method observations retained and merged into technique owners; exploitation details excluded.",
+      "evidence_level": "method-sections-inspected",
+      "skills": [
+        "compiler-invariant-auditing",
+        "state-and-lifetime-auditing"
+      ]
+    },
+    {
+      "id": "B063",
+      "title": "Gitlab Project Import RCE Analysis (CVE-2022-2185)",
+      "url": "https://starlabs.sg/blog/2022/07-gitlab-project-import-rce-analysis-cve-2022-2185/",
+      "retrieval": {
+        "at": "2026-09-30T02:52:28.480Z",
+        "http_status": 200,
+        "final_url": "https://starlabs.sg/blog/2022/07-gitlab-project-import-rce-analysis-cve-2022-2185/",
+        "response_html_bytes": 41901,
+        "response_html_sha256": "f81269df4636aeea9892ed8e8e4acf48e32ba96fe2cd032662712de9e0dc5ef8"
+      },
+      "observed_sections": [
+        {
+          "text": "ENVIRONMENT SETUP & DEBUGGING",
+          "anchor": "environment-setup--debugging"
+        },
+        {
+          "text": "CVE-2022-2185 ANALYSIS",
+          "anchor": "cve-2022-2185-analysis"
+        },
+        {
+          "text": "Related information",
+          "anchor": "related-information"
+        },
+        {
+          "text": "Proof of Concept video:",
+          "anchor": "proof-of-concept-video"
+        }
+      ],
+      "blog_links": [],
+      "disposition": "included",
+      "research_type": "Asynchronous import-pipeline patch and controllability audit",
+      "reason": "Method observations retained and merged into technique owners; exploitation details excluded.",
+      "evidence_level": "method-sections-inspected",
+      "skills": [
+        "data-flow-analysis",
+        "deserialization-and-dispatch-auditing",
+        "source-code-auditing"
+      ]
+    },
+    {
+      "id": "B064",
+      "title": "io_uring - new code, new bugs, and a new exploit technique",
+      "url": "https://starlabs.sg/blog/2022/06-io_uring-new-code-new-bugs-and-a-new-exploit-technique/",
+      "retrieval": {
+        "at": "2026-09-30T02:52:28.480Z",
+        "http_status": 200,
+        "final_url": "https://starlabs.sg/blog/2022/06-io_uring-new-code-new-bugs-and-a-new-exploit-technique/",
+        "response_html_bytes": 41175,
+        "response_html_sha256": "e1d0cd0590ccb2bdfc50384100f7e3d24c8a8867d146f7eb1440abdd43f242e2"
+      },
+      "observed_sections": [
+        {
+          "text": "What is io_uring?",
+          "anchor": "what-is-io_uring"
+        },
+        {
+          "text": "Provided buffers",
+          "anchor": "provided-buffers"
+        },
+        {
+          "text": "CVE-2021-41073",
+          "anchor": "cve-2021-41073"
+        },
+        {
+          "text": "Choosing a suitable kernel object",
+          "anchor": "choosing-a-suitable-kernel-object"
+        },
+        {
+          "text": "Searching for kernel structs",
+          "anchor": "searching-for-kernel-structs"
+        },
+        {
+          "text": "Unlinking attack",
+          "anchor": "unlinking-attack"
+        },
+        {
+          "text": "Summary of simple_xattr exploit technique",
+          "anchor": "summary-of-simple_xattr-exploit-technique"
+        },
+        {
+          "text": "Demo",
+          "anchor": "demo"
+        },
+        {
+          "text": "io_uring bug hunting",
+          "anchor": "io_uring-bug-hunting"
+        },
+        {
+          "text": "Conclusion",
+          "anchor": "conclusion"
+        },
+        {
+          "text": "References",
+          "anchor": "references"
+        }
+      ],
+      "blog_links": [],
+      "disposition": "included",
+      "research_type": "Recent-feature selection arithmetic and reservation-race audit",
+      "reason": "Method observations retained and merged into technique owners; exploitation details excluded.",
+      "evidence_level": "method-sections-inspected",
+      "skills": [
+        "race-condition-auditing",
+        "source-code-auditing",
+        "state-and-lifetime-auditing"
+      ]
+    },
+    {
+      "id": "B065",
+      "title": "Trying To Exploit A Windows Kernel Arbitrary Read Vulnerability",
+      "url": "https://starlabs.sg/blog/2022/06-trying-to-exploit-a-windows-kernel-arbitrary-read-vulnerability/",
+      "retrieval": {
+        "at": "2026-09-30T02:52:28.480Z",
+        "http_status": 200,
+        "final_url": "https://starlabs.sg/blog/2022/06-trying-to-exploit-a-windows-kernel-arbitrary-read-vulnerability/",
+        "response_html_bytes": 52856,
+        "response_html_sha256": "dae4710676f8a64627dff8628382d33eaa1db01e0bc418f7c450030aa23b3fb8"
+      },
+      "observed_sections": [
+        {
+          "text": "Introduction",
+          "anchor": "introduction"
+        },
+        {
+          "text": "The Vulnerability",
+          "anchor": "the-vulnerability"
+        },
+        {
+          "text": "Getting arbitrary address read primitive",
+          "anchor": "getting-arbitrary-address-read-primitive"
+        },
+        {
+          "text": "Exploitation",
+          "anchor": "exploitation"
+        },
+        {
+          "text": "Trying to achieve LPE",
+          "anchor": "trying-to-achieve-lpe"
+        },
+        {
+          "text": "What is missing ?",
+          "anchor": "what-is-missing-"
+        }
+      ],
+      "blog_links": [],
+      "disposition": "included",
+      "research_type": "Unfinished kernel-disclosure impact and failed-assumption study",
+      "reason": "Method observations retained and merged into technique owners; exploitation details excluded.",
+      "evidence_level": "method-sections-inspected",
+      "skills": [
+        "exploitability-assessment"
+      ]
+    },
+    {
+      "id": "B066",
+      "title": "New Wine in Old Bottle - Microsoft Sharepoint Post-Auth Deserialization RCE (CVE-2022-29108)",
+      "url": "https://starlabs.sg/blog/2022/05-new-wine-in-old-bottle-microsoft-sharepoint-post-auth-deserialization-rce-cve-2022-29108/",
+      "retrieval": {
+        "at": "2026-09-30T02:52:28.480Z",
+        "http_status": 200,
+        "final_url": "https://starlabs.sg/blog/2022/05-new-wine-in-old-bottle-microsoft-sharepoint-post-auth-deserialization-rce-cve-2022-29108/",
+        "response_html_bytes": 28007,
+        "response_html_sha256": "4a7abe9d48a7c017916fad0a97b834eddf18d92ed4613211b7e9c42006c01893"
+      },
+      "observed_sections": [
+        {
+          "text": "Introduction",
+          "anchor": "introduction"
+        },
+        {
+          "text": "Environment Setup",
+          "anchor": "environment-setup"
+        },
+        {
+          "text": "Analysis",
+          "anchor": "analysis"
+        },
+        {
+          "text": "Exploitation",
+          "anchor": "exploitation"
+        },
+        {
+          "text": "References",
+          "anchor": "references"
+        }
+      ],
+      "blog_links": [],
+      "disposition": "included",
+      "research_type": "Shared-consumer deserialization variant and environment audit",
+      "reason": "Method observations retained and merged into technique owners; exploitation details excluded.",
+      "evidence_level": "method-sections-inspected",
+      "skills": [
+        "attack-surface-mapping",
+        "deserialization-and-dispatch-auditing",
+        "patch-diff-analysis",
+        "remediation",
+        "source-code-auditing"
+      ]
+    },
+    {
+      "id": "B067",
+      "title": "The Cat Escaped from the Chrome Sandbox",
+      "url": "https://starlabs.sg/blog/2022/01-the-cat-escaped-from-the-chrome-sandbox/",
+      "retrieval": {
+        "at": "2026-09-30T02:52:28.480Z",
+        "http_status": 200,
+        "final_url": "https://starlabs.sg/blog/2022/01-the-cat-escaped-from-the-chrome-sandbox/",
+        "response_html_bytes": 61731,
+        "response_html_sha256": "1dff1e1f0284b7f4a0d9f4ee8cb4138ff6409527cf06e52e31253e2aee998665"
+      },
+      "observed_sections": [
+        {
+          "text": "Introduction",
+          "anchor": "introduction"
+        },
+        {
+          "text": "A short glance at the Vulnerability",
+          "anchor": "a-short-glance-at-the-vulnerability"
+        },
+        {
+          "text": "Exploitation",
+          "anchor": "exploitation"
+        },
+        {
+          "text": "Use-After-Free",
+          "anchor": "use-after-free"
+        },
+        {
+          "text": "Control Over A Vector",
+          "anchor": "control-over-a-vector"
+        },
+        {
+          "text": "Exploiting",
+          "anchor": "exploiting"
+        },
+        {
+          "text": "Selecting Target Object and Control RIP",
+          "anchor": "selecting-target-object-and-control-rip"
+        },
+        {
+          "text": "Fullchain Exploit",
+          "anchor": "fullchain-exploit"
+        },
+        {
+          "text": "Demo",
+          "anchor": "demo"
+        },
+        {
+          "text": "Conclusion",
+          "anchor": "conclusion"
+        },
+        {
+          "text": "References",
+          "anchor": "references"
+        }
+      ],
+      "blog_links": [],
+      "disposition": "included",
+      "research_type": "Privileged IPC state and nested-resource lifetime audit",
+      "reason": "Method observations retained and merged into technique owners; exploitation details excluded.",
+      "evidence_level": "method-sections-inspected",
+      "skills": [
+        "remediation",
+        "sandbox-boundary-analysis",
+        "state-and-lifetime-auditing"
+      ]
+    },
+    {
+      "id": "B068",
+      "title": "Diving into Open-source LMS Codebases",
+      "url": "https://starlabs.sg/blog/2021/11-diving-into-open-source-lms-codebases/",
+      "retrieval": {
+        "at": "2026-09-30T02:52:28.480Z",
+        "http_status": 200,
+        "final_url": "https://starlabs.sg/blog/2021/11-diving-into-open-source-lms-codebases/",
+        "response_html_bytes": 86767,
+        "response_html_sha256": "246d5f6cbf64945fdf89c3c61908daa1c6ac8b5a41a79132970b7ef9e83b11a2"
+      },
+      "observed_sections": [
+        {
+          "text": "Introduction",
+          "anchor": "introduction"
+        },
+        {
+          "text": "The Approach",
+          "anchor": "the-approach"
+        },
+        {
+          "text": "Chamilo",
+          "anchor": "chamilo"
+        },
+        {
+          "text": "Moodle",
+          "anchor": "moodle"
+        },
+        {
+          "text": "Discovered Vulnerabilities",
+          "anchor": "discovered-vulnerabilities"
+        },
+        {
+          "text": "Chamilo - Insecure Deserialization and Insecure File Upload leading to Remote Code Execution",
+          "anchor": "chamilo---insecure-deserialization-and-insecure-file-upload-leading-to-remote-code-execution"
+        },
+        {
+          "text": "Chamilo - Cross Site Request Forgery (CSRF) leading to Remote Code Execution",
+          "anchor": "chamilo---cross-site-request-forgery-csrf-leading-to-remote-code-execution"
+        },
+        {
+          "text": "Chamilo - Authenticated Blind SQL Injection",
+          "anchor": "chamilo---authenticated-blind-sql-injection"
+        },
+        {
+          "text": "Chamilo - Reflected XSS",
+          "anchor": "chamilo---reflected-xss"
+        },
+        {
+          "text": "Moodle - Reflected XSS (CVE-2021-43558)",
+          "anchor": "moodle---reflected-xss-cve-2021-43558"
+        },
+        {
+          "text": "Conclusion",
+          "anchor": "conclusion"
+        },
+        {
+          "text": "Timeline",
+          "anchor": "timeline"
+        }
+      ],
+      "blog_links": [],
+      "disposition": "included",
+      "research_type": "Convention-aware source/sink review of large web codebases",
+      "reason": "Method observations retained and merged into technique owners; exploitation details excluded.",
+      "evidence_level": "method-sections-inspected",
+      "skills": [
+        "authorization-auditing",
+        "data-flow-analysis",
+        "deserialization-and-dispatch-auditing",
+        "parser-differential-auditing",
+        "remediation",
+        "source-code-auditing"
+      ]
+    },
+    {
+      "id": "B069",
+      "title": "Analysis of CVE-2021-1758 (CoreText Out-Of-Bounds Read)",
+      "url": "https://starlabs.sg/blog/2021/09-analysis-of-cve-2021-1758-coretext-out-of-bounds-read/",
+      "retrieval": {
+        "at": "2026-09-30T02:52:28.480Z",
+        "http_status": 200,
+        "final_url": "https://starlabs.sg/blog/2021/09-analysis-of-cve-2021-1758-coretext-out-of-bounds-read/",
+        "response_html_bytes": 80221,
+        "response_html_sha256": "2e896265fd219c1cf9dd61219188e37ac2fa59da4b96ac23bae15831409dd313"
+      },
+      "observed_sections": [
+        {
+          "text": "Mac Resource Fork Font File",
+          "anchor": "mac-resource-fork-font-file"
+        },
+        {
+          "text": "Resource Fork Structure",
+          "anchor": "resource-fork-structure"
+        },
+        {
+          "text": "Understanding the Target",
+          "anchor": "understanding-the-target"
+        },
+        {
+          "text": "Harness",
+          "anchor": "harness"
+        },
+        {
+          "text": "Font file",
+          "anchor": "font-file"
+        },
+        {
+          "text": "Coverage",
+          "anchor": "coverage"
+        },
+        {
+          "text": "Vulnerability",
+          "anchor": "vulnerability"
+        },
+        {
+          "text": "POC",
+          "anchor": "poc"
+        }
+      ],
+      "blog_links": [],
+      "disposition": "included",
+      "research_type": "Coverage-guided binary parser and validation-consumption analysis",
+      "reason": "Method observations retained and merged into technique owners; exploitation details excluded.",
+      "evidence_level": "method-sections-inspected",
+      "skills": [
+        "dynamic-analysis",
+        "fuzzing",
+        "memory-safety-auditing",
+        "parser-differential-auditing"
+      ]
+    },
+    {
+      "id": "B070",
+      "title": "Identifying Bugs in Router Firmware at Scale with Taint Analysis",
+      "url": "https://starlabs.sg/blog/2021/08-identifying-bugs-in-router-firmware-at-scale-with-taint-analysis/",
+      "retrieval": {
+        "at": "2026-09-30T02:52:28.480Z",
+        "http_status": 200,
+        "final_url": "https://starlabs.sg/blog/2021/08-identifying-bugs-in-router-firmware-at-scale-with-taint-analysis/",
+        "response_html_bytes": 68445,
+        "response_html_sha256": "3a3b2586961fbc278d23d572d9e977ac8c034ba9c17ed307a1076458e6a22365"
+      },
+      "observed_sections": [
+        {
+          "text": "The Tool",
+          "anchor": "the-tool"
+        },
+        {
+          "text": "Existing Tools",
+          "anchor": "existing-tools"
+        },
+        {
+          "text": "Using angr symbolic execution",
+          "anchor": "using-angr-symbolic-execution"
+        },
+        {
+          "text": "Using angr’s Reaching Definition analysis",
+          "anchor": "using-angrs-reaching-definition-analysis"
+        },
+        {
+          "text": "Tool summary",
+          "anchor": "tool-summary"
+        },
+        {
+          "text": "Results",
+          "anchor": "results"
+        },
+        {
+          "text": "PROLiNK PRC2402M",
+          "anchor": "prolink-prc2402m"
+        },
+        {
+          "text": "DLink DIR-1960",
+          "anchor": "dlink-dir-1960"
+        },
+        {
+          "text": "DLink DIR-X1560",
+          "anchor": "dlink-dir-x1560"
+        },
+        {
+          "text": "Demo",
+          "anchor": "demo"
+        },
+        {
+          "text": "Remarks",
+          "anchor": "remarks"
+        }
+      ],
+      "blog_links": [],
+      "disposition": "included",
+      "research_type": "Architecture-aware binary taint automation and manual triage",
+      "reason": "Method observations retained and merged into technique owners; exploitation details excluded.",
+      "evidence_level": "method-sections-inspected",
+      "skills": [
+        "binary-auditing",
+        "data-flow-analysis",
+        "remediation"
+      ]
+    },
+    {
+      "id": "B071",
+      "title": "Simple Vulnerability Regression Monitoring with V8Harvest",
+      "url": "https://starlabs.sg/blog/2021/06-simple-vulnerability-regression-monitoring-with-v8harvest/",
+      "retrieval": {
+        "at": "2026-09-30T02:52:28.480Z",
+        "http_status": 200,
+        "final_url": "https://starlabs.sg/blog/2021/06-simple-vulnerability-regression-monitoring-with-v8harvest/",
+        "response_html_bytes": 15021,
+        "response_html_sha256": "d3dd1cf02206856dc715f28555c693cbba2a4d5830f16668bab0c8b1a48538e6"
+      },
+      "observed_sections": [
+        {
+          "text": "Introduction",
+          "anchor": "introduction"
+        },
+        {
+          "text": "How It Work",
+          "anchor": "how-it-work"
+        },
+        {
+          "text": "How To Use",
+          "anchor": "how-to-use"
+        }
+      ],
+      "blog_links": [],
+      "disposition": "included",
+      "research_type": "Regression-test provenance and release-gap monitoring",
+      "reason": "Method observations retained and merged into technique owners; exploitation details excluded.",
+      "evidence_level": "method-sections-inspected",
+      "skills": [
+        "compiler-invariant-auditing",
+        "patch-diff-analysis"
+      ]
+    },
+    {
+      "id": "B072",
+      "title": "You Talking To Me?",
+      "url": "https://starlabs.sg/blog/2021/04-you-talking-to-me/",
+      "retrieval": {
+        "at": "2026-09-30T02:52:28.480Z",
+        "http_status": 200,
+        "final_url": "https://starlabs.sg/blog/2021/04-you-talking-to-me/",
+        "response_html_bytes": 33664,
+        "response_html_sha256": "bf02cb7e22565702e2af5d09bc960227a95a7a69e38f0524658fb1069444e570"
+      },
+      "observed_sections": [
+        {
+          "text": "Chromedriver from Google",
+          "anchor": "chromedriver-from-google"
+        },
+        {
+          "text": "Potential arbitrary file read via Chrome DevTools Protocol",
+          "anchor": "potential-arbitrary-file-read-via-chrome-devtools-protocol"
+        },
+        {
+          "text": "RCE in chromedriver REST APIs?",
+          "anchor": "rce-in-chromedriver-rest-apis"
+        },
+        {
+          "text": "DNS Rebinding to complete the exploit chain",
+          "anchor": "dns-rebinding-to-complete-the-exploit-chain"
+        },
+        {
+          "text": "PoC Videos",
+          "anchor": "poc-videos"
+        },
+        {
+          "text": "Geckodriver from Mozilla",
+          "anchor": "geckodriver-from-mozilla"
+        },
+        {
+          "text": "Reinforced REST APIs",
+          "anchor": "reinforced-rest-apis"
+        },
+        {
+          "text": "Splitting the body",
+          "anchor": "splitting-the-body"
+        },
+        {
+          "text": "Easy RCE",
+          "anchor": "easy-rce"
+        },
+        {
+          "text": "PoC Videos",
+          "anchor": "poc-videos-1"
+        },
+        {
+          "text": "Other WebDrivers",
+          "anchor": "other-webdrivers"
+        },
+        {
+          "text": "Takeaway",
+          "anchor": "takeaway"
+        },
+        {
+          "text": "Timeline",
+          "anchor": "timeline"
+        },
+        {
+          "text": "References",
+          "anchor": "references"
+        }
+      ],
+      "blog_links": [],
+      "disposition": "included",
+      "research_type": "Browser automation origin/transport differential analysis",
+      "reason": "Method observations retained and merged into technique owners; exploitation details excluded.",
+      "evidence_level": "method-sections-inspected",
+      "skills": [
+        "dynamic-analysis",
+        "parser-differential-auditing",
+        "sandbox-boundary-analysis"
+      ]
+    },
+    {
+      "id": "B073",
+      "title": "Chrome 1-Day Hunting - Uncovering and Exploiting CVE-2020-15999",
+      "url": "https://starlabs.sg/blog/2021/01-chrome-1-day-hunting-uncovering-and-exploiting-cve-2020-15999/",
+      "retrieval": {
+        "at": "2026-09-30T02:52:28.480Z",
+        "http_status": 200,
+        "final_url": "https://starlabs.sg/blog/2021/01-chrome-1-day-hunting-uncovering-and-exploiting-cve-2020-15999/",
+        "response_html_bytes": 53760,
+        "response_html_sha256": "2d23c66536e49151bc6022bdfa0ab609aab9088a68ef71f9ba0c9398cbb9f4bb"
+      },
+      "observed_sections": [
+        {
+          "text": "Vulnerability details",
+          "anchor": "vulnerability-details"
+        },
+        {
+          "text": "TCMalloc",
+          "anchor": "tcmalloc"
+        },
+        {
+          "text": "Outline / Summary",
+          "anchor": "outline--summary"
+        },
+        {
+          "text": "Initial Leak",
+          "anchor": "initial-leak"
+        },
+        {
+          "text": "Arbitrary Read",
+          "anchor": "arbitrary-read"
+        },
+        {
+          "text": "Leaking Chrome Base",
+          "anchor": "leaking-chrome-base"
+        },
+        {
+          "text": "Execution Flow Control",
+          "anchor": "execution-flow-control"
+        },
+        {
+          "text": "Heap layout reliability",
+          "anchor": "heap-layout-reliability"
+        },
+        {
+          "text": "Overflow content limitations",
+          "anchor": "overflow-content-limitations"
+        },
+        {
+          "text": "Possible solutions",
+          "anchor": "possible-solutions"
+        }
+      ],
+      "blog_links": [],
+      "disposition": "included",
+      "research_type": "Dependency-parser arithmetic and controllability assessment",
+      "reason": "Method observations retained and merged into technique owners; exploitation details excluded.",
+      "evidence_level": "method-sections-inspected",
+      "skills": [
+        "exploitability-assessment",
+        "memory-safety-auditing"
+      ]
+    },
+    {
+      "id": "B074",
+      "title": "Instrumenting Adobe Reader with Frida",
+      "url": "https://starlabs.sg/blog/2020/11-instrumenting-adobe-reader-with-frida/",
+      "retrieval": {
+        "at": "2026-09-30T02:52:28.480Z",
+        "http_status": 200,
+        "final_url": "https://starlabs.sg/blog/2020/11-instrumenting-adobe-reader-with-frida/",
+        "response_html_bytes": 60811,
+        "response_html_sha256": "23bb2f38b30f5b39d026a766a8121da786abcbc7a2ed15cfefeeab898e3eddec"
+      },
+      "observed_sections": [
+        {
+          "text": "Installing Frida",
+          "anchor": "installing-frida"
+        },
+        {
+          "text": "Function Hooking",
+          "anchor": "function-hooking"
+        },
+        {
+          "text": "Frida Architecture",
+          "anchor": "frida-architecture"
+        },
+        {
+          "text": "Frida Javascript API",
+          "anchor": "frida-javascript-api"
+        },
+        {
+          "text": "Memory Allocation and Parameter Manipulation",
+          "anchor": "memory-allocation-and-parameter-manipulation"
+        },
+        {
+          "text": "Cross Process Messaging and A Practical Example",
+          "anchor": "cross-process-messaging-and-a-practical-example"
+        },
+        {
+          "text": "Function Tracing and Frida Stalker",
+          "anchor": "function-tracing-and-frida-stalker"
+        },
+        {
+          "text": "Conclusion",
+          "anchor": "conclusion"
+        }
+      ],
+      "blog_links": [],
+      "disposition": "included",
+      "research_type": "Dynamic instrumentation methods tutorial",
+      "reason": "Method observations retained and merged into technique owners; exploitation details excluded.",
+      "evidence_level": "method-sections-inspected",
+      "skills": [
+        "dynamic-analysis"
+      ]
+    },
+    {
+      "id": "B075",
+      "title": "Analysis & Exploitation of a Recent TP-Link Archer A7 Vulnerability",
+      "url": "https://starlabs.sg/blog/2020/10-analysis-exploitation-of-a-recent-tp-link-archer-a7-vulnerability/",
+      "retrieval": {
+        "at": "2026-09-30T02:52:28.480Z",
+        "http_status": 200,
+        "final_url": "https://starlabs.sg/blog/2020/10-analysis-exploitation-of-a-recent-tp-link-archer-a7-vulnerability/",
+        "response_html_bytes": 98948,
+        "response_html_sha256": "1af61a33ea3c8abef3e3f16d7ce06f22cbd62dc1d87269a119ff9ea2cc02ea36"
+      },
+      "observed_sections": [
+        {
+          "text": "Good ol Strings",
+          "anchor": "good-ol-strings"
+        },
+        {
+          "text": "Finding the system() Call",
+          "anchor": "finding-the-system-call"
+        },
+        {
+          "text": "Setup GDB server",
+          "anchor": "setup-gdb-server"
+        },
+        {
+          "text": "Test Connection to tdpServer",
+          "anchor": "test-connection-to-tdpserver"
+        },
+        {
+          "text": "TDP Packet Format",
+          "anchor": "tdp-packet-format"
+        },
+        {
+          "text": "Packet Under The Microscope",
+          "anchor": "packet-under-the-microscope"
+        },
+        {
+          "text": "Calculating The Checksum",
+          "anchor": "calculating-the-checksum"
+        },
+        {
+          "text": "Crafting The Packet",
+          "anchor": "crafting-the-packet"
+        },
+        {
+          "text": "Command Injection",
+          "anchor": "command-injection"
+        }
+      ],
+      "blog_links": [],
+      "disposition": "included",
+      "research_type": "Firmware binary comparison and on-device debugging",
+      "reason": "Method observations retained and merged into technique owners; exploitation details excluded.",
+      "evidence_level": "method-sections-inspected",
+      "skills": [
+        "binary-auditing",
+        "dynamic-analysis",
+        "patch-diff-analysis"
+      ]
+    },
+    {
+      "id": "B076",
+      "title": "Pwn2Own 2020: Oracle VirtualBox Escape",
+      "url": "https://starlabs.sg/blog/2020/09-pwn2own-2020-oracle-virtualbox-escape/",
+      "retrieval": {
+        "at": "2026-09-30T02:52:28.480Z",
+        "http_status": 200,
+        "final_url": "https://starlabs.sg/blog/2020/09-pwn2own-2020-oracle-virtualbox-escape/",
+        "response_html_bytes": 60873,
+        "response_html_sha256": "1c440e275a6e9c74a068e11646e11cb9b4f8700df0dd43ec47b112e57a88a69e"
+      },
+      "observed_sections": [
+        {
+          "text": "E1000 Out-Of-Bounds Read Vulnerability",
+          "anchor": "e1000-out-of-bounds-read-vulnerability"
+        },
+        {
+          "text": "Information Leakage",
+          "anchor": "information-leakage"
+        },
+        {
+          "text": "OHCI Controller Uninitialized Variable",
+          "anchor": "ohci-controller-uninitialized-variable"
+        },
+        {
+          "text": "Code Execution",
+          "anchor": "code-execution"
+        }
+      ],
+      "blog_links": [
+        "https://starlabs.sg/blog/adventures-in-hypervisor-oracle-virtualbox-research/"
+      ],
+      "disposition": "included",
+      "research_type": "Emulated-device range and reallocation-initialization audit",
+      "reason": "Method observations retained and merged into technique owners; exploitation details excluded.",
+      "evidence_level": "method-sections-inspected",
+      "skills": [
+        "memory-safety-auditing"
+      ]
+    },
+    {
+      "id": "B077",
+      "title": "This Font is not Your Type",
+      "url": "https://starlabs.sg/blog/2020/09-this-font-is-not-your-type/",
+      "retrieval": {
+        "at": "2026-09-30T02:52:28.480Z",
+        "http_status": 200,
+        "final_url": "https://starlabs.sg/blog/2020/09-this-font-is-not-your-type/",
+        "response_html_bytes": 12840,
+        "response_html_sha256": "12df1583e6e85363e9c33a91848486b46c1285e44b99ba5a0171a79131a4f920"
+      },
+      "observed_sections": [
+        {
+          "text": "The Root Cause",
+          "anchor": "the-root-cause"
+        },
+        {
+          "text": "Conclusion",
+          "anchor": "conclusion"
+        },
+        {
+          "text": "Further Resources",
+          "anchor": "further-resources"
+        }
+      ],
+      "blog_links": [],
+      "disposition": "included",
+      "research_type": "Binary font-argument-count validation audit",
+      "reason": "Method observations retained and merged into technique owners; exploitation details excluded.",
+      "evidence_level": "method-sections-inspected",
+      "skills": [
+        "memory-safety-auditing"
+      ]
+    },
+    {
+      "id": "B078",
+      "title": "ASUSWRT URL Processing Stack Buffer Overflow",
+      "url": "https://starlabs.sg/blog/2020/08-asuswrt-url-processing-stack-buffer-overflow/",
+      "retrieval": {
+        "at": "2026-09-30T02:52:28.480Z",
+        "http_status": 200,
+        "final_url": "https://starlabs.sg/blog/2020/08-asuswrt-url-processing-stack-buffer-overflow/",
+        "response_html_bytes": 103480,
+        "response_html_sha256": "4927b4e2b3c1c342924cb0fc27367503513b733df2deea101359f9bef5aa3dd9"
+      },
+      "observed_sections": [
+        {
+          "text": "Introduction",
+          "anchor": "introduction"
+        },
+        {
+          "text": "Static Analysis",
+          "anchor": "static-analysis"
+        },
+        {
+          "text": "Bin-Diffing",
+          "anchor": "bin-diffing"
+        },
+        {
+          "text": "Dynamic Analysis",
+          "anchor": "dynamic-analysis"
+        },
+        {
+          "text": "Debugging In GDB",
+          "anchor": "debugging-in-gdb"
+        },
+        {
+          "text": "Fixing SIGILL",
+          "anchor": "fixing-sigill"
+        },
+        {
+          "text": "Controlling The Program Counter (PC)",
+          "anchor": "controlling-the-program-counter-pc"
+        },
+        {
+          "text": "Exploitation",
+          "anchor": "exploitation"
+        },
+        {
+          "text": "The Plan",
+          "anchor": "the-plan"
+        },
+        {
+          "text": "ROP Gadgets",
+          "anchor": "rop-gadgets"
+        },
+        {
+          "text": "Stack Pivoting To User-Controlled Region",
+          "anchor": "stack-pivoting-to-user-controlled-region"
+        },
+        {
+          "text": "What Is A Stack Pivot?",
+          "anchor": "what-is-a-stack-pivot"
+        },
+        {
+          "text": "Why Stack Pivot?",
+          "anchor": "why-stack-pivot"
+        },
+        {
+          "text": "How Many Bytes To Pivot To And Why 0x400?",
+          "anchor": "how-many-bytes-to-pivot-to-and-why-0x400"
+        },
+        {
+          "text": "The ROP Chain",
+          "anchor": "the-rop-chain"
+        },
+        {
+          "text": "Getting The Reverse Shell",
+          "anchor": "getting-the-reverse-shell"
+        },
+        {
+          "text": "Full Exploit Script",
+          "anchor": "full-exploit-script"
+        },
+        {
+          "text": "Conclusion",
+          "anchor": "conclusion"
+        },
+        {
+          "text": "Credits",
+          "anchor": "credits"
+        }
+      ],
+      "blog_links": [],
+      "disposition": "included",
+      "research_type": "Firmware patch comparison and debugger-environment diagnosis",
+      "reason": "Method observations retained and merged into technique owners; exploitation details excluded.",
+      "evidence_level": "method-sections-inspected",
+      "skills": [
+        "binary-auditing",
+        "dynamic-analysis",
+        "memory-safety-auditing",
+        "patch-diff-analysis"
+      ]
+    },
+    {
+      "id": "B079",
+      "title": "Oracle VirtualBox VHWA Use-After-Free Privilege Escalation Vulnerability",
+      "url": "https://starlabs.sg/blog/2020/06-oracle-virtualbox-vhwa-use-after-free-privilege-escalation-vulnerability/",
+      "retrieval": {
+        "at": "2026-09-30T02:52:28.480Z",
+        "http_status": 200,
+        "final_url": "https://starlabs.sg/blog/2020/06-oracle-virtualbox-vhwa-use-after-free-privilege-escalation-vulnerability/",
+        "response_html_bytes": 57960,
+        "response_html_sha256": "29daafab1c18f52534d925ff30b251c6e705ac3c8e354cd9b4b680f4294793ba"
+      },
+      "observed_sections": [
+        {
+          "text": "Heap Spray",
+          "anchor": "heap-spray"
+        },
+        {
+          "text": "rip control",
+          "anchor": "rip-control"
+        },
+        {
+          "text": "Getting an infoleak",
+          "anchor": "getting-an-infoleak"
+        },
+        {
+          "text": "DLL infoleak",
+          "anchor": "dll-infoleak"
+        }
+      ],
+      "blog_links": [],
+      "disposition": "included",
+      "research_type": "Debug-build reachability and shared-reference lifetime investigation",
+      "reason": "Method observations retained and merged into technique owners; exploitation details excluded.",
+      "evidence_level": "method-sections-inspected",
+      "skills": [
+        "binary-auditing",
+        "exploitability-assessment",
+        "state-and-lifetime-auditing"
+      ]
+    },
+    {
+      "id": "B080",
+      "title": "TianFu Cup 2019: Adobe Reader Exploitation",
+      "url": "https://starlabs.sg/blog/2020/04-tianfu-cup-2019-adobe-reader-exploitation/",
+      "retrieval": {
+        "at": "2026-09-30T02:52:28.480Z",
+        "http_status": 200,
+        "final_url": "https://starlabs.sg/blog/2020/04-tianfu-cup-2019-adobe-reader-exploitation/",
+        "response_html_bytes": 65950,
+        "response_html_sha256": "6dfcc06c23e4be1bf91589239a06e5fc184e2aa8231e6cba1738042c9a0ad285"
+      },
+      "observed_sections": [
+        {
+          "text": "Vulnerability",
+          "anchor": "vulnerability"
+        },
+        {
+          "text": "Arbitrary Read/Write Primitives",
+          "anchor": "arbitrary-readwrite-primitives"
+        },
+        {
+          "text": "Gaining Code Execution",
+          "anchor": "gaining-code-execution"
+        },
+        {
+          "text": "Bypassing CFI",
+          "anchor": "bypassing-cfi"
+        },
+        {
+          "text": "Last Step",
+          "anchor": "last-step"
+        }
+      ],
+      "blog_links": [],
+      "disposition": "included",
+      "research_type": "Allocator provenance and observation-constraint analysis",
+      "reason": "Method observations retained and merged into technique owners; exploitation details excluded.",
+      "evidence_level": "method-sections-inspected",
+      "skills": [
+        "memory-safety-auditing",
+        "state-and-lifetime-auditing"
+      ]
+    },
+    {
+      "id": "B081",
+      "title": "Adventures in Hypervisor: Oracle VirtualBox Research",
+      "url": "https://starlabs.sg/blog/2020/04-adventures-in-hypervisor-oracle-virtualbox-research/",
+      "retrieval": {
+        "at": "2026-09-30T02:52:28.480Z",
+        "http_status": 200,
+        "final_url": "https://starlabs.sg/blog/2020/04-adventures-in-hypervisor-oracle-virtualbox-research/",
+        "response_html_bytes": 55391,
+        "response_html_sha256": "18a4c3495b76debe2ec1aff7485d86c28df0eaaa417b43f59b9e4666d881db87"
+      },
+      "observed_sections": [
+        {
+          "text": "RT_UNTRUSTED_VOLATILE_GUEST Keyword",
+          "anchor": "rt_untrusted_volatile_guest-keyword"
+        },
+        {
+          "text": "Guest’s Physical Memory Read/Write Handlers",
+          "anchor": "guests-physical-memory-readwrite-handlers"
+        },
+        {
+          "text": "Dumb Fuzzing",
+          "anchor": "dumb-fuzzing"
+        },
+        {
+          "text": "Coverage Guided Fuzzing",
+          "anchor": "coverage-guided-fuzzing"
+        },
+        {
+          "text": "Heap Spraying",
+          "anchor": "heap-spraying"
+        },
+        {
+          "text": "Allocation size < 0x3FA0: Send An Ethernet Frame With E1000 Network Adapter",
+          "anchor": "allocation-size--0x3fa0-send-an-ethernet-frame-with-e1000-network-adapter"
+        },
+        {
+          "text": "Allocation Size > 0x1000: Send A VMMDev Request",
+          "anchor": "allocation-size--0x1000-send-a-vmmdev-request"
+        },
+        {
+          "text": "Information Leakage",
+          "anchor": "information-leakage"
+        },
+        {
+          "text": "The RWX Page",
+          "anchor": "the-rwx-page"
+        }
+      ],
+      "blog_links": [],
+      "disposition": "included",
+      "research_type": "Hypervisor source-surface discovery and harness construction",
+      "reason": "Method observations retained and merged into technique owners; exploitation details excluded.",
+      "evidence_level": "method-sections-inspected",
+      "skills": [
+        "attack-surface-mapping",
+        "fuzzing",
+        "memory-safety-auditing"
+      ]
+    }
+  ],
+  "internal_link_review": [
+    {
+      "from": "B023",
+      "url": "https://starlabs.sg/blog/2023/07-prctl-anon_vma_name-an-amusing-heap-spray/",
+      "action": "stale-link-recovered-from-index-and-search",
+      "http_status": 404,
+      "to": "B046",
+      "recovered_url": "https://starlabs.sg/blog/2023/07-prctl-anon_vma_name-an-amusing-linux-kernel-heap-spray/"
+    },
+    {
+      "from": "B039",
+      "url": "https://starlabs.sg/blog/2022/12-the-last-breath-of-our-netgear-rax30-bugs-a-tragic-tale-before-pwn2own-toronto-2022/",
+      "action": "indexed-page-reviewed",
+      "to": "B056"
+    },
+    {
+      "from": "B045",
+      "url": "https://starlabs.sg/blog/2022/06-io_uring-new-code-new-bugs-and-a-new-exploit-technique/",
+      "action": "indexed-page-reviewed",
+      "to": "B064"
+    },
+    {
+      "from": "B045",
+      "url": "https://starlabs.sg/blog/2023/07-container-escape-using-file-based-DirtyCred_old_source.zip",
+      "action": "code-attachment-excluded-not-downloaded"
+    },
+    {
+      "from": "B045",
+      "url": "https://starlabs.sg/blog/2023/07-container-escape-using-file-based-DirtyCred_source.zip",
+      "action": "code-attachment-excluded-not-downloaded"
+    },
+    {
+      "from": "B060",
+      "url": "https://starlabs.sg/blog/2021/09-analysis-of-cve-2021-1758/",
+      "action": "stale-link-recovered-from-index-and-search",
+      "http_status": 404,
+      "to": "B069",
+      "recovered_url": "https://starlabs.sg/blog/2021/09-analysis-of-cve-2021-1758-coretext-out-of-bounds-read/"
+    },
+    {
+      "from": "B076",
+      "url": "https://starlabs.sg/blog/adventures-in-hypervisor-oracle-virtualbox-research/",
+      "action": "stale-link-recovered-from-index-and-search",
+      "http_status": 404,
+      "to": "B081",
+      "recovered_url": "https://starlabs.sg/blog/2020/04-adventures-in-hypervisor-oracle-virtualbox-research/"
+    }
+  ],
+  "statistics": {
+    "index_entries": 81,
+    "inspected_pages": 67,
+    "included_sources": 65,
+    "duplicate_pages": 1,
+    "context_pages": 1,
+    "excluded_entries": 14,
+    "skills": 17
+  }
+}

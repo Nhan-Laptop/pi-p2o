@@ -1,0 +1,164 @@
+{
+  "schema_version": 1,
+  "source_id": "O049",
+  "url": "https://blog.orange.tw/posts/2014-03-volgactf-2014-web-400-write-up/",
+  "observed_title": "Volga CTF 2014 Web 400 write up",
+  "retrieved_at": "2026-09-30T09:59:26.962Z",
+  "retrieval": {
+    "tool": "fetch_content (readable), agent_browser",
+    "response_id": "browser session orange-O049",
+    "final_url": "https://blog.orange.tw/posts/2014-03-volgactf-2014-web-400-write-up/",
+    "outcome": "read",
+    "quote_verification": "In the original article DOM, exact article.innerText.includes(quote) and paragraph.innerText.includes(quote) checks passed for all five quotations. Locators use 1-based article p-element indices, including image-only paragraphs. Title and final URL were also observed in this session."
+  },
+  "disposition": "included",
+  "reason": "Despite being a historical challenge solution, the article supplies distinct reusable method evidence: request interception, failure-induced loss of usable session state, consumer-format restrictions, and a failed reference-environment assumption investigated through available runtime objects. Only these methods are retained; the solution and exploitation sequence are omitted.",
+  "canonical_source": null,
+  "evidence": [
+    {
+      "id": "E1",
+      "locator": "Article body, p element 8: request-interception paragraph before the captured-request image; no body subheadings.",
+      "quote": "使用 Tamper Data 對我們送出的資訊進行截取:",
+      "verified": true
+    },
+    {
+      "id": "E2",
+      "locator": "Article body, p element 15: recovery paragraph immediately after the reported loss of functionality.",
+      "quote": "任何功能都無法操作，只能把 Cookie 清空再註冊一個帳號嘗試，之後的步驟都是這樣，只要一個地方出錯就要重新註冊一個帳號重來一次XD",
+      "verified": true
+    },
+    {
+      "id": "E3",
+      "locator": "Article body, p element 17: parenthetical format limitation in the error-information discussion.",
+      "quote": "（但是只限定於 html, xml 格式，不然再處理時會出錯一樣無法看到檔案內容）",
+      "verified": true
+    },
+    {
+      "id": "E4",
+      "locator": "Article body, p element 28: environment-mismatch clause following the linked paper's approach.",
+      "quote": "但是伺服器上的環境似乎跟 Paper 不太相同，所以不能直接使用上面的攻擊代碼，必須小改一下!",
+      "verified": true
+    },
+    {
+      "id": "E5",
+      "locator": "Article body, p element 29: method fragment about inspecting other known global variables after an assumed context was unavailable.",
+      "quote": "對其他已知的全域變數用 Relfection API 想辦法",
+      "verified": true
+    }
+  ],
+  "workflow": [
+    {
+      "decision": "Inspect the client's actual outgoing information rather than inferring its submitted representation solely from the visible interface.",
+      "evidence": ["E1"]
+    },
+    {
+      "decision": "When a failed observation leaves the session unusable, identify recovery requirements before interpreting subsequent observations as comparable.",
+      "evidence": ["E2"]
+    },
+    {
+      "decision": "Use processing failures to distinguish resource selection from content the downstream consumer can successfully process; retain format restrictions instead of claiming unrestricted visibility.",
+      "evidence": ["E3"]
+    },
+    {
+      "decision": "When a reference approach assumes an unavailable runtime context, investigate objects actually available in the observed environment and keep the missing prerequisite explicit.",
+      "evidence": ["E4", "E5"]
+    }
+  ],
+  "tools": [
+    {
+      "tool": "Tamper Data",
+      "purpose": "Intercept outgoing client information to inspect the submitted representation.",
+      "when": "When interface behavior alone does not reveal what the client sends.",
+      "attribution": "explicit",
+      "evidence": ["E1"]
+    },
+    {
+      "tool": "Java Reflection API",
+      "purpose": "Inspect known ambient runtime objects while investigating a missing context assumed by a reference.",
+      "when": "When the observed runtime's available objects differ from the reference environment.",
+      "attribution": "explicit",
+      "evidence": ["E4", "E5"]
+    }
+  ],
+  "handoffs": [
+    {
+      "producer": "data-flow-analysis",
+      "consumer": "dynamic-analysis",
+      "when": "The submitted representation is observed, but downstream format requirements or failure-state persistence remain unresolved.",
+      "packet": [
+        "authorized scope and artifact/runtime identity",
+        "single unresolved consumer question",
+        "actor-controlled field and submitted representation",
+        "known and inferred consumer edges",
+        "candidate format requirements and contrasting predictions",
+        "observed failure side effects and recovery requirements",
+        "known-good baseline and isolation/stop conditions",
+        "evidence provenance, classification and remaining limits"
+      ],
+      "acceptance_gate": "Require a recoverable benign baseline and an observation that distinguishes the stated hypotheses. Source-author reports may seed the question but cannot substitute for current consumer observations.",
+      "classification": "derived",
+      "evidence": ["E1", "E2", "E3"]
+    },
+    {
+      "producer": "dynamic-analysis",
+      "consumer": "exploitability-assessment",
+      "when": "An observed consumer restriction or missing runtime prerequisite changes the scope of a proposed capability.",
+      "packet": [
+        "scope, actor and original/modified environment identity",
+        "narrow observed capability and evidence classification",
+        "accepted/rejected format evidence",
+        "runtime prerequisites and differences from reference assumptions",
+        "collateral state effects and recovery constraints",
+        "negative evidence, missing capabilities and next bounded question"
+      ],
+      "acceptance_gate": "Keep resource reachability, successful content consumption and stronger impact separate. Each claimed capability needs evidence and stated prerequisites; an error or historical reference alone does not demonstrate unrestricted impact.",
+      "classification": "derived",
+      "evidence": ["E2", "E3", "E4", "E5"]
+    }
+  ],
+  "limitations": [
+    "This is a 2014 CTF account. Runtime details, behavior and results are author reports, not independently reproduced findings or evidence about current deployments.",
+    "The stated HTML/XML restriction was inferred from processing behavior; the article does not establish a comprehensive accepted-format grammar or complete consumer-policy analysis.",
+    "The author reports unusable functionality followed by cookie/account recovery. The exact persistence mechanism and account-versus-service-wide failure scope are not established.",
+    "The reference-context mismatch is described tentatively, without a complete runtime/configuration inventory or controlled comparison. Its eventual challenge-specific workaround is not retained.",
+    "Tamper Data and Java Reflection API are explicitly named historical tools, not required installations or claims of present-day compatibility. E5 preserves the source's spelling 'Relfection'.",
+    "The article supplies no remediation or deployed-fix validation. Derived baseline and handoff gates are library synthesis, not author-reported experimental controls."
+  ],
+  "candidate_additions": [
+    {
+      "owner": "data-flow-analysis",
+      "kind": "workflow",
+      "guidance": "For user-selectable options, record the submitted representation independently of the interface label; keep downstream consumer semantics a hypothesis until supported.",
+      "evidence": ["E1"]
+    },
+    {
+      "owner": "dynamic-analysis",
+      "kind": "failure",
+      "guidance": "Record persistent failure side effects and required reset state; restore a known-good baseline before comparing later observations.",
+      "evidence": ["E2"]
+    },
+    {
+      "owner": "exploitability-assessment",
+      "kind": "validation",
+      "guidance": "State consumer-format restrictions separately from resource reachability. A resource-selection capability does not establish visibility of arbitrary content.",
+      "evidence": ["E3"]
+    },
+    {
+      "owner": "dynamic-analysis",
+      "kind": "heuristic",
+      "guidance": "Treat reference examples as environment-dependent hypotheses. Check their runtime prerequisites against objects actually available, and carry missing prerequisites forward as failed assumptions.",
+      "evidence": ["E4", "E5"]
+    }
+  ],
+  "related_article_urls": [
+    "https://www.aspectsecurity.com/uploads/downloads/2012/12/Remote-Code-with-Expression-Language-Injection.pdf"
+  ],
+  "excluded_material": [
+    "Challenge solution and flag",
+    "Target-specific parameter values, paths, example hosts and configuration locations",
+    "Expression templates, evaluation payloads and reflection/class-loading bypass sequence",
+    "External code loading, command execution and callback scripting instructions",
+    "Payload/result screenshots and executable artifacts"
+  ],
+  "worker_notes": "Readable retrieval was corroborated against the assigned article in the isolated orange-O049 browser session. The linked paper and API tutorial were not retrieved. README.md and HANDOFFS.md resolve at repository root; neither exists under research/orange. Proposed additions mostly refine existing representation, baseline and constrained-impact rules; the orchestrator may merge or reject them."
+}

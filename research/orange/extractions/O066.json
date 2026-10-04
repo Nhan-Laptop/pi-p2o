@@ -1,0 +1,41 @@
+{
+  "schema_version": 1,
+  "source_id": "O066",
+  "url": "https://blog.orange.tw/posts/2012-11-phpconf-2012-security-in-php/",
+  "observed_title": "PHPCONF 2012 - Security in PHP 那些在滲透測試的小技巧",
+  "retrieved_at": "2026-09-30T10:14:23.864Z",
+  "retrieval": {
+    "tool": "agent_browser",
+    "response_id": null,
+    "session": "orange-O066",
+    "final_url": "https://blog.orange.tw/posts/2012-11-phpconf-2012-security-in-php/",
+    "outcome": "read",
+    "quote_verification": "Read the article element using get text article; verified E1 by exact inclusion in document.querySelector('article').innerText in the named browser session. The DOM check returned true."
+  },
+  "disposition": "excluded",
+  "reason": "The actual article body announces conference slides and supplies only three topic labels alongside an embedded presentation. It does not describe investigation decisions, named-tool purposes, failures, or validation. This is a slides-only post, not sufficient primary evidence for reusable method observations.",
+  "canonical_source": null,
+  "evidence": [
+    {
+      "id": "E1",
+      "locator": "Article body opening paragraph after the author/date and before the three-item topic list",
+      "quote": "在 PHPCONF 2012 的投影片，主要講到三種 trick",
+      "verified": true
+    }
+  ],
+  "workflow": [],
+  "tools": [],
+  "handoffs": [],
+  "limitations": [
+    "The observed article provides only a presentation announcement and topic labels; these do not establish a decision process or tool-purpose evidence.",
+    "The embedded slide deck was not used as a substitute for article-level method evidence, and no presentation attachments were downloaded.",
+    "This is historical conference material dated 2012-11-03. No target interaction, runtime behavior, or author security result was independently verified."
+  ],
+  "candidate_additions": [],
+  "related_article_urls": [],
+  "excluded_material": [
+    "Embedded slide-deck content and presentation attachments",
+    "Technical topic labels without supporting investigation or validation evidence"
+  ],
+  "worker_notes": "fetch_content readable retrieval failed with 'Page appears to be JavaScript-rendered (content loads dynamically)'; a read-only retry in browser session orange-O066 successfully exposed the actual article body. No other article was retrieved."
+}

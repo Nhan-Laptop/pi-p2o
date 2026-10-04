@@ -1,0 +1,41 @@
+{
+  "schema_version": 1,
+  "source_id": "O063",
+  "url": "https://blog.orange.tw/posts/2013-01-webconf-2013best-practices-upload/",
+  "observed_title": "WebConf 2013「Best Practices - The Upload」投影片",
+  "retrieved_at": "2026-09-30T10:12:05.797Z",
+  "retrieval": {
+    "tool": "agent_browser",
+    "response_id": "session orange-O063",
+    "final_url": "https://blog.orange.tw/posts/2013-01-webconf-2013best-practices-upload/",
+    "outcome": "read",
+    "quote_verification": "Named-session DOM evaluation confirmed document.body.innerText.includes(E1.quote) === true and returned the matching paragraph text verbatim; E1 is the third top-level page paragraph and is 30 Unicode characters long."
+  },
+  "disposition": "excluded",
+  "reason": "The actual blog body announces a conference presentation, embeds its slide deck, and lists upload-security topics. It does not describe an investigation decision process, named research-tool purposes, failures, or validation. This is a slides-only announcement under the extraction contract; topic labels are not sufficient method evidence.",
+  "canonical_source": null,
+  "evidence": [
+    {
+      "id": "E1",
+      "locator": "Article body, third paragraph, immediately before the embedded slide deck and upload-topic summary",
+      "quote": "下面是這次演講的投影片(刪掉了一張不能洩漏出來的投影片:P)",
+      "verified": true
+    }
+  ],
+  "workflow": [],
+  "tools": [],
+  "handoffs": [],
+  "limitations": [
+    "The blog body supplies presentation topics rather than primary investigation, tool-purpose, or validation evidence.",
+    "The embedded presentation was not separately inspected; the author explicitly says one slide was removed.",
+    "No target interaction or independent reproduction was performed; the page does not support an independently verified vulnerability claim."
+  ],
+  "candidate_additions": [],
+  "related_article_urls": [],
+  "excluded_material": [
+    "Conference and personal commentary",
+    "Embedded slide material and external event links",
+    "Unexpanded upload-validation and bypass topic labels"
+  ],
+  "worker_notes": "fetch_content readable mode reported that the page appeared JavaScript-rendered. The orange-O063 browser fallback successfully read the actual article body, confirmed its title and final URL, and verified the classification quote against original DOM text. No external presentation or event link was followed."
+}

@@ -1,0 +1,57 @@
+{
+  "schema_version": 1,
+  "source_id": "O084",
+  "url": "https://blog.orange.tw/posts/2010-05-blog-post/",
+  "observed_title": "爽",
+  "retrieved_at": "2026-09-30T10:31:22.289Z",
+  "retrieval": {
+    "tool": "agent_browser",
+    "response_id": "browser session orange-O084",
+    "final_url": "https://blog.orange.tw/posts/2010-05-blog-post/",
+    "outcome": "read",
+    "quote_verification": "Exact DOM text inclusion check in articleBody paragraph 2 using agent_browser eval in session orange-O084; E1 matched and measured 48 Unicode characters."
+  },
+  "disposition": "context",
+  "reason": "A personal announcement followed by a terse exercise-troubleshooting note. It supplies one useful diagnostic observation: inspecting generated code revealed an added checking routine. The historical compiler-version explanation is not developed into a controlled comparison or documented validation. Retain the explicit tool-purpose context, but do not force two reusable methods, candidate additions, or a handoff from this short note.",
+  "canonical_source": null,
+  "evidence": [
+    {
+      "id": "E1",
+      "locator": "Article body, paragraph 2, following the personal announcement",
+      "quote": "objdump後發覺會比原始多出__stack_chk_fail來檢查有沒有被 overflow",
+      "verified": true
+    }
+  ],
+  "workflow": [
+    {
+      "decision": "When behavior differs from a source-level expectation, inspect generated instructions for additional checking before assuming the original operation executes unchanged.",
+      "evidence": ["E1"]
+    }
+  ],
+  "tools": [
+    {
+      "tool": "objdump",
+      "purpose": "Inspect generated code for an additional checking routine that may explain unexpected local behavior.",
+      "when": "When an expected result does not occur in the local build.",
+      "attribution": "explicit",
+      "evidence": ["E1"]
+    }
+  ],
+  "handoffs": [],
+  "limitations": [
+    "The diagnosis and environment comparison are author reports, not independently reproduced observations.",
+    "The article provides no binary provenance, disassembly excerpt, tool options, effective build flags, matched control, or repeated observation.",
+    "Its historical compiler-version explanation does not establish the behavior of other configurations or current toolchains.",
+    "The closing suggestion to disable a security check has no reported post-change validation; it is omitted rather than treated as remediation or proof of unmodified-build impact.",
+    "The observation is contextual to existing generated-code comparison and environment-verification guidance, not a new library method."
+  ],
+  "candidate_additions": [],
+  "related_article_urls": [],
+  "excluded_material": [
+    "Personal admission announcement",
+    "Exercise-specific objective and environment identifiers",
+    "Numeric compiler versions",
+    "Command-line option and recommendation for disabling a protection"
+  ],
+  "worker_notes": "fetch_content readable mode returned a JavaScript-rendered-content error. The named browser session successfully exposed the complete five-paragraph article body; its text and HTML were read. The external reference was observed but not followed. No article code was executed, attachments retrieved, or targets tested."
+}

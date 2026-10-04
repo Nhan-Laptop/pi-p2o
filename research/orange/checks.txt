@@ -1,0 +1,117 @@
+Orange integration library checks — 2026-09-30T12:30:47Z
+
+Scope: artifact and library checks, not target execution, source-author result reproduction, optional-tool integration or performance.
+
+$ python3 -m py_compile scripts/*.py tests/*.py
+
+$ python3 scripts/render_research.py --check
+PASS: research render is current
+
+$ python3 scripts/orange_research.py --check
+PASS: Orange corpus freshness
+
+$ python3 scripts/orange_research.py --validate
+PASS: Orange corpus validation
+
+$ python3 scripts/validate_library.py
+PASS: 17 skills; 81 catalog entries; 65 evidence sources; format, links, provenance, mapping, handoffs, freshness, and recipe checks
+
+$ python3 -m unittest discover -s tests -v
+test_current_skill_frontmatter (test_library.FormatTests.test_current_skill_frontmatter) ... ok
+test_duplicate_frontmatter_field (test_library.FormatTests.test_duplicate_frontmatter_field) ... ok
+test_json_browser_envelope (test_library.FormatTests.test_json_browser_envelope) ... ok
+test_missing_frontmatter (test_library.FormatTests.test_missing_frontmatter) ... ok
+test_name_format (test_library.FormatTests.test_name_format) ... ok
+test_unterminated_frontmatter (test_library.FormatTests.test_unterminated_frontmatter) ... ok
+test_yaml_plain_scalar_contract (test_library.FormatTests.test_yaml_plain_scalar_contract) ... ok
+test_broken_local_link (test_library.LibraryGateTests.test_broken_local_link) ... ok
+test_broken_reference_link (test_library.LibraryGateTests.test_broken_reference_link) ... ok
+test_broken_source_anchor (test_library.LibraryGateTests.test_broken_source_anchor) ... ok
+test_composition_scaffold_fields (test_library.LibraryGateTests.test_composition_scaffold_fields) ... ok
+test_current_library (test_library.LibraryGateTests.test_current_library) ... ok
+test_duplicate_extractions (test_library.LibraryGateTests.test_duplicate_extractions) ... ok
+test_duplicate_paragraph (test_library.LibraryGateTests.test_duplicate_paragraph) ... ok
+test_duplicate_reference_paragraph (test_library.LibraryGateTests.test_duplicate_reference_paragraph) ... ok
+test_duplicate_requires_retained_canonical (test_library.LibraryGateTests.test_duplicate_requires_retained_canonical) ... ok
+test_excluded_source_cannot_be_evidence (test_library.LibraryGateTests.test_excluded_source_cannot_be_evidence) ... ok
+test_failed_http_receipt (test_library.LibraryGateTests.test_failed_http_receipt) ... ok
+test_granular_heuristic_citations (test_library.LibraryGateTests.test_granular_heuristic_citations) ... ok
+test_limitations_required (test_library.LibraryGateTests.test_limitations_required) ... ok
+test_link_cannot_escape_library (test_library.LibraryGateTests.test_link_cannot_escape_library) ... ok
+test_missing_hash_receipt (test_library.LibraryGateTests.test_missing_hash_receipt) ... ok
+test_missing_recursive_edge (test_library.LibraryGateTests.test_missing_recursive_edge) ... ok
+test_missing_required_goal (test_library.LibraryGateTests.test_missing_required_goal) ... ok
+test_name_directory_mismatch (test_library.LibraryGateTests.test_name_directory_mismatch) ... ok
+test_no_cve_specific_skill (test_library.LibraryGateTests.test_no_cve_specific_skill) ... ok
+test_no_encoded_byte_payload (test_library.LibraryGateTests.test_no_encoded_byte_payload) ... ok
+test_no_executable_fence (test_library.LibraryGateTests.test_no_executable_fence) ... ok
+test_no_external_tooling_helper (test_library.LibraryGateTests.test_no_external_tooling_helper) ... ok
+test_no_recipe_in_reference (test_library.LibraryGateTests.test_no_recipe_in_reference) ... ok
+test_no_unfinished_skill (test_library.LibraryGateTests.test_no_unfinished_skill) ... ok
+test_phase_context_scaffold_fields (test_library.LibraryGateTests.test_phase_context_scaffold_fields) ... ok
+test_raw_collection_artifacts_not_deliverables (test_library.LibraryGateTests.test_raw_collection_artifacts_not_deliverables) ... ok
+test_reference_link_cannot_escape_library (test_library.LibraryGateTests.test_reference_link_cannot_escape_library) ... ok
+test_renderer_check_cli_fails_stale_output (test_library.LibraryGateTests.test_renderer_check_cli_fails_stale_output) ... ok
+test_renderer_current_and_deterministic (test_library.LibraryGateTests.test_renderer_current_and_deterministic) ... ok
+test_scaffold_requires_uncertainty_and_fields (test_library.LibraryGateTests.test_scaffold_requires_uncertainty_and_fields) ... ok
+test_stale_generated_output (test_library.LibraryGateTests.test_stale_generated_output) ... ok
+test_statistics_not_trusted (test_library.LibraryGateTests.test_statistics_not_trusted) ... ok
+test_tools_require_purpose_and_when (test_library.LibraryGateTests.test_tools_require_purpose_and_when) ... ok
+test_unknown_source (test_library.LibraryGateTests.test_unknown_source) ... ok
+test_unobserved_locator (test_library.LibraryGateTests.test_unobserved_locator) ... ok
+test_unresolved_stale_link (test_library.LibraryGateTests.test_unresolved_stale_link) ... ok
+test_unreviewed_recursive_edge (test_library.LibraryGateTests.test_unreviewed_recursive_edge) ... ok
+test_validator_cli_success (test_library.LibraryGateTests.test_validator_cli_success) ... ok
+test_candidate_override_is_rendered_without_packet_rewrite (test_orange.OrangeGateTests.test_candidate_override_is_rendered_without_packet_rewrite) ... ok
+test_duplicate_child_session_rejected (test_orange.OrangeGateTests.test_duplicate_child_session_rejected) ... ok
+test_duplicate_quote_receipt_rejected (test_orange.OrangeGateTests.test_duplicate_quote_receipt_rejected) ... ok
+test_duplicate_requires_retained_canonical (test_orange.OrangeGateTests.test_duplicate_requires_retained_canonical) ... ok
+test_duplicate_worker_identity_rejected (test_orange.OrangeGateTests.test_duplicate_worker_identity_rejected) ... ok
+test_editorial_qualifications_survive_rendering (test_orange.OrangeGateTests.test_editorial_qualifications_survive_rendering) ... ok
+test_excessive_quote_rejected (test_orange.OrangeGateTests.test_excessive_quote_rejected) ... ok
+test_failed_independent_retrieval_rejected (test_orange.OrangeGateTests.test_failed_independent_retrieval_rejected) ... ok
+test_incomplete_worker_rejected (test_orange.OrangeGateTests.test_incomplete_worker_rejected) ... ok
+test_independent_text_hash_required (test_orange.OrangeGateTests.test_independent_text_hash_required) ... ok
+test_invalid_accepted_index_rejected (test_orange.OrangeGateTests.test_invalid_accepted_index_rejected) ... ok
+test_linked_publication_requires_its_own_receipt (test_orange.OrangeGateTests.test_linked_publication_requires_its_own_receipt) ... ok
+test_missing_article_packet_rejected (test_orange.OrangeGateTests.test_missing_article_packet_rejected) ... ok
+test_missing_pagination_page_rejected (test_orange.OrangeGateTests.test_missing_pagination_page_rejected) ... ok
+test_nonexact_matching_mode_rejected (test_orange.OrangeGateTests.test_nonexact_matching_mode_rejected) ... ok
+test_original_owner_requires_operational_citation (test_orange.OrangeGateTests.test_original_owner_requires_operational_citation) ... ok
+test_override_cannot_add_recipe (test_orange.OrangeGateTests.test_override_cannot_add_recipe) ... ok
+test_override_cannot_change_evidence (test_orange.OrangeGateTests.test_override_cannot_change_evidence) ... ok
+test_override_index_must_exist (test_orange.OrangeGateTests.test_override_index_must_exist) ... ok
+test_override_owner_must_exist (test_orange.OrangeGateTests.test_override_owner_must_exist) ... ok
+test_override_owner_requires_operational_citation (test_orange.OrangeGateTests.test_override_owner_requires_operational_citation) ... ok
+test_quote_hash_mismatch_rejected (test_orange.OrangeGateTests.test_quote_hash_mismatch_rejected) ... ok
+test_quote_match_failure_rejected (test_orange.OrangeGateTests.test_quote_match_failure_rejected) ... ok
+test_quote_origin_mismatch_rejected (test_orange.OrangeGateTests.test_quote_origin_mismatch_rejected) ... ok
+test_quote_receipt_identity_required (test_orange.OrangeGateTests.test_quote_receipt_identity_required) ... ok
+test_renderer_detects_stale_output (test_orange.OrangeGateTests.test_renderer_detects_stale_output) ... ok
+test_renderer_deterministic (test_orange.OrangeGateTests.test_renderer_deterministic) ... ok
+test_retained_source_needs_retrieval_receipt (test_orange.OrangeGateTests.test_retained_source_needs_retrieval_receipt) ... ok
+test_synthetic_fixture_is_valid (test_orange.OrangeGateTests.test_synthetic_fixture_is_valid) ... ok
+test_target_specific_candidate_rejected (test_orange.OrangeGateTests.test_target_specific_candidate_rejected) ... ok
+test_unaccepted_source_citation_rejected (test_orange.OrangeGateTests.test_unaccepted_source_citation_rejected) ... ok
+test_unknown_claim_evidence_rejected (test_orange.OrangeGateTests.test_unknown_claim_evidence_rejected) ... ok
+test_unowned_candidate_rejected (test_orange.OrangeGateTests.test_unowned_candidate_rejected) ... ok
+test_valid_linked_publication_is_explicitly_attributed (test_orange.OrangeGateTests.test_valid_linked_publication_is_explicitly_attributed) ... ok
+test_wrong_observed_runtime_rejected (test_orange.OrangeGateTests.test_wrong_observed_runtime_rejected) ... ok
+test_wrong_requested_runtime_rejected (test_orange.OrangeGateTests.test_wrong_requested_runtime_rejected) ... ok
+test_wrong_tool_attribution_rejected (test_orange.OrangeGateTests.test_wrong_tool_attribution_rejected) ... ok
+
+----------------------------------------------------------------------
+Ran 82 tests in 7.462s
+
+OK
+
+$ node scripts/orchestrate_orange.mjs --check-runtime
+PASS: installed pi-herdr herdSpawn and CLI adapter imported; no agents started.
+
+Native Pi discovery receipt: native-skills.json — 17 unique local skills, zero diagnostics, 17 prompt entries; defaults disabled and exact file paths asserted.
+Budget assertions: 17 main documents 623–875 words (<900); 10 references 542–641 (<650).
+Independent quote reconciliation: 96 sources; 276 strings; 273 exact and 3 whitespace-only matches; separate Phrack/DEVCORE origins.
+Harness baseline review: 21 full reads before first article worker; served-text hashes equal pre-edit skill/reference hashes.
+Observed worker launch: 96 unique child sessions, exact provider/model/max; 96 panes and preserved-before-close packets.
+
+PASS: all commands above exited 0.

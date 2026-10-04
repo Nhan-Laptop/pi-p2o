@@ -1,0 +1,4266 @@
+{
+  "schema_version": 1,
+  "collection": "Independent browser-origin HTTP metadata pass; no article bodies or exploit attachments retained",
+  "retrieved_at": "2026-09-30T09:03:50.555Z",
+  "indexes": [
+    {
+      "url": "https://blog.orange.tw/articles/",
+      "http_status": 200,
+      "marker": "Page 1 of 3",
+      "count": 40
+    },
+    {
+      "url": "https://blog.orange.tw/articles/page/2/",
+      "http_status": 200,
+      "marker": "Page 2 of 3",
+      "count": 40
+    },
+    {
+      "url": "https://blog.orange.tw/articles/page/3/",
+      "http_status": 200,
+      "marker": "Page 3 of 3",
+      "count": 16
+    }
+  ],
+  "entries": [
+    {
+      "id": "O001",
+      "url": "https://blog.orange.tw/posts/2025-08-the-art-of-php-ch/",
+      "index_title": "(繁中) The Art of PHP — My CTF Journey and Untold Stories!",
+      "retrieved_at": "2026-09-30T09:03:43.179Z",
+      "http_status": 200,
+      "final_url": "https://blog.orange.tw/posts/2025-08-the-art-of-php-ch/",
+      "response_html_bytes": 148195,
+      "response_html_sha256": "7c938a451bb19e9588341ade8ae5c3e60ca070a7857b48a992c3ddb81af40dd2",
+      "document_title": "(繁中) The Art of PHP — My CTF Journey and Untold Stories! | Orange Tsai",
+      "article_title": "(繁中) The Art of PHP — My CTF Journey and Untold Stories!",
+      "observed_sections": [
+        {
+          "text": "(繁中) The Art of PHP — My CTF Journey and Untold Stories!",
+          "anchor": "",
+          "level": "H1"
+        },
+        {
+          "text": "序",
+          "anchor": "",
+          "level": "H1"
+        },
+        {
+          "text": "目錄",
+          "anchor": "目錄",
+          "level": "H1"
+        },
+        {
+          "text": "前言",
+          "anchor": "前言",
+          "level": "H1"
+        },
+        {
+          "text": "我是誰？",
+          "anchor": "我是誰？",
+          "level": "H2"
+        },
+        {
+          "text": "駭客競賽",
+          "anchor": "駭客競賽",
+          "level": "H2"
+        },
+        {
+          "text": "所謂的「電競選手」",
+          "anchor": "所謂的「電競選手」",
+          "level": "H2"
+        },
+        {
+          "text": "那 PHP Security 呢？",
+          "anchor": "那-PHP-Security-呢？",
+          "level": "H2"
+        },
+        {
+          "text": "正文",
+          "anchor": "正文",
+          "level": "H1"
+        },
+        {
+          "text": "1. Reviving Forgotten Bugs Through CTF",
+          "anchor": "1-Reviving-Forgotten-Bugs-Through-CTF",
+          "level": "H2"
+        },
+        {
+          "text": "1.1 - Formatting Objects for Fun and Profit!",
+          "anchor": "1-1-Formatting-Objects-for-Fun-and-Profit",
+          "level": "H3"
+        },
+        {
+          "text": "1.2 - When Security Features Make You Less Secure",
+          "anchor": "1-2-When-Security-Features-Make-You-Less-Secure",
+          "level": "H3"
+        },
+        {
+          "text": "2. One unserialize() to Rule Them All",
+          "anchor": "2-One-unserialize-to-Rule-Them-All",
+          "level": "H2"
+        },
+        {
+          "text": "2.1 - The “Serialize-Then-Replace” Pattern",
+          "anchor": "2-1-The-“Serialize-Then-Replace”-Pattern",
+          "level": "H3"
+        },
+        {
+          "text": "2.2 - Sleepy Cats Catch No Mice",
+          "anchor": "2-2-Sleepy-Cats-Catch-No-Mice",
+          "level": "H3"
+        },
+        {
+          "text": "2.3 - The “Holy Grail” of Deserialization Attacks",
+          "anchor": "2-3-The-“Holy-Grail”-of-Deserialization-Attacks",
+          "level": "H3"
+        },
+        {
+          "text": "3. When Windows Breaks…",
+          "anchor": "3-When-Windows-Breaks…",
+          "level": "H2"
+        },
+        {
+          "text": "3.1 - Windows Path Madness",
+          "anchor": "3-1-Windows-Path-Madness",
+          "level": "H3"
+        },
+        {
+          "text": "3.2 - Let’s Make Windows Defender Angry!",
+          "anchor": "3-2-Let’s-Make-Windows-Defender-Angry",
+          "level": "H3"
+        },
+        {
+          "text": "4. New Attacks and Techniques Born in CTFs",
+          "anchor": "4-New-Attacks-and-Techniques-Born-in-CTFs",
+          "level": "H2"
+        },
+        {
+          "text": "4.1 - Twenty Years of Evolving LFI to RCE",
+          "anchor": "4-1-Twenty-Years-of-Evolving-LFI-to-RCE",
+          "level": "H3"
+        },
+        {
+          "text": "Level 0 - The LFI Arms Race",
+          "anchor": "Level-0-The-LFI-Arms-Race",
+          "level": "H4"
+        },
+        {
+          "text": "Level 1 - The End of LFI",
+          "anchor": "Level-1-The-End-of-LFI",
+          "level": "H4"
+        },
+        {
+          "text": "Level 2 - The End of AFR",
+          "anchor": "Level-2-The-End-of-AFR",
+          "level": "H4"
+        },
+        {
+          "text": "Level Max - Filter Chain ~After Story~",
+          "anchor": "Level-Max-Filter-Chain-After-Story",
+          "level": "H4"
+        },
+        {
+          "text": "4.2 - PHAR Deserialization",
+          "anchor": "4-2-PHAR-Deserialization",
+          "level": "H3"
+        },
+        {
+          "text": "Level 0 - What is PHAR?",
+          "anchor": "Level-0-What-is-PHAR",
+          "level": "H4"
+        },
+        {
+          "text": "Level Max - Laravel (w/ mPDF) Kill Chain",
+          "anchor": "Level-Max-Laravel-w-mPDF-Kill-Chain",
+          "level": "H4"
+        },
+        {
+          "text": "5. Participants Also Popped 0days",
+          "anchor": "5-Participants-Also-Popped-0days",
+          "level": "H2"
+        },
+        {
+          "text": "5.1 - Hack the Scoreboard!",
+          "anchor": "5-1-Hack-the-Scoreboard",
+          "level": "H3"
+        },
+        {
+          "text": "5.2 - From CTF to Real World!",
+          "anchor": "5-2-From-CTF-to-Real-World",
+          "level": "H3"
+        },
+        {
+          "text": "結語",
+          "anchor": "結語",
+          "level": "H1"
+        },
+        {
+          "text": "榮譽提名",
+          "anchor": "榮譽提名",
+          "level": "H2"
+        },
+        {
+          "text": "向 CTF 社群致敬",
+          "anchor": "向-CTF-社群致敬",
+          "level": "H2"
+        }
+      ],
+      "article_links": [
+        "https://blog.orange.tw/posts/2025-08-the-art-of-php-ch/#",
+        "https://blog.orange.tw/posts/2025-08-the-art-of-php-en/",
+        "https://blog.orange.tw/posts/2025-08-the-art-of-php-ch/#%E7%9B%AE%E9%8C%84",
+        "https://blog.orange.tw/posts/2025-08-the-art-of-php-ch/#%E5%89%8D%E8%A8%80",
+        "https://blog.orange.tw/posts/2025-08-the-art-of-php-ch/#%E6%88%91%E6%98%AF%E8%AA%B0%EF%BC%9F",
+        "https://blog.orange.tw/posts/2025-08-the-art-of-php-ch/#%E9%A7%AD%E5%AE%A2%E7%AB%B6%E8%B3%BD",
+        "https://blog.orange.tw/posts/2025-08-the-art-of-php-ch/#%E6%89%80%E8%AC%82%E7%9A%84%E3%80%8C%E9%9B%BB%E7%AB%B6%E9%81%B8%E6%89%8B%E3%80%8D",
+        "https://blog.orange.tw/posts/2025-08-the-art-of-php-ch/#%E9%82%A3-PHP-Security-%E5%91%A2%EF%BC%9F",
+        "https://blog.orange.tw/posts/2025-08-the-art-of-php-ch/#%E6%AD%A3%E6%96%87",
+        "https://blog.orange.tw/posts/2025-08-the-art-of-php-ch/#1-Reviving-Forgotten-Bugs-Through-CTF",
+        "https://blog.orange.tw/posts/2025-08-the-art-of-php-ch/#1-1-Formatting-Objects-for-Fun-and-Profit",
+        "https://blog.orange.tw/posts/2025-08-the-art-of-php-ch/#1-2-When-Security-Features-Make-You-Less-Secure",
+        "https://blog.orange.tw/posts/2025-08-the-art-of-php-ch/#2-One-unserialize-to-Rule-Them-All",
+        "https://blog.orange.tw/posts/2025-08-the-art-of-php-ch/#2-1-The-%E2%80%9CSerialize-Then-Replace%E2%80%9D-Pattern",
+        "https://blog.orange.tw/posts/2025-08-the-art-of-php-ch/#2-2-Sleepy-Cats-Catch-No-Mice",
+        "https://blog.orange.tw/posts/2025-08-the-art-of-php-ch/#2-3-The-%E2%80%9CHoly-Grail%E2%80%9D-of-Deserialization-Attacks",
+        "https://blog.orange.tw/posts/2025-08-the-art-of-php-ch/#3-When-Windows-Breaks%E2%80%A6",
+        "https://blog.orange.tw/posts/2025-08-the-art-of-php-ch/#3-1-Windows-Path-Madness",
+        "https://blog.orange.tw/posts/2025-08-the-art-of-php-ch/#3-2-Let%E2%80%99s-Make-Windows-Defender-Angry",
+        "https://blog.orange.tw/posts/2025-08-the-art-of-php-ch/#4-New-Attacks-and-Techniques-Born-in-CTFs",
+        "https://blog.orange.tw/posts/2025-08-the-art-of-php-ch/#4-1-Twenty-Years-of-Evolving-LFI-to-RCE",
+        "https://blog.orange.tw/posts/2025-08-the-art-of-php-ch/#Level-0-The-LFI-Arms-Race",
+        "https://blog.orange.tw/posts/2025-08-the-art-of-php-ch/#Level-1-The-End-of-LFI",
+        "https://blog.orange.tw/posts/2025-08-the-art-of-php-ch/#Level-2-The-End-of-AFR",
+        "https://blog.orange.tw/posts/2025-08-the-art-of-php-ch/#Level-Max-Filter-Chain-After-Story",
+        "https://blog.orange.tw/posts/2025-08-the-art-of-php-ch/#4-2-PHAR-Deserialization",
+        "https://blog.orange.tw/posts/2025-08-the-art-of-php-ch/#Level-0-What-is-PHAR",
+        "https://blog.orange.tw/posts/2025-08-the-art-of-php-ch/#Level-Max-Laravel-w-mPDF-Kill-Chain%22",
+        "https://blog.orange.tw/posts/2025-08-the-art-of-php-ch/#5-Participants-Also-Popped-0days",
+        "https://blog.orange.tw/posts/2025-08-the-art-of-php-ch/#5-1-Hack-the-Scoreboard",
+        "https://blog.orange.tw/posts/2025-08-the-art-of-php-ch/#5-2-From-CTF-to-Real-World",
+        "https://blog.orange.tw/posts/2025-08-the-art-of-php-ch/#%E7%B5%90%E8%AA%9E",
+        "https://blog.orange.tw/posts/2025-08-the-art-of-php-ch/#%E6%A6%AE%E8%AD%BD%E6%8F%90%E5%90%8D",
+        "https://blog.orange.tw/posts/2025-08-the-art-of-php-ch/#%E5%90%91-CTF-%E7%A4%BE%E7%BE%A4%E8%87%B4%E6%95%AC",
+        "https://blog.orange.tw/posts/2021-08-proxylogon-a-new-attack-surface-on-ms-exchange-part-1/",
+        "https://blog.orange.tw/posts/2019-09-attacking-ssl-vpn-part-3-golden-pulse-secure-rce-chain/",
+        "https://blog.orange.tw/posts/2024-08-confusion-attacks-ch/",
+        "https://blog.orange.tw/posts/2021-02-a-journey-combining-web-and-binary-exploitation/",
+        "https://blog.orange.tw/posts/2018-10-hitcon-ctf-2018-one-line-php-challenge/",
+        "https://blog.orange.tw/posts/2025-08-the-art-of-php-ch/#Level-Max-Laravel-w-mPDF-Kill-Chain"
+      ]
+    },
+    {
+      "id": "O002",
+      "url": "https://blog.orange.tw/posts/2025-08-the-art-of-php-en/",
+      "index_title": "The Art of PHP — My CTF Journey and Untold Stories!",
+      "retrieved_at": "2026-09-30T09:03:43.179Z",
+      "http_status": 200,
+      "final_url": "https://blog.orange.tw/posts/2025-08-the-art-of-php-en/",
+      "response_html_bytes": 7522,
+      "response_html_sha256": "e9e3e5e3da0a66691e9cf9fd0df6518608bcad60f28efc625eb10068d89b0fdd",
+      "document_title": "The Art of PHP — My CTF Journey and Untold Stories! | Orange Tsai",
+      "article_title": "The Art of PHP — My CTF Journey and Untold Stories!",
+      "observed_sections": [
+        {
+          "text": "The Art of PHP — My CTF Journey and Untold Stories!",
+          "anchor": "",
+          "level": "H1"
+        }
+      ],
+      "article_links": [
+        "https://blog.orange.tw/posts/2025-08-the-art-of-php-ch/",
+        "https://blog.orange.tw/posts/2025-08-the-art-of-php-en/#"
+      ]
+    },
+    {
+      "id": "O003",
+      "url": "https://blog.orange.tw/posts/2025-07-a-web-dog-guide-to-osee/",
+      "index_title": "從 Web 狗的視角看 OSEE — 從 0.1 開始的 Advanced Windows Exploitation 考試",
+      "retrieved_at": "2026-09-30T09:03:43.179Z",
+      "http_status": 200,
+      "final_url": "https://blog.orange.tw/posts/2025-07-a-web-dog-guide-to-osee/",
+      "response_html_bytes": 23526,
+      "response_html_sha256": "2ff0d708eefb9716264020b73e32dbdaa717743932b0c38b5f7ca5c7dc16e9b5",
+      "document_title": "從 Web 狗的視角看 OSEE — 從 0.1 開始的 Advanced Windows Exploitation 考試 | Orange Tsai",
+      "article_title": "從 Web 狗的視角看 OSEE — 從 0.1 開始的 Advanced Windows Exploitation 考試",
+      "observed_sections": [
+        {
+          "text": "從 Web 狗的視角看 OSEE — 從 0.1 開始的 Advanced Windows Exploitation 考試",
+          "anchor": "",
+          "level": "H1"
+        },
+        {
+          "text": "前情提要",
+          "anchor": "前情提要",
+          "level": "H1"
+        },
+        {
+          "text": "準備過程",
+          "anchor": "準備過程",
+          "level": "H1"
+        },
+        {
+          "text": "1.  Windows Shellcode",
+          "anchor": "1-Windows-Shellcode",
+          "level": "H2"
+        },
+        {
+          "text": "2. VM-Escape Exploit",
+          "anchor": "2-VM-Escape-Exploit",
+          "level": "H2"
+        },
+        {
+          "text": "3. Browser Exploit",
+          "anchor": "3-Browser-Exploit",
+          "level": "H2"
+        },
+        {
+          "text": "4. Kernel Exploit - Part 1",
+          "anchor": "4-Kernel-Exploit-Part-1",
+          "level": "H2"
+        },
+        {
+          "text": "5. Kernel Exploit - Part 2",
+          "anchor": "5-Kernel-Exploit-Part-2",
+          "level": "H2"
+        },
+        {
+          "text": "考試",
+          "anchor": "考試",
+          "level": "H1"
+        },
+        {
+          "text": "後續",
+          "anchor": "後續",
+          "level": "H1"
+        },
+        {
+          "text": "推薦嗎？",
+          "anchor": "推薦嗎？",
+          "level": "H1"
+        }
+      ],
+      "article_links": [
+        "https://blog.orange.tw/posts/2025-07-a-web-dog-guide-to-osee/#%E5%89%8D%E6%83%85%E6%8F%90%E8%A6%81",
+        "https://blog.orange.tw/posts/2025-07-a-web-dog-guide-to-osee/#%E6%BA%96%E5%82%99%E9%81%8E%E7%A8%8B",
+        "https://blog.orange.tw/posts/2025-07-a-web-dog-guide-to-osee/#1-Windows-Shellcode",
+        "https://blog.orange.tw/posts/2012-07-hacks-in-taiwan-2012-potent-pwnables-3/",
+        "https://blog.orange.tw/posts/2025-07-a-web-dog-guide-to-osee/#2-VM-Escape-Exploit",
+        "https://blog.orange.tw/posts/2025-07-a-web-dog-guide-to-osee/#3-Browser-Exploit",
+        "https://blog.orange.tw/posts/2013-07-0-day-0-day-easy-talk-happy-fuzzing/",
+        "https://blog.orange.tw/posts/2025-07-a-web-dog-guide-to-osee/#4-Kernel-Exploit-Part-1",
+        "https://blog.orange.tw/posts/2025-07-a-web-dog-guide-to-osee/#5-Kernel-Exploit-Part-2",
+        "https://blog.orange.tw/posts/2025-07-a-web-dog-guide-to-osee/#%E8%80%83%E8%A9%A6",
+        "https://blog.orange.tw/posts/2025-07-a-web-dog-guide-to-osee/#%E5%BE%8C%E7%BA%8C",
+        "https://blog.orange.tw/posts/2025-07-a-web-dog-guide-to-osee/#%E6%8E%A8%E8%96%A6%E5%97%8E%EF%BC%9F"
+      ]
+    },
+    {
+      "id": "O004",
+      "url": "https://blog.orange.tw/posts/2025-01-worstfit-unveiling-hidden-transformers-in-windows-ansi/",
+      "index_title": "WorstFit: Unveiling Hidden Transformers in Windows ANSI!",
+      "retrieved_at": "2026-09-30T09:03:43.179Z",
+      "http_status": 200,
+      "final_url": "https://blog.orange.tw/posts/2025-01-worstfit-unveiling-hidden-transformers-in-windows-ansi/",
+      "response_html_bytes": 89644,
+      "response_html_sha256": "cb10271a13c90596b73d466dd18618bea2fb4cafdc5f1d7bae6a875e1c4bb87b",
+      "document_title": "WorstFit: Unveiling Hidden Transformers in Windows ANSI! | Orange Tsai",
+      "article_title": "WorstFit: Unveiling Hidden Transformers in Windows ANSI!",
+      "observed_sections": [
+        {
+          "text": "WorstFit: Unveiling Hidden Transformers in Windows ANSI!",
+          "anchor": "",
+          "level": "H1"
+        },
+        {
+          "text": "TL;DR",
+          "anchor": "TL-DR",
+          "level": "H2"
+        },
+        {
+          "text": "Outline",
+          "anchor": "Outline",
+          "level": "H2"
+        },
+        {
+          "text": "Decoding the Windows Encodings",
+          "anchor": "Decoding-the-Windows-Encodings",
+          "level": "H2"
+        },
+        {
+          "text": "The Early Days: ANSI and Code Pages",
+          "anchor": "The-Early-Days-ANSI-and-Code-Pages",
+          "level": "H3"
+        },
+        {
+          "text": "The Unicode Era: UTF-16",
+          "anchor": "The-Unicode-Era-UTF-16",
+          "level": "H3"
+        },
+        {
+          "text": "The Dual Era of Encoding",
+          "anchor": "The-Dual-Era-of-Encoding",
+          "level": "H3"
+        },
+        {
+          "text": "It was the Best of Fit",
+          "anchor": "It-was-the-Best-of-Fit",
+          "level": "H2"
+        },
+        {
+          "text": "It was the Worst of Fit – The novel attack surface on Windows",
+          "anchor": "It-was-the-Worst-of-Fit-–-The-novel-attack-surface-on-Windows",
+          "level": "H2"
+        },
+        {
+          "text": "🔥 The nightmare of East-Asia - CVE-2024-4577",
+          "anchor": "🔥-The-nightmare-of-East-Asia-CVE-2024-4577",
+          "level": "H3"
+        },
+        {
+          "text": "🔥 Filename Smuggling",
+          "anchor": "🔥-Filename-Smuggling",
+          "level": "H3"
+        },
+        {
+          "text": "➤ Case Study - Path Traversal to RCE on Cuckoo Sandbox",
+          "anchor": "➤-Case-Study-Path-Traversal-to-RCE-on-Cuckoo-Sandbox",
+          "level": "H4"
+        },
+        {
+          "text": "🔥 Argument Splitting",
+          "anchor": "🔥-Argument-Splitting",
+          "level": "H3"
+        },
+        {
+          "text": "➤ Case Study 1 - ElFinder: RCE w/ Windows built-in GNU Tar",
+          "anchor": "➤-Case-Study-1-ElFinder-RCE-w-Windows-built-in-GNU-Tar",
+          "level": "H4"
+        },
+        {
+          "text": "➤ Case Study 2+ - All the Ways to Code Execution",
+          "anchor": "➤-Case-Study-2-All-the-Ways-to-Code-Execution",
+          "level": "H4"
+        },
+        {
+          "text": "➤ Case Study 3 - Microsoft Excel Remote Code Execution CVE-2024-49026",
+          "anchor": "➤-Case-Study-3-Microsoft-Excel-Remote-Code-Execution-CVE-2024-49026",
+          "level": "H4"
+        },
+        {
+          "text": "🔥 Environment Variable Confusion",
+          "anchor": "🔥-Environment-Variable-Confusion",
+          "level": "H3"
+        },
+        {
+          "text": "➤ Case study 1 - WAF bypass",
+          "anchor": "➤-Case-study-1-WAF-bypass",
+          "level": "H4"
+        },
+        {
+          "text": "➤ Case study 2 - PHP-CGI Local File Inclusion (LFI)",
+          "anchor": "➤-Case-study-2-PHP-CGI-Local-File-Inclusion-LFI",
+          "level": "H4"
+        },
+        {
+          "text": "The Dusk–or Dawn–of the WorstFit",
+          "anchor": "The-Dusk–or-Dawn–of-the-WorstFit",
+          "level": "H2"
+        },
+        {
+          "text": "🧐 Is this an issue?",
+          "anchor": "🧐-Is-this-an-issue",
+          "level": "H4"
+        },
+        {
+          "text": "🧐 Who is responsible for that?",
+          "anchor": "🧐-Who-is-responsible-for-that",
+          "level": "H4"
+        },
+        {
+          "text": "😖 It’s really hard to fix it!",
+          "anchor": "😖-It’s-really-hard-to-fix-it",
+          "level": "H4"
+        },
+        {
+          "text": "➤ Curl",
+          "anchor": "➤-Curl",
+          "level": "H4"
+        },
+        {
+          "text": "➤ OpenSSL",
+          "anchor": "➤-OpenSSL",
+          "level": "H4"
+        },
+        {
+          "text": "➤ Perl",
+          "anchor": "➤-Perl",
+          "level": "H4"
+        },
+        {
+          "text": "➤ Microsoft",
+          "anchor": "➤-Microsoft",
+          "level": "H4"
+        },
+        {
+          "text": "➤ Report to CERT/CC",
+          "anchor": "➤-Report-to-CERT-CC",
+          "level": "H4"
+        },
+        {
+          "text": "Epilogue",
+          "anchor": "Epilogue",
+          "level": "H2"
+        },
+        {
+          "text": "Mitigations",
+          "anchor": "Mitigations",
+          "level": "H3"
+        },
+        {
+          "text": "Conclusion",
+          "anchor": "Conclusion",
+          "level": "H3"
+        }
+      ],
+      "article_links": [
+        "https://blog.orange.tw/posts/2025-01-worstfit-unveiling-hidden-transformers-in-windows-ansi/#TL-DR",
+        "https://blog.orange.tw/posts/2025-01-worstfit-unveiling-hidden-transformers-in-windows-ansi/#Outline",
+        "https://blog.orange.tw/posts/2025-01-worstfit-unveiling-hidden-transformers-in-windows-ansi/#outline",
+        "https://blog.orange.tw/posts/2025-01-worstfit-unveiling-hidden-transformers-in-windows-ansi/#Decoding-the-Windows-Encodings",
+        "https://blog.orange.tw/posts/2025-01-worstfit-unveiling-hidden-transformers-in-windows-ansi/#The-Early-Days-ANSI-and-Code-Pages",
+        "https://blog.orange.tw/posts/2025-01-worstfit-unveiling-hidden-transformers-in-windows-ansi/#The-Unicode-Era-UTF-16",
+        "https://blog.orange.tw/posts/2025-01-worstfit-unveiling-hidden-transformers-in-windows-ansi/#The-Dual-Era-of-Encoding",
+        "https://blog.orange.tw/posts/2025-01-worstfit-unveiling-hidden-transformers-in-windows-ansi/#It-was-the-Best-of-Fit",
+        "https://blog.orange.tw/posts/2025-01-worstfit-unveiling-hidden-transformers-in-windows-ansi/#It-was-the-Worst-of-Fit-%E2%80%93-The-novel-attack-surface-on-Windows",
+        "https://blog.orange.tw/posts/2025-01-worstfit-unveiling-hidden-transformers-in-windows-ansi/#%F0%9F%94%A5-The-nightmare-of-East-Asia-CVE-2024-4577",
+        "https://blog.orange.tw/posts/2025-01-worstfit-unveiling-hidden-transformers-in-windows-ansi/#%F0%9F%94%A5-Filename-Smuggling",
+        "https://blog.orange.tw/posts/2025-01-worstfit-unveiling-hidden-transformers-in-windows-ansi/#%F0%9F%94%A5-Argument-Splitting",
+        "https://blog.orange.tw/posts/2025-01-worstfit-unveiling-hidden-transformers-in-windows-ansi/#-environment-variable-confusion",
+        "https://blog.orange.tw/posts/2025-01-worstfit-unveiling-hidden-transformers-in-windows-ansi/#The-Dusk%E2%80%93or-Dawn%E2%80%93of-the-WorstFit",
+        "https://blog.orange.tw/posts/2025-01-worstfit-unveiling-hidden-transformers-in-windows-ansi/#Epilogue",
+        "https://blog.orange.tw/posts/2025-01-worstfit-unveiling-hidden-transformers-in-windows-ansi/#Mitigations",
+        "https://blog.orange.tw/posts/2025-01-worstfit-unveiling-hidden-transformers-in-windows-ansi/#Conclusion",
+        "https://blog.orange.tw/posts/2025-01-worstfit-unveiling-hidden-transformers-in-windows-ansi/#%E2%9E%A4-Case-Study-Path-Traversal-to-RCE-on-Cuckoo-Sandbox",
+        "https://blog.orange.tw/posts/2025-01-worstfit-unveiling-hidden-transformers-in-windows-ansi/#%E2%9E%A4-Case-Study-1-ElFinder-RCE-w-Windows-built-in-GNU-Tar",
+        "https://blog.orange.tw/posts/2025-01-worstfit-unveiling-hidden-transformers-in-windows-ansi/#%E2%9E%A4-Case-Study-2-All-the-Ways-to-Code-Execution",
+        "https://blog.orange.tw/posts/2025-01-worstfit-unveiling-hidden-transformers-in-windows-ansi/#%E2%9E%A4-Case-Study-3-Microsoft-Excel-Remote-Code-Execution-CVE-2024-49026",
+        "https://blog.orange.tw/posts/2025-01-worstfit-unveiling-hidden-transformers-in-windows-ansi/#%F0%9F%94%A5-Environment-Variable-Confusion",
+        "https://blog.orange.tw/posts/2025-01-worstfit-unveiling-hidden-transformers-in-windows-ansi/#%E2%9E%A4-Case-study-1-WAF-bypass",
+        "https://blog.orange.tw/posts/2025-01-worstfit-unveiling-hidden-transformers-in-windows-ansi/#%E2%9E%A4-Case-study-2-PHP-CGI-Local-File-Inclusion-LFI",
+        "https://blog.orange.tw/posts/2025-01-worstfit-unveiling-hidden-transformers-in-windows-ansi/#%F0%9F%A7%90-Is-this-an-issue",
+        "https://blog.orange.tw/posts/2025-01-worstfit-unveiling-hidden-transformers-in-windows-ansi/#%F0%9F%A7%90-Who-is-responsible-for-that",
+        "https://blog.orange.tw/posts/2025-01-worstfit-unveiling-hidden-transformers-in-windows-ansi/#%F0%9F%98%96-It%E2%80%99s-really-hard-to-fix-it",
+        "https://blog.orange.tw/posts/2025-01-worstfit-unveiling-hidden-transformers-in-windows-ansi/#%E2%9E%A4-Curl",
+        "https://blog.orange.tw/posts/2025-01-worstfit-unveiling-hidden-transformers-in-windows-ansi/#%E2%9E%A4-OpenSSL",
+        "https://blog.orange.tw/posts/2025-01-worstfit-unveiling-hidden-transformers-in-windows-ansi/#%E2%9E%A4-Perl",
+        "https://blog.orange.tw/posts/2025-01-worstfit-unveiling-hidden-transformers-in-windows-ansi/#%E2%9E%A4-Microsoft",
+        "https://blog.orange.tw/posts/2025-01-worstfit-unveiling-hidden-transformers-in-windows-ansi/#%E2%9E%A4-Report-to-CERT-CC"
+      ]
+    },
+    {
+      "id": "O005",
+      "url": "https://blog.orange.tw/posts/2024-08-confusion-attacks-en/",
+      "index_title": "Confusion Attacks: Exploiting Hidden Semantic Ambiguity in Apache HTTP Server!",
+      "retrieved_at": "2026-09-30T09:03:43.391Z",
+      "http_status": 200,
+      "final_url": "https://blog.orange.tw/posts/2024-08-confusion-attacks-en/",
+      "response_html_bytes": 113220,
+      "response_html_sha256": "90e7fcc3b4a5bd80b41db8af2810426a4e07f3b2697cf7ccf7f335003617f6bd",
+      "document_title": "Confusion Attacks: Exploiting Hidden Semantic Ambiguity in Apache HTTP Server! | Orange Tsai",
+      "article_title": "Confusion Attacks: Exploiting Hidden Semantic Ambiguity in Apache HTTP Server!",
+      "observed_sections": [
+        {
+          "text": "Confusion Attacks: Exploiting Hidden Semantic Ambiguity in Apache HTTP Server!",
+          "anchor": "",
+          "level": "H1"
+        },
+        {
+          "text": "TL;DR",
+          "anchor": "TL-DR",
+          "level": "H1"
+        },
+        {
+          "text": "Outline",
+          "anchor": "Outline",
+          "level": "H1"
+        },
+        {
+          "text": "Before the Story",
+          "anchor": "Before-the-Story",
+          "level": "H1"
+        },
+        {
+          "text": "How Did the Story Begin?",
+          "anchor": "How-Did-the-Story-Begin",
+          "level": "H1"
+        },
+        {
+          "text": "Why Apache HTTP Server Smells Bad?",
+          "anchor": "Why-Apache-HTTP-Server-Smells-Bad",
+          "level": "H1"
+        },
+        {
+          "text": "A Whole New Attack — Confusion Attack",
+          "anchor": "A-Whole-New-Attack-—-Confusion-Attack",
+          "level": "H1"
+        },
+        {
+          "text": "🔥 1. Filename Confusion",
+          "anchor": "🔥-1-Filename-Confusion",
+          "level": "H2"
+        },
+        {
+          "text": "⚔️ Primitive 1-1. Truncation",
+          "anchor": "⚔️-Primitive-1-1-Truncation",
+          "level": "H3"
+        },
+        {
+          "text": "✔️ 1-1-1. Path Truncation",
+          "anchor": "✔️-1-1-1-Path-Truncation",
+          "level": "H4"
+        },
+        {
+          "text": "✔️ 1-1-2. Mislead RewriteFlag Assignment",
+          "anchor": "✔️-1-1-2-Mislead-RewriteFlag-Assignment",
+          "level": "H4"
+        },
+        {
+          "text": "⚔️ Primitive 1-2. ACL Bypass",
+          "anchor": "⚔️-Primitive-1-2-ACL-Bypass",
+          "level": "H3"
+        },
+        {
+          "text": "🔥 2. DocumentRoot Confusion",
+          "anchor": "🔥-2-DocumentRoot-Confusion",
+          "level": "H2"
+        },
+        {
+          "text": "⚔️ Primitive 2-1. Server-Side Source Code Disclosure",
+          "anchor": "⚔️-Primitive-2-1-Server-Side-Source-Code-Disclosure",
+          "level": "H3"
+        },
+        {
+          "text": "✔️ 2-1-1. Disclose CGI Source Code",
+          "anchor": "✔️-2-1-1-Disclose-CGI-Source-Code",
+          "level": "H4"
+        },
+        {
+          "text": "✔️ 2-1-2. Disclose PHP Source Code",
+          "anchor": "✔️-2-1-2-Disclose-PHP-Source-Code",
+          "level": "H4"
+        },
+        {
+          "text": "⚔️ Primitive 2-2. Local Gadgets Manipulation!",
+          "anchor": "⚔️-Primitive-2-2-Local-Gadgets-Manipulation",
+          "level": "H3"
+        },
+        {
+          "text": "✔️ 2-2-1. Local Gadget to Information Disclosure",
+          "anchor": "✔️-2-2-1-Local-Gadget-to-Information-Disclosure",
+          "level": "H4"
+        },
+        {
+          "text": "✔️ 2-2-2. Local Gadget to XSS",
+          "anchor": "✔️-2-2-2-Local-Gadget-to-XSS",
+          "level": "H4"
+        },
+        {
+          "text": "✔️ 2-2-3. Local Gadget to LFI",
+          "anchor": "✔️-2-2-3-Local-Gadget-to-LFI",
+          "level": "H4"
+        },
+        {
+          "text": "✔️ 2-2-4. Local Gadget to SSRF",
+          "anchor": "✔️-2-2-4-Local-Gadget-to-SSRF",
+          "level": "H4"
+        },
+        {
+          "text": "✔️ 2-2-5. Local Gadget to RCE",
+          "anchor": "✔️-2-2-5-Local-Gadget-to-RCE",
+          "level": "H4"
+        },
+        {
+          "text": "⚔️ Primitive 2-3. Jailbreak from Local Gadgets",
+          "anchor": "⚔️-Primitive-2-3-Jailbreak-from-Local-Gadgets",
+          "level": "H3"
+        },
+        {
+          "text": "✔️ 2-3-1. Jailbreak from Local Gadgets",
+          "anchor": "✔️-2-3-1-Jailbreak-from-Local-Gadgets",
+          "level": "H4"
+        },
+        {
+          "text": "✔️ 2-3-2. Jailbreak Local Gadgets to Redmine RCE",
+          "anchor": "✔️-2-3-2-Jailbreak-Local-Gadgets-to-Redmine-RCE",
+          "level": "H4"
+        },
+        {
+          "text": "🔥 3. Handler Confusion",
+          "anchor": "🔥-3-Handler-Confusion",
+          "level": "H2"
+        },
+        {
+          "text": "⚔️ Primitive 3-1. Overwrite the Handler",
+          "anchor": "⚔️-Primitive-3-1-Overwrite-the-Handler",
+          "level": "H3"
+        },
+        {
+          "text": "✔️ 3-1-1. Overwrite Handler to Disclose PHP Source Code",
+          "anchor": "✔️-3-1-1-Overwrite-Handler-to-Disclose-PHP-Source-Code",
+          "level": "H4"
+        },
+        {
+          "text": "✔️ 3-1-2. Overwrite Handler to ██████ ███████ ██████",
+          "anchor": "✔️-3-1-2-Overwrite-Handler-to-██████-███████-██████",
+          "level": "H4"
+        },
+        {
+          "text": "⚔️ Primitive 3-2. Invoke Arbitrary Handlers",
+          "anchor": "⚔️-Primitive-3-2-Invoke-Arbitrary-Handlers",
+          "level": "H3"
+        },
+        {
+          "text": "✔️ 3-2-1. Arbitrary Handler to Information Disclosure",
+          "anchor": "✔️-3-2-1-Arbitrary-Handler-to-Information-Disclosure",
+          "level": "H4"
+        },
+        {
+          "text": "✔️ 3-2-2. Arbitrary Handler to Misinterpret Scripts",
+          "anchor": "✔️-3-2-2-Arbitrary-Handler-to-Misinterpret-Scripts",
+          "level": "H4"
+        },
+        {
+          "text": "✔️ 3-2-2. Arbitrary Handler to Full SSRF",
+          "anchor": "✔️-3-2-2-Arbitrary-Handler-to-Full-SSRF",
+          "level": "H4"
+        },
+        {
+          "text": "✔️ 3-2-3. Arbitrary Handler to Access Local Unix Domain Socket",
+          "anchor": "✔️-3-2-3-Arbitrary-Handler-to-Access-Local-Unix-Domain-Socket",
+          "level": "H4"
+        },
+        {
+          "text": "✔️ 3-2-4. Arbitrary Handler to RCE",
+          "anchor": "✔️-3-2-4-Arbitrary-Handler-to-RCE",
+          "level": "H4"
+        },
+        {
+          "text": "🔥 4. Other Vulnerabilities",
+          "anchor": "🔥-4-Other-Vulnerabilities",
+          "level": "H2"
+        },
+        {
+          "text": "⚔️ CVE-2024-38472 - Windows UNC-based SSRF",
+          "anchor": "⚔️-CVE-2024-38472-Windows-UNC-based-SSRF",
+          "level": "H3"
+        },
+        {
+          "text": "✔️ Triggered via HTTP Request Parser",
+          "anchor": "✔️-Triggered-via-HTTP-Request-Parser",
+          "level": "H4"
+        },
+        {
+          "text": "✔️ Triggered via Type-Map",
+          "anchor": "✔️-Triggered-via-Type-Map",
+          "level": "H4"
+        },
+        {
+          "text": "⚔️ CVE-2024-39573 - SSRF via Full Control of RewriteRule Prefix",
+          "anchor": "⚔️-CVE-2024-39573-SSRF-via-Full-Control-of-RewriteRule-Prefix",
+          "level": "H3"
+        },
+        {
+          "text": "Future Works",
+          "anchor": "Future-Works",
+          "level": "H1"
+        },
+        {
+          "text": "Conclusion",
+          "anchor": "Conclusion",
+          "level": "H1"
+        }
+      ],
+      "article_links": [
+        "https://blog.orange.tw/posts/2024-08-confusion-attacks-en/#TL-DR",
+        "https://blog.orange.tw/posts/2024-08-confusion-attacks-en/#Outline",
+        "https://blog.orange.tw/posts/2024-08-confusion-attacks-en/#Before-the-Story",
+        "https://blog.orange.tw/posts/2024-08-confusion-attacks-en/#How-Did-the-Story-Begin",
+        "https://blog.orange.tw/posts/2024-08-confusion-attacks-en/#Why-Apache-HTTP-Server-Smells-Bad",
+        "https://blog.orange.tw/posts/2024-08-confusion-attacks-en/#A-Whole-New-Attack-%E2%80%94-Confusion-Attack",
+        "https://blog.orange.tw/posts/2024-08-confusion-attacks-en/#%F0%9F%94%A5-1-Filename-Confusion",
+        "https://blog.orange.tw/posts/2024-08-confusion-attacks-en/#%E2%9A%94%EF%B8%8F-Primitive-1-1-Truncation",
+        "https://blog.orange.tw/posts/2024-08-confusion-attacks-en/#%E2%9C%94%EF%B8%8F-1-1-1-Path-Truncation",
+        "https://blog.orange.tw/posts/2024-08-confusion-attacks-en/#%E2%9C%94%EF%B8%8F-1-1-2-Mislead-RewriteFlag-Assignment",
+        "https://blog.orange.tw/posts/2024-08-confusion-attacks-en/#%E2%9A%94%EF%B8%8F-Primitive-1-2-ACL-Bypass",
+        "https://blog.orange.tw/posts/2024-08-confusion-attacks-en/#%F0%9F%94%A5-2-DocumentRoot-Confusion",
+        "https://blog.orange.tw/posts/2024-08-confusion-attacks-en/#%E2%9A%94%EF%B8%8F-Primitive-2-1-Server-Side-Source-Code-Disclosure",
+        "https://blog.orange.tw/posts/2024-08-confusion-attacks-en/#%E2%9C%94%EF%B8%8F-2-1-1-Disclose-CGI-Source-Code",
+        "https://blog.orange.tw/posts/2024-08-confusion-attacks-en/#%E2%9C%94%EF%B8%8F-2-1-2-Disclose-PHP-Source-Code",
+        "https://blog.orange.tw/posts/2024-08-confusion-attacks-en/#%E2%9A%94%EF%B8%8F-Primitive-2-2-Local-Gadgets-Manipulation",
+        "https://blog.orange.tw/posts/2024-08-confusion-attacks-en/#%E2%9C%94%EF%B8%8F-2-2-1-Local-Gadget-to-Information-Disclosure",
+        "https://blog.orange.tw/posts/2024-08-confusion-attacks-en/#%E2%9C%94%EF%B8%8F-2-2-2-Local-Gadget-to-XSS",
+        "https://blog.orange.tw/posts/2024-08-confusion-attacks-en/#%E2%9C%94%EF%B8%8F-2-2-3-Local-Gadget-to-LFI",
+        "https://blog.orange.tw/posts/2024-08-confusion-attacks-en/#%E2%9C%94%EF%B8%8F-2-2-4-Local-Gadget-to-SSRF",
+        "https://blog.orange.tw/posts/2024-08-confusion-attacks-en/#%E2%9C%94%EF%B8%8F-2-2-5-Local-Gadget-to-RCE",
+        "https://blog.orange.tw/posts/2024-08-confusion-attacks-en/#%E2%9A%94%EF%B8%8F-Primitive-2-3-Jailbreak-from-Local-Gadgets",
+        "https://blog.orange.tw/posts/2024-08-confusion-attacks-en/#%E2%9C%94%EF%B8%8F-2-3-1-Jailbreak-from-Local-Gadgets",
+        "https://blog.orange.tw/posts/2024-08-confusion-attacks-en/#%E2%9C%94%EF%B8%8F-2-3-2-Jailbreak-Local-Gadgets-to-Redmine-RCE",
+        "https://blog.orange.tw/posts/2024-08-confusion-attacks-en/#%F0%9F%94%A5-3-Handler-Confusion",
+        "https://blog.orange.tw/posts/2024-08-confusion-attacks-en/#%E2%9A%94%EF%B8%8F-Primitive-3-1-Overwrite-the-Handler",
+        "https://blog.orange.tw/posts/2024-08-confusion-attacks-en/#%E2%9C%94%EF%B8%8F-3-1-1-Overwrite-Handler-to-Disclose-PHP-Source-Code",
+        "https://blog.orange.tw/posts/2024-08-confusion-attacks-en/#%E2%9C%94%EF%B8%8F-3-1-2-Overwrite-Handler-to-%E2%96%88%E2%96%88%E2%96%88%E2%96%88%E2%96%88%E2%96%88-%E2%96%88%E2%96%88%E2%96%88%E2%96%88%E2%96%88%E2%96%88%E2%96%88-%E2%96%88%E2%96%88%E2%96%88%E2%96%88%E2%96%88%E2%96%88",
+        "https://blog.orange.tw/posts/2024-08-confusion-attacks-en/#%E2%9A%94%EF%B8%8F-Primitive-3-2-Invoke-Arbitrary-Handlers",
+        "https://blog.orange.tw/posts/2024-08-confusion-attacks-en/#%E2%9C%94%EF%B8%8F-3-2-1-Arbitrary-Handler-to-Information-Disclosure",
+        "https://blog.orange.tw/posts/2024-08-confusion-attacks-en/#%E2%9C%94%EF%B8%8F-3-2-2-Arbitrary-Handler-to-Misinterpret-Scripts",
+        "https://blog.orange.tw/posts/2024-08-confusion-attacks-en/#%E2%9C%94%EF%B8%8F-3-2-2-Arbitrary-Handler-to-Full-SSRF",
+        "https://blog.orange.tw/posts/2024-08-confusion-attacks-en/#%E2%9C%94%EF%B8%8F-3-2-3-Arbitrary-Handler-to-Access-Local-Unix-Domain-Socket",
+        "https://blog.orange.tw/posts/2024-08-confusion-attacks-en/#%E2%9C%94%EF%B8%8F-3-2-4-Arbitrary-Handler-to-RCE",
+        "https://blog.orange.tw/posts/2024-08-confusion-attacks-en/#%F0%9F%94%A5-4-Other-Vulnerabilities",
+        "https://blog.orange.tw/posts/2024-08-confusion-attacks-en/#%E2%9A%94%EF%B8%8F-CVE-2024-38472---Windows-UNC-based-SSRF",
+        "https://blog.orange.tw/posts/2024-08-confusion-attacks-en/#%E2%9C%94%EF%B8%8F-Triggered-via-HTTP-Request-Parser",
+        "https://blog.orange.tw/posts/2024-08-confusion-attacks-en/#%E2%9C%94%EF%B8%8F-Triggered-via-Type-Map",
+        "https://blog.orange.tw/posts/2024-08-confusion-attacks-en/#%E2%9A%94%EF%B8%8F-CVE-2024-39573---SSRF-via-Full-Control-of-RewriteRule-Prefix",
+        "https://blog.orange.tw/posts/2024-08-confusion-attacks-en/#Future-Works",
+        "https://blog.orange.tw/posts/2024-08-confusion-attacks-en/#Conclusion",
+        "https://blog.orange.tw/posts/2024-08-confusion-attacks-en/#%E2%9A%94%EF%B8%8F-CVE-2024-38472-Windows-UNC-based-SSRF",
+        "https://blog.orange.tw/posts/2024-08-confusion-attacks-en/#%E2%9A%94%EF%B8%8F-CVE-2024-39573-SSRF-via-Full-Control-of-RewriteRule-Prefix"
+      ]
+    },
+    {
+      "id": "O006",
+      "url": "https://blog.orange.tw/posts/2024-06-cve-2024-4577-yet-another-php-rce/",
+      "index_title": "CVE-2024-4577 - Yet Another PHP RCE: Make PHP-CGI Argument Injection Great Again!",
+      "retrieved_at": "2026-09-30T09:03:43.490Z",
+      "http_status": 200,
+      "final_url": "https://blog.orange.tw/posts/2024-06-cve-2024-4577-yet-another-php-rce/",
+      "response_html_bytes": 8693,
+      "response_html_sha256": "cd8c08566fa589b2add5d1d4dd16e6b765466376d6cb6d7eb7801d85befbc99b",
+      "document_title": "CVE-2024-4577 - Yet Another PHP RCE: Make PHP-CGI Argument Injection Great Again! | Orange Tsai",
+      "article_title": "CVE-2024-4577 - Yet Another PHP RCE: Make PHP-CGI Argument Injection Great Again!",
+      "observed_sections": [
+        {
+          "text": "CVE-2024-4577 - Yet Another PHP RCE: Make PHP-CGI Argument Injection Great Again!",
+          "anchor": "",
+          "level": "H1"
+        }
+      ],
+      "article_links": [
+        "https://blog.orange.tw/posts/2024-06-cve-2024-4577-yet-another-php-rce/"
+      ]
+    },
+    {
+      "id": "O007",
+      "url": "https://blog.orange.tw/posts/2023-08-2023-webconf-the-evolution-of-web-security/",
+      "index_title": "從 2013 到 2023: Web Security 十年之進化與趨勢!",
+      "retrieved_at": "2026-09-30T09:03:43.493Z",
+      "http_status": 200,
+      "final_url": "https://blog.orange.tw/posts/2023-08-2023-webconf-the-evolution-of-web-security/",
+      "response_html_bytes": 18069,
+      "response_html_sha256": "3cb20147dd3c27fec373056601783792e6cf28a5c7e55a5ea452098548e9fff2",
+      "document_title": "從 2013 到 2023: Web Security 十年之進化與趨勢! | Orange Tsai",
+      "article_title": "從 2013 到 2023: Web Security 十年之進化與趨勢!",
+      "observed_sections": [
+        {
+          "text": "從 2013 到 2023: Web Security 十年之進化與趨勢!",
+          "anchor": "",
+          "level": "H1"
+        },
+        {
+          "text": "1. 架構層面的攻擊逐漸成為顯學",
+          "anchor": "1-架構層面的攻擊逐漸成為顯學",
+          "level": "H1"
+        },
+        {
+          "text": "2. 對底層邏輯重新梳理的攻擊",
+          "anchor": "2-對底層邏輯重新梳理的攻擊",
+          "level": "H1"
+        },
+        {
+          "text": "3. 不一致性所造成的攻擊面",
+          "anchor": "3-不一致性所造成的攻擊面",
+          "level": "H1"
+        },
+        {
+          "text": "4. 跨應用組合所導致的新攻擊",
+          "anchor": "4-跨應用組合所導致的新攻擊",
+          "level": "H1"
+        },
+        {
+          "text": "5. 當前端安全不只在前端…",
+          "anchor": "5-當前端安全不只在前端…",
+          "level": "H1"
+        },
+        {
+          "text": "結語",
+          "anchor": "結語",
+          "level": "H1"
+        }
+      ],
+      "article_links": [
+        "https://blog.orange.tw/posts/2023-08-2023-webconf-the-evolution-of-web-security/#1-%E6%9E%B6%E6%A7%8B%E5%B1%A4%E9%9D%A2%E7%9A%84%E6%94%BB%E6%93%8A%E9%80%90%E6%BC%B8%E6%88%90%E7%82%BA%E9%A1%AF%E5%AD%B8",
+        "https://blog.orange.tw/posts/2023-08-2023-webconf-the-evolution-of-web-security/#2-%E5%B0%8D%E5%BA%95%E5%B1%A4%E9%82%8F%E8%BC%AF%E9%87%8D%E6%96%B0%E6%A2%B3%E7%90%86%E7%9A%84%E6%94%BB%E6%93%8A",
+        "https://blog.orange.tw/posts/2023-08-2023-webconf-the-evolution-of-web-security/#3-%E4%B8%8D%E4%B8%80%E8%87%B4%E6%80%A7%E6%89%80%E9%80%A0%E6%88%90%E7%9A%84%E6%94%BB%E6%93%8A%E9%9D%A2",
+        "https://blog.orange.tw/posts/2023-08-2023-webconf-the-evolution-of-web-security/#4-%E8%B7%A8%E6%87%89%E7%94%A8%E7%B5%84%E5%90%88%E6%89%80%E5%B0%8E%E8%87%B4%E7%9A%84%E6%96%B0%E6%94%BB%E6%93%8A",
+        "https://blog.orange.tw/posts/2023-08-2023-webconf-the-evolution-of-web-security/#5-%E7%95%B6%E5%89%8D%E7%AB%AF%E5%AE%89%E5%85%A8%E4%B8%8D%E5%8F%AA%E5%9C%A8%E5%89%8D%E7%AB%AF%E2%80%A6",
+        "https://blog.orange.tw/posts/2023-08-2023-webconf-the-evolution-of-web-security/#%E7%B5%90%E8%AA%9E"
+      ]
+    },
+    {
+      "id": "O008",
+      "url": "https://blog.orange.tw/posts/2022-10-proxyrelay-a-new-attack-surface-on-ms-exchange-part-4/",
+      "index_title": "A New Attack Surface on MS Exchange Part 4 - ProxyRelay!",
+      "retrieved_at": "2026-09-30T09:03:43.497Z",
+      "http_status": 200,
+      "final_url": "https://blog.orange.tw/posts/2022-10-proxyrelay-a-new-attack-surface-on-ms-exchange-part-4/",
+      "response_html_bytes": 33952,
+      "response_html_sha256": "0cc361276f9e2ad94ea3d0370cca5860a12a5a925db26465c9316654f3ea80e4",
+      "document_title": "A New Attack Surface on MS Exchange Part 4 - ProxyRelay! | Orange Tsai",
+      "article_title": "A New Attack Surface on MS Exchange Part 4 - ProxyRelay!",
+      "observed_sections": [
+        {
+          "text": "A New Attack Surface on MS Exchange Part 4 - ProxyRelay!",
+          "anchor": "",
+          "level": "H1"
+        },
+        {
+          "text": "Idea",
+          "anchor": "Idea",
+          "level": "H1"
+        },
+        {
+          "text": "Vulnerabilities",
+          "anchor": "Vulnerabilities",
+          "level": "H1"
+        },
+        {
+          "text": "Round 1 - Relay to Exchange FrontEnd",
+          "anchor": "Round-1-Relay-to-Exchange-FrontEnd",
+          "level": "H2"
+        },
+        {
+          "text": "Patching FrontEnd",
+          "anchor": "Patching-FrontEnd",
+          "level": "H3"
+        },
+        {
+          "text": "Round 2 - Relay to Exchange BackEnd",
+          "anchor": "Round-2-Relay-to-Exchange-BackEnd",
+          "level": "H2"
+        },
+        {
+          "text": "2-1 Attacking BackEnd /EWS",
+          "anchor": "2-1-Attacking-BackEnd-EWS",
+          "level": "H3"
+        },
+        {
+          "text": "2-2 Attacking BackEnd /RPC",
+          "anchor": "2-2-Attacking-BackEnd-RPC",
+          "level": "H3"
+        },
+        {
+          "text": "2-3 Attacking BackEnd /PowerShell",
+          "anchor": "2-3-Attacking-BackEnd-PowerShell",
+          "level": "H3"
+        },
+        {
+          "text": "2-4 Patching BackEnd",
+          "anchor": "2-4-Patching-BackEnd",
+          "level": "H3"
+        },
+        {
+          "text": "Round 3 - Relay to Windows DCOM",
+          "anchor": "Round-3-Relay-to-Windows-DCOM",
+          "level": "H2"
+        },
+        {
+          "text": "Patching DCOM",
+          "anchor": "Patching-DCOM",
+          "level": "H3"
+        },
+        {
+          "text": "Round 4 - Relay to Other Exchange Services…",
+          "anchor": "Round-4-Relay-to-Other-Exchange-Services…",
+          "level": "H2"
+        },
+        {
+          "text": "Closing",
+          "anchor": "Closing",
+          "level": "H1"
+        },
+        {
+          "text": "Timeline",
+          "anchor": "Timeline",
+          "level": "H1"
+        }
+      ],
+      "article_links": [
+        "https://blog.orange.tw/posts/2022-10-proxyrelay-a-new-attack-surface-on-ms-exchange-part-4/#Timeline",
+        "https://blog.orange.tw/posts/2022-10-proxyrelay-a-new-attack-surface-on-ms-exchange-part-4/#Idea",
+        "https://blog.orange.tw/posts/2022-10-proxyrelay-a-new-attack-surface-on-ms-exchange-part-4/#Vulnerabilities",
+        "https://blog.orange.tw/posts/2022-10-proxyrelay-a-new-attack-surface-on-ms-exchange-part-4/#Round-1-Relay-to-Exchange-FrontEnd",
+        "https://blog.orange.tw/posts/2022-10-proxyrelay-a-new-attack-surface-on-ms-exchange-part-4/#Patching-FrontEnd",
+        "https://blog.orange.tw/posts/2022-10-proxyrelay-a-new-attack-surface-on-ms-exchange-part-4/#Round-2-Relay-to-Exchange-BackEnd",
+        "https://blog.orange.tw/posts/2022-10-proxyrelay-a-new-attack-surface-on-ms-exchange-part-4/#2-1-Attacking-BackEnd-EWS",
+        "https://blog.orange.tw/posts/2022-10-proxyrelay-a-new-attack-surface-on-ms-exchange-part-4/#2-2-Attacking-BackEnd-RPC",
+        "https://blog.orange.tw/posts/2022-10-proxyrelay-a-new-attack-surface-on-ms-exchange-part-4/#2-3-Attacking-BackEnd-PowerShell",
+        "https://blog.orange.tw/posts/2022-10-proxyrelay-a-new-attack-surface-on-ms-exchange-part-4/#2-4-Patching-BackEnd",
+        "https://blog.orange.tw/posts/2022-10-proxyrelay-a-new-attack-surface-on-ms-exchange-part-4/#Round-3-Relay-to-Windows-DCOM",
+        "https://blog.orange.tw/posts/2022-10-proxyrelay-a-new-attack-surface-on-ms-exchange-part-4/#Patching-DCOM",
+        "https://blog.orange.tw/posts/2022-10-proxyrelay-a-new-attack-surface-on-ms-exchange-part-4/#Round-4-Relay-to-Other-Exchange-Services%E2%80%A6",
+        "https://blog.orange.tw/posts/2022-10-proxyrelay-a-new-attack-surface-on-ms-exchange-part-4/#Closing"
+      ]
+    },
+    {
+      "id": "O009",
+      "url": "https://blog.orange.tw/posts/2022-08-lets-dance-in-the-cache-destabilizing-hash-table-on-microsoft-iis/",
+      "index_title": "Let's Dance in the Cache - Destabilizing Hash Table on Microsoft IIS!",
+      "retrieved_at": "2026-09-30T09:03:43.599Z",
+      "http_status": 200,
+      "final_url": "https://blog.orange.tw/posts/2022-08-lets-dance-in-the-cache-destabilizing-hash-table-on-microsoft-iis/",
+      "response_html_bytes": 21908,
+      "response_html_sha256": "c4b2b7a6a45bb0319f9c5a3a1b453bce52fa4ec72e44037c7673b6975a22666c",
+      "document_title": "Let's Dance in the Cache - Destabilizing Hash Table on Microsoft IIS! | Orange Tsai",
+      "article_title": "Let's Dance in the Cache - Destabilizing Hash Table on Microsoft IIS!",
+      "observed_sections": [
+        {
+          "text": "Let's Dance in the Cache - Destabilizing Hash Table on Microsoft IIS!",
+          "anchor": "",
+          "level": "H1"
+        },
+        {
+          "text": "1. IIS Hash-Flooding DoS",
+          "anchor": "1-IIS-Hash-Flooding-DoS",
+          "level": "H1"
+        },
+        {
+          "text": "2. IIS Cache Poisoning Attack",
+          "anchor": "2-IIS-Cache-Poisoning-Attack",
+          "level": "H1"
+        },
+        {
+          "text": "3. IIS Authentication Bypass",
+          "anchor": "3-IIS-Authentication-Bypass",
+          "level": "H1"
+        },
+        {
+          "text": "Timeline",
+          "anchor": "Timeline",
+          "level": "H1"
+        }
+      ],
+      "article_links": [
+        "https://blog.orange.tw/posts/2022-08-lets-dance-in-the-cache-destabilizing-hash-table-on-microsoft-iis/#TBD",
+        "https://blog.orange.tw/posts/2022-08-lets-dance-in-the-cache-destabilizing-hash-table-on-microsoft-iis/#1-IIS-Hash-Flooding-DoS",
+        "https://blog.orange.tw/posts/2022-08-lets-dance-in-the-cache-destabilizing-hash-table-on-microsoft-iis/#2-IIS-Cache-Poisoning-Attack",
+        "https://blog.orange.tw/posts/2022-08-lets-dance-in-the-cache-destabilizing-hash-table-on-microsoft-iis/#3-IIS-Authentication-Bypass",
+        "https://blog.orange.tw/posts/2022-08-lets-dance-in-the-cache-destabilizing-hash-table-on-microsoft-iis/#Timeline"
+      ]
+    },
+    {
+      "id": "O010",
+      "url": "https://blog.orange.tw/posts/2021-08-proxyshell-a-new-attack-surface-on-ms-exchange-part-3/",
+      "index_title": "A New Attack Surface on MS Exchange Part 3 - ProxyShell!",
+      "retrieved_at": "2026-09-30T09:03:43.599Z",
+      "http_status": 200,
+      "final_url": "https://blog.orange.tw/posts/2021-08-proxyshell-a-new-attack-surface-on-ms-exchange-part-3/",
+      "response_html_bytes": 8482,
+      "response_html_sha256": "04b03a024ce959b6a5e403751664db14bc84eb1482a2bcaa23cf19da6b4cde35",
+      "document_title": "A New Attack Surface on MS Exchange Part 3 - ProxyShell! | Orange Tsai",
+      "article_title": "A New Attack Surface on MS Exchange Part 3 - ProxyShell!",
+      "observed_sections": [
+        {
+          "text": "A New Attack Surface on MS Exchange Part 3 - ProxyShell!",
+          "anchor": "",
+          "level": "H1"
+        }
+      ],
+      "article_links": []
+    },
+    {
+      "id": "O011",
+      "url": "https://blog.orange.tw/posts/2021-08-proxyoracle-a-new-attack-surface-on-ms-exchange-part-2/",
+      "index_title": "A New Attack Surface on MS Exchange Part 2 - ProxyOracle!",
+      "retrieved_at": "2026-09-30T09:03:43.806Z",
+      "http_status": 200,
+      "final_url": "https://blog.orange.tw/posts/2021-08-proxyoracle-a-new-attack-surface-on-ms-exchange-part-2/",
+      "response_html_bytes": 28215,
+      "response_html_sha256": "70405ef485d6142dbcb5fda1204a183e288c7be2e79e44dafaf4e0badb11669e",
+      "document_title": "A New Attack Surface on MS Exchange Part 2 - ProxyOracle! | Orange Tsai",
+      "article_title": "A New Attack Surface on MS Exchange Part 2 - ProxyOracle!",
+      "observed_sections": [
+        {
+          "text": "A New Attack Surface on MS Exchange Part 2 - ProxyOracle!",
+          "anchor": "",
+          "level": "H1"
+        },
+        {
+          "text": "Where is ProxyOracle",
+          "anchor": "Where-is-ProxyOracle",
+          "level": "H1"
+        },
+        {
+          "text": "The FBA Mechanism",
+          "anchor": "The-FBA-Mechanism",
+          "level": "H1"
+        },
+        {
+          "text": "CVE-2021-31196 - The Padding Oracle",
+          "anchor": "CVE-2021-31196-The-Padding-Oracle",
+          "level": "H1"
+        },
+        {
+          "text": "The Exploit",
+          "anchor": "The-Exploit",
+          "level": "H1"
+        },
+        {
+          "text": "XSS to Steal Client Cookies",
+          "anchor": "XSS-to-Steal-Client-Cookies",
+          "level": "H2"
+        },
+        {
+          "text": "Bypass the HttpOnly",
+          "anchor": "Bypass-the-HttpOnly",
+          "level": "H2"
+        }
+      ],
+      "article_links": [
+        "https://blog.orange.tw/posts/2021-08-proxyoracle-a-new-attack-surface-on-ms-exchange-part-2/#Where-is-ProxyOracle",
+        "https://blog.orange.tw/posts/2021-08-proxyoracle-a-new-attack-surface-on-ms-exchange-part-2/#The-FBA-Mechanism",
+        "https://blog.orange.tw/posts/2021-08-proxyoracle-a-new-attack-surface-on-ms-exchange-part-2/#CVE-2021-31196-The-Padding-Oracle",
+        "https://blog.orange.tw/posts/2021-08-proxyoracle-a-new-attack-surface-on-ms-exchange-part-2/#The-Exploit",
+        "https://blog.orange.tw/posts/2021-08-proxyoracle-a-new-attack-surface-on-ms-exchange-part-2/#XSS-to-Steal-Client-Cookies",
+        "https://blog.orange.tw/posts/2021-08-proxyoracle-a-new-attack-surface-on-ms-exchange-part-2/#Bypass-the-HttpOnly"
+      ]
+    },
+    {
+      "id": "O012",
+      "url": "https://blog.orange.tw/posts/2021-08-proxylogon-a-new-attack-surface-on-ms-exchange-part-1/",
+      "index_title": "A New Attack Surface on MS Exchange Part 1 - ProxyLogon!",
+      "retrieved_at": "2026-09-30T09:03:43.822Z",
+      "http_status": 200,
+      "final_url": "https://blog.orange.tw/posts/2021-08-proxylogon-a-new-attack-surface-on-ms-exchange-part-1/",
+      "response_html_bytes": 60626,
+      "response_html_sha256": "4b33f997bc1e0498d2cf5a6cdca32f1ac2c7dbd9fa7e0281fb93b7a565d4c29d",
+      "document_title": "A New Attack Surface on MS Exchange Part 1 - ProxyLogon! | Orange Tsai",
+      "article_title": "A New Attack Surface on MS Exchange Part 1 - ProxyLogon!",
+      "observed_sections": [
+        {
+          "text": "A New Attack Surface on MS Exchange Part 1 - ProxyLogon!",
+          "anchor": "",
+          "level": "H1"
+        },
+        {
+          "text": "Intro",
+          "anchor": "Intro",
+          "level": "H1"
+        },
+        {
+          "text": "Why targeting on Exchange Server?",
+          "anchor": "Why-targeting-on-Exchange-Server",
+          "level": "H1"
+        },
+        {
+          "text": "The most special",
+          "anchor": "The-most-special",
+          "level": "H2"
+        },
+        {
+          "text": "The most interesting",
+          "anchor": "The-most-interesting",
+          "level": "H2"
+        },
+        {
+          "text": "The most surprising",
+          "anchor": "The-most-surprising",
+          "level": "H2"
+        },
+        {
+          "text": "Where is the new attack surface",
+          "anchor": "Where-is-the-new-attack-surface",
+          "level": "H1"
+        },
+        {
+          "text": "The CAS architecture",
+          "anchor": "The-CAS-architecture",
+          "level": "H1"
+        },
+        {
+          "text": "Frontend Proxy Module",
+          "anchor": "Frontend-Proxy-Module",
+          "level": "H2"
+        },
+        {
+          "text": "Frontend Request Section",
+          "anchor": "Frontend-Request-Section",
+          "level": "H3"
+        },
+        {
+          "text": "Frontend Proxy Section",
+          "anchor": "Frontend-Proxy-Section",
+          "level": "H3"
+        },
+        {
+          "text": "Frontend Response Section",
+          "anchor": "Frontend-Response-Section",
+          "level": "H3"
+        },
+        {
+          "text": "Backend Rehydration Module",
+          "anchor": "Backend-Rehydration-Module",
+          "level": "H2"
+        },
+        {
+          "text": "The attack surface",
+          "anchor": "The-attack-surface",
+          "level": "H1"
+        },
+        {
+          "text": "The ProxyLogon",
+          "anchor": "The-ProxyLogon",
+          "level": "H1"
+        },
+        {
+          "text": "CVE-2021-26855 - Pre-auth SSRF",
+          "anchor": "CVE-2021-26855-Pre-auth-SSRF",
+          "level": "H2"
+        },
+        {
+          "text": "CVE-2021-27065 - Post-auth Arbitrary-File-Write",
+          "anchor": "CVE-2021-27065-Post-auth-Arbitrary-File-Write",
+          "level": "H2"
+        },
+        {
+          "text": "Epilogue",
+          "anchor": "Epilogue",
+          "level": "H1"
+        }
+      ],
+      "article_links": [
+        "https://blog.orange.tw/posts/2021-08-proxylogon-a-new-attack-surface-on-ms-exchange-part-1/#Intro",
+        "https://blog.orange.tw/posts/2021-08-proxylogon-a-new-attack-surface-on-ms-exchange-part-1/#Why-targeting-on-Exchange-Server",
+        "https://blog.orange.tw/posts/2021-08-proxylogon-a-new-attack-surface-on-ms-exchange-part-1/#The-most-special",
+        "https://blog.orange.tw/posts/2021-08-proxylogon-a-new-attack-surface-on-ms-exchange-part-1/#The-most-interesting",
+        "https://blog.orange.tw/posts/2021-08-proxylogon-a-new-attack-surface-on-ms-exchange-part-1/#The-most-surprising",
+        "https://blog.orange.tw/posts/2021-08-proxylogon-a-new-attack-surface-on-ms-exchange-part-1/#Where-is-the-new-attack-surface",
+        "https://blog.orange.tw/posts/2021-08-proxylogon-a-new-attack-surface-on-ms-exchange-part-1/#The-CAS-architecture",
+        "https://blog.orange.tw/posts/2021-08-proxylogon-a-new-attack-surface-on-ms-exchange-part-1/#Frontend-Proxy-Module",
+        "https://blog.orange.tw/posts/2021-08-proxylogon-a-new-attack-surface-on-ms-exchange-part-1/#Frontend-Request-Section",
+        "https://blog.orange.tw/posts/2021-08-proxylogon-a-new-attack-surface-on-ms-exchange-part-1/#Frontend-Proxy-Section",
+        "https://blog.orange.tw/posts/2021-08-proxylogon-a-new-attack-surface-on-ms-exchange-part-1/#Frontend-Response-Section",
+        "https://blog.orange.tw/posts/2021-08-proxylogon-a-new-attack-surface-on-ms-exchange-part-1/#Backend-Rehydration-Module",
+        "https://blog.orange.tw/posts/2021-08-proxylogon-a-new-attack-surface-on-ms-exchange-part-1/#The-attack-surface",
+        "https://blog.orange.tw/posts/2021-08-proxylogon-a-new-attack-surface-on-ms-exchange-part-1/#The-ProxyLogon",
+        "https://blog.orange.tw/posts/2021-08-proxylogon-a-new-attack-surface-on-ms-exchange-part-1/#CVE-2021-26855-Pre-auth-SSRF",
+        "https://blog.orange.tw/posts/2021-08-proxylogon-a-new-attack-surface-on-ms-exchange-part-1/#CVE-2021-27065-Post-auth-Arbitrary-File-Write",
+        "https://blog.orange.tw/posts/2021-08-proxylogon-a-new-attack-surface-on-ms-exchange-part-1/#Epilogue"
+      ]
+    },
+    {
+      "id": "O013",
+      "url": "https://blog.orange.tw/posts/2021-02-a-journey-combining-web-and-binary-exploitation/",
+      "index_title": "A Journey Combining Web Hacking and Binary Exploitation in Real World!",
+      "retrieved_at": "2026-09-30T09:03:43.904Z",
+      "http_status": 200,
+      "final_url": "https://blog.orange.tw/posts/2021-02-a-journey-combining-web-and-binary-exploitation/",
+      "response_html_bytes": 8430,
+      "response_html_sha256": "edc70d6af5b3ba41b1883b3bddb74c286a5dda1d81150f6df786bd4078dfbd7b",
+      "document_title": "A Journey Combining Web Hacking and Binary Exploitation in Real World! | Orange Tsai",
+      "article_title": "A Journey Combining Web Hacking and Binary Exploitation in Real World!",
+      "observed_sections": [
+        {
+          "text": "A Journey Combining Web Hacking and Binary Exploitation in Real World!",
+          "anchor": "",
+          "level": "H1"
+        }
+      ],
+      "article_links": []
+    },
+    {
+      "id": "O014",
+      "url": "https://blog.orange.tw/posts/2020-09-how-i-hacked-facebook-again-mobileiron-mdm-rce/",
+      "index_title": "How I Hacked Facebook Again! Unauthenticated RCE on MobileIron MDM",
+      "retrieved_at": "2026-09-30T09:03:43.906Z",
+      "http_status": 200,
+      "final_url": "https://blog.orange.tw/posts/2020-09-how-i-hacked-facebook-again-mobileiron-mdm-rce/",
+      "response_html_bytes": 29741,
+      "response_html_sha256": "ae3d0e496b1db5faec5c60208fa9eee6b7849a99f494fdb89c07bd74985266a1",
+      "document_title": "How I Hacked Facebook Again! Unauthenticated RCE on MobileIron MDM | Orange Tsai",
+      "article_title": "How I Hacked Facebook Again! Unauthenticated RCE on MobileIron MDM",
+      "observed_sections": [
+        {
+          "text": "How I Hacked Facebook Again! Unauthenticated RCE on MobileIron MDM",
+          "anchor": "",
+          "level": "H1"
+        },
+        {
+          "text": "What is MDM?",
+          "anchor": "What-is-MDM",
+          "level": "H1"
+        },
+        {
+          "text": "Our target",
+          "anchor": "Our-target",
+          "level": "H1"
+        },
+        {
+          "text": "Where to Start",
+          "anchor": "Where-to-Start",
+          "level": "H1"
+        },
+        {
+          "text": "Finding Vulnerabilities",
+          "anchor": "Finding-Vulnerabilities",
+          "level": "H1"
+        },
+        {
+          "text": "Exploiting Vulnerabilities",
+          "anchor": "Exploiting-Vulnerabilities",
+          "level": "H1"
+        },
+        {
+          "text": "Attacking Facebook",
+          "anchor": "Attacking-Facebook",
+          "level": "H1"
+        },
+        {
+          "text": "Vulnerability Report and Patch",
+          "anchor": "Vulnerability-Report-and-Patch",
+          "level": "H1"
+        },
+        {
+          "text": "Conclusion",
+          "anchor": "Conclusion",
+          "level": "H1"
+        }
+      ],
+      "article_links": [
+        "https://blog.orange.tw/posts/2020-09-how-i-hacked-facebook-again-mobileiron-mdm-rce/",
+        "https://blog.orange.tw/posts/2020-09-how-i-hacked-facebook-again-mobileiron-mdm-rce/#What-is-MDM",
+        "https://blog.orange.tw/posts/2020-09-how-i-hacked-facebook-again-mobileiron-mdm-rce/#Our-target",
+        "https://blog.orange.tw/posts/2020-09-how-i-hacked-facebook-again-mobileiron-mdm-rce/#Where-to-Start",
+        "https://blog.orange.tw/posts/2020-09-how-i-hacked-facebook-again-mobileiron-mdm-rce/#Finding-Vulnerabilities",
+        "https://blog.orange.tw/posts/2020-09-how-i-hacked-facebook-again-mobileiron-mdm-rce/#Exploiting-Vulnerabilities",
+        "https://blog.orange.tw/posts/2020-09-how-i-hacked-facebook-again-mobileiron-mdm-rce/#Attacking-Facebook",
+        "https://blog.orange.tw/posts/2020-09-how-i-hacked-facebook-again-mobileiron-mdm-rce/#Vulnerability-Report-and-Patch",
+        "https://blog.orange.tw/posts/2020-09-how-i-hacked-facebook-again-mobileiron-mdm-rce/#Conclusion"
+      ]
+    },
+    {
+      "id": "O015",
+      "url": "https://blog.orange.tw/posts/2019-11-HiNet-GPON-Modem-RCE/",
+      "index_title": "你用它上網，我用它進你內網! 中華電信數據機遠端代碼執行漏洞",
+      "retrieved_at": "2026-09-30T09:03:44.186Z",
+      "http_status": 200,
+      "final_url": "https://blog.orange.tw/posts/2019-11-HiNet-GPON-Modem-RCE/",
+      "response_html_bytes": 27623,
+      "response_html_sha256": "29972ea317ecef631f100aed60ae90649f6bafa21328d83873b7a39958d12eb2",
+      "document_title": "你用它上網，我用它進你內網! 中華電信數據機遠端代碼執行漏洞 | Orange Tsai",
+      "article_title": "你用它上網，我用它進你內網! 中華電信數據機遠端代碼執行漏洞",
+      "observed_sections": [
+        {
+          "text": "你用它上網，我用它進你內網! 中華電信數據機遠端代碼執行漏洞",
+          "anchor": "",
+          "level": "H1"
+        },
+        {
+          "text": "前言",
+          "anchor": "前言",
+          "level": "H1"
+        },
+        {
+          "text": "影響範圍",
+          "anchor": "影響範圍",
+          "level": "H1"
+        },
+        {
+          "text": "漏洞挖掘",
+          "anchor": "漏洞挖掘",
+          "level": "H1"
+        },
+        {
+          "text": "黑箱測試",
+          "anchor": "黑箱測試",
+          "level": "H2"
+        },
+        {
+          "text": "從黑箱進化成灰箱",
+          "anchor": "從黑箱進化成灰箱",
+          "level": "H2"
+        },
+        {
+          "text": "從灰箱進化成白箱",
+          "anchor": "從灰箱進化成白箱",
+          "level": "H2"
+        },
+        {
+          "text": "後記",
+          "anchor": "後記",
+          "level": "H1"
+        },
+        {
+          "text": "通報時程",
+          "anchor": "通報時程",
+          "level": "H1"
+        }
+      ],
+      "article_links": [
+        "https://blog.orange.tw/posts/2019-11-HiNet-GPON-Modem-RCE/#%E5%89%8D%E8%A8%80",
+        "https://blog.orange.tw/posts/2019-11-HiNet-GPON-Modem-RCE/#%E5%BD%B1%E9%9F%BF%E7%AF%84%E5%9C%8D",
+        "https://blog.orange.tw/posts/2019-11-HiNet-GPON-Modem-RCE/#%E6%BC%8F%E6%B4%9E%E6%8C%96%E6%8E%98",
+        "https://blog.orange.tw/posts/2019-11-HiNet-GPON-Modem-RCE/#%E9%BB%91%E7%AE%B1%E6%B8%AC%E8%A9%A6",
+        "https://blog.orange.tw/posts/2019-11-HiNet-GPON-Modem-RCE/#%E5%BE%9E%E9%BB%91%E7%AE%B1%E9%80%B2%E5%8C%96%E6%88%90%E7%81%B0%E7%AE%B1",
+        "https://blog.orange.tw/posts/2019-11-HiNet-GPON-Modem-RCE/#%E5%BE%9E%E7%81%B0%E7%AE%B1%E9%80%B2%E5%8C%96%E6%88%90%E7%99%BD%E7%AE%B1",
+        "https://blog.orange.tw/posts/2019-11-HiNet-GPON-Modem-RCE/#%E5%BE%8C%E8%A8%98",
+        "https://blog.orange.tw/posts/2019-11-HiNet-GPON-Modem-RCE/#%E9%80%9A%E5%A0%B1%E6%99%82%E7%A8%8B"
+      ]
+    },
+    {
+      "id": "O016",
+      "url": "https://blog.orange.tw/posts/2019-10-an-analysis-and-thought-about-recently/",
+      "index_title": "An analysis and thought about recently PHP-FPM RCE (CVE-2019-11043)",
+      "retrieved_at": "2026-09-30T09:03:44.189Z",
+      "http_status": 200,
+      "final_url": "https://blog.orange.tw/posts/2019-10-an-analysis-and-thought-about-recently/",
+      "response_html_bytes": 69439,
+      "response_html_sha256": "978bb634939b6e56a71ba349b72e3b0a624c5d1b1335ab91575738553e802516",
+      "document_title": "An analysis and thought about recently PHP-FPM RCE (CVE-2019-11043) | Orange Tsai",
+      "article_title": "An analysis and thought about recently PHP-FPM RCE (CVE-2019-11043)",
+      "observed_sections": [
+        {
+          "text": "An analysis and thought about recently PHP-FPM RCE (CVE-2019-11043)",
+          "anchor": "",
+          "level": "H1"
+        },
+        {
+          "text": "The root cause",
+          "anchor": "The-root-cause",
+          "level": "H1"
+        },
+        {
+          "text": "The exploitation",
+          "anchor": "The-exploitation",
+          "level": "H1"
+        },
+        {
+          "text": "A. From null-byte writing to CGI environment overwritten",
+          "anchor": "A-From-null-byte-writing-to-CGI-environment-overwritten",
+          "level": "H2"
+        },
+        {
+          "text": "B. From CGI environment overwritten to Remote Code Execution",
+          "anchor": "B-From-CGI-environment-overwritten-to-Remote-Code-Execution",
+          "level": "H2"
+        },
+        {
+          "text": "Write a working exploit",
+          "anchor": "Write-a-working-exploit",
+          "level": "H1"
+        },
+        {
+          "text": "A. The Nginx obstacle",
+          "anchor": "A-The-Nginx-obstacle",
+          "level": "H2"
+        },
+        {
+          "text": "B. Vulnerability verification problem",
+          "anchor": "B-Vulnerability-verification-problem",
+          "level": "H2"
+        },
+        {
+          "text": "C. The length limitation",
+          "anchor": "C-The-length-limitation",
+          "level": "H2"
+        },
+        {
+          "text": "Improve the exploit",
+          "anchor": "Improve-the-exploit",
+          "level": "H1"
+        },
+        {
+          "text": "A. The PATH_INFO sequential problem",
+          "anchor": "A-The-PATH-INFO-sequential-problem",
+          "level": "H2"
+        },
+        {
+          "text": "B. How to detect the vulnerability",
+          "anchor": "B-How-to-detect-the-vulnerability",
+          "level": "H2"
+        },
+        {
+          "text": "C. Bypass the length limitation",
+          "anchor": "C-Bypass-the-length-limitation",
+          "level": "H2"
+        }
+      ],
+      "article_links": [
+        "https://blog.orange.tw/posts/2019-10-an-analysis-and-thought-about-recently/#The-root-cause",
+        "https://blog.orange.tw/posts/2019-10-an-analysis-and-thought-about-recently/#The-exploitation",
+        "https://blog.orange.tw/posts/2019-10-an-analysis-and-thought-about-recently/#A-From-null-byte-writing-to-CGI-environment-overwritten",
+        "https://blog.orange.tw/posts/2019-10-an-analysis-and-thought-about-recently/#B-From-CGI-environment-overwritten-to-Remote-Code-Execution",
+        "https://blog.orange.tw/posts/2019-10-an-analysis-and-thought-about-recently/#Write-a-working-exploit",
+        "https://blog.orange.tw/posts/2019-10-an-analysis-and-thought-about-recently/#A-The-Nginx-obstacle",
+        "https://blog.orange.tw/posts/2019-10-an-analysis-and-thought-about-recently/#B-Vulnerability-verification-problem",
+        "https://blog.orange.tw/posts/2019-10-an-analysis-and-thought-about-recently/#C-The-length-limitation",
+        "https://blog.orange.tw/posts/2019-10-an-analysis-and-thought-about-recently/#Improve-the-exploit",
+        "https://blog.orange.tw/posts/2019-10-an-analysis-and-thought-about-recently/#A-The-PATH-INFO-sequential-problem",
+        "https://blog.orange.tw/posts/2019-10-an-analysis-and-thought-about-recently/#B-How-to-detect-the-vulnerability",
+        "https://blog.orange.tw/posts/2019-10-an-analysis-and-thought-about-recently/#C-Bypass-the-length-limitation"
+      ]
+    },
+    {
+      "id": "O017",
+      "url": "https://blog.orange.tw/posts/2019-09-attacking-ssl-vpn-part-3-golden-pulse-secure-rce-chain/",
+      "index_title": "Attacking SSL VPN - Part 3: The Golden Pulse Secure SSL VPN RCE Chain, with Twitter as Case Study!",
+      "retrieved_at": "2026-09-30T09:03:44.190Z",
+      "http_status": 200,
+      "final_url": "https://blog.orange.tw/posts/2019-09-attacking-ssl-vpn-part-3-golden-pulse-secure-rce-chain/",
+      "response_html_bytes": 41664,
+      "response_html_sha256": "bd434e081c8e908d7dd8b92e28ae0f1e77c3d74404b116e8f29c6a1ec617bb95",
+      "document_title": "Attacking SSL VPN - Part 3: The Golden Pulse Secure SSL VPN RCE Chain, with Twitter as Case Study! | Orange Tsai",
+      "article_title": "Attacking SSL VPN - Part 3: The Golden Pulse Secure SSL VPN RCE Chain, with Twitter as Case Study!",
+      "observed_sections": [
+        {
+          "text": "Attacking SSL VPN - Part 3: The Golden Pulse Secure SSL VPN RCE Chain, with Twitter as Case Study!",
+          "anchor": "",
+          "level": "H1"
+        },
+        {
+          "text": "About Pulse Secure",
+          "anchor": "About-Pulse-Secure",
+          "level": "H1"
+        },
+        {
+          "text": "Vulnerabilities",
+          "anchor": "Vulnerabilities",
+          "level": "H1"
+        },
+        {
+          "text": "CVE-2019-11540: Cross-Site Script Inclusion",
+          "anchor": "CVE-2019-11540-Cross-Site-Script-Inclusion",
+          "level": "H2"
+        },
+        {
+          "text": "CVE-2019-11507: Cross-Site Scripting",
+          "anchor": "CVE-2019-11507-Cross-Site-Scripting",
+          "level": "H2"
+        },
+        {
+          "text": "CVE-2019-11538: Post-auth(user) Arbitrary File Reading via NFS",
+          "anchor": "CVE-2019-11538-Post-auth-user-Arbitrary-File-Reading-via-NFS",
+          "level": "H2"
+        },
+        {
+          "text": "CVE-2019-11508: Post-auth(user) Arbitrary File Writing via NFS",
+          "anchor": "CVE-2019-11508-Post-auth-user-Arbitrary-File-Writing-via-NFS",
+          "level": "H2"
+        },
+        {
+          "text": "CVE-2019-11542: Post-auth(admin) Stack Buffer Overflow",
+          "anchor": "CVE-2019-11542-Post-auth-admin-Stack-Buffer-Overflow",
+          "level": "H2"
+        },
+        {
+          "text": "CVE-2019-11510: Pre-auth Arbitrary File Reading",
+          "anchor": "CVE-2019-11510-Pre-auth-Arbitrary-File-Reading",
+          "level": "H2"
+        },
+        {
+          "text": "CVE-2019-11539: Post-auth(admin) Command Injection",
+          "anchor": "CVE-2019-11539-Post-auth-admin-Command-Injection",
+          "level": "H2"
+        },
+        {
+          "text": "The Case Study",
+          "anchor": "The-Case-Study",
+          "level": "H1"
+        },
+        {
+          "text": "Recommendations",
+          "anchor": "Recommendations",
+          "level": "H1"
+        },
+        {
+          "text": "Bonus: Take over all the VPN clients",
+          "anchor": "Bonus-Take-over-all-the-VPN-clients",
+          "level": "H1"
+        },
+        {
+          "text": "Epilogue",
+          "anchor": "Epilogue",
+          "level": "H1"
+        }
+      ],
+      "article_links": [
+        "https://blog.orange.tw/posts/2019-09-attacking-ssl-vpn-part-3-golden-pulse-secure-rce-chain/#About-Pulse-Secure",
+        "https://blog.orange.tw/posts/2019-09-attacking-ssl-vpn-part-3-golden-pulse-secure-rce-chain/#Vulnerabilities",
+        "https://blog.orange.tw/posts/2019-09-attacking-ssl-vpn-part-3-golden-pulse-secure-rce-chain/#CVE-2019-11540-Cross-Site-Script-Inclusion",
+        "https://blog.orange.tw/posts/2019-09-attacking-ssl-vpn-part-3-golden-pulse-secure-rce-chain/#CVE-2019-11507-Cross-Site-Scripting",
+        "https://blog.orange.tw/posts/2019-09-attacking-ssl-vpn-part-3-golden-pulse-secure-rce-chain/#CVE-2019-11538-Post-auth-user-Arbitrary-File-Reading-via-NFS",
+        "https://blog.orange.tw/posts/2019-09-attacking-ssl-vpn-part-3-golden-pulse-secure-rce-chain/#CVE-2019-11508-Post-auth-user-Arbitrary-File-Writing-via-NFS",
+        "https://blog.orange.tw/posts/2019-09-attacking-ssl-vpn-part-3-golden-pulse-secure-rce-chain/#CVE-2019-11542-Post-auth-admin-Stack-Buffer-Overflow",
+        "https://blog.orange.tw/posts/2019-09-attacking-ssl-vpn-part-3-golden-pulse-secure-rce-chain/#CVE-2019-11510-Pre-auth-Arbitrary-File-Reading",
+        "https://blog.orange.tw/posts/2019-09-attacking-ssl-vpn-part-3-golden-pulse-secure-rce-chain/#CVE-2019-11539-Post-auth-admin-Command-Injection",
+        "https://blog.orange.tw/posts/2019-09-attacking-ssl-vpn-part-3-golden-pulse-secure-rce-chain/#The-Case-Study",
+        "https://blog.orange.tw/posts/2019-09-attacking-ssl-vpn-part-3-golden-pulse-secure-rce-chain/#Recommendations",
+        "https://blog.orange.tw/posts/2019-09-attacking-ssl-vpn-part-3-golden-pulse-secure-rce-chain/#Bonus-Take-over-all-the-VPN-clients",
+        "https://blog.orange.tw/posts/2019-09-attacking-ssl-vpn-part-3-golden-pulse-secure-rce-chain/#Epilogue"
+      ]
+    },
+    {
+      "id": "O018",
+      "url": "https://blog.orange.tw/posts/2019-08-attacking-ssl-vpn-part-2-breaking-the-fortigate-ssl-vpn/",
+      "index_title": "Attacking SSL VPN - Part 2: Breaking the Fortigate SSL VPN",
+      "retrieved_at": "2026-09-30T09:03:44.206Z",
+      "http_status": 200,
+      "final_url": "https://blog.orange.tw/posts/2019-08-attacking-ssl-vpn-part-2-breaking-the-fortigate-ssl-vpn/",
+      "response_html_bytes": 40983,
+      "response_html_sha256": "61d01c55e141093ca169e6e943a30608a9044b62aed269437611b082d9e957bf",
+      "document_title": "Attacking SSL VPN - Part 2: Breaking the Fortigate SSL VPN | Orange Tsai",
+      "article_title": "Attacking SSL VPN - Part 2: Breaking the Fortigate SSL VPN",
+      "observed_sections": [
+        {
+          "text": "Attacking SSL VPN - Part 2: Breaking the Fortigate SSL VPN",
+          "anchor": "",
+          "level": "H1"
+        },
+        {
+          "text": "Let’s start!",
+          "anchor": "Let’s-start",
+          "level": "H1"
+        },
+        {
+          "text": "Fortigate SSL VPN",
+          "anchor": "Fortigate-SSL-VPN",
+          "level": "H1"
+        },
+        {
+          "text": "All-in-one binary",
+          "anchor": "All-in-one-binary",
+          "level": "H2"
+        },
+        {
+          "text": "Web daemon",
+          "anchor": "Web-daemon",
+          "level": "H2"
+        },
+        {
+          "text": "WebVPN",
+          "anchor": "WebVPN",
+          "level": "H2"
+        },
+        {
+          "text": "Vulnerabilities",
+          "anchor": "Vulnerabilities",
+          "level": "H1"
+        },
+        {
+          "text": "CVE-2018-13379: Pre-auth arbitrary file reading",
+          "anchor": "CVE-2018-13379-Pre-auth-arbitrary-file-reading",
+          "level": "H2"
+        },
+        {
+          "text": "CVE-2018-13380: Pre-auth XSS",
+          "anchor": "CVE-2018-13380-Pre-auth-XSS",
+          "level": "H2"
+        },
+        {
+          "text": "CVE-2018-13381: Pre-auth heap overflow",
+          "anchor": "CVE-2018-13381-Pre-auth-heap-overflow",
+          "level": "H2"
+        },
+        {
+          "text": "CVE-2018-13382: The magic backdoor",
+          "anchor": "CVE-2018-13382-The-magic-backdoor",
+          "level": "H2"
+        },
+        {
+          "text": "CVE-2018-13383: Post-auth heap overflow",
+          "anchor": "CVE-2018-13383-Post-auth-heap-overflow",
+          "level": "H2"
+        },
+        {
+          "text": "Exploitation",
+          "anchor": "Exploitation",
+          "level": "H1"
+        },
+        {
+          "text": "CVE-2018-13381",
+          "anchor": "CVE-2018-13381",
+          "level": "H2"
+        },
+        {
+          "text": "Single thread, single process, single allocator",
+          "anchor": "Single-thread-single-process-single-allocator",
+          "level": "H3"
+        },
+        {
+          "text": "Operations regularly triggered",
+          "anchor": "Operations-regularly-triggered",
+          "level": "H3"
+        },
+        {
+          "text": "Apache additional memory management.",
+          "anchor": "Apache-additional-memory-management",
+          "level": "H3"
+        },
+        {
+          "text": "JeMalloc",
+          "anchor": "JeMalloc",
+          "level": "H3"
+        },
+        {
+          "text": "CVE-2018-13379 + CVE-2018-13383",
+          "anchor": "CVE-2018-13379-CVE-2018-13383",
+          "level": "H2"
+        },
+        {
+          "text": "Gain authentication",
+          "anchor": "Gain-authentication",
+          "level": "H3"
+        },
+        {
+          "text": "Get the shell",
+          "anchor": "Get-the-shell",
+          "level": "H3"
+        },
+        {
+          "text": "1. Fake SSL structure",
+          "anchor": "1-Fake-SSL-structure",
+          "level": "H3"
+        },
+        {
+          "text": "2. ROP chain",
+          "anchor": "2-ROP-chain",
+          "level": "H3"
+        },
+        {
+          "text": "3. Overflow string",
+          "anchor": "3-Overflow-string",
+          "level": "H3"
+        },
+        {
+          "text": "Demo",
+          "anchor": "Demo",
+          "level": "H1"
+        },
+        {
+          "text": "Timeline",
+          "anchor": "Timeline",
+          "level": "H1"
+        },
+        {
+          "text": "Fix",
+          "anchor": "Fix",
+          "level": "H1"
+        }
+      ],
+      "article_links": [
+        "https://blog.orange.tw/posts/2019-08-attacking-ssl-vpn-part-2-breaking-the-fortigate-ssl-vpn/#Let%E2%80%99s-start",
+        "https://blog.orange.tw/posts/2019-08-attacking-ssl-vpn-part-2-breaking-the-fortigate-ssl-vpn/#Fortigate-SSL-VPN",
+        "https://blog.orange.tw/posts/2019-08-attacking-ssl-vpn-part-2-breaking-the-fortigate-ssl-vpn/#All-in-one-binary",
+        "https://blog.orange.tw/posts/2019-08-attacking-ssl-vpn-part-2-breaking-the-fortigate-ssl-vpn/#Web-daemon",
+        "https://blog.orange.tw/posts/2019-08-attacking-ssl-vpn-part-2-breaking-the-fortigate-ssl-vpn/#WebVPN",
+        "https://blog.orange.tw/posts/2019-08-attacking-ssl-vpn-part-2-breaking-the-fortigate-ssl-vpn/#Vulnerabilities",
+        "https://blog.orange.tw/posts/2019-08-attacking-ssl-vpn-part-2-breaking-the-fortigate-ssl-vpn/#CVE-2018-13379-Pre-auth-arbitrary-file-reading",
+        "https://blog.orange.tw/posts/2019-08-attacking-ssl-vpn-part-2-breaking-the-fortigate-ssl-vpn/#CVE-2018-13380-Pre-auth-XSS",
+        "https://blog.orange.tw/posts/2019-08-attacking-ssl-vpn-part-2-breaking-the-fortigate-ssl-vpn/#CVE-2018-13381-Pre-auth-heap-overflow",
+        "https://blog.orange.tw/posts/2019-08-attacking-ssl-vpn-part-2-breaking-the-fortigate-ssl-vpn/#CVE-2018-13382-The-magic-backdoor",
+        "https://blog.orange.tw/posts/2019-08-attacking-ssl-vpn-part-2-breaking-the-fortigate-ssl-vpn/#CVE-2018-13383-Post-auth-heap-overflow",
+        "https://blog.orange.tw/posts/2019-08-attacking-ssl-vpn-part-2-breaking-the-fortigate-ssl-vpn/#Exploitation",
+        "https://blog.orange.tw/posts/2019-08-attacking-ssl-vpn-part-2-breaking-the-fortigate-ssl-vpn/#CVE-2018-13381",
+        "https://blog.orange.tw/posts/2019-08-attacking-ssl-vpn-part-2-breaking-the-fortigate-ssl-vpn/#Single-thread-single-process-single-allocator",
+        "https://blog.orange.tw/posts/2019-08-attacking-ssl-vpn-part-2-breaking-the-fortigate-ssl-vpn/#Operations-regularly-triggered",
+        "https://blog.orange.tw/posts/2019-08-attacking-ssl-vpn-part-2-breaking-the-fortigate-ssl-vpn/#Apache-additional-memory-management",
+        "https://blog.orange.tw/posts/2019-08-attacking-ssl-vpn-part-2-breaking-the-fortigate-ssl-vpn/#JeMalloc",
+        "https://blog.orange.tw/posts/2019-08-attacking-ssl-vpn-part-2-breaking-the-fortigate-ssl-vpn/#CVE-2018-13379-CVE-2018-13383",
+        "https://blog.orange.tw/posts/2019-08-attacking-ssl-vpn-part-2-breaking-the-fortigate-ssl-vpn/#Gain-authentication",
+        "https://blog.orange.tw/posts/2019-08-attacking-ssl-vpn-part-2-breaking-the-fortigate-ssl-vpn/#Get-the-shell",
+        "https://blog.orange.tw/posts/2019-08-attacking-ssl-vpn-part-2-breaking-the-fortigate-ssl-vpn/#1-Fake-SSL-structure",
+        "https://blog.orange.tw/posts/2019-08-attacking-ssl-vpn-part-2-breaking-the-fortigate-ssl-vpn/#2-ROP-chain",
+        "https://blog.orange.tw/posts/2019-08-attacking-ssl-vpn-part-2-breaking-the-fortigate-ssl-vpn/#3-Overflow-string",
+        "https://blog.orange.tw/posts/2019-08-attacking-ssl-vpn-part-2-breaking-the-fortigate-ssl-vpn/#Demo",
+        "https://blog.orange.tw/posts/2019-08-attacking-ssl-vpn-part-2-breaking-the-fortigate-ssl-vpn/#Timeline",
+        "https://blog.orange.tw/posts/2019-08-attacking-ssl-vpn-part-2-breaking-the-fortigate-ssl-vpn/#Fix"
+      ]
+    },
+    {
+      "id": "O019",
+      "url": "https://blog.orange.tw/posts/2019-07-attacking-ssl-vpn-part-1-preauth-rce-on-palo-alto/",
+      "index_title": "Attacking SSL VPN - Part 1: PreAuth RCE on Palo Alto GlobalProtect, with Uber as Case Study!",
+      "retrieved_at": "2026-09-30T09:03:44.512Z",
+      "http_status": 200,
+      "final_url": "https://blog.orange.tw/posts/2019-07-attacking-ssl-vpn-part-1-preauth-rce-on-palo-alto/",
+      "response_html_bytes": 25174,
+      "response_html_sha256": "f8a47e080b3270d3a76efe98bf9f9b122ebbbad532f96904ddaae156ad397273",
+      "document_title": "Attacking SSL VPN - Part 1: PreAuth RCE on Palo Alto GlobalProtect, with Uber as Case Study! | Orange Tsai",
+      "article_title": "Attacking SSL VPN - Part 1: PreAuth RCE on Palo Alto GlobalProtect, with Uber as Case Study!",
+      "observed_sections": [
+        {
+          "text": "Attacking SSL VPN - Part 1: PreAuth RCE on Palo Alto GlobalProtect, with Uber as Case Study!",
+          "anchor": "",
+          "level": "H1"
+        },
+        {
+          "text": "The story",
+          "anchor": "The-story",
+          "level": "H1"
+        },
+        {
+          "text": "The bug",
+          "anchor": "The-bug",
+          "level": "H1"
+        },
+        {
+          "text": "Affect versions",
+          "anchor": "Affect-versions",
+          "level": "H1"
+        },
+        {
+          "text": "How to verify the bug",
+          "anchor": "How-to-verify-the-bug",
+          "level": "H1"
+        },
+        {
+          "text": "The exploitation",
+          "anchor": "The-exploitation",
+          "level": "H1"
+        },
+        {
+          "text": "The case study",
+          "anchor": "The-case-study",
+          "level": "H1"
+        }
+      ],
+      "article_links": [
+        "https://blog.orange.tw/posts/2019-07-attacking-ssl-vpn-part-1-preauth-rce-on-palo-alto/#The-story",
+        "https://blog.orange.tw/posts/2019-07-attacking-ssl-vpn-part-1-preauth-rce-on-palo-alto/#The-bug",
+        "https://blog.orange.tw/posts/2019-07-attacking-ssl-vpn-part-1-preauth-rce-on-palo-alto/#Affect-versions",
+        "https://blog.orange.tw/posts/2019-07-attacking-ssl-vpn-part-1-preauth-rce-on-palo-alto/#How-to-verify-the-bug",
+        "https://blog.orange.tw/posts/2019-07-attacking-ssl-vpn-part-1-preauth-rce-on-palo-alto/#The-exploitation",
+        "https://blog.orange.tw/posts/2019-07-attacking-ssl-vpn-part-1-preauth-rce-on-palo-alto/#The-case-study"
+      ]
+    },
+    {
+      "id": "O020",
+      "url": "https://blog.orange.tw/posts/2019-03-a-wormable-xss-on-hackmd/",
+      "index_title": "A Wormable XSS on HackMD!",
+      "retrieved_at": "2026-09-30T09:03:44.515Z",
+      "http_status": 200,
+      "final_url": "https://blog.orange.tw/posts/2019-03-a-wormable-xss-on-hackmd/",
+      "response_html_bytes": 23211,
+      "response_html_sha256": "5bd0d5f5ff9733ee5350700320c11f023ff66dfc9af9054608b9275206e713c6",
+      "document_title": "A Wormable XSS on HackMD! | Orange Tsai",
+      "article_title": "A Wormable XSS on HackMD!",
+      "observed_sections": [
+        {
+          "text": "A Wormable XSS on HackMD!",
+          "anchor": "",
+          "level": "H1"
+        },
+        {
+          "text": "漏洞成因",
+          "anchor": "漏洞成因",
+          "level": "H1"
+        },
+        {
+          "text": "繞過 CSP 政策",
+          "anchor": "繞過-CSP-政策",
+          "level": "H1"
+        },
+        {
+          "text": "最終攻擊代碼",
+          "anchor": "最終攻擊代碼",
+          "level": "H1"
+        }
+      ],
+      "article_links": [
+        "https://blog.orange.tw/posts/2019-03-a-wormable-xss-on-hackmd/#%E6%BC%8F%E6%B4%9E%E6%88%90%E5%9B%A0",
+        "https://blog.orange.tw/posts/2019-03-a-wormable-xss-on-hackmd/#%E7%B9%9E%E9%81%8E-CSP-%E6%94%BF%E7%AD%96",
+        "https://blog.orange.tw/posts/2019-03-a-wormable-xss-on-hackmd/#%E6%9C%80%E7%B5%82%E6%94%BB%E6%93%8A%E4%BB%A3%E7%A2%BC"
+      ]
+    },
+    {
+      "id": "O021",
+      "url": "https://blog.orange.tw/posts/2019-02-abusing-meta-programming-for-unauthenticated-rce/",
+      "index_title": "Hacking Jenkins Part 2 - Abusing Meta Programming for Unauthenticated RCE!",
+      "retrieved_at": "2026-09-30T09:03:44.518Z",
+      "http_status": 200,
+      "final_url": "https://blog.orange.tw/posts/2019-02-abusing-meta-programming-for-unauthenticated-rce/",
+      "response_html_bytes": 46746,
+      "response_html_sha256": "6523043e0fd7144f6cd0ddca12dea61eb989a6debd3107c59a2c6387b5767caa",
+      "document_title": "Hacking Jenkins Part 2 - Abusing Meta Programming for Unauthenticated RCE! | Orange Tsai",
+      "article_title": "Hacking Jenkins Part 2 - Abusing Meta Programming for Unauthenticated RCE!",
+      "observed_sections": [
+        {
+          "text": "Hacking Jenkins Part 2 - Abusing Meta Programming for Unauthenticated RCE!",
+          "anchor": "",
+          "level": "H1"
+        },
+        {
+          "text": "Vulnerability Analysis",
+          "anchor": "Vulnerability-Analysis",
+          "level": "H1"
+        },
+        {
+          "text": "What is Meta-Programming",
+          "anchor": "What-is-Meta-Programming",
+          "level": "H1"
+        },
+        {
+          "text": "How to Exploit?",
+          "anchor": "How-to-Exploit",
+          "level": "H1"
+        },
+        {
+          "text": "First Attempt",
+          "anchor": "First-Attempt",
+          "level": "H2"
+        },
+        {
+          "text": "Second Attempt",
+          "anchor": "Second-Attempt",
+          "level": "H2"
+        },
+        {
+          "text": "The Way to Code Execution",
+          "anchor": "The-Way-to-Code-Execution",
+          "level": "H1"
+        },
+        {
+          "text": "PoC:",
+          "anchor": "PoC",
+          "level": "H4"
+        },
+        {
+          "text": "Video:",
+          "anchor": "Video",
+          "level": "H4"
+        },
+        {
+          "text": "Epilogue",
+          "anchor": "Epilogue",
+          "level": "H1"
+        },
+        {
+          "text": "Updates",
+          "anchor": "Updates",
+          "level": "H1"
+        },
+        {
+          "text": "2019/07/02 updated",
+          "anchor": "2019-07-02-updated",
+          "level": "H4"
+        },
+        {
+          "text": "2019/05/10 updated",
+          "anchor": "2019-05-10-updated",
+          "level": "H4"
+        },
+        {
+          "text": "2019/02/22 updated",
+          "anchor": "2019-02-22-updated",
+          "level": "H4"
+        }
+      ],
+      "article_links": [
+        "https://blog.orange.tw/posts/2019-02-abusing-meta-programming-for-unauthenticated-rce/#",
+        "https://blog.orange.tw/posts/2019-02-abusing-meta-programming-for-unauthenticated-rce/#2019-02-22-updated",
+        "https://blog.orange.tw/posts/2019-02-abusing-meta-programming-for-unauthenticated-rce/#2019-05-10-updated",
+        "https://blog.orange.tw/posts/2019-02-abusing-meta-programming-for-unauthenticated-rce/#2019-07-02-updated",
+        "https://blog.orange.tw/posts/2019-02-abusing-meta-programming-for-unauthenticated-rce/#Vulnerability-Analysis",
+        "https://blog.orange.tw/posts/2019-02-abusing-meta-programming-for-unauthenticated-rce/#What-is-Meta-Programming",
+        "https://blog.orange.tw/posts/2019-02-abusing-meta-programming-for-unauthenticated-rce/#How-to-Exploit",
+        "https://blog.orange.tw/posts/2019-02-abusing-meta-programming-for-unauthenticated-rce/#First-Attempt",
+        "https://blog.orange.tw/posts/2019-02-abusing-meta-programming-for-unauthenticated-rce/#Second-Attempt",
+        "https://blog.orange.tw/posts/2019-02-abusing-meta-programming-for-unauthenticated-rce/#The-Way-to-Code-Execution",
+        "https://blog.orange.tw/posts/2019-02-abusing-meta-programming-for-unauthenticated-rce/#PoC",
+        "https://blog.orange.tw/posts/2019-02-abusing-meta-programming-for-unauthenticated-rce/#Video",
+        "https://blog.orange.tw/posts/2019-02-abusing-meta-programming-for-unauthenticated-rce/#Epilogue",
+        "https://blog.orange.tw/posts/2019-02-abusing-meta-programming-for-unauthenticated-rce/#Updates"
+      ]
+    },
+    {
+      "id": "O022",
+      "url": "https://blog.orange.tw/posts/2019-01-hacking-jenkins-part-1-play-with-dynamic-routing/",
+      "index_title": "Hacking Jenkins Part 1 - Play with Dynamic Routing",
+      "retrieved_at": "2026-09-30T09:03:44.520Z",
+      "http_status": 200,
+      "final_url": "https://blog.orange.tw/posts/2019-01-hacking-jenkins-part-1-play-with-dynamic-routing/",
+      "response_html_bytes": 31606,
+      "response_html_sha256": "42cac95b4aadacfd568381e66bf2d26c7913fbdcaffaa28e6ac5857bbd7550ef",
+      "document_title": "Hacking Jenkins Part 1 - Play with Dynamic Routing | Orange Tsai",
+      "article_title": "Hacking Jenkins Part 1 - Play with Dynamic Routing",
+      "observed_sections": [
+        {
+          "text": "Hacking Jenkins Part 1 - Play with Dynamic Routing",
+          "anchor": "",
+          "level": "H1"
+        },
+        {
+          "text": "Review Scope",
+          "anchor": "Review-Scope",
+          "level": "H1"
+        },
+        {
+          "text": "Privilege Levels",
+          "anchor": "Privilege-Levels",
+          "level": "H1"
+        },
+        {
+          "text": "1. Full Access",
+          "anchor": "1-Full-Access",
+          "level": "H2"
+        },
+        {
+          "text": "2. Read-only Mode",
+          "anchor": "2-Read-only-Mode",
+          "level": "H2"
+        },
+        {
+          "text": "3. Authenticated Mode",
+          "anchor": "3-Authenticated-Mode",
+          "level": "H2"
+        },
+        {
+          "text": "Vulnerability Analysis",
+          "anchor": "Vulnerability-Analysis",
+          "level": "H1"
+        },
+        {
+          "text": "1. Everything is the Subclass of java.lang.Object",
+          "anchor": "1-Everything-is-the-Subclass-of-java-lang-Object",
+          "level": "H2"
+        },
+        {
+          "text": "2. Whitelist Bypass",
+          "anchor": "2-Whitelist-Bypass",
+          "level": "H2"
+        },
+        {
+          "text": "How to Exploit?",
+          "anchor": "How-to-Exploit",
+          "level": "H1"
+        },
+        {
+          "text": "1. Pre-auth User Information Leakage",
+          "anchor": "1-Pre-auth-User-Information-Leakage",
+          "level": "H2"
+        },
+        {
+          "text": "PoC:",
+          "anchor": "PoC",
+          "level": "H3"
+        },
+        {
+          "text": "2. Chained with CVE-2018-1000600 to a Pre-auth Fully-responded SSRF",
+          "anchor": "2-Chained-with-CVE-2018-1000600-to-a-Pre-auth-Fully-responded-SSRF",
+          "level": "H2"
+        },
+        {
+          "text": "PoC:",
+          "anchor": "PoC-1",
+          "level": "H3"
+        },
+        {
+          "text": "3. Pre-auth Remote Code Execution",
+          "anchor": "3-Pre-auth-Remote-Code-Execution",
+          "level": "H2"
+        },
+        {
+          "text": "TODO",
+          "anchor": "TODO",
+          "level": "H1"
+        },
+        {
+          "text": "Acknowledgement",
+          "anchor": "Acknowledgement",
+          "level": "H1"
+        }
+      ],
+      "article_links": [
+        "https://blog.orange.tw/posts/2019-01-hacking-jenkins-part-1-play-with-dynamic-routing/#",
+        "https://blog.orange.tw/posts/2019-01-hacking-jenkins-part-1-play-with-dynamic-routing/#Review-Scope",
+        "https://blog.orange.tw/posts/2019-01-hacking-jenkins-part-1-play-with-dynamic-routing/#Privilege-Levels",
+        "https://blog.orange.tw/posts/2019-01-hacking-jenkins-part-1-play-with-dynamic-routing/#1-Full-Access",
+        "https://blog.orange.tw/posts/2019-01-hacking-jenkins-part-1-play-with-dynamic-routing/#2-Read-only-Mode",
+        "https://blog.orange.tw/posts/2019-01-hacking-jenkins-part-1-play-with-dynamic-routing/#3-Authenticated-Mode",
+        "https://blog.orange.tw/posts/2019-01-hacking-jenkins-part-1-play-with-dynamic-routing/#Vulnerability-Analysis",
+        "https://blog.orange.tw/posts/2019-01-hacking-jenkins-part-1-play-with-dynamic-routing/#1-Everything-is-the-Subclass-of-java-lang-Object",
+        "https://blog.orange.tw/posts/2019-01-hacking-jenkins-part-1-play-with-dynamic-routing/#2-Whitelist-Bypass",
+        "https://blog.orange.tw/posts/2019-01-hacking-jenkins-part-1-play-with-dynamic-routing/#How-to-Exploit",
+        "https://blog.orange.tw/posts/2019-01-hacking-jenkins-part-1-play-with-dynamic-routing/#1-Pre-auth-User-Information-Leakage",
+        "https://blog.orange.tw/posts/2019-01-hacking-jenkins-part-1-play-with-dynamic-routing/#PoC",
+        "https://blog.orange.tw/posts/2019-01-hacking-jenkins-part-1-play-with-dynamic-routing/#2-Chained-with-CVE-2018-1000600-to-a-Pre-auth-Fully-responded-SSRF",
+        "https://blog.orange.tw/posts/2019-01-hacking-jenkins-part-1-play-with-dynamic-routing/#PoC-1",
+        "https://blog.orange.tw/posts/2019-01-hacking-jenkins-part-1-play-with-dynamic-routing/#3-Pre-auth-Remote-Code-Execution",
+        "https://blog.orange.tw/posts/2019-01-hacking-jenkins-part-1-play-with-dynamic-routing/#TODO",
+        "https://blog.orange.tw/posts/2019-01-hacking-jenkins-part-1-play-with-dynamic-routing/#Acknowledgement"
+      ]
+    },
+    {
+      "id": "O023",
+      "url": "https://blog.orange.tw/posts/2018-10-hitcon-ctf-2018-one-line-php-challenge/",
+      "index_title": "HITCON CTF 2018 - One Line PHP Challenge",
+      "retrieved_at": "2026-09-30T09:03:44.617Z",
+      "http_status": 200,
+      "final_url": "https://blog.orange.tw/posts/2018-10-hitcon-ctf-2018-one-line-php-challenge/",
+      "response_html_bytes": 16270,
+      "response_html_sha256": "837abd8eefebcc19f45176b72d1c86dbcc91d362c46eab7d0708322d6b77cb9d",
+      "document_title": "HITCON CTF 2018 - One Line PHP Challenge | Orange Tsai",
+      "article_title": "HITCON CTF 2018 - One Line PHP Challenge",
+      "observed_sections": [
+        {
+          "text": "HITCON CTF 2018 - One Line PHP Challenge",
+          "anchor": "",
+          "level": "H1"
+        },
+        {
+          "text": "Inclusion Tragedy",
+          "anchor": "Inclusion-Tragedy",
+          "level": "H2"
+        },
+        {
+          "text": "Session Tragedy",
+          "anchor": "Session-Tragedy",
+          "level": "H2"
+        },
+        {
+          "text": "Cleanup Tragedy",
+          "anchor": "Cleanup-Tragedy",
+          "level": "H2"
+        },
+        {
+          "text": "Prefix Tragedy",
+          "anchor": "Prefix-Tragedy",
+          "level": "H2"
+        }
+      ],
+      "article_links": [
+        "https://blog.orange.tw/posts/2018-10-hitcon-ctf-2018-one-line-php-challenge/#Inclusion-Tragedy",
+        "https://blog.orange.tw/posts/2018-10-hitcon-ctf-2018-one-line-php-challenge/#Session-Tragedy",
+        "https://blog.orange.tw/posts/2018-10-hitcon-ctf-2018-one-line-php-challenge/#Cleanup-Tragedy",
+        "https://blog.orange.tw/posts/2018-10-hitcon-ctf-2018-one-line-php-challenge/#Prefix-Tragedy"
+      ]
+    },
+    {
+      "id": "O024",
+      "url": "https://blog.orange.tw/posts/2018-08-how-i-chained-4-bugs-features-into-rce-on-amazon/",
+      "index_title": "How I Chained 4 Bugs (Features?) into RCE on Amazon Collaboration System",
+      "retrieved_at": "2026-09-30T09:03:44.822Z",
+      "http_status": 200,
+      "final_url": "https://blog.orange.tw/posts/2018-08-how-i-chained-4-bugs-features-into-rce-on-amazon/",
+      "response_html_bytes": 37379,
+      "response_html_sha256": "6ef21823e38b36519d820948802e6ed41a32338c4c1b86e9484f5a9ca3c5ff81",
+      "document_title": "How I Chained 4 Bugs (Features?) into RCE on Amazon Collaboration System | Orange Tsai",
+      "article_title": "How I Chained 4 Bugs (Features?) into RCE on Amazon Collaboration System",
+      "observed_sections": [
+        {
+          "text": "How I Chained 4 Bugs (Features?) into RCE on Amazon Collaboration System",
+          "anchor": "",
+          "level": "H1"
+        },
+        {
+          "text": "Foreword",
+          "anchor": "Foreword",
+          "level": "H1"
+        },
+        {
+          "text": "Bugs",
+          "anchor": "Bugs",
+          "level": "H1"
+        },
+        {
+          "text": "1. Path normalization bug leads to ACL bypass",
+          "anchor": "1-Path-normalization-bug-leads-to-ACL-bypass",
+          "level": "H2"
+        },
+        {
+          "text": "2. Code reuse feature leads to partial EL invocation",
+          "anchor": "2-Code-reuse-feature-leads-to-partial-EL-invocation",
+          "level": "H2"
+        },
+        {
+          "text": "3. Double evaluation leads to EL injection",
+          "anchor": "3-Double-evaluation-leads-to-EL-injection",
+          "level": "H2"
+        },
+        {
+          "text": "4. EL blacklist bypass leads to RCE",
+          "anchor": "4-EL-blacklist-bypass-leads-to-RCE",
+          "level": "H2"
+        },
+        {
+          "text": "The fix",
+          "anchor": "The-fix",
+          "level": "H1"
+        },
+        {
+          "text": "1. JBoss",
+          "anchor": "1-JBoss",
+          "level": "H2"
+        },
+        {
+          "text": "2. Amazon",
+          "anchor": "2-Amazon",
+          "level": "H2"
+        },
+        {
+          "text": "3. Nuxeo",
+          "anchor": "3-Nuxeo",
+          "level": "H2"
+        },
+        {
+          "text": "Timeline",
+          "anchor": "Timeline",
+          "level": "H1"
+        }
+      ],
+      "article_links": [
+        "https://blog.orange.tw/posts/2018-08-how-i-chained-4-bugs-features-into-rce-on-amazon/#Foreword",
+        "https://blog.orange.tw/posts/2018-08-how-i-chained-4-bugs-features-into-rce-on-amazon/#Bugs",
+        "https://blog.orange.tw/posts/2018-08-how-i-chained-4-bugs-features-into-rce-on-amazon/#1-Path-normalization-bug-leads-to-ACL-bypass",
+        "https://blog.orange.tw/posts/2018-08-how-i-chained-4-bugs-features-into-rce-on-amazon/#2-Code-reuse-feature-leads-to-partial-EL-invocation",
+        "https://blog.orange.tw/posts/2018-08-how-i-chained-4-bugs-features-into-rce-on-amazon/#3-Double-evaluation-leads-to-EL-injection",
+        "https://blog.orange.tw/posts/2018-08-how-i-chained-4-bugs-features-into-rce-on-amazon/#4-EL-blacklist-bypass-leads-to-RCE",
+        "https://blog.orange.tw/posts/2018-08-how-i-chained-4-bugs-features-into-rce-on-amazon/#The-fix",
+        "https://blog.orange.tw/posts/2018-08-how-i-chained-4-bugs-features-into-rce-on-amazon/#1-JBoss",
+        "https://blog.orange.tw/posts/2018-08-how-i-chained-4-bugs-features-into-rce-on-amazon/#2-Amazon",
+        "https://blog.orange.tw/posts/2018-08-how-i-chained-4-bugs-features-into-rce-on-amazon/#3-Nuxeo",
+        "https://blog.orange.tw/posts/2018-08-how-i-chained-4-bugs-features-into-rce-on-amazon/#Timeline"
+      ]
+    },
+    {
+      "id": "O025",
+      "url": "https://blog.orange.tw/posts/2018-06-google-ctf-2018-quals-web-gcalc/",
+      "index_title": "Google CTF 2018 Quals Web Challenge - gCalc",
+      "retrieved_at": "2026-09-30T09:03:44.824Z",
+      "http_status": 200,
+      "final_url": "https://blog.orange.tw/posts/2018-06-google-ctf-2018-quals-web-gcalc/",
+      "response_html_bytes": 20150,
+      "response_html_sha256": "4843e6825028dc3c3adfa43968fd6e1abc7a06b8b1df2939b5fd5b48594a6062",
+      "document_title": "Google CTF 2018 Quals Web Challenge - gCalc | Orange Tsai",
+      "article_title": "Google CTF 2018 Quals Web Challenge - gCalc",
+      "observed_sections": [
+        {
+          "text": "Google CTF 2018 Quals Web Challenge - gCalc",
+          "anchor": "",
+          "level": "H1"
+        },
+        {
+          "text": "CSP of /",
+          "anchor": "CSP-of",
+          "level": "H3"
+        },
+        {
+          "text": "CSP of /static/calc.html",
+          "anchor": "CSP-of-static-calc-html",
+          "level": "H3"
+        }
+      ],
+      "article_links": [
+        "https://blog.orange.tw/posts/2018-06-google-ctf-2018-quals-web-gcalc/#CSP-of",
+        "https://blog.orange.tw/posts/2018-06-google-ctf-2018-quals-web-gcalc/#CSP-of-static-calc-html"
+      ]
+    },
+    {
+      "id": "O026",
+      "url": "https://blog.orange.tw/posts/2018-03-pwn-ctf-platform-with-java-jrmp-gadget/",
+      "index_title": "Pwn a CTF Platform with Java JRMP Gadget",
+      "retrieved_at": "2026-09-30T09:03:44.826Z",
+      "http_status": 200,
+      "final_url": "https://blog.orange.tw/posts/2018-03-pwn-ctf-platform-with-java-jrmp-gadget/",
+      "response_html_bytes": 16554,
+      "response_html_sha256": "a06937106c326c2606d7249e627fbff5a573d46aa247d63407dea008bf4a5d55",
+      "document_title": "Pwn a CTF Platform with Java JRMP Gadget | Orange Tsai",
+      "article_title": "Pwn a CTF Platform with Java JRMP Gadget",
+      "observed_sections": [
+        {
+          "text": "Pwn a CTF Platform with Java JRMP Gadget",
+          "anchor": "",
+          "level": "H1"
+        },
+        {
+          "text": "Updates",
+          "anchor": "Updates",
+          "level": "H1"
+        }
+      ],
+      "article_links": [
+        "https://blog.orange.tw/posts/2018-03-pwn-ctf-platform-with-java-jrmp-gadget/#Updates"
+      ]
+    },
+    {
+      "id": "O027",
+      "url": "https://blog.orange.tw/posts/2018-01-php-cve-2018-5711-hanging-websites-by/",
+      "index_title": "PHP CVE-2018-5711 - Hanging Websites by a Harmful GIF",
+      "retrieved_at": "2026-09-30T09:03:44.923Z",
+      "http_status": 200,
+      "final_url": "https://blog.orange.tw/posts/2018-01-php-cve-2018-5711-hanging-websites-by/",
+      "response_html_bytes": 28911,
+      "response_html_sha256": "8f24b0e3dbd5e445b9ec679620f8916de750520c966810c315fc17b4dda22aa7",
+      "document_title": "PHP CVE-2018-5711 - Hanging Websites by a Harmful GIF | Orange Tsai",
+      "article_title": "PHP CVE-2018-5711 - Hanging Websites by a Harmful GIF",
+      "observed_sections": [
+        {
+          "text": "PHP CVE-2018-5711 - Hanging Websites by a Harmful GIF",
+          "anchor": "",
+          "level": "H1"
+        },
+        {
+          "text": "Affected",
+          "anchor": "Affected",
+          "level": "H1"
+        },
+        {
+          "text": "Vulnerability Details",
+          "anchor": "Vulnerability-Details",
+          "level": "H1"
+        },
+        {
+          "text": "PoC",
+          "anchor": "PoC",
+          "level": "H1"
+        },
+        {
+          "text": "Epilogue",
+          "anchor": "Epilogue",
+          "level": "H1"
+        },
+        {
+          "text": "References",
+          "anchor": "References",
+          "level": "H1"
+        }
+      ],
+      "article_links": [
+        "https://blog.orange.tw/posts/2018-01-php-cve-2018-5711-hanging-websites-by/#Affected",
+        "https://blog.orange.tw/posts/2018-01-php-cve-2018-5711-hanging-websites-by/#Vulnerability-Details",
+        "https://blog.orange.tw/posts/2018-01-php-cve-2018-5711-hanging-websites-by/#PoC",
+        "https://blog.orange.tw/posts/2018-01-php-cve-2018-5711-hanging-websites-by/#Epilogue",
+        "https://blog.orange.tw/posts/2018-01-php-cve-2018-5711-hanging-websites-by/#References"
+      ]
+    },
+    {
+      "id": "O028",
+      "url": "https://blog.orange.tw/posts/2017-07-how-i-chained-4-vulnerabilities-on/",
+      "index_title": "How I Chained 4 vulnerabilities on GitHub Enterprise, From SSRF Execution Chain to RCE!",
+      "retrieved_at": "2026-09-30T09:03:45.024Z",
+      "http_status": 200,
+      "final_url": "https://blog.orange.tw/posts/2017-07-how-i-chained-4-vulnerabilities-on/",
+      "response_html_bytes": 34642,
+      "response_html_sha256": "d5880a4a43bd30e760a1bbc48777caf54935ad48ae0d040306886c661cfda1fe",
+      "document_title": "How I Chained 4 vulnerabilities on GitHub Enterprise, From SSRF Execution Chain to RCE! | Orange Tsai",
+      "article_title": "How I Chained 4 vulnerabilities on GitHub Enterprise, From SSRF Execution Chain to RCE!",
+      "observed_sections": [
+        {
+          "text": "How I Chained 4 vulnerabilities on GitHub Enterprise, From SSRF Execution Chain to RCE!",
+          "anchor": "",
+          "level": "H1"
+        },
+        {
+          "text": "Foreword",
+          "anchor": "Foreword",
+          "level": "H1"
+        },
+        {
+          "text": "Vulnerabilities",
+          "anchor": "Vulnerabilities",
+          "level": "H1"
+        },
+        {
+          "text": "First Bug - Harmless SSRF",
+          "anchor": "First-Bug-Harmless-SSRF",
+          "level": "H2"
+        },
+        {
+          "text": "Second Bug - SSRF in Internal Graphite",
+          "anchor": "Second-Bug-SSRF-in-Internal-Graphite",
+          "level": "H2"
+        },
+        {
+          "text": "Third Bug - CR-LF Injection in Python",
+          "anchor": "Third-Bug-CR-LF-Injection-in-Python",
+          "level": "H2"
+        },
+        {
+          "text": "Fourth Bug - Unsafe Deserialization",
+          "anchor": "Fourth-Bug-Unsafe-Deserialization",
+          "level": "H2"
+        },
+        {
+          "text": "The Fix",
+          "anchor": "The-Fix",
+          "level": "H1"
+        },
+        {
+          "text": "Timeline",
+          "anchor": "Timeline",
+          "level": "H1"
+        }
+      ],
+      "article_links": [
+        "https://blog.orange.tw/posts/2017-07-how-i-chained-4-vulnerabilities-on/#Foreword",
+        "https://blog.orange.tw/posts/2017-07-how-i-chained-4-vulnerabilities-on/#Vulnerabilities",
+        "https://blog.orange.tw/posts/2017-07-how-i-chained-4-vulnerabilities-on/#First-Bug-Harmless-SSRF",
+        "https://blog.orange.tw/posts/2017-07-how-i-chained-4-vulnerabilities-on/#Second-Bug-SSRF-in-Internal-Graphite",
+        "https://blog.orange.tw/posts/2017-07-how-i-chained-4-vulnerabilities-on/#Third-Bug-CR-LF-Injection-in-Python",
+        "https://blog.orange.tw/posts/2017-07-how-i-chained-4-vulnerabilities-on/#Fourth-Bug-Unsafe-Deserialization",
+        "https://blog.orange.tw/posts/2017-07-how-i-chained-4-vulnerabilities-on/#The-Fix",
+        "https://blog.orange.tw/posts/2017-07-how-i-chained-4-vulnerabilities-on/#Timeline"
+      ]
+    },
+    {
+      "id": "O029",
+      "url": "https://blog.orange.tw/posts/2017-01-bug-bounty-github-enterprise-sql-injection/",
+      "index_title": "GitHub Enterprise SQL Injection",
+      "retrieved_at": "2026-09-30T09:03:45.127Z",
+      "http_status": 200,
+      "final_url": "https://blog.orange.tw/posts/2017-01-bug-bounty-github-enterprise-sql-injection/",
+      "response_html_bytes": 37972,
+      "response_html_sha256": "b5d4b71642e20199361cfc081cbddaf179fd2b45880590d170e07835ecc1c901",
+      "document_title": "GitHub Enterprise SQL Injection | Orange Tsai",
+      "article_title": "GitHub Enterprise SQL Injection",
+      "observed_sections": [
+        {
+          "text": "GitHub Enterprise SQL Injection",
+          "anchor": "",
+          "level": "H1"
+        },
+        {
+          "text": "Before",
+          "anchor": "Before",
+          "level": "H1"
+        },
+        {
+          "text": "Environment",
+          "anchor": "Environment",
+          "level": "H1"
+        },
+        {
+          "text": "Code Analysis",
+          "anchor": "Code-Analysis",
+          "level": "H1"
+        },
+        {
+          "text": "Vulnerability",
+          "anchor": "Vulnerability",
+          "level": "H1"
+        },
+        {
+          "text": "Timeline",
+          "anchor": "Timeline",
+          "level": "H1"
+        }
+      ],
+      "article_links": [
+        "https://blog.orange.tw/posts/2017-01-bug-bounty-github-enterprise-sql-injection/#Before",
+        "https://blog.orange.tw/posts/2017-01-bug-bounty-github-enterprise-sql-injection/#Environment",
+        "https://blog.orange.tw/posts/2017-01-bug-bounty-github-enterprise-sql-injection/#Code-Analysis",
+        "https://blog.orange.tw/posts/2017-01-bug-bounty-github-enterprise-sql-injection/#Vulnerability",
+        "https://blog.orange.tw/posts/2017-01-bug-bounty-github-enterprise-sql-injection/#Timeline"
+      ]
+    },
+    {
+      "id": "O030",
+      "url": "https://blog.orange.tw/posts/2016-12-java-web/",
+      "retrieved_at": "2026-09-30T11:14:22.902Z",
+      "prior_observation": {
+        "id": "O030",
+        "url": "https://blog.orange.tw/posts/2016-12-java-web/",
+        "retrieved_at": "2026-09-30T09:03:45.132Z",
+        "error": "TypeError: Failed to construct 'URL': Invalid URL"
+      },
+      "final_url": "https://blog.orange.tw/posts/2016-12-java-web/",
+      "http_status": 200,
+      "response_html_bytes": 15383,
+      "response_html_sha256": "93b9d8a1813ddc03b6bef9530960c104ff2fbb7f5e5242a5d0c05b56cd2b48d3",
+      "title": "[隨筆] Java Web 漏洞生態食物鏈 | Orange Tsai",
+      "retry_receipt": "quote-verification-browser-1.json"
+    },
+    {
+      "id": "O031",
+      "url": "https://blog.orange.tw/posts/2016-10-collection-of-ctf-web-challenges-i-made/",
+      "index_title": "Collection of CTF Web Challenges I made",
+      "retrieved_at": "2026-09-30T09:03:45.332Z",
+      "http_status": 200,
+      "final_url": "https://blog.orange.tw/posts/2016-10-collection-of-ctf-web-challenges-i-made/",
+      "response_html_bytes": 6730,
+      "response_html_sha256": "1062bc2f842e684c60b0c9ed19e375651bc2494dbc300b30388d38f28e34ea47",
+      "document_title": "Collection of CTF Web Challenges I made | Orange Tsai",
+      "article_title": "Collection of CTF Web Challenges I made",
+      "observed_sections": [
+        {
+          "text": "Collection of CTF Web Challenges I made",
+          "anchor": "",
+          "level": "H1"
+        }
+      ],
+      "article_links": []
+    },
+    {
+      "id": "O032",
+      "url": "https://blog.orange.tw/posts/2016-07-hitcon-2016-slides-bug-bounty-hunter/",
+      "index_title": "HITCON 2016 投影片 - Bug Bounty 獎金獵人甘苦談 那些年我回報過的漏洞",
+      "retrieved_at": "2026-09-30T09:03:45.334Z",
+      "http_status": 200,
+      "final_url": "https://blog.orange.tw/posts/2016-07-hitcon-2016-slides-bug-bounty-hunter/",
+      "response_html_bytes": 7770,
+      "response_html_sha256": "e08eec5fa5867ca8d610b58e891d44edc8fe42b2a531399d84df5f0e82c9f626",
+      "document_title": "HITCON 2016 投影片 - Bug Bounty 獎金獵人甘苦談 那些年我回報過的漏洞 | Orange Tsai",
+      "article_title": "HITCON 2016 投影片 - Bug Bounty 獎金獵人甘苦談 那些年我回報過的漏洞",
+      "observed_sections": [
+        {
+          "text": "HITCON 2016 投影片 - Bug Bounty 獎金獵人甘苦談 那些年我回報過的漏洞",
+          "anchor": "",
+          "level": "H1"
+        }
+      ],
+      "article_links": []
+    },
+    {
+      "id": "O033",
+      "url": "https://blog.orange.tw/posts/2016-04-bug-bounty-how-i-hacked-facebook-and-found-someones-backdoor-script/",
+      "index_title": "How I Hacked Facebook, and Found Someone's Backdoor Script",
+      "retrieved_at": "2026-09-30T09:03:45.436Z",
+      "http_status": 200,
+      "final_url": "https://blog.orange.tw/posts/2016-04-bug-bounty-how-i-hacked-facebook-and-found-someones-backdoor-script/",
+      "response_html_bytes": 7327,
+      "response_html_sha256": "fef12336d2367292e1aecb366c8be7908b66456545cc545b5ca580903086a68e",
+      "document_title": "How I Hacked Facebook, and Found Someone's Backdoor Script | Orange Tsai",
+      "article_title": "How I Hacked Facebook, and Found Someone's Backdoor Script",
+      "observed_sections": [
+        {
+          "text": "How I Hacked Facebook, and Found Someone's Backdoor Script",
+          "anchor": "",
+          "level": "H1"
+        }
+      ],
+      "article_links": []
+    },
+    {
+      "id": "O034",
+      "url": "https://blog.orange.tw/posts/2016-04-bug-bounty-uber-ubercom-remote-code_7/",
+      "index_title": "Uber 遠端代碼執行- Uber.com Remote Code Execution via Flask Jinja2 Template Injection",
+      "retrieved_at": "2026-09-30T09:03:45.437Z",
+      "http_status": 200,
+      "final_url": "https://blog.orange.tw/posts/2016-04-bug-bounty-uber-ubercom-remote-code_7/",
+      "response_html_bytes": 12583,
+      "response_html_sha256": "710b37a579d71820cb348d287438dea1734d58b681bff0c66819080499a15d00",
+      "document_title": "Uber 遠端代碼執行- Uber.com Remote Code Execution via Flask Jinja2 Template Injection | Orange Tsai",
+      "article_title": "Uber 遠端代碼執行- Uber.com Remote Code Execution via Flask Jinja2 Template Injection",
+      "observed_sections": [
+        {
+          "text": "Uber 遠端代碼執行- Uber.com Remote Code Execution via Flask Jinja2 Template Injection",
+          "anchor": "",
+          "level": "H1"
+        }
+      ],
+      "article_links": []
+    },
+    {
+      "id": "O035",
+      "url": "https://blog.orange.tw/posts/2016-01-hitcon-ctf-2015-quals-final/",
+      "index_title": "HITCON CTF 2015 Quals & Final 心得備份",
+      "retrieved_at": "2026-09-30T09:03:45.638Z",
+      "http_status": 200,
+      "final_url": "https://blog.orange.tw/posts/2016-01-hitcon-ctf-2015-quals-final/",
+      "response_html_bytes": 21561,
+      "response_html_sha256": "96e4a772f900b335c4f8bfdf4533d3c02b8d90fc2e484d43cd77a0d554e37604",
+      "document_title": "HITCON CTF 2015 Quals & Final 心得備份 | Orange Tsai",
+      "article_title": "HITCON CTF 2015 Quals & Final 心得備份",
+      "observed_sections": [
+        {
+          "text": "HITCON CTF 2015 Quals & Final 心得備份",
+          "anchor": "",
+          "level": "H1"
+        },
+        {
+          "text": "寫在 HITCON CTF 2015 Quals 之後",
+          "anchor": "寫在-HITCON-CTF-2015-Quals-之後",
+          "level": "H1"
+        },
+        {
+          "text": "1. 100 BabyFirst (33 隊解)",
+          "anchor": "1-100-BabyFirst-33-隊解",
+          "level": "H2"
+        },
+        {
+          "text": "2. 200 nanana (18 隊解)",
+          "anchor": "2-200-nanana-18-隊解",
+          "level": "H2"
+        },
+        {
+          "text": "3. 300 Giraffe’s Coffee (16 隊解)",
+          "anchor": "3-300-Giraffe’s-Coffee-16-隊解",
+          "level": "H2"
+        },
+        {
+          "text": "4. 400 lalala (2 隊解)",
+          "anchor": "4-400-lalala-2-隊解",
+          "level": "H2"
+        },
+        {
+          "text": "5. 500 Use-After-FLEE (只有 PPP 解出)",
+          "anchor": "5-500-Use-After-FLEE-只有-PPP-解出",
+          "level": "H2"
+        }
+      ],
+      "article_links": [
+        "https://blog.orange.tw/posts/2016-01-hitcon-ctf-2015-quals-final/#%E5%AF%AB%E5%9C%A8-HITCON-CTF-2015-Quals-%E4%B9%8B%E5%BE%8C",
+        "https://blog.orange.tw/posts/2016-01-hitcon-ctf-2015-quals-final/#1-100-BabyFirst-33-%E9%9A%8A%E8%A7%A3",
+        "https://blog.orange.tw/posts/2016-01-hitcon-ctf-2015-quals-final/#2-200-nanana-18-%E9%9A%8A%E8%A7%A3",
+        "https://blog.orange.tw/posts/2016-01-hitcon-ctf-2015-quals-final/#3-300-Giraffe%E2%80%99s-Coffee-16-%E9%9A%8A%E8%A7%A3",
+        "https://blog.orange.tw/posts/2016-01-hitcon-ctf-2015-quals-final/#4-400-lalala-2-%E9%9A%8A%E8%A7%A3",
+        "https://blog.orange.tw/posts/2016-01-hitcon-ctf-2015-quals-final/#5-500-Use-After-FLEE-%E5%8F%AA%E6%9C%89-PPP-%E8%A7%A3%E5%87%BA"
+      ]
+    },
+    {
+      "id": "O036",
+      "url": "https://blog.orange.tw/posts/2015-09-google-facebook-bug-bounty-get/",
+      "index_title": "Google & Facebook Bug Bounty GET",
+      "retrieved_at": "2026-09-30T09:03:45.639Z",
+      "http_status": 200,
+      "final_url": "https://blog.orange.tw/posts/2015-09-google-facebook-bug-bounty-get/",
+      "response_html_bytes": 9109,
+      "response_html_sha256": "b7d40c6de8e2ac83a2895a4295c82a24b7c26f71856a68a0261fa02933d18e34",
+      "document_title": "Google & Facebook Bug Bounty GET | Orange Tsai",
+      "article_title": "Google & Facebook Bug Bounty GET",
+      "observed_sections": [
+        {
+          "text": "Google & Facebook Bug Bounty GET",
+          "anchor": "",
+          "level": "H1"
+        }
+      ],
+      "article_links": []
+    },
+    {
+      "id": "O037",
+      "url": "https://blog.orange.tw/posts/2015-09-ais3-final-ctf-web-writeup-race/",
+      "index_title": "AIS3 Final CTF Web Writeup (Race Condition & one-byte off SQL Injection)",
+      "retrieved_at": "2026-09-30T09:03:45.742Z",
+      "http_status": 200,
+      "final_url": "https://blog.orange.tw/posts/2015-09-ais3-final-ctf-web-writeup-race/",
+      "response_html_bytes": 11304,
+      "response_html_sha256": "6df3949ebb9344ace340ad8c9fefeb2f9ce6536077453254e85bda48afd37d10",
+      "document_title": "AIS3 Final CTF Web Writeup (Race Condition & one-byte off SQL Injection) | Orange Tsai",
+      "article_title": "AIS3 Final CTF Web Writeup (Race Condition & one-byte off SQL Injection)",
+      "observed_sections": [
+        {
+          "text": "AIS3 Final CTF Web Writeup (Race Condition & one-byte off SQL Injection)",
+          "anchor": "",
+          "level": "H1"
+        },
+        {
+          "text": "漏洞一 Race Condition",
+          "anchor": "漏洞一-Race-Condition",
+          "level": "H2"
+        },
+        {
+          "text": "漏洞二 one-byte off SQL Injection",
+          "anchor": "漏洞二-one-byte-off-SQL-Injection",
+          "level": "H2"
+        },
+        {
+          "text": "漏洞三 Local File Inclusion with PHP session",
+          "anchor": "漏洞三-Local-File-Inclusion-with-PHP-session",
+          "level": "H2"
+        }
+      ],
+      "article_links": [
+        "https://blog.orange.tw/posts/2015-09-ais3-final-ctf-web-writeup-race/#%E6%BC%8F%E6%B4%9E%E4%B8%80-Race-Condition",
+        "https://blog.orange.tw/posts/2015-09-ais3-final-ctf-web-writeup-race/#%E6%BC%8F%E6%B4%9E%E4%BA%8C-one-byte-off-SQL-Injection",
+        "https://blog.orange.tw/posts/2015-09-ais3-final-ctf-web-writeup-race/#%E6%BC%8F%E6%B4%9E%E4%B8%89-Local-File-Inclusion-with-PHP-session"
+      ]
+    },
+    {
+      "id": "O038",
+      "url": "https://blog.orange.tw/posts/2015-08-remote-code-execution-on-gdb-remote/",
+      "index_title": "Remote Code Execution through GDB Remote Debugging Protocol",
+      "retrieved_at": "2026-09-30T09:03:45.743Z",
+      "http_status": 200,
+      "final_url": "https://blog.orange.tw/posts/2015-08-remote-code-execution-on-gdb-remote/",
+      "response_html_bytes": 19787,
+      "response_html_sha256": "932613c4318aa9c9541da4c9fd82ddf707de9178a98d71ac1aa46356eb8139dd",
+      "document_title": "Remote Code Execution through GDB Remote Debugging Protocol | Orange Tsai",
+      "article_title": "Remote Code Execution through GDB Remote Debugging Protocol",
+      "observed_sections": [
+        {
+          "text": "Remote Code Execution through GDB Remote Debugging Protocol",
+          "anchor": "",
+          "level": "H1"
+        }
+      ],
+      "article_links": []
+    },
+    {
+      "id": "O039",
+      "url": "https://blog.orange.tw/posts/2015-08-hitcon-2015-community-web-hacking/",
+      "index_title": "HITCON 2015 Community 演講投影片 - 那些 Web Hacking 中的奇技淫巧",
+      "retrieved_at": "2026-09-30T09:03:45.946Z",
+      "http_status": 200,
+      "final_url": "https://blog.orange.tw/posts/2015-08-hitcon-2015-community-web-hacking/",
+      "response_html_bytes": 6779,
+      "response_html_sha256": "1e2d7c20c0616bee4338577e642dff45761eafb9a55f820e84e4d3327f4d7ba4",
+      "document_title": "HITCON 2015 Community 演講投影片 - 那些 Web Hacking 中的奇技淫巧 | Orange Tsai",
+      "article_title": "HITCON 2015 Community 演講投影片 - 那些 Web Hacking 中的奇技淫巧",
+      "observed_sections": [
+        {
+          "text": "HITCON 2015 Community 演講投影片 - 那些 Web Hacking 中的奇技淫巧",
+          "anchor": "",
+          "level": "H1"
+        }
+      ],
+      "article_links": []
+    },
+    {
+      "id": "O040",
+      "url": "https://blog.orange.tw/posts/2015-07-2015-hitcon-ctf-web-ctf/",
+      "index_title": "2015 烏雲峰會演講投影片 「關於 HITCON CTF 的那些事 之 Web 狗如何在險惡的 CTF 世界中存活？」",
+      "retrieved_at": "2026-09-30T09:03:45.948Z",
+      "http_status": 200,
+      "final_url": "https://blog.orange.tw/posts/2015-07-2015-hitcon-ctf-web-ctf/",
+      "response_html_bytes": 8224,
+      "response_html_sha256": "b9cffc282ed80e6275fbe2b40a0642fb5dfcd1ae2770e99c048320ecfef38e73",
+      "document_title": "2015 烏雲峰會演講投影片 「關於 HITCON CTF 的那些事 之 Web 狗如何在險惡的 CTF 世界中存活？」 | Orange Tsai",
+      "article_title": "2015 烏雲峰會演講投影片 「關於 HITCON CTF 的那些事 之 Web 狗如何在險惡的 CTF 世界中存活？」",
+      "observed_sections": [
+        {
+          "text": "2015 烏雲峰會演講投影片 「關於 HITCON CTF 的那些事 之 Web 狗如何在險惡的 CTF 世界中存活？」",
+          "anchor": "",
+          "level": "H1"
+        }
+      ],
+      "article_links": []
+    },
+    {
+      "id": "O041",
+      "url": "https://blog.orange.tw/posts/2015-05-0ctf-final-0cms/",
+      "index_title": "講個秘訣 - 0ctf Final 0cms",
+      "retrieved_at": "2026-09-30T09:03:46.151Z",
+      "http_status": 200,
+      "final_url": "https://blog.orange.tw/posts/2015-05-0ctf-final-0cms/",
+      "response_html_bytes": 10277,
+      "response_html_sha256": "279654d9563dfddb9370f71229929d38ea7cb8792e6bc0deb684c46e29c17157",
+      "document_title": "講個秘訣 - 0ctf Final 0cms | Orange Tsai",
+      "article_title": "講個秘訣 - 0ctf Final 0cms",
+      "observed_sections": [
+        {
+          "text": "講個秘訣 - 0ctf Final 0cms",
+          "anchor": "",
+          "level": "H1"
+        }
+      ],
+      "article_links": []
+    },
+    {
+      "id": "O042",
+      "url": "https://blog.orange.tw/posts/2015-04-web/",
+      "index_title": "Web 狗沒人權 TAT?",
+      "retrieved_at": "2026-09-30T09:03:46.153Z",
+      "http_status": 200,
+      "final_url": "https://blog.orange.tw/posts/2015-04-web/",
+      "response_html_bytes": 6730,
+      "response_html_sha256": "1d9f0b56627922f45dfc1006b6474afeb475fd52403b28bff4a0dd2366e466bd",
+      "document_title": "Web 狗沒人權 TAT? | Orange Tsai",
+      "article_title": "Web 狗沒人權 TAT?",
+      "observed_sections": [
+        {
+          "text": "Web 狗沒人權 TAT?",
+          "anchor": "",
+          "level": "H1"
+        }
+      ],
+      "article_links": []
+    },
+    {
+      "id": "O043",
+      "url": "https://blog.orange.tw/posts/2015-03-boston-key-parcty-ctf-2015-harvard/",
+      "index_title": "Boston Key Party CTF 2015 [Harvard Square] [Andrew & Broadway] Write-ups",
+      "retrieved_at": "2026-09-30T09:03:46.258Z",
+      "http_status": 200,
+      "final_url": "https://blog.orange.tw/posts/2015-03-boston-key-parcty-ctf-2015-harvard/",
+      "response_html_bytes": 14327,
+      "response_html_sha256": "cb09b63da9c6b354f547095230a758a1f280a1eedd6597a9af9e2d0ca4f6a6ed",
+      "document_title": "Boston Key Party CTF 2015 [Harvard Square] [Andrew & Broadway] Write-ups | Orange Tsai",
+      "article_title": "Boston Key Party CTF 2015 [Harvard Square] [Andrew & Broadway] Write-ups",
+      "observed_sections": [
+        {
+          "text": "Boston Key Party CTF 2015 [Harvard Square] [Andrew & Broadway] Write-ups",
+          "anchor": "",
+          "level": "H1"
+        },
+        {
+          "text": "Harvard Square (Pwn 275)",
+          "anchor": "Harvard-Square-Pwn-275",
+          "level": "H1"
+        },
+        {
+          "text": "Andrew & Broadway (Pwn 275 & Pwn 275)",
+          "anchor": "Andrew-Broadway-Pwn-275-Pwn-275",
+          "level": "H1"
+        }
+      ],
+      "article_links": [
+        "https://blog.orange.tw/posts/2015-03-boston-key-parcty-ctf-2015-harvard/#Harvard-Square-Pwn-275",
+        "https://blog.orange.tw/posts/2015-03-boston-key-parcty-ctf-2015-harvard/#Andrew-Broadway-Pwn-275-Pwn-275"
+      ]
+    },
+    {
+      "id": "O044",
+      "url": "https://blog.orange.tw/posts/2014-12-103/",
+      "index_title": "103 年資安技能金盾獎",
+      "retrieved_at": "2026-09-30T09:03:46.259Z",
+      "http_status": 200,
+      "final_url": "https://blog.orange.tw/posts/2014-12-103/",
+      "response_html_bytes": 6404,
+      "response_html_sha256": "c8b0d50a2d64dee55649ee297b521b97060933ff6d832a730a739e58c874dbc7",
+      "document_title": "103 年資安技能金盾獎 | Orange Tsai",
+      "article_title": "103 年資安技能金盾獎",
+      "observed_sections": [
+        {
+          "text": "103 年資安技能金盾獎",
+          "anchor": "",
+          "level": "H1"
+        }
+      ],
+      "article_links": []
+    },
+    {
+      "id": "O045",
+      "url": "https://blog.orange.tw/posts/2014-10-hack-in-box-2014-ctf-writeup-keygenme/",
+      "index_title": "Hack in the Box 2014 CTF Writeup - KeygenMe with RSA",
+      "retrieved_at": "2026-09-30T09:03:46.457Z",
+      "http_status": 200,
+      "final_url": "https://blog.orange.tw/posts/2014-10-hack-in-box-2014-ctf-writeup-keygenme/",
+      "response_html_bytes": 14558,
+      "response_html_sha256": "15ae897e1fc8803a81f10e35718c218178c4f80c7556800e66e2da5542f540be",
+      "document_title": "Hack in the Box 2014 CTF Writeup - KeygenMe with RSA | Orange Tsai",
+      "article_title": "Hack in the Box 2014 CTF Writeup - KeygenMe with RSA",
+      "observed_sections": [
+        {
+          "text": "Hack in the Box 2014 CTF Writeup - KeygenMe with RSA",
+          "anchor": "",
+          "level": "H1"
+        }
+      ],
+      "article_links": []
+    },
+    {
+      "id": "O046",
+      "url": "https://blog.orange.tw/posts/2014-08-hitcon-win-2nd-in-defcon-22-ctf-final/",
+      "index_title": "HITCON Won the 2nd in DEFCON 22 CTF Final",
+      "retrieved_at": "2026-09-30T09:03:46.459Z",
+      "http_status": 200,
+      "final_url": "https://blog.orange.tw/posts/2014-08-hitcon-win-2nd-in-defcon-22-ctf-final/",
+      "response_html_bytes": 23486,
+      "response_html_sha256": "7f343198417a001126068a8894912c08d3ced9fe81023bbbf1ce85146101fdda",
+      "document_title": "HITCON Won the 2nd in DEFCON 22 CTF Final | Orange Tsai",
+      "article_title": "HITCON Won the 2nd in DEFCON 22 CTF Final",
+      "observed_sections": [
+        {
+          "text": "HITCON Won the 2nd in DEFCON 22 CTF Final",
+          "anchor": "",
+          "level": "H1"
+        },
+        {
+          "text": "百度 BCTF",
+          "anchor": "百度-BCTF",
+          "level": "H1"
+        },
+        {
+          "text": "SECUINSIDE CTF FINAL",
+          "anchor": "SECUINSIDE-CTF-FINAL",
+          "level": "H1"
+        },
+        {
+          "text": "DEFCON CTF FINAL",
+          "anchor": "DEFCON-CTF-FINAL",
+          "level": "H1"
+        },
+        {
+          "text": "1. HITCON 隊伍為全場三天內第一個取得分數的隊伍，主辦單位為此顯示 First Blood 於螢幕上",
+          "anchor": "1-HITCON-隊伍為全場三天內第一個取得分數的隊伍，主辦單位為此顯示-First-Blood-於螢幕上",
+          "level": "H2"
+        },
+        {
+          "text": "2. 結束時被冠軍 PPP 過來除了詢問 Eliza 的 exploit 如何撰寫外，使用的後門形式還被稱讚「Your crontab is so cute.」",
+          "anchor": "2-結束時被冠軍-PPP-過來除了詢問-Eliza-的-exploit-如何撰寫外，使用的後門形式還被稱讚「Your-crontab-is-so-cute-」",
+          "level": "H2"
+        },
+        {
+          "text": "3. 從 Youtube 可以看出在這段時間內，我們 HITCON 是唯一可以吃到 PPP 分數的一隊",
+          "anchor": "3-從-Youtube-可以看出在這段時間內，我們-HITCON-是唯一可以吃到-PPP-分數的一隊",
+          "level": "H2"
+        },
+        {
+          "text": "最後是所有隊友的合作無間!",
+          "anchor": "最後是所有隊友的合作無間",
+          "level": "H2"
+        }
+      ],
+      "article_links": [
+        "https://blog.orange.tw/posts/2014-08-hitcon-win-2nd-in-defcon-22-ctf-final/#%E7%99%BE%E5%BA%A6-BCTF",
+        "https://blog.orange.tw/posts/2014-08-hitcon-win-2nd-in-defcon-22-ctf-final/#SECUINSIDE-CTF-FINAL",
+        "https://blog.orange.tw/posts/2014-08-hitcon-win-2nd-in-defcon-22-ctf-final/#DEFCON-CTF-FINAL",
+        "https://blog.orange.tw/posts/2014-08-hitcon-win-2nd-in-defcon-22-ctf-final/#1-HITCON-%E9%9A%8A%E4%BC%8D%E7%82%BA%E5%85%A8%E5%A0%B4%E4%B8%89%E5%A4%A9%E5%85%A7%E7%AC%AC%E4%B8%80%E5%80%8B%E5%8F%96%E5%BE%97%E5%88%86%E6%95%B8%E7%9A%84%E9%9A%8A%E4%BC%8D%EF%BC%8C%E4%B8%BB%E8%BE%A6%E5%96%AE%E4%BD%8D%E7%82%BA%E6%AD%A4%E9%A1%AF%E7%A4%BA-First-Blood-%E6%96%BC%E8%9E%A2%E5%B9%95%E4%B8%8A",
+        "https://blog.orange.tw/posts/2014-08-hitcon-win-2nd-in-defcon-22-ctf-final/#2-%E7%B5%90%E6%9D%9F%E6%99%82%E8%A2%AB%E5%86%A0%E8%BB%8D-PPP-%E9%81%8E%E4%BE%86%E9%99%A4%E4%BA%86%E8%A9%A2%E5%95%8F-Eliza-%E7%9A%84-exploit-%E5%A6%82%E4%BD%95%E6%92%B0%E5%AF%AB%E5%A4%96%EF%BC%8C%E4%BD%BF%E7%94%A8%E7%9A%84%E5%BE%8C%E9%96%80%E5%BD%A2%E5%BC%8F%E9%82%84%E8%A2%AB%E7%A8%B1%E8%AE%9A%E3%80%8CYour-crontab-is-so-cute-%E3%80%8D",
+        "https://blog.orange.tw/posts/2014-08-hitcon-win-2nd-in-defcon-22-ctf-final/#3-%E5%BE%9E-Youtube-%E5%8F%AF%E4%BB%A5%E7%9C%8B%E5%87%BA%E5%9C%A8%E9%80%99%E6%AE%B5%E6%99%82%E9%96%93%E5%85%A7%EF%BC%8C%E6%88%91%E5%80%91-HITCON-%E6%98%AF%E5%94%AF%E4%B8%80%E5%8F%AF%E4%BB%A5%E5%90%83%E5%88%B0-PPP-%E5%88%86%E6%95%B8%E7%9A%84%E4%B8%80%E9%9A%8A",
+        "https://blog.orange.tw/posts/2014-08-hitcon-win-2nd-in-defcon-22-ctf-final/#%E6%9C%80%E5%BE%8C%E6%98%AF%E6%89%80%E6%9C%89%E9%9A%8A%E5%8F%8B%E7%9A%84%E5%90%88%E4%BD%9C%E7%84%A1%E9%96%93"
+      ]
+    },
+    {
+      "id": "O047",
+      "url": "https://blog.orange.tw/posts/2014-05-defcon-ctf-quals-2014-nonameyet-write-up/",
+      "index_title": "Defcon CTF Quals 2014 - Nonameyet write up",
+      "retrieved_at": "2026-09-30T09:03:46.560Z",
+      "http_status": 200,
+      "final_url": "https://blog.orange.tw/posts/2014-05-defcon-ctf-quals-2014-nonameyet-write-up/",
+      "response_html_bytes": 13676,
+      "response_html_sha256": "8718925ce8c991a0edfef1129ab3c6a9d8843461b2f7742d5fdf36c463a51f9a",
+      "document_title": "Defcon CTF Quals 2014 - Nonameyet write up | Orange Tsai",
+      "article_title": "Defcon CTF Quals 2014 - Nonameyet write up",
+      "observed_sections": [
+        {
+          "text": "Defcon CTF Quals 2014 - Nonameyet write up",
+          "anchor": "",
+          "level": "H1"
+        }
+      ],
+      "article_links": []
+    },
+    {
+      "id": "O048",
+      "url": "https://blog.orange.tw/posts/2014-03-pwned-ctf-leaderboard-git/",
+      "index_title": "Pw3ed CTF LeaderBoard - Git Misconfiguration & SQL Injection",
+      "retrieved_at": "2026-09-30T09:03:46.570Z",
+      "http_status": 200,
+      "final_url": "https://blog.orange.tw/posts/2014-03-pwned-ctf-leaderboard-git/",
+      "response_html_bytes": 12957,
+      "response_html_sha256": "8eac7820a62194ec247f519219a1c411e270869725002658b3c32fe324833544",
+      "document_title": "Pw3ed CTF LeaderBoard - Git Misconfiguration & SQL Injection | Orange Tsai",
+      "article_title": "Pw3ed CTF LeaderBoard - Git Misconfiguration & SQL Injection",
+      "observed_sections": [
+        {
+          "text": "Pw3ed CTF LeaderBoard - Git Misconfiguration & SQL Injection",
+          "anchor": "",
+          "level": "H1"
+        }
+      ],
+      "article_links": []
+    },
+    {
+      "id": "O049",
+      "url": "https://blog.orange.tw/posts/2014-03-volgactf-2014-web-400-write-up/",
+      "index_title": "Volga CTF 2014 Web 400 write up",
+      "retrieved_at": "2026-09-30T09:03:46.766Z",
+      "http_status": 200,
+      "final_url": "https://blog.orange.tw/posts/2014-03-volgactf-2014-web-400-write-up/",
+      "response_html_bytes": 14886,
+      "response_html_sha256": "eceece9cceb0e8663fd39c8380158ccd6736e799395a6b239dca24a7a3bd8524",
+      "document_title": "Volga CTF 2014 Web 400 write up | Orange Tsai",
+      "article_title": "Volga CTF 2014 Web 400 write up",
+      "observed_sections": [
+        {
+          "text": "Volga CTF 2014 Web 400 write up",
+          "anchor": "",
+          "level": "H1"
+        }
+      ],
+      "article_links": []
+    },
+    {
+      "id": "O050",
+      "url": "https://blog.orange.tw/posts/2014-02-olympic-ctf-2014-curling-200-write-up/",
+      "index_title": "Olympic CTF 2014 CURLing 200 write up",
+      "retrieved_at": "2026-09-30T09:03:46.768Z",
+      "http_status": 200,
+      "final_url": "https://blog.orange.tw/posts/2014-02-olympic-ctf-2014-curling-200-write-up/",
+      "response_html_bytes": 13148,
+      "response_html_sha256": "2404a72d674b11dd111b581197a746d91333bbdbf646e6f1a69c925078bcc69e",
+      "document_title": "Olympic CTF 2014 CURLing 200 write up | Orange Tsai",
+      "article_title": "Olympic CTF 2014 CURLing 200 write up",
+      "observed_sections": [
+        {
+          "text": "Olympic CTF 2014 CURLing 200 write up",
+          "anchor": "",
+          "level": "H1"
+        }
+      ],
+      "article_links": []
+    },
+    {
+      "id": "O051",
+      "url": "https://blog.orange.tw/posts/2014-02-olympic-ctf-2014-curling-400-write-up/",
+      "index_title": "Olympic CTF 2014 CURLing 400 write up",
+      "retrieved_at": "2026-09-30T09:03:46.868Z",
+      "http_status": 200,
+      "final_url": "https://blog.orange.tw/posts/2014-02-olympic-ctf-2014-curling-400-write-up/",
+      "response_html_bytes": 15309,
+      "response_html_sha256": "ffd1989989aba93fc091d47df9c0bfb7e724e89102ab09de7320730b185a96c7",
+      "document_title": "Olympic CTF 2014 CURLing 400 write up | Orange Tsai",
+      "article_title": "Olympic CTF 2014 CURLing 400 write up",
+      "observed_sections": [
+        {
+          "text": "Olympic CTF 2014 CURLing 400 write up",
+          "anchor": "",
+          "level": "H1"
+        }
+      ],
+      "article_links": []
+    },
+    {
+      "id": "O052",
+      "url": "https://blog.orange.tw/posts/2013-12-md5-for-fun-fun-with-md5-hashes/",
+      "index_title": "MD5 for Fun - Fun with MD5 hashes",
+      "retrieved_at": "2026-09-30T09:03:46.870Z",
+      "http_status": 200,
+      "final_url": "https://blog.orange.tw/posts/2013-12-md5-for-fun-fun-with-md5-hashes/",
+      "response_html_bytes": 6934,
+      "response_html_sha256": "e255ff0bcdb4d38985e64b09a38ff970deadbb93459a6c08cc7eeda39f4186e0",
+      "document_title": "MD5 for Fun - Fun with MD5 hashes | Orange Tsai",
+      "article_title": "MD5 for Fun - Fun with MD5 hashes",
+      "observed_sections": [
+        {
+          "text": "MD5 for Fun - Fun with MD5 hashes",
+          "anchor": "",
+          "level": "H1"
+        }
+      ],
+      "article_links": []
+    },
+    {
+      "id": "O053",
+      "url": "https://blog.orange.tw/posts/2013-11-exptw/",
+      "index_title": "EXP.tw - 文章投稿、駭客資訊、資安文章",
+      "retrieved_at": "2026-09-30T09:03:47.073Z",
+      "http_status": 200,
+      "final_url": "https://blog.orange.tw/posts/2013-11-exptw/",
+      "response_html_bytes": 8385,
+      "response_html_sha256": "545b812b26ff92c10b030a70fb62d9abbf38592f66c05e284e9f2abc2fa47777",
+      "document_title": "EXP.tw - 文章投稿、駭客資訊、資安文章 | Orange Tsai",
+      "article_title": "EXP.tw - 文章投稿、駭客資訊、資安文章",
+      "observed_sections": [
+        {
+          "text": "EXP.tw - 文章投稿、駭客資訊、資安文章",
+          "anchor": "",
+          "level": "H1"
+        }
+      ],
+      "article_links": []
+    },
+    {
+      "id": "O054",
+      "url": "https://blog.orange.tw/posts/2013-11-yahoo-bug-bounty-part-2-loginyahoocom/",
+      "index_title": "Yahoo Bug Bounty Part 2 - *.login.yahoo.com Remote Code Execution 遠端代碼執行漏洞",
+      "retrieved_at": "2026-09-30T09:03:47.074Z",
+      "http_status": 200,
+      "final_url": "https://blog.orange.tw/posts/2013-11-yahoo-bug-bounty-part-2-loginyahoocom/",
+      "response_html_bytes": 14906,
+      "response_html_sha256": "63bf638150b48e9ce39145b854f430fa97b7e97cb99b1fdacaa0d165ec7a473a",
+      "document_title": "Yahoo Bug Bounty Part 2 - *.login.yahoo.com Remote Code Execution 遠端代碼執行漏洞 | Orange Tsai",
+      "article_title": "Yahoo Bug Bounty Part 2 - *.login.yahoo.com Remote Code Execution 遠端代碼執行漏洞",
+      "observed_sections": [
+        {
+          "text": "Yahoo Bug Bounty Part 2 - *.login.yahoo.com Remote Code Execution 遠端代碼執行漏洞",
+          "anchor": "",
+          "level": "H1"
+        }
+      ],
+      "article_links": []
+    },
+    {
+      "id": "O055",
+      "url": "https://blog.orange.tw/posts/2013-11-yahoo-bug-bounty-part-1-yahoo-blog/",
+      "index_title": "Yahoo Bug Bounty Part 1 - 台灣 Yahoo Blog 任意檔案下載漏洞",
+      "retrieved_at": "2026-09-30T09:03:47.176Z",
+      "http_status": 200,
+      "final_url": "https://blog.orange.tw/posts/2013-11-yahoo-bug-bounty-part-1-yahoo-blog/",
+      "response_html_bytes": 16060,
+      "response_html_sha256": "7ea361ebd411be99beca0e3014d510f909d5f4265c7a634b527008af0eaee629",
+      "document_title": "Yahoo Bug Bounty Part 1 - 台灣 Yahoo Blog 任意檔案下載漏洞 | Orange Tsai",
+      "article_title": "Yahoo Bug Bounty Part 1 - 台灣 Yahoo Blog 任意檔案下載漏洞",
+      "observed_sections": [
+        {
+          "text": "Yahoo Bug Bounty Part 1 - 台灣 Yahoo Blog 任意檔案下載漏洞",
+          "anchor": "",
+          "level": "H1"
+        },
+        {
+          "text": "正文開始",
+          "anchor": "正文開始",
+          "level": "H1"
+        }
+      ],
+      "article_links": [
+        "https://blog.orange.tw/posts/2013-11-yahoo-bug-bounty-part-1-yahoo-blog/#%E6%AD%A3%E6%96%87%E9%96%8B%E5%A7%8B"
+      ]
+    },
+    {
+      "id": "O056",
+      "url": "https://blog.orange.tw/posts/2013-10-phpconf-2013/",
+      "index_title": "PHPConf 2013 投影片 - 矛盾大對決！",
+      "retrieved_at": "2026-09-30T09:03:47.177Z",
+      "http_status": 200,
+      "final_url": "https://blog.orange.tw/posts/2013-10-phpconf-2013/",
+      "response_html_bytes": 6987,
+      "response_html_sha256": "0127ede242f8a54f0886e23ada5a9e33a9f803bbbf9509c3a0ee9aa83804b1a3",
+      "document_title": "PHPConf 2013 投影片 - 矛盾大對決！ | Orange Tsai",
+      "article_title": "PHPConf 2013 投影片 - 矛盾大對決！",
+      "observed_sections": [
+        {
+          "text": "PHPConf 2013 投影片 - 矛盾大對決！",
+          "anchor": "",
+          "level": "H1"
+        },
+        {
+          "text": "「能入侵任何網站的駭客 vs. 絕對不會被入侵的網站」",
+          "anchor": "「能入侵任何網站的駭客-vs-絕對不會被入侵的網站」",
+          "level": "H2"
+        }
+      ],
+      "article_links": [
+        "https://blog.orange.tw/posts/2013-10-phpconf-2013/#%E3%80%8C%E8%83%BD%E5%85%A5%E4%BE%B5%E4%BB%BB%E4%BD%95%E7%B6%B2%E7%AB%99%E7%9A%84%E9%A7%AD%E5%AE%A2-vs-%E7%B5%95%E5%B0%8D%E4%B8%8D%E6%9C%83%E8%A2%AB%E5%85%A5%E4%BE%B5%E7%9A%84%E7%B6%B2%E7%AB%99%E3%80%8D"
+      ]
+    },
+    {
+      "id": "O057",
+      "url": "https://blog.orange.tw/posts/2013-09-blog-post/",
+      "index_title": "這不是金盾獎Ｔ＿Ｔ",
+      "retrieved_at": "2026-09-30T09:03:47.381Z",
+      "http_status": 200,
+      "final_url": "https://blog.orange.tw/posts/2013-09-blog-post/",
+      "response_html_bytes": 7895,
+      "response_html_sha256": "914a1e0092b961dde9b7cbc77bc8926dd87a1ce1b84258dd0ca319f06ec5dfd9",
+      "document_title": "這不是金盾獎Ｔ＿Ｔ | Orange Tsai",
+      "article_title": "這不是金盾獎Ｔ＿Ｔ",
+      "observed_sections": [
+        {
+          "text": "這不是金盾獎Ｔ＿Ｔ",
+          "anchor": "",
+          "level": "H1"
+        }
+      ],
+      "article_links": []
+    },
+    {
+      "id": "O058",
+      "url": "https://blog.orange.tw/posts/2013-07-hitcon-2013-wargame-pwn3d-500/",
+      "index_title": "HITCON 2013 Wargame - Pwn3d 500 詳解",
+      "retrieved_at": "2026-09-30T09:03:47.382Z",
+      "http_status": 200,
+      "final_url": "https://blog.orange.tw/posts/2013-07-hitcon-2013-wargame-pwn3d-500/",
+      "response_html_bytes": 7152,
+      "response_html_sha256": "779b71768a850274782ddcfb33dcc38b4cc0261435eb0c5968d3da30acef1056",
+      "document_title": "HITCON 2013 Wargame - Pwn3d 500 詳解 | Orange Tsai",
+      "article_title": "HITCON 2013 Wargame - Pwn3d 500 詳解",
+      "observed_sections": [
+        {
+          "text": "HITCON 2013 Wargame - Pwn3d 500 詳解",
+          "anchor": "",
+          "level": "H1"
+        }
+      ],
+      "article_links": []
+    },
+    {
+      "id": "O059",
+      "url": "https://blog.orange.tw/posts/2013-07-hitcon-2013-wargame-web-500/",
+      "index_title": "HITCON 2013 Wargame - Web 500 詳解",
+      "retrieved_at": "2026-09-30T09:03:47.486Z",
+      "http_status": 200,
+      "final_url": "https://blog.orange.tw/posts/2013-07-hitcon-2013-wargame-web-500/",
+      "response_html_bytes": 15968,
+      "response_html_sha256": "3aec303a7d7c6360d304f4ca8df78ff8dbda86481cee730f97f4fa6cc60cf8db",
+      "document_title": "HITCON 2013 Wargame - Web 500 詳解 | Orange Tsai",
+      "article_title": "HITCON 2013 Wargame - Web 500 詳解",
+      "observed_sections": [
+        {
+          "text": "HITCON 2013 Wargame - Web 500 詳解",
+          "anchor": "",
+          "level": "H1"
+        }
+      ],
+      "article_links": []
+    },
+    {
+      "id": "O060",
+      "url": "https://blog.orange.tw/posts/2013-07-0-day-0-day-easy-talk-happy-fuzzing/",
+      "index_title": "0-Day 輕鬆談 (0-Day Easy Talk) - Happy Fuzzing Internet Explorer",
+      "retrieved_at": "2026-09-30T09:03:47.487Z",
+      "http_status": 200,
+      "final_url": "https://blog.orange.tw/posts/2013-07-0-day-0-day-easy-talk-happy-fuzzing/",
+      "response_html_bytes": 7043,
+      "response_html_sha256": "8f21b48366fefebbe8631d2acaacfdb94eda19583154ef28fca8e3130a9bdb14",
+      "document_title": "0-Day 輕鬆談 (0-Day Easy Talk) - Happy Fuzzing Internet Explorer | Orange Tsai",
+      "article_title": "0-Day 輕鬆談 (0-Day Easy Talk) - Happy Fuzzing Internet Explorer",
+      "observed_sections": [
+        {
+          "text": "0-Day 輕鬆談 (0-Day Easy Talk) - Happy Fuzzing Internet Explorer",
+          "anchor": "",
+          "level": "H1"
+        }
+      ],
+      "article_links": []
+    },
+    {
+      "id": "O061",
+      "url": "https://blog.orange.tw/posts/2013-05-pycon2013-slide-django/",
+      "index_title": "Pycon2013 Slide - 駭客看 Django",
+      "retrieved_at": "2026-09-30T09:03:47.686Z",
+      "http_status": 200,
+      "final_url": "https://blog.orange.tw/posts/2013-05-pycon2013-slide-django/",
+      "response_html_bytes": 6153,
+      "response_html_sha256": "50ae7871e0b6abb9e6ab5c1a17c46f79a12e36a50193aceb9095f9e58d1fdb75",
+      "document_title": "Pycon2013 Slide - 駭客看 Django | Orange Tsai",
+      "article_title": "Pycon2013 Slide - 駭客看 Django",
+      "observed_sections": [
+        {
+          "text": "Pycon2013 Slide - 駭客看 Django",
+          "anchor": "",
+          "level": "H1"
+        }
+      ],
+      "article_links": []
+    },
+    {
+      "id": "O062",
+      "url": "https://blog.orange.tw/posts/2013-02-cve-2013-0305-django-credit-get/",
+      "index_title": "CVE-2013-0305 Django Credit Get",
+      "retrieved_at": "2026-09-30T09:03:47.687Z",
+      "http_status": 200,
+      "final_url": "https://blog.orange.tw/posts/2013-02-cve-2013-0305-django-credit-get/",
+      "response_html_bytes": 7312,
+      "response_html_sha256": "77efa6fefad6ad2ed2b3b48c04e2f154f555fd799f24f1ffb35642aa63589274",
+      "document_title": "CVE-2013-0305 Django Credit Get | Orange Tsai",
+      "article_title": "CVE-2013-0305 Django Credit Get",
+      "observed_sections": [
+        {
+          "text": "CVE-2013-0305 Django Credit Get",
+          "anchor": "",
+          "level": "H1"
+        }
+      ],
+      "article_links": []
+    },
+    {
+      "id": "O063",
+      "url": "https://blog.orange.tw/posts/2013-01-webconf-2013best-practices-upload/",
+      "index_title": "WebConf 2013「Best Practices - The Upload」投影片",
+      "retrieved_at": "2026-09-30T09:03:47.795Z",
+      "http_status": 200,
+      "final_url": "https://blog.orange.tw/posts/2013-01-webconf-2013best-practices-upload/",
+      "response_html_bytes": 7554,
+      "response_html_sha256": "b5f9638028383d8db2ac0d74dee5ebb29d50a6e0f104886a5def6112dbc284e2",
+      "document_title": "WebConf 2013「Best Practices - The Upload」投影片 | Orange Tsai",
+      "article_title": "WebConf 2013「Best Practices - The Upload」投影片",
+      "observed_sections": [
+        {
+          "text": "WebConf 2013「Best Practices - The Upload」投影片",
+          "anchor": "",
+          "level": "H1"
+        }
+      ],
+      "article_links": []
+    },
+    {
+      "id": "O064",
+      "url": "https://blog.orange.tw/posts/2013-01-101/",
+      "index_title": "101 年全國大專院校資安技能金盾獎",
+      "retrieved_at": "2026-09-30T09:03:47.825Z",
+      "http_status": 200,
+      "final_url": "https://blog.orange.tw/posts/2013-01-101/",
+      "response_html_bytes": 6169,
+      "response_html_sha256": "a42f9f75834019f77ddbb46e6aaa88964406bc954ae8f48aadd070137aa93d01",
+      "document_title": "101 年全國大專院校資安技能金盾獎 | Orange Tsai",
+      "article_title": "101 年全國大專院校資安技能金盾獎",
+      "observed_sections": [
+        {
+          "text": "101 年全國大專院校資安技能金盾獎",
+          "anchor": "",
+          "level": "H1"
+        }
+      ],
+      "article_links": []
+    },
+    {
+      "id": "O065",
+      "url": "https://blog.orange.tw/posts/2012-11-ms12-071-cve-2012-4775/",
+      "index_title": "被微軟感謝了><  MS12-071 - CVE-2012-4775",
+      "retrieved_at": "2026-09-30T09:03:47.994Z",
+      "http_status": 200,
+      "final_url": "https://blog.orange.tw/posts/2012-11-ms12-071-cve-2012-4775/",
+      "response_html_bytes": 7594,
+      "response_html_sha256": "89057afd773f09d78d9b7d074afc4be8f9f4fc9dfe2e8cfe5953e694efa0c841",
+      "document_title": "被微軟感謝了>< MS12-071 - CVE-2012-4775 | Orange Tsai",
+      "article_title": "被微軟感謝了><  MS12-071 - CVE-2012-4775",
+      "observed_sections": [
+        {
+          "text": "被微軟感謝了><  MS12-071 - CVE-2012-4775",
+          "anchor": "",
+          "level": "H1"
+        }
+      ],
+      "article_links": []
+    },
+    {
+      "id": "O066",
+      "url": "https://blog.orange.tw/posts/2012-11-phpconf-2012-security-in-php/",
+      "index_title": "PHPCONF 2012 - Security in PHP 那些在滲透測試的小技巧",
+      "retrieved_at": "2026-09-30T09:03:47.995Z",
+      "http_status": 200,
+      "final_url": "https://blog.orange.tw/posts/2012-11-phpconf-2012-security-in-php/",
+      "response_html_bytes": 6386,
+      "response_html_sha256": "8e74dfe57e353ad8341632cffed123bb02695f3745f1d2b47dd10a790af2ef28",
+      "document_title": "PHPCONF 2012 - Security in PHP 那些在滲透測試的小技巧 | Orange Tsai",
+      "article_title": "PHPCONF 2012 - Security in PHP 那些在滲透測試的小技巧",
+      "observed_sections": [
+        {
+          "text": "PHPCONF 2012 - Security in PHP 那些在滲透測試的小技巧",
+          "anchor": "",
+          "level": "H1"
+        }
+      ],
+      "article_links": []
+    },
+    {
+      "id": "O067",
+      "url": "https://blog.orange.tw/posts/2012-09-satainan-web-security/",
+      "index_title": "Study-Area，「網頁安全 Web Security 入門」投影片",
+      "retrieved_at": "2026-09-30T09:03:48.096Z",
+      "http_status": 200,
+      "final_url": "https://blog.orange.tw/posts/2012-09-satainan-web-security/",
+      "response_html_bytes": 6535,
+      "response_html_sha256": "e1b7f290b42ee64ac1961cfef4f7c0bae0301a7c6d3270955a1e24ca1d738435",
+      "document_title": "Study-Area，「網頁安全 Web Security 入門」投影片 | Orange Tsai",
+      "article_title": "Study-Area，「網頁安全 Web Security 入門」投影片",
+      "observed_sections": [
+        {
+          "text": "Study-Area，「網頁安全 Web Security 入門」投影片",
+          "anchor": "",
+          "level": "H1"
+        }
+      ],
+      "article_links": []
+    },
+    {
+      "id": "O068",
+      "url": "https://blog.orange.tw/posts/2012-07-hacks-in-taiwan-2012-potent-pwnables-3/",
+      "index_title": "Hacks in Taiwan 2012 Potent Pwnables 3 出題詳解",
+      "retrieved_at": "2026-09-30T09:03:48.110Z",
+      "http_status": 200,
+      "final_url": "https://blog.orange.tw/posts/2012-07-hacks-in-taiwan-2012-potent-pwnables-3/",
+      "response_html_bytes": 10455,
+      "response_html_sha256": "7f71884dd84b4382738ceb5e4dd5fae0d746b66181d01cb6c3874bc0ba3b5431",
+      "document_title": "Hacks in Taiwan 2012 Potent Pwnables 3 出題詳解 | Orange Tsai",
+      "article_title": "Hacks in Taiwan 2012 Potent Pwnables 3 出題詳解",
+      "observed_sections": [
+        {
+          "text": "Hacks in Taiwan 2012 Potent Pwnables 3 出題詳解",
+          "anchor": "",
+          "level": "H1"
+        }
+      ],
+      "article_links": []
+    },
+    {
+      "id": "O069",
+      "url": "https://blog.orange.tw/posts/2012-07-hacks-in-taiwan-2012-web-hacking-1/",
+      "index_title": "Hacks in Taiwan 2012 Web Hacking 1 出題詳解",
+      "retrieved_at": "2026-09-30T09:03:48.301Z",
+      "http_status": 200,
+      "final_url": "https://blog.orange.tw/posts/2012-07-hacks-in-taiwan-2012-web-hacking-1/",
+      "response_html_bytes": 17074,
+      "response_html_sha256": "936e7654811aa9a69ae192b901526e36aa68b105cc6fa562212479f617adeda3",
+      "document_title": "Hacks in Taiwan 2012 Web Hacking 1 出題詳解 | Orange Tsai",
+      "article_title": "Hacks in Taiwan 2012 Web Hacking 1 出題詳解",
+      "observed_sections": [
+        {
+          "text": "Hacks in Taiwan 2012 Web Hacking 1 出題詳解",
+          "anchor": "",
+          "level": "H1"
+        }
+      ],
+      "article_links": []
+    },
+    {
+      "id": "O070",
+      "url": "https://blog.orange.tw/posts/2012-06-defcon-ctf-20-qual-pp100-writeup/",
+      "index_title": "Defcon ctf 20 qual pp100 Writeup",
+      "retrieved_at": "2026-09-30T09:03:48.302Z",
+      "http_status": 200,
+      "final_url": "https://blog.orange.tw/posts/2012-06-defcon-ctf-20-qual-pp100-writeup/",
+      "response_html_bytes": 26935,
+      "response_html_sha256": "bdcf2748b2fd60aaedd0ae767bf25d6203157e5bedde68788dcfafeb95419f71",
+      "document_title": "Defcon ctf 20 qual pp100 Writeup | Orange Tsai",
+      "article_title": "Defcon ctf 20 qual pp100 Writeup",
+      "observed_sections": [
+        {
+          "text": "Defcon ctf 20 qual pp100 Writeup",
+          "anchor": "",
+          "level": "H1"
+        },
+        {
+          "text": "Pwnables 100",
+          "anchor": "Pwnables-100",
+          "level": "H1"
+        }
+      ],
+      "article_links": [
+        "https://blog.orange.tw/posts/2012-06-defcon-ctf-20-qual-pp100-writeup/#Pwnables-100"
+      ]
+    },
+    {
+      "id": "O071",
+      "url": "https://blog.orange.tw/posts/2011-12-xd/",
+      "index_title": "一百年度全國大專院校資安技能金盾獎 XD",
+      "retrieved_at": "2026-09-30T09:03:48.403Z",
+      "http_status": 200,
+      "final_url": "https://blog.orange.tw/posts/2011-12-xd/",
+      "response_html_bytes": 12488,
+      "response_html_sha256": "cd50e1aa6b913a07857cc7691f64ee600d16afa2a153866a83e14582cb0badc7",
+      "document_title": "一百年度全國大專院校資安技能金盾獎 XD | Orange Tsai",
+      "article_title": "一百年度全國大專院校資安技能金盾獎 XD",
+      "observed_sections": [
+        {
+          "text": "一百年度全國大專院校資安技能金盾獎 XD",
+          "anchor": "",
+          "level": "H1"
+        },
+        {
+          "text": "雜紀:",
+          "anchor": "雜紀",
+          "level": "H1"
+        },
+        {
+          "text": "題目：",
+          "anchor": "題目：",
+          "level": "H1"
+        }
+      ],
+      "article_links": [
+        "https://blog.orange.tw/posts/2011-12-xd/#%E9%9B%9C%E7%B4%80",
+        "https://blog.orange.tw/posts/2011-12-xd/#%E9%A1%8C%E7%9B%AE%EF%BC%9A"
+      ]
+    },
+    {
+      "id": "O072",
+      "url": "https://blog.orange.tw/posts/2011-08-sql-injection/",
+      "index_title": "關於SQL Injection的那些奇淫異巧",
+      "retrieved_at": "2026-09-30T09:03:48.506Z",
+      "http_status": 200,
+      "final_url": "https://blog.orange.tw/posts/2011-08-sql-injection/",
+      "response_html_bytes": 7163,
+      "response_html_sha256": "da46bb421e158208b5b6f32babad53c698cd2e256d07e5f30f5621dffe67dd46",
+      "document_title": "關於SQL Injection的那些奇淫異巧 | Orange Tsai",
+      "article_title": "關於SQL Injection的那些奇淫異巧",
+      "observed_sections": [
+        {
+          "text": "關於SQL Injection的那些奇淫異巧",
+          "anchor": "",
+          "level": "H1"
+        }
+      ],
+      "article_links": []
+    },
+    {
+      "id": "O073",
+      "url": "https://blog.orange.tw/posts/2011-07-hitcon2011wargame-web-3/",
+      "index_title": "台灣駭客年會 HITCON2011，Wargame Web 3出題心得 & 解法",
+      "retrieved_at": "2026-09-30T09:03:48.608Z",
+      "http_status": 200,
+      "final_url": "https://blog.orange.tw/posts/2011-07-hitcon2011wargame-web-3/",
+      "response_html_bytes": 10081,
+      "response_html_sha256": "82090f54fb38df8dbfa9bb8f7dd4dc06638b0fd94daa88afa4ac78801f355535",
+      "document_title": "台灣駭客年會 HITCON2011，Wargame Web 3出題心得 & 解法 | Orange Tsai",
+      "article_title": "台灣駭客年會 HITCON2011，Wargame Web 3出題心得 & 解法",
+      "observed_sections": [
+        {
+          "text": "台灣駭客年會 HITCON2011，Wargame Web 3出題心得 & 解法",
+          "anchor": "",
+          "level": "H1"
+        }
+      ],
+      "article_links": []
+    },
+    {
+      "id": "O074",
+      "url": "https://blog.orange.tw/posts/2011-07-hitcon2011wargame-binary-3/",
+      "index_title": "台灣駭客年會 HITCON2011，Wargame Binary 3出題心得 & 解法",
+      "retrieved_at": "2026-09-30T09:03:48.615Z",
+      "http_status": 200,
+      "final_url": "https://blog.orange.tw/posts/2011-07-hitcon2011wargame-binary-3/",
+      "response_html_bytes": 9429,
+      "response_html_sha256": "e8d86949c40fa6b594c7f44c9923a29afba80d9f5a16ccef6d8f3b91d65ad639",
+      "document_title": "台灣駭客年會 HITCON2011，Wargame Binary 3出題心得 & 解法 | Orange Tsai",
+      "article_title": "台灣駭客年會 HITCON2011，Wargame Binary 3出題心得 & 解法",
+      "observed_sections": [
+        {
+          "text": "台灣駭客年會 HITCON2011，Wargame Binary 3出題心得 & 解法",
+          "anchor": "",
+          "level": "H1"
+        }
+      ],
+      "article_links": []
+    },
+    {
+      "id": "O075",
+      "url": "https://blog.orange.tw/posts/2011-07-hitcon2011wargame-web-4/",
+      "index_title": "台灣駭客年會 HITCON2011，Wargame Web 4出題心得 & 解法",
+      "retrieved_at": "2026-09-30T09:03:48.710Z",
+      "http_status": 200,
+      "final_url": "https://blog.orange.tw/posts/2011-07-hitcon2011wargame-web-4/",
+      "response_html_bytes": 11729,
+      "response_html_sha256": "ced3c3048d203e204314d4161d4602357094e4ad95fe717f804ad85d1f942754",
+      "document_title": "台灣駭客年會 HITCON2011，Wargame Web 4出題心得 & 解法 | Orange Tsai",
+      "article_title": "台灣駭客年會 HITCON2011，Wargame Web 4出題心得 & 解法",
+      "observed_sections": [
+        {
+          "text": "台灣駭客年會 HITCON2011，Wargame Web 4出題心得 & 解法",
+          "anchor": "",
+          "level": "H1"
+        }
+      ],
+      "article_links": []
+    },
+    {
+      "id": "O076",
+      "url": "https://blog.orange.tw/posts/2011-05-project-web-security-toolkit/",
+      "index_title": "[Project] Web Security Toolkit",
+      "retrieved_at": "2026-09-30T09:03:48.813Z",
+      "http_status": 200,
+      "final_url": "https://blog.orange.tw/posts/2011-05-project-web-security-toolkit/",
+      "response_html_bytes": 8035,
+      "response_html_sha256": "c0b70ffdd7cdd3eba2cbdf132dffad121a1b08a50d4e07f80dc1a221a300d6a9",
+      "document_title": "[Project] Web Security Toolkit | Orange Tsai",
+      "article_title": "[Project] Web Security Toolkit",
+      "observed_sections": [
+        {
+          "text": "[Project] Web Security Toolkit",
+          "anchor": "",
+          "level": "H1"
+        }
+      ],
+      "article_links": []
+    },
+    {
+      "id": "O077",
+      "url": "https://blog.orange.tw/posts/2011-04-blog-post/",
+      "index_title": "整理",
+      "retrieved_at": "2026-09-30T09:03:48.911Z",
+      "http_status": 200,
+      "final_url": "https://blog.orange.tw/posts/2011-04-blog-post/",
+      "response_html_bytes": 11056,
+      "response_html_sha256": "3d5d4c2fdfc18f8e8d7ec2b52f69ffd2cabf1efde8393e27b1d43996e5fe5c98",
+      "document_title": "整理 | Orange Tsai",
+      "article_title": "整理",
+      "observed_sections": [
+        {
+          "text": "整理",
+          "anchor": "",
+          "level": "H1"
+        },
+        {
+          "text": "About歷史：",
+          "anchor": "About歷史：",
+          "level": "H1"
+        },
+        {
+          "text": "Memory Corruption Attacks The (almost) Complete History",
+          "anchor": "Memory-Corruption-Attacks-The-almost-Complete-History",
+          "level": "H3"
+        },
+        {
+          "text": "Past, Present, Future of Windows Exploitation",
+          "anchor": "Past-Present-Future-of-Windows-Exploitation",
+          "level": "H3"
+        },
+        {
+          "text": "About Heap Spray：",
+          "anchor": "About-Heap-Spray：",
+          "level": "H1"
+        },
+        {
+          "text": "Heap Feng Shui in JavaScript",
+          "anchor": "Heap-Feng-Shui-in-JavaScript",
+          "level": "H3"
+        },
+        {
+          "text": "About JIT Spray：",
+          "anchor": "About-JIT-Spray：",
+          "level": "H1"
+        },
+        {
+          "text": "Interpreter Exploitation: Pointer Inference and JIT Spraying",
+          "anchor": "Interpreter-Exploitation-Pointer-Inference-and-JIT-Spraying",
+          "level": "H3"
+        },
+        {
+          "text": "Writing JIT-Spray Shellcode for fun and profit",
+          "anchor": "Writing-JIT-Spray-Shellcode-for-fun-and-profit",
+          "level": "H3"
+        },
+        {
+          "text": "About ROP：",
+          "anchor": "About-ROP：",
+          "level": "H1"
+        },
+        {
+          "text": "Return-Oriented Exploitation",
+          "anchor": "Return-Oriented-Exploitation",
+          "level": "H3"
+        },
+        {
+          "text": "Bypass DEP with WPM & ROP Case Study : Audio Converter by D.R Software Exploit and Document by Sud0",
+          "anchor": "Bypass-DEP-with-WPM-ROP-Case-Study-Audio-Converter-by-D-R-Software-Exploit-and-Document-by-Sud0",
+          "level": "H3"
+        },
+        {
+          "text": "About Writing Exploit：",
+          "anchor": "About-Writing-Exploit：",
+          "level": "H1"
+        },
+        {
+          "text": "Exploit Writing Tutorials",
+          "anchor": "Exploit-Writing-Tutorials",
+          "level": "H3"
+        }
+      ],
+      "article_links": [
+        "https://blog.orange.tw/posts/2011-04-blog-post/#About%E6%AD%B7%E5%8F%B2%EF%BC%9A",
+        "https://blog.orange.tw/posts/2011-04-blog-post/#Memory-Corruption-Attacks-The-almost-Complete-History",
+        "https://blog.orange.tw/posts/2011-04-blog-post/#Past-Present-Future-of-Windows-Exploitation",
+        "https://blog.orange.tw/posts/2011-04-blog-post/#About-Heap-Spray%EF%BC%9A",
+        "https://blog.orange.tw/posts/2011-04-blog-post/#Heap-Feng-Shui-in-JavaScript",
+        "https://blog.orange.tw/posts/2011-04-blog-post/#About-JIT-Spray%EF%BC%9A",
+        "https://blog.orange.tw/posts/2011-04-blog-post/#Interpreter-Exploitation-Pointer-Inference-and-JIT-Spraying",
+        "https://blog.orange.tw/posts/2011-04-blog-post/#Writing-JIT-Spray-Shellcode-for-fun-and-profit",
+        "https://blog.orange.tw/posts/2011-04-blog-post/#About-ROP%EF%BC%9A",
+        "https://blog.orange.tw/posts/2011-04-blog-post/#Return-Oriented-Exploitation",
+        "https://blog.orange.tw/posts/2011-04-blog-post/#Bypass-DEP-with-WPM-ROP-Case-Study-Audio-Converter-by-D-R-Software-Exploit-and-Document-by-Sud0",
+        "https://blog.orange.tw/posts/2011-04-blog-post/#About-Writing-Exploit%EF%BC%9A",
+        "https://blog.orange.tw/posts/2011-04-blog-post/#Exploit-Writing-Tutorials"
+      ]
+    },
+    {
+      "id": "O078",
+      "url": "https://blog.orange.tw/posts/2011-04-downloadexec-shellcode-fix-for-windows/",
+      "index_title": "Download_Exec shellcode fix & for Windows 7",
+      "retrieved_at": "2026-09-30T09:03:48.912Z",
+      "http_status": 200,
+      "final_url": "https://blog.orange.tw/posts/2011-04-downloadexec-shellcode-fix-for-windows/",
+      "response_html_bytes": 62788,
+      "response_html_sha256": "60fdc576877a7651a871f3452d5d84bb104a5e5c594dfc228d81305ef95a199d",
+      "document_title": "Download_Exec shellcode fix & for Windows 7 | Orange Tsai",
+      "article_title": "Download_Exec shellcode fix & for Windows 7",
+      "observed_sections": [
+        {
+          "text": "Download_Exec shellcode fix & for Windows 7",
+          "anchor": "",
+          "level": "H1"
+        }
+      ],
+      "article_links": []
+    },
+    {
+      "id": "O079",
+      "url": "https://blog.orange.tw/posts/2010-12-blog-post/",
+      "index_title": "第五屆全國大專院校資安技能金盾獎",
+      "retrieved_at": "2026-09-30T09:03:48.913Z",
+      "http_status": 200,
+      "final_url": "https://blog.orange.tw/posts/2010-12-blog-post/",
+      "response_html_bytes": 9901,
+      "response_html_sha256": "221b9a2abb452fac03efaa8a5c439b0238b96ad12dd18f7bf59d2bf3b336ca5c",
+      "document_title": "第五屆全國大專院校資安技能金盾獎 | Orange Tsai",
+      "article_title": "第五屆全國大專院校資安技能金盾獎",
+      "observed_sections": [
+        {
+          "text": "第五屆全國大專院校資安技能金盾獎",
+          "anchor": "",
+          "level": "H1"
+        },
+        {
+          "text": "心得：",
+          "anchor": "心得：",
+          "level": "H1"
+        },
+        {
+          "text": "題目：",
+          "anchor": "題目：",
+          "level": "H1"
+        }
+      ],
+      "article_links": [
+        "https://blog.orange.tw/posts/2010-12-blog-post/#%E5%BF%83%E5%BE%97%EF%BC%9A",
+        "https://blog.orange.tw/posts/2010-12-blog-post/#%E9%A1%8C%E7%9B%AE%EF%BC%9A"
+      ]
+    },
+    {
+      "id": "O080",
+      "url": "https://blog.orange.tw/posts/2010-07-hacks-in-taiwan/",
+      "index_title": "Hacks in Taiwan 第六屆台灣駭客年會",
+      "retrieved_at": "2026-09-30T09:03:49.017Z",
+      "http_status": 200,
+      "final_url": "https://blog.orange.tw/posts/2010-07-hacks-in-taiwan/",
+      "response_html_bytes": 7982,
+      "response_html_sha256": "75926be99c6b7e9d9616e56ab702dfe830acf3e7d8cdae284a17f70738962382",
+      "document_title": "Hacks in Taiwan 第六屆台灣駭客年會 | Orange Tsai",
+      "article_title": "Hacks in Taiwan 第六屆台灣駭客年會",
+      "observed_sections": [
+        {
+          "text": "Hacks in Taiwan 第六屆台灣駭客年會",
+          "anchor": "",
+          "level": "H1"
+        }
+      ],
+      "article_links": []
+    },
+    {
+      "id": "O081",
+      "url": "https://blog.orange.tw/posts/2010-05-ramexe/",
+      "index_title": "ram.exe",
+      "retrieved_at": "2026-09-30T09:03:49.224Z",
+      "http_status": 200,
+      "final_url": "https://blog.orange.tw/posts/2010-05-ramexe/",
+      "response_html_bytes": 6708,
+      "response_html_sha256": "c283bdb08dd8dc773a5f59620b60ce994bb9220f3ebf33676475ea157b43cda1",
+      "document_title": "ram.exe | Orange Tsai",
+      "article_title": "ram.exe",
+      "observed_sections": [
+        {
+          "text": "ram.exe",
+          "anchor": "",
+          "level": "H1"
+        }
+      ],
+      "article_links": []
+    },
+    {
+      "id": "O082",
+      "url": "https://blog.orange.tw/posts/2010-05-blog-post_28/",
+      "index_title": "動物園行",
+      "retrieved_at": "2026-09-30T09:03:49.225Z",
+      "http_status": 200,
+      "final_url": "https://blog.orange.tw/posts/2010-05-blog-post_28/",
+      "response_html_bytes": 6654,
+      "response_html_sha256": "d62cb0583a3f580edf018db281a6adbc81707be69efb20ddda7e9fde1229d95a",
+      "document_title": "動物園行 | Orange Tsai",
+      "article_title": "動物園行",
+      "observed_sections": [
+        {
+          "text": "動物園行",
+          "anchor": "",
+          "level": "H1"
+        }
+      ],
+      "article_links": []
+    },
+    {
+      "id": "O083",
+      "url": "https://blog.orange.tw/posts/2010-05-hacks-in-taiwan-2010-conference/",
+      "index_title": "Hacks in Taiwan 2010 Conference",
+      "retrieved_at": "2026-09-30T09:03:49.226Z",
+      "http_status": 200,
+      "final_url": "https://blog.orange.tw/posts/2010-05-hacks-in-taiwan-2010-conference/",
+      "response_html_bytes": 9478,
+      "response_html_sha256": "34a42f2f8327ebdc49563d5740c25475594c3a7e1ba31ed150a96d920ed60ff3",
+      "document_title": "Hacks in Taiwan 2010 Conference | Orange Tsai",
+      "article_title": "Hacks in Taiwan 2010 Conference",
+      "observed_sections": [
+        {
+          "text": "Hacks in Taiwan 2010 Conference",
+          "anchor": "",
+          "level": "H1"
+        }
+      ],
+      "article_links": []
+    },
+    {
+      "id": "O084",
+      "url": "https://blog.orange.tw/posts/2010-05-blog-post/",
+      "index_title": "爽",
+      "retrieved_at": "2026-09-30T09:03:49.320Z",
+      "http_status": 200,
+      "final_url": "https://blog.orange.tw/posts/2010-05-blog-post/",
+      "response_html_bytes": 6831,
+      "response_html_sha256": "51b8281694f016afc82061e995521946a7ddbfbced7e9ae41c633e5299d2fa9f",
+      "document_title": "爽 | Orange Tsai",
+      "article_title": "爽",
+      "observed_sections": [
+        {
+          "text": "爽",
+          "anchor": "",
+          "level": "H1"
+        }
+      ],
+      "article_links": []
+    },
+    {
+      "id": "O085",
+      "url": "https://blog.orange.tw/posts/2010-04-note/",
+      "index_title": "Note",
+      "retrieved_at": "2026-09-30T09:03:49.529Z",
+      "http_status": 200,
+      "final_url": "https://blog.orange.tw/posts/2010-04-note/",
+      "response_html_bytes": 7390,
+      "response_html_sha256": "0bdaf5dd6fb2da46795d1492b66bff62cecb84de0a8231324be329a2db4b741c",
+      "document_title": "Note | Orange Tsai",
+      "article_title": "Note",
+      "observed_sections": [
+        {
+          "text": "Note",
+          "anchor": "",
+          "level": "H1"
+        }
+      ],
+      "article_links": []
+    },
+    {
+      "id": "O086",
+      "url": "https://blog.orange.tw/posts/2010-02-forensic-challenge-2010/",
+      "index_title": "Forensic Challenge 2010",
+      "retrieved_at": "2026-09-30T09:03:49.530Z",
+      "http_status": 200,
+      "final_url": "https://blog.orange.tw/posts/2010-02-forensic-challenge-2010/",
+      "response_html_bytes": 7267,
+      "response_html_sha256": "c225174bb3c8df5b1fbe8d9b36abfc73975e92479183d5acb6ab4f87df2a0a1b",
+      "document_title": "Forensic Challenge 2010 | Orange Tsai",
+      "article_title": "Forensic Challenge 2010",
+      "observed_sections": [
+        {
+          "text": "Forensic Challenge 2010",
+          "anchor": "",
+          "level": "H1"
+        },
+        {
+          "text": "Challenge 1 of the Forensic Challenge 2010 - pcap attack trace",
+          "anchor": "Challenge-1-of-the-Forensic-Challenge-2010-pcap-attack-trace",
+          "level": "H1"
+        },
+        {
+          "text": "Challenge 2 of the Forensic Challenge 2010 - browsers under attack",
+          "anchor": "Challenge-2-of-the-Forensic-Challenge-2010-browsers-under-attack",
+          "level": "H1"
+        }
+      ],
+      "article_links": [
+        "https://blog.orange.tw/posts/2010-02-forensic-challenge-2010/#Challenge-1-of-the-Forensic-Challenge-2010-pcap-attack-trace",
+        "https://blog.orange.tw/posts/2010-02-forensic-challenge-2010/#Challenge-2-of-the-Forensic-Challenge-2010-browsers-under-attack"
+      ]
+    },
+    {
+      "id": "O087",
+      "url": "https://blog.orange.tw/posts/2010-02-xd/",
+      "index_title": "好玩的圖XD",
+      "retrieved_at": "2026-09-30T09:03:49.549Z",
+      "http_status": 200,
+      "final_url": "https://blog.orange.tw/posts/2010-02-xd/",
+      "response_html_bytes": 13479,
+      "response_html_sha256": "cf5e43e376d0ebbb64c83a27af699a8f8b8eb38675e3454fba99e0eaa3dccd8c",
+      "document_title": "好玩的圖XD | Orange Tsai",
+      "article_title": "好玩的圖XD",
+      "observed_sections": [
+        {
+          "text": "好玩的圖XD",
+          "anchor": "",
+          "level": "H1"
+        },
+        {
+          "text": "古典密碼",
+          "anchor": "古典密碼",
+          "level": "H1"
+        },
+        {
+          "text": "豬圈密碼",
+          "anchor": "豬圈密碼",
+          "level": "H3"
+        },
+        {
+          "text": "罪犯的來信Orz",
+          "anchor": "罪犯的來信Orz",
+          "level": "H3"
+        },
+        {
+          "text": "From 福爾摩斯小說",
+          "anchor": "From-福爾摩斯小說",
+          "level": "H3"
+        },
+        {
+          "text": "Polybius Square",
+          "anchor": "Polybius-Square",
+          "level": "H3"
+        },
+        {
+          "text": "維瓊內爾方陣(Vigenère cipher)",
+          "anchor": "維瓊內爾方陣-Vigenere-cipher",
+          "level": "H3"
+        },
+        {
+          "text": "Dvorak鍵盤位置xD",
+          "anchor": "Dvorak鍵盤位置xD",
+          "level": "H3"
+        },
+        {
+          "text": "克林貢語",
+          "anchor": "克林貢語",
+          "level": "H3"
+        },
+        {
+          "text": "Enochian Alphabet",
+          "anchor": "Enochian-Alphabet",
+          "level": "H3"
+        },
+        {
+          "text": "Queen Mary",
+          "anchor": "Queen-Mary",
+          "level": "H3"
+        },
+        {
+          "text": "Malachim Alphabet",
+          "anchor": "Malachim-Alphabet",
+          "level": "H3"
+        },
+        {
+          "text": "亞維語",
+          "anchor": "亞維語",
+          "level": "H3"
+        },
+        {
+          "text": "Atlantean alphabet",
+          "anchor": "Atlantean-alphabet",
+          "level": "H3"
+        },
+        {
+          "text": "Elder Futhark",
+          "anchor": "Elder-Futhark",
+          "level": "H3"
+        },
+        {
+          "text": "Templar Cipher",
+          "anchor": "Templar-Cipher",
+          "level": "H3"
+        },
+        {
+          "text": "在附上幾張不知名來源的吧XD",
+          "anchor": "在附上幾張不知名來源的吧XD",
+          "level": "H3"
+        }
+      ],
+      "article_links": [
+        "https://blog.orange.tw/posts/2010-02-xd/#%E5%8F%A4%E5%85%B8%E5%AF%86%E7%A2%BC",
+        "https://blog.orange.tw/posts/2010-02-xd/#%E8%B1%AC%E5%9C%88%E5%AF%86%E7%A2%BC",
+        "https://blog.orange.tw/posts/2010-02-xd/#%E7%BD%AA%E7%8A%AF%E7%9A%84%E4%BE%86%E4%BF%A1Orz",
+        "https://blog.orange.tw/posts/2010-02-xd/#From-%E7%A6%8F%E7%88%BE%E6%91%A9%E6%96%AF%E5%B0%8F%E8%AA%AA",
+        "https://blog.orange.tw/posts/2010-02-xd/#Polybius-Square",
+        "https://blog.orange.tw/posts/2010-02-xd/#%E7%B6%AD%E7%93%8A%E5%85%A7%E7%88%BE%E6%96%B9%E9%99%A3-Vigenere-cipher",
+        "https://blog.orange.tw/posts/2010-02-xd/#Dvorak%E9%8D%B5%E7%9B%A4%E4%BD%8D%E7%BD%AExD",
+        "https://blog.orange.tw/posts/2010-02-xd/#%E5%85%8B%E6%9E%97%E8%B2%A2%E8%AA%9E",
+        "https://blog.orange.tw/posts/2010-02-xd/#Enochian-Alphabet",
+        "https://blog.orange.tw/posts/2010-02-xd/#Queen-Mary",
+        "https://blog.orange.tw/posts/2010-02-xd/#Malachim-Alphabet",
+        "https://blog.orange.tw/posts/2010-02-xd/#%E4%BA%9E%E7%B6%AD%E8%AA%9E",
+        "https://blog.orange.tw/posts/2010-02-xd/#Atlantean-alphabet",
+        "https://blog.orange.tw/posts/2010-02-xd/#Elder-Futhark",
+        "https://blog.orange.tw/posts/2010-02-xd/#Templar-Cipher",
+        "https://blog.orange.tw/posts/2010-02-xd/#%E5%9C%A8%E9%99%84%E4%B8%8A%E5%B9%BE%E5%BC%B5%E4%B8%8D%E7%9F%A5%E5%90%8D%E4%BE%86%E6%BA%90%E7%9A%84%E5%90%A7XD"
+      ]
+    },
+    {
+      "id": "O088",
+      "url": "https://blog.orange.tw/posts/2010-02-blog-post_18/",
+      "index_title": "這......?",
+      "retrieved_at": "2026-09-30T09:03:49.632Z",
+      "http_status": 200,
+      "final_url": "https://blog.orange.tw/posts/2010-02-blog-post_18/",
+      "response_html_bytes": 7153,
+      "response_html_sha256": "68bba86c9b11b5d7a5b87d61193e39aa0883d4126a0f03489695fa913c2cbf06",
+      "document_title": "這......? | Orange Tsai",
+      "article_title": "這......?",
+      "observed_sections": [
+        {
+          "text": "這......?",
+          "anchor": "",
+          "level": "H1"
+        }
+      ],
+      "article_links": []
+    },
+    {
+      "id": "O089",
+      "url": "https://blog.orange.tw/posts/2010-02-blog-post/",
+      "index_title": "增",
+      "retrieved_at": "2026-09-30T09:03:49.836Z",
+      "http_status": 200,
+      "final_url": "https://blog.orange.tw/posts/2010-02-blog-post/",
+      "response_html_bytes": 7391,
+      "response_html_sha256": "e1b3ccf3d5a26efd30658f253857494ecdac43c9452bc2aa57148e5fa1b5c518",
+      "document_title": "增 | Orange Tsai",
+      "article_title": "增",
+      "observed_sections": [
+        {
+          "text": "增",
+          "anchor": "",
+          "level": "H1"
+        }
+      ],
+      "article_links": []
+    },
+    {
+      "id": "O090",
+      "url": "https://blog.orange.tw/posts/2010-02-orz/",
+      "index_title": "Orz",
+      "retrieved_at": "2026-09-30T09:03:49.837Z",
+      "http_status": 200,
+      "final_url": "https://blog.orange.tw/posts/2010-02-orz/",
+      "response_html_bytes": 5841,
+      "response_html_sha256": "5c86aa0e3605dd4bc16cb824dd841ce9114842ea430b6f22dff8cbbc13e64dbe",
+      "document_title": "Orz | Orange Tsai",
+      "article_title": "Orz",
+      "observed_sections": [
+        {
+          "text": "Orz",
+          "anchor": "",
+          "level": "H1"
+        }
+      ],
+      "article_links": []
+    },
+    {
+      "id": "O091",
+      "url": "https://blog.orange.tw/posts/2010-01-0day/",
+      "index_title": "0day~",
+      "retrieved_at": "2026-09-30T09:03:49.939Z",
+      "http_status": 200,
+      "final_url": "https://blog.orange.tw/posts/2010-01-0day/",
+      "response_html_bytes": 6384,
+      "response_html_sha256": "462ab59f84f09dfab85f579fc4c9c4e276a6b9951ff93bd15fdad93c4af78549",
+      "document_title": "0day~ | Orange Tsai",
+      "article_title": "0day~",
+      "observed_sections": [
+        {
+          "text": "0day~",
+          "anchor": "",
+          "level": "H1"
+        }
+      ],
+      "article_links": []
+    },
+    {
+      "id": "O092",
+      "url": "https://blog.orange.tw/posts/2010-01-blog-post_9987/",
+      "index_title": "....",
+      "retrieved_at": "2026-09-30T09:03:49.940Z",
+      "http_status": 200,
+      "final_url": "https://blog.orange.tw/posts/2010-01-blog-post_9987/",
+      "response_html_bytes": 7113,
+      "response_html_sha256": "dde3ac82ba5c36f34565ac38b6cb9b5302c2a3153b1a4c82b54dd1cddb23fcde",
+      "document_title": ".... | Orange Tsai",
+      "article_title": "....",
+      "observed_sections": [
+        {
+          "text": "....",
+          "anchor": "",
+          "level": "H1"
+        }
+      ],
+      "article_links": []
+    },
+    {
+      "id": "O093",
+      "url": "https://blog.orange.tw/posts/2010-01-blog-post_10/",
+      "index_title": "嘿",
+      "retrieved_at": "2026-09-30T09:03:50.144Z",
+      "http_status": 200,
+      "final_url": "https://blog.orange.tw/posts/2010-01-blog-post_10/",
+      "response_html_bytes": 5894,
+      "response_html_sha256": "3c6b4d23ca0ce570bbcdc68ffda77ac660779383c3018be4e1ab0593bffdf175",
+      "document_title": "嘿 | Orange Tsai",
+      "article_title": "嘿",
+      "observed_sections": [
+        {
+          "text": "嘿",
+          "anchor": "",
+          "level": "H1"
+        }
+      ],
+      "article_links": []
+    },
+    {
+      "id": "O094",
+      "url": "https://blog.orange.tw/posts/2009-12-blog-post_26/",
+      "index_title": "聖誕快樂",
+      "retrieved_at": "2026-09-30T09:03:50.145Z",
+      "http_status": 200,
+      "final_url": "https://blog.orange.tw/posts/2009-12-blog-post_26/",
+      "response_html_bytes": 6498,
+      "response_html_sha256": "0c898484e8a6314f9da248445ec418ae073446697cab43ee91223369b897aa62",
+      "document_title": "聖誕快樂 | Orange Tsai",
+      "article_title": "聖誕快樂",
+      "observed_sections": [
+        {
+          "text": "聖誕快樂",
+          "anchor": "",
+          "level": "H1"
+        }
+      ],
+      "article_links": []
+    },
+    {
+      "id": "O095",
+      "url": "https://blog.orange.tw/posts/2009-12-blog-post_3757/",
+      "index_title": "搬家",
+      "retrieved_at": "2026-09-30T09:03:50.247Z",
+      "http_status": 200,
+      "final_url": "https://blog.orange.tw/posts/2009-12-blog-post_3757/",
+      "response_html_bytes": 5835,
+      "response_html_sha256": "a898081a788f4ace2f88ac1f460c2102e61b5ac07b6fdaf51ca549c9439407b6",
+      "document_title": "搬家 | Orange Tsai",
+      "article_title": "搬家",
+      "observed_sections": [
+        {
+          "text": "搬家",
+          "anchor": "",
+          "level": "H1"
+        }
+      ],
+      "article_links": []
+    },
+    {
+      "id": "O096",
+      "url": "https://blog.orange.tw/posts/2009-12-hacks-in-taiwan-conference-2009-wargame/",
+      "index_title": "Hacks in Taiwan Conference 2009 WarGame心得",
+      "retrieved_at": "2026-09-30T09:03:50.248Z",
+      "http_status": 200,
+      "final_url": "https://blog.orange.tw/posts/2009-12-hacks-in-taiwan-conference-2009-wargame/",
+      "response_html_bytes": 12866,
+      "response_html_sha256": "73f2a57db3c9997998d1967c40183aa0b3f125df8022a15e5f3c40ad573395f8",
+      "document_title": "Hacks in Taiwan Conference 2009 WarGame心得 | Orange Tsai",
+      "article_title": "Hacks in Taiwan Conference 2009 WarGame心得",
+      "observed_sections": [
+        {
+          "text": "Hacks in Taiwan Conference 2009 WarGame心得",
+          "anchor": "",
+          "level": "H1"
+        },
+        {
+          "text": "Windows 3",
+          "anchor": "Windows-3",
+          "level": "H2"
+        },
+        {
+          "text": "Windows 5",
+          "anchor": "Windows-5",
+          "level": "H2"
+        },
+        {
+          "text": "Windows 9",
+          "anchor": "Windows-9",
+          "level": "H2"
+        },
+        {
+          "text": "Unix 1",
+          "anchor": "Unix-1",
+          "level": "H2"
+        },
+        {
+          "text": "Unix 2",
+          "anchor": "Unix-2",
+          "level": "H2"
+        },
+        {
+          "text": "Unix 3",
+          "anchor": "Unix-3",
+          "level": "H2"
+        },
+        {
+          "text": "Unix 4",
+          "anchor": "Unix-4",
+          "level": "H2"
+        },
+        {
+          "text": "Misc 1",
+          "anchor": "Misc-1",
+          "level": "H2"
+        },
+        {
+          "text": "Misc 2",
+          "anchor": "Misc-2",
+          "level": "H2"
+        },
+        {
+          "text": "Misc 3",
+          "anchor": "Misc-3",
+          "level": "H2"
+        },
+        {
+          "text": "Misc 4",
+          "anchor": "Misc-4",
+          "level": "H2"
+        },
+        {
+          "text": "Misc 5",
+          "anchor": "Misc-5",
+          "level": "H2"
+        },
+        {
+          "text": "Misc 6",
+          "anchor": "Misc-6",
+          "level": "H2"
+        },
+        {
+          "text": "Misc 8",
+          "anchor": "Misc-8",
+          "level": "H2"
+        },
+        {
+          "text": "Misc 9",
+          "anchor": "Misc-9",
+          "level": "H2"
+        },
+        {
+          "text": "Misc 10",
+          "anchor": "Misc-10",
+          "level": "H2"
+        },
+        {
+          "text": "Misc 11",
+          "anchor": "Misc-11",
+          "level": "H2"
+        },
+        {
+          "text": "Misc 12",
+          "anchor": "Misc-12",
+          "level": "H2"
+        },
+        {
+          "text": "Misc 13",
+          "anchor": "Misc-13",
+          "level": "H2"
+        }
+      ],
+      "article_links": [
+        "https://blog.orange.tw/posts/2009-12-hacks-in-taiwan-conference-2009-wargame/#Windows-3",
+        "https://blog.orange.tw/posts/2009-12-hacks-in-taiwan-conference-2009-wargame/#Windows-5",
+        "https://blog.orange.tw/posts/2009-12-hacks-in-taiwan-conference-2009-wargame/#Windows-9",
+        "https://blog.orange.tw/posts/2009-12-hacks-in-taiwan-conference-2009-wargame/#Unix-1",
+        "https://blog.orange.tw/posts/2009-12-hacks-in-taiwan-conference-2009-wargame/#Unix-2",
+        "https://blog.orange.tw/posts/2009-12-hacks-in-taiwan-conference-2009-wargame/#Unix-3",
+        "https://blog.orange.tw/posts/2009-12-hacks-in-taiwan-conference-2009-wargame/#Unix-4",
+        "https://blog.orange.tw/posts/2009-12-hacks-in-taiwan-conference-2009-wargame/#Misc-1",
+        "https://blog.orange.tw/posts/2009-12-hacks-in-taiwan-conference-2009-wargame/#Misc-2",
+        "https://blog.orange.tw/posts/2009-12-hacks-in-taiwan-conference-2009-wargame/#Misc-3",
+        "https://blog.orange.tw/posts/2009-12-hacks-in-taiwan-conference-2009-wargame/#Misc-4",
+        "https://blog.orange.tw/posts/2009-12-hacks-in-taiwan-conference-2009-wargame/#Misc-5",
+        "https://blog.orange.tw/posts/2009-12-hacks-in-taiwan-conference-2009-wargame/#Misc-6",
+        "https://blog.orange.tw/posts/2009-12-hacks-in-taiwan-conference-2009-wargame/#Misc-8",
+        "https://blog.orange.tw/posts/2009-12-hacks-in-taiwan-conference-2009-wargame/#Misc-9",
+        "https://blog.orange.tw/posts/2009-12-hacks-in-taiwan-conference-2009-wargame/#Misc-10",
+        "https://blog.orange.tw/posts/2009-12-hacks-in-taiwan-conference-2009-wargame/#Misc-11",
+        "https://blog.orange.tw/posts/2009-12-hacks-in-taiwan-conference-2009-wargame/#Misc-12",
+        "https://blog.orange.tw/posts/2009-12-hacks-in-taiwan-conference-2009-wargame/#Misc-13"
+      ]
+    }
+  ]
+}

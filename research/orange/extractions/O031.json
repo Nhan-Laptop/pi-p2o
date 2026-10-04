@@ -1,0 +1,40 @@
+{
+  "schema_version": 1,
+  "source_id": "O031",
+  "url": "https://blog.orange.tw/posts/2016-10-collection-of-ctf-web-challenges-i-made/",
+  "observed_title": "Collection of CTF Web Challenges I made",
+  "retrieved_at": "2026-09-30T09:37:53Z",
+  "retrieval": {
+    "tool": "agent_browser",
+    "browser_session": "orange-O031",
+    "final_url": "https://blog.orange.tw/posts/2016-10-collection-of-ctf-web-challenges-i-made/",
+    "outcome": "read",
+    "quote_verification": "Read the article body and verified E1 by exact document.body.innerText.includes(quote), which returned true; the matching paragraph's textContent was also returned."
+  },
+  "disposition": "excluded",
+  "reason": "The actual article is a short announcement linking to a collection of CTF challenge sources, solutions, write-ups and idea explanations. It presents no investigation decisions, tool purposes, failures or validation supporting reusable method observations. Repository availability alone does not establish a generic workflow contribution.",
+  "canonical_source": null,
+  "evidence": [
+    {
+      "id": "E1",
+      "locator": "Under the article title, the English paragraph immediately after the opening Chinese announcement.",
+      "quote": "This is the repository of CTF Web challenges I made. It contains challs’s source code, solution, write ups and some idea explanation.",
+      "verified": true
+    }
+  ],
+  "workflow": [],
+  "tools": [],
+  "handoffs": [],
+  "limitations": [
+    "The post contains no primary method account, failure analysis, validation or remediation discussion.",
+    "The linked repository was not inspected; this classification applies only to the assigned article, not to its challenge materials.",
+    "No target testing, source-code execution or independent verification of challenge results was performed."
+  ],
+  "candidate_additions": [],
+  "related_article_urls": [],
+  "excluded_material": [
+    "Repository promotion and invitation to readers.",
+    "Pointers to CTF source code, solutions and write-ups; no linked solution materials were imported."
+  ],
+  "worker_notes": "fetch_content readable mode failed with 'Page appears to be JavaScript-rendered (content loads dynamically)'. The assigned article was then read successfully in the isolated browser session orange-O031. E1 is classification evidence only, not operational guidance."
+}

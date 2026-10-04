@@ -1,0 +1,38 @@
+{
+  "schema_version": 1,
+  "source_id": "O094",
+  "url": "https://blog.orange.tw/posts/2009-12-blog-post_26/",
+  "observed_title": "聖誕快樂",
+  "retrieved_at": "2026-09-30T10:35:43.352Z",
+  "retrieval": {
+    "tool": "agent_browser",
+    "response_id": "browser session orange-O094",
+    "final_url": "https://blog.orange.tw/posts/2009-12-blog-post_26/",
+    "outcome": "read",
+    "quote_verification": "Exact DOM text inclusion check within the article element in session orange-O094 returned true for E1; the matching paragraph text was exactly the quoted greeting."
+  },
+  "disposition": "excluded",
+  "reason": "The actual article is a personal Christmas greeting followed by thanks and a birthday wish. It contains no reusable research decisions, investigation workflow, named-tool purpose, validation, or remediation evidence.",
+  "canonical_source": null,
+  "evidence": [
+    {
+      "id": "E1",
+      "locator": "Article body, opening greeting paragraph (second article p element, following an empty paragraph).",
+      "quote": "聖誕快樂^__^",
+      "verified": true
+    }
+  ],
+  "workflow": [],
+  "tools": [],
+  "handoffs": [],
+  "limitations": [
+    "The article supplies personal greetings only; no technical method, tool usage, or derived skill handoff is supported."
+  ],
+  "candidate_additions": [],
+  "related_article_urls": [],
+  "excluded_material": [
+    "Personal holiday greeting, acknowledgments, and birthday wish",
+    "Site navigation, author biography link, and footer"
+  ],
+  "worker_notes": "fetch_content readable mode reported that the page appeared JavaScript-rendered. The named browser session successfully read the complete article body and verified the classification quote."
+}

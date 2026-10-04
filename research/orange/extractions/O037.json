@@ -1,0 +1,136 @@
+{
+  "schema_version": 1,
+  "source_id": "O037",
+  "url": "https://blog.orange.tw/posts/2015-09-ais3-final-ctf-web-writeup-race/",
+  "observed_title": "AIS3 Final CTF Web Writeup (Race Condition & one-byte off SQL Injection)",
+  "retrieved_at": "2026-09-30T09:44:18.216Z",
+  "retrieval": {
+    "tool": "fetch_content (readable); agent_browser (article identity and exact DOM verification)",
+    "response_id": null,
+    "browser_session": "orange-O037",
+    "browser_artifact": "/home/nhanlaptop/.pi/agent/sessions/--home-nhanlaptop-project-pi-p2o--/.pi-agent-browser-artifacts/01a0f1b0-9c67-721b-855d-3d359c04096b/pi-agent-browser-snapshot-8a7cf68f617e773d.json",
+    "final_url": "https://blog.orange.tw/posts/2015-09-ais3-final-ctf-web-writeup-race/",
+    "outcome": "read",
+    "quote_verification": "In named session orange-O037, checked each E1-E5 string with document.body.innerText.includes(quote) and individual paragraph innerText.includes(quote). All five matched exactly, each in one paragraph, at the recorded observation time; character lengths were 26, 19, 26, 39 and 50. Article heading and final URL were also observed directly."
+  },
+  "disposition": "included",
+  "reason": "Retain two distinct source-review observations: policy-dependent state can be visible before initialization completes, and a presentation-purpose truncation can invalidate earlier escaping. These support reusable invariant checks independently of the omitted challenge solution. The article is brief and supplies author-reported outcomes, not a documented experimental research loop.",
+  "canonical_source": null,
+  "evidence": [
+    {
+      "id": "E1",
+      "locator": "漏洞一 Race Condition — second paragraph, opening clause about incomplete registration state",
+      "quote": "但是只要在註冊中，帳號尚未被新增進 locks 表時",
+      "verified": true
+    },
+    {
+      "id": "E2",
+      "locator": "漏洞一 Race Condition — concluding paragraph describing the guard outcome",
+      "quote": "登入檢查是否被鎖住的限制就可以繞過了！",
+      "verified": true
+    },
+    {
+      "id": "E3",
+      "locator": "漏洞二 one-byte off SQL Injection — paragraph beginning 漏洞發生在, clause explaining display-purpose truncation",
+      "quote": "當 note 的標題太長為了畫面美觀會進行截斷的動作",
+      "verified": true
+    },
+    {
+      "id": "E4",
+      "locator": "漏洞二 one-byte off SQL Injection — following paragraph, opening clause explaining the escaping defense",
+      "quote": "這時候因為對 SQL Injection 防護是使用 escape 的方式防護",
+      "verified": true
+    },
+    {
+      "id": "E5",
+      "locator": "漏洞二 one-byte off SQL Injection — paragraph beginning 導致原本的防護被繞過, after the transformed-value examples",
+      "quote": "導致原本的防護被繞過，使得原本被括起來後面的單引號被 escape 原本的 SQL 語句就變成字串了",
+      "verified": true
+    }
+  ],
+  "workflow": [
+    {
+      "decision": "Question whether object publication and companion policy initialization form one protected transition. The reported incomplete state and guard failure motivate a visibility-invariant hypothesis; inspect the creation and policy-reader relationship rather than assuming the normal completed state applies throughout. The unresolved questions are the consumer's missing-state rule and the actual atomicity and synchronization boundary.",
+      "evidence": ["E1", "E2"]
+    },
+    {
+      "decision": "Question whether a presentation-purpose length adjustment preserves a security encoder's guarantee. The author describes escaping followed by truncation and reports changed syntax at consumption; compare guarantees across the ordered transformations, not merely the presence of an escape call. Final representation, encoded-unit integrity and actual consumer reachability remain independent validation questions.",
+      "evidence": ["E3", "E4", "E5"]
+    }
+  ],
+  "tools": [],
+  "handoffs": [
+    {
+      "producer": "source-code-auditing",
+      "consumer": "race-condition-auditing",
+      "when": "A creation path publishes an object separately from the policy state required by another reader, leaving the intermediate-state semantics unresolved.",
+      "packet": [
+        "Authorized artifact, revision, runtime/configuration and actor scope",
+        "One publication/initialization invariant and contrasting predictions",
+        "Minimal creation and policy-reader slice with source references",
+        "Missing companion-state behavior and relevant gates",
+        "Visibility, transaction and synchronization boundaries, with unknowns marked",
+        "Evidence provenance separating source-author reports, static inference and observations",
+        "Normal controls, failed assumptions, untested scope and bounded next observation with stop condition"
+      ],
+      "acceptance_gate": "Require identified writers/readers and a specific intermediate-state invariant. A static schedule may be accepted as a hypothesis, but the reported guard failure cannot become independently verified race evidence without feasible ordering and observed state transitions; return missing visibility or default-policy semantics.",
+      "classification": "derived",
+      "evidence": ["E1", "E2"]
+    },
+    {
+      "producer": "data-flow-analysis",
+      "consumer": "parser-differential-auditing",
+      "when": "A value is changed after context-specific encoding, and the final parser may consume a representation whose original guarantee no longer holds.",
+      "packet": [
+        "Authorized artifact, revision, runtime/configuration and controllable subset",
+        "One guarantee-preservation question and contrasting consumer interpretations",
+        "Source-to-consumer slice, prerequisites and unresolved edges",
+        "Ordered transformations with their purposes and representation changes",
+        "Encoding guarantees, length units and later mutation boundaries",
+        "Final consumer context and ordinary accepted controls",
+        "Observed versus inferred values, source-report classification, limits and bounded next review with stop condition"
+      ],
+      "acceptance_gate": "Require a specific guarantee that later mutation may invalidate and an identified final consumer. Return a packet missing transformation order, consumer context or feasible gates; historical author reports alone do not establish current parser behavior.",
+      "classification": "derived",
+      "evidence": ["E3", "E4", "E5"]
+    }
+  ],
+  "limitations": [
+    "This is an educational CTF writeup from 2015, not evidence of a current production vulnerability or a general runtime default.",
+    "The guard failure, changed parsing and challenge outcomes are author reports. No source execution, target interaction or independent reproduction was performed.",
+    "The race discussion does not provide state traces, attempt counts, measured timing or a transaction/isolation analysis; publication visibility and practical scheduling remain unresolved.",
+    "The prose illustrates the transformation order but does not establish a complete parser/configuration matrix, paired benign controls or a repaired implementation. No remediation result is claimed.",
+    "An additional file-inclusion section appears beyond the two mechanisms named in the title. Its target-specific restrictions and exploit composition are omitted rather than promoted to a separate operational method.",
+    "The retained lessons overlap existing publication and transformation-order guidance. Candidate additions are narrow review prompts, not claims of novelty or final library acceptance."
+  ],
+  "candidate_additions": [
+    {
+      "owner": "race-condition-auditing",
+      "kind": "heuristic",
+      "guidance": "When an object and its companion policy state are initialized separately, review what a reader concludes from missing policy state. Treat visibility before policy completion as an invariant hypothesis even when neither reader nor writer uses a stale value; require evidence of the actual atomicity boundary before claiming a race.",
+      "evidence": ["E1", "E2"]
+    },
+    {
+      "owner": "source-code-auditing",
+      "kind": "heuristic",
+      "guidance": "Include presentation-purpose truncation and formatting among security-relevant writers when the changed value is reused by a sensitive consumer. A display-oriented reason for mutation does not prove the mutation is confined to output rendering.",
+      "evidence": ["E3", "E4", "E5"]
+    },
+    {
+      "owner": "parser-differential-auditing",
+      "kind": "validation",
+      "guidance": "For length-changing operations after encoding, review whether complete encoded units and delimiter meaning survive to the final consumer. Distinguish a bound on length from a guarantee of syntactic safety, and retain an unresolved classification when final consumption or effective parser rules are unknown.",
+      "evidence": ["E3", "E4", "E5"]
+    }
+  ],
+  "related_article_urls": [],
+  "excluded_material": [
+    "Embedded and linked challenge source code",
+    "Payload strings, query fragments and executable exploit code",
+    "Concrete requests, endpoints, cookies and session identifiers",
+    "Challenge-specific lengths, line numbers, paths and runtime/product versions",
+    "Credential retrieval, privileged-account transitions and file-inclusion execution sequence",
+    "Unlinked historical vulnerability comparison as operational guidance"
+  ],
+  "worker_notes": "Readable retrieval exposed no response ID; provenance therefore includes the explicitly named browser session and its snapshot artifact. Only this article was inspected; the linked source and referenced historical issue were not followed. The article names no research tool with a stated investigative purpose, so tools is empty. Handoffs and candidate guidance are library-derived, not author-attributed workflow claims."
+}

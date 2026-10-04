@@ -1,0 +1,148 @@
+{
+  "schema_version": 1,
+  "source_id": "O028",
+  "url": "https://blog.orange.tw/posts/2017-07-how-i-chained-4-vulnerabilities-on/",
+  "observed_title": "How I Chained 4 vulnerabilities on GitHub Enterprise, From SSRF Execution Chain to RCE!",
+  "retrieved_at": "2026-09-30T09:34:49.316Z",
+  "retrieval": {
+    "tool": "fetch_content (readable) + agent_browser",
+    "response_id": null,
+    "browser_session": "orange-O028",
+    "final_url": "https://blog.orange.tw/posts/2017-07-how-i-chained-4-vulnerabilities-on/",
+    "outcome": "read",
+    "quote_verification": "All five quotations passed exact document.body.innerText.includes(quote) checks in browser session orange-O028; matching paragraph/list-item text, quote lengths, article heading and final URL were also observed."
+  },
+  "disposition": "included",
+  "reason": "Despite its exploit-heavy presentation, the article supplies distinct reusable investigation evidence: characterize limited control before assessing impact, preserve protocol-feasibility failures, and investigate implicit representation changes behind object-capable storage. Only these methods and a bounded console purpose are retained.",
+  "canonical_source": null,
+  "evidence": [
+    {
+      "id": "E1",
+      "locator": "First Bug - Harmless SSRF: standalone paragraph immediately following the request-limitations list",
+      "quote": "The only thing we can control is Path part.",
+      "verified": true
+    },
+    {
+      "id": "E2",
+      "locator": "Second Bug - SSRF in Internal Graphite: opening paragraph posing the next investigation question",
+      "quote": "We have a SSRF now, with lots of limitations. What can I do? My next idea is - Is there any Intranet services we can leverage?",
+      "verified": true
+    },
+    {
+      "id": "E3",
+      "locator": "Third Bug - CR-LF Injection in Python: first item of the numbered protocol-smuggling limitations list",
+      "quote": "Protocols with handshakes like SSH, MySQL and SSL will fail",
+      "verified": true
+    },
+    {
+      "id": "E4",
+      "locator": "Fourth Bug - Unsafe Deserialization: first two sentences of the source-review paragraph about stored application objects",
+      "quote": "While reviewing the source. I am curious about why GitHub can store Ruby Objects in Memcached.",
+      "verified": true
+    },
+    {
+      "id": "E5",
+      "locator": "Fourth Bug - Unsafe Deserialization: paragraph caption immediately preceding the console transcript",
+      "quote": "Unsafe Marshal in Rails Console",
+      "verified": true
+    }
+  ],
+  "workflow": [
+    {
+      "decision": "Describe field-level influence and restrictions before assigning a stronger capability. When the result remains constrained, use those limits to frame the next unresolved downstream-contract question rather than declaring general message control.",
+      "evidence": ["E1", "E2"]
+    },
+    {
+      "decision": "Treat protocol state requirements as feasibility gates. Preserve reported handshake incompatibilities instead of assuming that network reachability means a consumer accepts the available message format.",
+      "evidence": ["E3"]
+    },
+    {
+      "decision": "Unexpected support for storing rich application objects is a reason to inspect the storage adapter's representation contract. Distinguish stored bytes from later reconstruction, using representation inspection rather than an alarming serializer name alone.",
+      "evidence": ["E4", "E5"]
+    }
+  ],
+  "tools": [
+    {
+      "tool": "Rails console",
+      "purpose": "The captioned console transcript inspects the cache wrapper and contrasts ordinary retrieval with raw retrieval, exposing an implicit object-representation conversion. Only this inspection purpose is retained, not its unsafe execution demonstration.",
+      "when": "Source review raises a question about how an adapter stores and retrieves application objects; the safe library adaptation is an isolated authorized model with benign values.",
+      "attribution": "explicit",
+      "evidence": ["E4", "E5"]
+    }
+  ],
+  "handoffs": [
+    {
+      "producer": "attack-surface-mapping",
+      "consumer": "source-code-auditing",
+      "when": "A constrained reachable interface leaves the downstream adapter's guarantees unresolved.",
+      "packet": [
+        "authorization, artifact revision, runtime and configuration",
+        "actor, processing identity, interface and handler/gate references",
+        "controllable fields, preserved restrictions and reachability evidence",
+        "downstream component/source provenance and inferred edges",
+        "one falsifiable contract question and contrasting expectations",
+        "evidence classification, negative results, untested scope and bounded next review with stop condition"
+      ],
+      "acceptance_gate": "A prioritized boundary has a documented handler/gate or is explicitly inferred, and its control restrictions and smallest unresolved contract question are stated. Author-reported reachability is not promoted to independently confirmed exposure.",
+      "classification": "derived",
+      "evidence": ["E1", "E2"]
+    },
+    {
+      "producer": "source-code-auditing",
+      "consumer": "deserialization-and-dispatch-auditing",
+      "when": "Adapter review suggests that shared storage may reconstruct objects implicitly during retrieval.",
+      "packet": [
+        "authorization, artifact/runtime/dependency revisions and configuration",
+        "writer-storage-reader slice with source references and inferred edges",
+        "input/stored/consumed representations and adapter transformations",
+        "writer trust, reader identity and reconstruction context",
+        "one unresolved behavior-selection question with contrasting predictions",
+        "benign baseline and proposed distinguishing observation",
+        "classification, controls, failed assumptions, untested scope and stop condition"
+      ],
+      "acceptance_gate": "The packet locates the suspected representation conversion and its prerequisites, labels unobserved gates, and proposes a harmless distinguishing observation. Rich-object storage or a serializer name alone does not establish unintended behavior.",
+      "classification": "derived",
+      "evidence": ["E4", "E5"]
+    }
+  ],
+  "limitations": [
+    "All vulnerability, execution and fix outcomes are author reports from a historical appliance study; no target, exploit or current release was tested.",
+    "The request restrictions and byte-encoding constraints depend on the historical client/runtime and configuration. The author expressly reports handshake-dependent protocols as incompatible; general protocol control is not established.",
+    "The retrospective investigation does not supply an exhaustive internal-service inventory, reproducibility denominator or systematic negative-control logs.",
+    "The console transcript includes unsafe execution material. Its retained inspection purpose does not endorse that demonstration or independently establish feasible behavior selection.",
+    "The reported fix combines request-address filtering, route confinement and network filtering. The article alone does not verify complete underlying invariant repair, equivalent-path coverage or active enforcement in a current shipped artifact."
+  ],
+  "candidate_additions": [
+    {
+      "owner": "exploitability-assessment",
+      "kind": "heuristic",
+      "guidance": "For a server-mediated request, inventory field-level influence, request-method restrictions, framing/encoding constraints and required handshake state separately. Reachability alone does not establish general message control.",
+      "evidence": ["E1", "E3"]
+    },
+    {
+      "owner": "source-code-auditing",
+      "kind": "workflow",
+      "guidance": "When a reachable operation is tightly constrained, select focused dependency-adapter slices to determine which guarantees persist at downstream boundaries. Keep each suspected capability unresolved until its own prerequisites and consumer behavior are supported.",
+      "evidence": ["E1", "E2", "E4"]
+    },
+    {
+      "owner": "deserialization-and-dispatch-auditing",
+      "kind": "tool",
+      "guidance": "In an isolated authorized model, a local language console can clarify whether a storage adapter transparently encodes or reconstructs values. Compare benign ordinary-value and raw-representation observations without importing behavioral payloads; retain runtime and dependency limits.",
+      "evidence": ["E4", "E5"]
+    }
+  ],
+  "related_article_urls": [
+    "http://blog.orange.tw/2017/01/bug-bounty-github-enterprise-sql-injection.html",
+    "http://www.economyofmechanism.com/github-saml",
+    "http://exablue.de/blog/2017-03-15-github-enterprise-remote-code-execution.html"
+  ],
+  "excluded_material": [
+    "Target-specific request routes, addresses, ports, headers and cache keys",
+    "Protection-bypass inputs, protocol-smuggling payloads and byte constants",
+    "Ordered exploitation steps and copied source or final exploit scripts",
+    "Serialized object layouts, execution gadgets and command/output demonstrations",
+    "Exploit attachments and video, slide-only extensions, bounty amounts and promotional details"
+  ],
+  "worker_notes": "Readable fetch supplied the article body without a displayed response ID; the isolated named browser session supplied final-URL/title observation and exact quote verification. Related URLs were observed in the Foreword only and were not followed. Handoffs and candidate guidance are library synthesis, not author claims of using these skills."
+}

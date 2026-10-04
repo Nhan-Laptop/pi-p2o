@@ -1,0 +1,153 @@
+{
+  "schema_version": 1,
+  "source_id": "O029",
+  "url": "https://blog.orange.tw/posts/2017-01-bug-bounty-github-enterprise-sql-injection/",
+  "observed_title": "GitHub Enterprise SQL Injection",
+  "retrieved_at": "2026-09-30T09:34:32.990Z",
+  "retrieval": {
+    "tool": "fetch_content readable; agent_browser named-session DOM inspection",
+    "response_id": null,
+    "browser_session": "orange-O029",
+    "final_url": "https://blog.orange.tw/posts/2017-01-bug-bounty-github-enterprise-sql-injection/",
+    "outcome": "read",
+    "quote_verification": "All five quotations passed exact inclusion checks against original DOM paragraph innerText in orange-O029 at 2026-09-30T09:36:03.509Z; lengths were 80, 94, 83, 69 and 19 characters."
+  },
+  "disposition": "included",
+  "reason": "Primary investigation evidence supports understanding a source-recovery helper before trusting a shortcut, reviewing abstraction misuse, and tracing a suspicious consumer to its callers and prerequisites. These reusable methods reinforce existing skills; the target-specific demonstration is excluded.",
+  "canonical_source": null,
+  "evidence": [
+    {
+      "id": "E1",
+      "locator": "Environment — opening port-scanning paragraph; following service-identification discussion provides architecture context.",
+      "quote": "The beginning of everything is Port Scanning. After using our good friend - Nmap",
+      "verified": true
+    },
+    {
+      "id": "E2",
+      "locator": "Environment — paragraph immediately after the third-party source-recovery shortcut and before the disassembler screenshots.",
+      "quote": "But to be a hacker. We can’t just use it without knowing how it works. So, let’s open IDA Pro!",
+      "verified": true
+    },
+    {
+      "id": "E3",
+      "locator": "Code Analysis — opening paragraph before the source-language inventory.",
+      "quote": "After de-obfuscated all the code. Finally, we can start our code reviewing process.",
+      "verified": true
+    },
+    {
+      "id": "E4",
+      "locator": "Vulnerability — ORM-misuse paragraph following the model-level source excerpt.",
+      "quote": "But there are so many misuse of ActiveRecord may cause SQL Injection.",
+      "verified": true
+    },
+    {
+      "id": "E5",
+      "locator": "Vulnerability — paragraph introducing caller tracing; the following caller discussion and credential-prerequisite paragraph supply influence and gate context.",
+      "quote": "OK, let’s trace up!",
+      "verified": true
+    }
+  ],
+  "workflow": [
+    {
+      "decision": "Inventory exposed interfaces in the authorized environment, then correlate observed service roles with the code selected for review. Listener discovery alone does not establish an actor's permission to reach a sensitive handler.",
+      "evidence": ["E1"]
+    },
+    {
+      "decision": "When obscured source blocks review and an external recovery shortcut exists, inspect the responsible helper to understand its transformation instead of trusting the shortcut blindly. Resume source auditing after intelligible code is available.",
+      "evidence": ["E2", "E3"]
+    },
+    {
+      "decision": "Treat an abstraction's safety as an argument-level contract, not a blanket property. Review calls that assemble query structure rather than assuming every use inherits safe data-binding behavior.",
+      "evidence": ["E4"]
+    },
+    {
+      "decision": "Trace a suspicious consumer backward through callers to the external field. Record feature and permission prerequisites separately from data dependence before concluding that the actor can influence the consumed value.",
+      "evidence": ["E4", "E5"]
+    }
+  ],
+  "tools": [
+    {
+      "tool": "Nmap",
+      "purpose": "Discover exposed network listeners to orient the interface inventory.",
+      "when": "At the beginning of an explicitly authorized environment survey; subsequent service and handler attribution remains a separate question.",
+      "attribution": "explicit",
+      "evidence": ["E1"]
+    },
+    {
+      "tool": "IDA Pro",
+      "purpose": "Inspect the native source-obscuring helper to understand the recovery mechanism rather than blindly adopting an external shortcut.",
+      "when": "Readable application source is blocked by a companion runtime helper whose behavior is not yet understood.",
+      "attribution": "explicit",
+      "evidence": ["E2", "E3"]
+    }
+  ],
+  "handoffs": [
+    {
+      "producer": "binary-auditing",
+      "consumer": "source-code-auditing",
+      "when": "A source-visibility obstacle has been characterized sufficiently to make application code available for review.",
+      "packet": [
+        "Authorized artifact provenance, revision, runtime and configuration",
+        "Blocking mechanism and bounded helper contract with confidence labels",
+        "Original versus recovered source provenance, coverage and discrepancies",
+        "Service-to-source mapping and unresolved audit question",
+        "Evidence collection method, claim classification and scope limits",
+        "Next bounded review and stop condition"
+      ],
+      "acceptance_gate": "Recovered code is tied to the declared artifact, and recovery assumptions and unsupported regions remain explicit. Successful recovery is not itself a security finding.",
+      "classification": "derived",
+      "evidence": ["E2", "E3"]
+    },
+    {
+      "producer": "source-code-auditing",
+      "consumer": "data-flow-analysis",
+      "when": "An abstraction call appears to accept unconstrained structure, but actor influence and path feasibility remain unresolved.",
+      "packet": [
+        "Actor, authorized scope, artifact provenance and configuration",
+        "Minimal external-field, caller and consumer slice with evidence locations",
+        "Representation changes and argument-level safety guarantees",
+        "Feature and permission constraints, evidenced edges and missing edges",
+        "Claim classification, failed assumptions and scope limits",
+        "Disconfirming observation, next bounded question and stop condition"
+      ],
+      "acceptance_gate": "Each flow edge and prerequisite is evidenced or explicitly unresolved. A framework label or suspicious method name alone does not prove a reachable violation.",
+      "classification": "derived",
+      "evidence": ["E4", "E5"]
+    }
+  ],
+  "limitations": [
+    "This is a historical GitHub Enterprise appliance investigation with administrative access for local inspection; source access does not establish the remote API actor's privileges.",
+    "The article describes a scoped-credential prerequisite, but not a complete least-privileged actor or authorization matrix. No unauthenticated reachability is inferred.",
+    "Source recovery, data-flow feasibility and vulnerability-response observations remain author reports; this extraction did not execute recovery code or reproduce target behavior.",
+    "The disclosure timeline reports vendor validation and a fixed release, but supplies no repair implementation, shipped-artifact comparison or regression coverage. Current-version applicability is unverified."
+  ],
+  "candidate_additions": [
+    {
+      "owner": "binary-auditing",
+      "kind": "heuristic",
+      "guidance": "If a source-obscuring helper blocks review, recover its narrow transformation contract before adopting an external recovery shortcut. Preserve the distinction between original and recovered evidence and carry recovery uncertainty into the source audit.",
+      "evidence": ["E2", "E3"]
+    },
+    {
+      "owner": "source-code-auditing",
+      "kind": "heuristic",
+      "guidance": "Distinguish abstraction APIs that bind data from APIs that accept query structure. Inspect each argument's actual safety contract rather than treating use of the abstraction as universal protection.",
+      "evidence": ["E4"]
+    },
+    {
+      "owner": "data-flow-analysis",
+      "kind": "workflow",
+      "guidance": "Trace suspicious consumers to external fields and enumerate the feature and permission gates separately. A locally reviewable sink remains a candidate until actor control and path feasibility are supported.",
+      "evidence": ["E4", "E5"]
+    }
+  ],
+  "related_article_urls": [],
+  "excluded_material": [
+    "Source-recovery code, transformation details and embedded key material",
+    "Product-specific source paths, model and route names, ports, addresses and version constants",
+    "Credential creation requests, tokens and authorization-scope strings",
+    "SQL payloads, target request sequences, timing probes and demonstration screenshots",
+    "Bounty amount, personal schedule and disclosure chronology as operational guidance"
+  ],
+  "worker_notes": "The readable fetch returned no response identifier or article-title header; the named browser supplied the observed title and exact original-text checks. E1 and E5 are short method-only excerpts of longer paragraphs, intentionally omitting target-specific details. No linked code, attachment or other article was retrieved."
+}

@@ -1,0 +1,130 @@
+{
+  "schema_version": 1,
+  "source_id": "O050",
+  "url": "https://blog.orange.tw/posts/2014-02-olympic-ctf-2014-curling-200-write-up/",
+  "observed_title": "Olympic CTF 2014 CURLing 200 write up",
+  "retrieved_at": "2026-09-30T09:58:59.798Z",
+  "retrieval": {
+    "tool": "agent_browser (following fetch_content readable retrieval)",
+    "response_id": null,
+    "browser_session": "orange-O050",
+    "final_url": "https://blog.orange.tw/posts/2014-02-olympic-ctf-2014-curling-200-write-up/",
+    "outcome": "read",
+    "quote_verification": "Exact, case-sensitive DOM substring checks against article p.innerText in session orange-O050. Paragraphs 20, 22, 23, 24 and 33 matched E1-E5 respectively; Unicode lengths were 29, 40, 35, 36 and 41. Checked at 2026-09-30T10:02:04.605Z."
+  },
+  "disposition": "included",
+  "reason": "Beyond the challenge solve sequence, the article documents interpreting a denied route through configuration and reference documentation, revisiting an initial service-control assumption after stalling, and revising impact in light of deployment context. Retain these generic decisions, not the solution or its request sequence.",
+  "canonical_source": null,
+  "evidence": [
+    {
+      "id": "E1",
+      "locator": "Article body, DOM paragraph 20 (counting all article p elements): direct-access failure observation.",
+      "quote": "但是直接 Access 會出現 404 Not Found",
+      "verified": true
+    },
+    {
+      "id": "E2",
+      "locator": "Article body, DOM paragraph 22: consultation of the linked official manual to interpret configuration and file protection.",
+      "quote": "查一下 官方 manual 會發現這是 Nginx 的功能之一可以用來保護檔案。",
+      "verified": true
+    },
+    {
+      "id": "E3",
+      "locator": "Article body, DOM paragraph 23: initial assumption about who controls the relevant metadata.",
+      "quote": "但是這個 header 是 server 端控制，所以使用者無法偽造。",
+      "verified": true
+    },
+    {
+      "id": "E4",
+      "locator": "Article body, DOM paragraph 24: stalled investigation followed by renewed inspection of the application.",
+      "quote": "在這邊卡了一下子，不過再仔細觀察整個新聞系統發現網頁其實存在另外一個漏洞",
+      "verified": true
+    },
+    {
+      "id": "E5",
+      "locator": "Article body, DOM paragraph 33: closing reflection on underestimating impact without configuration context.",
+      "quote": "可能只會把這個當成一個沒有大危害的弱點 （只能針對 Client Side 攻擊）",
+      "verified": true
+    }
+  ],
+  "workflow": [
+    {
+      "decision": "When direct access is denied, reconcile the observation with the enforcing component's configuration and reference documentation before concluding that a protected object is absent or unreachable through every interface.",
+      "evidence": ["E1", "E2"]
+    },
+    {
+      "decision": "Keep the claim that metadata is service-controlled separate from evidence that an actor cannot influence its writer. If that assumption stalls the investigation, revisit other application input/output boundaries rather than treating the assumption as a proven security guarantee.",
+      "evidence": ["E3", "E4"]
+    },
+    {
+      "decision": "Keep an initially narrow impact assessment provisional until the downstream consumers and configured capabilities are understood; the most visible consumer need not define the full consequence.",
+      "evidence": ["E2", "E3", "E5"]
+    }
+  ],
+  "tools": [
+    {
+      "tool": "Official server manual (reference documentation)",
+      "purpose": "Interpret unfamiliar configuration terms and the documented file-protection behavior.",
+      "when": "An observed access denial needs an explanation grounded in the enforcing component's semantics.",
+      "attribution": "explicit",
+      "evidence": ["E2"]
+    }
+  ],
+  "handoffs": [
+    {
+      "producer": "authorization-auditing",
+      "consumer": "exploitability-assessment",
+      "when": "An interface denies direct access, but the documented policy depends on metadata supplied by another component and actor influence remains unresolved.",
+      "packet": [
+        "scope_and_actor",
+        "falsifiable_boundary_question",
+        "configuration_and_documentation_provenance",
+        "enforcing_component_and_nominal_metadata_writer",
+        "consumers_and_capability_dependencies",
+        "denied_route_observation",
+        "author_report_vs_inference",
+        "unresolved_influence_edges_and_failed_assumptions",
+        "bounded_next_review_and_stop_condition"
+      ],
+      "acceptance_gate": "Identify the policy-bearing consumer and mark every proposed influence or capability edge as evidenced or unresolved. A direct-access denial or a nominally service-side writer alone cannot establish the complete boundary or stronger impact.",
+      "classification": "derived",
+      "evidence": ["E1", "E2", "E3", "E5"]
+    }
+  ],
+  "limitations": [
+    "This is one historical competition configuration, not a general result for all deployments; runtime revisions, current behavior and patch status are not established.",
+    "All security effects and successful completion remain author reports. Independent checks covered article text and extraction validity, not target behavior or vulnerability reproduction.",
+    "The direct-access denial and the initial service-control claim are incomplete interim observations, not proof that indirect actor influence is impossible.",
+    "The article supplies no comprehensive route inventory, remediation evaluation or variant coverage. Deployment components are not treated as named auditing utilities."
+  ],
+  "candidate_additions": [
+    {
+      "owner": "authorization-auditing",
+      "kind": "failure",
+      "guidance": "Treat a direct-access rejection as evidence about one route, not a complete policy result or proof that an object does not exist. Reconcile configuration and documented enforcement semantics before closing the boundary model.",
+      "evidence": ["E1", "E2"]
+    },
+    {
+      "owner": "data-flow-analysis",
+      "kind": "heuristic",
+      "guidance": "Service-generated metadata still has a provenance question: distinguish its nominal writer from actor influence over that writer and from the authority assigned by downstream consumers. Preserve unresolved influence edges instead of declaring the field trustworthy by origin alone.",
+      "evidence": ["E3", "E4"]
+    },
+    {
+      "owner": "exploitability-assessment",
+      "kind": "workflow",
+      "guidance": "Revisit a narrow impact classification when configuration reveals another consumer or capability. Record the dependency and its evidence limits without turning the assessment into a trigger sequence.",
+      "evidence": ["E2", "E5"]
+    }
+  ],
+  "related_article_urls": [
+    "http://blog.orange.tw/2014/02/olympic-ctf-2014-curling-400-write-up.html"
+  ],
+  "excluded_material": [
+    "Target addresses, filesystem paths, route names and challenge-specific parameter names",
+    "Traversal and response-framing payloads, exact control-header names and exploit request order",
+    "Flag value, success screenshots and challenge-specific stack-fingerprinting instructions",
+    "Instructions for acquiring target files or exercising protected resources"
+  ],
+  "worker_notes": "Readable fetch returned the article without a usable response ID; the named browser session independently supplied the title, paragraph locators and exact quote checks. The tool entry is reference documentation, not an installed analysis utility. The related article was recorded only as an observed link and was not read."
+}

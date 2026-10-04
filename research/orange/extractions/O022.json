@@ -1,0 +1,143 @@
+{
+  "schema_version": 1,
+  "source_id": "O022",
+  "url": "https://blog.orange.tw/posts/2019-01-hacking-jenkins-part-1-play-with-dynamic-routing/",
+  "observed_title": "Hacking Jenkins Part 1 - Play with Dynamic Routing",
+  "retrieved_at": "2026-09-30T09:27:53.269Z",
+  "retrieval": {
+    "tool": "fetch_content (readable); agent_browser",
+    "response_id": null,
+    "browser_session": "orange-O022",
+    "final_url": "https://blog.orange.tw/posts/2019-01-hacking-jenkins-part-1-play-with-dynamic-routing/",
+    "outcome": "read",
+    "quote_verification": "Read-only DOM eval in orange-O022 checked each final quote as an exact, unnormalized substring of document.body.innerText and a containing paragraph's innerText. All five checks passed; preceding headings were observed. Quote lengths were 137, 54, 129, 77 and 76 characters."
+  },
+  "disposition": "included",
+  "reason": "The article supplies reusable primary observations about convention-based dispatch, inherited behavior, entry-policy coverage, failed result retrieval and independent action-level checks. These support method extraction without retaining its concrete routes or vulnerability chains.",
+  "canonical_source": null,
+  "evidence": [
+    {
+      "id": "E1",
+      "locator": "Vulnerability Analysis — opening paragraph introducing naming-convention URL resolution.",
+      "quote": "In order to provide developers more flexibilities, Jenkins uses a naming convention to resolve the URL and invoke the method dynamically.",
+      "verified": true
+    },
+    {
+      "id": "E2",
+      "locator": "1. Everything is the Subclass of java.lang.Object — opening paragraph, first sentence.",
+      "quote": "In Java, everything is a subclass of java.lang.Object.",
+      "verified": true
+    },
+    {
+      "id": "E3",
+      "locator": "2. Whitelist Bypass — paragraph immediately after the prefix-list code block; substring of its first sentence.",
+      "quote": "if you can find a cross reference from the white-list entrance jump to other objects, you can still bypass this URL prefix check!",
+      "verified": true
+    },
+    {
+      "id": "E4",
+      "locator": "2. Whitelist Bypass — paragraph after the example method sequence, first sentence reporting unsuccessful result retrieval.",
+      "quote": "This execution chain seems smooth, but sadly, it can not retrieve the result.",
+      "verified": true
+    },
+    {
+      "id": "E5",
+      "locator": "How to Exploit? — paragraph about configurable objects; sentence explaining repeated permission checks before sensitive actions.",
+      "quote": "Most developers will check the permission before the dangerous action again.",
+      "verified": true
+    }
+  ],
+  "workflow": [
+    {
+      "decision": "When input selects behavior through framework naming conventions, first learn the resolution rules and include inherited members in the candidate callable set rather than reviewing only explicitly registered application handlers.",
+      "evidence": ["E1", "E2"]
+    },
+    {
+      "decision": "Ask whether an approved entry constrains the effective receiver and action after object references are followed. Treat entry admission and descendant authorization as distinct hypotheses.",
+      "evidence": ["E3"]
+    },
+    {
+      "decision": "Retain a plausible invocation with no retrievable result as negative evidence for that observation, not as proof of the claimed effect or proof that every related path is safe. Identify the missing observable before strengthening the conclusion.",
+      "evidence": ["E4"]
+    },
+    {
+      "decision": "After identifying a weak outer gate, inspect the permission check at the selected action. An intact downstream check limits the capability claim and leaves action-level policy coverage as a separate unresolved question.",
+      "evidence": ["E3", "E5"]
+    }
+  ],
+  "tools": [],
+  "handoffs": [
+    {
+      "producer": "deserialization-and-dispatch-auditing",
+      "consumer": "authorization-auditing",
+      "when": "Convention-based selection can reach receivers beyond those suggested by the entry allowlist, but effective action-level authority remains unresolved.",
+      "packet": [
+        "Scope, artifact revision, runtime/configuration, actor and intended boundary",
+        "Selection convention, receiver-reference model and inherited-member coverage",
+        "Entry admission policy versus effective action/object permission checks",
+        "Source-report and static-inference labels for every proposed transition",
+        "Failed paths, untested alternatives and remaining policy question",
+        "Benign contrasting observation design and stop condition"
+      ],
+      "acceptance_gate": "The effective receiver/action and its relevant gates are identified or explicitly marked unresolved. Entry admission alone is not accepted as evidence of protected-action authority; no source object chain is transferred.",
+      "classification": "derived",
+      "evidence": ["E1", "E2", "E3", "E5"]
+    },
+    {
+      "producer": "authorization-auditing",
+      "consumer": "exploitability-assessment",
+      "when": "A reported entry-policy failure exists, while result observability or a downstream permission check limits stronger impact claims.",
+      "packet": [
+        "Scope, actor, configuration and revision-dependent prerequisites",
+        "Narrow violated policy and independently enforced downstream checks",
+        "Reachability, result observability and protected effect recorded separately",
+        "Author-reported versus independently observed evidence classification",
+        "Failed observations, missing capabilities and collateral state changes",
+        "Next harmless observation, contrasting predictions and stop condition"
+      ],
+      "acceptance_gate": "Each claimed capability has evidence and prerequisites; inaccessible results and surviving permission gates remain explicit limits. Source-only evidence remains an author report, not demonstrated local impact.",
+      "classification": "derived",
+      "evidence": ["E3", "E4", "E5"]
+    }
+  ],
+  "limitations": [
+    "The author explicitly scoped a partial, high-impact review to Jenkins core, its routing framework and suggested plugins; this is not an exhaustive application or extension audit.",
+    "The review and disclosure concern historical 2018 behavior, published in 2019. Anonymous-readable and authenticated configurations differ; optional modules and actor privileges affect reachability. No current installation was assessed.",
+    "One illustrated traversal did not return the desired result, and the author also reports that setter invocation was unavailable. Neither a theoretical invocation nor this failed observation establishes a general impact or safety conclusion.",
+    "The author reports that many sensitive actions enforce their own permissions. A separate stronger claim required a known credential identifier whose acquisition was not established; missing prerequisites are not assumed satisfied.",
+    "The TODO section reports that an added user-object permission check invalidated the original access route after Jenkins 2.138. The reported fix also changed routing protections in both application and framework; no shipped artifact or repair completeness was verified here.",
+    "All vulnerability outcomes remain author reports. Extraction used read-only article retrieval and DOM quote checks only; no code execution, attachment retrieval, target requests or independent reproduction occurred."
+  ],
+  "candidate_additions": [
+    {
+      "owner": "deserialization-and-dispatch-auditing",
+      "kind": "heuristic",
+      "guidance": "For naming-convention dispatch, compare the intended callable set with inherited members and recursively returned receivers. Record the receiver and selected behavior rather than treating entry registration as the complete exposure model.",
+      "evidence": ["E1", "E2", "E3"]
+    },
+    {
+      "owner": "authorization-auditing",
+      "kind": "workflow",
+      "guidance": "Evaluate an entry allowlist against the effective action/object after receiver traversal. Distinguish admission policy from independent action-level permission checks, and retain intact downstream checks as explicit capability constraints.",
+      "evidence": ["E3", "E5"]
+    },
+    {
+      "owner": "exploitability-assessment",
+      "kind": "validation",
+      "guidance": "Preserve failed observations where plausible invocation does not yield the claimed result. Report reachability, observable result and protected effect separately; infer neither full compromise nor global safety from one failed return or a surviving action check.",
+      "evidence": ["E4", "E5"]
+    }
+  ],
+  "related_article_urls": [
+    "https://devco.re/blog/2019/01/16/hacking-Jenkins-part1-play-with-dynamic-routing/"
+  ],
+  "excluded_material": [
+    "Concrete request routes, endpoint strings, parameters and callable/object chains",
+    "Payloads, exploit code and ordered vulnerability-composition instructions",
+    "Account enumeration, credential extraction and sensitive-resource examples",
+    "Internet-exposure counts and target-discovery survey details",
+    "Promotional framing and disclosure chronology not needed for the method",
+    "Unpublished follow-up results and proposed exploitation tasks"
+  ],
+  "worker_notes": "The readable fetch returned the article without a response ID; the dedicated orange-O022 browser session supplies retrieval identity and exact-quote verification. Shodan appears only in exposure context or an external advisory, so no audit-tool guidance was retained. The linked Chinese translation was not fetched or classified as a duplicate; no follow-up article was read. Candidates reinforce existing contracts and remain proposals."
+}

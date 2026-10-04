@@ -1,0 +1,42 @@
+{
+  "schema_version": 1,
+  "source_id": "O087",
+  "url": "https://blog.orange.tw/posts/2010-02-xd/",
+  "observed_title": "好玩的圖XD",
+  "retrieved_at": "2026-09-30T10:30:31.302Z",
+  "retrieval": {
+    "tool": "fetch_content (readable/raw); agent_browser (DOM verification)",
+    "response_id": null,
+    "browser_session": "orange-O087",
+    "final_url": "https://blog.orange.tw/posts/2010-02-xd/",
+    "outcome": "read",
+    "quote_verification": "E1 checked in session orange-O087 against the original articleBody DOM: textContent.includes(quote) and exact equality with the final paragraph's textContent both returned true; quote length is 21 characters."
+  },
+  "disposition": "excluded",
+  "reason": "A personal collection of classical-cipher, alphabet and keyboard-layout images with reference links and brief descriptive comments. The closing paragraph explicitly identifies the pictures as collected online. The article does not provide two reusable investigation decisions, a named research tool with its purpose, or a validation/failure process; no workflow or handoff is inferred from the gallery.",
+  "canonical_source": null,
+  "evidence": [
+    {
+      "id": "E1",
+      "locator": "Final article-body paragraph beneath the heading 在附上幾張不知名來源的吧XD, following the final three images",
+      "quote": "以上圖為網路收集，如有侵犯版權請來信 :)",
+      "verified": true
+    }
+  ],
+  "workflow": [],
+  "tools": [],
+  "handoffs": [],
+  "limitations": [
+    "Classification rests on the complete article prose and its image/link structure; individual chart contents and external references were not separately analyzed.",
+    "The named ciphers, alphabets and keyboard layouts are subjects of the collection, not evidence of author tool usage or security-auditing methods.",
+    "No target testing, source-code execution or independent reproduction was performed; the page supplies no research result to validate."
+  ],
+  "candidate_additions": [],
+  "related_article_urls": [],
+  "excluded_material": [
+    "Collected cipher/alphabet charts and keyboard-layout imagery",
+    "Illustrative ciphertext and cipher-specific descriptive material",
+    "Entertainment references and external reference links"
+  ],
+  "worker_notes": "Readable and raw fetches exposed no response ID, so retrieval provenance uses the owned browser session. The actual title and classification quotation were verified in the live DOM. No links to other Orange articles were observed within the article body."
+}

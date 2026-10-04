@@ -1,0 +1,132 @@
+{
+  "schema_version": 1,
+  "source_id": "O055",
+  "url": "https://blog.orange.tw/posts/2013-11-yahoo-bug-bounty-part-1-yahoo-blog/",
+  "observed_title": "Yahoo Bug Bounty Part 1 - 台灣 Yahoo Blog 任意檔案下載漏洞",
+  "retrieved_at": "2026-09-30T10:06:26.982Z",
+  "retrieval": {
+    "tool": "agent_browser",
+    "browser_session": "orange-O055",
+    "final_url": "https://blog.orange.tw/posts/2013-11-yahoo-bug-bounty-part-1-yahoo-blog/",
+    "outcome": "read",
+    "quote_verification": "After a readable fetch, inspected the article in the named session. A read-only DOM evaluation checked each quotation with document.body.innerText.includes(quote) and matching paragraph innerText.includes(quote); all four matched exactly. Title, section heading and related link were also observed in the DOM."
+  },
+  "disposition": "included",
+  "reason": "Beyond the omitted exploit walkthrough, the article provides reusable evidence for distinguishing download metadata from actual content, keeping alternative processing explanations provisional, and reconciling a black-box model with source inspection. Its conjectured runtime restriction also supplies a concrete confidence limit.",
+  "canonical_source": null,
+  "evidence": [
+    {
+      "id": "E1",
+      "locator": "正文開始 — paragraph beginning 不過實際下載後 (DOM paragraph 31)",
+      "quote": "不過實際下載後，內容是空的，大致可以先猜想一下程式邏輯檔名部分先取得，最後再組裝路徑去讀取（或者發生某些錯誤）",
+      "verified": true
+    },
+    {
+      "id": "E2",
+      "locator": "正文開始 — paragraph containing 配合前面幾個測試 (DOM paragraph 34)",
+      "quote": "配合前面幾個測試，大致可以猜想程式的邏輯",
+      "verified": true
+    },
+    {
+      "id": "E3",
+      "locator": "正文開始 — source-inspection introduction beginning 最後就是讀 PHP 的 Source Code (DOM paragraph 45)",
+      "quote": "最後就是讀 PHP 的 Source Code，來看一下程式邏輯到底是怎麼寫的？",
+      "verified": true
+    },
+    {
+      "id": "E4",
+      "locator": "正文開始 — restriction hypothesis paragraph beginning 大致先猜想有 (DOM paragraph 27)",
+      "quote": "大致先猜想有 open_basedir 之類的限制",
+      "verified": true
+    }
+  ],
+  "workflow": [
+    {
+      "decision": "When apparent download success and actual content disagree, separate metadata observations from body observations. Use the contrasts to propose a processing-stage model while retaining an error path as an alternative; the next question is which stage produced each observable.",
+      "evidence": ["E1", "E2"]
+    },
+    {
+      "decision": "Treat an apparent environmental access restriction as a provisional explanation, not a demonstrated policy boundary. Keep the differing outcomes and the effective configuration as unresolved constraints on any impact claim.",
+      "evidence": ["E4"]
+    },
+    {
+      "decision": "When source is available through an authorized channel, inspect the relevant construction-to-consumption slice to reconcile the inferred behavior with implementation. Keep observations, inferred ordering and remaining unknowns distinct.",
+      "evidence": ["E1", "E2", "E3"]
+    }
+  ],
+  "tools": [],
+  "handoffs": [
+    {
+      "producer": "dynamic-analysis",
+      "consumer": "data-flow-analysis",
+      "when": "Response metadata and content suggest different processing stages, but the value reaching the consumer is unresolved.",
+      "packet": [
+        "authorization, actor and artifact/configuration identity",
+        "one falsifiable processing-stage question",
+        "baseline and contrasting metadata/content observations",
+        "proposed transformations with observed versus inferred edges",
+        "alternative error explanation and failed assumptions",
+        "available authorized source references and collection provenance",
+        "bounded next review question and stop condition"
+      ],
+      "acceptance_gate": "The observations must distinguish at least two explanations, preserve a normal comparison, and identify the missing consumer edge. Metadata alone is not accepted as proof of successful content access.",
+      "classification": "derived",
+      "evidence": ["E1", "E2", "E3"]
+    },
+    {
+      "producer": "data-flow-analysis",
+      "consumer": "exploitability-assessment",
+      "when": "A consumption model is supported, but the scope imposed by runtime or storage boundaries is still uncertain.",
+      "packet": [
+        "authorization, actor and original artifact identity",
+        "minimal annotated input-to-consumer slice and invariant",
+        "observed capability separated from source-author reports",
+        "successful, failed and ambiguous outcome classes",
+        "confirmed restrictions separated from configuration hypotheses",
+        "missing capabilities and untested scope",
+        "next harmless observation, redaction needs and stop condition"
+      ],
+      "acceptance_gate": "Require evidence of the consumer and its reachable input, or explicitly accept a static-only hypothesis. Do not upgrade a limited observation or conjectured restriction to unrestricted access or a verified containment boundary.",
+      "classification": "derived",
+      "evidence": ["E3", "E4"]
+    }
+  ],
+  "limitations": [
+    "This is a historical November 2013 account of the retiring Yahoo Blog backup service; it establishes no present-day product or configuration behavior.",
+    "The open_basedir explanation begins as a guess from differing outcomes; the article does not provide independently verified effective configuration or a complete accessible-resource inventory.",
+    "The metadata/body discrepancy also admits an error explanation. The displayed observations alone do not prove the complete processing order or successful content retrieval.",
+    "Source inspection, cross-account consequences and completed repair remain author reports. No target requests, exploit reproduction, attachments, or shipped-fix verification were performed for this extraction."
+  ],
+  "candidate_additions": [
+    {
+      "owner": "dynamic-analysis",
+      "kind": "heuristic",
+      "guidance": "Record response metadata and delivered content as separate observations. A discrepancy can suggest stage ordering, but preserve an error-path explanation until an independent observation distinguishes it.",
+      "evidence": ["E1", "E2"]
+    },
+    {
+      "owner": "data-flow-analysis",
+      "kind": "validation",
+      "guidance": "Reconcile a black-box construction model with the smallest authorized source-to-consumer slice when available. Mark inferred edges and compare the model with implementation rather than treating output appearance as consumer evidence.",
+      "evidence": ["E1", "E2", "E3"]
+    },
+    {
+      "owner": "exploitability-assessment",
+      "kind": "failure",
+      "guidance": "Do not treat a failed access as proof of a particular confinement policy, or a successful subset as unrestricted capability. Carry the restriction hypothesis, negative outcomes and untested scope into the impact statement.",
+      "evidence": ["E4"]
+    }
+  ],
+  "related_article_urls": [
+    "http://orange-tw.blogspot.tw/2013/11/yahoo-bug-bounty-part-2-loginyahoocom.html"
+  ],
+  "excluded_material": [
+    "Live target endpoints, request parameters and traversal payloads",
+    "Ordered exploitation and sensitive file/configuration/source retrieval details",
+    "Account identifier derivation, guessing constants and cross-account download construction",
+    "Executable source snippets and proof-of-concept suggestions",
+    "Target-specific filenames, directory layout, hashes and screenshots containing such details",
+    "Bounty promotion, reward amounts and reporting contact information"
+  ],
+  "worker_notes": "Read only the assigned article; the related article link was recorded but not followed. No named investigative tool with a stated purpose is described, so the tools list is empty. Handoffs and candidate guidance are library synthesis, not author claims."
+}

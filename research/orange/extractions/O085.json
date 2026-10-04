@@ -1,0 +1,40 @@
+{
+  "schema_version": 1,
+  "source_id": "O085",
+  "url": "https://blog.orange.tw/posts/2010-04-note/",
+  "observed_title": "Note",
+  "retrieved_at": "2026-09-30T10:30:00.921Z",
+  "retrieval": {
+    "tool": "agent_browser",
+    "response_id": "session:orange-O085",
+    "final_url": "https://blog.orange.tw/posts/2010-04-note/",
+    "outcome": "read",
+    "quote_verification": "Exact article.textContent.includes(quote) check through agent_browser eval in session orange-O085 returned true."
+  },
+  "disposition": "excluded",
+  "reason": "The actual article is a personal update about university applications, an upcoming talk, school credits, and enthusiasm for a borrowed vulnerability-analysis book. The book reflection supplies no concrete investigation decisions, named-tool purposes, failures, or validation; it does not support reusable method observations.",
+  "canonical_source": null,
+  "evidence": [
+    {
+      "id": "E1",
+      "locator": "Note, paragraph beginning 最近借了一本漏洞分析利用的書 (book-reading reflection)",
+      "quote": "最近借了一本漏洞分析利用的書",
+      "verified": true
+    }
+  ],
+  "workflow": [],
+  "tools": [],
+  "handoffs": [],
+  "limitations": [
+    "This personal note is dated 2010-04-06. The book is unnamed, and no technical finding, procedure, or validated outcome is reported.",
+    "The article text alone was inspected; the external event link was not followed, and no attachments or targets were accessed."
+  ],
+  "candidate_additions": [],
+  "related_article_urls": [],
+  "excluded_material": [
+    "University-application and school-life updates",
+    "Talk announcement and external event link",
+    "Book-reading enthusiasm without operational method evidence"
+  ],
+  "worker_notes": "fetch_content readable mode failed with 'Page appears to be JavaScript-rendered (content loads dynamically)'; the complete article was subsequently read in the dedicated orange-O085 browser session. E1 is a classification quote, not method evidence. Required README.md and HANDOFFS.md were read from the repository root."
+}

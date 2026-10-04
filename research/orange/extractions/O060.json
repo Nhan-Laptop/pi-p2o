@@ -1,0 +1,41 @@
+{
+  "schema_version": 1,
+  "source_id": "O060",
+  "url": "https://blog.orange.tw/posts/2013-07-0-day-0-day-easy-talk-happy-fuzzing/",
+  "observed_title": "0-Day 輕鬆談 (0-Day Easy Talk) - Happy Fuzzing Internet Explorer",
+  "retrieved_at": "2026-09-30T10:10:31.296Z",
+  "retrieval": {
+    "tool": "agent_browser",
+    "response_id": "orange-O060",
+    "final_url": "https://blog.orange.tw/posts/2013-07-0-day-0-day-easy-talk-happy-fuzzing/",
+    "outcome": "read",
+    "quote_verification": "E1 verified by exact equality against an original document paragraph's textContent in named browser session orange-O060; the DOM check returned true. Primary-document headings, all three paragraphs, and the embedded presentation URL were inspected."
+  },
+  "disposition": "excluded",
+  "reason": "The actual post is a conference-talk announcement: three introductory paragraphs and an embedded presentation. Its prose promises discussion of fuzzer design and experience but supplies no investigation decisions, tool-purpose rationale, validation, failures, or fixes. This is a slides-only post under the extraction contract, not two supported reusable method observations.",
+  "canonical_source": null,
+  "evidence": [
+    {
+      "id": "E1",
+      "locator": "First article-body paragraph beneath the title and publication date; introduces the conference talk.",
+      "quote": "這是我在台灣駭客年會 Hacks in Taiwan HITCON 2013 的演講",
+      "verified": true
+    }
+  ],
+  "workflow": [],
+  "tools": [],
+  "handoffs": [],
+  "limitations": [
+    "The article body is an introduction to an embedded slide deck, not a standalone methodological account. The presentation was not traversed or downloaded for a vulnerability walkthrough.",
+    "The summary does not establish harness design, corpus selection, reset semantics, oracles, crash triage, or validation; these cannot be inferred from the fuzzing topic alone.",
+    "The announced vulnerability disclosure is an author claim, not independent verification. No target interaction or reproduction was performed."
+  ],
+  "candidate_additions": [],
+  "related_article_urls": [],
+  "excluded_material": [
+    "Conference announcement and promotional summary",
+    "Embedded presentation material and announced vulnerability disclosure",
+    "Product-specific details and any exploit demonstration or payload material"
+  ],
+  "worker_notes": "fetch_content readable mode failed with: Page appears to be JavaScript-rendered (content loads dynamically). Read-only fallback in the dedicated orange-O060 browser session succeeded. E1 is a classification quote, permitted for an excluded page; no workflow, tools, or handoffs were invented."
+}

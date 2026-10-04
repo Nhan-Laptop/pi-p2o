@@ -1,0 +1,40 @@
+{
+  "publication_url": "https://devco.re/blog/2016/04/21/how-I-hacked-facebook-and-found-someones-backdoor-script-eng-ver/",
+  "quotes": [
+    {
+      "id": "E1",
+      "match_mode": "exact",
+      "matched": true,
+      "quote_sha256": "65c1cce8e7cd9332a483f89272df3af90abc263e57b2aeeb511a774b9e014726"
+    },
+    {
+      "id": "E2",
+      "match_mode": "exact",
+      "matched": true,
+      "quote_sha256": "2dc91dcab5015b15900c91adb6fe4e7840ca7dd9c5079035999f225ccea85cef"
+    },
+    {
+      "id": "E3",
+      "match_mode": "exact",
+      "matched": true,
+      "quote_sha256": "1625e5a5ca36d73f63780921bc7af708412722a15875c8727deeefd1a42ea7ab"
+    },
+    {
+      "id": "E4",
+      "match_mode": "exact",
+      "matched": true,
+      "quote_sha256": "cdd6233ff2f27a23ff64544fd3a7f74ef59094b1cedc1cef8216a97afadd4431"
+    },
+    {
+      "id": "E5",
+      "match_mode": "exact",
+      "matched": true,
+      "quote_sha256": "7b3b9b3281579bc02e3e241d1346f93a7492e2e7ce526114a7583fbdcafdcc2b"
+    }
+  ],
+  "rendered_body_sha256": "15922b021c9c897a44dcfb9d2fc878fb7162a2118c36a6bdebde93d45c40d82c",
+  "retrieved_at": "2026-09-30T11:20:00.048Z",
+  "source_id": "O033",
+  "title": "How I Hacked Facebook, and Found Someone's Backdoor Script | DEVCORE",
+  "tool": "agent_browser independently opened linked primary publication; rendered DOM exact/whitespace-only quote checks"
+}

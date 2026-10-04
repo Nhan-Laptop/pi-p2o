@@ -1,0 +1,105 @@
+{
+  "schema_version": 1,
+  "source_id": "O078",
+  "url": "https://blog.orange.tw/posts/2011-04-downloadexec-shellcode-fix-for-windows/",
+  "observed_title": "Download_Exec shellcode fix & for Windows 7",
+  "retrieved_at": "2026-09-30T10:25:36.675Z",
+  "retrieval": {
+    "tool": "fetch_content readable, followed by agent_browser named-session DOM inspection",
+    "response_id": "browser session orange-O078",
+    "final_url": "https://blog.orange.tw/posts/2011-04-downloadexec-shellcode-fix-for-windows/",
+    "outcome": "read",
+    "quote_verification": "Exact String.includes checks against the original article .content p elements outside highlighted code in session orange-O078; E1, E2 and E3 matched prose paragraphs 5, 7 and 16 respectively. All quotes are under 180 characters."
+  },
+  "disposition": "included",
+  "reason": "Two distinct prose diagnoses survive filtering: the author traces an input-size-dependent failure to a dynamically patched field with limited representability, and explains a cross-runtime failure through an invalid dependency-order assumption. Retain only the reusable diagnostic reasoning, not shellcode construction or the repair recipe.",
+  "canonical_source": null,
+  "evidence": [
+    {
+      "id": "E1",
+      "locator": "Unheaded article prose, paragraph 5: length-dependent failure investigation, beginning '首先是發現當網址長度'. Paragraph counts use article .content p outside highlighted code.",
+      "quote": "實際去追蹤後發現出錯點位於decode shellcode中發生問題",
+      "verified": true
+    },
+    {
+      "id": "E2",
+      "locator": "Unheaded article prose, paragraph 7: explanation of the dynamically patched offset field, beginning 'cl放的是要被解碼shellcode的offset偏移量'.",
+      "quote": "cl放的是要被解碼shellcode的offset偏移量，會被程式動態patch",
+      "verified": true
+    },
+    {
+      "id": "E3",
+      "locator": "Unheaded article prose, paragraph 16: dependency-load-order explanation, immediately after the cross-runtime success/failure comparison and before the reference links.",
+      "quote": "前先載入kernelbase.dll，所以造成ImageBase取錯",
+      "verified": true
+    }
+  ],
+  "workflow": [
+    {
+      "decision": "For a size-dependent failure, trace the earliest failing internal stage rather than blame the advertised operation. Inspect the changing length or offset at its dynamically written field and distinguish the logical value from the consumer's representable range; benign boundary validation remains a separate question.",
+      "evidence": ["E1", "E2"]
+    },
+    {
+      "decision": "For a cross-environment failure, question whether a positional dependency lookup still selects the intended component. Separate component identity from enumeration order; an environment change can invalidate the ordering assumption without changing the lookup code.",
+      "evidence": ["E3"]
+    }
+  ],
+  "tools": [],
+  "handoffs": [
+    {
+      "producer": "source-code-auditing",
+      "consumer": "dynamic-analysis",
+      "when": "A size-sensitive failure suggests that a dynamically written length or offset may exceed its representation, but the consumed value is not independently observed.",
+      "packet": [
+        "authorized scope, artifact revision, runtime and isolation constraints",
+        "one falsifiable representation-width question",
+        "minimal writer-to-consumer slice with logical range and storage width",
+        "source-report evidence and separately labeled static inferences",
+        "contrasting predictions and a precise observation point",
+        "benign known-good control, permitted observer changes and stop condition",
+        "failed assumptions, untested ranges and remaining questions"
+      ],
+      "acceptance_gate": "Require a benign representation-only experiment proposal that distinguishes the width hypothesis from an unrelated failure, preserves a known-good control and discloses observer changes. Reject any proposal dependent on executing the published download/execute program. This packet is a derived library contract, not an experiment performed by the author or this worker.",
+      "classification": "derived",
+      "evidence": ["E1", "E2"]
+    }
+  ],
+  "limitations": [
+    "This historical compatibility note does not establish a product vulnerability, actor-controlled security boundary or present-day exploitability.",
+    "The tracing and dependency-order diagnoses remain author reports. No named tracing tool, trace artifact, reproduction count or complete architecture/configuration matrix accompanies the prose.",
+    "The reported Windows-version differences were not independently verified and do not establish behavior of current loaders or other runtimes.",
+    "No independent benign regression matrix or original-versus-modified artifact validation was performed here. The source listing was not executed, and linked articles, forums and exploit attachments were not opened or downloaded."
+  ],
+  "candidate_additions": [
+    {
+      "owner": "dynamic-analysis",
+      "kind": "workflow",
+      "guidance": "For size-sensitive failures, locate the earliest failing internal stage and record the logical length or offset alongside its actual stored representation before attributing failure to a downstream operation.",
+      "evidence": ["E1", "E2"]
+    },
+    {
+      "owner": "source-code-auditing",
+      "kind": "heuristic",
+      "guidance": "Treat dynamically rewritten fields as representation contracts: compare the producer's full value range with the consuming field's capacity rather than relying on normal-sized examples.",
+      "evidence": ["E2"]
+    },
+    {
+      "owner": "binary-auditing",
+      "kind": "failure",
+      "guidance": "A stable enumeration position is not proof of component identity. Record dependency-order assumptions separately from address-selection evidence and carry environment-specific uncertainty forward.",
+      "evidence": ["E3"]
+    }
+  ],
+  "related_article_urls": [
+    "http://skypher.com/index.php/2009/07/22/shellcode-finding-kernel32-in-windows-7/",
+    "http://bbs.pediy.com/showthread.php?t=122260",
+    "http://bbs.pediy.com/showthread.php?t=99007"
+  ],
+  "excluded_material": [
+    "Complete download/execute source listing, generated payload and sample endpoint",
+    "Assembly edits, opcode bytes, encoding routine and patch-offset repair sequence",
+    "Target-specific size thresholds, register-width constants and module-identification workaround",
+    "Original exploit-code reference, attachment content and unrelated code-comment links"
+  ],
+  "worker_notes": "Readable-mode extraction omitted earlier diagnostic prose; complete article DOM inspection in orange-O078 recovered it and supplied exact quote verification. No debugger name is inferred from the author's reference to tracing. Related URLs are observed pointers only."
+}

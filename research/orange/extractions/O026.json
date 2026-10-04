@@ -1,0 +1,158 @@
+{
+  "schema_version": 1,
+  "source_id": "O026",
+  "url": "https://blog.orange.tw/posts/2018-03-pwn-ctf-platform-with-java-jrmp-gadget/",
+  "observed_title": "Pwn a CTF Platform with Java JRMP Gadget",
+  "retrieved_at": "2026-09-30T09:32:27.427Z",
+  "retrieval": {
+    "tool": "fetch_content readable; agent_browser DOM",
+    "response_id": null,
+    "browser_session": "orange-O026",
+    "final_url": "https://blog.orange.tw/posts/2018-03-pwn-ctf-platform-with-java-jrmp-gadget/",
+    "outcome": "read",
+    "quote_verification": "All five quotations passed exact inclusion checks against the assigned article's live article.innerText and a matching paragraph/list-item textContent in session orange-O026. Observed character lengths: 59, 47, 24, 54, 101. No whitespace normalization or translation was used."
+  },
+  "disposition": "included",
+  "reason": "Despite its compromise-oriented framing, the article contains distinct reusable dependency/configuration triage, narrow behavioral confirmation after an unsuccessful attempt, tooling-source inspection, and later representation-specific failure analysis. Retain only those research decisions, not the CTF-platform solution or exploitation procedure.",
+  "canonical_source": null,
+  "evidence": [
+    {
+      "id": "E1",
+      "locator": "Unheaded article body: dependency-review paragraph beginning 在有原始碼的狀況下進行 Java 的 code review, before the dependency list.",
+      "quote": "在有原始碼的狀況下進行 Java 的 code review 第一件事當然是去了解第三方 Libraries 的相依性",
+      "verified": true
+    },
+    {
+      "id": "E2",
+      "locator": "Dependency list: Jackson entry, subitem explaining disabled typing and absence of direct input.",
+      "quote": "不過 enableDefaultTyping 沒啟用，也無直接收取 JSON 輸入無法觸發漏洞",
+      "verified": true
+    },
+    {
+      "id": "E3",
+      "locator": "Unheaded article body: paragraph beginning 綜觀 ysoserial, containing the decision to first confirm observable behavior.",
+      "quote": "先來試試 URLDNS 至少先確認漏洞存在再說!",
+      "verified": true
+    },
+    {
+      "id": "E4",
+      "locator": "Unheaded article body: tooling-discovery paragraph beginning 網路上並沒有人有提供, after the question about implementing protocol support.",
+      "quote": "本來想要手刻但找著找著資料找回 ysoserial 上的 JRMPListener.java，讀了一下原始碼",
+      "verified": true
+    },
+    {
+      "id": "E5",
+      "locator": "Updates heading: second timed update, first subitem quoting a commenter's more detailed root-cause explanation.",
+      "quote": "Shiro resovleClass使用的是ClassLoader.loadClass()而非Class.forName()，而ClassLoader.loadClass不支持装载数组类型的class。",
+      "verified": true
+    }
+  ],
+  "workflow": [
+    {
+      "decision": "Start a source review by identifying dependency behavior, then check effective feature settings and input reachability before treating a catalogued issue as applicable. A matching dependency alone leaves necessary gates unresolved.",
+      "evidence": ["E1", "E2"]
+    },
+    {
+      "decision": "When a complex attempt fails, separate whether the behavioral boundary is reached from whether stronger consequences are possible. Resolve the narrower observable question without treating that observation as proof of unrestricted impact.",
+      "evidence": ["E3", "E5"]
+    },
+    {
+      "decision": "Revisit an environmental failure hypothesis at the actual type-resolution operation and supported representation category. Preserve the distinction between an initial conjecture and a later source-reported explanation.",
+      "evidence": ["E5"]
+    },
+    {
+      "decision": "If tutorials leave a supporting capability unclear, inspect the existing tool's implementation and module boundaries before assuming it must be reimplemented.",
+      "evidence": ["E4"]
+    }
+  ],
+  "tools": [
+    {
+      "tool": "ysoserial",
+      "purpose": "The author used it for narrow behavior corroboration and inspected its source to discover existing modular protocol support. Only these purposes are retained, not invocation details or behavior-construction recipes.",
+      "when": "A complex attempt does not establish basic behavioral reachability, or available documentation leaves the tool's supporting capabilities unclear.",
+      "attribution": "explicit",
+      "evidence": ["E3", "E4"]
+    }
+  ],
+  "handoffs": [
+    {
+      "producer": "source-code-auditing",
+      "consumer": "dynamic-analysis",
+      "when": "Dependency/configuration review leaves actual behavioral reachability or a runtime-specific failure unresolved.",
+      "packet": [
+        "authorization, artifact identity, runtime and effective configuration",
+        "dependency hypothesis and feature/input-reachability gates",
+        "minimal source slice and one unresolved behavior",
+        "failed assumptions with fact/hypothesis/source-report classification",
+        "contrasting benign observations, negative control and permitted instrumentation",
+        "stopping condition and untested routes"
+      ],
+      "acceptance_gate": "The packet identifies a bounded question distinguishable by harmless observations in an authorized isolated environment; a dependency version or failed complex trial alone is insufficient.",
+      "classification": "derived",
+      "evidence": ["E1", "E2", "E3"]
+    },
+    {
+      "producer": "dynamic-analysis",
+      "consumer": "deserialization-and-dispatch-auditing",
+      "when": "A narrow behavioral observation exists but the effective resolver's acceptance or rejection contract remains unexplained.",
+      "packet": [
+        "common scope and artifact/runtime identity",
+        "behavior observation and its provenance classification",
+        "effective resolver operation and failing representation category",
+        "consumer boundary and unresolved implementation assumptions",
+        "negative evidence, observer limitations and next bounded review question"
+      ],
+      "acceptance_gate": "Behavioral reachability is kept separate from stronger impact, and any resolver explanation remains a hypothesis or source report until supported by the actual scoped implementation and evidence.",
+      "classification": "derived",
+      "evidence": ["E3", "E5"]
+    }
+  ],
+  "limitations": [
+    "This is a historical application-specific report; dependency presence and source configuration do not establish current-release or deployed-artifact exposure.",
+    "The disabled feature and absent direct input are the author's review findings, not independently verified coverage of every input route.",
+    "The initial class-loading explanation was explicitly conjectural. The updates attribute more detailed analysis to an external article and a commenter; the quoted resolver limitation is their report, not an independently established universal runtime fact.",
+    "The reported network observation supports only the tested behavior. The article does not supply a matched negative control, repeated-trial denominator or observer-effect analysis.",
+    "An initial configuration mismatch and later runtime failure show that assumptions mattered; neither a failed attempt nor the narrow observation establishes the full security consequence by itself.",
+    "No target testing, exploit attachment retrieval or independent reproduction was performed. Final impact remains author-reported, and the article provides no verified shipped remediation."
+  ],
+  "candidate_additions": [
+    {
+      "owner": "source-code-auditing",
+      "kind": "heuristic",
+      "guidance": "Pair dependency triage with an applicability ledger recording effective feature settings and controllable input routes. Keep a catalogued issue as a hypothesis until its necessary gates are supported.",
+      "evidence": ["E1", "E2"]
+    },
+    {
+      "owner": "dynamic-analysis",
+      "kind": "validation",
+      "guidance": "After a complex trial fails, narrow the question to harmless behavioral reachability. Retain controls, failed assumptions and observation limits; neither failure nor a small observable side effect automatically establishes safety or stronger impact.",
+      "evidence": ["E3", "E5"]
+    },
+    {
+      "owner": "deserialization-and-dispatch-auditing",
+      "kind": "failure",
+      "guidance": "A reconstruction failure may reflect the effective resolver's representation support rather than absence of a risky boundary. Compare the actual resolution operation and rejected type category before generalizing the result.",
+      "evidence": ["E5"]
+    },
+    {
+      "owner": "source-code-auditing",
+      "kind": "tool",
+      "guidance": "When documentation leaves an existing tool's capability unclear, review its modules and interfaces before reimplementing support. Record source-inspected functionality separately from behavior actually observed.",
+      "evidence": ["E4"]
+    }
+  ],
+  "related_article_urls": [
+    "http://blog.orange.tw/2016/12/java-web.html",
+    "http://blog.knownsec.com/2016/08/apache-shiro-java/",
+    "https://bling.kapsi.fi/blog/jvm-deserialization-broken-classldr.html"
+  ],
+  "excluded_material": [
+    "CTF-platform solution and ordered exploitation sequence",
+    "payload generation, gadget composition and protocol-listener commands",
+    "application secrets, key material, configuration snippets and serialized byte dumps",
+    "target endpoints, addresses, ports and executable examples",
+    "shell-acquisition details and compromise screenshot",
+    "untested alternate exploitation suggestions"
+  ],
+  "worker_notes": "Readable retrieval exposed no response ID, so the named browser session supplies identity and exact-quote provenance. README.md and HANDOFFS.md were read at the repository root. Related articles were recorded as pointers only, not visited. The misspelling resovleClass is preserved in the verified original quote."
+}

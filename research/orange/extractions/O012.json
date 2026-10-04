@@ -1,0 +1,145 @@
+{
+  "schema_version": 1,
+  "source_id": "O012",
+  "url": "https://blog.orange.tw/posts/2021-08-proxylogon-a-new-attack-surface-on-ms-exchange-part-1/",
+  "observed_title": "A New Attack Surface on MS Exchange Part 1 - ProxyLogon!",
+  "retrieved_at": "2026-09-30T09:11:58Z",
+  "retrieval": {
+    "tool": "fetch_content readable; get_search_content; agent_browser --session orange-O012",
+    "response_id": "munvy8ixntm2z8",
+    "final_url": "https://blog.orange.tw/posts/2021-08-proxylogon-a-new-attack-surface-on-ms-exchange-part-1/",
+    "outcome": "read",
+    "quote_verification": "All five quotes matched once in get_search_content(responseId=munvy8ixntm2z8, urlIndex=0, findMode=exact). Each also passed document.body.innerText.includes(quote) in browser session orange-O012; lengths were 105, 138, 87, 52 and 124 characters. Browser observation confirmed the article heading and final URL."
+  },
+  "disposition": "included",
+  "reason": "The article supplies reusable architecture-first reasoning beyond its omitted exploit sequence: separate intermediary admission from restored client identity, question cross-layer request-context agreement, and prioritize compatibility mechanisms whose roles can change despite stable component names. These support method observations and derived library contracts without importing the reported attack chain.",
+  "canonical_source": null,
+  "evidence": [
+    {
+      "id": "E1",
+      "locator": "CVE-2021-26855 - Pre-auth SSRF — final root-cause paragraph, sentence about component names across versions",
+      "quote": "It might have different functions in different versions even with the same component under the same name.",
+      "verified": true
+    },
+    {
+      "id": "E2",
+      "locator": "The CAS architecture — final prose paragraph before Frontend Proxy Module, sentence describing request forwarding",
+      "quote": "The Proxy Module picks up the HTTP request from the client side and adds some internal settings, then forwards the request to the Backend.",
+      "verified": true
+    },
+    {
+      "id": "E3",
+      "locator": "Frontend Proxy Section — paragraph explaining the added authentication credential, second sentence",
+      "quote": "This header is designed to prevent anonymous users from accessing the Backend directly.",
+      "verified": true
+    },
+    {
+      "id": "E4",
+      "locator": "Backend Rehydration Module — paragraph beginning After passing the check, identity-restoration clause",
+      "quote": "will restore the login identity used in the Frontend",
+      "verified": true
+    },
+    {
+      "id": "E5",
+      "locator": "The attack surface — blockquoted research question following the proxy-architecture introduction",
+      "quote": "Could I use a single HTTP request to access different contexts in Frontend and Backend respectively to cause some confusion?",
+      "verified": true
+    }
+  ],
+  "workflow": [
+    {
+      "decision": "Map the request intermediary and downstream consumer before reviewing business logic. Record where the request gains internal metadata, where intermediary admission is checked, and where the client's identity is reconstructed; these are distinct trust transitions.",
+      "evidence": ["E2", "E3", "E4"]
+    },
+    {
+      "decision": "Treat compatibility support as an audit-prioritization signal. An unchanged component name does not establish an unchanged role or trust contract across revisions; review the actual forwarding responsibilities rather than assuming architectural continuity.",
+      "evidence": ["E1", "E2"]
+    },
+    {
+      "decision": "After establishing the layer map, ask whether the same request is admitted under one context but consumed under another. Focus review on context selection and metadata-policy agreement, while keeping a discrepancy hypothesis separate from a demonstrated consequence.",
+      "evidence": ["E2", "E4", "E5"]
+    }
+  ],
+  "tools": [],
+  "handoffs": [
+    {
+      "producer": "attack-surface-mapping",
+      "consumer": "source-code-auditing",
+      "when": "The interface map identifies a compatibility branch or intermediary whose historical role may differ from its current name.",
+      "packet": [
+        "authorization and artifact/revision/configuration scope",
+        "entry-to-handler and intermediary-to-consumer map",
+        "lowest relevant actor and admission gates",
+        "metadata producers, reconstructed identity and downstream privilege",
+        "compatibility roles with references and confidence labels",
+        "one unresolved trust-contract question, contrasting predictions and a bounded review stop condition"
+      ],
+      "acceptance_gate": "At least one prioritized route has handler/gate evidence or an explicit inferred label with a proposed harmless check. Component names and historical vulnerability reports alone do not establish current reachability or a faulty contract.",
+      "classification": "derived",
+      "evidence": ["E1", "E2", "E3", "E4"]
+    },
+    {
+      "producer": "source-code-auditing",
+      "consumer": "parser-differential-auditing",
+      "when": "A source slice leaves unresolved whether admission and consumption select different request contexts or apply different metadata meanings.",
+      "packet": [
+        "authorization, revision and runtime/configuration scope",
+        "minimal forwarding and consumer slice with source locations",
+        "context-selection and representation table for each layer",
+        "metadata origin, forwarding policy and consumer interpretation",
+        "one discrepancy hypothesis and contrasting predictions",
+        "known-good benign control, observation points and rejection conditions",
+        "author-report versus local-evidence classification and remaining unknowns"
+      ],
+      "acceptance_gate": "The packet identifies both contexts and their policy checks, or explicitly marks the missing interpretation. Any proposed isolated observation must distinguish agreement from disagreement using benign controls; neither a copied request nor a generic proxy label is sufficient evidence.",
+      "classification": "derived",
+      "evidence": ["E2", "E4", "E5"]
+    }
+  ],
+  "limitations": [
+    "The reported Exchange architecture and compatibility behavior are historical author descriptions, not evidence of exposure or equivalent behavior on a current installation. No target was tested.",
+    "The apparent direct accessibility of an internal listener is qualified by the article's subsequent authenticated-intermediary and identity-restoration permission checks. Listener reachability alone does not establish authority to act as a client.",
+    "Compatibility debt is the author's root-cause explanation; this extraction did not independently compare component roles across releases or verify deployment prerequisites.",
+    "All vulnerability effects and patch claims remain author reports. The article does not supply a semantic fix comparison or a complete regression matrix, and neither was independently verified.",
+    "The architecture and context question support audit selection, not a documented controlled validation protocol. Proposed controls, acceptance gates and handoffs are library-derived and were not performed or attributed to the author."
+  ],
+  "candidate_additions": [
+    {
+      "owner": "attack-surface-mapping",
+      "kind": "heuristic",
+      "guidance": "Prioritize early request intermediaries that add trusted metadata before business logic. Map the external caller, intermediary admission credential, metadata writer and reconstructed downstream client as separate trust roles.",
+      "evidence": ["E2", "E3", "E4"]
+    },
+    {
+      "owner": "source-code-auditing",
+      "kind": "heuristic",
+      "guidance": "When compatibility spans architectural revisions, compare the actual responsibility and trust contract of same-named components. Prioritize adapters that preserve older routing or identity assumptions, without treating compatibility debt as proof of a defect.",
+      "evidence": ["E1", "E2"]
+    },
+    {
+      "owner": "parser-differential-auditing",
+      "kind": "workflow",
+      "guidance": "Extend the representation map with the context selected at each processing layer and the metadata policy that context applies. Ask whether admission and consumption agree on context and meaning; require benign paired observations before asserting a security consequence.",
+      "evidence": ["E2", "E4", "E5"]
+    },
+    {
+      "owner": "authorization-auditing",
+      "kind": "validation",
+      "guidance": "Separate authentication of an intermediary from reconstruction of a client identity and authorization of that client's action. A valid intermediary credential or a reachable internal interface does not independently establish the latter two contracts.",
+      "evidence": ["E3", "E4"]
+    }
+  ],
+  "related_article_urls": [
+    "https://blog.orange.tw/2021/08/proxyoracle-a-new-attack-surface-on-ms-exchange-part-2.html",
+    "https://blog.orange.tw/2021/08/proxyshell-a-new-attack-surface-on-ms-exchange-part-3.html",
+    "https://blog.orange.tw/2022/10/proxyrelay-a-new-attack-surface-on-ms-exchange-part-4.html"
+  ],
+  "excluded_material": [
+    "exploit code, crafted requests, endpoint and header strings, payloads and target-specific constants",
+    "authentication-bypass, privileged-session and file-write exploit sequence",
+    "webshell placement, execution instructions, attachments and demonstration reproduction",
+    "historical incident and disclosure-leak speculation, promotional awards and bounty details",
+    "unassigned related articles and linked presentation contents"
+  ],
+  "worker_notes": "The complete fetched article was read, including its final slice. Repository-root README.md and HANDOFFS.md supplied the shared baseline. No named research tool with a stated analysis purpose was observed; platform and runtime components were not misattributed as author tooling. Related links are observed pointers only. No source code, payload, target probe, attachment or skill edit was executed."
+}

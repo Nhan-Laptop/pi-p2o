@@ -1,0 +1,150 @@
+{
+  "schema_version": 1,
+  "source_id": "O018",
+  "url": "https://blog.orange.tw/posts/2019-08-attacking-ssl-vpn-part-2-breaking-the-fortigate-ssl-vpn/",
+  "observed_title": "Attacking SSL VPN - Part 2: Breaking the Fortigate SSL VPN",
+  "retrieved_at": "2026-09-30T09:21:27.999Z",
+  "retrieval": {
+    "tool": "fetch_content readable; agent_browser",
+    "response_id": "agent_browser session orange-O018",
+    "final_url": "https://blog.orange.tw/posts/2019-08-attacking-ssl-vpn-part-2-breaking-the-fortigate-ssl-vpn/",
+    "outcome": "read",
+    "quote_verification": "Exact, unnormalized paragraph.textContent.includes(quote) checks in orange-O018; all five quotes matched one paragraph each. The DOM also confirmed the article heading, final URL, and preceding section headings."
+  },
+  "disposition": "included",
+  "reason": "Retain the primary method evidence for upstream-assisted handler reconstruction, agreement between sizing and emission passes, and framework-lifetime constraints on impact assumptions. The short account of switching to fuzzing supports only an evidence-source change, not a documented fuzzing methodology. The exploit walkthrough is excluded.",
+  "canonical_source": null,
+  "evidence": [
+    {
+      "id": "E1",
+      "locator": "Web daemon, second paragraph, final sentence on mapping upstream source",
+      "quote": "We can map the source code of apache to speed up our analysis.",
+      "verified": true
+    },
+    {
+      "id": "E2",
+      "locator": "Web daemon, third paragraph, final sentence on the handler table",
+      "quote": "We can find a table specifying the handlers and dig into them!",
+      "verified": true
+    },
+    {
+      "id": "E3",
+      "locator": "CVE-2018-13381: Pre-auth heap overflow, paragraph between the sizing pseudocode and encoding pseudocode",
+      "quote": "However, there is an inconsistency between length calculation and encoding process. The encode part does not handle that much.",
+      "verified": true
+    },
+    {
+      "id": "E4",
+      "locator": "Exploitation / CVE-2018-13381 / Apache additional memory management., sole paragraph, first two sentences",
+      "quote": "The memory won’t be free() until the connection ends. We cannot arrange the heap in a single connection.",
+      "verified": true
+    },
+    {
+      "id": "E5",
+      "locator": "Get the shell, second paragraph beginning 'Due to the problems mentioned above', final clause describing the switch to fuzzing",
+      "quote": "and we started to fuzz the server, trying to get something useful.",
+      "verified": true
+    }
+  ],
+  "workflow": [
+    {
+      "decision": "When a large symbol-poor binary obscures request handling, use recognizable upstream code and handler-registration tables to select a bounded consumer slice. Treat correspondence with upstream code as a hypothesis, not implementation identity; the remaining question is whether the recovered slice implements the reachable interface.",
+      "evidence": ["E1", "E2"]
+    },
+    {
+      "decision": "For a two-pass transformation, ask whether the sizing pass and emission pass classify the same input identically. Compare their branch rules and output lengths; disagreement directs review to the capacity invariant and earliest invalid access rather than merely the final crash.",
+      "evidence": ["E3"]
+    },
+    {
+      "decision": "Before assuming a memory fault permits controlled behavior, determine when the enclosing framework actually reclaims allocations. Connection-scoped retention can invalidate a lifetime assumption; carry that constraint into impact assessment instead of treating failed control as proof that the underlying defect is harmless.",
+      "evidence": ["E4"]
+    },
+    {
+      "decision": "When bounded static reconstruction stalls, consider changing the evidence source to isolated fuzzing. A resulting failure can narrow the next manual reconstruction question; reproducibility and root-cause attribution remain separate requirements, not established by the article's brief fuzzing account.",
+      "evidence": ["E5"]
+    }
+  ],
+  "tools": [],
+  "handoffs": [
+    {
+      "producer": "binary-auditing",
+      "consumer": "dynamic-analysis",
+      "when": "Upstream-source resemblance and a registration table suggest a handler contract, but implementation correspondence or reachability remains uncertain.",
+      "packet": [
+        "authorized_scope_and_artifact_identity",
+        "actor_configuration_and_interface_gate",
+        "handler_registration_and_bounded_code_slice",
+        "upstream_reference_and_confidence_tagged_correspondence",
+        "unresolved_contract_question_and_contrasting_predictions",
+        "benign_baseline_and_observation_points",
+        "allowed_observer_changes_and_coverage_limits"
+      ],
+      "acceptance_gate": "Require a specific handler reference and a falsifiable contract question. Upstream similarity alone is not implementation proof; inferred reachability must remain labeled inferred until a safe observation resolves it.",
+      "classification": "derived",
+      "evidence": ["E1", "E2"]
+    },
+    {
+      "producer": "memory-safety-auditing",
+      "consumer": "exploitability-assessment",
+      "when": "Sizing and emission disagree, but framework allocation lifetime constrains the supported consequence.",
+      "packet": [
+        "authorized_scope_actor_build_and_configuration",
+        "sizing_emission_relation_and_capacity_invariant",
+        "earliest_invalid_access_or_explicit_static_only_status",
+        "constrained_primitive_and_input_transformations",
+        "allocation_domain_and_connection_scoped_reclamation",
+        "interference_cleanup_and_collateral_effects",
+        "source_report_vs_independent_observation",
+        "failed_assumptions_reproduction_counts_and_missing_capabilities"
+      ],
+      "acceptance_gate": "Accept only a bounded primitive or explicitly static hypothesis. Retained allocations and failed control assumptions must remain visible; neither a final crash nor a failed impact attempt establishes arbitrary control or non-exploitability.",
+      "classification": "derived",
+      "evidence": ["E3", "E4"]
+    }
+  ],
+  "limitations": [
+    "This is a historical 2019 report about Fortigate SSL VPN. Its affected-build assumptions and upgrade recommendations are not evidence about current releases, configurations, or deployed repairs.",
+    "The authors describe a modified upstream server in a large symbol-poor binary. Upstream source is an analysis aid, not a substitute for confirming the shipped implementation; detailed correspondence validation and reconstruction-tool settings are not supplied.",
+    "The abandoned direct-impact attempt reportedly faced restricted byte control, shared allocations across connections and libraries, background activity, deferred reclamation, and allocator separation. These constrain that attempt; they do not repair the defect or prove every impact hypothesis impossible.",
+    "The fuzzing account names no engine and documents no corpus, harness equivalence, initialization/reset contract, coverage, minimization process, or reproduction denominator. No such details are inferred here.",
+    "Crash observations, stronger consequences, retry/recovery claims, and fix coverage remain source-author reports. Only article text was independently checked; no target was tested, exploit attachment retrieved, demonstration played, or shipped patch examined."
+  ],
+  "candidate_additions": [
+    {
+      "owner": "binary-auditing",
+      "kind": "heuristic",
+      "guidance": "For a symbol-poor monolithic image containing recognizable upstream components, combine provisional source correspondence with handler-registration tables to bound review. Record local modifications and unresolved correspondence rather than importing the upstream contract wholesale.",
+      "evidence": ["E1", "E2"]
+    },
+    {
+      "owner": "memory-safety-auditing",
+      "kind": "validation",
+      "guidance": "Audit sizing and emission as one paired contract. Compare how each pass recognizes already-transformed input and require the estimated capacity to cover what the actual emitter produces; a count-only review misses disagreement between their branch rules.",
+      "evidence": ["E3"]
+    },
+    {
+      "owner": "exploitability-assessment",
+      "kind": "failure",
+      "guidance": "Record framework-level reclamation boundaries alongside allocator behavior. If allocations remain live until a connection or transaction ends, reject assumptions of earlier release; preserve that failed assumption without equating failed control with absence of a security defect.",
+      "evidence": ["E4"]
+    },
+    {
+      "owner": "fuzzing",
+      "kind": "heuristic",
+      "guidance": "Treat isolated fuzzing as a possible navigation aid when static reconstruction stalls, not only as a bug-counting exercise. A saved failure should produce a narrower manual-audit question; require provenance and reproducibility before treating it as root-cause or impact evidence.",
+      "evidence": ["E5"]
+    }
+  ],
+  "related_article_urls": [
+    "https://devco.re/blog/2019/07/17/attacking-ssl-vpn-part-1-PreAuth-RCE-on-Palo-Alto-GlobalProtect-with-Uber-as-case-study/"
+  ],
+  "excluded_material": [
+    "Product-specific endpoints, paths, request parameters, constants, and concrete triggering inputs",
+    "Proof-of-concept source code, executable payloads, and copied vulnerability solutions",
+    "Authentication acquisition, credential/session disclosure, and the exploit-composition sequence",
+    "Heap shaping, replacement-object layouts, control-flow gadgets, command execution, and reverse-shell construction",
+    "Internet-target identification, population estimates, and target-testing instructions",
+    "Conference promotion, slide content, external reproduction claims, and demonstration media"
+  ],
+  "worker_notes": "The readable fetch returned the article body without a usable response ID; the named browser session supplied title, URL, timestamp, and exact quote checks. A debugger prompt appears only in the omitted exploit transcript, not a retained named-tool-purpose explanation; no source-attributed tool entry is forced. Handoffs and candidate guidance are derived library proposals, not author claims of using this library."
+}

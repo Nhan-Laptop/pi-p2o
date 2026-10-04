@@ -1,0 +1,40 @@
+{
+  "schema_version": 1,
+  "source_id": "O044",
+  "url": "https://blog.orange.tw/posts/2014-12-103/",
+  "observed_title": "103 年資安技能金盾獎",
+  "retrieved_at": "2026-09-30T09:51:09.608Z",
+  "retrieval": {
+    "tool": "agent_browser",
+    "response_id": "browser session orange-O044",
+    "final_url": "https://blog.orange.tw/posts/2014-12-103/",
+    "outcome": "read",
+    "quote_verification": "Read the full article text and article HTML in orange-O044; an exact DOM text inclusion check returned true for E1. E1 is classification evidence only, not a research-method quotation."
+  },
+  "disposition": "excluded",
+  "reason": "The actual article is a brief personal record of a team's competition championship, followed by a photograph and a note that the image is unrelated. It describes no investigation decisions, tools, validation, failures, or reusable research method; no operational contribution is supported.",
+  "canonical_source": null,
+  "evidence": [
+    {
+      "id": "E1",
+      "locator": "Article body, first paragraph, immediately before the championship announcement",
+      "quote": "紀錄一下XD",
+      "verified": true
+    }
+  ],
+  "workflow": [],
+  "tools": [],
+  "handoffs": [],
+  "limitations": [
+    "The championship result is an author report, not independently verified here.",
+    "The page supplies no technical procedure, tool-purpose attribution, investigation failure, or validation evidence from which to derive workflow or handoff guidance.",
+    "The photograph is explicitly described as unrelated to the text and is not used as method evidence."
+  ],
+  "candidate_additions": [],
+  "related_article_urls": [],
+  "excluded_material": [
+    "Personal competition award announcement and team identity",
+    "Photograph described as unrelated to the article text"
+  ],
+  "worker_notes": "fetch_content readable mode reported that the page appeared JavaScript-rendered; the explicit orange-O044 browser session successfully exposed the complete article body and HTML. README.md and HANDOFFS.md were read at repository root; neither exists under research/orange/. No target testing, attachments, or other articles were accessed."
+}

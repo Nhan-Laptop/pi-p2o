@@ -1,0 +1,41 @@
+{
+  "schema_version": 1,
+  "source_id": "O092",
+  "url": "https://blog.orange.tw/posts/2010-01-blog-post_9987/",
+  "observed_title": "....",
+  "retrieved_at": "2026-09-30T10:34:13.201Z",
+  "retrieval": {
+    "tool": "fetch_content (readable), corroborated with agent_browser",
+    "response_id": "orange-O092 (named browser session)",
+    "final_url": "https://blog.orange.tw/posts/2010-01-blog-post_9987/",
+    "outcome": "read",
+    "quote_verification": "E1 verified by exact document.body.innerText inclusion and matching paragraph text in browser session orange-O092. This is classification evidence, not a technical-method quotation."
+  },
+  "disposition": "excluded",
+  "reason": "The complete article is a personal reaction and a post-exam to-do list covering reading, prospective programming/security study, puzzle-ranking goals and entertainment. It describes no investigation decisions, tool-purpose usage, failures, validation or repair from which reusable research methods could be extracted.",
+  "canonical_source": null,
+  "evidence": [
+    {
+      "id": "E1",
+      "locator": "Under the article heading '....', standalone paragraph after the ascending dot lines and immediately before the to-do list.",
+      "quote": "算了先打一下學測後todo吧",
+      "verified": true
+    }
+  ],
+  "workflow": [],
+  "tools": [],
+  "handoffs": [],
+  "limitations": [
+    "Study and reading intentions are prospective personal goals, not evidence of an executed research workflow or named-tool use.",
+    "No technical result, failed hypothesis, validation control or remediation is reported; no target testing or independent reproduction was performed."
+  ],
+  "candidate_additions": [],
+  "related_article_urls": [],
+  "excluded_material": [
+    "Personal frustration, exam countdown and encouragement",
+    "Reading backlog and prospective programming/security study",
+    "Puzzle-ranking aspirations without a described method",
+    "Entertainment viewing plans"
+  ],
+  "worker_notes": "Readable fetch and live DOM agreed on the article body. The browser session supplies retrieval identity because the readable fetch exposed no response ID. No workflow, tool attribution or derived handoff was invented from the study list."
+}

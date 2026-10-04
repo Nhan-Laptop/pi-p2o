@@ -1,0 +1,114 @@
+{
+  "schema_version": 1,
+  "source_id": "O038",
+  "url": "https://blog.orange.tw/posts/2015-08-remote-code-execution-on-gdb-remote/",
+  "observed_title": "Remote Code Execution through GDB Remote Debugging Protocol",
+  "retrieved_at": "2026-09-30T09:47:53.174Z",
+  "retrieval": {
+    "tool": "fetch_content readable; agent_browser named-session DOM inspection",
+    "response_id": null,
+    "session": "orange-O038",
+    "final_url": "https://blog.orange.tw/posts/2015-08-remote-code-execution-on-gdb-remote/",
+    "outcome": "read",
+    "quote_verification": "Exact innerText substring inclusion checks in .content.e-content prose paragraphs, excluding pre, code, blockquote and table elements. E1, E2 and E3 matched paragraphs 4, 6 and 7 respectively; lengths were 43, 36 and 55 characters."
+  },
+  "disposition": "included",
+  "reason": "Although most of the page is an exploit listing, its prose supports two distinct reusable method observations: diagnosing an observer/subject architecture mismatch and treating listener protocol identity as a separate observation question. Only these decisions and their stated evidence gaps are retained; the execution walkthrough is excluded.",
+  "canonical_source": null,
+  "evidence": [
+    {
+      "id": "E1",
+      "locator": "Unheaded article body, prose paragraph 4: reported default architecture and cross-architecture failure.",
+      "quote": "GDB 預設的處理器架構會是 i386，如果遠端的處理器架構非 x86 的架構下會失敗",
+      "verified": true
+    },
+    {
+      "id": "E2",
+      "locator": "Unheaded article body, prose paragraph 6: remote architecture unavailable before execution.",
+      "quote": "但是在 run 之前無法知道所處的處理器架構所以變成一個很尷尬的狀態XD",
+      "verified": true
+    },
+    {
+      "id": "E3",
+      "locator": "Unheaded article body, prose paragraph 7: protocol-identification question immediately before the omitted probe block.",
+      "quote": "另外一個有趣的是如何檢測掃描到的 port 是否為 GDB remote debugging protocol",
+      "verified": true
+    }
+  ],
+  "workflow": [
+    {
+      "decision": "When a remote observation fails, consider whether the observer's default execution model differs from the subject's model before drawing a conclusion about the subject. The reported failure raises a further prerequisite question: whether the required remote metadata is available before model-dependent execution.",
+      "evidence": ["E1", "E2"]
+    },
+    {
+      "decision": "For a discovered listener, ask which protocol it actually implements and select a protocol-specific identification observation. The article proposes this classification step but does not document response criteria or controls, leaving its reliability unresolved.",
+      "evidence": ["E3"]
+    }
+  ],
+  "tools": [
+    {
+      "tool": "GDB",
+      "purpose": "Remote-debugging client whose default architecture assumption is implicated in the author's reported compatibility failure.",
+      "when": "The author's cross-architecture remote-debugging discussion; no executable debugging or exploitation commands are retained.",
+      "attribution": "explicit",
+      "evidence": ["E1", "E2"]
+    }
+  ],
+  "handoffs": [
+    {
+      "producer": "attack-surface-mapping",
+      "consumer": "dynamic-analysis",
+      "when": "A mapped listener still has an unverified protocol-identity hypothesis.",
+      "packet": [
+        "Authorized scope, actor, artifact/runtime identity and configuration",
+        "Listener reachability evidence and protocol-identity hypothesis",
+        "One falsifiable question with contrasting expected observations",
+        "Proposed benign observation, allowed changes and stop condition",
+        "Observer/subject execution-model assumptions and metadata availability",
+        "Evidence locations, collection method, classification and unresolved limits"
+      ],
+      "acceptance_gate": "Require an authorized non-mutating observation with explicit response criteria. Do not accept a port label or an assumed execution model as a verified fact; missing metadata remains unresolved. This is a derived library gate, not a procedure demonstrated by the article.",
+      "classification": "derived",
+      "evidence": ["E1", "E2", "E3"]
+    }
+  ],
+  "limitations": [
+    "The architecture behavior is a historical GDB report, not evidence about every protocol implementation or current debugger release.",
+    "The author explicitly reports that remote architecture information was unavailable before execution; the prose does not establish a non-mutating solution to that prerequisite gap.",
+    "Protocol identification is proposed without documented response semantics, negative controls, rejection cases or false-positive measurements. A reliable service-classification oracle is not established.",
+    "The author attributes most underlying work to a linked earlier article, which was not followed. This packet retains only observations present on the assigned page.",
+    "Execution success remains an author report. No target testing, independent reproduction, exposure validation or current-configuration verification was performed.",
+    "The page does not describe a verified fix, deployment validation or a remediation regression method."
+  ],
+  "candidate_additions": [
+    {
+      "owner": "dynamic-analysis",
+      "kind": "failure",
+      "guidance": "Before interpreting a failed remote observation as evidence about the subject, check whether the observer's configured execution model matches the subject. Carry a suspected mismatch separately from the original hypothesis.",
+      "evidence": ["E1", "E2"]
+    },
+    {
+      "owner": "dynamic-analysis",
+      "kind": "heuristic",
+      "guidance": "Derived precaution: if selecting an observer depends on metadata unavailable before execution, record that circular prerequisite explicitly. Keep the model choice unresolved until independent benign evidence supports it.",
+      "evidence": ["E2"]
+    },
+    {
+      "owner": "attack-surface-mapping",
+      "kind": "validation",
+      "guidance": "Derived safeguard: distinguish listener reachability from protocol identity. Require an explicit response criterion for a bounded benign classification observation; a port label alone is not service-identity evidence.",
+      "evidence": ["E3"]
+    }
+  ],
+  "related_article_urls": [
+    "http://jbremer.org/turning-arbitrary-gdbserver-sessions-into-rce/"
+  ],
+  "excluded_material": [
+    "Exploit source, reverse-shell payloads and callback configuration",
+    "Endpoint strings, target-specific constants and local proof-of-concept setup",
+    "Execution, memory-modification and continuation command sequence",
+    "Protocol probe bytes and batch-scanning recipe",
+    "Success screenshot and non-method CTF context"
+  ],
+  "worker_notes": "The readable fetch supplied the article body without title metadata or a visible response ID; the named browser session confirmed the title, final URL and exact prose quotations. README.md and HANDOFFS.md were read at repository root. No related article, exploit attachment or target was opened for testing."
+}

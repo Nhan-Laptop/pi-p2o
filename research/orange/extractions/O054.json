@@ -1,0 +1,126 @@
+{
+  "schema_version": 1,
+  "source_id": "O054",
+  "url": "https://blog.orange.tw/posts/2013-11-yahoo-bug-bounty-part-2-loginyahoocom/",
+  "observed_title": "Yahoo Bug Bounty Part 2 - *.login.yahoo.com Remote Code Execution 遠端代碼執行漏洞",
+  "retrieved_at": "2026-09-30T10:04:39Z",
+  "retrieval": {
+    "tool": "fetch_content (readable) + agent_browser",
+    "response_id": "browser session orange-O054",
+    "final_url": "https://blog.orange.tw/posts/2013-11-yahoo-bug-bounty-part-2-loginyahoocom/",
+    "outcome": "read",
+    "quote_verification": "In session orange-O054, checked each quotation by exact substring inclusion in both article.post.h-entry.textContent and its rendered innerText. All five matched their identified paragraph elements; Unicode lengths were 31, 15, 78, 70, and 30 characters. The article heading and final URL were also observed."
+  },
+  "disposition": "included",
+  "reason": "Although much of the article is an exploit walkthrough, distinct reusable investigation evidence remains: a failed generic template did not negate a smaller observed effect; direct environment evidence rejected a proposed explanation; and observable response behavior supported black-box investigation of only partially understood input restrictions. Retain those decisions, not the exploitation sequence.",
+  "canonical_source": null,
+  "evidence": [
+    {
+      "id": "E1",
+      "locator": "16th p element within article.post.h-entry, paragraph beginning '來感嘆一下XD', discussing existing tools and deployment assumptions.",
+      "quote": "但如果不確實明白原理的話很常會出現漏洞存在但工具無法使用的情況",
+      "verified": true
+    },
+    {
+      "id": "E2",
+      "locator": "22nd p element within article.post.h-entry, paragraph beginning '可以看到網站轉址的地方就是', reporting that the location matched the default.",
+      "quote": "從這裡可以看到位置是預設的沒錯",
+      "verified": true
+    },
+    {
+      "id": "E3",
+      "locator": "23rd p element within article.post.h-entry, paragraph beginning '在測試的過程中發現', distinguishing observed pattern-dependent failures from a guessed cause.",
+      "quote": "在測試的過程中發現有特定的 pattern 會造成 Exploit 失敗，猜測在伺服器上似乎有 Filter 或是一些其他的設定，造成 Exploit 失敗",
+      "verified": true
+    },
+    {
+      "id": "E4",
+      "locator": "24th p element within article.post.h-entry, paragraph beginning '不過好在利用的是', explaining the observable response used for black-box reasoning.",
+      "quote": "可以由轉址的方式來 leakge 出一些資訊判斷 Java Code 是否執行成功，所以雖然是用黑盒但可以用 Blind 的方式來進行猜測，",
+      "verified": true
+    },
+    {
+      "id": "E5",
+      "locator": "25th p element within article.post.h-entry, introductory paragraph immediately before the restriction list.",
+      "quote": "Blind 測試後發現 patterns 好像有（並不完全）",
+      "verified": true
+    }
+  ],
+  "workflow": [
+    {
+      "decision": "When a generic template fails despite a smaller observed effect, separate template applicability from defect existence and ask which environment assumptions could explain the gap.",
+      "evidence": ["E1", "E4"]
+    },
+    {
+      "decision": "Test an assumed deployment convention against direct environment evidence. A reported match rejects that explanation rather than confirming it; carry the remaining failure question forward.",
+      "evidence": ["E1", "E2"]
+    },
+    {
+      "decision": "Use pattern-dependent failures to narrow the question to acceptance conditions, but distinguish the observed restrictions from a guessed filtering or configuration mechanism. Preserve the model as incomplete.",
+      "evidence": ["E3", "E5"]
+    },
+    {
+      "decision": "When internal behavior is opaque, select an observable response that can distinguish outcomes. Bound the conclusion to what that signal establishes rather than treating it as proof of every stronger capability.",
+      "evidence": ["E1", "E4"]
+    }
+  ],
+  "tools": [],
+  "handoffs": [
+    {
+      "producer": "dynamic-analysis",
+      "consumer": "exploitability-assessment",
+      "when": "A limited effect is reported but a generic template fails, leaving environment-dependent applicability and stronger capabilities unresolved.",
+      "packet": [
+        "authorization, artifact identity, actor, and configuration",
+        "unresolved question and contrasting predictions",
+        "bounded observable effect, collection method, and evidence classification",
+        "environment assumptions checked and rejected explanations",
+        "observed acceptance constraints, failed cases, and unproven mechanism",
+        "demonstrated capability, missing capabilities, and scope limits",
+        "next harmless observation and stop condition"
+      ],
+      "acceptance_gate": "Separate response-level evidence from stronger author-reported effects; identify the failed assumptions and missing capabilities, and label the restriction model partial. Template success or failure alone is not an impact assessment.",
+      "classification": "derived",
+      "evidence": ["E1", "E2", "E3", "E4", "E5"]
+    }
+  ],
+  "limitations": [
+    "This is a historical bug-bounty account. No current release, deployment, or vulnerability status was assessed; all target outcomes remain author reports, not independent reproduction.",
+    "The author reports that the location matched the default. The illustrative location-mismatch explanation therefore did not account for this case.",
+    "A filtering or configuration cause is explicitly conjectural, and the restriction list is explicitly incomplete. The article does not establish the responsible internal component or a complete policy model.",
+    "An observable evaluation effect does not by itself establish full system authority. Stronger outcomes later in the article remain separate author-reported claims; their executable demonstrations were not retained.",
+    "The article provides no controlled comparison matrix, repetition denominator, internal source trace, or verified remediation and rollout evidence. Derived guidance must not imply that the author supplied these controls.",
+    "The source's environment observation also exposed sensitive context. Safe reuse should minimize and redact observations rather than reproduce that disclosure."
+  ],
+  "candidate_additions": [
+    {
+      "owner": "exploitability-assessment",
+      "kind": "failure",
+      "guidance": "Failure of a reusable template is not evidence that a separately observed defect is absent. Record the smaller observed effect, the template's environment assumptions, and the missing capabilities separately.",
+      "evidence": ["E1", "E4"]
+    },
+    {
+      "owner": "dynamic-analysis",
+      "kind": "workflow",
+      "guidance": "When a generic test depends on an assumed deployment convention, check that assumption using the minimum nonsensitive observation. If the convention matches, reject the mismatch explanation and select the next unresolved cause instead of repeatedly changing the same assumption.",
+      "evidence": ["E1", "E2"]
+    },
+    {
+      "owner": "dynamic-analysis",
+      "kind": "validation",
+      "guidance": "For opaque acceptance failures, choose a benign observable signal that distinguishes hypotheses and retain an accepted/rejected observation ledger. Label any rejection-pattern model partial; keep a suspected filter's identity unresolved without direct evidence and stop unexpected sensitive disclosure.",
+      "evidence": ["E3", "E4", "E5"]
+    }
+  ],
+  "related_article_urls": [
+    "http://orange-tw.blogspot.tw/2013/11/yahoo-bug-bounty-part-1-yahoo-blog.html"
+  ],
+  "excluded_material": [
+    "Target-specific hostnames, routes, parameters, and library paths",
+    "Executable expressions, exploit templates, syntax-restriction bypasses, and exploitation order",
+    "Timing constants, shell commands, callback destinations, and operational result screenshots",
+    "Request-context dumps and potentially sensitive values",
+    "Reward details, promotional links, and general commentary"
+  ],
+  "worker_notes": "The readable fetch supplied the full body without a visible response identifier; the named browser session supplies heading, URL, paragraph, and exact-quote provenance. No named research tool has a stated reusable purpose independent of the omitted exploit material, so tools is empty. No linked article was read and no target was tested. Handoffs and candidate guidance are library synthesis, not an author-described skill architecture."
+}

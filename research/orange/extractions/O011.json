@@ -1,0 +1,146 @@
+{
+  "schema_version": 1,
+  "source_id": "O011",
+  "url": "https://blog.orange.tw/posts/2021-08-proxyoracle-a-new-attack-surface-on-ms-exchange-part-2/",
+  "observed_title": "A New Attack Surface on MS Exchange Part 2 - ProxyOracle!",
+  "retrieved_at": "2026-09-30T09:11:25.993Z",
+  "retrieval": {
+    "tool": "fetch_content (readable), followed by agent_browser (read-only DOM)",
+    "response_id": null,
+    "browser_session": "orange-O011",
+    "final_url": "https://blog.orange.tw/posts/2021-08-proxyoracle-a-new-attack-surface-on-ms-exchange-part-2/",
+    "outcome": "read",
+    "quote_verification": "At 2026-09-30T09:12:30.053Z, exact case-sensitive String.includes checks against unnormalized article paragraph textContent verified E1-E5 in session orange-O011. Each matched exactly one paragraph; lengths were 161, 143, 107, 39, and 153 characters. The article heading and final URL were also checked."
+  },
+  "disposition": "included",
+  "reason": "The actual article supports reusable methods for tracing identity-processing stages, relating divergent failure paths to observable processing progress, and separating a useful primitive from input-acquisition prerequisites and access barriers. Its executable examples and cross-vulnerability solution are not retained.",
+  "canonical_source": null,
+  "evidence": [
+    {
+      "id": "E1",
+      "locator": "Where is ProxyOracle — second prose paragraph, opening two sentences about identity synchronization and earlier credential processing",
+      "quote": "We now know how the Frontend and Backend synchronize the User Identity. The next is to explain how the Frontend knows who you are and processes your credentials.",
+      "verified": true
+    },
+    {
+      "id": "E2",
+      "locator": "CVE-2021-31196 - The Padding Oracle — opening paragraph, clause describing the exception-driven immediate return",
+      "quote": "In the cookie decryption, Exchange uses an exception to catch the Padding Error, and because of the exception, the program returned immediately",
+      "verified": true
+    },
+    {
+      "id": "E3",
+      "locator": "CVE-2021-31196 - The Padding Oracle — prose paragraph immediately after the response-difference diagram",
+      "quote": "With the difference, we now have an Oracle to identify whether the decryption process is successful or not.",
+      "verified": true
+    },
+    {
+      "id": "E4",
+      "locator": "The Exploit — opening paragraph, question identifying the missing input-acquisition capability",
+      "quote": "BUT, how can we get the client cookies?",
+      "verified": true
+    },
+    {
+      "id": "E5",
+      "locator": "XSS to Steal Client Cookies — final prose paragraph, first sentence identifying the browser access restriction",
+      "quote": "But here comes another question: all the sensitive cookies are protected by the HttpOnly flag, which makes us unable to access the cookies by JavaScript.",
+      "verified": true
+    }
+  ],
+  "workflow": [
+    {
+      "decision": "Once downstream identity propagation is understood, move the unresolved question upstream: how is the identity established from client-held state before crossing the intermediary boundary? Trace the earlier processing and representation transitions instead of treating the downstream identity as an unexplained input.",
+      "evidence": ["E1"]
+    },
+    {
+      "decision": "Compare exceptional early rejection with rejection after later processing. The author relates externally distinguishable failures to different internal progress; the reusable hypothesis is that failure handling can disclose a protected processing stage even when the intended operation never succeeds. Independent validation remains a separate question.",
+      "evidence": ["E2", "E3"]
+    },
+    {
+      "decision": "After identifying useful processing feedback, ask separately whether the relevant actor can obtain the required protected input. Record a client-side access restriction as a failed capability assumption rather than inferring data access from script execution or promoting the primitive to complete impact.",
+      "evidence": ["E4", "E5"]
+    }
+  ],
+  "tools": [],
+  "handoffs": [
+    {
+      "producer": "source-code-auditing",
+      "consumer": "dynamic-analysis",
+      "when": "An exceptional return and a later rejection appear to expose different processing stages, but the external-to-internal correspondence remains unverified.",
+      "packet": [
+        "authorized_scope_and_artifact_identity",
+        "minimal_stage_and_failure_flow",
+        "actor_control_and_input_gates",
+        "question_and_contrasting_predictions",
+        "external_outcome_and_internal_observation_points",
+        "known_good_baseline_and_negative_controls",
+        "allowed_changes_stop_condition_and_failed_assumptions",
+        "evidence_collection_provenance_and_source_report_vs_local_observation"
+      ],
+      "acceptance_gate": "Require distinguishable predictions and a benign baseline in an authorized isolated lab. Do not equate an external difference with a particular internal stage without corroboration; retain author-report classification until independently observed.",
+      "classification": "derived",
+      "evidence": ["E2", "E3"]
+    },
+    {
+      "producer": "data-flow-analysis",
+      "consumer": "exploitability-assessment",
+      "when": "A useful primitive depends on access to protected input whose acquisition or browser-policy feasibility is unresolved.",
+      "packet": [
+        "authorized_scope_artifact_identity_actor_and_configuration",
+        "constrained_primitive_and_required_input",
+        "input_ownership_access_policy_and_feasibility_gates",
+        "capability_edges_with_preconditions_and_evidence_provenance",
+        "blocked_or_unresolved_edges_and_failed_assumptions",
+        "question_contrasting_predictions_and_bounded_next_observation",
+        "source_report_vs_local_observation_and_untested_scope"
+      ],
+      "acceptance_gate": "Every capability edge must have supporting evidence or be explicitly unresolved. Client-context execution does not establish access to protected data, and the author's later composition is not independent impact verification.",
+      "classification": "derived",
+      "evidence": ["E4", "E5"]
+    }
+  ],
+  "limitations": [
+    "This is a historical 2021 Exchange/FBA account. Architecture, vulnerabilities, and reported results were read, not independently reproduced or checked against a current deployment.",
+    "The author reports a recovery limitation for the initial ciphertext block because initialization state is separately protected. The reported compensation relies on predictable plaintext and encoding details; those target-specific assumptions and calculations are not generalized.",
+    "Useful decryption feedback alone does not establish access to another user's protected input. The article explicitly encounters a script-read restriction; its subsequent bypass and composition are deliberately omitted.",
+    "The article does not supply a controlled reliability denominator or negative-control study. Its source-based mapping of response behavior to internal stages has not been independently replicated here; the derived validation handoff is an evidence requirement, not an author-used procedure.",
+    "No patch implementation, shipped-fix verification, or regression matrix is presented. The preceding architecture article was only recorded as a pointer, and the demonstration video was not played."
+  ],
+  "candidate_additions": [
+    {
+      "owner": "data-flow-analysis",
+      "kind": "workflow",
+      "guidance": "When downstream identity propagation is already understood, work backward through earlier state decoding and identity establishment. Record the representation and ownership transitions instead of treating client-held state as equivalent to the identity ultimately consumed.",
+      "evidence": ["E1"]
+    },
+    {
+      "owner": "source-code-auditing",
+      "kind": "heuristic",
+      "guidance": "Audit exception-driven early exits alongside ordinary rejection paths. Two rejected operations can expose different processing progress even when neither completes the intended action; trace the externally observable consequence of each exit.",
+      "evidence": ["E2", "E3"]
+    },
+    {
+      "owner": "dynamic-analysis",
+      "kind": "validation",
+      "guidance": "For suspected processing-stage disclosure, define contrasting stage predictions and correlate each with observable rejection behavior using benign controls in an authorized isolated lab. A response difference without internal corroboration is a hypothesis, not a completed validation.",
+      "evidence": ["E2", "E3"]
+    },
+    {
+      "owner": "exploitability-assessment",
+      "kind": "failure",
+      "guidance": "Treat useful processing feedback and access to the required protected input as separate capabilities. Preserve access-policy barriers as missing-edge evidence rather than inferring complete impact from execution in a client context.",
+      "evidence": ["E4", "E5"]
+    }
+  ],
+  "related_article_urls": [
+    "https://blog.orange.tw/2021/08/proxylogon-a-new-attack-surface-on-ms-exchange-part-1.html"
+  ],
+  "excluded_material": [
+    "Source code, cryptographic pseudocode, and executable examples",
+    "Target endpoints, request syntax, response-location strings, and numeric response markers",
+    "Payloads, client-data extraction details, and predictable-plaintext byte calculations",
+    "Cross-vulnerability exploit ordering, routing manipulation, and access-policy bypass recipe",
+    "Demonstration-video content and target testing"
+  ],
+  "worker_notes": "Readable retrieval did not expose a response ID, so identity, full article prose, and exact quotations were checked through the dedicated orange-O011 browser session. No named investigative tool with a stated author-use purpose was found. Handoffs and validation additions are derived library contracts, not claims about author tooling or multi-agent practice."
+}

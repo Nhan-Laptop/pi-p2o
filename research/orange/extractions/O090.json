@@ -1,0 +1,39 @@
+{
+  "schema_version": 1,
+  "source_id": "O090",
+  "url": "https://blog.orange.tw/posts/2010-02-orz/",
+  "observed_title": "Orz",
+  "retrieved_at": "2026-09-30T10:33:07Z",
+  "retrieval": {
+    "tool": "agent_browser",
+    "response_id": "browser session orange-O090",
+    "final_url": "https://blog.orange.tw/posts/2010-02-orz/",
+    "outcome": "read",
+    "quote_verification": "Exact DOM text inclusion check in session orange-O090 returned true for E1; article paragraph text was also inspected directly."
+  },
+  "disposition": "excluded",
+  "reason": "The complete article is a two-paragraph personal status note about accidentally deleting blog posts and later receiving recovery assistance. It supplies no investigation decisions, recovery method, named tool purpose, validation procedure, or reusable research approach.",
+  "canonical_source": null,
+  "evidence": [
+    {
+      "id": "E1",
+      "locator": "Orz — first article body paragraph, after the publication line",
+      "quote": "不小心把文章都刪掉了…..怎麼會這樣!",
+      "verified": true
+    }
+  ],
+  "workflow": [],
+  "tools": [],
+  "handoffs": [],
+  "limitations": [
+    "The post is a brief personal report dated 2010-02-10, not a technical account of data recovery or vulnerability research.",
+    "The update reports recovery assistance but gives no mechanism or validation evidence; that outcome remains an author report, not independent verification."
+  ],
+  "candidate_additions": [],
+  "related_article_urls": [],
+  "excluded_material": [
+    "Personal blog-deletion status note",
+    "Recovery acknowledgement without methodological detail"
+  ],
+  "worker_notes": "Readable fetch reported: Page appears to be JavaScript-rendered (content loads dynamically). The isolated named browser exposed the complete article body. Its sole article-contained link is the author profile, not a related article. E1 is a classification quote permitted for an excluded page; no methods, tools, or handoffs were inferred."
+}

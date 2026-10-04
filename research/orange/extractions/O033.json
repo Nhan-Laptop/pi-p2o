@@ -1,0 +1,146 @@
+{
+  "schema_version": 1,
+  "source_id": "O033",
+  "url": "https://blog.orange.tw/posts/2016-04-bug-bounty-how-i-hacked-facebook-and-found-someones-backdoor-script/",
+  "observed_title": "How I Hacked Facebook, and Found Someone's Backdoor Script",
+  "retrieved_at": "2026-09-30T09:43:19.937Z",
+  "retrieval": {
+    "tool": "fetch_content and agent_browser",
+    "response_id": "browser session orange-O033",
+    "final_url": "https://devco.re/blog/2016/04/21/how-I-hacked-facebook-and-found-someones-backdoor-script-eng-ver/",
+    "outcome": "read",
+    "quote_verification": "Exact, case-sensitive inclusion checks against live DOM paragraph textContent in the explicitly named orange-O033 browser session. Each quotation matched exactly one paragraph; its preceding heading and character length were recorded. All five quotations are at most 180 characters."
+  },
+  "disposition": "included",
+  "reason": "The assigned archive page directly links the author's full English article, which was retrieved and inspected. Beyond the omitted compromise narrative, it supports reusable decisions about authorization-limited surface selection, changing evidence sources after inconclusive external testing, diagnostic-to-artifact investigation, and reporting observations without resolving uncertain attribution.",
+  "canonical_source": null,
+  "evidence": [
+    {
+      "id": "E1",
+      "locator": "Directly linked English article, Foreword: paragraph beginning 'Of course, Bug Bounty is nothing about firing random attacks without restrictions.'",
+      "quote": "By comparing your findings with the permitted actions set forth by Bug Bounty, the overlapping part will be the part worth trying.",
+      "verified": true
+    },
+    {
+      "id": "E2",
+      "locator": "Directly linked English article, Vulnerability Discovery: paragraph beginning 'Actually, from black-box testing'.",
+      "quote": "Actually, from black-box testing, I didn’t find any possible vulnerabilities, and I had to try white-box testing.",
+      "verified": true
+    },
+    {
+      "id": "E3",
+      "locator": "Directly linked English article, Was There Something Strange?: paragraph beginning 'I followed the PHP paths in error messages'.",
+      "quote": "I followed the PHP paths in error messages and ended up with discovering suspicious WEBSHELL files left by previous “visitors”.",
+      "verified": true
+    },
+    {
+      "id": "E4",
+      "locator": "Directly linked English article, Epilogue: paragraph beginning 'After adequate proofs had been collected'.",
+      "quote": "Other than vulnerability details accompanying logs, screenshots and timelines were also submitted xD",
+      "verified": true
+    },
+    {
+      "id": "E5",
+      "locator": "Directly linked English article, Epilogue: paragraph contrasting the earlier and later periods of suspicious activity, sentence beginning 'As for the identities'.",
+      "quote": "As for the identities of these two hackers, were they the same person? Your guess is as good as mine. :P",
+      "verified": true
+    }
+  ],
+  "workflow": [
+    {
+      "decision": "Ask which discovered interfaces are actually authorized for investigation. Intersect the surface inventory with permitted actions before prioritizing work; discoverability alone does not supply permission.",
+      "evidence": ["E1"]
+    },
+    {
+      "decision": "When external observations yield no useful candidate, change the evidence source to authorized code review rather than treating the negative outcome as proof of safety. Keep correspondence between reviewed artifacts and deployed behavior unresolved until established.",
+      "evidence": ["E2"]
+    },
+    {
+      "decision": "Unexpected application diagnostics can redirect evidence collection toward artifact integrity. Follow diagnostic references to the associated artifacts and record that relationship; suspicious files do not by themselves establish who changed them or how access was obtained.",
+      "evidence": ["E3", "E5"]
+    },
+    {
+      "decision": "Report the observation trail with logs, screenshots and a timeline. Separate observed activity from hypotheses about actor identity, and preserve unanswered questions rather than filling them with a narrative.",
+      "evidence": ["E4", "E5"]
+    }
+  ],
+  "tools": [],
+  "handoffs": [
+    {
+      "producer": "attack-surface-mapping",
+      "consumer": "source-code-auditing",
+      "when": "Permitted external observations are inconclusive and a lawfully available artifact offers a different evidence source.",
+      "packet": [
+        "Authorization, permitted interfaces, actor, configuration and intended boundary",
+        "Reachability and gate observations, including negative or inconclusive outcomes and their coverage limits",
+        "Source provenance, revision and known correspondence or mismatch with the deployed artifact",
+        "One unresolved question, proposed invariant and contrasting observations",
+        "Bounded review plan, validation limits and stop condition"
+      ],
+      "acceptance_gate": "The interface is within scope and evidenced or explicitly marked inferred; artifact provenance and deployment uncertainty are disclosed. The question is falsifiable, and an unmatched historical source finding is not promoted to a deployed vulnerability.",
+      "classification": "derived",
+      "evidence": ["E1", "E2"]
+    },
+    {
+      "producer": "exploitability-assessment",
+      "consumer": "remediation",
+      "when": "Evidence collection reveals unexpected artifacts suggesting a pre-existing incident that requires authorized owner review.",
+      "packet": [
+        "Authorization, artifact scope, environment modifications and intended reporting recipient",
+        "Minimal diagnostic-to-artifact evidence with collection method, timestamps and source-report classification",
+        "Redacted logs, screenshots and timeline separating observed events from attribution hypotheses",
+        "Narrow impact statement, uncertain access implications and untested scope",
+        "Preservation and escalation requirements, bounded next question and stop condition"
+      ],
+      "acceptance_gate": "The packet separates artifact observations from identity and wider-access hypotheses, excludes secrets, and names an authorized responder. It does not require credential use, persistence or expanded target access to substantiate the report.",
+      "classification": "derived",
+      "evidence": ["E3", "E4", "E5"]
+    }
+  ],
+  "limitations": [
+    "This is a historical 2016 author report about a particular appliance deployment, not independently reproduced or current-release vulnerability evidence.",
+    "The author obtained earlier source versions from several resources and describes repairing recovered code. Exact provenance, recovery-tool identity and equivalence to the deployed artifact are not established in the article.",
+    "The unsuccessful black-box pass has no reproducibility denominator or exhaustive coverage account; it does not show that external testing cannot reveal defects.",
+    "Suspicious files and activity are reported from logs and application artifacts. The author leaves actor identity and the initial access mechanism unresolved; inferred usefulness of exposed credentials on other services is not demonstrated access.",
+    "Vendor patching and completion of an owner forensics investigation are reported, but shipped fix artifacts, invariant-level regression results and independent forensic verification are not supplied.",
+    "Method evidence comes from the archive's directly linked English article on DEVCORE. The translation, external advisory, image contents and exploit attachments were not independently inspected."
+  ],
+  "candidate_additions": [
+    {
+      "owner": "attack-surface-mapping",
+      "kind": "workflow",
+      "guidance": "Intersect a discovered interface inventory with the exact permitted actors and actions before ranking investigation candidates; discovered ownership or reachability is not authorization.",
+      "evidence": ["E1"]
+    },
+    {
+      "owner": "source-code-auditing",
+      "kind": "failure",
+      "guidance": "An unproductive external observation pass can justify switching to authorized artifact review, not declaring the surface safe. Carry negative outcomes, coverage limits and artifact-to-deployment uncertainty into the new audit.",
+      "evidence": ["E2"]
+    },
+    {
+      "owner": "exploitability-assessment",
+      "kind": "validation",
+      "guidance": "Keep diagnostic-linked artifact observations separate from hypotheses about actor identity and access beyond the observed system. Unresolved attribution must remain unresolved in the impact statement.",
+      "evidence": ["E3", "E5"]
+    },
+    {
+      "owner": "remediation",
+      "kind": "handoff",
+      "guidance": "Derived reporting safeguard: unexpected incident indicators warrant a minimal, redacted log-and-artifact packet with screenshots, a timeline and explicit unknowns for authorized responders, rather than extending access to test sensitive implications.",
+      "evidence": ["E3", "E4", "E5"]
+    }
+  ],
+  "related_article_urls": [
+    "https://devco.re/blog/2016/04/21/how-I-hacked-facebook-and-found-someones-backdoor-script-eng-ver/",
+    "https://devco.re/blog/2016/04/21/how-I-hacked-facebook-and-found-someones-backdoor-script/"
+  ],
+  "excluded_material": [
+    "Target domains, endpoints, network ranges, internal paths and service-enumeration details",
+    "Exploit sequences, database injection, executable backdoors and privilege-escalation details",
+    "Persistence, stealth, tunneling, attacker commands and internal-network access attempts",
+    "Credentials, sensitive logs, personal information and credential-reuse implications as operational instructions",
+    "Payloads, code blocks, target-specific constants, bounty amounts and reproduction instructions"
+  ],
+  "worker_notes": "The assigned archive contains only an announcement and English/Chinese links. Its readable fetch failed as JavaScript-rendered; the named browser session confirmed the archive title and links. The directly linked English article supplied the full text and DOM-verified method quotations. No named author-used tool with a retained method-purpose quote was established: source-recovery utilities are unnamed, environment logging controls are not demonstrated analysis tools, and commands attributed to the prior intruder were excluded. Handoffs and additional safety gates are library synthesis, not author-reported agent usage."
+}

@@ -1,0 +1,41 @@
+{
+  "schema_version": 1,
+  "source_id": "O056",
+  "url": "https://blog.orange.tw/posts/2013-10-phpconf-2013/",
+  "observed_title": "PHPConf 2013 投影片 - 矛盾大對決！",
+  "retrieved_at": "2026-09-30T10:06:16Z",
+  "retrieval": {
+    "tool": "agent_browser",
+    "response_id": "browser-session:orange-O056",
+    "final_url": "https://blog.orange.tw/posts/2013-10-phpconf-2013/",
+    "outcome": "read",
+    "quote_verification": "agent_browser eval in session orange-O056 confirmed E1 is both an exact articleBody innerText inclusion and an exact paragraph innerText match; 35 characters. Article text and HTML were also inspected."
+  },
+  "disposition": "excluded",
+  "reason": "The actual article identifies itself as jointly delivered conference slides and embeds two slide decks. Its body contains talk framing and slide announcements, not investigation decisions, validation or failure evidence, or stated research-tool purposes. It meets the slides-only exclusion; no workflow or handoff is inferred from the talk title.",
+  "canonical_source": null,
+  "evidence": [
+    {
+      "id": "E1",
+      "locator": "Under the heading 「能入侵任何網站的駭客 vs. 絕對不會被入侵的網站」, articleBody paragraph beginning 這是我在, before the first slide embed.",
+      "quote": "這是我在 PHPConf 2013 與 allenown 合講的投影片",
+      "verified": true
+    }
+  ],
+  "workflow": [],
+  "tools": [],
+  "handoffs": [],
+  "limitations": [
+    "The assigned article body provides no primary research narrative sufficient for reusable method extraction.",
+    "The exclusion concerns the slide-announcement article; techniques inside the embedded decks were not assessed or converted into guidance.",
+    "No source-author security result was independently reproduced, and no targets were tested."
+  ],
+  "candidate_additions": [],
+  "related_article_urls": [],
+  "excluded_material": [
+    "Conference promotion and presentation framing",
+    "Embedded slide-deck content",
+    "Unsupported workflow, research-tool-purpose, and handoff inferences"
+  ],
+  "worker_notes": "fetch_content readable reported 'Page appears to be JavaScript-rendered (content loads dynamically)'; the named browser session successfully read the original article DOM and HTML. E1 is a classification quote under the excluded-page exception, not a method claim. No linked article or slide attachment was retrieved."
+}

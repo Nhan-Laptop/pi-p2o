@@ -1,0 +1,73 @@
+{
+  "schema_version": 1,
+  "source_id": "O088",
+  "url": "https://blog.orange.tw/posts/2010-02-blog-post_18/",
+  "observed_title": "這......?",
+  "retrieved_at": "2026-09-30T10:32:15.583Z",
+  "retrieval": {
+    "tool": "agent_browser",
+    "response_id": "browser session orange-O088",
+    "final_url": "https://blog.orange.tw/posts/2010-02-blog-post_18/",
+    "outcome": "read",
+    "quote_verification": "Exact, case-sensitive textContent.includes(quote) checks against the identified article p elements in session orange-O088; all three returned true."
+  },
+  "disposition": "context",
+  "reason": "A short reverse-engineering anecdote contrasts the author's interpretation of decompiled arithmetic with a reported debugger trace. It leaves the cause unresolved and supports only one reusable comparison observation, not two distinct method observations or a complete investigation workflow.",
+  "canonical_source": null,
+  "evidence": [
+    {
+      "id": "E1",
+      "locator": "Under heading 這......?, article paragraph 1: discussion of decompiled output",
+      "quote": "Hex-rays 出來的程式碼",
+      "verified": true
+    },
+    {
+      "id": "E2",
+      "locator": "Under heading 這......?, article paragraph 3, between the two inline images",
+      "quote": "不過Olly實際追出來是",
+      "verified": true
+    },
+    {
+      "id": "E3",
+      "locator": "Under heading 這......?, article paragraph 6: closing unresolved question",
+      "quote": "所以到底是我四則運算有問題還是眼睛有問題..?Orz",
+      "verified": true
+    }
+  ],
+  "workflow": [
+    {
+      "decision": "Compare an uncertain arithmetic interpretation from decompiled output with a runtime trace, leaving the cause of any disagreement unresolved until the interpretation is explained.",
+      "evidence": ["E1", "E2", "E3"]
+    }
+  ],
+  "tools": [
+    {
+      "tool": "Hex-rays",
+      "purpose": "Produce the decompiled code whose arithmetic interpretation the author questions.",
+      "when": "During static interpretation of the exercise; no version or settings are stated in the article text.",
+      "attribution": "explicit",
+      "evidence": ["E1"]
+    },
+    {
+      "tool": "Olly",
+      "purpose": "Trace arithmetic evaluation for comparison with the interpretation of decompiled output.",
+      "when": "When checking the apparent evaluation order; the article reports the comparison without a reproducible tracing procedure.",
+      "attribution": "explicit",
+      "evidence": ["E2"]
+    }
+  ],
+  "handoffs": [],
+  "limitations": [
+    "This is a brief historical reversing-exercise note, not a demonstrated vulnerability or completed solution.",
+    "The reported disagreement does not establish a decompiler defect: the author explicitly leaves open whether their own interpretation is mistaken.",
+    "Artifact identity, tool versions/settings, controls and a reproducible tracing procedure are not supplied in the article text. Inline image pixels were not independently interpreted.",
+    "No code was executed or target tested; the runtime behavior remains an author report, not independent verification."
+  ],
+  "candidate_additions": [],
+  "related_article_urls": [],
+  "excluded_material": [
+    "Challenge-specific arithmetic expressions, variable names and constants",
+    "Inline code-image content and solution reconstruction"
+  ],
+  "worker_notes": "Readable fetch_content reported a JavaScript-rendered page; the complete article text was then read in the dedicated browser session. Inline image fetches returned only image metadata. Existing binary-auditing and dynamic-analysis skills were reviewed; the limited contextual evidence does not warrant a new candidate or derived handoff."
+}

@@ -1,0 +1,122 @@
+{
+  "schema_version": 1,
+  "source_id": "O051",
+  "url": "https://blog.orange.tw/posts/2014-02-olympic-ctf-2014-curling-400-write-up/",
+  "observed_title": "Olympic CTF 2014 CURLing 400 write up",
+  "retrieved_at": "2026-09-30T10:01:01Z",
+  "retrieval": {
+    "tool": "fetch_content readable; agent_browser DOM inspection",
+    "response_id": "browser session orange-O051",
+    "final_url": "https://blog.orange.tw/posts/2014-02-olympic-ctf-2014-curling-400-write-up/",
+    "outcome": "read",
+    "quote_verification": "In orange-O051, each literal quote was checked with String.includes against original paragraph textContent and innerText. Each matched exactly one paragraph in both representations; no whitespace normalization or model summary was used. The article heading and related link were also read from the DOM."
+  },
+  "disposition": "included",
+  "reason": "Although predominantly a challenge walkthrough, the prose explicitly supports convention-bounded hypothesis selection, diagnostic-driven input-contract inference, and a timing-dependent false-negative caution. Retain only these reusable observations, not the solve sequence or reported exploit result.",
+  "canonical_source": null,
+  "evidence": [
+    {
+      "id": "E1",
+      "locator": "Article body, paragraph beginning '哦，會發現錯誤訊息變了' (documentation search); observed DOM paragraph 8.",
+      "quote": "Google 搜尋一下 JSON RPC 的標準",
+      "verified": true
+    },
+    {
+      "id": "E2",
+      "locator": "Article body, paragraph beginning '會發現錯誤訊息又變了。' (bounded versus blind guessing); observed DOM paragraph 11.",
+      "quote": "有範圍的猜測會比盲目的亂猜好太多",
+      "verified": true
+    },
+    {
+      "id": "E3",
+      "locator": "Article body, paragraph beginning '錯誤訊息又變了！' (information inferred from a diagnostic); observed DOM paragraph 15.",
+      "quote": "不過從這次的錯誤訊息中可以得到資訊",
+      "verified": true
+    },
+    {
+      "id": "E4",
+      "locator": "Article body, paragraph beginning '不過因為 server 的設定' (tentative periodic-cleanup explanation); observed DOM paragraph 29.",
+      "quote": "所以如果手速不夠快會一直以為自己沒有寫成功",
+      "verified": true
+    }
+  ],
+  "workflow": [
+    {
+      "decision": "When an input contract is unclear, use changes in diagnostics to identify the next unresolved format or argument question and consult the relevant standard. Treat the resulting contract model as provisional; diagnostic progress alone does not establish successful behavior.",
+      "evidence": ["E1", "E3"]
+    },
+    {
+      "decision": "When callable selection is undocumented, constrain candidate hypotheses using known receiver and runtime conventions rather than arbitrary guessing. The remaining question is which candidates actually belong to the installed interface and its intended contract.",
+      "evidence": ["E2"]
+    },
+    {
+      "decision": "When a result is absent at observation time, distinguish operation failure from a result that may have existed and then been cleaned up. A late negative observation leaves the creation, cleanup, and observation order unresolved.",
+      "evidence": ["E4"]
+    }
+  ],
+  "tools": [
+    {
+      "tool": "Google",
+      "purpose": "Locate the stated request-format standard instead of continuing to guess the format.",
+      "when": "A changed diagnostic suggests a recognizable documented request protocol.",
+      "attribution": "explicit",
+      "evidence": ["E1"]
+    }
+  ],
+  "handoffs": [
+    {
+      "producer": "dynamic-analysis",
+      "consumer": "deserialization-and-dispatch-auditing",
+      "when": "Diagnostics suggest input-selected behavior, but the receiving object, argument contract, and intended selectable set remain unresolved.",
+      "packet": [
+        "authorized artifact/runtime/configuration and actor scope",
+        "one unresolved dispatch-contract question and contrasting predictions",
+        "diagnostic observations with provenance and author-report versus independently observed classification",
+        "candidate-selection rationale and supporting runtime or protocol documentation",
+        "receiving-object and argument-binding model with inferred edges marked",
+        "known permitted-operation control, unknown gates, and a bounded benign validation proposal"
+      ],
+      "acceptance_gate": "The consumer can separate documented conventions and diagnostic inferences from confirmed dispatch. Missing receiver, actor, or binding evidence remains an explicit question; a changed error is not accepted as proof of unintended execution.",
+      "classification": "derived",
+      "evidence": ["E1", "E2", "E3"]
+    }
+  ],
+  "limitations": [
+    "This is a historical, challenge-specific configuration, not evidence of current software behavior. All target behavior and outcomes remain source-author reports; no target requests or local reproduction were performed.",
+    "Several diagnostics and outcomes appear in screenshots. Extraction used the surrounding prose; screenshot contents and detailed error contracts were not independently decoded or verified.",
+    "The author presents periodic cleanup as a tentative configuration explanation. Its mechanism and timing were not independently measured, so the retained lesson concerns observation ambiguity rather than an established lifecycle defect or race.",
+    "Runtime conventions provide candidate hypotheses, not proof of callable reachability, authorization, or impact. The article does not supply systematic negative controls or comprehensive interface coverage.",
+    "No remediation or shipped-fix evidence is provided. Proposed validation and handoff gates are library synthesis, not claims that the author followed those contracts."
+  ],
+  "candidate_additions": [
+    {
+      "owner": "dynamic-analysis",
+      "kind": "heuristic",
+      "guidance": "Treat successive diagnostics as a provisional input-contract model. Compare them with relevant standards, record the inferred validation or binding stage, and retain the next unresolved question instead of equating a changed error with successful execution.",
+      "evidence": ["E1", "E3"]
+    },
+    {
+      "owner": "deserialization-and-dispatch-auditing",
+      "kind": "heuristic",
+      "guidance": "For undocumented behavior selectors, justify a small candidate set from receiver and runtime conventions rather than guessing arbitrary names. Keep convention-derived candidates separate from the intended allowed set and from confirmed reachability.",
+      "evidence": ["E2"]
+    },
+    {
+      "owner": "dynamic-analysis",
+      "kind": "validation",
+      "guidance": "Before interpreting an absent transient result as operation failure, account for observation latency and possible cleanup. Preserve evidence of creation, removal, and observation ordering where available; otherwise classify the late negative result as inconclusive rather than disproving the operation.",
+      "evidence": ["E4"]
+    }
+  ],
+  "related_article_urls": [
+    "http://blog.orange.tw/2014/02/olympic-ctf-2014-curling-200-write-up.html"
+  ],
+  "excluded_material": [
+    "challenge request bodies, concrete selector names, parameter values, and exploit sequence",
+    "target endpoints, filesystem paths, permissions workarounds, and target-specific constants",
+    "wrapper-based behavior, object serialization details, executable artifact construction, and command execution",
+    "automation for exploiting short-lived results, secret retrieval, and the published flag",
+    "unverified screenshot contents and linked reference material not part of the assigned article"
+  ],
+  "worker_notes": "The readable fetch exposed no response identifier, so provenance and exact quote checks use only the named browser session. The related article link is recorded as observed and was not followed. Most source content was filtered out; candidates are incremental refinements of existing dynamic/dispatch guidance, not a copied solution or independently verified vulnerability."
+}

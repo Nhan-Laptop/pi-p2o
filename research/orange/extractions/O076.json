@@ -1,0 +1,43 @@
+{
+  "schema_version": 1,
+  "source_id": "O076",
+  "url": "https://blog.orange.tw/posts/2011-05-project-web-security-toolkit/",
+  "observed_title": "[Project] Web Security Toolkit",
+  "retrieved_at": "2026-09-30T10:22:12.261Z",
+  "retrieval": {
+    "tool": "fetch_content (readable and raw); agent_browser (read-only DOM verification)",
+    "response_id": "browser session orange-O076",
+    "final_url": "https://blog.orange.tw/posts/2011-05-project-web-security-toolkit/",
+    "outcome": "read",
+    "quote_verification": "In session orange-O076, checked that the first article-body paragraph's textContent exactly equals E1 and that the article body includes it. Both checks returned true; the quote contains 42 characters. Title and final URL were also checked in the DOM."
+  },
+  "disposition": "excluded",
+  "reason": "The actual article is a personal toolkit project announcement: implementation notes, a feature catalog, private-release status, future release plans and a naming request. It supplies no investigation decision process, contrasting observation, validation or failure analysis. The generality concern is stated without a method, so the feature list does not support reusable workflow or handoff additions.",
+  "canonical_source": null,
+  "evidence": [
+    {
+      "id": "E1",
+      "locator": "Article body, opening paragraph before the implementation paragraph and the feature list introduced by 現有功能：",
+      "quote": "以前為了方便寫的小工具，最近改版越寫越有興趣就變成自己的一個小Project了XDD",
+      "verified": true
+    }
+  ],
+  "workflow": [],
+  "tools": [],
+  "handoffs": [],
+  "limitations": [
+    "This historical announcement describes capabilities and release intentions, not an evidence-backed investigation or tool-selection procedure.",
+    "The stated effort to improve generality has no explained approach, supported configurations, comparison, test result or failure analysis.",
+    "Implementation-language and GUI-library mentions do not establish research-tool purposes or conditions of use.",
+    "Capability and release statements remain author reports; no toolkit or target was run, and screenshots were not used as proof of effectiveness."
+  ],
+  "candidate_additions": [],
+  "related_article_urls": [],
+  "excluded_material": [
+    "Database-specific feature and advanced injection capability listings",
+    "Command-execution and server-side file-writing feature names",
+    "Implementation-size details and release roadmap",
+    "GUI screenshots and project-naming promotion"
+  ],
+  "worker_notes": "Reviewed the actual article in readable and raw modes, then verified the classification quote, title and final URL in the isolated named browser session. The article body contains no related-article links. No operational tools, methods or derived handoffs were invented from the feature catalog."
+}

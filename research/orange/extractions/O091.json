@@ -1,0 +1,39 @@
+{
+  "schema_version": 1,
+  "source_id": "O091",
+  "url": "https://blog.orange.tw/posts/2010-01-0day/",
+  "observed_title": "0day~",
+  "retrieved_at": "2026-09-30T10:33:31.945Z",
+  "retrieval": {
+    "tool": "agent_browser",
+    "response_id": "orange-O091",
+    "final_url": "https://blog.orange.tw/posts/2010-01-0day/",
+    "outcome": "read",
+    "quote_verification": "Exact inclusion in the live article DOM text, with paragraph enumeration confirming E1 in body paragraph 4; browser evaluation returned exactDomInclusion: true."
+  },
+  "disposition": "excluded",
+  "reason": "The complete five-paragraph body is a personal diary about an exam-venue visit, a social encounter, and upcoming school exams. It describes no security investigation, reusable research decisions, named research tools, validation, or remediation; the playful title does not establish technical method evidence.",
+  "canonical_source": null,
+  "evidence": [
+    {
+      "id": "E1",
+      "locator": "Under the article title 0day~, body paragraph 4, first line (classification evidence only)",
+      "quote": "明天考國數社",
+      "verified": true
+    }
+  ],
+  "workflow": [],
+  "tools": [],
+  "handoffs": [],
+  "limitations": [
+    "There are no method-only passages to extract; E1 is a short classification quotation, not operational guidance.",
+    "No vulnerability, tool-purpose relationship, failure analysis, or fix is described. No target testing or independent reproduction was performed."
+  ],
+  "candidate_additions": [],
+  "related_article_urls": [],
+  "excluded_material": [
+    "Personal exam-preparation diary",
+    "Casual social anecdotes and emotive commentary"
+  ],
+  "worker_notes": "fetch_content readable mode returned a JavaScript-rendered-page error. Read-only inspection in the dedicated orange-O091 browser session recovered the full article body and verified the classification quotation. No related articles or exploit attachments were opened."
+}

@@ -1,0 +1,47 @@
+{
+  "schema_version": 1,
+  "source_id": "O070",
+  "url": "https://blog.orange.tw/posts/2012-06-defcon-ctf-20-qual-pp100-writeup/",
+  "observed_title": "Defcon ctf 20 qual pp100 Writeup",
+  "retrieved_at": "2026-09-30T10:17:23.801Z",
+  "retrieval": {
+    "tool": "fetch_content; agent_browser",
+    "response_id": "agent_browser session orange-O070",
+    "final_url": "https://blog.orange.tw/posts/2012-06-defcon-ctf-20-qual-pp100-writeup/",
+    "outcome": "read",
+    "quote_verification": "Exact inclusion of E1 in the original live article textContent and its introductory paragraph, checked with agent_browser eval in session orange-O070; article heading and final URL also observed."
+  },
+  "disposition": "excluded",
+  "reason": "The full article is a retrospective challenge solution dominated by payload construction and target-specific exploitation. Its brief artifact-identification, emulation and architecture notes do not develop a distinct reusable investigation or validation process. Excluded under the challenge-solve-sequence rule rather than inferred from the title; no workflow, tool guidance or handoff is proposed.",
+  "canonical_source": null,
+  "evidence": [
+    {
+      "id": "E1",
+      "locator": "Opening paragraph before the Pwnables 100 heading; final sentence identifying the retrospective reconstruction",
+      "quote": "由於沒有在時間內解完，所以這篇算是事後腦補文！",
+      "verified": true
+    }
+  ],
+  "workflow": [],
+  "tools": [],
+  "handoffs": [],
+  "limitations": [
+    "The author explicitly says the challenge was not completed within the event time limit; this is a post-event reconstruction, not a contemporaneous completion record.",
+    "A missed process-resource restriction is mentioned, but no general discovery or validation procedure for such restrictions is developed.",
+    "The environment and architecture observations concern a historical challenge; no current-release or production applicability is established.",
+    "All debugger/emulator and outcome claims remain author reports. No binary, attachment, source code or target was executed or tested for this extraction.",
+    "No defensive repair, regression-control comparison or deployment verification is reported."
+  ],
+  "candidate_additions": [],
+  "related_article_urls": [
+    "http://weng32002.blogspot.tw/2011/03/qemu.html",
+    "http://blog.lse.epita.fr/articles/17-defcon2k12-prequals-pwn100-writeup.html"
+  ],
+  "excluded_material": [
+    "Challenge-specific solution and exploit sequence",
+    "Payload, shellcode, assembly and exploit-script source",
+    "Target endpoints, commands, paths, addresses, offsets and numeric constants",
+    "Downloadable challenge artifacts, exploit attachments and challenge-specific screenshots"
+  ],
+  "worker_notes": "Full readable article inspected; original DOM used to verify the actual title and classification quote. README.md and HANDOFFS.md were read at repository root, along with the binary-auditing, dynamic-analysis and exploitability-assessment skills. Related links were recorded but not followed."
+}

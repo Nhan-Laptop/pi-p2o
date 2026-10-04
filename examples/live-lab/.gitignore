@@ -1,0 +1,2 @@
+# Retained live-run evidence (reports and, with --keep, full run directories). Never committed.
+.runs/

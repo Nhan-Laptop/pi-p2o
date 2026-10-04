@@ -1,0 +1,150 @@
+{
+  "schema_version": 1,
+  "source_id": "O020",
+  "url": "https://blog.orange.tw/posts/2019-03-a-wormable-xss-on-hackmd/",
+  "observed_title": "A Wormable XSS on HackMD!",
+  "retrieved_at": "2026-09-30T09:23:28.451Z",
+  "retrieval": {
+    "tool": "agent_browser",
+    "response_id": "session:orange-O020",
+    "final_url": "https://blog.orange.tw/posts/2019-03-a-wormable-xss-on-hackmd/",
+    "outcome": "read",
+    "quote_verification": "After reading the article with fetch_content, verified all five quotations by exact paragraph.textContent.includes(quote) checks in the original article DOM using the explicit orange-O020 session. Each check returned true and the observed section heading."
+  },
+  "disposition": "included",
+  "reason": "The article supplies reusable primary method evidence: prioritize application customizations of a security library, question an inert-content exception against the final consumer, and distinguish a filtering defect from the separate execution-policy gate. Its payload and bypass construction are not retained.",
+  "canonical_source": null,
+  "evidence": [
+    {
+      "id": "E1",
+      "locator": "漏洞成因 — paragraph beginning 因此把焦點放到函示庫的使用上",
+      "quote": "因此把焦點放到函示庫的使用上，再安全的函示庫碰到不安全的用法也會無用武之地",
+      "verified": true
+    },
+    {
+      "id": "E2",
+      "locator": "漏洞成因 — paragraph beginning 為了提供開發者可以自由的客製化過濾的處理, explaining the comment-preserving callback",
+      "quote": "開發者判斷了如果是註解的標籤便直接回傳原始的 HTML 內容",
+      "verified": true
+    },
+    {
+      "id": "E3",
+      "locator": "漏洞成因 — paragraph beginning 可以想像開發者原本的用意, questioning the comment-content trust assumption",
+      "quote": "既然它這麼相信註解中的內容，那我們來看一下是否可以從註解標籤中去汙染 DOM 的渲染!",
+      "verified": true
+    },
+    {
+      "id": "E4",
+      "locator": "繞過 CSP 政策 — opening paragraph contrasting insertion with the independent execution restriction",
+      "quote": "但事情不是憨人想的那麼簡單，為了防止未知的 XSS 攻擊，HackMD 使用了 CSP(Content Security Policy) 去阻擋未授權的 JavaScript 代碼執行!",
+      "verified": true
+    },
+    {
+      "id": "E5",
+      "locator": "繞過 CSP 政策 — closing P.S. paragraph recommending a policy-checking tool",
+      "quote": "可以使用 Google 所提供的 CSP Evaluator 來檢測!",
+      "verified": true
+    }
+  ],
+  "workflow": [
+    {
+      "decision": "When a security dependency appears mature, ask whether the application preserves its guarantees. Prioritize custom callbacks and pass-through exceptions rather than assuming either library reputation or the presence of a filtering call establishes safety.",
+      "evidence": ["E1", "E2"]
+    },
+    {
+      "decision": "For content preserved because it is classified as inert, state that trust assumption and ask whether the final consumer retains the same structure. The unresolved question is consumer interpretation, not merely whether the intermediate filter accepted the content.",
+      "evidence": ["E2", "E3"]
+    },
+    {
+      "decision": "Do not stop analysis at a structural filtering failure: identify the separate execution restriction before describing stronger impact. A policy checker can support configuration review, but its recommendation is not runtime validation or proof of a boundary crossing.",
+      "evidence": ["E4", "E5"]
+    }
+  ],
+  "tools": [
+    {
+      "tool": "CSP Evaluator",
+      "purpose": "Review whether a browser content-security policy has problematic configuration.",
+      "when": "The article recommends it to readers uncertain about policy correctness; it does not report the author running it. Treat findings as review leads, not enforcement proof.",
+      "attribution": "explicit",
+      "evidence": ["E5"]
+    }
+  ],
+  "handoffs": [
+    {
+      "producer": "source-code-auditing",
+      "consumer": "parser-differential-auditing",
+      "when": "An application-defined filtering exception preserves content as inert, while the final consumer's interpretation remains unresolved.",
+      "packet": [
+        "authorized_scope_and_artifact_revision",
+        "falsifiable_interpretation_question",
+        "default_library_contract_and_application_override",
+        "preserved_content_class_and_representation_map",
+        "final_consumer_and_intended_invariant",
+        "contrasting_benign_predictions",
+        "evidence_locations_and_collection_method",
+        "source_report_classification_and_limits",
+        "bounded_next_observation_and_stop_condition"
+      ],
+      "acceptance_gate": "Identify both the exception and final consumer, and give distinguishable interpretation predictions. A preservation branch alone must not be classified as a demonstrated policy violation.",
+      "classification": "derived",
+      "evidence": ["E1", "E2", "E3"]
+    },
+    {
+      "producer": "sandbox-boundary-analysis",
+      "consumer": "exploitability-assessment",
+      "when": "A content-structure defect is being considered for stronger impact, but an independent execution policy remains relevant.",
+      "packet": [
+        "authorized_scope_artifact_revision_and_configuration",
+        "starting_actor_and_execution_context",
+        "falsifiable_impact_question",
+        "structure_effect_and_evidence_classification",
+        "active_policy_and_enforcement_layer_table",
+        "loading_versus_execution_guarantees",
+        "remaining_denials_and_interaction_requirements",
+        "evidence_locations_collection_method_and_limits",
+        "missing_capabilities_and_bounded_next_observation"
+      ],
+      "acceptance_gate": "Separate structural acceptance from executable capability, retain the actual policy and unknowns, and distinguish author reports or static findings from independently observed impact. A policy-linter finding cannot satisfy the execution gate.",
+      "classification": "derived",
+      "evidence": ["E4", "E5"]
+    }
+  ],
+  "limitations": [
+    "The explanation is historical and explicitly uses CodiMD 1.2.1. Current HackMD/CodiMD behavior, dependency versions and deployed policies were not checked.",
+    "The library-maturity assessment rests on documentation and public project signals, not a proof of library correctness. Prioritizing integration review does not establish that the dependency is defect-free.",
+    "All vulnerability, execution and collaborative-editing results remain author reports. No source code, payload, attachment, demonstration video or target test was executed by this extraction.",
+    "The wormable characterization is conditional; this extraction provides no independent propagation, reliability or affected-user evidence.",
+    "The author says the latest CodiMD release was fixed and links a pull request. Neither the fix diff nor shipped/deployed artifacts were inspected, so repair and rollout are unverified here."
+  ],
+  "candidate_additions": [
+    {
+      "owner": "source-code-auditing",
+      "kind": "heuristic",
+      "guidance": "When an application customizes a security library, review pass-through callbacks and preservation exceptions as distinct contracts. Record how each override changes default guarantees before prioritizing an upstream-library defect hypothesis.",
+      "evidence": ["E1", "E2"]
+    },
+    {
+      "owner": "parser-differential-auditing",
+      "kind": "workflow",
+      "guidance": "For content exempted from filtering as inert structure, compare the filter's classification with the final consumer's interpretation of the preserved representation. Define the structural invariant and a benign contrasting observation; an intermediate inert label is not a safety guarantee.",
+      "evidence": ["E2", "E3"]
+    },
+    {
+      "owner": "sandbox-boundary-analysis",
+      "kind": "validation",
+      "guidance": "Keep content insertion and active-content execution as separate assessment gates. Record the actual execution policy and remaining restrictions; use configuration-linter output only to prioritize review, not to claim runtime execution or stronger impact.",
+      "evidence": ["E4", "E5"]
+    }
+  ],
+  "related_article_urls": [
+    "https://portswigger.net/blog/xss-without-html-client-side-template-injection-with-angularjs"
+  ],
+  "excluded_material": [
+    "Filter implementation, product-specific source paths and callback code",
+    "Comment-boundary payloads and malicious markup",
+    "Execution-policy allowlist, nonce/hash values, bypass ingredients and construction sequence",
+    "Final attack code and collaborative-editing demonstration",
+    "Product-specific deployment details and numerical constants from operational guidance"
+  ],
+  "worker_notes": "The readable fetch exposed no response ID, so retrieval provenance uses the explicitly named browser session. Exact DOM checks also verified the section locators. The tool entry is an explicit recommendation, not claimed author usage. Handoffs and candidates are derived, narrow refinements of the existing library; the related article was recorded as a pointer only."
+}

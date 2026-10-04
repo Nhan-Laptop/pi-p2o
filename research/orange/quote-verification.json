@@ -1,0 +1,3088 @@
+{
+  "schema_version": 1,
+  "classification": "Independent public-source wording/retrieval checks, not author-result or vulnerability reproduction",
+  "normalization": "Exact or whitespace-only DOM matches; Phrack also has exact get_search_content matches",
+  "browser_receipts": [
+    "quote-verification-browser-1.json",
+    "quote-verification-browser-2.json",
+    "quote-verification-browser-3.json",
+    "quote-verification-publication-o002.json",
+    "quote-verification-publication-o033.json"
+  ],
+  "entries": [
+    {
+      "article_text_sha256": "347aab1c2e57f7a710aa6b5fcf5c3b6859176b67b6f3c1dac3ae0c16314c12b6",
+      "final_url": "https://blog.orange.tw/posts/2025-08-the-art-of-php-ch/",
+      "http_status": 200,
+      "publication_url": "https://blog.orange.tw/posts/2025-08-the-art-of-php-ch/",
+      "quotes": [
+        {
+          "id": "E1",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "a843958065c7d2e9a1eb7f67a533f3a83fcb1b530e6ebee30884ce45d7639b45"
+        },
+        {
+          "id": "E2",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "fb63d3b2050b3d5a987a540704d0151a920472b0de6dcda19494d41b6b5157ef"
+        },
+        {
+          "id": "E3",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "b29b7cd5ab02653a851d65f7035232061808a27161bbcadfb8b1d4638933e89a"
+        },
+        {
+          "id": "E4",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "d27becea7d52fdce9b8ffbe09e5a0b36b29409eec496ced86e87e98590d05e62"
+        },
+        {
+          "id": "E5",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "457d71cfdc5d8911f0a0b80b9d9a63f08b7715ecc42b82a93e604666c2750cbd"
+        }
+      ],
+      "response_html_bytes": 148195,
+      "response_html_sha256": "7c938a451bb19e9588341ade8ae5c3e60ca070a7857b48a992c3ddb81af40dd2",
+      "retrieved_at": "2026-09-30T11:14:20.529Z",
+      "source_id": "O001",
+      "title": "(繁中) The Art of PHP — My CTF Journey and Untold Stories! | Orange Tsai",
+      "url": "https://blog.orange.tw/posts/2025-08-the-art-of-php-ch/"
+    },
+    {
+      "article_text_sha256": "6a3b4038392ff68b1f412d602c356b2a5c56746087b2d83f1d17cbee8d300526",
+      "final_url": "https://blog.orange.tw/posts/2025-08-the-art-of-php-en/",
+      "http_status": 200,
+      "publication_url": "https://phrack.org/issues/72/the-art-of-php-my-ctf-journey-and-untold-stories_md#article",
+      "quotes": [
+        {
+          "id": "E1",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "b67e49084b0c8295f208a37b46da45832a55053ec654261b42d147fae733747b"
+        },
+        {
+          "id": "E2",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "43a897083f210fa37f386d6571f700eb4626240cf167913997253b20b4610986"
+        },
+        {
+          "id": "E3",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "3140663057bf2e0afaeda0f148914b48aa23682069a42bba9c378ad0eb516b71"
+        },
+        {
+          "id": "E4",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "a820e8b43561dc1a66491a74990435e5f68749fe7215f83ee1752f649adf38de"
+        }
+      ],
+      "response_html_bytes": 7522,
+      "response_html_sha256": "e9e3e5e3da0a66691e9cf9fd0df6518608bcad60f28efc625eb10068d89b0fdd",
+      "retrieved_at": "2026-09-30T11:14:20.243Z",
+      "source_id": "O002",
+      "title": "The Art of PHP — My CTF Journey and Untold Stories! | Orange Tsai",
+      "url": "https://blog.orange.tw/posts/2025-08-the-art-of-php-en/",
+      "publication_verification": {
+        "publication_url": "https://phrack.org/issues/72/the-art-of-php-my-ctf-journey-and-untold-stories_md#article",
+        "quotes": [
+          {
+            "id": "E1",
+            "match_mode": "exact",
+            "matched": true,
+            "quote_sha256": "b67e49084b0c8295f208a37b46da45832a55053ec654261b42d147fae733747b"
+          },
+          {
+            "id": "E2",
+            "match_mode": "exact",
+            "matched": true,
+            "quote_sha256": "43a897083f210fa37f386d6571f700eb4626240cf167913997253b20b4610986"
+          },
+          {
+            "id": "E3",
+            "match_mode": "exact",
+            "matched": true,
+            "quote_sha256": "3140663057bf2e0afaeda0f148914b48aa23682069a42bba9c378ad0eb516b71"
+          },
+          {
+            "id": "E4",
+            "match_mode": "exact",
+            "matched": true,
+            "quote_sha256": "a820e8b43561dc1a66491a74990435e5f68749fe7215f83ee1752f649adf38de"
+          }
+        ],
+        "rendered_body_sha256": "e7a3154148f368dfca8364bfeee9ee5f6dab3e516db212d0694753a611b72693",
+        "retrieved_at": "2026-09-30T11:23:18.817Z",
+        "source_id": "O002",
+        "title": ".:: The Art of PHP - My CTF Journey and Untold Stories! ::.",
+        "tool": "agent_browser linked full-publication DOM; separately confirmed by fetch_content/get_search_content exact passage searches"
+      }
+    },
+    {
+      "article_text_sha256": "5c53d4014933832573e2dfde62ebb6207a309f413b9813db8c308ef1f59e254e",
+      "final_url": "https://blog.orange.tw/posts/2025-07-a-web-dog-guide-to-osee/",
+      "http_status": 200,
+      "publication_url": "https://blog.orange.tw/posts/2025-07-a-web-dog-guide-to-osee/",
+      "quotes": [
+        {
+          "id": "E1",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "a6281a961a3470e80660283882ebe850497d9c9724efaf45ae0f9030c3b7f619"
+        },
+        {
+          "id": "E2",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "e41f13801c6a26feea8f309dc5b483169524321dd68ea928a9cc8d74213bbfc6"
+        },
+        {
+          "id": "E3",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "0123ad8b05e39875da2177fb1da9d940110d2b6cd56c579a3f970aed8f10d04f"
+        }
+      ],
+      "response_html_bytes": 23526,
+      "response_html_sha256": "2ff0d708eefb9716264020b73e32dbdaa717743932b0c38b5f7ca5c7dc16e9b5",
+      "retrieved_at": "2026-09-30T11:14:20.242Z",
+      "source_id": "O003",
+      "title": "從 Web 狗的視角看 OSEE — 從 0.1 開始的 Advanced Windows Exploitation 考試 | Orange Tsai",
+      "url": "https://blog.orange.tw/posts/2025-07-a-web-dog-guide-to-osee/"
+    },
+    {
+      "article_text_sha256": "fb0531a47e29e7e03faa0ad9f6ef4a5de80a2701fd9b3fed1d93b17f18ff5319",
+      "final_url": "https://blog.orange.tw/posts/2025-01-worstfit-unveiling-hidden-transformers-in-windows-ansi/",
+      "http_status": 200,
+      "publication_url": "https://blog.orange.tw/posts/2025-01-worstfit-unveiling-hidden-transformers-in-windows-ansi/",
+      "quotes": [
+        {
+          "id": "E1",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "ad964799cd28d26cb391c5d2809dbf2eb5321ff220e5961786ca419904db5091"
+        },
+        {
+          "id": "E2",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "ff253f41b771013becf042a4891694b3ebc31b079d3043cdbce3f223d7759d25"
+        },
+        {
+          "id": "E3",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "252bd4cf51d5faebe9a3399f9b888767b2bb92c1020b187840c8d230850da0ec"
+        },
+        {
+          "id": "E4",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "5a9b19650fcf42179d9ce95530af356145c69d29ebb07d8274d652b7df5dba52"
+        },
+        {
+          "id": "E5",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "a8097077f1b29afc75d1a994c1d9b2f4deb4f73bef473bb235a68f6d80f6ad29"
+        }
+      ],
+      "response_html_bytes": 89644,
+      "response_html_sha256": "cb10271a13c90596b73d466dd18618bea2fb4cafdc5f1d7bae6a875e1c4bb87b",
+      "retrieved_at": "2026-09-30T11:14:20.340Z",
+      "source_id": "O004",
+      "title": "WorstFit: Unveiling Hidden Transformers in Windows ANSI! | Orange Tsai",
+      "url": "https://blog.orange.tw/posts/2025-01-worstfit-unveiling-hidden-transformers-in-windows-ansi/"
+    },
+    {
+      "article_text_sha256": "d51b25f431c46ab7d483b090eb2523b32ed863d78198d7ba5fe17b2f7fe2971d",
+      "final_url": "https://blog.orange.tw/posts/2024-08-confusion-attacks-en/",
+      "http_status": 200,
+      "publication_url": "https://blog.orange.tw/posts/2024-08-confusion-attacks-en/",
+      "quotes": [
+        {
+          "id": "E1",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "1d8af29de3aa95fb857b0b73572ee72c2ba22e5ec0ec9f33726734d69af9d9ca"
+        },
+        {
+          "id": "E2",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "05a1cc9f2ddb3763529454c801d4e0b83078ae48ebabcaacb9b4ae11524085a2"
+        },
+        {
+          "id": "E3",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "dfa212e55d0d8aad89d7d5ae0212def8b71d8902b3695103b328ce3434de7c1d"
+        },
+        {
+          "id": "E4",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "b63a450142e3859fa4da9d6ba721857ed350973680e117ec4c7ecbc11d70fa96"
+        },
+        {
+          "id": "E5",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "0a7f76138d7fd08005fea387143178b3c5d699cf125b10b40d236183d15d0f72"
+        }
+      ],
+      "response_html_bytes": 113220,
+      "response_html_sha256": "90e7fcc3b4a5bd80b41db8af2810426a4e07f3b2697cf7ccf7f335003617f6bd",
+      "retrieved_at": "2026-09-30T11:14:20.658Z",
+      "source_id": "O005",
+      "title": "Confusion Attacks: Exploiting Hidden Semantic Ambiguity in Apache HTTP Server! | Orange Tsai",
+      "url": "https://blog.orange.tw/posts/2024-08-confusion-attacks-en/"
+    },
+    {
+      "article_text_sha256": "0cd4c804bdf31d0e5a8985484a198e5c542b293eeafc8b89634debbf8cc014a8",
+      "final_url": "https://blog.orange.tw/posts/2024-06-cve-2024-4577-yet-another-php-rce/",
+      "http_status": 200,
+      "publication_url": "https://blog.orange.tw/posts/2024-06-cve-2024-4577-yet-another-php-rce/",
+      "quotes": [
+        {
+          "id": "E1",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "87076e99855e019ea9af83062f803aee4164b44ac2a272e55d10bbf856066491"
+        },
+        {
+          "id": "E2",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "96f575d1247a62245cc03bd6d26efcdd7ef1fd8a46d93f28257f5e6a89165aad"
+        }
+      ],
+      "response_html_bytes": 8693,
+      "response_html_sha256": "cd8c08566fa589b2add5d1d4dd16e6b765466376d6cb6d7eb7801d85befbc99b",
+      "retrieved_at": "2026-09-30T11:14:20.855Z",
+      "source_id": "O006",
+      "title": "CVE-2024-4577 - Yet Another PHP RCE: Make PHP-CGI Argument Injection Great Again! | Orange Tsai",
+      "url": "https://blog.orange.tw/posts/2024-06-cve-2024-4577-yet-another-php-rce/"
+    },
+    {
+      "article_text_sha256": "1c14032e9be7f3dcae223b8ae76ceecf44dcd9c58b7c286dc71f8411b2b26294",
+      "final_url": "https://blog.orange.tw/posts/2023-08-2023-webconf-the-evolution-of-web-security/",
+      "http_status": 200,
+      "publication_url": "https://blog.orange.tw/posts/2023-08-2023-webconf-the-evolution-of-web-security/",
+      "quotes": [
+        {
+          "id": "E1",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "472d29cf06e9fa5a3f542523ae57bf7b8df2e6c35a4c39ca543418bda1aeb998"
+        },
+        {
+          "id": "E2",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "3d80226e7994289b4c2fc4e3c8386bb2718ea47d7f118d229586f5414e8418b5"
+        },
+        {
+          "id": "E3",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "071a23e274ed62015581d40f2ce035d2fd9f05b5246bbc44b4a2705464b3f989"
+        },
+        {
+          "id": "E4",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "464441477a854c1200bdf65816ee245f50e936a2b7726c782c90420cef63c917"
+        },
+        {
+          "id": "E5",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "d968aa810e784d653885efa81b994a228f0b09daecce6f7a54c92b30cec613b9"
+        }
+      ],
+      "response_html_bytes": 18069,
+      "response_html_sha256": "3cb20147dd3c27fec373056601783792e6cf28a5c7e55a5ea452098548e9fff2",
+      "retrieved_at": "2026-09-30T11:14:20.756Z",
+      "source_id": "O007",
+      "title": "從 2013 到 2023: Web Security 十年之進化與趨勢! | Orange Tsai",
+      "url": "https://blog.orange.tw/posts/2023-08-2023-webconf-the-evolution-of-web-security/"
+    },
+    {
+      "article_text_sha256": "0b60e71e253cd142fd9d4874d03acc4d71dd4d966e5789b1084d31407621d769",
+      "final_url": "https://blog.orange.tw/posts/2022-10-proxyrelay-a-new-attack-surface-on-ms-exchange-part-4/",
+      "http_status": 200,
+      "publication_url": "https://blog.orange.tw/posts/2022-10-proxyrelay-a-new-attack-surface-on-ms-exchange-part-4/",
+      "quotes": [
+        {
+          "id": "E1",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "4b2d91d7dd7acd0f8276aa193c35303777560e7efc3a0a59c40a1ee05f188446"
+        },
+        {
+          "id": "E2",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "5e63a2c3b7d74d45935a318bcb68072cbdbf07ca85059d553ffffd15218387a5"
+        },
+        {
+          "id": "E3",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "542c73e4570d93e90e64af4c5ca02c77240eef2a858283bf85dd58f91781a713"
+        },
+        {
+          "id": "E4",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "dfa7865dccb7ef5a97666780c9fce0ce8d8da9ca717ac76aa1fa01620d4a2fab"
+        },
+        {
+          "id": "E5",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "2279a33eb8863a64a8dbf02290d67b1b81148d2a61158df97afa85fecd61fa3a"
+        }
+      ],
+      "response_html_bytes": 33952,
+      "response_html_sha256": "0cc361276f9e2ad94ea3d0370cca5860a12a5a925db26465c9316654f3ea80e4",
+      "retrieved_at": "2026-09-30T11:14:21.679Z",
+      "source_id": "O008",
+      "title": "A New Attack Surface on MS Exchange Part 4 - ProxyRelay! | Orange Tsai",
+      "url": "https://blog.orange.tw/posts/2022-10-proxyrelay-a-new-attack-surface-on-ms-exchange-part-4/"
+    },
+    {
+      "article_text_sha256": "fded22e75e40c7ee83d25c3b0ca2fd91394ce3d4279bbc34467864e8ca9a6d83",
+      "final_url": "https://blog.orange.tw/posts/2022-08-lets-dance-in-the-cache-destabilizing-hash-table-on-microsoft-iis/",
+      "http_status": 200,
+      "publication_url": "https://blog.orange.tw/posts/2022-08-lets-dance-in-the-cache-destabilizing-hash-table-on-microsoft-iis/",
+      "quotes": [
+        {
+          "id": "E1",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "f91a6f7055691fe0df8398a37cb8d525decf7e88551178cb0b70d63c6c62d7e8"
+        },
+        {
+          "id": "E2",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "22b7f28cd0b2f9d0aca50699dac0dc816d647d48b0089af5b2b9be05998ebc14"
+        },
+        {
+          "id": "E3",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "bfa4419a5d5afe4e8935425094a3979985c02c0cdce171edd35e6498daf36806"
+        },
+        {
+          "id": "E4",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "cd4f0ff50ab45c1227ff4b317429eef5e27d68462a27f877d8e213a862019a33"
+        },
+        {
+          "id": "E5",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "b92ad7597f629e1711f2952d624cf2da6520dd9340c9b84486f96915748943c1"
+        }
+      ],
+      "response_html_bytes": 21908,
+      "response_html_sha256": "c4b2b7a6a45bb0319f9c5a3a1b453bce52fa4ec72e44037c7673b6975a22666c",
+      "retrieved_at": "2026-09-30T11:14:20.961Z",
+      "source_id": "O009",
+      "title": "Let's Dance in the Cache - Destabilizing Hash Table on Microsoft IIS! | Orange Tsai",
+      "url": "https://blog.orange.tw/posts/2022-08-lets-dance-in-the-cache-destabilizing-hash-table-on-microsoft-iis/"
+    },
+    {
+      "article_text_sha256": "81788163bea420c23be57e72693f2287d9c8a79e0964a273ec9f89712a76a5f9",
+      "final_url": "https://blog.orange.tw/posts/2021-08-proxyshell-a-new-attack-surface-on-ms-exchange-part-3/",
+      "http_status": 200,
+      "publication_url": "https://blog.orange.tw/posts/2021-08-proxyshell-a-new-attack-surface-on-ms-exchange-part-3/",
+      "quotes": [
+        {
+          "id": "E1",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "efec702d490920eed4e2910a500d01419e9f47fbcbedb457b7aef2c3d1ee3209"
+        }
+      ],
+      "response_html_bytes": 8482,
+      "response_html_sha256": "04b03a024ce959b6a5e403751664db14bc84eb1482a2bcaa23cf19da6b4cde35",
+      "retrieved_at": "2026-09-30T11:14:20.957Z",
+      "source_id": "O010",
+      "title": "A New Attack Surface on MS Exchange Part 3 - ProxyShell! | Orange Tsai",
+      "url": "https://blog.orange.tw/posts/2021-08-proxyshell-a-new-attack-surface-on-ms-exchange-part-3/"
+    },
+    {
+      "article_text_sha256": "c943db2f95277e6201e6bb2ca93eb62332ec26a2b599bc96ff39b7ed9d75540f",
+      "final_url": "https://blog.orange.tw/posts/2021-08-proxyoracle-a-new-attack-surface-on-ms-exchange-part-2/",
+      "http_status": 200,
+      "publication_url": "https://blog.orange.tw/posts/2021-08-proxyoracle-a-new-attack-surface-on-ms-exchange-part-2/",
+      "quotes": [
+        {
+          "id": "E1",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "80dade98ea10a9b4558a603f4a44d0a429fd333f41731a1cd4f9d538a453f77c"
+        },
+        {
+          "id": "E2",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "c141521771ba03cf959b2c90ec84b5f42cd265771e80f9c9c4b6fe9e9a79a188"
+        },
+        {
+          "id": "E3",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "72b41fc1a97438ca6faf0e0bb503303f2ccb9688d48dac28044eec92f4f6e357"
+        },
+        {
+          "id": "E4",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "6dc14b1e784a1a8e19fef7cdaaf1e456e2f28767ede60a41a4fbb690e029a16e"
+        },
+        {
+          "id": "E5",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "75c503767510c98852c992c4e77fe21c69aa0a4449d59e322718352b3a9a60f3"
+        }
+      ],
+      "response_html_bytes": 28215,
+      "response_html_sha256": "70405ef485d6142dbcb5fda1204a183e288c7be2e79e44dafaf4e0badb11669e",
+      "retrieved_at": "2026-09-30T11:14:21.811Z",
+      "source_id": "O011",
+      "title": "A New Attack Surface on MS Exchange Part 2 - ProxyOracle! | Orange Tsai",
+      "url": "https://blog.orange.tw/posts/2021-08-proxyoracle-a-new-attack-surface-on-ms-exchange-part-2/"
+    },
+    {
+      "article_text_sha256": "796a2e710ffe76433153625aa74db1e97538da82e455f652549ca7ed570bc625",
+      "final_url": "https://blog.orange.tw/posts/2021-08-proxylogon-a-new-attack-surface-on-ms-exchange-part-1/",
+      "http_status": 200,
+      "publication_url": "https://blog.orange.tw/posts/2021-08-proxylogon-a-new-attack-surface-on-ms-exchange-part-1/",
+      "quotes": [
+        {
+          "id": "E1",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "e5baf0c6fca256214bcee2cf689a88bf0cb3dc42dec0044555a3ca9c1acc81f9"
+        },
+        {
+          "id": "E2",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "2f8c4e1d1362541625b96a0750e7e2c6ee8955fd8228842679a302737e47112c"
+        },
+        {
+          "id": "E3",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "f30912984a8ab7b3d78e1d2566f0ebf93096fce0752b7324306285bd404a27f3"
+        },
+        {
+          "id": "E4",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "6ab770d38c45677eaef545aefa560c4f9efc165a46e2af92ed3988642ed7bcbb"
+        },
+        {
+          "id": "E5",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "68fba3f4d36f4983cdd3bbbac46772e50d91d611ddbce871ca2067b87afebd51"
+        }
+      ],
+      "response_html_bytes": 60626,
+      "response_html_sha256": "4b33f997bc1e0498d2cf5a6cdca32f1ac2c7dbd9fa7e0281fb93b7a565d4c29d",
+      "retrieved_at": "2026-09-30T11:14:21.064Z",
+      "source_id": "O012",
+      "title": "A New Attack Surface on MS Exchange Part 1 - ProxyLogon! | Orange Tsai",
+      "url": "https://blog.orange.tw/posts/2021-08-proxylogon-a-new-attack-surface-on-ms-exchange-part-1/"
+    },
+    {
+      "article_text_sha256": "4816536db73b6ddea3419b38cdbdc3d78f88d21779cb3036c80346cccdc60ea7",
+      "final_url": "https://blog.orange.tw/posts/2021-02-a-journey-combining-web-and-binary-exploitation/",
+      "http_status": 200,
+      "publication_url": "https://blog.orange.tw/posts/2021-02-a-journey-combining-web-and-binary-exploitation/",
+      "quotes": [
+        {
+          "id": "E1",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "1db441dfc38ff2db737f415e55fefd0ac27364779357fbf4df14daf98b5993a0"
+        },
+        {
+          "id": "E2",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "62bc604434bfe63829f9d8c0d7d066287fb3a5ad002cf1d2a5fd2fa530d5d578"
+        },
+        {
+          "id": "E3",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "28f8a93bbc9b9150001d61e754bcdaf084e631c0480894228300124a88868d61"
+        }
+      ],
+      "response_html_bytes": 8430,
+      "response_html_sha256": "edc70d6af5b3ba41b1883b3bddb74c286a5dda1d81150f6df786bd4078dfbd7b",
+      "retrieved_at": "2026-09-30T11:14:21.159Z",
+      "source_id": "O013",
+      "title": "A Journey Combining Web Hacking and Binary Exploitation in Real World! | Orange Tsai",
+      "url": "https://blog.orange.tw/posts/2021-02-a-journey-combining-web-and-binary-exploitation/"
+    },
+    {
+      "article_text_sha256": "94a43a1ab10d2f263ec330899d651a1eeb1bcd0792edb8bbb3187e4f9d0b9b5e",
+      "final_url": "https://blog.orange.tw/posts/2020-09-how-i-hacked-facebook-again-mobileiron-mdm-rce/",
+      "http_status": 200,
+      "publication_url": "https://blog.orange.tw/posts/2020-09-how-i-hacked-facebook-again-mobileiron-mdm-rce/",
+      "quotes": [
+        {
+          "id": "E1",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "2c1886562778e0c54796b2901f54e8f555a559b9f67d8ffec5a453a1d93a0f14"
+        },
+        {
+          "id": "E2",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "ee547ef6e5703660628be9f021076dcff136a743802e43b5476338a71cc7f354"
+        },
+        {
+          "id": "E3",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "c7718d3b795a2b7ccebf95998e6b75547a6727eea01f00648a58102bb64c8a6a"
+        },
+        {
+          "id": "E4",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "2af6fa6209c25455967d31ea17fc121b2a0610ed57d5e7cb5af66a8f09bcb9a7"
+        },
+        {
+          "id": "E5",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "bc8c71e5a508bd68abd1a9f538bd7008d633af1cffca547d2424c4a48c0977f0"
+        }
+      ],
+      "response_html_bytes": 29741,
+      "response_html_sha256": "ae3d0e496b1db5faec5c60208fa9eee6b7849a99f494fdb89c07bd74985266a1",
+      "retrieved_at": "2026-09-30T11:14:21.472Z",
+      "source_id": "O014",
+      "title": "How I Hacked Facebook Again! Unauthenticated RCE on MobileIron MDM | Orange Tsai",
+      "url": "https://blog.orange.tw/posts/2020-09-how-i-hacked-facebook-again-mobileiron-mdm-rce/"
+    },
+    {
+      "article_text_sha256": "06632562acd579012daf4cc3c2220809b8d86635eaefc6a2cf81be803a29ab1c",
+      "final_url": "https://blog.orange.tw/posts/2019-11-HiNet-GPON-Modem-RCE/",
+      "http_status": 200,
+      "publication_url": "https://blog.orange.tw/posts/2019-11-HiNet-GPON-Modem-RCE/",
+      "quotes": [
+        {
+          "id": "E1",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "ab9b68f0e0ab22d659e1974e7c571a1b4d7f2223fdd573dab824f3bc6b227137"
+        },
+        {
+          "id": "E2",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "a5425f1ce094a665c4cce19be6b196d6a2b8dd7dc28d99b98cc36456cc6a0ff2"
+        },
+        {
+          "id": "E3",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "7207e290ba28bcdd5e56e4482e4fb95d060bd4274e1ddd0136b535e912b1061a"
+        },
+        {
+          "id": "E4",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "ad891ed08e3cb637c3651c5dda37d4b1671d23d9e3bd680ab2f0b6cc860e3af4"
+        },
+        {
+          "id": "E5",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "e69fbe954ffa4bf9ddf96c6789c00bb144cc97d50b2fa0897d7021903967ebe5"
+        }
+      ],
+      "response_html_bytes": 27623,
+      "response_html_sha256": "29972ea317ecef631f100aed60ae90649f6bafa21328d83873b7a39958d12eb2",
+      "retrieved_at": "2026-09-30T11:14:21.489Z",
+      "source_id": "O015",
+      "title": "你用它上網，我用它進你內網! 中華電信數據機遠端代碼執行漏洞 | Orange Tsai",
+      "url": "https://blog.orange.tw/posts/2019-11-HiNet-GPON-Modem-RCE/"
+    },
+    {
+      "article_text_sha256": "b772f1854e84f2611b011ae140ca450707df66d8826c60cb06435e5649959174",
+      "final_url": "https://blog.orange.tw/posts/2019-10-an-analysis-and-thought-about-recently/",
+      "http_status": 200,
+      "publication_url": "https://blog.orange.tw/posts/2019-10-an-analysis-and-thought-about-recently/",
+      "quotes": [
+        {
+          "id": "E1",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "b08d56f7fabdcf60ab5877b0bacfdd915914303f20405151ccd7d17a57821ddf"
+        },
+        {
+          "id": "E2",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "86c4eb7920c538ff01bb42c8042e8ae4b318be92165bbc18c233c205a2cc48c9"
+        },
+        {
+          "id": "E3",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "06cdbb90f4e74d206429c63521b271a007de16e4cc75d1e4da767fba114d3062"
+        },
+        {
+          "id": "E4",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "81d3aa127d859103f2a3a9c799d730067b90a00f347e3ced01a9e2505a584323"
+        },
+        {
+          "id": "E5",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "2062a338fb0ba4ff536b748db74f38fa0a8ee6aefb7fe4690fde89d29ffde038"
+        }
+      ],
+      "response_html_bytes": 69439,
+      "response_html_sha256": "978bb634939b6e56a71ba349b72e3b0a624c5d1b1335ab91575738553e802516",
+      "retrieved_at": "2026-09-30T11:14:21.577Z",
+      "source_id": "O016",
+      "title": "An analysis and thought about recently PHP-FPM RCE (CVE-2019-11043) | Orange Tsai",
+      "url": "https://blog.orange.tw/posts/2019-10-an-analysis-and-thought-about-recently/"
+    },
+    {
+      "article_text_sha256": "de02bb9cdb98c438eb581ea1031f55b6e680f9f304ee96bc33f5f5d5a4e6e939",
+      "final_url": "https://blog.orange.tw/posts/2019-09-attacking-ssl-vpn-part-3-golden-pulse-secure-rce-chain/",
+      "http_status": 200,
+      "publication_url": "https://blog.orange.tw/posts/2019-09-attacking-ssl-vpn-part-3-golden-pulse-secure-rce-chain/",
+      "quotes": [
+        {
+          "id": "E1",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "3fc0ece38a55c9a67361442d10a725b1d8cf7073ce79d422dced636d8eb041d9"
+        },
+        {
+          "id": "E2",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "c4012eef92a6bcf818af12552fb689ff46d3eec9f61cd5b58938e7232e07cee1"
+        },
+        {
+          "id": "E3",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "c06c9764e54b31bf767ac08ea0a5ee34e7000c5d2eaf0b549adfe26a82c77b43"
+        },
+        {
+          "id": "E4",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "5b97a468e9e566a5577058aa520432605f8e38739a0e640cf81d95d5bd8e7125"
+        },
+        {
+          "id": "E5",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "96b3543307d5e3b6a15940f16d3a1f6be7aef75e893ce6d81200f9744e29cb4d"
+        }
+      ],
+      "response_html_bytes": 41664,
+      "response_html_sha256": "bd434e081c8e908d7dd8b92e28ae0f1e77c3d74404b116e8f29c6a1ec617bb95",
+      "retrieved_at": "2026-09-30T11:14:21.584Z",
+      "source_id": "O017",
+      "title": "Attacking SSL VPN - Part 3: The Golden Pulse Secure SSL VPN RCE Chain, with Twitter as Case Study! | Orange Tsai",
+      "url": "https://blog.orange.tw/posts/2019-09-attacking-ssl-vpn-part-3-golden-pulse-secure-rce-chain/"
+    },
+    {
+      "article_text_sha256": "92767e3b94e4357f03048f3a6563305beccb8c7ddd6a002108e591895c41cc6e",
+      "final_url": "https://blog.orange.tw/posts/2019-08-attacking-ssl-vpn-part-2-breaking-the-fortigate-ssl-vpn/",
+      "http_status": 200,
+      "publication_url": "https://blog.orange.tw/posts/2019-08-attacking-ssl-vpn-part-2-breaking-the-fortigate-ssl-vpn/",
+      "quotes": [
+        {
+          "id": "E1",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "c7608d7c6c950812156afffd9bcb848fd86766d4ddd09c47ad2c043bf3448aab"
+        },
+        {
+          "id": "E2",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "645a218c5c45856b95bd3c2f78586a207de8534d190ca51016289c5e31877dfb"
+        },
+        {
+          "id": "E3",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "77083b37d5a87750561104b7c4c7eb1455a23e727269f87520dce8bed611139d"
+        },
+        {
+          "id": "E4",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "2908dcee424abc355903a49c42565bd9cbe105957abbffd40691a73cf8655009"
+        },
+        {
+          "id": "E5",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "fcabde370414f9004bf1c51957adde52b288519c36cf06f345b9991694b9f4ab"
+        }
+      ],
+      "response_html_bytes": 40983,
+      "response_html_sha256": "61d01c55e141093ca169e6e943a30608a9044b62aed269437611b082d9e957bf",
+      "retrieved_at": "2026-09-30T11:14:21.915Z",
+      "source_id": "O018",
+      "title": "Attacking SSL VPN - Part 2: Breaking the Fortigate SSL VPN | Orange Tsai",
+      "url": "https://blog.orange.tw/posts/2019-08-attacking-ssl-vpn-part-2-breaking-the-fortigate-ssl-vpn/"
+    },
+    {
+      "article_text_sha256": "3603b5255a92b1fbf324afcbac8420a3f21e1a1960e9876ed1690feb230d592a",
+      "final_url": "https://blog.orange.tw/posts/2019-07-attacking-ssl-vpn-part-1-preauth-rce-on-palo-alto/",
+      "http_status": 200,
+      "publication_url": "https://blog.orange.tw/posts/2019-07-attacking-ssl-vpn-part-1-preauth-rce-on-palo-alto/",
+      "quotes": [
+        {
+          "id": "E1",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "172e9dde5361516c4b34c5bf46fd34662294fe5c58c9684df39503d8def95924"
+        },
+        {
+          "id": "E2",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "4ccd39facd980c8db031e8c6178d25180a622bce89f73958c71c0b00860dc70d"
+        },
+        {
+          "id": "E3",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "2f3d9c4b4d2a09532495193ee1dea4ae187f9be482729a0bf93ffa151f4d4b94"
+        },
+        {
+          "id": "E4",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "d1ed73415d8d83d754d13f2a78c733649408e0221831f01b9429058832cfb047"
+        },
+        {
+          "id": "E5",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "b8d65df1eab71714ece80fe1cd2e4d17a8246d75804b0ca01115eb489a4d5430"
+        }
+      ],
+      "response_html_bytes": 25174,
+      "response_html_sha256": "f8a47e080b3270d3a76efe98bf9f9b122ebbbad532f96904ddaae156ad397273",
+      "retrieved_at": "2026-09-30T11:14:21.684Z",
+      "source_id": "O019",
+      "title": "Attacking SSL VPN - Part 1: PreAuth RCE on Palo Alto GlobalProtect, with Uber as Case Study! | Orange Tsai",
+      "url": "https://blog.orange.tw/posts/2019-07-attacking-ssl-vpn-part-1-preauth-rce-on-palo-alto/"
+    },
+    {
+      "article_text_sha256": "d093dc0e4195e526c5ba39fd1c21909b25fa62d12e1653399a0b062a2eeaa625",
+      "final_url": "https://blog.orange.tw/posts/2019-03-a-wormable-xss-on-hackmd/",
+      "http_status": 200,
+      "publication_url": "https://blog.orange.tw/posts/2019-03-a-wormable-xss-on-hackmd/",
+      "quotes": [
+        {
+          "id": "E1",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "acc22a075ac926b3c891ddc5c1cc03b1011c3f37c2db8afc24e3ce377e2d7f75"
+        },
+        {
+          "id": "E2",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "b76f4a1c43bf85321ea3f324dae9693b936c93016b68cc15add33f2ee5bd0eb6"
+        },
+        {
+          "id": "E3",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "c149a30fe939c29a1f931d4b39083884de243b803d6a5e883b2daa89cf97f483"
+        },
+        {
+          "id": "E4",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "95dee8dc61a160069db9b9049161ce0a6b94f08d660c3b3a5c3716c111d2aa94"
+        },
+        {
+          "id": "E5",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "b4fa2f5929961e7501d590b42f2f311d7edd60254d65a1b4a09bf755a23a6652"
+        }
+      ],
+      "response_html_bytes": 23211,
+      "response_html_sha256": "5bd0d5f5ff9733ee5350700320c11f023ff66dfc9af9054608b9275206e713c6",
+      "retrieved_at": "2026-09-30T11:14:21.776Z",
+      "source_id": "O020",
+      "title": "A Wormable XSS on HackMD! | Orange Tsai",
+      "url": "https://blog.orange.tw/posts/2019-03-a-wormable-xss-on-hackmd/"
+    },
+    {
+      "article_text_sha256": "b5963f1c7bac28c9e7223ea80b4d286270c40b417347eb0ec52e892a145e8be6",
+      "final_url": "https://blog.orange.tw/posts/2019-02-abusing-meta-programming-for-unauthenticated-rce/",
+      "http_status": 200,
+      "publication_url": "https://blog.orange.tw/posts/2019-02-abusing-meta-programming-for-unauthenticated-rce/",
+      "quotes": [
+        {
+          "id": "E1",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "bcb3afb9f9549fa97725e835c095201fef876cf119fbd92208fbb58af41284d9"
+        },
+        {
+          "id": "E2",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "6024944b993bb61c74b2d92a2e35037a3458e0210a28b8a15312a4658714fc50"
+        },
+        {
+          "id": "E3",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "78e8c9de025593ab8f7510a5173114f6e653ca6112dbe3ac7a81154c729efe08"
+        },
+        {
+          "id": "E4",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "883f055887218399979e6213facc3282c9327e8e347ea38a6dd8035ede082f71"
+        }
+      ],
+      "response_html_bytes": 46746,
+      "response_html_sha256": "6523043e0fd7144f6cd0ddca12dea61eb989a6debd3107c59a2c6387b5767caa",
+      "retrieved_at": "2026-09-30T11:14:21.783Z",
+      "source_id": "O021",
+      "title": "Hacking Jenkins Part 2 - Abusing Meta Programming for Unauthenticated RCE! | Orange Tsai",
+      "url": "https://blog.orange.tw/posts/2019-02-abusing-meta-programming-for-unauthenticated-rce/"
+    },
+    {
+      "article_text_sha256": "32e9fd20487dd13c6a0cdfced9e3414c7e0c82245e41ea525417fee53042f5f3",
+      "final_url": "https://blog.orange.tw/posts/2019-01-hacking-jenkins-part-1-play-with-dynamic-routing/",
+      "http_status": 200,
+      "publication_url": "https://blog.orange.tw/posts/2019-01-hacking-jenkins-part-1-play-with-dynamic-routing/",
+      "quotes": [
+        {
+          "id": "E1",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "c7d3336ea034f4fee57065e0f0bd9e43e50e76333129eebd3c20e71584d5f8d8"
+        },
+        {
+          "id": "E2",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "f128e9100f14a504e352a9ffca8c8fffdcdd22a2a76355c5bca6f6175700aa0f"
+        },
+        {
+          "id": "E3",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "93413977ddab0696e65fcc9d2979aa1320267064927ca94f10acb09f897427cf"
+        },
+        {
+          "id": "E4",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "a85e76248748d0e2d33c6dc61c5e766d9ea44089320ada30726bba4170b92495"
+        },
+        {
+          "id": "E5",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "5b9a339060e25ae3cb4270dedb5708c78c9b5955db722ac8e2d22cf1eb65cbb3"
+        }
+      ],
+      "response_html_bytes": 31606,
+      "response_html_sha256": "42cac95b4aadacfd568381e66bf2d26c7913fbdcaffaa28e6ac5857bbd7550ef",
+      "retrieved_at": "2026-09-30T11:14:21.981Z",
+      "source_id": "O022",
+      "title": "Hacking Jenkins Part 1 - Play with Dynamic Routing | Orange Tsai",
+      "url": "https://blog.orange.tw/posts/2019-01-hacking-jenkins-part-1-play-with-dynamic-routing/"
+    },
+    {
+      "article_text_sha256": "aa12e52aba575f75343b895d41a32ed0ad882085d4d1e8b04f6415c32fb6ee37",
+      "final_url": "https://blog.orange.tw/posts/2018-10-hitcon-ctf-2018-one-line-php-challenge/",
+      "http_status": 200,
+      "publication_url": "https://blog.orange.tw/posts/2018-10-hitcon-ctf-2018-one-line-php-challenge/",
+      "quotes": [
+        {
+          "id": "E1",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "7284e6f9c9c73909e0cac161a51669fecf13277c797a724b3049446697929597"
+        }
+      ],
+      "response_html_bytes": 16270,
+      "response_html_sha256": "837abd8eefebcc19f45176b72d1c86dbcc91d362c46eab7d0708322d6b77cb9d",
+      "retrieved_at": "2026-09-30T11:14:21.984Z",
+      "source_id": "O023",
+      "title": "HITCON CTF 2018 - One Line PHP Challenge | Orange Tsai",
+      "url": "https://blog.orange.tw/posts/2018-10-hitcon-ctf-2018-one-line-php-challenge/"
+    },
+    {
+      "article_text_sha256": "a7e2c49c881623646e810583070bc1a0191a1adb27a05e2d36dbd78aa1f2a6df",
+      "final_url": "https://blog.orange.tw/posts/2018-08-how-i-chained-4-bugs-features-into-rce-on-amazon/",
+      "http_status": 200,
+      "publication_url": "https://blog.orange.tw/posts/2018-08-how-i-chained-4-bugs-features-into-rce-on-amazon/",
+      "quotes": [
+        {
+          "id": "E1",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "362a0d76e76d065b9f5673179259ff8ddd5bb5a4a004e4833e74af8f7c0ab93c"
+        },
+        {
+          "id": "E2",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "ed6ca1cd61f28fc714b2d7dd715208e209f61b2fba180af81852e5ed6dba8bd0"
+        },
+        {
+          "id": "E3",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "ca0c2ac1cc3268d98304087af2fa4a54505efbe2ea23f111663050a73dfb7eb0"
+        },
+        {
+          "id": "E4",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "82e1a2ae8222f07d7ec829cfb3bda8c3023db990470f9fc4c0d5c7e444d0fa52"
+        },
+        {
+          "id": "E5",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "81317e652783a12ecde5d2e5d2b68e6204ae3a3f8a587211fe0b79a77bccc192"
+        }
+      ],
+      "response_html_bytes": 37379,
+      "response_html_sha256": "6ef21823e38b36519d820948802e6ed41a32338c4c1b86e9484f5a9ca3c5ff81",
+      "retrieved_at": "2026-09-30T11:14:22.209Z",
+      "source_id": "O024",
+      "title": "How I Chained 4 Bugs (Features?) into RCE on Amazon Collaboration System | Orange Tsai",
+      "url": "https://blog.orange.tw/posts/2018-08-how-i-chained-4-bugs-features-into-rce-on-amazon/"
+    },
+    {
+      "article_text_sha256": "ba78f93e7497545219be1cd601d45d4fa49c1611a76a49c685d915034e0930f8",
+      "final_url": "https://blog.orange.tw/posts/2018-06-google-ctf-2018-quals-web-gcalc/",
+      "http_status": 200,
+      "publication_url": "https://blog.orange.tw/posts/2018-06-google-ctf-2018-quals-web-gcalc/",
+      "quotes": [
+        {
+          "id": "E1",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "dded3e7d97eb97f27fb1c4be71d654ca91f7b389b8d9bfe09d5064183a4e39a2"
+        },
+        {
+          "id": "E2",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "e8923132abe3c7e6468a13128cbacd439afc6b2b3b3779fdb17aaf244c7f4937"
+        },
+        {
+          "id": "E3",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "1d75dca9caef74e222623f4f1c184819fdffe5b3d426a12902cba041fe6e6df1"
+        },
+        {
+          "id": "E4",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "797bfe3280728c369a7b520e0977bd1b869e60fe6749e6fe75d8437d9cb15243"
+        }
+      ],
+      "response_html_bytes": 20150,
+      "response_html_sha256": "4843e6825028dc3c3adfa43968fd6e1abc7a06b8b1df2939b5fd5b48594a6062",
+      "retrieved_at": "2026-09-30T11:14:22.290Z",
+      "source_id": "O025",
+      "title": "Google CTF 2018 Quals Web Challenge - gCalc | Orange Tsai",
+      "url": "https://blog.orange.tw/posts/2018-06-google-ctf-2018-quals-web-gcalc/"
+    },
+    {
+      "article_text_sha256": "f5e1777858c22112bf5e31dba84b25cdfeae39d8157d639f3722406dfe62208d",
+      "final_url": "https://blog.orange.tw/posts/2018-03-pwn-ctf-platform-with-java-jrmp-gadget/",
+      "http_status": 200,
+      "publication_url": "https://blog.orange.tw/posts/2018-03-pwn-ctf-platform-with-java-jrmp-gadget/",
+      "quotes": [
+        {
+          "id": "E1",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "4894afd5d07f01ea249977ef08c0b3eaaffcf9e26bacba15e59c29e2cebee647"
+        },
+        {
+          "id": "E2",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "e99456d754fe48c810c4d48145b7202c403c12f62cb3a3deb6df7db9b7af8e81"
+        },
+        {
+          "id": "E3",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "b4253b1b1adf74939e6b408dbedf2caef163e3e486c55ad53ffa4aeb2b927eae"
+        },
+        {
+          "id": "E4",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "6b24cc69ed8c24a8e1bdea9e70cd06dd0901f820ef836d1ef191b4e8c240a436"
+        },
+        {
+          "id": "E5",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "4f72588f45efc6f4643dd4c321a456ac160f94a3c49d3cd3b4e746ca85dc3c78"
+        }
+      ],
+      "response_html_bytes": 16554,
+      "response_html_sha256": "a06937106c326c2606d7249e627fbff5a573d46aa247d63407dea008bf4a5d55",
+      "retrieved_at": "2026-09-30T11:14:22.083Z",
+      "source_id": "O026",
+      "title": "Pwn a CTF Platform with Java JRMP Gadget | Orange Tsai",
+      "url": "https://blog.orange.tw/posts/2018-03-pwn-ctf-platform-with-java-jrmp-gadget/"
+    },
+    {
+      "article_text_sha256": "a4699bf7ee14861a43c1d3f8f2258f893938c1764d51ae36fc84496dfa2601c7",
+      "final_url": "https://blog.orange.tw/posts/2018-01-php-cve-2018-5711-hanging-websites-by/",
+      "http_status": 200,
+      "publication_url": "https://blog.orange.tw/posts/2018-01-php-cve-2018-5711-hanging-websites-by/",
+      "quotes": [
+        {
+          "id": "E1",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "e73bdc8e2e29c86beb15d350b279ebbd7d3fcf9ba2195632ccecc2f8f894205d"
+        },
+        {
+          "id": "E2",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "29956e4792d9aba95da137c4b2989d34688f4c93fedc303b6182d29c1fc829df"
+        },
+        {
+          "id": "E3",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "be9cf04225de3e18e2f95b8d6a03596bd93a6fee98b2c179e9fad1ce580dcb48"
+        },
+        {
+          "id": "E4",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "1e8271136caa5714c607caefc1a8298aeab6df69e483945604c726407a6b9764"
+        }
+      ],
+      "response_html_bytes": 28911,
+      "response_html_sha256": "8f24b0e3dbd5e445b9ec679620f8916de750520c966810c315fc17b4dda22aa7",
+      "retrieved_at": "2026-09-30T11:14:22.190Z",
+      "source_id": "O027",
+      "title": "PHP CVE-2018-5711 - Hanging Websites by a Harmful GIF | Orange Tsai",
+      "url": "https://blog.orange.tw/posts/2018-01-php-cve-2018-5711-hanging-websites-by/"
+    },
+    {
+      "article_text_sha256": "38faa814bc439e31b30c4b8c880823d822dddec20b483b0be561db8595b7b612",
+      "final_url": "https://blog.orange.tw/posts/2017-07-how-i-chained-4-vulnerabilities-on/",
+      "http_status": 200,
+      "publication_url": "https://blog.orange.tw/posts/2017-07-how-i-chained-4-vulnerabilities-on/",
+      "quotes": [
+        {
+          "id": "E1",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "7808f5c59fd5f63f95737ab0e0ef2dbe544d306952a4749736df191bb97d982b"
+        },
+        {
+          "id": "E2",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "296949df36731fd9efba50c301ca3f89db99b4fe9a5b19d006bd325737f2e409"
+        },
+        {
+          "id": "E3",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "78046d7a31c8fa93f365f6ed6ecf5010cba6a6f0773e5b47671eeff1bb613c59"
+        },
+        {
+          "id": "E4",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "a8fd7d38c7330d863154b20578329b7f7331e5fb07bf62b08c5a0f0b8fd3810c"
+        },
+        {
+          "id": "E5",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "d53babcbdcc1cebd89d2f46bc4e60cf1b6070c120676e170c711c19dd6b07f0d"
+        }
+      ],
+      "response_html_bytes": 34642,
+      "response_html_sha256": "d5880a4a43bd30e760a1bbc48777caf54935ad48ae0d040306886c661cfda1fe",
+      "retrieved_at": "2026-09-30T11:14:22.625Z",
+      "source_id": "O028",
+      "title": "How I Chained 4 vulnerabilities on GitHub Enterprise, From SSRF Execution Chain to RCE! | Orange Tsai",
+      "url": "https://blog.orange.tw/posts/2017-07-how-i-chained-4-vulnerabilities-on/"
+    },
+    {
+      "article_text_sha256": "3e6ed12f7edd64fa1f47c3e275fbd4b012ee03232ce93d1ac119664a03e81569",
+      "final_url": "https://blog.orange.tw/posts/2017-01-bug-bounty-github-enterprise-sql-injection/",
+      "http_status": 200,
+      "publication_url": "https://blog.orange.tw/posts/2017-01-bug-bounty-github-enterprise-sql-injection/",
+      "quotes": [
+        {
+          "id": "E1",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "aee508c8bd15d43838b73a909deee50e33461e8c9f1010984dfe2f2047017aee"
+        },
+        {
+          "id": "E2",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "31c950bb50baef4c558e0440f72666e5774178a00326bb4de6914569ff3c3f06"
+        },
+        {
+          "id": "E3",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "bfea8df5ef926584bb8517b5aaa1f1446a53420e7b0459eca668ec35f5a7e41d"
+        },
+        {
+          "id": "E4",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "bd20ca064e048b91793d2867a9e3e29112352943b5ba73723b549c0f7716e879"
+        },
+        {
+          "id": "E5",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "294ebc9bedfa2c5ef2d8737f8904e1ca7dd708f38ae6c3734a51dbbb3595aadf"
+        }
+      ],
+      "response_html_bytes": 37972,
+      "response_html_sha256": "b5d4b71642e20199361cfc081cbddaf179fd2b45880590d170e07835ecc1c901",
+      "retrieved_at": "2026-09-30T11:14:22.601Z",
+      "source_id": "O029",
+      "title": "GitHub Enterprise SQL Injection | Orange Tsai",
+      "url": "https://blog.orange.tw/posts/2017-01-bug-bounty-github-enterprise-sql-injection/"
+    },
+    {
+      "article_text_sha256": "cdd7386f9787b2d6ab066a861600918a2c17961e132f723449d7efa290532d63",
+      "final_url": "https://blog.orange.tw/posts/2016-12-java-web/",
+      "http_status": 200,
+      "publication_url": "https://blog.orange.tw/posts/2016-12-java-web/",
+      "quotes": [
+        {
+          "id": "E1",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "a3fee0362500fcee15bbddb2d00c44802ea93fb8c40cb1638d8e423457d22a83"
+        },
+        {
+          "id": "E2",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "9660576f07a8840cda94d1062078c4556ed06d93626c1166fe4054af7628dd75"
+        },
+        {
+          "id": "E3",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "9a1fb4814246b258902a1c62a3721ce84688b61446ffe595554054730526cc7b"
+        },
+        {
+          "id": "E4",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "3cf7011eab07ff55457590f0f91dbf4ffababa2bbdbdd22295a080e9320b11a1"
+        },
+        {
+          "id": "E5",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "b42452d9960e774f69af647cf0d7d960bd30c164f69b5865a36ab1541b5d204f"
+        }
+      ],
+      "response_html_bytes": 15383,
+      "response_html_sha256": "93b9d8a1813ddc03b6bef9530960c104ff2fbb7f5e5242a5d0c05b56cd2b48d3",
+      "retrieved_at": "2026-09-30T11:14:22.902Z",
+      "source_id": "O030",
+      "title": "[隨筆] Java Web 漏洞生態食物鏈 | Orange Tsai",
+      "url": "https://blog.orange.tw/posts/2016-12-java-web/"
+    },
+    {
+      "article_text_sha256": "c94eb495430621e99c71877727a8717c69a3eee44043c30c776b38b534495ea8",
+      "final_url": "https://blog.orange.tw/posts/2016-10-collection-of-ctf-web-challenges-i-made/",
+      "http_status": 200,
+      "publication_url": "https://blog.orange.tw/posts/2016-10-collection-of-ctf-web-challenges-i-made/",
+      "quotes": [
+        {
+          "id": "E1",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "e34e1825aa82c2d983a24505b8118ba17e7be3f43b14c91a07e00833f0d9f002"
+        }
+      ],
+      "response_html_bytes": 6730,
+      "response_html_sha256": "1062bc2f842e684c60b0c9ed19e375651bc2494dbc300b30388d38f28e34ea47",
+      "retrieved_at": "2026-09-30T11:14:22.597Z",
+      "source_id": "O031",
+      "title": "Collection of CTF Web Challenges I made | Orange Tsai",
+      "url": "https://blog.orange.tw/posts/2016-10-collection-of-ctf-web-challenges-i-made/"
+    },
+    {
+      "article_text_sha256": "6c365cb94637646dd983b43983acd6f33f95efbeb427dc33a1764f3a43894a1a",
+      "final_url": "https://blog.orange.tw/posts/2016-07-hitcon-2016-slides-bug-bounty-hunter/",
+      "http_status": 200,
+      "publication_url": "https://blog.orange.tw/posts/2016-07-hitcon-2016-slides-bug-bounty-hunter/",
+      "quotes": [
+        {
+          "id": "E1",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "1f8f1749693a161d537ea46ddec33fa1f6d9eda7c9e43989c2d4d9271916b8aa"
+        }
+      ],
+      "response_html_bytes": 7770,
+      "response_html_sha256": "e08eec5fa5867ca8d610b58e891d44edc8fe42b2a531399d84df5f0e82c9f626",
+      "retrieved_at": "2026-09-30T11:14:23.109Z",
+      "source_id": "O032",
+      "title": "HITCON 2016 投影片 - Bug Bounty 獎金獵人甘苦談 那些年我回報過的漏洞 | Orange Tsai",
+      "url": "https://blog.orange.tw/posts/2016-07-hitcon-2016-slides-bug-bounty-hunter/"
+    },
+    {
+      "article_text_sha256": "5b186bf169ea646623f2e3ceb178f4e0cf05243e65c98983a81c4edf03e709a5",
+      "final_url": "https://blog.orange.tw/posts/2016-04-bug-bounty-how-i-hacked-facebook-and-found-someones-backdoor-script/",
+      "http_status": 200,
+      "publication_url": "https://devco.re/blog/2016/04/21/how-I-hacked-facebook-and-found-someones-backdoor-script-eng-ver/",
+      "quotes": [
+        {
+          "id": "E1",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "65c1cce8e7cd9332a483f89272df3af90abc263e57b2aeeb511a774b9e014726"
+        },
+        {
+          "id": "E2",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "2dc91dcab5015b15900c91adb6fe4e7840ca7dd9c5079035999f225ccea85cef"
+        },
+        {
+          "id": "E3",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "1625e5a5ca36d73f63780921bc7af708412722a15875c8727deeefd1a42ea7ab"
+        },
+        {
+          "id": "E4",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "cdd6233ff2f27a23ff64544fd3a7f74ef59094b1cedc1cef8216a97afadd4431"
+        },
+        {
+          "id": "E5",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "7b3b9b3281579bc02e3e241d1346f93a7492e2e7ce526114a7583fbdcafdcc2b"
+        }
+      ],
+      "response_html_bytes": 7327,
+      "response_html_sha256": "fef12336d2367292e1aecb366c8be7908b66456545cc545b5ca580903086a68e",
+      "retrieved_at": "2026-09-30T11:16:11.241Z",
+      "source_id": "O033",
+      "title": "How I Hacked Facebook, and Found Someone's Backdoor Script | Orange Tsai",
+      "url": "https://blog.orange.tw/posts/2016-04-bug-bounty-how-i-hacked-facebook-and-found-someones-backdoor-script/",
+      "publication_verification": {
+        "publication_url": "https://devco.re/blog/2016/04/21/how-I-hacked-facebook-and-found-someones-backdoor-script-eng-ver/",
+        "quotes": [
+          {
+            "id": "E1",
+            "match_mode": "exact",
+            "matched": true,
+            "quote_sha256": "65c1cce8e7cd9332a483f89272df3af90abc263e57b2aeeb511a774b9e014726"
+          },
+          {
+            "id": "E2",
+            "match_mode": "exact",
+            "matched": true,
+            "quote_sha256": "2dc91dcab5015b15900c91adb6fe4e7840ca7dd9c5079035999f225ccea85cef"
+          },
+          {
+            "id": "E3",
+            "match_mode": "exact",
+            "matched": true,
+            "quote_sha256": "1625e5a5ca36d73f63780921bc7af708412722a15875c8727deeefd1a42ea7ab"
+          },
+          {
+            "id": "E4",
+            "match_mode": "exact",
+            "matched": true,
+            "quote_sha256": "cdd6233ff2f27a23ff64544fd3a7f74ef59094b1cedc1cef8216a97afadd4431"
+          },
+          {
+            "id": "E5",
+            "match_mode": "exact",
+            "matched": true,
+            "quote_sha256": "7b3b9b3281579bc02e3e241d1346f93a7492e2e7ce526114a7583fbdcafdcc2b"
+          }
+        ],
+        "rendered_body_sha256": "15922b021c9c897a44dcfb9d2fc878fb7162a2118c36a6bdebde93d45c40d82c",
+        "retrieved_at": "2026-09-30T11:20:00.048Z",
+        "source_id": "O033",
+        "title": "How I Hacked Facebook, and Found Someone's Backdoor Script | DEVCORE",
+        "tool": "agent_browser independently opened linked primary publication; rendered DOM exact/whitespace-only quote checks"
+      }
+    },
+    {
+      "article_text_sha256": "7f220daf4008009079b76d14d93bf7b6eb1cc8d1d8ad7dea2d21830a4307458c",
+      "final_url": "https://blog.orange.tw/posts/2016-04-bug-bounty-uber-ubercom-remote-code_7/",
+      "http_status": 200,
+      "publication_url": "https://blog.orange.tw/posts/2016-04-bug-bounty-uber-ubercom-remote-code_7/",
+      "quotes": [
+        {
+          "id": "E1",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "032348bfaf33a5c10c722bf52909efbe5532dc0f1ee171aa9575a2135fdf4a6e"
+        },
+        {
+          "id": "E2",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "50accc455c7dc375ed52975586d7a394dd6fc157062921db06184e35ffe29563"
+        },
+        {
+          "id": "E3",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "193424d39e6c8e61fd57fabcfa6645b5c6f489a37370a7879eb28aaabc3ded1f"
+        },
+        {
+          "id": "E4",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "d29075dd3012b35df1898f8195a45ac28ef7c93327ffc3b7e5af7c4e38413e4e"
+        },
+        {
+          "id": "E5",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "038afa3279b085e3ab41a09336e3982344eb73b73bc46341fb5ad26baaaca4c0"
+        }
+      ],
+      "response_html_bytes": 12583,
+      "response_html_sha256": "710b37a579d71820cb348d287438dea1734d58b681bff0c66819080499a15d00",
+      "retrieved_at": "2026-09-30T11:16:11.454Z",
+      "source_id": "O034",
+      "title": "Uber 遠端代碼執行- Uber.com Remote Code Execution via Flask Jinja2 Template Injection | Orange Tsai",
+      "url": "https://blog.orange.tw/posts/2016-04-bug-bounty-uber-ubercom-remote-code_7/"
+    },
+    {
+      "article_text_sha256": "69907d79ff7090ca85d5cc67838f83a5030db81efac2d0412ab295aa645d67fa",
+      "final_url": "https://blog.orange.tw/posts/2016-01-hitcon-ctf-2015-quals-final/",
+      "http_status": 200,
+      "publication_url": "https://blog.orange.tw/posts/2016-01-hitcon-ctf-2015-quals-final/",
+      "quotes": [
+        {
+          "id": "E1",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "0cde91b6d6d06581016346c24397d7efeefce681998bc08e1fe1e514c0a89f0a"
+        },
+        {
+          "id": "E2",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "defde3efd67b01c46fc190701ec60b12a2897e9de007506a3d11adfcb7ceedec"
+        },
+        {
+          "id": "E3",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "b7e0103dbd223d10b95ee43e48b1d7765f538d88875153f07a53fa1e197caece"
+        },
+        {
+          "id": "E4",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "1abc9886f4c57ffc896ce49f24b9bc37430f84845a1d7d3d4634e62dd3228a6f"
+        }
+      ],
+      "response_html_bytes": 21561,
+      "response_html_sha256": "96e4a772f900b335c4f8bfdf4533d3c02b8d90fc2e484d43cd77a0d554e37604",
+      "retrieved_at": "2026-09-30T11:16:11.246Z",
+      "source_id": "O035",
+      "title": "HITCON CTF 2015 Quals & Final 心得備份 | Orange Tsai",
+      "url": "https://blog.orange.tw/posts/2016-01-hitcon-ctf-2015-quals-final/"
+    },
+    {
+      "article_text_sha256": "e333b0c7aa468329e59be6e20fc419505dfa7a983b8c551e9dd9b234c1b62b72",
+      "final_url": "https://blog.orange.tw/posts/2015-09-google-facebook-bug-bounty-get/",
+      "http_status": 200,
+      "publication_url": "https://blog.orange.tw/posts/2015-09-google-facebook-bug-bounty-get/",
+      "quotes": [
+        {
+          "id": "E1",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "eb09fe0b7b1811d88c700faf1c94b0065ca6a2d68e02fb2bdd531b91bdce5c9e"
+        },
+        {
+          "id": "E2",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "ddec521cf1fc9b8dc45c6765f05b21246c16d6d4ae1a47ab26674bfe6fcc4be1"
+        }
+      ],
+      "response_html_bytes": 9109,
+      "response_html_sha256": "b7d40c6de8e2ac83a2895a4295c82a24b7c26f71856a68a0261fa02933d18e34",
+      "retrieved_at": "2026-09-30T11:16:11.248Z",
+      "source_id": "O036",
+      "title": "Google & Facebook Bug Bounty GET | Orange Tsai",
+      "url": "https://blog.orange.tw/posts/2015-09-google-facebook-bug-bounty-get/"
+    },
+    {
+      "article_text_sha256": "3b91f5d359c68f67fb4ef418af3f026840c9c5c4cfd83fad3fe3e110fb9d07c8",
+      "final_url": "https://blog.orange.tw/posts/2015-09-ais3-final-ctf-web-writeup-race/",
+      "http_status": 200,
+      "publication_url": "https://blog.orange.tw/posts/2015-09-ais3-final-ctf-web-writeup-race/",
+      "quotes": [
+        {
+          "id": "E1",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "53cf718e0e18436083f26e297748796cd93503a31f8f6faaf3dc59c87d718e46"
+        },
+        {
+          "id": "E2",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "9f915915257f07ea44c3818d7ce377df1ac91ad69d02ea1bb399480dc960accf"
+        },
+        {
+          "id": "E3",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "4683ced9f7bdabeb6f19ea0481b1f142503062fab56696164d284244ff332d34"
+        },
+        {
+          "id": "E4",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "ea91e948875d8720537e511cbbf143d0a23ce3625d908411162afd8a3a4b4c17"
+        },
+        {
+          "id": "E5",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "732190c5cd151896c96dc359eb5c5c2ef0eba455279e86ae800bb01387456f5d"
+        }
+      ],
+      "response_html_bytes": 11304,
+      "response_html_sha256": "6df3949ebb9344ace340ad8c9fefeb2f9ce6536077453254e85bda48afd37d10",
+      "retrieved_at": "2026-09-30T11:16:11.652Z",
+      "source_id": "O037",
+      "title": "AIS3 Final CTF Web Writeup (Race Condition & one-byte off SQL Injection) | Orange Tsai",
+      "url": "https://blog.orange.tw/posts/2015-09-ais3-final-ctf-web-writeup-race/"
+    },
+    {
+      "article_text_sha256": "8469c5d4614acc2ca64d4e43bf2f2d90f5e63fe36dcf79680bf21d88f71b6daa",
+      "final_url": "https://blog.orange.tw/posts/2015-08-remote-code-execution-on-gdb-remote/",
+      "http_status": 200,
+      "publication_url": "https://blog.orange.tw/posts/2015-08-remote-code-execution-on-gdb-remote/",
+      "quotes": [
+        {
+          "id": "E1",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "cf67b540cfbb0b3554e20e2c4f38b3c63a8bad65066dd6e2a1a1c18417dafc79"
+        },
+        {
+          "id": "E2",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "6746bbb6045cb6fc86ceb9c0ad4232c7e85e92d176c6ac709d00d064b50ddf7a"
+        },
+        {
+          "id": "E3",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "5f97e5436ee4ec0b25bb9876b0c71f88109086383ab797072bf27258b755f64b"
+        }
+      ],
+      "response_html_bytes": 19787,
+      "response_html_sha256": "932613c4318aa9c9541da4c9fd82ddf707de9178a98d71ac1aa46356eb8139dd",
+      "retrieved_at": "2026-09-30T11:16:11.349Z",
+      "source_id": "O038",
+      "title": "Remote Code Execution through GDB Remote Debugging Protocol | Orange Tsai",
+      "url": "https://blog.orange.tw/posts/2015-08-remote-code-execution-on-gdb-remote/"
+    },
+    {
+      "article_text_sha256": "a9b3601de0d9e23f5f7a3538d5eaa820535b7d296744ff8870d8295c95e6e30e",
+      "final_url": "https://blog.orange.tw/posts/2015-08-hitcon-2015-community-web-hacking/",
+      "http_status": 200,
+      "publication_url": "https://blog.orange.tw/posts/2015-08-hitcon-2015-community-web-hacking/",
+      "quotes": [
+        {
+          "id": "E1",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "ee09ae631141419f4d936c7290d214d4fe3b8a8923a40d1da046d8384c0ed5bf"
+        }
+      ],
+      "response_html_bytes": 6779,
+      "response_html_sha256": "1e2d7c20c0616bee4338577e642dff45761eafb9a55f820e84e4d3327f4d7ba4",
+      "retrieved_at": "2026-09-30T11:16:11.352Z",
+      "source_id": "O039",
+      "title": "HITCON 2015 Community 演講投影片 - 那些 Web Hacking 中的奇技淫巧 | Orange Tsai",
+      "url": "https://blog.orange.tw/posts/2015-08-hitcon-2015-community-web-hacking/"
+    },
+    {
+      "article_text_sha256": "a965514a5b7ef28f9ca5f6328c477b0f8545aba2a7b44ee63592ed99393e8334",
+      "final_url": "https://blog.orange.tw/posts/2015-07-2015-hitcon-ctf-web-ctf/",
+      "http_status": 200,
+      "publication_url": "https://blog.orange.tw/posts/2015-07-2015-hitcon-ctf-web-ctf/",
+      "quotes": [
+        {
+          "id": "E1",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "a2d1a7084294accca78cee48892ddbc8e927850350a3621d3f664be85e4267de"
+        }
+      ],
+      "response_html_bytes": 8224,
+      "response_html_sha256": "b9cffc282ed80e6275fbe2b40a0642fb5dfcd1ae2770e99c048320ecfef38e73",
+      "retrieved_at": "2026-09-30T11:16:11.450Z",
+      "source_id": "O040",
+      "title": "2015 烏雲峰會演講投影片 「關於 HITCON CTF 的那些事 之 Web 狗如何在險惡的 CTF 世界中存活？」 | Orange Tsai",
+      "url": "https://blog.orange.tw/posts/2015-07-2015-hitcon-ctf-web-ctf/"
+    },
+    {
+      "article_text_sha256": "88052466cfb40f0b9f63173c2e742ce4aee568a670b6d1f3de16aa8be6a2a883",
+      "final_url": "https://blog.orange.tw/posts/2015-05-0ctf-final-0cms/",
+      "http_status": 200,
+      "publication_url": "https://blog.orange.tw/posts/2015-05-0ctf-final-0cms/",
+      "quotes": [
+        {
+          "id": "E1",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "a33b4812bcce47af367b8e41ac9d42121b333149c8239fa46fde7c6fdc16654b"
+        },
+        {
+          "id": "E2",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "fa54e8242ad349922abc62e9c58a57699ca124998723074da38a289efc0d8da7"
+        },
+        {
+          "id": "E3",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "283132accb9f9fa3257fb7a27d52252539c44dd3bfe7421d135c3107bd34c0c5"
+        }
+      ],
+      "response_html_bytes": 10277,
+      "response_html_sha256": "279654d9563dfddb9370f71229929d38ea7cb8792e6bc0deb684c46e29c17157",
+      "retrieved_at": "2026-09-30T11:16:11.689Z",
+      "source_id": "O041",
+      "title": "講個秘訣 - 0ctf Final 0cms | Orange Tsai",
+      "url": "https://blog.orange.tw/posts/2015-05-0ctf-final-0cms/"
+    },
+    {
+      "article_text_sha256": "79b050023de34a7da1eb12ce8dcd066275a66caa1395b36a0bcc0ff6d6b8a148",
+      "final_url": "https://blog.orange.tw/posts/2015-04-web/",
+      "http_status": 200,
+      "publication_url": "https://blog.orange.tw/posts/2015-04-web/",
+      "quotes": [
+        {
+          "id": "E1",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "64314eec41728f46567f76f566c2f62c5695fa84004f2b315df4fa33932b3243"
+        }
+      ],
+      "response_html_bytes": 6730,
+      "response_html_sha256": "1d9f0b56627922f45dfc1006b6474afeb475fd52403b28bff4a0dd2366e466bd",
+      "retrieved_at": "2026-09-30T11:16:11.549Z",
+      "source_id": "O042",
+      "title": "Web 狗沒人權 TAT? | Orange Tsai",
+      "url": "https://blog.orange.tw/posts/2015-04-web/"
+    },
+    {
+      "article_text_sha256": "90d7e6e13df4aaf937555fc52dd0c9d03396f4b7ad815b511a7cd2990ad8afde",
+      "final_url": "https://blog.orange.tw/posts/2015-03-boston-key-parcty-ctf-2015-harvard/",
+      "http_status": 200,
+      "publication_url": "https://blog.orange.tw/posts/2015-03-boston-key-parcty-ctf-2015-harvard/",
+      "quotes": [
+        {
+          "id": "E1",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "ac773cb2f675cfef70ee6ac71dbe58deeca996b681761bdf351a3e5583c0460e"
+        },
+        {
+          "id": "E2",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "d2b3d9b7066229022fad25aefb0f5a6380ca7c71651345eae269b37ab30dfa1a"
+        },
+        {
+          "id": "E3",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "a218f6827141b5048716fd609e2c914890cdd2b9b86264f174acc921c02f41ca"
+        },
+        {
+          "id": "E4",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "4f46b632457fc48eed478b80dc74c333a9428f60d95d257ae282db5d8d1158cf"
+        },
+        {
+          "id": "E5",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "a8f5ced8dfa2d0cf5c784681ebae8685a97ca2da9cfa05d2dedc97aecf4d6c3d"
+        }
+      ],
+      "response_html_bytes": 14327,
+      "response_html_sha256": "cb09b63da9c6b354f547095230a758a1f280a1eedd6597a9af9e2d0ca4f6a6ed",
+      "retrieved_at": "2026-09-30T11:16:11.763Z",
+      "source_id": "O043",
+      "title": "Boston Key Party CTF 2015 [Harvard Square] [Andrew & Broadway] Write-ups | Orange Tsai",
+      "url": "https://blog.orange.tw/posts/2015-03-boston-key-parcty-ctf-2015-harvard/"
+    },
+    {
+      "article_text_sha256": "db784683ec26e07b2c582149fcb904afa18ec6782ed988fe8322aa553677896b",
+      "final_url": "https://blog.orange.tw/posts/2014-12-103/",
+      "http_status": 200,
+      "publication_url": "https://blog.orange.tw/posts/2014-12-103/",
+      "quotes": [
+        {
+          "id": "E1",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "b08fd79f0f588eacf800e985583821d53dfbd6fd3017973d4bf0451bb926dadc"
+        }
+      ],
+      "response_html_bytes": 6404,
+      "response_html_sha256": "c8b0d50a2d64dee55649ee297b521b97060933ff6d832a730a739e58c874dbc7",
+      "retrieved_at": "2026-09-30T11:16:11.858Z",
+      "source_id": "O044",
+      "title": "103 年資安技能金盾獎 | Orange Tsai",
+      "url": "https://blog.orange.tw/posts/2014-12-103/"
+    },
+    {
+      "article_text_sha256": "58df4bf41724bc2aede6d8102904a986254eb265a4e975131d0e9229cde26166",
+      "final_url": "https://blog.orange.tw/posts/2014-10-hack-in-box-2014-ctf-writeup-keygenme/",
+      "http_status": 200,
+      "publication_url": "https://blog.orange.tw/posts/2014-10-hack-in-box-2014-ctf-writeup-keygenme/",
+      "quotes": [
+        {
+          "id": "E1",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "e973d04a8d1689d0d3087781d78ce0cee490866c3d08700bee6cade9004c5634"
+        },
+        {
+          "id": "E2",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "0e923347bd390198a2302f8614e64bdd96466c8961481ef549fedac79216b128"
+        },
+        {
+          "id": "E3",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "a726346a514d11f6ef15679ad52417fcce5c8b1cc63e1579cfdebc9170a08344"
+        },
+        {
+          "id": "E4",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "e6cdb9e44cc1599add7eae1b82e55fa7a6cc20c2f95d18e72cdbf993f5279b9a"
+        },
+        {
+          "id": "E5",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "496c4ccc9dd920181a0c89cfc78a531a87d81fddba98d10222854308da75547f"
+        }
+      ],
+      "response_html_bytes": 14558,
+      "response_html_sha256": "15ae897e1fc8803a81f10e35718c218178c4f80c7556800e66e2da5542f540be",
+      "retrieved_at": "2026-09-30T11:16:12.066Z",
+      "source_id": "O045",
+      "title": "Hack in the Box 2014 CTF Writeup - KeygenMe with RSA | Orange Tsai",
+      "url": "https://blog.orange.tw/posts/2014-10-hack-in-box-2014-ctf-writeup-keygenme/"
+    },
+    {
+      "article_text_sha256": "5898901a4132b5861a42ec5345a53d29a4946c1549b5fc86d3940a5bb3472dbd",
+      "final_url": "https://blog.orange.tw/posts/2014-08-hitcon-win-2nd-in-defcon-22-ctf-final/",
+      "http_status": 200,
+      "publication_url": "https://blog.orange.tw/posts/2014-08-hitcon-win-2nd-in-defcon-22-ctf-final/",
+      "quotes": [
+        {
+          "id": "E1",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "bc40ee95ebb3c141849aab0f9fd8f6f22ae5bf73a75d702aabc2d602ea2c1ebb"
+        },
+        {
+          "id": "E2",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "2ba631a35f486fcf166be359cb565d0bad010fd9a0d5697c1027d64f4414a2ea"
+        },
+        {
+          "id": "E3",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "d83a3d92a5c32a02320109bfb7d7dd75c02aae087fbf2f60aa02f17a804784c8"
+        },
+        {
+          "id": "E4",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "b03e44630c1d687ea833d5f40391b1420e5dd22065bc6fdc78eb65c33ee217bb"
+        },
+        {
+          "id": "E5",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "67442a1ef481121ed1d919f4c6de3e518c8ea6893af9f7fdcf3a144179d083e2"
+        }
+      ],
+      "response_html_bytes": 23486,
+      "response_html_sha256": "7f343198417a001126068a8894912c08d3ced9fe81023bbbf1ce85146101fdda",
+      "retrieved_at": "2026-09-30T11:16:12.069Z",
+      "source_id": "O046",
+      "title": "HITCON Won the 2nd in DEFCON 22 CTF Final | Orange Tsai",
+      "url": "https://blog.orange.tw/posts/2014-08-hitcon-win-2nd-in-defcon-22-ctf-final/"
+    },
+    {
+      "article_text_sha256": "c285269a9c1c3d41d81126c1edba9064712f50d536a74e8ff37546ea53366c94",
+      "final_url": "https://blog.orange.tw/posts/2014-05-defcon-ctf-quals-2014-nonameyet-write-up/",
+      "http_status": 200,
+      "publication_url": "https://blog.orange.tw/posts/2014-05-defcon-ctf-quals-2014-nonameyet-write-up/",
+      "quotes": [
+        {
+          "id": "E1",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "62162bf8e886c6f0a5754e1c6e711c44ad1323e77ff8e9768e9535f1d9798fce"
+        },
+        {
+          "id": "E2",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "4b79d31adbba8d9cfee022c52406f5dd1178b2496de9ef57887b36cddaa29c13"
+        },
+        {
+          "id": "E3",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "b27a328f91ad23522518eeab2ad29aa1e869b4b21248b0edf9227e49dd4725fb"
+        },
+        {
+          "id": "E4",
+          "match_mode": "whitespace-normalized",
+          "matched": true,
+          "quote_sha256": "23e64c4828539e3358ee04169eae04a94e823e339fbaa708dfa3bd9087f867a7"
+        }
+      ],
+      "response_html_bytes": 13676,
+      "response_html_sha256": "8718925ce8c991a0edfef1129ab3c6a9d8843461b2f7742d5fdf36c463a51f9a",
+      "retrieved_at": "2026-09-30T11:16:12.072Z",
+      "source_id": "O047",
+      "title": "Defcon CTF Quals 2014 - Nonameyet write up | Orange Tsai",
+      "url": "https://blog.orange.tw/posts/2014-05-defcon-ctf-quals-2014-nonameyet-write-up/"
+    },
+    {
+      "article_text_sha256": "8c3048cfa515eea9093226b3cbdd5dcfe86bb129df6ee20ed1e8332e90937674",
+      "final_url": "https://blog.orange.tw/posts/2014-03-pwned-ctf-leaderboard-git/",
+      "http_status": 200,
+      "publication_url": "https://blog.orange.tw/posts/2014-03-pwned-ctf-leaderboard-git/",
+      "quotes": [
+        {
+          "id": "E1",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "6abb9db5e04c42c13a60fc410fb0558f7b5c933e813e39efe131a584a4d3da46"
+        },
+        {
+          "id": "E2",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "e973982793c49aa3af123b9ece9046f9377e3a0ecca80e7861d9c3af58e9226c"
+        },
+        {
+          "id": "E3",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "b6324fb4c1845a05e00e149a195b076ecce53871403b86f8d8aaf47c125473f4"
+        },
+        {
+          "id": "E4",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "87a87061f1ddd0f4603260a3f092c4f115176431a47c72a5b520161c068563e1"
+        },
+        {
+          "id": "E5",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "03a98afcd898a6a65b1e217328a7ab9b0cd386267e53c0e4950ffb5b83721e99"
+        }
+      ],
+      "response_html_bytes": 12957,
+      "response_html_sha256": "8eac7820a62194ec247f519219a1c411e270869725002658b3c32fe324833544",
+      "retrieved_at": "2026-09-30T11:16:12.173Z",
+      "source_id": "O048",
+      "title": "Pw3ed CTF LeaderBoard - Git Misconfiguration & SQL Injection | Orange Tsai",
+      "url": "https://blog.orange.tw/posts/2014-03-pwned-ctf-leaderboard-git/"
+    },
+    {
+      "article_text_sha256": "b1fafdc048521e2ca39753e886f644221a85aa1a48a76a5864cdd22aa8724395",
+      "final_url": "https://blog.orange.tw/posts/2014-03-volgactf-2014-web-400-write-up/",
+      "http_status": 200,
+      "publication_url": "https://blog.orange.tw/posts/2014-03-volgactf-2014-web-400-write-up/",
+      "quotes": [
+        {
+          "id": "E1",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "357fb13928f8158f98f3491f07813e7414433f1b9933bd49656dc4677696f90e"
+        },
+        {
+          "id": "E2",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "df73e8e0c35c30fcd597acf126c58c3e491a412c58dc9fab5411fdd218847c42"
+        },
+        {
+          "id": "E3",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "017f91d8ea8d45fd5356509c2afe9708cc4ab3461ff2d283092b9c3a9ec55290"
+        },
+        {
+          "id": "E4",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "5c81fdc3e8d9fc217c70253a144fe3f879d88f89e3cc75a038ed1614e872ed8e"
+        },
+        {
+          "id": "E5",
+          "match_mode": "whitespace-normalized",
+          "matched": true,
+          "quote_sha256": "340f2a14fae1479ac51a8e56495431f7c3b827890262f7df39e502a95139e482"
+        }
+      ],
+      "response_html_bytes": 14886,
+      "response_html_sha256": "eceece9cceb0e8663fd39c8380158ccd6736e799395a6b239dca24a7a3bd8524",
+      "retrieved_at": "2026-09-30T11:16:12.170Z",
+      "source_id": "O049",
+      "title": "Volga CTF 2014 Web 400 write up | Orange Tsai",
+      "url": "https://blog.orange.tw/posts/2014-03-volgactf-2014-web-400-write-up/"
+    },
+    {
+      "article_text_sha256": "3dc266350ccf42ad729e34a448b694599c6e3c73cb63f3868a56780c918b37e6",
+      "final_url": "https://blog.orange.tw/posts/2014-02-olympic-ctf-2014-curling-200-write-up/",
+      "http_status": 200,
+      "publication_url": "https://blog.orange.tw/posts/2014-02-olympic-ctf-2014-curling-200-write-up/",
+      "quotes": [
+        {
+          "id": "E1",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "64d159d9d96c8a661ab7786bb12eae5cba625ba35178bb5a04c3dcda18c29aca"
+        },
+        {
+          "id": "E2",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "78509a1b8b7c74e4d584313b3eb518379fbaeacffcf74cef15dd7898c7554522"
+        },
+        {
+          "id": "E3",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "70a663c83eceab4239ffb6d4f1b951c18b5673b6e0ad33b416e81152b1560d22"
+        },
+        {
+          "id": "E4",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "49c3c71a38d9f459457dd81b7a34f821633dc638f4b1b3bc9a61f0ea1c600b8e"
+        },
+        {
+          "id": "E5",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "c92d732b7f8225217a72c4f5be9e76ab15d7253f2676b1d2404d234612582cc0"
+        }
+      ],
+      "response_html_bytes": 13148,
+      "response_html_sha256": "2404a72d674b11dd111b581197a746d91333bbdbf646e6f1a69c925078bcc69e",
+      "retrieved_at": "2026-09-30T11:16:12.474Z",
+      "source_id": "O050",
+      "title": "Olympic CTF 2014 CURLing 200 write up | Orange Tsai",
+      "url": "https://blog.orange.tw/posts/2014-02-olympic-ctf-2014-curling-200-write-up/"
+    },
+    {
+      "article_text_sha256": "97fa666873a736b922050a6690f932bccedb2006ff1121b29b95da7a368846a7",
+      "final_url": "https://blog.orange.tw/posts/2014-02-olympic-ctf-2014-curling-400-write-up/",
+      "http_status": 200,
+      "publication_url": "https://blog.orange.tw/posts/2014-02-olympic-ctf-2014-curling-400-write-up/",
+      "quotes": [
+        {
+          "id": "E1",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "fde5791b2fe0f6fee9a0aa657d6867234315585c7dbe28b284579e0b6b2b487b"
+        },
+        {
+          "id": "E2",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "dfbc0b29436302186043dd3910d0eb754124441e5a5d99a92bea946a903da301"
+        },
+        {
+          "id": "E3",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "d2c806f222e1c8bbbe4c84847c986c01307371bcfd45d0cc129131c9cb5d6279"
+        },
+        {
+          "id": "E4",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "a62de4b9d79d9f59e7ed7d1e641fb3cfb2fb985509f56bdd6c142ff2ca1dfde1"
+        }
+      ],
+      "response_html_bytes": 15309,
+      "response_html_sha256": "ffd1989989aba93fc091d47df9c0bfb7e724e89102ab09de7320730b185a96c7",
+      "retrieved_at": "2026-09-30T11:16:12.478Z",
+      "source_id": "O051",
+      "title": "Olympic CTF 2014 CURLing 400 write up | Orange Tsai",
+      "url": "https://blog.orange.tw/posts/2014-02-olympic-ctf-2014-curling-400-write-up/"
+    },
+    {
+      "article_text_sha256": "f953ea068137689d7a03a4eb3f72f8a394971b29008b3910fe7daa278901954f",
+      "final_url": "https://blog.orange.tw/posts/2013-12-md5-for-fun-fun-with-md5-hashes/",
+      "http_status": 200,
+      "publication_url": "https://blog.orange.tw/posts/2013-12-md5-for-fun-fun-with-md5-hashes/",
+      "quotes": [
+        {
+          "id": "E1",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "0bddcebb1e43f4365d7c315b47ba66251b4991c6379cb55e2021a4d413902ec9"
+        }
+      ],
+      "response_html_bytes": 6934,
+      "response_html_sha256": "e255ff0bcdb4d38985e64b09a38ff970deadbb93459a6c08cc7eeda39f4186e0",
+      "retrieved_at": "2026-09-30T11:16:12.268Z",
+      "source_id": "O052",
+      "title": "MD5 for Fun - Fun with MD5 hashes | Orange Tsai",
+      "url": "https://blog.orange.tw/posts/2013-12-md5-for-fun-fun-with-md5-hashes/"
+    },
+    {
+      "article_text_sha256": "ca892c04b690e75f17c3ea731e32327a75dc8ba52165c792989fe35b89c88e6a",
+      "final_url": "https://blog.orange.tw/posts/2013-11-exptw/",
+      "http_status": 200,
+      "publication_url": "https://blog.orange.tw/posts/2013-11-exptw/",
+      "quotes": [
+        {
+          "id": "E1",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "695450d05e5a2a3c8a3e3d21baf9a98b2dec55b3efd6eb615f1bd397c5fe46d0"
+        }
+      ],
+      "response_html_bytes": 8385,
+      "response_html_sha256": "545b812b26ff92c10b030a70fb62d9abbf38592f66c05e284e9f2abc2fa47777",
+      "retrieved_at": "2026-09-30T11:16:12.479Z",
+      "source_id": "O053",
+      "title": "EXP.tw - 文章投稿、駭客資訊、資安文章 | Orange Tsai",
+      "url": "https://blog.orange.tw/posts/2013-11-exptw/"
+    },
+    {
+      "article_text_sha256": "df11dc365e70202297277d41264eb14887c7bbf8a9e512bd8702d99c97c899da",
+      "final_url": "https://blog.orange.tw/posts/2013-11-yahoo-bug-bounty-part-2-loginyahoocom/",
+      "http_status": 200,
+      "publication_url": "https://blog.orange.tw/posts/2013-11-yahoo-bug-bounty-part-2-loginyahoocom/",
+      "quotes": [
+        {
+          "id": "E1",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "6d94213edce0d0293ed05edbd34cef770e9c11fc4ce1b879dec3bb6cf0af7d81"
+        },
+        {
+          "id": "E2",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "73f1fcd94f076dd64c9e96772c14369f077ea2dfcd374e8aafda40f2f0f63637"
+        },
+        {
+          "id": "E3",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "359a375eff768fa01e09ec172dffd0800c6d9f20b311b7224291c3a8e261221a"
+        },
+        {
+          "id": "E4",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "4a2541156307d3fbf47d67593b69bf3d598903405bbd3ce090625e0a90e1e10f"
+        },
+        {
+          "id": "E5",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "d7bc1e2f1b47b8121dbfd1d69847a7ab221ae2e866d22f168c8748aa1ebfe6eb"
+        }
+      ],
+      "response_html_bytes": 14906,
+      "response_html_sha256": "63bf638150b48e9ce39145b854f430fa97b7e97cb99b1fdacaa0d165ec7a473a",
+      "retrieved_at": "2026-09-30T11:16:12.374Z",
+      "source_id": "O054",
+      "title": "Yahoo Bug Bounty Part 2 - *.login.yahoo.com Remote Code Execution 遠端代碼執行漏洞 | Orange Tsai",
+      "url": "https://blog.orange.tw/posts/2013-11-yahoo-bug-bounty-part-2-loginyahoocom/"
+    },
+    {
+      "article_text_sha256": "6c7f7482740daad9d8eb95def6b0033ddb6449e9c282991c50a637c8ed9cbb12",
+      "final_url": "https://blog.orange.tw/posts/2013-11-yahoo-bug-bounty-part-1-yahoo-blog/",
+      "http_status": 200,
+      "publication_url": "https://blog.orange.tw/posts/2013-11-yahoo-bug-bounty-part-1-yahoo-blog/",
+      "quotes": [
+        {
+          "id": "E1",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "55d5e1cfecc05b15be7cf4fca485d225b75ad75a9851aa3292b12b2af5b8fff6"
+        },
+        {
+          "id": "E2",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "1083050962f4487732a4e11d9696c2c03fc72fd7e3bbf21eda9a0a98bb08d091"
+        },
+        {
+          "id": "E3",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "430227de806f928ba278f91c5ad7c58c2a22f6db51acc727b8e414eaaf88852a"
+        },
+        {
+          "id": "E4",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "36fea3f74936b269e08d6c4aa51047e7e60c80651ccca7b0897e50ea71fcc7dc"
+        }
+      ],
+      "response_html_bytes": 16060,
+      "response_html_sha256": "7ea361ebd411be99beca0e3014d510f909d5f4265c7a634b527008af0eaee629",
+      "retrieved_at": "2026-09-30T11:16:12.685Z",
+      "source_id": "O055",
+      "title": "Yahoo Bug Bounty Part 1 - 台灣 Yahoo Blog 任意檔案下載漏洞 | Orange Tsai",
+      "url": "https://blog.orange.tw/posts/2013-11-yahoo-bug-bounty-part-1-yahoo-blog/"
+    },
+    {
+      "article_text_sha256": "52062f0c63bb97335450f3a3197584d914f0dfdb7622d8e2b32014b3ca9f17e7",
+      "final_url": "https://blog.orange.tw/posts/2013-10-phpconf-2013/",
+      "http_status": 200,
+      "publication_url": "https://blog.orange.tw/posts/2013-10-phpconf-2013/",
+      "quotes": [
+        {
+          "id": "E1",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "a4eeaf3c3844acb049807aff7a4a97448fe92d053049d901ff737208bd9c6bed"
+        }
+      ],
+      "response_html_bytes": 6987,
+      "response_html_sha256": "0127ede242f8a54f0886e23ada5a9e33a9f803bbbf9509c3a0ee9aa83804b1a3",
+      "retrieved_at": "2026-09-30T11:16:12.687Z",
+      "source_id": "O056",
+      "title": "PHPConf 2013 投影片 - 矛盾大對決！ | Orange Tsai",
+      "url": "https://blog.orange.tw/posts/2013-10-phpconf-2013/"
+    },
+    {
+      "article_text_sha256": "462a7e61b82b03f12ec5338e85e0b5a9fed74a859f57e3b9dc79537884909d7e",
+      "final_url": "https://blog.orange.tw/posts/2013-09-blog-post/",
+      "http_status": 200,
+      "publication_url": "https://blog.orange.tw/posts/2013-09-blog-post/",
+      "quotes": [
+        {
+          "id": "E1",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "a9f0bdc8bf0faeb58d286be1c546f6c1d5e4fbc0e8a099c7747921f7b93262dd"
+        },
+        {
+          "id": "E2",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "0965fb74861a2c54c26d5d833007eddd8d9b877fcc511e79af80a700c13cd3b2"
+        },
+        {
+          "id": "E3",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "0acd00d68b05d4673067f08c503ee183379846f535a5687fc9918db82f0f4043"
+        },
+        {
+          "id": "E4",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "86dd164b19614c3eeb28035adaeb6eed9cfed75e207e35bbb089668a0c12cd73"
+        }
+      ],
+      "response_html_bytes": 7895,
+      "response_html_sha256": "914a1e0092b961dde9b7cbc77bc8926dd87a1ce1b84258dd0ca319f06ec5dfd9",
+      "retrieved_at": "2026-09-30T11:16:12.682Z",
+      "source_id": "O057",
+      "title": "這不是金盾獎Ｔ＿Ｔ | Orange Tsai",
+      "url": "https://blog.orange.tw/posts/2013-09-blog-post/"
+    },
+    {
+      "article_text_sha256": "e7c64c4a329220eaaeec8aea9efcab4db38fc727f63f399491c14fe74b533287",
+      "final_url": "https://blog.orange.tw/posts/2013-07-hitcon-2013-wargame-pwn3d-500/",
+      "http_status": 200,
+      "publication_url": "https://blog.orange.tw/posts/2013-07-hitcon-2013-wargame-pwn3d-500/",
+      "quotes": [
+        {
+          "id": "E1",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "ed0db2e565e25c56e62f52db0c6d48b21259dc25964d0ccd0706cd0473303a45"
+        }
+      ],
+      "response_html_bytes": 7152,
+      "response_html_sha256": "779b71768a850274782ddcfb33dcc38b4cc0261435eb0c5968d3da30acef1056",
+      "retrieved_at": "2026-09-30T11:16:12.685Z",
+      "source_id": "O058",
+      "title": "HITCON 2013 Wargame - Pwn3d 500 詳解 | Orange Tsai",
+      "url": "https://blog.orange.tw/posts/2013-07-hitcon-2013-wargame-pwn3d-500/"
+    },
+    {
+      "article_text_sha256": "e1967bc50b44225bb375dc6e95ce29b274c049c001f42c55f4877cfb28dc30f0",
+      "final_url": "https://blog.orange.tw/posts/2013-07-hitcon-2013-wargame-web-500/",
+      "http_status": 200,
+      "publication_url": "https://blog.orange.tw/posts/2013-07-hitcon-2013-wargame-web-500/",
+      "quotes": [
+        {
+          "id": "E1",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "cc3271fd9dc08117d09970db953b4eeb1c08274158ddff4f7c87111b5463eec1"
+        }
+      ],
+      "response_html_bytes": 15968,
+      "response_html_sha256": "3aec303a7d7c6360d304f4ca8df78ff8dbda86481cee730f97f4fa6cc60cf8db",
+      "retrieved_at": "2026-09-30T11:16:12.891Z",
+      "source_id": "O059",
+      "title": "HITCON 2013 Wargame - Web 500 詳解 | Orange Tsai",
+      "url": "https://blog.orange.tw/posts/2013-07-hitcon-2013-wargame-web-500/"
+    },
+    {
+      "article_text_sha256": "76473609ac544a5184085410ce5aca0926f4d9d20957ec839b61d0e658a6021c",
+      "final_url": "https://blog.orange.tw/posts/2013-07-0-day-0-day-easy-talk-happy-fuzzing/",
+      "http_status": 200,
+      "publication_url": "https://blog.orange.tw/posts/2013-07-0-day-0-day-easy-talk-happy-fuzzing/",
+      "quotes": [
+        {
+          "id": "E1",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "b1ef6465370386cb1b2f1b9bffda7112500067b5a334ce31a0350ffdc19b5706"
+        }
+      ],
+      "response_html_bytes": 7043,
+      "response_html_sha256": "8f21b48366fefebbe8631d2acaacfdb94eda19583154ef28fca8e3130a9bdb14",
+      "retrieved_at": "2026-09-30T11:16:12.886Z",
+      "source_id": "O060",
+      "title": "0-Day 輕鬆談 (0-Day Easy Talk) - Happy Fuzzing Internet Explorer | Orange Tsai",
+      "url": "https://blog.orange.tw/posts/2013-07-0-day-0-day-easy-talk-happy-fuzzing/"
+    },
+    {
+      "article_text_sha256": "1373d866e8ff3735f6d0a404f8be9ba791ef48058e45feb9e87177383ce5c80a",
+      "final_url": "https://blog.orange.tw/posts/2013-05-pycon2013-slide-django/",
+      "http_status": 200,
+      "publication_url": "https://blog.orange.tw/posts/2013-05-pycon2013-slide-django/",
+      "quotes": [
+        {
+          "id": "E1",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "ecb69b91883afe0d38e30eebb8bcad9406c94789171b6e5683cfc02a9ef8e424"
+        }
+      ],
+      "response_html_bytes": 6153,
+      "response_html_sha256": "50ae7871e0b6abb9e6ab5c1a17c46f79a12e36a50193aceb9095f9e58d1fdb75",
+      "retrieved_at": "2026-09-30T11:16:12.892Z",
+      "source_id": "O061",
+      "title": "Pycon2013 Slide - 駭客看 Django | Orange Tsai",
+      "url": "https://blog.orange.tw/posts/2013-05-pycon2013-slide-django/"
+    },
+    {
+      "article_text_sha256": "590bed0955cf5701d1ab7582dfbc0a19a0a61732f411a088c52a1a18a5b5ca54",
+      "final_url": "https://blog.orange.tw/posts/2013-02-cve-2013-0305-django-credit-get/",
+      "http_status": 200,
+      "publication_url": "https://blog.orange.tw/posts/2013-02-cve-2013-0305-django-credit-get/",
+      "quotes": [
+        {
+          "id": "E1",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "ae2ff85d817e4267bf98a78bf9fbae4863b3a973a8f2dc0acf3779b586ac977c"
+        }
+      ],
+      "response_html_bytes": 7312,
+      "response_html_sha256": "77efa6fefad6ad2ed2b3b48c04e2f154f555fd799f24f1ffb35642aa63589274",
+      "retrieved_at": "2026-09-30T11:16:12.889Z",
+      "source_id": "O062",
+      "title": "CVE-2013-0305 Django Credit Get | Orange Tsai",
+      "url": "https://blog.orange.tw/posts/2013-02-cve-2013-0305-django-credit-get/"
+    },
+    {
+      "article_text_sha256": "00bdd4a68829b5c1cae891ea380a903175dbe61aeacd88a10e83583b654a3c0b",
+      "final_url": "https://blog.orange.tw/posts/2013-01-webconf-2013best-practices-upload/",
+      "http_status": 200,
+      "publication_url": "https://blog.orange.tw/posts/2013-01-webconf-2013best-practices-upload/",
+      "quotes": [
+        {
+          "id": "E1",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "f5a476e47eba1f44e95faabd34639e3a32d916d4037a9e0eb18021657fac104e"
+        }
+      ],
+      "response_html_bytes": 7554,
+      "response_html_sha256": "b5f9638028383d8db2ac0d74dee5ebb29d50a6e0f104886a5def6112dbc284e2",
+      "retrieved_at": "2026-09-30T11:16:13.198Z",
+      "source_id": "O063",
+      "title": "WebConf 2013「Best Practices - The Upload」投影片 | Orange Tsai",
+      "url": "https://blog.orange.tw/posts/2013-01-webconf-2013best-practices-upload/"
+    },
+    {
+      "article_text_sha256": "5ac02ff908fe29d6056a6a896848a681de2a0088a519d250ec50257574522b57",
+      "final_url": "https://blog.orange.tw/posts/2013-01-101/",
+      "http_status": 200,
+      "publication_url": "https://blog.orange.tw/posts/2013-01-101/",
+      "quotes": [
+        {
+          "id": "E1",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "effc640995a7cad10dc15311fa18ab8d2cf52413484be73bde80c9a0bac3ab26"
+        }
+      ],
+      "response_html_bytes": 6169,
+      "response_html_sha256": "a42f9f75834019f77ddbb46e6aaa88964406bc954ae8f48aadd070137aa93d01",
+      "retrieved_at": "2026-09-30T11:16:12.986Z",
+      "source_id": "O064",
+      "title": "101 年全國大專院校資安技能金盾獎 | Orange Tsai",
+      "url": "https://blog.orange.tw/posts/2013-01-101/"
+    },
+    {
+      "article_text_sha256": "a20cc6ce0dc85f5771bc3774245aaa3720e7003e6e6cd107c1f6e34717ce5332",
+      "final_url": "https://blog.orange.tw/posts/2012-11-ms12-071-cve-2012-4775/",
+      "http_status": 200,
+      "publication_url": "https://blog.orange.tw/posts/2012-11-ms12-071-cve-2012-4775/",
+      "quotes": [
+        {
+          "id": "E1",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "c97c46b37045969ff37694b59e14933c3d01c942a9178cd1737bf6f2964d295c"
+        }
+      ],
+      "response_html_bytes": 7594,
+      "response_html_sha256": "89057afd773f09d78d9b7d074afc4be8f9f4fc9dfe2e8cfe5953e694efa0c841",
+      "retrieved_at": "2026-09-30T11:18:36.253Z",
+      "source_id": "O065",
+      "title": "被微軟感謝了>< MS12-071 - CVE-2012-4775 | Orange Tsai",
+      "url": "https://blog.orange.tw/posts/2012-11-ms12-071-cve-2012-4775/"
+    },
+    {
+      "article_text_sha256": "ffc8cf91973b2e4451e86458b8fdb9c474f9ec810f21386fa63342aa6da23806",
+      "final_url": "https://blog.orange.tw/posts/2012-11-phpconf-2012-security-in-php/",
+      "http_status": 200,
+      "publication_url": "https://blog.orange.tw/posts/2012-11-phpconf-2012-security-in-php/",
+      "quotes": [
+        {
+          "id": "E1",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "8ed7a043d94fc72e274d04de54347fb7fb20f93f7661932b0c4cf4718d98f4dc"
+        }
+      ],
+      "response_html_bytes": 6386,
+      "response_html_sha256": "8e74dfe57e353ad8341632cffed123bb02695f3745f1d2b47dd10a790af2ef28",
+      "retrieved_at": "2026-09-30T11:18:36.253Z",
+      "source_id": "O066",
+      "title": "PHPCONF 2012 - Security in PHP 那些在滲透測試的小技巧 | Orange Tsai",
+      "url": "https://blog.orange.tw/posts/2012-11-phpconf-2012-security-in-php/"
+    },
+    {
+      "article_text_sha256": "821dd5778783f72e9dbe22e51f514221565627ed836bd6484f268252db4bbce7",
+      "final_url": "https://blog.orange.tw/posts/2012-09-satainan-web-security/",
+      "http_status": 200,
+      "publication_url": "https://blog.orange.tw/posts/2012-09-satainan-web-security/",
+      "quotes": [
+        {
+          "id": "E1",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "9e29328d0bd320ea459ac7d7262dce7c22b8c0a3796d92a2dcf699c138708004"
+        }
+      ],
+      "response_html_bytes": 6535,
+      "response_html_sha256": "e1b7f290b42ee64ac1961cfef4f7c0bae0301a7c6d3270955a1e24ca1d738435",
+      "retrieved_at": "2026-09-30T11:18:36.248Z",
+      "source_id": "O067",
+      "title": "Study-Area，「網頁安全 Web Security 入門」投影片 | Orange Tsai",
+      "url": "https://blog.orange.tw/posts/2012-09-satainan-web-security/"
+    },
+    {
+      "article_text_sha256": "3ed26d07fea7a92b21002ef3eca9f4acd497aa307c31d34dd5b9816b533f15f1",
+      "final_url": "https://blog.orange.tw/posts/2012-07-hacks-in-taiwan-2012-potent-pwnables-3/",
+      "http_status": 200,
+      "publication_url": "https://blog.orange.tw/posts/2012-07-hacks-in-taiwan-2012-potent-pwnables-3/",
+      "quotes": [
+        {
+          "id": "E1",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "7cb008cfb55b749209979e8693bb817ff1bae880adfe19c7c7a03dc1703a0b49"
+        },
+        {
+          "id": "E2",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "974efd24ebf61359ccfb9ff3d34b225a15e66d45fbd4ec680073718a27b08989"
+        }
+      ],
+      "response_html_bytes": 10455,
+      "response_html_sha256": "7f71884dd84b4382738ceb5e4dd5fae0d746b66181d01cb6c3874bc0ba3b5431",
+      "retrieved_at": "2026-09-30T11:18:36.254Z",
+      "source_id": "O068",
+      "title": "Hacks in Taiwan 2012 Potent Pwnables 3 出題詳解 | Orange Tsai",
+      "url": "https://blog.orange.tw/posts/2012-07-hacks-in-taiwan-2012-potent-pwnables-3/"
+    },
+    {
+      "article_text_sha256": "36c5a30d494779f1f4f2cdcbbe6a0cb413c0e6799c03793c64f4d5f83dd7b695",
+      "final_url": "https://blog.orange.tw/posts/2012-07-hacks-in-taiwan-2012-web-hacking-1/",
+      "http_status": 200,
+      "publication_url": "https://blog.orange.tw/posts/2012-07-hacks-in-taiwan-2012-web-hacking-1/",
+      "quotes": [
+        {
+          "id": "E1",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "35d1baac0f5e2783cb932ecbd3499d72332b5ba72bf1074f8e148ce722a94f82"
+        },
+        {
+          "id": "E2",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "f9a1e2a66f665c292375fd59b3dfcbf7c74200efb9f488cb09bf3c597df16aa3"
+        }
+      ],
+      "response_html_bytes": 17074,
+      "response_html_sha256": "936e7654811aa9a69ae192b901526e36aa68b105cc6fa562212479f617adeda3",
+      "retrieved_at": "2026-09-30T11:18:36.353Z",
+      "source_id": "O069",
+      "title": "Hacks in Taiwan 2012 Web Hacking 1 出題詳解 | Orange Tsai",
+      "url": "https://blog.orange.tw/posts/2012-07-hacks-in-taiwan-2012-web-hacking-1/"
+    },
+    {
+      "article_text_sha256": "dc3af1842b26f7f3bd5d4a7cbc75aec55f2f6d620da241e9ab91cf923f281bc3",
+      "final_url": "https://blog.orange.tw/posts/2012-06-defcon-ctf-20-qual-pp100-writeup/",
+      "http_status": 200,
+      "publication_url": "https://blog.orange.tw/posts/2012-06-defcon-ctf-20-qual-pp100-writeup/",
+      "quotes": [
+        {
+          "id": "E1",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "76dd35efb4328653b989c6cdea71002c912ea924b1be1d8993c8bdcca9ea6b00"
+        }
+      ],
+      "response_html_bytes": 26935,
+      "response_html_sha256": "bdcf2748b2fd60aaedd0ae767bf25d6203157e5bedde68788dcfafeb95419f71",
+      "retrieved_at": "2026-09-30T11:18:36.360Z",
+      "source_id": "O070",
+      "title": "Defcon ctf 20 qual pp100 Writeup | Orange Tsai",
+      "url": "https://blog.orange.tw/posts/2012-06-defcon-ctf-20-qual-pp100-writeup/"
+    },
+    {
+      "article_text_sha256": "1c5dc94aa1f5de92a1356225a85c674a855dae8894cbf1f432057a14ad133b40",
+      "final_url": "https://blog.orange.tw/posts/2011-12-xd/",
+      "http_status": 200,
+      "publication_url": "https://blog.orange.tw/posts/2011-12-xd/",
+      "quotes": [
+        {
+          "id": "E1",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "01752427d7f0f3e09d506db4dd9c6e97c5cd33ccb0d601380a85e4fdbbf0d6e3"
+        },
+        {
+          "id": "E2",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "0ba68c1889d010444dd050de7b08301049887f360f53a603814b71cf4332e5fd"
+        },
+        {
+          "id": "E3",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "09f3fe1f3e514b8cd2494e2013a373b357d274fb529ab94a19f33df8e3f6d8ba"
+        },
+        {
+          "id": "E4",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "5c7e886d7da5e9eaa7d25a675467e05fc1185bb3c7fb9665249c0344e0eca978"
+        }
+      ],
+      "response_html_bytes": 12488,
+      "response_html_sha256": "cd50e1aa6b913a07857cc7691f64ee600d16afa2a153866a83e14582cb0badc7",
+      "retrieved_at": "2026-09-30T11:18:36.356Z",
+      "source_id": "O071",
+      "title": "一百年度全國大專院校資安技能金盾獎 XD | Orange Tsai",
+      "url": "https://blog.orange.tw/posts/2011-12-xd/"
+    },
+    {
+      "article_text_sha256": "5e44dc61583fc7a813802b09ebd0a79573088199e309285f579298e108c01d36",
+      "final_url": "https://blog.orange.tw/posts/2011-08-sql-injection/",
+      "http_status": 200,
+      "publication_url": "https://blog.orange.tw/posts/2011-08-sql-injection/",
+      "quotes": [
+        {
+          "id": "E1",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "8e62376b81ba318559bd8e2c1ae6fa3a0f84f690b4e894a902cae90d3da57ce6"
+        }
+      ],
+      "response_html_bytes": 7163,
+      "response_html_sha256": "da46bb421e158208b5b6f32babad53c698cd2e256d07e5f30f5621dffe67dd46",
+      "retrieved_at": "2026-09-30T11:18:36.367Z",
+      "source_id": "O072",
+      "title": "關於SQL Injection的那些奇淫異巧 | Orange Tsai",
+      "url": "https://blog.orange.tw/posts/2011-08-sql-injection/"
+    },
+    {
+      "article_text_sha256": "e98ae7b46681b39395f8458915201bc574476009d86df3ac6e22d034a910d8f1",
+      "final_url": "https://blog.orange.tw/posts/2011-07-hitcon2011wargame-web-3/",
+      "http_status": 200,
+      "publication_url": "https://blog.orange.tw/posts/2011-07-hitcon2011wargame-web-3/",
+      "quotes": [
+        {
+          "id": "E1",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "d88818bf8ac60c9f77166096dba8d99b2eff333c0a6f7ba11bfdb02efa0ed4dd"
+        },
+        {
+          "id": "E2",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "9db4b54583dad68ef3ba32fe0b8e8f691bcd16aba97652fc81e2176d9aa98df6"
+        },
+        {
+          "id": "E3",
+          "match_mode": "whitespace-normalized",
+          "matched": true,
+          "quote_sha256": "5f9834683e8951abecdd339de9ce12ab885ca3f398aa6c5739faed97ced11a27"
+        },
+        {
+          "id": "E4",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "68af457318c66a894fe62b66ed07deff14f0726b7cb0c1368ace372994c7ffb8"
+        },
+        {
+          "id": "E5",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "80931136bd080af97afe2fffe86be2ca43dafd34c4500dc30295eb8e5773a0c9"
+        }
+      ],
+      "response_html_bytes": 10081,
+      "response_html_sha256": "82090f54fb38df8dbfa9bb8f7dd4dc06638b0fd94daa88afa4ac78801f355535",
+      "retrieved_at": "2026-09-30T11:18:36.462Z",
+      "source_id": "O073",
+      "title": "台灣駭客年會 HITCON2011，Wargame Web 3出題心得 & 解法 | Orange Tsai",
+      "url": "https://blog.orange.tw/posts/2011-07-hitcon2011wargame-web-3/"
+    },
+    {
+      "article_text_sha256": "ab24c8283887d664ffc7e2a945133d4ad83d35f4d6db0046dd78cab4753bfd51",
+      "final_url": "https://blog.orange.tw/posts/2011-07-hitcon2011wargame-binary-3/",
+      "http_status": 200,
+      "publication_url": "https://blog.orange.tw/posts/2011-07-hitcon2011wargame-binary-3/",
+      "quotes": [
+        {
+          "id": "E1",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "3b80b5297f850d89e826c82515fe7298b2d3fb49132c91331b2d7eef1aa62a22"
+        },
+        {
+          "id": "E2",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "b649e473876f2353aad7ac5c210f9602ba344ee8f4cbffa6b54427bb4e54c5e8"
+        },
+        {
+          "id": "E3",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "0a14587ca97b4a15a16eb9ec4251b881495c7a871d8291be01ef9bd8e5914e19"
+        },
+        {
+          "id": "E4",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "f70491ba4dc4159d91245b5147e415e0545a12c8dd5aad110a95231f19594988"
+        }
+      ],
+      "response_html_bytes": 9429,
+      "response_html_sha256": "e8d86949c40fa6b594c7f44c9923a29afba80d9f5a16ccef6d8f3b91d65ad639",
+      "retrieved_at": "2026-09-30T11:18:36.455Z",
+      "source_id": "O074",
+      "title": "台灣駭客年會 HITCON2011，Wargame Binary 3出題心得 & 解法 | Orange Tsai",
+      "url": "https://blog.orange.tw/posts/2011-07-hitcon2011wargame-binary-3/"
+    },
+    {
+      "article_text_sha256": "ac2d2d407ceab7e150ea224e46e931d4e76a0318b1672a3f484a6b92eb378848",
+      "final_url": "https://blog.orange.tw/posts/2011-07-hitcon2011wargame-web-4/",
+      "http_status": 200,
+      "publication_url": "https://blog.orange.tw/posts/2011-07-hitcon2011wargame-web-4/",
+      "quotes": [
+        {
+          "id": "E1",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "da464250c5e181eae708c6206a1b79a02361e151e91f6157ab0845b445615116"
+        }
+      ],
+      "response_html_bytes": 11729,
+      "response_html_sha256": "ced3c3048d203e204314d4161d4602357094e4ad95fe717f804ad85d1f942754",
+      "retrieved_at": "2026-09-30T11:18:36.464Z",
+      "source_id": "O075",
+      "title": "台灣駭客年會 HITCON2011，Wargame Web 4出題心得 & 解法 | Orange Tsai",
+      "url": "https://blog.orange.tw/posts/2011-07-hitcon2011wargame-web-4/"
+    },
+    {
+      "article_text_sha256": "78f767ebb8edabf1c6ab73dfe52bae1e8aad6c5c6dc4abdccac5291f16bf53c6",
+      "final_url": "https://blog.orange.tw/posts/2011-05-project-web-security-toolkit/",
+      "http_status": 200,
+      "publication_url": "https://blog.orange.tw/posts/2011-05-project-web-security-toolkit/",
+      "quotes": [
+        {
+          "id": "E1",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "643a085ed3428aef828f2421afafe6f8dbe685342f847b5a3801dc0d7e554561"
+        }
+      ],
+      "response_html_bytes": 8035,
+      "response_html_sha256": "c0b70ffdd7cdd3eba2cbdf132dffad121a1b08a50d4e07f80dc1a221a300d6a9",
+      "retrieved_at": "2026-09-30T11:18:36.465Z",
+      "source_id": "O076",
+      "title": "[Project] Web Security Toolkit | Orange Tsai",
+      "url": "https://blog.orange.tw/posts/2011-05-project-web-security-toolkit/"
+    },
+    {
+      "article_text_sha256": "4d4506cf1303803377209a0cc5db6772b74d2accf8afe885e0f6a3d49696eaa9",
+      "final_url": "https://blog.orange.tw/posts/2011-04-blog-post/",
+      "http_status": 200,
+      "publication_url": "https://blog.orange.tw/posts/2011-04-blog-post/",
+      "quotes": [
+        {
+          "id": "E1",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "96a77af4f15c14f8730ec1b30eb03816fd7dcd5b9e5dfb7b667fe8637add0f6f"
+        }
+      ],
+      "response_html_bytes": 11056,
+      "response_html_sha256": "3d5d4c2fdfc18f8e8d7ec2b52f69ffd2cabf1efde8393e27b1d43996e5fe5c98",
+      "retrieved_at": "2026-09-30T11:18:36.763Z",
+      "source_id": "O077",
+      "title": "整理 | Orange Tsai",
+      "url": "https://blog.orange.tw/posts/2011-04-blog-post/"
+    },
+    {
+      "article_text_sha256": "74092e78685bc81644dcec7ca22acc3b6cc42d5f55c37523147695cc26f73a2b",
+      "final_url": "https://blog.orange.tw/posts/2011-04-downloadexec-shellcode-fix-for-windows/",
+      "http_status": 200,
+      "publication_url": "https://blog.orange.tw/posts/2011-04-downloadexec-shellcode-fix-for-windows/",
+      "quotes": [
+        {
+          "id": "E1",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "00e1f3558e36c75147cfe878d50f24bb300b8af4d284fbac31cd5ad762059bf4"
+        },
+        {
+          "id": "E2",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "91a2f7e32c83efcd727b9cfd3609303a68506f23454901dc03b0d11cc59cf940"
+        },
+        {
+          "id": "E3",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "5537f4b977b56d98880a9df4214b768d89983e5ed27f294fccd3f2d769841a38"
+        }
+      ],
+      "response_html_bytes": 62788,
+      "response_html_sha256": "60fdc576877a7651a871f3452d5d84bb104a5e5c594dfc228d81305ef95a199d",
+      "retrieved_at": "2026-09-30T11:18:36.676Z",
+      "source_id": "O078",
+      "title": "Download_Exec shellcode fix & for Windows 7 | Orange Tsai",
+      "url": "https://blog.orange.tw/posts/2011-04-downloadexec-shellcode-fix-for-windows/"
+    },
+    {
+      "article_text_sha256": "387d4c3ac3dff986818b21614a33e789182bf07994125908d3f14d545c86bee0",
+      "final_url": "https://blog.orange.tw/posts/2010-12-blog-post/",
+      "http_status": 200,
+      "publication_url": "https://blog.orange.tw/posts/2010-12-blog-post/",
+      "quotes": [
+        {
+          "id": "E1",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "c0e9ad668e8fd4e9e28a85cd00a39da4aaa2641a00da772e143d251586291f4a"
+        },
+        {
+          "id": "E2",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "f22941bb5ddad83d9ed9afc68fb251c90b07e534b957e1a6400c6dc8075c1b8d"
+        }
+      ],
+      "response_html_bytes": 9901,
+      "response_html_sha256": "221b9a2abb452fac03efaa8a5c439b0238b96ad12dd18f7bf59d2bf3b336ca5c",
+      "retrieved_at": "2026-09-30T11:18:36.668Z",
+      "source_id": "O079",
+      "title": "第五屆全國大專院校資安技能金盾獎 | Orange Tsai",
+      "url": "https://blog.orange.tw/posts/2010-12-blog-post/"
+    },
+    {
+      "article_text_sha256": "0811a8f81def1c035516482eee3a740cc9d468e65372c756f0a525b2b21c211c",
+      "final_url": "https://blog.orange.tw/posts/2010-07-hacks-in-taiwan/",
+      "http_status": 200,
+      "publication_url": "https://blog.orange.tw/posts/2010-07-hacks-in-taiwan/",
+      "quotes": [
+        {
+          "id": "E1",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "f49fc5560af40f3dd8f8f979954fd98879466f4b38b0f4714033f811212d16ce"
+        }
+      ],
+      "response_html_bytes": 7982,
+      "response_html_sha256": "75926be99c6b7e9d9616e56ab702dfe830acf3e7d8cdae284a17f70738962382",
+      "retrieved_at": "2026-09-30T11:18:36.666Z",
+      "source_id": "O080",
+      "title": "Hacks in Taiwan 第六屆台灣駭客年會 | Orange Tsai",
+      "url": "https://blog.orange.tw/posts/2010-07-hacks-in-taiwan/"
+    },
+    {
+      "article_text_sha256": "dd7f844479246f52e72ec446736f581c697a862c5509cc2a014b880168676bb4",
+      "final_url": "https://blog.orange.tw/posts/2010-05-ramexe/",
+      "http_status": 200,
+      "publication_url": "https://blog.orange.tw/posts/2010-05-ramexe/",
+      "quotes": [
+        {
+          "id": "E1",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "954b36a331d7b826f2b35825f560c522b4938760b1745af2aa13550d8f600259"
+        }
+      ],
+      "response_html_bytes": 6708,
+      "response_html_sha256": "c283bdb08dd8dc773a5f59620b60ce994bb9220f3ebf33676475ea157b43cda1",
+      "retrieved_at": "2026-09-30T11:18:36.757Z",
+      "source_id": "O081",
+      "title": "ram.exe | Orange Tsai",
+      "url": "https://blog.orange.tw/posts/2010-05-ramexe/"
+    },
+    {
+      "article_text_sha256": "1e4f5c03a558019ea4525d7b395d2c7ce1131433ad18a6be37d2474a475c2833",
+      "final_url": "https://blog.orange.tw/posts/2010-05-blog-post_28/",
+      "http_status": 200,
+      "publication_url": "https://blog.orange.tw/posts/2010-05-blog-post_28/",
+      "quotes": [
+        {
+          "id": "E1",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "a46f577524c2eae1851a4de8ad6a80facbeb30b4df91a87c977a8f7c547200c7"
+        }
+      ],
+      "response_html_bytes": 6654,
+      "response_html_sha256": "d62cb0583a3f580edf018db281a6adbc81707be69efb20ddda7e9fde1229d95a",
+      "retrieved_at": "2026-09-30T11:18:36.759Z",
+      "source_id": "O082",
+      "title": "動物園行 | Orange Tsai",
+      "url": "https://blog.orange.tw/posts/2010-05-blog-post_28/"
+    },
+    {
+      "article_text_sha256": "7a910590563289ee443bb33fe0c425477e3b867c334b955198ea68a376ff568f",
+      "final_url": "https://blog.orange.tw/posts/2010-05-hacks-in-taiwan-2010-conference/",
+      "http_status": 200,
+      "publication_url": "https://blog.orange.tw/posts/2010-05-hacks-in-taiwan-2010-conference/",
+      "quotes": [
+        {
+          "id": "E1",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "36c9d02cb8a02751409b59e0ae2bad4b3783568efdb39aad1b5c933f586c4624"
+        }
+      ],
+      "response_html_bytes": 9478,
+      "response_html_sha256": "34a42f2f8327ebdc49563d5740c25475594c3a7e1ba31ed150a96d920ed60ff3",
+      "retrieved_at": "2026-09-30T11:18:36.761Z",
+      "source_id": "O083",
+      "title": "Hacks in Taiwan 2010 Conference | Orange Tsai",
+      "url": "https://blog.orange.tw/posts/2010-05-hacks-in-taiwan-2010-conference/"
+    },
+    {
+      "article_text_sha256": "20a4fa55ab1f126e07faf2e84d14226e9316829774d52619b7d2f7454e7ea1a5",
+      "final_url": "https://blog.orange.tw/posts/2010-05-blog-post/",
+      "http_status": 200,
+      "publication_url": "https://blog.orange.tw/posts/2010-05-blog-post/",
+      "quotes": [
+        {
+          "id": "E1",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "ba6b1fba818347c038cbd7ca52c271575131b5e962f19389d18cba0fafa7f0ad"
+        }
+      ],
+      "response_html_bytes": 6831,
+      "response_html_sha256": "51b8281694f016afc82061e995521946a7ddbfbced7e9ae41c633e5299d2fa9f",
+      "retrieved_at": "2026-09-30T11:18:36.969Z",
+      "source_id": "O084",
+      "title": "爽 | Orange Tsai",
+      "url": "https://blog.orange.tw/posts/2010-05-blog-post/"
+    },
+    {
+      "article_text_sha256": "0bf55cde9a3017ae7b8cf63865d49a9c0c2ab4a9a8d5932b88d79946e26e0488",
+      "final_url": "https://blog.orange.tw/posts/2010-04-note/",
+      "http_status": 200,
+      "publication_url": "https://blog.orange.tw/posts/2010-04-note/",
+      "quotes": [
+        {
+          "id": "E1",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "5a465ed5e245fe23c4e2616c85af0368345ef356241319301a93552f94cc32f4"
+        }
+      ],
+      "response_html_bytes": 7390,
+      "response_html_sha256": "0bdaf5dd6fb2da46795d1492b66bff62cecb84de0a8231324be329a2db4b741c",
+      "retrieved_at": "2026-09-30T11:18:36.966Z",
+      "source_id": "O085",
+      "title": "Note | Orange Tsai",
+      "url": "https://blog.orange.tw/posts/2010-04-note/"
+    },
+    {
+      "article_text_sha256": "2ade89b0d5b50fb1b07e054ddc0bc8df6bd61197fb26dfab6ec00bb9e7eb1d98",
+      "final_url": "https://blog.orange.tw/posts/2010-02-forensic-challenge-2010/",
+      "http_status": 200,
+      "publication_url": "https://blog.orange.tw/posts/2010-02-forensic-challenge-2010/",
+      "quotes": [
+        {
+          "id": "E1",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "3366f584a7da26b884e9eb97f3098ace057b4aa02b411177b021a77f9c5a3e1f"
+        }
+      ],
+      "response_html_bytes": 7267,
+      "response_html_sha256": "c225174bb3c8df5b1fbe8d9b36abfc73975e92479183d5acb6ab4f87df2a0a1b",
+      "retrieved_at": "2026-09-30T11:18:36.971Z",
+      "source_id": "O086",
+      "title": "Forensic Challenge 2010 | Orange Tsai",
+      "url": "https://blog.orange.tw/posts/2010-02-forensic-challenge-2010/"
+    },
+    {
+      "article_text_sha256": "1867304737bc734eba076460e6775b1755c60a91bc0c65dff9edce68db662a9b",
+      "final_url": "https://blog.orange.tw/posts/2010-02-xd/",
+      "http_status": 200,
+      "publication_url": "https://blog.orange.tw/posts/2010-02-xd/",
+      "quotes": [
+        {
+          "id": "E1",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "eb22f64c21acd540e76d34a929882b99c513fd31a2e6511b0a91b74b6a8c2c60"
+        }
+      ],
+      "response_html_bytes": 13479,
+      "response_html_sha256": "cf5e43e376d0ebbb64c83a27af699a8f8b8eb38675e3454fba99e0eaa3dccd8c",
+      "retrieved_at": "2026-09-30T11:18:36.967Z",
+      "source_id": "O087",
+      "title": "好玩的圖XD | Orange Tsai",
+      "url": "https://blog.orange.tw/posts/2010-02-xd/"
+    },
+    {
+      "article_text_sha256": "0177a175ed8bcd695595a20249c53f4b421b857677cfefcd4e386238e93ebb7d",
+      "final_url": "https://blog.orange.tw/posts/2010-02-blog-post_18/",
+      "http_status": 200,
+      "publication_url": "https://blog.orange.tw/posts/2010-02-blog-post_18/",
+      "quotes": [
+        {
+          "id": "E1",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "1906a11d23eacae47954a7fba184a7a871149367aec8c6ecf77cd944414c3fbc"
+        },
+        {
+          "id": "E2",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "ba65f067e71dbbcb9fc7377757fdbbfc8ab74ea3ebb2bc59535e8f830d8f3bec"
+        },
+        {
+          "id": "E3",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "957ca80a1ebde639ac0b06c9ab1e3684265f466c80f98823fd2ebac0f9cc7df9"
+        }
+      ],
+      "response_html_bytes": 7153,
+      "response_html_sha256": "68bba86c9b11b5d7a5b87d61193e39aa0883d4126a0f03489695fa913c2cbf06",
+      "retrieved_at": "2026-09-30T11:18:37.068Z",
+      "source_id": "O088",
+      "title": "這......? | Orange Tsai",
+      "url": "https://blog.orange.tw/posts/2010-02-blog-post_18/"
+    },
+    {
+      "article_text_sha256": "ab43899775da1c34fc1b0e5048d48ff0c8e1fd8a132930435d02ea81fae36489",
+      "final_url": "https://blog.orange.tw/posts/2010-02-blog-post/",
+      "http_status": 200,
+      "publication_url": "https://blog.orange.tw/posts/2010-02-blog-post/",
+      "quotes": [
+        {
+          "id": "E1",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "c1f44dcc5009caabbf1383df2c96713d31edb134e1aa26f95922047e3458725f"
+        },
+        {
+          "id": "E2",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "c23003985b4b640677891cd6fd1028a39e60b74085dd0bbcff6df9d132fe2569"
+        }
+      ],
+      "response_html_bytes": 7391,
+      "response_html_sha256": "e1b3ccf3d5a26efd30658f253857494ecdac43c9452bc2aa57148e5fa1b5c518",
+      "retrieved_at": "2026-09-30T11:18:37.072Z",
+      "source_id": "O089",
+      "title": "增 | Orange Tsai",
+      "url": "https://blog.orange.tw/posts/2010-02-blog-post/"
+    },
+    {
+      "article_text_sha256": "6c7cb7fdaf06fcea4fcceb889c9bba293b6fbcedfba9e8568ac9bfbee5ae52d5",
+      "final_url": "https://blog.orange.tw/posts/2010-02-orz/",
+      "http_status": 200,
+      "publication_url": "https://blog.orange.tw/posts/2010-02-orz/",
+      "quotes": [
+        {
+          "id": "E1",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "e0163b514aaf2a8b06b9b7731ec0849b2e74dc22ba6d0e34b6ca851da3478e1e"
+        }
+      ],
+      "response_html_bytes": 5841,
+      "response_html_sha256": "5c86aa0e3605dd4bc16cb824dd841ce9114842ea430b6f22dff8cbbc13e64dbe",
+      "retrieved_at": "2026-09-30T11:18:37.076Z",
+      "source_id": "O090",
+      "title": "Orz | Orange Tsai",
+      "url": "https://blog.orange.tw/posts/2010-02-orz/"
+    },
+    {
+      "article_text_sha256": "121269fd9b63eaf0b170bc2d402837e8d8ab8e9f37d4e16a64e100baaf45e394",
+      "final_url": "https://blog.orange.tw/posts/2010-01-0day/",
+      "http_status": 200,
+      "publication_url": "https://blog.orange.tw/posts/2010-01-0day/",
+      "quotes": [
+        {
+          "id": "E1",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "f95209a1b01edc5c1087b96567034d4f8d169ebb05e12c5e2333312340e8b345"
+        }
+      ],
+      "response_html_bytes": 6384,
+      "response_html_sha256": "462ab59f84f09dfab85f579fc4c9c4e276a6b9951ff93bd15fdad93c4af78549",
+      "retrieved_at": "2026-09-30T11:18:37.074Z",
+      "source_id": "O091",
+      "title": "0day~ | Orange Tsai",
+      "url": "https://blog.orange.tw/posts/2010-01-0day/"
+    },
+    {
+      "article_text_sha256": "49189b93e54ed3e23e13cca570bcd7fd9bd564d975a6631795ac0454c8104f46",
+      "final_url": "https://blog.orange.tw/posts/2010-01-blog-post_9987/",
+      "http_status": 200,
+      "publication_url": "https://blog.orange.tw/posts/2010-01-blog-post_9987/",
+      "quotes": [
+        {
+          "id": "E1",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "ffb027e6eefc881fe6eb849accfe10113ba5f945c1987017c3ce7c953af0567f"
+        }
+      ],
+      "response_html_bytes": 7113,
+      "response_html_sha256": "dde3ac82ba5c36f34565ac38b6cb9b5302c2a3153b1a4c82b54dd1cddb23fcde",
+      "retrieved_at": "2026-09-30T11:18:37.170Z",
+      "source_id": "O092",
+      "title": ".... | Orange Tsai",
+      "url": "https://blog.orange.tw/posts/2010-01-blog-post_9987/"
+    },
+    {
+      "article_text_sha256": "4edac38ee02f1a691888a9b14a0f6119f979d859ddc457a7703be55f2b90c1db",
+      "final_url": "https://blog.orange.tw/posts/2010-01-blog-post_10/",
+      "http_status": 200,
+      "publication_url": "https://blog.orange.tw/posts/2010-01-blog-post_10/",
+      "quotes": [
+        {
+          "id": "E1",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "f0d9d872d12d38e13ded2c645a99ebcf595b7ddc45a86b2f4431f3010e7a8839"
+        }
+      ],
+      "response_html_bytes": 5894,
+      "response_html_sha256": "3c6b4d23ca0ce570bbcdc68ffda77ac660779383c3018be4e1ab0593bffdf175",
+      "retrieved_at": "2026-09-30T11:18:37.176Z",
+      "source_id": "O093",
+      "title": "嘿 | Orange Tsai",
+      "url": "https://blog.orange.tw/posts/2010-01-blog-post_10/"
+    },
+    {
+      "article_text_sha256": "5c711f3a77782b8706c1fa47628a05750c81a12255dffa9186ff98f8012ef091",
+      "final_url": "https://blog.orange.tw/posts/2009-12-blog-post_26/",
+      "http_status": 200,
+      "publication_url": "https://blog.orange.tw/posts/2009-12-blog-post_26/",
+      "quotes": [
+        {
+          "id": "E1",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "1e9611022da04fbbcaef5407814599f808159fea9b1aca5f8fa9c59d61ab8e8e"
+        }
+      ],
+      "response_html_bytes": 6498,
+      "response_html_sha256": "0c898484e8a6314f9da248445ec418ae073446697cab43ee91223369b897aa62",
+      "retrieved_at": "2026-09-30T11:18:37.175Z",
+      "source_id": "O094",
+      "title": "聖誕快樂 | Orange Tsai",
+      "url": "https://blog.orange.tw/posts/2009-12-blog-post_26/"
+    },
+    {
+      "article_text_sha256": "4bb0b4b426e5967405da5be56e3aaa1dffa41eb97dc7e9e5b1831461b3bfd4cc",
+      "final_url": "https://blog.orange.tw/posts/2009-12-blog-post_3757/",
+      "http_status": 200,
+      "publication_url": "https://blog.orange.tw/posts/2009-12-blog-post_3757/",
+      "quotes": [
+        {
+          "id": "E1",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "32d08eeebc14278e7d572f9e1e797267678c1d1a135706fb4cfc1745227443c5"
+        }
+      ],
+      "response_html_bytes": 5835,
+      "response_html_sha256": "a898081a788f4ace2f88ac1f460c2102e61b5ac07b6fdaf51ca549c9439407b6",
+      "retrieved_at": "2026-09-30T11:18:37.178Z",
+      "source_id": "O095",
+      "title": "搬家 | Orange Tsai",
+      "url": "https://blog.orange.tw/posts/2009-12-blog-post_3757/"
+    },
+    {
+      "article_text_sha256": "bf71b9c6092f7e554e2788e7b639accfeb4a81e39adcb94c345b1feb7cef1ac8",
+      "final_url": "https://blog.orange.tw/posts/2009-12-hacks-in-taiwan-conference-2009-wargame/",
+      "http_status": 200,
+      "publication_url": "https://blog.orange.tw/posts/2009-12-hacks-in-taiwan-conference-2009-wargame/",
+      "quotes": [
+        {
+          "id": "E1",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "38d6ba31e049cc07898127b747d9178a000cfd80c7e8c2f71fd60ae2148e36ef"
+        },
+        {
+          "id": "E2",
+          "match_mode": "exact",
+          "matched": true,
+          "quote_sha256": "86ee54c838a96d86b447f883537389d7dffe02edcd50359b7b7eb94ac879c2bf"
+        }
+      ],
+      "response_html_bytes": 12866,
+      "response_html_sha256": "73f2a57db3c9997998d1967c40183aa0b3f125df8022a15e5f3c40ad573395f8",
+      "retrieved_at": "2026-09-30T11:18:37.270Z",
+      "source_id": "O096",
+      "title": "Hacks in Taiwan Conference 2009 WarGame心得 | Orange Tsai",
+      "url": "https://blog.orange.tw/posts/2009-12-hacks-in-taiwan-conference-2009-wargame/"
+    }
+  ]
+}

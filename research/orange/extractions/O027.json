@@ -1,0 +1,111 @@
+{
+  "schema_version": 1,
+  "source_id": "O027",
+  "url": "https://blog.orange.tw/posts/2018-01-php-cve-2018-5711-hanging-websites-by/",
+  "observed_title": "PHP CVE-2018-5711 - Hanging Websites by a Harmful GIF",
+  "retrieved_at": "2026-09-30T09:35:04.325Z",
+  "retrieval": {
+    "tool": "fetch_content readable; agent_browser with explicit named session",
+    "response_id": "orange-O027",
+    "final_url": "https://blog.orange.tw/posts/2018-01-php-cve-2018-5711-hanging-websites-by/",
+    "outcome": "read",
+    "quote_verification": "agent_browser eval in session orange-O027 checked each quote with exact String.includes against its article paragraph's innerText and the full article innerText, without case or whitespace normalization. E1: paragraph 5; E2 and E3: paragraph 8; E4: paragraph 9. All checks returned true; lengths were 67, 64, 79 and 51 characters."
+  },
+  "disposition": "included",
+  "reason": "The short source-level explanation supports two distinct reusable observations: resolve wrappers to their implementations, and verify that failure semantics survive a receiving-type conversion before trusting a loop-exit guard. The control-flow consequence is also explained. These observations are separable from the omitted proof of concept; the article does not establish a broader discovery workflow.",
+  "canonical_source": null,
+  "evidence": [
+    {
+      "id": "E1",
+      "locator": "Vulnerability Details, second prose paragraph (article paragraph 5), wrapper discussion",
+      "quote": "Function GetCode is just a wrapper, and GetCode_ do the real stuff.",
+      "verified": true
+    },
+    {
+      "id": "E2",
+      "locator": "Vulnerability Details, fifth prose paragraph (article paragraph 8), opening sentence of the type-conversion explanation",
+      "quote": "The bug relied on the type conversion from int to unsigned char.",
+      "verified": true
+    },
+    {
+      "id": "E3",
+      "locator": "Vulnerability Details, fifth prose paragraph (article paragraph 8), clause explaining why the expected termination update is not reached",
+      "quote": "But it will never be executed because the definition of count is unsigned char,",
+      "verified": true
+    },
+    {
+      "id": "E4",
+      "locator": "Vulnerability Details, sixth prose paragraph (article paragraph 9), final fragment of the reported consequence sentence",
+      "quote": "an infinite loop and exhausted the server resource.",
+      "verified": true
+    }
+  ],
+  "workflow": [
+    {
+      "decision": "When a loop invokes a helper, distinguish a wrapper from the implementation before selecting the source slice that explains progress and error handling.",
+      "evidence": ["E1"]
+    },
+    {
+      "decision": "Compare the callee's failure contract with the caller's receiving representation and subsequent guard; a conversion can destroy the meaning of a failure before the branch evaluates it.",
+      "evidence": ["E2", "E3"]
+    },
+    {
+      "decision": "Trace an ineffective failure guard to the loop's exit-state update and narrow progress consequence. Keep the reported nontermination separate from unproven application-wide resource exhaustion.",
+      "evidence": ["E3", "E4"]
+    }
+  ],
+  "tools": [],
+  "handoffs": [
+    {
+      "producer": "data-flow-analysis",
+      "consumer": "dynamic-analysis",
+      "when": "A failure result may change meaning before a loop-exit guard, and concrete value, branch or progress behavior remains unresolved.",
+      "packet": [
+        "Authorization, isolated artifact identity, revision, runtime and feature configuration",
+        "Minimal producer-to-conversion-to-guard slice and relevant loop-exit state",
+        "Callee failure contract, receiving representation and expected post-conversion meaning",
+        "One unresolved value or branch and contrasting predictions for preserved versus lost failure semantics",
+        "Observation points, known-good control, resource ceiling, stop condition and recovery constraints",
+        "Source-report versus local-observation classification, failed assumptions and untested application reachability"
+      ],
+      "acceptance_gate": "Accept only a safely bounded lab design that can distinguish the conversion and exit-state hypotheses while retaining a known-good control. A timeout alone cannot establish the conversion defect or service-wide exhaustion; missing application gates remain unresolved.",
+      "classification": "derived",
+      "evidence": ["E2", "E3", "E4"]
+    }
+  ],
+  "limitations": [
+    "This is article and embedded-source inspection only. The author's nontermination and resource-exhaustion results were not independently reproduced; no code, demonstration input or target was executed.",
+    "The explanation calls the unsigned receiving value always positive, although zero is representable. The supported inference is loss of a negative failure result, not that every possible value defeats termination.",
+    "The application-impact claim assumes untrusted uploads reach the affected decoder. The article supplies no application-level gate map, worker-limit measurements, recovery behavior or denominator supporting whole-service exhaustion.",
+    "The affected-release list is historical and is not proof for current releases, all builds or all configurations. Linked source and advisory references were not inspected, and no shipped-fix or semantic patch comparison was performed.",
+    "No named investigation tool has a stated reusable purpose outside the omitted demonstration. The article does not report a fuzzing campaign, instrumentation method, failed experiments or a regression-validation procedure. The handoff and proposed bounded validation are library-derived, not author usage."
+  ],
+  "candidate_additions": [
+    {
+      "owner": "source-code-auditing",
+      "kind": "workflow",
+      "guidance": "For a loop delegated through helper layers, resolve thin wrappers to the implementation before assessing failure handling; retain the producer, representation change and decision-consuming branch in the audit slice.",
+      "evidence": ["E1", "E2", "E3"]
+    },
+    {
+      "owner": "data-flow-analysis",
+      "kind": "heuristic",
+      "guidance": "Treat failure markers as a representation contract: record the producer's return type, receiving type, implicit conversion and branch interpretation, then ask whether each failure remains distinguishable from valid data at the consumer.",
+      "evidence": ["E2", "E3"]
+    },
+    {
+      "owner": "dynamic-analysis",
+      "kind": "validation",
+      "guidance": "Derived validation: for suspected loss of a termination signal, pair receiving-value and guard-state observations with bounded loop-progress evidence and a known-good control in an isolated lab. A timeout alone cannot identify the cause or establish service-wide exhaustion.",
+      "evidence": ["E3", "E4"]
+    }
+  ],
+  "related_article_urls": [],
+  "excluded_material": [
+    "Proof-of-concept bytes, hexadecimal dump, demonstration command and trigger construction",
+    "Executable source snippets and target-specific line numbers or numeric constants",
+    "Product paths, routine names, release thresholds and identifiers from candidate operational guidance",
+    "Unsubstantiated deployment-wide exploitability rhetoric and promotional epilogue"
+  ],
+  "worker_notes": "The readable fetch returned the article body without a visible response identifier; response_id records the actual named browser session used for title, paragraph and exact-quote verification. No external references or other articles were opened."
+}

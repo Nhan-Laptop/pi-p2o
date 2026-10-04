@@ -1,0 +1,152 @@
+{
+  "schema_version": 1,
+  "source_id": "O002",
+  "url": "https://blog.orange.tw/posts/2025-08-the-art-of-php-en/",
+  "observed_title": "The Art of PHP — My CTF Journey and Untold Stories!",
+  "retrieved_at": "2026-09-30T09:03:20Z",
+  "retrieval": {
+    "tool": "fetch_content readable; get_search_content; agent_browser session orange-O002",
+    "response_id": "munvk2lsir1r6k",
+    "final_url": "https://phrack.org/issues/72/the-art-of-php-my-ctf-journey-and-untold-stories_md#article",
+    "outcome": "read",
+    "quote_verification": "get_search_content with responseId munvk2lsir1r6k, urlIndex 0 and findMode exact returned one exact match for each of E1–E4. Quotes preserve fetched line breaks. The assigned blog title and its full-content link were observed in browser session orange-O002."
+  },
+  "disposition": "included",
+  "reason": "The assigned blog page announces and directly links the same-titled Phrack article; that full article was read, not just the announcement. Its retrospective includes distinct reusable evidence about diagnostic side effects, post-construction representation changes, implicit decoding and analyzer visibility. Only those method lessons are retained; challenge solutions and exploit sequences are excluded.",
+  "canonical_source": null,
+  "evidence": [
+    {
+      "id": "E1",
+      "locator": "Linked Phrack full text, Main → 1.2 - When Security Features Make You Less Secure; paragraph beginning 'Definitely! @pilvar cleverly exploited a side effect', warning/output assumption clause.",
+      "quote": "However, this warning indeed violates the\nassumption that \"there must be no output before the response header,\"",
+      "verified": true
+    },
+    {
+      "id": "E2",
+      "locator": "Linked Phrack full text, Main → 2.1 - The \"Serialize-Then-Replace\" Pattern; paragraph beginning 'So when this mechanism is combined with the serialization process', storage and later parsing clause.",
+      "quote": "storing serialized data with mismatched lengths. Then,\nthe next time WordPress retrieves the data, it gets parsed incorrectly",
+      "verified": true
+    },
+    {
+      "id": "E3",
+      "locator": "Linked Phrack full text, Main → 4.2 - PHAR Deserialization → Level 0 - What is PHAR?; paragraph beginning 'At first glance, it might seem like filter chains could help again', implicit metadata-decoding sentence.",
+      "quote": "And whenever PHP parses a PHAR\nfile with this protocol, it automatically deserializes the metadata stored\ninside.",
+      "verified": true
+    },
+    {
+      "id": "E4",
+      "locator": "Linked Phrack full text, Main → 5.2 - From CTF to Real World!; paragraph beginning 'Honestly, the entire exploit was incredibly neat and packed with details', contiguous-allocation/analyzer limitation clause.",
+      "quote": "but also deal with PHP's internal\ncontiguous memory allocations, making it way harder for tools like ASAN to\ncatch",
+      "verified": true
+    }
+  ],
+  "workflow": [
+    {
+      "decision": "When policy establishment depends on no earlier output, include initialization and limit-triggered diagnostics in the causal model, not only visible handler statements. A diagnostic can invalidate the ordering assumption; the remaining question is which runtime settings preserve or prevent that side effect.",
+      "evidence": ["E1"]
+    },
+    {
+      "decision": "Trace structured content through every later rewrite, persistence boundary and decoding pass. A format constructed correctly can acquire mismatched extents before retrieval; resolve the final consumer's representation rather than inheriting an earlier preparation guarantee.",
+      "evidence": ["E2"]
+    },
+    {
+      "decision": "Review ordinary I/O and metadata adapters for hidden object reconstruction instead of treating explicit decoder calls as the complete entry-point inventory. Keep actual runtime behavior and format-selection prerequisites unresolved until supported; an implicit-decoder report alone does not establish impact.",
+      "evidence": ["E3"]
+    },
+    {
+      "decision": "Before using analyzer silence to reject a boundary hypothesis, check whether the observation method represents composed input handling and internal allocation boundaries. Contiguous backing storage can reduce detector visibility; carry that coverage limit forward rather than equating it with safety.",
+      "evidence": ["E4"]
+    }
+  ],
+  "tools": [
+    {
+      "tool": "ASAN",
+      "purpose": "Discussed as a memory-error detector whose visibility can be reduced by contiguous internal allocations.",
+      "when": "When assessing the detection limits of a cross-component memory-boundary finding. The article names the tool as a limitation example, not as a documented author run.",
+      "attribution": "explicit",
+      "evidence": ["E4"]
+    }
+  ],
+  "handoffs": [
+    {
+      "producer": "source-code-auditing",
+      "consumer": "deserialization-and-dispatch-auditing",
+      "when": "An ordinary I/O or metadata adapter appears to introduce implicit object reconstruction outside the explicit decoder inventory.",
+      "packet": [
+        "Authorized scope, actor, artifact identity, runtime and dependency configuration",
+        "Minimal adapter-to-decoder call slice and controllable format selector",
+        "Expected inert-data contract and inferred reconstruction behavior",
+        "Available types, callbacks and every reachability prerequisite",
+        "Evidence classification, historical behavior, untested scope and a benign observation proposal"
+      ],
+      "acceptance_gate": "Identify at least one specific consumer boundary, or label it a source-author report/static inference with a bounded reachability question. Reject a catalogue-only claim of exposure; require actual format and runtime prerequisites before claiming observed behavior.",
+      "classification": "derived",
+      "evidence": ["E3"]
+    },
+    {
+      "producer": "parser-differential-auditing",
+      "consumer": "dynamic-analysis",
+      "when": "A representation mutation or exceptional initialization path may invalidate the final consumer's structural or policy assumption.",
+      "packet": [
+        "Authorized artifact/runtime/configuration and isolated observation scope",
+        "Minimal producer-transform-storage-consumer or initialization-policy slice",
+        "Invariant, controllable fields, prerequisites and representations at each boundary",
+        "Contrasting benign predictions, known-good baseline and exact observation points",
+        "Permitted instrumentation, allocation granularity and analyzer coverage limits",
+        "Classification, negative controls, failed assumptions and next unresolved question"
+      ],
+      "acceptance_gate": "The proposed observation must distinguish preserved from invalidated assumptions on a known-good baseline. Missing diagnostics or sanitizer findings cannot substitute for consumer-state evidence, and published exploit inputs are not an acceptable test design.",
+      "classification": "derived",
+      "evidence": ["E1", "E2", "E4"]
+    }
+  ],
+  "limitations": [
+    "This is a historical survey mixing the author's experiences with other researchers' reports, not a reproducible experiment record. No vulnerability, impact or fix was independently verified here.",
+    "Derived scope limit: the warning/output lesson is configuration-sensitive; the article does not provide a complete error-display and output-buffering matrix.",
+    "The serialization workaround is described relative to the author's then-current WordPress ecosystem. No current artifact, affected-version range or deployment was audited.",
+    "The article reports that automatic PHAR metadata deserialization was disabled starting in PHP 8.0. Its earlier implicit-decoding behavior must not be assumed for a current interpreter or every file operation.",
+    "ASAN difficulty is an author-reported limitation without analyzer logs, options, build details or reproduction counts. No local analyzer result was collected.",
+    "Other linked articles and the translation are pointers only; they were not read or treated as corroborating evidence. Library handoffs and candidate guidance are derived, not author-used skills or an author-described multi-agent workflow."
+  ],
+  "candidate_additions": [
+    {
+      "owner": "dynamic-analysis",
+      "kind": "validation",
+      "guidance": "If policy establishment follows request initialization, include startup and limit-triggered diagnostics in benign exceptional-path regression properties. Check policy state at the actual response boundary rather than infer it from handler ordering alone.",
+      "evidence": ["E1"]
+    },
+    {
+      "owner": "parser-differential-auditing",
+      "kind": "heuristic",
+      "guidance": "Do not treat prepared or serialized output as stable once downstream layers can rewrite it. Extend the representation ledger through persistence and re-decoding; check structural extents and type meaning after the final transformation.",
+      "evidence": ["E2"]
+    },
+    {
+      "owner": "deserialization-and-dispatch-auditing",
+      "kind": "workflow",
+      "guidance": "Include format-dependent metadata and ordinary I/O adapters in the decoder entry-point inventory. Separate historically reported implicit decoding from behavior supported in the actual runtime; format selection, installed types and benign callback observation are prerequisites, not an impact conclusion.",
+      "evidence": ["E3"]
+    },
+    {
+      "owner": "dynamic-analysis",
+      "kind": "failure",
+      "guidance": "Document allocation granularity and composed input handling before interpreting sanitizer or fuzzer silence. An internal logical boundary absent from the detector's model is a coverage limitation; narrow observation to that boundary without disabling security checks.",
+      "evidence": ["E4"]
+    }
+  ],
+  "related_article_urls": [
+    "https://phrack.org/issues/72/5_md#article",
+    "https://blog.orange.tw/posts/2025-08-the-art-of-php-ch/",
+    "https://blog.orange.tw/posts/2021-02-a-journey-combining-web-and-binary-exploitation/",
+    "https://devco.re/blog/2025/01/09/worstfit-unveiling-hidden-transformers-in-windows-ansi/"
+  ],
+  "excluded_material": [
+    "Executable snippets, payloads and exploit request sequences",
+    "Challenge solutions, flags, filter mappings and side-channel extraction procedures",
+    "Object-chain construction, memory-corruption escalation and data-exfiltration details",
+    "Target endpoints, filesystem paths, debugger addresses and exploit constants",
+    "Autobiographical, competitive and promotional narrative",
+    "Historical impact or remediation reports presented as current verified results"
+  ],
+  "worker_notes": "The first readable fetch of the legacy Phrack link failed with 'Extracted content appears incomplete'. Following the assigned page's full-content link in session orange-O002 revealed the canonical route; its readable fetch succeeded and all 91,172 characters were inspected through pagination. No attachments, source execution or target testing. Candidates may overlap existing guidance and remain subject to orchestrator merge review."
+}

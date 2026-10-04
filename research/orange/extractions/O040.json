@@ -1,0 +1,43 @@
+{
+  "schema_version": 1,
+  "source_id": "O040",
+  "url": "https://blog.orange.tw/posts/2015-07-2015-hitcon-ctf-web-ctf/",
+  "observed_title": "2015 烏雲峰會演講投影片 「關於 HITCON CTF 的那些事 之 Web 狗如何在險惡的 CTF 世界中存活？」",
+  "retrieved_at": "2026-09-30T09:49:09Z",
+  "retrieval": {
+    "tool": "agent_browser",
+    "response_id": "session:orange-O040",
+    "final_url": "https://blog.orange.tw/posts/2015-07-2015-hitcon-ctf-web-ctf/",
+    "outcome": "read",
+    "quote_verification": "Readable fetch corroborated against the top-level article DOM in named browser session orange-O040. E1 was checked with an exact paragraph textContent.includes(quote) test, which returned true and the matching paragraph. The observed title was checked against the article H1."
+  },
+  "disposition": "excluded",
+  "reason": "The actual article is a conference/slides announcement: its prose introduces team relationships and competition staffing, then describes the presentation's framing and links a slide deck. It supplies no distinct reusable technical investigation method, named research-tool purpose, or validation evidence. Slides-only/event posts are excluded by the extraction contract; teamwork anecdotes are not converted into technical handoffs.",
+  "canonical_source": null,
+  "evidence": [
+    {
+      "id": "E1",
+      "locator": "Final prose paragraph beginning 不過投影片做著做著, immediately before the presentation PDF link",
+      "quote": "不過投影片做著做著就多了下半部分，在烏雲以 Web 技術為主的氛圍下，剛好命名成講述 Web 狗如何在 CTF 世界生存的故事XD",
+      "verified": true
+    }
+  ],
+  "workflow": [],
+  "tools": [],
+  "handoffs": [],
+  "limitations": [
+    "E1 is classification evidence for a presentation announcement, not a technical method observation.",
+    "The article prose does not document investigation hypotheses, research-tool purposes, failed technical assumptions, validation, or remediation.",
+    "Linked and embedded slides were not used as method evidence; this disposition assesses the assigned article rather than the presentation deck's contents.",
+    "No challenge or target was tested, and no author-reported security result was independently reproduced."
+  ],
+  "candidate_additions": [],
+  "related_article_urls": [],
+  "excluded_material": [
+    "Conference invitation and presentation promotion",
+    "Team identities, affiliations, staffing anecdotes, and competition background",
+    "Linked and embedded slide-deck material; the PDF was not downloaded",
+    "Any challenge solutions, payloads, exploit sequences, or executable attachments; none were extracted"
+  ],
+  "worker_notes": "The readable fetch omitted the article heading, so the exact title and complete top-level prose were verified in orange-O040. One exact classification quote is retained under the excluded-page exception; no workflow, tool, handoff, or skill addition is inferred."
+}

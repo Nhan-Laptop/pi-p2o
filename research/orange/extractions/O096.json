@@ -1,0 +1,51 @@
+{
+  "schema_version": 1,
+  "source_id": "O096",
+  "url": "https://blog.orange.tw/posts/2009-12-hacks-in-taiwan-conference-2009-wargame/",
+  "observed_title": "Hacks in Taiwan Conference 2009 WarGame心得",
+  "retrieved_at": "2026-09-30T10:38:11.726Z",
+  "retrieval": {
+    "tool": "agent_browser",
+    "response_id": "orange-O096 (explicit browser session)",
+    "final_url": "https://blog.orange.tw/posts/2009-12-hacks-in-taiwan-conference-2009-wargame/",
+    "outcome": "read",
+    "quote_verification": "Exact article.innerText.includes(quote) checks in browser session orange-O096 returned true for E1 and E2; lengths were 13 and 54 Unicode characters. Matching paragraphs and the article heading were inspected."
+  },
+  "disposition": "excluded",
+  "reason": "The actual article is a first-person wargame solution recap, as its introductory paragraph states. After removing challenge-specific modifications, requests, bypasses and answers, the remainder is a tool inventory and brief investigation or failure remarks, including an explicitly unresolved crash-dump inspection. These do not establish two distinct reusable method observations separate from the solve sequences; no operational additions or handoffs are proposed.",
+  "canonical_source": null,
+  "evidence": [
+    {
+      "id": "E1",
+      "locator": "Introductory paragraph, before 行前準備: (article paragraph 1); classification excerpt",
+      "quote": "以下是我在解題時的一些心得",
+      "verified": true
+    },
+    {
+      "id": "E2",
+      "locator": "Unix 3 — opening paragraph (article paragraph 21), before 解法不明XD",
+      "quote": "執行會出現Segmentation Fault，coredump後用strings看了一下沒看到什麼就放棄了",
+      "verified": true
+    }
+  ],
+  "workflow": [],
+  "tools": [],
+  "handoffs": [],
+  "limitations": [
+    "The observations concern a 2009 competition environment; no current-artifact, configuration or defensive-fix validation is supplied.",
+    "The Unix 3 crash-dump string inspection was reported as uninformative and left unsolved. It establishes neither root cause nor absence of a defect.",
+    "The short tool inventory and challenge notes do not provide a transferable experiment contract with contrasting predictions, controls and bounded validation. Tools were not promoted into library recommendations merely because they were listed.",
+    "All reported results remain source-author reports. Only article identity and quotation fidelity were checked; no code, attachments or targets were executed or tested."
+  ],
+  "candidate_additions": [],
+  "related_article_urls": [],
+  "excluded_material": [
+    "Challenge solve sequences and puzzle-specific answers",
+    "Executable commands, request payloads, endpoint strings and network addresses",
+    "Binary patch values and target-specific privilege or client-state bypass instructions",
+    "Key-recovery details and answer strings",
+    "Unattributed tool-purpose assumptions and invented skill handoffs",
+    "Competition ranking, preparation anecdotes and personal acknowledgements"
+  ],
+  "worker_notes": "Readable fetch was read first but exposed no response identifier. The assigned article was then inspected in the explicit browser session orange-O096 for title, final URL, paragraph locators and exact quotation verification. Its article links contained only an author link and heading self-links, not related article pointers."
+}

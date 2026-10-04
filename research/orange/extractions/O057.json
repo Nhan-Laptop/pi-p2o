@@ -1,0 +1,100 @@
+{
+  "schema_version": 1,
+  "source_id": "O057",
+  "url": "https://blog.orange.tw/posts/2013-09-blog-post/",
+  "observed_title": "這不是金盾獎Ｔ＿Ｔ",
+  "retrieved_at": "2026-09-30T10:08:28.181Z",
+  "retrieval": {
+    "tool": "fetch_content readable; agent_browser",
+    "response_id": "browser-session:orange-O057",
+    "final_url": "https://blog.orange.tw/posts/2013-09-blog-post/",
+    "outcome": "read",
+    "quote_verification": "Exact String.includes checks against the identified article p innerText in named session orange-O057, without normalization. All four checks returned true; the article heading and final URL were also checked."
+  },
+  "disposition": "included",
+  "reason": "This short historical vulnerability report supports two reusable observations: downstream document delivery needs its own identity gate, and reported visibility of non-owned records raises a separate object-authorization question. It corroborates existing library principles rather than supplying a new testing technique. The article names no research tools and provides no systematic controls or repair-validation evidence.",
+  "canonical_source": null,
+  "evidence": [
+    {
+      "id": "E1",
+      "locator": "Under article heading 這不是金盾獎Ｔ＿Ｔ, article p[2]: normal registration-to-print workflow paragraph.",
+      "quote": "照著正常流程，註冊 -> 登入 -> 輸入報名資料 -> 送出 -> 列印實體報名表",
+      "verified": true
+    },
+    {
+      "id": "E2",
+      "locator": "Article p[6]: italic P.S. immediately following the document-link blockquote; session-binding observation only.",
+      "quote": "因為沒鎖 session 有網址不用登入帳號也可以存取…",
+      "verified": true
+    },
+    {
+      "id": "E3",
+      "locator": "Article p[7]: author-reported visibility result; request-manipulation clause omitted.",
+      "quote": "好像就可以看到別人的資料了誒！？",
+      "verified": true
+    },
+    {
+      "id": "E4",
+      "locator": "Article p[1]: opening Update notice; correction claim only, timestamp omitted.",
+      "quote": "官方已修正此問題。",
+      "verified": true
+    }
+  ],
+  "workflow": [
+    {
+      "decision": "Identify the downstream artifact-delivery boundary in an ordinary application workflow. Question whether its consumer enforces identity independently instead of assuming an earlier login stage protects every later delivery operation.",
+      "evidence": ["E1", "E2"]
+    },
+    {
+      "decision": "Keep identity establishment and object ownership as separate policy questions. Reported non-owned-record visibility warrants object-authorization review, but unspecified actor and session conditions must remain unresolved rather than being folded into a single proven mechanism.",
+      "evidence": ["E2", "E3"]
+    }
+  ],
+  "tools": [],
+  "handoffs": [
+    {
+      "producer": "attack-surface-mapping",
+      "consumer": "authorization-auditing",
+      "when": "A workflow produces a protected artifact whose delivery boundary may not share the upstream identity or ownership gate.",
+      "packet": [
+        "authorized scope and artifact/configuration identity",
+        "ordinary workflow stage and downstream delivery boundary",
+        "expected actor/session requirements",
+        "protected-object ownership policy",
+        "source-author observations and exact evidence locators",
+        "unknown gates, missing controls, and bounded next question"
+      ],
+      "acceptance_gate": "Accept this article only as author-report-backed audit prioritization. Keep identity and ownership enforcement unresolved until authorized-artifact evidence supports each gate; reject packets containing non-owned data or asserting current exposure.",
+      "classification": "derived",
+      "evidence": ["E1", "E2", "E3"]
+    }
+  ],
+  "limitations": [
+    "The report concerns a historical deployment; reading the blog does not establish present-day exposure. No target requests or reproduction were performed.",
+    "Absent session binding and non-owned-record visibility are author reports. The article does not document independent actor/session controls, backend policy decisions, source code, or a complete root-cause analysis.",
+    "The opening correction notice supplies no patch artifact, regression results, equivalent-route coverage, or deployed-enforcement evidence; repair remains an author claim.",
+    "The report includes real-team examples. Screenshot contents and personal or team identifiers were not extracted; no affected-record inventory or exposure magnitude is supported."
+  ],
+  "candidate_additions": [
+    {
+      "owner": "attack-surface-mapping",
+      "kind": "heuristic",
+      "guidance": "Include generated-document delivery in the interface inventory. An authenticated navigation path is not evidence that a downstream artifact consumer enforces the same identity gate.",
+      "evidence": ["E1", "E2"]
+    },
+    {
+      "owner": "authorization-auditing",
+      "kind": "workflow",
+      "guidance": "Record session requirements and object-ownership policy separately for artifact delivery. Preserve unknown actor/session conditions when a source reports both anonymous access and non-owned-record visibility without independent controls.",
+      "evidence": ["E2", "E3"]
+    }
+  ],
+  "related_article_urls": [],
+  "excluded_material": [
+    "Target endpoint and query strings",
+    "Source-specific request-manipulation sequence and identifier values",
+    "Team names and screenshot contents involving other participants",
+    "Recruitment, jokes, and event commentary"
+  ],
+  "worker_notes": "Readable fetch and live article DOM agreed. Title and quotations were verified in isolated named browser session orange-O057. No named author tools or related article pointers were observed; all library handoff guidance is derived."
+}

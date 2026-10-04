@@ -1,0 +1,58 @@
+{
+  "schema_version": 1,
+  "source_id": "O013",
+  "url": "https://blog.orange.tw/posts/2021-02-a-journey-combining-web-and-binary-exploitation/",
+  "observed_title": "A Journey Combining Web Hacking and Binary Exploitation in Real World!",
+  "retrieved_at": "2026-09-30T09:13:46.382Z",
+  "retrieval": {
+    "tool": "agent_browser",
+    "response_id": "session:orange-O013",
+    "final_url": "https://blog.orange.tw/posts/2021-02-a-journey-combining-web-and-binary-exploitation/",
+    "outcome": "read",
+    "quote_verification": "Exact JavaScript String.includes checks against textContent of the specified original article-body paragraphs in session orange-O013. All three quotes matched; character lengths were 93, 92 and 46. Initial fetch_content readable output was corroborated with the complete article DOM."
+  },
+  "disposition": "excluded",
+  "reason": "The actual page contains two prose paragraphs and talk links: a short results/talk teaser, not a technical method account. It reports a lab recreation and an unknown-environment constraint, then explicitly sends readers to slides and video for details. These summary statements do not establish two reusable investigation decisions, a tool-purpose account or a validation procedure. No workflow or library handoff is inferred from the exploit-composition summary.",
+  "canonical_source": null,
+  "evidence": [
+    {
+      "id": "E1",
+      "locator": "Article body, opening paragraph, second sentence (lab-recreation statement).",
+      "quote": "I believe it’s worth sharing, so I reproduced this in my lab environment and made this topic.",
+      "verified": true
+    },
+    {
+      "id": "E2",
+      "locator": "Article body, second prose paragraph after the slides/video list, second sentence (environment limitation).",
+      "quote": "Since the target environment is unknown to us, the hard part is to build all things blindly.",
+      "verified": true
+    },
+    {
+      "id": "E3",
+      "locator": "Article body, second prose paragraph after the slides/video list, final sentence (classification evidence).",
+      "quote": "Please check the slides and video for details!",
+      "verified": true
+    }
+  ],
+  "workflow": [],
+  "tools": [],
+  "handoffs": [],
+  "limitations": [
+    "The lab recreation and real-world outcome are author reports, not independently reproduced or verified vulnerability evidence.",
+    "The author explicitly describes an unknown target environment; the page supplies no build, configuration or mitigation inventory for assessing transferability.",
+    "The page gives no investigation trace, named analysis-tool purpose, negative control, reliability denominator, failed probe or remediation validation.",
+    "Technical detail is delegated to slides and video. Those assets, the embedded demonstration and the linked prior-case article were not inspected; their contents cannot support this extraction.",
+    "This is a historical 2021 summary, not evidence of current-release exposure or of a reusable cross-layer analysis procedure."
+  ],
+  "candidate_additions": [],
+  "related_article_urls": [
+    "https://www.evonide.com/how-we-broke-php-hacked-pornhub-and-earned-20000-dollar/"
+  ],
+  "excluded_material": [
+    "Target-specific exploit-composition result, secret-recovery and execution claims, vulnerable-call details and product/advisory identifiers.",
+    "Slides, videos and embedded exploit demonstration.",
+    "Event, product and personal promotional links.",
+    "External prior-case walkthrough; only its observed article URL is retained."
+  ],
+  "worker_notes": "Full article body and title were checked in the dedicated orange-O013 browser session. Empty workflow, tool, handoff and candidate lists are intentional: the brief teaser does not support operational additions. No linked walkthrough, attachment or target was accessed."
+}

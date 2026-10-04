@@ -1,0 +1,39 @@
+{
+  "schema_version": 1,
+  "source_id": "O082",
+  "url": "https://blog.orange.tw/posts/2010-05-blog-post_28/",
+  "observed_title": "動物園行",
+  "retrieved_at": "2026-09-30T10:26:50.876Z",
+  "retrieval": {
+    "tool": "agent_browser",
+    "response_id": null,
+    "browser_session": "orange-O082",
+    "final_url": "https://blog.orange.tw/posts/2010-05-blog-post_28/",
+    "outcome": "read",
+    "quote_verification": "Exact DOM text-inclusion check: document.body.innerText.includes(E1.quote) returned true; the matching paragraph's full innerText equaled the quote. The complete article element was also read."
+  },
+  "disposition": "excluded",
+  "reason": "The actual article is a personal zoo-outing recollection celebrating the author's first time as a group leader. It contains no technical investigation, reusable research decisions, named-tool purposes, or validation evidence; no method contribution is supported.",
+  "canonical_source": null,
+  "evidence": [
+    {
+      "id": "E1",
+      "locator": "Article 動物園行, paragraph beginning 第一次當隊輔的紀念, between 你們超棒 :) and 大嘴鳥～.",
+      "quote": "第一次當隊輔的紀念",
+      "verified": true
+    }
+  ],
+  "workflow": [],
+  "tools": [],
+  "handoffs": [],
+  "limitations": [
+    "The retained quote supports personal-post classification only, not an operational method or tool attribution.",
+    "The outing and participant experiences remain author recollections; they were not independently verified."
+  ],
+  "candidate_additions": [],
+  "related_article_urls": [],
+  "excluded_material": [
+    "Personal outing narrative, participant praise, and informal celebratory remarks."
+  ],
+  "worker_notes": "Readable fetch reported that the page appeared JavaScript-rendered. The dedicated orange-O082 browser session successfully exposed the complete article text; its title, final URL, and classification quote were checked directly in the DOM. No relevant technical skill additions are proposed."
+}

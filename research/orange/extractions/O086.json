@@ -1,0 +1,42 @@
+{
+  "schema_version": 1,
+  "source_id": "O086",
+  "url": "https://blog.orange.tw/posts/2010-02-forensic-challenge-2010/",
+  "observed_title": "Forensic Challenge 2010",
+  "retrieved_at": "2026-09-30T10:29:58.509Z",
+  "retrieval": {
+    "tool": "agent_browser",
+    "response_id": null,
+    "session": "orange-O086",
+    "final_url": "https://blog.orange.tw/posts/2010-02-forensic-challenge-2010/",
+    "outcome": "read",
+    "quote_verification": "After inspecting the readable fetch, checked the original article's full DOM text and headings in the named browser session. E1 exactly matches a paragraph's textContent and is included verbatim in document.body.innerText."
+  },
+  "disposition": "excluded",
+  "reason": "This is a short resource-pointer post: two forensic-challenge headings, links to the challenge pages and a sample solution, and a closing invitation to explore older material. The article itself contains no investigation decisions, named-tool purposes, validation, failures, or reusable method observations. The closing paragraph supports classification only.",
+  "canonical_source": null,
+  "evidence": [
+    {
+      "id": "E1",
+      "locator": "Closing paragraph after the link under 'Challenge 2 of the Forensic Challenge 2010 - browsers under attack'",
+      "quote": "裡面還有一些歷年的東西可以玩欸~",
+      "verified": true
+    }
+  ],
+  "workflow": [],
+  "tools": [],
+  "handoffs": [],
+  "limitations": [
+    "Challenge-topic headings identify resources, not an author investigation or a documented method.",
+    "The external challenge pages and linked sample-solution PDF were not retrieved; their contents cannot supply evidence for this article.",
+    "No author findings or validation are described on the assigned page, and no challenge or target was independently tested."
+  ],
+  "candidate_additions": [],
+  "related_article_urls": [],
+  "excluded_material": [
+    "Challenge-resource links and the sample-solution pointer",
+    "Invitation to explore older challenges",
+    "Site navigation and footer"
+  ],
+  "worker_notes": "The readable fetch omitted the article title and exposed no response ID; the named browser session confirmed the actual title and complete short body. E1 is a permitted classification quote, not method evidence. No tools or handoffs were inferred from the challenge labels."
+}

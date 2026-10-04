@@ -1,0 +1,43 @@
+{
+  "schema_version": 1,
+  "source_id": "O081",
+  "url": "https://blog.orange.tw/posts/2010-05-ramexe/",
+  "observed_title": "ram.exe",
+  "retrieved_at": "2026-09-30T10:26:35.301Z",
+  "retrieval": {
+    "tool": "agent_browser",
+    "response_id": null,
+    "browser_session": "orange-O081",
+    "final_url": "https://blog.orange.tw/posts/2010-05-ramexe/",
+    "outcome": "read",
+    "quote_verification": "Exact inclusion check against document.querySelector('article').innerText: E1 occurred once and measured 34 Unicode characters."
+  },
+  "disposition": "excluded",
+  "reason": "A short download/personal notice about a desktop sheep toy encountered while playing a cryptography challenge. The article names the toy and mentions an extra-feature mode, but supplies no investigation decisions, reusable method, or validation evidence. It does not support two method observations or any operational additions.",
+  "canonical_source": null,
+  "evidence": [
+    {
+      "id": "E1",
+      "locator": "Under heading 'ram.exe': first prose paragraph after the download block",
+      "quote": "禮拜天玩Defcon Crypto300 的產物，還滿可愛的小羊XD",
+      "verified": true
+    }
+  ],
+  "workflow": [],
+  "tools": [],
+  "handoffs": [],
+  "limitations": [
+    "The post is a brief historical personal/download notice, not a research report or challenge-solving method.",
+    "The Debugger mode mention describes an application feature; it does not establish author use of an analysis tool or a diagnostic workflow.",
+    "No hypothesis, failure analysis, runtime trace, validation method, or repair is described.",
+    "No attachment was downloaded, inspected, or executed. Application behavior remains an author report, not independent verification."
+  ],
+  "candidate_additions": [],
+  "related_article_urls": [],
+  "excluded_material": [
+    "External download URL and executable attachment",
+    "Application activation shortcut",
+    "Challenge-specific details beyond the minimal classification quotation"
+  ],
+  "worker_notes": "fetch_content readable failed with 'Page appears to be JavaScript-rendered (content loads dynamically)'. The complete article text was then read from the DOM in the explicit orange-O081 browser session; the classification quotation was checked directly against that original text."
+}

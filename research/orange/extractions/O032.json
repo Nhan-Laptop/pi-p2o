@@ -1,0 +1,46 @@
+{
+  "schema_version": 1,
+  "source_id": "O032",
+  "url": "https://blog.orange.tw/posts/2016-07-hitcon-2016-slides-bug-bounty-hunter/",
+  "observed_title": "HITCON 2016 投影片 - Bug Bounty 獎金獵人甘苦談 那些年我回報過的漏洞",
+  "retrieved_at": "2026-09-30T09:38:45Z",
+  "retrieval": {
+    "tool": "fetch_content readable; agent_browser DOM inspection",
+    "response_id": "browser session orange-O032",
+    "final_url": "https://blog.orange.tw/posts/2016-07-hitcon-2016-slides-bug-bounty-hunter/",
+    "outcome": "read",
+    "quote_verification": "agent_browser --session orange-O032 eval: exact String.includes check against the opening article paragraph's textContent returned true for E1 (73 characters)."
+  },
+  "disposition": "excluded",
+  "reason": "The actual article is a short conference-talk/slides announcement: it introduces the talk, lists case-study topics, and embeds/links a presentation. Its prose does not describe investigation decisions, tool purposes, validation, failures, or fixes. Excluded under the slides-only rule; no reusable workflow or handoff is inferred from the case-study list.",
+  "canonical_source": null,
+  "evidence": [
+    {
+      "id": "E1",
+      "locator": "Opening article paragraph beneath the title and publication date",
+      "quote": "This is my talk about being a Bug Bounty Hunter at HITCON Community 2016.",
+      "verified": true
+    }
+  ],
+  "workflow": [],
+  "tools": [],
+  "handoffs": [],
+  "limitations": [
+    "Classification covers the article's prose and presentation pointers; the embedded slides and linked PDF were not reviewed.",
+    "Linked case-study articles are separate sources and were not followed.",
+    "Listed findings remain author-reported talk topics, not independently reproduced vulnerability evidence."
+  ],
+  "candidate_additions": [],
+  "related_article_urls": [
+    "http://blog.orange.tw/2016/04/bug-bounty-how-i-hacked-facebook-and-found-someones-backdoor-script.html",
+    "http://blog.orange.tw/2016/04/bug-bounty-uber-ubercom-remote-code_7.html",
+    "http://blog.orange.tw/2013/11/yahoo-bug-bounty-part-2-loginyahoocom.html"
+  ],
+  "excluded_material": [
+    "Conference promotion and presentation links",
+    "Target-specific case-study outcome list",
+    "Embedded slide content and linked PDF",
+    "Separate linked vulnerability narratives"
+  ],
+  "worker_notes": "Readable retrieval and article DOM inspection agreed on the short announcement. DOM inspection supplied the exact title and verified the classification quote. The three related-article URLs are observed pointers only; no attachments, targets, or other articles were accessed."
+}

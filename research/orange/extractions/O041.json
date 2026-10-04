@@ -1,0 +1,110 @@
+{
+  "schema_version": 1,
+  "source_id": "O041",
+  "url": "https://blog.orange.tw/posts/2015-05-0ctf-final-0cms/",
+  "observed_title": "講個秘訣 - 0ctf Final 0cms",
+  "retrieved_at": "2026-09-30T09:51:34.559Z",
+  "retrieval": {
+    "tool": "fetch_content (readable/raw) and agent_browser (DOM verification)",
+    "session": "orange-O041",
+    "artifact": "/home/nhanlaptop/.pi/agent/sessions/--home-nhanlaptop-project-pi-p2o--/.pi-agent-browser-artifacts/01a0f1b7-7d8e-7209-a37c-35f2b0f968b3/pi-agent-browser-snapshot-70cb09d7a9dbf5b6.json",
+    "final_url": "https://blog.orange.tw/posts/2015-05-0ctf-final-0cms/",
+    "outcome": "read",
+    "quote_verification": "Exact DOM textContent.includes checks against article .e-content > p in session orange-O041. E1 matched direct paragraph 11; E2 and E3 matched direct paragraph 13. Each matched exactly one paragraph; lengths were 39, 38 and 50 Unicode characters. The title was read from article h1.posttitle."
+  },
+  "disposition": "included",
+  "reason": "Although this is a challenge report, its prose supplies distinct reusable decisions beyond the solution: reassess residual behavior after an enabling capability is blocked, let invocation constraints direct dependency-source review, and reconsider the impact objective after an unproductive review. Only these method observations are retained; the challenge solution and disruptive demonstration are omitted.",
+  "canonical_source": null,
+  "evidence": [
+    {
+      "id": "E1",
+      "locator": "Unheaded article body, direct paragraph 11: discussion of a blocked enabling capability and the behavior-selection feature left unchanged; middle clause.",
+      "quote": "不過任意引用的部分似乎許多隊伍認為是正常功能以及不搭配上傳無法利用所以都沒修補",
+      "verified": true
+    },
+    {
+      "id": "E2",
+      "locator": "Unheaded article body, direct paragraph 13: source-review decision following the constraint paragraph; opening clause.",
+      "quote": "看到這些限制又要可以對網站有實質影響所以最後決定看一下 Webpy 的原始碼",
+      "verified": true
+    },
+    {
+      "id": "E3",
+      "locator": "Unheaded article body, direct paragraph 13: initial review found nothing and the author reconsidered availability impact; closing clause.",
+      "quote": "花了一陣子後沒發現什麼，不過在 Attack & Defense 比賽中 DoS 的洞也很有利用價值",
+      "verified": true
+    }
+  ],
+  "workflow": [
+    {
+      "decision": "When a familiar enabling capability is removed, reassess whether the remaining behavior-selection interface still exceeds its intended contract. Blocking the familiar use case is not evidence that the interface is harmless.",
+      "evidence": ["E1"]
+    },
+    {
+      "decision": "Let the remaining selection and invocation constraints choose the next source-review slice. Inspect already-present dependency behavior rather than assuming the actor must introduce new code.",
+      "evidence": ["E1", "E2"]
+    },
+    {
+      "decision": "Carry an unproductive first review as a limited negative observation. Ask whether another relevant security objective, such as availability, is affected rather than turning an unsuccessful search into a safety conclusion.",
+      "evidence": ["E3"]
+    }
+  ],
+  "tools": [],
+  "handoffs": [
+    {
+      "producer": "deserialization-and-dispatch-auditing",
+      "consumer": "exploitability-assessment",
+      "when": "An enabling capability has reportedly been blocked, but the remaining behavior-selection contract and its bounded consequences are unresolved.",
+      "packet": [
+        "scope_and_artifact_provenance",
+        "actor_and_selector_control",
+        "intended_behavior_contract",
+        "invocation_constraints_and_dependency_reachability",
+        "blocked_and_remaining_capabilities",
+        "negative_findings_and_missing_preconditions",
+        "evidence_classification_and_coverage",
+        "impact_question_and_safe_observation_stop_condition"
+      ],
+      "acceptance_gate": "Distinguish a blocked capability from unresolved dispatch reachability. Candidate effects must satisfy the recorded selection and binding constraints or remain explicitly hypothetical. Separate source-author reports from local evidence, and require a harmless observation plan rather than a disruptive demonstration.",
+      "classification": "derived",
+      "evidence": ["E1", "E2", "E3"]
+    }
+  ],
+  "limitations": [
+    "This is a brief historical competition account. Framework/runtime revisions, per-team configurations and final repair artifacts are not specified, so current applicability is unknown.",
+    "The author describes selection and invocation restrictions, but gives no systematic source-review coverage or completeness argument. The initial unsuccessful review does not rule out other behavior.",
+    "The availability consequence remains an author report, not an independently reproduced finding. No independent traces, negative controls, attempt denominator, recovery measurements or collateral-effect assessment were collected.",
+    "The account of blocking an enabling feature is not accompanied by patch diffs or deployed-artifact verification. The remediation candidate is a derived invariant-level lesson, not an assessed fix."
+  ],
+  "candidate_additions": [
+    {
+      "owner": "remediation",
+      "kind": "heuristic",
+      "guidance": "Disabling an enabling capability does not establish repair of the behavior-selection contract. Review the remaining permitted behavior and distinguish exposure mitigation from invariant repair.",
+      "evidence": ["E1"]
+    },
+    {
+      "owner": "source-code-auditing",
+      "kind": "workflow",
+      "guidance": "Use known selector, receiver-shape and argument-binding constraints to prioritize review of already-installed dependency behavior. Preserve unanswered reachability assumptions; a matching source construct alone is not observed impact.",
+      "evidence": ["E1", "E2"]
+    },
+    {
+      "owner": "exploitability-assessment",
+      "kind": "failure",
+      "guidance": "Bound unsuccessful review results to the inspected slice and objective. Consider availability independently where relevant, without upgrading a hypothesis or source-author report into a demonstrated result.",
+      "evidence": ["E3"]
+    }
+  ],
+  "related_article_urls": [
+    "http://drops.wooyun.org/papers/5040"
+  ],
+  "excluded_material": [
+    "Competition scoring, team anecdotes and scoreboard image",
+    "Embedded source listing and exploit-related attachment links",
+    "Challenge-specific selector syntax, object names, paths and argument constants",
+    "File-introduction and execution solution sequence",
+    "Disruptive request example, target address and service-control operation"
+  ],
+  "worker_notes": "Readable/raw fetch results did not expose a response ID, so the named-session DOM receipt is recorded instead. No named analytical tool was described; the framework is an inspected artifact and the final request client is exploit-only material. No raw attachment link, related article or target request was followed. README.md and HANDOFFS.md were read at repository root."
+}

@@ -1,0 +1,80 @@
+{
+  "observed_at": "2026-09-30T12:12:19.916Z",
+  "tool": "Native installed Pi loadSkills / formatSkillsForPrompt",
+  "includeDefaults": false,
+  "skill_count": 17,
+  "unique_names": true,
+  "diagnostics": [],
+  "prompt_entries": 17,
+  "skills": [
+    {
+      "name": "attack-surface-mapping",
+      "filePath": "/home/nhanlaptop/project/pi-p2o/skills/attack-surface-mapping/SKILL.md"
+    },
+    {
+      "name": "authorization-auditing",
+      "filePath": "/home/nhanlaptop/project/pi-p2o/skills/authorization-auditing/SKILL.md"
+    },
+    {
+      "name": "binary-auditing",
+      "filePath": "/home/nhanlaptop/project/pi-p2o/skills/binary-auditing/SKILL.md"
+    },
+    {
+      "name": "compiler-invariant-auditing",
+      "filePath": "/home/nhanlaptop/project/pi-p2o/skills/compiler-invariant-auditing/SKILL.md"
+    },
+    {
+      "name": "data-flow-analysis",
+      "filePath": "/home/nhanlaptop/project/pi-p2o/skills/data-flow-analysis/SKILL.md"
+    },
+    {
+      "name": "deserialization-and-dispatch-auditing",
+      "filePath": "/home/nhanlaptop/project/pi-p2o/skills/deserialization-and-dispatch-auditing/SKILL.md"
+    },
+    {
+      "name": "dynamic-analysis",
+      "filePath": "/home/nhanlaptop/project/pi-p2o/skills/dynamic-analysis/SKILL.md"
+    },
+    {
+      "name": "exploitability-assessment",
+      "filePath": "/home/nhanlaptop/project/pi-p2o/skills/exploitability-assessment/SKILL.md"
+    },
+    {
+      "name": "fuzzing",
+      "filePath": "/home/nhanlaptop/project/pi-p2o/skills/fuzzing/SKILL.md"
+    },
+    {
+      "name": "memory-safety-auditing",
+      "filePath": "/home/nhanlaptop/project/pi-p2o/skills/memory-safety-auditing/SKILL.md"
+    },
+    {
+      "name": "parser-differential-auditing",
+      "filePath": "/home/nhanlaptop/project/pi-p2o/skills/parser-differential-auditing/SKILL.md"
+    },
+    {
+      "name": "patch-diff-analysis",
+      "filePath": "/home/nhanlaptop/project/pi-p2o/skills/patch-diff-analysis/SKILL.md"
+    },
+    {
+      "name": "race-condition-auditing",
+      "filePath": "/home/nhanlaptop/project/pi-p2o/skills/race-condition-auditing/SKILL.md"
+    },
+    {
+      "name": "remediation",
+      "filePath": "/home/nhanlaptop/project/pi-p2o/skills/remediation/SKILL.md"
+    },
+    {
+      "name": "sandbox-boundary-analysis",
+      "filePath": "/home/nhanlaptop/project/pi-p2o/skills/sandbox-boundary-analysis/SKILL.md"
+    },
+    {
+      "name": "source-code-auditing",
+      "filePath": "/home/nhanlaptop/project/pi-p2o/skills/source-code-auditing/SKILL.md"
+    },
+    {
+      "name": "state-and-lifetime-auditing",
+      "filePath": "/home/nhanlaptop/project/pi-p2o/skills/state-and-lifetime-auditing/SKILL.md"
+    }
+  ],
+  "scope": "Local discovery/frontmatter/prompt integration; not optional analysis tool integration, target execution or source-author result replication."
+}

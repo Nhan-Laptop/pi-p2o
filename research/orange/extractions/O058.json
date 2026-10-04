@@ -1,0 +1,44 @@
+{
+  "schema_version": 1,
+  "source_id": "O058",
+  "url": "https://blog.orange.tw/posts/2013-07-hitcon-2013-wargame-pwn3d-500/",
+  "observed_title": "HITCON 2013 Wargame - Pwn3d 500 詳解",
+  "retrieved_at": "2026-09-30T10:07:45.230Z",
+  "retrieval": {
+    "tool": "agent_browser",
+    "response_id": "browser session orange-O058",
+    "final_url": "https://blog.orange.tw/posts/2013-07-hitcon-2013-wargame-pwn3d-500/",
+    "outcome": "read",
+    "quote_verification": "After a readable fetch, inspected the original article DOM in session orange-O058. An exact paragraph-text inclusion check for E1 returned true; the article heading and all three body paragraphs were also observed."
+  },
+  "disposition": "excluded",
+  "reason": "The actual article contains three short framing paragraphs describing a historical signed-cookie serialization scenario, followed by a source-code link and an embedded challenge solution. E1 explicitly introduces that solution. It provides no distinct investigation decision process, tool-purpose account, failed hypothesis, validation controls, or repair discussion from which two reusable method observations could be supported. No workflow or handoff is inferred from the challenge mechanism alone.",
+  "canonical_source": null,
+  "evidence": [
+    {
+      "id": "E1",
+      "locator": "Third and final body paragraph, immediately before the solution iframe",
+      "quote": "Django Apps 的 source code 在 Guthub 上，相對的 solution 如下",
+      "verified": true
+    }
+  ],
+  "workflow": [],
+  "tools": [],
+  "handoffs": [],
+  "limitations": [
+    "The article body is a short challenge introduction rather than a documented investigation; the embedded solution was not opened or analyzed.",
+    "The stated execution possibility depends on signing-key exposure and the described historical Django serialization configuration; neither prerequisites nor impact were independently verified.",
+    "The linked challenge repository and earlier presentation were not retrieved. The page does not document negative controls, failed assumptions, deployment coverage, or remediation.",
+    "Pickle is named as a serialization mechanism, not as an investigative tool with a reported purpose; no author-attributed tool or library handoff is supported."
+  ],
+  "candidate_additions": [],
+  "related_article_urls": [
+    "http://orange-tw.blogspot.tw/2013/05/pycon2013-slide-django.html"
+  ],
+  "excluded_material": [
+    "Embedded challenge solution and linked challenge source code, not followed",
+    "Challenge-specific signing and serialization details as operational instructions",
+    "Payloads, exploit code, and exploit sequences from external solution material, not retrieved"
+  ],
+  "worker_notes": "Readable retrieval exposed three paragraphs and an iframe marker; named-session DOM inspection confirmed the actual title, body, related presentation link, and iframe presence. E1 is classification-only evidence. No related article, exploit attachment, or target was accessed."
+}

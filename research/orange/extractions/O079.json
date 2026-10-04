@@ -1,0 +1,49 @@
+{
+  "schema_version": 1,
+  "source_id": "O079",
+  "url": "https://blog.orange.tw/posts/2010-12-blog-post/",
+  "observed_title": "第五屆全國大專院校資安技能金盾獎",
+  "retrieved_at": "2026-09-30T10:26:17.759Z",
+  "retrieval": {
+    "tool": "fetch_content (readable), agent_browser",
+    "response_id": "browser session orange-O079",
+    "final_url": "https://blog.orange.tw/posts/2010-12-blog-post/",
+    "outcome": "read",
+    "quote_verification": "Exact substring checks against the article element's innerText using agent_browser eval in session orange-O079; inspected the matching list items under 心得：. Both checks returned true."
+  },
+  "disposition": "excluded",
+  "reason": "Personal competition recap with broad teamwork/time-management reflections and brief challenge-answer notes. It does not describe a distinct reusable investigation, tool-selection, or validation process; the event/personal-post exclusion applies rather than forcing method contributions.",
+  "canonical_source": null,
+  "evidence": [
+    {
+      "id": "E1",
+      "locator": "心得： — list item comparing team competition with solo practice, teamwork/time-management clause",
+      "quote": "團隊合作以及時間的掌控戰術很重要",
+      "verified": true
+    },
+    {
+      "id": "E2",
+      "locator": "心得： — list item criticizing the artificial input/output design of web challenges",
+      "quote": "稍嫌不滿意的是Web相關題目的漏洞是人工設計好判斷input & output 並不是真的有漏洞存在",
+      "verified": true
+    }
+  ],
+  "workflow": [],
+  "tools": [],
+  "handoffs": [],
+  "limitations": [
+    "The teamwork/time-allocation remark provides no concrete prioritization rule, evidence packet, tool purpose, or validation gate.",
+    "The author reports that web challenges simulated vulnerable input/output behavior rather than containing real vulnerabilities; that competition-specific assessment was not independently verified.",
+    "Challenge hints and reported teammate contributions do not establish a general research workflow. No challenge reproduction, target testing, or independent verification of reported results was performed."
+  ],
+  "candidate_additions": [],
+  "related_article_urls": [],
+  "excluded_material": [
+    "Challenge-specific answers, hints, and solve fragments",
+    "Challenge counts, scoring, and prize thresholds",
+    "Personal anecdotes, teammate identities, celebrations, and learning autobiography",
+    "Promotional merchandise links and illustrative image",
+    "External presentation reference and unrelated homepage link"
+  ],
+  "worker_notes": "The complete assigned article was read through readable fetch and the isolated browser session. No named research tool with a stated investigative purpose appears. No linked presentation, image, or other article was followed. Required README.md and HANDOFFS.md were located and read at repository root."
+}

@@ -1,0 +1,172 @@
+{
+  "schema_version": 1,
+  "classification": "Artifact/source-receipt snapshot; library checks do not establish source-author vulnerabilities, target safety, optional-tool integration or performance",
+  "observed_at": "2026-09-30T12:30:47.072311+00:00",
+  "command_receipt": "checks.txt",
+  "commands": [
+    {
+      "command": "python3 -m py_compile scripts/*.py tests/*.py",
+      "exit_code": 0
+    },
+    {
+      "command": "python3 scripts/render_research.py --check",
+      "exit_code": 0
+    },
+    {
+      "command": "python3 scripts/orange_research.py --check",
+      "exit_code": 0
+    },
+    {
+      "command": "python3 scripts/orange_research.py --validate",
+      "exit_code": 0
+    },
+    {
+      "command": "python3 scripts/validate_library.py",
+      "exit_code": 0
+    },
+    {
+      "command": "python3 -m unittest discover -s tests -v",
+      "exit_code": 0
+    },
+    {
+      "command": "node scripts/orchestrate_orange.mjs --check-runtime",
+      "exit_code": 0
+    }
+  ],
+  "statistics": {
+    "index_entries": 96,
+    "article_workers": 96,
+    "read_articles": 96,
+    "retained_method_sources": 29,
+    "context_sources": 20,
+    "excluded_sources": 46,
+    "duplicate_sources": 1,
+    "unavailable_sources": 0,
+    "updated_skill_owners": 14
+  },
+  "adopted_or_merged_candidates": 51,
+  "wording_matches": {
+    "exact": 273,
+    "whitespace-normalized": 3
+  },
+  "verified_quote_count": 276,
+  "baseline_full_read_count": 21,
+  "unique_worker_session_count": 96,
+  "unique_worker_pane_count": 96,
+  "worker_packets_preserved_before_pane_close": true,
+  "actual_worker_provider": "openai-codex-account-3",
+  "actual_worker_model": "gpt-6.1-sol",
+  "actual_worker_thinking": "max",
+  "native_skills": {
+    "observed_at": "2026-09-30T12:12:19.916Z",
+    "tool": "Native installed Pi loadSkills / formatSkillsForPrompt",
+    "includeDefaults": false,
+    "skill_count": 17,
+    "unique_names": true,
+    "diagnostics": [],
+    "prompt_entries": 17,
+    "skills": [
+      {
+        "name": "attack-surface-mapping",
+        "filePath": "/home/nhanlaptop/project/pi-p2o/skills/attack-surface-mapping/SKILL.md"
+      },
+      {
+        "name": "authorization-auditing",
+        "filePath": "/home/nhanlaptop/project/pi-p2o/skills/authorization-auditing/SKILL.md"
+      },
+      {
+        "name": "binary-auditing",
+        "filePath": "/home/nhanlaptop/project/pi-p2o/skills/binary-auditing/SKILL.md"
+      },
+      {
+        "name": "compiler-invariant-auditing",
+        "filePath": "/home/nhanlaptop/project/pi-p2o/skills/compiler-invariant-auditing/SKILL.md"
+      },
+      {
+        "name": "data-flow-analysis",
+        "filePath": "/home/nhanlaptop/project/pi-p2o/skills/data-flow-analysis/SKILL.md"
+      },
+      {
+        "name": "deserialization-and-dispatch-auditing",
+        "filePath": "/home/nhanlaptop/project/pi-p2o/skills/deserialization-and-dispatch-auditing/SKILL.md"
+      },
+      {
+        "name": "dynamic-analysis",
+        "filePath": "/home/nhanlaptop/project/pi-p2o/skills/dynamic-analysis/SKILL.md"
+      },
+      {
+        "name": "exploitability-assessment",
+        "filePath": "/home/nhanlaptop/project/pi-p2o/skills/exploitability-assessment/SKILL.md"
+      },
+      {
+        "name": "fuzzing",
+        "filePath": "/home/nhanlaptop/project/pi-p2o/skills/fuzzing/SKILL.md"
+      },
+      {
+        "name": "memory-safety-auditing",
+        "filePath": "/home/nhanlaptop/project/pi-p2o/skills/memory-safety-auditing/SKILL.md"
+      },
+      {
+        "name": "parser-differential-auditing",
+        "filePath": "/home/nhanlaptop/project/pi-p2o/skills/parser-differential-auditing/SKILL.md"
+      },
+      {
+        "name": "patch-diff-analysis",
+        "filePath": "/home/nhanlaptop/project/pi-p2o/skills/patch-diff-analysis/SKILL.md"
+      },
+      {
+        "name": "race-condition-auditing",
+        "filePath": "/home/nhanlaptop/project/pi-p2o/skills/race-condition-auditing/SKILL.md"
+      },
+      {
+        "name": "remediation",
+        "filePath": "/home/nhanlaptop/project/pi-p2o/skills/remediation/SKILL.md"
+      },
+      {
+        "name": "sandbox-boundary-analysis",
+        "filePath": "/home/nhanlaptop/project/pi-p2o/skills/sandbox-boundary-analysis/SKILL.md"
+      },
+      {
+        "name": "source-code-auditing",
+        "filePath": "/home/nhanlaptop/project/pi-p2o/skills/source-code-auditing/SKILL.md"
+      },
+      {
+        "name": "state-and-lifetime-auditing",
+        "filePath": "/home/nhanlaptop/project/pi-p2o/skills/state-and-lifetime-auditing/SKILL.md"
+      }
+    ],
+    "scope": "Local discovery/frontmatter/prompt integration; not optional analysis tool integration, target execution or source-author result replication."
+  },
+  "word_counts": {
+    "skills/attack-surface-mapping/SKILL.md": 748,
+    "skills/attack-surface-mapping/references/intermediary-trust.md": 570,
+    "skills/authorization-auditing/SKILL.md": 726,
+    "skills/binary-auditing/SKILL.md": 823,
+    "skills/binary-auditing/references/format-routing.md": 542,
+    "skills/binary-auditing/references/native-slices.md": 636,
+    "skills/compiler-invariant-auditing/SKILL.md": 623,
+    "skills/data-flow-analysis/SKILL.md": 844,
+    "skills/data-flow-analysis/references/reduced-models.md": 552,
+    "skills/deserialization-and-dispatch-auditing/SKILL.md": 704,
+    "skills/deserialization-and-dispatch-auditing/references/framework-routing.md": 587,
+    "skills/dynamic-analysis/SKILL.md": 875,
+    "skills/dynamic-analysis/references/observation-signals.md": 594,
+    "skills/dynamic-analysis/references/runtime-probes.md": 621,
+    "skills/exploitability-assessment/SKILL.md": 697,
+    "skills/fuzzing/SKILL.md": 668,
+    "skills/memory-safety-auditing/SKILL.md": 777,
+    "skills/parser-differential-auditing/SKILL.md": 749,
+    "skills/parser-differential-auditing/references/cache-selection.md": 619,
+    "skills/parser-differential-auditing/references/semantic-boundaries.md": 617,
+    "skills/patch-diff-analysis/SKILL.md": 733,
+    "skills/race-condition-auditing/SKILL.md": 646,
+    "skills/remediation/SKILL.md": 792,
+    "skills/sandbox-boundary-analysis/SKILL.md": 687,
+    "skills/source-code-auditing/SKILL.md": 738,
+    "skills/source-code-auditing/references/interaction-audits.md": 641,
+    "skills/state-and-lifetime-auditing/SKILL.md": 686
+  },
+  "receipt_reconciliation": "Aggregate exactly equals the three independent browser batches after substituting the two separately verified linked publications",
+  "unit_and_mutation_tests": 82,
+  "checks_recorded_at": "2026-09-30T12:30:55.076659+00:00"
+}

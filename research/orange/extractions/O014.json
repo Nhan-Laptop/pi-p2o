@@ -1,0 +1,159 @@
+{
+  "schema_version": 1,
+  "source_id": "O014",
+  "url": "https://blog.orange.tw/posts/2020-09-how-i-hacked-facebook-again-mobileiron-mdm-rce/",
+  "observed_title": "How I Hacked Facebook Again! Unauthenticated RCE on MobileIron MDM",
+  "retrieved_at": "2026-09-30T09:15:48.194Z",
+  "retrieval": {
+    "tool": "fetch_content readable; agent_browser",
+    "response_id": "agent_browser session orange-O014",
+    "final_url": "https://blog.orange.tw/posts/2020-09-how-i-hacked-facebook-again-mobileiron-mdm-rce/",
+    "outcome": "read",
+    "quote_verification": "Case-sensitive inclusion checks against the original article DOM innerText and individual paragraph innerText in session orange-O014 returned true for all five quotes. Preceding headings were observed directly. Quote lengths were 76, 176, 74, 110 and 147 characters. The displayed revision comparison was separately checked for the named diff tool without retaining its arguments or source code."
+  },
+  "disposition": "included",
+  "reason": "The article supports reusable decisions about implementation visibility, intermediary versus consumer enforcement, environment-dependent capability limits, and revision-specific negative evidence. These reinforce existing library contracts; the reported exploit and target operations are not retained or independently reproduced.",
+  "canonical_source": null,
+  "evidence": [
+    {
+      "id": "E1",
+      "locator": "Where to Start; opening paragraph, final sentence about the discovered analysis package's indexing.",
+      "quote": "The file is just sitting on a listable WebRoot and indexed by Google Search.",
+      "verified": true
+    },
+    {
+      "id": "E2",
+      "locator": "Finding Vulnerabilities; paragraph beginning 'MobileIron relied on Apache Rewrite Rules', immediately after the displayed access rules.",
+      "quote": "MobileIron relied on Apache Rewrite Rules to block all the access to Web Service. It’s in the front of a reverse-proxy architecture, and the backend is a Java-based web server.",
+      "verified": true
+    },
+    {
+      "id": "E3",
+      "locator": "Attacking Facebook; paragraph beginning 'Everything is ready', final sentence describing the unavailable outbound prerequisite.",
+      "quote": "But now, we can’t even make an outbound connection, not to mention others.",
+      "verified": true
+    },
+    {
+      "id": "E4",
+      "locator": "Attacking Facebook; paragraph beginning 'A question quickly came up in my mind', immediately after the cited paper's failure observation.",
+      "quote": "Although it failed with exceptions, there must have been something special so that the author write this down.",
+      "verified": true
+    },
+    {
+      "id": "E5",
+      "locator": "Attacking Facebook; paragraph beginning 'Our target is running with a very old Groovy', preceding the displayed source-revision comparison using diff.",
+      "quote": "Our target is running with a very old Groovy, so we are guessing that the readResolve() constrain might not have been applied to the code base yet!",
+      "verified": true
+    }
+  ],
+  "workflow": [
+    {
+      "decision": "When external behavior leaves implementation questions unresolved, look for legitimately accessible offline analysis artifacts. Record provenance and age before using them to refine hypotheses; representativeness of the deployed build remains a separate question.",
+      "evidence": ["E1"]
+    },
+    {
+      "decision": "When access appears blocked, identify the layer enforcing the restriction and the downstream consumer. Map their interpretation boundaries before treating an intermediary's denial as proof of consumer-side enforcement; semantic agreement remains an unresolved question.",
+      "evidence": ["E2"]
+    },
+    {
+      "decision": "Before inferring stronger impact, enumerate the environmental capabilities each hypothesis requires. If deployment policy denies a required connection, mark that hypothesis unsupported under that configuration and return to the underlying finding rather than promoting it to a stronger result.",
+      "evidence": ["E3"]
+    },
+    {
+      "decision": "Treat a published exception as scoped negative evidence: ask which guard caused rejection and whether that guard exists in the relevant dependency revision. Compare the narrow implementation slice across revisions; static guard presence or absence does not replace benign runtime validation of applicability.",
+      "evidence": ["E4", "E5"]
+    }
+  ],
+  "tools": [
+    {
+      "tool": "diff",
+      "purpose": "Compare a narrow implementation slice across dependency revisions to investigate whether a rejection guard is present.",
+      "when": "A published failure may depend on mitigation added after the installed revision; use comparable, authorized source artifacts before changing an applicability claim.",
+      "attribution": "explicit",
+      "evidence": ["E4", "E5"]
+    }
+  ],
+  "handoffs": [
+    {
+      "producer": "attack-surface-mapping",
+      "consumer": "parser-differential-auditing",
+      "when": "An upstream access gate and downstream consumer interpret the same input independently, leaving enforcement equivalence unresolved.",
+      "packet": [
+        "authorization, artifact provenance, revisions and configuration",
+        "actor, interface, gate and downstream-handler map",
+        "representation and interpretation ledger for each layer",
+        "one discrepancy hypothesis with contrasting predictions",
+        "evidence origin, failed assumptions and unresolved coverage",
+        "benign baseline, negative controls, bounded next observation and stop condition"
+      ],
+      "acceptance_gate": "Require identified policy-checking and consuming layers, explicit runtime identities, and a falsifiable semantic-agreement question. An upstream denial alone cannot establish downstream enforcement; inferred reachability must remain labeled until safely corroborated.",
+      "classification": "derived",
+      "evidence": ["E2"]
+    },
+    {
+      "producer": "exploitability-assessment",
+      "consumer": "patch-diff-analysis",
+      "when": "A capability hypothesis loses an environmental prerequisite and a published rejection may be specific to a different dependency revision.",
+      "packet": [
+        "authorization, artifact identities, dependency revisions and configuration",
+        "root-cause hypothesis and bounded capability contract",
+        "failed prerequisite, negative evidence and its provenance",
+        "published rejection behavior and suspected guard",
+        "comparable revision slices and one guard-applicability question",
+        "static versus observed classification, benign validation predictions and stop condition"
+      ],
+      "acceptance_gate": "Require the failed prerequisite, provenance-tagged comparable revisions, and an explicit guard-applicability question. Missing static guard code is only an applicability hypothesis, not proof of reachable behavior or stronger impact.",
+      "classification": "derived",
+      "evidence": ["E3", "E4", "E5"]
+    }
+  ],
+  "limitations": [
+    "The author used an older developer testing package, not an established equivalent of every deployed build. The article reports its later removal; public indexing is neither authorization nor artifact-integrity evidence.",
+    "Runtime/library compatibility and outbound-policy constraints are author reports tied to historical configurations. They were not measured here and cannot be generalized to current releases or other deployments.",
+    "Failure of a connection-dependent hypothesis does not establish repair of the underlying behavior or exhaustive non-exploitability. This extraction retains the constraint, not an alternate exploit route.",
+    "The source-revision comparison is narrow and does not establish all callers, package contents or runtime reachability. Static absence of a guard needs separate safe applicability evidence.",
+    "The article reports vendor fixes and uses static-file modification metadata as a coarse patch-status indicator. No shipped package or installed repair was verified here; advisory publication and header metadata are not deployment proof.",
+    "All vulnerability, execution and bounty outcomes remain source-author reports. This work only read the article and verified quotations; it did not obtain research packages, run exploit code or test any target."
+  ],
+  "candidate_additions": [
+    {
+      "owner": "attack-surface-mapping",
+      "kind": "heuristic",
+      "guidance": "Separate implementation visibility from deployed applicability: authorized offline artifacts may reduce uncertainty, but record acquisition provenance, age and build-equivalence gaps before using their behavior to rank reachable surfaces.",
+      "evidence": ["E1"]
+    },
+    {
+      "owner": "parser-differential-auditing",
+      "kind": "workflow",
+      "guidance": "For layered request handling, attach each policy check to the representation it actually sees and map the downstream consumer separately. Investigate semantic agreement with benign observations rather than assuming an intermediary's denial proves equivalent consumer enforcement.",
+      "evidence": ["E2"]
+    },
+    {
+      "owner": "exploitability-assessment",
+      "kind": "failure",
+      "guidance": "Make environment capabilities explicit prerequisites of impact hypotheses. A denied required connection invalidates that hypothesis under the recorded policy, not the underlying finding; carry both the failed prerequisite and residual uncertainty forward.",
+      "evidence": ["E3"]
+    },
+    {
+      "owner": "patch-diff-analysis",
+      "kind": "heuristic",
+      "guidance": "Do not inherit a published exception as universal negative evidence. Identify its rejection guard, compare only the relevant implementation across comparable dependency revisions, and keep static applicability inference separate from benign runtime confirmation.",
+      "evidence": ["E4", "E5"]
+    }
+  ],
+  "related_article_urls": [
+    "https://blog.orange.tw/2018/08/how-i-chained-4-bugs-features-into-rce-on-amazon.html",
+    "https://blog.orange.tw/2019/02/abusing-meta-programming-for-unauthenticated-rce.html",
+    "https://devco.re/blog/2016/04/21/how-I-hacked-facebook-and-found-someones-backdoor-script-eng-ver/",
+    "https://www.veracode.com/blog/research/exploiting-jndi-injections-java"
+  ],
+  "excluded_material": [
+    "Internet-wide enumeration, corporate target selection and target-specific testing",
+    "Listener constants, endpoint strings, access-rule samples and normalization payloads",
+    "Deserializer triggers, executable source snippets, gadget identities and exploit composition",
+    "Remote naming, class-loading and alternate execution-route instructions",
+    "Exploit attachments, shell demonstrations, target screenshots and reproduction sequences",
+    "Disclosure chronology and bounty outcomes as operational guidance"
+  ],
+  "worker_notes": "The readable fetch exposed no response identifier, so retrieval provenance names the private browser session used for original-DOM verification. Google Search is named as the package's indexer, not established as a directly invoked author tool; it was therefore not retained as tool usage. Related article pointers were recorded without visiting them."
+}

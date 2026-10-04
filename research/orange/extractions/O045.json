@@ -1,0 +1,128 @@
+{
+  "schema_version": 1,
+  "source_id": "O045",
+  "url": "https://blog.orange.tw/posts/2014-10-hack-in-box-2014-ctf-writeup-keygenme/",
+  "observed_title": "Hack in the Box 2014 CTF Writeup - KeygenMe with RSA",
+  "retrieved_at": "2026-09-30T09:53:58.183Z",
+  "retrieval": {
+    "tool": "fetch_content (readable), then agent_browser (read-only DOM inspection)",
+    "response_id": null,
+    "browser_session": "orange-O045",
+    "final_url": "https://blog.orange.tw/posts/2014-10-hack-in-box-2014-ctf-writeup-keygenme/",
+    "outcome": "read",
+    "quote_verification": "In browser session orange-O045, each quote passed exact textContent.includes(quote) against its identified article p element, without normalization. Observed lengths were 29, 30, 58, 37 and 38 characters. The article h1 and final URL were also checked."
+  },
+  "disposition": "included",
+  "reason": "The CTF writeup contains three reusable reconstruction decisions distinct from its solution: locating a relevant input consumer despite recognition noise, identifying library routine roles from reference material, and resolving a statically missing value through runtime observation. Retain only those methods; omit the cryptographic solving sequence and challenge answers.",
+  "canonical_source": null,
+  "evidence": [
+    {
+      "id": "E1",
+      "locator": "Article paragraph 14 in DOM article p order: input-API and library-identification paragraph, opening clause.",
+      "quote": "使用 GetDlgItemText 可以把關鍵地方定位出來",
+      "verified": true
+    },
+    {
+      "id": "E2",
+      "locator": "Article paragraph 14 in DOM article p order: identification of the numerical-library dependency.",
+      "quote": "仔細觀察發現程式有使用 MIRACL 的 C++ 大數函示庫",
+      "verified": true
+    },
+    {
+      "id": "E3",
+      "locator": "Article paragraph 14 in DOM article p order: clause following the linked reference article, describing recovered routine roles.",
+      "quote": "文章中將各個函數作用大致識別出來，如 subtract, divide, powmod 等，如此一來分析輕鬆了許多！",
+      "verified": true
+    },
+    {
+      "id": "E4",
+      "locator": "Article paragraph 16 in DOM article p order: parenthetical contrasting static analysis with dynamic tracing; quote ends before the recovered value.",
+      "quote": "IDA 靜態分析中雖然沒有看到對於 e 的賦值，不過可以透過動態追蹤會發現",
+      "verified": true
+    },
+    {
+      "id": "E5",
+      "locator": "Article paragraph 13 in DOM article p order: unidentified functions and anomalous entry-point observation, immediately before the input-API paragraph.",
+      "quote": "一堆臭臭長長的 Function 沒有辨識出來，OEP 怪怪的不過不影響分析",
+      "verified": true
+    }
+  ],
+  "workflow": [
+    {
+      "decision": "When function recognition and startup metadata are noisy, narrow the investigation using a known input-consumption call as the anchor for relevant logic.",
+      "evidence": ["E1", "E5"]
+    },
+    {
+      "decision": "When opaque helper routines obscure a computation, identify the dependency and consult reference descriptions to recover approximate operation roles before interpreting the surrounding logic.",
+      "evidence": ["E2", "E3"]
+    },
+    {
+      "decision": "When static reconstruction leaves a necessary assignment unresolved, change evidence source to runtime tracing of that missing value rather than treating the incomplete static view as the complete model.",
+      "evidence": ["E4"]
+    }
+  ],
+  "tools": [
+    {
+      "tool": "IDA",
+      "purpose": "Static inspection of the relevant executable logic, with unresolved assignments explicitly recognized as gaps in the reconstruction.",
+      "when": "When the computation must be understood from a binary and static analysis may leave individual facts unresolved.",
+      "attribution": "explicit",
+      "evidence": ["E4"]
+    }
+  ],
+  "handoffs": [
+    {
+      "producer": "binary-auditing",
+      "consumer": "dynamic-analysis",
+      "when": "A necessary value or assignment remains unresolved in an otherwise relevant static slice.",
+      "packet": [
+        "Authorization, artifact identity, runtime and isolation scope",
+        "Input-consumer anchor and minimal call/data-flow slice",
+        "Required unresolved value and static-analysis coverage limits",
+        "One falsifiable question with contrasting expected observations",
+        "Proposed observation point, benign baseline and allowed instrumentation changes",
+        "Evidence classification, author-report provenance and remaining uncertainty"
+      ],
+      "acceptance_gate": "Accept only a question that a bounded, authorized observation can distinguish at the relevant consumer under a known-good baseline. Missing static output is uncertainty, not proof that runtime initialization is absent. Return the observation with artifact identity and instrumentation limits.",
+      "classification": "derived",
+      "evidence": ["E1", "E4"]
+    }
+  ],
+  "limitations": [
+    "This is a historical CTF verifier writeup, not evidence of a production vulnerability, current-release exposure or remediation.",
+    "The author reports incomplete function recognition and an unusual entry point but does not establish their causes or the completeness of the recovered program model.",
+    "Library recognition and approximate operation labeling are author reports. The article does not document independent call-site or signature validation of those labels.",
+    "The runtime-tracing tool, observation point, controls, repetition and observer effects are not specified. IDA is explicitly named for static analysis; it must not be assumed to be the runtime tracer.",
+    "No executable, scripts or solution artifacts were acquired or run; embedded screenshots were not reconstructed into challenge logic. Author-reported results were not independently reproduced."
+  ],
+  "candidate_additions": [
+    {
+      "owner": "binary-auditing",
+      "kind": "heuristic",
+      "guidance": "When function recognition or entry-point interpretation is noisy, choose an identifiable input consumer as a local analysis anchor before expanding reconstruction scope.",
+      "evidence": ["E1", "E5"]
+    },
+    {
+      "owner": "binary-auditing",
+      "kind": "heuristic",
+      "guidance": "Use reference-described operation roles from a recognizable dependency to label opaque routines in the relevant slice. Preserve the labels as approximate reconstruction rather than proof of the entire computation.",
+      "evidence": ["E2", "E3"]
+    },
+    {
+      "owner": "dynamic-analysis",
+      "kind": "handoff",
+      "guidance": "Convert a required value missing from static reconstruction into a narrow runtime-observation question. Carry the static gap and relevant consumer forward; do not silently substitute an assumed default or claim the value is never initialized.",
+      "evidence": ["E4"]
+    }
+  ],
+  "related_article_urls": [
+    "http://bbs.pediy.com/showthread.php?t=35599"
+  ],
+  "excluded_material": [
+    "Competition rankings, scoring details and automated attack/flag-submission commentary",
+    "Challenge answers, registration codes, cryptographic constants, ciphertexts and plaintexts",
+    "Factorization, private-key recovery, decryption and inverse-transformation solution sequence",
+    "Executable commands, solution scripts and embedded challenge screenshots"
+  ],
+  "worker_notes": "fetch_content exposed no response ID; browser-session provenance and exact DOM checks are recorded instead. The input API is an anchor and the numerical library is a target dependency, not additional analyst tools. The linked reference is an observed pointer only and was not crawled. Candidates corroborate existing skill themes rather than asserting novelty; handoff gates are library synthesis, not author-used architecture."
+}

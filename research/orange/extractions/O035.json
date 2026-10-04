@@ -1,0 +1,129 @@
+{
+  "schema_version": 1,
+  "source_id": "O035",
+  "url": "https://blog.orange.tw/posts/2016-01-hitcon-ctf-2015-quals-final/",
+  "observed_title": "HITCON CTF 2015 Quals & Final 心得備份",
+  "retrieved_at": "2026-09-30T09:43:11.666Z",
+  "retrieval": {
+    "tool": "fetch_content readable; agent_browser original-DOM inspection",
+    "response_id": "agent_browser session orange-O035; DOM text artifact /home/nhanlaptop/.pi/agent/sessions/--home-nhanlaptop-project-pi-p2o--/.pi-agent-browser-artifacts/01a0f1af-99f3-76c9-9bb9-073be0554357/pi-agent-browser-output-01730bed2ed6f8f6.json",
+    "final_url": "https://blog.orange.tw/posts/2016-01-hitcon-ctf-2015-quals-final/",
+    "outcome": "read",
+    "quote_verification": "Read-only DOM eval in orange-O035 checked exact, unnormalized substring inclusion in the specified article paragraphs and article.innerText. E1–E4 all matched; lengths were 72, 104, 48 and 24 characters."
+  },
+  "disposition": "included",
+  "reason": "Mostly a challenge-design retrospective containing solutions, but it supplies two distinct reusable investigation decisions: diagnosing a tool's fresh-state assumption against worker reuse/history, and narrowing a representation incompatibility to dependency source. Only those methods, the reported upstream-change outcome and their limitations are retained.",
+  "canonical_source": null,
+  "evidence": [
+    {
+      "id": "E1",
+      "locator": "3. 300 Giraffe’s Coffee (16 隊解) — paragraph beginning 有些人會使用現成的工具來解; article paragraph 25",
+      "quote": "有些人會使用現成的工具來解，但會發現失敗，無法準確的預測 PRNG 是因為當 PHP 在 Apache 下時是使用 prefork 的方式去執行",
+      "verified": true
+    },
+    {
+      "id": "E2",
+      "locator": "3. 300 Giraffe’s Coffee (16 隊解) — same tool-failure paragraph, explanation of state history and worker selection; article paragraph 25",
+      "quote": "因此無法確定當前的 process PRNG 中 STATE 的狀態是否為第一次，以及每次連線上的 process 也不一定相同所以 STATE 狀態更無法預測 (現成工具只會算 seed 後的第一次來比對)",
+      "verified": true
+    },
+    {
+      "id": "E3",
+      "locator": "4. 400 lalala (2 隊解) — paragraph beginning 然後本題使用, final source-inspection clause; article paragraph 35",
+      "quote": "後來去研究了一下 libcurl 的原始碼，發現是因為寫得有點問題才不能使用 NULL Byte",
+      "verified": true
+    },
+    {
+      "id": "E4",
+      "locator": "4. 400 lalala (2 隊解) — standalone paragraph reporting upstream acceptance, before the commit link; article paragraph 36",
+      "quote": "所以送了一個 commit 過去還被接受了…XD",
+      "verified": true
+    }
+  ],
+  "workflow": [
+    {
+      "decision": "When a state-dependent tool fails, compare its assumed initialization and progression with worker selection and prior request history. A reused or different worker can invalidate a fresh-run model; state provenance remains the next unresolved question.",
+      "evidence": ["E1", "E2"]
+    },
+    {
+      "decision": "When an intermediary cannot represent data required by its consumer, narrow the investigation to that component's input-handling implementation rather than assuming the consumer's format is impossible.",
+      "evidence": ["E3"]
+    },
+    {
+      "decision": "Carry an identified dependency defect into an upstream contribution, but keep reported source-change acceptance distinct from the unresolved question of corrected shipped behavior.",
+      "evidence": ["E3", "E4"]
+    }
+  ],
+  "tools": [],
+  "handoffs": [
+    {
+      "producer": "state-and-lifetime-auditing",
+      "consumer": "dynamic-analysis",
+      "when": "A state model assumes fresh initialization while the serving architecture may reuse or select different stateful workers.",
+      "packet": [
+        "Artifact, runtime and serving configuration",
+        "State owner and worker-selection evidence",
+        "Initialization, reset and advancement assumptions",
+        "Known and unknown prior operation history",
+        "Contrasting fresh-state and reused-state predictions",
+        "Benign observation points, controls and stopping condition"
+      ],
+      "acceptance_gate": "The observation must distinguish worker selection from state progression. Unknown worker/history identity remains explicit; transport continuity alone is not accepted as independent proof of state identity.",
+      "classification": "derived",
+      "evidence": ["E1", "E2"]
+    },
+    {
+      "producer": "source-code-auditing",
+      "consumer": "remediation",
+      "when": "Source review attributes a representation limitation to a dependency implementation and an upstream change is reported accepted.",
+      "packet": [
+        "Dependency revision and focused implementation slice",
+        "Consumer-required representation and intermediary constraint",
+        "Proposed preservation invariant",
+        "Author-reported diagnosis and upstream acceptance",
+        "Missing release/build identity and benign regression evidence"
+      ],
+      "acceptance_gate": "Preserve diagnosis and acceptance as source-author reports until corroborated. Repair closure requires the actual shipped artifact and controls demonstrating representation preservation, not source acceptance alone.",
+      "classification": "derived",
+      "evidence": ["E3", "E4"]
+    }
+  ],
+  "limitations": [
+    "This is a historical competition designer's account, not an independently reproduced vulnerability investigation; all results remain author reports.",
+    "The proposed state-handling adjustment is not accompanied by worker/state traces, repetition counts or model-validation data. Connection-to-worker association is configuration-specific, not a universal guarantee.",
+    "The dependency diagnosis lacks an implementation slice and benign compatibility controls in the article. Its linked commit was not retrieved or independently reviewed.",
+    "Upstream acceptance is reported, while the later claim about newer-library behavior is tentative. No exact shipped artifact, deployment identity or current-release verification is supplied."
+  ],
+  "candidate_additions": [
+    {
+      "owner": "dynamic-analysis",
+      "kind": "failure",
+      "guidance": "Before trusting a state-dependent tool, check whether its fresh-instance assumption matches worker reuse, worker selection and prior operation history. Record state initialization and progression separately from request or connection identity.",
+      "evidence": ["E1", "E2"]
+    },
+    {
+      "owner": "source-code-auditing",
+      "kind": "heuristic",
+      "guidance": "When an intermediary excludes a representation required by its consumer, inspect the responsible dependency's handling before revising the consumer model. Preserve the incompatible representation contract and the unverified source-to-behavior link.",
+      "evidence": ["E3"]
+    },
+    {
+      "owner": "remediation",
+      "kind": "validation",
+      "guidance": "Treat an accepted upstream change as a source-change report, not deployed repair. Require an identified shipped artifact and benign representation-preservation controls before assigning repaired status.",
+      "evidence": ["E3", "E4"]
+    }
+  ],
+  "related_article_urls": [
+    "http://5alt.me/posts/2015/12/HITCON%20CTF%202015%20Final%20Webful%20Writeup.html"
+  ],
+  "excluded_material": [
+    "Challenge solution sequences and command lines",
+    "Network locations, protocol payloads and endpoint strings",
+    "Binary addresses, offsets, structure layouts and exploit code",
+    "Security-policy bypasses, shell execution and memory-corruption chains",
+    "Challenge scores, solve counts, team anecdotes and personal commentary",
+    "Unretrieved source/exploit attachments and linked third-party walkthroughs"
+  ],
+  "worker_notes": "Readable fetch supplied the body; title, URL and exact quotes were confirmed against the original DOM. The named transfer library is an audited subject, not an attributed research tool; prediction tools are unnamed and commands elsewhere are solve mechanics. Earlier syndication and the related writeup were not opened or compared; no canonical duplicate ID was established."
+}

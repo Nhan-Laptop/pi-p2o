@@ -1,0 +1,71 @@
+{
+  "schema_version": 1,
+  "source_id": "O003",
+  "url": "https://blog.orange.tw/posts/2025-07-a-web-dog-guide-to-osee/",
+  "observed_title": "從 Web 狗的視角看 OSEE — 從 0.1 開始的 Advanced Windows Exploitation 考試",
+  "retrieved_at": "2026-09-30T09:00:58.074Z",
+  "retrieval": {
+    "tool": "fetch_content readable; agent_browser named-session DOM inspection",
+    "response_id": null,
+    "browser_session": "orange-O003",
+    "final_url": "https://blog.orange.tw/posts/2025-07-a-web-dog-guide-to-osee/",
+    "outcome": "read",
+    "quote_verification": "In browser session orange-O003, exact JavaScript textContent.includes checks against the article and containing paragraphs returned true for E1-E3. Preceding headings and paragraph text established the locators; quote lengths were 55, 23 and 61 characters. No whitespace normalization was used for quote matching."
+  },
+  "disposition": "context",
+  "reason": "A preparation/exam retrospective with useful self-assessment, environment-confirmation and practice-gap reflections, rather than a documented vulnerability-research investigation. It gives no bounded observation design, trace, negative control or validated analytical tool-purpose contract sufficient for operational additions. Retain these reflections as context without promoting exam outcomes into method validation.",
+  "canonical_source": null,
+  "evidence": [
+    {
+      "id": "E1",
+      "locator": "Introduction before 前情提要; paragraph beginning 不過說實話，準備這個考試真的壓力很大",
+      "quote": "因此這篇文章將從個人的角度出發、評估自己所擁有的技能、衡量是否符合 OSEE 考試所需的最低要求，並加以準備。",
+      "verified": true
+    },
+    {
+      "id": "E2",
+      "locator": "考試; paragraph beginning 回到家洗洗睡起來趕快看下一題",
+      "quote": "但小丑如我，連一開始的確認環境都花了好多時間。",
+      "verified": true
+    },
+    {
+      "id": "E3",
+      "locator": "後續; paragraph beginning 其實整個流程看下來我也知道",
+      "quote": "其實整個流程看下來我也知道，最欠缺的就是「實作」—— 這導致雖然能搞定所有的關鍵流程，反而我都卡在一些莫名其妙的小細節上。",
+      "verified": true
+    }
+  ],
+  "workflow": [
+    {
+      "decision": "Contextual reflection: compare required competencies with actual experience, separating conceptual familiarity from practiced execution. The reported difficulty with small details leaves an execution-readiness question, not evidence that understanding the overall process is sufficient.",
+      "evidence": ["E1", "E3"]
+    },
+    {
+      "decision": "Contextual failure observation: environment confirmation can remain unresolved even when the main problem appears simple. Do not infer readiness from perceived problem difficulty; this retrospective does not specify the observation needed to resolve that prerequisite.",
+      "evidence": ["E2"]
+    }
+  ],
+  "tools": [],
+  "handoffs": [],
+  "limitations": [
+    "The reported exam completion and difficulties are author reports only; no local reproduction, target testing or exploit execution was performed.",
+    "Environment-confirmation delays are described without the relevant configuration, mistaken assumption, diagnostic method or resolving observation.",
+    "Preparation decisions reflect personal prior experience, severe time pressure and fatigue in an exam setting; they do not establish general research coverage or a recommended order of investigation.",
+    "Named tools occur as historical familiarity or background commentary, not a sufficiently described analytical tool-purpose/when contract; no author tool usage is inferred from their names.",
+    "The post provides no invariant repair, shipped-fix validation or current-release evidence. No derived library handoff or candidate addition is proposed from these contextual reflections."
+  ],
+  "candidate_additions": [],
+  "related_article_urls": [
+    "https://devco.re/blog/2025/05/22/exp-401-osee-five-days-to-master-a-decade-of-knowledge/",
+    "https://devco.re/blog/2025/07/12/finally-stepping-into-the-world-of-osee-after-five-years/",
+    "https://devco.re/blog/2025/07/11/exp-401-course-and-second-exam-thoughts/"
+  ],
+  "excluded_material": [
+    "Personal dialogue, scheduling, sleep anecdotes, certificate image and course promotion/recommendation",
+    "Exam task descriptions, solution-stage narrative and offensive technique catalog",
+    "Shellcode, primitive-building, mitigation-bypass and weaponization details, including target-specific addresses and sizes",
+    "Linked exploit examples, attachments and walkthroughs; none were retrieved or executed",
+    "Assumed tool usage, invented probes and unsupported multi-agent or skill-handoff claims"
+  ],
+  "worker_notes": "The complete assigned article was read in fetch_content readable mode. That result exposed no response ID, so the named browser session records observed title, URL and exact DOM quotation verification. Root README.md and HANDOFFS.md, BASELINE.md, dynamic-analysis and exploitability-assessment were reviewed. Related links are observed pointers only; no other article was read."
+}

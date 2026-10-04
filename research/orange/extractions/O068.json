@@ -1,0 +1,53 @@
+{
+  "schema_version": 1,
+  "source_id": "O068",
+  "url": "https://blog.orange.tw/posts/2012-07-hacks-in-taiwan-2012-potent-pwnables-3/",
+  "observed_title": "Hacks in Taiwan 2012 Potent Pwnables 3 出題詳解",
+  "retrieved_at": "2026-09-30T10:16:10.799Z",
+  "retrieval": {
+    "tool": "fetch_content readable; agent_browser",
+    "response_id": "browser session orange-O068",
+    "final_url": "https://blog.orange.tw/posts/2012-07-hacks-in-taiwan-2012-potent-pwnables-3/",
+    "outcome": "read",
+    "quote_verification": "Read the actual article with fetch_content, then inspected its title, paragraphs and related link in browser session orange-O068. Read-only DOM evaluation confirmed each quote was an exact substring of an original paragraph's textContent; E1 is 34 characters and E2 is 28 characters."
+  },
+  "disposition": "excluded",
+  "reason": "This is a challenge-author solution explanation: modified-game preparation, recognition of a known embedded component, and use of an existing exploit. The brief detection-service anecdote and compatibility workaround do not establish two distinct reusable investigation methods. E1 identifies the challenge framing; E2 explicitly leaves the crash explanation unconfirmed. No solve sequence is converted into operational guidance.",
+  "canonical_source": null,
+  "evidence": [
+    {
+      "id": "E1",
+      "locator": "Opening prose paragraph immediately after the game image",
+      "quote": "照慣例今年還是有個經典遊戲題，皮卡丘打排球相信是許多人童年的回憶XD",
+      "verified": true
+    },
+    {
+      "id": "E2",
+      "locator": "Compatibility/crash paragraph after the patch discussion and before component-identification indicators",
+      "quote": "猜測是 Heap Allocation 的問題(未證實)",
+      "verified": true
+    }
+  ],
+  "workflow": [],
+  "tools": [],
+  "handoffs": [],
+  "limitations": [
+    "The article explicitly labels its heap-allocation explanation as unconfirmed; reported success after a compatibility change does not establish the crash's root cause.",
+    "The described behavior depends on historical software, a modified challenge binary and a relaxed mitigation configuration; it provides no current-release or unmodified-artifact validation.",
+    "The detection-service anecdote supplies neither a controlled comparison nor evidence of general detector coverage.",
+    "Compatibility and challenge-success results remain author reports. No binary, attachment, exploit or target was executed or independently tested."
+  ],
+  "candidate_additions": [],
+  "related_article_urls": [
+    "http://orange-tw.blogspot.tw/2011/04/downloadexec-shellcode-fix-for-windows.html"
+  ],
+  "excluded_material": [
+    "Challenge-specific binary modifications, embedded payload and patching instructions",
+    "Anti-analysis and detection-evasion details",
+    "Component-identification constants and mitigation-relaxation instructions",
+    "Exploit-module reference, attack sequence and challenge-key recovery",
+    "Downloadable artifacts and exploit-output screenshots",
+    "Product/version-specific compatibility workaround"
+  ],
+  "worker_notes": "The readable fetch did not expose a response ID, so provenance and exact-quote verification use the named browser session. The related article is only an observed pointer and was not followed. No method, tool or derived handoff additions are retained for this excluded solution post."
+}

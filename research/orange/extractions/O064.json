@@ -1,0 +1,39 @@
+{
+  "schema_version": 1,
+  "source_id": "O064",
+  "url": "https://blog.orange.tw/posts/2013-01-101/",
+  "observed_title": "101 年全國大專院校資安技能金盾獎",
+  "retrieved_at": "2026-09-30T10:13:17Z",
+  "retrieval": {
+    "tool": "agent_browser",
+    "response_id": "session:orange-O064",
+    "final_url": "https://blog.orange.tw/posts/2013-01-101/",
+    "outcome": "read",
+    "quote_verification": "Read the article body through get text and get html; a read-only DOM evaluation confirmed E1 by exact text inclusion and exact trimmed first-paragraph equality (21 characters)."
+  },
+  "disposition": "excluded",
+  "reason": "The actual article consists of three short paragraphs: a delayed personal record, a reflection on laziness, and a team championship announcement. It contains no investigation decisions, technical methods, named-tool purposes, validation, failures, or remediation from which reusable research guidance could be extracted.",
+  "canonical_source": null,
+  "evidence": [
+    {
+      "id": "E1",
+      "locator": "Article body, first paragraph; no section headings",
+      "quote": "Lag 了半個月很久這篇算是紀錄一下 xD",
+      "verified": true
+    }
+  ],
+  "workflow": [],
+  "tools": [],
+  "handoffs": [],
+  "limitations": [
+    "The observed article body has only three paragraphs, with no images, links, or technical sections; the competition title does not establish a security-research method.",
+    "The championship statement remains an author report, not an independently verified result; no challenge procedures or technical evidence are described."
+  ],
+  "candidate_additions": [],
+  "related_article_urls": [],
+  "excluded_material": [
+    "Personal reflection and posting-delay commentary",
+    "Competition team and championship announcement"
+  ],
+  "worker_notes": "fetch_content readable mode reported that the page appeared JavaScript-rendered. The explicit orange-O064 browser session successfully read the actual article. E1 is solely a classification quote, not method evidence; no workflow, tools, handoffs, or additions were invented."
+}

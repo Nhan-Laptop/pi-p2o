@@ -1,0 +1,144 @@
+{
+  "schema_version": 1,
+  "source_id": "O008",
+  "url": "https://blog.orange.tw/posts/2022-10-proxyrelay-a-new-attack-surface-on-ms-exchange-part-4/",
+  "observed_title": "A New Attack Surface on MS Exchange Part 4 - ProxyRelay!",
+  "retrieved_at": "2026-09-30T09:07:16.769Z",
+  "retrieval": {
+    "tool": "fetch_content (readable); agent_browser (named session)",
+    "response_id": "browser session orange-O008",
+    "final_url": "https://blog.orange.tw/posts/2022-10-proxyrelay-a-new-attack-surface-on-ms-exchange-part-4/",
+    "outcome": "read",
+    "quote_verification": "Exact String.includes checks against the original article DOM body.textContent and each containing paragraph/list-item textContent in orange-O008. All five quotes matched; the preceding observed heading was checked for each. Quotes were not normalized or reconstructed from a summary."
+  },
+  "disposition": "included",
+  "reason": "The article supports reusable observations about inherited peer authority, context-dependent mitigations that preserve legitimate operations, and the distinction between shipped code and active hardening. These refine existing skills. Relay demonstrations, tool-driven attack procedures, and stronger unimplemented impact claims are not operational contributions.",
+  "canonical_source": null,
+  "evidence": [
+    {
+      "id": "E1",
+      "locator": "Idea — paragraph describing installation-time group membership and inherited rights, final clause.",
+      "quote": "all objects in this Active Directory group have that Token-Serialization right by default.",
+      "verified": true
+    },
+    {
+      "id": "E2",
+      "locator": "Vulnerabilities — opening paragraph, sentence contrasting an attack surface with a single bug.",
+      "quote": "Since it’s an entire attack surface instead of a single bug, this idea could be applied to different contexts, causing different vulnerabilities.",
+      "verified": true
+    },
+    {
+      "id": "E3",
+      "locator": "Round 2 - Relay to Exchange BackEnd — opening paragraph, explanation of why the earlier mitigation cannot simply transfer to the next consumer.",
+      "quote": "mitigating Backend would be more challenging because it’s a regular operation",
+      "verified": true
+    },
+    {
+      "id": "E4",
+      "locator": "Patching DCOM — opening paragraph, compatibility/default-hardening sentence.",
+      "quote": "due to compatibility, the hardening on the server-side is disabled by default.",
+      "verified": true
+    },
+    {
+      "id": "E5",
+      "locator": "Timeline — Apr 27, 2022 entry, vendor reply distinguishing the code change from its activation.",
+      "quote": "the CU contain the code change, but it needs to be activated manually or with a script.",
+      "verified": true
+    }
+  ],
+  "workflow": [
+    {
+      "decision": "When a gate has been strengthened, ask whether the same trust assumption survives at other consumers. The author connects installation-derived authority with several service contexts. The reusable review is to map peer identities, inherited permissions, and consumer-specific gates, keeping each context's reachability and authority unresolved until supported rather than declaring the whole surface closed.",
+      "evidence": ["E1", "E2"]
+    },
+    {
+      "decision": "Before transferring a mitigation between consumers, compare the legitimate identity classes each requires. An identity-based prohibition suitable for one entrance can reject normal peer activity elsewhere. Preserve accepted-operation requirements and identify the consumer's actual trust invariant instead of treating the first local check as a universal repair.",
+      "evidence": ["E3"]
+    },
+    {
+      "decision": "When a release claims a repair, separate code availability from enabled enforcement. Compatibility can leave hardening inactive, and the author reports a vendor explanation that activation remained necessary after shipping the change. Carry package state, activation state, rollout phase, and remaining uncertainty separately; a release announcement alone cannot close the issue.",
+      "evidence": ["E4", "E5"]
+    }
+  ],
+  "tools": [],
+  "handoffs": [
+    {
+      "producer": "attack-surface-mapping",
+      "consumer": "authorization-auditing",
+      "when": "A distributed interface map suggests inherited peer authority, but the relationship between identity establishment and consumer permissions is unresolved.",
+      "packet": [
+        "authorization scope, artifact revision, and configuration",
+        "one falsifiable identity or permission question",
+        "interface, actor, gate, and consumer map",
+        "default membership and effective-rights provenance",
+        "legitimate peer operations and expected policy",
+        "evidence references and fact versus author-report classification",
+        "unknown routes, failed assumptions, and next bounded review"
+      ],
+      "acceptance_gate": "At least one prioritized interface has gate and authority evidence or is explicitly labeled inferred. Nominal membership must not substitute for effective permission evidence, and the consumer must distinguish normal peer authority from a policy violation.",
+      "classification": "derived",
+      "evidence": ["E1", "E2", "E3"]
+    },
+    {
+      "producer": "authorization-auditing",
+      "consumer": "remediation",
+      "when": "A proposed identity restriction is context-specific or hardening depends on activation and compatibility decisions.",
+      "packet": [
+        "scope, artifact revision, and enforcement question",
+        "target-independent trust invariant and authoritative consumer",
+        "consumer and legitimate-identity matrix",
+        "equivalent contexts and proposed accepted/rejected regression properties",
+        "shipped-code, activation, and rollout evidence",
+        "compatibility tradeoffs and impact limits",
+        "evidence classification, residual unknowns, and bounded verification request"
+      ],
+      "acceptance_gate": "The proposed repair preserves documented legitimate operations and covers the consumer-specific trust requirement. Shipped code and enabled enforcement have separate evidence; absent activation evidence remains unverified rather than repaired.",
+      "classification": "derived",
+      "evidence": ["E3", "E4", "E5"]
+    }
+  ],
+  "limitations": [
+    "Findings and vendor communications are author reports concerning historical Exchange, Windows, and directory configurations; no vulnerability or fix was independently reproduced.",
+    "The reported surface depends on peer topology, inherited service-account privileges, authentication support, reachable consumers, and enabled configuration. It does not establish equivalent exposure in every deployment or current release.",
+    "The author explicitly states that the stronger backend management-shell exploit chain was not implemented. That proposal must not be promoted to demonstrated code execution.",
+    "The DCOM section retains pre-enforcement prose followed by a postscript reporting a later default change. Its deployment-status statements belong to historical rollout phases, not a verified present-day status.",
+    "The backend patch's broad effectiveness is the author's claim. The retained evidence establishes a deployment-state lesson, not independently confirmed coverage of all variants.",
+    "No exploit code, attachments, demonstrations, third-party slide evidence, or targets were executed or tested. Only the assigned public article was inspected; related URLs were recorded without following them."
+  ],
+  "candidate_additions": [
+    {
+      "owner": "attack-surface-mapping",
+      "kind": "heuristic",
+      "guidance": "For distributed services, include installation-derived membership and effective peer authority in each interface row. Review the same trust assumption across consumers; a corrected entrance gate does not establish policy coverage elsewhere.",
+      "evidence": ["E1", "E2"]
+    },
+    {
+      "owner": "authorization-auditing",
+      "kind": "remediation",
+      "guidance": "Before reusing an identity-based restriction at another consumer, document which identity classes are legitimate there. Require a consumer-specific trust invariant and accepted-operation controls rather than applying a blanket identity prohibition.",
+      "evidence": ["E3"]
+    },
+    {
+      "owner": "remediation",
+      "kind": "validation",
+      "guidance": "Maintain separate evidence for a shipped repair and active enforcement. Record compatibility-driven defaults, activation requirements, and rollout phase; classify missing activation evidence as unverified even when the package contains the change.",
+      "evidence": ["E4", "E5"]
+    }
+  ],
+  "related_article_urls": [
+    "https://blog.orange.tw/2021/08/proxylogon-a-new-attack-surface-on-ms-exchange-part-1.html",
+    "https://blog.orange.tw/2021/08/proxyoracle-a-new-attack-surface-on-ms-exchange-part-2.html",
+    "https://blog.orange.tw/2021/08/proxyshell-a-new-attack-surface-on-ms-exchange-part-3.html",
+    "https://doublepulsar.com/proxynotshell-the-story-of-the-claimed-zero-day-in-microsoft-exchange-5c63d963a9e9",
+    "https://swarm.ptsecurity.com/attacking-ms-exchange-web-interfaces/",
+    "https://blog.compass-security.com/2020/05/relaying-ntlm-authentication-over-rpc/"
+  ],
+  "excluded_material": [
+    "Coercion and authentication-relay procedures, commands, tool customizations, and execution order",
+    "Service endpoints, ports, identity headers, registry activation paths, and payload material",
+    "Mailbox-access demonstrations, command-execution methods, and proposed exploit composition",
+    "Exploit attachments and third-party reproduction hints",
+    "Promotional, conference, award, and autobiographical passages"
+  ],
+  "worker_notes": "Named utilities occur in attack implementation or third-party reproduction discussion; no generic author-attributed tool-purpose contribution survived filtering, so tools is intentionally empty. Handoffs are library-derived contracts, not claims about the author's workflow architecture. Exact quotes retain source wording only; operational guidance is product-independent. The readable fetch supplied no visible response ID, so retrieval provenance uses the named browser session."
+}

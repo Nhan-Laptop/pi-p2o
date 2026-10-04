@@ -1,0 +1,124 @@
+{
+  "schema_version": 1,
+  "source_id": "O034",
+  "url": "https://blog.orange.tw/posts/2016-04-bug-bounty-uber-ubercom-remote-code_7/",
+  "observed_title": "Uber 遠端代碼執行- Uber.com Remote Code Execution via Flask Jinja2 Template Injection",
+  "retrieved_at": "2026-09-30T09:44:11.049Z",
+  "retrieval": {
+    "tool": "agent_browser",
+    "response_id": "browser-session:orange-O034",
+    "final_url": "https://blog.orange.tw/posts/2016-04-bug-bounty-uber-ubercom-remote-code_7/",
+    "outcome": "read",
+    "quote_verification": "Exact, unnormalized String.includes checks against article.post.h-entry textContent and innerText in the dedicated orange-O034 browser session; E1-E5 matched both representations. Matching descendant paragraph positions and quote lengths were also recorded."
+  },
+  "disposition": "included",
+  "reason": "Beyond the omitted exploitation examples, the article supports reusable backward tracing from a secondary output, recovery of observations hidden by rendering, and explicitly tentative inference of a stored-input asynchronous consumer. These method observations are separable from the target-specific solution; the inferred architecture and reported impact remain unverified author accounts.",
+  "canonical_source": null,
+  "evidence": [
+    {
+      "id": "E1",
+      "locator": "Unsectioned article body: article.post.h-entry descendant paragraph 7 (1-based), beginning '往前追查原因才發現進入點', following the account-change notification discussion and before the first code example.",
+      "quote": "往前追查原因才發現進入點",
+      "verified": true
+    },
+    {
+      "id": "E2",
+      "locator": "Unsectioned article body: article.post.h-entry descendant paragraph 20 (1-based), explaining apparently empty displayed output and inspection of the original message.",
+      "quote": "會顯示是空的是因為被 HTML < > 包起來了，檢視原始信件就可以看到了XD",
+      "verified": true
+    },
+    {
+      "id": "E3",
+      "locator": "Unsectioned article body: article.post.h-entry descendant paragraph 21 (1-based), beginning '額外一提的是在引用模組中', introducing the proposed architecture after a dependency observation.",
+      "quote": "因此可以猜測網站大致架構應該是：",
+      "verified": true
+    },
+    {
+      "id": "E4",
+      "locator": "Unsectioned article body: article.post.h-entry descendant paragraph 23 (1-based), the proposed asynchronous-work explanation between the storage and later-consumer paragraphs.",
+      "quote": "不過為了寄送簡訊以及信件等耗時的工作，使用 Asynchronous Task 機制交給後方的 Worker",
+      "verified": true
+    },
+    {
+      "id": "E5",
+      "locator": "Unsectioned article body: article.post.h-entry descendant paragraph 24 (1-based), beginning '而當 Worker 再從', describing the hypothesized later read and template construction before the closing personal reflection.",
+      "quote": "而當 Worker 再從資料庫抓出姓名產生模板時使用串接的方式直接將模板產生",
+      "verified": true
+    }
+  ],
+  "workflow": [
+    {
+      "decision": "When a secondary output changes unexpectedly, ask which earlier actor-controlled update produced it. Trace backward from that artifact to the originating write rather than limiting the observation surface to the immediate response.",
+      "evidence": ["E1"]
+    },
+    {
+      "decision": "When output appears empty, distinguish absent content from presentation-layer suppression. Compare the preserved raw artifact with its displayed form before classifying the producer observation as unsuccessful.",
+      "evidence": ["E2"]
+    },
+    {
+      "decision": "Use a dependency clue to form, not confirm, a delayed-consumer hypothesis. Map earlier writes, storage, queued work, later reads and the value's semantic role at interpretation; retain unobserved edges and construction details as unresolved.",
+      "evidence": ["E3", "E4", "E5"]
+    }
+  ],
+  "tools": [],
+  "handoffs": [
+    {
+      "producer": "data-flow-analysis",
+      "consumer": "dynamic-analysis",
+      "when": "Backward tracing suggests a stored value is consumed later, but storage, queue and data-to-interpreter edges remain inferred.",
+      "packet": [
+        "Scope, artifact/runtime identity and source-author-report versus local-observation classification",
+        "One falsifiable missing-edge question with contrasting predicted observations",
+        "Actor-controlled field, earlier writer and proposed storage/job/consumer chain",
+        "Observed versus inferred edges and unknown transformations or construction semantics",
+        "Raw and displayed artifact provenance, collection timing and viewer effects",
+        "Permitted minimal observation, known-good control and stop conditions",
+        "Failed assumptions, untested configurations and remaining restrictions"
+      ],
+      "acceptance_gate": "Require explicit provenance and uncertainty for every edge, distinct outcomes for the unresolved question, and a feasible benign observation in an authorized environment. A dependency name or newly visible raw output cannot alone establish process ownership, a complete consumer path or confinement escape. Source-only packets remain hypotheses, not reproduced findings.",
+      "classification": "derived",
+      "evidence": ["E1", "E2", "E3", "E4", "E5"]
+    }
+  ],
+  "limitations": [
+    "The author explicitly guesses the storage/task/worker architecture from a dependency observation. No consumer source, storage trace or worker trace was independently obtained; those edges remain inferred.",
+    "This is a historical 2016 report. Limited template evaluation and broader remote execution remain author reports; the actual sandbox implementation/configuration, process privileges, denied capabilities and present-day affected scope were not established.",
+    "Exact DOM matches verify the article's wording, not its technical claims. Embedded screenshots were not independently analyzed as execution traces, and no target interaction or reproduction was performed.",
+    "The post does not document a shipped fix, rollout verification or regression/control matrix. BurpSuite is mentioned only through a linked paper's author affiliation; Celery and Jinja2 are application components, not evidence of author-used research tools with stated purposes."
+  ],
+  "candidate_additions": [
+    {
+      "owner": "data-flow-analysis",
+      "kind": "heuristic",
+      "guidance": "Treat secondary artifacts produced after an actor-controlled update as possible starting points for backward influence tracing; record the earlier writer instead of assuming the immediate response is the only consumer evidence.",
+      "evidence": ["E1"]
+    },
+    {
+      "owner": "dynamic-analysis",
+      "kind": "failure",
+      "guidance": "An apparently empty rendered artifact may conceal content at the display layer. Compare preserved raw and displayed representations before concluding that the producer returned nothing, and record the viewer's suppression separately from the producer's behavior.",
+      "evidence": ["E2"]
+    },
+    {
+      "owner": "data-flow-analysis",
+      "kind": "workflow",
+      "guidance": "Dependency observations can prioritize deferred-consumer hypotheses, but cannot prove them. Carry stored-field provenance and the later consumer's data-versus-interpreter role, marking queue/storage boundaries and construction semantics unconfirmed until corroborated.",
+      "evidence": ["E3", "E4", "E5"]
+    }
+  ],
+  "related_article_urls": [
+    "https://www.blackhat.com/docs/us-15/materials/us-15-Kettle-Server-Side-Template-Injection-RCE-For-The-Modern-Web-App-wp.pdf",
+    "https://nvisium.com/blog/2016/03/09/exploring-ssti-in-flask-jinja2/",
+    "https://nvisium.com/blog/2016/03/11/exploring-ssti-in-flask-jinja2-part-ii/",
+    "http://blog.knownsec.com/2016/02/use-python-features-to-execute-arbitrary-codes-in-jinja2-templates/"
+  ],
+  "excluded_material": [
+    "Template-expression and loop payloads",
+    "Runtime object-traversal and sandbox-bypass examples",
+    "Target-specific endpoints and exploitation procedure",
+    "Copied output screenshots as proof-of-exploitation artifacts",
+    "Reward amounts, personal reflections and promotional framing",
+    "Contents of linked external exploit walkthroughs"
+  ],
+  "worker_notes": "Read the article body with fetch_content, then used the dedicated browser session for the observed heading, paragraph locators and exact quote checks because readable retrieval omitted heading/response metadata. Linked technical sources were recorded only as pointers, not opened. No author-used research tool with a stated purpose was established, so tools is empty."
+}

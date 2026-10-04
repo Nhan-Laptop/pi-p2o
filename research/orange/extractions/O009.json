@@ -1,0 +1,135 @@
+{
+  "schema_version": 1,
+  "source_id": "O009",
+  "url": "https://blog.orange.tw/posts/2022-08-lets-dance-in-the-cache-destabilizing-hash-table-on-microsoft-iis/",
+  "observed_title": "Let's Dance in the Cache - Destabilizing Hash Table on Microsoft IIS!",
+  "retrieved_at": "2026-09-30T09:09:36.425Z",
+  "retrieval": {
+    "tool": "fetch_content readable, corroborated by agent_browser",
+    "response_id": "browser session orange-O009",
+    "final_url": "https://blog.orange.tw/posts/2022-08-lets-dance-in-the-cache-destabilizing-hash-table-on-microsoft-iis/",
+    "outcome": "read",
+    "quote_verification": "Literal String.includes checks against the original article's document.body.textContent and individual paragraph textContent in orange-O009; all five quotations matched exactly, with lengths 138, 123, 145, 110 and 105 characters. Observed headings and containing paragraphs were checked in the same DOM evaluation."
+  },
+  "disposition": "included",
+  "reason": "Although this is a brief accompanying a talk, its prose supplies reusable method evidence: compare cache-selection and backend interpretation, audit record/key/callback relationships, and investigate repeated operands in a composite identity comparison. Detailed demonstration and exploitation material is not needed for these observations and is omitted.",
+  "canonical_source": null,
+  "evidence": [
+    {
+      "id": "E1",
+      "locator": "2. IIS Cache Poisoning Attack — second prose paragraph, opening sentence",
+      "quote": "Output Caching uses a bad Query String parser that only takes the first occurrence as the Cache-Key when Query String keys are duplicated.",
+      "verified": true
+    },
+    {
+      "id": "E2",
+      "locator": "2. IIS Cache Poisoning Attack — same second paragraph, sentence beginning 'The backend concatenates'",
+      "quote": "The backend concatenates the value of all repeated keys together, which leads to an inconsistency between parser behaviors.",
+      "verified": true
+    },
+    {
+      "id": "E3",
+      "locator": "3. IIS Authentication Bypass — second prose paragraph, sentence beginning 'An application can define'",
+      "quote": "An application can define its own Table-Related functions, such as the Hash Function, the Key Extracting Function, or the Key Comparing Function.",
+      "verified": true
+    },
+    {
+      "id": "E4",
+      "locator": "3. IIS Authentication Bypass — same second paragraph, final sentence",
+      "quote": "So, under this context, we cares more about the relationship between the records, the keys, and the functions.",
+      "verified": true
+    },
+    {
+      "id": "E5",
+      "locator": "3. IIS Authentication Bypass — paragraph beginning 'As the logic compares several parts'",
+      "quote": "As the logic compares several parts to make the decision, it’s weird why IIS compares the username twice.",
+      "verified": true
+    }
+  ],
+  "workflow": [
+    {
+      "decision": "Ask whether cache selection and downstream consumption assign the same meaning to repeated fields. Contrast each layer's interpretation before treating either parser's isolated behavior as a security defect; the unresolved question is whether key equivalence preserves the consumer's response-selection semantics.",
+      "evidence": ["E1", "E2"]
+    },
+    {
+      "decision": "For a customizable shared data structure, inspect records, extracted keys, hashing and equality as a connected application contract rather than reviewing only the generic algorithm. The next question is which application-defined callback determines whether a stored record is the intended one.",
+      "evidence": ["E3", "E4"]
+    },
+    {
+      "decision": "When a multi-part identity comparison repeats an operand, question whether every required independent field is actually checked. Treat the inferred intended comparison as a hypothesis requiring corroboration, not as demonstrated reachability or impact.",
+      "evidence": ["E5"]
+    }
+  ],
+  "tools": [],
+  "handoffs": [
+    {
+      "producer": "binary-auditing",
+      "consumer": "authorization-auditing",
+      "when": "Recovered cache callbacks leave uncertainty about whether record equality preserves the intended identity binding.",
+      "packet": [
+        "Common scope, question, evidence, classification, limits and next-action envelope",
+        "Record-to-key-to-hash-to-equality map with observed versus inferred relationships",
+        "Comparison operands mapped to semantic fields and the intended identity-binding invariant",
+        "Relevant decision branch, cached-state prerequisites and unresolved reachability, without trigger inputs",
+        "Contrasting predictions for a bounded, benign corroboration design"
+      ],
+      "acceptance_gate": "Each compared operand must be tied to a semantic field, and the packet must distinguish a suspected missing binding from a legitimate optimization. Author reports, reconstructed intent and independent observations remain separately classified; duplicate comparisons alone do not prove a policy failure.",
+      "classification": "derived",
+      "evidence": ["E3", "E4", "E5"]
+    },
+    {
+      "producer": "parser-differential-auditing",
+      "consumer": "remediation",
+      "when": "A cache-key/consumer interpretation discrepancy has been characterized and an invariant-level repair question remains.",
+      "packet": [
+        "Common scope, question, evidence, classification, limits and next-action envelope",
+        "Cache-selection and consumer representation table, including repeated-field policies",
+        "Declared cache context and the proposed key-equivalence invariant",
+        "Authoritative interpretation, affected consumers and unresolved semantic variants",
+        "Accepted controls, contrasting interpretation classes and proposed regression properties",
+        "Policy-consequence evidence limits and source-versus-shipped-fix status"
+      ],
+      "acceptance_gate": "The proposed property must preserve accepted behavior while preventing key equivalence from merging distinct downstream response-selection meanings. A parser discrepancy without a supported consequence is not promoted to a security finding, and a proposed regression is not treated as a verified deployed repair.",
+      "classification": "derived",
+      "evidence": ["E1", "E2"]
+    }
+  ],
+  "limitations": [
+    "The author explicitly delegates most details to slides. Those slides and demonstration videos were not consulted, so acquisition, instrumentation and complete experiment coverage are not established here.",
+    "The parser discrepancy is an author report about IIS Output Caching and ASP.NET; generality across parser versions, runtime configurations and other cache contexts is unverified.",
+    "The authentication report requires an existing cached record and a hash collision reaching application-specific equality logic. The article notes uncertainty about existing cache keys and probabilistic success; a defective comparison alone does not establish practical reachability or current impact.",
+    "The availability section reports a failure of periodic stale-record cleanup, but this brief provides no reusable bounded complexity-measurement workflow. No load-generation or mitigation-defeat guidance is extracted.",
+    "The author reports Microsoft patched the issues in July 2022, but this article does not explain the shipped repair. No independent reproduction, current-release testing or deployed-fix verification was performed; all reported results remain author reports. Handoff gates and regression properties are defensive synthesis."
+  ],
+  "candidate_additions": [
+    {
+      "owner": "parser-differential-auditing",
+      "kind": "validation",
+      "guidance": "Within a declared cache context, require key-equivalent requests to preserve equivalent downstream response-selection semantics. Record repeated-field policy at both layers rather than declaring either parser unsafe in isolation.",
+      "evidence": ["E1", "E2"]
+    },
+    {
+      "owner": "binary-auditing",
+      "kind": "heuristic",
+      "guidance": "Audit customization callbacks together with their record/key mappings. Check whether extraction, hashing and equality express the same application identity instead of assuming the shared container enforces application-specific correctness.",
+      "evidence": ["E3", "E4"]
+    },
+    {
+      "owner": "authorization-auditing",
+      "kind": "heuristic",
+      "guidance": "For composite identity checks, map each operand to a required semantic field. Repeated operand comparisons are a prompt to investigate an omitted independent field, not proof of a policy failure; retain intended semantics as a hypothesis until corroborated.",
+      "evidence": ["E5"]
+    }
+  ],
+  "related_article_urls": [
+    "https://portswigger.net/research/practical-web-cache-poisoning"
+  ],
+  "excluded_material": [
+    "Executable proof-of-concept code, command lines, credentials, endpoint strings and request sequences",
+    "Hash-collision construction, numeric exploit constants, probability amplification and token-persistence techniques",
+    "Load-generation rates, availability-attack amplification and bounty amounts",
+    "Account-specific demonstrations, post-authentication chaining and further exploitation suggestions",
+    "Slides, embedded demonstrations, exploit attachments and external article content"
+  ],
+  "worker_notes": "Readable article retrieval was corroborated in the dedicated orange-O009 browser session. Retrieval provenance uses that session because the readable fetch exposed no response identifier. Named commands occurred only in the omitted proof-of-concept, so tools is empty. The related article URL was observed in the page but not followed; no target testing was performed."
+}

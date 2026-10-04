@@ -1,0 +1,154 @@
+{
+  "schema_version": 1,
+  "source_id": "O004",
+  "url": "https://blog.orange.tw/posts/2025-01-worstfit-unveiling-hidden-transformers-in-windows-ansi/",
+  "observed_title": "WorstFit: Unveiling Hidden Transformers in Windows ANSI!",
+  "retrieved_at": "2026-09-30T09:01:44.804Z",
+  "retrieval": {
+    "tool": "fetch_content readable; get_search_content; agent_browser",
+    "response_id": "munvid9xvoybpy",
+    "final_url": "https://blog.orange.tw/posts/2025-01-worstfit-unveiling-hidden-transformers-in-windows-ansi/",
+    "outcome": "read",
+    "quote_verification": "Read the complete fetched article in two slices. Checked fetched passages with get_search_content(findMode=exact), then verified the final plain-text E1-E5 quotations by exact inclusion in article.innerText in the named browser session orange-O004. Each final quotation occurred once and was at most 180 characters. Browser observation also confirmed the title, final URL and related pointers."
+  },
+  "disposition": "included",
+  "reason": "The article supplies reusable evidence about implicit runtime conversion, encoding-dependent mapping inspection, escaping-before-conversion failures, and end-to-end repair responsibility. Those methods remain useful after omitting its exploit demonstrations. It identifies itself as a coauthored cross-post, but no canonical in-corpus source ID was established.",
+  "canonical_source": null,
+  "evidence": [
+    {
+      "id": "E1",
+      "locator": "Decoding the Windows Encodings / The Dual Era of Encoding; paragraph beginning 'This happens because, during compilation', following the argument/environment demonstration.",
+      "quote": "This happens because, during compilation, the compiler inserts several functions and links the CRT DLLs for you, which internally rely on ANSI Windows APIs.",
+      "verified": true
+    },
+    {
+      "id": "E2",
+      "locator": "It was the Worst of Fit – The novel attack surface on Windows / 🔥 Filename Smuggling; opening paragraph, sentence identifying the mapping lookup tool.",
+      "quote": "You can check the affected characters and Code Pages on our Best-fit Mapping Grepper tool!",
+      "verified": true
+    },
+    {
+      "id": "E3",
+      "locator": "It was the Worst of Fit – The novel attack surface on Windows / 🔥 Argument Splitting; paragraph beginning 'However, all of this escaping happens'.",
+      "quote": "However, all of this escaping happens before the Best-Fit feature comes into play.",
+      "verified": true
+    },
+    {
+      "id": "E4",
+      "locator": "The Dusk–or Dawn–of the WorstFit / 🧐 Who is responsible for that?; paragraph beginning 'To make things even more confusing'.",
+      "quote": "some projects only provide source code, leaving the prebuilt executable files distributed to be handled by third-party volunteers across the Internet.",
+      "verified": true
+    },
+    {
+      "id": "E5",
+      "locator": "The Dusk–or Dawn–of the WorstFit / 😖 It’s really hard to fix it!; first paragraph, sentence describing the limits of an entry-point-only change.",
+      "quote": "However, resolving this problem isn’t that as simple as just replacing the main() with its wide-character counterpart.",
+      "verified": true
+    }
+  ],
+  "workflow": [
+    {
+      "decision": "When application source appears to preserve an input, extend the representation trace through generated startup code and runtime libraries; an implicit conversion may explain a changed consumer value.",
+      "evidence": ["E1"]
+    },
+    {
+      "decision": "Use a mapping lookup to narrow which representation changes are possible under the effective encoding configuration, rather than assuming one character mapping applies everywhere.",
+      "evidence": ["E2"]
+    },
+    {
+      "decision": "Place escaping and conversion in their actual order. If conversion follows escaping, the unresolved question is whether the final parser receives the same structure that the earlier check protected.",
+      "evidence": ["E1", "E3"]
+    },
+    {
+      "decision": "Treat repair as a representation-contract change across entry handling, variable types and downstream parsing. Separately identify who builds the distributed executable; a source change does not establish shipped behavior.",
+      "evidence": ["E4", "E5"]
+    }
+  ],
+  "tools": [
+    {
+      "tool": "Best-fit Mapping Grepper",
+      "purpose": "Inspect character conversion mappings and their code-page applicability.",
+      "when": "A suspected narrowing conversion needs configuration-specific mapping evidence.",
+      "attribution": "explicit",
+      "evidence": ["E2"]
+    }
+  ],
+  "handoffs": [
+    {
+      "producer": "data-flow-analysis",
+      "consumer": "dynamic-analysis",
+      "when": "A representation trace includes a possible implicit conversion after validation, but the exact value received by the consumer is unresolved.",
+      "packet": [
+        "Common scope, artifact identity, question, evidence classification, limits and stop condition",
+        "Actor-controllable subset and feasible gates",
+        "Representation chain including generated startup and runtime edges",
+        "Validation and escaping positions with their stated guarantees",
+        "Effective encoding configuration and mapping hypothesis",
+        "Contrasting predictions, benign baseline, observation points and modification budget"
+      ],
+      "acceptance_gate": "The proposed bounded observation must distinguish preservation from reinterpretation at the actual consumer. Mapping-table entries alone do not establish reachability, security impact or a locally verified result.",
+      "classification": "derived",
+      "evidence": ["E1", "E2", "E3"]
+    },
+    {
+      "producer": "parser-differential-auditing",
+      "consumer": "remediation",
+      "when": "The root cause is disagreement between the representation validated earlier and the representation consumed after conversion.",
+      "packet": [
+        "Common scope, evidence classification and unresolved limits",
+        "Target-independent semantic invariant and authoritative consumer",
+        "All conversion, entry-handling, string-type and parsing variants",
+        "Normal-behavior controls and configuration-dependent regression properties",
+        "Source-to-distributed-build ownership and artifact-verification gap",
+        "Compatibility tradeoffs and residual narrowing paths"
+      ],
+      "acceptance_gate": "The repair must preserve the invariant through the whole consumer path, not merely rename an entry point or block one sample. Shipped-artifact verification and compatibility coverage must remain explicit unresolved gates until evidence exists.",
+      "classification": "derived",
+      "evidence": ["E3", "E4", "E5"]
+    }
+  ],
+  "limitations": [
+    "All vulnerability, demonstration and vendor-response results remain author reports. Only article text and quotation identity were independently checked; no binaries, APIs or targets were exercised.",
+    "Conversion depends on the effective code page and actual API/runtime path. The article distinguishes the application/system code page from the console code page; a console setting is not evidence of the relevant configuration.",
+    "The article labels initial filename examples as bugs rather than demonstrated vulnerabilities, describes one environment-routing example as hypothetical, and calls a later configuration-dependent inclusion scenario rare. A representation discrepancy alone does not establish a reachable security consequence.",
+    "Runtime-version and distributor differences matter: the article contrasts historical filesystem behavior, narrow versus wide startup paths, and independently built executables. Its publication-era affected/fixed statuses were not checked against current releases.",
+    "The proposed wide-character migration requires downstream type and parsing changes. The article also warns that its system-wide encoding alternative was a beta option with uncertain side effects; neither an entry-point change nor a configuration toggle is verified here as a universal repair."
+  ],
+  "candidate_additions": [
+    {
+      "owner": "data-flow-analysis",
+      "kind": "heuristic",
+      "guidance": "Include compiler-generated startup and runtime-library conversions as representation edges, even when application source contains no explicit conversion call. Keep unresolved edges separate from proven actor influence.",
+      "evidence": ["E1"]
+    },
+    {
+      "owner": "parser-differential-auditing",
+      "kind": "workflow",
+      "guidance": "Record escaping as a position in the transformation sequence, not an unconditional safety guarantee. Ask whether a later representation change can introduce structural meaning before the final parser consumes the value.",
+      "evidence": ["E1", "E3"]
+    },
+    {
+      "owner": "dynamic-analysis",
+      "kind": "validation",
+      "guidance": "Use configuration-specific mapping evidence to formulate contrasting predictions, then require a benign baseline and consumer-value evidence. A lookup table predicts a conversion class but does not prove reachability or impact.",
+      "evidence": ["E1", "E2", "E3"]
+    },
+    {
+      "owner": "remediation",
+      "kind": "remediation",
+      "guidance": "For representation migration, review entry handling, variable types, downstream parsing and remaining conversions as one contract. Track source ownership separately from build distribution, and require compatibility and shipped-artifact evidence before closing the repair.",
+      "evidence": ["E4", "E5"]
+    }
+  ],
+  "related_article_urls": [
+    "https://devco.re/blog/2025/01/09/worstfit-unveiling-hidden-transformers-in-windows-ansi",
+    "https://daviddeley.com/autohotkey/parameters/parameters.htm#WIN"
+  ],
+  "excluded_material": [
+    "Executable examples, payloads, request and command strings, exploit sequences and target-specific paths or numeric constants",
+    "Sensitive-file disclosure, credential-derived calculations and post-compromise escalation details",
+    "Product-specific exploit options, affected-product inventories and demonstration screenshots",
+    "Promotional slides, embedded demonstrations and exploit-catalog links"
+  ],
+  "worker_notes": "Only the assigned article was read; related URLs are observed pointers, not crawled sources. The mapping tool was identified from the article, not operated. Used the repository-root README.md and HANDOFFS.md because those files are not under research/orange/. Browser inspection used only orange-O004."
+}

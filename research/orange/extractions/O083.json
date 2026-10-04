@@ -1,0 +1,43 @@
+{
+  "schema_version": 1,
+  "source_id": "O083",
+  "url": "https://blog.orange.tw/posts/2010-05-hacks-in-taiwan-2010-conference/",
+  "observed_title": "Hacks in Taiwan 2010 Conference",
+  "retrieved_at": "2026-09-30T10:26:57Z",
+  "retrieval": {
+    "tool": "fetch_content (readable), agent_browser (article DOM)",
+    "response_id": null,
+    "browser_session": "orange-O083",
+    "final_url": "https://blog.orange.tw/posts/2010-05-hacks-in-taiwan-2010-conference/",
+    "outcome": "read",
+    "quote_verification": "Exact article DOM textContent inclusion returned true for E1 in session orange-O083; the matching paragraph was also returned verbatim. The complete article body and article heading were inspected."
+  },
+  "disposition": "excluded",
+  "reason": "Conference announcement consisting of organizers, venue and schedule, ticket registration and eligibility, attendance notes, and a personal invitation with a staffing/challenge-writing remark. It describes no technical investigation, reusable security-method observations, research-tool purposes, or validation/failure process.",
+  "canonical_source": null,
+  "evidence": [
+    {
+      "id": "E1",
+      "locator": "Final article paragraph, after the invitation beginning 有人要來嗎???",
+      "quote": "今年我變工作人員，也會出WarGame題目唷!!",
+      "verified": true
+    }
+  ],
+  "workflow": [],
+  "tools": [],
+  "handoffs": [],
+  "limitations": [
+    "Conference registration and student-ticket checks are event logistics, not evidence of a security-research decision process.",
+    "The mention of writing WarGame challenges supplies no challenge content, technical approach, tool purpose, or handoff evidence.",
+    "Historical event and participation details remain source-author statements; no independent event verification, challenge reproduction, or target testing was performed."
+  ],
+  "candidate_additions": [],
+  "related_article_urls": [],
+  "excluded_material": [
+    "Organizer and supporting-organization lists",
+    "Venue, schedule, ticket prices, registration links, and student eligibility rules",
+    "Travel, catering, identity-check, and attendance instructions",
+    "Personal invitation and staffing/challenge-writing remarks beyond the short classification quote"
+  ],
+  "worker_notes": "E1 is a classification-only quote under the excluded-page exception. No method, tool, or handoff was inferred from the announcement. The legacy DEBUG link refers to this same post and was not treated as another assigned article."
+}

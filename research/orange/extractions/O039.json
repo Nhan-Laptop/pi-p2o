@@ -1,0 +1,41 @@
+{
+  "schema_version": 1,
+  "source_id": "O039",
+  "url": "https://blog.orange.tw/posts/2015-08-hitcon-2015-community-web-hacking/",
+  "observed_title": "HITCON 2015 Community 演講投影片 - 那些 Web Hacking 中的奇技淫巧",
+  "retrieved_at": "2026-09-30T09:46:44.114Z",
+  "retrieval": {
+    "tool": "fetch_content (raw); agent_browser",
+    "response_id": "browser session orange-O039",
+    "final_url": "https://blog.orange.tw/posts/2015-08-hitcon-2015-community-web-hacking/",
+    "outcome": "read",
+    "quote_verification": "agent_browser eval in orange-O039 compared E1 with the original articleBody direct-paragraph text using exact string equality (paragraphs.includes); result true, 43 Unicode characters. The observed article heading and URL were also checked."
+  },
+  "disposition": "excluded",
+  "reason": "The actual article body consists of one sentence introducing conference slides, a presentation PDF link, and an embedded slide deck. It supplies no standalone investigation decisions, named-tool purposes, failures, validation, or remediation evidence. This is a slides-only announcement under the extraction contract; reusable methods are not inferred from its title or presentation link.",
+  "canonical_source": null,
+  "evidence": [
+    {
+      "id": "E1",
+      "locator": "articleBody: sole introductory paragraph immediately above the blockquoted presentation link",
+      "quote": "噗，在 HITCON 2015 Community 的投影片，講一些好玩的特性跟技巧!",
+      "verified": true
+    }
+  ],
+  "workflow": [],
+  "tools": [],
+  "handoffs": [],
+  "limitations": [
+    "The linked PDF and embedded presentation were not downloaded or analyzed; this packet covers the assigned blog article itself.",
+    "The article provides no primary method evidence sufficient to support two reusable observations or any tool-purpose or handoff attribution.",
+    "No target testing or independent reproduction was performed; slide-deck demonstrations and technical outcomes are not assessed."
+  ],
+  "candidate_additions": [],
+  "related_article_urls": [],
+  "excluded_material": [
+    "External presentation PDF and embedded slide content",
+    "Technical-method inferences based only on the title or presentation promotion",
+    "Invented workflow, tool-purpose, validation, and handoff guidance"
+  ],
+  "worker_notes": "Readable fetch reported JavaScript-rendered content. A raw fetch exposed the complete short static article body; the dedicated orange-O039 browser session confirmed the body, title, URL, and exact classification quote. No external presentation link was followed."
+}

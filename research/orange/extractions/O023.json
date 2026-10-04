@@ -1,0 +1,45 @@
+{
+  "schema_version": 1,
+  "source_id": "O023",
+  "url": "https://blog.orange.tw/posts/2018-10-hitcon-ctf-2018-one-line-php-challenge/",
+  "observed_title": "HITCON CTF 2018 - One Line PHP Challenge",
+  "retrieved_at": "2026-09-30T09:28:28.377Z",
+  "retrieval": {
+    "tool": "fetch_content (readable), agent_browser (named-session DOM inspection)",
+    "response_id": "browser session orange-O023",
+    "final_url": "https://blog.orange.tw/posts/2018-10-hitcon-ctf-2018-one-line-php-challenge/",
+    "outcome": "read",
+    "quote_verification": "Exact inclusion of E1 was checked in both the original page's visible body text and its matching paragraph textContent using agent_browser --session orange-O023 eval; both checks returned true. The preceding heading was Cleanup Tragedy."
+  },
+  "disposition": "excluded",
+  "reason": "The actual article is a worked CTF solution organized around configuration, activation, cleanup and representation obstacles to a challenge-specific exploit chain. Its partial-control and transient-state observations are useful constraints, but no distinct generic investigation or validation method is developed apart from that solve sequence. Retain one safe lifetime observation for the filtering record rather than manufacture operational additions or handoffs.",
+  "canonical_source": null,
+  "evidence": [
+    {
+      "id": "E1",
+      "locator": "Cleanup Tragedy, first paragraph, final sentence",
+      "quote": "It means your upload progress in the session will be cleaned as soon as possible!",
+      "verified": true
+    }
+  ],
+  "workflow": [],
+  "tools": [],
+  "handoffs": [],
+  "limitations": [
+    "The deployment and default settings belong to a historical challenge; they do not establish current-runtime behavior.",
+    "The stated cleanup behavior makes stored progress transient; debugging configurations that preserve it are not equivalent to the described setup.",
+    "The timing-dependent result remains an author report. The article provides no measured schedule or success/attempt denominator, and no independent reproduction was performed.",
+    "No remediation, regression matrix or shipped-fix validation is described."
+  ],
+  "candidate_additions": [],
+  "related_article_urls": [],
+  "excluded_material": [
+    "Challenge source and solution-bearing screenshots",
+    "Exploit requests, filesystem commands and target-specific configuration details",
+    "Session identifiers, filesystem paths and endpoint strings",
+    "Encoded payloads, transformation-chain construction and execution code",
+    "Ordered exploitation and timing procedures",
+    "Linked exploit attachment and unrelated challenge solutions"
+  ],
+  "worker_notes": "The readable fetch exposed no response identifier, so retrieval provenance uses the dedicated browser session. All textual article sections were read; solution images and linked exploit code were not transcribed or followed. Named command utilities occur in excluded solution snippets, so no tool-purpose entry is retained."
+}

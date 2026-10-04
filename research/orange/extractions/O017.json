@@ -1,0 +1,154 @@
+{
+  "schema_version": 1,
+  "source_id": "O017",
+  "url": "https://blog.orange.tw/posts/2019-09-attacking-ssl-vpn-part-3-golden-pulse-secure-rce-chain/",
+  "observed_title": "Attacking SSL VPN - Part 3: The Golden Pulse Secure SSL VPN RCE Chain, with Twitter as Case Study!",
+  "retrieved_at": "2026-09-30T09:19:41.125Z",
+  "retrieval": {
+    "tool": "fetch_content (readable); agent_browser (named session)",
+    "response_id": "browser session orange-O017",
+    "final_url": "https://blog.orange.tw/posts/2019-09-attacking-ssl-vpn-part-3-golden-pulse-secure-rce-chain/",
+    "outcome": "read",
+    "quote_verification": "Read-only DOM checks in orange-O017 confirmed document.body.innerText.includes(quote) for all five quotations; each also matched exactly one paragraph under its recorded heading."
+  },
+  "disposition": "included",
+  "reason": "Feature-specific relaxation of strict validation, runtime replacement of familiar operations, failed format-compatibility assumptions, configuration prerequisites and lightweight crash corroboration provide reusable method evidence beyond the exploit walkthrough.",
+  "canonical_source": null,
+  "evidence": [
+    {
+      "id": "E1",
+      "locator": "CVE-2019-11510: Pre-auth Arbitrary File Reading — second paragraph, opening sentence",
+      "quote": "In order to handle the static resources, Pulse Secure created a new IF-CONDITION to widen the originally strict path validation.",
+      "verified": true
+    },
+    {
+      "id": "E2",
+      "locator": "CVE-2019-11539: Post-auth(admin) Command Injection — sixth paragraph, sentence describing the replacement module's parser",
+      "quote": "It implements its own command line parser and re-implements the I/O redirections in Perl.",
+      "verified": true
+    },
+    {
+      "id": "E3",
+      "locator": "CVE-2019-11539: Post-auth(admin) Command Injection — ninth paragraph, final sentence reporting a format-compatibility obstacle",
+      "quote": "However, it seems impossible to write a polyglot file in both PCAP and Perl format.",
+      "verified": true
+    },
+    {
+      "id": "E4",
+      "locator": "CVE-2019-11542: Post-auth(admin) Stack Buffer Overflow — third paragraph, diagnostic instruction before the fault log",
+      "quote": "And you can observed the segment fault from dmesg",
+      "verified": true
+    },
+    {
+      "id": "E5",
+      "locator": "CVE-2019-11538: Post-auth(user) Arbitrary File Reading via NFS — first paragraph, second sentence",
+      "quote": "It appears only if the admin configures the NFS sharing for the VPN users.",
+      "verified": true
+    }
+  ],
+  "workflow": [
+    {
+      "decision": "Ask which feature-specific branches relax a normally strict validation policy. Review the exception separately and determine whether resource selection still preserves the baseline invariant.",
+      "evidence": ["E1"]
+    },
+    {
+      "decision": "Before classifying a familiar operation as a dangerous sink, resolve runtime replacements and their actual parsing and transformation rules. The next question is what the effective implementation accepts, not what the builtin normally does.",
+      "evidence": ["E2"]
+    },
+    {
+      "decision": "Treat proposed impact as conditional on enabled features and compatible producer/consumer formats. Preserve a failed compatibility assumption and identify the remaining prerequisite instead of promoting a partial capability to stronger impact.",
+      "evidence": ["E3", "E5"]
+    },
+    {
+      "decision": "Corroborate a reported native fault with existing diagnostic logs before selecting more intrusive observation. Keep crash evidence separate from any claim of execution or broader impact.",
+      "evidence": ["E4"]
+    }
+  ],
+  "tools": [
+    {
+      "tool": "dmesg",
+      "purpose": "Read kernel diagnostic messages to corroborate a reported native process fault.",
+      "when": "A crash needs a diagnostic record in an authorized isolated environment; the record establishes a fault, not stronger impact.",
+      "attribution": "explicit",
+      "evidence": ["E4"]
+    }
+  ],
+  "handoffs": [
+    {
+      "producer": "source-code-auditing",
+      "consumer": "dynamic-analysis",
+      "when": "A feature exception or replacement runtime operation leaves one validation or consumption behavior unresolved.",
+      "packet": [
+        "Authorization, isolation, artifact revision, runtime, configuration and actor",
+        "One unresolved question with contrasting predictions",
+        "Evidence locations, collection method and source-report versus observed classification",
+        "Minimal validation-to-consumer slice and effective wrapper contract",
+        "Benign baseline, negative control and exact observation points",
+        "Allowed modification budget, failed assumptions, coverage limits and stop condition"
+      ],
+      "acceptance_gate": "The artifact and necessary feature state are known, and the proposed harmless observation distinguishes invariant preservation from violation. A familiar API name or the existence of a permissive branch alone is insufficient.",
+      "classification": "derived",
+      "evidence": ["E1", "E2", "E4"]
+    },
+    {
+      "producer": "dynamic-analysis",
+      "consumer": "exploitability-assessment",
+      "when": "A fault or partial capability is being interpreted as broader security impact.",
+      "packet": [
+        "Authorization, artifact identity, runtime, configuration, actor and intended boundary",
+        "Unresolved impact question and evidence classification",
+        "Invariant, earliest violating operation and diagnostic context",
+        "Observed capability constraints, feature and permission prerequisites, and actual mitigations",
+        "Producer/consumer compatibility assumptions and failed observations",
+        "Original versus modified environment, collateral effects, cleanup and missing capabilities",
+        "Narrow next observation, limits and stop condition"
+      ],
+      "acceptance_gate": "Require evidence of a reachable violation or label the assessment explicitly source-report/static-only. A diagnostic fault is not execution proof; optional-feature and format constraints must remain in the impact statement.",
+      "classification": "derived",
+      "evidence": ["E3", "E4", "E5"]
+    }
+  ],
+  "limitations": [
+    "The findings concern historical appliance builds and embedded runtimes. The custom parser's behavior and feature-specific validation exceptions were not checked on current releases or alternate implementations.",
+    "The remote-sharing findings explicitly require an administrator-enabled feature and do not apply to default configurations; actor and feature prerequisites cannot be dropped.",
+    "The author reports both an unavailable utility feature and a failed output-format compatibility attempt. These bound particular hypotheses in that environment, not every possible consequence of the underlying defect.",
+    "Kernel fault diagnostics support reported crashes only. All compromise results, customer-case outcomes, fixes and mitigation claims remain author reports; no source code, attachment, target or shipped fix was executed or independently validated."
+  ],
+  "candidate_additions": [
+    {
+      "owner": "source-code-auditing",
+      "kind": "heuristic",
+      "guidance": "Prioritize feature-specific exceptions to otherwise strict validation. State which acceptance rule the exception broadens and whether later resource selection still obeys the baseline invariant.",
+      "evidence": ["E1"]
+    },
+    {
+      "owner": "source-code-auditing",
+      "kind": "workflow",
+      "guidance": "Resolve runtime replacements of familiar operations before classifying a sink. Audit the replacement parser and transformation contract rather than inheriting the builtin's behavior.",
+      "evidence": ["E2"]
+    },
+    {
+      "owner": "exploitability-assessment",
+      "kind": "failure",
+      "guidance": "Keep a precondition ledger for optional-feature configuration and producer/consumer format compatibility. A failed path is a scoped compatibility result, not proof that the underlying defect is harmless.",
+      "evidence": ["E3", "E5"]
+    },
+    {
+      "owner": "dynamic-analysis",
+      "kind": "tool",
+      "guidance": "Use available kernel diagnostic logs to corroborate a reported native fault. Preserve fault context and component attribution; classify the record as crash evidence rather than code-execution proof.",
+      "evidence": ["E4"]
+    }
+  ],
+  "related_article_urls": [
+    "https://blog.orange.tw/2019/07/attacking-ssl-vpn-part-1-preauth-rce-on-palo-alto.html",
+    "https://blog.orange.tw/2019/08/attacking-ssl-vpn-part-2-breaking-the-fortigate-ssl-vpn.html"
+  ],
+  "excluded_material": [
+    "Request payloads, proof-of-concept and exploit code, endpoint and filesystem strings, and target-specific constants",
+    "Ordered compromise chain, interface or identity bypass procedures, session and credential material, and password-cracking details",
+    "Client-compromise demonstration, external exploit attachments and target probing",
+    "Promotional content and incidental disclosure or news claims not converted into method guidance"
+  ],
+  "worker_notes": "The readable fetch did not expose a response ID; provenance and exact-quote verification therefore use the dedicated browser session. Linked reports, exploit attachments and embedded demonstrations were not opened. Handoffs are derived library contracts, not author-reported skill usage."
+}

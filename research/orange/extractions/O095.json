@@ -1,0 +1,39 @@
+{
+  "schema_version": 1,
+  "source_id": "O095",
+  "url": "https://blog.orange.tw/posts/2009-12-blog-post_3757/",
+  "observed_title": "搬家",
+  "retrieved_at": "2026-09-30T10:36:13.359Z",
+  "retrieval": {
+    "tool": "agent_browser",
+    "response_id": "orange-O095",
+    "final_url": "https://blog.orange.tw/posts/2009-12-blog-post_3757/",
+    "outcome": "read",
+    "quote_verification": "Named-session DOM evaluation confirmed E1 by exact paragraph textContent equality and article textContent inclusion. The complete article body was inspected."
+  },
+  "disposition": "excluded",
+  "reason": "A brief personal blog-relocation/greeting entry ending with a return to studying. Its three body paragraphs contain no reusable research decisions, stated-purpose tools, validation or failure evidence; no method contribution is supported.",
+  "canonical_source": null,
+  "evidence": [
+    {
+      "id": "E1",
+      "locator": "Under the observed heading 搬家, final body paragraph, after Hello World!!",
+      "quote": "繼續去讀書…..",
+      "verified": true
+    }
+  ],
+  "workflow": [],
+  "tools": [],
+  "handoffs": [],
+  "limitations": [
+    "The article provides personal context only; no technical workflow, tool-purpose attribution or derived handoff can be justified from its text.",
+    "Classification is based on the complete body rendered at the assigned archive URL; the DEBUG backlink was not followed and no earlier content was inferred."
+  ],
+  "candidate_additions": [],
+  "related_article_urls": [],
+  "excluded_material": [
+    "Personal relocation/update remarks and greeting-only text",
+    "Site navigation, author/date metadata and DEBUG backlink"
+  ],
+  "worker_notes": "fetch_content readable retrieval failed with: Page appears to be JavaScript-rendered (content loads dynamically). Read-only retry in the explicit orange-O095 browser session succeeded. E1 is a classification quotation, not method evidence; no relevant skill additions are proposed."
+}

@@ -1,0 +1,43 @@
+{
+  "schema_version": 1,
+  "source_id": "O059",
+  "url": "https://blog.orange.tw/posts/2013-07-hitcon-2013-wargame-web-500/",
+  "observed_title": "HITCON 2013 Wargame - Web 500 詳解",
+  "retrieved_at": "2026-09-30T10:08:08Z",
+  "retrieval": {
+    "tool": "fetch_content (readable) and agent_browser",
+    "response_id": "browser session orange-O059",
+    "final_url": "https://blog.orange.tw/posts/2013-07-hitcon-2013-wargame-web-500/",
+    "outcome": "read",
+    "quote_verification": "In orange-O059, an exact JavaScript String.includes check against the original page's p.textContent and document.body.textContent returned true for E1; the matching paragraph text equaled the entire quote. The DOM also confirmed the article heading and final URL."
+  },
+  "disposition": "excluded",
+  "reason": "The post is a compact challenge solution dominated by embedded source, enumerated bypass answers and an example serialized input. E1 supplies one high-level checker/consumer inconsistency observation, but the article does not describe a distinct generic investigation process or at least two supported reusable method observations. No tool-purpose evidence, operational additions or handoffs are retained.",
+  "canonical_source": null,
+  "evidence": [
+    {
+      "id": "E1",
+      "locator": "Article body, paragraph beginning 原本繞過的方式, after the numbered solution list and informal aside, immediately before the serialized-input blockquote.",
+      "quote": "原本繞過的方式是利用 PHP 對於 unserialize 實作的不一致來繞過",
+      "verified": true
+    }
+  ],
+  "workflow": [],
+  "tools": [],
+  "handoffs": [],
+  "limitations": [
+    "The source describes a historical challenge, not a versioned investigation of a current deployed system; runtime/configuration applicability is not established.",
+    "The author explicitly leaves confirmation of the reported runtime bug fix pending. Neither that fix nor the reported challenge results were independently verified.",
+    "Language functions and the embedded checker are subjects of the solution, not named research tools with stated purposes. The external technical-note pointer was not followed."
+  ],
+  "candidate_additions": [],
+  "related_article_urls": [
+    "http://www.80vul.com/pch/pch-010.txt"
+  ],
+  "excluded_material": [
+    "Embedded challenge source and secret-bearing literals",
+    "Numbered solution, gate-bypass instructions and exploit sequence",
+    "Serialized payload, target-specific fields, constants and challenge answers"
+  ],
+  "worker_notes": "Read the complete assigned article body with fetch_content; the isolated named browser session confirmed title, final URL, exact quotation and external pointer. No source code was executed, attachments downloaded, targets tested or related articles read. Repository-root README.md and HANDOFFS.md were read alongside the Orange baseline and relevant source, parser and dispatch skills."
+}

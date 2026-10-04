@@ -1,0 +1,42 @@
+{
+  "schema_version": 1,
+  "source_id": "O080",
+  "url": "https://blog.orange.tw/posts/2010-07-hacks-in-taiwan/",
+  "observed_title": "Hacks in Taiwan 第六屆台灣駭客年會",
+  "retrieved_at": "2026-09-30T10:26:02Z",
+  "retrieval": {
+    "tool": "agent_browser",
+    "browser_session": "orange-O080",
+    "final_url": "https://blog.orange.tw/posts/2010-07-hacks-in-taiwan/",
+    "outcome": "read",
+    "quote_verification": "An exact DOM check in orange-O080 confirmed article.textContent.includes(E1 quote) was true and returned the containing paragraph verbatim. The complete article text and heading were also read."
+  },
+  "disposition": "excluded",
+  "reason": "The actual article is a conference promotion: it introduces the event, gives registration information, advertises a competition, and invites several audience groups. E1 directly identifies its introductory purpose. It contains no investigation decisions, tool-purpose evidence, validation, failures, or reusable research method to extract.",
+  "canonical_source": null,
+  "evidence": [
+    {
+      "id": "E1",
+      "locator": "Article body paragraph beginning 各位好, immediately after the event-registration notice.",
+      "quote": "各位好，很高興能跟大家介紹今年的台灣駭客年會。",
+      "verified": true
+    }
+  ],
+  "workflow": [],
+  "tools": [],
+  "handoffs": [],
+  "limitations": [
+    "This is a historical event announcement, not a technical investigation or tool overview.",
+    "The quotation is classification evidence only; it supports no operational guidance or derived handoff.",
+    "Claims about the event and competition remain promotional statements, not independently verified results."
+  ],
+  "candidate_additions": [],
+  "related_article_urls": [],
+  "excluded_material": [
+    "Event-registration and promotional details",
+    "Competition prize and audience invitations",
+    "Humorous alien-themed framing",
+    "External event-site link"
+  ],
+  "worker_notes": "Readable fetch content was corroborated against the complete article DOM in orange-O080. No linked pages were followed and no target testing was performed."
+}
