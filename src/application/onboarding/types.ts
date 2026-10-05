@@ -1,3 +1,5 @@
+import type { BundledRuntimeEnvironment } from './runtime-prerequisites.js';
+
 /** Owner-authored scope consent, not a run manifest, model plan, or independently verified ownership proof. */
 export interface OnboardingTarget {
   kind: 'local-dir' | 'github-repo' | 'http-url';
@@ -111,6 +113,12 @@ export interface OnboardingOptions {
   /** Host-only override, never taken from command arguments, model content or target files. */
   storageRoot?: string;
   now?: () => number;
+  /**
+   * Host-only readiness seam for the bundled-runtime check: the package root and environment to validate.
+   * Production omits it and validates the discovered package root with the real environment. It is never
+   * taken from command arguments, target content, UI input or model output.
+   */
+  runtime?: BundledRuntimeEnvironment;
 }
 export type OnboardingHandler = (input: OnboardingInput) => Promise<OnboardingResult>;
 export class OnboardingError extends Error {

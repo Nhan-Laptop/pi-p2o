@@ -1,7 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { tmpdir } from 'node:os';
 import { isIP } from 'node:net';
 import { lookup } from 'node:dns/promises';
@@ -9,7 +8,7 @@ import { canonicalJson, digestJson, type PlanProposal, type RunManifest, type Sc
 import type { PlanRequestEnvelope } from '../contracts/plan-request.js';
 import type { BackendFactoryContext, ControlBackend } from '../interface/types.js';
 import type { EntryPreparation, EntryRun, EntryRunSummary, TargetEntryPort } from '../interface/target-entry.js';
-import { configurationDigest, consentCovers, defaultOwnerStorageRoot, onboardingScopeFor, readOwnerConsent, type OnboardingReady } from './onboarding/index.js';
+import { configurationDigest, consentCovers, defaultOwnerStorageRoot, inspectBundledRuntime, onboardingScopeFor, readOwnerConsent, type BundledRuntimePlan, type OnboardingReady } from './onboarding/index.js';
 import { createApplication, ownerGrantFor, validateApplicationConfig, type ApplicationConfigWithSpend } from './composition.js';
 import type { AssessmentApplication, ObservationCheck } from './types.js';
 import { createTargetEntryPort } from './entry/port.js';
@@ -36,11 +35,19 @@ import { createControllerModelGateway, type ControllerModelGateway } from '../ru
 import { persistControllerCheckpoint, type ControllerRestoreReady } from './checkpoint/index.js';
 import { discoverInterruptedControllerRun, prepareInterruptedControllerRestore, readControllerOwnerFromDurableConsent, releaseStaleVaultWriter, type ControllerRunDiscovery } from './checkpoint/restore.js';
 
-const candidates = [resolve(dirname(fileURLToPath(import.meta.url)), '../..'), resolve(dirname(fileURLToPath(import.meta.url)), '../../..')];
-const packageRoot = candidates.find(root => existsSync(join(root, 'containers/pack.lock.json')))!;
-if (!packageRoot) throw new Error('BUNDLED_RUNTIME_MISSING: no shipped pinned container lock');
 const sha = (bytes: string | Buffer) => createHash('sha256').update(bytes).digest('hex');
 function fail(code: string, message: string): never { throw new EntryError(code, message); }
+
+/**
+ * Resolve the bundled runtime or refuse with the named code. No path is joined ad hoc in this module: a missing
+ * `dist/` runtime or worker binary must surface as BUNDLED_RUNTIME_MISSING before any run directory exists,
+ * never as a raw ENOENT after the owner has already consented.
+ */
+function bundledRuntime(): BundledRuntimePlan {
+  const inspected = inspectBundledRuntime();
+  if (!inspected.ok) fail(inspected.code, inspected.message);
+  return inspected.plan;
+}
 const iso = (n: number) => new Date(n).toISOString();
 const taskId = 'assessment';
 const targetId = 'owner-target';
@@ -61,13 +68,13 @@ async function revalidateOwner(owner: OnboardingReady): Promise<void> {
   if (owner.effectivePermissions.repositoryScripts || owner.effectivePermissions.stateChanges) fail('ENTRY_UNSUPPORTED_ACTION', 'repository scripts and state-changing actions are not qualified by the bundled read/static runtime; granting consent does not enable unsupported tools');
 }
 
-function containerSettings(root: string, owner: OnboardingReady): QualifiedSourceContainerSettings {
-  const lock = JSON.parse(readFileSync(join(packageRoot, 'containers/pack.lock.json'), 'utf8'));
+function containerSettings(root: string, owner: OnboardingReady, runtime: BundledRuntimePlan): QualifiedSourceContainerSettings {
+  const lock = JSON.parse(readFileSync(runtime.containerLockPath, 'utf8'));
   if (lock.lockVersion !== 2 || lock.packVersion !== '1.0.0') fail('SANDBOX_NOT_QUALIFIED', 'bundled container lock is unavailable/unsupported; no pull/build/re-pin');
   return { enginePath: '/usr/bin/docker', engineVersion: lock.engineVersion, image: lock.image.pin,
     imageRootfsLayers: lock.image.rootfsLayers, baseImageId: lock.base.localBaseImageId,
     workerSha256: lock.sources.workerSha256, sourceSha256: lock.sources.sourceSha256,
-    seccompPath: join(packageRoot, 'containers/seccomp.json'), seccompSha256: lock.sources.seccompSha256,
+    seccompPath: runtime.seccompPath, seccompSha256: lock.sources.seccompSha256,
     qualification: { acknowledgement: 'containers-share-host-kernel-not-hostile-code-isolation', dedicatedLab: true,
       approvedBy: `human-ui:${owner.configuration.owner.uid}`, expiresAt: iso(owner.effectiveLimits.deadlineMs), nativeEnabled: false },
     maxFileBytes: 1024 * 1024, maxArtifactBytes: 4 * 1024 * 1024,
@@ -75,7 +82,7 @@ function containerSettings(root: string, owner: OnboardingReady): QualifiedSourc
     maxArtifacts: root ? 128 : 128 };
 }
 
-function synthesize(owner: OnboardingReady, setup: HostAssessmentSetup, root: string, qualified: QualifiedSourceContainerSettings, controller: ControllerContainerOwner): ApplicationConfigWithSpend {
+function synthesize(owner: OnboardingReady, setup: HostAssessmentSetup, root: string, qualified: QualifiedSourceContainerSettings, controller: ControllerContainerOwner, runtime: BundledRuntimePlan): ApplicationConfigWithSpend {
   const limits = owner.effectiveLimits, scope = owner.configuration.scope, source = scope.target.kind !== 'http-url';
   const runId = controller.binding.scope.runId;
   const control = join(root, 'control'), workspace = join(root, 'workspaces'), input = join(root, 'consent-inputs'), output = join(root, 'outputs');
@@ -108,14 +115,14 @@ function synthesize(owner: OnboardingReady, setup: HostAssessmentSetup, root: st
     question: { text: `What bounded ${source ? 'static source' : 'read-only HTTP'} observations are supported within the exact approved target?`, ifTrue: 'Authenticated observations support a bounded account of the assessed surface, with limitations.', ifFalse: 'Evidence is insufficient; identify failures and untested scope without claiming vulnerability verification.' },
     scope: taskScope, skills: [source ? 'source-code-auditing' : 'attack-surface-mapping'], allowedActions: [action], requiredCapabilities: [capability],
     budgets: { deadlineAt: iso(limits.deadlineMs - reserveMs), maxRequests: limits.maxRequests, maxBytes: run.budgets.maxBytes, maxToolCalls: limits.maxToolCalls, maxTokens: remainingTokens, maxCostUsd: remainingCost, maxAttempts: limits.maxAttempts }, requestedRuntime: { ...run.requestedRuntime }, workspace: join(workspace, taskId), lifecycleState: 'queued', packetState: 'draft' };
-  const extension = realpathSync(join(packageRoot, 'examples/local-assessment/bridge-extension.js'));
+  const extension = runtime.bridgeExtensionPath;
   const toolPolicy = { mode: 'sandbox-extension' as const, extension: { path: extension, sha256: sha(readFileSync(extension)), approval: 'bundled pinned bridge; no built-in host tools' }, boundaryId: 'p2o-first-use-read-static', tools: ['p2o_context', 'p2o_broker', 'p2o_packet'] };
   const parsedUrl = source ? undefined : new URL(scope.target.locator);
   // Unix sockets have a ~108-byte kernel limit; never derive the socket from long owner/run paths.
   const bridgeDirectory = mkdtempSync(join(tmpdir(), 'p2o-b-'));
   return validateApplicationConfig({ schemaVersion: 1, mode: 'authorized-assessment', roots: { state: join(root, 'state.sqlite'), control, workspace, vault: join(root, 'vault'), artifacts: { controller: join(control, 'artifacts'), broker: output }, workerWriteRoots: [workspace] },
     run, tasks: [{ manifest, role: 'worker', toolPolicy, boundaryReceipt: taskScope.isolation }],
-    runtime: { adapter: 'headless', selection: { ...setup.selection }, piBinary: realpathSync(join(packageRoot, 'node_modules/.bin/pi')), piVersion: '1.0.0', gateway: { approval: setup.upstream.approval, baseUrl: 'http://127.0.0.1:1', api: setup.upstream.api, models: setup.upstream.models } },
+    runtime: { adapter: 'headless', selection: { ...setup.selection }, piBinary: runtime.piBinary, piVersion: '1.0.0', gateway: { approval: setup.upstream.approval, baseUrl: 'http://127.0.0.1:1', api: setup.upstream.api, models: setup.upstream.models } },
     sandbox: { mode: 'container', options: { ...qualified, inputRoot: input, outputRoot: output, trustedInputSnapshot: true } },
     policy: { version: 1, runId, authorization: { reference: run.authorization.reference, approvedBy: run.authorization.authorizedBy, expiresAt: deadlineAt },
       targets: parsedUrl ? [{ id: targetId, origins: [parsedUrl.origin], pathPrefixes: [parsedUrl.pathname], allowedCidrs: initialUrlCidrs(parsedUrl), methods: ['GET', 'HEAD'], actions: ['read'], accounts: ['anonymous'], limits: { maxRequests: limits.maxRequests, maxBytes: run.budgets.maxBytes, maxConcurrent: limits.concurrency, rate: { requests: Math.max(1, Math.min(8, limits.maxRequests)), windowMs: 1000 } } }] : [],
@@ -156,6 +163,9 @@ export function createFirstUseBackend(context: BackendFactoryContext): ControlBa
     if (!author?.configure || !author.confirmSource || !author.confirmContainer) fail('ENTRY_PLAN_AUTHOR_REQUIRED', 'bundled first use needs the checked host Pi model selection, pricing and source UI bridge; a string-only custom author cannot grant these boundaries');
     const setup = await author.configure(owner);
     if (setup.qualificationHarness && (setup.qualificationHarness.kind !== 'model-inert-controlled-targets-not-live' || setup.selection.provider !== 'inert-fixture' || new URL(setup.upstream.upstreamBaseUrl).hostname !== '127.0.0.1')) fail('QUALIFICATION_MODE_DENIED', 'controlled transport is only legal for an explicit inert loopback qualification; never live/production');
+    // The bundled runtime is resolved (worker binary, dist guardian/receipts, pinned lock/seccomp/bridge)
+    // before any run directory or consent-adjacent artifact is created, so a broken install refuses here.
+    const runtime = bundledRuntime();
     const root = join(resolve(dirname(owner.configPath), '..'), 'runs', `assessment-${randomUUID()}`);
     mkdirSync(root, { recursive: true, mode: 0o700 });
     const selected = setup.upstream.models.find(model => model.id === setup.selection.model);
@@ -169,11 +179,11 @@ export function createFirstUseBackend(context: BackendFactoryContext): ControlBa
     }
     if (!setup.bindPlannerBudget) fail("MODEL_PLAN_GATEWAY_REQUIRED", "Author cannot bind durable phase/gateway admission; no paid fallback");
     Object.assign(setup.planningLimits, budgetPlan.phases.planner.limits);
-    const qualified = containerSettings(root, owner);
+    const qualified = containerSettings(root, owner, runtime);
     await author.confirmContainer(qualified.image, qualified.qualification.expiresAt);
     mkdirSync(join(root, 'control'), { recursive: true, mode: 0o700 });
     const controller = await createControllerContainerOwner(join(root, 'control'), `run-${randomUUID()}`, qualified);
-    const config = synthesize(owner, setup, root, qualified, controller);
+    const config = synthesize(owner, setup, root, qualified, controller, runtime);
     const budgetStore = new DurableStore({ path: config.roots.state });
     const pool = durableAutonomousPool(budgetStore, config.run.runId, budgetPlan);
     const preflightJournal = budgetStore.autonomousPreflightJournal(config.run.runId);
@@ -284,7 +294,7 @@ export function createFirstUseBackend(context: BackendFactoryContext): ControlBa
         // verifier task/plan identity from the approved checks alone and pre-authorizes it as a deferred task;
         // nothing is admitted, no finding plan exists and no claim is promoted before execution.
         const derivedAt = iso(Date.now());
-        const verifierExtensionPath = realpathSync(join(packageRoot, 'examples/local-assessment/bridge-extension.js'));
+        const verifierExtensionPath = runtime.bridgeExtensionPath;
         const verifierBudget: FirstUseVerificationBudget = {
           maxRequests: owner.effectiveLimits.maxRequests, maxToolCalls: owner.effectiveLimits.maxToolCalls,
           maxTokens: budgetPlan.phases.verifier.limits.maxTokens, maxCostUsd: budgetPlan.phases.verifier.limits.maxCostUsd,
@@ -333,7 +343,7 @@ export function createFirstUseBackend(context: BackendFactoryContext): ControlBa
         spend: { phase: { ...budgetPlan.phases.workers, ledger: pool.workers, prices: budgetPlan.prices },
           ...(verifierTaskId ? { byTask: (id: string) => id === verifierTaskId ? { ...budgetPlan.phases.verifier, ledger: pool.verifier, prices: budgetPlan.prices } : undefined } : {}) },
         ...(verificationScheduleForApplication ? { verificationSchedule: verificationScheduleForApplication } : {}),
-        runtimePaths: { guardianPath: join(packageRoot, 'dist/src/runtime/guardian.js'), receiptExtensionPath: join(packageRoot, 'dist/src/runtime/pi-receipts.js') } });
+        runtimePaths: { guardianPath: runtime.guardianPath, receiptExtensionPath: runtime.receiptExtensionPath } });
       return { taskIds: [taskId], observationIds: finalChecks.map(check => check.observationId) };
     };
     const sourceProposal = (selection: EntryOwnerSelection[], preparation: EntryPreparation): PlanProposal => {
@@ -416,6 +426,9 @@ export function createFirstUseBackend(context: BackendFactoryContext): ControlBa
     await revalidateOwner(owner);
     const author = authorNow() as HostPiPlanAuthor | undefined;
     if (!author?.configure) fail('ENTRY_PLAN_AUTHOR_REQUIRED', 'bundled restart needs the checked host Pi model selection/pricing and source UI bridge');
+    // A restored run reuses the same pinned bundled runtime; a now-unbuilt/broken install refuses with the
+    // named code instead of producing a raw ENOENT while the durable run is being re-admitted.
+    const runtime = bundledRuntime();
     // 2. Verifier-state refusal/reconstruction and the exclusive controller claim (phase one grants no source
     //    or launch authority).
     const prepared = await prepareInterruptedControllerRestore({ owner, discovery });
@@ -433,7 +446,7 @@ export function createFirstUseBackend(context: BackendFactoryContext): ControlBa
       await releaseStaleVaultWriter({ layout: discovery.layout, config });
       // 3. Current pinned qualification must equal the original pins exactly; drift is a refusal, never a re-pin.
       const persistedPins = config.sandbox.options as Record<string, unknown>;
-      const current = containerSettings(discovery.layout.runRoot, owner);
+      const current = containerSettings(discovery.layout.runRoot, owner, runtime);
       for (const key of ['enginePath', 'engineVersion', 'image', 'baseImageId', 'workerSha256', 'sourceSha256', 'seccompPath', 'seccompSha256'] as const) {
         if (persistedPins[key] !== undefined && persistedPins[key] !== (current as unknown as Record<string, unknown>)[key]) {
           fail('CHECKPOINT_QUALIFICATION', `pinned container qualification ${key} changed since the original run; explicit re-approval and a new plan are required; no re-pin`);
@@ -490,7 +503,7 @@ export function createFirstUseBackend(context: BackendFactoryContext): ControlBa
         spend: { phase: { ...discovery.budget.phases.workers, ledger: pool.workers, prices: discovery.budget.prices },
           ...(verifierSchedule ? { byTask: (id: string) => id === verifierSchedule.verifierTaskId ? { ...discovery.budget.phases.verifier, ledger: pool.verifier, prices: discovery.budget.prices } : undefined } : {}) },
         ...(verifierSchedule ? { verificationSchedule: verifierSchedule } : {}),
-        runtimePaths: { guardianPath: join(packageRoot, 'dist/src/runtime/guardian.js'), receiptExtensionPath: join(packageRoot, 'dist/src/runtime/pi-receipts.js') },
+        runtimePaths: { guardianPath: runtime.guardianPath, receiptExtensionPath: runtime.receiptExtensionPath },
       });
       // 7. The SAME durable run/tasks are re-admitted in this controller session, then the existing
       // supervisor/DurableStore gates start fresh attempts with fresh sessions on the restored source.

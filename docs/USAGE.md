@@ -4,10 +4,18 @@ Use one command, `/p2o`. See [README](../README.md) for installation and skills.
 
 ## Prerequisites
 
-- Node >=24.19.0, project dependencies installed, and `npm run build` completed.
+- Node >=24.19.0, project dependencies installed, and `npm run build` completed. A **git/local install is a copy
+  of the source tree**: build it in place once (`npm install --include=dev && npm run build`) and check it with
+  `npm run check:runtime`; `pi update <source>` removes that build again, so rebuild after every upgrade.
 - A configured Pi provider with a supported gateway protocol and a pinned price quote.
 - The qualified local Docker image for container-backed execution. Assessment never pulls or re-pins it automatically.
 - An interactive Pi UI or a human-operated RPC UI for initial consent and plan approval.
+
+Load exactly one copy at a time: the installed package (`pi`) or this repository
+(`pi --no-extensions -e /abs/path/to/pi-p2o`). Loading both registers the 14 `p2o_*` tools twice; Pi reports
+tool conflicts and exits `1` before `/p2o` runs. Host-only owner overrides for the bundled runtime are
+`P2O_PI_BINARY` (worker `pi` binary) and `P2O_RUNTIME_DIST` (built dist directory); worker binary order is
+`P2O_PI_BINARY` → package `node_modules/.bin/pi` → `pi` on `PATH`.
 
 The supported baseline is Pi 1.0.0 for both host and managed worker. Availability of a model in Pi does not prove its gateway protocol or pricing is supported here.
 
@@ -82,9 +90,11 @@ the optional pre-authored override are documented there.
 ## Validation
 
 ```sh
+npm run check:runtime         # read-only doctor: worker pi + guardian/receipt + lock/seccomp/bridge
+npm run test:packaging        # installed-layout gate, worker-pi precedence, real Pi CLI /p2o dispatch
 npm run check:first-use       # onboarding + source/container + lifecycle + first-use + verifier suites
 npm run check:upgrade         # existing aggregate and tool-pack integration suites
-npm run qualify:first-use    # installed Pi host, real command/backend/processes; inert model by default
+npm run qualify:first-use     # installed Pi host, real command/backend/processes; inert model by default
 ```
 
 The qualification harness explicitly separates automated RPC consent, mechanical inert-model evidence, live provider runs and public GitHub acquisition. Live provider qualification is opt-in and costs money. Read [qualification results](first-use-qualification.md) and [verification support](first-use-verification.md) before interpreting a passing test.
@@ -93,7 +103,8 @@ The qualification harness explicitly separates automated RPC consent, mechanical
 
 | Failure | Meaning |
 |---|---|
-| `ONBOARDING_UI_UNSUPPORTED` | Initial consent needs a supported interactive UI; no setup/execution was authorized. |
+| `BUNDLED_RUNTIME_MISSING` | The bundled runtime is incomplete (worker `pi`, `dist/src/runtime/guardian.js`, `dist/src/runtime/pi-receipts.js`, or the pinned lock/seccomp/bridge). The message lists every missing path and the fix; it is raised before any consent dialog, never as a raw `ENOENT`. Build the copy (`npm install --include=dev && npm run build`, then `npm run check:runtime`) or set `P2O_PI_BINARY`/`P2O_RUNTIME_DIST`. Nothing was consented, planned or launched. |
+| `Tool "p2o_*" conflicts with …` / exit 1 | Two copies of this package are loaded (installed copy plus an explicit `-e`). Use `pi` alone or `pi --no-extensions -e <abs repo>`; never both. |
 | Unsupported model/pricing/protocol | Select a qualified model; availability in the host alone is insufficient. |
 | `ENTRY_SOURCE_UNBOUND` / source digest mismatch | The approved source identity cannot be bound or restored; execution is refused. |
 | `STOP_UNVERIFIED` / unresolved resource inventory | Cleanup is not proven. Inspect status/events; do not assume the worker or pack stopped. |

@@ -22,6 +22,37 @@ Limits remain explicit:
   passed. This is not a clean full-regression result.
 - Live assessment qualification still requires explicit model and total-budget approval.
 
+## Bundled-runtime packaging gate
+
+A git/local `pi install` copy is a source checkout: it has no `dist/` and no `node_modules/`, and Pi installs
+it with `npm install --omit=dev --legacy-peer-deps`, so a `prepare`-style build cannot run during install.
+The human `/p2o` path previously resolved `node_modules/.bin/pi` and
+`dist/src/runtime/{guardian,pi-receipts}.js` directly and died with a raw `ENOENT` **after** the owner had
+already consented (F2), while the README-documented `pi -e .` produced 14 `p2o_*` tool conflicts and exit 1
+when the same package was also installed (F1).
+
+The bundled runtime is now resolved and checked **before any consent dialog and before any provider or plan
+work**:
+
+- The check fails closed with `BUNDLED_RUNTIME_MISSING` and lists **every** missing path
+  (`examples/local-assessment/bridge-extension.js`, `containers/pack.lock.json`, `containers/seccomp.json`,
+  `dist/src/runtime/guardian.js`, `dist/src/runtime/pi-receipts.js`, and the worker binary when no tier
+  resolves). No raw `ENOENT` reaches the user, and nothing is consented, planned or launched.
+- Worker `pi` binary order: `P2O_PI_BINARY` → `<copy>/node_modules/.bin/pi` → `pi` on `PATH` (no shell).
+  An explicit but unusable override is refused rather than silently replaced.
+- Guardian/receipt dist order: `<copy>/dist/src/runtime/` → `P2O_RUNTIME_DIST` override → named refusal.
+- The same paths feed `runtime.piBinary`, `runtimePaths` and the bridge policy in `prepare()` and restart, so
+  no path is joined ad hoc and no later `realpathSync` can raise `ENOENT`.
+- A git/local copy is documented as needing one explicit build (`npm install --include=dev && npm run
+  build`), verified by the read-only `npm run check:runtime` doctor; `pi update` removes that build and the
+  docs say to rebuild. `dist/` stays git-ignored.
+
+Regression coverage: `npm run test:packaging` (2026-10-05 run on this tree: 3 files, 17 passed, 1 skipped, exit 0). It
+asserts a simulated installed layout (shipped tree copied without `dist/`/`node_modules/`) refuses with the
+named code and zero consent dialogs, each worker-binary precedence tier, dist resolution order, and that a
+real `pi --no-extensions -e <abs copy>` process loads exactly one extension copy, dispatches `/p2o`, and
+makes no model call (no provider is configured) and no target request.
+
 The separate installed-host qualification harness below has not been requalified by these checks.
 
 ```sh

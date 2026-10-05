@@ -11,10 +11,48 @@ untrusted data — none of them grants permission or turns a hypothesis into a v
 
 ## Install
 
-Install with `pi install /absolute/path/to/pi-p2o` (user settings), `pi install -l .` (project settings in
-`.pi/settings.json`) or `pi -e .` (temporary, from the repo root).
+Install as a user package with `pi install /absolute/path/to/pi-p2o` (user settings), as a project package
+with `pi install -l .` (`.pi/settings.json`), or from git with `pi install git:github.com/<owner>/pi-p2o`.
 
-From a source checkout: `npm ci --no-audit --no-fund`, then `npm run build` (required for managed workers).
+### One copy at a time
+
+An installed copy and an explicit `-e` path are **two copies**: both register the same 14 `p2o_*` tools, Pi
+reports one `Tool "p2o_*" conflicts with …` error per tool and exits `1` without running `/p2o`. Use exactly
+one copy:
+
+| You want | Invocation |
+|---|---|
+| the installed copy | `pi` (no `-e`) |
+| this repository (development) | `pi --no-extensions -e /abs/path/to/pi-p2o` |
+
+`--no-extensions` disables discovery of the installed copy while explicit `-e` paths still load. A relative
+`-e .` is not enough once a copy is installed, and `pi -e .` **without** `-ne` is the fatal combination.
+
+### Build the bundled runtime once per copy (managed workers)
+
+A git/local install copies the **source tree only**: `pi install` runs `npm install --omit=dev
+--legacy-peer-deps`, so the copy has neither `dist/` nor the TypeScript compiler. Managed workers need the
+compiled guardian/receipt runtime and the pinned worker bridge, so after installing a copy that will run
+`/p2o`:
+
+```sh
+cd /path/to/the/copy          # e.g. ~/.pi/agent/git/github.com/<owner>/pi-p2o
+npm install --include=dev --no-audit --no-fund
+npm run build
+npm run check:runtime         # read-only doctor: worker pi, guardian/receipts, lock/seccomp/bridge
+```
+
+Without it `/p2o --target …` fails closed with **`BUNDLED_RUNTIME_MISSING`** listing every missing path —
+before any consent dialog, and never as a raw `ENOENT` after you have consented. `pi update <source>` (or
+`pi update --extensions`) reconciles a git checkout with `git clean -fdx` plus a production-only install, so
+a previous build is removed: **rebuild after every upgrade**. The repository itself needs the same build
+(`npm ci --no-audit --no-fund && npm run build`).
+
+Host-only owner overrides for an already-built runtime: `P2O_PI_BINARY` pins the worker `pi` binary and
+`P2O_RUNTIME_DIST` points at a built dist directory. Worker binary order is `P2O_PI_BINARY` →
+`<copy>/node_modules/.bin/pi` → `pi` on `PATH` (resolved without a shell). They are never read from command
+arguments or model output.
+
 Requires **Node >= 24.19.0**, a configured Pi model provider, and the qualified local Docker pack for
 container-backed execution. Both the extension host and pinned managed workers target Pi 1.0.0.
 `pi --skill ./skills` loads only the method library.
@@ -86,6 +124,9 @@ Reports distinguish observations, static findings and independently replayed fin
 ### Current limits
 
 - Bundled first-use supports read/static assessment; script execution and state-changing tests remain unsupported.
+- An installed copy must be built once (`npm install --include=dev && npm run build`). Otherwise `/p2o` refuses
+  with `BUNDLED_RUNTIME_MISSING`, naming every missing path, before consent and without a raw `ENOENT`.
+- Load either the installed copy or the repository copy, never both: two copies collide on the 14 `p2o_*` tools.
 - Independent first-use replay currently covers bounded loopback read-only differentials, not arbitrary external exploits.
 - `/p2o stop` cancels terminally. Cross-process source resume is not supported; stale sessions are refused.
 - Browser/proxy/fuzz packs require explicit qualified composition; they are not automatically granted by first-use consent.
@@ -119,10 +160,13 @@ and untested scope forward; an emulated result is not unmodified-target proof, a
 ## Development
 
 ```sh
-npm run typecheck       # strict TypeScript over src/, extensions/, tests/
-npm run build           # dist/ (JS + .d.ts), then check:build imports every entry point
-npm run test:command    # /p2o grammar, dispatch, approval and lifecycle tests
-npm test                # fail-fast aggregate: typecheck → build → suites → editorial checks
+pi --no-extensions -e "$PWD"   # load exactly this repo copy (single-copy dev invocation)
+npm run check:runtime           # doctor: worker pi + guardian/receipt + lock/seccomp/bridge readiness
+npm run typecheck               # strict TypeScript over src/, extensions/, tests/
+npm run build                   # dist/ (JS + .d.ts), then check:build imports every entry point
+npm run test:command            # /p2o grammar, dispatch, approval and lifecycle tests
+npm run test:packaging          # installed-layout gate, worker-pi precedence and real CLI /p2o dispatch
+npm test                        # fail-fast aggregate: typecheck → build → suites → editorial checks
 ```
 
 `test:runtime` runs the real pinned `pi` binary against an in-process inert provider; `test:sandbox` runs the

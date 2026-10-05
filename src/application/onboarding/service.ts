@@ -1,6 +1,7 @@
 import { actionsFor, boundedText, consentCovers, LIMIT_CEILINGS, onboardingScopeFor, ownerUid, profileLimits, validateLimits, validateOwnerConfiguration } from './configuration.js';
 import { assertStorageOutsideTarget, defaultOwnerStorageRoot, findOwnerConsent, ownerConfigPath, publishOwnerConsent } from './storage.js';
 import { OnboardingError, type OnboardingInput, type OnboardingOptions, type OnboardingResult, type OwnerConfiguration, type OwnerLimits } from './types.js';
+import { assertBundledRuntimeReady } from './runtime-prerequisites.js';
 export const MODEL_DISCLOSURE = 'Planning uses an assessment model you explicitly select in the human UI; your parent Pi model is not assessment consent. Model calls may incur provider charges, including --plan-only. Target identifiers and approved context may be sent to the selected provider. The USD cap includes planning, workers and bounded verification; it is a ceiling, not a price estimate. No target I/O or worker execution is permitted during preparation/planning. Scope consent is not approval of a model plan; you will review its exact digest separately.';
 class Cancelled extends Error {}
 /** Honest bases only. `public-source-review` exists because a public repository is neither owned, nor covered by
@@ -19,6 +20,10 @@ function deadlineText(deadlineMs: number): string {
 }
 /** First-use HUMAN UI only. This function never constructs a backend, calls a model, or reads a target. */
 export async function ensureOwnerOnboarding(input: OnboardingInput, options: OnboardingOptions = {}): Promise<OnboardingResult> {
+  // Bundled-runtime readiness precedes every consent dialog (and the UI check): an installation that cannot
+  // reach prepare() must never collect owner consent. Fails with BUNDLED_RUNTIME_MISSING naming every
+  // missing path, so the owner learns immediately instead of after consenting to a raw ENOENT.
+  assertBundledRuntimeReady(options.runtime);
   if (!input.hasUI || !input.ui || ['confirm', 'select', 'input'].some(method => typeof (input.ui as unknown as Record<string, unknown>)[method] !== 'function')) {
     return { status: 'unsupported', code: 'ONBOARDING_UI_UNSUPPORTED', message: 'First-use /p2o owner consent requires human select/input/confirm dialogs. This host has no supported UI; nothing was configured, planned or launched. Use an interactive Pi session (or a human-operated RPC UI).' };
   }
