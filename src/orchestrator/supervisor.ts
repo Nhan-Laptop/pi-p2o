@@ -994,7 +994,9 @@ export class Supervisor implements SupervisorApi {
     if (accepted && finalize) return this.terminate(state, task, attempt, 'completed', `accepted packet ${accepted.resultId}`);
     const next = nextLifecycle(status);
     if (!next) return false;
-    const runtime = this.observedRuntimeFor(attempt, handle, adapter, observation.observed);
+    // Sample the observation instant BEFORE the projection and the receipt admission, and use it for both.
+    const observedAt = this.nowIso();
+    const runtime = this.observedRuntimeFor(attempt, handle, adapter, observation.observed, observedAt);
     const lastStatus = this.lastStatus.get(attempt.attemptId);
     const selectionChanged = canonicalJson(attempt.observedRuntime?.selection ?? null) !== canonicalJson(runtime.selection ?? null)
       || attempt.observedRuntime?.attestation !== runtime.attestation
@@ -1002,7 +1004,7 @@ export class Supervisor implements SupervisorApi {
     let changed = false;
     if (LIVE_STATUS.has(status)) this.heartbeatQuietly(attempt);
     if (next !== attempt.lifecycleState || !attempt.observedRuntime || selectionChanged || lastStatus !== status) {
-      const evidenceId = this.admitReceipt(task, attempt, handle, contractCapabilities(adapter), this.observationKind(attempt, handle, status));
+      const evidenceId = this.admitReceipt(task, attempt, handle, contractCapabilities(adapter), this.observationKind(attempt, handle, status), observedAt);
       const observed: ObservedRuntime = { ...runtime, receiptEvidenceIds: [evidenceId] };
       try {
         this.store.updateAttempt(attempt.attemptId, { lifecycleState: next, observedRuntime: observed }, { leaseToken: attempt.leaseToken });
@@ -1184,12 +1186,12 @@ export class Supervisor implements SupervisorApi {
           if (!stopped) observations.push({ attemptId: attempt.attemptId, status: 'unknown', observedAt });
           continue;
         }
-        const runtime = this.observedRuntimeFor(attempt, handle, adapter, handle.observed);
+        const runtime = this.observedRuntimeFor(attempt, handle, adapter, handle.observed, observedAt);
         if (!attempt.observedRuntime?.processIdentity || !runtime.processIdentity) {
           observations.push({ attemptId: attempt.attemptId, status: 'unknown', observedAt });
           continue;
         }
-        const evidenceId = this.admitReceipt(task, attempt, handle, contractCapabilities(adapter), 'live');
+        const evidenceId = this.admitReceipt(task, attempt, handle, contractCapabilities(adapter), 'live', observedAt);
         observations.push({
           attemptId: attempt.attemptId, status: 'running', observedAt,
           receiptEvidenceIds: [evidenceId], runtime: { ...runtime, receiptEvidenceIds: [evidenceId] },
@@ -1197,7 +1199,7 @@ export class Supervisor implements SupervisorApi {
         continue;
       }
       if (receipt.state === 'terminated') {
-        const evidenceId = this.admitReceipt(task, attempt, handle, contractCapabilities(adapter), 'terminated');
+        const evidenceId = this.admitReceipt(task, attempt, handle, contractCapabilities(adapter), 'terminated', observedAt);
         const terminated = terminalLifecycleFor(handle);
         const notStarted = handle.launchIntent === false && !attempt.observedRuntime?.processIdentity;
         // A process that ended without an accepted packet is a failed inspection, matching the live finalize path.
@@ -1680,14 +1682,20 @@ export class Supervisor implements SupervisorApi {
       }
       try {
         const capabilities = handle && adapter ? contractCapabilities(adapter) : UNKNOWN_CAPABILITIES;
-        const evidenceId = this.admitReceipt(task, attempt, identity, capabilities, 'terminated');
+        // ONE instant for both sides of the pair: the receipt's `collectedAt` and this observation's
+        // `observedAt`. The store requires `collectedAt >= observedAt`, so admitting the receipt first and
+        // sampling the clock afterwards lets one millisecond tick invert them — permanently refusing the only
+        // reconciliation that can settle this attempt (it stays `reconciling`, the task never terminalizes and
+        // the run never reaches a terminal state).
+        const observedAt = this.nowIso();
+        const evidenceId = this.admitReceipt(task, attempt, identity, capabilities, 'terminated', observedAt);
         const reportedExit = exit ?? (identity.exit
-          ? { code: identity.exit.code, ...(identity.exit.signal ? { signal: identity.exit.signal } : {}), observedAt: this.nowIso() }
+          ? { code: identity.exit.code, ...(identity.exit.signal ? { signal: identity.exit.signal } : {}), observedAt }
           : undefined);
         this.store.reconcileRun(state.runId, [{
           attemptId: attempt.attemptId,
           status: identity.launchIntent === false && !attempt.observedRuntime?.processIdentity ? 'not-started' : 'terminated',
-          observedAt: this.nowIso(), receiptEvidenceIds: [evidenceId], terminationConfirmed: true, lifecycleState: lifecycle,
+          observedAt, receiptEvidenceIds: [evidenceId], terminationConfirmed: true, lifecycleState: lifecycle,
           ...(reportedExit ? { exit: reportedExit } : {}),
         }], { leaseMs: this.leaseMs });
         finalized = true;
@@ -1724,7 +1732,7 @@ export class Supervisor implements SupervisorApi {
 
   private observedRuntimeFor(
     attempt: AttemptRecord, handle: RuntimeHandle, adapter: RuntimeAdapter,
-    receipts: readonly RuntimeHandle['observed'][number][],
+    receipts: readonly RuntimeHandle['observed'][number][], observedAt: string = this.nowIso(),
   ): ObservedRuntime {
     const last = [...receipts].reverse().find(receipt => receipt.thinking !== undefined);
     const process = handle.native.guardian ?? handle.native.processes[0];
@@ -1734,15 +1742,21 @@ export class Supervisor implements SupervisorApi {
       ...(last ? { selection: { provider: last.provider, model: last.model, thinking: last.thinking! } } : {}),
       capabilities: contractCapabilities(adapter),
       attestation: attested ? 'attested' : 'reported',
-      observedAt: this.nowIso(),
+      observedAt,
       receiptEvidenceIds: attempt.observedRuntime?.receiptEvidenceIds ?? [],
       ...(process ? { processIdentity: { pid: process.pid, hostId: process.bootId, startToken: process.startTicks } } : {}),
     };
   }
 
+  /**
+   * Admit the controller receipt that backs ONE observation. `observedAt` is that observation's instant: the
+   * store enforces `receipt.collectedAt >= observation.observedAt`, so the receipt must be stamped at the same
+   * instant or later. Callers that also record the observation pass one captured instant to both, so the pair
+   * can never be ordered ambiguously by a clock tick between the two calls.
+   */
   private admitReceipt(
     task: TaskManifest, attempt: AttemptRecord, handle: RuntimeHandle, capabilities: ContractCapabilities,
-    observation: ControllerObservation['observation'],
+    observation: ControllerObservation['observation'], observedAt: string = this.nowIso(),
   ): string {
     const process = handle.native.guardian ?? handle.native.processes[0];
     const observationRecord: ControllerObservation = {
@@ -1758,7 +1772,7 @@ export class Supervisor implements SupervisorApi {
       files: this.files, store: this.store, controllerId: this.ownerId,
       environmentId: task.scope.environmentId, configurationDigest: task.scope.configurationDigest,
       inputDigests: [digestJson(task.scope.inputs), digestJson(task.question)],
-      handle, now: this.nowIso(), observation: observationRecord,
+      handle, now: observedAt, observation: observationRecord,
     });
   }
 
