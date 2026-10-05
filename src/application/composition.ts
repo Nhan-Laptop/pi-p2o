@@ -13,7 +13,7 @@ import {
 } from '../evidence/index.js';
 import { createPlanLedger, createPlanPort, createRequestPlanLedger, createWorkerContextPort, materializeRequestPlan, type PlanLedger, type PlanPort, type PlanPortOptions, type RequestPlanLedger } from './planner.js';
 import { defaultResolver } from '../tools/http.js';
-import { createPolicy, modelPriceKey, PINNED_MODEL_PRICES, PolicyError, TargetBudget, type Policy, type Scope } from '../policy/index.js';
+import { createPolicy, modelPriceKey, modelAccountingPolicy, PINNED_MODEL_PRICES, PolicyError, TargetBudget, type Policy, type Scope } from '../policy/index.js';
 import {
   CapabilityRegistry, createBrowserPack, createContainerSandbox, createDefaultRegistry, createHostBrowserSandbox, createLocalFixtureSandbox,
   createProxyPack, createToolBroker, ToolExecutionError, validateApprovedTemplates,
@@ -445,12 +445,15 @@ export function validateApplicationConfig(input: unknown): ApplicationConfigWith
   }, 256);
   if (taskEntries.length === 0) fail('invalid-config', 'at least one owner-approved task is required');
 
-  // [T8/S1] Fail-closed model-spend plan gate: every selection this run may request must be priceable by the
-  // pinned catalog, otherwise no worst-case reservation can be bounded. The document is refused here, before
-  // any admission, instead of silently dispatching without spend enforcement.
-  for (const selection of [run.requestedRuntime.selection, ...taskEntries.map(entry => entry.manifest.requestedRuntime.selection)]) {
-    if (!PINNED_MODEL_PRICES[modelPriceKey(selection.provider, selection.model)]) {
-      fail('invalid-config', `No pinned model price for ${selection.provider}/${selection.model}; the run cannot be bounded (fail-closed)`);
+  // [T8/S1] Fail-closed model-spend plan gate for BOUNDED legacy runs: every selection must be priceable by
+  // the pinned catalog, otherwise no worst-case reservation can be bounded. An informational-accounting run
+  // has no financial admission to bound, so an unpriced model is allowed there: its tokens are recorded and
+  // its cost is reported as unknown, never silently as zero.
+  if (run.budgets.modelAccounting !== 'informational') {
+    for (const selection of [run.requestedRuntime.selection, ...taskEntries.map(entry => entry.manifest.requestedRuntime.selection)]) {
+      if (!PINNED_MODEL_PRICES[modelPriceKey(selection.provider, selection.model)]) {
+        fail('invalid-config', `No pinned model price for ${selection.provider}/${selection.model}; the run cannot be bounded (fail-closed)`);
+      }
     }
   }
 
@@ -1035,7 +1038,7 @@ export async function createApplication(configInput: ApplicationConfigWithSpend,
   // override may pin the worst case; enforcement itself is not optional.
   const spendPlan: ModelSpendRuntimeOptions = (() => {
     if (overrides.spend?.phase) return overrides.spend.phase;
-    const limits = { maxTokens: config.run.budgets.maxTokens, maxCostUsd: config.run.budgets.maxCostUsd };
+    const limits = modelAccountingPolicy(config.run.budgets);
     const journal = store.modelSpendJournal(config.run.runId);
     const priorExists = ((): boolean => {
       try { const prior = journal.load(config.run.runId); return prior !== undefined && prior !== null; }
@@ -1777,7 +1780,7 @@ export async function createApplication(configInput: ApplicationConfigWithSpend,
       budgets: {
         deadlineAt: new Date(Date.parse(config.run.budgets.deadlineAt) - config.run.budgets.reportReserveMs).toISOString(),
         maxRequests: config.run.budgets.maxRequests, maxBytes: config.run.budgets.maxBytes, maxToolCalls: config.run.budgets.maxToolCalls,
-        maxTokens: config.run.budgets.maxTokens, maxCostUsd: config.run.budgets.maxCostUsd, maxAttempts: config.run.budgets.maxAttempts,
+        maxTokens: config.run.budgets.maxTokens, maxCostUsd: config.run.budgets.maxCostUsd, ...(config.run.budgets.modelAccounting ? { modelAccounting: config.run.budgets.modelAccounting } : {}), maxAttempts: config.run.budgets.maxAttempts,
         maxTasks: config.run.budgets.maxTasks, maxDepth: config.run.budgets.maxDepth, maxConcurrency: config.run.budgets.maxConcurrency,
       },
       capsCeiling, tasks,
@@ -2196,7 +2199,7 @@ export async function createApplication(configInput: ApplicationConfigWithSpend,
         budgets: {
           deadlineAt: new Date(Date.parse(run.budgets.deadlineAt) - run.budgets.reportReserveMs).toISOString(),
           maxRequests: run.budgets.maxRequests, maxBytes: run.budgets.maxBytes, maxToolCalls: run.budgets.maxToolCalls,
-          maxTokens: run.budgets.maxTokens, maxCostUsd: run.budgets.maxCostUsd, maxAttempts: run.budgets.maxAttempts,
+          maxTokens: run.budgets.maxTokens, maxCostUsd: run.budgets.maxCostUsd, ...(run.budgets.modelAccounting ? { modelAccounting: run.budgets.modelAccounting } : {}), maxAttempts: run.budgets.maxAttempts,
           maxTasks: run.budgets.maxTasks, maxDepth: run.budgets.maxDepth, maxConcurrency: run.budgets.maxConcurrency,
         },
       },
@@ -2409,9 +2412,14 @@ export async function createApplication(configInput: ApplicationConfigWithSpend,
       {
         const requested = config.run.requestedRuntime.selection;
         const key = modelPriceKey(requested.provider, requested.model);
-        warnings.push(`spend enforcement=on limits=maxTokens:${spendPlan.limits.maxTokens} maxCostUsd:${spendPlan.limits.maxCostUsd} price=${key} prices=pinned inputTokensUpperBound=${spendPlan.inputTokensUpperBound ?? 'prompt-bytes'} maxOutputTokens=${spendPlan.maxOutputTokens ?? 'min(4096,remaining)'} journal=${spendPlan.journal ? 'durable' : 'memory'} operations=per-turn-admission-at-the-gateway+per-turn-charge+catch-up+release-with-charged-turns`);
+        const pricing = PINNED_MODEL_PRICES[key] ? `price=${key}` : `price=unknown for ${key} (informational tokens only)`;
+        warnings.push('mode' in spendPlan.limits
+          ? `model accounting=informational-durable; application token/USD caps=none; completion=selected-model capability; ${pricing}`
+          : `spend enforcement=on limits=maxTokens:${spendPlan.limits.maxTokens} maxCostUsd:${spendPlan.limits.maxCostUsd} price=${key} prices=pinned inputTokensUpperBound=${spendPlan.inputTokensUpperBound ?? 'prompt-bytes'} maxOutputTokens=${spendPlan.maxOutputTokens ?? 'min(4096,remaining)'} journal=${spendPlan.journal ? 'durable' : 'memory'} operations=per-turn-admission-at-the-gateway+per-turn-charge+catch-up+release-with-charged-turns`);
         const priced = Boolean(PINNED_MODEL_PRICES[key]);
-        if (!priced) issues.push({ code: 'MODEL_SPEND_UNPRICED', message: `no pinned model price for ${key}; the run cannot be bounded` });
+        // [L3] Bounded runs still refuse an unpriced selection; informational runs record tokens and leave the
+        // monetary figure unknown instead.
+        if (!priced && !('mode' in spendPlan.limits)) issues.push({ code: 'MODEL_SPEND_UNPRICED', message: `no pinned model price for ${key}; the run cannot be bounded` });
       }
       // [F3/F4] Read-only pack report: which optional packs this composition owns, on which boundary, and which
       // pack can release an attempt's session. No capability is granted here and nothing is contacted.

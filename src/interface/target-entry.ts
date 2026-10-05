@@ -38,14 +38,15 @@ export interface EntryPrepareInput {
   purpose?: string;
   depth: EntryDepth;
   planOnly: boolean;
-  budgetUsd?: number;
   concurrency?: number;
 }
 
 export interface EntrySpend {
-  maxCostUsd: number;
+  maxCostUsd: number | null;
   maxRequests: number;
-  maxTokens: number;
+  /** Null only with explicit informational model accounting; legacy numbers remain caps. */
+  maxTokens: number | null;
+  modelAccounting?: 'informational';
   maxToolCalls: number;
   maxAttempts: number;
   deadlineMs?: number;

@@ -274,7 +274,7 @@ test('observed cost above pinned quote consumes headroom and cumulative receipts
   assert.equal(budget.snapshot().accountedCostUsd, .5);
   assert.equal(budget.snapshot().observedCostUsd, .5);
   assert.equal(budget.snapshot().costPolicy, 'pinned-cache-miss-price');
-  assert.ok(budget.snapshot().remaining.costUsd < .5);
+  assert.ok(budget.snapshot().remaining.costUsd! < .5);
   assert.equal(budget.catchUp({ attemptId: 'worker', selection, reservationId: hold.reservationId, usage: { inputTokens: 10, outputTokens: 10, reportedCostUsd: .5 } }), undefined);
   assert.equal(budget.snapshot().accountedCostUsd, .5);
   assert.throws(() => budget.admitTurn({ attemptId: 'worker', selection, inputTokensUpperBound: 1, maxOutputTokens: 1, reservationId: hold.reservationId }), /overshoot/);

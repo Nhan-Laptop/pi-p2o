@@ -27,7 +27,6 @@ export type P2OCommand =
     purpose?: string;
     depth: EntryDepth;
     planOnly: boolean;
-    budgetUsd?: number;
     concurrency?: number;
     /** Requests for separate HUMAN rights/deadline review, never grants. */
     repositoryScripts?: true;
@@ -49,10 +48,8 @@ export const DEPTHS: readonly EntryDepth[] = ['quick', 'standard', 'deep'];
 const MAX_COMMAND_BYTES = 16_384;
 const MAX_ID = 160;
 const ID = /^[A-Za-z0-9][A-Za-z0-9_.:-]*$/;
-const BUDGET = /^(?:0|[1-9]\d*)(?:\.\d{1,2})?$/;
 const CONCURRENCY = /^[1-9]\d*$/;
 const CONTROL = /[\u0000-\u001f\u007f]/;
-export const MAX_BUDGET_USD = 100_000;
 export const MAX_CONCURRENCY = 64;
 
 function invalid(code: string, message: string): InterfaceError {
@@ -142,7 +139,7 @@ function parseStart(tokens: string[]): P2OCommand {
   let purpose: string | undefined;
   let depth: EntryDepth = 'standard';
   let planOnly = false;
-  let budgetUsd: number | undefined;
+
   let concurrency: number | undefined;
   let repositoryScripts: true | undefined;
   let stateChanges: true | undefined;
@@ -195,16 +192,6 @@ function parseStart(tokens: string[]): P2OCommand {
       i = taken.next;
       if (!DEPTHS.includes(taken.value as EntryDepth)) throw invalid('INVALID_DEPTH', `--depth must be one of ${DEPTHS.join('|')}`);
       depth = taken.value as EntryDepth;
-      continue;
-    }
-    if (name === '--budget') {
-      const taken = takeValue('--budget', inline, i);
-      i = taken.next;
-      if (!BUDGET.test(taken.value)) throw invalid('INVALID_BUDGET', '--budget must be a plain positive USD amount such as 5 or 12.50');
-      const value = Number(taken.value);
-      if (!Number.isFinite(value) || value <= 0) throw invalid('INVALID_BUDGET', '--budget must be greater than 0');
-      if (value > MAX_BUDGET_USD) throw invalid('INVALID_BUDGET', `--budget must be at most ${MAX_BUDGET_USD}`);
-      budgetUsd = value;
       continue;
     }
     if (name === '--concurrency') {
@@ -265,7 +252,7 @@ function parseStart(tokens: string[]): P2OCommand {
   }
   if (target === undefined) throw invalid('MISSING_TARGET', 'a target is required: /p2o --target <local-dir|github-https-repo|http(s)-URL>');
   return { verb: 'start', target, ...(purpose !== undefined ? { purpose } : {}), depth, planOnly,
-    ...(budgetUsd !== undefined ? { budgetUsd } : {}), ...(concurrency !== undefined ? { concurrency } : {}),
+    ...(concurrency !== undefined ? { concurrency } : {}),
     ...(repositoryScripts || fullRights ? { repositoryScripts: true } : {}), ...(stateChanges || fullRights ? { stateChanges: true } : {}),
     ...(deadlineMinutes !== undefined ? { deadlineMinutes } : {}), ...(profile !== undefined ? { profile } : {}),
     ...(basis !== undefined ? { basis } : {}), ...(fullRights ? { fullRights } : {}), ...(advanced ? { advanced } : {}) };

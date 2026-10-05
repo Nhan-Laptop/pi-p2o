@@ -126,11 +126,14 @@ async function request(gateway: ControllerModelGateway, placeholder: string, pay
 /** Run one witness against the real gateway, the real gate factory and a durable (in-memory) ledger. */
 async function withGateway(
   fixture: Fixture,
-  limits: { maxTokens: number; maxCostUsd: number },
+  limits: { maxTokens: number; maxCostUsd: number } | { mode: 'accounting-only' },
   body: (context: { gateway: ControllerModelGateway; journal: ReturnType<typeof memoryJournal>; ledger: ModelSpendBudget; placeholder: string }) => Promise<void>,
   options: {
     /** [T10] One-shot journal failure on the first state carrying a settlement. */
     faultOnSettlement?: boolean;
+    contextWindow?: number;
+    nativeMaxTokens?: number;
+    launchOutputTokens?: number;
     /** [T10] Replace the production gate (e.g. to inject a duplicate-producing permit or a failure sink). */
     gate?: (context: { ledger: ModelSpendBudget; reservationId: string }) => GatewaySpendGate;
   } = {},
@@ -140,7 +143,7 @@ async function withGateway(
     provider: PROVIDER,
     upstreamBaseUrl: fixture.origin,
     api: 'openai-completions',
-    models: [{ id: MODEL, maxTokens: 4096, contextWindow: 131072 }],
+    models: [{ id: MODEL, maxTokens: options.nativeMaxTokens ?? 4096, contextWindow: options.contextWindow ?? 131072 }],
     credential: { accountId: 't9-fixture-owner', version: 'v1', secret: UPSTREAM_SECRET },
   });
   await gateway.listen();
@@ -148,7 +151,7 @@ async function withGateway(
   const ledger = new ModelSpendBudget(limits, { runId: RUN, freshRun: true, journal: journal.journal, prices: PRICES });
   ledger.bindRun(RUN, limits);
   const placeholder = gateway.bindAttempt({ attemptId: ATTEMPT, requested: SELECTION });
-  ledger.reserve({ attemptId: ATTEMPT, selection: SELECTION, inputTokensUpperBound: 200, maxOutputTokens: DECLARED_OUTPUT, reservationId: RESERVATION });
+  ledger.reserve({ attemptId: ATTEMPT, selection: SELECTION, inputTokensUpperBound: 200, maxOutputTokens: options.launchOutputTokens ?? DECLARED_OUTPUT, reservationId: RESERVATION });
   gateway.bindSpendGate({
     attemptId: ATTEMPT,
     gate: options.gate?.( { ledger, reservationId: RESERVATION }) ?? createTurnSpendGate({ ledger, reservationId: RESERVATION, attemptId: ATTEMPT, selection: SELECTION, maxOutputTokens: DECLARED_OUTPUT }),
@@ -159,6 +162,120 @@ async function withGateway(
     await gateway.close();
   }
 }
+
+test('review repro: effective 558 versus initial 1200 with observed 600 notifies native failure even below total allowance', async t => {
+  const fixture = await startFixture({ usage: () => ({ prompt_tokens: 100, completion_tokens: 600 }) });
+  const failures: Array<{ reason: string; kind?: string; maxOutputTokens?: number; observedOutputTokens?: number }> = [];
+  const native = { id: MODEL, maxTokens: 1200, contextWindow: 1400 };
+  const baseBytes = Buffer.byteLength(JSON.stringify(clampModelRequest('openai-completions', JSON.parse(requestBody(200)), native, 558)));
+  try {
+    await withGateway(fixture, { mode: 'accounting-only' }, async ({ gateway, journal, ledger, placeholder }) => {
+      const result = await request(gateway, placeholder, 201 + 842 - baseBytes);
+      assert.equal(result.status, 200);
+      assert.equal(JSON.parse(fixture.turns[0]!.body).max_tokens, 558);
+      assert.equal(failures.length, 1, 'runtime must be notified although 600 < initial1200 and 100+600 < 1400');
+      assert.equal(failures[0]!.kind, 'native-output-bound');
+      assert.equal(failures[0]!.maxOutputTokens, 558);
+      assert.equal(failures[0]!.observedOutputTokens, 600);
+      assert.match(failures[0]!.reason, /not monetary exhaustion/);
+      assert.equal(ledger.snapshot().committed.tokens, 700, 'measured usage is still charged truthfully');
+      assert.equal(ledger.snapshot().overshoot.tokens, 42);
+      assert.deepEqual(ledger.snapshot().breach, { tokens: 0, costUsd: 0 });
+      assert.equal(gateway.attestations()[0]!.spend?.reasonCode, 'MODEL_NATIVE_BOUND_EXCEEDED');
+      const closed = await request(gateway, placeholder, 500);
+      assert.equal(closed.status, 403);
+      assert.match(closed.body, /GATEWAY_MODEL_BOUND_DENIED/);
+      assert.doesNotMatch(closed.body, /BUDGET_EXCEEDED/);
+      assert.equal(fixture.turns.length, 1);
+      assert.equal(Object.values(journal.state()!.settlements)[0]!.outputTokens, 600);
+      t.diagnostic('initial=1200 effective=558 observedOutput=600 observedTotal=700 admittedTotal=1400 nativeOvershoot=42 callbacks=1 monetaryBreach=0 nextRequest=native-bound-denied');
+    }, { contextWindow: 1400, nativeMaxTokens: 1200, launchOutputTokens: 1200,
+      gate: ({ ledger, reservationId }) => createTurnSpendGate({ ledger, reservationId, attemptId: ATTEMPT, selection: SELECTION, maxOutputTokens: 1200, accountingOnly: true, onDenied: input => { failures.push(input); } }) });
+  } finally { await fixture.close(); }
+});
+
+test('informational measured input above JSON estimate is accounted, not treated as monetary exhaustion', () => {
+  const ledger = new ModelSpendBudget({ mode: 'accounting-only' }, { runId: RUN, prices: PRICES });
+  ledger.reserve({ attemptId: ATTEMPT, selection: SELECTION, inputTokensUpperBound: 842, maxOutputTokens: 1200, reservationId: RESERVATION });
+  const failures: unknown[] = [];
+  const gate = createTurnSpendGate({ ledger, reservationId: RESERVATION, attemptId: ATTEMPT, selection: SELECTION, maxOutputTokens: 1200, accountingOnly: true, onDenied: input => { failures.push(input); } });
+  gate.admit({ bytes: 842, path: '/chat/completions', maxOutputTokens: 558 }).settle({ inputTokens: 3000, outputTokens: 500 });
+  assert.equal(failures.length, 0);
+  assert.equal(ledger.snapshot().committed.tokens, 3500);
+  assert.deepEqual(ledger.snapshot().breach, { tokens: 0, costUsd: 0 });
+  assert.equal(ledger.snapshot().overshoot.tokens, 0);
+});
+
+test('actual wire admission is mandatory only for informational turns; legacy reservations stay immutable', () => {
+  for (const accountingOnly of [true, false]) {
+    const journal = memoryJournal();
+    const policy = accountingOnly ? { mode: 'accounting-only' as const } : { maxTokens: 10_000, maxCostUsd: 1 };
+    const ledger = new ModelSpendBudget(policy, { runId: RUN, freshRun: true, journal: journal.journal, prices: PRICES });
+    ledger.reserve({ attemptId: ATTEMPT, selection: SELECTION, inputTokensUpperBound: 842, maxOutputTokens: 1200, reservationId: RESERVATION });
+    const gate = createTurnSpendGate({ ledger, reservationId: RESERVATION, attemptId: ATTEMPT, selection: SELECTION, maxOutputTokens: 1200, accountingOnly });
+    if (accountingOnly) {
+      const before = journal.state();
+      assert.throws(() => gate.admit({ bytes: 842, path: '/chat/completions' }), /Actual wire completion ceiling is required/);
+      assert.deepEqual(journal.state(), before, 'missing actual ceiling cannot create a stale launch-bound reservation');
+    }
+    gate.admit({ bytes: 842, path: '/chat/completions', maxOutputTokens: 558 }).unobserved('fixture-no-usage');
+    const settlement = Object.values(journal.state()!.settlements)[0]!;
+    assert.equal(settlement.outputTokens, accountingOnly ? 558 : 1200);
+    assert.equal(settlement.tokens, accountingOnly ? 1400 : 2042);
+  }
+});
+
+test('review repro: wire output 558, not initial 1200, is durably admitted and assumed when usage is absent', async t => {
+  let admission: ModelSpendState | undefined;
+  let readState: () => ModelSpendState | undefined = () => undefined;
+  const fixture = await startFixture({ usage: () => { admission = readState(); return undefined; } });
+  const native = { id: MODEL, maxTokens: 1200, contextWindow: 1400 };
+  const baseBytes = Buffer.byteLength(JSON.stringify(clampModelRequest('openai-completions', JSON.parse(requestBody(200)), native, 558)));
+  const payloadBytes = 201 + 842 - baseBytes;
+  try {
+    await withGateway(fixture, { mode: 'accounting-only' }, async ({ gateway, journal, ledger, placeholder }) => {
+      readState = journal.state;
+      const result = await request(gateway, placeholder, payloadBytes);
+      assert.equal(result.status, 200, result.body);
+      const wire = fixture.turns[0]!;
+      assert.equal(wire.bytes, 842);
+      assert.equal(JSON.parse(wire.body).max_tokens, 558);
+      const hold = Object.values(admission!.reservations[RESERVATION]!.turnHolds!)[0]!;
+      assert.deepEqual(hold, { inputTokens: 842, outputTokens: 558 }, 'actual wire bounds are durable before upstream dispatch');
+      const state = journal.state()!;
+      const settlement = Object.values(state.settlements)[0]!;
+      assert.equal(settlement.inputTokens, 842);
+      assert.equal(settlement.outputTokens, 558, 'unknown usage must not charge the initial 1200 ceiling');
+      assert.equal(settlement.tokens, 1400);
+      assert.match(settlement.basis!, /assumed-worst-case/);
+      assert.equal(ledger.snapshot().overshoot.tokens, 0);
+      const reopened = new ModelSpendBudget({ mode: 'accounting-only' }, { runId: RUN, journal: journal.journal, prices: PRICES });
+      assert.deepEqual(reopened.snapshot(), ledger.snapshot());
+      t.diagnostic(`wireInput=${wire.bytes} wireOutput=${JSON.parse(wire.body).max_tokens} assumedInput=${settlement.inputTokens} assumedOutput=${settlement.outputTokens} total=${settlement.tokens} initialCeiling=1200 restart=preserved`);
+    }, { contextWindow: 1400, nativeMaxTokens: 1200, launchOutputTokens: 1200, gate: ({ ledger, reservationId }) => createTurnSpendGate({ ledger, reservationId, attemptId: ATTEMPT, selection: SELECTION, maxOutputTokens: 1200, accountingOnly: true }) });
+  } finally { await fixture.close(); }
+});
+
+test('informational turns use actual-input native completion capacity and charge that exact wire bound', async () => {
+  const fixture = await startFixture({ usage: () => undefined });
+  try {
+    await withGateway(fixture, { mode: 'accounting-only' }, async ({ gateway, ledger, placeholder }) => {
+      for (const bytes of [600, 3_000, 500]) {
+        const result = await request(gateway, placeholder, bytes);
+        assert.equal(result.status, 200, result.body);
+        const wire = fixture.turns.at(-1)!;
+        const effective = gateway.attestations().at(-1)!.request.effective!;
+        assert.equal(JSON.parse(wire.body).max_tokens, effective.maxOutputTokens);
+        assert.ok(wire.bytes + effective.maxOutputTokens <= 4096);
+        assert.ok(effective.maxOutputTokens > DECLARED_OUTPUT, 'launch ceiling must not constrain informational turns');
+      }
+      const ceilings = gateway.attestations().map(a => a.request.effective!.maxOutputTokens);
+      assert.ok(ceilings[1]! < ceilings[0]! && ceilings[2]! > ceilings[1]!);
+      assert.equal(ledger.snapshot().committed.tokens, fixture.turns.reduce((n, turn, i) => n + turn.bytes + ceilings[i]!, 0));
+      assert.equal(ledger.snapshot().overshoot.tokens, 0);
+    }, { contextWindow: 4096, gate: ({ ledger, reservationId }) => createTurnSpendGate({ ledger, reservationId, attemptId: ATTEMPT, selection: SELECTION, maxOutputTokens: DECLARED_OUTPUT, accountingOnly: true }) });
+  } finally { await fixture.close(); }
+});
 
 test('a turn that no longer fits the run budget is refused at the gateway with zero upstream requests', async () => {
   const fixture = await startFixture({ usage: turn => ({ prompt_tokens: 100 + turn, completion_tokens: 20 }) });
@@ -207,7 +324,7 @@ test('a turn that no longer fits the run budget is refused at the gateway with z
       }
       assert.ok(committed + denial.request.bytes + DECLARED_OUTPUT > limits.maxTokens,
         'the refused turn could not fit the remaining headroom');
-      assert.ok(ledger.snapshot().remaining.tokens > 0, 'the refusal must leave the unspent budget visible');
+      assert.ok(ledger.snapshot().remaining.tokens! > 0, 'the refusal must leave the unspent budget visible');
       assert.equal(ledger.attemptUsage(RESERVATION, ATTEMPT).turns, 2, 'only the two forwarded turns were charged');
     });
   } finally {

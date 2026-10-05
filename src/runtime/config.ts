@@ -164,7 +164,7 @@ export type GatewayDenialCode =
   | "GATEWAY_AUTH_DENIED" | "GATEWAY_ENDPOINT_DENIED" | "GATEWAY_MODEL_DENIED" | "GATEWAY_THINKING_DENIED"
   | "GATEWAY_BODY_DENIED" | "GATEWAY_CREDENTIAL_EXPIRED" | "GATEWAY_UNAVAILABLE" | "GATEWAY_UPSTREAM_FAILED"
   /** [T9] The per-turn spend ledger refused the next request before it reached the provider. */
-  | "GATEWAY_BUDGET_DENIED"
+  | "GATEWAY_BUDGET_DENIED" | "GATEWAY_MODEL_BOUND_DENIED"
 
 /**
  * [T10] A refusal keeps its stable machine code (`GATEWAY_*`) and now also names the underlying policy
@@ -238,7 +238,7 @@ export interface GatewayTurnUsage { inputTokens: number; outputTokens: number }
 
 /** The durable charge one turn produced. */
 /** The durable charge one turn produced. `duplicate` means the ledger already held this turn's charge. */
-export interface GatewayTurnCharge { turnId: string; inputTokens: number; outputTokens: number; costMicros: number; assumed: boolean; duplicate: boolean; exceeded?: boolean }
+export interface GatewayTurnCharge { turnId: string; inputTokens: number; outputTokens: number; costMicros: number; assumed: boolean; duplicate: boolean; exceeded?: boolean; nativeBoundExceeded?: boolean }
 
 /**
  * One admitted provider turn. `settle`/`unobserved` are called exactly once per forwarded request, before
@@ -263,10 +263,17 @@ export interface GatewaySpendGate {
   /** Required for spend-enforced dispatch; absence fails closed rather than trusting worker JSON. */
   readonly maxOutputTokens?: number;
   /**
+   * [L2] Informational-accounting dispatch: the completion ceiling is clamped at the egress to what THIS
+   * request's actual payload leaves available in the model context window (and the payload is only refused
+   * when it cannot fit at all). Bounded legacy dispatch keeps the pre-committed supervisor ceiling so its
+   * worst-case reservation stays authoritative.
+   */
+  readonly accountingOnly?: boolean;
+  /**
    * Pre-forward admission: `bytes` is the actual request payload length the gateway is about to relay.
    * Synchronous and fail-closed: a thrown error denies the turn before any upstream request is issued.
    */
-  admit(request: { bytes: number; path: string }): GatewayTurnPermit;
+  admit(request: { bytes: number; path: string; maxOutputTokens?: number }): GatewayTurnPermit;
   /**
    * [T9] Called by the gateway when `admit` refused a turn, so the supervisor can record that this attempt
    * did not complete its work under the approved budget (the attempt is failed, never reported completed).
@@ -653,6 +660,7 @@ class ControllerModelGatewayServer implements ControllerModelGateway {
   private seq = 0;
   private receiptWrites: Promise<void> = Promise.resolve();
   private readonly deniedAttempts = new Set<string>();
+  private readonly nativeBoundAttempts = new Set<string>();
 
   readonly gatewayId: string;
   readonly provider: string;
@@ -809,7 +817,7 @@ class ControllerModelGatewayServer implements ControllerModelGateway {
       // [T10] A charge the ledger already held is attested as a duplicate, never as a fresh charge.
       const outcome = charge.assumed ? "assumed-worst-case" as const : charge.duplicate ? "duplicate" as const : "charged" as const;
       this.logLine(`gateway ${outcome} turn=${charge.turnId} input=${charge.inputTokens} output=${charge.outputTokens} micros=${charge.costMicros}`);
-      return { turnId: charge.turnId, outcome, inputTokens: charge.inputTokens, outputTokens: charge.outputTokens, costMicros: charge.costMicros, ...(charge.assumed ? { reason } : {}), ...(charge.duplicate ? { reason: "model spend ledger already held this turn's charge" } : {}), ...(charge.exceeded ? { reason: "measured-wire-ceiling-overshoot" } : {}) };
+      return { turnId: charge.turnId, outcome, inputTokens: charge.inputTokens, outputTokens: charge.outputTokens, costMicros: charge.costMicros, ...(charge.assumed ? { reason } : {}), ...(charge.duplicate ? { reason: "model spend ledger already held this turn's charge" } : {}), ...(charge.exceeded ? { reason: "measured-wire-ceiling-overshoot" } : {}), ...(charge.nativeBoundExceeded ? { reasonCode: 'MODEL_NATIVE_BOUND_EXCEEDED' } : {}) };
     } catch (error) {
       // A poisoned or already-finalized ledger is loud, never silent: the attestation records the failure and
       // the supervisor is told that a turn the worker may have paid for is NOT durably charged.
@@ -882,6 +890,13 @@ class ControllerModelGatewayServer implements ControllerModelGateway {
       const prior = await readJson<GatewayAttestation[]>(binding.receiptFile, 512 * 1024);
       if (prior !== undefined && !Array.isArray(prior)) throw new Error('Invalid durable gateway receipt journal');
       if (prior?.some(entry => entry.attemptId === binding.attemptId && (entry.denial?.code === 'GATEWAY_BUDGET_DENIED' || entry.spend?.outcome === 'failed' || entry.spend?.reason === 'measured-wire-ceiling-overshoot'))) this.deniedAttempts.add(binding.attemptId);
+      if (prior?.some(entry => entry.attemptId === binding.attemptId && entry.spend?.reasonCode === 'MODEL_NATIVE_BOUND_EXCEEDED')) this.nativeBoundAttempts.add(binding.attemptId);
+    }
+    if (this.nativeBoundAttempts.has(binding.attemptId)) {
+      await this.deny(response, { at, binding, observed: observed(null), requestDigest: digest(`${method} ${rawPath}`), requestBytes: 0,
+        denial: { code: 'GATEWAY_MODEL_BOUND_DENIED', message: 'ATTEMPT_NATIVE_BOUND_CLOSED: provider violated the actual wire output ceiling; reconciliation required, not a monetary extension', reasonCode: 'MODEL_NATIVE_BOUND_EXCEEDED' },
+        spend: { turnId: '', outcome: 'denied', reason: 'provider-native-output-bound', reasonCode: 'MODEL_NATIVE_BOUND_EXCEEDED' } });
+      return;
     }
     if (this.deniedAttempts.has(binding.attemptId)) {
       await this.deny(response, { at, binding, observed: observed(null), requestDigest: digest(`${method} ${rawPath}`), requestBytes: 0, denial: { code: "GATEWAY_BUDGET_DENIED", message: "[BUDGET_EXCEEDED] ATTEMPT_BUDGET_CLOSED: attempt already has a mandatory partial/failure receipt; owner extension or reconciliation and a new attempt are required", reasonCode: "BUDGET_EXCEEDED" }, spend: { turnId: "", outcome: "denied", reason: "attempt-budget-closed", reasonCode: "BUDGET_EXCEEDED" } });
@@ -946,11 +961,29 @@ class ControllerModelGatewayServer implements ControllerModelGateway {
     let effective: GatewayAttestation["request"]["effective"];
     if (gate) {
       try {
-        const ceiling = gate.maxOutputTokens;
-        if (ceiling === undefined) throw new Error("Supervisor wire completion ceiling is absent");
+        if (gate.maxOutputTokens === undefined) throw new Error("Supervisor wire completion ceiling is absent");
+        // [L2] Accounting-only: the ceiling depends on the ACTUAL request, not on the launch-time prompt. The
+        // payload is refused only when it cannot fit the context window at all; otherwise the completion is
+        // clamped to the remaining space so a long worker turn is not denied by a fixed initial-ceiling check.
+        const estimate = (bytes: number): number => bytes;
+        let ceiling = gate.accountingOnly === true ? model.maxTokens : gate.maxOutputTokens;
+        if (ceiling === undefined) throw new Error("Selected-model native output capability is absent");
+        if (gate.accountingOnly === true && model.contextWindow === undefined) throw new Error("Selected-model context capability is absent");
+        if (gate.accountingOnly === true && model.contextWindow !== undefined) {
+          const available = model.contextWindow - estimate(body.length);
+          if (available < 1) throw new Error("Request payload alone exceeds the model context window");
+          ceiling = Math.min(ceiling, available);
+        }
         effectiveBody = Buffer.from(JSON.stringify(clampModelRequest(this.api, parsed, model, ceiling)));
         if (effectiveBody.length > this.maxBodyBytes) throw new Error("Effective request exceeds gateway body limit");
-        if (model.contextWindow !== undefined && effectiveBody.length + ceiling > model.contextWindow) throw new Error("Estimated request plus completion exceeds model context window");
+        if (model.contextWindow !== undefined && effectiveBody.length + ceiling > model.contextWindow) {
+          if (gate.accountingOnly !== true) throw new Error("Estimated request plus completion exceeds model context window");
+          const available = model.contextWindow - estimate(effectiveBody.length);
+          if (available < 1) throw new Error("Effective request payload alone exceeds the model context window");
+          ceiling = Math.min(ceiling, available);
+          effectiveBody = Buffer.from(JSON.stringify(clampModelRequest(this.api, parsed, model, ceiling)));
+          if (effectiveBody.length > this.maxBodyBytes) throw new Error("Effective request exceeds gateway body limit");
+        }
         effective = { digest: digest(`POST ${route.path}\u0000${digest(effectiveBody)}`), bytes: effectiveBody.length, maxOutputTokens: ceiling, inputEstimationPolicy: "utf8-json-bytes-conservative-estimate-not-tokenizer", thinkingValue: observeThinkingValue(this.api, JSON.parse(effectiveBody.toString('utf8')) as Record<string, unknown>) ?? null };
       } catch (error) {
         const reason = errorText(error).slice(0, 240);
@@ -963,7 +996,7 @@ class ControllerModelGatewayServer implements ControllerModelGateway {
     let permit: GatewayTurnPermit | undefined;
     if (gate) {
       try {
-        permit = gate.admit({ bytes: effectiveBody.length, path });
+        permit = gate.admit({ bytes: effectiveBody.length, path, maxOutputTokens: effective?.maxOutputTokens });
       } catch (error) {
         const reason = errorText(error).slice(0, 240);
         // [T10] The outer code stays stable for machine handling; the policy code names the cause.
@@ -1066,6 +1099,7 @@ class ControllerModelGatewayServer implements ControllerModelGateway {
           if (spend || !permit) return spend;
           spend = this.gatewayTurnCharge(permit, reason === 'provider-response-stream-failed' ? new GatewayUsageScanner(undefined) : scanner, reason);
           if (spend?.outcome === 'failed' || spend?.reason === 'measured-wire-ceiling-overshoot') this.deniedAttempts.add(binding.attemptId);
+          if (spend?.reasonCode === 'MODEL_NATIVE_BOUND_EXCEEDED') this.nativeBoundAttempts.add(binding.attemptId);
           return spend;
         };
         upstreamResponse.on("data", (chunk: Buffer) => {

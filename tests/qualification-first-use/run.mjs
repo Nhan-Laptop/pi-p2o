@@ -4,13 +4,15 @@
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { createServer } from 'node:http';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync, realpathSync } from 'node:fs';
+import { chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync, realpathSync } from 'node:fs';
 import { join, resolve, dirname } from 'node:path';
 import { homedir, tmpdir } from 'node:os';
 import { startInertProvider, transcriptResults, UNTESTED_SCOPE } from './inert-provider.mjs';
 import { PiRpc, GITHUB, GITHUB_COMMIT, CONSENT_LABEL, LIVE_CONSENT_LABEL, LIVE_SELECTION } from './rpc.mjs';
 import { append, command, dockerCanary, hashTree, jsonArtifacts, observeDocker, observeProcesses,
   redact, sha256, sleep, walk } from './observe.mjs';
+
+import { assertPrivateRoot, privateBase } from './private-root.mjs';
 
 const repo = resolve(import.meta.dirname, '../..');
 const flag = name => process.argv.includes(name);
@@ -25,10 +27,21 @@ if (flag('--help')) {
   console.log('node tests/qualification-first-use/run.mjs [--github] [--case NAME] [--artifacts /tmp/NEW-DIR] [--pi /absolute/pi] [--require-live]\nCases: decline-onboarding, decline-plan, url, local, github, stop-stale-reuse (legacy alias: stop-resume)\n--github is an explicit HTTPS public fixed-commit opt-in. stop-stale-reuse is a NEGATIVE stale-reuse test: stop is terminal, resume must refuse RUN_TERMINAL with zero stale resources. --require-live is a NO-CALL readiness refusal, not permission to spend.');
   process.exit(0);
 }
-const root = option('--artifacts') ? resolve(option('--artifacts')) : mkdtempSync(join(tmpdir(), 'p2o-qualification-first-use-'));
+/**
+ * Private root for this qualification. The owner-storage security check (correctly) refuses a root whose
+ * ancestor chain is group/other-writable unless that ancestor is a root-owned sticky directory, and the
+ * ambient TMPDIR here is a group-writable cache directory. So the harness picks an ancestor-safe base and
+ * creates a 0700 root: it must never point owner storage under a writable shared directory.
+ */
+const artifactsOption = option('--artifacts');
 // Reuse of an explicit artifacts root is intentional: the live ledger must survive across sequential live runs so
 // the aggregate cap is enforced across the whole qualification, not per invocation.
-if (option('--artifacts')) mkdirSync(root, { recursive: true, mode: 0o700 });
+if (artifactsOption) mkdirSync(resolve(artifactsOption), { recursive: true, mode: 0o700 });
+const root = artifactsOption ? resolve(artifactsOption)
+  : mkdtempSync(join(privateBase([homedir(), '/tmp']), '.p2o-qualification-first-use-'));
+// Validate before chmod: an explicit root must not be a symlink or hide an unsafe ancestor.
+assertPrivateRoot(root);
+chmodSync(root, 0o700);
 const commandsPath = join(root, 'commands.jsonl');
 const binary = option('--pi') ?? command('/usr/bin/which', ['pi']).stdout.trim();
 // The IMPLEMENTATION agent that invokes this harness, recorded from its own session environment. It is never
@@ -211,6 +224,15 @@ async function runCase(name) {
       if (approved.error) fail(stageFor(rpc), approved.error);
     }
     result.checks.actualModelPlanTransport = provider.receipts.some(receipt => receipt.step === 'plan');
+    // [L1/L3] Ordinary consent asks for no token/USD quota and the run carries no financial phase pools. This is
+    // observable in the real RPC dialog transcript and the persisted controller budget record.
+    const askedTitles = (rpc.prompts ?? []).map(row => row.request?.title ?? '');
+    check(!askedTitles.some(title => /Total USD ceiling|Maximum model tokens/i.test(title)), 'no-budget-prompt',
+      `ordinary consent still asked a financial dialog: ${askedTitles.filter(title => /USD|token/i.test(title)).slice(0, 3).join(' | ')}`);
+    const mechanicalBudget = jsonArtifacts(home).find(row => row.path.endsWith('/autonomous-budget.json'))?.value;
+    check(mechanicalBudget?.outcome === 'accounting-only' && mechanicalBudget?.phases === undefined, 'no-phase-quotas',
+      `controller budget is not accounting-only: ${JSON.stringify(mechanicalBudget)?.slice(0, 200)}`);
+    result.accountingMode = { outcome: mechanicalBudget?.outcome, financialPrompt: false };
     check(result.checks.actualModelPlanTransport, 'model-plan', 'no actual installed-host provider request');
     if (name === 'stop-stale-reuse') {
       stage = 'actual-worker-container-before-stop';
@@ -591,8 +613,23 @@ async function runLiveCase(name) {
     check(planReceipt, 'live-planning-receipt', 'no durable planning receipt with real provider usage; the planning call is unproven');
     check(planReceipt.selection?.provider === LIVE.selection.provider && planReceipt.selection?.model === LIVE.selection.model && planReceipt.selection?.thinking === LIVE.selection.thinking,
       'live-planning-selection', 'planning receipt selection differs from the authorized live selection');
-    check(planReceipt.usage.cost?.total > 0, 'live-planning-cost', 'planning receipt reports no provider cost; live spend cannot be bounded');
+    check(planReceipt.usage.cost?.total > 0, 'live-planning-cost', 'planning receipt reports no provider cost; the pinned quote is unavailable');
+    // [L1-L3] Ordinary accounting-only evidence: no phase quotas, the native selected-model completion bound,
+    // no financial refusal and no partial/extension demand on this path.
+    const pinnedBudget = jsonArtifacts(home).find(row => row.path.endsWith('/autonomous-budget.json'))?.value;
+    check(pinnedBudget?.outcome === 'accounting-only' && pinnedBudget?.phases === undefined,
+      'live-accounting-mode', `live run is not accounting-only without phase quotas: ${JSON.stringify(pinnedBudget)?.slice(0, 200)}`);
+    check(planning?.limits?.modelAccounting === 'informational' && planning?.limits?.maxTokens === null && planning?.limits?.maxCostUsd === null,
+      'live-informational-limits', `planning limits are not informational: ${JSON.stringify(planning?.limits)}`);
+    check(planReceipt.outputBound > 4096, 'live-native-completion-bound',
+      `planning completion bound ${planReceipt.outputBound} is not the native selected-model capability`);
+    const liveDialogTitles = (rpc.prompts ?? []).map(row => row.request?.title ?? '');
+    check(!liveDialogTitles.some(title => /Total USD ceiling|Maximum model tokens/i.test(title)), 'live-no-budget-prompt',
+      `live consent asked a financial dialog: ${liveDialogTitles.filter(title => /USD|token/i.test(title)).slice(0, 3).join(' | ')}`);
+    check(!jsonArtifacts(home).some(row => row.path.endsWith('/partial-report.json')),
+      'live-no-partial-admission', 'ordinary accounting-only run produced a partial/extension report');
     result.planningReceipt = planReceipt;
+    result.accountingMode = { outcome: pinnedBudget?.outcome, nativeBound: planReceipt.outputBound, inputBound: planReceipt.inputBound };
     runId = planned.outcome?.details?.runId; result.runId = runId;
     check(runId, stageFor(rpc), 'no sealed plan/run receipt in the live host session');
     if (kind === 'url') {
@@ -613,6 +650,22 @@ async function runLiveCase(name) {
       await sleep(500);
     }
     result.finalStatus = status;
+    // Durable informational usage AFTER the whole flow: tokens recorded, no financial breach, and a paid hold
+    // that exceeded the former 4096 constant was admitted without a spend refusal.
+    const finalPlanning = jsonArtifacts(home).find(row => row.path.endsWith('/control/planning-spend.json'))?.value;
+    const accounting = finalPlanning?.accounting;
+    check(accounting?.limits?.mode === 'accounting-only' && accounting?.committed?.tokens > 0,
+      'live-durable-accounting', `no durable informational usage recorded: ${JSON.stringify(accounting)?.slice(0, 200)}`);
+    check(accounting?.breach?.tokens === 0 && accounting?.breach?.costUsd === 0, 'live-no-financial-breach',
+      `informational accounting reported a financial breach: ${JSON.stringify(accounting?.breach)}`);
+    // Durable proof that the former 4096 constant is no longer the ceiling: the planner receipt carries the
+    // native selected-model bound (asserted above as > 4096) and the durable policy carries no token/USD cap at
+    // all, while observed usage is recorded. (The budget suite separately proves informational usage above the
+    // former per-phase caps with no financial refusal.)
+    const handles = jsonArtifacts(home).filter(row => row.path.includes('/control/handles/'));
+    check(!handles.some(row => row.value?.budgetOutcome?.extensionRequired === true || row.value?.budgetOutcome?.outcome === 'partial'),
+      'live-no-spend-refusal', 'a live attempt carries a partial/extension spend refusal under informational accounting');
+    result.accounting = { committed: accounting?.committed, breach: accounting?.breach, limits: accounting?.limits, nativeBound: planReceipt.outputBound };
     check(status?.run?.state === 'completed', 'live-supervisor', `live run ${status?.run?.state ?? 'unknown'}; ${JSON.stringify(status?.failures ?? [])}`);
     const attempts = status?.process?.attempts ?? [];
     const admitted = (status?.packets ?? []).filter(row => row.decision?.status === 'accepted');

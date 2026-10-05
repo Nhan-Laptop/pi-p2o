@@ -63,12 +63,12 @@ describe('first-use owner onboarding — UI CONTRACT ONLY', () => {
     expect(await fs.readdir(defaultOwnerStorageRoot())).toEqual([result.configPath.split('/').at(-1)]);
     expect(Object.isFrozen(config.permissions)).toBe(true);
     expect(ui.calls.at(-1)?.message).toMatch(/charges.*--plan-only/);
-    expect(ui.calls.at(-1)?.message).toMatch(/includes planning/);
+    expect(ui.calls.at(-1)?.message).toMatch(/no application token\/USD caps/);
     expect(ui.calls.at(-1)?.message).toMatch(/not independent ownership proof/);
     expect(ui.calls.at(-1)?.message).toMatch(/provider/);
     await expect(fs.lstat(target)).rejects.toMatchObject({ code: 'ENOENT' });
   });
-  test.each(Array.from({ length: 13 }, (_, i) => i + 1))('cancel dialog %i writes absolutely nothing', async cancelAt => {
+  test.each(Array.from({ length: 11 }, (_, i) => i + 1))('cancel dialog %i writes absolutely nothing', async cancelAt => {
     const ui = new ContractUI(); ui.cancelAt = cancelAt;
     expect(await ensureOwnerOnboarding(input(ui))).toEqual({ status: 'cancelled' });
     expect(await fs.readdir(root)).toEqual([]);
@@ -86,12 +86,12 @@ describe('first-use owner onboarding — UI CONTRACT ONLY', () => {
     expect(await ensureOwnerOnboarding(input(ui, { signal: signal.signal }))).toEqual({ status: 'cancelled' });
     expect(await fs.readdir(root)).toEqual([]);
   });
-  test('exact saved scope and narrowed budgets/deadline reuse without onboarding questions in a fresh service call', async () => {
+  test('exact saved scope and narrowed operational limits/deadline reuse without onboarding questions in a fresh service call', async () => {
     const first = await ready();
     const bytes = await fs.readFile(first.configPath, 'utf8'), ui = new ContractUI();
-    const second = await ready(ui, { limits: { maxCostUsd: 2, maxTokens: 50_000, concurrency: 1, deadlineMs: first.configuration.limits.deadlineMs - 1_000 } });
+    const second = await ready(ui, { limits: { maxRequests: 10, concurrency: 1, deadlineMs: first.configuration.limits.deadlineMs - 1_000 } });
     expect(second.reused).toBe(true); expect(ui.calls).toEqual([]);
-    expect(second.effectiveLimits).toMatchObject({ maxCostUsd: 2, maxTokens: 50_000, deadlineMs: first.configuration.limits.deadlineMs - 1_000 });
+    expect(second.effectiveLimits).toMatchObject({ maxRequests: 10, concurrency: 1, deadlineMs: first.configuration.limits.deadlineMs - 1_000, maxCostUsd: null, maxTokens: null });
     expect(second.configuration.limits).toEqual(first.configuration.limits);
     expect(await fs.readFile(first.configPath, 'utf8')).toBe(bytes);
     expect(ui.notifications.join('\n')).toMatch(/model.*charges/);
@@ -102,8 +102,14 @@ describe('first-use owner onboarding — UI CONTRACT ONLY', () => {
     expect(second.configPath).toBe(first.configPath); expect(second.reused).toBe(true); expect(ui.calls).toEqual([]);
     await expect(fs.lstat(join(root, 'work'))).rejects.toMatchObject({ code: 'ENOENT' });
   });
+  test('the removed token/USD budget request is refused explicitly, never silently ignored', async () => {
+    await ready();
+    for (const limits of [{ maxCostUsd: 6 }, { maxTokens: 100_001 }, { maxCostUsd: 6, maxTokens: 100_001 }]) {
+      await expect(ensureOwnerOnboarding(input(new ContractUI(), { limits }))).rejects.toThrow(/application token\/USD caps were removed/);
+    }
+  });
   test.each([
-    { limits: { maxCostUsd: 6 } }, { limits: { maxRequests: 21 } }, { limits: { maxTokens: 100_001 } },
+    { limits: { maxRequests: 21 } },
     { limits: { maxToolCalls: 21 } }, { limits: { maxAttempts: 3 } }, { limits: { concurrency: 2 } },
     { permissions: { repositoryScripts: true } }, { permissions: { stateChanges: true } },
   ])('rights/budget expansion re-prompts; flags/requests do not grant rights: %j', async extra => {
@@ -208,10 +214,10 @@ describe('first-use owner onboarding — UI CONTRACT ONLY', () => {
       if (title.startsWith('Save')) { reached(); await new Promise<void>(resolve => { release = resolve; }); }
       return true;
     };
-    const pending = ready(stale, { limits: { maxCostUsd: 6 } });
+    const pending = ready(stale, { limits: { maxRequests: 21 } });
     await barrier;
     expect(await readOwnerConfiguration(first.configPath)).toEqual(first.configuration);
-    const newest = await ready(new ContractUI(), { limits: { maxCostUsd: 7 } });
+    const newest = await ready(new ContractUI(), { limits: { maxRequests: 22 } });
     release(); await expect(pending).rejects.toThrow(/ONBOARDING_CONFIG_CHANGED/);
     expect(await readOwnerConfiguration(first.configPath)).toEqual(newest.configuration);
     expect(await fs.readdir(defaultOwnerStorageRoot())).toHaveLength(1);

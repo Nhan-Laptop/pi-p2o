@@ -89,7 +89,9 @@ export interface Report {
   /** Redacted report data, never raw artifact bytes or filesystem paths. */
   content: unknown;
   /** Controller-owned phase caps/accounting; no additional model call to render a partial report. */
-  modelBudget?: { policy: "isolated-phase-caps-no-borrowing"; phases: Record<import("../policy/budget.js").AutonomousBudgetPhase, Readonly<import("../policy/budget.js").ModelSpendSnapshot>> };
+  modelBudget?:
+    | { policy: 'isolated-phase-caps-no-borrowing'; phases: Record<import('../policy/budget.js').AutonomousBudgetPhase, Readonly<import('../policy/budget.js').ModelSpendSnapshot>> }
+    | { policy: 'informational-durable-no-phase-quotas'; accounting: Readonly<import('../policy/budget.js').ModelSpendSnapshot> };
 }
 /**
  * This port does not mint authority. start/resume MUST revalidate scope, input identity,

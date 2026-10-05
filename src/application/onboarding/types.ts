@@ -18,9 +18,11 @@ export interface OwnerPermissions {
 }
 export type OwnerAction = 'read' | 'analyze' | 'repo-script' | 'state-change';
 export interface OwnerLimits {
-  maxCostUsd: number;
+  maxCostUsd: number | null;
   maxRequests: number;
-  maxTokens: number;
+  /** Null only with explicit informational model accounting; legacy numbers remain caps. */
+  maxTokens: number | null;
+  modelAccounting?: 'informational';
   maxToolCalls: number;
   maxAttempts: number;
   deadlineMs: number;

@@ -64,7 +64,8 @@ export function scopeKey(scope: OwnerScope): string {
 export function actionsFor(permissions: OwnerPermissions): OwnerConfiguration['allowedActions'] {
   return ['read', 'analyze', ...(permissions.repositoryScripts ? ['repo-script' as const] : []), ...(permissions.stateChanges ? ['state-change' as const] : [])];
 }
-export const LIMIT_CEILINGS: OwnerLimits = {
+export type NumericLimitKey = Exclude<keyof OwnerLimits, 'modelAccounting'>;
+export const LIMIT_CEILINGS: Omit<OwnerLimits, 'modelAccounting' | 'maxTokens' | 'maxCostUsd'> & { maxTokens: number; maxCostUsd: number } = {
   maxCostUsd: 100_000, maxRequests: 1_000_000, maxTokens: 10_000_000, maxToolCalls: 1_000_000,
   maxAttempts: 10_000, deadlineMs: Number.MAX_SAFE_INTEGER, concurrency: 64,
 };
@@ -77,6 +78,12 @@ export const LIMIT_CEILINGS: OwnerLimits = {
  * profile is finite: an unbounded spend cap or deadline is not a guard at all. `deadlineMs` is absolute, so
  * this takes the current time.
  */
+/**
+ * [L1] Ordinary (informational) per-task attempt ceiling. With no application money cap this durable retry
+ * count plus the supervisor's consecutive-failure brake is the loop stop, so it must stay single-digit and
+ * be shown in the consent dialog. A legacy owner who explicitly chose a numeric attempt budget keeps it.
+ */
+export const ORDINARY_MAX_ATTEMPTS = 3;
 export function profileLimits(profile: OnboardingProfile, now: number): OwnerLimits {
   if (profile === 'conservative') {
     return { maxCostUsd: 5, maxRequests: 20, maxTokens: 100_000, maxToolCalls: 20, maxAttempts: 2, deadlineMs: now + 60 * 60_000, concurrency: 1 };
@@ -84,15 +91,17 @@ export function profileLimits(profile: OnboardingProfile, now: number): OwnerLim
   if (profile === 'ceiling') {
     return { ...LIMIT_CEILINGS };
   }
-  return { maxCostUsd: 100, maxRequests: LIMIT_CEILINGS.maxRequests, maxTokens: LIMIT_CEILINGS.maxTokens,
-    maxToolCalls: LIMIT_CEILINGS.maxToolCalls, maxAttempts: LIMIT_CEILINGS.maxAttempts,
+  return { modelAccounting: 'informational', maxCostUsd: null, maxRequests: LIMIT_CEILINGS.maxRequests, maxTokens: null,
+    maxToolCalls: LIMIT_CEILINGS.maxToolCalls, maxAttempts: ORDINARY_MAX_ATTEMPTS,
     deadlineMs: now + 12 * 60 * 60_000, concurrency: 8 };
 }
 
 export function validateLimits(limits: OwnerLimits): void {
-  for (const key of Object.keys(LIMIT_CEILINGS) as Array<keyof OwnerLimits>) {
+  if (limits.modelAccounting === 'informational' ? limits.maxTokens !== null || limits.maxCostUsd !== null : limits.maxTokens === null || limits.maxCostUsd === null) throw new OnboardingError('ONBOARDING_INVALID_INPUT', 'Informational accounting must be explicit; bounded legacy caps cannot disappear');
+  for (const key of Object.keys(LIMIT_CEILINGS) as NumericLimitKey[]) {
     const value = limits[key];
-    if (!Number.isFinite(value) || value <= 0 || value > LIMIT_CEILINGS[key] ||
+    if (limits.modelAccounting === 'informational' && (key === 'maxTokens' || key === 'maxCostUsd')) continue;
+    if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0 || value > LIMIT_CEILINGS[key] ||
       (key !== 'maxCostUsd' && !Number.isSafeInteger(value)) ||
       (key === 'maxCostUsd' && Math.abs(value * 100 - Math.round(value * 100)) > 1e-7)) {
       throw new OnboardingError('ONBOARDING_INVALID_INPUT', `invalid owner limit: ${key}`);
@@ -133,7 +142,9 @@ export function validateOwnerConfiguration(value: unknown): OwnerConfiguration {
   }
   const actions = actionsFor(permissions as unknown as OwnerPermissions);
   if (canonicalJSON(config.allowedActions) !== canonicalJSON(actions)) throw new OnboardingError('ONBOARDING_CONFIG_INVALID', 'actions do not match human permissions');
-  object(config.limits, Object.keys(LIMIT_CEILINGS));
+  const limitKeys = Object.keys(LIMIT_CEILINGS);
+  if ((config.limits as OwnerLimits)?.modelAccounting === 'informational') limitKeys.push('modelAccounting');
+  object(config.limits, limitKeys);
   validateLimits(config.limits as OwnerLimits);
   const disclosure = object(config.disclosure, ['version', 'modelCosts', 'modelDataSharing', 'planOnlyTargetIO']);
   if (disclosure.version !== 1 || disclosure.modelCosts !== true || disclosure.modelDataSharing !== true || disclosure.planOnlyTargetIO !== 0) {
@@ -155,8 +166,12 @@ export function consentCovers(configuration: OwnerConfiguration, scope: OwnerSco
   const localNarrowing = approved.target.kind === 'local-dir' && scope.target.kind === 'local-dir' &&
     scope.boundary === approved.boundary && scope.target.locator.startsWith(`${approved.target.locator}/`);
   if ((!localNarrowing && scopeKey(approved) !== scopeKey(scope)) || configuration.limits.deadlineMs <= now) return false;
+  if (limits.modelAccounting === 'informational' && configuration.limits.modelAccounting !== 'informational') return false;
   for (const key of Object.keys(limits) as Array<keyof OwnerLimits>) {
-    if (limits[key] === undefined || !Number.isFinite(limits[key]) || limits[key]! <= 0 || limits[key]! > configuration.limits[key]) return false;
+    if (key === 'modelAccounting') continue;
+    const requested = limits[key], approved = configuration.limits[key];
+    if (requested === null) { if (approved !== null || configuration.limits.modelAccounting !== 'informational') return false; continue; }
+    if (typeof requested !== 'number' || !Number.isFinite(requested) || requested <= 0 || (approved !== null && requested > approved)) return false;
   }
   if (permissions.repositoryScripts && !configuration.permissions.repositoryScripts) return false;
   if (permissions.stateChanges && !configuration.permissions.stateChanges) return false;

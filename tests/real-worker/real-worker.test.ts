@@ -741,7 +741,7 @@ test('an unaffordable model spend reservation is refused before any provider req
     assert.equal(state.limits.maxTokens, 4_000, 'the run budget that made the worst case unaffordable must be the approved one');
     // The stable enforcement code, checked against exactly this durable journal and these approved limits: the
     // declared worst case (input bound + max output) cannot fit, so the ledger refuses with BUDGET_EXCEEDED.
-    const approved = { maxTokens: state.limits.maxTokens, maxCostUsd: state.limits.maxCostUsdMicros / 1_000_000 };
+    const approved = { maxTokens: state.limits.maxTokens, maxCostUsd: state.limits.maxCostUsdMicros! / 1_000_000 };
     const refusalLedger = new ModelSpendBudget(approved, { runId: REAL_WORKER_REFUSED_RUN_ID, journal: run.app.store.modelSpendJournal(REAL_WORKER_REFUSED_RUN_ID) });
     refusalLedger.bindRun(REAL_WORKER_REFUSED_RUN_ID, approved);
     let budgetError: { code?: string; message?: string } | undefined;

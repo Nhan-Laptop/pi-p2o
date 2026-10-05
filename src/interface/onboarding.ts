@@ -6,7 +6,7 @@ import { InterfaceError } from './types.js';
 
 /** Shared human-command adapter. Never called from a p2o_* tool. */
 export async function onboardCommandTarget(ctx: ExtensionCommandContext, target: EntryTarget, handler: OnboardingHandler = ensureOwnerOnboarding,
-  budgetUsd?: number, concurrency?: number,
+  concurrency?: number,
   request?: Pick<OnboardingInput, 'limits' | 'permissions' | 'mode' | 'profile' | 'basis' | 'reference'>): Promise<OnboardingReady> {
   const result = await handler({ target, cwd: ctx.cwd, hasUI: ctx.hasUI, ui: ctx.ui, signal: ctx.signal,
     ...(request?.mode !== undefined ? { mode: request.mode } : {}),
@@ -14,7 +14,7 @@ export async function onboardCommandTarget(ctx: ExtensionCommandContext, target:
     ...(request?.basis !== undefined ? { basis: request.basis } : {}),
     ...(request?.reference !== undefined ? { reference: request.reference } : {}),
     permissions: request?.permissions,
-    limits: { ...(budgetUsd !== undefined ? { maxCostUsd: budgetUsd } : {}), ...(concurrency !== undefined ? { concurrency } : {}), ...request?.limits } });
+    limits: { ...(concurrency !== undefined ? { concurrency } : {}), ...request?.limits } });
   if (result.status === 'unsupported') throw new InterfaceError(result.code, result.message);
   if (result.status === 'cancelled') throw new InterfaceError('ONBOARDING_CANCELLED', 'you cancelled owner consent; nothing was configured, planned or launched');
   const configuration = validateOwnerConfiguration(result.configuration);
@@ -47,7 +47,8 @@ export function assertOwnerPreparation(owner: OnboardingReady, preparation: Entr
   }
   for (const key of ['maxCostUsd', 'maxRequests', 'maxTokens', 'maxToolCalls', 'maxAttempts'] as const) {
     const value = preparation.spend?.[key];
-    if (!Number.isFinite(value) || value <= 0 || value > limits[key]) {
+    if (value === null && (key === 'maxTokens' || key === 'maxCostUsd') && preparation.spend.modelAccounting === 'informational' && limits.modelAccounting === 'informational' && limits[key] === null) continue;
+    if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0 || (limits[key] !== null && value > limits[key]!)) {
       throw new InterfaceError('ONBOARDING_BUDGET_EXPANSION', `prepared ${key} exceeds your approved budget; renew owner consent interactively`);
     }
   }

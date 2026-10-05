@@ -1,6 +1,7 @@
 import type { Authorization, Scope, RunManifest, TaskManifest, ContractIssue, RequestedRuntime, ObservedRuntime } from './types.js';
 import { authorizationSchema, scopeSchema, runSchema, taskSchema } from './schemas.js';
 import { isTimestamp } from './validation.js';
+import { modelAccountingNarrows } from './model-accounting.js';
 
 export const contractIssue = (code: string, path: string, message: string, question: string): ContractIssue => ({ code, path, message, question });
 export function validateScope(scope: Scope, authorization: Authorization, now: string, actions: readonly string[] = []): ContractIssue[] {
@@ -34,7 +35,8 @@ export function validateTaskScope(task: TaskManifest, run: RunManifest, now: str
   const add = (code: string, path: string, message: string, question: string) => issues.push(contractIssue(code, path, message, question));
   if (task.runId !== run.runId) add('run-identity', '$/runId', 'Task belongs to another run', 'Use the active run identity.');
   for (const capability of task.requiredCapabilities) if (!run.allowedCapabilities.includes(capability)) add('unauthorized-capability', '$/requiredCapabilities', 'Capability was not granted', 'Request an explicit capability grant or narrow the task.');
-  for (const key of ['maxRequests', 'maxBytes', 'maxToolCalls', 'maxTokens', 'maxCostUsd', 'maxAttempts'] as const) if (task.budgets[key] > run.budgets[key]) add('budget-exceeds-run', `$/budgets/${key}`, 'Task budget exceeds run allowance', 'Reduce the task budget to the approved run limit.');
+  if (!modelAccountingNarrows(task.budgets, run.budgets)) add('budget-exceeds-run', '$/budgets', 'Task model accounting widens explicit owner financial policy', 'Keep legacy financial limits or obtain new owner authority.');
+  for (const key of ['maxRequests', 'maxBytes', 'maxToolCalls', 'maxAttempts'] as const) if (task.budgets[key] > run.budgets[key]) add('budget-exceeds-run', `$/budgets/${key}`, 'Task budget exceeds run allowance', 'Reduce the task budget to the approved run limit.');
   const deadline = Date.parse(task.budgets.deadlineAt);
   if (deadline > Date.parse(run.budgets.deadlineAt) - run.budgets.reportReserveMs || deadline <= Date.parse(now)) add('task-deadline', '$/budgets/deadlineAt', 'Task deadline is expired or consumes reporting reserve', 'Choose a live deadline within the absolute run deadline and reserve.');
   if (task.depth > run.budgets.maxDepth) add('task-depth', '$/depth', 'Task exceeds graph depth', 'Use the approved task graph depth.');

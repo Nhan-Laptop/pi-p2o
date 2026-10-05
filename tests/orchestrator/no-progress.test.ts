@@ -4,7 +4,10 @@
 // instead of staying `active` until the deadline. Inert fake runtime only: no provider, no target traffic.
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { admitRunAndTasks, admitTaskEvidence, createHarness, latestAttempt, taskBudget } from './fixtures.js';
+import { join } from 'node:path';
+import { openStore } from '../../src/store/index.js';
+import { createSupervisor } from '../../src/orchestrator/index.js';
+import { admitRunAndTasks, admitTaskEvidence, createHarness, fixtureRun, latestAttempt, supervisorOptionsFor, taskBudget } from './fixtures.js';
 
 test('a never-progressing attempt is terminated with an explicit no-progress reason and its runtime stopped', async () => {
   const harness = createHarness({
@@ -39,7 +42,7 @@ test('a never-progressing attempt is terminated with an explicit no-progress rea
   } finally { harness.store.close(); }
 });
 
-test('an attempt that has collected an observation is never halted by the no-progress breaker', async () => {
+test('[L1] recent progress keeps an attempt alive, but a stale observation no longer exempts it', async () => {
   const harness = createHarness({
     noProgress: { windowMs: 60_000, minToolCalls: 1 },
     runtimeOptions: { steps: [{ at: 0, status: 'running' }] },
@@ -50,10 +53,136 @@ test('an attempt that has collected an observation is never halted by the no-pro
     const attempt = latestAttempt(harness, 'task-1');
     admitTaskEvidence(harness, 'task-1');
     harness.supervisor.consumeBudget(attempt.attemptId, { toolCalls: 4 });
-    harness.clock.advance(600_000);
+    // The progress marker advanced inside the window: the attempt may keep working.
+    harness.clock.advance(30_000);
     await harness.supervisor.tick(harness.run.runId);
-    assert.equal(harness.store.getAttempt(attempt.attemptId)?.lifecycleState, 'running');
+    assert.equal(harness.store.getAttempt(attempt.attemptId)?.lifecycleState, 'running', 'recent progress is not a halt');
     assert.equal(harness.store.listEvents({ runId: harness.run.runId }).some(event => event.type === 'orchestrator.no-progress-halt'), false);
+    // Nothing new arrived for longer than the window: 'collected one observation and stalled' is now halted.
+    harness.clock.advance(61_000);
+    await harness.supervisor.tick(harness.run.runId);
+    assert.equal(harness.store.getAttempt(attempt.attemptId)?.lifecycleState, 'failed', 'a stale observation does not exempt the attempt');
+    const halt = harness.store.listEvents({ runId: harness.run.runId }).find(event => event.type === 'orchestrator.no-progress-halt');
+    assert.ok(halt, 'the post-progress stall is durably recorded');
+  } finally { harness.store.close(); }
+});
+
+test('restart cannot reset a stalled observation window', async () => {
+  const noProgress = { windowMs: 60_000, minToolCalls: 1 };
+  const harness = createHarness({ noProgress, runtimeOptions: { steps: [{ at: 0, status: 'running' }] } });
+  try {
+    await admitRunAndTasks(harness, [harness.task('task-1', { budgets: taskBudget({ maxAttempts: 1 }) })]);
+    await harness.supervisor.tick(harness.run.runId);
+    const attempt = latestAttempt(harness, 'task-1');
+    admitTaskEvidence(harness, 'task-1');
+    harness.supervisor.consumeBudget(attempt.attemptId, { toolCalls: 4 });
+    harness.clock.advance(61_000);
+    const restarted = createSupervisor(supervisorOptionsFor(harness, { noProgress }));
+    try {
+      await restarted.tick(harness.run.runId);
+      assert.equal(harness.store.getAttempt(attempt.attemptId)?.lifecycleState, 'failed');
+      assert.equal(harness.runtime.stops.length, 1);
+    } finally { restarted.dispose(); }
+  } finally { harness.store.close(); }
+});
+
+test('[L1] a durable consecutive-failure brake stops relaunching an informational task and is restart-safe', async () => {
+  const informationalRun = fixtureRun();
+  const harness = createHarness({
+    retryBrake: { consecutiveFailures: 2 },
+    runOverrides: { budgets: { ...informationalRun.budgets, modelAccounting: 'informational', maxTokens: null, maxCostUsd: null, maxAttempts: 10_000 } },
+    runtimeOptions: { steps: [{ at: 0, status: 'running' }, { at: 5_000, status: 'failed' }] },
+  });
+  try {
+    await admitRunAndTasks(harness, [harness.task('task-1', {
+      budgets: taskBudget({ modelAccounting: 'informational', maxTokens: null, maxCostUsd: null, maxAttempts: 10_000 }),
+    })]);
+    // Two complete attempts fail in a row; the durable attempts table is the only counter.
+    for (let round = 0; round < 2; round++) {
+      await harness.supervisor.tick(harness.run.runId);
+      harness.clock.advance(10_000);
+      await harness.supervisor.tick(harness.run.runId);
+      harness.clock.advance(10_000);
+    }
+    const attempts = harness.store.listAttempts(harness.run.runId, 'task-1');
+    assert.equal(attempts.length, 2, `expected exactly two attempts before the brake, saw ${attempts.length}`);
+    assert.equal(harness.store.attemptFailureStreak(harness.run.runId, 'task-1').failures, 2);
+    await harness.supervisor.tick(harness.run.runId);
+    assert.equal(harness.store.listAttempts(harness.run.runId, 'task-1').length, 2, 'the brake refuses a third launch');
+    const brake = harness.store.listEvents({ runId: harness.run.runId }).find(event => event.type === 'orchestrator.retry-brake');
+    assert.ok(brake, 'the brake is durably recorded');
+    assert.equal(brake?.payload.consecutiveFailures, 2);
+    assert.equal(brake?.payload.lastState, 'failed');
+    assert.equal(harness.store.getRun(harness.run.runId)?.state, 'failed', 'retry exhaustion is not successful completion');
+    const restarted = createSupervisor(supervisorOptionsFor(harness, { retryBrake: { consecutiveFailures: 2 } }));
+    try {
+      await restarted.tick(harness.run.runId);
+      assert.equal(harness.store.listAttempts(harness.run.runId, 'task-1').length, 2, 'a fresh supervisor cannot buy 9998 more retries');
+    } finally { restarted.dispose(); }
+    // Restart-equivalent: a FRESH store handle on the same SQLite file re-derives the same streak and sees the
+    // durable brake event, so a restarted controller cannot bypass it (no in-memory counter is involved).
+    const reopened = openStore({ path: join(harness.root, 'run.sqlite') });
+    try {
+      assert.equal(reopened.attemptFailureStreak(harness.run.runId, 'task-1').failures, 2);
+      assert.ok(reopened.listEvents({ runId: harness.run.runId }).some(event => event.type === 'orchestrator.retry-brake'));
+    } finally { reopened.close(); }
+  } finally { harness.store.close(); }
+});
+
+test('review repro: retry-braked A terminalizes B and reverse-ordered descendants in the same tick', async t => {
+  const run = fixtureRun();
+  const budgets = taskBudget({ modelAccounting: 'informational', maxTokens: null, maxCostUsd: null, maxAttempts: 10_000 });
+  const harness = createHarness({
+    retryBrake: { consecutiveFailures: 2 },
+    runOverrides: { budgets: { ...run.budgets, modelAccounting: 'informational', maxTokens: null, maxCostUsd: null, maxAttempts: 10_000 } },
+    runtimeOptions: { steps: [{ at: 0, status: 'running' }, { at: 5_000, status: 'failed' }] },
+  });
+  try {
+    const A = harness.task('task-z-A', { budgets });
+    const B = harness.task('task-y-B', { budgets, dependencyTaskIds: [A.taskId] });
+    const C = harness.task('task-a-C', { budgets, dependencyTaskIds: [B.taskId] });
+    await admitRunAndTasks(harness, [A, B, C]);
+    await harness.supervisor.tick(harness.run.runId);
+    harness.clock.advance(10_000);
+    await harness.supervisor.tick(harness.run.runId);
+    assert.equal(harness.store.listAttempts(harness.run.runId, A.taskId).length, 2);
+    assert.equal(harness.store.getTask(B.taskId)?.lifecycleState, 'queued', 'one failure still permits renewal');
+    harness.clock.advance(10_000);
+    await harness.supervisor.tick(harness.run.runId);
+    assert.equal(harness.store.getTask(A.taskId)?.lifecycleState, 'failed');
+    assert.equal(harness.store.getTask(B.taskId)?.lifecycleState, 'cancelled');
+    assert.equal(harness.store.getTask(C.taskId)?.lifecycleState, 'cancelled');
+    assert.equal(harness.store.getRun(harness.run.runId)?.state, 'failed');
+    assert.equal(harness.store.listAttempts(harness.run.runId, A.taskId).length, 2);
+    for (const id of [B.taskId, C.taskId]) {
+      assert.equal(harness.store.listAttempts(harness.run.runId, id).length, 0);
+      assert.equal(harness.store.getTask(id)?.packetState, 'draft', 'no coverage is fabricated');
+    }
+    const restarted = createSupervisor(supervisorOptionsFor(harness, { retryBrake: { consecutiveFailures: 2 } }));
+    try {
+      await restarted.tick(harness.run.runId);
+      assert.equal(harness.store.getRun(harness.run.runId)?.state, 'failed');
+      assert.equal(harness.store.listAttempts(harness.run.runId).length, 2);
+    } finally { restarted.dispose(); }
+    t.diagnostic('A=failed attempts=2/10000 B=cancelled attempts=0 C=cancelled attempts=0 run=failed restart=no-relaunch');
+  } finally { harness.store.close(); }
+});
+
+test('[L1] a bounded legacy task keeps its owner-set numeric attempt budget and ignores the informational brake', async () => {
+  const harness = createHarness({
+    retryBrake: { consecutiveFailures: 1 },
+    runtimeOptions: { steps: [{ at: 0, status: 'running' }, { at: 5_000, status: 'failed' }] },
+  });
+  try {
+    await admitRunAndTasks(harness, [harness.task('task-1', { budgets: taskBudget({ maxAttempts: 3 }) })]);
+    for (let round = 0; round < 3; round++) {
+      await harness.supervisor.tick(harness.run.runId);
+      harness.clock.advance(10_000);
+      await harness.supervisor.tick(harness.run.runId);
+      harness.clock.advance(10_000);
+    }
+    assert.equal(harness.store.listAttempts(harness.run.runId, 'task-1').length, 3, 'bounded legacy retries follow the numeric attempt budget');
+    assert.equal(harness.store.listEvents({ runId: harness.run.runId }).some(event => event.type === 'orchestrator.retry-brake'), false);
   } finally { harness.store.close(); }
 });
 
@@ -165,25 +294,9 @@ test('[F-3] refunded pre-dispatch refusals still halt the attempt (budget counte
   } finally { harness.store.close(); }
 });
 
-test('[F-1] an attempt that collected an observation is never halted as no-progress', async () => {
-  const harness = createHarness({
-    noProgress: { windowMs: 60_000, minToolCalls: 3, consecutiveRefusals: 3 },
-    runtimeOptions: { steps: [{ at: 0, status: 'running' }] },
-  });
-  try {
-    await admitRunAndTasks(harness, [harness.task('task-1')]);
-    await harness.supervisor.tick(harness.run.runId);
-    const attempt = latestAttempt(harness, 'task-1');
-    admitTaskEvidence(harness, 'task-1');
-    harness.supervisor.consumeBudget(attempt.attemptId, { toolCalls: 3, targetId: 'fixture' });
-    await harness.supervisor.tick(harness.run.runId);
-    harness.clock.advance(301_000);
-    await harness.supervisor.tick(harness.run.runId);
-    assert.equal(harness.store.getAttempt(attempt.attemptId)?.lifecycleState, 'running', 'collected evidence must not be reported as zero collected observations');
-    assert.equal(harness.store.listEvents({ runId: harness.run.runId }).some(event => event.type === 'orchestrator.no-progress-halt'), false);
-    assert.equal(harness.runtime.stops.length, 0);
-  } finally { harness.store.close(); }
-});
+// [L1] The former '[F-1] ever collected an observation is never halted' exemption is intentionally gone: it
+// let a worker collect one artifact and then burn provider turns forever. The replacement above requires the
+// progress marker to advance inside the window, and an accepted packet still exempts an attempt permanently.
 
 test('[F-2] dependents wait until the dependency can no longer be renewed', async () => {
   const harness = createHarness({

@@ -154,7 +154,7 @@ export function registerP2O(pi: ExtensionAPI, options: P2OExtensionOptions = {})
   // Exactly one human slash command. No `/p2o_<action>` registrations: the p2o_* tools stay available for
   // agent/script use, but the human grammar is `/p2o` only.
   pi.registerCommand('p2o', {
-    description: 'One entrypoint: /p2o --target <local-dir|github-https-repo|http(s)-URL> [--plan-only --budget USD --deadline minutes --concurrency N --repo-scripts --state-changes] (first-use human UI) | status|stop|resume|report [runId] | approve <planId>',
+    description: 'One entrypoint: /p2o --target <local-dir|github-https-repo|http(s)-URL> [--plan-only --deadline minutes --concurrency N --repo-scripts --state-changes] (first-use human UI; model usage is informational, provider-limited) | status|stop|resume|report [runId] | approve <planId>',
     handler: async (args: string, ctx: ExtensionCommandContext) => { await runP2OCommand(host, args, ctx); },
   });
 

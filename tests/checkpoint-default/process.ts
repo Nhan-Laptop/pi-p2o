@@ -126,7 +126,8 @@ function snapshotFor(runRoot: string, control: string, attemptId: string | undef
     sourceIdentity: checkpoint.checkpoint.source.identity,
     planDigest: checkpoint.checkpoint.planDigest,
     mountDigest: checkpoint.checkpoint.mountDigest,
-    workerMaxTurns: budget.phases.workers.maxTurns,
+    // Accounting-only runs have no financial/turn phase quota; bounded legacy runs keep their pinned turn cap.
+    workerMaxTurns: budget.outcome === 'accounting-only' ? null : budget.phases.workers.maxTurns,
     checkpointUsage: checkpoint.checkpoint.progress.usage,
     phases: phaseJournals(join(runRoot, 'state.sqlite')),
     attemptId, containerId, handle,
@@ -170,10 +171,16 @@ if (mode === 'persist' || mode === 'persist-mid' || mode === 'persist-live-contr
     return handle?.native?.guardian ? { attemptId, handle } : undefined;
   });
   const phases = phaseJournals(statePath);
-  if (admittedTurns(phases.workers) !== 0 || tokens(phases.workers) !== 0) {
-    // The first provider turn beat the kill; the finite phase program is partially consumed. Let the runner
+  // Accounting-only runs share one informational ledger the planner already charged, so 'the worker's program
+  // is still untouched' is measured on THIS attempt's own hold/turn records, not on ledger-wide totals.
+  const workerHolds = { ...(phases.workers?.reservations ?? {}), ...(phases.workers?.released ?? {}) };
+  const admitted = Object.values(workerHolds).filter((hold: any) => hold?.attemptId === claimed.attemptId)
+    .reduce<number>((total, hold: any) => total + Number(hold?.admittedTurns ?? 0), 0);
+  const charged = Object.values(phases.workers?.settlements ?? {}).filter((settled: any) => settled?.attemptId === claimed.attemptId).length;
+  if (admitted !== 0 || charged !== 0) {
+    // The first provider turn beat the kill; the attempt's program is partially consumed. Let the runner
     // start a fresh run instead of pretending this state qualifies.
-    output(`CHECKPOINT_DEFAULT_PERSIST_RETRY admitted=${admittedTurns(phases.workers)}`);
+    output(`CHECKPOINT_DEFAULT_PERSIST_RETRY admitted=${admitted} charged=${charged}`);
     process.exit(0);
   }
   const snapshot: Record<string, unknown> = snapshotFor(runRoot, control, claimed.attemptId, undefined, claimed.handle);
@@ -278,7 +285,7 @@ if (mode === 'restore' || mode === 'restore-mid') {
     if (settled.run.state !== 'failed') throw new Error(`a mid-program restart must be refused further provider turns, settled as ${settled.run.state}`);
     const after = phaseJournals(snapshot.statePath);
     if (tokens(after.workers) < tokens(before.workers) || costMicros(after.workers) < costMicros(before.workers)) throw new Error('a refused restart reset worker spend');
-    if (admittedTurns(after.workers) > Number(snapshot.workerMaxTurns)) throw new Error(`a refused restart admitted ${admittedTurns(after.workers)} turns beyond the pinned cap ${snapshot.workerMaxTurns}`);
+    if (snapshot.workerMaxTurns !== null && admittedTurns(after.workers) > Number(snapshot.workerMaxTurns)) throw new Error(`a refused restart admitted ${admittedTurns(after.workers)} turns beyond the pinned cap ${snapshot.workerMaxTurns}`);
     for (const phase of ['planner', 'verifier', 'report'] as const) {
       if (tokens(after[phase]) !== tokens(before[phase]) || costMicros(after[phase]) !== costMicros(before[phase])) throw new Error(`a refused restart borrowed from the ${phase} phase`);
     }

@@ -434,7 +434,7 @@ if (mode === 'persist' || mode === 'persist-live') {
   if (mode === 'consent-change') {
     const previous = await readOwnerConsent(input.ownerConfigPath);
     const changed = structuredClone(previous.configuration);
-    changed.limits.maxTokens -= 1;
+    changed.limits.maxTokens = changed.limits.maxTokens! - 1;
     await publishOwnerConsent(join(root, 'consent'), changed, previous.receipt.configurationDigest, Date.now());
   }
 

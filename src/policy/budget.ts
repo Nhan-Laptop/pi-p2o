@@ -149,6 +149,17 @@ export class TargetBudget {
 const THINKING_LEVELS = ['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'] as const;
 export type ModelThinking = typeof THINKING_LEVELS[number];
 export interface ModelSpendLimits { maxTokens: number; maxCostUsd: number }
+/** Explicit durable informational accounting; never inferred from a missing legacy cap. */
+export interface ModelAccountingOnly { mode: 'accounting-only' }
+export type ModelAccountingPolicy = ModelSpendLimits | ModelAccountingOnly;
+export function modelAccountingPolicy(value: { modelAccounting?: 'informational'; maxTokens: number | null; maxCostUsd: number | null }): ModelAccountingPolicy {
+  if (value.modelAccounting === 'informational') {
+    invariant(value.maxTokens === null && value.maxCostUsd === null, 'IDENTITY_DENIED', 'Informational policy cannot carry hidden token/USD caps');
+    return { mode: 'accounting-only' };
+  }
+  invariant(typeof value.maxTokens === 'number' && typeof value.maxCostUsd === 'number', 'IDENTITY_DENIED', 'Legacy bounded policy requires explicit token/USD limits');
+  return { maxTokens: value.maxTokens, maxCostUsd: value.maxCostUsd };
+}
 export interface ModelSpendSelection { provider: string; model: string; thinking: ModelThinking }
 export interface ModelPrice { inputMicroUsdPerMillion: number; outputMicroUsdPerMillion: number }
 export type ModelPriceTable = Readonly<Record<string, Readonly<ModelPrice>>>;
@@ -270,7 +281,7 @@ export interface ModelSpendState {
   runId: string;
   priceDigest: string;
   limitsDigest: string;
-  limits: { maxTokens: number; maxCostUsdMicros: number };
+  limits: { maxTokens: number | null; maxCostUsdMicros: number | null; mode?: 'accounting-only' };
   reservations: Record<string, ModelSpendActiveReservation>;
   settlements: Record<string, ModelSpendSettlementRecord>;
   released: Record<string, ModelSpendReleaseRecord>;
@@ -385,14 +396,15 @@ export interface ModelSpendCatchUpRequest {
 }
 export interface ModelSpendSnapshot {
   runId: string;
-  limits: { maxTokens: number; maxCostUsd: number };
-  committed: { tokens: number; costUsd: number };
+  limits: { maxTokens: number | null; maxCostUsd: number | null; mode?: 'accounting-only' };
+  committed: { tokens: number; costUsd: number | null };
   /** USD charged from pinned cache-miss prices is conservative policy accounting, not a provider invoice. */
-  costPolicy: 'pinned-cache-miss-price';
+  costPolicy: 'pinned-cache-miss-price' | 'unpriced-informational';
   observedCostUsd: number | null;
-  accountedCostUsd: number;
+  /** Unknown unless every settlement has a pinned price or provider-reported cost. */
+  accountedCostUsd: number | null;
   active: { count: number; tokens: number; costUsd: number };
-  remaining: { tokens: number; costUsd: number };
+  remaining: { tokens: number | null; costUsd: number | null };
   overshoot: { tokens: number; costUsd: number };
   /** [T11] Settled spend above the run's own pinned limit — a genuine run-limit breach, always visible. */
   breach: { tokens: number; costUsd: number };
@@ -437,7 +449,7 @@ export class ModelSpendBudget {
   private readonly maxTurns?: number;
   private readonly selectionPin?: ModelSpendSelection;
   private readonly admissionGuard?: () => void;
-  private readonly limits: Readonly<{ maxTokens: number; maxCostUsdMicros: number }>;
+  private readonly limits: Readonly<{ maxTokens: number | null; maxCostUsdMicros: number | null; mode?: 'accounting-only' }>;
   private readonly limitsDigest: string;
   private readonly reservations = new Map<string, ModelSpendActiveReservation>();
   private readonly settlements = new Map<string, ModelSpendSettlementRecord>();
@@ -474,15 +486,20 @@ export class ModelSpendBudget {
   private boundRunId?: string;
   readonly durable: boolean;
 
-  constructor(limits: ModelSpendLimits, options: ModelSpendOptions = {}) {
+  constructor(limits: ModelAccountingPolicy, options: ModelSpendOptions = {}) {
     this.now = options.now ?? Date.now;
     this.admissionGuard = options.admissionGuard;
     this.journal = options.journal;
     this.durable = !!options.journal;
     this.prices = options.prices ?? PINNED_MODEL_PRICES;
     this.priceDigest = digest(this.prices);
-    const maxTokens = integer(limits.maxTokens, 'maxTokens', 0);
-    this.limits = Object.freeze({ maxTokens, maxCostUsdMicros: usdLimitToMicros(money(limits.maxCostUsd, 'maxCostUsd')) });
+    if ('mode' in limits) {
+      invariant(limits.mode === 'accounting-only' && Object.keys(limits).length === 1, 'INVALID_INPUT', 'Accounting-only policy cannot carry hidden financial caps');
+      this.limits = Object.freeze({ mode: 'accounting-only', maxTokens: null, maxCostUsdMicros: null });
+    } else {
+      const maxTokens = integer(limits.maxTokens, 'maxTokens', 0);
+      this.limits = Object.freeze({ maxTokens, maxCostUsdMicros: usdLimitToMicros(money(limits.maxCostUsd, 'maxCostUsd')) });
+    }
     this.maxTurns = options.maxTurns === undefined ? undefined : integer(options.maxTurns, 'maxTurns', 1, MODEL_SPEND_MAX_RECORDS - 1);
     this.selectionPin = options.selection === undefined ? undefined : storedSelection(options.selection);
     this.limitsDigest = digest({ ...this.limits, ...(this.maxTurns === undefined ? {} : { maxTurns: this.maxTurns }), ...(this.selectionPin === undefined ? {} : { selection: this.selectionPin }) });
@@ -503,12 +520,16 @@ export class ModelSpendBudget {
   }
 
   /** Prevent foreign-run counters or a pinned limit configuration wider than the approved run budget. */
-  bindRun(runId: string, limits: ModelSpendLimits): void {
+  bindRun(runId: string, limits: ModelAccountingPolicy): void {
     identifier(runId, 'runId');
     invariant(!this.boundRunId || this.boundRunId === runId, 'IDENTITY_DENIED', 'Model spend ledger belongs to a different run');
-    const approvedTokens = integer(limits.maxTokens, 'maxTokens', 0);
-    const approvedCostMicros = usdLimitToMicros(money(limits.maxCostUsd, 'maxCostUsd'));
-    invariant(this.limits.maxTokens <= approvedTokens && this.limits.maxCostUsdMicros <= approvedCostMicros, 'BUDGET_EXCEEDED', 'Model spend limits are absent or wider than the approved run budget');
+    if ('mode' in limits) {
+      invariant(limits.mode === 'accounting-only' && Object.keys(limits).length === 1 && this.limits.mode === 'accounting-only', 'IDENTITY_DENIED', 'Persisted bounded policy cannot migrate to accounting-only');
+    } else {
+      const approvedTokens = integer(limits.maxTokens, 'maxTokens', 0);
+      const approvedCostMicros = usdLimitToMicros(money(limits.maxCostUsd, 'maxCostUsd'));
+      invariant(this.limits.maxTokens !== null && this.limits.maxCostUsdMicros !== null && this.limits.maxTokens <= approvedTokens && this.limits.maxCostUsdMicros <= approvedCostMicros, 'BUDGET_EXCEEDED', 'Model spend limits are absent or wider than the approved run budget');
+    }
     this.boundRunId = runId;
   }
 
@@ -531,10 +552,19 @@ export class ModelSpendBudget {
     invariant(!this.selectionPin || sameSelection(this.selectionPin, { provider, model, thinking: thinking as ModelThinking }), 'IDENTITY_DENIED', 'Model selection differs from owner phase allocation');
     return deepFreeze({ provider, model, thinking: thinking as ModelThinking });
   }
-  private priceFor(selection: ModelSpendSelection): Readonly<ModelPrice> {
+  /**
+   * Pinned price for the selection. `undefined` only under informational accounting, where an unpriced model
+   * is allowed and its cost is recorded as unknown rather than refused; bounded legacy mode still fails closed.
+   */
+  private priceFor(selection: ModelSpendSelection): Readonly<ModelPrice> | undefined {
     const price = this.prices[modelPriceKey(selection.provider, selection.model)];
-    invariant(price, 'BUDGET_EXCEEDED', 'No pinned price for the requested provider/model; the request cannot be bounded');
+    if (!price && this.limits.mode !== 'accounting-only') invariant(false, 'BUDGET_EXCEEDED', 'No pinned price for the requested provider/model; the request cannot be bounded');
     return price;
+  }
+  /** True when every settled selection so far has a pinned quote (restart-safe: derived from settlements). */
+  private pricedEverySettlement(): boolean {
+    for (const settlement of this.settlements.values()) if (!this.prices[modelPriceKey(settlement.selection.provider, settlement.selection.model)]) return false;
+    return true;
   }
   private assertAttempt(runId: string, attemptId: string): void {
     const owns = this.journal?.ownsAttempt;
@@ -608,7 +638,7 @@ export class ModelSpendBudget {
       runId,
       priceDigest: this.priceDigest,
       limitsDigest: this.limitsDigest,
-      limits: { maxTokens: this.limits.maxTokens, maxCostUsdMicros: this.limits.maxCostUsdMicros },
+      limits: { ...this.limits },
       // [T12] The real `DurableStore` journal writes through `canonicalJson`, which rejects any non-JSON
       // value: an own key whose value is `undefined` (`structuredClone` keeps it) failed every deferral
       // clear and every observed charge. Optional fields are therefore omitted, never persisted empty.
@@ -644,8 +674,12 @@ export class ModelSpendBudget {
     try {
       const o = record(value, 'model spend state', ['version', 'runId', 'priceDigest', 'limitsDigest', 'limits', 'reservations', 'settlements', 'released', 'committed', 'overshoot']);
       invariant(o.version === 1 && o.runId === this.boundRunId && o.priceDigest === this.priceDigest && o.limitsDigest === this.limitsDigest, 'UNAVAILABLE', 'Model spend run/prices/limits identity mismatch');
-      const limits = record(o.limits, 'model spend limits', ['maxTokens', 'maxCostUsdMicros']);
-      invariant(integer(limits.maxTokens, 'maxTokens', 0) === this.limits.maxTokens && integer(limits.maxCostUsdMicros, 'maxCostUsdMicros', 0) === this.limits.maxCostUsdMicros, 'UNAVAILABLE', 'Persisted model spend limits changed');
+      const limits = record(o.limits, 'model spend limits', ['maxTokens', 'maxCostUsdMicros', 'mode']);
+      if (this.limits.mode === 'accounting-only') {
+        invariant(limits.mode === 'accounting-only' && limits.maxTokens === null && limits.maxCostUsdMicros === null, 'UNAVAILABLE', 'Persisted accounting mode changed');
+      } else {
+        invariant(integer(limits.maxTokens, 'maxTokens', 0) === this.limits.maxTokens && integer(limits.maxCostUsdMicros, 'maxCostUsdMicros', 0) === this.limits.maxCostUsdMicros, 'UNAVAILABLE', 'Persisted model spend limits changed');
+      }
       const reservations = record(o.reservations, 'model spend reservations');
       invariant(Object.keys(reservations).length <= MODEL_SPEND_MAX_RECORDS, 'OUTPUT_LIMIT', 'Excessive model spend reservation state');
       // [T10] Counters are read as one set: a state written by the previous revision restores them from the
@@ -746,7 +780,7 @@ export class ModelSpendBudget {
       for (const item of this.reservations.values()) { this.activeTokens += item.reservedTokens; this.activeCostMicros += item.reservedCostMicros; }
       invariant(integer(committed.tokens, 'committed.tokens', 0) === tokens && integer(committed.costMicros, 'committed.costMicros', 0) === costMicros, 'UNAVAILABLE', 'Persisted model spend totals do not match the settled receipts');
       invariant(integer(overshoot.tokens, 'overshoot.tokens', 0) === overshootTokens && integer(overshoot.costMicros, 'overshoot.costMicros', 0) === overshootCostMicros, 'UNAVAILABLE', 'Persisted model spend overshoot does not match the settled receipts');
-      invariant(this.activeTokens <= this.limits.maxTokens && this.activeCostMicros <= this.limits.maxCostUsdMicros, 'UNAVAILABLE', 'Persisted active reservations exceed the pinned limits');
+      invariant((this.limits.maxTokens === null || this.activeTokens <= this.limits.maxTokens) && (this.limits.maxCostUsdMicros === null || this.activeCostMicros <= this.limits.maxCostUsdMicros), 'UNAVAILABLE', 'Persisted active reservations exceed the pinned limits');
       this.committed = { tokens, costMicros };
       this.overshootTotals = { tokens: overshootTokens, costMicros: overshootCostMicros };
     } catch (error) {
@@ -759,7 +793,7 @@ export class ModelSpendBudget {
   reserve(request: ModelSpendRequest): ModelSpendReservation {
     this.assertHealthy();
     this.admissionGuard?.();
-    invariant(this.overshootTotals.tokens === 0 && this.overshootTotals.costMicros === 0 && this.committed.tokens <= this.limits.maxTokens && this.accountedCostMicros() <= this.limits.maxCostUsdMicros, 'BUDGET_EXCEEDED', 'Measured budget overshoot requires owner reconciliation before another reservation');
+    invariant(this.overshootTotals.tokens === 0 && this.overshootTotals.costMicros === 0 && (this.limits.maxTokens === null || this.committed.tokens <= this.limits.maxTokens) && (this.limits.maxCostUsdMicros === null || this.accountedCostMicros() <= this.limits.maxCostUsdMicros), 'BUDGET_EXCEEDED', 'Measured budget overshoot requires owner reconciliation before another reservation');
     const runId = this.requireRun();
     const attemptId = identifier(request.attemptId, 'attemptId');
     this.assertAttempt(runId, attemptId);
@@ -769,12 +803,12 @@ export class ModelSpendBudget {
     const maxOutputTokens = integer(request.maxOutputTokens, 'maxOutputTokens', 0);
     const reservedTokens = inputTokensUpperBound + maxOutputTokens;
     invariant(Number.isSafeInteger(reservedTokens), 'INVALID_INPUT', 'Reserved token bound is not a safe integer');
-    const reservedCostMicros = microUsdForTokens(inputTokensUpperBound, price.inputMicroUsdPerMillion) + microUsdForTokens(maxOutputTokens, price.outputMicroUsdPerMillion);
+    const reservedCostMicros = price ? microUsdForTokens(inputTokensUpperBound, price.inputMicroUsdPerMillion) + microUsdForTokens(maxOutputTokens, price.outputMicroUsdPerMillion) : 0;
     // [T11] A deferred catch-up is observed usage the run has already paid for but not charged yet; the part
     // the in-flight turns do not hold is a claim on the headroom, so admission never advertises it as free.
     const deferred = this.deferredClaim();
-    invariant(this.committed.tokens + this.activeTokens + deferred.tokens + reservedTokens <= this.limits.maxTokens, 'BUDGET_EXCEEDED', 'Model token budget cannot cover the worst-case reservation');
-    invariant(this.accountedCostMicros() + this.activeCostMicros + deferred.costMicros + reservedCostMicros <= this.limits.maxCostUsdMicros, 'BUDGET_EXCEEDED', 'Model cost budget cannot cover the worst-case reservation');
+    invariant((this.limits.maxTokens === null || this.committed.tokens + this.activeTokens + deferred.tokens + reservedTokens <= this.limits.maxTokens), 'BUDGET_EXCEEDED', 'Model token budget cannot cover the worst-case reservation');
+    invariant((this.limits.maxCostUsdMicros === null || this.accountedCostMicros() + this.activeCostMicros + deferred.costMicros + reservedCostMicros <= this.limits.maxCostUsdMicros), 'BUDGET_EXCEEDED', 'Model cost budget cannot cover the worst-case reservation');
     invariant(this.reservations.size + this.settlements.size + this.released.size < MODEL_SPEND_MAX_RECORDS, 'OUTPUT_LIMIT', 'Model spend ledger record limit reached; refusing further dispatch');
     const reservationId = request.reservationId === undefined ? randomUUID() : identifier(request.reservationId, 'reservationId');
     invariant(!this.reservations.has(reservationId) && !this.settlements.has(reservationId) && !this.released.has(reservationId), 'INVALID_INPUT', 'Reservation identity already used');
@@ -814,7 +848,7 @@ export class ModelSpendBudget {
     this.admissionGuard?.();
     const admissions = [...this.reservations.values()].reduce((n, r) => n + r.admittedTurns, 0) + [...this.released.entries()].reduce((n, [id, r]) => n + (r.admittedTurns ?? [...this.settlements.keys()].filter(key => key.startsWith(`${id}:turn-`)).length), 0);
     invariant(this.maxTurns === undefined || admissions < this.maxTurns, 'BUDGET_EXCEEDED', 'Finite phase provider-turn allocation exhausted; owner extension required');
-    invariant(this.overshootTotals.tokens === 0 && this.overshootTotals.costMicros === 0 && this.committed.tokens <= this.limits.maxTokens && this.committed.costMicros <= this.limits.maxCostUsdMicros, 'BUDGET_EXCEEDED', 'Measured budget overshoot requires owner reconciliation before another provider turn');
+    invariant(this.overshootTotals.tokens === 0 && this.overshootTotals.costMicros === 0 && (this.limits.maxTokens === null || this.committed.tokens <= this.limits.maxTokens) && (this.limits.maxCostUsdMicros === null || this.committed.costMicros <= this.limits.maxCostUsdMicros), 'BUDGET_EXCEEDED', 'Measured budget overshoot requires owner reconciliation before another provider turn');
     const runId = this.requireRun();
     const reservationId = identifier(request.reservationId, 'reservationId');
     const attemptId = identifier(request.attemptId, 'attemptId');
@@ -835,8 +869,8 @@ export class ModelSpendBudget {
     if (growTokens > 0 || growCostMicros > 0) {
       // [T11] Same claim as in `reserve`: observed-but-uncharged usage still bounds the next admission.
       const deferred = this.deferredClaim();
-      invariant(this.committed.tokens + this.activeTokens + deferred.tokens + growTokens <= this.limits.maxTokens, 'BUDGET_EXCEEDED', "Model token budget cannot cover the next provider turn's worst case");
-      invariant(this.accountedCostMicros() + this.activeCostMicros + deferred.costMicros + growCostMicros <= this.limits.maxCostUsdMicros, 'BUDGET_EXCEEDED', "Model cost budget cannot cover the next provider turn's worst case");
+      invariant((this.limits.maxTokens === null || this.committed.tokens + this.activeTokens + deferred.tokens + growTokens <= this.limits.maxTokens), 'BUDGET_EXCEEDED', "Model token budget cannot cover the next provider turn's worst case");
+      invariant((this.limits.maxCostUsdMicros === null || this.accountedCostMicros() + this.activeCostMicros + deferred.costMicros + growCostMicros <= this.limits.maxCostUsdMicros), 'BUDGET_EXCEEDED', "Model cost budget cannot cover the next provider turn's worst case");
       invariant(this.reservations.size + this.settlements.size + this.released.size < MODEL_SPEND_MAX_RECORDS, 'OUTPUT_LIMIT', 'Model spend ledger record limit reached; refusing further dispatch');
     }
     // Minted from the durable per-hold counter (never from the settled-charge count) so concurrent admits are
@@ -965,7 +999,7 @@ export class ModelSpendBudget {
         chargedTokens += record.tokens; chargedMicros += Math.max(record.costMicros, record.reportedCostMicros ?? 0);
       }
       const price = this.priceFor(active.selection);
-      const observedMicros = Math.max(deferred.reportedCostMicros ?? 0, microUsdForTokens(deferred.inputTokens, price.inputMicroUsdPerMillion) + microUsdForTokens(deferred.outputTokens, price.outputMicroUsdPerMillion));
+      const observedMicros = price ? Math.max(deferred.reportedCostMicros ?? 0, microUsdForTokens(deferred.inputTokens, price.inputMicroUsdPerMillion) + microUsdForTokens(deferred.outputTokens, price.outputMicroUsdPerMillion)) : (deferred.reportedCostMicros ?? 0);
       // Only the part that no live in-flight turn still holds and that is not charged yet is a claim on the
       // run's remaining headroom: the rest of the observation is already reserved by those turns or paid.
       const live = this.liveTurnCoverage(reservationId);
@@ -1002,9 +1036,10 @@ export class ModelSpendBudget {
     return bound;
   }
 
+  /** Internal arithmetic uses zero for unavailable prices; public totals expose unknown as null. */
   private chargeCostMicros(selection: ModelSpendSelection, inputTokens: number, outputTokens: number): number {
     const price = this.priceFor(selection);
-    return microUsdForTokens(inputTokens, price.inputMicroUsdPerMillion) + microUsdForTokens(outputTokens, price.outputMicroUsdPerMillion);
+    return price ? microUsdForTokens(inputTokens, price.inputMicroUsdPerMillion) + microUsdForTokens(outputTokens, price.outputMicroUsdPerMillion) : 0;
   }
 
   /**
@@ -1031,8 +1066,10 @@ export class ModelSpendBudget {
     invariant(Number.isSafeInteger(tokens), 'INVALID_INPUT', 'Observed token usage is not a safe integer');
     invariant(this.settlements.size + this.released.size < MODEL_SPEND_MAX_RECORDS, 'OUTPUT_LIMIT', 'Model spend ledger record limit reached; refusing further charges');
     const costMicros = this.chargeCostMicros(input.selection, input.usage.inputTokens, input.usage.outputTokens);
-    const overshootTokens = Math.max(0, tokens - input.reservedTokens, input.usage.outputTokens - (input.reservedOutputTokens ?? input.usage.outputTokens));
-    const overshootCostMicros = Math.max(0, Math.max(costMicros, input.usage.reportedCostMicros ?? 0) - input.reservedCostMicros);
+    const overshootTokens = this.limits.mode === 'accounting-only'
+      ? Math.max(0, input.usage.outputTokens - (input.reservedOutputTokens ?? input.usage.outputTokens))
+      : Math.max(0, tokens - input.reservedTokens, input.usage.outputTokens - (input.reservedOutputTokens ?? input.usage.outputTokens));
+    const overshootCostMicros = this.limits.mode === 'accounting-only' ? 0 : Math.max(0, Math.max(costMicros, input.usage.reportedCostMicros ?? 0) - input.reservedCostMicros);
     // [T10] Consume only what is not reserved for turns still in flight (this turn's own bound stops being
     // in flight now, so it becomes claimable here).
     const stillOpenTokens = Math.max(0, active.openTokens - (input.openTurn?.tokens ?? 0));
@@ -1113,9 +1150,9 @@ export class ModelSpendBudget {
     const price = this.priceFor(selection);
     const tokens = usage.inputTokens + usage.outputTokens;
     invariant(Number.isSafeInteger(tokens), 'INVALID_INPUT', 'Observed token usage is not a safe integer');
-    const costMicros = microUsdForTokens(usage.inputTokens, price.inputMicroUsdPerMillion) + microUsdForTokens(usage.outputTokens, price.outputMicroUsdPerMillion);
-    const overshootTokens = Math.max(0, tokens - active.reservedTokens);
-    const overshootCostMicros = Math.max(0, Math.max(costMicros, usage.reportedCostMicros ?? 0) - active.reservedCostMicros);
+    const costMicros = price ? microUsdForTokens(usage.inputTokens, price.inputMicroUsdPerMillion) + microUsdForTokens(usage.outputTokens, price.outputMicroUsdPerMillion) : 0;
+    const overshootTokens = this.limits.mode === 'accounting-only' ? 0 : Math.max(0, tokens - active.reservedTokens);
+    const overshootCostMicros = this.limits.mode === 'accounting-only' ? 0 : Math.max(0, Math.max(costMicros, usage.reportedCostMicros ?? 0) - active.reservedCostMicros);
     this.reservations.delete(reservationId);
     this.liveTurns.delete(reservationId);
     this.activeTokens -= active.reservedTokens;
@@ -1236,20 +1273,20 @@ export class ModelSpendBudget {
     const deferred = this.deferredClaim();
     return Object.freeze({
       runId,
-      limits: Object.freeze({ maxTokens: this.limits.maxTokens, maxCostUsd: microsToUsd(this.limits.maxCostUsdMicros) }),
-      committed: Object.freeze({ tokens: this.committed.tokens, costUsd: microsToUsd(this.committed.costMicros) }),
-      costPolicy: 'pinned-cache-miss-price',
+      limits: Object.freeze({ ...(this.limits.mode ? { mode: this.limits.mode } : {}), maxTokens: this.limits.maxTokens, maxCostUsd: this.limits.maxCostUsdMicros === null ? null : microsToUsd(this.limits.maxCostUsdMicros) }),
+      committed: Object.freeze({ tokens: this.committed.tokens, costUsd: this.pricedEverySettlement() ? microsToUsd(this.committed.costMicros) : null }),
+      costPolicy: this.pricedEverySettlement() ? 'pinned-cache-miss-price' : 'unpriced-informational',
       observedCostUsd: this.settlements.size > 0 && [...this.settlements.values()].every(s => s.reportedCostMicros !== null) ? microsToUsd([...this.settlements.values()].reduce((n, s) => n + s.reportedCostMicros!, 0)) : null,
-      accountedCostUsd: microsToUsd(this.accountedCostMicros()),
+      accountedCostUsd: [...this.settlements.values()].every(record => this.priceFor(record.selection) !== undefined || record.reportedCostMicros !== null) ? microsToUsd(this.accountedCostMicros()) : null,
       active: Object.freeze({ count: this.reservations.size, tokens: this.activeTokens, costUsd: microsToUsd(this.activeCostMicros) }),
       remaining: Object.freeze({
-        tokens: Math.max(0, this.limits.maxTokens - this.committed.tokens - this.activeTokens - deferred.tokens),
-        costUsd: microsToUsd(Math.max(0, this.limits.maxCostUsdMicros - this.accountedCostMicros() - this.activeCostMicros - deferred.costMicros)),
+        tokens: this.limits.maxTokens === null ? null : Math.max(0, this.limits.maxTokens - this.committed.tokens - this.activeTokens - deferred.tokens),
+        costUsd: this.limits.maxCostUsdMicros === null ? null : microsToUsd(Math.max(0, this.limits.maxCostUsdMicros - this.accountedCostMicros() - this.activeCostMicros - deferred.costMicros)),
       }),
       overshoot: Object.freeze({ tokens: this.overshootTotals.tokens, costUsd: microsToUsd(this.overshootTotals.costMicros) }),
       breach: Object.freeze({
-        tokens: Math.max(0, this.committed.tokens - this.limits.maxTokens),
-        costUsd: microsToUsd(Math.max(0, this.accountedCostMicros() - this.limits.maxCostUsdMicros)),
+        tokens: this.limits.maxTokens === null ? 0 : Math.max(0, this.committed.tokens - this.limits.maxTokens),
+        costUsd: this.limits.maxCostUsdMicros === null ? 0 : microsToUsd(Math.max(0, this.accountedCostMicros() - this.limits.maxCostUsdMicros)),
       }),
       deferred: Object.freeze({
         holds: [...this.reservations.values()].filter(active => active.deferred !== undefined).length,
@@ -1272,6 +1309,7 @@ export type AutonomousBudgetPhase = 'planner' | 'workers' | 'verifier' | 'report
 export interface AutonomousPhaseRequest { selection: ModelSpendSelection; inputTokensUpperBound: number; maxOutputTokens: number; maxTurns: number }
 export interface AutonomousPhaseAllocation extends AutonomousPhaseRequest { limits: ModelSpendLimits }
 export type AutonomousModelBudgetPlan =
+  | { outcome: 'accounting-only'; ownerLimits: ModelAccountingOnly; selection: ModelSpendSelection; policy: 'informational-durable-no-phase-quotas' }
   | { outcome: 'ready'; ownerLimits: ModelSpendLimits; phases: Record<AutonomousBudgetPhase, AutonomousPhaseAllocation>; allocated: ModelSpendLimits; prices: ModelPriceTable; policy: 'isolated-phase-caps-no-borrowing' }
   | { outcome: 'partial'; reason: 'budget-extension-required'; required: ModelSpendLimits; ownerLimits: ModelSpendLimits; shortfall: ModelSpendLimits; launchAllowed: false };
 /** Finite, owner-capped allocation BEFORE launch. Phase ledgers/journals must be isolated; never share worker headroom with verifier/report. */

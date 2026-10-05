@@ -22,8 +22,10 @@ export interface EvidenceBoundReplayCandidate {
 export interface FirstUseVerificationBudget {
   maxRequests: number;
   maxToolCalls: number;
-  maxTokens: number;
-  maxCostUsd: number;
+  /** Null only with explicit informational model accounting; legacy numbers remain caps. */
+  maxTokens: number | null;
+  modelAccounting?: 'informational';
+  maxCostUsd: number | null;
 }
 
 /**

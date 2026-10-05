@@ -66,8 +66,9 @@ function dividedBudget(run: RunManifest, count: number): Budget {
     maxRequests: equalShare(run.budgets.maxRequests, count, 1),
     maxBytes: equalShare(run.budgets.maxBytes, count, 1),
     maxToolCalls: equalShare(run.budgets.maxToolCalls, count, 1),
-    maxTokens: equalShare(run.budgets.maxTokens, count, 1),
-    maxCostUsd: run.budgets.maxCostUsd / count,
+    maxTokens: run.budgets.maxTokens === null ? null : equalShare(run.budgets.maxTokens, count, 1),
+    maxCostUsd: run.budgets.maxCostUsd === null ? null : run.budgets.maxCostUsd / count,
+    ...(run.budgets.modelAccounting ? { modelAccounting: run.budgets.modelAccounting } : {}),
     maxAttempts: equalShare(run.budgets.maxAttempts, count, 1),
   };
 }

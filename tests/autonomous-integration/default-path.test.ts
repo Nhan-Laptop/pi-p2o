@@ -16,21 +16,24 @@ function phases(path: string) {
   finally { db.close(); }
 }
 describe('actual default command -> bundled backend: INERT model and automated consent, not live AI qualification', () => {
-  it('low owner budget returns explicit partial/coverage before ANY planning or launch; no increase', async () => {
-    const h = await commandHarness({ tokens: 1000 });
+  it('ordinary runs have no application token/USD quota: no partial admission and no extension demand', async () => {
+    // Ordinary runs have no application token/USD quota: a formerly 'too small' budget can no longer stop
+    // planning, and no partial/extension report is produced. The native model limits still bound each turn.
+    const h = await commandHarness();
     try {
-      await h.command('--target https://example.invalid/exact --plan-only');
-      expect(h.provider.requests).toHaveLength(0);
-      expect(h.notifications.some(n => n.message.includes('BUDGET_EXTENSION_REQUIRED'))).toBe(true);
+      const plan = await h.command('--target https://example.invalid/exact --plan-only');
+      expect(plan?.runId).toBeTruthy();
+      expect(h.notifications.some(n => n.message.includes('BUDGET_EXTENSION_REQUIRED'))).toBe(false);
       const root = await runDirectory(h.root);
-      const partial = JSON.parse(await readFile(join(root, 'partial-report.json'), 'utf8'));
-      expect(partial).toMatchObject({ outcome: 'partial', extensionRequired: true, launchAllowed: false, findings: [] });
-      expect(partial.budget.ownerLimits.maxTokens).toBe(1000);
-      expect(partial.coverage[0].state).toBe('untested');
-      await expect(readFile(join(root, 'state.sqlite'))).rejects.toThrow();
+      const pinned = JSON.parse(await readFile(join(root, 'autonomous-budget.json'), 'utf8'));
+      expect(pinned).toMatchObject({ outcome: 'accounting-only', ownerLimits: { mode: 'accounting-only' } });
+      const manifest = JSON.parse(await readFile(join(root, 'control/run-manifest.json'), 'utf8'));
+      expect(manifest.budgets).toMatchObject({ modelAccounting: 'informational', maxTokens: null, maxCostUsd: null });
+      await expect(readFile(join(root, 'partial-report.json'))).rejects.toThrow();
+      expect(h.provider.requests.length).toBe(1);
     } finally { await h.close(); }
   });
-  it('real planner AND worker gateway wire limits; four original-run journals; deterministic accepted-packet stop without paid prose', async () => {
+  it('real planner AND worker gateway wire limits; one informational durable ledger; deterministic accepted-packet stop without paid prose', async () => {
     const h = await commandHarness(); let requests = 0;
     const server = createServer((_req, res) => { requests++; res.end('bounded owner response'); });
     await new Promise<void>(r => server.listen(0, '127.0.0.1', r));
@@ -45,20 +48,21 @@ describe('actual default command -> bundled backend: INERT model and automated c
       expect(h.provider.requests).toHaveLength(4);
       expect(h.provider.requests.every(r => r.model === 'inert-worker' && r.max_tokens === 4096 && r.n === 1)).toBe(true);
       const root = await runDirectory(h.root), state = phases(join(root, 'state.sqlite'));
-      expect(Object.keys(state).sort()).toEqual(['planner', 'report', 'verifier', 'workers']);
-      for (const ledger of Object.values(state)) expect(ledger.runId).toBe(plan.runId);
-      expect(state.planner.committed.tokens).toBeGreaterThan(0);
+      // Accounting-only runs keep one informational durable ledger (no four financial phase quotas).
+      expect(Object.keys(state)).toEqual(['workers']);
+      expect(state.workers.runId).toBe(plan.runId);
       expect(state.workers.committed.tokens).toBeGreaterThan(0);
-      expect(state.verifier.committed.tokens).toBe(0); expect(state.report.committed.tokens).toBe(0);
+      expect(state.workers.limits).toMatchObject({ mode: 'accounting-only', maxTokens: null, maxCostUsdMicros: null });
       expect(Object.keys(state.workers.reservations)).toHaveLength(0);
       const handles = await readdir(join(root, 'control/handles'));
       const handle = JSON.parse(await readFile(join(root, 'control/handles', handles[0]!), 'utf8'));
       expect(handle.sessionRelease.verified).toBe(true); expect(handle.budgetOutcome).toBeUndefined();
       const report: any = await h.controller.execute('report', { runId: plan.runId, format: 'json' }, h.cwd);
-      // The protected verifier reserve is the finite owner-authorized verifier program bound: 4 provider turns
-      // x (8192-byte input estimate + 2048 output ceiling). It stays entirely unspent when no verifier runs.
-      expect(report.modelBudget.phases.verifier.remaining.tokens).toBe(40960);
-      expect(report.modelBudget.phases.report.remaining.tokens).toBe(1536);
+      // Informational accounting is reported cumulatively; there are no phase reserves left to report.
+      expect(report.modelBudget.policy).toBe('informational-durable-no-phase-quotas');
+      expect(report.modelBudget.accounting.limits).toMatchObject({ mode: 'accounting-only', maxTokens: null, maxCostUsd: null });
+      expect(report.modelBudget.accounting.committed.tokens).toBeGreaterThan(0);
+      expect(report.modelBudget.phases).toBeUndefined();
       expect(h.provider.requests).toHaveLength(4);
     } finally { await h.close(); server.closeAllConnections(); await new Promise<void>(r => server.close(() => r())); }
   }, 90000);

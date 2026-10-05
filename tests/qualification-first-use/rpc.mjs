@@ -20,7 +20,9 @@ export function answerDialog(request, { decline, kind = 'local', live, liveLimit
   const title = request.title ?? '';
   const response = { type: 'extension_ui_response', id: request.id };
   if (request.method === 'confirm') {
-    const known = /^(First-use owner consent:|Scope\/rights\/budget renewal or expansion:|Save this owner-only scope consent\?|Use this assessment model and bounded planning spend\?|Qualify the pinned dedicated-lab container boundary\?|Approve p2o (run|plan) |Approve plan |Approve immutable source for the exact model plan\?)/.test(title);
+    // Ordinary /p2o consent has no budget/quota dialog: the model confirmation is either the accounting-only
+    // 'Use this Pi assessment model?' or the legacy bounded 'Use this assessment model and bounded planning spend?'.
+    const known = /^(First-use owner consent:|Scope\/rights\/limits renewal or expansion:|Save this owner-only scope consent\?|Use this (?:Pi assessment model|assessment model and bounded planning spend)\?|Qualify the pinned dedicated-lab container boundary\?|Consent to scoped TOOL PACK|Confirm ONE local TOOL PACK|Approve p2o (run|plan) |Approve plan |Approve immutable source for the exact model plan\?)/.test(title);
     if (!known) return { ...response, cancelled: true, reason: 'UNRECOGNIZED_CONFIRMATION' };
     if (decline && title.includes(decline)) return { ...response, confirmed: false };
     if (title.startsWith('Approve immutable source') && kind === 'github' && !request.message?.includes(`Commit: ${GITHUB_COMMIT}`)) {
@@ -46,6 +48,10 @@ export function answerDialog(request, { decline, kind = 'local', live, liveLimit
     else if (title.startsWith('Assessment thinking')) value = live
       ? choices.find(option => option === live.thinking)
       : choices.find(option => option === 'off');
+    // Ordinary first-use asks for the pinned container tool boundary explicitly; the harness always answers that
+    // exact option, and any other pack boundary is declined (never silently substituted).
+    else if (title.startsWith('First-use tool boundary')) value = choices.find(option => option.startsWith('Pinned container static pack'));
+    else if (title.startsWith('TOOL PACK ')) value = choices[0];
     if (value) return { ...response, value };
     return { ...response, cancelled: true, reason: live ? `LIVE_SELECTION_UNAVAILABLE: ${title}`.slice(0, 200) : 'UNRECOGNIZED_OR_UNSUPPORTED_SELECTION' };
   }

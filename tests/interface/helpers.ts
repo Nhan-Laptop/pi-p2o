@@ -151,7 +151,7 @@ export class FakeEntry implements TargetEntryPort {
       mode: input.target.kind === 'http-url' ? 'assessment' : 'fixture',
       scopeDigest: 'a'.repeat(64),
       actions: ['read', 'analyze'],
-      spend: { maxCostUsd: input.budgetUsd ?? 5, maxRequests: 20, maxTokens: 100_000, maxToolCalls: 20, maxAttempts: 2 },
+      spend: { maxCostUsd: 5, maxRequests: 20, maxTokens: 100_000, maxToolCalls: 20, maxAttempts: 2 },
       concurrency: input.concurrency ?? 1,
       warnings: [],
       requiresHumanApproval: true,

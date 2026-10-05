@@ -6,7 +6,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { describe, expect, test } from 'vitest';
 import { registerP2O } from '../../extensions/p2o/index.js';
 import { ENTRY_PLAN_LIMITS } from '../../src/application/entry/authoring.js';
-import { createPiModelPlanAuthor, planAuthorPrompt } from '../../src/application/entry/pi-author.js';
+import { createPiModelPlanAuthor, planAuthorPrompt, type PiPlanAuthorCompletionResult } from '../../src/application/entry/pi-author.js';
 import type { EntryPlanAuthorInput } from '../../src/application/entry/types.js';
 import { ENTRY_PLAN_STEP_BOUNDS, type EntryPreparation } from '../../src/interface/target-entry.js';
 import { FakeBackend, FakeEntry, fakePi } from '../interface/helpers.js';
@@ -55,6 +55,13 @@ function authorReturning(steps: string[]) {
   return createPiModelPlanAuthor({
     selection: { provider: 'inert-fixture', model: 'inert-worker', thinking: 'max' },
     complete: async () => JSON.stringify({ attemptId: 'plan-bound', steps, ownerMenu: [{ taskId: 'assessment', observationId: 'obs-1' }] }),
+  });
+}
+
+function authorReturningCompletion(completion: PiPlanAuthorCompletionResult) {
+  return createPiModelPlanAuthor({
+    selection: { provider: 'inert-fixture', model: 'inert-worker', thinking: 'max' },
+    complete: async () => completion,
   });
 }
 
@@ -121,5 +128,33 @@ describe('one shared plan-step bound', () => {
     });
     await expect(authorReturning(['y'.repeat(ENTRY_PLAN_STEP_BOUNDS.maxStepChars + 1)]).author(authorInput()))
       .rejects.toThrow(new RegExp(`at most ${ENTRY_PLAN_STEP_BOUNDS.maxStepChars} characters`));
+  });
+
+  test('classifies a length-stopped reasoning-only provider completion with actionable headroom facts', async () => {
+    const completion = authorReturningCompletion({
+      text: '', stopReason: 'length', rawStopReason: 'length', outputTokens: 4096, reasoningTokens: 4096,
+      reasoningContent: true, admittedMaxOutputTokens: 4096,
+    });
+    await expect(completion.author(authorInput())).rejects.toMatchObject({ code: 'MODEL_PLAN_COMPLETION_TRUNCATED' });
+    await expect(completion.author(authorInput())).rejects.toThrow(/stopReason=length.*observedOutputTokens=4096.*observedReasoningTokens=4096.*admittedCompletionCeiling=4096.*lower thinking level for planning or raise the planner completion bound/);
+  });
+
+  test('keeps valid provider text on the unchanged plan success path', async () => {
+    const completion = authorReturningCompletion({
+      text: JSON.stringify({ attemptId: 'provider-valid', steps: ['inspect the approved loopback metadata'], ownerMenu: [{ taskId: 'assessment', observationId: 'obs-1' }] }),
+      stopReason: 'stop', outputTokens: 42, reasoningTokens: 4, reasoningContent: true, admittedMaxOutputTokens: 4096,
+    });
+    await expect(completion.author(authorInput())).resolves.toMatchObject({ authoredBy: 'model', steps: ['inspect the approved loopback metadata'] });
+  });
+
+  test('fails closed with a distinct no-text diagnostic when provider truncation evidence is absent', async () => {
+    const completion = authorReturningCompletion({ text: '', stopReason: 'stop', outputTokens: 0, reasoningTokens: 0, reasoningContent: false, admittedMaxOutputTokens: 4096 });
+    await expect(completion.author(authorInput())).rejects.toMatchObject({ code: 'MODEL_PLAN_COMPLETION_EMPTY' });
+    await expect(completion.author(authorInput())).rejects.toThrow(/no visible text and no provider truncation stop was observed/);
+  });
+
+  test('keeps ENTRY_PLAN_INVALID for malformed present provider text', async () => {
+    const completion = authorReturningCompletion({ text: 'not a JSON plan', stopReason: 'stop', outputTokens: 3, reasoningTokens: 0, reasoningContent: false, admittedMaxOutputTokens: 4096 });
+    await expect(completion.author(authorInput())).rejects.toMatchObject({ code: 'ENTRY_PLAN_INVALID' });
   });
 });

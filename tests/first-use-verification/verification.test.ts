@@ -237,13 +237,12 @@ describe('first-use independent verification (MODEL-INERT real-process fixtures)
       expect(JSON.stringify(report)).not.toContain('"targetReset":true');
       expect(JSON.stringify(report)).not.toContain('cleanEnvironment');
 
-      // Protected verifier phase debit: the verifier attempt's provider turns were charged to the protected
-      // verifier ledger, the workers ledger paid the producer, and no phase borrowed from another.
-      expect(report.modelBudget.phases.verifier.committed.tokens).toBeGreaterThan(0);
-      expect(report.modelBudget.phases.verifier.limits.maxTokens).toBe(40960);
-      expect(report.modelBudget.phases.verifier.remaining.tokens).toBeLessThan(40960);
-      expect(report.modelBudget.phases.workers.committed.tokens).toBeGreaterThan(0);
-      expect(report.modelBudget.policy).toBe('isolated-phase-caps-no-borrowing');
+      // One informational durable ledger: producer and verifier provider turns are both charged to it, with
+      // no protected phase reserve or borrowing question left in the ordinary path.
+      expect(report.modelBudget.policy).toBe('informational-durable-no-phase-quotas');
+      expect(report.modelBudget.accounting.limits).toMatchObject({ mode: 'accounting-only', maxTokens: null });
+      expect(report.modelBudget.accounting.committed.tokens).toBeGreaterThan(0);
+      expect(report.modelBudget.phases).toBeUndefined();
 
       // Cleanup: the replay environment termination and the verifier attempt termination are receipt-backed.
       const terminated = [...artifacts.evidence.values()].find((receipt: any) => receipt.kind === 'runtime' && receipt.attemptId === finding.verifier.attemptId && receipt.metadata?.terminationConfirmed === true);
@@ -290,8 +289,10 @@ describe('first-use independent verification (MODEL-INERT real-process fixtures)
       // The verifier's own replay receipts remain visible and honest: the reproduction did not reproduce.
       expect(report.evidence.some((entry: any) => entry.collectorRole === 'verifier' && entry.test?.purpose === 'reproduction' && entry.test?.outcome === 'failed')).toBe(true);
       expect(report.evidence.some((entry: any) => entry.collectorRole === 'verifier' && entry.test?.purpose === 'negative-control' && entry.test?.outcome === 'passed')).toBe(true);
-      // The verifier still ran under the protected pool and its session was still closed with a receipt.
-      expect(report.modelBudget.phases.verifier.committed.tokens).toBeGreaterThan(0);
+      // The verifier still ran, charged to the same informational durable ledger, and its session was closed
+      // with a receipt.
+      expect(report.modelBudget.policy).toBe('informational-durable-no-phase-quotas');
+      expect(report.modelBudget.accounting.committed.tokens).toBeGreaterThan(0);
       const terminated = [...artifacts.evidence.values()].find((receipt: any) => receipt.kind === 'runtime' && receipt.attemptId === finding.verifier.attemptId && receipt.metadata?.terminationConfirmed === true);
       expect(terminated, 'verifier replay termination receipt').toBeTruthy();
     } finally {
@@ -317,8 +318,8 @@ describe('first-use independent verification (MODEL-INERT real-process fixtures)
       }
       const report = await support.report(planned.runId, 'json');
       expect(report.findings).toEqual([]);
-      expect(report.modelBudget.phases.verifier.committed.tokens).toBe(0);
-      expect(report.modelBudget.phases.verifier.remaining.tokens).toBe(40960);
+      expect(report.modelBudget.policy).toBe('informational-durable-no-phase-quotas');
+      expect(report.modelBudget.accounting.limits).toMatchObject({ mode: 'accounting-only', maxTokens: null });
       expect(artifacts.events.some(entry => entry.type === 'orchestrator.attempt-launched' && entry.taskId === artifacts.admission?.verifierTaskId)).toBe(false);
     } finally {
       await support.close();

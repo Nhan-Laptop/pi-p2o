@@ -41,7 +41,9 @@ export type EntryFailureCode =
   | 'ENTRY_HUMAN_APPROVAL_REQUIRED'
   | 'ENTRY_APPROVAL_CONFLICT'
   | 'ENTRY_APPROVAL_WINDOW'
-  | 'ENTRY_SOURCE_UNBOUND';
+  | 'ENTRY_SOURCE_UNBOUND'
+  | 'MODEL_PLAN_COMPLETION_TRUNCATED'
+  | 'MODEL_PLAN_COMPLETION_EMPTY';
 
 /** Bounded, control-character-free rendering of untrusted text (target names, stderr, author output). */
 export function safeText(value: unknown, max = 300): string {

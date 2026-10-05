@@ -1,6 +1,7 @@
 import type { Classification, CoverageRecord, Digest, EvidenceKind, Id, JsonObject, Question, RunManifest, RuntimeSelection, Scope, Timestamp } from './types.js';
 import { ID_PATTERN } from './schemas.js';
 import { classifications, evidenceKinds, thinkingLevels } from './types.js';
+import { modelAccountingNarrows } from './model-accounting.js';
 import { digestJson, makeSchema, rules as r } from './validation.js';
 import { normalizeTargetKey, threatModelCapsDefaults } from './threat-model.js';
 
@@ -28,8 +29,10 @@ export interface PlanRequestBudget {
   maxRequests: number;
   maxBytes: number;
   maxToolCalls: number;
-  maxTokens: number;
-  maxCostUsd: number;
+  /** Null only with explicit informational model accounting; legacy numbers remain caps. */
+  maxTokens: number | null;
+  modelAccounting?: 'informational';
+  maxCostUsd: number | null;
   maxAttempts: number;
   maxTasks: number;
   maxDepth: number;
@@ -248,8 +251,8 @@ export const planCapsRule = r.object({
 export const planCapsSchema = makeSchema<PlanCaps>('plan-caps', planCapsRule);
 
 export const planRequestBudgetRule = r.object({
-  deadlineAt: date, maxRequests: uint, maxBytes: uint, maxToolCalls: uint, maxTokens: uint,
-  maxCostUsd: r.number(), maxAttempts: positive, maxTasks: positive, maxDepth: uint, maxConcurrency: positive,
+  deadlineAt: date, maxRequests: uint, maxBytes: uint, maxToolCalls: uint, maxTokens: r.union(uint, r.literal(null)),
+  maxCostUsd: r.union(r.number(), r.literal(null)), modelAccounting: r.optional(r.literal('informational')), maxAttempts: positive, maxTasks: positive, maxDepth: uint, maxConcurrency: positive,
 });
 export const planRunRequestRule = r.object({
   runId: id, purpose: prose, inputRevision: r.string({ maxLength: 512 }), scope: scopeRule,
@@ -450,7 +453,8 @@ export function validatePlanProposal(input: unknown, options: PlanValidationOpti
     if (proposal.caps.maxTasks > runCaps.maxTasks || proposal.caps.maxDepth > runCaps.maxDepth || proposal.caps.maxRequests > runCaps.maxRequests) {
       add('plan-caps-wide', '$/caps', 'Declared caps exceed the admitted run budget');
     }
-    const budgetFields = ['maxRequests', 'maxBytes', 'maxToolCalls', 'maxTokens', 'maxCostUsd', 'maxAttempts'] as const;
+    if (!modelAccountingNarrows(request.budgets, run.budgets)) add('plan-run-budget', '$/run/budgets', 'Plan model accounting widens explicit financial policy');
+    const budgetFields = ['maxRequests', 'maxBytes', 'maxToolCalls', 'maxAttempts'] as const;
     for (const field of budgetFields) {
       if (request.budgets[field] > run.budgets[field]) add('plan-run-budget', `$/run/budgets/${field}`, `Plan budget ${field} exceeds the admitted run budget`);
     }

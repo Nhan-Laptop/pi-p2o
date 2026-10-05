@@ -2,7 +2,7 @@
 
 `pi-p2o` is a Pi package for **authorized, scoped security assessments**: a deterministic assessment runtime
 for Pi plus a 17-skill research method library. **The model proposes; deterministic code admits runs, enforces
-scope and budgets, accepts evidence and verifies findings.** Target pages, worker messages and model prose are
+scope and operational limits, accepts evidence and verifies findings.** Target pages, worker messages and model prose are
 untrusted data — none of them grants permission or turns a hypothesis into a verified finding.
 
 - **Extension** — one human command `/p2o`, 14 `p2o_*` agent tools, owned worker runtimes, a supervisor-only
@@ -62,7 +62,7 @@ container-backed execution. Both the extension host and pinned managed workers t
 ```text
 /p2o --target <local-dir|github-https-repo|http(s)-URL>
      [--purpose "..."] [--depth quick|standard|deep] [--plan-only]
-     [--budget <USD>] [--concurrency <N>] [--deadline <minutes>]
+     [--concurrency <N>] [--deadline <minutes>]
      [--profile conservative|wide|ceiling] [--basis <owner|written-permission|published-program|public-source-review>]
      [--repo-scripts] [--state-changes] [--full-rights] [--advanced]
 /p2o status|stop|resume|report [runId]
@@ -70,32 +70,35 @@ container-backed execution. Both the extension host and pinned managed workers t
 ```
 
 **A target is the only required input.** One consent dialog then shows the exact scope, authorization basis,
-separate rights and every limit being consented to. Read/static is the default; repository scripts and state
+separate rights and the operational limits being consented to. Model usage is informational: ordinary runs
+have **no application token/USD quota** and are bounded by the selected provider/model's own context/output
+capability, with durable informational accounting of observed usage. Read/static is the default; repository scripts and state
 changes stay OFF unless this invocation requests them, and they are always displayed in that dialog before you
 approve it. `--full-rights` is the one-flag convenience for both separate rights on a target you own, never a
 third kind of grant. `--advanced` asks every question separately instead.
 
-Limits are always finite and visible, so nothing can run away with your provider spend:
+Operational limits stay finite, visible and provider-independent:
 
-| profile | spend cap | deadline | requests / tokens / tool calls / attempts | concurrency |
+| profile | model token/USD | deadline | requests / tool calls / attempts | concurrency |
 |---|---|---|---|---|
-| `wide` (default) | $100 | 12 h | validated maximum | 8 |
-| `conservative` | $5 | 1 h | 20 / 100k / 20 / 2 | 1 |
-| `ceiling` | validated maximum | validated maximum | validated maximum | validated maximum |
+| `wide` (default) | informational accounting; no application cap | 12 h | validated maximum requests/tool calls; **3 attempts** | 8 |
+| `conservative` | explicit legacy cap: $5 / 100k tokens | 1 h | 20 / 20 / 2 | 1 |
+| `ceiling` | explicit legacy cap: validated maximum | validated maximum | validated maximum | validated maximum |
 
-An unbounded cap is not a guard, so it is not an option: the engine needs a finite number to bound provider
-spend and lease arithmetic. `--budget`, `--concurrency` and `--deadline` set an individual value inside the same
-single dialog, so no numeric prompt is ever required.
+`--concurrency` and `--deadline` set an individual operational value inside the same single dialog, so no
+numeric prompt is ever required. `--budget` was removed: the ordinary path records observed usage and never
+refuses a provider turn on a token/USD number. Saved legacy bounded consent remains bounded and is never
+silently widened.
 
 One target per run, parsed without a shell: no expansion, no globbing, no `eval`; unknown or duplicate flags,
-out-of-range budgets/concurrency and ambiguous runs are refused with an explicit code. `--depth` only sets
+out-of-range concurrency and ambiguous runs are refused with an explicit code. `--depth` only sets
 planning/analysis intensity for the same target and scope: it never selects a different application mode, and
 it is not a permission. The target is classified and **prepared and planned without any request to the
 target and without spawning a worker**. Bare `/p2o` shows help and the current run.
 
 - `--plan-only` sends **zero target requests**, but the planning step still asks the configured model author
   for one bounded plan — a provider call, and therefore possible provider cost, even in plan-only mode.
-- You review the scope digest, action allowlist, spend, concurrency, mode and plan, then confirm in a dialog.
+- You review the scope digest, action allowlist, informational model cost, concurrency, mode and plan, then confirm in a dialog.
   The confirmation mints the exact, digest-named owner approval artifact for that sealed proposal inside the
   owner window; a model tool, a JSON field or a replayed string can never do it.
 - `--plan-only` prints `planId`; `/p2o approve <planId>` admits it once after a second review. Headless runs
@@ -106,12 +109,12 @@ target and without spawning a worker**. Bare `/p2o` shows help and the current r
 
 ### First run
 
-Without saved owner scope, `/p2o --target …` asks for the target, authorization basis, permitted actions,
-budget and deadline through Pi's UI. Confirmed consent is saved privately under `~/.p2o/onboarding/`;
+Without saved owner scope, `/p2o --target …` asks for the target, authorization basis, permitted actions and
+the operational deadline through Pi's UI; model usage is informational and provider-limited. Confirmed consent is saved privately under `~/.p2o/onboarding/`;
 the bundled backend generates its run configuration. **No manual JSON or `P2O_*` variables are required.**
 Advanced owner-controlled composition overrides remain available.
 
-You explicitly select a supported, priced assessment model, review its cost and the proposed plan, then
+You explicitly select a supported assessment model, review its informational cost and the proposed plan, then
 approve execution. Saved scope is reused for equal/narrower requests; expansions require renewed consent.
 Local/GitHub source is copied into a bounded immutable snapshot. GitHub acquisition is followed by
 approval of the resolved commit/tree; the actual snapshot is mounted read-only into the qualified container.

@@ -65,6 +65,14 @@ describe('no-config /p2o first-use, real bundled backend (explicit MODEL-INERT p
       const planned = await h.command(`--target ${target} --plan-only`);
       expect(h.notifications.filter(n => n.type === 'error')).toEqual([]);
       expect(planned?.planOnly).toBe(true); expect(targetRequests).toBe(0); expect(h.provider.requests.length).toBe(1);
+      // Ordinary first-use asks for scope/rights only: no budget/quota dialog exists on this path.
+      expect(h.dialogs.filter(dialog => /budget|USD|model tokens|quota/i.test(dialog.title))).toEqual([]);
+      const runDirectory = join(h.root, 'runs', (await readdir(join(h.root, 'runs')))[0]!);
+      const pinnedBudget = JSON.parse(await readFile(join(runDirectory, 'autonomous-budget.json'), 'utf8'));
+      expect(pinnedBudget).toMatchObject({ outcome: 'accounting-only', policy: 'informational-durable-no-phase-quotas', ownerLimits: { mode: 'accounting-only' } });
+      expect(pinnedBudget.phases).toBeUndefined();
+      const manifest = JSON.parse(await readFile(join(runDirectory, 'control/run-manifest.json'), 'utf8'));
+      expect(manifest.budgets).toMatchObject({ modelAccounting: 'informational', maxTokens: null, maxCostUsd: null });
       await h.command(`approve ${planned.planId}`);
       expect(h.notifications.filter(n => n.type === 'error')).toEqual([]);
       const status = await h.waitForRun(planned.runId);
@@ -76,6 +84,19 @@ describe('no-config /p2o first-use, real bundled backend (explicit MODEL-INERT p
       expect(JSON.stringify(report)).toContain('"findings":[]');
       expect(JSON.stringify(report)).not.toContain('tenant=alpha');
       expect(h.dialogs.filter(d => d.title.includes('First-use owner consent'))).toHaveLength(1);
+      // The controller-attested native completion/context capability is what bounded planning, and the
+      // informational ledger records usage without any financial admission gate.
+      expect(report.modelBudget).toMatchObject({ policy: 'informational-durable-no-phase-quotas', accounting: { limits: { mode: 'accounting-only', maxTokens: null, maxCostUsd: null } } });
+      expect(report.modelBudget.phases).toBeUndefined();
+      expect(report.modelBudget.accounting.committed.tokens).toBeGreaterThan(0);
+      const planningSpend = JSON.parse(await readFile(join(runDirectory, 'control/planning-spend.json'), 'utf8')) as { accounting: any; receipts: any[] };
+      expect(planningSpend.accounting.limits).toMatchObject({ mode: 'accounting-only', maxTokens: null, maxCostUsd: null });
+      expect(planningSpend.accounting.committed.tokens).toBeGreaterThan(0);
+      // The planner receipt records the native selected-model completion bound (4096 for this model), not a
+      // fixed 4096 application constant, and it records observed usage informationally.
+      const planReceipt = planningSpend.receipts.at(-1);
+      expect(planReceipt).toMatchObject({ basis: 'durable-planner-phase; controller-gateway-wire-admission', outputBound: 4096 });
+      expect(planReceipt.usage.output).toBeGreaterThan(0);
     } finally { await h.close(); server.closeAllConnections(); await new Promise<void>(r => server.close(() => r())); }
   }, 90000);
 
@@ -120,11 +141,16 @@ describe('no-config /p2o first-use, real bundled backend (explicit MODEL-INERT p
     } finally { await h.close(); await git.close(); await rm(fixtureRoot, { recursive: true, force: true }); }
   }, 90000);
 
-  it('unpriced selection fails before any host provider or worker call, without an alternate model', async () => {
+  it('an explicitly bounded consent still refuses an unpriced selection before any host provider or worker call', async () => {
+    // Ordinary accounting-only runs may use an unpriced model (tokens recorded, cost unknown) — covered by the
+    // budget ledger test and the composition gate. An explicit legacy bounded consent still fails closed here.
     const h = await harness({ unpriced: true });
-    try { await h.command('--target https://example.invalid/only --plan-only'); expect(h.notifications.some(n => n.message.includes('MODEL_SPEND_UNPRICED'))).toBe(true); expect(h.provider.requests).toHaveLength(0); }
-    finally { await h.close(); }
-  });
+    try {
+      await h.command('--target https://example.invalid/only --plan-only --profile conservative');
+      expect(h.notifications.some(n => n.message.includes('MODEL_SPEND_UNPRICED'))).toBe(true);
+      expect(h.provider.requests).toHaveLength(0);
+    } finally { await h.close(); }
+  }, 30000);
 
   it('source identity refusal leaves workers/broker unlaunched (first approval permits acquisition only)', async () => {
     const h = await harness({ refuse: 'Approve immutable source' }); const target = join(h.root, 'source'); await mkdir(target); await writeFile(join(target, 'index.ts'), 'export const a = 1;');

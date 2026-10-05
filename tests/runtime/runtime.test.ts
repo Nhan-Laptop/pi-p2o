@@ -7,6 +7,8 @@ import { fileURLToPath } from "node:url";
 import { spawn, type ChildProcess } from "node:child_process";
 import { PassThrough } from "node:stream";
 import { EventEmitter } from "node:events";
+import { createServer } from 'node:http';
+import { clampModelRequest } from '../../src/runtime/config.js';
 import {
   createControllerModelGateway, createHeadlessRuntime, createHerdrRuntime, createPlanRuntime, filesystemHooks,
   LinuxProcessProbe, ProcessFamily, RuntimeCapabilityError,
@@ -689,6 +691,63 @@ test("real Pi public RPC/extension compatibility with an in-process inert provid
 // ---------------------------------------------------------------------------------------------
 // T11: the gateway's HTTP refusal keeps the stable `GATEWAY_*` code and now also carries the policy reason.
 // ---------------------------------------------------------------------------------------------
+test('native output overshoot is durably a managed runtime failure, never a monetary extension', async t => {
+  const root = await mkdtemp('/tmp/p2o-native-overshoot-');
+  const upstream = createServer((request, response) => {
+    request.resume();
+    request.on('end', () => {
+      response.writeHead(200, { 'content-type': 'application/json' });
+      response.end(JSON.stringify({ choices: [{ message: { role: 'assistant', content: 'ok' }, finish_reason: 'stop' }], usage: { prompt_tokens: 100, completion_tokens: 600 } }));
+    });
+  });
+  await new Promise<void>(resolve => upstream.listen(0, '127.0.0.1', resolve));
+  const address = upstream.address();
+  assert.ok(address && typeof address !== 'string');
+  const native = { id: 'inert', maxTokens: 1200, contextWindow: 1400 };
+  const gateway = createControllerModelGateway({ approval: 'owned loopback native-output regression', provider: 'p2o-inert',
+    upstreamBaseUrl: `http://127.0.0.1:${address.port}`, api: 'openai-completions', models: [native],
+    credential: { accountId: 'fixture', version: 'v1', secret: 'inert-fixture-secret' } });
+  await gateway.listen();
+  const durable = spendJournal();
+  const policy = { mode: 'accounting-only' as const };
+  const ledger = new ModelSpendBudget(policy, { runId: 'inert-run', journal: durable.journal, prices: {}, freshRun: true });
+  const runtime = createHeadlessRuntime(runtimeOptions(path.join(root, 'controller'), { gateway: gateway.gateway,
+    spend: { limits: policy, ledger, inputTokensUpperBound: 200, prices: {} } }));
+  let handle: RuntimeHandle | undefined;
+  try {
+    const request = await inertRequest(root, 'native-failure', { hold: true }, await hangBound());
+    request.requested.thinking = 'off';
+    handle = await runtime.start(request);
+    const base = { model: 'inert', messages: [{ role: 'user', content: '' }] };
+    const emptyBytes = Buffer.byteLength(JSON.stringify(clampModelRequest('openai-completions', base, native, 558)));
+    base.messages[0]!.content = 'x'.repeat(842 - emptyBytes);
+    const placeholder = gateway.bindAttempt({ attemptId: request.attemptId, requested: request.requested });
+    const response = await fetch(`${gateway.url}/chat/completions`, { method: 'POST', headers: { authorization: `Bearer ${placeholder}`, 'content-type': 'application/json' }, body: JSON.stringify(base) });
+    assert.equal(response.status, 200); await response.text();
+    const collected = await runtime.collect(handle);
+    assert.equal(collected.handle.modelBoundFailure?.kind, 'native-output-bound');
+    assert.equal(collected.handle.modelBoundFailure?.maxOutputTokens, 558);
+    assert.equal(collected.handle.modelBoundFailure?.observedOutputTokens, 600);
+    assert.equal(collected.handle.budgetOutcome, undefined, 'no financial partial report or extension demand');
+    assert.ok(collected.handle.events.some(event => event.type === 'model-native-bound-exceeded'));
+    const stop = await runtime.stop(handle, { reason: 'completed' });
+    assert.equal(stop.reason, 'failed', 'even an explicit successful-completion request must be downgraded');
+    assert.equal(stop.verified, true);
+    const terminal = await runtime.collect(handle);
+    assert.equal(terminal.handle.status, 'failed');
+    assert.equal(terminal.handle.budgetOutcome, undefined, 'catch-up must not reclassify native violation as spend refusal');
+    const saved = await json<RuntimeHandle>(path.join(root, 'controller', `attempt-${attemptKey(handle)}.json`));
+    assert.equal(saved.modelBoundFailure?.observedOutputTokens, 600);
+    assert.equal(saved.budgetOutcome, undefined);
+    t.diagnostic('native-output=600 wire=558 runtime=failed stop=verified modelBoundFailure=durable budgetOutcome=absent');
+  } finally {
+    if (handle) await runtime.stop(handle, { reason: 'cancelled' });
+    await runtime.shutdown(); await gateway.close();
+    await new Promise<void>((resolve, reject) => upstream.close(error => error ? reject(error) : resolve()));
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test("gateway refusals keep the stable denial code and carry the policy reason in the HTTP body", async (t) => {
   // No turn may be forwarded by either refusal below: the upstream is deliberately unreachable.
   const gateway = createControllerModelGateway({

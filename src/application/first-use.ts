@@ -99,7 +99,7 @@ function synthesize(owner: OnboardingReady, setup: HostAssessmentSetup, root: st
     authorization: { reference: owner.configuration.authorization.reference, authorizedBy: `human-ui-uid:${owner.configuration.owner.uid}`,
       validFrom: iso(now - 1000), expiresAt: deadlineAt, targets: [{ id: targetId, kind: source ? 'lab' : 'web', locator: scope.target.locator }], exclusions: [], allowedActions: ['read', 'analyze'] },
     budgets: { deadlineAt, maxRequests: limits.maxRequests, maxBytes: 64 * 1024 * 1024, maxToolCalls: limits.maxToolCalls,
-      maxTokens: remainingTokens, maxCostUsd: remainingCost, maxAttempts: limits.maxAttempts, maxTasks: source ? 1 : 2, maxDepth: source ? 0 : 1,
+      maxTokens: remainingTokens, maxCostUsd: remainingCost, ...(limits.modelAccounting ? { modelAccounting: limits.modelAccounting } : {}), maxAttempts: limits.maxAttempts, maxTasks: source ? 1 : 2, maxDepth: source ? 0 : 1,
       // The owner's concurrency is a ceiling, and the manifest may not declare more concurrent work than it has
       // tasks; a run with one planned task therefore runs one worker even when the owner allows more.
       maxConcurrency: Math.min(limits.concurrency, source ? 1 : 2), reportReserveMs: reserveMs, targetRequestLimits: { [targetId]: limits.maxRequests } },
@@ -114,7 +114,7 @@ function synthesize(owner: OnboardingReady, setup: HostAssessmentSetup, root: st
   const manifest: TaskManifest = { schemaVersion: 1, runId, taskId, createdAt: iso(now), depth: 0, dependencyTaskIds: [], inputRevision: inputDigest,
     question: { text: `What bounded ${source ? 'static source' : 'read-only HTTP'} observations are supported within the exact approved target?`, ifTrue: 'Authenticated observations support a bounded account of the assessed surface, with limitations.', ifFalse: 'Evidence is insufficient; identify failures and untested scope without claiming vulnerability verification.' },
     scope: taskScope, skills: [source ? 'source-code-auditing' : 'attack-surface-mapping'], allowedActions: [action], requiredCapabilities: [capability],
-    budgets: { deadlineAt: iso(limits.deadlineMs - reserveMs), maxRequests: limits.maxRequests, maxBytes: run.budgets.maxBytes, maxToolCalls: limits.maxToolCalls, maxTokens: remainingTokens, maxCostUsd: remainingCost, maxAttempts: limits.maxAttempts }, requestedRuntime: { ...run.requestedRuntime }, workspace: join(workspace, taskId), lifecycleState: 'queued', packetState: 'draft' };
+    budgets: { deadlineAt: iso(limits.deadlineMs - reserveMs), maxRequests: limits.maxRequests, maxBytes: run.budgets.maxBytes, maxToolCalls: limits.maxToolCalls, maxTokens: remainingTokens, maxCostUsd: remainingCost, ...(limits.modelAccounting ? { modelAccounting: limits.modelAccounting } : {}), maxAttempts: limits.maxAttempts }, requestedRuntime: { ...run.requestedRuntime }, workspace: join(workspace, taskId), lifecycleState: 'queued', packetState: 'draft' };
   const extension = runtime.bridgeExtensionPath;
   const toolPolicy = { mode: 'sandbox-extension' as const, extension: { path: extension, sha256: sha(readFileSync(extension)), approval: 'bundled pinned bridge; no built-in host tools' }, boundaryId: 'p2o-first-use-read-static', tools: ['p2o_context', 'p2o_broker', 'p2o_packet'] };
   const parsedUrl = source ? undefined : new URL(scope.target.locator);
@@ -129,7 +129,7 @@ function synthesize(owner: OnboardingReady, setup: HostAssessmentSetup, root: st
       exclusions: [], accounts: source ? [] : [{ id: 'anonymous', kind: 'anonymous', targetIds: [targetId], actions: [action], expiresAt: deadlineAt }],
       grantTemplates: [{ id: 'first-use-grant', taskId, role: 'worker', capabilities: [capability], targetIds: source ? [] : [targetId], actions: [action], accountIds: source ? [] : ['anonymous'], expiresAt: deadlineAt, maxCalls: limits.maxToolCalls, maxArtifactBytes: run.budgets.maxBytes }] },
     bridge: { socketPath: join(bridgeDirectory, 'bridge.sock'), controllerArtifactRootId: 'controller', brokerArtifactRootId: 'broker', inertLocalOnly: false },
-    interface: { perTargetConcurrency: { [targetId]: runConcurrency } }, spend: { maxOutputTokens: Math.min(4096, remainingTokens) },
+    interface: { perTargetConcurrency: { [targetId]: runConcurrency } }, ...(remainingTokens === null ? {} : { spend: { maxOutputTokens: Math.min(4096, remainingTokens) } }),
     // Source-only runs synthesize no finding: a lexical source scan is an observation, not a demonstrated issue.
     // The source receipts and the untested coverage cell stay visible with static-inference classification.
     reporting: { coverage: [{ taskId, surfaceId: targetId, actorId: 'anonymous', question: manifest.question.text, state: 'untested', basis: 'worker-asserted', reason: 'Coverage remains bounded to accepted evidence; findings are limited to owner-approved checks with an independent verifier outcome, with unsupported claims left unresolved.' }] } } satisfies ApplicationConfigWithSpend);
@@ -138,7 +138,7 @@ function synthesize(owner: OnboardingReady, setup: HostAssessmentSetup, root: st
 interface FirstUseFlow {
   owner: OnboardingReady; setup: HostAssessmentSetup; author: HostPiPlanAuthor; config: ApplicationConfigWithSpend; port: TargetEntryPort;
   application?: AssessmentApplication; source?: ApprovedSourceContainerBinding; controller?: ControllerContainerOwner; persist(): void;
-  budgetStore: DurableStore; budgetPlan: Extract<import("../policy/budget.js").AutonomousModelBudgetPlan, { outcome: "ready" }>; pool: ReturnType<typeof durableAutonomousPool>; planningGateway?: ControllerModelGateway;
+  budgetStore: DurableStore; budgetPlan: Extract<import("../policy/budget.js").AutonomousModelBudgetPlan, { outcome: "ready" | "accounting-only" }>; pool: ReturnType<typeof durableAutonomousPool>; planningGateway?: ControllerModelGateway;
   checkpointRequest?: import("./source-binding/identity.js").ApprovedSourceRequest; saveCheckpoint?: () => Promise<void>;
   /** Restart wiring: the held controller claim, the restored-run resume seam and a bounded run summary. */
   restore?: { ticket: { close(): Promise<void> }; resume(): Promise<EntryRun>; summary: EntryRunSummary };
@@ -178,7 +178,7 @@ export function createFirstUseBackend(context: BackendFactoryContext): ControlBa
       fail("BUDGET_EXTENSION_REQUIRED", `Partial: no planning or launch. Required ${budgetPlan.required.maxTokens} tokens / $${budgetPlan.required.maxCostUsd}. Explicit owner extension required; no automatic increase. Report: ${join(root, "partial-report.json")}`);
     }
     if (!setup.bindPlannerBudget) fail("MODEL_PLAN_GATEWAY_REQUIRED", "Author cannot bind durable phase/gateway admission; no paid fallback");
-    Object.assign(setup.planningLimits, budgetPlan.phases.planner.limits);
+    if (budgetPlan.outcome === 'ready') Object.assign(setup.planningLimits, budgetPlan.phases.planner.limits);
     const qualified = containerSettings(root, owner, runtime);
     await author.confirmContainer(qualified.image, qualified.qualification.expiresAt);
     mkdirSync(join(root, 'control'), { recursive: true, mode: 0o700 });
@@ -205,7 +205,7 @@ export function createFirstUseBackend(context: BackendFactoryContext): ControlBa
     budgetStore.registerControllerPhaseAttempt(config.run.runId, "planner", plannerAttemptId);
     try {
       await planningGateway.listen();
-      setup.bindPlannerBudget({ ledger: pool.planner, allocation: budgetPlan.phases.planner, gateway: planningGateway, attemptId: plannerAttemptId });
+      setup.bindPlannerBudget({ ledger: pool.planner, ...(budgetPlan.outcome === 'ready' ? { allocation: budgetPlan.phases.planner } : {}), gateway: planningGateway, attemptId: plannerAttemptId });
     } catch (error) { await planningGateway.close(); await controller.close(); budgetStore.close(); throw error; }
     const manifestPath = join(config.roots.control, 'run-manifest.json');
     ensureOwnerRunManifest({ path: manifestPath, run: config.run, derived: true });
@@ -297,7 +297,7 @@ export function createFirstUseBackend(context: BackendFactoryContext): ControlBa
         const verifierExtensionPath = runtime.bridgeExtensionPath;
         const verifierBudget: FirstUseVerificationBudget = {
           maxRequests: owner.effectiveLimits.maxRequests, maxToolCalls: owner.effectiveLimits.maxToolCalls,
-          maxTokens: budgetPlan.phases.verifier.limits.maxTokens, maxCostUsd: budgetPlan.phases.verifier.limits.maxCostUsd,
+          ...(budgetPlan.outcome === 'accounting-only' ? { modelAccounting: 'informational' as const, maxTokens: null, maxCostUsd: null } : { maxTokens: budgetPlan.phases.verifier.limits.maxTokens, maxCostUsd: budgetPlan.phases.verifier.limits.maxCostUsd }),
         };
         const planned = deriveFirstUseVerificationPlan({
           run: config.run, producerTask: config.tasks[0]!.manifest, targetId, targetLocator: owner.configuration.scope.target.locator,
@@ -331,7 +331,7 @@ export function createFirstUseBackend(context: BackendFactoryContext): ControlBa
             ? 'Owner-approved differential program derived. The verifier task/grant are owner-authorized but are admitted only after the producer packet and its exact per-claim collector receipts pass controller validation; no finding or target reset is synthesized before execution.'
             : planned.reason,
           ...(planned.supported ? { verifierTaskId: planned.draft.verifierTask.taskId, findingId: planned.draft.finding.findingId, claimDigest: digestJson(planned.draft.finding.claim) } : {}),
-          protectedReserve: budgetPlan.phases.verifier.limits, reportReserve: budgetPlan.phases.report.limits, derivedAt,
+          ...(budgetPlan.outcome === 'ready' ? { protectedReserve: budgetPlan.phases.verifier.limits, reportReserve: budgetPlan.phases.report.limits } : { modelAccounting: 'informational' }), derivedAt,
         }), { mode: 0o600 });
       }
       config.checks = finalChecks;
@@ -340,7 +340,7 @@ export function createFirstUseBackend(context: BackendFactoryContext): ControlBa
       // attempt keeps the workers phase. The reserve is never widened or borrowed here.
       const verifierTaskId = verificationScheduleForApplication?.verifierTaskId;
       flow.application = await createApplication(config, { upstream: setup.upstream, ...(flow.source ? { sourceBinding: flow.source } : {}), controllerContainerOwner: flow.controller,
-        spend: { phase: { ...budgetPlan.phases.workers, ledger: pool.workers, prices: budgetPlan.prices },
+        spend: budgetPlan.outcome === 'accounting-only' ? { phase: { limits: budgetPlan.ownerLimits, ledger: pool.workers, selection: setup.selection } } : { phase: { ...budgetPlan.phases.workers, ledger: pool.workers, prices: budgetPlan.prices },
           ...(verifierTaskId ? { byTask: (id: string) => id === verifierTaskId ? { ...budgetPlan.phases.verifier, ledger: pool.verifier, prices: budgetPlan.prices } : undefined } : {}) },
         ...(verificationScheduleForApplication ? { verificationSchedule: verificationScheduleForApplication } : {}),
         runtimePaths: { guardianPath: runtime.guardianPath, receiptExtensionPath: runtime.receiptExtensionPath } });
@@ -396,7 +396,7 @@ export function createFirstUseBackend(context: BackendFactoryContext): ControlBa
         },
       },
     });
-    flow = { owner, setup, author, config, port, controller, budgetStore, budgetPlan, pool, planningGateway, persist() { writeFileSync(join(config.roots.control, 'application.json'), canonicalJson(config), { mode: 0o600 }); writeFileSync(join(config.roots.control, 'planning-spend.json'), canonicalJson({ limits: setup.planningLimits, receipts: setup.planningReceipts, phases: Object.fromEntries(Object.entries(pool).map(([phase, ledger]) => [phase, ledger.snapshot()])) }), { mode: 0o600 }); } };
+    flow = { owner, setup, author, config, port, controller, budgetStore, budgetPlan, pool, planningGateway, persist() { writeFileSync(join(config.roots.control, 'application.json'), canonicalJson(config), { mode: 0o600 }); writeFileSync(join(config.roots.control, 'planning-spend.json'), canonicalJson({ limits: setup.planningLimits, receipts: setup.planningReceipts, ...(budgetPlan.outcome === 'accounting-only' ? { accounting: pool.workers.snapshot() } : { phases: Object.fromEntries(Object.entries(pool).map(([phase, ledger]) => [phase, ledger.snapshot()])) }) }), { mode: 0o600 }); } };
     flow.persist(); flows.set(config.run.runId, flow); latest = flow;
     return flow;
   };
@@ -498,10 +498,15 @@ export function createFirstUseBackend(context: BackendFactoryContext): ControlBa
       const verifierSchedule = prepared.verifier.kind === 'pre-admission' ? prepared.verifier.schedule : undefined;
       const manifestPath = join(config.roots.control, 'run-manifest.json');
       ensureOwnerRunManifest({ path: manifestPath, run: config.run, derived: true });
+      const restoredSpend = (() => {
+        const budget = discovery.budget;
+        if (budget.outcome === 'accounting-only') return { phase: { limits: budget.ownerLimits, ledger: pool.workers, selection: budget.selection } };
+        return { phase: { ...budget.phases.workers, ledger: pool.workers, prices: budget.prices },
+          ...(verifierSchedule ? { byTask: (id: string) => id === verifierSchedule.verifierTaskId ? { ...budget.phases.verifier, ledger: pool.verifier, prices: budget.prices } : undefined } : {}) };
+      })();
       const application = await createApplication(config, {
         upstream: setup.upstream, sourceBinding: binding, controllerContainerOwner: controller,
-        spend: { phase: { ...discovery.budget.phases.workers, ledger: pool.workers, prices: discovery.budget.prices },
-          ...(verifierSchedule ? { byTask: (id: string) => id === verifierSchedule.verifierTaskId ? { ...discovery.budget.phases.verifier, ledger: pool.verifier, prices: discovery.budget.prices } : undefined } : {}) },
+        spend: restoredSpend,
         ...(verifierSchedule ? { verificationSchedule: verifierSchedule } : {}),
         runtimePaths: { guardianPath: runtime.guardianPath, receiptExtensionPath: runtime.receiptExtensionPath },
       });
@@ -591,7 +596,12 @@ export function createFirstUseBackend(context: BackendFactoryContext): ControlBa
       const flow = flows.get(runId); publishFindingReviews(flow);
       const report = await active(runId).report(runId, format);
       flow?.persist();
-      return { ...report, ...(flow ? { modelBudget: { policy: flow.budgetPlan.policy, phases: Object.fromEntries(Object.entries(flow.pool).map(([phase, ledger]) => [phase, ledger.snapshot()])) as Record<import("../policy/budget.js").AutonomousBudgetPhase, Readonly<import("../policy/budget.js").ModelSpendSnapshot>> } } : {}) };
+      if (!flow) return report;
+      // Accounting-only runs report one informational cumulative snapshot. Reporting four identical
+      // 'phase' snapshots would falsely imply isolated financial quotas that no longer exist.
+      return flow.budgetPlan.outcome === 'accounting-only'
+        ? { ...report, modelBudget: { policy: flow.budgetPlan.policy, accounting: flow.pool.workers.snapshot() } }
+        : { ...report, modelBudget: { policy: flow.budgetPlan.policy, phases: Object.fromEntries(Object.entries(flow.pool).map(([phase, ledger]) => [phase, ledger.snapshot()])) as Record<import("../policy/budget.js").AutonomousBudgetPhase, Readonly<import("../policy/budget.js").ModelSpendSnapshot>> } };
     }, events: (runId, page) => active(runId).events(runId, page),
     async close() { closed = true; for (const flow of flows.values()) { await flow.application?.close(); await flow.controller?.close(); await flow.planningGateway?.close(); await flow.restore?.ticket.close(); flow.budgetStore.close(); } },
   };

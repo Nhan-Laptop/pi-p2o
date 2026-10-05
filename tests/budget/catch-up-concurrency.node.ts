@@ -105,7 +105,7 @@ test('a catch-up that lands while two admitted turns are in flight is deferred, 
       deferredHolds: 1, deferredTokens: 1_400, deferredClaimedTokens: 0, openTurns: 0, deferredCatchUps: 1, settlements: ['turn-1', 'turn-2'],
     });
     assert.equal(ledger.attemptUsage(held.reservationId, ATTEMPT).turns, 2, 'two provider turns settle exactly twice, not three times');
-    assert.ok(ledger.snapshot().committed.tokens <= ledger.snapshot().limits.maxTokens, 'the run limit is not breached by double counting');
+    assert.ok(ledger.snapshot().committed.tokens <= ledger.snapshot().limits.maxTokens!, 'the run limit is not breached by double counting');
 
     // The terminal catch-up retry finds nothing left to charge and clears the durable deferral.
     assert.equal(catchUp(ledger, held.reservationId), undefined);

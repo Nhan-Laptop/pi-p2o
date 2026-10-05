@@ -213,6 +213,13 @@ export interface SupervisorOptions {
    * `{ windowMs: 0 }` disables the breaker; absolute run/task deadlines and cancellation are unaffected.
    */
   noProgress?: { windowMs?: number; minToolCalls?: number; consecutiveRefusals?: number };
+  /**
+   * [L1] Durable retry brake for informational (no application spend cap) tasks: once this many attempts at
+   * the tail of a task's sequence have ended in `failed`/`timed-out`, the task is not relaunched and a durable
+   * `orchestrator.retry-brake` event records why. It is derived from the durable attempts table, so a restart
+   * sees the same streak. Bounded legacy tasks keep their owner-set numeric attempt budget unchanged.
+   */
+  retryBrake?: { consecutiveFailures?: number };
 }
 export interface RunSnapshot {
   run: RunManifest;

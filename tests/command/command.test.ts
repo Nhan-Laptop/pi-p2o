@@ -67,7 +67,7 @@ describe('single human entrypoint', () => {
     const s = setup();
     for (const [args, code] of [
       ['--target ./repo --evil 1', /UNKNOWN_FLAG/],
-      ['--target ./repo --budget -1', /INVALID_BUDGET/],
+      ['--target ./repo --budget 5', /UNKNOWN_FLAG/],
       ['--target ./repo --concurrency 0', /INVALID_CONCURRENCY/],
       ['--target ./repo --target ./other', /DUPLICATE_FLAG/],
       ['--target ./repo --depth extreme', /INVALID_DEPTH/],
@@ -89,7 +89,7 @@ describe('approval is a human decision', () => {
   test('no start without an interactive confirmation of scope, actions and spend', async () => {
     const s = setup(true);
     s.pi.setConfirm(false);
-    await s.pi.command('p2o', '--target ./repo --purpose "audit auth" --budget 5 --concurrency 2');
+    await s.pi.command('p2o', '--target ./repo --purpose "audit auth" --concurrency 2');
     expect(s.entry.calls).not.toContain('start');
     expect(lastMessage(s.pi)?.customType).toBe('p2o_error');
     expect(lastText(s.pi)).toMatch(/NOT_APPROVED/);

@@ -28,13 +28,13 @@ describe('quick owner consent — one dialog', () => {
     expect(ui.calls[0]!.title).toBe('First-use owner consent: save this scope, rights and limits?');
     if (result.status !== 'ready') throw new Error(`expected ready, got ${result.status}`);
     const expected = profileLimits('wide', now);
-    // The dialog must show every consented number; nothing is granted silently.
-    for (const value of [expected.maxCostUsd, expected.maxRequests, expected.maxTokens, expected.maxToolCalls, expected.maxAttempts, expected.concurrency]) {
+    // The ordinary dialog shows the informational model-usage mode and every operational limit: no budget
+    // prompt exists, and nothing is granted silently.
+    expect(ui.calls[0]!.message).toContain('informational durable accounting; no application token/USD caps');
+    for (const value of [expected.maxRequests, expected.maxToolCalls, expected.maxAttempts, expected.concurrency]) {
       expect(ui.calls[0]!.message).toContain(String(value));
     }
-    expect(result.configuration.limits.maxCostUsd).toBe(expected.maxCostUsd);
-    expect(result.configuration.limits.maxRequests).toBe(expected.maxRequests);
-    expect(result.configuration.limits.maxTokens).toBe(expected.maxTokens);
+    expect(result.configuration.limits).toMatchObject({ modelAccounting: 'informational', maxCostUsd: null, maxTokens: null, maxRequests: expected.maxRequests });
     expect(result.configuration.permissions.repositoryScripts).toBe(false);
     expect(result.configuration.permissions.stateChanges).toBe(false);
     expect(result.configuration.authorization.basis).toBe('owner');
@@ -65,17 +65,37 @@ describe('quick owner consent — one dialog', () => {
     expect(ui.calls).toHaveLength(0);
   });
 
-  test('--profile ceiling consents to the validated maxima, and the wider request is never satisfied by narrower saved consent', async () => {
-    const first = await quick(LOCAL, new ContractUI());
-    if (first.status !== 'ready') throw new Error('expected ready');
-    expect(first.configuration.limits.maxCostUsd).toBe(100);
+  test('a bounded legacy consent is never silently widened to the informational default', async () => {
+    // First save an explicit bounded consent, then ask for the wide (informational) profile: the wider
+    // request cannot be satisfied by the narrower saved caps, so a human dialog is required and the saved
+    // legacy numbers are not removed without it.
+    const bounded = await quick(LOCAL, new ContractUI(), { profile: 'conservative' });
+    if (bounded.status !== 'ready') throw new Error('expected ready');
+    expect(bounded.configuration.limits).toMatchObject({ maxCostUsd: 5, maxTokens: 100_000 });
     const ui = new ContractUI();
-    const wider = await quick(LOCAL, ui, { profile: 'ceiling' });
+    const wider = await quick(LOCAL, ui, { profile: 'wide' });
     if (wider.status !== 'ready') throw new Error('expected ready');
     expect(ui.calls.map(call => call.method)).toEqual(['confirm']);
     expect(wider.reused).toBe(false);
-    expect(wider.configuration.limits.maxCostUsd).toBe(LIMIT_CEILINGS.maxCostUsd);
-    expect(wider.configuration.limits.maxRequests).toBe(LIMIT_CEILINGS.maxRequests);
+    expect(wider.configuration.limits).toMatchObject({ modelAccounting: 'informational', maxCostUsd: null, maxTokens: null });
+  });
+
+  test('an informational parent covers a narrower explicit profile without dialogs; explicit numeric profiles stay explicit', async () => {
+    const first = await quick(LOCAL, new ContractUI());
+    if (first.status !== 'ready') throw new Error('expected ready');
+    // Every conservative value is inside the informational parent (which has no cap to exceed), so the
+    // narrower request reuses the saved consent: informational mode is never silently replaced by numbers.
+    const ui = new ContractUI();
+    const narrower = await quick(LOCAL, ui, { profile: 'conservative' });
+    if (narrower.status !== 'ready') throw new Error('expected ready');
+    expect(ui.calls).toHaveLength(0);
+    expect(narrower.reused).toBe(true);
+    expect(narrower.configuration.limits).toMatchObject({ modelAccounting: 'informational', maxCostUsd: null, maxTokens: null });
+    // A fresh explicit conservative profile is still a real bounded consent (an explicit owner request).
+    await rm(join(home.path, '.p2o'), { recursive: true, force: true });
+    const fresh = await quick(LOCAL, new ContractUI(), { profile: 'conservative' });
+    if (fresh.status !== 'ready') throw new Error('expected ready');
+    expect(fresh.configuration.limits).toMatchObject({ maxCostUsd: 5, maxTokens: 100_000, maxRequests: 20 });
   });
 
   test('--profile conservative asks one dialog and keeps the historic narrow defaults', async () => {
@@ -86,14 +106,14 @@ describe('quick owner consent — one dialog', () => {
     expect(result.configuration.limits).toMatchObject({ maxCostUsd: 5, maxRequests: 20, maxTokens: 100_000, maxToolCalls: 20, maxAttempts: 2, concurrency: 1 });
   });
 
-  test('explicit flags set a value inside one dialog instead of asking for it', async () => {
+  test('the removed budget request is refused explicitly and operational narrowing still works', async () => {
     const ui = new ContractUI();
-    const result = await quick(LOCAL, ui, { limits: { maxCostUsd: 12.5, concurrency: 3 } });
-    if (result.status !== 'ready') throw new Error('expected ready');
-    expect(ui.calls).toHaveLength(1);
-    expect(result.configuration.limits.maxCostUsd).toBe(12.5);
-    expect(result.configuration.limits.concurrency).toBe(3);
-    expect(ui.calls[0]!.message).toContain('12.5');
+    await expect(quick(LOCAL, ui, { limits: { maxCostUsd: 12.5 } })).rejects.toThrow(/application token\/USD caps were removed/);
+    await expect(quick(LOCAL, new ContractUI(), { limits: { maxTokens: 400_000 } })).rejects.toThrow(/application token\/USD caps were removed/);
+    expect(ui.calls).toHaveLength(0);
+    const narrowed = await quick(LOCAL, new ContractUI(), { limits: { concurrency: 3 } });
+    if (narrowed.status !== 'ready') throw new Error('expected ready');
+    expect(narrowed.configuration.limits.concurrency).toBe(3);
   });
 
   test('--full-rights requests both separate rights, shows them ON, and records them', async () => {
@@ -144,16 +164,16 @@ describe('quick owner consent — one dialog', () => {
   });
 
   test('a requested limit above the validated ceiling is refused rather than clamped silently', async () => {
-    await expect(quick(LOCAL, new ContractUI(), { limits: { maxCostUsd: LIMIT_CEILINGS.maxCostUsd + 1 } })).rejects.toThrow(/invalid owner limit/);
+    await expect(quick(LOCAL, new ContractUI(), { limits: { maxToolCalls: LIMIT_CEILINGS.maxToolCalls + 1 } })).rejects.toThrow(/invalid owner limit/);
   });
 
   test('saved consent records the human attestation and the exact limits the dialog showed', async () => {
     const ui = new ContractUI();
     const result = await quick(LOCAL, ui);
     if (result.status !== 'ready') throw new Error('expected ready');
-    const saved = JSON.parse(await readFile(result.configPath, 'utf8')) as { configuration: { authorization: { attestation: string }; limits: Record<string, number> } };
+    const saved = JSON.parse(await readFile(result.configPath, 'utf8')) as { configuration: { authorization: { attestation: string }; limits: Record<string, unknown> } };
     expect(saved.configuration.authorization.attestation).toBe('human-self-attested');
-    expect(saved.configuration.limits.maxCostUsd).toBe(100);
+    expect(saved.configuration.limits).toMatchObject({ modelAccounting: 'informational', maxCostUsd: null, maxTokens: null });
     expect(ui.calls[0]!.message).toContain('Save outside the target at');
   });
 

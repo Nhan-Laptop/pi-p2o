@@ -69,7 +69,9 @@ describe('/p2o first-use onboarding — CONTRACT ONLY', () => {
     await expect(lstat(join(root, 'work'))).rejects.toMatchObject({ code: 'ENOENT' });
   });
   // The guided questionnaire still asks every question; cancelling any one of them must write/plan/launch nothing.
-  test.each(Array.from({ length: 13 }, (_, index) => index + 1))('cancelling guided first-use question %i writes nothing, constructs/plans/launches nothing', async cancelAt => {
+  // The guided questionnaire still asks every remaining question (financial dialogs are removed); cancelling
+  // any one of them must write/plan/launch nothing.
+  test.each(Array.from({ length: 11 }, (_, index) => index + 1))('cancelling guided first-use question %i writes nothing, constructs/plans/launches nothing', async cancelAt => {
     const s = setup(); s.ui.cancelAt = cancelAt;
     await s.pi.command('p2o', '--target ./repo-never-read --advanced');
     expect(last(s)).toMatch(/ONBOARDING_CANCELLED/);
@@ -98,13 +100,15 @@ describe('/p2o first-use onboarding — CONTRACT ONLY', () => {
     expect(next.ui.calls).toEqual([]); expect(next.contexts[0].onboarding?.reused).toBe(true);
     expect(next.contexts[0].onboarding?.configPath).toBe(s.contexts[0].onboarding?.configPath);
   });
-  test('reuse narrows argv budget and directory target; the command never widens back to the saved parent', async () => {
+  test('reuse narrows the directory target and never widens back to the saved parent', async () => {
     const s = setup(); await s.pi.command('p2o', '--target ./repo --plan-only');
-    const next = setup(); await next.pi.command('p2o', '--target ./repo/src --budget 2 --plan-only');
+    const next = setup(); await next.pi.command('p2o', '--target ./repo/src --plan-only');
     expect(next.ui.calls).toEqual([]);
     const savedPlan = next.entry.plans.get('plan-1')!;
     expect(savedPlan.preparation.target.locator).toBe(join(root, 'work', 'repo', 'src'));
-    expect(savedPlan.preparation.spend.maxCostUsd).toBe(2);
+    // The saved parent consent is reused unchanged: no argv flag can remove or invent financial policy.
+    expect(s.contexts[0].onboarding!.configuration.limits).toMatchObject({ modelAccounting: 'informational', maxCostUsd: null, maxTokens: null });
+    expect(savedPlan.preparation.spend).toMatchObject({ maxCostUsd: 5, maxTokens: 100_000 });
   });
   test('shorter per-run deadline is forwarded through effective limits, not discarded during consent reuse', async () => {
     const s = setup(); await s.pi.command('p2o', '--target ./repo --plan-only');
@@ -115,12 +119,12 @@ describe('/p2o first-use onboarding — CONTRACT ONLY', () => {
     expect(owner.effectiveLimits.deadlineMs).toBeGreaterThanOrEqual(before + 30 * 60_000);
     expect(owner.effectiveLimits.deadlineMs).toBeLessThan(owner.configuration.limits.deadlineMs);
   });
-  test('scope/budget/rights expansions ask HUMAN again; late-bound factory slot updates', async () => {
+  test('scope/rights expansions ask HUMAN again; late-bound factory slot updates', async () => {
     const s = setup(); await s.pi.command('p2o', '--target ./repo --plan-only');
     const secondUI = new ContractUI(); changeUI(s, secondUI);
-    await s.pi.command('p2o', '--target ./repo --budget 6 --concurrency 2 --deadline 120 --repo-scripts --state-changes --plan-only');
+    await s.pi.command('p2o', '--target ./repo --concurrency 2 --deadline 120 --repo-scripts --state-changes --plan-only');
     expect(secondUI.calls[0].title).toMatch(/expansion/); expect(s.backendFactory).toHaveBeenCalledTimes(1);
-    expect(s.contexts[0].onboardingSlot?.current?.configuration.limits).toMatchObject({ maxCostUsd: 6, concurrency: 2 });
+    expect(s.contexts[0].onboardingSlot?.current?.configuration.limits).toMatchObject({ concurrency: 2 });
     // Quick consent does not let a flag grant a right by itself: the dialog that carries the request is what the
     // human approves, and cancelling it grants nothing (covered by the cancellation cases).
     expect(secondUI.calls[0].message).toMatch(/repository scripts ON, state changes ON/);

@@ -63,13 +63,12 @@ function runSegment(runId: string): string {
   return segment;
 }
 
-function effectiveSpend(run: EntryRunBinding['run'], requestedBudgetUsd: number | undefined, now: number): EntryPreparation['spend'] {
-  const ownerCost = run.budgets.maxCostUsd;
-  const maxCostUsd = requestedBudgetUsd === undefined ? ownerCost : Math.min(requestedBudgetUsd, ownerCost);
+function effectiveSpend(run: EntryRunBinding['run'], now: number): EntryPreparation['spend'] {
   return {
-    maxCostUsd,
+    maxCostUsd: run.budgets.maxCostUsd,
     maxRequests: run.budgets.maxRequests,
     maxTokens: run.budgets.maxTokens,
+    ...(run.budgets.modelAccounting ? { modelAccounting: run.budgets.modelAccounting } : {}),
     maxToolCalls: run.budgets.maxToolCalls,
     maxAttempts: run.budgets.maxAttempts,
     deadlineMs: Math.max(0, Date.parse(run.budgets.deadlineAt) - now),
@@ -477,7 +476,7 @@ export function createTargetEntryPort(options: TargetEntryOptions): import('../.
         ...(resolved.approved.digest ? { digest: resolved.approved.digest } : {}),
         ...(preparationRevision(resolved, fingerprint) ? { revision: preparationRevision(resolved, fingerprint)! } : {}),
       };
-      const spend = effectiveSpend(binding.run, input.budgetUsd, clock());
+      const spend = effectiveSpend(binding.run, clock());
       const concurrency = effectiveConcurrency(binding.run, input.concurrency);
       const actions = resolved.approved.actions.filter(action => binding.run.authorization.allowedActions.includes(action));
       if (!actions.length) entryFail('TARGET_DENIED', 'the resolved target has no owner-approved action within run authorization');

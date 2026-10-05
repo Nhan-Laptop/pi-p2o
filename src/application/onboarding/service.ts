@@ -2,7 +2,7 @@ import { actionsFor, boundedText, consentCovers, LIMIT_CEILINGS, onboardingScope
 import { assertStorageOutsideTarget, defaultOwnerStorageRoot, findOwnerConsent, ownerConfigPath, publishOwnerConsent } from './storage.js';
 import { OnboardingError, type OnboardingInput, type OnboardingOptions, type OnboardingResult, type OwnerConfiguration, type OwnerLimits } from './types.js';
 import { assertBundledRuntimeReady } from './runtime-prerequisites.js';
-export const MODEL_DISCLOSURE = 'Planning uses an assessment model you explicitly select in the human UI; your parent Pi model is not assessment consent. Model calls may incur provider charges, including --plan-only. Target identifiers and approved context may be sent to the selected provider. The USD cap includes planning, workers and bounded verification; it is a ceiling, not a price estimate. No target I/O or worker execution is permitted during preparation/planning. Scope consent is not approval of a model plan; you will review its exact digest separately.';
+export const MODEL_DISCLOSURE = 'Ordinary target runs have no application token/USD cap. Observed usage is durably recorded as information; provider charges still accrue. Native selected-model context/output constraints and independent lifecycle controls remain. Planning uses an assessment model you explicitly select in the human UI; your parent Pi model is not assessment consent. Model calls may incur provider charges, including --plan-only. Target identifiers and approved context may be sent to the selected provider. Legacy explicitly bounded managed runs retain their saved financial policy. No target I/O or worker execution is permitted during preparation/planning. Scope consent is not approval of a model plan; you will review its exact digest separately.';
 class Cancelled extends Error {}
 /** Honest bases only. `public-source-review` exists because a public repository is neither owned, nor covered by
  *  written permission, nor covered by a published program; it grants static read/clone and nothing more. */
@@ -33,9 +33,12 @@ export async function ensureOwnerOnboarding(input: OnboardingInput, options: Onb
   assertStorageOutsideTarget(root, input.cwd, scope);
   const readyResult = (configuration: OwnerConfiguration, path: string, reused: boolean): OnboardingResult => {
     const effectiveLimits = { ...configuration.limits };
-    for (const key of Object.keys(effectiveLimits) as Array<keyof OwnerLimits>) {
-      effectiveLimits[key] = Math.min(effectiveLimits[key], input.limits?.[key] ?? effectiveLimits[key]);
+    for (const key of Object.keys(effectiveLimits) as Array<Exclude<keyof OwnerLimits, 'modelAccounting'>>) {
+      if (key === 'modelAccounting' as string) continue;
+      const requested = input.limits?.[key], approved = effectiveLimits[key];
+      if (typeof requested === 'number') effectiveLimits[key] = approved === null ? requested : Math.min(approved, requested);
     }
+    if (effectiveLimits.maxTokens !== null || effectiveLimits.maxCostUsd !== null) delete effectiveLimits.modelAccounting;
     const effectivePermissions = { ...configuration.permissions,
       repositoryScripts: configuration.permissions.repositoryScripts && input.permissions?.repositoryScripts !== false,
       stateChanges: configuration.permissions.stateChanges && input.permissions?.stateChanges !== false };
@@ -45,6 +48,9 @@ export async function ensureOwnerOnboarding(input: OnboardingInput, options: Onb
   const defaults: OwnerLimits = { maxCostUsd: 5, maxRequests: 20, maxTokens: 100_000, maxToolCalls: 20, maxAttempts: 2, deadlineMs: now() + 60 * 60_000, concurrency: 1 };
   if (input.limits) {
     if (Object.keys(input.limits).some(key => !Object.hasOwn(LIMIT_CEILINGS, key))) throw new OnboardingError('ONBOARDING_INVALID_INPUT', 'unknown requested budget field');
+    if (input.limits.maxCostUsd !== undefined || input.limits.maxTokens !== undefined) {
+      throw new OnboardingError('ONBOARDING_BUDGET_REMOVED', 'application token/USD caps were removed from ordinary /p2o target consent; model usage is informational and provider-limited');
+    }
     validateLimits({ ...defaults, ...input.limits });
     if (input.limits.deadlineMs !== undefined && input.limits.deadlineMs <= now()) throw new OnboardingError('ONBOARDING_INVALID_INPUT', 'requested deadline has expired');
   }
@@ -62,7 +68,7 @@ export async function ensureOwnerOnboarding(input: OnboardingInput, options: Onb
   const quickLimits: OwnerLimits | undefined = quick ? { ...quickProfile, ...input.limits } : undefined;
   // The profile deadline is a *default*, not a request: a repeated identical run must reuse saved consent instead of
   // re-asking merely because "twelve hours from now" moved. An explicit deadline request is a real request.
-  const quickCaps: Partial<OwnerLimits> = { maxCostUsd: quickProfile.maxCostUsd, maxRequests: quickProfile.maxRequests,
+  const quickCaps: Partial<OwnerLimits> = { ...(quickProfile.modelAccounting ? { modelAccounting: quickProfile.modelAccounting } : {}), maxCostUsd: quickProfile.maxCostUsd, maxRequests: quickProfile.maxRequests,
     maxTokens: quickProfile.maxTokens, maxToolCalls: quickProfile.maxToolCalls, maxAttempts: quickProfile.maxAttempts, concurrency: quickProfile.concurrency };
   const requestedLimits = quick ? { ...quickCaps, ...input.limits } : input.limits;
   try {
@@ -135,14 +141,14 @@ export async function ensureOwnerOnboarding(input: OnboardingInput, options: Onb
         : basisKey === 'published-program' ? 'A published program authorizes this scope (your attestation)'
         : 'Public source review only — static read/clone of public source, no host testing';
       // A renewal/expansion is labelled as such so a wider consent is never mistaken for the first one.
-      const quickTitle = previous ? 'Scope/rights/budget renewal or expansion: save this scope, rights and limits?' : 'First-use owner consent: save this scope, rights and limits?';
+      const quickTitle = previous ? 'Scope/rights/limits renewal or expansion: save this scope, rights and limits?' : 'First-use owner consent: save this scope, rights and limits?';
       await confirm(quickTitle,
         `Target: ${scope.target.kind} ${scope.target.locator}\nScope: ${scope.boundary}\n`
         + `Authorization: ${basisText}\nReference: ${reference}\n`
         + (publicSourceReview ? 'Public source review is static read/clone and static analysis only: no host testing, no HTTP requests against the repository host, no scripts, no state changes.\n' : '')
         + `Separate rights: repository scripts ${repositoryScripts ? 'ON' : 'OFF'}, state changes ${stateChanges ? 'ON' : 'OFF'}\n`
         + `Your rights: ${configuration.allowedActions.join(', ')}\n`
-        + `Spend: up to $${limits.maxCostUsd}; ${limits.maxRequests} target requests, ${limits.maxTokens} model tokens, ${limits.maxToolCalls} tool calls, ${limits.maxAttempts} attempts; concurrency ${limits.concurrency}; deadline ${deadlineText(limits.deadlineMs)}\n`
+        + (limits.modelAccounting === 'informational' ? `Model usage: informational durable accounting; no application token/USD caps; provider-limited completions. Operational scope: ${limits.maxRequests} target requests, ${limits.maxToolCalls} tool calls, ${limits.maxAttempts} attempts; concurrency ${limits.concurrency}; deadline ${deadlineText(limits.deadlineMs)}\n` : `Legacy bounded consent: up to $${limits.maxCostUsd}; ${limits.maxTokens} model tokens; concurrency ${limits.concurrency}; deadline ${deadlineText(limits.deadlineMs)}\n`)
         + `${MODEL_DISCLOSURE}\n`
         + `Save outside the target at ${root}, owner-only. Nothing is saved if you cancel this dialog.`);
       abort(input);
@@ -151,7 +157,7 @@ export async function ensureOwnerOnboarding(input: OnboardingInput, options: Onb
       return readyResult(configuration, path, false);
     }
 
-    const renewal = previous ? 'Scope/rights/budget renewal or expansion' : 'First-use owner consent';
+    const renewal = previous ? 'Scope/rights/limits renewal or expansion' : 'First-use owner consent';
     await confirm(`${renewal}: confirm target and scope?`,
       `Target: ${scope.target.kind} ${scope.target.locator}\nScope: ${scope.boundary}\nNo additional hosts, URL paths, redirects, symlink targets or repositories are included. No target has been read or contacted. Only authorize a scope you are legally entitled to assess.${scope.target.kind === 'github-repo' ? '\nRepository scope does not approve an unobserved commit/tree. Execution requires separate approval of the acquired immutable source identity.' : ''}`);
     const basis = await select('What is your authorization basis for this exact scope?', BASIS);
@@ -169,9 +175,12 @@ export async function ensureOwnerOnboarding(input: OnboardingInput, options: Onb
       await select('Separately permit state-changing actions on this exact target? This does not authorize extra scope or unreviewed model plans.', CHANGE) === CHANGE[1];
     const base = { ...defaults, ...(previous?.configuration.limits ?? {}), ...input.limits };
     if (base.deadlineMs <= now()) base.deadlineMs = now() + 60 * 60_000;
-    const maxCostUsd = await number('Total USD ceiling, INCLUDING model planning and workers', base.maxCostUsd, LIMIT_CEILINGS.maxCostUsd, true);
+    // A legacy bounded consent is preserved verbatim: the guided flow has no financial dialog any more, so it
+    // must never silently strip caps the owner saved earlier. Fresh guided consents are informational.
+    const previousBounded = previous !== null && previous.configuration.limits.modelAccounting !== 'informational';
+    const maxCostUsd = previousBounded ? previous!.configuration.limits.maxCostUsd : null;
     const maxRequests = await number('Maximum target requests (after separate plan approval)', base.maxRequests, LIMIT_CEILINGS.maxRequests);
-    const maxTokens = await number('Maximum model tokens, including planning', base.maxTokens, LIMIT_CEILINGS.maxTokens);
+    const maxTokens = previousBounded ? previous!.configuration.limits.maxTokens : null;
     const maxToolCalls = await number('Maximum tool calls', base.maxToolCalls, LIMIT_CEILINGS.maxToolCalls);
     const maxAttempts = await number('Maximum worker attempts', base.maxAttempts, LIMIT_CEILINGS.maxAttempts);
     const concurrency = await number('Maximum concurrent workers', base.concurrency, LIMIT_CEILINGS.concurrency);
@@ -184,11 +193,13 @@ export async function ensureOwnerOnboarding(input: OnboardingInput, options: Onb
       schemaVersion: 1, owner: { uid: ownerUid() }, scope,
       authorization: { basis: basis === BASIS[0] ? 'owner' : basis === BASIS[1] ? 'written-permission' : basis === BASIS[2] ? 'published-program' : 'public-source-review', reference, attestation: 'human-self-attested' },
       permissions, allowedActions: actionsFor(permissions),
-      limits: { maxCostUsd, maxRequests, maxTokens, maxToolCalls, maxAttempts, deadlineMs, concurrency },
+      limits: previousBounded
+        ? { maxCostUsd: maxCostUsd!, maxRequests, maxTokens: maxTokens!, maxToolCalls, maxAttempts, deadlineMs, concurrency }
+        : { modelAccounting: 'informational', maxCostUsd, maxRequests, maxTokens, maxToolCalls, maxAttempts, deadlineMs, concurrency },
       disclosure: { version: 1, modelCosts: true, modelDataSharing: true, planOnlyTargetIO: 0 },
     });
     await confirm('Save this owner-only scope consent?',
-      `Target: ${scope.target.locator}\nScope: ${scope.boundary}\nAuthorization: ${configuration.authorization.basis} — ${reference} (your attestation; not independent ownership proof)\nActions: ${configuration.allowedActions.join(', ')}\nSeparate rights: repository scripts ${repositoryScripts ? 'ON' : 'OFF'}, state changes ${stateChanges ? 'ON' : 'OFF'}\n${publicSourceReview ? 'Public source review is static read/clone and static analysis only: no host testing, no HTTP requests against the repository host, no scripts, no state changes.\n' : ''}Spend: up to $${maxCostUsd}; ${maxRequests} target requests, ${maxTokens} model tokens, ${maxToolCalls} tool calls, ${maxAttempts} attempts; concurrency ${concurrency}; deadline ${new Date(deadlineMs).toISOString()}\n${MODEL_DISCLOSURE}\nSave outside the target at ${root}, owner-only. Nothing is saved if you cancel this dialog.`);
+      `Target: ${scope.target.locator}\nScope: ${scope.boundary}\nAuthorization: ${configuration.authorization.basis} — ${reference} (your attestation; not independent ownership proof)\nActions: ${configuration.allowedActions.join(', ')}\nSeparate rights: repository scripts ${repositoryScripts ? 'ON' : 'OFF'}, state changes ${stateChanges ? 'ON' : 'OFF'}\n${publicSourceReview ? 'Public source review is static read/clone and static analysis only: no host testing, no HTTP requests against the repository host, no scripts, no state changes.\n' : ''}${previousBounded ? `Legacy bounded consent preserved: up to $${maxCostUsd}; ${maxTokens} model tokens\n` : `Model usage: informational durable accounting; no application token/USD caps; provider-limited completions\n`}${maxRequests} target requests, ${maxToolCalls} tool calls, ${maxAttempts} attempts; concurrency ${concurrency}; deadline ${new Date(deadlineMs).toISOString()}\n${MODEL_DISCLOSURE}\nSave outside the target at ${root}, owner-only. Nothing is saved if you cancel this dialog.`);
     abort(input);
     const path = await publishOwnerConsent(root, configuration, previous?.receipt.configurationDigest ?? null, now());
     ui.notify?.(`Saved owner configuration and scope-consent receipt: ${path}. This is not approval of a model plan.`, 'info');

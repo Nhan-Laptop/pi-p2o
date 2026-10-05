@@ -1,4 +1,5 @@
 import { isAbsolute, resolve } from 'node:path';
+import { validModelAccounting } from './model-accounting.js';
 import { rules as r, makeSchema, type Rule, type ValidationIssue } from './validation.js';
 import {
   SCHEMA_VERSION, lifecycleStates, packetStates, findingStates, runStates, classifications,
@@ -33,7 +34,7 @@ const target = obj({ id, kind: en(['artifact', 'web', 'service', 'lab']), locato
 const authorization = obj({ reference: text, authorizedBy: text, validFrom: date, expiresAt: date, targets: r.array(target, 1), exclusions: texts, allowedActions: r.array(text, 1, true) });
 const scope = obj({ authorizationRef: text, targetIds: r.array(id, 1, true), actor: obj({ id, privileges: texts }), boundary: text, isolation: text, recovery: text, environmentId: id, configurationDigest: digest, inputs: r.array(artifact) });
 const question = obj({ text, ifTrue: text, ifFalse: text });
-const budgetFields = { deadlineAt: date, maxRequests: uint, maxBytes: uint, maxToolCalls: uint, maxTokens: uint, maxCostUsd: r.number(), maxAttempts: positive };
+const budgetFields = { deadlineAt: date, maxRequests: uint, maxBytes: uint, maxToolCalls: uint, maxTokens: r.union(uint, r.literal(null)), maxCostUsd: r.union(r.number(), r.literal(null)), modelAccounting: opt(r.literal('informational')), maxAttempts: positive };
 const budget = obj(budgetFields);
 const runBudget = obj({ ...budgetFields, maxTasks: positive, maxDepth: uint, maxConcurrency: positive, reportReserveMs: uint, targetRequestLimits: r.record(uint, ID_PATTERN) });
 const usage = obj({ requests: uint, bytes: uint, toolCalls: uint, tokens: uint, costUsd: r.number() });
@@ -58,6 +59,9 @@ function checkAuthorization(a: Authorization, e: ValidationIssue[], path = '$'):
     if (a.exclusions.some(x => t.id === x || t.locator === x || t.locator.startsWith(x.endsWith('/') ? x : `${x}/`))) add(e, p, 'excluded-target', 'An approved target overlaps an explicit exclusion');
   }
 }
+function checkModelAccounting(v: { modelAccounting?: 'informational'; maxTokens: number | null; maxCostUsd: number | null }, e: ValidationIssue[]): void {
+  if (!validModelAccounting(v)) add(e, '$/budgets', 'model-accounting-policy', 'Null financial caps require explicit informational accounting; legacy bounded policy cannot disappear');
+}
 function checkObserved(v: ObservedRuntime, e: ValidationIssue[], path = '$'): void {
   if ((v.capabilities.canHardStop || v.capabilities.canResume) && !v.capabilities.ownsLifecycle) add(e, path, 'capability-ownership', 'Stop/resume requires lifecycle ownership');
   if (v.attestation === 'attested' && (!v.selection || !v.capabilities.attestsRuntime || v.receiptEvidenceIds.length === 0)) add(e, path, 'runtime-attestation', 'Attestation needs a selection, capability and receipt');
@@ -72,6 +76,7 @@ export const observedRuntimeSchema = makeSchema<ObservedRuntime>('observed-runti
 export const budgetUsageSchema = makeSchema<BudgetUsage>('budget-usage', usage);
 export const runSchema = makeSchema<RunManifest>('run', obj({ schemaVersion: version, runId: id, createdAt: date, state: en(runStates), authorization, budgets: runBudget, requestedRuntime, allowedCapabilities: texts }), (v, e) => {
   checkAuthorization(v.authorization, e, '$/authorization');
+  checkModelAccounting(v.budgets, e);
   const end = Date.parse(v.budgets.deadlineAt);
   if (end <= Date.parse(v.createdAt) || end > Date.parse(v.authorization.expiresAt)) add(e, '$/budgets/deadlineAt', 'deadline', 'Run deadline must follow creation and fit authorization');
   if (Date.parse(v.createdAt) < Date.parse(v.authorization.validFrom)) add(e, '$/createdAt', 'authorization-window', 'Run creation predates authorization');
@@ -83,6 +88,7 @@ export const runSchema = makeSchema<RunManifest>('run', obj({ schemaVersion: ver
 });
 export const taskSchema = makeSchema<TaskManifest>('task', obj({ schemaVersion: version, runId: id, taskId: id, parentTaskId: opt(id), dependencyTaskIds: ids, depth: uint, createdAt: date, inputRevision: text, question, scope, skills: texts, allowedActions: texts, requiredCapabilities: texts, budgets: budget, requestedRuntime, workspace: text, lifecycleState: en(lifecycleStates), packetState: en(packetStates) }), (v, e) => {
   checkScope(v.scope, e, '$/scope');
+  checkModelAccounting(v.budgets, e);
   if (!isAbsolute(v.workspace) || resolve(v.workspace) !== v.workspace || v.workspace === resolve('/')) add(e, '$/workspace', 'workspace', 'Workspace must be a normalized private absolute path');
   if (v.parentTaskId === v.taskId || v.dependencyTaskIds.includes(v.taskId)) add(e, '$/dependencyTaskIds', 'self-dependency', 'A task cannot depend on itself');
   if (Date.parse(v.budgets.deadlineAt) <= Date.parse(v.createdAt)) add(e, '$/budgets/deadlineAt', 'deadline', 'Task deadline must follow creation');

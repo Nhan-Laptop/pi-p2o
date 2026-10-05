@@ -1,5 +1,5 @@
 import type { ChildProcess } from "node:child_process";
-import type { ModelPriceTable, ModelSpendJournal, ModelSpendBudget } from "../policy/budget.js";
+import type { ModelPriceTable, ModelSpendJournal, ModelSpendBudget, ModelAccountingPolicy } from "../policy/budget.js";
 
 export type RuntimeKind = "headless" | "herdr" | "plan";
 export type Thinking = "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
@@ -218,6 +218,8 @@ export interface RuntimeHandle {
   stopReceipt?: StopReceipt;
   /** Supervisor-owned mandatory partial/failure semantics; never a worker completion assertion. */
   budgetOutcome?: { outcome: "partial" | "failed"; reason: string; at: number; extensionRequired: boolean };
+  /** Provider violated a native wire bound; independent of financial policy and owner spend extensions. */
+  modelBoundFailure?: { kind: 'native-output-bound'; reason: string; at: number; maxOutputTokens?: number; observedOutputTokens?: number };
   provenance?: { checkpointId: string; parentAttemptId: string; parentSessionId: string; sessionDigest: string };
   /** [B4] Durable session-release verdict for this attempt (idempotent, bounded, never swallowed). */
   sessionRelease?: SessionReleaseReceipt;
@@ -346,7 +348,7 @@ export interface ManagedRuntimeOptions {
   sessions?: SessionReleaseOptions;
 }
 export interface ModelSpendRuntimeOptions {
-  limits: { maxTokens: number; maxCostUsd: number };
+  limits: ModelAccountingPolicy;
   /** Finite phase-wide admission count (persisted in ledger policy digest); not replenished on restart. */
   maxTurns?: number;
   /** Optional allocation selection pin; a worker cannot spend another phase's model allocation. */

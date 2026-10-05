@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import { MAX_BUDGET_USD, MAX_CONCURRENCY, parseP2OArgs, tokenize } from '../../src/interface/argv.js';
+import { MAX_CONCURRENCY, parseP2OArgs, tokenize } from '../../src/interface/argv.js';
 import { classifyTargetSyntax } from '../../src/interface/targets.js';
 
 describe('shell-free tokenizer', () => {
@@ -32,8 +32,8 @@ describe('p2o grammar', () => {
 
   test('the target form accepts exactly the documented flags', () => {
     expect(parseP2OArgs('--target ./repo')).toEqual({ verb: 'start', target: './repo', depth: 'standard', planOnly: false });
-    expect(parseP2OArgs('--target "https://github.com/o/r" --purpose "audit auth" --depth=deep --plan-only --budget 12.50 --concurrency 4')).toEqual({
-      verb: 'start', target: 'https://github.com/o/r', purpose: 'audit auth', depth: 'deep', planOnly: true, budgetUsd: 12.5, concurrency: 4,
+    expect(parseP2OArgs('--target "https://github.com/o/r" --purpose "audit auth" --depth=deep --plan-only --concurrency 4')).toEqual({
+      verb: 'start', target: 'https://github.com/o/r', purpose: 'audit auth', depth: 'deep', planOnly: true, concurrency: 4,
     });
     // Purpose text is literal data, never executed or expanded.
     expect(parseP2OArgs('--target ./r --purpose "bad; rm -rf / $(whoami) `id`"')).toMatchObject({ purpose: 'bad; rm -rf / $(whoami) `id`' });
@@ -63,11 +63,8 @@ describe('p2o grammar', () => {
     expect(() => parseP2OArgs('--target ./repo --plan-only --plan-only')).toThrow(/DUPLICATE_FLAG/);
   });
 
-  test('invalid budgets, concurrency and depth are denied', () => {
-    for (const budget of ['0', '-1', 'abc', '1e3', '1.234', '.5', '100000.01']) {
-      expect(() => parseP2OArgs(`--target ./r --budget ${budget}`)).toThrow(/INVALID_BUDGET/);
-    }
-    expect(() => parseP2OArgs(`--target ./r --budget ${MAX_BUDGET_USD + 1}`)).toThrow(/INVALID_BUDGET/);
+  test('the removed budget flag is an unknown flag; concurrency and depth are denied when invalid', () => {
+    expect(() => parseP2OArgs('--target ./r --budget 5')).toThrow(/UNKNOWN_FLAG/);
     for (const value of ['0', '-2', '2.5', 'abc', String(MAX_CONCURRENCY + 1)]) {
       expect(() => parseP2OArgs(`--target ./r --concurrency ${value}`)).toThrow(/INVALID_CONCURRENCY/);
     }

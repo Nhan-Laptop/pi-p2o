@@ -12,6 +12,7 @@ import { ControllerLease } from "./controller-lease.js";
 import { SessionReleaseRegistry } from "./sessions.js";
 import { assertModelSpendPrice, dispatchModelRequest, MODEL_SPEND_BASIS, ModelSpendBudget, type ModelSpendDispatch, type ModelSpendTurnCharge, type ModelSpendUsage, type ModelSpendUsageInput } from "../policy/budget.js";
 import { PolicyError } from "../policy/errors.js";
+import { selectedModelCompletionLimit } from './completion-capability.js';
 import type {
   CheckpointOptions, GuardianJournal, ManagedRuntimeOptions, ModelSpendRuntimeOptions, ObserveOptions, PiReceiptFile, PreflightReceipt,
   ProcessRow, ReconciliationReceipt, RuntimeAdapter, RuntimeCapabilities, RuntimeCheckpoint, RuntimeCollection, RuntimeDependencies,
@@ -81,8 +82,10 @@ export interface TurnSpendGateOptions {
   attemptId: string;
   selection: RuntimeSelection;
   maxOutputTokens: number;
-  /** Called when the ledger refuses a turn, so the attempt can be recorded as failed for budget reasons. */
-  onDenied?: (input: { bytes: number; path: string; reason: string }) => void;
+  /** [L2] Let the gateway clamp the completion to the actual request's remaining context (informational mode). */
+  accountingOnly?: boolean;
+  /** Native-output violations are runtime/provider failures, not monetary-cap exhaustion. */
+  onDenied?: (input: { bytes: number; path: string; reason: string; kind?: 'native-output-bound'; maxOutputTokens?: number; observedOutputTokens?: number }) => void;
   /** [T10] Called when an admitted turn's charge could not be persisted (fail closed, never attested charged). */
   onChargeFailed?: (input: { turnId: string; reason: string }) => void;
 }
@@ -96,14 +99,21 @@ export function createTurnSpendGate(options: TurnSpendGateOptions): GatewaySpend
   return Object.freeze({
     attemptId: options.attemptId,
     maxOutputTokens: options.maxOutputTokens,
-    admit(request: { bytes: number; path: string }): GatewayTurnPermit {
+    ...(options.accountingOnly === true ? { accountingOnly: true } : {}),
+    admit(request: { bytes: number; path: string; maxOutputTokens?: number }): GatewayTurnPermit {
+      // Only the controller egress supplies the effective wire ceiling. Legacy accounting always
+      // retains its immutable reserved ceiling; informational turns use this request's native clamp.
+      if (options.accountingOnly === true && (!Number.isSafeInteger(request.maxOutputTokens) || request.maxOutputTokens! < 1)) {
+        throw new Error('Actual wire completion ceiling is required for informational turn admission');
+      }
+      const maxOutputTokens = options.accountingOnly === true ? request.maxOutputTokens! : options.maxOutputTokens;
       const bytes = Number.isSafeInteger(request.bytes) && request.bytes > 0 ? request.bytes : 1;
       const turn = options.ledger.admitTurn({
         reservationId: options.reservationId,
         attemptId: options.attemptId,
         selection: { ...options.selection },
         inputTokensUpperBound: bytes,
-        maxOutputTokens: options.maxOutputTokens,
+        maxOutputTokens,
       });
       let done = false;
       const charge = (result: Readonly<ModelSpendTurnCharge>): GatewayTurnCharge => ({
@@ -114,6 +124,7 @@ export function createTurnSpendGate(options: TurnSpendGateOptions): GatewaySpend
         assumed: result.assumed,
         duplicate: result.duplicate,
         exceeded: result.overshoot.tokens > 0 || result.overshoot.costUsd > 0,
+        nativeBoundExceeded: result.outputTokens > maxOutputTokens,
       });
       return Object.freeze({
         turnId: turn.turnId,
@@ -122,8 +133,11 @@ export function createTurnSpendGate(options: TurnSpendGateOptions): GatewaySpend
           // [T10] Only a *returned* charge marks the turn settled; a throwing attempt stays open for `failed`.
           const result = charge(turn.charge({ input: usage.inputTokens, output: usage.outputTokens }));
           done = true;
-          if (usage.outputTokens > options.maxOutputTokens || result.inputTokens + result.outputTokens > turn.reservedTokens) {
-            options.onDenied?.({ bytes, path: request.path, reason: "Provider measured usage exceeded the admitted wire/token ceiling; extension and reconciliation required" });
+          if (usage.outputTokens > maxOutputTokens) {
+            options.onDenied?.({ bytes, path: request.path, kind: 'native-output-bound', maxOutputTokens, observedOutputTokens: usage.outputTokens,
+              reason: `Provider output ${usage.outputTokens} exceeded actual admitted wire completion ceiling ${maxOutputTokens}; provider/native-bound failure, not monetary exhaustion` });
+          } else if (options.accountingOnly !== true && result.inputTokens + result.outputTokens > turn.reservedTokens) {
+            options.onDenied?.({ bytes, path: request.path, reason: "Provider measured usage exceeded the admitted token reservation; reconciliation required" });
           }
           return result;
         },
@@ -243,15 +257,24 @@ export abstract class ManagedRuntime implements RuntimeAdapter {
           receipt.warnings.push("spend enforcement=off: no plan was supplied by the runtime caller (a managed composition always supplies one)");
         } else {
           const key = `${r.requested.provider}/${r.requested.model}`;
-          try { assertModelSpendPrice(r.requested, spend.prices); }
-          catch (error) { receipt.errors.push(`Model spend plan cannot price ${key}: ${errorText(error)}`); }
+          if ('mode' in spend.limits) {
+            // [L3] Informational accounting accepts an unpriced model: tokens are recorded and cost is
+            // reported as unknown. Only bounded legacy policy requires a positive pinned quote.
+            if (!spend.prices?.[key]) receipt.warnings.push(`model cost is unknown for ${key}: informational accounting records tokens and provider-reported cost when available`);
+          } else {
+            try { assertModelSpendPrice(r.requested, spend.prices); }
+            catch (error) { receipt.errors.push(`Model spend plan cannot price ${key}: ${errorText(error)}`); }
+          }
           try { spend.journal?.load(r.runId); }
           catch (error) { receipt.errors.push(`Model spend journal is unavailable for run ${r.runId}: ${errorText(error)}`); }
           if (spend.ledger) {
             try { spend.ledger.bindRun(r.runId, spend.limits); spend.ledger.snapshot(); }
             catch (error) { receipt.errors.push(`Shared phase ledger is unavailable: ${errorText(error)}`); }
           }
-          receipt.warnings.push(`spend enforcement=on price=${key} limits=maxTokens:${spend.limits.maxTokens} maxCostUsd:${spend.limits.maxCostUsd} inputTokensUpperBound=${spend.inputTokensUpperBound ?? "prompt-bytes"} maxOutputTokens=${spend.maxOutputTokens ?? "min(4096,remaining)"}`);
+          const native = this.options.gateway.models.find(candidate => candidate.id === r.requested.model);
+          receipt.warnings.push('mode' in spend.limits
+            ? `model accounting=informational-durable; application token/USD caps=none; completion=selected-model capability native=${native?.maxTokens ?? 'unset'}/${native?.contextWindow ?? 'unset'}; price=${key}`
+            : `spend enforcement=on price=${key} limits=maxTokens:${spend.limits.maxTokens} maxCostUsd:${spend.limits.maxCostUsd} inputTokensUpperBound=${spend.inputTokensUpperBound ?? "prompt-bytes"} maxOutputTokens=${spend.maxOutputTokens ?? "min(4096,remaining)"}`);
         }
       }
       receipt.ok = receipt.errors.length === 0;
@@ -325,7 +348,7 @@ export abstract class ManagedRuntime implements RuntimeAdapter {
   private createSpendLedger(spend: ModelSpendRuntimeOptions, runId: string): ModelSpendBudget {
     try {
       const ledger = new ModelSpendBudget(
-        { maxTokens: spend.limits.maxTokens, maxCostUsd: spend.limits.maxCostUsd },
+        spend.limits,
         {
           runId,
           ...(spend.journal ? { journal: spend.journal } : {}),
@@ -335,7 +358,7 @@ export abstract class ManagedRuntime implements RuntimeAdapter {
           ...(spend.freshRun === true ? { freshRun: true } : {}),
         },
       );
-      ledger.bindRun(runId, { maxTokens: spend.limits.maxTokens, maxCostUsd: spend.limits.maxCostUsd });
+      ledger.bindRun(runId, spend.limits);
       return ledger;
     } catch (error) {
       throw new Error(`Model spend ledger unavailable: ${errorText(error)}`);
@@ -390,8 +413,14 @@ export abstract class ManagedRuntime implements RuntimeAdapter {
     if (spend.selection && (spend.selection.provider !== r.requested.provider || spend.selection.model !== r.requested.model || spend.selection.thinking !== r.requested.thinking)) throw new PolicyError('IDENTITY_DENIED', 'Requested selection differs from the owner phase allocation');
     const ledger = this.ledger(r.runId, r.taskId);
     const inputTokensUpperBound = spend.inputTokensUpperBound ?? Math.max(1, Buffer.byteLength(r.prompt));
-    const modelMaximum = this.options.gateway.models.find(model => model.id === r.requested.model)?.maxTokens;
-    const maxOutputTokens = Math.min(spend.maxOutputTokens ?? Math.min(4096, Math.max(1, spend.limits.maxTokens - inputTokensUpperBound)), modelMaximum ?? Number.MAX_SAFE_INTEGER);
+    const model = this.options.gateway.models.find(model => model.id === r.requested.model);
+    let maxOutputTokens: number;
+    if ('mode' in spend.limits) {
+      if (!model?.maxTokens || !model.contextWindow) throw new PolicyError('UNAVAILABLE', 'Accounting-only runtime requires actual selected-model output/context capability');
+      maxOutputTokens = selectedModelCompletionLimit({ maxTokens: model.maxTokens, contextWindow: model.contextWindow }, inputTokensUpperBound);
+    } else {
+      maxOutputTokens = Math.min(spend.maxOutputTokens ?? Math.min(4096, Math.max(1, spend.limits.maxTokens - inputTokensUpperBound)), model?.maxTokens ?? Number.MAX_SAFE_INTEGER);
+    }
     // [T8/S2/T9] One reservation per attempt is the launch envelope: it refuses an unaffordable attempt
     // before dispatch and supplies the durable attempt identity every per-turn admission is charged
     // against. The worker issues the provider traffic, so the per-turn enforcement point is the
@@ -414,7 +443,15 @@ export abstract class ManagedRuntime implements RuntimeAdapter {
     const bound = controllerGatewayRuntime(this.options.gateway);
     if (bound) {
       bound.bindSpendGate({ attemptId: r.attemptId, gate: createTurnSpendGate({ ledger, reservationId, attemptId: r.attemptId, selection, maxOutputTokens,
+        ...(('mode' in spend.limits) ? { accountingOnly: true } : {}),
         onDenied: input => {
+          if (input.kind === 'native-output-bound') {
+            e.h.modelBoundFailure ??= { kind: input.kind, at: this.dep.now(), reason: input.reason,
+              maxOutputTokens: input.maxOutputTokens!, observedOutputTokens: input.observedOutputTokens! };
+            void this.save(e).catch(error => { e.persistenceError ??= errorText(error); });
+            this.event(e, 'model-native-bound-exceeded', input.reason);
+            return;
+          }
           // [T9] A refused provider turn means this attempt did not complete under its approved budget: it is
           // recorded durably and classified as failed, never as a successful completion.
           e.spendRefused ??= { at: this.dep.now(), bytes: input.bytes, reason: input.reason };
@@ -457,7 +494,14 @@ export abstract class ManagedRuntime implements RuntimeAdapter {
     try {
       ledger.catchUp({ reservationId: spend.reservationId, attemptId: e.h.attemptId, selection: spend.selection, usage, basis: reason });
       const snapshot = ledger.snapshot();
-      if (snapshot.overshoot.tokens > 0 || snapshot.overshoot.costUsd > 0 || snapshot.breach.tokens > 0 || snapshot.breach.costUsd > 0) {
+      if (snapshot.limits.mode === 'accounting-only' && snapshot.overshoot.tokens > 0) {
+        // Native output overshoot is not financial exhaustion. Preserve the gate's precise failure
+        // without creating a partial-report or monetary extension demand during terminal catch-up.
+        e.h.modelBoundFailure ??= { kind: 'native-output-bound', at: this.dep.now(),
+          reason: 'Durable informational ledger reports provider/native output overshoot; not monetary exhaustion' };
+        if (e.h.status === 'completed') e.h.status = 'failed';
+        await this.save(e);
+      } else if (snapshot.limits.mode !== 'accounting-only' && (snapshot.overshoot.tokens > 0 || snapshot.overshoot.costUsd > 0 || snapshot.breach.tokens > 0 || snapshot.breach.costUsd > 0)) {
         const detail = 'Measured session usage exceeded the admitted run/turn budget; owner extension and reconciliation required';
         e.spendRefused ??= { at: this.dep.now(), bytes: 0, reason: detail };
         e.h.budgetOutcome ??= { outcome: 'partial', reason: detail, at: this.dep.now(), extensionRequired: true };
@@ -858,9 +902,11 @@ export abstract class ManagedRuntime implements RuntimeAdapter {
         // persisted, makes this attempt failed — never completed: the worker could not finish its work under
         // the approved budget, and the paid-but-uncharged turn must not be reported as a clean success.
         const reason = journal.termination?.reason === "timed-out" ? "timed-out" :
-          e.h.budgetOutcome || e.spendRefused || e.spendChargeFailed ? "failed" :
+          e.h.modelBoundFailure || e.h.budgetOutcome || e.spendRefused || e.spendChargeFailed ? "failed" :
           e.settled && e.assistant && !["error", "aborted"].includes(e.assistant.stopReason) && journal.exit?.code === 0 && !journal.error ? "completed" : "failed";
-        if (reason === "failed") e.h.startupError ??= e.spendRefused
+        if (reason === "failed") e.h.startupError ??= e.h.modelBoundFailure
+          ? e.h.modelBoundFailure.reason
+          : e.spendRefused
           ? `Model spend admission refused a provider turn: ${e.spendRefused.reason}`
           : e.spendChargeFailed
             ? `Model spend charge could not be persisted for provider turn ${e.spendChargeFailed.turnId}; the attempt is failed and the durable hold is left for reconciliation: ${e.spendChargeFailed.reason}`
@@ -912,7 +958,7 @@ export abstract class ManagedRuntime implements RuntimeAdapter {
     // instead of observing a terminal receipt while the fence is still held.
     if (e.stopping) return e.stopping;
     if (e.h.stopReceipt?.verified && e.h.sessionRelease?.verified) return clone(e.h.stopReceipt);
-    const reason = options.reason === "completed" && e.h.budgetOutcome ? "failed" : options.reason ?? "stopped";
+    const reason = options.reason === "completed" && (e.h.budgetOutcome || e.h.modelBoundFailure) ? "failed" : options.reason ?? "stopped";
     const end = Math.min(e.h.deadlineAt, options.deadlineAt ?? e.h.deadlineAt);
     e.stopping = (async () => {
       // Claim the shared promise BEFORE awaiting controller ownership; two simultaneous stops cannot both enter teardown.

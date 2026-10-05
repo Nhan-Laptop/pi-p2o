@@ -269,6 +269,7 @@ export function createHarness(options: {
   events?: import('../../src/orchestrator/index.js').EventSink;
   ackWithoutSink?: boolean;
   noProgress?: { windowMs?: number; minToolCalls?: number; consecutiveRefusals?: number };
+  retryBrake?: { consecutiveFailures?: number };
 } = {}): Harness {
   const root = options.root ?? mkdtempSync(join(tmpdir(), 'p2o-orchestrator-'));
   const controlRoot = join(root, 'control');
@@ -287,6 +288,7 @@ export function createHarness(options: {
     ...(options.events ? { events: options.events } : {}),
     ...(options.ackWithoutSink === undefined ? {} : { ackWithoutSink: options.ackWithoutSink }),
     ...(options.noProgress ? { noProgress: options.noProgress } : {}),
+    ...(options.retryBrake ? { retryBrake: options.retryBrake } : {}),
   });
   const runtime = new FakeRuntime({ now: () => clock.now(), ...options.runtimeOptions });
   runtime.hooks = supervisor.runtimeHooks();

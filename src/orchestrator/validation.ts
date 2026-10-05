@@ -221,8 +221,8 @@ export function subtaskBudgets(request: SubtaskRequestValue, parent: TaskManifes
   budgets.maxRequests = Math.min(supplied.maxRequests ?? parent.budgets.maxRequests, parent.budgets.maxRequests);
   budgets.maxBytes = Math.min(supplied.maxBytes ?? parent.budgets.maxBytes, parent.budgets.maxBytes);
   budgets.maxToolCalls = Math.min(supplied.maxToolCalls ?? parent.budgets.maxToolCalls, parent.budgets.maxToolCalls);
-  budgets.maxTokens = Math.min(supplied.maxTokens ?? parent.budgets.maxTokens, parent.budgets.maxTokens);
-  budgets.maxCostUsd = Math.min(supplied.maxCostUsd ?? parent.budgets.maxCostUsd, parent.budgets.maxCostUsd);
+  budgets.maxTokens = parent.budgets.maxTokens === null ? null : Math.min(supplied.maxTokens ?? parent.budgets.maxTokens, parent.budgets.maxTokens);
+  budgets.maxCostUsd = parent.budgets.maxCostUsd === null ? null : Math.min(supplied.maxCostUsd ?? parent.budgets.maxCostUsd, parent.budgets.maxCostUsd);
   budgets.maxAttempts = Math.min(supplied.maxAttempts ?? parent.budgets.maxAttempts, parent.budgets.maxAttempts);
   return budgets;
 }
@@ -252,8 +252,8 @@ export function subtaskNarrowing(parent: TaskManifest, child: TaskManifest, requ
   if (requested) {
     const deadline = requested.deadlineAt;
     if (deadline !== undefined && Date.parse(deadline) > Date.parse(parent.budgets.deadlineAt)) add('budget', '$/budgets/deadlineAt', 'Subtask deadline may not outlive the parent deadline');
-    const over = (field: 'maxRequests' | 'maxBytes' | 'maxToolCalls' | 'maxTokens' | 'maxCostUsd' | 'maxAttempts', value: number | undefined) => {
-      if (value !== undefined && value > parent.budgets[field]) add('budget', `$/budgets/${field}`, 'Subtask budget may not exceed the parent budget');
+    const over = (field: 'maxRequests' | 'maxBytes' | 'maxToolCalls' | 'maxTokens' | 'maxCostUsd' | 'maxAttempts', value: number | null | undefined) => {
+      if (value !== undefined && value !== null && parent.budgets[field] !== null && value > parent.budgets[field]!) add('budget', `$/budgets/${field}`, 'Subtask budget may not exceed the parent budget');
     };
     over('maxRequests', requested.maxRequests);
     over('maxBytes', requested.maxBytes);

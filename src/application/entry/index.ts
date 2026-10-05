@@ -27,7 +27,7 @@ export {
 export { createEntryPlanStore } from './plans.js';
 export { readOwnerDocument, ensureOwnerRunManifest, MAX_OWNER_DOCUMENT_BYTES } from './documents.js';
 export { planFactsFor, sealPlanDigest, validatePlanAuthorOutput, ENTRY_PLAN_LIMITS } from './authoring.js';
-export { createPiModelPlanAuthor, planAuthorPrompt, extractPlanJson, MAX_AUTHOR_RESPONSE_CHARS, type PiPlanAuthorOptions, type PiPlanAuthorCompletion } from './pi-author.js';
+export { createPiModelPlanAuthor, planAuthorPrompt, extractPlanJson, failForEmptyPlanCompletion, MAX_AUTHOR_RESPONSE_CHARS, type PiPlanAuthorOptions, type PiPlanAuthorCompletion, type PiPlanAuthorCompletionResult } from './pi-author.js';
 export {
   createOwnerDirectoryAuthority, createOwnerApprovalPort, entryOwnerApprovalPath, ownerDocumentPathFor, type EntryOwnerApprovalKind,
 } from './approvals.js';

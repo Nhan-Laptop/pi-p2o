@@ -3,7 +3,7 @@
  *
  * Grammar (see README):
  *   /p2o --target <local-dir|github-https-repo|http(s)-URL> [--purpose "..."] [--depth quick|standard|deep]
- *        [--plan-only] [--budget <USD>] [--concurrency <N>]
+ *        [--plan-only] [--concurrency <N>] [--deadline <minutes>]
  *   /p2o status|stop|resume|report [runId]
  *   /p2o approve <planId>
  *   /p2o                       help + current run
@@ -69,7 +69,7 @@ export function p2oHelp(currentRun?: string): string {
     '',
     '  /p2o --target <local-dir|github-https-repo|http(s)-URL>', 
     '       [flags] [--purpose "..."] [--depth quick|standard|deep] [--plan-only]',
-    '       [--budget <USD>] [--concurrency <N>] [--deadline <minutes>]',
+    '       [--concurrency <N>] [--deadline <minutes>]',
     '       [--profile conservative|wide|ceiling] [--basis <owner|written-permission|published-program|public-source-review>]',
     '       [--repo-scripts] [--state-changes] [--full-rights] [--advanced]',
     '  /p2o status|stop|resume|report [runId]',
@@ -77,18 +77,16 @@ export function p2oHelp(currentRun?: string): string {
     '  /p2o                                  this help',
     '',
     'A target is the only required input. One consent dialog then shows the exact scope, authorization',
-    'basis, separate rights and every limit being consented to; the rest is derived from --profile.',
+    'basis, separate rights and operational limits. Ordinary runs have no application token/USD quota.',
     'Read/static is the default. Repository scripts and state changes stay OFF unless this invocation',
     'explicitly requests them (--repo-scripts, --state-changes, or --full-rights for a target you own),',
     'and they are always displayed in that dialog. --advanced asks every question separately instead.',
-    'Limits are always finite and visible: --profile wide (default) keeps a real spend cap and deadline',
-    'with the remaining ceilings at the validated maximum; --profile ceiling uses the validated maxima',
-    'for every field. An unbounded cap would not be a guard, so it does not exist as an option.',
-    'Saved consent is reused only within its exact scope, rights, budget and deadline; flags request',
+    'Model usage is durably recorded for transparency; selected provider/model context/output limits apply.',
+    'Saved consent is reused only within its exact scope, rights and deadline; flags request',
     'review of expansions, never grant authority. The model plan still needs exact digest approval.',
-    'Planning may incur explicitly selected assessment-model charges (including --plan-only); phase budget',
-    'admission happens first. Insufficient consent returns partial/extension-required, never an increase.',
+    'Planning may incur explicitly selected assessment-model charges (including --plan-only).',
     'No target I/O during preparation/planning; nothing launches until you confirm the resulting plan.',
+    '--profile conservative|ceiling is an explicit bounded opt-in; legacy bounded runs stay bounded.',
     'runId may be omitted only when this session has one unambiguous current run.',
   ];
   if (currentRun) lines.push('', `current run: ${safeText(currentRun, 160)}`);
@@ -167,7 +165,7 @@ function describePreparation(preparation: EntryPreparation, plan?: EntryPlan, ow
     `mode:      ${preparation.mode}`,
     `scope:     ${safeText(preparation.scopeDigest, 128)}`,
     `actions:   ${preparation.actions.slice(0, 24).map(action => safeText(action, 64)).join(', ') || '(none)'}`,
-    `spend:     up to $${spend.maxCostUsd}, ${spend.maxRequests} requests, ${spend.maxTokens} tokens, ${spend.maxToolCalls} tool calls, ${spend.maxAttempts} attempts`,
+    spend.modelAccounting === 'informational' ? `model usage: informational durable accounting; no application token/USD caps; provider-limited completions` : `legacy spend: up to $${spend.maxCostUsd}, ${spend.maxRequests} requests, ${spend.maxTokens} tokens, ${spend.maxToolCalls} tool calls, ${spend.maxAttempts} attempts`,
     `workers:   concurrency ${preparation.concurrency}`,
     ...(owner ? [`deadline:  ${new Date(owner.effectiveLimits.deadlineMs).toISOString()} (absolute owner deadline)`] : []),
     ...(plan ? [`plan:      ${safeText(plan.planId, 128)} (digest ${safeText(plan.digest, 128)}), ${plan.steps.length} steps`] : []),
@@ -244,7 +242,7 @@ async function startCommand(host: P2OCommandHost, command: Extract<P2OCommand, {
   const classified = classifyTargetSyntax(command.target);
   // One-dialog quick consent is the default: the target is the only required argument, and the dialog shows the
   // exact scope, authorization basis, separate rights and every limit that will be consented to.
-  const owner = await onboardCommandTarget(ctx, classified, host.onboardingFor, command.budgetUsd, command.concurrency, {
+  const owner = await onboardCommandTarget(ctx, classified, host.onboardingFor, command.concurrency, {
     mode: command.advanced ? 'guided' : 'quick',
     ...(command.profile !== undefined ? { profile: command.profile } : {}),
     ...(command.basis !== undefined ? { basis: command.basis } : {}),
@@ -260,7 +258,6 @@ async function startCommand(host: P2OCommandHost, command: Extract<P2OCommand, {
     ...(command.purpose !== undefined ? { purpose: command.purpose } : {}),
     depth: command.depth,
     planOnly: command.planOnly,
-    budgetUsd: owner.effectiveLimits.maxCostUsd,
     concurrency: owner.effectiveLimits.concurrency,
   }, ctx.signal);
   assertPreparation(preparation, target);
@@ -295,7 +292,7 @@ async function approveCommand(host: P2OCommandHost, command: Extract<P2OCommand,
   const port = await entryPort(host, ctx);
   const found = await readPlan(host, port, command.planId, ctx);
   const owner = await onboardCommandTarget(ctx, found.preparation.target, host.onboardingFor,
-    found.preparation.spend.maxCostUsd, found.preparation.concurrency, { mode: 'quick' });
+    found.preparation.concurrency, { mode: 'quick' });
   await entryPort(host, ctx, owner);
   assertOwnerPreparation(owner, found.preparation, ctx.cwd);
   const summary = describePreparation(found.preparation, found.plan, owner);

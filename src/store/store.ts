@@ -292,8 +292,11 @@ export class DurableStore {
       const total = (subset: AttemptRecord[]) => subset.reduce((sum, item) => Object.fromEntries(usageKeys.map(k => [k, sum[k] + item.usage[k]])) as unknown as BudgetUsage, zeroUsage());
       const taskTotal = total(attempts.filter(x => x.taskId === a.taskId)); const runTotal = total(attempts);
       for (const k of usageKeys) {
-        ensure(taskTotal[k] + delta[k] <= task.budgets[budgetKeys[k]] + (k === 'costUsd' ? 1e-9 : 0), 'task-budget-exhausted', `Task ${k} budget exhausted`);
-        ensure(runTotal[k] + delta[k] <= run.budgets[budgetKeys[k]] + (k === 'costUsd' ? 1e-9 : 0), 'run-budget-exhausted', `Run ${k} budget exhausted`);
+        const taskCap = task.budgets[budgetKeys[k]], runCap = run.budgets[budgetKeys[k]];
+        // Null is schema-qualified informational model accounting, not a large numeric allowance. Request,
+        // byte and tool controls always remain numerical, and bounded legacy caps are unchanged.
+        ensure(taskCap === null || taskTotal[k] + delta[k] <= taskCap + (k === 'costUsd' ? 1e-9 : 0), 'task-budget-exhausted', `Task ${k} budget exhausted`);
+        ensure(runCap === null || runTotal[k] + delta[k] <= runCap + (k === 'costUsd' ? 1e-9 : 0), 'run-budget-exhausted', `Run ${k} budget exhausted`);
       }
       if (input.targetId) {
         const used = Number(this.row('SELECT requests FROM target_usage WHERE run_id = ? AND target_id = ?', a.runId, input.targetId)?.requests ?? 0);
@@ -355,6 +358,21 @@ export class DurableStore {
    * latest tool-plane code. One indexed query over this attempt's own release rows — no run-wide page cap, so
    * a long run can never drop late releases on a controller restart.
    */
+  /**
+   * [L1] Durable consecutive-failure streak for one task: how many attempts at the tail of the sequence
+   * ended in a renewable terminal failure (`failed`/`timed-out`). Derived from the durable attempts table, so
+   * a restarted controller sees exactly the same streak; it is never an in-memory counter.
+   */
+  attemptFailureStreak(runId: string, taskId: string): { failures: number; lastState: string; lastAttemptId?: string } {
+    const attempts = this.listAttempts(runId, taskId);
+    let failures = 0, lastState = 'none', lastAttemptId: string | undefined;
+    for (let index = attempts.length - 1; index >= 0; index--) {
+      const state = String(attempts[index]!.lifecycleState);
+      if (state === 'failed' || state === 'timed-out') { failures += 1; lastState = state; lastAttemptId ??= attempts[index]!.attemptId; continue; }
+      break;
+    }
+    return { failures, lastState, ...(lastAttemptId ? { lastAttemptId } : {}) };
+  }
   attemptReleaseStreak(runId: string, attemptId: string): { refusals: number; code: string } {
     const rows = this.rows("SELECT payload_json FROM events WHERE run_id = ? AND attempt_id = ? AND type = 'budget.released' ORDER BY sequence", runId, attemptId);
     let refusals = 0, code = 'none';
@@ -407,7 +425,7 @@ export class DurableStore {
 
   /** Pre-planning controller authority; immutable and separate from approved assessment admission. */
   bindAutonomousBudget(runId: string, plan: import('../policy/budget.js').AutonomousModelBudgetPlan): boolean {
-    validId(runId); ensure(plan.outcome === 'ready', 'budget-partial', 'Partial budget cannot dispatch');
+    validId(runId); ensure(plan.outcome !== 'partial', 'budget-partial', 'Partial budget cannot dispatch');
     const json = canonicalJson(plan);
     return this.transaction(() => {
       const prior = this.row('SELECT plan_json FROM autonomous_budget_runs WHERE run_id = ?', runId);
@@ -427,7 +445,11 @@ export class DurableStore {
     const ownsAttempt = (id: string, attemptId: string): boolean => {
       if (id !== runId) return false;
       const attempt = this.getAttempt(attemptId);
-      if (phase === 'workers' || phase === 'verifier') return !!attempt && attempt.runId === runId;
+      if (phase === 'workers' || phase === 'verifier') {
+        if (attempt && attempt.runId === runId) return true;
+        const policy = this.row('SELECT plan_json FROM autonomous_budget_runs WHERE run_id = ?', runId);
+        return !!policy && JSON.parse(String(policy.plan_json)).outcome === 'accounting-only' && !!this.row('SELECT 1 FROM autonomous_phase_attempts WHERE run_id = ? AND attempt_id = ?', runId, attemptId);
+      }
       return !!this.row('SELECT 1 FROM autonomous_phase_attempts WHERE run_id = ? AND phase = ? AND attempt_id = ?', runId, phase, attemptId);
     };
     let expected: string | undefined;

@@ -1,7 +1,7 @@
 export * from './types.js';
 export * from './target-entry.js';
 export { schemas, validate, parseCommand, type Action, type Input } from './schemas.js';
-export { parseP2OArgs, tokenize, LIFECYCLE_VERBS, DEPTHS, MAX_BUDGET_USD, MAX_CONCURRENCY, type P2OCommand } from './argv.js';
+export { parseP2OArgs, tokenize, LIFECYCLE_VERBS, DEPTHS, MAX_CONCURRENCY, type P2OCommand } from './argv.js';
 export { classifyTargetSyntax, ACCEPTED_TARGET_FORMS } from './targets.js';
 export { SessionRunRegistry, type SessionPlanRecord, type SessionRunRecord, type SessionEntryLike } from './session-state.js';
 export { runP2OCommand, p2oHelp, p2oErrorText, failureMessage, type P2OCommandHost, type P2OTextWriter } from './command.js';

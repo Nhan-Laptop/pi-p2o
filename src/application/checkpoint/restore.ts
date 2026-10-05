@@ -77,7 +77,7 @@ export interface ControllerRunDiscovery {
   layout: ControllerRunLayout;
   config: ApplicationConfigWithSpend;
   configDigest: string;
-  budget: Extract<Readonly<import('../../policy/budget.js').AutonomousModelBudgetPlan>, { outcome: 'ready' }>;
+  budget: Extract<Readonly<import('../../policy/budget.js').AutonomousModelBudgetPlan>, { outcome: 'ready' | 'accounting-only' }>;
 }
 
 export interface ControllerRestorePreparation {
@@ -238,10 +238,13 @@ export async function discoverInterruptedControllerRun(options: {
   }
   const budget = await privateJson(layout.budgetPath);
   const parsed = record(budget, 'pinned autonomous budget');
-  if (parsed.outcome !== 'ready' || parsed.policy !== 'isolated-phase-caps-no-borrowing') {
+  if (parsed.outcome === 'accounting-only') {
+    if (parsed.policy !== 'informational-durable-no-phase-quotas' || (parsed.ownerLimits as { mode?: unknown } | undefined)?.mode !== 'accounting-only' || parsed.selection === undefined) {
+      deny('CHECKPOINT_BUDGET', 'the accounting-only autonomous policy is incomplete; a fresh policy is never synthesized');
+    }
+  } else if (parsed.outcome !== 'ready' || parsed.policy !== 'isolated-phase-caps-no-borrowing') {
     deny('CHECKPOINT_BUDGET', 'the original autonomous budget is partial or missing; explicit owner extension is required and no budget is reset');
-  }
-  if (parsed.ownerLimits === undefined || parsed.phases === undefined || parsed.prices === undefined) {
+  } else if (parsed.ownerLimits === undefined || parsed.phases === undefined || parsed.prices === undefined) {
     deny('CHECKPOINT_BUDGET', 'the pinned autonomous budget is incomplete; a fresh allocation is never synthesized');
   }
   return {
@@ -582,13 +585,11 @@ export async function inspectVerifierRestartState(options: {
   // Pre-admission only: the dynamic registries are provably empty, so the deterministic derivation must
   // reproduce the exact durable task/finding/claim identity before the schedule may be reinstated.
   const derivedAt = text(parsed.derivedAt, 'verification derivedAt');
-  const verifierBudget: FirstUseVerificationBudget = {
-    maxRequests: owner.effectiveLimits.maxRequests,
-    maxToolCalls: owner.effectiveLimits.maxToolCalls,
-    maxTokens: (parsed.protectedReserve as { maxTokens?: unknown } | undefined)?.maxTokens as number,
-    maxCostUsd: (parsed.protectedReserve as { maxCostUsd?: unknown } | undefined)?.maxCostUsd as number,
-  };
-  if (!Number.isSafeInteger(verifierBudget.maxTokens) || !Number.isFinite(verifierBudget.maxCostUsd)) {
+  const protectedReserve = parsed.protectedReserve as { maxTokens?: unknown; maxCostUsd?: unknown } | undefined;
+  const verifierBudget: FirstUseVerificationBudget = parsed.modelAccounting === 'informational'
+    ? { maxRequests: owner.effectiveLimits.maxRequests, maxToolCalls: owner.effectiveLimits.maxToolCalls, modelAccounting: 'informational', maxTokens: null, maxCostUsd: null }
+    : { maxRequests: owner.effectiveLimits.maxRequests, maxToolCalls: owner.effectiveLimits.maxToolCalls, maxTokens: protectedReserve?.maxTokens as number, maxCostUsd: protectedReserve?.maxCostUsd as number };
+  if (verifierBudget.modelAccounting !== 'informational' && (!Number.isSafeInteger(verifierBudget.maxTokens) || !Number.isFinite(verifierBudget.maxCostUsd))) {
     return { kind: 'refused', code: 'CHECKPOINT_VERIFIER_STATE', reason: 'the protected verifier reserve is missing from the durable synthesis record' };
   }
   const planned = deriveFirstUseVerificationPlan({

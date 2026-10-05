@@ -108,6 +108,8 @@ interface RunState {
   noProgress?: Map<string, { marker: string; since: number }>;
   /** [F4] taskIds terminalized because their dependencies failed without an accepted handoff packet. */
   dependencyBlocked?: Set<string>;
+  /** [L1] taskIds whose informational-accounting retry brake already emitted its durable event. */
+  retryBraked?: Set<string>;
 }
 
 interface LaunchOverride {
@@ -176,6 +178,8 @@ export class Supervisor implements SupervisorApi {
    * budget counters cannot prove a dead tool plane; the supervisor counts the releases themselves.
    */
   private get noProgressRefusalLimit(): number { return this.options.noProgress?.consecutiveRefusals ?? 3; }
+  /** [L1] Consecutive-failure brake for tasks with informational model accounting (no application money cap). */
+  private get retryBrakeLimit(): number { return this.options.retryBrake?.consecutiveFailures ?? 2; }
   private get authority(): Authority { return this.options.authority; }
   private get store(): import('../store/index.js').DurableStore { return this.options.store; }
 
@@ -663,11 +667,11 @@ export class Supervisor implements SupervisorApi {
     for (const attempt of this.store.listAttempts(runId)) {
       for (const key of Object.keys(totals)) totals[key] = (totals[key] ?? 0) + (attempt.usage[key as keyof typeof attempt.usage] ?? 0);
     }
-    const limits: Record<string, number> = {
+    const limits: Record<string, number | null> = {
       requests: run.budgets.maxRequests, bytes: run.budgets.maxBytes, toolCalls: run.budgets.maxToolCalls,
       tokens: run.budgets.maxTokens, costUsd: run.budgets.maxCostUsd,
     };
-    const exhausted = Object.keys(limits).filter(key => (totals[key] ?? 0) >= (limits[key] ?? 0));
+    const exhausted = Object.keys(limits).filter(key => limits[key] !== null && (totals[key] ?? 0) >= limits[key]!);
     return exhausted.length ? { ok: false, exhausted } : { ok: true };
   }
 
@@ -1256,6 +1260,24 @@ export class Supervisor implements SupervisorApi {
       }
       const attempts = this.store.listAttempts(state.runId, task.taskId);
       if (attempts.length >= task.budgets.maxAttempts) continue;
+      // [L1] With no application spend cap the durable consecutive-failure streak is the loop stop: a task
+      // that failed this many times in a row is not relaunched, and the refusal is recorded durably rather
+      // than silently idling. Bounded legacy tasks keep their owner-set numeric attempt budget semantics.
+      if (task.budgets.modelAccounting === 'informational') {
+        const streak = this.store.attemptFailureStreak(state.runId, task.taskId);
+        if (this.retryBrakeLimit > 0 && streak.failures >= this.retryBrakeLimit) {
+          if (!state.retryBraked) state.retryBraked = new Set();
+          if (!state.retryBraked.has(task.taskId)) {
+            state.retryBraked.add(task.taskId);
+            this.event(state.runId, 'orchestrator.retry-brake', {
+              attempts: attempts.length, consecutiveFailures: streak.failures, lastState: streak.lastState,
+              maxAttempts: task.budgets.maxAttempts, reason: 'durable consecutive-failure brake under informational model accounting',
+            }, task.taskId);
+            progress = true;
+          }
+          continue;
+        }
+      }
       const last = attempts.at(-1);
       if (last && !['failed', 'timed-out'].includes(last.lifecycleState)) continue;
       if (!task.dependencyTaskIds.every(id => this.store.getTask(id)?.packetState === 'accepted')) continue;
@@ -1435,7 +1457,8 @@ export class Supervisor implements SupervisorApi {
     // not a completed one, even though every task is terminal.
     const truncated = this.spendTruncation(state);
     const blocked = this.dependencyBlocked(state);
-    const target = state.cancelRequested ? 'cancelled' : truncated.truncated || blocked.blocked ? 'failed' : 'completed';
+    const retryBraked = tasks.some(task => task.packetState !== 'accepted' && task.budgets.modelAccounting === 'informational' && this.retryBrakeLimit > 0 && this.store.attemptFailureStreak(state.runId, task.taskId).failures >= this.retryBrakeLimit);
+    const target = state.cancelRequested ? 'cancelled' : truncated.truncated || blocked.blocked || retryBraked ? 'failed' : 'completed';
     try { this.store.setRunState(state.runId, target); }
     catch (error) {
       this.event(state.runId, 'orchestrator.completion-rejected', { code: errorCode(error), message: errorMessage(error).slice(0, 256) });
@@ -1487,12 +1510,10 @@ export class Supervisor implements SupervisorApi {
   }
 
   /**
-   * [F4] No-progress circuit breaker. A live attempt that has never collected a single observation and has
-   * never produced an accepted packet is burning provider turns on a dead tool plane. Once it has charged at
-   * least `minToolCalls` tool calls and `windowMs` has elapsed with the same progress marker, the attempt is
-   * terminated with the explicit reason. Termination stops the owned runtime, so provider turns stop being
-   * charged; absolute deadlines and owner cancellation keep their own semantics. Halt state is attempt-scoped
-   * and dropped when the attempt is no longer live, so a retry starts from a clean marker.
+   * No-progress circuit breaker: an unaccepted attempt with enough tool activity is stopped when its
+   * last durable observation (or launch) is older than the window. Controller restart cannot reset that
+   * window. Termination still verifies owned-runtime stop; cancellation and deadlines remain authoritative.
+   * Informational task retries are separately bounded by the durable consecutive-failure brake.
    */
   private async enforceNoProgress(state: RunState): Promise<boolean> {
     const refusalLimit = this.noProgressRefusalLimit;
@@ -1506,11 +1527,14 @@ export class Supervisor implements SupervisorApi {
       const attempt = this.store.getAttempt(lease.attemptId);
       if (!attempt || isTerminalLifecycle(attempt.lifecycleState)) continue;
       seen.add(attempt.attemptId);
-      const collected = this.store.listEvidence(state.runId).filter(e => e.attemptId === attempt.attemptId && e.kind !== 'runtime' && e.kind !== 'log').length;
+      const evidence = this.store.listEvidence(state.runId).filter(e => e.attemptId === attempt.attemptId && e.kind !== 'runtime' && e.kind !== 'log');
+      const collected = evidence.length;
       const accepted = this.store.listResults(state.runId, task.taskId).filter(result => result.decision.status === 'accepted').length;
-      // An attempt that ever collected an observation (or produced an accepted packet) is never halted as
-      // "no-progress": only its absolute deadline and explicit cancellation may end it from here on.
-      if (collected > 0 || accepted > 0) { state.noProgress.delete(attempt.attemptId); this.refusalStreak.delete(attempt.attemptId); continue; }
+      // [L1] Only RECENT progress — or an accepted packet — exempts an attempt from the breaker. "Ever
+      // collected one observation" is not progress: a worker can collect one artifact and then burn turns
+      // forever. The marker below is `collected:accepted`, so any new distinct observation resets the window;
+      // an unchanged marker past the window with enough charged tool calls terminates the attempt.
+      if (accepted > 0) { state.noProgress.delete(attempt.attemptId); this.refusalStreak.delete(attempt.attemptId); continue; }
       // [F-3] Non-refundable refusal streak. A refunded pre-dispatch reservation (R2) leaves the budget
       // counters at zero, so the refusal itself — counted in `releaseBudget` — is the only non-refundable
       // evidence that the tool plane is dead. Without this the breaker could never fire after a refund.
@@ -1534,11 +1558,16 @@ export class Supervisor implements SupervisorApi {
         if (await this.terminate(state, task, attempt, 'failed', detail)) { state.noProgress.delete(attempt.attemptId); this.refusalStreak.delete(attempt.attemptId); progress = true; }
         continue;
       }
-      // Window backstop for a plane that keeps dispatching without ever collecting anything.
+      // Window backstop for a plane that dispatches without collecting fresh observations.
       if (this.noProgressWindowMs <= 0) continue;
+      // [L1] The marker is `collected:accepted`, so any new DISTINCT observation advances it and resets the
+      // window. A stale single observation leaves the marker unchanged and is therefore no longer an exemption.
       const marker = `${collected}:${accepted}`;
-      const entry = state.noProgress.get(attempt.attemptId);
-      if (!entry || entry.marker !== marker) { state.noProgress.set(attempt.attemptId, { marker, since: this.now() }); continue; }
+      // Reconstruct the window from durable collector timestamps, not controller uptime. Restarting
+      // must not purchase another full dead-loop window; old observations cannot permanently exempt it.
+      const since = evidence.reduce((latest, receipt) => Math.max(latest, Date.parse(receipt.provenance.collectedAt)), Date.parse(attempt.createdAt));
+      const entry = { marker, since };
+      state.noProgress.set(attempt.attemptId, entry);
       const charged = attempt.usage.toolCalls + (refusals?.refusals ?? 0);
       if (charged < this.noProgressMinToolCalls) continue;
       if (this.now() - entry.since < this.noProgressWindowMs) continue;
@@ -1546,7 +1575,7 @@ export class Supervisor implements SupervisorApi {
         attemptId: attempt.attemptId, toolCalls: attempt.usage.toolCalls, refundedRefusals: refusals?.refusals ?? 0, tokens: attempt.usage.tokens,
         windowMs: this.noProgressWindowMs, unchangedSince: new Date(entry.since).toISOString(),
       }, task.taskId, attempt.attemptId);
-      const detail = `no-progress: ${charged} tool calls over ${this.noProgressWindowMs} ms with zero collected observations and no accepted packet`;
+      const detail = `no-progress: ${charged} tool calls over ${this.noProgressWindowMs} ms without new collected observations and no accepted packet`;
       if (await this.terminate(state, task, attempt, 'failed', detail)) { state.noProgress.delete(attempt.attemptId); this.refusalStreak.delete(attempt.attemptId); progress = true; }
     }
     for (const attemptId of [...state.noProgress.keys()]) if (!seen.has(attemptId)) state.noProgress.delete(attemptId);
@@ -1562,29 +1591,36 @@ export class Supervisor implements SupervisorApi {
    */
   private terminalizeBlockedTasks(state: RunState): boolean {
     let progress = false;
-    for (const task of this.store.listTasks(state.runId)) {
-      if (task.packetState === 'accepted' || task.lifecycleState !== 'queued' || this.store.getLease(task.taskId)) continue;
-      const blockers = task.dependencyTaskIds.filter(id => {
-        const dependency = this.store.getTask(id);
-        if (!dependency || dependency.packetState === 'accepted') return false;
-        if (!isTerminalLifecycle(dependency.lifecycleState)) return false;
-        // [F-2] A dependency that still has attempts and retry time is not a permanent blocker: its own
-        // renewal must be attempted (retryAfter included) before dependents are terminalized.
-        return this.dependencyCannotBeRenewed(state, dependency);
-      });
-      if (!blockers.length) continue;
-      try {
-        this.store.cancelQueuedTask(task.taskId);
-        state.dependencyBlocked ??= new Set();
-        state.dependencyBlocked.add(task.taskId);
-        this.event(state.runId, 'orchestrator.task-blocked', {
-          blockers: blockers.slice(0, 8), reason: 'dependency terminal without an accepted handoff packet',
-        }, task.taskId);
-        progress = true;
-      } catch (error) {
-        this.event(state.runId, 'orchestrator.task-blocked-rejected', { code: errorCode(error), message: errorMessage(error).slice(0, 256) }, task.taskId);
+    // Reach a fixed point in this tick, independent of manifest order. A newly cancelled B must
+    // immediately block C even when C appears before B in the durable task listing.
+    let changed: boolean;
+    do {
+      changed = false;
+      for (const task of this.store.listTasks(state.runId)) {
+        if (task.packetState === 'accepted' || task.lifecycleState !== 'queued' || this.store.getLease(task.taskId)) continue;
+        const blockers = task.dependencyTaskIds.filter(id => {
+          const dependency = this.store.getTask(id);
+          if (!dependency || dependency.packetState === 'accepted') return false;
+          if (!isTerminalLifecycle(dependency.lifecycleState)) return false;
+          // [F-2] A dependency that still has attempts and retry time is not a permanent blocker: its own
+          // renewal must be attempted (retryAfter included) before dependents are terminalized.
+          return this.dependencyCannotBeRenewed(state, dependency);
+        });
+        if (!blockers.length) continue;
+        try {
+          this.store.cancelQueuedTask(task.taskId);
+          state.dependencyBlocked ??= new Set();
+          state.dependencyBlocked.add(task.taskId);
+          this.event(state.runId, 'orchestrator.task-blocked', {
+            blockers: blockers.slice(0, 8), reason: 'dependency terminal without an accepted handoff packet',
+          }, task.taskId);
+          progress = true;
+          changed = true;
+        } catch (error) {
+          this.event(state.runId, 'orchestrator.task-blocked-rejected', { code: errorCode(error), message: errorMessage(error).slice(0, 256) }, task.taskId);
+        }
       }
-    }
+    } while (changed);
     return progress;
   }
 
@@ -1602,6 +1638,8 @@ export class Supervisor implements SupervisorApi {
     if (dependency.lifecycleState === 'cancelled') return true;
     const attempts = this.store.listAttempts(state.runId, dependency.taskId);
     if (attempts.length >= dependency.budgets.maxAttempts) return true;
+    if (dependency.budgets.modelAccounting === 'informational' && this.retryBrakeLimit > 0 &&
+        this.store.attemptFailureStreak(state.runId, dependency.taskId).failures >= this.retryBrakeLimit) return true;
     // Mirror the launch gate: a last attempt in any state other than failed/timed-out is never retried.
     const last = attempts.at(-1);
     if (last && !['failed', 'timed-out'].includes(last.lifecycleState)) return true;

@@ -17,7 +17,7 @@ import type { RuntimeSelection } from '../../contracts/index.js';
 import type { PlanRequestProposal } from '../../contracts/plan-request.js';
 import type { EntryPlanAuthor, EntryPlanAuthorInput, EntryPlanAuthorOutput, EntryOwnerSelection } from './types.js';
 import { entryFail, safeText } from './errors.js';
-import { ModelSpendBudget, PINNED_MODEL_PRICES, modelPriceKey } from '../../policy/budget.js';
+import { ModelSpendBudget, PINNED_MODEL_PRICES, modelPriceKey, modelAccountingPolicy } from '../../policy/budget.js';
 import type { AssistantMessage, Context, Model, Api } from '@earendil-works/pi-ai';
 import type { OnboardingReady, OnboardingUI } from '../onboarding/index.js';
 import type { ApplicationOverrides } from '../composition.js';
@@ -27,6 +27,7 @@ import { dirname } from 'node:path';
 import { dispatchModelRequest } from '../../policy/budget.js';
 import { createTurnSpendGate } from '../../runtime/managed.js';
 import { ENTRY_PLAN_STEP_BOUNDS } from '../../interface/target-entry.js';
+import { selectedModelCompletionLimit, type CompletionCapability } from '../../runtime/completion-capability.js';
 /** Bounded model answer; larger answers are refused instead of truncated into a different plan. */
 export const MAX_AUTHOR_RESPONSE_CHARS = 64 * 1024;
 const MAX_SELECTIONS = 32;
@@ -43,12 +44,27 @@ export interface PiPlanAuthorCompletion {
   inputTokensUpperBound: number;
 }
 
+/** Provider facts retained long enough to classify a no-text planner completion. */
+export interface PiPlanAuthorCompletionResult {
+  text: string;
+  stopReason?: AssistantMessage['stopReason'] | string;
+  rawStopReason?: string;
+  outputTokens?: number;
+  reasoningTokens?: number;
+  /** True when the normalized provider message carried visible reasoning content. */
+  reasoningContent?: boolean;
+  /** The actual controller/gateway ceiling, when it is narrower than the author request. */
+  admittedMaxOutputTokens?: number;
+}
+
 export interface PiPlanAuthorOptions {
   /**
    * One bounded assistant completion. The first-use host bridge binds the human-selected model through
    * `ctx.modelRegistry.complete(model, …)` with explicit output, retry, deadline and pricing bounds.
+   * Host bindings should return `PiPlanAuthorCompletionResult` so an empty answer can be classified from
+   * provider facts; string-only adapters remain supported for bounded fixtures and generic integrations.
    */
-  complete(input: PiPlanAuthorCompletion): Promise<string>;
+  complete(input: PiPlanAuthorCompletion): Promise<string | PiPlanAuthorCompletionResult>;
   /** Provenance label for the authored packet (informational, never authority). */
   selection: RuntimeSelection;
   maxResponseChars?: number;
@@ -56,6 +72,7 @@ export interface PiPlanAuthorOptions {
   newId?: () => string;
   /** Controller gateway owns admission/usage for the production first-use author. */
   controllerSpendManaged?: boolean;
+  completionCapability?: CompletionCapability;
 }
 
 const SYSTEM_PROMPT = [
@@ -112,9 +129,40 @@ export function planAuthorPrompt(input: EntryPlanAuthorInput): string {
   return lines.join('\n');
 }
 
+function countFact(value: unknown): string {
+  return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0 ? String(value) : 'unknown';
+}
+
+const SAFE_STOP_REASONS = new Set(['pending', 'stop', 'length', 'toolUse', 'error', 'aborted', 'deferred']);
+function completionStopReason(completion: PiPlanAuthorCompletionResult): { stopReason: string; rawStopReason: string } {
+  const stop = typeof completion.stopReason === 'string' ? completion.stopReason : '';
+  const raw = typeof completion.rawStopReason === 'string' ? completion.rawStopReason : stop;
+  const stopReason = SAFE_STOP_REASONS.has(stop) ? stop : 'provider-specific';
+  const rawStopReason = SAFE_STOP_REASONS.has(raw) ? raw : 'provider-specific';
+  return { stopReason, rawStopReason };
+}
+
+/**
+ * Empty visible output is never a plan. A length stop is provider evidence that reasoning/output shared the
+ * admitted ceiling; all other no-text cases remain an explicit failure with their observed facts, not a
+ * fabricated empty plan or a generic parse error.
+ */
+export function failForEmptyPlanCompletion(completion: PiPlanAuthorCompletionResult, requestedCeiling: number): never {
+  const { stopReason, rawStopReason } = completionStopReason(completion);
+  const ceiling = countFact(completion.admittedMaxOutputTokens ?? requestedCeiling);
+  const outputTokens = countFact(completion.outputTokens);
+  const reasoningTokens = countFact(completion.reasoningTokens);
+  const reasoningContent = completion.reasoningContent === true ? 'present' : 'absent';
+  const facts = `stopReason=${stopReason}; rawStopReason=${rawStopReason}; observedOutputTokens=${outputTokens}; observedReasoningTokens=${reasoningTokens}; reasoningContent=${reasoningContent}; admittedCompletionCeiling=${ceiling}`;
+  if (stopReason === 'length' || rawStopReason === 'length') {
+    entryFail('MODEL_PLAN_COMPLETION_TRUNCATED', `the planner produced no visible text because the provider stopped at its completion limit (${facts}). Remedy: choose a lower thinking level for planning or raise the planner completion bound; no plan was accepted`);
+  }
+  entryFail('MODEL_PLAN_COMPLETION_EMPTY', `the planner completion contained no visible text and no provider truncation stop was observed (${facts}). No plan was accepted; inspect the provider/gateway completion diagnostics and choose a lower thinking level for planning or raise the planner completion bound`);
+}
+
 /** Bounded extraction of the first complete JSON object; never evaluates and never truncates into a plan. */
 export function extractPlanJson(text: string, maxChars = MAX_AUTHOR_RESPONSE_CHARS): Record<string, unknown> {
-  if (typeof text !== 'string' || text.length === 0) entryFail('ENTRY_PLAN_INVALID', 'the plan author returned an empty model response');
+  if (typeof text !== 'string' || text.length === 0) entryFail('MODEL_PLAN_COMPLETION_EMPTY', 'the planner completion contained no visible text; provider completion facts were unavailable and no plan was accepted');
   if (text.length > maxChars) entryFail('ENTRY_PLAN_INVALID', `the plan author response exceeds ${maxChars} characters`);
   const start = text.indexOf('{');
   if (start < 0) entryFail('ENTRY_PLAN_INVALID', 'the plan author response contains no JSON object');
@@ -198,17 +246,23 @@ export function createPiModelPlanAuthor(options: PiPlanAuthorOptions): EntryPlan
       const prompt = planAuthorPrompt(input);
       // UTF-8 bytes plus framing is deliberately conservative, never a guessed token/zero-cost estimate.
       const inputTokensUpperBound = Buffer.byteLength(SYSTEM_PROMPT + prompt, 'utf8') + 1024;
-      const maxOutputTokens = Math.min(4096, input.preparation.spend.maxTokens - inputTokensUpperBound);
+      const policy = modelAccountingPolicy(input.preparation.spend);
+      const maxOutputTokens = 'mode' in policy
+        ? (options.completionCapability ? selectedModelCompletionLimit(options.completionCapability, inputTokensUpperBound) : entryFail('MODEL_LIMITS_REQUIRED', 'Informational planning requires actual selected-model completion/context capability'))
+        : Math.min(4096, policy.maxTokens - inputTokensUpperBound);
       if (maxOutputTokens < 128) entryFail('MODEL_PLAN_BUDGET_EXCEEDED', 'planning token budget cannot bound this prompt and completion');
-      const reservation = options.controllerSpendManaged ? undefined : new ModelSpendBudget(input.preparation.spend, { runId: input.preparation.runId }).reserve({ attemptId: `planner-${randomUUID()}`, selection: options.selection, inputTokensUpperBound, maxOutputTokens });
-      let answer: string;
+      const reservation = options.controllerSpendManaged ? undefined : new ModelSpendBudget(policy, { runId: input.preparation.runId }).reserve({ attemptId: `planner-${randomUUID()}`, selection: options.selection, inputTokensUpperBound, maxOutputTokens });
+      let completion: string | PiPlanAuthorCompletionResult;
       try {
-        answer = await options.complete({ system: SYSTEM_PROMPT, prompt, inputTokensUpperBound, maxOutputTokens, ...(signal ? { signal } : {}) });
+        completion = await options.complete({ system: SYSTEM_PROMPT, prompt, inputTokensUpperBound, maxOutputTokens, ...(signal ? { signal } : {}) });
       } finally {
         // Generic string-only adapters cannot attest provider usage. Charge the admitted worst case, never zero.
         reservation?.settle({ inputTokens: inputTokensUpperBound, outputTokens: maxOutputTokens });
       }
-      const parsed = extractPlanJson(answer, options.maxResponseChars);
+      const result: PiPlanAuthorCompletionResult = typeof completion === 'string' ? { text: completion } : completion;
+      if (!result || typeof result.text !== 'string') entryFail('MODEL_PLAN_COMPLETION_EMPTY', 'the planner completion did not provide a visible text field; no plan was accepted');
+      if (result.text.length === 0) failForEmptyPlanCompletion(result, maxOutputTokens);
+      const parsed = extractPlanJson(result.text, options.maxResponseChars);
       const steps = boundedSteps(parsed.steps);
       const ownerMenu = parsed.ownerMenu ?? parsed.selection;
       const generated = parsed.generatedRequests ?? parsed.requests;
@@ -257,9 +311,9 @@ function randomPlanSuffix(seed: number): string {
 export interface HostAssessmentSetup {
   selection: RuntimeSelection;
   upstream: NonNullable<ApplicationOverrides['upstream']>;
-  planningLimits: { maxTokens: number; maxCostUsd: number };
+  planningLimits: { maxTokens: number | null; maxCostUsd: number | null; modelAccounting?: 'informational' };
   planningReceipts: Array<{ selection: RuntimeSelection; inputBound: number; outputBound: number; usage: unknown; basis: string }>;
-  bindPlannerBudget?: (binding: { ledger: ModelSpendBudget; allocation: import("../../policy/budget.js").AutonomousPhaseAllocation; gateway: import("../../runtime/config.js").ControllerModelGateway; attemptId: string }) => void;
+  bindPlannerBudget?: (binding: { ledger: ModelSpendBudget; allocation?: import("../../policy/budget.js").AutonomousPhaseAllocation; gateway: import("../../runtime/config.js").ControllerModelGateway; attemptId: string }) => void;
   /** Explicit inert qualification only: real controlled Git HTTP transport, never a production fallback. */
   qualificationHarness?: { kind: 'model-inert-controlled-targets-not-live'; sourceRunner?: import('./types.js').EntryCommandRunner };
 }
@@ -293,13 +347,19 @@ export function createHostPiPlanAuthor(ctx: HostPiAuthorContext): HostPiPlanAuth
     async configure(owner: OnboardingReady) {
       requireUI();
       if (!registry || typeof registry.complete !== 'function' || typeof registry.getApiKeyAndHeaders !== 'function' || typeof registry.getAvailable !== 'function') entryFail('PI_MODEL_API_UNSUPPORTED', 'host Pi lacks the checked completion/auth/model APIs; no model fallback');
+      // [L3] Informational accounting accepts an unpriced model: tokens are recorded and cost is reported as
+      // unknown. Bounded legacy consent still requires a positive pinned quote.
+      const informational = owner.effectiveLimits.modelAccounting === 'informational';
       const candidates = registry.getAvailable().map(model => structuredClone(model));
       const labels = candidates.map(model => {
         const quote = PINNED_MODEL_PRICES[modelPriceKey(model.provider, model.id)];
         const priced = !!quote && quote.inputMicroUsdPerMillion > 0 && quote.outputMicroUsdPerMillion > 0;
         const supported = model.api === 'openai-completions';
         const current = model.provider === ctx.model?.provider && model.id === ctx.model?.id;
-        return `${model.provider}/${model.id}${current ? ' [parent; not preselected]' : ''}${model.provider === 'inert-fixture' ? ' [MODEL-INERT ONLY; NOT LIVE AI]' : ''} — ${!priced ? 'BLOCKED unpriced' : !supported ? 'BLOCKED unsupported gateway API' : 'priced; explicit consent required'}`;
+        const status = !supported ? 'BLOCKED unsupported gateway API'
+          : priced ? 'priced; explicit consent required'
+          : informational ? 'unpriced; informational accounting (cost unknown)' : 'BLOCKED unpriced';
+        return `${model.provider}/${model.id}${current ? ' [parent; not preselected]' : ''}${model.provider === 'inert-fixture' ? ' [MODEL-INERT ONLY; NOT LIVE AI]' : ''} — ${status}`;
       });
       if (!labels.length) entryFail('MODEL_UNAVAILABLE', 'no authenticated assessment models available in the host Pi registry');
       const chosen = await ctx.ui.select('Assessment model (parent agent selection is NOT consent)', labels, ctx.signal ? { signal: ctx.signal } : undefined);
@@ -307,7 +367,7 @@ export function createHostPiPlanAuthor(ctx: HostPiAuthorContext): HostPiPlanAuth
       if (index < 0) entryFail('CANCELLED', 'assessment model selection cancelled; no provider call');
       const model = candidates[index]!;
       const price = PINNED_MODEL_PRICES[modelPriceKey(model.provider, model.id)];
-      if (!price || price.inputMicroUsdPerMillion <= 0 || price.outputMicroUsdPerMillion <= 0) entryFail('MODEL_SPEND_UNPRICED', `no positive pinned quote for ${model.provider}/${model.id}; no planning or worker call`);
+      if (!informational && (!price || price.inputMicroUsdPerMillion <= 0 || price.outputMicroUsdPerMillion <= 0)) entryFail('MODEL_SPEND_UNPRICED', `no positive pinned quote for ${model.provider}/${model.id}; no planning or worker call`);
       if (model.api !== 'openai-completions') entryFail('MODEL_PROVIDER_UNSUPPORTED', `${model.api} is not qualified for this bundled controller gateway; no alternate model is selected`);
       const levels = model.reasoning ? Object.entries(model.thinkingLevelMap ?? {}).filter(([, value]) => value !== null).map(([level]) => level) : ['off'];
       if (!levels.length) entryFail('MODEL_THINKING_UNSUPPORTED', 'reasoning model has no exact qualified thinking mapping; no clamping or aliasing');
@@ -315,8 +375,8 @@ export function createHostPiPlanAuthor(ctx: HostPiAuthorContext): HostPiPlanAuth
       if (!thinking || !levels.includes(thinking)) entryFail('CANCELLED', 'thinking selection cancelled');
       const selection = { provider: model.provider, model: model.id, thinking: thinking as RuntimeSelection['thinking'] };
       const allocation = defaultAutonomousBudget(owner.effectiveLimits, selection, model.maxTokens);
-      const planningLimits = allocation.outcome === "ready" ? { ...allocation.phases.planner.limits } : { maxTokens: 1, maxCostUsd: 0 };
-      if (!await ctx.ui.confirm('Use this assessment model and bounded planning spend?', `${model.provider}/${model.id}/${thinking}${model.provider === 'inert-fixture' ? '\nMODEL-INERT ONLY: synthetic counters/quote; NOT live AI/provider qualification or vulnerability verification.' : ''}\nPinned cache-miss pricing: input $${price.inputMicroUsdPerMillion / 1e6}/M, output $${price.outputMicroUsdPerMillion / 1e6}/M.\n${allocation.outcome === "ready" ? `Four isolated phase caps; planner ${planningLimits.maxTokens} tokens / $${planningLimits.maxCostUsd}; protected verifier/report reserve. Workers cannot borrow it.` : `PARTIAL: requires ${allocation.required.maxTokens} tokens / $${allocation.required.maxCostUsd}; no planning/launch without explicit budget extension.`}\nModel receives approved target metadata, not target file contents before source approval. No automatic increase, provider/thinking fallback or setup.`, ctx.signal ? { signal: ctx.signal } : undefined)) entryFail('CANCELLED', 'assessment model not approved');
+      const planningLimits: HostAssessmentSetup['planningLimits'] = allocation.outcome === 'accounting-only' ? { modelAccounting: 'informational', maxTokens: null, maxCostUsd: null } : allocation.outcome === "ready" ? { ...allocation.phases.planner.limits } : { maxTokens: 1, maxCostUsd: 0 };
+      if (!await ctx.ui.confirm(allocation.outcome === 'accounting-only' ? 'Use this Pi assessment model?' : 'Use this assessment model and bounded planning spend?', `${model.provider}/${model.id}/${thinking}${model.provider === 'inert-fixture' ? '\nMODEL-INERT ONLY: synthetic counters/quote; NOT live AI/provider qualification or vulnerability verification.' : ''}\n${price ? `Pinned cache-miss pricing: input $${price.inputMicroUsdPerMillion / 1e6}/M, output $${price.outputMicroUsdPerMillion / 1e6}/M.` : 'No pinned quote: token usage is recorded, cost is reported as unknown, and no financial admission applies.'}\n${allocation.outcome === 'accounting-only' ? `Informational durable usage accounting; no application token/USD caps or financial phase quotas. Completion capability: ${model.maxTokens}; context: ${model.contextWindow}. Provider charges still accrue.` : allocation.outcome === "ready" ? `Four isolated phase caps; planner ${planningLimits.maxTokens} tokens / $${planningLimits.maxCostUsd}; protected verifier/report reserve. Workers cannot borrow it.` : `PARTIAL: requires ${allocation.required.maxTokens} tokens / $${allocation.required.maxCostUsd}; no planning/launch without explicit budget extension.`}\nModel receives approved target metadata, not target file contents before source approval. No automatic increase, provider/thinking fallback or setup.`, ctx.signal ? { signal: ctx.signal } : undefined)) entryFail('CANCELLED', 'assessment model not approved');
       const resolveAuth = async () => {
         const auth = await registry.getApiKeyAndHeaders(model);
         if (!auth.ok || !auth.apiKey || (auth.headers && Object.keys(auth.headers).length) || (auth.env && Object.keys(auth.env).length)) entryFail('MODEL_AUTH_UNSUPPORTED', 'bundled gateway requires a resolved host API key without custom headers/env; credentials are never persisted');
@@ -330,18 +390,18 @@ export function createHostPiPlanAuthor(ctx: HostPiAuthorContext): HostPiPlanAuth
       let plannerBinding: Parameters<NonNullable<HostAssessmentSetup["bindPlannerBudget"]>>[0] | undefined;
       configured = { selection, planningLimits, planningReceipts: [], bindPlannerBudget(binding) {
         if (plannerBinding) entryFail("MODEL_PLAN_BUDGET_EXCEEDED", "Planner budget already bound");
-        plannerBinding = binding; Object.assign(planningLimits, binding.allocation.limits);
+        plannerBinding = binding; if (binding.allocation) Object.assign(planningLimits, binding.allocation.limits);
       }, upstream: { approval: `human-model:${model.provider}/${model.id}`, provider: model.provider, upstreamBaseUrl: auth.endpoint, api: 'openai-completions', models: [{ id: model.id, reasoning: model.reasoning, contextWindow: model.contextWindow, maxTokens: model.maxTokens, ...(model.thinkingLevelMap ? { thinkingLevelMap: model.thinkingLevelMap } : {}) }], credential: { accountId: `host-pi-${model.provider}`, version: randomUUID(), secret: auth.secret, expiresAt: new Date(owner.effectiveLimits.deadlineMs).toISOString() } } };
       const setup = configured;
-      delegate = createPiModelPlanAuthor({ selection, controllerSpendManaged: true, async complete(input) {
+      delegate = createPiModelPlanAuthor({ selection, controllerSpendManaged: true, completionCapability: { maxTokens: model.maxTokens, contextWindow: model.contextWindow }, async complete(input) {
         if (Date.now() >= owner.effectiveLimits.deadlineMs) entryFail('ENTRY_APPROVAL_WINDOW', 'absolute owner deadline reached before model call');
         const binding = plannerBinding;
         if (!binding) entryFail("MODEL_PLAN_GATEWAY_REQUIRED", "Default planning requires the durable controller phase pool/gateway; no host-direct fallback");
-        const ceiling = Math.min(binding.allocation.maxOutputTokens, model.maxTokens, input.maxOutputTokens);
-        if (input.inputTokensUpperBound > binding.allocation.inputTokensUpperBound) entryFail("MODEL_PLAN_BUDGET_EXCEEDED", "Planning prompt exceeds approved phase input bound");
+        const ceiling = Math.min(binding.allocation?.maxOutputTokens ?? selectedModelCompletionLimit(model, input.inputTokensUpperBound), model.maxTokens, input.maxOutputTokens);
+        if (binding.allocation && input.inputTokensUpperBound > binding.allocation.inputTokensUpperBound) entryFail("MODEL_PLAN_BUDGET_EXCEEDED", "Planning prompt exceeds approved phase input bound");
         const dispatch = dispatchModelRequest(binding.ledger, { attemptId: binding.attemptId, selection, inputTokensUpperBound: input.inputTokensUpperBound, maxOutputTokens: ceiling }, { deferred: true });
         const token = binding.gateway.bindAttempt({ attemptId: binding.attemptId, requested: selection });
-        binding.gateway.bindSpendGate({ attemptId: binding.attemptId, gate: createTurnSpendGate({ ledger: binding.ledger, reservationId: dispatch.reservation.reservationId, attemptId: binding.attemptId, selection, maxOutputTokens: ceiling }) });
+        binding.gateway.bindSpendGate({ attemptId: binding.attemptId, gate: createTurnSpendGate({ ledger: binding.ledger, reservationId: dispatch.reservation.reservationId, attemptId: binding.attemptId, selection, maxOutputTokens: ceiling, ...(binding.allocation ? {} : { accountingOnly: true }) }) });
         if (setup.planningReceipts.length) entryFail('MODEL_PLAN_BUDGET_EXCEEDED', 'this invocation has already consumed its one planning allocation; re-entry needs a fresh consent-bounded run');
         // Re-resolve host-side immediately before dispatch; no credential enters a manifest or worker prompt.
         await resolveAuth();
@@ -353,7 +413,16 @@ export function createHostPiPlanAuthor(ctx: HostPiAuthorContext): HostPiPlanAuth
           usage = message.usage;
           if (message.stopReason === 'error' || message.stopReason === 'aborted') entryFail('MODEL_PLAN_FAILED', 'provider completion failed or was aborted; no template fallback');
           const text = message.content.filter(block => block.type === 'text').map(block => block.text).join('\n');
-          return text;
+          const reasoningContent = message.content.some(block => block.type === 'thinking' && block.thinking.length > 0);
+          return {
+            text,
+            stopReason: message.stopReason,
+            ...(message.rawStopReason === undefined ? {} : { rawStopReason: message.rawStopReason }),
+            outputTokens: message.usage.output,
+            ...(message.usage.reasoning === undefined ? {} : { reasoningTokens: message.usage.reasoning }),
+            reasoningContent,
+            admittedMaxOutputTokens: ceiling,
+          } satisfies PiPlanAuthorCompletionResult;
         } finally {
           // Gateway charges observed turns (or uncertain worst case) before returning the response.
           dispatch.release("planner-returned; gateway settled admitted turns");
