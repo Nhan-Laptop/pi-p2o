@@ -147,6 +147,18 @@ const modules: Record<Capability, string[]> = {
   'fuzz.template': ['sandbox', 'http', 'fuzz/prng', 'fuzz/generator', 'fuzz/template', 'fuzz/external-tool', 'fuzz/pack'],
 };
 const common = ['broker', 'filesystem', 'redaction', 'schema', 'registry', 'process', 'types'];
+/**
+ * Descriptor-level bring-up budget: cold-starting the pinned sandbox happens before the operation deadline,
+ * so it must never fit inside the 15s steady-state cap. Capabilities may widen it; nothing may declare less
+ * than the 30s floor that a packed-image cold start needs on a loaded host.
+ */
+export const DEFAULT_STARTUP_BUDGET_MS = 30_000;
+const descriptorStartupBudgetMs: Partial<Record<Capability, number>> = {
+  // Source analysis mounts and hashes the immutable snapshot inside the pack before its operation starts.
+  'source.analyze': 30_000,
+  // Native inspection loads and disassembles bounded bytes inside the pack.
+  'native.inspect': 45_000,
+};
 const baseLimits = { timeoutMs: 15000, maxInputBytes: 131072, maxOutputBytes: 2097152, maxResponseBytes: 1048576, maxFiles: 64, maxRedirects: 4 };
 function implementationDigest(id: Capability): string {
   const extension = import.meta.url.endsWith('.ts') ? '.ts' : '.js';
@@ -221,6 +233,15 @@ export class CapabilityRegistry {
     return descriptor;
   }
   list(): readonly Readonly<ToolDescriptor>[] { return Object.freeze([...this.descriptors.values()]); }
+  /**
+   * Bounded descriptor-driven bring-up budget for this capability. It is not the operation deadline: the
+   * caller runs sandbox readiness under this budget and only then starts `limits.timeoutMs` for real work.
+   */
+  startupBudgetMs(id: Capability): number {
+    const budget = descriptorStartupBudgetMs[this.get(id).id] ?? DEFAULT_STARTUP_BUDGET_MS;
+    integer(budget, 'startupBudgetMs', DEFAULT_STARTUP_BUDGET_MS, 300_000);
+    return budget;
+  }
   validateInput(id: Capability, input: unknown): void { validateSchema(this.get(id).inputSchema, input); }
   validateOutput(id: Capability, output: unknown): void { validateSchema(this.get(id).outputSchema, output, 'output'); }
 }

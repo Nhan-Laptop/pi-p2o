@@ -1,8 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { mkdirSync } from 'node:fs';
 import { readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { createContainerSandbox, createDefaultRegistry, doctor, type ContainerSandboxOptions, type EngineRunner } from '../../src/tools/index.js';
+import { createContainerSandbox, createDefaultRegistry, doctor, type ContainerSandboxOptions, type EngineRunner, type PackSessionLifecycle } from '../../src/tools/index.js';
 import { createToolBroker } from '../../src/tools/broker.js';
 import { createPolicy, TargetBudget } from '../../src/policy/index.js';
 import { sha256 } from '../../src/tools/redaction.js';
@@ -332,4 +333,36 @@ test('a forged image that copies every label and runtime field is still refused 
   assert.match(failed, /layer content does not match the recorded pack layer pin/);
   await assert.rejects(sandbox.analyzeSource([{ path: 'x.ts', text: 'export const x = 1;', sha256: 'd'.repeat(64) }]), code('IDENTITY_DENIED'));
   assert.equal(log.filter(argv => argv[0] === 'run').length, 0, 'a spoofed image must never reach a container start');
+});
+
+test('configuration digest attests the approved sandbox config, not the run-scoped lifecycle binding (R1)', async t => {
+  const options = await config(t, inertEngine([]));
+  const scope = { runId: 'run-r1', taskId: 'task-r1', attemptId: 'attempt-r1' };
+  const lifecycle: PackSessionLifecycle = { check: async () => undefined, enroll: async () => undefined, update: async () => undefined, resolve: async () => undefined };
+  const approved = createContainerSandbox(options).configurationDigest;
+  const controllerBound = createContainerSandbox({ ...options, controllerLifecycle: { scope, lifecycle } }).configurationDigest;
+  const attemptBound = createContainerSandbox({ ...options, lifecycle: { scope: { ...scope, attemptId: 'attempt-r1b' }, lifecycle } }).configurationDigest;
+  assert.equal(controllerBound, approved, 'the controller lifecycle binding is runtime bookkeeping and must not change the digest');
+  assert.equal(attemptBound, approved, 'the attempt lifecycle binding is runtime bookkeeping and must not change the digest');
+});
+
+test('configuration digest still changes for every real sandbox configuration change (R1)', async t => {
+  const options = await config(t, inertEngine([]));
+  const base = createContainerSandbox(options).configurationDigest;
+  const otherInputRoot = join(options.inputRoot, '..', 'inputs-other');
+  mkdirSync(otherInputRoot, { recursive: true, mode: 0o700 });
+  const variants: Array<[string, Partial<ContainerSandboxOptions>]> = [
+    ['image pin', { image: `sha256:${'7'.repeat(64)}` }],
+    ['image layer pin', { imageRootfsLayers: [`sha256:${'8'.repeat(64)}`] }],
+    ['base image pin', { baseImageId: `sha256:${'9'.repeat(64)}` }],
+    ['worker/source identity', { workerSha256: 'e'.repeat(64) }],
+    ['seccomp profile', { seccompPath: join(options.inputRoot, '..', 'seccomp-other.json'), seccompSha256: 'f'.repeat(64) }],
+    ['filesystem limits', { maxArtifacts: 7 }],
+    ['input root', { inputRoot: otherInputRoot }],
+    ['qualification', { qualification: { ...options.qualification, approvedBy: 'other-owner' } }],
+    ['engine release', { engineVersion: '0.0.0-not-qualified' }],
+  ];
+  for (const [label, override] of variants) {
+    assert.notEqual(createContainerSandbox({ ...options, ...override }).configurationDigest, base, `${label} must change the digest`);
+  }
 });

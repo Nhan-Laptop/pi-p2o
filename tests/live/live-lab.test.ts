@@ -15,7 +15,8 @@ import { createContainerSandbox } from '../../src/tools/index.js';
 import { buildContainerSandboxOptions } from '../../examples/live-lab/pack.js';
 import {
   ACTOR_ADMIN, ACTOR_GUEST, ACTOR_GUEST_B, CLAIM_EXPORT, CLAIM_IDOR, FINDING_EXPORT, FINDING_IDOR, LIVE_SELECTION,
-  SNAPSHOT_FILE, TASK_HYP_EXPORT, TASK_HYP_IDOR, TASK_SURFACE_MAP, TASK_VERIFY, assertPricedSelection, buildScenario,
+  SNAPSHOT_FILE, TASK_HYP_EXPORT, TASK_HYP_IDOR, TASK_SURFACE_MAP, TASK_VERIFY, assertContractEnumCoverage, assertPricedSelection,
+  buildScenario, readContractEnumTable,
 } from '../../examples/live-lab/scenario.js';
 import type { LabInstance, LabServerModule } from '../../examples/live-lab/types.js';
 
@@ -268,4 +269,77 @@ test('bridge extension: pinned file exposes the live-lab tool surface and re-has
   assert.match(source, /handoff\.packet\.json/);
   // The extension must not read configuration from anywhere but the runtime-provided config file.
   assert.doesNotMatch(source, /process\.env\.(?!P2O_CONFIG)/);
+});
+
+test('authoring crib enumerates the exact contract enums and required fields (drift fails at authoring time)', () => {
+  const table = readContractEnumTable(join(sourceRoot, 'contract-enums.json'));
+  assertContractEnumCoverage(table); // throws if the crib drifts from the supervisor's handoff gate
+  assert.deepEqual(table.contracts.H1?.enums['interfaces[].reachability'], ['observed', 'inferred']);
+  assert.deepEqual(table.contracts.H2?.enums['baseline.status'], ['observed', 'unavailable']);
+  const bridge = readFileSync(join(sourceRoot, 'bridge-extension.js'), 'utf8');
+  assert.match(bridge, /contract-enums\.json/, 'the crib must load the machine-checked table');
+  assert.match(bridge, /Exact \$\{contract\} enum values/, 'the crib must render the exact enum values');
+  assert.match(bridge, /Required \$\{contract\} fields/, 'the crib must render the required fields');
+  assert.match(bridge, /Exact \$\{contract\} root keys/, 'the crib must render the exact root key set');
+  const scenario = readFileSync(join(sourceRoot, 'scenario.ts'), 'utf8');
+  assert.match(scenario, /assertContractEnumCoverage\(/, 'scenario construction must run the guard before launch');
+});
+
+test('a drifted or incomplete authoring table is refused with an explicit drift error', () => {
+  const table = readContractEnumTable(join(sourceRoot, 'contract-enums.json'));
+  const drifted = JSON.parse(JSON.stringify(table)) as typeof table;
+  drifted.contracts.H1!.enums['interfaces[].reachability'] = ['observed', 'guessed'];
+  assert.throws(() => assertContractEnumCoverage(drifted), /enum drift for H1/);
+  const incomplete = JSON.parse(JSON.stringify(table)) as typeof table;
+  delete incomplete.contracts.H1!.required['interfaces[]'];
+  assert.throws(() => assertContractEnumCoverage(incomplete), /does not require H1 interfaces\[\]/);
+});
+
+test('p2o_packet refuses a drifting packet at authoring time with the exact paths (R3)', async () => {
+  const table = readContractEnumTable(join(sourceRoot, 'contract-enums.json'));
+  const bridge = await import(pathToFileURL(join(sourceRoot, 'bridge-extension.js')).href) as {
+    cribViolations: (packet: unknown, contract: string, table: unknown) => string[];
+  };
+  const minimalPacket = (contract: 'H1' | 'H2') => {
+    const entry = table.contracts[contract]!;
+    const details: Record<string, unknown> = {};
+    for (const key of entry.required.details ?? []) details[key] = {};
+    for (const [scope, keys] of Object.entries(entry.required)) {
+      if (scope === 'details') continue;
+      const shape = Object.fromEntries(keys.map(key => [key, 'placeholder']));
+      if (scope.endsWith('[]')) details[scope.slice(0, -2)] = [shape];
+      else details[scope] = shape;
+    }
+    for (const [path, values] of Object.entries(entry.enums)) {
+      const segments = path.split('.');
+      let node: Record<string, unknown> = details;
+      for (let index = 0; index < segments.length; index++) {
+        const last = index === segments.length - 1;
+        const array = segments[index]!.endsWith('[]');
+        const key = array ? segments[index]!.slice(0, -2) : segments[index]!;
+        if (last) { node[key] = values[0]; break; }
+        if (array) { if (!Array.isArray(node[key])) node[key] = [{}]; node = (node[key] as Record<string, unknown>[])[0]!; }
+        else node = (node[key] ??= {}) as Record<string, unknown>;
+      }
+    }
+    const packet: Record<string, unknown> = Object.fromEntries(entry.requiredRootKeys.map(key => [key, key === 'details' ? details : 'placeholder']));
+    packet.contract = contract;
+    packet.details = details;
+    return packet;
+  };
+  for (const contract of ['H1', 'H2'] as const) {
+    assert.deepEqual(bridge.cribViolations(minimalPacket(contract), contract, table), [], `${contract} packet built from the table must be accepted`);
+  }
+  // The exact live-lab failure: a details-only key written at the packet root.
+  const strayRoot = { ...minimalPacket('H1'), peerTopology: [] };
+  const strayViolations = bridge.cribViolations(strayRoot, 'H1', table);
+  assert.ok(strayViolations.some(message => message.includes('unknown root key "peerTopology"') && message.includes('belongs inside details')), JSON.stringify(strayViolations));
+  // A guessed enum value is refused with the allowed values.
+  const badEnum = minimalPacket('H1');
+  (badEnum.details as { interfaces: Array<Record<string, unknown>> }).interfaces[0]!.reachability = 'guessed';
+  assert.ok(bridge.cribViolations(badEnum, 'H1', table).some(message => message.includes('interfaces[].reachability must be one of')), 'the enum value must be refused');
+  // A missing required field is refused with its path.
+  const missing = minimalPacket('H2');
+  delete (missing.details as { baseline: Record<string, unknown> }).baseline.status;
+  assert.ok(bridge.cribViolations(missing, 'H2', table).some(message => message.includes('missing required field baseline.status')), 'the missing field must be refused');
 });

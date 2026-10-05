@@ -13,6 +13,23 @@ export interface AttemptUpdate {
   exit?: ExitObservation;
 }
 export interface BudgetConsumption extends Partial<BudgetUsage> { attemptId: string; leaseToken: string; targetId?: string }
+/** One durable pre-dispatch reservation; the store mints its identity and records it on the charge. */
+export interface BudgetReservation { attemptId: string; leaseToken: string; targetId?: string; toolCalls: number; requests?: number }
+/**
+ * Exactly-once release of ONE recorded reservation. Counters are taken from the recorded reservation, so the
+ * caller can neither choose amounts nor replay an id to refund another call's charge.
+ */
+export interface BudgetRelease {
+  attemptId: string;
+  leaseToken: string;
+  /** Identity minted by `reserveBudget` and recorded in the `budget.consumed` event. */
+  reservationId: string;
+  reason: string;
+  /** Structured refusal identity of the released reservation: recorded durably, never free-form authority. */
+  code: string;
+  /** True only for tool-plane failures (TIMEOUT/CANCELLED/UNAVAILABLE); denials prove the plane answered. */
+  toolPlane: boolean;
+}
 export interface StoredResult {
   resultId: string; runId: string; taskId: string; attemptId: string; digest: string;
   packet: HandoffPacket; decision: GateDecision; admittedAt: string;

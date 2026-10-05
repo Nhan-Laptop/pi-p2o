@@ -36,10 +36,66 @@ export interface ToolBrokerOptions {
    * pack session that could outlive its attempt. A refusal is a denial, never a silent no-op.
    */
   sessionFence?: PackSessionFence;
+  /**
+   * Bounded bring-up budget for sandbox readiness. When absent, the capability descriptor's own budget is
+   * used (>= 30s). The operation deadline (`descriptor.limits.timeoutMs`, 15s) only starts once the sandbox
+   * reports ready, so a cold packed-image start can never consume the operation budget.
+   */
+  startupBudgetMs?: number;
+  /**
+   * No-progress circuit breaker: after N consecutive tool-plane refusals (TIMEOUT / STARTUP_TIMEOUT /
+   * CANCELLED / UNAVAILABLE) with zero collected receipts, this attempt is halted with the explicit
+   * `NO_PROGRESS_HALT` code instead of calling into a dead loop. `{ consecutiveRefusals: 0 }` disables it.
+   */
+  noProgress?: { consecutiveRefusals?: number };
+  /** Trusted composition hook, invoked once per halted attempt. Never a worker-facing surface. */
+  onNoProgress?: (report: NoProgressReport) => void;
 }
 export class ToolExecutionError extends PolicyError {
   readonly receipt: ToolReceipt;
-  constructor(error: PolicyError, receipt: ToolReceipt) { super(error.code, error.message); this.name = 'ToolExecutionError'; this.receipt = receipt; }
+  /**
+   * True once the call entered the capability adapter, false for every pre-dispatch refusal (halt fence,
+   * capability/isolation/input validation, session fence, policy authorize, sandbox bring-up). The owning
+   * composition releases a reservation whose call never dispatched; dispatched failures stay charged.
+   */
+  readonly dispatched: boolean;
+  constructor(error: PolicyError, receipt: ToolReceipt, dispatched: boolean) { super(error.code, error.message); this.name = 'ToolExecutionError'; this.receipt = receipt; this.dispatched = dispatched; }
+}
+/** Explicit terminal code for an attempt whose tool plane is refusing every call with no progress. */
+export const NO_PROGRESS_HALT = 'NO_PROGRESS_HALT';
+export const DEFAULT_NO_PROGRESS_REFUSALS = 5;
+/**
+ * One attempt's halt record. It is also the receipt-facing reason: the attempt may not keep calling tools,
+ * and the supervisor's own no-progress watchdog terminates the owned runtime so provider turns stop.
+ */
+export interface NoProgressReport {
+  version: 1;
+  attemptId: string;
+  code: typeof NO_PROGRESS_HALT;
+  refusals: number;
+  collected: number;
+  lastCode: string;
+  reason: string;
+  at: string;
+}
+/** Tool-plane failures, as opposed to a policy decision about one request. */
+const refusalCodes: ReadonlySet<string> = new Set(['TIMEOUT', 'CANCELLED', 'UNAVAILABLE']);
+/**
+ * True for the tool-plane failures the no-progress breaker counts. The owning composition uses this to
+ * classify a released reservation's refusal, so the supervisor only ever counts the same codes (a policy
+ * denial proves the plane answered and resets the streak).
+ */
+export function isToolPlaneRefusal(code: string): boolean { return refusalCodes.has(code); }
+/**
+ * `PolicyErrorCode` is a closed policy union outside this module, so the explicit halt identity travels as
+ * this stable message prefix plus the structured `NoProgressReport` (broker accessor and `onNoProgress`),
+ * while the code stays the truthful `UNAVAILABLE` (the tool plane is not usable).
+ */
+const haltError = (report: NoProgressReport): PolicyError => new PolicyError('UNAVAILABLE', `${NO_PROGRESS_HALT}: ${report.reason}`);
+/** A broker whose per-attempt halt state is readable by the owning composition for status/reporting. */
+export interface ToolBrokerWithNoProgress extends ToolBroker {
+  /** The halt record for one attempt, when its tool plane was halted. Never creates state. */
+  noProgress(attemptId: string): NoProgressReport | undefined;
 }
 const denialCodes = new Set(['INVALID_INPUT', 'EXPIRED', 'NOT_YET_VALID', 'IDENTITY_DENIED', 'CAPABILITY_DENIED', 'ACTION_DENIED', 'TARGET_DENIED', 'ACCOUNT_DENIED', 'ADDRESS_DENIED', 'DNS_CHANGED', 'PEER_MISMATCH', 'REDIRECT_DENIED', 'BUDGET_EXCEEDED', 'RATE_LIMITED', 'FILESYSTEM_DENIED']);
 /**
@@ -54,7 +110,7 @@ function opensOrDrivesPackSession(tool: Capability, input: unknown): boolean {
   if (tool === 'proxy.session') return action === 'start';
   return false;
 }
-export function createToolBroker(configuration: ToolBrokerOptions): ToolBroker {
+export function createToolBroker(configuration: ToolBrokerOptions): ToolBrokerWithNoProgress {
   const options: ToolBrokerOptions = Object.freeze({ ...configuration, secrets: configuration.secrets ? Object.freeze([...configuration.secrets]) : undefined });
   options.budgets.bindRun(options.policy.scope.runId, options.policy.scope.targets);
   invariant(options.sandbox.mode === 'local-fixture' || options.budgets.durable, 'UNAVAILABLE', 'Operational container mode requires a supervisor-owned durable budget journal');
@@ -73,6 +129,36 @@ export function createToolBroker(configuration: ToolBrokerOptions): ToolBroker {
   // traffic lands in `proxy.history`; an owner-supplied browser pack opts in by passing the same factory.
   const proxies = options.proxy ?? createProxyPack({ policy: options.policy, budgets: options.budgets, sandbox: options.sandbox, resolver: options.resolver ?? defaultResolver });
   const browsers = options.browser ?? createBrowserPack({ policy: options.policy, budgets: options.budgets, sandbox: options.sandbox, resolver: options.resolver ?? defaultResolver, egressProxy: proxies.egressProxy });
+  invariant(options.startupBudgetMs === undefined || (Number.isSafeInteger(options.startupBudgetMs) && options.startupBudgetMs >= 1000 && options.startupBudgetMs <= 300_000), 'INVALID_INPUT', 'startupBudgetMs must be a bounded 1s..300s bring-up budget');
+  const refusalLimit = options.noProgress?.consecutiveRefusals ?? DEFAULT_NO_PROGRESS_REFUSALS;
+  invariant(Number.isSafeInteger(refusalLimit) && refusalLimit >= 0 && refusalLimit <= 64, 'INVALID_INPUT', 'noProgress.consecutiveRefusals must be 0..64');
+  /**
+   * Attempt-scoped no-progress state. `collected` counts observations that actually reached the caller, so
+   * the breaker can only fire for an attempt that has never collected anything; any non-refusal outcome
+   * (including a policy denial, which proves the plane answered) resets the consecutive streak.
+   */
+  const progress = new Map<string, { refusals: number; collected: number; lastCode: string; halt?: NoProgressReport }>();
+  const recordCollected = (attemptId: string): void => {
+    if (attemptId === 'untrusted') return;
+    const entry = progress.get(attemptId) ?? { refusals: 0, collected: 0, lastCode: 'none' };
+    entry.refusals = 0; entry.collected += 1; progress.set(attemptId, entry);
+  };
+  const recordRefusal = (attemptId: string, code: string): NoProgressReport | undefined => {
+    if (attemptId === 'untrusted') return undefined;
+    const entry = progress.get(attemptId) ?? { refusals: 0, collected: 0, lastCode: 'none' };
+    progress.set(attemptId, entry);
+    if (entry.halt) return entry.halt;
+    if (!refusalCodes.has(code)) { entry.refusals = 0; entry.lastCode = code; return undefined; }
+    entry.refusals += 1; entry.lastCode = code;
+    if (refusalLimit === 0 || entry.collected > 0 || entry.refusals < refusalLimit) return undefined;
+    entry.halt = Object.freeze({
+      version: 1 as const, attemptId, code: NO_PROGRESS_HALT as typeof NO_PROGRESS_HALT, refusals: entry.refusals, collected: entry.collected, lastCode: code,
+      reason: `no-progress: ${entry.refusals} consecutive tool-plane refusals (${code}) with zero collected receipts; attempt halted instead of calling into a dead loop`,
+      at: new Date().toISOString(),
+    });
+    try { options.onNoProgress?.(entry.halt); } catch { /* a composition hook must never change the halt decision */ }
+    return entry.halt;
+  };
   let preflight: ReturnType<ExecutionSandbox['preflight']> | undefined;
   return Object.freeze({
     async execute(request: ExecuteRequest) {
@@ -80,6 +166,11 @@ export function createToolBroker(configuration: ToolBrokerOptions): ToolBroker {
       const touchedTargets = new Set<string>();
       let descriptor: Readonly<ToolDescriptor> | undefined;
       let inputDigest = digest(null), artifact: Artifact | undefined, timeout = false;
+      /**
+       * True only once the call passed every pre-dispatch gate and entered the capability adapter. The owning
+       * composition releases a reservation whose call provably never dispatched (see `ToolExecutionError`).
+       */
+      let dispatched = false;
       const controller = new AbortController();
       const cancel = () => controller.abort();
       request.signal?.addEventListener('abort', cancel, { once: true });
@@ -95,7 +186,10 @@ export function createToolBroker(configuration: ToolBrokerOptions): ToolBroker {
         checkCancelled(controller.signal);
         const grant = options.policy.assertActive(request.context);
         context = { ...request.context };
-        options.budgets.chargeCall(grant); // charge all identity-valid attempts, including malformed/denied input
+        // Halt fence: an attempt whose tool plane already refused N consecutive calls with zero collected
+        // receipts may not keep calling (and may not spend another tool-call budget unit) on a dead plane.
+        const halted = progress.get(context.attemptId)?.halt;
+        if (halted) throw haltError(halted);
         descriptor = registry.get(request.tool);
         invariant(grant.capabilities.includes(request.tool), 'CAPABILITY_DENIED', 'Tool capability not granted');
         invariant(descriptor.isolation.includes(options.sandbox.mode) && descriptor.platforms.includes(process.platform) && (request.tool !== 'native.inspect' || options.sandbox.nativeEnabled), 'UNAVAILABLE', 'Tool is not qualified in this sandbox');
@@ -140,10 +234,51 @@ export function createToolBroker(configuration: ToolBrokerOptions): ToolBroker {
           const v = input as HttpInput;
           options.policy.authorize({ context, capability: request.tool, action: networkAction(v), url: v.url, method: v.method ?? 'GET', accountId: v.accountId });
         }
+        // Bring-up is bounded by its own budget: the operation deadline starts only after the sandbox is ready.
+        const startupBudgetMs = options.startupBudgetMs ?? registry.startupBudgetMs(request.tool);
+        const startup = new AbortController();
+        const abortStartup = () => startup.abort();
+        request.signal?.addEventListener('abort', abortStartup, { once: true });
+        if (request.signal?.aborted) startup.abort();
+        let startupTimer: ReturnType<typeof setTimeout> | undefined;
+        let startupTimedOut = false;
+        try {
+          if (!preflight) {
+            startupTimer = setTimeout(() => { startupTimedOut = true; startup.abort(); }, startupBudgetMs);
+            preflight = options.sandbox.preflight(startup.signal);
+          }
+          try {
+            const readyPromise = preflight;
+            // The budget must bound a sandbox that never honours the signal: race the readiness promise against
+            // the bring-up abort instead of trusting the sandbox to stop on its own.
+            let rejectOnAbort: (() => void) | undefined;
+            const aborted = new Promise<never>((_, reject) => {
+              rejectOnAbort = () => reject(startupTimedOut
+                ? new PolicyError('TIMEOUT', `sandbox bring-up exceeded ${startupBudgetMs} ms; no unsandboxed fallback`)
+                : new PolicyError('CANCELLED', 'Tool cancelled'));
+              if (startup.signal.aborted) rejectOnAbort();
+              else startup.signal.addEventListener('abort', rejectOnAbort, { once: true });
+            });
+            // The losing promise is observed, never an unhandled rejection.
+            void readyPromise.catch(() => { /* bring-up result is discarded after abort */ });
+            let ready: Awaited<typeof readyPromise>;
+            try { ready = await Promise.race([readyPromise, aborted]); }
+            finally { if (rejectOnAbort) startup.signal.removeEventListener('abort', rejectOnAbort); }
+            invariant(ready.ok, 'UNAVAILABLE', 'Sandbox preflight failed; no unsandboxed fallback');
+          } catch (error) {
+            preflight = undefined; // a failed bring-up must not poison every later call with a cached rejection
+            if (startupTimedOut && !request.signal?.aborted && !(error instanceof PolicyError && error.code === 'TIMEOUT')) throw new PolicyError('TIMEOUT', `sandbox bring-up exceeded ${startupBudgetMs} ms; no unsandboxed fallback`);
+            throw error;
+          }
+        } finally {
+          if (startupTimer) clearTimeout(startupTimer);
+          request.signal?.removeEventListener('abort', abortStartup);
+        }
         timer = setTimeout(() => { timeout = true; controller.abort(); }, descriptor.limits.timeoutMs);
-        preflight ??= options.sandbox.preflight(controller.signal);
-        invariant((await preflight).ok, 'UNAVAILABLE', 'Sandbox preflight failed; no unsandboxed fallback');
         checkCancelled(controller.signal); options.policy.assertActive(context);
+        // Charged only at dispatch: a refusal that never dispatched must not consume the capability/task budget.
+        options.budgets.chargeCall(grant);
+        dispatched = true; // the dispatch boundary: everything after this may reach the sandbox/target adapter
         const execution = { context, capability: request.tool, descriptor, signal: controller.signal, touchedTargets };
         let raw: unknown;
         switch (request.tool) {
@@ -193,13 +328,19 @@ export function createToolBroker(configuration: ToolBrokerOptions): ToolBroker {
         const collected = receipt();
         try { await options.receiptSink?.(collected); } catch { throw new PolicyError('UNAVAILABLE', 'Supervisor receipt persistence failed'); }
         checkCancelled(controller.signal); options.policy.assertActive(context);
+        recordCollected(context.attemptId);
         return deepFreeze({ data, artifact, receipt: collected });
       } catch (e) {
         const error = timeout ? new PolicyError('TIMEOUT', 'Tool deadline exceeded') : request.signal?.aborted ? new PolicyError('CANCELLED', 'Tool cancelled') : e instanceof PolicyError ? e : new PolicyError('UNAVAILABLE', 'Tool failed safely');
-        const failed = receipt(error);
+        // The breaker sees every failure the worker would have seen; the tripping call reports the explicit
+        // halt reason so the worker cannot mistake it for a retryable single-request error.
+        const halt = recordRefusal(context.attemptId, error.code);
+        const effective = halt && !error.message.startsWith(NO_PROGRESS_HALT) ? haltError(halt) : error;
+        const failed = receipt(effective);
         try { await options.receiptSink?.(failed); } catch { /* Return the failure receipt for durable retry by the supervisor. */ }
-        throw new ToolExecutionError(error, failed);
+        throw new ToolExecutionError(effective, failed, dispatched);
       } finally { if (timer) clearTimeout(timer); request.signal?.removeEventListener('abort', cancel); }
     },
+    noProgress(attemptId: string) { return progress.get(attemptId)?.halt; },
   });
 }

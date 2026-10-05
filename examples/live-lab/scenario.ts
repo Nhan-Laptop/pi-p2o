@@ -6,9 +6,9 @@
 // only observationIds and packet prose.
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import {
-  type Authorization, type JsonObject, type RunManifest, type Scope, type TaskManifest,
+  handoffSchema, type Authorization, type JsonObject, type RunManifest, type Scope, type TaskManifest,
 } from '../../src/contracts/index.js';
 import type {
   CoveragePlanEntry, FindingPlan, GrantedTask, ObservationCheck, OwnerGrant as OwnerGrantDocument,
@@ -222,8 +222,105 @@ export interface LiveLabDocument {
   checks: ObservationCheck[];
 }
 
+// ------------------------------------------------------- authoring-contract drift guard
+
+/** The worker authoring crib's required fields and enum values, keyed by handoff contract. */
+export interface ContractEnumTable {
+  version: 1;
+  contracts: Record<string, {
+    /** Every root-level packet key the contract accepts (an unknown root key is rejected at admission). */
+    rootKeys: readonly string[];
+    /** Root keys that must be present in every packet of this contract. */
+    requiredRootKeys: readonly string[];
+    /** Every key the contract accepts inside `details` (required and optional). */
+    detailsKeys: readonly string[];
+    required: Record<string, readonly string[]>;
+    enums: Record<string, readonly string[]>;
+  }>;
+}
+
+export function contractEnumsPath(sourceRoot = process.env.P2O_EXAMPLE_SOURCE ?? import.meta.dirname): string {
+  return join(sourceRoot, 'contract-enums.json');
+}
+
+export function readContractEnumTable(path = contractEnumsPath()): ContractEnumTable {
+  const parsed = JSON.parse(readFileSync(path, 'utf8')) as ContractEnumTable;
+  if (parsed?.version !== 1 || !parsed.contracts || typeof parsed.contracts !== 'object') throw new Error('contract-enums.json is not a version-1 table');
+  return parsed;
+}
+
+type JsonNode = Record<string, unknown>;
+
+function walkEnums(node: unknown, path: string, out: Record<string, string[]>): void {
+  if (!node || typeof node !== 'object') return;
+  const entry = node as JsonNode;
+  if (Array.isArray(entry.enum)) { out[path] = entry.enum.map(String); return; }
+  if (entry.properties && typeof entry.properties === 'object') {
+    for (const [key, child] of Object.entries(entry.properties as Record<string, unknown>)) walkEnums(child, path ? `${path}.${key}` : key, out);
+  }
+  if (entry.items) walkEnums(entry.items, `${path}[]`, out);
+  if (Array.isArray(entry.anyOf)) for (const child of entry.anyOf) walkEnums(child, path, out);
+}
+
+/** The same facts read from the supervisor's handoff gate, so the crib cannot drift from it. */
+export function schemaContractEnumTable(): ContractEnumTable {
+  const contracts: ContractEnumTable['contracts'] = {};
+  const json = handoffSchema.jsonSchema as { anyOf?: JsonNode[] };
+  for (const branch of json.anyOf ?? []) {
+    const properties = (branch.properties ?? {}) as Record<string, JsonNode>;
+    const contract = (properties.contract?.const ?? '') as string;
+    if (contract !== 'H1' && contract !== 'H2') continue;
+    const details = properties.details ?? {};
+    const required: Record<string, string[]> = {};
+    if (Array.isArray(details.required)) required.details = (details.required as string[]).slice();
+    const items = details.items as JsonNode | undefined;
+    if (items && Array.isArray(items.required)) required['interfaces[]'] = (items.required as string[]).slice();
+    for (const [key, child] of Object.entries((details.properties ?? {}) as Record<string, JsonNode>)) {
+      const childItems = child.items as JsonNode | undefined;
+      if (childItems && Array.isArray(childItems.required)) required[`${key}[]`] = (childItems.required as string[]).slice();
+      if (child.properties && Array.isArray(child.required)) required[key] = (child.required as string[]).slice();
+    }
+    const enums: Record<string, string[]> = {};
+    walkEnums(details, 'details', enums);
+    contracts[contract] = {
+      rootKeys: Object.keys(properties).sort(),
+      detailsKeys: Object.keys((details.properties ?? {}) as Record<string, JsonNode>).sort(),
+      requiredRootKeys: Array.isArray(branch.required) ? (branch.required as string[]).slice().sort() : [],
+      required, enums: Object.fromEntries(Object.entries(enums).map(([path, values]) => [path.replace(/^details\./, ''), values])),
+    };
+  }
+  return { version: 1, contracts };
+}
+
+/**
+ * Fail loudly at authoring time (scenario construction), never at packet admission: the worker crib must
+ * enumerate exactly the enum values the gate accepts and exactly the required fields per contract.
+ */
+export function assertContractEnumCoverage(table: ContractEnumTable = readContractEnumTable()): void {
+  const expected = schemaContractEnumTable();
+  for (const [contract, schemaEntry] of Object.entries(expected.contracts)) {
+    const crib = table.contracts[contract];
+    if (!crib) throw new Error(`authoring crib is missing contract ${contract}`);
+    const cribEnums = JSON.stringify(crib.enums ?? {}), schemaEnums = JSON.stringify(schemaEntry.enums ?? {});
+    if (cribEnums !== schemaEnums) throw new Error(`authoring crib enum drift for ${contract}: crib=${cribEnums} gate=${schemaEnums}`);
+    const cribRoot = JSON.stringify(crib.rootKeys ?? []), schemaRoot = JSON.stringify(schemaEntry.rootKeys ?? []);
+    if (cribRoot !== schemaRoot) throw new Error(`authoring crib root-key drift for ${contract}: crib=${cribRoot} gate=${schemaRoot}`);
+    const cribRequiredRoot = JSON.stringify(crib.requiredRootKeys ?? []), schemaRequiredRoot = JSON.stringify(schemaEntry.requiredRootKeys ?? []);
+    if (cribRequiredRoot !== schemaRequiredRoot) throw new Error(`authoring crib required-root-key drift for ${contract}: crib=${cribRequiredRoot} gate=${schemaRequiredRoot}`);
+    const cribDetails = JSON.stringify(crib.detailsKeys ?? []), schemaDetails = JSON.stringify(schemaEntry.detailsKeys ?? []);
+    if (cribDetails !== schemaDetails) throw new Error(`authoring crib details-key drift for ${contract}: crib=${cribDetails} gate=${schemaDetails}`);
+    for (const [scope, keys] of Object.entries(schemaEntry.required)) {
+      const covered = crib.required?.[scope] ?? [];
+      for (const key of keys) if (!covered.includes(key)) throw new Error(`authoring crib does not require ${contract} ${scope}.${key}`);
+      for (const key of covered) if (!keys.includes(key)) throw new Error(`authoring crib invents ${contract} ${scope}.${key}`);
+    }
+  }
+}
+
 /** Build the complete owner-approved composition document for the live lab. */
 export function buildScenario(inputs: ScenarioInputs): Scenario {
+  // Authoring-time drift guard: the worker crib must match the packet gate before any worker launches.
+  assertContractEnumCoverage(readContractEnumTable(contractEnumsPath(dirname(inputs.extensionPath))));
   const runId = inputs.runId;
   const configurationDigest = inputs.configurationDigest;
   const sourceDigest = sha256(inputs.snapshotBytes);

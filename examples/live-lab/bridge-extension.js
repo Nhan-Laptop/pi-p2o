@@ -32,7 +32,18 @@ import path from 'node:path';
 import { createHash, randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { Type } from 'typebox';
-
+/**
+ * Authoring-crib enum/required table, shipped next to this extension. The live-lab scenario verifies it
+ * against the supervisor's handoff gate (`assertContractEnumCoverage`) before any worker launches.
+ */
+const CONTRACT_ENUM_TABLE = (() => {
+  try {
+    const table = JSON.parse(fs.readFileSync(new URL('./contract-enums.json', import.meta.url), 'utf8'));
+    return table && table.version === 1 ? table : undefined;
+  } catch {
+    return undefined;
+  }
+})();
 const MAX_PACKET_BYTES = 1024 * 1024;
 const MAX_BRIDGE_FRAME_BYTES = 1024 * 1024;
 const MAX_OBSERVATION_ID_LENGTH = 128;
@@ -258,9 +269,69 @@ function authoringGuide(contract, context, role) {
       );
     }
   }
+  // Machine-checked enum/required guidance: `contract-enums.json` is verified against the supervisor's
+  // handoff gate by scenario.assertContractEnumCoverage() at authoring time, so a drifting packet fails
+  // before a worker launches instead of at admission.
+  const table = CONTRACT_ENUM_TABLE?.contracts?.[contract];
+  if (table) {
+    const required = Object.entries(table.required || {}).map(([scope, keys]) => `${scope}: ${keys.join(', ')}`).join('; ');
+    const enums = Object.entries(table.enums || {}).map(([path, values]) => `${path} = ${values.map(value => JSON.stringify(value)).join(' | ')}`).join('; ');
+    rules.push(`Required ${contract} fields (a missing/extra field is rejected at admission): ${required}.`);
+    rules.push(`Exact ${contract} root keys (an extra root key or a missing required one is rejected): ${table.rootKeys.join(', ')}. Contract extras stay inside details.`);
+    rules.push(`Exact ${contract} enum values (any other spelling is rejected at admission): ${enums}.`);
+  } else {
+    rules.push(`Enum guidance for ${contract} is unavailable in this worker build; keep to the skeleton's literal values and call p2o_context before authoring.`);
+  }
   return { contract, rules, packet };
 }
 
+/**
+ * Machine-checked authoring shape. A drifting packet (unknown root key, missing required field, enum value
+ * the gate rejects) is refused here, at authoring time, with the exact paths instead of being discovered at
+ * admission. The table is verified against the supervisor gate by scenario.assertContractEnumCoverage().
+ */
+export function cribViolations(packet, contract, table) {
+  const entry = table?.contracts?.[contract];
+  if (!entry) return [];
+  if (!packet || typeof packet !== 'object' || Array.isArray(packet)) return ['packet must be a JSON object'];
+  const violations = [];
+  for (const key of Object.keys(packet)) {
+    if (entry.rootKeys.includes(key)) continue;
+    const belongsInDetails = (entry.detailsKeys || []).includes(key);
+    violations.push(`unknown root key ${JSON.stringify(key)}${belongsInDetails ? ` — ${JSON.stringify(key)} belongs inside details` : ''} (allowed root keys: ${entry.rootKeys.join(', ')})`);
+  }
+  for (const key of entry.requiredRootKeys || []) if (!(key in packet)) violations.push(`missing required root key ${JSON.stringify(key)}`);
+  const details = packet.details && typeof packet.details === 'object' && !Array.isArray(packet.details) ? packet.details : undefined;
+  for (const [scope, keys] of Object.entries(entry.required || {})) {
+    if (!details) break;
+    const array = scope.endsWith('[]');
+    const name = array ? scope.slice(0, -2) : scope;
+    const value = scope === 'details' ? details : details[name];
+    const list = scope === 'details' ? [details] : Array.isArray(value) ? value : value && typeof value === 'object' ? [value] : [];
+    for (const key of keys) {
+      for (let index = 0; index < list.length; index++) {
+        if (!(key in list[index])) violations.push(`missing required field ${scope}.${key} at ${scope === 'details' ? '$' : `${name}[${index}]`}`);
+      }
+    }
+  }
+  for (const [path, values] of Object.entries(entry.enums || {})) {
+    let current = details ? [details] : [];
+    for (const segment of path.split('.')) {
+      const array = segment.endsWith('[]');
+      const key = array ? segment.slice(0, -2) : segment;
+      const next = [];
+      for (const node of current) {
+        const value = node?.[key];
+        if (value === undefined) continue;
+        if (array) { if (Array.isArray(value)) next.push(...value); }
+        else next.push(value);
+      }
+      current = next;
+    }
+    for (const value of current) if (!values.includes(value)) violations.push(`${path} must be one of ${values.map(candidate => JSON.stringify(candidate)).join(' | ')}, received ${JSON.stringify(value ?? null)}`);
+  }
+  return violations;
+}
 /** Collect the evidence references the packet makes, with the JSON path that made them. */
 function evidenceReferences(value, path = '$', found = []) {
   if (Array.isArray(value)) {
@@ -446,6 +517,12 @@ export default function bridgeExtension(pi) {
       const unknown = evidenceReferences(packet).filter(reference => !known.has(reference.id));
       if (unknown.length) {
         throw new Error(`packet references evidenceIds this session never received: ${unknown.slice(0, 8).map(entry => `${entry.id} at ${entry.path}`).join(', ')}. Evidence minted for this session: ${known.size ? [...minted.values()].map(entry => `${entry.evidenceId} (kind=${entry.kind}${entry.observationId ? `, from ${entry.observationId}` : ''})`).join('; ') : 'none yet'}`);
+      }
+      // Authoring-time shape gate: the packet must match the machine-checked contract table before it is
+      // written, so a drifting packet fails here with exact paths instead of at supervisor admission.
+      const violations = cribViolations(packet, packet.contract, CONTRACT_ENUM_TABLE);
+      if (violations.length) {
+        throw new Error(`packet does not match the ${String(packet.contract)} authoring contract; fix exactly these and call p2o_packet again:\n- ${violations.slice(0, 12).join('\n- ')}`);
       }
       const target = path.join(config.workspace, 'handoff.packet.json');
       fs.writeFileSync(target, bytes, { mode: 0o600, flag: 'w' });

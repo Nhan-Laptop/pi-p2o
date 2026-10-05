@@ -16,7 +16,7 @@ import { migrate, STORE_SCHEMA_VERSION } from './migrations.js';
 import { redactForExport } from './redaction.js';
 import {
   StoreError, type StoreOptions, type WorkspaceLease, type BeginAttemptInput, type AttemptUpdate,
-  type BudgetConsumption, type StoredResult, type ResultInput, type ResultAdmission,
+  type BudgetConsumption, type BudgetReservation, type BudgetRelease, type StoredResult, type ResultInput, type ResultAdmission,
   type EventInput, type DurableEvent, type OutboxEntry, type ClaimedOutboxEntry,
   type ReconciliationObservation, type ReconciliationReport, type AttemptLease,
 } from './types.js';
@@ -266,7 +266,20 @@ export class DurableStore {
       return true;
     });
   }
-  consumeBudget(input: BudgetConsumption): BudgetUsage {
+  consumeBudget(input: BudgetConsumption): BudgetUsage { return this.chargeBudget(input); }
+  /**
+   * Mint a durable pre-dispatch reservation and charge it. The returned id is recorded in the
+   * `budget.consumed` event and is the only handle that can release exactly this charge (once).
+   */
+  reserveBudget(input: BudgetReservation): { reservationId: string; usage: BudgetUsage } {
+    ensure(Object.keys(input).every(k => ['attemptId', 'leaseToken', 'targetId', 'toolCalls', 'requests'].includes(k)), 'budget-input', 'Unknown budget reservation field');
+    const delta = budgetUsageSchema.parse({ requests: input.requests ?? 0, bytes: 0, toolCalls: input.toolCalls ?? 0, tokens: 0, costUsd: 0 });
+    ensure(delta.toolCalls === 1 && delta.requests <= 1, 'reservation-shape', 'A reservation is exactly one tool call and at most one target request');
+    const reservationId = randomUUID();
+    const usage = this.chargeBudget({ attemptId: input.attemptId, leaseToken: input.leaseToken, ...(input.targetId ? { targetId: input.targetId } : {}), toolCalls: delta.toolCalls, requests: delta.requests }, reservationId);
+    return { reservationId, usage };
+  }
+  private chargeBudget(input: BudgetConsumption, reservationId?: string): BudgetUsage {
     ensure(Object.keys(input).every(k => ['attemptId', 'leaseToken', 'targetId', ...usageKeys].includes(k)), 'budget-input', 'Unknown budget consumption field');
     const delta = budgetUsageSchema.parse(Object.fromEntries(usageKeys.map(k => [k, input[k] === undefined ? 0 : input[k]])));
     return this.transaction(() => {
@@ -289,9 +302,69 @@ export class DurableStore {
       }
       const usage = budgetUsageSchema.parse(Object.fromEntries(usageKeys.map(k => [k, a.usage[k] + delta[k]])));
       this.saveAttempt({ ...a, usage, updatedAt: now });
-      this.append({ runId: a.runId, taskId: a.taskId, attemptId: a.attemptId, type: 'budget.consumed', payload: { ...(input.targetId ? { targetId: input.targetId } : {}), delta: delta as unknown as JsonObject, usage: usage as unknown as JsonObject } }, now);
+      this.append({ runId: a.runId, taskId: a.taskId, attemptId: a.attemptId, type: 'budget.consumed', payload: { ...(input.targetId ? { targetId: input.targetId } : {}), delta: delta as unknown as JsonObject, ...(reservationId ? { reservationId } : {}), usage: usage as unknown as JsonObject } }, now);
       return usage;
     });
+  }
+  /**
+   * Release a reservation by identity, exactly once. The released counters come from the RECORDED
+   * reservation (`budget.consumed` event carrying `reservationId`), never from the caller, and a replay of
+   * the same id is refused — so a release can never be replayed to refund another call's charge. Fail-closed
+   * reservation-before-dispatch is unchanged: an exhausted budget refuses before any traffic.
+   */
+  releaseReservation(input: BudgetRelease): BudgetUsage {
+    ensure(Object.keys(input).every(k => ['attemptId', 'leaseToken', 'reservationId', 'reason', 'code', 'toolPlane'].includes(k)), 'budget-input', 'Unknown budget release field');
+    ensure(typeof input.reason === 'string' && input.reason.trim().length > 0 && input.reason.length <= 256, 'budget-input', 'Budget release requires a bounded reason');
+    ensure(typeof input.code === 'string' && /^[A-Z][A-Z0-9_]{0,63}$/.test(input.code), 'budget-input', 'Budget release requires a structured refusal code');
+    ensure(typeof input.toolPlane === 'boolean', 'budget-input', 'Budget release requires the refusal class');
+    ensure(ID_PATTERN.test(input.reservationId), 'budget-input', 'Budget release requires a reservation id');
+    return this.transaction(() => {
+      const a = this.needAttempt(input.attemptId); const now = this.now();
+      this.fence(a, input.leaseToken, now);
+      const rows = this.rows("SELECT type, payload_json FROM events WHERE run_id = ? AND attempt_id = ? AND type IN ('budget.consumed', 'budget.released') ORDER BY sequence", a.runId, a.attemptId);
+      let recorded: { toolCalls: number; requests: number; targetId?: string } | undefined, alreadyReleased = false;
+      for (const row of rows) {
+        let payload: Record<string, unknown>;
+        try { payload = JSON.parse(String(row.payload_json)) as Record<string, unknown>; } catch { continue; }
+        if (payload.reservationId !== input.reservationId) continue;
+        if (row.type === 'budget.released') { alreadyReleased = true; continue; }
+        const delta = (payload.delta ?? {}) as Record<string, unknown>;
+        recorded = { toolCalls: Number(delta.toolCalls ?? 0), requests: Number(delta.requests ?? 0), ...(typeof payload.targetId === 'string' ? { targetId: payload.targetId } : {}) };
+      }
+      ensure(recorded || alreadyReleased, 'reservation-unknown', 'No reservation with this identity exists for the attempt');
+      ensure(!alreadyReleased, 'reservation-already-released', 'This reservation was already released; exactly-once release is enforced');
+      const reservation = recorded!;
+      ensure(reservation.toolCalls === 1 && reservation.requests <= 1, 'reservation-shape', 'Recorded reservation is not a single pre-dispatch call');
+      for (const k of usageKeys) ensure(a.usage[k] - (k === 'toolCalls' ? reservation.toolCalls : k === 'requests' ? reservation.requests : 0) >= 0, 'budget-release-underflow', `Released ${k} exceeds the attempt's charged usage`);
+      if (reservation.targetId) ensure(this.needTask(a.taskId).scope.targetIds.includes(reservation.targetId), 'target-budget', 'Reservation target is not in task scope');
+      if (reservation.requests > 0) {
+        ensure(reservation.targetId, 'target-required', 'Releasing target requests requires the recorded scoped target');
+        const used = this.getTargetUsage(a.runId, reservation.targetId);
+        ensure(used - reservation.requests >= 0, 'budget-release-underflow', 'Released requests exceed the target usage');
+        this.exec('UPDATE target_usage SET requests = requests - ? WHERE run_id = ? AND target_id = ?', reservation.requests, a.runId, reservation.targetId);
+      }
+      const usage = budgetUsageSchema.parse({ ...a.usage, toolCalls: a.usage.toolCalls - reservation.toolCalls, requests: a.usage.requests - reservation.requests });
+      this.saveAttempt({ ...a, usage, updatedAt: now });
+      this.append({ runId: a.runId, taskId: a.taskId, attemptId: a.attemptId, type: 'budget.released', payload: { reservationId: input.reservationId, ...(reservation.targetId ? { targetId: reservation.targetId } : {}), delta: { requests: reservation.requests, bytes: 0, toolCalls: reservation.toolCalls, tokens: 0, costUsd: 0 } as unknown as JsonObject, reason: input.reason, code: input.code, toolPlane: input.toolPlane, usage: usage as unknown as JsonObject } }, now);
+      return usage;
+    });
+  }
+  /**
+   * [R-5] Complete per-attempt refusal accounting for the supervisor's no-progress breaker: the number of
+   * CONSECUTIVE tool-plane `budget.released` events after this attempt's last non-tool-plane release, and the
+   * latest tool-plane code. One indexed query over this attempt's own release rows — no run-wide page cap, so
+   * a long run can never drop late releases on a controller restart.
+   */
+  attemptReleaseStreak(runId: string, attemptId: string): { refusals: number; code: string } {
+    const rows = this.rows("SELECT payload_json FROM events WHERE run_id = ? AND attempt_id = ? AND type = 'budget.released' ORDER BY sequence", runId, attemptId);
+    let refusals = 0, code = 'none';
+    for (const row of rows) {
+      let payload: Record<string, unknown>;
+      try { payload = JSON.parse(String(row.payload_json)) as Record<string, unknown>; } catch { continue; }
+      if (payload.toolPlane === true) { refusals += 1; code = typeof payload.code === 'string' ? payload.code : 'none'; }
+      else { refusals = 0; code = 'none'; }
+    }
+    return { refusals, code };
   }
   getTargetUsage(runId: string, targetId: string): number { return Number(this.row('SELECT requests FROM target_usage WHERE run_id = ? AND target_id = ?', runId, targetId)?.requests ?? 0); }
 

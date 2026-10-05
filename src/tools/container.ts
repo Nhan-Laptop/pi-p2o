@@ -57,9 +57,21 @@ export interface ContainerSandboxOptions extends FilesystemOptions {
   controllerLifecycle?: ContainerLifecycleBinding;
   runner?: EngineRunner;
   fixtureAcknowledgement?: 'inert-engine-fixture-not-container-isolation';
+  /**
+   * Bounded bring-up budget for sandbox readiness (engine/image inspection and the probe container run
+   * that cold-starts the pinned pack). It is NOT the operation deadline: steady-state tool work keeps the
+   * fixed per-CLI cap below, and the broker's operation timer only starts once preflight reports ready.
+   * Defaults to 30_000 ms; never unbounded, never a fallback to an unsandboxed path.
+   */
+  startupBudgetMs?: number;
 }
 
 const PACK_VERSION = '1.0.0';
+const DEFAULT_STARTUP_BUDGET_MS = 30_000;
+/** Steady-state engine CLI cap for real work; the broker's operation timer is the outer bound. */
+const OPERATION_CLI_TIMEOUT_MS = 15_000;
+/** Termination proofs stay short: a killed CLI is never treated as termination. */
+const TERMINATION_CLI_TIMEOUT_MS = 1_000;
 const NODE_VERSION = 'v22.14.0';
 const IMAGE_ID_PATTERN = /^sha256:[a-f0-9]{64}$/;
 const REPO_DIGEST_PATTERN = /^[\w./:-]+@sha256:[a-f0-9]{64}$/;
@@ -114,6 +126,8 @@ export function createContainerSandbox(settings: ContainerSandboxOptions): Sourc
   hash(options.workerSha256); hash(options.sourceSha256); hash(options.seccompSha256);
   invariant(isAbsolute(options.seccompPath) && !/[,:\n]/.test(options.seccompPath), 'INVALID_INPUT', 'Absolute pinned seccomp profile required');
   invariant(options.qualification?.acknowledgement === 'containers-share-host-kernel-not-hostile-code-isolation' && options.qualification.dedicatedLab === true && typeof options.qualification.nativeEnabled === 'boolean', 'UNAVAILABLE', 'Explicit dedicated-lab qualification required');
+  invariant(options.startupBudgetMs === undefined || (Number.isSafeInteger(options.startupBudgetMs) && options.startupBudgetMs >= 1000 && options.startupBudgetMs <= 300_000), 'INVALID_INPUT', 'startupBudgetMs must be a bounded 1s..300s bring-up budget');
+  const startupBudgetMs = options.startupBudgetMs ?? DEFAULT_STARTUP_BUDGET_MS;
   text(options.qualification.approvedBy, 'qualification.approvedBy'); timestamp(options.qualification.expiresAt, 'qualification.expiresAt');
   const filesystem = new SandboxFilesystem(options);
   invariant(!/[,:\n]/.test(filesystem.inputRoot), 'FILESYSTEM_DENIED', 'Input mount path contains engine separators');
@@ -130,7 +144,18 @@ export function createContainerSandbox(settings: ContainerSandboxOptions): Sourc
   const runner = options.runner ?? runFixedProcess;
   invariant(!options.runner || options.fixtureAcknowledgement === 'inert-engine-fixture-not-container-isolation', 'UNAVAILABLE', 'Injected engine runner requires explicit inert-fixture acknowledgement');
   const boundary = options.runner ? 'inert-engine-fixture:no-container-isolation-attestation:loopback-only' : 'dedicated-offline-container:shared-kernel:broker-only-target-egress';
-  const configurationDigest = digest({ ...options, runner: undefined, containerLifecycle: lifecycle || controllerLifecycle ? { protocol: 'durable-create-start-v1', labels: 'exact-session-run-task-attempt-configuration' } : undefined, mode: 'container', nodeVersion: NODE_VERSION, packVersion: PACK_VERSION, imagePin });
+  /**
+   * The configuration digest attests the OWNER-APPROVED security-relevant sandbox configuration (pack image +
+   * content layer pin, engine, seccomp, resource limits, filesystem roots, qualification) so evidence
+   * admission can bind a receipt to the approved scope document.
+   *
+   * Run-scoped lifecycle bookkeeping is deliberately EXCLUDED. The durable create/start lifecycle binding
+   * (`lifecycle`/`controllerLifecycle`) is allocated per run by the composition AFTER owner consent, so
+   * folding it into this digest would make the runtime sandbox digest differ from the owner-approved scope
+   * digest and no broker receipt could ever be admitted (`broker-input`). Lifecycle ownership is attested
+   * separately by the runtime/guardian receipts and the exact container session labels, never by this digest.
+   */
+  const configurationDigest = digest({ ...options, runner: undefined, lifecycle: undefined, controllerLifecycle: undefined, mode: 'container', nodeVersion: NODE_VERSION, packVersion: PACK_VERSION, imagePin });
   let verifiedImageId: string | undefined;
   let ready = false;
   /** Last preflight failure, so callers receive the specific fail-closed code, not a generic denial. */
@@ -138,7 +163,20 @@ export function createContainerSandbox(settings: ContainerSandboxOptions): Sourc
   const assertQualified = () => invariant(Date.now() < Date.parse(options.qualification.expiresAt), 'EXPIRED', 'Lab qualification expired');
   /** Re-raises the specific preflight refusal so callers can distinguish identity drift from unavailability. */
   const assertReady = () => { if (!ready) throw failure ?? new PolicyError('UNAVAILABLE', 'Container preflight failed or not performed'); };
-  const engine = (args: readonly string[], input?: string, signal?: AbortSignal, cleanup = false) => runner(options.enginePath, args, { input, timeoutMs: cleanup ? 1000 : 15000, maxOutputBytes: 4194304, signal });
+  /**
+   * Bring-up CLI calls (image/engine inspection, container create, the probe run) get the bounded startup
+   * budget; steady-state operations keep the fixed 15s cap, and termination proofs stay at 1s. The probe run
+   * is identified by its own request bytes, so no mutable phase flag can leak the longer budget into worker
+   * traffic. `cleanup` always wins. A cold packed image therefore never fails inside the operation deadline.
+   */
+  const cliTimeoutMs = (args: readonly string[], input?: string, cleanup = false): number => {
+    if (cleanup) return TERMINATION_CLI_TIMEOUT_MS;
+    const verb = args[0];
+    if (verb === 'create' || verb === 'inspect' || verb === 'version' || verb === 'image') return startupBudgetMs;
+    if (verb === 'start' && typeof input === 'string' && input.includes('"operation":"preflight"')) return startupBudgetMs;
+    return OPERATION_CLI_TIMEOUT_MS;
+  };
+  const engine = (args: readonly string[], input?: string, signal?: AbortSignal, cleanup = false) => runner(options.enginePath, args, { input, timeoutMs: cliTimeoutMs(args, input, cleanup), maxOutputBytes: 4194304, signal });
 
   function runArgs(name: string): string[] {
     return ['run', '--name', name, '--rm', '--pull=never', '--network=none', '--read-only', '--user=65532:65532', '--cap-drop=ALL', '--security-opt=no-new-privileges:true', `--security-opt=seccomp=${options.seccompPath}`, '--pids-limit=32', '--memory=256m', '--memory-swap=256m', '--cpus=0.5', '--ulimit=nofile=64:64', '--ulimit=core=0:0', '--tmpfs=/tmp:rw,noexec,nosuid,nodev,size=8388608,mode=1777', '--tmpfs=/outputs:rw,noexec,nosuid,nodev,size=8388608,mode=1777', '--mount', `type=bind,src=${filesystem.inputRoot},dst=/inputs,readonly,bind-propagation=rprivate`, '--env=HOME=/tmp', '--env=NODE_OPTIONS=', '--log-driver=none', '--entrypoint=/usr/local/bin/node', '-i', options.image, '/opt/p2o/offline-worker.mjs'];

@@ -12,7 +12,7 @@ import { spawnSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { cp, mkdir, mkdtemp, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, sep } from 'node:path';
 import { compilerPath, nodeTypeRoots, repoRoot } from '../end-to-end/compile.mjs';
 
 const requireLive = process.argv.includes('--require-live');
@@ -24,11 +24,12 @@ async function compileLiveSlice() {
   await mkdir(source, { recursive: true });
   for (const directory of ['src', 'examples', 'tests/live']) {
     if (!existsSync(join(repoRoot, directory))) continue;
-    await cp(join(repoRoot, directory), join(source, directory), { recursive: true });
+    // Private run artifacts (`.runs`, including unix sockets) are never part of the compiled slice.
+    await cp(join(repoRoot, directory), join(source, directory), { recursive: true, filter: entry => !entry.split(sep).includes('.runs') });
   }
   const provisionedModules = join(repoRoot, 'node_modules');
   if (existsSync(provisionedModules) && !existsSync(join(source, 'node_modules'))) await symlink(provisionedModules, join(source, 'node_modules'), 'dir');
-  const files = ['tests/live/live-lab.test.ts', 'src/runtime/guardian.ts', 'src/runtime/pi-receipts.ts'].map(entry => join(source, entry));
+  const files = ['tests/live/live-lab.test.ts', 'tests/live/container-coldstart.test.ts', 'src/runtime/guardian.ts', 'src/runtime/pi-receipts.ts'].map(entry => join(source, entry));
   for (const file of files) if (!existsSync(file)) throw new Error(`Missing compile entry ${file}`);
   const compile = spawnSync(compilerPath(), [
     '--target', 'ES2022', '--module', 'ES2022', '--moduleResolution', 'bundler',
@@ -46,7 +47,8 @@ async function compileLiveSlice() {
 
 const build = await compileLiveSlice();
 try {
-  const result = spawnSync(process.execPath, ['--test', '--test-concurrency=1', join(build.out, 'tests/live/live-lab.test.js')], {
+  const testFiles = ['live-lab.test.js', 'container-coldstart.test.js'].map(name => join(build.out, 'tests/live', name));
+  const result = spawnSync(process.execPath, ['--test', '--test-concurrency=1', ...testFiles], {
     cwd: build.out,
     stdio: 'inherit',
     timeout: 600_000,

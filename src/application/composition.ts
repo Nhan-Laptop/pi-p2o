@@ -16,7 +16,7 @@ import { defaultResolver } from '../tools/http.js';
 import { createPolicy, modelPriceKey, PINNED_MODEL_PRICES, PolicyError, TargetBudget, type Policy, type Scope } from '../policy/index.js';
 import {
   CapabilityRegistry, createBrowserPack, createContainerSandbox, createDefaultRegistry, createHostBrowserSandbox, createLocalFixtureSandbox,
-  createProxyPack, createToolBroker, validateApprovedTemplates,
+  createProxyPack, createToolBroker, ToolExecutionError, validateApprovedTemplates,
   type ApprovedFuzzTemplate, type BrowserPack, type DnsResolver, type ExecutionSandbox, type PackSessionFence, type ProxyPack, type ToolBroker,
 } from '../tools/index.js';
 import { CAPABILITIES } from '../policy/index.js';
@@ -78,6 +78,15 @@ import { recoverBrowserResources } from '../tools/browser-lifecycle.js';
 import { recoverContainerResources, type ContainerSandboxOptions, type SourceContainerSandbox } from '../tools/container.js';
 import { createControllerContainerOwner, type ControllerContainerOwner } from './container-owner.js';
 import type { ApprovedSourceContainerBinding } from './source-binding/index.js';
+/**
+ * Reservations are taken before dispatch so an already exhausted task/run/target budget refuses without any
+ * target traffic. A call that then provably never dispatched (broker pre-dispatch refusal: capability/input
+ * validation, policy authorize, session fence, sandbox bring-up, halt fence) must not keep those counters, so
+ * the exact reservation is released. Dispatched work — including redirects and failures — stays charged.
+ */
+export function isPreDispatchRefusal(error: unknown): boolean {
+  return error instanceof ToolExecutionError && !error.dispatched;
+}
 export interface ApplicationOverrides {
   /** Controller-issued immutable binding; never loaded from model/worker JSON. */
   sourceBinding?: ApprovedSourceContainerBinding;
@@ -1491,14 +1500,16 @@ export async function createApplication(configInput: ApplicationConfigWithSpend,
           ...(input.url ? { url: input.url } : {}), ...(input.method ? { method: input.method } : {}), ...(input.accountId ? { accountId: input.accountId } : {}),
         } as Parameters<Policy['authorize']>[0]);
         targetId = decision.target?.id;
-      } catch { /* the broker produces the immutable denial receipt below; limits are still charged */ }
+      } catch { /* the broker produces the immutable denial receipt below; a pre-dispatch refusal is released there */ }
       // Absolute run/task/target limits are charged BEFORE any dispatch, including calls that fail, are denied,
       // or redirect: the store rejects the attempt/task/run overage first, and the broker reserves the
       // target-wide request/rate/concurrency budget before the connection is created. A destination denial
       // resolves no target, and the store refuses an unscoped request count, so the attempted request is
       // attributed to the first owner-approved network target in the task scope.
       const budgetTargetId = targetId ?? (offline ? undefined : config.policy.targets.find(candidate => requireTask(config, attempt.taskId).scope.targetIds.includes(candidate.id))?.id);
-      supervisor.consumeBudget(attempt.attemptId, {
+      // One durable reservation per bridge call: its identity is the only handle that can release this
+      // charge, so a replay can never refund another call's charge.
+      const reservation = supervisor.reserveBudget(attempt.attemptId, {
         toolCalls: 1,
         ...(offline ? {} : { requests: 1 }),
         ...(budgetTargetId ? { targetId: budgetTargetId } : {}),
@@ -1510,6 +1521,16 @@ export async function createApplication(configInput: ApplicationConfigWithSpend,
         const code = error instanceof Error && 'code' in error && typeof error.code === 'string' ? error.code : 'broker-error';
         const detail = error instanceof Error ? error.message.slice(0, 240) : 'unknown error';
         log('entry.broker-refused', `${check.tool} ${code}: ${detail}`);
+        // Reservation-before-dispatch is preserved (an exhausted budget refuses without traffic). A refusal that
+        // never dispatched gives the reservation back so it cannot exhaust a task that collected nothing.
+        if (isPreDispatchRefusal(error)) {
+          try {
+            supervisor.releaseBudget(attempt.attemptId, { reservationId: reservation.reservationId, reason: `pre-dispatch refusal (${code})`, refusal: { code } });
+          } catch (releaseError) {
+            // A failed release must never mask the refusal; the durable counters stay visible.
+            log('entry.broker-release-failed', `${check.tool} ${code}: ${releaseError instanceof Error ? releaseError.message.slice(0, 120) : 'unknown'}`);
+          }
+        }
         throw new ApplicationError(code, `${check.tool} failed: ${detail}`);
       }
       // No late side effects: an aborted request must not mint evidence after cancellation/close/deadline.

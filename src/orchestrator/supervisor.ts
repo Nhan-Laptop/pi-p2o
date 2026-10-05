@@ -1,5 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { mkdirSync, realpathSync } from 'node:fs';
+// The broker owns the tool-plane refusal classification; the supervisor must count exactly the same codes.
+import { isToolPlaneRefusal } from '../tools/broker.js';
 import { join } from 'node:path';
 import {
   assertPlanBatchMatchesProposal, canonicalJson, digestJson, isTerminalLifecycle, planProposalSchema, validatePlanProposal, validateTaskScope,
@@ -99,6 +101,13 @@ interface RunState {
    * or an admitted turn whose charge could not be persisted). Such a run is truncated, never `completed`.
    */
   spendTruncated?: Map<string, string>;
+  /**
+   * [F4] attemptId → no-progress marker + the time it was first seen unchanged. Reset whenever the attempt
+   * collects an observation or produces an accepted packet, so only a never-progressing attempt is halted.
+   */
+  noProgress?: Map<string, { marker: string; since: number }>;
+  /** [F4] taskIds terminalized because their dependencies failed without an accepted handoff packet. */
+  dependencyBlocked?: Set<string>;
 }
 
 interface LaunchOverride {
@@ -120,6 +129,15 @@ export class Supervisor implements SupervisorApi {
   private readonly tasks = new Map<string, TaskRecord>();
   private readonly chains = new Map<string, Promise<unknown>>();
   private readonly aborts = new Map<string, AbortController>();
+  /**
+   * [F-3] Non-refundable per-attempt pre-dispatch refusal streak. A refunded reservation (R2) leaves the
+   * budget counters at zero, so this counter — fed by `releaseBudget` — is what lets the no-progress
+   * breaker still see a dead tool plane. Cleared for any attempt that collected an observation and for
+   * attempts that are no longer live.
+   */
+  private readonly refusalStreak = new Map<string, { refusals: number; code: string }>();
+  /** Attempts whose durable refusal baseline has been loaded into `refusalStreak` on this controller. */
+  private readonly refusalsDerived = new Set<string>();
   private readonly lastStatus = new Map<string, string>();
   private readonly emittedCursors = new Map<string, number>();
   private readonly probed = new Set<string>();
@@ -151,6 +169,13 @@ export class Supervisor implements SupervisorApi {
   private get operationTimeoutMs(): number { return this.options.operationTimeoutMs ?? 10_000; }
   private get stopReserveMs(): number { return this.options.stopReserveMs ?? 5_000; }
   private get automatic(): boolean { return this.options.automatic !== false; }
+  private get noProgressWindowMs(): number { return this.options.noProgress?.windowMs ?? 300_000; }
+  private get noProgressMinToolCalls(): number { return this.options.noProgress?.minToolCalls ?? 3; }
+  /**
+   * Non-refundable refusal limit. Pre-dispatch refusals give their budget reservation back (R2), so the
+   * budget counters cannot prove a dead tool plane; the supervisor counts the releases themselves.
+   */
+  private get noProgressRefusalLimit(): number { return this.options.noProgress?.consecutiveRefusals ?? 3; }
   private get authority(): Authority { return this.options.authority; }
   private get store(): import('../store/index.js').DurableStore { return this.options.store; }
 
@@ -850,6 +875,7 @@ export class Supervisor implements SupervisorApi {
       const before = this.leaseCount(runId);
       if (await this.observeAttempts(state, true)) progressed = true;
       if (await this.reconcileLeases(state)) progressed = true;
+      if (await this.enforceNoProgress(state)) progressed = true;
       if (await this.schedule(state)) progressed = true;
       if (await this.drain(state)) progressed = true;
       if (await this.complete(state)) progressed = true;
@@ -885,6 +911,18 @@ export class Supervisor implements SupervisorApi {
     const run = this.store.getRun(state.runId);
     if (!run || TERMINAL_RUN.has(run.state)) return;
     state.timer = this.clock.setTimeout(() => { state.timer = undefined; void this.pumpSafely(state.runId); }, this.pollMs);
+  }
+
+  /**
+   * Owner-approved controller handover: stop this instance's own pumping and drop its local references WITHOUT
+   * aborting the owned executions. The runtimes keep running and are adopted by the replacement controller
+   * through the durable leases/receipts (the crash-recovery path); `dispose()` is the fencing shutdown and
+   * would make a live adoption observe a cancelled runtime.
+   */
+  handover(): void {
+    this.disposed = true;
+    for (const state of this.runs.values()) if (state.timer !== undefined) { this.clock.clearTimeout(state.timer); state.timer = undefined; }
+    this.aborts.clear();
   }
 
   dispose(): void {
@@ -1247,6 +1285,8 @@ export class Supervisor implements SupervisorApi {
       })());
     }
     await Promise.all(launches);
+    // A task whose dependencies already failed can never launch; terminalize it so the run can complete.
+    if (this.terminalizeBlockedTasks(state)) progress = true;
     return progress;
   }
 
@@ -1392,7 +1432,8 @@ export class Supervisor implements SupervisorApi {
     // [T10] A run cut short by a model-spend refusal (or a paid-but-unpersisted turn) is a truncated run,
     // not a completed one, even though every task is terminal.
     const truncated = this.spendTruncation(state);
-    const target = state.cancelRequested ? 'cancelled' : truncated.truncated ? 'failed' : 'completed';
+    const blocked = this.dependencyBlocked(state);
+    const target = state.cancelRequested ? 'cancelled' : truncated.truncated || blocked.blocked ? 'failed' : 'completed';
     try { this.store.setRunState(state.runId, target); }
     catch (error) {
       this.event(state.runId, 'orchestrator.completion-rejected', { code: errorCode(error), message: errorMessage(error).slice(0, 256) });
@@ -1409,6 +1450,7 @@ export class Supervisor implements SupervisorApi {
       returned: results.filter(r => r.decision.status !== 'accepted').length,
       terminal: tasks.filter(t => isTerminalLifecycle(t.lifecycleState)).length,
       ...(truncated.truncated ? { truncation: 'model-spend-refusal', truncatedTaskIds: truncated.taskIds.slice(0, 8) } : {}),
+      ...(blocked.blocked ? { truncation: 'dependency-failed', blockedTaskIds: blocked.taskIds.slice(0, 8) } : {}),
     });
     return true;
   }
@@ -1440,6 +1482,152 @@ export class Supervisor implements SupervisorApi {
     }
     const taskIds = [...recorded.keys()].filter(taskId => this.store.getTask(taskId)?.packetState !== 'accepted');
     return { truncated: taskIds.length > 0, taskIds };
+  }
+
+  /**
+   * [F4] No-progress circuit breaker. A live attempt that has never collected a single observation and has
+   * never produced an accepted packet is burning provider turns on a dead tool plane. Once it has charged at
+   * least `minToolCalls` tool calls and `windowMs` has elapsed with the same progress marker, the attempt is
+   * terminated with the explicit reason. Termination stops the owned runtime, so provider turns stop being
+   * charged; absolute deadlines and owner cancellation keep their own semantics. Halt state is attempt-scoped
+   * and dropped when the attempt is no longer live, so a retry starts from a clean marker.
+   */
+  private async enforceNoProgress(state: RunState): Promise<boolean> {
+    const refusalLimit = this.noProgressRefusalLimit;
+    if (this.noProgressWindowMs <= 0 && refusalLimit <= 0) return false;
+    state.noProgress ??= new Map();
+    let progress = false;
+    const seen = new Set<string>();
+    for (const task of this.store.listTasks(state.runId)) {
+      const lease = this.store.getLease(task.taskId);
+      if (!lease) continue;
+      const attempt = this.store.getAttempt(lease.attemptId);
+      if (!attempt || isTerminalLifecycle(attempt.lifecycleState)) continue;
+      seen.add(attempt.attemptId);
+      const collected = this.store.listEvidence(state.runId).filter(e => e.attemptId === attempt.attemptId && e.kind !== 'runtime' && e.kind !== 'log').length;
+      const accepted = this.store.listResults(state.runId, task.taskId).filter(result => result.decision.status === 'accepted').length;
+      // An attempt that ever collected an observation (or produced an accepted packet) is never halted as
+      // "no-progress": only its absolute deadline and explicit cancellation may end it from here on.
+      if (collected > 0 || accepted > 0) { state.noProgress.delete(attempt.attemptId); this.refusalStreak.delete(attempt.attemptId); continue; }
+      // [F-3] Non-refundable refusal streak. A refunded pre-dispatch reservation (R2) leaves the budget
+      // counters at zero, so the refusal itself — counted in `releaseBudget` — is the only non-refundable
+      // evidence that the tool plane is dead. Without this the breaker could never fire after a refund.
+      let refusals = this.refusalStreak.get(attempt.attemptId);
+      if (!this.refusalsDerived.has(attempt.attemptId)) {
+        // [R-2] Seed once from the durable release ledger: it already includes every release this controller
+        // and any prior controller wrote (each release is a durable `budget.released` event), so a restart
+        // cannot lose the non-refundable evidence of a dead plane.
+        refusals = this.derivedRefusalStreak(state, attempt.attemptId);
+        this.refusalsDerived.add(attempt.attemptId);
+        if (refusals.refusals > 0) this.refusalStreak.set(attempt.attemptId, refusals);
+      } else if (!refusals) {
+        refusals = { refusals: 0, code: 'none' };
+      }
+      if (refusalLimit > 0 && refusals && refusals.refusals >= refusalLimit) {
+        this.event(state.runId, 'orchestrator.no-progress-halt', {
+          attemptId: attempt.attemptId, refusals: refusals.refusals, lastCode: refusals.code,
+          toolCalls: attempt.usage.toolCalls, tokens: attempt.usage.tokens,
+        }, task.taskId, attempt.attemptId);
+        const detail = `no-progress: ${refusals.refusals} consecutive pre-dispatch tool refusals (${refusals.code}) with zero collected observations and no accepted packet`;
+        if (await this.terminate(state, task, attempt, 'failed', detail)) { state.noProgress.delete(attempt.attemptId); this.refusalStreak.delete(attempt.attemptId); progress = true; }
+        continue;
+      }
+      // Window backstop for a plane that keeps dispatching without ever collecting anything.
+      if (this.noProgressWindowMs <= 0) continue;
+      const marker = `${collected}:${accepted}`;
+      const entry = state.noProgress.get(attempt.attemptId);
+      if (!entry || entry.marker !== marker) { state.noProgress.set(attempt.attemptId, { marker, since: this.now() }); continue; }
+      const charged = attempt.usage.toolCalls + (refusals?.refusals ?? 0);
+      if (charged < this.noProgressMinToolCalls) continue;
+      if (this.now() - entry.since < this.noProgressWindowMs) continue;
+      this.event(state.runId, 'orchestrator.no-progress-halt', {
+        attemptId: attempt.attemptId, toolCalls: attempt.usage.toolCalls, refundedRefusals: refusals?.refusals ?? 0, tokens: attempt.usage.tokens,
+        windowMs: this.noProgressWindowMs, unchangedSince: new Date(entry.since).toISOString(),
+      }, task.taskId, attempt.attemptId);
+      const detail = `no-progress: ${charged} tool calls over ${this.noProgressWindowMs} ms with zero collected observations and no accepted packet`;
+      if (await this.terminate(state, task, attempt, 'failed', detail)) { state.noProgress.delete(attempt.attemptId); this.refusalStreak.delete(attempt.attemptId); progress = true; }
+    }
+    for (const attemptId of [...state.noProgress.keys()]) if (!seen.has(attemptId)) state.noProgress.delete(attemptId);
+    for (const attemptId of [...this.refusalStreak.keys()]) if (!seen.has(attemptId)) this.refusalStreak.delete(attemptId);
+    for (const attemptId of [...this.refusalsDerived]) if (!seen.has(attemptId)) this.refusalsDerived.delete(attemptId);
+    return progress;
+  }
+
+  /**
+   * [F4] A queued task whose dependencies can no longer be satisfied (some dependency is terminal without an
+   * accepted handoff packet) will never become launchable. Terminalize it explicitly, recording the exact
+   * blockers, so the run reaches a verdict instead of staying `active` until the deadline.
+   */
+  private terminalizeBlockedTasks(state: RunState): boolean {
+    let progress = false;
+    for (const task of this.store.listTasks(state.runId)) {
+      if (task.packetState === 'accepted' || task.lifecycleState !== 'queued' || this.store.getLease(task.taskId)) continue;
+      const blockers = task.dependencyTaskIds.filter(id => {
+        const dependency = this.store.getTask(id);
+        if (!dependency || dependency.packetState === 'accepted') return false;
+        if (!isTerminalLifecycle(dependency.lifecycleState)) return false;
+        // [F-2] A dependency that still has attempts and retry time is not a permanent blocker: its own
+        // renewal must be attempted (retryAfter included) before dependents are terminalized.
+        return this.dependencyCannotBeRenewed(state, dependency);
+      });
+      if (!blockers.length) continue;
+      try {
+        this.store.cancelQueuedTask(task.taskId);
+        state.dependencyBlocked ??= new Set();
+        state.dependencyBlocked.add(task.taskId);
+        this.event(state.runId, 'orchestrator.task-blocked', {
+          blockers: blockers.slice(0, 8), reason: 'dependency terminal without an accepted handoff packet',
+        }, task.taskId);
+        progress = true;
+      } catch (error) {
+        this.event(state.runId, 'orchestrator.task-blocked-rejected', { code: errorCode(error), message: errorMessage(error).slice(0, 256) }, task.taskId);
+      }
+    }
+    return progress;
+  }
+
+  /**
+   * [F-2] True only when no further attempt of this dependency can ever launch: no live lease, no controller
+   * approval left, attempts exhausted, or no time left for one more launch. A dependency that can still be
+   * renewed (including one waiting out `retryAfter`) is not a permanent blocker.
+   */
+  private dependencyCannotBeRenewed(state: RunState, dependency: TaskManifest): boolean {
+    if (this.store.getLease(dependency.taskId)) return false;
+    if (!this.tasks.get(dependency.taskId)) return true;
+    // [R-3] A cancelled task is terminal and nothing relaunches it (`schedule` only renews a last attempt in
+    // failed/timed-out), so it is a permanent blocker even with attempts left — otherwise a chain A->B->C
+    // would leave C queued while its blocked dependency can never run again.
+    if (dependency.lifecycleState === 'cancelled') return true;
+    const attempts = this.store.listAttempts(state.runId, dependency.taskId);
+    if (attempts.length >= dependency.budgets.maxAttempts) return true;
+    // Mirror the launch gate: a last attempt in any state other than failed/timed-out is never retried.
+    const last = attempts.at(-1);
+    if (last && !['failed', 'timed-out'].includes(last.lifecycleState)) return true;
+    return this.now() + this.minLaunchBudgetMs() >= Date.parse(dependency.budgets.deadlineAt);
+  }
+
+  /**
+   * [F4] Durable dependency-blocked adjudication, re-derived from the recorded events so a restarted
+   * supervisor classifies the same run identically. A task only counts while it never produced an accepted
+   * packet, and every scan is bounded.
+   */
+  private dependencyBlocked(state: RunState): { blocked: boolean; taskIds: string[] } {
+    const recorded = state.dependencyBlocked ?? new Set<string>();
+    if (!recorded.size) {
+      let after = 0;
+      for (let page = 0; page < 20 && !recorded.size; page++) {
+        const events = this.store.listEvents({ runId: state.runId, afterSequence: after, limit: 1_000 });
+        if (!events.length) break;
+        for (const event of events) {
+          after = event.sequence;
+          if (event.type === 'orchestrator.task-blocked' && event.taskId) recorded.add(event.taskId);
+        }
+        if (events.length < 1_000) break;
+      }
+      if (recorded.size) state.dependencyBlocked = recorded;
+    }
+    const taskIds = [...recorded].filter(taskId => this.store.getTask(taskId)?.packetState !== 'accepted');
+    return { blocked: taskIds.length > 0, taskIds };
   }
 
   // ------------------------------------------------------------ termination
@@ -1793,6 +1981,64 @@ export class Supervisor implements SupervisorApi {
       costUsd: raw.costUsd === undefined ? 0 : Number(raw.costUsd),
       ...(typeof raw.targetId === 'string' ? { targetId: identifier(raw.targetId, 'targetId') } : {}),
     });
+  }
+  /**
+   * [R-4] Mint a durable pre-dispatch reservation. Its identity is the only handle that can release exactly
+   * this charge (once); a replay of the id is refused by the store, so a release can never refund another
+   * call's charge. Fail-closed: an exhausted budget refuses here, before any traffic.
+   */
+  reserveBudget(attemptId: string, delta: { toolCalls: number; requests?: number; targetId?: string }): { reservationId: string; usage: BudgetUsage } {
+    this.assertLive();
+    const attempt = this.store.getAttempt(attemptId);
+    assert(attempt, 'attempt-not-found', 'Unknown attempt');
+    const raw = object({ ...delta }, ['toolCalls', 'requests', 'targetId'], 'budget reservation');
+    return this.store.reserveBudget({
+      attemptId, leaseToken: attempt.leaseToken,
+      toolCalls: countOrZero(raw.toolCalls, 'toolCalls'),
+      requests: countOrZero(raw.requests, 'requests'),
+      ...(typeof raw.targetId === 'string' ? { targetId: identifier(raw.targetId, 'targetId') } : {}),
+    });
+  }
+
+  /**
+   * Release ONE recorded reservation, exactly once. Counters come from the durable reservation, the refusal
+   * class is derived here from the code (never caller-asserted), and a second release of the same id is
+   * refused (`reservation-already-released`).
+   */
+  releaseBudget(attemptId: string, delta: { reservationId: string; reason: string; refusal: { code: string } }): BudgetUsage {
+    this.assertLive();
+    const attempt = this.store.getAttempt(attemptId);
+    assert(attempt, 'attempt-not-found', 'Unknown attempt');
+    const raw = object({ ...delta }, ['reservationId', 'reason', 'refusal'], 'budget release');
+    assert(typeof raw.reason === 'string' && raw.reason.trim().length > 0 && raw.reason.length <= 256, 'invalid-input', 'Budget release requires a bounded reason');
+    const refusal = object({ ...(raw.refusal as object) }, ['code'], 'budget release refusal');
+    assert(typeof refusal.code === 'string' && /^[A-Z][A-Z0-9_]{0,63}$/.test(refusal.code), 'invalid-input', 'Budget release requires a structured refusal code');
+    const refusalCode = refusal.code as string;
+    const toolPlane = isToolPlaneRefusal(refusalCode);
+    const usage = this.store.releaseReservation({
+      attemptId, leaseToken: attempt.leaseToken,
+      reservationId: identifier(raw.reservationId, 'reservationId'),
+      reason: raw.reason, code: refusalCode, toolPlane,
+    });
+    if (toolPlane) {
+      const streak = this.refusalStreak.get(attemptId) ?? { refusals: 0, code: 'none' };
+      streak.refusals += 1;
+      streak.code = refusalCode;
+      this.refusalStreak.set(attemptId, streak);
+    } else {
+      this.refusalStreak.delete(attemptId);
+    }
+    return usage;
+  }
+
+  /**
+   * [R-2]/[R-5] Re-derive an attempt's refusal streak from the durable `budget.released` ledger, so a
+   * controller restart does not lose the non-refundable evidence of a dead tool plane. The store answers from
+   * this attempt's own release rows (complete, no run-wide page cap) and resets on a non-tool-plane release,
+   * exactly like the live counter.
+   */
+  private derivedRefusalStreak(state: RunState, attemptId: string): { refusals: number; code: string } {
+    return this.store.attemptReleaseStreak(state.runId, attemptId);
   }
 
   /** Bounded drain: claims and delivers in batches until the outbox has nothing claimable. */

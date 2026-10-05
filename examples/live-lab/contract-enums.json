@@ -1,0 +1,199 @@
+{
+  "version": 1,
+  "note": "Single source of truth for the worker authoring crib; verified against handoffSchema by assertContractEnumCoverage() and enforced by p2o_packet before a packet is written.",
+  "contracts": {
+    "H1": {
+      "rootKeys": [
+        "attemptId",
+        "classification",
+        "consumer",
+        "contract",
+        "createdAt",
+        "details",
+        "evidenceIds",
+        "inputRevision",
+        "limits",
+        "nextAction",
+        "observedRuntime",
+        "outcome",
+        "packetId",
+        "producer",
+        "question",
+        "requestedRuntime",
+        "runId",
+        "schemaVersion",
+        "scope",
+        "taskId"
+      ],
+      "requiredRootKeys": [
+        "attemptId",
+        "classification",
+        "consumer",
+        "contract",
+        "createdAt",
+        "details",
+        "evidenceIds",
+        "inputRevision",
+        "limits",
+        "nextAction",
+        "observedRuntime",
+        "outcome",
+        "packetId",
+        "producer",
+        "question",
+        "requestedRuntime",
+        "runId",
+        "schemaVersion",
+        "scope",
+        "taskId"
+      ],
+      "detailsKeys": [
+        "architecture",
+        "interfaces",
+        "peerTopology",
+        "unresolvedRoutes"
+      ],
+      "required": {
+        "details": [
+          "interfaces",
+          "unresolvedRoutes"
+        ],
+        "interfaces[]": [
+          "surfaceId",
+          "registration",
+          "handler",
+          "actorId",
+          "gate",
+          "processIdentity",
+          "formats",
+          "benignOperations",
+          "priority",
+          "priorityReason",
+          "evidenceIds",
+          "reachability"
+        ],
+        "peerTopology[]": [
+          "peer",
+          "identityOrigin",
+          "membershipEvidenceIds",
+          "authorityEvidenceIds"
+        ]
+      },
+      "enums": {
+        "interfaces[].reachability": [
+          "observed",
+          "inferred"
+        ]
+      }
+    },
+    "H2": {
+      "rootKeys": [
+        "attemptId",
+        "classification",
+        "consumer",
+        "contract",
+        "createdAt",
+        "details",
+        "evidenceIds",
+        "inputRevision",
+        "limits",
+        "nextAction",
+        "observedRuntime",
+        "outcome",
+        "packetId",
+        "producer",
+        "question",
+        "requestedRuntime",
+        "runId",
+        "schemaVersion",
+        "scope",
+        "taskId"
+      ],
+      "requiredRootKeys": [
+        "attemptId",
+        "classification",
+        "consumer",
+        "contract",
+        "createdAt",
+        "details",
+        "evidenceIds",
+        "inputRevision",
+        "limits",
+        "nextAction",
+        "observedRuntime",
+        "outcome",
+        "packetId",
+        "producer",
+        "question",
+        "requestedRuntime",
+        "runId",
+        "schemaVersion",
+        "scope",
+        "taskId"
+      ],
+      "detailsKeys": [
+        "baseline",
+        "composition",
+        "constraints",
+        "controllableFields",
+        "instrumentation",
+        "invariant",
+        "lab",
+        "minimalSlice",
+        "modificationDisclosure",
+        "modifiedBuild",
+        "observationPoints",
+        "predictions",
+        "prerequisites",
+        "prerequisitesKnown",
+        "unknown"
+      ],
+      "required": {
+        "details": [
+          "minimalSlice",
+          "invariant",
+          "controllableFields",
+          "constraints",
+          "unknown",
+          "predictions",
+          "observationPoints",
+          "instrumentation",
+          "prerequisites",
+          "prerequisitesKnown",
+          "baseline",
+          "lab",
+          "modifiedBuild"
+        ],
+        "predictions": [
+          "ifTrue",
+          "ifFalse",
+          "observableIfTrue",
+          "observableIfFalse"
+        ],
+        "baseline": [
+          "status",
+          "evidenceIds"
+        ],
+        "lab": [
+          "safety",
+          "isolation",
+          "authorized"
+        ],
+        "composition": [
+          "representationChanges",
+          "writersReaders",
+          "encoding",
+          "phaseGuards",
+          "inferredEdges",
+          "terminalStateEvidenceIds"
+        ]
+      },
+      "enums": {
+        "baseline.status": [
+          "observed",
+          "unavailable"
+        ]
+      }
+    }
+  }
+}

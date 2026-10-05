@@ -79,6 +79,14 @@ export function createLabReplayEnvironment(services: VerificationServices, optio
         environmentId: options.environmentId,
         metadata: {
           cleanEnvironment: true,
+          // The verifier gate requires an authenticated independent session that is NOT a target reset:
+          // the fresh instance is a separate observable baseline of the same approved environment, and the
+          // assessed instance is closed rather than reset in place (no clean stateful target is claimed).
+          independentSession: true,
+          targetReset: false,
+          // Bind the exact controller-approved replay recipe (accounts, caps, predictions); the verifier gate
+          // requires this equality, so an unqualified/fresh instance can never stand in for the approved recipe.
+          recipeDigest: request.recipeDigest,
           qualification: `fresh lab instance ${instance.instanceId}; health digest ${qualificationDigest}`,
           fixtureInstanceId: instance.instanceId,
         },

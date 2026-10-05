@@ -500,7 +500,7 @@ test('cancelling the owned attempt aborts in-flight bridge work through the live
   }
 });
 
-test('an owner-approved probe outside scope is denied before dispatch and still charged to the absolute budget', async () => {
+test('an owner-approved probe outside scope is denied before dispatch and its reservation is refunded exactly once', async () => {
   const prepared = await prepareLocalAssessment({ log: () => {}, probeHoldMs: 20_000 });
   try {
     await prepared.app.admitApprovedRun();
@@ -517,21 +517,74 @@ test('an owner-approved probe outside scope is denied before dispatch and still 
     const handle = JSON.parse(readFileSync(join(prepared.config.roots.control, 'handles', `${attempt.attemptId}.json`), 'utf8')) as { ownerToken: string };
     const fixturesBefore = prepared.fixtureRequests();
     const usageBefore = prepared.app.store.getAttempt(attempt.attemptId)!.usage;
+    const targetUsageBefore = new Map(prepared.config.policy.targets.map(target => [target.id, prepared.app.store.getTargetUsage(RUN_ID, target.id)]));
+    // Reservations already refunded before this probe (normally none): the probe must add exactly one.
+    const releasesBefore = new Set(readAttemptEvents(prepared, attempt.attemptId)
+      .filter(event => event.type === 'budget.released')
+      .map(event => event.payload.reservationId));
     await rejects(
       callBridge(prepared.app.bridge.socketPath, handle.ownerToken, { attemptId: attempt.attemptId }, 'broker.execute', { observationId: 'denied-probe' }),
       (error: unknown) => (error as { code?: string }).code === 'TARGET_DENIED',
     );
     const usageAfter = prepared.app.store.getAttempt(attempt.attemptId)!.usage;
-    assert.equal(usageAfter.requests, usageBefore.requests + 1, 'the refused request is charged to the absolute task budget before dispatch');
-    assert.equal(usageAfter.toolCalls, usageBefore.toolCalls + 1);
+
+    // Denied before dispatch: no traffic and no evidence, exactly as before.
     assert.deepEqual(prepared.fixtureRequests(), fixturesBefore, 'a denied destination produces no fixture traffic');
     assert.equal(prepared.app.store.getEvidence(`denied-probe-${attempt.attemptId}`), undefined, 'a denied dispatch mints no evidence receipt');
+
+    // New contract (R2/R4): a refusal that provably never dispatched refunds its own reservation exactly once.
+    const events = readAttemptEvents(prepared, attempt.attemptId);
+    const probeReleases = events.filter(event => event.type === 'budget.released' && !releasesBefore.has(event.payload.reservationId));
+    assert.equal(probeReleases.length, 1, 'the denied probe refunds exactly one reservation');
+    const refund = probeReleases[0]!;
+    assert.equal(refund.payload.code, 'TARGET_DENIED', 'the refund records the denial code it was refused with');
+    assert.equal(refund.payload.toolPlane, false, 'a policy denial is not a tool-plane refusal');
+    assert.deepEqual(refund.payload.delta, { requests: 1, bytes: 0, toolCalls: 1, tokens: 0, costUsd: 0 }, 'the refund reverts exactly the pre-dispatch reservation');
+    const reservationId = refund.payload.reservationId as string;
+    const charges = events.filter(event => event.type === 'budget.consumed' && event.payload.reservationId === reservationId);
+    assert.equal(charges.length, 1, 'the refund names the one charge it was reserved from');
+    assert.equal(charges[0]?.payload.delta && (charges[0]!.payload.delta as { toolCalls?: number }).toolCalls, 1);
+    assert.equal(refund.payload.targetId, charges[0]?.payload.targetId, 'the refund reverts the same scoped target reservation');
+
+    // Net-zero for the refused call (nothing is "still charged"), and the reservation is spent.
+    assert.equal(usageAfter.requests, usageBefore.requests, 'the refused request is not charged after its refund');
+    assert.equal(usageAfter.toolCalls, usageBefore.toolCalls, 'the refused tool call is not charged after its refund');
+    const targetId = refund.payload.targetId as string;
+    assert.equal(prepared.app.store.getTargetUsage(RUN_ID, targetId), targetUsageBefore.get(targetId), 'the target-wide reservation is released too');
+    assert.throws(
+      () => prepared.app.supervisor.releaseBudget(attempt.attemptId, { reservationId, reason: 'replayed refund', refusal: { code: 'TARGET_DENIED' } }),
+      (error: unknown) => (error as { code?: string }).code === 'reservation-already-released',
+      'a refund cannot be replayed',
+    );
+    assert.deepEqual(prepared.app.store.getAttempt(attempt.attemptId)!.usage, usageAfter, 'the replay refunded nothing');
+    const releasesAfterReplay = readAttemptEvents(prepared, attempt.attemptId).filter(event => event.type === 'budget.released');
+    assert.equal(releasesAfterReplay.length, releasesBefore.size + 1, 'the replay left no second release record');
+
+    // Dispatched work stays charged: the worker's own observations still own consumed reservations with no refund.
+    const refundedIds = new Set(releasesAfterReplay.map(event => event.payload.reservationId));
+    const stillCharged = events.filter(event => event.type === 'budget.consumed' && typeof event.payload.reservationId === 'string' && !refundedIds.has(event.payload.reservationId));
+    assert.ok(stillCharged.length > 0, 'dispatched observations stay charged');
+    assert.ok(usageAfter.toolCalls >= stillCharged.length, 'the attempt usage still counts every dispatched call');
   } finally {
     await prepared.app.supervisor.cancel(RUN_ID).catch(() => {});
     await prepared.app.close();
     await prepared.closeFixtures();
   }
 });
+
+/** Durable events for one attempt, paged so a long run never hides the probe's own records. */
+function readAttemptEvents(prepared: PreparedAssessment, attemptId: string): Array<{ type: string; payload: Record<string, unknown> }> {
+  const events: Array<{ type: string; payload: Record<string, unknown> }> = [];
+  let after = 0;
+  for (;;) {
+    const page = prepared.app.store.listEvents({ runId: RUN_ID, afterSequence: after, limit: 1_000 });
+    if (!page.length) break;
+    after = page.at(-1)!.sequence;
+    for (const event of page) if (event.attemptId === attemptId) events.push({ type: event.type, payload: event.payload as Record<string, unknown> });
+    if (page.length < 1_000) break;
+  }
+  return events;
+}
 
 interface BridgeHarnessState {
   lifecycle: AttemptRecord['lifecycleState'];

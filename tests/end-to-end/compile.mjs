@@ -5,7 +5,7 @@ import { spawnSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { cp, mkdir, mkdtemp, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { dirname, join, resolve } from 'node:path';
+import { dirname, join, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 export const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
@@ -43,7 +43,8 @@ export async function compileSlice({ entries, label = 'p2o-slice' }) {
   await mkdir(source, { recursive: true });
   for (const directory of ['src', 'examples', 'tests/end-to-end', 'tests/real-worker']) {
     if (!existsSync(join(repoRoot, directory))) continue;
-    await cp(join(repoRoot, directory), join(source, directory), { recursive: true });
+    // Private run artifacts (`.runs`, including unix sockets) are never part of the compiled slice.
+    await cp(join(repoRoot, directory), join(source, directory), { recursive: true, filter: entry => !entry.split(sep).includes('.runs') });
   }
   // The private build has no node_modules of its own: link the repository's provisioned one so that the
   // host peer imports (@earendil-works/pi-ai, typebox) resolve during compilation. Nothing is installed.

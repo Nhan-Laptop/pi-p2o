@@ -205,6 +205,14 @@ export interface SupervisorOptions {
   automatic?: boolean;
   /** Default true: durable events are retained in the store and acknowledged without an external sink. */
   ackWithoutSink?: boolean;
+  /**
+   * No-progress circuit breaker. A live attempt that has never collected one observation (non-runtime/log
+   * evidence) and never produced an accepted packet is terminated once it has charged at least
+   * `minToolCalls` tool calls and `windowMs` has elapsed since that attempt's progress marker was last seen
+   * unchanged. Termination stops the owned runtime, so provider turns stop being charged for a dead plane.
+   * `{ windowMs: 0 }` disables the breaker; absolute run/task deadlines and cancellation are unaffected.
+   */
+  noProgress?: { windowMs?: number; minToolCalls?: number; consecutiveRefusals?: number };
 }
 export interface RunSnapshot {
   run: RunManifest;
@@ -263,14 +271,20 @@ export interface SupervisorApi {
   subtaskDecisions(runId: string): SubtaskDecision[];
   modelSwitches(runId: string): ModelSwitchDecision[];
   modelProfile(runId: string): ModelSwitchProfile;
+  /** Release reservations for a call that provably never dispatched; recorded, never a limit widening. */
+  releaseBudget(attemptId: string, delta: { reservationId: string; reason: string; refusal: { code: string } }): BudgetUsage;
   snapshot(runId: string): RunSnapshot;
   preview(runId: string): PlanPreview;
   worker(attemptId: string): WorkerPort;
   runtimeHooks(): RuntimeHooks;
   budgetJournal(): BudgetJournal;
   consumeBudget(attemptId: string, delta: Partial<BudgetUsage> & { targetId?: string }): BudgetUsage;
+  /** Mint a durable pre-dispatch reservation; its id is the only handle that can release exactly this charge. */
+  reserveBudget(attemptId: string, delta: { toolCalls: number; requests?: number; targetId?: string }): { reservationId: string; usage: BudgetUsage };
   flushOutbox(): Promise<{ delivered: number; retried: number }>;
   dispose(): void;
+  /** Optional owner-approved handover: stop pumping without aborting owned executions (replacement adoption). */
+  handover?(): void;
 }
 export interface TaskRecord { proposal: TaskProposal; approval: TaskApproval; digest: string }
 export interface RunRecord { digest: string; admission: RunAdmission; approval: Approval }

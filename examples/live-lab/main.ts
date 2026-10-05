@@ -19,6 +19,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { createApplication, loadApplicationConfig, type AssessmentApplication, type VerificationServices } from '../../src/application/index.js';
+import { createSupervisor } from '../../src/orchestrator/index.js';
 import type { StoredResult } from '../../src/store/index.js';
 import { auditArtifactsForSecrets, type GatewayAttestation } from '../../src/runtime/config.js';
 import type { OwnerCredentialEntry, OwnerCredentialStore } from '../../src/application/authority.js';
@@ -267,6 +268,14 @@ export async function runLiveLab(options: LiveLabOptions): Promise<LiveLabResult
       configurationDigest,
       now,
     });
+    // Fault-injection mode for the bounded breaker proof (default off; never used by a normal run): the pinned
+    // seccomp identity is perturbed so every broker call fails its sandbox bring-up with UNAVAILABLE — a
+    // tool-plane refusal, refunded by R2 but still counted by the supervisor's refusal streak.
+    const faultMode = process.env.P2O_LIVE_FAULT === 'refuse-broker';
+    if (faultMode && scenario.config.sandbox.mode === 'container') {
+      (scenario.config.sandbox as unknown as { options: Record<string, unknown> }).options.seccompSha256 = 'f'.repeat(64);
+      log('[live] FAULT MODE refuse-broker: pinned seccomp identity perturbed; every broker call must fail UNAVAILABLE before dispatch');
+    }
     const assessmentPath = join(runRoot, 'assessment.json');
     const manifestPath = join(runRoot, 'run-manifest.json');
     writeFileSync(assessmentPath, `${JSON.stringify(scenario.config, null, 2)}\n`, { mode: 0o600 });
@@ -317,11 +326,39 @@ export async function runLiveLab(options: LiveLabOptions): Promise<LiveLabResult
     // declared deadline is reached (then cancels and reports honestly).
     const runDeadlineAt = Date.parse(config.run.budgets.deadlineAt);
     const terminalStates = new Set(['completed', 'failed', 'cancelled']);
-    let snapshot = app.supervisor.snapshot(runId);
+    // Optional bounded controller restart (fault proof): the replacement inherits the durable control record
+    // (same owner identity) and must re-derive the non-refundable refusal streak from `budget.released`.
+    const restartAfterMs = Number(process.env.P2O_LIVE_RESTART_MS ?? '0');
+    // Deterministic alternative for the dead-plane proof: restart as soon as the first pre-dispatch refusal
+    // is observed, so the remaining refusals must be re-derived from the durable ledger by the replacement.
+    const restartOnFirstRefusal = process.env.P2O_LIVE_RESTART_ON === 'first-refusal';
+    const controllerStartedAt = Date.now();
+    let restarted = false;
+    let active = app.supervisor;
+    let snapshot = active.snapshot(runId);
     let lastProgress = 0;
+    let chargesAtHalt: number | undefined;
     while (!terminalStates.has(snapshot.run.state) && Date.now() < runDeadlineAt + 5_000) {
       await new Promise(resolve => setTimeout(resolve, 1_000));
-      snapshot = await app.supervisor.tick(runId);
+      if (!restarted && !terminalStates.has(snapshot.run.state) && (
+        (restartOnFirstRefusal && logLines.some(line => line.includes('entry.broker-refused')))
+        || (restartAfterMs > 0 && Date.now() - controllerStartedAt >= restartAfterMs)
+      )) {
+        restarted = true;
+        // Handover (not dispose): the worker must keep running so the refusal streak is the only thing that
+        // stops it; `dispose()` would fence the runtime and the replacement would observe a cancelled attempt.
+        active.handover?.();
+        active = createSupervisor({
+          store: app.store, authority: app.authority, controlRoot: config.roots.control, workspaceRoot: config.roots.workspace,
+          runtimes: app.runtimes, ownerId: 'p2o-supervisor', reviewerId: 'p2o-reviewer', automatic: false,
+        });
+        log(`[live] controller restarted after ${Date.now() - controllerStartedAt} ms; the replacement inherits the durable control record and must re-derive the refusal streak`);
+      }
+      snapshot = await active.tick(runId);
+      if (chargesAtHalt === undefined && app.store.listEvents({ runId, limit: 1_000 }).some(event => event.type === 'orchestrator.no-progress-halt')) {
+        chargesAtHalt = logLines.filter(line => line.includes('charged turn=')).length;
+        log(`[live] FAULT PROOF halt observed after ${chargesAtHalt} provider charges; no further provider turn is expected`);
+      }
       if (Date.now() - lastProgress > 30_000) {
         lastProgress = Date.now();
         log(`[live] progress ${snapshot.tasks.map(task => `${task.taskId}:${task.lifecycleState}/${task.packetState}`).join(' ')}`);
@@ -329,9 +366,14 @@ export async function runLiveLab(options: LiveLabOptions): Promise<LiveLabResult
     }
     if (!terminalStates.has(snapshot.run.state)) {
       log('[live] declared deadline reached without a terminal run; cancelling owned execution');
-      snapshot = await app.supervisor.cancel(runId);
+      snapshot = await active.cancel(runId);
     }
     log(`[live] run ${snapshot.run.runId} state=${snapshot.run.state} tasks=${snapshot.tasks.map(task => `${task.taskId}:${task.lifecycleState}/${task.packetState}`).join(' ')}`);
+    if (faultMode) {
+      const haltEvent = app.store.listEvents({ runId, limit: 1_000 }).find(event => event.type === 'orchestrator.no-progress-halt');
+      const charges = logLines.filter(line => line.includes('charged turn=')).length;
+      log(`[live] FAULT PROOF state=${snapshot.run.state} halts=${haltEvent ? 1 : 0} refusals=${JSON.stringify(haltEvent?.payload.refusals ?? null)} releases=${JSON.stringify(app.store.attemptReleaseStreak(runId, snapshot.attempts.at(-1)?.attemptId ?? '').refusals)} providerCharges=${charges} chargesAtHalt=${chargesAtHalt ?? 'none'} haltedBilling=${chargesAtHalt !== undefined && charges === chargesAtHalt}`);
+    }
 
     const artifacts = app.artifacts(runId);
     const reportJsonPath = join(runRoot, 'report.json');
