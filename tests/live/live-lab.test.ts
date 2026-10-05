@@ -14,8 +14,9 @@ import { auditArtifactsForSecrets } from '../../src/runtime/config.js';
 import { createContainerSandbox } from '../../src/tools/index.js';
 import { buildContainerSandboxOptions } from '../../examples/live-lab/pack.js';
 import {
-  ACTOR_ADMIN, ACTOR_GUEST, ACTOR_GUEST_B, CLAIM_EXPORT, CLAIM_IDOR, FINDING_EXPORT, FINDING_IDOR, LIVE_SELECTION,
-  SNAPSHOT_FILE, TASK_HYP_EXPORT, TASK_HYP_IDOR, TASK_SURFACE_MAP, TASK_VERIFY, assertContractEnumCoverage, assertPricedSelection,
+  ACTOR_ADMIN, ACTOR_GUEST, ACTOR_GUEST_B, CLAIM_EXPORT, CLAIM_IDOR, FINDING_EXPORT, FINDING_IDOR, LIVE_GATEWAY_MODELS,
+  LIVE_SELECTION, LIVE_TURN_COMPLETION_TOKENS, PROVIDER_MAX_COMPLETION_TOKENS, SNAPSHOT_FILE, SUBMIT_PACKET_EARLY,
+  TASK_HYP_EXPORT, TASK_HYP_IDOR, TASK_SURFACE_MAP, TASK_VERIFY, assertContractEnumCoverage, assertPricedSelection,
   buildScenario, readContractEnumTable,
 } from '../../examples/live-lab/scenario.js';
 import type { DurableStore } from '../../src/store/index.js';
@@ -190,6 +191,44 @@ test('owner document: validates, prices the live selection and binds every check
       assert.equal(config.run.budgets.maxTokens, 400_000);
       assert.equal(config.run.budgets.maxCostUsd, 1);
       assert.ok(config.run.budgets.reportReserveMs > 0);
+
+      // Truncation headroom: one turn must not be able to consume the provider's whole completion allowance
+      // and be cut off before the packet is written (acceptance run ll-SOs5Zy: third turn at exactly 8192
+      // output tokens, zero submissions). The ceiling is a positive integer strictly below the provider
+      // maximum, and the model identity it belongs to is unchanged: same id, same reasoning flag, same
+      // context window, same thinking map, same pinning to LIVE_TURN_COMPLETION_TOKENS (pricing is asserted
+      // above by assertPricedSelection and is untouched).
+      const provisioned = config.runtime.gateway.models;
+      assert.deepEqual(provisioned, JSON.parse(JSON.stringify(LIVE_GATEWAY_MODELS)) as unknown,
+        'the schema-validated document carries the frozen harness model entry unchanged');
+      assert.equal(provisioned.length, 1);
+      const model = provisioned[0]!;
+      assert.equal(model.id, LIVE_SELECTION.model);
+      assert.equal(model.reasoning, true);
+      assert.equal(model.contextWindow, 1_000_000);
+      assert.equal(model.maxTokens, LIVE_TURN_COMPLETION_TOKENS);
+      // Runtime-legal by the same rules `src/runtime/config.ts` applies at launch (`validateGatewayModel`):
+      // a safe integer >= 1 that is not above the context window.
+      assert.ok(Number.isSafeInteger(model.maxTokens) && model.maxTokens! >= 1, `the ceiling must be a positive integer: ${model.maxTokens}`);
+      assert.ok(model.maxTokens! <= model.contextWindow!, 'the ceiling must stay within the context window');
+      // ...and strictly below the provider maximum it used to be provisioned as, with real headroom left.
+      assert.ok(model.maxTokens! < PROVIDER_MAX_COMPLETION_TOKENS, `the ceiling must leave truncation headroom below ${PROVIDER_MAX_COMPLETION_TOKENS}`);
+      assert.deepEqual(model.thinkingLevelMap, { minimal: null, low: 'low', medium: null, high: 'high', xhigh: null, max: 'max' });
+
+      // Bounded attempt insurance: the surface map (first turn, widest enumeration) may take one extra
+      // attempt so a single truncated turn cannot end the run; every other task keeps the scenario minimum.
+      assert.equal(config.run.budgets.maxAttempts, 3);
+      const attemptsFor = (taskId: string) => config.tasks.find(entry => entry.manifest.taskId === taskId)!.manifest.budgets.maxAttempts;
+      assert.equal(attemptsFor(TASK_SURFACE_MAP), 3);
+      for (const taskId of [TASK_HYP_IDOR, TASK_HYP_EXPORT, TASK_VERIFY]) assert.equal(attemptsFor(taskId), 2, `${taskId} keeps the minimum attempt budget`);
+
+      // Every worker question states the failure mode explicitly, so a long answer cannot silently consume
+      // the attempt: submit as soon as the evidence exists.
+      for (const entry of config.tasks) {
+        assert.match(entry.manifest.question.text, /call p2o_packet as soon as the evidence/,
+          `${entry.manifest.taskId} must carry the submit-early discipline`);
+      }
+      assert.ok(config.tasks.every(entry => entry.manifest.question.text.includes(SUBMIT_PACKET_EARLY)));
 
       // Every approved observation names an approved task and a unique (taskId, observationId) key.
       const keys = new Set<string>();
@@ -457,6 +496,7 @@ test('p2o_packet refuses a drifting packet at authoring time with the exact path
   // The crib renders the exact types, split by scope, and the H1 semantic rules.
   assert.match(bridgeSource, /Exact \$\{contract\} JSON types/);
   assert.match(bridgeSource, /omit it unless the evidence supports it/);
+  assert.match(bridgeSource, /Turn discipline: submit with p2o_packet as soon as the evidence the packet needs exists/);
   assert.equal('composition' in (minimalPacket('H2').details as Record<string, unknown>), false, 'an optional field is omitted, not fabricated to fill the schema');
 
   // Guidance must not turn optional scopes into fill-everything checklists: a field inside an optional object

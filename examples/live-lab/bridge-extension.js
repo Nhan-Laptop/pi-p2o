@@ -245,6 +245,7 @@ function authoringGuide(contract, context, role) {
     'Replace every <PLACEHOLDER> with your own assessment content; replace the placeholder evidenceIds with evidenceIds p2o_broker/p2o_verify actually returned in this session. Never invent an evidenceId.',
     'Do not add unknown keys: the handoff schema rejects additional properties and requires every listed key.',
     'createdAt must be an ISO UTC timestamp with milliseconds at or before the collection time; keep the value supplied here unless you finish much later.',
+    'Turn discipline: submit with p2o_packet as soon as the evidence the packet needs exists. A long prose answer that runs into the per-turn completion ceiling is truncated before the packet is written and wastes the attempt — keep the answer short, then submit.',
   ];
   if (contract === 'H1') {
     rules.push(

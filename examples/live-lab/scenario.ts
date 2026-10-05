@@ -62,18 +62,37 @@ export const LIVE_API = 'openai-completions' as const;
 export const LIVE_PI_VERSION = '1.0.0';
 export const LIVE_GATEWAY_APPROVAL = 'live-lab-owner-approved-deepseek-flash-upstream';
 
+/** The pinned provider's per-response completion limit for this model, which the harness used to provision as-is. */
+export const PROVIDER_MAX_COMPLETION_TOKENS = 8_192;
+
+/**
+ * Per-turn completion ceiling handed to the worker runtime. Deliberately well below the provider maximum: this
+ * is truncation headroom for a small model, not a capability claim. A response cut off at the ceiling never
+ * reaches `p2o_packet`, so one overlong turn can consume a whole attempt and yield no packet at all
+ * (acceptance run ll-SOs5Zy: third turn, exactly 8192 output tokens, zero submissions). The run's spend
+ * ceilings in USD terms (`RUN_MAX_COST_USD` and the per-task `maxCostUsd`) are unchanged.
+ */
+export const LIVE_TURN_COMPLETION_TOKENS = 3_072;
+
 /**
  * Provisioned model identity for the controller gateway. `thinkingLevelMap.low` is what makes the requested
- * `low` level observable on the wire (`reasoning_effort: "low"`), which the gateway attests; `maxTokens` is
- * deliberately bounded well below the model maximum so one turn cannot consume the run's spend budget.
+ * `low` level observable on the wire (`reasoning_effort: "low"`), which the gateway attests; `maxTokens` bounds
+ * one turn so a truncated response cannot consume the provider allowance or the run's spend budget.
  */
 export const LIVE_GATEWAY_MODELS = Object.freeze([{
   id: LIVE_SELECTION.model,
   reasoning: true,
   contextWindow: 1_000_000,
-  maxTokens: 8_192,
+  maxTokens: LIVE_TURN_COMPLETION_TOKENS,
   thinkingLevelMap: { minimal: null, low: 'low', medium: null, high: 'high', xhigh: null, max: 'max' },
 }]);
+
+/**
+ * Turn-economy instruction carried by every worker question (appended by `task()`). A response that runs into
+ * the per-turn completion ceiling is truncated before the packet is written, so the observations of that
+ * attempt are paid for and lost: the packet must be submitted as soon as the evidence it needs exists.
+ */
+export const SUBMIT_PACKET_EARLY = 'Turn discipline: call p2o_packet as soon as the evidence the packet needs exists. A long prose answer that runs into the per-turn completion ceiling is truncated and wastes the attempt — keep the answer short, then submit.';
 
 export const RUN_MAX_TOKENS = 400_000;
 export const RUN_MAX_COST_USD = 1;
@@ -154,6 +173,8 @@ function task(input: {
   maxTokens: number;
   maxCostUsd: number;
   workspace: string;
+  /** Bounded attempt ceiling for this task; defaults to the scenario minimum of 2. */
+  maxAttempts?: number;
   overrides?: Partial<TaskManifest>;
 }): TaskManifest {
   return {
@@ -164,7 +185,7 @@ function task(input: {
     depth: 0,
     createdAt: new Date().toISOString(),
     inputRevision: INPUT_REVISION,
-    question: input.question,
+    question: { ...input.question, text: `${input.question.text}\n\n${SUBMIT_PACKET_EARLY}` },
     scope: input.scope,
     skills: input.skills,
     allowedActions: input.allowedActions,
@@ -176,7 +197,7 @@ function task(input: {
       maxToolCalls: 24,
       maxTokens: input.maxTokens,
       maxCostUsd: input.maxCostUsd,
-      maxAttempts: 2,
+      maxAttempts: input.maxAttempts ?? 2,
     },
     requestedRuntime: { adapter: 'headless', selection: { ...LIVE_SELECTION }, requiredCapabilities: ['ownsLifecycle'] },
     workspace: input.workspace,
@@ -405,7 +426,7 @@ export function buildScenario(inputs: ScenarioInputs): Scenario {
       // One worst-case spend hold is taken per live attempt, so the declared run budget must cover the
       // authorized concurrency (3) with margin: 3 x (8 000 input + 8 192 output) fits inside 400 000 tokens.
       deadlineAt: runDeadline, maxRequests: 256, maxBytes: 16_000_000, maxToolCalls: 128, maxTokens: RUN_MAX_TOKENS,
-      maxCostUsd: RUN_MAX_COST_USD, maxAttempts: 2, maxTasks: 8, maxDepth: 3, maxConcurrency: 3, reportReserveMs: 120_000,
+      maxCostUsd: RUN_MAX_COST_USD, maxAttempts: 3, maxTasks: 8, maxDepth: 3, maxConcurrency: 3, reportReserveMs: 120_000,
       targetRequestLimits: { [TARGET_A]: 96, [TARGET_B]: 32, [TARGET_SOURCE]: 24 },
     },
     requestedRuntime: { adapter: 'headless', selection: { ...LIVE_SELECTION }, requiredCapabilities: ['ownsLifecycle'] },
@@ -424,6 +445,9 @@ export function buildScenario(inputs: ScenarioInputs): Scenario {
     ...common,
     scope: scopeA,
     taskId: TASK_SURFACE_MAP,
+    // One extra bounded attempt: the surface map is the first turn of the run and the widest enumeration, so
+    // a single truncated turn should not end the run before any dependent hypothesis can be admitted.
+    maxAttempts: 3,
     question: {
       text: `Map the loopback lab HTTP surface: which routes exist, which approved actor reaches each one, and which gate each route applies. Deliverable: exactly one H1 handoff packet; call p2o_authoring with contract "H1" for the exact packet shape, perform the approved observations you rely on, then write the packet with p2o_packet.`,
       ifTrue: 'The approved member reaches the item read route and a separate export route, and a health route answers with the lab identity',
