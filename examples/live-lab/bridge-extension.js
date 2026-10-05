@@ -278,6 +278,15 @@ function authoringGuide(contract, context, role) {
     const enums = Object.entries(table.enums || {}).map(([path, values]) => `${path} = ${values.map(value => JSON.stringify(value)).join(' | ')}`).join('; ');
     rules.push(`Required ${contract} fields (a missing/extra field is rejected at admission): ${required}.`);
     rules.push(`Exact ${contract} root keys (an extra root key or a missing required one is rejected): ${table.rootKeys.join(', ')}. Contract extras stay inside details.`);
+    const typeGuidance = renderTypeGuidance(contract, table);
+    for (const line of [typeGuidance.required, typeGuidance.conditional, typeGuidance.optional]) if (line) rules.push(line);
+    if (contract === 'H1') {
+      rules.push('H1 details.peerTopology[] authority rule: membershipEvidenceIds must reference source or observation evidence; authorityEvidenceIds must reference observation or trace evidence. Omit peerTopology entirely rather than inventing receipts.');
+      rules.push('H1 details.interfaces[] rule: surfaceId/registration/handler/gate/processIdentity/formats/benignOperations/priority/priorityReason/evidenceIds/actorId are required, actorId must equal scope.actor.id exactly, and reachability "observed" needs observation or trace evidence while "inferred" needs details.proposedCheck plus source evidence.');
+    }
+    if (contract === 'H2') {
+      rules.push('H2 details.composition is optional — omit it unless the evidence supports it. When present its fields are required and typed (representationChanges, writersReaders and phaseGuards/inferredEdges/terminalStateEvidenceIds are arrays of strings, encoding is a string). Never invent entries to fill it, and never substitute a scalar for an array.');
+    }
     rules.push(`Exact ${contract} enum values (any other spelling is rejected at admission): ${enums}.`);
   } else {
     rules.push(`Enum guidance for ${contract} is unavailable in this worker build; keep to the skeleton's literal values and call p2o_context before authoring.`);
@@ -290,6 +299,73 @@ function authoringGuide(contract, context, role) {
  * the gate rejects) is refused here, at authoring time, with the exact paths instead of being discovered at
  * admission. The table is verified against the supervisor gate by scenario.assertContractEnumCoverage().
  */
+/** Resolve one schema path against the packet's details, with the JSON pointer of every value found. */
+function resolvePathValues(details, path) {
+  let current = details ? [{ value: details, pointer: '$/details' }] : [];
+  for (const segment of path.split('.')) {
+    const array = segment.endsWith('[]');
+    const key = array ? segment.slice(0, -2) : segment;
+    const next = [];
+    for (const node of current) {
+      const value = node.value?.[key];
+      if (value === undefined) continue;
+      if (array) {
+        if (Array.isArray(value)) value.forEach((item, index) => next.push({ value: item, pointer: `${node.pointer}/${key}/${index}` }));
+      } else next.push({ value, pointer: `${node.pointer}/${key}` });
+    }
+    current = next;
+  }
+  return current;
+}
+
+/** JSON value type test for the generated type table (`types` and array `items`). */
+function matchesJsonType(value, names) {
+  return (names || []).some(name => name === 'array' ? Array.isArray(value)
+    : name === 'object' ? value !== null && typeof value === 'object' && !Array.isArray(value)
+    : name === 'integer' ? typeof value === 'number' && Number.isSafeInteger(value)
+    : name === 'number' ? typeof value === 'number' && Number.isFinite(value)
+    : name === 'string' ? typeof value === 'string'
+    : name === 'boolean' ? typeof value === 'boolean'
+    : name === 'null' ? value === null
+    : false);
+}
+
+/**
+ * Render the crib's model-facing type guidance from the generated table, split into three scopes.
+ * A field inside an optional object (e.g. `composition`) or an optional array (e.g. `peerTopology`) is required
+ * only WHEN that scope is written: presenting those as unconditional requirements is what pushes an author to
+ * fabricate the parent merely to satisfy the schema. Enforcement is unchanged — this only words the guidance so
+ * that omitting an optional scope is the documented, valid choice and filling it speculatively is not.
+ */
+export function renderTypeGuidance(contract, table) {
+  const types = table?.types || {};
+  const scopeCondition = path => {
+    const segments = path.split('.');
+    for (let index = segments.length - 1; index > 0; index -= 1) {
+      const name = segments.slice(0, index).join('.');
+      const bare = name.replace(/\[\]$/, '');
+      const ancestor = types[name] ?? types[bare];
+      if (!ancestor) continue;
+      if (!ancestor.required) return `required only when ${bare} is present — omit ${bare} entirely when you have no evidence for it`;
+      if (ancestor.types.includes('array')) return `required inside each ${bare} element — omit the element itself when you have no evidence for it`;
+    }
+    return undefined;
+  };
+  const required = [], conditional = [], optional = [];
+  for (const [path, entry] of Object.entries(types)) {
+    const rendered = `${path} = ${entry.description}`;
+    if (!entry.required) { optional.push(rendered); continue; }
+    const condition = scopeCondition(path);
+    if (condition) conditional.push(`${rendered} (${condition})`);
+    else required.push(rendered);
+  }
+  return {
+    required: required.length ? `Exact ${contract} JSON types (a missing required field, or a value of the wrong type — e.g. a string where an array is required — is refused before admission): ${required.join('; ')}.` : undefined,
+    conditional: conditional.length ? `Conditional ${contract} JSON types (each is required only in the scope stated; if you hold no evidence for that scope, omit the scope itself instead of filling its fields): ${conditional.join('; ')}.` : undefined,
+    optional: optional.length ? `Optional ${contract} JSON types — omit each one unless the evidence you actually hold needs it. An omitted optional field is valid and correct; a speculative value, a guessed enum spelling or an empty placeholder written only to fill the schema is not. When present, a wrong type is refused before admission: ${optional.join('; ')}.` : undefined,
+  };
+}
+
 export function cribViolations(packet, contract, table) {
   const entry = table?.contracts?.[contract];
   if (!entry) return [];
@@ -314,21 +390,22 @@ export function cribViolations(packet, contract, table) {
       }
     }
   }
-  for (const [path, values] of Object.entries(entry.enums || {})) {
-    let current = details ? [details] : [];
-    for (const segment of path.split('.')) {
-      const array = segment.endsWith('[]');
-      const key = array ? segment.slice(0, -2) : segment;
-      const next = [];
-      for (const node of current) {
-        const value = node?.[key];
-        if (value === undefined) continue;
-        if (array) { if (Array.isArray(value)) next.push(...value); }
-        else next.push(value);
+  // Exact JSON value types, reported at the field's own pointer (an optional object's fields are checked only
+  // when that object is present). This is the authoring-time form of the schema's type gate.
+  for (const [path, typeEntry] of Object.entries(entry.types || {})) {
+    for (const { value, pointer } of resolvePathValues(details, path)) {
+      if (!matchesJsonType(value, typeEntry.types)) { violations.push(`${pointer}: expected ${typeEntry.description}, received ${Array.isArray(value) ? 'array' : value === null ? 'null' : typeof value}`); continue; }
+      if (Array.isArray(value) && typeEntry.items && typeEntry.items.length) {
+        value.forEach((item, index) => {
+          if (!matchesJsonType(item, typeEntry.items)) violations.push(`${pointer}/${index}: expected ${typeEntry.itemDescription || 'value'}, received ${Array.isArray(item) ? 'array' : item === null ? 'null' : typeof item}`);
+        });
       }
-      current = next;
     }
-    for (const value of current) if (!values.includes(value)) violations.push(`${path} must be one of ${values.map(candidate => JSON.stringify(candidate)).join(' | ')}, received ${JSON.stringify(value ?? null)}`);
+  }
+  for (const [path, values] of Object.entries(entry.enums || {})) {
+    for (const { value, pointer } of resolvePathValues(details, path)) {
+      if (!values.includes(value)) violations.push(`${pointer}: must be one of ${values.map(candidate => JSON.stringify(candidate)).join(' | ')}, received ${JSON.stringify(value ?? null)}`);
+    }
   }
   return violations;
 }

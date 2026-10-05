@@ -89,6 +89,8 @@ export interface LocalAssessmentOptions {
   maxRequests?: number;
   /** Optional worker idle window before the packet (pre-dispatch budget regression). */
   probeHoldMs?: number;
+  /** Test seam forwarded to `prepareLocalAssessment`; the controller still binds the verifier policy. */
+  replaySessionDecorator?: (session: import('../../src/evidence/index.js').CleanReplaySession) => import('../../src/evidence/index.js').CleanReplaySession;
 }
 
 export interface PreparedAssessment {
@@ -129,6 +131,11 @@ function exampleSourceRoot(): string {
  */
 export interface PrepareOptions {
   runRoot?: string;
+  /**
+   * Test seam: decorate the fixture replay session before the product seam sees it, so a test can omit the
+   * verification policy or supply a conflicting one. The controller still binds the verifier's policy.
+   */
+  replaySessionDecorator?: (session: import('../../src/evidence/index.js').CleanReplaySession) => import('../../src/evidence/index.js').CleanReplaySession;
   log?: (message: string) => void;
   /** Safe fixture variant: the export route enforces the tenant boundary. */
   enforceExportTenant?: boolean;
@@ -197,13 +204,17 @@ export async function prepareLocalAssessment(options: PrepareOptions = {}): Prom
       models: config.runtime.gateway.models.map(model => ({ ...model, reasoning: true, maxTokens: 1024, contextWindow: 32768, thinkingLevelMap: { max: 'max-effort' } })),
       credential: { accountId: 'inert-local-example', version: '1', secret: 'inert-local-example-not-a-provider-credential' },
     },
-    replayEnvironment: services => createFixtureReplayEnvironment(services, {
-      port: portB,
-      initial: () => environmentB,
-      setCurrent: instance => { environmentB = instance; },
-      // The owner-approved document the controller issues the scoped verifier capability from.
-      config,
-    }),
+    replayEnvironment: services => {
+      const broker = createFixtureReplayEnvironment(services, {
+        port: portB,
+        initial: () => environmentB,
+        setCurrent: instance => { environmentB = instance; },
+        config,
+      });
+      if (!options.replaySessionDecorator) return broker;
+      const decorator = options.replaySessionDecorator;
+      return { async prepare(request) { return decorator(await broker.prepare(request)); } };
+    },
     log: (event, detail) => log(`[app] ${event} ${detail}`),
   });
   return {
@@ -295,6 +306,7 @@ export async function runLocalAssessment(options: LocalAssessmentOptions = {}): 
     ...(options.enforceExportTenant === undefined ? {} : { enforceExportTenant: options.enforceExportTenant }),
     ...(options.maxRequests === undefined ? {} : { maxRequests: options.maxRequests }),
     ...(options.probeHoldMs === undefined ? {} : { probeHoldMs: options.probeHoldMs }),
+    ...(options.replaySessionDecorator === undefined ? {} : { replaySessionDecorator: options.replaySessionDecorator }),
   });
   const { app, config, runDir } = prepared;
   try {

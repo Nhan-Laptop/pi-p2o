@@ -6,14 +6,16 @@ import { rejects } from 'node:assert';
 import test from 'node:test';
 import {
   createOwnerAuthority, createApplication, createWorkerBridge, validateApplicationConfig, ownerGrantFor, callBridge,
-  createP2OBackend, enforceInterfaceMode, interfaceModeFor, parseObservationSelection,
+  createP2OBackend, enforceInterfaceMode, interfaceModeFor, parseObservationSelection, ApplicationError,
   type ApplicationConfig, type WorkerBridgeOperations,
 } from '../../src/application/index.js';
 import type { ControlBackend, Preflight, ResumeInput, RunHandle, Snapshot, StartInput } from '../../src/interface/index.js';
 import { digestJson, type AttemptRecord } from '../../src/contracts/index.js';
+import type { Scope } from '../../src/policy/index.js';
 import { type DurableStore, type WorkspaceLease } from '../../src/store/index.js';
 import { prepareLocalAssessment, runLocalAssessment, type PreparedAssessment } from '../../examples/local-assessment/main.js';
-import { RUN_ID, TASK_HYP_CASE, TASK_HYP_EXPORT } from '../../examples/local-assessment/scenario.js';
+import { FINDING_EXPORT, RUN_ID, TASK_HYP_CASE, TASK_HYP_EXPORT, TASK_VERIFY_EXPORT } from '../../examples/local-assessment/scenario.js';
+import { bindControllerVerificationPolicy } from '../../src/application/composition.js';
 
 test('local assessment chain: mapping -> parallel hypotheses -> verifier -> honest report', async () => {
   const runDir = mkdtempSync(join(tmpdir(), 'p2o-e2e-run-'));
@@ -585,6 +587,140 @@ function readAttemptEvents(prepared: PreparedAssessment, attemptId: string): Arr
   }
   return events;
 }
+
+
+test('[verification] a replay override that omits the verification policy gets the controller policy for the verifier attempt', async () => {
+  const runDir = mkdtempSync(join(tmpdir(), 'p2o-e2e-replay-policy-'));
+  const result = await runLocalAssessment({
+    runRoot: runDir,
+    log: () => {},
+    // The override hands back a session with NO policy at all; the controller must inject its own, bound to
+    // the actual verifier attempt's broker scope, or no bounded question could ever reach validation.
+    replaySessionDecorator: session => ({ ...session, verificationPolicy: undefined }),
+  });
+  assert.equal(result.terminal, true);
+  assert.equal(result.accepted, 4, 'the chain still accepts the mapping, both hypotheses and the verifier packet');
+  assert.deepEqual(result.findings, [{ findingId: FINDING_EXPORT, state: 'independently-validated', taskId: TASK_HYP_EXPORT }],
+    'the controller-injected policy admits the independent replay');
+});
+
+test('[verification] a replay override that supplies a conflicting policy is refused by name', async () => {
+  const runDir = mkdtempSync(join(tmpdir(), 'p2o-e2e-replay-conflict-'));
+  const result = await runLocalAssessment({
+    runRoot: runDir,
+    log: () => {},
+    replaySessionDecorator: session => ({
+      ...session,
+      verificationPolicy: { ...session.verificationPolicy!, scopeDigest: 'f'.repeat(64) },
+    }),
+  });
+  assert.equal(result.terminal, true);
+  const finding = result.report.findings.find(candidate => candidate.findingId === FINDING_EXPORT);
+  assert.ok(finding, 'the export finding is present in the report');
+  assert.notEqual(finding.state, 'independently-validated', 'a conflicting policy can never promote the finding');
+  assert.ok(finding.limitations.some(text => text.includes('replay-policy-conflict')),
+    `the refusal must be named in the finding limitations: ${JSON.stringify(finding.limitations)}`);
+  assert.equal(result.findings.some(entry => entry.state === 'independently-validated'), false, 'no finding is validated under a conflicting policy');
+});
+
+test('[verification] the policy seam preserves an environment\'s own plan refusal (no bypass, no injection)', async () => {
+  const prepared = await prepareLocalAssessment({ log: () => {} });
+  try {
+    const template = prepared.config.policy.grantTemplates.find(candidate => candidate.taskId === TASK_VERIFY_EXPORT);
+    assert.ok(template, 'the owner document approves a verifier grant');
+    const scopeFor = (attemptId: string): Scope => ({
+      version: 1,
+      runId: prepared.config.policy.runId,
+      authorization: prepared.config.policy.authorization,
+      targets: prepared.config.policy.targets,
+      exclusions: prepared.config.policy.exclusions,
+      accounts: prepared.config.policy.accounts,
+      grants: [{ ...template!, attemptId }],
+    });
+    const bound = bindControllerVerificationPolicy({ run: prepared.config.run, scopeFor, now: () => Date.now() })({
+      // The controller's built-in factory refuses an unregistered plan; the seam must propagate that refusal
+      // unchanged instead of injecting a policy and continuing.
+      async prepare() { throw Object.assign(new Error('No controller-registered replay plan exists for this task'), { code: 'unapproved-verification' }); },
+    });
+    await rejects(
+      bound.prepare({ attempt: { attemptId: 'attempt-verifier-1' } } as never),
+      (error: unknown) => (error as { code?: string }).code === 'unapproved-verification',
+    );
+  } finally {
+    await prepared.app.close();
+    await prepared.closeFixtures();
+  }
+});
+
+/** The verifier attempt's owner-approved scope, built the same way the composition's `brokerScope` does. */
+function verifierScopeFor(prepared: PreparedAssessment) {
+  return (attemptId: string): Scope => {
+    const template = prepared.config.policy.grantTemplates.find(candidate => candidate.taskId === TASK_VERIFY_EXPORT);
+    assert.ok(template, 'the owner document approves a verifier grant');
+    return {
+      version: 1,
+      runId: prepared.config.policy.runId,
+      authorization: prepared.config.policy.authorization,
+      targets: prepared.config.policy.targets,
+      exclusions: prepared.config.policy.exclusions,
+      accounts: prepared.config.policy.accounts,
+      grants: [{ ...template!, attemptId }],
+    };
+  };
+}
+
+test('[verification] a scope defect refuses BEFORE any environment is created (no leaked session)', async () => {
+  const prepared = await prepareLocalAssessment({ log: () => {} });
+  try {
+    let prepareCalls = 0;
+    const bound = bindControllerVerificationPolicy({
+      run: prepared.config.run,
+      // The real `brokerScope` throws exactly this way for an attempt the durable store does not own.
+      scopeFor: () => { throw new ApplicationError('attempt-missing', 'No durable attempt attempt-verifier-1'); },
+      now: () => Date.now(),
+    })({
+      async prepare() { prepareCalls += 1; throw new Error('the environment must never be created for a defective scope'); },
+    } as never);
+    await rejects(
+      bound.prepare({ attempt: { attemptId: 'attempt-verifier-1' } } as never),
+      (error: unknown) => (error as { code?: string }).code === 'attempt-missing',
+    );
+    assert.equal(prepareCalls, 0, 'policy validation must happen before the environment side effect');
+  } finally {
+    await prepared.app.close();
+    await prepared.closeFixtures();
+  }
+});
+
+test('[verification] an uncooperative close cannot stall the refusal beyond the bounded release', async () => {
+  const prepared = await prepareLocalAssessment({ log: () => {} });
+  try {
+    let closeCalls = 0;
+    const bound = bindControllerVerificationPolicy({
+      run: prepared.config.run,
+      scopeFor: verifierScopeFor(prepared),
+      now: () => Date.now(),
+    })({
+      async prepare() {
+        return {
+          // A hostile/buggy environment: it ignores the AbortSignal and its close never settles.
+          close() { closeCalls += 1; return new Promise<void>(() => {}); },
+          verificationPolicy: { runId: 'foreign-run', scopeDigest: 'f'.repeat(64) },
+        } as never;
+      },
+    } as never);
+    const started = Date.now();
+    const failure = await bound.prepare({ attempt: { attemptId: 'attempt-verifier-1' } } as never).then(() => undefined, (error: unknown) => error);
+    const elapsed = Date.now() - started;
+    assert.equal((failure as { code?: string } | undefined)?.code, 'replay-policy-conflict');
+    assert.match(String((failure as Error).message), /prepared environment release: timeout/, 'the bounded release outcome must be recorded, not assumed');
+    assert.equal(closeCalls, 1, 'the refusal must still attempt to release the prepared environment');
+    assert.ok(elapsed < 1_500, `the refusal must not wait for an uncooperative close (waited ${elapsed}ms)`);
+  } finally {
+    await prepared.app.close();
+    await prepared.closeFixtures();
+  }
+});
 
 interface BridgeHarnessState {
   lifecycle: AttemptRecord['lifecycleState'];

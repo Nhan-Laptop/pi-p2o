@@ -276,3 +276,92 @@ modified.
 A paged `readAttemptEvents()` helper was added so a long run cannot hide the probe's own records.
 
 `npm run test:e2e` → **14/14 pass** (no provider/model calls). No product code changed for this update.
+
+## Verification-policy seam fix (2026-10-05, product seam)
+
+**Problem (parent diagnosis confirmed):** the live-lab passes `replayEnvironment` as an application override and
+the composition invoked it directly, so only the built-in `dynamicReplayFactory` minted a
+`ScopedVerificationPolicy`; the harness session had none and `src/evidence/replay.ts` failed
+`verification-policy`, leaving the run without an independently-validated finding.
+
+**Fix — the controller is the sole authority for the verifier's policy, for any replay environment:**
+- New exported seam `bindControllerVerificationPolicy({ run, scopeFor, now })` in
+  `src/application/composition.ts`. It wraps *whatever* broker the composition resolved (override or built-in)
+  and, per `prepare(request)`, sets `session.verificationPolicy =
+  createScopedVerificationPolicy(run, scopeFor(request.attempt.attemptId), now)` — computed from the ACTUAL
+  verifier attempt's broker scope.
+- An environment may omit the policy (controller injects it); if it supplies one whose `runId` or `scopeDigest`
+  differs, the seam **refuses by name** (`ApplicationError('replay-policy-conflict', …)`) and releases the fresh
+  environment (`session.close`) instead of silently overwriting it.
+- **Ordering (review fix):** the expected policy is computed *before* `broker.prepare`, so a defective scope (or
+  run binding) refuses while no environment exists. Computing it afterwards would create an environment this
+  seam cannot return, silently leaking it.
+- **Bounded release (review fix):** `closePreparedReplaySession()` races the `close()` await against a 1s
+  deadline and aborts the signal at it — an `AbortSignal` only bounds an abort-*aware* close, never the await.
+  The refusal message records the release outcome (`prepared environment release: closed|timeout|failed`) so a
+  leaked environment is visible in receipts instead of being assumed.
+- The built-in `dynamicReplayFactory` path is unchanged and still goes through the factory (its
+  `unapproved-verification` plan refusal propagates untouched; no double registration, no bypass). The
+  owner-approved plan gate (`approvedVerification`) is untouched.
+- `examples/local-assessment/main.ts` gained a test-only `replaySessionDecorator` seam (default behaviour
+  unchanged) so the regressions run the real store/broker/vault chain with an override that omits or conflicts.
+
+**Regressions** (`tests/end-to-end/end-to-end.test.ts`, inert local fixtures, no external traffic):
+(a) omit-policy override → the chain still reaches `independently-validated` (controller policy injected);
+(b) conflicting-policy override → the finding stays unresolved and the refusal is named
+`replay-policy-conflict` in its limitations, with no finding validated;
+(c) the seam propagates an environment's own `unapproved-verification` refusal unchanged;
+(d) a scope defect refuses with the store's own error and **zero** `broker.prepare` calls (no environment can be
+created before the controller has a policy to bind);
+(e) an environment whose `close()` ignores the signal and never settles still cannot stall the refusal: the
+refusal lands in ~1.0s (test measured 1059ms), the release was attempted once, and the message records
+`release: timeout` rather than asserting an outcome.
+
+**This seam has NOT been exercised live.** The last real-Pi run (`ll-m8bkq1`) failed *before* the replay stage:
+the `task-hyp-idor` packet was rejected at admission by the handoff schema (`adapter-error:
+$/details/composition/representationChanges: Expected an array; $/details/composition/writersReaders: Expected
+an array`), so its verifier was cancelled and no replay ran. The absence of a `verification-policy` error in that
+run is therefore **not** evidence that the injection works — it is evidence the verifier never reached the replay
+environment. The only live validation to date that a controller-computed policy admits an independent replay
+predates this seam; the next live run is the first live exercise of `bindControllerVerificationPolicy`.
+
+**Commands / results:** `typecheck` 0 errors · `test:evidence` 61/61 · `test:orchestrator` 81/81 ·
+`test:e2e` **19/19** (5 new) · `test:live-lab` 13/13. No live/provider run was made.
+
+**Item 5 (now required — done): authoring type gate.** The live acceptance bar was blocked by schema TYPE drift
+on optional `details.composition` fields (`$/details/composition/representationChanges: Expected an array`, …),
+so the crib now carries and enforces exact types:
+- `examples/live-lab/generate-contract-enums.mjs` (new) generates `contract-enums.json` from
+  `handoffSchema` (`npm run build && node examples/live-lab/generate-contract-enums.mjs`); the JSON is byte-stable
+  across regenerations and now records, per contract, a details-relative `types` table (accepted JSON
+  type(s), array item types, required/optional, human description, exact pointer scope) alongside the root keys,
+  required scopes and enums. 21 H1 + 31 H2 type entries.
+- `scenario.assertContractEnumCoverage()` re-derives the same table from the schema and refuses any drift by
+  name (`authoring crib value-type drift for <contract>`), so a stale JSON fails at scenario build, before any
+  worker launches.
+- `bridge-extension.js` `cribViolations()` enforces the table at authoring time with the field's JSON pointer:
+  `$/details/composition/representationChanges: expected array of string, received string`, and element pointers
+  for array items (`$/details/composition/writersReaders/0: expected string, received number`). The crib's
+  guidance now renders the exact types (optional composition fields marked), and the H1 semantic gates the crib
+  can express without lying: the `peerTopology[]` membership/authority evidence rule and the `interfaces[]`
+  rule (required keys, `actorId === scope.actor.id`, `observed` needs observation|trace evidence, `inferred`
+  needs `proposedCheck` + source evidence) — authoring guidance mirroring `src/contracts/gates.ts`, never a bypass.
+- **Omission guidance (review fix):** `renderTypeGuidance()` renders the table for the worker in three
+  scopes — required, **conditional** and optional — because listing the fields of an optional scope as
+  unconditional requirements is what pushes an author to fabricate it. `composition` (and `peerTopology`) and
+  their fields are stated as *"required only when `<scope>` is present — omit `<scope>` entirely when you have no
+  evidence for it"*; `interfaces[]` element fields as *"required inside each `interfaces` element — omit the
+  element itself when you have no evidence for it"*; the optional line states that an omitted optional field is
+  valid and correct, and that a speculative value, guessed enum spelling or empty placeholder written only to
+  fill the schema is not. The exact enforcement types (`representationChanges = array of string`, …) are still
+  named, in the conditional line. Enforcement is unchanged; `cribViolations` still refuses a present-but-wrong
+  value at its pointer.
+- Regressions (`tests/live/live-lab.test.ts`): prose-level assertions that `composition`/`peerTopology` never
+  appear on the required line while their exact types appear in the conditional line; a scalar where an array is
+  required is refused at its pointer; a
+  wrong array element type is refused at its element pointer; a type-valid packet built from the table passes;
+  a hand-edited type table is refused by the drift guard; the rendered crib contains the type line and both H1
+  semantic rules.
+
+**Commands / results (item 5):** `typecheck` 0 errors · `test:live-lab` **13/13** · `test:e2e` **17/17** ·
+`build` + `check:build` OK. No paid live run (parent runs exactly one).

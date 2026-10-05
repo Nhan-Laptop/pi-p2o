@@ -276,6 +276,13 @@ test('authoring crib enumerates the exact contract enums and required fields (dr
   assertContractEnumCoverage(table); // throws if the crib drifts from the supervisor's handoff gate
   assert.deepEqual(table.contracts.H1?.enums['interfaces[].reachability'], ['observed', 'inferred']);
   assert.deepEqual(table.contracts.H2?.enums['baseline.status'], ['observed', 'unavailable']);
+  // Item 5: the generated type table carries optional H2 composition fields with their exact types.
+  assert.equal(table.contracts.H2?.types['composition']?.required, false, 'composition is optional');
+  assert.equal(table.contracts.H2?.types['composition.representationChanges']?.description, 'array of string');
+  assert.equal(table.contracts.H2?.types['composition.writersReaders']?.description, 'array of string');
+  assert.equal(table.contracts.H2?.types['composition.encoding']?.description, 'string');
+  assert.equal(table.contracts.H1?.types['interfaces[].reachability']?.description, 'string');
+  assert.equal(table.contracts.H1?.types['interfaces[].benignOperations']?.description, 'array of string');
   const bridge = readFileSync(join(sourceRoot, 'bridge-extension.js'), 'utf8');
   assert.match(bridge, /contract-enums\.json/, 'the crib must load the machine-checked table');
   assert.match(bridge, /Exact \$\{contract\} enum values/, 'the crib must render the exact enum values');
@@ -293,24 +300,47 @@ test('a drifted or incomplete authoring table is refused with an explicit drift 
   const incomplete = JSON.parse(JSON.stringify(table)) as typeof table;
   delete incomplete.contracts.H1!.required['interfaces[]'];
   assert.throws(() => assertContractEnumCoverage(incomplete), /does not require H1 interfaces\[\]/);
+  // A stale hand-edited type table is refused too, with the regeneration command.
+  const staleTypes = JSON.parse(JSON.stringify(table)) as typeof table;
+  staleTypes.contracts.H2!.types['composition.representationChanges'] = { types: ['string'], description: 'string', required: true };
+  assert.throws(() => assertContractEnumCoverage(staleTypes), /authoring crib value-type drift for H2/);
 });
 
-test('p2o_packet refuses a drifting packet at authoring time with the exact paths (R3)', async () => {
+test('p2o_packet refuses a drifting packet at authoring time with the exact paths (R3 + item 5 types)', async () => {
   const table = readContractEnumTable(join(sourceRoot, 'contract-enums.json'));
+  const bridgeSource = readFileSync(join(sourceRoot, 'bridge-extension.js'), 'utf8');
   const bridge = await import(pathToFileURL(join(sourceRoot, 'bridge-extension.js')).href) as {
     cribViolations: (packet: unknown, contract: string, table: unknown) => string[];
+    renderTypeGuidance: (contract: string, table: unknown) => { required?: string; conditional?: string; optional?: string };
   };
-  const minimalPacket = (contract: 'H1' | 'H2') => {
-    const entry = table.contracts[contract]!;
-    const details: Record<string, unknown> = {};
-    for (const key of entry.required.details ?? []) details[key] = {};
-    for (const [scope, keys] of Object.entries(entry.required)) {
-      if (scope === 'details') continue;
-      const shape = Object.fromEntries(keys.map(key => [key, 'placeholder']));
-      if (scope.endsWith('[]')) details[scope.slice(0, -2)] = [shape];
-      else details[scope] = shape;
+  // The generated type table is details-relative: '' is the details root, `X[]` is an array-of-objects scope.
+  const typeEntries = (contract: 'H1' | 'H2') => table.contracts[contract]!.types;
+  const objectFor = (contract: 'H1' | 'H2', parentPath: string): Record<string, unknown> => {
+    const parent = parentPath === '' ? undefined : typeEntries(contract)[parentPath];
+    const prefix = parentPath === '' ? '' : `${parentPath}${parent?.types.includes('array') ? '[]' : ''}.`;
+    const children = Object.entries(typeEntries(contract)).filter(([candidate]) => {
+      if (!candidate.startsWith(prefix)) return false;
+      const rest = candidate.slice(prefix.length);
+      return rest.length > 0 && !rest.includes('.') && !rest.includes('[]');
+    });
+    return Object.fromEntries(children.filter(([, child]) => child.required).map(([candidate]) => [candidate.slice(prefix.length), valueFor(contract, candidate)]));
+  };
+  const valueFor = (contract: 'H1' | 'H2', path: string): unknown => {
+    const entry = typeEntries(contract)[path]!;
+    if (entry.types.includes('array')) {
+      if (entry.items?.includes('string')) return ['placeholder'];
+      if (entry.items?.includes('object')) return [objectFor(contract, path)];
+      return [];
     }
-    for (const [path, values] of Object.entries(entry.enums)) {
+    if (entry.types.includes('object')) return objectFor(contract, path);
+    if (entry.types.includes('boolean')) return false;
+    if (entry.types.includes('integer') || entry.types.includes('number')) return 1;
+    return 'placeholder';
+  };
+  // Fill every required leaf with a value of its declared type, then any enum with its first allowed value.
+  const minimalDetails = (contract: 'H1' | 'H2') => {
+    const details: Record<string, unknown> = objectFor(contract, '');
+    for (const [path, values] of Object.entries(table.contracts[contract]!.enums)) {
       const segments = path.split('.');
       let node: Record<string, unknown> = details;
       for (let index = 0; index < segments.length; index++) {
@@ -322,7 +352,11 @@ test('p2o_packet refuses a drifting packet at authoring time with the exact path
         else node = (node[key] ??= {}) as Record<string, unknown>;
       }
     }
-    const packet: Record<string, unknown> = Object.fromEntries(entry.requiredRootKeys.map(key => [key, key === 'details' ? details : 'placeholder']));
+    return details;
+  };
+  const minimalPacket = (contract: 'H1' | 'H2') => {
+    const details = minimalDetails(contract);
+    const packet: Record<string, unknown> = Object.fromEntries(table.contracts[contract]!.requiredRootKeys.map(key => [key, key === 'details' ? details : 'placeholder']));
     packet.contract = contract;
     packet.details = details;
     return packet;
@@ -337,9 +371,51 @@ test('p2o_packet refuses a drifting packet at authoring time with the exact path
   // A guessed enum value is refused with the allowed values.
   const badEnum = minimalPacket('H1');
   (badEnum.details as { interfaces: Array<Record<string, unknown>> }).interfaces[0]!.reachability = 'guessed';
-  assert.ok(bridge.cribViolations(badEnum, 'H1', table).some(message => message.includes('interfaces[].reachability must be one of')), 'the enum value must be refused');
+  assert.ok(bridge.cribViolations(badEnum, 'H1', table).some(message => message.startsWith('$/details/interfaces/0/reachability: must be one of')), 'the enum value must be refused at its pointer');
   // A missing required field is refused with its path.
   const missing = minimalPacket('H2');
   delete (missing.details as { baseline: Record<string, unknown> }).baseline.status;
   assert.ok(bridge.cribViolations(missing, 'H2', table).some(message => message.includes('missing required field baseline.status')), 'the missing field must be refused');
+
+  // [item 5] A scalar where the schema requires an array is refused at authoring time with the exact pointer.
+  const compositionTemplate = objectFor('H2', 'composition');
+  const drifted = minimalPacket('H2');
+  (drifted.details as { composition?: Record<string, unknown> }).composition = { ...compositionTemplate, representationChanges: 'not-an-array' };
+  const driftedViolations = bridge.cribViolations(drifted, 'H2', table);
+  assert.ok(
+    driftedViolations.some(message => message.startsWith('$/details/composition/representationChanges: expected array of string')),
+    `the scalar-in-array-place drift must be refused at its pointer: ${JSON.stringify(driftedViolations)}`,
+  );
+  // A wrong element type inside a required array is refused at its element pointer too.
+  const badElement = minimalPacket('H2');
+  (badElement.details as { composition?: Record<string, unknown> }).composition = { ...compositionTemplate, writersReaders: [7] };
+  assert.ok(
+    bridge.cribViolations(badElement, 'H2', table).some(message => message.startsWith('$/details/composition/writersReaders/0: expected string')),
+    'a wrong array element type must be refused at its element pointer',
+  );
+  // The crib renders the exact types, split by scope, and the H1 semantic rules.
+  assert.match(bridgeSource, /Exact \$\{contract\} JSON types/);
+  assert.match(bridgeSource, /omit it unless the evidence supports it/);
+  assert.equal('composition' in (minimalPacket('H2').details as Record<string, unknown>), false, 'an optional field is omitted, not fabricated to fill the schema');
+
+  // Guidance must not turn optional scopes into fill-everything checklists: a field inside an optional object
+  // (or optional array) is stated as required only WHEN that scope is written, so omitting the scope is the
+  // documented valid choice and a speculative value is not encouraged.
+  const h2Guidance = bridge.renderTypeGuidance('H2', table.contracts.H2);
+  assert.ok(h2Guidance.required?.includes('constraints = array of string'), 'unconditional requirements stay on the required line');
+  assert.ok(!h2Guidance.required?.includes('composition.'), `composition fields must not be listed as unconditional requirements: ${h2Guidance.required}`);
+  assert.ok(h2Guidance.conditional?.includes('composition.representationChanges = array of string (required only when composition is present'), `composition fields belong to the conditional scope: ${h2Guidance.conditional}`);
+  assert.match(h2Guidance.conditional ?? '', /omit composition entirely when you have no evidence for it/);
+  assert.ok(h2Guidance.optional?.includes('composition = object'), 'composition itself is named optional');
+  assert.ok(h2Guidance.optional?.includes('modificationDisclosure = string'));
+  assert.match(h2Guidance.optional ?? '', /omit each one unless the evidence you actually hold needs it/);
+  assert.match(h2Guidance.optional ?? '', /a speculative value, a guessed enum spelling or an empty placeholder written only to fill the schema is not/);
+  const h1Guidance = bridge.renderTypeGuidance('H1', table.contracts.H1);
+  assert.ok(h1Guidance.required?.includes('interfaces = array of object'), 'the required interfaces array stays required');
+  assert.ok(!h1Guidance.required?.includes('peerTopology'), `peerTopology must not be an unconditional requirement: ${h1Guidance.required}`);
+  assert.ok(h1Guidance.optional?.includes('peerTopology = array of object'), 'peerTopology is optional');
+  assert.match(h1Guidance.conditional ?? '', /peerTopology\[\]\.identityOrigin = string \(required only when peerTopology is present/);
+  assert.match(h1Guidance.conditional ?? '', /interfaces\[\]\.surfaceId = string \(required inside each interfaces element/);
+  assert.match(bridgeSource, /authority rule: membershipEvidenceIds must reference source or observation evidence/);
+  assert.match(bridgeSource, /reachability "observed" needs observation or trace evidence/);
 });

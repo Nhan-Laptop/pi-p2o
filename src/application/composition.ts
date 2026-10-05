@@ -9,7 +9,7 @@ import {
 import { openStore, type StoredResult } from '../store/index.js';
 import {
   createResultCollectorBridge, createWorkspacePacketSource, openEvidenceVault, PACKET_EVIDENCE_CLASSIFICATION,
-  PACKET_EVIDENCE_KIND, publishHandoffReviews as publishEvidenceReviews, type FindingReview, type ResultCollectorBridge,
+  PACKET_EVIDENCE_KIND, publishHandoffReviews as publishEvidenceReviews, type CleanReplayBroker, type FindingReview, type ResultCollectorBridge,
 } from '../evidence/index.js';
 import { createPlanLedger, createPlanPort, createRequestPlanLedger, createWorkerContextPort, materializeRequestPlan, type PlanLedger, type PlanPort, type PlanPortOptions, type RequestPlanLedger } from './planner.js';
 import { defaultResolver } from '../tools/http.js';
@@ -86,6 +86,55 @@ import type { ApprovedSourceContainerBinding } from './source-binding/index.js';
  */
 export function isPreDispatchRefusal(error: unknown): boolean {
   return error instanceof ToolExecutionError && !error.dispatched;
+}
+/**
+ * Release a prepared environment on a refusal path without trusting it to cooperate. An AbortSignal only bounds
+ * an abort-AWARE close; it does not bound the await, so the await itself is raced against a deadline. Never
+ * throws, and reports whether the release actually settled so a leak is visible in the refusal message.
+ */
+export async function closePreparedReplaySession(
+  session: { close(signal: AbortSignal): unknown },
+  timeoutMs = 1_000,
+): Promise<'closed' | 'timeout' | 'failed'> {
+  const controller = new AbortController();
+  let expire: () => void = () => {};
+  const deadline = new Promise<'timeout'>(resolve => { expire = () => resolve('timeout'); });
+  const timer = setTimeout(() => { controller.abort(); expire(); }, timeoutMs);
+  timer.unref();
+  try {
+    return await Promise.race([
+      Promise.resolve()
+        .then(() => session.close(controller.signal))
+        .then(() => 'closed' as const, () => 'failed' as const),
+      deadline,
+    ]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/**
+ * [verification] Controller-owned policy seam for ANY replay environment, override included. The verifier's
+ * scoped verification policy is never chosen or weakened by a harness: it is computed per request from the
+ * ACTUAL verifier attempt's broker scope (`scopeFor(request.attempt.attemptId)`). An environment may omit the
+ * policy (the controller injects it) but may not supply a conflicting one — a mismatching policy is refused by
+ * name and the freshly created environment is released instead of being used.
+ */
+export function bindControllerVerificationPolicy(input: { run: RunManifest; scopeFor: (attemptId: string) => Scope; now: () => number }): (broker: CleanReplayBroker) => CleanReplayBroker {
+  return broker => ({
+    async prepare(request) {
+      // Validate the controller side BEFORE creating anything: a defective scope (or run binding) must refuse
+      // here, while there is no session to release, instead of leaking an environment this seam cannot return.
+      const expected = createScopedVerificationPolicy(input.run, input.scopeFor(request.attempt.attemptId), input.now);
+      const session = await broker.prepare(request);
+      const supplied = session.verificationPolicy;
+      if (supplied && (supplied.runId !== expected.runId || supplied.scopeDigest !== expected.scopeDigest)) {
+        const released = await closePreparedReplaySession(session);
+        throw new ApplicationError('replay-policy-conflict', `replay-policy-conflict: a replay environment may not supply a verification policy that differs from the controller-computed verifier scope (prepared environment release: ${released})`);
+      }
+      return { ...session, verificationPolicy: expected };
+    },
+  });
 }
 export interface ApplicationOverrides {
   /** Controller-issued immutable binding; never loaded from model/worker JSON. */
@@ -1342,8 +1391,10 @@ export async function createApplication(configInput: ApplicationConfigWithSpend,
     reviewerId: REVIEWER_ID,
     producerFinding: findingId => producerFindings().get(findingId),
     tick: async () => { await supervisor.tick(config.run.runId); },
-    replay: (overrides.replayEnvironment ?? (verificationSchedule ? dynamicReplayFactory : undefined))?.(verificationServices)
-      ?? { async prepare() { throw new ApplicationError('INTEGRATION_REQUIRED', 'No clean replay environment factory is configured for this composition'); } },
+    replay: bindControllerVerificationPolicy({ run: config.run, scopeFor: brokerScope, now: () => Date.parse(clockIso()) })(
+      (overrides.replayEnvironment ?? (verificationSchedule ? dynamicReplayFactory : undefined))?.(verificationServices)
+        ?? { async prepare() { throw new ApplicationError('INTEGRATION_REQUIRED', 'No clean replay environment factory is configured for this composition'); } },
+    ),
   });
   const verifier: AssessmentApplication['verifier'] = Object.freeze({
     producerReview: (findingId: string) => {

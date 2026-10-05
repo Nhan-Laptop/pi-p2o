@@ -222,6 +222,42 @@ export interface LiveLabDocument {
   checks: ObservationCheck[];
 }
 
+
+const schemaTypeNames = (schema: JsonNode | undefined): string[] => {
+  if (!schema || typeof schema !== 'object') return ['value'];
+  if (Array.isArray(schema.anyOf)) return [...new Set((schema.anyOf as JsonNode[]).flatMap(schemaTypeNames))].sort();
+  if (schema.type === 'array') return ['array'];
+  if (schema.type === 'object') return ['object'];
+  if (schema.type === 'integer') return ['integer'];
+  if (schema.type === 'number') return ['number'];
+  if (schema.type === 'string') return ['string'];
+  if (schema.type === 'boolean') return ['boolean'];
+  if ('const' in schema) return [typeof schema.const];
+  return ['value'];
+};
+const schemaTypeDescription = (schema: JsonNode | undefined): string => {
+  if (!schema || typeof schema !== 'object') return 'value';
+  if (Array.isArray(schema.anyOf)) return [...new Set((schema.anyOf as JsonNode[]).map(schemaTypeDescription))].join(' or ');
+  if (schema.type === 'array') return `array of ${schema.items ? schemaTypeDescription(schema.items as JsonNode) : 'value'}`;
+  if ('const' in schema) return `literal ${JSON.stringify(schema.const)}`;
+  if (schema.type) return String(schema.type);
+  return 'value';
+};
+type TypeEntry = { types: string[]; description: string; required: boolean; items?: string[]; itemDescription?: string };
+function walkTypes(node: JsonNode, path: string, requiredKeys: readonly string[] | undefined, out: Record<string, TypeEntry>): void {
+  const required = requiredKeys ?? [];
+  for (const [key, child] of Object.entries((node.properties ?? {}) as Record<string, JsonNode>)) {
+    const childPath = path ? `${path}.${key}` : key;
+    const entry: TypeEntry = { types: schemaTypeNames(child), description: schemaTypeDescription(child), required: required.includes(key) };
+    if (child.type === 'array' && child.items) { entry.items = schemaTypeNames(child.items as JsonNode); entry.itemDescription = schemaTypeDescription(child.items as JsonNode); }
+    out[childPath] = entry;
+    walkTypes(child, childPath, Array.isArray(child.required) ? (child.required as string[]) : undefined, out);
+    const items = child.items as JsonNode | undefined;
+    if (items && items.properties) walkTypes(items, `${childPath}[]`, Array.isArray(items.required) ? (items.required as string[]) : undefined, out);
+  }
+}
+const sortedRecord = <T>(value: Record<string, T>): Record<string, T> => Object.fromEntries(Object.entries(value).sort(([a], [b]) => a.localeCompare(b)));
+
 // ------------------------------------------------------- authoring-contract drift guard
 
 /** The worker authoring crib's required fields and enum values, keyed by handoff contract. */
@@ -236,6 +272,11 @@ export interface ContractEnumTable {
     detailsKeys: readonly string[];
     required: Record<string, readonly string[]>;
     enums: Record<string, readonly string[]>;
+    /**
+     * Exact accepted JSON value types per `details` field and nested object/array element, generated from the
+     * handoff schema. `description` is what the authoring gate reports at the field's JSON pointer.
+     */
+    types: Record<string, { types: readonly string[]; description: string; required: boolean; items?: readonly string[]; itemDescription?: string }>;
   }>;
 }
 
@@ -282,11 +323,15 @@ export function schemaContractEnumTable(): ContractEnumTable {
     }
     const enums: Record<string, string[]> = {};
     walkEnums(details, 'details', enums);
+    const types: Record<string, TypeEntry> = {};
+    walkTypes(details, 'details', Array.isArray(details.required) ? (details.required as string[]) : undefined, types);
     contracts[contract] = {
       rootKeys: Object.keys(properties).sort(),
       detailsKeys: Object.keys((details.properties ?? {}) as Record<string, JsonNode>).sort(),
       requiredRootKeys: Array.isArray(branch.required) ? (branch.required as string[]).slice().sort() : [],
-      required, enums: Object.fromEntries(Object.entries(enums).map(([path, values]) => [path.replace(/^details\./, ''), values])),
+      required,
+      enums: sortedRecord(Object.fromEntries(Object.entries(enums).map(([path, values]) => [path.replace(/^details\.?/, ''), values]))),
+      types: sortedRecord(Object.fromEntries(Object.entries(types).map(([path, entry]) => [path.replace(/^details\.?/, ''), entry]))),
     };
   }
   return { version: 1, contracts };
@@ -307,6 +352,8 @@ export function assertContractEnumCoverage(table: ContractEnumTable = readContra
     if (cribRoot !== schemaRoot) throw new Error(`authoring crib root-key drift for ${contract}: crib=${cribRoot} gate=${schemaRoot}`);
     const cribRequiredRoot = JSON.stringify(crib.requiredRootKeys ?? []), schemaRequiredRoot = JSON.stringify(schemaEntry.requiredRootKeys ?? []);
     if (cribRequiredRoot !== schemaRequiredRoot) throw new Error(`authoring crib required-root-key drift for ${contract}: crib=${cribRequiredRoot} gate=${schemaRequiredRoot}`);
+    const cribTypes = JSON.stringify(crib.types ?? {}), schemaTypes = JSON.stringify(schemaEntry.types ?? {});
+    if (cribTypes !== schemaTypes) throw new Error(`authoring crib value-type drift for ${contract}; regenerate with \`npm run build && node examples/live-lab/generate-contract-enums.mjs\` (crib=${cribTypes.slice(0, 240)} gate=${schemaTypes.slice(0, 240)})`);
     const cribDetails = JSON.stringify(crib.detailsKeys ?? []), schemaDetails = JSON.stringify(schemaEntry.detailsKeys ?? []);
     if (cribDetails !== schemaDetails) throw new Error(`authoring crib details-key drift for ${contract}: crib=${cribDetails} gate=${schemaDetails}`);
     for (const [scope, keys] of Object.entries(schemaEntry.required)) {
