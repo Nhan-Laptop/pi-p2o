@@ -2,9 +2,9 @@ import { access, lstat, mkdir, open, readdir, realpath } from "node:fs/promises"
 import { constants } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { atomicJson, digest, errorText, readBounded, readJson, within } from "./io.js";
+import { atomicJson, Deadline, digest, errorText, MAX_TIMER_MS, readBounded, readJson, within } from "./io.js";
 import type { ManagedRuntimeOptions, RuntimeHandle, RuntimeRequest, WorkerConfig } from "./types.js";
-import { createServer, request as httpRequest, type IncomingMessage, type Server, type ServerResponse } from "node:http";
+import { createServer, request as httpRequest, type ClientRequest, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { request as httpsRequest } from "node:https";
 import { createHash, randomUUID } from "node:crypto";
 import { createEvidenceRedactor } from "../evidence/redaction.js";
@@ -304,7 +304,7 @@ export interface ControllerModelGateway {
   listen(): Promise<void>;
   close(): Promise<void>;
   /** Mint (or reuse) the isolated placeholder for one attempt and bind its receipt file. */
-  bindAttempt(input: { attemptId: string; requested: RuntimeSelection; receiptFile?: string }): string;
+  bindAttempt(input: { attemptId: string; requested: RuntimeSelection; receiptFile?: string; deadlineAt?: number }): string;
   /**
    * [T9] Bind the supervisor-owned per-turn spend gate for one attempt. Every provider request the
    * gateway forwards for that attempt is admitted against the run's durable spend ledger first.
@@ -416,7 +416,22 @@ const gatewayApiHeaders: Record<ModelGateway["api"], { header: string; scheme: s
 const forwardedRequestHeaders = new Set(["accept", "accept-encoding", "content-type", "user-agent", "openai-version", "anthropic-version", "anthropic-beta", "x-stainless-arch", "x-stainless-lang", "x-stainless-os", "x-stainless-package-version", "x-stainless-runtime", "x-stainless-runtime-version"]);
 const forwardedResponseHeaders = new Set(["content-type", "content-encoding", "content-length", "cache-control", "request-id", "x-request-id", "retry-after", "openai-version", "openai-processing-ms", "anthropic-version"]);
 
-interface AttemptBinding { attemptId: string; requested: RuntimeSelection; receiptFile?: string }
+interface AttemptBinding { attemptId: string; requested: RuntimeSelection; receiptFile?: string; deadlineAt?: number; deadline?: Deadline }
+
+/** Re-arm long absolute deadlines safely; a timeout is never converted into a renewed budget. */
+function armDeadline(deadline: Deadline | undefined, onExpire: () => void): () => void {
+  if (!deadline) return () => {};
+  let active = true;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const schedule = (): void => {
+    if (!active) return;
+    const remaining = deadline.remaining();
+    if (remaining <= 0) { active = false; onExpire(); return; }
+    timer = setTimeout(schedule, Math.min(remaining, MAX_TIMER_MS));
+  };
+  schedule();
+  return () => { active = false; if (timer) clearTimeout(timer); };
+}
 
 /** API-specific model route. Anything else is denied before any upstream request is issued. */
 function gatewayRoute(api: ModelGateway["api"], requestPath: string): { path: string; model?: string } | undefined {
@@ -750,17 +765,19 @@ class ControllerModelGatewayServer implements ControllerModelGateway {
     if (!ready.ok) throw new Error(`Credential-owning gateway is not ready: ${ready.code}: ${ready.message}`);
   }
 
-  bindAttempt(input: { attemptId: string; requested: RuntimeSelection; receiptFile?: string }): string {
+  bindAttempt(input: { attemptId: string; requested: RuntimeSelection; receiptFile?: string; deadlineAt?: number }): string {
     this.assertReady(input.requested);
+    if (input.deadlineAt !== undefined && (!Number.isSafeInteger(input.deadlineAt) || input.deadlineAt <= 0)) throw new Error('Attempt gateway deadline must be a positive absolute timestamp');
     const existing = this.placeholders.get(input.attemptId);
     if (existing) {
       const bound = this.byPlaceholder.get(digest(existing));
-      if (!bound || bound.requested.provider !== input.requested.provider || bound.requested.model !== input.requested.model || bound.requested.thinking !== input.requested.thinking || bound.receiptFile !== input.receiptFile) throw new Error('Attempt gateway policy/receipt identity cannot change');
+      if (!bound || bound.requested.provider !== input.requested.provider || bound.requested.model !== input.requested.model || bound.requested.thinking !== input.requested.thinking || bound.receiptFile !== input.receiptFile || bound.deadlineAt !== input.deadlineAt) throw new Error('Attempt gateway policy/receipt/deadline identity cannot change');
       return existing;
     }
     const placeholder = `p2o-gw.v1.${this.gatewayId}.${randomUUID().replaceAll("-", "")}`;
     this.placeholders.set(input.attemptId, placeholder);
-    this.byPlaceholder.set(digest(placeholder), { attemptId: input.attemptId, requested: { ...input.requested }, ...(input.receiptFile ? { receiptFile: input.receiptFile } : {}) });
+    this.byPlaceholder.set(digest(placeholder), { attemptId: input.attemptId, requested: { ...input.requested }, ...(input.receiptFile ? { receiptFile: input.receiptFile } : {}),
+      ...(input.deadlineAt === undefined ? {} : { deadlineAt: input.deadlineAt, deadline: new Deadline(input.deadlineAt, this.nowMs) }) });
     this.logLine(`gateway ${this.gatewayId} minted an isolated placeholder for attempt ${input.attemptId}`);
     return placeholder;
   }
@@ -915,7 +932,22 @@ class ControllerModelGatewayServer implements ControllerModelGateway {
       await this.deny(response, { at, binding, observed: observed(null), requestDigest: digest(`${method} ${path}`), requestBytes: 0, denial: { code: "GATEWAY_ENDPOINT_DENIED", message: "only provisioned model routes are served" } });
       return;
     }
-    const body = await this.readBody(request);
+    if (binding.deadline?.exhausted()) {
+      await this.deny(response, { at, binding, observed: observed(null), requestDigest: digest(`${method} ${path}`), requestBytes: 0,
+        denial: { code: 'GATEWAY_UPSTREAM_FAILED', message: 'attempt absolute deadline exhausted; provider request was not forwarded', reasonCode: 'ATTEMPT_DEADLINE_EXHAUSTED' } });
+      return;
+    }
+    let body: Buffer | undefined;
+    try { body = await this.readBody(request, binding.deadline); }
+    catch (error) {
+      if (binding.deadline?.exhausted()) {
+        if (!request.complete) response.once('finish', () => request.socket.destroy());
+        await this.deny(response, { at, binding, observed: observed(null), requestDigest: digest(`${method} ${path}`), requestBytes: 0,
+          denial: { code: 'GATEWAY_UPSTREAM_FAILED', message: 'attempt absolute deadline exhausted before provider dispatch', reasonCode: 'ATTEMPT_DEADLINE_EXHAUSTED' } });
+        return;
+      }
+      throw error;
+    }
     if (!body) {
       await this.deny(response, { at, binding, observed: observed(null), requestDigest: digest(`${method} ${path}`), requestBytes: 0, denial: { code: "GATEWAY_BODY_DENIED", message: `request body exceeded the bounded gateway limit` } });
       return;
@@ -948,6 +980,11 @@ class ControllerModelGatewayServer implements ControllerModelGateway {
     }
     if (this.credentialExpired()) {
       await this.deny(response, { at, binding, observed: observedSelection, requestDigest, requestBytes: body.length, denial: { code: "GATEWAY_CREDENTIAL_EXPIRED", message: `provider credential ${this.credential.accountId}@${this.credential.version} has expired` } });
+      return;
+    }
+    if (binding.deadline?.exhausted()) {
+      await this.deny(response, { at, binding, observed: observedSelection, requestDigest, requestBytes: body.length,
+        denial: { code: 'GATEWAY_UPSTREAM_FAILED', message: 'attempt absolute deadline exhausted; provider request was not forwarded', reasonCode: 'ATTEMPT_DEADLINE_EXHAUSTED' } });
       return;
     }
     // [T9/T10] Per-turn spend admission at the single egress: the supervisor-owned gate reads the actual
@@ -1032,18 +1069,39 @@ class ControllerModelGatewayServer implements ControllerModelGateway {
     return undefined;
   }
 
-  private async readBody(request: IncomingMessage): Promise<Buffer | undefined> {
-    const chunks: Buffer[] = [];
-    let total = 0;
-    let overflow = false;
-    for await (const chunk of request) {
-      const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk as Uint8Array);
-      total += buffer.length;
-      // Keep draining so the client can read the bounded denial instead of deadlocking on backpressure.
-      if (total > this.maxBodyBytes) { overflow = true; continue; }
-      chunks.push(buffer);
-    }
-    return overflow ? undefined : Buffer.concat(chunks);
+  private async readBody(request: IncomingMessage, deadline?: Deadline): Promise<Buffer | undefined> {
+    return new Promise<Buffer | undefined>((resolve, reject) => {
+      const chunks: Buffer[] = [];
+      let total = 0, overflow = false, settled = false;
+      let cancelDeadline = (): void => {};
+      const cleanup = (): void => {
+        cancelDeadline();
+        request.off('data', onData); request.off('end', onEnd); request.off('error', onError);
+        request.off('aborted', onAborted); request.off('close', onClose);
+      };
+      const finish = (error?: Error, body?: Buffer): void => {
+        if (settled) return;
+        settled = true; cleanup();
+        if (error) reject(error); else resolve(body);
+      };
+      const onData = (chunk: Buffer | Uint8Array | string): void => {
+        const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+        total += buffer.length;
+        // Keep draining so the client can read the bounded denial instead of deadlocking on backpressure.
+        if (total > this.maxBodyBytes) { overflow = true; return; }
+        chunks.push(buffer);
+      };
+      const onEnd = (): void => finish(undefined, overflow ? undefined : Buffer.concat(chunks));
+      const onError = (error: Error): void => finish(error);
+      const onAborted = (): void => finish(new Error('Worker request body was cancelled'));
+      const onClose = (): void => { if (!request.complete) finish(new Error('Worker request body closed before completion')); };
+      request.on('data', onData); request.once('end', onEnd); request.once('error', onError);
+      request.once('aborted', onAborted); request.once('close', onClose);
+      cancelDeadline = armDeadline(deadline, () => {
+        request.pause();
+        finish(new Error('Absolute deadline exhausted while reading provider request body'));
+      });
+    });
   }
 
   /** Strips the per-gateway mount prefix; undefined means the request addressed another mount. */
@@ -1082,53 +1140,116 @@ class ControllerModelGatewayServer implements ControllerModelGateway {
     const port = this.upstream.port ? Number(this.upstream.port) : undefined;
     const options = { hostname: this.upstream.hostname, ...(port !== undefined ? { port } : {}), path: this.upstreamPath(path), method: "POST", headers };
     await new Promise<void>((resolve) => {
-      const onResponse = (upstreamResponse: IncomingMessage): void => {
-        const status = upstreamResponse.statusCode ?? 502;
+      let upstreamRequest: ClientRequest | undefined;
+      let upstreamResponse: IncomingMessage | undefined;
+      let scanner = new GatewayUsageScanner(undefined);
+      let spend: GatewaySpendAttestation | undefined;
+      let dispatched = false, finished = false, resolved = false;
+      let cancelDeadline = (): void => {};
+      const buffered: Buffer[] = [];
+      const complete = (): void => {
+        if (resolved) return;
+        resolved = true; cancelDeadline();
+        request.off("aborted", onClientClose); response.off("close", onClientClose); response.off("drain", onDrain);
+        resolve();
+      };
+      const chargeTurn = (reason: string, observedUsage = true): GatewaySpendAttestation | undefined => {
+        if (spend || !permit) return spend;
+        spend = this.gatewayTurnCharge(permit, observedUsage ? scanner : new GatewayUsageScanner(undefined), reason);
+        if (spend.outcome === "failed" || spend.reason === "measured-wire-ceiling-overshoot") this.deniedAttempts.add(binding.attemptId);
+        if (spend.reasonCode === "MODEL_NATIVE_BOUND_EXCEEDED") this.nativeBoundAttempts.add(binding.attemptId);
+        return spend;
+      };
+      const denialFor = (reason: string): GatewayDenial => reason === "attempt-absolute-deadline-exhausted"
+        ? { code: "GATEWAY_UPSTREAM_FAILED", message: "provider exchange exceeded the attempt absolute deadline", reasonCode: "ATTEMPT_DEADLINE_EXHAUSTED" }
+        : { code: "GATEWAY_UPSTREAM_FAILED", message: "provider exchange ended before usage settlement", reasonCode: "PROVIDER_EXCHANGE_INTERRUPTED" };
+      const failClosed = (reason: string, clientGone = false): void => {
+        if (finished) return;
+        finished = true;
+        const spendOutcome = dispatched
+          ? chargeTurn(reason, false)
+          : permit ? (permit.abandon(reason), { turnId: permit.turnId, outcome: "unissued" as const, reason }) : undefined;
+        if (dispatched) this.deniedAttempts.add(binding.attemptId);
+        upstreamResponse?.destroy(); upstreamRequest?.destroy();
+        const denial = denialFor(reason);
+        void this.commit({ version: 1, seq: ++this.seq, at, gatewayId: this.gatewayId, attemptId: binding.attemptId, outcome: "denied", denial,
+          credential: this.credentialIdentity, requested: { ...binding.requested }, observed, matchesRequest: false, request: wireRequest,
+          upstream: { origin: this.upstream.origin, path: this.upstreamPath(path), ...(upstreamResponse?.statusCode ? { status: upstreamResponse.statusCode } : {}) },
+          ...(spendOutcome ? { spend: spendOutcome } : {}) }, binding.receiptFile).then(() => {
+          if (clientGone || response.destroyed || response.writableEnded) response.destroy();
+          else if (!response.headersSent) {
+            response.writeHead(502, { "content-type": "application/json", "cache-control": "no-store" });
+            response.end(`${JSON.stringify({ error: { code: denial.code, message: denial.message, reasonCode: denial.reasonCode } })}\n`);
+          } else response.destroy();
+          complete();
+        }, () => {
+          if (dispatched) permit?.failed?.("gateway-receipt-persistence-failed");
+          response.destroy(); complete();
+        });
+      };
+      const onClientClose = (): void => {
+        if (response.writableEnded) return;
+        if (finished) { response.destroy(); complete(); return; }
+        failClosed("worker-request-cancelled", true);
+      };
+      const onDrain = (): void => { upstreamResponse?.resume(); };
+      request.once("aborted", onClientClose); response.once("close", onClientClose); response.on("drain", onDrain);
+      cancelDeadline = armDeadline(binding.deadline, () => {
+        // Once the provider has fully responded, durable receipt persistence is still bounded by the
+        // attempt deadline: cut off the worker-facing exchange even if local settlement is slow.
+        if (finished) { response.destroy(); complete(); return; }
+        failClosed("attempt-absolute-deadline-exhausted");
+      });
+      if (finished) return;
+      if (binding.deadline?.exhausted()) { failClosed("attempt-absolute-deadline-exhausted"); return; }
+      const onResponse = (received: IncomingMessage): void => {
+        if (finished) { received.destroy(); return; }
+        if (binding.deadline?.exhausted()) { upstreamResponse = received; failClosed("attempt-absolute-deadline-exhausted"); return; }
+        upstreamResponse = received;
+        const status = received.statusCode ?? 502;
         const safe: Record<string, string> = {};
-        for (const [name, value] of Object.entries(upstreamResponse.headers)) {
+        for (const [name, value] of Object.entries(received.headers)) {
           if (typeof value !== "string") continue;
           if (forwardedResponseHeaders.has(name) || name.startsWith("x-ratelimit-")) safe[name] = value;
         }
         if (!response.headersSent) response.writeHead(status, safe);
-        const scanner = new GatewayUsageScanner(upstreamResponse.headers["content-type"]);
-        // A non-streaming body is buffered so the turn is charged before any byte the worker could act on
-        // is flushed; a streaming body is charged at its end, before the final chunk framing is written.
-        const buffered: Buffer[] = [];
-        let spend: GatewaySpendAttestation | undefined;
-        const chargeTurn = (reason: string): GatewaySpendAttestation | undefined => {
-          if (spend || !permit) return spend;
-          spend = this.gatewayTurnCharge(permit, reason === 'provider-response-stream-failed' ? new GatewayUsageScanner(undefined) : scanner, reason);
-          if (spend?.outcome === 'failed' || spend?.reason === 'measured-wire-ceiling-overshoot') this.deniedAttempts.add(binding.attemptId);
-          if (spend?.reasonCode === 'MODEL_NATIVE_BOUND_EXCEEDED') this.nativeBoundAttempts.add(binding.attemptId);
-          return spend;
-        };
-        upstreamResponse.on("data", (chunk: Buffer) => {
+        scanner = new GatewayUsageScanner(received.headers["content-type"]);
+        // Non-streaming bodies stay buffered until usage is durably charged; streaming bodies settle at end.
+        received.on("data", (chunk: Buffer) => {
+          if (binding.deadline?.exhausted()) { failClosed("attempt-absolute-deadline-exhausted"); return; }
           scanner.feed(chunk);
           if (!scanner.streaming) { buffered.push(chunk); return; }
-          if (!response.write(chunk)) upstreamResponse.pause();
+          if (!response.write(chunk)) received.pause();
         });
-        response.on("drain", () => upstreamResponse.resume());
-        upstreamResponse.once("end", () => {
+        received.once("end", () => {
+          if (finished) return;
+          if (binding.deadline?.exhausted()) { failClosed("attempt-absolute-deadline-exhausted"); return; }
+          finished = true;
           const spendOutcome = chargeTurn("provider-response-usage-absent");
           for (const chunk of buffered) response.write(chunk);
           // The attestation (with this turn's spend outcome) is persisted before the response ends.
-          void this.commit({ version: 1, seq: ++this.seq, at, gatewayId: this.gatewayId, attemptId: binding.attemptId, outcome: "forwarded", credential: this.credentialIdentity, requested: { ...binding.requested }, observed, matchesRequest: this.attests(binding, observed), request: wireRequest, upstream: { origin: this.upstream.origin, path: this.upstreamPath(path), status }, ...(spendOutcome ? { spend: spendOutcome } : {}) }, binding.receiptFile).then(() => { response.end(); resolve(); }, () => { permit?.failed?.("gateway-receipt-persistence-failed"); response.destroy(); resolve(); });
+          void this.commit({ version: 1, seq: ++this.seq, at, gatewayId: this.gatewayId, attemptId: binding.attemptId, outcome: "forwarded", credential: this.credentialIdentity,
+            requested: { ...binding.requested }, observed, matchesRequest: this.attests(binding, observed), request: wireRequest,
+            upstream: { origin: this.upstream.origin, path: this.upstreamPath(path), status }, ...(spendOutcome ? { spend: spendOutcome } : {}) }, binding.receiptFile)
+            .then(() => { if (!response.destroyed) response.end(); complete(); }, () => { permit?.failed?.("gateway-receipt-persistence-failed"); response.destroy(); complete(); });
         });
-        upstreamResponse.once("error", () => {
-          const spendOutcome = chargeTurn("provider-response-stream-failed");
-          for (const chunk of buffered) response.write(chunk);
-          void this.commit({ version: 1, seq: ++this.seq, at, gatewayId: this.gatewayId, attemptId: binding.attemptId, outcome: "denied", denial: { code: "GATEWAY_UPSTREAM_FAILED", message: "provider response stream failed" }, credential: this.credentialIdentity, requested: { ...binding.requested }, observed, matchesRequest: false, request: wireRequest, upstream: { origin: this.upstream.origin, path: this.upstreamPath(path), status }, ...(spendOutcome ? { spend: spendOutcome } : {}) }, binding.receiptFile).then(() => { response.destroy(); resolve(); }, () => { permit?.failed?.("gateway-receipt-persistence-failed"); response.destroy(); resolve(); });
-        });
+        received.once("error", () => failClosed("provider-response-stream-failed"));
+        received.once("close", () => { if (!received.complete) failClosed("provider-response-stream-failed"); });
       };
-      const upstreamRequest = this.upstream.protocol === "https:" ? httpsRequest(options, onResponse) : httpRequest(options, onResponse);
-      upstreamRequest.once("error", (error: unknown) => {
-        this.logLine(`gateway upstream error: ${errorText(error)}`);
-        // A transport error cannot prove the provider did not execute a transmitted request.
-        const spend = permit ? this.gatewayTurnCharge(permit, new GatewayUsageScanner(undefined), "upstream-request-outcome-unknown") : undefined;
-        if (!response.headersSent) response.writeHead(502, { "content-type": "application/json", "cache-control": "no-store" });
-        void this.commit({ version: 1, seq: ++this.seq, at, gatewayId: this.gatewayId, attemptId: binding.attemptId, outcome: "denied", denial: { code: "GATEWAY_UPSTREAM_FAILED", message: "provider request outcome is unknown" }, credential: this.credentialIdentity, requested: { ...binding.requested }, observed, matchesRequest: false, request: wireRequest, upstream: { origin: this.upstream.origin, path: this.upstreamPath(path) }, ...(spend ? { spend } : {}) }, binding.receiptFile).then(() => { response.end(JSON.stringify({ error: { code: "GATEWAY_UPSTREAM_FAILED", message: "provider request outcome is unknown" } })); resolve(); }, () => { permit?.failed?.("gateway-receipt-persistence-failed"); response.destroy(); resolve(); });
-      });
-      upstreamRequest.end(body);
+      try {
+        upstreamRequest = this.upstream.protocol === "https:" ? httpsRequest(options, onResponse) : httpRequest(options, onResponse);
+        upstreamRequest.once("error", (error: unknown) => {
+          if (finished) return;
+          this.logLine(`gateway upstream error: ${errorText(error)}`);
+          // A transport error cannot prove the provider did not execute a transmitted request.
+          failClosed("upstream-request-outcome-unknown");
+        });
+        dispatched = true; // From this point onward transport failure cannot prove the provider did no work.
+        upstreamRequest.end(body);
+      } catch (error) {
+        this.logLine(`gateway upstream dispatch error: ${errorText(error)}`);
+        failClosed("upstream-request-outcome-unknown");
+      }
     });
   }
 }
@@ -1146,5 +1267,5 @@ export function controllerGatewayRuntime(gateway: ModelGateway): ControllerModel
 function gatewayPlaceholderFor(gateway: ModelGateway, h: RuntimeHandle): string {
   const bound = controllerGatewayRuntime(gateway);
   if (!bound) return GATEWAY_PLACEHOLDER;
-  return bound.bindAttempt({ attemptId: h.attemptId, requested: h.requested, receiptFile: path.join(h.controlDir, "gateway-attestation.json") });
+  return bound.bindAttempt({ attemptId: h.attemptId, requested: h.requested, deadlineAt: h.deadlineAt, receiptFile: path.join(h.controlDir, "gateway-attestation.json") });
 }

@@ -1517,7 +1517,7 @@ export class Supervisor implements SupervisorApi {
    */
   private async enforceNoProgress(state: RunState): Promise<boolean> {
     const refusalLimit = this.noProgressRefusalLimit;
-    if (this.noProgressWindowMs <= 0 && refusalLimit <= 0) return false;
+    // The durable returned-submission brake is independent of time/tool-plane breaker tuning.
     state.noProgress ??= new Map();
     let progress = false;
     const seen = new Set<string>();
@@ -1535,6 +1535,12 @@ export class Supervisor implements SupervisorApi {
       // forever. The marker below is `collected:accepted`, so any new distinct observation resets the window;
       // an unchanged marker past the window with enough charged tool calls terminates the attempt.
       if (accepted > 0) { state.noProgress.delete(attempt.attemptId); this.refusalStreak.delete(attempt.attemptId); continue; }
+      const rejectedSubmissions = this.store.packetRejectionCount(state.runId, attempt.attemptId);
+      if (rejectedSubmissions >= 2 || this.store.packetSubmissionLimitReached(state.runId, attempt.attemptId)) {
+        this.event(state.runId, 'orchestrator.packet-rejection-halt', { rejectedSubmissions, limit: 2 }, task.taskId, attempt.attemptId);
+        if (await this.terminate(state, task, attempt, 'failed', 'Packet submission/correction allowance exhausted; no further publication retry is allowed')) progress = true;
+        continue;
+      }
       // [F-3] Non-refundable refusal streak. A refunded pre-dispatch reservation (R2) leaves the budget
       // counters at zero, so the refusal itself — counted in `releaseBudget` — is the only non-refundable
       // evidence that the tool plane is dead. Without this the breaker could never fire after a refund.

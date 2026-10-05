@@ -183,6 +183,10 @@ test('worker bridge authenticates token and attempt identity', async () => {
   try {
     const socket = prepared.app.bridge.socketPath;
     const taskId = TASK_HYP_EXPORT;
+    const before = prepared.app.store.listEvents().filter(event => event.type.startsWith('packet.submission-')).length;
+    await assert.rejects(callBridge(socket, 'not-the-owner-token', { taskId }, 'packet.admit', {}), /bridge-denied/);
+    await assert.rejects(callBridge(socket, 'a'.repeat(40), { attemptId: 'unknown-attempt' }, 'packet.admit', {}), /bridge-denied/);
+    assert.equal(prepared.app.store.listEvents().filter(event => event.type.startsWith('packet.submission-')).length, before, 'unauthenticated callers cannot consume victim submission slots');
     await assert.rejects(callBridge(socket, 'not-the-owner-token', { taskId }, 'attempt.state', {}), /bridge-denied/);
     await assert.rejects(callBridge(socket, 'a'.repeat(40), { attemptId: 'unknown-attempt' }, 'attempt.state', {}), /bridge-denied/);
     // An unresolved identity (no lease yet) is denied rather than defaulting to anything.

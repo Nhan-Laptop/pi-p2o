@@ -22,7 +22,7 @@ export function answerDialog(request, { decline, kind = 'local', live, liveLimit
   if (request.method === 'confirm') {
     // Ordinary /p2o consent has no budget/quota dialog: the model confirmation is either the accounting-only
     // 'Use this Pi assessment model?' or the legacy bounded 'Use this assessment model and bounded planning spend?'.
-    const known = /^(First-use owner consent:|Scope\/rights\/limits renewal or expansion:|Save this owner-only scope consent\?|Use this (?:Pi assessment model|assessment model and bounded planning spend)\?|Qualify the pinned dedicated-lab container boundary\?|Consent to scoped TOOL PACK|Confirm ONE local TOOL PACK|Approve p2o (run|plan) |Approve plan |Approve immutable source for the exact model plan\?)/.test(title);
+    const known = /^(First-use owner consent:|Scope\/rights\/limits renewal or expansion:|Save this owner-only scope consent\?|Use this (?:Pi assessment model|assessment model and bounded planning spend)\?|Qualify the pinned dedicated-lab container boundary\?|Consent to scoped TOOL PACK|Confirm ONE local TOOL PACK|Approve p2o (run|plan) |Approve plan |Approve immutable source for the exact model plan\?|Proceed with observation-only assessment \(no independent verification\)\?)/.test(title);
     if (!known) return { ...response, cancelled: true, reason: 'UNRECOGNIZED_CONFIRMATION' };
     if (decline && title.includes(decline)) return { ...response, confirmed: false };
     if (title.startsWith('Approve immutable source') && kind === 'github' && !request.message?.includes(`Commit: ${GITHUB_COMMIT}`)) {

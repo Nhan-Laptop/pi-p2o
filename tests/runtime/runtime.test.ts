@@ -7,7 +7,7 @@ import { fileURLToPath } from "node:url";
 import { spawn, type ChildProcess } from "node:child_process";
 import { PassThrough } from "node:stream";
 import { EventEmitter } from "node:events";
-import { createServer } from 'node:http';
+import { createServer, request as httpClientRequest } from 'node:http';
 import { clampModelRequest } from '../../src/runtime/config.js';
 import {
   createControllerModelGateway, createHeadlessRuntime, createHerdrRuntime, createPlanRuntime, filesystemHooks,
@@ -745,6 +745,203 @@ test('native output overshoot is durably a managed runtime failure, never a mone
     await runtime.shutdown(); await gateway.close();
     await new Promise<void>((resolve, reject) => upstream.close(error => error ? reject(error) : resolve()));
     await rm(root, { recursive: true, force: true });
+  }
+});
+
+test('gateway deadline cancellation settles unknown provider turns and returns before the attempt deadline', async (t) => {
+  const receiptDir = await mkdtemp(path.join(os.tmpdir(), 'p2o-gateway-deadline-'));
+  const receiptFile = path.join(receiptDir, 'gateway-attestation.json');
+  t.after(async () => { await rm(receiptDir, { recursive: true, force: true }); });
+  let providerStarted!: () => void, providerClosed!: () => void;
+  const started = new Promise<void>(resolve => { providerStarted = resolve; });
+  const closed = new Promise<void>(resolve => { providerClosed = resolve; });
+  const upstream = createServer((request) => {
+    request.socket.once('close', providerClosed);
+    request.on('end', providerStarted);
+    request.resume(); // Deliberately never sends provider headers or usage.
+  });
+  await new Promise<void>((resolve, reject) => {
+    upstream.once('error', reject);
+    upstream.listen(0, '127.0.0.1', () => { upstream.removeListener('error', reject); resolve(); });
+  });
+  const address = upstream.address(); assert.ok(address && typeof address !== 'string');
+  const gateway = createControllerModelGateway({ approval: 'offline attempt-deadline loopback regression', provider: 'p2o-inert',
+    upstreamBaseUrl: `http://127.0.0.1:${address.port}`, api: 'openai-completions', models: [{ id: 'inert', reasoning: true, contextWindow: 32000, maxTokens: 1024 }],
+    credential: { accountId: 'fixture', version: 'deadline-v1', secret: 'inert-fixture-secret' }, requireSpendGate: true });
+  await gateway.listen();
+  const requested = { provider: 'p2o-inert', model: 'inert', thinking: 'off' as const };
+  const attemptId = 'gateway-deadline';
+  const deadlineAt = Date.now() + 600;
+  const placeholder = gateway.bindAttempt({ attemptId, requested, deadlineAt, receiptFile });
+  let admitted = 0, settled = 0, unobservedReason = '';
+  gateway.bindSpendGate({ attemptId, gate: { attemptId, maxOutputTokens: 1024,
+    admit: () => {
+      admitted += 1;
+      return { turnId: 'inert-turn', settle: () => { settled += 1; return { turnId: 'inert-turn', inputTokens: 1, outputTokens: 1, costMicros: 1, assumed: false, duplicate: false }; },
+        unobserved: (reason: string) => { settled += 1; unobservedReason = reason; return { turnId: 'inert-turn', inputTokens: 1, outputTokens: 1024, costMicros: 1, assumed: true, duplicate: false }; },
+        abandon: () => { throw new Error('dispatched provider request must not be abandoned'); } };
+    } } });
+  try {
+    const before = Date.now();
+    const response = await fetch(`${gateway.url}/chat/completions`, { method: 'POST', headers: { authorization: `Bearer ${placeholder}`, 'content-type': 'application/json' },
+      body: JSON.stringify({ model: 'inert', messages: [{ role: 'user', content: 'offline fixture' }] }) });
+    const body = await response.json() as { error: { code: string; reasonCode?: string } };
+    await started;
+    assert.equal(response.status, 502);
+    assert.equal(body.error.code, 'GATEWAY_UPSTREAM_FAILED');
+    assert.equal(body.error.reasonCode, 'ATTEMPT_DEADLINE_EXHAUSTED');
+    assert.ok(Date.now() - before < 2_000, 'provider settlement wait is bounded by the absolute attempt deadline');
+    await Promise.race([closed, sleep(1_000).then(() => { throw new Error('provider socket survived gateway deadline cancellation'); })]);
+    assert.equal(admitted, 1);
+    assert.equal(settled, 1);
+    assert.equal(unobservedReason, 'attempt-absolute-deadline-exhausted');
+    const attestation = gateway.attestations().find(entry => entry.attemptId === attemptId);
+    assert.equal(attestation?.outcome, 'denied');
+    assert.equal(attestation?.denial?.reasonCode, 'ATTEMPT_DEADLINE_EXHAUSTED');
+    assert.equal(attestation?.spend?.outcome, 'assumed-worst-case');
+    assert.equal(attestation?.spend?.reason, 'attempt-absolute-deadline-exhausted');
+    const durable = await json<Array<{ attemptId: string; denial?: { reasonCode?: string }; spend?: { outcome: string } }>>(receiptFile);
+    assert.equal(durable.find(entry => entry.attemptId === attemptId)?.denial?.reasonCode, 'ATTEMPT_DEADLINE_EXHAUSTED');
+    assert.equal(durable.find(entry => entry.attemptId === attemptId)?.spend?.outcome, 'assumed-worst-case');
+    assert.throws(() => gateway.bindAttempt({ attemptId, requested, deadlineAt: deadlineAt + 300_000 }), /deadline identity cannot change/,
+      'a retry cannot rebind the attempt to a later deadline');
+  } finally {
+    await gateway.close(); upstream.closeAllConnections();
+    await new Promise<void>((resolve, reject) => upstream.close(error => error ? reject(error) : resolve()));
+  }
+});
+
+test('gateway bounds a partial worker request body before provider dispatch', async (t) => {
+  const receiptDir = await mkdtemp(path.join(os.tmpdir(), 'p2o-gateway-partial-body-'));
+  const receiptFile = path.join(receiptDir, 'gateway-attestation.json');
+  t.after(async () => { await rm(receiptDir, { recursive: true, force: true }); });
+  let upstreamRequests = 0;
+  const upstream = createServer((_request, response) => { upstreamRequests += 1; response.end('{}'); });
+  await new Promise<void>((resolve, reject) => {
+    upstream.once('error', reject);
+    upstream.listen(0, '127.0.0.1', () => { upstream.removeListener('error', reject); resolve(); });
+  });
+  const address = upstream.address(); assert.ok(address && typeof address !== 'string');
+  const gateway = createControllerModelGateway({ approval: 'offline partial-request-body loopback regression', provider: 'p2o-inert',
+    upstreamBaseUrl: `http://127.0.0.1:${address.port}`, api: 'openai-completions', models: [{ id: 'inert', reasoning: true, contextWindow: 32000, maxTokens: 1024 }],
+    credential: { accountId: 'fixture', version: 'partial-v1', secret: 'inert-fixture-secret' } });
+  await gateway.listen();
+  const attemptId = 'gateway-partial-body';
+  const placeholder = gateway.bindAttempt({ attemptId, requested: { provider: 'p2o-inert', model: 'inert', thinking: 'off' }, deadlineAt: Date.now() + 300, receiptFile });
+  let client: ReturnType<typeof httpClientRequest> | undefined;
+  try {
+    const responsePromise = new Promise<{ status: number; body: string }>((resolve, reject) => {
+      client = httpClientRequest(`${gateway.url}/chat/completions`, { method: 'POST', headers: { authorization: `Bearer ${placeholder}`, 'content-type': 'application/json', 'content-length': '1024' } }, response => {
+        const chunks: Buffer[] = [];
+        response.on('data', chunk => chunks.push(Buffer.from(chunk)));
+        response.once('end', () => resolve({ status: response.statusCode ?? 0, body: Buffer.concat(chunks).toString('utf8') }));
+      });
+      client.once('error', reject);
+      client.write('{"model":"inert"'); // Deliberately never completes the declared request body.
+    });
+    const result = await Promise.race([responsePromise, sleep(2_000).then(() => { throw new Error('gateway left an incomplete worker request unbounded'); })]);
+    const body = JSON.parse(result.body) as { error: { code: string; reasonCode?: string } };
+    assert.equal(result.status, 502);
+    assert.equal(body.error.code, 'GATEWAY_UPSTREAM_FAILED');
+    assert.equal(body.error.reasonCode, 'ATTEMPT_DEADLINE_EXHAUSTED');
+    assert.equal(upstreamRequests, 0);
+    const durable = await json<Array<{ attemptId: string; denial?: { reasonCode?: string } }>>(receiptFile);
+    assert.equal(durable.find(entry => entry.attemptId === attemptId)?.denial?.reasonCode, 'ATTEMPT_DEADLINE_EXHAUSTED');
+  } finally {
+    client?.destroy(); await gateway.close(); upstream.closeAllConnections();
+    await new Promise<void>((resolve, reject) => upstream.close(error => error ? reject(error) : resolve()));
+  }
+});
+
+test('gateway refuses an already-expired attempt before any provider dispatch', async (t) => {
+  const receiptDir = await mkdtemp(path.join(os.tmpdir(), 'p2o-gateway-expired-'));
+  const receiptFile = path.join(receiptDir, 'gateway-attestation.json');
+  t.after(async () => { await rm(receiptDir, { recursive: true, force: true }); });
+  let upstreamRequests = 0;
+  const upstream = createServer((request, response) => { upstreamRequests += 1; request.resume(); response.end('{}'); });
+  await new Promise<void>((resolve, reject) => {
+    upstream.once('error', reject);
+    upstream.listen(0, '127.0.0.1', () => { upstream.removeListener('error', reject); resolve(); });
+  });
+  const address = upstream.address(); assert.ok(address && typeof address !== 'string');
+  const gateway = createControllerModelGateway({ approval: 'offline expired-attempt loopback regression', provider: 'p2o-inert',
+    upstreamBaseUrl: `http://127.0.0.1:${address.port}`, api: 'openai-completions', models: [{ id: 'inert', reasoning: true, contextWindow: 32000, maxTokens: 1024 }],
+    credential: { accountId: 'fixture', version: 'expired-v1', secret: 'inert-fixture-secret' } });
+  await gateway.listen();
+  const attemptId = 'gateway-already-expired';
+  const placeholder = gateway.bindAttempt({ attemptId, requested: { provider: 'p2o-inert', model: 'inert', thinking: 'off' }, deadlineAt: Date.now() - 1, receiptFile });
+  try {
+    const response = await fetch(`${gateway.url}/chat/completions`, { method: 'POST', headers: { authorization: `Bearer ${placeholder}`, 'content-type': 'application/json' },
+      body: JSON.stringify({ model: 'inert', messages: [] }) });
+    const body = await response.json() as { error: { code: string; reasonCode?: string } };
+    assert.equal(response.status, 502);
+    assert.equal(body.error.code, 'GATEWAY_UPSTREAM_FAILED');
+    assert.equal(body.error.reasonCode, 'ATTEMPT_DEADLINE_EXHAUSTED');
+    assert.equal(upstreamRequests, 0, 'an expired attempt cannot dispatch a paid provider request');
+    const attestation = gateway.attestations().find(entry => entry.attemptId === attemptId);
+    assert.equal(attestation?.outcome, 'denied');
+    assert.equal(attestation?.denial?.reasonCode, 'ATTEMPT_DEADLINE_EXHAUSTED');
+    const durable = await json<Array<{ attemptId: string; denial?: { reasonCode?: string } }>>(receiptFile);
+    assert.equal(durable.find(entry => entry.attemptId === attemptId)?.denial?.reasonCode, 'ATTEMPT_DEADLINE_EXHAUSTED');
+  } finally {
+    await gateway.close(); upstream.closeAllConnections();
+    await new Promise<void>((resolve, reject) => upstream.close(error => error ? reject(error) : resolve()));
+  }
+});
+
+test('worker-side HTTP cancellation stops the upstream exchange and durably marks settlement unknown', async (t) => {
+  const receiptDir = await mkdtemp(path.join(os.tmpdir(), 'p2o-gateway-cancel-'));
+  const receiptFile = path.join(receiptDir, 'gateway-attestation.json');
+  t.after(async () => { await rm(receiptDir, { recursive: true, force: true }); });
+  let providerStarted!: () => void, providerClosed!: () => void;
+  const started = new Promise<void>(resolve => { providerStarted = resolve; });
+  const closed = new Promise<void>(resolve => { providerClosed = resolve; });
+  const upstream = createServer((request) => {
+    request.socket.once('close', providerClosed);
+    request.on('end', providerStarted);
+    request.resume(); // Hold the provider exchange open until the gateway cancels it.
+  });
+  await new Promise<void>((resolve, reject) => {
+    upstream.once('error', reject);
+    upstream.listen(0, '127.0.0.1', () => { upstream.removeListener('error', reject); resolve(); });
+  });
+  const address = upstream.address(); assert.ok(address && typeof address !== 'string');
+  const gateway = createControllerModelGateway({ approval: 'offline worker-cancel loopback regression', provider: 'p2o-inert',
+    upstreamBaseUrl: `http://127.0.0.1:${address.port}`, api: 'openai-completions', models: [{ id: 'inert', reasoning: true, contextWindow: 32000, maxTokens: 1024 }],
+    credential: { accountId: 'fixture', version: 'cancel-v1', secret: 'inert-fixture-secret' }, requireSpendGate: true });
+  await gateway.listen();
+  const requested = { provider: 'p2o-inert', model: 'inert', thinking: 'off' as const };
+  const attemptId = 'gateway-worker-cancel';
+  const placeholder = gateway.bindAttempt({ attemptId, requested, deadlineAt: Date.now() + 10_000, receiptFile });
+  let settled = 0, unobservedReason = '';
+  gateway.bindSpendGate({ attemptId, gate: { attemptId, maxOutputTokens: 1024,
+    admit: () => ({ turnId: 'cancel-turn', settle: () => { throw new Error('provider usage was never observed'); },
+      unobserved: (reason: string) => { settled += 1; unobservedReason = reason; return { turnId: 'cancel-turn', inputTokens: 1, outputTokens: 1024, costMicros: 1, assumed: true, duplicate: false }; },
+      abandon: () => { throw new Error('dispatched provider request must not be abandoned'); } }) } });
+  try {
+    const controller = new AbortController();
+    const responsePromise = fetch(`${gateway.url}/chat/completions`, { method: 'POST', signal: controller.signal,
+      headers: { authorization: `Bearer ${placeholder}`, 'content-type': 'application/json' },
+      body: JSON.stringify({ model: 'inert', messages: [{ role: 'user', content: 'offline fixture' }] }) });
+    await started;
+    controller.abort(new Error('offline cancellation fixture'));
+    await assert.rejects(responsePromise);
+    await Promise.race([closed, sleep(1_000).then(() => { throw new Error('provider socket survived worker cancellation'); })]);
+    const attestation = await waitFor(async () => gateway.attestations().find(entry => entry.attemptId === attemptId), 1_000, 'durable cancellation attestation');
+    assert.equal(attestation.outcome, 'denied');
+    assert.equal(attestation.denial?.reasonCode, 'PROVIDER_EXCHANGE_INTERRUPTED');
+    assert.equal(attestation.spend?.outcome, 'assumed-worst-case');
+    assert.equal(settled, 1);
+    assert.equal(unobservedReason, 'worker-request-cancelled');
+    const durable = await waitFor(async () => {
+      try { return await json<Array<{ attemptId: string; denial?: { reasonCode?: string }; spend?: { outcome: string } }>>(receiptFile); }
+      catch { return undefined; }
+    }, 1_000, 'durable cancellation attestation write');
+    assert.equal(durable.find(entry => entry.attemptId === attemptId)?.denial?.reasonCode, 'PROVIDER_EXCHANGE_INTERRUPTED');
+    assert.equal(durable.find(entry => entry.attemptId === attemptId)?.spend?.outcome, 'assumed-worst-case');
+  } finally {
+    await gateway.close(); upstream.closeAllConnections();
+    await new Promise<void>((resolve, reject) => upstream.close(error => error ? reject(error) : resolve()));
   }
 });
 

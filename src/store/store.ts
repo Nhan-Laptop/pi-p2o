@@ -373,6 +373,58 @@ export class DurableStore {
     }
     return { failures, lastState, ...(lastAttemptId ? { lastAttemptId } : {}) };
   }
+  /** Reserve one submission slot BEFORE any async collection/admission, under the SQLite writer lock.
+   * Controller-internal only: the bridge authenticates token/run/lease before invoking this method. */
+  reservePacketSubmission(runId: string, attemptId: string): { allowed: boolean; slotId?: string; used: number; remaining: number } {
+    return this.transaction(() => {
+      const attempt = this.needAttempt(attemptId);
+      ensure(attempt.runId === runId, 'packet-submission-identity', 'Foreign submission attempt');
+      const run = this.needRun(runId);
+      ensure(['active', 'paused'].includes(run.state) && Date.parse(attempt.deadlineAt) > Date.parse(this.now()), 'stale-attempt', 'Expired or terminal run cannot submit');
+      const lease = this.getLease(attempt.taskId);
+      ensure(lease?.attemptId === attemptId && lease.token === attempt.leaseToken, 'stale-attempt', 'Submission needs the current owned lease');
+      ensure(!['failed', 'cancelled', 'timed-out', 'reconciling'].includes(attempt.lifecycleState), 'stale-attempt', 'Stopped attempt cannot submit');
+      const used = this.packetSubmissionSlots(runId, attemptId);
+      if (used >= 2) {
+        this.append({ runId, taskId: attempt.taskId, attemptId, type: 'packet.submission-limit', payload: { used, limit: 2 } }, this.now());
+        return { allowed: false, used, remaining: 0 };
+      }
+      const slotId = randomUUID();
+      this.append({ runId, taskId: attempt.taskId, attemptId, type: 'packet.submission-started', payload: { slotId, ordinal: used + 1 } }, this.now());
+      return { allowed: true, slotId, used: used + 1, remaining: 1 - used };
+    });
+  }
+  packetSubmissionSlots(runId: string, attemptId: string): number {
+    const started = Number(this.row("SELECT COUNT(*) AS count FROM events WHERE run_id = ? AND attempt_id = ? AND type = 'packet.submission-started'", runId, attemptId)?.count ?? 0);
+    return Math.max(started, this.packetRejectionCount(runId, attemptId));
+  }
+  finishPacketSubmission(runId: string, attemptId: string, slotId: string, accepted: boolean, reasons: string[]): void {
+    this.transaction(() => {
+      const attempt = this.needAttempt(attemptId);
+      ensure(attempt.runId === runId && this.row("SELECT 1 FROM events WHERE run_id = ? AND attempt_id = ? AND type = 'packet.submission-started' AND json_extract(payload_json, '$.slotId') = ?", runId, attemptId, slotId), 'packet-submission-identity', 'Unknown submission slot');
+      if (accepted) ensure(this.row("SELECT 1 FROM results WHERE run_id = ? AND attempt_id = ? AND decision_state = 'accepted'", runId, attemptId), 'packet-submission-acceptance', 'Only real gate acceptance may complete an accepted submission');
+      const old = this.row("SELECT payload_json FROM events WHERE run_id = ? AND attempt_id = ? AND type IN ('packet.submission-accepted', 'packet.submission-returned') AND json_extract(payload_json, '$.slotId') = ?", runId, attemptId, slotId);
+      if (old) {
+        ensure(JSON.parse(String(old.payload_json)).accepted === accepted, 'packet-submission-conflict', 'Submission outcome cannot change');
+        return;
+      }
+      this.append({ runId, taskId: attempt.taskId, attemptId, type: accepted ? 'packet.submission-accepted' : 'packet.submission-returned', payload: { slotId, accepted, reasons: reasons.slice(0, 8).map(reason => reason.slice(0, 128)) } }, this.now());
+    });
+  }
+  packetSubmissionLimitReached(runId: string, attemptId: string): boolean {
+    if (this.row("SELECT 1 FROM results WHERE run_id = ? AND attempt_id = ? AND decision_state = 'accepted'", runId, attemptId)) return false;
+    return !!this.row("SELECT 1 FROM events WHERE run_id = ? AND attempt_id = ? AND type = 'packet.submission-limit'", runId, attemptId);
+  }
+  /** Complete attempt-indexed accounting; neither a fresh worker nor controller restart resets returns. */
+  packetRejectionCount(runId: string, attemptId: string): number {
+    // Only a real gate-accepted result resets this attempt's rejection verdict; a claimed accepted flag
+    // in a malformed packet or another task/attempt can never clear it. Slot consumption is not reset.
+    if (this.row("SELECT 1 FROM results WHERE run_id = ? AND attempt_id = ? AND decision_state = 'accepted'", runId, attemptId)) return 0;
+    const submissions = Number(this.row("SELECT COUNT(*) AS count FROM events WHERE run_id = ? AND attempt_id = ? AND type = 'packet.submission-returned'", runId, attemptId)?.count ?? 0);
+    const results = Number(this.row("SELECT COUNT(*) AS count FROM results WHERE run_id = ? AND attempt_id = ? AND decision_state = 'returned-for-evidence'", runId, attemptId)?.count ?? 0);
+    // Result admission can precede feedback persistence; preserve that rejection across a crash too.
+    return Math.max(submissions, results);
+  }
   attemptReleaseStreak(runId: string, attemptId: string): { refusals: number; code: string } {
     const rows = this.rows("SELECT payload_json FROM events WHERE run_id = ? AND attempt_id = ? AND type = 'budget.released' ORDER BY sequence", runId, attemptId);
     let refusals = 0, code = 'none';

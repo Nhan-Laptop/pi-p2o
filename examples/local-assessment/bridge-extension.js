@@ -148,6 +148,9 @@ export default function bridgeExtension(pi) {
       'Call p2o_context first: it is the only source of the owner-approved observationIds, the attempt identity and the task scope.',
       'Then call p2o_broker exactly once per owner-approved observationId you decide to perform; never repeat, rename or invent one.',
       'A policy denial is a result, never a reason to widen scope or retry with different inputs.',
+      'Use controllerNow/packetAuthoring.publicationTime for packet createdAt; never guess a future clock or change evidence/runtime timestamps.',
+      'packetAuthoring is an identity/time envelope and H1/H2 requirements only; you must author the actual source-backed handler, reachability and substantive conclusions yourself.',
+      'For static H1, use reachability=inferred with a proposedCheck and source receipt; a source inventory is not observed execution.',
       'Never invent evidence ids; only evidenceIds returned by p2o_broker may be referenced.',
       'Finish with exactly one p2o_packet for the assigned task.',
     ],
@@ -183,13 +186,18 @@ export default function bridgeExtension(pi) {
     },
   });
 
+  // Bound returned-packet correction to one retry in this attempt. The supervisor remains the only
+  // admission authority; the worker receives its bounded reason codes but cannot override a rejection.
+  let packetSubmissions = 0;
   registerTool({
     name: 'p2o_packet',
     label: 'p2o packet',
-    description: 'Write the bounded final handoff packet to the task workspace so the supervisor result collector can preserve and admit it.',
-    promptSnippet: 'p2o_packet writes exactly one terminal handoff packet for this attempt.',
+    description: 'Submit the bounded final handoff packet for controller admission. A returned packet permits one correction only; a second return stops this attempt.',
+    promptSnippet: 'p2o_packet submits a terminal packet; only one returned-packet correction is allowed per attempt.',
     promptGuidelines: [
-      'Write at most one packet; the supervisor rejects a second accepted result for the same task.',
+      'Read p2o_context.packetAuthoring first. Submit your own packet, echoing controller identity and publicationTime without changing collected evidence/runtime times.',
+      'If returned for evidence, read issues[].code/path/message/question and evaluatedAt, correct exactly those issues and make at most one final p2o_packet call.',
+      'A second returned-for-evidence decision stops this attempt; do not retry or invent alternate evidence.',
       'Only evidence ids returned by p2o_broker may be referenced; do not invent receipts.',
     ],
     parameters: Type.Object({
@@ -197,18 +205,42 @@ export default function bridgeExtension(pi) {
     }),
     async execute(_id, params, signal, _onUpdate, ctx) {
       if (signal?.aborted) throw new Error('p2o_packet cancelled');
-      const bytes = Buffer.from(`${params.packet}\n`, 'utf8');
-      if (bytes.byteLength === 0 || bytes.byteLength > MAX_PACKET_BYTES) throw new Error('packet exceeds the bounded size');
-      JSON.parse(bytes.toString('utf8'));
-      const target = path.join(config.workspace, 'handoff.packet.json');
-      fs.writeFileSync(target, bytes, { mode: 0o600, flag: 'w' });
-      const admission = await callBridge(descriptor, config, "packet.admit", {});
-      if (admission.accepted === true) {
-        // Only a real controller schema/evidence admission may stop the candidate deterministically.
-        // No extra paid terminal prose is needed; supervisor still verifies process/pack cleanup.
+      exactParams(params, ['packet'], 'p2o_packet');
+      if (packetSubmissions >= 2) {
         await ctx.abort();
+        return { content: [{ type: 'text', text: 'p2o_packet correction limit exhausted; this attempt is stopping without another admission request.' }] };
       }
-      return { content: [{ type: 'text', text: `wrote ${path.basename(target)} (${bytes.byteLength} bytes)` }] };
+      packetSubmissions += 1;
+      try {
+        const bytes = Buffer.from(`${params.packet}\n`, 'utf8');
+        if (bytes.byteLength === 0 || bytes.byteLength > MAX_PACKET_BYTES) throw new Error('packet exceeds the bounded size');
+        // Even malformed JSON must reach authenticated controller collection so its rejection consumes
+        // a durable submission slot. Do not hide parse failures in a resettable worker-local counter.
+        const target = path.join(config.workspace, 'handoff.packet.json');
+        fs.writeFileSync(target, bytes, { mode: 0o600, flag: 'w' });
+        const admission = await callBridge(descriptor, config, "packet.admit", {});
+        if (admission.accepted === true) {
+          // Only a real controller schema/evidence admission may stop the candidate deterministically.
+          // No extra paid terminal prose is needed; supervisor still verifies process/pack cleanup.
+          await ctx.abort();
+          return { content: [{ type: 'text', text: `Controller accepted ${path.basename(target)}; attempt stopped after admission.` }] };
+        }
+        const reasons = Array.isArray(admission.reasons) ? admission.reasons.filter(reason => typeof reason === 'string').slice(0, 8) : [];
+        const reasonText = reasons.length ? reasons.join(', ') : 'controller returned the packet for evidence without reason codes';
+        const issues = Array.isArray(admission.issues) ? admission.issues.slice(0, 8) : [];
+        const feedback = JSON.stringify({ issues, evaluatedAt: admission.evaluatedAt ?? null, controllerNow: admission.controllerNow ?? null, deadlineAt: admission.deadlineAt ?? null, remainingCorrections: admission.remainingCorrections ?? null });
+        if (packetSubmissions >= 2 || admission.remainingCorrections === 0) {
+          await ctx.abort();
+          return { content: [{ type: 'text', text: `returned-for-evidence: ${reasonText}. ${feedback}. The one correction was also returned; this attempt is stopping. No further packet retry is allowed.` }] };
+        }
+        return { content: [{ type: 'text', text: `returned-for-evidence: ${reasonText}. ${feedback}. Use the returned controllerNow for current publication time; never advance it or modify receipt times. Correct only these issues and make at most one final p2o_packet call; a second return stops this attempt.` }] };
+      } catch (error) {
+        if (packetSubmissions >= 2) {
+          await ctx.abort();
+          return { content: [{ type: 'text', text: 'The corrected packet did not complete admission; the one correction is exhausted and this attempt is stopping.' }] };
+        }
+        throw error;
+      }
     },
   });
 

@@ -13,7 +13,7 @@ try {
     await cp(join(repoRoot, dir), join(source, dir), { recursive: true });
   }
   await symlink(join(repoRoot, 'node_modules'), join(source, 'node_modules'), 'dir');
-  const entries = ['tests/orchestrator/no-progress.test.ts', 'tests/real-worker/spend-gate.test.ts'];
+  const entries = ['tests/orchestrator/no-progress.test.ts', 'tests/orchestrator/packet-authoring.test.ts', 'tests/real-worker/spend-gate.test.ts'];
   const compile = spawnSync(compilerPath(), [
     '--target', 'ES2022', '--module', 'ES2022', '--moduleResolution', 'bundler', '--strict',
     '--noUnusedLocals', '--noUnusedParameters', '--skipLibCheck', '--types', 'node',
@@ -24,7 +24,7 @@ try {
   else {
     await writeFile(join(out, 'package.json'), '{"type":"module"}\n');
     const result = spawnSync(process.execPath, [
-      '--test', '--test-concurrency=1', '--test-name-pattern=review repro:|actual wire admission is mandatory|informational measured input above JSON estimate',
+      '--test', '--test-concurrency=1', '--test-name-pattern=review repro:|actual wire admission is mandatory|informational measured input above JSON estimate|controller authoring clock|durable rejected submissions|authenticated malformed|identical retries|concurrent schema|valid gate acceptance',
       ...entries.map(path => join(out, path.replace(/\.ts$/, '.js'))),
     ], { cwd: out, stdio: 'inherit' });
     process.exitCode = result.status ?? 1;

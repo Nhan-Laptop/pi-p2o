@@ -480,25 +480,10 @@ function readJsonl(path) {
 function workerSessions(home) {
   return walk(home, 20_000).filter(path => path.endsWith('/session.jsonl') && !path.includes('/entry-views/'));
 }
-/** Durable live spend: planning receipt (host-computed with the pinned price) + worker session turns. */
+/** Controller journals are authoritative and cache-inclusive; sessions are not an invoice. */
 function liveSpendOf(home) {
-  const planning = jsonArtifacts(home).find(row => row.path.endsWith('/control/planning-spend.json'))?.value;
-  const receipts = planning?.receipts ?? [];
-  const planTokens = receipts.reduce((sum, row) => sum + (row.usage?.totalTokens ?? 0), 0);
-  const planUsd = receipts.reduce((sum, row) => sum + (row.usage?.cost?.total ?? 0), 0);
-  let workerInput = 0, workerOutput = 0, workerTurns = 0, workerUsdReported = 0;
-  for (const file of workerSessions(home)) {
-    for (const row of readJsonl(file)) {
-      const usage = row?.message?.usage;
-      if (row?.message?.role !== 'assistant' || !usage) continue;
-      workerTurns += 1; workerInput += usage.input ?? 0; workerOutput += usage.output ?? 0; workerUsdReported += usage.cost?.total ?? 0;
-    }
-  }
-  const workerUsdPinned = (workerInput * LIVE.price.inputUsdPerMillion + workerOutput * LIVE.price.outputUsdPerMillion) / 1e6;
-  const tokens = planTokens + workerInput + workerOutput;
-  const usd = planUsd + Math.max(workerUsdReported, workerUsdPinned);
-  return { planTokens, planUsd, workerTurns, workerInput, workerOutput, workerUsdReported, workerUsdPinned,
-    tokens, usd, usdBasis: 'planning receipt cost + max(reported, pinned-price recomputation) for worker turns' };
+  const databases = walk(home, 20_000).filter(path => path.endsWith('.sqlite'));
+  return readDurableAccounting(databases, [`${LIVE.selection.provider}/${LIVE.selection.model}`]);
 }
 /** Remove any host-persisted copy of the live credential, then prove no copy remains under the artifact root. */
 function scrubSecret(folder, secret) {

@@ -47,7 +47,7 @@ export function evaluateHandoff(input: unknown, context: HandoffGateContext): Ga
   }
   const p = parsed.data;
   reasons.push(...validateScope(p.scope, context.authorization, context.now, p.nextAction.allowedActions));
-  if (Date.parse(p.createdAt) > Date.parse(context.now)) add('future-packet', '$/createdAt', 'Packet is future-dated', 'Supply the actual collection/publication time.');
+  if (Date.parse(p.createdAt) > Date.parse(context.now)) add('future-packet', '$/createdAt', `Packet is future-dated: createdAt=${p.createdAt}; controller evaluatedAt=${context.now}`, 'Use the actual publication time supplied by the controller, no later than evaluatedAt. Do not advance timestamps between retries or change evidence/runtime collection times.');
   if (Date.parse(p.observedRuntime.observedAt) > Date.parse(context.now)) add('runtime-timestamp', '$/observedRuntime/observedAt', 'Runtime observation is future-dated', 'Record the actual adapter observation time.');
   if (normalized(p.question.ifTrue) === normalized(p.question.ifFalse)) add('indistinguishable-question', '$/question', 'Contrasting predictions are identical', 'What observation distinguishes the true and false predictions?');
   if (!p.nextAction.allowedActions.length) add('unbounded-next-action', '$/nextAction/allowedActions', 'Next action has no declared allowed action', 'Name the smallest approved review or observation and its stop condition.');
@@ -106,6 +106,11 @@ export function evaluateHandoff(input: unknown, context: HandoffGateContext): Ga
   switch (p.contract) {
     case 'H1': {
       const d = p.details;
+      for (const [index, entry] of d.interfaces.entries()) {
+        for (const key of ['registration', 'handler', 'gate', 'processIdentity', 'priorityReason'] as const) {
+          if (/^<[^>]+>$/.test(entry[key].trim()) || !entry[key].trim()) add('H1-entry-facts', `$/details/interfaces/${index}/${key}`, 'An actual handler/gate fact is missing or still a placeholder', 'Name the source/observation-backed fact, explicitly disclose inference, or leave the route in unresolvedRoutes; never invent reachability.');
+        }
+      }
       if (!d.interfaces.some(i => i.priorityReason && i.formats.length && i.benignOperations.length && i.actorId === p.scope.actor.id && (i.reachability === 'observed' ? hasKind(i.evidenceIds, ['observation', 'trace']) : !!i.proposedCheck && hasKind(i.evidenceIds, ['source'])))) add('H1-prioritized-entry', '$/details/interfaces', 'No prioritized actual handler/gate or explicitly inferred reachability check', 'Which actor reaches which handler/gate, and why is that surface prioritized?');
       for (const peer of d.peerTopology ?? []) if (!hasKind(peer.membershipEvidenceIds, ['source', 'observation']) || !hasKind(peer.authorityEvidenceIds, ['observation', 'trace'])) add('H1-peer-authority', '$/details/peerTopology', 'Nominal membership is not effective authority', 'Supply identity origin, installed membership and effective peer-authority evidence.');
       break;

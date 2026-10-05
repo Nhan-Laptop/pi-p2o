@@ -42,6 +42,8 @@ import type { CredentialProvider } from '../tools/index.js';
 import { createSupervisorBackend, type SupervisorPort } from '../interface/supervisor-backend.js';
 import type { ControlBackend, PlanInput, Report as InterfaceReport } from '../interface/types.js';
 import { createWorkerBridge, type WorkerBridgeOperations } from './bridge.js';
+import { packetAuthoringFor } from './packet-authoring.js';
+import { admitAuthenticatedPacket } from './packet-admission.js';
 import { createCollectorBridge, controllerToolIdentity, type CollectorBridge } from './evidence.js';
 import { acceptedPacket, acceptedResult, buildAssessmentArtifacts, coverageRecords, coverageReviews, producerFinding } from './report.js';
 import { createIndependentVerifier, type CleanReplayEnvironmentFactory, type VerificationServices } from './verification.js';
@@ -1631,22 +1633,17 @@ export async function createApplication(configInput: ApplicationConfigWithSpend,
       return accepted.map(packet => ({ taskId: packet.taskId, packetId: packet.packetId, contract: packet.contract, outcome: packet.outcome }));
     },
     async admitPacket(attempt) {
-      // Bridge authentication verified the exact controller handle/token and live lease first.
-      const handle = JSON.parse(readFileSync(join(config.roots.control, "handles", `${attempt.attemptId}.json`), "utf8")) as import("../runtime/types.js").RuntimeHandle;
-      if (handle.attemptId !== attempt.attemptId || handle.runId !== attempt.runId) throw new ApplicationError("packet-identity", "Controller handle differs from authenticated attempt");
-      const candidates = await collectPacketCandidates(handle);
-      const reasons: string[] = [];
-      for (const candidate of candidates.slice(0, 4)) {
-        const admission = await supervisor.worker(attempt.attemptId).submit(candidate);
-        if (admission.decision.status === "accepted") {
-          // The producer packet is durable before any verifier identity is admitted or launched. A scheduling
-          // failure is recorded, never converted into a false acceptance.
-          await triggerVerificationScheduling();
-          return { accepted: true, reasons: [] };
-        }
-        reasons.push(...admission.decision.reasons.map(r => r.code));
-      }
-      return { accepted: false, reasons };
+      // reserve + collect + submit + safe feedback all run behind authenticated bridge serialization.
+      const admission = await admitAuthenticatedPacket({ attempt, store, now: clockIso,
+        async collect() {
+          const handle = JSON.parse(readFileSync(join(config.roots.control, "handles", `${attempt.attemptId}.json`), "utf8")) as import("../runtime/types.js").RuntimeHandle;
+          if (handle.attemptId !== attempt.attemptId || handle.runId !== attempt.runId) throw new ApplicationError('packet-identity', 'Controller handle differs from authenticated attempt');
+          return collectPacketCandidates(handle);
+        },
+        submit: candidate => supervisor.worker(attempt.attemptId).submit(candidate),
+      });
+      if (admission.accepted) await triggerVerificationScheduling();
+      return admission;
     },
     async attemptState(attempt) {
       // The durable admitted manifest is authoritative: a plan-materialized task carries the approved plan's
@@ -1656,6 +1653,9 @@ export async function createApplication(configInput: ApplicationConfigWithSpend,
       return {
         runId: attempt.runId, taskId: attempt.taskId, attemptId: attempt.attemptId, ownerId: attempt.ownerId,
         sequence: attempt.sequence, lifecycleState: attempt.lifecycleState,
+        controllerNow: clockIso(), deadlineAt: attempt.deadlineAt,
+        packetAuthoring: packetAuthoringFor(task, attempt, clockIso(), grantTemplate(attempt.taskId).role === 'verifier' ? 'verifier' : 'worker'),
+        packetRejections: store.packetRejectionCount(attempt.runId, attempt.attemptId),
         requestedRuntime: attempt.requestedRuntime, observedRuntime: attempt.observedRuntime ?? null,
         scope: task.scope, question: task.question, inputRevision: task.inputRevision,
         allowedActions: task.allowedActions, skills: task.skills,

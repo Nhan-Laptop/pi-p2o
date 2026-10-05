@@ -232,6 +232,8 @@ export function createFirstUseBackend(context: BackendFactoryContext): ControlBa
       /** Owner-authorized deferred verifier scheduling, present only for a supported owner-approved differential. */
       let verificationScheduleForApplication: NonNullable<import('./composition.js').ApplicationOverrides['verificationSchedule']> | undefined;
       if (sourceKind) {
+        if (!author.confirmObservationOnly) fail('VERIFICATION_UNSUPPORTED', 'Static source analysis has no independent replay program; explicit observation-only consent is required before acquisition/execution');
+        await author.confirmObservationOnly('The qualified source.analyze capability is bounded static/lexical analysis only; it cannot execute or independently reproduce a vulnerability. H1 must describe source-backed inferred reachability and untested dynamic checks.');
         if (!acquisition) fail('ENTRY_SOURCE_UNBOUND', 'source acquisition is missing');
         await author.confirmSource(acquisition, input.plan.digest);
         await authorize();
@@ -284,12 +286,6 @@ export function createFirstUseBackend(context: BackendFactoryContext): ControlBa
             fail('ENTRY_PLAN_REJECTED', 'generated request leaves the exact owner-approved target origin/path prefix; re-run with a plan for the approved target');
           }
         }
-        await authorize();
-        const url = new URL(owner.configuration.scope.target.locator);
-        const hostname = url.hostname.replace(/^\[|\]$/g, '');
-        const addresses = isIP(hostname) ? [{ address: hostname, family: isIP(hostname) }] : await lookup(hostname, { all: true, verbatim: true });
-        if (!addresses.length || addresses.length > 16) fail('TARGET_ADDRESS_UNBOUND', 'approved hostname needs a bounded nonempty address set after exact plan approval');
-        config.policy.targets[0]!.allowedCidrs = [...new Set(addresses.map(({ address, family }) => `${address}/${family === 6 ? 128 : 32}`))];
         // The owner-approved read-only differential is a *program*, not a finding. The controller derives the
         // verifier task/plan identity from the approved checks alone and pre-authorizes it as a deferred task;
         // nothing is admitted, no finding plan exists and no claim is promoted before execution.
@@ -303,6 +299,16 @@ export function createFirstUseBackend(context: BackendFactoryContext): ControlBa
           run: config.run, producerTask: config.tasks[0]!.manifest, targetId, targetLocator: owner.configuration.scope.target.locator,
           checks: finalChecks, workspaceRoot: config.roots.workspace, verifierBudget, now: derivedAt, verifierTaskCreatedAt: derivedAt,
         });
+        if (!planned.supported) {
+          if (!author.confirmObservationOnly) fail('VERIFICATION_UNSUPPORTED', `${planned.reason}; explicit observation-only consent is required before target execution`);
+          await author.confirmObservationOnly(planned.reason);
+        }
+        await authorize();
+        const url = new URL(owner.configuration.scope.target.locator);
+        const hostname = url.hostname.replace(/^\[|\]$/g, '');
+        const addresses = isIP(hostname) ? [{ address: hostname, family: isIP(hostname) }] : await lookup(hostname, { all: true, verbatim: true });
+        if (!addresses.length || addresses.length > 16) fail('TARGET_ADDRESS_UNBOUND', 'approved hostname needs a bounded nonempty address set after exact plan approval');
+        config.policy.targets[0]!.allowedCidrs = [...new Set(addresses.map(({ address, family }) => `${address}/${family === 6 ? 128 : 32}`))];
         if (planned.supported) {
           // The producer checks carry the controller-side test descriptor so their collector receipts are bound
           // to the exact owner-approved claim; inputs, URLs, accounts and expectations are unchanged.
