@@ -1,7 +1,8 @@
+import { writeSync } from 'node:fs';
 import type { ExtensionAPI, ExtensionCommandContext, ExtensionContext } from '@earendil-works/pi-coding-agent';
 import { InterfaceController } from '../../src/interface/controller.js';
 import { createDefaultBackend } from '../../src/interface/default-backend.js';
-import { runP2OCommand, type P2OCommandHost } from '../../src/interface/command.js';
+import { runP2OCommand, type P2OCommandHost, type P2OTextWriter } from '../../src/interface/command.js';
 import { SessionRunRegistry, type SessionEntryLike } from '../../src/interface/session-state.js';
 import { boundedOutput, publicError, safeText } from '../../src/interface/presentation.js';
 import { schemas, type Action } from '../../src/interface/schemas.js';
@@ -22,6 +23,12 @@ export interface P2OExtensionOptions {
    * is not assessment consent; returning undefined fails closed rather than substituting a fixture plan.
    */
   planAuthorFor?: (ctx: ExtensionCommandContext) => unknown;
+  /**
+   * Host-only raw transport for Pi's one-shot text print surface (`pi -p`). Production omits it and
+   * writes to file descriptor 1, the only channel that reaches real stdout under Pi's non-interactive
+   * stdout takeover. Tests inject a recorder; no model or command argument can select it.
+   */
+  textPrintWriterFor?: P2OTextWriter;
 }
 
 /** Host-only UI consent and bounded native completion. Never inherits parent selection as authority. */
@@ -53,6 +60,44 @@ function branchEntries(ctx: ExtensionContext): readonly SessionEntryLike[] {
   } catch { return []; }
 }
 
+/** Bound on stdout write attempts so a stalled non-blocking pipe cannot hang the command. */
+const STDOUT_WRITE_RETRIES = 200;
+
+/**
+ * Write plain text to the process's real stdout. Pi takes over `process.stdout.write` in every
+ * non-interactive mode (`core/output-guard` in Pi 1.0.0) so incidental chatter cannot corrupt stdout,
+ * which leaves a direct file-descriptor write as the only channel onto the one-shot text print surface.
+ */
+export async function writeStdoutText(text: string): Promise<void> {
+  const buffer = Buffer.from(text, 'utf8');
+  let offset = 0;
+  for (let attempts = 0; offset < buffer.length; attempts += 1) {
+    if (attempts > STDOUT_WRITE_RETRIES) throw new Error('stdout write made no progress');
+    try { offset += writeSync(1, buffer, offset); }
+    catch (error) {
+      // A non-blocking pipe can refuse the write with EAGAIN; waiting for the reader is not a failure.
+      if ((error as NodeJS.ErrnoException)?.code !== 'EAGAIN') throw error;
+      await new Promise(resolve => setTimeout(resolve, 10));
+    }
+  }
+}
+
+/**
+ * Plain-text sink for `/p2o` on surfaces that have no transcript UI. Only `ctx.mode === 'print'` is
+ * Pi's one-shot text print mode (`pi -p`): there `hasUI` is false, `ctx.ui` is the runner's no-op UI,
+ * `process.stdout.write` is redirected to stderr and no custom message is rendered, so command output
+ * is invisible unless it is written straight to fd 1. `json`/`rpc` reserve stdout for protocol records
+ * and `tui` renders the emitted `p2o_result`/`p2o_error` message, so no text sink is bound there. Text
+ * is best-effort: a failed write is reported on stderr and never changes a reported outcome.
+ */
+export function createP2OTextSink(ctx: ExtensionContext, write: P2OTextWriter = writeStdoutText): P2OTextWriter | undefined {
+  if (ctx.mode !== 'print') return undefined;
+  return async text => {
+    try { await write(text.endsWith('\n') ? text : `${text}\n`); }
+    catch (error) { process.stderr.write(`p2o: text print output failed: ${publicError(error).message}\n`); }
+  };
+}
+
 /** Public test/integration seam. Factory registration itself opens no resources. */
 export function registerP2O(pi: ExtensionAPI, options: P2OExtensionOptions = {}): InterfaceController {
   const controller = new InterfaceController(options.backendFactory ?? createDefaultBackend, options.ownerStorageRoot);
@@ -62,6 +107,7 @@ export function registerP2O(pi: ExtensionAPI, options: P2OExtensionOptions = {})
     registry,
     appendEntry: (customType, data) => { if (typeof pi.appendEntry === 'function') pi.appendEntry(customType, data); },
     emit: message => pi.sendMessage(message, { triggerTurn: false }),
+    textPrintFor: ctx => createP2OTextSink(ctx, options.textPrintWriterFor),
     planAuthorFor: options.planAuthorFor ?? hostPlanAuthor,
     onboardingFor: options.onboardingFor,
   };

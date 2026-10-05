@@ -31,6 +31,12 @@ import { ENTRY_PLAN_STEP_BOUNDS } from './target-entry.js';
 import { onboardingScopeFor, type OnboardingHandler, type OnboardingReady, OnboardingError } from '../application/onboarding/index.js';
 import { assertOwnerPreparation, onboardCommandTarget } from './onboarding.js';
 
+/**
+ * Plain-text writer for one-shot print surfaces. Text is auxiliary: a rejecting writer is tolerated and
+ * never replaces the emitted `p2o_result`/`p2o_error` message.
+ */
+export type P2OTextWriter = (text: string) => void | Promise<void>;
+
 export interface P2OCommandHost {
   controller: InterfaceController;
   registry: SessionRunRegistry;
@@ -38,6 +44,12 @@ export interface P2OCommandHost {
   appendEntry?: (customType: string, data?: unknown) => void;
   /** Emit a user-visible transcript message (pi.sendMessage). */
   emit?: (message: { customType: string; content: string; display: true; details?: unknown }) => void;
+  /**
+   * Host sink for Pi's one-shot text print surface (`pi -p`, `ctx.mode === 'print'`), which has no
+   * extension UI and renders no custom message. Absent (or returning undefined) whenever the surface
+   * has a transcript UI or a structured stream, where raw text would duplicate or corrupt output.
+   */
+  textPrintFor?: (ctx: ExtensionCommandContext) => P2OTextWriter | undefined;
   /**
    * Host session model-author seam for the planning step. The Pi extension binds its own model through
    * this hook; the value is opaque to the interface and never authority or confirmation.
@@ -87,6 +99,11 @@ export function p2oHelp(currentRun?: string): string {
 export function failureMessage(error: unknown): string {
   if (error instanceof InterfaceError || error instanceof OnboardingError) return safeText(error.message, 1024);
   return publicError(error).message;
+}
+
+/** Plain-text rendering of a failed `/p2o` invocation for one-shot print surfaces. */
+export function p2oErrorText(message: string): string {
+  return `p2o error: ${message}`;
 }
 
 /**
@@ -356,9 +373,21 @@ async function execute(host: P2OCommandHost, command: P2OCommand, ctx: Extension
   }
 }
 
-/** Run one `/p2o` invocation. Never throws: failures are emitted as `p2o_error` messages. */
+/**
+ * Run one `/p2o` invocation. Never throws: failures are emitted as `p2o_error` messages.
+ * When the host binds a one-shot text print surface (`host.textPrintFor`), the same outcome is also
+ * written as plain text because that surface renders no custom message; the emitted
+ * `p2o_result`/`p2o_error` message remains authoritative in every mode, and a failing writer never
+ * turns a reported outcome into an error.
+ */
 export async function runP2OCommand(host: P2OCommandHost, args: string, ctx: ExtensionCommandContext): Promise<void> {
   const emit = host.emit ?? ((): void => {});
+  let textPrint: P2OTextWriter | undefined;
+  try { textPrint = host.textPrintFor?.(ctx); } catch { textPrint = undefined; }
+  const writeText = async (text: string): Promise<void> => {
+    if (!textPrint) return;
+    try { await textPrint(text); } catch { /* text is best-effort; the emitted receipt stays authoritative */ }
+  };
   const notify = (message: string, type: 'info' | 'error'): void => {
     if (ctx.hasUI) ctx.ui.notify(message, type);
   };
@@ -368,15 +397,18 @@ export async function runP2OCommand(host: P2OCommandHost, args: string, ctx: Ext
     const message = failureMessage(error);
     emit({ customType: 'p2o_error', content: message, display: true });
     notify(message, 'error');
+    await writeText(p2oErrorText(message));
     return;
   }
   try {
     const outcome = await execute(host, command, ctx);
     emit({ customType: 'p2o_result', content: outcome.text, display: true, details: publicValue(outcome.details) });
     notify('p2o: receipt available', 'info');
+    await writeText(outcome.text);
   } catch (error) {
     const message = failureMessage(error);
     emit({ customType: 'p2o_error', content: message, display: true });
     notify(message, 'error');
+    await writeText(p2oErrorText(message));
   }
 }

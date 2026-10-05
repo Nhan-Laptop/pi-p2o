@@ -4,7 +4,7 @@ export { schemas, validate, parseCommand, type Action, type Input } from './sche
 export { parseP2OArgs, tokenize, LIFECYCLE_VERBS, DEPTHS, MAX_BUDGET_USD, MAX_CONCURRENCY, type P2OCommand } from './argv.js';
 export { classifyTargetSyntax, ACCEPTED_TARGET_FORMS } from './targets.js';
 export { SessionRunRegistry, type SessionPlanRecord, type SessionRunRecord, type SessionEntryLike } from './session-state.js';
-export { runP2OCommand, p2oHelp, failureMessage, type P2OCommandHost } from './command.js';
+export { runP2OCommand, p2oHelp, p2oErrorText, failureMessage, type P2OCommandHost, type P2OTextWriter } from './command.js';
 export { onboardCommandTarget, assertOwnerPreparation } from './onboarding.js';
 export { InterfaceController } from './controller.js';
 export { startDashboard, type DashboardHandle, type DashboardOptions } from './dashboard.js';
