@@ -652,16 +652,24 @@ export function buildScenario(inputs: ScenarioInputs): Scenario {
     },
   ];
 
+  /**
+   * Coverage reasons are authored BEFORE the run and are copied into `report.coverage.records` verbatim, so this
+   * text may claim only what the producing attempt's own accepted packet supports. Independent replay is a
+   * separate verifier task: its outcome belongs to the finding record (which carries the verifier's receipts).
+   * A static independence claim here would assert a replay that a blocked or failed verifier never performed —
+   * an unresolved finding would still be described as "independently replayed".
+   */
+  const PRODUCER_TESTED_REASON = 'Reproduced live by the producing attempt: the approved reproduction and negative-control checks for this surface, actor and question back this cell (see evidenceIds). Independent replay is a separate verifier task; its outcome is reported on the finding record and is not asserted by this coverage entry.';
   const coverage: CoveragePlanEntry[] = [
     {
       surfaceId: SURFACE_READ, actorId: ACTOR_GUEST, question: CLAIM_IDOR, taskId: TASK_HYP_IDOR, state: 'tested',
       basis: 'reviewer-validated',
-      reason: 'Reproduced live by the producing attempt and independently replayed in a fresh lab instance under the original policy.',
+      reason: PRODUCER_TESTED_REASON,
     },
     {
       surfaceId: SURFACE_EXPORT, actorId: ACTOR_GUEST, question: CLAIM_EXPORT, taskId: TASK_HYP_EXPORT, state: 'tested',
       basis: 'reviewer-validated',
-      reason: 'Reproduced live by the producing attempt and independently replayed in a fresh lab instance under the original policy.',
+      reason: PRODUCER_TESTED_REASON,
     },
     {
       surfaceId: SURFACE_EXPORT, actorId: ACTOR_ANONYMOUS, question: CLAIM_ANONYMOUS, state: 'untested',

@@ -7,7 +7,7 @@ clean, pushed to `origin/main`. All receipts below were produced by that exact r
 
 - **[L] live** — real pinned `pi` worker processes, real provider calls through the controller-owned gateway, real
   Docker pack, real broker/evidence/vault/reporting. Executed by the parent, not reported by a worker.
-- **[I] inert** — the offline suites (`npm test` aggregate, fixture/injected runtimes).
+- **[I] offline tests** — includes fixtures/injected runtimes and real Pi/Docker checks without paid provider calls.
 - **[D] documented non-claim** — the repository explicitly does not claim it.
 
 **Scope of this document.** It records the *runtime/harness* end-to-end proof. It is not the human first-use
@@ -32,7 +32,7 @@ npm run demo:live        # examples/live-lab/run.mjs --require-live --keep
 | Gateway | `exchanges: 20`, `forwarded: 20`, `denied: 0`; real credential held by the controller gateway only | L |
 | Per-turn spend | `130 570 tokens` / `$0.06328` committed, `overshoot: 0`, per-turn admission + charge + release | L |
 | Accepted packets | 4 — `task-surface-map/H1/unresolved`, `task-hyp-idor/H2/supported`, `task-hyp-export/H2/supported`, `task-verify-replay/H2/unresolved` | L |
-| Tool receipts | 49 broker receipts (real `source.analyze` + `http.request` through the container pack) | L |
+| Tool receipts | 49 recorded receipts; source inspection uses the offline container, HTTP requests use the controller-side scoped broker | L |
 | Verified finding | `finding-idor-client-tenant-parameter` = **`independently-validated`**, classification `independently-observed`, verifier `p2o-supervisor.verifier.944d9536-…` | L |
 | Coverage | `tested: 2` (both `reviewer-validated`, each with source + baseline + negative-control + reproduction evidence), `untested: 1`, `ruled-out/blocked: 0` | L |
 | Honest negative | `finding-export-missing-authorization` stayed `unresolved` — its replay was blocked (`replay-blocked: fetch failed`) and the report says so instead of promoting it | L |
@@ -82,20 +82,21 @@ first refusal is observed, so the replacement must re-derive the streak from the
 [live] FAULT PROOF state=failed halts=1 refusals=3 releases=5 providerCharges=3 chargesAtHalt=3 haltedBilling=true
 ```
 
-`haltedBilling=true` is the claim under test: exactly 3 provider charges occurred, the attempt was halted at the
-third durable refusal, the owned runtime was stopped, and **no provider turn was charged after the halt**. Because
-the restart happened before the second refusal, the streak that produced the halt was necessarily reconstructed
-from durable `budget.released`/`budget.consumed` records, not from process memory.
+The bounded run recorded exactly 3 gateway provider charges, a no-progress halt and a terminal failed run.
+The gateway recorded no additional charge between the observed halt and run cleanup. The log also records a
+controller handover before the halt; it does not establish that handover occurred before the second refusal.
+This is evidence for this run, not a guarantee about future provider billing or every restart interleaving.
 
 ---
 
-## 3. Offline aggregate on the same revision
+## 3. Offline verification by revision
 
 `npm test` (typecheck → build → import checks → extension package → contracts/store/reporting → tools → evidence →
 interface + integration → credentials → budget → orchestrator → runtime → real-worker → sandbox → end-to-end →
-Python) passed at `9fbeafb`; the failing end-to-end assertion that run exposed (a pre-dispatch refusal is now
-refunded exactly once) was corrected to assert the new contract, and the suites touched by `8c601b0` were re-run:
-`typecheck` clean, `test:e2e` 19/19, `test:live-lab` 13/13, `test:evidence`, `test:orchestrator` green. **[I]**
+Python) passed on the tree committed as `9fbeafb`, after its pre-dispatch-refund regression was updated.
+The focused suites were rerun for `8c601b0`: `typecheck` clean, `test:e2e` 19/19 and `test:live-lab` 13/13.
+Evidence tests also passed during the policy-seam review. This is not a claim that the entire aggregate was
+rerun at `8c601b0`. **[I]**
 
 ---
 
@@ -105,8 +106,8 @@ refunded exactly once) was corrected to assert the new contract, and the suites 
 - `assessmentStatus: incomplete` is correct and intentional: coverage is bounded to the declared plan. **[L]**
 - The live lab is a harness (`examples/live-lab`), not the human first-use `/p2o` flow; the harness supplies its
   own owner document, it does not mint owner consent. **[L]**
-- No platform submission, no external target, no third-party system was touched: every target origin is
-  `127.0.0.1`. **[L]**
+- No platform submission or external assessment target was contacted: assessed origins were loopback. Real
+  model-provider API traffic was external and charged as recorded above. **[L]**
 - Two findings appeared in this run; only one is promoted. A passing run is not a claim that every claim in a
   target is true or false. **[L]**
 
@@ -118,40 +119,42 @@ refunded exactly once) was corrected to assert the new contract, and the suites 
    (`$/details/composition/representationChanges: Expected an array`) and to a mis-stated H1 peer-authority
    evidence kind. The crib/gate fix addresses the observed cases, but a small model at `thinking: low` still
    occasionally authors a packet the gates reject; that is returned as `returned-for-evidence` and retried, not
-   hidden. Raising the harness thinking level or strengthening gate guidance would raise first-attempt yield.
+   hidden. Whether higher thinking improves first-attempt yield has not been measured.
 2. **Harness-only verification of the policy seam (P2).** The controller-bound replay policy is proven live in the
    harness path; the human first-use flow constructs its replay environment through the same seam, but its own
    live run has not been repeated in this session.
-3. **Refusal-streak derivation is page-bounded (P3).** The durable re-derivation scans the event ledger in pages;
-   a run with an extremely large event count could under-count on restart. Controller-internal, bounded, recorded
-   in the F4 review.
-4. **Installed-copy build step (P2, packaging).** A git-installed copy has neither `dist/` nor `node_modules/`;
-   `/p2o` now refuses before consent with `BUNDLED_RUNTIME_MISSING` naming the exact paths, and the documented fix
-   is to build the checkout. It is an explicit requirement, not automatic.
-5. **Owner-consent store hygiene (P3).** Two consent records under `~/.p2o/onboarding/` reference temporary
-   `pi-tmp/p2o-installed-behavior-*/app` directories created while verifying the installed-copy path
-   (one of them granted `repositoryScripts`/`stateChanges`). The committed tests isolate `HOME`/storage root; these
-   two are manual-verification leftovers in the owner's real store and should be reviewed by the owner.
+3. **Blocked second replay (P1).** The export finding remained unresolved because its replay failed to fetch.
+   Its coverage record in the captured report incorrectly described an independent replay; producer-tested
+   coverage must not be confused with a verified finding. The original artifact is retained unchanged.
+4. **Installed-copy build step (P2, packaging).** A git-installed copy needs an explicit build after update.
+   `/p2o` refuses before consent with `BUNDLED_RUNTIME_MISSING` naming the missing paths.
+5. **Existing owner-state provenance (observation only).** Existing consent records reference temporary test
+   directories. This session did not establish who created them and did not reuse, modify or delete them.
+   The committed packaging tests use isolated HOME/storage roots.
+6. The previous page-bounded refusal-history issue was fixed before the tested revision; the latest
+   independent review closes it. It is not an outstanding defect of `8c601b0`.
 
 ---
 
 ## 6. Human first-use `/p2o` handoff (the CTF target)
 
 The first-use flow is gated on human consent dialogs by design; an agent cannot and must not mint that consent.
-To run the authorized local CTF with the extension:
+The supplied CTF has **not** been solved through the extension. Bundled first use currently supports
+read/static assessment, not the state-changing workflow needed to prove the challenge end-to-end.
+For an interactive, read-only assessment of its source (no service startup required):
 
 ```sh
-# 1. start the challenge locally (loopback only)
-cd /home/nhanlaptop/project/pi-p2o/tmp/p2o-e2e-ancient-bookshelf/challenge && python3 app.py
-
-# 2. in an interactive Pi session, load the current checkout explicitly (never both copies at once)
 cd /home/nhanlaptop/project/pi-p2o
 pi --no-extensions -e /home/nhanlaptop/project/pi-p2o --model deepseek-flash --provider deepseek --thinking max
 
-# 3. first-use owner flow: one consent dialog, then review the sealed plan
-/p2o --target http://127.0.0.1:8000 --plan-only --profile conservative
+# In the Pi TUI, review the scope and sealed plan yourself:
+/p2o --target /home/nhanlaptop/project/pi-p2o/tmp/p2o-e2e-ancient-bookshelf/challenge --plan-only --profile conservative
 /p2o approve <planId>
 ```
+
+The earlier `python3 app.py` startup smoke returned HTTP 200 when requested over loopback, but the supplied
+launcher binds `0.0.0.0:8000`. It was therefore not a loopback-only listener; the process has been stopped.
+Do not use that launcher unmodified for an isolated local deployment.
 
 The consent dialog is where the authorization basis, permitted actions, budget and deadline are chosen by the
 owner; the plan digest is reviewed separately. `/p2o status`, `/p2o report <runId>` and `/p2o stop <runId>` then

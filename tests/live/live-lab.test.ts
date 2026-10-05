@@ -9,7 +9,7 @@ import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { loadApplicationConfig } from '../../src/application/index.js';
+import { coverageRecords, loadApplicationConfig } from '../../src/application/index.js';
 import { auditArtifactsForSecrets } from '../../src/runtime/config.js';
 import { createContainerSandbox } from '../../src/tools/index.js';
 import { buildContainerSandboxOptions } from '../../examples/live-lab/pack.js';
@@ -18,6 +18,7 @@ import {
   SNAPSHOT_FILE, TASK_HYP_EXPORT, TASK_HYP_IDOR, TASK_SURFACE_MAP, TASK_VERIFY, assertContractEnumCoverage, assertPricedSelection,
   buildScenario, readContractEnumTable,
 } from '../../examples/live-lab/scenario.js';
+import type { DurableStore } from '../../src/store/index.js';
 import type { LabInstance, LabServerModule } from '../../examples/live-lab/types.js';
 
 const repoRoot = process.env.P2O_REPO_ROOT ?? join(import.meta.dirname, '..', '..');
@@ -257,6 +258,66 @@ test('leak audit: a planted credential is detected and an absent one is not', as
     await assert.rejects(() => auditArtifactsForSecrets(root, [secret]), /Credential material detected/);
   } finally {
     rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('coverage reasons never claim independent replay: a blocked verifier leaves the row producer-tested', async () => {
+  const runRoot = mkdtempSync(join(tmpdir(), 'p2o-live-coverage-'));
+  try {
+    const snapshotRoot = join(runRoot, 'snapshot');
+    mkdirSync(snapshotRoot, { recursive: true, mode: 0o700 });
+    const snapshotFile = join(snapshotRoot, SNAPSHOT_FILE);
+    writeFileSync(snapshotFile, readFileSync(join(sourceRoot, SNAPSHOT_FILE)));
+    const sandboxOptions = buildContainerSandboxOptions({
+      repoRoot, inputRoot: snapshotRoot, outputRoot: join(runRoot, 'broker-artifacts'),
+      approvedBy: 'live-lab-test', expiresAt: new Date(Date.now() + 3_600_000).toISOString(),
+    });
+    const scenario = buildScenario({
+      runId: 'run-live-coverage-test', runRoot, snapshotRoot, snapshotBytes: readFileSync(snapshotFile),
+      // The coverage reason is the artifact under test, so the lab origins are stubs and no lab server starts.
+      labA: { origin: 'http://127.0.0.1:1' } as unknown as LabInstance,
+      labB: { origin: 'http://127.0.0.1:2' } as unknown as LabInstance,
+      workspaceRoot: join(runRoot, 'workspaces'), controlRoot: join(runRoot, 'control'), vaultRoot: join(runRoot, 'vault'),
+      socketPath: join(runRoot, 'run', 'worker-bridge.sock'), piBinary: join(repoRoot, 'node_modules', '.bin', 'pi'),
+      extensionPath: join(sourceRoot, 'bridge-extension.js'), sandboxOptions,
+      configurationDigest: createContainerSandbox(sandboxOptions).configurationDigest, now: Date.now(),
+    });
+    const plan = scenario.config.reporting?.coverage ?? [];
+    const tested = plan.filter(entry => entry.state === 'tested');
+    assert.ok(tested.length >= 2, 'both reproduced claims are tested coverage cells');
+    for (const entry of tested) {
+      assert.match(entry.reason, /Reproduced live by the producing attempt/);
+      assert.doesNotMatch(entry.reason, /independently (replayed|validated|verified)/i,
+        `a plan authored before the run may not assert independent replay: ${entry.reason}`);
+      assert.match(entry.reason, /finding record/, 'independence must be deferred to the finding record');
+    }
+
+    // The exact falsehood seen in ll-XqJPYB: the export replay was blocked, yet every coverage row read
+    // "independently replayed in a fresh lab instance". Report rows are the plan's reason verbatim — the
+    // pipeline never derives the reason from verifier receipts — so a plan-time claim reaches an unresolved
+    // finding's coverage row too, where it is false.
+    const exportPlan = plan.find(entry => entry.taskId === TASK_HYP_EXPORT);
+    assert.ok(exportPlan, 'the export claim is a planned coverage cell');
+    const store = {
+      // The producer packet was accepted (probe + negative control)...
+      listResults: (_runId: string, taskId: string) => taskId === TASK_HYP_EXPORT
+        ? [{ decision: { status: 'accepted' }, packet: { evidenceIds: ['ev-probe'], limits: { negativeControlEvidenceIds: ['ev-control'] } } }]
+        // ...and the verifier replay for it was blocked: no accepted verifier packet exists.
+        : [],
+    } as unknown as DurableStore;
+    const records = coverageRecords(store, scenario.config.run.runId, plan);
+    const exportRecord = records.find(record => record.taskId === TASK_HYP_EXPORT);
+    assert.ok(exportRecord);
+    assert.equal(exportRecord.reason, exportPlan.reason, 'the report row is the plan reason verbatim');
+    assert.doesNotMatch(exportRecord.reason, /independently (replayed|validated|verified)/i,
+      `a blocked replay must not be reported as independent: ${exportRecord.reason}`);
+    assert.deepEqual(exportRecord.evidenceIds, ['ev-probe', 'ev-control'], 'the producer receipts still back the row');
+    // The finding gate is untouched: independence still has to come from the verifier's own receipts on the
+    // finding record, which this coverage text neither supplies nor weakens.
+    assert.ok((scenario.config.reporting?.verification ?? []).some(entry => entry.findingId === FINDING_EXPORT),
+      'the independent replay plan for the export claim is still approved');
+  } finally {
+    rmSync(runRoot, { recursive: true, force: true });
   }
 });
 
