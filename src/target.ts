@@ -3,20 +3,43 @@ import { realpath, stat } from 'node:fs/promises';
 import { isIP } from 'node:net';
 import { resolve } from 'node:path';
 import { homedir } from 'node:os';
+import { MAX_DEPTH, MAX_WORKERS } from './roles.js';
 
 export type Target = { kind: 'directory'; path: string } | { kind: 'url'; url: string; origin: string };
-export type Command = { action: 'help' } | { action: 'stop' } | { action: 'start'; target: string };
+export interface StartOptions { solo: boolean; workers?: number; maxDepth?: number }
+export type Command = { action: 'help' } | { action: 'stop' } | { action: 'start'; target: string; options: StartOptions };
 
-/** Deliberately one option. Quoting is supported for directory names with spaces. */
+/** Deliberately small. One target plus delegation limits; quoting is supported for directory names. */
 export function parseCommand(args: string): Command {
   const text = args.trim();
   if (!text || text === '--help') return { action: 'help' };
   if (text === 'stop') return { action: 'stop' };
-  const match = /^--target\s+(?:"([^"\r\n]+)"|'([^'\r\n]+)'|([^\s"']+))$/.exec(text);
-  if (!match) throw new Error('Usage: /p2o --target <directory|http(s)-URL> or /p2o stop');
+  const match = /^--target\s+(?:"([^"\r\n]+)"|'([^'\r\n]+)'|([^\s"']+))(?:\s+(.*))?$/.exec(text);
+  if (!match) throw new Error('Usage: /p2o --target <directory|http(s)-URL> [--solo] [--workers N] [--max-depth D] or /p2o stop');
   const target = match[1] ?? match[2] ?? match[3];
   if (target.length > 4096 || /[\x00-\x1f\x7f]/.test(target) || target.startsWith('-')) throw new Error('Invalid target');
-  return { action: 'start', target };
+  const options: StartOptions = { solo: false };
+  const rest = (match[4] ?? '').trim();
+  if (rest) {
+    const tokens = rest.split(/\s+/);
+    for (let index = 0; index < tokens.length; index += 1) {
+      const token = tokens[index];
+      if (token === '--solo') { options.solo = true; continue; }
+      if (token !== '--workers' && token !== '--max-depth') throw new Error(`Unknown option ${token.slice(0, 40)}; usage: /p2o --target <directory|http(s)-URL> [--solo] [--workers N] [--max-depth D]`);
+      const value = tokens[index + 1];
+      if (!value || !/^\d+$/.test(value)) throw new Error(`${token} needs an integer value`);
+      index += 1;
+      const parsed = Number(value);
+      if (token === '--workers') {
+        if (parsed < 1 || parsed > MAX_WORKERS) throw new Error(`--workers must be 1..${MAX_WORKERS}`);
+        options.workers = parsed;
+      } else {
+        if (parsed < 0 || parsed > MAX_DEPTH) throw new Error(`--max-depth must be 0..${MAX_DEPTH}`);
+        options.maxDepth = parsed;
+      }
+    }
+  }
+  return { action: 'start', target, options };
 }
 
 export function webURL(value: string): URL {

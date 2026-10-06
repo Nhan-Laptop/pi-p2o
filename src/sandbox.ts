@@ -6,11 +6,16 @@ import { scopedRequest, type ResolveAddress, type Target } from './target.js';
 
 // Fixed content digest, not a mutable tag or a model-selected image. No automatic image pull.
 export const IMAGE = 'ghcr.io/usestrix/strix-sandbox@sha256:f6906c3114e504fd1a218fcf028d7a0e46851118403a438b63956de6ea7c4331';
-const LIMITS = ['--read-only', '--cap-drop', 'ALL', '--security-opt', 'no-new-privileges',
+const LIMITS = (options: SandboxOptions) => ['--read-only', '--cap-drop', 'ALL', '--security-opt', 'no-new-privileges',
   '--user', '65532:65532', '--pids-limit', '128', '--memory', '512m', '--memory-swap', '512m', '--cpus', '1',
   '--ulimit', 'nofile=1024:1024', '--log-driver', 'none',
-  '--tmpfs', '/tmp:rw,nosuid,nodev,size=64m,mode=1777', '--tmpfs', '/work:rw,nosuid,nodev,size=64m,mode=1777',
+  '--tmpfs', `/tmp:rw,nosuid,nodev,size=${options.tmpBytes ?? '64m'},mode=1777`,
+  '--tmpfs', `/work:rw,nosuid,nodev,size=${options.workBytes ?? '64m'},mode=1777`,
   '--workdir', '/work', '--env', 'HOME=/tmp', '--env', 'TMPDIR=/tmp'];
+
+/** Optional sizing/labelling. Delegated runs get more scratch and a run label for verified sweeps. */
+export interface SandboxOptions { tmpBytes?: string; workBytes?: string; runId?: string }
+const ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
 
 /** Docker containers are executors, never AI agents. All names are owned until removal is verified. */
 export class Sandbox {
@@ -22,7 +27,10 @@ export class Sandbox {
   private stopped = false;
   private pending: Promise<unknown> = Promise.resolve();
   private cancellation = new AbortController();
-  constructor(readonly target: Target, private readonly run: RunProcess = runDocker, private readonly resolveIP?: ResolveAddress) {}
+  private readonly workdirs = new Set<string>();
+  constructor(readonly target: Target, private readonly run: RunProcess = runDocker, private readonly resolveIP?: ResolveAddress, private readonly options: SandboxOptions = {}) {
+    if (options.runId !== undefined && !ID_PATTERN.test(options.runId)) throw new Error('Invalid run id for container labels');
+  }
 
   private async docker(args: string[], options?: { timeoutMs?: number; signal?: AbortSignal }): Promise<ProcessResult> {
     return this.run(this.endpoint ? ['--host', this.endpoint, ...args] : args, options);
@@ -52,7 +60,8 @@ export class Sandbox {
     if (this.stopped) throw new Error('Sandbox is stopped');
     const name = `p2o-${randomUUID()}`;
     this.names.add(name); // Track before dispatch, even if the CLI loses its response.
-    checked(await this.docker(['create', '--name', name, '--label', 'pi-p2o=minimal', '--network', network, ...LIMITS, ...command]));
+    const labels = ['--label', 'pi-p2o=minimal', ...(this.options.runId ? ['--label', `pi-p2o.run=${this.options.runId}`] : [])];
+    checked(await this.docker(['create', '--name', name, ...labels, '--network', network, ...LIMITS(this.options), ...command]));
     return name;
   }
 
@@ -63,21 +72,36 @@ export class Sandbox {
     return next;
   }
 
-  async exec(command: string, seconds = 30, signal?: AbortSignal): Promise<ProcessResult> {
+  async exec(command: string, seconds = 30, signal?: AbortSignal, workdir = '/work'): Promise<ProcessResult> {
     if (!command || command.length > 8192 || !Number.isInteger(seconds) || seconds < 1 || seconds > 60) throw new Error('Command must be 1..8192 characters; timeout must be 1..60 seconds');
+    if (workdir !== '/work' && !/^\/work\/[A-Za-z0-9][A-Za-z0-9._-]{0,60}$/.test(workdir)) throw new Error('Invalid sandbox working directory');
     return this.enqueue(async () => {
       if (this.stopped || !this.shell) throw new Error('No active sandbox');
       const combined = AbortSignal.any([this.cancellation.signal, ...(signal ? [signal] : [])]);
       try {
-        const result = await this.docker(['exec', '--workdir', '/work', this.shell, '/usr/bin/timeout', '--signal=KILL', `${seconds}s`, '/bin/sh', '-c', command], { timeoutMs: (seconds + 5) * 1000, signal: combined });
+        await this.ensureWorkdir(workdir, combined);
+        const result = await this.docker(['exec', '--workdir', workdir, this.shell, '/usr/bin/timeout', '--signal=KILL', `${seconds}s`, '/bin/sh', '-c', command], { timeoutMs: (seconds + 5) * 1000, signal: combined });
         if (result.code === 124 || result.code === 137) throw new Error('Sandbox command timed out; stopping the sandbox to remove background processes');
         return result;
       } catch (error) {
-        this.stopped = true;
-        await this.removeAll();
+        // One caller aborting its own command (e.g. a worker being stopped) must not destroy the shared
+        // sandbox for everyone else. The command's own `timeout` wrapper reaps it.
+        if (!signal?.aborted) {
+          this.stopped = true;
+          await this.removeAll();
+        }
         throw error;
       }
     });
+  }
+
+  private async ensureWorkdir(workdir: string, signal: AbortSignal): Promise<void> {
+    if (workdir === '/work' || this.workdirs.has(workdir)) return;
+    const created = await this.docker(['exec', this.shell!, '/bin/mkdir', '-p', workdir], { timeoutMs: 15_000, signal });
+    // Docker may report failure to attach while the command still ran; only a real absence is fatal.
+    const exists = await this.docker(['exec', this.shell!, '/bin/sh', '-c', `test -d ${workdir}`], { timeoutMs: 15_000, signal });
+    if (created.code !== 0 && exists.code !== 0) throw new Error(`Could not prepare the sandbox working directory ${workdir}`);
+    this.workdirs.add(workdir);
   }
 
   async http(value: string, method: 'GET' | 'HEAD' = 'GET', signal?: AbortSignal): Promise<ProcessResult> {
@@ -101,10 +125,11 @@ export class Sandbox {
   }
 
   private async remove(name: string): Promise<void> {
-    // A CLI success alone is not enough. The daemon must successfully list zero matching containers.
-    await this.docker(['rm', '--force', name]);
+    // A CLI exit code is not evidence in either direction: `rm` can fail for a container that is already
+    // gone, and can "succeed" while the daemon still lists it. The listing is the source of truth.
+    const removal = await this.docker(['rm', '--force', name]).catch(() => ({ code: -1, stdout: '', stderr: 'rm failed', truncated: false }));
     const remaining = checked(await this.docker(['container', 'ls', '--all', '--filter', `name=^/${name}$`, '--format', '{{.Names}}']));
-    if (remaining.stdout.trim()) throw new Error(`Sandbox cleanup unresolved: ${name}. Retry /p2o stop`);
+    if (remaining.stdout.trim()) throw new Error(`Sandbox cleanup unresolved: ${name} (docker rm exit ${removal.code}). Retry /p2o stop or check Docker`);
     this.names.delete(name);
   }
 
@@ -118,5 +143,15 @@ export class Sandbox {
     this.stopped = true; this.cancellation.abort();
     await this.pending;
     await this.removeAll();
+  }
+
+  /** Belt-and-braces: after removal, no container of this run may still exist on the daemon. */
+  async assertNoRunContainers(): Promise<void> {
+    if (!this.options.runId) return;
+    const listed = checked(await this.docker(['container', 'ls', '--all', '--filter', `label=pi-p2o.run=${this.options.runId}`, '--format', '{{.Names}}']));
+    const names = listed.stdout.split('\n').map(name => name.trim()).filter(Boolean);
+    for (const name of names) { try { await this.remove(name); } catch { /* verified below */ } }
+    const remaining = checked(await this.docker(['container', 'ls', '--all', '--filter', `label=pi-p2o.run=${this.options.runId}`, '--format', '{{.Names}}']));
+    if (remaining.stdout.trim()) throw new Error(`Sandbox cleanup unresolved for run ${this.options.runId}: ${remaining.stdout.trim()}. Retry /p2o stop or check Docker`);
   }
 }

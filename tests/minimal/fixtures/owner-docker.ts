@@ -1,24 +1,25 @@
-// Inert model + inert sandbox. Tests real Pi's prompt/session/tool loop, not a live provider.
+// Real extension + real Docker, inert model. Delegation is off (--solo) so no pane is opened.
 import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
 import { createAssistantMessageEventStream, getCurrentSystemPrompt, getCurrentTools, type AssistantMessage } from '@earendil-works/pi-ai';
 import { registerP2O } from '../../../extensions/p2o/index.js';
-import { Sandbox } from '../../../src/sandbox.js';
 
 export default function (pi: ExtensionAPI) {
-  pi.registerProvider('p2o-inert', {
+  pi.registerProvider('p2o-docker-inert', {
     baseUrl: 'http://127.0.0.1:1/never-contacted', apiKey: 'inert-placeholder', api: 'openai-completions',
-    models: [{ id: 'current-agent', name: 'Mechanical fixture, NOT live AI', reasoning: false, input: ['text'],
+    models: [{ id: 'docker-agent', name: 'Mechanical fixture, NOT live AI', reasoning: false, input: ['text'],
       cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }, contextWindow: 128000, maxTokens: 4096 }],
     streamSimple(model, context) {
-      const names = getCurrentTools(context.messages).map(tool => tool.name);
-      if (!names.includes('p2o_shell') || names.includes('bash')) throw new Error('Sandbox-only tool loadout missing');
-      if (!getCurrentSystemPrompt(context.messages).includes('P2O ASSESSMENT: YOU')) throw new Error('Scope prompt missing');
-      const last = context.messages.filter(m => m.role === 'toolResult').at(-1);
-      const content: AssistantMessage['content'] = last?.toolName === 'p2o_finish'
-        ? [{ type: 'text', text: 'DIRECT_CURRENT_AGENT_REPORT: inert observation, no independent verification.' }]
-        : last?.toolName === 'p2o_shell'
-          ? [{ type: 'toolCall', id: 'finish', name: 'p2o_finish', arguments: {} }]
-          : [{ type: 'text', text: 'DIRECT_CURRENT_AGENT_PLAN: inspect within scope.' }, { type: 'toolCall', id: 'shell', name: 'p2o_shell', arguments: { command: 'id' } }];
+      const system = getCurrentSystemPrompt(context.messages);
+      const tools = getCurrentTools(context.messages).map(tool => tool.name);
+      if (!system.includes('P2O ASSESSMENT')) throw new Error('lead scope section missing');
+      if (tools.includes('bash') || tools.includes('read')) throw new Error(`host tools were declared: ${tools.join(',')}`);
+      const results = context.messages.filter((message: any) => message.role === 'toolResult');
+      const last: any = results.at(-1);
+      let content: AssistantMessage['content'];
+      if (!last) content = [{ type: 'toolCall', id: 'host-1', name: 'bash', arguments: { command: 'echo HOST_BYPASS' } }];
+      else if (last.toolName === 'bash') content = [{ type: 'toolCall', id: 'shell-1', name: 'p2o_shell', arguments: { command: 'id -u; cat /target/code.txt; grep CapEff /proc/self/status; test ! -e /var/run/docker.sock && echo NO_DOCKER_SOCKET' } }];
+      else if (last.toolName === 'p2o_shell') content = [{ type: 'toolCall', id: 'finish-1', name: 'p2o_finish', arguments: {} }];
+      else content = [{ type: 'text', text: 'DOCKER_OWNER_FINAL_REPORT: sandbox evidence recorded from the real container.' }];
       const message: AssistantMessage = { role: 'assistant', api: 'openai-completions', provider: model.provider, model: model.id,
         content, timestamp: Date.now(), stopReason: content.some(block => block.type === 'toolCall') ? 'toolUse' : 'stop',
         usage: { input: 12, output: 5, cacheRead: 0, cacheWrite: 0, totalTokens: 17, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } } };
@@ -35,13 +36,12 @@ export default function (pi: ExtensionAPI) {
           stream.push({ type: 'text_end', contentIndex: index, content: block.text, partial: message });
         }
       }
-      stream.push({ type: 'done', reason: message.stopReason as 'stop' | 'toolUse', message }); stream.end(message); return stream;
+      stream.push({ type: 'done', reason: message.stopReason as 'stop' | 'toolUse', message });
+      stream.end(message);
+      return stream;
     },
   });
-  class InertSandbox extends Sandbox {
-    override async start() {}
-    override async stop() {}
-    override async exec() { return { code: 0, stdout: 'INERT_SANDBOX_OBSERVATION', stderr: '', truncated: false }; }
-  }
-  registerP2O(pi, process.env.P2O_NATIVE_REAL_DOCKER === '1' ? {} : { createSandbox: target => new InertSandbox(target) });
+  registerP2O(pi, {
+    ...(process.env.P2O_TEST_CONTROL_ROOT ? { controlRoot: process.env.P2O_TEST_CONTROL_ROOT } : {}),
+  });
 }

@@ -8,10 +8,17 @@ describe('one target grammar', () => {
   it('has only help, stop and a target', () => {
     expect(parseCommand('')).toEqual({ action: 'help' });
     expect(parseCommand('stop')).toEqual({ action: 'stop' });
-    expect(parseCommand('--target "./my repo"')).toEqual({ action: 'start', target: './my repo' });
-    expect(parseCommand("--target './my repo'")).toEqual({ action: 'start', target: './my repo' });
-    expect(parseCommand('--target https://example.com')).toEqual({ action: 'start', target: 'https://example.com' });
+    expect(parseCommand('--target "./my repo"')).toEqual({ action: 'start', target: './my repo', options: { solo: false } });
+    expect(parseCommand("--target './my repo'")).toEqual({ action: 'start', target: './my repo', options: { solo: false } });
+    expect(parseCommand('--target https://example.com')).toEqual({ action: 'start', target: 'https://example.com', options: { solo: false } });
     for (const args of ['--target', '--target x --headless', '--target x --target y', '--target x;y extra', 'approve plan-1', 'resume', '--target "unterminated', '--target --help']) expect(() => parseCommand(args)).toThrow();
+  });
+  it('parses only the delegation limits it understands', () => {
+    expect(parseCommand('--target x --solo')).toMatchObject({ options: { solo: true } });
+    expect(parseCommand('--target x --workers 5 --max-depth 1')).toMatchObject({ options: { solo: false, workers: 5, maxDepth: 1 } });
+    for (const args of ['--target x --workers 0', '--target x --workers 7', '--target x --workers many', '--target x --max-depth 4', '--target x --max-depth -1', '--target x --delegate', '--target x --solo --solo=1']) {
+      expect(() => parseCommand(args), args).toThrow();
+    }
   });
   it('resolves directories, refuses files and root, and treats GitHub as an ordinary URL', async () => {
     const root = await mkdtemp(join(tmpdir(), 'p2o-target-'));

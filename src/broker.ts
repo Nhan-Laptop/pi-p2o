@@ -1,0 +1,393 @@
+import { createServer, createConnection, type Server, type Socket } from 'node:net';
+import { rm } from 'node:fs/promises';
+import { join } from 'node:path';
+import type { ProcessResult } from './process.js';
+import { isOutcome, isRecordKind, type AssessmentRecord, type CoverageOutcome } from './records.js';
+
+/**
+ * Owner-served broker. Strix shares one sandbox session with every agent; Pi workers are separate
+ * processes, so the owner exposes exactly the same session over a private unix socket and keeps the
+ * policy, the budgets and the single cleanup path in one place. Workers never receive a Docker client.
+ */
+export const MAX_LINE_BYTES = 64 * 1024;
+export const WORKER_BUDGET_RESERVE = 0.9;
+export const DEFAULT_WORKER_COMMAND_BUDGET = 200;
+
+export interface WorkerReport {
+  summary: string;
+  findings: string[];
+  evidence: string[];
+  coverage: Array<{ surface: string; risk: string; outcome: CoverageOutcome }>;
+  openItems: string[];
+  confidence: 'high' | 'medium' | 'low';
+  blocked?: string;
+}
+
+export interface WorkerRegistration {
+  workerId: string;
+  name: string;
+  paneId: string;
+  role: string;
+  depth: number;
+  parentWorkerId: string | null;
+  token: string;
+  commandBudget: number;
+  used: number;
+  startedAt: number;
+  stopped: boolean;
+  reported?: WorkerReport;
+}
+
+export interface DelegateInput { focus: string; task: string; context?: string; role?: string; skills?: string[]; model?: string }
+export interface DelegateResult { workerId: string; name: string; paneId: string; role: string; model?: string; depth: number }
+
+export interface BrokerDeps {
+  exec(command: string, seconds: number, workdir: string, signal: AbortSignal): Promise<ProcessResult>;
+  http(url: string, method: 'GET' | 'HEAD', signal: AbortSignal): Promise<ProcessResult>;
+  note(record: AssessmentRecord): Promise<void>;
+  ledger(limit: number): Promise<AssessmentRecord[]>;
+  delegate(input: DelegateInput, parent: WorkerRegistration): Promise<DelegateResult>;
+  report(workerId: string, report: WorkerReport): Promise<void>;
+  onProblem?(message: string): void;
+}
+
+export interface BrokerLimits { totalCommandBudget: number; maxLineBytes?: number }
+
+function text(value: unknown, limit: number): string | undefined {
+  if (typeof value !== 'string') return undefined;
+  const clean = value.replace(/[\x00-\x08\x0b-\x1f\x7f]/g, '');
+  return clean.length > limit ? clean.slice(0, limit) : clean;
+}
+
+function stringList(value: unknown, count: number, limit: number): string[] {
+  if (!Array.isArray(value)) return [];
+  return value.map(item => text(item, limit)).filter((item): item is string => Boolean(item)).slice(0, count);
+}
+
+/** Reports are untrusted input: shape them here so no later consumer has to trust worker JSON. */
+export function normalizeReport(raw: unknown): WorkerReport {
+  const input = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>;
+  const coverage: WorkerReport['coverage'] = [];
+  if (Array.isArray(input.coverage)) {
+    for (const entry of input.coverage.slice(0, 40)) {
+      const item = (entry && typeof entry === 'object' ? entry : {}) as Record<string, unknown>;
+      const surface = text(item.surface, 200); const risk = text(item.risk, 200);
+      if (!surface || !risk || !isOutcome(item.outcome)) continue;
+      coverage.push({ surface, risk, outcome: item.outcome as CoverageOutcome });
+    }
+  }
+  const confidence = input.confidence === 'high' || input.confidence === 'medium' || input.confidence === 'low' ? input.confidence : 'low';
+  return {
+    summary: text(input.summary, 4000) ?? '(no summary supplied)',
+    findings: stringList(input.findings, 20, 1000),
+    evidence: stringList(input.evidence, 40, 500),
+    coverage,
+    openItems: stringList(input.openItems, 20, 1000),
+    confidence,
+    blocked: text(input.blocked, 1000),
+  };
+}
+
+export class Broker {
+  private server?: Server;
+  private readonly clients = new Set<Socket>();
+  private readonly registrations = new Map<string, WorkerRegistration>();
+  /** Commands in flight per worker, so revoking a worker ends its wait instead of letting it run on. */
+  private readonly inFlight = new Map<string, AbortController>();
+  private totalUsed = 0;
+  private readonly socketPath: string;
+  constructor(private readonly control: string, private readonly deps: BrokerDeps, private readonly limits: BrokerLimits) {
+    this.socketPath = join(control, 'sandbox.sock');
+  }
+
+  get socket(): string { return this.socketPath; }
+  get workers(): WorkerRegistration[] { return [...this.registrations.values()]; }
+  registration(workerId: string): WorkerRegistration | undefined { return this.registrations.get(workerId); }
+
+  register(registration: WorkerRegistration): void {
+    if (this.registrations.has(registration.workerId)) throw new Error(`Worker ${registration.workerId} is already registered`);
+    this.registrations.set(registration.workerId, registration);
+  }
+
+  revoke(workerId: string): void {
+    const registration = this.registrations.get(workerId);
+    if (registration) registration.stopped = true;
+    this.inFlight.get(workerId)?.abort();
+    this.inFlight.delete(workerId);
+  }
+
+  async start(): Promise<string> {
+    await rm(this.socketPath, { force: true });
+    const server = createServer(socket => this.accept(socket));
+    this.server = server;
+    await new Promise<void>((resolve, reject) => {
+      server.once('error', reject);
+      server.listen(this.socketPath, () => { server.removeListener('error', reject); resolve(); });
+    });
+    // Only the owner may speak on this socket; the directory is already 0700.
+    const { chmodSync } = await import('node:fs');
+    chmodSync(this.socketPath, 0o600);
+    return this.socketPath;
+  }
+
+  private accept(socket: Socket): void {
+    this.clients.add(socket);
+    socket.setNoDelay(true);
+    socket.setEncoding('utf8');
+    let buffer = '';
+    let workerId: string | undefined;
+    let chain: Promise<void> = Promise.resolve();
+    const send = (payload: unknown) => { if (!socket.destroyed) socket.write(`${JSON.stringify(payload)}\n`); };
+    const fail = (message: string) => { this.deps.onProblem?.(message); send({ ok: false, error: message }); };
+    socket.on('data', chunk => {
+      buffer += chunk;
+      // Serialize per connection so two tool calls cannot interleave around shared budgets.
+      for (;;) {
+        const index = buffer.indexOf('\n');
+        if (index < 0) break;
+        const line = buffer.slice(0, index); buffer = buffer.slice(index + 1);
+        if (!line.trim()) continue;
+        if (Buffer.byteLength(line) > (this.limits.maxLineBytes ?? MAX_LINE_BYTES)) { fail('Request too large'); socket.destroy(); return; }
+        chain = chain.then(async () => {
+          let request: any;
+          try { request = JSON.parse(line); } catch { fail('Malformed request'); socket.destroy(); return; }
+          if (!workerId) {
+            const registration = this.authenticate(request?.token);
+            if (!registration) { fail('Unauthorized'); socket.destroy(); return; }
+            workerId = registration.workerId;
+            send({ ok: true, workerId });
+            return;
+          }
+          const response = await this.dispatch(workerId, request);
+          send({ id: request?.id, ...response });
+        }).catch(error => { fail(String(error instanceof Error ? error.message : error).slice(0, 400)); });
+      }
+      if (buffer.length > (this.limits.maxLineBytes ?? MAX_LINE_BYTES)) { fail('Request too large'); socket.destroy(); }
+    });
+    socket.on('error', error => this.deps.onProblem?.(`worker socket error: ${error.message}`));
+    socket.on('close', () => this.clients.delete(socket));
+  }
+
+  private authenticate(token: unknown): WorkerRegistration | undefined {
+    if (typeof token !== 'string' || !/^[a-f0-9]{32}$/.test(token)) return undefined;
+    for (const registration of this.registrations.values()) {
+      if (registration.token === token) return registration.stopped ? undefined : registration;
+    }
+    return undefined;
+  }
+
+  private async dispatch(workerId: string, request: any): Promise<Record<string, unknown>> {
+    const registration = this.registrations.get(workerId);
+    if (!registration || registration.stopped) return { ok: false, error: 'This worker was stopped by the owner' };
+    const op = text(request?.op, 32);
+    switch (op) {
+      case 'status':
+        return { ok: true, workerId, used: registration.used, budget: registration.commandBudget, reported: Boolean(registration.reported) };
+      case 'ledger': {
+        // Workers may read the shared ledger: it is how a nested worker sees its parent's notes.
+        const limit = Number.isInteger(request?.limit) ? Math.min(Math.max(request.limit, 1), 100) : 50;
+        const slice = await this.deps.ledger(limit);
+        return { ok: true, records: slice };
+      }
+      case 'exec': {
+        if (typeof request?.command !== 'string' || request.command.length > 8192) return { ok: false, error: 'command must be 1..8192 characters' };
+        const command = text(request.command, 8192);
+        const seconds = Number.isInteger(request?.timeout) ? request.timeout : 30;
+        if (!command || !command.trim()) return { ok: false, error: 'command must be 1..8192 characters' };
+        if (seconds < 1 || seconds > 60) return { ok: false, error: 'timeout must be 1..60 seconds' };
+        const spent = this.spend(registration);
+        if (spent) return spent;
+        return this.whileRunning(workerId, async signal => {
+          try {
+            const result = await this.deps.exec(command, seconds, `/work/${workerId}`, signal);
+            return { ok: true, code: result.code, stdout: result.stdout, stderr: result.stderr, truncated: result.truncated };
+          } catch (error) { return { ok: false, error: errText(error) }; }
+        });
+      }
+      case 'http': {
+        if (typeof request?.url !== 'string' || request.url.length > 4096) return { ok: false, error: 'url must be 1..4096 characters' };
+        const url = text(request.url, 4096);
+        const method = request?.method === 'HEAD' ? 'HEAD' : 'GET';
+        if (!url) return { ok: false, error: 'url must be 1..4096 characters' };
+        const spent = this.spend(registration);
+        if (spent) return spent;
+        return this.whileRunning(workerId, async signal => {
+          try {
+            const result = await this.deps.http(url, method, signal);
+            return { ok: true, code: result.code, stdout: result.stdout, stderr: result.stderr, truncated: result.truncated };
+          } catch (error) { return { ok: false, error: errText(error) }; }
+        });
+      }
+      case 'note': {
+        if (!isRecordKind(request?.kind) || request.kind === 'report' || request.kind === 'lifecycle') return { ok: false, error: 'kind must be note, coverage, observation or open' };
+        const body = text(request?.text, 2000);
+        if (!body) return { ok: false, error: 'text is required' };
+        const outcome = isOutcome(request?.outcome) ? request.outcome : undefined;
+        if (request.kind === 'coverage' && (!text(request?.surface, 200) || !text(request?.risk, 200) || !outcome)) return { ok: false, error: 'coverage needs surface, risk and outcome' };
+        await this.deps.note({
+          at: new Date().toISOString(), by: workerId, kind: request.kind, text: body,
+          workerId, role: registration.role, depth: registration.depth,
+          ...(text(request?.surface, 200) ? { surface: text(request?.surface, 200) } : {}),
+          ...(text(request?.risk, 200) ? { risk: text(request?.risk, 200) } : {}),
+          ...(outcome ? { outcome } : {}),
+          ...(stringList(request?.refs, 10, 200).length ? { refs: stringList(request?.refs, 10, 200) } : {}),
+        });
+        return { ok: true };
+      }
+      case 'delegate': {
+        const focus = text(request?.focus, 60); const task = text(request?.task, 4000);
+        if (!focus || !task) return { ok: false, error: 'focus and task are required' };
+        try {
+          const worker = await this.deps.delegate({
+            focus, task, context: text(request?.context, 4000), role: text(request?.role, 32),
+            skills: stringList(request?.skills, 3, 64).filter(skill => /^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(skill)),
+            model: text(request?.model, 200),
+          }, registration);
+          return { ok: true, worker };
+        } catch (error) { return { ok: false, error: errText(error) }; }
+      }
+      case 'report': {
+        if (registration.reported) return { ok: false, error: 'this worker already reported' };
+        const report = normalizeReport(request?.report);
+        await this.deps.report(workerId, report);
+        registration.reported = report;
+        // Reporting ends this worker's authority: a copy of its ticket must not keep target access.
+        this.revoke(workerId);
+        return { ok: true };
+      }
+      default:
+        return { ok: false, error: 'unsupported broker operation' };
+    }
+  }
+
+  private async whileRunning(workerId: string, run: (signal: AbortSignal) => Promise<Record<string, unknown>>): Promise<Record<string, unknown>> {
+    const controller = new AbortController();
+    this.inFlight.set(workerId, controller);
+    try {
+      return await run(controller.signal);
+    } finally {
+      if (this.inFlight.get(workerId) === controller) this.inFlight.delete(workerId);
+    }
+  }
+
+  /** Workers stop at the reserve so the owner keeps budget for reconciliation and the final report. */
+  private spend(registration: WorkerRegistration): Record<string, unknown> | undefined {
+    if (registration.used >= registration.commandBudget) return { ok: false, error: 'worker command budget exhausted; report what you have with p2o_report' };
+    const reserve = Math.floor(this.limits.totalCommandBudget * WORKER_BUDGET_RESERVE);
+    if (this.totalUsed >= reserve) return { ok: false, error: 'assessment worker budget reserve reached; report what you have with p2o_report' };
+    registration.used += 1; this.totalUsed += 1;
+    return undefined;
+  }
+
+  get used(): number { return this.totalUsed; }
+
+  async stop(): Promise<void> {
+    for (const controller of this.inFlight.values()) controller.abort();
+    this.inFlight.clear();
+    for (const client of this.clients) client.destroy();
+    this.clients.clear();
+    const server = this.server;
+    this.server = undefined;
+    if (server) await new Promise<void>(resolve => server.close(() => resolve()));
+    await rm(this.socketPath, { force: true });
+    for (const registration of this.registrations.values()) registration.stopped = true;
+  }
+}
+
+function errText(error: unknown): string { return (error instanceof Error ? error.message : String(error)).slice(0, 600); }
+
+export interface BrokerClientOptions { connectMs?: number; requestMs?: number }
+
+/** Worker side: one connection, sequential requests, and fail-closed behaviour after any socket loss. */
+export class BrokerClient {
+  private socket?: Socket;
+  private chain: Promise<unknown> = Promise.resolve();
+  private broken?: string;
+  private sequence = 0;
+  private readonly pending = new Map<number, { resolve(value: any): void; reject(error: Error): void }>();
+  constructor(private readonly socketPath: string, private readonly token: string, private readonly options: BrokerClientOptions = {}) {}
+
+  private connect(): Promise<void> {
+    if (this.broken) return Promise.reject(new Error(this.broken));
+    if (this.socket && !this.socket.destroyed) return Promise.resolve();
+    return new Promise<void>((resolve, reject) => {
+      const socket = createConnection(this.socketPath);
+      socket.setEncoding('utf8');
+      let buffer = '';
+      let settled = false;
+      const timer = setTimeout(() => {
+        if (settled) return;
+        settled = true;
+        socket.destroy();
+        reject(new Error('p2o owner broker did not answer; the assessment owner may have stopped. Report blocked with p2o_report.'));
+      }, this.options.connectMs ?? 5000);
+      const finish = (error?: Error) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        if (error) reject(error); else resolve();
+      };
+      socket.on('error', error => { this.fail(`owner broker connection failed: ${error.message}`); finish(new Error(this.broken!)); });
+      socket.on('close', () => {
+        const current = this.socket === socket;
+        if (current) this.socket = undefined;
+        if (!this.broken) this.fail('owner broker connection closed; the assessment owner may have stopped');
+        finish(new Error(this.broken!));
+      });
+      socket.on('data', chunk => {
+        buffer += chunk;
+        for (;;) {
+          const index = buffer.indexOf('\n');
+          if (index < 0) break;
+          const line = buffer.slice(0, index); buffer = buffer.slice(index + 1);
+          if (!line.trim()) continue;
+          let record: any;
+          try { record = JSON.parse(line); } catch { continue; }
+          if (this.socket !== socket) {
+            if (record.ok === true) { this.socket = socket; finish(); }
+            else { this.fail(String(record.error ?? 'owner rejected the worker ticket')); finish(new Error(this.broken!)); }
+            continue;
+          }
+          const waiter = this.pending.get(record.id);
+          if (!waiter) continue;
+          this.pending.delete(record.id);
+          if (record.ok === true) waiter.resolve(record);
+          else waiter.reject(new Error(String(record.error ?? 'broker request failed')));
+        }
+        if (buffer.length > MAX_LINE_BYTES) this.fail('owner broker response exceeded the line limit');
+      });
+      socket.write(`${JSON.stringify({ token: this.token })}\n`);
+    });
+  }
+
+  private fail(message: string): void {
+    this.broken = `${message}. Do not retry host-side work; call p2o_report with blocked.`;
+    for (const waiter of this.pending.values()) waiter.reject(new Error(this.broken));
+    this.pending.clear();
+    this.socket?.destroy();
+    this.socket = undefined;
+  }
+
+  request<T = any>(op: string, payload: Record<string, unknown> = {}, options: { timeoutMs?: number } = {}): Promise<T> {
+    const run = async (): Promise<T> => {
+      await this.connect();
+      const socket = this.socket;
+      if (!socket) throw new Error(this.broken ?? 'owner broker unavailable');
+      const id = ++this.sequence;
+      const timeoutMs = options.timeoutMs ?? this.options.requestMs ?? 60_000;
+      return new Promise<T>((resolve, reject) => {
+        const timer = setTimeout(() => { this.pending.delete(id); reject(new Error(`p2o ${op} request timed out after ${timeoutMs}ms`)); }, timeoutMs);
+        this.pending.set(id, {
+          resolve: value => { clearTimeout(timer); resolve(value as T); },
+          reject: error => { clearTimeout(timer); reject(error); },
+        });
+        socket.write(`${JSON.stringify({ id, op, ...payload })}\n`);
+      });
+    };
+    const next = this.chain.then(run, run);
+    this.chain = next.catch(() => {});
+    return next;
+  }
+
+  close(): void { this.fail('worker session ended'); }
+}
