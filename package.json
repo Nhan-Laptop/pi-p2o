@@ -1,116 +1,29 @@
 {
   "name": "pi-p2o",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "type": "module",
-  "description": "Pi-native scoped-assessment runtime: deterministic supervisor, policy/tool broker, evidence vault, qualified reporting, and the p2o_* Pi control plane, alongside the portable vulnerability-research skill library.",
+  "description": "One target command: the current Pi agent investigates directly through Docker sandbox tools. Includes a security-research skill library.",
   "license": "UNLICENSED",
-  "keywords": [
-    "pi-package",
-    "security-assessment",
-    "orchestration",
-    "evidence"
-  ],
-  "packageManager": "npm@11.19.0",
-  "engines": {
-    "node": ">=24.19.0"
-  },
-  "pi": {
-    "extensions": [
-      "./extensions"
-    ],
-    "skills": [
-      "./skills"
-    ]
-  },
-  "files": [
-    "src/",
-    "extensions/",
-    "skills/",
-    "research/",
-    "scripts/",
-    "containers/",
-    "examples/",
-    "templates/",
-    "docs/",
-    "HANDOFFS.md",
-    "README.md"
-  ],
+  "keywords": ["pi-package", "security-assessment"],
+  "engines": { "node": ">=22.19.0" },
+  "pi": { "extensions": ["./extensions/p2o/index.ts"], "skills": ["./skills"] },
+  "files": ["src/", "extensions/", "skills/", "research/", "scripts/", "templates/", "docs/", "HANDOFFS.md", "README.md"],
   "scripts": {
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "build": "tsc -p tsconfig.build.json",
-    "check:build": "node --input-type=module -e \"for (const entry of ['./dist/src/contracts/index.js','./dist/src/store/index.js','./dist/src/policy/index.js','./dist/src/tools/index.js','./dist/src/evidence/index.js','./dist/src/reporting/index.js','./dist/src/orchestrator/index.js','./dist/src/runtime/index.js','./dist/src/interface/index.js','./dist/src/application/index.js','./dist/extensions/p2o/index.js']) await import(entry); console.log('build artifact import OK')\"",
-    "test": "npm run typecheck && npm run build && npm run check:build && npm run test:extension-package && npm run test:vitest && npm run test:tools && npm run test:evidence && npm run test:interface && npm run test:integration && npm run test:credentials && npm run test:budget && npm run test:orchestrator && npm run test:runtime && npm run test:real-worker && npm run test:sandbox && npm run test:e2e && npm run check:python",
-    "test:extension-package": "node tests/extension-package/run.mjs && npm run test:qualification-contract",
-    "test:qualification-contract": "node --test tests/qualification-first-use/rpc-contract.test.mjs",
-    "test:vitest": "vitest run",
-    "test:contracts": "vitest run tests/contracts",
-    "test:store": "vitest run tests/store",
-    "test:reporting": "vitest run tests/reporting",
-    "test:orchestrator": "node tests/orchestrator/run.mjs",
-    "test:review-repros": "node tests/review-repros/run.mjs",
-    "test:evidence": "node tests/evidence/run.mjs",
-    "test:policy": "npm run test:tools",
-    "test:tools": "node tests/tools/run.mjs",
-    "test:interface": "node tests/interface/run.mjs",
-    "test:command": "vitest run tests/command",
-    "test:integration": "node tests/interface/integration.mjs",
-    "test:runtime": "P2O_TEST_PI_BINARY=$PWD/node_modules/.bin/pi TSC=node_modules/typescript/bin/tsc NODE_TYPES_ROOT=node_modules/@types node tests/runtime/run.mjs",
-    "test:credentials": "node tests/credentials/run.mjs",
-    "test:budget": "node tests/budget/run.mjs",
-    "test:real-worker": "node tests/real-worker/run.mjs --require-real-pi",
-    "test:sandbox": "node tests/sandbox/run.mjs --allow-missing",
-    "test:sandbox:live": "node tests/sandbox/run.mjs",
-    "test:e2e": "node tests/end-to-end/run.mjs",
-    "test:planner": "node tests/planner/run.mjs",
-    "test:live-lab": "node tests/live/run.mjs",
-    "test:browser": "node tests/browser/run.mjs",
-    "test:proxy": "node tests/proxy/run.mjs",
-    "test:fuzz": "node tests/fuzz/run.mjs",
-    "test:integration-packs": "node tests/integration-packs/run.mjs",
-    "test:onboarding": "vitest run --config tests/onboarding/vitest.config.ts",
-    "test:source-container": "P2O_SOURCE_REQUIRE_DOCKER=1 vitest run --config tests/source-container/vitest.config.ts",
-    "test:pack-lifecycle": "node tests/pack-lifecycle/run.mjs",
-    "test:first-use": "node tests/first-use/run.mjs",
-    "test:live-loopback": "P2O_LIVE_FIRST_USE=1 node node_modules/vitest/vitest.mjs run --config tests/first-use/vitest.config.ts tests/first-use/live-loopback.test.ts",
-    "test:first-use-verification": "node tests/first-use-verification/run.mjs",
-    "test:packaging": "node tests/packaging/run.mjs",
-    "check:runtime": "node tests/packaging/check-runtime.mjs",
-    "check:first-use": "npm run typecheck && npm run build && npm run check:build && npm run test:extension-package && npm run test:packaging && npm run test:onboarding && npm run test:source-container && npm run test:pack-lifecycle && npm run test:first-use && npm run test:first-use-verification",
-    "test:model-budget": "node tests/model-budget/run.mjs",
-    "test:checkpoint": "node tests/checkpoint/run.mjs",
-    "test:checkpoint-default": "node tests/checkpoint-default/run.mjs",
-    "test:pack-readiness": "vitest run --config tests/pack-readiness/vitest.config.ts",
-    "test:autonomous-integration": "vitest run --config tests/autonomous-integration/vitest.config.ts",
-    "check:autonomous": "npm run check:first-use && npm run test:model-budget && npm run test:checkpoint && npm run test:checkpoint-default && npm run test:pack-readiness && npm run test:autonomous-integration",
-    "qualify:first-use": "node tests/qualification-first-use/run.mjs",
-    "check:upgrade": "npm test && npm run test:planner && npm run test:live-lab && npm run test:browser && npm run test:proxy && npm run test:fuzz && npm run test:integration-packs",
-    "demo:live": "node examples/live-lab/run.mjs --require-live --keep",
-    "demo:plan": "node examples/live-lab/plan.mjs --require-live --keep",
-    "test:python": "PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s tests -v",
-    "check:python": "npm run check:render && npm run check:orange && npm run check:orange-validate && npm run check:library && npm run test:python",
+    "check:build": "node --input-type=module -e \"await import('./dist/extensions/p2o/index.js'); console.log('build import OK')\"",
+    "test": "npm run typecheck && npm run build && npm run check:build && vitest run && npm run check:python",
+    "test:sandbox": "P2O_TEST_DOCKER=1 vitest run tests/minimal/docker.test.ts tests/minimal/native.test.ts",
     "check:render": "PYTHONDONTWRITEBYTECODE=1 python3 scripts/render_research.py --check",
     "check:orange": "PYTHONDONTWRITEBYTECODE=1 python3 scripts/orange_research.py --check",
     "check:orange-validate": "PYTHONDONTWRITEBYTECODE=1 python3 scripts/orange_research.py --validate",
     "check:library": "PYTHONDONTWRITEBYTECODE=1 python3 scripts/validate_library.py",
-    "check:release": "npm test && npm run test:sandbox:live"
+    "test:python": "PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s tests -v",
+    "check:python": "npm run check:render && npm run check:orange && npm run check:orange-validate && npm run check:library && npm run test:python"
   },
-  "peerDependencies": {
-    "@earendil-works/pi-ai": "*",
-    "@earendil-works/pi-coding-agent": "*",
-    "typebox": "*"
-  },
-  "peerDependenciesMeta": {
-    "@earendil-works/pi-ai": {
-      "optional": true
-    },
-    "@earendil-works/pi-coding-agent": {
-      "optional": true
-    },
-    "typebox": {
-      "optional": true
-    }
-  },
+  "peerDependencies": { "@earendil-works/pi-coding-agent": "*", "typebox": "*" },
+  "peerDependenciesMeta": { "@earendil-works/pi-coding-agent": { "optional": true }, "typebox": { "optional": true } },
   "devDependencies": {
     "@earendil-works/pi-ai": "1.0.0",
     "@earendil-works/pi-coding-agent": "1.0.0",

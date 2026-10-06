@@ -8,4 +8,6 @@ dist/
 *.tsbuildinfo
 .vite-cache/
 coverage/
-tmp/ 
+tmp/
+# Local receipts from the removed legacy demos (not source; never publish their secrets).
+examples/live-lab/.runs/
