@@ -13,7 +13,8 @@
  *   * The exact owner approval artifact for the sealed proposal is minted controller-side from that
  *     capability, inside the pre-existing owner authorization window, and is then still verified by the
  *     existing owner ledger gate before any clone, target request or delegation.
- *   * No `p2o_*` tool can reach this port.
+ *   * The session-bound foreground bridge may read planning facts and seal a proposal only. It cannot
+ *     reach start/approve, mint human authority or perform target I/O.
  */
 import type { HumanConfirmationCapability } from './human-approval.js';
 
@@ -147,6 +148,10 @@ export interface EntryStopReceipt {
 export interface TargetEntryPort {
   prepare(input: EntryPrepareInput, signal?: AbortSignal): Promise<EntryPreparation>;
   plan(input: EntryPlanInput, signal?: AbortSignal): Promise<EntryPlan>;
+  /** Offline, controller-derived facts for the current Pi session's visible planner. No target I/O. */
+  planContext?(input: EntryPlanInput, signal?: AbortSignal): Promise<import('../application/entry/types.js').EntryPlanAuthorInput>;
+  /** Proposal-only bridge. Reuses the nested author's validation/seal; never approval or dispatch. */
+  proposePlan?(input: EntryPlanInput, output: import('../application/entry/types.js').EntryPlanAuthorOutput, signal?: AbortSignal): Promise<EntryPlan>;
   start(input: EntryStartInput, signal?: AbortSignal): Promise<EntryRun>;
   resume(runId: string, signal?: AbortSignal): Promise<EntryRun>;
   /** Optional; omit to force `/p2o approve` to use the session plan registry only. */

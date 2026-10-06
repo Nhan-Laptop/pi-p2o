@@ -75,6 +75,9 @@ export class SessionRunRegistry {
 
   /** Rebuild in-memory state from branch entries; abandoned branches are not consulted by the caller. */
   hydrate(entries: readonly SessionEntryLike[]): void {
+    this.plans.clear();
+    this.runs.clear();
+    this.current = undefined;
     for (const entry of entries) {
       if (!isRecord(entry) || entry.type !== 'custom') continue;
       if (entry.customType === 'p2o_run' && isRunRecord(entry.data)) {

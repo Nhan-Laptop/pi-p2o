@@ -23,8 +23,10 @@ const variant = (base: PlanProposal): PlanProposal => {
   return clone;
 };
 
-test('p2o_plan is the 14th tool and never accepts an approval without a digest and owner file', () => {
-  assert.equal(Object.keys(schemas).length, 14);
+test('p2o_plan is a registered tool and never accepts an approval without a digest and owner file', () => {
+  // 14 control-plane actions plus the session-bound p2o_orchestrate foreground surface.
+  assert.equal(Object.keys(schemas).length, 15);
+  assert.ok(Object.hasOwn(schemas, 'orchestrate'));
   assert.ok(Object.hasOwn(schemas, 'plan'));
   const command = parseCommand('plan', JSON.stringify({ action: 'read', runId: 'run-1' }));
   assert.equal(command.action, 'read');

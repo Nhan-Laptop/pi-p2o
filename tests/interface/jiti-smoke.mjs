@@ -26,7 +26,7 @@ const pi = {
   sendMessage: () => {},
 };
 mod.registerP2O(pi); // No injected factory: the default must fail closed without P2O_CONTROL_MODULE.
-assert(tools.size === 14, `expected 14 tools, saw ${tools.size}`);
+assert(tools.size === 15, `expected 15 tools, saw ${tools.size}`);
 assert(commands.size === 1 && commands.has('p2o'), `expected exactly one slash command /p2o, saw ${[...commands].join(',') || 'none'}`);
 assert(![...commands].some(name => name.startsWith('p2o_')), 'per-action slash commands must not be registered');
 assert(tools.keys().next().value === 'p2o_start', 'first registered tool must be p2o_start');
@@ -40,5 +40,5 @@ catch (error) {
   failedClosed = message.includes('ENTRY_RUN_UNKNOWN') && message.includes('no fake backend');
 }
 assert(failedClosed, 'the bundled default must fail closed without an admitted owner run and never select a fake backend');
-console.log(`JITI: PASS — 14 tools and one /p2o command registered through jiti, no work at load (${[...tools.keys()].join(',')})`);
+console.log(`JITI: PASS — 15 tools and one /p2o command registered through jiti, no work at load (${[...tools.keys()].join(',')})`);
 process.exitCode = 0; // explicit success; every failure path above exits 1

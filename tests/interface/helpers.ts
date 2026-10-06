@@ -26,6 +26,8 @@ export class FakeBackend implements ControlBackend {
   dispatchAllowed = true;
   verifiedStop = true;
   closeFailure = false;
+  foregroundReceipts: import('../../src/interface/types.js').ForegroundUsageReceipt[] = [];
+  async recordForegroundUsage(_runId: string, receipt: import('../../src/interface/types.js').ForegroundUsageReceipt) { this.foregroundReceipts.push(receipt); }
   startWait?: () => Promise<void>;
   snapshotValue = snapshot();
   eventValues: Events['items'] = [{ sequence: 1, eventId: 'event-1', occurredAt: '2026-10-02T00:00:00Z', type: 'runtime.exited',
@@ -89,25 +91,36 @@ export function fakePi(hasUI = true) {
   const commands = new Map<string, { handler: (args: string, ctx: ExtensionCommandContext) => Promise<void> }>();
   const handlers = new Map<string, Array<(event: unknown, ctx: ExtensionContext) => unknown>>();
   const messages: Array<{ customType: string; content: unknown; details?: unknown }> = [];
+  const deliveries: Array<{ triggerTurn?: boolean; deliverAs?: string } | undefined> = [];
+  const userMessages: string[] = [];
+  const widgets: Array<{ key: string; content?: string[] }> = [];
+  const loadouts: string[][] = [];
+  let activeTools = ['read', 'bash', 'edit', 'write', 'codemode'];
+  let idle = true, aborts = 0;
   const notifications: Array<{ message: string; type?: string }> = [];
   const statuses: Array<{ key: string; text?: string }> = [];
   const confirmCalls: Array<{ title: string; message: string }> = [];
   const sessionEntries: Array<{ type: 'custom'; customType: string; data?: unknown }> = [];
   let confirmResult = true;
   const api = {
-    registerTool(definition: ToolDefinition) { if (tools.has(definition.name)) throw new Error('Duplicate tool'); tools.set(definition.name, definition); },
+    sendUserMessage(content: string | unknown[]) { userMessages.push(typeof content === 'string' ? content : JSON.stringify(content)); },
+    registerTool(definition: ToolDefinition) { if (tools.has(definition.name)) throw new Error('Duplicate tool'); tools.set(definition.name, definition); activeTools.push(definition.name); },
     registerCommand(name: string, command: { handler: (args: string, ctx: ExtensionCommandContext) => Promise<void> }) { commands.set(name, command); },
     on(name: string, handler: (event: unknown, ctx: ExtensionContext) => unknown) { handlers.set(name, [...(handlers.get(name) ?? []), handler]); },
-    sendMessage(message: { customType: string; content: unknown; details?: unknown }) { messages.push(message); },
+    sendMessage(message: { customType: string; content: unknown; details?: unknown }, options?: { triggerTurn?: boolean; deliverAs?: string }) { messages.push(message); deliveries.push(options); },
+    getActiveTools() { return [...activeTools]; },
+    setActiveTools(names: string[]) { activeTools = [...names]; loadouts.push([...names]); },
     appendEntry(customType: string, data?: unknown) { sessionEntries.push({ type: 'custom', customType, data }); },
   } as unknown as ExtensionAPI;
-  const context = { cwd: process.cwd(), hasUI, thinkingLevel: 'max', model: { provider: 'parent', id: 'parent-model' },
+  const context = { cwd: process.cwd(), hasUI, isIdle: () => idle, abort: () => { aborts++; idle = true; }, thinkingLevel: 'max', model: { provider: 'parent', id: 'parent-model' },
     ui: { notify(message: string, type?: string) { notifications.push({ message, type }); },
       setStatus(key: string, text?: string) { statuses.push({ key, text }); },
+      setWidget(key: string, content?: string[]) { widgets.push({ key, content }); },
       confirm(title: string, message: string) { confirmCalls.push({ title, message }); return Promise.resolve(confirmResult); } },
     sessionManager: { getBranch: () => [...sessionEntries] },
   } as unknown as ExtensionCommandContext;
-  return { api, tools, commands, handlers, messages, notifications, statuses, context, confirmCalls, sessionEntries,
+  return { api, tools, commands, handlers, messages, deliveries, userMessages, widgets, loadouts, notifications, statuses, context, confirmCalls, sessionEntries,
+    setIdle(value: boolean) { idle = value; }, aborts: () => aborts,
     setConfirm(value: boolean) { confirmResult = value; },
     async call(name: string, args: unknown, signal?: AbortSignal) {
       return tools.get(name)!.execute('call-1', args, signal, undefined, {
@@ -116,7 +129,7 @@ export function fakePi(hasUI = true) {
       });
     },
     async command(name: string, args: string) { await commands.get(name)!.handler(args, context); },
-    async event(name: string) { for (const handler of handlers.get(name) ?? []) await handler({ type: name }, context); },
+    async event(name: string, event: unknown = { type: name }) { const results: unknown[] = []; for (const handler of handlers.get(name) ?? []) results.push(await handler(event, context)); return results; },
     setHasUI(value: boolean) { (context as unknown as { hasUI: boolean }).hasUI = value; },
   };
 }
@@ -164,6 +177,20 @@ export class FakeEntry implements TargetEntryPort {
   async plan(input: EntryPlanInput): Promise<EntryPlan> {
     this.calls.push('plan');
     const plan = { planId: 'plan-1', runId: input.preparation.runId, digest: 'b'.repeat(64), steps: ['snapshot', 'delegate'], targetRequests: 0, ...this.planOverrides } as unknown as EntryPlan;
+    this.plans.set(plan.planId, { preparation: input.preparation, plan });
+    return plan;
+  }
+
+  async planContext(input: EntryPlanInput): Promise<import('../../src/application/entry/types.js').EntryPlanAuthorInput> {
+    this.calls.push('planContext');
+    return { preparation: input.preparation, depth: 'standard', techniques: ['source.analyze'], skills: ['source-code-auditing'], available: { ownerMenu: true, generatedRequests: false },
+      facts: { targetKind: input.preparation.target.kind, locator: input.preparation.target.locator, targetId: 'target-1', samplePaths: [],
+        ownerObservations: [{ taskId: 'task-1', observationId: 'source-inventory', tool: 'source.analyze', summary: 'bounded approved observation', targetIds: ['target-1'], capabilities: ['source.analyze'], actions: ['analyze'] }],
+        generatedTasks: [], accounts: ['anonymous'], allowedActions: ['analyze'], allowedCapabilities: ['source.analyze'], limits: { maxSteps: 16, maxStepChars: 300, maxSelections: 32, maxGeneratedRequests: 16 } } };
+  }
+  async proposePlan(input: EntryPlanInput, output: import('../../src/application/entry/types.js').EntryPlanAuthorOutput): Promise<EntryPlan> {
+    this.calls.push('proposePlan');
+    const plan: EntryPlan = { planId: 'plan-1', runId: input.preparation.runId, digest: 'b'.repeat(64), steps: output.steps, targetRequests: 0 };
     this.plans.set(plan.planId, { preparation: input.preparation, plan });
     return plan;
   }

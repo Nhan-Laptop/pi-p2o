@@ -84,7 +84,14 @@ export interface Events {
   nextSequence: number;
   gap: boolean;
 }
+/** Native Pi message usage is separate from gateway-bounded worker usage and worker attestation. */
+export interface ForegroundUsageReceipt {
+  recordId: string; occurredAt: string; provider: string; model: string; thinkingRequested: string;
+  basis: 'native-pi-message';
+  usage: { input: number; output: number; cacheRead: number; cacheWrite: number; totalTokens: number; costUsd: number | null };
+}
 export interface Report {
+  foregroundUsage?: unknown;
   format: 'json' | 'markdown';
   /** Redacted report data, never raw artifact bytes or filesystem paths. */
   content: unknown;
@@ -118,6 +125,8 @@ export interface ControlBackend {
   plan?(input: PlanInput, signal?: AbortSignal): Promise<unknown>;
   /** Optional target-entry workflow for the human `/p2o` command; absent fails closed with INTEGRATION_REQUIRED. */
   entry?: TargetEntryPort;
+  /** Host event-only accounting, never a model-callable authority. */
+  recordForegroundUsage?(runId: string, receipt: ForegroundUsageReceipt): Promise<void>;
   close(): Promise<void>;
 }
 /**

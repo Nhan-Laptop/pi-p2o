@@ -46,6 +46,7 @@ export class InterfaceController {
   async execute<A extends Action>(action: A, raw: unknown, cwd: string, signal?: AbortSignal,
     privateDashboardLink?: (accessUrl: string) => void, origin: 'tool' | 'command' = 'tool'): Promise<unknown> {
     const input = validate(action, raw);
+    if (action === 'orchestrate') throw new InterfaceError('ORCHESTRATION_SESSION_REQUIRED', 'foreground controls require the live Pi session bridge; the backend cannot activate one');
     // Plan approval is a human decision, never a model tool call. Only the `/p2o approve <planId>` command
     // passes origin 'command'.
     if (action === 'plan' && (input as Input<'plan'>).action === 'approve' && origin !== 'command') {
@@ -128,6 +129,12 @@ export class InterfaceController {
     const backend = await this.backend(cwd, planAuthor);
     this.assertOpen();
     return backend.entry;
+  }
+
+  /** Only extension message_end events call this; no model/tool can mint a usage receipt. */
+  async recordForegroundUsage(runId: string, receipt: import('./types.js').ForegroundUsageReceipt, cwd: string): Promise<void> {
+    const backend = await this.backend(cwd);
+    await backend.recordForegroundUsage?.(runId, receipt);
   }
 
   private launch(backend: ControlBackend, action: 'start' | 'resume', input: StartInput | Input<'resume'>, signal?: AbortSignal): Promise<unknown> {

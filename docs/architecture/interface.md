@@ -4,7 +4,7 @@ Control-plane implementation: `extensions/p2o/**`, `src/interface/**`, `tests/in
 
 ## Entry point and seam
 
-`extensions/p2o/index.ts` default-exports the Pi extension factory and also exports `registerP2O(pi, { backendFactory })` for tests/integration. The factory registers the 14 `p2o_*` tools plus the single human `/p2o` command, one `session_start` status line and one idempotent `session_shutdown` cleanup handler. It starts no process, socket, timer, manifest or dashboard at load time.
+`extensions/p2o/index.ts` default-exports the Pi extension factory and also exports `registerP2O(pi, { backendFactory })` for tests/integration. The factory registers the 15 `p2o_*` tools plus the single human `/p2o` command, one `session_start` status line and one idempotent `session_shutdown` cleanup handler. It starts no process, socket, timer, manifest or dashboard at load time.
 
 | Tool | Purpose |
 |---|---|
@@ -16,6 +16,7 @@ Control-plane implementation: `extensions/p2o/**`, `src/interface/**`, `tests/in
 | `p2o_tasks`, `p2o_evidence` | Paginated durable metadata. Evidence is metadata only: no artifact bytes, locators, tokens or raw logs. |
 | `p2o_report` | Vault-backed qualified report (JSON/Markdown) from the trusted composition; fails closed with `INTEGRATION_REQUIRED` when the vault-backed renderer is absent. |
 | `p2o_events` | Paginated durable receipts with cursor/gap semantics. Free text appears only when a trusted collector marks the payload redacted. |
+| `p2o_orchestrate` | Live-session-only `context`/`propose`/`watch`/`finish`. Reads offline facts, seals an unapproved draft, waits on bounded durable progress and reports terminal state. Cannot approve, activate from replay, or dispatch target work. |
 | `p2o_dashboard` | Explicit opt-in (`enabled: true` + `runId`) loopback read-only dashboard; `action: close` stops the server only. |
 
 The human entrypoint is the single `/p2o` command (`src/interface/argv.ts`, `command.ts`): shell-free flags/verbs, no JSON on the command line, and no target workflow call before an interactive `ctx.ui.confirm`. `p2o_plan` approval is human-command-only — the tool path is refused with `APPROVAL_HUMAN_ONLY`. Tool arguments, command dispatch inputs and post-`tool_call` mutations are re-validated with compiled TypeBox (`typebox/schema`) plus a plain-JSON/accessor/`__proto__` guard. Failures are reported by throwing, never by a fabricated success envelope. Tool output is bounded at 48KiB and record pages at 100 items.
@@ -23,6 +24,34 @@ The backend-factory context carries one opaque extra: `planAuthor`, the host ses
 
 
 Prompt metadata never implies permission: every tool guideline states that calling the tool, possessing targets, or passing preflight does not establish authorization, and that process completion, packet acceptance, verification and coverage stay separate.
+
+## Native foreground orchestration
+
+`src/interface/foreground.ts` owns the live interaction state, not execution authority. TUI target commands
+default to this surface; `--headless` preserves legacy behavior and RPC opts in with `--foreground`.
+The command emits its preparation receipt before one session handoff. That handoff uses `pi.sendUserMessage`,
+not `pi.sendMessage({ triggerTurn: true })`: in Pi 1.0.0 the custom-message trigger calls the lower-level agent
+prompt and never emits `before_agent_start`, which would silently drop this workspace's system section. The
+user-message path runs the full prompt pipeline, and the scope rules also travel inside each handoff text so
+continuation turns stay bound. The root session model/context has explicit human consent, separate from workers.
+
+`TargetEntryPort.planContext` exposes offline controller facts; `proposePlan` uses the same validation/seal
+as the nested author. Only `/p2o approve` can mint authority or acquire/dispatch. The tools are narrowed for
+UX, with actual `tool_call` and execute-time run-binding gates (including nested/codemode calls); `user_bash`
+is blocked. The system section is scoped to this live workspace, and stale kickoff context is filtered.
+The workspace uses Pi's widget/status APIs, not a second terminal renderer or an automatically opened web UI.
+
+A single bounded controller poll updates redacted status/event cursors. Heartbeats alone do not wake the
+model. `watch` waits up to 120 seconds for meaningful change, parent abort, stop or the owner deadline.
+Idle wakeups and `agent_before_settle` continuations require unseen progress; there is no unconditional
+continuation loop. `finish` rechecks terminal state/ownership and renders the qualified report.
+
+Foreground state entries are informational only, never resume authority. Verified stop, final settlement,
+branch changes and shutdown clear timers/watchers and restore tools; unverified cleanup retains the gate
+and blocks session navigation. Parent abort/error invokes owned-runtime cancellation, not merely UI closure.
+Financially bounded consent refuses native turns because the root session is outside the worker gateway;
+`--headless` retains those caps. Host `message_end` receipts record native usage separately in Pi and the
+bundled private journal/report; no model can manufacture usage or worker attestation.
 
 ## Trusted composition (exact integration)
 

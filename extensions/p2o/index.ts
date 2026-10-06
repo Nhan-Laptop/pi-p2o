@@ -5,7 +5,8 @@ import { createDefaultBackend } from '../../src/interface/default-backend.js';
 import { runP2OCommand, type P2OCommandHost, type P2OTextWriter } from '../../src/interface/command.js';
 import { SessionRunRegistry, type SessionEntryLike } from '../../src/interface/session-state.js';
 import { boundedOutput, publicError, safeText } from '../../src/interface/presentation.js';
-import { schemas, type Action } from '../../src/interface/schemas.js';
+import { schemas, validate, type Action } from '../../src/interface/schemas.js';
+import { ForegroundOrchestrator } from '../../src/interface/foreground.js';
 import type { BackendFactory } from '../../src/interface/types.js';
 import { createHostPiPlanAuthor } from '../../src/application/entry/pi-author.js';
 import type { OnboardingHandler } from '../../src/application/onboarding/index.js';
@@ -36,6 +37,7 @@ function hostPlanAuthor(ctx: ExtensionCommandContext): unknown {
   return createHostPiPlanAuthor(ctx);
 }
 const descriptions: Record<Action, string> = {
+  orchestrate: 'Coordinate the live foreground run in this Pi session: read offline planning context, propose an unapproved bounded draft, wait for durable progress, or finish with a terminal qualified report. Cannot activate from session replay, approve a plan or launch target work.',
   start: 'Start a user-requested scoped workflow using the real managed supervisor. Requires owner-approved manifest and explicit fixture/assessment mode; never grants permission.',
   status: 'Read durable run/process, packet acceptance, finding verification, coverage, failures and requested-versus-observed runtime receipts independently.',
   stop: 'Cancel scheduling and stop supervisor-owned runtime execution; success requires verified termination, not merely a parent-model abort.',
@@ -102,6 +104,7 @@ export function createP2OTextSink(ctx: ExtensionContext, write: P2OTextWriter = 
 export function registerP2O(pi: ExtensionAPI, options: P2OExtensionOptions = {}): InterfaceController {
   const controller = new InterfaceController(options.backendFactory ?? createDefaultBackend, options.ownerStorageRoot);
   const registry = new SessionRunRegistry();
+  const foreground = new ForegroundOrchestrator(pi, controller, registry);
   const host: P2OCommandHost = {
     controller,
     registry,
@@ -110,6 +113,7 @@ export function registerP2O(pi: ExtensionAPI, options: P2OExtensionOptions = {})
     textPrintFor: ctx => createP2OTextSink(ctx, options.textPrintWriterFor),
     planAuthorFor: options.planAuthorFor ?? hostPlanAuthor,
     onboardingFor: options.onboardingFor,
+    foreground,
   };
   const privateLink = (ctx: ExtensionContext): ((link: string) => void) | undefined => ctx.hasUI
     ? link => ctx.ui.notify(`Private read-only dashboard (do not share): ${link}`, 'info') : undefined;
@@ -140,9 +144,20 @@ export function registerP2O(pi: ExtensionAPI, options: P2OExtensionOptions = {})
       async execute(_id, params, signal, onUpdate, ctx) {
         try {
           if (action === 'start' || action === 'resume') onUpdate?.({ content: [{ type: 'text', text: 'Checking scope and runtime prerequisites; no acceptance or verification is implied.' }], details: {} });
-          const result = await controller.execute(action, params, ctx.cwd, signal, privateLink(ctx), 'tool');
+          validate(action, params);
+          const foregroundStopping = action === 'stop' && foreground.runId === (params as { runId: string }).runId;
+          const denied = foreground.guard(name, params);
+          if (denied) throw new Error(denied);
+          if (action === 'stop' && foreground.stopPlanning((params as { runId: string }).runId)) {
+            return { content: [{ type: 'text', text: 'Foreground planning cancelled. No worker was admitted; no runtime-termination success is claimed.' }], details: { planningCancelled: true, workersStarted: false }, terminate: true };
+          }
+          if (action === 'stop') foreground.beforeStop((params as { runId: string }).runId);
+          const result = action === 'orchestrate'
+            ? await foreground.execute(validate('orchestrate', params), ctx, signal)
+            : await controller.execute(action, params, ctx.cwd, signal, privateLink(ctx), 'tool');
+          if (action === 'stop') foreground.stopped((params as { runId: string }).runId);
           const output = boundedOutput(result);
-          return { content: [{ type: 'text', text: output.text }], details: output.value };
+          return { content: [{ type: 'text', text: output.text }], details: output.value, ...(foregroundStopping ? { terminate: true } : {}) };
         } catch (error) {
           // Pi marks failures only when execute throws. Never return a fake isError/success envelope.
           throw publicError(error);
@@ -154,8 +169,47 @@ export function registerP2O(pi: ExtensionAPI, options: P2OExtensionOptions = {})
   // Exactly one human slash command. No `/p2o_<action>` registrations: the p2o_* tools stay available for
   // agent/script use, but the human grammar is `/p2o` only.
   pi.registerCommand('p2o', {
-    description: 'One entrypoint: /p2o --target <local-dir|github-https-repo|http(s)-URL> [--plan-only --deadline minutes --concurrency N --repo-scripts --state-changes] (first-use human UI; model usage is informational, provider-limited) | status|stop|resume|report [runId] | approve <planId>',
-    handler: async (args: string, ctx: ExtensionCommandContext) => { await runP2OCommand(host, args, ctx); },
+    description: 'One entrypoint: /p2o --target <local-dir|github-https-repo|http(s)-URL> [--foreground|--headless --plan-only --deadline minutes --concurrency N --repo-scripts --state-changes] (TUI: current Pi orchestrator; human approval; sandboxed workers) | status|stop|resume|report [runId] | approve <planId>',
+    handler: async (args: string, ctx: ExtensionCommandContext) => { await runP2OCommand(host, args, ctx); foreground.deliverPending(); },
+  });
+
+  // Exposure alone is not a boundary: direct, nested and codemode calls all pass this gate.
+  pi.on('tool_call', event => {
+    const reason = foreground.guard(event.toolName, event.input);
+    if (reason) return { block: true, reason };
+  });
+  pi.on('user_bash', () => {
+    if (foreground.active) return { result: { output: 'Host shell is disabled during foreground orchestration. Use /p2o stop before leaving this control workspace.', exitCode: 1, cancelled: false, truncated: false } };
+  });
+  pi.on('before_agent_start', event => {
+    const instructions = foreground.instructions();
+    if (instructions) event.systemPromptOptions.sections.p2o_orchestration = instructions;
+    else delete event.systemPromptOptions.sections.p2o_orchestration;
+  });
+  pi.on('context', event => ({ messages: event.messages.filter(message => {
+    const custom = message as { customType?: string; details?: { runId?: string } };
+    return custom.customType !== 'p2o_orchestrator' || custom.details?.runId === foreground.runId;
+  }) }));
+  pi.on('message_end', async event => {
+    if (event.message.role === 'assistant') await foreground.recordUsage(event.message);
+  });
+  pi.on('agent_before_settle', async event => {
+    await foreground.settled(event.outcome);
+    const continuation = foreground.takeContinuation();
+    if (continuation) return { entries: [{ type: 'custom_message', customType: 'p2o_orchestrator', content: continuation.content, display: true, details: continuation.details }], continue: true };
+  });
+  const leaveWorkspace = async (): Promise<{ cancel?: boolean } | undefined> => {
+    try { await foreground.cancel('Pi session/branch change'); }
+    catch { return { cancel: true }; }
+  };
+  pi.on('session_before_switch', leaveWorkspace);
+  pi.on('session_before_fork', leaveWorkspace);
+  pi.on('session_before_tree', leaveWorkspace);
+  pi.on('model_select', async (_event, ctx) => {
+    if (foreground.active) { await foreground.cancel('foreground model changed; fresh consent required'); ctx.ui.notify('p2o foreground stopped for model change. Start again to approve the new session model.', 'info'); }
+  });
+  pi.on('thinking_level_select', async (_event, ctx) => {
+    if (foreground.active) { await foreground.cancel('foreground thinking changed; fresh consent required'); ctx.ui.notify('p2o foreground stopped for thinking change. Start again to approve the new selection.', 'info'); }
   });
 
   pi.on('session_start', (_event, ctx) => {
@@ -164,6 +218,7 @@ export function registerP2O(pi: ExtensionAPI, options: P2OExtensionOptions = {})
     // Do not auto-start, auto-resume, load manifests or start a dashboard here.
   });
   pi.on('session_shutdown', async (_event, ctx) => {
+    foreground.dispose();
     try { await controller.close(); }
     catch (error) {
       if (ctx.hasUI) ctx.ui.notify(publicError(error).message, 'error');

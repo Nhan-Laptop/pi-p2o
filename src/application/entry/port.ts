@@ -454,6 +454,82 @@ export function createTargetEntryPort(options: TargetEntryOptions): import('../.
     return { ...(output as Record<string, unknown>), packet: { kind: 'owner-menu', proposal: expanded.proposal } };
   };
 
+  // Both authors use the same offline facts and exact validation/sealing path. These helpers never approve.
+  const contextFor = async (input: EntryPlanInput, signal?: AbortSignal) => {
+    signal?.throwIfAborted();
+    if (!input || typeof input !== 'object' || !input.preparation) entryFail('ENTRY_FAILED', 'plan requires the preparation returned by prepare');
+    const binding = await bindingNow();
+    const { resolved, pending: remembered } = await verifyPreparation(input.preparation, binding);
+    const samplePaths = remembered?.fingerprint?.samplePaths ?? [];
+    const available = {
+      ownerMenu: Boolean(options.executions?.['owner-menu']),
+      generatedRequests: Boolean(options.executions?.['generated-requests']),
+    };
+    return { binding, resolved, authorInput: {
+      preparation: input.preparation,
+      ...(remembered?.purpose ? { purpose: remembered.purpose } : {}),
+      depth: remembered?.depth ?? 'standard',
+      facts: planFactsFor({
+        preparation: input.preparation,
+        binding,
+        samplePaths,
+        targetId: resolved.approved.targetId,
+        ...(binding.requestEnvelope ? { envelope: binding.requestEnvelope } : {}),
+      }),
+      techniques: [resolved.route.capability],
+      skills: [...resolved.skills],
+      available,
+    } };
+  };
+
+  const sealDraft = async (input: EntryPlanInput, output: import('./types.js').EntryPlanAuthorOutput, signal?: AbortSignal): Promise<EntryPlan> => {
+    const { binding, resolved, authorInput } = await contextFor(input, signal);
+    const available = authorInput.available;
+    const expanded = await expandOwnerMenuSelection({ output, preparation: input.preparation, binding, targetId: resolved.approved.targetId, available });
+    const validated = validatePlanAuthorOutput({
+      output: expanded,
+      preparation: input.preparation,
+      run: binding.run,
+      binding,
+      technique: resolved.route.capability,
+      targetId: resolved.approved.targetId,
+      ...(binding.requestEnvelope ? { envelope: binding.requestEnvelope } : {}),
+    });
+    if (validated.authoredBy !== 'model' && options.allowFixtureAuthor !== true) {
+      entryFail('ENTRY_PLAN_AUTHOR_REQUIRED',
+        'the plan author reported fixture authorship; production requires the real model-authored Pi planner seam');
+    }
+    const execution = await requireExecution(validated.packet);
+    const proposal = await execution.propose({ packet: validated.packet, preparation: input.preparation });
+    const planId = `plan-${String(newId()).replace(/[^A-Za-z0-9_.:-]/g, '-').slice(0, 64)}`;
+    const digest = sealPlanDigest({
+      preparation: input.preparation,
+      steps: validated.steps,
+      packet: validated.packet,
+      proposalId: proposal.proposalId,
+      proposalDigest: proposal.proposalDigest,
+    });
+    const plan: EntryPlan = { planId, runId: input.preparation.runId, digest, steps: validated.steps, targetRequests: 0 };
+    await store.save({
+      version: 1,
+      planId,
+      runId: input.preparation.runId,
+      digest,
+      scopeDigest: input.preparation.scopeDigest,
+      mode: binding.mode,
+      manifestPath: binding.manifestPath,
+      preparation: input.preparation,
+      plan,
+      packet: validated.packet,
+      proposalId: proposal.proposalId,
+      proposalDigest: proposal.proposalDigest,
+      createdAt: new Date(clock()).toISOString(),
+    });
+    plansByScope.set(keyOf(input.preparation), planId);
+    observer?.decision?.({ step: 'planned', detail: `${planId} ${validated.packet.kind}` });
+    return plan;
+  };
+
   return Object.freeze({
     async prepare(input: EntryPrepareInput, signal?: AbortSignal): Promise<EntryPreparation> {
       if (!input || typeof input !== 'object') entryFail('ENTRY_FAILED', 'prepare requires an input object');
@@ -513,76 +589,18 @@ export function createTargetEntryPort(options: TargetEntryOptions): import('../.
     },
 
     async plan(input: EntryPlanInput, signal?: AbortSignal): Promise<EntryPlan> {
-      if (!input || typeof input !== 'object' || !input.preparation) entryFail('ENTRY_FAILED', 'plan requires the preparation returned by prepare');
-      const binding = await bindingNow();
-      const { resolved, pending: remembered } = await verifyPreparation(input.preparation, binding);
-      if (!options.planAuthor) {
-        entryFail('ENTRY_PLAN_AUTHOR_REQUIRED',
-          'no model-authored plan seam is wired: bind the Pi/planner runtime author (see docs/architecture/target-entry.md); entry never substitutes a hardcoded plan');
-      }
-      const samplePaths = remembered?.fingerprint?.samplePaths ?? [];
-      const available = {
-        ownerMenu: Boolean(options.executions?.['owner-menu']),
-        generatedRequests: Boolean(options.executions?.['generated-requests']),
-      };
-      const output = await options.planAuthor.author({
-        preparation: input.preparation,
-        ...(remembered?.purpose ? { purpose: remembered.purpose } : {}),
-        depth: remembered?.depth ?? 'standard',
-        facts: planFactsFor({
-          preparation: input.preparation,
-          binding,
-          samplePaths,
-          targetId: resolved.approved.targetId,
-          ...(binding.requestEnvelope ? { envelope: binding.requestEnvelope } : {}),
-        }),
-        techniques: [resolved.route.capability],
-        skills: [...resolved.skills],
-        available,
-      }, signal);
-      const expanded = await expandOwnerMenuSelection({ output, preparation: input.preparation, binding, targetId: resolved.approved.targetId, available });
-      const validated = validatePlanAuthorOutput({
-        output: expanded,
-        preparation: input.preparation,
-        run: binding.run,
-        binding,
-        technique: resolved.route.capability,
-        targetId: resolved.approved.targetId,
-        ...(binding.requestEnvelope ? { envelope: binding.requestEnvelope } : {}),
-      });
-      if (validated.authoredBy !== 'model' && options.allowFixtureAuthor !== true) {
-        entryFail('ENTRY_PLAN_AUTHOR_REQUIRED',
-          'the plan author reported fixture authorship; production requires the real model-authored Pi planner seam');
-      }
-      const execution = await requireExecution(validated.packet);
-      const proposal = await execution.propose({ packet: validated.packet, preparation: input.preparation });
-      const planId = `plan-${String(newId()).replace(/[^A-Za-z0-9_.:-]/g, '-').slice(0, 64)}`;
-      const digest = sealPlanDigest({
-        preparation: input.preparation,
-        steps: validated.steps,
-        packet: validated.packet,
-        proposalId: proposal.proposalId,
-        proposalDigest: proposal.proposalDigest,
-      });
-      const plan: EntryPlan = { planId, runId: input.preparation.runId, digest, steps: validated.steps, targetRequests: 0 };
-      await store.save({
-        version: 1,
-        planId,
-        runId: input.preparation.runId,
-        digest,
-        scopeDigest: input.preparation.scopeDigest,
-        mode: binding.mode,
-        manifestPath: binding.manifestPath,
-        preparation: input.preparation,
-        plan,
-        packet: validated.packet,
-        proposalId: proposal.proposalId,
-        proposalDigest: proposal.proposalDigest,
-        createdAt: new Date(clock()).toISOString(),
-      });
-      plansByScope.set(keyOf(input.preparation), planId);
-      observer?.decision?.({ step: 'planned', detail: `${planId} ${validated.packet.kind}` });
-      return plan;
+      const { authorInput } = await contextFor(input, signal);
+      if (!options.planAuthor) entryFail('ENTRY_PLAN_AUTHOR_REQUIRED', 'no model-authored plan seam is wired: bind the Pi/planner runtime author (see docs/architecture/target-entry.md); entry never substitutes a hardcoded plan');
+      const output = await options.planAuthor.author(authorInput, signal);
+      return sealDraft(input, output, signal);
+    },
+
+    async planContext(input: EntryPlanInput, signal?: AbortSignal) {
+      return (await contextFor(input, signal)).authorInput;
+    },
+
+    async proposePlan(input: EntryPlanInput, output: import('./types.js').EntryPlanAuthorOutput, signal?: AbortSignal) {
+      return sealDraft(input, output, signal);
     },
 
     async start(input: EntryStartInput, signal?: AbortSignal): Promise<EntryRun> {

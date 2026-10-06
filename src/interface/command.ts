@@ -30,6 +30,7 @@ import type {
 import { ENTRY_PLAN_STEP_BOUNDS } from './target-entry.js';
 import { onboardingScopeFor, type OnboardingHandler, type OnboardingReady, OnboardingError } from '../application/onboarding/index.js';
 import { assertOwnerPreparation, onboardCommandTarget } from './onboarding.js';
+import type { ForegroundOrchestrator } from './foreground.js';
 
 /**
  * Plain-text writer for one-shot print surfaces. Text is auxiliary: a rejecting writer is tolerated and
@@ -57,6 +58,8 @@ export interface P2OCommandHost {
   planAuthorFor?: (ctx: ExtensionCommandContext) => unknown;
   /** Human-only onboarding precedes lazy backend creation and any model planning. */
   onboardingFor?: OnboardingHandler;
+  /** Host-only current-session control surface; model tools cannot select or activate it. */
+  foreground?: ForegroundOrchestrator;
 }
 
 interface CommandOutcome { text: string; details: unknown }
@@ -69,7 +72,7 @@ export function p2oHelp(currentRun?: string): string {
     '',
     '  /p2o --target <local-dir|github-https-repo|http(s)-URL>', 
     '       [flags] [--purpose "..."] [--depth quick|standard|deep] [--plan-only]',
-    '       [--concurrency <N>] [--deadline <minutes>]',
+    '       [--concurrency <N>] [--deadline <minutes>] [--foreground|--headless]',
     '       [--profile conservative|wide|ceiling] [--basis <owner|written-permission|published-program|public-source-review>]',
     '       [--repo-scripts] [--state-changes] [--full-rights] [--advanced]',
     '  /p2o status|stop|resume|report [runId]',
@@ -84,7 +87,11 @@ export function p2oHelp(currentRun?: string): string {
     'Model usage is durably recorded for transparency; selected provider/model context/output limits apply.',
     'Saved consent is reused only within its exact scope, rights and deadline; flags request',
     'review of expansions, never grant authority. The model plan still needs exact digest approval.',
-    'Planning may incur explicitly selected assessment-model charges (including --plan-only).',
+    'Interactive TUI defaults to foreground orchestration in THIS Pi conversation; --headless keeps',
+    'the legacy nested planner/background flow. RPC clients opt in with --foreground (human UI required).',
+    'Foreground Pi visibly proposes a plan, waits for /p2o approve <planId>, and coordinates sandboxed',
+    'workers with live progress. Native usage is separate; bounded legacy quotas require --headless.',
+    'Planning may incur model charges (including --plan-only); nothing launches from a model proposal.',
     'No target I/O during preparation/planning; nothing launches until you confirm the resulting plan.',
     '--profile conservative|ceiling is an explicit bounded opt-in; legacy bounded runs stay bounded.',
     'runId may be omitted only when this session has one unambiguous current run.',
@@ -239,6 +246,9 @@ async function readPlan(host: P2OCommandHost, port: TargetEntryPort, planId: str
 }
 
 async function startCommand(host: P2OCommandHost, command: Extract<P2OCommand, { verb: 'start' }>, ctx: ExtensionCommandContext): Promise<CommandOutcome> {
+  host.foreground?.assertAvailable();
+  const foreground = command.interaction === 'foreground' || (command.interaction !== 'headless' && ctx.mode === 'tui');
+  if (foreground && !host.foreground) throw new InterfaceError('FOREGROUND_INTEGRATION_REQUIRED', 'this host has no native Pi orchestration bridge; no headless fallback');
   const classified = classifyTargetSyntax(command.target);
   // One-dialog quick consent is the default: the target is the only required argument, and the dialog shows the
   // exact scope, authorization basis, separate rights and every limit that will be consented to.
@@ -262,6 +272,23 @@ async function startCommand(host: P2OCommandHost, command: Extract<P2OCommand, {
   }, ctx.signal);
   assertPreparation(preparation, target);
   assertOwnerPreparation(owner, preparation, ctx.cwd);
+  if (foreground) {
+    if (!port.planContext || !port.proposePlan) throw new InterfaceError('FOREGROUND_INTEGRATION_REQUIRED', 'the composition supplies no offline proposal-only bridge; no hidden planning fallback');
+    // Ask for this session's model/context consent only after the run itself is preparable, so a cold-start
+    // refusal costs no native-session dialog.
+    await host.foreground!.consent(ctx, owner);
+    const facts = await port.planContext({ preparation }, ctx.signal);
+    assertOwnerPreparation(owner, preparation, ctx.cwd);
+    host.foreground!.begin(ctx, preparation, facts, owner.effectiveLimits.deadlineMs, async (output, signal) => {
+      const plan = await port.proposePlan!({ preparation }, output, signal);
+      assertPlan(plan, preparation);
+      assertOwnerPreparation(owner, preparation, ctx.cwd);
+      return plan;
+    });
+    recordRun(host, preparation.runId, 'planning');
+    return { text: `Foreground workspace prepared — ${safeText(preparation.runId, 160)}.\nThe current Pi agent will visibly propose the bounded plan here. No target request or worker has started.\n${command.planOnly ? 'Plan-only: execution stays off.' : 'Execution requires your exact /p2o approve <planId> confirmation.'}`,
+      details: { verb: 'start', interaction: 'foreground', state: 'planning', runId: preparation.runId, scopeDigest: preparation.scopeDigest, planOnly: command.planOnly, targetRequests: 0, workersStarted: false } };
+  }
   const plan = await port.plan({ preparation }, ctx.signal);
   assertPlan(plan, preparation);
   assertOwnerPreparation(owner, preparation, ctx.cwd);
@@ -298,8 +325,11 @@ async function approveCommand(host: P2OCommandHost, command: Extract<P2OCommand,
   const summary = describePreparation(found.preparation, found.plan, owner);
   await requireConfirmation(ctx, `Approve plan ${safeText(command.planId, 160)}?`, summary);
   assertOwnerPreparation(owner, found.preparation, ctx.cwd);
+  host.foreground?.admitting(found.preparation.runId);
   const approval = humanApproval(found.preparation, found.plan);
-  const receipt = await port.approve({ planId: command.planId, planDigest: found.plan.digest, approval }, ctx.signal);
+  let receipt;
+  try { receipt = await port.approve({ planId: command.planId, planDigest: found.plan.digest, approval }, ctx.signal); }
+  catch (error) { host.foreground?.admissionFailed(found.preparation.runId, error); throw error; }
   if (!receipt || receipt.planId !== command.planId || receipt.approved !== true) {
     throw contract('approve() did not confirm the exact plan');
   }
@@ -307,6 +337,7 @@ async function approveCommand(host: P2OCommandHost, command: Extract<P2OCommand,
   if (!receipt.run?.runId) throw contract('approve() did not report the admitted run');
   assertRun(receipt.run, found.plan.runId);
   recordRun(host, receipt.run.runId, receipt.run.state);
+  await host.foreground?.admitted(receipt.run);
   return {
     text: `Approved plan ${safeText(command.planId, 160)} — run ${safeText(receipt.run.runId, 160)} admitted once (state ${safeText(receipt.run.state, 80)}).\n\n${summary}\n\nLaunch is not acceptance: read /p2o status ${safeText(receipt.run.runId, 160)} for the observed state.`,
     details: { verb: 'approve', planId: command.planId, runId: receipt.run.runId, admittedOnce: true, approvalRef: approval.approvalRef, ...(receipt.run.approvalPath ? { approvalPath: receipt.run.approvalPath } : {}) },
@@ -321,16 +352,23 @@ async function lifecycleCommand(host: P2OCommandHost, command: Extract<P2OComman
     recordRun(host, runId);
     return { text: output.text, details: { verb: command.verb, runId, runSource: source, result: output.value } };
   }
+  if (host.foreground?.stopPlanning(runId)) {
+    recordRun(host, runId, 'planning-cancelled');
+    return { text: `Cancelled foreground planning for ${safeText(runId, 160)}. No worker was admitted; this is not a runtime-termination receipt.`, details: { verb: 'stop', runId, planningCancelled: true, workersStarted: false } };
+  }
+  host.foreground?.beforeStop(runId);
   const port = await tryEntryPort(host, ctx);
   if (port?.stop) {
     const receipt = await port.stop(runId, 'user-requested /p2o stop');
     if (receipt.runId !== runId || !receipt.schedulingStopped || !receipt.terminationVerified || receipt.failures.length) {
       throw new InterfaceError('STOP_UNVERIFIED', 'runtime termination is unresolved; ownership/fences must be retained');
     }
+    host.foreground?.stopped(runId);
     recordRun(host, runId);
     return { text: `stopped run ${safeText(runId, 160)} (verified termination)\n${JSON.stringify(publicValue(receipt), null, 2)}`, details: { verb: 'stop', runId, runSource: source, receipt: publicValue(receipt) } };
   }
   const output = boundedOutput(await host.controller.execute('stop', { runId, reason: 'user-requested /p2o stop' }, ctx.cwd, ctx.signal));
+  host.foreground?.stopped(runId);
   recordRun(host, runId);
   return { text: output.text, details: { verb: 'stop', runId, runSource: source, result: output.value } };
 }

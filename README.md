@@ -5,7 +5,7 @@ for Pi plus a 17-skill research method library. **The model proposes; determinis
 scope and operational limits, accepts evidence and verifies findings.** Target pages, worker messages and model prose are
 untrusted data — none of them grants permission or turns a hypothesis into a verified finding.
 
-- **Extension** — one human command `/p2o`, 14 `p2o_*` agent tools, owned worker runtimes, a supervisor-only
+- **Extension** — one human command `/p2o`, 15 `p2o_*` agent tools, owned worker runtimes, a supervisor-only
   evidence vault, durable SQLite state, and an opt-in loopback read-only dashboard.
 - **Skills** — 17 technique-oriented Agent Skills (see the [skill router](#skill-router)).
 
@@ -16,7 +16,7 @@ with `pi install -l .` (`.pi/settings.json`), or from git with `pi install git:g
 
 ### One copy at a time
 
-An installed copy and an explicit `-e` path are **two copies**: both register the same 14 `p2o_*` tools, Pi
+An installed copy and an explicit `-e` path are **two copies**: both register the same 15 `p2o_*` tools, Pi
 reports one `Tool "p2o_*" conflicts with …` error per tool and exits `1` without running `/p2o`. Use exactly
 one copy:
 
@@ -62,12 +62,31 @@ container-backed execution. Both the extension host and pinned managed workers t
 ```text
 /p2o --target <local-dir|github-https-repo|http(s)-URL>
      [--purpose "..."] [--depth quick|standard|deep] [--plan-only]
-     [--concurrency <N>] [--deadline <minutes>]
+     [--concurrency <N>] [--deadline <minutes>] [--foreground|--headless]
      [--profile conservative|wide|ceiling] [--basis <owner|written-permission|published-program|public-source-review>]
      [--repo-scripts] [--state-changes] [--full-rights] [--advanced]
 /p2o status|stop|resume|report [runId]
 /p2o approve <planId>
 ```
+
+### Foreground workspace (interactive default)
+
+In interactive Pi, `/p2o --target …` hands a scoped orchestration prompt into **your current conversation**.
+The Pi agent visibly authors the plan, shows its `planId`, and waits for you to run `/p2o approve <planId>`.
+After exact human approval it coordinates supervisor-owned sandboxed workers, displays a live workspace
+widget, waits for meaningful progress without model busy-polling, and summarizes the qualified report.
+You can steer the orchestrator in the same editor; steering never expands scope or grants rights.
+
+The foreground agent is a control-plane planner, **not** an attested worker or unrestricted host executor.
+Host tools (including nested/codemode calls and `!` shell) are blocked while this workspace is active.
+`/p2o stop` cancels preparation or verifies admitted-runtime termination and restores the original tools.
+Native Pi model/context use needs separate consent and has separate informational usage records.
+Worker model selection, sandbox qualification and evidence/verification gates are unchanged.
+
+Use `--headless` for the previous nested-planner/background flow and bounded/legacy financial consent;
+financial caps are never silently removed to enable native turns. RPC remains legacy by default and may
+opt in with `--foreground` when it supplies the human UI. Print/JSON modes cannot bypass confirmation.
+Session replay/reload does not reactivate a foreground workspace or launch anything automatically.
 
 **A target is the only required input.** One consent dialog then shows the exact scope, authorization basis,
 separate rights and the operational limits being consented to. Model usage is informational: ordinary runs
@@ -104,7 +123,8 @@ target and without spawning a worker**. Bare `/p2o` shows help and the current r
 - `--plan-only` prints `planId`; `/p2o approve <planId>` admits it once after a second review. Headless runs
   may still supply an owner-authored `plan-approval-<digest>.json` / `request-approval-<digest>.json` under
   `<approvalDirectory>`; entry never overwrites one and the owner ledger still verifies every binding.
-- No `p2o_*` tool can approve a plan or reach the target workflow, and `stop` requires verified termination.
+- No `p2o_*` tool can approve an entry plan or dispatch its target workflow. The live foreground bridge
+  may expose offline facts and seal a proposal only. Stopping admitted work requires verified termination.
   A target list, a prepared plan, a dialog or an admitted run is **not** authorization.
 
 ### First run
@@ -129,14 +149,14 @@ Reports distinguish observations, static findings and independently replayed fin
 - Bundled first-use supports read/static assessment; script execution and state-changing tests remain unsupported.
 - An installed copy must be built once (`npm install --include=dev && npm run build`). Otherwise `/p2o` refuses
   with `BUNDLED_RUNTIME_MISSING`, naming every missing path, before consent and without a raw `ENOENT`.
-- Load either the installed copy or the repository copy, never both: two copies collide on the 14 `p2o_*` tools.
+- Load either the installed copy or the repository copy, never both: two copies collide on the 15 `p2o_*` tools.
 - Independent first-use replay currently covers bounded loopback read-only differentials, not arbitrary external exploits.
 - `/p2o stop` cancels terminally. Cross-process source resume is not supported; stale sessions are refused.
 - Browser/proxy/fuzz packs require explicit qualified composition; they are not automatically granted by first-use consent.
 - Missing model pricing, supported gateway protocol or Docker qualification blocks execution rather than selecting a fallback.
 
-The 14 `p2o_*` tools (`start`, `resume`, `preflight`, `doctor`, `status`, `stop`, `tasks`, `evidence`,
-`events`, `report`, `dashboard`, `switch_model`, `subtask`, `plan`) are the agent surface, not the human one.
+The 15 `p2o_*` tools (`start`, `resume`, `preflight`, `doctor`, `status`, `stop`, `tasks`, `evidence`,
+`events`, `report`, `dashboard`, `switch_model`, `subtask`, `plan`, `orchestrate`) are the agent surface, not the human one.
 They take strict JSON and return projections capped at 48 KiB (pages at most 100 items); `p2o_start`/
 `p2o_resume` require an owner-approved manifest and explicit `fixture|assessment` mode; `p2o_plan` cannot approve.
 

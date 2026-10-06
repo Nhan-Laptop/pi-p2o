@@ -27,6 +27,8 @@ export type P2OCommand =
     purpose?: string;
     depth: EntryDepth;
     planOnly: boolean;
+    /** Interaction surface, independent of the sandboxed worker runtime. TUI defaults to foreground. */
+    interaction?: 'foreground' | 'headless';
     concurrency?: number;
     /** Requests for separate HUMAN rights/deadline review, never grants. */
     repositoryScripts?: true;
@@ -139,6 +141,7 @@ function parseStart(tokens: string[]): P2OCommand {
   let purpose: string | undefined;
   let depth: EntryDepth = 'standard';
   let planOnly = false;
+  let interaction: 'foreground' | 'headless' | undefined;
 
   let concurrency: number | undefined;
   let repositoryScripts: true | undefined;
@@ -241,6 +244,14 @@ function parseStart(tokens: string[]): P2OCommand {
       deadlineMinutes = value;
       continue;
     }
+    if (name === '--foreground' || name === '--headless') {
+      if (inline !== undefined) throw invalid('UNEXPECTED_ARGUMENT', `${name} takes no value`);
+      if (seen.has(name)) throw invalid('DUPLICATE_FLAG', `${name} was given more than once`);
+      if (interaction) throw invalid('CONFLICTING_FLAGS', '--foreground and --headless are mutually exclusive');
+      seen.add(name);
+      interaction = name === '--foreground' ? 'foreground' : 'headless';
+      continue;
+    }
     if (name === '--plan-only') {
       if (inline !== undefined) throw invalid('UNEXPECTED_ARGUMENT', '--plan-only takes no value');
       if (seen.has(name)) throw invalid('DUPLICATE_FLAG', '--plan-only was given more than once');
@@ -252,6 +263,7 @@ function parseStart(tokens: string[]): P2OCommand {
   }
   if (target === undefined) throw invalid('MISSING_TARGET', 'a target is required: /p2o --target <local-dir|github-https-repo|http(s)-URL>');
   return { verb: 'start', target, ...(purpose !== undefined ? { purpose } : {}), depth, planOnly,
+    ...(interaction ? { interaction } : {}),
     ...(concurrency !== undefined ? { concurrency } : {}),
     ...(repositoryScripts || fullRights ? { repositoryScripts: true } : {}), ...(stateChanges || fullRights ? { stateChanges: true } : {}),
     ...(deadlineMinutes !== undefined ? { deadlineMinutes } : {}), ...(profile !== undefined ? { profile } : {}),

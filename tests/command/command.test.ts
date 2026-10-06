@@ -19,7 +19,7 @@ describe('single human entrypoint', () => {
     const s = setup();
     expect([...s.pi.commands.keys()]).toEqual(['p2o']);
     expect([...s.pi.commands.keys()].some(name => name.startsWith('p2o_'))).toBe(false);
-    expect(s.pi.tools.size).toBe(14);
+    expect(s.pi.tools.size).toBe(15);
     expect([...s.pi.tools.keys()]).toContain('p2o_start');
     await s.controller.close();
   });

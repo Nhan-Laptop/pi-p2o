@@ -15,8 +15,8 @@ function setup(hasUI = true) {
 
 test('all prefixed Pi tools/commands register against the real public API shapes without startup resources', async () => {
   const s = setup();
-  // 14 owner-gated control actions: the original 11 plus p2o_switch_model, p2o_subtask and p2o_plan.
-  assert.equal(s.pi.tools.size, 14);
+  // Fourteen existing control actions plus the session-bound foreground orchestrator.
+  assert.equal(s.pi.tools.size, 15);
   assert.deepEqual([...s.pi.tools.keys()], Object.keys(schemas).map(k => `p2o_${k}`));
   // Exactly one human slash command (`/p2o`); the per-action command registrations are gone.
   assert.deepEqual([...s.pi.commands.keys()], ['p2o']);

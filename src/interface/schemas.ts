@@ -81,6 +81,17 @@ export const schemas = {
     enabled: Type.Optional(Type.Boolean({ description: 'Must be true to opt in to a localhost read-only dashboard.' })),
     runId: Type.Optional(id),
   }, closed),
+  /** Session-bound foreground planning/control; never accepts authority, paths or a launch action. */
+  orchestrate: Type.Object({
+    runId: id,
+    action: StringEnum(['context', 'propose', 'watch', 'finish'] as const),
+    afterRevision: Type.Optional(Type.Integer({ minimum: 0, maximum: Number.MAX_SAFE_INTEGER })),
+    draft: Type.Optional(Type.Object({
+      steps: Type.Array(Type.String({ minLength: 1, maxLength: 300 }), { minItems: 1, maxItems: 16 }),
+      ownerMenu: Type.Optional(Type.Array(Type.Object({ taskId: id, observationId: id }, closed), { minItems: 1, maxItems: 32 })),
+      generatedRequests: Type.Optional(Type.Array(Type.Unknown(), { minItems: 1, maxItems: 16 })),
+    }, closed)),
+  }, closed),
 } as const;
 export type Action = keyof typeof schemas;
 export type Input<A extends Action> = Static<(typeof schemas)[A]>;
@@ -94,6 +105,15 @@ export function validate<A extends Action>(action: A, input: unknown): Input<A> 
   if (!validator) { validator = Compile(schema); validators.set(schema, validator); }
   if (!validator.Check(input)) throw new InterfaceError('INVALID_INPUT', `p2o_${action} arguments do not match its schema`);
   const value = input as Input<A>;
+  if (action === 'orchestrate') {
+    const o = value as Input<'orchestrate'>;
+    if ((o.action === 'propose') !== (o.draft !== undefined) || (o.action === 'watch') !== (o.afterRevision !== undefined)) {
+      throw new InterfaceError('INVALID_INPUT', 'propose requires only draft; watch requires only afterRevision; context/finish accept neither');
+    }
+    if (o.draft && (o.draft.ownerMenu === undefined) === (o.draft.generatedRequests === undefined)) {
+      throw new InterfaceError('INVALID_INPUT', 'a draft must name exactly one ownerMenu or generatedRequests flavour');
+    }
+  }
   if (action === 'dashboard') {
     const d = value as Input<'dashboard'>;
     if (d.action === 'open' && (d.enabled !== true || !d.runId)) {

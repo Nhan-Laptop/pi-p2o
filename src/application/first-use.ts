@@ -1,4 +1,5 @@
 import { createHash, randomUUID } from 'node:crypto';
+import { readForegroundUsage, recordForegroundUsage } from './foreground-usage.js';
 import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -571,6 +572,8 @@ export function createFirstUseBackend(context: BackendFactoryContext): ControlBa
   const entry: TargetEntryPort = {
     async prepare(input, signal) { const owner = ownerNow(); if (!owner || !consentCovers(owner.configuration, onboardingScopeFor(input.target, context.cwd), owner.effectiveLimits, owner.effectivePermissions)) fail('OWNER_SCOPE_MISMATCH', 'command target differs from current owner consent'); return (await newFlow()).port.prepare(input, signal); },
     async plan(input, signal) { const flow = forPreparation(input.preparation); try { const plan = await flow.port.plan(input, signal); plans.set(plan.planId, flow); return plan; } finally { flow.persist(); } },
+    async planContext(input, signal) { const flow = forPreparation(input.preparation); await revalidateOwner(flow.owner); return flow.port.planContext!(input, signal); },
+    async proposePlan(input, output, signal) { const flow = forPreparation(input.preparation); try { await revalidateOwner(flow.owner); const plan = await flow.port.proposePlan!(input, output, signal); await revalidateOwner(flow.owner); plans.set(plan.planId, flow); return plan; } finally { flow.persist(); } },
     async start(input, signal) { return forPreparation(input.preparation).port.start(input, signal); },
     async approve(input, signal) { const flow = plans.get(input.planId); if (!flow) fail('PLAN_NOT_FOUND', 'sealed bundled plan cannot be restored in this process'); return flow.port.approve(input, signal); },
     async readPlan(planId, signal) { return plans.get(planId)?.port.readPlan?.(planId, signal) ?? null; },
@@ -598,9 +601,16 @@ export function createFirstUseBackend(context: BackendFactoryContext): ControlBa
     resume: (input, signal) => active(input.runId).resume(input, signal),
     stop: (runId, reason) => active(runId).stop(runId, reason), async status(runId) { const status = await active(runId).status(runId); await flows.get(runId)?.saveCheckpoint?.(); return status; },
     tasks: (runId, page) => active(runId).tasks(runId, page), evidence: (runId, page, evidenceId) => active(runId).evidence(runId, page, evidenceId),
+    async recordForegroundUsage(runId, receipt) {
+      const flow = flows.get(runId);
+      if (!flow) fail('ENTRY_RUN_UNKNOWN', 'native usage belongs to no prepared bundled run');
+      recordForegroundUsage(flow.config.roots.control, receipt);
+    },
     async report(runId, format) {
       const flow = flows.get(runId); publishFindingReviews(flow);
-      const report = await active(runId).report(runId, format);
+      const original = await active(runId).report(runId, format);
+      const foregroundUsage = flow ? readForegroundUsage(flow.config.roots.control) : undefined;
+      const report = { ...original, ...(foregroundUsage ? { foregroundUsage } : {}) };
       flow?.persist();
       if (!flow) return report;
       // Accounting-only runs report one informational cumulative snapshot. Reporting four identical

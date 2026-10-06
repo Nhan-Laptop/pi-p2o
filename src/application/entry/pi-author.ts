@@ -266,44 +266,54 @@ export function createPiModelPlanAuthor(options: PiPlanAuthorOptions): EntryPlan
       if (!result || typeof result.text !== 'string') entryFail('MODEL_PLAN_COMPLETION_EMPTY', 'the planner completion did not provide a visible text field; no plan was accepted');
       if (result.text.length === 0) failForEmptyPlanCompletion(result, maxOutputTokens);
       const parsed = extractPlanJson(result.text, options.maxResponseChars);
-      const steps = boundedSteps(parsed.steps);
-      const ownerMenu = parsed.ownerMenu ?? parsed.selection;
-      const generated = parsed.generatedRequests ?? parsed.requests;
-      if (ownerMenu !== undefined && generated !== undefined) entryFail('ENTRY_PLAN_INVALID', 'the plan author returned both an owner-menu selection and generated requests; author one flavour');
-      if (ownerMenu === undefined && generated === undefined) entryFail('ENTRY_PLAN_INVALID', 'the plan author returned neither an owner-menu selection nor generated requests');
-      const attemptId = `model-${safeText(String(parsed.attemptId ?? ''), 64) || newId()}`.slice(0, 128);
-      if (generated !== undefined) {
-        if (!available.generatedRequests) entryFail('ENTRY_PLAN_INVALID', 'the composed runtime exposes no generated-request execution path, so that flavour cannot be authored');
-        if (!Array.isArray(generated) || generated.length === 0) entryFail('ENTRY_PLAN_INVALID', 'a generated-request plan needs at least one concrete request');
-        if (generated.length > MAX_REQUESTS) entryFail('ENTRY_PLAN_INVALID', `a generated-request plan may author at most ${MAX_REQUESTS} requests`);
-        const proposalId = `request-proposal-${safeText(newId(), 64)}`;
-        const packet: EntryPlanAuthorOutput['packet'] = {
-          kind: 'generated-requests',
-          proposal: {
-            schemaVersion: 1,
-            proposalId,
-            runId: input.preparation.runId,
-            generator: {
-              generatorAttemptId: attemptId,
-              generatorKind: 'worker',
-              requestedSelection: { ...options.selection },
-              inputDigests: [input.preparation.scopeDigest],
-              producedAt: new Date(now()).toISOString(),
-            },
-            requests: generated as PlanRequestProposal['requests'],
-          },
-        };
-        return { authoredBy: 'model', attemptId, steps, packet };
-      }
-      if (!available.ownerMenu) entryFail('ENTRY_PLAN_INVALID', 'the composed runtime exposes no owner-menu execution path, so that flavour cannot be authored');
-      return {
-        authoredBy: 'model',
-        attemptId,
-        steps,
-        packet: { kind: 'owner-menu-selection', selection: selectionList(ownerMenu) },
-      };
+      return planDraftOutput(parsed, input, { selection: options.selection, now, newId });
     },
   });
+}
+
+/** Shared decoder for a native-session draft and a bounded nested completion. Identities are host-derived. */
+export function planDraftOutput(parsed: Record<string, unknown>, input: EntryPlanAuthorInput, options: {
+  selection: RuntimeSelection; now?: () => number; newId?: () => string;
+}): EntryPlanAuthorOutput {
+  const available = input.available ?? { ownerMenu: true, generatedRequests: true };
+  const now = options.now ?? Date.now;
+  const newId = options.newId ?? (() => randomUUID());
+  const steps = boundedSteps(parsed.steps);
+  const ownerMenu = parsed.ownerMenu ?? parsed.selection;
+  const generated = parsed.generatedRequests ?? parsed.requests;
+  if (ownerMenu !== undefined && generated !== undefined) entryFail('ENTRY_PLAN_INVALID', 'the plan author returned both an owner-menu selection and generated requests; author one flavour');
+  if (ownerMenu === undefined && generated === undefined) entryFail('ENTRY_PLAN_INVALID', 'the plan author returned neither an owner-menu selection nor generated requests');
+  const attemptId = `model-${safeText(String(parsed.attemptId ?? ''), 64) || newId()}`.slice(0, 128);
+  if (generated !== undefined) {
+    if (!available.generatedRequests) entryFail('ENTRY_PLAN_INVALID', 'the composed runtime exposes no generated-request execution path, so that flavour cannot be authored');
+    if (!Array.isArray(generated) || generated.length === 0) entryFail('ENTRY_PLAN_INVALID', 'a generated-request plan needs at least one concrete request');
+    if (generated.length > MAX_REQUESTS) entryFail('ENTRY_PLAN_INVALID', `a generated-request plan may author at most ${MAX_REQUESTS} requests`);
+    const proposalId = `request-proposal-${safeText(newId(), 64)}`;
+    const packet: EntryPlanAuthorOutput['packet'] = {
+      kind: 'generated-requests',
+      proposal: {
+        schemaVersion: 1,
+        proposalId,
+        runId: input.preparation.runId,
+        generator: {
+          generatorAttemptId: attemptId,
+          generatorKind: 'worker',
+          requestedSelection: { ...options.selection },
+          inputDigests: [input.preparation.scopeDigest],
+          producedAt: new Date(now()).toISOString(),
+        },
+        requests: generated as PlanRequestProposal['requests'],
+      },
+    };
+    return { authoredBy: 'model', attemptId, steps, packet };
+  }
+  if (!available.ownerMenu) entryFail('ENTRY_PLAN_INVALID', 'the composed runtime exposes no owner-menu execution path, so that flavour cannot be authored');
+  return {
+    authoredBy: 'model',
+    attemptId,
+    steps,
+    packet: { kind: 'owner-menu-selection', selection: selectionList(ownerMenu) },
+  };
 }
 
 function randomPlanSuffix(seed: number): string {

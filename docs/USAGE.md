@@ -12,7 +12,7 @@ Use one command, `/p2o`. See [README](../README.md) for installation and skills.
 - An interactive Pi UI or a human-operated RPC UI for initial consent and plan approval.
 
 Load exactly one copy at a time: the installed package (`pi`) or this repository
-(`pi --no-extensions -e /abs/path/to/pi-p2o`). Loading both registers the 14 `p2o_*` tools twice; Pi reports
+(`pi --no-extensions -e /abs/path/to/pi-p2o`). Loading both registers the 15 `p2o_*` tools twice; Pi reports
 tool conflicts and exits `1` before `/p2o` runs. Host-only owner overrides for the bundled runtime are
 `P2O_PI_BINARY` (worker `pi` binary) and `P2O_RUNTIME_DIST` (built dist directory); worker binary order is
 `P2O_PI_BINARY` → package `node_modules/.bin/pi` → `pi` on `PATH`.
@@ -26,7 +26,7 @@ The supported baseline is Pi 1.0.0 for both host and managed worker. Availabilit
 /p2o --target https://github.com/owner/repo
 /p2o --target https://authorized.example
 /p2o --target ./project --purpose "Review authorization" --depth deep
-/p2o --target ./project --profile ceiling --full-rights   # widest validated caps, both separate rights
+/p2o --target ./project --headless --profile ceiling --full-rights   # widest validated caps, both separate rights
 /p2o --target https://authorized.example --plan-only
   /p2o --target ./project --advanced                    # ask every question separately
 /p2o approve <planId>
@@ -42,6 +42,30 @@ With no saved scope, **one** consent dialog shows the exact target/scope, author
 Public-source-review consent permits only reading/cloning and static analysis of public source. It does not authorize testing the GitHub service, executing repository scripts, or state-changing actions. Repository execution and mutation require separate rights and remain unsupported by bundled first-use even if requested.
 
 An equal or narrower request reuses saved scope. Expanding the target, rights, concurrency or authorization window requires renewed consent; a legacy bounded consent is never silently widened into informational mode. Your authorization statement is recorded, not independently verified ownership.
+
+### Current Pi foreground workspace
+
+Interactive TUI is foreground by default. The command collects scope consent, prepares offline planning facts,
+then asks for separate native-session model/context consent before releasing an orchestration prompt into the
+**same Pi conversation** (a cold-start refusal therefore costs no native-session dialog). The visible agent calls `p2o_orchestrate` to read facts and seal its draft; it
+does not make a hidden planning completion. You review `/p2o approve <planId>` to dispatch the exact plan.
+After approval the agent coordinates sandboxed workers here, with a live widget and qualified reporting.
+Use the editor to steer within the approved scope; new scope/actions require new human review.
+
+`p2o_orchestrate watch` waits for meaningful durable changes (or a bounded timeout) without a model
+busy-poll loop. Host shell/file/other-extension tools are blocked, including nested/codemode calls.
+`finish` requires observed terminal state and no unresolved ownership; it returns the trusted qualified
+report, not a model-invented verification. The original tool set is restored after final settlement.
+Abort, model/thinking changes, branch/session changes and shutdown cancel or clean up the owned work;
+unverified termination remains a blocker. No replayed session entry activates orchestration.
+
+Native usage is recorded in Pi entries and, for bundled runs, `control/foreground-usage.json`; reports
+show it separately from worker gateway accounting. Native turns cannot enforce that gateway's financial
+phase caps, so bounded/legacy consent must use `--headless` (otherwise `FOREGROUND_BOUNDED_UNSUPPORTED`).
+
+`--headless` preserves the previous nested planner/background flow. RPC keeps that flow by default;
+`--foreground` opts an RPC client with human UI into native-session orchestration (no terminal widget).
+No-UI/print clients still cannot confirm/launch, and no missing bridge silently falls back to headless.
 
 ### Planning and execution
 
@@ -61,7 +85,7 @@ The approved snapshot—not the mutable original checkout—is mounted read-only
 
 ### Stop and resume
 
-`/p2o stop` is terminal cancellation and requires verified resource termination. A stopped/completed run cannot be resumed; `RUN_TERMINAL` is expected.
+`/p2o stop` cancels foreground preparation before admission without claiming runtime termination. For an admitted run it is terminal cancellation and requires verified resource termination. A stopped/completed run cannot be resumed; `RUN_TERMINAL` is expected.
 
 Supported runtime checkpoint/replacement paths create new attempt/session identities and reject stale handles. **Fresh-controller source restoration is not implemented**; restart cannot silently re-clone HEAD or bless a serialized snapshot. Re-prepare and approve a new run where restoration cannot be proved.
 
@@ -108,6 +132,9 @@ The qualification harness explicitly separates automated RPC consent, mechanical
 | Unsupported model/pricing/protocol | Select a qualified model; availability in the host alone is insufficient. |
 | `ENTRY_SOURCE_UNBOUND` / source digest mismatch | The approved source identity cannot be bound or restored; execution is refused. |
 | `STOP_UNVERIFIED` / unresolved resource inventory | Cleanup is not proven. Inspect status/events; do not assume the worker or pack stopped. |
+| `FOREGROUND_BOUNDED_UNSUPPORTED` | Native Pi cannot enforce gateway financial caps. Use `--headless` for existing bounded consent; do not silently widen it. |
+| `FOREGROUND_INTEGRATION_REQUIRED` | An advanced composition lacks the offline proposal-only bridge; execution does not fall back silently. |
+| `ORCHESTRATION_ACTIVE` | Finish or stop the current foreground workspace before starting another target. |
 | `RUN_TERMINAL` | Stop/completion is terminal; create a new approved run instead of reusing stale sessions. |
 
 [Container qualification](../containers/QUALIFICATION.md) · [Target entry](architecture/target-entry.md) · [Handoff contracts](../HANDOFFS.md)

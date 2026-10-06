@@ -3,7 +3,7 @@
 This document describes the product behaviour of the target workflow behind the single `/p2o` command:
 `prepare` → model-authored plan → explicit owner approval → target acquisition → owner-gated materialization →
 delegation to the existing supervisor. Implementation lives in `src/application/entry/**`; the frozen interface
-contract is `src/interface/target-entry.ts`.
+contract is `src/interface/target-entry.ts`, with additive optional foreground proposal-only methods.
 
 ## 1. What `/p2o --target <T>` accepts
 
@@ -56,6 +56,16 @@ plan. Only `ctx.ui.confirm` in `src/interface/command.ts` mints an `EntryHumanAp
   anything, under the broker policy.
 
 ## 4. Planning and approval
+
+Interactive TUI uses the current Pi session as the visible orchestrator. The command asks for native
+model/context consent, calls offline `planContext`, emits a receipt, and triggers one current-session turn.
+`p2o_orchestrate propose` decodes the native tool draft with host-derived provenance and calls `proposePlan`;
+that method uses the **same** owner-envelope validation, execution proposal ledger and digest seal as
+`plan`. It cannot reach `start`/`approve`, mint human authority or perform target acquisition.
+`/p2o approve <planId>` remains the sole entry admission path. Missing proposal wiring fails explicitly.
+`--headless` selects the previous nested author, required for bounded financial caps; RPC is legacy by
+default and opts in with `--foreground`. Interaction flavor is not a new `RuntimeKind`: workers remain
+supervisor-owned, sandboxed and independently attested. See [foreground control plane](interface.md#native-foreground-orchestration).
 
 `plan` calls the injected Pi/planner runtime author — a model seam, not a template. Fixture-authored plans are
 refused in production (`ENTRY_PLAN_AUTHOR_REQUIRED`), so a hardcoded lab menu can never masquerade as target

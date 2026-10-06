@@ -126,7 +126,7 @@ export function projectPreflight(p: Preflight): unknown {
   return publicValue(p);
 }
 export function projectReport(report: Report): unknown {
-  return { format: report.format, content: publicValue(report.content), ...(report.modelBudget ? { modelBudget: publicValue(report.modelBudget) } : {}) };
+  return { format: report.format, content: publicValue(report.content), ...(report.foregroundUsage ? { foregroundUsage: publicValue(report.foregroundUsage) } : {}), ...(report.modelBudget ? { modelBudget: publicValue(report.modelBudget) } : {}) };
 }
 export function boundedOutput(value: unknown, maxBytes = MAX_OUTPUT_BYTES): { value: unknown; text: string; truncated: boolean } {
   const safe = publicValue(value);

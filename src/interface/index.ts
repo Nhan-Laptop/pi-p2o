@@ -7,6 +7,7 @@ export { SessionRunRegistry, type SessionPlanRecord, type SessionRunRecord, type
 export { runP2OCommand, p2oHelp, p2oErrorText, failureMessage, type P2OCommandHost, type P2OTextWriter } from './command.js';
 export { onboardCommandTarget, assertOwnerPreparation } from './onboarding.js';
 export { InterfaceController } from './controller.js';
+export { ForegroundOrchestrator } from './foreground.js';
 export { startDashboard, type DashboardHandle, type DashboardOptions } from './dashboard.js';
 export { createSupervisorBackend, type SupervisorPort, type SupervisorBackendOptions } from './supervisor-backend.js';
 export { createDefaultBackend, assertBackend } from './default-backend.js';
