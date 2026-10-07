@@ -35,6 +35,23 @@ Authenticated requests, bodies, browser execution, managed local labs, OAST and 
 remain unsupported. An offline renderer or simulated bot cannot prove execution in a real browser. Source
 snapshots exclude `.git`; tool/rules/database availability is independent of source availability.
 
+## Optional offline tool image
+
+The default pinned base can lack Semgrep. Explicit operator setup (not an agent tool) is available:
+
+```sh
+bash scripts/setup-sandbox-tools.sh --build
+# Copy the immutable sha256:... ID printed by the build:
+pi --p2o-image sha256:<64-hex-image-id>
+```
+
+Setup downloads packages while building, pins Semgrep 1.179.0, and records resolved dependencies inside
+`/opt/p2o-semgrep/requirements.resolved.txt`. Transitive dependencies are resolved at build time; this is not
+a claim of bit-for-bit rebuild reproducibility. The finished image ID pins the exact runtime. Assessment
+execution remains offline and unprivileged. No setup or image pull occurs automatically during an assessment.
+The human confirmation names the selected immutable image; the same binding is passed into worker tickets.
+Mutable tags are rejected. Default installations and model settings are unchanged.
+
 ## Evidence and candidates
 
 Each target command/request receives an owner-generated evidence ID. Receipts store run/actor/target identity,
@@ -59,7 +76,7 @@ for a retained artifact.
 Blocked execution cannot establish closed runtime proof. Unknown evidence IDs and malformed transitions are
 rejected with actionable errors. Legacy notes/reports remain accepted as attributed text; their `clean` outcome
 is only a summary of the stated tested slice, never proof of universal safety. New records use version 2 and IDs;
-old records without them remain readable. The ledger shows IDs so workers can cite observations without rerunning
+old records without them remain readable. The ledger is available to both roles, with `p2o_ledger {id}` for one complete bounded record, so agents can cite observations without rerunning
 work. Projections are bounded; this is not an unbounded artifact store.
 
 ## Persistence and failures

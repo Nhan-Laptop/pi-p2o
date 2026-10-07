@@ -48,7 +48,7 @@ export class SkillLibrary {
     if (value.version !== 1 || !Array.isArray(value.skills) || !Array.isArray(value.documents) || value.skills.length > 100 || value.documents.length > 600) throw new Error('Invalid skill catalog');
     const ids = new Set<string>();
     for (const d of value.documents) {
-      if (!/^[a-z0-9][a-z0-9:.-]{0,159}$/.test(d.id) || ids.has(d.id) || typeof d.path !== 'string' || !/\.(md|yaml|yml)$/.test(d.path)) throw new Error('Invalid catalog document');
+      if (!/^[a-z0-9][a-z0-9:.-]{0,159}$/.test(d.id) || ids.has(d.id) || typeof d.path !== 'string' || !/\.(md|yaml|yml|json)$/.test(d.path)) throw new Error('Invalid catalog document');
       ids.add(d.id);
     }
     const names = new Set<string>();

@@ -19,8 +19,14 @@ Use when an action selects a specific object, field, tenant, or delegated role, 
 ## Baseline
 Establish two expected outcomes with controlled objects. The owner acting on its own object must succeed through the normal endpoint or policy function. The same actor requesting the same action on a controlled foreign object, tenant, or field must be denied by a specific policy location. Record where the decision runs relative to object retrieval and the protected effect, and keep the object identifiers and identities in the ledger so every later comparison uses the same fixtures.
 
+Intended-policy provenance comes first:
+- Name the contract, documented role or ownership rule, or policy location that makes the expectation true. A convention, a naming pattern, or a sibling operation is a hypothesis, not provenance.
+- Distinct operations can intentionally grant different permissions. Read, update, export, aggregate, batch, and administrator paths each establish their own policy, and an update-path field constraint does not automatically govern read, list, or export.
+- A sibling surface that looks stricter or different is a review lead only; confirm the effective registration and contract before asserting that this surface must match.
+- `confirmed` requires a stated policy that the observed effect violates. Inferred intent is an `open_proof_gap`; a reachable unauthorized effect against a stated policy stays confirmed and is not dismissed for incomplete documentation.
+
 ## Bounded Comparison
-Change exactly one variable per comparison: acting principal, object owner, tenant binding, requested field, action verb, or representation of the same identifier. Use only controlled objects created for the assessment; never survey real customer records to find a target. When only local reproduction is available, call the policy function directly with the substituted actor/object pair and compare the returned decision and the effect it guards. Promote a candidate to confirmed only when the unauthorized protected effect is observed, not merely when a handler returns success or a UI element appears.
+Change exactly one variable per comparison: acting principal, object owner, tenant binding, requested field, action verb, or representation of the same identifier. Use only controlled objects created for the assessment; never survey real customer records to find a target. When only local reproduction is available, call the policy function directly with the substituted actor/object pair and compare the returned decision and the effect it guards. Promote a candidate to confirmed only when the unauthorized protected effect is observed and the policy that the effect violates has provenance, not merely when a handler returns success or a UI element appears.
 
 ## Controls
 - Positive control: the protected action must fail for a principal that lacks the required grant, with the denial attributable to the named policy location rather than to a missing route or a broken fixture.
@@ -39,12 +45,17 @@ A principal-object-action matrix with the expected decision, the observed decisi
 - A privileged-by-design administrative or service interface that is powerful but intended.
 - UI-only restrictions mistaken for server-side policy, or the reverse.
 - A fixture object that turned out to be owned by the acting principal.
+- A different operation that deliberately applies a broader or narrower policy, such as an aggregate or export path assembled for a role that cannot read individual records.
+- An update-path field constraint projected onto a read, list, or export path with no stated policy covering that path.
+- A sibling route, version, or prefix assumed to carry the same intent without a contract or effective registration.
+- A credential-shaped literal in synthetic or test data treated as a deployed secret without provenance and reachability.
 
 ## Stop Conditions
 - Stop when the objects or identities are not controlled for the assessment.
 - Stop before any destructive, financial, or externally visible mutation that a separate scope has not approved.
 - Stop after the first reachable unauthorized protected effect and record the remaining transports as variant coverage rather than duplicating the same evidence.
 - Stop when the denial cannot be attributed to a policy location; record an open proof gap instead of claiming safety.
+- Stop when the intended policy can only be inferred; record an `open_proof_gap` that names the missing provenance instead of a confirmed violation, and never convert that gap into a dismissal of the reachable effect.
 
 ## Evidence Fields
 - Principal identity label and the capability it represents.
@@ -53,6 +64,7 @@ A principal-object-action matrix with the expected decision, the observed decisi
 - Expected decision, observed decision, and the policy location responsible.
 - Protected effect observed, or the explicit absence of one.
 - Proof level: static trace, offline reproduction, or live reproduction.
+- Intended-policy provenance: the contract or policy location, or `inferred` with the missing source named.
 - Coverage state and the reason for any untested cell.
 
 ## Gaps
@@ -61,4 +73,4 @@ Live authenticated cross-principal comparison remains unverified without the app
 ## Handoffs
 Provide the matrix, controlled fixtures, policy locations, observed effects, and untested cells. Next: [authorization auditing](../authorization-auditing/SKILL.md) for identity establishment and alternate interfaces, [remediation](../remediation/SKILL.md) for policy repair, or [web route and input inventory](../web-route-input-inventory/SKILL.md) when the missing input is a route map.
 
-Matrix construction and variant placement detail lives in the [principal-object matrix](references/principal-object-matrix.md). This playbook adapts the reviewed object-authorization method; see [skill provenance](../../research/SKILL_PROVENANCE.md).
+Matrix construction and variant placement detail lives in the [principal-object matrix](references/principal-object-matrix.md). Cross-cutting claim rules are in [claim provenance before confirmation](../source-code-auditing/references/claim-provenance.md). This playbook adapts the reviewed object-authorization method; see [skill provenance](../../research/SKILL_PROVENANCE.md).

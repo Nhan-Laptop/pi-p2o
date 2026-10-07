@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 // @ts-ignore - the benchmark harness is plain JavaScript, outside the TypeScript build.
-import { BoundedRecords, MAX_RECORDS, main, parseArgs, p2oStartFlags, readExportFile, exportDataFrom } from '../../scripts/benchmark-skills.mjs';
+import { BoundedRecords, MAX_RECORDS, RUN_ID_PATTERN, deriveRunId, exportDataFrom, main, parseArgs, p2oStartFlags, readExportFile, runContainerQueryArgs } from '../../scripts/benchmark-skills.mjs';
 // @ts-ignore - the benchmark harness is plain JavaScript, outside the TypeScript build.
 import { buildPlan, catalogDocuments, copyVariant, discoverFixtures, isSharedDocument, mulberry32, objectiveProblems, parseSeed, resolveArms, shuffle, solutionMarkers, supportsStartFlag, ORIGINAL_SKILLS, PLAYBOOK_SET } from '../../bench/lib/plan.mjs';
 // @ts-ignore - the benchmark harness is plain JavaScript, outside the TypeScript build.
@@ -570,6 +570,45 @@ describe('scorer pilot regression', () => {
     const fallback = authoritativeCandidates({ candidateDetails: [recordCandidate] }, null);
     expect(fallback.source).toBe('records');
     expect(fallback.candidates.map((candidate: any) => candidate.candidate)).toEqual(['record-one']);
+  });
+});
+
+describe('per-run container cleanup detection', () => {
+  it('derives the run id from the export payload, export filename or P2O brief', () => {
+    expect(deriveRunId({ exportData: { runId: 'run-muxr4ct0-idbxyo' } })).toEqual({ runId: 'run-muxr4ct0-idbxyo', source: 'export' });
+    expect(deriveRunId({ exportPath: '/x/.p2o-reports/run-muxr4ct0-idbxyo-d7056b9e-7057-422e-ac27-b49efa4d4f6f.json' }))
+      .toEqual({ runId: 'run-muxr4ct0-idbxyo', source: 'export-filename' });
+    expect(deriveRunId({ messages: [{ role: 'user', content: 'Authorized target (untrusted metadata): "/x". Run run-muxr4ct0-idbxyo. Deadline 2026-01-01T00:00:00.000Z.' }] }))
+      .toEqual({ runId: 'run-muxr4ct0-idbxyo', source: 'brief' });
+    expect(deriveRunId({ exportData: { runId: 'not a valid id!' }, messages: [] })).toEqual({ runId: null, source: 'unknown' });
+    expect(deriveRunId({ exportData: { runId: 'run-export-wins' }, messages: [{ role: 'user', content: 'Run run-brief-loses. ' }] })).toEqual({ runId: 'run-export-wins', source: 'export' });
+  });
+
+  it('queries only the run label and rejects invalid ids', () => {
+    expect(runContainerQueryArgs('run-muxr4ct0-idbxyo')).toContain('label=pi-p2o.run=run-muxr4ct0-idbxyo');
+    expect(runContainerQueryArgs('run-muxr4ct0-idbxyo')[0]).toBe('container');
+    expect(() => runContainerQueryArgs('bad id; rm -rf /')).toThrow(/invalid run id/);
+    expect(() => runContainerQueryArgs('')).toThrow(/invalid run id/);
+    expect(RUN_ID_PATTERN.test('run-muxr4ct0-idbxyo')).toBe(true);
+  });
+
+  it('keeps global container snapshots informational and fails only on own-label leaks', async () => {
+    const truth = JSON.parse(await readFile(join(fixturePath('object-authorization'), 'expected', 'truth.json'), 'utf8'));
+    const extraction = extractTranscript({
+      messages: [toolResult('p2o_finish', 'Container removal verified.'), assistantText('Final report: no confirmed findings.')],
+      records: [{ type: 'agent_settled' }],
+    });
+    const clean = scoreRun({ truth, variant: 'fixed', extraction, checks: { globalNewContainers: ['some-concurrent-holdout-container'] } });
+    expect(clean.validity.runValid).toBe(true);
+    const leaked = scoreRun({ truth, variant: 'fixed', extraction, checks: { leakedContainers: ['p2o-own-leftover'] } });
+    expect(leaked.validity.runValid).toBe(false);
+  });
+
+  it('runner detects leaks by its own label and keeps global snapshots informational', async () => {
+    const runner = await readFile(join(repo, 'scripts/benchmark-skills.mjs'), 'utf8');
+    expect(runner).toContain('label=pi-p2o.run=');
+    expect(runner).toContain('globalNewContainers');
+    expect(runner).toContain('cleanupVerification');
   });
 });
 

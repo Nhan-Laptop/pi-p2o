@@ -105,14 +105,27 @@ installed package build can be pinned without editing the repository.
   The runner aborts on any limit and records `timeout`, `turn_budget`, `command_budget` or
   `cost_budget` instead of scoring it as a security negative. The extension's own 30-minute deadline
   stays above the default wall budget.
+- **Suite cost control:** the per-run cap is the lever for an agreed total ceiling. The first 72-run
+  campaign used `--max-cost-usd 0.13` because `72 × $0.13 = $9.36 < $10`; the default $3/run cap
+  would allow a $216 worst case and could not honor a $10 suite budget. The cap did not bind (all 72
+  runs finished normally; actual total $1.5736). Every suite plan and summary records
+  `costControl: {perRunCapUsd, runCount, plannedWorstCaseUsd, note}`, and each receipt keeps the
+  actual `usage.cost`; the cap is never silently raised during a run.
 - **No implicit fallback:** provider failures, protocol errors and transport failures are separate
   outcomes (`provider_error`, `transport_error`, `no_assessment`) and are excluded from
   recall/precision aggregates; the suite summary lists `invalidRuns`, `providerFailures`,
   `budgetOutcomes` and `costAvailableRuns`.
-- **Teardown:** the runner snapshots `docker container ls --filter label=pi-p2o=minimal` before and
-  after every run and records any container that appeared during the run as `leakedContainers`.
-  A non-empty leak makes the run invalid and the suite exit code non-zero. Containers that already
-  existed are never touched.
+- **Teardown (per-run label, concurrency-safe):** every P2O container carries a
+  `pi-p2o.run=<runId>` label. The runner derives its own runId in priority order from the finish
+  export payload, the export filename, or the P2O assessment brief ("... Run <runId>. Deadline
+  ..."), then queries only `docker container ls --filter label=pi-p2o.run=<runId>`. Those
+  containers are the authoritative `leakedContainers`; a non-empty result makes the run invalid and
+  the suite exit code non-zero. Global `pi-p2o=minimal` snapshots are still taken but are recorded as
+  `globalNewContainers` (informational only): containers appearing during the run may belong to
+  another benchmark or a concurrent holdout and never invalidate this run. `checks.runId`,
+  `checks.runIdSource` and `checks.cleanupVerification` (`own-label-clean`, `own-label-leak` or
+  `unverified`) record how cleanup was established. The suite summary separates the authoritative
+  `leakedContainers` from informational `globalNewContainers`.
 
 ## Real Pi, real sandbox, local-only target
 

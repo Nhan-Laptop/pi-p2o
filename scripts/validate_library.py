@@ -238,7 +238,7 @@ def validate_runtime_document(root: Path, label: str, document: dict, errors: li
     if not isinstance(identifier, str) or not DOCUMENT_ID.fullmatch(identifier):
         errors.append(f"{label}: invalid document id")
         return
-    if not isinstance(path, str) or not path.endswith((".md", ".yaml", ".yml")):
+    if not isinstance(path, str) or not path.endswith((".md", ".yaml", ".yml", ".json")):
         errors.append(f"{label}: invalid document path for {identifier}")
         return
     target = (root / path).resolve()

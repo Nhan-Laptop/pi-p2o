@@ -402,6 +402,54 @@ async function listBenchContainers() {
   }
 }
 
+/** P2O run ids are labels the extension applies to every container it creates. */
+export const RUN_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
+
+/**
+ * Derive this run's own P2O runId, in priority order: the finish export payload, the export
+ * filename, then the P2O assessment brief ("... Run <runId>. Deadline ..."). Leak detection is
+ * scoped to this label so concurrent runs (for example a holdout) can never be misattributed.
+ */
+export function deriveRunId({ messages = [], exportData = null, exportPath = null } = {}) {
+  if (exportData && typeof exportData.runId === 'string' && RUN_ID_PATTERN.test(exportData.runId)) {
+    return { runId: exportData.runId, source: 'export' };
+  }
+  if (typeof exportPath === 'string' && exportPath) {
+    const name = exportPath.split('/').pop() ?? '';
+    const match = /^(.+)-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.json$/.exec(name);
+    if (match && RUN_ID_PATTERN.test(match[1])) return { runId: match[1], source: 'export-filename' };
+  }
+  for (const message of messages) {
+    if (message?.role !== 'user') continue;
+    const content = message.content;
+    const text = typeof content === 'string'
+      ? content
+      : Array.isArray(content) ? content.filter(block => block?.type === 'text').map(block => block.text ?? '').join('\n') : '';
+    const match = /\bRun\s+([A-Za-z0-9][A-Za-z0-9._-]{0,63})\./.exec(text);
+    if (match && RUN_ID_PATTERN.test(match[1])) return { runId: match[1], source: 'brief' };
+  }
+  return { runId: null, source: 'unknown' };
+}
+
+/** Docker argument list for one run's own label; exported for the hermetic label tests. */
+export function runContainerQueryArgs(runId) {
+  if (typeof runId !== 'string' || !RUN_ID_PATTERN.test(runId)) throw new Error('invalid run id for container query');
+  return ['container', 'ls', '--all', '--filter', `label=pi-p2o.run=${runId}`, '--format', '{{.Names}}'];
+}
+
+/** Authoritative per-run cleanup check: only containers labelled with this run's own runId. */
+async function listRunContainers(runId) {
+  if (typeof runId !== 'string' || !RUN_ID_PATTERN.test(runId)) return { available: false, names: [], invalid: true };
+  try {
+    const { code, stdout } = await runCommand('docker', runContainerQueryArgs(runId), { timeoutMs: 20_000 });
+    if (code !== 0) return { available: false, names: [] };
+    return { available: true, names: stdout.split('\n').map(name => name.trim()).filter(Boolean) };
+  } catch {
+    return { available: false, names: [] };
+  }
+}
+
+/** Informational only: names that appeared between two global snapshots (may belong to other runs). */
 function newLeakedContainers(before, after) {
   const known = new Set(before.names);
   return after.names.filter(name => !known.has(name));
@@ -493,7 +541,9 @@ async function executeRun({ plan, run, truth, options, suiteId, resultsDir }) {
   const checks = {
     exitOk: null, providerFailure: false, budgetExceeded: false, protocolDirty: false,
     assessmentStarted: false, cleanupVerified: false, turnsUsed: 0, targetCommandsUsed: 0, budget: null,
+    runId: null, runIdSource: 'unknown', cleanupVerification: 'unverified', leakedContainers: [], globalNewContainers: [],
   };
+  let runIdInfo = { runId: null, source: 'unknown' };
   let outcome = 'transport_error';
   let rpc;
   try {
@@ -507,7 +557,11 @@ async function executeRun({ plan, run, truth, options, suiteId, resultsDir }) {
     let messages = [];
     for (let waited = 0; waited < ASSESSMENT_START_TIMEOUT_MS; waited += POLL_MS) {
       messages = await readMessages();
-      if (messages.some(message => message.role === 'user' && textOfMessage(message).includes('P2O ASSESSMENT'))) { checks.assessmentStarted = true; break; }
+      if (messages.some(message => message.role === 'user' && textOfMessage(message).includes('P2O ASSESSMENT'))) {
+        checks.assessmentStarted = true;
+        runIdInfo = deriveRunId({ messages });
+        break;
+      }
       if (rpc.recordSummary.extensionErrors.length) break;
       await delay(POLL_MS);
     }
@@ -584,7 +638,6 @@ async function executeRun({ plan, run, truth, options, suiteId, resultsDir }) {
       stats, dialogs, notifications, htmlPath,
     });
     if (extraction.providerErrors.length) checks.providerFailure = true;
-    checks.cleanupVerified = extraction.cleanupVerified;
 
     // Preserve the durable export before the workspace is removed.
     let exportInfo = { exportPath: null, copiedPath: null, bytes: null, sha256: null, candidates: 0, evidence: 0, error: null };
@@ -604,13 +657,22 @@ async function executeRun({ plan, run, truth, options, suiteId, resultsDir }) {
         exportInfo.error = redactSecrets(error instanceof Error ? error.message : String(error));
       }
     }
+    runIdInfo = deriveRunId({ messages: messagesFinal, exportData, exportPath: exportInfo.exportPath });
     await rpc.close();
 
+    // Authoritative cleanup check: query only this run's own container label. Global snapshots
+    // stay informational, so a concurrent benchmark or holdout can never invalidate this run.
+    const ownContainers = runIdInfo.runId ? await listRunContainers(runIdInfo.runId) : { available: false, names: [] };
     const containersAfter = await listBenchContainers();
-    const leakedContainers = newLeakedContainers(containersBefore, containersAfter);
-    if (leakedContainers.length) checks.cleanupVerified = false;
+    checks.runId = runIdInfo.runId;
+    checks.runIdSource = runIdInfo.source;
+    checks.leakedContainers = ownContainers.names;
+    checks.globalNewContainers = newLeakedContainers(containersBefore, containersAfter);
+    checks.cleanupVerified = extraction.cleanupVerified && ownContainers.names.length === 0;
+    checks.cleanupVerification = ownContainers.names.length ? 'own-label-leak'
+      : (runIdInfo.runId && ownContainers.available ? 'own-label-clean' : 'unverified');
     const finishedAt = Date.now();
-    const score = scoreRun({ truth, variant: run.variant, extraction, checks: { ...checks, leakedContainers }, exportData });
+    const score = scoreRun({ truth, variant: run.variant, extraction, checks, exportData });
     const receipt = {
       schema: RUN_SCHEMA,
       suiteId,
@@ -630,7 +692,7 @@ async function executeRun({ plan, run, truth, options, suiteId, resultsDir }) {
       finishedAt: new Date(finishedAt).toISOString(),
       wallMs: finishedAt - startedAt,
       outcome,
-      checks: { ...checks, containersBefore: containersBefore.names, containersAfter: containersAfter.names, leakedContainers },
+      checks: { ...checks, containersBefore: containersBefore.names, containersAfter: containersAfter.names },
       usage: extraction.usage,
       export: exportInfo,
       score,
@@ -658,12 +720,19 @@ async function executeRun({ plan, run, truth, options, suiteId, resultsDir }) {
     return receipt;
   } catch (error) {
     checks.exitOk = false;
+    const ownContainers = runIdInfo.runId ? await listRunContainers(runIdInfo.runId) : { available: false, names: [] };
     const containersAfter = await listBenchContainers();
+    checks.runId = runIdInfo.runId;
+    checks.runIdSource = runIdInfo.source;
+    checks.leakedContainers = ownContainers.names;
+    checks.globalNewContainers = newLeakedContainers(containersBefore, containersAfter);
+    checks.cleanupVerification = ownContainers.names.length ? 'own-label-leak'
+      : (runIdInfo.runId && ownContainers.available ? 'own-label-clean' : 'unverified');
     return {
       schema: RUN_SCHEMA, suiteId, runId: run.runId, orderIndex: run.orderIndex, outcome: 'transport_error',
       error: redactSecrets(error instanceof Error ? error.message : String(error)),
       stderrTail: redactSecrets(rpc?.stderr?.slice(-4000) ?? ''),
-      checks: { ...checks, leakedContainers: newLeakedContainers(containersBefore, containersAfter) },
+      checks: { ...checks, containersBefore: containersBefore.names, containersAfter: containersAfter.names },
       startedAt: new Date(startedAt).toISOString(), finishedAt: new Date().toISOString(), wallMs: Date.now() - startedAt,
       arm: jsonSafe(arm), fixture: { name: run.fixture, variant: run.variant, sourceHash: source.hash, truthSha256: run.truthSha256 },
     };
@@ -831,6 +900,11 @@ async function runCommandLive(options) {
   await writeJson(join(options.results, `${suiteId}.plan.json`), {
     schema: PLAN_SCHEMA, suiteId, seed: plan.seed, model: plan.model, thinking: plan.thinking,
     budgets: plan.budgets, controls: { maxTurns: options.maxTurns, maxTargetCommands: options.maxTargetCommands },
+    costControl: {
+      perRunCapUsd: options.maxCostUsd, runCount: plan.runCount,
+      plannedWorstCaseUsd: Number((options.maxCostUsd * plan.runCount).toFixed(2)),
+      note: 'per-run cap keeps the suite worst case under the agreed total ceiling; actual per-run cost is recorded in each receipt',
+    },
     arms: jsonSafe(plan.arms), fixtures: jsonSafe(plan.fixtures), skippedArms: skipped,
     startFlags: Object.fromEntries(Object.entries(plan.arms).map(([id, arm]) => [id, p2oStartFlags(arm, options)])),
     runs: plan.runs,
@@ -861,8 +935,14 @@ async function runCommandLive(options) {
     providerFailures: receipts.filter(receipt => receipt.checks?.providerFailure || receipt.outcome === 'provider_error').map(receipt => receipt.runId),
     budgetOutcomes,
     costAvailableRuns: receipts.filter(receipt => receipt.usage?.costAvailable).length,
+    costControl: {
+      perRunCapUsd: options.maxCostUsd, runCount: plan.runCount,
+      plannedWorstCaseUsd: Number((options.maxCostUsd * plan.runCount).toFixed(2)),
+      note: 'per-run cap keeps the suite worst case under the agreed total ceiling; actual per-run cost is recorded in each receipt',
+    },
     objectiveWrapperHashes: [...new Set(receipts.map(receipt => receipt.objectiveWrapper?.sha256).filter(Boolean))],
-    leakedContainers: receipts.flatMap(receipt => (receipt.checks?.leakedContainers ?? []).map(name => ({ runId: receipt.runId, name }))),
+    leakedContainers: receipts.flatMap(receipt => (receipt.checks?.leakedContainers ?? []).map(name => ({ runId: receipt.runId, p2oRunId: receipt.checks?.runId ?? null, name }))),
+    globalNewContainers: receipts.flatMap(receipt => (receipt.checks?.globalNewContainers ?? []).map(name => ({ runId: receipt.runId, name, informational: true }))),
     exportFailures: receipts.filter(receipt => receipt.export?.error).map(receipt => ({ runId: receipt.runId, error: receipt.export.error })),
   };
   await writeJson(join(options.results, `${suiteId}.summary.json`), summary);

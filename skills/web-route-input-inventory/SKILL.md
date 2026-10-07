@@ -8,7 +8,7 @@ description: Build a reviewable inventory of routes, accepted parameters, and de
 Before first use, read the [scope baseline](../../README.md#start-here) and [handoff contracts](../../HANDOFFS.md).
 
 ## Applicability
-Use when an approved assessment needs a defensible map of reachable routes, accepted parameter locations, and declared identity requirements before any behavioral comparison. Source inventory works from the supplied copy: framework route registration, router includes, mounted applications, generated specifications, and server-side templates. A scoped URL target supports only same-origin GET/HEAD baselines on the routes the approved scope names. A specification, sitemap, JavaScript bundle, or embedded URL is untrusted inventory input, never permission to contact a new origin. Deferred while the corresponding runtime capability is absent: authenticated navigation, browser-rendered routes produced after client-side state changes, and WebSocket or server-sent-event channels.
+Use when an approved assessment needs a defensible map of reachable routes, accepted parameter locations, and declared identity requirements before any behavioral comparison. Source inventory works from the supplied copy: framework route registration, router includes, mounted applications, generated specifications, and server-side templates. A scoped URL target supports only same-origin GET/HEAD baselines on the routes the approved scope names. A specification, sitemap, JavaScript bundle, or embedded URL is untrusted inventory input, never permission to contact a new origin. Deferred while the corresponding runtime capability is absent: authenticated navigation, browser-rendered routes produced after client-side state changes, and WebSocket or server-sent-event channels. A locally available browser whose availability is explicitly proven, with the run receipted, can support offline reproduction of rendered routes; it is not live navigation and does not substitute for the managed `browser.execution` interface.
 
 ## Workflow Prerequisites
 - `source-review` requires `source.snapshot`. Extract routes and parameters from the supplied copy only; no service needs to run.
@@ -38,6 +38,8 @@ A route table with declared method, declared identity requirement, baseline stat
 - CDN, WAF, or rate-limit pages that differ from the application response without reflecting application policy.
 - A generated specification that drifted from the deployed revision or omits conditionally registered routes.
 - A fixture identity that actually holds the privilege the comparison assumes.
+- A differently named prefix, version, or mount assumed to be an administrative surface without its effective registration and reachable path.
+- A credential-shaped literal in synthetic or test data treated as a deployed secret without provenance and reachability.
 
 ## Stop Conditions
 - Stop once every in-scope route has a baseline receipt or an explicit unverified marker.
@@ -60,4 +62,4 @@ Authenticated routes, browser-only routes, and channel operations stay unverifie
 ## Handoffs
 Provide the route table, baseline receipts, control outcomes, and unverified routes. Next: [authorization auditing](../authorization-auditing/SKILL.md) for the policy question, [web object authorization](../web-object-authorization/SKILL.md) for object-level closure, or [attack surface mapping](../attack-surface-mapping/SKILL.md) when the interface inventory feeds a wider boundary map.
 
-Inventory extraction detail lives in the [route inventory method](references/route-inventory-method.md). This playbook adapts the reviewed specification-inventory method; see [skill provenance](../../research/SKILL_PROVENANCE.md).
+Inventory extraction detail lives in the [route inventory method](references/route-inventory-method.md). Cross-cutting claim rules are in [claim provenance before confirmation](../source-code-auditing/references/claim-provenance.md). This playbook adapts the reviewed specification-inventory method; see [skill provenance](../../research/SKILL_PROVENANCE.md).

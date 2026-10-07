@@ -495,7 +495,7 @@
         },
         {
           "id": "browser-execution-proof",
-          "description": "Observe an inert marker interpreted as code by a managed browser; local HTTP is not execution proof",
+          "description": "Observe an inert marker interpreted as code by the managed browser interface; a proven offline local browser run is offline reproduction, not live proof",
           "allOf": [
             "browser.execution"
           ]
@@ -1171,6 +1171,18 @@
     {
       "id": "shared:apache-2.0",
       "path": "research/licenses/apache-2.0.md"
+    },
+    {
+      "id": "source-code-auditing:claim-provenance",
+      "path": "skills/source-code-auditing/references/claim-provenance.md"
+    },
+    {
+      "id": "shared:handoff-scaffold",
+      "path": "templates/handoff.json"
+    },
+    {
+      "id": "shared:research-catalog",
+      "path": "research/catalog.md"
     }
   ]
 }

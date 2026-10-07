@@ -46,7 +46,7 @@ neighbouring pane with its own role model, and every worker shares this sandbox 
 | `p2o_shell` | lead + worker | Offline shell in the sandbox; `/target` is a read-only copy, `/work/<workerId>` is scratch |
 | `p2o_http` | lead + worker | Fixed curl, GET/HEAD on the authorized origin only; public IPv4, no redirects/credentials |
 | `p2o_note` | lead + worker | Append a note, observation, coverage row or open item to the shared ledger |
-| `p2o_ledger` | worker | Read the shared ledger (bounded) before repeating work |
+| `p2o_ledger` | lead + worker | Read the shared ledger or one evidence/candidate record by ID before repeating work |
 | `p2o_delegate` | lead + worker | Spawn one focused worker (objective, context, role, 1-3 skills, optional model) |
 | `p2o_workers` | lead | Worker status, budget, report summary, coverage; optionally wait for a report |
 | `p2o_steer` | lead | Send a follow-up instruction to a worker without stopping it |
@@ -101,7 +101,7 @@ Application guidance: [route inventory](skills/web-route-input-inventory/SKILL.m
 These augment the original 17 methods. An overlay occupies one of the existing three assignment slots.
 [Provenance and exclusions](research/SKILL_PROVENANCE.md) document the selected Strix references.
 [Offline Semgrep recipe](skills/source-code-auditing/recipes/offline-python-semgrep.md) requires a successful tool probe;
-tool presence and usable dependencies must never be assumed from the image name.
+tool presence and usable dependencies must never be assumed from the image name. An [explicit tool-image setup](docs/SKILL_RUNTIME.md#optional-offline-tool-image) can add pinned Semgrep without enabling network access during assessments.
 
 ## Development
 

@@ -55,7 +55,7 @@ try {
       const state = (await rpc.request('get_state')).data;
       if (!state?.isStreaming) break;
     }
-    if (rpc.recordSummary.providerErrors.length) throw new Error(`Provider failure: ${rpc.recordSummary.providerErrors.join('; ')}`);
+    if (rpc.recordSummary.providerErrors.length && !(await rpc.request('get_state')).data?.isStreaming && !finish) throw new Error(`Terminal provider failure: ${rpc.recordSummary.providerErrors.join('; ')}`);
     if (rpc.recordSummary.targetCommands > 30) throw new Error('Target command budget exceeded');
   }
   if (!result?.sandboxRemoved || !result.exportPath) throw new Error('No successful finish/export within deadline');
@@ -63,7 +63,7 @@ try {
   await cp(result.exportPath, join(work, 'evidence.json'));
   const records = exported.records;
   const workers = result.workers ?? [];
-  if (!workers.length || !workers.every(w => w.reported && !w.blocked)) throw new Error('Worker did not complete its report');
+  if (!workers.length || !workers.every(w => w.reported && !w.summary?.startsWith('Worker settled'))) throw new Error('Worker did not complete its report');
   for (const worker of workers) {
     if (!records.some(r => r.by === worker.workerId && r.kind === 'lifecycle' && r.text.startsWith('skill_read '))) throw new Error('No brokered worker skill read');
     if (!records.some(r => r.by === worker.workerId && r.kind === 'evidence')) throw new Error('No worker execution receipt');

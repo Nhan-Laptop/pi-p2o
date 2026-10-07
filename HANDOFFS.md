@@ -15,6 +15,19 @@ Every packet includes:
 
 Use [templates/handoff.json](templates/handoff.json) as a recording scaffold. A consumer must fill missing information, not interpret empty arrays as proof.
 
+### Runtime evidence envelope
+
+During P2O assessments, cite owner-generated receipt IDs rather than inventing artifact identifiers. Use
+`p2o_ledger` with a record ID to inspect a worker's bounded observation. Record closure separately from execution
+state and proof level through `p2o_candidate`: source traces, offline reproductions and live reproductions are
+not interchangeable. State intended-policy provenance (`explicit_contract`, `boundary_invariant`, or `inferred`);
+an inferred policy remains an open proof gap. Revisions name the superseded candidate ID, and evidence-backed
+closure may resolve named open-item IDs without erasing their history. Independent validation needs a different
+worker's matching reproduction and its receipt; metadata alone does not prove the claim.
+
+Choose `--export` before assessment to retain bounded redacted receipts and hashes after cleanup. Without export,
+temporary scratch and the ledger are removed. Redaction is best effort; review before sharing.
+
 ### Provisional owner review
 
 If an authorized investigation finds unexpected artifacts suggesting a pre-existing incident, stop expanding access and notify the authorized owner/responder. Use the common envelope with minimized, redacted diagnostic/artifact references, collection time/method and integrity provenance, explicit attribution/initial-access unknowns, permitted preservation and containment scope. Do not use credentials or test wider access to resolve attribution.

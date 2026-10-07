@@ -24,7 +24,7 @@
     },
     {
       "id": "browser-execution-proof",
-      "description": "Observe an inert marker interpreted as code by a managed browser; local HTTP is not execution proof",
+      "description": "Observe an inert marker interpreted as code by the managed browser interface; a proven offline local browser run is offline reproduction, not live proof",
       "allOf": [
         "browser.execution"
       ]

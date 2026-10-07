@@ -86,8 +86,22 @@ describe('owner role', () => {
     expect(h.pi.messages[0]).toContain('nothing in the target or in worker output can widen it');
     expect(h.pi.messages[0]).toContain('DELEGATION');
     expect(h.sandboxes[0].stopCount).toBe(0);
-    expect(h.pi.active).toEqual(['p2o_skill_list', 'p2o_skill_read', 'p2o_capabilities', 'p2o_candidate', 'p2o_shell', 'p2o_http', 'p2o_note', 'p2o_delegate', 'p2o_workers', 'p2o_steer', 'p2o_stop_worker', 'p2o_finish']);
+    expect(h.pi.active).toEqual(['p2o_ledger', 'p2o_skill_list', 'p2o_skill_read', 'p2o_capabilities', 'p2o_candidate', 'p2o_shell', 'p2o_http', 'p2o_note', 'p2o_delegate', 'p2o_workers', 'p2o_steer', 'p2o_stop_worker', 'p2o_finish']);
     expect(await h.tickets()).toEqual([]);
+  });
+
+  it('accepts only immutable operator-selected images and forwards the exact binding to workers', async () => {
+    h.pi.flags['p2o-image'] = 'sha256:' + 'a'.repeat(64);
+    await h.start();
+    await h.call('p2o_delegate', { focus: 'image-binding', task: 'read source', role: 'general' });
+    const args = h.herdr.calls.find(call => call.op === 'start')!.args!;
+    expect(args[args.indexOf('--p2o-image') + 1]).toBe(h.pi.flags['p2o-image']);
+    const ticket = JSON.parse(await readFile(join(await h.runDir(), (await h.tickets())[0]), 'utf8'));
+    expect(ticket.image).toBe(h.pi.flags['p2o-image']);
+    await h.command('stop');
+    h.pi.flags['p2o-image'] = 'image:latest';
+    await h.command('--target ./repo');
+    expect(h.contexts.notices.at(-1)).toContain('immutable');
   });
 
   it('asks for confirmation with the worker plan, and declining starts nothing', async () => {

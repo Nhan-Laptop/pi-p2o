@@ -45,7 +45,7 @@ export interface BrokerDeps {
   exec(command: string, seconds: number, workdir: string, signal: AbortSignal): Promise<ProcessResult>;
   http(url: string, method: 'GET' | 'HEAD', signal: AbortSignal, workerId?: string): Promise<ProcessResult>;
   note(record: AssessmentRecord): Promise<void>;
-  ledger(limit: number): Promise<AssessmentRecord[]>;
+  ledger(limit: number, id?: string): Promise<AssessmentRecord[]>;
   delegate(input: DelegateInput, parent: WorkerRegistration): Promise<DelegateResult>;
   report(workerId: string, report: WorkerReport): Promise<void>;
   knowledge?(op: string, request: Record<string, unknown>, worker: WorkerRegistration): Promise<unknown>;
@@ -205,7 +205,7 @@ export class Broker {
       case 'ledger': {
         // Workers may read the shared ledger: it is how a nested worker sees its parent's notes.
         const limit = Number.isInteger(request?.limit) ? Math.min(Math.max(request.limit, 1), 100) : 50;
-        const slice = await this.deps.ledger(limit);
+        const slice = await this.deps.ledger(limit, text(request?.recordId, 80));
         const records: AssessmentRecord[] = []; let bytes = 0;
         for (const record of slice.slice().reverse()) {
           const size = Buffer.byteLength(JSON.stringify(record));

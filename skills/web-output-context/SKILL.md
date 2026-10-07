@@ -13,7 +13,7 @@ Use when user-influenced data reaches a browser, document, template, or script s
 ## Workflow Prerequisites
 - `source-review` requires `source.snapshot`. Trace each source through every transformation to the sink and name the context at the sink.
 - `offline-reproduction` requires `shell.offline`, with the renderer runtime reported as `tool.python` after a bounded probe. Render a local fixture with the extracted template or sanitizer configuration.
-- `browser-execution-proof` requires `browser.execution`. Local HTTP and a simulated consumer are not execution proof; without a managed browser context, record the execution gap instead of substituting an oracle.
+- `browser-execution-proof` requires the managed `browser.execution` interface for live execution evidence. Its absence does not establish that no browser binary exists; a locally run browser in the offline sandbox with explicitly proven availability and a retained receipt is `offline_reproduction`, not live execution. Local HTTP and simulated consumers are not execution proof, and an offline run is never presented as a live claim.
 - A sanitizer name or framework default is not a control until the actual call, arguments, configuration, and context are confirmed.
 
 ## Baseline
@@ -50,14 +50,14 @@ A chain record per source with the transformation steps, the sink, the context, 
 - Transformation chain with decode and encode steps in order.
 - Sink identity, file location, and output context.
 - Rendered artifact hash and the local fixture identity.
-- Observation stage: static trace, offline render, or controlled runtime execution.
+- Observation stage: static trace, offline reproduction (including a proven local browser or renderer), or controlled live execution through the managed browser interface.
 - Named control or the explicit absence of one.
 - Limitations and the exact reason any execution step was not reached.
 
 ## Gaps
-Real browser execution proof, client-side rendering after hydration, alternate render paths such as server-side versus client-side, and document or email consumers outside a browser remain unverified without the corresponding oracle. DOM sources that depend on runtime state, dynamically constructed sinks, and sanitizer behavior under configurations not exercised locally stay open candidates.
+Real browser execution proof, client-side rendering after hydration, alternate render paths such as server-side versus client-side, and document or email consumers outside a browser remain unverified without the corresponding oracle. A local browser oracle, when available, may advance context fitting only as offline reproduction; it does not prove live-target execution or a deployed consumer. DOM sources that depend on runtime state, dynamically constructed sinks, and sanitizer behavior under configurations not exercised locally stay open candidates.
 
 ## Handoffs
 Provide the chain records, context classification, rendered artifacts, controls, and execution gaps. Next: [data flow analysis](../data-flow-analysis/SKILL.md) for unresolved influence, [parser differential auditing](../parser-differential-auditing/SKILL.md) when two consumers parse the same bytes differently, or [remediation](../remediation/SKILL.md) for context-specific encoding repair.
 
-Source-to-sink and context detail lives in the [source and sink context map](references/source-sink-context.md). This playbook adapts the reviewed output-context method; see [skill provenance](../../research/SKILL_PROVENANCE.md).
+Source-to-sink and context detail lives in the [source and sink context map](references/source-sink-context.md). Cross-cutting claim rules are in [claim provenance before confirmation](../source-code-auditing/references/claim-provenance.md). This playbook adapts the reviewed output-context method; see [skill provenance](../../research/SKILL_PROVENANCE.md).

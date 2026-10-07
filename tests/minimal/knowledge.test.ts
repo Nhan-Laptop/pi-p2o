@@ -68,7 +68,8 @@ describe('evidence contracts and export', () => {
     try {
       const records = join(root, 'records.jsonl'); const store = new EvidenceStore('run-test', records, '/target');
       const receipt = await store.receipt('owner', 'shell', 'read source', { code: 0, stdout: 'observation', stderr: '', truncated: false }, new Date().toISOString());
-      const c: Candidate = { candidate: 'candidate-a', surface: '/x', risk: 'authorization', closure: 'confirmed', execution: 'tested', proof: 'static_trace', evidenceRefs: [receipt], negativeControls: [], limitations: 'Static only; no live proof' };
+      const c: Candidate = { candidate: 'candidate-a', surface: '/x', risk: 'authorization', closure: 'confirmed', execution: 'tested', proof: 'static_trace', evidenceRefs: [receipt], negativeControls: [], policyBasis: 'explicit_contract', expectedPolicy: 'Local test contract: protected object belongs to its owner', limitations: 'Static only; no live proof' };
+      await expect(store.candidate('owner', { ...c, policyBasis: 'inferred' })).rejects.toThrow('Inferred policy');
       await expect(store.candidate('owner', { ...c, evidenceRefs: ['missing'] })).rejects.toThrow('Unknown same-run');
       await expect(store.candidate('owner', { ...c, closure: 'ruled_out' })).rejects.toThrow('specific control');
       await expect(store.candidate('owner', { ...c, execution: 'blocked', requirement: 'http.authenticated' })).rejects.toThrow('Blocked');

@@ -14,7 +14,11 @@ const LIMITS = (options: SandboxOptions) => ['--read-only', '--cap-drop', 'ALL',
   '--workdir', '/work', '--env', 'HOME=/tmp', '--env', 'TMPDIR=/tmp'];
 
 /** Optional sizing/labelling. Delegated runs get more scratch and a run label for verified sweeps. */
-export interface SandboxOptions { tmpBytes?: string; workBytes?: string; runId?: string }
+export interface SandboxOptions { tmpBytes?: string; workBytes?: string; runId?: string; image?: string }
+export function validateImage(image: string): string {
+  if (!/^(?:sha256:[a-f0-9]{64}|[a-z0-9][a-z0-9._/:-]*@sha256:[a-f0-9]{64})$/.test(image)) throw new Error('Sandbox image must be an immutable sha256 ID or repository@sha256 digest');
+  return image;
+}
 const ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
 
 /** Docker containers are executors, never AI agents. All names are owned until removal is verified. */
@@ -30,6 +34,7 @@ export class Sandbox {
   private cancellation = new AbortController();
   private readonly workdirs = new Set<string>();
   constructor(readonly target: Target, private readonly run: RunProcess = runDocker, private readonly resolveIP?: ResolveAddress, private readonly options: SandboxOptions = {}) {
+    validateImage(options.image ?? IMAGE);
     if (options.runId !== undefined && !ID_PATTERN.test(options.runId)) throw new Error('Invalid run id for container labels');
   }
 
@@ -44,14 +49,14 @@ export class Sandbox {
     this.endpoint = endpoint;
     const info = checked(await this.docker(['info', '--format', '{{.OSType}}']));
     if (info.stdout.trim() !== 'linux') throw new Error('A Linux Docker daemon is required');
-    checked(await this.docker(['image', 'inspect', IMAGE]));
+    checked(await this.docker(['image', 'inspect', this.options.image ?? IMAGE]));
     if (this.target.kind === 'directory' && await realpath(this.target.path) !== this.target.path) throw new Error('Target directory changed during confirmation');
     if (this.target.kind === 'directory') {
       const source = await copySource(this.target.path);
       this.source = source.path; this.sourceSkipped = source.skipped; this.sourceManifest = source.manifest;
     }
     const mount = this.source ? ['--volume', `${this.source}:/target:ro`] : [];
-    this.shell = await this.create('none', [...mount, '--entrypoint', '/bin/sh', IMAGE, '-c', 'exec sleep infinity']);
+    this.shell = await this.create('none', [...mount, '--entrypoint', '/bin/sh', this.options.image ?? IMAGE, '-c', 'exec sleep infinity']);
     checked(await this.docker(['start', this.shell]));
     const running = checked(await this.docker(['inspect', '--format', '{{.State.Running}}', this.shell]));
     if (running.stdout.trim() !== 'true') throw new Error('Sandbox did not stay running');
@@ -113,7 +118,7 @@ export class Sandbox {
       if (this.stopped || signal?.aborted) throw new Error('Cancelled');
       const port = url.port || (url.protocol === 'https:' ? '443' : '80');
       // This networking container runs ONLY fixed curl arguments, never model-supplied shell/code.
-      const name = await this.create('bridge', ['--entrypoint', '/usr/bin/curl', IMAGE, '-q',
+      const name = await this.create('bridge', ['--entrypoint', '/usr/bin/curl', this.options.image ?? IMAGE, '-q',
         '--proxy', '', '--noproxy', '*', '--proto', '=http,https', '--max-time', '20', '--connect-timeout', '5',
         '--max-filesize', '1048576', '--max-redirs', '0', '--no-location', '--silent', '--show-error', '--include',
         '--resolve', `${url.hostname}:${port}:${address}`, ...(method === 'HEAD' ? ['--head'] : []), '--url', url.href]);

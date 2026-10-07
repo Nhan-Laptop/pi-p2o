@@ -24,7 +24,9 @@ export function capabilities(target: Pick<Target, 'kind'>): CapabilitySnapshot {
       return { id, permitted: supported.has(id) || tool, applicable,
         availability: supported.has(id) ? 'supported' : tool ? 'unknown' : 'unavailable',
         reason: supported.has(id) ? 'Owner-enforced assessment transport' : tool ? 'Needs a bounded offline execution with its dependencies/rules; no probe yet'
-          : id === 'source.history' ? 'Source snapshots omit .git' : 'Not provided by this assessment transport' };
+          : id === 'source.history' ? 'Source snapshots omit .git' : id === 'browser.execution'
+            ? 'No managed browser transport. Offline shell binaries are a separate unprobed facility; local parser/browser experiments establish offline, not live target reproduction.'
+            : 'Not provided by this assessment transport' };
     }) };
 }
 export function validateRequirements(value: Requirements): void {

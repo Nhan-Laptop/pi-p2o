@@ -678,6 +678,55 @@ class SkillProfileTests(unittest.TestCase):
         self.assertEqual(documents["shared:license-notice"], "research/licenses/README.md")
         self.assertEqual(documents["shared:apache-2.0"], "research/licenses/apache-2.0.md")
 
+    def test_claim_provenance_guidance_present(self):
+        reference_path = "skills/source-code-auditing/references/claim-provenance.md"
+        reference = (ROOT / reference_path).read_text(encoding="utf-8").lower()
+        for phrase in ("intended-policy provenance", "distinct operations", "field constraint", "sibling surfaces", "provenance", "reachability", "open_proof_gap", "confirmed"):
+            self.assertIn(phrase, reference)
+        playbook = (ROOT / "skills/web-object-authorization/SKILL.md").read_text(encoding="utf-8").lower()
+        for phrase in ("intended-policy provenance comes first", "intentionally grant different permissions", "update-path field constraint", "sibling surface", "open_proof_gap", "stays confirmed"):
+            self.assertIn(phrase, playbook)
+        overlay = (ROOT / "skills/fastapi-security-parity/SKILL.md").read_text(encoding="utf-8").lower()
+        self.assertIn("sibling enforcement differences as hypotheses", overlay)
+        self.assertIn("open_proof_gap", overlay)
+        route = (ROOT / "skills/web-route-input-inventory/SKILL.md").read_text(encoding="utf-8").lower()
+        self.assertIn("administrative surface without its effective registration", route)
+        for name in ("skills/web-route-input-inventory/SKILL.md", "skills/web-object-authorization/SKILL.md",
+                     "skills/web-output-context/SKILL.md", "skills/fastapi-security-parity/SKILL.md"):
+            self.assertIn("claim-provenance.md", (ROOT / name).read_text(encoding="utf-8"), name)
+        catalog = json.loads((ROOT / "skills/catalog.json").read_text(encoding="utf-8"))
+        documents = {document["id"]: document["path"] for document in catalog["documents"]}
+        self.assertEqual(documents["source-code-auditing:claim-provenance"], reference_path)
+
+    def test_browser_guidance_distinguishes_managed_interface(self):
+        document = (ROOT / "skills/web-output-context/SKILL.md").read_text(encoding="utf-8").lower()
+        self.assertIn("managed `browser.execution` interface", document)
+        self.assertIn("does not establish that no browser binary exists", document)
+        self.assertIn("offline_reproduction", document)
+        self.assertIn("not live execution", document)
+        sidecar = json.loads((ROOT / "skills/web-output-context/skill.json").read_text(encoding="utf-8"))
+        workflow = next(item for item in sidecar["workflows"] if item["id"] == "browser-execution-proof")
+        self.assertEqual(workflow["allOf"], ["browser.execution"])
+        self.assertIn("offline reproduction", workflow["description"])
+        catalog = json.loads((ROOT / "skills/catalog.json").read_text(encoding="utf-8"))
+        entry = next(item for item in catalog["skills"] if item["name"] == "web-output-context")
+        runtime = next(item for item in entry["workflows"] if item["id"] == "browser-execution-proof")
+        self.assertEqual(runtime["description"], workflow["description"])
+
+    def test_new_docs_avoid_benchmark_specifics(self):
+        documents = [
+            ROOT / "skills/source-code-auditing/references/claim-provenance.md",
+            ROOT / "skills/web-route-input-inventory/SKILL.md",
+            ROOT / "skills/web-object-authorization/SKILL.md",
+            ROOT / "skills/web-output-context/SKILL.md",
+            ROOT / "skills/fastapi-security-parity/SKILL.md",
+        ]
+        forbidden = ("can_export_orders", "operator-digest", "render_diagnostics", "o-1001", "api.storefront.invalid", "bench/fixtures", "chromium")
+        for document in documents:
+            text = document.read_text(encoding="utf-8").lower()
+            for token in forbidden:
+                self.assertNotIn(token, text, document.name)
+
     def test_vendored_license_copy_matches_recorded_hash(self):
         data = json.loads((ROOT / "research/SKILL_PROVENANCE.json").read_text())
         copy = ROOT / data["upstream"]["license_copy"]

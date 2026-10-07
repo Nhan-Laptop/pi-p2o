@@ -175,7 +175,7 @@ describe('worker role', () => {
     await expect(h.call('p2o_skill_read', { id: '/etc/passwd' }, 'worker')).rejects.toThrow('Unknown document');
     const shell = await h.call('p2o_shell', { command: 'cat /target/code.txt' }, 'worker');
     expect(shell.details.evidenceId).toBeDefined();
-    const candidate = await h.call('p2o_candidate', { candidate: 'test-case', surface: '/target/code.txt', risk: 'example', closure: 'open_proof_gap', execution: 'blocked', proof: 'static_trace', evidenceRefs: [shell.details.evidenceId], negativeControls: [], limitations: 'No authenticated comparison', requirement: 'http.authenticated' }, 'worker');
+    const candidate = await h.call('p2o_candidate', { candidate: 'test-case', surface: '/target/code.txt', risk: 'example', closure: 'open_proof_gap', execution: 'blocked', proof: 'static_trace', evidenceRefs: [shell.details.evidenceId], negativeControls: [], policyBasis: 'inferred', expectedPolicy: 'Intended policy needs confirmation', limitations: 'No authenticated comparison', requirement: 'http.authenticated' }, 'worker');
     expect(candidate.details.by).toBe(workerId);
     const view = await h.call('p2o_workers');
     expect(view.details.open.some((r: any) => r.kind === 'candidate')).toBe(true);
