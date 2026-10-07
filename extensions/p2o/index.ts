@@ -50,6 +50,7 @@ interface OwnerRun {
   settings: P2OSettings; extensionPath: string; extensionSha: string; deadline: number;
   /** Spawns that have not finished registering yet; a parallel finish must not race them. */
   spawns: Set<Promise<unknown>>;
+  operations: Set<Promise<unknown>>;
   /** Panes Herdr refused to close, reported honestly instead of as "verified teardown". */
   unclosedPanes?: string[];
   cleanedReason?: string;
@@ -164,6 +165,7 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
 
   async function spawnWorkerLocked(input: { focus: string; task: string; context?: string; role?: string; skills?: string[]; model?: string; workflow?: string }, parent: { workerId: string | null; depth: number }): Promise<{ workerId: string; name: string; paneId: string; role: string; model?: string; depth: number; capabilityWarnings: string[] }> {
     const current = owner();
+    if (current.sandbox.isStopped) fail('SANDBOX_STOPPED', 'Executor stopped; record gaps and finish, do not delegate more target work');
     if (!current.delegation.enabled) fail('DELEGATION_UNAVAILABLE', current.delegation.reason ?? 'delegation is disabled for this assessment');
     const depth = parent.depth + 1;
     if (depth > current.delegation.maxDepth) fail('DELEGATION_DEPTH', `delegation depth limit ${current.delegation.maxDepth} reached; do this work yourself or record it as an open gap`);
@@ -331,14 +333,15 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
       await removeTicket(ticketPath(current.control, registration.workerId));
     }
     await current.broker.stop();
+    await current.sandbox.stop();
+    if (current.operations.size) await Promise.allSettled([...current.operations]);
+    await current.sandbox.assertNoRunContainers();
     if (current.exportEnabled && !current.exportPath) {
       try { current.exportPath = await current.evidence.exportTo(current.ctx.cwd, {
         target: targetLabel(current.target), sourceHashes: current.sandbox.sourceManifest, image: current.image, extensionSha256: current.extensionSha,
         leadModel: sessionModel(current.ctx), skillHashes: current.library.hashes(), capabilities: current.capabilities, reason,
       }); } catch (error) { current.exportError = message(error); current.ctx.ui.notify(`Evidence export failed: ${current.exportError}. Cleanup still proceeds.`, 'error'); }
     }
-    await current.sandbox.stop();
-    await current.sandbox.assertNoRunContainers();
     const { rm } = await import('node:fs/promises');
     await rm(current.control, { recursive: true, force: true });
     if (unclosed.length) current.unclosedPanes = unclosed;
@@ -352,16 +355,27 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
     return current.stop;
   }
 
-  async function executeWithReceipt(current: OwnerRun, by: string, operation: string, input: string, perform: () => Promise<ProcessResult>): Promise<ProcessResult> {
+  function executeWithReceipt(current: OwnerRun, by: string, operation: string, input: string, perform: () => Promise<ProcessResult>): Promise<ProcessResult> {
+    const task = (async () => {
     const started = new Date().toISOString();
     try {
       const result = await perform();
       const evidenceId = await current.evidence.receipt(by, operation, input, result, started);
       return { ...result, evidenceId };
     } catch (error) {
+      if (current.sandbox.isStopped) {
+        for (const capability of current.capabilities.capabilities) {
+          if (capability.availability === 'supported') { capability.availability = 'unavailable'; capability.reason = 'Executor stopped after a failed/timed-out operation; finish or stop this assessment, do not retry target commands'; }
+        }
+        if (run === current) pi.setActiveTools(OWNER_TOOLS.filter(name => !['p2o_shell', 'p2o_http', 'p2o_delegate'].includes(name)));
+      }
       await current.evidence.receipt(by, operation, input, { code: -1, stdout: '', stderr: message(error), truncated: false }, started).catch(() => {});
       throw error;
     }
+    })();
+    current.operations.add(task);
+    void task.finally(() => current.operations.delete(task)).catch(() => {});
+    return task;
   }
   async function readKnowledge(current: OwnerRun, op: string, params: Record<string, unknown>, by = 'owner') {
     if (current.phase !== 'active') fail('NO_ASSESSMENT', 'Knowledge service is closed');
@@ -375,7 +389,7 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
       return current.capabilities;
     }
     if (op === 'skill_list' || op === 'skill_read') {
-      const result = op === 'skill_list' ? await current.library.list((params.offset ?? 0) as number)
+      const result = op === 'skill_list' ? await current.library.list((params.offset ?? 0) as number, (params.query ?? '') as string)
         : await current.library.read((params.documentId ?? params.id) as string, (params.offset ?? 0) as number);
       await appendRecord(current.records, { runId: current.runId, at: new Date().toISOString(), by, workerId: by === 'owner' ? undefined : by,
         kind: 'lifecycle', text: `${op}${'id' in result ? ` ${result.id} sha256=${result.sha256} offset=${result.offset}` : ''}` });
@@ -384,10 +398,18 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
     throw new Error('Unknown knowledge operation');
   }
 
+  async function recordCandidate(current: OwnerRun, by: string, candidate: Candidate) {
+    if (candidate?.execution === 'blocked') {
+      const capability = current.capabilities.capabilities.find(c => c.id === candidate.requirement);
+      if (capability?.permitted && capability.applicable && capability.availability === 'supported') fail('CAPABILITY_AVAILABLE', 'That capability is available. Use tested/not_tested with open_proof_gap for a missing observation or policy, not a fabricated capability block.');
+    }
+    return current.evidence.candidate(by, candidate);
+  }
+
   // ---------------------------------------------------------------- tools
 
   for (const [name, op, description, parameters] of [
-    ['p2o_skill_list', 'skill_list', 'List approved skill IDs, workflow prerequisites and reference IDs; follow nextOffset for more. No host paths.', Type.Object({ offset: Type.Optional(Type.Integer({ minimum: 0 })) })],
+    ['p2o_skill_list', 'skill_list', 'Find approved skills by optional query (e.g. route, authorization, output, FastAPI); specialized playbooks appear before general techniques. Lists workflow prerequisites and reference IDs; paginate nextOffset. No host paths.', Type.Object({ query: Type.Optional(Type.String({ maxLength: 80 })), offset: Type.Optional(Type.Integer({ minimum: 0 })) })],
     ['p2o_skill_read', 'skill_read', 'Read an approved skill/reference/handoff/evidence document by catalog ID. Follow nextOffset for the rest. Not an arbitrary host file reader.', Type.Object({ id: Type.String({ maxLength: 160 }), offset: Type.Optional(Type.Integer({ minimum: 0 })) })],
     ['p2o_capabilities', 'capabilities', 'Read owner-enforced permissions, applicability, runtime availability and limits. Optionally execute one fixed offline functional tool probe (45s max); no network or installation. A missing capability is not a clean test.', Type.Object({ probe: Type.Optional(Type.Union([Type.Literal('python'), Type.Literal('semgrep')])) })],
   ] as const) {
@@ -422,7 +444,7 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
       const current = run;
       if (!current || current.phase !== 'active') fail('NO_ASSESSMENT', 'No active assessment');
       const record = current.role === 'worker' ? (await worker().client.request('candidate', { candidate: params })).value
-        : await current.evidence.candidate('owner', params);
+        : await recordCandidate(current, 'owner', params);
       return { content: [{ type: 'text' as const, text: JSON.stringify(record) }], details: record };
     },
   });
@@ -692,7 +714,7 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
             role: 'owner', target, sandbox, ctx, phase: 'starting', toolsBefore: pi.getActiveTools(),
             runId, control, records, reports, broker: undefined as unknown as Broker, workers: new Map(),
             delegation: { enabled: delegationAvailable, reason: delegationAvailable ? undefined : delegationReason, maxWorkers, maxDepth, spawned: 0, totalBudget },
-            settings: loaded, extensionPath, extensionSha: extensionSha!, deadline, spawns: new Set(),
+            settings: loaded, extensionPath, extensionSha: extensionSha!, deadline, spawns: new Set(), operations: new Set(),
             library: new SkillLibrary(packageRoot(extensionPath)), evidence: new EvidenceStore(runId, records, targetLabel(target)),
             knowledgeUsed: 0, image, capabilities: capabilities(target), exportEnabled: command.options.export ?? false,
           };
@@ -700,7 +722,7 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
             exec: (command, seconds, workdir, signal) => executeWithReceipt(current, workdir.split('/').at(-1)!, 'shell', command, () => sandbox.exec(command, seconds, signal, workdir)),
             http: (url, method, signal, workerId) => executeWithReceipt(current, workerId ?? 'owner', 'http', `${method} ${url}`, () => sandbox.http(url, method, signal)),
             knowledge: (op, request, registration) => readKnowledge(current, op, request, registration.workerId),
-            candidate: (input, registration) => current.evidence.candidate(registration.workerId, input as Candidate),
+            candidate: (input, registration) => recordCandidate(current, registration.workerId, input as Candidate),
             note: record => appendRecord(current.records, { ...record, runId: current.runId }),
             ledger: async (limit, id) => id ? (await readRecords(current.records, 10000)).filter(r => r.id === id) : readRecords(current.records, limit),
             delegate: (input, parent) => spawnWorker(input, { workerId: parent.workerId, depth: parent.depth }),

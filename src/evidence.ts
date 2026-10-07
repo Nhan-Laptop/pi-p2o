@@ -107,7 +107,7 @@ function validateCandidate(c: Candidate): void {
   if (!Array.isArray(c.evidenceRefs) || !Array.isArray(c.negativeControls) || c.evidenceRefs.length > 10 || c.negativeControls.length > 10) throw new Error('Evidence arrays must be bounded');
   if (!['explicit_contract', 'boundary_invariant', 'inferred'].includes(c.policyBasis ?? '')) throw new Error('Invalid policy basis');
   if (!c.expectedPolicy?.trim()) throw new Error('Name the expected policy and its provenance');
-  if (c.policyBasis === 'inferred' && c.closure === 'confirmed') throw new Error('Inferred policy is a hypothesis: use open_proof_gap until intended policy is established');
+  if (c.policyBasis === 'inferred' && c.closure !== 'open_proof_gap') throw new Error('Inferred policy is a hypothesis: use open_proof_gap until intended policy is established');
   if (c.closure !== 'open_proof_gap' && !c.evidenceRefs.length) throw new Error('Closure needs evidence; otherwise use open_proof_gap');
   if (c.closure === 'ruled_out' && !c.control?.trim()) throw new Error('ruled_out needs the specific control and its location');
   if (c.resolves && (!Array.isArray(c.resolves) || c.resolves.length > 10 || c.resolves.some(id => typeof id !== 'string'))) throw new Error('Invalid resolved open-item list');

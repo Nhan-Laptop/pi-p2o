@@ -54,7 +54,10 @@ PROVENANCE_FIELDS = (
     "project", "distribution", "revision", "revision_basis", "snapshot_retrieved_at", "reviewed_at",
     "license", "license_sha256", "license_copy", "license_notice", "version_metadata_sha256", "usage_boundary", "attribution",
 )
-REQUIRED_RECIPE_FLAGS = ("--config", "--metrics=off", "--json", "--jobs", "--timeout")
+REQUIRED_RECIPE_FLAGS = (
+    "--config", "--metrics=off", "--json", "--jobs", "--timeout", "--disable-version-check",
+    "SEMGREP_ENABLE_VERSION_CHECK=0", "SEMGREP_SEND_METRICS=off",
+)
 REGISTRY_CONFIG = (re.compile(r"\bp/default\b"), re.compile(r"--config[= ]+auto\b"), re.compile(r"registry\.semgrep\.dev"))
 HASH = re.compile(r"[0-9a-f]{64}")
 BLOG_SOURCE = re.compile(r"\bB\d{3}\b")
@@ -606,8 +609,20 @@ def validate_recipe(path: Path, root: Path, text: str, parts: dict, provenance: 
     for flag in REQUIRED_RECIPE_FLAGS:
         if flag not in text:
             errors.append(f"{label}: recipe missing {flag}")
-    if "--max-memory" not in text:
-        errors.append(f"{label}: recipe lacks a memory bound")
+    if "--max-memory 256" not in text:
+        errors.append(f"{label}: recipe must bound memory at 256 MiB for the shared sandbox")
+    if "--max-memory 512" in text:
+        errors.append(f"{label}: recipe exceeds the shared sandbox memory budget")
+    if "timeout 45 semgrep" not in text:
+        errors.append(f"{label}: recipe lacks the bounded shell timeout wrapper")
+    if "do not retry target commands" not in text.lower():
+        errors.append(f"{label}: recipe lacks the sandbox-stop no-retry rule")
+    if "scan --validate" in text:
+        errors.append(f"{label}: recipe must not use the validate stage offline")
+    if "positive/negative fixture" not in text.lower():
+        errors.append(f"{label}: recipe lacks the local positive/negative fixture gate")
+    if "remote meta-lint" not in text.lower():
+        errors.append(f"{label}: recipe lacks the validate remote-dependency caution")
     if "--version" not in parts.get("Prerequisites", ""):
         errors.append(f"{label}: prerequisites lack a tool probe")
     if "network" not in (parts.get("Prerequisites", "") + parts.get("Input", "")).lower():

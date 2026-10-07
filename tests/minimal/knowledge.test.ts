@@ -24,6 +24,9 @@ describe('approved knowledge', () => {
     expect((await library.read('source-code-auditing')).text).toContain('p2o-skill:evidence:b068');
     const list = await library.list();
     expect(list.nextOffset).toBe(8);
+    expect(list.entries[0].kind).toBe('playbook');
+    expect((await library.list(0, 'route')).entries.some(s => s.name === 'web-route-input-inventory')).toBe(true);
+    expect((await library.list(0, 'nonexistent-term')).total).toBe(0);
     expect(JSON.stringify(list)).not.toContain(ROOT);
     await expect(library.read('../../etc/passwd')).rejects.toThrow('Unknown document');
     await expect(library.read('/etc/passwd')).rejects.toThrow('Unknown document');
@@ -70,6 +73,7 @@ describe('evidence contracts and export', () => {
       const receipt = await store.receipt('owner', 'shell', 'read source', { code: 0, stdout: 'observation', stderr: '', truncated: false }, new Date().toISOString());
       const c: Candidate = { candidate: 'candidate-a', surface: '/x', risk: 'authorization', closure: 'confirmed', execution: 'tested', proof: 'static_trace', evidenceRefs: [receipt], negativeControls: [], policyBasis: 'explicit_contract', expectedPolicy: 'Local test contract: protected object belongs to its owner', limitations: 'Static only; no live proof' };
       await expect(store.candidate('owner', { ...c, policyBasis: 'inferred' })).rejects.toThrow('Inferred policy');
+      await expect(store.candidate('owner', { ...c, policyBasis: 'inferred', closure: 'ruled_out', control: 'a sibling is safe' })).rejects.toThrow('Inferred policy');
       await expect(store.candidate('owner', { ...c, evidenceRefs: ['missing'] })).rejects.toThrow('Unknown same-run');
       await expect(store.candidate('owner', { ...c, closure: 'ruled_out' })).rejects.toThrow('specific control');
       await expect(store.candidate('owner', { ...c, execution: 'blocked', requirement: 'http.authenticated' })).rejects.toThrow('Blocked');

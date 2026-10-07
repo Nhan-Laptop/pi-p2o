@@ -517,6 +517,33 @@ class SkillProfileTests(unittest.TestCase):
     def test_recipe_requires_metrics_off(self):
         self.reject(lambda root: self.edit_document(root, "skills/source-code-auditing/recipes/offline-python-semgrep.md", lambda s: s.replace("--metrics=off", "--metrics=on")), "recipe missing --metrics=off")
 
+    def test_recipe_requires_offline_version_controls(self):
+        self.reject(lambda root: self.edit_document(root, "skills/source-code-auditing/recipes/offline-python-semgrep.md", lambda s: s.replace("--disable-version-check", "")), "recipe missing --disable-version-check")
+
+    def test_recipe_requires_version_check_environment(self):
+        self.reject(lambda root: self.edit_document(root, "skills/source-code-auditing/recipes/offline-python-semgrep.md", lambda s: s.replace("SEMGREP_ENABLE_VERSION_CHECK=0", "")), "recipe missing SEMGREP_ENABLE_VERSION_CHECK=0")
+
+    def test_recipe_requires_metrics_environment(self):
+        self.reject(lambda root: self.edit_document(root, "skills/source-code-auditing/recipes/offline-python-semgrep.md", lambda s: s.replace("SEMGREP_SEND_METRICS=off", "")), "recipe missing SEMGREP_SEND_METRICS=off")
+
+    def test_recipe_memory_budget_matches_shared_sandbox(self):
+        self.reject(lambda root: self.edit_document(root, "skills/source-code-auditing/recipes/offline-python-semgrep.md", lambda s: s.replace("--max-memory 256", "--max-memory 512")), "recipe exceeds the shared sandbox memory budget")
+
+    def test_recipe_states_sandbox_stop_no_retry(self):
+        self.reject(lambda root: self.edit_document(root, "skills/source-code-auditing/recipes/offline-python-semgrep.md", lambda s: s.replace("Do not retry target commands", "Retry carefully")), "recipe lacks the sandbox-stop no-retry rule")
+
+    def test_recipe_requires_bounded_shell_timeout(self):
+        self.reject(lambda root: self.edit_document(root, "skills/source-code-auditing/recipes/offline-python-semgrep.md", lambda s: s.replace("timeout 45 semgrep", "semgrep")), "recipe lacks the bounded shell timeout wrapper")
+
+    def test_recipe_forbids_validate_stage(self):
+        self.reject(lambda root: self.edit_document(root, "skills/source-code-auditing/recipes/offline-python-semgrep.md", lambda s: s.replace("Fixture check first", "SEMGREP_ENABLE_VERSION_CHECK=0 semgrep scan --validate --config x --metrics=off; fixture check", 1)), "recipe must not use the validate stage offline")
+
+    def test_recipe_requires_local_fixture_gate(self):
+        self.reject(lambda root: self.edit_document(root, "skills/source-code-auditing/recipes/offline-python-semgrep.md", lambda s: s.replace("positive/negative fixture", "fixture")), "recipe lacks the local positive/negative fixture gate")
+
+    def test_recipe_requires_validate_caution(self):
+        self.reject(lambda root: self.edit_document(root, "skills/source-code-auditing/recipes/offline-python-semgrep.md", lambda s: s.replace("remote meta-lint rules", "remote rules")), "recipe lacks the validate remote-dependency caution")
+
     def test_recipe_rejects_registry_config(self):
         self.reject(lambda root: self.edit_document(root, "skills/source-code-auditing/recipes/offline-python-semgrep.md", lambda s: s + "\nUse --config p/default when the local file is unavailable.\n"), "recipe uses a registry configuration")
 
@@ -775,11 +802,12 @@ def handler(payload):
 
     @unittest.skipUnless(os.environ.get("P2O_TEST_SEMGREP") == "1", "opt-in Semgrep runtime test")
     def test_ruleset_runs_on_synthetic_samples(self):
-        """Opt-in vulnerable/fixed check; the default suite stays hermetic."""
+        """Opt-in fixture gate: the shipped rules produce the known candidates and no fixed matches."""
         binary = shutil.which("semgrep")
         if not binary:
             self.skipTest("semgrep is not installed")
         ruleset = ROOT / "skills/source-code-auditing/recipes/semgrep-rules/p2o-python-offline.yaml"
+        environment = {**os.environ, "SEMGREP_ENABLE_VERSION_CHECK": "0", "SEMGREP_SEND_METRICS": "off"}
         with tempfile.TemporaryDirectory() as directory:
             sample = Path(directory) / "sample"
             sample.mkdir()
@@ -787,9 +815,10 @@ def handler(payload):
             (sample / "fixed.py").write_text(self.FIXED_FIXTURE)
             report = Path(directory) / "semgrep.json"
             result = subprocess.run(
-                [binary, "scan", "--config", str(ruleset), "--metrics=off", "--json", "--output", str(report),
-                 "--quiet", "--jobs", "1", "--timeout", "20", "--max-memory", "512", "--no-git-ignore", str(sample)],
-                capture_output=True, text=True, timeout=300, check=False,
+                [binary, "scan", "--config", str(ruleset), "--metrics=off", "--disable-version-check", "--json",
+                 "--output", str(report), "--quiet", "--jobs", "1", "--timeout", "20", "--max-memory", "256",
+                 "--no-git-ignore", str(sample)],
+                capture_output=True, text=True, timeout=300, check=False, env=environment,
             )
             self.assertTrue(report.is_file(), result.stdout + result.stderr)
             data = json.loads(report.read_text())

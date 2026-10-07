@@ -14,6 +14,13 @@ export function registerInertProvider(pi: ExtensionAPI, mode: 'owner' | 'worker'
     models: [{ id: 'current-agent', name: 'Mechanical fixture, NOT live AI', reasoning: false, input: ['text'],
       cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }, contextWindow: 128000, maxTokens: 4096 }],
     streamSimple(model, context) {
+      if (mode === 'worker' && process.env.P2O_TEST_WORKER_FAULT === 'quota') {
+        const message: AssistantMessage = { role: 'assistant', api: 'openai-completions', provider: model.provider, model: model.id,
+          content: [], timestamp: Date.now(), stopReason: 'error', errorMessage: '429 GoUsageLimitError: Go usage limit exceeded',
+          usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } } };
+        const stream = createAssistantMessageEventStream();
+        stream.push({ type: 'error', reason: 'error', error: message }); stream.end(message); return stream;
+      }
       const system = getCurrentSystemPrompt(context.messages);
       const tools = getCurrentTools(context.messages).map(tool => tool.name);
       const results = context.messages.filter((message: any) => message.role === 'toolResult');

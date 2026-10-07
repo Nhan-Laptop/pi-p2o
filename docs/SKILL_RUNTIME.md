@@ -5,8 +5,8 @@ network route, session identity or filesystem capability.
 
 ## Knowledge
 
-Both lead and worker have `p2o_skill_list {offset?}`, `p2o_skill_read {id, offset?}` and `p2o_capabilities`.
-Listing is paginated (eight skills); read results contain `nextOffset` when another page is required. The
+Both lead and worker have `p2o_skill_list {query?, offset?}`, `p2o_skill_read {id, offset?}` and `p2o_capabilities`.
+Listing is paginated (eight skills), supports keyword search, and surfaces application playbooks/overlays before general techniques; read results contain `nextOffset` when another page is required. The
 catalog's document IDs include main skills, owned references, recipe/rule documents, `shared:scope`,
 `shared:handoffs`, and approved evidence-ledger sections. Relative links are rewritten to `p2o-skill:` IDs.
 Hashes identify original package document bytes, not target evidence; read text may have rewritten links.
@@ -29,7 +29,7 @@ is instantiated per assessment; document pages retain consistent bytes/hashes du
 An unknown runtime is neither supported nor forbidden. Optional `probe: "python" | "semgrep"` runs a fixed,
 bounded offline functional check once per run and attaches its evidence ID. These probes never download or
 install software. The Semgrep check requires an actual finding on a tiny synthetic input, not just `--version`.
-The original pinned image may lack Semgrep; unavailable is an honest outcome, not a successful scan.
+The original pinned image may lack Semgrep; unavailable is an honest outcome, not a successful scan. Version checks and metrics are disabled in the sandbox. Semgrep's `--validate` still fetches remote lint rules and must not be used offline; the local positive/negative scan is the functional validation. If a command times out and stops the executor, target tools are withdrawn; record gaps and finish instead of repeatedly probing the dead sandbox.
 
 Authenticated requests, bodies, browser execution, managed local labs, OAST and parallel-request harnesses
 remain unsupported. An offline renderer or simulated bot cannot prove execution in a real browser. Source
@@ -66,6 +66,7 @@ for a retained artifact.
 - `execution`: `tested`, `not_tested`, `blocked`, `not_applicable`.
 - `proof`: `static_trace`, `offline_reproduction`, `live_reproduction`.
 - `evidenceRefs`, `negativeControls`: same-run command receipt IDs.
+- `policyBasis`: `explicit_contract`, `boundary_invariant`, or `inferred`; `expectedPolicy` names the rule and its provenance. Inferred policy must remain `open_proof_gap`, including when a sibling appears safe.
 - `limitations`: required; `control`: required for `ruled_out`.
 - `requirement`: known capability ID required for `blocked`.
 - `supersedes`: latest candidate record ID for revisions; contradictory branches are rejected, not silently merged.
@@ -73,7 +74,7 @@ for a retained artifact.
 - `independentEvidenceRef`: requires another worker's receipt and a matching runtime-tested candidate recorded
   by that worker. The lead must still inspect semantics; metadata is not an independent truth oracle.
 
-Blocked execution cannot establish closed runtime proof. Unknown evidence IDs and malformed transitions are
+Blocked execution cannot establish closed runtime proof. A capability already proven available cannot be named as a fabricated block; missing policy or observations are open proof gaps instead. Unknown evidence IDs and malformed transitions are
 rejected with actionable errors. Legacy notes/reports remain accepted as attributed text; their `clean` outcome
 is only a summary of the stated tested slice, never proof of universal safety. New records use version 2 and IDs;
 old records without them remain readable. The ledger is available to both roles, with `p2o_ledger {id}` for one complete bounded record, so agents can cite observations without rerunning

@@ -60,12 +60,17 @@ export class SkillLibrary {
     this.catalog = value;
     return value;
   }
-  async list(offset = 0) {
+  async list(offset = 0, query = '') {
     if (!Number.isInteger(offset) || offset < 0) throw new Error('Invalid catalog offset');
+    if (typeof query !== 'string' || query.length > 80) throw new Error('Invalid catalog query');
     const c = await this.load();
-    const entries = c.skills.slice(offset, offset + 8).map(s => ({ ...s, documents: c.documents.filter(d => d.id === s.document || d.id.startsWith(`${s.name}:`)).map(d => d.id) }));
-    return { entries, sharedDocuments: c.documents.filter(d => d.id.startsWith('shared:')).map(d => d.id), total: c.skills.length,
-      ...(offset + entries.length < c.skills.length ? { nextOffset: offset + entries.length } : {}) };
+    const words = query.toLowerCase().trim().split(/\s+/).filter(Boolean);
+    const rank = { playbook: 0, overlay: 1, technique: 2 };
+    const selected = c.skills.filter(s => words.every(w => `${s.name} ${s.description}`.toLowerCase().includes(w)))
+      .sort((a, b) => rank[a.kind] - rank[b.kind] || a.name.localeCompare(b.name));
+    const entries = selected.slice(offset, offset + 8).map(s => ({ ...s, documents: c.documents.filter(d => d.id === s.document || d.id.startsWith(`${s.name}:`)).map(d => d.id) }));
+    return { entries, sharedDocuments: c.documents.filter(d => d.id.startsWith('shared:')).map(d => d.id), total: selected.length, query,
+      ...(offset + entries.length < selected.length ? { nextOffset: offset + entries.length } : {}) };
   }
   async read(id: string, offset = 0): Promise<DocumentPage> {
     if (typeof id !== 'string' || !Number.isInteger(offset) || offset < 0) throw new Error('Invalid document request');

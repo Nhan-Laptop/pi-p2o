@@ -11,7 +11,8 @@ const LIMITS = (options: SandboxOptions) => ['--read-only', '--cap-drop', 'ALL',
   '--ulimit', 'nofile=1024:1024', '--log-driver', 'none',
   '--tmpfs', `/tmp:rw,nosuid,nodev,size=${options.tmpBytes ?? '64m'},mode=1777`,
   '--tmpfs', `/work:rw,nosuid,nodev,size=${options.workBytes ?? '64m'},mode=1777`,
-  '--workdir', '/work', '--env', 'HOME=/tmp', '--env', 'TMPDIR=/tmp'];
+  '--workdir', '/work', '--env', 'HOME=/tmp', '--env', 'TMPDIR=/tmp',
+  '--env', 'SEMGREP_ENABLE_VERSION_CHECK=0', '--env', 'SEMGREP_SEND_METRICS=off'];
 
 /** Optional sizing/labelling. Delegated runs get more scratch and a run label for verified sweeps. */
 export interface SandboxOptions { tmpBytes?: string; workBytes?: string; runId?: string; image?: string }
@@ -26,6 +27,7 @@ export class Sandbox {
   private names = new Set<string>();
   private shell?: string;
   private source?: string;
+  get isStopped(): boolean { return this.stopped; }
   sourceSkipped = 0;
   sourceManifest: Record<string, string> = {};
   private endpoint?: string;

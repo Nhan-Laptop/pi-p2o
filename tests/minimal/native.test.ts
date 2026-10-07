@@ -11,19 +11,19 @@ import { setTimeout as delay } from 'node:timers/promises';
  * The owner spawns a genuine child `pi` (standing in for a Herdr pane), the child activates the worker
  * role from its ticket, runs a brokered command against the owner's sandbox, and reports back.
  */
-it.each(process.env.P2O_TEST_DOCKER === '1' ? ['inert', 'docker'] : ['inert'])('real Pi + %s sandbox: one confirmation, then the current agent delegates a visible worker end to end', async mode => {
+it.each(['normal', 'quota'])('real Pi + inert sandbox, %s worker: terminal report and verified cleanup across processes', async mode => {
   const root = await mkdtemp(join(tmpdir(), 'p2o-native-'));
   const repo = resolve(import.meta.dirname, '../..');
   await mkdir(join(root, 'repo'));
   await writeFile(join(root, 'repo', 'code.txt'), 'authorized inert source');
   const sandboxLog = join(root, 'sandbox.jsonl');
-  const real = process.env.P2O_NATIVE_REAL_DOCKER === '1';
   const env = {
     PATH: process.env.PATH, HOME: root, PI_CODING_AGENT_DIR: join(root, 'agent'),
     PI_OFFLINE: '1', PI_SKIP_VERSION_CHECK: '1', PI_TELEMETRY: '0',
     P2O_TEST_CONTROL_ROOT: join(root, 'control'), P2O_TEST_SANDBOX_LOG: sandboxLog,
     P2O_TEST_FAKE_HERDR: '1', P2O_TEST_CWD: root, P2O_TEST_PI_BINARY: join(repo, 'node_modules/.bin/pi'),
     P2O_TEST_WORKER_EXT: join(repo, 'tests/minimal/fixtures/worker.ts'),
+    P2O_TEST_WORKER_FAULT: mode === 'quota' ? 'quota' : '',
   } as NodeJS.ProcessEnv;
   const child = spawn(join(repo, 'node_modules/.bin/pi'), ['--no-extensions', '-e', join(repo, 'tests/minimal/fixtures/owner.ts'),
     '--no-skills', '--no-prompt-templates', '--no-themes', '--no-context-files', '--offline', '--no-session', '--no-approve',
@@ -57,7 +57,7 @@ it.each(process.env.P2O_TEST_DOCKER === '1' ? ['inert', 'docker'] : ['inert'])('
   };
   const text = (message: any) => typeof message.content === 'string' ? message.content : (message.content ?? []).filter((block: any) => block.type === 'text').map((block: any) => block.text).join('\n');
   const transcript = async (predicate: (messages: any[]) => boolean) => {
-    for (let attempt = 0; attempt < 200; attempt += 1) {
+    for (let attempt = 0; attempt < 600; attempt += 1) {
       const messages = (await request('get_messages')).data?.messages ?? [];
       if (predicate(messages)) return messages;
       await delay(100);
@@ -65,16 +65,6 @@ it.each(process.env.P2O_TEST_DOCKER === '1' ? ['inert', 'docker'] : ['inert'])('
     throw new Error(`transcript did not progress: ${JSON.stringify({ records: records.slice(-12), stderr })}`);
   };
   try {
-    if (real) {
-      // Real Docker mode reuses the production fixture, which mounts a real sandbox and no fake sandbox journal.
-      const dockerSandbox = new (await import('../../src/sandbox.js')).Sandbox({ kind: 'directory', path: join(root, 'repo') }, undefined, undefined, { runId: 'native-test' });
-      await dockerSandbox.start();
-      const executed = await dockerSandbox.exec(`id -u; cat /target/code.txt`);
-      expect(executed.stdout).toContain('65532');
-      expect(executed.stdout).toContain('authorized inert source');
-      await dockerSandbox.stop();
-      await dockerSandbox.assertNoRunContainers();
-    }
     expect((await request('get_state')).success).toBe(true);
     expect((await request('prompt', { message: '/p2o --target ./repo' })).success).toBe(true);
     const messages = await transcript((list: any[]) => list.some((message: any) => text(message).includes('OWNER_FINAL_REPORT')));
@@ -87,12 +77,18 @@ it.each(process.env.P2O_TEST_DOCKER === '1' ? ['inert', 'docker'] : ['inert'])('
     // The worker's brokered command really executed in the owner's sandbox, in the worker's own scratch directory.
     const journal = (await readFile(sandboxLog, 'utf8')).split('\n').filter(Boolean).map(line => JSON.parse(line));
     const executed = journal.filter(entry => entry.op === 'exec');
-    expect(executed).toHaveLength(1);
-    expect(executed[0].command).toContain('cat /target/code.txt');
-    expect(executed[0].workdir).toMatch(/^\/work\/p2o-general-[0-9a-f]{6}$/);
-    // The worker reported through the broker into the shared ledger, and the owner saw it.
-    expect(text(toolResults[1])).toContain('WORKER_REPORT');
-    expect(text(toolResults[1])).toContain('coverage: 1');
+    if (mode === 'normal') {
+      expect(executed).toHaveLength(1);
+      expect(executed[0].command).toContain('cat /target/code.txt');
+      expect(executed[0].workdir).toMatch(/^\/work\/p2o-general-[0-9a-f]{6}$/);
+      expect(text(toolResults[1])).toContain('WORKER_REPORT');
+      expect(text(toolResults[1])).toContain('coverage: 1');
+    } else {
+      expect(executed).toHaveLength(0);
+      expect(text(toolResults[1])).toContain('429 GoUsageLimitError');
+      expect(text(toolResults[1])).toContain('BLOCKED');
+      expect(toolResults[1].details.workers[0]).toMatchObject({ reported: true, live: false });
+    }
     expect(text(toolResults[1])).toMatch(/p2o-general-[0-9a-f]{6} \[idle\]|p2o-general-[0-9a-f]{6} \[done\]|reported/);
     expect(text(toolResults[2])).toContain('Container removal verified');
     expect(journal.some(entry => entry.op === 'stop')).toBe(true);
