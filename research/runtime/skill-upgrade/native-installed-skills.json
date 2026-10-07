@@ -1,0 +1,28 @@
+{
+  "count": 21,
+  "names": [
+    "attack-surface-mapping",
+    "authorization-auditing",
+    "binary-auditing",
+    "compiler-invariant-auditing",
+    "data-flow-analysis",
+    "deserialization-and-dispatch-auditing",
+    "dynamic-analysis",
+    "exploitability-assessment",
+    "fastapi-security-parity",
+    "fuzzing",
+    "memory-safety-auditing",
+    "parser-differential-auditing",
+    "patch-diff-analysis",
+    "race-condition-auditing",
+    "remediation",
+    "sandbox-boundary-analysis",
+    "source-code-auditing",
+    "state-and-lifetime-auditing",
+    "web-object-authorization",
+    "web-output-context",
+    "web-route-input-inventory"
+  ],
+  "diagnostics": [],
+  "promptEntries": 21
+}

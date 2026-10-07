@@ -1,0 +1,116 @@
+[
+  {
+    "schema": "user-interrupted-attempt/1",
+    "fixture": "route-inventory",
+    "workspace": "${HOME}/project/pi-p2o/tmp/skill-upgrade/clean-work-route-inventory/live-C-d9k8cx",
+    "plannedRunId": "C-route-inventory-vulnerable-r3",
+    "correlation": "Next sequential plan entry after completed receipts; not a synthesized benchmark receipt.",
+    "orderIndex": 7,
+    "arm": "C",
+    "variant": "vulnerable",
+    "rep": 3,
+    "outcome": "user_interrupted",
+    "securityOutcome": null,
+    "usage": null,
+    "stopAt": "2026-10-07T15:07:06.529501+00:00",
+    "actualSourceHashes": {
+      "README.md": "869b1305f9686653dc50478175f88b028f71e6a1fcfd67d140b38ed85d0af62e",
+      "requirements.txt": "026694f955ef759428692cb9b38d4d0cea8e318564f2f0e8bf8c1076eda0b9bb",
+      "static/index.html": "826f6315e0394bc0c04b75efb7ebf9990b6cd0d5138707c17c246321480c17ac",
+      "docs/openapi.yaml": "81eed16920bd190096f4fc4f11b73941f0e665618dafb5241fa94400418eaef1",
+      "app/security.py": "d7a6ad012351179039417a8a37f05a7c09f67284bc870e539df4adc2d6998a04",
+      "app/main.py": "4389f7c1922eaa042a7cf13327b60005945a5584bd9ae87ab6d831ad1cd248eb",
+      "app/admin.py": "ba103cc9d57dc23355efa0bdffcea4eec80d7b4d1413b0de246919156a5c2618",
+      "app/__init__.py": "41719f33bb4ee9c062b7065537dd00d4189bf9207b9b970d08a8ac8742255644",
+      "app/legacy.py": "4ed3656ec915d8c1ece4d17535d56ed5a3e3b394d7a879808c5fe24a1a981771"
+    },
+    "actualTargetMatchesExpected": true,
+    "exports": [
+      {
+        "runId": "run-muy8gcyp-rwwvrt",
+        "originalPath": "${HOME}/project/pi-p2o/tmp/skill-upgrade/clean-work-route-inventory/live-C-d9k8cx/.p2o-reports/run-muy8gcyp-rwwvrt-85caa1c0-6508-4a8b-9c55-9d5451f6db93.json",
+        "preservedPath": "tmp/skill-upgrade/clean-campaign-route-inventory/interrupted-attempts/run-muy8gcyp-rwwvrt-85caa1c0-6508-4a8b-9c55-9d5451f6db93.json",
+        "sha256": "39904f40bad58b26fa9338cf963ee56350d7057ba5a23bac01e0ebbd00a43243",
+        "reason": "shutdown",
+        "leadModel": "openai-codex-account-3/gpt-6.1-sol",
+        "sourceHashes": {
+          "static/index.html": "826f6315e0394bc0c04b75efb7ebf9990b6cd0d5138707c17c246321480c17ac",
+          "README.md": "869b1305f9686653dc50478175f88b028f71e6a1fcfd67d140b38ed85d0af62e",
+          "docs/openapi.yaml": "81eed16920bd190096f4fc4f11b73941f0e665618dafb5241fa94400418eaef1",
+          "app/security.py": "d7a6ad012351179039417a8a37f05a7c09f67284bc870e539df4adc2d6998a04",
+          "app/main.py": "4389f7c1922eaa042a7cf13327b60005945a5584bd9ae87ab6d831ad1cd248eb",
+          "app/admin.py": "ba103cc9d57dc23355efa0bdffcea4eec80d7b4d1413b0de246919156a5c2618",
+          "app/__init__.py": "41719f33bb4ee9c062b7065537dd00d4189bf9207b9b970d08a8ac8742255644",
+          "app/legacy.py": "4ed3656ec915d8c1ece4d17535d56ed5a3e3b394d7a879808c5fe24a1a981771",
+          "requirements.txt": "026694f955ef759428692cb9b38d4d0cea8e318564f2f0e8bf8c1076eda0b9bb"
+        },
+        "exportSourceHashesMatchExpected": true,
+        "extensionHashMatchesFrozen": true,
+        "recordKinds": {
+          "lifecycle": 12,
+          "evidence": 7,
+          "note": 2,
+          "open": 1,
+          "candidate": 3,
+          "coverage": 8
+        },
+        "loadedDocumentHashes": {
+          "web-route-input-inventory": "2c31b5816bccee99fab10bea92822659ee9f382147c5c61c7e42e9647c82ad3f",
+          "fastapi-security-parity": "bc367a7e4c446be5b18fca8d363c22f9fafa441456d5150366852c2f815b466e",
+          "shared:scope": "92c5ccb8d8d87aac9cbb67ddd8a1ba3d58ae427e8b4d8437d53371d2eb13edc5",
+          "shared:handoffs": "90adb87d0bb8abab13e5344148078f7d80d767a02435d28c0a421311295c625c",
+          "fastapi-security-parity:enforcement-parity": "6010a58e3912174df15756d470263309c3297800403c26f2d01c91fbb3ce0ece",
+          "source-code-auditing:claim-provenance": "4d2c686c0f759691a7a632ffbb056eaf583ba7697b24caf294eadbd6667d1240",
+          "web-route-input-inventory:route-inventory-method": "569320a95a59ac43dfb7775a68435c5c43e24a546a8ac0899d82fb4dc5e52334",
+          "authorization-auditing": "6ada0355e96e057ab79ce8b48a527fe291f14f6a52755c32aaf1705a7492efc0"
+        }
+      }
+    ]
+  },
+  {
+    "schema": "user-interrupted-attempt/1",
+    "fixture": "object-authorization",
+    "workspace": "${HOME}/project/pi-p2o/tmp/skill-upgrade/clean-work-object-authorization/live-C-MXb2TJ",
+    "plannedRunId": "C-object-authorization-vulnerable-r1",
+    "correlation": "Next sequential plan entry after completed receipts; not a synthesized benchmark receipt.",
+    "orderIndex": 11,
+    "arm": "C",
+    "variant": "vulnerable",
+    "rep": 1,
+    "outcome": "user_interrupted",
+    "securityOutcome": null,
+    "usage": null,
+    "stopAt": "2026-10-07T15:07:06.529501+00:00",
+    "actualSourceHashes": {
+      "README.md": "04f2f6c1ccdc6561c53fd411e8c57508801e83797412f2503d03a2eecb2d822e",
+      "policy.py": "be993aaefb055cb430784e76f6ac32b84fb6d568a1acd82ca0d9d8089fad1402",
+      "orders.py": "b21dbb40662f94fb2fd834d493d99e991fbbb6e888aa24120715655ea00122e4",
+      "probe.py": "38be090e76e27ebe816c1139c1536c5d4d8cee0bec56d05aa653f35d293b068a"
+    },
+    "actualTargetMatchesExpected": true,
+    "exports": [
+      {
+        "runId": "run-muy8qgqr-r42dal",
+        "originalPath": "${HOME}/project/pi-p2o/tmp/skill-upgrade/clean-work-object-authorization/live-C-MXb2TJ/.p2o-reports/run-muy8qgqr-r42dal-2837f20a-cab2-4939-93c4-4575f2016c75.json",
+        "preservedPath": "tmp/skill-upgrade/clean-campaign-object-authorization/interrupted-attempts/run-muy8qgqr-r42dal-2837f20a-cab2-4939-93c4-4575f2016c75.json",
+        "sha256": "fb59225adc03e91d21d61953a086857a6603445bb0485cdfa7846ec14eebb8bd",
+        "reason": "shutdown",
+        "leadModel": "openai-codex-account-3/gpt-6.1-sol",
+        "sourceHashes": {
+          "README.md": "04f2f6c1ccdc6561c53fd411e8c57508801e83797412f2503d03a2eecb2d822e",
+          "policy.py": "be993aaefb055cb430784e76f6ac32b84fb6d568a1acd82ca0d9d8089fad1402",
+          "orders.py": "b21dbb40662f94fb2fd834d493d99e991fbbb6e888aa24120715655ea00122e4",
+          "probe.py": "38be090e76e27ebe816c1139c1536c5d4d8cee0bec56d05aa653f35d293b068a"
+        },
+        "exportSourceHashesMatchExpected": true,
+        "extensionHashMatchesFrozen": true,
+        "recordKinds": {
+          "lifecycle": 4
+        },
+        "loadedDocumentHashes": {
+          "web-object-authorization": "f8b3e7b91e447bb284ec88006effdeb6235f141d1bf3b8890542322ab0f40180"
+        }
+      }
+    ]
+  }
+]

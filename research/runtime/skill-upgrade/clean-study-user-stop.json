@@ -1,0 +1,66 @@
+{
+  "at": "2026-10-07T15:07:06.529501+00:00",
+  "reason": "User requested combined report now; no more study runs.",
+  "controllerPid": 270416,
+  "stoppedRunnerPids": {
+    "route-inventory": 262390,
+    "object-authorization": 262444
+  },
+  "existingPiAbortResults": [
+    {
+      "pid": 279035,
+      "fixture": "route-inventory",
+      "rpcAbortWritten": false,
+      "error": "[Errno 6] No such device or address: '/proc/279035/fd/0'"
+    },
+    {
+      "pid": 281040,
+      "fixture": "object-authorization",
+      "rpcAbortWritten": false,
+      "error": "[Errno 6] No such device or address: '/proc/281040/fd/0'"
+    }
+  ],
+  "remainingPiAfterEof": [],
+  "priorStatus": {
+    "schema": "clean-study-status/1",
+    "startedAt": "2026-10-07T14:08:10.176281+00:00",
+    "updatedAt": "2026-10-07T15:07:04.654048+00:00",
+    "state": "running",
+    "frozen": "3d254feb91f7f13226079b1c875a29781ae58462",
+    "model": "gpt-6.1-sol",
+    "provider": "openai-codex-account-3",
+    "thinking": "xhigh",
+    "maxConcurrentShards": 2,
+    "maxReportedCostUsd": 10,
+    "reportedSdkCostUsd": 0,
+    "costWarning": "SDK cost 0 is not billing proof; billing remains unverified.",
+    "receipts": 18,
+    "plannedRuns": 72,
+    "activeFixtures": [
+      "route-inventory",
+      "object-authorization"
+    ],
+    "queuedFixtures": [
+      "output-context",
+      "fastapi-parity"
+    ],
+    "shards": {
+      "route-inventory": {
+        "state": "running",
+        "pid": 262390,
+        "startedAt": "2026-10-07T14:08:12.166041+00:00"
+      },
+      "object-authorization": {
+        "state": "running",
+        "pid": 262444,
+        "startedAt": "2026-10-07T14:08:13.216391+00:00"
+      }
+    },
+    "stopReason": null,
+    "outcomes": {
+      "finished": 18
+    },
+    "validRuns": 18,
+    "ownLabelLeakCount": 0
+  }
+}

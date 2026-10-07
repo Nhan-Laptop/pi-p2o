@@ -1,0 +1,68 @@
+{
+  "schema": "clean-study-combined-summary/1",
+  "finalizedAt": "2026-10-07T15:41:42.479481+00:00",
+  "status": "partial_finalized_no_resume",
+  "scopeDecision": "FINALIZE_WITH_PARTIAL_BENCHMARK; no more paid/live agents",
+  "noRestart": true,
+  "frozenRevision": "3d254feb91f7f13226079b1c875a29781ae58462",
+  "baselineRevision": "4321f2ba4b3f65b902c20252595bae50e73eb5cd",
+  "profile": {
+    "model": "gpt-6.1-sol",
+    "provider": "openai-codex-account-3",
+    "thinking": "xhigh",
+    "pi": "${HOME}/.pi/agent/bin/pi"
+  },
+  "plannedRuns": 72,
+  "completedCleanReceipts": 18,
+  "interruptedAttempts": 2,
+  "plannedIncomplete": 54,
+  "completedOutcomes": {
+    "finished": 18,
+    "valid": 18
+  },
+  "fixtureCompletedCounts": {
+    "route-inventory": 7,
+    "object-authorization": 11,
+    "output-context": 0,
+    "fastapi-parity": 0
+  },
+  "qualityClaim": "none; partial and unbalanced sample, descriptive artifacts only",
+  "reportedSdkCostUsd": 0,
+  "sdkCostWarning": "zero SDK cost is not billing proof",
+  "sourceBlindingAudit": {
+    "completedReceiptSourceHashesChecked": 18,
+    "completedTargetManifestMatches": 18,
+    "interruptedTargetManifestMatches": 2,
+    "interruptedShutdownExports": 2,
+    "interruptedShutdownExportManifestMatches": 2,
+    "durableExportChecks": {
+      "checked": 13,
+      "exactSourceSetAndHashMatches": 13,
+      "forbiddenPaths": 0,
+      "extensionHashMismatches": 0
+    },
+    "loadedDocumentHashMismatches": 0,
+    "actualAssistantProviderModelMismatches": 0,
+    "fixtureFilesChanged": 0,
+    "fixtureFilesMissing": 0
+  },
+  "acceptedCandidates": 37,
+  "acceptedCandidateReferenceFailures": 0,
+  "missingPolicyBasis": 0,
+  "resourceCleanup": {
+    "knownCompletedAndInterruptedLabels": 20,
+    "remainingContainers": 0,
+    "remainingNetworks": 0,
+    "remainingVolumes": 0,
+    "unrelatedGlobalContainersUntouched": true
+  },
+  "artifacts": {
+    "report": "tmp/skill-upgrade/clean-study/REPORT.md",
+    "audit": "tmp/skill-upgrade/clean-study/AUDIT.json",
+    "metrics": "tmp/skill-upgrade/clean-study/METRICS.json",
+    "status": "tmp/skill-upgrade/clean-study/status.json",
+    "interrupted": "tmp/skill-upgrade/clean-study/INTERRUPTED-ATTEMPTS.json",
+    "cleanup": "tmp/skill-upgrade/clean-study/own-label-resources.json",
+    "stop": "tmp/skill-upgrade/clean-study/USER-STOP.json"
+  }
+}

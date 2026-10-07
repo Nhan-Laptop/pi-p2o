@@ -1,6 +1,12 @@
 # Skill and testing capability enhancement plan
 
-**Status: proposed; implementation and benchmarks not started.**
+**Status: implemented and runtime-verified; benchmark evidence is partial and explicitly non-conclusive.**
+
+The release is implemented on `3d254fe` (pushed and reinstalled with Pi). The clean real-agent benchmark was
+user-stopped after 18/72 valid runs; those results are retained as mechanism and runtime evidence only, not as a
+quality comparison or effectiveness claim. Earlier campaigns remain marked confounded by generated-bytecode
+leakage. See `research/runtime/skill-upgrade/clean-study-combined-summary.json` and the full local report under
+`tmp/skill-upgrade/clean-study/REPORT.md`.
 
 This roadmap follows the skill-library comparison and the completed 0.3.0 delegation baseline.
 The old delegation plan was removed; its history remains in Git. This roadmap does not change user settings
@@ -18,7 +24,9 @@ Improve practical assessment quality without replacing the existing evidence-fir
 
 **Selection rule:** adopt the best-fitting ideas from the inspected Strix checkout, not its whole corpus.
 “Best-fitting” means relevant, concrete, bounded and compatible with our evidence policy. It does **not** mean
-proven more effective: live benchmarks decide which additions remain.
+proven more effective: live benchmarks decide which additions remain. The implemented release retains the
+three web playbooks and FastAPI overlay because they pass catalog/provenance validation and were exercised in
+controlled local runs; no broad security-effectiveness claim is made from the partial benchmark.
 
 ## 2. Verified baseline and gaps
 

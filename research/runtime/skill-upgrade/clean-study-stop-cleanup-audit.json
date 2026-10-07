@@ -1,0 +1,51 @@
+{
+  "knownRunIds": [
+    "run-muy6nd05-7uuz4i",
+    "run-muy6ne12-xu6rly",
+    "run-muy6toha-wh5sa8",
+    "run-muy6yv6c-4764ay",
+    "run-muy6z412-738wbi",
+    "run-muy75mcg-i4fjpo",
+    "run-muy7604n-c0tm8d",
+    "run-muy7dutk-xzn0k0",
+    "run-muy7fz5j-fiymlf",
+    "run-muy7ot3n-2lsudb",
+    "run-muy7qzii-5kx2xh",
+    "run-muy7tul9-m6c9af",
+    "run-muy80c9s-a565sa",
+    "run-muy80nbu-tls9fa",
+    "run-muy86vzv-68vuuf",
+    "run-muy87ymt-kzpyzy",
+    "run-muy8e847-s9vwto",
+    "run-muy8gcyp-rwwvrt",
+    "run-muy8ksc9-0n5366",
+    "run-muy8qgqr-r42dal"
+  ],
+  "ownLabelRemainingContainers": [],
+  "unscoredWorkspaces": [
+    {
+      "fixture": "route-inventory",
+      "workspace": "${HOME}/project/pi-p2o/tmp/skill-upgrade/clean-work-route-inventory/live-C-d9k8cx",
+      "partialExports": [
+        {
+          "path": "${HOME}/project/pi-p2o/tmp/skill-upgrade/clean-work-route-inventory/live-C-d9k8cx/.p2o-reports/run-muy8gcyp-rwwvrt-85caa1c0-6508-4a8b-9c55-9d5451f6db93.json",
+          "runId": "run-muy8gcyp-rwwvrt",
+          "reason": "shutdown",
+          "records": 33
+        }
+      ]
+    },
+    {
+      "fixture": "object-authorization",
+      "workspace": "${HOME}/project/pi-p2o/tmp/skill-upgrade/clean-work-object-authorization/live-C-MXb2TJ",
+      "partialExports": [
+        {
+          "path": "${HOME}/project/pi-p2o/tmp/skill-upgrade/clean-work-object-authorization/live-C-MXb2TJ/.p2o-reports/run-muy8qgqr-r42dal-2837f20a-cab2-4939-93c4-4575f2016c75.json",
+          "runId": "run-muy8qgqr-r42dal",
+          "reason": "shutdown",
+          "records": 4
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,15 @@
+{
+  "image": "sha256:027064f1f3f5492f4e750c67b20f9a0efae5a6f0e6e7e324d9669e43e0d0ccd1",
+  "python": {
+    "code": 0,
+    "stdout": "P2O_PYTHON_OK\n",
+    "stderr": "",
+    "truncated": false
+  },
+  "semgrep": {
+    "code": 0,
+    "stdout": "P2O_SEMGREP_OK\n",
+    "stderr": "",
+    "truncated": false
+  }
+}

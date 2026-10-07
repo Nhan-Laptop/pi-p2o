@@ -1,0 +1,79 @@
+{
+  "status": "passed",
+  "model": "deepseek/deepseek-flash",
+  "elapsedMs": 105690,
+  "extensionSha256": "9688c2c25b7b19f22c900566033981c3fe1a2a961788e3d5b7d5acf4d7ac9480",
+  "sourceHashes": {
+    "app.py": "9349f95eeacf0eb340afc582995b247333345072cecfc54819f55e0eafc4ee3b",
+    "README.md": "ceec69456643f1fc4878b49c0e4ab41cdef1ef79ab61e6aedfc1565d8ac6fe85"
+  },
+  "image": "ghcr.io/usestrix/strix-sandbox@sha256:f6906c3114e504fd1a218fcf028d7a0e46851118403a438b63956de6ea7c4331",
+  "evidenceSha256": "81e242cf30080e413b92d0ed70d86b3a4106bb66604eb18e6b137aa7a0f49458",
+  "records": 44,
+  "receiptCount": 13,
+  "knowledgeReads": [
+    {
+      "by": "owner",
+      "text": "skill_read shared:handoffs sha256=90adb87d0bb8abab13e5344148078f7d80d767a02435d28c0a421311295c625c offset=0"
+    },
+    {
+      "by": "owner",
+      "text": "skill_read web-output-context sha256=91167e3466a0b1632b3a1a878abb7a88849c951723a176a36e89f192b1a2392e offset=0"
+    },
+    {
+      "by": "owner",
+      "text": "skill_read web-output-context:source-sink-context sha256=b08e5664c0166860a91d9edaa63796475e39da0795c555fba62918e37f760139 offset=0"
+    },
+    {
+      "by": "p2o-discovery-5ae92b",
+      "text": "skill_read web-output-context:source-sink-context sha256=b08e5664c0166860a91d9edaa63796475e39da0795c555fba62918e37f760139 offset=0"
+    },
+    {
+      "by": "p2o-discovery-5ae92b",
+      "text": "skill_read shared:handoffs sha256=90adb87d0bb8abab13e5344148078f7d80d767a02435d28c0a421311295c625c offset=0"
+    }
+  ],
+  "workerResults": [
+    {
+      "workerId": "p2o-discovery-5ae92b",
+      "reported": true,
+      "commandsUsed": 3,
+      "confidence": "high",
+      "dynamicGapRecorded": true
+    }
+  ],
+  "candidateStates": [
+    {
+      "id": "52acf953-f7b9-4f7d-9c59-1db6371e4a4d",
+      "by": "owner",
+      "closure": "open_proof_gap",
+      "execution": "tested",
+      "proof": "offline_reproduction",
+      "policyBasis": "inferred"
+    },
+    {
+      "id": "8fc8f65f-425a-4718-a460-9e5d8ba4e3d0",
+      "by": "owner",
+      "closure": "open_proof_gap",
+      "execution": "tested",
+      "proof": "offline_reproduction",
+      "policyBasis": "inferred"
+    },
+    {
+      "id": "ccbd34c6-2225-4524-aebe-97f246be9d48",
+      "by": "p2o-discovery-5ae92b",
+      "closure": "open_proof_gap",
+      "execution": "not_tested",
+      "proof": "static_trace",
+      "policyBasis": "inferred"
+    }
+  ],
+  "cleanup": {
+    "ownedRunId": "run-muy0ziuj-frzw09",
+    "newContainers": [],
+    "leakedWorkers": [],
+    "observedNewContainers": [
+      "p2o-18102b6d-20bb-4724-8c59-71e70c892ae9"
+    ]
+  }
+}

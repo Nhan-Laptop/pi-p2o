@@ -1,0 +1,37 @@
+{
+  "status": "passed",
+  "model": "deepseek/deepseek-flash",
+  "elapsedMs": 37180,
+  "extensionSha256": "9688c2c25b7b19f22c900566033981c3fe1a2a961788e3d5b7d5acf4d7ac9480",
+  "image": "sha256:027064f1f3f5492f4e750c67b20f9a0efae5a6f0e6e7e324d9669e43e0d0ccd1",
+  "rulesHash": "22df0cb3adb782ee1e817fe8d22714420ba989612aba12e434e674bc5ae79e8d",
+  "outcome": {
+    "vulnerableCandidates": 5,
+    "fixedCandidates": 0,
+    "errors": 0
+  },
+  "evidenceSha256": "1df27ecb7aeba2b6945fee8d238e190453af3ad21655afbfb15c83b7e94d8cb6",
+  "records": 11,
+  "receiptCount": 5,
+  "knowledgeReads": [
+    {
+      "by": "owner",
+      "text": "skill_read source-code-auditing:offline-python-semgrep sha256=0e8745c9556879fe7fd43537ebd88d89006789b31124503c8e8e4f39e60ddab1 offset=0"
+    },
+    {
+      "by": "owner",
+      "text": "skill_read source-code-auditing:offline-python-semgrep-rules sha256=22df0cb3adb782ee1e817fe8d22714420ba989612aba12e434e674bc5ae79e8d offset=0"
+    }
+  ],
+  "candidateStates": [
+    {
+      "id": "b8d3d20c-37ad-408a-a377-16752e6ff769",
+      "by": "owner",
+      "closure": "open_proof_gap",
+      "execution": "tested",
+      "proof": "offline_reproduction",
+      "policyBasis": "inferred"
+    }
+  ],
+  "cleanup": ""
+}

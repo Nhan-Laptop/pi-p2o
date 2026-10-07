@@ -1,0 +1,1350 @@
+{
+  "version": 1,
+  "note": "Original raw files remain in ignored local storage. No RPC messages/thinking streams or user challenge source are published.",
+  "artifacts": [
+    {
+      "path": "campaign/suite-2026-10-07T06-55-32-225Z-seed7.0-B-fastapi-parity-vulnerable-r3.json",
+      "sha256": "b1eea2f5c0278a6ad2d21f6a52eef83ed7e0a2ced4ce6222c0709fd3d72a9d8c"
+    },
+    {
+      "path": "campaign/suite-2026-10-07T06-55-32-225Z-seed7.0-B-fastapi-parity-vulnerable-r3.export.json",
+      "sha256": "aaecea54e66de6d018527aed749fe35ec764d20552ac7126eebb60073a87121d"
+    },
+    {
+      "path": "campaign/suite-2026-10-07T06-55-32-225Z-seed7.1-B-output-context-vulnerable-r1.json",
+      "sha256": "07d18d11a61caa85f56b0b5350fd49e459ba4cca7e609af853da160837b7776a"
+    },
+    {
+      "path": "campaign/suite-2026-10-07T06-55-32-225Z-seed7.1-B-output-context-vulnerable-r1.export.json",
+      "sha256": "db3f836f6273f53d25332e5f9143a325089b8ae7264cda2882d885a2c4de0abc"
+    },
+    {
+      "path": "campaign/suite-2026-10-07T06-55-32-225Z-seed7.10-B-route-inventory-vulnerable-r1.json",
+      "sha256": "7932768d31eaec946fbab94a337929689c8d33fe83b51fded4b1621e31ab91f7"
+    },
+    {
+      "path": "campaign/suite-2026-10-07T06-55-32-225Z-seed7.10-B-route-inventory-vulnerable-r1.export.json",
+      "sha256": "33814d97f0130ee4f467618a1c66f127a56fdb0d74617922fe869be57b2d71a8"
+    },
+    {
+      "path": "campaign/suite-2026-10-07T06-55-32-225Z-seed7.11-A-object-authorization-vulnerable-r3.json",
+      "sha256": "d7546f2836b8082f68ddf6d9842972284d714184812c45767fb4248126f2117a"
+    },
+    {
+      "path": "campaign/suite-2026-10-07T06-55-32-225Z-seed7.12-C-object-authorization-fixed-r2.json",
+      "sha256": "5964ecadabf2df958d2f23fdf051a8f50e9272dec920e89cb23406c06da904af"
+    },
+    {
+      "path": "campaign/suite-2026-10-07T06-55-32-225Z-seed7.12-C-object-authorization-fixed-r2.export.json",
+      "sha256": "590c126ca5f455c1e5271fb376f2160810cf8ab710b2d83fa719e8e6ac21a584"
+    },
+    {
+      "path": "campaign/suite-2026-10-07T06-55-32-225Z-seed7.13-C-route-inventory-fixed-r2.json",
+      "sha256": "65da1d26be39b47c5e73e0843cb97ac7d5bce18a25ad24676f67f7d9f5ce5b5b"
+    },
+    {
+      "path": "campaign/suite-2026-10-07T06-55-32-225Z-seed7.13-C-route-inventory-fixed-r2.export.json",
+      "sha256": "f4801c299c7fd1fc0ae5939f6b141136da67f46761c51d5c87f462ee24f4291f"
+    },
+    {
+      "path": "campaign/suite-2026-10-07T06-55-32-225Z-seed7.14-C-fastapi-parity-vulnerable-r2.json",
+      "sha256": "ebbd141eb394ec5231631dcf294680c90f9417a2e5f0c72cc19e170d7c87c895"
+    },
+    {
+      "path": "campaign/suite-2026-10-07T06-55-32-225Z-seed7.14-C-fastapi-parity-vulnerable-r2.export.json",
+      "sha256": "2e29f91b2780e86a2f28be657af9d8a76a737ca795a52ef0543f193a965ece70"
+    },
+    {
+      "path": "campaign/suite-2026-10-07T06-55-32-225Z-seed7.15-B-route-inventory-vulnerable-r2.json",
+      "sha256": "201c0951b844aa1ee95801bb7832bcf27b6fc2968f8a686bb8342cd1f3510cb6"
+    },
+    {
+      "path": "campaign/suite-2026-10-07T06-55-32-225Z-seed7.15-B-route-inventory-vulnerable-r2.export.json",
+      "sha256": "237d2b7198f99b29b69f13050085a975f38acadee747bc6179d13ce04856b6f7"
+    },
+    {
+      "path": "campaign/suite-2026-10-07T06-55-32-225Z-seed7.16-B-object-authorization-fixed-r1.json",
+      "sha256": "cdb8bf2a4d790e59a0bba8f25d0911f25b817d8f37ddf999534f6d8f7c6be119"
+    },
+    {
+      "path": "campaign/suite-2026-10-07T06-55-32-225Z-seed7.16-B-object-authorization-fixed-r1.export.json",
+      "sha256": "5eeccde7af5ef5b11e4fb98a5975bc50dd3a8e147c9f5e7398b8adcb5ce153a4"
+    },
+    {
+      "path": "campaign/suite-2026-10-07T06-55-32-225Z-seed7.17-B-fastapi-parity-vulnerable-r1.json",
+      "sha256": "75ff4daafa59344c6f7b81c0f41489d7c1a7a67e521da871e88b8d3ce7a963d5"
+    },
+    {
+      "path": "campaign/suite-2026-10-07T06-55-32-225Z-seed7.17-B-fastapi-parity-vulnerable-r1.export.json",
+      "sha256": "420e0f4588a21f80ff6bb8cb2f2d9b68e86f9685b346edc2c74fd078f3c15b55"
+    },
+    {
+      "path": "campaign/suite-2026-10-07T06-55-32-225Z-seed7.18-A-route-inventory-vulnerable-r2.json",
+      "sha256": "c4e0f123314149a46237915bd62b425826ba8be853d5f822563145c462874521"
+    },
+    {
+      "path": "campaign/suite-2026-10-07T06-55-32-225Z-seed7.19-C-output-context-fixed-r1.json",
+      "sha256": "c181a7ccad326edb8960abe9dc8a8a5f0c4f10a15a0ce1a686dc70e929ec9908"
+    },
+    {
+      "path": "campaign/suite-2026-10-07T06-55-32-225Z-seed7.19-C-output-context-fixed-r1.export.json",
+      "sha256": "ea5430e7acdd44e4fdfae691ad5a8357383aa8068b1cb45f37108b6614098318"
+    },
+    {
+      "path": "campaign/suite-2026-10-07T06-55-32-225Z-seed7.2-B-fastapi-parity-fixed-r2.json",
+      "sha256": "3a94fa16ca94c74d4c2958d91d675b2545d3f1197130f21620e0e602b2877fdf"
+    },
+    {
+      "path": "campaign/suite-2026-10-07T06-55-32-225Z-seed7.2-B-fastapi-parity-fixed-r2.export.json",
+      "sha256": "b5c9740be10aa4e835c4510757c161fbff8fdfa8e6315ef0d39e3b8bb6b8bead"
+    },
+    {
+      "path": "campaign/suite-2026-10-07T06-55-32-225Z-seed7.20-A-route-inventory-fixed-r1.json",
+      "sha256": "ec9953c9aed06a0046ec5c1253a74dd3e1e57547c09f05aa44656e86b19963a3"
+    },
+    {
+      "path": "campaign/suite-2026-10-07T06-55-32-225Z-seed7.21-B-route-inventory-fixed-r3.json",
+      "sha256": "e0f06684bed4918a88c51bc3130565671e7a09219847169cefad758b92cff387"
+    },
+    {
+      "path": "campaign/suite-2026-10-07T06-55-32-225Z-seed7.21-B-route-inventory-fixed-r3.export.json",
+      "sha256": "65657fe329a27b09fafd766abbc6d874593e679ef1bde68205f5ecd845c63d40"
+    },
+    {
+      "path": "campaign/suite-2026-10-07T06-55-32-225Z-seed7.22-C-output-context-vulnerable-r2.json",
+      "sha256": "d52b8e38f738ca94bc4ced6193280ab8c1ba21de876dafef98962aa66f248918"
+    },
+    {
+      "path": "campaign/suite-2026-10-07T06-55-32-225Z-seed7.22-C-output-context-vulnerable-r2.export.json",
+      "sha256": "c94729ee59a93f84c5329a25c998318526d5c24151c33442614f2513636d37bd"
+    },
+    {
+      "path": "campaign/suite-2026-10-07T06-55-32-225Z-seed7.23-C-fastapi-parity-fixed-r3.json",
+      "sha256": "69eec2c37881d5ae8b556c84a8b062011f51a1da756661bb676dc4876b7ee26a"
+    },
+    {
+      "path": "campaign/suite-2026-10-07T06-55-32-225Z-seed7.23-C-fastapi-parity-fixed-r3.export.json",
+      "sha256": "5e462009f845844bb3ac31686bd8a3cf185e29ddd9f01a0bd78c76217bb938b2"
+    },
+    {
+      "path": "campaign/suite-2026-10-07T06-55-32-225Z-seed7.24-B-output-context-vulnerable-r3.json",
+      "sha256": "cb4756eaa45ef6272ba34e12d9c423d40c1f3a72cdd49d8552e622f7bda7e9f0"
+    },
+    {
+      "path": "campaign/suite-2026-10-07T06-55-32-225Z-seed7.24-B-output-context-vulnerable-r3.export.json",
+      "sha256": "217b67b91877da92ba6f85f9189deade628949b342eee0a5daad3cb01aabdfa2"
+    },
+    {
+      "path": "campaign/suite-2026-10-07T06-55-32-225Z-seed7.25-C-fastapi-parity-fixed-r2.json",
+      "sha256": "1b26585f8116cf95a36ffe60c4665da61e667a098860a1caa9b2a4d1bb697e75"
+    },
+    {
+      "path": "campaign/suite-2026-10-07T06-55-32-225Z-seed7.25-C-fastapi-parity-fixed-r2.export.json",
+      "sha256": "c63ceb391e7f379e784da5a6c7e84896f00b8c6fa15a6f2d330572dff057d27f"
+    },
+    {
+      "path": "campaign/suite-2026-10-07T06-55-32-225Z-seed7.26-B-object-authorization-vulnerable-r3.json",
+      "sha256": "0345baa8c7a65e34b83688e7fef944fdf06e04fac0e767a39ea6927e08693342"
+    },
+    {
+      "path": "campaign/suite-2026-10-07T06-55-32-225Z-seed7.26-B-object-authorization-vulnerable-r3.export.json",
+      "sha256": "b1daa01d99f305bce5f7821faa3a2ed57ccda909527be90828d21339bb78bbc6"
+    },
+    {
+      "path": "campaign/suite-2026-10-07T06-55-32-225Z-seed7.27-A-object-authorization-fixed-r2.json",
+      "sha256": "58052a09b4f2b1bb6f2f7e6f1b58dcc384509ff133822482d136235adbd2c66a"
+    },
+    {
+      "path": "campaign/suite-2026-10-07T06-55-32-225Z-seed7.28-A-route-inventory-fixed-r2.json",
+      "sha256": "851431ef27e4422d79fec36b8d71c97582e92a36458d094faad2475439d601ef"
+    },
+    {
+      "path": "campaign/suite-2026-10-07T06-55-32-225Z-seed7.29-A-fastapi-parity-vulnerable-r3.json",
+      "sha256": "8a874f544e0d1c9196e61f3e961245b66227eeab659c3e54cb6d61383d210562"
+    },
+    {
+      "path": "campaign/suite-2026-10-07T06-55-32-225Z-seed7.3-B-object-authorization-vulnerable-r2.json",
+      "sha256": "7f8be8b32e3f38a7754ac9e0bbe7a3d1b85b771a5cce3ed271936cdc6f17becf"
+    },
+    {
+      "path": "campaign/suite-2026-10-07T06-55-32-225Z-seed7.3-B-object-authorization-vulnerable-r2.export.json",
+      "sha256": "e1634c96dfe13fee0e4c9a67bade27b44e096f50c92fe40c87d1fb4e494fc8d5"
+    },
+    {
+      "path": "campaign/suite-2026-10-07T06-55-32-225Z-seed7.30-C-route-inventory-fixed-r3.json",
+      "sha256": "826e9e17b43392ea20993241a7491448253c05059cbd24b33eaa3d69de96b672"
+    },
+    {
+      "path": "campaign/suite-2026-10-07T06-55-32-225Z-seed7.30-C-route-inventory-fixed-r3.export.json",
+      "sha256": "3e5d85dcce6cef23af5dc029a7da88fc2aabc8a4e2556b2e39e8816a5f125834"
+    },
+    {
+      "path": "campaign/suite-2026-10-07T06-55-32-225Z-seed7.31-B-route-inventory-fixed-r2.json",
+      "sha256": "0450fb0515af1dde39a734ce245a11c0dac78caf74b4709f76e7abff044b6786"
+    },
+    {
+      "path": "campaign/suite-2026-10-07T06-55-32-225Z-seed7.31-B-route-inventory-fixed-r2.export.json",
+      "sha256": "0e45e3bc8df46263ecf61cc74b3cd11ab8aa92f2d093712178311d3f23beb714"
+    },
+    {
+      "path": "campaign/suite-2026-10-07T06-55-32-225Z-seed7.32-C-object-authorization-fixed-r1.json",
+      "sha256": "38bfae92be36aef00ad8a3677a36b407a6a1a448806c72f7d88a20677a749c9e"
+    },
+    {
+      "path": "campaign/suite-2026-10-07T06-55-32-225Z-seed7.32-C-object-authorization-fixed-r1.export.json",
+      "sha256": "fb4237c6f84bdf03897ec2c04a57ee111d7ecb2fdba4e815a0ce0a0812dc1fe7"
+    },
+    {
+      "path": "campaign/suite-2026-10-07T06-55-32-225Z-seed7.33-A-fastapi-parity-fixed-r3.json",
+      "sha256": "5c9522ec69a55365b14facbd82ff516a0a3314661b72a2407b48f6f6c42b80fd"
+    },
+    {
+      "path": "campaign/suite-2026-10-07T06-55-32-225Z-seed7.34-A-fastapi-parity-vulnerable-r2.json",
+      "sha256": "159bf6b8db5fad1b2df9e05d308efdc751318d408635fab92d5883e7c1f03a21"
+    },
+    {
+      "path": "campaign/suite-2026-10-07T06-55-32-225Z-seed7.35-C-object-authorization-vulnerable-r1.json",
+      "sha256": "c29982024b79f01359fc6b2a162e71d27e7ef042e375a5d5f8404d6b14ca230b"
+    },
+    {
+      "path": "campaign/suite-2026-10-07T06-55-32-225Z-seed7.35-C-object-authorization-vulnerable-r1.export.json",
+      "sha256": "2443408912c28983ec09685d699fa9386ad2acf1325f9059b640ef4fd5be32cd"
+    },
+    {
+      "path": "campaign/suite-2026-10-07T06-55-32-225Z-seed7.36-C-fastapi-parity-vulnerable-r3.json",
+      "sha256": "4293196109a6f00d8fc0a6a1b27eb69de3721ff8e34d39b25ca37a22b5c6e62a"
+    },
+    {
+      "path": "campaign/suite-2026-10-07T06-55-32-225Z-seed7.36-C-fastapi-parity-vulnerable-r3.export.json",
+      "sha256": "4b0a118d2b95cb15dfe4e4d971402e688e44b90611501d62b834074b88a72fcf"
+    },
+    {
+      "path": "campaign/suite-2026-10-07T06-55-32-225Z-seed7.37-B-output-context-fixed-r3.json",
+      "sha256": "9c5debcc651a8d3959974b924afd3467383aaee1dce6e86bd16435850ec7d885"
+    },
+    {
+      "path": "campaign/suite-2026-10-07T06-55-32-225Z-seed7.37-B-output-context-fixed-r3.export.json",
+      "sha256": "2985793b80830a14732cb61a34d32cc3f912dd82ae2f7a2177935b0ba478ea8d"
+    },
+    {
+      "path": "campaign/suite-2026-10-07T06-55-32-225Z-seed7.38-B-output-context-vulnerable-r2.json",
+      "sha256": "b7b5b3f6f1082a48a0fedc3d0ec811a5dd6ae99cf032f66446359a43f4d639c4"
+    },
+    {
+      "path": "campaign/suite-2026-10-07T06-55-32-225Z-seed7.38-B-output-context-vulnerable-r2.export.json",
+      "sha256": "0f5d4315595cce7e12e58a9e8c32bbbe72f288371160c1da95c1f2ec8f5a870b"
+    },
+    {
+      "path": "campaign/suite-2026-10-07T06-55-32-225Z-seed7.39-C-route-inventory-vulnerable-r1.json",
+      "sha256": "89f570e8cc2458bb8cfc8ff3f153b741fb4c3d0cea51cfadc19fc2c03be11954"
+    },
+    {
+      "path": "campaign/suite-2026-10-07T06-55-32-225Z-seed7.39-C-route-inventory-vulnerable-r1.export.json",
+      "sha256": "41d18b22ab9e649a4351f3a58f95096728432ada4314034de7a75388f42788b7"
+    },
+    {
+      "path": "campaign/suite-2026-10-07T06-55-32-225Z-seed7.4-A-route-inventory-vulnerable-r1.json",
+      "sha256": "cdc1e422cdd22b53cd6042bfc6e59c3ce5264f25c708290371aaa8996fe20171"
+    },
+    {
+      "path": "campaign/suite-2026-10-07T06-55-32-225Z-seed7.40-C-object-authorization-fixed-r3.json",
+      "sha256": "b6fbc3ad9d795dfe3332011722b1b98679ee70f4f4fbc31610f77371de9367c8"
+    },
+    {
+      "path": "campaign/suite-2026-10-07T06-55-32-225Z-seed7.40-C-object-authorization-fixed-r3.export.json",
+      "sha256": "ba8771b2312f55106cffe935d8450dce85154c1486cab71910b5a2b5a1431cad"
+    },
+    {
+      "path": "campaign/suite-2026-10-07T06-55-32-225Z-seed7.41-A-route-inventory-fixed-r3.json",
+      "sha256": "c4d14e07c542bf665d6c87c44eebd08ec39bd6c38d8d607cc973bcc0334bba02"
+    },
+    {
+      "path": "campaign/suite-2026-10-07T06-55-32-225Z-seed7.42-B-output-context-fixed-r1.json",
+      "sha256": "8e6c125c8acd29070d64e956c8b64410189050c2fdd60a3804b91c984dfddc68"
+    },
+    {
+      "path": "campaign/suite-2026-10-07T06-55-32-225Z-seed7.42-B-output-context-fixed-r1.export.json",
+      "sha256": "19c308040764ecbedc75679ae24ac8863330173af1fd956962ae544ac9cbf24b"
+    },
+    {
+      "path": "campaign/suite-2026-10-07T06-55-32-225Z-seed7.43-A-fastapi-parity-fixed-r1.json",
+      "sha256": "4a0ead0771d661e4076f04e6ac25b8dc54816f4eabb155840b5246e504f580f7"
+    },
+    {
+      "path": "campaign/suite-2026-10-07T06-55-32-225Z-seed7.44-B-object-authorization-fixed-r2.json",
+      "sha256": "0dfbb301d088190c613fd2cd40588f28a1fee7209d59f9effb183add36416654"
+    },
+    {
+      "path": "campaign/suite-2026-10-07T06-55-32-225Z-seed7.44-B-object-authorization-fixed-r2.export.json",
+      "sha256": "1d276d91868abb04982ad6f22d06fc25e2f0e744c4217380066eab4562d20f9e"
+    },
+    {
+      "path": "campaign/suite-2026-10-07T06-55-32-225Z-seed7.45-B-fastapi-parity-vulnerable-r2.json",
+      "sha256": "df11544d4948c4dc2a8f995785970fd278c18e39860d58eeb21b302b271386b5"
+    },
+    {
+      "path": "campaign/suite-2026-10-07T06-55-32-225Z-seed7.45-B-fastapi-parity-vulnerable-r2.export.json",
+      "sha256": "1b16e98bd6b869ab8c5900e929eba22cb285b5075adbe76938ddf4951674766a"
+    },
+    {
+      "path": "campaign/suite-2026-10-07T06-55-32-225Z-seed7.46-A-output-context-vulnerable-r2.json",
+      "sha256": "22bebdbfca1a9efe74723264c02cab1457359b2f6cd568947324c2e21da898b2"
+    },
+    {
+      "path": "campaign/suite-2026-10-07T06-55-32-225Z-seed7.47-C-route-inventory-fixed-r1.json",
+      "sha256": "2f75a2142674f139466d6d5daabe75005e5a9a940b7d917bfc81b5973372da9e"
+    },
+    {
+      "path": "campaign/suite-2026-10-07T06-55-32-225Z-seed7.47-C-route-inventory-fixed-r1.export.json",
+      "sha256": "f1482c40ec343f0b7db2052a35338d1ab7241f312845e62585cbeb788434f011"
+    },
+    {
+      "path": "campaign/suite-2026-10-07T06-55-32-225Z-seed7.48-A-object-authorization-vulnerable-r2.json",
+      "sha256": "49784c09074dd91c7b9d10aeaa7a6cca83032f7aa2e5239a4886ade93cf9526d"
+    },
+    {
+      "path": "campaign/suite-2026-10-07T06-55-32-225Z-seed7.49-C-output-context-vulnerable-r1.json",
+      "sha256": "522aca2923545edf2f5dab431e0030cafdcae49e38e86f36227db0da14a1be02"
+    },
+    {
+      "path": "campaign/suite-2026-10-07T06-55-32-225Z-seed7.49-C-output-context-vulnerable-r1.export.json",
+      "sha256": "06be3cc9b2e151b62348d5e33a5faa24d361c4f1727054df1dc4be2f0424f54a"
+    },
+    {
+      "path": "campaign/suite-2026-10-07T06-55-32-225Z-seed7.5-B-output-context-fixed-r2.json",
+      "sha256": "2a155c9a91ddbda2c0b6aba414d1391db058372494fe10849f1e0a4d83f9933c"
+    },
+    {
+      "path": "campaign/suite-2026-10-07T06-55-32-225Z-seed7.5-B-output-context-fixed-r2.export.json",
+      "sha256": "6a045fea660e6da86e7e3153e1fca4349462c78be52524f01bfb4b4071c5cfa6"
+    },
+    {
+      "path": "campaign/suite-2026-10-07T06-55-32-225Z-seed7.50-B-route-inventory-vulnerable-r3.json",
+      "sha256": "a7a8ea81e20f31dedd21003aa22b5403fe716c6586cd94d0a18779f73d4c4456"
+    },
+    {
+      "path": "campaign/suite-2026-10-07T06-55-32-225Z-seed7.50-B-route-inventory-vulnerable-r3.export.json",
+      "sha256": "0a57f9bbd2521665c6a952f637ae1dcb25cb971cbd3a0d49d064cb1dd252b700"
+    },
+    {
+      "path": "campaign/suite-2026-10-07T06-55-32-225Z-seed7.51-A-output-context-vulnerable-r1.json",
+      "sha256": "1c4601cb1e47abdc57a8d8aecf9866f7be0644a7badd843123d497e185be7c94"
+    },
+    {
+      "path": "campaign/suite-2026-10-07T06-55-32-225Z-seed7.52-C-fastapi-parity-fixed-r1.json",
+      "sha256": "7edb9c73c8474443fd29e7dff46b897d6d68be63b57433f3cd5b92f5515c7961"
+    },
+    {
+      "path": "campaign/suite-2026-10-07T06-55-32-225Z-seed7.52-C-fastapi-parity-fixed-r1.export.json",
+      "sha256": "ebbdb3d943bd9073cc2357077659ef750f42b630589335d8f5c9708f7c01dde6"
+    },
+    {
+      "path": "campaign/suite-2026-10-07T06-55-32-225Z-seed7.53-C-object-authorization-vulnerable-r2.json",
+      "sha256": "54ef9c1931cbdcbb19537ec8665a5c8b4172fcae7d92385c3b8386f1ec52f172"
+    },
+    {
+      "path": "campaign/suite-2026-10-07T06-55-32-225Z-seed7.53-C-object-authorization-vulnerable-r2.export.json",
+      "sha256": "54935ea017b5b4f01f9cf0c7d034279688924c35e7b0f3b272df398212fa0378"
+    },
+    {
+      "path": "campaign/suite-2026-10-07T06-55-32-225Z-seed7.54-B-fastapi-parity-fixed-r3.json",
+      "sha256": "71a5aee082ffd4239942917a566448b3cae6dc5c5d8eff1a07304a4d0c8c8552"
+    },
+    {
+      "path": "campaign/suite-2026-10-07T06-55-32-225Z-seed7.54-B-fastapi-parity-fixed-r3.export.json",
+      "sha256": "9e79957b54f4484279db4841b4c31c755ef9b056799d90925023350e92669a71"
+    },
+    {
+      "path": "campaign/suite-2026-10-07T06-55-32-225Z-seed7.55-A-output-context-fixed-r2.json",
+      "sha256": "29c4b917cbe907d845aa5d52693e99f71c2b58a26e295b7b19e5697aa16781ff"
+    },
+    {
+      "path": "campaign/suite-2026-10-07T06-55-32-225Z-seed7.56-A-route-inventory-vulnerable-r3.json",
+      "sha256": "ecfa73606cd40684bae495079b82b4534939f8bba3b6ff708940fc4348c05827"
+    },
+    {
+      "path": "campaign/suite-2026-10-07T06-55-32-225Z-seed7.57-A-object-authorization-fixed-r3.json",
+      "sha256": "97878b94998109e0e9df332dfd96106af918185cdc489211d091fb69df7ee13d"
+    },
+    {
+      "path": "campaign/suite-2026-10-07T06-55-32-225Z-seed7.58-C-output-context-fixed-r3.json",
+      "sha256": "e9ca2a6457fb4ba7ebd314e649011da51c5d2358f6bfa809faf87297a9e0830a"
+    },
+    {
+      "path": "campaign/suite-2026-10-07T06-55-32-225Z-seed7.58-C-output-context-fixed-r3.export.json",
+      "sha256": "84816ea3ad84ff75341faf3a982018df1ad622c9f1bbdb5f44bb99cced33340e"
+    },
+    {
+      "path": "campaign/suite-2026-10-07T06-55-32-225Z-seed7.59-C-output-context-vulnerable-r3.json",
+      "sha256": "47358375585cfbb358874935b20f8ef3f4539f9ae09990b489c30b11b0d7bf8d"
+    },
+    {
+      "path": "campaign/suite-2026-10-07T06-55-32-225Z-seed7.59-C-output-context-vulnerable-r3.export.json",
+      "sha256": "4f0d4a05cb895cf02b571e54bd8a98620d94be5d2082a222b8ae17343862070b"
+    },
+    {
+      "path": "campaign/suite-2026-10-07T06-55-32-225Z-seed7.6-A-object-authorization-vulnerable-r1.json",
+      "sha256": "c66dbac0dcfedc4a07c83829d64e7699cf78273d40115a2131458cea62a4eaf5"
+    },
+    {
+      "path": "campaign/suite-2026-10-07T06-55-32-225Z-seed7.60-A-object-authorization-fixed-r1.json",
+      "sha256": "65f04c97b26ce42138940848277ea48d27995d4a0e71dc53df87db5df51f559f"
+    },
+    {
+      "path": "campaign/suite-2026-10-07T06-55-32-225Z-seed7.61-C-output-context-fixed-r2.json",
+      "sha256": "90d035f34c6e5a536f78e61ffeb674e3007eafd3a804dc80180107b8900273c9"
+    },
+    {
+      "path": "campaign/suite-2026-10-07T06-55-32-225Z-seed7.61-C-output-context-fixed-r2.export.json",
+      "sha256": "48a92cab2ff4c3211eb368375437b4a3af0cb90fc8344524627c5a9c8a47a0b9"
+    },
+    {
+      "path": "campaign/suite-2026-10-07T06-55-32-225Z-seed7.62-B-route-inventory-fixed-r1.json",
+      "sha256": "314f4b59a9ec6dd11100a631949e2e036753f85e162025ed85d11001fd898be2"
+    },
+    {
+      "path": "campaign/suite-2026-10-07T06-55-32-225Z-seed7.62-B-route-inventory-fixed-r1.export.json",
+      "sha256": "a08aa22e1d55a36ba7c6b83f930d836641b9a393efc2ce1abbde3271242ce94d"
+    },
+    {
+      "path": "campaign/suite-2026-10-07T06-55-32-225Z-seed7.63-C-route-inventory-vulnerable-r2.json",
+      "sha256": "52f5ba23cd504690f1812ef992b712be82d60bbd33e0005f1e6209e345e72c54"
+    },
+    {
+      "path": "campaign/suite-2026-10-07T06-55-32-225Z-seed7.63-C-route-inventory-vulnerable-r2.export.json",
+      "sha256": "b6dd7f5249d64286ba5e7c7a7c51926c3249b011d2bdebf8f49b7d13a09abe26"
+    },
+    {
+      "path": "campaign/suite-2026-10-07T06-55-32-225Z-seed7.64-A-output-context-fixed-r1.json",
+      "sha256": "23ee71b322f2be1a53aed51452bd36ac182de6a9a915ae793cdd6f1a51af66a3"
+    },
+    {
+      "path": "campaign/suite-2026-10-07T06-55-32-225Z-seed7.65-B-object-authorization-vulnerable-r1.json",
+      "sha256": "21d1c0b24b9bfbef200329006927c18100b46a54ceb83a2f283f8fc05300742d"
+    },
+    {
+      "path": "campaign/suite-2026-10-07T06-55-32-225Z-seed7.65-B-object-authorization-vulnerable-r1.export.json",
+      "sha256": "537936b72d661411f686f809cbfb2f519f43a4c9e52ea2ae16662a34c2fdf5b8"
+    },
+    {
+      "path": "campaign/suite-2026-10-07T06-55-32-225Z-seed7.66-B-fastapi-parity-fixed-r1.json",
+      "sha256": "b3af0332975c7548795802f49a04f5e8b73f7d80aba8fb4b4cf05ed3b608e200"
+    },
+    {
+      "path": "campaign/suite-2026-10-07T06-55-32-225Z-seed7.66-B-fastapi-parity-fixed-r1.export.json",
+      "sha256": "d4da261c78b0fa0520794e73ce794f2f3fa23bd0b8b5f2405f46354a72f7da69"
+    },
+    {
+      "path": "campaign/suite-2026-10-07T06-55-32-225Z-seed7.67-B-object-authorization-fixed-r3.json",
+      "sha256": "daf4644ca79e1d453d3a60333f7eaa4d32fce5dbb517eec35f9ec345a7d4eeed"
+    },
+    {
+      "path": "campaign/suite-2026-10-07T06-55-32-225Z-seed7.67-B-object-authorization-fixed-r3.export.json",
+      "sha256": "f1f657efae67541c24fb934c50be2a1adfd99f28791d76b6d7d26c6ecd902d5b"
+    },
+    {
+      "path": "campaign/suite-2026-10-07T06-55-32-225Z-seed7.68-C-fastapi-parity-vulnerable-r1.json",
+      "sha256": "29d74d0cf5b766aee42963fb02245d9106aed8fd5ea16920869a7a786f9ed4f9"
+    },
+    {
+      "path": "campaign/suite-2026-10-07T06-55-32-225Z-seed7.68-C-fastapi-parity-vulnerable-r1.export.json",
+      "sha256": "b0f3706c59dc67a026f798c7b75ae3fa83371ef758d2e5e204ef341c88c60ef7"
+    },
+    {
+      "path": "campaign/suite-2026-10-07T06-55-32-225Z-seed7.69-C-route-inventory-vulnerable-r3.json",
+      "sha256": "d1f54baaa95e5c99cdfaebbb40db255d61069a5235edbf908aa67babe1975e4b"
+    },
+    {
+      "path": "campaign/suite-2026-10-07T06-55-32-225Z-seed7.69-C-route-inventory-vulnerable-r3.export.json",
+      "sha256": "a818554ded9f4a7ef0707792b6403d2d95d4d0e08b37bbfe41a341b4dd117181"
+    },
+    {
+      "path": "campaign/suite-2026-10-07T06-55-32-225Z-seed7.7-A-output-context-vulnerable-r3.json",
+      "sha256": "3c0cfb673f5c1866ee1d186c94e430c6803480184210c088f86d5f69bc7baaeb"
+    },
+    {
+      "path": "campaign/suite-2026-10-07T06-55-32-225Z-seed7.70-A-fastapi-parity-fixed-r2.json",
+      "sha256": "476962922f03e498f6b5de21715a7e9a9fb5be1d93a28e9b5c0f124f5f57750b"
+    },
+    {
+      "path": "campaign/suite-2026-10-07T06-55-32-225Z-seed7.71-A-fastapi-parity-vulnerable-r1.json",
+      "sha256": "ac2bf79435281ccc55e9b691f8efbcdf6cb9f9c1aa8f290d62e4ac88b125be5f"
+    },
+    {
+      "path": "campaign/suite-2026-10-07T06-55-32-225Z-seed7.8-C-object-authorization-vulnerable-r3.json",
+      "sha256": "328321d12b8d59f742ebf13ff36e4e519369d643fc81ef10c38b7e49dcacf193"
+    },
+    {
+      "path": "campaign/suite-2026-10-07T06-55-32-225Z-seed7.8-C-object-authorization-vulnerable-r3.export.json",
+      "sha256": "d7f3a181266897210564a2b04bb751f2ca619733912b79c104c4cc0557cd6dd7"
+    },
+    {
+      "path": "campaign/suite-2026-10-07T06-55-32-225Z-seed7.9-A-output-context-fixed-r3.json",
+      "sha256": "ef5d9d928a87662b9c51a8e8bea3512fefb386a187634fa7aef93cb256c2b651"
+    },
+    {
+      "path": "campaign/suite-2026-10-07T06-55-32-225Z-seed7.summary.json",
+      "sha256": "9fac721425514dc29814ab236ded42f92eb38af508130f136ae15aeb145b9bc1"
+    },
+    {
+      "path": "campaign-v2/suite-2026-10-07T09-17-54-511Z-seed7.0-B-fastapi-parity-vulnerable-r3.json",
+      "sha256": "29165fc4f27dbc8461647e11e2dd46f4a7de58c8ce8889fdc181e2e26b2114a3"
+    },
+    {
+      "path": "campaign-v2/suite-2026-10-07T09-17-54-511Z-seed7.0-B-fastapi-parity-vulnerable-r3.export.json",
+      "sha256": "93545b46784333f6e73a54e7ed2b16592d4b63ca0269830cb3221cc48abc3fdc"
+    },
+    {
+      "path": "campaign-v2/suite-2026-10-07T09-17-54-511Z-seed7.1-B-output-context-vulnerable-r1.json",
+      "sha256": "85ae6882616377699a11931f0d687ecdfa2375bb981e20f82975aace8c5bd25c"
+    },
+    {
+      "path": "campaign-v2/suite-2026-10-07T09-17-54-511Z-seed7.1-B-output-context-vulnerable-r1.export.json",
+      "sha256": "11403d1700bf58f1cfae4a9de6ec60242bad166f41e8f6d7459e3dd269cf05a1"
+    },
+    {
+      "path": "campaign-v2/suite-2026-10-07T09-17-54-511Z-seed7.10-B-route-inventory-vulnerable-r1.json",
+      "sha256": "581bdbf542d52c4391231773fdb6683f14cc1cd7673ce5ec746dd588ab2cc5c9"
+    },
+    {
+      "path": "campaign-v2/suite-2026-10-07T09-17-54-511Z-seed7.10-B-route-inventory-vulnerable-r1.export.json",
+      "sha256": "f92cee9a07f6b732142e2c08a6dd3b8c6c68727ef5c00a1236b7fee4112f4133"
+    },
+    {
+      "path": "campaign-v2/suite-2026-10-07T09-17-54-511Z-seed7.11-A-object-authorization-vulnerable-r3.json",
+      "sha256": "c90488e4bbe2d3b9367fafba66f2c9cc5e2019baea293784a2c9174a9f64b68f"
+    },
+    {
+      "path": "campaign-v2/suite-2026-10-07T09-17-54-511Z-seed7.12-C-object-authorization-fixed-r2.json",
+      "sha256": "e9d5421a929d74c3dad57e7c35c55bf7959a1fcbc1afe5803eb7c086053cf6a8"
+    },
+    {
+      "path": "campaign-v2/suite-2026-10-07T09-17-54-511Z-seed7.12-C-object-authorization-fixed-r2.export.json",
+      "sha256": "392debe86c5e65079134efcc8750b358542c1bac00873760ada6a15f148d8aab"
+    },
+    {
+      "path": "campaign-v2/suite-2026-10-07T09-17-54-511Z-seed7.13-C-route-inventory-fixed-r2.json",
+      "sha256": "ed93974927af0fa159580f5cf031a5db3bbb1017ce5cf85fdfc535183a79e9ec"
+    },
+    {
+      "path": "campaign-v2/suite-2026-10-07T09-17-54-511Z-seed7.13-C-route-inventory-fixed-r2.export.json",
+      "sha256": "21dbb1e08917162e3c3e9e44c2db616949a7e53d79be6d897e392b3d33571212"
+    },
+    {
+      "path": "campaign-v2/suite-2026-10-07T09-17-54-511Z-seed7.14-C-fastapi-parity-vulnerable-r2.json",
+      "sha256": "27d961e6f936270549039c9f8761932295b63f344e47113fe9c1271e3eb49f02"
+    },
+    {
+      "path": "campaign-v2/suite-2026-10-07T09-17-54-511Z-seed7.14-C-fastapi-parity-vulnerable-r2.export.json",
+      "sha256": "52f41aaf4bb11b25a71ad68b3358ae38d0eed5fa394763cad91ca8ed1845a366"
+    },
+    {
+      "path": "campaign-v2/suite-2026-10-07T09-17-54-511Z-seed7.15-B-route-inventory-vulnerable-r2.json",
+      "sha256": "2784dde6a71e8f9dc8d5d1917f6310c10e7de47a34feead5d165af5d6f83aca0"
+    },
+    {
+      "path": "campaign-v2/suite-2026-10-07T09-17-54-511Z-seed7.15-B-route-inventory-vulnerable-r2.export.json",
+      "sha256": "4b965f2a0efc2265830a13c838accaeae3613b73cc06b4c24cea7a12364a4a30"
+    },
+    {
+      "path": "campaign-v2/suite-2026-10-07T09-17-54-511Z-seed7.16-B-object-authorization-fixed-r1.json",
+      "sha256": "c4099ad56bd51b35ab0db38070c751deea5757ec02d086f74fc64c87ee6c3566"
+    },
+    {
+      "path": "campaign-v2/suite-2026-10-07T09-17-54-511Z-seed7.16-B-object-authorization-fixed-r1.export.json",
+      "sha256": "1756fe8da376509097dc847704c49d04d45197f216ec7e7a78b799b6bb2cc3ee"
+    },
+    {
+      "path": "campaign-v2/suite-2026-10-07T09-17-54-511Z-seed7.17-B-fastapi-parity-vulnerable-r1.json",
+      "sha256": "178919ebd38cb0f1e04227084cf86ed34f9fce7c4161c89f27ec65167501624f"
+    },
+    {
+      "path": "campaign-v2/suite-2026-10-07T09-17-54-511Z-seed7.17-B-fastapi-parity-vulnerable-r1.export.json",
+      "sha256": "15fd255a0209031e94034b87c46114ed6ea164c254f1d5de48f8a6df13c173c6"
+    },
+    {
+      "path": "campaign-v2/suite-2026-10-07T09-17-54-511Z-seed7.18-A-route-inventory-vulnerable-r2.json",
+      "sha256": "a73295d438d4847434263f20d95677c63ec016fd78a470bec0ecdee0a2206c6e"
+    },
+    {
+      "path": "campaign-v2/suite-2026-10-07T09-17-54-511Z-seed7.19-C-output-context-fixed-r1.json",
+      "sha256": "8c815c8dd0720d37cfe56fe4cc10b065b811d36e77d18585ca86ae907ae32aed"
+    },
+    {
+      "path": "campaign-v2/suite-2026-10-07T09-17-54-511Z-seed7.19-C-output-context-fixed-r1.export.json",
+      "sha256": "789acc858c43134f0623f561e8a4a851a1d3414b3925d846cbe02e263928af45"
+    },
+    {
+      "path": "campaign-v2/suite-2026-10-07T09-17-54-511Z-seed7.2-B-fastapi-parity-fixed-r2.json",
+      "sha256": "9a9de869e879648da39d75644189cf957a880381fb8d2ea4c17a864b454b4787"
+    },
+    {
+      "path": "campaign-v2/suite-2026-10-07T09-17-54-511Z-seed7.2-B-fastapi-parity-fixed-r2.export.json",
+      "sha256": "c55a29bae20e5dc8471af3026a6e6218b07560a9d5adbed552ef2853e214a70c"
+    },
+    {
+      "path": "campaign-v2/suite-2026-10-07T09-17-54-511Z-seed7.20-A-route-inventory-fixed-r1.json",
+      "sha256": "d5bdaa97ebca490883caa1a4a9d7cfe1df55d59e75f809bf3c1b758771826b31"
+    },
+    {
+      "path": "campaign-v2/suite-2026-10-07T09-17-54-511Z-seed7.21-B-route-inventory-fixed-r3.json",
+      "sha256": "61abb57729d13f3f321eaf97cd390e125b15350a7e9682409466a6594f1e8e08"
+    },
+    {
+      "path": "campaign-v2/suite-2026-10-07T09-17-54-511Z-seed7.21-B-route-inventory-fixed-r3.export.json",
+      "sha256": "06e795f14704aebf5dfb33bf3074c4e79be823e92fc4f88818fc596b0fd57e19"
+    },
+    {
+      "path": "campaign-v2/suite-2026-10-07T09-17-54-511Z-seed7.22-C-output-context-vulnerable-r2.json",
+      "sha256": "8c221cec3cc5599210061dda7b37b8c6222c79675a0c66f52a4f75e82845de14"
+    },
+    {
+      "path": "campaign-v2/suite-2026-10-07T09-17-54-511Z-seed7.22-C-output-context-vulnerable-r2.export.json",
+      "sha256": "55474ba614e53c52da0cfc9b83e3fada873f20ce2e6028bd51b7abb58b266563"
+    },
+    {
+      "path": "campaign-v2/suite-2026-10-07T09-17-54-511Z-seed7.23-C-fastapi-parity-fixed-r3.json",
+      "sha256": "9dcb08d4d9dd2ce33bc295204fc43a794a5da58ab2e8d76c8d7413bf34c0426d"
+    },
+    {
+      "path": "campaign-v2/suite-2026-10-07T09-17-54-511Z-seed7.23-C-fastapi-parity-fixed-r3.export.json",
+      "sha256": "0680fece45870d8c38acc7d8ebe4254f86276487ebce4c2bcef0eb2e21867b9a"
+    },
+    {
+      "path": "campaign-v2/suite-2026-10-07T09-17-54-511Z-seed7.24-B-output-context-vulnerable-r3.json",
+      "sha256": "a934c94a87644d4e01385f635c0b4ef541171c4b569e245b3cef61733532e572"
+    },
+    {
+      "path": "campaign-v2/suite-2026-10-07T09-17-54-511Z-seed7.24-B-output-context-vulnerable-r3.export.json",
+      "sha256": "9d7409252cc993e308b5790a77cb968a43407cd900c895c992dec9fe79943f4c"
+    },
+    {
+      "path": "campaign-v2/suite-2026-10-07T09-17-54-511Z-seed7.25-C-fastapi-parity-fixed-r2.json",
+      "sha256": "c44c54cb4b5e92947520b717281db9e09c9fbc8cad3b744495d4a3850c906fed"
+    },
+    {
+      "path": "campaign-v2/suite-2026-10-07T09-17-54-511Z-seed7.25-C-fastapi-parity-fixed-r2.export.json",
+      "sha256": "c1e855754ea20389829a2abe893ed0af539a0e6b56ba9987201c4bd92e840960"
+    },
+    {
+      "path": "campaign-v2/suite-2026-10-07T09-17-54-511Z-seed7.26-B-object-authorization-vulnerable-r3.json",
+      "sha256": "1bb07dad40237607bf40eb9afe0bcd23aa9ac42138c755558a42687bea6b7f12"
+    },
+    {
+      "path": "campaign-v2/suite-2026-10-07T09-17-54-511Z-seed7.26-B-object-authorization-vulnerable-r3.export.json",
+      "sha256": "fbd2e9f9633d8cc405d49d4d20969e5ef1d32028e9d530e4c696059d22728ce9"
+    },
+    {
+      "path": "campaign-v2/suite-2026-10-07T09-17-54-511Z-seed7.27-A-object-authorization-fixed-r2.json",
+      "sha256": "48206c74ca03618b2ec92b3e42554249dbb6cb314ae02bc90a4fb8c13285216b"
+    },
+    {
+      "path": "campaign-v2/suite-2026-10-07T09-17-54-511Z-seed7.28-A-route-inventory-fixed-r2.json",
+      "sha256": "b2e978651403dc43fbb989dc7be3f508e9d2a96eadc73606db595eb287949586"
+    },
+    {
+      "path": "campaign-v2/suite-2026-10-07T09-17-54-511Z-seed7.29-A-fastapi-parity-vulnerable-r3.json",
+      "sha256": "357b049d9d016f70481a41804f51e033d95f51c78c6ed7b781ca165f9da1a564"
+    },
+    {
+      "path": "campaign-v2/suite-2026-10-07T09-17-54-511Z-seed7.3-B-object-authorization-vulnerable-r2.json",
+      "sha256": "5bc6f8283e7eb9da13408d2b860394dcea8aa2792caeebe747c317b4a4c4b2d9"
+    },
+    {
+      "path": "campaign-v2/suite-2026-10-07T09-17-54-511Z-seed7.3-B-object-authorization-vulnerable-r2.export.json",
+      "sha256": "c985365e3d11325d1482a4747e9a28f045d64d923c5554eccfbee89e2368be9f"
+    },
+    {
+      "path": "campaign-v2/suite-2026-10-07T09-17-54-511Z-seed7.30-C-route-inventory-fixed-r3.json",
+      "sha256": "35d7350c61a12bfae83040bda1fda1fc6df0195b6214922139bc1e662b18b7b7"
+    },
+    {
+      "path": "campaign-v2/suite-2026-10-07T09-17-54-511Z-seed7.30-C-route-inventory-fixed-r3.export.json",
+      "sha256": "f6a7cc266710bc6d06054b0fdd4cbae74e79ce7cb43c19b6753a917fbbed7053"
+    },
+    {
+      "path": "campaign-v2/suite-2026-10-07T09-17-54-511Z-seed7.31-B-route-inventory-fixed-r2.json",
+      "sha256": "b4723ab6c1e57465fa8b0c585c7af9711594e7fe1d32da626e5318a7e61af47d"
+    },
+    {
+      "path": "campaign-v2/suite-2026-10-07T09-17-54-511Z-seed7.31-B-route-inventory-fixed-r2.export.json",
+      "sha256": "0d3495a56c00ed5a33bba77fd8481f4daaa0e9d3c21948e1b460a2f39e835032"
+    },
+    {
+      "path": "campaign-v2/suite-2026-10-07T09-17-54-511Z-seed7.32-C-object-authorization-fixed-r1.json",
+      "sha256": "8adadd229c68211b6990d451802df0af911d6057b920f2cfc1351ed8979ec9bc"
+    },
+    {
+      "path": "campaign-v2/suite-2026-10-07T09-17-54-511Z-seed7.32-C-object-authorization-fixed-r1.export.json",
+      "sha256": "5c63f42b3669374dd67747e2effe3a0ba005a446bba872f717357b070253bb2e"
+    },
+    {
+      "path": "campaign-v2/suite-2026-10-07T09-17-54-511Z-seed7.33-A-fastapi-parity-fixed-r3.json",
+      "sha256": "aacce9bd29291b1d39f3504d3451fcabad2290a37725016b5620e4576071c62d"
+    },
+    {
+      "path": "campaign-v2/suite-2026-10-07T09-17-54-511Z-seed7.34-A-fastapi-parity-vulnerable-r2.json",
+      "sha256": "eca969c3959c7be9ad532bd539cfd3a75fce4a5a61afb654d928ca20865965ec"
+    },
+    {
+      "path": "campaign-v2/suite-2026-10-07T09-17-54-511Z-seed7.35-C-object-authorization-vulnerable-r1.json",
+      "sha256": "6792459b82ae22e35728011a4bbe607244861cf762d82971ca2cd53c03db32e2"
+    },
+    {
+      "path": "campaign-v2/suite-2026-10-07T09-17-54-511Z-seed7.35-C-object-authorization-vulnerable-r1.export.json",
+      "sha256": "5a34442c1dcf0dde9c72e32f031c1b0ba75ad53e33bad2272b9129a71e5c882e"
+    },
+    {
+      "path": "campaign-v2/suite-2026-10-07T09-17-54-511Z-seed7.36-C-fastapi-parity-vulnerable-r3.json",
+      "sha256": "a206149ce9603d1fcd1f2434e0f7d4ff4cc7a40221006f40b3cc72b4443ec97f"
+    },
+    {
+      "path": "campaign-v2/suite-2026-10-07T09-17-54-511Z-seed7.36-C-fastapi-parity-vulnerable-r3.export.json",
+      "sha256": "1a31b181a2f36c4a42942dae8ffa6f2e68d2a6a4c48c7d6e77fceacdbd5c065f"
+    },
+    {
+      "path": "campaign-v2/suite-2026-10-07T09-17-54-511Z-seed7.37-B-output-context-fixed-r3.json",
+      "sha256": "f240e25b00adf6508f6830ef8a52ccaece76a051b044281375305b9b0e00c8de"
+    },
+    {
+      "path": "campaign-v2/suite-2026-10-07T09-17-54-511Z-seed7.37-B-output-context-fixed-r3.export.json",
+      "sha256": "8e9aa4528bf74c6f3744f30ffa4d20e4d2826fc8a3d72428d1cefa62329c5084"
+    },
+    {
+      "path": "campaign-v2/suite-2026-10-07T09-17-54-511Z-seed7.38-B-output-context-vulnerable-r2.json",
+      "sha256": "3bf0ad3af56bd9c364337e4fe006fc3a0f769bf03139074b35a785c06105d8ab"
+    },
+    {
+      "path": "campaign-v2/suite-2026-10-07T09-17-54-511Z-seed7.38-B-output-context-vulnerable-r2.export.json",
+      "sha256": "11cb8eecc9bc7a0740327f38bc242feb221cefc96d2e40c4d509c256eb144422"
+    },
+    {
+      "path": "campaign-v2/suite-2026-10-07T09-17-54-511Z-seed7.39-C-route-inventory-vulnerable-r1.json",
+      "sha256": "9e84a727d7b4592a4d2382642a589a74d0635846906f7c6c852d4884aa89148d"
+    },
+    {
+      "path": "campaign-v2/suite-2026-10-07T09-17-54-511Z-seed7.39-C-route-inventory-vulnerable-r1.export.json",
+      "sha256": "17ca10903292746d131248de493f19a60fed920aab9ea40eef87854cff66cce0"
+    },
+    {
+      "path": "campaign-v2/suite-2026-10-07T09-17-54-511Z-seed7.4-A-route-inventory-vulnerable-r1.json",
+      "sha256": "8402d1bc3152549570510c0365818e4fb54eb206c3232bb7b753236d7ebb5dfd"
+    },
+    {
+      "path": "campaign-v2/suite-2026-10-07T09-17-54-511Z-seed7.40-C-object-authorization-fixed-r3.json",
+      "sha256": "44d71bb0760494b23f70b14cbe9d5edb184263c91c97b51ebf154a485d28860e"
+    },
+    {
+      "path": "campaign-v2/suite-2026-10-07T09-17-54-511Z-seed7.40-C-object-authorization-fixed-r3.export.json",
+      "sha256": "50b6095b5aeaef66a9554e33f00c1fbd3c1d6ce15522349b04a32c4f6ba253d4"
+    },
+    {
+      "path": "campaign-v2/suite-2026-10-07T09-17-54-511Z-seed7.41-A-route-inventory-fixed-r3.json",
+      "sha256": "167446a7093edd1b822ec39642bde4828da581691761f484c0df3cf2e178a8d1"
+    },
+    {
+      "path": "campaign-v2/suite-2026-10-07T09-17-54-511Z-seed7.42-B-output-context-fixed-r1.json",
+      "sha256": "3b1a9c40d9b4d5fc0ede6382f1a1d94ef9eca812f8eac964f02de9d46c45ccc9"
+    },
+    {
+      "path": "campaign-v2/suite-2026-10-07T09-17-54-511Z-seed7.42-B-output-context-fixed-r1.export.json",
+      "sha256": "66006b814bad8178c4b3baaf77526b5ff593947ffbb8de0f9fd84afbed225628"
+    },
+    {
+      "path": "campaign-v2/suite-2026-10-07T09-17-54-511Z-seed7.43-A-fastapi-parity-fixed-r1.json",
+      "sha256": "cf83cb378b3d638ac9b24e0256ebfbd5948a80ab8d9be72388010f78f9c8cf70"
+    },
+    {
+      "path": "campaign-v2/suite-2026-10-07T09-17-54-511Z-seed7.44-B-object-authorization-fixed-r2.json",
+      "sha256": "433d13bd341f12be50a4e6d31723a58c1f3f9631edf54ffbe7ede66ff469a05e"
+    },
+    {
+      "path": "campaign-v2/suite-2026-10-07T09-17-54-511Z-seed7.44-B-object-authorization-fixed-r2.export.json",
+      "sha256": "24a4336143f1eea0d8fdbc763f4ab749590224322df163cb6ff763965030d8db"
+    },
+    {
+      "path": "campaign-v2/suite-2026-10-07T09-17-54-511Z-seed7.45-B-fastapi-parity-vulnerable-r2.json",
+      "sha256": "4e08b75aec53ebacf36f41b3200063e17116908bfdb1c580e78d36175e1ccc23"
+    },
+    {
+      "path": "campaign-v2/suite-2026-10-07T09-17-54-511Z-seed7.45-B-fastapi-parity-vulnerable-r2.export.json",
+      "sha256": "1d54e64edffab407d6490b33f1f227ea99a6fef97a7edba7a21254e85bfab80e"
+    },
+    {
+      "path": "campaign-v2/suite-2026-10-07T09-17-54-511Z-seed7.46-A-output-context-vulnerable-r2.json",
+      "sha256": "0d8dfa7cc1277a0a8710fb8df65ec0cfb806bb1e5eda20ebfaecdcf50bc05464"
+    },
+    {
+      "path": "campaign-v2/suite-2026-10-07T09-17-54-511Z-seed7.47-C-route-inventory-fixed-r1.json",
+      "sha256": "b2c88bbd2f462fb5b62a81558999427f117cd0b35c167372b5d6a6d56a9a4642"
+    },
+    {
+      "path": "campaign-v2/suite-2026-10-07T09-17-54-511Z-seed7.47-C-route-inventory-fixed-r1.export.json",
+      "sha256": "858a9cb5e6a835c6dff651eff62aac9b15d296829ff9101aee016373b37d68ae"
+    },
+    {
+      "path": "campaign-v2/suite-2026-10-07T09-17-54-511Z-seed7.48-A-object-authorization-vulnerable-r2.json",
+      "sha256": "3c73c32dc9eccf452e07312f689178f6cd2cfe09e1d1e6d4fcd8e2e1acdf977f"
+    },
+    {
+      "path": "campaign-v2/suite-2026-10-07T09-17-54-511Z-seed7.49-C-output-context-vulnerable-r1.json",
+      "sha256": "d5275716a77fa26a147bc31f868fa3de024c20b5c43781d97cb7663497a3d6fc"
+    },
+    {
+      "path": "campaign-v2/suite-2026-10-07T09-17-54-511Z-seed7.49-C-output-context-vulnerable-r1.export.json",
+      "sha256": "d5952bed667245196cbb6c679714fc95b8fec106b5ca58cee8539fe7fa2b9afd"
+    },
+    {
+      "path": "campaign-v2/suite-2026-10-07T09-17-54-511Z-seed7.5-B-output-context-fixed-r2.json",
+      "sha256": "d57a028f37fb1617e3ca10699ae56db66697d067c1abba766e3419dacbff612f"
+    },
+    {
+      "path": "campaign-v2/suite-2026-10-07T09-17-54-511Z-seed7.5-B-output-context-fixed-r2.export.json",
+      "sha256": "9a130ed2dd0217747651b28d465c244b6724b3aba7c96cff8bace34076013518"
+    },
+    {
+      "path": "campaign-v2/suite-2026-10-07T09-17-54-511Z-seed7.50-B-route-inventory-vulnerable-r3.json",
+      "sha256": "a787ea08d387469807e338fea17885126b49543e1be197b36728fbb6e8c3b6b7"
+    },
+    {
+      "path": "campaign-v2/suite-2026-10-07T09-17-54-511Z-seed7.50-B-route-inventory-vulnerable-r3.export.json",
+      "sha256": "5c8901229cfc7ed1fecfb59d1885856e2c60bb14ae00c584de3e80db59fd94a4"
+    },
+    {
+      "path": "campaign-v2/suite-2026-10-07T09-17-54-511Z-seed7.51-A-output-context-vulnerable-r1.json",
+      "sha256": "5c9b719f6a1f9748728de49ff046b6f09653367ce95d8442f245d995974ce4e1"
+    },
+    {
+      "path": "campaign-v2/suite-2026-10-07T09-17-54-511Z-seed7.52-C-fastapi-parity-fixed-r1.json",
+      "sha256": "72b73d4fc3ef61665d2142089d709e2f27c8f786541000515c70d3c924a68623"
+    },
+    {
+      "path": "campaign-v2/suite-2026-10-07T09-17-54-511Z-seed7.52-C-fastapi-parity-fixed-r1.export.json",
+      "sha256": "031f25f0534ff3a330d85e8715abb4f8f14f8a5bcf7f25d6e867201a0de8ec20"
+    },
+    {
+      "path": "campaign-v2/suite-2026-10-07T09-17-54-511Z-seed7.53-C-object-authorization-vulnerable-r2.json",
+      "sha256": "b76649533edacfad80f4a60c22d36849c8de7a3f4ce8836cee410a8dbb5e725b"
+    },
+    {
+      "path": "campaign-v2/suite-2026-10-07T09-17-54-511Z-seed7.53-C-object-authorization-vulnerable-r2.export.json",
+      "sha256": "96b8498e5968f4bf4cea0042d8407628b3618d7cc7f962a38eb94a768180511d"
+    },
+    {
+      "path": "campaign-v2/suite-2026-10-07T09-17-54-511Z-seed7.54-B-fastapi-parity-fixed-r3.json",
+      "sha256": "bc0e7fd7413eba9366dd52e2790e2e99e19a06fbaf7dd7ca45d618d0730363ef"
+    },
+    {
+      "path": "campaign-v2/suite-2026-10-07T09-17-54-511Z-seed7.54-B-fastapi-parity-fixed-r3.export.json",
+      "sha256": "22c55dcba8db3d6b480d9be2f21c19b66b3bb5e975a73fa341c6225dc84fd0d9"
+    },
+    {
+      "path": "campaign-v2/suite-2026-10-07T09-17-54-511Z-seed7.55-A-output-context-fixed-r2.json",
+      "sha256": "ced1bd336056d3ef67e5e9f2f6f282c3f5e37eaf7f93cddb61be925e7c92fe55"
+    },
+    {
+      "path": "campaign-v2/suite-2026-10-07T09-17-54-511Z-seed7.56-A-route-inventory-vulnerable-r3.json",
+      "sha256": "e8a570585274e08848313b2caed0db1c63cd3e18b8da64e90fe88849a77136a9"
+    },
+    {
+      "path": "campaign-v2/suite-2026-10-07T09-17-54-511Z-seed7.57-A-object-authorization-fixed-r3.json",
+      "sha256": "818efbf7ad6e6ee9806951036db9d9a1942c0a1c5aac8fcffc0aeb92af1e94cf"
+    },
+    {
+      "path": "campaign-v2/suite-2026-10-07T09-17-54-511Z-seed7.58-C-output-context-fixed-r3.json",
+      "sha256": "57f63e155f529029d71a73dea2a03375a42dd69e7d1118821e3019481eb07c6a"
+    },
+    {
+      "path": "campaign-v2/suite-2026-10-07T09-17-54-511Z-seed7.58-C-output-context-fixed-r3.export.json",
+      "sha256": "b0a156c855d6d03cf4b5aee4472a63601b460faa45f74a83ca6de23619957744"
+    },
+    {
+      "path": "campaign-v2/suite-2026-10-07T09-17-54-511Z-seed7.59-C-output-context-vulnerable-r3.json",
+      "sha256": "d2e487d925cbd3962a1d565879db372dcae975f3d982c7140a395ff210cb2607"
+    },
+    {
+      "path": "campaign-v2/suite-2026-10-07T09-17-54-511Z-seed7.59-C-output-context-vulnerable-r3.export.json",
+      "sha256": "0b47643348ca5db3369981ffe359ddf5a347f4a177f29a74078510f588c04218"
+    },
+    {
+      "path": "campaign-v2/suite-2026-10-07T09-17-54-511Z-seed7.6-A-object-authorization-vulnerable-r1.json",
+      "sha256": "b6915845025dd310d674385c6e0b71f3186a4f920f9e295523d8fa5cdca1fe7c"
+    },
+    {
+      "path": "campaign-v2/suite-2026-10-07T09-17-54-511Z-seed7.60-A-object-authorization-fixed-r1.json",
+      "sha256": "d758db4dbf559058b5e5cf4789ac7ff115bfda1a725ee25481ed30a544e67aac"
+    },
+    {
+      "path": "campaign-v2/suite-2026-10-07T09-17-54-511Z-seed7.61-C-output-context-fixed-r2.json",
+      "sha256": "483dc33f4c5f5cad5977aa94799c25d9b36fc21a831619485f495d7a94de564d"
+    },
+    {
+      "path": "campaign-v2/suite-2026-10-07T09-17-54-511Z-seed7.61-C-output-context-fixed-r2.export.json",
+      "sha256": "341413446ad12c230fcfefcb4fae7c4ae042bc9b7bbe9a079370ded0e6b1fe23"
+    },
+    {
+      "path": "campaign-v2/suite-2026-10-07T09-17-54-511Z-seed7.62-B-route-inventory-fixed-r1.json",
+      "sha256": "84f617c4af16895b04ecabc8242d1a69609a41b4bfb4656b0ebd371fcba0fe03"
+    },
+    {
+      "path": "campaign-v2/suite-2026-10-07T09-17-54-511Z-seed7.62-B-route-inventory-fixed-r1.export.json",
+      "sha256": "81976202551c558f522fdadd59bebfa1f1e1bc3b0c18426ccd14ecf600ee5561"
+    },
+    {
+      "path": "campaign-v2/suite-2026-10-07T09-17-54-511Z-seed7.63-C-route-inventory-vulnerable-r2.json",
+      "sha256": "0dfbb5e593c5c87e5d37d68240f91e67c2c4e2d871c16437ef301ab5978da0f8"
+    },
+    {
+      "path": "campaign-v2/suite-2026-10-07T09-17-54-511Z-seed7.63-C-route-inventory-vulnerable-r2.export.json",
+      "sha256": "a67afdbb80014e5a208ca3986f547413e4d29e592fb1dcc4e2ed8c5e4b4d8882"
+    },
+    {
+      "path": "campaign-v2/suite-2026-10-07T09-17-54-511Z-seed7.64-A-output-context-fixed-r1.json",
+      "sha256": "fca26ab75954bbb0f67848f369b929f853fd1384e3fb4dd943453664246c6c47"
+    },
+    {
+      "path": "campaign-v2/suite-2026-10-07T09-17-54-511Z-seed7.65-B-object-authorization-vulnerable-r1.json",
+      "sha256": "f8adc7d7f24b2dd5c945493dacf1bcc8f5a3f4e9418ca33eeeeeb54d6ad7ce6b"
+    },
+    {
+      "path": "campaign-v2/suite-2026-10-07T09-17-54-511Z-seed7.65-B-object-authorization-vulnerable-r1.export.json",
+      "sha256": "a554d20f90942644af1475636ea0d2a891dc7f9ce75658a9902882b491c203de"
+    },
+    {
+      "path": "campaign-v2/suite-2026-10-07T09-17-54-511Z-seed7.66-B-fastapi-parity-fixed-r1.json",
+      "sha256": "5bc04c27ce01452348bf80ba0657dc66957e4961b36f263cadcb54cae25c803f"
+    },
+    {
+      "path": "campaign-v2/suite-2026-10-07T09-17-54-511Z-seed7.66-B-fastapi-parity-fixed-r1.export.json",
+      "sha256": "dbe6f5688e418d48c10d0d9385f50be2c620e3b0af0a5b9a85e8f0fde83da367"
+    },
+    {
+      "path": "campaign-v2/suite-2026-10-07T09-17-54-511Z-seed7.67-B-object-authorization-fixed-r3.json",
+      "sha256": "fc890eda2b710a2bddd87d4680be6e1968c7d5642ee231c64cbeb8abdc3144df"
+    },
+    {
+      "path": "campaign-v2/suite-2026-10-07T09-17-54-511Z-seed7.67-B-object-authorization-fixed-r3.export.json",
+      "sha256": "63eb3eeaff33740dc144bfb827cc623802112a5ebb978c00bec238bb7165c34e"
+    },
+    {
+      "path": "campaign-v2/suite-2026-10-07T09-17-54-511Z-seed7.68-C-fastapi-parity-vulnerable-r1.json",
+      "sha256": "10a50f68ebafc4d77aa5cca1d1611e77480df2eac08a9fa0dd478bad2d95a19e"
+    },
+    {
+      "path": "campaign-v2/suite-2026-10-07T09-17-54-511Z-seed7.68-C-fastapi-parity-vulnerable-r1.export.json",
+      "sha256": "79348f67122a594bd2aa7d9f64c8e6e6fd0e9a248660f67bbe15653a9afdd18d"
+    },
+    {
+      "path": "campaign-v2/suite-2026-10-07T09-17-54-511Z-seed7.69-C-route-inventory-vulnerable-r3.json",
+      "sha256": "afe6c7c89f26934ce0906d07f403d9a3b826915d4a83b6e5bca5ff22225907ea"
+    },
+    {
+      "path": "campaign-v2/suite-2026-10-07T09-17-54-511Z-seed7.69-C-route-inventory-vulnerable-r3.export.json",
+      "sha256": "42e241d9df289cdd24d57e781a41b36d71a638098349b9e15681539c213e14a8"
+    },
+    {
+      "path": "campaign-v2/suite-2026-10-07T09-17-54-511Z-seed7.7-A-output-context-vulnerable-r3.json",
+      "sha256": "89c88d4082bd1e8a0a8b2522fd82f97080c060cf747c1833e323769279d39840"
+    },
+    {
+      "path": "campaign-v2/suite-2026-10-07T09-17-54-511Z-seed7.70-A-fastapi-parity-fixed-r2.json",
+      "sha256": "d7c43ce291652ac1b35d13e381af78ca0065b819d62cf9d2ccbde260af7e9506"
+    },
+    {
+      "path": "campaign-v2/suite-2026-10-07T09-17-54-511Z-seed7.71-A-fastapi-parity-vulnerable-r1.json",
+      "sha256": "638458b68e86e720c6e7aedda89123eeaae4f81e612099f5b64e595d3a193580"
+    },
+    {
+      "path": "campaign-v2/suite-2026-10-07T09-17-54-511Z-seed7.8-C-object-authorization-vulnerable-r3.json",
+      "sha256": "d9268c1fc1d2b6b45d46da78e779148520729a530f22a19a78cae0c3877ce809"
+    },
+    {
+      "path": "campaign-v2/suite-2026-10-07T09-17-54-511Z-seed7.8-C-object-authorization-vulnerable-r3.export.json",
+      "sha256": "910bcc1b5145a20342141219dc1c1019207f7e8f86e140617e9ebf642ba16d16"
+    },
+    {
+      "path": "campaign-v2/suite-2026-10-07T09-17-54-511Z-seed7.9-A-output-context-fixed-r3.json",
+      "sha256": "77684e6e222c02e5a29964c6076bdfc3316efb257d9ceff88fb17f5ee12200dc"
+    },
+    {
+      "path": "campaign-v2/suite-2026-10-07T09-17-54-511Z-seed7.summary.json",
+      "sha256": "e0f1fad85d2ebe596e67359b0c761c052143bb411bfd6c41e274894b05f3849b"
+    },
+    {
+      "path": "campaign-final-C/suite-2026-10-07T11-24-25-094Z-seed7.0-C-route-inventory-vulnerable-r3.json",
+      "sha256": "833a57474229e1b6a09682945d93b96d189dda7e5276ac6ee40bc67959417983"
+    },
+    {
+      "path": "campaign-final-C/suite-2026-10-07T11-24-25-094Z-seed7.0-C-route-inventory-vulnerable-r3.export.json",
+      "sha256": "219913721dbd71bd99bdff33c83186c205e78db9336a6a0381bfc1b230b0557e"
+    },
+    {
+      "path": "campaign-final-C/suite-2026-10-07T11-24-25-094Z-seed7.1-C-object-authorization-vulnerable-r1.json",
+      "sha256": "6a6c9ee46e4c5e9d32e24c9a32356bb56d0efe38cbd90626dad73c7505f76f93"
+    },
+    {
+      "path": "campaign-final-C/suite-2026-10-07T11-24-25-094Z-seed7.1-C-object-authorization-vulnerable-r1.export.json",
+      "sha256": "fe52804f70f233b3b55c5c724d5cb0b87135fe1221536998bdfeca020335fb28"
+    },
+    {
+      "path": "campaign-final-C/suite-2026-10-07T11-24-25-094Z-seed7.10-C-fastapi-parity-fixed-r3.json",
+      "sha256": "2272ef5c6f6d7869a56831ad89a52a96467efe493eebad1f51e8430ef5b9ac11"
+    },
+    {
+      "path": "campaign-final-C/suite-2026-10-07T11-24-25-094Z-seed7.10-C-fastapi-parity-fixed-r3.export.json",
+      "sha256": "042d746a733f24ee028c2f1e3e0c2b423047254faf39da061112bf6a993f6bce"
+    },
+    {
+      "path": "campaign-final-C/suite-2026-10-07T11-24-25-094Z-seed7.11-C-object-authorization-fixed-r1.json",
+      "sha256": "9ce4f3a09d798d384e39d0d601b5e84655f62b4e0c4fd3262f27ea306cc98b67"
+    },
+    {
+      "path": "campaign-final-C/suite-2026-10-07T11-24-25-094Z-seed7.11-C-object-authorization-fixed-r1.export.json",
+      "sha256": "04f3ad110f33221578c78ba1eee59103f9556eb30d949cfffed21bd750ad7470"
+    },
+    {
+      "path": "campaign-final-C/suite-2026-10-07T11-24-25-094Z-seed7.12-C-fastapi-parity-vulnerable-r3.json",
+      "sha256": "c97cab7ed928d5d73eb43ab8a8e03881c0caceac593de81fd6f54c0b29f0d5c9"
+    },
+    {
+      "path": "campaign-final-C/suite-2026-10-07T11-24-25-094Z-seed7.12-C-fastapi-parity-vulnerable-r3.export.json",
+      "sha256": "de124704fa2792930e35a2cdb3c219d5b4460dab563f8dd373f93e300f8340a5"
+    },
+    {
+      "path": "campaign-final-C/suite-2026-10-07T11-24-25-094Z-seed7.13-C-fastapi-parity-fixed-r1.json",
+      "sha256": "92f2cdbf5613496777d3a642ce91575b021658553724911c22b3dcb4bfcaff95"
+    },
+    {
+      "path": "campaign-final-C/suite-2026-10-07T11-24-25-094Z-seed7.13-C-fastapi-parity-fixed-r1.export.json",
+      "sha256": "5d206dcf9352b8e532372cfccf6a2115148dcb38c7c1f7d0e8f983714f181c99"
+    },
+    {
+      "path": "campaign-final-C/suite-2026-10-07T11-24-25-094Z-seed7.14-C-route-inventory-vulnerable-r2.json",
+      "sha256": "706f3b8a202eac0bc8e9fbcd39496f04df107647ef81ab4ac0840c99804de23a"
+    },
+    {
+      "path": "campaign-final-C/suite-2026-10-07T11-24-25-094Z-seed7.14-C-route-inventory-vulnerable-r2.export.json",
+      "sha256": "e27cd2826bc03b38ab55050bd20971b31670e3ed4b7a8390742b340b2151c055"
+    },
+    {
+      "path": "campaign-final-C/suite-2026-10-07T11-24-25-094Z-seed7.15-C-output-context-fixed-r3.json",
+      "sha256": "5dedeefd42616600061737297bf4ba61a812bc151bab968b060b09378b22ced0"
+    },
+    {
+      "path": "campaign-final-C/suite-2026-10-07T11-24-25-094Z-seed7.15-C-output-context-fixed-r3.export.json",
+      "sha256": "0c6c5f2866c433cf4e43369492b8e12bceb8076fe1c53aba704d6d66d0c0f006"
+    },
+    {
+      "path": "campaign-final-C/suite-2026-10-07T11-24-25-094Z-seed7.16-C-fastapi-parity-fixed-r2.json",
+      "sha256": "3236f78d2111e122d2bb4f1a6104ac5ba9d390dfa3ae506289509b67e7c6314d"
+    },
+    {
+      "path": "campaign-final-C/suite-2026-10-07T11-24-25-094Z-seed7.16-C-fastapi-parity-fixed-r2.export.json",
+      "sha256": "71966170cb6b747ccef0617153598ec3a20e7ea8343d783d83d61d7f1af5be00"
+    },
+    {
+      "path": "campaign-final-C/suite-2026-10-07T11-24-25-094Z-seed7.17-C-object-authorization-vulnerable-r3.json",
+      "sha256": "55760227c9ea35abc0aa5bda4d44d4d4d41342f4f5389d98456bd5bb161889ba"
+    },
+    {
+      "path": "campaign-final-C/suite-2026-10-07T11-24-25-094Z-seed7.17-C-object-authorization-vulnerable-r3.export.json",
+      "sha256": "1971c064d22bc57c597affd4bf5fe9df5efd159a117c8aaea85e2894b9a16381"
+    },
+    {
+      "path": "campaign-final-C/suite-2026-10-07T11-24-25-094Z-seed7.18-C-object-authorization-vulnerable-r2.json",
+      "sha256": "59996ad38b6787978f3e575c3a772a63da68fd005785bbe65daa1c050a2eb642"
+    },
+    {
+      "path": "campaign-final-C/suite-2026-10-07T11-24-25-094Z-seed7.18-C-object-authorization-vulnerable-r2.export.json",
+      "sha256": "31d9214de377f210be7aabe57a9ecf02c4e686ccc7914c455b04cfa95da3c64a"
+    },
+    {
+      "path": "campaign-final-C/suite-2026-10-07T11-24-25-094Z-seed7.19-C-object-authorization-fixed-r2.json",
+      "sha256": "aad170a7e1d91c69addf02e205a6d9762716c8488502f69e03654f1acdf065d7"
+    },
+    {
+      "path": "campaign-final-C/suite-2026-10-07T11-24-25-094Z-seed7.19-C-object-authorization-fixed-r2.export.json",
+      "sha256": "322204c2482019cea8389977ae98465012421df7eb85cd9787a4378ca89faf8e"
+    },
+    {
+      "path": "campaign-final-C/suite-2026-10-07T11-24-25-094Z-seed7.2-C-route-inventory-vulnerable-r1.json",
+      "sha256": "f27e758193577eb045dc13aa45ddb824deaddda9b7da12b04098991f777caf9a"
+    },
+    {
+      "path": "campaign-final-C/suite-2026-10-07T11-24-25-094Z-seed7.2-C-route-inventory-vulnerable-r1.export.json",
+      "sha256": "f879ee8da502159fefafaf59938202f9da5d465aa40e49a7d9658e74d439be30"
+    },
+    {
+      "path": "campaign-final-C/suite-2026-10-07T11-24-25-094Z-seed7.20-C-output-context-vulnerable-r3.json",
+      "sha256": "6bfd635493e01bae55d97192783beefc4c0cb0088e8235f9b53d35760c01dd08"
+    },
+    {
+      "path": "campaign-final-C/suite-2026-10-07T11-24-25-094Z-seed7.20-C-output-context-vulnerable-r3.export.json",
+      "sha256": "63155662d37c58aad0dbebabb8b62096f7768bde5605c8fe5a846c73638dd2db"
+    },
+    {
+      "path": "campaign-final-C/suite-2026-10-07T11-24-25-094Z-seed7.21-C-route-inventory-fixed-r1.json",
+      "sha256": "5f04c3f5b0321405a68066a7b44ae7f4b24f4f4c0970e88cb388b0695380e5fa"
+    },
+    {
+      "path": "campaign-final-C/suite-2026-10-07T11-24-25-094Z-seed7.21-C-route-inventory-fixed-r1.export.json",
+      "sha256": "cf09bfbc56ccd899e03bf60fd012dcf78f59c78dfad1eb1e25e17375c60b69fd"
+    },
+    {
+      "path": "campaign-final-C/suite-2026-10-07T11-24-25-094Z-seed7.22-C-fastapi-parity-vulnerable-r2.json",
+      "sha256": "925be45714fba9286618686d07e773c439d659a50fefb35cf9441915610d8d27"
+    },
+    {
+      "path": "campaign-final-C/suite-2026-10-07T11-24-25-094Z-seed7.22-C-fastapi-parity-vulnerable-r2.export.json",
+      "sha256": "605f8023c089aa44e969f30dcaa3b599aa7785cb6801cc0d3cfea0768778db9f"
+    },
+    {
+      "path": "campaign-final-C/suite-2026-10-07T11-24-25-094Z-seed7.23-C-fastapi-parity-vulnerable-r1.json",
+      "sha256": "6c5e0d625d2410679abe22105280324b0fcb33b1d104a7ce37e219f5d1dae4b3"
+    },
+    {
+      "path": "campaign-final-C/suite-2026-10-07T11-24-25-094Z-seed7.23-C-fastapi-parity-vulnerable-r1.export.json",
+      "sha256": "f067a8a5b749ac7c4c47067985fe000a3f1d14dcb723cfd63dfdc927a28f1539"
+    },
+    {
+      "path": "campaign-final-C/suite-2026-10-07T11-24-25-094Z-seed7.3-C-route-inventory-fixed-r3.json",
+      "sha256": "c54f7723413846237a0790a9ebb3250700203deb6a5aec8157846d1bd633ce27"
+    },
+    {
+      "path": "campaign-final-C/suite-2026-10-07T11-24-25-094Z-seed7.3-C-route-inventory-fixed-r3.export.json",
+      "sha256": "c3b19d4e148f67f7131a34bb7046f6ea5eb16ae05ebdea9337d7c36caf68936b"
+    },
+    {
+      "path": "campaign-final-C/suite-2026-10-07T11-24-25-094Z-seed7.4-C-output-context-fixed-r2.json",
+      "sha256": "1788bd6aa8f405b89f6d0b31db3731e42596a5079f983a3da70485bee1673f40"
+    },
+    {
+      "path": "campaign-final-C/suite-2026-10-07T11-24-25-094Z-seed7.4-C-output-context-fixed-r2.export.json",
+      "sha256": "d97a518fe12e0a2466792dfd42cb0bfa4dbbec9f86ef3d6098e4d0ce3b8ec2f7"
+    },
+    {
+      "path": "campaign-final-C/suite-2026-10-07T11-24-25-094Z-seed7.5-C-object-authorization-fixed-r3.json",
+      "sha256": "d3f2d4ba0db8b9b15a3b58fe6d2050ae53be166ef4fc6e4cc41edc98a47de9b9"
+    },
+    {
+      "path": "campaign-final-C/suite-2026-10-07T11-24-25-094Z-seed7.5-C-object-authorization-fixed-r3.export.json",
+      "sha256": "55f480dd94faccb826dbf3f050aa933935563fd616006ec28216432c3b53926a"
+    },
+    {
+      "path": "campaign-final-C/suite-2026-10-07T11-24-25-094Z-seed7.6-C-output-context-fixed-r1.json",
+      "sha256": "844eb99a8d5a157452e7f01a80318ded8cafbd7fb7ebf90d036a6a98aa3ef8fb"
+    },
+    {
+      "path": "campaign-final-C/suite-2026-10-07T11-24-25-094Z-seed7.6-C-output-context-fixed-r1.export.json",
+      "sha256": "0615c105e67bd319eef552a9d71b6167d9b3b2e28e12dc63adb7e54981c5c599"
+    },
+    {
+      "path": "campaign-final-C/suite-2026-10-07T11-24-25-094Z-seed7.7-C-output-context-vulnerable-r1.json",
+      "sha256": "4da46f98d9e2e3ecfe80fe00b337931ac9247a8406579b4a73097be7370ddc74"
+    },
+    {
+      "path": "campaign-final-C/suite-2026-10-07T11-24-25-094Z-seed7.7-C-output-context-vulnerable-r1.export.json",
+      "sha256": "48135b7ab06a6cce33e25468ff2e84b3661dfd46c24c8d330fe67de812ddb98c"
+    },
+    {
+      "path": "campaign-final-C/suite-2026-10-07T11-24-25-094Z-seed7.8-C-output-context-vulnerable-r2.json",
+      "sha256": "0a5521d7e9db63d24b9357ba4d7d994d6bd9c3d302b51e2c9b36300a95b239a3"
+    },
+    {
+      "path": "campaign-final-C/suite-2026-10-07T11-24-25-094Z-seed7.8-C-output-context-vulnerable-r2.export.json",
+      "sha256": "b47a4b454a0f2d58e65de694c56114042e6c4332fcd939ea55b5908bf1bb806a"
+    },
+    {
+      "path": "campaign-final-C/suite-2026-10-07T11-24-25-094Z-seed7.9-C-route-inventory-fixed-r2.json",
+      "sha256": "10e35baa6cf733d2e4dea1b67173d9df11eba62ff2b61c252553d3837247573c"
+    },
+    {
+      "path": "campaign-final-C/suite-2026-10-07T11-24-25-094Z-seed7.9-C-route-inventory-fixed-r2.export.json",
+      "sha256": "311c97a1c38f81f962c6a946adb547a7fffcc2abdf710ffabda8bc0b02417570"
+    },
+    {
+      "path": "campaign-final-C/suite-2026-10-07T11-24-25-094Z-seed7.summary.json",
+      "sha256": "915e1f15a0cae66f5b728fdf5722f8e413f9256b9204836fecede36c038a7a01"
+    },
+    {
+      "path": "clean-campaign-object-authorization/suite-2026-10-07T14-08-13-465Z-seed7.0-B-object-authorization-fixed-r1.json",
+      "sha256": "f56a2a7e9eb3f6832202e465a28c17593e0ee3314fb22b7b51c419782dbef89a"
+    },
+    {
+      "path": "clean-campaign-object-authorization/suite-2026-10-07T14-08-13-465Z-seed7.0-B-object-authorization-fixed-r1.export.json",
+      "sha256": "1cba0869bc0d335e68cb08986e3e59ba1f3275a21c0a317c3d06592e2275ca5a"
+    },
+    {
+      "path": "clean-campaign-object-authorization/suite-2026-10-07T14-08-13-465Z-seed7.1-A-object-authorization-fixed-r1.json",
+      "sha256": "65fd156a8bbcd7ce088fb16897803b029444d332509ae331813d2d3d5c92310c"
+    },
+    {
+      "path": "clean-campaign-object-authorization/suite-2026-10-07T14-08-13-465Z-seed7.10-A-object-authorization-vulnerable-r3.json",
+      "sha256": "453ae636ba634a2f748be22b0e4db62beda51c45cd0011844eeeaecb8514dee5"
+    },
+    {
+      "path": "clean-campaign-object-authorization/suite-2026-10-07T14-08-13-465Z-seed7.2-B-object-authorization-vulnerable-r3.json",
+      "sha256": "eade575343c594a74e9a72943755ffcd34486b2d62d99c5017a5b39e0de8310d"
+    },
+    {
+      "path": "clean-campaign-object-authorization/suite-2026-10-07T14-08-13-465Z-seed7.2-B-object-authorization-vulnerable-r3.export.json",
+      "sha256": "074c9726537e9449e92b073376ec5367b6f6c606f6da5a3a15068a17de729b0b"
+    },
+    {
+      "path": "clean-campaign-object-authorization/suite-2026-10-07T14-08-13-465Z-seed7.3-C-object-authorization-fixed-r3.json",
+      "sha256": "ec59fcd69395e02a5d73349c5fdad23b32738729fe9073c73017d6b276b3dd71"
+    },
+    {
+      "path": "clean-campaign-object-authorization/suite-2026-10-07T14-08-13-465Z-seed7.3-C-object-authorization-fixed-r3.export.json",
+      "sha256": "2119628c2c88d97d71584000a072978018812bd01349ba85884b04f0f54e3e75"
+    },
+    {
+      "path": "clean-campaign-object-authorization/suite-2026-10-07T14-08-13-465Z-seed7.4-C-object-authorization-vulnerable-r2.json",
+      "sha256": "a329f0816d4f9a90c96828f5761b3253e066bd1a9bb84b48205800bcdfca248a"
+    },
+    {
+      "path": "clean-campaign-object-authorization/suite-2026-10-07T14-08-13-465Z-seed7.4-C-object-authorization-vulnerable-r2.export.json",
+      "sha256": "f11d5a50fef354b384aa8e37bee80df6498045ad8b05fe64d1fae197e289c1d9"
+    },
+    {
+      "path": "clean-campaign-object-authorization/suite-2026-10-07T14-08-13-465Z-seed7.5-A-object-authorization-fixed-r2.json",
+      "sha256": "444cf6e7e3f088164240f7109d2d0179f1dbe0b9386a631d947d4f36a5b61398"
+    },
+    {
+      "path": "clean-campaign-object-authorization/suite-2026-10-07T14-08-13-465Z-seed7.6-C-object-authorization-fixed-r2.json",
+      "sha256": "380928d3da31bda5bbaba9dcdfa0e5e172d192a7f4598746da565a8ddbb68dac"
+    },
+    {
+      "path": "clean-campaign-object-authorization/suite-2026-10-07T14-08-13-465Z-seed7.6-C-object-authorization-fixed-r2.export.json",
+      "sha256": "9275f2e0791979b7e630ae6ab45ded6295572d2c12c59823d34876e7db7ff441"
+    },
+    {
+      "path": "clean-campaign-object-authorization/suite-2026-10-07T14-08-13-465Z-seed7.7-C-object-authorization-vulnerable-r3.json",
+      "sha256": "e1cf74e07eef9bcd9e13b9fa2449f49661d4e1d333a527398dc39f03ad971bd3"
+    },
+    {
+      "path": "clean-campaign-object-authorization/suite-2026-10-07T14-08-13-465Z-seed7.7-C-object-authorization-vulnerable-r3.export.json",
+      "sha256": "3b491696608ba42f9aad7eb411d267e932d6c7c4c512909db18e0fdc312c6eb6"
+    },
+    {
+      "path": "clean-campaign-object-authorization/suite-2026-10-07T14-08-13-465Z-seed7.8-B-object-authorization-vulnerable-r1.json",
+      "sha256": "76433d5abb892406e1354d57c7a5d882598ed03d6e6d0f18cf5aaa9ad8af40c6"
+    },
+    {
+      "path": "clean-campaign-object-authorization/suite-2026-10-07T14-08-13-465Z-seed7.8-B-object-authorization-vulnerable-r1.export.json",
+      "sha256": "6868e288c348bd1cd13709b3f6e546e441291903308f47a475f584e4abbc311c"
+    },
+    {
+      "path": "clean-campaign-object-authorization/suite-2026-10-07T14-08-13-465Z-seed7.9-B-object-authorization-fixed-r3.json",
+      "sha256": "d039bcee6c0d98b146e909ccf696e7a0600a4ade3e3ac7782d02d4cd3644c80a"
+    },
+    {
+      "path": "clean-campaign-object-authorization/suite-2026-10-07T14-08-13-465Z-seed7.9-B-object-authorization-fixed-r3.export.json",
+      "sha256": "30655136361c92a93f6713165cb80c6795710eee8b61f6e23c0053faa36be427"
+    },
+    {
+      "path": "clean-campaign-route-inventory/suite-2026-10-07T14-08-12-573Z-seed7.0-B-route-inventory-fixed-r1.json",
+      "sha256": "51f25b68ce1a3b52f17a315f55681ccb0d81094d7abf1c7bfa378409956e6164"
+    },
+    {
+      "path": "clean-campaign-route-inventory/suite-2026-10-07T14-08-12-573Z-seed7.0-B-route-inventory-fixed-r1.export.json",
+      "sha256": "1128e64e3dbada3412bf0ae93b3c24950bb3c805f4484632de8b7b1ae4bef3a9"
+    },
+    {
+      "path": "clean-campaign-route-inventory/suite-2026-10-07T14-08-12-573Z-seed7.1-A-route-inventory-fixed-r1.json",
+      "sha256": "a21c40dedaa3bf1f8116606abaab92da7654457cc73423bb0343c1b7c04bee15"
+    },
+    {
+      "path": "clean-campaign-route-inventory/suite-2026-10-07T14-08-12-573Z-seed7.2-B-route-inventory-vulnerable-r3.json",
+      "sha256": "a97656aa498f5b94cf6ef3d63b836c89cdc7c20e8c345db95457a8705018d730"
+    },
+    {
+      "path": "clean-campaign-route-inventory/suite-2026-10-07T14-08-12-573Z-seed7.2-B-route-inventory-vulnerable-r3.export.json",
+      "sha256": "8285961c5e5b41f56bf2d173201d0097275df7f0e0dfff07335897ee1b618723"
+    },
+    {
+      "path": "clean-campaign-route-inventory/suite-2026-10-07T14-08-12-573Z-seed7.3-C-route-inventory-fixed-r3.json",
+      "sha256": "3abf625e46a2cb61264a78a3baa6c197727c678061d05200b6651bd921ce42ef"
+    },
+    {
+      "path": "clean-campaign-route-inventory/suite-2026-10-07T14-08-12-573Z-seed7.3-C-route-inventory-fixed-r3.export.json",
+      "sha256": "e9fe032dd9bbab88d92e1cb668a270f10d7da96454c1b1d9ccb4ecfc0cf44fde"
+    },
+    {
+      "path": "clean-campaign-route-inventory/suite-2026-10-07T14-08-12-573Z-seed7.4-C-route-inventory-vulnerable-r2.json",
+      "sha256": "27cdd6bcd4d625f16175d18c9b015bc733e1c9e373548456268f515a0bfb6404"
+    },
+    {
+      "path": "clean-campaign-route-inventory/suite-2026-10-07T14-08-12-573Z-seed7.4-C-route-inventory-vulnerable-r2.export.json",
+      "sha256": "f54b3d549f6f86786f42b7edc8f7bd86ac71620846875a03047d150b68150e2a"
+    },
+    {
+      "path": "clean-campaign-route-inventory/suite-2026-10-07T14-08-12-573Z-seed7.5-A-route-inventory-fixed-r2.json",
+      "sha256": "7f93f7b93aaf37bfe7beeaf09e9e594d65a294afc28f8b5032a3e7000fc96a27"
+    },
+    {
+      "path": "clean-campaign-route-inventory/suite-2026-10-07T14-08-12-573Z-seed7.6-C-route-inventory-fixed-r2.json",
+      "sha256": "7dfbf8101e09288c19fe381788cf4961260e20b497e1df794c0eeb68d515161a"
+    },
+    {
+      "path": "clean-campaign-route-inventory/suite-2026-10-07T14-08-12-573Z-seed7.6-C-route-inventory-fixed-r2.export.json",
+      "sha256": "d453f69a277f0062168dc52406288bb8e992f704aaa399f2012c4cca2dc3a767"
+    },
+    {
+      "path": "holdout-verified/run-BCBi1W/summary.json",
+      "sha256": "e6784602c37ff61fb7ff68883516810e5ecb74c92ca112a4e33ec1bc2e9879fe"
+    },
+    {
+      "path": "holdout-verified/run-BCBi1W/evidence.json",
+      "sha256": "81e242cf30080e413b92d0ed70d86b3a4106bb66604eb18e6b137aa7a0f49458"
+    },
+    {
+      "path": "installed-recipe-v2/run-WE80oe/summary.json",
+      "sha256": "c6813095cc29faea66f767baad409edc704b5a2aff4b035d19629e173ffe5648"
+    },
+    {
+      "path": "installed-recipe-v2/run-WE80oe/evidence.json",
+      "sha256": "1df27ecb7aeba2b6945fee8d238e190453af3ad21655afbfb15c83b7e94d8cb6"
+    },
+    {
+      "path": "baseline.json",
+      "sha256": "cf5ede7920c30aaea668e1f277915eb04852cb967d3eda36c07a141106c444f4"
+    },
+    {
+      "path": "native-installed-skills.json",
+      "sha256": "050544f089d6841bc959c56577787ab52eaca4af535c695e7dacae6a71ab83bd"
+    },
+    {
+      "path": "tool-probes.json",
+      "sha256": "d119adda2f1f965aea48e9e584bb67b95ab1b19fc59a25e8d1c7c4525c8893b9"
+    },
+    {
+      "path": "semgrep-validate-diagnostic.json",
+      "sha256": "4d912e4e3df3fa74dfeafa7a130948e0b66254ba9f188ebe814b907cf7891533"
+    },
+    {
+      "path": "clean-study/combined-summary.json",
+      "sha256": "a325610159728712bbe59df259000c24f7ab339d22f339893a9c6fc3fc7c3d85"
+    },
+    {
+      "path": "clean-study/USER-STOP.json",
+      "sha256": "d35c45ce9e9d16e4bdd61f8f547f7d9b8819ae5ec7e42208c04f9c274d92fa35"
+    },
+    {
+      "path": "clean-study/stop-cleanup-audit.json",
+      "sha256": "1a85ca45dae6ea276cf5461f0308388f59fada26e3bdaab5e658734607154364"
+    },
+    {
+      "path": "clean-study/own-label-resources.json",
+      "sha256": "cf4960cf735737f319743a2fabf4ca650799e2457809b76f824462acf9902cc8"
+    },
+    {
+      "path": "clean-study/INTERRUPTED-ATTEMPTS.json",
+      "sha256": "3f5d21ad945087760f20c0cdee8a0de9cff42736443af8c349be2c4b0f0692fb"
+    },
+    {
+      "path": "clean-study/AUDIT.json",
+      "sha256": "1476ad8a095ce72f49a3c2e4da9e9983d9942cb8fb6aa32a9a82076bae476623"
+    }
+  ]
+}
