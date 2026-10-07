@@ -1,0 +1,31 @@
+openapi: 3.0.3
+info:
+  title: Storefront API
+  version: 2.4.2
+servers:
+  - url: https://api.storefront.invalid
+paths:
+  /search:
+    get:
+      summary: Public storefront search
+  /orders:
+    get:
+      summary: List the caller's orders
+      security:
+        - ApiKeyAuth: []
+  /admin/export:
+    get:
+      summary: Finance export
+      security:
+        - ApiKeyAuth: []
+  /v1/report/{report_id}:
+    get:
+      summary: Quarterly report for its owning integrator
+      security:
+        - ApiKeyAuth: []
+components:
+  securitySchemes:
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-Api-Key

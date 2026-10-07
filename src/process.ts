@@ -1,7 +1,7 @@
 import { spawn } from 'node:child_process';
 
 export const OUTPUT_LIMIT = 48 * 1024;
-export interface ProcessResult { code: number; stdout: string; stderr: string; truncated: boolean }
+export interface ProcessResult { code: number; stdout: string; stderr: string; truncated: boolean; evidenceId?: string }
 export type RunProcess = (args: string[], options?: { timeoutMs?: number; signal?: AbortSignal }) => Promise<ProcessResult>;
 
 /** Fixed executable, argument arrays only; never run a model-supplied host shell. */

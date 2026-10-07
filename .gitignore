@@ -11,3 +11,8 @@ coverage/
 tmp/
 # Local receipts from the removed legacy demos (not source; never publish their secrets).
 examples/live-lab/.runs/
+# Assessment receipts and benchmark workspaces can contain target/provider output.
+.p2o-reports/
+bench/.arms/
+bench/.work/
+bench/results/

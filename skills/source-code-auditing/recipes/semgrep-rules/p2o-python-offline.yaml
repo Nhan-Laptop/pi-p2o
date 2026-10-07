@@ -1,0 +1,83 @@
+# Original P2O local candidate rules. Candidate generation only, never confirmation.
+rules:
+  - id: p2o-python-subprocess-shell-true
+    languages: [python]
+    message: >-
+      Candidate shell invocation through subprocess with shell=True. Trace whether the
+      command is influenced by request, file, or environment input before treating it as
+      a finding; a fixed command with fixed arguments is not a vulnerability by itself.
+    severity: WARNING
+    metadata:
+      category: p2o-local-candidate
+      confidence: LOW
+      source: local-original
+    patterns:
+      - pattern-either:
+          - pattern: subprocess.$FUNC(..., shell=True, ...)
+          - pattern: subprocess.$FUNC($CMD, shell=True)
+
+  - id: p2o-python-pickle-deserialization
+    languages: [python]
+    message: >-
+      Candidate untrusted deserialization through pickle. Establish the byte origin, the
+      integrity control between producer and consumer, and the reachable path before
+      recording a finding.
+    severity: WARNING
+    metadata:
+      category: p2o-local-candidate
+      confidence: LOW
+      source: local-original
+    pattern-either:
+      - pattern: pickle.loads(...)
+      - pattern: pickle.load(...)
+
+  - id: p2o-python-yaml-load-unsafe
+    languages: [python]
+    message: >-
+      Candidate YAML load without an explicit safe loader. Confirm the loader actually
+      resolved on the tested call path; a wrapper that pins SafeLoader is a control.
+    severity: WARNING
+    metadata:
+      category: p2o-local-candidate
+      confidence: LOW
+      source: local-original
+    patterns:
+      - pattern: yaml.load(...)
+      - pattern-not: yaml.load(..., Loader=yaml.SafeLoader, ...)
+      - pattern-not: yaml.load(..., Loader=yaml.CSafeLoader, ...)
+      - pattern-not: yaml.load(..., Loader=SafeLoader, ...)
+
+  - id: p2o-python-dynamic-code-evaluation
+    languages: [python]
+    message: >-
+      Candidate dynamic evaluation through eval or exec. Show attacker influence and the
+      absence of a safer parser on the reachable path; a constant literal expression is
+      not a finding.
+    severity: WARNING
+    metadata:
+      category: p2o-local-candidate
+      confidence: LOW
+      source: local-original
+    pattern-either:
+      - pattern: eval(...)
+      - pattern: exec(...)
+
+  - id: p2o-python-http-request-without-timeout
+    languages: [python]
+    message: >-
+      Candidate outbound HTTP request without an explicit timeout. Confirm the call path
+      and whether an unbounded wait can block a request handler, worker, or scheduled
+      task under attacker influence.
+    severity: WARNING
+    metadata:
+      category: p2o-local-candidate
+      confidence: LOW
+      source: local-original
+    patterns:
+      - pattern-either:
+          - pattern: requests.$METHOD(...)
+          - pattern: httpx.$METHOD(...)
+      - pattern-not: requests.$METHOD(..., timeout=..., ...)
+      - pattern-not: requests.$METHOD(..., timeout=$T)
+      - pattern-not: httpx.$METHOD(..., timeout=..., ...)
+      - pattern-not: httpx.$METHOD(..., timeout=$T)

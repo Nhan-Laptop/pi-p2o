@@ -1,0 +1,37 @@
+{
+  "schema_version": 1,
+  "kind": "playbook",
+  "references": [
+    "references/principal-object-matrix.md"
+  ],
+  "workflows": [
+    {
+      "id": "source-review",
+      "description": "Trace the effective authorization decision and its operands in the supplied revision",
+      "allOf": [
+        "source.snapshot"
+      ]
+    },
+    {
+      "id": "offline-reproduction",
+      "description": "Exercise an extracted policy function against controlled objects in a local harness",
+      "allOf": [
+        "shell.offline"
+      ],
+      "anyOf": [
+        "tool.python"
+      ]
+    },
+    {
+      "id": "controlled-identity-comparison",
+      "description": "Compare a controlled principal against another over an authenticated transport; local HTTP alone is not identity",
+      "allOf": [
+        "http.authenticated"
+      ]
+    }
+  ],
+  "provenance_refs": [
+    "R1",
+    "R2"
+  ]
+}

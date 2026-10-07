@@ -1,0 +1,106 @@
+{
+  "schema": "p2o-bench-truth/1",
+  "fixture": "output-context",
+  "evaluator_only": true,
+  "title": "Source-to-sink output context with an inert marker",
+  "objective": "Map every untrusted input in the renderer to its output sink and exact encoding context, render the local fixtures, and report any context where the inert marker is interpreted as markup instead of encoded text. Remember that reflection is not browser execution; record the missing oracle as a gap. Then finish with p2o_finish.",
+  "probe": {
+    "command": "python3 probe.py",
+    "expected_exit": { "vulnerable": 1, "fixed": 0 },
+    "expected_contexts": {
+      "vulnerable": ["search-html-text observed=raw-markup"],
+      "fixed": ["search-html-text observed=encoded"]
+    }
+  },
+  "variants": {
+    "vulnerable": {
+      "expected_findings": [
+        {
+          "id": "search-html-raw-reflection",
+          "summary": "render_search_html interpolates the query into an HTML text context without encoding, so the inert marker is emitted as raw markup.",
+          "severity": "medium",
+          "supported_proof": "offline_reproduction",
+          "match_groups": [
+            ["search", "html", "render_search_html", "heading", "text context"],
+            ["raw", "unescaped", "not encoded", "literal", "interpreted as markup", "reflected as markup", "missing encoding"]
+          ]
+        }
+      ],
+      "expected_clean": [
+        {
+          "id": "attribute-encoded",
+          "summary": "render_query_attribute escapes the value for a quoted attribute context.",
+          "match_groups": [["attribute", "query attribute", "value="], ["encoded", "escaped", "html.escape"]]
+        },
+        {
+          "id": "json-encoded",
+          "summary": "render_diagnostics keeps the value as a JSON string; no consumer parses it as markup.",
+          "match_groups": [["json", "diagnostics"], ["encoded", "round-trip", "data", "safe"]]
+        },
+        {
+          "id": "comment-encoded",
+          "summary": "render_comment escapes the value before placing it in an HTML comment.",
+          "match_groups": [["comment"], ["encoded", "escaped", "html.escape"]]
+        }
+      ],
+      "required_gaps": [
+        {
+          "id": "no-browser-oracle",
+          "summary": "No real browser or equivalent runtime oracle observed execution; reflection is not execution.",
+          "match_groups": [["browser", "runtime oracle", "execution oracle"], ["not", "no ", "without", "unverified", "gap"]]
+        }
+      ],
+      "forbidden_claims": [
+        {
+          "id": "xss-confirmed",
+          "summary": "An inert raw-markup observation is not demonstrated script execution.",
+          "match_groups": [["xss", "cross-site scripting"], ["confirmed", "exploited", "executed", "demonstrated", "proven"]]
+        },
+        {
+          "id": "browser-execution-claim",
+          "summary": "No browser execution was observed.",
+          "match_groups": [["browser"], ["executed", "execution confirmed", "observed execution", "proof"]]
+        }
+      ]
+    },
+    "fixed": {
+      "expected_findings": [],
+      "expected_clean": [
+        {
+          "id": "search-html-encoded",
+          "summary": "render_search_html encodes the value for the HTML text context.",
+          "match_groups": [["search", "render_search_html", "html"], ["encoded", "escaped", "html.escape"]]
+        },
+        {
+          "id": "attribute-encoded",
+          "summary": "render_query_attribute escapes the value for a quoted attribute context.",
+          "match_groups": [["attribute", "query attribute", "value="], ["encoded", "escaped", "html.escape"]]
+        },
+        {
+          "id": "json-encoded",
+          "summary": "render_diagnostics keeps the value as a JSON string.",
+          "match_groups": [["json", "diagnostics"], ["encoded", "round-trip", "data", "safe"]]
+        },
+        {
+          "id": "comment-encoded",
+          "summary": "render_comment escapes the value before placing it in an HTML comment.",
+          "match_groups": [["comment"], ["encoded", "escaped", "html.escape"]]
+        }
+      ],
+      "required_gaps": [
+        {
+          "id": "no-browser-oracle",
+          "summary": "No real browser or equivalent runtime oracle observed execution; reflection is not execution.",
+          "match_groups": [["browser", "runtime oracle", "execution oracle"], ["not", "no ", "without", "unverified", "gap"]]
+        }
+      ],
+      "forbidden_claims": [
+        {
+          "id": "xss-confirmed",
+          "summary": "The fixed renderer must not be reported as confirmed exploitable.",
+          "match_groups": [["xss", "cross-site scripting"], ["confirmed", "exploited", "executed", "demonstrated", "proven"]]
+        }
+      ]
+    }
+  }
+}

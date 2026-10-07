@@ -6,7 +6,7 @@ import { homedir } from 'node:os';
 import { MAX_DEPTH, MAX_WORKERS } from './roles.js';
 
 export type Target = { kind: 'directory'; path: string } | { kind: 'url'; url: string; origin: string };
-export interface StartOptions { solo: boolean; workers?: number; maxDepth?: number }
+export interface StartOptions { solo: boolean; workers?: number; maxDepth?: number; export?: boolean }
 export type Command = { action: 'help' } | { action: 'stop' } | { action: 'start'; target: string; options: StartOptions };
 
 /** Deliberately small. One target plus delegation limits; quoting is supported for directory names. */
@@ -25,6 +25,7 @@ export function parseCommand(args: string): Command {
     for (let index = 0; index < tokens.length; index += 1) {
       const token = tokens[index];
       if (token === '--solo') { options.solo = true; continue; }
+      if (token === '--export') { options.export = true; continue; }
       if (token !== '--workers' && token !== '--max-depth') throw new Error(`Unknown option ${token.slice(0, 40)}; usage: /p2o --target <directory|http(s)-URL> [--solo] [--workers N] [--max-depth D]`);
       const value = tokens[index + 1];
       if (!value || !/^\d+$/.test(value)) throw new Error(`${token} needs an integer value`);

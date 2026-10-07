@@ -1,5 +1,7 @@
 # Usage
 
+For on-demand skills, workflow prerequisites, proof-level records and `--export`, see [skill runtime](SKILL_RUNTIME.md).
+
 Install with `pi install https://github.com/Nhan-Laptop/pi-p2o`, then `/reload`.
 Start Docker and pull the pinned image listed in the README once. No source build is required in an installed copy.
 

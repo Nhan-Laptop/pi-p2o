@@ -38,16 +38,18 @@ export interface WorkerRegistration {
   reported?: WorkerReport;
 }
 
-export interface DelegateInput { focus: string; task: string; context?: string; role?: string; skills?: string[]; model?: string }
+export interface DelegateInput { focus: string; task: string; context?: string; role?: string; skills?: string[]; model?: string; workflow?: string }
 export interface DelegateResult { workerId: string; name: string; paneId: string; role: string; model?: string; depth: number }
 
 export interface BrokerDeps {
   exec(command: string, seconds: number, workdir: string, signal: AbortSignal): Promise<ProcessResult>;
-  http(url: string, method: 'GET' | 'HEAD', signal: AbortSignal): Promise<ProcessResult>;
+  http(url: string, method: 'GET' | 'HEAD', signal: AbortSignal, workerId?: string): Promise<ProcessResult>;
   note(record: AssessmentRecord): Promise<void>;
   ledger(limit: number): Promise<AssessmentRecord[]>;
   delegate(input: DelegateInput, parent: WorkerRegistration): Promise<DelegateResult>;
   report(workerId: string, report: WorkerReport): Promise<void>;
+  knowledge?(op: string, request: Record<string, unknown>, worker: WorkerRegistration): Promise<unknown>;
+  candidate?(input: unknown, worker: WorkerRegistration): Promise<unknown>;
   onProblem?(message: string): void;
 }
 
@@ -95,6 +97,7 @@ export class Broker {
   /** Commands in flight per worker, so revoking a worker ends its wait instead of letting it run on. */
   private readonly inFlight = new Map<string, AbortController>();
   private totalUsed = 0;
+  private readonly knowledgeUsed = new Map<string, number>();
   private readonly socketPath: string;
   constructor(private readonly control: string, private readonly deps: BrokerDeps, private readonly limits: BrokerLimits) {
     this.socketPath = join(control, 'sandbox.sock');
@@ -137,7 +140,7 @@ export class Broker {
     let buffer = '';
     let workerId: string | undefined;
     let chain: Promise<void> = Promise.resolve();
-    const send = (payload: unknown) => { if (!socket.destroyed) socket.write(`${JSON.stringify(payload)}\n`); };
+    const send = (payload: unknown) => { if (!socket.destroyed) socket.write(`${boundedResponse(payload)}\n`); };
     const fail = (message: string) => { this.deps.onProblem?.(message); send({ ok: false, error: message }); };
     socket.on('data', chunk => {
       buffer += chunk;
@@ -181,13 +184,35 @@ export class Broker {
     if (!registration || registration.stopped) return { ok: false, error: 'This worker was stopped by the owner' };
     const op = text(request?.op, 32);
     switch (op) {
+      case 'skill_list': case 'skill_read': case 'capabilities': {
+        const used = this.knowledgeUsed.get(workerId) ?? 0;
+        if (used >= 200) return { ok: false, error: 'Knowledge read budget exhausted (separate from target commands)' };
+        this.knowledgeUsed.set(workerId, used + 1);
+        if (!this.deps.knowledge) return { ok: false, error: 'Knowledge service unavailable' };
+        try { return { ok: true, value: await this.deps.knowledge(op, request, registration) }; }
+        catch (error) { return { ok: false, error: errText(error) }; }
+      }
+      case 'candidate': {
+        const used = this.knowledgeUsed.get(workerId) ?? 0;
+        if (used >= 200) return { ok: false, error: 'Coordination budget exhausted' };
+        this.knowledgeUsed.set(workerId, used + 1);
+        if (!this.deps.candidate) return { ok: false, error: 'Candidate service unavailable' };
+        try { return { ok: true, value: await this.deps.candidate(request?.candidate, registration) }; }
+        catch (error) { return { ok: false, error: errText(error) }; }
+      }
       case 'status':
         return { ok: true, workerId, used: registration.used, budget: registration.commandBudget, reported: Boolean(registration.reported) };
       case 'ledger': {
         // Workers may read the shared ledger: it is how a nested worker sees its parent's notes.
         const limit = Number.isInteger(request?.limit) ? Math.min(Math.max(request.limit, 1), 100) : 50;
         const slice = await this.deps.ledger(limit);
-        return { ok: true, records: slice };
+        const records: AssessmentRecord[] = []; let bytes = 0;
+        for (const record of slice.slice().reverse()) {
+          const size = Buffer.byteLength(JSON.stringify(record));
+          if (bytes + size > 48 * 1024) break;
+          bytes += size; records.unshift(record);
+        }
+        return { ok: true, records, truncated: records.length < slice.length };
       }
       case 'exec': {
         if (typeof request?.command !== 'string' || request.command.length > 8192) return { ok: false, error: 'command must be 1..8192 characters' };
@@ -200,7 +225,7 @@ export class Broker {
         return this.whileRunning(workerId, async signal => {
           try {
             const result = await this.deps.exec(command, seconds, `/work/${workerId}`, signal);
-            return { ok: true, code: result.code, stdout: result.stdout, stderr: result.stderr, truncated: result.truncated };
+            return { ok: true, ...result };
           } catch (error) { return { ok: false, error: errText(error) }; }
         });
       }
@@ -213,13 +238,16 @@ export class Broker {
         if (spent) return spent;
         return this.whileRunning(workerId, async signal => {
           try {
-            const result = await this.deps.http(url, method, signal);
-            return { ok: true, code: result.code, stdout: result.stdout, stderr: result.stderr, truncated: result.truncated };
+            const result = await this.deps.http(url, method, signal, workerId);
+            return { ok: true, ...result };
           } catch (error) { return { ok: false, error: errText(error) }; }
         });
       }
       case 'note': {
-        if (!isRecordKind(request?.kind) || request.kind === 'report' || request.kind === 'lifecycle') return { ok: false, error: 'kind must be note, coverage, observation or open' };
+        const used = this.knowledgeUsed.get(workerId) ?? 0;
+        if (used >= 200) return { ok: false, error: 'Coordination budget exhausted' };
+        this.knowledgeUsed.set(workerId, used + 1);
+        if (!isRecordKind(request?.kind) || !['note', 'coverage', 'observation', 'open'].includes(request.kind)) return { ok: false, error: 'kind must be note, coverage, observation or open' };
         const body = text(request?.text, 2000);
         if (!body) return { ok: false, error: 'text is required' };
         const outcome = isOutcome(request?.outcome) ? request.outcome : undefined;
@@ -241,7 +269,7 @@ export class Broker {
           const worker = await this.deps.delegate({
             focus, task, context: text(request?.context, 4000), role: text(request?.role, 32),
             skills: stringList(request?.skills, 3, 64).filter(skill => /^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(skill)),
-            model: text(request?.model, 200),
+            model: text(request?.model, 200), workflow: text(request?.workflow, 64),
           }, registration);
           return { ok: true, worker };
         } catch (error) { return { ok: false, error: errText(error) }; }
@@ -294,6 +322,20 @@ export class Broker {
   }
 }
 
+/** Bound the serialized wire frame, not just raw output bytes. Keep oversize errors request-correlated. */
+export function boundedResponse(payload: unknown): string {
+  const value = { ...(payload as Record<string, unknown>) };
+  let encoded = JSON.stringify(value);
+  while (Buffer.byteLength(encoded) > MAX_LINE_BYTES - 512 && (typeof value.stdout === 'string' && value.stdout.length || typeof value.stderr === 'string' && value.stderr.length)) {
+    if (typeof value.stdout === 'string') value.stdout = value.stdout.slice(0, Math.floor(value.stdout.length / 2));
+    if (typeof value.stderr === 'string') value.stderr = value.stderr.slice(0, Math.floor(value.stderr.length / 2));
+    value.truncated = true;
+    encoded = JSON.stringify(value);
+  }
+  return Buffer.byteLength(encoded) <= MAX_LINE_BYTES - 512 ? encoded
+    : JSON.stringify({ id: value.id, ok: false, error: 'Response exceeds broker frame limit; narrow the request' });
+}
+
 function errText(error: unknown): string { return (error instanceof Error ? error.message : String(error)).slice(0, 600); }
 
 export interface BrokerClientOptions { connectMs?: number; requestMs?: number }
@@ -341,6 +383,7 @@ export class BrokerClient {
           if (index < 0) break;
           const line = buffer.slice(0, index); buffer = buffer.slice(index + 1);
           if (!line.trim()) continue;
+          if (Buffer.byteLength(line) > MAX_LINE_BYTES) { this.fail('owner broker response exceeded the line limit'); return; }
           let record: any;
           try { record = JSON.parse(line); } catch { continue; }
           if (this.socket !== socket) {
@@ -381,7 +424,7 @@ export class BrokerClient {
           resolve: value => { clearTimeout(timer); resolve(value as T); },
           reject: error => { clearTimeout(timer); reject(error); },
         });
-        socket.write(`${JSON.stringify({ id, op, ...payload })}\n`);
+        socket.write(`${JSON.stringify({ ...payload, id, op })}\n`);
       });
     };
     const next = this.chain.then(run, run);

@@ -1,0 +1,34 @@
+{
+  "schema_version": 1,
+  "kind": "playbook",
+  "references": [
+    "references/route-inventory-method.md"
+  ],
+  "workflows": [
+    {
+      "id": "source-review",
+      "description": "Extract routes, parameters, and declared identity gates from the supplied source copy",
+      "allOf": [
+        "source.snapshot"
+      ]
+    },
+    {
+      "id": "public-baseline",
+      "description": "Send one bodyless same-origin GET or HEAD baseline per in-scope route",
+      "allOf": [
+        "http.same-origin.get"
+      ]
+    },
+    {
+      "id": "authenticated-navigation",
+      "description": "Reach protected routes with a controlled authenticated identity; a browser session is not a substitute",
+      "allOf": [
+        "http.authenticated"
+      ]
+    }
+  ],
+  "provenance_refs": [
+    "R1",
+    "R4"
+  ]
+}

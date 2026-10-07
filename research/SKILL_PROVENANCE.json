@@ -1,0 +1,175 @@
+{
+  "schema_version": 1,
+  "upstream": {
+    "project": "usestrix/strix",
+    "distribution": "strix-agent",
+    "revision": "1.7.0",
+    "revision_basis": "Package version recorded in the reviewed snapshot's pyproject.toml; the snapshot carries no git commit identifier.",
+    "snapshot_retrieved_at": "2026-10-06",
+    "reviewed_at": "2026-10-07",
+    "license": "Apache-2.0",
+    "license_sha256": "7db9697134251e314bd8d39257fe170c98b3e2ad9b2ed67e97acaf9613e7b9e3",
+    "license_copy": "research/licenses/apache-2.0.md",
+    "license_notice": "research/licenses/README.md",
+    "version_metadata_sha256": "8b4b6f1c0b4531a4cbc72b1f04877432d1fad2547f07a5b19c244aee4083c2b2",
+    "usage_boundary": "Review snapshot only. No runtime, packaged, or network dependency on the snapshot; guidance was rewritten for this library's evidence policy and no upstream text, code, payload, or ruleset is shipped.",
+    "attribution": "Adapted material is credited by document title and content hash, and the upstream license text is vendored for conservative attribution while the reviewed material remains Apache-2.0."
+  },
+  "references": [
+    {
+      "id": "R1",
+      "role": "primary",
+      "document": "Counterevidence and Closure Discipline",
+      "sha256": "3e729859564e68859eb588862d3c20a1fd65d88b49418b3e0e18f34eebae1d2d",
+      "license": "Apache-2.0",
+      "adapted": [
+        "Named-control closure and the open-proof-gap state instead of an unproven clean result.",
+        "Explicit positive and negative controls for every comparison.",
+        "Honest evidence-stage and confidence limits in candidate records."
+      ],
+      "excluded": [
+        "Strix runtime tool calls, record schemas, and orchestration instructions tied to its agent harness.",
+        "Any claim that a schema-complete record proves a finding is true."
+      ],
+      "used_by": [
+        "web-route-input-inventory",
+        "web-object-authorization",
+        "web-output-context"
+      ]
+    },
+    {
+      "id": "R2",
+      "role": "primary",
+      "document": "IDOR, object-level authorization failures",
+      "sha256": "2b97ead5254ab3e3fec92c3edafcd3eb619e59264c9f743c844bdadfcc1d0659",
+      "license": "Apache-2.0",
+      "adapted": [
+        "Principal-object-action matrix as the organizing artifact.",
+        "Tenant, batch, export, and background-job variants placed as separate matrix cells.",
+        "One reachable unauthorized protected effect establishes the policy question; a second transport is variant coverage."
+      ],
+      "excluded": [
+        "Automatic parameter-discovery tooling and bulk identifier harvesting.",
+        "Cache, timing, redirect, and parser bypass recipes.",
+        "Header-spoofing guidance and post-exploitation chaining."
+      ],
+      "used_by": [
+        "web-object-authorization"
+      ]
+    },
+    {
+      "id": "R3",
+      "role": "primary",
+      "document": "XSS, reflected stored and DOM-based vectors",
+      "sha256": "3eba51fd17b527eccaad21a9f1a07aa638ffd61d85f573c49360229e068bcc97",
+      "license": "Apache-2.0",
+      "adapted": [
+        "Source to sink to exact output-context classification.",
+        "Reflection versus demonstrated execution as separate evidence stages.",
+        "Encoding judged against the parser and position that consume the bytes."
+      ],
+      "excluded": [
+        "Payload catalogs, polyglots, and encoding-bypass recipes.",
+        "CSP, Trusted Types, and sanitizer bypass operations.",
+        "Credential or session collection, persistence, and post-exploitation guidance."
+      ],
+      "used_by": [
+        "web-output-context"
+      ]
+    },
+    {
+      "id": "R4",
+      "role": "primary",
+      "document": "API specification testing",
+      "sha256": "bc16c8b64d35cae9b3aa703f32d40f33e280617f1c0cdf8c05358fec98dd09bf",
+      "license": "Apache-2.0",
+      "adapted": [
+        "Method, path, parameter, and declared-authorization inventory.",
+        "Valid-request baseline as the comparison anchor.",
+        "Coverage tracking so every inventoried route keeps a state."
+      ],
+      "excluded": [
+        "The assumption that specification-provided base addresses authorize traffic.",
+        "Automatic probing of undocumented write-method siblings.",
+        "Active fuzzing and live exploitation steps."
+      ],
+      "used_by": [
+        "web-route-input-inventory"
+      ]
+    },
+    {
+      "id": "R5",
+      "role": "primary",
+      "document": "FastAPI security testing playbook",
+      "sha256": "4d1ee5916a2f8d145afe47a329c630196ca9d9a86e19af85c877d83366db9aa4",
+      "license": "Apache-2.0",
+      "adapted": [
+        "Router, mounted-application, middleware, asynchronous-consumer, and channel enforcement parity.",
+        "Dependency parsing versus verification distinction.",
+        "Installed version and actual dependency code as preconditions for a framework claim."
+      ],
+      "excluded": [
+        "Bypass catalogue, outbound-request probing, and payload sets.",
+        "Version-advisory blanket claims and framework assertions not verified against installed source."
+      ],
+      "used_by": [
+        "fastapi-security-parity"
+      ]
+    },
+    {
+      "id": "R6",
+      "role": "primary",
+      "document": "Semgrep CLI playbook",
+      "sha256": "1de60189a3ff5d920ab7842659003349e06c061270c840768da6d35796870554",
+      "license": "Apache-2.0",
+      "adapted": [
+        "Explicit configuration, bounded scope, metrics off, and machine-readable output.",
+        "Conservative jobs, timeout, and memory settings for a shared sandbox.",
+        "Failure recovery that narrows scope before changing engine behavior."
+      ],
+      "excluded": [
+        "Registry packs, automatic config defaults, and telemetry.",
+        "The broader command catalogue and any network-dependent step."
+      ],
+      "used_by": [
+        "skills/source-code-auditing/recipes/offline-python-semgrep.md"
+      ]
+    },
+    {
+      "id": "A1",
+      "role": "architecture",
+      "document": "Strix skill loader package",
+      "sha256": "d7b4d8678dc67cebf9bef76b0ad53d9c77ce4c55a74c4439e6f70d1d853b14f3",
+      "license": "Apache-2.0",
+      "adapted": [],
+      "excluded": [
+        "Not used as library content. Reviewed only to confirm that a name and description frontmatter sidecar remains compatible with our strict parser and discovery."
+      ],
+      "used_by": []
+    },
+    {
+      "id": "A2",
+      "role": "architecture",
+      "document": "On-demand skill loading tool",
+      "sha256": "1cbcaff9968972f60ede8a3d137df8984a71d1cc2b28014b4224fa27fd8f31d5",
+      "license": "Apache-2.0",
+      "adapted": [],
+      "excluded": [
+        "Not used as library content. Reviewed only as architecture context for on-demand retrieval, which is implemented separately in the P2O runtime."
+      ],
+      "used_by": []
+    },
+    {
+      "id": "A3",
+      "role": "architecture",
+      "document": "Shared versus task-specific prompt assembly",
+      "sha256": "d70343408e042018ba34380c6235e32a882c2b4a14e34a6f3752eb5cefd95122",
+      "license": "Apache-2.0",
+      "adapted": [],
+      "excluded": [
+        "Not used as library content. Reviewed only as architecture context for separating always-loaded instructions from task-specific skills."
+      ],
+      "used_by": []
+    }
+  ]
+}

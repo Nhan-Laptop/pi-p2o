@@ -1,0 +1,1176 @@
+{
+  "version": 1,
+  "skills": [
+    {
+      "name": "attack-surface-mapping",
+      "description": "Map an unfamiliar application's, service's, firmware's, kernel's, or hypervisor's reachable interfaces and trust boundaries. Use before choosing code to audit or designing a harness.",
+      "kind": "technique",
+      "document": "attack-surface-mapping",
+      "workflows": [
+        {
+          "id": "source-review",
+          "description": "Review supplied source and trace invariants without claiming runtime proof",
+          "allOf": [
+            "source.snapshot"
+          ]
+        },
+        {
+          "id": "offline-reproduction",
+          "description": "Bounded offline execution; check target runtime/dependencies with a real probe first",
+          "allOf": [
+            "shell.offline"
+          ],
+          "anyOf": []
+        },
+        {
+          "id": "public-http-review",
+          "description": "Same-origin public GET/HEAD comparison only; no credentials, bodies or browser",
+          "allOf": [
+            "http.same-origin.get"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "authorization-auditing",
+      "description": "Audit identity establishment, object/field authorization, alternate interfaces, failure behavior, and privilege-bearing defaults. Use when authenticated input or connection state controls privileged actions.",
+      "kind": "technique",
+      "document": "authorization-auditing",
+      "workflows": [
+        {
+          "id": "source-review",
+          "description": "Review supplied source and trace invariants without claiming runtime proof",
+          "allOf": [
+            "source.snapshot"
+          ]
+        },
+        {
+          "id": "offline-reproduction",
+          "description": "Bounded offline execution; check target runtime/dependencies with a real probe first",
+          "allOf": [
+            "shell.offline"
+          ],
+          "anyOf": []
+        },
+        {
+          "id": "authenticated-comparison",
+          "description": "Controlled two-account HTTP comparison, requires separately consented runtime",
+          "allOf": [
+            "http.authenticated"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "binary-auditing",
+      "description": "Route native executables, managed bundles, and firmware to the right analysis layer. Recover memory maps and interface contracts with bounded code slices when source, symbols, or format documentation is missing.",
+      "kind": "technique",
+      "document": "binary-auditing",
+      "workflows": [
+        {
+          "id": "source-review",
+          "description": "Review supplied source and trace invariants without claiming runtime proof",
+          "allOf": [
+            "source.snapshot"
+          ]
+        },
+        {
+          "id": "offline-reproduction",
+          "description": "Bounded offline execution; check target runtime/dependencies with a real probe first",
+          "allOf": [
+            "shell.offline"
+          ],
+          "anyOf": []
+        }
+      ]
+    },
+    {
+      "name": "compiler-invariant-auditing",
+      "description": "Audit optimizer assumptions, effect chains, numeric ranges, parser identities, exception sentinels, and cross-tier metadata. Use for compilers, JITs, language runtimes, or staged reprocessing systems.",
+      "kind": "technique",
+      "document": "compiler-invariant-auditing",
+      "workflows": [
+        {
+          "id": "source-review",
+          "description": "Review supplied source and trace invariants without claiming runtime proof",
+          "allOf": [
+            "source.snapshot"
+          ]
+        },
+        {
+          "id": "offline-reproduction",
+          "description": "Bounded offline execution; check target runtime/dependencies with a real probe first",
+          "allOf": [
+            "shell.offline"
+          ],
+          "anyOf": []
+        }
+      ]
+    },
+    {
+      "name": "data-flow-analysis",
+      "description": "Trace attacker influence through wrappers, indirect dispatch, persistent state, and asynchronous consumers. Use to distinguish a sensitive sink candidate from a feasible security-boundary violation.",
+      "kind": "technique",
+      "document": "data-flow-analysis",
+      "workflows": [
+        {
+          "id": "source-review",
+          "description": "Review supplied source and trace invariants without claiming runtime proof",
+          "allOf": [
+            "source.snapshot"
+          ]
+        },
+        {
+          "id": "offline-reproduction",
+          "description": "Bounded offline execution; check target runtime/dependencies with a real probe first",
+          "allOf": [
+            "shell.offline"
+          ],
+          "anyOf": []
+        }
+      ]
+    },
+    {
+      "name": "deserialization-and-dispatch-auditing",
+      "description": "Audit data that selects methods, types, callbacks, templates, or serialized object behavior. Use for reflective APIs, prototype inheritance, nested deserializers, converters, and data-to-code boundaries.",
+      "kind": "technique",
+      "document": "deserialization-and-dispatch-auditing",
+      "workflows": [
+        {
+          "id": "source-review",
+          "description": "Review supplied source and trace invariants without claiming runtime proof",
+          "allOf": [
+            "source.snapshot"
+          ]
+        },
+        {
+          "id": "offline-reproduction",
+          "description": "Bounded offline execution; check target runtime/dependencies with a real probe first",
+          "allOf": [
+            "shell.offline"
+          ],
+          "anyOf": []
+        }
+      ]
+    },
+    {
+      "name": "dynamic-analysis",
+      "description": "Design minimal debugger or instrumentation experiments to resolve a static hypothesis. Use for uncertain dataflow, object lifetimes, execution paths, representation changes, or environment-dependent failures.",
+      "kind": "technique",
+      "document": "dynamic-analysis",
+      "workflows": [
+        {
+          "id": "source-review",
+          "description": "Review supplied source and trace invariants without claiming runtime proof",
+          "allOf": [
+            "source.snapshot"
+          ]
+        },
+        {
+          "id": "offline-reproduction",
+          "description": "Bounded offline execution; check target runtime/dependencies with a real probe first",
+          "allOf": [
+            "shell.offline"
+          ],
+          "anyOf": []
+        }
+      ]
+    },
+    {
+      "name": "exploitability-assessment",
+      "description": "Assess reachable security impact using constrained primitives, capability preconditions, mitigation state, and negative evidence. Use after a bug is confirmed, without turning assessment into weaponization.",
+      "kind": "technique",
+      "document": "exploitability-assessment",
+      "workflows": [
+        {
+          "id": "source-review",
+          "description": "Review supplied source and trace invariants without claiming runtime proof",
+          "allOf": [
+            "source.snapshot"
+          ]
+        },
+        {
+          "id": "offline-reproduction",
+          "description": "Bounded offline execution; check target runtime/dependencies with a real probe first",
+          "allOf": [
+            "shell.offline"
+          ],
+          "anyOf": []
+        }
+      ]
+    },
+    {
+      "name": "fastapi-security-parity",
+      "description": "Verify that FastAPI and Starlette identity, router, middleware, mounted-app, and asynchronous-consumer enforcement actually covers the reachable route before claiming a bypass. Use as an overlay on an application-level audit.",
+      "kind": "overlay",
+      "document": "fastapi-security-parity",
+      "workflows": [
+        {
+          "id": "source-review",
+          "description": "Walk the application factory, routers, and mounts in the supplied revision",
+          "allOf": [
+            "source.snapshot"
+          ]
+        },
+        {
+          "id": "offline-reproduction",
+          "description": "Read the installed dependency metadata from the copy without installing anything",
+          "allOf": [
+            "shell.offline"
+          ],
+          "anyOf": [
+            "tool.python"
+          ]
+        },
+        {
+          "id": "live-parity-comparison",
+          "description": "Compare the anonymous enforcement baseline across equivalent routes on the approved same-origin target",
+          "allOf": [
+            "http.same-origin.get"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "fuzzing",
+      "description": "Build and validate stateful, format-aware fuzzing harnesses, choose meaningful corpora and oracles, and hand crashes to manual audit. Use for parsers, protocol handlers, emulated devices, or complex storage formats.",
+      "kind": "technique",
+      "document": "fuzzing",
+      "workflows": [
+        {
+          "id": "source-review",
+          "description": "Review supplied source and trace invariants without claiming runtime proof",
+          "allOf": [
+            "source.snapshot"
+          ]
+        },
+        {
+          "id": "offline-reproduction",
+          "description": "Bounded offline execution; check target runtime/dependencies with a real probe first",
+          "allOf": [
+            "shell.offline"
+          ],
+          "anyOf": []
+        }
+      ]
+    },
+    {
+      "name": "memory-safety-auditing",
+      "description": "Audit numeric representations, buffer ranges, initialization, allocator/lifetime constraints, and crash provenance. Use to distinguish structural validity from safe memory access without developing an exploit.",
+      "kind": "technique",
+      "document": "memory-safety-auditing",
+      "workflows": [
+        {
+          "id": "source-review",
+          "description": "Review supplied source and trace invariants without claiming runtime proof",
+          "allOf": [
+            "source.snapshot"
+          ]
+        },
+        {
+          "id": "offline-reproduction",
+          "description": "Bounded offline execution; check target runtime/dependencies with a real probe first",
+          "allOf": [
+            "shell.offline"
+          ],
+          "anyOf": []
+        }
+      ]
+    },
+    {
+      "name": "parser-differential-auditing",
+      "description": "Find trust failures caused by inconsistent parsing, canonicalization, framing, encoding, or validation across layers. Use when the validated representation may differ from the consumed one.",
+      "kind": "technique",
+      "document": "parser-differential-auditing",
+      "workflows": [
+        {
+          "id": "source-review",
+          "description": "Review supplied source and trace invariants without claiming runtime proof",
+          "allOf": [
+            "source.snapshot"
+          ]
+        },
+        {
+          "id": "offline-reproduction",
+          "description": "Bounded offline execution; check target runtime/dependencies with a real probe first",
+          "allOf": [
+            "shell.offline"
+          ],
+          "anyOf": []
+        }
+      ]
+    },
+    {
+      "name": "patch-diff-analysis",
+      "description": "Turn source or binary changes and regression tests into invariant hypotheses, validate N-day applicability, and assess fix coverage. Use for sparse advisories, variant hunting, and release-gap analysis.",
+      "kind": "technique",
+      "document": "patch-diff-analysis",
+      "workflows": [
+        {
+          "id": "source-review",
+          "description": "Review supplied source and trace invariants without claiming runtime proof",
+          "allOf": [
+            "source.snapshot"
+          ]
+        },
+        {
+          "id": "offline-reproduction",
+          "description": "Bounded offline execution; check target runtime/dependencies with a real probe first",
+          "allOf": [
+            "shell.offline"
+          ],
+          "anyOf": []
+        }
+      ]
+    },
+    {
+      "name": "race-condition-auditing",
+      "description": "Audit double-fetch, lock-drop, TOCTOU, and shared-state interleavings using explicit event schedules and bounded runtime evidence. Use when a checked value or object can change before use.",
+      "kind": "technique",
+      "document": "race-condition-auditing",
+      "workflows": [
+        {
+          "id": "source-review",
+          "description": "Review supplied source and trace invariants without claiming runtime proof",
+          "allOf": [
+            "source.snapshot"
+          ]
+        },
+        {
+          "id": "offline-reproduction",
+          "description": "Bounded offline execution; check target runtime/dependencies with a real probe first",
+          "allOf": [
+            "shell.offline"
+          ],
+          "anyOf": []
+        }
+      ]
+    },
+    {
+      "name": "remediation",
+      "description": "Convert a verified vulnerability invariant into root-cause fixes, variant regression tests, deployment checks, detection, and hardening. Use after discovery or when reviewing a vendor's proposed patch.",
+      "kind": "technique",
+      "document": "remediation",
+      "workflows": [
+        {
+          "id": "source-review",
+          "description": "Review supplied source and trace invariants without claiming runtime proof",
+          "allOf": [
+            "source.snapshot"
+          ]
+        },
+        {
+          "id": "offline-reproduction",
+          "description": "Bounded offline execution; check target runtime/dependencies with a real probe first",
+          "allOf": [
+            "shell.offline"
+          ],
+          "anyOf": []
+        }
+      ]
+    },
+    {
+      "name": "sandbox-boundary-analysis",
+      "description": "Model browser, desktop-app, container, and OS confinement as layered capabilities and broker contracts. Use to assess privileged IPC, trusted rendering, policy composition, and claimed sandbox escapes.",
+      "kind": "technique",
+      "document": "sandbox-boundary-analysis",
+      "workflows": [
+        {
+          "id": "source-review",
+          "description": "Review supplied source and trace invariants without claiming runtime proof",
+          "allOf": [
+            "source.snapshot"
+          ]
+        },
+        {
+          "id": "offline-reproduction",
+          "description": "Bounded offline execution; check target runtime/dependencies with a real probe first",
+          "allOf": [
+            "shell.offline"
+          ],
+          "anyOf": []
+        }
+      ]
+    },
+    {
+      "name": "source-code-auditing",
+      "description": "Plan a high-yield audit of a large source tree using framework conventions, dual source/sink sweeps, invariant hypotheses, and variant searches. Use after reachable interfaces are mapped.",
+      "kind": "technique",
+      "document": "source-code-auditing",
+      "workflows": [
+        {
+          "id": "source-review",
+          "description": "Review supplied source and trace invariants without claiming runtime proof",
+          "allOf": [
+            "source.snapshot"
+          ]
+        },
+        {
+          "id": "offline-reproduction",
+          "description": "Bounded offline execution; check target runtime/dependencies with a real probe first",
+          "allOf": [
+            "shell.offline"
+          ],
+          "anyOf": []
+        }
+      ]
+    },
+    {
+      "name": "state-and-lifetime-auditing",
+      "description": "Audit ownership, reference counts, transaction phases, asynchronous callbacks, and lifecycle transitions. Use when objects remain discoverable after teardown or operations can observe inconsistent state.",
+      "kind": "technique",
+      "document": "state-and-lifetime-auditing",
+      "workflows": [
+        {
+          "id": "source-review",
+          "description": "Review supplied source and trace invariants without claiming runtime proof",
+          "allOf": [
+            "source.snapshot"
+          ]
+        },
+        {
+          "id": "offline-reproduction",
+          "description": "Bounded offline execution; check target runtime/dependencies with a real probe first",
+          "allOf": [
+            "shell.offline"
+          ],
+          "anyOf": []
+        }
+      ]
+    },
+    {
+      "name": "web-object-authorization",
+      "description": "Test whether a principal can reach an object, field, tenant, or delegated action outside the intended policy, using a source policy matrix and controlled local reproduction before any live comparison. Use for application-level authorization review.",
+      "kind": "playbook",
+      "document": "web-object-authorization",
+      "workflows": [
+        {
+          "id": "source-review",
+          "description": "Trace the effective authorization decision and its operands in the supplied revision",
+          "allOf": [
+            "source.snapshot"
+          ]
+        },
+        {
+          "id": "offline-reproduction",
+          "description": "Exercise an extracted policy function against controlled objects in a local harness",
+          "allOf": [
+            "shell.offline"
+          ],
+          "anyOf": [
+            "tool.python"
+          ]
+        },
+        {
+          "id": "controlled-identity-comparison",
+          "description": "Compare a controlled principal against another over an authenticated transport; local HTTP alone is not identity",
+          "allOf": [
+            "http.authenticated"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "web-output-context",
+      "description": "Map untrusted sources to output sinks and their exact encoding contexts, and distinguish safe reflection from demonstrated execution using harmless local markers. Use for output-encoding and script-context review.",
+      "kind": "playbook",
+      "document": "web-output-context",
+      "workflows": [
+        {
+          "id": "source-review",
+          "description": "Trace each source through its transformations to the sink and name the output context",
+          "allOf": [
+            "source.snapshot"
+          ]
+        },
+        {
+          "id": "offline-reproduction",
+          "description": "Render a local fixture with the extracted template or sanitizer configuration",
+          "allOf": [
+            "shell.offline"
+          ],
+          "anyOf": [
+            "tool.python"
+          ]
+        },
+        {
+          "id": "browser-execution-proof",
+          "description": "Observe an inert marker interpreted as code by a managed browser; local HTTP is not execution proof",
+          "allOf": [
+            "browser.execution"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "web-route-input-inventory",
+      "description": "Build a reviewable inventory of routes, accepted parameters, and declared authorization from a supplied source copy or an explicitly scoped public GET/HEAD baseline. Use before behaviorally testing a web surface.",
+      "kind": "playbook",
+      "document": "web-route-input-inventory",
+      "workflows": [
+        {
+          "id": "source-review",
+          "description": "Extract routes, parameters, and declared identity gates from the supplied source copy",
+          "allOf": [
+            "source.snapshot"
+          ]
+        },
+        {
+          "id": "public-baseline",
+          "description": "Send one bodyless same-origin GET or HEAD baseline per in-scope route",
+          "allOf": [
+            "http.same-origin.get"
+          ]
+        },
+        {
+          "id": "authenticated-navigation",
+          "description": "Reach protected routes with a controlled authenticated identity; a browser session is not a substitute",
+          "allOf": [
+            "http.authenticated"
+          ]
+        }
+      ]
+    }
+  ],
+  "documents": [
+    {
+      "id": "attack-surface-mapping",
+      "path": "skills/attack-surface-mapping/SKILL.md"
+    },
+    {
+      "id": "attack-surface-mapping:intermediary-trust",
+      "path": "skills/attack-surface-mapping/references/intermediary-trust.md"
+    },
+    {
+      "id": "authorization-auditing",
+      "path": "skills/authorization-auditing/SKILL.md"
+    },
+    {
+      "id": "binary-auditing",
+      "path": "skills/binary-auditing/SKILL.md"
+    },
+    {
+      "id": "binary-auditing:format-routing",
+      "path": "skills/binary-auditing/references/format-routing.md"
+    },
+    {
+      "id": "binary-auditing:native-slices",
+      "path": "skills/binary-auditing/references/native-slices.md"
+    },
+    {
+      "id": "compiler-invariant-auditing",
+      "path": "skills/compiler-invariant-auditing/SKILL.md"
+    },
+    {
+      "id": "data-flow-analysis",
+      "path": "skills/data-flow-analysis/SKILL.md"
+    },
+    {
+      "id": "data-flow-analysis:reduced-models",
+      "path": "skills/data-flow-analysis/references/reduced-models.md"
+    },
+    {
+      "id": "deserialization-and-dispatch-auditing",
+      "path": "skills/deserialization-and-dispatch-auditing/SKILL.md"
+    },
+    {
+      "id": "deserialization-and-dispatch-auditing:framework-routing",
+      "path": "skills/deserialization-and-dispatch-auditing/references/framework-routing.md"
+    },
+    {
+      "id": "dynamic-analysis",
+      "path": "skills/dynamic-analysis/SKILL.md"
+    },
+    {
+      "id": "dynamic-analysis:observation-signals",
+      "path": "skills/dynamic-analysis/references/observation-signals.md"
+    },
+    {
+      "id": "dynamic-analysis:runtime-probes",
+      "path": "skills/dynamic-analysis/references/runtime-probes.md"
+    },
+    {
+      "id": "exploitability-assessment",
+      "path": "skills/exploitability-assessment/SKILL.md"
+    },
+    {
+      "id": "fastapi-security-parity",
+      "path": "skills/fastapi-security-parity/SKILL.md"
+    },
+    {
+      "id": "fastapi-security-parity:enforcement-parity",
+      "path": "skills/fastapi-security-parity/references/enforcement-parity.md"
+    },
+    {
+      "id": "fuzzing",
+      "path": "skills/fuzzing/SKILL.md"
+    },
+    {
+      "id": "memory-safety-auditing",
+      "path": "skills/memory-safety-auditing/SKILL.md"
+    },
+    {
+      "id": "parser-differential-auditing",
+      "path": "skills/parser-differential-auditing/SKILL.md"
+    },
+    {
+      "id": "parser-differential-auditing:cache-selection",
+      "path": "skills/parser-differential-auditing/references/cache-selection.md"
+    },
+    {
+      "id": "parser-differential-auditing:semantic-boundaries",
+      "path": "skills/parser-differential-auditing/references/semantic-boundaries.md"
+    },
+    {
+      "id": "patch-diff-analysis",
+      "path": "skills/patch-diff-analysis/SKILL.md"
+    },
+    {
+      "id": "race-condition-auditing",
+      "path": "skills/race-condition-auditing/SKILL.md"
+    },
+    {
+      "id": "remediation",
+      "path": "skills/remediation/SKILL.md"
+    },
+    {
+      "id": "sandbox-boundary-analysis",
+      "path": "skills/sandbox-boundary-analysis/SKILL.md"
+    },
+    {
+      "id": "source-code-auditing",
+      "path": "skills/source-code-auditing/SKILL.md"
+    },
+    {
+      "id": "source-code-auditing:interaction-audits",
+      "path": "skills/source-code-auditing/references/interaction-audits.md"
+    },
+    {
+      "id": "state-and-lifetime-auditing",
+      "path": "skills/state-and-lifetime-auditing/SKILL.md"
+    },
+    {
+      "id": "web-object-authorization",
+      "path": "skills/web-object-authorization/SKILL.md"
+    },
+    {
+      "id": "web-object-authorization:principal-object-matrix",
+      "path": "skills/web-object-authorization/references/principal-object-matrix.md"
+    },
+    {
+      "id": "web-output-context",
+      "path": "skills/web-output-context/SKILL.md"
+    },
+    {
+      "id": "web-output-context:source-sink-context",
+      "path": "skills/web-output-context/references/source-sink-context.md"
+    },
+    {
+      "id": "web-route-input-inventory",
+      "path": "skills/web-route-input-inventory/SKILL.md"
+    },
+    {
+      "id": "web-route-input-inventory:route-inventory-method",
+      "path": "skills/web-route-input-inventory/references/route-inventory-method.md"
+    },
+    {
+      "id": "shared:handoffs",
+      "path": "HANDOFFS.md"
+    },
+    {
+      "id": "shared:scope",
+      "path": "README.md",
+      "section": "start-here"
+    },
+    {
+      "id": "evidence:b001",
+      "path": "research/evidence.md",
+      "section": "b001"
+    },
+    {
+      "id": "evidence:b002",
+      "path": "research/evidence.md",
+      "section": "b002"
+    },
+    {
+      "id": "evidence:b003",
+      "path": "research/evidence.md",
+      "section": "b003"
+    },
+    {
+      "id": "evidence:b004",
+      "path": "research/evidence.md",
+      "section": "b004"
+    },
+    {
+      "id": "evidence:b005",
+      "path": "research/evidence.md",
+      "section": "b005"
+    },
+    {
+      "id": "evidence:b006",
+      "path": "research/evidence.md",
+      "section": "b006"
+    },
+    {
+      "id": "evidence:b007",
+      "path": "research/evidence.md",
+      "section": "b007"
+    },
+    {
+      "id": "evidence:b008",
+      "path": "research/evidence.md",
+      "section": "b008"
+    },
+    {
+      "id": "evidence:b009",
+      "path": "research/evidence.md",
+      "section": "b009"
+    },
+    {
+      "id": "evidence:b014",
+      "path": "research/evidence.md",
+      "section": "b014"
+    },
+    {
+      "id": "evidence:b017",
+      "path": "research/evidence.md",
+      "section": "b017"
+    },
+    {
+      "id": "evidence:b018",
+      "path": "research/evidence.md",
+      "section": "b018"
+    },
+    {
+      "id": "evidence:b021",
+      "path": "research/evidence.md",
+      "section": "b021"
+    },
+    {
+      "id": "evidence:b022",
+      "path": "research/evidence.md",
+      "section": "b022"
+    },
+    {
+      "id": "evidence:b023",
+      "path": "research/evidence.md",
+      "section": "b023"
+    },
+    {
+      "id": "evidence:b024",
+      "path": "research/evidence.md",
+      "section": "b024"
+    },
+    {
+      "id": "evidence:b026",
+      "path": "research/evidence.md",
+      "section": "b026"
+    },
+    {
+      "id": "evidence:b027",
+      "path": "research/evidence.md",
+      "section": "b027"
+    },
+    {
+      "id": "evidence:b028",
+      "path": "research/evidence.md",
+      "section": "b028"
+    },
+    {
+      "id": "evidence:b030",
+      "path": "research/evidence.md",
+      "section": "b030"
+    },
+    {
+      "id": "evidence:b031",
+      "path": "research/evidence.md",
+      "section": "b031"
+    },
+    {
+      "id": "evidence:b034",
+      "path": "research/evidence.md",
+      "section": "b034"
+    },
+    {
+      "id": "evidence:b035",
+      "path": "research/evidence.md",
+      "section": "b035"
+    },
+    {
+      "id": "evidence:b037",
+      "path": "research/evidence.md",
+      "section": "b037"
+    },
+    {
+      "id": "evidence:b039",
+      "path": "research/evidence.md",
+      "section": "b039"
+    },
+    {
+      "id": "evidence:b040",
+      "path": "research/evidence.md",
+      "section": "b040"
+    },
+    {
+      "id": "evidence:b041",
+      "path": "research/evidence.md",
+      "section": "b041"
+    },
+    {
+      "id": "evidence:b042",
+      "path": "research/evidence.md",
+      "section": "b042"
+    },
+    {
+      "id": "evidence:b043",
+      "path": "research/evidence.md",
+      "section": "b043"
+    },
+    {
+      "id": "evidence:b045",
+      "path": "research/evidence.md",
+      "section": "b045"
+    },
+    {
+      "id": "evidence:b046",
+      "path": "research/evidence.md",
+      "section": "b046"
+    },
+    {
+      "id": "evidence:b047",
+      "path": "research/evidence.md",
+      "section": "b047"
+    },
+    {
+      "id": "evidence:b048",
+      "path": "research/evidence.md",
+      "section": "b048"
+    },
+    {
+      "id": "evidence:b049",
+      "path": "research/evidence.md",
+      "section": "b049"
+    },
+    {
+      "id": "evidence:b050",
+      "path": "research/evidence.md",
+      "section": "b050"
+    },
+    {
+      "id": "evidence:b051",
+      "path": "research/evidence.md",
+      "section": "b051"
+    },
+    {
+      "id": "evidence:b053",
+      "path": "research/evidence.md",
+      "section": "b053"
+    },
+    {
+      "id": "evidence:b054",
+      "path": "research/evidence.md",
+      "section": "b054"
+    },
+    {
+      "id": "evidence:b055",
+      "path": "research/evidence.md",
+      "section": "b055"
+    },
+    {
+      "id": "evidence:b056",
+      "path": "research/evidence.md",
+      "section": "b056"
+    },
+    {
+      "id": "evidence:b057",
+      "path": "research/evidence.md",
+      "section": "b057"
+    },
+    {
+      "id": "evidence:b058",
+      "path": "research/evidence.md",
+      "section": "b058"
+    },
+    {
+      "id": "evidence:b059",
+      "path": "research/evidence.md",
+      "section": "b059"
+    },
+    {
+      "id": "evidence:b060",
+      "path": "research/evidence.md",
+      "section": "b060"
+    },
+    {
+      "id": "evidence:b061",
+      "path": "research/evidence.md",
+      "section": "b061"
+    },
+    {
+      "id": "evidence:b062",
+      "path": "research/evidence.md",
+      "section": "b062"
+    },
+    {
+      "id": "evidence:b063",
+      "path": "research/evidence.md",
+      "section": "b063"
+    },
+    {
+      "id": "evidence:b064",
+      "path": "research/evidence.md",
+      "section": "b064"
+    },
+    {
+      "id": "evidence:b065",
+      "path": "research/evidence.md",
+      "section": "b065"
+    },
+    {
+      "id": "evidence:b066",
+      "path": "research/evidence.md",
+      "section": "b066"
+    },
+    {
+      "id": "evidence:b067",
+      "path": "research/evidence.md",
+      "section": "b067"
+    },
+    {
+      "id": "evidence:b068",
+      "path": "research/evidence.md",
+      "section": "b068"
+    },
+    {
+      "id": "evidence:b069",
+      "path": "research/evidence.md",
+      "section": "b069"
+    },
+    {
+      "id": "evidence:b070",
+      "path": "research/evidence.md",
+      "section": "b070"
+    },
+    {
+      "id": "evidence:b071",
+      "path": "research/evidence.md",
+      "section": "b071"
+    },
+    {
+      "id": "evidence:b072",
+      "path": "research/evidence.md",
+      "section": "b072"
+    },
+    {
+      "id": "evidence:b073",
+      "path": "research/evidence.md",
+      "section": "b073"
+    },
+    {
+      "id": "evidence:b074",
+      "path": "research/evidence.md",
+      "section": "b074"
+    },
+    {
+      "id": "evidence:b075",
+      "path": "research/evidence.md",
+      "section": "b075"
+    },
+    {
+      "id": "evidence:b076",
+      "path": "research/evidence.md",
+      "section": "b076"
+    },
+    {
+      "id": "evidence:b077",
+      "path": "research/evidence.md",
+      "section": "b077"
+    },
+    {
+      "id": "evidence:b078",
+      "path": "research/evidence.md",
+      "section": "b078"
+    },
+    {
+      "id": "evidence:b079",
+      "path": "research/evidence.md",
+      "section": "b079"
+    },
+    {
+      "id": "evidence:b080",
+      "path": "research/evidence.md",
+      "section": "b080"
+    },
+    {
+      "id": "evidence:b081",
+      "path": "research/evidence.md",
+      "section": "b081"
+    },
+    {
+      "id": "evidence:o001",
+      "path": "research/orange/evidence.md",
+      "section": "o001"
+    },
+    {
+      "id": "evidence:o004",
+      "path": "research/orange/evidence.md",
+      "section": "o004"
+    },
+    {
+      "id": "evidence:o005",
+      "path": "research/orange/evidence.md",
+      "section": "o005"
+    },
+    {
+      "id": "evidence:o008",
+      "path": "research/orange/evidence.md",
+      "section": "o008"
+    },
+    {
+      "id": "evidence:o009",
+      "path": "research/orange/evidence.md",
+      "section": "o009"
+    },
+    {
+      "id": "evidence:o011",
+      "path": "research/orange/evidence.md",
+      "section": "o011"
+    },
+    {
+      "id": "evidence:o012",
+      "path": "research/orange/evidence.md",
+      "section": "o012"
+    },
+    {
+      "id": "evidence:o014",
+      "path": "research/orange/evidence.md",
+      "section": "o014"
+    },
+    {
+      "id": "evidence:o015",
+      "path": "research/orange/evidence.md",
+      "section": "o015"
+    },
+    {
+      "id": "evidence:o016",
+      "path": "research/orange/evidence.md",
+      "section": "o016"
+    },
+    {
+      "id": "evidence:o017",
+      "path": "research/orange/evidence.md",
+      "section": "o017"
+    },
+    {
+      "id": "evidence:o018",
+      "path": "research/orange/evidence.md",
+      "section": "o018"
+    },
+    {
+      "id": "evidence:o019",
+      "path": "research/orange/evidence.md",
+      "section": "o019"
+    },
+    {
+      "id": "evidence:o020",
+      "path": "research/orange/evidence.md",
+      "section": "o020"
+    },
+    {
+      "id": "evidence:o021",
+      "path": "research/orange/evidence.md",
+      "section": "o021"
+    },
+    {
+      "id": "evidence:o022",
+      "path": "research/orange/evidence.md",
+      "section": "o022"
+    },
+    {
+      "id": "evidence:o024",
+      "path": "research/orange/evidence.md",
+      "section": "o024"
+    },
+    {
+      "id": "evidence:o027",
+      "path": "research/orange/evidence.md",
+      "section": "o027"
+    },
+    {
+      "id": "evidence:o028",
+      "path": "research/orange/evidence.md",
+      "section": "o028"
+    },
+    {
+      "id": "evidence:o029",
+      "path": "research/orange/evidence.md",
+      "section": "o029"
+    },
+    {
+      "id": "evidence:o033",
+      "path": "research/orange/evidence.md",
+      "section": "o033"
+    },
+    {
+      "id": "evidence:o034",
+      "path": "research/orange/evidence.md",
+      "section": "o034"
+    },
+    {
+      "id": "evidence:o035",
+      "path": "research/orange/evidence.md",
+      "section": "o035"
+    },
+    {
+      "id": "evidence:o037",
+      "path": "research/orange/evidence.md",
+      "section": "o037"
+    },
+    {
+      "id": "evidence:o048",
+      "path": "research/orange/evidence.md",
+      "section": "o048"
+    },
+    {
+      "id": "evidence:o049",
+      "path": "research/orange/evidence.md",
+      "section": "o049"
+    },
+    {
+      "id": "evidence:o051",
+      "path": "research/orange/evidence.md",
+      "section": "o051"
+    },
+    {
+      "id": "evidence:o055",
+      "path": "research/orange/evidence.md",
+      "section": "o055"
+    },
+    {
+      "id": "evidence:o078",
+      "path": "research/orange/evidence.md",
+      "section": "o078"
+    },
+    {
+      "id": "source-code-auditing:offline-python-semgrep",
+      "path": "skills/source-code-auditing/recipes/offline-python-semgrep.md"
+    },
+    {
+      "id": "source-code-auditing:offline-python-semgrep-rules",
+      "path": "skills/source-code-auditing/recipes/semgrep-rules/p2o-python-offline.yaml"
+    },
+    {
+      "id": "shared:skill-provenance",
+      "path": "research/SKILL_PROVENANCE.md"
+    },
+    {
+      "id": "shared:license-notice",
+      "path": "research/licenses/README.md"
+    },
+    {
+      "id": "shared:apache-2.0",
+      "path": "research/licenses/apache-2.0.md"
+    }
+  ]
+}

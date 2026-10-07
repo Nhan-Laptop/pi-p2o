@@ -1,0 +1,36 @@
+{
+  "schema_version": 1,
+  "kind": "overlay",
+  "references": [
+    "references/enforcement-parity.md"
+  ],
+  "workflows": [
+    {
+      "id": "source-review",
+      "description": "Walk the application factory, routers, and mounts in the supplied revision",
+      "allOf": [
+        "source.snapshot"
+      ]
+    },
+    {
+      "id": "offline-reproduction",
+      "description": "Read the installed dependency metadata from the copy without installing anything",
+      "allOf": [
+        "shell.offline"
+      ],
+      "anyOf": [
+        "tool.python"
+      ]
+    },
+    {
+      "id": "live-parity-comparison",
+      "description": "Compare the anonymous enforcement baseline across equivalent routes on the approved same-origin target",
+      "allOf": [
+        "http.same-origin.get"
+      ]
+    }
+  ],
+  "provenance_refs": [
+    "R5"
+  ]
+}

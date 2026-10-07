@@ -28,6 +28,13 @@ serves exactly that session over a private unix socket. Workers get a narrow pro
 `delegate`, `report`), never a Docker client, so policy, budgets and the single verified-cleanup path stay in one
 place. A worker that cannot reach the socket fails closed and reports blocked instead of touching the host.
 
+## Skills and evidence
+
+`src/skills.ts` serves approved package documents through held-directory-FD reads; the broker exposes IDs only.
+`src/capabilities.ts` separates policy, applicability and availability; `src/probes.ts` contains fixed offline checks.
+`src/evidence.ts` records tool receipts, validates candidate revisions and exports bounded redacted results before cleanup.
+See [skill runtime](SKILL_RUNTIME.md) for schemas, failure behavior and compatibility limits.
+
 ## Files
 
 | File | Responsibility |

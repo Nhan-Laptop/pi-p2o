@@ -10,14 +10,14 @@ const REGISTRATION = (patch: Partial<WorkerRegistration> = {}): WorkerRegistrati
   parentWorkerId: null, token: 'c'.repeat(32), commandBudget: 3, used: 0, startedAt: Date.now(), stopped: false, ...patch,
 });
 
-async function fixture(patch: { budget?: number; total?: number; registration?: Partial<WorkerRegistration> } = {}) {
+async function fixture(patch: { budget?: number; total?: number; stdout?: string; registration?: Partial<WorkerRegistration> } = {}) {
   const control = await mkdtemp(join(tmpdir(), 'p2o-broker-'));
   const records = join(control, 'records.jsonl');
   await writeFile(records, '', { mode: 0o600 });
   const calls: string[] = [];
   const registrations = new Map<string, WorkerRegistration>();
   const broker = new Broker(control, {
-    exec: async (command, seconds, workdir) => { calls.push(`exec ${workdir} ${seconds} ${command}`); return { code: 0, stdout: `ran ${command}`, stderr: '', truncated: false }; },
+    exec: async (command, seconds, workdir) => { calls.push(`exec ${workdir} ${seconds} ${command}`); return { code: 0, stdout: patch.stdout ?? `ran ${command}`, stderr: '', truncated: false }; },
     http: async (url, method) => { calls.push(`http ${method} ${url}`); return { code: 0, stdout: `fetched ${url}`, stderr: '', truncated: false }; },
     note: async record => { calls.push(`note ${record.kind}`); await appendRecord(records, record); },
     ledger: async limit => (await readRecords(records, limit)),
@@ -31,6 +31,18 @@ async function fixture(patch: { budget?: number; total?: number; registration?: 
 }
 
 describe('sandbox broker', () => {
+  it('bounds escaped wire output and preserves the connection for a blocked report', async () => {
+    const f = await fixture({ stdout: '\u0000'.repeat(48 * 1024) });
+    const client = new BrokerClient(f.socket, 'c'.repeat(32), { requestMs: 2000 });
+    try {
+      const result = await client.request('exec', { command: 'cat binary' });
+      expect(result.truncated).toBe(true);
+      expect(Buffer.byteLength(JSON.stringify(result))).toBeLessThan(64 * 1024);
+      await client.request('report', { report: { summary: 'bounded result', blocked: 'output truncated', confidence: 'low' } });
+      expect(f.broker.registration('p2o-recon-aaaaaa')?.reported?.blocked).toBe('output truncated');
+    } finally { client.close(); await f.close(); }
+  });
+
   it('publishes an owner-private socket and runs exec/http/note/report/delegate for an authenticated worker', async () => {
     const f = await fixture();
     const client = new BrokerClient(f.socket, 'c'.repeat(32), { connectMs: 2000, requestMs: 5000 });

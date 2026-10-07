@@ -1,0 +1,37 @@
+{
+  "schema_version": 1,
+  "kind": "playbook",
+  "references": [
+    "references/source-sink-context.md"
+  ],
+  "workflows": [
+    {
+      "id": "source-review",
+      "description": "Trace each source through its transformations to the sink and name the output context",
+      "allOf": [
+        "source.snapshot"
+      ]
+    },
+    {
+      "id": "offline-reproduction",
+      "description": "Render a local fixture with the extracted template or sanitizer configuration",
+      "allOf": [
+        "shell.offline"
+      ],
+      "anyOf": [
+        "tool.python"
+      ]
+    },
+    {
+      "id": "browser-execution-proof",
+      "description": "Observe an inert marker interpreted as code by a managed browser; local HTTP is not execution proof",
+      "allOf": [
+        "browser.execution"
+      ]
+    }
+  ],
+  "provenance_refs": [
+    "R1",
+    "R3"
+  ]
+}

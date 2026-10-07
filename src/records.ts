@@ -1,16 +1,23 @@
 import { appendFile, open, readFile, stat } from 'node:fs/promises';
+import { randomUUID } from 'node:crypto';
 
 /**
  * Append-only shared state. This is the coordination medium between the owner and its workers,
  * mirroring Strix's notes/coverage ledger: the next agent reads state, not someone's reasoning.
  * Nothing in this file is authority — scope comes from the human, evidence is verified elsewhere.
  */
-export const RECORD_KINDS = ['note', 'coverage', 'observation', 'open', 'report', 'lifecycle'] as const;
+export const RECORD_KINDS = ['note', 'coverage', 'observation', 'open', 'report', 'lifecycle', 'evidence', 'candidate'] as const;
 export type RecordKind = typeof RECORD_KINDS[number];
 export const COVERAGE_OUTCOMES = ['confirmed', 'ruled_out', 'open_proof_gap', 'clean', 'needs_follow_up'] as const;
 export type CoverageOutcome = typeof COVERAGE_OUTCOMES[number];
 
 export interface AssessmentRecord {
+  version?: 2;
+  id?: string;
+  runId?: string;
+  data?: Record<string, unknown>;
+  supersedes?: string;
+  resolves?: string[];
   at: string;
   by: string;
   kind: RecordKind;
@@ -33,14 +40,14 @@ export function isOutcome(value: unknown): value is CoverageOutcome { return typ
 
 /** Single small O_APPEND write so concurrent writers cannot interleave inside one line. */
 export async function appendRecord(path: string, record: AssessmentRecord): Promise<void> {
-  const line = `${JSON.stringify(record)}\n`;
+  const line = `${JSON.stringify({ version: 2, id: randomUUID(), ...record })}\n`;
   if (Buffer.byteLength(line) > 16 * 1024) throw new Error('Record is too large');
   await appendFile(path, line, { encoding: 'utf8', mode: 0o600 });
 }
 
-export async function readRecords(path: string, limit = RECORD_READ_LIMIT): Promise<AssessmentRecord[]> {
+export async function readRecords(path: string, limit = RECORD_READ_LIMIT, strict = false): Promise<AssessmentRecord[]> {
   let text: string;
-  try { text = await readFile(path, 'utf8'); } catch { return []; }
+  try { text = await readFile(path, 'utf8'); } catch (error) { if (strict) throw error; return []; }
   const records: AssessmentRecord[] = [];
   for (const line of text.split('\n')) {
     const trimmed = line.trim();
@@ -70,10 +77,15 @@ export function summarizeRecords(records: AssessmentRecord[]): RecordsSummary {
   const workers = new Map<string, WorkerSummary>();
   const coverage: AssessmentRecord[] = [];
   const open: AssessmentRecord[] = [];
+  const superseded = new Set(records.flatMap(r => [r.supersedes, ...(r.resolves ?? [])]).filter(Boolean));
   const lifecycle: AssessmentRecord[] = [];
   for (const record of records) {
     if (record.kind === 'coverage') coverage.push(record);
-    else if (record.kind === 'open') open.push(record);
+    else if (record.kind === 'open' && !superseded.has(record.id)) open.push(record);
+    else if (record.kind === 'candidate' && !superseded.has(record.id)) {
+      coverage.push(record);
+      if (record.data?.closure === 'open_proof_gap' || record.data?.execution === 'blocked') open.push(record);
+    }
     else if (record.kind === 'lifecycle') lifecycle.push(record);
     if (!record.workerId) continue;
     const entry = workers.get(record.workerId) ?? { workerId: record.workerId, role: record.role, depth: record.depth, notes: 0, coverage: 0, open: 0, reported: false };

@@ -23,6 +23,7 @@ export class Sandbox {
   private shell?: string;
   private source?: string;
   sourceSkipped = 0;
+  sourceManifest: Record<string, string> = {};
   private endpoint?: string;
   private stopped = false;
   private pending: Promise<unknown> = Promise.resolve();
@@ -47,7 +48,7 @@ export class Sandbox {
     if (this.target.kind === 'directory' && await realpath(this.target.path) !== this.target.path) throw new Error('Target directory changed during confirmation');
     if (this.target.kind === 'directory') {
       const source = await copySource(this.target.path);
-      this.source = source.path; this.sourceSkipped = source.skipped;
+      this.source = source.path; this.sourceSkipped = source.skipped; this.sourceManifest = source.manifest;
     }
     const mount = this.source ? ['--volume', `${this.source}:/target:ro`] : [];
     this.shell = await this.create('none', [...mount, '--entrypoint', '/bin/sh', IMAGE, '-c', 'exec sleep infinity']);

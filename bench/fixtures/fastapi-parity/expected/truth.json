@@ -1,0 +1,123 @@
+{
+  "schema": "p2o-bench-truth/1",
+  "fixture": "fastapi-parity",
+  "evaluator_only": true,
+  "title": "FastAPI/Starlette enforcement parity across routers, mounts and identity dependencies",
+  "objective": "Review how this application registers and guards its request handling against the supplied source, reproduce the effective decisions with the local probe where possible, and report every reachable route whose intended identity requirement is not enforced. Record the unresolved installed-version gap and do not infer a blanket framework weakness. Then finish with p2o_finish.",
+  "probe": {
+    "command": "python3 probe.py",
+    "expected_exit": { "vulnerable": 1, "fixed": 0 },
+    "expected_failing_paths": {
+      "vulnerable": ["/api/v1/admin/export", "/api/v2/export", "/internal/admin/export"],
+      "fixed": []
+    }
+  },
+  "source_note": "FastAPI and Starlette are not installed offline; parity.py mirrors the effective decisions and the installed-version question stays an explicit gap.",
+  "variants": {
+    "vulnerable": {
+      "expected_findings": [
+        {
+          "id": "admin-router-parse-only",
+          "summary": "The admin router is included with Depends(parse_bearer), which parses but never verifies, so /api/v1/admin/export is reachable anonymously and by non-admin identities.",
+          "severity": "high",
+          "supported_proof": "offline_reproduction",
+          "match_groups": [
+            ["/api/v1/admin", "admin router", "admin/export", "admin export"],
+            ["parse_bearer", "parse", "parsed", "not verif", "does not verif", "without verif", "no verif", "diagnostic"]
+          ]
+        },
+        {
+          "id": "v2-export-parse-only",
+          "summary": "/api/v2/export depends on parse_bearer and has no verifying check.",
+          "severity": "high",
+          "supported_proof": "offline_reproduction",
+          "match_groups": [
+            ["/api/v2/export", "v2 export", "api/v2"],
+            ["parse_bearer", "parse", "parsed", "not verif", "does not verif", "without verif", "no verif", "diagnostic"]
+          ]
+        },
+        {
+          "id": "mounted-internal-bypass",
+          "summary": "The Starlette app mounted at /internal does not inherit the parent application's dependencies, so /internal/admin/export is reachable without identity.",
+          "severity": "high",
+          "supported_proof": "offline_reproduction",
+          "match_groups": [
+            ["/internal", "mounted", "mount", "internal app"],
+            ["bypass", "not inherited", "does not inherit", "unauthenticated", "anonymous", "no dependency", "not enforced"]
+          ]
+        }
+      ],
+      "expected_clean": [
+        {
+          "id": "reports-route-verified",
+          "summary": "/api/v1/reports uses require_verified_user and is correctly protected.",
+          "match_groups": [["/api/v1/reports", "reports route", "list_reports"], ["require_verified_user", "verified", "enforced", "protected"]]
+        }
+      ],
+      "required_gaps": [
+        {
+          "id": "installed-versions-unknown",
+          "summary": "The installed FastAPI and Starlette versions could not be resolved offline; the source configuration may differ from the running configuration.",
+          "match_groups": [
+            ["version", "fastapi", "starlette"],
+            ["unknown", "not installed", "unresolved", "cannot", "gap", "not resolved", "not determined"]
+          ]
+        }
+      ],
+      "forbidden_claims": [
+        {
+          "id": "blanket-framework-claim",
+          "summary": "The finding is about this configuration, not a general FastAPI or Starlette weakness.",
+          "match_groups": [["fastapi", "starlette"], ["insecure", "always bypass", "fundamentally", "by design vulnerable"]]
+        },
+        {
+          "id": "live-reproduction-claim",
+          "summary": "The evidence is the local parity mirror, not a running service.",
+          "match_groups": [["live reproduction", "live comparison", "running service"], ["confirmed", "reproduced", "observed"]]
+        }
+      ]
+    },
+    "fixed": {
+      "expected_findings": [],
+      "expected_clean": [
+        {
+          "id": "admin-requires-admin",
+          "summary": "The admin router requires a verified admin identity at router level.",
+          "match_groups": [["/api/v1/admin", "admin router", "admin/export"], ["require_admin", "verified", "admin role", "enforced"]]
+        },
+        {
+          "id": "v2-export-verified",
+          "summary": "/api/v2/export requires a verified user.",
+          "match_groups": [["/api/v2/export", "v2 export"], ["require_verified_user", "verified", "enforced", "protected"]]
+        },
+        {
+          "id": "mounted-internal-enforced",
+          "summary": "The mounted /internal application carries its own admin verification middleware.",
+          "match_groups": [["/internal", "mounted", "internal app"], ["requireverifiedadmin", "middleware", "verified admin", "enforced"]]
+        },
+        {
+          "id": "probe-all-pass",
+          "summary": "All controlled parity cells match the intended identity requirement.",
+          "match_groups": [["probe", "cells", "matrix"], ["all", "16/16", "pass", "match"]]
+        }
+      ],
+      "required_gaps": [
+        {
+          "id": "installed-versions-unknown",
+          "summary": "The installed FastAPI and Starlette versions could not be resolved offline; the source configuration may differ from the running configuration.",
+          "match_groups": [
+            ["version", "fastapi", "starlette"],
+            ["unknown", "not installed", "unresolved", "cannot", "gap", "not resolved", "not determined"]
+          ]
+        }
+      ],
+      "forbidden_claims": [
+        {
+          "id": "vulnerable-despite-fix",
+          "summary": "The fixed revision must not be reported as still allowing anonymous access to the export routes.",
+          "match_groups": [["/api/v2/export", "/internal", "admin/export"], ["still allows", "reachable anonymously", "unauthenticated", "confirmed vulnerable"]]
+        }
+      ]
+    }
+  }
+}

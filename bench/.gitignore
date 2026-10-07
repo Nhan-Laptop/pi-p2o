@@ -1,0 +1,4 @@
+# Local benchmark artifacts: never source, never published.
+.arms/
+.work/
+results/

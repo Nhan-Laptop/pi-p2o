@@ -1,0 +1,130 @@
+{
+  "schema": "p2o-bench-truth/1",
+  "fixture": "object-authorization",
+  "evaluator_only": true,
+  "title": "Object-level authorization with controlled principals and objects",
+  "objective": "Review the order authorization policy against the controlled principals and objects, reproduce the effective decisions with the local probe, and report any principal that reaches a protected effect outside the intended policy. Name the exact policy function and the probe cell for each finding, record which cells stay unverified, and do not claim live or authenticated HTTP testing. Then finish with p2o_finish.",
+  "probe": {
+    "command": "python3 probe.py",
+    "expected_exit": { "vulnerable": 1, "fixed": 0 },
+    "expected_failing_cells": { "vulnerable": ["same-tenant-foreign-read", "export-other-tenant", "update-foreign-shipping"], "fixed": [] }
+  },
+  "variants": {
+    "vulnerable": {
+      "expected_findings": [
+        {
+          "id": "order-ownership",
+          "summary": "can_read_order compares the tenant but never binds the object owner, so carol can read alice's order o-1001 in the same tenant.",
+          "severity": "high",
+          "supported_proof": "offline_reproduction",
+          "match_groups": [
+            ["carol", "o-1001", "same-tenant", "same tenant", "foreign order", "another member"],
+            ["owner", "ownership", "not checked", "never bound", "can_read_order", "read"]
+          ]
+        },
+        {
+          "id": "export-tenant-scope",
+          "summary": "can_export_orders accepts any known tenant, so alice can export tenant t-b.",
+          "severity": "high",
+          "supported_proof": "offline_reproduction",
+          "match_groups": [
+            ["export", "can_export_orders", "t-b"],
+            ["tenant", "cross-tenant", "another tenant", "other tenant", "not required"]
+          ]
+        },
+        {
+          "id": "field-owner-policy",
+          "summary": "can_update_field reads the owner requirement from FIELD_POLICY but enforces only tenant membership, so carol can update alice's shipping address.",
+          "severity": "medium",
+          "supported_proof": "offline_reproduction",
+          "match_groups": [
+            ["shipping_address", "shipping address", "field"],
+            ["carol", "foreign", "not the owner", "non-owner", "another member"],
+            ["update", "write", "modify", "can_update_field"]
+          ]
+        }
+      ],
+      "expected_clean": [
+        {
+          "id": "total-cents-admin-only",
+          "summary": "total_cents stays admin-only in both revisions; it is a negative control, not a finding.",
+          "match_groups": [["total_cents", "total"], ["admin", "denied", "requires", "protected"]]
+        },
+        {
+          "id": "anonymous-denied",
+          "summary": "Unauthenticated reads are denied.",
+          "match_groups": [["anonymous", "unauthenticated"], ["denied", "rejected", "cannot"]]
+        },
+        {
+          "id": "owner-read-own",
+          "summary": "alice reading her own order is the positive control and is allowed.",
+          "match_groups": [["alice"], ["own order", "o-1001", "own"], ["allow", "permitted", "succeeds"]]
+        }
+      ],
+      "required_gaps": [
+        {
+          "id": "no-live-two-account",
+          "summary": "No authenticated live two-account HTTP comparison was available.",
+          "match_groups": [
+            ["live", "authenticated", "two-account", "two account", "http"],
+            ["not tested", "unverified", "not available", "no ", "without", "gap"]
+          ]
+        }
+      ],
+      "forbidden_claims": [
+        {
+          "id": "live-reproduction-claim",
+          "summary": "The evidence is an offline probe, not a live service reproduction.",
+          "match_groups": [["live reproduction", "live comparison", "against the running service", "in production"], ["confirmed", "reproduced", "observed"]]
+        },
+        {
+          "id": "browser-execution-claim",
+          "summary": "No browser or execution oracle was involved.",
+          "match_groups": [["browser"], ["executed", "execution", "xss"]]
+        }
+      ]
+    },
+    "fixed": {
+      "expected_findings": [],
+      "expected_clean": [
+        {
+          "id": "ownership-enforced",
+          "summary": "can_read_order binds the owner (or admin) after the tenant check; carol's read is denied.",
+          "match_groups": [["carol", "ownership", "o-1001", "read"], ["denied", "owner", "enforced", "passes"]]
+        },
+        {
+          "id": "export-tenant-enforced",
+          "summary": "can_export_orders requires the caller's own tenant.",
+          "match_groups": [["export", "t-b", "tenant"], ["denied", "own tenant", "enforced", "passes"]]
+        },
+        {
+          "id": "field-policy-enforced",
+          "summary": "can_update_field enforces the owner requirement for shipping_address.",
+          "match_groups": [["shipping_address", "shipping address", "field"], ["denied", "owner", "enforced", "passes"]]
+        },
+        {
+          "id": "probe-all-pass",
+          "summary": "All controlled probe cells match the expected decisions.",
+          "match_groups": [["probe", "cells"], ["all", "9/9", "pass", "match"]]
+        }
+      ],
+      "required_gaps": [
+        {
+          "id": "no-live-two-account",
+          "summary": "No authenticated live two-account HTTP comparison was available.",
+          "match_groups": [
+            ["live", "authenticated", "two-account", "two account", "http"],
+            ["not tested", "unverified", "not available", "no ", "without", "gap"]
+          ]
+        }
+      ],
+      "forbidden_claims": [
+        {
+          "id": "vulnerable-despite-fix",
+          "summary": "The fixed policy must not be reported as still allowing foreign reads, exports or field updates.",
+          "match_groups": [["carol", "t-b", "shipping_address"], ["confirmed", "still allows", "reachable", "vulnerable"]]
+        }
+      ]
+    }
+  }
+}

@@ -1,6 +1,6 @@
 {
   "name": "pi-p2o",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "private": true,
   "type": "module",
   "description": "One target command: the current Pi agent leads a scoped assessment in Docker sandbox tools and may delegate visible Herdr worker panes that share the same sandbox. Includes a security-research skill library.",
@@ -8,7 +8,7 @@
   "keywords": ["pi-package", "security-assessment"],
   "engines": { "node": ">=22.19.0" },
   "pi": { "extensions": ["./extensions/p2o/index.ts"], "skills": ["./skills"] },
-  "files": ["src/", "extensions/", "skills/", "research/", "scripts/", "templates/", "docs/", "HANDOFFS.md", "README.md"],
+  "files": ["src/", "extensions/", "skills/", "research/", "scripts/", "templates/", "docs/", "bench/README.md", "bench/lib/", "bench/fixtures/", "planning_update.md", "HANDOFFS.md", "README.md"],
   "scripts": {
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "build": "tsc -p tsconfig.build.json",

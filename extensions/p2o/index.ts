@@ -13,6 +13,10 @@ import { ensurePrivateDirectory, extensionDigest, mintTicket, mintToken, readTic
 import { createHerdrClient, type HerdrClient } from '../../src/herdr.js';
 import { loadSettings, resolveRole, MAX_SKILLS, type P2OSettings } from '../../src/roles.js';
 import { ownerInstructions, workerBrief, workerInstructions } from '../../src/prompts.js';
+import { SkillLibrary, packageRoot } from '../../src/skills.js';
+import { capabilities, missingRequirements, type CapabilitySnapshot } from '../../src/capabilities.js';
+import { EvidenceStore, redact, type Candidate } from '../../src/evidence.js';
+import { PROBES, applyProbe } from '../../src/probes.js';
 
 /**
  * One command, two roles.
@@ -24,14 +28,12 @@ import { ownerInstructions, workerBrief, workerInstructions } from '../../src/pr
  * Strix's model is one sandbox session shared by every agent; because Pi workers are separate processes,
  * the owner serves that session over a 0600 unix socket instead of handing out a Docker client.
  */
-const OWNER_TOOLS = ['p2o_shell', 'p2o_http', 'p2o_note', 'p2o_delegate', 'p2o_workers', 'p2o_steer', 'p2o_stop_worker', 'p2o_finish'];
-const WORKER_TOOLS = ['p2o_shell', 'p2o_http', 'p2o_note', 'p2o_ledger', 'p2o_delegate', 'p2o_report'];
+const OWNER_TOOLS = ['p2o_skill_list', 'p2o_skill_read', 'p2o_capabilities', 'p2o_candidate', 'p2o_shell', 'p2o_http', 'p2o_note', 'p2o_delegate', 'p2o_workers', 'p2o_steer', 'p2o_stop_worker', 'p2o_finish'];
+const WORKER_TOOLS = ['p2o_skill_list', 'p2o_skill_read', 'p2o_capabilities', 'p2o_candidate', 'p2o_shell', 'p2o_http', 'p2o_note', 'p2o_ledger', 'p2o_delegate', 'p2o_report'];
 const ALL_TOOLS = [...new Set([...OWNER_TOOLS, ...WORKER_TOOLS])];
 const WORKER_FLAG = 'p2o-worker';
-/** Bound on each inlined skill body so a brief cannot explode the worker's context. */
-const SKILL_DOC_LIMIT = 24 * 1024;
 const HELP = [
-  'Usage: /p2o --target <directory|http(s)-URL> [--solo] [--workers N] [--max-depth D]',
+  'Usage: /p2o --target <directory|http(s)-URL> [--solo] [--workers N] [--max-depth D] [--export]',
   '       /p2o stop',
   'Your CURRENT Pi agent investigates through sandbox tools and may delegate visible worker panes',
   '(Herdr required). --solo disables delegation. Workers share this sandbox and cannot exceed your scope.',
@@ -51,10 +53,12 @@ interface OwnerRun {
   /** Panes Herdr refused to close, reported honestly instead of as "verified teardown". */
   unclosedPanes?: string[];
   cleanedReason?: string;
+  library: SkillLibrary; evidence: EvidenceStore; knowledgeUsed: number; capabilities: CapabilitySnapshot;
+  exportEnabled: boolean; exportPath?: string; exportError?: string;
 }
 interface WorkerRun {
   role: 'worker';
-  ticket: Ticket; ctx: ExtensionContext; phase: 'active' | 'finished'; client: BrokerClient; toolsBefore: string[];
+  ticket: Ticket; ctx: ExtensionContext; phase: 'active' | 'finished'; client: BrokerClient; toolsBefore: string[]; capabilities?: CapabilitySnapshot;
 }
 type Run = OwnerRun | WorkerRun;
 
@@ -73,8 +77,8 @@ export interface Options {
 
 function output(result: ProcessResult) {
   return {
-    content: [{ type: 'text' as const, text: `Exit: ${result.code}\n${cleanText(result.stdout)}${result.stderr ? `\nStderr:\n${cleanText(result.stderr)}` : ''}${result.truncated ? '\n[Output truncated at 48 KiB; narrow the command/request.]' : ''}` }],
-    details: { exitCode: result.code, truncated: result.truncated },
+    content: [{ type: 'text' as const, text: `Exit: ${result.code}${result.evidenceId ? `\nEvidence ID: ${result.evidenceId}` : ''}\n${cleanText(result.stdout)}${result.stderr ? `\nStderr:\n${cleanText(result.stderr)}` : ''}${result.truncated ? '\n[Output truncated at 48 KiB; narrow the command/request.]' : ''}` }],
+    details: { exitCode: result.code, truncated: result.truncated, evidenceId: result.evidenceId },
   };
 }
 function fail(code: string, message: string): never { throw new Error(`${code}: ${message}`); }
@@ -144,7 +148,8 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
   }
 
   async function note(record: Omit<AssessmentRecord, 'at'>): Promise<void> {
-    await appendRecord(owner().records, { at: new Date().toISOString(), ...record });
+    const current = owner();
+    await appendRecord(current.records, { at: new Date().toISOString(), runId: current.runId, ...record });
   }
 
   // One spawn at a time: parallel `p2o_delegate` calls in a single assistant turn would otherwise both pass
@@ -156,7 +161,7 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
     return next;
   }
 
-  async function spawnWorkerLocked(input: { focus: string; task: string; context?: string; role?: string; skills?: string[]; model?: string }, parent: { workerId: string | null; depth: number }): Promise<{ workerId: string; name: string; paneId: string; role: string; model?: string; depth: number }> {
+  async function spawnWorkerLocked(input: { focus: string; task: string; context?: string; role?: string; skills?: string[]; model?: string; workflow?: string }, parent: { workerId: string | null; depth: number }): Promise<{ workerId: string; name: string; paneId: string; role: string; model?: string; depth: number; capabilityWarnings: string[] }> {
     const current = owner();
     if (!current.delegation.enabled) fail('DELEGATION_UNAVAILABLE', current.delegation.reason ?? 'delegation is disabled for this assessment');
     const depth = parent.depth + 1;
@@ -166,6 +171,7 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
     if (current.delegation.spawned >= current.delegation.maxWorkers * 2) fail('DELEGATION_TOTAL', `this assessment already spawned ${current.delegation.spawned} workers; continue with the ones you have`);
     const resolved = resolveRole({ role: input.role, model: input.model, skills: input.skills, settings: current.settings, parentModel: sessionModel(current.ctx) });
     const skillDocs: Array<{ name: string; body: string }> = [];
+    const capabilityWarnings: string[] = [];
     if (resolved.skills.length) {
       if (!skills) fail('SKILLS_UNAVAILABLE', 'the packaged skill library was not found next to this extension');
       const present = new Set(await availableSkills(skills));
@@ -173,10 +179,18 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
         if (!present.has(skill)) fail('SKILL_UNKNOWN', `unknown skill "${skill}"; available: ${[...present].join(', ')}`);
         // Pi advertises skills by name/path and expects the model to read the file; a sandbox-only worker
         // cannot read host files, so the instructions are inlined into its brief (Strix does the same).
-        const body = await readFile(join(skills, skill, 'SKILL.md'), 'utf8').catch(() => '');
-        skillDocs.push({ name: skill, body: body.slice(0, SKILL_DOC_LIMIT) });
+        const page = await current.library.read(skill);
+        skillDocs.push({ name: skill, body: `${page.text}${page.nextOffset !== undefined ? `\nContinued: p2o_skill_read id=${skill} offset=${page.nextOffset}` : ''}` });
+        if (input.workflow) {
+          const entry = (await current.library.load()).skills.find(s => s.name === skill)!;
+          const workflow = entry.workflows.find(w => w.id === input.workflow);
+          if (!workflow) fail('WORKFLOW_UNKNOWN', `skill ${skill} has no workflow ${input.workflow}; use p2o_skill_list`);
+          const missing = missingRequirements(workflow, current.capabilities);
+          if (missing.length) capabilityWarnings.push(`${skill}/${workflow.id}: ${missing.join('; ')}`);
+        }
       }
     }
+    for (const warning of capabilityWarnings) await note({ by: 'owner', kind: 'open', text: `Selected workflow prerequisite gap: ${warning}` });
     const workerId = workerName(resolved.role);
     if (current.workers.size >= current.delegation.maxWorkers * 2 + 4) fail('DELEGATION_TOTAL', 'too many workers for this assessment');
     const paneId = await herdr.split({ cwd: current.ctx.cwd });
@@ -203,7 +217,7 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
       const args = ['--no-extensions', '-e', workerExtensionPath, '--no-approve', '--no-skills', '--no-context-files', '--no-prompt-templates',
         ...(resolved.model ? ['--model', resolved.model] : []), ...(resolved.thinking ? ['--thinking', resolved.thinking] : []), '--p2o-worker', ticketFile];
       await herdr.start({ name: workerId, paneId, args });
-      await herdr.prompt({ name: workerId, text: workerBrief({ ticket, focus: input.focus, task: input.task, context: input.context, skills: skillDocs }) });
+      await herdr.prompt({ name: workerId, text: workerBrief({ ticket, focus: input.focus, task: input.task, context: `${input.context ?? ''}${capabilityWarnings.length ? `\nCAPABILITY GAPS: ${capabilityWarnings.join(' | ')}` : ''}`, skills: skillDocs }) });
       // A fresh pane can still read "idle" while the brief is being submitted, so liveness is decided by
       // reports, never by that transient status. Wait briefly only to report a worker that never starts.
       const startDeadline = now() + 15_000;
@@ -225,11 +239,11 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
     }
     current.delegation.spawned += 1;
     await note({ by: parent.workerId ?? 'owner', kind: 'lifecycle', text: `delegated ${workerId} (${resolved.role}, depth ${depth}, model ${resolved.model ?? 'inherit'}): ${input.focus}`, workerId, role: resolved.role, depth });
-    return { workerId, name: workerId, paneId, role: resolved.role, model: resolved.model, depth };
+    return { workerId, name: workerId, paneId, role: resolved.role, model: resolved.model, depth, capabilityWarnings };
   }
 
   /** Spawns are serialized and tracked so a parallel finish/stop cannot race a half-registered worker. */
-  function spawnWorker(input: { focus: string; task: string; context?: string; role?: string; skills?: string[]; model?: string }, parent: { workerId: string | null; depth: number }) {
+  function spawnWorker(input: { focus: string; task: string; context?: string; role?: string; skills?: string[]; model?: string; workflow?: string }, parent: { workerId: string | null; depth: number }) {
     const current = owner();
     const task = serializeSpawn(() => spawnWorkerLocked(input, parent));
     const tracked = task.catch(() => {}).finally(() => current.spawns.delete(tracked));
@@ -316,6 +330,12 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
       await removeTicket(ticketPath(current.control, registration.workerId));
     }
     await current.broker.stop();
+    if (current.exportEnabled && !current.exportPath) {
+      try { current.exportPath = await current.evidence.exportTo(current.ctx.cwd, {
+        target: targetLabel(current.target), sourceHashes: current.sandbox.sourceManifest, image: IMAGE, extensionSha256: current.extensionSha,
+        leadModel: sessionModel(current.ctx), skillHashes: current.library.hashes(), capabilities: current.capabilities, reason,
+      }); } catch (error) { current.exportError = message(error); current.ctx.ui.notify(`Evidence export failed: ${current.exportError}. Cleanup still proceeds.`, 'error'); }
+    }
     await current.sandbox.stop();
     await current.sandbox.assertNoRunContainers();
     const { rm } = await import('node:fs/promises');
@@ -331,7 +351,73 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
     return current.stop;
   }
 
+  async function executeWithReceipt(current: OwnerRun, by: string, operation: string, input: string, perform: () => Promise<ProcessResult>): Promise<ProcessResult> {
+    const started = new Date().toISOString();
+    try {
+      const result = await perform();
+      const evidenceId = await current.evidence.receipt(by, operation, input, result, started);
+      return { ...result, evidenceId };
+    } catch (error) {
+      await current.evidence.receipt(by, operation, input, { code: -1, stdout: '', stderr: message(error), truncated: false }, started).catch(() => {});
+      throw error;
+    }
+  }
+  async function readKnowledge(current: OwnerRun, op: string, params: Record<string, unknown>) {
+    if (current.phase !== 'active') fail('NO_ASSESSMENT', 'Knowledge service is closed');
+    if (op === 'capabilities') {
+      if (params.probe !== undefined) {
+        if (params.probe !== 'python' && params.probe !== 'semgrep') fail('INVALID_PROBE', 'Only fixed offline python/semgrep probes exist');
+        if (current.capabilities.capabilities.find(c => c.id === `tool.${params.probe}`)?.availability !== 'unknown') return current.capabilities;
+        const result = await executeWithReceipt(current, 'owner', 'probe', params.probe, () => current.sandbox.exec(PROBES[params.probe as keyof typeof PROBES], 45));
+        applyProbe(current.capabilities, params.probe, result);
+      }
+      return current.capabilities;
+    }
+    if (op === 'skill_list') return current.library.list((params.offset ?? 0) as number);
+    if (op === 'skill_read') return current.library.read((params.documentId ?? params.id) as string, (params.offset ?? 0) as number);
+    throw new Error('Unknown knowledge operation');
+  }
+
   // ---------------------------------------------------------------- tools
+
+  for (const [name, op, description, parameters] of [
+    ['p2o_skill_list', 'skill_list', 'List approved skill IDs, workflow prerequisites and reference IDs; follow nextOffset for more. No host paths.', Type.Object({ offset: Type.Optional(Type.Integer({ minimum: 0 })) })],
+    ['p2o_skill_read', 'skill_read', 'Read an approved skill/reference/handoff/evidence document by catalog ID. Follow nextOffset for the rest. Not an arbitrary host file reader.', Type.Object({ id: Type.String({ maxLength: 160 }), offset: Type.Optional(Type.Integer({ minimum: 0 })) })],
+    ['p2o_capabilities', 'capabilities', 'Read owner-enforced permissions, applicability, runtime availability and limits. Optionally execute one fixed offline functional tool probe (45s max); no network or installation. A missing capability is not a clean test.', Type.Object({ probe: Type.Optional(Type.Union([Type.Literal('python'), Type.Literal('semgrep')])) })],
+  ] as const) {
+    pi.registerTool({ name, label: name, exposure: 'model-only', description, parameters,
+      async execute(_id, params) {
+        const current = run;
+        if (!current || current.phase !== 'active') fail('NO_ASSESSMENT', 'No active assessment');
+        const value = current.role === 'worker'
+          ? (await worker().client.request(op, op === 'skill_read' ? { documentId: (params as { id: string }).id, offset: (params as { offset?: number }).offset } : params as Record<string, unknown>)).value
+          : (++current.knowledgeUsed <= 400 ? await readKnowledge(current, op, params as Record<string, unknown>) : fail('KNOWLEDGE_BUDGET', 'Lead knowledge budget exhausted'));
+        if (current.role === 'worker' && op === 'capabilities') current.capabilities = value as CapabilitySnapshot;
+        return { content: [{ type: 'text' as const, text: cleanText(JSON.stringify(value, null, 2)) }], details: value };
+      },
+    });
+  }
+  pi.registerTool({
+    name: 'p2o_candidate', label: 'Record candidate closure', exposure: 'model-only',
+    description: 'Record an attributed candidate claim, evidence IDs, proof level, negative controls and limitations. Runtime receipts are observations, not automatic proof. Revise with supersedes=latest record ID. Blocked testing must stay open_proof_gap.',
+    parameters: Type.Object({
+      candidate: Type.String({ pattern: '^[a-z0-9][a-z0-9-]{0,79}$' }), surface: Type.String({ minLength: 1, maxLength: 200 }), risk: Type.String({ minLength: 1, maxLength: 200 }),
+      closure: Type.Union([Type.Literal('confirmed'), Type.Literal('ruled_out'), Type.Literal('open_proof_gap')]),
+      execution: Type.Union([Type.Literal('tested'), Type.Literal('not_tested'), Type.Literal('blocked'), Type.Literal('not_applicable')]),
+      proof: Type.Union([Type.Literal('static_trace'), Type.Literal('offline_reproduction'), Type.Literal('live_reproduction')]),
+      evidenceRefs: Type.Array(Type.String({ maxLength: 80 }), { maxItems: 10 }), negativeControls: Type.Array(Type.String({ maxLength: 80 }), { maxItems: 10 }),
+      limitations: Type.String({ minLength: 1, maxLength: 1500 }), control: Type.Optional(Type.String({ maxLength: 1000 })),
+      resolves: Type.Optional(Type.Array(Type.String({ maxLength: 80 }), { maxItems: 10 })),
+      requirement: Type.Optional(Type.String({ maxLength: 200 })), supersedes: Type.Optional(Type.String({ maxLength: 80 })), independentEvidenceRef: Type.Optional(Type.String({ maxLength: 80 })),
+    }),
+    async execute(_id, params) {
+      const current = run;
+      if (!current || current.phase !== 'active') fail('NO_ASSESSMENT', 'No active assessment');
+      const record = current.role === 'worker' ? (await worker().client.request('candidate', { candidate: params })).value
+        : await current.evidence.candidate('owner', params);
+      return { content: [{ type: 'text' as const, text: JSON.stringify(record) }], details: record };
+    },
+  });
 
   pi.registerTool({
     name: 'p2o_shell', label: 'Sandbox shell', exposure: 'model-only',
@@ -343,7 +429,7 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
       if (!current) fail('NO_ASSESSMENT', 'No active p2o assessment; start one with /p2o --target …');
       if (current.role === 'owner') {
         if (current.phase !== 'active' || current.ctx.cwd !== ctx.cwd) fail('NO_ASSESSMENT', 'No active p2o assessment in this session');
-        return output(await current.sandbox.exec(params.command, timeout, signal, '/work'));
+        return output(await executeWithReceipt(current, 'owner', 'shell', params.command, () => current.sandbox.exec(params.command, timeout, signal, '/work')));
       }
       const active = worker();
       const result = await active.client.request<ProcessResult>('exec', { command: params.command, timeout }, { timeoutMs: (timeout + 20) * 1000 });
@@ -360,7 +446,7 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
       if (!current) fail('NO_ASSESSMENT', 'No active p2o assessment; start one with /p2o --target …');
       if (current.role === 'owner') {
         if (current.phase !== 'active' || current.ctx.cwd !== ctx.cwd) fail('NO_ASSESSMENT', 'No active p2o assessment in this session');
-        return output(await current.sandbox.http(params.url, method, signal));
+        return output(await executeWithReceipt(current, 'owner', 'http', `${method} ${params.url}`, () => current.sandbox.http(params.url, method, signal)));
       }
       const active = worker();
       const result = await active.client.request<ProcessResult>('http', { url: params.url, method }, { timeoutMs: 45_000 });
@@ -405,9 +491,9 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
       const response = await current.client.request<{ records: AssessmentRecord[] }>('ledger', { limit: params.limit ?? 50 }, { timeoutMs: 30_000 });
       const records = response.records ?? [];
       const text = records.length
-        ? records.map(entry => `[${entry.by} ${entry.kind}${entry.surface ? ` ${entry.surface}×${entry.risk ?? '?'}=${entry.outcome ?? '?'}` : ''}] ${cleanText(entry.text).slice(0, 400)}`).join('\n')
+        ? records.map(entry => `[${entry.id ?? 'legacy'} ${entry.by} ${entry.kind}${entry.surface ? ` ${entry.surface}×${entry.risk ?? '?'}=${entry.outcome ?? '?'}` : ''}] ${cleanText(entry.text).slice(0, 400)}${entry.data ? `\n${JSON.stringify(entry.data).slice(0, 2500)}` : ''}`).join('\n')
         : '(the ledger is empty)';
-      return { content: [{ type: 'text' as const, text: `${records.length} ledger record(s):\n${text}` }], details: { count: records.length } };
+      return { content: [{ type: 'text' as const, text: cleanText(`${records.length} ledger record(s):\n${text}`) }], details: { count: records.length } };
     },
   });
   pi.registerTool({
@@ -420,6 +506,7 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
       role: Type.Optional(Type.Union([Type.Literal('recon'), Type.Literal('discovery'), Type.Literal('validation'), Type.Literal('reporting'), Type.Literal('general')])),
       skills: Type.Optional(Type.Array(Type.String({ maxLength: 64 }), { maxItems: MAX_SKILLS })),
       model: Type.Optional(Type.String({ maxLength: 200 })),
+      workflow: Type.Optional(Type.String({ maxLength: 64, description: 'Optional catalog workflow ID to check prerequisites for selected skills' })),
     }),
     async execute(_id, params) {
       const current = run;
@@ -427,12 +514,12 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
       if (current.role === 'worker') {
         const active = worker();
         const response = await active.client.request<{ worker: { workerId: string; role: string; depth: number } }>('delegate', {
-          focus: params.focus, task: params.task, context: params.context, role: params.role, skills: params.skills, model: params.model,
+          focus: params.focus, task: params.task, context: params.context, role: params.role, skills: params.skills, model: params.model, workflow: params.workflow,
         }, { timeoutMs: 150_000 });
         return { content: [{ type: 'text' as const, text: `The lead spawned ${response.worker.workerId} (${response.worker.role}, depth ${response.worker.depth}). Continue your own objective; read the shared ledger with p2o_note/refs when it reports.` }], details: response.worker };
       }
       if (current.phase !== 'active') fail('NO_ASSESSMENT', 'The assessment is finishing; no new workers');
-      const spawned = await spawnWorker({ focus: params.focus, task: params.task, context: params.context, role: params.role, skills: params.skills, model: params.model }, { workerId: null, depth: 0 });
+      const spawned = await spawnWorker({ focus: params.focus, task: params.task, context: params.context, role: params.role, skills: params.skills, model: params.model, workflow: params.workflow }, { workerId: null, depth: 0 });
       return {
         content: [{ type: 'text' as const, text: `Spawned ${spawned.workerId} (${spawned.role}, ${spawned.model ?? 'inherit'}, depth ${spawned.depth}) in a visible pane. Continue your own work and read its report with p2o_workers.` }],
         details: spawned,
@@ -535,8 +622,8 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
       const open = view.open.slice(-8).map(entry => cleanText(entry.text).slice(0, 160)).join(' | ') || '(none recorded)';
       const workers = view.workers.map(entry => `${entry.workerId} ${entry.status}${entry.reported ? ' reported' : ' no report'}`).join(', ') || '(none)';
       return {
-        content: [{ type: 'text' as const, text: `Container removal verified${panesBefore ? `; worker panes closed ${panesBefore - (current.unclosedPanes?.length ?? 0)}/${panesBefore}${current.unclosedPanes?.length ? ` (still present: ${current.unclosedPanes.join(', ')} — close them in Herdr; their tickets are revoked and they have no target access)` : ''}` : ''}. Workers: ${workers}.\nCoverage: ${coverage}\nOpen items: ${open}\n\nWrite the final report now: findings with reproduction and evidence, confidence, what was NOT covered, and what you could not verify. Findings are assessed by this agent; "independently verified" needs a separate reproduction, and worker claims you did not verify must be labelled as such.` }],
-        details: { sandboxRemoved: true, panesClosed: panesBefore - (current.unclosedPanes?.length ?? 0), unclosedPanes: current.unclosedPanes ?? [], workers: view.workers, coverage: view.coverage, open: view.open },
+        content: [{ type: 'text' as const, text: `${current.exportPath ? `Evidence export: ${current.exportPath}\n` : current.exportError ? `EXPORT FAILED: ${current.exportError}\n` : ''}Container removal verified${panesBefore ? `; worker panes closed ${panesBefore - (current.unclosedPanes?.length ?? 0)}/${panesBefore}${current.unclosedPanes?.length ? ` (still present: ${current.unclosedPanes.join(', ')} — close them in Herdr; their tickets are revoked and they have no target access)` : ''}` : ''}. Workers: ${workers}.\nCoverage: ${coverage}\nOpen items: ${open}\n\nWrite the final report now: findings with reproduction and evidence, confidence, what was NOT covered, and what you could not verify. Findings are assessed by this agent; "independently verified" needs a separate reproduction, and worker claims you did not verify must be labelled as such.` }],
+        details: { exportPath: current.exportPath, exportError: current.exportError, sandboxRemoved: true, panesClosed: panesBefore - (current.unclosedPanes?.length ?? 0), unclosedPanes: current.unclosedPanes ?? [], workers: view.workers, coverage: view.coverage, open: view.open },
       };
     },
   });
@@ -575,7 +662,7 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
           const delegationReason = command.options.solo ? '--solo was requested' : 'Pi is not running inside a Herdr session';
           const delegation = maxWorkers > 0 && maxDepth > 0 ? '' : ' (delegation disabled by the configured limits)';
           const allowed = await ctx.ui.confirm('Start authorized assessment?',
-            `Target: ${cleanText(targetLabel(target))}\n${target.kind === 'directory' ? 'A bounded source copy (64 MiB / 20000 entries) is exposed read-only to the sandbox and its contents may reach your model provider. Symlinks, special files, .git and node_modules are skipped. Choose a source directory, not your home or a secrets directory.' : `Scope: ${target.origin}, public IPv4 GET/HEAD only. No login, redirects or state changes.`}\nConfirm you own this target or have permission to assess it. The current Pi model leads the assessment; normal provider charges apply.\nWorkers: ${delegationAvailable ? `up to ${maxWorkers} visible Pi worker panes may be delegated inside this sandbox, nesting to depth ${maxDepth}; each worker has its own model and models may cost more.` : `none${delegation} (${delegationReason}).`}\nDocker uses a pinned Strix tools image, an unprivileged user, resource limits and no host credentials/socket. Containers share the host kernel; this is not VM isolation. Maximum duration: 30 minutes.`);
+            `Target: ${cleanText(targetLabel(target))}\n${target.kind === 'directory' ? 'A bounded source copy (64 MiB / 20000 entries) is exposed read-only to the sandbox and its contents may reach your model provider. Symlinks, special files, .git and node_modules are skipped. Choose a source directory, not your home or a secrets directory.' : `Scope: ${target.origin}, public IPv4 GET/HEAD only. No login, redirects or state changes.`}\nConfirm you own this target or have permission to assess it. The current Pi model leads the assessment; normal provider charges apply.\nWorkers: ${delegationAvailable ? `up to ${maxWorkers} visible Pi worker panes may be delegated inside this sandbox, nesting to depth ${maxDepth}; each worker has its own model and models may cost more.` : `none${delegation} (${delegationReason}).`}\nDocker uses a pinned Strix tools image, an unprivileged user, resource limits and no host credentials/socket. Containers share the host kernel; this is not VM isolation. Maximum duration: 30 minutes.${command.options.export ? '\nExport enabled: bounded redacted receipts will be saved under .p2o-reports in this working directory before cleanup. Redaction is best effort; review before sharing.' : '\nNo durable export selected. Use --export to retain bounded redacted receipts after cleanup.'}`);
           if (!allowed) { ctx.ui.notify('Cancelled. No sandbox, worker or agent turn started.', 'info'); return; }
           ctx.signal?.throwIfAborted();
           const source = await readFile(extensionPath, 'utf8');
@@ -595,11 +682,15 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
             runId, control, records, reports, broker: undefined as unknown as Broker, workers: new Map(),
             delegation: { enabled: delegationAvailable, reason: delegationAvailable ? undefined : delegationReason, maxWorkers, maxDepth, spawned: 0, totalBudget },
             settings: loaded, extensionPath, extensionSha: extensionSha!, deadline, spawns: new Set(),
+            library: new SkillLibrary(packageRoot(extensionPath)), evidence: new EvidenceStore(runId, records, targetLabel(target)),
+            knowledgeUsed: 0, capabilities: capabilities(target), exportEnabled: command.options.export ?? false,
           };
           current.broker = new Broker(control, {
-            exec: (command, seconds, workdir, signal) => sandbox.exec(command, seconds, signal, workdir),
-            http: (url, method) => sandbox.http(url, method),
-            note: record => appendRecord(current.records, record),
+            exec: (command, seconds, workdir, signal) => executeWithReceipt(current, workdir.split('/').at(-1)!, 'shell', command, () => sandbox.exec(command, seconds, signal, workdir)),
+            http: (url, method, signal, workerId) => executeWithReceipt(current, workerId ?? 'owner', 'http', `${method} ${url}`, () => sandbox.http(url, method, signal)),
+            knowledge: (op, request) => readKnowledge(current, op, request),
+            candidate: (input, registration) => current.evidence.candidate(registration.workerId, input as Candidate),
+            note: record => appendRecord(current.records, { ...record, runId: current.runId }),
             ledger: limit => readRecords(current.records, limit),
             delegate: (input, parent) => spawnWorker(input, { workerId: parent.workerId, depth: parent.depth }),
             report: async (workerId, report) => {
@@ -633,7 +724,7 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
             runId, targetLabel: targetLabel(target), targetKind: target.kind,
             deadline: new Date(deadline).toISOString(), sourceSkipped: sandbox.sourceSkipped,
             delegation: { enabled: current.delegation.enabled, reason: current.delegation.reason, maxWorkers, maxDepth },
-            workerBudget: totalBudget,
+            workerBudget: totalBudget, capabilities: current.capabilities,
           };
           ctx.ui.notify(`Sandbox ready. Leading the assessment in this conversation.${current.delegation.enabled ? ` Delegation: up to ${maxWorkers} workers, depth ${maxDepth}.` : ''}${sandbox.sourceSkipped ? ` Source entries skipped: ${sandbox.sourceSkipped}.` : ''}`, 'info');
           pi.sendUserMessage(`${ownerInstructions(facts)}\n\nBegin the assessment now. Use recon before targeted testing, delegate when it genuinely helps, and record coverage as you go.`);
@@ -670,15 +761,28 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
         runId: current.runId, targetLabel: targetLabel(current.target), targetKind: current.target.kind,
         deadline: new Date(current.deadline).toISOString(), sourceSkipped: current.sandbox.sourceSkipped,
         delegation: { enabled: current.delegation.enabled, reason: current.delegation.reason, maxWorkers: current.delegation.maxWorkers, maxDepth: current.delegation.maxDepth },
-        workerBudget: current.delegation.totalBudget,
+        workerBudget: current.delegation.totalBudget, capabilities: current.capabilities,
       })
-      : workerInstructions(current.ticket);
+      : workerInstructions(current.ticket, current.capabilities);
     return { systemPrompt: `${event.systemPrompt}\n\n${text}` };
   });
   pi.on('agent_before_settle', async (event, ctx) => {
     const current = run;
     if (!current) return;
-    if (current.role === 'worker') { if (event.outcome !== 'completed' && current.phase === 'active') ctx.ui.notify('Worker turn ended without p2o_report; the lead is waiting.', 'warning'); return; }
+    if (current.role === 'worker') {
+      if (current.phase === 'active' && !event.continue && !event.context?.pendingMessages?.length) {
+        const last = event.context?.contextMessages?.filter(m => m.role === 'assistant').at(-1);
+        const detail = last && 'errorMessage' in last ? String(last.errorMessage ?? '') : '';
+        const reason = redact(`Worker settled ${event.outcome} without p2o_report. ${detail}`).slice(0, 900);
+        try {
+          await current.client.request('report', { report: { summary: reason, findings: [], evidence: [], coverage: [],
+            openItems: ['Assigned objective incomplete; inspect prior ledger evidence before retrying.'], confidence: 'low', blocked: reason } }, { timeoutMs: 5000 });
+          current.phase = 'finished';
+          ctx.ui.notify('Blocked lifecycle report delivered to the lead; no further model request was needed.', 'warning');
+        } catch (error) { ctx.ui.notify(`Could not deliver blocked report: ${message(error)}. Ask the lead to withdraw this worker.`, 'error'); }
+      }
+      return;
+    }
     if (current.phase === 'finished') { restore(current); return; }
     if (event.outcome !== 'completed') { try { await stopAssessment(current, 'error'); } catch (error) { ctx.ui.notify(message(error), 'error'); } }
   });

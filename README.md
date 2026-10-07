@@ -10,7 +10,7 @@ plan IDs or dashboard.
 pi install https://github.com/Nhan-Laptop/pi-p2o
 ```
 
-Requires Pi 1.0.0, a configured model, and a running local Linux Docker daemon. Install the sandbox tools image once:
+Requires Pi 1.0.0, a configured model, a Linux host (`/proc/self/fd` containment), and a running local Linux Docker daemon. Install the sandbox tools image once:
 
 ```sh
 docker pull ghcr.io/usestrix/strix-sandbox@sha256:f6906c3114e504fd1a218fcf028d7a0e46851118403a438b63956de6ea7c4331
@@ -27,6 +27,7 @@ No extension build or JSON configuration is needed. Use `/reload` after installi
 /p2o --target https://example.com
 /p2o --target ./my-repo --workers 2 --max-depth 1
 /p2o --target ./my-repo --solo
+/p2o --target ./my-repo --export
 /p2o stop
 ```
 
@@ -39,6 +40,9 @@ neighbouring pane with its own role model, and every worker shares this sandbox 
 
 | Tool | Role | Purpose |
 |---|---|---|
+| `p2o_skill_list` / `p2o_skill_read` | lead + worker | Paginated catalog and approved skill/reference/handoff documents; IDs, never arbitrary host paths |
+| `p2o_capabilities` | lead + worker | Permission, applicability and runtime availability; optional fixed offline Python/Semgrep probe |
+| `p2o_candidate` | lead + worker | Evidence-linked candidate claims, proof level, controls, limitations and explicit revisions |
 | `p2o_shell` | lead + worker | Offline shell in the sandbox; `/target` is a read-only copy, `/work/<workerId>` is scratch |
 | `p2o_http` | lead + worker | Fixed curl, GET/HEAD on the authorized origin only; public IPv4, no redirects/credentials |
 | `p2o_note` | lead + worker | Append a note, observation, coverage row or open item to the shared ledger |
@@ -53,6 +57,10 @@ neighbouring pane with its own role model, and every worker shares this sandbox 
 Host tools, `codemode`, the browser, other extensions, `!` shell and the worker's own Docker access are blocked
 while an assessment is active. A worker reaches the target **only** through the lead's broker socket; if the
 lead stops, workers fail closed.
+
+With `--export`, cleanup saves bounded redacted receipts and source/skill hashes in `.p2o-reports/` (0700; files 0600).
+Review before sharing: redaction is best effort, not a guarantee. Without `--export`, the temporary ledger is removed.
+Terminal worker failures deliver a blocked report without another model call; no provider fallback is automatic.
 
 ## Limits
 
@@ -87,6 +95,14 @@ The research-method library stays available independently of the extension: [han
 [Deserialization](skills/deserialization-and-dispatch-auditing/SKILL.md) · [Compiler invariants](skills/compiler-invariant-auditing/SKILL.md) ·
 [Sandbox boundaries](skills/sandbox-boundary-analysis/SKILL.md) · [Impact](skills/exploitability-assessment/SKILL.md) · [Remediation](skills/remediation/SKILL.md).
 
+Application guidance: [route inventory](skills/web-route-input-inventory/SKILL.md) ·
+[object authorization](skills/web-object-authorization/SKILL.md) · [output context](skills/web-output-context/SKILL.md) ·
+[FastAPI parity overlay](skills/fastapi-security-parity/SKILL.md).
+These augment the original 17 methods. An overlay occupies one of the existing three assignment slots.
+[Provenance and exclusions](research/SKILL_PROVENANCE.md) document the selected Strix references.
+[Offline Semgrep recipe](skills/source-code-auditing/recipes/offline-python-semgrep.md) requires a successful tool probe;
+tool presence and usable dependencies must never be assumed from the image name.
+
 ## Development
 
 ```sh
@@ -97,7 +113,8 @@ npm run test:herdr        # opt-in: real Herdr pane spawn (opens and closes a pa
 pi --no-extensions -e "$PWD"
 ```
 
-Design notes: [architecture](docs/ARCHITECTURE.md), [usage](docs/USAGE.md), [implementation plan](plan_updating.md).
+Design notes: [architecture](docs/ARCHITECTURE.md), [usage](docs/USAGE.md), [enhancement roadmap](planning_update.md).
+[Benchmarks](bench/README.md) are opt-in real-model runs, separate from the hermetic suite; no effectiveness claim is implied by passing unit tests.
 `my_references/` is not shipped or modified.
 
 ## Offline quality checks

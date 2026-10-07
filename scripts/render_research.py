@@ -57,6 +57,16 @@ def skill_source_map(root: Path) -> dict:
     }
 
 
+def blog_owner_map(root: Path) -> dict:
+    """Technique skills that own at least one blog source.
+
+    Playbooks, overlays, and recipes carry no blog evidence, so they must not be
+    counted as merged technique owners or be able to falsify the historical
+    source-to-skill statistics.
+    """
+    return {name: ids for name, ids in skill_source_map(root).items() if ids}
+
+
 def bootstrap(root: Path, snapshots: list[Path]) -> dict:
     index, crawl, supplemental = map(load_json, snapshots)
     posts = index["posts"]
@@ -156,7 +166,7 @@ def synchronize(root: Path, corpus: dict) -> dict:
     corpus["statistics"] = {
         "index_entries": len(corpus["entries"]), "inspected_pages": sum(bool(e["retrieval"]) for e in corpus["entries"]),
         "included_sources": counts["included"], "duplicate_pages": counts["duplicate"],
-        "context_pages": counts["context"], "excluded_entries": counts["excluded"], "skills": len(mapping),
+        "context_pages": counts["context"], "excluded_entries": counts["excluded"], "skills": len(blog_owner_map(root)),
     }
     return corpus
 
