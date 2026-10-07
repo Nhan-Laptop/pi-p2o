@@ -41,7 +41,7 @@ const child = spawn(arg('--pi', `${process.env.HOME}/.pi/agent/bin/pi`), ['--no-
   { cwd: work, env: { ...process.env }, stdio: ['pipe', 'pipe', 'pipe'] });
 child.stdin.on('error', () => {});
 const rpc = new PiRpc(child); rpc.answerDialogs();
-let messages = [], result, failed;
+let messages = [], result, failed, ownedRunId;
 const started = Date.now();
 try {
   await rpc.request('get_state');
@@ -49,6 +49,8 @@ try {
   while (Date.now() - started < 8 * 60_000) {
     await delay(1000);
     messages = (await rpc.request('get_messages')).data?.messages ?? [];
+    const brief = messages.find(m => m.role === 'user' && JSON.stringify(m.content).includes('P2O ASSESSMENT'));
+    ownedRunId ??= /\bRun (run-[a-z0-9-]+)\b/.exec(JSON.stringify(brief?.content ?? ''))?.[1];
     const finish = messages.find(m => m.role === 'toolResult' && m.toolName === 'p2o_finish' && !m.isError);
     if (finish) {
       result = finish.details;
@@ -60,6 +62,7 @@ try {
   }
   if (!result?.sandboxRemoved || !result.exportPath) throw new Error('No successful finish/export within deadline');
   const exported = JSON.parse(await readFile(result.exportPath, 'utf8'));
+  ownedRunId = exported.runId;
   await cp(result.exportPath, join(work, 'evidence.json'));
   const records = exported.records;
   const workers = result.workers ?? [];
@@ -80,12 +83,14 @@ finally {
   await rpc.request('abort', {}, 10_000).catch(() => {});
   await rpc.request('prompt', { message: '/p2o stop' }, 30_000).catch(() => {});
   await rpc.close();
-  const newContainers = containers().filter(x => !oldContainers.has(x));
+  const observedNewContainers = containers().filter(x => !oldContainers.has(x));
+  const newContainers = ownedRunId ? execFileSync('docker', ['ps', '-a', '--filter', `label=pi-p2o.run=${ownedRunId}`, '--format', '{{.Names}}'], { encoding: 'utf8' }).trim().split('\n').filter(Boolean) : observedNewContainers;
   const agents = JSON.parse(execFileSync('herdr', ['agent', 'list'], { encoding: 'utf8' })).result.agents;
-  const leakedWorkers = agents.filter(a => !before.has(a.pane_id) && a.name?.startsWith('p2o-'));
+  const ownedWorkers = new Set(messages.filter(m => m.role === 'toolResult' && m.toolName === 'p2o_delegate').map(m => m.details?.workerId).filter(Boolean));
+  const leakedWorkers = agents.filter(a => ownedWorkers.has(a.name) && !before.has(a.pane_id));
   if (newContainers.length || leakedWorkers.length) failed = `${failed ?? ''} Leaked test resources: ${JSON.stringify({ newContainers, leakedWorkers })}`;
   await writeFile(join(work, 'messages.json'), JSON.stringify(messages, null, 2), { mode: 0o600 });
-  await writeFile(join(work, 'runtime.json'), JSON.stringify({ failed, stderr: rpc.stderr, events: rpc.records, summary: rpc.recordSummary, cleanup: { newContainers, leakedWorkers } }, null, 2), { mode: 0o600 });
+  await writeFile(join(work, 'runtime.json'), JSON.stringify({ failed, stderr: rpc.stderr, events: rpc.records, summary: rpc.recordSummary, cleanup: { ownedRunId, newContainers, leakedWorkers, observedNewContainers } }, null, 2), { mode: 0o600 });
 }
 console.log(JSON.stringify({ work, status: failed ? 'failed' : 'passed', failed }, null, 2));
 if (failed) process.exitCode = 1;
