@@ -22,6 +22,7 @@ import {
   DEFAULT_MAX_TURNS, DEFAULT_MODEL, DEFAULT_REPS, DEFAULT_SEED, DEFAULT_THINKING, PLAN_SCHEMA,
   buildPlan, copyVariant, discoverFixtures, parseSeed, resolveArms,
 } from '../bench/lib/plan.mjs';
+import { objectiveExtensionSource } from '../bench/lib/objective.mjs';
 import { extractTranscript, redactSecrets, scoreRun, summarizeScores } from '../bench/lib/score.mjs';
 
 const SCRIPT_PATH = fileURLToPath(import.meta.url);
@@ -78,7 +79,10 @@ Options:
   --json                  print machine JSON instead of a short summary
 
 The objective text always comes from the frozen evaluator manifest; the runner accepts no
-caller-supplied prompt, and objectives are validated offline for leaked solution terms. Live runs
+caller-supplied prompt, and objectives are validated offline for leaked solution terms. A tiny
+generated wrapper extension is loaded immediately after the tested arm and appends the objective to
+the system prompt only while the P2O scope text is present — the runner sends no follow-up prompt,
+so no benchmark work can start after p2o_finish or outside the sandbox. Live runs
 use the real P2O extension against a local synthetic fixture with the real Docker sandbox. Budgets
 are fixed per run, the run order is seeded and recorded, and provider failures are reported
 separately, never scored as security negatives.`;
@@ -272,9 +276,10 @@ export class BoundedRecords {
     if (record?.type === 'tool_execution_end') {
       const details = record.result?.details ?? null;
       const evidenceId = details?.evidenceId;
+      if (record.isError === true && record.toolName === 'p2o_candidate') summary.failedCandidateCalls = (summary.failedCandidateCalls ?? 0) + 1;
       if (typeof evidenceId === 'string' && evidenceId) pushBounded(summary.evidenceIds, evidenceId.toLowerCase(), 400);
-      if (record.toolName === 'p2o_finish' || record.toolName === 'p2o_candidate' || evidenceId) {
-        if (summary.toolDetails.length < 500) summary.toolDetails.push({ toolName: record.toolName ?? '', details });
+      if ((record.toolName === 'p2o_finish' || record.toolName === 'p2o_candidate' || evidenceId) && details !== null) {
+        if (summary.toolDetails.length < 500) summary.toolDetails.push({ toolName: record.toolName ?? '', isError: Boolean(record.isError), details });
       }
     }
     const size = safeSize(record);
@@ -474,7 +479,13 @@ async function executeRun({ plan, run, truth, options, suiteId, resultsDir }) {
   const notifications = [];
   const startFlags = p2oStartFlags(arm, options);
   const p2oCommand = `/p2o --target ./target${options.delegation ? ` --workers ${options.workers}` : ' --solo'}${startFlags.length ? ` ${startFlags.join(' ')}` : ''}`;
-  const args = ['--no-extensions', '-e', arm.extensionPath, '--no-skills', '--no-prompt-templates', '--no-themes',
+  // The objective is appended by a wrapper extension loaded after the tested arm; the runner sends
+  // no follow-up prompt, so no benchmark work can start after p2o_finish or outside the sandbox.
+  const objectiveWrapperSource = objectiveExtensionSource(run.objective);
+  const objectiveWrapperPath = join(runDir, 'p2o-benchmark-objective.ts');
+  await writeFile(objectiveWrapperPath, objectiveWrapperSource);
+  const objectiveWrapperSha256 = createHash('sha256').update(objectiveWrapperSource).digest('hex');
+  const args = ['--no-extensions', '-e', arm.extensionPath, '-e', objectiveWrapperPath, '--no-skills', '--no-prompt-templates', '--no-themes',
     '--no-context-files', '--no-approve', '--no-session', '--mode', 'rpc', '--model', options.model, '--thinking', options.thinking];
   const child = spawn(options.pi, args, { cwd: runDir, env: childEnv(), stdio: ['pipe', 'pipe', 'pipe'] });
   child.stdin.on('error', () => { /* closed pipes are handled by the request timeout/exit path */ });
@@ -501,8 +512,8 @@ async function executeRun({ plan, run, truth, options, suiteId, resultsDir }) {
       await delay(POLL_MS);
     }
     if (checks.assessmentStarted) {
-      // The fixture objective is delivered after the assessment brief, identical for every arm.
-      await rpc.request('follow_up', { message: run.objective }, 30_000);
+      // No follow-up prompt: the wrapper extension already appended the neutral objective to the
+      // system prompt before the assessment's first model call.
     } else {
       outcome = 'no_assessment';
     }
@@ -613,6 +624,8 @@ async function executeRun({ plan, run, truth, options, suiteId, resultsDir }) {
         delegation: options.delegation, workers: options.workers, piBinary: options.pi, piVersion: piVersion(options.pi), seed: plan.seed,
       },
       p2oCommand,
+      extensions: { owner: arm.extensionPath, objectiveWrapper: objectiveWrapperPath },
+      objectiveWrapper: { path: objectiveWrapperPath, sha256: objectiveWrapperSha256, source: objectiveWrapperSource },
       startedAt: new Date(startedAt).toISOString(),
       finishedAt: new Date(finishedAt).toISOString(),
       wallMs: finishedAt - startedAt,
@@ -848,6 +861,7 @@ async function runCommandLive(options) {
     providerFailures: receipts.filter(receipt => receipt.checks?.providerFailure || receipt.outcome === 'provider_error').map(receipt => receipt.runId),
     budgetOutcomes,
     costAvailableRuns: receipts.filter(receipt => receipt.usage?.costAvailable).length,
+    objectiveWrapperHashes: [...new Set(receipts.map(receipt => receipt.objectiveWrapper?.sha256).filter(Boolean))],
     leakedContainers: receipts.flatMap(receipt => (receipt.checks?.leakedContainers ?? []).map(name => ({ runId: receipt.runId, name }))),
     exportFailures: receipts.filter(receipt => receipt.export?.error).map(receipt => ({ runId: receipt.runId, error: receipt.export.error })),
   };
@@ -872,8 +886,11 @@ async function scoreCommand(options) {
   if (receipt.export?.copiedPath && existsSync(receipt.export.copiedPath)) {
     try { exportData = exportDataFrom(JSON.parse(await readFile(receipt.export.copiedPath, 'utf8'))); } catch { exportData = null; }
   }
+  const recordSummary = receipt.extraction?.records
+    ? { ...receipt.extraction.records, failedCandidateCalls: receipt.extraction?.counts?.candidateCallsRejected ?? 0 }
+    : null;
   const extraction = extractTranscript({
-    messages, records: [], recordSummary: receipt.extraction?.records ? { ...receipt.extraction.records, toolDetails: [] } : null,
+    messages, records: [], recordSummary,
     stats: receipt.usage, dialogs: receipt.extraction?.dialogs, notifications: receipt.extraction?.notifications,
     htmlPath: receipt.workspace?.htmlPath,
   });
@@ -885,7 +902,7 @@ async function scoreCommand(options) {
     },
   });
   const outPath = join(options.results, `${receipt.suiteId ?? 'suite'}.${receipt.orderIndex}-${receipt.runId}.rescored.json`);
-  await writeJson(outPath, { ...receipt, score, rescoredAt: new Date().toISOString(), scorer: 'lexical-v1' });
+  await writeJson(outPath, { ...receipt, score, rescoredAt: new Date().toISOString(), scorer: score.scorer });
   console.log(`re-scored ${receipt.runId}: recall=${score.metrics.recall.toFixed(2)} precision=${score.metrics.precision.toFixed(2)} evidence=${score.metrics.evidenceReproducibility.toFixed(2)} valid=${score.validity.runValid} -> ${outPath}`);
   return 0;
 }

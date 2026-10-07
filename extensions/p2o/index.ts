@@ -362,19 +362,24 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
       throw error;
     }
   }
-  async function readKnowledge(current: OwnerRun, op: string, params: Record<string, unknown>) {
+  async function readKnowledge(current: OwnerRun, op: string, params: Record<string, unknown>, by = 'owner') {
     if (current.phase !== 'active') fail('NO_ASSESSMENT', 'Knowledge service is closed');
     if (op === 'capabilities') {
       if (params.probe !== undefined) {
         if (params.probe !== 'python' && params.probe !== 'semgrep') fail('INVALID_PROBE', 'Only fixed offline python/semgrep probes exist');
         if (current.capabilities.capabilities.find(c => c.id === `tool.${params.probe}`)?.availability !== 'unknown') return current.capabilities;
-        const result = await executeWithReceipt(current, 'owner', 'probe', params.probe, () => current.sandbox.exec(PROBES[params.probe as keyof typeof PROBES], 45));
+        const result = await executeWithReceipt(current, by, 'probe', params.probe, () => current.sandbox.exec(PROBES[params.probe as keyof typeof PROBES], 45));
         applyProbe(current.capabilities, params.probe, result);
       }
       return current.capabilities;
     }
-    if (op === 'skill_list') return current.library.list((params.offset ?? 0) as number);
-    if (op === 'skill_read') return current.library.read((params.documentId ?? params.id) as string, (params.offset ?? 0) as number);
+    if (op === 'skill_list' || op === 'skill_read') {
+      const result = op === 'skill_list' ? await current.library.list((params.offset ?? 0) as number)
+        : await current.library.read((params.documentId ?? params.id) as string, (params.offset ?? 0) as number);
+      await appendRecord(current.records, { runId: current.runId, at: new Date().toISOString(), by, workerId: by === 'owner' ? undefined : by,
+        kind: 'lifecycle', text: `${op}${'id' in result ? ` ${result.id} sha256=${result.sha256} offset=${result.offset}` : ''}` });
+      return result;
+    }
     throw new Error('Unknown knowledge operation');
   }
 
@@ -688,7 +693,7 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
           current.broker = new Broker(control, {
             exec: (command, seconds, workdir, signal) => executeWithReceipt(current, workdir.split('/').at(-1)!, 'shell', command, () => sandbox.exec(command, seconds, signal, workdir)),
             http: (url, method, signal, workerId) => executeWithReceipt(current, workerId ?? 'owner', 'http', `${method} ${url}`, () => sandbox.http(url, method, signal)),
-            knowledge: (op, request) => readKnowledge(current, op, request),
+            knowledge: (op, request, registration) => readKnowledge(current, op, request, registration.workerId),
             candidate: (input, registration) => current.evidence.candidate(registration.workerId, input as Candidate),
             note: record => appendRecord(current.records, { ...record, runId: current.runId }),
             ledger: limit => readRecords(current.records, limit),

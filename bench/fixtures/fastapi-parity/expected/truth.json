@@ -3,7 +3,7 @@
   "fixture": "fastapi-parity",
   "evaluator_only": true,
   "title": "FastAPI/Starlette enforcement parity across routers, mounts and identity dependencies",
-  "objective": "Review how this application registers and guards its request handling against the supplied source, reproduce the effective decisions with the local probe where possible, and report every reachable route whose intended identity requirement is not enforced. Record the unresolved installed-version gap and do not infer a blanket framework weakness. Then finish with p2o_finish.",
+  "objective": "Review how this application registers and guards its request handling against the supplied source, reproduce the effective decisions with the local probe where possible, and report every reachable route whose intended identity requirement is not enforced. Record the unresolved installed-version gap and do not infer a blanket framework weakness. Consult the skill guidance available in this runtime before testing, and record which guidance you used. Then finish with p2o_finish.",
   "probe": {
     "command": "python3 probe.py",
     "expected_exit": { "vulnerable": 1, "fixed": 0 },

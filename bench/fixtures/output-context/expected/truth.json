@@ -3,7 +3,7 @@
   "fixture": "output-context",
   "evaluator_only": true,
   "title": "Source-to-sink output context with an inert marker",
-  "objective": "Map every untrusted input in the renderer to its output sink and exact encoding context, render the local fixtures, and report any context where the inert marker is interpreted as markup instead of encoded text. Remember that reflection is not browser execution; record the missing oracle as a gap. Then finish with p2o_finish.",
+  "objective": "Map every untrusted input in the renderer to its output sink and exact encoding context, render the local fixtures, and report any context where the inert marker is interpreted as markup instead of encoded text. Remember that reflection is not browser execution; record the missing oracle as a gap. Consult the skill guidance available in this runtime before testing, and record which guidance you used. Then finish with p2o_finish.",
   "probe": {
     "command": "python3 probe.py",
     "expected_exit": { "vulnerable": 1, "fixed": 0 },

@@ -1,15 +1,18 @@
 import { describe, expect, it } from 'vitest';
-import { spawnSync } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
+import { setTimeout as delay } from 'node:timers/promises';
 // @ts-ignore - the benchmark harness is plain JavaScript, outside the TypeScript build.
 import { BoundedRecords, MAX_RECORDS, main, parseArgs, p2oStartFlags, readExportFile, exportDataFrom } from '../../scripts/benchmark-skills.mjs';
 // @ts-ignore - the benchmark harness is plain JavaScript, outside the TypeScript build.
 import { buildPlan, catalogDocuments, copyVariant, discoverFixtures, isSharedDocument, mulberry32, objectiveProblems, parseSeed, resolveArms, shuffle, solutionMarkers, supportsStartFlag, ORIGINAL_SKILLS, PLAYBOOK_SET } from '../../bench/lib/plan.mjs';
 // @ts-ignore - the benchmark harness is plain JavaScript, outside the TypeScript build.
-import { extractTranscript, redactSecrets, scoreRun, summarizeScores } from '../../bench/lib/score.mjs';
+import { SCORER_LIMITATIONS, authoritativeCandidates, extractTranscript, normalizeEvidenceId, redactSecrets, scoreRun, summarizeScores } from '../../bench/lib/score.mjs';
+// @ts-ignore - the benchmark harness is plain JavaScript, outside the TypeScript build.
+import { OBJECTIVE_MARKER, SCOPE_MARKER, applyObjectiveHook, objectiveExtensionSource } from '../../bench/lib/objective.mjs';
 import { IMAGE } from '../../src/sandbox.js';
 
 const repo = resolve(import.meta.dirname, '../..');
@@ -254,9 +257,8 @@ describe('benchmark scorer', () => {
       messages: [
         assistantTool('p2o_shell', { command: 'cd /target && python3 probe.py' }),
         toolResult('p2o_shell', 'CELL same-tenant-foreign-read expected=deny observed=allow FAIL :: carol reads alice order o-1001'),
-        assistantText('Finding order-ownership (offline reproduction, local probe): carol can read order o-1001 in the same tenant because ownership is not checked in can_read_order. Gap: no live authenticated two-account HTTP comparison was possible.'),
         toolResult('p2o_finish', 'Container removal verified. Coverage: order read; Open items: live comparison not tested.'),
-        assistantText('Final report: order-ownership reproduced offline; live authenticated comparison was not performed.'),
+        assistantText('Final report: finding order-ownership (offline reproduction, local probe): carol can read order o-1001 in the same tenant because ownership is not checked in can_read_order. Gap: no live authenticated two-account HTTP comparison was possible.'),
       ],
       stats: { cost: 0.12, tokens: { total: 1200 }, assistantMessages: 2 },
       records: [{ type: 'agent_settled' }],
@@ -428,4 +430,348 @@ describe('benchmark safety refinements', () => {
     expect(score.scope.exportEvidence).toBe(1);
     expect(score.validity.runValid).toBe(true);
   });
+});
+
+// Bounded synthetic equivalent of the first installed pilot
+// (tmp/skill-upgrade/installed-pilot run C r1: object-authorization/vulnerable). The report text
+// and export shape mirror the real run; the arrays are trimmed to keep the test hermetic.
+describe('scorer pilot regression', () => {
+  const EV1 = '58f3fb23-120b-48d4-9184-f532887c6378';
+  const EV2 = 'f882ef9f-a224-498c-aae2-6ae82349cba0';
+  const EV3 = '6fd51333-dda2-4c30-bafa-0466937de73e';
+
+  function pilotExport() {
+    const evidenceRefs = [EV1, EV2];
+    const negativeControls = [EV3];
+    return {
+      candidates: [
+        { candidate: 'bola-read-same-tenant', surface: 'orders.get_order / policy.can_read_order', risk: "Object-level authorization failure: a tenant member can read another user's order (BOLA/IDOR), exposing PII fields shipping_address and total_cents", closure: 'confirmed', execution: 'tested', proof: 'offline_reproduction', evidenceRefs, negativeControls },
+        { candidate: 'bola-write-same-tenant', surface: 'orders.update_order_field / policy.can_update_field', risk: "Object-level authorization failure: a tenant member can modify another user's order, including shipping_address", closure: 'confirmed', execution: 'tested', proof: 'offline_reproduction', evidenceRefs, negativeControls },
+        { candidate: 'cross-tenant-export-param', surface: 'orders.export_orders / policy.can_export_orders', risk: "Tenant isolation bypass: any authenticated caller can export another tenant's orders by naming that tenant", closure: 'confirmed', execution: 'tested', proof: 'offline_reproduction', evidenceRefs, negativeControls },
+      ],
+      evidenceIds: [EV1, EV2, EV3],
+    };
+  }
+
+  const finalReport = [
+    '# P2O Assessment Final Report',
+    '## Summary',
+    'Three object-level authorization (BOLA/IDOR) flaws are confirmed by offline reproduction.',
+    '## Findings',
+    '### F1 - Same-tenant read (PII disclosure) | Confirmed | offline_reproduction',
+    "- Impact: Carol (t-a) reads Alice's o-1001, receiving shipping_address + total_cents.",
+    '- Reproduction: python3 probe.py -> same-tenant-foreign-read expected=deny observed=allow FAIL (ev 58f3...). Independent verify prints the full order dict (ev f882...).',
+    '- Control expected: order["owner"] == principal_id; policy.py returns only principal["tenant"] == order["tenant"].',
+    '### F2 - Same-tenant write | Confirmed | offline_reproduction',
+    "- Impact: Carol updates Alice's shipping_address; FIELD_POLICY declares shipping_address: owner but can_update_field returns True.",
+    '### F3 - Cross-tenant export | Confirmed | offline_reproduction',
+    '- Impact: Alice (t-a) exports t-b, receiving Bob row; can_export_orders only checks the tenant exists.',
+    '## Coverage',
+    '| AuthN boundary + cross-tenant controls | auth bypass | clean (ev 6fd5...: anonymous / unknown / cross-tenant / non-admin-total all DENY) |',
+    '| Injection / deserialization / file / network sinks | RCE, SSRF | clean (grep-based, ev 65f5...) |',
+    '## Not covered / could not verify',
+    '- HTTP/web, browser, local-lab, OAST: all unavailable per capability snapshot - no live request reproduction possible.',
+    '- Live exploitability is not established; this is a synthetic fixture.',
+  ].join('\n');
+
+  function pilotMessages() {
+    const messages: any[] = [];
+    messages.push(assistantText('I will assume the export route is unprotected and probe it.'));
+    for (let round = 0; round < 3; round += 1) {
+      messages.push({ role: 'assistant', content: [1, 2, 3].map(n => ({ type: 'toolCall', name: 'p2o_candidate', arguments: { candidate: `c-${n}`, closure: 'confirmed' } })) });
+      for (let n = 1; n <= 3; n += 1) messages.push(toolResult('p2o_candidate', round === 2 ? JSON.stringify({ id: `rec-${n}`, version: 2, kind: 'candidate' }) : `Error: Unknown same-run evidence ID: control ${n}`));
+    }
+    messages.push(assistantTool('p2o_shell', { command: 'cd /target && python3 probe.py' }));
+    messages.push(toolResult('p2o_shell', [
+      'CELL same-tenant-foreign-read expected=deny observed=allow FAIL :: carol reads alice order o-1001',
+      'CELL export-other-tenant expected=deny observed=allow FAIL :: alice exports t-b',
+      'CELL update-foreign-shipping expected=deny observed=allow FAIL :: carol updates alice shipping_address',
+      `Evidence ID: ${EV1}`,
+      `Evidence ID: ${EV1}`,
+      `Evidence ID: ${EV2}`,
+      `Evidence ID: ${EV3}`,
+    ].join('\n')));
+    messages.push(toolResult('p2o_finish', 'Evidence export: out/.p2o-reports/x.json\nContainer removal verified.'));
+    messages.push(assistantText(finalReport));
+    return messages;
+  }
+
+  function pilotRecords() {
+    const records: any[] = [];
+    for (let round = 0; round < 3; round += 1) {
+      for (let n = 1; n <= 3; n += 1) {
+        records.push({ type: 'tool_execution_end', toolName: 'p2o_candidate', isError: round !== 2, result: round === 2 ? { details: { id: `rec-${n}`, data: {} } } : {} });
+      }
+    }
+    records.push({ type: 'tool_execution_end', toolName: 'p2o_shell', isError: false, result: { details: { evidenceId: EV1 } } });
+    records.push({ type: 'tool_execution_end', toolName: 'p2o_finish', isError: false, result: { details: { exportPath: 'x/.p2o-reports/x.json' } } });
+    records.push({ type: 'agent_settled' });
+    return records;
+  }
+
+  it('removes the pilot false positives and prefers the export candidate set', async () => {
+    const truth = JSON.parse(await readFile(join(fixturePath('object-authorization'), 'expected', 'truth.json'), 'utf8'));
+    const extraction = extractTranscript({ messages: pilotMessages(), records: pilotRecords(), stats: { cost: 0.01 } });
+    const score = scoreRun({ truth, variant: 'vulnerable', extraction, checks: {}, exportData: pilotExport() });
+    expect(score.forbidden.map((item: any) => item.matched)).toEqual([false, false]);
+    expect(score.clean.every((item: any) => item.false_positive === false)).toBe(true);
+    expect(score.counts.falsePositives).toBe(0);
+    expect(score.metrics.recall).toBe(1);
+    expect(score.metrics.precision).toBe(1);
+    expect(score.metrics.proofAccuracy).toBe(1);
+    expect(score.findings.find((finding: any) => finding.id === 'order-ownership').claimed_proof).toBe('offline_reproduction');
+    expect(score.findings.find((finding: any) => finding.id === 'export-tenant-scope').claimed_proof).toBe('offline_reproduction');
+    expect(score.scope.candidatesSource).toBe('export');
+    expect(score.counts.candidatesUsed).toBe(3);
+    expect(score.scope.candidateCalls).toBe(9);
+    expect(score.scope.candidateCallsRejected).toBe(6);
+    expect(score.counts.evidenceRefs).toBe(9);
+    expect(score.counts.evidenceRefsLinked).toBe(9);
+    expect(score.metrics.evidenceReproducibility).toBe(1);
+    expect(score.scope.proofLevels).toEqual({ offline_reproduction: 3 });
+    expect(score.validity.runValid).toBe(true);
+    expect(score.limitations).toEqual(SCORER_LIMITATIONS);
+    expect(score.scorer).toBe('lexical-v2');
+  });
+
+  it('uses only the final report for an arm without a durable export', async () => {
+    const truth = JSON.parse(await readFile(join(fixturePath('object-authorization'), 'expected', 'truth.json'), 'utf8'));
+    const extraction = extractTranscript({
+      messages: [
+        assistantText('I will assume the export route is unprotected and may be vulnerable; planning to confirm it.'),
+        toolResult('p2o_finish', 'Container removal verified.'),
+        assistantText('# Final report\nNo confirmed findings in this revision; the tested policy surfaces denied foreign access.'),
+      ],
+      records: [{ type: 'agent_settled' }],
+    });
+    const score = scoreRun({ truth, variant: 'vulnerable', extraction, checks: {} });
+    expect(score.findings.every((finding: any) => !finding.claimed)).toBe(true);
+    expect(score.counts.falsePositives).toBe(0);
+    expect(score.metrics.evidenceReproducibility).toBeNull();
+    expect(score.scope.candidatesSource).toBe('none');
+  });
+
+  it('normalizes Evidence ID prefixes and de-duplicates identifiers', () => {
+    expect(normalizeEvidenceId('Evidence ID: 58F3FB23-120B-48D4-9184-F532887C6378')).toBe('58f3fb23-120b-48d4-9184-f532887c6378');
+    expect(normalizeEvidenceId('ev:abc-123')).toBe('abc-123');
+    const extraction = extractTranscript({
+      messages: [toolResult('p2o_shell', `Evidence ID: ${EV1}\nEvidence ID: ${EV1}`), toolResult('p2o_finish', 'Container removal verified.')],
+      records: [{ type: 'agent_settled' }],
+    });
+    expect(extraction.evidenceIds).toEqual([EV1]);
+  });
+
+  it('prefers export candidates over successful call records', () => {
+    const recordCandidate = { candidate: 'record-one', closure: 'open_proof_gap', evidenceRefs: [] };
+    const exportCandidate = { candidate: 'export-one', closure: 'confirmed', evidenceRefs: ['ev-1'] };
+    const authoritative = authoritativeCandidates({ candidateDetails: [recordCandidate] }, { candidates: [exportCandidate] });
+    expect(authoritative.source).toBe('export');
+    expect(authoritative.candidates.map((candidate: any) => candidate.candidate)).toEqual(['export-one']);
+    const fallback = authoritativeCandidates({ candidateDetails: [recordCandidate] }, null);
+    expect(fallback.source).toBe('records');
+    expect(fallback.candidates.map((candidate: any) => candidate.candidate)).toEqual(['record-one']);
+  });
+});
+
+describe('objective wrapper (no follow-up runs)', () => {
+  const objective = 'Review the synthetic target and report findings. Consult the skill guidance available in this runtime before testing, and record which guidance you used.';
+
+  it('never uses a follow-up RPC command to deliver the objective', async () => {
+    const runner = await readFile(join(repo, 'scripts', 'benchmark-skills.mjs'), 'utf8');
+    expect(runner).not.toMatch(/\bfollow_up\b/);
+    expect(runner).not.toMatch(/\bfollowUp\b/);
+    expect(runner).toContain('objectiveExtensionSource');
+    expect(runner).toContain('p2o-benchmark-objective.ts');
+  });
+
+  it('generates a text-only wrapper with the P2O scope guard', () => {
+    const source = objectiveExtensionSource(objective);
+    expect(source).toContain('before_agent_start');
+    expect(source).toContain(SCOPE_MARKER);
+    expect(source).toContain(OBJECTIVE_MARKER);
+    expect(source).toContain(JSON.stringify(objective));
+    for (const forbidden of ['registerTool', 'registerCommand', 'registerFlag', 'registerProvider', 'sendUserMessage', 'appendEntry', 'setActiveTools', 'follow_up', 'followUp']) {
+      expect(source).not.toContain(forbidden);
+    }
+    expect(applyObjectiveHook('a plain prompt', objective)).toBeUndefined();
+    const injected = applyObjectiveHook(`lead text\n\n${SCOPE_MARKER} text`, objective);
+    expect(injected?.systemPrompt).toContain(OBJECTIVE_MARKER);
+    expect(applyObjectiveHook(injected!.systemPrompt, objective)).toBeUndefined();
+  });
+
+  it('appends the objective after the P2O hook in a real Pi process, and only while in scope', async () => {
+    const active = await orderingProbe(true);
+    expect(active.systemPrompt).toContain(SCOPE_MARKER);
+    expect(active.systemPrompt).toContain(OBJECTIVE_MARKER);
+    expect(active.systemPrompt.indexOf(SCOPE_MARKER)).toBeLessThan(active.systemPrompt.indexOf(OBJECTIVE_MARKER));
+    const inactive = await orderingProbe(false);
+    expect(inactive.systemPrompt).not.toContain(OBJECTIVE_MARKER);
+  }, 60_000);
+
+  it('places the objective after the real P2O scope hook and cleans up without a follow-up run', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'p2o-objective-owner-'));
+    const capture = join(root, 'system-prompt.jsonl');
+    const wrapperPath = join(root, 'wrapper.ts');
+    const capturePath = join(root, 'capture.ts');
+    await mkdir(join(root, 'repo'));
+    await writeFile(join(root, 'repo', 'code.txt'), 'authorized inert source');
+    const sandboxLog = join(root, 'sandbox.jsonl');
+    await writeFile(wrapperPath, objectiveExtensionSource(objective));
+    await writeFile(capturePath, `// @ts-nocheck
+import { appendFileSync } from 'node:fs';
+export default function (pi) {
+  pi.on('before_agent_start', event => {
+    appendFileSync(${JSON.stringify(capture)}, JSON.stringify({ systemPrompt: event.systemPrompt }) + '\\n');
+  });
+}
+`);
+    const env = {
+      ...process.env, HOME: root, PI_CODING_AGENT_DIR: join(root, 'agent'), PI_OFFLINE: '1',
+      PI_SKIP_VERSION_CHECK: '1', PI_TELEMETRY: '0',
+      P2O_TEST_CONTROL_ROOT: join(root, 'control'), P2O_TEST_SANDBOX_LOG: sandboxLog,
+      P2O_TEST_FAKE_HERDR: '1', P2O_TEST_CWD: root, P2O_TEST_PI_BINARY: join(repo, 'node_modules', '.bin', 'pi'),
+      P2O_TEST_WORKER_EXT: join(repo, 'tests', 'minimal', 'fixtures', 'worker.ts'),
+    } as NodeJS.ProcessEnv;
+    const child = spawn(join(repo, 'node_modules', '.bin', 'pi'), ['--no-extensions',
+      '-e', join(repo, 'tests', 'minimal', 'fixtures', 'owner.ts'), '-e', wrapperPath, '-e', capturePath,
+      '--no-skills', '--no-prompt-templates', '--no-themes', '--no-context-files', '--offline', '--no-session', '--no-approve',
+      '--mode', 'rpc', '--provider', 'p2o-inert', '--model', 'current-agent', '--thinking', 'off'],
+    { cwd: root, env, stdio: ['pipe', 'pipe', 'pipe'] });
+    let buffer = '';
+    let stderr = '';
+    let sequence = 0;
+    const pending = new Map<string, (value: any) => void>();
+    child.stderr.setEncoding('utf8');
+    child.stderr.on('data', (text: string) => { stderr += text; });
+    child.stdout.setEncoding('utf8');
+    child.stdout.on('data', (text: string) => {
+      buffer += text;
+      for (;;) {
+        const index = buffer.indexOf('\n');
+        if (index < 0) break;
+        const line = buffer.slice(0, index);
+        buffer = buffer.slice(index + 1);
+        if (!line.trim()) continue;
+        try {
+          const record = JSON.parse(line);
+          if (record.type === 'response' && record.id && pending.has(record.id)) { pending.get(record.id)!(record); pending.delete(record.id); }
+          if (record.type === 'extension_ui_request' && record.method === 'confirm') {
+            child.stdin.write(`${JSON.stringify({ type: 'extension_ui_response', id: record.id, confirmed: true })}\n`);
+          }
+        } catch { /* ignore non-JSON noise */ }
+      }
+    });
+    const request = (type: string, fields: Record<string, unknown> = {}) => new Promise<any>((resolvePromise, reject) => {
+      const id = `owner-probe-${++sequence}`;
+      pending.set(id, resolvePromise);
+      child.stdin.write(`${JSON.stringify({ id, type, ...fields })}\n`);
+      setTimeout(() => { if (pending.has(id)) { pending.delete(id); reject(new Error(`probe timeout ${type}: ${stderr}`)); } }, 20_000);
+    });
+    try {
+      await request('get_state');
+      await request('prompt', { message: '/p2o --target ./repo' });
+      for (let waited = 0; waited < 150 && !existsSync(capture); waited += 1) await delay(100);
+      expect(existsSync(capture), `capture missing; stderr: ${stderr}`).toBe(true);
+      const first = JSON.parse((await readFile(capture, 'utf8')).split('\n').filter(Boolean)[0]);
+      expect(first.systemPrompt).toContain(SCOPE_MARKER);
+      expect(first.systemPrompt).toContain(OBJECTIVE_MARKER);
+      expect(first.systemPrompt.indexOf(SCOPE_MARKER)).toBeLessThan(first.systemPrompt.indexOf(OBJECTIVE_MARKER));
+      // No follow-up prompt: the only user message is the /p2o command itself.
+      const messages = (await request('get_messages')).data?.messages ?? [];
+      const userMessages = messages.filter((message: any) => message.role === 'user').map((message: any) => typeof message.content === 'string' ? message.content : (message.content ?? []).map((block: any) => block.text ?? '').join(''));
+      expect(userMessages.some((text: string) => text.includes('BENCHMARK OBJECTIVE'))).toBe(false);
+      // Orderly shutdown must still verify teardown. InertSandbox journals stop+sweep.
+      child.stdin.end();
+      await Promise.race([new Promise<void>(resolvePromise => child.once('close', () => resolvePromise())), delay(10_000)]);
+      const journal = existsSync(sandboxLog) ? (await readFile(sandboxLog, 'utf8')).split('\n').filter(Boolean).map(line => JSON.parse(line)) : [];
+      expect(journal.some((entry: any) => entry.op === 'sweep')).toBe(true);
+    } finally {
+      child.kill('SIGTERM');
+      await rm(root, { recursive: true, force: true }).catch(() => {});
+    }
+  }, 60_000);
+
+  async function orderingProbe(scopeActive: boolean): Promise<{ systemPrompt: string }> {
+    const root = await mkdtemp(join(tmpdir(), 'p2o-objective-probe-'));
+    const capture = join(root, 'system-prompt.jsonl');
+    const providerPath = join(root, 'provider.ts');
+    const scopePath = join(root, 'scope.ts');
+    const wrapperPath = join(root, 'wrapper.ts');
+    const capturePath = join(root, 'capture.ts');
+    // A local, inert provider: the ordering probe only needs hooks to fire, not a real completion.
+    await writeFile(providerPath, `// @ts-nocheck
+export default function (pi) {
+  pi.registerProvider('bench-inert', {
+    baseUrl: 'http://127.0.0.1:1/never', apiKey: 'bench-inert', api: 'openai-completions',
+    models: [{ id: 'inert', name: 'inert', reasoning: false, input: ['text'], cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }, contextWindow: 8192, maxTokens: 256 }],
+    streamSimple() { throw new Error('bench-inert stream must not be called'); },
+  });
+}
+`);
+    await writeFile(scopePath, scopeActive
+      ? `// @ts-nocheck
+export default function (pi) {
+  pi.on('before_agent_start', event => {
+    const current = typeof event?.systemPrompt === 'string' ? event.systemPrompt : '';
+    if (current.includes('P2O ASSESSMENT')) return undefined;
+    return { systemPrompt: current + '\\n\\nP2O ASSESSMENT - synthetic scope for the wrapper ordering probe.' };
+  });
+}
+`
+      : '// @ts-nocheck\nexport default function () {}\n');
+    await writeFile(wrapperPath, objectiveExtensionSource(objective));
+    await writeFile(capturePath, `// @ts-nocheck
+import { appendFileSync } from 'node:fs';
+export default function (pi) {
+  pi.on('before_agent_start', event => {
+    appendFileSync(${JSON.stringify(capture)}, JSON.stringify({ systemPrompt: event.systemPrompt }) + '\\n');
+  });
+}
+`);
+    const child = spawn(join(repo, 'node_modules', '.bin', 'pi'), ['--no-extensions',
+      '-e', providerPath, '-e', scopePath, '-e', wrapperPath, '-e', capturePath,
+      '--no-skills', '--no-prompt-templates', '--no-themes', '--no-context-files', '--no-approve', '--no-session',
+      '--mode', 'rpc', '--provider', 'bench-inert', '--model', 'inert', '--thinking', 'off'],
+    { cwd: root, env: { ...process.env, HOME: root, PI_CODING_AGENT_DIR: join(root, 'agent'), PI_OFFLINE: '1', PI_SKIP_VERSION_CHECK: '1', PI_TELEMETRY: '0' }, stdio: ['pipe', 'pipe', 'pipe'] });
+    let buffer = '';
+    let stderr = '';
+    let sequence = 0;
+    const pending = new Map<string, (value: any) => void>();
+    child.stderr.setEncoding('utf8');
+    child.stderr.on('data', (text: string) => { stderr += text; });
+    child.stdout.setEncoding('utf8');
+    child.stdout.on('data', (text: string) => {
+      buffer += text;
+      for (;;) {
+        const index = buffer.indexOf('\n');
+        if (index < 0) break;
+        const line = buffer.slice(0, index);
+        buffer = buffer.slice(index + 1);
+        if (!line.trim()) continue;
+        try {
+          const record = JSON.parse(line);
+          if (record.type === 'response' && record.id && pending.has(record.id)) { pending.get(record.id)!(record); pending.delete(record.id); }
+        } catch { /* ignore non-JSON noise */ }
+      }
+    });
+    const request = (type: string, fields: Record<string, unknown> = {}) => new Promise<any>((resolvePromise, reject) => {
+      const id = `probe-${++sequence}`;
+      pending.set(id, resolvePromise);
+      child.stdin.write(`${JSON.stringify({ id, type, ...fields })}\n`);
+      setTimeout(() => { if (pending.has(id)) { pending.delete(id); reject(new Error(`probe timeout ${type}: ${stderr}`)); } }, 15_000);
+    });
+    try {
+      await request('get_state');
+      await request('prompt', { message: 'wrapper ordering probe' });
+      for (let waited = 0; waited < 150 && !existsSync(capture); waited += 1) await delay(100);
+      expect(existsSync(capture), `capture missing; stderr: ${stderr}`).toBe(true);
+      const first = (await readFile(capture, 'utf8')).split('\n').filter(Boolean)[0];
+      return JSON.parse(first);
+    } finally {
+      child.stdin.end();
+      await Promise.race([new Promise<void>(resolvePromise => child.once('close', () => resolvePromise())), delay(5000)]);
+      child.kill('SIGTERM');
+      await rm(root, { recursive: true, force: true }).catch(() => {});
+    }
+  }
 });

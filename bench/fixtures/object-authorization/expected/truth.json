@@ -3,7 +3,7 @@
   "fixture": "object-authorization",
   "evaluator_only": true,
   "title": "Object-level authorization with controlled principals and objects",
-  "objective": "Review the order authorization policy against the controlled principals and objects, reproduce the effective decisions with the local probe, and report any principal that reaches a protected effect outside the intended policy. Name the exact policy function and the probe cell for each finding, record which cells stay unverified, and do not claim live or authenticated HTTP testing. Then finish with p2o_finish.",
+  "objective": "Review the order authorization policy against the controlled principals and objects, reproduce the effective decisions with the local probe, and report any principal that reaches a protected effect outside the intended policy. Name the exact policy function and the probe cell for each finding, record which cells stay unverified, and do not claim live or authenticated HTTP testing. Consult the skill guidance available in this runtime before testing, and record which guidance you used. Then finish with p2o_finish.",
   "probe": {
     "command": "python3 probe.py",
     "expected_exit": { "vulnerable": 1, "fixed": 0 },

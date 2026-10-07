@@ -119,16 +119,31 @@ installed package build can be pinned without editing the repository.
 A live run spawns the actual `pi` binary in RPC mode:
 
 ```
-pi --no-extensions -e <arm extension path> --no-skills --no-prompt-templates --no-themes \
-   --no-context-files --no-approve --no-session --mode rpc --model deepseek/deepseek-flash --thinking off
+pi --no-extensions -e <arm extension path> -e <run objective wrapper> --no-skills \
+   --no-prompt-templates --no-themes --no-context-files --no-approve --no-session \
+   --mode rpc --model deepseek/deepseek-flash --thinking off
 ```
 
-The runner answers the extension's "Start authorized assessment?" confirmation mechanically, sends
-`/p2o --target ./target [--solo | --workers N] [<arm start flags>]`, waits for the assessment brief,
-then delivers the fixture's fixed objective from `truth.json`. The lead runs inside the **real P2O
-Docker sandbox** (pinned image digest, no network, read-only `/target`); delegation is off by default
-and available with `--delegation` where Herdr can spawn visible panes. `--workers` is capped at 6,
-matching the runtime's own `MAX_WORKERS`.
+The runner answers the extension's "Start authorized assessment?" confirmation mechanically and
+sends exactly one prompt: `/p2o --target ./target [--solo | --workers N] [<arm start flags>]`.
+
+**Objective delivery (no follow-up runs).** The fixture objective is appended to the system prompt
+by a generated wrapper extension loaded **immediately after the tested arm**, for all arms A/B/C
+identically. The wrapper's `before_agent_start` handler appends `BENCHMARK OBJECTIVE (frozen fixture
+task, identical for every arm)` plus the objective only while the system prompt already contains the
+P2O scope text. Pi evaluates `before_agent_start` handlers in extension load order and chains
+`systemPrompt`, so the P2O owner hook runs first; if it did not, the wrapper appends nothing. The
+wrapper registers no tools, commands, flags, providers or messages and creates no agent run. The
+runner never sends a follow-up prompt, so no benchmark instruction can be queued after `p2o_finish`,
+after cleanup, or outside the sandbox. Wrapper source and SHA-256 are recorded per run
+(`objectiveWrapper`), and the suite summary lists all wrapper hashes. `bench/lib/objective.mjs`
+exports the generator and a plain-JS handler mirror so the future holdout runner reuses the same
+wrapper. Hermetic tests cover the generated source invariants, the absence of any follow-up RPC
+command, and real-Pi ordering (P2O hook first, objective only in scope).
+
+The lead runs inside the **real P2O Docker sandbox** (pinned image digest, no network, read-only
+`/target`); delegation is off by default and available with `--delegation` where Herdr can spawn
+visible panes. `--workers` is capped at 6, matching the runtime's own `MAX_WORKERS`.
 
 Default model: `deepseek/deepseek-flash`; override with `--model <provider/id>`. The runner makes no
 provider assumptions and performs no automatic cross-provider fallback. Fixtures are directory
@@ -153,7 +168,7 @@ failures are recorded per run in the receipt (`export.error`) and listed in the 
 
 ## Scoring
 
-`lib/score.mjs` is a deterministic **lexical** scorer (`scorer: "lexical-v1"`); it is a
+`lib/score.mjs` is a deterministic **lexical** scorer (`scorer: "lexical-v2"`); it is a
 reproducibility aid, not ground truth. For every run it reports:
 
 - `recall` / `precision` over expected findings, forbidden claims and clean-surface false positives;
@@ -163,19 +178,47 @@ reproducibility aid, not ground truth. For every run it reports:
 - `gapHonesty` — required gaps actually stated;
 - `evidenceReproducibility` and proof-level counts from candidate/proof references;
 - `scope` — worker delegations, turns, target commands, `p2o_skill_read`/`p2o_skill_list` calls,
-  `p2o_candidate` calls, evidence IDs and record-store counters;
+  `p2o_candidate` calls and rejected calls, evidence IDs and record-store counters;
 - `validity` — finish observed, "Container removal verified" present, no leaked containers, no
   provider/protocol failure and no budget breach.
 
+**What counts as a claim.** Every arm is scored on the final report written after `p2o_finish` (plus
+the finish coverage summary); progress messages are never claims. For B/C the runtime-validated
+candidates are added, with the durable export taking priority: the scorer uses the export candidate
+set (latest revision per candidate id), then successful tool-result candidate records, and excludes
+rejected `p2o_candidate` calls entirely. This fixes the first pilot, where six rejected calls
+inflated the candidate and evidence counts and a progress message was scored as a claim.
+
+**Context-aware checks.** Forbidden claims and clean-surface false positives require all of their
+terms to co-occur in the same sentence/table cell (with a bounded ±240-character window fallback),
+are exempt when negated in the same clause, and clean controls are exempt when the segment also
+contains a strong clean marker ("clean", "correctly encoded", "negative control", "ruled out", …).
+A clean surface is a false positive only when a confirmed candidate claims it or a segment asserts a
+positive finding about it. Evidence IDs from tool text are normalized (`Evidence ID:` prefix
+stripped), lowercased, and de-duplicated before linking against candidate `evidenceRefs` and
+`negativeControls`.
+
+**Recorded limitations.** Every score carries `limitations: SCORER_LIMITATIONS` — lexical term
+matching rather than semantic judgment; heuristic segment/window checks; candidate closure only as
+good as the runtime-validated records; proof-level words not independently verified; no independent
+validation of probe output or worker claims. These are reported rather than tuned away.
+
 Raw redacted `claimText`/`evidenceText` and the original messages are stored (bounded) next to every
 receipt so a human can re-score with `score <receipt.json>`. Aggregates report distributions (n, mean,
-median, min, max) only; no significance claims are made.
+median, min, max) only; no significance claims are made. `evidenceReproducibility` is `null` for runs
+with no candidate records (for example arm A), and the aggregate skips those values instead of
+inventing a result.
 
 **Memory bounds:** the RPC record store keeps at most `MAX_RECORDS` (20 000) records or 32 MiB of raw
 log, whichever comes first, and preserves exact counters (turns, target commands, settle, errors,
 evidence IDs, finish details) independently. Claim text is capped at 256 KiB, evidence text at
 512 KiB, stderr at 200 KiB, and dialogs/notifications at 200 entries. Over-limit runs set
 `logTruncated`/`evidenceTextTruncated` in the receipt.
+
+**Guidance prompt.** Every frozen objective ends with "Consult the skill guidance available in this
+runtime before testing, and record which guidance you used." The wording is capability-neutral: it
+names no tool, so it is honest for arm A (where only the inlined technique documents exist) and
+encourages B/C to use the on-demand library without hiding what A does not have.
 
 Coordination note: the runtime is under concurrent development. The runner records the structured
 APIs opportunistically (`p2o_skill_list{offset?}`, `p2o_skill_read{id,offset?}`,
