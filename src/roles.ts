@@ -75,7 +75,7 @@ export interface ResolvedRole { role: Role; model?: string; thinking?: string; s
  * Precedence mirrors pi-herdr: per-spawn override > settings role > package default > parent session model.
  * `skills` is validated by the caller against the installed library before any path is used.
  */
-export function resolveRole(input: { role?: string; model?: string; thinking?: string; skills?: string[]; settings: P2OSettings; parentModel?: string }): ResolvedRole {
+export function resolveRole(input: { role?: string; model?: string; thinking?: string; skills?: string[]; settings: P2OSettings; parentModel?: string; parentThinking?: string }): ResolvedRole {
   const role: Role = isRole(input.role) ? input.role : 'general';
   const configured = input.settings.roles[role] ?? {};
   const fallback = ROLE_DEFAULTS[role];
@@ -84,7 +84,7 @@ export function resolveRole(input: { role?: string; model?: string; thinking?: s
   return {
     role,
     model: input.model ?? configured.model ?? fallback.model ?? input.parentModel,
-    thinking: input.thinking ?? configured.thinking ?? fallback.thinking,
+    thinking: input.thinking ?? configured.thinking ?? fallback.thinking ?? input.parentThinking,
     skills,
   };
 }

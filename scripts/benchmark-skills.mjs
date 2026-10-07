@@ -15,11 +15,12 @@ import { createHash } from 'node:crypto';
 import { mkdir, mkdtemp, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
+import { tmpdir } from 'node:os';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { setTimeout as delay } from 'node:timers/promises';
 import {
   ARM_IDS, BASELINE_REVISION, DEFAULT_MAX_COST_USD, DEFAULT_MAX_MINUTES, DEFAULT_MAX_TARGET_COMMANDS,
-  DEFAULT_MAX_TURNS, DEFAULT_MODEL, DEFAULT_REPS, DEFAULT_SEED, DEFAULT_THINKING, PLAN_SCHEMA,
+  DEFAULT_MAX_TURNS, DEFAULT_MODEL, DEFAULT_REPS, DEFAULT_SEED, DEFAULT_THINKING, THINKING_LEVELS, PLAN_SCHEMA,
   buildPlan, copyVariant, discoverFixtures, parseSeed, resolveArms,
 } from '../bench/lib/plan.mjs';
 import { objectiveExtensionSource } from '../bench/lib/objective.mjs';
@@ -59,8 +60,9 @@ Options:
   --variant <list>        vulnerable,fixed (default: both)
   --reps <n>              repetitions per arm/fixture/variant (default: ${DEFAULT_REPS})
   --seed <int|random>     run-order seed, always recorded (default: ${DEFAULT_SEED})
-  --model <provider/id>   Pi model (default: ${DEFAULT_MODEL})
-  --thinking <level>      off|minimal|low|medium|high (default: ${DEFAULT_THINKING})
+  --model <id|provider/id> Pi model (default: ${DEFAULT_MODEL})
+  --provider <name>       explicit Pi provider/account; recorded and passed verbatim when selected
+  --thinking <level>      ${THINKING_LEVELS.join('|')} (default: ${DEFAULT_THINKING})
   --max-minutes <n>       fixed per-run wall budget (default: ${DEFAULT_MAX_MINUTES})
   --max-cost-usd <n>      per-run cost ceiling when the provider reports cost (default: ${DEFAULT_MAX_COST_USD})
   --max-turns <n>         fixed per-run assistant-turn ceiling (default: ${DEFAULT_MAX_TURNS})
@@ -99,7 +101,7 @@ export function parseArgs(argv) {
     command: argv[0] && !argv[0].startsWith('-') ? argv[0] : 'help',
     repo: DEFAULT_REPO, workdir: undefined, results: undefined,
     arms: undefined, fixtures: [], variants: undefined, reps: DEFAULT_REPS,
-    seed: undefined, model: DEFAULT_MODEL, thinking: DEFAULT_THINKING,
+    seed: undefined, model: DEFAULT_MODEL, provider: null, thinking: DEFAULT_THINKING,
     maxMinutes: DEFAULT_MAX_MINUTES, maxCostUsd: DEFAULT_MAX_COST_USD,
     maxTurns: DEFAULT_MAX_TURNS, maxTargetCommands: DEFAULT_MAX_TARGET_COMMANDS,
     delegation: false, workers: 1, pi: undefined, baselineDir: undefined,
@@ -131,7 +133,12 @@ export function parseArgs(argv) {
       case 'variant': options.variants = String(value).split(',').map(item => item.trim()).filter(Boolean); break;
       case 'reps': options.reps = Number(value); break;
       case 'seed': options.seed = String(value); break;
-      case 'model': options.model = String(value); break;
+      case 'model':
+        if (value === true || !String(value).trim()) throw usageError('--model needs a non-empty value');
+        options.model = String(value); break;
+      case 'provider':
+        if (value === true || !String(value).trim()) throw usageError('--provider needs a non-empty value');
+        options.provider = String(value); break;
       case 'thinking': options.thinking = String(value); break;
       case 'max-minutes': options.maxMinutes = Number(value); break;
       case 'max-cost-usd': options.maxCostUsd = Number(value); break;
@@ -155,6 +162,7 @@ export function parseArgs(argv) {
     }
   }
   if (!Number.isInteger(options.reps) || options.reps < 1) throw usageError('--reps must be a positive integer');
+  if (!THINKING_LEVELS.includes(options.thinking)) throw usageError(`--thinking must be one of ${THINKING_LEVELS.join(', ')}`);
   if (!Number.isFinite(options.maxMinutes) || options.maxMinutes < 1 || options.maxMinutes > HARD_CAP_MINUTES) {
     throw usageError(`--max-minutes must be between 1 and ${HARD_CAP_MINUTES}`);
   }
@@ -179,6 +187,16 @@ export function parseArgs(argv) {
   options.pi = options.pi ? resolve(options.pi) : join(options.repo, 'node_modules', '.bin', 'pi');
   options.baselineDir = options.baselineDir ? resolve(options.baselineDir) : join(options.repo, 'bench', '.arms', `baseline-${BASELINE_REVISION}`);
   return options;
+}
+
+/** One explicit selection shared by plans, receipts and Pi argv; never reads ambient defaults. */
+export function modelSelection({ model, provider = null, thinking }) {
+  return { model, provider, thinking };
+}
+
+export function piModelArgs(options) {
+  const { model, provider, thinking } = modelSelection(options);
+  return ['--model', model, ...(provider !== null ? ['--provider', provider] : []), '--thinking', thinking];
 }
 
 function selectedArmIds(options) {
@@ -534,7 +552,7 @@ async function executeRun({ plan, run, truth, options, suiteId, resultsDir }) {
   await writeFile(objectiveWrapperPath, objectiveWrapperSource);
   const objectiveWrapperSha256 = createHash('sha256').update(objectiveWrapperSource).digest('hex');
   const args = ['--no-extensions', '-e', arm.extensionPath, '-e', objectiveWrapperPath, '--no-skills', '--no-prompt-templates', '--no-themes',
-    '--no-context-files', '--no-approve', '--no-session', '--mode', 'rpc', '--model', options.model, '--thinking', options.thinking];
+    '--no-context-files', '--no-approve', '--no-session', '--mode', 'rpc', ...piModelArgs(options)];
   const child = spawn(options.pi, args, { cwd: runDir, env: childEnv(), stdio: ['pipe', 'pipe', 'pipe'] });
   child.stdin.on('error', () => { /* closed pipes are handled by the request timeout/exit path */ });
   const startedAt = Date.now();
@@ -681,7 +699,7 @@ async function executeRun({ plan, run, truth, options, suiteId, resultsDir }) {
       arm: jsonSafe(arm),
       fixture: { name: run.fixture, variant: run.variant, objective: run.objective, sourceHash: source.hash, truthSha256: run.truthSha256, truthPath: run.truthPath ?? null },
       config: {
-        model: options.model, thinking: options.thinking, maxMinutes: options.maxMinutes, maxCostUsd: options.maxCostUsd,
+        ...modelSelection(options), maxMinutes: options.maxMinutes, maxCostUsd: options.maxCostUsd,
         maxTurns: options.maxTurns, maxTargetCommands: options.maxTargetCommands,
         delegation: options.delegation, workers: options.workers, piBinary: options.pi, piVersion: piVersion(options.pi), seed: plan.seed,
       },
@@ -735,6 +753,7 @@ async function executeRun({ plan, run, truth, options, suiteId, resultsDir }) {
       checks: { ...checks, containersBefore: containersBefore.names, containersAfter: containersAfter.names },
       startedAt: new Date(startedAt).toISOString(), finishedAt: new Date().toISOString(), wallMs: Date.now() - startedAt,
       arm: jsonSafe(arm), fixture: { name: run.fixture, variant: run.variant, sourceHash: source.hash, truthSha256: run.truthSha256 },
+      config: { ...modelSelection(options), ...planBudgets(options), seed: plan.seed },
     };
   } finally {
     if (rpc) await rpc.close().catch(() => {});
@@ -787,14 +806,14 @@ async function planCommand(options) {
   const plan = await buildPlan({
     repoRoot: options.repo, workDir: options.workdir, fixtures, arms: available,
     variants: options.variants ?? ['vulnerable', 'fixed'], reps: options.reps, seed,
-    model: options.model, thinking: options.thinking,
+    ...modelSelection(options),
     maxMinutes: options.maxMinutes, maxCostUsd: options.maxCostUsd,
     maxTurns: options.maxTurns, maxTargetCommands: options.maxTargetCommands,
     delegation: options.delegation, workers: options.workers, baselineDir: options.baselineDir, armPaths: options.armPaths,
   });
   const receipt = {
     schema: PLAN_SCHEMA, command: 'plan', createdAt: plan.createdAt, repoRoot: options.repo,
-    seed: plan.seed, model: plan.model, thinking: plan.thinking, budgets: plan.budgets, reps: plan.reps,
+    seed: plan.seed, ...modelSelection(plan), budgets: plan.budgets, reps: plan.reps,
     arms: jsonSafe(plan.arms), fixtures: jsonSafe(plan.fixtures), skippedArms: skipped, runCount: plan.runCount,
     order: plan.runs.map(run => `#${run.orderIndex} ${run.arm} ${run.fixture}/${run.variant} r${run.rep}`),
     runs: plan.runs,
@@ -819,8 +838,15 @@ async function verifyCommand(options) {
       const probe = fixture.truth.probe;
       if (!probe) { results.push({ fixture: fixture.name, variant, probe: 'source-only', ok: true }); continue; }
       const parts = probe.command.split(' ');
-      const executed = await runCommand(parts[0], parts.slice(1), { cwd: join(fixture.dir, variant), timeoutMs: 60_000 })
-        .catch(error => ({ code: -1, stdout: '', stderr: String(error) }));
+      const workspace = await mkdtemp(join(tmpdir(), 'p2o-bench-verify-'));
+      let executed;
+      try {
+        const target = join(workspace, 'target');
+        await copyVariant(join(fixture.dir, variant), target);
+        executed = await runCommand(parts[0], parts.slice(1), {
+          cwd: target, env: { ...process.env, PYTHONDONTWRITEBYTECODE: '1' }, timeoutMs: 60_000,
+        }).catch(error => ({ code: -1, stdout: '', stderr: String(error) }));
+      } finally { await rm(workspace, { recursive: true, force: true }); }
       const expectedExit = probe.expected_exit?.[variant];
       const observedLines = `${executed.stdout}\n${executed.stderr}`;
       const missing = [];
@@ -890,7 +916,7 @@ async function runCommandLive(options) {
   const plan = await buildPlan({
     repoRoot: options.repo, workDir: options.workdir, fixtures, arms: available,
     variants: options.variants ?? ['vulnerable', 'fixed'], reps: options.reps, seed,
-    model: options.model, thinking: options.thinking,
+    ...modelSelection(options),
     maxMinutes: options.maxMinutes, maxCostUsd: options.maxCostUsd,
     maxTurns: options.maxTurns, maxTargetCommands: options.maxTargetCommands,
     delegation: options.delegation, workers: options.workers, baselineDir: options.baselineDir, armPaths: options.armPaths,
@@ -898,7 +924,7 @@ async function runCommandLive(options) {
   const truthByFixture = new Map(fixtures.map(fixture => [fixture.name, fixture.truth]));
   const suiteId = `suite-${new Date().toISOString().replace(/[:.]/g, '-')}-seed${plan.seed}`;
   await writeJson(join(options.results, `${suiteId}.plan.json`), {
-    schema: PLAN_SCHEMA, suiteId, seed: plan.seed, model: plan.model, thinking: plan.thinking,
+    schema: PLAN_SCHEMA, suiteId, seed: plan.seed, ...modelSelection(plan),
     budgets: plan.budgets, controls: { maxTurns: options.maxTurns, maxTargetCommands: options.maxTargetCommands },
     costControl: {
       perRunCapUsd: options.maxCostUsd, runCount: plan.runCount,
@@ -928,7 +954,7 @@ async function runCommandLive(options) {
   const budgetOutcomes = receipts.filter(receipt => receipt.checks?.budgetExceeded).length;
   const summary = {
     schema: 'p2o-bench-summary/1', suiteId, createdAt: new Date().toISOString(), seed: plan.seed,
-    model: plan.model, thinking: plan.thinking, budgets: plan.budgets,
+    ...modelSelection(plan), budgets: plan.budgets,
     controls: { maxTurns: options.maxTurns, maxTargetCommands: options.maxTargetCommands },
     arms: summarizeScores(scores),
     invalidRuns: receipts.filter(receipt => !receipt.score?.validity?.runValid).map(receipt => ({ runId: receipt.runId, outcome: receipt.outcome, providerFailure: receipt.checks?.providerFailure })),

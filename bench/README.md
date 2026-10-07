@@ -8,6 +8,28 @@ with a real Pi lead driving the **real P2O sandbox**.
 Nothing here runs as part of `npm test`. `npm test` still typechecks, builds and runs the hermetic
 unit/verification suites only; live model traffic requires an explicit `--live` flag.
 
+## Historical contamination caveat
+
+**The quality results of `campaign`, `campaign-v2`, and `campaign-final-C` are confounded.** The old
+`copyVariant()` recursively copied Python bytecode even though `hashTree()` excluded it. Exported
+`manifest.sourceHashes` contain bytecode in **36/48 B/C exports in each 72-run campaign** and
+**18/24 final-C exports**. A reviewer observed a `.pyc` original filename pointing to the `fixed`
+variant, leaking answer/revision information. Arm A has no exports, so its exposure cannot be
+counted that way; it used the same flawed copy path. Preserve all receipts, transcripts, exports,
+cost/cleanup attestations and raw scores, but do not treat these campaigns as uncontaminated quality
+or A/B evidence. Mechanical completion does not repair input contamination, and manual adjudication
+cannot restore a clean experimental comparison. The final C suite was also only a post-fix
+regression, not a fresh A/B inference.
+
+Future copies use one enumerated source manifest for hashing **and** copying. Only its regular
+files are copied, with byte hashes checked before writing; symlinks/special files fail closed.
+`__pycache__`, `.pyc`/`.pyo`, hidden files/directories (including generated caches), and evaluator
+truth are excluded. The copied tree is checked strictly against that manifest, including actual
+file paths and hashes. Host verification uses isolated clean copies and
+`PYTHONDONTWRITEBYTECODE=1`, rather than importing or generating caches in the original fixtures.
+Fixtures and evaluator truth themselves are unchanged. A clean new 72-run campaign is required
+**after push/install and explicit authorization**, with the requested provider/model/thinking pinned.
+
 ## Layout
 
 ```
@@ -134,7 +156,7 @@ A live run spawns the actual `pi` binary in RPC mode:
 ```
 pi --no-extensions -e <arm extension path> -e <run objective wrapper> --no-skills \
    --no-prompt-templates --no-themes --no-context-files --no-approve --no-session \
-   --mode rpc --model deepseek/deepseek-flash --thinking off
+   --mode rpc --model gpt-6.1-sol --provider openai-codex-account-3 --thinking xhigh
 ```
 
 The runner answers the extension's "Start authorized assessment?" confirmation mechanically and
@@ -158,9 +180,16 @@ The lead runs inside the **real P2O Docker sandbox** (pinned image digest, no ne
 `/target`); delegation is off by default and available with `--delegation` where Herdr can spawn
 visible panes. `--workers` is capped at 6, matching the runtime's own `MAX_WORKERS`.
 
-Default model: `deepseek/deepseek-flash`; override with `--model <provider/id>`. The runner makes no
-provider assumptions and performs no automatic cross-provider fallback. Fixtures are directory
-targets, so `p2o_http` is not used — loopback URLs are deliberately rejected by the transport.
+The historical default model remains `deepseek/deepseek-flash` with thinking `off`; never rely on
+ambient Pi settings for an approved experiment. Select an exact account/model with
+`--model gpt-6.1-sol --provider openai-codex-account-3 --thinking xhigh` (or another explicitly
+approved tuple). `--provider` is optional for legacy provider-qualified model IDs. Model, provider
+(`null` when not explicitly selected), and thinking are recorded in plans, summaries and run
+receipts, including transport-error receipts; the same values form the child's explicit CLI flags.
+Pi supports `off|minimal|low|medium|high|xhigh|max` and can clamp thinking to model capabilities;
+confirm the approved tuple in the model registry before live use. No automatic cross-provider
+fallback occurs. Fixtures are directory targets, so `p2o_http` is not used — loopback URLs are
+deliberately rejected by the transport.
 
 ## Export, candidate and proof references
 
@@ -234,7 +263,7 @@ names no tool, so it is honest for arm A (where only the inlined technique docum
 encourages B/C to use the on-demand library without hiding what A does not have.
 
 Coordination note: the runtime is under concurrent development. The runner records the structured
-APIs opportunistically (`p2o_skill_list{offset?}`, `p2o_skill_read{id,offset?}`,
+APIs opportunistically (`p2o_skill_list{offset?,query?}`, `p2o_skill_read{id,offset?}`,
 `p2o_capabilities{probe?}`, `p2o_candidate{...}`, target-command evidence IDs, `p2o_finish`
 `details.exportPath`) but requires none of them — arm A does not have them, and scored claims come
 from the transcript that every arm produces. An invalid workflow sidecar is the runtime's concern to
@@ -249,18 +278,21 @@ node scripts/benchmark-skills.mjs verify
 # Hermetic: materialize arm A from revision 4321f2b (git archive; no commit, no push)
 node scripts/benchmark-skills.mjs prepare
 
-# Hermetic: randomized plan receipt under bench/results/ (shows arm skills and start flags)
-node scripts/benchmark-skills.mjs plan --seed 7
+# Hermetic: requested tuple pinned in a randomized plan receipt (no model invocation)
+node scripts/benchmark-skills.mjs plan --seed 7 \
+  --model gpt-6.1-sol --provider openai-codex-account-3 --thinking xhigh
 
-# Opt-in live pilot: one arm, one fixture, one repetition (real model traffic)
-node scripts/benchmark-skills.mjs plan  --arm C --fixture object-authorization --reps 1
-node scripts/benchmark-skills.mjs run   --arm C --fixture object-authorization --reps 1 --live
+# Examples only: do not start live runs until separately authorized after push/install.
+# Opt-in pilot: one arm, one fixture, one repetition
+node scripts/benchmark-skills.mjs run --arm C --fixture object-authorization --reps 1 \
+  --model gpt-6.1-sol --provider openai-codex-account-3 --thinking xhigh --live
 
-# Full campaign after the baseline is prepared (72 runs with defaults)
-node scripts/benchmark-skills.mjs run --live
-
-# Tighter cost control when the provider does not report cost
-node scripts/benchmark-skills.mjs run --live --max-turns 40 --max-target-commands 80
+# Clean 72-run campaign: pin installed C, prepare B from the approved committed content.
+node scripts/benchmark-skills.mjs run --arm A,B,C --seed 7 --reps 3 \
+  --arm-c-path /home/nhanlaptop/.pi/agent/git/github.com/Nhan-Laptop/pi-p2o \
+  --model gpt-6.1-sol --provider openai-codex-account-3 --thinking xhigh \
+  --max-minutes 6 --max-turns 50 --max-target-commands 80 --max-cost-usd 0.13 \
+  --results tmp/skill-upgrade/campaign-clean --live
 
 # Re-score a stored run (uses the preserved export when present)
 node scripts/benchmark-skills.mjs score bench/results/suite-....3-C-object-authorization-vulnerable-r1.json

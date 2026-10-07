@@ -2,15 +2,16 @@
 // reads credentials or touches the network: it discovers evaluator fixtures, prepares the
 // pinned arm packages and produces the randomized run plan that the live runner executes.
 import { createHash } from 'node:crypto';
-import { cp, mkdir, readdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
-import { existsSync, readFileSync } from 'node:fs';
-import { dirname, join, relative, resolve } from 'node:path';
+import { cp, lstat, mkdir, open, readdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
+import { constants, existsSync, readFileSync } from 'node:fs';
+import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 
 export const PLAN_SCHEMA = 'p2o-bench-plan/1';
 export const TRUTH_SCHEMA = 'p2o-bench-truth/1';
 export const BASELINE_REVISION = '4321f2b';
 export const DEFAULT_MODEL = 'deepseek/deepseek-flash';
 export const DEFAULT_THINKING = 'off';
+export const THINKING_LEVELS = ['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'];
 export const DEFAULT_REPS = 3;
 export const DEFAULT_MAX_MINUTES = 25;
 export const DEFAULT_MAX_COST_USD = 3;
@@ -62,8 +63,25 @@ function isTruthPath(relativePath) {
   return parts.includes('expected') || parts.some(part => part.toLowerCase().includes('truth'));
 }
 
-/** Recursively hash a tree; excludes evaluator truth, VCS metadata and Python caches. */
-export async function hashTree(root, { exclude = [] } = {}) {
+function excludedSourcePath(path, exclude) {
+  const parts = path.split('/');
+  return isTruthPath(path) || parts.some(part => part.startsWith('.') || part === '__pycache__')
+    || /\.py[co]$/i.test(path)
+    || exclude.some(pattern => path === pattern || path.startsWith(`${pattern}/`));
+}
+
+/** Read one regular file without following a final-component symlink or blocking on a FIFO. */
+async function readSourceFile(path) {
+  const file = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
+  try {
+    if (!(await file.stat()).isFile()) throw new Error(`Source must be a regular file: ${path}`);
+    return await file.readFile();
+  } finally { await file.close(); }
+}
+
+/** Authoritative source manifest: no truth, hidden artifacts or bytecode; unsafe entries fail closed. */
+export async function hashTree(root, { exclude = [], rejectExcluded = false } = {}) {
+  if (!(await lstat(root)).isDirectory()) throw new Error(`Source root must be a real directory (no symlink): ${root}`);
   const files = [];
   async function walk(directory) {
     const entries = await readdir(directory, { withFileTypes: true });
@@ -71,16 +89,14 @@ export async function hashTree(root, { exclude = [] } = {}) {
     for (const entry of entries) {
       const absolute = join(directory, entry.name);
       const rel = relative(root, absolute).split('\\').join('/');
-      if (entry.isDirectory()) {
-        if (entry.name === '.git' || entry.name === '__pycache__') continue;
-        if (isTruthPath(rel)) continue;
-        if (exclude.some(pattern => rel === pattern || rel.startsWith(`${pattern}/`))) continue;
-        await walk(absolute);
-      } else if (entry.isFile()) {
-        if (isTruthPath(rel)) continue;
-        if (exclude.some(pattern => rel === pattern || rel.startsWith(`${pattern}/`))) continue;
-        if (entry.name.endsWith('.pyc')) continue;
-        const content = await readFile(absolute);
+      if (!entry.isDirectory() && !entry.isFile()) throw new Error(`Symlink or special file in source: ${rel}`);
+      if (excludedSourcePath(rel, exclude)) {
+        if (rejectExcluded) throw new Error(`Unmanifested artifact in source copy: ${rel}`);
+        continue;
+      }
+      if (entry.isDirectory()) await walk(absolute);
+      else {
+        const content = await readSourceFile(absolute);
         files.push({ path: rel, sha256: sha256(content), bytes: content.length });
       }
     }
@@ -467,13 +483,15 @@ export function parseSeed(value) {
  */
 export async function buildPlan({
   repoRoot, workDir, fixtures, arms, variants = ['vulnerable', 'fixed'], reps = DEFAULT_REPS,
-  seed = DEFAULT_SEED, model = DEFAULT_MODEL, thinking = DEFAULT_THINKING,
+  seed = DEFAULT_SEED, model = DEFAULT_MODEL, provider = null, thinking = DEFAULT_THINKING,
   maxMinutes = DEFAULT_MAX_MINUTES, maxCostUsd = DEFAULT_MAX_COST_USD,
   maxTurns = DEFAULT_MAX_TURNS, maxTargetCommands = DEFAULT_MAX_TARGET_COMMANDS,
   delegation = false, workers = 1,
   baselineDir, armPaths = {},
 } = {}) {
   if (!Number.isInteger(reps) || reps < 1 || reps > 20) throw new Error('reps must be an integer between 1 and 20');
+  if (provider !== null && (typeof provider !== 'string' || !provider.trim())) throw new Error('provider must be a non-empty name');
+  if (!THINKING_LEVELS.includes(thinking)) throw new Error(`thinking must be one of ${THINKING_LEVELS.join(', ')}`);
   if (!fixtures?.length) throw new Error('at least one fixture is required');
   if (!arms?.length) throw new Error('at least one arm is required');
   const unknownArms = arms.filter(id => !ARM_IDS.includes(id));
@@ -519,6 +537,7 @@ export async function buildPlan({
     createdAt: new Date().toISOString(),
     seed,
     model,
+    provider,
     thinking,
     budgets,
     reps,
@@ -536,27 +555,41 @@ export async function buildPlan({
   };
 }
 
-/** Copy one source variant into a run workspace; evaluator truth can never enter the copy. */
+/** Copy only the enumerated, hash-checked source files, never a separate recursive tree. */
 export async function copyVariant(sourceDir, destination) {
   const absoluteSource = resolve(sourceDir);
+  const absoluteDestination = resolve(destination);
   const parent = dirname(absoluteSource);
-  const parts = relative(parent, absoluteSource).split('/');
-  if (parts.includes('expected') || parts.some(part => part.toLowerCase().includes('truth'))) {
+  if (isTruthPath(relative(parent, absoluteSource).split('\\').join('/'))) {
     throw new Error(`refusing to copy evaluator truth into the agent workspace: ${sourceDir}`);
   }
-  await rm(destination, { recursive: true, force: true });
-  await mkdir(destination, { recursive: true });
-  await cp(sourceDir, destination, {
-    recursive: true,
-    filter: source => {
-      const rel = relative(sourceDir, source).split('\\').join('/');
-      if (rel === '') return true;
-      return !isTruthPath(rel) && !rel.split('/').includes('.git');
-    },
-  });
-  const tree = await hashTree(destination);
-  for (const file of tree.files) {
-    if (isTruthPath(file.path)) throw new Error(`evaluator truth entered the agent workspace: ${file.path}`);
+  const overlaps = (a, b) => {
+    const rel = relative(a, b);
+    return rel === '' || (rel !== '..' && !rel.startsWith(`..${sep}`) && !isAbsolute(rel));
+  };
+  if (overlaps(absoluteSource, absoluteDestination) || overlaps(absoluteDestination, absoluteSource)) {
+    throw new Error('Source and destination must not overlap');
   }
-  return tree;
+  // Validate the source before touching the destination. The manifest is the copy allowlist.
+  const manifest = await hashTree(absoluteSource);
+  await rm(absoluteDestination, { recursive: true, force: true });
+  await mkdir(absoluteDestination, { recursive: true });
+  try {
+    for (const entry of manifest.files) {
+      const content = await readSourceFile(join(absoluteSource, entry.path));
+      if (sha256(content) !== entry.sha256) throw new Error(`Source changed after enumeration: ${entry.path}`);
+      const target = join(absoluteDestination, entry.path);
+      await mkdir(dirname(target), { recursive: true });
+      await writeFile(target, content, { flag: 'wx' });
+    }
+    // Strict enumeration includes every copied entry: an extra cache/hidden artifact is an error.
+    const tree = await hashTree(absoluteDestination, { rejectExcluded: true });
+    if (tree.hash !== manifest.hash || JSON.stringify(tree.files) !== JSON.stringify(manifest.files)) {
+      throw new Error('Source copy differs from its enumerated manifest');
+    }
+    return tree;
+  } catch (error) {
+    await rm(absoluteDestination, { recursive: true, force: true });
+    throw error;
+  }
 }

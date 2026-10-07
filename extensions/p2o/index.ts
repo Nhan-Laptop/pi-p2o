@@ -129,7 +129,7 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
       run = { role: 'worker', ticket, ctx, phase: 'active', client: new BrokerClient(ticket.socket, ticket.token, { requestMs: 120_000 }), toolsBefore: pi.getActiveTools() };
       pi.setActiveTools(WORKER_TOOLS);
       ctx.ui.setStatus('p2o', `p2o worker ${ticket.workerId}`);
-      await appendRecord(ticket.records, { at: new Date().toISOString(), by: ticket.workerId, kind: 'lifecycle', workerId: ticket.workerId, role: ticket.role, depth: ticket.depth, text: `worker ${ticket.workerId} started (${ticket.role}, depth ${ticket.depth})` });
+      await appendRecord(ticket.records, { runId: ticket.runId, at: new Date().toISOString(), by: ticket.workerId, kind: 'lifecycle', workerId: ticket.workerId, role: ticket.role, depth: ticket.depth, text: `worker ${ticket.workerId} started (${ticket.role}, depth ${ticket.depth}, runtime ${sessionModel(ctx) ?? 'unknown'}, thinking ${ctx.thinkingLevel ?? 'unknown'})` });
       return true;
     } catch (error) {
       pi.setActiveTools([]);
@@ -163,7 +163,7 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
     return next;
   }
 
-  async function spawnWorkerLocked(input: { focus: string; task: string; context?: string; role?: string; skills?: string[]; model?: string; workflow?: string }, parent: { workerId: string | null; depth: number }): Promise<{ workerId: string; name: string; paneId: string; role: string; model?: string; depth: number; capabilityWarnings: string[] }> {
+  async function spawnWorkerLocked(input: { focus: string; task: string; context?: string; role?: string; skills?: string[]; model?: string; workflow?: string; thinking?: string }, parent: { workerId: string | null; depth: number }): Promise<{ workerId: string; name: string; paneId: string; role: string; model?: string; thinking?: string; depth: number; capabilityWarnings: string[] }> {
     const current = owner();
     if (current.sandbox.isStopped) fail('SANDBOX_STOPPED', 'Executor stopped; record gaps and finish, do not delegate more target work');
     if (!current.delegation.enabled) fail('DELEGATION_UNAVAILABLE', current.delegation.reason ?? 'delegation is disabled for this assessment');
@@ -172,9 +172,11 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
     const live = [...current.workers.values()].filter(entry => !entry.stopped && !entry.reported);
     if (live.length >= current.delegation.maxWorkers) fail('DELEGATION_CAP', `${live.length} workers already running (cap ${current.delegation.maxWorkers}); collect or stop one first`);
     if (current.delegation.spawned >= current.delegation.maxWorkers * 2) fail('DELEGATION_TOTAL', `this assessment already spawned ${current.delegation.spawned} workers; continue with the ones you have`);
-    const resolved = resolveRole({ role: input.role, model: input.model, skills: input.skills, settings: current.settings, parentModel: sessionModel(current.ctx) });
+    const resolved = resolveRole({ role: input.role, model: input.model, thinking: input.thinking, skills: input.skills, settings: current.settings, parentModel: sessionModel(current.ctx), parentThinking: current.ctx.thinkingLevel });
+    if (resolved.thinking && !['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'].includes(resolved.thinking)) fail('THINKING_INVALID', 'Unsupported thinking level');
     const skillDocs: Array<{ name: string; body: string }> = [];
     const capabilityWarnings: string[] = [];
+    if (input.workflow && !resolved.skills.length) fail('WORKFLOW_UNKNOWN', 'A workflow must belong to an assigned skill');
     if (resolved.skills.length) {
       if (!skills) fail('SKILLS_UNAVAILABLE', 'the packaged skill library was not found next to this extension');
       const present = new Set(await availableSkills(skills));
@@ -217,8 +219,10 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
     try {
       // No resolved model means "use the worker's configured default", never a literal --model value.
       // A worker is a focused specialist: no extension pack, no skill index, no host context files.
+      const slash = resolved.model?.indexOf('/') ?? -1;
+      const modelArgs = resolved.model ? (slash > 0 ? ['--model', resolved.model.slice(slash + 1), '--provider', resolved.model.slice(0, slash)] : ['--model', resolved.model]) : [];
       const args = ['--no-extensions', '-e', workerExtensionPath, '--no-approve', '--no-skills', '--no-context-files', '--no-prompt-templates',
-        ...(resolved.model ? ['--model', resolved.model] : []), ...(resolved.thinking ? ['--thinking', resolved.thinking] : []), '--p2o-image', current.image, '--p2o-worker', ticketFile];
+        ...modelArgs, ...(resolved.thinking ? ['--thinking', resolved.thinking] : []), '--p2o-image', current.image, '--p2o-worker', ticketFile];
       await herdr.start({ name: workerId, paneId, args });
       await herdr.prompt({ name: workerId, text: workerBrief({ ticket, focus: input.focus, task: input.task, context: `${input.context ?? ''}${capabilityWarnings.length ? `\nCAPABILITY GAPS: ${capabilityWarnings.join(' | ')}` : ''}`, skills: skillDocs }) });
       // A fresh pane can still read "idle" while the brief is being submitted, so liveness is decided by
@@ -241,12 +245,12 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
       fail('DELEGATION_SPAWN_FAILED', `could not start worker ${workerId}: ${message(error)}`);
     }
     current.delegation.spawned += 1;
-    await note({ by: parent.workerId ?? 'owner', kind: 'lifecycle', text: `delegated ${workerId} (${resolved.role}, depth ${depth}, model ${resolved.model ?? 'inherit'}): ${input.focus}`, workerId, role: resolved.role, depth });
-    return { workerId, name: workerId, paneId, role: resolved.role, model: resolved.model, depth, capabilityWarnings };
+    await note({ by: parent.workerId ?? 'owner', kind: 'lifecycle', text: `delegated ${workerId} (${resolved.role}, depth ${depth}, model ${resolved.model ?? 'inherit'}, thinking ${resolved.thinking ?? 'inherit'}): ${input.focus}`, workerId, role: resolved.role, depth });
+    return { workerId, name: workerId, paneId, role: resolved.role, model: resolved.model, thinking: resolved.thinking, depth, capabilityWarnings };
   }
 
   /** Spawns are serialized and tracked so a parallel finish/stop cannot race a half-registered worker. */
-  function spawnWorker(input: { focus: string; task: string; context?: string; role?: string; skills?: string[]; model?: string; workflow?: string }, parent: { workerId: string | null; depth: number }) {
+  function spawnWorker(input: { focus: string; task: string; context?: string; role?: string; skills?: string[]; model?: string; workflow?: string; thinking?: string }, parent: { workerId: string | null; depth: number }) {
     const current = owner();
     const task = serializeSpawn(() => spawnWorkerLocked(input, parent));
     const tracked = task.catch(() => {}).finally(() => current.spawns.delete(tracked));
@@ -377,7 +381,8 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
     void task.finally(() => current.operations.delete(task)).catch(() => {});
     return task;
   }
-  async function readKnowledge(current: OwnerRun, op: string, params: Record<string, unknown>, by = 'owner') {
+  function readKnowledge(current: OwnerRun, op: string, params: Record<string, unknown>, by = 'owner') {
+    const task = (async () => {
     if (current.phase !== 'active') fail('NO_ASSESSMENT', 'Knowledge service is closed');
     if (op === 'capabilities') {
       if (params.probe !== undefined) {
@@ -396,6 +401,10 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
       return result;
     }
     throw new Error('Unknown knowledge operation');
+    })();
+    current.operations.add(task);
+    void task.finally(() => current.operations.delete(task)).catch(() => {});
+    return task;
   }
 
   async function recordCandidate(current: OwnerRun, by: string, candidate: Candidate) {
@@ -539,6 +548,7 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
       skills: Type.Optional(Type.Array(Type.String({ maxLength: 64 }), { maxItems: MAX_SKILLS })),
       model: Type.Optional(Type.String({ maxLength: 200 })),
       workflow: Type.Optional(Type.String({ maxLength: 64, description: 'Optional catalog workflow ID to check prerequisites for selected skills' })),
+      thinking: Type.Optional(Type.Union(['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'].map(value => Type.Literal(value)))),
     }),
     async execute(_id, params) {
       const current = run;
@@ -546,12 +556,12 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
       if (current.role === 'worker') {
         const active = worker();
         const response = await active.client.request<{ worker: { workerId: string; role: string; depth: number } }>('delegate', {
-          focus: params.focus, task: params.task, context: params.context, role: params.role, skills: params.skills, model: params.model, workflow: params.workflow,
+          focus: params.focus, task: params.task, context: params.context, role: params.role, skills: params.skills, model: params.model, workflow: params.workflow, thinking: params.thinking,
         }, { timeoutMs: 150_000 });
         return { content: [{ type: 'text' as const, text: `The lead spawned ${response.worker.workerId} (${response.worker.role}, depth ${response.worker.depth}). Continue your own objective; read the shared ledger with p2o_note/refs when it reports.` }], details: response.worker };
       }
       if (current.phase !== 'active') fail('NO_ASSESSMENT', 'The assessment is finishing; no new workers');
-      const spawned = await spawnWorker({ focus: params.focus, task: params.task, context: params.context, role: params.role, skills: params.skills, model: params.model, workflow: params.workflow }, { workerId: null, depth: 0 });
+      const spawned = await spawnWorker({ focus: params.focus, task: params.task, context: params.context, role: params.role, skills: params.skills, model: params.model, workflow: params.workflow, thinking: params.thinking }, { workerId: null, depth: 0 });
       return {
         content: [{ type: 'text' as const, text: `Spawned ${spawned.workerId} (${spawned.role}, ${spawned.model ?? 'inherit'}, depth ${spawned.depth}) in a visible pane. Continue your own work and read its report with p2o_workers.` }],
         details: spawned,

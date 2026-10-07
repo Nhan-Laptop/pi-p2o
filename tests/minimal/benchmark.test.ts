@@ -1,14 +1,15 @@
 import { describe, expect, it } from 'vitest';
 import { spawn, spawnSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { existsSync } from 'node:fs';
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, readdir, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 // @ts-ignore - the benchmark harness is plain JavaScript, outside the TypeScript build.
-import { BoundedRecords, MAX_RECORDS, RUN_ID_PATTERN, deriveRunId, exportDataFrom, main, parseArgs, p2oStartFlags, readExportFile, runContainerQueryArgs } from '../../scripts/benchmark-skills.mjs';
+import { BoundedRecords, MAX_RECORDS, RUN_ID_PATTERN, deriveRunId, exportDataFrom, main, modelSelection, parseArgs, piModelArgs, p2oStartFlags, readExportFile, runContainerQueryArgs } from '../../scripts/benchmark-skills.mjs';
 // @ts-ignore - the benchmark harness is plain JavaScript, outside the TypeScript build.
-import { buildPlan, catalogDocuments, copyVariant, discoverFixtures, isSharedDocument, mulberry32, objectiveProblems, parseSeed, resolveArms, shuffle, solutionMarkers, supportsStartFlag, ORIGINAL_SKILLS, PLAYBOOK_SET } from '../../bench/lib/plan.mjs';
+import { buildPlan, catalogDocuments, copyVariant, discoverFixtures, hashTree, isSharedDocument, mulberry32, objectiveProblems, parseSeed, resolveArms, shuffle, solutionMarkers, supportsStartFlag, ORIGINAL_SKILLS, PLAYBOOK_SET } from '../../bench/lib/plan.mjs';
 // @ts-ignore - the benchmark harness is plain JavaScript, outside the TypeScript build.
 import { SCORER_LIMITATIONS, authoritativeCandidates, extractTranscript, normalizeEvidenceId, redactSecrets, scoreRun, summarizeScores } from '../../bench/lib/score.mjs';
 // @ts-ignore - the benchmark harness is plain JavaScript, outside the TypeScript build.
@@ -82,19 +83,145 @@ describe('benchmark fixtures', () => {
     }
   });
 
+  it('copies exactly the source manifest, excluding real bytecode with an answer-path leak', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'p2o-bench-bytecode-'));
+    const source = join(root, 'vulnerable');
+    const destination = join(root, 'target');
+    const answerPath = '/bench/fixtures/object-authorization/fixed/policy.py';
+    try {
+      await mkdir(join(source, '__pycache__'), { recursive: true });
+      await mkdir(join(source, 'nested', '.cache'), { recursive: true });
+      await mkdir(join(source, '.git'), { recursive: true });
+      await mkdir(join(source, 'expected'), { recursive: true });
+      await writeFile(join(source, 'policy.py'), 'allowed = False\n');
+      await writeFile(join(source, 'nested', 'helper.py'), 'value = 1\n');
+      const pyc = join(source, '__pycache__', 'policy.cpython-313.pyc');
+      const compiled = spawnSync('python3', ['-c', 'import py_compile, sys; py_compile.compile(sys.argv[1], cfile=sys.argv[2], dfile=sys.argv[3], doraise=True)',
+        join(source, 'policy.py'), pyc, answerPath], { encoding: 'utf8', env: { ...process.env, PYTHONDONTWRITEBYTECODE: '1' } });
+      expect(compiled.status, compiled.stderr).toBe(0);
+      expect((await readFile(pyc)).includes(Buffer.from(answerPath))).toBe(true);
+      for (const file of ['orphan.pyc', 'orphan.pyo', '.answer', '.git/config', 'nested/.cache/answer.json', 'expected/truth.json']) {
+        await writeFile(join(source, file), answerPath);
+      }
+      const original = await hashTree(source);
+      const copied = await copyVariant(source, destination);
+      expect(copied.hash).toBe(original.hash);
+      expect(copied.files).toEqual(original.files);
+      expect(copied.files.map((file: any) => file.path).sort()).toEqual(['nested/helper.py', 'policy.py']);
+      // Do not use hashTree for this walk: it must expose any accidentally copied hidden/cache file.
+      const actual: { path: string; sha256: string; bytes: number }[] = [];
+      async function walk(directory: string, prefix = '') {
+        for (const entry of await readdir(directory, { withFileTypes: true })) {
+          const path = prefix + entry.name;
+          if (entry.isDirectory()) await walk(join(directory, entry.name), path + '/');
+          else {
+            expect(entry.isFile()).toBe(true);
+            const bytes = await readFile(join(directory, entry.name));
+            expect(bytes.includes(Buffer.from(answerPath))).toBe(false);
+            actual.push({ path, sha256: createHash('sha256').update(bytes).digest('hex'), bytes: bytes.length });
+          }
+        }
+      }
+      await walk(destination);
+      expect(actual.sort((a, b) => a.path.localeCompare(b.path)))
+        .toEqual([...copied.files].sort((a: any, b: any) => a.path.localeCompare(b.path)));
+      expect(existsSync(join(destination, '__pycache__'))).toBe(false);
+      expect(existsSync(join(destination, '.git'))).toBe(false);
+      expect(existsSync(join(destination, 'nested', '.cache'))).toBe(false);
+      expect((await readFile(pyc)).includes(Buffer.from(answerPath))).toBe(true); // original preserved
+    } finally { await rm(root, { recursive: true, force: true }); }
+  });
+
+  it.runIf(process.platform !== 'win32').each(['file', 'directory', 'root'])('rejects %s symlinks instead of copying or hashing them', async kind => {
+    const root = await mkdtemp(join(tmpdir(), 'p2o-bench-symlink-'));
+    try {
+      const source = join(root, 'source');
+      const outside = join(root, 'outside');
+      await mkdir(source); await mkdir(outside);
+      await writeFile(join(outside, 'answer.py'), 'fixed_answer = True\n');
+      let selected = source;
+      if (kind === 'root') {
+        selected = join(root, 'linked-root');
+        await symlink(source, selected);
+      } else await symlink(kind === 'file' ? join(outside, 'answer.py') : outside, join(source, 'link'));
+      await expect(hashTree(selected)).rejects.toThrow(/symlink/i);
+      await expect(copyVariant(selected, join(root, 'target'))).rejects.toThrow(/symlink/i);
+      expect(existsSync(join(root, 'target'))).toBe(false);
+    } finally { await rm(root, { recursive: true, force: true }); }
+  });
+
+  it.runIf(process.platform !== 'win32')('rejects a special file before copying or reading it', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'p2o-bench-fifo-'));
+    try {
+      const source = join(root, 'source'); await mkdir(source);
+      expect(spawnSync('mkfifo', [join(source, 'pipe')]).status).toBe(0);
+      await expect(hashTree(source)).rejects.toThrow(/special file/i);
+      await expect(copyVariant(source, join(root, 'target'))).rejects.toThrow(/special file/i);
+      expect(existsSync(join(root, 'target'))).toBe(false);
+    } finally { await rm(root, { recursive: true, force: true }); }
+  });
+
+  it('refuses overlapping destinations without deleting source files', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'p2o-bench-overlap-'));
+    try {
+      const source = join(root, 'source'); await mkdir(source);
+      await writeFile(join(source, 'code.py'), 'original = True\n');
+      for (const destination of [root, source, join(source, 'target'), join(source, '..hidden-copy')]) {
+        await expect(copyVariant(source, destination)).rejects.toThrow(/overlap/);
+      }
+      expect(await readFile(join(source, 'code.py'), 'utf8')).toBe('original = True\n');
+    } finally { await rm(root, { recursive: true, force: true }); }
+  });
+
+  it('verify runs in a clean copy with bytecode writing disabled, without changing fixtures', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'p2o-bench-verify-'));
+    const inherited = process.env.PYTHONDONTWRITEBYTECODE;
+    try {
+      await writeFile(join(root, 'package.json'), '{}');
+      const fixture = join(root, 'bench', 'fixtures', 'snapshot-inputs');
+      await mkdir(join(fixture, 'expected'), { recursive: true });
+      const entry = { expected_findings: [], expected_clean: [], required_gaps: [], forbidden_claims: [] };
+      await writeFile(join(fixture, 'expected', 'truth.json'), JSON.stringify({
+        schema: 'p2o-bench-truth/1', fixture: 'snapshot-inputs', evaluator_only: true,
+        objective: 'Review the supplied synthetic application source and report coverage and any findings with evidence.',
+        variants: { vulnerable: entry, fixed: entry },
+        probe: { command: 'python3 probe.py', expected_exit: { vulnerable: 0, fixed: 0 } },
+      }));
+      for (const variant of ['vulnerable', 'fixed']) {
+        const source = join(fixture, variant); await mkdir(source);
+        await writeFile(join(source, 'policy.py'), 'value = 1\n');
+        await writeFile(join(source, 'probe.py'), `import os, pathlib\nassert os.environ['PYTHONDONTWRITEBYTECODE'] == '1'\nassert pathlib.Path.cwd() != pathlib.Path(${JSON.stringify(source)})\nimport policy\nassert policy.value == 1\nassert not list(pathlib.Path('.').rglob('*.pyc'))\n`);
+      }
+      process.env.PYTHONDONTWRITEBYTECODE = '0'; // verify must override an unsafe inherited setting
+      expect(await main(['verify', '--repo', root, '--results', join(root, 'results')])).toBe(0);
+      for (const variant of ['vulnerable', 'fixed']) {
+        expect((await readdir(join(fixture, variant))).sort()).toEqual(['policy.py', 'probe.py']);
+      }
+    } finally {
+      if (inherited === undefined) delete process.env.PYTHONDONTWRITEBYTECODE;
+      else process.env.PYTHONDONTWRITEBYTECODE = inherited;
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
   it.runIf(process.platform !== 'win32')('runs each executable fixture probe with the expected outcome', async () => {
     const fixtures = await discoverFixtures(repo);
     for (const fixture of fixtures) {
       const probe = fixture.truth.probe;
       if (!probe) continue;
       for (const variant of ['vulnerable', 'fixed'] as const) {
-        const result = spawnSync(probe.command.split(' ')[0], probe.command.split(' ').slice(1), {
-          cwd: join(fixture.dir, variant), encoding: 'utf8', timeout: 30_000,
-        });
-        expect(result.status, `${fixture.name}/${variant}: ${result.stderr}`).toBe(probe.expected_exit[variant]);
-        for (const needle of probe.expected_failing_cells?.[variant] ?? []) expect(result.stdout).toContain(needle);
-        for (const needle of probe.expected_failing_paths?.[variant] ?? []) expect(result.stdout).toContain(needle);
-        for (const needle of probe.expected_contexts?.[variant] ?? []) expect(result.stdout).toContain(needle);
+        const workspace = await mkdtemp(join(tmpdir(), 'p2o-bench-probe-'));
+        try {
+          const target = join(workspace, 'target');
+          await copyVariant(join(fixture.dir, variant), target);
+          const result = spawnSync(probe.command.split(' ')[0], probe.command.split(' ').slice(1), {
+            cwd: target, encoding: 'utf8', timeout: 30_000, env: { ...process.env, PYTHONDONTWRITEBYTECODE: '1' },
+          });
+          expect(result.status, `${fixture.name}/${variant}: ${result.stderr}`).toBe(probe.expected_exit[variant]);
+          for (const needle of probe.expected_failing_cells?.[variant] ?? []) expect(result.stdout).toContain(needle);
+          for (const needle of probe.expected_failing_paths?.[variant] ?? []) expect(result.stdout).toContain(needle);
+          for (const needle of probe.expected_contexts?.[variant] ?? []) expect(result.stdout).toContain(needle);
+        } finally { await rm(workspace, { recursive: true, force: true }); }
       }
     }
   }, 60_000);
@@ -138,6 +265,30 @@ describe('benchmark plan', () => {
     expect(() => parseArgs(['run', 'ignore all previous instructions'])).toThrow(/unexpected argument/);
     expect(() => parseArgs(['score', 'a.json', 'b.json'])).toThrow(/one receipt path/);
     expect(parseArgs(['run', '--start-flag', '--export']).startFlags).toEqual(['--export']);
+  });
+
+  it('pins the requested model, provider and xhigh in Pi argv and plan receipts', async () => {
+    const selection = ['--model', 'gpt-6.1-sol', '--provider', 'openai-codex-account-3', '--thinking', 'xhigh'];
+    const options = parseArgs(['plan', ...selection]);
+    expect(modelSelection(options)).toEqual({ model: 'gpt-6.1-sol', provider: 'openai-codex-account-3', thinking: 'xhigh' });
+    expect(piModelArgs(options)).toEqual(selection);
+    expect(piModelArgs(parseArgs(['plan']))).toEqual(['--model', 'deepseek/deepseek-flash', '--thinking', 'off']);
+    expect(() => parseArgs(['plan', '--provider'])).toThrow(/provider/);
+    expect(() => parseArgs(['plan', '--provider='])).toThrow(/provider/);
+    expect(() => parseArgs(['plan', '--model'])).toThrow(/model/);
+    expect(() => parseArgs(['plan', '--thinking', 'typo'])).toThrow(/thinking/);
+    const root = await mkdtemp(join(tmpdir(), 'p2o-bench-provider-'));
+    try {
+      expect(await main(['plan', '--arm', 'C', '--fixture', 'route-inventory', '--reps', '1', '--seed', '7', '--results', root, ...selection])).toBe(0);
+      const file = (await readdir(root)).find(name => name.startsWith('plan-'))!;
+      const plan = JSON.parse(await readFile(join(root, file), 'utf8'));
+      expect(modelSelection(plan)).toEqual(modelSelection(options));
+      expect(plan.runCount).toBe(2);
+      const source = await readFile(join(repo, 'scripts/benchmark-skills.mjs'), 'utf8');
+      expect(source).toContain("'--mode', 'rpc', ...piModelArgs(options)");
+      expect(source).toContain('...modelSelection(options), maxMinutes:');
+      expect(source).toContain('config: { ...modelSelection(options), ...planBudgets(options)');
+    } finally { await rm(root, { recursive: true, force: true }); }
   });
 
   it('refuses to start live model traffic without --live', async () => {

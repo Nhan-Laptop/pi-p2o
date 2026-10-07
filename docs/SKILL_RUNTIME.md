@@ -18,6 +18,8 @@ are returned in `capabilityWarnings`, included in the brief and recorded as open
 dynamic workflow if source review is sufficient. No selected workflow means no automatic gap for every possible
 technique mentioned by the skill. Overlay assignments still count against the three-skill limit.
 
+Delegation accepts optional `thinking` alongside `model`. Thinking precedence is per-spawn override, role setting, then the lead's current level. A qualified `provider/model` is passed to worker Pi as separate `--provider` and `--model` arguments, and startup records capture the actual model and thinking level. No provider fallback is automatic.
+
 Catalog IDs are not host paths. Every package-file component is opened relative to a held Linux directory FD
 with no symlink following; only registered documents are reachable. Knowledge calls have separate bounded
 budgets (400 lead reads, 200 worker knowledge/coordination calls), not the target command reserve. The registry

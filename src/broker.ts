@@ -38,7 +38,7 @@ export interface WorkerRegistration {
   reported?: WorkerReport;
 }
 
-export interface DelegateInput { focus: string; task: string; context?: string; role?: string; skills?: string[]; model?: string; workflow?: string }
+export interface DelegateInput { focus: string; task: string; context?: string; role?: string; skills?: string[]; model?: string; workflow?: string; thinking?: string }
 export interface DelegateResult { workerId: string; name: string; paneId: string; role: string; model?: string; depth: number }
 
 export interface BrokerDeps {
@@ -269,7 +269,7 @@ export class Broker {
           const worker = await this.deps.delegate({
             focus, task, context: text(request?.context, 4000), role: text(request?.role, 32),
             skills: stringList(request?.skills, 3, 64).filter(skill => /^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(skill)),
-            model: text(request?.model, 200), workflow: text(request?.workflow, 64),
+            model: text(request?.model, 200), workflow: text(request?.workflow, 64), thinking: text(request?.thinking, 16),
           }, registration);
           return { ok: true, worker };
         } catch (error) { return { ok: false, error: errText(error) }; }

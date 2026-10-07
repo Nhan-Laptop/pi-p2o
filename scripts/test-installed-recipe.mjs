@@ -13,6 +13,8 @@ const image = get('--image', '');
 if (!/^sha256:[a-f0-9]{64}$/.test(image)) throw new Error('--image needs the immutable local setup image ID');
 const extension = resolve(get('--extension', `${process.env.HOME}/.pi/agent/git/github.com/Nhan-Laptop/pi-p2o/extensions/p2o/index.ts`));
 const model = get('--model', 'deepseek/deepseek-flash');
+const provider = get('--provider', '');
+const thinking = get('--thinking', 'off');
 const output = resolve(get('--output', 'tmp/skill-upgrade/installed-recipe'));
 await mkdir(output, { recursive: true, mode: 0o700 });
 const work = await mkdtemp(join(output, 'run-')); await mkdir(join(work, 'target'));
@@ -22,7 +24,7 @@ const objective = `This is an installed-extension integration of an OFFLINE STAT
 const wrapper = join(work, 'objective.ts'); await writeFile(wrapper, objectiveExtensionSource(objective));
 const child = spawn(get('--pi', `${process.env.HOME}/.pi/agent/bin/pi`), ['--no-extensions', '-e', extension, '-e', wrapper,
   '--no-skills', '--no-context-files', '--no-prompt-templates', '--no-approve', '--no-session', '--mode', 'rpc',
-  '--model', model, '--thinking', 'off', '--p2o-image', image], { cwd: work, stdio: ['pipe','pipe','pipe'] });
+  '--model', model, ...(provider ? ['--provider', provider] : []), '--thinking', thinking, '--p2o-image', image], { cwd: work, stdio: ['pipe','pipe','pipe'] });
 child.stdin.on('error', () => {});
 const rpc = new PiRpc(child); rpc.answerDialogs();
 let messages = [], exported, failed;
@@ -44,7 +46,7 @@ try {
   if (!/VULNERABLE=5 FIXED=0 ERRORS=0/.test(outputText)) throw new Error('Actual candidate counts did not match fixture');
   const rulesHash = exported.manifest.skillHashes['source-code-auditing:offline-python-semgrep-rules'];
   if (!rulesHash || !outputText.includes(rulesHash)) throw new Error('Materialized rule content hash does not match catalog');
-  await writeFile(join(work, 'summary.json'), JSON.stringify({ status: 'passed', model, extensionSha256: createHash('sha256').update(await readFile(extension)).digest('hex'), image, rulesHash,
+  await writeFile(join(work, 'summary.json'), JSON.stringify({ status: 'passed', model, provider, thinking, extensionSha256: createHash('sha256').update(await readFile(extension)).digest('hex'), image, rulesHash,
     elapsedMs: Date.now()-started, outcome: { vulnerableCandidates: 5, fixedCandidates: 0, errors: 0 }, runtimeClaim: 'static candidate generation only' }, null, 2));
 } catch (error) { failed = String(error); }
 finally {

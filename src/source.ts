@@ -11,7 +11,7 @@ const MAX_ENTRIES = 20_000;
 export async function copySource(path: string): Promise<{ path: string; skipped: number; manifest: Record<string, string> }> {
   const destination = await mkdtemp(join(tmpdir(), 'p2o-source-'));
   let bytes = 0; let entries = 0; let skipped = 0;
-  const manifest: Record<string, string> = {};
+  const manifest: Record<string, string> = Object.create(null);
   const root = await open(path, constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW).catch(async error => {
     await rm(destination, { recursive: true, force: true }); throw error;
   });
