@@ -1,0 +1,198 @@
+{
+  "fixture": "Real Pi with scripted inert provider, inert sandbox and process-based Herdr double; not model quality or Docker proof",
+  "installedExtension": "/home/nhanlaptop/.pi/agent/git/github.com/Nhan-Laptop/pi-p2o/extensions/p2o/index.ts",
+  "checks": [
+    "no capability tool/table",
+    "tool descriptions available",
+    "shared recon prompt",
+    "broker isolation",
+    "terminal report",
+    "cleanup",
+    "export without capability metadata"
+  ],
+  "export": {
+    "version": 2,
+    "runId": "run-muz2wwze-uhacx0",
+    "manifest": {
+      "target": "/home/nhanlaptop/.cache/pi-tmp/p2o-native-I2DtA6/repo",
+      "sourceHashes": {},
+      "image": "ghcr.io/usestrix/strix-sandbox@sha256:f6906c3114e504fd1a218fcf028d7a0e46851118403a438b63956de6ea7c4331",
+      "extensionSha256": "3fb42c48862d75d5c988e58dec483a166cdd3d4a13ba22f954aefa613c27957e",
+      "leadModel": "p2o-inert/current-agent",
+      "skillHashes": {
+        "shared:handoffs": "2d667a09600c2299525b7a2c29f90c58177fc438d3bc05847ecdc799d7334a32"
+      },
+      "reason": "finished"
+    },
+    "records": [
+      {
+        "version": 2,
+        "id": "35d94ec3-9f67-4c34-a5b0-5cac4bfbfc5f",
+        "at": "2026-10-08T05:11:31.323Z",
+        "by": "owner",
+        "kind": "lifecycle",
+        "text": "assessment started for /home/nhanlaptop/.cache/pi-tmp/p2o-native-I2DtA6/repo"
+      },
+      {
+        "version": 2,
+        "id": "b140014a-8357-4528-8d8f-cc3e98355e03",
+        "runId": "run-muz2wwze-uhacx0",
+        "at": "2026-10-08T05:11:31.694Z",
+        "by": "p2o-general-0a5b32",
+        "kind": "lifecycle",
+        "workerId": "p2o-general-0a5b32",
+        "role": "general",
+        "depth": 1,
+        "text": "worker p2o-general-0a5b32 started (general, depth 1, runtime p2o-inert/current-agent, thinking off)"
+      },
+      {
+        "version": 2,
+        "id": "43c79f97-222d-4d93-a08b-bbd1d51f4109",
+        "at": "2026-10-08T05:11:31.701Z",
+        "runId": "run-muz2wwze-uhacx0",
+        "by": "owner",
+        "kind": "lifecycle",
+        "text": "delegated p2o-general-0a5b32 (general, depth 1, model p2o-inert/current-agent, thinking off): surface-recon",
+        "workerId": "p2o-general-0a5b32",
+        "role": "general",
+        "depth": 1
+      },
+      {
+        "version": 2,
+        "id": "ba34ed85-c083-4025-852a-ed82efc7448d",
+        "runId": "run-muz2wwze-uhacx0",
+        "at": "2026-10-08T05:11:31.717Z",
+        "by": "p2o-general-0a5b32",
+        "workerId": "p2o-general-0a5b32",
+        "kind": "lifecycle",
+        "text": "skill_read shared:handoffs sha256=2d667a09600c2299525b7a2c29f90c58177fc438d3bc05847ecdc799d7334a32 offset=0"
+      },
+      {
+        "version": 2,
+        "id": "bec9824b-d995-4bb9-bd3d-fae7fdaeaef0",
+        "runId": "run-muz2wwze-uhacx0",
+        "at": "2026-10-08T05:11:31.723Z",
+        "by": "p2o-general-0a5b32",
+        "workerId": "p2o-general-0a5b32",
+        "kind": "evidence",
+        "text": "shell exit 0; untrusted observation, not a finding",
+        "data": {
+          "operation": "shell",
+          "input": "id -u; cat /target/code.txt; pwd",
+          "target": "/home/nhanlaptop/.cache/pi-tmp/p2o-native-I2DtA6/repo",
+          "startedAt": "2026-10-08T05:11:31.723Z",
+          "exitCode": 0,
+          "stdout": "INERT_SANDBOX uid=65532\nid -u; cat /target/code.txt; pwd",
+          "stderr": "",
+          "outputSha256": "7dcbda6b97b45e8defc592e7b35dc37fcaf498e2323a35fca46b3b95fae66d87",
+          "truncated": false,
+          "limitations": "Bounded redacted tool output; command semantics and claimed effect require review."
+        }
+      },
+      {
+        "version": 2,
+        "id": "49b7c20a-eed7-45d9-85fe-e1e22ad3aedb",
+        "at": "2026-10-08T05:11:31.729Z",
+        "by": "p2o-general-0a5b32",
+        "kind": "note",
+        "text": "Inventory: source entry /target/code.txt; input=text; actor/gate/handler and deployed exposure unknown. Extraction=brokered read; observation is an inert fixture, not target proof.",
+        "workerId": "p2o-general-0a5b32",
+        "role": "general",
+        "depth": 1,
+        "surface": "/target/code.txt",
+        "refs": [
+          "bec9824b-d995-4bb9-bd3d-fae7fdaeaef0"
+        ],
+        "runId": "run-muz2wwze-uhacx0"
+      },
+      {
+        "version": 2,
+        "id": "1e0e6ff0-c166-4285-81ff-f93638af1312",
+        "at": "2026-10-08T05:11:31.731Z",
+        "by": "p2o-general-0a5b32",
+        "kind": "note",
+        "text": "Decision: correct the assumption that source implies deployment. Next task: map consumer identity before discovery; missing gate has highest information gain in this fixture. Expected observation: a registered handler and principal. Stop if no deployment context is supplied; retain the gap.",
+        "workerId": "p2o-general-0a5b32",
+        "role": "general",
+        "depth": 1,
+        "surface": "/target/code.txt",
+        "risk": "identity boundary",
+        "refs": [
+          "bec9824b-d995-4bb9-bd3d-fae7fdaeaef0"
+        ],
+        "runId": "run-muz2wwze-uhacx0"
+      },
+      {
+        "version": 2,
+        "id": "9ae8d53f-7e63-4183-a39e-ee8fb2caff23",
+        "runId": "run-muz2wwze-uhacx0",
+        "at": "2026-10-08T05:11:31.735Z",
+        "by": "p2o-general-0a5b32",
+        "workerId": "p2o-general-0a5b32",
+        "kind": "candidate",
+        "text": "consumer-identity: open_proof_gap (not_tested, static_trace); agent claim, not automatic verification",
+        "surface": "/target/code.txt",
+        "risk": "identity boundary",
+        "outcome": "open_proof_gap",
+        "refs": [
+          "bec9824b-d995-4bb9-bd3d-fae7fdaeaef0"
+        ],
+        "data": {
+          "candidate": "consumer-identity",
+          "surface": "/target/code.txt",
+          "risk": "identity boundary",
+          "closure": "open_proof_gap",
+          "execution": "not_tested",
+          "proof": "static_trace",
+          "evidenceRefs": [
+            "bec9824b-d995-4bb9-bd3d-fae7fdaeaef0"
+          ],
+          "negativeControls": [],
+          "policyBasis": "inferred",
+          "expectedPolicy": "Consumer identity must be established before assessing intended policy",
+          "limitations": "Scripted mechanical fixture; no deployment or live effect established"
+        }
+      },
+      {
+        "version": 2,
+        "id": "27cf76a1-ec41-40b7-8867-d77c216f7e14",
+        "at": "2026-10-08T05:11:31.737Z",
+        "by": "p2o-general-0a5b32",
+        "kind": "report",
+        "workerId": "p2o-general-0a5b32",
+        "role": "general",
+        "depth": 1,
+        "text": "WORKER_REPORT: brokered shell ran inside the owner sandbox and read the authorized source copy.",
+        "refs": [
+          "bec9824b-d995-4bb9-bd3d-fae7fdaeaef0"
+        ]
+      },
+      {
+        "version": 2,
+        "id": "50bbde78-e522-4796-a523-6e02a3c68855",
+        "at": "2026-10-08T05:11:31.737Z",
+        "by": "p2o-general-0a5b32",
+        "kind": "coverage",
+        "workerId": "p2o-general-0a5b32",
+        "role": "general",
+        "depth": 1,
+        "surface": "/target/code.txt",
+        "risk": "unintended data exposure",
+        "outcome": "clean",
+        "text": "/target/code.txt × unintended data exposure: clean"
+      },
+      {
+        "version": 2,
+        "id": "323674c8-fe72-4013-9336-5b6056b66954",
+        "at": "2026-10-08T05:11:31.737Z",
+        "by": "p2o-general-0a5b32",
+        "kind": "open",
+        "workerId": "p2o-general-0a5b32",
+        "role": "general",
+        "depth": 1,
+        "text": "worker did not test any other surface"
+      }
+    ],
+    "warning": "Redaction is best effort; review before sharing. Candidate records are attributed claims, not verified findings."
+  }
+}

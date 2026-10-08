@@ -1,11 +1,12 @@
 # P2O enhancement plan: tool guidance and evidence-led reconnaissance
 
-**Status: implementation complete; installed-package acceptance in progress.**
+**Status: implemented, pushed, reinstalled and verified with local/inert runtime acceptance.**
 
 Implemented: capability subsystem removal, descriptive prerequisite migration, shared recon/decision guidance,
 aligned handoffs/skills/templates and regression fixtures. Verification is local and model-inert: no external
-assessment or paid agent run is authorized or implied. Full results and installed revision will be recorded in
-`research/runtime/recon-upgrade/README.md` after shipping acceptance.
+assessment or paid agent run is authorized or implied. Results, installed implementation revision and scope limitations are recorded in
+`research/runtime/recon-upgrade/README.md` and its acceptance receipts. Autonomous quality comparisons and paid
+agent tests were not performed; the local URL fixture remains conditional/deferred without relaxing scope.
 
 This plan replaces the previous roadmap. It covers removal of the redundant capability subsystem and improvement of reconnaissance, investigation selection, worker handoffs and verification. It does not authorize external-target testing, new transports, credentials, package installation or paid agent runs.
 
@@ -243,9 +244,9 @@ Do not automatically restart the earlier benchmark. It was finalized by user req
 - [x] Explain and mechanically exercise evidence-led next-task selection and feedback into recon (not autonomous model quality).
 - [x] Preserve independent validation, coverage reconciliation and verified cleanup.
 - [x] Pass automated regression, library and package gates.
-- [ ] Commit → push → reinstall with Pi; verify installed identity.
-- [ ] Verify installed runtime behavior with authorized tests and sanitized receipts.
-- [ ] Document actual verification scope, unresolved gaps and benchmark limitations.
+- [x] Commit → push → reinstall with Pi; verify installed identity.
+- [x] Verify installed runtime behavior with authorized local/inert tests and bounded receipts (not paid agents).
+- [x] Document actual verification scope, unresolved gaps and benchmark limitations.
 
 ## 11. Suggested implementation order
 

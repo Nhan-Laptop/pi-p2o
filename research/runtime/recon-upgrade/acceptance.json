@@ -1,0 +1,51 @@
+{
+  "schema": "p2o-recon-acceptance/1",
+  "verifiedAt": "2026-10-08T05:12:56.441601+00:00",
+  "testedInstalledRevision": "6a89e5573691ff002008f8faa0b4efa2e1af803f",
+  "runtimeHashes": {
+    "src/records.ts": "22d842f96ca73512b801ea0003501f7885e80dc78beb9373e92800aeb3f2dc23",
+    "src/herdr.ts": "360192e3fdc60c37358316d8ba23962d213d667f1dfa410cc4d8823a7cf27327",
+    "src/process.ts": "ec5f332e146a50e91154d521edea57c18d4cc384e864afa1352af1f11f74d428",
+    "src/evidence.ts": "8d3936a6a7d50e4909cda1977f55b6daa5ca9d7f12b956eae01cbae4b287065e",
+    "src/skills.ts": "9df29507d5772a636da7395a947755a87ba33fd040c163c2f4a556bdb828afc2",
+    "src/target.ts": "3d97e9c7008cc23e9501fd30ecf9fef220bd1a380c7842276228b90581111c0e",
+    "src/sandbox.ts": "b363ce628c2e6067ba5a77a91186c0f7aa42b1c2e842add92cfcd1b19c44159d",
+    "src/broker.ts": "bc115406db9202408772c79adecde9a01027623adfbe571d263637f2a565c16f",
+    "src/source.ts": "7d87531ea3688b1193f0ed85423531b7068541a28aced25cfdc0b31829e98723",
+    "src/roles.ts": "791c6f5093ac03f3d0bf6015230e0250658bff18a66242eaf8eefbd2b7b26ce5",
+    "src/prompts.ts": "b4590bb07b8f69aa1a287f0670f43a47e2de8c158e117ba24fc8e41c07a56934",
+    "src/ticket.ts": "a2c5cce13d0faf0ea2e0ca546c4022da59ace6929ad5a349e9d05ed5e3664ae5",
+    "extensions/p2o/index.ts": "3fb42c48862d75d5c988e58dec483a166cdd3d4a13ba22f954aefa613c27957e",
+    "skills/catalog.json": "9d93b92f73544fa864a57731035987f6d194aa9c53083306055654be4e43c4e8",
+    "HANDOFFS.md": "2d667a09600c2299525b7a2c29f90c58177fc438d3bc05847ecdc799d7334a32",
+    "templates/handoff.json": "022a6430cfc0645f1bf60338c50a19a2b035516b6be7b3103be14c31abf73d21"
+  },
+  "tests": {
+    "typescript": {
+      "passed": 115,
+      "skipped": 6
+    },
+    "python": {
+      "ran": 141,
+      "skipped": 1
+    },
+    "dockerSuitePassed": 5,
+    "realHerdrInertPassed": 1,
+    "offlineRecipePassed": 1,
+    "installedPiTestsPassed": 3,
+    "installedLibraryPassed": true
+  },
+  "packageFiles": 300,
+  "logHashes": {
+    "/home/nhanlaptop/project/pi-p2o/tmp/recon-upgrade/test.log": "755e36a04ad334a1b5b26eb2dcb2da73cbae5e818ffee5f8f8ca80505a4bfb17",
+    "/home/nhanlaptop/project/pi-p2o/tmp/recon-upgrade/installed-tests.log": "df3570055866c4b86e82c065abb0f894f0bcad7659e64ff49b1ad9c690c2f865",
+    "/home/nhanlaptop/project/pi-p2o/tmp/recon-upgrade/installed-library.log": "fa6bfed6018b6ab0ede86010330fa89a3eaed6c2ef626608bc9d67f0899da367",
+    "/home/nhanlaptop/project/pi-p2o/tmp/recon-upgrade/install.log": "2451dbe4ab6dd8ab2da113238402516b91dcc212e7c7f91c634868b01655bde8"
+  },
+  "limits": [
+    "Scripted inert providers are not model quality evidence",
+    "No paid agents or external requests",
+    "No local URL recon because public-IPv4 policy was not relaxed",
+    "Historical benchmark artifacts unchanged"
+  ]
+}

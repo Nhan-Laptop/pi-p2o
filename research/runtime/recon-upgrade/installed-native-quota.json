@@ -1,0 +1,84 @@
+{
+  "fixture": "Real Pi with scripted inert provider, inert sandbox and process-based Herdr double; not model quality or Docker proof",
+  "installedExtension": "/home/nhanlaptop/.pi/agent/git/github.com/Nhan-Laptop/pi-p2o/extensions/p2o/index.ts",
+  "checks": [
+    "no capability tool/table",
+    "tool descriptions available",
+    "shared recon prompt",
+    "broker isolation",
+    "terminal report",
+    "cleanup",
+    "export without capability metadata"
+  ],
+  "export": {
+    "version": 2,
+    "runId": "run-muz2x134-v0miql",
+    "manifest": {
+      "target": "/home/nhanlaptop/.cache/pi-tmp/p2o-native-9TLgEj/repo",
+      "sourceHashes": {},
+      "image": "ghcr.io/usestrix/strix-sandbox@sha256:f6906c3114e504fd1a218fcf028d7a0e46851118403a438b63956de6ea7c4331",
+      "extensionSha256": "3fb42c48862d75d5c988e58dec483a166cdd3d4a13ba22f954aefa613c27957e",
+      "leadModel": "p2o-inert/current-agent",
+      "skillHashes": {},
+      "reason": "finished"
+    },
+    "records": [
+      {
+        "version": 2,
+        "id": "80135f4d-796f-41bd-a1c9-bb0b900c912d",
+        "at": "2026-10-08T05:11:36.641Z",
+        "by": "owner",
+        "kind": "lifecycle",
+        "text": "assessment started for /home/nhanlaptop/.cache/pi-tmp/p2o-native-9TLgEj/repo"
+      },
+      {
+        "version": 2,
+        "id": "19814612-0575-4358-9cdf-848bbd2233d1",
+        "runId": "run-muz2x134-v0miql",
+        "at": "2026-10-08T05:11:36.976Z",
+        "by": "p2o-general-6b6a09",
+        "kind": "lifecycle",
+        "workerId": "p2o-general-6b6a09",
+        "role": "general",
+        "depth": 1,
+        "text": "worker p2o-general-6b6a09 started (general, depth 1, runtime p2o-inert/current-agent, thinking off)"
+      },
+      {
+        "version": 2,
+        "id": "2d62e7d0-005b-40c2-9d09-12102e1e39ab",
+        "at": "2026-10-08T05:11:36.982Z",
+        "runId": "run-muz2x134-v0miql",
+        "by": "owner",
+        "kind": "lifecycle",
+        "text": "delegated p2o-general-6b6a09 (general, depth 1, model p2o-inert/current-agent, thinking off): surface-recon",
+        "workerId": "p2o-general-6b6a09",
+        "role": "general",
+        "depth": 1
+      },
+      {
+        "version": 2,
+        "id": "63c674a2-ce44-44a3-9709-12c81532c405",
+        "at": "2026-10-08T05:11:36.994Z",
+        "by": "p2o-general-6b6a09",
+        "kind": "report",
+        "workerId": "p2o-general-6b6a09",
+        "role": "general",
+        "depth": 1,
+        "text": "Worker settled error without p2o_report. 429 GoUsageLimitError: Go usage limit exceeded",
+        "refs": []
+      },
+      {
+        "version": 2,
+        "id": "ff682155-1f7f-41a4-873d-6e070db21753",
+        "at": "2026-10-08T05:11:36.994Z",
+        "by": "p2o-general-6b6a09",
+        "kind": "open",
+        "workerId": "p2o-general-6b6a09",
+        "role": "general",
+        "depth": 1,
+        "text": "Assigned objective incomplete; inspect prior ledger evidence before retrying."
+      }
+    ],
+    "warning": "Redaction is best effort; review before sharing. Candidate records are attributed claims, not verified findings."
+  }
+}

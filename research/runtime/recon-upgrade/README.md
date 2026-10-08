@@ -21,7 +21,9 @@ One initial Docker test failed because a global before/after container snapshot 
 
 ## Installed acceptance
 
-Pending commit → push → Pi reinstall and installed-path tests. `P2O_TEST_INSTALLED_EXTENSION` makes the real-Pi owner/worker fixtures import the installed package, rather than silently retesting the development module. It preserves the installed extension identity for worker tickets and exported manifests.
+Implementation commit `6a89e5573691ff002008f8faa0b4efa2e1af803f` was committed, pushed and installed with Pi before acceptance. Installed-path tests passed: three real-Pi tests (normal cross-process worker, terminal quota worker and real Docker owner). The installed library validator also passed. All runtime module, extension, catalog, handoff and template hashes matched the committed checkout; the removed modules are absent.
+
+`P2O_TEST_INSTALLED_EXTENSION` makes the real-Pi owner/worker fixtures import the installed package, rather than silently retesting the development module. It preserves installed extension identity for worker tickets and exported manifests. Native exports retain worker knowledge reads, evidence-linked inventory/decision notes, an open candidate, reports and cleanup. Neither export has capability metadata. See `acceptance.json` and the two `installed-native-*.json` receipts. Final publication changes only plan/verification artifacts; runtime hashes remain those tested here.
 
 ## Limits
 
