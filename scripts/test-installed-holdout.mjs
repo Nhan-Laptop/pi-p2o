@@ -5,7 +5,7 @@ import { mkdir, mkdtemp, readFile, writeFile, cp, readdir } from 'node:fs/promis
 import { resolve, join } from 'node:path';
 import { createHash } from 'node:crypto';
 import { setTimeout as delay } from 'node:timers/promises';
-import { PiRpc } from './benchmark-skills.mjs';
+import { PiRpc, deriveRunId } from './benchmark-skills.mjs';
 import { objectiveExtensionSource } from '../bench/lib/objective.mjs';
 
 if (!process.argv.includes('--live')) throw new Error('Requires --live: this starts real provider-backed Pi and Herdr workers');
@@ -52,8 +52,7 @@ try {
   while (Date.now() - started < 8 * 60_000) {
     await delay(1000);
     messages = (await rpc.request('get_messages')).data?.messages ?? [];
-    const brief = messages.find(m => m.role === 'user' && JSON.stringify(m.content).includes('P2O ASSESSMENT'));
-    ownedRunId ??= /\bRun (run-[a-z0-9-]+)\b/.exec(JSON.stringify(brief?.content ?? ''))?.[1];
+    ownedRunId ??= deriveRunId({ messages }).runId ?? undefined;
     const finish = messages.find(m => m.role === 'toolResult' && m.toolName === 'p2o_finish' && !m.isError);
     if (finish) {
       result = finish.details;

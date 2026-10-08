@@ -4,6 +4,8 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { spawn } from 'node:child_process';
 import { setTimeout as delay } from 'node:timers/promises';
+// @ts-ignore - hermetic metadata helpers from the plain-JS benchmark harness
+import { deriveRunId, hasAssessmentStarted } from '../../scripts/benchmark-skills.mjs';
 
 
 /**
@@ -81,6 +83,8 @@ it.each(['normal', 'quota'])('real Pi + inert sandbox, %s worker: terminal repor
     expect(scope).toContain('same-run Evidence IDs');
     expect(scope).not.toContain('CAPABILITIES');
     expect(scope).not.toMatch(/\bp2o_[a-z_]+\b|nextOffset|supersedes=|policyBasis=/);
+    expect(hasAssessmentStarted(messages)).toBe(true);
+    expect(deriveRunId({ messages })).toMatchObject({ runId: expect.stringMatching(/^run-/), source: 'policy-section' });
     const toolResults = messages.filter((message: any) => message.role === 'toolResult');
     expect(toolResults.map((message: any) => message.toolName)).toEqual(['p2o_delegate', 'p2o_workers', 'p2o_finish']);
     expect(text(toolResults[0])).toMatch(/Spawned p2o-general-[0-9a-f]{6}/);

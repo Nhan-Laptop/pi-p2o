@@ -7,7 +7,7 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 // @ts-ignore - the benchmark harness is plain JavaScript, outside the TypeScript build.
-import { BoundedRecords, MAX_RECORDS, RUN_ID_PATTERN, deriveRunId, exportDataFrom, main, modelSelection, parseArgs, piModelArgs, p2oStartFlags, readExportFile, runContainerQueryArgs } from '../../scripts/benchmark-skills.mjs';
+import { BoundedRecords, MAX_RECORDS, RUN_ID_PATTERN, deriveRunId, hasAssessmentStarted, exportDataFrom, main, modelSelection, parseArgs, piModelArgs, p2oStartFlags, readExportFile, runContainerQueryArgs } from '../../scripts/benchmark-skills.mjs';
 // @ts-ignore - the benchmark harness is plain JavaScript, outside the TypeScript build.
 import { buildPlan, catalogDocuments, copyVariant, discoverFixtures, hashTree, isSharedDocument, mulberry32, objectiveProblems, parseSeed, resolveArms, shuffle, solutionMarkers, supportsStartFlag, ORIGINAL_SKILLS, PLAYBOOK_SET } from '../../bench/lib/plan.mjs';
 // @ts-ignore - the benchmark harness is plain JavaScript, outside the TypeScript build.
@@ -725,6 +725,21 @@ describe('scorer pilot regression', () => {
 });
 
 describe('per-run container cleanup detection', () => {
+  it('recognizes modern policy sections, opaque wrappers and legacy briefs without requiring the old kickoff dump', () => {
+    const policy = 'P2O ASSESSMENT — lead. Run run-policy. Deadline 2030.';
+    const section = { role: 'system', sections: { p2o_assessment: `<p2o_assessment>\n${policy}\n</p2o_assessment>` } };
+    expect(hasAssessmentStarted([section, { role: 'user', content: 'Begin the confirmed assessment now.' }])).toBe(true);
+    expect(deriveRunId({ messages: [section] })).toEqual({ runId: 'run-policy', source: 'policy-section' });
+    expect(hasAssessmentStarted([{ role: 'system', content: `BASE\n${policy}` }])).toBe(true);
+    expect(deriveRunId({ messages: [{ role: 'system', content: `BASE\n${policy}` }] })).toEqual({ runId: 'run-policy', source: 'system-prompt' });
+    expect(hasAssessmentStarted([{ role: 'user', content: policy }])).toBe(true);
+    expect(hasAssessmentStarted([{ role: 'user', content: 'Begin the confirmed assessment now.' }])).toBe(false);
+    expect(hasAssessmentStarted([{ role: 'toolResult', content: policy }, { role: 'assistant', content: policy }])).toBe(false);
+    expect(hasAssessmentStarted([{ role: 'system', sections: { p2o_assessment: 'P2O FINALIZATION — not active' } }])).toBe(false);
+    expect(deriveRunId({ messages: [{ role: 'toolResult', content: policy }] }).runId).toBeNull();
+    expect(deriveRunId({ messages: [section], exportData: { runId: 'run-export' } }).source).toBe('export');
+  });
+
   it('derives the run id from the export payload, export filename or P2O brief', () => {
     expect(deriveRunId({ exportData: { runId: 'run-muxr4ct0-idbxyo' } })).toEqual({ runId: 'run-muxr4ct0-idbxyo', source: 'export' });
     expect(deriveRunId({ exportPath: '/x/.p2o-reports/run-muxr4ct0-idbxyo-d7056b9e-7057-422e-ac27-b49efa4d4f6f.json' }))

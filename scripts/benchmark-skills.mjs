@@ -425,7 +425,7 @@ export const RUN_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
 
 /**
  * Derive this run's own P2O runId, in priority order: the finish export payload, the export
- * filename, then the P2O assessment brief ("... Run <runId>. Deadline ..."). Leak detection is
+ * filename, structured/opaque system policy, then the legacy assessment brief. Leak detection is
  * scoped to this label so concurrent runs (for example a holdout) can never be misattributed.
  */
 export function deriveRunId({ messages = [], exportData = null, exportPath = null } = {}) {
@@ -438,6 +438,14 @@ export function deriveRunId({ messages = [], exportData = null, exportPath = nul
     if (match && RUN_ID_PATTERN.test(match[1])) return { runId: match[1], source: 'export-filename' };
   }
   for (const message of messages) {
+    if (message?.role !== 'system') continue;
+    const section = message.sections?.p2o_assessment;
+    const text = typeof section === 'string' ? section : textOfMessage(message);
+    if (typeof section !== 'string' && !/^P2O ASSESSMENT\b/m.test(text)) continue;
+    const match = /\bRun\s+([A-Za-z0-9][A-Za-z0-9._-]{0,63})\./.exec(text);
+    if (match && RUN_ID_PATTERN.test(match[1])) return { runId: match[1], source: typeof section === 'string' ? 'policy-section' : 'system-prompt' };
+  }
+  for (const message of messages) {
     if (message?.role !== 'user') continue;
     const content = message.content;
     const text = typeof content === 'string'
@@ -447,6 +455,15 @@ export function deriveRunId({ messages = [], exportData = null, exportPath = nul
     if (match && RUN_ID_PATTERN.test(match[1])) return { runId: match[1], source: 'brief' };
   }
   return { runId: null, source: 'unknown' };
+}
+
+/** Detect startup metadata, not the short kickoff or target/tool output. Supports historical arms. */
+export function hasAssessmentStarted(messages = []) {
+  return messages.some(message => {
+    if (!['system', 'user'].includes(message?.role)) return false;
+    const section = message.role === 'system' ? message.sections?.p2o_assessment : undefined;
+    return /^P2O ASSESSMENT\b/m.test(typeof section === 'string' ? section : textOfMessage(message));
+  });
 }
 
 /** Docker argument list for one run's own label; exported for the hermetic label tests. */
@@ -575,7 +592,7 @@ async function executeRun({ plan, run, truth, options, suiteId, resultsDir }) {
     let messages = [];
     for (let waited = 0; waited < ASSESSMENT_START_TIMEOUT_MS; waited += POLL_MS) {
       messages = await readMessages();
-      if (messages.some(message => message.role === 'user' && textOfMessage(message).includes('P2O ASSESSMENT'))) {
+      if (hasAssessmentStarted(messages)) {
         checks.assessmentStarted = true;
         runIdInfo = deriveRunId({ messages });
         break;
