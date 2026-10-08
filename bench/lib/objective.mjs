@@ -5,7 +5,8 @@
 // the benchmark task outside the sandbox. Instead we load a tiny extension after the tested P2O
 // extension; its `before_agent_start` handler appends the frozen objective to the system prompt
 // while (and only while) the P2O scope text is present. Pi evaluates handlers in extension load
-// order and chains `systemPrompt`, so the P2O hook (loaded first) runs before this one.
+// order; later hooks see structured-section changes as well as `systemPrompt` overrides.
+// Thus the P2O hook (loaded first) runs before this one.
 //
 // The wrapper registers no tools, commands, flags, providers or message injection, and creates no
 // additional agent run; it only appends text to the system prompt for an already-running assessment.

@@ -2,7 +2,9 @@ import { describe, expect, it } from 'vitest';
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
-import { ownerInstructions, reconInstructions } from '../../src/prompts.js';
+import { ownerInstructions, reconInstructions, workerInstructions, workerBrief } from '../../src/prompts.js';
+import { createHash } from 'node:crypto';
+import type { Ticket } from '../../src/ticket.js';
 import { SkillLibrary } from '../../src/skills.js';
 import { EvidenceStore } from '../../src/evidence.js';
 import { appendRecord, readRecords } from '../../src/records.js';
@@ -23,11 +25,30 @@ describe('bounded recon contract', () => {
     expect(source).toContain('why it is next');
     expect(source).toContain('same-run Evidence IDs');
     expect(source).not.toContain('CAPABILITIES');
-    expect(source).not.toContain('p2o_capabilities');
+    expect(source).not.toMatch(/\bp2o_[a-z_]+\b|nextOffset|offset\?|supersedes=|policyBasis=/);
+    expect(source.length).toBeLessThan(5000);
+    expect(source).toContain('Only the human can change confirmed scope');
+    expect(source).toContain('never bypass scope');
+    expect(source).toContain('missing, blocked or untested proof remain open_proof_gap');
+    expect(source).toContain('specific effective control and location');
+    expect(source).toContain('separate worker reproducing the effect');
+    expect(source).toContain('complete verified cleanup before the final report');
     const url = reconInstructions('url');
     expect(url).toContain('same-origin GET/HEAD');
     expect(url).toContain('No other origins, port scans, login, redirects, form submission or state changes');
     expect(url).toContain('inferred, not deployment proof');
+  });
+
+  it.each([
+    ['url', 'cc9c5d89d6192d2caff26cfe16c87603c9876386fae05f2d09a6cdb0910ad28d', 'd46788388126e353c5744c364e1390e75c98f69e9da043156651dcdaf2ee67c3'],
+    ['directory', 'c720eba4021e5c67b900d051bc29b6fbfb78994caab53de26d3a1b914e04d65a', 'dfad83371227e967125d31a208fd7c417214dcaba90d471e4b33ed721f5b10b9'],
+  ])('keeps %s worker instructions and briefs byte-identical to 8f6db40', (kind, instructionHash, briefHash) => {
+    const ticket = { workerId: 'worker-test', role: 'recon', runId: 'run-test', depth: 1, parentWorkerId: null,
+      expiresAt: 1893456000000, target: { kind, label: kind === 'url' ? 'https://example.invalid' : '/target' }, commandBudget: 20 } as Ticket;
+    const input = { ticket, focus: 'surface-recon', task: 'Map authorized inputs', context: 'No previous work', skills: [{ name: 'test', body: 'Approved fixture guidance' }] };
+    const hash = (text: string) => createHash('sha256').update(text).digest('hex');
+    expect(hash(workerInstructions(ticket))).toBe(instructionHash);
+    expect(hash(workerBrief(input))).toBe(briefHash);
   });
 
   it('serves descriptive prerequisites, rejects a legacy capability registry and malformed prose', async () => {

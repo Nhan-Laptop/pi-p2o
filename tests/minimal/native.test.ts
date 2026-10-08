@@ -70,12 +70,17 @@ it.each(['normal', 'quota'])('real Pi + inert sandbox, %s worker: terminal repor
     expect((await request('prompt', { message: '/p2o --target ./repo --export' })).success).toBe(true);
     const messages = await transcript((list: any[]) => list.some((message: any) => text(message).includes('OWNER_FINAL_REPORT')));
     expect(dialogs).toEqual(['Start authorized assessment?']);
-    // The owner briefed itself, then delegated to a real worker process.
-    expect(messages.some((message: any) => message.role === 'user' && text(message).includes('P2O ASSESSMENT'))).toBe(true);
-    const brief = messages.find((message: any) => message.role === 'user' && text(message).includes('P2O ASSESSMENT'));
-    expect(text(brief)).toContain('RECON → INVESTIGATION');
-    expect(text(brief)).toContain('same-run Evidence IDs');
-    expect(text(brief)).not.toContain('CAPABILITIES');
+    // A brief kickoff, with policy only in one structured system section (no duplicated manual).
+    const users = messages.filter((message: any) => message.role === 'user');
+    expect(users).toHaveLength(1);
+    expect(text(users[0])).toContain('Begin the confirmed assessment');
+    expect(text(users[0]).length).toBeLessThan(200);
+    expect(text(users[0])).not.toMatch(/p2o_|P2O ASSESSMENT|RECON → INVESTIGATION/);
+    const scope = (messages.find((message: any) => message.role === 'system' && message.sections?.p2o_assessment)?.sections.p2o_assessment ?? '').replace(/^<p2o_assessment>\s*|\s*<\/p2o_assessment>$/g, '');
+    expect(scope).toContain('RECON → INVESTIGATION');
+    expect(scope).toContain('same-run Evidence IDs');
+    expect(scope).not.toContain('CAPABILITIES');
+    expect(scope).not.toMatch(/\bp2o_[a-z_]+\b|nextOffset|supersedes=|policyBasis=/);
     const toolResults = messages.filter((message: any) => message.role === 'toolResult');
     expect(toolResults.map((message: any) => message.toolName)).toEqual(['p2o_delegate', 'p2o_workers', 'p2o_finish']);
     expect(text(toolResults[0])).toMatch(/Spawned p2o-general-[0-9a-f]{6}/);
@@ -116,7 +121,8 @@ it.each(['normal', 'quota'])('real Pi + inert sandbox, %s worker: terminal repor
       await writeFile(join(process.env.P2O_TEST_RECEIPT_DIR, `native-${mode}.json`), JSON.stringify({
         fixture: 'Real Pi with scripted inert provider, inert sandbox and process-based Herdr double; not model quality or Docker proof',
         installedExtension: process.env.P2O_TEST_INSTALLED_EXTENSION ?? null,
-        checks: ['no capability tool/table', 'tool descriptions available', 'shared recon prompt', 'broker isolation', 'terminal report', 'cleanup', 'export without capability metadata'],
+        checks: ['no capability tool/table', 'tool descriptions/schema available', 'one structured lead policy section without tool tutorials', 'short kickoff without duplicate policy', 'shared recon prompt', 'broker isolation', 'terminal report', 'cleanup', 'export without capability metadata'],
+        leadPolicy: scope, kickoff: text(users[0]),
         export: exported,
       }, null, 2));
     }

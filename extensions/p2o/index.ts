@@ -12,7 +12,7 @@ import { appendRecord, readRecords, recordsSize, summarizeRecords, waitForRecord
 import { ensurePrivateDirectory, extensionDigest, mintTicket, mintToken, readTicket, removeTicket, ticketPath, workerName, type Ticket } from '../../src/ticket.js';
 import { createHerdrClient, type HerdrClient } from '../../src/herdr.js';
 import { loadSettings, resolveRole, MAX_SKILLS, type P2OSettings } from '../../src/roles.js';
-import { ownerInstructions, workerBrief, workerInstructions } from '../../src/prompts.js';
+import { OWNER_PROMPT_SECTION, ownerInstructions, workerBrief, workerInstructions } from '../../src/prompts.js';
 import { SkillLibrary, packageRoot } from '../../src/skills.js';
 import { EvidenceStore, redact, type Candidate } from '../../src/evidence.js';
 
@@ -740,14 +740,8 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
           ctx.ui.setStatus('p2o', `p2o: ${cleanText(targetLabel(target))}${current.delegation.enabled ? ` (+${maxWorkers} workers)` : ''}`);
           current.timer = setTimeout(() => { ctx.abort(); void stopAssessment(current, 'deadline').catch(error => ctx.ui.notify(message(error), 'error')); }, Math.max(1, deadline - now()));
           current.timer.unref();
-          const facts = {
-            runId, targetLabel: targetLabel(target), targetKind: target.kind,
-            deadline: new Date(deadline).toISOString(), sourceSkipped: sandbox.sourceSkipped,
-            delegation: { enabled: current.delegation.enabled, reason: current.delegation.reason, maxWorkers, maxDepth },
-            workerBudget: totalBudget,
-          };
           ctx.ui.notify(`Sandbox ready. Leading the assessment in this conversation.${current.delegation.enabled ? ` Delegation: up to ${maxWorkers} workers, depth ${maxDepth}.` : ''}${sandbox.sourceSkipped ? ` Source entries skipped: ${sandbox.sourceSkipped}.` : ''}`, 'info');
-          pi.sendUserMessage(`${ownerInstructions(facts)}\n\nBegin the assessment now. Use recon before targeted testing, delegate when it genuinely helps, and record coverage as you go.`);
+          pi.sendUserMessage('Begin the confirmed assessment now. Explain a bounded plan, investigate within scope, and report evidence, coverage and unresolved gaps.');
         } finally { opening = false; }
       } catch (error) { ctx.ui.notify(message(error), 'error'); }
     },
@@ -775,16 +769,20 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
   });
   pi.on('before_agent_start', event => {
     const current = run;
+    // Own one structured policy section; leave Pi's tools, rules and other extensions untouched.
+    delete event.systemPromptOptions.sections[OWNER_PROMPT_SECTION];
     if (!current) return;
-    const text = current.role === 'owner'
-      ? ownerInstructions({
+    if (current.role === 'owner') {
+      event.systemPromptOptions.sections[OWNER_PROMPT_SECTION] = ownerInstructions({
         runId: current.runId, targetLabel: targetLabel(current.target), targetKind: current.target.kind,
         deadline: new Date(current.deadline).toISOString(), sourceSkipped: current.sandbox.sourceSkipped,
         delegation: { enabled: current.delegation.enabled, reason: current.delegation.reason, maxWorkers: current.delegation.maxWorkers, maxDepth: current.delegation.maxDepth },
-        workerBudget: current.delegation.totalBudget,
-      })
-      : workerInstructions(current.ticket);
-    return { systemPrompt: `${event.systemPrompt}\n\n${text}` };
+        workerBudget: current.delegation.totalBudget, phase: current.phase,
+      });
+      return;
+    }
+    // Worker guidance is deliberately unchanged in this lead-only simplification.
+    return { systemPrompt: `${event.systemPrompt}\n\n${workerInstructions(current.ticket)}` };
   });
   pi.on('agent_before_settle', async (event, ctx) => {
     const current = run;

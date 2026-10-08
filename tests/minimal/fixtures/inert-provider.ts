@@ -28,6 +28,11 @@ export function registerInertProvider(pi: ExtensionAPI, mode: 'owner' | 'worker'
 
       if (mode === 'owner') {
         if (!system.includes('P2O ASSESSMENT')) throw new Error('owner scope section missing');
+        const policy = system.split('<p2o_assessment>')[1]?.split('</p2o_assessment>')[0];
+        if (!policy || /\bp2o_[a-z_]+\b|nextOffset|supersedes=|policyBasis=/.test(policy)) throw new Error('lead policy duplicates tool guidance');
+        if ((system.match(/<p2o_assessment>/g) ?? []).length !== 1) throw new Error('lead policy duplicated');
+        const candidate = descriptions.find(tool => tool.name === 'p2o_candidate');
+        if (!(candidate?.parameters as any)?.properties?.evidenceRefs || !(candidate?.parameters as any)?.properties?.policyBasis) throw new Error('candidate schema lost');
         if (!tools.includes('p2o_delegate') || tools.includes('bash') || tools.includes('read')) throw new Error(`owner tool loadout was not applied: ${tools.join(',')}`);
         if (!last) content = [{ type: 'toolCall', id: 'delegate-1', name: 'p2o_delegate', arguments: {
           focus: 'surface-recon', role: 'general',

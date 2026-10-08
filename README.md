@@ -63,6 +63,8 @@ Terminal worker failures deliver a blocked report without another model call; no
 
 ## Recon and next-task selection
 
+The lead’s prompt contains assessment policy, not tool manuals; Pi supplies the active descriptions and schemas.
+Startup uses a short kickoff instead of duplicating those instructions. Worker guidance is unchanged.
 Pi tool descriptions explain execution limits; they do not guarantee installed binaries. Check only prerequisites
 needed for the chosen task through bounded offline shell execution, without installation or universal startup probes.
 Recon records surfaces, inputs, actors/gates, Evidence IDs and unknowns. The lead records why a particular

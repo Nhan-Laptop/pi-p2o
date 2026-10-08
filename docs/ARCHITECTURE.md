@@ -33,7 +33,9 @@ place. A worker that cannot reach the socket fails closed and reports blocked in
 `src/skills.ts` serves approved package documents through held-directory-FD reads; the broker exposes IDs only.
 Active tool descriptions carry execution guidance; owner/broker checks remain authoritative.
 `src/prompts.ts` shares a bounded evidence-led recon/decision contract across lead and workers; workflow prerequisites
-are descriptive text, not a runtime permission/availability registry.
+are descriptive text, not a runtime permission/availability registry. The lead contributes policy through
+`before_agent_start` → `systemPromptOptions.sections.p2o_assessment`, without replacing Pi’s complete prompt
+or duplicating tool descriptions. Its startup message is a short kickoff; workers keep their existing guidance.
 `src/evidence.ts` records tool receipts, validates candidate revisions and exports bounded redacted results before cleanup.
 See [skill runtime](SKILL_RUNTIME.md) for schemas, failure behavior and compatibility limits.
 

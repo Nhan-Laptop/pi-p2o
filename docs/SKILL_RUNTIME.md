@@ -26,6 +26,13 @@ is instantiated per assessment; document pages retain consistent bytes/hashes du
 
 ## Tool guidance and reconnaissance
 
+The lead receives assessment policy in one structured `p2o_assessment` section: role, confirmed scope,
+recon/decision strategy, delegation, evidence safeguards and cleanup. Tool tutorials, argument spelling and
+pagination instructions are not repeated there. Startup sends only a short kickoff instead of a second policy
+copy. The section is replaced, not appended, and removed when no assessment is active; finalization cannot
+reactivate target work. Pi’s other prompt sections and active tool declarations are left intact.
+Worker instructions and briefs retain their existing guidance in this lead-only simplification.
+
 Pi exposes active tool descriptions and schemas. They describe enforced limits, not installed binaries.
 For a selected task needing an unknown tool, use a bounded offline functional check through `p2o_shell`
 and cite its receipt; never install/download or run universal startup probes. The base image may lack Semgrep.

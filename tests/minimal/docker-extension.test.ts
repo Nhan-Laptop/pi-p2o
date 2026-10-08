@@ -81,8 +81,9 @@ it.skipIf(process.env.P2O_TEST_DOCKER !== '1')('real Docker + real extension: ho
     expect(text(finish)).toContain('Container removal verified');
     expect(dialogs).toEqual(['Start authorized assessment?']);
     // Verify only this assessment's labels, not concurrently created unrelated test containers.
-    const brief = messages.find((message: any) => message.role === 'user' && text(message).includes('P2O ASSESSMENT'));
-    const runId = /Run (run-[a-z0-9-]+)\./.exec(text(brief))?.[1];
+    const scope = (messages.find((message: any) => message.role === 'system' && message.sections?.p2o_assessment)?.sections.p2o_assessment ?? '').replace(/^<p2o_assessment>\s*|\s*<\/p2o_assessment>$/g, '');
+    const runId = /Run (run-[a-z0-9-]+)\./.exec(scope ?? '')?.[1];
+    expect(scope).not.toMatch(/\bp2o_[a-z_]+\b/);
     expect(runId).toBeDefined();
     expect(await containers(runId!)).toEqual([]);
   } finally {
