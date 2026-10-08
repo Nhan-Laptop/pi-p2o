@@ -43,6 +43,9 @@ For composed-service identity questions, use [intermediary trust](references/int
 - pi-web-access → retrieve an approved public reference page when the local library and offline sources are insufficient → when the research question needs a current public source and the target itself must not be contacted.
 
 
+## Focused Method
+Give each extracted surface a stable ID and provenance. Distinguish registration, inferred reachability and an observed consumer. Select one next question; stop unchanged extraction when it adds no information. Choose role/method from the unanswered question; record expected evidence and a branch stop condition. Use the [owned review contract](../../HANDOFFS.md#focused-method-and-review).
+
 ## Validation
 A surface row is **confirmed** only with the tested actor, gate outcome, and handler observation; otherwise label it inferred or unresolved. Recheck on the deployed/default configuration, not just a debug build. A privileged diagnostic path cannot establish unprivileged reachability. Preserve denied operations as negative controls.
 

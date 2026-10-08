@@ -837,6 +837,9 @@ def validate(root: Path) -> list[str]:
         scaffold = load_json(root / "templates/handoff.json")
         if scaffold.get("classification") != "unresolved" or not {"scope", "question", "predictions", "evidence", "modifications", "negative_controls", "failed_assumptions", "reproduction", "untested_scope", "contract_specific_fields", "next_action", "stop_condition"} <= set(scaffold):
             errors.append("handoff scaffold incomplete or falsely completed")
+        coordination = scaffold.get("coordination", {})
+        if coordination.get("lead_reviewed") is not False or coordination.get("outcome") != "unknown" or not {"task_id", "task_revision", "parent_task_id", "validation_of", "role", "role_reason", "selected_method", "accepted_prerequisite_revisions", "missing_prerequisites", "known_unknowns", "expected_evidence_output", "review_receipt_ids"} <= set(coordination):
+            errors.append("handoff coordination scaffold incomplete or falsely accepted")
         pipeline_fields = {"peer_trust_model", "representation_ledger", "phase_and_reentry_edges", "effective_encoding_configuration", "logical_vs_allocation_bounds", "legitimate_peer_controls", "enforcement_state",
                            "intermediary_role_map", "dispatch_phase_model", "cache_selection_contract", "result_and_failure_contract", "observation_stage_ledger", "worker_and_state_history", "failure_reset_contract", "publication_policy_state", "mediated_request_contract", "producer_emission_constraints", "provisional_owner_review"}
         if not pipeline_fields <= set(scaffold.get("contract_specific_fields", {})):

@@ -112,6 +112,15 @@ it.each(['normal', 'quota'])('real Pi + inert sandbox, %s worker: terminal repor
     expect(exports).toHaveLength(1);
     const exported = JSON.parse(await readFile(join(root, '.p2o-reports', exports[0]), 'utf8'));
     expect(exported.manifest).not.toHaveProperty('capabilities');
+    expect(exported.reconciliation.complete).toBe(true);
+    expect(exported.manifest.report).toMatchObject({complete:true,counts:{reports:1}});
+    expect(exported.records.filter((r:any)=>r.kind==='task').every((r:any)=>r.by==='owner' && !r.workerId)).toBe(true);
+    expect(exported.manifest.report.tasks).toHaveLength(1);
+    const workerState=toolResults[1].details.workers[0];expect(workerState.effectiveRuntime).toMatchObject({verified:true,model:'p2o-inert/current-agent',thinking:'off'});
+    const {recoverReports}=await import('../../src/report.js');
+    const recovered=recoverReports({records:exported.records,byId:new Map(exported.records.map((r:any)=>[r.id,r])),complete:true,diagnostics:[],issueCount:0,foreign:0,bytes:0});
+    expect(recovered.diagnostics).toEqual([]);expect(recovered.reports).toHaveLength(1);
+    if(mode==='quota')expect(recovered.reports[0].report.outcome).toBe('provider-error');
     if (mode === 'normal') {
       expect(exported.manifest.skillHashes['shared:handoffs']).toMatch(/^[a-f0-9]{64}$/);
       const notes = exported.records.filter((r: any) => r.kind === 'note');
@@ -125,7 +134,7 @@ it.each(['normal', 'quota'])('real Pi + inert sandbox, %s worker: terminal repor
       await writeFile(join(process.env.P2O_TEST_RECEIPT_DIR, `native-${mode}.json`), JSON.stringify({
         fixture: 'Real Pi with scripted inert provider, inert sandbox and process-based Herdr double; not model quality or Docker proof',
         installedExtension: process.env.P2O_TEST_INSTALLED_EXTENSION ?? null,
-        checks: ['no capability tool/table', 'tool descriptions/schema available', 'one structured lead policy section without tool tutorials', 'short kickoff without duplicate policy', 'shared recon prompt', 'broker isolation', 'terminal report', 'cleanup', 'export without capability metadata'],
+        checks: ['no capability tool/table', 'tool descriptions/schema available', 'one structured lead policy section without tool tutorials', 'short kickoff without duplicate policy', 'shared recon prompt', 'broker isolation', 'terminal report', 'cleanup', 'export without capability metadata', 'complete ledger reconciliation', 'request-local worker objective refresh', 'owner-only task state', 'locally verified runtime profile', 'recoverable normalized report parts and frozen projection'],
         leadPolicy: scope, kickoff: text(users[0]),
         export: exported,
       }, null, 2));

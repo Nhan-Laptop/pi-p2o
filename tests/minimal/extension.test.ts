@@ -70,7 +70,7 @@ describe('owner role', () => {
   afterEach(async () => { await rm(h.root, { recursive: true, force: true }); });
 
   it('registers the owner and worker tools plus one command, and does no work before the command', () => {
-    expect([...h.pi.tools.keys()].sort()).toEqual(['p2o_candidate', 'p2o_delegate', 'p2o_finish', 'p2o_http', 'p2o_ledger', 'p2o_note', 'p2o_report', 'p2o_shell', 'p2o_skill_list', 'p2o_skill_read', 'p2o_steer', 'p2o_stop_worker', 'p2o_workers']);
+    expect([...h.pi.tools.keys()].sort()).toEqual(['p2o_candidate', 'p2o_delegate', 'p2o_finish', 'p2o_http', 'p2o_ledger', 'p2o_note', 'p2o_report', 'p2o_shell', 'p2o_skill_list', 'p2o_skill_read', 'p2o_steer', 'p2o_stop_worker', 'p2o_task', 'p2o_workers']);
     expect(h.pi.messages).toEqual([]);
     expect(h.sandboxes).toEqual([]);
     expect([...h.pi.commands.keys()]).toEqual(['p2o']);
@@ -92,7 +92,7 @@ describe('owner role', () => {
     expect(event.systemPromptOptions.sections.p2o_assessment).toContain('DELEGATION');
     expect(event.systemPromptOptions.sections.other).toBe('KEEP OTHER GUIDANCE');
     expect(h.sandboxes[0].stopCount).toBe(0);
-    expect(h.pi.active).toEqual(['p2o_ledger', 'p2o_skill_list', 'p2o_skill_read', 'p2o_candidate', 'p2o_shell', 'p2o_http', 'p2o_note', 'p2o_delegate', 'p2o_workers', 'p2o_steer', 'p2o_stop_worker', 'p2o_finish']);
+    expect(h.pi.active).toEqual(['p2o_task', 'p2o_ledger', 'p2o_skill_list', 'p2o_skill_read', 'p2o_candidate', 'p2o_shell', 'p2o_http', 'p2o_note', 'p2o_delegate', 'p2o_workers', 'p2o_steer', 'p2o_stop_worker', 'p2o_finish']);
     expect(await h.tickets()).toEqual([]);
   });
 
@@ -122,6 +122,68 @@ describe('owner role', () => {
     await h.command('stop');
     await h.emit('before_agent_start', event);
     expect(options.sections).toEqual({ other: 'UNRELATED' });
+  });
+
+  it('rejects unknown/mismatched methods and changed hashes; URL methods cannot unlock transport', async () => {
+    await h.start('--target https://example.com');
+    const draft:any={question:'What can the approved anonymous baseline establish?',surface:'/surface',risk:'authorization',role:'general',roleReason:'Lead chose a bounded source-policy question',expectedTrue:'Known permitted observation is available',expectedFalse:'Required identity contrast is unavailable',stopCondition:'Stop at the missing transport prerequisite',evidenceIds:[],prerequisites:[],skills:['web-object-authorization'],methodReason:'Trace policy before selecting an unavailable identity comparison'};
+    await expect(h.call('p2o_task',{action:'create',draft:{...draft,workflow:'not-a-workflow'}})).rejects.toThrow('WORKFLOW_UNKNOWN');
+    await expect(h.call('p2o_task',{action:'create',draft:{...draft,skills:['not-a-skill']}})).rejects.toThrow(/SKILL_UNKNOWN|unknown/i);
+    const blocked=(await h.call('p2o_task',{action:'create',draft:{...draft,workflow:'controlled-identity-comparison',missingPrerequisites:['Authenticated comparison transport is not authorized in this URL scope']}})).details;
+    expect(blocked.status).toBe('blocked');await expect(h.call('p2o_delegate',{focus:'blocked',task:'Do not broaden access',taskId:blocked.id})).rejects.toThrow('available');
+    expect(h.herdr.calls.filter(c=>c.op==='start')).toHaveLength(0);expect(h.pi.active).not.toContain('agent_browser');
+    const task=(await h.call('p2o_task',{action:'create',draft:{...draft,surface:'/other'}})).details;
+    const {appendRecord}=await import('../../src/records.js');
+    await appendRecord(join(await h.runDir(),'records.jsonl'),{at:'2030',runId:task.runId,by:'owner',kind:'task',text:'Controlled hash fault',supersedes:task.recordId,data:{task:{...task,revision:task.revision+1,method:{...task.method,skills:task.method.skills.map((s:any)=>({...s,sha256:'0'.repeat(64)}))}}}});
+    await expect(h.call('p2o_delegate',{focus:'fault',task:'Do not use stale method',taskId:task.id})).rejects.toThrow('TASK_METHOD_STALE');
+    expect(h.herdr.calls.filter(c=>c.op==='start')).toHaveLength(0);
+    await h.command('stop');
+  });
+
+  it('maintains a per-surface recon/discovery/independent-validation loop, rejects stale conclusions and freezes before cleanup', async () => {
+    await h.start('--target ./repo --export');
+    const makeDraft = (role: string, prerequisites: any[] = [], validationOf?: string) => ({question:'Which actor reaches the controlled consumer?',surface:'/surface',risk:'authorization',role,
+      roleReason:'Lead selected this role from the current unanswered question',expectedTrue:'Known baseline reaches the intended consumer',expectedFalse:'Contrasting observation refutes the boundary hypothesis',
+      stopCondition:'Stop after the contrast or a missing prerequisite; keep the original deadline',evidenceIds:[],prerequisites,validationOf,methodReason:'Bounded offline method; no deployment claims'});
+    const recon = (await h.call('p2o_task',{action:'create',draft:makeDraft('recon')})).details;
+    await h.call('p2o_task',{action:'start',id:recon.id});
+    const lead = await h.call('p2o_shell',{command:'printf controlled-baseline'});
+    const accepted = (await h.call('p2o_task',{action:'review',id:recon.id,reason:'Lead accepts this bounded source observation, not deployment proof',evidenceIds:[lead.details.evidenceId]})).details;
+    const discovery = (await h.call('p2o_task',{action:'create',draft:makeDraft('discovery',[{taskId:recon.id,revision:accepted.revision}])})).details;
+    const context = await h.emit('context',{messages:[{role:'compactionSummary',summary:'compact fixture',tokensBefore:1000,timestamp:0}]});
+    expect(context.messages.filter((m:any)=>m.customType==='p2o_objective_state')).toHaveLength(1);
+    expect(JSON.stringify(context.messages)).toContain(discovery.id);
+    const a = (await h.call('p2o_delegate',{focus:'discovery',task:'Follow the owner-authored objective',taskId:discovery.id})).details;
+    const {BrokerClient}=await import('../../src/broker.js');
+    const connect = async(id:string) => {const t=JSON.parse(await readFile(join(await h.runDir(),`ticket-${id}.json`),'utf8'));return new BrokerClient(t.socket,t.token);};
+    const first=await connect(a.workerId);
+    const base={candidate:'controlled-gate',surface:'/surface',risk:'authorization',policyBasis:'boundary_invariant',expectedPolicy:'Fixture-only principal/consumer contract',negativeControls:[],limitations:'Inert receipts are mechanical metadata, not semantic security proof'};
+    try {
+      await expect(first.request('note',{kind:'task',text:'Forge owner state'})).rejects.toThrow('kind');
+      const obs=await first.request('exec',{command:'printf observation'});
+      const initial=(await first.request('candidate',{candidate:{...base,closure:'open_proof_gap',execution:'not_tested',proof:'static_trace',evidenceRefs:[obs.evidenceId]}})).value;
+      await first.request('report',{report:{summary:'Discovery packet; source-only boundary remains unknown',evidence:[obs.evidenceId],confidence:'low',outcome:'completed'}});
+      await expect(first.request('exec',{command:'true'})).rejects.toThrow('stopped');
+      const reviewed=(await h.call('p2o_task',{action:'review',id:discovery.id,reason:'Lead accepts the packet for a contrasting validation question',evidenceIds:[obs.evidenceId]})).details;
+      const validation=(await h.call('p2o_task',{action:'create',draft:makeDraft('validation',[{taskId:discovery.id,revision:reviewed.revision}],discovery.id)})).details;
+      const b=(await h.call('p2o_delegate',{focus:'validation',task:'Follow the separate validation objective',taskId:validation.id})).details;
+      const second=await connect(b.workerId);
+      try {
+        const probe=await second.request('exec',{command:'printf contrasting-observation'});
+        const v=(await second.request('candidate',{candidate:{...base,closure:'confirmed',execution:'tested',proof:'offline_reproduction',evidenceRefs:[probe.evidenceId],supersedes:initial.id}})).value;
+        const claim=(await h.call('p2o_candidate',{...base,closure:'confirmed',execution:'tested',proof:'offline_reproduction',evidenceRefs:[obs.evidenceId,probe.evidenceId],supersedes:v.id,independentEvidenceRef:probe.evidenceId})).details;
+        const withdrawn=(await second.request('candidate',{candidate:{...base,closure:'open_proof_gap',execution:'not_tested',proof:'static_trace',evidenceRefs:[probe.evidenceId],supersedes:claim.id}})).value;
+        await expect(h.call('p2o_candidate',{...base,closure:'confirmed',execution:'tested',proof:'offline_reproduction',evidenceRefs:[probe.evidenceId],supersedes:withdrawn.id,independentEvidenceRef:probe.evidenceId})).rejects.toThrow('matching runtime');
+        await second.request('report',{report:{summary:'Withdrawn conclusion; retain missing proof',confidence:'low',evidence:[probe.evidenceId],blocked:'Missing independent effect',openItems:['Controlled boundary remains a proof gap'],outcome:'prerequisite-blocked'}});
+        await h.call('p2o_task',{action:'review',id:validation.id,reason:'Review accepts the observation only; withdrawn effect remains open',evidenceIds:[probe.evidenceId]});
+      } finally {second.close();}
+      const view=await h.call('p2o_workers',{cursor:0});expect(view.details.changes.total).toBeGreaterThan(0);expect(view.details.budgets.workerUsed).toBe(2);
+      const finish=await h.call('p2o_finish');expect(finish.details.report.complete).toBe(true);expect(finish.details.report.counts.reports).toBe(2);expect(finish.details.report.counts.open).toBeGreaterThan(0);
+      const exported=JSON.parse(await readFile(finish.details.exportPath,'utf8'));expect(exported.manifest.report.version).toBe(finish.details.report.version);
+      expect(exported.records.some((r:any)=>r.kind==='task')).toBe(true);
+      expect(await h.emit('tool_call',{toolName:'p2o_task'})).toMatchObject({block:true});
+      const after=await h.emit('context',{messages:context.messages});expect(after.messages.some((m:any)=>m.customType==='p2o_objective_state')).toBe(false);
+    } finally {first.close();}
   });
 
   it('accepts only immutable operator-selected images and forwards the exact binding to workers', async () => {

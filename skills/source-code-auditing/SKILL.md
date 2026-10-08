@@ -49,6 +49,9 @@ Over-filtering hides custom wrappers; under-filtering produces unactionable cand
 ## Fix / Mitigation
 Derived guidance: centralize typed input and authorization contracts, remove unsafe dynamic dispatch, and review every caller of shared helpers. Regression tests should assert the invariant across sibling paths, not merely reject one sample.
 
+## Focused Method
+Hand off the minimal controllable-input → gate → consumer slice, its competing predictions and missing edge. Prefer one targeted observation over another broad sweep; revise the question when a gate assumption fails. Choose role/method from the unanswered question; record expected evidence and a branch stop condition. Use the [owned review contract](../../HANDOFFS.md#focused-method-and-review).
+
 ## Handoffs
 **Static Analysis → Dynamic Analysis:** deliver revision, minimal call/data-flow slice, exact unresolved gate or value, expected observations on both hypothesis outcomes, and proposed instrumentation points. No handoff based solely on a grep hit. **Static Analysis → Fuzzing:** when a reachable processing unit has too many input combinations for manual tests, hand off its harness and reset contract to [fuzzing](../fuzzing/SKILL.md); a crash-free campaign is coverage, not safety. Next: [dynamic analysis](../dynamic-analysis/SKILL.md).
 

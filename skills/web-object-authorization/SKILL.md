@@ -70,6 +70,9 @@ A principal-object-action matrix with the expected decision, the observed decisi
 ## Gaps
 Live authenticated cross-principal comparison remains unverified without the approved transport and controlled identities. Batch handlers, import and export pipelines, background jobs, cache-backed responses, and channel operations need their own reachable path before they can be closed. A static policy matrix proves only the code path that was read; unresolved dispatch, dynamic permission composition, and environment-dependent configuration stay open.
 
+## Focused Method
+Review policy provenance and the actor/object contrast before accepting a packet. Unsupported live authenticated comparison remains a gap. Withdraw an earlier conclusion when current counterevidence changes the effective gate. Choose role/method from the unanswered question; record expected evidence and a branch stop condition. Use the [owned review contract](../../HANDOFFS.md#focused-method-and-review).
+
 ## Handoffs
 Provide the matrix, controlled fixtures, policy locations, observed effects, and untested cells. Next: [authorization auditing](../authorization-auditing/SKILL.md) for identity establishment and alternate interfaces, [remediation](../remediation/SKILL.md) for policy repair, or [web route and input inventory](../web-route-input-inventory/SKILL.md) when the missing input is a route map.
 

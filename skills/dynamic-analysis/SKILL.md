@@ -56,6 +56,9 @@ Detector silence can miss logical boundaries inside a larger allocation or compo
 ## Fix / Mitigation
 Derived guidance: add structured diagnostics at state and authorization boundaries; retain security assertions and memory sanitizers. Instrumentation-only changes are not fixes. Turn the confirmed invariant into a regression test rather than shipping a diagnostic bypass.
 
+## Focused Method
+Report the known-good baseline, matched controls, successes/attempts and original-versus-modified environment. Adapted probes need provenance and observation stage. Stop repeated inconclusive commands; simulation is not deployed-process evidence. Choose role/method from the unanswered question; record expected evidence and a branch stop condition. Use the [owned review contract](../../HANDOFFS.md#focused-method-and-review).
+
 ## Handoffs
 **Static → Dynamic:** require the question, call slice, contrasting predictions, probes, and modification budget. **Dynamic → Root Cause:** return original/modified artifact identities, recorded observations, rejected assumptions, uncertainty, and the narrowest remaining question. Next: the appropriate invariant skill or [exploitability assessment](../exploitability-assessment/SKILL.md).
 

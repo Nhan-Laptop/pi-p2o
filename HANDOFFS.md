@@ -28,6 +28,16 @@ worker's matching reproduction and its receipt; metadata alone does not prove th
 Choose `--export` before assessment to retain bounded redacted receipts and hashes after cleanup. Without export,
 temporary scratch and the ledger are removed. Redaction is best effort; review before sharing.
 
+### Focused method and review
+
+Select the role from the current question: recon for unclear entry/actor/gate, discovery for a concrete hypothesis, validation for another worker’s reproduction, reporting for synthesis, general for bounded support. The lead remains an investigator. No universal stage order or full-target map is required.
+
+Record the question, contrasting observations, source/actor/control provenance, known unknowns, selected skill/workflow and package hash, expected evidence, smallest missing prerequisite and stop condition. Adapted extraction/probe scripts need their own provenance; one sample is not a parameter contract. Stop repeated unchanged failures rather than installing tools or widening transport.
+
+During P2O, only owner service operations accept task packets and reserve assignments. Worker text is an observation/request, not acceptance. Prerequisites name a reviewed task revision backed by same-run receipts; revised support invalidates dependent work. Exact surface/risk reservations are not semantic deduplication. Independent validation explicitly names its reviewed predecessor and accepted revision. Document hashes identify methodology, not target evidence or binary availability.
+
+Review the validator’s **current** conclusion and receipt, including withdrawal and controls. A reported/closed coordination task does not close a security candidate; reporting creates no proof. Missing actor, control or provenance returns the smallest unanswered question. Unsupported URL/authenticated/browser methods remain gaps under the original scope.
+
 ### Provisional owner review
 
 If an authorized investigation finds unexpected artifacts suggesting a pre-existing incident, stop expanding access and notify the authorized owner/responder. Use the common envelope with minimized, redacted diagnostic/artifact references, collection time/method and integrity provenance, explicit attribution/initial-access unknowns, permitted preservation and containment scope. Do not use credentials or test wider access to resolve attribution.

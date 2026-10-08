@@ -1,4 +1,5 @@
-import { appendFile, open, readFile, stat } from 'node:fs/promises';
+import { appendFile, open, stat } from 'node:fs/promises';
+import { constants } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 
 /**
@@ -6,7 +7,7 @@ import { randomUUID } from 'node:crypto';
  * mirroring Strix's notes/coverage ledger: the next agent reads state, not someone's reasoning.
  * Nothing in this file is authority — scope comes from the human, evidence is verified elsewhere.
  */
-export const RECORD_KINDS = ['note', 'coverage', 'observation', 'open', 'report', 'lifecycle', 'evidence', 'candidate'] as const;
+export const RECORD_KINDS = ['note', 'coverage', 'observation', 'open', 'report', 'lifecycle', 'evidence', 'candidate', 'report_part', 'task'] as const;
 export type RecordKind = typeof RECORD_KINDS[number];
 export const COVERAGE_OUTCOMES = ['confirmed', 'ruled_out', 'open_proof_gap', 'clean', 'needs_follow_up'] as const;
 export type CoverageOutcome = typeof COVERAGE_OUTCOMES[number];
@@ -45,19 +46,90 @@ export async function appendRecord(path: string, record: AssessmentRecord): Prom
   await appendFile(path, line, { encoding: 'utf8', mode: 0o600 });
 }
 
+export const LEDGER_BYTES = 64 * 1024 * 1024;
+export const LEDGER_RECORDS = 100000;
+export interface LedgerIndex {
+  records: AssessmentRecord[]; byId: Map<string, AssessmentRecord>; complete: boolean;
+  diagnostics: string[]; issueCount: number; foreign: number; bytes: number;
+}
+
+/** Complete bounded scan of the run-owned regular file. A display tail is never authority. */
+export async function readLedger(path: string, runId?: string): Promise<LedgerIndex> {
+  const result: LedgerIndex = { records: [], byId: new Map(), complete: true, diagnostics: [], issueCount: 0, foreign: 0, bytes: 0 };
+  const issue = (text: string) => { result.complete = false; result.issueCount++; if (result.diagnostics.length < 40) result.diagnostics.push(text); };
+  const file = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
+  try {
+    const info = await file.stat();
+    if (!info.isFile()) throw new Error('Ledger must be a regular file');
+    if (info.size > LEDGER_BYTES) { issue('Ledger exceeds 64 MiB; reconciliation incomplete'); return result; }
+    let pending = '', lineNumber = 0;
+    const taskHeads = new Map<string,AssessmentRecord>();
+    const consume = (line: string) => {
+      lineNumber++;
+      if (!line.trim()) return;
+      if (Buffer.byteLength(line) > 16 * 1024) { issue(`Oversized ledger row ${lineNumber}`); return; }
+      let row: AssessmentRecord;
+      try { row = JSON.parse(line); } catch { issue(`Malformed ledger row ${lineNumber}`); return; }
+      if (!row || !isRecordKind(row.kind) || typeof row.text !== 'string' || typeof row.by !== 'string' || typeof row.at !== 'string'
+        || (row.data !== undefined && (!row.data || typeof row.data !== 'object' || Array.isArray(row.data)))
+        || (row.refs !== undefined && (!Array.isArray(row.refs) || row.refs.some(v => typeof v !== 'string')))
+        || (row.supersedes !== undefined && (typeof row.supersedes !== 'string' || row.supersedes.length > 80))) { issue(`Invalid ledger row ${lineNumber}`); return; }
+      if (runId && row.runId !== undefined && row.runId !== runId) { result.foreign++; return; }
+      if (row.id !== undefined && (typeof row.id !== 'string' || !row.id || row.id.length > 80)) { issue(`Invalid ID at row ${lineNumber}`); return; }
+      if (row.id && result.byId.has(row.id)) { issue(`Duplicate ledger ID ${row.id}`); return; }
+      if (row.version === 2 && !row.id) issue(`Missing v2 ID at row ${lineNumber}`);
+      if (result.records.length >= LEDGER_RECORDS) { issue('Ledger exceeds 100000 records'); return; }
+      if (row.kind === 'task') {
+        const t = row.data?.task as Record<string,unknown> | undefined, head = typeof t?.id === 'string' ? taskHeads.get(t.id) : undefined;
+        if (!t || row.by !== 'owner' || row.workerId || t.runId !== row.runId || typeof t.id !== 'string' || !Array.isArray(t.prerequisites)
+          || !['proposed','reserved','running','reported','reviewed','closed','blocked','cancelled','expired'].includes(String(t.status))
+          || !Number.isInteger(t.revision) || (head ? row.supersedes !== head.id || t.revision !== Number((head.data!.task as Record<string,unknown>).revision)+1 : t.revision !== 1)
+          || Object.keys(t).some(k => ['deadline','scope','token','authority','target','permissions'].includes(k))) { issue(`Invalid owned task revision ${row.id ?? 'missing'}`); return; }
+        taskHeads.set(t.id,row);
+      }
+      result.records.push(row);
+      if (row.id) result.byId.set(row.id, row);
+    };
+    const stream = file.createReadStream({ encoding: 'utf8', autoClose: false, highWaterMark: 64 * 1024 });
+    for await (const chunk of stream) {
+      result.bytes += Buffer.byteLength(chunk);
+      if (result.bytes > LEDGER_BYTES) { issue('Ledger grew beyond byte bound'); break; }
+      pending += chunk;
+      let end: number;
+      while ((end = pending.indexOf('\n')) >= 0) { consume(pending.slice(0, end)); pending = pending.slice(end + 1); }
+      if (Buffer.byteLength(pending) > 16 * 1024) { issue('Oversized unterminated ledger row'); break; }
+    }
+    if (pending.trim()) { issue('Uncommitted or damaged ledger tail'); }
+    const prior = new Set<string>();
+    for (const row of result.records) {
+      if (row.supersedes) {
+        const previous = result.byId.get(row.supersedes);
+        if (!previous || !prior.has(row.supersedes) || previous === row || previous.kind !== row.kind || (row.kind === 'candidate' && (previous.data?.candidate !== row.data?.candidate || previous.surface !== row.surface || previous.risk !== row.risk))) issue(`Invalid revision ${row.id ?? 'legacy'}`);
+      }
+      if (row.resolves && (!Array.isArray(row.resolves) || row.resolves.some(id => !prior.has(id) || result.byId.get(id)?.kind !== 'open'))) issue(`Invalid resolution ${row.id ?? 'legacy'}`);
+      if (row.id) prior.add(row.id);
+    }
+    return result;
+  } finally { await file.close(); }
+}
+
+/** Legacy bounded display API. Integrity-sensitive callers use readLedger directly. */
 export async function readRecords(path: string, limit = RECORD_READ_LIMIT, strict = false): Promise<AssessmentRecord[]> {
-  let text: string;
-  try { text = await readFile(path, 'utf8'); } catch (error) { if (strict) throw error; return []; }
-  const records: AssessmentRecord[] = [];
-  for (const line of text.split('\n')) {
-    const trimmed = line.trim();
-    if (!trimmed) continue;
-    try {
-      const parsed = JSON.parse(trimmed) as AssessmentRecord;
-      if (parsed && typeof parsed === 'object' && isRecordKind(parsed.kind) && typeof parsed.text === 'string') records.push(parsed);
-    } catch { /* a truncated tail line is not a reason to lose the rest */ }
-  }
-  return records.slice(-limit);
+  try { return (await readLedger(path)).records.slice(-Math.max(1, limit)); }
+  catch (error) { if (strict) throw error; return []; }
+}
+
+export interface LedgerPage { records: AssessmentRecord[]; total: number; cursor: number; nextCursor?: number; complete: boolean; truncated: boolean; diagnostics: string[] }
+export function ledgerPage(index: LedgerIndex, options: { cursor?: number; limit?: number; id?: string } = {}): LedgerPage {
+  const cursor = options.cursor ?? Math.max(0, index.records.length - (options.limit ?? 50));
+  const limit = options.limit ?? 50;
+  if (!Number.isInteger(cursor) || cursor < 0 || cursor > index.records.length || !Number.isInteger(limit) || limit < 1 || limit > 100) throw new Error('Invalid ledger cursor/limit');
+  const candidates = options.id ? [index.byId.get(options.id)].filter((r): r is AssessmentRecord => Boolean(r)) : index.records.slice(cursor, cursor + limit);
+  const records: AssessmentRecord[] = []; let bytes = 0;
+  for (const row of candidates) { const size = Buffer.byteLength(JSON.stringify(row)); if (bytes + size > 48 * 1024) break; records.push(row); bytes += size; }
+  const next = cursor + records.length;
+  return { records, total: index.records.length, cursor, ...(!options.id && next < index.records.length ? { nextCursor: next } : {}), complete: index.complete,
+    truncated: records.length < candidates.length || (!options.id && (cursor > 0 || next < index.records.length)), diagnostics: index.diagnostics };
 }
 
 export interface WorkerSummary {
@@ -70,6 +142,7 @@ export interface RecordsSummary {
   open: AssessmentRecord[];
   workers: WorkerSummary[];
   lifecycle: AssessmentRecord[];
+  coverageTotal: number; openTotal: number; lifecycleTotal: number; omitted: number;
 }
 
 /** Compact projection for p2o_workers: what the owner needs to decide the next move, not the raw log. */
@@ -96,7 +169,9 @@ export function summarizeRecords(records: AssessmentRecord[]): RecordsSummary {
     entry.last = record;
     workers.set(record.workerId, entry);
   }
-  return { total: records.length, coverage: coverage.slice(-40), open: open.slice(-40), workers: [...workers.values()], lifecycle: lifecycle.slice(-20) };
+  return { total: records.length, coverage: coverage.slice(-40), open: open.slice(-40), workers: [...workers.values()], lifecycle: lifecycle.slice(-20),
+    coverageTotal: coverage.length, openTotal: open.length, lifecycleTotal: lifecycle.length,
+    omitted: Math.max(0, coverage.length - 40) + Math.max(0, open.length - 40) + Math.max(0, lifecycle.length - 20) };
 }
 
 /** Blocking owner-side wait used instead of model polling (Strix's `wait_for_agents`). */

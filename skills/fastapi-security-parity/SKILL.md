@@ -39,6 +39,9 @@ One overlay consumes one of the three document slots: a technique plus a playboo
 ## Gaps
 Unresolved version backports, dynamically registered routes evaluated only at startup, deployment-specific middleware ordering, and proxy behavior that differs from the supplied configuration all stay open. An alternate version or prefix whose intended role is inferred rather than contracted stays an `open_proof_gap`. A parity check that could not be exercised is recorded as unverified for the affected route; other frameworks and protocol overlays remain deferred until a target and authorized test environment justify them.
 
+## Focused Method
+Bind the question to the supplied application factory and effective route/consumer chain. Preserve controls and static-versus-observed provenance; do not substitute framework annotations or frontend mocks for backend identity enforcement. Choose role/method from the unanswered question; record expected evidence and a branch stop condition. Use the [owned review contract](../../HANDOFFS.md#focused-method-and-review).
+
 ## Handoffs
 Provide the resolved versions, the effective route and dependency path, the middleware order, the protected effect or its absence, and the exact configuration the observation applies to. Next: [source code auditing](../source-code-auditing/SKILL.md) for the wider convention sweep, [authorization auditing](../authorization-auditing/SKILL.md) for identity and action policy, or [web object authorization](../web-object-authorization/SKILL.md) for object-level closure.
 

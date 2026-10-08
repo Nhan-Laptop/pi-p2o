@@ -10,7 +10,7 @@ const REGISTRATION = (patch: Partial<WorkerRegistration> = {}): WorkerRegistrati
   parentWorkerId: null, token: 'c'.repeat(32), commandBudget: 3, used: 0, startedAt: Date.now(), stopped: false, ...patch,
 });
 
-async function fixture(patch: { budget?: number; total?: number; stdout?: string; registration?: Partial<WorkerRegistration> } = {}) {
+async function fixture(patch: { budget?: number; total?: number; stdout?: string; registration?: Partial<WorkerRegistration>; reportFails?: boolean } = {}) {
   const control = await mkdtemp(join(tmpdir(), 'p2o-broker-'));
   const records = join(control, 'records.jsonl');
   await writeFile(records, '', { mode: 0o600 });
@@ -22,7 +22,8 @@ async function fixture(patch: { budget?: number; total?: number; stdout?: string
     note: async record => { calls.push(`note ${record.kind}`); await appendRecord(records, record); },
     ledger: async limit => (await readRecords(records, limit)),
     delegate: async (input, parent) => { calls.push(`delegate ${parent.workerId} ${input.role}`); return { workerId: 'p2o-general-bbbbbb', name: 'p2o-general-bbbbbb', paneId: 'w1T:p10', role: input.role ?? 'general', depth: parent.depth + 1 }; },
-    report: async (workerId, report) => { calls.push(`report ${workerId} ${report.confidence}`); },
+    report: async (workerId, report) => { if (patch.reportFails) throw Error('inert report storage failure'); calls.push(`report ${workerId} ${report.confidence}`); },
+    onBudget: (id,reason) => {calls.push(`budget ${id} ${reason}`);},
     onProblem: problem => { calls.push(`problem ${problem}`); },
   }, { totalCommandBudget: patch.total ?? 100 });
   for (const registration of [REGISTRATION(patch.registration)]) { broker.register(registration); registrations.set(registration.workerId, registration); }
@@ -80,6 +81,7 @@ describe('sandbox broker', () => {
       await client.request('exec', { command: 'one' });
       await client.request('exec', { command: 'two' });
       await expect(client.request('exec', { command: 'three' })).rejects.toThrow(/budget exhausted/);
+      expect(f.calls.filter(c=>c.startsWith('budget'))).toHaveLength(1);
       f.broker.revoke('p2o-recon-aaaaaa');
       await expect(client.request('exec', { command: 'four' })).rejects.toThrow(/stopped by the owner/);
       client.close();
@@ -117,11 +119,11 @@ describe('sandbox broker', () => {
     const control = await mkdtemp(join(tmpdir(), 'p2o-broker-abort-'));
     const records = join(control, 'records.jsonl');
     await writeFile(records, '', { mode: 0o600 });
-    let started: () => void = () => {};
+    let started: () => void = () => {}, starts=0;
     const began = new Promise<void>(resolve => { started = resolve; });
     const broker = new Broker(control, {
       exec: (_command, _seconds, _workdir, signal) => new Promise((_resolve, reject) => {
-        started();
+        if (++starts===2) started();
         signal.addEventListener('abort', () => reject(new Error('Cancelled')), { once: true });
       }),
       http: async () => { throw new Error('unused'); },
@@ -133,12 +135,14 @@ describe('sandbox broker', () => {
     broker.register(REGISTRATION());
     await broker.start();
     const client = new BrokerClient(broker.socket, 'c'.repeat(32), { connectMs: 2000, requestMs: 30_000 });
+    const copied = new BrokerClient(broker.socket, 'c'.repeat(32), { connectMs:2000,requestMs:30000 });
     try {
       const pending = client.request('exec', { command: 'sleep 60', timeout: 60 });
+      const other = copied.request('exec',{command:'sleep 60',timeout:60});
       await began;
       broker.revoke('p2o-recon-aaaaaa');
-      await expect(pending).rejects.toThrow(/Cancelled|stopped by the owner/);
-    } finally { client.close(); await broker.stop(); await rm(control, { recursive: true, force: true }); }
+      const results=await Promise.allSettled([pending,other]);expect(results.every(r=>r.status==='rejected')).toBe(true);
+    } finally { client.close(); copied.close(); await broker.stop(); await rm(control, { recursive: true, force: true }); }
   });
 
   it('fails closed when the owner goes away', async () => {
@@ -150,6 +154,29 @@ describe('sandbox broker', () => {
       await expect(client.request('status')).rejects.toThrow(/Do not retry/);
       client.close();
     } finally { await f.close(); }
+  });
+
+  it('reserves coordination after knowledge exhaustion without increasing the 200-call ceiling', async () => {
+    const f=await fixture();const client=new BrokerClient(f.socket,'c'.repeat(32),{requestMs:2000});
+    try {
+      for(let i=0;i<160;i++)await client.request('skill_list').catch(()=>{});
+      await expect(client.request('skill_list')).rejects.toThrow('40 coordination');
+      for(let i=0;i<40;i++)await client.request('note',{kind:'open',text:'bounded fixture gap'});
+      await expect(client.request('note',{kind:'open',text:'over budget'})).rejects.toThrow('Coordination budget');
+      await client.request('report',{report:{summary:'Knowledge exhausted; bounded partial report',confidence:'low',outcome:'partial-budget'}});
+      expect(f.broker.registration('p2o-recon-aaaaaa')?.reported?.outcome).toBe('partial-budget');
+    } finally {client.close();await f.close();}
+  });
+  it('blocks a known runtime mismatch and preserves correlated report-failure/oversize errors', async () => {
+    const f=await fixture({registration:{requestedRuntime:{model:'fixture-provider/model',thinking:'xhigh'}},reportFails:true});
+    const client=new BrokerClient(f.socket,'c'.repeat(32),{requestMs:1000});
+    try {
+      expect(await client.request('runtime',{model:'fixture-provider/model',thinking:'medium'})).toMatchObject({verified:false});
+      await expect(client.request('exec',{command:'true'})).rejects.toThrow('profile mismatch');
+      await expect(client.request('report',{report:{summary:'x'.repeat(70000)}})).rejects.toThrow('frame limit');
+      await expect(client.request('report',{report:{summary:'Mismatch; no investigation',confidence:'low'}})).rejects.toThrow('inert report storage failure');
+      expect((await client.request('status')).reported).toBe(false);expect(f.calls.some(c=>c.startsWith('exec'))).toBe(false);
+    } finally {client.close();await f.close();}
   });
 
   it('normalizes untrusted worker reports instead of trusting their shape', () => {

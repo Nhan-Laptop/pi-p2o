@@ -25,6 +25,10 @@ The lead calls `p2o_finish` before its report; that refuses until every worker h
 removes the sandbox, verifies container removal with the daemon, and reports how many worker panes Herdr actually
 closed (a pane it refuses to close is named, and by then that worker's ticket is already revoked). `/p2o stop` cancels manually and does the same.
 
+## Focused state and review
+
+The lead can use `p2o_task` to record a question, contrast, role/method and stop condition; accept a reported packet with receipts; then delegate its `taskId` with reviewed prerequisite revisions. Workers cannot accept owner packets. `p2o_ledger {cursor:0}` traverses complete bounded run state; `p2o_workers {cursor}` returns changes. Request-local objective refresh never starts another turn or renews scope. Full reports use committed hashed parts; final projection/export states omissions and failures. See [assessment state](ASSESSMENT_STATE.md) for limits and compatibility.
+
 ## Reconnaissance
 
 Start by reading existing ledger/coverage and building a bounded surface inventory. Record entry/input, observed

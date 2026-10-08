@@ -48,6 +48,9 @@ Assuming commit means immediate destruction; counting user handles instead of al
 ## Fix / Mitigation
 Source-supported patterns include delaying release to final close (B021), state-validity checks at alternate lookups (B043), and browser-side request-state checks (B067). Derived guidance: pair ownership changes atomically, revoke registries/borrowers before destruction, hold appropriate references across callbacks, and make rollback restore the same invariant as commit. Do not terminate a peer for a locally caused transition without tracking provenance.
 
+## Focused Method
+Preserve state generation, event order, failed assumptions and the smallest next observation. Report partial publication separately from stale use; a timing hypothesis does not authorize parallel or race testing. Choose role/method from the unanswered question; record expected evidence and a branch stop condition. Use the [owned review contract](../../HANDOFFS.md#focused-method-and-review).
+
 ## Handoffs
 **Lifetime Audit → Race Audit:** provide the object graph, transition ledger, synchronization gaps, and proposed event ordering. **Discovery → Impact:** provide confirmed invalidated reference, use type, barriers, actor/configuration, and reproduction evidence. Next: [race auditing](../race-condition-auditing/SKILL.md) or [exploitability assessment](../exploitability-assessment/SKILL.md).
 

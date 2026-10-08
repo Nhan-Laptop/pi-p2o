@@ -59,6 +59,9 @@ A route table with declared method, declared identity requirement, baseline stat
 ## Gaps
 Authenticated routes, browser-only routes, and channel operations stay unverified without a separately authorized transport. Specification drift, conditionally registered routes, dynamic route construction evaluated at runtime, parameters consumed only by middleware, and authorization declared solely inside a handler remain open inventory questions. Report gaps per route; never summarize an incomplete inventory as a clean surface.
 
+## Focused Method
+Record extraction script/version and supplied revision. Compare controlled representative samples; one response cannot establish required parameters or deployment. After repeated unchanged failures, keep the smallest extraction gap rather than widening transport. Choose role/method from the unanswered question; record expected evidence and a branch stop condition. Use the [owned review contract](../../HANDOFFS.md#focused-method-and-review).
+
 ## Handoffs
 Provide the route table with stable surface IDs, input locations, actors/gates, handler or sensitive consumer where known, receipt IDs, extraction method and fact/inference/hypothesis labels. Include baseline/control outcomes, covered and unverified routes, corrected assumptions and a bounded ranked investigation queue. Record why the selected surface/risk is next, the expected observation and stop condition; an unclear gate returns to mapping rather than a premature finding. Next: [authorization auditing](../authorization-auditing/SKILL.md) for the policy question, [web object authorization](../web-object-authorization/SKILL.md) for object-level closure, or [attack surface mapping](../attack-surface-mapping/SKILL.md) when the interface inventory feeds a wider boundary map.
 

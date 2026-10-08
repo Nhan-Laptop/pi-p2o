@@ -2,7 +2,7 @@ import { createServer, createConnection, type Server, type Socket } from 'node:n
 import { rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { ProcessResult } from './process.js';
-import { isOutcome, isRecordKind, type AssessmentRecord, type CoverageOutcome } from './records.js';
+import { isOutcome, isRecordKind, type AssessmentRecord, type CoverageOutcome, type LedgerPage } from './records.js';
 
 /**
  * Owner-served broker. Strix shares one sandbox session with every agent; Pi workers are separate
@@ -21,6 +21,7 @@ export interface WorkerReport {
   openItems: string[];
   confidence: 'high' | 'medium' | 'low';
   blocked?: string;
+  outcome?: 'completed' | 'partial-budget' | 'prerequisite-blocked' | 'provider-error' | 'cancelled' | 'expired' | 'unknown';
 }
 
 export interface WorkerRegistration {
@@ -36,16 +37,22 @@ export interface WorkerRegistration {
   startedAt: number;
   stopped: boolean;
   reported?: WorkerReport;
+  taskId?: string;
+  requestedRuntime?: { model?: string; thinking?: string };
+  effectiveRuntime?: { model?: string; thinking?: string; verified: boolean };
 }
 
-export interface DelegateInput { focus: string; task: string; context?: string; role?: string; skills?: string[]; model?: string; workflow?: string; thinking?: string }
+export interface DelegateInput { focus: string; task: string; context?: string; role?: string; skills?: string[]; model?: string; workflow?: string; thinking?: string; taskId?: string }
 export interface DelegateResult { workerId: string; name: string; paneId: string; role: string; model?: string; depth: number }
 
 export interface BrokerDeps {
   exec(command: string, seconds: number, workdir: string, signal: AbortSignal): Promise<ProcessResult>;
   http(url: string, method: 'GET' | 'HEAD', signal: AbortSignal, workerId?: string): Promise<ProcessResult>;
   note(record: AssessmentRecord): Promise<void>;
-  ledger(limit: number, id?: string): Promise<AssessmentRecord[]>;
+  ledger(limit: number, id?: string, cursor?: number): Promise<AssessmentRecord[] | LedgerPage>;
+  objective?(worker: WorkerRegistration): Promise<unknown>;
+  beforeCommand?(worker: WorkerRegistration): Promise<void>;
+  onBudget?(workerId: string, reason: string): void;
   delegate(input: DelegateInput, parent: WorkerRegistration): Promise<DelegateResult>;
   report(workerId: string, report: WorkerReport): Promise<void>;
   knowledge?(op: string, request: Record<string, unknown>, worker: WorkerRegistration): Promise<unknown>;
@@ -87,6 +94,7 @@ export function normalizeReport(raw: unknown): WorkerReport {
     openItems: stringList(input.openItems, 20, 1000),
     confidence,
     blocked: text(input.blocked, 1000),
+    ...(typeof input.outcome === 'string' && ['completed','partial-budget','prerequisite-blocked','provider-error','cancelled','expired','unknown'].includes(input.outcome) ? { outcome: input.outcome as WorkerReport['outcome'] } : {}),
   };
 }
 
@@ -95,9 +103,10 @@ export class Broker {
   private readonly clients = new Set<Socket>();
   private readonly registrations = new Map<string, WorkerRegistration>();
   /** Commands in flight per worker, so revoking a worker ends its wait instead of letting it run on. */
-  private readonly inFlight = new Map<string, AbortController>();
+  private readonly inFlight = new Map<string, Set<AbortController>>();
   private totalUsed = 0;
   private readonly knowledgeUsed = new Map<string, number>();
+  private readonly reporting = new Set<string>();
   private readonly socketPath: string;
   constructor(private readonly control: string, private readonly deps: BrokerDeps, private readonly limits: BrokerLimits) {
     this.socketPath = join(control, 'sandbox.sock');
@@ -115,7 +124,7 @@ export class Broker {
   revoke(workerId: string): void {
     const registration = this.registrations.get(workerId);
     if (registration) registration.stopped = true;
-    this.inFlight.get(workerId)?.abort();
+    for (const controller of this.inFlight.get(workerId) ?? []) controller.abort();
     this.inFlight.delete(workerId);
   }
 
@@ -161,7 +170,7 @@ export class Broker {
             send({ ok: true, workerId });
             return;
           }
-          const response = await this.dispatch(workerId, request);
+          const response = await this.dispatch(workerId, request).catch(error => ({ok:false,error:errText(error)}));
           send({ id: request?.id, ...response });
         }).catch(error => { fail(String(error instanceof Error ? error.message : error).slice(0, 400)); });
       }
@@ -183,10 +192,12 @@ export class Broker {
     const registration = this.registrations.get(workerId);
     if (!registration || registration.stopped) return { ok: false, error: 'This worker was stopped by the owner' };
     const op = text(request?.op, 32);
+    if (this.reporting.has(workerId) && op !== 'status') return {ok:false,error:'Worker report persistence in progress; no further requests'};
+    if (registration.effectiveRuntime?.verified === false && !['runtime','report','status'].includes(op ?? '')) return { ok:false,error:'Runtime profile mismatch; report blocked, no investigation' };
     switch (op) {
       case 'skill_list': case 'skill_read': {
         const used = this.knowledgeUsed.get(workerId) ?? 0;
-        if (used >= 200) return { ok: false, error: 'Knowledge read budget exhausted (separate from target commands)' };
+        if (used >= 160) return { ok: false, error: 'Knowledge read budget exhausted; 40 coordination calls reserved for notes/candidates (200 total)' };
         this.knowledgeUsed.set(workerId, used + 1);
         if (!this.deps.knowledge) return { ok: false, error: 'Knowledge service unavailable' };
         try { return { ok: true, value: await this.deps.knowledge(op, request, registration) }; }
@@ -200,12 +211,23 @@ export class Broker {
         try { return { ok: true, value: await this.deps.candidate(request?.candidate, registration) }; }
         catch (error) { return { ok: false, error: errText(error) }; }
       }
+      case 'objective':
+        return { ok: true, value: await this.deps.objective?.(registration) };
+      case 'runtime': {
+        const model = text(request?.model,200), thinking = text(request?.thinking,16);
+        const expected = registration.requestedRuntime;
+        const modelMatches = !expected?.model || (expected.model.includes('/') ? model === expected.model : model?.split('/').slice(1).join('/') === expected.model);
+        const verified = Boolean(model && thinking && modelMatches && (!expected?.thinking || thinking === expected.thinking));
+        registration.effectiveRuntime = { model,thinking,verified };
+        return { ok:true,verified };
+      }
       case 'status':
         return { ok: true, workerId, used: registration.used, budget: registration.commandBudget, reported: Boolean(registration.reported) };
       case 'ledger': {
         // Workers may read the shared ledger: it is how a nested worker sees its parent's notes.
         const limit = Number.isInteger(request?.limit) ? Math.min(Math.max(request.limit, 1), 100) : 50;
-        const slice = await this.deps.ledger(limit, text(request?.recordId, 80));
+        const slice = await this.deps.ledger(limit, text(request?.recordId, 80), Number.isInteger(request?.cursor) ? request.cursor : undefined);
+        if (!Array.isArray(slice)) return { ok:true,...slice };
         const records: AssessmentRecord[] = []; let bytes = 0;
         for (const record of slice.slice().reverse()) {
           const size = Buffer.byteLength(JSON.stringify(record));
@@ -220,7 +242,7 @@ export class Broker {
         const seconds = Number.isInteger(request?.timeout) ? request.timeout : 30;
         if (!command || !command.trim()) return { ok: false, error: 'command must be 1..8192 characters' };
         if (seconds < 1 || seconds > 60) return { ok: false, error: 'timeout must be 1..60 seconds' };
-        const spent = this.spend(registration);
+        const spent = await this.prepareCommand(registration);
         if (spent) return spent;
         return this.whileRunning(workerId, async signal => {
           try {
@@ -234,7 +256,7 @@ export class Broker {
         const url = text(request.url, 4096);
         const method = request?.method === 'HEAD' ? 'HEAD' : 'GET';
         if (!url) return { ok: false, error: 'url must be 1..4096 characters' };
-        const spent = this.spend(registration);
+        const spent = await this.prepareCommand(registration);
         if (spent) return spent;
         return this.whileRunning(workerId, async signal => {
           try {
@@ -269,7 +291,7 @@ export class Broker {
           const worker = await this.deps.delegate({
             focus, task, context: text(request?.context, 4000), role: text(request?.role, 32),
             skills: stringList(request?.skills, 3, 64).filter(skill => /^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(skill)),
-            model: text(request?.model, 200), workflow: text(request?.workflow, 64), thinking: text(request?.thinking, 16),
+            model: text(request?.model, 200), workflow: text(request?.workflow, 64), thinking: text(request?.thinking, 16), taskId: text(request?.taskId,80),
           }, registration);
           return { ok: true, worker };
         } catch (error) { return { ok: false, error: errText(error) }; }
@@ -277,11 +299,15 @@ export class Broker {
       case 'report': {
         if (registration.reported) return { ok: false, error: 'this worker already reported' };
         const report = normalizeReport(request?.report);
-        await this.deps.report(workerId, report);
-        registration.reported = report;
-        // Reporting ends this worker's authority: a copy of its ticket must not keep target access.
-        this.revoke(workerId);
-        return { ok: true };
+        if (this.reporting.has(workerId)) return {ok:false,error:'Report persistence already in progress'};
+        this.reporting.add(workerId);
+        try {
+          await this.deps.report(workerId, report);
+          registration.reported = report;
+          // Reporting ends this worker's authority: a copied ticket cannot retain target access.
+          this.revoke(workerId);
+          return { ok: true };
+        } finally { this.reporting.delete(workerId); }
       }
       default:
         return { ok: false, error: 'unsupported broker operation' };
@@ -290,19 +316,24 @@ export class Broker {
 
   private async whileRunning(workerId: string, run: (signal: AbortSignal) => Promise<Record<string, unknown>>): Promise<Record<string, unknown>> {
     const controller = new AbortController();
-    this.inFlight.set(workerId, controller);
-    try {
-      return await run(controller.signal);
-    } finally {
-      if (this.inFlight.get(workerId) === controller) this.inFlight.delete(workerId);
-    }
+    const pending = this.inFlight.get(workerId) ?? new Set<AbortController>();
+    pending.add(controller); this.inFlight.set(workerId,pending);
+    try { return await run(controller.signal); }
+    finally { pending.delete(controller); if (!pending.size && this.inFlight.get(workerId) === pending) this.inFlight.delete(workerId); }
+  }
+
+  private async prepareCommand(registration: WorkerRegistration): Promise<Record<string,unknown> | undefined> {
+    try { await this.deps.beforeCommand?.(registration); } catch (error) { return {ok:false,error:errText(error)}; }
+    if (registration.stopped || this.reporting.has(registration.workerId)) return {ok:false,error:'Worker revoked or reporting; no new target command'};
+    return this.spend(registration);
   }
 
   /** Workers stop at the reserve so the owner keeps budget for reconciliation and the final report. */
   private spend(registration: WorkerRegistration): Record<string, unknown> | undefined {
-    if (registration.used >= registration.commandBudget) return { ok: false, error: 'worker command budget exhausted; report what you have with p2o_report' };
     const reserve = Math.floor(this.limits.totalCommandBudget * WORKER_BUDGET_RESERVE);
-    if (this.totalUsed >= reserve) return { ok: false, error: 'assessment worker budget reserve reached; report what you have with p2o_report' };
+    const reason = registration.used >= registration.commandBudget ? 'worker command budget exhausted; report what you have with p2o_report'
+      : this.totalUsed >= reserve ? 'assessment worker budget reserve reached; report what you have with p2o_report' : undefined;
+    if (reason) { this.deps.onBudget?.(registration.workerId,reason); return {ok:false,error:reason}; }
     registration.used += 1; this.totalUsed += 1;
     return undefined;
   }
@@ -310,7 +341,7 @@ export class Broker {
   get used(): number { return this.totalUsed; }
 
   async stop(): Promise<void> {
-    for (const controller of this.inFlight.values()) controller.abort();
+    for (const pending of this.inFlight.values()) for (const controller of pending) controller.abort();
     this.inFlight.clear();
     for (const client of this.clients) client.destroy();
     this.clients.clear();
@@ -417,6 +448,7 @@ export class BrokerClient {
       const socket = this.socket;
       if (!socket) throw new Error(this.broken ?? 'owner broker unavailable');
       const id = ++this.sequence;
+      if (Buffer.byteLength(JSON.stringify({ ...payload,id,op })) > MAX_LINE_BYTES - 1) throw new Error('Request exceeds broker frame limit; narrow the report or request');
       const timeoutMs = options.timeoutMs ?? this.options.requestMs ?? 60_000;
       return new Promise<T>((resolve, reject) => {
         const timer = setTimeout(() => { this.pending.delete(id); reject(new Error(`p2o ${op} request timed out after ${timeoutMs}ms`)); }, timeoutMs);

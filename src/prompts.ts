@@ -58,12 +58,12 @@ export function ownerInstructions(facts: OwnerPromptFacts): string {
       ? `Available: up to ${facts.delegation.maxWorkers} concurrent workers, depth ${facts.delegation.maxDepth}, ${facts.workerBudget} brokered commands total.`
       : `Delegation is NOT available (${facts.delegation.reason ?? 'disabled'}). Do the work yourself; do not invent workers or independent verification.`,
     'You are a working lead, not a dispatcher. Delegate reactively for specialization, parallel coverage or independent validation. Check existing work first; never duplicate a surface+risk assignment.',
-    'Each brief owns one objective and states known facts, evidence, coverage, success criteria and stop conditions. Redirect misdirected work and stop redundant workers.',
+    'Keep focused questions, chosen roles/methods, contrasting predictions and stop conditions current. Accept prerequisites with reviewed evidence before dependent work; revised support requires renewed review. Each brief owns one objective. Redirect misdirected work and stop redundant workers.',
     'Discovery → separate validation → reviewed reporting. Verify cited observations before repeating a worker claim; discovery cannot independently validate itself.',
     '', 'EVIDENCE AND CLOSURE',
     'Evidence receipts and document hashes are not automatic proof. Distinguish observations, inferences and hypotheses, static traces, offline reproduction and live effects. Simulated consumers are not browser execution; source presence is not deployed reachability.',
     'Establish intended-policy provenance before claiming a violation. Sibling-route differences and placeholder credentials alone prove neither broken policy nor deployment leaks. Inferred policy and missing, blocked or untested proof remain open_proof_gap, never safety.',
-    'Give each candidate explicit closure: confirmed with evidence, ruled_out with the specific effective control and location, or open_proof_gap. Independent verification requires a separate worker reproducing the effect with reviewable evidence.',
+    'Give each candidate explicit closure: confirmed with evidence, ruled_out with the specific effective control and location, or open_proof_gap. Independent verification requires a separate worker reproducing the effect with a current matching conclusion and reviewable receipt; withdrawn or stale support cannot validate a revised claim.',
     'Preserve evidence links, controls, limitations and revision history. Record coverage, including ruled-out and unresolved surfaces. Argue counterevidence, calibrate confidence and limit severity to demonstrated impact.',
     'Collect or withdraw every worker and complete verified cleanup before the final report. Report findings with reproduction and evidence, confidence, reviewed/tested/ruled-out/blocked/untested coverage and unresolved gaps. Never declare cleanup successful without verification.',
   ].join('\n');
@@ -84,7 +84,7 @@ export function workerInstructions(ticket: Ticket): string {
   ].join('\n');
 }
 
-export function workerBrief(input: { ticket: Ticket; focus: string; task: string; context?: string; skills?: Array<{ name: string; body: string }> }): string {
+export function workerBrief(input: { ticket: Ticket; focus: string; task: string; context?: string; skills?: Array<{ name: string; body: string }>; objective?: string }): string {
   const { ticket, focus, task, context, skills } = input;
   return [
     `[p2o worker ${ticket.workerId} · role ${ticket.role} · depth ${ticket.depth} · run ${ticket.runId}]`,
@@ -107,5 +107,6 @@ export function workerBrief(input: { ticket: Ticket; focus: string; task: string
     '',
     ...(ticket.role === 'recon' ? [reconInstructions(ticket.target.kind)] : []),
     `TASK:\n${task.trim()}`,
+    ...(input.objective ? ['', input.objective] : []),
   ].join('\n');
 }

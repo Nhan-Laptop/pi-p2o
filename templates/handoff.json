@@ -12,6 +12,22 @@
   "question": "",
   "predictions": {"if_true": "", "if_false": ""},
   "classification": "unresolved",
+  "coordination": {
+    "task_id": null,
+    "task_revision": null,
+    "parent_task_id": null,
+    "validation_of": null,
+    "role": "",
+    "role_reason": "",
+    "selected_method": {"skill_hashes": {}, "workflow_id": null, "selection_reason": ""},
+    "accepted_prerequisite_revisions": [],
+    "missing_prerequisites": [],
+    "known_unknowns": [],
+    "expected_evidence_output": "",
+    "lead_reviewed": false,
+    "review_receipt_ids": [],
+    "outcome": "unknown"
+  },
   "runtime_evidence": {
     "receipt_ids": [],
     "candidate_id": "",

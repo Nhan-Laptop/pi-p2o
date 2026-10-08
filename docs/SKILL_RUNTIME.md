@@ -21,7 +21,7 @@ Delegation accepts optional `thinking` alongside `model`. Thinking precedence is
 
 Catalog IDs are not host paths. Every package-file component is opened relative to a held Linux directory FD
 with no symlink following; only registered documents are reachable. Knowledge calls have separate bounded
-budgets (400 lead reads, 200 worker knowledge/coordination calls), not the target command reserve. The registry
+budgets (400 lead reads, 200 worker knowledge/coordination calls, with knowledge stopping at 160 used to reserve 40 coordination calls), not the target command reserve. The registry
 is instantiated per assessment; document pages retain consistent bytes/hashes during that run.
 
 ## Tool guidance and reconnaissance
@@ -86,13 +86,15 @@ for a retained artifact.
 - `supersedes`: latest candidate record ID for revisions; contradictory branches are rejected, not silently merged.
 - `resolves`: open-item IDs closed by this evidence-backed candidate, keeping the original history.
 - `independentEvidenceRef`: requires another worker's receipt and a matching runtime-tested candidate recorded
-  by that worker. The lead must still inspect semantics; metadata is not an independent truth oracle.
+  by that worker at its latest relevant revision. Withdrawn support is rejected. The lead must still inspect semantics; metadata is not an independent truth oracle.
 
 Blocked execution cannot establish closed runtime proof. Missing policy or observations remain open proof gaps; a blocked reason is an attributed claim, not automatically verified availability. Unknown evidence IDs and malformed transitions are
 rejected with actionable errors. Legacy notes/reports remain accepted as attributed text; their `clean` outcome
 is only a summary of the stated tested slice, never proof of universal safety. New records use version 2 and IDs;
 old records without them remain readable. The ledger is available to both roles, with `p2o_ledger {id}` for one complete bounded record, so agents can cite observations without rerunning
 work. Projections are bounded; this is not an unbounded artifact store.
+
+Owner-only questions, accepted prerequisite revisions, role/method hashes, cursor deltas, request-local objective refresh and committed normalized reports are described in [assessment state](ASSESSMENT_STATE.md). Skill selection never enables tools. Shared coordination follows [focused method and review](../HANDOFFS.md#focused-method-and-review); the handoff scaffold is initially unresolved/unreviewed, not evidence acceptance.
 
 ## Persistence and failures
 

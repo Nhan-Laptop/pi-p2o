@@ -80,7 +80,7 @@ export class Sandbox {
     return next;
   }
 
-  async exec(command: string, seconds = 30, signal?: AbortSignal, workdir = '/work'): Promise<ProcessResult> {
+  async exec(command: string, seconds = 30, signal?: AbortSignal, workdir = '/work', onRunning?: () => void): Promise<ProcessResult> {
     if (!command || command.length > 8192 || !Number.isInteger(seconds) || seconds < 1 || seconds > 60) throw new Error('Command must be 1..8192 characters; timeout must be 1..60 seconds');
     if (workdir !== '/work' && !/^\/work\/[A-Za-z0-9][A-Za-z0-9._-]{0,60}$/.test(workdir)) throw new Error('Invalid sandbox working directory');
     return this.enqueue(async () => {
@@ -88,6 +88,7 @@ export class Sandbox {
       const combined = AbortSignal.any([this.cancellation.signal, ...(signal ? [signal] : [])]);
       try {
         await this.ensureWorkdir(workdir, combined);
+        onRunning?.();
         const result = await this.docker(['exec', '--workdir', workdir, this.shell, '/usr/bin/timeout', '--signal=KILL', `${seconds}s`, '/bin/sh', '-c', command], { timeoutMs: (seconds + 5) * 1000, signal: combined });
         if (result.code === 124 || result.code === 137) throw new Error('Sandbox command timed out; stopping the sandbox to remove background processes');
         return result;
@@ -112,7 +113,7 @@ export class Sandbox {
     this.workdirs.add(workdir);
   }
 
-  async http(value: string, method: 'GET' | 'HEAD' = 'GET', signal?: AbortSignal): Promise<ProcessResult> {
+  async http(value: string, method: 'GET' | 'HEAD' = 'GET', signal?: AbortSignal, onRunning?: () => void): Promise<ProcessResult> {
     if (!['GET', 'HEAD'].includes(method) || value.length > 4096) throw new Error('Only GET/HEAD and URLs up to 4096 characters are supported');
     return this.enqueue(async () => {
       if (this.stopped || !this.shell) throw new Error('No active sandbox');
@@ -125,6 +126,7 @@ export class Sandbox {
         '--max-filesize', '1048576', '--max-redirs', '0', '--no-location', '--silent', '--show-error', '--include',
         '--resolve', `${url.hostname}:${port}:${address}`, ...(method === 'HEAD' ? ['--head'] : []), '--url', url.href]);
       try {
+        onRunning?.();
         return await this.docker(['start', '--attach', name], {
           timeoutMs: 25_000, signal: AbortSignal.any([this.cancellation.signal, ...(signal ? [signal] : [])]),
         });

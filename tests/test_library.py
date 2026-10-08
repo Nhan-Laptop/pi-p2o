@@ -252,6 +252,12 @@ class LibraryGateTests(unittest.TestCase):
             self.edit_json(root, "research/corpus.json", lambda c: next(e for e in c["entries"] if e["disposition"] == "duplicate").update(canonical_source="B010"))
         self.assert_rejected(mutate, "duplicate has no retained")
 
+    def test_coordination_scaffold_is_not_lead_acceptance(self):
+        self.assert_rejected(lambda root: self.edit_json(root, "templates/handoff.json", lambda c: c["coordination"].update(lead_reviewed=True)), "falsely accepted")
+
+    def test_coordination_scaffold_requires_method(self):
+        self.assert_rejected(lambda root: self.edit_json(root, "templates/handoff.json", lambda c: c["coordination"].pop("selected_method")), "coordination scaffold incomplete")
+
     def test_scaffold_requires_uncertainty_and_fields(self):
         self.assert_rejected(lambda root: self.edit_json(root, "templates/handoff.json", lambda c: c.pop("negative_controls")), "handoff scaffold incomplete")
 

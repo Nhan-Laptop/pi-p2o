@@ -49,6 +49,9 @@ A source fix is missing from the distributed package (B006); one lookup ignores 
 ## Fix / Mitigation
 Apply the invariant-specific fix: checked arithmetic and complete bounds; consistent snapshot parsing; correct final-release ownership; consumer-side state/authorization checks; own-property/fixed dispatch; inert serialization; fail-closed dependency behavior. Supplement with least privilege, restricted activation/listeners, non-executable uploads, network segmentation, bounded work, and secret rotation when exposure is established. Rate limiting, CSP, CFI, allocator separation, and access restriction are defense in depth, not interchangeable root-cause repairs.
 
+## Focused Method
+Consume reviewed current claims with their controls and gaps. Invalidate proposals relying on withdrawn validation; separate proposed repair, shipped artifact and active enforcement. Formatting or a fix recommendation is not independent reproduction. Choose role/method from the unanswered question; record expected evidence and a branch stop condition. Use the [owned review contract](../../HANDOFFS.md#focused-method-and-review).
+
 ## Handoffs
 **Root Cause → Engineering:** provide invariant, authoritative enforcement point, all consumers/variants, impact limits, normal controls, regression matrix, and emergency mitigations. **Engineering → Verification/Operations:** provide actual build IDs, test receipts, rollout scope, detection coverage, compatibility changes, and residual reachability. Return to [patch analysis](../patch-diff-analysis/SKILL.md) if artifact contents disagree.
 

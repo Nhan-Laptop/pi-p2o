@@ -2,7 +2,7 @@ import { randomUUID, createHash } from 'node:crypto';
 import { constants } from 'node:fs';
 import { mkdir, open } from 'node:fs/promises';
 import { join } from 'node:path';
-import { appendRecord, readRecords, type AssessmentRecord } from './records.js';
+import { appendRecord, readLedger, type AssessmentRecord } from './records.js';
 import type { ProcessResult } from './process.js';
 
 export interface Candidate {
@@ -46,7 +46,9 @@ export class EvidenceStore {
   candidate(by: string, input: Candidate): Promise<AssessmentRecord> {
     const task = this.pending.then(async () => {
       validateCandidate(input);
-      const records = await readRecords(this.path, 10000);
+      const index = await readLedger(this.path, this.runId);
+      if (!index.complete) throw new Error('Ledger reconciliation incomplete; candidate closure is blocked');
+      const records = index.records;
       const evidence = records.filter(r => r.kind === 'evidence' && r.runId === this.runId);
       const references = [...input.evidenceRefs, ...input.negativeControls];
       for (const id of references) if (!evidence.some(r => r.id === id)) throw new Error(`Unknown same-run evidence ID: ${id}`);
@@ -55,14 +57,15 @@ export class EvidenceStore {
         if (input.closure === 'open_proof_gap') throw new Error('Resolving an open item needs a closed candidate with evidence');
       }
       const previous = records.filter(r => r.kind === 'candidate' && r.data?.candidate === input.candidate).at(-1);
+      if (previous && (previous.surface !== input.surface || previous.risk !== input.risk)) throw Error('Candidate revision cannot change surface/risk; use a new candidate ID');
       if (previous && input.supersedes !== previous.id) throw new Error(`Candidate revision must supersede latest ID ${previous.id}`);
       if (input.supersedes && (!previous || input.supersedes !== previous.id)) throw new Error('Invalid candidate revision');
       if (input.independentEvidenceRef) {
         const independent = evidence.find(r => r.id === input.independentEvidenceRef);
         if (!independent?.workerId || independent.by === by || !references.includes(input.independentEvidenceRef)) throw new Error('Independent validation needs a cited receipt from a different worker');
-        const reproduced = records.some(r => r.kind === 'candidate' && r.by === independent.by && r.data?.candidate === input.candidate
-          && r.data?.surface === input.surface && r.data?.risk === input.risk && r.data?.execution === 'tested'
-          && r.data?.proof !== 'static_trace' && r.data?.closure === 'confirmed' && r.refs?.includes(independent.id!));
+        const latest = records.filter(r => r.kind === 'candidate' && r.by === independent.by && r.data?.candidate === input.candidate).at(-1);
+        const reproduced = latest && latest.data?.surface === input.surface && latest.data?.risk === input.risk && latest.data?.execution === 'tested'
+          && latest.data?.proof !== 'static_trace' && latest.data?.closure === 'confirmed' && latest.refs?.includes(independent.id!);
         if (!reproduced) throw new Error('Independent claim needs the other worker\'s matching runtime candidate and cited receipt');
       }
       const record: AssessmentRecord = { id: randomUUID(), version: 2, runId: this.runId, at: new Date().toISOString(), by,
@@ -85,13 +88,21 @@ export class EvidenceStore {
     const dir = await open(directory, constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW);
     try {
       if (((await dir.stat()).mode & 0o777) !== 0o700) throw new Error('Export directory must have mode 0700');
-      const records = await readRecords(this.path, 10000, true);
+      const index = await readLedger(this.path, this.runId);
+      const records = index.records;
       if (!records.length) throw new Error('Cannot export an empty assessment ledger');
       const payload = { version: 2, runId: this.runId, manifest, records,
+        reconciliation: { complete: index.complete, total: records.length, diagnostics: index.diagnostics, foreign: index.foreign },
         warning: 'Redaction is best effort; review before sharing. Candidate records are attributed claims, not verified findings.' };
       // Walk string values rather than a serialized JSON string, so redaction cannot corrupt JSON framing.
+      const reportPartData = new Set(records.filter(r => r.kind === 'report_part').map(r => r.data));
       const clean = (v: unknown): unknown => typeof v === 'string' ? redact(v) : Array.isArray(v) ? v.map(clean)
-        : v && typeof v === 'object' ? Object.fromEntries(Object.entries(v).map(([k,x]) => [k, clean(x)])) : v;
+        : v && typeof v === 'object' ? Object.fromEntries(Object.entries(v).map(([k,x]) => {
+          // Report parts contain serialized JSON whose fields were redacted before chunking/hashing.
+          // Redacting the encoded fragment again would destroy framing and invalidate its manifest.
+          const part = (v as Record<string,unknown>);
+          return [k, k === 'value' && reportPartData.has(v as Record<string,unknown>) && part.redacted === true && typeof x === 'string' && part.sha256 === createHash('sha256').update(x).digest('hex') ? x : clean(x)];
+        })) : v;
       const body = JSON.stringify(clean(payload), null, 2);
       if (Buffer.byteLength(body) > 16 * 1024 * 1024) throw new Error('Export exceeds 16 MiB; cleanup will still proceed');
       const name = `${this.runId}-${randomUUID()}.json`;

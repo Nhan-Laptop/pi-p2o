@@ -31,6 +31,8 @@ export interface Ticket {
   commandBudget: number;
   extension: { path: string; sha256: string };
   token: string;
+  taskId?: string;
+  requestedRuntime?: { model?: string; thinking?: string };
 }
 
 export function ticketPath(control: string, workerId: string): string { return join(control, `ticket-${workerId}.json`); }
@@ -96,6 +98,8 @@ export async function readTicket(path: string, expected: TicketExpectations): Pr
   if (ticket.image !== expected.image) bad('ticket image does not match this extension');
   if (ticket.extension?.path !== expected.extensionPath || ticket.extension.sha256 !== expected.extensionSha) bad('ticket extension identity does not match the running code');
   if (!/^[a-f0-9]{32}$/.test(String(ticket.token))) bad('invalid ticket token');
+  if (ticket.taskId !== undefined && !/^[a-z0-9][a-z0-9-]{0,79}$/.test(ticket.taskId)) bad('invalid task ID');
+  if (ticket.requestedRuntime !== undefined && (!ticket.requestedRuntime || Object.entries(ticket.requestedRuntime).some(([k,v]) => !['model','thinking'].includes(k) || typeof v !== 'string' || v.length > 200 || /[\x00-\x1f\x7f]/.test(v)))) bad('invalid runtime profile');
   if (typeof ticket.target?.label !== 'string' || !ticket.target.label || ticket.target.label.length > 512 || /[\x00-\x1f\x7f]/.test(ticket.target.label)) bad('invalid target label');
   if (ticket.target.kind === 'url' && (typeof ticket.target.origin !== 'string' || !/^https?:\/\//.test(ticket.target.origin))) bad('url ticket needs an http(s) origin');
   if (!Number.isInteger(ticket.commandBudget) || ticket.commandBudget < 1 || ticket.commandBudget > 5000) bad('invalid command budget');

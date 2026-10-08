@@ -1,8 +1,7 @@
 # pi-p2o
 
 One command. Your **current Pi agent** leads an authorized assessment through sandbox tools and can delegate
-**visible worker panes** that share the same sandbox. No separate orchestrator, planning wizard, manifests,
-plan IDs or dashboard.
+**visible worker panes** that share the same sandbox. No separate orchestrator, setup wizard or dashboard.
 
 ## Install
 
@@ -41,6 +40,7 @@ neighbouring pane with its own role model, and every worker shares this sandbox 
 | Tool | Role | Purpose |
 |---|---|---|
 | `p2o_skill_list` / `p2o_skill_read` | lead + worker | Paginated catalog and approved skill/reference/handoff documents; IDs, never arbitrary host paths |
+| `p2o_task` | lead only | Maintain focused questions, accepted prerequisite revisions, role/method decisions and reservations |
 | `p2o_candidate` | lead + worker | Evidence-linked candidate claims, proof level, controls, limitations and explicit revisions |
 | `p2o_shell` | lead + worker | Offline shell in the sandbox; `/target` is a read-only copy, `/work/<workerId>` is scratch |
 | `p2o_http` | lead + worker | Fixed curl, GET/HEAD on the authorized origin only; public IPv4, no redirects/credentials |
@@ -60,6 +60,8 @@ lead stops, workers fail closed.
 With `--export`, cleanup saves bounded redacted receipts and source/skill hashes in `.p2o-reports/` (0700; files 0600).
 Review before sharing: redaction is best effort, not a guarantee. Without `--export`, the temporary ledger is removed.
 Terminal worker failures deliver a blocked report without another model call; no provider fallback is automatic.
+
+See [focused assessment state](docs/ASSESSMENT_STATE.md) for complete-ledger cursors, task/handoff review, current validation, progress and bounded report retention. No background planner or automatic retry is introduced.
 
 ## Recon and next-task selection
 

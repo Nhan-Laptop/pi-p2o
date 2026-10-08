@@ -6,7 +6,7 @@
   → pi.sendUserMessage(scoped brief)
   → LEAD (this conversation, this model)
        p2o_shell / p2o_http  → the single sandbox container
-       p2o_note              → <control>/records.jsonl
+       p2o_task / p2o_note   → owner-maintained questions / <control>/records.jsonl
        p2o_delegate          → Herdr pane split + agent start + ticket + brief
        p2o_workers/steer/stop_worker
        p2o_finish            → refuse unreported workers, stop panes, remove containers, verify, delete control dir
@@ -37,7 +37,7 @@ are descriptive text, not a runtime permission/availability registry. The lead c
 `before_agent_start` → `systemPromptOptions.sections.p2o_assessment`, without replacing Pi’s complete prompt
 or duplicating tool descriptions. Its startup message is a short kickoff; workers keep their existing guidance.
 `src/evidence.ts` records tool receipts, validates candidate revisions and exports bounded redacted results before cleanup.
-See [skill runtime](SKILL_RUNTIME.md) for schemas, failure behavior and compatibility limits.
+`src/tasks.ts` serializes owner task/acceptance/reservation state; reconstructed records never restore execution. `src/progress.ts` records local observable events, not a scheduler. `src/report.ts` commits normalized hashed report parts and freezes a bounded current frontier. The context hook adds only request-local objective data while active; no model/timer loop is created. See [assessment state](ASSESSMENT_STATE.md) and [skill runtime](SKILL_RUNTIME.md) for schemas, failure behavior and limits.
 
 ## Files
 
@@ -49,7 +49,10 @@ See [skill runtime](SKILL_RUNTIME.md) for schemas, failure behavior and compatib
 | `src/source.ts` | Bounded regular-file-only source copy via Linux directory-FD traversal (no symlink races) |
 | `src/ticket.ts` | Owner-private worker ticket: mint, strict validation, single-use identity, expiry, extension/image binding |
 | `src/broker.ts` | Socket server + client: authentication, framing, per-worker and reserve budgets, report normalization |
-| `src/records.ts` | Append-only shared ledger (note/coverage/observation/open/report/lifecycle), summary and blocking wait |
+| `src/records.ts` | Complete bounded streaming ledger index, integrity diagnostics, cursor pages, summary and blocking wait |
+| `src/tasks.ts` | Owner-only questions, accepted revisions, reservations and active/deadline gates |
+| `src/progress.ts` | Observable progress/quiet diagnostics without dispatch or retries |
+| `src/report.ts` | Committed normalized report parts and frozen candidate/report/task projection |
 | `src/herdr.ts` | Herdr CLI client: tiled pane split, agent start with `-- <args>`, prompt/status/interrupt/close |
 | `src/roles.ts` | Role → model/skills defaults with pi-herdr-style precedence, defensive settings parsing |
 | `src/prompts.ts` | Lead and worker scope prompts, plus the delegation brief template |
@@ -76,7 +79,7 @@ See [skill runtime](SKILL_RUNTIME.md) for schemas, failure behavior and compatib
 
 The ledger (`records.jsonl`, 0600, append-only, single small writes) is the coordination medium, mirroring
 Strix's notes/coverage/threat-model state. Workers append observations, coverage rows (including clean surfaces)
-and open items; reports land as `report` records plus one `coverage` record per reported row and one `open` record
+and open items; normalized reports land as hashed `report_part` records and a committing `report` manifest, plus one `coverage` record per reported row and one `open` record
 per open item. The lead reads it through `p2o_workers` and must reconcile open items before finishing.
 
 Closure states come from Strix: every candidate ends `confirmed`, `ruled_out` (name the specific control) or

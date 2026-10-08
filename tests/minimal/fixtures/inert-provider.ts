@@ -8,6 +8,8 @@ export function registerInertProvider(pi: ExtensionAPI, mode: 'owner' | 'worker'
     models: [{ id: 'current-agent', name: 'Mechanical fixture, NOT live AI', reasoning: false, input: ['text'],
       cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }, contextWindow: 128000, maxTokens: 4096 }],
     streamSimple(model, context) {
+      const objectivePresent = context.messages.some((m:any) => (typeof m.content === 'string' ? m.content : JSON.stringify(m.content ?? '')).includes('P2O OBJECTIVE STATE'));
+      if (mode === 'worker' && !objectivePresent) throw Error('Worker objective did not survive request context rebuilding');
       if (mode === 'worker' && process.env.P2O_TEST_WORKER_FAULT === 'quota') {
         const message: AssistantMessage = { role: 'assistant', api: 'openai-completions', provider: model.provider, model: model.id,
           content: [], timestamp: Date.now(), stopReason: 'error', errorMessage: '429 GoUsageLimitError: Go usage limit exceeded',
