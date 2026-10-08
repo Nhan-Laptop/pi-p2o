@@ -10,7 +10,7 @@ Worker instructions and briefs remain byte-identical to `8f6db40` for fixed URL 
 
 ## Pre-shipping checks
 
-- Full suite: 118 TypeScript tests passed, six opt-in skips; 141 Python tests ran successfully, one opt-in skip.
+- Full suite: 119 TypeScript tests passed, six opt-in skips; 141 Python tests ran successfully, one opt-in skip.
 - Docker suite: five tests passed, including real-Pi/inert-provider integration, real offline/non-root/read-only sandbox behavior, broker isolation, cancellation and cleanup.
 - Real Herdr: one visible-pane lifecycle test passed with an inert provider.
 - Actual provider-facing context checks: one structured lead policy, no tool tutorials in it, descriptions and candidate schemas still present, short kickoff without duplicate policy, evidence/decision/candidate records and terminal quota handling.
@@ -22,7 +22,9 @@ An initial native assertion counted the section's XML tag (`p2o_assessment`) as 
 
 ## Installed acceptance
 
-Pending commit → push → Pi reinstall, revision/hash matching and installed-path native/Docker tests. Acceptance evidence will record the installed implementation revision.
+Core implementation `b355eb862768ce6f2966ac77ef445de710734285` and harness compatibility update `76602c6` were committed, pushed and installed with Pi before acceptance. The harness now recognizes structured/opaque system policy metadata and historical user briefs, instead of requiring the old startup dump; cleanup run IDs still prefer exported evidence. Three installed-path real-Pi tests passed again at `76602c6`: normal worker, terminal quota worker and real Docker owner. The native provider asserted policy/tool separation against the actual model context, and the transcript retained the structured section and short kickoff. Extension identity in exports matched the installed file; the runtime module hashes matched the committed checkout.
+
+See `acceptance.json` and the two `installed-native-*.json` fixtures. The fixtures publish their observed lead policy and kickoff along with bounded mechanical evidence; they are not a live-agent quality study. Final publication changes verification documentation/receipts only, not the tested runtime.
 
 ## Limits
 

@@ -1,0 +1,68 @@
+{
+  "schema": "p2o-lean-lead-acceptance/1",
+  "verifiedAt": "2026-10-08T05:59:13.902795+00:00",
+  "testedInstalledRevision": "76602c6bd1679b22d8aa2051ac813eee5f67d316",
+  "baselineRevision": "8f6db4014f8164cfc8509d9731894eee41199c90",
+  "runtimeHashes": {
+    "src/records.ts": "22d842f96ca73512b801ea0003501f7885e80dc78beb9373e92800aeb3f2dc23",
+    "src/herdr.ts": "360192e3fdc60c37358316d8ba23962d213d667f1dfa410cc4d8823a7cf27327",
+    "src/process.ts": "ec5f332e146a50e91154d521edea57c18d4cc384e864afa1352af1f11f74d428",
+    "src/evidence.ts": "8d3936a6a7d50e4909cda1977f55b6daa5ca9d7f12b956eae01cbae4b287065e",
+    "src/skills.ts": "9df29507d5772a636da7395a947755a87ba33fd040c163c2f4a556bdb828afc2",
+    "src/target.ts": "3d97e9c7008cc23e9501fd30ecf9fef220bd1a380c7842276228b90581111c0e",
+    "src/sandbox.ts": "b363ce628c2e6067ba5a77a91186c0f7aa42b1c2e842add92cfcd1b19c44159d",
+    "src/broker.ts": "bc115406db9202408772c79adecde9a01027623adfbe571d263637f2a565c16f",
+    "src/source.ts": "7d87531ea3688b1193f0ed85423531b7068541a28aced25cfdc0b31829e98723",
+    "src/roles.ts": "791c6f5093ac03f3d0bf6015230e0250658bff18a66242eaf8eefbd2b7b26ce5",
+    "src/prompts.ts": "f22b22689d6c5a91746aec6c194ca14aac0a062faae1ddaa60af2ff0253e5e57",
+    "src/ticket.ts": "a2c5cce13d0faf0ea2e0ca546c4022da59ace6929ad5a349e9d05ed5e3664ae5",
+    "extensions/p2o/index.ts": "3b62ada3820ca0efd3c362b92a7ef54a98ddb1d86f5c5e1d83927e70c8a9bfd7",
+    "skills/catalog.json": "9d93b92f73544fa864a57731035987f6d194aa9c53083306055654be4e43c4e8",
+    "scripts/benchmark-skills.mjs": "0c36996acc61a7990ff88861c0a6cc48ec0f8f49b974e694fc4b2147f0bdf574",
+    "scripts/test-installed-holdout.mjs": "c827d883f892ba7ea497a6add159393fb3c9fac57fb199b8d78f291be5a4303f"
+  },
+  "tests": {
+    "typescriptPassed": 119,
+    "typescriptOptInSkipped": 6,
+    "pythonRan": 141,
+    "pythonOptInSkipped": 1,
+    "dockerSuitePassed": 5,
+    "realHerdrInertPassed": 1,
+    "installedPiPassed": 3
+  },
+  "characterMeasurements": {
+    "url": {
+      "beforeLead": 7557,
+      "afterLead": 4647
+    },
+    "directory": {
+      "beforeLead": 7440,
+      "afterLead": 4567
+    },
+    "unit": "characters, not tokens"
+  },
+  "checks": [
+    "lead body has no tool tutorials",
+    "one structured policy section",
+    "short kickoff with no duplicate policy",
+    "active schemas/descriptions still available to provider",
+    "worker URL/source prompts and briefs byte-identical",
+    "scope/evidence/independent validation/cleanup policies retained",
+    "finish/stop/replay section cleanup",
+    "real Pi benchmark-wrapper hook ordering",
+    "benchmark/holdout startup and run-ID detection supports structured policy and historical briefs"
+  ],
+  "logHashes": {
+    "tmp/lean-lead/test-compat.log": "e20fa7029d9d3d26a187b69d2312825707007d170274c6eb21b023cb26ac86eb",
+    "tmp/lean-lead/docker.log": "676fc781807d55f1b9e49a1f6d9203a70779997c014d2e7183120aaffd87656f",
+    "tmp/lean-lead/herdr.log": "697a9ef136698754c4dcd6d14833ac3ddfba0179ad6d4c5be13ec6163bc2134b",
+    "tmp/lean-lead/install-compat.log": "36a8bca686263e6d61db914b3f40185093054de227b2d640ece7b7701be9ffee",
+    "tmp/lean-lead/installed-compat-tests.log": "0e0d64376f098f53af9acf5922d54221a12d5f8d4b773a41362723e38bf508ab"
+  },
+  "limits": [
+    "mechanical inert providers, no security-effectiveness claim",
+    "no paid agents or external target requests",
+    "historical transcripts and receipts unchanged"
+  ],
+  "implementationRevision": "b355eb862768ce6f2966ac77ef445de710734285"
+}
