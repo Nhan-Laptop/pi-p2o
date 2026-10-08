@@ -37,13 +37,13 @@ export const ARM_DEFINITIONS = {
   A: {
     id: 'A',
     label: 'baseline-4321f2b',
-    description: `baseline runtime at revision ${BASELINE_REVISION} with the original 17 skills (no catalog, no skill/capability/evidence APIs)`,
+    description: `baseline runtime at revision ${BASELINE_REVISION} with the original 17 skills (no catalog, no skill/evidence APIs)`,
     revision: BASELINE_REVISION,
   },
   B: {
     id: 'B',
     label: 'improved-runtime-17-skills',
-    description: 'improved runtime (skill/capability/evidence APIs) with the same original 17 skills',
+    description: 'improved runtime (skill/evidence APIs) with the same original 17 skills',
     revision: 'working-tree',
   },
   C: {

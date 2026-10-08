@@ -2,12 +2,6 @@
 import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
 import { createAssistantMessageEventStream, getCurrentSystemPrompt, getCurrentTools, type AssistantMessage } from '@earendil-works/pi-ai';
 
-function text(value: unknown): string {
-  if (typeof value === 'string') return value;
-  const blocks = (value as Array<{ type?: string; text?: string }> | undefined) ?? [];
-  return blocks.filter(block => block?.type === 'text').map(block => block.text ?? '').join('\n');
-}
-
 export function registerInertProvider(pi: ExtensionAPI, mode: 'owner' | 'worker'): void {
   pi.registerProvider('p2o-inert', {
     baseUrl: 'http://127.0.0.1:1/never-contacted', apiKey: 'inert-placeholder', api: 'openai-completions',
@@ -23,10 +17,13 @@ export function registerInertProvider(pi: ExtensionAPI, mode: 'owner' | 'worker'
       }
       const system = getCurrentSystemPrompt(context.messages);
       const tools = getCurrentTools(context.messages).map(tool => tool.name);
+      if (tools.includes('p2o_capabilities') || system.includes('CAPABILITIES')) throw new Error('removed capability subsystem is exposed');
+      if (!system.includes('RECON → INVESTIGATION') || !system.includes('decision note')) throw new Error('recon contract missing');
+      const descriptions = getCurrentTools(context.messages);
+      if (!descriptions.find(tool => tool.name === 'p2o_shell')?.description.includes('Network disabled')) throw new Error('shell guidance missing');
       const results = context.messages.filter((message: any) => message.role === 'toolResult');
       const last: any = results.at(-1);
       const lastTool = last?.toolName as string | undefined;
-      const lastText = text(last?.content);
       let content: AssistantMessage['content'];
 
       if (mode === 'owner') {
@@ -45,11 +42,22 @@ export function registerInertProvider(pi: ExtensionAPI, mode: 'owner' | 'worker'
       } else {
         if (!system.includes('P2O WORKER')) throw new Error('worker scope section missing');
         if (!tools.includes('p2o_shell') || !tools.includes('p2o_report') && tools.includes('p2o_ledger') || tools.includes('p2o_finish') || tools.includes('bash') || tools.includes('read')) throw new Error(`worker tool loadout was not applied: ${tools.join(',')}`);
-        if (!last) content = [{ type: 'toolCall', id: 'shell-1', name: 'p2o_shell', arguments: { command: 'id -u; cat /target/code.txt; pwd' } }];
-        else if (lastTool === 'p2o_shell') content = [{ type: 'toolCall', id: 'report-1', name: 'p2o_report', arguments: {
+        if (!last) content = [{ type: 'toolCall', id: 'handoff-1', name: 'p2o_skill_read', arguments: { id: 'shared:handoffs' } }];
+        else if (lastTool === 'p2o_skill_read') content = [{ type: 'toolCall', id: 'shell-1', name: 'p2o_shell', arguments: { command: 'id -u; cat /target/code.txt; pwd' } }];
+        else if (lastTool === 'p2o_shell') content = [{ type: 'toolCall', id: 'inventory-1', name: 'p2o_note', arguments: {
+          kind: 'note', surface: '/target/code.txt', text: 'Inventory: source entry /target/code.txt; input=text; actor/gate/handler and deployed exposure unknown. Extraction=brokered read; observation is an inert fixture, not target proof.', refs: [last.details.evidenceId],
+        } }];
+        else if (lastTool === 'p2o_note' && results.filter((r: any) => r.toolName === 'p2o_note').length === 1) content = [{ type: 'toolCall', id: 'decision-1', name: 'p2o_note', arguments: {
+          kind: 'note', surface: '/target/code.txt', risk: 'identity boundary', text: 'Decision: correct the assumption that source implies deployment. Next task: map consumer identity before discovery; missing gate has highest information gain in this fixture. Expected observation: a registered handler and principal. Stop if no deployment context is supplied; retain the gap.', refs: [(results.find((r: any) => r.toolName === 'p2o_shell') as any).details.evidenceId],
+        } }];
+        else if (lastTool === 'p2o_note') content = [{ type: 'toolCall', id: 'candidate-1', name: 'p2o_candidate', arguments: {
+          candidate: 'consumer-identity', surface: '/target/code.txt', risk: 'identity boundary', closure: 'open_proof_gap', execution: 'not_tested', proof: 'static_trace',
+          evidenceRefs: [(results.find((r: any) => r.toolName === 'p2o_shell') as any).details.evidenceId], negativeControls: [], policyBasis: 'inferred', expectedPolicy: 'Consumer identity must be established before assessing intended policy', limitations: 'Scripted mechanical fixture; no deployment or live effect established',
+        } }];
+        else if (lastTool === 'p2o_candidate') content = [{ type: 'toolCall', id: 'report-1', name: 'p2o_report', arguments: {
           summary: 'WORKER_REPORT: brokered shell ran inside the owner sandbox and read the authorized source copy.',
           findings: [],
-          evidence: [`p2o_shell exit ${/Exit:\s*(\S+)/.exec(lastText)?.[1] ?? '?'}: id -u; cat /target/code.txt; pwd`],
+          evidence: [(results.find((r: any) => r.toolName === 'p2o_shell') as any).details.evidenceId],
           coverage: [{ surface: '/target/code.txt', risk: 'unintended data exposure', outcome: 'clean' }],
           openItems: ['worker did not test any other surface'],
           confidence: 'medium',

@@ -40,9 +40,13 @@ If an authorized investigation finds unexpected artifacts suggesting a pre-exist
 
 Required additions: interface table with registration/handler locations; lowest reachable actor; gate results; process identity; input formats and benign accepted operations; architecture/load map if known; unresolved routes/features. For distributed services, include peer topology, identity origin, installation-derived membership and evidence of effective authority—not merely nominal group names.
 
+Required recon inventory: stable surface ID, entry and accepted input, observed actor, gate/handler if known, sensitive consumer or trust boundary, same-run receipt IDs and extraction method, fact/inference/hypothesis label, unknowns and covered/untested scope. For URL targets use only authorized same-origin GET/HEAD; no authentication, forms or other origins. Source declarations do not establish deployed exposure.
+
+Rank a bounded next-task queue by reachable influence, sensitive effect, boundary ambiguity, evidence strength, information gain and remaining budget. Record why the selected surface/risk is next, the expected observation, owned coverage and stop condition. Correct the actor/boundary model when observations contradict assumptions.
+
 **Acceptance gate:** at least one prioritized entry has evidence of its actual gate/handler, or is explicitly marked inferred with a proposed reachability check. Root-object access cannot stand in for descendant routes. UI behavior cannot stand in for backend policy.
 
-**Return condition:** missing actor/configuration, unclear artifact provenance, or no reason for prioritization. Return the smallest missing surface question.
+**Return condition:** missing actor/configuration, unclear artifact provenance, or no reason for prioritization. Return the smallest missing surface question. Unclear gates return to mapping; concrete boundary concerns proceed to discovery; plausible candidates need separate validation; blocked proof stays open. New surfaces feed back into recon, and unproductive branches stop with gaps recorded. Do not wait to map everything or claim whole-target completeness.
 
 ## H2 — Static Analysis → Dynamic Analysis
 

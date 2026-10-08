@@ -49,6 +49,7 @@ describe('sandbox broker', () => {
     try {
       const mode = await stat(f.socket);
       expect(mode.mode & 0o777).toBe(0o600);
+      await expect(client.request('capabilities')).rejects.toThrow(/unknown|unsupported/i);
       const status = await client.request('status');
       expect(status).toMatchObject({ workerId: 'p2o-recon-aaaaaa', used: 0, budget: 3, reported: false });
       const executed = await client.request('exec', { command: 'id -u', timeout: 10 });

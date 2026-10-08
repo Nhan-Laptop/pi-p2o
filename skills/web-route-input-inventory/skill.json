@@ -8,22 +8,22 @@
     {
       "id": "source-review",
       "description": "Extract routes, parameters, and declared identity gates from the supplied source copy",
-      "allOf": [
-        "source.snapshot"
+      "prerequisites": [
+        "A supplied read-only source snapshot; deployment exposure is not established."
       ]
     },
     {
       "id": "public-baseline",
       "description": "Send one bodyless same-origin GET or HEAD baseline per in-scope route",
-      "allOf": [
-        "http.same-origin.get"
+      "prerequisites": [
+        "Authorized same-origin public GET retrieval through p2o_http."
       ]
     },
     {
       "id": "authenticated-navigation",
       "description": "Reach protected routes with a controlled authenticated identity; a browser session is not a substitute",
-      "allOf": [
-        "http.authenticated"
+      "prerequisites": [
+        "An explicitly authorized authenticated test transport and controlled principals; not provided by P2O."
       ]
     }
   ],

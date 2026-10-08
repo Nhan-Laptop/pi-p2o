@@ -184,7 +184,7 @@ export class Broker {
     if (!registration || registration.stopped) return { ok: false, error: 'This worker was stopped by the owner' };
     const op = text(request?.op, 32);
     switch (op) {
-      case 'skill_list': case 'skill_read': case 'capabilities': {
+      case 'skill_list': case 'skill_read': {
         const used = this.knowledgeUsed.get(workerId) ?? 0;
         if (used >= 200) return { ok: false, error: 'Knowledge read budget exhausted (separate from target commands)' };
         this.knowledgeUsed.set(workerId, used + 1);

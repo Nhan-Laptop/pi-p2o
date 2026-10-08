@@ -1,5 +1,5 @@
 import { expect, it } from 'vitest';
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { spawn } from 'node:child_process';
@@ -24,6 +24,7 @@ it.each(['normal', 'quota'])('real Pi + inert sandbox, %s worker: terminal repor
     P2O_TEST_FAKE_HERDR: '1', P2O_TEST_CWD: root, P2O_TEST_PI_BINARY: join(repo, 'node_modules/.bin/pi'),
     P2O_TEST_WORKER_EXT: join(repo, 'tests/minimal/fixtures/worker.ts'),
     P2O_TEST_WORKER_FAULT: mode === 'quota' ? 'quota' : '',
+    ...(process.env.P2O_TEST_INSTALLED_EXTENSION ? { P2O_TEST_INSTALLED_EXTENSION: process.env.P2O_TEST_INSTALLED_EXTENSION } : {}),
   } as NodeJS.ProcessEnv;
   const child = spawn(join(repo, 'node_modules/.bin/pi'), ['--no-extensions', '-e', join(repo, 'tests/minimal/fixtures/owner.ts'),
     '--no-skills', '--no-prompt-templates', '--no-themes', '--no-context-files', '--offline', '--no-session', '--no-approve',
@@ -66,11 +67,15 @@ it.each(['normal', 'quota'])('real Pi + inert sandbox, %s worker: terminal repor
   };
   try {
     expect((await request('get_state')).success).toBe(true);
-    expect((await request('prompt', { message: '/p2o --target ./repo' })).success).toBe(true);
+    expect((await request('prompt', { message: '/p2o --target ./repo --export' })).success).toBe(true);
     const messages = await transcript((list: any[]) => list.some((message: any) => text(message).includes('OWNER_FINAL_REPORT')));
     expect(dialogs).toEqual(['Start authorized assessment?']);
     // The owner briefed itself, then delegated to a real worker process.
     expect(messages.some((message: any) => message.role === 'user' && text(message).includes('P2O ASSESSMENT'))).toBe(true);
+    const brief = messages.find((message: any) => message.role === 'user' && text(message).includes('P2O ASSESSMENT'));
+    expect(text(brief)).toContain('RECON → INVESTIGATION');
+    expect(text(brief)).toContain('same-run Evidence IDs');
+    expect(text(brief)).not.toContain('CAPABILITIES');
     const toolResults = messages.filter((message: any) => message.role === 'toolResult');
     expect(toolResults.map((message: any) => message.toolName)).toEqual(['p2o_delegate', 'p2o_workers', 'p2o_finish']);
     expect(text(toolResults[0])).toMatch(/Spawned p2o-general-[0-9a-f]{6}/);
@@ -82,7 +87,7 @@ it.each(['normal', 'quota'])('real Pi + inert sandbox, %s worker: terminal repor
       expect(executed[0].command).toContain('cat /target/code.txt');
       expect(executed[0].workdir).toMatch(/^\/work\/p2o-general-[0-9a-f]{6}$/);
       expect(text(toolResults[1])).toContain('WORKER_REPORT');
-      expect(text(toolResults[1])).toContain('coverage: 1');
+      expect(text(toolResults[1])).toContain('coverage: 2');
     } else {
       expect(executed).toHaveLength(0);
       expect(text(toolResults[1])).toContain('429 GoUsageLimitError');
@@ -94,6 +99,27 @@ it.each(['normal', 'quota'])('real Pi + inert sandbox, %s worker: terminal repor
     expect(journal.some(entry => entry.op === 'stop')).toBe(true);
     expect(journal.some(entry => entry.op === 'sweep')).toBe(true);
     expect(records.filter(record => record.protocolError || record.type === 'extension_error')).toEqual([]);
+    const exports = await readdir(join(root, '.p2o-reports'));
+    expect(exports).toHaveLength(1);
+    const exported = JSON.parse(await readFile(join(root, '.p2o-reports', exports[0]), 'utf8'));
+    expect(exported.manifest).not.toHaveProperty('capabilities');
+    if (mode === 'normal') {
+      expect(exported.manifest.skillHashes['shared:handoffs']).toMatch(/^[a-f0-9]{64}$/);
+      const notes = exported.records.filter((r: any) => r.kind === 'note');
+      expect(notes.map((r: any) => r.text).join('\n')).toContain('Decision: correct the assumption');
+      const evidence = exported.records.filter((r: any) => r.kind === 'evidence');
+      expect(notes.every((r: any) => r.refs?.some((id: string) => evidence.some((e: any) => e.id === id)))).toBe(true);
+      expect(exported.records.some((r: any) => r.kind === 'candidate' && r.data.closure === 'open_proof_gap')).toBe(true);
+    }
+    if (process.env.P2O_TEST_RECEIPT_DIR) {
+      await mkdir(process.env.P2O_TEST_RECEIPT_DIR, { recursive: true });
+      await writeFile(join(process.env.P2O_TEST_RECEIPT_DIR, `native-${mode}.json`), JSON.stringify({
+        fixture: 'Real Pi with scripted inert provider, inert sandbox and process-based Herdr double; not model quality or Docker proof',
+        installedExtension: process.env.P2O_TEST_INSTALLED_EXTENSION ?? null,
+        checks: ['no capability tool/table', 'tool descriptions available', 'shared recon prompt', 'broker isolation', 'terminal report', 'cleanup', 'export without capability metadata'],
+        export: exported,
+      }, null, 2));
+    }
   } finally {
     child.stdin.end();
     const exited = await Promise.race([closed.then(() => true), delay(5000).then(() => false)]);

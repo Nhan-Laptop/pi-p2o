@@ -1,22 +1,21 @@
-# Skills, capabilities and evidence
+# Skills, tool guidance and evidence
 
 P2O keeps target execution inside its owner-managed sandbox. Reading knowledge does not grant another tool,
 network route, session identity or filesystem capability.
 
 ## Knowledge
 
-Both lead and worker have `p2o_skill_list {query?, offset?}`, `p2o_skill_read {id, offset?}` and `p2o_capabilities`.
+Both lead and worker have `p2o_skill_list {query?, offset?}`, `p2o_skill_read {id, offset?}`.
 Listing is paginated (eight skills), supports keyword search, and surfaces application playbooks/overlays before general techniques; read results contain `nextOffset` when another page is required. The
 catalog's document IDs include main skills, owned references, recipe/rule documents, `shared:scope`,
 `shared:handoffs`, and approved evidence-ledger sections. Relative links are rewritten to `p2o-skill:` IDs.
 Hashes identify original package document bytes, not target evidence; read text may have rewritten links.
 The first page of each assigned skill is inlined with explicit continuation instructions.
 
-`skills/catalog.json` separates technique/playbook/overlay and lists workflow-level `allOf`/`anyOf`
-prerequisites. `p2o_delegate` optionally accepts a `workflow` shared by its selected skills. Missing prerequisites
-are returned in `capabilityWarnings`, included in the brief and recorded as open items. Do not select a blocked
-dynamic workflow if source review is sufficient. No selected workflow means no automatic gap for every possible
-technique mentioned by the skill. Overlay assignments still count against the three-skill limit.
+`skills/catalog.json` separates technique/playbook/overlay and lists descriptive workflow prerequisites.
+`p2o_delegate` can validate a workflow ID against assigned skills, but does not infer tool availability or grant
+permissions from those descriptions. Verify only prerequisites relevant to a selected task. Overlay assignments
+still count against the three-skill limit.
 
 Delegation accepts optional `thinking` alongside `model`. Thinking precedence is per-spawn override, role setting, then the lead's current level. A qualified `provider/model` is passed to worker Pi as separate `--provider` and `--model` arguments, and startup records capture the actual model and thinking level. No provider fallback is automatic.
 
@@ -25,17 +24,23 @@ with no symlink following; only registered documents are reachable. Knowledge ca
 budgets (400 lead reads, 200 worker knowledge/coordination calls), not the target command reserve. The registry
 is instantiated per assessment; document pages retain consistent bytes/hashes during that run.
 
-## Capabilities
+## Tool guidance and reconnaissance
 
-`p2o_capabilities {}` reports policy permission, target applicability, runtime availability and limits.
-An unknown runtime is neither supported nor forbidden. Optional `probe: "python" | "semgrep"` runs a fixed,
-bounded offline functional check once per run and attaches its evidence ID. These probes never download or
-install software. The Semgrep check requires an actual finding on a tiny synthetic input, not just `--version`.
-The original pinned image may lack Semgrep; unavailable is an honest outcome, not a successful scan. Version checks and metrics are disabled in the sandbox. Semgrep's `--validate` still fetches remote lint rules and must not be used offline; the local positive/negative scan is the functional validation. If a command times out and stops the executor, target tools are withdrawn; record gaps and finish instead of repeatedly probing the dead sandbox.
+Pi exposes active tool descriptions and schemas. They describe enforced limits, not installed binaries.
+For a selected task needing an unknown tool, use a bounded offline functional check through `p2o_shell`
+and cite its receipt; never install/download or run universal startup probes. The base image may lack Semgrep.
+Keep metrics/version checks disabled and local rules only; Semgrep's `--validate` fetches remote meta-lints.
+If timeout/cancellation stops the executor, target tools are withdrawn; record gaps and finish.
 
-Authenticated requests, bodies, browser execution, managed local labs, OAST and parallel-request harnesses
-remain unsupported. An offline renderer or simulated bot cannot prove execution in a real browser. Source
-snapshots exclude `.git`; tool/rules/database availability is independent of source availability.
+Scope is still enforced by the owner and broker. Authenticated/body requests, browser execution, OAST and
+parallel-request harnesses remain unsupported. Offline parsing is not browser proof; source is not deployment proof.
+
+Recon records a bounded surface inventory with inputs, actors, gates/handlers, boundaries, Evidence IDs,
+extraction method and labeled unknowns. Choose the next task per surface by reachable influence, sensitive effect,
+boundary uncertainty, evidence strength, information gain and remaining budget. Record the rationale in a note;
+no whole-target mapping claim or numerical risk score is implied. Correct assumptions when observations disagree.
+Unclear entries return to mapping; plausible candidates proceed to separate validation; blocked proof stays open.
+See [handoffs](../HANDOFFS.md#h1--recon--static-analysis) for the shared contract.
 
 ## Optional offline tool image
 
@@ -70,13 +75,13 @@ for a retained artifact.
 - `evidenceRefs`, `negativeControls`: same-run command receipt IDs.
 - `policyBasis`: `explicit_contract`, `boundary_invariant`, or `inferred`; `expectedPolicy` names the rule and its provenance. Inferred policy must remain `open_proof_gap`, including when a sibling appears safe.
 - `limitations`: required; `control`: required for `ruled_out`.
-- `requirement`: known capability ID required for `blocked`.
+- `requirement`: bounded descriptive prerequisite/scope failure required for `blocked`.
 - `supersedes`: latest candidate record ID for revisions; contradictory branches are rejected, not silently merged.
 - `resolves`: open-item IDs closed by this evidence-backed candidate, keeping the original history.
 - `independentEvidenceRef`: requires another worker's receipt and a matching runtime-tested candidate recorded
   by that worker. The lead must still inspect semantics; metadata is not an independent truth oracle.
 
-Blocked execution cannot establish closed runtime proof. A capability already proven available cannot be named as a fabricated block; missing policy or observations are open proof gaps instead. Unknown evidence IDs and malformed transitions are
+Blocked execution cannot establish closed runtime proof. Missing policy or observations remain open proof gaps; a blocked reason is an attributed claim, not automatically verified availability. Unknown evidence IDs and malformed transitions are
 rejected with actionable errors. Legacy notes/reports remain accepted as attributed text; their `clean` outcome
 is only a summary of the stated tested slice, never proof of universal safety. New records use version 2 and IDs;
 old records without them remain readable. The ledger is available to both roles, with `p2o_ledger {id}` for one complete bounded record, so agents can cite observations without rerunning
@@ -87,7 +92,7 @@ work. Projections are bounded; this is not an unbounded artifact store.
 Choose `/p2o --target ./source --export` before the assessment. Its confirmation explains retention. Before
 cleanup, an exclusive 0600 JSON export is written under cwd `.p2o-reports/` (0700); no arbitrary export path or
 artifact-symlink traversal is accepted. It includes source snapshot hashes, loaded document hashes, lead model,
-image/extension identity, capabilities and ledger records. Worker role/model selections remain in lifecycle
+image/extension identity and ledger records. Worker role/model selections remain in lifecycle
 records. It never copies tickets or authentication files. **Redaction is best effort: review before sharing.**
 Without `--export`, cleanup removes the ledger. Export errors are reported; teardown still proceeds. A missing
 ledger cannot become a success-looking empty export on retry.

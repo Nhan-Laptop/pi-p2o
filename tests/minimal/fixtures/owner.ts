@@ -9,7 +9,9 @@ import { registerInertProvider } from './inert-provider.js';
 export { InertSandbox };
 
 // The fixture is also used as the owner process; tests point P2O_TEST_* at their own temp paths.
-export default function (pi: ExtensionAPI) {
+export default async function (pi: ExtensionAPI) {
+  const installed = process.env.P2O_TEST_INSTALLED_EXTENSION;
+  const register = installed ? (await import(installed)).registerP2O : registerP2O;
   registerInertProvider(pi, 'owner');
   // Hermetic delegation transport for tests: same Herdr contract, child `pi` processes instead of panes.
   const fake = process.env.P2O_TEST_FAKE_HERDR === '1'
@@ -19,7 +21,8 @@ export default function (pi: ExtensionAPI) {
       ...(process.env.P2O_TEST_WORKER_EXT ? { replaceExtensionArg: process.env.P2O_TEST_WORKER_EXT } : {}),
     })
     : undefined;
-  registerP2O(pi, {
+  register(pi, {
+    ...(installed ? { extensionPath: installed } : {}),
     ...(fake ? { herdr: fake } : {}),
     createSandbox: (target: Target, _options: SandboxOptions) => new InertSandbox(target),
     ...(process.env.P2O_TEST_SETTINGS ? { settingsPath: process.env.P2O_TEST_SETTINGS } : {}),

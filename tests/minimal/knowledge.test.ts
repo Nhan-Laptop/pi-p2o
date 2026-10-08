@@ -3,7 +3,6 @@ import { mkdtemp, mkdir, writeFile, rm, symlink, readFile } from 'node:fs/promis
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { SkillLibrary, readPackageFile } from '../../src/skills.js';
-import { capabilities, missingRequirements, validateRequirements } from '../../src/capabilities.js';
 import { EvidenceStore, redact, type Candidate } from '../../src/evidence.js';
 import { appendRecord, readRecords, summarizeRecords } from '../../src/records.js';
 
@@ -52,17 +51,6 @@ describe('approved knowledge', () => {
       while (offset !== undefined) { const page = await lib.read('test', offset); assembled += page.text; offset = page.nextOffset; expect(Buffer.byteLength(JSON.stringify(page))).toBeLessThan(64000); }
       expect(assembled).toBe(text);
     } finally { await rm(root, { recursive: true, force: true }); }
-  });
-});
-describe('capabilities', () => {
-  it('separates permission, applicability and unknown runtime; supports alternatives', () => {
-    const source = capabilities({ kind: 'directory' });
-    const url = capabilities({ kind: 'url' });
-    expect(missingRequirements({ allOf: ['source.snapshot'] }, source)).toEqual([]);
-    expect(missingRequirements({ allOf: ['source.snapshot'] }, url)).toEqual(['source.snapshot']);
-    expect(source.capabilities.find(c => c.id === 'tool.semgrep')).toMatchObject({ permitted: true, availability: 'unknown' });
-    expect(missingRequirements({ anyOf: ['source.snapshot', 'http.same-origin.get'] }, url)).toEqual([]);
-    expect(() => validateRequirements({ allOf: ['invented' as any] })).toThrow();
   });
 });
 describe('evidence contracts and export', () => {

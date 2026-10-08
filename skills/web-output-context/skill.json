@@ -8,25 +8,23 @@
     {
       "id": "source-review",
       "description": "Trace each source through its transformations to the sink and name the output context",
-      "allOf": [
-        "source.snapshot"
+      "prerequisites": [
+        "A supplied read-only source snapshot; deployment exposure is not established."
       ]
     },
     {
       "id": "offline-reproduction",
       "description": "Render a local fixture with the extracted template or sanitizer configuration",
-      "allOf": [
-        "shell.offline"
-      ],
-      "anyOf": [
-        "tool.python"
+      "prerequisites": [
+        "Bounded offline execution in sandbox scratch without network access.",
+        "One suitable option: A bounded offline functional check of Python and the dependencies needed for this task."
       ]
     },
     {
       "id": "browser-execution-proof",
       "description": "Observe an inert marker interpreted as code by the managed browser interface; a proven offline local browser run is offline reproduction, not live proof",
-      "allOf": [
-        "browser.execution"
+      "prerequisites": [
+        "An explicitly authorized real browser environment; offline parsing is not browser proof and P2O provides no browser transport."
       ]
     }
   ],

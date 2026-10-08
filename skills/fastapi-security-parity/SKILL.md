@@ -11,9 +11,9 @@ Before first use, read the [scope baseline](../../README.md#start-here) and [han
 Use only when the target is confirmed to be a FastAPI or Starlette application, and resolve the installed versions before applying any framework-specific claim. Record the FastAPI version, the Starlette version, the ASGI server, and the front proxy, because their behaviors differ and vendor backports are common. If the framework or version cannot be resolved from the supplied source and installed dependency metadata, record that as a gap rather than assuming the newest behavior. This overlay composes with a technique and a playbook; it does not replace either one.
 
 ## Workflow Prerequisites
-- `source-review` requires `source.snapshot`. Walk the application factory, routers, and mounts in the supplied revision.
-- `offline-reproduction` requires `shell.offline`, with the dependency-metadata runtime reported as `tool.python` after a bounded probe. Read the installed metadata from the copy; do not install anything.
-- `live-parity-comparison` requires `http.same-origin.get` and compares only the anonymous enforcement baseline on the approved same-origin target. An identity-dependent parity comparison additionally needs `http.authenticated`; without it, record the dynamic gap rather than inferring enforcement.
+- `source-review` requires a supplied read-only source snapshot. Walk the application factory, routers, and mounts in the supplied revision.
+- `offline-reproduction` requires bounded offline sandbox execution, with Python and the required dependency-metadata library checked through a bounded offline run. Read the installed metadata from the copy; do not install anything.
+- `live-parity-comparison` requires authorized same-origin GET retrieval and compares only the anonymous enforcement baseline on the approved same-origin target. An identity-dependent parity comparison additionally needs a separately authorized authenticated transport (not provided by P2O); without it, record the dynamic gap rather than inferring enforcement.
 
 ## Parity Surfaces
 - Router and route dependencies: compare the dependency list actually attached to each effective route against the identity requirement the route is meant to enforce.
@@ -37,7 +37,7 @@ One overlay consumes one of the three document slots: a technique plus a playboo
 - Stop when the reachable path cannot be shown; a missing dependency alone is a review lead, not a finding.
 
 ## Gaps
-Unresolved version backports, dynamically registered routes evaluated only at startup, deployment-specific middleware ordering, and proxy behavior that differs from the supplied configuration all stay open. An alternate version or prefix whose intended role is inferred rather than contracted stays an `open_proof_gap`. A parity check that could not be exercised is recorded as unverified for the affected route; other frameworks and protocol overlays remain deferred until a target and capability justify them.
+Unresolved version backports, dynamically registered routes evaluated only at startup, deployment-specific middleware ordering, and proxy behavior that differs from the supplied configuration all stay open. An alternate version or prefix whose intended role is inferred rather than contracted stays an `open_proof_gap`. A parity check that could not be exercised is recorded as unverified for the affected route; other frameworks and protocol overlays remain deferred until a target and authorized test environment justify them.
 
 ## Handoffs
 Provide the resolved versions, the effective route and dependency path, the middleware order, the protected effect or its absence, and the exact configuration the observation applies to. Next: [source code auditing](../source-code-auditing/SKILL.md) for the wider convention sweep, [authorization auditing](../authorization-auditing/SKILL.md) for identity and action policy, or [web object authorization](../web-object-authorization/SKILL.md) for object-level closure.

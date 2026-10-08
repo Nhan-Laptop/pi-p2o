@@ -25,6 +25,16 @@ The lead calls `p2o_finish` before its report; that refuses until every worker h
 removes the sandbox, verifies container removal with the daemon, and reports how many worker panes Herdr actually
 closed (a pane it refuses to close is named, and by then that worker's ticket is already revoked). `/p2o stop` cancels manually and does the same.
 
+## Reconnaissance
+
+Start by reading existing ledger/coverage and building a bounded surface inventory. Record entry/input, observed
+actor, gate/handler if known, sensitive consumer, Evidence IDs and extraction method; label inferences and gaps.
+For URL targets only existing same-origin GET/HEAD retrieval is authorized. Source declarations are not live exposure.
+Choose the next surface/risk qualitatively by reachable influence, boundary uncertainty, likely effect, evidence,
+information gain and budget; record the rationale, expected observation and stop condition in a decision note.
+A missing gate returns to mapping, a candidate needs validation, and blocked proof remains open. Correct assumptions
+when observations disagree. Do not wait to map everything or duplicate another worker’s owned surface/risk.
+
 ## Delegation
 
 Inside Herdr, the lead may spawn workers. Each worker is a real `pi` process in a visible pane, started with its

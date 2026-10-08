@@ -8,12 +8,12 @@ description: Test whether a principal can reach an object, field, tenant, or del
 Before first use, read the [scope baseline](../../README.md#start-here) and [handoff contracts](../../HANDOFFS.md).
 
 ## Applicability
-Use when an action selects a specific object, field, tenant, or delegated role, and the question is whether the effective policy binds that selection to the acting principal. Source review covers handler-level ownership checks, list and export filters, serializer field policy, nested-object policy, batch handlers, and asynchronous consumers. Offline reproduction covers policy functions that can be exercised against controlled objects with a local runtime. Deferred while the corresponding capability is absent: a live two-account HTTP comparison over authenticated requests. A second transport is optional variant coverage; one reachable unauthorized protected effect is enough to establish the policy question.
+Use when an action selects a specific object, field, tenant, or delegated role, and the question is whether the effective policy binds that selection to the acting principal. Source review covers handler-level ownership checks, list and export filters, serializer field policy, nested-object policy, batch handlers, and asynchronous consumers. Offline reproduction covers policy functions that can be exercised against controlled objects with a local runtime. Unavailable under the current assessment transport: a live two-account HTTP comparison over authenticated requests. A second transport is optional variant coverage; one reachable unauthorized protected effect is enough to establish the policy question.
 
 ## Workflow Prerequisites
-- `source-review` requires `source.snapshot`. Trace the effective decision and its operands in the supplied revision.
-- `offline-reproduction` requires `shell.offline`, with the local runtime reported as `tool.python` after a bounded probe. Exercise an extracted policy function against controlled objects in a local harness.
-- `controlled-identity-comparison` requires `http.authenticated`. Local HTTP without a controlled authenticated identity does not satisfy this workflow; without the capability, keep the candidate at a static trace and record the dynamic gap explicitly.
+- `source-review` requires a supplied read-only source snapshot. Trace the effective decision and its operands in the supplied revision.
+- `offline-reproduction` requires bounded offline sandbox execution, with the local runtime and required dependencies functionally checked through a bounded offline run. Exercise an extracted policy function against controlled objects in a local harness.
+- `controlled-identity-comparison` requires a separately authorized authenticated transport (not provided by P2O). Local HTTP without a controlled authenticated identity does not satisfy this workflow; without that transport, keep the candidate at a static trace and record the dynamic gap explicitly.
 - A framework permit or scope annotation is a review lead, not proof that the effective action is authorized; confirm the code path that runs.
 
 ## Baseline

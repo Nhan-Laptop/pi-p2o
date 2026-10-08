@@ -31,7 +31,9 @@ place. A worker that cannot reach the socket fails closed and reports blocked in
 ## Skills and evidence
 
 `src/skills.ts` serves approved package documents through held-directory-FD reads; the broker exposes IDs only.
-`src/capabilities.ts` separates policy, applicability and availability; `src/probes.ts` contains fixed offline checks.
+Active tool descriptions carry execution guidance; owner/broker checks remain authoritative.
+`src/prompts.ts` shares a bounded evidence-led recon/decision contract across lead and workers; workflow prerequisites
+are descriptive text, not a runtime permission/availability registry.
 `src/evidence.ts` records tool receipts, validates candidate revisions and exports bounded redacted results before cleanup.
 See [skill runtime](SKILL_RUNTIME.md) for schemas, failure behavior and compatibility limits.
 

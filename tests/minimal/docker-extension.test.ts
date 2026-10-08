@@ -19,15 +19,14 @@ it.skipIf(process.env.P2O_TEST_DOCKER !== '1')('real Docker + real extension: ho
   await mkdir(join(root, 'repo'));
   await writeFile(join(root, 'repo', 'code.txt'), 'authorized docker source');
   const controlRoot = join(root, 'control');
-  const containers = async (): Promise<string[]> => {
-    const { stdout } = await run('docker', ['ps', '-a', '--filter', 'label=pi-p2o=minimal', '--format', '{{.Names}}']).catch(() => ({ stdout: '' }));
+  const containers = async (runId: string): Promise<string[]> => {
+    const { stdout } = await run('docker', ['ps', '-a', '--filter', `label=pi-p2o.run=${runId}`, '--format', '{{.Names}}']);
     return stdout.split('\n').map(name => name.trim()).filter(Boolean).sort();
   };
-  const before = await containers();
   const child = spawn(join(repo, 'node_modules/.bin/pi'), ['--no-extensions', '-e', join(repo, 'tests/minimal/fixtures/owner-docker.ts'),
     '--no-skills', '--no-prompt-templates', '--no-themes', '--no-context-files', '--offline', '--no-session', '--no-approve',
     '--mode', 'rpc', '--provider', 'p2o-docker-inert', '--model', 'docker-agent', '--thinking', 'off'],
-  { cwd: root, env: { PATH: process.env.PATH, HOME: root, PI_CODING_AGENT_DIR: join(root, 'agent'), PI_OFFLINE: '1', PI_SKIP_VERSION_CHECK: '1', PI_TELEMETRY: '0', P2O_TEST_CONTROL_ROOT: controlRoot, HERDR_ENV: '0' }, stdio: ['pipe', 'pipe', 'pipe'] });
+  { cwd: root, env: { PATH: process.env.PATH, HOME: root, PI_CODING_AGENT_DIR: join(root, 'agent'), PI_OFFLINE: '1', PI_SKIP_VERSION_CHECK: '1', PI_TELEMETRY: '0', P2O_TEST_CONTROL_ROOT: controlRoot, HERDR_ENV: '0', ...(process.env.P2O_TEST_INSTALLED_EXTENSION ? { P2O_TEST_INSTALLED_EXTENSION: process.env.P2O_TEST_INSTALLED_EXTENSION } : {}) }, stdio: ['pipe', 'pipe', 'pipe'] });
   let buffer = '', stderr = '', sequence = 0;
   const dialogs: string[] = [];
   const pending = new Map<string, { resolve(value: any): void; reject(error: Error): void }>();
@@ -81,9 +80,11 @@ it.skipIf(process.env.P2O_TEST_DOCKER !== '1')('real Docker + real extension: ho
     const finish = results.find((message: any) => message.toolName === 'p2o_finish');
     expect(text(finish)).toContain('Container removal verified');
     expect(dialogs).toEqual(['Start authorized assessment?']);
-    // Containers created by this run are gone; anything this test found beforehand is untouched.
-    const after = await containers();
-    expect(after.filter(name => !before.includes(name))).toEqual([]);
+    // Verify only this assessment's labels, not concurrently created unrelated test containers.
+    const brief = messages.find((message: any) => message.role === 'user' && text(message).includes('P2O ASSESSMENT'));
+    const runId = /Run (run-[a-z0-9-]+)\./.exec(text(brief))?.[1];
+    expect(runId).toBeDefined();
+    expect(await containers(runId!)).toEqual([]);
   } finally {
     child.stdin.end();
     const exited = await Promise.race([closed.then(() => true), delay(10_000).then(() => false)]);

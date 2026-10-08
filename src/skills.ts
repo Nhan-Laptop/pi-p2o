@@ -2,7 +2,7 @@ import { constants } from 'node:fs';
 import { open, type FileHandle } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 import { dirname, posix, resolve } from 'node:path';
-import { validateRequirements, type Workflow } from './capabilities.js';
+export interface Workflow { id: string; description: string; prerequisites?: string[] }
 
 export interface CatalogSkill { name: string; description: string; kind: 'technique' | 'playbook' | 'overlay'; document: string; workflows: Workflow[] }
 export interface CatalogDocument { id: string; path: string; section?: string }
@@ -55,7 +55,10 @@ export class SkillLibrary {
     for (const s of value.skills) {
       if (!SLUG.test(s.name) || names.has(s.name) || !ids.has(s.document) || !['technique', 'playbook', 'overlay'].includes(s.kind) || !Array.isArray(s.workflows)) throw new Error('Invalid catalog skill');
       names.add(s.name);
-      for (const w of s.workflows) { if (!SLUG.test(w.id)) throw new Error('Invalid workflow'); validateRequirements(w); }
+      for (const w of s.workflows) { if (!SLUG.test(w.id) || typeof w.description !== 'string' || w.description.length < 20
+        || Object.keys(w).some(k => !['id', 'description', 'prerequisites'].includes(k))
+        || (w.prerequisites !== undefined && (!Array.isArray(w.prerequisites) || w.prerequisites.length > 10
+          || w.prerequisites.some(p => typeof p !== 'string' || p.trim().length < 10 || p.length > 500)))) throw new Error('Invalid workflow'); }
     }
     this.catalog = value;
     return value;

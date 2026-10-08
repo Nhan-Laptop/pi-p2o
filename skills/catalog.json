@@ -10,23 +10,22 @@
         {
           "id": "source-review",
           "description": "Review supplied source and trace invariants without claiming runtime proof",
-          "allOf": [
-            "source.snapshot"
+          "prerequisites": [
+            "A supplied read-only source snapshot; deployment exposure is not established."
           ]
         },
         {
           "id": "offline-reproduction",
           "description": "Bounded offline execution; check target runtime/dependencies with a real probe first",
-          "allOf": [
-            "shell.offline"
-          ],
-          "anyOf": []
+          "prerequisites": [
+            "Bounded offline execution in sandbox scratch without network access."
+          ]
         },
         {
           "id": "public-http-review",
           "description": "Same-origin public GET/HEAD comparison only; no credentials, bodies or browser",
-          "allOf": [
-            "http.same-origin.get"
+          "prerequisites": [
+            "Authorized same-origin public GET retrieval through p2o_http."
           ]
         }
       ]
@@ -40,23 +39,22 @@
         {
           "id": "source-review",
           "description": "Review supplied source and trace invariants without claiming runtime proof",
-          "allOf": [
-            "source.snapshot"
+          "prerequisites": [
+            "A supplied read-only source snapshot; deployment exposure is not established."
           ]
         },
         {
           "id": "offline-reproduction",
           "description": "Bounded offline execution; check target runtime/dependencies with a real probe first",
-          "allOf": [
-            "shell.offline"
-          ],
-          "anyOf": []
+          "prerequisites": [
+            "Bounded offline execution in sandbox scratch without network access."
+          ]
         },
         {
           "id": "authenticated-comparison",
           "description": "Controlled two-account HTTP comparison, requires separately consented runtime",
-          "allOf": [
-            "http.authenticated"
+          "prerequisites": [
+            "An explicitly authorized authenticated test transport and controlled principals; not provided by P2O."
           ]
         }
       ]
@@ -70,17 +68,16 @@
         {
           "id": "source-review",
           "description": "Review supplied source and trace invariants without claiming runtime proof",
-          "allOf": [
-            "source.snapshot"
+          "prerequisites": [
+            "A supplied read-only source snapshot; deployment exposure is not established."
           ]
         },
         {
           "id": "offline-reproduction",
           "description": "Bounded offline execution; check target runtime/dependencies with a real probe first",
-          "allOf": [
-            "shell.offline"
-          ],
-          "anyOf": []
+          "prerequisites": [
+            "Bounded offline execution in sandbox scratch without network access."
+          ]
         }
       ]
     },
@@ -93,17 +90,16 @@
         {
           "id": "source-review",
           "description": "Review supplied source and trace invariants without claiming runtime proof",
-          "allOf": [
-            "source.snapshot"
+          "prerequisites": [
+            "A supplied read-only source snapshot; deployment exposure is not established."
           ]
         },
         {
           "id": "offline-reproduction",
           "description": "Bounded offline execution; check target runtime/dependencies with a real probe first",
-          "allOf": [
-            "shell.offline"
-          ],
-          "anyOf": []
+          "prerequisites": [
+            "Bounded offline execution in sandbox scratch without network access."
+          ]
         }
       ]
     },
@@ -116,17 +112,16 @@
         {
           "id": "source-review",
           "description": "Review supplied source and trace invariants without claiming runtime proof",
-          "allOf": [
-            "source.snapshot"
+          "prerequisites": [
+            "A supplied read-only source snapshot; deployment exposure is not established."
           ]
         },
         {
           "id": "offline-reproduction",
           "description": "Bounded offline execution; check target runtime/dependencies with a real probe first",
-          "allOf": [
-            "shell.offline"
-          ],
-          "anyOf": []
+          "prerequisites": [
+            "Bounded offline execution in sandbox scratch without network access."
+          ]
         }
       ]
     },
@@ -139,17 +134,16 @@
         {
           "id": "source-review",
           "description": "Review supplied source and trace invariants without claiming runtime proof",
-          "allOf": [
-            "source.snapshot"
+          "prerequisites": [
+            "A supplied read-only source snapshot; deployment exposure is not established."
           ]
         },
         {
           "id": "offline-reproduction",
           "description": "Bounded offline execution; check target runtime/dependencies with a real probe first",
-          "allOf": [
-            "shell.offline"
-          ],
-          "anyOf": []
+          "prerequisites": [
+            "Bounded offline execution in sandbox scratch without network access."
+          ]
         }
       ]
     },
@@ -162,17 +156,16 @@
         {
           "id": "source-review",
           "description": "Review supplied source and trace invariants without claiming runtime proof",
-          "allOf": [
-            "source.snapshot"
+          "prerequisites": [
+            "A supplied read-only source snapshot; deployment exposure is not established."
           ]
         },
         {
           "id": "offline-reproduction",
           "description": "Bounded offline execution; check target runtime/dependencies with a real probe first",
-          "allOf": [
-            "shell.offline"
-          ],
-          "anyOf": []
+          "prerequisites": [
+            "Bounded offline execution in sandbox scratch without network access."
+          ]
         }
       ]
     },
@@ -185,17 +178,16 @@
         {
           "id": "source-review",
           "description": "Review supplied source and trace invariants without claiming runtime proof",
-          "allOf": [
-            "source.snapshot"
+          "prerequisites": [
+            "A supplied read-only source snapshot; deployment exposure is not established."
           ]
         },
         {
           "id": "offline-reproduction",
           "description": "Bounded offline execution; check target runtime/dependencies with a real probe first",
-          "allOf": [
-            "shell.offline"
-          ],
-          "anyOf": []
+          "prerequisites": [
+            "Bounded offline execution in sandbox scratch without network access."
+          ]
         }
       ]
     },
@@ -208,25 +200,23 @@
         {
           "id": "source-review",
           "description": "Walk the application factory, routers, and mounts in the supplied revision",
-          "allOf": [
-            "source.snapshot"
+          "prerequisites": [
+            "A supplied read-only source snapshot; deployment exposure is not established."
           ]
         },
         {
           "id": "offline-reproduction",
           "description": "Read the installed dependency metadata from the copy without installing anything",
-          "allOf": [
-            "shell.offline"
-          ],
-          "anyOf": [
-            "tool.python"
+          "prerequisites": [
+            "Bounded offline execution in sandbox scratch without network access.",
+            "One suitable option: A bounded offline functional check of Python and the dependencies needed for this task."
           ]
         },
         {
           "id": "live-parity-comparison",
           "description": "Compare the anonymous enforcement baseline across equivalent routes on the approved same-origin target",
-          "allOf": [
-            "http.same-origin.get"
+          "prerequisites": [
+            "Authorized same-origin public GET retrieval through p2o_http."
           ]
         }
       ]
@@ -240,17 +230,16 @@
         {
           "id": "source-review",
           "description": "Review supplied source and trace invariants without claiming runtime proof",
-          "allOf": [
-            "source.snapshot"
+          "prerequisites": [
+            "A supplied read-only source snapshot; deployment exposure is not established."
           ]
         },
         {
           "id": "offline-reproduction",
           "description": "Bounded offline execution; check target runtime/dependencies with a real probe first",
-          "allOf": [
-            "shell.offline"
-          ],
-          "anyOf": []
+          "prerequisites": [
+            "Bounded offline execution in sandbox scratch without network access."
+          ]
         }
       ]
     },
@@ -263,17 +252,16 @@
         {
           "id": "source-review",
           "description": "Review supplied source and trace invariants without claiming runtime proof",
-          "allOf": [
-            "source.snapshot"
+          "prerequisites": [
+            "A supplied read-only source snapshot; deployment exposure is not established."
           ]
         },
         {
           "id": "offline-reproduction",
           "description": "Bounded offline execution; check target runtime/dependencies with a real probe first",
-          "allOf": [
-            "shell.offline"
-          ],
-          "anyOf": []
+          "prerequisites": [
+            "Bounded offline execution in sandbox scratch without network access."
+          ]
         }
       ]
     },
@@ -286,17 +274,16 @@
         {
           "id": "source-review",
           "description": "Review supplied source and trace invariants without claiming runtime proof",
-          "allOf": [
-            "source.snapshot"
+          "prerequisites": [
+            "A supplied read-only source snapshot; deployment exposure is not established."
           ]
         },
         {
           "id": "offline-reproduction",
           "description": "Bounded offline execution; check target runtime/dependencies with a real probe first",
-          "allOf": [
-            "shell.offline"
-          ],
-          "anyOf": []
+          "prerequisites": [
+            "Bounded offline execution in sandbox scratch without network access."
+          ]
         }
       ]
     },
@@ -309,17 +296,16 @@
         {
           "id": "source-review",
           "description": "Review supplied source and trace invariants without claiming runtime proof",
-          "allOf": [
-            "source.snapshot"
+          "prerequisites": [
+            "A supplied read-only source snapshot; deployment exposure is not established."
           ]
         },
         {
           "id": "offline-reproduction",
           "description": "Bounded offline execution; check target runtime/dependencies with a real probe first",
-          "allOf": [
-            "shell.offline"
-          ],
-          "anyOf": []
+          "prerequisites": [
+            "Bounded offline execution in sandbox scratch without network access."
+          ]
         }
       ]
     },
@@ -332,17 +318,16 @@
         {
           "id": "source-review",
           "description": "Review supplied source and trace invariants without claiming runtime proof",
-          "allOf": [
-            "source.snapshot"
+          "prerequisites": [
+            "A supplied read-only source snapshot; deployment exposure is not established."
           ]
         },
         {
           "id": "offline-reproduction",
           "description": "Bounded offline execution; check target runtime/dependencies with a real probe first",
-          "allOf": [
-            "shell.offline"
-          ],
-          "anyOf": []
+          "prerequisites": [
+            "Bounded offline execution in sandbox scratch without network access."
+          ]
         }
       ]
     },
@@ -355,17 +340,16 @@
         {
           "id": "source-review",
           "description": "Review supplied source and trace invariants without claiming runtime proof",
-          "allOf": [
-            "source.snapshot"
+          "prerequisites": [
+            "A supplied read-only source snapshot; deployment exposure is not established."
           ]
         },
         {
           "id": "offline-reproduction",
           "description": "Bounded offline execution; check target runtime/dependencies with a real probe first",
-          "allOf": [
-            "shell.offline"
-          ],
-          "anyOf": []
+          "prerequisites": [
+            "Bounded offline execution in sandbox scratch without network access."
+          ]
         }
       ]
     },
@@ -378,17 +362,16 @@
         {
           "id": "source-review",
           "description": "Review supplied source and trace invariants without claiming runtime proof",
-          "allOf": [
-            "source.snapshot"
+          "prerequisites": [
+            "A supplied read-only source snapshot; deployment exposure is not established."
           ]
         },
         {
           "id": "offline-reproduction",
           "description": "Bounded offline execution; check target runtime/dependencies with a real probe first",
-          "allOf": [
-            "shell.offline"
-          ],
-          "anyOf": []
+          "prerequisites": [
+            "Bounded offline execution in sandbox scratch without network access."
+          ]
         }
       ]
     },
@@ -401,17 +384,16 @@
         {
           "id": "source-review",
           "description": "Review supplied source and trace invariants without claiming runtime proof",
-          "allOf": [
-            "source.snapshot"
+          "prerequisites": [
+            "A supplied read-only source snapshot; deployment exposure is not established."
           ]
         },
         {
           "id": "offline-reproduction",
           "description": "Bounded offline execution; check target runtime/dependencies with a real probe first",
-          "allOf": [
-            "shell.offline"
-          ],
-          "anyOf": []
+          "prerequisites": [
+            "Bounded offline execution in sandbox scratch without network access."
+          ]
         }
       ]
     },
@@ -424,17 +406,16 @@
         {
           "id": "source-review",
           "description": "Review supplied source and trace invariants without claiming runtime proof",
-          "allOf": [
-            "source.snapshot"
+          "prerequisites": [
+            "A supplied read-only source snapshot; deployment exposure is not established."
           ]
         },
         {
           "id": "offline-reproduction",
           "description": "Bounded offline execution; check target runtime/dependencies with a real probe first",
-          "allOf": [
-            "shell.offline"
-          ],
-          "anyOf": []
+          "prerequisites": [
+            "Bounded offline execution in sandbox scratch without network access."
+          ]
         }
       ]
     },
@@ -447,25 +428,23 @@
         {
           "id": "source-review",
           "description": "Trace the effective authorization decision and its operands in the supplied revision",
-          "allOf": [
-            "source.snapshot"
+          "prerequisites": [
+            "A supplied read-only source snapshot; deployment exposure is not established."
           ]
         },
         {
           "id": "offline-reproduction",
           "description": "Exercise an extracted policy function against controlled objects in a local harness",
-          "allOf": [
-            "shell.offline"
-          ],
-          "anyOf": [
-            "tool.python"
+          "prerequisites": [
+            "Bounded offline execution in sandbox scratch without network access.",
+            "One suitable option: A bounded offline functional check of Python and the dependencies needed for this task."
           ]
         },
         {
           "id": "controlled-identity-comparison",
           "description": "Compare a controlled principal against another over an authenticated transport; local HTTP alone is not identity",
-          "allOf": [
-            "http.authenticated"
+          "prerequisites": [
+            "An explicitly authorized authenticated test transport and controlled principals; not provided by P2O."
           ]
         }
       ]
@@ -479,25 +458,23 @@
         {
           "id": "source-review",
           "description": "Trace each source through its transformations to the sink and name the output context",
-          "allOf": [
-            "source.snapshot"
+          "prerequisites": [
+            "A supplied read-only source snapshot; deployment exposure is not established."
           ]
         },
         {
           "id": "offline-reproduction",
           "description": "Render a local fixture with the extracted template or sanitizer configuration",
-          "allOf": [
-            "shell.offline"
-          ],
-          "anyOf": [
-            "tool.python"
+          "prerequisites": [
+            "Bounded offline execution in sandbox scratch without network access.",
+            "One suitable option: A bounded offline functional check of Python and the dependencies needed for this task."
           ]
         },
         {
           "id": "browser-execution-proof",
           "description": "Observe an inert marker interpreted as code by the managed browser interface; a proven offline local browser run is offline reproduction, not live proof",
-          "allOf": [
-            "browser.execution"
+          "prerequisites": [
+            "An explicitly authorized real browser environment; offline parsing is not browser proof and P2O provides no browser transport."
           ]
         }
       ]
@@ -511,22 +488,22 @@
         {
           "id": "source-review",
           "description": "Extract routes, parameters, and declared identity gates from the supplied source copy",
-          "allOf": [
-            "source.snapshot"
+          "prerequisites": [
+            "A supplied read-only source snapshot; deployment exposure is not established."
           ]
         },
         {
           "id": "public-baseline",
           "description": "Send one bodyless same-origin GET or HEAD baseline per in-scope route",
-          "allOf": [
-            "http.same-origin.get"
+          "prerequisites": [
+            "Authorized same-origin public GET retrieval through p2o_http."
           ]
         },
         {
           "id": "authenticated-navigation",
           "description": "Reach protected routes with a controlled authenticated identity; a browser session is not a substitute",
-          "allOf": [
-            "http.authenticated"
+          "prerequisites": [
+            "An explicitly authorized authenticated test transport and controlled principals; not provided by P2O."
           ]
         }
       ]

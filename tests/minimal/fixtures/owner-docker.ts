@@ -3,7 +3,9 @@ import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
 import { createAssistantMessageEventStream, getCurrentSystemPrompt, getCurrentTools, type AssistantMessage } from '@earendil-works/pi-ai';
 import { registerP2O } from '../../../extensions/p2o/index.js';
 
-export default function (pi: ExtensionAPI) {
+export default async function (pi: ExtensionAPI) {
+  const installed = process.env.P2O_TEST_INSTALLED_EXTENSION;
+  const register = installed ? (await import(installed)).registerP2O : registerP2O;
   pi.registerProvider('p2o-docker-inert', {
     baseUrl: 'http://127.0.0.1:1/never-contacted', apiKey: 'inert-placeholder', api: 'openai-completions',
     models: [{ id: 'docker-agent', name: 'Mechanical fixture, NOT live AI', reasoning: false, input: ['text'],
@@ -11,7 +13,8 @@ export default function (pi: ExtensionAPI) {
     streamSimple(model, context) {
       const system = getCurrentSystemPrompt(context.messages);
       const tools = getCurrentTools(context.messages).map(tool => tool.name);
-      if (!system.includes('P2O ASSESSMENT')) throw new Error('lead scope section missing');
+      if (!system.includes('P2O ASSESSMENT') || !system.includes('RECON → INVESTIGATION')) throw new Error('lead scope/recon section missing');
+      if (tools.includes('p2o_capabilities') || system.includes('CAPABILITIES')) throw new Error('removed capability interface still exposed');
       if (tools.includes('bash') || tools.includes('read')) throw new Error(`host tools were declared: ${tools.join(',')}`);
       const results = context.messages.filter((message: any) => message.role === 'toolResult');
       const last: any = results.at(-1);
@@ -41,7 +44,8 @@ export default function (pi: ExtensionAPI) {
       return stream;
     },
   });
-  registerP2O(pi, {
+  register(pi, {
+    ...(installed ? { extensionPath: installed } : {}),
     ...(process.env.P2O_TEST_CONTROL_ROOT ? { controlRoot: process.env.P2O_TEST_CONTROL_ROOT } : {}),
   });
 }

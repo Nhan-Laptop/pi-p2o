@@ -4,7 +4,6 @@ import { mkdir, open } from 'node:fs/promises';
 import { join } from 'node:path';
 import { appendRecord, readRecords, type AssessmentRecord } from './records.js';
 import type { ProcessResult } from './process.js';
-import { CAPABILITY_IDS } from './capabilities.js';
 
 export interface Candidate {
   candidate: string; surface: string; risk: string;
@@ -113,7 +112,8 @@ function validateCandidate(c: Candidate): void {
   if (c.closure !== 'open_proof_gap' && !c.evidenceRefs.length) throw new Error('Closure needs evidence; otherwise use open_proof_gap');
   if (c.closure === 'ruled_out' && !c.control?.trim()) throw new Error('ruled_out needs the specific control and its location');
   if (c.resolves && (!Array.isArray(c.resolves) || c.resolves.length > 10 || c.resolves.some(id => typeof id !== 'string'))) throw new Error('Invalid resolved open-item list');
-  if (c.execution === 'blocked' && !(CAPABILITY_IDS as readonly string[]).includes(c.requirement ?? '')) throw new Error('blocked needs a known capability requirement');
+  if (c.requirement !== undefined && (typeof c.requirement !== 'string' || !c.requirement.trim() || c.requirement.length > 1000)) throw new Error('Invalid blocked prerequisite reason');
+  if (c.execution === 'blocked' && (c.requirement?.trim().length ?? 0) < 10) throw new Error('blocked needs a descriptive prerequisite reason (10..1000 characters)');
   if (c.execution === 'blocked' && c.closure !== 'open_proof_gap') throw new Error('Blocked execution cannot establish closure');
   if (c.proof !== 'static_trace' && c.execution !== 'tested') throw new Error('Runtime proof requires tested execution');
 }

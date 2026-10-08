@@ -8,25 +8,23 @@
     {
       "id": "source-review",
       "description": "Trace the effective authorization decision and its operands in the supplied revision",
-      "allOf": [
-        "source.snapshot"
+      "prerequisites": [
+        "A supplied read-only source snapshot; deployment exposure is not established."
       ]
     },
     {
       "id": "offline-reproduction",
       "description": "Exercise an extracted policy function against controlled objects in a local harness",
-      "allOf": [
-        "shell.offline"
-      ],
-      "anyOf": [
-        "tool.python"
+      "prerequisites": [
+        "Bounded offline execution in sandbox scratch without network access.",
+        "One suitable option: A bounded offline functional check of Python and the dependencies needed for this task."
       ]
     },
     {
       "id": "controlled-identity-comparison",
       "description": "Compare a controlled principal against another over an authenticated transport; local HTTP alone is not identity",
-      "allOf": [
-        "http.authenticated"
+      "prerequisites": [
+        "An explicitly authorized authenticated test transport and controlled principals; not provided by P2O."
       ]
     }
   ],

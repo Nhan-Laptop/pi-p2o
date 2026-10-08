@@ -42,14 +42,8 @@ METADATA_FIELDS = frozenset({"schema_version", "kind", "name", "references", "wo
 CATALOG_FIELDS = frozenset({"version", "skills", "documents"})
 CATALOG_SKILL_FIELDS = frozenset({"name", "description", "kind", "document", "workflows"})
 CATALOG_DOCUMENT_FIELDS = frozenset({"id", "path", "section"})
-WORKFLOW_FIELDS = frozenset({"id", "description", "allOf", "anyOf"})
+WORKFLOW_FIELDS = frozenset({"id", "description", "prerequisites"})
 DOCUMENT_ID = re.compile(r"[a-z0-9][a-z0-9:.-]{0,159}")
-STATIC_CAPABILITIES = frozenset({
-    "source.snapshot", "source.history", "shell.offline", "work.scratch",
-    "http.same-origin.get", "http.same-origin.head", "http.authenticated", "http.body",
-    "browser.execution", "lab.local-http", "oast.callback", "requests.parallel",
-    "tool.python", "tool.semgrep",
-})
 PROVENANCE_FIELDS = (
     "project", "distribution", "revision", "revision_basis", "snapshot_retrieved_at", "reviewed_at",
     "license", "license_sha256", "license_copy", "license_notice", "version_metadata_sha256", "usage_boundary", "attribution",
@@ -122,20 +116,7 @@ def read_json_object(path: Path) -> dict:
     return data
 
 
-def runtime_capabilities(root: Path) -> frozenset[str]:
-    """Capability IDs owned by the runtime source; fall back to the pinned copy."""
-    source = root / "src/capabilities.ts"
-    if source.is_file():
-        text = source.read_text(encoding="utf-8")
-        match = re.search(r"CAPABILITY_IDS\s*=\s*\[(.*?)\]", text, re.S)
-        if match:
-            identifiers = frozenset(re.findall(r"'([a-z0-9.-]+)'", match.group(1)))
-            if identifiers:
-                return identifiers
-    return STATIC_CAPABILITIES
-
-
-def validate_workflows(label: str, workflows, capabilities: frozenset[str], errors: list[str]) -> None:
+def validate_workflows(label: str, workflows, errors: list[str]) -> None:
     if not isinstance(workflows, list) or not workflows:
         errors.append(f"{label}: workflow prerequisites missing")
         return
@@ -153,16 +134,10 @@ def validate_workflows(label: str, workflows, capabilities: frozenset[str], erro
             seen.add(identifier)
         if not isinstance(workflow.get("description"), str) or len(workflow["description"]) < 20:
             errors.append(f"{label}: workflow {identifier} lacks a description")
-        for key in ("allOf", "anyOf"):
-            if key not in workflow:
-                continue
-            values = workflow[key]
-            if not isinstance(values, list) or any(not isinstance(value, str) for value in values):
-                errors.append(f"{label}: invalid {key} for {identifier}")
-                continue
-            unknown = sorted(set(values) - capabilities)
-            if unknown:
-                errors.append(f"{label}: unknown capability {unknown} for {identifier}")
+        values = workflow.get("prerequisites", [])
+        if (not isinstance(values, list) or len(values) > 10
+                or any(not isinstance(value, str) or len(value.strip()) < 10 or len(value) > 500 for value in values)):
+            errors.append(f"{label}: invalid descriptive prerequisites for {identifier}")
 
 
 def metadata_list(metadata: dict, key: str) -> list:
@@ -173,12 +148,12 @@ def metadata_list(metadata: dict, key: str) -> list:
 def workflow_requirements(workflows) -> dict:
     """Normalize workflow ids to their requirement tuples so catalog drift is detectable."""
     return {
-        workflow.get("id"): (tuple(sorted(workflow.get("allOf", []))), tuple(sorted(workflow.get("anyOf", []))))
+        workflow.get("id"): tuple(sorted(workflow.get("prerequisites", [])))
         for workflow in workflows if isinstance(workflow, dict)
     }
 
 
-def validate_skill_metadata(base: Path, label: str, data: dict, capabilities: frozenset[str], errors: list[str]) -> None:
+def validate_skill_metadata(base: Path, label: str, data: dict, errors: list[str]) -> None:
     """Validate the staging sidecar carried by a non-technique skill."""
     if set(data) - METADATA_FIELDS:
         errors.append(f"{label}: unknown metadata field")
@@ -200,7 +175,7 @@ def validate_skill_metadata(base: Path, label: str, data: dict, capabilities: fr
         if not (base / reference).is_file():
             errors.append(f"{label}: missing reference {reference}")
     if "workflows" in data:
-        validate_workflows(label, data["workflows"], capabilities, errors)
+        validate_workflows(label, data["workflows"], errors)
     elif kind in {"playbook", "overlay"}:
         errors.append(f"{label}: workflow prerequisites missing")
     provenance = data.get("provenance_refs", [])
@@ -213,7 +188,7 @@ def validate_skill_metadata(base: Path, label: str, data: dict, capabilities: fr
         errors.append(f"{label}: invalid recipes")
 
 
-def validate_runtime_skill(label: str, entry: dict, capabilities: frozenset[str], errors: list[str]) -> None:
+def validate_runtime_skill(label: str, entry: dict, errors: list[str]) -> None:
     """Validate one skill entry of the runtime catalog ({version, skills, documents})."""
     if set(entry) - CATALOG_SKILL_FIELDS:
         errors.append(f"{label}: unknown catalog skill field")
@@ -229,7 +204,7 @@ def validate_runtime_skill(label: str, entry: dict, capabilities: frozenset[str]
     if not isinstance(entry.get("workflows"), list) or not entry.get("workflows"):
         errors.append(f"{label}: workflow prerequisites missing")
     else:
-        validate_workflows(label, entry["workflows"], capabilities, errors)
+        validate_workflows(label, entry["workflows"], errors)
 
 
 def validate_runtime_document(root: Path, label: str, document: dict, errors: list[str]) -> None:
@@ -275,7 +250,6 @@ def load_skill_metadata(root: Path, errors: list[str]) -> dict[str, dict]:
     catalog owns document IDs, workflows, and the reachable entry points. A catalog kind that differs
     from staging is only an error when it is an explicit non-default choice.
     """
-    capabilities = runtime_capabilities(root)
     metadata: dict[str, dict] = {}
     sidecars: dict[str, dict] = {}
     known_skills = {path.parent.name for path in (root / "skills").glob("*/SKILL.md")}
@@ -287,7 +261,7 @@ def load_skill_metadata(root: Path, errors: list[str]) -> dict[str, dict]:
         except (OSError, TypeError, ValueError) as error:
             errors.append(f"{label}: invalid metadata ({error})")
             continue
-        validate_skill_metadata(path.parent, str(path.relative_to(root)), data, capabilities, errors)
+        validate_skill_metadata(path.parent, str(path.relative_to(root)), data, errors)
         sidecars[name] = data
     catalog_path = root / "skills/catalog.json"
     catalog: dict[str, dict] = {}
@@ -316,7 +290,7 @@ def load_skill_metadata(root: Path, errors: list[str]) -> dict[str, dict]:
                 if name in catalog:
                     errors.append(f"{label}: duplicate skill entry {name}")
                     continue
-                validate_runtime_skill(f"{label}:{name}", entry, capabilities, errors)
+                validate_runtime_skill(f"{label}:{name}", entry, errors)
                 catalog[name] = entry
             documents = data.get("documents", [])
             if not isinstance(documents, list):

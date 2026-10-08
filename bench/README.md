@@ -264,7 +264,7 @@ encourages B/C to use the on-demand library without hiding what A does not have.
 
 Coordination note: the runtime is under concurrent development. The runner records the structured
 APIs opportunistically (`p2o_skill_list{offset?,query?}`, `p2o_skill_read{id,offset?}`,
-`p2o_capabilities{probe?}`, `p2o_candidate{...}`, target-command evidence IDs, `p2o_finish`
+`p2o_candidate{...}`, target-command evidence IDs, `p2o_finish`
 `details.exportPath`) but requires none of them — arm A does not have them, and scored claims come
 from the transcript that every arm produces. An invalid workflow sidecar is the runtime's concern to
 fix; the planner only reports arm availability rather than working around it.

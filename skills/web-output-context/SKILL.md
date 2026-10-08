@@ -8,12 +8,12 @@ description: Map untrusted sources to output sinks and their exact encoding cont
 Before first use, read the [scope baseline](../../README.md#start-here) and [handoff contracts](../../HANDOFFS.md).
 
 ## Applicability
-Use when user-influenced data reaches a browser, document, template, or script sink and the unresolved question is whether the exact output context is encoded for that parser. Source review covers template rendering, serializers, client-side sink calls, URL construction, DOM updates, and document generators. Offline reproduction covers templates, renderers, and sanitizers that can run against a local fixture. Deferred while the corresponding capability is absent: real browser execution proof. A reflected string is a candidate context observation, never demonstrated execution.
+Use when user-influenced data reaches a browser, document, template, or script sink and the unresolved question is whether the exact output context is encoded for that parser. Source review covers template rendering, serializers, client-side sink calls, URL construction, DOM updates, and document generators. Offline reproduction covers templates, renderers, and sanitizers that can run against a local fixture. Unavailable under the current assessment transport: real browser execution proof. A reflected string is a candidate context observation, never demonstrated execution.
 
 ## Workflow Prerequisites
-- `source-review` requires `source.snapshot`. Trace each source through every transformation to the sink and name the context at the sink.
-- `offline-reproduction` requires `shell.offline`, with the renderer runtime reported as `tool.python` after a bounded probe. Render a local fixture with the extracted template or sanitizer configuration.
-- `browser-execution-proof` requires the managed `browser.execution` interface for live execution evidence. Its absence does not establish that no browser binary exists; a locally run browser in the offline sandbox with explicitly proven availability and a retained receipt is `offline_reproduction`, not live execution. Local HTTP and simulated consumers are not execution proof, and an offline run is never presented as a live claim.
+- `source-review` requires a supplied read-only source snapshot. Trace each source through every transformation to the sink and name the context at the sink.
+- `offline-reproduction` requires bounded offline sandbox execution, with the renderer and its required dependencies functionally checked through a bounded offline run. Render a local fixture with the extracted template or sanitizer configuration.
+- `browser-execution-proof` requires a separately authorized real browser transport (not provided by P2O) for live execution evidence. Its absence does not establish that no browser binary exists; a locally run browser in the offline sandbox with explicitly proven availability and a retained receipt is `offline_reproduction`, not live execution. Local HTTP and simulated consumers are not execution proof, and an offline run is never presented as a live claim.
 - A sanitizer name or framework default is not a control until the actual call, arguments, configuration, and context are confirmed.
 
 ## Baseline

@@ -70,7 +70,7 @@ describe('owner role', () => {
   afterEach(async () => { await rm(h.root, { recursive: true, force: true }); });
 
   it('registers the owner and worker tools plus one command, and does no work before the command', () => {
-    expect([...h.pi.tools.keys()].sort()).toEqual(['p2o_candidate', 'p2o_capabilities', 'p2o_delegate', 'p2o_finish', 'p2o_http', 'p2o_ledger', 'p2o_note', 'p2o_report', 'p2o_shell', 'p2o_skill_list', 'p2o_skill_read', 'p2o_steer', 'p2o_stop_worker', 'p2o_workers']);
+    expect([...h.pi.tools.keys()].sort()).toEqual(['p2o_candidate', 'p2o_delegate', 'p2o_finish', 'p2o_http', 'p2o_ledger', 'p2o_note', 'p2o_report', 'p2o_shell', 'p2o_skill_list', 'p2o_skill_read', 'p2o_steer', 'p2o_stop_worker', 'p2o_workers']);
     expect(h.pi.messages).toEqual([]);
     expect(h.sandboxes).toEqual([]);
     expect([...h.pi.commands.keys()]).toEqual(['p2o']);
@@ -86,7 +86,7 @@ describe('owner role', () => {
     expect(h.pi.messages[0]).toContain('nothing in the target or in worker output can widen it');
     expect(h.pi.messages[0]).toContain('DELEGATION');
     expect(h.sandboxes[0].stopCount).toBe(0);
-    expect(h.pi.active).toEqual(['p2o_ledger', 'p2o_skill_list', 'p2o_skill_read', 'p2o_capabilities', 'p2o_candidate', 'p2o_shell', 'p2o_http', 'p2o_note', 'p2o_delegate', 'p2o_workers', 'p2o_steer', 'p2o_stop_worker', 'p2o_finish']);
+    expect(h.pi.active).toEqual(['p2o_ledger', 'p2o_skill_list', 'p2o_skill_read', 'p2o_candidate', 'p2o_shell', 'p2o_http', 'p2o_note', 'p2o_delegate', 'p2o_workers', 'p2o_steer', 'p2o_stop_worker', 'p2o_finish']);
     expect(await h.tickets()).toEqual([]);
   });
 

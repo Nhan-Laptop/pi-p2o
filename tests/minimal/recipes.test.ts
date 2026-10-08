@@ -3,7 +3,6 @@ import { readFile, mkdtemp, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { Sandbox } from '../../src/sandbox.js';
-import { PROBES } from '../../src/probes.js';
 
 it.skipIf(!process.env.P2O_TEST_TOOL_IMAGE)('offline selected image: actual vendored recipe finds five candidates and zero fixed matches', async () => {
   const target = await mkdtemp(join(tmpdir(), 'p2o-recipe-'));
@@ -12,9 +11,6 @@ it.skipIf(!process.env.P2O_TEST_TOOL_IMAGE)('offline selected image: actual vend
   const sandbox = new Sandbox({ kind: 'directory', path: target }, undefined, undefined, { image, runId: 'p2o-recipe-test' });
   try {
     await sandbox.start();
-    const probe = await sandbox.exec(PROBES.semgrep, 60);
-    expect(probe.code, probe.stderr).toBe(0);
-    expect(probe.stdout).toContain('P2O_SEMGREP_OK');
     const rules = await readFile(resolve('skills/source-code-auditing/recipes/semgrep-rules/p2o-python-offline.yaml'));
     const vulnerable = 'import subprocess,pickle,yaml,requests\nsubprocess.run(user_value, shell=True)\npickle.loads(user_value)\nyaml.load(user_value)\neval(user_value)\nrequests.get(user_value)\n';
     const fixed = 'import subprocess,json,yaml,requests\nsubprocess.run(["echo", user_value], shell=False)\njson.loads(user_value)\nyaml.safe_load(user_value)\nint(user_value)\nrequests.get(user_value,timeout=2)\n';

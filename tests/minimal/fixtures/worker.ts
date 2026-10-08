@@ -9,7 +9,9 @@ import { registerInertProvider } from './inert-provider.js';
  */
 export const REAL_EXTENSION = fileURLToPath(new URL('../../../extensions/p2o/index.ts', import.meta.url));
 
-export default function (pi: ExtensionAPI) {
+export default async function (pi: ExtensionAPI) {
+  const installed = process.env.P2O_TEST_INSTALLED_EXTENSION;
+  const register = installed ? (await import(installed)).registerP2O : registerP2O;
   registerInertProvider(pi, 'worker');
-  registerP2O(pi, { extensionPath: REAL_EXTENSION });
+  register(pi, { extensionPath: installed ?? REAL_EXTENSION });
 }

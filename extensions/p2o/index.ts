@@ -14,9 +14,7 @@ import { createHerdrClient, type HerdrClient } from '../../src/herdr.js';
 import { loadSettings, resolveRole, MAX_SKILLS, type P2OSettings } from '../../src/roles.js';
 import { ownerInstructions, workerBrief, workerInstructions } from '../../src/prompts.js';
 import { SkillLibrary, packageRoot } from '../../src/skills.js';
-import { capabilities, missingRequirements, type CapabilitySnapshot } from '../../src/capabilities.js';
 import { EvidenceStore, redact, type Candidate } from '../../src/evidence.js';
-import { PROBES, applyProbe } from '../../src/probes.js';
 
 /**
  * One command, two roles.
@@ -28,8 +26,8 @@ import { PROBES, applyProbe } from '../../src/probes.js';
  * Strix's model is one sandbox session shared by every agent; because Pi workers are separate processes,
  * the owner serves that session over a 0600 unix socket instead of handing out a Docker client.
  */
-const OWNER_TOOLS = ['p2o_ledger', 'p2o_skill_list', 'p2o_skill_read', 'p2o_capabilities', 'p2o_candidate', 'p2o_shell', 'p2o_http', 'p2o_note', 'p2o_delegate', 'p2o_workers', 'p2o_steer', 'p2o_stop_worker', 'p2o_finish'];
-const WORKER_TOOLS = ['p2o_skill_list', 'p2o_skill_read', 'p2o_capabilities', 'p2o_candidate', 'p2o_shell', 'p2o_http', 'p2o_note', 'p2o_ledger', 'p2o_delegate', 'p2o_report'];
+const OWNER_TOOLS = ['p2o_ledger', 'p2o_skill_list', 'p2o_skill_read', 'p2o_candidate', 'p2o_shell', 'p2o_http', 'p2o_note', 'p2o_delegate', 'p2o_workers', 'p2o_steer', 'p2o_stop_worker', 'p2o_finish'];
+const WORKER_TOOLS = ['p2o_skill_list', 'p2o_skill_read', 'p2o_candidate', 'p2o_shell', 'p2o_http', 'p2o_note', 'p2o_ledger', 'p2o_delegate', 'p2o_report'];
 const ALL_TOOLS = [...new Set([...OWNER_TOOLS, ...WORKER_TOOLS])];
 const WORKER_FLAG = 'p2o-worker';
 const HELP = [
@@ -54,13 +52,13 @@ interface OwnerRun {
   /** Panes Herdr refused to close, reported honestly instead of as "verified teardown". */
   unclosedPanes?: string[];
   cleanedReason?: string;
-  library: SkillLibrary; evidence: EvidenceStore; knowledgeUsed: number; capabilities: CapabilitySnapshot;
+  library: SkillLibrary; evidence: EvidenceStore; knowledgeUsed: number;
   image: string;
   exportEnabled: boolean; exportPath?: string; exportError?: string;
 }
 interface WorkerRun {
   role: 'worker';
-  ticket: Ticket; ctx: ExtensionContext; phase: 'active' | 'finished'; client: BrokerClient; toolsBefore: string[]; capabilities?: CapabilitySnapshot;
+  ticket: Ticket; ctx: ExtensionContext; phase: 'active' | 'finished'; client: BrokerClient; toolsBefore: string[];
 }
 type Run = OwnerRun | WorkerRun;
 
@@ -163,7 +161,7 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
     return next;
   }
 
-  async function spawnWorkerLocked(input: { focus: string; task: string; context?: string; role?: string; skills?: string[]; model?: string; workflow?: string; thinking?: string }, parent: { workerId: string | null; depth: number }): Promise<{ workerId: string; name: string; paneId: string; role: string; model?: string; thinking?: string; depth: number; capabilityWarnings: string[] }> {
+  async function spawnWorkerLocked(input: { focus: string; task: string; context?: string; role?: string; skills?: string[]; model?: string; workflow?: string; thinking?: string }, parent: { workerId: string | null; depth: number }): Promise<{ workerId: string; name: string; paneId: string; role: string; model?: string; thinking?: string; depth: number }> {
     const current = owner();
     if (current.sandbox.isStopped) fail('SANDBOX_STOPPED', 'Executor stopped; record gaps and finish, do not delegate more target work');
     if (!current.delegation.enabled) fail('DELEGATION_UNAVAILABLE', current.delegation.reason ?? 'delegation is disabled for this assessment');
@@ -175,7 +173,6 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
     const resolved = resolveRole({ role: input.role, model: input.model, thinking: input.thinking, skills: input.skills, settings: current.settings, parentModel: sessionModel(current.ctx), parentThinking: current.ctx.thinkingLevel });
     if (resolved.thinking && !['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'].includes(resolved.thinking)) fail('THINKING_INVALID', 'Unsupported thinking level');
     const skillDocs: Array<{ name: string; body: string }> = [];
-    const capabilityWarnings: string[] = [];
     if (input.workflow && !resolved.skills.length) fail('WORKFLOW_UNKNOWN', 'A workflow must belong to an assigned skill');
     if (resolved.skills.length) {
       if (!skills) fail('SKILLS_UNAVAILABLE', 'the packaged skill library was not found next to this extension');
@@ -190,12 +187,9 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
           const entry = (await current.library.load()).skills.find(s => s.name === skill)!;
           const workflow = entry.workflows.find(w => w.id === input.workflow);
           if (!workflow) fail('WORKFLOW_UNKNOWN', `skill ${skill} has no workflow ${input.workflow}; use p2o_skill_list`);
-          const missing = missingRequirements(workflow, current.capabilities);
-          if (missing.length) capabilityWarnings.push(`${skill}/${workflow.id}: ${missing.join('; ')}`);
         }
       }
     }
-    for (const warning of capabilityWarnings) await note({ by: 'owner', kind: 'open', text: `Selected workflow prerequisite gap: ${warning}` });
     const workerId = workerName(resolved.role);
     if (current.workers.size >= current.delegation.maxWorkers * 2 + 4) fail('DELEGATION_TOTAL', 'too many workers for this assessment');
     const paneId = await herdr.split({ cwd: current.ctx.cwd });
@@ -224,7 +218,7 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
       const args = ['--no-extensions', '-e', workerExtensionPath, '--no-approve', '--no-skills', '--no-context-files', '--no-prompt-templates',
         ...modelArgs, ...(resolved.thinking ? ['--thinking', resolved.thinking] : []), '--p2o-image', current.image, '--p2o-worker', ticketFile];
       await herdr.start({ name: workerId, paneId, args });
-      await herdr.prompt({ name: workerId, text: workerBrief({ ticket, focus: input.focus, task: input.task, context: `${input.context ?? ''}${capabilityWarnings.length ? `\nCAPABILITY GAPS: ${capabilityWarnings.join(' | ')}` : ''}`, skills: skillDocs }) });
+      await herdr.prompt({ name: workerId, text: workerBrief({ ticket, focus: input.focus, task: input.task, context: input.context, skills: skillDocs }) });
       // A fresh pane can still read "idle" while the brief is being submitted, so liveness is decided by
       // reports, never by that transient status. Wait briefly only to report a worker that never starts.
       const startDeadline = now() + 15_000;
@@ -246,7 +240,7 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
     }
     current.delegation.spawned += 1;
     await note({ by: parent.workerId ?? 'owner', kind: 'lifecycle', text: `delegated ${workerId} (${resolved.role}, depth ${depth}, model ${resolved.model ?? 'inherit'}, thinking ${resolved.thinking ?? 'inherit'}): ${input.focus}`, workerId, role: resolved.role, depth });
-    return { workerId, name: workerId, paneId, role: resolved.role, model: resolved.model, thinking: resolved.thinking, depth, capabilityWarnings };
+    return { workerId, name: workerId, paneId, role: resolved.role, model: resolved.model, thinking: resolved.thinking, depth };
   }
 
   /** Spawns are serialized and tracked so a parallel finish/stop cannot race a half-registered worker. */
@@ -343,7 +337,7 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
     if (current.exportEnabled && !current.exportPath) {
       try { current.exportPath = await current.evidence.exportTo(current.ctx.cwd, {
         target: targetLabel(current.target), sourceHashes: current.sandbox.sourceManifest, image: current.image, extensionSha256: current.extensionSha,
-        leadModel: sessionModel(current.ctx), skillHashes: current.library.hashes(), capabilities: current.capabilities, reason,
+        leadModel: sessionModel(current.ctx), skillHashes: current.library.hashes(), reason,
       }); } catch (error) { current.exportError = message(error); current.ctx.ui.notify(`Evidence export failed: ${current.exportError}. Cleanup still proceeds.`, 'error'); }
     }
     const { rm } = await import('node:fs/promises');
@@ -368,9 +362,6 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
       return { ...result, evidenceId };
     } catch (error) {
       if (current.sandbox.isStopped) {
-        for (const capability of current.capabilities.capabilities) {
-          if (capability.availability === 'supported') { capability.availability = 'unavailable'; capability.reason = 'Executor stopped after a failed/timed-out operation; finish or stop this assessment, do not retry target commands'; }
-        }
         if (run === current) pi.setActiveTools(OWNER_TOOLS.filter(name => !['p2o_shell', 'p2o_http', 'p2o_delegate'].includes(name)));
       }
       await current.evidence.receipt(by, operation, input, { code: -1, stdout: '', stderr: message(error), truncated: false }, started).catch(() => {});
@@ -384,15 +375,6 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
   function readKnowledge(current: OwnerRun, op: string, params: Record<string, unknown>, by = 'owner') {
     const task = (async () => {
     if (current.phase !== 'active') fail('NO_ASSESSMENT', 'Knowledge service is closed');
-    if (op === 'capabilities') {
-      if (params.probe !== undefined) {
-        if (params.probe !== 'python' && params.probe !== 'semgrep') fail('INVALID_PROBE', 'Only fixed offline python/semgrep probes exist');
-        if (current.capabilities.capabilities.find(c => c.id === `tool.${params.probe}`)?.availability !== 'unknown') return current.capabilities;
-        const result = await executeWithReceipt(current, by, 'probe', params.probe, () => current.sandbox.exec(PROBES[params.probe as keyof typeof PROBES], 45));
-        applyProbe(current.capabilities, params.probe, result);
-      }
-      return current.capabilities;
-    }
     if (op === 'skill_list' || op === 'skill_read') {
       const result = op === 'skill_list' ? await current.library.list((params.offset ?? 0) as number, (params.query ?? '') as string)
         : await current.library.read((params.documentId ?? params.id) as string, (params.offset ?? 0) as number);
@@ -408,10 +390,6 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
   }
 
   async function recordCandidate(current: OwnerRun, by: string, candidate: Candidate) {
-    if (candidate?.execution === 'blocked') {
-      const capability = current.capabilities.capabilities.find(c => c.id === candidate.requirement);
-      if (capability?.permitted && capability.applicable && capability.availability === 'supported') fail('CAPABILITY_AVAILABLE', 'That capability is available. Use tested/not_tested with open_proof_gap for a missing observation or policy, not a fabricated capability block.');
-    }
     return current.evidence.candidate(by, candidate);
   }
 
@@ -420,7 +398,6 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
   for (const [name, op, description, parameters] of [
     ['p2o_skill_list', 'skill_list', 'Find approved skills by optional query (e.g. route, authorization, output, FastAPI); specialized playbooks appear before general techniques. Lists workflow prerequisites and reference IDs; paginate nextOffset. No host paths.', Type.Object({ query: Type.Optional(Type.String({ maxLength: 80 })), offset: Type.Optional(Type.Integer({ minimum: 0 })) })],
     ['p2o_skill_read', 'skill_read', 'Read an approved skill/reference/handoff/evidence document by catalog ID. Follow nextOffset for the rest. Not an arbitrary host file reader.', Type.Object({ id: Type.String({ maxLength: 160 }), offset: Type.Optional(Type.Integer({ minimum: 0 })) })],
-    ['p2o_capabilities', 'capabilities', 'Read owner-enforced permissions, applicability, runtime availability and limits. Optionally execute one fixed offline functional tool probe (45s max); no network or installation. A missing capability is not a clean test.', Type.Object({ probe: Type.Optional(Type.Union([Type.Literal('python'), Type.Literal('semgrep')])) })],
   ] as const) {
     pi.registerTool({ name, label: name, exposure: 'model-only', description, parameters,
       async execute(_id, params) {
@@ -429,7 +406,6 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
         const value = current.role === 'worker'
           ? (await worker().client.request(op, op === 'skill_read' ? { documentId: (params as { id: string }).id, offset: (params as { offset?: number }).offset } : params as Record<string, unknown>)).value
           : (++current.knowledgeUsed <= 400 ? await readKnowledge(current, op, params as Record<string, unknown>) : fail('KNOWLEDGE_BUDGET', 'Lead knowledge budget exhausted'));
-        if (current.role === 'worker' && op === 'capabilities') current.capabilities = value as CapabilitySnapshot;
         return { content: [{ type: 'text' as const, text: cleanText(JSON.stringify(value, null, 2)) }], details: value };
       },
     });
@@ -448,7 +424,7 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
       expectedPolicy: Type.String({ minLength: 1, maxLength: 1000, description: 'State the violated intended policy/invariant and its provenance; a sibling route difference alone is only inferred' }),
       limitations: Type.String({ minLength: 1, maxLength: 1500 }), control: Type.Optional(Type.String({ maxLength: 1000 })),
       resolves: Type.Optional(Type.Array(Type.String({ maxLength: 80 }), { maxItems: 10 })),
-      requirement: Type.Optional(Type.String({ maxLength: 200 })), supersedes: Type.Optional(Type.String({ maxLength: 80 })), independentEvidenceRef: Type.Optional(Type.String({ maxLength: 80 })),
+      requirement: Type.Optional(Type.String({ minLength: 10, maxLength: 1000, description: 'For blocked execution, describe the actual scope restriction, missing binary/dependency or failed prerequisite; not a capability ID' })), supersedes: Type.Optional(Type.String({ maxLength: 80 })), independentEvidenceRef: Type.Optional(Type.String({ maxLength: 80 })),
     }),
     async execute(_id, params) {
       const current = run;
@@ -548,7 +524,7 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
       role: Type.Optional(Type.Union([Type.Literal('recon'), Type.Literal('discovery'), Type.Literal('validation'), Type.Literal('reporting'), Type.Literal('general')])),
       skills: Type.Optional(Type.Array(Type.String({ maxLength: 64 }), { maxItems: MAX_SKILLS })),
       model: Type.Optional(Type.String({ maxLength: 200 })),
-      workflow: Type.Optional(Type.String({ maxLength: 64, description: 'Optional catalog workflow ID to check prerequisites for selected skills' })),
+      workflow: Type.Optional(Type.String({ maxLength: 64, description: 'Optional catalog workflow ID belonging to the selected skills; descriptive prerequisites do not grant permissions' })),
       thinking: Type.Optional(Type.Union(['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'].map(value => Type.Literal(value)))),
     }),
     async execute(_id, params) {
@@ -727,7 +703,7 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
             delegation: { enabled: delegationAvailable, reason: delegationAvailable ? undefined : delegationReason, maxWorkers, maxDepth, spawned: 0, totalBudget },
             settings: loaded, extensionPath, extensionSha: extensionSha!, deadline, spawns: new Set(), operations: new Set(),
             library: new SkillLibrary(packageRoot(extensionPath)), evidence: new EvidenceStore(runId, records, targetLabel(target)),
-            knowledgeUsed: 0, image, capabilities: capabilities(target), exportEnabled: command.options.export ?? false,
+            knowledgeUsed: 0, image, exportEnabled: command.options.export ?? false,
           };
           current.broker = new Broker(control, {
             exec: (command, seconds, workdir, signal) => executeWithReceipt(current, workdir.split('/').at(-1)!, 'shell', command, () => sandbox.exec(command, seconds, signal, workdir)),
@@ -768,7 +744,7 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
             runId, targetLabel: targetLabel(target), targetKind: target.kind,
             deadline: new Date(deadline).toISOString(), sourceSkipped: sandbox.sourceSkipped,
             delegation: { enabled: current.delegation.enabled, reason: current.delegation.reason, maxWorkers, maxDepth },
-            workerBudget: totalBudget, capabilities: current.capabilities,
+            workerBudget: totalBudget,
           };
           ctx.ui.notify(`Sandbox ready. Leading the assessment in this conversation.${current.delegation.enabled ? ` Delegation: up to ${maxWorkers} workers, depth ${maxDepth}.` : ''}${sandbox.sourceSkipped ? ` Source entries skipped: ${sandbox.sourceSkipped}.` : ''}`, 'info');
           pi.sendUserMessage(`${ownerInstructions(facts)}\n\nBegin the assessment now. Use recon before targeted testing, delegate when it genuinely helps, and record coverage as you go.`);
@@ -805,9 +781,9 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
         runId: current.runId, targetLabel: targetLabel(current.target), targetKind: current.target.kind,
         deadline: new Date(current.deadline).toISOString(), sourceSkipped: current.sandbox.sourceSkipped,
         delegation: { enabled: current.delegation.enabled, reason: current.delegation.reason, maxWorkers: current.delegation.maxWorkers, maxDepth: current.delegation.maxDepth },
-        workerBudget: current.delegation.totalBudget, capabilities: current.capabilities,
+        workerBudget: current.delegation.totalBudget,
       })
-      : workerInstructions(current.ticket, current.capabilities);
+      : workerInstructions(current.ticket);
     return { systemPrompt: `${event.systemPrompt}\n\n${text}` };
   });
   pi.on('agent_before_settle', async (event, ctx) => {

@@ -41,7 +41,6 @@ neighbouring pane with its own role model, and every worker shares this sandbox 
 | Tool | Role | Purpose |
 |---|---|---|
 | `p2o_skill_list` / `p2o_skill_read` | lead + worker | Paginated catalog and approved skill/reference/handoff documents; IDs, never arbitrary host paths |
-| `p2o_capabilities` | lead + worker | Permission, applicability and runtime availability; optional fixed offline Python/Semgrep probe |
 | `p2o_candidate` | lead + worker | Evidence-linked candidate claims, proof level, controls, limitations and explicit revisions |
 | `p2o_shell` | lead + worker | Offline shell in the sandbox; `/target` is a read-only copy, `/work/<workerId>` is scratch |
 | `p2o_http` | lead + worker | Fixed curl, GET/HEAD on the authorized origin only; public IPv4, no redirects/credentials |
@@ -61,6 +60,15 @@ lead stops, workers fail closed.
 With `--export`, cleanup saves bounded redacted receipts and source/skill hashes in `.p2o-reports/` (0700; files 0600).
 Review before sharing: redaction is best effort, not a guarantee. Without `--export`, the temporary ledger is removed.
 Terminal worker failures deliver a blocked report without another model call; no provider fallback is automatic.
+
+## Recon and next-task selection
+
+Pi tool descriptions explain execution limits; they do not guarantee installed binaries. Check only prerequisites
+needed for the chosen task through bounded offline shell execution, without installation or universal startup probes.
+Recon records surfaces, inputs, actors/gates, Evidence IDs and unknowns. The lead records why a particular
+surface/risk is next, then maps unclear gates, investigates concrete concerns and seeks separate validation for
+plausible candidates. New surfaces feed back into recon; incomplete mapping never implies target safety.
+See [runtime guidance](docs/SKILL_RUNTIME.md) and [handoffs](HANDOFFS.md).
 
 ## Limits
 

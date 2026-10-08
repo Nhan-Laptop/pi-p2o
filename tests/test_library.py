@@ -331,8 +331,8 @@ class SkillProfileTests(unittest.TestCase):
             sidecar = json.loads(sidecar_path.read_text()) if sidecar_path.exists() else None
             kind = (kinds or {}).get(name, (sidecar or {}).get("kind", "technique"))
             workflows = (sidecar or {}).get("workflows") or [
-                {"id": "source-review", "description": "Review the supplied source without claiming runtime proof", "allOf": ["source.snapshot"]},
-                {"id": "offline-reproduction", "description": "Bounded offline probe that verifies required runtimes first", "allOf": ["shell.offline"], "anyOf": ["tool.python"]},
+                {"id": "source-review", "description": "Review the supplied source without claiming runtime proof", "prerequisites": ["A supplied read-only source snapshot"]},
+                {"id": "offline-reproduction", "description": "Bounded offline probe that verifies required runtimes first", "prerequisites": ["Bounded offline execution with required Python dependencies checked"]},
             ]
             entries.append({"name": name, "description": fields["description"], "kind": kind, "document": name, "workflows": workflows})
         documents = []
@@ -483,13 +483,13 @@ class SkillProfileTests(unittest.TestCase):
     def test_unknown_metadata_field_rejected(self):
         self.reject(lambda root: self.edit_sidecar(root, "web-output-context", lambda d: d.update(extra="synthetic")), "unknown metadata field")
 
-    def test_unknown_capability_rejected(self):
+    def test_invalid_prerequisite_rejected(self):
         def mutate(root):
             def change(data):
                 workflow = next(item for item in data["workflows"] if item["id"] == "public-baseline")
-                workflow["allOf"] = ["http.upload"]
+                workflow["prerequisites"] = ["x"]
             self.edit_sidecar(root, "web-route-input-inventory", change)
-        self.reject(mutate, "unknown capability")
+        self.reject(mutate, "invalid descriptive prerequisites")
 
     def test_missing_reference_rejected(self):
         self.reject(lambda root: self.edit_sidecar(root, "web-route-input-inventory", lambda d: d.update(references=["references/missing.md"])), "missing reference")
@@ -595,13 +595,13 @@ class SkillProfileTests(unittest.TestCase):
             errors = checker.validate(root)
             self.assertTrue(any("disagrees with staging metadata" in error for error in errors), errors)
 
-    def test_catalog_unknown_capability_rejected(self):
+    def test_catalog_invalid_prerequisite_rejected(self):
         def mutate(root):
             def change(catalog):
                 entry = next(item for item in catalog["skills"] if item["name"] == "web-route-input-inventory")
-                next(item for item in entry["workflows"] if item["id"] == "public-baseline")["allOf"] = ["http.upload"]
+                next(item for item in entry["workflows"] if item["id"] == "public-baseline")["prerequisites"] = ["x"]
             self.edit_catalog(root, change)
-        self.reject_catalog(mutate, "unknown capability")
+        self.reject_catalog(mutate, "invalid descriptive prerequisites")
 
     def test_catalog_kind_disagreement_rejected(self):
         def mutate(root):
@@ -614,16 +614,16 @@ class SkillProfileTests(unittest.TestCase):
         def mutate(root):
             def change(catalog):
                 entry = next(item for item in catalog["skills"] if item["name"] == "web-output-context")
-                entry["workflows"] = [{"id": "renamed-workflow", "description": "A synthetic rename that no longer matches the authored playbook", "allOf": ["source.snapshot"]}]
+                entry["workflows"] = [{"id": "renamed-workflow", "description": "A synthetic rename that no longer matches the authored playbook", "prerequisites": ["A supplied read-only source snapshot"]}]
             self.edit_catalog(root, change)
         self.reject_catalog(mutate, "workflows differ from staging metadata")
 
-    def test_catalog_capability_drift_rejected(self):
+    def test_catalog_prerequisite_drift_rejected(self):
         """A runtime workflow cannot weaken browser proof into local HTTP."""
         def mutate(root):
             def change(catalog):
                 entry = next(item for item in catalog["skills"] if item["name"] == "web-output-context")
-                next(item for item in entry["workflows"] if item["id"] == "browser-execution-proof")["allOf"] = ["lab.local-http"]
+                next(item for item in entry["workflows"] if item["id"] == "browser-execution-proof")["prerequisites"] = ["A different local execution environment"]
             self.edit_catalog(root, change)
         self.reject_catalog(mutate, "workflows differ from staging metadata")
 
@@ -663,30 +663,20 @@ class SkillProfileTests(unittest.TestCase):
                 sidecar.unlink()
             self.assertEqual(checker.validate(root), [])
 
-    def test_capability_ids_match_runtime_source(self):
-        source = ROOT / "src/capabilities.ts"
-        if not source.is_file():
-            self.skipTest("runtime capability source is not present")
-        match = re.search(r"CAPABILITY_IDS\s*=\s*\[(.*?)\]", source.read_text(encoding="utf-8"), re.S)
-        self.assertIsNotNone(match)
-        runtime = set(re.findall(r"'([a-z0-9.-]+)'", match.group(1)))
-        self.assertEqual(runtime, set(checker.STATIC_CAPABILITIES))
-        self.assertEqual(runtime, set(checker.runtime_capabilities(ROOT)))
-
     @staticmethod
     def workflows(root, name):
         return {workflow["id"]: workflow for workflow in json.loads((root / f"skills/{name}/skill.json").read_text())["workflows"]}
 
     def test_workflow_semantics_match_the_proof_class(self):
         browser = self.workflows(ROOT, "web-output-context")["browser-execution-proof"]
-        self.assertEqual(browser["allOf"], ["browser.execution"])
-        self.assertNotIn("anyOf", browser)
+        self.assertIn("real browser", " ".join(browser["prerequisites"]))
+        self.assertNotIn("allOf", browser)
         self.assertNotIn("lab.local-http", json.dumps(browser))
         navigation = self.workflows(ROOT, "web-route-input-inventory")["authenticated-navigation"]
-        self.assertEqual(navigation["allOf"], ["http.authenticated"])
+        self.assertIn("authenticated", " ".join(navigation["prerequisites"]))
         self.assertNotIn("browser.execution", json.dumps(navigation))
         comparison = self.workflows(ROOT, "web-object-authorization")["controlled-identity-comparison"]
-        self.assertEqual(comparison["allOf"], ["http.authenticated"])
+        self.assertIn("authenticated", " ".join(comparison["prerequisites"]))
         self.assertNotIn("lab.local-http", json.dumps(comparison))
 
     def test_runtime_catalog_integrates_new_skills(self):
@@ -727,13 +717,13 @@ class SkillProfileTests(unittest.TestCase):
 
     def test_browser_guidance_distinguishes_managed_interface(self):
         document = (ROOT / "skills/web-output-context/SKILL.md").read_text(encoding="utf-8").lower()
-        self.assertIn("managed `browser.execution` interface", document)
+        self.assertIn("separately authorized real browser transport (not provided by p2o)", document)
         self.assertIn("does not establish that no browser binary exists", document)
         self.assertIn("offline_reproduction", document)
         self.assertIn("not live execution", document)
         sidecar = json.loads((ROOT / "skills/web-output-context/skill.json").read_text(encoding="utf-8"))
         workflow = next(item for item in sidecar["workflows"] if item["id"] == "browser-execution-proof")
-        self.assertEqual(workflow["allOf"], ["browser.execution"])
+        self.assertIn("real browser", " ".join(workflow["prerequisites"]))
         self.assertIn("offline reproduction", workflow["description"])
         catalog = json.loads((ROOT / "skills/catalog.json").read_text(encoding="utf-8"))
         entry = next(item for item in catalog["skills"] if item["name"] == "web-output-context")

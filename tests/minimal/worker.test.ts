@@ -97,7 +97,7 @@ describe('worker role', () => {
     worker.flags['p2o-worker'] = join(await h.runDir(), `ticket-${workerId}.json`);
     const freshContext = createContext({ cwd: h.root });
     await worker.events.get('session_start')![0]({}, freshContext.ctx);
-    expect(worker.active).toEqual(['p2o_skill_list', 'p2o_skill_read', 'p2o_capabilities', 'p2o_candidate', 'p2o_shell', 'p2o_http', 'p2o_note', 'p2o_ledger', 'p2o_delegate', 'p2o_report']);
+    expect(worker.active).toEqual(['p2o_skill_list', 'p2o_skill_read', 'p2o_candidate', 'p2o_shell', 'p2o_http', 'p2o_note', 'p2o_ledger', 'p2o_delegate', 'p2o_report']);
     expect(freshContext.notices.join('\n')).not.toContain('rejected');
 
     // Host tools are blocked; sandbox tools run in the owner's container with the worker's own scratch.
@@ -164,18 +164,16 @@ describe('worker role', () => {
     await expect(h.call('p2o_shell', { command: 'id' }, 'worker')).rejects.toThrow(/finished or has no valid ticket|Do not retry|stopped by the owner/);
   });
 
-  it('serves approved knowledge and capabilities through the real broker with identical hashes', async () => {
+  it('serves approved knowledge through the real broker with identical hashes', async () => {
     const workerId = await h.delegate();
     await h.activate(join(await h.runDir(), `ticket-${workerId}.json`));
     const ownerRead = await h.call('p2o_skill_read', { id: 'shared:handoffs' });
     const workerRead = await h.call('p2o_skill_read', { id: 'shared:handoffs' }, 'worker');
     expect(workerRead.details.sha256).toBe(ownerRead.details.sha256);
-    const caps = await h.call('p2o_capabilities', {}, 'worker');
-    expect(caps.details.targetKind).toBe('directory');
     await expect(h.call('p2o_skill_read', { id: '/etc/passwd' }, 'worker')).rejects.toThrow('Unknown document');
     const shell = await h.call('p2o_shell', { command: 'cat /target/code.txt' }, 'worker');
     expect(shell.details.evidenceId).toBeDefined();
-    const candidate = await h.call('p2o_candidate', { candidate: 'test-case', surface: '/target/code.txt', risk: 'example', closure: 'open_proof_gap', execution: 'blocked', proof: 'static_trace', evidenceRefs: [shell.details.evidenceId], negativeControls: [], policyBasis: 'inferred', expectedPolicy: 'Intended policy needs confirmation', limitations: 'No authenticated comparison', requirement: 'http.authenticated' }, 'worker');
+    const candidate = await h.call('p2o_candidate', { candidate: 'test-case', surface: '/target/code.txt', risk: 'example', closure: 'open_proof_gap', execution: 'blocked', proof: 'static_trace', evidenceRefs: [shell.details.evidenceId], negativeControls: [], policyBasis: 'inferred', expectedPolicy: 'Intended policy needs confirmation', limitations: 'No authenticated comparison', requirement: 'No authorized authenticated transport for this source assessment' }, 'worker');
     expect(candidate.details.by).toBe(workerId);
     const view = await h.call('p2o_workers');
     expect(view.details.open.some((r: any) => r.kind === 'candidate')).toBe(true);

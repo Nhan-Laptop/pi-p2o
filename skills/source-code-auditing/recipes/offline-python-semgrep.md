@@ -6,11 +6,11 @@ Bounded candidate generation for [source-code auditing](../SKILL.md). This recip
 Run one pinned, original local rule file against a copied Python source tree in the offline sandbox and collect machine-readable candidate locations. The tool and the ruleset are the only moving parts; no registry pack, no network fetch, no update or version check, and no automatic fix traversal. A finding is a place to start reading, not a result.
 
 ## Prerequisites
-- The `semgrep` binary exists in the sandbox and the capability probe has recorded a bounded run. Before relying on it, reproduce that probe under the offline environment on tiny owned fixtures: `SEMGREP_ENABLE_VERSION_CHECK=0 SEMGREP_SEND_METRICS=off semgrep --version` and one local scan of the fixture directory with this ruleset. A version string alone is not proof that the rules install and execute; the scan result is.
+- The `semgrep` binary exists in the sandbox and its task-specific shell check has recorded a bounded run. Before relying on it, perform that check under the offline environment on tiny owned fixtures: `SEMGREP_ENABLE_VERSION_CHECK=0 SEMGREP_SEND_METRICS=off semgrep --version` and one local scan of the fixture directory with this ruleset. A version string alone is not proof that the rules install and execute; the scan result is.
 - Do not use the validate stage (`--validate`) offline, even with both environment variables and `--disable-version-check`: it can fetch remote meta-lint rules, hang until the shell budget expires, and stop the sandbox. The local positive/negative fixture scan below is the gate.
 - Every semgrep invocation sets `SEMGREP_ENABLE_VERSION_CHECK=0` and `SEMGREP_SEND_METRICS=off` and passes `--disable-version-check`. `--metrics=off` alone does not prevent the version check from attempting the network.
 - The owner transfers the immutable ruleset from this skill into worker scratch under a fixed path. Host rules are not automatically mounted, and a worker must not supply an arbitrary host source path.
-- Workflow capability `shell.offline`. Networking stays disabled; a missing tool or ruleset becomes a precise capability gap rather than a registry download.
+- Use bounded offline sandbox execution. Networking stays disabled; a missing tool or ruleset becomes a precise prerequisite gap rather than a registry download.
 - Source input is the read-only copy with its revision or snapshot hash recorded, and the output directory exists in scratch.
 
 ## Input
@@ -29,7 +29,7 @@ Fixture check first, on the owned fixtures only:
 SEMGREP_ENABLE_VERSION_CHECK=0 SEMGREP_SEND_METRICS=off timeout 45 semgrep scan --config /work/rules/p2o-python-offline.yaml --metrics=off --disable-version-check --json --output /work/out/fixture-check.json --quiet --jobs 1 --timeout 20 --max-memory 256 --no-git-ignore /work/fixture-check
 ```
 
-Pass the gate only when the fixture-check JSON has an empty `errors` array, every `p2o-` rule id appears on the positive fixture, and no rule fires on the negative fixture. A parse failure, a timeout, a missing rule, or a negative-fixture hit means the ruleset or the engine is not usable in this sandbox; record the capability gap instead of scanning the target.
+Pass the gate only when the fixture-check JSON has an empty `errors` array, every `p2o-` rule id appears on the positive fixture, and no rule fires on the negative fixture. A parse failure, a timeout, a missing rule, or a negative-fixture hit means the ruleset or the engine is not usable in this sandbox; record the prerequisite gap instead of scanning the target.
 
 Then the target scan:
 
@@ -50,7 +50,7 @@ The report is Semgrep JSON with `results`, `errors`, `paths`, and version metada
 - A first run that is too slow: narrow the source root and keep the same ruleset before changing engine settings.
 - Timeouts: reduce the scanned scope or lower `--jobs`, then rerun one bounded command and record the changed parameters.
 - A shell timeout that stops the sandbox: the transport tears the sandbox down and later commands return no active sandbox. Do not retry target commands or the scan. Keep the partial output, record a blocked lifecycle result and an execution gap, state that the recipe result is unproven rather than clean, and finish the assessment.
-- Missing binary or ruleset: record the capability gap and stop; do not attempt installation or a registry fetch.
+- Missing binary or ruleset: record the prerequisite gap and stop; do not attempt installation or a registry fetch.
 - Engine errors: keep the partial report, mark the coverage partial, and re-run with one variable changed at a time.
 
 ## Manual Validation

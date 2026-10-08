@@ -57,6 +57,17 @@
       "residual_unknowns": []
     }
   },
+  "recon": {
+    "surface_inventory": [],
+    "actor_boundary_assumptions": [],
+    "corrected_assumptions": [],
+    "ranked_investigation_queue": [],
+    "selected_surface_risk": "",
+    "decision_evidence_ids": [],
+    "rationale": "",
+    "expected_observation": "",
+    "owned_coverage": ""
+  },
   "next_action": "",
   "stop_condition": ""
 }
