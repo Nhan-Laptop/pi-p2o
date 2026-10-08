@@ -1,4 +1,5 @@
 import { expect, it } from 'vitest';
+import { createServer } from 'node:http';
 import { mkdtemp, rm, writeFile, chmod } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -6,7 +7,7 @@ import { Sandbox } from '../../src/sandbox.js';
 import { Broker, BrokerClient, type WorkerRegistration } from '../../src/broker.js';
 import { appendRecord, readRecords } from '../../src/records.js';
 
-it.skipIf(process.env.P2O_TEST_DOCKER !== '1')('real Docker: read-only source, non-root shell, offline networking, scratch, cancellation and verified cleanup', async () => {
+it.skipIf(process.env.P2O_TEST_DOCKER !== '1')('real Docker: read-only source, non-root shell, network egress, scratch, cancellation and verified cleanup', async () => {
   const root = await mkdtemp(join(tmpdir(), 'p2o-minimal-docker-')); await chmod(root, 0o755);
   await writeFile(join(root, 'source.txt'), 'approved source', { mode: 0o644 });
   const sandbox = new Sandbox({ kind: 'directory', path: root }, undefined, undefined, { runId: 'docker-test' });
@@ -17,9 +18,18 @@ it.skipIf(process.env.P2O_TEST_DOCKER !== '1')('real Docker: read-only source, n
     expect((await sandbox.exec('echo changed > /target/source.txt')).code).not.toBe(0);
     expect((await sandbox.exec('echo changed > /etc/p2o-test')).code).not.toBe(0);
     expect((await sandbox.exec('test ! -e /var/run/docker.sock')).code).toBe(0);
-    const offline = await sandbox.exec('python3 -c "import socket; s=socket.socket(); s.settimeout(1); s.connect((\'192.0.2.1\',80))"');
-    expect(offline.code).not.toBe(0);
-    await expect(sandbox.http('https://example.com')).rejects.toThrow('unavailable');
+    // Egress is real: a host-published service is reachable through the container alias, and an
+    // unroutable documentation address still fails instead of being mistaken for success.
+    const server = createServer((_request, response) => { response.writeHead(200); response.end('host service'); });
+    await new Promise<void>(resolve => server.listen(0, '0.0.0.0', resolve));
+    const port = (server.address() as { port: number }).port;
+    try {
+      const reached = await sandbox.exec(`curl -sS -m 5 http://host.docker.internal:${port}/`);
+      expect(reached.code).toBe(0); expect(reached.stdout).toContain('host service');
+    } finally { await new Promise<void>(resolve => server.close(() => resolve())); }
+    const unroutable = await sandbox.exec('python3 -c "import socket; s=socket.socket(); s.settimeout(1); s.connect((\'192.0.2.1\',80))"');
+    expect(unroutable.code).not.toBe(0);
+    await expect(sandbox.http({ url: 'https://example.com', method: 'GET', followRedirects: true, maxRedirects: 0 })).rejects.toThrow('unavailable');
     const abort = new AbortController();
     const task = sandbox.exec('sleep 999', 60, abort.signal); setTimeout(() => abort.abort(), 500);
     await expect(task).rejects.toThrow('Cancelled');
@@ -27,6 +37,39 @@ it.skipIf(process.env.P2O_TEST_DOCKER !== '1')('real Docker: read-only source, n
     await sandbox.assertNoRunContainers();
   } finally { await sandbox.stop(); await rm(root, { recursive: true, force: true }); }
 }, 60_000);
+
+it.skipIf(process.env.P2O_TEST_DOCKER !== '1')('real Docker: full HTTP against the approved origin, including a body, a redirect hop and a session cookie', async () => {
+  const server = createServer((request, response) => {
+    const path = new URL(request.url ?? '/', 'http://host.docker.internal').pathname;
+    if (path === '/start') { response.writeHead(302, { Location: '/next' }); response.end(); return; }
+    let body = '';
+    request.on('data', chunk => { body += chunk; });
+    request.on('end', () => {
+      if (path === '/login') response.writeHead(200, { 'Set-Cookie': 'sid=abc123; Path=/' });
+      else response.writeHead(200, { 'Content-Type': 'text/plain' });
+      response.end(`ok ${request.method} ${path} cookie=${request.headers.cookie ?? 'none'} body=${body}`);
+    });
+  });
+  await new Promise<void>(resolve => server.listen(0, '0.0.0.0', resolve));
+  const port = (server.address() as { port: number }).port;
+  const origin = `http://host.docker.internal:${port}`;
+  const sandbox = new Sandbox({ kind: 'url', url: `${origin}/`, origin }, undefined, undefined, { runId: 'docker-http-test' });
+  try {
+    await sandbox.start();
+    const login = await sandbox.http({ url: '/login', method: 'POST', body: 'u=a&p=b', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, followRedirects: true, maxRedirects: 3 });
+    expect(login.code).toBe(0);
+    expect(login.stdout).toContain('ok POST /login');
+    expect(login.stdout).toContain('body=u=a&p=b');
+    const followed = await sandbox.http({ url: '/start', method: 'GET', followRedirects: true, maxRedirects: 3 });
+    expect(followed.hops).toHaveLength(2);
+    expect(followed.stdout).toContain('ok GET /next');
+    const reused = await sandbox.http({ url: '/after', method: 'GET', followRedirects: false, maxRedirects: 0 });
+    expect(reused.stdout).toContain('cookie=sid=abc123');
+    await expect(sandbox.http({ url: `http://127.0.0.1:${port}/`, method: 'GET', followRedirects: false, maxRedirects: 0 })).rejects.toThrow('Out of scope');
+    await sandbox.stop();
+    await sandbox.assertNoRunContainers();
+  } finally { await sandbox.stop(); await new Promise<void>(resolve => server.close(() => resolve())); }
+}, 90_000);
 
 it.skipIf(process.env.P2O_TEST_DOCKER !== '1')('real Docker: two delegated workers share one container through the owner broker with isolated scratch and verified cleanup', async () => {
   const root = await mkdtemp(join(tmpdir(), 'p2o-broker-docker-')); await chmod(root, 0o755);

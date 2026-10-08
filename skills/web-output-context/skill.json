@@ -16,7 +16,7 @@
       "id": "offline-reproduction",
       "description": "Render a local fixture with the extracted template or sanitizer configuration",
       "prerequisites": [
-        "Bounded offline execution in sandbox scratch without network access.",
+        "Bounded execution in your own sandbox scratch; network egress is available and any download or install must be receipted.",
         "One suitable option: A bounded offline functional check of Python and the dependencies needed for this task."
       ]
     },

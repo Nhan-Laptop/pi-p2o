@@ -14,16 +14,16 @@
     },
     {
       "id": "public-baseline",
-      "description": "Send one bodyless same-origin GET or HEAD baseline per in-scope route",
+      "description": "Send one same-origin baseline request per in-scope route using the declared method",
       "prerequisites": [
-        "Authorized same-origin public GET retrieval through p2o_http."
+        "Authorized same-origin requests through p2o_http on the confirmed origin, with the method, headers, cookies and body the approved scope declares."
       ]
     },
     {
       "id": "authenticated-navigation",
       "description": "Reach protected routes with a controlled authenticated identity; a browser session is not a substitute",
       "prerequisites": [
-        "An explicitly authorized authenticated test transport and controlled principals; not provided by P2O."
+        "Operator-supplied authorized credentials for controlled authenticated principals, used only inside the confirmed origin."
       ]
     }
   ],

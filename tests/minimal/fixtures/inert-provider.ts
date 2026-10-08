@@ -22,7 +22,9 @@ export function registerInertProvider(pi: ExtensionAPI, mode: 'owner' | 'worker'
       if (tools.includes('p2o_capabilities') || system.includes('CAPABILITIES')) throw new Error('removed capability subsystem is exposed');
       if (!system.includes('RECON → INVESTIGATION') || !system.includes('decision note')) throw new Error('recon contract missing');
       const descriptions = getCurrentTools(context.messages);
-      if (!descriptions.find(tool => tool.name === 'p2o_shell')?.description.includes('Network disabled')) throw new Error('shell guidance missing');
+      if (!descriptions.find(tool => tool.name === 'p2o_shell')?.description.includes('network egress')) throw new Error('shell guidance missing');
+      if (!descriptions.find(tool => tool.name === 'p2o_http')?.description.includes('bounded redirect following')) throw new Error('http guidance missing');
+      if (!descriptions.find(tool => tool.name === 'p2o_net')?.description.includes('connect scans')) throw new Error('network tool guidance missing');
       const results = context.messages.filter((message: any) => message.role === 'toolResult');
       const last: any = results.at(-1);
       const lastTool = last?.toolName as string | undefined;

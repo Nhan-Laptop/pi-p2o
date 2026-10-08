@@ -18,7 +18,7 @@ async function fixture(patch: { budget?: number; total?: number; stdout?: string
   const registrations = new Map<string, WorkerRegistration>();
   const broker = new Broker(control, {
     exec: async (command, seconds, workdir) => { calls.push(`exec ${workdir} ${seconds} ${command}`); return { code: 0, stdout: patch.stdout ?? `ran ${command}`, stderr: '', truncated: false }; },
-    http: async (url, method) => { calls.push(`http ${method} ${url}`); return { code: 0, stdout: `fetched ${url}`, stderr: '', truncated: false }; },
+    http: async request => { calls.push(`http ${request.method} ${request.url}${request.body ? ` body=${request.body}` : ''}${request.headers ? ` headers=${Object.keys(request.headers).join(',')}` : ''}`); return { code: 0, stdout: `fetched ${request.url}`, stderr: '', truncated: false }; },
     note: async record => { calls.push(`note ${record.kind}`); await appendRecord(records, record); },
     ledger: async limit => (await readRecords(records, limit)),
     delegate: async (input, parent) => { calls.push(`delegate ${parent.workerId} ${input.role}`); return { workerId: 'p2o-general-bbbbbb', name: 'p2o-general-bbbbbb', paneId: 'w1T:p10', role: input.role ?? 'general', depth: parent.depth + 1 }; },
@@ -68,6 +68,30 @@ describe('sandbox broker', () => {
       // Reporting ends this worker's authority: its token, even from a copied ticket, is refused afterwards.
       await expect(client.request('report', { report: { summary: 'again', confidence: 'low' } })).rejects.toThrow(/stopped by the owner/);
       expect(f.broker.registration('p2o-recon-aaaaaa')?.stopped).toBe(true);
+    } finally { client.close(); await f.close(); }
+  });
+
+  it('carries full HTTP verbs, bodies, headers and network commands across the broker', async () => {
+    const f = await fixture({ budget: 50 });
+    const client = new BrokerClient(f.socket, 'c'.repeat(32), { requestMs: 5000 });
+    try {
+      const posted = await client.request('http', { url: '/login', method: 'post', body: 'user=a', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, followRedirects: false });
+      expect(posted).toMatchObject({ ok: true, stdout: 'fetched /login' });
+      expect(f.calls).toContain('http POST /login body=user=a headers=Content-Type');
+      const scanned = await client.request('net', { command: 'nmap -sT 10.0.0.7', timeout: 120 });
+      expect(scanned).toMatchObject({ ok: true, stdout: 'ran nmap -sT 10.0.0.7' });
+      expect(f.calls).toContain('exec /work/p2o-recon-aaaaaa 120 nmap -sT 10.0.0.7');
+      // Validation happens before any budget is spent.
+      const used = (await client.request('status')).used;
+      await expect(client.request('http', { url: '/a', method: 'bad method' })).rejects.toThrow(/HTTP token/);
+      for(const data of [{method:123},{body:42},{followRedirects:'yes'},{maxRedirects:1.5},{session:'../x'}]) await expect(client.request('http',{url:'/a',...data})).rejects.toThrow();
+      await expect(client.request('http', { url: '/a', headers: { 'X-Test': 'a\r\nb: 1' } })).rejects.toThrow(/Invalid value/);
+      await expect(client.request('http', { url: '/a', headers: { 'Content-Length': '9' } })).rejects.toThrow(/cannot be overridden/);
+      await expect(client.request('http', { url: '/a', body: 'x'.repeat(40_000) })).rejects.toThrow(/at most/);
+      await expect(client.request('http', { url: '/a', body: 'x'.repeat(70_000) })).rejects.toThrow(/frame limit/);
+      await expect(client.request('net', { command: 'id', timeout: 900 })).rejects.toThrow(/1\.\.300/);
+      await expect(client.request('net', { command: 'id', timeout: 300 })).resolves.toMatchObject({ ok: true });
+      expect((await client.request('status')).used).toBe(used + 1);
     } finally { client.close(); await f.close(); }
   });
 

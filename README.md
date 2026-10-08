@@ -42,8 +42,9 @@ neighbouring pane with its own role model, and every worker shares this sandbox 
 | `p2o_skill_list` / `p2o_skill_read` | lead + worker | Paginated catalog and approved skill/reference/handoff documents; IDs, never arbitrary host paths |
 | `p2o_task` | lead only | Maintain focused questions, accepted prerequisite revisions, role/method decisions and reservations |
 | `p2o_candidate` | lead + worker | Evidence-linked candidate claims, proof level, controls, limitations and explicit revisions |
-| `p2o_shell` | lead + worker | Offline shell in the sandbox; `/target` is a read-only copy, `/work/<workerId>` is scratch |
-| `p2o_http` | lead + worker | Fixed curl, GET/HEAD on the authorized origin only; public IPv4, no redirects/credentials |
+| `p2o_shell` | lead + worker | Shell in the sandbox; `/target` is a read-only copy, `/work/<workerId>` is scratch, `p2o_net` for egress |
+| `p2o_http` | lead + worker | Fixed curl on the confirmed origin only: any method, bodies, headers, cookies, bounded redirects |
+| `p2o_net` | lead + worker | Network commands in the sandbox: connect scans, service probes, tooling installs; 1..300 s |
 | `p2o_note` | lead + worker | Append a note, observation, coverage row or open item to the shared ledger |
 | `p2o_ledger` | lead + worker | Read the shared ledger or one evidence/candidate record by ID before repeating work |
 | `p2o_delegate` | lead + worker | Spawn one focused worker (objective, context, role, 1-3 skills, optional model) |
@@ -66,9 +67,10 @@ See [focused assessment state](docs/ASSESSMENT_STATE.md) for complete-ledger cur
 ## Recon and next-task selection
 
 The lead’s prompt contains assessment policy, not tool manuals; Pi supplies the active descriptions and schemas.
-Startup uses a short kickoff instead of duplicating those instructions. Worker guidance is unchanged.
+Startup uses a short kickoff instead of duplicating those instructions. Worker guidance now describes the networked transport.
 Pi tool descriptions explain execution limits; they do not guarantee installed binaries. Check only prerequisites
-needed for the chosen task through bounded offline shell execution, without installation or universal startup probes.
+needed for the chosen task through bounded sandbox execution; a tool the image lacks is installed into your own
+scratch with a receipt, and universal startup probes are never run.
 Recon records surfaces, inputs, actors/gates, Evidence IDs and unknowns. The lead records why a particular
 surface/risk is next, then maps unclear gates, investigates concrete concerns and seeks separate validation for
 plausible candidates. New surfaces feed back into recon; incomplete mapping never implies target safety.
@@ -77,9 +79,9 @@ See [runtime guidance](docs/SKILL_RUNTIME.md) and [handoffs](HANDOFFS.md).
 ## Limits
 
 - Local directories or HTTP(S) URLs only. A GitHub URL is a web target, not a clone; clone it yourself for source review.
-- URL scope is the exact origin. No login, custom headers, credentials, POST, redirects, private/loopback targets or IPv6 yet.
+- URL scope is the exact origin, re-checked at every redirect hop. Methods, bodies, headers, actor-local cookie sessions and login flows are available; the scoped HTTP tool refuses other URL origins. Opaque shell/network commands are not origin-filtered. IPv6 routing depends on Docker.
 - Source is copied before mounting: regular files only, ≤64 MiB / 20000 entries, symlinks/special files/`.git`/`node_modules` skipped.
-- The offline shell has no network; browser automation, proxy capture and fuzzing harnesses are not provided.
+- The sandbox has real network egress, including private/internal destinations and host-published lab services. Loopback is container-local. No egress firewall, managed browser, proxy or fuzzing service is provided; user-space tooling can be installed into scratch. See [HTTP/network boundaries](docs/HTTP_TRANSPORT.md).
 - Delegation needs Herdr plus one visible pane per worker (cap `--workers`, default 3, max 6; total spawns ≤ 2× the cap).
 - Workers stop at the shared command reserve (90 %), leaving the remainder for the lead's report.
 - Docker shares the host kernel: this is container isolation, **not** VM isolation or a claim about kernel escapes.
@@ -113,7 +115,7 @@ Application guidance: [route inventory](skills/web-route-input-inventory/SKILL.m
 These augment the original 17 methods. An overlay occupies one of the existing three assignment slots.
 [Provenance and exclusions](research/SKILL_PROVENANCE.md) document the selected Strix references.
 [Offline Semgrep recipe](skills/source-code-auditing/recipes/offline-python-semgrep.md) requires a successful tool probe;
-tool presence and usable dependencies must never be assumed from the image name. An [explicit tool-image setup](docs/SKILL_RUNTIME.md#optional-offline-tool-image) can add pinned Semgrep without enabling network access during assessments.
+tool presence and usable dependencies must never be assumed from the image name. An [explicit tool-image setup](docs/SKILL_RUNTIME.md#optional-offline-tool-image) can add pinned Semgrep to the image; the sandbox itself can also fetch tooling at run time, which is receipted when it happens.
 
 ## Development
 

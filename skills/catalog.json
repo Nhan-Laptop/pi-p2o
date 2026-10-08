@@ -18,14 +18,14 @@
           "id": "offline-reproduction",
           "description": "Bounded offline execution; check target runtime/dependencies with a real probe first",
           "prerequisites": [
-            "Bounded offline execution in sandbox scratch without network access."
+            "Bounded execution in your own sandbox scratch; network egress is available and any download or install must be receipted."
           ]
         },
         {
           "id": "public-http-review",
-          "description": "Same-origin public GET/HEAD comparison only; no credentials, bodies or browser",
+          "description": "Same-origin HTTP comparison with the methods, headers, cookies and bodies the approved scope declares; no browser transport",
           "prerequisites": [
-            "Authorized same-origin public GET retrieval through p2o_http."
+            "Authorized same-origin requests through p2o_http on the confirmed origin, with the method, headers, cookies and body the approved scope declares."
           ]
         }
       ]
@@ -47,14 +47,14 @@
           "id": "offline-reproduction",
           "description": "Bounded offline execution; check target runtime/dependencies with a real probe first",
           "prerequisites": [
-            "Bounded offline execution in sandbox scratch without network access."
+            "Bounded execution in your own sandbox scratch; network egress is available and any download or install must be receipted."
           ]
         },
         {
           "id": "authenticated-comparison",
           "description": "Controlled two-account HTTP comparison, requires separately consented runtime",
           "prerequisites": [
-            "An explicitly authorized authenticated test transport and controlled principals; not provided by P2O."
+            "Operator-supplied authorized credentials for controlled authenticated principals, used only inside the confirmed origin."
           ]
         }
       ]
@@ -76,7 +76,7 @@
           "id": "offline-reproduction",
           "description": "Bounded offline execution; check target runtime/dependencies with a real probe first",
           "prerequisites": [
-            "Bounded offline execution in sandbox scratch without network access."
+            "Bounded execution in your own sandbox scratch; network egress is available and any download or install must be receipted."
           ]
         }
       ]
@@ -98,7 +98,7 @@
           "id": "offline-reproduction",
           "description": "Bounded offline execution; check target runtime/dependencies with a real probe first",
           "prerequisites": [
-            "Bounded offline execution in sandbox scratch without network access."
+            "Bounded execution in your own sandbox scratch; network egress is available and any download or install must be receipted."
           ]
         }
       ]
@@ -120,7 +120,7 @@
           "id": "offline-reproduction",
           "description": "Bounded offline execution; check target runtime/dependencies with a real probe first",
           "prerequisites": [
-            "Bounded offline execution in sandbox scratch without network access."
+            "Bounded execution in your own sandbox scratch; network egress is available and any download or install must be receipted."
           ]
         }
       ]
@@ -142,7 +142,7 @@
           "id": "offline-reproduction",
           "description": "Bounded offline execution; check target runtime/dependencies with a real probe first",
           "prerequisites": [
-            "Bounded offline execution in sandbox scratch without network access."
+            "Bounded execution in your own sandbox scratch; network egress is available and any download or install must be receipted."
           ]
         }
       ]
@@ -164,7 +164,7 @@
           "id": "offline-reproduction",
           "description": "Bounded offline execution; check target runtime/dependencies with a real probe first",
           "prerequisites": [
-            "Bounded offline execution in sandbox scratch without network access."
+            "Bounded execution in your own sandbox scratch; network egress is available and any download or install must be receipted."
           ]
         }
       ]
@@ -186,7 +186,7 @@
           "id": "offline-reproduction",
           "description": "Bounded offline execution; check target runtime/dependencies with a real probe first",
           "prerequisites": [
-            "Bounded offline execution in sandbox scratch without network access."
+            "Bounded execution in your own sandbox scratch; network egress is available and any download or install must be receipted."
           ]
         }
       ]
@@ -208,7 +208,7 @@
           "id": "offline-reproduction",
           "description": "Read the installed dependency metadata from the copy without installing anything",
           "prerequisites": [
-            "Bounded offline execution in sandbox scratch without network access.",
+            "Bounded execution in your own sandbox scratch; network egress is available and any download or install must be receipted.",
             "One suitable option: A bounded offline functional check of Python and the dependencies needed for this task."
           ]
         },
@@ -216,7 +216,7 @@
           "id": "live-parity-comparison",
           "description": "Compare the anonymous enforcement baseline across equivalent routes on the approved same-origin target",
           "prerequisites": [
-            "Authorized same-origin public GET retrieval through p2o_http."
+            "Authorized same-origin requests through p2o_http on the confirmed origin, with the method, headers, cookies and body the approved scope declares."
           ]
         }
       ]
@@ -238,7 +238,7 @@
           "id": "offline-reproduction",
           "description": "Bounded offline execution; check target runtime/dependencies with a real probe first",
           "prerequisites": [
-            "Bounded offline execution in sandbox scratch without network access."
+            "Bounded execution in your own sandbox scratch; network egress is available and any download or install must be receipted."
           ]
         }
       ]
@@ -260,7 +260,7 @@
           "id": "offline-reproduction",
           "description": "Bounded offline execution; check target runtime/dependencies with a real probe first",
           "prerequisites": [
-            "Bounded offline execution in sandbox scratch without network access."
+            "Bounded execution in your own sandbox scratch; network egress is available and any download or install must be receipted."
           ]
         }
       ]
@@ -282,7 +282,7 @@
           "id": "offline-reproduction",
           "description": "Bounded offline execution; check target runtime/dependencies with a real probe first",
           "prerequisites": [
-            "Bounded offline execution in sandbox scratch without network access."
+            "Bounded execution in your own sandbox scratch; network egress is available and any download or install must be receipted."
           ]
         }
       ]
@@ -304,7 +304,7 @@
           "id": "offline-reproduction",
           "description": "Bounded offline execution; check target runtime/dependencies with a real probe first",
           "prerequisites": [
-            "Bounded offline execution in sandbox scratch without network access."
+            "Bounded execution in your own sandbox scratch; network egress is available and any download or install must be receipted."
           ]
         }
       ]
@@ -326,7 +326,7 @@
           "id": "offline-reproduction",
           "description": "Bounded offline execution; check target runtime/dependencies with a real probe first",
           "prerequisites": [
-            "Bounded offline execution in sandbox scratch without network access."
+            "Bounded execution in your own sandbox scratch; network egress is available and any download or install must be receipted."
           ]
         }
       ]
@@ -348,7 +348,7 @@
           "id": "offline-reproduction",
           "description": "Bounded offline execution; check target runtime/dependencies with a real probe first",
           "prerequisites": [
-            "Bounded offline execution in sandbox scratch without network access."
+            "Bounded execution in your own sandbox scratch; network egress is available and any download or install must be receipted."
           ]
         }
       ]
@@ -370,7 +370,7 @@
           "id": "offline-reproduction",
           "description": "Bounded offline execution; check target runtime/dependencies with a real probe first",
           "prerequisites": [
-            "Bounded offline execution in sandbox scratch without network access."
+            "Bounded execution in your own sandbox scratch; network egress is available and any download or install must be receipted."
           ]
         }
       ]
@@ -392,7 +392,7 @@
           "id": "offline-reproduction",
           "description": "Bounded offline execution; check target runtime/dependencies with a real probe first",
           "prerequisites": [
-            "Bounded offline execution in sandbox scratch without network access."
+            "Bounded execution in your own sandbox scratch; network egress is available and any download or install must be receipted."
           ]
         }
       ]
@@ -414,7 +414,7 @@
           "id": "offline-reproduction",
           "description": "Bounded offline execution; check target runtime/dependencies with a real probe first",
           "prerequisites": [
-            "Bounded offline execution in sandbox scratch without network access."
+            "Bounded execution in your own sandbox scratch; network egress is available and any download or install must be receipted."
           ]
         }
       ]
@@ -436,15 +436,15 @@
           "id": "offline-reproduction",
           "description": "Exercise an extracted policy function against controlled objects in a local harness",
           "prerequisites": [
-            "Bounded offline execution in sandbox scratch without network access.",
+            "Bounded execution in your own sandbox scratch; network egress is available and any download or install must be receipted.",
             "One suitable option: A bounded offline functional check of Python and the dependencies needed for this task."
           ]
         },
         {
           "id": "controlled-identity-comparison",
-          "description": "Compare a controlled principal against another over an authenticated transport; local HTTP alone is not identity",
+          "description": "Compare a controlled principal against another with operator-supplied credentials; local HTTP alone is not identity",
           "prerequisites": [
-            "An explicitly authorized authenticated test transport and controlled principals; not provided by P2O."
+            "Operator-supplied authorized credentials for controlled authenticated principals, used only inside the confirmed origin."
           ]
         }
       ]
@@ -466,7 +466,7 @@
           "id": "offline-reproduction",
           "description": "Render a local fixture with the extracted template or sanitizer configuration",
           "prerequisites": [
-            "Bounded offline execution in sandbox scratch without network access.",
+            "Bounded execution in your own sandbox scratch; network egress is available and any download or install must be receipted.",
             "One suitable option: A bounded offline functional check of Python and the dependencies needed for this task."
           ]
         },
@@ -481,7 +481,7 @@
     },
     {
       "name": "web-route-input-inventory",
-      "description": "Build a reviewable inventory of routes, accepted parameters, and declared authorization from a supplied source copy or an explicitly scoped public GET/HEAD baseline. Use before behaviorally testing a web surface.",
+      "description": "Build a reviewable inventory of routes, accepted parameters, and declared authorization from a supplied source copy or an explicitly scoped same-origin URL baseline. Use before behaviorally testing a web surface.",
       "kind": "playbook",
       "document": "web-route-input-inventory",
       "workflows": [
@@ -494,16 +494,16 @@
         },
         {
           "id": "public-baseline",
-          "description": "Send one bodyless same-origin GET or HEAD baseline per in-scope route",
+          "description": "Send one same-origin baseline request per in-scope route using the declared method",
           "prerequisites": [
-            "Authorized same-origin public GET retrieval through p2o_http."
+            "Authorized same-origin requests through p2o_http on the confirmed origin, with the method, headers, cookies and body the approved scope declares."
           ]
         },
         {
           "id": "authenticated-navigation",
           "description": "Reach protected routes with a controlled authenticated identity; a browser session is not a substitute",
           "prerequisites": [
-            "An explicitly authorized authenticated test transport and controlled principals; not provided by P2O."
+            "Operator-supplied authorized credentials for controlled authenticated principals, used only inside the confirmed origin."
           ]
         }
       ]

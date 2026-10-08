@@ -50,7 +50,7 @@ If an authorized investigation finds unexpected artifacts suggesting a pre-exist
 
 Required additions: interface table with registration/handler locations; lowest reachable actor; gate results; process identity; input formats and benign accepted operations; architecture/load map if known; unresolved routes/features. For distributed services, include peer topology, identity origin, installation-derived membership and evidence of effective authority—not merely nominal group names.
 
-Required recon inventory: stable surface ID, entry and accepted input, observed actor, gate/handler if known, sensitive consumer or trust boundary, same-run receipt IDs and extraction method, fact/inference/hypothesis label, unknowns and covered/untested scope. For URL targets use only authorized same-origin GET/HEAD; no authentication, forms or other origins. Source declarations do not establish deployed exposure.
+Required recon inventory: stable surface ID, entry and accepted input, observed actor, gate/handler if known, sensitive consumer or trust boundary, same-run receipt IDs and extraction method, fact/inference/hypothesis label, unknowns and covered/untested scope. For URL targets use only the confirmed origin, whichever method, headers, cookies or body the approved scope declares; other origins, hosts and ports are out of scope. Source declarations do not establish deployed exposure.
 
 Rank a bounded next-task queue by reachable influence, sensitive effect, boundary ambiguity, evidence strength, information gain and remaining budget. Record why the selected surface/risk is next, the expected observation, owned coverage and stop condition. Correct the actor/boundary model when observations contradict assumptions.
 

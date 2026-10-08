@@ -18,8 +18,9 @@ and use of your current model provider. Declining starts no sandbox, worker or m
 
 For source: a regular-file-only copy at `/target` is read-only (≤64 MiB / 20000 entries; symlinks, special files,
 `.git` and `node_modules skipped`), `/work` is writable scratch. Commands run through `p2o_shell`, never host shell.
-For web: `p2o_http` accepts GET/HEAD only, on the same origin as the selected URL, with a validated and pinned
-public IPv4 address, no redirects and no credentials. A GitHub URL does not clone source in this release.
+For web: `p2o_http` sends any HTTP method with headers, cookies and a bounded body to the confirmed origin, resolving
+and pinning the destination per hop and stopping before any redirect leaves that origin. `p2o_net` runs network commands
+(connect scans, probes, user-space tool installs) in the same container, with unrestricted egress, not an origin firewall. A GitHub URL does not clone source. See [HTTP/session/network details](HTTP_TRANSPORT.md).
 
 The lead calls `p2o_finish` before its report; that refuses until every worker has reported or been stopped, then
 removes the sandbox, verifies container removal with the daemon, and reports how many worker panes Herdr actually
@@ -33,7 +34,8 @@ The lead can use `p2o_task` to record a question, contrast, role/method and stop
 
 Start by reading existing ledger/coverage and building a bounded surface inventory. Record entry/input, observed
 actor, gate/handler if known, sensitive consumer, Evidence IDs and extraction method; label inferences and gaps.
-For URL targets only existing same-origin GET/HEAD retrieval is authorized. Source declarations are not live exposure.
+For URL targets only the confirmed origin is authorized, with the methods, headers, cookies and bodies the approved
+scope declares. Source declarations are not live exposure.
 Choose the next surface/risk qualitatively by reachable influence, boundary uncertainty, likely effect, evidence,
 information gain and budget; record the rationale, expected observation and stop condition in a decision note.
 A missing gate returns to mapping, a candidate needs validation, and blocked proof remains open. Correct assumptions
@@ -48,7 +50,7 @@ own model and only the skills it was given. The worker receives:
 FOCUS / SCOPE / LIMITS / background context (background only) / its TASK
 ```
 
-and may use only `p2o_shell`, `p2o_http`, `p2o_note`, `p2o_ledger` (read the shared ledger), `p2o_delegate`
+and may use only `p2o_shell`, `p2o_net`, `p2o_http`, `p2o_note`, `p2o_ledger` (read the shared ledger), `p2o_delegate`
 (which the lead executes) and `p2o_report`.
 Its selected skills are inlined into the brief (a sandbox-only worker cannot read host files), and it has no
 host tools, no Docker and no consent dialogs. All of its target work is brokered by the lead, so scope
@@ -94,11 +96,13 @@ Limits: `--workers` 1..6 (default 3), `--max-depth` 0..3 (default 2), total spaw
 ## Sandbox limits
 
 Pinned Strix tools image; user 65532; read-only root filesystem; capabilities dropped; no-new-privileges;
-Docker default seccomp; 128 PIDs; 512 MiB memory; one CPU; `/tmp` and `/work` tmpfs (larger when delegation is
-enabled). The shell container has no network. HTTP containers have bridge networking but run **only fixed curl
-arguments**, not model-controlled code, with proxy use disabled and the requested hostname pinned to a validated
-public IPv4. No source mounts, Docker socket, host home or provider credentials are mounted.
-Commands: 1..60 s; HTTP: 20 s and 1 MiB body; visible output: 48 KiB. Assessment lifetime: 30 minutes.
+Docker default seccomp; 512 PIDs; 2 GiB memory; two CPUs; `/tmp` and `/work` tmpfs (larger when delegation is
+enabled). The shell container has bridge networking with real egress, including private and loopback addresses;
+unprivileged connect scans work, raw-socket scans do not (no capabilities). HTTP requests run in ephemeral
+containers with **only fixed curl arguments**, never model-controlled code, no proxy, and the destination resolved
+and pinned per hop. No source mounts, Docker socket, host home or provider credentials are mounted.
+Commands: 1..60 s (`p2o_net` 1..300 s); HTTP: 20 s per hop, 8 MiB response, 32 KiB request body; visible output:
+48 KiB. Assessment lifetime: 30 minutes.
 No application-level model token/cost cap; Pi/provider accounting is unchanged.
 
 This is container isolation, not a virtual machine. The trusted Pi process, other installed extensions and
@@ -125,6 +129,6 @@ Worker panes can be closed from Herdr. The extension does not silently reclaim o
 - Delegation unavailable: Pi is not inside Herdr, or `--solo`/limits disabled it. The confirmation dialog says which.
 - Worker rejected its ticket: the pane shows `p2o worker ticket rejected …`; the worker keeps no target access.
   Tickets are owner-private, single-use per process and expire with the assessment.
-- Target unavailable: choose an existing directory, or an HTTP(S) URL with public IPv4 DNS.
+- Target unavailable: choose an existing directory, or an HTTP(S) URL whose hostname resolves to a reachable IPv4 address.
 - Duplicate tools: load either the installed package or `pi --no-extensions -e /path/to/pi-p2o`, never both.
 - Legacy flags/configurations from 0.2 (plan approval, profiles, manifests) are removed. Use `--target` only.

@@ -38,6 +38,8 @@ export class EvidenceStore {
       kind: 'evidence', text: `${operation} exit ${result.code}; untrusted observation, not a finding`,
       data: { operation, input: bounded(input, 2000), target: this.target, startedAt, exitCode: result.code,
         stdout: bounded(result.stdout, 4000), stderr: bounded(result.stderr, 1000),
+        ...(result.hops ? { http: { hops: result.hops.slice(0,6).map(hop => bounded(hop, 256)), session: result.session,
+          redirectStopped: result.redirectStopped ? bounded(result.redirectStopped, 1000) : undefined, cookieWarning: result.cookieWarning } } : {}),
         outputSha256: createHash('sha256').update(result.stdout).update(result.stderr).digest('hex'),
         truncated: result.truncated || result.stdout.length > 4000 || result.stderr.length > 1000,
         limitations: 'Bounded redacted tool output; command semantics and claimed effect require review.' } });

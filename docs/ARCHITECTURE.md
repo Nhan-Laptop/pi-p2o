@@ -5,14 +5,14 @@
   parse → classify → one scope confirmation → control dir + ledger + broker socket → Docker sandbox
   → pi.sendUserMessage(scoped brief)
   → LEAD (this conversation, this model)
-       p2o_shell / p2o_http  → the single sandbox container
+       p2o_shell / p2o_net / p2o_http  → the single sandbox container
        p2o_task / p2o_note   → owner-maintained questions / <control>/records.jsonl
        p2o_delegate          → Herdr pane split + agent start + ticket + brief
        p2o_workers/steer/stop_worker
        p2o_finish            → refuse unreported workers, stop panes, remove containers, verify, delete control dir
 
   → WORKER (real `pi` in a visible Herdr pane, `--p2o-worker <ticket>`)
-       p2o_shell / p2o_http  → broker (0600 unix socket) → the LEAD runs it in the same sandbox
+       p2o_shell / p2o_net / p2o_http  → broker (0600 unix socket) → the LEAD runs it in the same sandbox
        p2o_note              → same ledger
        p2o_ledger            → read the shared ledger (bounded)
        p2o_delegate          → broker `delegate` → the LEAD spawns the nested pane
@@ -24,7 +24,7 @@
 Strix gives every agent the same sandbox session: one container per scan (`_SESSION_CACHE`), handed to the model
 run as `RunConfig(sandbox=SandboxRunConfig(...))`, with each `SandboxAgent` reaching it through its `Shell`
 capability. Pi workers are separate processes, so the faithful translation is: the **lead owns the container** and
-serves exactly that session over a private unix socket. Workers get a narrow protocol (`exec`, `http`, `note`, `ledger`,
+serves exactly that session over a private unix socket. Workers get a narrow protocol (`exec`, `net`, `http`, `note`, `ledger`,
 `delegate`, `report`), never a Docker client, so policy, budgets and the single verified-cleanup path stay in one
 place. A worker that cannot reach the socket fails closed and reports blocked instead of touching the host.
 
@@ -35,7 +35,7 @@ Active tool descriptions carry execution guidance; owner/broker checks remain au
 `src/prompts.ts` shares a bounded evidence-led recon/decision contract across lead and workers; workflow prerequisites
 are descriptive text, not a runtime permission/availability registry. The lead contributes policy through
 `before_agent_start` → `systemPromptOptions.sections.p2o_assessment`, without replacing Pi’s complete prompt
-or duplicating tool descriptions. Its startup message is a short kickoff; workers keep their existing guidance.
+or duplicating tool descriptions. Its startup message is a short kickoff; worker guidance describes the current transport.
 `src/evidence.ts` records tool receipts, validates candidate revisions and exports bounded redacted results before cleanup.
 `src/tasks.ts` serializes owner task/acceptance/reservation state; reconstructed records never restore execution. `src/progress.ts` records local observable events, not a scheduler. `src/report.ts` commits normalized hashed report parts and freezes a bounded current frontier. The context hook adds only request-local objective data while active; no model/timer loop is created. See [assessment state](ASSESSMENT_STATE.md) and [skill runtime](SKILL_RUNTIME.md) for schemas, failure behavior and limits.
 
@@ -44,7 +44,7 @@ or duplicating tool descriptions. Its startup message is a short kickoff; worker
 | File | Responsibility |
 |---|---|
 | `extensions/p2o/index.ts` | Command, consent, role activation (`--p2o-worker`), tool registration/gating, delegation, finish reconciliation |
-| `src/target.ts` | `/p2o` grammar (target plus `--solo`/`--workers`/`--max-depth`), directory classification, HTTP scope and public-IPv4 validation |
+| `src/target.ts` | `/p2o` grammar (target plus `--solo`/`--workers`/`--max-depth`), directory classification, HTTP URL-origin enforcement, request validation and IP classification (not address filtering) |
 | `src/sandbox.ts` | One container owner: resource limits, run labels, per-worker working directories, verified removal and a label sweep |
 | `src/source.ts` | Bounded regular-file-only source copy via Linux directory-FD traversal (no symlink races) |
 | `src/ticket.ts` | Owner-private worker ticket: mint, strict validation, single-use identity, expiry, extension/image binding |
@@ -56,7 +56,10 @@ or duplicating tool descriptions. Its startup message is a short kickoff; worker
 | `src/herdr.ts` | Herdr CLI client: tiled pane split, agent start with `-- <args>`, prompt/status/interrupt/close |
 | `src/roles.ts` | Role → model/skills defaults with pi-herdr-style precedence, defensive settings parsing |
 | `src/prompts.ts` | Lead and worker scope prompts, plus the delegation brief template |
-| `src/process.ts` | Fixed-executable subprocesses with bounded output and timeout/cancellation |
+| `src/process.ts` | Fixed-executable subprocesses with stdin delivery, bounded output and timeout/cancellation |
+| `src/http-session.ts` | Trusted response-header framing and actor-local, named, bounded HTTP cookie sessions |
+
+HTTP origin checks do not constrain opaque network commands. The shared shell is bridge-networked, so its target boundary is agent policy, not an egress firewall. See [transport boundaries](HTTP_TRANSPORT.md).
 
 ## Roles and authority
 

@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { mkdtemp, rm, writeFile, symlink } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { parseCommand, classifyTarget, publicIPv4, scopedRequest } from '../../src/target.js';
+import { parseCommand, classifyTarget, addressClass, publicIPv4, scopedRequest, httpRequest } from '../../src/target.js';
 
 describe('one target grammar', () => {
   it('has only help, stop and a target', () => {
@@ -38,6 +38,7 @@ describe('HTTP scope', () => {
   it('pins a public address and accepts relative URLs', async () => {
     const request = await scopedRequest(target, '/about', async () => ['93.184.216.34']);
     expect(request.address).toBe('93.184.216.34'); expect(request.url.href).toBe('https://example.com/about');
+    expect(request).toMatchObject({ addressClass: 'public', pin: true });
   });
   it('rejects origin changes, URL credentials, fragments and non-HTTP schemes before DNS', async () => {
     for (const url of ['https://other.com', 'http://example.com', 'https://example.com:444', 'https://user:pass@example.com', '/#x', 'file:///etc/passwd', 'https://example.com./']) {
@@ -45,11 +46,34 @@ describe('HTTP scope', () => {
     }
     await expect(scopedRequest({ kind: 'directory', path: '/tmp' }, '/', async () => [])).rejects.toThrow('unavailable');
   });
-  it('blocks private, reserved and IPv6 addresses, including mixed DNS answers', async () => {
-    for (const ip of ['0.1.2.3', '10.0.0.1', '100.64.1.1', '127.0.0.1', '169.254.169.254', '172.16.0.1', '192.168.1.1', '192.0.0.9', '192.0.2.1', '192.88.99.1', '198.18.0.1', '198.51.100.1', '203.0.113.1', '224.1.1.1', '255.255.255.255', '::1', '::ffff:127.0.0.1']) {
+  it('classifies every non-public range without blocking it, and leaves IP literals unpinned', async () => {
+    for (const [ip, kind] of [['0.1.2.3', 'reserved'], ['10.0.0.1', 'private'], ['100.64.1.1', 'shared'], ['127.0.0.1', 'loopback'], ['169.254.169.254', 'link-local'], ['172.16.0.1', 'private'], ['192.168.1.1', 'private'], ['192.0.0.9', 'reserved'], ['198.18.0.1', 'reserved'], ['203.0.113.1', 'reserved'], ['224.1.1.1', 'multicast'], ['::1', 'ipv6']] as const) {
       expect(publicIPv4(ip), ip).toBe(false);
-      await expect(scopedRequest(target, '/', async () => ['93.184.216.34', ip])).rejects.toThrow('public IPv4');
+      expect(addressClass(ip), ip).toBe(kind);
     }
-    await expect(scopedRequest(target, '/', async () => [])).rejects.toThrow();
+    expect(addressClass('93.184.216.34')).toBe('public');
+    // The confirmed scope, not the address class, is what stops a request now.
+    const loopback = { kind: 'url' as const, url: 'http://127.0.0.1:8080/', origin: 'http://127.0.0.1:8080' };
+    await expect(scopedRequest(loopback, '/', async () => ['127.0.0.1'])).resolves.toMatchObject({ addressClass: 'loopback', pin: false });
+    await expect(scopedRequest(target, '/', async () => ['10.0.0.7'])).resolves.toMatchObject({ addressClass: 'private', address: '10.0.0.7' });
+    await expect(scopedRequest(target, '/', async () => ['93.184.216.34', '10.0.0.7'])).resolves.toMatchObject({ address: '93.184.216.34' });
+    await expect(scopedRequest(target, '/', async () => [])).rejects.toThrow('Could not resolve');
+    const ipv6={kind:'url' as const,url:'http://[::1]:8080/',origin:'http://[::1]:8080'};
+    expect(await scopedRequest(ipv6,'/',async()=>{throw Error('No DNS for a literal');})).toMatchObject({address:'::1',addressClass:'ipv6',pin:false});
+  });
+  it('validates methods, headers and bodies before any request is made', () => {
+    expect(httpRequest({ url: '/x' })).toMatchObject({ method: 'GET', followRedirects: true, maxRedirects: 3 });
+    expect(httpRequest({ url: '/x', method: 'post', body: '{}', headers: { 'Content-Type': 'application/json' } })).toMatchObject({ method: 'POST', body: '{}' });
+    for (const method of ['get ', '', 'G\r\nET']) expect(() => httpRequest({ url: '/x', method })).toThrow('HTTP token');
+    for (const method of ['TRACE', 'CONNECT', 'PROPFIND', 'M-SEARCH']) expect(httpRequest({url:'/x',method}).method).toBe(method);
+    for(const input of [{url:'/x',body:123},{url:'/x',method:42},{url:'/x',followRedirects:'yes'},{url:'/x',maxRedirects:1.5},{url:'/x',session:'a/b'}]) expect(()=>httpRequest(input)).toThrow();
+    expect(() => httpRequest({ url: '/x', maxRedirects: 9 })).toThrow('maxRedirects must be 0..5');
+    expect(() => httpRequest({ url: '/x', method: 'HEAD', body: 'x' })).toThrow('cannot carry a body');
+    expect(() => httpRequest({ url: '/x', body: 'x'.repeat(70_000) })).toThrow('at most');
+    expect(() => httpRequest({ url: '/x', headers: { 'Bad Name': 'v' } })).toThrow('Invalid header name');
+    expect(() => httpRequest({ url: '/x', headers: { 'X-Test': 'a\r\nInjected: 1' } })).toThrow('Invalid value');
+    expect(() => httpRequest({ url: '/x', headers: { 'Content-Length': '10' } })).toThrow('cannot be overridden');
+    expect(() => httpRequest({ url: '/x', headers: Object.fromEntries(Array.from({ length: 21 }, (_, i) => [`X-${i}`, 'v'])) })).toThrow('At most 20');
+    expect(() => httpRequest({ url: 'x'.repeat(4100) })).toThrow('1..4096');
   });
 });

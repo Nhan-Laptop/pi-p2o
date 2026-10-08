@@ -13,7 +13,7 @@ Use only when the target is confirmed to be a FastAPI or Starlette application, 
 ## Workflow Prerequisites
 - `source-review` requires a supplied read-only source snapshot. Walk the application factory, routers, and mounts in the supplied revision.
 - `offline-reproduction` requires bounded offline sandbox execution, with Python and the required dependency-metadata library checked through a bounded offline run. Read the installed metadata from the copy; do not install anything.
-- `live-parity-comparison` requires authorized same-origin GET retrieval and compares only the anonymous enforcement baseline on the approved same-origin target. An identity-dependent parity comparison additionally needs a separately authorized authenticated transport (not provided by P2O); without it, record the dynamic gap rather than inferring enforcement.
+- `live-parity-comparison` compares same-origin responses on the approved target, anonymously or with operator-supplied credentials attributable to a controlled principal. Without attributable credentials, record the dynamic gap for identity-dependent routes rather than inferring enforcement.
 
 ## Parity Surfaces
 - Router and route dependencies: compare the dependency list actually attached to each effective route against the identity requirement the route is meant to enforce.

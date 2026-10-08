@@ -97,7 +97,7 @@ describe('worker role', () => {
     worker.flags['p2o-worker'] = join(await h.runDir(), `ticket-${workerId}.json`);
     const freshContext = createContext({ cwd: h.root });
     await worker.events.get('session_start')![0]({}, freshContext.ctx);
-    expect(worker.active).toEqual(['p2o_skill_list', 'p2o_skill_read', 'p2o_candidate', 'p2o_shell', 'p2o_http', 'p2o_note', 'p2o_ledger', 'p2o_delegate', 'p2o_report']);
+    expect(worker.active).toEqual(['p2o_skill_list', 'p2o_skill_read', 'p2o_candidate', 'p2o_shell', 'p2o_net', 'p2o_http', 'p2o_note', 'p2o_ledger', 'p2o_delegate', 'p2o_report']);
     expect(freshContext.notices.join('\n')).not.toContain('rejected');
 
     // Host tools are blocked; sandbox tools run in the owner's container with the worker's own scratch.
@@ -106,7 +106,15 @@ describe('worker role', () => {
     expect(blocked).toMatchObject({ block: true });
     const executed = await worker.tools.get('p2o_shell').execute('call', { command: 'cat /target/code.txt' }, undefined, undefined, freshContext.ctx);
     expect(executed.content[0].text).toContain('INERT_SANDBOX');
-    expect(h.sandbox.commands).toEqual([{ command: 'cat /target/code.txt', workdir: `/work/${workerId}` }]);
+    expect(h.sandbox.commands).toEqual([{ command: 'cat /target/code.txt', workdir: `/work/${workerId}`, max: 60 }]);
+    // The network tool shares the executor but keeps its own longer ceiling and its own receipt label.
+    const scanned = await worker.tools.get('p2o_net').execute('call', { command: 'nmap -sT 127.0.0.1', timeout: 120 }, undefined, undefined, freshContext.ctx);
+    expect(scanned.content[0].text).toContain('INERT_SANDBOX');
+    expect(h.sandbox.commands.at(-1)).toEqual({ command: 'nmap -sT 127.0.0.1', workdir: `/work/${workerId}`, max: 300 });
+    expect((await h.records()).some((record: any) => record.kind === 'evidence' && record.data?.operation === 'net' && String(record.data?.input).includes('nmap'))).toBe(true);
+    const posted = await worker.tools.get('p2o_http').execute('call', { url: '/login', method: 'POST', body: 'user=a', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, followRedirects: false }, undefined, undefined, freshContext.ctx);
+    expect(posted.content[0].text).toContain('Hops: 200 POST /login');
+    expect(h.sandbox.httpCalls.at(-1)).toMatchObject({ url: '/login', method: 'POST', body: 'user=a' });
     await expect(worker.tools.get('p2o_finish').execute('call', {}, undefined, undefined, freshContext.ctx)).rejects.toThrow(/No active p2o assessment/);
   });
 

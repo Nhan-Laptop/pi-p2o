@@ -13,7 +13,7 @@ Use when an action selects a specific object, field, tenant, or delegated role, 
 ## Workflow Prerequisites
 - `source-review` requires a supplied read-only source snapshot. Trace the effective decision and its operands in the supplied revision.
 - `offline-reproduction` requires bounded offline sandbox execution, with the local runtime and required dependencies functionally checked through a bounded offline run. Exercise an extracted policy function against controlled objects in a local harness.
-- `controlled-identity-comparison` requires a separately authorized authenticated transport (not provided by P2O). Local HTTP without a controlled authenticated identity does not satisfy this workflow; without that transport, keep the candidate at a static trace and record the dynamic gap explicitly.
+- `controlled-identity-comparison` requires operator-supplied credentials attributable to at least two controlled principals, used only inside the confirmed origin. An unauthenticated request or a session you cannot attribute to a controlled principal does not satisfy this workflow; without attributable credentials, keep the candidate at a static trace and record the dynamic gap explicitly.
 - A framework permit or scope annotation is a review lead, not proof that the effective action is authorized; confirm the code path that runs.
 
 ## Baseline

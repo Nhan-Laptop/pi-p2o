@@ -34,15 +34,23 @@ describe('bounded recon contract', () => {
     expect(source).toContain('separate worker reproducing the effect');
     expect(source).toContain('complete verified cleanup before the final report');
     const url = reconInstructions('url');
-    expect(url).toContain('same-origin GET/HEAD');
-    expect(url).toContain('No other origins, port scans, login, redirects, form submission or state changes');
+    expect(url).toContain('any HTTP method');
+    expect(url).toContain('connect scans');
+    expect(url).toContain('Other assessment origins remain out of scope');
     expect(url).toContain('inferred, not deployment proof');
+    // The lead policy section is shared with reconInstructions: it must stay free of tool manuals.
+    const urlFacts = { ...facts, targetKind: 'url' as const, targetLabel: 'https://example.invalid' };
+    const urlOwner = ownerInstructions(urlFacts);
+    expect(urlOwner).not.toMatch(/\bp2o_[a-z_]+\b/);
+    expect(urlOwner).toContain('Only the human can widen scope');
+    expect(urlOwner).toContain('Shell/network egress is not origin-filtered');
+    expect(urlOwner.length).toBeLessThan(5000);
   });
 
   it.each([
-    ['url', 'cc9c5d89d6192d2caff26cfe16c87603c9876386fae05f2d09a6cdb0910ad28d', 'd46788388126e353c5744c364e1390e75c98f69e9da043156651dcdaf2ee67c3'],
-    ['directory', 'c720eba4021e5c67b900d051bc29b6fbfb78994caab53de26d3a1b914e04d65a', 'dfad83371227e967125d31a208fd7c417214dcaba90d471e4b33ed721f5b10b9'],
-  ])('keeps %s worker instructions and briefs byte-identical to 8f6db40', (kind, instructionHash, briefHash) => {
+    ['url', '139ce3c4902f00443a0a53c388296d27d8c706edf8c68375b4e242349b3d1b0d', '9608f1fa2108eaff0a427d1a9365205223f462ba4ff1033804a05412bf324c1c'],
+    ['directory', '22f26dba6ade6a3785230f6988263da76e84e4f766e69a98b2d2cfb29939af41', 'dfad83371227e967125d31a208fd7c417214dcaba90d471e4b33ed721f5b10b9'],
+  ])('pins %s worker guidance for the network-transport revision; historical fixtures are not rewritten', (kind, instructionHash, briefHash) => {
     const ticket = { workerId: 'worker-test', role: 'recon', runId: 'run-test', depth: 1, parentWorkerId: null,
       expiresAt: 1893456000000, target: { kind, label: kind === 'url' ? 'https://example.invalid' : '/target' }, commandBudget: 20 } as Ticket;
     const input = { ticket, focus: 'surface-recon', task: 'Map authorized inputs', context: 'No previous work', skills: [{ name: 'test', body: 'Approved fixture guidance' }] };

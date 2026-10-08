@@ -16,15 +16,15 @@
       "id": "offline-reproduction",
       "description": "Exercise an extracted policy function against controlled objects in a local harness",
       "prerequisites": [
-        "Bounded offline execution in sandbox scratch without network access.",
+        "Bounded execution in your own sandbox scratch; network egress is available and any download or install must be receipted.",
         "One suitable option: A bounded offline functional check of Python and the dependencies needed for this task."
       ]
     },
     {
       "id": "controlled-identity-comparison",
-      "description": "Compare a controlled principal against another over an authenticated transport; local HTTP alone is not identity",
+      "description": "Compare a controlled principal against another with operator-supplied credentials; local HTTP alone is not identity",
       "prerequisites": [
-        "An explicitly authorized authenticated test transport and controlled principals; not provided by P2O."
+        "Operator-supplied authorized credentials for controlled authenticated principals, used only inside the confirmed origin."
       ]
     }
   ],

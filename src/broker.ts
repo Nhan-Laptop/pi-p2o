@@ -2,6 +2,7 @@ import { createServer, createConnection, type Server, type Socket } from 'node:n
 import { rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { ProcessResult } from './process.js';
+import { httpRequest, type HttpRequest } from './target.js';
 import { isOutcome, isRecordKind, type AssessmentRecord, type CoverageOutcome, type LedgerPage } from './records.js';
 
 /**
@@ -46,8 +47,10 @@ export interface DelegateInput { focus: string; task: string; context?: string; 
 export interface DelegateResult { workerId: string; name: string; paneId: string; role: string; model?: string; depth: number }
 
 export interface BrokerDeps {
-  exec(command: string, seconds: number, workdir: string, signal: AbortSignal): Promise<ProcessResult>;
-  http(url: string, method: 'GET' | 'HEAD', signal: AbortSignal, workerId?: string): Promise<ProcessResult>;
+  exec(command: string, seconds: number, workdir: string, signal: AbortSignal, maxSeconds?: number): Promise<ProcessResult>;
+  /** Network-egress command: identical executor, separately labelled so its receipts are auditable. */
+  net?(command: string, seconds: number, workdir: string, signal: AbortSignal): Promise<ProcessResult>;
+  http(request: HttpRequest, signal: AbortSignal, workerId?: string): Promise<ProcessResult>;
   note(record: AssessmentRecord): Promise<void>;
   ledger(limit: number, id?: string, cursor?: number): Promise<AssessmentRecord[] | LedgerPage>;
   objective?(worker: WorkerRegistration): Promise<unknown>;
@@ -236,31 +239,36 @@ export class Broker {
         }
         return { ok: true, records, truncated: records.length < slice.length };
       }
-      case 'exec': {
+      case 'exec':
+      case 'net': {
+        const maxSeconds = op === 'net' ? 300 : 60;
         if (typeof request?.command !== 'string' || request.command.length > 8192) return { ok: false, error: 'command must be 1..8192 characters' };
         const command = text(request.command, 8192);
         const seconds = Number.isInteger(request?.timeout) ? request.timeout : 30;
         if (!command || !command.trim()) return { ok: false, error: 'command must be 1..8192 characters' };
-        if (seconds < 1 || seconds > 60) return { ok: false, error: 'timeout must be 1..60 seconds' };
+        if (seconds < 1 || seconds > maxSeconds) return { ok: false, error: `timeout must be 1..${maxSeconds} seconds` };
         const spent = await this.prepareCommand(registration);
         if (spent) return spent;
         return this.whileRunning(workerId, async signal => {
           try {
-            const result = await this.deps.exec(command, seconds, `/work/${workerId}`, signal);
+            const workdir = `/work/${workerId}`;
+            const runner = op === 'net' ? this.deps.net : undefined;
+            const result = runner ? await runner(command, seconds, workdir, signal)
+              : await this.deps.exec(command, seconds, workdir, signal, maxSeconds);
             return { ok: true, ...result };
           } catch (error) { return { ok: false, error: errText(error) }; }
         });
       }
       case 'http': {
-        if (typeof request?.url !== 'string' || request.url.length > 4096) return { ok: false, error: 'url must be 1..4096 characters' };
-        const url = text(request.url, 4096);
-        const method = request?.method === 'HEAD' ? 'HEAD' : 'GET';
-        if (!url) return { ok: false, error: 'url must be 1..4096 characters' };
+        let parsed: HttpRequest;
+        try {
+          parsed = httpRequest(request);
+        } catch (error) { return { ok: false, error: errText(error) }; }
         const spent = await this.prepareCommand(registration);
         if (spent) return spent;
         return this.whileRunning(workerId, async signal => {
           try {
-            const result = await this.deps.http(url, method, signal, workerId);
+            const result = await this.deps.http(parsed, signal, workerId);
             return { ok: true, ...result };
           } catch (error) { return { ok: false, error: errText(error) }; }
         });

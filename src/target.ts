@@ -64,7 +64,22 @@ export async function classifyTarget(value: string, cwd: string): Promise<Target
   return { kind: 'directory', path };
 }
 
-/** Conservative IPv4-only first version. Reject private, reserved, multicast and documentation ranges. */
+export type AddressClass = 'public' | 'private' | 'loopback' | 'link-local' | 'multicast' | 'reserved' | 'shared' | 'ipv6' | 'container-alias';
+
+/** Classification only. Requests are no longer blocked by class; the class is recorded in the receipt. */
+export function addressClass(address: string): AddressClass {
+  if (isIP(address) === 6) return 'ipv6';
+  if (isIP(address) !== 4) return 'reserved';
+  const [a, b, c] = address.split('.').map(Number);
+  if (a === 127) return 'loopback';
+  if (a === 10 || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168)) return 'private';
+  if (a === 169 && b === 254) return 'link-local';
+  if (a >= 224) return 'multicast';
+  if (a === 100 && b >= 64 && b <= 127) return 'shared';
+  return publicIPv4(address) ? 'public' : 'reserved';
+}
+
+/** Conservative public-address test, retained for labelling and for tests that assert the boundary. */
 export function publicIPv4(address: string): boolean {
   if (isIP(address) !== 4) return false;
   const [a, b, c] = address.split('.').map(Number);
@@ -79,17 +94,94 @@ export function publicIPv4(address: string): boolean {
 export type ResolveAddress = (hostname: string) => Promise<string[]>;
 export const resolveAddresses: ResolveAddress = async hostname => {
   if (isIP(hostname)) return [hostname];
-  return (await lookup(hostname, { all: true, family: 4 })).map(record => record.address);
+  return (await lookup(hostname, { all: true })).map(record => record.address)
+    .sort((a, b) => isIP(a) - isIP(b)); // Prefer IPv4; IPv6 availability depends on Docker routing.
 };
 
-/** Recheck every request, then pin curl to the validated address: DNS cannot rebind after validation. */
-export async function scopedRequest(target: Target, value: string, resolveIP: ResolveAddress = resolveAddresses): Promise<{ url: URL; address: string }> {
+/** Container-side alias that only resolves inside the sandbox; the container resolver owns it. */
+export const CONTAINER_HOST_ALIAS = 'host.docker.internal';
+
+export interface ScopedAddress { address: string; addressClass: AddressClass; pin: boolean }
+
+/**
+ * Recheck the confirmed origin on every request, then resolve the destination. Private and loopback
+ * addresses are allowed by the confirmed scope; the resulting class is recorded rather than used to
+ * block. A hostname the sandbox resolves itself (the container alias) is deliberately not pinned.
+ */
+export async function scopedRequest(target: Target, value: string, resolveIP: ResolveAddress = resolveAddresses): Promise<{ url: URL } & ScopedAddress> {
   if (target.kind !== 'url') throw new Error('HTTP is unavailable for directory assessments');
   const url = webURL(new URL(value, target.url).href);
   if (url.origin !== target.origin) throw new Error(`Out of scope: only ${target.origin} is allowed`);
-  const addresses = await resolveIP(url.hostname);
-  if (!addresses.length || addresses.some(address => !publicIPv4(address))) throw new Error('Only public IPv4 targets are supported; private/reserved addresses are blocked');
-  return { url, address: addresses[0] };
+  const hostname = url.hostname.replace(/^\[|\]$/g, '');
+  if (isIP(hostname)) return { url, address: hostname, addressClass: addressClass(hostname), pin: false };
+  if (hostname === CONTAINER_HOST_ALIAS) return { url, address: '', addressClass: 'container-alias', pin: false };
+  const addresses = await resolveIP(hostname);
+  if (!addresses.length || addresses.some(address => !isIP(address))) throw new Error(`Could not resolve ${hostname} to valid IP addresses`);
+  return { url, address: addresses[0], addressClass: addressClass(addresses[0]), pin: true };
+}
+
+export const HTTP_METHODS = ['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS', 'TRACE', 'CONNECT'] as const;
+export type HttpMethod = string;
+export const HTTP_METHOD_PATTERN = "^[!#$%&'*+.^_`|~0-9A-Za-z-]{1,32}$";
+export interface HttpRequest {
+  url: string;
+  method: HttpMethod;
+  headers?: Record<string, string>;
+  body?: string;
+  followRedirects: boolean;
+  maxRedirects: number;
+  /** Actor-local named cookie jar. "none" disables cookie persistence and automatic sending. */
+  session?: string;
+  resetSession?: boolean;
+}
+export type NormalizedHttpRequest = HttpRequest & { session: string; resetSession: boolean };
+export const MAX_BODY_BYTES = 32 * 1024;
+const HEADER_NAME = /^[A-Za-z0-9!#$%&'*+.^_`|~-]{1,64}$/;
+const RESERVED_HEADERS = new Set(['content-length', 'transfer-encoding', 'connection', 'expect']);
+
+/** Validated once here, revalidated by the broker: header/body values never reach a shell. */
+export function httpHeaders(input: unknown): Record<string, string> | undefined {
+  if (input === undefined || input === null) return undefined;
+  if (typeof input !== 'object' || Array.isArray(input)) throw new Error('headers must be an object of name/value strings');
+  const entries = Object.entries(input as Record<string, unknown>);
+  if (entries.length > 20) throw new Error('At most 20 request headers are supported');
+  const headers: Record<string, string> = Object.create(null);
+  let bytes = 0;
+  for (const [name, value] of entries) {
+    if (!HEADER_NAME.test(name)) throw new Error(`Invalid header name ${name.slice(0, 40)}`);
+    if (RESERVED_HEADERS.has(name.toLowerCase())) throw new Error(`${name} is set by the transport and cannot be overridden`);
+    if (typeof value !== 'string' || Buffer.byteLength(value) > 4096 || /[\x00-\x08\x0a-\x1f\x7f]/.test(value)) throw new Error(`Invalid value for header ${name.slice(0, 40)}`);
+    bytes += Buffer.byteLength(name) + Buffer.byteLength(value) + 4;
+    if (bytes > 8192) throw new Error('Request headers must total at most 8192 bytes');
+    if (Object.keys(headers).some(key => key.toLowerCase() === name.toLowerCase())) throw new Error('Duplicate case-insensitive header name');
+    headers[name] = value;
+  }
+  return headers;
+}
+
+/** Model-facing request validation. Bodies and headers are bounded; URLs stay within the confirmed origin. */
+export function httpRequest(input: unknown): NormalizedHttpRequest {
+  if (!input || typeof input !== 'object' || Array.isArray(input)) throw new Error('HTTP request must be an object');
+  const params = input as Record<string, unknown>;
+  if (typeof params.url !== 'string' || !params.url || params.url.length > 4096) throw new Error('url must be 1..4096 characters');
+  if (params.method !== undefined && typeof params.method !== 'string') throw new Error('method must be an HTTP token of 1..32 characters');
+  const method = (params.method as string | undefined) ?? 'GET';
+  if (!new RegExp(HTTP_METHOD_PATTERN).test(method)) throw new Error('method must be an HTTP token of 1..32 characters');
+  const maxRedirects = params.maxRedirects ?? 3;
+  if (typeof maxRedirects !== 'number' || !Number.isInteger(maxRedirects) || maxRedirects < 0 || maxRedirects > 5) throw new Error('maxRedirects must be 0..5');
+  if (params.followRedirects !== undefined && typeof params.followRedirects !== 'boolean') throw new Error('followRedirects must be boolean');
+  if (params.resetSession !== undefined && typeof params.resetSession !== 'boolean') throw new Error('resetSession must be boolean');
+  const session = params.session ?? 'default';
+  if (typeof session !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9._-]{0,39}$/.test(session)) throw new Error('session must be a name of 1..40 characters, or none');
+  const headers = httpHeaders(params.headers);
+  const body = params.body;
+  if (body !== undefined && typeof body !== 'string') throw new Error('body must be a string');
+  if (typeof body === 'string' && Buffer.byteLength(body) > MAX_BODY_BYTES) throw new Error(`Request body must be at most ${MAX_BODY_BYTES} bytes`);
+  // Standard convenience is case-insensitive; extension methods retain their exact token spelling.
+  const normalized = (HTTP_METHODS as readonly string[]).includes(method.toUpperCase()) ? method.toUpperCase() : method;
+  if (normalized === 'HEAD' && body !== undefined) throw new Error('HEAD requests cannot carry a body');
+  return { url: params.url, method: normalized, headers, body, followRedirects: params.followRedirects ?? true,
+    maxRedirects, session, resetSession: params.resetSession ?? false } as NormalizedHttpRequest;
 }
 
 export function targetLabel(target: Target): string { return target.kind === 'directory' ? target.path : target.url; }

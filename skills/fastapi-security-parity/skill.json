@@ -16,7 +16,7 @@
       "id": "offline-reproduction",
       "description": "Read the installed dependency metadata from the copy without installing anything",
       "prerequisites": [
-        "Bounded offline execution in sandbox scratch without network access.",
+        "Bounded execution in your own sandbox scratch; network egress is available and any download or install must be receipted.",
         "One suitable option: A bounded offline functional check of Python and the dependencies needed for this task."
       ]
     },
@@ -24,7 +24,7 @@
       "id": "live-parity-comparison",
       "description": "Compare the anonymous enforcement baseline across equivalent routes on the approved same-origin target",
       "prerequisites": [
-        "Authorized same-origin public GET retrieval through p2o_http."
+        "Authorized same-origin requests through p2o_http on the confirmed origin, with the method, headers, cookies and body the approved scope declares."
       ]
     }
   ],

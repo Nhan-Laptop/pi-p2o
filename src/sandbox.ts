@@ -2,17 +2,23 @@ import { randomUUID } from 'node:crypto';
 import { realpath, rm } from 'node:fs/promises';
 import { copySource } from './source.js';
 import { checked, runDocker, type RunProcess, type ProcessResult } from './process.js';
-import { scopedRequest, type ResolveAddress, type Target } from './target.js';
+import { isIP } from 'node:net';
+import { httpRequest, scopedRequest, CONTAINER_HOST_ALIAS, type HttpRequest, type ResolveAddress, type Target } from './target.js';
+import { HttpSessions, responseHead } from './http-session.js';
 
 // Fixed content digest, not a mutable tag or a model-selected image. No automatic image pull.
 export const IMAGE = 'ghcr.io/usestrix/strix-sandbox@sha256:f6906c3114e504fd1a218fcf028d7a0e46851118403a438b63956de6ea7c4331';
 const LIMITS = (options: SandboxOptions) => ['--read-only', '--cap-drop', 'ALL', '--security-opt', 'no-new-privileges',
-  '--user', '65532:65532', '--pids-limit', '128', '--memory', '512m', '--memory-swap', '512m', '--cpus', '1',
-  '--ulimit', 'nofile=1024:1024', '--log-driver', 'none',
-  '--tmpfs', `/tmp:rw,nosuid,nodev,size=${options.tmpBytes ?? '64m'},mode=1777`,
-  '--tmpfs', `/work:rw,nosuid,nodev,size=${options.workBytes ?? '64m'},mode=1777`,
+  '--user', '65532:65532', '--pids-limit', '512', '--memory', '2g', '--memory-swap', '2g', '--cpus', '2',
+  '--ulimit', 'nofile=4096:4096', '--log-driver', 'none',
+  '--tmpfs', `/tmp:rw,nosuid,nodev,size=${options.tmpBytes ?? '512m'},mode=1777`,
+  '--tmpfs', `/work:rw,nosuid,nodev,size=${options.workBytes ?? '512m'},mode=1777`,
   '--workdir', '/work', '--env', 'HOME=/tmp', '--env', 'TMPDIR=/tmp',
   '--env', 'SEMGREP_ENABLE_VERSION_CHECK=0', '--env', 'SEMGREP_SEND_METRICS=off'];
+
+/** The container may reach the host's published ports under this alias; it is not the host's loopback. */
+const HOST_ALIAS_ARGS = ['--add-host', `${CONTAINER_HOST_ALIAS}:host-gateway`];
+const REDIRECT_STATUS = new Set([301, 302, 303, 307, 308]);
 
 /** Optional sizing/labelling. Delegated runs get more scratch and a run label for verified sweeps. */
 export interface SandboxOptions { tmpBytes?: string; workBytes?: string; runId?: string; image?: string }
@@ -35,12 +41,13 @@ export class Sandbox {
   private pending: Promise<unknown> = Promise.resolve();
   private cancellation = new AbortController();
   private readonly workdirs = new Set<string>();
+  private readonly sessions = new HttpSessions();
   constructor(readonly target: Target, private readonly run: RunProcess = runDocker, private readonly resolveIP?: ResolveAddress, private readonly options: SandboxOptions = {}) {
     validateImage(options.image ?? IMAGE);
     if (options.runId !== undefined && !ID_PATTERN.test(options.runId)) throw new Error('Invalid run id for container labels');
   }
 
-  private async docker(args: string[], options?: { timeoutMs?: number; signal?: AbortSignal }): Promise<ProcessResult> {
+  private async docker(args: string[], options?: Parameters<RunProcess>[1]): Promise<ProcessResult> {
     return this.run(this.endpoint ? ['--host', this.endpoint, ...args] : args, options);
   }
 
@@ -58,7 +65,7 @@ export class Sandbox {
       this.source = source.path; this.sourceSkipped = source.skipped; this.sourceManifest = source.manifest;
     }
     const mount = this.source ? ['--volume', `${this.source}:/target:ro`] : [];
-    this.shell = await this.create('none', [...mount, '--entrypoint', '/bin/sh', this.options.image ?? IMAGE, '-c', 'exec sleep infinity']);
+    this.shell = await this.create('bridge', [...HOST_ALIAS_ARGS, ...mount, '--entrypoint', '/bin/sh', this.options.image ?? IMAGE, '-c', 'exec sleep infinity']);
     checked(await this.docker(['start', this.shell]));
     const running = checked(await this.docker(['inspect', '--format', '{{.State.Running}}', this.shell]));
     if (running.stdout.trim() !== 'true') throw new Error('Sandbox did not stay running');
@@ -80,8 +87,8 @@ export class Sandbox {
     return next;
   }
 
-  async exec(command: string, seconds = 30, signal?: AbortSignal, workdir = '/work', onRunning?: () => void): Promise<ProcessResult> {
-    if (!command || command.length > 8192 || !Number.isInteger(seconds) || seconds < 1 || seconds > 60) throw new Error('Command must be 1..8192 characters; timeout must be 1..60 seconds');
+  async exec(command: string, seconds = 30, signal?: AbortSignal, workdir = '/work', onRunning?: () => void, maxSeconds = 60): Promise<ProcessResult> {
+    if (![60, 300].includes(maxSeconds) || !command || command.length > 8192 || !Number.isInteger(seconds) || seconds < 1 || seconds > maxSeconds) throw new Error(`Command must be 1..8192 characters; timeout must be 1..${maxSeconds} seconds`);
     if (workdir !== '/work' && !/^\/work\/[A-Za-z0-9][A-Za-z0-9._-]{0,60}$/.test(workdir)) throw new Error('Invalid sandbox working directory');
     return this.enqueue(async () => {
       if (this.stopped || !this.shell) throw new Error('No active sandbox');
@@ -93,12 +100,10 @@ export class Sandbox {
         if (result.code === 124 || result.code === 137) throw new Error('Sandbox command timed out; stopping the sandbox to remove background processes');
         return result;
       } catch (error) {
-        // One caller aborting its own command (e.g. a worker being stopped) must not destroy the shared
-        // sandbox for everyone else. The command's own `timeout` wrapper reaps it.
-        if (!signal?.aborted) {
-          this.stopped = true;
-          await this.removeAll();
-        }
+        // Killing the Docker CLI does not reap commands in the container. With network egress,
+        // fail closed: cancel/timeout removes the shared executor, including background children.
+        this.stopped = true; this.cancellation.abort();
+        await this.removeAll();
         throw error;
       }
     });
@@ -113,24 +118,67 @@ export class Sandbox {
     this.workdirs.add(workdir);
   }
 
-  async http(value: string, method: 'GET' | 'HEAD' = 'GET', signal?: AbortSignal, onRunning?: () => void): Promise<ProcessResult> {
-    if (!['GET', 'HEAD'].includes(method) || value.length > 4096) throw new Error('Only GET/HEAD and URLs up to 4096 characters are supported');
+  /** Fixed curl, actor-local sessions, and origin validation before every redirect hop. */
+  async http(input: HttpRequest, signal?: AbortSignal, onRunning?: () => void, actor = 'owner'): Promise<ProcessResult> {
+    const request = httpRequest(input);
     return this.enqueue(async () => {
-      if (this.stopped || !this.shell) throw new Error('No active sandbox');
-      const { url, address } = await scopedRequest(this.target, value, this.resolveIP);
-      if (this.stopped || signal?.aborted) throw new Error('Cancelled');
-      const port = url.port || (url.protocol === 'https:' ? '443' : '80');
-      // This networking container runs ONLY fixed curl arguments, never model-supplied shell/code.
-      const name = await this.create('bridge', ['--entrypoint', '/usr/bin/curl', this.options.image ?? IMAGE, '-q',
-        '--proxy', '', '--noproxy', '*', '--proto', '=http,https', '--max-time', '20', '--connect-timeout', '5',
-        '--max-filesize', '1048576', '--max-redirs', '0', '--no-location', '--silent', '--show-error', '--include',
-        '--resolve', `${url.hostname}:${port}:${address}`, ...(method === 'HEAD' ? ['--head'] : []), '--url', url.href]);
-      try {
-        onRunning?.();
-        return await this.docker(['start', '--attach', name], {
-          timeoutMs: 25_000, signal: AbortSignal.any([this.cancellation.signal, ...(signal ? [signal] : [])]),
-        });
-      } finally { await this.remove(name); }
+      const hops: string[] = [];
+      let current = request.url, method = request.method, body = request.body;
+      let last: ProcessResult | undefined;
+      let rejectedCookies = 0;
+      const finish = (redirectStopped?: string): ProcessResult => ({ ...last!, hops, session: request.session,
+        ...(redirectStopped ? { redirectStopped } : {}), ...(rejectedCookies ? { cookieWarning: 'Some cookies exceeded session limits or were invalid' } : {}) });
+      for (let index = 0; ; index++) {
+        if (this.stopped || !this.shell) throw new Error('No active sandbox');
+        const combined = AbortSignal.any([this.cancellation.signal, ...(signal ? [signal] : [])]);
+        combined.throwIfAborted();
+        let destination: Awaited<ReturnType<typeof scopedRequest>>;
+        try { destination = await scopedRequest(this.target, current, this.resolveIP); }
+        catch (error) { if (last) return finish(error instanceof Error ? error.message : String(error)); throw error; }
+        const { url, address, addressClass: kind, pin } = destination;
+        combined.throwIfAborted();
+        if (this.stopped) throw new Error('Cancelled');
+        if (!index && request.resetSession) this.sessions.reset(actor, request.session, url);
+        const headers = Object.entries(request.headers ?? {});
+        const explicitCookie = headers.some(([name]) => name.toLowerCase() === 'cookie');
+        const jar = explicitCookie ? undefined : this.sessions.header(actor, request.session, url);
+        const args = ['-q', '--proxy', '', '--noproxy', '*', '--proto', '=http,https', '--max-time', '20', '--connect-timeout', '5',
+          '--max-filesize', '8388608', '--max-redirs', '0', '--no-location', '--silent', '--show-error', '--include'];
+        const port = url.port || (url.protocol === 'https:' ? '443' : '80');
+        if (pin) args.push('--resolve', url.hostname + ':' + port + ':' + (isIP(address) === 6 ? '[' + address + ']' : address));
+        if (method === 'HEAD') args.push('--head');
+        else args.push('--request', method); // A GET body must not implicitly become POST.
+        if (jar) args.push('-H', 'Cookie: ' + jar);
+        for (const [name, value] of headers) args.push('-H', name + ': ' + value);
+        if (body !== undefined) args.push('--data-binary', '@-');
+        args.push('--url', url.href);
+        const name = await this.create('bridge', [...HOST_ALIAS_ARGS, ...(body === undefined ? [] : ['--interactive']),
+          '--entrypoint', '/usr/bin/curl', this.options.image ?? IMAGE, ...args]);
+        try {
+          combined.throwIfAborted();
+          if (this.stopped) throw new Error('Cancelled');
+          onRunning?.();
+          last = await this.docker(['start', '--attach', ...(body === undefined ? [] : ['--interactive']), name], {
+            timeoutMs: 25_000, signal: combined, ...(body === undefined ? {} : { stdin: body }),
+          });
+        } finally { await this.remove(name); }
+        const head = responseHead(last.stdout);
+        hops.push((head.status ?? 'no-status') + ' ' + method + ' ' + url.href + ' → ' + (address || CONTAINER_HOST_ALIAS) + ' (' + kind + ')');
+        if (last.code !== 0) return finish('Transport failed; no automatic retry or redirect');
+        if (!head.complete) return finish('Response headers incomplete; cookies and redirects were not processed');
+        rejectedCookies += this.sessions.store(actor, request.session, url, head.headers);
+        const locations = head.headers.filter(([name]) => name === 'location').map(([, value]) => value);
+        if (!head.status || !REDIRECT_STATUS.has(head.status) || !locations.length || !request.followRedirects) return finish();
+        if (locations.length !== 1) return finish('Ambiguous Location headers; no redirect followed');
+        if (index >= request.maxRedirects) return finish('Redirect limit reached');
+        try {
+          const next = new URL(locations[0], url.href); next.hash = '';
+          current = next.href;
+        } catch { return finish('Invalid redirect URL'); }
+        if ((head.status === 303 && method !== 'HEAD') || ((head.status === 301 || head.status === 302) && method === 'POST')) {
+          method = 'GET'; body = undefined;
+        }
+      }
     });
   }
 
@@ -152,6 +200,7 @@ export class Sandbox {
   async stop(): Promise<void> {
     this.stopped = true; this.cancellation.abort();
     await this.pending;
+    this.sessions.clear();
     await this.removeAll();
   }
 

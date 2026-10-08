@@ -5,7 +5,7 @@ import { dirname, join, resolve } from 'node:path';
 import type { ExtensionAPI, ExtensionCommandContext, ExtensionContext } from '@earendil-works/pi-coding-agent';
 import { Type } from 'typebox';
 import { Sandbox, IMAGE, validateImage, type SandboxOptions } from '../../src/sandbox.js';
-import { classifyTarget, parseCommand, targetLabel, type Target } from '../../src/target.js';
+import { classifyTarget, httpRequest, HTTP_METHOD_PATTERN, parseCommand, targetLabel, type HttpRequest, type Target } from '../../src/target.js';
 import { cleanText, type ProcessResult } from '../../src/process.js';
 import { Broker, BrokerClient, DEFAULT_WORKER_COMMAND_BUDGET, type WorkerRegistration, type WorkerReport, type DelegateInput } from '../../src/broker.js';
 import { appendRecord, readLedger, ledgerPage, recordsSize, summarizeRecords, waitForRecordChange, type AssessmentRecord, type CoverageOutcome, type LedgerPage } from '../../src/records.js';
@@ -29,8 +29,8 @@ import { ProgressState } from '../../src/progress.js';
  * Strix's model is one sandbox session shared by every agent; because Pi workers are separate processes,
  * the owner serves that session over a 0600 unix socket instead of handing out a Docker client.
  */
-const OWNER_TOOLS = ['p2o_task', 'p2o_ledger', 'p2o_skill_list', 'p2o_skill_read', 'p2o_candidate', 'p2o_shell', 'p2o_http', 'p2o_note', 'p2o_delegate', 'p2o_workers', 'p2o_steer', 'p2o_stop_worker', 'p2o_finish'];
-const WORKER_TOOLS = ['p2o_skill_list', 'p2o_skill_read', 'p2o_candidate', 'p2o_shell', 'p2o_http', 'p2o_note', 'p2o_ledger', 'p2o_delegate', 'p2o_report'];
+const OWNER_TOOLS = ['p2o_task', 'p2o_ledger', 'p2o_skill_list', 'p2o_skill_read', 'p2o_candidate', 'p2o_shell', 'p2o_net', 'p2o_http', 'p2o_note', 'p2o_delegate', 'p2o_workers', 'p2o_steer', 'p2o_stop_worker', 'p2o_finish'];
+const WORKER_TOOLS = ['p2o_skill_list', 'p2o_skill_read', 'p2o_candidate', 'p2o_shell', 'p2o_net', 'p2o_http', 'p2o_note', 'p2o_ledger', 'p2o_delegate', 'p2o_report'];
 const ALL_TOOLS = [...new Set([...OWNER_TOOLS, ...WORKER_TOOLS])];
 const WORKER_FLAG = 'p2o-worker';
 const HELP = [
@@ -82,11 +82,17 @@ export interface Options {
 
 function output(result: ProcessResult) {
   return {
-    content: [{ type: 'text' as const, text: `Exit: ${result.code}${result.evidenceId ? `\nEvidence ID: ${result.evidenceId}` : ''}\n${cleanText(result.stdout)}${result.stderr ? `\nStderr:\n${cleanText(result.stderr)}` : ''}${result.truncated ? '\n[Output truncated at 48 KiB; narrow the command/request.]' : ''}` }],
-    details: { exitCode: result.code, truncated: result.truncated, evidenceId: result.evidenceId },
+    content: [{ type: 'text' as const, text: `Exit: ${result.code}${result.evidenceId ? `\nEvidence ID: ${result.evidenceId}` : ''}${result.hops?.length ? `\nHops: ${cleanText(result.hops.join(' -> '))}` : ''}${result.redirectStopped ? `\nRedirect stopped: ${cleanText(result.redirectStopped)}` : ''}${result.cookieWarning ? `\nSession: ${cleanText(result.cookieWarning)}` : ''}\n${cleanText(result.stdout)}${result.stderr ? `\nStderr:\n${cleanText(result.stderr)}` : ''}${result.truncated ? '\n[Output truncated at 48 KiB; narrow the command/request.]' : ''}` }],
+    details: { exitCode: result.code, truncated: result.truncated, evidenceId: result.evidenceId, hops: result.hops, session: result.session, redirectStopped: result.redirectStopped },
   };
 }
 function fail(code: string, message: string): never { throw new Error(`${code}: ${message}`); }
+
+/** Receipt label: method, URL, header names and body size only. Values are never copied into the ledger. */
+function requestLabel(request: HttpRequest): string {
+  const names = request.headers ? ` [${Object.keys(request.headers).sort().join(',')}]` : '';
+  return `${request.method} ${request.url}${request.body !== undefined ? ` (+${Buffer.byteLength(request.body)} byte body)` : ''}${names} [session=${request.session ?? 'default'}${request.resetSession ? ', reset' : ''}]`;
+}
 function message(error: unknown): string { return cleanText(error instanceof Error ? error.message : String(error)); }
 
 /** Skills are resolved against the installed library; an unknown name is refused, never guessed. */
@@ -410,7 +416,7 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
     } catch (error) {
       current.progress.record(by,'error',operation,redact(message(error)));
       if (current.sandbox.isStopped) {
-        if (run === current) pi.setActiveTools(OWNER_TOOLS.filter(name => !['p2o_shell', 'p2o_http', 'p2o_delegate'].includes(name)));
+        if (run === current) pi.setActiveTools(OWNER_TOOLS.filter(name => !['p2o_shell', 'p2o_net', 'p2o_http', 'p2o_delegate'].includes(name)));
       }
       await current.evidence.receipt(by, operation, input, { code: -1, stdout: '', stderr: message(error), truncated: false }, started).catch(() => {});
       throw error;
@@ -548,7 +554,7 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
 
   pi.registerTool({
     name: 'p2o_shell', label: 'Sandbox shell', exposure: 'model-only',
-    description: 'Run a command in the assessment Docker sandbox, not on the host. Network disabled, /target read-only for directory targets, /work (or your own worker scratch) writable. 1..60 second timeout, 48 KiB output cap. A timeout/cancellation stops the sandbox.',
+    description: 'Run a command in the assessment Docker sandbox, not on the host. The container has network egress, so prefer p2o_net for anything that contacts the target or downloads tooling; /target is read-only for directory targets and /work (or your own worker scratch) is writable. 1..60 second timeout, 48 KiB output cap. A timeout/cancellation stops the sandbox.',
     parameters: Type.Object({ command: Type.String({ minLength: 1, maxLength: 8192 }), timeout: Type.Optional(Type.Integer({ minimum: 1, maximum: 60 })) }),
     async execute(_id, params, signal, _update, ctx) {
       const timeout = params.timeout ?? 30;
@@ -564,19 +570,46 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
     },
   });
   pi.registerTool({
-    name: 'p2o_http', label: 'Scoped HTTP', exposure: 'model-only',
-    description: 'Fetch a URL with fixed curl inside a sandbox container: GET/HEAD only, same origin as the authorized URL target, validated public IPv4, no redirects or credentials. Relative URLs allowed. 20 seconds, 1 MiB response, 48 KiB visible. Not available for directory targets.',
-    parameters: Type.Object({ url: Type.String({ minLength: 1, maxLength: 4096 }), method: Type.Optional(Type.Union([Type.Literal('GET'), Type.Literal('HEAD')])) }),
+    name: 'p2o_net', label: 'Sandbox network', exposure: 'model-only',
+    description: 'Run network-facing commands in the assessment Docker sandbox: TCP/UDP service probes and connect scans, downloads/tool installs into scratch, or target tunnels. Shared networked container; 1..300 seconds and 48 KiB output. No raw-socket capabilities or host Docker. Unlike p2o_http, opaque commands are NOT origin-filtered: keep assessment traffic to the human-confirmed target and use only trusted repositories for needed software. Scope is agent policy here, not an egress firewall. Cancellation/timeout removes the shared executor and background processes.',
+    parameters: Type.Object({ command: Type.String({ minLength: 1, maxLength: 8192 }), timeout: Type.Optional(Type.Integer({ minimum: 1, maximum: 300 })) }),
     async execute(_id, params, signal, _update, ctx) {
-      const method = params.method ?? 'GET';
+      const timeout = params.timeout ?? 60;
       const current = run;
       if (!current) fail('NO_ASSESSMENT', 'No active p2o assessment; start one with /p2o --target …');
       if (current.role === 'owner') {
         if (current.phase !== 'active' || current.ctx.cwd !== ctx.cwd) fail('NO_ASSESSMENT', 'No active p2o assessment in this session');
-        return output(await executeWithReceipt(current, 'owner', 'http', `${method} ${params.url}`, () => current.sandbox.http(params.url, method, signal,() => current.progress.record('owner','running','http'))));
+        return output(await executeWithReceipt(current, 'owner', 'net', params.command, () => current.sandbox.exec(params.command, timeout, signal, '/work', () => current.progress.record('owner','running','net'), 300)));
       }
       const active = worker();
-      const result = await active.client.request<ProcessResult>('http', { url: params.url, method }, { timeoutMs: 45_000 });
+      const result = await active.client.request<ProcessResult>('net', { command: params.command, timeout }, { timeoutMs: (timeout + 20) * 1000 });
+      return output(result);
+    },
+  });
+  pi.registerTool({
+    name: 'p2o_http', label: 'Scoped HTTP', exposure: 'model-only',
+    description: 'Full HTTP with fixed curl: standard verbs including TRACE and custom HTTP method tokens, request bodies (32 KiB UTF-8), custom headers (8 KiB total) including Authorization/Cookie, and bounded redirect following. Each URL/hop must match the confirmed origin; redirects stop before contacting other origins. Response/curl failure is not retried. Actor-local named cookie sessions preserve Path/Secure/expiry; session=none disables persistence, resetSession clears the selected jar, and an explicit Cookie header overrides the jar. Credentials are operator-supplied and can appear in model transcripts and local Docker inspection. 20 seconds per hop, curl transfer limit 8 MiB, 48 KiB captured. Not available for directory targets.',
+    parameters: Type.Object({
+      url: Type.String({ minLength: 1, maxLength: 4096 }),
+      method: Type.Optional(Type.String({ minLength: 1, maxLength: 32, pattern: HTTP_METHOD_PATTERN })),
+      headers: Type.Optional(Type.Record(Type.String({ maxLength: 64 }), Type.String({ maxLength: 4096 }), { maxProperties: 20 })),
+      body: Type.Optional(Type.String({ maxLength: 32768 })),
+      followRedirects: Type.Optional(Type.Boolean()),
+      maxRedirects: Type.Optional(Type.Integer({ minimum: 0, maximum: 5 })),
+      session: Type.Optional(Type.String({ minLength: 1, maxLength: 40, pattern: '^[A-Za-z0-9][A-Za-z0-9._-]{0,39}$' })),
+      resetSession: Type.Optional(Type.Boolean()),
+    }),
+    async execute(_id, params, signal, _update, ctx) {
+      const request = httpRequest(params);
+      const label = requestLabel(request);
+      const current = run;
+      if (!current) fail('NO_ASSESSMENT', 'No active p2o assessment; start one with /p2o --target …');
+      if (current.role === 'owner') {
+        if (current.phase !== 'active' || current.ctx.cwd !== ctx.cwd) fail('NO_ASSESSMENT', 'No active p2o assessment in this session');
+        return output(await executeWithReceipt(current, 'owner', 'http', label, () => current.sandbox.http(request, signal, () => current.progress.record('owner','running','http'))));
+      }
+      const active = worker();
+      const result = await active.client.request<ProcessResult>('http', { ...request }, { timeoutMs: 30_000 * (request.followRedirects ? request.maxRedirects + 1 : 1) + 15_000 });
       return output(result);
     },
   });
@@ -798,7 +831,7 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
           const delegationReason = command.options.solo ? '--solo was requested' : 'Pi is not running inside a Herdr session';
           const delegation = maxWorkers > 0 && maxDepth > 0 ? '' : ' (delegation disabled by the configured limits)';
           const allowed = await ctx.ui.confirm('Start authorized assessment?',
-            `Target: ${cleanText(targetLabel(target))}\n${target.kind === 'directory' ? 'A bounded source copy (64 MiB / 20000 entries) is exposed read-only to the sandbox and its contents may reach your model provider. Symlinks, special files, .git and node_modules are skipped. Choose a source directory, not your home or a secrets directory.' : `Scope: ${target.origin}, public IPv4 GET/HEAD only. No login, redirects or state changes.`}\nConfirm you own this target or have permission to assess it. The current Pi model leads the assessment; normal provider charges apply.\nWorkers: ${delegationAvailable ? `up to ${maxWorkers} visible Pi worker panes may be delegated inside this sandbox, nesting to depth ${maxDepth}; each worker has its own model and models may cost more.` : `none${delegation} (${delegationReason}).`}\nDocker image: ${image}. An unprivileged user, resource limits and no host credentials/socket. Containers share the host kernel; this is not VM isolation. Maximum duration: 30 minutes.${command.options.export ? '\nExport enabled: bounded redacted receipts will be saved under .p2o-reports in this working directory before cleanup. Redaction is best effort; review before sharing.' : '\nNo durable export selected. Use --export to retain bounded redacted receipts after cleanup.'}`);
+            `Target: ${cleanText(targetLabel(target))}\n${target.kind === 'directory' ? 'A bounded source copy (64 MiB / 20000 entries) is exposed read-only to the sandbox and its contents may reach your model provider. Symlinks, special files, .git and node_modules are skipped. Choose a source directory, not your home or a secrets directory.' : `Assessment target: ${target.origin} only. All HTTP methods, bodies, login/auth headers, cookies and state-changing requests are authorized for this run. The HTTP tool validates each URL/redirect against this origin; other HTTP origins are refused.`}\nNetwork authority: both shell and network tools have unrestricted bridge egress (public/private/link-local addresses and reachable host services), plus downloads and user-space tool installs in scratch. Opaque commands are NOT origin-filtered; target scope outside the HTTP tool is agent policy, not an egress firewall. Tool repositories are auxiliary egress, not additional assessment targets. Loopback is container-local; host.docker.internal reaches host-published services. Raw-packet capabilities/root/host Docker are not granted. Never mount a secrets directory. Supplied credentials and returned data may reach your model provider or local Docker inspection; exports are only best-effort redacted.\nConfirm you own this target or have permission to assess it. The current Pi model leads the assessment; normal provider charges apply.\nWorkers: ${delegationAvailable ? `up to ${maxWorkers} visible Pi worker panes may be delegated inside this sandbox, nesting to depth ${maxDepth}; each worker has its own model and models may cost more.` : `none${delegation} (${delegationReason}).`}\nDocker image: ${image}. Unprivileged user, no host credentials/socket, 2 GiB memory and 512 PIDs per container. Containers share the host kernel; this is not VM isolation. Maximum duration: 30 minutes.${command.options.export ? '\nExport enabled: bounded redacted receipts will be saved under .p2o-reports in this working directory before cleanup. Redaction is best effort; review before sharing.' : '\nNo durable export selected. Use --export to retain bounded redacted receipts after cleanup.'}`);
           if (!allowed) { ctx.ui.notify('Cancelled. No sandbox, worker or agent turn started.', 'info'); return; }
           ctx.signal?.throwIfAborted();
           const source = await readFile(extensionPath, 'utf8');
@@ -809,7 +842,7 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
           await appendRecord(records, { at: new Date().toISOString(), runId, by: 'owner', kind: 'lifecycle', text: `assessment started for ${cleanText(targetLabel(target))}` });
           const reports = join(control, 'reports');
           await ensurePrivateDirectory(reports);
-          const sandboxOptions: SandboxOptions = { runId, image, ...(delegationAvailable ? { tmpBytes: '256m', workBytes: '512m' } : {}) };
+          const sandboxOptions: SandboxOptions = { runId, image, ...(delegationAvailable ? { tmpBytes: '768m', workBytes: '1g' } : {}) };
           const createSandbox = options.createSandbox ?? ((value: Target, sandboxOptionsValue: SandboxOptions) => new Sandbox(value, undefined, undefined, sandboxOptionsValue));
       const sandbox = createSandbox(target, sandboxOptions);
           const deadline = now() + 30 * 60 * 1000;
@@ -824,8 +857,9 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
           };
           current.board = new TaskBoard(runId,records,deadline,() => run === current && current.phase === 'active',now);
           current.broker = new Broker(control, {
-            exec: (command, seconds, workdir, signal) => executeWithReceipt(current, workdir.split('/').at(-1)!, 'shell', command, () => sandbox.exec(command, seconds, signal, workdir,() => current.progress.record(workdir.split('/').at(-1)!,'running','shell'))),
-            http: (url, method, signal, workerId) => executeWithReceipt(current, workerId ?? 'owner', 'http', `${method} ${url}`, () => sandbox.http(url, method, signal,() => current.progress.record(workerId ?? 'owner','running','http'))),
+            exec: (command, seconds, workdir, signal, maxSeconds) => executeWithReceipt(current, workdir.split('/').at(-1)!, 'shell', command, () => sandbox.exec(command, seconds, signal, workdir,() => current.progress.record(workdir.split('/').at(-1)!,'running','shell'), maxSeconds)),
+            net: (command, seconds, workdir, signal) => executeWithReceipt(current, workdir.split('/').at(-1)!, 'net', command, () => sandbox.exec(command, seconds, signal, workdir, () => current.progress.record(workdir.split('/').at(-1)!,'running','net'), 300)),
+            http: (request, signal, workerId) => executeWithReceipt(current, workerId ?? 'owner', 'http', requestLabel(request), () => sandbox.http(request, signal,() => current.progress.record(workerId ?? 'owner','running','http'), workerId ?? 'owner')),
             knowledge: (op, request, registration) => readKnowledge(current, op, request, registration.workerId),
             candidate: (input, registration) => recordCandidate(current, registration.workerId, input as Candidate),
             note: record => track(current,appendRecord(current.records, { ...record, runId: current.runId })),
