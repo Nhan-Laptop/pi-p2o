@@ -1,6 +1,6 @@
 # P2O enhancement plan — ARTEX-informed assessment loop, roles and skills
 
-**Status:** implementation authorized and completed for Phases 0–4; source regression and inert Docker/visible Herdr acceptance passed. Phase 5 installed release verification is in progress. Checkmarks describe tested mechanics, not autonomous security effectiveness.
+**Status:** implemented and shipped. Source regression, inert Docker/visible Herdr, installed native normal/quota/Docker acceptance and 40 runtime/document hash comparisons passed. Evidence: `research/runtime/assessment-loop/`. Checkmarks describe tested mechanics, not autonomous security effectiveness or semantic proof.
 
 **P2O baseline:** `da05d0e7a367bacd252d6173c6d0e8f03c733d60`.
 
@@ -253,8 +253,8 @@ Completion is not “found something” or “all workers idle.” Reconcile all
 - [x] Add partial-budget, terminal-provider-error, stale-prerequisite and cleanup-failure variants.
 - [x] Update docs for new state, role/method decisions, progress, retention and compatibility; preserve the lean prompt contract.
 - [x] Run full regression/library checks and package exclusions, then selected inert Docker/visible Herdr checks where prerequisites exist.
-- [ ] Commit → push → `pi install` → match installed revision/runtime hashes → run installed-path native normal/quota/Docker acceptance.
-- [ ] Publish bounded reviewed receipts, recording skips/limitations honestly; never rewrite previous studies or session exports.
+- [x] Commit → push → `pi install` → match installed revision/runtime hashes → run installed-path native normal/quota/Docker acceptance.
+- [x] Publish bounded reviewed receipts, recording skips/limitations honestly; never rewrite previous studies or session exports.
 
 **Gate:** complete reconciliation or explicit incompleteness; no silent stale validation; original authority/deadlines preserved; report-only finalization; revoked worker access; verified container removal and honest pane failures. Inert results do not establish autonomous security effectiveness.
 
@@ -280,14 +280,14 @@ ARTEX-style orchestration-only lead; forced generation of new work; automatic pr
 
 The enhancement is complete only when shipped, installed-path evidence shows:
 
-- [ ] All relevant valid state is reconcilable despite bounded views; omitted/damaged state is explicit.
-- [ ] Full normalized reports and current candidate/validation versions survive final reporting, within documented retention limits.
-- [ ] The working lead can recover the current question and select a justified next step.
-- [ ] Dependencies are accepted by evidence; reservations prevent exact duplicate dispatch and allow deliberate independent validation.
-- [ ] Role/skill/workflow selection is explainable and cannot grant authority.
-- [ ] Progress distinguishes observable outcomes from unknown silence and preserves closure capacity.
-- [ ] Compaction, replay, worker text and terminal hooks cannot renew scope or continue target work after stop/expiry.
-- [ ] Source/URL restrictions, worker revocation and verified cleanup remain unchanged.
-- [ ] ARTEX remains reference-only; existing historical evidence remains intact.
+- [x] All relevant valid state is reconcilable despite bounded views; omitted/damaged state is explicit.
+- [x] Full normalized reports and current candidate/validation versions survive final reporting, within documented retention limits.
+- [x] The working lead can recover the current question and select a justified next step.
+- [x] Dependencies are accepted by evidence; reservations prevent exact duplicate dispatch and allow deliberate independent validation.
+- [x] Role/skill/workflow selection is explainable and cannot grant authority.
+- [x] Progress distinguishes observable outcomes from unknown silence and preserves closure capacity.
+- [x] Compaction, replay, worker text and terminal hooks cannot renew scope or continue target work after stop/expiry.
+- [x] Source/URL restrictions, worker revocation and verified cleanup remain unchanged.
+- [x] ARTEX remains reference-only; existing historical evidence remains intact.
 
-**Recommended order:** evidence integrity first (including stale validation), then task/handoff state, then maintenance/skills integration and installed acceptance. The remaining step is installed acceptance and bounded receipt publication, not an autonomous campaign.
+**Recommended order:** evidence integrity first (including stale validation), then task/handoff state, then maintenance/skills integration and installed acceptance. Implementation and bounded installed acceptance are complete. Any further live evaluation needs separate authorization; no autonomous campaign is scheduled.

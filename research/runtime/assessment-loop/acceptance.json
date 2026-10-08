@@ -1,0 +1,84 @@
+{
+  "baseline": "da05d0e7a367bacd252d6173c6d0e8f03c733d60",
+  "testedRevision": "7c1e64056e7bf5a5135eb40a30a080e8904c3338",
+  "installedRevision": "7c1e64056e7bf5a5135eb40a30a080e8904c3338",
+  "verifiedAt": "2026-10-08T09:13:06.997Z",
+  "runtimeAndDocumentHashes": {
+    "extensions/p2o/index.ts": "10fbaac99c661257ae7a24cee04241e08b36c4c7e1716283e8b6dc0ca882f0a6",
+    "src/broker.ts": "97e70892dfc3ab3877b99452a39dafabef5c9725c34455d1ef8f34bb8423c894",
+    "src/evidence.ts": "d715e4a67b48c1c05cc8c558b7f80d3d5ede4092aca1399df6442db2f933da3f",
+    "src/herdr.ts": "360192e3fdc60c37358316d8ba23962d213d667f1dfa410cc4d8823a7cf27327",
+    "src/process.ts": "ec5f332e146a50e91154d521edea57c18d4cc384e864afa1352af1f11f74d428",
+    "src/progress.ts": "9e502876f50320bc1afa718ae11cef175f322aeb2a12572259137f30b89bdd82",
+    "src/prompts.ts": "8e164cd99d53b532a34be260f80b0f9037816b71f30606702729f5b6bb1153a1",
+    "src/records.ts": "90f8a7341fc31855e1a037f46ca88191e3325b0a90a6d08ce5386e514ba04f86",
+    "src/report.ts": "02cb95a3594f2d4530c9c31f7025c755ad341aafa5066c09dfc30690de815eb3",
+    "src/roles.ts": "791c6f5093ac03f3d0bf6015230e0250658bff18a66242eaf8eefbd2b7b26ce5",
+    "src/sandbox.ts": "5f8313ae9c886a3c79a16e428113e06e18729ce37723ec8e9fbb7fd66a8df81d",
+    "src/skills.ts": "9df29507d5772a636da7395a947755a87ba33fd040c163c2f4a556bdb828afc2",
+    "src/source.ts": "7d87531ea3688b1193f0ed85423531b7068541a28aced25cfdc0b31829e98723",
+    "src/target.ts": "3d97e9c7008cc23e9501fd30ecf9fef220bd1a380c7842276228b90581111c0e",
+    "src/tasks.ts": "d9cf70bde7f40f4755c6b1453231bdf1299819e3f6902d9bd5bc98da41c9fa04",
+    "src/ticket.ts": "4e160c6e64379ee9586075a5e576b22a4f8c5cac7b37711702a458777c00b024",
+    "skills/catalog.json": "9d93b92f73544fa864a57731035987f6d194aa9c53083306055654be4e43c4e8",
+    "HANDOFFS.md": "190463bbfa3d2557512d94f41f73ba04cf5df41e6f7aaf57db2951370e8d0760",
+    "templates/handoff.json": "a04d39fb64beb65f01da3b37d13b6b9b80cf277641ea945bebcc3e2190dd6b10",
+    "skills/attack-surface-mapping/SKILL.md": "ee8e7ef5127c7e6fd862501fcc9deb3663dadc1aae083571ba80099a5a5a65ce",
+    "skills/authorization-auditing/SKILL.md": "d7459d9d9bc4359d697a9da3e41c6e105a8ac64b370dd38d110698be6e08e6bd",
+    "skills/binary-auditing/SKILL.md": "cffcf930cde7888a9371197586585567aca4994e8981d7620f9624790bd11bca",
+    "skills/compiler-invariant-auditing/SKILL.md": "65d5121b1dc5b933bff31b65691bb9c25a2618016ed07be9f957d490240ec506",
+    "skills/data-flow-analysis/SKILL.md": "9f722df13c2205a6d41313c45fecd661390a60ce5f27455482a28c34dd2e7209",
+    "skills/deserialization-and-dispatch-auditing/SKILL.md": "ee4350c9d26d3b1548dd6ddbd26e8552628ff7699580eb74f4f16331c0f83b32",
+    "skills/dynamic-analysis/SKILL.md": "c2de6190f62a23c4911f92147f522c84588e16fcd3c9cb0ba6a451d5ca93c77f",
+    "skills/exploitability-assessment/SKILL.md": "860f52b281e9f362c9ea09b6210e99e41eadce1a4615fe407f7e2c34918d3d8d",
+    "skills/fastapi-security-parity/SKILL.md": "3cd7366bf95f11e085ecd9d601fec2d49ac17ce670a31cc6df172d8f1aca52de",
+    "skills/fuzzing/SKILL.md": "acf906be05ac20204200fa805698e2edd7ef7cd0789b000445f56594bdc7e9f0",
+    "skills/memory-safety-auditing/SKILL.md": "7435275a5a0ee7c8525945d7085b6c20ec258ae21b20658f320e68a7b7b5a9b1",
+    "skills/parser-differential-auditing/SKILL.md": "a60a3f1c029714e3039403a7be8670e94060b9f6e621963f4b96ab6330ad37ff",
+    "skills/patch-diff-analysis/SKILL.md": "a0f493eae6909fde5311ff3ff3cf7cf2944cedbe59f6ae69035b48ced7998aa6",
+    "skills/race-condition-auditing/SKILL.md": "f2a33d8179e4d58200ea71e5d0d60d85ce12865ffbaa867d73cbd262d0160448",
+    "skills/remediation/SKILL.md": "c5640ed49ea7219ec68fd8c0d6b2792ea86bca3ea284444270b83f166a06e0ce",
+    "skills/sandbox-boundary-analysis/SKILL.md": "e46942d12ac43feaceda4b08da0506d63f3af72cdd406c7482bdcd277bf118c8",
+    "skills/source-code-auditing/SKILL.md": "1e0190d0ddc29bb6cd83cbcc0a2d4cf277207ad74cc42ea99207d9d3014dd6e4",
+    "skills/state-and-lifetime-auditing/SKILL.md": "25d5c6ad0f21fb5835df5e67c00d0c7c0852827df42698fc698abbbe32fcd1f3",
+    "skills/web-object-authorization/SKILL.md": "7494e0a077e446be8f3523267d11135ea75ef84df17f219f71d45486d3604f17",
+    "skills/web-output-context/SKILL.md": "be817e1f9f55d6cad2db747caa11cb900888da3972dbab33c286c52868e1b732",
+    "skills/web-route-input-inventory/SKILL.md": "f04f3ecc3b669a95a79d1033e98fe5b9681771fb49b6f88f98c65e464714e939"
+  },
+  "checks": {
+    "typecheck": true,
+    "buildImport": true,
+    "typescript": {
+      "passed": 135,
+      "optInSkipped": 6
+    },
+    "python": {
+      "ran": 143,
+      "skipped": 1,
+      "ok": true
+    },
+    "libraryAndProvenance": true,
+    "sourceDocker": {
+      "passed": 5
+    },
+    "visibleHerdrInert": {
+      "passed": 1
+    },
+    "installedNativeNormalQuotaAndDocker": {
+      "passed": 3
+    },
+    "packageExcludedPrivateInputs": true
+  },
+  "limits": [
+    "Scripted inert providers; not AI security quality or billing proof",
+    "Local runtime selection metadata; no remote reasoning attestation",
+    "No live benchmark, external target, provider fallback or new target dependency",
+    "URL recon fixture deferred; public IPv4 enforcement unchanged",
+    "Historical studies, sessions and exports unchanged",
+    "Publication paths sanitized; digests cover original tested state"
+  ],
+  "receipts": [
+    "installed-native-normal.json",
+    "installed-native-quota.json"
+  ]
+}
