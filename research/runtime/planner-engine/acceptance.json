@@ -1,0 +1,85 @@
+{
+  "qualification": "Source working tree mechanics only; NOT installed/published, paid-provider cancellation/billing, finding correctness, effectiveness or ARTEX superiority",
+  "version": "0.5.0",
+  "baselineRevision": "6f02060f22109df4ff360956adffc5213ad857a0",
+  "recordedAt": "2026-10-09T05:10:04.794527+00:00",
+  "checks": {
+    "typecheck": "pass",
+    "build": "pass",
+    "import": "pass",
+    "libraryAndProvenance": "pass",
+    "vitest": {
+      "passed": 179,
+      "skipped": 9
+    },
+    "python": {
+      "run": 143,
+      "skipped": 1,
+      "result": "OK"
+    },
+    "dockerNative": {
+      "passed": 8
+    },
+    "realPiInertWakeCases": [
+      "idle",
+      "settlement boundary",
+      "human-priority"
+    ],
+    "sourcePackage": {
+      "privateInputsExcluded": true,
+      "newEngineModulesIncluded": true
+    },
+    "gitnexus": {
+      "changed_count": 484,
+      "affected_count": 4,
+      "changed_files": 39,
+      "risk_level": "medium",
+      "newFilesIncluded": true,
+      "partial": false,
+      "truncated": false,
+      "qualification": "Full changed-symbol result in temporary index; capped/missing process graph coverage and dynamic dispatch still require source review. Not a safety all-clear."
+    }
+  },
+  "remaining": [
+    "P5 incremental indexes/archives/checkpoints",
+    "durable structured Planner todo",
+    "warm process/session reuse",
+    "broad provider/version stop/billing matrix",
+    "installed publication/hash acceptance",
+    "separately authorized effectiveness/cost studies"
+  ],
+  "sourceHashes": {
+    "HANDOFFS.md": "d09c5810505ddec86c178c347af6cc61a07a79f1dae0dcb19de3358c39f1eb3c",
+    "README.md": "60d86700f6296803448f31539a413b6d6a121bfff277da8f172d4c9350fa5021",
+    "docs/ARCHITECTURE.md": "d46a52567bb3b3c587d5bcab3becc2beb83ee4af55513089f57d37f423e6de0e",
+    "docs/ASSESSMENT_STATE.md": "bd16733c5b7e8efccb84707a4550bb031dfe35a2447871ca0bf352f8e0969a14",
+    "docs/HTTP_TRANSPORT.md": "e1f5279c086d5672b10dc4cae88ae45bd051ed26e3837e52c964c0e508f5cc69",
+    "docs/PLANNER_ENGINE.md": "a238c011f8bc7a2db4729040bb845e50a3727121e0e167d8f0a1072dacc9f1ab",
+    "docs/SKILL_RUNTIME.md": "1bb66f03abf0d9e4e04e784e69f2748bc4090bed3127b33fb57f4a81c2e70eb8",
+    "docs/USAGE.md": "d357ec59c867ed3bd884a9f1dc88534aeb448e12340f87387edc0daadd2ae303",
+    "extensions/p2o/index.ts": "1687882b33de16297b92a3bd92979933400d761e116c2e3bab81c47123c2c53f",
+    "package-lock.json": "9c76b2abdab5428461a1cf96e8e5e3ba68c9e2285a6062852d5920ea062bae3f",
+    "package.json": "473fb538d5a453583d28ea90e5f7b306c38e497cf78a7b384b6a3be0ea6fb02b",
+    "src/broker.ts": "8d2c82b7bdf13487316bbe8f0910d7b8418d83d6245f3c0881d02cda96c135c9",
+    "src/engine.ts": "d6ad13d93213616de193ae3ddfc21268a26490ce0ffbdc44af0b3bb06997eca4",
+    "src/evidence.ts": "42912a671c910e3f81a59c49df8c262a7cb954799e50c8af6cdb9c88981d29a1",
+    "src/executors.ts": "7cf7a64dd694326713fa16d5662ac74cab5681a83649f68d9e769eab66822688",
+    "src/herdr.ts": "360192e3fdc60c37358316d8ba23962d213d667f1dfa410cc4d8823a7cf27327",
+    "src/http-session.ts": "4c1b6473ac757b4ffef8a38ed3273eb35dcdbe6e2996c8f49d56b6ed5d8fac61",
+    "src/planner-bridge.ts": "0fe469168c36c375262c2e6145bf90198391edb8acf595bfd4506cb2ce2ccd4e",
+    "src/process.ts": "5e96361cde22cc8c6c7dc21bb8292bc4df5183b9a7d40241c89649dd70ce0557",
+    "src/progress.ts": "9e502876f50320bc1afa718ae11cef175f322aeb2a12572259137f30b89bdd82",
+    "src/prompts.ts": "f95bfffd8b7e60675ab1f562e201c0ea863d037ca4c1d12e40cde7368d7fae32",
+    "src/records.ts": "90f8a7341fc31855e1a037f46ca88191e3325b0a90a6d08ce5386e514ba04f86",
+    "src/report.ts": "02cb95a3594f2d4530c9c31f7025c755ad341aafa5066c09dfc30690de815eb3",
+    "src/roles.ts": "75300c09adffba8fea9e709416fc3b50deff6dd67bec5da203d07bf7d2755483",
+    "src/sandbox.ts": "ea476b38c670d0156687ca96fbd537fc76e98b3c23b9083e3e3b25cd5af8ec23",
+    "src/skills.ts": "9df29507d5772a636da7395a947755a87ba33fd040c163c2f4a556bdb828afc2",
+    "src/source.ts": "7d87531ea3688b1193f0ed85423531b7068541a28aced25cfdc0b31829e98723",
+    "src/target.ts": "02901a55d46f95a90f7f32cf2f2dd916a56b2b90f2705b787d7b33313f50fc66",
+    "src/tasks.ts": "ec9652f38b6eaa1434c043df632db5a1c478d677215bd9bc2e28b02e6abe8d22",
+    "src/ticket.ts": "2c617f1e897600b85b47fff6260b2ea15a838fac97527fbd168c61778264676a",
+    "src/tool-policy.ts": "db05a864368b9aac6c1040730fe7d5749544cc3ef3d4da180b8549a09f7cccde",
+    "templates/handoff.json": "a04d39fb64beb65f01da3b37d13b6b9b80cf277641ea945bebcc3e2190dd6b10"
+  }
+}

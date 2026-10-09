@@ -1,6 +1,7 @@
 # Hoạch định lại p2o: Planner rõ vai trò, Engine giữ loop, Worker thực hiện intent
 
-> **Trạng thái: core MVP đã triển khai trong working tree 0.5.0; chưa phải hoàn tất toàn bộ P0–P6 hoặc bản đã publish/install.**
+> **Trạng thái: core MVP 0.5.0 đã commit/push và cài bằng `pi install`; chưa phải hoàn tất toàn bộ P0–P6.**
+> Runtime: `4d21f267c780562e2a07fb5cefe76d8cd746dab2`. Installed mechanics acceptance: [research/runtime/planner-engine](research/runtime/planner-engine/README.md). P5 và effectiveness/provider-wide studies vẫn chưa hoàn tất.
 > Các phần phân tích bên dưới giữ baseline `6f02060` và proposal gốc; không đọc mọi tên API/gate đề xuất thành capability đã ship. Contract thực tế: [docs/PLANNER_ENGINE.md](docs/PLANNER_ENGINE.md).
 
 ## Tiến độ hiện thực hóa
@@ -11,12 +12,12 @@
 - **P3:** manual default; consented event-driven Engine, committed events, coalescing, một reservation, human priority, wait/blocked, pause/resume/stop epoch; provider error pause, không retry/fallback.
 - **P4:** shared-serial default giữ nguyên; opt-in isolated assignment executors + target-operation semaphore, snapshot consistency và teardown. Local Docker fixture xác nhận B không chờ A, cancel A giữ B, cleanup mọi executor; không phải live assessment.
 - **P5:** mới có live/closed frontier separation và bounded request-local snapshots/decision provenance. Incremental indexes, archival checkpoints, durable structured todo, warm session/process reuse và long-history performance vẫn **chưa triển khai**.
-- **P6:** typecheck/build/import/library/provenance pass; Vitest **179 pass/9 opt-in skips**, Python **143 run/1 skip/OK**, source Docker/native **8 pass**. Package private inputs excluded; graph change review gồm cả file mới qua temporary index. Installed hash acceptance/publication, provider/version matrix và effectiveness/cost studies là bước riêng. Không chạy live/paid benchmark, không thực thi ARTEX/norma.
+- **P6:** typecheck/build/import/library/provenance pass; Vitest **179 pass/9 opt-in skips**, Python **143 run/1 skip/OK**, source Docker/native **8 pass**. Package private inputs excluded; graph change review gồm cả file mới qua temporary index. Installed runtime đã pass **6 checks** (Pi thật/inert provider, normal/quota worker, idle/boundary/human-priority wake và Docker), với **32 selected runtime/document hashes** khớp tại runtime revision. Publication chỉ cập nhật tài liệu/artifacts; provider/version matrix và effectiveness/cost studies vẫn là bước riêng. Không chạy live/paid benchmark, không thực thi ARTEX/norma.
 
 Mọi scope/ticket/evidence/currentness/cleanup/budget safeguards và unlimited elapsed lifetime được giữ; số round, retention và resource budget không phải TTL. [Runtime contract](docs/PLANNER_ENGINE.md) là nguồn cho API hiện có.
 > Baseline p2o: `6f02060f22109df4ff360956adffc5213ad857a0`.
 > Lập kế hoạch từ source local và `my_references/ARTEX/ARTEX_AGENTIC_CORE.vi.md`, không từ suy đoán về một chiến dịch thực tế.
-> Turn này chỉ đọc/phân tích và viết kế hoạch; không chạy ARTEX/norma, worker, container, target hay benchmark; không commit/push/install.
+> Turn lập kế hoạch gốc chỉ đọc/phân tích, không chạy ARTEX/norma hay assessment và không commit/push/install. Các bước triển khai/fixture acceptance và publication sau đó được ghi riêng ở phần tiến độ trên.
 
 ## 1. Kết luận cần chốt trước
 

@@ -1,0 +1,307 @@
+{
+  "qualification": "Installed Pi/inert-provider and local Docker mechanics only; not paid-provider cancellation/billing proof, real Herdr redesign acceptance, live-target effectiveness, finding correctness or ARTEX superiority",
+  "version": "0.5.0",
+  "recordedAt": "2026-10-09T05:30:48.652272+00:00",
+  "baselineRevision": "6f02060f22109df4ff360956adffc5213ad857a0",
+  "planRevision": "6732fda8599686863c47f1e111da74d798dcd8f4",
+  "testedRuntimeRevision": "4d21f267c780562e2a07fb5cefe76d8cd746dab2",
+  "installation": {
+    "command": "pi install https://github.com/Nhan-Laptop/pi-p2o",
+    "packageDeclarations": 1,
+    "installedVersion": "0.5.0",
+    "note": "Earlier pi update reported success without moving HEAD. A clean fast-forward corrected it; explicit pi install succeeded before these tests. Revision/hashes, not CLI wording, establish the installed bytes."
+  },
+  "checks": {
+    "sourceVitest": {
+      "passed": 179,
+      "skipped": 9
+    },
+    "python": {
+      "run": 143,
+      "skipped": 1,
+      "result": "OK"
+    },
+    "installedVitest": {
+      "passed": 6,
+      "logSha256": "9dc1a4271e54a3814f4d7c9b24105589253dbe355e8ad6e35da0a6a1d277c8b5",
+      "cases": [
+        "normal inert cross-process worker",
+        "quota inert cross-process worker",
+        "idle semantic wake",
+        "settlement boundary continuation",
+        "pending human follow-up priority",
+        "real Docker solo host denial/nonroot/read-only source/run-scoped cleanup"
+      ]
+    },
+    "sourceDockerNative": {
+      "passed": 8,
+      "qualification": "Previously verified source tree; includes isolated concurrency/cancellation and unlimited elapsed task probes. Not an installed parallel-worker assessment."
+    },
+    "sourceHashesMatchedAtRuntimeRevision": 32
+  },
+  "testedSourceHashes": {
+    "HANDOFFS.md": "d09c5810505ddec86c178c347af6cc61a07a79f1dae0dcb19de3358c39f1eb3c",
+    "README.md": "60d86700f6296803448f31539a413b6d6a121bfff277da8f172d4c9350fa5021",
+    "docs/ARCHITECTURE.md": "d46a52567bb3b3c587d5bcab3becc2beb83ee4af55513089f57d37f423e6de0e",
+    "docs/ASSESSMENT_STATE.md": "bd16733c5b7e8efccb84707a4550bb031dfe35a2447871ca0bf352f8e0969a14",
+    "docs/HTTP_TRANSPORT.md": "e1f5279c086d5672b10dc4cae88ae45bd051ed26e3837e52c964c0e508f5cc69",
+    "docs/PLANNER_ENGINE.md": "a238c011f8bc7a2db4729040bb845e50a3727121e0e167d8f0a1072dacc9f1ab",
+    "docs/SKILL_RUNTIME.md": "1bb66f03abf0d9e4e04e784e69f2748bc4090bed3127b33fb57f4a81c2e70eb8",
+    "docs/USAGE.md": "d357ec59c867ed3bd884a9f1dc88534aeb448e12340f87387edc0daadd2ae303",
+    "extensions/p2o/index.ts": "1687882b33de16297b92a3bd92979933400d761e116c2e3bab81c47123c2c53f",
+    "package-lock.json": "9c76b2abdab5428461a1cf96e8e5e3ba68c9e2285a6062852d5920ea062bae3f",
+    "package.json": "473fb538d5a453583d28ea90e5f7b306c38e497cf78a7b384b6a3be0ea6fb02b",
+    "src/broker.ts": "8d2c82b7bdf13487316bbe8f0910d7b8418d83d6245f3c0881d02cda96c135c9",
+    "src/engine.ts": "d6ad13d93213616de193ae3ddfc21268a26490ce0ffbdc44af0b3bb06997eca4",
+    "src/evidence.ts": "42912a671c910e3f81a59c49df8c262a7cb954799e50c8af6cdb9c88981d29a1",
+    "src/executors.ts": "7cf7a64dd694326713fa16d5662ac74cab5681a83649f68d9e769eab66822688",
+    "src/herdr.ts": "360192e3fdc60c37358316d8ba23962d213d667f1dfa410cc4d8823a7cf27327",
+    "src/http-session.ts": "4c1b6473ac757b4ffef8a38ed3273eb35dcdbe6e2996c8f49d56b6ed5d8fac61",
+    "src/planner-bridge.ts": "0fe469168c36c375262c2e6145bf90198391edb8acf595bfd4506cb2ce2ccd4e",
+    "src/process.ts": "5e96361cde22cc8c6c7dc21bb8292bc4df5183b9a7d40241c89649dd70ce0557",
+    "src/progress.ts": "9e502876f50320bc1afa718ae11cef175f322aeb2a12572259137f30b89bdd82",
+    "src/prompts.ts": "f95bfffd8b7e60675ab1f562e201c0ea863d037ca4c1d12e40cde7368d7fae32",
+    "src/records.ts": "90f8a7341fc31855e1a037f46ca88191e3325b0a90a6d08ce5386e514ba04f86",
+    "src/report.ts": "02cb95a3594f2d4530c9c31f7025c755ad341aafa5066c09dfc30690de815eb3",
+    "src/roles.ts": "75300c09adffba8fea9e709416fc3b50deff6dd67bec5da203d07bf7d2755483",
+    "src/sandbox.ts": "ea476b38c670d0156687ca96fbd537fc76e98b3c23b9083e3e3b25cd5af8ec23",
+    "src/skills.ts": "9df29507d5772a636da7395a947755a87ba33fd040c163c2f4a556bdb828afc2",
+    "src/source.ts": "7d87531ea3688b1193f0ed85423531b7068541a28aced25cfdc0b31829e98723",
+    "src/target.ts": "02901a55d46f95a90f7f32cf2f2dd916a56b2b90f2705b787d7b33313f50fc66",
+    "src/tasks.ts": "ec9652f38b6eaa1434c043df632db5a1c478d677215bd9bc2e28b02e6abe8d22",
+    "src/ticket.ts": "2c617f1e897600b85b47fff6260b2ea15a838fac97527fbd168c61778264676a",
+    "src/tool-policy.ts": "db05a864368b9aac6c1040730fe7d5749544cc3ef3d4da180b8549a09f7cccde",
+    "templates/handoff.json": "a04d39fb64beb65f01da3b37d13b6b9b80cf277641ea945bebcc3e2190dd6b10"
+  },
+  "publication": {
+    "documentationAndArtifactsOnly": true,
+    "runtimeHashesUnchanged": {
+      "extensions/p2o/index.ts": "1687882b33de16297b92a3bd92979933400d761e116c2e3bab81c47123c2c53f",
+      "package-lock.json": "9c76b2abdab5428461a1cf96e8e5e3ba68c9e2285a6062852d5920ea062bae3f",
+      "package.json": "473fb538d5a453583d28ea90e5f7b306c38e497cf78a7b384b6a3be0ea6fb02b",
+      "src/broker.ts": "8d2c82b7bdf13487316bbe8f0910d7b8418d83d6245f3c0881d02cda96c135c9",
+      "src/engine.ts": "d6ad13d93213616de193ae3ddfc21268a26490ce0ffbdc44af0b3bb06997eca4",
+      "src/evidence.ts": "42912a671c910e3f81a59c49df8c262a7cb954799e50c8af6cdb9c88981d29a1",
+      "src/executors.ts": "7cf7a64dd694326713fa16d5662ac74cab5681a83649f68d9e769eab66822688",
+      "src/herdr.ts": "360192e3fdc60c37358316d8ba23962d213d667f1dfa410cc4d8823a7cf27327",
+      "src/http-session.ts": "4c1b6473ac757b4ffef8a38ed3273eb35dcdbe6e2996c8f49d56b6ed5d8fac61",
+      "src/planner-bridge.ts": "0fe469168c36c375262c2e6145bf90198391edb8acf595bfd4506cb2ce2ccd4e",
+      "src/process.ts": "5e96361cde22cc8c6c7dc21bb8292bc4df5183b9a7d40241c89649dd70ce0557",
+      "src/progress.ts": "9e502876f50320bc1afa718ae11cef175f322aeb2a12572259137f30b89bdd82",
+      "src/prompts.ts": "f95bfffd8b7e60675ab1f562e201c0ea863d037ca4c1d12e40cde7368d7fae32",
+      "src/records.ts": "90f8a7341fc31855e1a037f46ca88191e3325b0a90a6d08ce5386e514ba04f86",
+      "src/report.ts": "02cb95a3594f2d4530c9c31f7025c755ad341aafa5066c09dfc30690de815eb3",
+      "src/roles.ts": "75300c09adffba8fea9e709416fc3b50deff6dd67bec5da203d07bf7d2755483",
+      "src/sandbox.ts": "ea476b38c670d0156687ca96fbd537fc76e98b3c23b9083e3e3b25cd5af8ec23",
+      "src/skills.ts": "9df29507d5772a636da7395a947755a87ba33fd040c163c2f4a556bdb828afc2",
+      "src/source.ts": "7d87531ea3688b1193f0ed85423531b7068541a28aced25cfdc0b31829e98723",
+      "src/target.ts": "02901a55d46f95a90f7f32cf2f2dd916a56b2b90f2705b787d7b33313f50fc66",
+      "src/tasks.ts": "ec9652f38b6eaa1434c043df632db5a1c478d677215bd9bc2e28b02e6abe8d22",
+      "src/ticket.ts": "2c617f1e897600b85b47fff6260b2ea15a838fac97527fbd168c61778264676a",
+      "src/tool-policy.ts": "db05a864368b9aac6c1040730fe7d5749544cc3ef3d4da180b8549a09f7cccde",
+      "templates/handoff.json": "a04d39fb64beb65f01da3b37d13b6b9b80cf277641ea945bebcc3e2190dd6b10"
+    },
+    "contentHashes": {
+      "HANDOFFS.md": "d09c5810505ddec86c178c347af6cc61a07a79f1dae0dcb19de3358c39f1eb3c",
+      "README.md": "60d86700f6296803448f31539a413b6d6a121bfff277da8f172d4c9350fa5021",
+      "docs/ARCHITECTURE.md": "d46a52567bb3b3c587d5bcab3becc2beb83ee4af55513089f57d37f423e6de0e",
+      "docs/ASSESSMENT_STATE.md": "bd16733c5b7e8efccb84707a4550bb031dfe35a2447871ca0bf352f8e0969a14",
+      "docs/HTTP_TRANSPORT.md": "e1f5279c086d5672b10dc4cae88ae45bd051ed26e3837e52c964c0e508f5cc69",
+      "docs/PLANNER_ENGINE.md": "cd7f0a30855e41f98ccd97dfc2716fd1767be4eed74eda7a36dc203cef22e182",
+      "docs/SKILL_RUNTIME.md": "1bb66f03abf0d9e4e04e784e69f2748bc4090bed3127b33fb57f4a81c2e70eb8",
+      "docs/USAGE.md": "d357ec59c867ed3bd884a9f1dc88534aeb448e12340f87387edc0daadd2ae303",
+      "extensions/p2o/index.ts": "1687882b33de16297b92a3bd92979933400d761e116c2e3bab81c47123c2c53f",
+      "package-lock.json": "9c76b2abdab5428461a1cf96e8e5e3ba68c9e2285a6062852d5920ea062bae3f",
+      "package.json": "473fb538d5a453583d28ea90e5f7b306c38e497cf78a7b384b6a3be0ea6fb02b",
+      "planning_update.md": "1d354a1ab592f5f019dc2d1c36ad33c1ccc17c8410c0554a112e47473667fe0d",
+      "src/broker.ts": "8d2c82b7bdf13487316bbe8f0910d7b8418d83d6245f3c0881d02cda96c135c9",
+      "src/engine.ts": "d6ad13d93213616de193ae3ddfc21268a26490ce0ffbdc44af0b3bb06997eca4",
+      "src/evidence.ts": "42912a671c910e3f81a59c49df8c262a7cb954799e50c8af6cdb9c88981d29a1",
+      "src/executors.ts": "7cf7a64dd694326713fa16d5662ac74cab5681a83649f68d9e769eab66822688",
+      "src/herdr.ts": "360192e3fdc60c37358316d8ba23962d213d667f1dfa410cc4d8823a7cf27327",
+      "src/http-session.ts": "4c1b6473ac757b4ffef8a38ed3273eb35dcdbe6e2996c8f49d56b6ed5d8fac61",
+      "src/planner-bridge.ts": "0fe469168c36c375262c2e6145bf90198391edb8acf595bfd4506cb2ce2ccd4e",
+      "src/process.ts": "5e96361cde22cc8c6c7dc21bb8292bc4df5183b9a7d40241c89649dd70ce0557",
+      "src/progress.ts": "9e502876f50320bc1afa718ae11cef175f322aeb2a12572259137f30b89bdd82",
+      "src/prompts.ts": "f95bfffd8b7e60675ab1f562e201c0ea863d037ca4c1d12e40cde7368d7fae32",
+      "src/records.ts": "90f8a7341fc31855e1a037f46ca88191e3325b0a90a6d08ce5386e514ba04f86",
+      "src/report.ts": "02cb95a3594f2d4530c9c31f7025c755ad341aafa5066c09dfc30690de815eb3",
+      "src/roles.ts": "75300c09adffba8fea9e709416fc3b50deff6dd67bec5da203d07bf7d2755483",
+      "src/sandbox.ts": "ea476b38c670d0156687ca96fbd537fc76e98b3c23b9083e3e3b25cd5af8ec23",
+      "src/skills.ts": "9df29507d5772a636da7395a947755a87ba33fd040c163c2f4a556bdb828afc2",
+      "src/source.ts": "7d87531ea3688b1193f0ed85423531b7068541a28aced25cfdc0b31829e98723",
+      "src/target.ts": "02901a55d46f95a90f7f32cf2f2dd916a56b2b90f2705b787d7b33313f50fc66",
+      "src/tasks.ts": "ec9652f38b6eaa1434c043df632db5a1c478d677215bd9bc2e28b02e6abe8d22",
+      "src/ticket.ts": "2c617f1e897600b85b47fff6260b2ea15a838fac97527fbd168c61778264676a",
+      "src/tool-policy.ts": "db05a864368b9aac6c1040730fe7d5749544cc3ef3d4da180b8549a09f7cccde",
+      "templates/handoff.json": "a04d39fb64beb65f01da3b37d13b6b9b80cf277641ea945bebcc3e2190dd6b10"
+    },
+    "note": "Publication content hashes exclude this artifact itself. Final release revision is obtained from git; no self-referential revision/hash claim."
+  },
+  "receipts": [
+    {
+      "name": "native-normal.json",
+      "receiptSha256": "13735f9e71ff4cc48154c5a98d24c4ffb8d50213148115685a97cb6835d1790e",
+      "fixture": "Real Pi with scripted inert provider, inert sandbox and process-based Herdr double; not model quality or Docker proof",
+      "checks": [
+        "no capability tool/table",
+        "tool descriptions/schema available",
+        "one structured lead policy section without tool tutorials",
+        "short kickoff without duplicate policy",
+        "shared recon prompt",
+        "broker isolation",
+        "terminal report",
+        "cleanup",
+        "export without capability metadata",
+        "complete ledger reconciliation",
+        "request-local worker objective refresh",
+        "owner-only task state",
+        "locally verified runtime profile",
+        "recoverable normalized report parts and frozen projection"
+      ],
+      "acceptedInertRequests": null,
+      "engine": {
+        "mode": "manual",
+        "rounds": 0,
+        "state": "stopped"
+      },
+      "reconciliationComplete": true,
+      "reportCounts": {
+        "candidates": 1,
+        "reports": 1,
+        "reportHistory": 1,
+        "coverage": 2,
+        "open": 2,
+        "unreviewedTasks": 1
+      }
+    },
+    {
+      "name": "native-quota.json",
+      "receiptSha256": "08b982547deb9fa84f606972a63c97d8016781b04712e2ea848b96344ad46a21",
+      "fixture": "Real Pi with scripted inert provider, inert sandbox and process-based Herdr double; not model quality or Docker proof",
+      "checks": [
+        "no capability tool/table",
+        "tool descriptions/schema available",
+        "one structured lead policy section without tool tutorials",
+        "short kickoff without duplicate policy",
+        "shared recon prompt",
+        "broker isolation",
+        "terminal report",
+        "cleanup",
+        "export without capability metadata",
+        "complete ledger reconciliation",
+        "request-local worker objective refresh",
+        "owner-only task state",
+        "locally verified runtime profile",
+        "recoverable normalized report parts and frozen projection"
+      ],
+      "acceptedInertRequests": null,
+      "engine": {
+        "mode": "manual",
+        "rounds": 0,
+        "state": "stopped"
+      },
+      "reconciliationComplete": true,
+      "reportCounts": {
+        "candidates": 0,
+        "reports": 1,
+        "reportHistory": 1,
+        "coverage": 0,
+        "open": 1,
+        "unreviewedTasks": 1
+      }
+    },
+    {
+      "name": "planner-native-boundary.json",
+      "receiptSha256": "f43928e88047b7cdb05e05c799c197fecd525ddc2f41d33f96209d5be4bd2340",
+      "fixture": "Real Pi, inert provider/executor and genuine child worker. Not paid-provider cancellation or effectiveness proof.",
+      "checks": [
+        "wait terminates round",
+        "worker report wakes after idle",
+        "one coalesced automatic round",
+        "one semantic prompt, no periodic polling",
+        "obsolete wake aborts before accepted inert request",
+        "cleanup/export"
+      ],
+      "acceptedInertRequests": 12,
+      "engine": {
+        "mode": "event-driven",
+        "rounds": 1,
+        "state": "stopped"
+      },
+      "reconciliationComplete": true,
+      "reportCounts": {
+        "candidates": 1,
+        "reports": 1,
+        "reportHistory": 1,
+        "coverage": 2,
+        "open": 2,
+        "unreviewedTasks": 1
+      }
+    },
+    {
+      "name": "planner-native-human-priority.json",
+      "receiptSha256": "30ae66f133e53a5c6c79a5f5bc46cf8faa9715b918a1ad5e34c9cc816f38a2da",
+      "fixture": "Real Pi, inert provider/executor and genuine child worker. Not paid-provider cancellation or effectiveness proof.",
+      "checks": [
+        "wait terminates round",
+        "worker report wakes after idle",
+        "one coalesced automatic round",
+        "one semantic prompt, no periodic polling",
+        "obsolete wake aborts before accepted inert request",
+        "cleanup/export"
+      ],
+      "acceptedInertRequests": 12,
+      "engine": {
+        "mode": "event-driven",
+        "rounds": 0,
+        "state": "stopped"
+      },
+      "reconciliationComplete": true,
+      "reportCounts": {
+        "candidates": 1,
+        "reports": 1,
+        "reportHistory": 1,
+        "coverage": 2,
+        "open": 2,
+        "unreviewedTasks": 1
+      }
+    },
+    {
+      "name": "planner-native-idle.json",
+      "receiptSha256": "5ae46506c2cc2fee26781213fd2e6528b385a658122e81e9c11bcfea1391f17f",
+      "fixture": "Real Pi, inert provider/executor and genuine child worker. Not paid-provider cancellation or effectiveness proof.",
+      "checks": [
+        "wait terminates round",
+        "worker report wakes after idle",
+        "one coalesced automatic round",
+        "one semantic prompt, no periodic polling",
+        "obsolete wake aborts before accepted inert request",
+        "cleanup/export"
+      ],
+      "acceptedInertRequests": 12,
+      "engine": {
+        "mode": "event-driven",
+        "rounds": 1,
+        "state": "stopped"
+      },
+      "reconciliationComplete": true,
+      "reportCounts": {
+        "candidates": 1,
+        "reports": 1,
+        "reportHistory": 1,
+        "coverage": 2,
+        "open": 2,
+        "unreviewedTasks": 1
+      }
+    }
+  ],
+  "remaining": [
+    "P5 incremental indexes/checkpoints/archival",
+    "durable structured Planner todo",
+    "warm assignment-safe process/session reuse",
+    "broad provider/version stop and billing matrix",
+    "separately authorized effectiveness/cost studies"
+  ],
+  "activation": "Fresh Pi sessions load the update. Older sessions must stop any active assessment before /reload; old state/tickets grant no restored authority."
+}

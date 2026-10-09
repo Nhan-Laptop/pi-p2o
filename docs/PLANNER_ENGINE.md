@@ -3,6 +3,8 @@
 This implements the core of [planning_update.md](../planning_update.md), not every long-run/rollout requirement.
 Historical acceptance artifacts remain baseline-specific. Source mechanics acceptance is not installed acceptance,
 paid-provider cancellation proof, assessment effectiveness or an ARTEX comparison.
+Qualified [installed mechanics acceptance](../research/runtime/planner-engine/README.md) covers six checks at
+runtime revision `4d21f267c780562e2a07fb5cefe76d8cd746dab2`; it does not complete every P5/P6 requirement.
 
 ## Operator controls
 
@@ -95,8 +97,8 @@ capsules navigate current tasks/frontier/deltas and persist round decisions to p
 not receipt substitutes, a full durable todo database, incremental indexes or automatic restart/resume.
 
 Remaining P5/P6 work: incremental indexes/archival checkpoints, durable structured Planner todo, large-history
-performance measurements, warm assignment-safe process/session reuse, broad provider/version stop races and
-installed publication/hash acceptance. Token/cost governance and effectiveness/labeled-control studies are
+performance measurements, warm assignment-safe process/session reuse and broad provider/version stop races.
+Installed publication/hash acceptance is recorded separately from the original source snapshot. Token/cost governance and effectiveness/labeled-control studies are
 separate work requiring explicit authorization; no live/paid benchmark has been run for this redesign.
 
 Rollback without restoring old authority: stop, use manual loop + shared executor or solo, and start a newly
