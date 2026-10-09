@@ -31,7 +31,7 @@ it.skipIf(process.env.P2O_TEST_DOCKER !== '1')('real Docker: read-only source, n
     expect(unroutable.code).not.toBe(0);
     await expect(sandbox.http({ url: 'https://example.com', method: 'GET', followRedirects: true, maxRedirects: 0 })).rejects.toThrow('unavailable');
     const abort = new AbortController();
-    const task = sandbox.exec('sleep 999', 60, abort.signal); setTimeout(() => abort.abort(), 500);
+    const task = sandbox.exec('sleep 999', 0, abort.signal); setTimeout(() => abort.abort(), 500);
     await expect(task).rejects.toThrow('Cancelled');
     await sandbox.stop();
     await sandbox.assertNoRunContainers();
@@ -70,6 +70,30 @@ it.skipIf(process.env.P2O_TEST_DOCKER !== '1')('real Docker: full HTTP against t
     await sandbox.assertNoRunContainers();
   } finally { await sandbox.stop(); await new Promise<void>(resolve => server.close(() => resolve())); }
 }, 90_000);
+
+it.skipIf(process.env.P2O_TEST_DOCKER !== '1')('real Docker: unlimited shell passes the old 30/60s clocks, HTTP passes 20s, and explicit timeout remains opt-in', async () => {
+  const server=createServer((request,response)=>{
+    if(request.url==='/slow'){
+      const timer=setTimeout(()=>{response.writeHead(200);response.end('delayed local response');},22000);
+      response.once('close',()=>clearTimeout(timer));
+    }else{response.writeHead(200);response.end('ready');}
+  });
+  await new Promise<void>(resolve=>server.listen(0,'0.0.0.0',resolve));
+  const origin=`http://host.docker.internal:${(server.address() as {port:number}).port}`;
+  const sandbox=new Sandbox({kind:'url',url:origin+'/',origin},undefined,undefined,{runId:'docker-unlimited-test'});
+  try{
+    await sandbox.start();
+    const before=Date.now();
+    const long=await sandbox.exec('sleep 65; printf long-local-command');
+    expect(Date.now()-before).toBeGreaterThanOrEqual(64000);expect(long.code).toBe(0);expect(long.stdout).toContain('long-local-command');
+    const slow=await sandbox.http({url:'/slow',method:'GET',followRedirects:false,maxRedirects:0});
+    expect(slow.code).toBe(0);expect(slow.stdout).toContain('delayed local response');
+    const opted=await sandbox.http({url:'/slow',method:'GET',followRedirects:false,maxRedirects:0,timeout:1});
+    expect(opted.code).toBe(28);expect(opted.redirectStopped).toContain('no automatic retry');
+    expect((await sandbox.exec('printf still-active')).stdout).toContain('still-active');
+    await sandbox.stop();await sandbox.assertNoRunContainers();
+  }finally{await sandbox.stop();server.closeAllConnections();await new Promise<void>(resolve=>server.close(()=>resolve()));}
+},130000);
 
 it.skipIf(process.env.P2O_TEST_DOCKER !== '1')('real Docker: two delegated workers share one container through the owner broker with isolated scratch and verified cleanup', async () => {
   const root = await mkdtemp(join(tmpdir(), 'p2o-broker-docker-')); await chmod(root, 0o755);

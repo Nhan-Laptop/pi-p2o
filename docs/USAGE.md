@@ -101,8 +101,8 @@ enabled). The shell container has bridge networking with real egress, including 
 unprivileged connect scans work, raw-socket scans do not (no capabilities). HTTP requests run in ephemeral
 containers with **only fixed curl arguments**, never model-controlled code, no proxy, and the destination resolved
 and pinned per hop. No source mounts, Docker socket, host home or provider credentials are mounted.
-Commands: 1..60 s (`p2o_net` 1..300 s); HTTP: 20 s per hop, 8 MiB response, 32 KiB request body; visible output:
-48 KiB. Assessment lifetime: 30 minutes.
+Assessment, lead and worker lifetime: **no elapsed-time limit** while the live owner retains authority. Shell/network and HTTP task timeouts default to `0` (unlimited); optional positive integer seconds have no 60/300-second ceiling. HTTP also accepts optional `connectTimeout`; zero uses underlying library/network defaults. Response 8 MiB, request body 32 KiB and visible output 48 KiB remain.
+Use `/p2o stop`, `p2o_finish` or worker withdrawal to end work. Infrastructure connection/startup/control/cleanup watchdogs remain, not investigation deadlines. An explicit shell timeout or cancellation removes the shared executor/background processes. Losing a worker socket revokes its ticket and cancels its in-flight operations. No automatic continuation, retry or provider fallback is introduced.
 No application-level model token/cost cap; Pi/provider accounting is unchanged.
 
 This is container isolation, not a virtual machine. The trusted Pi process, other installed extensions and
@@ -128,7 +128,7 @@ Worker panes can be closed from Herdr. The extension does not silently reclaim o
 - Docker permissions: ensure your account can use the local Unix socket. Remote Docker daemons are unsupported.
 - Delegation unavailable: Pi is not inside Herdr, or `--solo`/limits disabled it. The confirmation dialog says which.
 - Worker rejected its ticket: the pane shows `p2o worker ticket rejected …`; the worker keeps no target access.
-  Tickets are owner-private, single-use per process and expire with the assessment.
-- Target unavailable: choose an existing directory, or an HTTP(S) URL whose hostname resolves to a reachable IPv4 address.
+  Version-2 tickets explicitly declare `lifetime: "until-stopped"`; they remain owner-private, extension/image-bound and require a live owner registration. Stop, report or socket loss revokes access. Old/implicit lifetime formats are rejected, not upgraded silently.
+- Target unavailable: choose an existing directory, or an HTTP(S) URL whose hostname resolves to a reachable address; IPv6 depends on Docker routing.
 - Duplicate tools: load either the installed package or `pi --no-extensions -e /path/to/pi-p2o`, never both.
 - Legacy flags/configurations from 0.2 (plan approval, profiles, manifests) are removed. Use `--target` only.

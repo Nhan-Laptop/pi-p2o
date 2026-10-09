@@ -5,7 +5,7 @@ import { dirname, join, resolve } from 'node:path';
 import type { ExtensionAPI, ExtensionCommandContext, ExtensionContext } from '@earendil-works/pi-coding-agent';
 import { Type } from 'typebox';
 import { Sandbox, IMAGE, validateImage, type SandboxOptions } from '../../src/sandbox.js';
-import { classifyTarget, httpRequest, HTTP_METHOD_PATTERN, parseCommand, targetLabel, type HttpRequest, type Target } from '../../src/target.js';
+import { classifyTarget, httpRequest, HTTP_METHOD_PATTERN, parseCommand, targetLabel, taskTimeout, type HttpRequest, type Target } from '../../src/target.js';
 import { cleanText, type ProcessResult } from '../../src/process.js';
 import { Broker, BrokerClient, DEFAULT_WORKER_COMMAND_BUDGET, type WorkerRegistration, type WorkerReport, type DelegateInput } from '../../src/broker.js';
 import { appendRecord, readLedger, ledgerPage, recordsSize, summarizeRecords, waitForRecordChange, type AssessmentRecord, type CoverageOutcome, type LedgerPage } from '../../src/records.js';
@@ -44,11 +44,11 @@ type Phase = 'starting' | 'active' | 'stopping' | 'finished';
 interface OwnerRun {
   role: 'owner';
   target: Target; sandbox: Sandbox; ctx: ExtensionContext;
-  phase: Phase; toolsBefore: string[]; start?: Promise<void>; stop?: Promise<void>; timer?: ReturnType<typeof setTimeout>;
+  phase: Phase; toolsBefore: string[]; start?: Promise<void>; stop?: Promise<void>;
   runId: string; control: string; records: string; reports: string; socket?: string;
   broker: Broker; workers: Map<string, WorkerRegistration>;
   delegation: { enabled: boolean; reason?: string; maxWorkers: number; maxDepth: number; spawned: number; totalBudget: number };
-  settings: P2OSettings; extensionPath: string; extensionSha: string; deadline: number;
+  settings: P2OSettings; extensionPath: string; extensionSha: string;
   /** Spawns that have not finished registering yet; a parallel finish must not race them. */
   spawns: Set<Promise<unknown>>;
   operations: Set<Promise<unknown>>;
@@ -91,7 +91,7 @@ function fail(code: string, message: string): never { throw new Error(`${code}: 
 /** Receipt label: method, URL, header names and body size only. Values are never copied into the ledger. */
 function requestLabel(request: HttpRequest): string {
   const names = request.headers ? ` [${Object.keys(request.headers).sort().join(',')}]` : '';
-  return `${request.method} ${request.url}${request.body !== undefined ? ` (+${Buffer.byteLength(request.body)} byte body)` : ''}${names} [session=${request.session ?? 'default'}${request.resetSession ? ', reset' : ''}]`;
+  return `${request.method} ${request.url}${request.body !== undefined ? ` (+${Buffer.byteLength(request.body)} byte body)` : ''}${names} [session=${request.session ?? 'default'}${request.resetSession ? ', reset' : ''}; timeout=${request.timeout ?? 0}; connectTimeout=${request.connectTimeout ?? 0}]`;
 }
 function message(error: unknown): string { return cleanText(error instanceof Error ? error.message : String(error)); }
 
@@ -213,7 +213,7 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
     const workerId = workerName(resolved.role);
     if (current.workers.size >= current.delegation.maxWorkers * 2 + 4) fail('DELEGATION_TOTAL', 'too many workers for this assessment');
     const objective = assigned ?? await current.board.create({ question: input.task.slice(0,1500), unknowns:input.task.length > 1500 ? ['Compact objective is an excerpt; full original assignment remains in the initial brief'] : ['Legacy request supplied no structured contrasting predictions or prerequisite packet'], surface: input.focus, risk: resolved.role, role: resolved.role,
-      roleReason: 'Legacy focused request; lead remains responsible for question and evidence review', expectedTrue: 'Deliver the bounded requested observation; detailed contrast not supplied', expectedFalse: 'No supporting observation; retain the missing proof and limitations', stopCondition: 'Stop at the assigned objective, unavailable prerequisite, command allowance or original expiry', evidenceIds: [], prerequisites: [], method });
+      roleReason: 'Legacy focused request; lead remains responsible for question and evidence review', expectedTrue: 'Deliver the bounded requested observation; detailed contrast not supplied', expectedFalse: 'No supporting observation; retain the missing proof and limitations', stopCondition: 'Stop at the assigned objective, unavailable prerequisite, command allowance or explicit withdrawal', evidenceIds: [], prerequisites: [], method });
     await current.board.reserve(objective.id,workerId);
     current.currentTaskId = objective.id;
     let paneId: string;
@@ -221,12 +221,12 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
     catch (error) { await current.board.transition(objective.id,'blocked','Pane creation failed; no assignment started'); throw error; }
     const ticketFile = ticketPath(current.control, workerId);
     const ticket: Ticket = {
-      version: 1, runId: current.runId, workerId, paneId, parentWorkerId: parent.workerId, depth, role: resolved.role,
+      version: 2, runId: current.runId, workerId, paneId, parentWorkerId: parent.workerId, depth, role: resolved.role,
       target: current.target.kind === 'directory'
         ? { kind: 'directory', label: current.target.path }
         : { kind: 'url', label: current.target.url, origin: current.target.origin },
       image: current.image, socket: current.socket!, records: current.records, reports: current.reports,
-      expiresAt: current.deadline, commandBudget: DEFAULT_WORKER_COMMAND_BUDGET,
+      lifetime: 'until-stopped', commandBudget: DEFAULT_WORKER_COMMAND_BUDGET,
       extension: { path: current.extensionPath, sha256: current.extensionSha }, token: mintToken(),
       taskId: objective.id, requestedRuntime: { model:resolved.model,thinking:resolved.thinking },
     };
@@ -346,7 +346,6 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
   }
 
   function restore(current: Run): void {
-    if (current.role === 'owner' && current.timer) clearTimeout(current.timer);
     if (run !== current) return;
     run = undefined;
     pi.setActiveTools(current.toolsBefore);
@@ -381,7 +380,7 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
     await current.sandbox.stop();
     if (current.operations.size) await Promise.allSettled([...current.operations]);
     await current.sandbox.assertNoRunContainers();
-    for (const worker of current.workers.values()) if (!worker.reported) current.progress.record(worker.workerId,now() >= current.deadline ? 'expired' : 'cancelled');
+    for (const worker of current.workers.values()) if (!worker.reported) current.progress.record(worker.workerId,'cancelled');
     await current.board.releaseAll(reason).catch(error => { current.exportError = `Task finalization incomplete: ${message(error)}`; });
     current.frozen = await freezeReport(current.records,current.runId).catch(error => ({ version:'unavailable',complete:false,totalRecords:0,counts:{candidates:0,reports:0,reportHistory:0,coverage:0,open:0,unreviewedTasks:0},tasks:[],candidates:[],reports:[],openIds:[],reportIds:[],omitted:0,staleIndependent:[],diagnostics:[message(error)],warning:'Reconciliation failed; no completeness claim is valid.' }));
     if (current.exportEnabled && !current.exportPath) {
@@ -477,7 +476,7 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
   },{additionalProperties:false});
   pi.registerTool({
     name:'p2o_task',label:'Maintain assessment question',exposure:'model-only',
-    description:'OWNER ONLY: create/revise a bounded per-surface question, choose its role/method and stop condition, accept a reported handoff with same-run receipts, start direct lead work, close/block/cancel, or list tasks. Review is an attributed lead decision, not proof. For delegation use its proposed task ID; recordId enables full ledger lookup. No scope/deadline changes.',
+    description:'OWNER ONLY: create/revise a bounded per-surface question, choose its role/method and stop condition, accept a reported handoff with same-run receipts, start direct lead work, close/block/cancel, or list tasks. Review is an attributed lead decision, not proof. For delegation use its proposed task ID; recordId enables full ledger lookup. No scope or run-authority changes.',
     parameters:Type.Object({action:Type.Union(['create','revise','list','start','review','close','block','cancel'].map(v => Type.Literal(v))),
       id:Type.Optional(Type.String({maxLength:80})),revision:Type.Optional(Type.Integer({minimum:1})),draft:Type.Optional(taskDraftSchema),
       cursor:Type.Optional(Type.Integer({minimum:0})),limit:Type.Optional(Type.Integer({minimum:1,maximum:25})),
@@ -554,10 +553,10 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
 
   pi.registerTool({
     name: 'p2o_shell', label: 'Sandbox shell', exposure: 'model-only',
-    description: 'Run a command in the assessment Docker sandbox, not on the host. The container has network egress, so prefer p2o_net for anything that contacts the target or downloads tooling; /target is read-only for directory targets and /work (or your own worker scratch) is writable. 1..60 second timeout, 48 KiB output cap. A timeout/cancellation stops the sandbox.',
-    parameters: Type.Object({ command: Type.String({ minLength: 1, maxLength: 8192 }), timeout: Type.Optional(Type.Integer({ minimum: 1, maximum: 60 })) }),
+    description: 'Run a command in the assessment Docker sandbox, not on the host. The container has network egress, so prefer p2o_net for anything that contacts the target or downloads tooling; /target is read-only for directory targets and /work (or your own worker scratch) is writable. No task timeout by default (timeout=0); an optional positive timeout is in seconds with no 60-second ceiling. 48 KiB output cap. A timeout/cancellation stops the sandbox.',
+    parameters: Type.Object({ command: Type.String({ minLength: 1, maxLength: 8192 }), timeout: Type.Optional(Type.Integer({ minimum: 0, description: 'Optional seconds; 0 or omitted means no task timeout' })) }),
     async execute(_id, params, signal, _update, ctx) {
-      const timeout = params.timeout ?? 30;
+      const timeout = taskTimeout(params.timeout);
       const current = run;
       if (!current) fail('NO_ASSESSMENT', 'No active p2o assessment; start one with /p2o --target …');
       if (current.role === 'owner') {
@@ -565,30 +564,30 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
         return output(await executeWithReceipt(current, 'owner', 'shell', params.command, () => current.sandbox.exec(params.command, timeout, signal, '/work',() => current.progress.record('owner','running','shell'))));
       }
       const active = worker();
-      const result = await active.client.request<ProcessResult>('exec', { command: params.command, timeout }, { timeoutMs: (timeout + 20) * 1000 });
+      const result = await active.client.request<ProcessResult>('exec', { command: params.command, timeout }, { timeoutMs: null, signal });
       return output(result);
     },
   });
   pi.registerTool({
     name: 'p2o_net', label: 'Sandbox network', exposure: 'model-only',
-    description: 'Run network-facing commands in the assessment Docker sandbox: TCP/UDP service probes and connect scans, downloads/tool installs into scratch, or target tunnels. Shared networked container; 1..300 seconds and 48 KiB output. No raw-socket capabilities or host Docker. Unlike p2o_http, opaque commands are NOT origin-filtered: keep assessment traffic to the human-confirmed target and use only trusted repositories for needed software. Scope is agent policy here, not an egress firewall. Cancellation/timeout removes the shared executor and background processes.',
-    parameters: Type.Object({ command: Type.String({ minLength: 1, maxLength: 8192 }), timeout: Type.Optional(Type.Integer({ minimum: 1, maximum: 300 })) }),
+    description: 'Run network-facing commands in the assessment Docker sandbox: TCP/UDP service probes and connect scans, downloads/tool installs into scratch, or target tunnels. Shared networked container; no task timeout by default (timeout=0), optional positive seconds without a 300-second ceiling; 48 KiB output. No raw-socket capabilities or host Docker. Unlike p2o_http, opaque commands are NOT origin-filtered: keep assessment traffic to the human-confirmed target and use only trusted repositories for needed software. Scope is agent policy here, not an egress firewall. Cancellation/timeout removes the shared executor and background processes.',
+    parameters: Type.Object({ command: Type.String({ minLength: 1, maxLength: 8192 }), timeout: Type.Optional(Type.Integer({ minimum: 0, description: 'Optional seconds; 0 or omitted means no task timeout' })) }),
     async execute(_id, params, signal, _update, ctx) {
-      const timeout = params.timeout ?? 60;
+      const timeout = taskTimeout(params.timeout);
       const current = run;
       if (!current) fail('NO_ASSESSMENT', 'No active p2o assessment; start one with /p2o --target …');
       if (current.role === 'owner') {
         if (current.phase !== 'active' || current.ctx.cwd !== ctx.cwd) fail('NO_ASSESSMENT', 'No active p2o assessment in this session');
-        return output(await executeWithReceipt(current, 'owner', 'net', params.command, () => current.sandbox.exec(params.command, timeout, signal, '/work', () => current.progress.record('owner','running','net'), 300)));
+        return output(await executeWithReceipt(current, 'owner', 'net', params.command, () => current.sandbox.exec(params.command, timeout, signal, '/work', () => current.progress.record('owner','running','net'))));
       }
       const active = worker();
-      const result = await active.client.request<ProcessResult>('net', { command: params.command, timeout }, { timeoutMs: (timeout + 20) * 1000 });
+      const result = await active.client.request<ProcessResult>('net', { command: params.command, timeout }, { timeoutMs: null, signal });
       return output(result);
     },
   });
   pi.registerTool({
     name: 'p2o_http', label: 'Scoped HTTP', exposure: 'model-only',
-    description: 'Full HTTP with fixed curl: standard verbs including TRACE and custom HTTP method tokens, request bodies (32 KiB UTF-8), custom headers (8 KiB total) including Authorization/Cookie, and bounded redirect following. Each URL/hop must match the confirmed origin; redirects stop before contacting other origins. Response/curl failure is not retried. Actor-local named cookie sessions preserve Path/Secure/expiry; session=none disables persistence, resetSession clears the selected jar, and an explicit Cookie header overrides the jar. Credentials are operator-supplied and can appear in model transcripts and local Docker inspection. 20 seconds per hop, curl transfer limit 8 MiB, 48 KiB captured. Not available for directory targets.',
+    description: 'Full HTTP with fixed curl: standard verbs including TRACE and custom HTTP method tokens, request bodies (32 KiB UTF-8), custom headers (8 KiB total) including Authorization/Cookie, and bounded redirect following. Each URL/hop must match the confirmed origin; redirects stop before contacting other origins. Response/curl failure is not retried. Actor-local named cookie sessions preserve Path/Secure/expiry; session=none disables persistence, resetSession clears the selected jar, and an explicit Cookie header overrides the jar. Credentials are operator-supplied and can appear in model transcripts and local Docker inspection. No extension-imposed task timeout by default; timeout/connectTimeout optionally bound each hop/connection in seconds (0 disables). Curl transfer limit 8 MiB, 48 KiB captured. Not available for directory targets.',
     parameters: Type.Object({
       url: Type.String({ minLength: 1, maxLength: 4096 }),
       method: Type.Optional(Type.String({ minLength: 1, maxLength: 32, pattern: HTTP_METHOD_PATTERN })),
@@ -598,6 +597,8 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
       maxRedirects: Type.Optional(Type.Integer({ minimum: 0, maximum: 5 })),
       session: Type.Optional(Type.String({ minLength: 1, maxLength: 40, pattern: '^[A-Za-z0-9][A-Za-z0-9._-]{0,39}$' })),
       resetSession: Type.Optional(Type.Boolean()),
+      timeout: Type.Optional(Type.Integer({minimum:0,description:'Optional per-hop seconds; 0 or omitted disables the task timeout'})),
+      connectTimeout: Type.Optional(Type.Integer({minimum:0,description:'Optional connect seconds; 0 or omitted uses underlying network/library defaults'})),
     }),
     async execute(_id, params, signal, _update, ctx) {
       const request = httpRequest(params);
@@ -609,7 +610,7 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
         return output(await executeWithReceipt(current, 'owner', 'http', label, () => current.sandbox.http(request, signal, () => current.progress.record('owner','running','http'))));
       }
       const active = worker();
-      const result = await active.client.request<ProcessResult>('http', { ...request }, { timeoutMs: 30_000 * (request.followRedirects ? request.maxRedirects + 1 : 1) + 15_000 });
+      const result = await active.client.request<ProcessResult>('http', { ...request }, { timeoutMs: null, signal });
       return output(result);
     },
   });
@@ -785,7 +786,6 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
       const panesBefore = current.workers.size;
       await cleanupOwner(current, 'finished');
       current.phase = 'finished';
-      if (current.timer) clearTimeout(current.timer);
       const coverage = view.coverage.slice(-12).map(entry => `${entry.surface} × ${entry.risk}: ${entry.outcome}`).join('; ') || '(none recorded)';
       const open = view.open.slice(-8).map(entry => cleanText(entry.text).slice(0, 160)).join(' | ') || '(none recorded)';
       const workers = view.workers.map(entry => `${entry.workerId} ${entry.status}${entry.reported ? ' reported' : ' no report'}`).join(', ') || '(none)';
@@ -831,7 +831,7 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
           const delegationReason = command.options.solo ? '--solo was requested' : 'Pi is not running inside a Herdr session';
           const delegation = maxWorkers > 0 && maxDepth > 0 ? '' : ' (delegation disabled by the configured limits)';
           const allowed = await ctx.ui.confirm('Start authorized assessment?',
-            `Target: ${cleanText(targetLabel(target))}\n${target.kind === 'directory' ? 'A bounded source copy (64 MiB / 20000 entries) is exposed read-only to the sandbox and its contents may reach your model provider. Symlinks, special files, .git and node_modules are skipped. Choose a source directory, not your home or a secrets directory.' : `Assessment target: ${target.origin} only. All HTTP methods, bodies, login/auth headers, cookies and state-changing requests are authorized for this run. The HTTP tool validates each URL/redirect against this origin; other HTTP origins are refused.`}\nNetwork authority: both shell and network tools have unrestricted bridge egress (public/private/link-local addresses and reachable host services), plus downloads and user-space tool installs in scratch. Opaque commands are NOT origin-filtered; target scope outside the HTTP tool is agent policy, not an egress firewall. Tool repositories are auxiliary egress, not additional assessment targets. Loopback is container-local; host.docker.internal reaches host-published services. Raw-packet capabilities/root/host Docker are not granted. Never mount a secrets directory. Supplied credentials and returned data may reach your model provider or local Docker inspection; exports are only best-effort redacted.\nConfirm you own this target or have permission to assess it. The current Pi model leads the assessment; normal provider charges apply.\nWorkers: ${delegationAvailable ? `up to ${maxWorkers} visible Pi worker panes may be delegated inside this sandbox, nesting to depth ${maxDepth}; each worker has its own model and models may cost more.` : `none${delegation} (${delegationReason}).`}\nDocker image: ${image}. Unprivileged user, no host credentials/socket, 2 GiB memory and 512 PIDs per container. Containers share the host kernel; this is not VM isolation. Maximum duration: 30 minutes.${command.options.export ? '\nExport enabled: bounded redacted receipts will be saved under .p2o-reports in this working directory before cleanup. Redaction is best effort; review before sharing.' : '\nNo durable export selected. Use --export to retain bounded redacted receipts after cleanup.'}`);
+            `Target: ${cleanText(targetLabel(target))}\n${target.kind === 'directory' ? 'A bounded source copy (64 MiB / 20000 entries) is exposed read-only to the sandbox and its contents may reach your model provider. Symlinks, special files, .git and node_modules are skipped. Choose a source directory, not your home or a secrets directory.' : `Assessment target: ${target.origin} only. All HTTP methods, bodies, login/auth headers, cookies and state-changing requests are authorized for this run. The HTTP tool validates each URL/redirect against this origin; other HTTP origins are refused.`}\nNetwork authority: both shell and network tools have unrestricted bridge egress (public/private/link-local addresses and reachable host services), plus downloads and user-space tool installs in scratch. Opaque commands are NOT origin-filtered; target scope outside the HTTP tool is agent policy, not an egress firewall. Tool repositories are auxiliary egress, not additional assessment targets. Loopback is container-local; host.docker.internal reaches host-published services. Raw-packet capabilities/root/host Docker are not granted. Never mount a secrets directory. Supplied credentials and returned data may reach your model provider or local Docker inspection; exports are only best-effort redacted.\nConfirm you own this target or have permission to assess it. The current Pi model leads the assessment; normal provider charges apply.\nWorkers: ${delegationAvailable ? `up to ${maxWorkers} visible Pi worker panes may be delegated inside this sandbox, nesting to depth ${maxDepth}; each worker has its own model and models may cost more.` : `none${delegation} (${delegationReason}).`}\nDocker image: ${image}. Unprivileged user, no host credentials/socket, 2 GiB memory and 512 PIDs per container. Containers share the host kernel; this is not VM isolation. No elapsed-time limit for the assessment, lead or workers. Commands/HTTP default to no task timeout; explicitly stop/finish the run. Provider costs and resource/command budgets still apply.${command.options.export ? '\nExport enabled: bounded redacted receipts will be saved under .p2o-reports in this working directory before cleanup. Redaction is best effort; review before sharing.' : '\nNo durable export selected. Use --export to retain bounded redacted receipts after cleanup.'}`);
           if (!allowed) { ctx.ui.notify('Cancelled. No sandbox, worker or agent turn started.', 'info'); return; }
           ctx.signal?.throwIfAborted();
           const source = await readFile(extensionPath, 'utf8');
@@ -845,20 +845,19 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
           const sandboxOptions: SandboxOptions = { runId, image, ...(delegationAvailable ? { tmpBytes: '768m', workBytes: '1g' } : {}) };
           const createSandbox = options.createSandbox ?? ((value: Target, sandboxOptionsValue: SandboxOptions) => new Sandbox(value, undefined, undefined, sandboxOptionsValue));
       const sandbox = createSandbox(target, sandboxOptions);
-          const deadline = now() + 30 * 60 * 1000;
           const current: OwnerRun = {
             role: 'owner', target, sandbox, ctx, phase: 'starting', toolsBefore: pi.getActiveTools(),
             runId, control, records, reports, broker: undefined as unknown as Broker, workers: new Map(),
             delegation: { enabled: delegationAvailable, reason: delegationAvailable ? undefined : delegationReason, maxWorkers, maxDepth, spawned: 0, totalBudget },
-            settings: loaded, extensionPath, extensionSha: extensionSha!, deadline, spawns: new Set(), operations: new Set(),
+            settings: loaded, extensionPath, extensionSha: extensionSha!, spawns: new Set(), operations: new Set(),
             library: new SkillLibrary(packageRoot(extensionPath)), evidence: new EvidenceStore(runId, records, targetLabel(target)),
             knowledgeUsed: 0, image, exportEnabled: command.options.export ?? false,
             board:undefined as unknown as TaskBoard,progress:new ProgressState(now),
           };
-          current.board = new TaskBoard(runId,records,deadline,() => run === current && current.phase === 'active',now);
+          current.board = new TaskBoard(runId,records,() => run === current && current.phase === 'active',now);
           current.broker = new Broker(control, {
-            exec: (command, seconds, workdir, signal, maxSeconds) => executeWithReceipt(current, workdir.split('/').at(-1)!, 'shell', command, () => sandbox.exec(command, seconds, signal, workdir,() => current.progress.record(workdir.split('/').at(-1)!,'running','shell'), maxSeconds)),
-            net: (command, seconds, workdir, signal) => executeWithReceipt(current, workdir.split('/').at(-1)!, 'net', command, () => sandbox.exec(command, seconds, signal, workdir, () => current.progress.record(workdir.split('/').at(-1)!,'running','net'), 300)),
+            exec: (command, seconds, workdir, signal) => executeWithReceipt(current, workdir.split('/').at(-1)!, 'shell', command, () => sandbox.exec(command, seconds, signal, workdir,() => current.progress.record(workdir.split('/').at(-1)!,'running','shell'))),
+            net: (command, seconds, workdir, signal) => executeWithReceipt(current, workdir.split('/').at(-1)!, 'net', command, () => sandbox.exec(command, seconds, signal, workdir, () => current.progress.record(workdir.split('/').at(-1)!,'running','net'))),
             http: (request, signal, workerId) => executeWithReceipt(current, workerId ?? 'owner', 'http', requestLabel(request), () => sandbox.http(request, signal,() => current.progress.record(workerId ?? 'owner','running','http'), workerId ?? 'owner')),
             knowledge: (op, request, registration) => readKnowledge(current, op, request, registration.workerId),
             candidate: (input, registration) => recordCandidate(current, registration.workerId, input as Candidate),
@@ -866,7 +865,7 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
             ledger: async (limit, id, cursor) => ledgerPage(await readLedger(current.records,current.runId),{limit,id,cursor}),
             objective: async registration => { if (current.phase !== 'active') return undefined; return current.board.forWorker(registration.workerId); },
             onBudget: (id,reason) => { current.progress.record(id,'budget-exhausted',undefined,reason); void note({by:'owner',kind:'lifecycle',workerId:id,text:reason}).catch(() => {}); },
-            beforeCommand: async registration => { if (current.phase !== 'active' || now() >= current.deadline) throw Error('Assessment inactive or expired'); if (registration.taskId) await current.board.assertReady(registration.workerId); },
+            beforeCommand: async registration => { if (current.phase !== 'active' || run !== current) throw Error('Assessment inactive'); if (registration.taskId) await current.board.assertReady(registration.workerId); },
             delegate: (input, parent) => spawnWorker(input, { workerId: parent.workerId, depth: parent.depth }),
             report: (workerId, report) => track(current,(async () => {
               const registration = current.workers.get(workerId);
@@ -895,8 +894,6 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
           if (run !== current || current.phase !== 'starting') return;
           current.phase = 'active';
           ctx.ui.setStatus('p2o', `p2o: ${cleanText(targetLabel(target))}${current.delegation.enabled ? ` (+${maxWorkers} workers)` : ''}`);
-          current.timer = setTimeout(() => { ctx.abort(); void stopAssessment(current, 'deadline').catch(error => ctx.ui.notify(message(error), 'error')); }, Math.max(1, deadline - now()));
-          current.timer.unref();
           ctx.ui.notify(`Sandbox ready. Leading the assessment in this conversation.${current.delegation.enabled ? ` Delegation: up to ${maxWorkers} workers, depth ${maxDepth}.` : ''}${sandbox.sourceSkipped ? ` Source entries skipped: ${sandbox.sourceSkipped}.` : ''}`, 'info');
           pi.sendUserMessage('Begin the confirmed assessment now. Explain a bounded plan, investigate within scope, and report evidence, coverage and unresolved gaps.');
         } finally { opening = false; }
@@ -932,13 +929,13 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
     if (current.role === 'owner') {
       event.systemPromptOptions.sections[OWNER_PROMPT_SECTION] = ownerInstructions({
         runId: current.runId, targetLabel: targetLabel(current.target), targetKind: current.target.kind,
-        deadline: new Date(current.deadline).toISOString(), sourceSkipped: current.sandbox.sourceSkipped,
+        sourceSkipped: current.sandbox.sourceSkipped,
         delegation: { enabled: current.delegation.enabled, reason: current.delegation.reason, maxWorkers: current.delegation.maxWorkers, maxDepth: current.delegation.maxDepth },
         workerBudget: current.delegation.totalBudget, phase: current.phase,
       });
       return;
     }
-    // Worker guidance is deliberately unchanged in this lead-only simplification.
+    // Worker guidance describes the current run lifetime and transport.
     return { systemPrompt: `${event.systemPrompt}\n\n${workerInstructions(current.ticket)}` };
   });
   // Request-local objective refresh survives compaction without persisting another instruction dump.

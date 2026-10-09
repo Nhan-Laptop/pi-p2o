@@ -32,7 +32,7 @@ No extension build or JSON configuration is needed. Use `/reload` after installi
 
 Confirm scope and permission once. The command prepares the sandbox and sends the task directly into the
 **existing conversation**, using the existing model. The lead investigates, shows progress through ordinary Pi
-tool calls, and writes the report here. Normal provider charges apply.
+tool calls, and writes the report here. No elapsed-time limit is imposed on the lead, workers or assessment. Commands/HTTP default to no task timeout; stop or finish explicitly. Normal provider charges and existing command/resource budgets still apply. Infrastructure watchdogs do not cap investigation time.
 
 Delegation is available when Pi runs inside [Herdr](https://herdr.dev): each worker is a real Pi process in a
 neighbouring pane with its own role model, and every worker shares this sandbox through the owner.
@@ -44,7 +44,7 @@ neighbouring pane with its own role model, and every worker shares this sandbox 
 | `p2o_candidate` | lead + worker | Evidence-linked candidate claims, proof level, controls, limitations and explicit revisions |
 | `p2o_shell` | lead + worker | Shell in the sandbox; `/target` is a read-only copy, `/work/<workerId>` is scratch, `p2o_net` for egress |
 | `p2o_http` | lead + worker | Fixed curl on the confirmed origin only: any method, bodies, headers, cookies, bounded redirects |
-| `p2o_net` | lead + worker | Network commands in the sandbox: connect scans, service probes, tooling installs; 1..300 s |
+| `p2o_net` | lead + worker | Network commands in the sandbox: connect scans, service probes, tooling installs; no task timeout by default |
 | `p2o_note` | lead + worker | Append a note, observation, coverage row or open item to the shared ledger |
 | `p2o_ledger` | lead + worker | Read the shared ledger or one evidence/candidate record by ID before repeating work |
 | `p2o_delegate` | lead + worker | Spawn one focused worker (objective, context, role, 1-3 skills, optional model) |

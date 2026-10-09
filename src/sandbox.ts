@@ -1,9 +1,9 @@
 import { randomUUID } from 'node:crypto';
 import { realpath, rm } from 'node:fs/promises';
 import { copySource } from './source.js';
-import { checked, runDocker, type RunProcess, type ProcessResult } from './process.js';
+import { abortable, checked, runDocker, type RunProcess, type ProcessResult } from './process.js';
 import { isIP } from 'node:net';
-import { httpRequest, scopedRequest, CONTAINER_HOST_ALIAS, type HttpRequest, type ResolveAddress, type Target } from './target.js';
+import { httpRequest, scopedRequest, taskTimeout, CONTAINER_HOST_ALIAS, type HttpRequest, type ResolveAddress, type Target } from './target.js';
 import { HttpSessions, responseHead } from './http-session.js';
 
 // Fixed content digest, not a mutable tag or a model-selected image. No automatic image pull.
@@ -87,8 +87,9 @@ export class Sandbox {
     return next;
   }
 
-  async exec(command: string, seconds = 30, signal?: AbortSignal, workdir = '/work', onRunning?: () => void, maxSeconds = 60): Promise<ProcessResult> {
-    if (![60, 300].includes(maxSeconds) || !command || command.length > 8192 || !Number.isInteger(seconds) || seconds < 1 || seconds > maxSeconds) throw new Error(`Command must be 1..8192 characters; timeout must be 1..${maxSeconds} seconds`);
+  async exec(command: string, seconds = 0, signal?: AbortSignal, workdir = '/work', onRunning?: () => void): Promise<ProcessResult> {
+    if (typeof command !== 'string' || !command.trim() || command.length > 8192) throw new Error('Command must be 1..8192 characters');
+    taskTimeout(seconds);
     if (workdir !== '/work' && !/^\/work\/[A-Za-z0-9][A-Za-z0-9._-]{0,60}$/.test(workdir)) throw new Error('Invalid sandbox working directory');
     return this.enqueue(async () => {
       if (this.stopped || !this.shell) throw new Error('No active sandbox');
@@ -96,8 +97,9 @@ export class Sandbox {
       try {
         await this.ensureWorkdir(workdir, combined);
         onRunning?.();
-        const result = await this.docker(['exec', '--workdir', workdir, this.shell, '/usr/bin/timeout', '--signal=KILL', `${seconds}s`, '/bin/sh', '-c', command], { timeoutMs: (seconds + 5) * 1000, signal: combined });
-        if (result.code === 124 || result.code === 137) throw new Error('Sandbox command timed out; stopping the sandbox to remove background processes');
+        const deadline = seconds ? ['/usr/bin/timeout', '--signal=KILL', `${seconds}s`] : [];
+        const result = await this.docker(['exec', '--workdir', workdir, this.shell, ...deadline, '/bin/sh', '-c', command], { timeoutMs: null, signal: combined });
+        if (seconds && (result.code === 124 || result.code === 137)) throw new Error('Opt-in sandbox command timed out; stopping the sandbox to remove background processes');
         return result;
       } catch (error) {
         // Killing the Docker CLI does not reap commands in the container. With network egress,
@@ -133,7 +135,7 @@ export class Sandbox {
         const combined = AbortSignal.any([this.cancellation.signal, ...(signal ? [signal] : [])]);
         combined.throwIfAborted();
         let destination: Awaited<ReturnType<typeof scopedRequest>>;
-        try { destination = await scopedRequest(this.target, current, this.resolveIP); }
+        try { destination = await abortable(scopedRequest(this.target, current, this.resolveIP),combined); }
         catch (error) { if (last) return finish(error instanceof Error ? error.message : String(error)); throw error; }
         const { url, address, addressClass: kind, pin } = destination;
         combined.throwIfAborted();
@@ -142,7 +144,7 @@ export class Sandbox {
         const headers = Object.entries(request.headers ?? {});
         const explicitCookie = headers.some(([name]) => name.toLowerCase() === 'cookie');
         const jar = explicitCookie ? undefined : this.sessions.header(actor, request.session, url);
-        const args = ['-q', '--proxy', '', '--noproxy', '*', '--proto', '=http,https', '--max-time', '20', '--connect-timeout', '5',
+        const args = ['-q', '--proxy', '', '--noproxy', '*', '--proto', '=http,https', '--max-time', String(request.timeout), '--connect-timeout', String(request.connectTimeout),
           '--max-filesize', '8388608', '--max-redirs', '0', '--no-location', '--silent', '--show-error', '--include'];
         const port = url.port || (url.protocol === 'https:' ? '443' : '80');
         if (pin) args.push('--resolve', url.hostname + ':' + port + ':' + (isIP(address) === 6 ? '[' + address + ']' : address));
@@ -159,7 +161,7 @@ export class Sandbox {
           if (this.stopped) throw new Error('Cancelled');
           onRunning?.();
           last = await this.docker(['start', '--attach', ...(body === undefined ? [] : ['--interactive']), name], {
-            timeoutMs: 25_000, signal: combined, ...(body === undefined ? {} : { stdin: body }),
+            timeoutMs: null, signal: combined, ...(body === undefined ? {} : { stdin: body }),
           });
         } finally { await this.remove(name); }
         const head = responseHead(last.stdout);

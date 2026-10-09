@@ -157,12 +157,13 @@ describe('sandbox executor, no agents', () => {
     expect(d.names.size).toBe(0);
     await expect(sandbox.exec('id')).rejects.toThrow('No active');
   });
-  it('bounds timeouts at the executor boundary and honours the network ceiling', async () => {
+  it('defaults to unlimited tasks, accepts opt-in long timeouts and rejects malformed values', async () => {
     const d = driver(); const sandbox = new Sandbox(target, d.run);
     await sandbox.start();
-    await expect(sandbox.exec('id', 61)).rejects.toThrow('1..60');
-    await expect(sandbox.exec('id', 0)).rejects.toThrow('timeout');
-    await expect(sandbox.exec('nmap -sT host', 300, undefined, '/work', undefined, 300)).resolves.toMatchObject({ code: 0 });
+    for(const seconds of [undefined,0,61,300,900]) await expect(sandbox.exec('id',seconds)).resolves.toMatchObject({code:0});
+    expect(d.calls.filter(c=>c.includes('exec')).find(c=>c.at(-1)==='id')).not.toContain('/usr/bin/timeout');
+    for(const seconds of [-1,1.5,NaN,Infinity,'30' as any]) await expect(sandbox.exec('id',seconds)).rejects.toThrow('non-negative');
+    expect(d.calls.filter(c=>c.includes('/usr/bin/timeout')).at(-1)).toContain('900s');
     await expect(sandbox.http({ ...request, url: 'https://example.com/'.concat('x'.repeat(4100)) })).rejects.toThrow('4096');
     await sandbox.stop();
   });

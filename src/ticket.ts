@@ -4,18 +4,18 @@ import { dirname, isAbsolute, join } from 'node:path';
 
 /**
  * A worker ticket is the only thing that lets a delegated Pi process speak to the owner's sandbox.
- * It is owner-private (0600 in a 0700 directory), expires with the assessment, is bound to the exact
+ * It is owner-private (0600 in a 0700 directory), valid only while its owner keeps it registered, bound to the exact
  * extension bytes and image, and the owner additionally checks the token against its in-memory
  * registry — so a ticket found after a restart grants nothing.
  */
-export const TICKET_VERSION = 1;
+export const TICKET_VERSION = 2;
 export const TICKET_LIMIT_BYTES = 8192;
 export const WORKER_ID_PATTERN = /^p2o-[a-z]{3,10}-[0-9a-f]{6}$/;
 
 export interface TicketTarget { kind: 'directory' | 'url'; label: string; origin?: string }
 
 export interface Ticket {
-  version: 1;
+  version: 2;
   runId: string;
   workerId: string;
   paneId: string;
@@ -27,7 +27,7 @@ export interface Ticket {
   socket: string;
   records: string;
   reports: string;
-  expiresAt: number;
+  lifetime: 'until-stopped';
   commandBudget: number;
   extension: { path: string; sha256: string };
   token: string;
@@ -94,7 +94,7 @@ export async function readTicket(path: string, expected: TicketExpectations): Pr
   if (!isAbsolute(String(ticket.socket)) || dirname(ticket.socket) !== directory) bad('socket must live in the ticket directory');
   if (dirname(String(ticket.records)) !== directory || dirname(String(ticket.reports)) !== directory) bad('records and reports must live in the ticket directory');
   if (!Number.isInteger(ticket.depth) || ticket.depth < 1 || ticket.depth > 4) bad('invalid delegation depth');
-  if (!Number.isInteger(ticket.expiresAt) || ticket.expiresAt <= (expected.now ?? Date.now())) bad('ticket expired');
+  if (ticket.lifetime !== 'until-stopped' || 'expiresAt' in ticket || 'deadline' in ticket) bad('invalid ticket lifetime');
   if (ticket.image !== expected.image) bad('ticket image does not match this extension');
   if (ticket.extension?.path !== expected.extensionPath || ticket.extension.sha256 !== expected.extensionSha) bad('ticket extension identity does not match the running code');
   if (!/^[a-f0-9]{32}$/.test(String(ticket.token))) bad('invalid ticket token');

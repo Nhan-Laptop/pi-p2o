@@ -144,7 +144,7 @@ describe('owner role', () => {
     await h.start('--target ./repo --export');
     const makeDraft = (role: string, prerequisites: any[] = [], validationOf?: string) => ({question:'Which actor reaches the controlled consumer?',surface:'/surface',risk:'authorization',role,
       roleReason:'Lead selected this role from the current unanswered question',expectedTrue:'Known baseline reaches the intended consumer',expectedFalse:'Contrasting observation refutes the boundary hypothesis',
-      stopCondition:'Stop after the contrast or a missing prerequisite; keep the original deadline',evidenceIds:[],prerequisites,validationOf,methodReason:'Bounded offline method; no deployment claims'});
+      stopCondition:'Stop after the contrast, a missing prerequisite or explicit owner withdrawal',evidenceIds:[],prerequisites,validationOf,methodReason:'Bounded offline method; no deployment claims'});
     const recon = (await h.call('p2o_task',{action:'create',draft:makeDraft('recon')})).details;
     await h.call('p2o_task',{action:'start',id:recon.id});
     const lead = await h.call('p2o_shell',{command:'printf controlled-baseline'});
@@ -416,7 +416,7 @@ describe('owner role', () => {
     expect(await h.emit('tool_call', { toolName: 'p2o_report' })).toMatchObject({ block: true });
     await expect(h.emit('user_bash')).rejects.toThrow(/Host shell is blocked/);
     await h.call('p2o_shell', { command: 'id -u' });
-    expect(h.sandboxes[0].commands).toEqual([{ command: 'id -u', workdir: '/work' }]);
+    expect(h.sandboxes[0].commands).toEqual([{ command: 'id -u', workdir: '/work', timeout:0 }]);
     await h.command('stop');
     await expect(h.call('p2o_shell', { command: 'id' })).rejects.toThrow(/No active p2o assessment/);
     expect(h.pi.active).toContain('bash');

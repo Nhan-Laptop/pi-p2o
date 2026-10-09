@@ -50,7 +50,7 @@ or duplicating tool descriptions. Its startup message is a short kickoff; worker
 | `src/ticket.ts` | Owner-private worker ticket: mint, strict validation, single-use identity, expiry, extension/image binding |
 | `src/broker.ts` | Socket server + client: authentication, framing, per-worker and reserve budgets, report normalization |
 | `src/records.ts` | Complete bounded streaming ledger index, integrity diagnostics, cursor pages, summary and blocking wait |
-| `src/tasks.ts` | Owner-only questions, accepted revisions, reservations and active/deadline gates |
+| `src/tasks.ts` | Owner-only questions, accepted revisions, reservations and active owner-authority gates (no elapsed-time deadline) |
 | `src/progress.ts` | Observable progress/quiet diagnostics without dispatch or retries |
 | `src/report.ts` | Committed normalized report parts and frozen candidate/report/task projection |
 | `src/herdr.ts` | Herdr CLI client: tiled pane split, agent start with `-- <args>`, prompt/status/interrupt/close |
@@ -76,7 +76,7 @@ HTTP origin checks do not constrain opaque network commands. The shared shell is
 - The broker's identity boundary is the **token, not the operating system**: another process running as the same
   host user can copy a live ticket and speak to the socket until that worker reports, is stopped, or the
   assessment ends. Same-user isolation is not a security boundary the extension claims to provide, which is why
-  the ticket directory, socket and ledger are 0600/0700 and the window is kept short.
+  the ticket directory, socket and ledger are 0600/0700. Runs have no automatic expiry; use explicit stop/finish and disposable infrastructure.
 
 ## Ledger, coverage and closure
 
@@ -96,9 +96,9 @@ reproducing the same claim.
 waits for any in-flight spawn to register first, then revokes tickets, closes panes, stops the broker, removes
 containers, sweeps by run label, verifies absence and deletes the control directory. Cleanup is idempotent and
 genuinely retryable after a failure, and a pane Herdr refuses to close is reported instead of being called
-verified. Reporting also revokes that worker immediately, so a copied ticket stops working. Cancellation, session navigation, agent error, deadline and shutdown run the
+verified. Reporting also revokes that worker immediately, so a copied ticket stops working. Cancellation, session navigation, agent error and shutdown run the
 same path; if any step fails, the tool gate stays closed and `/p2o stop` retries. A worker's Herdr status is
-displayed but never used as a substitute for a report.
+displayed but never used as a substitute for a report. Assessment/lead/worker authority has no elapsed-time limit; v2 tickets require an explicit until-stopped lifetime and a current registration. Socket loss revokes that identity and aborts its commands, including copied-ticket connections. Task commands and HTTP attachments disable subprocess/RPC task timers by default; optional probe timeouts remain explicit. Infrastructure watchdogs and resource/command budgets remain. No clock, restored session or disk record renews authority.
 
 ## Deliberate differences from Strix
 

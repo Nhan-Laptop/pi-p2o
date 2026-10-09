@@ -133,8 +133,18 @@ export interface HttpRequest {
   /** Actor-local named cookie jar. "none" disables cookie persistence and automatic sending. */
   session?: string;
   resetSession?: boolean;
+  /** Optional per-hop/connect probe deadlines in seconds; zero/omitted disables extension limits. */
+  timeout?: number;
+  connectTimeout?: number;
 }
-export type NormalizedHttpRequest = HttpRequest & { session: string; resetSession: boolean };
+export type NormalizedHttpRequest = HttpRequest & { session: string; resetSession: boolean; timeout: number; connectTimeout: number };
+
+/** Optional task deadline only, never run/worker authority. No 60/300-second ceiling. */
+export function taskTimeout(value: unknown, name = 'timeout'): number {
+  if (value === undefined) return 0;
+  if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < 0) throw Error(`${name} must be a non-negative safe integer in seconds; 0 disables it`);
+  return value;
+}
 export const MAX_BODY_BYTES = 32 * 1024;
 const HEADER_NAME = /^[A-Za-z0-9!#$%&'*+.^_`|~-]{1,64}$/;
 const RESERVED_HEADERS = new Set(['content-length', 'transfer-encoding', 'connection', 'expect']);
@@ -181,7 +191,8 @@ export function httpRequest(input: unknown): NormalizedHttpRequest {
   const normalized = (HTTP_METHODS as readonly string[]).includes(method.toUpperCase()) ? method.toUpperCase() : method;
   if (normalized === 'HEAD' && body !== undefined) throw new Error('HEAD requests cannot carry a body');
   return { url: params.url, method: normalized, headers, body, followRedirects: params.followRedirects ?? true,
-    maxRedirects, session, resetSession: params.resetSession ?? false } as NormalizedHttpRequest;
+    maxRedirects, session, resetSession: params.resetSession ?? false,
+    timeout: taskTimeout(params.timeout), connectTimeout: taskTimeout(params.connectTimeout, 'connectTimeout') } as NormalizedHttpRequest;
 }
 
 export function targetLabel(target: Target): string { return target.kind === 'directory' ? target.path : target.url; }

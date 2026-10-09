@@ -2,7 +2,7 @@ import { createServer, createConnection, type Server, type Socket } from 'node:n
 import { rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { ProcessResult } from './process.js';
-import { httpRequest, type HttpRequest } from './target.js';
+import { httpRequest, taskTimeout, type HttpRequest } from './target.js';
 import { isOutcome, isRecordKind, type AssessmentRecord, type CoverageOutcome, type LedgerPage } from './records.js';
 
 /**
@@ -47,7 +47,7 @@ export interface DelegateInput { focus: string; task: string; context?: string; 
 export interface DelegateResult { workerId: string; name: string; paneId: string; role: string; model?: string; depth: number }
 
 export interface BrokerDeps {
-  exec(command: string, seconds: number, workdir: string, signal: AbortSignal, maxSeconds?: number): Promise<ProcessResult>;
+  exec(command: string, seconds: number, workdir: string, signal: AbortSignal): Promise<ProcessResult>;
   /** Network-egress command: identical executor, separately labelled so its receipts are auditable. */
   net?(command: string, seconds: number, workdir: string, signal: AbortSignal): Promise<ProcessResult>;
   http(request: HttpRequest, signal: AbortSignal, workerId?: string): Promise<ProcessResult>;
@@ -180,7 +180,8 @@ export class Broker {
       if (buffer.length > (this.limits.maxLineBytes ?? MAX_LINE_BYTES)) { fail('Request too large'); socket.destroy(); }
     });
     socket.on('error', error => this.deps.onProblem?.(`worker socket error: ${error.message}`));
-    socket.on('close', () => this.clients.delete(socket));
+    // A lost worker connection cannot leave an unbounded command or copied ticket running.
+    socket.on('close', () => { this.clients.delete(socket); if (workerId) this.revoke(workerId); });
   }
 
   private authenticate(token: unknown): WorkerRegistration | undefined {
@@ -241,12 +242,11 @@ export class Broker {
       }
       case 'exec':
       case 'net': {
-        const maxSeconds = op === 'net' ? 300 : 60;
         if (typeof request?.command !== 'string' || request.command.length > 8192) return { ok: false, error: 'command must be 1..8192 characters' };
         const command = text(request.command, 8192);
-        const seconds = Number.isInteger(request?.timeout) ? request.timeout : 30;
+        let seconds: number;
+        try { seconds = taskTimeout(request?.timeout); } catch (error) { return {ok:false,error:errText(error)}; }
         if (!command || !command.trim()) return { ok: false, error: 'command must be 1..8192 characters' };
-        if (seconds < 1 || seconds > maxSeconds) return { ok: false, error: `timeout must be 1..${maxSeconds} seconds` };
         const spent = await this.prepareCommand(registration);
         if (spent) return spent;
         return this.whileRunning(workerId, async signal => {
@@ -254,7 +254,7 @@ export class Broker {
             const workdir = `/work/${workerId}`;
             const runner = op === 'net' ? this.deps.net : undefined;
             const result = runner ? await runner(command, seconds, workdir, signal)
-              : await this.deps.exec(command, seconds, workdir, signal, maxSeconds);
+              : await this.deps.exec(command, seconds, workdir, signal);
             return { ok: true, ...result };
           } catch (error) { return { ok: false, error: errText(error) }; }
         });
@@ -450,20 +450,26 @@ export class BrokerClient {
     this.socket = undefined;
   }
 
-  request<T = any>(op: string, payload: Record<string, unknown> = {}, options: { timeoutMs?: number } = {}): Promise<T> {
+  request<T = any>(op: string, payload: Record<string, unknown> = {}, options: { timeoutMs?: number | null; signal?: AbortSignal } = {}): Promise<T> {
     const run = async (): Promise<T> => {
+      options.signal?.throwIfAborted();
       await this.connect();
+      options.signal?.throwIfAborted();
       const socket = this.socket;
       if (!socket) throw new Error(this.broken ?? 'owner broker unavailable');
       const id = ++this.sequence;
       if (Buffer.byteLength(JSON.stringify({ ...payload,id,op })) > MAX_LINE_BYTES - 1) throw new Error('Request exceeds broker frame limit; narrow the report or request');
-      const timeoutMs = options.timeoutMs ?? this.options.requestMs ?? 60_000;
+      const timeoutMs = options.timeoutMs === null ? null : options.timeoutMs ?? this.options.requestMs ?? 60_000;
       return new Promise<T>((resolve, reject) => {
-        const timer = setTimeout(() => { this.pending.delete(id); reject(new Error(`p2o ${op} request timed out after ${timeoutMs}ms`)); }, timeoutMs);
+        const abort = () => this.fail('worker request cancelled; revoke its executor access');
+        const cleanup = () => { if (timer) clearTimeout(timer); options.signal?.removeEventListener('abort',abort); };
+        const timer = timeoutMs === null ? undefined : setTimeout(() => { this.pending.delete(id); cleanup(); reject(new Error(`p2o ${op} request timed out after ${timeoutMs}ms`)); }, timeoutMs);
         this.pending.set(id, {
-          resolve: value => { clearTimeout(timer); resolve(value as T); },
-          reject: error => { clearTimeout(timer); reject(error); },
+          resolve: value => { cleanup(); resolve(value as T); },
+          reject: error => { cleanup(); reject(error); },
         });
+        options.signal?.addEventListener('abort',abort,{once:true});
+        if (options.signal?.aborted) { abort(); return; }
         socket.write(`${JSON.stringify({ ...payload, id, op })}\n`);
       });
     };

@@ -15,7 +15,7 @@ import { copySource } from '../../src/source.js';
 // Contract/mechanical checks, not an autonomous-agent quality benchmark.
 describe('bounded recon contract', () => {
   it('distinguishes source mapping from URL permissions and includes corrective next-task reasoning', () => {
-    const facts = { runId: 'run-recon', targetLabel: '/target', targetKind: 'directory' as const, deadline: '2030-01-01', sourceSkipped: 2,
+    const facts = { runId: 'run-recon', targetLabel: '/target', targetKind: 'directory' as const, sourceSkipped: 2,
       delegation: { enabled: false, maxWorkers: 1, maxDepth: 1 }, workerBudget: 20 };
     const source = ownerInstructions(facts);
     expect(source).toContain('Source recon:');
@@ -48,11 +48,11 @@ describe('bounded recon contract', () => {
   });
 
   it.each([
-    ['url', '139ce3c4902f00443a0a53c388296d27d8c706edf8c68375b4e242349b3d1b0d', '9608f1fa2108eaff0a427d1a9365205223f462ba4ff1033804a05412bf324c1c'],
-    ['directory', '22f26dba6ade6a3785230f6988263da76e84e4f766e69a98b2d2cfb29939af41', 'dfad83371227e967125d31a208fd7c417214dcaba90d471e4b33ed721f5b10b9'],
-  ])('pins %s worker guidance for the network-transport revision; historical fixtures are not rewritten', (kind, instructionHash, briefHash) => {
+    ['url', '3af77a1df3b2480a7a99ea1a6e099bdb47c138054da610ba3e2297ecde7a1945', 'e790c5ff68fd3b60b865b6344155a412708b27b7aa8de54d548be84e1abeaf79'],
+    ['directory', 'cecddc684352ca434b02ea4a26794add1535867f6a6c7fc9fff800631eff37b7', 'e77d2995d5166864e523f03eff44987758c6eff5409bae39408bbfc361629d5d'],
+  ])('pins %s worker guidance for the explicit-lifetime revision; historical fixtures are not rewritten', (kind, instructionHash, briefHash) => {
     const ticket = { workerId: 'worker-test', role: 'recon', runId: 'run-test', depth: 1, parentWorkerId: null,
-      expiresAt: 1893456000000, target: { kind, label: kind === 'url' ? 'https://example.invalid' : '/target' }, commandBudget: 20 } as Ticket;
+      lifetime: 'until-stopped', target: { kind, label: kind === 'url' ? 'https://example.invalid' : '/target' }, commandBudget: 20 } as Ticket;
     const input = { ticket, focus: 'surface-recon', task: 'Map authorized inputs', context: 'No previous work', skills: [{ name: 'test', body: 'Approved fixture guidance' }] };
     const hash = (text: string) => createHash('sha256').update(text).digest('hex');
     expect(hash(workerInstructions(ticket))).toBe(instructionHash);

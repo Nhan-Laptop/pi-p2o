@@ -76,7 +76,7 @@ describe('complete bounded state and report integrity',()=>{
 
 describe('owner-maintained tasks and context, not autonomous dispatch',()=>{
   it('serializes competing assignments and releases blocked work',async()=>fixture(async(_root,path)=>{
-    const board=new TaskBoard('run-test',path,1000,()=>true,()=>0);
+    const board=new TaskBoard('run-test',path,()=>true,()=>0);
     await board.create(draft('task-a'));await board.create(draft('task-b'));
     const results=await Promise.allSettled([board.reserve('task-a','worker-a'),board.reserve('task-b','worker-b')]);expect(results.filter(r=>r.status==='fulfilled')).toHaveLength(1);
     await board.transition('task-a','blocked','Spawn failed; reservation withdrawn');await board.reserve('task-b','worker-b');
@@ -84,7 +84,7 @@ describe('owner-maintained tasks and context, not autonomous dispatch',()=>{
     await board.releaseAll('human stop');await expect(board.assertReady('worker-b')).rejects.toThrow('running');
   }));
   it('accepts same-run evidence, rejects stale dependencies and supports explicit independent overlap',async()=>fixture(async(_root,path)=>{
-    const board=new TaskBoard('run-test',path,1000,()=>true,()=>0),store=new EvidenceStore('run-test',path,'fixture');
+    const board=new TaskBoard('run-test',path,()=>true,()=>0),store=new EvidenceStore('run-test',path,'fixture');
     const ref=await store.receipt('owner','shell','fixture',result,'2030');await board.create(draft('prior'));await board.reserve('prior','owner');await board.transition('prior','running','Lead inspecting gate');
     await expect(board.transition('prior','reviewed','Review without evidence')).rejects.toThrow('receipts');
     const accepted=await board.transition('prior','reviewed','Lead accepts this bounded offline prerequisite',[ref]);
@@ -94,18 +94,20 @@ describe('owner-maintained tasks and context, not autonomous dispatch',()=>{
     await expect(board.assertReady('worker')).rejects.toThrow('stale');
     expect(taskCapsule(await board.forWorker('worker'))).toContain('P2O OBJECTIVE STATE');
   }));
-  it('rejects cycles, foreign evidence, authority injection and expiry/replay',async()=>fixture(async(_root,path)=>{
-    let active=true,time=0;const board=new TaskBoard('run-test',path,1000,()=>active,()=>time);
+  it('rejects cycles, foreign evidence, authority injection and stopped-run replay, not elapsed time',async()=>fixture(async(_root,path)=>{
+    let active=true,time=0;const board=new TaskBoard('run-test',path,()=>active,()=>time);
     await expect(board.create({...draft('bad'),deadline:2000} as any)).rejects.toThrow('authority');
     await expect(board.create(draft('bad',{evidenceIds:['foreign']}))).rejects.toThrow('same-run');
     await board.create(draft('one'));await board.reserve('one','owner');await board.transition('one','running','Lead bounded observation');
     const store=new EvidenceStore('run-test',path,'fixture');const ref=await store.receipt('owner','shell','fixture',result,'2030');const a=await board.transition('one','reviewed','Accepted known-good baseline',[ref]);
     const two=await board.create(draft('two',{surface:'/other',prerequisites:[{taskId:'one',revision:a.revision}]}));await board.reserve(two.id,'owner');await board.transition(two.id,'running','Second bounded observation');const b=await board.transition(two.id,'reviewed','Accepted another baseline',[ref]);
     await expect(board.revise('one',a.revision,draft('one',{prerequisites:[{taskId:'two',revision:b.revision}]}))).rejects.toThrow('cycle');
-    active=false;await expect(board.create(draft('three'))).rejects.toThrow('inactive');active=true;time=1000;await expect(board.reserve('one','worker')).rejects.toThrow('expired');
+    time=365*24*60*60*1000;await expect(board.create(draft('three',{surface:'/third'}))).resolves.toMatchObject({status:'proposed'});
+    active=false;await expect(board.reserve('three','worker')).rejects.toThrow('inactive');
+    await board.releaseAll('Owner revoked the run');
   }));
   it('blocks declared missing prerequisites and requires the reviewed revision for validation overlap',async()=>fixture(async(_root,path)=>{
-    const board=new TaskBoard('run-test',path,1000,()=>true,()=>0);
+    const board=new TaskBoard('run-test',path,()=>true,()=>0);
     const task=await board.create(draft('blocked',{missingPrerequisites:['Authenticated transport is unavailable under this scope']}));expect(task.status).toBe('blocked');
     await expect(board.reserve(task.id,'worker')).rejects.toThrow('available');
     await expect(board.transition(task.id,'reviewed','Pretend transport exists',['unknown'])).rejects.toThrow('prerequisites');

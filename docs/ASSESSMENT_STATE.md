@@ -4,6 +4,10 @@ The current Pi lead still investigates. State maintenance never creates a model 
 container or transport. Only human confirmation and the live owner/broker establish authority; disk state,
 compaction summaries and worker text cannot restore or extend it.
 
+## Explicit lifetime
+
+The assessment, lead and workers have no elapsed-time deadline. Live owner state and unrevoked registrations, not timestamps, authorize operations. V2 tickets explicitly declare `lifetime: "until-stopped"`; malformed/old tickets are rejected and restored state never recreates a broker or registration. Stop, finish, session exit/error, report or worker socket loss still end authority and trigger the relevant cancellation/cleanup. Old expiry rows remain readable history, not a current timer. Commands and HTTP default to no task timeout, with optional probe deadlines. Infrastructure watchdogs remain. No maintenance timer or automatic model continuation is added.
+
 ## Question → observation → review
 
 The owner-only `p2o_task` tool creates a bounded question with `surface`, `risk`, role/reason, contrasting
@@ -23,7 +27,7 @@ Pass a proposed task's `taskId` to `p2o_delegate`. The owner serializes reservat
 before dispatch and each worker target command. Withdraw active work before revising it. Accepted support that
 changes makes dependent work stale. Ordinary trimmed surface/risk keys cannot overlap; explicit validation may
 overlap ordinary work, not another validator. Aliases/semantic overlap still require lead judgment. Failure,
-withdrawal, expiry and cleanup release reservations without granting another assignment.
+withdrawal and cleanup release reservations without granting another assignment.
 
 Legacy focused delegation remains available: the owner makes a task automatically, labels missing structured
 contrasts/prerequisites, and uses an explicitly marked compact excerpt when the original task exceeds 1,500
@@ -53,7 +57,7 @@ Worker report outcomes are attributed claims. Broker exhaustion is separately ob
 commands and broker worker usage are separate counters, **not an aggregate spend ceiling**.
 
 The worker's 200 knowledge/coordination calls reserve 40 for notes/candidates: knowledge stops at 160 total
-used. Reporting remains independent. Existing worker target command ceilings and the 90% worker reserve are
+used. Reporting remains independent. Existing worker command-count allowances and the 90% worker reserve are
 unchanged; these changes increase no allowance. Runtime metadata compares locally selected provider/model and
 thinking against requested settings; it does not attest remote reasoning quality or billing. Known mismatches
 block investigation. No provider fallback is automatic.

@@ -89,7 +89,7 @@ describe('sandbox broker', () => {
       await expect(client.request('http', { url: '/a', headers: { 'Content-Length': '9' } })).rejects.toThrow(/cannot be overridden/);
       await expect(client.request('http', { url: '/a', body: 'x'.repeat(40_000) })).rejects.toThrow(/at most/);
       await expect(client.request('http', { url: '/a', body: 'x'.repeat(70_000) })).rejects.toThrow(/frame limit/);
-      await expect(client.request('net', { command: 'id', timeout: 900 })).rejects.toThrow(/1\.\.300/);
+      await expect(client.request('net', { command: 'id', timeout: -1 })).rejects.toThrow(/non-negative/);
       await expect(client.request('net', { command: 'id', timeout: 300 })).resolves.toMatchObject({ ok: true });
       expect((await client.request('status')).used).toBe(used + 1);
     } finally { client.close(); await f.close(); }
@@ -120,7 +120,7 @@ describe('sandbox broker', () => {
       await expect(client.request('exec', { command: 'over-reserve' })).rejects.toThrow(/reserve reached/);
       await expect(client.request('nonsense')).rejects.toThrow(/unsupported broker operation/);
       await expect(client.request('exec', { command: 'x'.repeat(9000) })).rejects.toThrow(/1\.\.8192/);
-      await expect(client.request('exec', { command: 'id', timeout: 900 })).rejects.toThrow(/1\.\.60/);
+      await expect(client.request('exec', { command: 'id', timeout: 1.5 })).rejects.toThrow(/non-negative/);
       await expect(client.request('http', { url: '' })).rejects.toThrow(/url must be/);
       await expect(client.request('note', { kind: 'lifecycle', text: 'nope' })).rejects.toThrow(/kind must be/);
     } finally { client.close(); await f.close(); }

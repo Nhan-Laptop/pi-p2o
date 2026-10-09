@@ -20,9 +20,9 @@ async function fixture() {
   const records = join(control, 'records.jsonl');
   await writeFile(records, '', { mode: 0o600 });
   const ticket: Ticket = {
-    version: 1, runId: 'run-1', workerId: workerName('validation'), paneId: 'w1T:p2', parentWorkerId: null, depth: 1,
+    version: 2, runId: 'run-1', workerId: workerName('validation'), paneId: 'w1T:p2', parentWorkerId: null, depth: 1,
     role: 'validation', target: { kind: 'url', label: 'https://example.com', origin: 'https://example.com' },
-    image: IMAGE, socket, records, reports: join(control, 'reports'), expiresAt: Date.now() + 60_000,
+    image: IMAGE, socket, records, reports: join(control, 'reports'), lifetime: 'until-stopped',
     commandBudget: 20, extension: { path: EXTENSION, sha256: SHA }, token: 'b'.repeat(32),
   };
   const path = await mintTicket(control, ticket);
@@ -38,10 +38,12 @@ describe('worker tickets', () => {
       const ticket = await readTicket(f.path, f.expectations);
       expect(ticket.workerId).toBe(f.ticket.workerId);
       expect(ticket.token).toBe(f.ticket.token);
+      expect(ticket.lifetime).toBe('until-stopped');
+      expect(await readTicket(f.path,{...f.expectations,now:Date.now()+365*24*60*60*1000})).toEqual(ticket);
     } finally { await f.close(); }
   });
 
-  it('rejects a permissive ticket, a permissive directory, an expired ticket and a foreign identity', async () => {
+  it('rejects a permissive ticket, a permissive directory, an implicit/legacy lifetime and a foreign identity', async () => {
     const f = await fixture();
     try {
       await chmod(f.path, 0o644);
@@ -50,10 +52,11 @@ describe('worker tickets', () => {
       await chmod(f.control, 0o755);
       await expect(readTicket(f.path, f.expectations)).rejects.toThrow(/directory must be owner-private/);
       await chmod(f.control, 0o700);
-      const expired = { ...f.ticket, expiresAt: Date.now() - 1 };
-      await writeFile(f.path, JSON.stringify(expired), { mode: 0o600 });
-      await expect(readTicket(f.path, f.expectations)).rejects.toThrow(/expired/);
-      await writeFile(f.path, JSON.stringify({ ...f.ticket, expiresAt: Date.now() + 1000 }), { mode: 0o600 });
+      for (const patch of [{expiresAt:Date.now()-1},{lifetime:undefined},{lifetime:null},{lifetime:'forever'},{deadline:Date.now()+1000}]) {
+        await writeFile(f.path,JSON.stringify({...f.ticket,...patch}),{mode:0o600});
+        await expect(readTicket(f.path,f.expectations)).rejects.toThrow(/lifetime/);
+      }
+      await writeFile(f.path, JSON.stringify(f.ticket), { mode: 0o600 });
       await expect(readTicket(f.path, { ...f.expectations, extensionSha: extensionDigest('other') })).rejects.toThrow(/extension identity/);
       await expect(readTicket(f.path, { ...f.expectations, image: 'other' })).rejects.toThrow(/image/);
     } finally { await f.close(); }
@@ -70,7 +73,7 @@ describe('worker tickets', () => {
         [{ token: 'nope' }, /token/],
         [{ commandBudget: 0 }, /budget/],
         [{ target: { kind: 'url', label: 'x' } as Ticket['target'] }, /origin/],
-        [{ version: 2 as 1 }, /version/],
+        [{ version: 1 as any }, /version/],
       ];
       for (const [patch, pattern] of cases) {
         await writeFile(f.path, JSON.stringify({ ...f.ticket, ...patch }), { mode: 0o600 });

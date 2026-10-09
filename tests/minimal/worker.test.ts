@@ -106,11 +106,11 @@ describe('worker role', () => {
     expect(blocked).toMatchObject({ block: true });
     const executed = await worker.tools.get('p2o_shell').execute('call', { command: 'cat /target/code.txt' }, undefined, undefined, freshContext.ctx);
     expect(executed.content[0].text).toContain('INERT_SANDBOX');
-    expect(h.sandbox.commands).toEqual([{ command: 'cat /target/code.txt', workdir: `/work/${workerId}`, max: 60 }]);
-    // The network tool shares the executor but keeps its own longer ceiling and its own receipt label.
+    expect(h.sandbox.commands).toEqual([{ command: 'cat /target/code.txt', workdir: `/work/${workerId}`, timeout: 0 }]);
+    // Network shares the unlimited executor; this probe explicitly opts into a timeout and a separate receipt label.
     const scanned = await worker.tools.get('p2o_net').execute('call', { command: 'nmap -sT 127.0.0.1', timeout: 120 }, undefined, undefined, freshContext.ctx);
     expect(scanned.content[0].text).toContain('INERT_SANDBOX');
-    expect(h.sandbox.commands.at(-1)).toEqual({ command: 'nmap -sT 127.0.0.1', workdir: `/work/${workerId}`, max: 300 });
+    expect(h.sandbox.commands.at(-1)).toEqual({ command: 'nmap -sT 127.0.0.1', workdir: `/work/${workerId}`, timeout: 120 });
     expect((await h.records()).some((record: any) => record.kind === 'evidence' && record.data?.operation === 'net' && String(record.data?.input).includes('nmap'))).toBe(true);
     const posted = await worker.tools.get('p2o_http').execute('call', { url: '/login', method: 'POST', body: 'user=a', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, followRedirects: false }, undefined, undefined, freshContext.ctx);
     expect(posted.content[0].text).toContain('Hops: 200 POST /login');

@@ -3,10 +3,10 @@ import { spawn } from 'node:child_process';
 export const OUTPUT_LIMIT = 48 * 1024;
 export interface ProcessResult { code: number; stdout: string; stderr: string; truncated: boolean; evidenceId?: string; hops?: string[]; session?: string; redirectStopped?: string; cookieWarning?: string }
 /** `stdin` is passed once and closed immediately; it carries a request body, never a model-run host shell. */
-export type RunProcess = (args: string[], options?: { timeoutMs?: number; signal?: AbortSignal; stdin?: string }) => Promise<ProcessResult>;
+export type RunProcess = (args: string[], options?: { timeoutMs?: number | null; signal?: AbortSignal; stdin?: string }) => Promise<ProcessResult>;
 
 /** Fixed executable, argument arrays only; never run a model-supplied host shell. */
-export function runFixed(command: string, args: string[], options: { timeoutMs?: number; signal?: AbortSignal; env?: NodeJS.ProcessEnv; stdin?: string } = {}): Promise<ProcessResult> {
+export function runFixed(command: string, args: string[], options: { timeoutMs?: number | null; signal?: AbortSignal; env?: NodeJS.ProcessEnv; stdin?: string } = {}): Promise<ProcessResult> {
   return new Promise((resolve, reject) => {
   if (options.signal?.aborted) { reject(new Error('Cancelled')); return; }
   const child = spawn(command, args, { env: options.env ?? process.env, stdio: [options.stdin === undefined ? 'ignore' : 'pipe', 'pipe', 'pipe'] });
@@ -23,15 +23,28 @@ export function runFixed(command: string, args: string[], options: { timeoutMs?:
   const abort = () => kill('Cancelled');
   child.stdin?.on('error', () => kill('Request input delivery failed'));
   if (options.stdin !== undefined) child.stdin?.end(options.stdin);
-  const timer = setTimeout(() => kill('Docker operation timed out'), options.timeoutMs ?? 30_000);
+  // null explicitly disables task duration limits; omitted keeps the infrastructure watchdog.
+  const timer = options.timeoutMs === null ? undefined : setTimeout(() => kill('Docker operation timed out'), options.timeoutMs ?? 30_000);
   options.signal?.addEventListener('abort', abort, { once: true });
-  const cleanup = () => { clearTimeout(timer); options.signal?.removeEventListener('abort', abort); };
+  if (options.signal?.aborted) abort();
+  const cleanup = () => { if (timer) clearTimeout(timer); options.signal?.removeEventListener('abort', abort); };
   child.once('error', error => { cleanup(); reject(error); });
   child.once('close', code => {
     cleanup();
     if (failure) reject(failure);
     else resolve({ code: code ?? -1, stdout: Buffer.concat(stdout).toString('utf8'), stderr: Buffer.concat(stderr).toString('utf8'), truncated });
   });
+  });
+}
+
+/** Stop waiting on asynchronous setup (such as DNS) without reviving it after cancellation. */
+export function abortable<T>(work: Promise<T>, signal: AbortSignal): Promise<T> {
+  return new Promise<T>((resolve,reject) => {
+    const abort = () => { cleanup(); reject(new Error('Cancelled')); };
+    const cleanup = () => signal.removeEventListener('abort',abort);
+    signal.addEventListener('abort',abort,{once:true});
+    work.then(value => { cleanup(); resolve(value); },error => { cleanup(); reject(error); });
+    if (signal.aborted) abort();
   });
 }
 
