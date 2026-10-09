@@ -19,7 +19,7 @@ Baseline: `58eb8e980eb12258bad9956d5de0c15b50da406f`. The operator reviewed a re
 - Regression coverage includes an injected one-year owner-clock jump, late worker activation/tasks, no 30-minute timer, explicit-v2 lifetime validation, stopped-run/ticket replay denial, null subprocess task timers versus preserved infrastructure watchdogs, RPC task waits exceeding a short coordination timeout, cancellation/revocation and DNS cancellation with late-result suppression. This establishes tested mechanics, not indefinite-duration stress testing or semantic security.
 - Initial failures were stale fixture expectations for elapsed expiry, old prompt hashes and executor ceiling metadata; updated fixtures and deliberate current-policy hashes passed the complete suite. Historical acceptance/studies were not rewritten or resumed.
 
-Installed revision/hash/package/normal-quota-Docker receipts are recorded in `acceptance.json` after release verification. No user secrets, raw transcript or private reference snapshots are published.
+Installed native normal/quota/Docker acceptance: **three passes**. Local and installed tested revisions matched, with **50 runtime/document hashes** verified; `acceptance.json` records revision, checks and limitations. No user secrets, raw transcript or private reference snapshots are published.
 
 ## Remaining limits
 
