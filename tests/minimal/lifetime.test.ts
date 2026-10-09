@@ -25,8 +25,9 @@ describe('explicit run ownership, no elapsed-time limits',()=>{
       expect(owner.messages).toHaveLength(1);
       expect(timer.mock.calls.some(([,ms])=>ms===30*60*1000)).toBe(false);
       time+=365*24*60*60*1000;
-      const lead=await owner.tools.get('p2o_shell').execute('lead',{command:'late lead inspection'},undefined,undefined,ctx.ctx);
-      expect(lead.content[0].text).toContain('INERT_SANDBOX');
+      const lead=await owner.tools.get('p2o_loop').execute('lead',{action:'status'},undefined,undefined,ctx.ctx);
+      expect(lead.details.state).toBe('waiting');
+      await expect(owner.tools.get('p2o_shell').execute('lead',{command:'Planner must delegate'},undefined,undefined,ctx.ctx)).rejects.toThrow('PLANNER_ONLY');
       const delegated=await owner.tools.get('p2o_delegate').execute('delegate',{focus:'late focused question',task:'Inspect this controlled local fixture only',role:'general'},undefined,undefined,ctx.ctx);
       const workerId=delegated.details.workerId;
       const control=join(root,'control',(await readdir(join(root,'control')))[0]);

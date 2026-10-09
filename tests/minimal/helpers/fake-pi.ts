@@ -15,6 +15,7 @@ export interface FakePi {
   events: Map<string, any>;
   active: string[];
   messages: string[];
+  customMessages: Array<{message:any; options:any}>;
   flags: Record<string, string | boolean>;
   allowWorkerFlag: (value: string) => void;
 }
@@ -23,6 +24,7 @@ export function createFakePi(options: { active?: string[] } = {}): FakePi {
   const tools = new Map<string, any>(); const commands = new Map<string, any>(); const events = new Map<string, any>();
   let active = [...(options.active ?? ['read', 'bash', 'edit', 'write'])];
   const messages: string[] = [];
+  const customMessages: Array<{message:any; options:any}> = [];
   const flags: Record<string, string | boolean> = {};
   const api = {
     registerTool: (tool: any) => { tools.set(tool.name, tool); },
@@ -33,11 +35,11 @@ export function createFakePi(options: { active?: string[] } = {}): FakePi {
     getActiveTools: () => [...active],
     setActiveTools: (names: string[]) => { active = [...names]; },
     sendUserMessage: (text: string) => { messages.push(text); },
-    sendMessage: () => {},
+    sendMessage: (message:any, options:any) => {customMessages.push({message,options});},
     appendEntry: () => {},
   } as unknown as ExtensionAPI;
   const fake: FakePi = {
-    pi: api, tools, commands, events, get active() { return active; }, messages, flags,
+    pi: api, tools, commands, events, get active() { return active; }, messages, customMessages, flags,
     allowWorkerFlag: (value: string) => { flags['p2o-worker'] = value; },
   } as FakePi;
   Object.defineProperty(fake, 'active', { get: () => active });
@@ -51,11 +53,13 @@ export interface FakeContext {
   aborts: number;
   waitForIdleCalls: number;
   setConfirm: (value: boolean) => void;
+  setIdle: (value: boolean) => void;
 }
 
 export function createContext(options: { cwd: string; hasUI?: boolean; model?: { provider: string; id: string } | null; confirm?: boolean } ): FakeContext {
   const notices: string[] = []; const dialogs: string[] = [];
   let confirmed = options.confirm ?? true;
+  let idle = true;
   let aborts = 0; let waitForIdleCalls = 0;
   const controller = new AbortController();
   const ctx = {
@@ -70,12 +74,14 @@ export function createContext(options: { cwd: string; hasUI?: boolean; model?: {
     },
     abort: () => { aborts += 1; controller.abort(); },
     waitForIdle: async () => { waitForIdleCalls += 1; },
+    isIdle: () => idle,
     signal: controller.signal,
     sessionManager: { getBranch: () => [] },
   } as unknown as ExtensionCommandContext;
   return {
     ctx, notices, dialogs, get aborts() { return aborts; }, get waitForIdleCalls() { return waitForIdleCalls; },
     setConfirm: (value: boolean) => { confirmed = value; },
+    setIdle: (value: boolean) => {idle=value;},
   } as FakeContext;
 }
 

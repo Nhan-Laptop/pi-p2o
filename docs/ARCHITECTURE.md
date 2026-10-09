@@ -1,111 +1,116 @@
-# Minimal architecture
+# Planner / Engine / Worker architecture
 
 ```text
-/p2o --target … [--solo|--workers N|--max-depth D]
-  parse → classify → one scope confirmation → control dir + ledger + broker socket → Docker sandbox
-  → pi.sendUserMessage(scoped brief)
-  → LEAD (this conversation, this model)
-       p2o_shell / p2o_net / p2o_http  → the single sandbox container
-       p2o_task / p2o_note   → owner-maintained questions / <control>/records.jsonl
-       p2o_delegate          → Herdr pane split + agent start + ticket + brief
-       p2o_workers/steer/stop_worker
-       p2o_finish            → refuse unreported workers, stop panes, remove containers, verify, delete control dir
-
-  → WORKER (real `pi` in a visible Herdr pane, `--p2o-worker <ticket>`)
-       p2o_shell / p2o_net / p2o_http  → broker (0600 unix socket) → the LEAD runs it in the same sandbox
-       p2o_note              → same ledger
-       p2o_ledger            → read the shared ledger (bounded)
-       p2o_delegate          → broker `delegate` → the LEAD spawns the nested pane
-       p2o_report            → report + coverage + open items land in the ledger
+/p2o --target … [--solo] [--workers N] [--loop manual|event-driven]
+                [--executors shared|isolated] [--target-ops N]
+  parse → classify → human scope/resource/model consent → owner + ledger + broker + sandbox
+  → current Pi conversation: strategic PLANNER (working investigator only in solo mode)
+       task create/revise/review/dispatch, evidence retrieval, steer/withdraw, wait/blocked/finish
+  → TypeScript ENGINE (not another LLM)
+       accepted frontier → readiness + fresh atomic reservation → available model slot → fresh worker
+       committed semantic signal → local coalescing → optional authorized Planner round
+  → WORKER (fresh real Pi process in visible Herdr pane, --p2o-worker <private ticket>)
+       one bounded intent, tactical tool choice, brokered execution, attributed observation/report
+       subtask needs → proposal to Planner, never nested dispatch
+  → run-owned EXECUTOR POOL
+       shared default: one serial shell/HTTP queue
+       isolated opt-in: fresh assignment-owned sandbox + separate target-operation semaphore
+  → stop/finish: close Engine epoch/gate → drain/cancel → revoke → close panes → verify all containers
 ```
 
-## Why one sandbox with a broker
+The Planner is the existing user-selected model, not a hidden SDK/RPC agent. Pi owns its model/tool inner loop;
+`AssessmentEngine` owns the deterministic outer scheduling/waiting loop. No timer/process is created by the
+extension factory or Engine constructor. Event timers are run-owned, finite coalescing windows, not paid polling.
+See [runtime contract and remaining roadmap](PLANNER_ENGINE.md).
 
-Strix gives every agent the same sandbox session: one container per scan (`_SESSION_CACHE`), handed to the model
-run as `RunConfig(sandbox=SandboxRunConfig(...))`, with each `SandboxAgent` reaching it through its `Shell`
-capability. Pi workers are separate processes, so the faithful translation is: the **lead owns the container** and
-serves exactly that session over a private unix socket. Workers get a narrow protocol (`exec`, `net`, `http`, `note`, `ledger`,
-`delegate`, `report`), never a Docker client, so policy, budgets and the single verified-cleanup path stay in one
-place. A worker that cannot reach the socket fails closed and reports blocked instead of touching the host.
+## Authority and capabilities
 
-## Skills and evidence
+The live owner owns consent, control directory, task board, broker, executor lifetimes and cleanup. Transcript,
+compaction, ledger history and summaries never recreate registrations or authority after restart.
+`tool-policy.ts` supplies enforced loadouts: delegated Planner cannot shell/net/HTTP or start direct investigation;
+solo can. Workers cannot accept/review/dispatch tasks. Reporting workers cannot execute target operations or
+record candidates, including through direct broker requests. Discovery cannot certify itself as independent
+validation. All target operations still require scope, ticket, owner, current task readiness and budget checks.
 
-`src/skills.ts` serves approved package documents through held-directory-FD reads; the broker exposes IDs only.
-Active tool descriptions carry execution guidance; owner/broker checks remain authoritative.
-`src/prompts.ts` shares a bounded evidence-led recon/decision contract across lead and workers; workflow prerequisites
-are descriptive text, not a runtime permission/availability registry. The lead contributes policy through
-`before_agent_start` → `systemPromptOptions.sections.p2o_assessment`, without replacing Pi’s complete prompt
-or duplicating tool descriptions. Its startup message is a short kickoff; worker guidance describes the current transport.
-`src/evidence.ts` records tool receipts, validates candidate revisions and exports bounded redacted results before cleanup.
-`src/tasks.ts` serializes owner task/acceptance/reservation state; reconstructed records never restore execution. `src/progress.ts` records local observable events, not a scheduler. `src/report.ts` commits normalized hashed report parts and freezes a bounded current frontier. The context hook adds only request-local objective data while active; no model/timer loop is created. See [assessment state](ASSESSMENT_STATE.md) and [skill runtime](SKILL_RUNTIME.md) for schemas, failure behavior and limits.
+Worker tickets bind fresh identity/token, run, image, extension bytes and runtime profile. V2 lifetime is
+`until-stopped`: no elapsed deadline, no restored authority. Report, withdrawal or socket loss revokes the
+registration. Wrong model/thinking fails closed: **Runtime profile mismatch; report blocked, no investigation**.
+Another same-host-user process can copy a live token; same-user isolation is not claimed.
 
-## Files
+## Tasks, completion and wakes
+
+TaskStatus and ledger v2 are retained; prerequisite revision is additively optional for queued work. Missing IDs
+and dependency cycles remain invalid. Dispatch pins reviewed same-run support atomically; every worker command
+rechecks current revisions. A revised/withdrawn prerequisite blocks its dependent. Exact surface/risk reservation
+is not semantic deduplication. Queue and task lists are separate bounded projections.
+
+Reports persist normalized hashed parts, manifest, task transition, coverage and open items **before** terminal
+registration/revocation and completion notification. Engine admission reaps completed panes/executors before
+reusing capacity; failed cleanup causes backpressure. Fresh processes are not warm sessions.
+
+Default manual mode dispatches explicitly accepted ready work but never automatically calls a Planner model.
+Event-driven mode requires explicit consent and a positive automatic-round allowance. Committed reports,
+proposals, reviews/revisions/withdrawals produce semantic signals; stdout, skill reads and noisy notes do not.
+One reservation is in flight; signals coalesce and are consumed only by the next request-local projection.
+
+Pi 1.0 idle wakes use the normal `sendUserMessage` pipeline, with a clearly marked extension-origin semantic
+prompt and typed custom entry. Direct `sendMessage(triggerTurn)` bypasses `before_agent_start` and loses
+structured scope instructions; the real-Pi spike rejected that adapter. Input veto checks current epoch before
+any model request. The context hook aborts a late stale wake defensively and denies all tools in that stale turn.
+At settlement, a custom entry plus continuation is allowed only with active consent/actionable events, an eligible
+boundary and no pending human input. `agent_settled` is observation, not terminal truth or a place to launch work.
+Provider error pauses automatic dispatch/wakes without retry or fallback; explicit stop still cleans up.
+
+## Execution and transport
+
+The default shared executor keeps `Sandbox.enqueue` intact. Multiple panes do not mean parallel target execution;
+shell cancellation/timeout can remove the shared executor and interrupt peers. Isolated mode multiplies resources:
+each assignment has fresh source copy, scratch, cookies, background processes and owned container names. Source
+hashes/skipped counts must match the primary bounded snapshot. The target-operation semaphore is independent of
+model slots; per-sandbox serialization prevents cookie/session races. No automatic restart occurs after cancellation.
+
+HTTP remains exact-origin checked on every redirect, with arbitrary valid methods, bounded bodies/auth headers,
+actor-local cookies, private/internal/IPv6 support and destination pinning. Opaque shell/net egress is not
+origin-filtered: scope is agent policy, not an egress firewall. All executors preserve non-root UID, immutable image,
+read-only source/root, dropped capabilities, resource/output caps and no host/provider-credential mounts.
+See [HTTP boundaries](HTTP_TRANSPORT.md). Docker shares the host kernel; this is not VM isolation.
+
+## Persistence, budgets and teardown
+
+JSONL provenance remains authoritative evidence input, not an authorization database. Complete bounded ledger
+reconciliation, revision chains, receipt hashes, current independent conclusions and report-part integrity are
+unchanged. Request-local task/frontier/delta capsules navigate evidence and survive chat compaction while the
+owner is live. They are not proof, new system policy or unbounded history. Incremental durable indexes, archival
+checkpoints and warm-session reuse remain future work; full scans retain their existing bounds.
+
+Capacity defaults to 3 operator-selected model slots. There is no six-worker hard ceiling or cumulative 2× spawn
+ceiling. Limits remain: 100 live tasks/pending intents, 1,000 retained registrations, 256 pending semantic signals,
+64 MiB/100,000-row ledger and bounded exports. Unverified cleanup prevents reuse. 200 commands/worker and the
+unchanged 90% worker reserve of default 600 do not reset with identities. Owner commands are separate; neither
+command counts nor automatic-round counts are an aggregate monetary/token governor. Unknown cost is not zero.
+
+Stop closes the Engine gate/increments epoch before draining async work; cancellation cannot reauthorize queued
+operations. Cleanup is idempotent/retryable; failure keeps tools gated and is disclosed. Finish refuses unreported
+live workers and freezes current state before verified cleanup/export. Session navigation/shutdown use the same
+cleanup path. Hard kills or Docker loss may leave containers/panes; no automatic startup reclamation is claimed.
+Assessment, worker and target operations have no mandatory elapsed timeout; explicit optional timeouts and
+infrastructure watchdogs remain. Pausing scheduling does not revoke active workers; stopping does.
+
+## Implementation map
 
 | File | Responsibility |
 |---|---|
-| `extensions/p2o/index.ts` | Command, consent, role activation (`--p2o-worker`), tool registration/gating, delegation, finish reconciliation |
-| `src/target.ts` | `/p2o` grammar (target plus `--solo`/`--workers`/`--max-depth`), directory classification, HTTP URL-origin enforcement, request validation and IP classification (not address filtering) |
-| `src/sandbox.ts` | One container owner: resource limits, run labels, per-worker working directories, verified removal and a label sweep |
-| `src/source.ts` | Bounded regular-file-only source copy via Linux directory-FD traversal (no symlink races) |
-| `src/ticket.ts` | Owner-private worker ticket: mint, strict validation, single-use identity, expiry, extension/image binding |
-| `src/broker.ts` | Socket server + client: authentication, framing, per-worker and reserve budgets, report normalization |
-| `src/records.ts` | Complete bounded streaming ledger index, integrity diagnostics, cursor pages, summary and blocking wait |
-| `src/tasks.ts` | Owner-only questions, accepted revisions, reservations and active owner-authority gates (no elapsed-time deadline) |
-| `src/progress.ts` | Observable progress/quiet diagnostics without dispatch or retries |
-| `src/report.ts` | Committed normalized report parts and frozen candidate/report/task projection |
-| `src/herdr.ts` | Herdr CLI client: tiled pane split, agent start with `-- <args>`, prompt/status/interrupt/close |
-| `src/roles.ts` | Role → model/skills defaults with pi-herdr-style precedence, defensive settings parsing |
-| `src/prompts.ts` | Lead and worker scope prompts, plus the delegation brief template |
-| `src/process.ts` | Fixed-executable subprocesses with stdin delivery, bounded output and timeout/cancellation |
-| `src/http-session.ts` | Trusted response-header framing and actor-local, named, bounded HTTP cookie sessions |
+| `extensions/p2o/index.ts` | Pi command/tool/lifecycle adapter, consent, loadouts, owner/worker activation, cleanup |
+| `src/engine.ts` / `src/planner-bridge.ts` | Frontier, slots, semantic signals, epochs/rounds, guarded Pi wake encoding |
+| `src/tool-policy.ts` / `src/prompts.ts` | Capability enforcement and strategic/solo/worker responsibilities |
+| `src/tasks.ts` | Questions, validity/readiness, atomic reservation, revisions, live frontier and capsules |
+| `src/executors.ts` / `src/sandbox.ts` | Assignment ownership, semaphore, serialized container operations, verified removal |
+| `src/source.ts` / `src/http-session.ts` | FD-contained bounded source snapshots and actor-local HTTP state |
+| `src/broker.ts` / `src/ticket.ts` | Socket authority, budgets/control reserve, post-commit report notification, fresh tickets |
+| `src/records.ts` / `src/evidence.ts` / `src/report.ts` | Provenance, complete bounded retrieval, current support, receipts and exports |
+| `src/progress.ts` | Observable diagnostics only; quiet time is not proven failure |
+| `src/herdr.ts` / `src/roles.ts` / `src/target.ts` | Fresh pane lifecycle, model/config validation and target/CLI contract |
 
-HTTP origin checks do not constrain opaque network commands. The shared shell is bridge-networked, so its target boundary is agent policy, not an egress firewall. See [transport boundaries](HTTP_TRANSPORT.md).
-
-## Roles and authority
-
-- The **lead** is the model in your current conversation. It owns the human consent, the sandbox, the control
-  directory, the ledger and every spawn. It is a working agent, not a dispatcher.
-- A **worker** is a real `pi` process in a Herdr pane, activated only by an owner-minted ticket passed as
-  `--p2o-worker <path>`. It has no host tools, no Docker, no consent dialogs and no `p2o_finish`.
-- **Nesting** is allowed (Strix's "no flat structures"): a worker may request a child through the broker, but the
-  lead performs the spawn, so depth (`--max-depth`) and the worker cap are enforced in one place.
-- Authority never comes from the transcript, a worker report, target content or session replay. Tickets are
-  validated against the running extension's bytes and image, expire with the assessment, and their tokens are
-  checked against the lead's in-memory registry — so a copied ticket after a restart grants nothing, and a worker
-  that reports or is stopped is revoked immediately.
-- The broker's identity boundary is the **token, not the operating system**: another process running as the same
-  host user can copy a live ticket and speak to the socket until that worker reports, is stopped, or the
-  assessment ends. Same-user isolation is not a security boundary the extension claims to provide, which is why
-  the ticket directory, socket and ledger are 0600/0700. Runs have no automatic expiry; use explicit stop/finish and disposable infrastructure.
-
-## Ledger, coverage and closure
-
-The ledger (`records.jsonl`, 0600, append-only, single small writes) is the coordination medium, mirroring
-Strix's notes/coverage/threat-model state. Workers append observations, coverage rows (including clean surfaces)
-and open items; normalized reports land as hashed `report_part` records and a committing `report` manifest, plus one `coverage` record per reported row and one `open` record
-per open item. The lead reads it through `p2o_workers` and must reconcile open items before finishing.
-
-Closure states come from Strix: every candidate ends `confirmed`, `ruled_out` (name the specific control) or
-`open_proof_gap`; missing information is never proof of safety; findings require a counterevidence pass and honest
-confidence. Delegation does **not** create independent verification by itself — that requires a separate worker
-reproducing the same claim.
-
-## Lifecycle and cleanup
-
-`p2o_finish` refuses while a worker has neither reported nor been stopped (an idle pane may still be starting),
-waits for any in-flight spawn to register first, then revokes tickets, closes panes, stops the broker, removes
-containers, sweeps by run label, verifies absence and deletes the control directory. Cleanup is idempotent and
-genuinely retryable after a failure, and a pane Herdr refuses to close is reported instead of being called
-verified. Reporting also revokes that worker immediately, so a copied ticket stops working. Cancellation, session navigation, agent error and shutdown run the
-same path; if any step fails, the tool gate stays closed and `/p2o stop` retries. A worker's Herdr status is
-displayed but never used as a substitute for a report. Assessment/lead/worker authority has no elapsed-time limit; v2 tickets require an explicit until-stopped lifetime and a current registration. Socket loss revokes that identity and aborts its commands, including copied-ticket connections. Task commands and HTTP attachments disable subprocess/RPC task timers by default; optional probe timeouts remain explicit. Infrastructure watchdogs and resource/command budgets remain. No clock, restored session or disk record renews authority.
-
-## Deliberate differences from Strix
-
-Strix's prompt tells its model never to question authorization; our authority is the human confirmation dialog,
-so that framing is not copied. Also not carried over: Caido proxy capture, shared browsers, in-sandbox Docker,
-`sudo`, unattended autonomy budgets, and the report database. What *is* carried over is the sandbox-sharing
-model, the root/worker split, the delegation rules, the shared state ledger and the closure discipline.
-
-Passing the test suite verifies the tested mechanics — not live vulnerability-finding quality, not independent
-verification, and not immunity to container escapes.
+ARTEX/Strix sources inform architecture, not runtime dependencies or authorization. No reference scripts are
+executed or packaged; forced work invention, scope widening, permission bypass and automatic retry are not copied.
+Passing mechanics tests does not prove assessment effectiveness, finding correctness or superiority over ARTEX.

@@ -1,12 +1,13 @@
 # Focused assessment state
 
-The current Pi lead still investigates. State maintenance never creates a model turn, worker, retry, ticket,
-container or transport. Only human confirmation and the live owner/broker establish authority; disk state,
+The current Pi is a strategic Planner in delegated mode and a working investigator in solo mode. State maintenance
+is distinct from the owner Engine: accepted ready work can dispatch, and consented event-driven mode can request
+a Planner round. Only human confirmation and the live owner/broker establish authority; disk state,
 compaction summaries and worker text cannot restore or extend it.
 
 ## Explicit lifetime
 
-The assessment, lead and workers have no elapsed-time deadline. Live owner state and unrevoked registrations, not timestamps, authorize operations. V2 tickets explicitly declare `lifetime: "until-stopped"`; malformed/old tickets are rejected and restored state never recreates a broker or registration. Stop, finish, session exit/error, report or worker socket loss still end authority and trigger the relevant cancellation/cleanup. Old expiry rows remain readable history, not a current timer. Commands and HTTP default to no task timeout, with optional probe deadlines. Infrastructure watchdogs remain. No maintenance timer or automatic model continuation is added.
+The assessment, lead and workers have no elapsed-time deadline. Live owner state and unrevoked registrations, not timestamps, authorize operations. V2 tickets explicitly declare `lifetime: "until-stopped"`; malformed/old tickets are rejected and restored state never recreates a broker or registration. Stop, finish, session navigation/shutdown, report or worker socket loss end the relevant authority and trigger cancellation/cleanup. Owner provider errors pause scheduling/wakes without automatic retry; explicit stop remains required. Old expiry rows remain readable history, not a current timer. Commands and HTTP default to no task timeout, with optional probe deadlines. Infrastructure watchdogs remain. No lifetime timer is added. Semantic continuation is opt-in; see [Engine contract](PLANNER_ENGINE.md).
 
 ## Question → observation → review
 
@@ -17,7 +18,7 @@ blocked task, not permission to install tools or use another transport. Choose r
 discovery for a concrete hypothesis, validation for a different worker's reproduction, reporting for synthesis,
 or general for bounded support. No global stage order is required.
 
-Actions: `create`, `revise`, `list`, `start` (direct lead investigation), `review`, `close`, `block`, `cancel`.
+Actions: `create`, `revise`, `list`, `start` (solo only), `dispatch` (accept 1–25 task IDs), `review`, `close`, `block`, `cancel`. Queued prerequisites may omit revision until reviewed evidence is pinned at atomic reservation.
 Use `list {id}` for full details. Revisions require the current `revision`; supply it on review/transitions to
 reject a stale decision. A running worker packet must first be reported; direct lead work can be reviewed with
 same-run receipts. Review is an attributed decision, **not semantic proof**. Task closure and candidate closure
@@ -32,7 +33,7 @@ withdrawal and cleanup release reservations without granting another assignment.
 Legacy focused delegation remains available: the owner makes a task automatically, labels missing structured
 contrasts/prerequisites, and uses an explicitly marked compact excerpt when the original task exceeds 1,500
 characters. The initial brief retains the full request. Prefer an explicit small question for reliable refresh.
-Workers may propose observations or children; they cannot create/review owned tasks or dispatch owned task IDs.
+Workers may propose observations or subtasks through `p2o_request_subtask`;  they cannot create/review owned tasks or dispatch owned task IDs.
 
 Approved skill IDs and selected workflow membership are validated. Tasks retain package-document hashes and
 method rationale; hashes do not establish tool availability or target proof. Existing descriptive workflow
@@ -64,7 +65,7 @@ block investigation. No provider fallback is automatic.
 
 A request-local custom objective capsule refreshes the current question after context rebuilding. It contains
 labeled data, not another system policy or tool manual. It is removed outside the active run; other Pi prompt
-sections/messages remain intact. There are no heartbeat model calls or automatic continuations.
+sections/messages remain intact. There are no heartbeat model calls. Automatic semantic continuations require explicit event-driven consent. Planner `wait`/`blocked` decisions persist outside chat; bounded frontier/delta snapshots refresh while the owner remains live. Full durable todo/index/checkpoint work is not yet implemented.
 
 ## Reports and retention
 

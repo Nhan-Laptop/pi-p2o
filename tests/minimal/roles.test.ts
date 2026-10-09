@@ -32,7 +32,8 @@ describe('role table', () => {
       expect(loadSettings(path)).toMatchObject({ maxWorkers: DEFAULT_MAX_WORKERS, roles: {} });
       await writeFile(path, JSON.stringify({ p2o: { maxWorkers: 99, maxDepth: -3, roles: { validation: { model: 42, skills: ['ok', 'not a skill', 7], thinking: 'MAXIMUM' } } } }));
       const settings = loadSettings(path);
-      expect(settings.maxWorkers).toBe(DEFAULT_MAX_WORKERS);
+      expect(settings.maxWorkers).toBe(99); // Explicit operator capacity, not the old hard cap 6.
+      expect(parseSettings({p2o:{maxWorkers:Number.MAX_SAFE_INTEGER+1}}).maxWorkers).toBe(DEFAULT_MAX_WORKERS);
       expect(settings.maxDepth).toBe(DEFAULT_MAX_DEPTH);
       expect(settings.roles.validation).toEqual({ skills: ['ok'] });
       expect(resolveRole({ role: 'validation', settings, model: 'x/y' }).thinking).toBeUndefined();

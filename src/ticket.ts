@@ -28,6 +28,7 @@ export interface Ticket {
   records: string;
   reports: string;
   lifetime: 'until-stopped';
+  executorMode?: 'shared' | 'isolated';
   commandBudget: number;
   extension: { path: string; sha256: string };
   token: string;
@@ -95,6 +96,7 @@ export async function readTicket(path: string, expected: TicketExpectations): Pr
   if (dirname(String(ticket.records)) !== directory || dirname(String(ticket.reports)) !== directory) bad('records and reports must live in the ticket directory');
   if (!Number.isInteger(ticket.depth) || ticket.depth < 1 || ticket.depth > 4) bad('invalid delegation depth');
   if (ticket.lifetime !== 'until-stopped' || 'expiresAt' in ticket || 'deadline' in ticket) bad('invalid ticket lifetime');
+  if (ticket.executorMode !== undefined && !['shared','isolated'].includes(ticket.executorMode)) bad('invalid executor profile');
   if (ticket.image !== expected.image) bad('ticket image does not match this extension');
   if (ticket.extension?.path !== expected.extensionPath || ticket.extension.sha256 !== expected.extensionSha) bad('ticket extension identity does not match the running code');
   if (!/^[a-f0-9]{32}$/.test(String(ticket.token))) bad('invalid ticket token');

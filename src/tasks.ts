@@ -6,7 +6,8 @@ export interface TaskMethod { skills: Array<{ id: string; sha256: string }>; wor
 export interface TaskDraft {
   id?: string; question: string; surface: string; risk: string; role: Role; roleReason: string;
   expectedTrue: string; expectedFalse: string; stopCondition: string; evidenceIds: string[];
-  prerequisites: Array<{ taskId: string; revision: number }>; validationOf?: string; parentTaskId?: string;
+  // Omit revision to wait; reserve pins the accepted revision.
+  prerequisites: Array<{ taskId: string; revision?: number }>; validationOf?: string; parentTaskId?: string;
   method: TaskMethod;
   unknowns?: string[]; missingPrerequisites?: string[]; expectedOutput?: string;
 }
@@ -32,7 +33,7 @@ function validate(input: TaskDraft) {
   if (!isRole(input.role)) throw new Error('Invalid task role');
   for (const id of [input.id, input.validationOf, input.parentTaskId]) if (id !== undefined && !/^[a-z0-9][a-z0-9-]{0,79}$/.test(id)) throw new Error('Invalid task ID');
   if (!Array.isArray(input.evidenceIds) || input.evidenceIds.length > 10 || input.evidenceIds.some(id => typeof id !== 'string' || id.length > 80)) throw new Error('Invalid task evidence');
-  if (!Array.isArray(input.prerequisites) || input.prerequisites.length > 10 || input.prerequisites.some(p => !p || typeof p.taskId !== 'string' || !Number.isInteger(p.revision))) throw new Error('Invalid task prerequisites');
+  if (!Array.isArray(input.prerequisites) || input.prerequisites.length > 10 || input.prerequisites.some(p => !p || typeof p.taskId !== 'string' || (p.revision !== undefined && (!Number.isSafeInteger(p.revision) || p.revision < 1)))) throw new Error('Invalid task prerequisites');
   for (const list of [input.unknowns,input.missingPrerequisites]) if (list !== undefined && (!Array.isArray(list) || list.length > 10 || list.some(v => typeof v !== 'string' || v.trim().length < 10 || v.length > 500))) throw Error('Invalid task unknowns/prerequisites');
   if (input.expectedOutput !== undefined) bounded(input.expectedOutput,'expected output',1000,5);
   if (!input.method || typeof input.method.reason !== 'string' || input.method.reason.trim().length < 10 || input.method.reason.length > 1000 || !Array.isArray(input.method.skills) || input.method.skills.length > 3 || input.method.skills.some(s => !s || typeof s.id !== 'string' || s.id.length > 64 || !/^[a-z0-9-]+$/.test(s.id) || !/^[a-f0-9]{64}$/.test(s.sha256))) throw new Error('Invalid task method');
@@ -56,7 +57,8 @@ export class TaskBoard {
     validate(draft);
     return this.mutate(async (index, tasks) => {
       const id = draft.id ?? `task-${randomUUID()}`;
-      if (tasks.some(t => t.id === id) || tasks.length >= 100) throw Error('Duplicate task or task limit reached');
+      if (tasks.some(t => t.id === id)) throw Error('Duplicate task');
+      if (tasks.filter(t => !['closed','cancelled','expired'].includes(t.status)).length >= 100) throw Error('Live task frontier limit reached (100); review/close or cancel retained work');
       this.checkDependencies({ ...draft, id }, tasks, index);
       return this.write({ ...draft, id, runId: this.runId, revision: 1, status: draft.missingPrerequisites?.length ? 'blocked' : 'proposed' });
     });
@@ -66,6 +68,7 @@ export class TaskBoard {
     return this.mutate(async (index, tasks) => {
       const old = this.current(tasks,id,revision);
       if (['reserved','running'].includes(old.status)) throw Error('Withdraw active assignment before revising');
+      if (['closed','cancelled','expired'].includes(old.status) && tasks.filter(t => !['closed','cancelled','expired'].includes(t.status)).length >= 100) throw Error('Live task frontier limit reached (100); cannot reopen retained task');
       if (draft.id && draft.id !== id) throw Error('Cannot change task identity');
       this.checkDependencies({ ...draft,id }, tasks.filter(t => t.id !== id), index);
       return this.write({ ...draft,id,runId:this.runId,revision:old.revision+1,status:draft.missingPrerequisites?.length ? 'blocked' : 'proposed' },old);
@@ -76,7 +79,7 @@ export class TaskBoard {
     if (!t || (revision !== undefined && t.revision !== revision)) throw Error('Missing or stale task revision');
     return t;
   }
-  private checkDependencies(draft: TaskDraft & { id: string }, tasks: AssessmentTask[], index: LedgerIndex) {
+  private checkDependencies(draft: TaskDraft & { id: string }, tasks: AssessmentTask[], index: LedgerIndex, ready = false) {
     for (const id of draft.evidenceIds) if (index.byId.get(id)?.kind !== 'evidence' || index.byId.get(id)?.runId !== this.runId) throw Error('Unknown same-run task evidence');
     if (draft.parentTaskId && !tasks.some(t => t.id === draft.parentTaskId)) throw Error('Missing parent task');
     const edges = (t:TaskDraft) => [...t.prerequisites.map(p => p.taskId),...(t.parentTaskId ? [t.parentTaskId] : [])];
@@ -85,22 +88,26 @@ export class TaskBoard {
     const visit = (id: string) => { if (visiting.has(id)) throw Error('Task dependency cycle'); if (visited.has(id)) return; visiting.add(id); for (const parent of graph.get(id) ?? []) visit(parent); visiting.delete(id); visited.add(id); }; visit(draft.id);
     for (const p of draft.prerequisites) {
       const t = this.current(tasks,p.taskId,p.revision);
-      if (!['reviewed','closed'].includes(t.status) || !t.reviewReason || !t.evidenceIds.length) throw Error('Prerequisite requires lead-accepted evidence');
-      for (const ref of t.evidenceIds) if (index.byId.get(ref)?.kind !== 'evidence') throw Error('Prerequisite evidence missing');
+      if (ready) {
+        if (!['reviewed','closed'].includes(t.status) || !t.reviewReason || !t.evidenceIds.length) throw Error('Prerequisite requires lead-accepted evidence');
+        for (const ref of t.evidenceIds) if (index.byId.get(ref)?.kind !== 'evidence' || index.byId.get(ref)?.runId !== this.runId) throw Error('Prerequisite evidence missing');
+      }
     }
     if (draft.validationOf) {
       const prior = this.current(tasks,draft.validationOf);
-      if (draft.role !== 'validation' || !draft.prerequisites.some(p => p.taskId === prior.id && p.revision === prior.revision) || !prior.evidenceIds.length || prior.surface !== draft.surface || prior.risk !== draft.risk || !['reviewed','closed'].includes(prior.status)) throw Error('Validation overlap needs a reviewed matching predecessor');
+      if (draft.role !== 'validation' || !draft.prerequisites.some(p => p.taskId === prior.id) || prior.surface !== draft.surface || prior.risk !== draft.risk) throw Error('Validation overlap needs a matching predecessor');
+      if (ready && (!prior.evidenceIds.length || !['reviewed','closed'].includes(prior.status))) throw Error('Validation overlap needs a reviewed matching predecessor');
     }
   }
   reserve(id: string, assignee: string): Promise<AssessmentTask> {
     return this.mutate(async (index,tasks) => {
       const task = this.current(tasks,id);
       if (task.status !== 'proposed') throw Error('Task is not available for assignment');
-      this.checkDependencies(task,tasks.filter(t => t.id !== id),index);
+      this.checkDependencies(task,tasks.filter(t => t.id !== id),index,true);
+      const prerequisites = task.prerequisites.map(p => ({taskId:p.taskId,revision:this.current(tasks,p.taskId,p.revision).revision}));
       const overlaps = tasks.filter(t => ['reserved','running'].includes(t.status) && t.surface.trim() === task.surface.trim() && t.risk.trim().toLowerCase() === task.risk.trim().toLowerCase());
       if (overlaps.some(busy => !(task.validationOf && !busy.validationOf && task.role === 'validation')))  throw Error('ASSIGNMENT_CONFLICT: surface/risk already reserved');
-      return this.write({ ...task,revision:task.revision+1,status:'reserved',assignee },task);
+      return this.write({ ...task,prerequisites,revision:task.revision+1,status:'reserved',assignee },task);
     });
   }
   async transition(id: string, status: TaskStatus, reason: string, evidenceIds?: string[], expectedRevision?: number): Promise<AssessmentTask> {
@@ -127,12 +134,26 @@ export class TaskBoard {
     this.gate(); const index = await readLedger(this.path,this.runId); if (!index.complete) throw Error('Objective reconciliation incomplete');
     const tasks = taskFrontier(index), t = tasks.find(t => t.assignee === workerId);
     if (!t || t.status !== 'running') throw Error('No running assignment');
-    this.checkDependencies(t,tasks.filter(p => p.id !== t.id),index); this.gate();
+    if (t.prerequisites.some(p => p.revision === undefined)) throw Error('Unpinned running prerequisite');
+    this.checkDependencies(t,tasks.filter(p => p.id !== t.id),index,true); this.gate();
+  }
+  /** Admission projection only: reserve still repeats the authoritative checks atomically. */
+  async readiness(id: string): Promise<{ ready: boolean; reason?: string }> {
+    this.gate(); await this.pending;
+    const index = await readLedger(this.path,this.runId);
+    if (!index.complete) throw Error('Task reconciliation incomplete');
+    const tasks = taskFrontier(index), task = this.current(tasks,id);
+    if (task.status !== 'proposed') return {ready:false,reason:`Task is ${task.status}`};
+    try {
+      this.checkDependencies(task,tasks.filter(t => t.id !== id),index,true);
+      if (tasks.some(t => ['reserved','running'].includes(t.status) && t.surface.trim() === task.surface.trim() && t.risk.trim().toLowerCase() === task.risk.trim().toLowerCase() && !(task.validationOf && !t.validationOf && task.role === 'validation'))) return {ready:false,reason:'ASSIGNMENT_CONFLICT: surface/risk already reserved'};
+      this.gate(); return {ready:true};
+    } catch (error) { return {ready:false,reason:error instanceof Error ? error.message : String(error)}; }
   }
   async releaseAll(reason: string) {
     // Cleanup is allowed to release coordination state after the execution gate has closed.
     await this.pending;
-    for (const t of await this.list()) if (['reserved','running'].includes(t.status)) {
+    for (const t of await this.list()) if (['proposed','reserved','running'].includes(t.status)) {
       const id = randomUUID(); await appendRecord(this.path,{ id,runId:this.runId,at:new Date(this.now()).toISOString(),by:'owner',kind:'task',text:`${t.id}: cancelled`,supersedes:t.recordId,data:{task:{...t,revision:t.revision+1,status:'cancelled',outcome:reason}} });
     }
   }

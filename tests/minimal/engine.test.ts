@@ -1,0 +1,68 @@
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { AssessmentEngine, type EngineDeps, type PlannerWake } from '../../src/engine.js';
+import type { AssessmentTask } from '../../src/tasks.js';
+
+function fixture(mode:'manual'|'event-driven'='manual',cap=3,maxRounds=100) {
+  let active=true,idle=true,live=0,peak=0;
+  const tasks:AssessmentTask[]=Array.from({length:30},(_,i)=>({id:`task-${i}`,revision:1,status:'proposed',question:`Question ${i}`,surface:`surface-${i}`,role:'general'} as AssessmentTask));
+  const spawns:string[]=[],wakes:PlannerWake[]=[],journal:unknown[]=[],problems:string[]=[];
+  const readiness=new Map<string,string>();
+  const deps:EngineDeps={active:()=>active,list:async()=>tasks,readiness:async id=>readiness.has(id)?{ready:false,reason:readiness.get(id)}:{ready:true},capacity:()=>cap-live,reap:async()=>true,
+    spawn:async input=>{const t=tasks.find(t=>t.id===input.taskId)!;t.status='running';live++;peak=Math.max(peak,live);spawns.push(t.id);},persist:async(text,data)=>{journal.push({text,data});},wake:w=>wakes.push(w),idle:()=>idle,problem:s=>problems.push(s)};
+  const engine=new AssessmentEngine('run-fixture',mode,maxRounds,deps,10);
+  const queue=(ids:number[])=>engine.enqueue(ids.map(i=>({taskId:`task-${i}`,input:{taskId:`task-${i}`,focus:`surface-${i}`,task:`Question ${i}`}})));
+  const complete=(id:string)=>{tasks.find(t=>t.id===id)!.status='reported';live--;engine.notify('worker-report',id);};
+  return {engine,queue,complete,tasks,spawns,wakes,journal,problems,readiness,deps,get peak(){return peak;},setActive:(v:boolean)=>{active=v;},setIdle:(v:boolean)=>{idle=v;}};
+}
+beforeEach(()=>vi.useFakeTimers());afterEach(()=>vi.useRealTimers());
+const tick=()=>vi.advanceTimersByTimeAsync(15);
+
+describe('deterministic frontier and semantic wake loop',()=>{
+  it('processes 30 successive assignments on 3 slots without a lifetime spawn ceiling',async()=>{
+    const f=fixture();await f.queue(Array.from({length:25},(_,i)=>i));await f.queue([25,26,27,28,29]);await tick();expect(f.spawns).toHaveLength(3);
+    for(let i=0;i<30;i++){expect(f.spawns[i]).toBeDefined();f.complete(f.spawns[i]);await tick();}
+    expect(f.peak).toBe(3);expect(new Set(f.spawns).size).toBe(30);expect(f.engine.snapshot().pendingIntents).toBe(0);expect(f.wakes).toEqual([]);f.engine.stop();
+  });
+  it('pause during asynchronous readiness preserves the accepted frontier without launching',async()=>{
+    const f=fixture();let release!:()=>void,entered!:()=>void;const blocked=new Promise<void>(r=>{release=r;});const started=new Promise<void>(r=>{entered=r;});
+    f.deps.readiness=async()=>{entered();await blocked;return {ready:true};};
+    await f.queue([0]);const pumping=tick();await started;f.engine.pause('Human pause');release();await pumping;
+    expect(f.spawns).toEqual([]);expect(f.engine.snapshot().pendingIntents).toBe(1);f.engine.resume();await tick();expect(f.spawns).toEqual(['task-0']);f.engine.stop();
+  });
+  it('validates a batch before commit and does not double enqueue accepted IDs',async()=>{
+    const f=fixture();await expect(f.queue([0,99])).rejects.toThrow('proposed');expect(f.journal).toHaveLength(0);await f.queue([0]);await expect(f.queue([0])).rejects.toThrow('already queued');f.engine.stop();
+  });
+  it('waits for evidence readiness, invalidates revisions and never repeats a failed launch',async()=>{
+    const f=fixture();f.readiness.set('task-0','Reviewed receipt prerequisite unavailable');await f.queue([0,1]);f.tasks[1].revision++;
+    await tick();expect(f.spawns).toEqual([]);expect(f.engine.snapshot().events[0].kind).toBe('intent-invalidated');expect(f.engine.snapshot().intents[0].reason).toContain('prerequisite');
+    f.readiness.delete('task-0');f.deps.spawn=async()=>{throw Error('Pane transport failed');};f.engine.kick();await tick();expect(f.engine.snapshot().pendingIntents).toBe(0);await tick();expect(f.engine.snapshot().events.some(e=>e.kind==='intent-blocked')).toBe(true);f.engine.stop();
+  });
+  it('coalesces semantic events, waits locally, and consumes only at a request projection',async()=>{
+    const f=fixture('event-driven');for(let i=0;i<100;i++)f.engine.notify('worker-report','same-worker');await tick();expect(f.wakes).toHaveLength(1);expect(f.engine.snapshot().pendingEvents).toBe(1);
+    expect(f.engine.validWake(f.wakes[0])).toBe(true);await vi.advanceTimersByTimeAsync(24*60*60*1000);expect(f.wakes).toHaveLength(1);
+    f.engine.started();expect(f.engine.consume()).toHaveLength(1);f.engine.settled();await tick();expect(f.wakes).toHaveLength(1);f.engine.stop();
+  });
+  it('retains events while busy and supplies exactly one boundary continuation',async()=>{
+    const f=fixture('event-driven');f.engine.started();f.setIdle(false);f.engine.notify('worker-report','a');await tick();expect(f.wakes).toEqual([]);
+    const wake=f.engine.boundary()!;expect(wake.round).toBe(1);expect(f.engine.boundary()).toBeUndefined();expect(f.engine.validWake(wake)).toBe(true);
+    f.engine.consume();f.engine.notify('worker-report','b');expect(f.engine.boundary()!.round).toBe(2);f.engine.stop();
+  });
+  it('pause/stop invalidates reserved wakes, preserves allowance and never resurrects authority',async()=>{
+    const f=fixture('event-driven');f.engine.notify('worker-report','a');await tick();const wake=f.wakes[0];f.engine.pause('Human pause');expect(f.engine.validWake(wake)).toBe(false);
+    await f.queue([0]);await tick();expect(f.spawns).toEqual([]);f.engine.resume();await tick();expect(f.spawns).toHaveLength(1);expect(f.wakes).toHaveLength(2);
+    f.engine.stop();f.engine.notify('worker-report','late');await tick();expect(f.wakes).toHaveLength(2);await expect(f.queue([1])).rejects.toThrow('inactive');
+  });
+  it('caps automatic wakes independently of command/inner-turn budgets; no silent renewal',async()=>{
+    const f=fixture('event-driven',3,1);f.engine.notify('worker-report','a');await tick();f.engine.consume();f.engine.notify('worker-report','b');await tick();
+    expect(f.wakes).toHaveLength(1);expect(f.engine.snapshot().paused).toContain('allowance');expect(()=>f.engine.resume()).toThrow('exhausted');f.engine.stop();
+  });
+  it('stops new dispatch after stop while an asynchronous spawn is still owned',async()=>{
+    const f=fixture();let release!:()=>void;f.deps.spawn=()=>new Promise<void>(resolve=>{release=resolve;});await f.queue([0,1]);await tick();f.engine.stop();release();await f.engine.join();expect(f.engine.snapshot().state).toBe('stopped');
+  });
+  it('pane cleanup uncertainty creates explicit backpressure, not more workers',async()=>{
+    const f=fixture();f.deps.reap=async()=>false;await f.queue([0]);await tick();expect(f.engine.snapshot().paused).toContain('unverified');expect(f.spawns).toHaveLength(0);f.engine.stop();
+  });
+  it('bounded event retention diagnoses overflow and cannot silently resume',async()=>{
+    const f=fixture('event-driven');for(let i=0;i<257;i++)f.engine.notify('worker-report',String(i));await tick();expect(f.engine.snapshot().paused).toContain('overflow');expect(f.engine.snapshot().pendingEvents).toBe(256);expect(f.wakes).toEqual([]);f.engine.stop();
+  });
+});

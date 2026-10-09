@@ -1,7 +1,8 @@
 # pi-p2o
 
-One command. Your **current Pi agent** leads an authorized assessment through sandbox tools and can delegate
-**visible worker panes** that share the same sandbox. No separate orchestrator, setup wizard or dashboard.
+One command. Your **current Pi agent** plans an authorized assessment; a deterministic TypeScript Engine schedules
+**visible worker panes**. Workers investigate one intent autonomously. Shared-serial execution is default; isolated
+assignment executors are opt-in. No hidden Planner model, provider harness or dashboard.
 
 ## Install
 
@@ -27,27 +28,35 @@ No extension build or JSON configuration is needed. Use `/reload` after installi
 /p2o --target ./my-repo --workers 2 --max-depth 1
 /p2o --target ./my-repo --solo
 /p2o --target ./my-repo --export
+/p2o --target ./my-repo --loop event-driven --executors isolated --workers 3 --target-ops 2
+/p2o pause
+/p2o resume
 /p2o stop
 ```
 
 Confirm scope and permission once. The command prepares the sandbox and sends the task directly into the
-**existing conversation**, using the existing model. The lead investigates, shows progress through ordinary Pi
-tool calls, and writes the report here. No elapsed-time limit is imposed on the lead, workers or assessment. Commands/HTTP default to no task timeout; stop or finish explicitly. Normal provider charges and existing command/resource budgets still apply. Infrastructure watchdogs do not cap investigation time.
+**existing conversation**, using the existing model. In delegated mode it is a strategic Planner: target execution
+is denied, not just discouraged. `--solo` retains working-agent execution. The Planner reviews evidence and writes the report here. No elapsed-time limit is imposed on the lead, workers or assessment. Commands/HTTP default to no task timeout; stop or finish explicitly. Normal provider charges and existing command/resource budgets still apply. Infrastructure watchdogs do not cap investigation time.
 
 Delegation is available when Pi runs inside [Herdr](https://herdr.dev): each worker is a real Pi process in a
-neighbouring pane with its own role model, and every worker shares this sandbox through the owner.
+neighbouring pane with its own role model. Every worker uses the owner broker; the confirmed profile selects shared or isolated execution.
+Default `--loop manual` never wakes a model automatically. `--loop event-driven` requires consent for additional
+model rounds on committed reports, proposals and task-review changes. Waiting is local; no periodic model polling,
+automatic retry/fallback or restored-session authority. See [Planner/Engine contract](docs/PLANNER_ENGINE.md).
 
 | Tool | Role | Purpose |
 |---|---|---|
 | `p2o_skill_list` / `p2o_skill_read` | lead + worker | Paginated catalog and approved skill/reference/handoff documents; IDs, never arbitrary host paths |
 | `p2o_task` | lead only | Maintain focused questions, accepted prerequisite revisions, role/method decisions and reservations |
-| `p2o_candidate` | lead + worker | Evidence-linked candidate claims, proof level, controls, limitations and explicit revisions |
-| `p2o_shell` | lead + worker | Shell in the sandbox; `/target` is a read-only copy, `/work/<workerId>` is scratch, `p2o_net` for egress |
-| `p2o_http` | lead + worker | Fixed curl on the confirmed origin only: any method, bodies, headers, cookies, bounded redirects |
-| `p2o_net` | lead + worker | Network commands in the sandbox: connect scans, service probes, tooling installs; no task timeout by default |
+| `p2o_candidate` | Planner/solo + non-reporting worker | Evidence-linked candidate claims, proof level, controls, limitations and explicit revisions |
+| `p2o_shell` | solo + non-reporting worker | Shell in the sandbox; `/target` is a read-only copy, `/work/<workerId>` is scratch, `p2o_net` for egress |
+| `p2o_http` | solo + non-reporting worker | Fixed curl on the confirmed origin only: any method, bodies, headers, cookies, bounded redirects |
+| `p2o_net` | solo + non-reporting worker | Network commands in the sandbox: connect scans, service probes, tooling installs; no task timeout by default |
 | `p2o_note` | lead + worker | Append a note, observation, coverage row or open item to the shared ledger |
 | `p2o_ledger` | lead + worker | Read the shared ledger or one evidence/candidate record by ID before repeating work |
-| `p2o_delegate` | lead + worker | Spawn one focused worker (objective, context, role, 1-3 skills, optional model) |
+| `p2o_delegate` | Planner | Spawn one focused worker immediately; batch/waiting work uses `p2o_task dispatch` |
+| `p2o_request_subtask` | worker | Propose a missing bounded task; never directly spawn or accept work |
+| `p2o_loop` | owner | Engine/frontier status, end round with wait, or explain blocked/human-needed |
 | `p2o_workers` | lead | Worker status, budget, report summary, coverage; optionally wait for a report |
 | `p2o_steer` | lead | Send a follow-up instruction to a worker without stopping it |
 | `p2o_stop_worker` | lead | Revoke a worker's sandbox access and close its pane |
@@ -62,7 +71,7 @@ With `--export`, cleanup saves bounded redacted receipts and source/skill hashes
 Review before sharing: redaction is best effort, not a guarantee. Without `--export`, the temporary ledger is removed.
 Terminal worker failures deliver a blocked report without another model call; no provider fallback is automatic.
 
-See [focused assessment state](docs/ASSESSMENT_STATE.md) for complete-ledger cursors, task/handoff review, current validation, progress and bounded report retention. No background planner or automatic retry is introduced.
+See [focused assessment state](docs/ASSESSMENT_STATE.md) for complete-ledger cursors, task/handoff review, current validation, progress and bounded report retention. Automatic planning is explicit opt-in; automatic retry is not introduced.
 
 ## Recon and next-task selection
 
@@ -82,8 +91,9 @@ See [runtime guidance](docs/SKILL_RUNTIME.md) and [handoffs](HANDOFFS.md).
 - URL scope is the exact origin, re-checked at every redirect hop. Methods, bodies, headers, actor-local cookie sessions and login flows are available; the scoped HTTP tool refuses other URL origins. Opaque shell/network commands are not origin-filtered. IPv6 routing depends on Docker.
 - Source is copied before mounting: regular files only, ≤64 MiB / 20000 entries, symlinks/special files/`.git`/`node_modules` skipped.
 - The sandbox has real network egress, including private/internal destinations and host-published lab services. Loopback is container-local. No egress firewall, managed browser, proxy or fuzzing service is provided; user-space tooling can be installed into scratch. See [HTTP/network boundaries](docs/HTTP_TRANSPORT.md).
-- Delegation needs Herdr plus one visible pane per worker (cap `--workers`, default 3, max 6; total spawns ≤ 2× the cap).
-- Workers stop at the shared command reserve (90 %), leaving the remainder for the lead's report.
+- Delegation needs Herdr and fresh worker processes. `--workers` is an operator-selected positive safe integer (default 3); no cumulative 2× spawn ceiling. Model concurrency is not target concurrency. Unverified pane closure blocks new admission.
+- Worker commands stop at the unchanged run reserve (90% of default 600) and 200/worker. Fresh identities do not renew it. Owner commands remain separate, not an aggregate cost governor. Reporting/control access survives command exhaustion.
+- Retention remains bounded: 100 live tasks, 100 pending intents, 1,000 registrations, 256 pending semantic signals; ledger/export limits remain. Unlimited elapsed lifetime is not unlimited retention or cost.
 - Docker shares the host kernel: this is container isolation, **not** VM isolation or a claim about kernel escapes.
 - The report is an agent assessment. "Independently verified" requires a separate worker reproduction, and a
   worker claim the lead did not check must be labelled as such.

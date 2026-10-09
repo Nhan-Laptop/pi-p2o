@@ -48,9 +48,9 @@ describe('bounded recon contract', () => {
   });
 
   it.each([
-    ['url', '3af77a1df3b2480a7a99ea1a6e099bdb47c138054da610ba3e2297ecde7a1945', 'e790c5ff68fd3b60b865b6344155a412708b27b7aa8de54d548be84e1abeaf79'],
-    ['directory', 'cecddc684352ca434b02ea4a26794add1535867f6a6c7fc9fff800631eff37b7', 'e77d2995d5166864e523f03eff44987758c6eff5409bae39408bbfc361629d5d'],
-  ])('pins %s worker guidance for the explicit-lifetime revision; historical fixtures are not rewritten', (kind, instructionHash, briefHash) => {
+    ['url', 'ff335a86c7f5f9cc545d66bb54d8e72e99d79dd5beef1bddf516629cf12fc355', 'e790c5ff68fd3b60b865b6344155a412708b27b7aa8de54d548be84e1abeaf79'],
+    ['directory', '90ce7f6f8f04b51188df60bf92f75bbda9ed0e3ba9be4ffaffa485b943342eb8', 'e77d2995d5166864e523f03eff44987758c6eff5409bae39408bbfc361629d5d'],
+  ])('pins %s worker guidance for the Planner/frontier revision; historical acceptance artifacts are not rewritten', (kind, instructionHash, briefHash) => {
     const ticket = { workerId: 'worker-test', role: 'recon', runId: 'run-test', depth: 1, parentWorkerId: null,
       lifetime: 'until-stopped', target: { kind, label: kind === 'url' ? 'https://example.invalid' : '/target' }, commandBudget: 20 } as Ticket;
     const input = { ticket, focus: 'surface-recon', task: 'Map authorized inputs', context: 'No previous work', skills: [{ name: 'test', body: 'Approved fixture guidance' }] };

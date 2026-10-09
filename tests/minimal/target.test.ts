@@ -8,15 +8,18 @@ describe('one target grammar', () => {
   it('has only help, stop and a target', () => {
     expect(parseCommand('')).toEqual({ action: 'help' });
     expect(parseCommand('stop')).toEqual({ action: 'stop' });
+    expect(parseCommand('pause')).toEqual({action:'pause'});expect(parseCommand('resume')).toEqual({action:'resume'});
     expect(parseCommand('--target "./my repo"')).toEqual({ action: 'start', target: './my repo', options: { solo: false } });
     expect(parseCommand("--target './my repo'")).toEqual({ action: 'start', target: './my repo', options: { solo: false } });
     expect(parseCommand('--target https://example.com')).toEqual({ action: 'start', target: 'https://example.com', options: { solo: false } });
-    for (const args of ['--target', '--target x --headless', '--target x --target y', '--target x;y extra', 'approve plan-1', 'resume', '--target "unterminated', '--target --help']) expect(() => parseCommand(args)).toThrow();
+    for (const args of ['--target', '--target x --headless', '--target x --target y', '--target x;y extra', 'approve plan-1', 'resume extra', '--target "unterminated', '--target --help']) expect(() => parseCommand(args)).toThrow();
   });
   it('parses only the delegation limits it understands', () => {
     expect(parseCommand('--target x --solo')).toMatchObject({ options: { solo: true } });
+    expect(parseCommand('--target x --workers 12 --loop event-driven --executors isolated --target-ops 2')).toMatchObject({options:{workers:12,loopMode:'event-driven',executorMode:'isolated',maxTargetOperations:2}});
+    for (const args of ['--loop retry','--executors bad','--target-ops 0']) expect(() => parseCommand(`--target x ${args}`)).toThrow();
     expect(parseCommand('--target x --workers 5 --max-depth 1')).toMatchObject({ options: { solo: false, workers: 5, maxDepth: 1 } });
-    for (const args of ['--target x --workers 0', '--target x --workers 7', '--target x --workers many', '--target x --max-depth 4', '--target x --max-depth -1', '--target x --delegate', '--target x --solo --solo=1']) {
+    for (const args of ['--target x --workers 0', '--target x --workers 9007199254740992', '--target x --workers many', '--target x --max-depth 4', '--target x --max-depth -1', '--target x --delegate', '--target x --solo --solo=1']) {
       expect(() => parseCommand(args), args).toThrow();
     }
   });

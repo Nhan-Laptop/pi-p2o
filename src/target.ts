@@ -3,17 +3,17 @@ import { realpath, stat } from 'node:fs/promises';
 import { isIP } from 'node:net';
 import { resolve } from 'node:path';
 import { homedir } from 'node:os';
-import { MAX_DEPTH, MAX_WORKERS } from './roles.js';
+import { MAX_DEPTH, MAX_WORKERS, type LoopMode } from './roles.js';
 
 export type Target = { kind: 'directory'; path: string } | { kind: 'url'; url: string; origin: string };
-export interface StartOptions { solo: boolean; workers?: number; maxDepth?: number; export?: boolean }
-export type Command = { action: 'help' } | { action: 'stop' } | { action: 'start'; target: string; options: StartOptions };
+export interface StartOptions { solo: boolean; workers?: number; maxDepth?: number; export?: boolean; loopMode?: LoopMode; executorMode?: 'shared' | 'isolated'; maxTargetOperations?: number }
+export type Command = { action: 'help' } | { action: 'stop' } | { action: 'pause' } | { action: 'resume' } | { action: 'start'; target: string; options: StartOptions };
 
 /** Deliberately small. One target plus delegation limits; quoting is supported for directory names. */
 export function parseCommand(args: string): Command {
   const text = args.trim();
   if (!text || text === '--help') return { action: 'help' };
-  if (text === 'stop') return { action: 'stop' };
+  if (text === 'stop' || text === 'pause' || text === 'resume') return { action: text };
   const match = /^--target\s+(?:"([^"\r\n]+)"|'([^'\r\n]+)'|([^\s"']+))(?:\s+(.*))?$/.exec(text);
   if (!match) throw new Error('Usage: /p2o --target <directory|http(s)-URL> [--solo] [--workers N] [--max-depth D] or /p2o stop');
   const target = match[1] ?? match[2] ?? match[3];
@@ -26,12 +26,26 @@ export function parseCommand(args: string): Command {
       const token = tokens[index];
       if (token === '--solo') { options.solo = true; continue; }
       if (token === '--export') { options.export = true; continue; }
-      if (token !== '--workers' && token !== '--max-depth') throw new Error(`Unknown option ${token.slice(0, 40)}; usage: /p2o --target <directory|http(s)-URL> [--solo] [--workers N] [--max-depth D]`);
+      if (token === '--loop') {
+        const value = tokens[++index];
+        if (value !== 'manual' && value !== 'event-driven') throw Error('--loop must be manual or event-driven');
+        options.loopMode = value; continue;
+      }
+      if (token === '--executors') {
+        const value = tokens[++index];
+        if (value !== 'shared' && value !== 'isolated') throw Error('--executors must be shared or isolated');
+        options.executorMode = value; continue;
+      }
+      if (token !== '--workers' && token !== '--max-depth' && token !== '--target-ops') throw new Error(`Unknown option ${token.slice(0, 40)}; usage: /p2o --target <directory|http(s)-URL> [--solo] [--workers N] [--max-depth D]`);
       const value = tokens[index + 1];
       if (!value || !/^\d+$/.test(value)) throw new Error(`${token} needs an integer value`);
       index += 1;
       const parsed = Number(value);
-      if (token === '--workers') {
+      if (!Number.isSafeInteger(parsed)) throw Error(`${token} needs a safe integer`);
+      if (token === '--target-ops') {
+        if (parsed < 1) throw Error('--target-ops must be positive');
+        options.maxTargetOperations = parsed;
+      } else if (token === '--workers') {
         if (parsed < 1 || parsed > MAX_WORKERS) throw new Error(`--workers must be 1..${MAX_WORKERS}`);
         options.workers = parsed;
       } else {

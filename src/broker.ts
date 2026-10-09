@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import type { ProcessResult } from './process.js';
 import { httpRequest, taskTimeout, type HttpRequest } from './target.js';
 import { isOutcome, isRecordKind, type AssessmentRecord, type CoverageOutcome, type LedgerPage } from './records.js';
+import { reportingOperationDenied } from './tool-policy.js';
 
 /**
  * Owner-served broker. Strix shares one sandbox session with every agent; Pi workers are separate
@@ -37,6 +38,7 @@ export interface WorkerRegistration {
   used: number;
   startedAt: number;
   stopped: boolean;
+  paneClosed?: boolean;
   reported?: WorkerReport;
   taskId?: string;
   requestedRuntime?: { model?: string; thinking?: string };
@@ -58,6 +60,9 @@ export interface BrokerDeps {
   onBudget?(workerId: string, reason: string): void;
   delegate(input: DelegateInput, parent: WorkerRegistration): Promise<DelegateResult>;
   report(workerId: string, report: WorkerReport): Promise<void>;
+  /** Commit boundary: report persisted, registration terminal and authority revoked. */
+  reportCommitted?(worker: WorkerRegistration): Promise<void>;
+  requestSubtask?(input: DelegateInput, parent: WorkerRegistration): Promise<unknown>;
   knowledge?(op: string, request: Record<string, unknown>, worker: WorkerRegistration): Promise<unknown>;
   candidate?(input: unknown, worker: WorkerRegistration): Promise<unknown>;
   onProblem?(message: string): void;
@@ -198,6 +203,7 @@ export class Broker {
     const op = text(request?.op, 32);
     if (this.reporting.has(workerId) && op !== 'status') return {ok:false,error:'Worker report persistence in progress; no further requests'};
     if (registration.effectiveRuntime?.verified === false && !['runtime','report','status'].includes(op ?? '')) return { ok:false,error:'Runtime profile mismatch; report blocked, no investigation' };
+    if (reportingOperationDenied(registration.role,op ?? '')) return {ok:false,error:'Reporting role is synthesis-only; request separate execution/validation'};
     switch (op) {
       case 'skill_list': case 'skill_read': {
         const used = this.knowledgeUsed.get(workerId) ?? 0;
@@ -292,6 +298,15 @@ export class Broker {
         });
         return { ok: true };
       }
+      case 'request_subtask': {
+        const used = this.knowledgeUsed.get(workerId) ?? 0;
+        if (used >= 200) return {ok:false,error:'Coordination budget exhausted; include request in final report'};
+        this.knowledgeUsed.set(workerId,used+1);
+        if (!this.deps.requestSubtask) return {ok:false,error:'Subtask proposals unavailable'};
+        const focus = text(request?.focus,60), task = text(request?.task,4000);
+        if (!focus || !task) return {ok:false,error:'focus and task are required'};
+        return {ok:true,value:await this.deps.requestSubtask({focus,task,context:text(request?.context,4000),role:text(request?.role,32)},registration)};
+      }
       case 'delegate': {
         const focus = text(request?.focus, 60); const task = text(request?.task, 4000);
         if (!focus || !task) return { ok: false, error: 'focus and task are required' };
@@ -314,6 +329,9 @@ export class Broker {
           registration.reported = report;
           // Reporting ends this worker's authority: a copied ticket cannot retain target access.
           this.revoke(workerId);
+          // Notification failure must not make an already committed report replayable.
+          try { await this.deps.reportCommitted?.(registration); }
+          catch (error) { this.deps.onProblem?.(`Report committed but notification failed: ${errText(error)}`); }
           return { ok: true };
         } finally { this.reporting.delete(workerId); }
       }

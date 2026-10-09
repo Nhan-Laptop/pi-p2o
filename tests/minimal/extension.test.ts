@@ -70,7 +70,7 @@ describe('owner role', () => {
   afterEach(async () => { await rm(h.root, { recursive: true, force: true }); });
 
   it('registers the owner and worker tools plus one command, and does no work before the command', () => {
-    expect([...h.pi.tools.keys()].sort()).toEqual(['p2o_candidate', 'p2o_delegate', 'p2o_finish', 'p2o_http', 'p2o_ledger', 'p2o_net', 'p2o_note', 'p2o_report', 'p2o_shell', 'p2o_skill_list', 'p2o_skill_read', 'p2o_steer', 'p2o_stop_worker', 'p2o_task', 'p2o_workers']);
+    expect([...h.pi.tools.keys()].sort()).toEqual(['p2o_candidate', 'p2o_delegate', 'p2o_finish', 'p2o_http', 'p2o_ledger', 'p2o_loop', 'p2o_net', 'p2o_note', 'p2o_report', 'p2o_request_subtask', 'p2o_shell', 'p2o_skill_list', 'p2o_skill_read', 'p2o_steer', 'p2o_stop_worker', 'p2o_task', 'p2o_workers']);
     expect(h.pi.messages).toEqual([]);
     expect(h.sandboxes).toEqual([]);
     expect([...h.pi.commands.keys()]).toEqual(['p2o']);
@@ -92,7 +92,7 @@ describe('owner role', () => {
     expect(event.systemPromptOptions.sections.p2o_assessment).toContain('DELEGATION');
     expect(event.systemPromptOptions.sections.other).toBe('KEEP OTHER GUIDANCE');
     expect(h.sandboxes[0].stopCount).toBe(0);
-    expect(h.pi.active).toEqual(['p2o_task', 'p2o_ledger', 'p2o_skill_list', 'p2o_skill_read', 'p2o_candidate', 'p2o_shell', 'p2o_net', 'p2o_http', 'p2o_note', 'p2o_delegate', 'p2o_workers', 'p2o_steer', 'p2o_stop_worker', 'p2o_finish']);
+    expect(h.pi.active).toEqual(['p2o_task', 'p2o_ledger', 'p2o_skill_list', 'p2o_skill_read', 'p2o_candidate', 'p2o_note', 'p2o_delegate', 'p2o_workers', 'p2o_steer', 'p2o_stop_worker', 'p2o_loop', 'p2o_finish']);
     expect(await h.tickets()).toEqual([]);
   });
 
@@ -146,8 +146,14 @@ describe('owner role', () => {
       roleReason:'Lead selected this role from the current unanswered question',expectedTrue:'Known baseline reaches the intended consumer',expectedFalse:'Contrasting observation refutes the boundary hypothesis',
       stopCondition:'Stop after the contrast, a missing prerequisite or explicit owner withdrawal',evidenceIds:[],prerequisites,validationOf,methodReason:'Bounded offline method; no deployment claims'});
     const recon = (await h.call('p2o_task',{action:'create',draft:makeDraft('recon')})).details;
-    await h.call('p2o_task',{action:'start',id:recon.id});
-    const lead = await h.call('p2o_shell',{command:'printf controlled-baseline'});
+    await expect(h.call('p2o_task',{action:'start',id:recon.id})).rejects.toThrow('PLANNER_ONLY');
+    const reconWorker = (await h.call('p2o_delegate',{focus:'controlled-recon',task:'Observe the bounded fixture',taskId:recon.id})).details;
+    const {BrokerClient:ReconClient}=await import('../../src/broker.js');
+    const rt=JSON.parse(await readFile(join(await h.runDir(),`ticket-${reconWorker.workerId}.json`),'utf8'));
+    const rc=new ReconClient(rt.socket,rt.token);
+    const observation=await rc.request('exec',{command:'printf controlled-baseline'});
+    await rc.request('report',{report:{summary:'Bounded recon packet',evidence:[observation.evidenceId],confidence:'low'}});rc.close();
+    const lead={details:{evidenceId:observation.evidenceId}};
     const accepted = (await h.call('p2o_task',{action:'review',id:recon.id,reason:'Lead accepts this bounded source observation, not deployment proof',evidenceIds:[lead.details.evidenceId]})).details;
     const discovery = (await h.call('p2o_task',{action:'create',draft:makeDraft('discovery',[{taskId:recon.id,revision:accepted.revision}])})).details;
     const context = await h.emit('context',{messages:[{role:'compactionSummary',summary:'compact fixture',tokensBefore:1000,timestamp:0}]});
@@ -177,8 +183,8 @@ describe('owner role', () => {
         await second.request('report',{report:{summary:'Withdrawn conclusion; retain missing proof',confidence:'low',evidence:[probe.evidenceId],blocked:'Missing independent effect',openItems:['Controlled boundary remains a proof gap'],outcome:'prerequisite-blocked'}});
         await h.call('p2o_task',{action:'review',id:validation.id,reason:'Review accepts the observation only; withdrawn effect remains open',evidenceIds:[probe.evidenceId]});
       } finally {second.close();}
-      const view=await h.call('p2o_workers',{cursor:0});expect(view.details.changes.total).toBeGreaterThan(0);expect(view.details.budgets.workerUsed).toBe(2);
-      const finish=await h.call('p2o_finish');expect(finish.details.report.complete).toBe(true);expect(finish.details.report.counts.reports).toBe(2);expect(finish.details.report.counts.open).toBeGreaterThan(0);
+      const view=await h.call('p2o_workers',{cursor:0});expect(view.details.changes.total).toBeGreaterThan(0);expect(view.details.budgets.workerUsed).toBe(3); // Recon is now a worker, not Planner execution.
+      const finish=await h.call('p2o_finish');expect(finish.details.report.complete).toBe(true);expect(finish.details.report.counts.reports).toBe(3);expect(finish.details.report.counts.open).toBeGreaterThan(0);
       const exported=JSON.parse(await readFile(finish.details.exportPath,'utf8'));expect(exported.manifest.report.version).toBe(finish.details.report.version);
       expect(exported.records.some((r:any)=>r.kind==='task')).toBe(true);
       expect(await h.emit('tool_call',{toolName:'p2o_task'})).toMatchObject({block:true});
@@ -262,7 +268,7 @@ describe('owner role', () => {
     await expect(h.call('p2o_delegate', { focus: 'two', task: 'second' })).rejects.toThrow(/DELEGATION_CAP/);
   });
 
-  it('enforces the depth cap for nested spawns requested by a worker and reports worker state to the owner', async () => {
+  it('denies nested spawning even when requested by a worker and preserves attributed report state', async () => {
     h = await harness({ settings: { p2o: { maxWorkers: 2, maxDepth: 1 } } });
     await h.start();
     await h.call('p2o_delegate', { focus: 'recon', task: 'map the surface' });
@@ -271,7 +277,7 @@ describe('owner role', () => {
     const { BrokerClient } = await import('../../src/broker.js');
     const client = new BrokerClient(ticket.socket, ticket.token, { connectMs: 2000, requestMs: 5000 });
     try {
-      await expect(client.request('delegate', { focus: 'deep', task: 'nested work', role: 'validation' })).rejects.toThrow(/depth limit/);
+      await expect(client.request('delegate', { focus: 'deep', task: 'nested work', role: 'validation' })).rejects.toThrow(/PLANNER_ONLY/);
       const view = await h.call('p2o_workers', {});
       expect(view.details.workers).toHaveLength(1);
       expect(view.details.workers[0]).toMatchObject({ workerId, status: 'working', depth: 1 });
@@ -289,7 +295,7 @@ describe('owner role', () => {
     } finally { client.close(); }
   });
 
-  it('spawns a nested worker when depth allows, recording parentage and the grandchild ticket', async () => {
+  it('persists a worker subtask proposal without spawning or accepting it even when depth allows', async () => {
     h = await harness({ settings: { p2o: { maxWorkers: 3, maxDepth: 2 } } });
     await h.start();
     await h.call('p2o_delegate', { focus: 'recon', task: 'map the surface' });
@@ -298,19 +304,16 @@ describe('owner role', () => {
     const { BrokerClient } = await import('../../src/broker.js');
     const client = new BrokerClient(parentTicket.socket, parentTicket.token, { connectMs: 2000, requestMs: 5000 });
     try {
-      const spawned = await client.request('delegate', { focus: 'validate-idor', task: 'reproduce the candidate', role: 'validation', skills: ['exploitability-assessment'] });
-      expect(spawned.worker).toMatchObject({ role: 'validation', depth: 2 });
-      const starts = h.herdr.calls.filter(call => call.op === 'start');
-      expect(starts).toHaveLength(2);
-      expect(starts[1].name).toBe(spawned.worker.workerId);
-      const childTicket = JSON.parse(await readFile(join(await h.runDir(), `ticket-${spawned.worker.workerId}.json`), 'utf8'));
-      expect(childTicket).toMatchObject({ depth: 2, parentWorkerId: parentId, workerId: spawned.worker.workerId });
-      expect((await h.tickets()).length).toBe(2);
-      // The worker's own request is refused with the worker cap in force, and the ledger records the parentage.
-      const view = await h.call('p2o_workers', {});
-      expect(view.details.workers.map((entry: any) => entry.depth).sort()).toEqual([1, 2]);
-      expect(view.details.workers[1]).toMatchObject({ parentWorkerId: parentId });
-      expect(JSON.stringify(await h.records())).toContain('delegated');
+      await expect(client.request('delegate',{focus:'validate-idor',task:'Unaccepted follow-up'})).rejects.toThrow('PLANNER_ONLY');
+      const proposal = (await client.request('request_subtask',{focus:'validate-idor',task:'Propose bounded validation',role:'validation'})).value;
+      expect(proposal).toMatchObject({accepted:false,recordId:expect.any(String)});
+      expect(h.herdr.calls.filter(call => call.op === 'start')).toHaveLength(1);
+      expect((await h.tickets()).length).toBe(1);
+      const records=await h.records();
+      const record=records.find(r => r.id === proposal.recordId);
+      expect(record).toMatchObject({by:parentId,workerId:parentId,kind:'open',data:{proposal:{role:'validation'}}});
+      expect(records.filter(r => r.kind === 'task')).toHaveLength(3);
+      const view = await h.call('p2o_workers',{});expect(view.details.workers).toHaveLength(1);
     } finally { client.close(); }
   });
 
@@ -408,7 +411,7 @@ describe('owner role', () => {
   });
 
   it('blocks host, nested and other-extension tools while active, and no tool can reach the target after stop', async () => {
-    await h.start();
+    await h.start('--target ./repo --solo');
     for (const toolName of ['read', 'bash', 'edit', 'write', 'codemode', 'herd_spawn', 'agent_browser']) {
       expect(await h.emit('tool_call', { toolName }), toolName).toMatchObject({ block: true });
     }
@@ -455,11 +458,13 @@ describe('owner role', () => {
     expect(h.pi.active).toContain('bash');
   });
 
-  it('stops on agent failure, session navigation and replay attempts', async () => {
+  it('blocks automatic scheduling on provider failure, cleans on explicit stop/navigation, and denies replay', async () => {
     await h.start();
     await h.emit('agent_before_settle', { outcome: 'error' });
-    expect(h.sandboxes[0].stopCount).toBe(1);
-    expect(h.pi.active).toContain('bash');
+    expect(h.sandboxes[0].stopCount).toBe(0);
+    expect((await h.call('p2o_loop',{action:'status'})).details.state).toBe('blocked');
+    await expect(h.call('p2o_delegate',{focus:'retry',task:'No unattended replay'})).rejects.toThrow('LOOP_PAUSED');
+    await h.command('stop');expect(h.sandboxes[0].stopCount).toBe(1);expect(h.pi.active).toContain('bash');
 
     h = await harness();
     await h.start();

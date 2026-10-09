@@ -9,12 +9,15 @@ Start Docker and pull the pinned image listed in the README once. No source buil
 /p2o --target ./source
 /p2o --target https://example.com
 /p2o --target ./source --workers 2
+/p2o --target ./source --loop event-driven --executors isolated --target-ops 2
 
+/p2o pause
+/p2o resume
 /p2o stop
 ```
 
-One dialog confirms ownership/permission, scope, sandbox limits, the worker plan when delegation is available,
-and use of your current model provider. Declining starts no sandbox, worker or model turn.
+One dialog confirms ownership/permission, scope, sandbox limits, the worker plan, extra event-driven model rounds
+when requested and isolated executor resource multiplication. Manual + shared is default; see [Engine contract](PLANNER_ENGINE.md). In delegated mode the current Pi plans/reviews and cannot execute target commands; solo investigates. Declining starts no sandbox, worker or model turn.
 
 For source: a regular-file-only copy at `/target` is read-only (≤64 MiB / 20000 entries; symlinks, special files,
 `.git` and `node_modules skipped`), `/work` is writable scratch. Commands run through `p2o_shell`, never host shell.
@@ -28,7 +31,7 @@ closed (a pane it refuses to close is named, and by then that worker's ticket is
 
 ## Focused state and review
 
-The lead can use `p2o_task` to record a question, contrast, role/method and stop condition; accept a reported packet with receipts; then delegate its `taskId` with reviewed prerequisite revisions. Workers cannot accept owner packets. `p2o_ledger {cursor:0}` traverses complete bounded run state; `p2o_workers {cursor}` returns changes. Request-local objective refresh never starts another turn or renews scope. Full reports use committed hashed parts; final projection/export states omissions and failures. See [assessment state](ASSESSMENT_STATE.md) for limits and compatibility.
+The lead can use `p2o_task` to record a question, contrast, role/method and stop condition; accept a reported packet with receipts; then delegate its `taskId` with reviewed prerequisite revisions. Workers cannot accept owner packets or spawn children. `p2o_task dispatch` queues accepted batches until slots and reviewed support permit admission; `p2o_loop wait/blocked` expresses the Planner disposition. `p2o_ledger {cursor:0}` traverses complete bounded run state; `p2o_workers {cursor}` returns changes. Request-local objective refresh never starts another turn or renews scope. Full reports use committed hashed parts; final projection/export states omissions and failures. See [assessment state](ASSESSMENT_STATE.md) for limits and compatibility.
 
 ## Reconnaissance
 
@@ -50,8 +53,8 @@ own model and only the skills it was given. The worker receives:
 FOCUS / SCOPE / LIMITS / background context (background only) / its TASK
 ```
 
-and may use only `p2o_shell`, `p2o_net`, `p2o_http`, `p2o_note`, `p2o_ledger` (read the shared ledger), `p2o_delegate`
-(which the lead executes) and `p2o_report`.
+and uses its enforced role loadout: execution, approved document/evidence retrieval, notes, subtask proposals and
+reporting. Reporting workers cannot shell/net/HTTP or record candidates. No worker has delegation/owner task tools.
 Its selected skills are inlined into the brief (a sandbox-only worker cannot read host files), and it has no
 host tools, no Docker and no consent dialogs. All of its target work is brokered by the lead, so scope
 checks, timeouts, output caps and the single cleanup path stay in one place.
@@ -62,8 +65,8 @@ Practical rules:
   told repeats the work.
 - Delegate discovery, then have a *different* worker validate a candidate. A worker validating its own finding is
   not independent verification.
-- Chain depth is capped (`--max-depth`, default 2) and the lead performs every spawn, including a worker's nested
-  request.
+- Delegation is flat. `p2o_request_subtask` records a proposal for the Planner; only the owner can accept it.
+  `--max-depth` remains a compatibility/policy limit, not permission for nested spawning.
 - `p2o_workers` with `waitFor: "all-report"` blocks locally until every worker reported or was stopped; use it
   instead of polling.
 - A worker pane can read `idle` for a moment before its brief is submitted. Liveness is decided by reports, not by
@@ -90,8 +93,10 @@ created, and each selected skill's instructions are inlined into the worker's br
 { "p2o": { "maxWorkers": 3, "maxDepth": 2, "roles": { "validation": { "model": "opencode-go/kimi-k3" } } } }
 ```
 
-Limits: `--workers` 1..6 (default 3), `--max-depth` 0..3 (default 2), total spawns ≤ 2× the worker cap,
-200 brokered commands per worker and a 90 % worker reserve of the shared budget.
+Limits: `--workers` positive safe integer (default 3), `--max-depth` 0..3 (default 2); no cumulative 2× spawn cap.
+Fresh assignments reuse logical capacity, not processes/tickets. 200 commands/worker and 90% of default 600
+worker commands persist across identities. Owner commands and provider cost are separate. 100 live tasks/pending
+intents and 1,000 retained registrations remain bounded; pane cleanup failure blocks new admission.
 
 ## Sandbox limits
 
@@ -102,7 +107,7 @@ unprivileged connect scans work, raw-socket scans do not (no capabilities). HTTP
 containers with **only fixed curl arguments**, never model-controlled code, no proxy, and the destination resolved
 and pinned per hop. No source mounts, Docker socket, host home or provider credentials are mounted.
 Assessment, lead and worker lifetime: **no elapsed-time limit** while the live owner retains authority. Shell/network and HTTP task timeouts default to `0` (unlimited); optional positive integer seconds have no 60/300-second ceiling. HTTP also accepts optional `connectTimeout`; zero uses underlying library/network defaults. Response 8 MiB, request body 32 KiB and visible output 48 KiB remain.
-Use `/p2o stop`, `p2o_finish` or worker withdrawal to end work. Infrastructure connection/startup/control/cleanup watchdogs remain, not investigation deadlines. An explicit shell timeout or cancellation removes the shared executor/background processes. Losing a worker socket revokes its ticket and cancels its in-flight operations. No automatic continuation, retry or provider fallback is introduced.
+Use `/p2o stop`, `p2o_finish` or worker withdrawal to end work. Infrastructure connection/startup/control/cleanup watchdogs remain, not investigation deadlines. An explicit shell timeout/cancellation removes the affected executor/background processes; shared mode can interrupt peers, isolated mode does not remove peers. Losing a worker socket revokes its ticket and cancels its in-flight operations. Continuation is opt-in on semantic events only; no automatic retry/provider fallback or periodic paid polling.
 No application-level model token/cost cap; Pi/provider accounting is unchanged.
 
 This is container isolation, not a virtual machine. The trusted Pi process, other installed extensions and

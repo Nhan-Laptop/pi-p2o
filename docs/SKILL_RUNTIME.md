@@ -31,12 +31,12 @@ recon/decision strategy, delegation, evidence safeguards and cleanup. Tool tutor
 pagination instructions are not repeated there. Startup sends only a short kickoff instead of a second policy
 copy. The section is replaced, not appended, and removed when no assessment is active; finalization cannot
 reactivate target work. Pi’s other prompt sections and active tool declarations are left intact.
-Worker instructions and briefs describe the current transport; approved methodology remains content, not authority.
+Delegated Pi is a strategic Planner; only solo investigates. Worker instructions and briefs describe the current transport; approved methodology remains content, not authority. Enforced reporting loadouts cannot execute target tools or record candidates; workers propose subtasks, not nested dispatch. See [Engine contract](PLANNER_ENGINE.md).
 
 Pi exposes active tool descriptions and schemas. They describe enforced limits, not installed binaries.
 For a selected task needing an unknown tool, make a bounded functional check and cite its receipt. Needed user-space tools can be downloaded/installed into sandbox scratch through `p2o_net`; no host/root installation or universal startup probes. The base image may lack Semgrep.
 Keep metrics/version checks disabled and local rules only; Semgrep's `--validate` fetches remote meta-lints.
-If timeout/cancellation stops the executor, target tools are withdrawn; record gaps and finish.
+If timeout/cancellation stops an executor, that assignment cannot restart it automatically; report gaps. Default shared mode may affect peers; isolated mode does not remove their executors.
 
 The owner/broker enforce lifecycle, tickets, budgets and scoped HTTP URL origins. HTTP supports bodies, auth headers, cookies and bounded redirects. Opaque shell/network commands have unrestricted bridge egress, not origin enforcement; managed browser/proxy/OAST transports are not provided. Offline parsing is not browser proof; source is not deployment proof. See [HTTP/network boundaries](HTTP_TRANSPORT.md).
 

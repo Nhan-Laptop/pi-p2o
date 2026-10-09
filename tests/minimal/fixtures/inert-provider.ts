@@ -1,5 +1,7 @@
 // MODEL-INERT scripted provider shared by the owner/worker Pi fixtures. No network, no live AI.
 import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
+import { appendFileSync } from 'node:fs';
+import { setTimeout as delay } from 'node:timers/promises';
 import { createAssistantMessageEventStream, getCurrentSystemPrompt, getCurrentTools, type AssistantMessage } from '@earendil-works/pi-ai';
 
 export function registerInertProvider(pi: ExtensionAPI, mode: 'owner' | 'worker'): void {
@@ -7,7 +9,11 @@ export function registerInertProvider(pi: ExtensionAPI, mode: 'owner' | 'worker'
     baseUrl: 'http://127.0.0.1:1/never-contacted', apiKey: 'inert-placeholder', api: 'openai-completions',
     models: [{ id: 'current-agent', name: 'Mechanical fixture, NOT live AI', reasoning: false, input: ['text'],
       cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }, contextWindow: 128000, maxTokens: 4096 }],
-    streamSimple(model, context) {
+    streamSimple(model, context, options) {
+      // A conforming provider must honor an already-aborted request BEFORE network/usage.
+      // This fixture never contacts a provider; journaling counts accepted inert requests only.
+      options?.signal?.throwIfAborted();
+      if (process.env.P2O_TEST_PROVIDER_LOG) appendFileSync(process.env.P2O_TEST_PROVIDER_LOG,JSON.stringify({mode,at:Date.now()})+'\n');
       const objectivePresent = context.messages.some((m:any) => (typeof m.content === 'string' ? m.content : JSON.stringify(m.content ?? '')).includes('P2O OBJECTIVE STATE'));
       if (mode === 'worker' && !objectivePresent) throw Error('Worker objective did not survive request context rebuilding');
       if (mode === 'worker' && process.env.P2O_TEST_WORKER_FAULT === 'quota') {
@@ -22,12 +28,13 @@ export function registerInertProvider(pi: ExtensionAPI, mode: 'owner' | 'worker'
       if (tools.includes('p2o_capabilities') || system.includes('CAPABILITIES')) throw new Error('removed capability subsystem is exposed');
       if (!system.includes('RECON → INVESTIGATION') || !system.includes('decision note')) throw new Error('recon contract missing');
       const descriptions = getCurrentTools(context.messages);
-      if (!descriptions.find(tool => tool.name === 'p2o_shell')?.description.includes('network egress')) throw new Error('shell guidance missing');
-      if (!descriptions.find(tool => tool.name === 'p2o_http')?.description.includes('bounded redirect following')) throw new Error('http guidance missing');
-      if (!descriptions.find(tool => tool.name === 'p2o_net')?.description.includes('connect scans')) throw new Error('network tool guidance missing');
+      if (mode === 'worker' && !descriptions.find(tool => tool.name === 'p2o_shell')?.description.includes('network egress')) throw new Error('shell guidance missing');
+      if (mode === 'worker' && !descriptions.find(tool => tool.name === 'p2o_http')?.description.includes('bounded redirect following')) throw new Error('http guidance missing');
+      if (mode === 'worker' && !descriptions.find(tool => tool.name === 'p2o_net')?.description.includes('connect scans')) throw new Error('network tool guidance missing');
       const results = context.messages.filter((message: any) => message.role === 'toolResult');
       const last: any = results.at(-1);
       const lastTool = last?.toolName as string | undefined;
+      options?.signal?.throwIfAborted();
       let content: AssistantMessage['content'];
 
       if (mode === 'owner') {
@@ -43,6 +50,8 @@ export function registerInertProvider(pi: ExtensionAPI, mode: 'owner' | 'worker'
           task: 'Inspect /target/code.txt in the sandbox and report what it contains. Success: a command, its output, and coverage for that surface. Stop if the sandbox is unavailable.',
           context: 'The lead has not inspected the target yet; nothing is already known and no surface is covered.',
         } }];
+        else if (lastTool === 'p2o_delegate' && process.env.P2O_TEST_EVENT_LOOP === '1') content = [{type:'toolCall',id:'loop-wait',name:'p2o_loop',arguments:{action:'wait',reason:'Engine should await the delayed worker report without model polling'}}];
+        else if (lastTool === 'p2o_loop') content = [{type:'toolCall',id:'workers-after-wake',name:'p2o_workers',arguments:{}}];
         else if (lastTool === 'p2o_delegate') content = [{ type: 'toolCall', id: 'workers-1', name: 'p2o_workers', arguments: { waitFor: 'all-report', timeoutSeconds: 30 } }];
         else if (lastTool === 'p2o_workers') content = [{ type: 'toolCall', id: 'finish-1', name: 'p2o_finish', arguments: {} }];
         else if (lastTool === 'p2o_finish') content = [{ type: 'text', text: 'OWNER_FINAL_REPORT: inert owner run; worker claim repeated only as a labelled, unverified assertion.' }];
@@ -79,6 +88,10 @@ export function registerInertProvider(pi: ExtensionAPI, mode: 'owner' | 'worker'
         content, timestamp: Date.now(), stopReason: content.some(block => block.type === 'toolCall') ? 'toolUse' : 'stop',
         usage: { input: 12, output: 5, cacheRead: 0, cacheWrite: 0, totalTokens: 17, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } } };
       const stream = createAssistantMessageEventStream();
+      const emit = async () => {
+      if (mode === 'worker' && process.env.P2O_TEST_EVENT_LOOP === '1' && !last) await delay(500);
+      if (mode === 'owner' && process.env.P2O_TEST_WAKE_BOUNDARY === '1' && lastTool === 'p2o_delegate') await delay(1000);
+      options?.signal?.throwIfAborted();
       stream.push({ type: 'start', partial: { ...message, content: [], stopReason: 'pending' } });
       for (const [index, block] of content.entries()) {
         if (block.type === 'toolCall') {
@@ -93,6 +106,11 @@ export function registerInertProvider(pi: ExtensionAPI, mode: 'owner' | 'worker'
       }
       stream.push({ type: 'done', reason: message.stopReason as 'stop' | 'toolUse', message });
       stream.end(message);
+      };
+      void emit().catch(error => {
+        const aborted:AssistantMessage={...message,content:[],stopReason:'aborted',errorMessage:String(error)};
+        stream.push({type:'error',reason:'aborted',error:aborted});stream.end(aborted);
+      });
       return stream;
     },
   });

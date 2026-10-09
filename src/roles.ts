@@ -21,17 +21,24 @@ export const ROLE_DEFAULTS: Record<Role, RoleDefaults> = {
 };
 export const DEFAULT_MAX_WORKERS = 3;
 export const DEFAULT_MAX_DEPTH = 2;
-export const MAX_WORKERS = 6;
+// Capacity is operator-controlled, not a lifetime assignment budget. Live frontier, command,
+// provider and Herdr resource limits still apply; confirmation names the selected capacity.
+export const MAX_WORKERS = Number.MAX_SAFE_INTEGER;
 export const MAX_DEPTH = 3;
 export const MAX_SKILLS = 3;
 
+export type LoopMode = 'manual' | 'event-driven';
 export interface P2OSettings {
   maxWorkers: number;
   maxDepth: number;
+  loopMode: LoopMode;
+  maxPlannerRounds: number;
+  executorMode: 'shared' | 'isolated';
+  maxTargetOperations: number;
   roles: Partial<Record<Role, RoleSettings>>;
 }
 
-const blank = (): P2OSettings => ({ maxWorkers: DEFAULT_MAX_WORKERS, maxDepth: DEFAULT_MAX_DEPTH, roles: {} });
+const blank = (): P2OSettings => ({ maxWorkers: DEFAULT_MAX_WORKERS, maxDepth: DEFAULT_MAX_DEPTH, loopMode: 'manual', maxPlannerRounds: 100, executorMode: 'shared', maxTargetOperations: 3, roles: {} });
 
 export function isRole(value: unknown): value is Role { return typeof value === 'string' && (ROLES as readonly string[]).includes(value); }
 
@@ -44,6 +51,10 @@ export function parseSettings(raw: unknown): P2OSettings {
   const clamp = (value: unknown, fallback: number, max: number) =>
     typeof value === 'number' && Number.isInteger(value) && value >= 1 && value <= max ? value : fallback;
   settings.maxWorkers = clamp(source.maxWorkers, DEFAULT_MAX_WORKERS, MAX_WORKERS);
+  settings.loopMode = source.loopMode === 'event-driven' ? 'event-driven' : 'manual';
+  settings.maxPlannerRounds = clamp(source.maxPlannerRounds, 100, Number.MAX_SAFE_INTEGER);
+  settings.executorMode = source.executorMode === 'isolated' ? 'isolated' : 'shared';
+  settings.maxTargetOperations = clamp(source.maxTargetOperations,3,Number.MAX_SAFE_INTEGER);
   settings.maxDepth = typeof source.maxDepth === 'number' && Number.isInteger(source.maxDepth) && source.maxDepth >= 0 && source.maxDepth <= MAX_DEPTH
     ? source.maxDepth : DEFAULT_MAX_DEPTH;
   const roles = source.roles;

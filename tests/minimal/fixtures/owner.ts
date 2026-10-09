@@ -5,6 +5,7 @@ import type { Target } from '../../../src/target.js';
 import { InertSandbox } from '../helpers/inert-sandbox.js';
 import { createFakeHerdr } from './fake-herdr.js';
 import { registerInertProvider } from './inert-provider.js';
+import { plannerWakePrompt } from '../../../src/planner-bridge.js';
 
 export { InertSandbox };
 
@@ -13,6 +14,10 @@ export default async function (pi: ExtensionAPI) {
   const installed = process.env.P2O_TEST_INSTALLED_EXTENSION;
   const register = installed ? (await import(installed)).registerP2O : registerP2O;
   registerInertProvider(pi, 'owner');
+  // Test-only stale-message injection, not an extension/runtime command.
+  pi.registerCommand('fixture-stale-wake',{description:'Inject a deliberately obsolete inert wake',handler:async()=>{
+    pi.sendUserMessage(plannerWakePrompt({runId:'run-obsolete',epoch:0,through:1,round:1}),{deliverAs:'followUp'});
+  }});
   // Hermetic delegation transport for tests: same Herdr contract, child `pi` processes instead of panes.
   const fake = process.env.P2O_TEST_FAKE_HERDR === '1'
     ? createFakeHerdr({
