@@ -4,7 +4,7 @@ One command. Your **current Pi agent** plans an authorized assessment; a determi
 **visible worker panes**. Workers investigate one intent autonomously. Shared-serial execution is default; isolated
 assignment executors are opt-in. No hidden Planner model, provider harness or dashboard.
 
-**Checkout đang triển khai K0–K7, chưa publish/install:** canonical SQLite/schema 7, durable-local luôn confirm, visibility/checkpoint/bounded capture, [asset/fact graph K3](docs/ASSET_GRAPH.md), [work admission/kế hoạch/phase cards K4](docs/WORK_ADMISSION.md), [canonical case/proof-aware coverage K5](docs/CASE_REVIEW.md) và [indexed knowledge heads/context packets K6](docs/CONTEXT_PACKETS.md) đã nối. Baseline đã phát hành 0.5.0 (`e639029`) chưa có các phần mới; [trạng thái/gates còn lại](docs/KNOWLEDGE_WORKSPACE.md).
+**Trạng thái:** `main` từ `7e204c3` đã gồm phần K0–K7 đang triển khai và là bản mà `pi install` lấy về: canonical SQLite/schema 7, durable-local luôn confirm, visibility/checkpoint/bounded capture, [asset/fact graph K3](docs/ASSET_GRAPH.md), [work admission/kế hoạch/phase cards K4](docs/WORK_ADMISSION.md), [canonical case/proof-aware coverage K5](docs/CASE_REVIEW.md), [indexed knowledge heads/context packets K6](docs/CONTEXT_PACKETS.md) và [acceptance matrix K7](docs/ACCEPTANCE_MATRIX.md). `package.json` vẫn **0.5.0** (baseline phát hành `e639029`): chưa có version/release mới, nhãn K2–K6 bên dưới đánh dấu phần thêm sau baseline. K0–K7 **chưa hoàn tất**; installed acceptance mới là 6 test inert, chưa phải ma trận đầy đủ, Herdr thật hay hiệu quả pentest. Xem [trạng thái và gates còn lại](docs/KNOWLEDGE_WORKSPACE.md).
 
 ## Install
 
@@ -12,14 +12,16 @@ assignment executors are opt-in. No hidden Planner model, provider harness or da
 pi install https://github.com/Nhan-Laptop/pi-p2o
 ```
 
-Requires Pi 1.0.0 or 1.1.0 (the source checkout passes the same inert regression suite on both; the released 0.5.0 installed acceptance was recorded on 1.0.0 only), a configured model, a Linux host (`/proc/self/fd` containment), and a running local Linux Docker daemon. Install the sandbox tools image once:
+Tested with Pi 1.1.0, the pinned development dependency; the installed check of `7e204c3` ran on a managed Pi 1.1.0. Pi 1.0.0 passed the earlier 357-test inert suite and the 0.5.0 installed acceptance, but the current 388-test suite and the installed check were **not** re-run on 1.0.0 (peer dependencies stay `*`). You also need a configured model, a Linux host (`/proc/self/fd` containment), and a running local Linux Docker daemon. Install the sandbox tools image once:
 
 ```sh
 docker pull ghcr.io/usestrix/strix-sandbox@sha256:f6906c3114e504fd1a218fcf028d7a0e46851118403a438b63956de6ea7c4331
 ```
 
-No extension build or JSON configuration is needed. Use `/reload` after installing/updating. Load only one copy:
+No extension build or JSON configuration is needed. Use `/reload` after installing/updating, and stop any active assessment first. Load only one copy:
 `pi` for the installed package, or `pi --no-extensions -e "$PWD"` for development.
+
+`pi update` does nothing when `PI_OFFLINE=1` is set, yet still prints "Updated". Unset `PI_OFFLINE` for that one command, then check the revision (`git -C ~/.pi/agent/git/github.com/Nhan-Laptop/pi-p2o rev-parse HEAD`) rather than trusting the message.
 
 ## Use
 
@@ -31,18 +33,50 @@ No extension build or JSON configuration is needed. Use `/reload` after installi
 /p2o --target ./my-repo --solo
 /p2o --target ./my-repo --export
 /p2o --target ./my-repo --loop event-driven --executors isolated --workers 3 --target-ops 2
+/p2o --target ./my-repo --retention ephemeral
 /p2o pause
 /p2o resume
 /p2o stop
-/p2o export /abs/path/bundle
-/p2o import /abs/path/bundle
-/p2o reconcile <run-id> [reason]
+/p2o hold [reason]
+/p2o release
+/p2o workers
+/p2o stop-worker <worker-id> [reason]
+
+/p2o status
+/p2o tasks [all|live|awaiting-review|blocked|done] [cursor]
+/p2o task <task-id>
+/p2o log [cursor] [task=<id>] [actor=<id>] [operation=<id>]
+/p2o report
+/p2o report export /abs/path/report-dir
+/p2o plans [cursor]
+/p2o plan <id>
+/p2o phases [cursor]
+/p2o phase <id>
+/p2o findings [cursor]
+/p2o finding <case-id>
+/p2o coverage [cursor]
+/p2o coverage-cell <cell-id>
 /p2o graph
 /p2o graph <asset-id> [cursor]
 /p2o graph export [limit] [cursor]
 /p2o heads [domain|all] [cursor] [limit]
 /p2o digest
+/p2o search <text> [cursor=N]
+
+/p2o checkpoint [reason]
+/p2o checkpoints [checkpoint-id]
+/p2o artifact <artifact-id> [byte-offset]
+/p2o open <run-id>
+/p2o recover <run-id>
+/p2o reconcile <run-id> [reason]
+/p2o close
+/p2o export /abs/path/bundle
+/p2o import /abs/path/bundle
 ```
+
+The first group starts or controls a run: `hold` refuses new target commands and worker launches without ending the run (running commands finish; reporting and `stop` stay open), `release` lifts it after confirmation, and `stop-worker` withdraws one worker; none of these has a model-callable equivalent. The second group (`status` … `search`, `workers`) is read-only: no model call, no target
+operation, no change to mode, budget or authority. `report export` writes a deterministic `REPORT.md` + CSV from committed state (no model, markup-neutralized, new directory only) after confirmation. The third group (K2) manages retained knowledge and runs on the
+human side only; `open`, `recover` and `close` never resume an assessment. Details: [usage](docs/USAGE.md).
 
 Confirm scope and permission once. The command prepares the sandbox and sends the task directly into the
 **existing conversation**, using the existing model. In delegated mode it is a strategic Planner: target execution
@@ -64,14 +98,14 @@ automatic retry/fallback or restored-session authority. See [Planner/Engine cont
 | `p2o_net` | solo + non-reporting worker | Network commands in the sandbox: connect scans, service probes, tooling installs; no task timeout by default |
 | `p2o_note` | lead + worker | Append a note, observation, coverage row or open item to the shared ledger |
 | `p2o_ledger` | lead + worker | Read the shared ledger or one evidence/candidate record by ID before repeating work |
-| `p2o_artifact` (checkout K2) | lead + worker, including reporting | Đọc retained redacted text theo opaque ID, ≤8 KiB/range; không chạy target hoặc cấp authority |
-| `p2o_graph` (checkout K3) | lead + worker; reporting read-only | Scoped typed asset/fact/anchor batches; owner hypotheses/relations, provenance/revision pins, bounded history/JSON/Mermaid; không grant permission hoặc finding proof |
-| `p2o_state` (checkout K6) | lead + worker, including reporting; read-only | Bounded indexed knowledge-head navigation with exact totals and a stable sequence cursor; filters never change work, proof or authority |
-| `p2o_plan` (checkout K4) | lead only | Goal/todo/decision revisions on canonical records; not a second task queue, scope authority or proof |
-| `p2o_case` (checkout K5) | lead only | Owner-reviewed canonical cases from exact claim/evidence/task/asset revisions; worker claims stay pending until review; acceptance never completes a goal |
-| `p2o_coverage` (checkout K5) | lead only | Versioned coverage denominators/cells with separate execution and assessment axes; blocked or untested is never "clean" |
-| `p2o_capture` (checkout K2) | solo + non-reporting worker | Đọc bounded UTF-8 text từ scratch đã cấp qua FD/single-link rồi lưu artifact redacted; không nhận host path, không thực thi nội dung file |
-| `p2o_delegate` | Planner | Spawn one focused worker immediately; batch/waiting work uses `p2o_task dispatch` |
+| `p2o_artifact` (K2) | lead + worker, including reporting | Đọc retained redacted text theo opaque ID, ≤8 KiB/range; không chạy target hoặc cấp authority |
+| `p2o_graph` (K3) | lead + worker; reporting read-only | Scoped typed asset/fact/anchor batches; owner hypotheses/relations, provenance/revision pins, bounded history/JSON/Mermaid; không grant permission hoặc finding proof |
+| `p2o_state` (K6) | lead + worker, including reporting; read-only | Bounded indexed knowledge-head navigation with exact totals and a stable sequence cursor, plus plain-substring `search` over committed records (pointers, not evidence); filters never change work, proof or authority |
+| `p2o_plan` (K4) | lead only | Goal/todo/decision revisions on canonical records; not a second task queue, scope authority or proof |
+| `p2o_case` (K5) | lead only | Owner-reviewed canonical cases from exact claim/evidence/task/asset revisions; worker claims stay pending until review; acceptance never completes a goal |
+| `p2o_coverage` (K5) | lead only | Versioned coverage denominators/cells with separate execution and assessment axes; blocked or untested is never "clean" |
+| `p2o_capture` (K2) | solo + non-reporting worker | Đọc bounded UTF-8 text từ scratch đã cấp qua FD/single-link rồi lưu artifact redacted; không nhận host path, không thực thi nội dung file |
+| `p2o_delegate` | Planner | Spawn one focused worker immediately; pass `work` for exact duplicate/history checks (otherwise the identity is reported as unknown); batch/waiting work uses `p2o_task dispatch` |
 | `p2o_request_subtask` | worker | Propose a missing bounded task; never directly spawn or accept work |
 | `p2o_loop` | owner | Engine/frontier status, end round with wait, or explain blocked/human-needed |
 | `p2o_workers` | lead | Worker status, budget, report summary, coverage; optionally wait for a report |
@@ -84,12 +118,13 @@ Host tools, `codemode`, the browser, other extensions, `!` shell and the worker'
 while an assessment is active. A worker reaches the target **only** through the lead's broker socket; if the
 lead stops, workers fail closed.
 
-**Checkout K2:** durable-local mặc định giữ tri thức tại `.p2o-state/<run-id>` sau cleanup; luôn xác nhận location/quota/sensitivity trước tạo (kèm finalization reserve). File text trong scratch chỉ vào kho qua `p2o_capture` với kiểm tra path/FD/single-link/UTF-8 rồi redact trước khi publish; file ngoài scratch, symlink, hardlink, device, binary bị từ chối. `--retention ephemeral` xóa tri thức với control. `/p2o open <run-id>` chỉ mở lịch sử read-only, không resume assessment. `/p2o export <absolute-dir>` ghi bản sao portable có hash (segments + artifact + manifest, không overwrite); `/p2o import <absolute-dir>` xác minh hash rồi giữ exported bytes thành artifact bất biến + một provenance note (foreign redaction claims không được authenticate) trong run đang chạy — không khôi phục scope/ticket/worker/cookie/budget và không tính là same-run evidence. `/p2o reconcile <run-id>` (cần xác nhận) ghi **một** lifecycle record có attribution đánh dấu task non-terminal và operation unknown là interrupted/unknown; không rewrite task status, không resume, không cấp authority. Shell/net/curl capture prefix trước display cap 48 KiB, tổng stdout+stderr mặc định 1 MiB/operation (setting 1–8192 KiB); trả artifact IDs, total/captured bytes và partial labels. Hash/byte cursor không phải finding proof; redaction best effort, không bảo đảm hết secrets.
+**K2 (retention):** durable-local mặc định giữ tri thức tại `.p2o-state/<run-id>` sau cleanup; luôn xác nhận location/quota/sensitivity trước tạo (kèm finalization reserve). File text trong scratch chỉ vào kho qua `p2o_capture` với kiểm tra path/FD/single-link/UTF-8 rồi redact trước khi publish; file ngoài scratch, symlink, hardlink, device, binary bị từ chối. `--retention ephemeral` xóa tri thức với control. `/p2o open <run-id>` chỉ mở lịch sử read-only, không resume assessment. `/p2o export <absolute-dir>` ghi bản sao portable có hash (segments + artifact + manifest, không overwrite); `/p2o import <absolute-dir>` xác minh hash rồi giữ exported bytes thành artifact bất biến + một provenance note (foreign redaction claims không được authenticate) trong run đang chạy — không khôi phục scope/ticket/worker/cookie/budget và không tính là same-run evidence. `/p2o reconcile <run-id>` (cần xác nhận) ghi **một** lifecycle record có attribution đánh dấu task non-terminal và operation unknown là interrupted/unknown; không rewrite task status, không resume, không cấp authority. Shell/net/curl capture prefix trước display cap 48 KiB, tổng stdout+stderr mặc định 1 MiB/operation (setting 1–8192 KiB); trả artifact IDs, total/captured bytes và partial labels. Hash/byte cursor không phải finding proof; redaction best effort, không bảo đảm hết secrets.
 
-With `--export`, cleanup additionally saves bounded redacted receipts and source/skill hashes in `.p2o-reports/` (0700; files 0600); this is not yet a portable artifact bundle. Review before sharing. The released 0.5.0 baseline removes its temporary ledger without export; the new checkout follows confirmed retention instead.
+With `--export`, cleanup additionally saves bounded redacted receipts and source/skill hashes in `.p2o-reports/` (0700; files 0600); this legacy export is not the portable bundle (`/p2o export <absolute-dir>` writes that, human only). Review before sharing. The 0.5.0 baseline removed its temporary ledger without export; current `main` follows the confirmed retention instead.
 Terminal worker failures deliver a blocked report without another model call; no provider fallback is automatic.
 
 See [focused assessment state](docs/ASSESSMENT_STATE.md) for complete-ledger cursors, task/handoff review, current validation, progress and bounded report retention. Automatic planning is explicit opt-in; automatic retry is not introduced.
+`/p2o status` also shows worker liveness (`QUIET` is a local observation, not a timeout), the runtime closure digest (entry file plus `src/**`), the Planner's context usage and model usage per role as Pi reports it — display only: no cap, retry or limit is ever derived from it, and unreported messages are counted as unknown, not estimated.
 
 ## Recon and next-task selection
 
@@ -154,6 +189,10 @@ npm run test:sandbox      # real Docker boundary + two-worker broker, no externa
 npm run test:herdr        # opt-in: real Herdr pane spawn (opens and closes a pane in your session)
 pi --no-extensions -e "$PWD"
 ```
+
+The same inert real-Pi/Docker tests can target an installed copy instead of the source tree (no model, no external target):
+`P2O_TEST_DOCKER=1 P2O_TEST_INSTALLED_EXTENSION=<installed-checkout>/extensions/p2o/index.ts npx vitest run tests/minimal/native.test.ts tests/minimal/planner-native.test.ts tests/minimal/docker-extension.test.ts`.
+A passing run proves the installed mechanics only, not assessment quality.
 
 Design notes: [architecture](docs/ARCHITECTURE.md), [usage](docs/USAGE.md), [enhancement roadmap](planning_update.md), [acceptance matrix](docs/ACCEPTANCE_MATRIX.md).
 [Benchmarks](bench/README.md) are opt-in real-model runs, separate from the hermetic suite; no effectiveness claim is implied by passing unit tests.
