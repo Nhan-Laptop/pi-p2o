@@ -17,6 +17,8 @@ export interface FakePi {
   messages: string[];
   customMessages: Array<{message:any; options:any}>;
   flags: Record<string, string | boolean>;
+  entries: Array<{customType:string; data:any}>;
+  entryRenderers: Map<string, any>;
   allowWorkerFlag: (value: string) => void;
 }
 
@@ -26,6 +28,7 @@ export function createFakePi(options: { active?: string[] } = {}): FakePi {
   const messages: string[] = [];
   const customMessages: Array<{message:any; options:any}> = [];
   const flags: Record<string, string | boolean> = {};
+  const entries: Array<{customType:string; data:any}> = [], entryRenderers = new Map<string, any>();
   const api = {
     registerTool: (tool: any) => { tools.set(tool.name, tool); },
     registerCommand: (name: string, command: any) => { commands.set(name, command); },
@@ -36,10 +39,11 @@ export function createFakePi(options: { active?: string[] } = {}): FakePi {
     setActiveTools: (names: string[]) => { active = [...names]; },
     sendUserMessage: (text: string) => { messages.push(text); },
     sendMessage: (message:any, options:any) => {customMessages.push({message,options});},
-    appendEntry: () => {},
+    appendEntry: (customType:string, data:any) => { entries.push({customType,data}); },
+    registerEntryRenderer: (customType:string, renderer:any) => { entryRenderers.set(customType,renderer); },
   } as unknown as ExtensionAPI;
   const fake: FakePi = {
-    pi: api, tools, commands, events, get active() { return active; }, messages, customMessages, flags,
+    pi: api, tools, commands, events, get active() { return active; }, messages, customMessages, flags, entries, entryRenderers,
     allowWorkerFlag: (value: string) => { flags['p2o-worker'] = value; },
   } as FakePi;
   Object.defineProperty(fake, 'active', { get: () => active });
@@ -50,17 +54,21 @@ export interface FakeContext {
   ctx: ExtensionCommandContext;
   notices: string[];
   dialogs: string[];
+  confirmBodies: string[];
   aborts: number;
   waitForIdleCalls: number;
+  screens: any[];
+  widgets: Map<string, any>;
   setConfirm: (value: boolean) => void;
   setIdle: (value: boolean) => void;
 }
 
 export function createContext(options: { cwd: string; hasUI?: boolean; model?: { provider: string; id: string } | null; confirm?: boolean } ): FakeContext {
-  const notices: string[] = []; const dialogs: string[] = [];
+  const notices: string[] = []; const dialogs: string[] = [], confirmBodies:string[] = [];
   let confirmed = options.confirm ?? true;
   let idle = true;
   let aborts = 0; let waitForIdleCalls = 0;
+  const screens: any[] = [], widgets = new Map<string, any>();
   const controller = new AbortController();
   const ctx = {
     cwd: options.cwd, hasUI: options.hasUI ?? true, mode: 'tui',
@@ -68,9 +76,10 @@ export function createContext(options: { cwd: string; hasUI?: boolean; model?: {
     thinkingLevel: 'off',
     ui: {
       notify: (text: string) => { notices.push(text); },
-      confirm: async (title: string) => { dialogs.push(title); return confirmed; },
+      confirm: async (title: string, body?: string) => { dialogs.push(title); confirmBodies.push(body ?? ''); return confirmed; },
       setStatus: () => {},
-      custom: async () => undefined,
+      setWidget: (key:string, value:any) => { if (value === undefined) widgets.delete(key); else widgets.set(key,value); },
+      custom: async (factory:any) => { screens.push(factory({}, {}, {}, () => {})); },
     },
     abort: () => { aborts += 1; controller.abort(); },
     waitForIdle: async () => { waitForIdleCalls += 1; },
@@ -79,7 +88,7 @@ export function createContext(options: { cwd: string; hasUI?: boolean; model?: {
     sessionManager: { getBranch: () => [] },
   } as unknown as ExtensionCommandContext;
   return {
-    ctx, notices, dialogs, get aborts() { return aborts; }, get waitForIdleCalls() { return waitForIdleCalls; },
+    ctx, notices, dialogs, confirmBodies, screens, widgets, get aborts() { return aborts; }, get waitForIdleCalls() { return waitForIdleCalls; },
     setConfirm: (value: boolean) => { confirmed = value; },
     setIdle: (value: boolean) => {idle=value;},
   } as FakeContext;

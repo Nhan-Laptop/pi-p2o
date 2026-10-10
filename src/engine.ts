@@ -120,10 +120,13 @@ export class AssessmentEngine {
   forget(taskId: string) {this.queue.delete(taskId);}
   started() { this.busy = true; }
   settled() { this.busy = false; this.kick(); }
-  /** Called only when the next request actually gets a projection containing this delta. */
-  consume() {
-    const delta = [...this.events.values()].sort((a,b) => a.sequence-b.sequence);
-    this.events.clear(); this.consumed = this.sequence; this.reservation = undefined;
+  /** Delivery ACK only: never discard events committed after the projected barrier. */
+  consume(through = this.sequence) {
+    if (!Number.isSafeInteger(through) || through < 0 || through > this.sequence) throw Error('Invalid semantic consumption barrier');
+    const delta = [...this.events.values()].filter(event => event.sequence <= through).sort((a,b) => a.sequence-b.sequence);
+    for (const [key,event] of this.events) if (event.sequence <= through) this.events.delete(key);
+    this.consumed = Math.max(this.consumed,through);
+    if (this.reservation && this.reservation.through <= through) this.reservation = undefined;
     return delta;
   }
   async disposition(disposition: 'wait' | 'blocked', reason: string) {

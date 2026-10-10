@@ -58,8 +58,8 @@ async function harness(options: { settings?: unknown; herdrAvailable?: boolean }
     get contexts() { return contextFor(); },
     async tickets() { return (await readdir(await runDirectory())).filter(name => name.startsWith('ticket-')); },
     async records(): Promise<any[]> {
-      const file = join(await runDirectory(), 'records.jsonl');
-      return (await readFile(file, 'utf8')).split('\n').filter(Boolean).map((line: string) => JSON.parse(line) as any);
+      const {readLedger} = await import('../../src/records.js');
+      return (await readLedger(join(await runDirectory(),'records.sqlite'))).records;
     },
   };
 }
@@ -67,10 +67,10 @@ async function harness(options: { settings?: unknown; herdrAvailable?: boolean }
 describe('owner role', () => {
   let h: Harness;
   beforeEach(async () => { h = await harness(); });
-  afterEach(async () => { await rm(h.root, { recursive: true, force: true }); });
+  afterEach(async () => { await h.command('stop'); await rm(h.root, { recursive: true, force: true }); });
 
   it('registers the owner and worker tools plus one command, and does no work before the command', () => {
-    expect([...h.pi.tools.keys()].sort()).toEqual(['p2o_candidate', 'p2o_delegate', 'p2o_finish', 'p2o_http', 'p2o_ledger', 'p2o_loop', 'p2o_net', 'p2o_note', 'p2o_report', 'p2o_request_subtask', 'p2o_shell', 'p2o_skill_list', 'p2o_skill_read', 'p2o_steer', 'p2o_stop_worker', 'p2o_task', 'p2o_workers']);
+    expect([...h.pi.tools.keys()].sort()).toEqual(['p2o_artifact', 'p2o_candidate', 'p2o_capture', 'p2o_case', 'p2o_coverage', 'p2o_delegate', 'p2o_finish', 'p2o_graph', 'p2o_http', 'p2o_ledger', 'p2o_loop', 'p2o_net', 'p2o_note', 'p2o_plan', 'p2o_report', 'p2o_request_subtask', 'p2o_shell', 'p2o_skill_list', 'p2o_skill_read', 'p2o_state', 'p2o_steer', 'p2o_stop_worker', 'p2o_task', 'p2o_workers']);
     expect(h.pi.messages).toEqual([]);
     expect(h.sandboxes).toEqual([]);
     expect([...h.pi.commands.keys()]).toEqual(['p2o']);
@@ -92,7 +92,7 @@ describe('owner role', () => {
     expect(event.systemPromptOptions.sections.p2o_assessment).toContain('DELEGATION');
     expect(event.systemPromptOptions.sections.other).toBe('KEEP OTHER GUIDANCE');
     expect(h.sandboxes[0].stopCount).toBe(0);
-    expect(h.pi.active).toEqual(['p2o_task', 'p2o_ledger', 'p2o_skill_list', 'p2o_skill_read', 'p2o_candidate', 'p2o_note', 'p2o_delegate', 'p2o_workers', 'p2o_steer', 'p2o_stop_worker', 'p2o_loop', 'p2o_finish']);
+    expect(h.pi.active).toEqual(['p2o_task', 'p2o_plan', 'p2o_case', 'p2o_coverage', 'p2o_ledger', 'p2o_state', 'p2o_graph', 'p2o_artifact', 'p2o_skill_list', 'p2o_skill_read', 'p2o_candidate', 'p2o_note', 'p2o_delegate', 'p2o_workers', 'p2o_steer', 'p2o_stop_worker', 'p2o_loop', 'p2o_finish']);
     expect(await h.tickets()).toEqual([]);
   });
 
@@ -134,7 +134,7 @@ describe('owner role', () => {
     expect(h.herdr.calls.filter(c=>c.op==='start')).toHaveLength(0);expect(h.pi.active).not.toContain('agent_browser');
     const task=(await h.call('p2o_task',{action:'create',draft:{...draft,surface:'/other'}})).details;
     const {appendRecord}=await import('../../src/records.js');
-    await appendRecord(join(await h.runDir(),'records.jsonl'),{at:'2030',runId:task.runId,by:'owner',kind:'task',text:'Controlled hash fault',supersedes:task.recordId,data:{task:{...task,revision:task.revision+1,method:{...task.method,skills:task.method.skills.map((s:any)=>({...s,sha256:'0'.repeat(64)}))}}}});
+    await appendRecord(join(await h.runDir(),'records.sqlite'),{at:'2030',runId:task.runId,by:'owner',kind:'task',text:'Controlled hash fault',supersedes:task.recordId,data:{task:{...task,revision:task.revision+1,method:{...task.method,skills:task.method.skills.map((s:any)=>({...s,sha256:'0'.repeat(64)}))}}}});
     await expect(h.call('p2o_delegate',{focus:'fault',task:'Do not use stale method',taskId:task.id})).rejects.toThrow('TASK_METHOD_STALE');
     expect(h.herdr.calls.filter(c=>c.op==='start')).toHaveLength(0);
     await h.command('stop');
@@ -480,6 +480,19 @@ describe('owner role', () => {
     expect(await h.emit('tool_call', { toolName: 'p2o_delegate' })).toMatchObject({ block: true });
   });
 
+  it('treats fork and tree navigation like a session switch: authority closes before the branch changes and nothing is restored', async () => {
+    for (const event of ['session_before_fork', 'session_before_tree'] as const) {
+      h = await harness(); await h.start();
+      expect(h.pi.active).not.toContain('bash');
+      expect(await h.emit(event)).toBeUndefined(); // navigation is allowed once cleanup is verified
+      expect(h.sandboxes[0].stopCount, event).toBe(1);
+      expect(h.pi.active, event).toContain('bash'); expect(await h.emit('tool_call', { toolName: 'p2o_shell' })).toMatchObject({ block: true });
+      await expect(h.call('p2o_shell', { command: 'id' })).rejects.toThrow(/No active p2o assessment/);
+      h = await harness(); await h.start(); h.sandboxes[0].cleanupFailure = true;
+      expect(await h.emit(event), `${event} must not leave while teardown is unverified`).toMatchObject({ cancel: true });
+      h.sandboxes[0].cleanupFailure = false; await h.command('stop');
+    }
+  });
   it('cleans up when the sandbox cannot start and never briefs the agent', async () => {
     const root = await mkdtemp(join(tmpdir(), 'p2o-failstart-'));
     try {

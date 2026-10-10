@@ -13,7 +13,8 @@ export function registerInertProvider(pi: ExtensionAPI, mode: 'owner' | 'worker'
       // A conforming provider must honor an already-aborted request BEFORE network/usage.
       // This fixture never contacts a provider; journaling counts accepted inert requests only.
       options?.signal?.throwIfAborted();
-      if (process.env.P2O_TEST_PROVIDER_LOG) appendFileSync(process.env.P2O_TEST_PROVIDER_LOG,JSON.stringify({mode,at:Date.now()})+'\n');
+      const indexedContext=context.messages.some((m:any)=>(typeof m.content==='string'?m.content:JSON.stringify(m.content??'')).includes('P2O INDEXED KNOWLEDGE'));
+      if (process.env.P2O_TEST_PROVIDER_LOG) appendFileSync(process.env.P2O_TEST_PROVIDER_LOG,JSON.stringify({mode,at:Date.now(),indexedContext})+'\n');
       const objectivePresent = context.messages.some((m:any) => (typeof m.content === 'string' ? m.content : JSON.stringify(m.content ?? '')).includes('P2O OBJECTIVE STATE'));
       if (mode === 'worker' && !objectivePresent) throw Error('Worker objective did not survive request context rebuilding');
       if (mode === 'worker' && process.env.P2O_TEST_WORKER_FAULT === 'quota') {
@@ -34,6 +35,7 @@ export function registerInertProvider(pi: ExtensionAPI, mode: 'owner' | 'worker'
       const results = context.messages.filter((message: any) => message.role === 'toolResult');
       const last: any = results.at(-1);
       const lastTool = last?.toolName as string | undefined;
+      if(lastTool!=='p2o_finish'&&lastTool!=='p2o_report'&&!indexedContext)throw Error('Indexed role packet did not reach the real Pi provider request');
       options?.signal?.throwIfAborted();
       let content: AssistantMessage['content'];
 
@@ -45,7 +47,58 @@ export function registerInertProvider(pi: ExtensionAPI, mode: 'owner' | 'worker'
         const candidate = descriptions.find(tool => tool.name === 'p2o_candidate');
         if (!(candidate?.parameters as any)?.properties?.evidenceRefs || !(candidate?.parameters as any)?.properties?.policyBasis) throw new Error('candidate schema lost');
         if (!tools.includes('p2o_delegate') || tools.includes('bash') || tools.includes('read')) throw new Error(`owner tool loadout was not applied: ${tools.join(',')}`);
-        if (!last) content = [{ type: 'toolCall', id: 'delegate-1', name: 'p2o_delegate', arguments: {
+        if(process.env.P2O_TEST_CASE_OWNER==='1'){
+          const caseSchema=descriptions.find(tool=>tool.name==='p2o_case')?.parameters as any,coverageSchema=descriptions.find(tool=>tool.name==='p2o_coverage')?.parameters as any;
+          if(caseSchema?.type!=='object'||!caseSchema.properties?.entry||!caseSchema.required?.includes('action')||coverageSchema?.type!=='object'||!coverageSchema.properties?.cell||!coverageSchema.required?.includes('action'))throw Error('case/coverage root object schema missing in real Pi context');
+          if(last?.isError)throw Error('Native case fixture tool rejected: '+JSON.stringify(last));
+          const graph=(results.find((r:any)=>r.toolName==='p2o_graph') as any)?.details.acks[0],receipt=(results.find((r:any)=>r.toolName==='p2o_shell') as any)?.details.evidenceId,claim=(results.find((r:any)=>r.toolName==='p2o_candidate') as any)?.details,
+            caseResults:any[]=results.filter((r:any)=>r.toolName==='p2o_case'),coverageResults:any[]=results.filter((r:any)=>r.toolName==='p2o_coverage'),pending=caseResults[0]?.details,accepted=caseResults[2]?.details,plan=coverageResults[0]?.details,
+            entry={title:'Native inert canonical case',policyKey:'policy:native-case',rootCauseKey:'root:native-gate',assetRefs:[{id:graph?.entityId,revision:1}],claimRefs:[claim?.id],independentEvidenceRefs:[],taskRefs:[],reportRefs:[],contradictions:[],affectedVariants:['variant:native'],relatedCaseIds:[],verdict:'confirmed',reviewStatus:'pending',reviewReason:'Pending explicit native owner review of exact support',limitations:'Only the scripted inert provider fixture is covered',remediation:{status:'unplanned',reason:'No remediation has been implemented or reviewed',evidenceRefs:[]}},
+            planInput={title:'Native inert coverage denominator',status:'active',reason:'One explicit scripted fixture cell only',exclusions:['No undeclared assets or actors'],unknownScope:['Deployment parity is unknown']};
+          if(!last)content=[{type:'toolCall',id:'case-asset',name:'p2o_graph',arguments:{action:'record',batch:{assets:[{asset:{kind:'endpoint',key:'GET /native-case'}}]}}}];
+          else if(lastTool==='p2o_graph')content=[{type:'toolCall',id:'case-receipt',name:'p2o_shell',arguments:{command:'printf native-case-observation'}}];
+          else if(lastTool==='p2o_shell')content=[{type:'toolCall',id:'case-claim',name:'p2o_candidate',arguments:{candidate:'native-case-claim',surface:'/native-case',risk:'authorization',closure:'confirmed',execution:'tested',proof:'offline_reproduction',evidenceRefs:[receipt],negativeControls:[],policyBasis:'boundary_invariant',expectedPolicy:'Declared inert fixture boundary',limitations:'Scripted provider and sandbox only'}}];
+          else if(lastTool==='p2o_candidate')content=[{type:'toolCall',id:'case-create',name:'p2o_case',arguments:{action:'create',requestId:'native-case-request',entry}}];
+          else if(lastTool==='p2o_case'&&caseResults.length===1)content=[{type:'toolCall',id:'case-replay',name:'p2o_case',arguments:{action:'create',requestId:'native-case-request',entry}}];
+          else if(lastTool==='p2o_case'&&caseResults.length===2)content=[{type:'toolCall',id:'case-accept',name:'p2o_case',arguments:{action:'revise',id:pending.id,revision:1,entry:{...entry,reviewStatus:'accepted',reviewReason:'Owner reviewed exact native claim, asset and limitations'}}}];
+          else if(lastTool==='p2o_case'&&caseResults.length===3)content=[{type:'toolCall',id:'coverage-plan',name:'p2o_coverage',arguments:{action:'plan-create',requestId:'native-coverage-request',plan:planInput}}];
+          else if(lastTool==='p2o_coverage'&&coverageResults.length===1)content=[{type:'toolCall',id:'coverage-replay',name:'p2o_coverage',arguments:{action:'plan-create',requestId:'native-coverage-request',plan:planInput}}];
+          else if(lastTool==='p2o_coverage'&&coverageResults.length===2)content=[{type:'toolCall',id:'coverage-cell',name:'p2o_coverage',arguments:{action:'cell-create',planId:plan.id,planRevision:plan.revision,cell:{assetRef:{id:graph.entityId,revision:1},questionKey:'question:native-case',policyKey:'policy:native-case',actorContext:'actor:native',tenantContext:'tenant:native',methodFamily:'offline-observation',execution:'attempted',assessment:'confirmed_claim',taskRefs:[],claimRefs:[claim.id],caseRefs:[{caseId:accepted.id,revision:accepted.revision}],evidenceRefs:[receipt],negativeControlRefs:[],gapRefs:[],reason:'Scripted claim attempt is represented without clean or whole-target inference',limitations:'No task-review or live-provider effectiveness is claimed'}}}];
+          else if(lastTool==='p2o_coverage'&&coverageResults.length===3)content=[{type:'toolCall',id:'case-list',name:'p2o_case',arguments:{action:'list'}}];
+          else if(lastTool==='p2o_case')content=[{type:'toolCall',id:'coverage-list',name:'p2o_coverage',arguments:{action:'list'}}];
+          else if(lastTool==='p2o_coverage')content=[{type:'toolCall',id:'case-finish',name:'p2o_finish',arguments:{}}];
+          else if(lastTool==='p2o_finish')content=[{type:'text',text:'OWNER_CASE_DONE: one owner-reviewed inert case and explicit attempted cell; no goal or assessment completion.'}];
+          else throw Error('Unexpected native case fixture turn');
+        }
+        else if(process.env.P2O_TEST_WORK_OWNER==='1'){
+          const schema=descriptions.find(tool=>tool.name==='p2o_plan')?.parameters as any;
+          if(schema?.type!=='object'||!schema.properties?.entry||!schema.required?.includes('action'))throw Error('plan root object schema missing in real Pi context');
+          if(last?.isError)throw Error('Native work fixture tool rejected: '+JSON.stringify(last));
+          const asset=(results.find((r:any)=>r.toolName==='p2o_graph') as any)?.details.acks[0].entityId,draft={
+            question:'Which declared inert policy reaches the consumer?',surface:'fixture-source',risk:'boundary',role:'general',roleReason:'Single inert source-only question',expectedTrue:'Declared fixture gate reaches consumer',expectedFalse:'Effective control does not reach consumer',stopCondition:'Stop at this one bounded inert question',evidenceIds:[],prerequisites:[],skills:[],methodReason:'Controlled source fixture, no target execution',
+            work:{assetRefs:[{id:asset,revision:1}],questionKey:'policy:inert',actorContext:'actor:source',tenantContext:'tenant:none',methodFamily:'source-trace',purpose:'investigation'},decision:{disposition:'new',reason:'No known matching retained attempt exists yet'},outputContract:{kind:'investigation',required:['evidence','gaps'],partialAllowed:true,artifactPolicy:'ids-only'},
+          };
+          if(!last)content=[{type:'toolCall',id:'work-asset',name:'p2o_graph',arguments:{action:'record',batch:{assets:[{asset:{kind:'file',key:'src/gate.py'}}]}}}];
+          else if(lastTool==='p2o_graph')content=[{type:'toolCall',id:'work-task',name:'p2o_task',arguments:{action:'create',draft}}];
+          else if(lastTool==='p2o_task'&&!(results as any[]).some(r=>r.toolName==='p2o_plan'))content=[{type:'toolCall',id:'work-goal',name:'p2o_plan',arguments:{action:'create',requestId:'native-work-goal',entry:{kind:'goal',title:'Review one declared inert policy boundary',status:'active',reason:'Explicit controlled fixture; no investigation claimed',criteria:['Owner must review attribution and a control'],taskIds:[last.details.id]}}}];
+          else if(lastTool==='p2o_plan'&&results.filter((r:any)=>r.toolName==='p2o_plan').length===1)content=[{type:'toolCall',id:'work-goal-replay',name:'p2o_plan',arguments:{action:'create',requestId:'native-work-goal',entry:{kind:'goal',title:'Review one declared inert policy boundary',status:'active',reason:'Explicit controlled fixture; no investigation claimed',criteria:['Owner must review attribution and a control'],taskIds:[(results.find((r:any)=>r.toolName==='p2o_task') as any).details.id]}}}];
+          else if(lastTool==='p2o_plan')content=[{type:'toolCall',id:'work-match',name:'p2o_task',arguments:{action:'match',draft}}];
+          else if(lastTool==='p2o_task')content=[{type:'toolCall',id:'work-finish',name:'p2o_finish',arguments:{}}];
+          else if(lastTool==='p2o_finish')content=[{type:'text',text:'OWNER_WORK_DONE: task cancelled by finish, goal retained active; no proof or investigation.'}];
+          else throw Error('Unexpected native work fixture turn');
+        }
+        else if(process.env.P2O_TEST_GRAPH_OWNER==='1'){
+          const schema=descriptions.find(tool=>tool.name==='p2o_graph')?.parameters as any;
+          if(schema?.type!=='object'||!schema.properties?.batch||!schema.required?.includes('action'))throw Error('graph root object schema missing in real Pi context');
+          const graphResults:any[]=results.filter((r:any)=>r.toolName==='p2o_graph'),batch={assets:[{ref:'entry',asset:{kind:'file',key:'src/gate.py'}}],facts:[{assetId:'@entry',kind:'inferred',statement:'native fixture question; not evidence or a finding',confidence:'low'}]};
+          if(!last||graphResults.length===1)content=[{type:'toolCall',id:'native-graph-'+graphResults.length,name:'p2o_graph',arguments:{action:'record',requestId:'native-graph-request',batch}}];
+          else if(graphResults.length===2)content=[{type:'toolCall',id:'native-graph-view',name:'p2o_graph',arguments:{action:'view',id:graphResults[0].details.acks[0].entityId}}];
+          else if(graphResults.length===3)content=[{type:'toolCall',id:'native-graph-export',name:'p2o_graph',arguments:{action:'export'}}];
+          else if(lastTool==='p2o_graph')content=[{type:'toolCall',id:'native-graph-finish',name:'p2o_finish',arguments:{}}];
+          else if(lastTool==='p2o_finish')content=[{type:'text',text:'OWNER_GRAPH_DONE: knowledge retained; no investigation or finding verified.'}];
+          else throw Error('Unexpected native graph fixture turn');
+        }
+        else if (!last) content = [{ type: 'toolCall', id: 'delegate-1', name: 'p2o_delegate', arguments: {
           focus: 'surface-recon', role: 'general',
           task: 'Inspect /target/code.txt in the sandbox and report what it contains. Success: a command, its output, and coverage for that surface. Stop if the sandbox is unavailable.',
           context: 'The lead has not inspected the target yet; nothing is already known and no surface is covered.',

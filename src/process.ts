@@ -2,24 +2,34 @@ import { spawn } from 'node:child_process';
 
 export const OUTPUT_LIMIT = 48 * 1024;
 export interface ProcessResult { code: number; stdout: string; stderr: string; truncated: boolean; evidenceId?: string; hops?: string[]; session?: string; redirectStopped?: string; cookieWarning?: string }
+export type OutputStream = 'stdout' | 'stderr';
+/** Trusted host callback only; raw bytes must never become serializable process/RPC metadata. */
+export type OutputObserver = (stream: OutputStream, bytes: Buffer) => void;
 /** `stdin` is passed once and closed immediately; it carries a request body, never a model-run host shell. */
-export type RunProcess = (args: string[], options?: { timeoutMs?: number | null; signal?: AbortSignal; stdin?: string }) => Promise<ProcessResult>;
+export type RunProcess = (args: string[], options?: { timeoutMs?: number | null; signal?: AbortSignal; stdin?: string; onOutput?: OutputObserver }) => Promise<ProcessResult>;
 
 /** Fixed executable, argument arrays only; never run a model-supplied host shell. */
-export function runFixed(command: string, args: string[], options: { timeoutMs?: number | null; signal?: AbortSignal; env?: NodeJS.ProcessEnv; stdin?: string } = {}): Promise<ProcessResult> {
+export function runFixed(command: string, args: string[], options: { timeoutMs?: number | null; signal?: AbortSignal; env?: NodeJS.ProcessEnv; stdin?: string; onOutput?: OutputObserver } = {}): Promise<ProcessResult> {
   return new Promise((resolve, reject) => {
   if (options.signal?.aborted) { reject(new Error('Cancelled')); return; }
   const child = spawn(command, args, { env: options.env ?? process.env, stdio: [options.stdin === undefined ? 'ignore' : 'pipe', 'pipe', 'pipe'] });
   const stdout: Buffer[] = []; const stderr: Buffer[] = [];
   let bytes = 0; let truncated = false; let failure: Error | undefined;
-  const collect = (chunks: Buffer[], data: Buffer) => {
+  const kill = (message: string) => { failure ??= new Error(message); child.kill('SIGKILL'); };
+  const observe = (stream: OutputStream, data: Buffer) => {
+    if (failure) return;
+    try { options.onOutput?.(stream, data); } catch { kill('Output capture observer failed; remote outcome unknown'); }
+  };
+  const collect = (stream: OutputStream, chunks: Buffer[], data: Buffer) => {
+    observe(stream, data); // Before the independent 48 KiB visible-output cap.
     const remaining = Math.max(0, OUTPUT_LIMIT - bytes);
     if (data.length > remaining) truncated = true;
-    const chunk = data.subarray(0, remaining); chunks.push(chunk); bytes += chunk.length;
+    if (!remaining || !data.length) return; // Endless excess output must not accumulate empty chunk descriptors.
+    const chunk = Buffer.from(data.subarray(0, remaining)); chunks.push(chunk); bytes += chunk.length;
   };
-  child.stdout?.on('data', (data: Buffer) => collect(stdout, data));
-  child.stderr?.on('data', (data: Buffer) => collect(stderr, data));
-  const kill = (message: string) => { failure = new Error(message); child.kill('SIGKILL'); };
+  child.once('spawn', () => observe('stdout', Buffer.alloc(0)));
+  child.stdout?.on('data', (data: Buffer) => collect('stdout', stdout, data));
+  child.stderr?.on('data', (data: Buffer) => collect('stderr', stderr, data));
   const abort = () => kill('Cancelled');
   child.stdin?.on('error', () => kill('Request input delivery failed'));
   if (options.stdin !== undefined) child.stdin?.end(options.stdin);

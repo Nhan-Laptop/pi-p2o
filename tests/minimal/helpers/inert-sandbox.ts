@@ -1,6 +1,7 @@
 import { appendFileSync } from 'node:fs';
 import { Sandbox } from '../../../src/sandbox.js';
 import type { HttpRequest } from '../../../src/target.js';
+import type { OutputObserver } from '../../../src/process.js';
 
 /** Real Pi, inert sandbox: no Docker, no live AI. Optionally journals calls for a test. */
 export class InertSandbox extends Sandbox {
@@ -17,15 +18,19 @@ export class InertSandbox extends Sandbox {
   }
   override async start() { this.journal({ op: 'start' }); if (this.failStart) throw new Error('docker unavailable'); }
   override async stop() { this.stopCount += 1; this.journal({ op: 'stop' }); if (this.cleanupFailure) throw new Error('cleanup not verified'); }
-  override async exec(command: string, seconds = 0, _signal?: AbortSignal, workdir = '/work', _onRunning?: () => void) {
+  override async exec(command: string, seconds = 0, _signal?: AbortSignal, workdir = '/work', _onRunning?: () => void, onOutput?: OutputObserver) {
+    _onRunning?.();
     this.commands.push({ command, workdir, timeout:seconds });
     this.journal({ op: 'exec', command, workdir, timeout:seconds });
-    return { code: 0, stdout: `INERT_SANDBOX uid=65532\n${command}`, stderr: '', truncated: false };
+    const stdout = `INERT_SANDBOX uid=65532\n${command}`; onOutput?.('stdout',Buffer.from(stdout));
+    return { code: 0, stdout, stderr: '', truncated: false };
   }
-  override async http(request: HttpRequest) {
+  override async http(request: HttpRequest, _signal?:AbortSignal, onRunning?:()=>void, _actor='owner', onOutput?:OutputObserver) {
+    onRunning?.();
     this.httpCalls.push({ url: request.url, method: request.method, body: request.body, headers: request.headers });
     this.journal({ op: 'http', url: request.url, method: request.method, body: request.body ?? null, headers: request.headers ?? null });
-    return { code: 0, stdout: `HTTP/1.1 200 OK\n${request.method} ${request.url}`, stderr: '', truncated: false, hops: [`200 ${request.method} ${request.url}`] };
+    const stdout = `HTTP/1.1 200 OK\n${request.method} ${request.url}`; onOutput?.('stdout',Buffer.from(stdout));
+    return { code: 0, stdout, stderr: '', truncated: false, hops: [`200 ${request.method} ${request.url}`] };
   }
   override async assertNoRunContainers() { this.journal({ op: 'sweep' }); }
 }

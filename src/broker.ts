@@ -1,10 +1,17 @@
 import { createServer, createConnection, type Server, type Socket } from 'node:net';
 import { rm } from 'node:fs/promises';
+import { randomUUID } from 'node:crypto';
+import type { MutationRequest } from './state/store.js';
 import { join } from 'node:path';
 import type { ProcessResult } from './process.js';
 import { httpRequest, taskTimeout, type HttpRequest } from './target.js';
-import { isOutcome, isRecordKind, type AssessmentRecord, type CoverageOutcome, type LedgerPage } from './records.js';
+import { isOutcome, isRecordKind, type AssessmentRecord, type CoverageOutcome, type LedgerPage, type RecordAck } from './records.js';
 import { reportingOperationDenied } from './tool-policy.js';
+import { scratchOffset, scratchPath } from './scratch.js';
+import { graphObject, validateGraphBatch, type GraphAck, type GraphBatch } from './state/graph.js';
+import type { ContextCursor, ContextPacket } from './context.js';
+import type { AssessmentTask } from './tasks.js';
+export type { GraphBatch } from './state/graph.js';
 
 /**
  * Owner-served broker. Strix shares one sandbox session with every agent; Pi workers are separate
@@ -53,13 +60,26 @@ export interface BrokerDeps {
   /** Network-egress command: identical executor, separately labelled so its receipts are auditable. */
   net?(command: string, seconds: number, workdir: string, signal: AbortSignal): Promise<ProcessResult>;
   http(request: HttpRequest, signal: AbortSignal, workerId?: string): Promise<ProcessResult>;
-  note(record: AssessmentRecord): Promise<void>;
+  /** Fixed scratch read under this authenticated assignment; no caller-selected root/host path. */
+  capture?(path: string, seconds: number, workerId: string, signal: AbortSignal, offset: number): Promise<ProcessResult>;
+  /** Owner-bound asset graph writes and reads; actor identity never comes from the payload. */
+  graphRecord?(batch: GraphBatch, worker: WorkerRegistration, request: MutationRequest): Promise<GraphAck[]>;
+  graphReplay?(batch: GraphBatch, worker: WorkerRegistration, request: MutationRequest): Promise<GraphAck[] | undefined>;
+  graphRead?(op: string, params: Record<string, unknown>, worker: WorkerRegistration): Promise<unknown>;
+  note(record: AssessmentRecord, request?: MutationRequest): Promise<void | RecordAck>;
   ledger(limit: number, id?: string, cursor?: number): Promise<AssessmentRecord[] | LedgerPage>;
   objective?(worker: WorkerRegistration): Promise<unknown>;
+  /** Fixed host-selected assignment projection/receipt only, never worker-selected scope or cursor. */
+  context?(worker:WorkerRegistration):Promise<{packet:ContextPacket;objective?:AssessmentTask}>;
+  contextAck?(packetSha256:string,worker:WorkerRegistration):Promise<ContextCursor>;
+  /** Startup lifecycle is persisted by the authenticated owner, never the worker filesystem. */
+  started?(worker: WorkerRegistration, request?: MutationRequest): Promise<void | RecordAck>;
+  /** Retained record/handoff ACK lookup. Graph results use graphReplay, so report recovery is type-safe. */
+  replayMutation?(worker: WorkerRegistration, op: string, request: MutationRequest): Promise<RecordAck[] | undefined>;
   beforeCommand?(worker: WorkerRegistration): Promise<void>;
   onBudget?(workerId: string, reason: string): void;
   delegate(input: DelegateInput, parent: WorkerRegistration): Promise<DelegateResult>;
-  report(workerId: string, report: WorkerReport): Promise<void>;
+  report(workerId: string, report: WorkerReport, request?: MutationRequest): Promise<void | RecordAck[]>;
   /** Commit boundary: report persisted, registration terminal and authority revoked. */
   reportCommitted?(worker: WorkerRegistration): Promise<void>;
   requestSubtask?(input: DelegateInput, parent: WorkerRegistration): Promise<unknown>;
@@ -155,7 +175,7 @@ export class Broker {
     socket.setNoDelay(true);
     socket.setEncoding('utf8');
     let buffer = '';
-    let workerId: string | undefined;
+    let workerId: string | undefined, receiptOnly = false;
     let chain: Promise<void> = Promise.resolve();
     const send = (payload: unknown) => { if (!socket.destroyed) socket.write(`${boundedResponse(payload)}\n`); };
     const fail = (message: string) => { this.deps.onProblem?.(message); send({ ok: false, error: message }); };
@@ -172,13 +192,14 @@ export class Broker {
           let request: any;
           try { request = JSON.parse(line); } catch { fail('Malformed request'); socket.destroy(); return; }
           if (!workerId) {
-            const registration = this.authenticate(request?.token);
+            receiptOnly = request?.receiptOnly === true;
+            const registration = this.authenticate(request?.token, receiptOnly);
             if (!registration) { fail('Unauthorized'); socket.destroy(); return; }
             workerId = registration.workerId;
             send({ ok: true, workerId });
             return;
           }
-          const response = await this.dispatch(workerId, request).catch(error => ({ok:false,error:errText(error)}));
+          const response = receiptOnly && request?.op !== 'mutation_ack' ? {ok:false,error:'Receipt-only connection; no execution or mutation authority'} : await this.dispatch(workerId, request).catch(error => ({ok:false,error:errText(error)}));
           send({ id: request?.id, ...response });
         }).catch(error => { fail(String(error instanceof Error ? error.message : error).slice(0, 400)); });
       }
@@ -186,26 +207,44 @@ export class Broker {
     });
     socket.on('error', error => this.deps.onProblem?.(`worker socket error: ${error.message}`));
     // A lost worker connection cannot leave an unbounded command or copied ticket running.
-    socket.on('close', () => { this.clients.delete(socket); if (workerId) this.revoke(workerId); });
+    socket.on('close', () => { this.clients.delete(socket); if (workerId && !receiptOnly) this.revoke(workerId); });
   }
 
-  private authenticate(token: unknown): WorkerRegistration | undefined {
+  private authenticate(token: unknown, receiptOnly = false): WorkerRegistration | undefined {
     if (typeof token !== 'string' || !/^[a-f0-9]{32}$/.test(token)) return undefined;
     for (const registration of this.registrations.values()) {
-      if (registration.token === token) return registration.stopped ? undefined : registration;
+      if (registration.token === token) return registration.stopped && !(receiptOnly && (this.deps.replayMutation || this.deps.graphReplay)) ? undefined : registration;
     }
     return undefined;
   }
 
   private async dispatch(workerId: string, request: any): Promise<Record<string, unknown>> {
     const registration = this.registrations.get(workerId);
-    if (!registration || registration.stopped) return { ok: false, error: 'This worker was stopped by the owner' };
+    if (!registration) return {ok:false,error:'Worker is not registered'};
     const op = text(request?.op, 32);
+    const {id:_id,op:_op,requestId:_requestId,...submitted} = request;
+    const mutation = (kind: string, payload: unknown): MutationRequest => {
+      if (request?.requestId !== undefined && (typeof request.requestId !== 'string' || !/^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,79}$/.test(request.requestId))) throw Error('Invalid mutation request ID');
+      return {actorId:workerId,requestId:request.requestId ?? randomUUID(),payload:{op:kind,submitted:payload}};
+    };
+    if (op === 'mutation_ack') {
+      if (!['note','report','started','graph_record'].includes(request?.mutationOp) || !request?.requestId || !request.original || typeof request.original !== 'object' || Array.isArray(request.original)) return {ok:false,error:'Invalid retained mutation ACK query'};
+      const delivery=mutation(request.mutationOp,request.original);
+      const acks=request.mutationOp==='graph_record' ? await this.deps.graphReplay?.(request.original.batch,registration,delivery)
+        : await this.deps.replayMutation?.(registration,request.mutationOp,delivery);
+      return acks ? {ok:true,acks,replayed:true} : {ok:false,error:'Mutation result unknown; no execution/mutation was replayed'};
+    }
+    const delivery = ['note','report','started','graph_record'].includes(op ?? '') ? mutation(op!,submitted) : undefined;
+    if (delivery && (!registration.stopped || registration.reported)) {
+      if(op==='graph_record') {const prior=await this.deps.graphReplay?.(request.batch,registration,delivery);if(prior)return {ok:true,value:prior,replayed:true};}
+      else {const prior=await this.deps.replayMutation?.(registration,op!,delivery);if(prior)return op==='report'?{ok:true,acks:prior,replayed:true}:{ok:true,...prior[0],replayed:true};}
+    }
+    if (registration.stopped) return { ok: false, error: 'This worker was stopped by the owner' };
     if (this.reporting.has(workerId) && op !== 'status') return {ok:false,error:'Worker report persistence in progress; no further requests'};
     if (registration.effectiveRuntime?.verified === false && !['runtime','report','status'].includes(op ?? '')) return { ok:false,error:'Runtime profile mismatch; report blocked, no investigation' };
     if (reportingOperationDenied(registration.role,op ?? '')) return {ok:false,error:'Reporting role is synthesis-only; request separate execution/validation'};
     switch (op) {
-      case 'skill_list': case 'skill_read': {
+      case 'skill_list': case 'skill_read': case 'artifact_read': case 'knowledge_heads': {
         const used = this.knowledgeUsed.get(workerId) ?? 0;
         if (used >= 160) return { ok: false, error: 'Knowledge read budget exhausted; 40 coordination calls reserved for notes/candidates (200 total)' };
         this.knowledgeUsed.set(workerId, used + 1);
@@ -221,6 +260,16 @@ export class Broker {
         try { return { ok: true, value: await this.deps.candidate(request?.candidate, registration) }; }
         catch (error) { return { ok: false, error: errText(error) }; }
       }
+      case 'context_read': {
+        if(registration.effectiveRuntime?.verified!==true)return {ok:false,error:'Verified runtime required before context delivery'};
+        graphObject(submitted,[],'Assignment context request');if(!this.deps.context)return {ok:false,error:'Indexed context service unavailable; no hidden fallback'};
+        return {ok:true,value:await this.deps.context(registration)};
+      }
+      case 'context_ack': {
+        if(registration.effectiveRuntime?.verified!==true)return {ok:false,error:'Verified runtime required before context receipt'};
+        graphObject(submitted,['packetSha256'],'Context delivery ACK');if(typeof submitted.packetSha256!=='string'||!/^[a-f0-9]{64}$/.test(submitted.packetSha256)||!this.deps.contextAck)return {ok:false,error:'Invalid context delivery receipt'};
+        return {ok:true,value:await this.deps.contextAck(submitted.packetSha256,registration)};
+      }
       case 'objective':
         return { ok: true, value: await this.deps.objective?.(registration) };
       case 'runtime': {
@@ -230,6 +279,11 @@ export class Broker {
         const verified = Boolean(model && thinking && modelMatches && (!expected?.thinking || thinking === expected.thinking));
         registration.effectiveRuntime = { model,thinking,verified };
         return { ok:true,verified };
+      }
+      case 'started': {
+        if (!registration.effectiveRuntime?.verified) return {ok:false,error:'Verified runtime required before startup lifecycle'};
+        const ack = await this.deps.started?.(registration, delivery);
+        return {ok:true,...(ack ?? {})};
       }
       case 'status':
         return { ok: true, workerId, used: registration.used, budget: registration.commandBudget, reported: Boolean(registration.reported) };
@@ -265,6 +319,32 @@ export class Broker {
           } catch (error) { return { ok: false, error: errText(error) }; }
         });
       }
+      case 'capture': {
+        let path: string, seconds: number;
+        let offset: number;
+        try {path=scratchPath(request?.path);seconds=taskTimeout(request?.timeout);offset=scratchOffset(request?.offset);} catch(error) {return {ok:false,error:errText(error)};}
+        const capture=this.deps.capture;if (!capture) return {ok:false,error:'Scratch capture unavailable; no fallback read'};
+        const spent=await this.prepareCommand(registration);if(spent)return spent;
+        return this.whileRunning(workerId,async signal=>{
+          try {return {ok:true,...await capture(path,seconds,workerId,signal,offset)};} catch(error) {return {ok:false,error:errText(error)};}
+        });
+      }
+      case 'graph_record': {
+        const used = this.knowledgeUsed.get(workerId) ?? 0;
+        if (used >= 200) return {ok:false,error:'Coordination budget exhausted'};
+        this.knowledgeUsed.set(workerId, used+1);
+        if (!this.deps.graphRecord) return {ok:false,error:'Graph service unavailable'};
+        if(registration.effectiveRuntime?.verified!==true)return {ok:false,error:'Verified runtime required before graph recording'};
+        try { graphObject(submitted,['batch'],'Graph recording request'); validateGraphBatch(request?.batch); return {ok:true,value:await this.deps.graphRecord(request.batch, registration, delivery!)}; }
+        catch (error) {const prior=await this.deps.graphReplay?.(request?.batch,registration,delivery!);return prior?{ok:true,value:prior,replayed:true}:{ok:false,error:errText(error)};}
+      }
+      case 'graph_read': {
+        const used = this.knowledgeUsed.get(workerId) ?? 0;
+        if (used >= 160) return {ok:false,error:'Knowledge read budget exhausted; 40 coordination calls reserved'};
+        this.knowledgeUsed.set(workerId, used+1);
+        if (!this.deps.graphRead) return {ok:false,error:'Graph service unavailable'};
+        try { return {ok:true,value:await this.deps.graphRead(text(request?.graphOp,32) ?? 'page', (request ?? {}) as Record<string,unknown>, registration)}; } catch (error) { return {ok:false,error:errText(error)}; }
+      }
       case 'http': {
         let parsed: HttpRequest;
         try {
@@ -288,15 +368,15 @@ export class Broker {
         if (!body) return { ok: false, error: 'text is required' };
         const outcome = isOutcome(request?.outcome) ? request.outcome : undefined;
         if (request.kind === 'coverage' && (!text(request?.surface, 200) || !text(request?.risk, 200) || !outcome)) return { ok: false, error: 'coverage needs surface, risk and outcome' };
-        await this.deps.note({
+        const ack = await this.deps.note({
           at: new Date().toISOString(), by: workerId, kind: request.kind, text: body,
           workerId, role: registration.role, depth: registration.depth,
           ...(text(request?.surface, 200) ? { surface: text(request?.surface, 200) } : {}),
           ...(text(request?.risk, 200) ? { risk: text(request?.risk, 200) } : {}),
           ...(outcome ? { outcome } : {}),
           ...(stringList(request?.refs, 10, 200).length ? { refs: stringList(request?.refs, 10, 200) } : {}),
-        });
-        return { ok: true };
+        }, delivery);
+        return { ok: true, ...(ack ?? {}) };
       }
       case 'request_subtask': {
         const used = this.knowledgeUsed.get(workerId) ?? 0;
@@ -325,14 +405,20 @@ export class Broker {
         if (this.reporting.has(workerId)) return {ok:false,error:'Report persistence already in progress'};
         this.reporting.add(workerId);
         try {
-          await this.deps.report(workerId, report);
+          let acks: void | RecordAck[];
+          try { acks = await this.deps.report(workerId, report, delivery); }
+          catch (error) {
+            // Post-commit delivery failure is not a target retry. Lookup only; never run report builder twice.
+            acks = delivery ? await this.deps.replayMutation?.(registration,'report',delivery) : undefined;
+            if (!acks) throw error;
+          }
           registration.reported = report;
           // Reporting ends this worker's authority: a copied ticket cannot retain target access.
           this.revoke(workerId);
           // Notification failure must not make an already committed report replayable.
           try { await this.deps.reportCommitted?.(registration); }
           catch (error) { this.deps.onProblem?.(`Report committed but notification failed: ${errText(error)}`); }
-          return { ok: true };
+          return { ok: true, ...(acks ? {acks} : {}) };
         } finally { this.reporting.delete(workerId); }
       }
       default:
@@ -395,7 +481,7 @@ export function boundedResponse(payload: unknown): string {
 
 function errText(error: unknown): string { return (error instanceof Error ? error.message : String(error)).slice(0, 600); }
 
-export interface BrokerClientOptions { connectMs?: number; requestMs?: number }
+export interface BrokerClientOptions { connectMs?: number; requestMs?: number; receiptOnly?: boolean }
 
 /** Worker side: one connection, sequential requests, and fail-closed behaviour after any socket loss. */
 export class BrokerClient {
@@ -456,7 +542,7 @@ export class BrokerClient {
         }
         if (buffer.length > MAX_LINE_BYTES) this.fail('owner broker response exceeded the line limit');
       });
-      socket.write(`${JSON.stringify({ token: this.token })}\n`);
+      socket.write(`${JSON.stringify({ token: this.token, ...(this.options.receiptOnly ? {receiptOnly:true} : {}) })}\n`);
     });
   }
 
@@ -468,15 +554,15 @@ export class BrokerClient {
     this.socket = undefined;
   }
 
-  request<T = any>(op: string, payload: Record<string, unknown> = {}, options: { timeoutMs?: number | null; signal?: AbortSignal } = {}): Promise<T> {
+  request<T = any>(op: string, payload: Record<string, unknown> = {}, options: { timeoutMs?: number | null; signal?: AbortSignal; requestId?: string } = {}): Promise<T> {
     const run = async (): Promise<T> => {
       options.signal?.throwIfAborted();
       await this.connect();
       options.signal?.throwIfAborted();
       const socket = this.socket;
       if (!socket) throw new Error(this.broken ?? 'owner broker unavailable');
-      const id = ++this.sequence;
-      if (Buffer.byteLength(JSON.stringify({ ...payload,id,op })) > MAX_LINE_BYTES - 1) throw new Error('Request exceeds broker frame limit; narrow the report or request');
+      const id = ++this.sequence, requestId = options.requestId ?? randomUUID();
+      if (Buffer.byteLength(JSON.stringify({ ...payload,id,op,requestId })) > MAX_LINE_BYTES - 1) throw new Error('Request exceeds broker frame limit; narrow the report or request');
       const timeoutMs = options.timeoutMs === null ? null : options.timeoutMs ?? this.options.requestMs ?? 60_000;
       return new Promise<T>((resolve, reject) => {
         const abort = () => this.fail('worker request cancelled; revoke its executor access');
@@ -488,7 +574,7 @@ export class BrokerClient {
         });
         options.signal?.addEventListener('abort',abort,{once:true});
         if (options.signal?.aborted) { abort(); return; }
-        socket.write(`${JSON.stringify({ ...payload, id, op })}\n`);
+        socket.write(`${JSON.stringify({ ...payload, id, op, requestId })}\n`);
       });
     };
     const next = this.chain.then(run, run);

@@ -28,6 +28,9 @@ export const MAX_DEPTH = 3;
 export const MAX_SKILLS = 3;
 
 export type LoopMode = 'manual' | 'event-driven';
+export type RetentionMode = 'durable-local' | 'ephemeral';
+export const DEFAULT_STORAGE_QUOTA_MIB = 256;
+export const DEFAULT_ARTIFACT_CAPTURE_KIB = 1024;
 export interface P2OSettings {
   maxWorkers: number;
   maxDepth: number;
@@ -35,10 +38,13 @@ export interface P2OSettings {
   maxPlannerRounds: number;
   executorMode: 'shared' | 'isolated';
   maxTargetOperations: number;
+  retention: RetentionMode;
+  storageQuotaMiB: number;
+  artifactCaptureKiB: number;
   roles: Partial<Record<Role, RoleSettings>>;
 }
 
-const blank = (): P2OSettings => ({ maxWorkers: DEFAULT_MAX_WORKERS, maxDepth: DEFAULT_MAX_DEPTH, loopMode: 'manual', maxPlannerRounds: 100, executorMode: 'shared', maxTargetOperations: 3, roles: {} });
+const blank = (): P2OSettings => ({ maxWorkers: DEFAULT_MAX_WORKERS, maxDepth: DEFAULT_MAX_DEPTH, loopMode: 'manual', maxPlannerRounds: 100, executorMode: 'shared', maxTargetOperations: 3, retention: 'durable-local', storageQuotaMiB: DEFAULT_STORAGE_QUOTA_MIB, artifactCaptureKiB: DEFAULT_ARTIFACT_CAPTURE_KIB, roles: {} });
 
 export function isRole(value: unknown): value is Role { return typeof value === 'string' && (ROLES as readonly string[]).includes(value); }
 
@@ -55,6 +61,9 @@ export function parseSettings(raw: unknown): P2OSettings {
   settings.maxPlannerRounds = clamp(source.maxPlannerRounds, 100, Number.MAX_SAFE_INTEGER);
   settings.executorMode = source.executorMode === 'isolated' ? 'isolated' : 'shared';
   settings.maxTargetOperations = clamp(source.maxTargetOperations,3,Number.MAX_SAFE_INTEGER);
+  settings.retention = source.retention === 'ephemeral' ? 'ephemeral' : 'durable-local';
+  settings.storageQuotaMiB = typeof source.storageQuotaMiB === 'number' && Number.isInteger(source.storageQuotaMiB) && source.storageQuotaMiB >= 8 && source.storageQuotaMiB <= 1024 ? source.storageQuotaMiB : DEFAULT_STORAGE_QUOTA_MIB;
+  settings.artifactCaptureKiB = clamp(source.artifactCaptureKiB, DEFAULT_ARTIFACT_CAPTURE_KIB, 8192);
   settings.maxDepth = typeof source.maxDepth === 'number' && Number.isInteger(source.maxDepth) && source.maxDepth >= 0 && source.maxDepth <= MAX_DEPTH
     ? source.maxDepth : DEFAULT_MAX_DEPTH;
   const roles = source.roles;

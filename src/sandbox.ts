@@ -1,10 +1,11 @@
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { realpath, rm } from 'node:fs/promises';
 import { copySource } from './source.js';
-import { abortable, checked, runDocker, type RunProcess, type ProcessResult } from './process.js';
+import { abortable, checked, runDocker, type RunProcess, type ProcessResult, type OutputObserver } from './process.js';
 import { isIP } from 'node:net';
 import { httpRequest, scopedRequest, taskTimeout, CONTAINER_HOST_ALIAS, type HttpRequest, type ResolveAddress, type Target } from './target.js';
 import { HttpSessions, responseHead } from './http-session.js';
+import { SCRATCH_READER, SCRATCH_PROTOCOL_BYTES, scratchPath, scratchRoot, scratchBound, scratchOffset, parseScratchSnapshot, type ScratchSnapshot } from './scratch.js';
 
 // Fixed content digest, not a mutable tag or a model-selected image. No automatic image pull.
 export const IMAGE = 'ghcr.io/usestrix/strix-sandbox@sha256:f6906c3114e504fd1a218fcf028d7a0e46851118403a438b63956de6ea7c4331';
@@ -21,7 +22,7 @@ const HOST_ALIAS_ARGS = ['--add-host', `${CONTAINER_HOST_ALIAS}:host-gateway`];
 const REDIRECT_STATUS = new Set([301, 302, 303, 307, 308]);
 
 /** Optional sizing/labelling. Delegated runs get more scratch and a run label for verified sweeps. */
-export interface SandboxOptions { tmpBytes?: string; workBytes?: string; runId?: string; image?: string }
+export interface SandboxOptions { tmpBytes?: string; workBytes?: string; runId?: string; image?: string; sourceExcludePaths?: readonly string[] }
 export function validateImage(image: string): string {
   if (!/^(?:sha256:[a-f0-9]{64}|[a-z0-9][a-z0-9._/:-]*@sha256:[a-f0-9]{64})$/.test(image)) throw new Error('Sandbox image must be an immutable sha256 ID or repository@sha256 digest');
   return image;
@@ -61,7 +62,7 @@ export class Sandbox {
     checked(await this.docker(['image', 'inspect', this.options.image ?? IMAGE]));
     if (this.target.kind === 'directory' && await realpath(this.target.path) !== this.target.path) throw new Error('Target directory changed during confirmation');
     if (this.target.kind === 'directory') {
-      const source = await copySource(this.target.path);
+      const source = await copySource(this.target.path, this.options.sourceExcludePaths);
       this.source = source.path; this.sourceSkipped = source.skipped; this.sourceManifest = source.manifest;
     }
     const mount = this.source ? ['--volume', `${this.source}:/target:ro`] : [];
@@ -87,7 +88,7 @@ export class Sandbox {
     return next;
   }
 
-  async exec(command: string, seconds = 0, signal?: AbortSignal, workdir = '/work', onRunning?: () => void): Promise<ProcessResult> {
+  async exec(command: string, seconds = 0, signal?: AbortSignal, workdir = '/work', onRunning?: () => void, onOutput?: OutputObserver): Promise<ProcessResult> {
     if (typeof command !== 'string' || !command.trim() || command.length > 8192) throw new Error('Command must be 1..8192 characters');
     taskTimeout(seconds);
     if (workdir !== '/work' && !/^\/work\/[A-Za-z0-9][A-Za-z0-9._-]{0,60}$/.test(workdir)) throw new Error('Invalid sandbox working directory');
@@ -98,7 +99,7 @@ export class Sandbox {
         await this.ensureWorkdir(workdir, combined);
         onRunning?.();
         const deadline = seconds ? ['/usr/bin/timeout', '--signal=KILL', `${seconds}s`] : [];
-        const result = await this.docker(['exec', '--workdir', workdir, this.shell, ...deadline, '/bin/sh', '-c', command], { timeoutMs: null, signal: combined });
+        const result = await this.docker(['exec', '--workdir', workdir, this.shell, ...deadline, '/bin/sh', '-c', command], { timeoutMs: null, signal: combined, onOutput });
         if (seconds && (result.code === 124 || result.code === 137)) throw new Error('Opt-in sandbox command timed out; stopping the sandbox to remove background processes');
         return result;
       } catch (error) {
@@ -108,6 +109,48 @@ export class Sandbox {
         await this.removeAll();
         throw error;
       }
+    });
+  }
+
+  /** Fixed FD-walking text reader in assigned scratch. Never docker-cp to a host/model path. */
+  async captureScratch(path: string, maxBytes: number, signal?: AbortSignal, workdir = '/work', onRunning?: () => void, onOutput?: OutputObserver, seconds = 0, offsetBytes = 0): Promise<ProcessResult & {scratchSnapshot:ScratchSnapshot;previewLimit:number}> {
+    const relative = scratchPath(path), root = scratchRoot(workdir), bound = scratchBound(maxBytes), offset = scratchOffset(offsetBytes); taskTimeout(seconds);
+    return this.enqueue(async () => {
+      if (this.stopped || !this.shell) throw Error('No active sandbox');
+      const combined = AbortSignal.any([this.cancellation.signal, ...(signal ? [signal] : [])]);
+      const metadata = Buffer.alloc(SCRATCH_PROTOCOL_BYTES), hash = createHash('sha256');
+      let used = 0, observed = 0, denialFrame = false, readerCode: number | undefined, readerBytes = 0;
+      try {
+        await this.ensureWorkdir(root,combined); combined.throwIfAborted();
+        onRunning?.();
+        const deadline = seconds ? ['/usr/bin/timeout','--signal=KILL',`${seconds}s`] : [];
+        const result = await this.docker(['exec','--workdir',root,this.shell,...deadline,'/usr/bin/python3','-I','-S','-c',SCRATCH_READER,JSON.stringify({root,path:relative,maxBytes:bound,offset})], {
+          timeoutMs:null,signal:combined,onOutput:(stream,bytes)=>{
+            if (stream === 'stderr') {
+              if (used + bytes.length > metadata.length) throw Error('Scratch metadata frame exceeds bound');
+              bytes.copy(metadata,used); used += bytes.length;
+            } else {
+              if (observed + bytes.length > bound) throw Error('Scratch body exceeds configured capture bound');
+              observed += bytes.length;hash.update(bytes);onOutput?.('stdout',bytes);
+            }
+          },
+        });
+        readerCode = result.code; readerBytes = Buffer.byteLength(result.stdout);
+        if (seconds && [124,137].includes(result.code)) throw Error('Opt-in scratch capture timed out; stopping the sandbox');
+        try {denialFrame = (JSON.parse(metadata.subarray(0,used).toString('utf8')) as {ok?:unknown})?.ok === false;} catch { /* not a denial frame */ }
+        const scratchSnapshot = parseScratchSnapshot(metadata.subarray(0,used),{path:relative,root,maxBytes:bound,offset,observedBytes:observed,sha256:hash.digest('hex')});
+        if (result.code !== 0) throw Error(`Scratch reader returned ${result.code}; captured tail/operation uncertain, no retry`);
+        const preview = Buffer.from(result.stdout).subarray(0,8192).toString('utf8'); // Replaced by the redacted retained prefix before returning.
+        return {...result,stdout:preview,stderr:'',scratchSnapshot,previewLimit:8192,truncated:result.truncated || readerBytes>8192}; // Bound JSON escaping plus metadata to broker frame; no raw buffers.
+      } catch(error) {
+        // A completed, authenticated denial frame is a safe refusal. Transport/cancel/protocol faults may
+        // still have a helper running: retire the executor and never silently rerun the read.
+        const denial = denialFrame && readerCode === 78 && observed === 0 && /^Scratch capture denied \(/.test(error instanceof Error ? error.message : '');
+        if (!denial) {
+          this.stopped = true; this.cancellation.abort(); await this.removeAll();
+        }
+        throw error;
+      } finally {metadata.fill(0);}
     });
   }
 
@@ -121,7 +164,7 @@ export class Sandbox {
   }
 
   /** Fixed curl, actor-local sessions, and origin validation before every redirect hop. */
-  async http(input: HttpRequest, signal?: AbortSignal, onRunning?: () => void, actor = 'owner'): Promise<ProcessResult> {
+  async http(input: HttpRequest, signal?: AbortSignal, onRunning?: () => void, actor = 'owner', onOutput?: OutputObserver): Promise<ProcessResult> {
     const request = httpRequest(input);
     return this.enqueue(async () => {
       const hops: string[] = [];
@@ -161,7 +204,7 @@ export class Sandbox {
           if (this.stopped) throw new Error('Cancelled');
           onRunning?.();
           last = await this.docker(['start', '--attach', ...(body === undefined ? [] : ['--interactive']), name], {
-            timeoutMs: null, signal: combined, ...(body === undefined ? {} : { stdin: body }),
+            timeoutMs: null, signal: combined, onOutput, ...(body === undefined ? {} : { stdin: body }),
           });
         } finally { await this.remove(name); }
         const head = responseHead(last.stdout);

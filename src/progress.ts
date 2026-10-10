@@ -7,12 +7,13 @@ export class ProgressState {
   private events = new Map<string, ProgressEvent>();
   private commands = new Map<string, number>();
   private outcomes = new Map<string,string>();
-  constructor(private now = () => Date.now()) {}
+  constructor(private now = () => Date.now(), private changed?: () => void) {}
   record(by: string, kind: ProgressKind, operation?: string, error?: string) {
     const event = { sequence: ++this.sequence, at: this.now(), kind, operation, error: error?.slice(0, 600) };
     this.events.set(by,event);
     if (['budget-exhausted','cancelled','expired','error'].includes(kind)) this.outcomes.set(by,kind);
     if (kind === 'queued') this.commands.set(by,(this.commands.get(by) ?? 0)+1);
+    try { this.changed?.(); } catch { /* Rendering must not change operation authority/outcome. */ }
     return event;
   }
   view(by: string, quietMs = 120000) {

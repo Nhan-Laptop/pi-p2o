@@ -42,6 +42,19 @@ describe('deterministic frontier and semantic wake loop',()=>{
     expect(f.engine.validWake(f.wakes[0])).toBe(true);await vi.advanceTimersByTimeAsync(24*60*60*1000);expect(f.wakes).toHaveLength(1);
     f.engine.started();expect(f.engine.consume()).toHaveLength(1);f.engine.settled();await tick();expect(f.wakes).toHaveLength(1);f.engine.stop();
   });
+  it('ACKs only projected semantic events and never drops a signal arriving during the request',()=>{
+    const f=fixture('event-driven');f.engine.started();f.engine.notify('worker-report','old');const through=f.engine.snapshot().sequence;
+    f.engine.notify('worker-report','late');expect(f.engine.consume(through).map(event=>event.id)).toEqual(['old']);
+    expect(f.engine.snapshot()).toMatchObject({pendingEvents:1,consumedSequence:through});expect(f.engine.snapshot().events[0].id).toBe('late');
+    expect(()=>f.engine.consume(through+2)).toThrow('barrier');expect(f.engine.consume().map(event=>event.id)).toEqual(['late']);f.engine.stop();
+  });
+  it('manual mode never wakes under a semantic event storm, while event-driven coalesces the same storm into one reservation',async()=>{
+    const manual=fixture('manual');for(let i=0;i<200;i++)manual.engine.notify('worker-report',`worker-${i}`);await tick();await tick();
+    expect(manual.wakes).toEqual([]);expect(manual.engine.snapshot()).toMatchObject({mode:'manual',rounds:0,pendingEvents:200,state:'waiting'});manual.engine.stop();
+    const driven=fixture('event-driven');for(let i=0;i<200;i++)driven.engine.notify('worker-report',`worker-${i}`);await tick();await tick();
+    expect(driven.wakes).toHaveLength(1);expect(driven.wakes[0]).toMatchObject({round:1,through:200});expect(driven.engine.snapshot()).toMatchObject({rounds:1,pendingEvents:200});
+    for(let i=0;i<200;i++)driven.engine.notify('worker-report',`worker-${i}`);await tick();await tick();await tick();expect(driven.wakes,'repeats coalesce onto the same keys and one reservation stays in flight until a request projection consumes it').toHaveLength(1);expect(driven.engine.snapshot()).toMatchObject({rounds:1,pendingEvents:200,sequence:400});driven.engine.stop();
+  });
   it('retains events while busy and supplies exactly one boundary continuation',async()=>{
     const f=fixture('event-driven');f.engine.started();f.setIdle(false);f.engine.notify('worker-report','a');await tick();expect(f.wakes).toEqual([]);
     const wake=f.engine.boundary()!;expect(wake.round).toBe(1);expect(f.engine.boundary()).toBeUndefined();expect(f.engine.validWake(wake)).toBe(true);

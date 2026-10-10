@@ -4,13 +4,15 @@ One command. Your **current Pi agent** plans an authorized assessment; a determi
 **visible worker panes**. Workers investigate one intent autonomously. Shared-serial execution is default; isolated
 assignment executors are opt-in. No hidden Planner model, provider harness or dashboard.
 
+**Checkout đang triển khai K0–K7, chưa publish/install:** canonical SQLite/schema 7, durable-local luôn confirm, visibility/checkpoint/bounded capture, [asset/fact graph K3](docs/ASSET_GRAPH.md), [work admission/kế hoạch/phase cards K4](docs/WORK_ADMISSION.md), [canonical case/proof-aware coverage K5](docs/CASE_REVIEW.md) và [indexed knowledge heads/context packets K6](docs/CONTEXT_PACKETS.md) đã nối. Baseline đã phát hành 0.5.0 (`e639029`) chưa có các phần mới; [trạng thái/gates còn lại](docs/KNOWLEDGE_WORKSPACE.md).
+
 ## Install
 
 ```sh
 pi install https://github.com/Nhan-Laptop/pi-p2o
 ```
 
-Requires Pi 1.0.0, a configured model, a Linux host (`/proc/self/fd` containment), and a running local Linux Docker daemon. Install the sandbox tools image once:
+Requires Pi 1.0.0 or 1.1.0 (the source checkout passes the same inert regression suite on both; the released 0.5.0 installed acceptance was recorded on 1.0.0 only), a configured model, a Linux host (`/proc/self/fd` containment), and a running local Linux Docker daemon. Install the sandbox tools image once:
 
 ```sh
 docker pull ghcr.io/usestrix/strix-sandbox@sha256:f6906c3114e504fd1a218fcf028d7a0e46851118403a438b63956de6ea7c4331
@@ -32,6 +34,14 @@ No extension build or JSON configuration is needed. Use `/reload` after installi
 /p2o pause
 /p2o resume
 /p2o stop
+/p2o export /abs/path/bundle
+/p2o import /abs/path/bundle
+/p2o reconcile <run-id> [reason]
+/p2o graph
+/p2o graph <asset-id> [cursor]
+/p2o graph export [limit] [cursor]
+/p2o heads [domain|all] [cursor] [limit]
+/p2o digest
 ```
 
 Confirm scope and permission once. The command prepares the sandbox and sends the task directly into the
@@ -54,6 +64,13 @@ automatic retry/fallback or restored-session authority. See [Planner/Engine cont
 | `p2o_net` | solo + non-reporting worker | Network commands in the sandbox: connect scans, service probes, tooling installs; no task timeout by default |
 | `p2o_note` | lead + worker | Append a note, observation, coverage row or open item to the shared ledger |
 | `p2o_ledger` | lead + worker | Read the shared ledger or one evidence/candidate record by ID before repeating work |
+| `p2o_artifact` (checkout K2) | lead + worker, including reporting | Đọc retained redacted text theo opaque ID, ≤8 KiB/range; không chạy target hoặc cấp authority |
+| `p2o_graph` (checkout K3) | lead + worker; reporting read-only | Scoped typed asset/fact/anchor batches; owner hypotheses/relations, provenance/revision pins, bounded history/JSON/Mermaid; không grant permission hoặc finding proof |
+| `p2o_state` (checkout K6) | lead + worker, including reporting; read-only | Bounded indexed knowledge-head navigation with exact totals and a stable sequence cursor; filters never change work, proof or authority |
+| `p2o_plan` (checkout K4) | lead only | Goal/todo/decision revisions on canonical records; not a second task queue, scope authority or proof |
+| `p2o_case` (checkout K5) | lead only | Owner-reviewed canonical cases from exact claim/evidence/task/asset revisions; worker claims stay pending until review; acceptance never completes a goal |
+| `p2o_coverage` (checkout K5) | lead only | Versioned coverage denominators/cells with separate execution and assessment axes; blocked or untested is never "clean" |
+| `p2o_capture` (checkout K2) | solo + non-reporting worker | Đọc bounded UTF-8 text từ scratch đã cấp qua FD/single-link rồi lưu artifact redacted; không nhận host path, không thực thi nội dung file |
 | `p2o_delegate` | Planner | Spawn one focused worker immediately; batch/waiting work uses `p2o_task dispatch` |
 | `p2o_request_subtask` | worker | Propose a missing bounded task; never directly spawn or accept work |
 | `p2o_loop` | owner | Engine/frontier status, end round with wait, or explain blocked/human-needed |
@@ -67,8 +84,9 @@ Host tools, `codemode`, the browser, other extensions, `!` shell and the worker'
 while an assessment is active. A worker reaches the target **only** through the lead's broker socket; if the
 lead stops, workers fail closed.
 
-With `--export`, cleanup saves bounded redacted receipts and source/skill hashes in `.p2o-reports/` (0700; files 0600).
-Review before sharing: redaction is best effort, not a guarantee. Without `--export`, the temporary ledger is removed.
+**Checkout K2:** durable-local mặc định giữ tri thức tại `.p2o-state/<run-id>` sau cleanup; luôn xác nhận location/quota/sensitivity trước tạo (kèm finalization reserve). File text trong scratch chỉ vào kho qua `p2o_capture` với kiểm tra path/FD/single-link/UTF-8 rồi redact trước khi publish; file ngoài scratch, symlink, hardlink, device, binary bị từ chối. `--retention ephemeral` xóa tri thức với control. `/p2o open <run-id>` chỉ mở lịch sử read-only, không resume assessment. `/p2o export <absolute-dir>` ghi bản sao portable có hash (segments + artifact + manifest, không overwrite); `/p2o import <absolute-dir>` xác minh hash rồi giữ exported bytes thành artifact bất biến + một provenance note (foreign redaction claims không được authenticate) trong run đang chạy — không khôi phục scope/ticket/worker/cookie/budget và không tính là same-run evidence. `/p2o reconcile <run-id>` (cần xác nhận) ghi **một** lifecycle record có attribution đánh dấu task non-terminal và operation unknown là interrupted/unknown; không rewrite task status, không resume, không cấp authority. Shell/net/curl capture prefix trước display cap 48 KiB, tổng stdout+stderr mặc định 1 MiB/operation (setting 1–8192 KiB); trả artifact IDs, total/captured bytes và partial labels. Hash/byte cursor không phải finding proof; redaction best effort, không bảo đảm hết secrets.
+
+With `--export`, cleanup additionally saves bounded redacted receipts and source/skill hashes in `.p2o-reports/` (0700; files 0600); this is not yet a portable artifact bundle. Review before sharing. The released 0.5.0 baseline removes its temporary ledger without export; the new checkout follows confirmed retention instead.
 Terminal worker failures deliver a blocked report without another model call; no provider fallback is automatic.
 
 See [focused assessment state](docs/ASSESSMENT_STATE.md) for complete-ledger cursors, task/handoff review, current validation, progress and bounded report retention. Automatic planning is explicit opt-in; automatic retry is not introduced.
@@ -137,7 +155,7 @@ npm run test:herdr        # opt-in: real Herdr pane spawn (opens and closes a pa
 pi --no-extensions -e "$PWD"
 ```
 
-Design notes: [architecture](docs/ARCHITECTURE.md), [usage](docs/USAGE.md), [enhancement roadmap](planning_update.md).
+Design notes: [architecture](docs/ARCHITECTURE.md), [usage](docs/USAGE.md), [enhancement roadmap](planning_update.md), [acceptance matrix](docs/ACCEPTANCE_MATRIX.md).
 [Benchmarks](bench/README.md) are opt-in real-model runs, separate from the hermetic suite; no effectiveness claim is implied by passing unit tests.
 `my_references/` is not shipped or modified.
 

@@ -13,6 +13,7 @@ tmp/
 examples/live-lab/.runs/
 # Assessment receipts and benchmark workspaces can contain target/provider output.
 .p2o-reports/
+.p2o-state/
 bench/.arms/
 bench/.work/
 bench/results/

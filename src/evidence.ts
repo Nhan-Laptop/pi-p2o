@@ -4,6 +4,7 @@ import { mkdir, open } from 'node:fs/promises';
 import { join } from 'node:path';
 import { appendRecord, readLedger, type AssessmentRecord } from './records.js';
 import type { ProcessResult } from './process.js';
+import { redactArtifactPrefix, type CaptureReceipt } from './artifacts.js';
 
 export interface Candidate {
   candidate: string; surface: string; risk: string;
@@ -24,7 +25,7 @@ export function redact(value: string): string {
     .replace(/-----BEGIN [^-]*PRIVATE KEY-----[\s\S]*?-----END [^-]*PRIVATE KEY-----/g, '[REDACTED PRIVATE KEY]');
 }
 const bounded = (s: string, n: number) => {
-  let result = redact(s).replace(/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/g, '').slice(0, n);
+  let result = redactArtifactPrefix(s,redact).replace(/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/g, '').slice(0, n);
   while (Buffer.byteLength(JSON.stringify(result)) > n) result = result.slice(0, Math.floor(result.length * 0.75));
   return result;
 };
@@ -32,14 +33,16 @@ const bounded = (s: string, n: number) => {
 export class EvidenceStore {
   private pending: Promise<unknown> = Promise.resolve();
   constructor(readonly runId: string, readonly path: string, readonly target: string) {}
-  async receipt(by: string, operation: string, input: string, result: ProcessResult, startedAt: string): Promise<string> {
+  async receipt(by: string, operation: string, input: string, result: ProcessResult, startedAt: string, capture?: CaptureReceipt): Promise<string> {
     const id = randomUUID();
     await appendRecord(this.path, { id, runId: this.runId, at: new Date().toISOString(), by, workerId: by === 'owner' ? undefined : by,
       kind: 'evidence', text: `${operation} exit ${result.code}; untrusted observation, not a finding`,
-      data: { operation, input: bounded(input, 2000), target: this.target, startedAt, exitCode: result.code,
+      data: { operation, receiptRedactionVersion:2, input: bounded(input, 2000), target: this.target, startedAt, exitCode: result.code,
         stdout: bounded(result.stdout, 4000), stderr: bounded(result.stderr, 1000),
         ...(result.hops ? { http: { hops: result.hops.slice(0,6).map(hop => bounded(hop, 256)), session: result.session,
           redirectStopped: result.redirectStopped ? bounded(result.redirectStopped, 1000) : undefined, cookieWarning: result.cookieWarning } } : {}),
+        ...(capture ? {capture} : {}),
+        outputSha256Scope: 'visible-excerpt-before-redaction',
         outputSha256: createHash('sha256').update(result.stdout).update(result.stderr).digest('hex'),
         truncated: result.truncated || result.stdout.length > 4000 || result.stderr.length > 1000,
         limitations: 'Bounded redacted tool output; command semantics and claimed effect require review.' } });

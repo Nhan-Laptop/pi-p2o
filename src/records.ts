@@ -1,6 +1,8 @@
 import { appendFile, open, stat } from 'node:fs/promises';
 import { constants } from 'node:fs';
 import { randomUUID } from 'node:crypto';
+import { recordBackend, type WorkHistoryPage, type WorkHistoryRow } from './state/registry.js';
+import type { MutationRequest } from './state/store.js';
 
 /**
  * Append-only shared state. This is the coordination medium between the owner and its workers,
@@ -39,57 +41,176 @@ export const RECORD_READ_LIMIT = 500;
 export function isRecordKind(value: unknown): value is RecordKind { return typeof value === 'string' && (RECORD_KINDS as readonly string[]).includes(value); }
 export function isOutcome(value: unknown): value is CoverageOutcome { return typeof value === 'string' && (COVERAGE_OUTCOMES as readonly string[]).includes(value); }
 
-/** Single small O_APPEND write so concurrent writers cannot interleave inside one line. */
-export async function appendRecord(path: string, record: AssessmentRecord): Promise<void> {
-  const line = `${JSON.stringify({ version: 2, id: randomUUID(), ...record })}\n`;
+export interface RecordAck { recordId: string; version: 2; sequence?: number; storeVersion?: number }
+const observers = new Map<string, Set<() => void>>();
+/** Process-local UI hints only. Not durable delivery, authority, or semantic Planner wakes. */
+export function observeRecords(path: string, observer: () => void): () => void {
+  const set = observers.get(path) ?? new Set<() => void>();
+  set.add(observer); observers.set(path, set);
+  return () => { set.delete(observer); if (!set.size) observers.delete(path); };
+}
+
+/** Process-local committed-write hint. Never an execution authorization or semantic wake. */
+export function notifyRecordObservers(path: string): void {
+  for (const observer of observers.get(path) ?? []) { try { observer(); } catch { /* Rendering cannot mask commit. */ } }
+}
+
+/** Canonical transaction ACK when bound; legacy O_APPEND ACK has no durability/sequence claim. */
+export async function appendRecord(path: string, record: AssessmentRecord): Promise<RecordAck> {
+  const backend = recordBackend(path); if (backend) return backend.append([record])[0];
+  const recordId = record.id ?? randomUUID();
+  const line = `${JSON.stringify({ ...record, version: 2, id: recordId })}\n`;
   if (Buffer.byteLength(line) > 16 * 1024) throw new Error('Record is too large');
   await appendFile(path, line, { encoding: 'utf8', mode: 0o600 });
+  notifyRecordObservers(path);
+  return { recordId, version: 2 };
+}
+
+/** One canonical transaction; legacy exports retain explicitly non-atomic append compatibility. */
+export async function appendRecords(path: string, records: AssessmentRecord[], request?: MutationRequest): Promise<RecordAck[]> {
+  const backend = recordBackend(path); if (backend) return backend.append(records, request);
+  if (request) throw Error('Idempotent record packets require the canonical store');
+  const acknowledgments: RecordAck[] = [];
+  for (const record of records) acknowledgments.push(await appendRecord(path, record));
+  return acknowledgments;
+}
+
+/** Generated packet IDs/times are created after the store's request lookup, so lost ACKs are safe. */
+export async function appendGeneratedRecords(path: string, makeRecords: () => AssessmentRecord[], request: MutationRequest): Promise<RecordAck[]> {
+  const backend = recordBackend(path);
+  if (!backend) throw Error('Idempotent generated packets require the canonical store');
+  return backend.generated(makeRecords, request);
+}
+/** Retained ACK inspection only; never invokes a record builder or restores mutation authority. */
+export async function readGeneratedRecords(path:string,request:MutationRequest):Promise<RecordAck[]|undefined>{
+  const backend=recordBackend(path);if(!backend?.generatedResult)throw Error('Retained generated ACK lookup requires the canonical store');return backend.generatedResult(request);
 }
 
 export const LEDGER_BYTES = 64 * 1024 * 1024;
 export const LEDGER_RECORDS = 100000;
 export interface LedgerIndex {
   records: AssessmentRecord[]; byId: Map<string, AssessmentRecord>; complete: boolean;
-  diagnostics: string[]; issueCount: number; foreign: number; bytes: number;
+  diagnostics: string[]; issueCount: number; foreign: number; bytes: number; snapshotSequence?: number;
 }
 
 /** Complete bounded scan of the run-owned regular file. A display tail is never authority. */
-export async function readLedger(path: string, runId?: string): Promise<LedgerIndex> {
+function ledgerBuilder(runId?: string) {
   const result: LedgerIndex = { records: [], byId: new Map(), complete: true, diagnostics: [], issueCount: 0, foreign: 0, bytes: 0 };
-  const issue = (text: string) => { result.complete = false; result.issueCount++; if (result.diagnostics.length < 40) result.diagnostics.push(text); };
+  // Row issues and revision/resolution link issues are kept apart so an incremental scan reports exactly the diagnostics
+  // (first 40, rows before links) that one full scan would; a one-shot scan is unchanged.
+  const phases = { rows: [] as string[], links: [] as string[] };
+  const issue = (text: string, phase: 'rows' | 'links' = 'rows') => {
+    result.complete = false; result.issueCount++;
+    const list = phases[phase]; if (list.length < 40) list.push(text);
+    result.diagnostics = [...phases.rows, ...phases.links].slice(0, 40);
+  };
+  let lineNumber = 0;
+  const taskHeads = new Map<string,AssessmentRecord>();
+  const consume = (line: string) => {
+    lineNumber++;
+    if (!line.trim()) return;
+    if (Buffer.byteLength(line) > 16 * 1024) { issue(`Oversized ledger row ${lineNumber}`); return; }
+    let row: AssessmentRecord;
+    try { row = JSON.parse(line); } catch { issue(`Malformed ledger row ${lineNumber}`); return; }
+    if (!row || !isRecordKind(row.kind) || typeof row.text !== 'string' || typeof row.by !== 'string' || typeof row.at !== 'string'
+      || (row.data !== undefined && (!row.data || typeof row.data !== 'object' || Array.isArray(row.data)))
+      || (row.refs !== undefined && (!Array.isArray(row.refs) || row.refs.some(v => typeof v !== 'string')))
+      || (row.supersedes !== undefined && (typeof row.supersedes !== 'string' || row.supersedes.length > 80))) { issue(`Invalid ledger row ${lineNumber}`); return; }
+    if (runId && row.runId !== undefined && row.runId !== runId) { result.foreign++; return; }
+    if (row.id !== undefined && (typeof row.id !== 'string' || !row.id || row.id.length > 80)) { issue(`Invalid ID at row ${lineNumber}`); return; }
+    if (row.id && result.byId.has(row.id)) { issue(`Duplicate ledger ID ${row.id}`); return; }
+    if (row.version === 2 && !row.id) issue(`Missing v2 ID at row ${lineNumber}`);
+    if (result.records.length >= LEDGER_RECORDS) { issue('Ledger exceeds 100000 records'); return; }
+    if (row.kind === 'task') {
+      const t = row.data?.task as Record<string,unknown> | undefined, head = typeof t?.id === 'string' ? taskHeads.get(t.id) : undefined;
+      if (!t || row.by !== 'owner' || row.workerId || t.runId !== row.runId || typeof t.id !== 'string' || !Array.isArray(t.prerequisites)
+        || !['proposed','reserved','running','reported','reviewed','closed','blocked','cancelled','expired'].includes(String(t.status))
+        || !Number.isInteger(t.revision) || (head ? row.supersedes !== head.id || t.revision !== Number((head.data!.task as Record<string,unknown>).revision)+1 : t.revision !== 1)
+        || Object.keys(t).some(k => ['deadline','scope','token','authority','target','permissions'].includes(k))) { issue(`Invalid owned task revision ${row.id ?? 'missing'}`); return; }
+      taskHeads.set(t.id,row);
+    }
+    result.records.push(row);
+    if (row.id) result.byId.set(row.id, row);
+  };
+  // Only rows after the last call are linked; a later row can never validate an earlier one (`prior` is order-based), so
+  // linking appended rows once equals one full pass.
+  const prior = new Set<string>();
+  let linked = 0;
+  const finish = () => {
+    for (; linked < result.records.length; linked++) {
+      const row = result.records[linked];
+      if (row.supersedes) {
+        const previous = result.byId.get(row.supersedes);
+        if (!previous || !prior.has(row.supersedes) || previous === row || previous.kind !== row.kind || (row.kind === 'candidate' && (previous.data?.candidate !== row.data?.candidate || previous.surface !== row.surface || previous.risk !== row.risk))) issue(`Invalid revision ${row.id ?? 'legacy'}`, 'links');
+      }
+      if (row.resolves && (!Array.isArray(row.resolves) || row.resolves.some(id => !prior.has(id) || result.byId.get(id)?.kind !== 'open'))) issue(`Invalid resolution ${row.id ?? 'legacy'}`, 'links');
+      if (row.id) prior.add(row.id);
+    }
+    return result;
+  };
+  return { result, consume, issue, finish };
+}
+
+/** Shared v2 integrity checks for both historical JSONL and canonical-store projections. */
+export function indexRecords(rows: AssessmentRecord[], runId?: string): LedgerIndex {
+  const builder = ledgerBuilder(runId);
+  for (const row of rows) {
+    const line = JSON.stringify(row); builder.result.bytes += Buffer.byteLength(line) + 1;
+    if (builder.result.bytes > LEDGER_BYTES) { builder.issue('Ledger exceeds 64 MiB; reconciliation incomplete'); break; }
+    builder.consume(line);
+  }
+  return builder.finish();
+}
+
+function freezeDeep<T>(value: T): T {
+  if (value && typeof value === 'object' && !Object.isFrozen(value)) { Object.freeze(value); for (const child of Object.values(value)) freezeDeep(child); }
+  return value;
+}
+
+/**
+ * Append-only form of `indexRecords`: the same v2 integrity checks, byte/row bounds and diagnostics, applied once per row instead
+ * of once per read. Feeding the same rows in any batching yields exactly what `indexRecords` returns for them (differentially
+ * tested). Rows and snapshots are deeply frozen: a snapshot is immutable shared state, never a scratch copy a caller may edit.
+ */
+export class IncrementalLedger {
+  private readonly builder: ReturnType<typeof ledgerBuilder>;
+  private capped = false;
+  private cached?: LedgerIndex;
+  constructor(readonly runId?: string) { this.builder = ledgerBuilder(runId); }
+  get size(): number { return this.builder.result.records.length; }
+  append(rows: AssessmentRecord[]): void {
+    if (!rows.length) return;
+    const { result, consume, issue, finish } = this.builder;
+    this.cached = undefined;
+    for (const row of rows) {
+      if (this.capped) break; // a full scan stops reading at the byte bound
+      const line = JSON.stringify(row); result.bytes += Buffer.byteLength(line) + 1;
+      if (result.bytes > LEDGER_BYTES) { issue('Ledger exceeds 64 MiB; reconciliation incomplete'); this.capped = true; break; }
+      const before = result.records.length;
+      consume(line);
+      if (result.records.length > before) freezeDeep(result.records[before]);
+    }
+    finish();
+  }
+  /** Immutable view; `snapshotSequence` is stamped per call without copying anything. */
+  snapshot(snapshotSequence?: number): LedgerIndex {
+    const { result } = this.builder;
+    this.cached ??= { records: Object.freeze(result.records.slice()) as AssessmentRecord[], byId: new Map(result.byId), complete: result.complete,
+      diagnostics: Object.freeze([...result.diagnostics]) as string[], issueCount: result.issueCount, foreign: result.foreign, bytes: result.bytes };
+    return snapshotSequence === undefined ? this.cached : { ...this.cached, snapshotSequence };
+  }
+}
+
+/** Complete bounded scan or the one bound owner-store projection; never a display tail. */
+export async function readLedger(path: string, runId?: string): Promise<LedgerIndex> {
+  const backend = recordBackend(path); if (backend) return backend.index(runId);
+  const builder = ledgerBuilder(runId), { result, issue, consume } = builder;
   const file = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
   try {
     const info = await file.stat();
     if (!info.isFile()) throw new Error('Ledger must be a regular file');
     if (info.size > LEDGER_BYTES) { issue('Ledger exceeds 64 MiB; reconciliation incomplete'); return result; }
-    let pending = '', lineNumber = 0;
-    const taskHeads = new Map<string,AssessmentRecord>();
-    const consume = (line: string) => {
-      lineNumber++;
-      if (!line.trim()) return;
-      if (Buffer.byteLength(line) > 16 * 1024) { issue(`Oversized ledger row ${lineNumber}`); return; }
-      let row: AssessmentRecord;
-      try { row = JSON.parse(line); } catch { issue(`Malformed ledger row ${lineNumber}`); return; }
-      if (!row || !isRecordKind(row.kind) || typeof row.text !== 'string' || typeof row.by !== 'string' || typeof row.at !== 'string'
-        || (row.data !== undefined && (!row.data || typeof row.data !== 'object' || Array.isArray(row.data)))
-        || (row.refs !== undefined && (!Array.isArray(row.refs) || row.refs.some(v => typeof v !== 'string')))
-        || (row.supersedes !== undefined && (typeof row.supersedes !== 'string' || row.supersedes.length > 80))) { issue(`Invalid ledger row ${lineNumber}`); return; }
-      if (runId && row.runId !== undefined && row.runId !== runId) { result.foreign++; return; }
-      if (row.id !== undefined && (typeof row.id !== 'string' || !row.id || row.id.length > 80)) { issue(`Invalid ID at row ${lineNumber}`); return; }
-      if (row.id && result.byId.has(row.id)) { issue(`Duplicate ledger ID ${row.id}`); return; }
-      if (row.version === 2 && !row.id) issue(`Missing v2 ID at row ${lineNumber}`);
-      if (result.records.length >= LEDGER_RECORDS) { issue('Ledger exceeds 100000 records'); return; }
-      if (row.kind === 'task') {
-        const t = row.data?.task as Record<string,unknown> | undefined, head = typeof t?.id === 'string' ? taskHeads.get(t.id) : undefined;
-        if (!t || row.by !== 'owner' || row.workerId || t.runId !== row.runId || typeof t.id !== 'string' || !Array.isArray(t.prerequisites)
-          || !['proposed','reserved','running','reported','reviewed','closed','blocked','cancelled','expired'].includes(String(t.status))
-          || !Number.isInteger(t.revision) || (head ? row.supersedes !== head.id || t.revision !== Number((head.data!.task as Record<string,unknown>).revision)+1 : t.revision !== 1)
-          || Object.keys(t).some(k => ['deadline','scope','token','authority','target','permissions'].includes(k))) { issue(`Invalid owned task revision ${row.id ?? 'missing'}`); return; }
-        taskHeads.set(t.id,row);
-      }
-      result.records.push(row);
-      if (row.id) result.byId.set(row.id, row);
-    };
+    let pending = '';
     const stream = file.createReadStream({ encoding: 'utf8', autoClose: false, highWaterMark: 64 * 1024 });
     for await (const chunk of stream) {
       result.bytes += Buffer.byteLength(chunk);
@@ -99,18 +220,30 @@ export async function readLedger(path: string, runId?: string): Promise<LedgerIn
       while ((end = pending.indexOf('\n')) >= 0) { consume(pending.slice(0, end)); pending = pending.slice(end + 1); }
       if (Buffer.byteLength(pending) > 16 * 1024) { issue('Oversized unterminated ledger row'); break; }
     }
-    if (pending.trim()) { issue('Uncommitted or damaged ledger tail'); }
-    const prior = new Set<string>();
-    for (const row of result.records) {
-      if (row.supersedes) {
-        const previous = result.byId.get(row.supersedes);
-        if (!previous || !prior.has(row.supersedes) || previous === row || previous.kind !== row.kind || (row.kind === 'candidate' && (previous.data?.candidate !== row.data?.candidate || previous.surface !== row.surface || previous.risk !== row.risk))) issue(`Invalid revision ${row.id ?? 'legacy'}`);
-      }
-      if (row.resolves && (!Array.isArray(row.resolves) || row.resolves.some(id => !prior.has(id) || result.byId.get(id)?.kind !== 'open'))) issue(`Invalid resolution ${row.id ?? 'legacy'}`);
-      if (row.id) prior.add(row.id);
-    }
-    return result;
+    if (pending.trim()) issue('Uncommitted or damaged ledger tail');
+    return builder.finish();
   } finally { await file.close(); }
+}
+
+function legacyWorkPage(index:LedgerIndex,key:'workFingerprint'|'workOverlapKey',value:string,limit:number):WorkHistoryPage{
+  const latest=new Map<string,string>();for(const row of index.records){const task=row.kind==='task'?row.data?.task as Record<string,unknown>|undefined:undefined;if(task&&typeof task.id==='string')latest.set(task.id,row.id!);}
+  const all:WorkHistoryRow[]=[];for(const [sequence,row] of index.records.entries()){
+    const task=row.kind==='task'?row.data?.task as Record<string,unknown>|undefined:undefined;if(!task||task[key]!==value||typeof task.id!=='string'||typeof task.workFingerprint!=='string'||typeof task.targetRevision!=='string')continue;
+    const status=String(task.status),result:WorkHistoryRow['result']=status==='closed'&&typeof task.reviewReason==='string'&&Array.isArray(task.evidenceIds)&&task.evidenceIds.length?'reusable':['blocked','reported','cancelled','expired'].includes(status)?'partial':'none';
+    all.push({sequence:sequence+1,recordId:row.id!,taskId:task.id,taskRevision:Number(task.revision),fingerprint:task.workFingerprint,targetRevision:task.targetRevision,
+      ...(typeof task.workOverlapKey==='string'?{overlapKey:task.workOverlapKey}:{}),status,current:latest.get(task.id)===row.id,result});
+  }
+  all.sort((a,b)=>b.sequence-a.sequence);const active=all.filter(row=>row.current&&!['closed','blocked','cancelled','expired'].includes(row.status)).length,reusable=all.filter(row=>row.result==='reusable').length,partial=all.filter(row=>row.result==='partial').length;
+  return {rows:all.slice(0,limit),total:all.length,active,reusable,partial,omitted:Math.max(0,all.length-limit)};
+}
+/** Indexed in canonical schema 6; legacy JSONL uses a complete bounded scan, never a display tail. */
+export async function readWorkHistory(path:string,fingerprint:string,limit=20):Promise<WorkHistoryPage>{
+  if(!/^[a-f0-9]{64}$/.test(fingerprint)||!Number.isInteger(limit)||limit<1||limit>100)throw Error('Invalid work-history query');
+  const backend=recordBackend(path);if(backend?.workHistory)return backend.workHistory(fingerprint,limit);return legacyWorkPage(await readLedger(path),'workFingerprint',fingerprint,limit);
+}
+export async function readWorkOverlap(path:string,overlapKey:string,limit=20):Promise<WorkHistoryPage>{
+  if(!/^[a-f0-9]{64}$/.test(overlapKey)||!Number.isInteger(limit)||limit<1||limit>100)throw Error('Invalid work-overlap query');
+  const backend=recordBackend(path);if(backend?.workOverlap)return backend.workOverlap(overlapKey,limit);return legacyWorkPage(await readLedger(path),'workOverlapKey',overlapKey,limit);
 }
 
 /** Legacy bounded display API. Integrity-sensitive callers use readLedger directly. */
@@ -180,14 +313,15 @@ export async function waitForRecordChange(path: string, options: { since: number
   const poll = Math.max(100, options.pollMs ?? 400);
   for (;;) {
     if (options.signal?.aborted) throw new Error('Cancelled');
-    const size = await stat(path).then(value => value.size, () => 0);
+    const size = await recordsSize(path);
     if (size !== options.since) return true;
     if (Date.now() >= deadline) return false;
     await new Promise(resolve => setTimeout(resolve, poll));
   }
 }
 
-export async function recordsSize(path: string): Promise<number> { return stat(path).then(value => value.size, () => 0); }
+/** Opaque change token: canonical event sequence or legacy file byte count; not a disk quota. */
+export async function recordsSize(path: string): Promise<number> { const backend = recordBackend(path); return backend ? backend.changeToken() : stat(path).then(value => value.size, () => 0); }
 
 /** Mode check helper for owner-private control files. */
 export async function privateFile(path: string, expected: number): Promise<boolean> {

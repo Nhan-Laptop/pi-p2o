@@ -1,29 +1,44 @@
 import { createHash, randomUUID } from 'node:crypto';
-import { appendRecord, readLedger, summarizeRecords, type AssessmentRecord, type LedgerIndex } from './records.js';
+import { appendRecords, appendGeneratedRecords, readLedger, summarizeRecords, type AssessmentRecord, type LedgerIndex } from './records.js';
+import type { MutationRequest } from './state/store.js';
 import { normalizeReport, type WorkerReport } from './broker.js';
 import { redact } from './evidence.js';
 import { taskFrontier } from './tasks.js';
+import { caseViews, type CaseContext } from './cases.js';
+import { coverageViews, type CoverageContext } from './coverage.js';
 
 const hash = (value: string) => createHash('sha256').update(value).digest('hex');
 
-/** Bounded normalized report, split without increasing the 16 KiB append ceiling. Manifest is the commit. */
-export async function persistReport(path: string, runId: string, workerId: string, report: WorkerReport, role?: string, depth?: number): Promise<string> {
+/** Host-normalized report rows; framing/hashes are created after whole-payload redaction. */
+export function prepareReport(runId: string, workerId: string, report: WorkerReport, role?: string, depth?: number): { reportId: string; records: AssessmentRecord[]; normalized: WorkerReport } {
   const redacted = JSON.parse(JSON.stringify(report,(_key,value) => typeof value === 'string' ? redact(value) : value));
-  const body = JSON.stringify(normalizeReport(redacted));
+  const normalized = normalizeReport(redacted), body = JSON.stringify(normalized);
   if (Buffer.byteLength(body) > 128 * 1024) throw new Error('Normalized report exceeds storage bound');
-  const reportId = randomUUID(), parts: string[] = [], ids: string[] = [];
+  const reportId = randomUUID(), parts: string[] = [], ids: string[] = [], records: AssessmentRecord[] = [];
   let text = '', count = 0;
   for (const char of body) { text += char; if (++count === 2000) { parts.push(text); text = ''; count = 0; } }
   if (text) parts.push(text);
   for (const [part, value] of parts.entries()) {
     const id = randomUUID(); ids.push(id);
-    await appendRecord(path, { id, runId, at: new Date().toISOString(), by: workerId, workerId, role, depth, kind: 'report_part',
+    records.push({ id, runId, at: new Date().toISOString(), by: workerId, workerId, role, depth, kind: 'report_part',
       text: 'Attributed report part; not proof', data: { reportId, part, value, sha256: hash(value), redacted:true } });
   }
-  await appendRecord(path, { id: reportId, runId, at: new Date().toISOString(), by: workerId, workerId, role, depth, kind: 'report',
-    text: report.summary.slice(0, 2000), refs: report.evidence.slice(0, 10),
-    data: { reportId, parts: ids, bytes: Buffer.byteLength(body), sha256: hash(body), confidence: report.confidence, blocked: report.blocked, attributed: true } });
-  return reportId;
+  records.push({ id: reportId, runId, at: new Date().toISOString(), by: workerId, workerId, role, depth, kind: 'report',
+    text: normalized.summary.slice(0, 2000), refs: normalized.evidence.slice(0, 10),
+    data: { reportId, parts: ids, bytes: Buffer.byteLength(body), sha256: hash(body), confidence: normalized.confidence, blocked: normalized.blocked, attributed: true } });
+  return { reportId, records, normalized };
+}
+
+/** Canonical atomic parts/manifest; legacy adapter remains explicitly append-only compatibility. */
+export async function persistReport(path: string, runId: string, workerId: string, report: WorkerReport, role?: string, depth?: number, request?: MutationRequest): Promise<string> {
+  if (request) {
+    const bound = { ...request, payload: { kind: 'normalized-report', runId, workerId, report, role, depth, submitted: request.payload } };
+    const acks = await appendGeneratedRecords(path, () => prepareReport(runId, workerId, report, role, depth).records, bound);
+    return acks.at(-1)!.recordId;
+  }
+  const prepared = prepareReport(runId, workerId, report, role, depth);
+  await appendRecords(path, prepared.records);
+  return prepared.reportId;
 }
 
 export function recoverReports(index: LedgerIndex): { reports: Array<{ id: string; workerId?: string; report: WorkerReport }>; diagnostics: string[] } {
@@ -51,7 +66,8 @@ export function recoverReports(index: LedgerIndex): { reports: Array<{ id: strin
 }
 
 /** Frozen bounded navigation manifest. Full detail stays in active ID queries / opt-in bounded export. */
-export function reportProjection(index: LedgerIndex) {
+export interface ReportProjectionContext {cases?:CaseContext;coverage?:CoverageContext}
+export function reportProjection(index: LedgerIndex, context:ReportProjectionContext={}) {
   const summary = summarizeRecords(index.records), recovered = recoverReports(index);
   const replaced = new Set(index.records.flatMap(r => r.supersedes ? [r.supersedes] : []));
   const resolved = new Set(index.records.flatMap(r => r.resolves ?? []));
@@ -75,19 +91,28 @@ export function reportProjection(index: LedgerIndex) {
   for (const report of recovered.reports) latestReports.set(report.workerId ?? report.id,report);
   const reports = [...latestReports.values()].map(r => ({id:r.id,workerId:r.workerId,confidence:r.report.confidence,blocked:short(r.report.blocked),outcome:r.report.outcome,
     evidenceRefs:r.report.evidence.slice(0,10),findings:r.report.findings.length,openItems:r.report.openItems.length,attributed:true}));
-  const digest = createHash('sha256'); for (const record of index.records) digest.update(JSON.stringify(record)).update('\n');
+  // Content digest over every record: O(history) and unused by status views, so it is computed on first read of `version` from a captured copy
+  // (same value, same JSON/spread output; only consumers that read it pay for it).
+  const digested = index.records.slice();
+  let digestValue: string | undefined;
+  const versionOf = () => { if (digestValue === undefined) { const digest = createHash('sha256'); for (const record of digested) digest.update(JSON.stringify(record)).update('\n'); digestValue = digest.digest('hex'); } return digestValue; };
   const tasks = taskFrontier(index).map(t => ({id:t.id,recordId:t.recordId,status:t.status}));
   const openIds = index.records.filter(r => !resolved.has(r.id!) && (r.kind === 'open' || (r.kind === 'candidate' && !replaced.has(r.id!) && (r.data?.closure === 'open_proof_gap' || r.data?.execution === 'blocked')))).map(r => r.id ?? '(legacy-no-id)');
   const take = <T>(rows:T[],bytes:number) => {const result:T[]=[];let used=0;for(const row of rows){used+=Buffer.byteLength(JSON.stringify(row))+1;if(used>bytes || result.length===100)break;result.push(row);}return result;};
-  const shownCandidates=take(frontier,16384),shownReports=take(reports,8192),shownTasks=take(tasks,8192),shownOpen=take(openIds,4096);
+  const reviewedCases=caseViews(index,context.cases??{}),coveragePlans=context.coverage?coverageViews(index,context.coverage):[],caseRows=reviewedCases.map(entry=>({id:entry.id,recordId:entry.recordId,revision:entry.revision,title:entry.title,verdict:entry.verdict,reviewStatus:entry.reviewStatus,currentness:entry.currentness,acceptedFinding:entry.acceptedFinding,independentCurrent:entry.independentCurrent,canonicalCaseId:entry.canonicalCaseId,duplicateOf:entry.duplicateOf,staleReasons:entry.staleReasons,claimRefs:entry.claimRefs,assetRefs:entry.assetRefs,limitations:entry.limitations,remediation:entry.remediation})),
+    coverageRows=coveragePlans.map(plan=>({id:plan.id,recordId:plan.recordId,revision:plan.revision,status:plan.status,title:plan.title,cellCount:plan.cellIds.length,counts:plan.counts,discoveredUnplannedAssets:plan.discoveredUnplannedAssets,unknownScope:plan.unknownScope,exclusions:plan.exclusions,omittedCells:plan.omittedCells}));
+  const shownCandidates=take(frontier,12288),shownReports=take(reports,6144),shownTasks=take(tasks,6144),shownOpen=take(openIds,3072),shownCases=take(caseRows,12288),shownCoverage=take(coverageRows,8192),uniqueAccepted=new Set(reviewedCases.filter(entry=>entry.acceptedFinding).map(entry=>entry.canonicalCaseId));
+  const proofWarnings=[...(!context.cases&&reviewedCases.length?['Case asset/hypothesis currentness unavailable in this projection; no accepted current finding is inferred.']:[]),...(!context.coverage&&index.records.some(row=>row.data?.coveragePlan)?['Coverage currentness unavailable in this projection; inspect through the active/historical store.']:[])];
   return {
-    version:digest.digest('hex'),complete:index.complete && recovered.diagnostics.length===0,totalRecords:index.records.length,
-    counts:{candidates:candidates.length,reports:reports.length,reportHistory:recovered.reports.length,coverage:summary.coverageTotal,open:summary.openTotal,unreviewedTasks:tasks.filter(t => !['reviewed','closed'].includes(t.status)).length},
-    tasks:shownTasks,candidates:shownCandidates,reports:shownReports,reportIds:shownReports.map(r => r.id),openIds:shownOpen,
-    omitted:frontier.length-shownCandidates.length+reports.length-shownReports.length+tasks.length-shownTasks.length+openIds.length-shownOpen.length,
-    staleIndependent:staleIndependent.slice(0,100),diagnostics:[...index.diagnostics,...recovered.diagnostics].slice(0,40),
-    warning:'Frozen attributed state, not semantic proof. Fields/views can be abbreviated; full detail requires pre-cleanup ID queries or opt-in export. No export means temporary records are deleted.',
+    get version() { return versionOf(); },complete:index.complete && recovered.diagnostics.length===0,totalRecords:index.records.length,
+    counts:{candidates:candidates.length,reports:reports.length,reportHistory:recovered.reports.length,coverage:summary.coverageTotal,open:summary.openTotal,unreviewedTasks:tasks.filter(t => !['reviewed','closed'].includes(t.status)).length,
+      cases:reviewedCases.length,uniqueAcceptedFindings:uniqueAccepted.size,duplicateCases:reviewedCases.filter(entry=>Boolean(entry.duplicateOf)).length,pendingCaseReviews:reviewedCases.filter(entry=>entry.reviewStatus==='pending'||entry.reviewStatus==='disputed').length,staleCases:reviewedCases.filter(entry=>entry.currentness==='stale').length,
+      coveragePlans:coveragePlans.length,coverageCells:coveragePlans.reduce((sum,plan)=>sum+plan.cellIds.length,0),staleCoverageCells:coveragePlans.reduce((sum,plan)=>sum+plan.counts.stale,0)},
+    tasks:shownTasks,candidates:shownCandidates,cases:shownCases,coveragePlans:shownCoverage,reports:shownReports,reportIds:shownReports.map(r => r.id),openIds:shownOpen,
+    omitted:frontier.length-shownCandidates.length+reports.length-shownReports.length+tasks.length-shownTasks.length+openIds.length-shownOpen.length+caseRows.length-shownCases.length+coverageRows.length-shownCoverage.length,
+    staleIndependent:staleIndependent.slice(0,100),diagnostics:[...index.diagnostics,...recovered.diagnostics,...proofWarnings].slice(0,40),
+    warning:index.snapshotSequence !== undefined ? 'Frozen attributed canonical state, not semantic proof. Views can be abbreviated; retention follows the confirmed durable-local/ephemeral profile. Durable history opens read-only, never restores authority.' : 'Frozen attributed state, not semantic proof. Fields/views can be abbreviated; full detail requires pre-cleanup ID queries or opt-in export. No export means temporary records are deleted.',
   };
 }
 
-export async function freezeReport(path: string, runId: string) { return reportProjection(await readLedger(path, runId)); }
+export async function freezeReport(path: string, runId: string, context:ReportProjectionContext={}) { return reportProjection(await readLedger(path, runId),context); }

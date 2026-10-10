@@ -11,7 +11,7 @@ import { createContext, createFakePi, createSimpleHerdr, sandboxFactory, EXTENSI
 async function fixture(work:(h:any)=>Promise<void>,args='',budget?:number) {
   const root=await mkdtemp(join(tmpdir(),'p2o-planner-'));await mkdir(join(root,'source'));
   const pi=createFakePi(),ctx=createContext({cwd:root}),herdr=createSimpleHerdr(),sandboxes:InertSandbox[]=[];
-  registerP2O(pi.pi,{extensionPath:EXTENSION_PATH,controlRoot:join(root,'control'),herdr:herdr.client,createSandbox:sandboxFactory(sandboxes),totalCommandBudget:budget});
+  registerP2O(pi.pi,{extensionPath:EXTENSION_PATH,controlRoot:join(root,'control'),settingsPath:join(root,'fixture-settings.json'),herdr:herdr.client,createSandbox:sandboxFactory(sandboxes),totalCommandBudget:budget});
   const call=(name:string,params={})=>pi.tools.get(name).execute('call',params,undefined,undefined,ctx.ctx);
   const emit=async(name:string,event:any={})=>{let result:any;for(const f of pi.events.get(name)??[])result=await f(event,ctx.ctx);return result;};
   const command=(s:string)=>pi.commands.get('p2o').handler(s,ctx.ctx);
@@ -27,7 +27,7 @@ async function until(p:()=>boolean) {for(let i=0;i<400;i++){if(p())return;await 
 describe('Planner/Engine/Worker extension contract',()=>{
   it('denies Planner target execution and reporter broker bypass; solo keeps direct access',async()=>{
     await fixture(async(h)=>{
-      for(const name of ['p2o_shell','p2o_net','p2o_http']) {expect(h.pi.active).not.toContain(name);expect(await h.emit('tool_call',{toolName:name})).toMatchObject({block:true});}
+      for(const name of ['p2o_shell','p2o_net','p2o_http','p2o_capture']) {expect(h.pi.active).not.toContain(name);expect(await h.emit('tool_call',{toolName:name})).toMatchObject({block:true});}
       await expect(h.call('p2o_shell',{command:'must not execute'})).rejects.toThrow('PLANNER_ONLY');
       const spawned=(await h.call('p2o_delegate',{focus:'report-only',task:'Synthesize existing ledger only',role:'reporting'})).details;
       const {client}=await h.connect(spawned.workerId);

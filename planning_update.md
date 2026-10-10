@@ -1,731 +1,875 @@
-# Hoạch định lại p2o: Planner rõ vai trò, Engine giữ loop, Worker thực hiện intent
+# Hoạch định p2o: output từng pha, checklog/checkpoint và knowledge graph
 
-> **Trạng thái: core MVP 0.5.0 đã commit/push và cài bằng `pi install`; chưa phải hoàn tất toàn bộ P0–P6.**
-> Runtime: `4d21f267c780562e2a07fb5cefe76d8cd746dab2`. Installed mechanics acceptance: [research/runtime/planner-engine](research/runtime/planner-engine/README.md). P5 và effectiveness/provider-wide studies vẫn chưa hoàn tất.
-> Các phần phân tích bên dưới giữ baseline `6f02060` và proposal gốc; không đọc mọi tên API/gate đề xuất thành capability đã ship. Contract thực tế: [docs/PLANNER_ENGINE.md](docs/PLANNER_ENGINE.md).
+> **Trạng thái thiết kế: PROPOSED; checkout đã implement/nối một số slices K0–K6, chưa hoàn tất K0–K7 và chưa publish/install.**
+> Baseline: p2o **0.5.0**, commit `e6390291cee071919ca260804080c434610726ce`.
+> Tài liệu này thay roadmap cũ tại cùng đường dẫn, **không** tuyên bố các API/schema bên dưới đã tồn tại.
+> Contract đã ship: [docs/PLANNER_ENGINE.md](docs/PLANNER_ENGINE.md). Acceptance baseline: [research/runtime/planner-engine/README.md](research/runtime/planner-engine/README.md).
+> Triển khai đang diễn ra theo từng gate: [implementation status / ADR K0](docs/KNOWLEDGE_WORKSPACE.md). Scope mới được duyệt là K0–K7, durable-local mặc định với confirmation; không coi toàn bộ roadmap đã hoàn thành.
+> Những link/hashes lịch sử trỏ đến bản plan trước phải được đọc tại commit tương ứng; không sửa acceptance cũ để hợp thức hóa plan mới.
 
-## Tiến độ hiện thực hóa
+## 0. Kết luận điều hành
 
-- **P0:** đã chốt schema additive (giữ ledger v2/TaskStatus, revision queued optional), state/epoch và spike Pi thật với inert provider: idle wake, settlement continuation, human follow-up priority, stale-wake veto. Loại adapter `sendMessage(triggerTurn)` vì mất scoped prompt; idle dùng normal prompt pipeline có typed semantic entry. Không khẳng định cancellation/billing của provider thương mại.
-- **P1:** enforced Planner/solo/reporting loadouts, worker subtask proposal, batch dispatch qua TaskDraft hiện có; chưa có một schema thin IntentDraft riêng hoặc đầy đủ review-packet redesign.
-- **P2:** logical slot reuse bằng fresh process/ticket; bỏ cumulative 2× spawn ceiling/max-6. Test 30 assignments/capacity 3; policy/retention và command reserve không reset. Live frontier 100, history terminal >100 được test; registrations vẫn bounded 1000.
-- **P3:** manual default; consented event-driven Engine, committed events, coalescing, một reservation, human priority, wait/blocked, pause/resume/stop epoch; provider error pause, không retry/fallback.
-- **P4:** shared-serial default giữ nguyên; opt-in isolated assignment executors + target-operation semaphore, snapshot consistency và teardown. Local Docker fixture xác nhận B không chờ A, cancel A giữ B, cleanup mọi executor; không phải live assessment.
-- **P5:** mới có live/closed frontier separation và bounded request-local snapshots/decision provenance. Incremental indexes, archival checkpoints, durable structured todo, warm session/process reuse và long-history performance vẫn **chưa triển khai**.
-- **P6:** typecheck/build/import/library/provenance pass; Vitest **179 pass/9 opt-in skips**, Python **143 run/1 skip/OK**, source Docker/native **8 pass**. Package private inputs excluded; graph change review gồm cả file mới qua temporary index. Installed runtime đã pass **6 checks** (Pi thật/inert provider, normal/quota worker, idle/boundary/human-priority wake và Docker), với **32 selected runtime/document hashes** khớp tại runtime revision. Publication chỉ cập nhật tài liệu/artifacts; provider/version matrix và effectiveness/cost studies vẫn là bước riêng. Không chạy live/paid benchmark, không thực thi ARTEX/norma.
+**Không cần viết lại Planner/Engine/Worker một lần nữa. Cần nâng lớp state và sản phẩm người dùng nhìn thấy.**
 
-Mọi scope/ticket/evidence/currentness/cleanup/budget safeguards và unlimited elapsed lifetime được giữ; số round, retention và resource budget không phải TTL. [Runtime contract](docs/PLANNER_ENGINE.md) là nguồn cho API hiện có.
-> Baseline p2o: `6f02060f22109df4ff360956adffc5213ad857a0`.
-> Lập kế hoạch từ source local và `my_references/ARTEX/ARTEX_AGENTIC_CORE.vi.md`, không từ suy đoán về một chiến dịch thực tế.
-> Turn lập kế hoạch gốc chỉ đọc/phân tích, không chạy ARTEX/norma hay assessment và không commit/push/install. Các bước triển khai/fixture acceptance và publication sau đó được ghi riêng ở phần tiến độ trên.
+p2o hiện đã có task board, ledger, evidence receipts, candidate revisions, worker reports, event-driven Engine và cleanup. Nhưng thông tin vẫn rời rạc, phần lớn phải yêu cầu model gọi tool mới thấy, và full ledger thường chỉ sống đến cleanup. Vì vậy người dùng có cảm giác “không có output, không biết đã làm gì, pha nào xong, có bị làm lại không”.
 
-## 1. Kết luận cần chốt trước
+Thứ tự đề xuất:
 
-**Vấn đề chính không phải agent thiếu một prompt dài hơn hoặc thiếu thời gian. p2o thiếu một outer loop điều phối độc lập với conversation, đồng thời giao quá nhiều trách nhiệm cho cùng một LLM.**
+1. **Hiển thị tiến độ và output ngay:** bảng task/worker, nhật ký sự kiện, bàn giao từng nhánh, review pending, lý do đang chờ.
+2. **Lưu công việc bền vững:** checklog có thứ tự, artifact registry, checkpoint nhất quán, đọc lại sau stop/reload mà không phục hồi quyền thực thi.
+3. **Asset Graph + Exploration Graph:** resource identity tách khỏi mục tiêu/câu hỏi/quan sát/kết luận. “Vuln Graph” là một view của Exploration Graph liên kết assets/evidence/reviews.
+4. **Chống trùng đúng tầng:** chống ghi lặp, trùng asset, trùng assignment và trùng finding là bốn bài toán khác nhau; validation/retest hợp lệ không được bị chặn như việc thừa.
+5. **Planner đọc tri thức có chọn lọc:** delta + outstanding review + known facts/counterevidence + frontier + kế hoạch dài hạn; không chỉ last-N task và chat history.
+6. **Tháo nút thắt có đo lường:** phân trang, index, artifact spill, archive; không bỏ giới hạn bảo vệ hoặc tăng budget ngầm.
 
-Hiện nay lead vừa làm chiến lược, vừa recon/discovery, vừa dispatch, đọc/review mọi handoff, xử lý lỗi, chờ worker và viết báo cáo. Trong khi đó:
+Đầu ra mong muốn của một run không phải chỉ một câu trả lời cuối, mà là một **hồ sơ assessment sống**, có thể trả lời:
 
-- Worker có cap đồng thời, nhưng còn có **cap tổng số lần spawn**, nên không thể tạo nhiều đợt liên tiếp dù các worker trước đã xong.
-- Nhiều worker LLM có thể hoạt động, nhưng **shell và HTTP thực thi tuần tự qua cùng một executor queue**.
-- Worker report được lưu, **không tự đánh thức lead thành một planning round mới**.
-- `p2o_workers waitFor=...` giúp chờ không tốn model turn trong khoảng chờ, nhưng vẫn là công cụ lead phải tự gọi; không phải scheduler thường trực.
-- Không có assessment deadline không đồng nghĩa có auto-continuation, worker pool tái sử dụng hay context bền vững cho nhiều vòng.
+- Scope và mục tiêu hiện tại là gì?
+- Đã phát hiện tài nguyên nào, từ evidence nào?
+- Đã hỏi/test câu nào, ai làm, phương pháp nào, trên phiên bản/actor nào?
+- Cái gì chỉ được worker báo, cái gì đã review, cái gì thiếu proof?
+- Tại sao chọn bước tiếp theo; tại sao không lặp bước trước?
+- File/receipt/report nằm đâu; checkpoint nào còn nguyên và còn hiện hành?
+- Run đang chờ worker, chờ review, chờ prerequisite, hết allowance hay lỗi storage?
 
-**Kiến trúc đề xuất:**
+### Quy ước bằng chứng
 
-```text
-Human: mục tiêu, scope, consent, ngân sách, stop
-                        |
-                        v
-Owner / Assessment Engine [TypeScript, không phải LLM]
-  authority + events + frontier + admission + dispatch + cleanup
-                        |
-              +---------+------------------------+
-              |                                  |
-              v                                  v
-Planner LLM                              Worker slots x N
-strategic decisions                      một intent / một assignment
-selected snapshot + delta                tactical model/tool loop
-              |                                  |
-              +---- intents/review/steer          +---- observations/report
-              |                                  |
-              +---------- shared run state <-----+
-                             |
-                    commit event -> wake Planner
-```
+- **SOURCE-CONFIRMED:** đọc implementation trong snapshot hiện có; không đồng nghĩa đã chạy end-to-end.
+- **DESIGN-INFERENCE:** chẩn đoán/hệ quả kiến trúc có cơ sở, chưa có đo lường người dùng hoặc benchmark.
+- **PROPOSED:** schema, API, UX, thuật toán và ngưỡng nghiệm thu của bản cập nhật này.
+- **UNVERIFIED:** chưa có bằng chứng đủ, nhất là hiệu quả pentest, giảm trùng ngữ nghĩa, chi phí, chất lượng findings.
 
-**Khuyến nghị MVP:** Pi conversation hiện tại là **Planner**, không còn là “lead AND working investigator” khi delegation hoạt động. Engine thực hiện công việc cơ khí. Không bắt buộc thêm một Planner agent trả phí hoặc một dashboard. `--solo` vẫn có working-agent mode rõ ràng, không giả vờ có subagent.
-
-Planner riêng chạy qua SDK/RPC là lựa chọn giai đoạn sau nếu cần tách hoàn toàn human chat khỏi planning rounds. Không đưa cả hai mô hình vào MVP cùng lúc.
+Thiết kế mới từ §4 trở đi là **PROPOSED**, trừ chỗ ghi rõ baseline/source; trạng thái thực hiện authoritative nằm trong [implementation checklog](docs/KNOWLEDGE_WORKSPACE.md), [store contract](docs/STATE_STORE.md) [graph K3](docs/ASSET_GRAPH.md), [work/planning K4](docs/WORK_ADMISSION.md), [case/coverage K5](docs/CASE_REVIEW.md), [indexed context K6](docs/CONTEXT_PACKETS.md) và [acceptance matrix K7](docs/ACCEPTANCE_MATRIX.md). Không suy từ slice đã code sang việc mọi API/schema/gate trong thiết kế đã có. Ví dụ thiết kế là fixture giả định, không phải một cuộc kiểm thử thật.
 
 ---
 
-## 2. Phạm vi, nguồn và mức chắc chắn
+## 1. Phạm vi nghiên cứu và provenance
 
-### 2.1. Những gì đã đối chiếu
+### 1.1. Nguồn thực tế
 
-- Đọc toàn bộ bản phân tích tiếng Việt của bạn.
-- Đọc đường core của ARTEX: `Engine.Run/plannerLoop/workerLoop/runIntent`, `Planner.Plan`, `Worker.execute`, `Task.Notify*`, task-agent assembly, frontier/atomic claim, overview, intent admission và goal proof.
-- Đối chiếu norma `Session.Prompt/Resume`, `harness.loop.run`, tool execution và settlement. Không thực thi source tham khảo.
-- Đọc toàn bộ entrypoint p2o và các thành phần roles, prompts, tasks, progress, Herdr, sandbox; đối chiếu broker, evidence, ledger và regression liên quan.
-- Đọc Pi 1.0.0 docs `extensions.md`, `sdk.md`, `message-types.md`, `cli-integration.md`, `compaction.md`, examples và declarations của boundary/message APIs.
-- Khảo sát cấu trúc repo ARTEX: `agent`, `server`, `db` là core; `guard/intercept/traffic/evidence/report` là enforcement/evidence support; `web` là UI; norma là harness.
+File người dùng nhắc được tìm thấy tại `my_references/ARTEX/ARTEX_AGENTIC_CORE.vi.md`, không phải trực tiếp dưới `my_references/`. Đã đọc đủ 1.364 dòng và đối chiếu các implementation trọng yếu bên dưới.
 
-Đây là **review kiến trúc xuyên các đường source liên quan**, không phải audit từng dòng của toàn bộ UI, mọi API/provider/MCP hoặc mọi package trong ARTEX. Không tuyên bố đã kiểm chứng ARTEX end-to-end. File review hashes cục bộ: `tmp/planner-redesign/review-hashes.json` (không phải artifact release).
+- SHA-256 bài phân tích: `db70fdd06bda7994f9cb07f6deaccea8ca86c4dbfd3294441cde1bd1e8cc91fa`.
+- Manifest reference: `my_references/ARTEX/research_sources/source_manifest.json`.
+- Đối chiếu **332 file trong manifest: 0 thiếu, 0 lệch hash**. Điều này chứng minh tính nhất quán với manifest local, không xác thực tác giả/upstream và không phải 332 file đã được audit từng dòng.
+- Nhãn ARTEX 0.3.15/norma v0.4.3 lấy từ snapshot/bài phân tích; không tự khẳng định deployment hay commit upstream đã xác thực. Kết quả 404 upstream là ghi nhận trong nghiên cứu trước, không phải kiểm tra mạng mới ở lượt này.
+- Đã đọc toàn bộ **20 module `src/*.ts` và `extensions/p2o/index.ts`** của p2o; đọc contract/docs và các regression liên quan. Với ARTEX, kiểm kê cây source rồi trace core storage/planning/worker/activity/finding/digest và một số UI paths; không tuyên bố audit toàn bộ frontend/vendor/security surface.
 
-### 2.2. Phân loại dùng trong tài liệu
+Reference là **dữ liệu không tin cậy, chỉ đọc tĩnh**. Không chạy ARTEX/norma, không import/build source reference, không thêm dependency từ reference, không dùng IP/credentials/campaign artifacts làm mục tiêu. Không chạy assessment/paid benchmark trong công việc hoạch định này.
 
-- **SOURCE-CONFIRMED:** đọc thấy implementation trong snapshot hiện có; không đồng nghĩa đã đo hành vi runtime.
-- **DESIGN-INFERENCE:** hệ quả hoặc nguyên nhân khả dĩ từ kiến trúc; cần test/measurement.
-- **PROPOSED:** thay đổi cho p2o, chưa có trong runtime.
-- **UNVERIFIED:** effectiveness, deployment/config thực tế hoặc tính đúng tuyệt đối chưa được chứng minh.
+### 1.2. Phân biệt ba loại graph
 
-`my_references/` là dữ liệu tham khảo không tin cậy: không chạy script/tests từ đó, không import, không commit/package, không trở thành runtime dependency. Chỉ rút ra ý tưởng, viết implementation p2o riêng.
+1. **GitNexus code graph:** phục vụ đọc source và impact analysis trong repo phát triển.
+2. **Asset Graph runtime:** tri thức về tài nguyên của assessment được phép.
+3. **Exploration/Vulnerability Graph runtime:** công việc, kết luận, evidence và quan hệ của assessment.
 
-Snapshot ARTEX không có provenance commit upstream đã xác thực. Nhãn 0.3.15/norma v0.4.3 trong tài liệu không chứng minh campaign sử dụng đúng snapshot này. Bài báo, tên/comment và prompt không thay thế handler đang chạy.
+GitNexus không tự cung cấp graph assessment. Tạo thêm edge trong graph code không làm Planner nhớ assets/vulns tốt hơn.
 
-Hashes neo review hiện tại:
-
-| Artifact | SHA-256 |
-|---|---|
-| `ARTEX_AGENTIC_CORE.vi.md` | `db70fdd06bda7994f9cb07f6deaccea8ca86c4dbfd3294441cde1bd1e8cc91fa` |
-| `agent/planner.go` | `a4c6dca3b5da2843f87602df5ee16182d3b21e6d541d3b339f2fca0a0dbacc30` |
-| `agent/worker.go` | `3b23500bc9025876f1c06fdfd3d60b43965de7f62b718b3d010ce3c67c62b0cf` |
-| `server/engine.go` | `aa93f45a53222465240e809a77ab6c163cfb868e4ff65b8cc66271048e928b03` |
-
-### 2.3. GitNexus và blast radius
-
-Đã rebuild index bằng `--index-only`, dùng graph query/context và CLI fallback để đối chiếu `plannerLoop`, `spawnWorkerLocked`, `TaskBoard`.
-
-- `TaskBoard`: **HIGH**, 22 symbols upstream; direct consumers gồm extension, report projection và tests; các flow handler/cleanup/delegation bị ảnh hưởng.
-- `spawnWorkerLocked`: graph trả LOW/1 caller trực tiếp, nhưng **không dùng kết quả nhỏ này để kết luận refactor tổng thể ít rủi ro**: callbacks/plain-object dispatch cần đọc source.
-- Rebuild báo BM25/FTS disabled; một số MCP calls lỗi. CLI context/impact và source trực tiếp được dùng thay thế. Không coi query rỗng hoặc graph output bị giới hạn là all-clear.
-
-**Chỉ có kế hoạch được viết ở turn này.** Khi triển khai phải chạy impact lại cho symbol thực sự đổi; đặc biệt ticket/broker, task transitions, cancellation và shared executor. Trước commit phải detect changes, cùng regression thực tế; graph không phải chứng nhận an toàn.
+Graph query/context đã dùng để tìm đường đọc; kết quả có nhiễu từ reference lớn, một số liên kết tên phổ thông xuyên file không đúng ngữ nghĩa, và thiếu process coverage cho p2o. Vì vậy kết luận implementation dựa thêm vào source trực tiếp, không coi đồ thị là proof. Impact của `planning_update.md` trước khi tạo trả `UNKNOWN/target not found` vì file đã bị xóa; đã kiểm tra các liên kết từ README, contract, acceptance và package manifest. Lượt này chỉ thay tài liệu, không chỉnh executable code.
 
 ---
 
-## 3. ARTEX thực sự giao việc và giữ loop thế nào?
+## 2. Chẩn đoán p2o 0.5.0: có gì, thiếu gì?
 
-### 3.1. Hai vòng, không phải một agent chạy vô hạn
+### 2.1. Không đúng nếu nói “hoàn toàn chưa có log/output”
 
-**Inner loop — trong một Planner/Worker run:**
-
-```text
-model -> tool_use -> handler -> tool_result ghép đúng ID
-      -> append vào session messages -> model request tiếp
-      -> ... -> natural completion / error / budget / cancellation
-```
-
-Norma giữ vòng này; Worker tự chọn tools và tactical steps. Planner không biên dịch intent thành command, Worker không chỉ là process runner.
-
-**Outer loop — giữa Planner và workers:**
-
-```text
-Engine wake Planner
-  -> Planner đọc delta + overview + todo
-  -> add_intent tạo frontier entries
-  -> worker slot claim một entry
-  -> Worker thực hiện inner loop và ghi tri thức
-  -> report_finding / worker terminal -> NotifyFinding / NotifyDone
-  -> Engine gom signals -> planning round mới
-```
-
-Source: ARTEX `server/engine.go:748–1156,1237–1245`; `agent/planner.go:355–473`; norma `harness/query.go:366–579`, `harness/tools.go:28–133`.
-
-### 3.2. Planner “ngồi chờ” nghĩa chính xác là gì?
-
-**SOURCE-CONFIRMED:** `plannerLoop` block trên Go channel `t.notify`, heartbeat timer hoặc cancellation. Sau `Plan()` trả về, Engine vẫn sống. Không cần model viết “tiếp tục” hoặc một human message mới để nhận worker completion.
-
-- Coalesce mặc định 800 ms, một cửa sổ cố định; không reset timer với mọi signal.
-- Heartbeat tối thiểu/mặc định 600 giây, re-arm sau planning wake.
-- `NotifyDone` tích lũy intent ID; `NotifyFinding` có summary và có thể wake khi worker chưa kết thúc.
-- Human goal/hint edits có signals riêng.
-- Không phải mọi `record_fact/insert_assets` đều trực tiếp wake Planner; không có bằng chứng một watcher tổng quát cho mọi graph mutation.
-
-**Quan trọng:** đợi signal là chờ bằng runtime, không tốn model call trong thời gian đó. Heartbeat của ARTEX có thể tạo model call nếu task còn runnable; không đồng nhất heartbeat với “miễn phí”.
-
-Source: `server/engine.go:780–914`; `server/manager.go:1751–1860`.
-
-### 3.3. Planner giao “hướng + lý do”, không giao mọi bước nhỏ
-
-Planner:
-
-1. Xem goal, trigger và state hiện có.
-2. Đọc evidence/fact chi tiết khi cần.
-3. So sánh hướng mới với open/running/recent-done để hạn chế duplicate.
-4. Tạo một hoặc nhiều intents: natural-language summary, asset IDs, parent fact/finding IDs, priority.
-5. Nếu bước sau phụ thuộc kết quả bước trước, giữ todo và chờ kết quả thật rồi mới giao bước sau.
-6. Có thể steer/kill worker, đánh giá goal.
-
-Worker:
-
-1. Nhận đúng một intent và target rows.
-2. Tự xác định tactical steps, chọn tool, đọc kết quả.
-3. Ghi assets/facts/findings tường minh; không tự mở chiến lược khác.
-4. Hoàn tất hoặc trả trạng thái lỗi/partial; slot quay lại claim việc khác.
-
-`add_intent` handler kiểm tra parent **fact/finding**, không chấp nhận tùy ý goal/intent/hint làm parent. Frontier chọn priority DESC, ID ASC và atomic `open -> running`. Không có prerequisite-ready DAG scheduler tổng quát trong đường claim: phần sequencing còn dựa nhiều vào Planner.
-
-Source: `agent/planner.go:298–473`; `agent/tools.go:1021–1202`; `db/exploration.go:1136–1182`.
-
-### 3.4. Worker slots khác với worker tasks
-
-ARTEX `Engine.Run` tạo N worker loops. Mỗi loop thực hiện:
-
-```text
-claim -> execute intent -> settle -> notify -> claim tiếp
-```
-
-N là **số slot đồng thời**, không phải tổng số intents được xử lý suốt task. `Manager.Workers()` mặc định 3; `SetWorkers()` trong đường đã đọc chỉ yêu cầu N > 0, không có hard cap 6 như p2o. Không suy ra rằng mọi API/UI hoặc mọi deployment đều không có giới hạn khác.
-
-`WorkerSessionID` theo exploration + intent ID, không theo `work#N`. Do đó slot tái sử dụng không có nghĩa conversation của intent A bị đưa nguyên sang intent B. Cùng intent có transcript/resume; intent mới có session riêng.
-
-Source: `server/manager.go:319–337`; `server/engine.go:916–1156`; `agent/worker.go:94–96,361–535`.
-
-### 3.5. Vì sao duy trì nhiều vòng mà context không phải một chat khổng lồ?
-
-- Planner tạo session mới mỗi round, nhận projection/delta/todo, không replay toàn bộ Worker conversation.
-- Todo của Planner sống qua rounds **trong process**; không thấy bảo đảm load lại nguyên todo từ DB sau restart.
-- Worker mandate/target được dựng ở system mỗi run; overview ở user context chỉ để hiểu tình hình.
-- Tool output có cap/spill; session compaction là một lớp, cold-graph digests là lớp khác.
-- Facts/resources/evidence ở ngoài conversation, có ID để drill-down.
-- Overview có cửa sổ: open 30, recent facts 20, recent ended 12; bounded counts không luôn là absolute totals.
-
-Không cần PostgreSQL/graph database để học nguyên lý này. Giá trị là **state ngoài chat + projection có provenance + retrieval theo nhu cầu**.
-
-### 3.6. ARTEX cũng có giới hạn và recovery, không phải unlimited hoàn toàn
-
-Các đường đã đọc có:
-
-- MaxTurns configurable, 0 = không giới hạn theo setting đó.
-- Worker run timeout configurable; fallback `agentRunSeconds` là **1200 giây**, có thể đặt 0. Task deadline có thể clamp run.
-- Harness defensive guard **10000 iterations**.
-- Max-turns/time settlement để ghi checkpoint, không giả vờ completed.
-- Engine model-error retry mặc định 2 lần thêm, backoff 3 giây; router-handled errors có ngoại lệ chống replay side effects.
-- Thinking-only turn có bounded stop-hook nudge (mặc định 2 cho intent), không phải unconditional “cứ tiếp tục”.
-
-Source: `server/server.go:296–322`; `server/engine.go:71–85,531–650,1028–1156`; norma `harness/query.go:261–263,366–579`.
-
-**Bài học:** duration dài đến từ Engine sống qua nhiều run, pool nhận việc tiếp, checkpoint và compaction. Không chỉ đến từ bỏ timeout. Không copy retry/failover/nudge policy sang p2o mà không có consent, budget và side-effect model.
-
-### 3.7. Những phần không nên sao chép nguyên xi
-
-- Planner ARTEX vẫn được assemble generic tools/Bash; “chỉ lập kế hoạch” phần lớn là prompt policy. p2o nên enforce tool surface rõ hơn.
-- Asset auto-scope không tương đương quyền human-confirmed scope của p2o; **không đem auto-widen scope vào extension**.
-- `confirmed` graph state không tự chứng minh vulnerability; goal proof còn phụ thuộc model và có writes không kiểm tra đủ lỗi.
-- Khi goal chưa đạt và frontier trống, prompt ARTEX thúc tạo hướng mới; p2o phải cho phép **blocked/no-feasible-work**, không ép model bịa thêm việc để giữ loop.
-- Không sao chép campaign workflow, credentials, unsafe actions hoặc `PermissionModeBypass` thành host authority.
-
----
-
-## 4. Chẩn đoán p2o ở baseline hiện tại
-
-### 4.1. Role đang bị lẫn ở đâu?
-
-`src/prompts.ts::ownerInstructions` tuyên bố **“lead AND a working investigator”** và **“not a dispatcher”**. Đây là quyết định hiện tại, không phải lỗi Pi tự gây ra.
-
-`ROLES` chỉ gồm recon/discovery/validation/reporting/general. Chúng là presets model/skills; tất cả workers nhận gần như cùng tool set, kể cả nested delegation. Chưa có capability boundary theo vai trò reporting/validation/planning.
-
-**DESIGN-INFERENCE:** lead phải đổi liên tục giữa tactical trace và strategic state, dễ bỏ lỡ report, over-plan một task hoặc ôm phần việc nên giao worker. Cần đo trước/sau, không gọi đây là benchmark đã xác nhận.
-
-### 4.2. Những giới hạn thực sự còn lại
-
-| Giới hạn hiện tại | Implementation | Hệ quả |
+| Nhu cầu | SOURCE-CONFIRMED trong baseline | Thiếu/gây khó sử dụng |
 |---|---|---|
-| Concurrent workers mặc định 3, hard max 6 | `src/roles.ts:27–30`; parser/settings | Tuning bị chặn bởi constant chung |
-| Tổng successful spawns ≤ 2 × maxWorkers | `spawnWorkerLocked` | Default chỉ 6 assignments; max chỉ 12, dù trước đó đã report |
-| Map-size guard ≤ 2 × cap + 4 | `spawnWorkerLocked` | Historical registrations tiếp tục góp vào giới hạn |
-| Depth mặc định 2, max 3 | `src/roles.ts`; spawn admission | Tree depth, không phải tổng capacity hay pipeline depth |
-| Mỗi worker 200 target commands | `src/broker.ts:15` | Assignment dài có thể partial-budget |
-| Worker command pool 600 × 90% = 540 mặc định | extension `totalBudget`; `Broker.spend` | Nhiều đợt vẫn chia cùng run allowance |
-| Lead knowledge 400; worker shared knowledge/coordination counter 160/200 | extension; broker | Cần tách read/report/control reserve khi tăng số vòng |
-| Task lifetime-count cap 100 | `TaskBoard.create` | Đã closed vẫn tính; không phải chỉ active backlog |
-| Single sandbox queue cho shell + HTTP | `src/sandbox.ts::enqueue` | Head-of-line blocking; LLM concurrency ≠ target execution concurrency |
-| Shell abort/opt-in timeout xóa shared executor | `Sandbox.exec` | Một worker bị revoke có thể làm peers mất executor |
-| `p2o_workers` wait tối đa 300 giây, default 120 | tool schema + `waitForWorkers` | Chỉ giới hạn một lần đợi; **không dừng assessment/worker** |
-| Report revoke ticket, worker phase finished | broker report + `p2o_report` | Không có “giao thêm intent mới” cho chính worker session đã xong |
-| Ledger reconciliation ≤64 MiB /100000 records; bounded receipts/exports | records/evidence/report | Duration unlimited không có nghĩa retention unlimited |
+| Tool output | `output()` trả exit/output/Evidence ID; `EvidenceStore.receipt()` ghi observation | Output bị cap; không có artifact store giữ phần đã mất; không có bảng output theo pha |
+| Nhật ký | `records.jsonl`, 10 record kinds, lifecycle/note/evidence/task/report | Trộn audit và knowledge; không có durable typed checklog/correlation thống nhất |
+| Tiến độ worker | `ProgressState` ghi queued/running/returned/error/reported; `p2o_workers` truy vấn | Map chỉ giữ latest event mỗi actor; không phải lịch sử, chưa có persistent widget |
+| Task completion | `TaskBoard`: proposed → reserved → running → reported → reviewed → closed, kèm blocked/cancelled/expired | Task board chưa dễ xem trực tiếp; reported/worker complete rất dễ bị hiểu nhầm là reviewed |
+| Handoff | Report chuẩn hóa, hashed parts + manifest; coverage/open items được ghi | Findings/evidence trong WorkerReport còn arrays of strings; không có typed output contract theo nhánh |
+| Candidate | Policy basis, evidenceRefs, negativeControls, supersedes, independent currentness | Identity do model đặt; chưa có asset/fact/hypothesis graph hay semantic duplicate review |
+| Chống cùng làm | Reserve serialize; active overlap theo trimmed surface + normalized risk; validation exception | Đổi alias có thể lọt; hai phương pháp khác trên cùng surface/risk có thể bị chặn quá rộng; lịch sử completed không phải khóa dedup |
+| Planner state | Request-local capsule + engine delta/frontier + 10 task cuối; wait/blocked có provenance | Chưa có goal tree, durable strategic todo, indexed retrieval theo asset/question/fact |
+| Stop/report | `freezeReport()` tạo bounded projection; `--export` giữ ledger JSON | Không có checkpoint giữa run; full temporary records bị xóa khi cleanup nếu không export |
+| UI | Status target/worker, notify, tool text/details, pane thật | Không có `/p2o status/tasks/log/checkpoints`, phase card, checklist output hoặc renderer riêng |
 
-**Không được viết “600 aggregate commands bao gồm lead”**: hiện lead target commands được thống kê riêng, không bị `Broker.spend` debit. 90% là reserve trên worker pool, không phải một aggregate lead/worker cost governor đã enforce.
+**DESIGN-INFERENCE:** vấn đề lớn là thiếu một “mặt tiền vận hành” và domain model thống nhất, không phải thiếu mọi primitive. Thêm prompt “hãy ghi log” sẽ không giải quyết retention, canonical identity, race, currentness hay UI.
 
-### 4.3. Outer loop thiếu chính xác phần nào?
+### 2.2. Các điểm source cụ thể cần đưa vào backlog
 
-`Broker.report` callback hiện persist report/coverage/open items và transition task thành reported. Không queue model message/wakeup cho owner. `ProgressState` chỉ advisory, không có timer/dispatch/retry. Hook owner `agent_before_settle` không yêu cầu continuation khi completed; lỗi owner hiện dừng assessment.
+1. **Note không trả record ID:** `appendRecord()` tự sinh ID nhưng trả `void`; `p2o_note`/broker `note` chỉ ACK. Description nói ID dùng để link, nhưng caller phải đọc ledger để tìm lại. API ghi mới phải trả `{id, revision, sequence}` sau commit.
+2. **Progress mất lịch sử:** `src/progress.ts` giữ latest event/command count/last problem, không giữ các cặp tool-start/tool-end. Không suy ra một operation đã xong chỉ từ actor chuyển trạng thái.
+3. **Chưa có security phase state:** `Phase = starting|active|stopping|finished` trong extension là lifecycle tài nguyên, không phải recon/discovery/validation/reporting.
+4. **Report chưa phải atomic assessment packet:** `persistReport()` commit parts/manifest trước các task/coverage/open writes; transition task được `.catch(() => {})`. Broker đã có thứ tự ACK/revoke/notify, nhưng nhiều write không phải một transaction chung. Lỗi giữa các bước cần packet status/recovery rõ, không được UI tuyên bố mọi nhánh đã đồng bộ.
+5. **Finish không phải chứng nhận hoàn thành nghiên cứu:** `p2o_finish` chặn queued intents và workers chưa report, nhưng không yêu cầu tất cả task đã reviewed/closed. Đây là operational finish; cần thêm outcome `completed|partial|blocked|cancelled|incomplete` cho assessment, không cấm người dùng stop khi còn gap.
+6. **Lưu trữ ngắn hạn:** cleanup xóa control directory kể cả export lỗi; export cap 16 MiB nhỏ hơn ledger read bound 64 MiB. Cần tách evidence retention khỏi ticket/socket/scratch cleanup và biểu thị retention failure.
+7. **Đọc lặp toàn ledger:** task mutation/readiness/worker objective/candidate/export dùng `readLedger()`. Context owner còn gọi `board.list()` nhiều lần. Cost tăng theo history; chưa có incremental index.
+8. **Budget coordination có thể bóp phần graph mới:** worker dùng chung counter 200 cho skill/note/candidate/proposal, knowledge dừng ở 160; owner knowledge 400. Không nhét hàng loạt asset/fact writes vào đó mà không đo và thiết kế reserve cho report/checkpoint.
+9. **Coverage hiện là entry counts:** có thể có note coverage rồi report coverage cho cùng nội dung. `coverageTotal` không phải số test cells duy nhất, không phải % assessment an toàn.
+10. **Liveness và result khác nhau:** pane idle, tool exit 0, worker reported, receipt persisted, review accepted, goal satisfied là sáu điều khác nhau.
+11. **Capsule không có toàn bộ known knowledge:** task gần nhất không đủ ngăn một worker khác tìm lại endpoint/fact đã có ở lịch sử sâu.
+12. **Output checksum không cứu phần đã truncate:** process capture cap 48 KiB; receipt lưu input 2.000, stdout 4.000, stderr 1.000 ký tự rồi bound JSON bytes. Hash receipt được tính trên output truyền vào store, có thể đã truncated ở process layer; không gọi đó là hash của toàn bộ output ban đầu.
 
-Do đó:
+### 2.3. Không được làm mất phần đã ship
+
+Giữ nguyên mặc định manual/shared; event-driven opt-in; Planner delegated không target-execute; solo vẫn thực thi; Worker không tự dispatch/review; reporting synthesis-only. Giữ fresh ticket/session mỗi assignment, runtime mismatch gate, reviewed prerequisite revisions, cancellation/revocation, verified cleanup và source snapshot consistency.
+
+Không đưa trở lại worker cap sáu hoặc cumulative `2× maxWorkers`. Không thêm assessment TTL, worker TTL, default command timeout, hidden retry/provider fallback, model heartbeat hay buộc sinh việc khi hết hướng khả thi. Full HTTP/network hiện có vẫn phải giữ.
+
+---
+
+## 3. ARTEX thật sự làm gì, nên học phần nào?
+
+### 3.1. Asset Graph: identity + attributes + relational projection
+
+**SOURCE-CONFIRMED** qua `db/schema.sql`, `db/assets.go`, `agent/tools_insert.go`, `db/task_scope.go`:
+
+- Sáu asset types: `root_domain`, `ip`, `subdomain`, `app`, `service`, `endpoint`.
+- Ports, technology, credentials, params là fields/arrays trong snapshot này; không phải tất cả đều là node riêng.
+- Natural unique keys và SQL upsert làm hard dedup tài nguyên: endpoint `(url, method)`, HTTP service `url`, IP `ip`, subdomain `(domain, record_type)`…
+- `insert_assets` do agent gọi tường minh; handler runtime gán task identity, normalize/merge, anchor vào intent và ghi source metadata.
+- `BuildCoverageGraph()` dựng **child → parent containment view** từ fields; không có persisted asset-edge table tương đương exploration edges. Chọn parent đại diện, không mô tả đủ mọi DNS/network relationship.
+- Asset discovery có các đường `AddAutoScope`; **không sao chép vào p2o**. Phát hiện asset khác origin không cấp quyền kiểm thử nó.
+
+**Bài học:** canonical ID dùng chung + provenance + scoped retrieval quan trọng hơn chọn graph database hay vẽ sơ đồ đẹp. Cần thêm source-code assets cho p2o; bê nguyên sáu type thiên network sẽ không đủ.
+
+### 3.2. Exploration Graph rộng hơn “Vuln Graph”
+
+**SOURCE-CONFIRMED:** `exploration_nodes`, `exploration_edges`, `exploration_anchors` lưu goals, intents, facts, findings, hints, digests và legacy begin. Các đường hiện tại:
 
 ```text
-worker report -> ledger updated -> [lead phải còn đang chạy/chủ động đợi/human prompt]
+origin fact ──spawns───────> goal
+origin/fact/finding ──derived_from──> intent
+intent ──yields───────────> fact hoặc finding
+fact/finding ──proves─────> goal
+digest ──covers───────────> member nodes
+node ──anchor────────────> asset
 ```
 
-Chưa có:
+- `addOneIntent()` chỉ chấp nhận parent kind fact/finding; không phải DAG scheduler tổng quát.
+- `Frontier()` priority DESC, ID ASC; `ClaimIntent()` atomic open→running chống hai worker claim **cùng intent**, không chống hai intent có cùng ý nghĩa.
+- `record_fact` ghi observation/kết luận âm tính; fact state `confirmed` không bảo đảm payload observed hay evidence đã được kiểm chứng.
+- `RecordFindingTx()` gom finding node + standalone finding row + anchors + yields + traffic binding trong transaction. `finding_id` khác `finding_node_id`.
+- Standalone findings có triage status (`pending`, `confirmed`, `fixed`, `duplicate`…); state của exploration finding không phải cùng lifecycle với triage.
+- Handler `report_finding` không tự tái hiện để xác minh bug. `prove_goal` không phải oracle kiểm tra nội dung proof.
+- Một số intent/fact/proof paths link riêng và bỏ qua lỗi; không suy ra mọi edge luôn atomic chỉ vì finding path có transaction.
+- Schema cấm self-loop nhưng không enforce acyclic toàn graph. p2o phải giữ cycle checking của task dependencies hiện có.
 
-```text
-worker report committed -> semantic event -> schedule một planning round
-```
+**Bài học:** giữ riêng resource, fact/hypothesis, task, candidate, review và goal. Không đồng nhất “recorded” với “true” hoặc “done” với “verified”.
 
-Chỉ thay câu “hãy chờ subagent” trong prompt không tạo được đường thứ hai.
+### 3.3. Giao việc và context
 
-### 4.4. State nền tảng nên giữ
+**SOURCE-CONFIRMED:** `Planner.Plan()` nhận trigger + bounded overview + shared TodoStore; model tạo natural-language intent. Worker nhận một intent + target assets + overview, tự chọn tactical steps/tools.
 
-p2o đã có nhiều invariant tốt hơn một raw “graph fact”:
+- Planner fresh Session mỗi wake; todo qua rounds nằm trong map của process, **không phải durable DB-backed todo**.
+- Worker transcript stable theo intent và có Resume; không suy ra reuse session an toàn giữa mọi assignment.
+- Overview có open/running/recent done, facts, findings, goals, digests, linked source tasks; retrieval drill-down qua IDs.
+- Open intents cap 30, recent facts 20, recent done 12, finding details 10; một số “total” dựa read cap 1.000. Đây là lý do phải ghi count semantics rõ.
+- Fact/asset write không tự wake mọi lần; report finding và worker completion có callbacks. Engine có heartbeat riêng. Không sao chép heartbeat trả phí vào p2o.
+- Prompt yêu cầu tránh lặp và dùng todo nhưng **không có semantic unique constraint tổng quát** trên intent/finding trong các paths đã trace.
 
-- Task revisions, owner-only mutations, reservations, cycle checks.
-- Prerequisite yêu cầu **reviewed revision + same-run receipts**; revised support làm dependency stale.
-- Candidate closure, proof level, controls, inferred-policy gap và current independent reproduction.
-- Ticket runtime-profile verification, owner active gate, revocation/socket-loss shutdown.
-- Ledger diagnostics, report parts/manifests, freeze/export và verified cleanup.
+**Bài học:** làm cho Planner có thông tin để quyết định, cộng exact admission checks ở Engine; không hứa graph tự tìm ra next target tối ưu hoặc triệt tiêu việc lặp.
 
-Không rewrite bỏ những thứ này để “giống ARTEX hơn”.
+### 3.4. Checklog, output và digests
 
-**Một hạn chế riêng:** hiện `create/revise` đã đòi prerequisites được reviewed, nên chưa thể đăng ký cả một chain chưa-ready rồi để Engine chờ. Cần tách **dependency schema validity** khỏi **dispatch readiness**, giữ reviewed-evidence gate ở admission/command time.
+**SOURCE-CONFIRMED:** `agent/capture.go` bắt tool-use/tool-result/text/result/usage; `server/engine.go::emitActivity` append rồi publish; UI sessions ghép history/live events theo sequence. Broadcaster có thể drop khi buffer đầy, nên DB + cursor catch-up mới là nền tảng, không phải notification in-memory.
 
----
+- Planner có round marker; output không chỉ nằm trong final finding.
+- Worker artifact directory theo task/intent; large-output spill có đường lưu và đọc lại.
+- Asset graph, exploration graph, sessions, findings là các view khác nhau, không một màn hình “mọi thứ”.
+- Cold digest là projection có member IDs/content version; original nodes còn tồn tại và có expand path.
+- Compaction có LLM call riêng, có thể chạy background; **không sao chép thành hidden paid service**.
 
-## 5. Role contract mới: giảm tải thay vì chỉ đổi tên
+**Bài học:** audit event và domain knowledge là hai lớp. Tóm tắt/diagram không thay thế raw evidence. p2o không cần copy thinking trace; chỉ lưu action metadata, observations, decision summaries được công bố và evidence references.
 
-### 5.1. Tách hai trục
+### 3.5. Những thứ không nên bê nguyên
 
-- **Authority/lifecycle actor:** human, owner service, assignment worker. Đây là enforcement.
-- **LLM responsibility:** planner, recon, discovery, validation, reporting, support. Đây là quyết định và chuyên môn; phải có capability loadout tương ứng.
-
-Owner service giữ scope/tickets/cleanup, không phải một model “toàn quyền”. Planner quyết định chiến lược, không tự quản lý Docker/process hay ghi file broker tùy ý.
-
-### 5.2. Ma trận trách nhiệm đề xuất
-
-| Thành phần | Làm | Không làm |
-|---|---|---|
-| Human | Confirm scope/loop policy/resource budget, pause/stop, đổi mục tiêu | Không phải polling mỗi worker để loop tiếp |
-| Engine/owner service | Admit tasks, claim/reserve, worker slots, wake coalescing, budgets, snapshots, revoke/cleanup | Không phát minh security hypothesis, không tự xác nhận finding |
-| Planner LLM | Decompose goal, chọn hướng/role/priority, đọc evidence chọn lọc, accept/return handoff, steer, chọn wait/blocked/finish | Không tự recon/test target trong delegated mode; không gọi host Docker |
-| Recon worker | Một surface/entry/actor question; inventory có evidence | Không chờ map toàn bộ target rồi mới giao discovery |
-| Discovery worker | Một hypothesis/intent, tactical tool loop, candidate + counterevidence | Không tự independent-validate mình; không mở chiến lược run mới |
-| Validation worker | Reproduce matching current claim, controls/limits, return conclusion riêng | Không coi metadata/current status là proof |
-| Reporting worker | Tổng hợp evidence/candidate/coverage có sẵn, draft report | Không target execution mặc định, không tự nâng proof/severity/goal status |
-| General/support worker | Bounded prerequisite/helper intent | Không trở thành orchestrator thứ hai |
-
-Planner có thể batch directions, chờ, xử lý delta và đọc packet. Validator/reporter làm phần nặng; **Planner vẫn chịu trách nhiệm review quyết định**, không nhắm mắt nhận summary.
-
-### 5.3. Hard boundary đề xuất
-
-- Planner: state read, plan/task submit, review, steer/cancel, loop control, finish proposal; không shell/net/HTTP khi delegated mode.
-- Worker execution: sandbox tools + approved knowledge/state reads + incremental observations + report; không trực tiếp spawn.
-- Worker cần trợ giúp: `request_subtask` tạo **proposal** gửi Planner. Runtime không mặc nhiên biến worker text thành accepted intent/authority.
-- Reporting: read/retrieve/draft/report only; cần reproduction thì trả request cho validation.
-- Model-generated IDs/role/priority phải validate; authority không lấy từ message hoặc file state.
-
-`--solo`: current Pi là working agent với inner loop hiện có; không thêm Planner model ẩn. Nếu không có Herdr, giữ solo/manual fallback rõ ràng. SDK/RPC backend chỉ thay thế khi đã có acceptance riêng.
-
----
-
-## 6. Intent frontier và worker capacity
-
-### 6.1. Giữ task evidence contract, thêm một thin strategic intent API
-
-Không buộc Planner viết một biểu mẫu dài cho mọi helper step. Tool mới có thể batch intent drafts, owner service normalize defaults và liên kết về TaskBoard.
-
-Ví dụ **schema đề xuất**, không phải payload hiện tại:
-
-```text
-IntentDraft:
-  question / purpose
-  surfaceIds, risk, role
-  priority + reason
-  supportingRecordIds
-  prerequisites: taskId + accepted revision requirement
-  expectedObservation, stopCondition, expectedOutput
-  validationOf? / parentTaskId?
-  method: skills/workflow + recorded selection reason
-  noveltyReason? (khi quay lại hướng đã xử lý)
-```
-
-Runtime có thể derive skill hashes/default role profile; không derive hoặc bịa evidence. Helper/task thiếu contrasting predictions được đánh dấu quality gap, không tự tạo “scientific certainty”. Giữ structured minimum cho discovery/validation.
-
-### 6.2. Queued khác runnable
-
-```text
-queued -> waiting_prerequisite -> ready -> reserved -> running
-                                      -> reported -> reviewed -> closed
-                       \-> blocked / cancelled / partial-budget / provider-error
-```
-
-Đây là **logical views/events đề xuất**, không tùy tiện thay TaskStatus hiện tại. P0 phải quyết định mapping/version trước khi đổi enum và `readLedger` parser.
-
-- Cho phép ghi dependency tới task có thật nhưng chưa-reviewed; cycle/missing-ID vẫn fail.
-- Engine chỉ dispatch khi prerequisite **current reviewed revision**, matching receipts và assignment reservation hợp lệ.
-- Nếu predecessor revise/withdraw, dependent bị invalidated; đang chạy phải ngừng nhận target commands, không tự nâng stale support.
-- Exact surface/risk/method/actor reservation là hard duplicate gate; semantic similarity chỉ advisory.
-- Follow-up phải chỉ rõ mới ở evidence/method/actor hoặc delta nào; đổi câu chữ không tạo novelty.
-
-### 6.3. Tách ba capacity, không dùng một số cho mọi thứ
-
-1. `maxConcurrentWorkers`: model/session slots đang active.
-2. `maxConcurrentTargetOps`: execution pressure, độc lập với số models.
-3. `maxPendingIntents`/retention limits: memory/disk/frontier bounds.
-
-**Tổng assignments trong lifetime run không bị buộc = 2 × concurrency nữa.** Budget và retained-history limits vẫn giới hạn tài nguyên; queue đầy thì backpressure với lý do, không “không được làm thêm vì từng có 6 workers”.
-
-MVP vẫn default concurrency 3. Bỏ constant hard max 6 theo hướng **operator-controlled positive integer + preflight resource/provider policy**, không mặc định spawn vô hạn. Ví dụ 8/12 chỉ được dùng nếu profile, pane/backend và resource envelope chấp nhận; các số này chưa được benchmark.
-
-- Chưa cần tăng depth: khuyến nghị flat Planner -> Worker; chain depth không phải spawn-tree depth.
-- Nested task requests quay về cùng frontier; tránh parent giữ slot chờ child trong pool đã đầy. Có dependency-wait/yield contract, không tự tăng quota để chữa deadlock.
-- Total task cap chuyển từ “mọi tasks lịch sử” sang bounded live frontier + indexed archived history, không xóa proof/lineage để tiết kiệm chỗ.
-
-### 6.4. Pool về logic trước, warm process sau
-
-Bước đầu: slot được giải phóng khi report committed/assignment ended; Engine có thể dùng slot cho worker process mới, đóng pane đã xong theo policy. **Đã đạt outer-loop pool semantics mà chưa phải reuse Pi process.**
-
-Bước sau mới warm SDK/RPC/process reuse:
-
-- `slotId != workerIdentity != assignmentId != taskId`.
-- Intent mới: fresh Pi session/context, ticket/token generation mới, scratch mới; không reuse phase=finished hoặc ticket cũ.
-- Cùng intent resume: transcript có provenance, effective runtime recheck, **authority mới được owner admit**; transcript không tự cấp quyền.
-- Late report/old socket không được ghi vào assignment mới.
-- Independence dựa attributed assignment identity, lineage và reproduction, không dựa “khác pane name” hoặc slot reuse.
-
-Giữ Herdr visibility ở MVP. Không biến mỗi closed task thành một pane lịch sử tồn tại mãi.
-
----
-
-## 7. Assessment Engine: outer loop thực sự
-
-### 7.1. Trách nhiệm tối thiểu
-
-Engine nằm trong owner extension runtime, bắt đầu sau human confirmation và shutdown cùng assessment. Không tạo watcher/timer/process trong extension factory.
-
-State tối thiểu:
-
-```text
-runId, epoch, authorityPhase
-loopMode = manual | event-driven
-plannerState = idle | scheduled | running | waiting | blocked | finishing
-eventSequence, consumedSequence, pending semantic events
-frontier, current claims, worker slots
-budgets, runtime profile, snapshot completeness
-```
-
-`plannerState=waiting` **không phải** run finished; không phát final report/cleanup chỉ vì Planner trả một assistant turn ngắn.
-
-### 7.2. Chỉ wake theo semantic event đã commit
-
-Events ưu tiên:
-
-- assignment report committed (completed/blocked/partial/provider-error).
-- candidate ready for validation/review, control/evidence withdrawal.
-- prerequisite reviewed/revised, slot/capacity change cần quyết định.
-- accepted human hint/goal change.
-- executor failure hoặc budget state change.
-
-Không wake mỗi stdout chunk, skill read, raw note hoặc timer tick. Facts chỉ wake sớm khi có **explicit actionable handoff**; findings/candidates vẫn là claims cần review.
-
-Persist state trước, emit event sau. Report commit phải nhất quán với assignment terminal flag/revocation; callback persist report hiện nằm trước `registration.reported/revoke`, nên **không được gắn wake naïvely ngay giữa callback**. Engine cần completion commit boundary/idempotent outbox để không thấy worker vừa reported vừa live rồi double-dispatch.
-
-Coalesce có bounded queue và sequence cursor; event mới trong khi Planner running không mất, được xử lý round tiếp theo. Không có hai Planner rounds đồng thời cho một run.
-
-### 7.3. Wait không phải model polling
-
-Planner có thể kết thúc round bằng disposition:
-
-```text
-dispatch / wait_for_events / request_review / blocked / finish_proposal
-```
-
-- Nếu còn workers làm relevant work: Engine giữ waiting, không tự đẻ request “hãy kiểm tra status” đều đặn.
-- Event hợp lệ đến: một wake đủ cho cả batch.
-- Frontier ready + slot trống: Engine dispatch accepted tasks không cần LLM lặp lại spawn từng cái.
-- Không có ready work/worker/event mà goal chưa đạt: Planner có một no-feasible-work decision có lý do; chuyển blocked/human-needed, **không ép invent task**.
-- Quiet time chỉ observation, không bằng provider failure/dead worker.
-
-Heartbeat mặc định chỉ kiểm tra local lifecycle/transport. Model-consuming supervision heartbeat là opt-in, rate-limited và có consent; không copy heartbeat 600s của ARTEX thành compulsory paid loop.
-
-### 7.4. Tích hợp đúng Pi 1.0.0 boundary
-
-Pi đã có inner loop; **không viết LLM/tool harness mới**.
-
-- `agent_end` có thể còn retry/queued work; không dùng làm terminal truth.
-- `agent_settled` notification-only; không return continuation ở đó.
-- `agent_before_settle` có `BoundaryResult {entries?, continue?}`, `context.canContinue`, pending messages và outcome.
-- Khi có pending actionable event, run còn active, loop authorized, outcome hợp lệ và không đụng human queued input: có thể append **typed custom boundary entry** rồi `continue: true` cho đúng một next request.
-- Sau khi Pi thực sự idle, event bridge dùng `pi.sendMessage(..., {triggerTurn:true, deliverAs:'followUp'})` qua coalesced wake adapter; semantics busy/idle phải được integration-test, không assume từ tên method.
-- `context` inject request-local snapshot, không tự trigger model/process và không thay toàn bộ Pi system prompt.
-- Không gọi command-only `ctx.waitForIdle/newSession/reload` từ lifecycle handler; tránh deadlock.
-
-Nếu muốn fresh Planner session mỗi round như ARTEX, dùng explicit SDK/RPC adapter ở phase sau. Không reset session chính để giả lập fresh rounds, không gán `agent.state.messages=[]`, không phá human conversation hoặc tool-call/result pairs.
-
-### 7.5. Continuation guard không được thiếu
-
-Trước mọi continuation/dispatch kiểm tra:
-
-1. Current owner instance, run ID, epoch, active phase.
-2. Consent cho event-driven loop + configured resource/model policy.
-3. New actionable sequence/disposition, không unconditional “keep working”.
-4. Không finalizing/stopped/revoked/provider-blocked; không lặp unchanged failure.
-5. Pending human input ưu tiên; steer phải được nhận ở safe boundary.
-6. State/ledger complete; known policy/method prerequisites còn current.
-7. Budget còn allowance; report/control không bị target-command budget chặn.
-
-Stop tăng epoch và đóng gate **trước** cancel/drain. Timer, spawn, report và queued wake cũ không thể reauthorize run. Một message đã queue trước stop cũng không được mở lại target; P0 phải chứng minh queue suppression/cancellation bằng Pi thật, không chỉ fake event. Nếu API không đủ để đảm bảo không có paid stale turn, adapter phải đổi thiết kế trước rollout.
-
-Không can thiệp `/goal`; assessment loop là workflow p2o riêng. Goal mode của harness vẫn inactive, không gọi goal tools.
-
-### 7.6. Failure/retry policy
-
-- Worker natural stop không report: giữ blocked lifecycle report hiện tại; có thể thêm tối đa một report-only repair turn **chỉ khi được cấu hình/consent**. Không biến mọi completion thành “cứ tiếp tục”.
-- Worker provider error: commit partial report/event; không tự replay target actions.
-- Planner provider error: ngừng auto scheduling; giữ scope gate/control/cleanup, thông báo paused/blocked. Default vẫn không unattended retry/fallback.
-- User abort/stop: revoke/cancel, không coi là retryable error.
-- Retry chỉ khi policy cho phép, classified failure, bounded attempts và explicit replay-safe checkpoint; auth/profile mismatch fail closed.
-- Hết target command budget: report partial, giữ unresolved proof; không sinh worker mới để reset allowance.
-
----
-
-## 8. Executor và cancellation: không để nhiều workers cùng nghẽn một hàng
-
-### 8.1. Không chỉ bỏ `enqueue`
-
-Global queue hiện bảo vệ shell lifecycle, HTTP sessions và teardown. Xóa nó naïvely có thể tạo races/cross-worker contamination và background processes không được dọn.
-
-**PROPOSED staged execution:**
-
-1. Engine queue riêng theo assignment + global semaphore `maxConcurrentTargetOps`.
-2. HTTP ephemeral container ownership/session mutation locks đúng actor; cancellation của A không đụng B.
-3. Shell execution độc lập theo worker slot/assignment container nếu muốn concurrent + isolated cancellation đáng tin cậy.
-4. Source mount vẫn là bounded read-only snapshot; scratch và cookie state không dùng lẫn actors/assignments.
-5. Teardown đóng admission, cancel mọi queue/in-flight, rồi verify all run-labelled containers/panes gone.
-
-Một directory `/work/<id>` trong shared container không phải file/process isolation. Per-slot executor là thay đổi resource/isolation model, cần update consent và acceptance, không tuyên bố VM sandbox.
-
-### 8.2. Trade-offs cần công khai
-
-- N containers tăng RAM/CPU/disk và tool setup cost; không nhân 2 GiB × N âm thầm.
-- Tool installs/artifacts: shared approved base image; scratch riêng; không tự merge credentials/tool state.
-- Target state-changing operations có thể tranh chấp dù containers độc lập; per-origin/actor/surface execution policy và controls cần serialize khi phù hợp.
-- Nếu vẫn dùng shared shell trong MVP, UI phải nói **shared-serial executor**; cancel fail-closed có thể làm run execution unavailable. Không dùng nhiều pane để quảng cáo target parallelism chưa có.
-
----
-
-## 9. Shared state và context cho run dài
-
-### 9.1. Học dual-state, không copy PostgreSQL stack
-
-Giữ ba lớp tách biệt:
-
-| Lớp | Nội dung | Quyền/ý nghĩa |
-|---|---|---|
-| Resource/surface inventory | Source route, endpoint/method, actor/gate/consumer, identity, unknowns | Resource knowledge; không tự mở scope |
-| Exploration/task state | Goals/questions, intents, prerequisites, claims, observations, reviewed outcomes, lineage | Coordination và reasoning support |
-| Evidence/report store | Receipts, proof level, controls, candidate revisions, report parts/export | Evidence-linked claims, không truth oracle |
-
-Bắt đầu từ JSONL hiện có + owner-owned typed indexes/projections. Không cần Neo4j/PostgreSQL, vector DB hoặc graph visualizer để có outer loop.
-
-### 9.2. Snapshot riêng theo role
-
-**Planner snapshot:** goal/acceptance, loop policy, budgets, queue counts/ready/waiting, live assignment status, delta event IDs, review-needed packets, accepted/new facts, unresolved candidate links và decision journal.
-
-**Worker snapshot:** đúng mandate/current revision, prerequisites/evidence, assigned resources/actor, method/skills, remaining allowance, stop condition; sibling knowledge chỉ đọc để tránh redo, không nhận “hãy mở mọi mặt chưa test”.
-
-**Reporter snapshot:** current candidate/validation/coverage/report records + omissions/diagnostics; không raw chat history.
-
-Mọi bounded view phải có total, shown, omitted, cursor, completeness, retrieval IDs. Không lấy `len(recent_window)` làm absolute total hoặc absence proof.
-
-### 9.3. Chống full-scan và context growth
-
-Hiện TaskBoard/command readiness/candidate/context refresh có thể scan toàn ledger lặp lại. Đây là scalability concern từ source, chưa có benchmark latency.
-
-- Incremental owner index/cursors + append revision serialization; indexes là derived, journal mới là provenance.
-- Verified snapshot/checkpoint và segmented retention khi cần; không xóa raw proof refs để “compact graph”.
-- Corrupt tail/missing segment/version mismatch => incomplete/fail closed, không fallback sang recent tail rồi claim complete.
-- Decision journal/todo phải lưu qua rounds; session compaction không được làm mất authority/mandate/current dependency revision.
-- Cold digest là navigational derived summary, có covered IDs; không được dùng thay receipt hoặc independent validation.
-- Full evidence spill/export có thể là phase sau: receipt hiện chỉ giữ bounded output/hash, hash không phục hồi phần đã bỏ. Không hứa full artifacts đã tồn tại.
-
-Durable history **không đồng nghĩa durable authority**. Sau process/session restart: read-only reconstruction, explicit human re-confirmation/new run admission mới được execute. Không tự phục sinh tickets từ journal.
-
----
-
-## 10. Budget policy: nới giới hạn sai, giữ kiểm soát đúng
-
-**Giữ yêu cầu đã ship:** không assessment/worker/container TTL và không mandatory task timeout. Timer debounce/local health check không phải duration ceiling. Optional timeout vẫn explicit.
-
-Tách cấu hình/telemetry:
-
-```text
-concurrent model assignments
-concurrent target operations
-total worker target-command allowance (không reset khi đổi slot)
-lead/planner model rounds + known usage/cost
-knowledge reads / state writes
-control/report reserve
-pending frontier / retained evidence limits
-```
-
-- Bỏ lifetime spawn cap gắn với concurrency; không bỏ command budgets bằng stealth.
-- Per-assignment allowance có thể cấp từ run budget thay fixed 200 cho mọi task; có thể request thêm khi có material progress.
-- Renewal chỉ từ operator policy/explicit approval, persisted decision; Planner không tự mint budget vô hạn.
-- Worker báo partial-budget là đúng; Engine không đánh completed/confirmed.
-- Control/report/revoke/cleanup và emergency gap reporting còn dùng được khi target-command allowance hết.
-- Usage/cost thu từ Pi/provider và nested calls khi có; unknown không coi là 0. Không hứa hard monetary cap nếu provider không có accounting đủ.
-
-Ví dụ cấu hình hướng tới (tên/schema **chưa tồn tại**, P0 phải chốt): `loopMode`, `maxConcurrentWorkers`, `maxConcurrentTargetOps`, `workerCommandAllowance`, `maxPendingIntents`, `supervisionHeartbeat`, `retryPolicy`. Không thêm mặc định runtime chỉ bằng document này.
-
----
-
-## 11. Roadmap triển khai với acceptance gates
-
-### P0 — Contract, characterization và Pi wake spike
-
-**Ưu tiên P0.**
-
-- Characterize role/toolsets, spawn caps, report commit order, natural settlement, command budgets, shared queue/abort và current cleanup.
-- Chốt intent/task schema version/migration; queue admission vs reviewed dependency readiness.
-- Dùng scripted/inert provider để chứng minh busy/idle wake, boundary continuation, human priority, stop race, pending queue cancellation, compaction và SDK compatibility.
-- Đo current baseline: lifetime assignments, model rounds/polling, target-op queue wait, lead vs worker task counts.
-
-**Gate:** có state machine, typed event contract và real-Pi trace; không chỉ fake handlers. Không commercial calls/target traffic.
-
-### P1 — Role split và giảm thao tác Planner
-
-- Owner prompt thành strategic Planner khi delegated; solo working-agent riêng.
-- Enforced role-specific tool loadouts; reporting read-only default; worker subtask proposals, không direct spawning.
-- Batch/thin intent submission; Engine normalize defaults, preserve task/method/evidence provenance.
-- Worker/report packet nav compact; validator/reporter được giao phần nặng.
-
-**Gate:** Planner không target execute trong delegated mode; Worker không tự dispatch accepted work; solo không bị khóa nhầm. Independent proof và stale-support tests không giảm chuẩn.
-
-### P2 — Frontier + logical pool, bỏ lifetime spawn choke
-
-- Tách total historical assignments khỏi active slot capacity; close/recycle finished pane safely.
-- Queue ready/waiting/blocked; atomic reservations, priority + fairness, dependency currentness.
-- Operator-configurable concurrency qua settings/CLI; same validation source, explicit resource/profile policy.
-- Budget exhaustion/backpressure trả reasons; không bypass bằng fresh worker identity.
-
-**Gate:** ít nhất 30 sequential assignments trên concurrency=3 bằng inert provider, không vượt active cap; xử lý được hơn old 6/12 spawn ceiling. Test một cấu hình >6 khi preflight cho phép và rejection khi không cho phép. Không cần tăng live workers trong turn lập kế hoạch này.
-
-### P3 — Event-driven Planner loop và wait đúng nghĩa
-
-- Add Engine/event bridge, report-after-commit outbox, coalescing/sequence cursors.
-- Opt-in event-driven mode với consent mô tả thêm paid rounds; manual mode vẫn hoạt động.
-- Single Planner in-flight; pending events survive round; no paid idle polling by default.
-- Wait/blocked/finish disposition và cancellation epoch; provider error default block, không replay/fallback.
-
-**Gate:** report đến sau Pi idle tự wake đúng một planning round trong mode đã consent; signal burst coalesced; no follow-up after stop; human queued message không bị overwrite; duplicate/late event không dispatch thêm.
-
-### P4 — Execution concurrency và isolated cancellation
-
-- Per-assignment/per-slot executor ownership + semaphores; HTTP actor/session locks.
-- Giữ bounded source, fixed image/runtime verification, network authorization boundaries và verified sweeps.
-- Resource consent/progress nói đúng number of executors, queue/running/returned.
-
-**Gate:** worker A long command không chặn independent B trong profile parallel; cancel A không xóa B executor; stop run dọn cả A/B, queued work không chạy. Nếu chưa đạt, ship shared-serial rõ ràng, không claim parallel target execution.
-
-### P5 — Long-run state, role projections và resumable work
-
-- Incremental index/snapshot + durable decision/todo, bounded frontier/history retention.
-- Resource inventory/query, typed observations, digests chỉ để navigation.
-- Warm SDK/RPC backend/reuse chỉ sau fresh assignment/session/ticket-generation isolation.
-- Resume history không resume authority; installed artifact/runtime-profile checks tiếp tục fail closed.
-
-**Gate:** multi-round + compaction vẫn thấy correct mandate/revisions; >100 historical closed tasks nếu live-frontier policy cho phép; old ticket/socket/report không ảnh hưởng assignment mới; incomplete archive không biến thành complete.
-
-### P6 — Acceptance, rollout và effectiveness study riêng
-
-- Typecheck/build/import, focused/full regressions và library/provenance/package checks.
-- Real Pi + inert provider, visible Herdr opt-in, Docker/lab-only acceptance; installed version/hash match.
-- Update README/USAGE/ARCHITECTURE/ASSESSMENT_STATE/HANDOFFS để bỏ câu working lead/total spawn assumptions đúng phase.
-- Versioned receipts, qualified limits, rollback manual/solo; historical studies giữ nguyên.
-
-**Gate:** cơ chế loop/role/control được kiểm chứng trên shipped artifact. Chất lượng phát hiện, token/cost reduction hoặc superiority so với ARTEX là **study riêng**, không suy ra từ unit tests. Paid benchmark/live target chỉ sau authorization riêng.
-
----
-
-## 12. File map cho implementation sau khi được duyệt
-
-| File/module | Hướng thay đổi |
+| Không bê nguyên | Lý do / hướng p2o |
 |---|---|
-| `extensions/p2o/index.ts` | Adapter mỏng: commands/tools/events, consent, session guards; rút runtime orchestration ra service |
-| `src/engine.ts` (mới, tên tạm) | Run state machine, admission, scheduling, semantic event pump, round gate |
-| `src/planner-bridge.ts` (mới) | Pi busy/idle boundary/wake coalescing; không tự viết provider loop |
-| `src/tasks.ts` | Queued dependency validity vs readiness, current revisions, capacity/claim views |
-| `src/roles.ts` + `src/prompts.ts` | Strategic/solo responsibility, role capabilities, configurable capacity/profile |
-| `src/broker.ts` + `src/ticket.ts` | Assignment identity/generation, authority gate, commit event ordering, control reserve |
-| `src/herdr.ts` | Pane lifecycle/backend interface; fresh process slots trước, warm reuse sau |
-| `src/sandbox.ts` + `src/process.ts` + `src/http-session.ts` | Executor ownership, concurrency, abort isolation, actor/session serialization |
-| `src/records.ts` + `src/progress.ts` | Indexed state/events/projections; progress vẫn không coi silence là failure |
-| `src/evidence.ts` + `src/report.ts` | Current support, review packets, bounded complete reconciliation/export; không auto-proof |
-| Docs + `tests/minimal/*` | Contract migration, compatibility, fixtures, recorded acceptance |
-
-Không tách thành nhiều module chỉ để đẹp sơ đồ. P0/P1 giữ nhỏ; các module trên là seam/responsibility, không phải phải tạo tất cả ngay.
+| Global assets mặc định mọi task dùng | Namespace theo workspace/engagement, explicit cross-run import; tránh lẫn tenant/project |
+| Credentials plaintext vào `assets.auth` | Chỉ actor label/secret handle; không đưa credential value vào graph/context/checklog |
+| Auto-scope từ asset insertion | Discovery ≠ authorization; gate target vẫn dựa human confirmation |
+| `confirmed` ngay lúc report | Giữ candidate claim/proof/review/currentness độc lập |
+| Coverage = asset có fact anchor | Chỉ là touched proxy; dùng test-cell coverage có method/actor/version |
+| Phải sinh intent khi frontier rỗng | `wait`, `blocked`, `human-needed`, partial finish đều hợp lệ |
+| Todo in-process là “checkpoint” | Durable plan/checkpoint phải có commit/version/digest và đọc lại sau restart |
+| Silent link errors / giả định mọi write atomic | Transaction + idempotency + explicit incomplete packet |
+| Full transcript hoặc toàn graph vào prompt | Bounded projections + retrieval, không mất access tới history |
+| PostgreSQL/Next.js như prerequisite bắt buộc | p2o là extension local; storage adapter nhỏ và TUI trước |
+| Permission bypass, automatic retry/resume | Giữ các boundary/lifecycle hiện hành của p2o |
 
 ---
 
-## 13. Regression matrix tối thiểu
+## 4. Kiến trúc đích: một state store, nhiều views
 
-| Case | Expected invariant |
+```text
+Human: scope + goals + persistence consent + limits + stop
+                    │
+             Owner authority (live)
+                    │
+          Planner ↔ AssessmentEngine ↔ fresh Workers
+                    │ broker / owner writer
+                    ▼
+             AssessmentStore (canonical)
+        ┌───────────┼──────────────┬──────────────┐
+        │           │              │              │
+     event log   asset records  exploration    artifact refs
+     checklog    + relations    + candidates   + evidence
+                                + reviews
+        └───────────┼──────────────┴──────────────┘
+                    ▼
+     deterministic projections + indexed retrieval
+       ├── human: status / tasks / log / phase cards
+       ├── Planner: delta / todo / gaps / known work
+       ├── Worker: assignment packet / relevant knowledge
+       ├── graph views: assets / exploration / vulnerabilities
+       └── checkpoint / report / archive
+```
+
+### 4.1. Quyết định thiết kế
+
+- **Một nguồn canonical.** Không thêm ba JSON files mutable với trạng thái khác nhau; UI, model và report đọc cùng `asOfSequence`.
+- **Tách knowledge khỏi authority.** Store ghi lại run history; không lưu usable tokens/cookies/socket authority và không mint lại ticket khi replay.
+- **Owner là writer của assessment state.** Worker gửi structured mutations qua broker; server gắn run/task/worker identity. Chuyển lifecycle append trực tiếp lúc worker startup sang broker event, thay vì để nhiều process tự ghi canonical log.
+- **Không có graph writer LLM ẩn.** Worker/Planner submit typed assertions; host validate, normalize, resolve IDs, commit. Parser deterministic chỉ extract dữ liệu có nguồn, không nâng output thành vulnerability.
+- **TaskBoard và Engine tiếp tục là cơ chế điều phối.** Exploration view tham chiếu chính task IDs/revisions, không nhân đôi một hệ intent state khác.
+- **Vuln Graph là view**, không thêm một finding store độc lập cạnh `p2o_candidate` gây hai nguồn sự thật. Có thể thêm metadata finding/case, nhưng proof revision vẫn nối về candidate/evidence/review canonical.
+- **Không ép pipeline toàn cục tuyến tính.** Recon của nhánh B có thể song song validation nhánh A; phase nằm trên workstream/task/artifact, còn run có overview tổng hợp.
+
+### 4.2. Lựa chọn storage
+
+**Khuyến nghị:** local SQLite-backed `AssessmentStore` với single owner writer, transaction cho domain mutation + event + outbox. JSONL/Markdown/graph exports là định dạng trao đổi/view, không phải replica writable thứ hai.
+
+Lý do: cần atomic multi-entity write, index unique keys, historical lookup, snapshot query, stable cursor và checkpoint. Chưa cần Neo4j/PostgreSQL hoặc network service.
+
+**Gate trước implementation:** spike driver tương thích Node/Pi đang hỗ trợ, jiti load, package distribution, crash/disk-full, sync latency và WAL. Không mặc nhiên dựa vào một `node:sqlite` API/flag/version chưa test. Driver/build/dependency trade-off phải chốt bằng ADR; nếu không đạt, phase UI dùng adapter ledger v2 trong khi storage gate còn blocked, không lén triển khai dual-write không atomic.
+
+Canonical layout đề xuất khi người dùng chọn durable mode:
+
+```text
+<private-p2o-data>/engagements/<engagement-id>/
+  manifest.json                 # schema, project identity, retention policy
+  assessment.sqlite            # canonical event/domain state
+  artifacts/<artifact-id>      # immutable bounded retained bytes
+  checkpoints/<checkpoint-id>/ # immutable snapshot manifest + rendered summary
+  reports/<report-id>/         # deterministic index + reviewed narrative
+```
+
+Control directory/tickets/socket/executor scratch vẫn riêng và bị cleanup. Durable store không mount vào target sandbox. Root 0700, files 0600; đường dẫn sinh bởi host, không nhận host path tùy ý từ model. User phải biết data ở đâu và retention mode ngay khi confirm.
+
+---
+
+## 5. Domain model tối thiểu
+
+### 5.1. Identity và revision
+
+Mọi entity cần ID opaque ổn định; label ngắn để UI hiển thị. Revision identity khác entity identity. UUID baseline được giữ qua adapter; không renumber evidence chỉ để đẹp.
+
+Common metadata:
+
+```text
+id, revision, engagementId, sourceRunId, createdSequence, updatedSequence
+producer { workerId?, taskId?, operationId?, actor: owner|worker|system }
+provenance { evidenceRefs[], artifactRefs[], importedFrom? }
+validity { current|stale|superseded|withdrawn|unknown, reason? }
+```
+
+Foreign references bị kiểm tra theo namespace/explicit import policy. Không chấp nhận worker tự gán `producer=owner`, run ID hay review quyền cao hơn.
+
+### 5.2. Asset Graph
+
+Tối thiểu hỗ trợ cả URL và source assessment:
+
+| Type đề xuất | Identity / ví dụ | Ghi chú |
+|---|---|---|
+| `host` | domain hoặc IP canonical có namespace | Không tự resolve/probe để tạo node |
+| `service` | host + transport + port + logical service identity | Same IP không đồng nghĩa same app/tenant |
+| `endpoint` | origin + exact path + HTTP method; identity policy versioned | Method custom giữ semantics; route template là grouping riêng |
+| `source_component` | source snapshot + relative path + symbol/location | Không tự coi source handler là deployed endpoint |
+| `data_resource` | typed resource key trong app/namespace | Collection/topic/object class khi evidence cho phép |
+| `principal` | operator-defined actor/tenant/role label | Không lưu bearer token/password/cookie value |
+
+Technology/parameter hints là attributes có provenance; chỉ tách node khi cần relation/query riêng. `in_scope` là view từ **live scope policy**, không field model có thể set để cấp quyền.
+
+Relations đề xuất: `contains`, `resolves_to`, `exposes`, `implemented_by`, `consumes`, `authenticates_as`, `alias_of`. Mỗi edge có type, source, evidence/assertion status; không suy ra network reachability/authorization từ containment. Alias cần review và có undo, không merge destructive.
+
+**Normalization thận trọng:**
+
+- Lowercase host/scheme và chuẩn hóa default port theo contract transport; giữ raw observed spelling riêng.
+- Không lower path, không decode percent-encoding tùy tiện, không bỏ query values/order hoặc collapse `/a` với `/a/` một cách tổng quát.
+- Giữ exact request variant có query/body/actor trong operation/test-case record; endpoint grouping không được làm mất sự khác biệt cần kiểm tra.
+- `/objects/1` và `/objects/2` có thể cùng route template nhưng khác object ownership. Grouping ≠ exact identity ≠ coverage equivalence.
+- Non-standard HTTP method spelling không bị uppercase chỉ để dedup nếu transport giữ nguyên token đó.
+- Secret-bearing URL/attribute phải redact hoặc dùng opaque handle; không dùng secret làm public key/hash dễ dò.
+- Source component identity gắn snapshot hash; đổi code làm facts/tests liên quan stale, không chỉ update timestamp.
+
+### 5.3. Exploration Graph và goal/todo
+
+Nodes tối thiểu: `goal`, `task`, `fact`, `hypothesis`, `candidate`, `review`, `decision`, `gap`, `checkpoint`, `digest`.
+
+- `task`: chính entity từ TaskBoard, không tạo queue thứ hai.
+- `fact`: assertion có support; classification `observed|inferred`; review riêng `unreviewed|accepted|disputed|withdrawn`. Negative observation ghi điều kiện kiểm tra, không nói tuyệt đối “không có bug”.
+- `hypothesis`: câu hỏi cần kiểm chứng, predicted contrast, linked facts/asset IDs; có thể bị disproved hoặc remain open.
+- `goal`: acceptance criteria + explicit exclusions + current reviewed support. Goal satisfaction không được tính chỉ bằng finding count.
+- `decision`: lý do ngắn, inputs/revisions, options đã xét, chosen/deferred task IDs, revisit condition; không yêu cầu lưu hidden chain-of-thought.
+- `gap`: thiếu account/browser/dependency/policy/scope/proof, owner action cần thiết và workstream bị ảnh hưởng.
+- `plan/todo`: durable strategic steps tham chiếu goals/tasks/gaps; status được derive từ review hoặc ghi attribution, không có checkbox tự “chứng minh” completion.
+
+Relations đề xuất và hướng:
+
+```text
+goal ──decomposes_to──> subgoal
+fact/hypothesis ──motivates──> task
+task ──depends_on──> prerequisite task@revision
+task ──produces──> fact/candidate/artifact
+evidence ──supports|contradicts──> assertion@revision
+review ──reviews──> candidate/task@revision
+accepted result ──satisfies──> goal@revision
+candidate ──affects──> asset
+entity revision ──supersedes──> older revision
+candidate ──duplicate_of──> canonical candidate
+digest ──summarizes──> member@revision
+```
+
+Không enforce DAG cho mọi edge: contradictions/asset relations có thể cyclic. Enforce acyclic cho task dependencies, goal decomposition và duplicate canonical chain. Edge tới version không tồn tại hoặc namespace không được phép phải bị từ chối atomic.
+
+### 5.4. Candidate/vulnerability case
+
+Giữ các axes baseline `closure`, `execution`, `proof`, `policyBasis`, controls, limitations, supersedes và independent support. Bổ sung:
+
+- stable case ID; asset/component IDs, hypothesis ID và root-cause key **nếu biết**;
+- task/attempt/operation IDs và exact claim revision;
+- `reviewStatus` tách khỏi worker `closure` claim;
+- `duplicateOf`, related cases, affected variants, contradictory evidence;
+- report content version và evidence version đã đọc;
+- remediation/retest status riêng, không “fixed” chỉ vì text report được cập nhật.
+
+Worker `closure=confirmed` hiển thị **“claimed confirmed — pending review”**, không tự “verified”. Static trace vẫn có giá trị với label static; không giả vờ runtime và không bắt mọi source finding phải có live exploit. Independent badge chỉ có khi separate validator, matching current claim, method/result và receipts đạt contract hiện có; cùng receipt copy lại không được tính độc lập.
+
+Report có thể partial hoặc blocked và vẫn là output hợp lệ. “Không tìm được finding” cũng phải có test coverage/gaps, không ép sinh bug.
+
+### 5.5. Coverage matrix
+
+Coverage cell:
+
+```text
+(asset/variant, security question or risk family, actor/tenant,
+ method family, relevant target revision/environment)
+```
+
+Giữ hai axes riêng:
+
+- execution: `unplanned|planned|running|attempted|tested|blocked|not_applicable`;
+- assessment: `unreviewed|confirmed_claim|ruled_out_bounded|open_gap|accepted|stale`.
+
+Mẫu số là test cells trong **assessment plan version**, không “mọi bug có thể tồn tại”. Hiển thị thêm discovered-but-unplanned assets và unknown scope, để 100% planned cells không bị hiểu thành toàn hệ thống an toàn. Denominator đổi phải có event; blocked/waived không tự tính tested. Coverage notes legacy vẫn xem được nhưng không tự migrate thành accepted test cells.
+
+---
+
+## 6. Output contract cho từng pha/nhánh
+
+### 6.1. “Hoàn thành” phải nói rõ hoàn thành cái gì
+
+```text
+command returned ≠ observation understood
+worker reported ≠ task reviewed
+task closed ≠ vulnerability confirmed
+candidate reviewed ≠ entire goal satisfied
+checkpoint committed ≠ state still current
+resources cleaned ≠ assessment complete
+```
+
+Mỗi phase packet cần `packetId`, task/attempt/revision, status, evidence/artifact refs, new/reused IDs, limitations, review state, next eligible actions và `asOfSequence`.
+
+| Pha | Output phải có | Điều kiện báo phase completed | Output khi thiếu điều kiện |
+|---|---|---|---|
+| Scope/bootstrap | Scope manifest, target identity/snapshot, goals/exclusions, executor/retention/budget profile | Human confirmation + setup verified | setup failed/cancelled, không tự bắt đầu |
+| Recon theo surface | Asset inventory delta, observed/inferred facts, entry/actor/boundary map, unknowns, ranked question queue | Bounded recon objective được bàn giao/review, không cần map toàn target | partial map + missing prerequisite/gaps |
+| Planning | Durable decision + linked todo/task IDs + reused knowledge + dedup disposition | Accepted plan delta hoặc wait/blocked có lý do | No feasible next action/human-needed |
+| Investigation | Hypothesis/test attempts, positive/negative observations, controls, receipts/artifacts, candidate/gap | Đáp ứng stop condition và có handoff; review vẫn riêng | partial-budget, blocked, provider error, no-result |
+| Validation | Case revision checked, independent observations/control matrix, reproducibility limits, verdict | Evidence review theo mức proof thực tế | inconclusive/disputed/stale, không nâng claim |
+| Reporting | Human report + machine-readable index + coverage/gaps + linked current reviews | Snapshot reconciled; all required review criteria met hoặc explicit partial label | draft/partial report có missing IDs/reasons |
+| Stop/cleanup | Final checkpoint, retention status, revoked tickets, pane/container cleanup status | Resource removal verified; outcome assessment ghi riêng | cleanup unresolved và hướng retry, không mất gap |
+
+Phase packets là **materialized views từ canonical records**; không buộc model viết lại 7 files text ở mỗi bước. Chỉ packet đủ nghĩa mới publish; incremental events vẫn thấy ngay. Empty result ghi `no-new-information` với scope/method/limitation, không tạo fact rỗng để qua gate.
+
+### 6.2. UX trước graph canvas
+
+Các slash commands dưới đây **chưa có ở baseline**:
+
+```text
+/p2o status                   # trạng thái hiện tại, không gọi model
+/p2o tasks [filter]            # live / awaiting-review / blocked / done
+/p2o task <id>                 # assignment, attempts, artifacts, history
+/p2o log [since]               # committed checklog, stable cursor
+/p2o assets [query]            # inventory và evidence-linked relations
+/p2o findings [query]          # claim/review/duplicate/stale phân biệt rõ
+/p2o checkpoints               # list/inspect, không resume authority
+/p2o checkpoint [label]        # tạo snapshot tại commit barrier
+/p2o report                   # xem latest report/draft, không gọi model ngầm
+```
+
+Widget gọn (số liệu minh họa):
+
+```text
+P2O run-R · ACTIVE · manual/shared · state @184
+Tasks 12: queued 2 | running 2 | review 3 | blocked 1 | closed 4
+Assets 18 | hypotheses 5 | cases 2 pending / 1 reviewed / 1 stale
+Last: T7 handoff committed → review required
+Checkpoint C4 @170 · 14 events newer · durable OK
+Next: review T7; T9 waiting on T7@r3; user action: test actor B
+```
+
+Mặc định hiển thị counts/last meaningful event/next blocker/output location; drill-down theo ID. Không spam mọi token/stdout vào chat. Mỗi phase packet có một card được update theo revision, không append vô hạn cùng một nội dung.
+
+**Pi integration:**
+
+- TUI: `ctx.ui.setStatus`, `setWidget`, custom command screen; dùng width helpers, handle Unicode/resize, không thay editor/footer của extension khác.
+- Non-context durable session marker: `pi.appendEntry` + entry renderer, chứa IDs/summary/pointer. Không dùng `sendUserMessage` để cập nhật progress UI, vì nó có thể kích model turn.
+- Model context: request-local projection qua hook đang có; renderer không quyết định permission.
+- JSON/RPC: structured status/events và readable tool results; không phụ thuộc custom TUI. Start confirmation giữ contract UI/RPC hiện có.
+- Session marker không thay external assessment store. Tree/fork chỉ đổi conversation branch; không rewind side effects hay phục hồi workers.
+- Không network dashboard mặc định. Web graph là bước sau, read-only/loopback/auth rõ nếu được duyệt; Mermaid/JSON export trước.
+
+---
+
+## 7. Checklog: lịch sử thật, không một dòng status cuối
+
+### 7.1. Event envelope
+
+```text
+sequence, eventId, schemaVersion, engagementId, runId
+kind, occurredAt, committedAt
+actorId, taskId?, attemptId?, operationId?, correlationId?
+entityId?, entityRevision?, payloadRefs[], summary, redactionVersion
+```
+
+`sequence` do store cấp, không tin timestamp model hoặc số đếm từ nhiều worker. UUID dedup event delivery; `operationId` ghép lifecycle của một invocation; task ID không đủ vì cùng task có nhiều attempts.
+
+Groups cần có:
+
+- run started/paused/stopping/stopped; worker admitted/runtime-verified/revoked/retired;
+- task created/queued/reserved/running/reported/reviewed/closed/blocked; queue rejected/invalidation;
+- operation requested/started/returned/failed/cancelled/unknown-terminal;
+- asset upserted, fact/candidate revised, review accepted/disputed, support invalidated;
+- phase packet committed, checkpoint committed/failed, artifact retained/missing;
+- decision committed, planner wake admitted/vetoed, limit/backpressure reached;
+- cleanup step/result và export/retention failure.
+
+Tool status là host observation, kết luận security là attributed assertion. Không dùng stream silence làm timeout authority hay automatic retry. Nếu process chết giữa start/end, giữ operation `unknown-terminal`, không giả returned success.
+
+### 7.2. Commit và delivery
+
+- Domain mutation + event + outbox trong cùng transaction.
+- Notify UI/Engine **sau commit**; success ACK gồm committed IDs/sequence.
+- Subscriber có thể nhận trùng/drop; replay từ durable cursor với idempotent merge. Snapshot `@S` + tail `>S` phải không bỏ khoảng.
+- UI event stream và semantic Planner wake là **hai consumer khác nhau**. Mỗi command event cập nhật UI nhưng không gọi LLM.
+- Manual mode: zero automatic model rounds từ các event mới.
+- Event-driven mode: coalesce candidate needing review, handoff, prerequisite change, material blocker; chỉ wake theo consent/quota/current epoch. Không wake từng asset field hoặc mỗi log row.
+- Kiểm tra backlog của notification riêng storage capacity. Nếu queue overflow, ghi health warning và catch-up; không mất canonical event rồi nói đã complete.
+
+---
+
+## 8. Checkpoint, artifacts và khả năng tiếp tục công việc
+
+### 8.1. Ba khái niệm không được nhập làm một
+
+1. **Progress marker:** UI/notification cho biết vừa xảy ra gì; không phải backup.
+2. **Checkpoint:** snapshot nhất quán tại sequence S, có references/hashes/health; dùng inspect/reconcile.
+3. **Continuation:** run mới được human confirm, chọn tri thức từ checkpoint để revalidate; không resurrect run cũ.
+
+Checkpoint không phải VM snapshot, không chứa network session/cookie jar/ticket, không rollback HTTP side effects.
+
+### 8.2. Checkpoint manifest
+
+```text
+checkpointId, schemaVersion, project/targetIdentity, sourceRunId
+asOfSequence, createdAt, reason, store/schema/profile hashes
+entity revision heads, task/attempt states, reviewed support refs
+coverage plan version, open gaps, pending reviews, pending proposals
+artifact manifest [{id, size, sha256, availability, redactionVersion}]
+accepted intent history, planner decisions/todo references
+integrityStatus, missingRefs[], omissions[], retentionStatus
+```
+
+- Snapshot bắt tại transaction boundary; không nhất thiết dừng tất cả workers. Work đang chạy ghi rõ in-flight tại S; result sau S thuộc checkpoint sau.
+- Checkpoint logical có thể tạo nhanh mỗi handoff/review/phase/stop; portable bundle lớn chỉ khi request hoặc retention policy, tránh copy toàn DB mỗi event.
+- Ghi manifest/file temp trong cùng filesystem, flush/fsync phù hợp rồi atomic rename và commit pointer; verify referenced bytes. Crash trước publish không được hiện như checkpoint thành công.
+- Không đưa raw credentials, tickets, sockets hay host environment vào manifest.
+- Integrity (đủ/hash đúng) khác currentness (support còn hiện hành). UI cần cả hai.
+- Tạo lại cùng idempotency key trả cùng checkpoint, không tạo N bản duplicate khi ACK mất.
+
+### 8.3. Artifact pipeline
+
+`artifact ≠ asset`: asset là đối tượng kiểm thử; artifact là file/output sinh ra hoặc thu thập để chứng minh.
+
+- Registry lưu kind/media type/producer/size/hash/sensitivity/retention, evidence references và captured range.
+- Model dùng artifact IDs, không arbitrary host filesystem paths. Lấy file từ worker scratch qua owner-controlled validated path, no symlinks/devices/path traversal; không mở host write capability.
+- Output dài: stream bounded bytes sang artifact **trước** capture truncation; trả excerpt + `artifactId` + total/captured bytes + `truncated`/reason. Không thể khôi phục phần output baseline đã mất bằng hash.
+- Không cần lưu mọi raw response vô hạn. Có max bytes/object, storage quota/run, redaction/sensitivity choices; raw secret-bearing capture phải explicit opt-in, mặc định redacted artifact hoặc no-retain.
+- Retained artifact do owner ingest bất biến; scratch file có thể sửa nhưng không rewrite artifact đã referenced.
+- Hash trước/sau redaction ghi rõ; export không redact lại serialized fragments làm hỏng manifest.
+- Missing evidence bytes, read failure, disk full hoặc capture giới hạn phải giữ `partial/missing`, không checkpoint “complete”.
+
+### 8.4. Retention và restart
+
+**Đề xuất UX:** lúc confirm chọn rõ `ephemeral` hoặc `durable-local`; giới thiệu durable-local như lựa chọn phù hợp công việc dài, nhưng không âm thầm thay consent retention cũ. Không cần bắt người dùng nhớ `--export` mới có output thấy được trong phiên.
+
+- Ephemeral: UI/checklog/checkpoint in-run vẫn có; cảnh báo trước cleanup rằng full data sẽ mất, chỉ được giữ nếu người dùng chọn save.
+- Durable-local: log/domain/artifacts được commit trong run; cleanup xóa authority/scratch, không xóa knowledge store. Không đợi đến finish mới cố export một file khổng lồ.
+- `/p2o stop` luôn revoke/cancel trước. Storage lỗi không được giữ target access để “chờ ghi xong”; báo retention failure và retained/missing bytes rõ.
+- Restart/reload: mở hồ sơ read-only với banner “historical — no active authority”. Historical running tasks không trở thành live; đánh dấu interruption/unknown qua reconciliation record có attribution.
+- Muốn tiếp tục: human xác nhận target/scope/profile/retention mới; run mới, worker mới, ticket mới, allowance theo confirmation mới. Old knowledge chỉ là imported evidence có provenance, cần freshness review; không vượt same-run receipt gate bằng copy IDs.
+- Cấm hai owner writers đồng thời vào cùng active run. Lock ownership không phục hồi execution authority; read-only sessions được phép.
+
+---
+
+## 9. Chống trùng: bốn tầng, không một hàm similarity
+
+### 9.1. Transport idempotency
+
+`(runId, actorId, requestId)` là unique mutation key. Same key/same canonical payload trả original result; same key/different payload báo conflict. Bao gồm report/asset/fact/candidate/checkpoint mutations.
+
+Đây không phải exactly-once target execution. Network operation ACK mất thì outcome có thể unknown; không tự replay POST/command vì request ID trùng. Lấy retained result/status trước; nếu chưa biết thì Planner/human quyết định attempt mới.
+
+### 9.2. Asset dedup
+
+Canonical resource key theo §5; exact duplicates merge provenance, không tăng count. Alias grouping có audit/undo. Upsert ghi chỉ delta; unchanged observation không sinh vô hạn semantic events. Conflicting attributes giữ nguồn/version, không last-write-wins xóa contradiction.
+
+### 9.3. Work dedup và admission
+
+Exact work fingerprint đề xuất:
+
+```text
+namespace + targetRevision + sorted(asset/variant IDs)
++ question/policy key + actor/tenant context + method family
++ prerequisite revisions + declared purpose
+```
+
+Không hash raw prose làm “ngữ nghĩa”. Nếu metadata thiếu, `dedupConfidence=unknown`; không giả exact match.
+
+1. Query active **và history indexed**, không chỉ 10 task gần nhất.
+2. Exact active duplicate: return `already_covered_by=taskId`, không spawn.
+3. Exact historical match có current reviewed result: return `reuse_candidate` cùng refs/revision/limitations; không tự suy ra goal met.
+4. Historical blocked/partial: đọc last attempt/gap trước; chỉ đề xuất retry khi prerequisite/environment/material evidence thay đổi hoặc explicit retry decision có lý do. Không blanket suppress vì đã từng làm.
+5. Same surface/risk nhưng method/actor khác: overlap warning + resource conflict policy, không coi mặc định trùng.
+6. Independent validation: explicit `validationOf`, separate attempt/worker, không tái sử dụng discovery receipt để chứng minh độc lập.
+7. Retest: `retestOf`, changed target/policy/config revision hoặc explicit reason; retain old result, không overwrite history.
+8. Fuzzy match chỉ đưa suggestions để Planner chọn `reuse|refine|new|validate|retest|defer`, kèm lý do. Không auto-merge từ embeddings/LLM confidence.
+9. Sau duplicate decision, check lại ở **atomic reserve** trước launch để chống hai parallel calls cùng pass. Read-only lookup không phải admission lock.
+
+Finite duplicate rules không bảo đảm hai câu diễn đạt khác nhau luôn được nhận ra. Mục tiêu đo được: giảm repeat-on-unchanged-input, không chặn các khác biệt an ninh quan trọng.
+
+### 9.4. Finding dedup
+
+- Group candidate by reviewed asset/component identity + policy violated + root cause/control location + affected variant family, **không chỉ title/CWE/severity**.
+- Exact known case thêm evidence/variant hoặc revision; semantically similar case yêu cầu review trước `duplicate_of`.
+- Nếu root cause chưa rõ, giữ hai candidates linked `possibly_related`; không ép merge sớm.
+- Merge tạo alias/relationship reversible, giữ original IDs/producers/reviews. Same CVE không đủ chứng minh same instance.
+- Validator disagreement là disputed support, không phải finding mới chỉ để né revision protocol.
+- Root-cause shared across endpoints có thể một canonical case + affected instances; report phải giữ endpoint-specific tested/untested status.
+- UI/report count tách unique canonical cases, duplicate submissions, open candidates và current reviewed findings.
+
+---
+
+## 10. Planner/Worker sử dụng state mới thế nào?
+
+### 10.1. Planner context packet
+
+Builder deterministic, bounded, cùng store snapshot:
+
+1. confirmed scope/target identity references và original goals;
+2. health: incomplete storage, stale refs, retention problems trước;
+3. changes since last consumed cursor;
+4. unreviewed handoffs/candidates, contradictions, invalidated support;
+5. active/ready/blocked frontier và decision/todo cần xử lý;
+6. relevant assets/facts/negative results cùng IDs/revisions;
+7. exact counts + displayed counts + omitted counts + retrieval cursors;
+8. run allowance/executor pressure, không giả tổng monetary budget.
+
+Selection ưu tiên relevance/open work, không đơn giản newest-N. Deep detail qua typed query theo ID/asset/task/risk/actor/status; không expose SQL hoặc graph query tùy ý có host effects. Token/byte budget rõ; bị omitted vẫn query được.
+
+Consumption cursor phải phản ánh packet đã thật sự cung cấp cho request; không mất event nếu build/context/request abort. Re-delivery read-only an toàn; effects chỉ xảy ra qua validated mutation/admission, không qua replay packet.
+
+### 10.2. Planner round output
+
+Một round có thể kết thúc bằng:
+
+```text
+reviewed results + knowledge delta references
+accepted/reused/deferred tasks + reasons
+updated strategic todo
+next trigger or blocker
+wait | blocked | continue-existing-work | finish-with-outcome
+```
+
+Không cần mỗi round sinh tasks/findings. Khuyến nghị qualitative ranking: authorized reachability, concrete unresolved boundary, evidence strength, information gain, dependency readiness, overlap, environment readiness và cost/resource estimate có uncertainty. Không tạo fake scoring formula dự đoán xác suất bug.
+
+### 10.3. Worker assignment packet
+
+Giữ autonomous tactical worker nhưng brief có:
+
+- one question + role + expected contrasts + stop condition;
+- asset IDs/versions, known observations và exact sources;
+- prior attempts/controls **không cần làm lại**, kèm giới hạn của chúng;
+- selected method/skills hashes, dependencies reviewed revisions;
+- desired output type, partial-report contract, artifact policy;
+- relevant gaps and forbidden scope expansion;
+- refs để retrieve thêm, không toàn bộ graph/chat khác.
+
+Worker có batch structured writes để không mất thời gian ghi từng field. Broker gắn task/actor, validate references rồi trả IDs. Facts/hypotheses incremental được lưu khi có ý nghĩa; không đợi final report, không ép “một intent chỉ đúng một fact” như luật cứng.
+
+Material candidate/gap có thể notify Planner trước worker kết thúc, nhưng worker slot chưa free cho tới report/revocation/verified retirement hiện hành. Reporter chỉ đọc và tổng hợp, không target-execute hay tự upgrade proof.
+
+### 10.4. API roadmap tối giản
+
+Tên **đề xuất**, không phải commands/tools đang ship:
+
+| API | Vai trò |
 |---|---|
-| 3 slots, 30 assignments nối tiếp | Active ≤3, completed slots reusable; không lifetime spawn error |
-| Batch intents > free slots | Queued, không lỗi cap như spawn trực tiếp |
-| Prerequisite chưa-reviewed / revised giữa claim và command | Không execute dependent; stale support được chặn |
-| Same surface/risk/actor/method duplicated | Hard exact reservation gate; khác wording không tự đủ novelty |
-| Worker report event trước/sau registration terminal | Một commit/slot release/wake; không double assignment |
-| Report đến trong Planner round và ngay sau idle | Không mất event, không overlapping rounds |
-| 100 noisy notes / stdout chunks | Không 100 paid Planner wakes |
-| Waiting vài giờ bằng fake clock, không semantic event | Không auto expiry và không model polling |
-| Human steer/stop tại boundary | Human ưu tiên; stop gate đóng trước cleanup |
-| Stop trong debounce/spawn/HTTP/DNS/pending wake | Không late execution, ticket resurrection hoặc paid stale wake |
-| Worker provider quota, Planner error, auth/profile mismatch | Blocked/partial đúng nguyên nhân; không implicit fallback/replay |
-| Command/coordination/retention budget exhausted | Report/stop vẫn dùng được; không mint fresh worker để bypass |
-| A long exec, B short exec; cancel A | Parallel profile không HOL và không hủy B; serial profile báo đúng limits |
-| Reporting role thử shell/delegate; Planner thử HTTP | Denied ở enforcement, không chỉ prompt |
-| Slot tái dùng; old socket/report/ticket; compaction | Assignment/token/context tách biệt; no restored authority |
-| Corrupt ledger, missing report part/archive, old validation revoked | Incomplete/gap, không confirmed/complete false-positive |
-| All workers settled nhưng open proof gaps còn | Report partial/gaps, không full-target safe hoặc “goal met” chỉ theo counts |
-| Session switch/reload/shutdown/hard-kill recovery | Idempotent verified cleanup; unresolved teardown công khai |
+| `p2o_state` | Typed read query: overview/tasks/assets/facts/cases/events/checkpoints, filters/cursor — checkout có slice `heads` read-only (K6: domain/status filter, exact totals, sequence cursor), chưa phải full typed query |
+| `p2o_record` | Worker/solo batch assets/facts/hypotheses/gaps/artifact metadata; action-specific schemas và broker allowlist |
+| `p2o_task` mở rộng | Giữ action cũ, thêm asset/question refs, dedup disposition, desired output contract |
+| `p2o_candidate` + checkout `p2o_case` | Candidate vẫn là attributed claim; owner-only stable case revisions, reviewed duplicate/root-cause relation và current support; không bypass evidence gates |
+| `p2o_plan` | Owner goal/todo/decision/review operations theo quyền tách rõ — checkout có slice create/revise/list/view, chưa full K5 review/support-currentness |
+| `p2o_checkpoint` | Owner commit/list/inspect; worker chỉ propose hoặc read permitted state |
+| `p2o_report` mở rộng | Typed output packet refs + outcome; legacy strings giữ labelled compatibility. Checkout final projection đã mang bounded case/coverage index, chưa phải full K6 relevance packet |
 
-Các tests này là **yêu cầu tương lai**, không phải kết quả đã pass của turn này.
+Không bật tất cả schemas dài ở mọi role. Dùng discriminated action schemas/tool-loadout đúng Pi API, test hidden/deferred execution boundary trước khi đổi exposure. `p2o_record` không nhận generic `set arbitrary entity` vượt quyền owner.
 
----
+### 10.5. Trace minh họa: không tìm lại từ đầu sau mỗi worker
 
-## 14. Đo sự cải thiện, không lấy “loop lâu” làm thành công
+**Fixture giả định, không chạy request:** một source snapshot có route đọc tài liệu và một export handler; chính sách export chưa rõ. IDs ngắn dưới đây chỉ là nhãn minh họa.
 
-Trên cùng inert/lab fixtures, model/profile/budget và stop conditions:
+| Bước | Canonical write / quyết định | Người dùng thấy |
+|---|---|---|
+| 1. Confirm | Run R1, target snapshot S1, goal G1 “đánh giá boundary truy cập tài liệu”, persistence choice | Scope card; chưa có kết luận bug |
+| 2. Recon T1 | Worker đọc source; receipt E1; assets A1 route, A2 handler; fact F1 về đường đăng ký/gate; gap X1 về intended export policy | Recon delta: 2 assets, 1 fact, 1 gap; IDs click/read được |
+| 3. Handoff | Packet P1 committed; T1 reported; checkpoint C1@42 | “T1 awaiting review”, không “assessment complete” |
+| 4. Review/plan | Owner accepts bounded mapping T1@r3; decision D1 chọn kiểm tra contract policy trước; task T2 dựa F1/X1 | T1 reviewed; T2 queued; lý do chưa validate vulnerability |
+| 5. Tránh trùng | Một proposal khác gọi A1 bằng alias nhưng cùng mapping S1/method; lookup trả T1/E1/F1 | “Reuse mapping T1; no new worker”; không tăng tested count |
+| 6. Context mới | T2 nhận A1/A2/F1, prior receipt E1 và gap X1; không cần enumerate lại routes | Brief có known work và output contract “policy evidence hoặc explicit unknown” |
+| 7a. Policy chưa rõ | T2 trả gap X1 còn mở; candidate H1 vẫn inferred/open_proof_gap | Partial investigation output; không ghi confirmed chỉ vì hai route khác nhau |
+| 7b. Nếu có evidence mới | Receipt E2 thiết lập explicit policy; hypothesis H1 được cập nhật; D2 tạo bounded test T3 | UI ghi rõ evidence nào làm hướng mới hợp lệ |
+| 8. Nếu có candidate | T3 ghi claim V1@r1 + controls/receipts; handoff pending review; proposed validation T4 | “Claimed finding, validation pending”; không tự badge independent |
+| 9. Validator | T4 do worker khác, target/method/actor ghi rõ; tự thu E4, không copy E3; review RV1 pin V1/E4 revisions | Reviewed support hoặc disputed/inconclusive; cả hai là kết quả hợp lệ |
+| 10. Báo cáo | Report B1 tham chiếu current reviews, coverage cells, X1 nếu còn mở; checkpoint C2 | Finding/gap/untested tách rõ, đủ đường drill-down |
+| 11. Stop/reopen | Revoke/cleanup như hiện tại; durable data giữ lại; mở lại chỉ historical | “R1 stopped — resources cleaned; knowledge retained; no authority” |
+| 12. Source đổi S2 | New run R2 cần confirmation; import mapping như prior knowledge; affected support stale | Retest có change reason; không tái dùng S1 để claim S2 đã tested |
 
-- Assignments processed / active-cap violations / duplicate assignments.
-- Event-to-round scheduling và target queue wait, tách model latency khỏi scheduler latency.
-- Planner rounds không có material delta; idle model calls (mặc định phải 0).
-- Tỷ lệ lead target commands trong delegated mode (mục tiêu 0), review calls trên packet vs raw stdout.
-- Unresolved prerequisite, partial-budget, provider failure, stale-support và cleanup diagnostics.
-- Context bytes/tokens theo round và retrieval completeness, không chỉ snapshot size.
-- Usage/cost biết được và unknown accounting; keep/renew policy.
-- Finding correctness/negative controls/independence trên labeled authorized fixture, không dùng số lượng findings để tự chấm goal.
-
-Không cam kết “nhiều worker hơn = tốt hơn”. Concurrency có thể tăng chi phí, rate limits, duplicate effort hoặc target contention; phải đo.
+Hai nhánh 7a/7b là điều kiện, không buộc run phải tìm thấy bug. Nếu finding không tồn tại, hồ sơ vẫn hữu ích nhờ bounded negative results, policy evidence và gaps. Đây là lợi ích mục tiêu của graph: **giữ identity, provenance, trạng thái và lý do làm tiếp**, không phải tự động biến route khác biệt thành vulnerability.
 
 ---
 
-## 15. Quyết định kiến trúc đề nghị duyệt
+## 11. “Bị giới hạn nhiều”: xử lý đúng loại giới hạn
 
-1. **Current Pi = strategic Planner trong delegated mode; solo là working agent.** Engine không phải một LLM orchestrator nữa.
-2. **Event-driven outer loop** có explicit consent, wait không paid polling, no unconditional continuation, manual compatibility.
-3. **Frontier + reusable capacity**, bỏ lifetime spawn cap gắn với N; command/resource/retention policies vẫn explicit.
-4. **Worker tactical autonomy trong một intent**, incremental evidence; subtask request qua Planner, không uncontrolled spawn tree.
-5. **Per-role capabilities và executor concurrency/cancellation isolation**, không chỉ đổi prompt hoặc nâng hard cap.
-6. **Giữ và mở rộng TaskBoard/EvidenceStore/ledger**, không import ARTEX/norma hay copy cả server/DB/UI stack.
+| Baseline cap/constraint | Vấn đề | Đề xuất |
+|---|---|---|
+| 48 KiB captured output; receipts nhỏ hơn | Evidence dài mất trước khi có cơ hội drill-down | Artifact streaming/spill có quotas, excerpt + range retrieval |
+| 64 MiB/100k-row ledger; 16 MiB export | Run dài đọc lại đắt, export có thể lỗi dù ledger hợp lệ | Indexed store, segmented export/checkpoints, storage health/backpressure |
+| 100 live tasks / 100 queued intents | Backlog dài chiếm active frontier | Separate durable backlog vs admitted frontier; pagination. Không bỏ cap admission trước resource tests |
+| 1.000 retained registrations | Runtime memory/lifecycle retention | Archive verified terminal assignment metadata; keep budget counters/tombstones/revocation correctness; fresh IDs vẫn bắt buộc |
+| 200 commands/worker; 90% reserve của default 600 | Có thể hết trước khi plan mong muốn hoàn tất | Show remaining + block reason; future explicit budget policy, không auto-renew bằng worker mới |
+| 160/200 worker coordination; 400 owner knowledge | Structured state cần nhiều interactions | Batch writes/reads, delta projections, reserved finalization path; benchmark trước policy adjustment |
+| Last-N views và 16 KiB row / 64 KiB broker frame | Người dùng tưởng lịch sử mất hoặc không thấy work cũ | Stable pagination/IDs/blobs; giữ transport bounds, không tăng vô hạn |
+| Shared executor serial | Workers LLM đồng thời nhưng target operations chờ | Giữ isolated opt-in đã có; UI phân biệt model slot và target slot |
+| 100 automatic Planner wakes mặc định | Long run dừng automatic scheduling | Status rõ exhaustion; manual review vẫn có, không TTL và không tăng quota ẩn |
+| Một confirmed origin | Discovery ra link khác nhưng không được test | Record out-of-scope observation; human scope workflow riêng nếu cần, không graph-driven widening |
+| No durable todo/checkpoint | Lặp vì mất tri thức/khó biết done | Ưu tiên release này trước tăng số worker |
 
-Thứ tự nên làm: **P0 -> P1 -> P2 -> P3** để giải quyết role và loop trước; **P4** cần trước khi claim parallel target execution; **P5/P6** hoàn thiện long-run/rollout. Không gom cả redesign thành một giant commit.
+**Không đặt mục tiêu “unlimited mọi thứ”.** Unlimited elapsed lifetime vẫn giữ; disk/RAM/provider/request size phải bounded. Quota cần observable, operator-controlled theo policy, và đủ đường để report/stop khi hết. Archive không xóa counter để lách run budget.
 
-### Source navigation
+---
 
-- ARTEX scheduler/wait/pool: `my_references/ARTEX/server/engine.go:748–1245`.
-- ARTEX signals: `my_references/ARTEX/server/manager.go:1751–1860`.
-- ARTEX strategy/context/todo: `my_references/ARTEX/agent/planner.go:23–51,108–473`.
-- ARTEX tactical mandate/resume: `my_references/ARTEX/agent/worker.go:94–96,230–535`.
-- ARTEX intents/overview/proofs: `my_references/ARTEX/agent/tools.go:354–551,1021–1405,2033–2054`.
-- ARTEX claim: `my_references/ARTEX/db/exploration.go:1136–1182`.
-- ARTEX role sessions/settings: `my_references/ARTEX/server/task_llm.go:552–606`; `server/server.go:296–322`; `server/manager.go:319–337`.
-- Norma inner loop/settlement: `my_references/ARTEX/research_sources/norma-v0.4.3/harness/query.go:366–579`; `agentcore/agentcore.go:364–529`.
-- p2o spawn/report/settle: `extensions/p2o/index.ts:181–285,329–348,746–898,956–979`.
-- p2o constraints/state: `src/roles.ts`, `src/tasks.ts`, `src/broker.ts`, `src/sandbox.ts`, `src/prompts.ts`, `src/records.ts`, `src/evidence.ts`, `src/report.ts`, `src/progress.ts`.
-- Pi contract: installed 1.0.0 `docs/extensions.md`, `docs/sdk.md`, `docs/compaction.md`, `docs/message-types.md`; project `node_modules/@earendil-works/pi-coding-agent/dist/core/extensions/types.d.ts:709–762,1212–1227`.
+## 12. Rollout: giao vertical slices, không big-bang rewrite
 
-**Mental model cuối:** Planner quyết định *việc đáng làm tiếp*, Worker quyết định *cách làm việc đã nhận*, Engine quyết định *khi nào/có quyền/còn capacity để chạy*; evidence/state giúp rounds sau hiểu đúng kết quả. Đây mới là cơ sở cho một loop dài và trơn tru — không phải để một orchestrator ôm mọi việc rồi chỉ bỏ đồng hồ.
+Dùng nhãn **K0–K7** để không nhầm P0–P6 của roadmap cũ đã có core 0.5.0.
+
+### K0 — Contract và storage spike
+
+**Deliverables:** ADR identity/state/retention/SQLite driver; migration map; current UX fixtures; event/correlation/idempotency schemas; assessment outcome semantics.
+
+**Gate:** thống nhất `reported/reviewed/closed`, candidate claim/review, artifact/asset và checkpoint/authority. Driver load/package/crash test đạt hoặc storage phase blocked rõ. Không sửa runtime trước impact review các core paths.
+
+### K1 — Visibility đầu tiên, dùng được ngay trên state v2
+
+**Deliverables:** `/p2o status/tasks/task/log` read-only, compact widget, grouped tool renderers, review-pending badge, output path và cap/retention warnings; note ACK có IDs; clear operational/assessment completion labels.
+
+**Gate:** người dùng không cần gọi model để biết ai làm gì/đang chờ gì. Adapter v2 chỉ hiển thị log hiện có; thiếu operation correlation/history thì ghi unknown, không invent events cũ. Không gọi đây là durable checkpoint release.
+
+### K2 — Canonical store + checklog + checkpoint/artifact foundation
+
+**Deliverables:** single owner writer, typed events, transaction/outbox, request idempotency, persistence consent, durable local storage, operation lifecycle, checkpoint barrier, immutable artifact ingest/export, read-only reopen.
+
+**Gate:** failure injection trước/sau commit/ACK/checkpoint; replay không duplicate state; kill/restart không restore authority; cleanup không xóa retained knowledge. K1 UI chuyển adapter sang store mới, không chạy hai canonical writers.
+
+### K3 — Asset + fact/hypothesis graph
+
+**Deliverables:** versioned identities, scoped queries, anchors/typed relations, batch recording, source + URL fixtures, negative/counterevidence state, graph JSON/Mermaid, per-asset history.
+
+**Gate:** asset concurrency dedup, unsafe normalization tests, imported/foreign scope rejection, stale references. Discovery không tự cấp permission.
+
+### K4 — Work dedup + durable planning + phase packets
+
+**Deliverables:** exact active/history matching, overlap warnings, explicit reuse/validation/retest, atomic reservation, goal/todo/decision records, per-workstream output contracts và checkpoint cards.
+
+**Gate:** paraphrase/alias fixture, intentional validator/retest vẫn hoạt động, stale prerequisite blocks như baseline; completed worker không tự mark reviewed goal. Reportless exit ra partial packet không cần extra model call.
+
+### K5 — Vulnerability view + review/currentness
+
+**Deliverables:** canonical cases/duplicates, revision-pinned reviews, contradictions, affected variants, review queue, bounded proof-aware coverage và final report bundle.
+
+**Gate:** independent validator withdrawal làm badge/report stale; repeated report delivery không tăng findings; uncertain root cause không merge sai; blocked/untested không thành clean. Case close không tự goal complete.
+
+**Checkout source hiện tại:** gate mechanics trên đã có unit/runtime/actual-Pi inert fixtures, canonical record revisions, atomic ACK replay và read-only UI/checkpoint/final projection; xem [K5 contract](docs/CASE_REVIEW.md). Đây không phải live finding-effectiveness, installed hay publication qualification; K6/K7 và các hardening còn mở.
+
+### K6 — Indexed context + long-history optimization
+
+**Deliverables:** Planner/Worker packets, exact counts/cursors, historical duplicate lookup, deterministic digest/index, archival policy; optional model-generated summaries chỉ sau explicit budget/consent riêng.
+
+**Gate:** no dropped old gap; checkpoint + event tail rebuild tương đương snapshot; hot data không bị stale digest che; UI/context budgets không tăng theo toàn history. Không warm-session reuse trong scope này.
+
+**Checkout source hiện tại:** schema 7 thêm rebuildable `knowledge_heads`/`knowledge_links`/`context_cursors` trong cùng database; role packets Planner/Worker/reporting bounded, human `/p2o heads|digest`, read-only `p2o_state`, delivery ACK sau assistant `message_end` thành công, rotating old gap/review pages và passive checkpoint+tail index replay đã có unit/runtime/actual-Pi inert fixtures cùng microbench 10k/100k; xem [K6 contract](docs/CONTEXT_PACKETS.md). Đường legacy `/p2o status|tasks|report` + widget đã chuyển sang ledger incremental bất biến + memo task lookups + digest lazy + pacing quét: refresh p95 ≤114 ms ở 100k records (simple và mixed cases/coverage; trước đó ~0.98 s đến ~1.8 s), **đạt** mục tiêu §13.2 (<200 ms) trên corpus synthetic, nhưng vẫn suy counts từ snapshot trong bộ nhớ (O(lịch sử), bị chặn bởi cap 100000 rows) và chưa đo TUI render; xem [số đo và bằng chứng tương đương](docs/CONTEXT_PACKETS.md#legacy-status-and-widget-path). Còn mở: TUI render p95, (nếu cần) đếm status từ heads/SQL, large mixed graph/case/review replay fixtures, segmented archive >64 MiB; model-generated summaries không có và cần budget/consent riêng. Đây không phải installed, paid-provider hay finding-effectiveness qualification.
+
+### K7 — Qualified acceptance / publication riêng
+
+**Deliverables:** reproducible fixtures, regression matrix, docs/settings help, pack exclusions, source/install hash acceptance và release checklist.
+
+**Gate:** test inert mechanics trước; real-Pi load/render/manual/event-driven tests; Docker lifecycle regressions nếu executable change; real Herdr acceptance được ghi riêng nếu thực hiện. Paid/live effectiveness test chỉ khi có authorization mới.
+
+**Checkout source hiện tại (một phần K7):** [ACCEPTANCE_MATRIX](docs/ACCEPTANCE_MATRIX.md) ánh xạ đủ 22 fixture của §13.1 và 7 điều kiện của §13.3 tới test thật, kèm guard tự động (`acceptance-matrix.test.ts`) fail khi test được dẫn bị đổi tên/xóa hoặc khi plan thêm scenario mà ma trận chưa có hàng. Ba khoảng trống phát hiện khi lập ma trận đã có test mới: manual-mode event storm (#19), fork/tree navigation (#12), ENOSPC khi export bundle (#11). Đây là bằng chứng cơ chế inert; chưa phải hiệu quả pentest, real Herdr, installed-package hay publication.
+
+**MVP có giá trị cho yêu cầu này:** K0–K2 + output contracts cơ bản. **Knowledge-driven planning MVP:** thêm K3–K5. Không chờ canvas/UI web hoặc perfect semantic dedup mới giải quyết việc thiếu output.
+
+### 12.1. File/module impact map cho implementation sau
+
+| Existing / proposed module | Trách nhiệm thay đổi |
+|---|---|
+| `src/records.ts` | v2 reader compatibility; không âm thầm coi new kinds là valid legacy records |
+| `src/tasks.ts` | store adapter, identity refs, reserve/dedup/currentness; giữ prerequisite/cycle/role invariants |
+| `src/evidence.ts`, `src/report.ts` | receipts/artifact refs, proof gates, transaction packets, current report projection |
+| `src/broker.ts` | authenticated typed writes, IDs, idempotency, operation correlation, report ACK semantics |
+| `src/engine.ts` | state-committed signals, queue visibility, revised support invalidation; không thành strategy model |
+| `src/progress.ts` | derived latest progress từ event log, không source of truth độc lập |
+| `src/process.ts`, `src/sandbox.ts` | bounded artifact capture/ingest, abort integrity; giữ cancellation và cleanup semantics |
+| `src/ticket.ts`, `src/executors.ts`, `src/herdr.ts` | regression-sensitive ownership/retirement; không cần rewrite nếu contract không đổi |
+| `src/prompts.ts`, `src/tool-policy.ts` | knowledge packet guidance, role-specific writes; không dùng prompt thay broker gates |
+| `extensions/p2o/index.ts` | command/UI integration, hooks/consent/lifecycle; tách rendering/store service khỏi file lớn |
+| **Mới đề xuất** `src/state/*` | store/schema/migrations/events/checkpoints/query projections |
+| **Mới đề xuất** `src/knowledge/*` | assets/facts/relations/identity/dedup/coverage |
+| **Mới đề xuất** `src/ui/*` | status/task/phase cards và renderers, không execution authority |
+| **Mới đề xuất** `src/artifacts.ts`, `src/context.ts` | artifact manifests và bounded role projections |
+| Tests/docs/library | adapter + adversarial state tests; update runtime knowledge recipes khi API thật được ship |
+
+Tên module mới là đề xuất tổ chức, không yêu cầu tạo đủ mọi file rỗng. Trước mỗi slice chạy graph impact; HIGH/CRITICAL lifecycle/store changes phải review riêng. Graph incomplete/UNKNOWN không phải all-clear.
+
+---
+
+## 13. Acceptance matrix: chứng minh cơ chế, rồi mới đo chất lượng
+
+### 13.1. Fixture scenarios bắt buộc
+
+| Case | Kỳ vọng |
+|---|---|
+| Start chưa có task/asset | Empty state nói đúng, không giả 0 bugs = safe |
+| Worker làm lâu, chưa có result | Hiện running op/start time; không timeout vì quiet và không model polling |
+| Hai workers ghi cùng endpoint | Một asset ID, hai provenance entries, count không tăng đôi |
+| Hai task aliases cho cùng work | Exact known identity conflict ở reserve; fuzzy trường hợp unknown đưa review |
+| Same endpoint khác method/actor/tenant | Không collapse thành cùng security test |
+| Handoff committed, chưa review | `reported / awaiting review`, không completed goal |
+| Worker provider-error/no report | Partial lifecycle packet, gap retained, không cần model retry để có output |
+| Report ACK mất rồi submit lại | Một canonical packet/event effect, không nhân coverage/open/finding |
+| Crash giữa report parts/domain writes | Chỉ committed transaction hiển thị complete; partial có diagnostics |
+| Stop khi operation in flight | Revoke/abort giữ nguyên; checkpoint ghi cancellation/unknown, không fabricated output |
+| Disk full lúc checkpoint/export | No success claim, no authority extension, rõ retained/missing data |
+| Reload/tree/fork đọc checkpoint | Chỉ historical state; không broker/ticket/container/network/model turn mới |
+| Old review bị superseded | Dependent task/candidate/report/digest stale đúng IDs/revisions |
+| Independent validator bị withdraw | Independent badge mất hiệu lực; history không bị xóa |
+| Out-of-scope asset từ response | Có thể ghi observation ngoại vi, không dispatch/probe hay auto-widen scope |
+| Artifact symlink/path traversal/secret | Denied/redacted theo policy, không leak host files hoặc raw token |
+| Same content event delivered N lần | UI merge theo ID/sequence, không N phase cards |
+| History vượt display windows | Exact totals + omitted + drill-down; old blockers vẫn tìm được |
+| Manual mode event storm | Zero automatic paid requests; UI vẫn update |
+| Event-driven pause/stop race | Late wake veto, no dispatch after pause/stop; human pending input priority |
+| Normalization adversarial set | Path case, query repeats/order, `%2F`, trailing slash, IPv6, custom method không merge sai |
+| Negative result reused | Chỉ cùng tested context/method/version; không biến thành global “clean” |
+
+### 13.2. Measurements đề xuất, chưa có kết quả
+
+- Corpus deterministic: 10k và 100k domain/events; stress lớn hơn là opt-in có disk budget.
+- Đo p50/p95 query/render/commit/checkpoint latency, RSS, bytes/on-disk và query count; công bố hardware/corpus.
+- Budget projection đề xuất: khoảng 16 KiB overview ban đầu, drill-down riêng; exact count không tính từ truncated list.
+- Responsiveness target ban đầu: status local p95 <200 ms với corpus/hardware đã công bố; nếu chưa đạt phải profile/index, không lược bỏ dữ liệu rồi vẫn ghi “complete”.
+- Retest/dedup oracle corpus có labels: exact duplicates, aliases, changed snapshot, validation, controls, different actors, related-but-distinct root causes.
+- Báo cả duplicate suppression đúng và **false suppression** của test hợp lệ. Không tối ưu “ít tool calls” bằng bỏ kiểm chứng.
+- Đo finding completeness/proof correctness, unresolved-gap recall, task review accuracy và evidence retrieval; không chỉ số nodes hoặc số bugs model tự báo.
+- Inert fixtures chỉ chứng minh mechanics. Muốn nói “pentest tốt hơn”, cần authorized benchmark với cùng model/scope/budget, repeated runs, held-out controls và independent adjudication. Chưa được thực hiện/ủy quyền ở đây.
+
+### 13.3. Không đạt acceptance nếu
+
+- Có graph nhưng không trả lời được “task nào chưa review, vì sao blocked, output ở đâu”.
+- Checkpoint chỉ là model summary không có snapshot/version/refs.
+- Finish xóa toàn bộ result mà user tưởng đã lưu.
+- Graph dữ liệu được coi như authorization hoặc replay history tự chạy lại request.
+- Mọi `confirmed` đều lên badge verified, hoặc “100% coverage” dựa touched assets.
+- Dedup suppress validator/retest hoặc merge hai bug chỉ vì cùng CWE/title.
+- Thêm background LLM hay đổi budgets/mode mà confirmation không nói.
+
+---
+
+## 14. Migration, compatibility và release discipline
+
+1. Giữ `0.5.0` acceptance bất biến; new schema/store có version mới, không rewrite history cũ tại chỗ.
+2. Import v2 exports qua explicit read-only adapter: giữ original record IDs/hash/provenance; không fabricate typed asset/fact quan hệ từ prose. Mapping đề xuất có thể được review sau.
+3. `note`, legacy coverage và report strings không tự promote thành observed fact/verified finding. Source marker `legacy-unstructured` và missingness rõ.
+4. Adapter giữ existing task/candidate APIs hoạt động; đổi semantics phải version và migration test. Stop/reload assessment cũ trước khi đổi extension bytes.
+5. Chuyển canonical backend tại new run boundary. Không dual-write hai stores rồi dùng tùy chỗ làm authority; legacy export có thể generate từ new committed store.
+6. Runtime settings mới (retention, storage/output quotas, context budgets…) phải có schema/help/default/confirmation; tên trong plan chưa phải API.
+7. Rollback: stop, giữ retained store read-only, new explicitly confirmed baseline run nếu cần. Baseline không đọc được schema mới phải báo unsupported, không xóa file.
+8. Test/impact review → commit phase-scoped → source acceptance → push/install chỉ khi được yêu cầu → installed hash/real-Pi mechanics acceptance. Không suy ra install pass từ CLI “Updated”.
+9. Reference, private config, credentials và `tmp/` không commit/package. Không để validation hashes lịch sử “pass” bằng thay hash sau khi code/docs đổi.
+
+---
+
+## 15. Source map để triển khai và review tiếp
+
+Line numbers áp dụng baseline/snapshot trên; symbol/file là anchor chính khi source đổi.
+
+| ID | Source | Nội dung đã đối chiếu |
+|---|---|---|
+| P1 | `src/records.ts:10–134,148–181` | Record kinds, append/scan/page, coverage summaries và caps |
+| P2 | `src/tasks.ts:1–166` | Task draft/status, reserve conflict, reviewed prerequisites, revisions/capsule |
+| P3 | `src/evidence.ts:8–132` | Candidate policy/proof/currentness, bounded receipts và opt-in export |
+| P4 | `src/report.ts:10–93` | Report parts/manifest, integrity reconstruction, frozen projection |
+| P5 | `src/progress.ts:1–24` | Latest observational state, không history log |
+| P6 | `src/engine.ts:24–161` | Queue, semantic events, wake reservation, pause/stop/round limits |
+| P7 | `src/broker.ts:19–106,191–379` | Worker reports, normalization, op gating/budgets, ACK/revoke boundary |
+| P8 | `extensions/p2o/index.ts:339–475,687–804,821–1011,1060–1140` | Views, cleanup/export, note ACK, reports, context refresh, lifecycle |
+| P9 | `src/prompts.ts`, `src/tool-policy.ts`, `src/roles.ts` | Policy/loadouts/settings; existing structured recon guidance |
+| P10 | `src/process.ts`, `src/sandbox.ts`, `src/source.ts`, `src/http-session.ts`, `src/target.ts` | Output capture, snapshot, HTTP scopes/sessions, no-default task timeout |
+| P11 | `src/executors.ts`, `src/herdr.ts`, `src/ticket.ts`, `src/planner-bridge.ts`, `src/skills.ts` | Ownership, transport, fresh identities, wakes, packaged knowledge |
+| P12 | `tests/minimal/loop.test.ts`, `frontier.test.ts`, `engine.test.ts`, `planner.test.ts` | Existing integrity/currentness/admission regressions, không effectiveness proof |
+| A1 | `my_references/ARTEX/ARTEX_AGENTIC_CORE.vi.md` | Bài phân tích người dùng, đã đọc đầy đủ |
+| A2 | `my_references/ARTEX/db/schema.sql:40–110,153–280,1081–1174` | Assets unique keys, exploration kinds/edges/anchors, standalone findings |
+| A3 | `my_references/ARTEX/db/assets.go:164–195,453–554,683–808,939–1061` | Normalize/upsert/host side effects; endpoint identity |
+| A4 | `my_references/ARTEX/agent/tools_insert.go:79–375` | Explicit registration, owner anchors, metadata và auto-scope |
+| A5 | `my_references/ARTEX/db/task_scope.go:367–584`, `db/task_assets_context.go:12–198` | Derived containment, direct-source context, touched-fact coverage |
+| A6 | `my_references/ARTEX/agent/tools.go:354–551,1021–1405` | Bounded overview, intent parents, fact/finding/proof writes |
+| A7 | `my_references/ARTEX/db/exploration.go:172–270,1136–1182` | Node/anchor transaction, separate links, priority frontier/atomic claim |
+| A8 | `my_references/ARTEX/agent/planner.go:23–51,108–295,355–472` | In-process todos, triggers, fresh context/session, planner round |
+| A9 | `my_references/ARTEX/agent/worker.go:260–342,361–535` | Artifact directories, mandate/assets, per-intent transcript/resume |
+| A10 | `my_references/ARTEX/agent/capture.go:28–160`, `server/engine.go:640–704,748–963`, `server/broadcast.go` | Activity capture/persist/publish, round markers, heartbeat và live stream |
+| A11 | `my_references/ARTEX/db/finding_traffic.go:328–415`, `db/findings.go:14–109` | Atomic finding records/traffic, IDs riêng, triage states |
+| A12 | `my_references/ARTEX/agent/finding_workflow.go`, `agent/finding_recorder.go`, `server/findings_groups.go` | Evidence handoff/version guidance, drill-down/grouping/explicit follow-up |
+| A13 | `my_references/ARTEX/agent/compaction.go:35–145,514–548`, `agent/tools_digest.go`, `db/digest.go:122–253` | Cold-digest lifecycle, background model call, expansion/member refs |
+| A14 | `my_references/ARTEX/web/src/app/(main)/function/tasks/detail/_tabs/{graph-tab,coverage-graph-tab,sessions-tab}.tsx` | Separate views, folding và sequence/history/live UI design |
+| PI1 | Pi 1.0 docs `extensions.md`, `tui.md`, `sessions.md`, `session-format.md`, `how-pi-works.md` | State vs context vs external store, branch behavior, renderers, mode separation |
+| PI2 | Pi examples `extensions/todo.ts`, `extensions/widget-placement.ts` | Branch-sensitive UI state và widget integration, không assessment authority recovery |
+
+ARTEX paths ghi rút gọn `db/...`, `agent/...`, `server/...` trong cùng một hàng vẫn nằm dưới `my_references/ARTEX/`. Các reference paths là navigation local, không yêu cầu đóng gói source reference. Pi docs/examples đã đọc từ installation release 1.0.0, không giả public API của phiên bản khác.
+
+## 16. Quyết định chốt cho bản update
+
+**Xây “observable, evidence-linked assessment workspace” trên Engine hiện có.**
+
+- Human có bảng công việc và checklog thật, không phải đoán từ chat.
+- Mỗi pha/nhánh bàn giao được output có ID, trạng thái, proof/gaps và đường dẫn.
+- Knowledge có resource identity và exploration lineage để Planner dùng lại, không tìm lại từ đầu.
+- Dedup chặn exact duplicate có cơ sở, vẫn cho validation/retest/variant exploration hợp lệ.
+- Checkpoint giữ state và evidence để inspect/continue có kiểm soát, không biến lịch sử thành quyền thực thi.
+- Không tuyên bố tăng hiệu quả pentest chỉ vì thêm graph; đo bằng evidence correctness, gap recall và duplicate/false-suppression metrics.
+
+**Scope của lượt nghiên cứu tạo bản plan:** nghiên cứu tĩnh + tạo mới tài liệu này; khi đó chưa implement các API/store/UI ở trên, không chạy assessment hay commit/push/install. Trạng thái triển khai sau đó được ghi riêng tại `docs/KNOWLEDGE_WORKSPACE.md`, không thay các facts/acceptance baseline của bản nghiên cứu.

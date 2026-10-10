@@ -46,6 +46,13 @@ it.each(['idle','boundary','human-priority'] as const)('real Pi %s wake preserve
     const exported=JSON.parse(await readFile(exportFile,'utf8'));expect(exported.reconciliation.complete).toBe(true);expect(exported.manifest.engine).toMatchObject({mode:'event-driven',rounds:mode==='human-priority'?0:1,state:'stopped'});
     const acceptedBefore=(await readFile(log,'utf8')).split('\n').filter(Boolean).length;
     const settledBefore=records.filter(r=>r.type==='agent_settled').length;
+    // Real-Pi read-only command: a custom ENTRY/notification is not a custom MESSAGE or paid request.
+    expect((await request('prompt',{message:'/p2o status'})).success).toBe(true);
+    await delay(100);
+    expect(records.some(r=>r.type==='extension_ui_request'&&r.method==='notify'&&String(r.message).includes('HISTORICAL in-memory'))).toBe(true);
+    expect((await request('get_messages')).data.messages).toEqual(messages);
+    expect((await readFile(log,'utf8')).split('\n').filter(Boolean)).toHaveLength(acceptedBefore);
+    expect(records.filter(r=>r.type==='agent_settled')).toHaveLength(settledBefore);
     expect((await request('prompt',{message:'/fixture-stale-wake'})).success).toBe(true);
     await delay(150);expect(records.filter(r=>r.type==='agent_settled')).toHaveLength(settledBefore); // input veto, not another run.
     expect((await readFile(log,'utf8')).split('\n').filter(Boolean)).toHaveLength(acceptedBefore);

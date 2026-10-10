@@ -3,10 +3,10 @@ import { realpath, stat } from 'node:fs/promises';
 import { isIP } from 'node:net';
 import { resolve } from 'node:path';
 import { homedir } from 'node:os';
-import { MAX_DEPTH, MAX_WORKERS, type LoopMode } from './roles.js';
+import { MAX_DEPTH, MAX_WORKERS, type LoopMode, type RetentionMode } from './roles.js';
 
 export type Target = { kind: 'directory'; path: string } | { kind: 'url'; url: string; origin: string };
-export interface StartOptions { solo: boolean; workers?: number; maxDepth?: number; export?: boolean; loopMode?: LoopMode; executorMode?: 'shared' | 'isolated'; maxTargetOperations?: number }
+export interface StartOptions { solo: boolean; workers?: number; maxDepth?: number; export?: boolean; loopMode?: LoopMode; executorMode?: 'shared' | 'isolated'; maxTargetOperations?: number; retention?: RetentionMode }
 export type Command = { action: 'help' } | { action: 'stop' } | { action: 'pause' } | { action: 'resume' } | { action: 'start'; target: string; options: StartOptions };
 
 /** Deliberately small. One target plus delegation limits; quoting is supported for directory names. */
@@ -26,6 +26,11 @@ export function parseCommand(args: string): Command {
       const token = tokens[index];
       if (token === '--solo') { options.solo = true; continue; }
       if (token === '--export') { options.export = true; continue; }
+      if (token === '--retention') {
+        const value = tokens[++index];
+        if (value !== 'durable-local' && value !== 'ephemeral') throw Error('--retention must be durable-local or ephemeral');
+        options.retention = value; continue;
+      }
       if (token === '--loop') {
         const value = tokens[++index];
         if (value !== 'manual' && value !== 'event-driven') throw Error('--loop must be manual or event-driven');

@@ -1,0 +1,176 @@
+import { taskFrontier, type AssessmentTask } from '../tasks.js';
+import { reportProjection, type ReportProjectionContext } from '../report.js';
+import { caseViews } from '../cases.js';
+import { coverageViews } from '../coverage.js';
+import { redact } from '../evidence.js';
+import { cleanText } from '../process.js';
+import type { LedgerIndex } from '../records.js';
+import type { AssessmentEngine } from '../engine.js';
+import { phasePackets, planFrontier } from '../planning.js';
+import { STATE_SCHEMA_VERSION } from '../state/schema.js';
+
+export type StateCommand = { action: 'status' } | { action: 'report' } | { action: 'tasks'; filter: string; cursor: number }
+  | { action: 'task'; id: string } | { action:'plan';id:string } | { action:'phase';id:string } | {action:'finding';id:string}|{action:'coverage-cell';id:string}
+  | { action:'plans';cursor:number } | { action:'phases';cursor:number } | {action:'findings';cursor:number}|{action:'coverage';cursor:number}| { action: 'log'; cursor?: number };
+const filters = ['all', 'live', 'awaiting-review', 'blocked', 'done'];
+const integer = (text: string) => {
+  if (!/^\d+$/.test(text) || !Number.isSafeInteger(Number(text))) throw Error('Cursor must be a non-negative safe integer');
+  return Number(text);
+};
+/** Human-only, read-only commands. Not a model input or an execution capability. */
+export function parseStateCommand(args: string): StateCommand | undefined {
+  const [action, ...parts] = args.trim().split(/\s+/);
+  if (!['status', 'tasks', 'task', 'log', 'report','plans','plan','phases','phase','findings','finding','coverage','coverage-cell'].includes(action)) return undefined;
+  if (action === 'status' || action === 'report') {
+    if (parts.length) throw Error(`${action} takes no arguments`);
+    return { action };
+  }
+  if (action === 'task'||action==='plan'||action==='phase'||action==='finding'||action==='coverage-cell') {
+    if (parts.length !== 1 || !/^[a-z0-9][a-z0-9-]{0,79}$/.test(parts[0])) throw Error(`Usage: /p2o ${action} <id>`);
+    return { action, id: parts[0] };
+  }
+  if(action==='plans'||action==='phases'||action==='findings'||action==='coverage'){if(parts.length>1)throw Error(`Usage: /p2o ${action} [cursor]`);return {action,cursor:parts[0]?integer(parts[0]):0};}
+  if (action === 'log') {
+    if (parts.length > 1) throw Error('Usage: /p2o log [cursor]');
+    return { action, ...(parts.length ? { cursor: integer(parts[0]) } : {}) };
+  }
+  if (parts.length > 2 || (parts[0] && !filters.includes(parts[0]))) throw Error('Usage: /p2o tasks [all|live|awaiting-review|blocked|done] [cursor]');
+  return { action: 'tasks', filter: parts[0] ?? 'all', cursor: parts[1] ? integer(parts[1]) : 0 };
+}
+
+const safe = (text: string, limit = 200) => cleanText(redact(text)).replace(/\s+/g, ' ').slice(0, limit);
+const reviewLabel = (task: AssessmentTask) => task.status === 'reported' || (task.status === 'blocked' && task.handoffId) ? `${task.status} — awaiting owner review` : task.status;
+export interface ViewProfile {
+  runId: string; target: string; lifecycle: string; delegation: boolean; maxWorkers: number;
+  workerUsed: number; workerCeiling: number; exportEnabled: boolean; exportPath?: string; exportError?: string;
+  engine: ReturnType<AssessmentEngine['snapshot']>; executor: { mode: string; maxTargetOperations: number };
+  retention?: 'durable-local' | 'ephemeral'; stateLocation?: string; storageError?: string;
+}
+export interface StatusView {
+  schemaVersion: 1; runId: string; lifecycle: string; asOfRecordCount: number; complete: boolean; diagnostics: string[];
+  taskCounts: Record<string, number>; reportCount: number; candidateClaims: number; openEntries: number;
+  pendingReview: number; acceptedFindings:number; pendingCaseReviews:number; staleCases:number; coverageCells:number; retained: boolean; lines: string[]; widget: string[];
+}
+
+/** Legacy v2 projection. Counts are records/tasks, never test cells or validated findings. */
+export function statusView(index: LedgerIndex, profile: ViewProfile, context:ReportProjectionContext={}): StatusView {
+  const tasks = taskFrontier(index), report = reportProjection(index,context);
+  const counts: Record<string, number> = {};
+  for (const task of tasks) counts[task.status] = (counts[task.status] ?? 0) + 1;
+  const pendingReview = tasks.filter(t => t.status === 'reported' || (t.status === 'blocked' && t.handoffId)).length;
+  const last = index.records.filter(r => !['report_part', 'evidence'].includes(r.kind) && !(r.kind === 'lifecycle' && /^skill_(list|read)/.test(r.text))).at(-1);
+  const retained = profile.retention === 'durable-local' || Boolean(profile.exportPath);
+  const retention = profile.storageError ? `RETENTION WARNING: ${safe(profile.storageError,500)}; retained bytes/integrity unknown at ${profile.stateLocation ?? '(unknown)'}`
+    : profile.retention === 'durable-local' ? `Durable-local knowledge: ${profile.stateLocation}; retained after cleanup, read-only reopening only.${profile.exportError ? ` Export warning: ${safe(profile.exportError,500)}` : ''}`
+    : profile.exportError ? `RETENTION WARNING: ${safe(profile.exportError, 500)}`
+    : retained ? `Export: ${profile.exportPath}`
+    : profile.exportEnabled ? 'Ephemeral full ledger; export requested at cleanup (not yet saved).'
+    : 'Ephemeral full ledger — deleted at cleanup. No durable checkpoint yet; use --export on a new run to retain bounded receipts.';
+  const title = `P2O ${profile.runId} · ${profile.lifecycle} · ${profile.engine.mode}/${profile.executor.mode} · records @${index.records.length}`;
+  const taskLine = `Tasks ${tasks.length}: proposed ${counts.proposed ?? 0} | reserved ${counts.reserved ?? 0} | running ${counts.running ?? 0} | awaiting-review ${pendingReview} | reviewed ${counts.reviewed ?? 0} | closed ${counts.closed ?? 0} | blocked ${counts.blocked ?? 0} | cancelled/expired ${(counts.cancelled ?? 0) + (counts.expired ?? 0)}`;
+  const attention = profile.engine.paused ? `Admission paused: ${safe(profile.engine.paused, 500)}`
+    : pendingReview ? `Next: review ${pendingReview} reported task(s); report alone does not close a goal.`
+    : profile.engine.decision ? `Planner ${profile.engine.decision.disposition}: ${safe(profile.engine.decision.reason, 500)}`
+    : 'No disposition recorded. Empty findings/queue do not mean the target is safe.';
+  const diagnostics = [...index.diagnostics, ...report.diagnostics].slice(0, 40);
+  return {
+    schemaVersion: 1, runId: profile.runId, lifecycle: profile.lifecycle, asOfRecordCount: index.records.length,
+    complete: report.complete, diagnostics, taskCounts: counts, reportCount: report.counts.reports,
+    candidateClaims: report.counts.candidates, openEntries: report.counts.open, pendingReview,acceptedFindings:report.counts.uniqueAcceptedFindings,pendingCaseReviews:report.counts.pendingCaseReviews,staleCases:report.counts.staleCases,coverageCells:report.counts.coverageCells, retained,
+    lines: [title, `Target: ${safe(profile.target, 1000)}`, taskLine,
+      `Worker slots: ${profile.delegation ? profile.maxWorkers : 0}; target-operation cap: ${profile.executor.maxTargetOperations} (not network rate/connections)`,
+      `Frontier: ${profile.engine.pendingIntents} accepted pending intents; automatic wakes ${profile.engine.rounds}/${profile.engine.maxAutomaticRounds}`,
+      `Worker commands: ${profile.workerUsed}/${profile.workerCeiling} run allowance (worker reserve 90%; owner commands/provider cost separate)`,
+      `Handoffs ${report.counts.reports} | claims ${report.counts.candidates} | cases accepted-current ${report.counts.uniqueAcceptedFindings}, pending ${report.counts.pendingCaseReviews}, stale ${report.counts.staleCases} | coverage cells ${report.counts.coverageCells} | open ${report.counts.open}`,
+      attention, `Last committed record: ${last ? `${last.id ?? 'legacy-no-id'} ${safe(last.text, 350)}` : '(none)'}`, retention,
+      `Reconciliation: ${report.complete ? 'complete bounded record scan' : 'INCOMPLETE — no completeness claim'}${diagnostics.length ? `; ${diagnostics.map(x => safe(x, 150)).join('; ')}` : ''}`,
+      'Reported ≠ reviewed; closed task ≠ verified finding; resources cleaned ≠ assessment complete.',
+      index.snapshotSequence !== undefined ? `Canonical store v${STATE_SCHEMA_VERSION} / records v2; committed sequence @${index.snapshotSequence}. Missing operation correlation stays unknown.` : 'Legacy v2 view: record cursor is not a durable event sequence; operation history/correlation may be unknown.'],
+    widget: [title, `Tasks: running ${counts.running ?? 0} | review ${pendingReview} | blocked ${counts.blocked ?? 0} | closed ${counts.closed ?? 0}; cases accepted ${report.counts.uniqueAcceptedFindings} | pending/stale ${report.counts.pendingCaseReviews}/${report.counts.staleCases}`,
+      `${attention} ${report.complete ? '' : 'STATE INCOMPLETE.'}`, retention],
+  };
+}
+
+export function stateLines(index: LedgerIndex, command: Exclude<StateCommand, { action: 'status' }>, context:ReportProjectionContext={}): string[] {
+  const tasks = taskFrontier(index);
+  const health = `${index.snapshotSequence !== undefined ? `Canonical store snapshot @${index.snapshotSequence} / records v2` : `Legacy v2 record snapshot @${index.records.length}`}; complete=${index.complete}. Target-derived text is untrusted data.`;
+  if(command.action==='plans'||command.action==='plan'){
+    const all=planFrontier(index);if(command.action==='plan'){const entry=all.find(row=>row.id===command.id);if(!entry)throw Error('Unknown plan ID in this run');
+      return [health,`${entry.id}@r${entry.revision} ${entry.kind}: ${entry.status}`,`Title: ${safe(entry.title,500)}`,`Reason: ${safe(entry.reason,1000)}`,
+        `Criteria: ${(entry.criteria??[]).map(value=>safe(value,500)).join(' | ')||'(none)'}`,`Excluded: ${(entry.exclusions??[]).map(value=>safe(value,500)).join(' | ')||'(none)'}`,
+        `Task refs: ${entry.taskIds?.join(', ')||'(none)'}`,`Goal refs: ${entry.goalIds?.join(', ')||'(none)'}`,`Support refs: ${entry.supportRefs?.join(', ')||'(none)'}`,
+        ...(entry.decision?[`Decision: ${safe(JSON.stringify(entry.decision),3000)}`]:[]),'Owner coordination only; not proof, scope, automatic dispatch or goal completion.'];}
+    if(command.cursor>all.length)throw Error('Plan cursor is beyond the snapshot');const page=all.slice(command.cursor,command.cursor+20),next=command.cursor+page.length;
+    return [health,`Plans: total ${all.length}, displayed ${page.length}, cursor ${command.cursor}`,...(next<all.length?[`Next: /p2o plans ${next}`]:[]),...page.map(row=>`${row.id}@r${row.revision} ${row.kind} [${row.status}]: ${safe(row.title,300)}`),'Snapshot-relative navigation; open details with /p2o plan <id>.'];
+  }
+  if(command.action==='phases'||command.action==='phase'){
+    const all=phasePackets(index);if(command.action==='phase'){const phase=all.find(row=>row.id===command.id);if(!phase)throw Error('Unknown phase packet ID');const task=tasks.find(row=>row.id===phase.taskId);
+      return [health,`${phase.id}: ${phase.delivery} at ${phase.at}`,`Assignment ${phase.taskId}@r${phase.taskRevision}; worker ${phase.workerId}; report ${phase.reportId}`,
+        `Current task: ${task?.status??'unknown'}; delivery review status: pending (immutable history, not current acceptance)`,
+        `Reported output counts (not verified): ${safe(JSON.stringify(phase.observed),1000)}`,`Desired contract: ${phase.contract?safe(JSON.stringify(phase.contract),3000):'legacy — unspecified'}`,
+        `Required output still needs owner review: ${phase.unreviewedRequired.join(', ')||'(legacy unspecified)'}`,`Outcome: ${phase.outcome??'unknown'}; confidence: ${safe(phase.confidence)}`,
+        ...(phase.blocked?[`Blocked: ${safe(phase.blocked,1000)}`]:[]),'Counts/contract presence do not establish completeness, independent evidence or a verified finding.'];}
+    if(command.cursor>all.length)throw Error('Phase cursor is beyond the snapshot');const page=all.slice(command.cursor,command.cursor+20),next=command.cursor+page.length;
+    return [health,`Phase packets: total ${all.length}, displayed ${page.length}, cursor ${command.cursor}`,...(next<all.length?[`Next: /p2o phases ${next}`]:[]),...page.map(row=>`${row.id} ${row.taskId}@r${row.taskRevision}: ${row.delivery} ${row.outcome??'unknown'}; review separately`),'Open one packet with /p2o phase <id>; historical delivery is not live authority.'];
+  }
+  if(command.action==='findings'||command.action==='finding'){
+    const all=caseViews(index,context.cases??{});if(command.action==='finding'){const entry=all.find(row=>row.id===command.id);if(!entry)throw Error('Unknown case ID in this run');return [health,`${entry.id}@r${entry.revision}: ${entry.verdict}/${entry.reviewStatus}; currentness=${entry.currentness}`,
+      `Title: ${safe(entry.title,500)}`,`Canonical case: ${entry.canonicalCaseId}; accepted unique finding=${entry.acceptedFinding}; independent current=${entry.independentCurrent}`,
+      `Assets: ${entry.assetRefs.map(ref=>`${ref.id}@r${ref.revision??'?'}/${ref.variant??'-'}`).join(', ')}`,`Claims: ${entry.claimRefs.join(', ')}`,`Tasks: ${entry.taskRefs.map(ref=>`${ref.taskId}@r${ref.revision??'?'}`).join(', ')||'(none)'}`,
+      `Duplicate of: ${entry.duplicateOf??'(canonical/unresolved)'}; related: ${entry.relatedCaseIds.join(', ')||'(none)'}`,`Contradictions: ${entry.contradictions.map(item=>`${item.evidenceRef}:${item.status}`).join(', ')||'(none)'}`,
+      `Remediation: ${entry.remediation.status}; ${safe(entry.remediation.reason,1000)}`,`Limitations: ${safe(entry.limitations,1500)}`,`Stale reasons: ${entry.staleReasons.join(', ')||'(none)'}`,
+      'Worker claim, owner case review, independent badge, remediation and goal completion are separate axes.'];}
+    if(command.cursor>all.length)throw Error('Finding cursor is beyond the snapshot');const page=all.slice(command.cursor,command.cursor+20),next=command.cursor+page.length,unique=new Set(all.filter(row=>row.acceptedFinding).map(row=>row.canonicalCaseId));return [health,`Cases: ${all.length}; unique accepted-current findings ${unique.size}; displayed ${page.length}, cursor ${command.cursor}`,...(next<all.length?[`Next: /p2o findings ${next}`]:[]),...page.map(row=>`${row.id}@r${row.revision} ${row.verdict}/${row.reviewStatus} current=${row.currentness}${row.duplicateOf?` duplicate→${row.canonicalCaseId}`:''}: ${safe(row.title,300)}`),'Counts keep submissions/duplicates/pending/stale separate; open one with /p2o finding <id>.'];
+  }
+  if(command.action==='coverage'||command.action==='coverage-cell'){
+    if(!context.coverage)throw Error('Coverage currentness unavailable in this projection; inspect through the canonical store');const plans=coverageViews(index,context.coverage);
+    if(command.action==='coverage-cell'){const cell=plans.flatMap(plan=>plan.cells).find(row=>row.id===command.id);if(!cell)throw Error('Unknown current coverage cell');return [health,`${cell.id}@r${cell.revision}: execution=${cell.execution}; assessment=${cell.assessment}; effective=${cell.effectiveAssessment}; currentness=${cell.currentness}`,
+      `Plan ${cell.planId}@r${cell.planRevision}; target ${cell.targetRevision}; asset ${cell.assetRef.id}@r${cell.assetRef.revision??'?'}/${cell.assetRef.variant??'-'}`,
+      `Identity: ${cell.questionKey} | ${cell.policyKey??'-'} | ${cell.actorContext}/${cell.tenantContext} | ${cell.methodFamily}`,`Tasks: ${cell.taskRefs.map(ref=>`${ref.taskId}@r${ref.revision??'?'}`).join(', ')||'(none)'}`,`Claims: ${cell.claimRefs.join(', ')||'(none)'}; cases: ${cell.caseRefs.map(ref=>`${ref.caseId}@r${ref.revision}`).join(', ')||'(none)'}`,
+      `Evidence: ${cell.evidenceRefs.join(', ')||'(none)'}; controls: ${cell.negativeControlRefs.join(', ')||'(none)'}; gaps: ${cell.gapRefs.join(', ')||'(none)'}`,`Reason: ${safe(cell.reason,1200)}`,`Limitations: ${safe(cell.limitations,1500)}`,`Stale reasons: ${cell.staleReasons.join(', ')||'(none)'}`,'A cell is bounded plan coverage, not whole-target safety or goal completion.'];}
+    const cells=plans.flatMap(plan=>plan.cells.map(cell=>({plan,cell})));if(command.cursor>cells.length)throw Error('Coverage cursor is beyond the snapshot');const page=cells.slice(command.cursor,command.cursor+20),next=command.cursor+page.length;return [health,`Coverage: plans ${plans.length}; cells ${cells.length}; displayed ${page.length}, cursor ${command.cursor}`,...plans.slice(0,10).map(plan=>`${plan.id}@r${plan.revision} [${plan.status}] denominator=${plan.cellIds.length}; stale=${plan.counts.stale}; reviewed=${plan.counts.reviewed}; discovered-unplanned=${plan.discoveredUnplannedAssets}; unknown-scope=${plan.unknownScope.length}`),...(next<cells.length?[`Next: /p2o coverage ${next}`]:[]),...page.map(({plan,cell})=>`${cell.id}@r${cell.revision} plan=${plan.id}: ${cell.execution}/${cell.effectiveAssessment} current=${cell.currentness} ${cell.assetRef.id} ${cell.questionKey}`),'Blocked/untested/unplanned/stale cells and discovered assets never count clean; open one with /p2o coverage-cell <id>.'];
+  }
+  if (command.action === 'report') {
+    const p = reportProjection(index,context);
+    return [health, 'Attributed report index — not a final narrative or evidence review.',
+      `Handoffs ${p.counts.reports}, candidate claims ${p.counts.candidates}, open entries ${p.counts.open}; complete=${p.complete}; omitted=${p.omitted}`,
+      ...p.reports.map(r => `${r.id} worker=${r.workerId} outcome=${r.outcome ?? 'unknown'} findings claimed=${r.findings}; review separately`),
+      ...p.candidates.map(c => `${c.id} ${safe(String(c.candidate))}: claimed ${c.closure}, ${c.execution}/${c.proof}, independentCurrent=${c.independentCurrent ?? 'not claimed'}`),
+      ...p.cases.map(c=>`${c.id}@r${c.revision} ${safe(c.title)}: ${c.verdict}/${c.reviewStatus}, current=${c.currentness}, acceptedUnique=${c.acceptedFinding}, canonical=${c.canonicalCaseId}`),
+      ...p.coveragePlans.map(plan=>`${plan.id}@r${plan.revision} coverage denominator=${plan.cellCount}, stale=${plan.counts.stale}, discovered-unplanned=${plan.discoveredUnplannedAssets}`),
+      ...p.diagnostics, 'Full handoff: ask for its report ID via p2o_ledger; no model was called by this command.'];
+  }
+  if (command.action === 'task') {
+    const task = tasks.find(t => t.id === command.id);
+    if (!task) throw Error('Unknown task ID in this run');
+    const history = index.records.filter(r => r.kind === 'task' && r.data?.task && (r.data.task as AssessmentTask).id === task.id);
+    return [health, `${task.id}@r${task.revision} · ${reviewLabel(task)} · ${task.role} · ${task.assignee ?? 'unassigned'}`,
+      ...['question', 'surface', 'risk', 'expectedTrue', 'expectedFalse', 'stopCondition', 'expectedOutput', 'reviewReason', 'outcome'].flatMap(key => {
+        const value = task[key as keyof AssessmentTask]; return typeof value === 'string' ? [`${key}: ${safe(value, 1500)}`] : [];
+      }), `Receipts: ${task.evidenceIds.join(', ') || '(none)'}`,
+      `Prerequisites: ${task.prerequisites.map(p => `${p.taskId}@${p.revision ?? 'unpinned'}`).join(', ') || '(none)'}`,
+      `Work confidence: ${task.dedupConfidence??'legacy unknown'}; target revision ${task.targetRevision??'unknown'}; fingerprint ${task.workFingerprint??'(unknown)'}`,
+      ...(task.decision?[`Work decision: ${safe(JSON.stringify(task.decision),2200)}`]:[]),...(task.overlapWarnings?.length?[`Overlap warnings: ${task.overlapWarnings.join(', ')}`]:[]),
+      ...(task.phasePacketId?[`Phase packet: /p2o phase ${task.phasePacketId}`]:[]),
+      `History ${history.length} revisions (displayed last ${Math.min(20, history.length)}):`,
+      ...history.slice(-20).map(r => `${r.id} · ${safe(r.text, 300)}`),
+      'Review is coordination acceptance, not proof. Missing correlation/artifact history is unknown, not fabricated.'];
+  }
+  if (command.action === 'tasks') {
+    const selected = tasks.filter(t => command.filter === 'all' || (command.filter === 'live' ? !['closed', 'cancelled', 'expired'].includes(t.status)
+      : command.filter === 'awaiting-review' ? t.status === 'reported' || (t.status === 'blocked' && Boolean(t.handoffId)) : command.filter === 'done' ? t.status === 'closed' : t.status === 'blocked'));
+    if (command.cursor > selected.length) throw Error('Task cursor is beyond the filtered snapshot');
+    const page = selected.slice(command.cursor, command.cursor + 20), next = command.cursor + page.length;
+    return [health, `Tasks ${command.filter}: total ${selected.length}, displayed ${page.length}, cursor ${command.cursor}`,
+      ...(next < selected.length ? [`Next: /p2o tasks ${command.filter} ${next}`] : []),
+      ...page.map(t => `${t.id}@r${t.revision} [${reviewLabel(t)}] ${t.role} ${t.assignee ?? 'unassigned'}: ${safe(t.question, 300)}`),
+      'Task list pagination is snapshot-relative; after mutations, start at cursor 0. done means task closed, not assessment verified.'];
+  }
+  const cursor = command.cursor ?? Math.max(0, index.records.length - 20);
+  if (cursor > index.records.length) throw Error('Log cursor is beyond the committed records');
+  const page = index.records.slice(cursor, cursor + 20), next = cursor + page.length;
+  return [health, `Record log: total ${index.records.length}, displayed ${page.length}, cursor ${cursor}`,
+    ...(next < index.records.length ? [`Next: /p2o log ${next}`] : []),
+    ...page.map((r, i) => `${cursor + i} ${r.id ?? 'legacy-no-id'} · ${r.kind} · ${safe(r.by, 80)} · ${safe(r.text, 600)}`),
+    'Use /p2o log 0 for traversal. This is existing ledger history, not a complete typed operation checklog.'];
+}

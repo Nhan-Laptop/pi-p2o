@@ -18,7 +18,7 @@ describe('explicit run ownership, no elapsed-time limits',()=>{
     const root=await mkdtemp(join(tmpdir(),'p2o-lifetime-'));await mkdir(join(root,'source'));
     const owner=createFakePi(),herdr=createSimpleHerdr(),sandboxes:InertSandbox[]=[];
     const ctx=createContext({cwd:root});let time=Date.now();let worker:ReturnType<typeof createFakePi>|undefined;
-    registerP2O(owner.pi,{extensionPath:EXTENSION_PATH,controlRoot:join(root,'control'),herdr:herdr.client,createSandbox:sandboxFactory(sandboxes),now:()=>time});
+    registerP2O(owner.pi,{extensionPath:EXTENSION_PATH,controlRoot:join(root,'control'),settingsPath:join(root,'fixture-settings.json'),herdr:herdr.client,createSandbox:sandboxFactory(sandboxes),now:()=>time});
     const timer=vi.spyOn(globalThis,'setTimeout');
     try{
       await owner.commands.get('p2o').handler('--target ./source',ctx.ctx);
