@@ -8,7 +8,7 @@
   "keywords": ["pi-package", "security-assessment"],
   "engines": { "node": ">=22.19.0" },
   "pi": { "extensions": ["./extensions/p2o/index.ts"], "skills": ["./skills"] },
-  "files": ["src/", "extensions/", "skills/", "research/", "scripts/", "templates/", "docs/", "bench/README.md", "bench/lib/", "bench/fixtures/", "planning_update.md", "HANDOFFS.md", "README.md"],
+  "files": ["src/", "extensions/", "skills/", "research/", "scripts/", "templates/", "docs/", "bench/README.md", "bench/lib/", "bench/fixtures/", "planning_update.md", "HANDOFFS.md", "README.md", "!**/.p2o-state/**", "!**/.p2o-reports/**", "!**/.p2o-export-*/**", "!**/p2o-run-*/**", "!**/assessment.sqlite*", "!**/writer.lock*", "!**/artifact-*.txt", "!**/checkpoint-*.json", "!**/ticket-p2o-*.json"],
   "scripts": {
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "build": "tsc -p tsconfig.build.json",
@@ -23,11 +23,12 @@
     "test:python": "PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s tests -v",
     "check:python": "npm run check:render && npm run check:orange && npm run check:orange-validate && npm run check:library && npm run test:python"
   },
-  "peerDependencies": { "@earendil-works/pi-coding-agent": "*", "typebox": "*" },
-  "peerDependenciesMeta": { "@earendil-works/pi-coding-agent": { "optional": true }, "typebox": { "optional": true } },
+  "peerDependencies": { "@earendil-works/pi-coding-agent": "*", "@earendil-works/pi-tui": "*", "typebox": "*" },
+  "peerDependenciesMeta": { "@earendil-works/pi-coding-agent": { "optional": true }, "@earendil-works/pi-tui": { "optional": true }, "typebox": { "optional": true } },
   "devDependencies": {
-    "@earendil-works/pi-ai": "1.0.0",
-    "@earendil-works/pi-coding-agent": "1.0.0",
+    "@earendil-works/pi-ai": "1.1.0",
+    "@earendil-works/pi-coding-agent": "1.1.0",
+    "@earendil-works/pi-tui": "1.1.0",
     "@types/node": "^24.19.0",
     "typebox": "1.3.27",
     "typescript": "^5.9.3",
