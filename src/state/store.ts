@@ -1,5 +1,6 @@
 import { DatabaseSync, type SQLInputValue } from 'node:sqlite';
-import { createHash, createHmac, randomBytes, randomUUID } from 'node:crypto';
+import { createHmac, randomBytes, randomUUID } from 'node:crypto';
+import { sha256Hex as sha, validId } from '../validate.js';
 import { closeSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { PrivateDirectory } from './files.js';
@@ -62,10 +63,8 @@ export interface CheckpointManifest {
   knowledge?:{version:1;sha256:string;heads:number;links:number;cursors:number};
 }
 export type StoreFault = (stage: 'before-commit' | 'after-commit' | 'artifact-published' | 'checkpoint-published') => void;
-const sha = (value: string | Buffer) => createHash('sha256').update(value).digest('hex');
 /** Retained for the final outcome/checkpoint only; never an increase of the confirmed quota. */
 export const finalizationReserve = (maxBytes: number) => Math.max(256 * 1024, Math.min(4 * 1024 * 1024, Math.floor(maxBytes / 16)));
-const validId = (value: string) => typeof value === 'string' && /^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,79}$/.test(value);
 const safe = <T>(value: T): T => JSON.parse(JSON.stringify(value, (key, item) =>
   /^(?:authorization|proxy-authorization|cookie|set-cookie|password|secret|token|environment|tickets|socket)$/i.test(key) ? '[REDACTED]' : typeof item === 'string' ? redact(item) : item));
 const canonical = (value: unknown): string => {
@@ -373,7 +372,7 @@ export class AssessmentStore {
           if(row.by!=='owner'||row.workerId||coveragePlan.runId!==row.runId||coveragePlan.targetRevision!==this.graphScope()||(prior?row.supersedes!==prior.id||coveragePlan.revision!==Number(priorPlan?.revision)+1:row.supersedes!==undefined||coveragePlan.revision!==1))throw Error('Invalid owned coverage plan revision');}
         if(coverageCell){const head=this.db.prepare("SELECT body FROM records WHERE kind='note' AND entity_id=? ORDER BY sequence DESC LIMIT 1").get(coverageCell.id),prior=head?JSON.parse(String(head.body)) as AssessmentRecord:undefined,priorCell=prior?.data?.coverageCell as Record<string,unknown>|undefined,
           planHead=this.db.prepare("SELECT body FROM records WHERE kind='note' AND entity_id=? ORDER BY sequence DESC LIMIT 1").get(coverageCell.planId),planRecord=planHead?JSON.parse(String(planHead.body)) as AssessmentRecord:undefined,planValue=planRecord?.data?.coveragePlan as Record<string,unknown>|undefined,
-          {runId:_run,revision:_revision,recordId:_record,planId:_plan,planRevision:_planRevision,targetRevision:_target,fingerprint:_fingerprint,retired:_retired,...coverageDraft}=coverageCell,model=validateCoverageCellDraft(coverageDraft),fingerprint=createHash('sha256').update(graphCanonical({version:1,targetRevision:coverageCell.targetRevision,assetRef:model.assetRef,questionKey:model.questionKey,policyKey:model.policyKey??null,actorContext:model.actorContext,tenantContext:model.tenantContext,methodFamily:model.methodFamily})).digest('hex');
+          {runId:_run,revision:_revision,recordId:_record,planId:_plan,planRevision:_planRevision,targetRevision:_target,fingerprint:_fingerprint,retired:_retired,...coverageDraft}=coverageCell,model=validateCoverageCellDraft(coverageDraft),fingerprint=sha(graphCanonical({version:1,targetRevision:coverageCell.targetRevision,assetRef:model.assetRef,questionKey:model.questionKey,policyKey:model.policyKey??null,actorContext:model.actorContext,tenantContext:model.tenantContext,methodFamily:model.methodFamily}));
           if(row.by!=='owner'||row.workerId||coverageCell.runId!==row.runId||coverageCell.targetRevision!==this.graphScope()||coverageCell.fingerprint!==fingerprint||Number(planValue?.revision)!==coverageCell.planRevision
             ||!Array.isArray(planValue?.cellIds)||(coverageCell.retired?(planValue!.cellIds as unknown[]).includes(coverageCell.id):!(planValue!.cellIds as unknown[]).includes(coverageCell.id))
             ||(prior?row.supersedes!==prior.id||coverageCell.revision!==Number(priorCell?.revision)+1:row.supersedes!==undefined||coverageCell.revision!==1))throw Error('Invalid owned coverage cell revision');}
@@ -476,17 +475,22 @@ export class AssessmentStore {
     this.gate();const {packetSha256,encodedBytes:_,...base}=packet;if(packet.version!==1||packet.runId!==this.manifest().runId||!validId(packet.consumerId)||!['planner','worker','reporting'].includes(packet.role)||packetSha256!==sha(graphCanonical(base))||packet.encodedBytes!==Buffer.byteLength(JSON.stringify(packet))||packet.encodedBytes>48*1024||!Number.isSafeInteger(packet.asOfSequence)||packet.asOfSequence>this.sequence()||Object.values(packet.cursorAfter).some(value=>!Number.isSafeInteger(value)||value<0||value>packet.asOfSequence)||packet.cursorAfter.throughSequence<packet.cursorBefore.throughSequence)throw Error('Invalid context packet receipt');const request:MutationRequest={actorId:'owner',requestId:`context-${packetSha256.slice(0,40)}`,payload:{consumerId:packet.consumerId,packetSha256,cursorBefore:packet.cursorBefore,cursorAfter:packet.cursorAfter}};
     return this.atomically(()=>{const current=this.contextCursor(packet.consumerId),actual={throughSequence:current?.throughSequence??0,gapThrough:current?.gapThrough??0,reviewThrough:current?.reviewThrough??0};if(graphCanonical(actual)!==graphCanonical(packet.cursorBefore))throw Error('STALE_CONTEXT_PACKET: a newer packet was already consumed');const body={version:1,consumerId:packet.consumerId,role:packet.role,taskId:packet.taskId,asOfSequence:packet.asOfSequence,counts:packet.counts,omissions:packet.omissions,cursorAfter:packet.cursorAfter,packetSha256,authorityRestored:false,proofReviewed:false},event=this.insertEvent({kind:'context.consumed',actorId:'owner',occurredAt:new Date().toISOString(),summary:`Context delivery ${packetSha256.slice(0,12)} to ${packet.consumerId} through ${packet.cursorAfter.throughSequence}; not proof review`,payloadRefs:[],data:{context:body}});this.db.prepare(`INSERT INTO context_cursors VALUES (?,?,?,?,?,?,?) ON CONFLICT(consumer_id) DO UPDATE SET through_sequence=excluded.through_sequence,gap_through=excluded.gap_through,review_through=excluded.review_through,packet_sha256=excluded.packet_sha256,event_sequence=excluded.event_sequence,body=excluded.body`).run(packet.consumerId,packet.cursorAfter.throughSequence,packet.cursorAfter.gapThrough,packet.cursorAfter.reviewThrough,packetSha256,event.sequence,JSON.stringify(body));return {consumerId:packet.consumerId,throughSequence:packet.cursorAfter.throughSequence,gapThrough:packet.cursorAfter.gapThrough,reviewThrough:packet.cursorAfter.reviewThrough,packetSha256,eventSequence:event.sequence};},request,{context:{consumerId:packet.consumerId,packetSha256,cursorAfter:packet.cursorAfter}});
   }
-  events(options: { since?: number; until?: number; limit?: number; actorId?: string; taskId?: string; operationId?: string } = {}): StorePage<StateEvent> {
+  events(options: { since?: number; until?: number; limit?: number; actorId?: string; taskId?: string; operationId?: string; tail?: boolean } = {}): StorePage<StateEvent> {
     this.gate(); const asOfSequence = options.until ?? this.sequence(), cursor = options.since ?? 0, limit = options.limit ?? 20;
     if (![asOfSequence, cursor, limit].every(Number.isSafeInteger) || cursor < 0 || asOfSequence < cursor || asOfSequence > this.sequence() || limit < 1 || limit > 100) throw Error('Invalid state event cursor/limit');
     const conditions = ['sequence>?', 'sequence<=?'], values: SQLInputValue[] = [cursor, asOfSequence];
     for (const [column, value] of [['actor_id', options.actorId], ['task_id', options.taskId], ['operation_id', options.operationId]]) if (value !== undefined) { if (!validId(value)) throw Error('Invalid event filter'); conditions.push(`${column}=?`); values.push(value); }
     const where = conditions.join(' AND '), total = Number(this.db.prepare(`SELECT count(*) AS n FROM events WHERE ${where}`).get(...values)!.n);
-    const selected = this.db.prepare(`SELECT sequence,body FROM events WHERE ${where} ORDER BY sequence LIMIT ?`).all(...values, limit);
+    // `tail` returns the newest matching events (still oldest-first) so a filtered view can open on recent activity; it never pages forward.
+    const tail = options.tail === true;
+    const selected = tail
+      ? this.db.prepare(`SELECT sequence,body FROM (SELECT sequence,body FROM events WHERE ${where} ORDER BY sequence DESC LIMIT ?) ORDER BY sequence`).all(...values, limit)
+      : this.db.prepare(`SELECT sequence,body FROM events WHERE ${where} ORDER BY sequence LIMIT ?`).all(...values, limit);
     const rows: StateEvent[] = []; let bytes = 0;
-    for (const row of selected) { bytes += Buffer.byteLength(String(row.body)); if (bytes > 48 * 1024) break; rows.push({ ...JSON.parse(String(row.body)), sequence: Number(row.sequence) }); }
+    for (const row of tail ? [...selected].reverse() : selected) { bytes += Buffer.byteLength(String(row.body)); if (bytes > 48 * 1024) break; rows.push({ ...JSON.parse(String(row.body)), sequence: Number(row.sequence) }); }
+    if (tail) rows.reverse();
     return { rows, total, shown: rows.length, omitted: total - rows.length, cursor, asOfSequence,
-      ...(rows.length < total && rows.length ? { nextCursor: rows.at(-1)!.sequence } : {}) };
+      ...(!tail && rows.length < total && rows.length ? { nextCursor: rows.at(-1)!.sequence } : {}) };
   }
   outbox(since = 0, limit = 100): number[] {
     this.gate(); if (!Number.isSafeInteger(since) || since < 0 || !Number.isInteger(limit) || limit < 1 || limit > 100) throw Error('Invalid outbox cursor/limit');

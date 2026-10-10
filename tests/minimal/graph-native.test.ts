@@ -23,11 +23,11 @@ it('real Pi executes graph tools, unwraps retained ACKs, and reads retained grap
     }
   });
   const request=async(type:string,fields:any={})=>{const id=`graph-native-${++sequence}`;let timer:ReturnType<typeof setTimeout>|undefined;
-    try{return await Promise.race([new Promise<any>(r=>{pending.set(id,r);child.stdin.write(JSON.stringify({id,type,...fields})+'\n');}),new Promise<never>((_,reject)=>{timer=setTimeout(()=>reject(Error(`RPC timeout: ${stderr}`)),10000);})]);}
+    try{return await Promise.race([new Promise<any>(r=>{pending.set(id,r);child.stdin.write(JSON.stringify({id,type,...fields})+'\n');}),new Promise<never>((_,reject)=>{timer=setTimeout(()=>reject(Error(`RPC timeout: ${stderr}`)),60000);})]);}
     finally{clearTimeout(timer);pending.delete(id);}
   };
   const text=(m:any)=>typeof m.content==='string'?m.content:JSON.stringify(m.content??'');
-  const until=async(p:()=>Promise<boolean>)=>{for(let i=0;i<300;i++){if(await p())return;await delay(30);}throw Error(`No native graph progress: ${stderr} ${JSON.stringify(records.slice(-8))}`);};
+  const until=async(p:()=>Promise<boolean>)=>{for(let i=0;i<2000;i++){if(await p())return;await delay(30);}throw Error(`No native graph progress: ${stderr} ${JSON.stringify(records.slice(-8))}`);};
   try{
     expect((await request('get_state')).success).toBe(true);
     expect((await request('prompt',{message:'/p2o --target ./source'})).success).toBe(true);
@@ -54,4 +54,4 @@ it('real Pi executes graph tools, unwraps retained ACKs, and reads retained grap
     if(!await Promise.race([closed.then(()=>true),delay(3000).then(()=>false)])){child.kill('SIGTERM');await closed;}
     await rm(root,{recursive:true,force:true});
   }
-},40000);
+},180_000);

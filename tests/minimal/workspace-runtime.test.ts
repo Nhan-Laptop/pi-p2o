@@ -58,7 +58,7 @@ describe('canonical owner runtime (inert execution, real SQLite and Unix broker)
     await fixture(async h=>{
       h.ctx.setConfirm(false);await h.command('--target ./source');
       expect(h.ctx.confirmBodies[0]).toContain('DURABLE-LOCAL');expect(h.ctx.confirmBodies[0]).toContain(join(h.root,'.p2o-state'));
-      expect(h.ctx.confirmBodies[0]).toContain('256 MiB');expect(h.ctx.confirmBodies[0]).toContain('nhạy cảm');
+      expect(h.ctx.confirmBodies[0]).toContain('256 MiB');expect(h.ctx.confirmBodies[0]).toContain('nhạy cảm');expect(h.ctx.confirmBodies[0]).toMatch(/^Runtime: p2o \S+ · [0-9a-f]{12}\n/);
       expect(h.sandboxes).toHaveLength(0);expect(h.pi.messages).toHaveLength(0);
       await expect(stat(join(h.root,'.p2o-state'))).rejects.toThrow();await expect(stat(join(h.root,'control'))).rejects.toThrow();
       h.ctx.setConfirm(true);await h.command('--target ./source --solo');await h.command('stop');
@@ -88,7 +88,7 @@ describe('canonical owner runtime (inert execution, real SQLite and Unix broker)
       await h.command('--target ./source --solo --retention ephemeral');expect(h.ctx.confirmBodies[0]).toContain('EPHEMERAL');
       await h.call('p2o_note',{kind:'note',text:'temporary observation'});await h.command('checkpoint temporary barrier');expect(h.screen()).toContain('ephemeral');
       await expect(stat(join(h.root,'.p2o-state'))).rejects.toThrow();await h.command('stop');
-      expect(await readdir(join(h.root,'control'))).toEqual([]);await h.command('status');expect(h.screen()).toContain('Ephemeral');
+      expect(await readdir(join(h.root,'control'))).toEqual([]);await h.command('status');expect(h.screen()).toContain('Ephemeral');expect(h.screen()).toMatch(/Runtime: p2o \S+ · [0-9a-f]{12} \(digest of the entry file \+ src closure/);
     });
   });
   it('hands exclusion paths to both shared and isolated executors outside all container mounts',async()=>{

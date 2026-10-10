@@ -1,3 +1,4 @@
+import { exact, fieldValidators, plain } from './validate.js';
 export const COVERAGE_EXECUTION=['unplanned','planned','running','attempted','tested','blocked','not_applicable'] as const;
 export const COVERAGE_ASSESSMENT=['unreviewed','confirmed_claim','ruled_out_bounded','open_gap','accepted','stale'] as const;
 export const COVERAGE_PLAN_STATUS=['draft','active','reviewed','closed','cancelled'] as const;
@@ -14,14 +15,7 @@ export interface CoverageCellDraft {
   reason:string;limitations:string;
 }
 export interface CoverageCellEntry extends CoverageCellDraft {id:string;runId:string;revision:number;recordId:string;planId:string;planRevision:number;targetRevision:string;fingerprint:string;retired:boolean}
-const CONTROL=/[\x00-\x1f\x7f-\x9f\u202a-\u202e\u2066-\u2069]/;
-function plain(value:unknown,label:string):Record<string,unknown>{if(!value||typeof value!=='object'||Array.isArray(value)||Object.getPrototypeOf(value)!==Object.prototype)throw Error(`Invalid ${label}`);return value as Record<string,unknown>}
-function exact(row:Record<string,unknown>,allowed:string[],label:string){if(Object.keys(row).some(key=>!allowed.includes(key)))throw Error(`${label} contains host-owned or unknown fields`)}
-function text(value:unknown,label:string,max:number,min=1):string{if(typeof value!=='string'||value.trim().length<min||value.length>max||value!==value.normalize('NFC')||CONTROL.test(value))throw Error(`Invalid coverage ${label}`);return value}
-function key(value:unknown,label:string,max=160):string{const result=text(value,label,max);if(!/^[a-z0-9][a-z0-9._:/-]*$/.test(result))throw Error(`Invalid coverage ${label}`);return result}
-function id(value:unknown,label:string):string{const result=text(value,label,80);if(!/^[a-z0-9][a-z0-9-]{0,79}$/.test(result))throw Error(`Invalid coverage ${label}`);return result}
-function revision(value:unknown,label:string):number{if(!Number.isSafeInteger(value)||Number(value)<1)throw Error(`Invalid coverage ${label}`);return Number(value)}
-function ids(value:unknown,label:string,max=10):string[]{if(!Array.isArray(value)||value.length>max)throw Error(`Invalid coverage ${label}`);const result=value.map(item=>id(item,label));if(new Set(result).size!==result.length)throw Error(`Duplicate coverage ${label}`);return result}
+const {text,key,id,revision,ids}=fieldValidators('coverage');
 function prose(value:unknown,label:string,max=10):string[]{if(!Array.isArray(value)||value.length>max)throw Error(`Invalid coverage ${label}`);return value.map(item=>text(item,label,500,5));}
 
 export function validateCoveragePlanDraft(value:unknown):CoveragePlanDraft{

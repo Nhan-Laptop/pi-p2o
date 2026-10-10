@@ -1,4 +1,5 @@
 import { createHash, randomUUID } from 'node:crypto';
+import { sha256Hex } from './validate.js';
 import { appendRecords, appendGeneratedRecords, readLedger, summarizeRecords, type AssessmentRecord, type LedgerIndex } from './records.js';
 import type { MutationRequest } from './state/store.js';
 import { normalizeReport, type WorkerReport } from './broker.js';
@@ -7,7 +8,7 @@ import { taskFrontier } from './tasks.js';
 import { caseViews, type CaseContext } from './cases.js';
 import { coverageViews, type CoverageContext } from './coverage.js';
 
-const hash = (value: string) => createHash('sha256').update(value).digest('hex');
+const hash = sha256Hex;
 
 /** Host-normalized report rows; framing/hashes are created after whole-payload redaction. */
 export function prepareReport(runId: string, workerId: string, report: WorkerReport, role?: string, depth?: number): { reportId: string; records: AssessmentRecord[]; normalized: WorkerReport } {

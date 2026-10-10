@@ -10,6 +10,8 @@ export class ExecutorPool {
   private closed = false;
   private running = 0;
   private waiters: Array<() => void> = [];
+  /** Re-checked after any wait for a target-operation slot and before the work starts, so an operator hold also stops commands that were queued. */
+  beforeStart?: () => void;
   constructor(readonly mode: ExecutorMode, readonly maxOperations: number, private primary: Sandbox,
     private factory: () => Sandbox, private active: () => boolean) {}
   private gate() { if (this.closed || !this.active()) throw Error('Executor ownership inactive'); }
@@ -47,7 +49,7 @@ export class ExecutorPool {
     try {
       const sandbox = this.mode === 'shared' || id === 'owner' ? this.primary : this.leases.get(id)?.sandbox;
       if (!sandbox || sandbox.isStopped) throw Error('Assignment executor unavailable; report partial, no automatic restart');
-      signal?.throwIfAborted(); return await work(sandbox);
+      signal?.throwIfAborted(); this.beforeStart?.(); return await work(sandbox);
     } finally { this.running -= 1; for (const wake of [...this.waiters]) wake(); }
   }
   async stop() {

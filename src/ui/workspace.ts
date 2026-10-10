@@ -3,15 +3,29 @@ import { cleanText } from '../process.js';
 import { redact } from '../evidence.js';
 import { bundlePath } from '../state/bundle.js';
 import { KNOWLEDGE_DOMAINS, type KnowledgeDomain } from '../context.js';
+import { normalizeQuery } from '../search.js';
 
 export type WorkspaceCommand = { action: 'graph'; id?: string; limit?: number; cursor?:number; export?:boolean } | { action: 'open'; runId: string } | { action: 'recover'; runId: string } | { action: 'reconcile'; runId: string; reason?: string } | { action: 'close' }
   | { action: 'checkpoint'; reason: string } | { action: 'checkpoints'; id?: string }
   | { action: 'artifact'; id: string; offset: number }
   | { action: 'heads'; domain?:KnowledgeDomain; cursor:number; limit:number } | { action:'digest' }
-  | { action: 'export'; path: string } | { action: 'import'; path: string };
+  | { action: 'export'; path: string } | { action: 'import'; path: string } | { action: 'report-export'; path: string } | { action: 'search'; query: string; cursor: number };
 export function parseWorkspaceCommand(args: string): WorkspaceCommand | undefined {
   const trimmed = args.trim();
   const [action, ...parts] = trimmed.split(/\s+/);
+  if (action === 'search') {
+    // `/p2o search <text> [cursor=N]`: the text is a plain substring (no operators); an explicit `cursor=` keeps numeric queries such as 404 unambiguous.
+    const last = parts.at(-1), paged = last !== undefined && /^cursor=\d+$/.test(last), cursor = paged ? Number(last!.slice(7)) : 0;
+    if (!Number.isSafeInteger(cursor)) throw Error('Usage: /p2o search <text> [cursor=N]');
+    return { action, query: normalizeQuery((paged ? parts.slice(0, -1) : parts).join(' ')), cursor };
+  }
+  if (action === 'report' && parts[0] === 'export') {
+    // `/p2o report` stays the read-only index; only `report export <absolute-dir>` writes, human-only, to a new directory.
+    let value = trimmed.slice(trimmed.indexOf('export') + 'export'.length).trim();
+    if (value.length > 1 && ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'")))) value = value.slice(1, -1);
+    if (!value) throw Error('Usage: /p2o report export <absolute-host-directory>');
+    return { action: 'report-export', path: bundlePath(value, 'export') };
+  }
   if (!['open', 'recover', 'close', 'checkpoint', 'checkpoints', 'artifact', 'export', 'import', 'reconcile', 'graph', 'heads', 'digest'].includes(action)) return;
   if (action === 'export' || action === 'import') {
     // Human-selected absolute host directory. One optional matching quote pair keeps spaces usable.
@@ -137,12 +151,18 @@ export function checkpointLines(store: AssessmentStore, id?: string): string[] {
     `Unavailable capture (${c.captureUnavailableEvidenceIds?.length ?? 0}): ${c.captureUnavailableEvidenceIds?.slice(0,20).join(', ') || '(none)'}`, ...c.omissions,
     'Snapshot is retained knowledge only; no worker/ticket/cookie/queue/request replay or execution authority is restored.'];
 }
-export function eventLines(store: AssessmentStore, cursor?: number): string[] {
-  const page = store.events({ since: cursor ?? Math.max(0, store.sequence() - 20), limit: 20 });
-  return [`Committed checklog @${page.asOfSequence}; cursor ${page.cursor}; matching total ${page.total}, displayed ${page.shown}, omitted ${page.omitted}`,
-    ...(page.nextCursor !== undefined ? [`Next: /p2o log ${page.nextCursor}`] : []),
+export interface EventFilter { taskId?: string; actorId?: string; operationId?: string }
+export function eventLines(store: AssessmentStore, cursor?: number, filter: EventFilter = {}): string[] {
+  const selected = [['task', filter.taskId], ['actor', filter.actorId], ['operation', filter.operationId]].filter((entry): entry is [string, string] => entry[1] !== undefined);
+  const suffix = selected.map(([key, value]) => ` ${key}=${value}`).join(''), filtered = selected.length > 0;
+  // An unfiltered default stays the last 20 sequence numbers; a filtered default shows the newest matching events, never the newest sequences.
+  const page = store.events({ ...(cursor !== undefined ? { since: cursor } : filtered ? { tail: true } : { since: Math.max(0, store.sequence() - 20) }), limit: 20,
+    ...(filter.taskId ? { taskId: filter.taskId } : {}), ...(filter.actorId ? { actorId: filter.actorId } : {}), ...(filter.operationId ? { operationId: filter.operationId } : {}) });
+  return [`Committed checklog @${page.asOfSequence}; cursor ${page.cursor}; matching total ${page.total}, displayed ${page.shown}, omitted ${page.omitted}${filtered ? `; filter${suffix}` : ''}`,
+    ...(page.nextCursor !== undefined ? [`Next: /p2o log ${page.nextCursor}${suffix}`] : []),
+    ...(filtered && cursor === undefined && page.omitted > 0 ? [`Showing the newest ${page.shown} matching events; /p2o log 0${suffix} pages from the oldest.`] : []),
     ...page.rows.map(e => `${e.sequence} ${e.eventId} ${e.kind} actor=${e.actorId}${e.taskId ? ` task=${e.taskId}` : ''}${e.operationId ? ` operation=${e.operationId}` : ''}${e.payloadRefs.length ? ` refs=${e.payloadRefs.join(',')}` : ''}: ${safe(e.summary)}`),
-    'Stable sequence cursor; timestamps are not authority. Use /p2o log 0 for all retained events.',
+    `Stable sequence cursor; timestamps are not authority. Use /p2o log 0${suffix} for all retained ${filtered ? 'matching ' : ''}events.`,
     ...(store.readOnly ? ['HISTORICAL — running/in-flight states are interrupted/unknown, not live execution.'] : [])];
 }
 export function artifactLines(store: AssessmentStore, id: string, offset: number): string[] {

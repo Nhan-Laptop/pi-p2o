@@ -31,6 +31,11 @@ export type LoopMode = 'manual' | 'event-driven';
 export type RetentionMode = 'durable-local' | 'ephemeral';
 export const DEFAULT_STORAGE_QUOTA_MIB = 256;
 export const DEFAULT_ARTIFACT_CAPTURE_KIB = 1024;
+/**
+ * Off by default. The 2026-10-10 benchmark (32-run A/B plus a 16-run ablation, planning_update.md §0.2) showed the guidance steers the model to the
+ * K3-K6 tools 2-7x more often but raised cost ~70%, turns ~60% and invalid (timeout/turn-budget) runs from 1/16 to 3/16 with no recall or precision gain.
+ */
+export const DEFAULT_TOOL_GUIDANCE = false;
 export interface P2OSettings {
   maxWorkers: number;
   maxDepth: number;
@@ -41,10 +46,12 @@ export interface P2OSettings {
   retention: RetentionMode;
   storageQuotaMiB: number;
   artifactCaptureKiB: number;
+  /** Per-tool workflow guidance (src/tool-guidelines.ts). Read when the extension loads; /reload applies a change. */
+  toolGuidance: boolean;
   roles: Partial<Record<Role, RoleSettings>>;
 }
 
-const blank = (): P2OSettings => ({ maxWorkers: DEFAULT_MAX_WORKERS, maxDepth: DEFAULT_MAX_DEPTH, loopMode: 'manual', maxPlannerRounds: 100, executorMode: 'shared', maxTargetOperations: 3, retention: 'durable-local', storageQuotaMiB: DEFAULT_STORAGE_QUOTA_MIB, artifactCaptureKiB: DEFAULT_ARTIFACT_CAPTURE_KIB, roles: {} });
+const blank = (): P2OSettings => ({ maxWorkers: DEFAULT_MAX_WORKERS, maxDepth: DEFAULT_MAX_DEPTH, loopMode: 'manual', maxPlannerRounds: 100, executorMode: 'shared', maxTargetOperations: 3, retention: 'durable-local', storageQuotaMiB: DEFAULT_STORAGE_QUOTA_MIB, artifactCaptureKiB: DEFAULT_ARTIFACT_CAPTURE_KIB, toolGuidance: DEFAULT_TOOL_GUIDANCE, roles: {} });
 
 export function isRole(value: unknown): value is Role { return typeof value === 'string' && (ROLES as readonly string[]).includes(value); }
 
@@ -64,6 +71,7 @@ export function parseSettings(raw: unknown): P2OSettings {
   settings.retention = source.retention === 'ephemeral' ? 'ephemeral' : 'durable-local';
   settings.storageQuotaMiB = typeof source.storageQuotaMiB === 'number' && Number.isInteger(source.storageQuotaMiB) && source.storageQuotaMiB >= 8 && source.storageQuotaMiB <= 1024 ? source.storageQuotaMiB : DEFAULT_STORAGE_QUOTA_MIB;
   settings.artifactCaptureKiB = clamp(source.artifactCaptureKiB, DEFAULT_ARTIFACT_CAPTURE_KIB, 8192);
+  settings.toolGuidance = typeof source.toolGuidance === 'boolean' ? source.toolGuidance : DEFAULT_TOOL_GUIDANCE;
   settings.maxDepth = typeof source.maxDepth === 'number' && Number.isInteger(source.maxDepth) && source.maxDepth >= 0 && source.maxDepth <= MAX_DEPTH
     ? source.maxDepth : DEFAULT_MAX_DEPTH;
   const roles = source.roles;

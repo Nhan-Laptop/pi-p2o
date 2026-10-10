@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { describe, expect, it, vi } from 'vitest';
 import { AssessmentStore, type StoreManifest } from '../../src/state/store.js';
-import { exportBundle, inspectBundle } from '../../src/state/bundle.js';
+import { exportBundle, inspectBundle, publishReportFiles } from '../../src/state/bundle.js';
 import type { AssessmentRecord } from '../../src/records.js';
 
 /**
@@ -67,4 +67,24 @@ describe('portable bundle export under a full disk (K7 fixture: disk full during
       expect(constants.O_CREAT).toBeGreaterThan(0);
     });
   });
+
+  it('fails closed on ENOSPC at any file write of a report export and a retry publishes every file (plan F-W5-5)', async () => {
+    await fixture(async (root, store) => {
+      const files = ['REPORT.md', 'cases.csv', 'coverage.csv', 'report-manifest.json'].map(name => ({ name, body: `body of ${name}\n` }));
+      const destination = join(root, 'report');
+      fault.writes = 0; fault.failAt = Number.POSITIVE_INFINITY; await publishReportFiles(store, join(root, 'probe'), files); const writes = fault.writes;
+      await rm(join(root, 'probe'), { recursive: true, force: true });
+      expect(writes, 'four files, the private marker and .npmignore').toBe(6);
+      for (let failAt = 1; failAt <= writes; failAt++) {
+        fault.writes = 0; fault.failAt = failAt;
+        await expect(publishReportFiles(store, destination, files), `write ${failAt}/${writes}`).rejects.toThrow('ENOSPC');
+        expect(await stat(destination).catch(() => undefined), `no success claim after write ${failAt}`).toBeUndefined();
+        expect(await leftovers(root), `no partial report or temporary directory after write ${failAt}`).toEqual([]);
+      }
+      fault.writes = 0; fault.failAt = Number.POSITIVE_INFINITY;
+      expect(await publishReportFiles(store, destination, files)).toMatchObject({ files: 4 });
+      expect((await readdir(destination)).sort()).toEqual(['.npmignore', '.p2o-knowledge-bundle', 'REPORT.md', 'cases.csv', 'coverage.csv', 'report-manifest.json']);
+      await expect(publishReportFiles(store, destination, files)).rejects.toThrow('already exists'); // a published report is never overwritten
+    });
+  }, 60_000);
 });

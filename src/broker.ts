@@ -52,7 +52,7 @@ export interface WorkerRegistration {
   effectiveRuntime?: { model?: string; thinking?: string; verified: boolean };
 }
 
-export interface DelegateInput { focus: string; task: string; context?: string; role?: string; skills?: string[]; model?: string; workflow?: string; thinking?: string; taskId?: string }
+export interface DelegateInput { focus: string; task: string; context?: string; role?: string; skills?: string[]; model?: string; workflow?: string; thinking?: string; taskId?: string; work?: Record<string, unknown>; decision?: Record<string, unknown>; outputContract?: Record<string, unknown> }
 export interface DelegateResult { workerId: string; name: string; paneId: string; role: string; model?: string; depth: number }
 
 export interface BrokerDeps {
@@ -77,6 +77,8 @@ export interface BrokerDeps {
   /** Retained record/handoff ACK lookup. Graph results use graphReplay, so report recovery is type-safe. */
   replayMutation?(worker: WorkerRegistration, op: string, request: MutationRequest): Promise<RecordAck[] | undefined>;
   beforeCommand?(worker: WorkerRegistration): Promise<void>;
+  /** Display-only model usage counters the worker's Pi reported for one assistant message. Never a limit, budget or gate. */
+  usage?(worker: WorkerRegistration, usage: unknown): boolean;
   onBudget?(workerId: string, reason: string): void;
   delegate(input: DelegateInput, parent: WorkerRegistration): Promise<DelegateResult>;
   report(workerId: string, report: WorkerReport, request?: MutationRequest): Promise<void | RecordAck[]>;
@@ -241,10 +243,10 @@ export class Broker {
     }
     if (registration.stopped) return { ok: false, error: 'This worker was stopped by the owner' };
     if (this.reporting.has(workerId) && op !== 'status') return {ok:false,error:'Worker report persistence in progress; no further requests'};
-    if (registration.effectiveRuntime?.verified === false && !['runtime','report','status'].includes(op ?? '')) return { ok:false,error:'Runtime profile mismatch; report blocked, no investigation' };
+    if (registration.effectiveRuntime?.verified === false && !['runtime','report','status','usage'].includes(op ?? '')) return { ok:false,error:'Runtime profile mismatch; report blocked, no investigation' };
     if (reportingOperationDenied(registration.role,op ?? '')) return {ok:false,error:'Reporting role is synthesis-only; request separate execution/validation'};
     switch (op) {
-      case 'skill_list': case 'skill_read': case 'artifact_read': case 'knowledge_heads': {
+      case 'skill_list': case 'skill_read': case 'artifact_read': case 'knowledge_heads': case 'knowledge_search': {
         const used = this.knowledgeUsed.get(workerId) ?? 0;
         if (used >= 160) return { ok: false, error: 'Knowledge read budget exhausted; 40 coordination calls reserved for notes/candidates (200 total)' };
         this.knowledgeUsed.set(workerId, used + 1);
@@ -287,6 +289,9 @@ export class Broker {
       }
       case 'status':
         return { ok: true, workerId, used: registration.used, budget: registration.commandBudget, reported: Boolean(registration.reported) };
+      case 'usage':
+        // Counters only, attributed by the authenticated registration (never by the payload); it spends no command budget and gates nothing.
+        return { ok: true, recorded: this.deps.usage?.(registration, request?.usage) === true };
       case 'ledger': {
         // Workers may read the shared ledger: it is how a nested worker sees its parent's notes.
         const limit = Number.isInteger(request?.limit) ? Math.min(Math.max(request.limit, 1), 100) : 50;

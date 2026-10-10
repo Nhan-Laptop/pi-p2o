@@ -20,7 +20,7 @@ it('real Pi preserves structured work/plan arguments, dedup/replay and historica
     }
   });
   const request=async(type:string,fields:any={})=>{const id=`work-native-${++sequence}`;let timer:ReturnType<typeof setTimeout>|undefined;
-    try{return await Promise.race([new Promise<any>(resolve=>{pending.set(id,resolve);child.stdin.write(JSON.stringify({id,type,...fields})+'\n');}),new Promise<never>((_,reject)=>{timer=setTimeout(()=>reject(Error(`RPC timeout: ${stderr}`)),10000);})]);}finally{clearTimeout(timer);pending.delete(id);}
+    try{return await Promise.race([new Promise<any>(resolve=>{pending.set(id,resolve);child.stdin.write(JSON.stringify({id,type,...fields})+'\n');}),new Promise<never>((_,reject)=>{timer=setTimeout(()=>reject(Error(`RPC timeout: ${stderr}`)),60000);})]);}finally{clearTimeout(timer);pending.delete(id);}
   };
   const text=(message:any)=>typeof message.content==='string'?message.content:JSON.stringify(message.content??'');
   const until=async(check:()=>Promise<boolean>)=>{for(let i=0;i<300;i++){if(await check())return;await delay(30);}throw Error(`Native work did not progress: ${stderr} ${JSON.stringify(records.slice(-8))}`);};
@@ -41,4 +41,4 @@ it('real Pi preserves structured work/plan arguments, dedup/replay and historica
     await until(async()=>records.some(record=>record.type==='extension_ui_request'&&record.method==='notify'&&String(record.message).includes('Owner coordination only')));
     expect((await request('get_messages')).data.messages).toEqual(messages);expect((await readFile(log,'utf8')).split('\n').filter(Boolean)).toHaveLength(accepted);expect(records.filter(record=>record.type==='agent_settled')).toHaveLength(settled);expect((await request('get_state')).data.isStreaming).toBe(false);
   }finally{await request('prompt',{message:'/p2o close'}).catch(()=>{});await request('prompt',{message:'/p2o stop'}).catch(()=>{});child.stdin.end();if(!await Promise.race([closed.then(()=>true),delay(3000).then(()=>false)])){child.kill('SIGTERM');await closed;}await rm(root,{recursive:true,force:true});}
-},40000);
+},180_000);

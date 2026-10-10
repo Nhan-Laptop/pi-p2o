@@ -1,4 +1,4 @@
-import { createHash } from 'node:crypto';
+import { sha256Hex as sha } from '../validate.js';
 import { constants } from 'node:fs';
 import { mkdir, open, readdir, realpath, rename, rm, stat } from 'node:fs/promises';
 import { isAbsolute, join, relative } from 'node:path';
@@ -12,7 +12,6 @@ export const BUNDLE_SEGMENT_BYTES = 4 * 1024 * 1024;
 export const BUNDLE_TOTAL_BYTES = 64 * 1024 * 1024;
 export const BUNDLE_FILES = 4096;
 const INDEX_BYTES = 1024 * 1024;
-const sha = (value: string | Buffer) => createHash('sha256').update(value).digest('hex');
 const NAME_PATTERN = /^(?:manifest\.json|segments\/(?:records|events|graph)-[0-9]{5}\.ndjson|artifacts\/artifact-[a-f0-9-]{36}\.txt)$/;
 
 export interface BundleFile { name: string; kind: 'records' | 'events' | 'graph' | 'artifact'; bytes: number; sha256: string; sourceId?: string }
@@ -96,6 +95,32 @@ export async function exportBundle(store: AssessmentStore, destination: string):
     await rename(temporary, target);
   } catch (error) { await rm(temporary, { recursive: true, force: true }); throw error; }
   return { directory: target, manifest: index };
+}
+/**
+ * Publishes a flat set of private report files with the same discipline as a bundle: absolute new path outside the private state root,
+ * 0700 temporary directory, 0600 files, fsync, then one rename. A failure removes the temporary directory and leaves no destination.
+ * The private marker keeps the directory out of any later source clone.
+ */
+export async function publishReportFiles(store: AssessmentStore, destination: string, files: Array<{ name: string; body: string }>): Promise<{ directory: string; files: number; bytes: number }> {
+  const target = bundlePath(destination, 'export');
+  for (const privatePath of [store.location, store.stateRoot]) {
+    if (target === privatePath || target.startsWith(privatePath + '/') || privatePath.startsWith(target + '/')) throw Error('Report destination must be outside the private state directory');
+  }
+  if (!files.length || files.length > 16 || files.some(file => !/^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/.test(file.name) || file.name === BUNDLE_SOURCE_MARKER || file.name === '.npmignore')) throw Error('Invalid report file set');
+  if (await stat(target).catch(() => undefined)) throw Error('Report destination already exists; choose a new directory (no overwrite, no merge)');
+  const bytes = files.reduce((sum, file) => sum + Buffer.byteLength(file.body), 0);
+  if (bytes > 16 * 1024 * 1024) throw Error('Report exceeds 16 MiB; nothing was written');
+  const temporary = `${target}.p2o-tmp-report-${sha(files.map(file => `${file.name}\0${sha(file.body)}`).join('\n')).slice(0, 12)}`;
+  await mkdir(temporary, { recursive: true, mode: 0o700 });
+  try {
+    for (const file of files) await privateFile(temporary, file.name, file.body);
+    await privateFile(temporary, BUNDLE_SOURCE_MARKER, 'pi-p2o private report; never target source\n');
+    await privateFile(temporary, '.npmignore', '*\n');
+    const directory = await open(temporary, constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW); try { await directory.sync(); } finally { await directory.close(); }
+    if (await stat(target).catch(() => undefined)) throw Error('Report destination appeared during export; refusing to overwrite');
+    await rename(temporary, target);
+  } catch (error) { await rm(temporary, { recursive: true, force: true }); throw error; }
+  return { directory: target, files: files.length, bytes };
 }
 /** Verify the index, every file hash/size and report extras. Integrity is not authority or currentness. */
 export async function inspectBundle(directory: string): Promise<{ manifest: BundleManifest; integrityStatus: 'complete' | 'partial'; missing: string[]; tampered: string[]; extra: string[] }> {

@@ -1,4 +1,4 @@
-import { createHash } from 'node:crypto';
+import { sha256Hex as sha } from '../validate.js';
 import { redact } from '../evidence.js';
 import { redactArtifactPrefix } from '../artifacts.js';
 
@@ -33,7 +33,6 @@ export type GraphTable = 'assets' | 'assertions' | 'relations' | 'anchors';
 export type GraphRow = Record<string, unknown> & { id: string; entityId: string; revision: number; sequence: number };
 export interface GraphObservation { id: string; entityId: string; revisionId: string; actorId: string; taskId?: string; role?: string; depth?: number; at: string; sequence: number }
 export interface GraphSnapshot { identityVersion: number; runId:string; scope: string; asOfSequence: number; assets: GraphRow[]; assertions: GraphRow[]; relations: GraphRow[]; anchors: GraphRow[]; provenance: GraphObservation[] }
-const sha = (value: string) => createHash('sha256').update(value).digest('hex');
 export const scopeOf = (targetIdentity: string) => sha(targetIdentity).slice(0, 32);
 export const assetEntityId = (scope: string, kind: string, key: string) => `asset-${sha(`${scope}\u0000${kind}\u0000${key}`).slice(0,24)}`;
 export const assertionEntityId = (subjectEntity: string, kind: string, statement: string) => `assertion-${sha(`${subjectEntity}\u0000${kind}\u0000${statement}`).slice(0,24)}`;

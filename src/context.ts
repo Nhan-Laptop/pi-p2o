@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import type { AssessmentRecord } from './records.js';
 import type { StateEvent } from './state/store.js';
 import { graphCanonical } from './state/graph.js';
+import { validId } from './validate.js';
 
 export const KNOWLEDGE_DOMAINS=['task','goal','todo','decision','case','coverage-plan','coverage-cell','candidate','gap','phase','report','evidence'] as const;
 export type KnowledgeDomain=typeof KNOWLEDGE_DOMAINS[number];
@@ -22,7 +23,6 @@ export interface ContextPacket {
   retrieval:{headsCursor:number;eventCursor:number;commands:string[]};warning:string;packetSha256:string;encodedBytes:number;
 }
 
-const validId=(value:unknown):value is string=>typeof value==='string'&&/^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,79}$/.test(value);
 const object=(value:unknown):Record<string,unknown>|undefined=>value&&typeof value==='object'&&!Array.isArray(value)?value as Record<string,unknown>:undefined;
 /** Deterministic record-to-head descriptor. No I/O, no authority and no semantic proof upgrade. */
 export function describeKnowledgeRecord(row:AssessmentRecord):{domain:KnowledgeDomain;entityId:string;status:string;links:Array<[string,string]>}|undefined{

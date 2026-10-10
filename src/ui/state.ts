@@ -8,10 +8,11 @@ import type { LedgerIndex } from '../records.js';
 import type { AssessmentEngine } from '../engine.js';
 import { phasePackets, planFrontier } from '../planning.js';
 import { STATE_SCHEMA_VERSION } from '../state/schema.js';
+import { validId } from '../validate.js';
 
 export type StateCommand = { action: 'status' } | { action: 'report' } | { action: 'tasks'; filter: string; cursor: number }
   | { action: 'task'; id: string } | { action:'plan';id:string } | { action:'phase';id:string } | {action:'finding';id:string}|{action:'coverage-cell';id:string}
-  | { action:'plans';cursor:number } | { action:'phases';cursor:number } | {action:'findings';cursor:number}|{action:'coverage';cursor:number}| { action: 'log'; cursor?: number };
+  | { action:'plans';cursor:number } | { action:'phases';cursor:number } | {action:'findings';cursor:number}|{action:'coverage';cursor:number}| { action: 'log'; cursor?: number; taskId?: string; actorId?: string; operationId?: string };
 const filters = ['all', 'live', 'awaiting-review', 'blocked', 'done'];
 const integer = (text: string) => {
   if (!/^\d+$/.test(text) || !Number.isSafeInteger(Number(text))) throw Error('Cursor must be a non-negative safe integer');
@@ -31,9 +32,17 @@ export function parseStateCommand(args: string): StateCommand | undefined {
   }
   if(action==='plans'||action==='phases'||action==='findings'||action==='coverage'){if(parts.length>1)throw Error(`Usage: /p2o ${action} [cursor]`);return {action,cursor:parts[0]?integer(parts[0]):0};}
   if (action === 'log') {
-    if (parts.length > 1) throw Error('Usage: /p2o log [cursor]');
-    return { action, ...(parts.length ? { cursor: integer(parts[0]) } : {}) };
+    const usage = 'Usage: /p2o log [cursor] [task=<id>] [actor=<id>] [operation=<id>]', keys = { task: 'taskId', actor: 'actorId', operation: 'operationId' } as const;
+    const command: Extract<StateCommand, { action: 'log' }> = { action };
+    for (const part of parts) {
+      if (/^\d+$/.test(part)) { if (command.cursor !== undefined) throw Error(usage); command.cursor = integer(part); continue; }
+      const match = /^(task|actor|operation)=(.+)$/.exec(part);
+      if (!match || !validId(match[2]) || command[keys[match[1] as keyof typeof keys]] !== undefined) throw Error(usage);
+      command[keys[match[1] as keyof typeof keys]] = match[2];
+    }
+    return command;
   }
+
   if (parts.length > 2 || (parts[0] && !filters.includes(parts[0]))) throw Error('Usage: /p2o tasks [all|live|awaiting-review|blocked|done] [cursor]');
   return { action: 'tasks', filter: parts[0] ?? 'all', cursor: parts[1] ? integer(parts[1]) : 0 };
 }
@@ -45,6 +54,22 @@ export interface ViewProfile {
   workerUsed: number; workerCeiling: number; exportEnabled: boolean; exportPath?: string; exportError?: string;
   engine: ReturnType<AssessmentEngine['snapshot']>; executor: { mode: string; maxTargetOperations: number };
   retention?: 'durable-local' | 'ephemeral'; stateLocation?: string; storageError?: string;
+  runtime?: { version: string; sha256: string; policy?: number | 'off' };
+  workers?: WorkerView[]; held?: { reason: string; at: number }; usageLines?: string[];
+  contextUsage?: { tokens: number | null; contextWindow: number; percent: number | null; at: number };
+}
+/** Local observation only. `quiet` means no local event for the quiet window while queued/running; it is not failure proof, a timeout or a model wake. */
+export interface WorkerView { id: string; role: string; taskId?: string; state: string; commandsUsed: number; commandBudget: number; idleMs?: number; quiet: boolean; reported: boolean; stopped: boolean }
+const age = (ms: number) => ms < 60_000 ? `${Math.max(0, Math.floor(ms / 1000))}s` : ms < 3_600_000 ? `${Math.floor(ms / 60_000)}m` : `${Math.floor(ms / 3_600_000)}h`;
+const MAX_WORKER_LINES = 12;
+export function workerLines(workers: WorkerView[], maxWorkers: number): string[] {
+  if (!workers.length) return [];
+  const live = workers.filter(w => !w.reported && !w.stopped), quiet = live.filter(w => w.quiet).length;
+  const lines = [`Workers: live ${live.length}/${maxWorkers} slots (quiet ${quiet}) | reported ${workers.filter(w => w.reported).length} | stopped ${workers.filter(w => w.stopped && !w.reported).length}`];
+  for (const w of live.slice(0, MAX_WORKER_LINES)) lines.push(`  ${safe(w.id, 80)} · ${safe(w.role, 20)} · task ${w.taskId ? safe(w.taskId, 80) : 'none'} · ${safe(w.state, 24)} · ${w.commandsUsed}/${w.commandBudget} cmds${w.idleMs !== undefined ? ` · idle ${age(w.idleMs)}` : ''}${w.quiet ? ' · QUIET' : ''}`);
+  if (live.length > MAX_WORKER_LINES) lines.push(`  … ${live.length - MAX_WORKER_LINES} more live workers; /p2o log actor=<worker-id> filters one worker's events`);
+  if (quiet) lines.push('QUIET = no local event for 120 s while queued/running. It is not proof of failure, not a timeout and wakes no model; /p2o log actor=<worker-id> shows what it last did.');
+  return lines;
 }
 export interface StatusView {
   schemaVersion: 1; runId: string; lifecycle: string; asOfRecordCount: number; complete: boolean; diagnostics: string[];
@@ -77,16 +102,22 @@ export function statusView(index: LedgerIndex, profile: ViewProfile, context:Rep
     schemaVersion: 1, runId: profile.runId, lifecycle: profile.lifecycle, asOfRecordCount: index.records.length,
     complete: report.complete, diagnostics, taskCounts: counts, reportCount: report.counts.reports,
     candidateClaims: report.counts.candidates, openEntries: report.counts.open, pendingReview,acceptedFindings:report.counts.uniqueAcceptedFindings,pendingCaseReviews:report.counts.pendingCaseReviews,staleCases:report.counts.staleCases,coverageCells:report.counts.coverageCells, retained,
-    lines: [title, `Target: ${safe(profile.target, 1000)}`, taskLine,
+    lines: [title, `Target: ${safe(profile.target, 1000)}`,
+      ...(profile.held ? [`HOLD: new target commands and worker launches are refused until /p2o release — ${safe(profile.held.reason, 300)}. Commands already running finish; reporting and /p2o stop stay available.`] : []),
+      ...(profile.runtime ? [`Runtime: p2o ${safe(profile.runtime.version || 'unknown version', 40)} · ${safe(profile.runtime.sha256, 64).slice(0, 12)} (digest of the entry file + src closure; identifies code, not safety)${profile.runtime.policy !== undefined ? `; tool guidance ${profile.runtime.policy === 'off' ? 'off' : `v${profile.runtime.policy}`}` : ''}`] : []), taskLine,
       `Worker slots: ${profile.delegation ? profile.maxWorkers : 0}; target-operation cap: ${profile.executor.maxTargetOperations} (not network rate/connections)`,
       `Frontier: ${profile.engine.pendingIntents} accepted pending intents; automatic wakes ${profile.engine.rounds}/${profile.engine.maxAutomaticRounds}`,
       `Worker commands: ${profile.workerUsed}/${profile.workerCeiling} run allowance (worker reserve 90%; owner commands/provider cost separate)`,
+      ...workerLines(profile.workers ?? [], profile.maxWorkers),
+      ...(profile.usageLines ?? []).map(line => safe(line, 400)),
+      `Planner context: ${profile.contextUsage ? (profile.contextUsage.percent != null && profile.contextUsage.tokens != null ? `${Math.round(profile.contextUsage.percent)}% (${profile.contextUsage.tokens} of ${profile.contextUsage.contextWindow} tokens) at the last request` : `unknown right now (window ${profile.contextUsage.contextWindow} tokens)`) : 'not reported yet'}; measurement only, p2o never compacts or summarizes the Planner session itself.`,
       `Handoffs ${report.counts.reports} | claims ${report.counts.candidates} | cases accepted-current ${report.counts.uniqueAcceptedFindings}, pending ${report.counts.pendingCaseReviews}, stale ${report.counts.staleCases} | coverage cells ${report.counts.coverageCells} | open ${report.counts.open}`,
       attention, `Last committed record: ${last ? `${last.id ?? 'legacy-no-id'} ${safe(last.text, 350)}` : '(none)'}`, retention,
       `Reconciliation: ${report.complete ? 'complete bounded record scan' : 'INCOMPLETE — no completeness claim'}${diagnostics.length ? `; ${diagnostics.map(x => safe(x, 150)).join('; ')}` : ''}`,
       'Reported ≠ reviewed; closed task ≠ verified finding; resources cleaned ≠ assessment complete.',
       index.snapshotSequence !== undefined ? `Canonical store v${STATE_SCHEMA_VERSION} / records v2; committed sequence @${index.snapshotSequence}. Missing operation correlation stays unknown.` : 'Legacy v2 view: record cursor is not a durable event sequence; operation history/correlation may be unknown.'],
-    widget: [title, `Tasks: running ${counts.running ?? 0} | review ${pendingReview} | blocked ${counts.blocked ?? 0} | closed ${counts.closed ?? 0}; cases accepted ${report.counts.uniqueAcceptedFindings} | pending/stale ${report.counts.pendingCaseReviews}/${report.counts.staleCases}`,
+    widget: [title, ...(profile.held ? [`HOLD: ${safe(profile.held.reason, 120)}`] : []), `Tasks: running ${counts.running ?? 0} | review ${pendingReview} | blocked ${counts.blocked ?? 0} | closed ${counts.closed ?? 0}; cases accepted ${report.counts.uniqueAcceptedFindings} | pending/stale ${report.counts.pendingCaseReviews}/${report.counts.staleCases}`,
+      ...(profile.workers?.length ? [`Workers: live ${profile.workers.filter(w => !w.reported && !w.stopped).length} (quiet ${profile.workers.filter(w => w.quiet && !w.reported && !w.stopped).length}) | reported ${profile.workers.filter(w => w.reported).length}`] : []),
       `${attention} ${report.complete ? '' : 'STATE INCOMPLETE.'}`, retention],
   };
 }

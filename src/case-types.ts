@@ -1,3 +1,4 @@
+import { exact, fieldValidators, plain } from './validate.js';
 export const CASE_VERDICTS=['open','confirmed','ruled_out','inconclusive'] as const;
 export const CASE_REVIEW_STATUSES=['pending','accepted','disputed','withdrawn'] as const;
 export const REMEDIATION_STATUSES=['unplanned','planned','implemented','retest-pending','retested','accepted','failed'] as const;
@@ -16,14 +17,7 @@ export interface CaseDraft {
 }
 export interface CaseEntry extends CaseDraft {id:string;runId:string;revision:number;recordId:string}
 
-const CONTROL=/[\x00-\x1f\x7f-\x9f\u202a-\u202e\u2066-\u2069]/;
-function plain(value:unknown,label:string):Record<string,unknown>{if(!value||typeof value!=='object'||Array.isArray(value)||Object.getPrototypeOf(value)!==Object.prototype)throw Error(`Invalid ${label}`);return value as Record<string,unknown>}
-function exact(row:Record<string,unknown>,allowed:string[],label:string):void{if(Object.keys(row).some(key=>!allowed.includes(key)))throw Error(`${label} contains host-owned or unknown fields`)}
-function text(value:unknown,label:string,max:number,min=1):string{if(typeof value!=='string'||value.trim().length<min||value.length>max||value!==value.normalize('NFC')||CONTROL.test(value))throw Error(`Invalid case ${label}`);return value}
-function key(value:unknown,label:string,max=160):string{const result=text(value,label,max);if(!/^[a-z0-9][a-z0-9._:/-]*$/.test(result))throw Error(`Invalid case ${label}`);return result}
-function id(value:unknown,label:string):string{const result=text(value,label,80);if(!/^[a-z0-9][a-z0-9-]{0,79}$/.test(result))throw Error(`Invalid case ${label}`);return result}
-function revision(value:unknown,label:string):number{if(!Number.isSafeInteger(value)||Number(value)<1)throw Error(`Invalid case ${label}`);return Number(value)}
-function ids(value:unknown,label:string,max=10,minimum=0):string[]{if(!Array.isArray(value)||value.length<minimum||value.length>max)throw Error(`Invalid case ${label}`);const result=value.map(item=>id(item,label));if(new Set(result).size!==result.length)throw Error(`Duplicate case ${label}`);return result}
+const {text,key,id,revision,ids}=fieldValidators('case');
 function taskRef(value:unknown,label:string,revisionRequired=false):CaseTaskRef{const row=plain(value,label);exact(row,['taskId','revision'],label);const result:CaseTaskRef={taskId:id(row.taskId,`${label} task ID`)};if(row.revision!==undefined)result.revision=revision(row.revision,`${label} revision`);if(revisionRequired&&result.revision===undefined)throw Error(`${label} revision must be pinned`);return result}
 function unique<T>(items:T[],identity:(item:T)=>string,label:string):T[]{if(new Set(items.map(identity)).size!==items.length)throw Error(`Duplicate case ${label}`);return items}
 

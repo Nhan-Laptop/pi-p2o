@@ -114,5 +114,6 @@ export const EVENT_KINDS = [
   'asset.upserted', 'assertion.revised', 'graph.observed', 'case.revised', 'review.committed', 'support.invalidated', 'coverage.revised', 'phase.committed',
   'checkpoint.committed', 'checkpoint.failed', 'artifact.retained', 'artifact.missing',
   'decision.committed', 'context.consumed', 'planner.admitted', 'planner.vetoed', 'limit.reached', 'cleanup.result', 'retention.failed',
+  'run.held', 'run.released', 'delegate.unstructured', 'usage.reported',
 ] as const;
 export type EventKind = typeof EVENT_KINDS[number];
