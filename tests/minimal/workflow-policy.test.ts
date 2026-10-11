@@ -9,7 +9,7 @@ import { AssessmentStore } from '../../src/state/store.js';
 import { ALL_TOOLS, ownerTools, workerTools } from '../../src/tool-policy.js';
 import { POLICY_VERSION, TOOL_GUIDELINES } from '../../src/tool-guidelines.js';
 import { DEFAULT_TOOL_GUIDANCE, parseSettings } from '../../src/roles.js';
-import { ownerInstructions, workerInstructions } from '../../src/prompts.js';
+import { ownerInstructions, workerBrief, workerInstructions } from '../../src/prompts.js';
 import { createContext, createFakePi, createSimpleHerdr, EXTENSION_PATH, InertSandbox } from './helpers/fake-pi.js';
 
 /**
@@ -51,6 +51,14 @@ describe('prompt and tool guidance cannot drift apart', () => {
     for (const prompt of [ownerInstructions(facts(true)), ownerInstructions(facts(false)), ...['recon', 'discovery', 'validation', 'reporting', 'general'].map(role => workerInstructions(ticket(role)))])
       for (const named of mentioned(prompt)) expect(registered.has(named), `a prompt names ${named}`).toBe(true);
     for (const name of ALL_TOOLS) expect(registered.has(name), name).toBe(true);
+  });
+
+  it('names only tools its own role can call, in the system instructions and in the brief', () => {
+    for (const kind of ['directory', 'url'] as const) for (const role of ['recon', 'discovery', 'validation', 'reporting', 'general']) {
+      const worker = { ...ticket(role), target: { kind, label: kind === 'url' ? 'https://example.invalid' : '/home/x/repo' }, commandBudget: 20 };
+      const text = `${workerInstructions(worker)}\n${workerBrief({ ticket: worker, focus: 'surface-recon', task: 'Map authorized inputs', context: 'No previous work' })}`;
+      for (const named of mentioned(text)) expect(workerTools(role), `${role}/${kind}: the worker prompt names ${named}`).toContain(named);
+    }
   });
 
   it('gives every knowledge-workflow tool guidance, or a stated reason why not, and never advises a role about a tool it cannot call', () => {

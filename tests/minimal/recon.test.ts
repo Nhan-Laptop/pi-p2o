@@ -48,8 +48,8 @@ describe('bounded recon contract', () => {
   });
 
   it.each([
-    ['url', 'ff335a86c7f5f9cc545d66bb54d8e72e99d79dd5beef1bddf516629cf12fc355', 'e790c5ff68fd3b60b865b6344155a412708b27b7aa8de54d548be84e1abeaf79'],
-    ['directory', '90ce7f6f8f04b51188df60bf92f75bbda9ed0e3ba9be4ffaffa485b943342eb8', 'e77d2995d5166864e523f03eff44987758c6eff5409bae39408bbfc361629d5d'],
+    ['url', '7092eb65fd1d34872d5c6b1c152e02eff0dcaac28c53a2b88fbb4a85246c3f71', 'e5f38a11c4965e093216143cc130012c49357182f85127cb5b951317ac2717af'],
+    ['directory', '05dc552ec281d2da8d73924cb58588826e11e3c90cd554cd0b42f9190a8c1b76', '1ee913a605e1e14fe648bd8df189b2d0f518bd127d923a2f01bdedb4eebde53f'],
   ])('pins %s worker guidance for the Planner/frontier revision; historical acceptance artifacts are not rewritten', (kind, instructionHash, briefHash) => {
     const ticket = { workerId: 'worker-test', role: 'recon', runId: 'run-test', depth: 1, parentWorkerId: null,
       lifetime: 'until-stopped', target: { kind, label: kind === 'url' ? 'https://example.invalid' : '/target' }, commandBudget: 20 } as Ticket;
@@ -57,6 +57,36 @@ describe('bounded recon contract', () => {
     const hash = (text: string) => createHash('sha256').update(text).digest('hex');
     expect(hash(workerInstructions(ticket))).toBe(instructionHash);
     expect(hash(workerBrief(input))).toBe(briefHash);
+  });
+
+  it('gives every worker the recon handoff contract exactly once, in its system instructions', () => {
+    for (const kind of ['directory', 'url'] as const) {
+      const block = reconInstructions(kind);
+      for (const role of ['recon', 'discovery', 'validation', 'reporting', 'general']) {
+        const ticket = { workerId: 'worker-test', role, runId: 'run-test', depth: 1, parentWorkerId: null, lifetime: 'until-stopped',
+          target: { kind, label: kind === 'url' ? 'https://example.invalid' : '/target' }, commandBudget: 20 } as Ticket;
+        const context = `${workerInstructions(ticket)}\n${workerBrief({ ticket, focus: 'surface-recon', task: 'Map authorized inputs' })}`;
+        expect(context.split(block).length - 1, `${role}/${kind}: recon block occurrences`).toBe(1);
+      }
+    }
+  });
+
+  it('keeps the evidence and closure obligations in every worker role after the duplicate recon block was removed', () => {
+    for (const role of ['recon', 'discovery', 'validation', 'reporting', 'general']) {
+      const text = workerInstructions({ workerId: 'worker-test', role, runId: 'run-test', depth: 1, parentWorkerId: null, lifetime: 'until-stopped', target: { kind: 'directory', label: '/target' }, commandBudget: 20 } as Ticket);
+      for (const phrase of ['A source trace is not runtime proof', 'Blocked execution stays open_proof_gap', 'Records are claims, not automatic verification', 'argue the strongest case against it', 'Finish by calling p2o_report'])
+        expect(text, `${role}: ${phrase}`).toContain(phrase);
+    }
+  });
+
+  it('keeps the delegated lead prompt variants inside a recorded size (the solo variants are bounded above)', () => {
+    // Measured 2026-10-11 with these facts: 5,221 / 5,372 / 5,617 characters. Ceilings are the measurement plus 2%; raise them on purpose, never to make a test pass.
+    const base = { runId: 'run-recon', sourceSkipped: 2, workerBudget: 20, delegation: { enabled: true, maxWorkers: 3, maxDepth: 2 } };
+    const directory = ownerInstructions({ ...base, targetKind: 'directory', targetLabel: '/target' });
+    const url = ownerInstructions({ ...base, targetKind: 'url', targetLabel: 'https://example.invalid' });
+    const eventDriven = ownerInstructions({ ...base, targetKind: 'url', targetLabel: 'https://example.invalid', loopMode: 'event-driven' });
+    expect(directory.length).toBeLessThanOrEqual(5326); expect(url.length).toBeLessThanOrEqual(5480); expect(eventDriven.length).toBeLessThanOrEqual(5730);
+    for (const text of [directory, url, eventDriven]) expect(text).not.toMatch(/\bp2o_[a-z_]+\b/);
   });
 
   it('serves descriptive prerequisites, rejects a legacy capability registry and malformed prose', async () => {

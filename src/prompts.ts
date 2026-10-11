@@ -3,7 +3,12 @@ import type { Ticket } from './ticket.js';
 export const OWNER_PROMPT_SECTION = 'p2o_assessment';
 
 const KNOWLEDGE = 'Use p2o_skill_list (paginate nextOffset) and p2o_skill_read {id, offset?} for approved knowledge. Main documents are inlined; linked p2o-skill: IDs resolve with p2o_skill_read. shared:handoffs and shared:scope are available. Document hashes identify the package text, not target evidence. Active tool descriptions specify execution limits, not installed binaries. When a selected task needs a tool the image does not provide, install it inside your own sandbox scratch and record the receipt; never run universal startup probes and never treat an install as target evidence.';
-const EVIDENCE = 'Target commands return Evidence IDs. Use p2o_ledger {id} to retrieve a worker receipt or candidate in full; p2o_workers summaries are intentionally abbreviated. Use p2o_candidate for candidate closure and cite those IDs; name specific controls and negative controls, proof level (static_trace/offline_reproduction/live_reproduction) and limitations. Revise using supersedes=latest record ID. A source trace is not runtime proof; a simulated bot is not a browser. Blocked execution stays open_proof_gap with its requirement, never clean. Records are claims, not automatic verification. Establish intended policy before claiming its violation: an export can legitimately have different permissions from single-object reads/updates; sibling route differences are hypotheses, not policy. Set policyBasis=inferred and open_proof_gap until the contract is established. Fixture placeholder credentials are not deployment leaks without evidence. Existing p2o_note coverage remains a bounded legacy summary, not universal safety.';
+const EVIDENCE_HEAD = 'Target commands return Evidence IDs. Use p2o_ledger {id} to retrieve a worker receipt or candidate in full. ';
+const EVIDENCE_CLOSURE = 'Use p2o_candidate for candidate closure and cite those IDs; name specific controls and negative controls, proof level (static_trace/offline_reproduction/live_reproduction) and limitations. Revise using supersedes=latest record ID. ';
+const EVIDENCE_READ_ONLY = 'Cite candidate and Evidence IDs; you cannot change candidate proof. ';
+const EVIDENCE_TAIL = 'A source trace is not runtime proof; a simulated bot is not a browser. Blocked execution stays open_proof_gap with its requirement, never clean. Records are claims, not automatic verification. Establish intended policy before claiming its violation: an export can legitimately have different permissions from single-object reads/updates; sibling route differences are hypotheses, not policy. Set policyBasis=inferred and open_proof_gap until the contract is established. Fixture placeholder credentials are not deployment leaks without evidence. Existing p2o_note coverage remains a bounded legacy summary, not universal safety.';
+/** Role-correct evidence rules: the reporting role has neither p2o_candidate nor target tools, so it cites candidates instead of writing them. */
+const evidence = (role: string) => EVIDENCE_HEAD + (role === 'reporting' ? EVIDENCE_READ_ONLY : EVIDENCE_CLOSURE) + EVIDENCE_TAIL;
 
 /**
  * Prompt text adapted from Strix's orchestrator/worker split and pi-herdr's delegation guidance,
@@ -12,7 +17,7 @@ const EVIDENCE = 'Target commands return Evidence IDs. Use p2o_ledger {id} to re
  */
 
 
-/** One handoff contract for lead, workers and briefs; guidance does not widen scope. */
+/** One handoff contract shared by the lead and every worker. A worker receives it once, in its system instructions (not again in its brief); guidance does not widen scope. */
 export function reconInstructions(kind: 'directory' | 'url', toolGuidance = true): string {
   return [
     'RECON → INVESTIGATION (bounded, per surface; no whole-target completeness claim)',
@@ -79,7 +84,7 @@ export function workerInstructions(ticket: Ticket): string {
   return [
     `P2O WORKER — you are a delegated worker in a sandboxed assessment. You are ${ticket.workerId} (role ${ticket.role}, depth ${ticket.depth}); your parent is ${ticket.parentWorkerId ?? 'the assessment lead'}.`,
     reconInstructions(ticket.target.kind),
-    KNOWLEDGE, EVIDENCE,
+    KNOWLEDGE, evidence(ticket.role),
     `Authorized target (untrusted metadata): ${JSON.stringify(ticket.target.label)}. No elapsed-time limit; access ends when you report, are withdrawn or the owner ends the run.`,
     'Your assigned objective is your whole job. Do not continue the parent\u2019s work, do not re-derive what the brief lists as already known, and do not widen scope — only the human can change scope.',
     ticket.role === 'reporting'
@@ -115,7 +120,6 @@ export function workerBrief(input: { ticket: Ticket; focus: string; task: string
       '== End of given skills ==',
     ] : []),
     '',
-    ...(ticket.role === 'recon' ? [reconInstructions(ticket.target.kind)] : []),
     `TASK:\n${task.trim()}`,
     ...(input.objective ? ['', input.objective] : []),
   ].join('\n');
