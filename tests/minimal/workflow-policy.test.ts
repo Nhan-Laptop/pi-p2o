@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { registerP2O } from '../../extensions/p2o/index.js';
 import { AssessmentStore } from '../../src/state/store.js';
-import { ALL_TOOLS, ownerTools, workerTools } from '../../src/tool-policy.js';
+import { ALL_TOOLS, DELEGATION_TOOLS, TARGET_TOOLS, ownerTools, workerTools } from '../../src/tool-policy.js';
 import { POLICY_VERSION, TOOL_GUIDELINES } from '../../src/tool-guidelines.js';
 import { DEFAULT_TOOL_GUIDANCE, parseSettings } from '../../src/roles.js';
 import { ownerInstructions, workerBrief, workerInstructions } from '../../src/prompts.js';
@@ -92,10 +92,21 @@ describe('prompt and tool guidance cannot drift apart', () => {
   });
 });
 
+describe('the worker-control tools are offered only when workers exist', () => {
+  it('keeps p2o_delegate, p2o_workers, p2o_steer and p2o_stop_worker out of the solo loadout, and the target tools out of the delegated one', () => {
+    expect(DELEGATION_TOOLS).toEqual(['p2o_delegate', 'p2o_workers', 'p2o_steer', 'p2o_stop_worker']);
+    for (const name of DELEGATION_TOOLS) { expect(ownerTools(true), name).toContain(name); expect(ownerTools(false), name).not.toContain(name); expect(workerTools('discovery'), name).not.toContain(name); }
+    for (const name of TARGET_TOOLS) { expect(ownerTools(false), name).toContain(name); expect(ownerTools(true), name).not.toContain(name); }
+    expect(ownerTools(false)).toContain('p2o_loop'); // engine and frontier status stay available to a solo owner
+    expect(ownerTools(false)).toHaveLength(18); expect(ownerTools(true)).toHaveLength(18);
+  });
+});
+
 describe('fixed context cost per loadout is budgeted (plan principle 16)', () => {
   // Sizes measured on 2026-10-10 after W3 (delegate work params, trimmed ceilings) and W4 (p2o_state search), plus 2% headroom. Baseline before the W phase was
   // 35,514 / 39,904 / 20,458 / 13,627 bytes of declarations (+2.1% / +1.8% / +1.4% / +2.5%). A change that grows a loadout must raise the number here on purpose.
-  const budget = { 'delegated Planner': [36_268, 1_003], 'solo owner': [40_603, 1_100], 'worker': [20_750, 314], 'reporting worker': [13_974, 217] } as const;
+  // 2026-10-11 (S2): the solo owner no longer carries the four worker-control tools (-3,636 B declarations, -179 B guidance), so its budget fell to 36,967 / 921.
+  const budget = { 'delegated Planner': [36_268, 1_003], 'solo owner': [36_967, 921], 'worker': [20_750, 314], 'reporting worker': [13_974, 217] } as const;
   it('keeps tool declarations and guidance inside the recorded budget', () => {
     const tools = registry();
     for (const [label, names] of Object.entries(loadouts)) {

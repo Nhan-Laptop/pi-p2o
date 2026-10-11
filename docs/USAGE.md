@@ -183,7 +183,7 @@ Precedence của option start: **CLI cho run đó → settings → package defau
 
 `pause`, `hold` và `stop` khác nhau: **pause** dừng lập lịch/wake và abort lượt Planner nhưng workers đã admit vẫn chạy lệnh; **hold** chặn lệnh target mới và launch nhưng giữ Planner, report và hàng đợi; **stop** kết thúc run. Hold trong lúc `/p2o stop` vẫn cleanup bình thường.
 
-Worker/report/proof state vẫn cần review dù resources đã cleanup. Baseline 0.5.0 chỉ cho xem qua agent: yêu cầu agent dùng `p2o_loop {"action":"status"}` hoặc `p2o_workers` (vẫn dùng được). Từ `7e204c3` có thêm các human commands dưới đây, đã nằm trong bản `pi install` lấy về.
+Worker/report/proof state vẫn cần review dù resources đã cleanup. Baseline 0.5.0 chỉ cho xem qua agent: yêu cầu agent dùng `p2o_loop {"action":"status"}` hoặc `p2o_workers` (vẫn dùng được ở chế độ delegated; ở `--solo` tool này không được bật, dùng `p2o_loop` hoặc lệnh `/p2o workers`). Từ `7e204c3` có thêm các human commands dưới đây, đã nằm trong bản `pi install` lấy về.
 
 ## Xem tiến độ trực tiếp — K1/K2
 

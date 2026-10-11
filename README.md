@@ -114,6 +114,8 @@ automatic retry/fallback or restored-session authority. See [Planner/Engine cont
 | `p2o_report` | worker | Report to the lead: summary, findings, evidence, coverage, open items, confidence, blocked |
 | `p2o_finish` | lead | Refuse while a worker has not reported, then remove and verify all sandboxes |
 
+A solo run (`--solo`, no Herdr, or `--max-depth 0`) is not offered the worker-control tools `p2o_delegate`, `p2o_workers`, `p2o_steer` and `p2o_stop_worker`: there are no workers for them to act on. `p2o_loop` stays, and `/p2o workers` remains a human command.
+
 Host tools, `codemode`, the browser, other extensions, `!` shell and the worker's own Docker access are blocked
 while an assessment is active. A worker reaches the target **only** through the lead's broker socket; if the
 lead stops, workers fail closed.

@@ -46,7 +46,9 @@ export function registerInertProvider(pi: ExtensionAPI, mode: 'owner' | 'worker'
         if ((system.match(/<p2o_assessment>/g) ?? []).length !== 1) throw new Error('lead policy duplicated');
         const candidate = descriptions.find(tool => tool.name === 'p2o_candidate');
         if (!(candidate?.parameters as any)?.properties?.evidenceRefs || !(candidate?.parameters as any)?.properties?.policyBasis) throw new Error('candidate schema lost');
-        if (!tools.includes('p2o_delegate') || tools.includes('bash') || tools.includes('read')) throw new Error(`owner tool loadout was not applied: ${tools.join(',')}`);
+        // A solo owner works directly, so it is not offered the worker-control tools; a delegated Planner is.
+        const solo = system.includes('you are the solo working investigator'), workerControl = ['p2o_delegate', 'p2o_workers', 'p2o_steer', 'p2o_stop_worker'];
+        if ((solo ? workerControl.some(name => tools.includes(name)) : !workerControl.every(name => tools.includes(name))) || tools.includes('bash') || tools.includes('read')) throw new Error(`owner tool loadout was not applied (${solo ? 'solo' : 'delegated'}): ${tools.join(',')}`);
         if(process.env.P2O_TEST_CASE_OWNER==='1'){
           const caseSchema=descriptions.find(tool=>tool.name==='p2o_case')?.parameters as any,coverageSchema=descriptions.find(tool=>tool.name==='p2o_coverage')?.parameters as any;
           if(caseSchema?.type!=='object'||!caseSchema.properties?.entry||!caseSchema.required?.includes('action')||coverageSchema?.type!=='object'||!coverageSchema.properties?.cell||!coverageSchema.required?.includes('action'))throw Error('case/coverage root object schema missing in real Pi context');
