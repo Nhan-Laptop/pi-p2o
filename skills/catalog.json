@@ -655,6 +655,16 @@
       "path": "HANDOFFS.md"
     },
     {
+      "id": "shared:handoffs-method-review",
+      "path": "HANDOFFS.md",
+      "section": "focused-method-and-review"
+    },
+    {
+      "id": "shared:handoffs-owner-review",
+      "path": "HANDOFFS.md",
+      "section": "provisional-owner-review"
+    },
+    {
       "id": "shared:scope",
       "path": "README.md",
       "section": "start-here"
@@ -1161,10 +1171,6 @@
     {
       "id": "shared:handoff-scaffold",
       "path": "templates/handoff.json"
-    },
-    {
-      "id": "shared:research-catalog",
-      "path": "research/catalog.md"
     }
   ]
 }
