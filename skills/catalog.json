@@ -25,7 +25,7 @@
           "id": "public-http-review",
           "description": "Same-origin HTTP comparison with the methods, headers, cookies and bodies the approved scope declares; no browser transport",
           "prerequisites": [
-            "Authorized same-origin requests through p2o_http on the confirmed origin, with the method, headers, cookies and body the approved scope declares."
+            "Authorized same-origin requests through the scoped HTTP client on the confirmed origin, with the method, headers, cookies and body the approved scope declares."
           ]
         }
       ]
@@ -216,7 +216,7 @@
           "id": "live-parity-comparison",
           "description": "Compare the anonymous enforcement baseline across equivalent routes on the approved same-origin target",
           "prerequisites": [
-            "Authorized same-origin requests through p2o_http on the confirmed origin, with the method, headers, cookies and body the approved scope declares."
+            "Authorized same-origin requests through the scoped HTTP client on the confirmed origin, with the method, headers, cookies and body the approved scope declares."
           ]
         }
       ]
@@ -496,7 +496,7 @@
           "id": "public-baseline",
           "description": "Send one same-origin baseline request per in-scope route using the declared method",
           "prerequisites": [
-            "Authorized same-origin requests through p2o_http on the confirmed origin, with the method, headers, cookies and body the approved scope declares."
+            "Authorized same-origin requests through the scoped HTTP client on the confirmed origin, with the method, headers, cookies and body the approved scope declares."
           ]
         },
         {
