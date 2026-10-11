@@ -401,3 +401,30 @@ export function wstgEvidence(cells: readonly WstgCell[], cases: readonly WstgCas
   if (tested.length || live.some(cell => cell.execution === 'attempted' || cell.execution === 'blocked')) return 'L1';
   return 'L0';
 }
+
+/** Chapter number of each WSTG test group in the guide (the directory under document/4-Web_Application_Security_Testing starts with it). */
+const GROUP_NUMBER: Readonly<Record<string, string>> = { INFO: '01', CONF: '02', IDNT: '03', ATHN: '04', ATHZ: '05', SESS: '06', INPV: '07', ERRH: '08', CRYP: '09', BUSL: '10', CLNT: '11', APIT: '12' };
+const PAGE_ROOT = 'my_references/wstg/4-Web_Application_Security_Testing/';
+/**
+ * Address of one test's upstream page at the pinned commit, or undefined when the library did not register that page.
+ * `paths` are the package-relative paths of the catalog's wstg-source documents (my_references/wstg/4-Web_Application_Security_Testing/<NN-group>/<NN-title>.md);
+ * the page is found by the group's chapter number and the test's own number, so no title or directory name is guessed. The address is for the reader to open, never fetched.
+ */
+export function wstgPageUrl(id: string, paths: readonly string[]): string | undefined {
+  const match = /^WSTG-([A-Z]{4})-(\d{2})$/.exec(id.toUpperCase()), group = match && GROUP_NUMBER[match[1]];
+  if (!match || !group) return;
+  const found = paths.find(path => { if (!path.startsWith(PAGE_ROOT)) return false; const [directory, file, ...rest] = path.slice(PAGE_ROOT.length).split('/'); return rest.length === 0 && directory?.startsWith(`${group}-`) && file?.startsWith(`${match[2]}-`); });
+  return found ? `https://github.com/OWASP/wstg/blob/${WSTG_COMMIT}/document/4-Web_Application_Security_Testing/${found.slice(PAGE_ROOT.length)}` : undefined;
+}
+
+export interface WstgSuggestion { key: string; title: string; support: WstgSupport; flags: string; owner: string; card: string; phase: WstgTest['phase'] }
+/**
+ * Planning aid: the in-scope tests whose trigger matches one of the recon features the caller names (`any` always matches) and that have no live cell yet,
+ * in map order. Pure and read-only; a suggestion is not a finding, not permission and not coverage until a cell records it.
+ */
+export function wstgSuggest(features: readonly string[], options: { modes?: string; covered: ReadonlySet<string>; offset?: number; limit?: number }): { matched: number; suggestions: WstgSuggestion[] } {
+  const wanted = new Set(features), matches = WSTG_MAP.filter(test => test.trigger.length > 0 && !options.covered.has(wstgKey(test.id))
+    && (test.trigger.includes('any') || test.trigger.some(feature => wanted.has(feature))) && (!options.modes || [...options.modes].some(mode => test.modes.includes(mode))));
+  const offset = options.offset ?? 0, limit = options.limit ?? 20;
+  return { matched: matches.length, suggestions: matches.slice(offset, offset + limit).map(test => ({ key: wstgKey(test.id), title: test.title, support: test.support, flags: `${test.browser ? 'B' : ''}${test.identity ? 'I' : ''}`, owner: test.owner, card: test.card, phase: test.phase })) };
+}

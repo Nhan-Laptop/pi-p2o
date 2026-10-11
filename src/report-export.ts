@@ -1,28 +1,45 @@
 import { caseViews, type CaseView } from './cases.js';
+import { cvssScore } from './cvss.js';
+import { FINDING_SEVERITIES } from './case-types.js';
 import { coverageViews, type CoverageCellView, type CoverageContext, type CoveragePlanView } from './coverage.js';
 import { redact } from './evidence.js';
 import { cleanText } from './process.js';
 import type { LedgerIndex } from './records.js';
+import type { FinishPreflight } from './finish-preflight.js';
 import { reportProjection, type ReportProjectionContext } from './report.js';
-import { taskFrontier } from './tasks.js';
+import { taskFrontier, taskRevisionAt } from './tasks.js';
 import { sha256Hex } from './validate.js';
-import { WSTG_BY_KEY, WSTG_COMMIT, WSTG_MAP, isWstgKey, wstgEvidence, wstgKey, type WstgEvidence } from './wstg-map.js';
+import { WSTG_BY_KEY, WSTG_COMMIT, WSTG_MAP, isWstgKey, wstgEvidence, wstgKey, wstgPageUrl, type WstgEvidence } from './wstg-map.js';
 
 /**
  * Deterministic human report rendered from committed state. No model, no clock, no random values: the same state at the same
  * sequence yields the same bytes. Every target- or model-derived string passes through `mdText`/`csvCell`, so a hostile value cannot
  * become a link, image, HTML, fence, table break, spreadsheet formula or terminal escape. The report is an attributed index, never a verdict.
  */
-export const REPORT_FORMAT_VERSION = 1;
+export const REPORT_FORMAT_VERSION = 2;
 const ROWS = 200, CASE_ROWS = 500, TEXT = 300, CSV_TEXT = 500;
 const INVISIBLE = /[\u200b-\u200f\u202a-\u202e\u2060-\u2064\u2066-\u2069\ufeff]/g;
 
 export interface ReportMeta {
   runId: string; target: string; retention: string; historical: boolean; asOfSequence: number; storeSchema: number;
   runtime: { hash: string; version?: string }; complete: boolean;
+  /** 1 renders the original file set, 2 adds the OWASP-shaped sections and findings files. Default 2. */
+  format?: 1 | 2;
+  /** Why this report was written: finished, stopped, shutdown, session-change, storage-failed, failed, or manual (a human export). */
+  endReason?: string;
+  /** Preflight at finish: items still unresolved when the lead finished. Printed as a section, never counted as findings. */
+  unresolved?: FinishPreflight;
+  /** Lead-written executive text (p2o_finish narrative). Printed under an "unverified" label. */
+  narrative?: string;
+  /** Operator-supplied labels from settings p2o.report; printed as given after neutralization. */
+  operator?: Partial<Record<OperatorField, string>>;
+  /** Package-relative paths of the catalog's wstg-source pages, used only to print the pinned upstream address of a test. */
+  wstgPages?: readonly string[];
 }
+export const OPERATOR_FIELDS = ['author', 'organization', 'team', 'classification', 'disclaimer'] as const;
+export type OperatorField = typeof OPERATOR_FIELDS[number];
 export interface ReportFile { name: string; body: string }
-export interface RenderedReport { files: ReportFile[]; counts: { acceptedCurrent: number; cases: number; coverageCells: number; openGaps: number; claims: number } }
+export interface RenderedReport { files: ReportFile[]; counts: { acceptedCurrent: number; cases: number; coverageCells: number; openGaps: number; claims: number; unrated?: number } }
 
 /** Inline Markdown-safe text: one line, bounded, HTML and Markdown syntax neutralized, autolinks broken. */
 export function mdText(value: unknown, limit = TEXT): string {
@@ -44,14 +61,70 @@ const ids = (values: readonly string[] | undefined, limit = 6) => !values?.lengt
 const list = (values: readonly string[] | undefined, limit = 6) => !values?.length ? 'none' : `${values.slice(0, limit).join('; ')}${values.length > limit ? `; … +${values.length - limit}` : ''}`;
 const rows = <T>(items: T[], limit: number) => ({ shown: items.slice(0, limit), omitted: Math.max(0, items.length - limit) });
 
-function caseSection(view: CaseView, cells: readonly CoverageCellView[]): string {
+
+/** Plain bounded text for JSON/CSV/fenced blocks: redacted, control and invisible characters removed, line breaks kept. Not Markdown-safe on its own. */
+const plainText = (value: unknown, limit = 2000) => { const text = cleanText(redact(String(value ?? ''))).replace(INVISIBLE, '').trim(); return text.length > limit ? `${text.slice(0, limit)}…` : text; };
+/** Fenced block that its own content cannot close: the fence is longer than any backtick run inside. */
+export function safeFence(value: unknown, limit = 1200): string {
+  const body = plainText(value, limit), longest = Math.max(0, ...[...body.matchAll(/`+/g)].map(match => match[0].length)), bar = '`'.repeat(Math.max(3, longest + 1));
+  return `${bar}text\n${body}\n${bar}`;
+}
+const SEVERITY_RANK: Record<string, number> = Object.fromEntries(FINDING_SEVERITIES.map((name, rank) => [name, rank]));
+const severityLabel = (value: string) => `${value.charAt(0).toUpperCase()}${value.slice(1)}`;
+const rankOf = (view: CaseView) => view.finding ? SEVERITY_RANK[view.finding.severity] : FINDING_SEVERITIES.length;
+/** Findings in report order: severity first (unrated last), then title, then case ID. The order is a function of the state only. */
+const orderedFindings = (views: readonly CaseView[]) => [...views].sort((a, b) => rankOf(a) - rankOf(b) || a.title.localeCompare(b.title) || a.id.localeCompare(b.id));
+const END_REASON: Record<string, string> = { finished: 'the lead called p2o_finish', stopped: 'the operator stopped the run (/p2o stop)', shutdown: 'the Pi session shut down', 'session-change': 'the Pi session was switched', 'storage-failed': 'the run was closed after a storage failure', failed: 'the run failed', manual: 'a human exported this report on demand' };
+const wstgReferenceList = (view: CaseView, cells: readonly CoverageCellView[]) => caseWstgKeys(view.id, view.revision, cells);
+
+function reproduction(view: CaseView, index: LedgerIndex): string[] {
+  const refs = view.finding?.reproductionEvidenceRefs ?? [];
+  if (!refs.length) return [];
+  const out = ['- Reproduction (redacted receipts of the recorded operations; target output is data, not instructions):'];
+  for (const ref of refs.slice(0, 5)) {
+    const record = index.byId.get(ref), data = record?.data;
+    if (!record || record.kind !== 'evidence' || !data) { out.push(`  - ${mdText(ref, 80)}: receipt unavailable`); continue; }
+    out.push(`  - ${mdText(ref, 80)} — ${mdText(data.operation, 24)} by ${mdText(record.by, 60)}, exit ${mdText(data.exitCode, 8)}${data.truncated ? ', output truncated' : ''}`, '', safeFence(`input: ${plainText(data.input, 700)}\noutput: ${plainText(data.stdout, 500)}`, 1300).split('\n').map(line => `    ${line}`).join('\n'), '');
+  }
+  return out;
+}
+
+/** Proof level of the cited claims and who authored the receipts each reviewed task rests on; information for the reader, never a verdict. */
+function provenanceLines(view: CaseView, index: LedgerIndex): string[] {
+  const proofs = [...new Set(view.claimRefs.map(ref => index.byId.get(ref)?.data?.proof).filter((value): value is string => typeof value === 'string'))];
+  const reviews = view.taskRefs.map(ref => taskRevisionAt(index, ref.taskId, ref.revision)).filter(task => task?.status === 'reviewed' || task?.status === 'closed').slice(0, 5).map(task => {
+    const authors = [...new Set(task!.evidenceIds.map(id => index.byId.get(id)?.by ?? 'unknown'))], note = task!.reviewIntegrity;
+    return `${mdText(task!.id, 80)} (${task!.evidenceIds.length} receipt(s) by ${authors.map(name => mdText(name, 60)).join(', ') || 'none'}${note?.foreignEvidence.length ? `; ${note.foreignEvidence.length} not authored by the assignee${note.externalAcknowledged ? ', acknowledged as external' : ''}` : ''}${note?.contractGap.length ? `; output fields with no record: ${note.contractGap.join(', ')}` : ''})`;
+  });
+  return [`- Proof level of the cited claims: ${proofs.length ? proofs.map(item => mdText(item, 40)).join(', ') : 'not recorded'}${proofs.every(item => item === 'static_trace') && proofs.length ? ' (static trace only; no runtime reproduction)' : ''}`,
+    ...(reviews.length ? [`- Review receipts: ${reviews.join('; ')}`] : [])];
+}
+
+function findingLines(view: CaseView, cells: readonly CoverageCellView[], index: LedgerIndex, pages: readonly string[]): string[] {
+  const finding = view.finding;
+  if (!finding) return ['- Severity: **not rated** — the owner has not recorded a rating for this case, so it cannot be ranked.'];
+  const score = cvssScore(finding.cvssVector), keys = wstgReferenceList(view, cells);
+  return [`- Severity **${severityLabel(finding.severity)}** (owner-attributed, p2o scale) — basis: ${mdText(finding.basis, 1000)}${view.ratingCurrent === false ? ` (rating recorded against r${view.ratedRevision}; the case is now r${view.revision}, so check that it still applies)` : ''}`,
+    ...(finding.likelihood ? [`- Likelihood: ${mdText(finding.likelihood, 800)}`] : []), ...(finding.impact ? [`- Impact: ${mdText(finding.impact, 800)}`] : []),
+    ...(score ? [`- CVSS 3.1 base \`${score.vector}\` = **${score.score.toFixed(1)}** (${score.severity}); vector recorded by the owner, score computed by the host. It may differ from the p2o rating.`] : []),
+    ...(finding.cwe.length ? [`- Weakness classes recorded by the owner (not checked against MITRE): ${finding.cwe.map(item => `\`${item}\``).join(', ')}`] : []),
+    ...(finding.remediationSteps ? [`- Recommended remediation: ${mdText(finding.remediationSteps, 2000)}`] : []),
+    ...(finding.references.length || keys.length ? [`- References: ${[...new Set([...finding.references, ...keys])].slice(0, 8).map(ref => {
+      const url = isWstgKey(ref) ? wstgPageUrl(ref, pages) : undefined; return url ? `\`${ref}\` (pinned page: \`${url}\`)` : `\`${mdText(ref, 120)}\``; }).join('; ')}`] : []),
+    ...(finding.independenceWaiver ? [`- Independence waiver: ${mdText(finding.independenceWaiver, 300)}`] : []),
+    ...reproduction(view, index)];
+}
+
+function caseSection(view: CaseView, cells: readonly CoverageCellView[], index?: LedgerIndex, pages: readonly string[] = [], ordinal?: number): string {
   const wstg = caseWstgKeys(view.id, view.revision, cells);
-  return [`### ${mdText(view.title, 160)} — case ${mdText(view.id, 80)} r${view.revision}`,
+  const v2 = ordinal !== undefined;
+  return [`### ${v2 ? `F-${ordinal} ` : ''}${mdText(view.title, 160)} — case ${mdText(view.id, 80)} r${view.revision}`,
     `- Verdict **${mdText(view.verdict)}**; review **${mdText(view.reviewStatus)}**; currentness **${mdText(view.currentness)}**; independent validation current: ${view.independentCurrent ? 'yes' : 'no'}`,
     `- Policy: ${mdText(view.policyKey, 160)}${view.rootCauseKey ? `; root cause: ${mdText(view.rootCauseKey, 160)}` : ''}`,
     `- Assets: ${ids(view.assetRefs.map(ref => ref.id))}; claims: ${ids(view.claimRefs)}; independent evidence: ${ids(view.independentEvidenceRefs)}; tasks: ${ids(view.taskRefs.map(ref => `${ref.taskId}@r${ref.revision ?? '?'}`))}`,
     `- Contradictions: ${view.contradictions.length ? view.contradictions.slice(0, 6).map(item => `${mdText(item.evidenceRef, 80)} (${mdText(item.status)})`).join(', ') : 'none recorded'}; affected variants: ${list(view.affectedVariants.map(item => mdText(item, 120)))}`,
     ...(wstg.length ? [`- WSTG tests this case addresses (see the WSTG checklist for level): ${wstg.map(key => mdText(key, 40)).join(', ')}`] : []),
+    ...(v2 && index ? [...provenanceLines(view, index), ...findingLines(view, cells, index, pages)] : []),
     `- Remediation: ${mdText(view.remediation.status)} — ${mdText(view.remediation.reason, 200)}`,
     `- Reviewer reasoning: ${mdText(view.reviewReason)}`, `- Limitations: ${mdText(view.limitations)}`].join('\n');
 }
@@ -110,6 +183,61 @@ export function wstgAppendix(cells: readonly CoverageCellView[], cases: readonly
   return out;
 }
 
+
+/** Scope, limitations and executive summary (OWASP WSTG reporting: scope, limitations, executive summary). Counts only; it adds no judgement of its own. */
+function scopeAndSummary(meta: ReportMeta, index: LedgerIndex, plans: readonly CoveragePlanView[], cells: ReadonlyArray<{ plan: CoveragePlanView; cell: CoverageCellView }>, notClean: ReadonlyArray<{ cell: CoverageCellView }>,
+  accepted: readonly CaseView[], rated: readonly CaseView[], unrated: readonly CaseView[], others: readonly CaseView[], openGaps: number, awaiting: number, cases: readonly CaseView[]): string[] {
+  const live = cells.filter(({ cell }) => cell.currentness !== 'retired'), notTested = live.filter(({ cell }) => cell.execution !== 'tested').length, stale = live.filter(({ cell }) => cell.currentness === 'stale').length;
+  const exclusions = [...new Set(plans.flatMap(plan => plan.exclusions))], unknown = [...new Set(plans.flatMap(plan => plan.unknownScope))], unplanned = Math.max(0, ...plans.map(plan => plan.discoveredUnplannedAssets));
+  const pending = cases.filter(view => view.reviewStatus === 'pending' || view.reviewStatus === 'disputed').length;
+  const bySeverity = FINDING_SEVERITIES.map(name => `${severityLabel(name)} ${rated.filter(view => view.finding!.severity === name).length}`).join(', ');
+  const usesWstg = live.some(({ cell }) => isWstgKey(cell.questionKey)), untouched = usesWstg ? WSTG_MAP.filter(test => !live.some(({ cell }) => cell.questionKey === wstgKey(test.id))).length : 0;
+  const paragraphs = (meta.narrative ?? '').split(/\n{2,}/).map(part => part.trim()).filter(Boolean).slice(0, 6);
+  return ['## Scope and limitations', '',
+    `- Assessed target: ${mdText(meta.target, 400)}, as authorized by the operator when the run started. The tool never widened this scope.`,
+    `- Coverage denominator: ${plans.length ? `${plans.length} plan(s), ${live.length} live cell(s)` : 'none recorded, so nothing can be called covered'}. Exclusions recorded: ${list(exclusions.map(item => mdText(item, 200)))}. Unknown scope: ${list(unknown.map(item => mdText(item, 200)))}.`,
+    `- Not examined or not confirmed: ${notClean.length} cell(s) (${notTested} not tested, ${stale} stale), ${unplanned} discovered asset(s) outside every plan, ${openGaps} open gap(s)${usesWstg ? `, ${untouched} WSTG test(s) with no cell` : ''}. Each is listed in the coverage section below; none of them is a result.`,
+    '- Tool limits: commands and HTTP requests run from an isolated sandbox against the authorized target only. There is no browser, so an effect that happens only in a browser stops at offline reproduction; a check that needs a credential ran only if the operator supplied that identity; third-party origins and DNS are outside the tool’s scope.',
+    '- The severity of a finding is an attributed rating recorded by the lead, with its stated basis. It is not computed from exploit evidence and it never changes a case’s verdict or review status.', '',
+    '## Executive summary', '',
+    `- Accepted, current findings: **${accepted.length}** (${bySeverity}${unrated.length ? `, not rated ${unrated.length}` : ''}).`,
+    `- Cases not accepted-current: ${others.length} (${pending} awaiting a review decision). Tasks awaiting owner review: ${awaiting}.`,
+    `- Coverage: ${live.length} live cell(s) of which ${live.length - notTested} tested; ${notTested} not tested; ${stale} stale. Open gaps: ${openGaps}.`,
+    `- Records examined: ${index.records.length}${index.complete ? '' : ' (INCOMPLETE scan, no completeness claim)'}.`,
+    ...(paragraphs.length ? ['', '> **Lead narrative — written by the lead agent, not verified by the host:**', '>', ...paragraphs.flatMap(part => [`> ${mdText(part, 1500)}`, '>']).slice(0, -1)] : ['', 'No lead narrative was supplied.']),
+    '', 'These counts describe attributed state at one sequence number. They are not a business-impact rating and not a statement that the target is safe.', ''];
+}
+
+
+/** Machine-readable findings: every typed field of every accepted-current case, strings redacted and bounded but NOT Markdown-escaped (escape on display). */
+function findingFiles(meta: ReportMeta, index: LedgerIndex, ordered: readonly CaseView[], cells: readonly CoverageCellView[], pages: readonly string[]): ReportFile[] {
+  const reproduce = (view: CaseView) => (view.finding?.reproductionEvidenceRefs ?? []).map(ref => { const record = index.byId.get(ref), data = record?.kind === 'evidence' ? record.data : undefined;
+    return { evidenceId: ref, available: Boolean(data), operation: data ? plainText(data.operation, 24) : null, by: record ? plainText(record.by, 60) : null, exitCode: data?.exitCode ?? null, input: data ? plainText(data.input, 700) : null, output: data ? plainText(data.stdout, 500) : null, truncated: Boolean(data?.truncated) }; });
+  const items = ordered.slice(0, CASE_ROWS).map((view, position) => {
+    const score = cvssScore(view.finding?.cvssVector), wstg = caseWstgKeys(view.id, view.revision, cells);
+    return { ref: `F-${position + 1}`, caseId: view.id, revision: view.revision, title: plainText(view.title, 500), verdict: view.verdict, reviewStatus: view.reviewStatus, currentness: view.currentness, independentValidationCurrent: view.independentCurrent,
+      severity: view.finding?.severity ?? null, severityBasis: view.finding ? plainText(view.finding.basis, 1000) : null, likelihood: view.finding?.likelihood ? plainText(view.finding.likelihood, 800) : null, impact: view.finding?.impact ? plainText(view.finding.impact, 800) : null,
+      cvss: score ? { vector: score.vector, baseScore: score.score, severity: score.severity } : null, cwe: view.finding?.cwe ?? [], wstg: wstg.map(key => ({ key, page: isWstgKey(key) ? wstgPageUrl(key, pages) ?? null : null })),
+      policyKey: plainText(view.policyKey, 160), rootCauseKey: view.rootCauseKey ? plainText(view.rootCauseKey, 160) : null, assets: view.assetRefs.map(ref => ref.id), claims: view.claimRefs, independentEvidence: view.independentEvidenceRefs,
+      remediation: { status: view.remediation.status, reason: plainText(view.remediation.reason, 1000), steps: view.finding?.remediationSteps ? plainText(view.finding.remediationSteps, 2000) : null },
+      references: view.finding?.references ?? [], reproduction: reproduce(view), contradictions: view.contradictions.map(item => ({ evidenceRef: item.evidenceRef, status: item.status })), limitations: plainText(view.limitations, 2000), independenceWaiver: view.finding?.independenceWaiver ? plainText(view.finding.independenceWaiver, 300) : null };
+  });
+  const body = { format: 'p2o-findings', version: 1, runId: meta.runId, asOfSequence: meta.asOfSequence, complete: meta.complete, endReason: meta.endReason ?? null,
+    note: 'Accepted, current cases only. Severity is an attributed owner rating; CVSS scores are computed by the host from the owner-recorded vector. Strings are redacted and bounded but not Markdown-escaped; escape them before display.', findings: items };
+  const csv = [csvRow(['ref', 'case_id', 'revision', 'title', 'severity', 'cvss_vector', 'cvss_score', 'cwe', 'wstg', 'verdict', 'review_status', 'currentness', 'independent_validation_current', 'policy_key', 'root_cause_key', 'remediation_status', 'remediation_steps', 'references', 'reproduction_evidence']),
+    ...items.map(item => csvRow([item.ref, item.caseId, item.revision, item.title, item.severity ?? 'not rated', item.cvss?.vector ?? '', item.cvss?.baseScore ?? '', item.cwe.join(' '), item.wstg.map(entry => entry.key).join(' '), item.verdict, item.reviewStatus, item.currentness, item.independentValidationCurrent, item.policyKey, item.rootCauseKey ?? '', item.remediation.status, item.remediation.steps ?? '', item.references.join(' '), item.reproduction.map(entry => entry.evidenceId).join(' ')]))];
+  return [{ name: 'findings.json', body: `${JSON.stringify(body, null, 2)}\n` }, { name: 'findings.csv', body: `${csv.join('\n')}\n` }];
+}
+/** One row per WSTG test with its level, only for runs that address WSTG tests (same condition as the Markdown checklist). */
+function wstgChecklistFile(cells: readonly CoverageCellView[], cases: readonly CaseView[], pages: readonly string[]): ReportFile[] {
+  const used = cells.filter(cell => cell.currentness !== 'retired' && isWstgKey(cell.questionKey));
+  if (!used.length) return [];
+  const byKey = new Map<string, CoverageCellView[]>(); for (const cell of used) byKey.set(cell.questionKey, [...(byKey.get(cell.questionKey) ?? []), cell]);
+  const lines = [csvRow(['test_id', 'key', 'title', 'group', 'support', 'browser', 'identity', 'level', 'cells', 'pinned_page']),
+    ...WSTG_MAP.map(test => { const own = [...(byKey.get(wstgKey(test.id)) ?? [])].sort((a, b) => a.id.localeCompare(b.id)); return csvRow([test.id, wstgKey(test.id), test.title, test.id.split('-')[1], test.support, test.browser, test.identity, wstgEvidence(own, cases), own.map(cell => cell.id).join(' '), wstgPageUrl(test.id, pages) ?? '']); })];
+  return [{ name: 'wstg-checklist.csv', body: `${lines.join('\n')}\n` }];
+}
+
 export function renderReport(index: LedgerIndex, context: ReportProjectionContext & { coverage?: CoverageContext }, meta: ReportMeta): RenderedReport {
   const projection = reportProjection(index, context), tasks = taskFrontier(index);
   const cases = caseViews(index, context.cases ?? {}), plans: CoveragePlanView[] = context.coverage ? coverageViews(index, context.coverage) : [];
@@ -119,15 +247,21 @@ export function renderReport(index: LedgerIndex, context: ReportProjectionContex
   const awaiting = tasks.filter(task => task.status === 'reported' || (task.status === 'blocked' && task.handoffId));
   const cells = plans.flatMap(plan => plan.cells.map(cell => ({ plan, cell })));
   const notClean = cells.filter(({ cell }) => cell.currentness !== 'retired' && (cell.execution !== 'tested' || ['unreviewed', 'open_gap', 'stale'].includes(cell.effectiveAssessment)));
+  const version = meta.format ?? REPORT_FORMAT_VERSION, v2 = version === 2, pages = meta.wstgPages ?? [], everyCell = cells.map(item => item.cell);
+  const rated = accepted.filter(view => view.finding), unrated = accepted.filter(view => !view.finding);
   const out: string[] = [];
   out.push(`# p2o assessment report — run ${mdText(meta.runId, 80)}`, '',
     '> **Read this first.** This is a deterministic index of committed, attributed state at one sequence number. It is **not** a verification, not a penetration-test conclusion and not a statement that the target is safe. A list with no accepted case, or a coverage cell that is blocked or untested, says nothing about the absence of problems. Redaction is best effort; review before sharing.', '',
+    ...(v2 && meta.endReason ? [meta.endReason === 'finished' || meta.endReason === 'manual' ? `> **Run end:** ${(END_REASON[meta.endReason] ?? mdText(meta.endReason, 120))}.` : `> **INTERRUPTED RUN — ${(END_REASON[meta.endReason] ?? mdText(meta.endReason, 120))}.** The lead did not finish normally, so review, coverage and the final narrative may be incomplete. Everything below is what was committed before the end.`, ''] : []),
     '## Provenance', '',
     `- Run: ${mdText(meta.runId, 80)}${meta.historical ? ' (historical, read-only store)' : ' (active run)'}; as of committed sequence **${meta.asOfSequence}**; ${index.records.length} records; store schema ${meta.storeSchema}`,
     `- Target: ${mdText(meta.target, 400)}; retention ${mdText(meta.retention)}`,
     `- Runtime that wrote this run: p2o ${mdText(meta.runtime.version || 'unknown version', 40)} · closure digest ${mdText(meta.runtime.hash.slice(0, 12), 16)}`,
     `- Reconciliation: ${meta.complete && projection.complete ? 'complete bounded record scan' : '**INCOMPLETE** — no completeness claim'}${projection.diagnostics.length ? `; diagnostics: ${projection.diagnostics.slice(0, 10).map(item => mdText(item, 200)).join('; ')}` : ''}`,
-    `- Views below are bounded (${ROWS} rows per list, ${CASE_ROWS} cases); omitted rows are counted and the complete data is in the portable bundle (\`/p2o export\`).`, '',
+    `- Views below are bounded (${ROWS} rows per list, ${CASE_ROWS} cases); omitted rows are counted and the complete data is in the portable bundle (\`/p2o export\`).`,
+    ...(v2 ? [`- Records: first at ${mdText(index.records[0]?.at ?? 'n/a', 40)}, last at ${mdText(index.records.at(-1)?.at ?? 'n/a', 40)} (timestamps as stored; this report reads no clock)`,
+      ...(meta.operator ? (['author', 'organization', 'team', 'classification'] as const).filter(name => meta.operator![name]).map(name => `- ${severityLabel(name)} (operator-supplied, unverified): ${mdText(meta.operator![name], 200)}`) : [])] : []), '',
+    ...(v2 ? scopeAndSummary(meta, index, plans, cells, notClean, accepted, rated, unrated, others, open.length, awaiting.length, cases) : []),
     '## Summary', '', '| Item | Count |', '|---|---|',
     `| Accepted current cases | ${accepted.length} |`, `| Cases pending, disputed, stale, withdrawn or duplicate | ${others.length} |`,
     `| Coverage cells (all plans) | ${cells.length} |`, `| Cells not tested or not confirmed (listed first below) | ${notClean.length} |`,
@@ -158,9 +292,20 @@ export function renderReport(index: LedgerIndex, context: ReportProjectionContex
   if (accepted.length) out.push('## Risk rating criteria', '', 'A fixed, documented scale, named here for the cases below. It is attributed, not computed from any field the host validates, and it never changes a case’s own verdict or review status.', '',
     '| Level | Criteria |', '|---|---|', ...RISK_LEVELS.map(([name, criteria]) => `| ${name} | ${criteria} |`), '');
 
+  const shownAccepted = v2 ? orderedFindings(accepted) : accepted;
+  if (v2 && accepted.length) {
+    const withWstg = shownAccepted.some(view => caseWstgKeys(view.id, view.revision, everyCell).length);
+    out.push('## Findings summary', '', 'Accepted, current cases only, ordered by the owner-attributed severity (unrated last). One row per case; the details follow in the next section.', '',
+      `| # | Case | Title | Severity | CVSS 3.1 | CWE |${withWstg ? ' WSTG |' : ''} Independent validation |`, `|---|---|---|---|---|---|${withWstg ? '---|' : ''}---|`);
+    for (const [position, view] of rows(shownAccepted, CASE_ROWS).shown.entries()) {
+      const score = cvssScore(view.finding?.cvssVector), keys = caseWstgKeys(view.id, view.revision, everyCell);
+      out.push(`| F-${position + 1} | ${mdText(view.id, 80)} r${view.revision} | ${mdText(view.title, 160)} | ${view.finding ? severityLabel(view.finding.severity) : 'not rated'} | ${score ? score.score.toFixed(1) : '-'} | ${view.finding?.cwe.length ? view.finding.cwe.join(', ') : '-'} |${withWstg ? ` ${keys.length ? keys.map(key => mdText(key, 40)).join(', ') : '-'} |` : ''} ${view.independentCurrent ? 'current' : 'none'} |`);
+    }
+    out.push('');
+  }
   out.push('## Accepted current cases', '');
   if (!accepted.length) out.push(`No case was accepted and current at sequence ${meta.asOfSequence}. This does not mean the target is safe; see the coverage and gaps above.`, '');
-  else { const listed = rows(accepted, CASE_ROWS); for (const view of listed.shown) out.push(caseSection(view, cells.map(item => item.cell)), ''); if (listed.omitted) out.push(`… ${listed.omitted} more accepted cases; see cases.csv.`, ''); }
+  else { const listed = rows(shownAccepted, CASE_ROWS); for (const [position, view] of listed.shown.entries()) out.push(caseSection(view, everyCell, index, pages, v2 ? position + 1 : undefined), ''); if (listed.omitted) out.push(`… ${listed.omitted} more accepted cases; see cases.csv.`, ''); }
 
   out.push('## Other cases', '');
   if (!others.length) out.push('None.', '');
@@ -184,21 +329,27 @@ export function renderReport(index: LedgerIndex, context: ReportProjectionContex
   const handoffs = rows(projection.reports, ROWS);
   for (const report of handoffs.shown) out.push(`- Handoff ${mdText(report.id, 80)} from ${mdText(report.workerId ?? 'unknown', 80)}: outcome ${mdText(report.outcome ?? 'unknown', 40)}, confidence ${mdText(report.confidence ?? 'unknown', 24)}, ${report.findings} claimed finding(s), ${report.openItems} open item(s)${report.blocked ? `, blocked: ${mdText(report.blocked, 200)}` : ''}`);
   if (handoffs.omitted) out.push(`- … ${handoffs.omitted} more handoffs`);
+  if (v2 && meta.unresolved && (meta.unresolved.blocking.length || meta.unresolved.advisory.length)) {
+    out.push('', '## Unresolved when the lead finished', '', 'Host check over committed state at p2o_finish. These are unfinished review or coverage items, not findings and not a safety statement.', '', '| Code | Level | Count | Examples | Meaning |', '|---|---|---|---|---|');
+    for (const item of [...meta.unresolved.blocking, ...meta.unresolved.advisory]) out.push(`| \`${item.code}\` | ${item.level} | ${item.count} | ${ids(item.ids, 5)} | ${mdText(item.message, 200)} |`);
+  }
   out.push('', '## Limits of this report', '',
     '- Reported is not reviewed; a closed task is not a verified finding; resources cleaned is not assessment complete.',
     '- Captured output may be truncated or lossy; hashes identify retained redacted bytes, not the original output.',
     '- Target-derived text was neutralized (links, images, HTML, formulas and control characters), not re-verified.',
-    `- No execution authority, ticket, token, cookie or budget is part of, or restored by, this report. Format version ${REPORT_FORMAT_VERSION}.`, '');
+    `- No execution authority, ticket, token, cookie or budget is part of, or restored by, this report. Format version ${version}.`, '');
 
   const caseCsv = [csvRow(['case_id', 'revision', 'title', 'verdict', 'review_status', 'currentness', 'accepted_current', 'duplicate_of', 'independent_current', 'policy_key', 'claims', 'independent_evidence', 'stale_reasons', 'limitations']),
     ...rows(cases, 5000).shown.map(view => csvRow([view.id, view.revision, view.title, view.verdict, view.reviewStatus, view.currentness, view.acceptedFinding, view.duplicateOf ?? '', view.independentCurrent, view.policyKey, view.claimRefs.join(' '), view.independentEvidenceRefs.join(' '), view.staleReasons.join('; '), view.limitations]))];
   const coverageCsv = [csvRow(['plan_id', 'plan_revision', 'cell_id', 'asset_id', 'question_key', 'policy_key', 'actor_context', 'tenant_context', 'method_family', 'execution', 'assessment', 'effective_assessment', 'currentness', 'stale_reasons', 'reason', 'limitations']),
     ...rows(cells, 20000).shown.map(({ plan, cell }) => csvRow([plan.id, plan.revision, cell.id, cell.assetRef.id, cell.questionKey, cell.policyKey ?? '', cell.actorContext, cell.tenantContext, cell.methodFamily, cell.execution, cell.assessment, cell.effectiveAssessment, cell.currentness, cell.staleReasons.join('; '), cell.reason, cell.limitations]))];
   const files: ReportFile[] = [{ name: 'REPORT.md', body: `${out.join('\n')}\n` }, { name: 'cases.csv', body: `${caseCsv.join('\n')}\n` }, { name: 'coverage.csv', body: `${coverageCsv.join('\n')}\n` }];
-  const manifest = { format: 'p2o-report', version: REPORT_FORMAT_VERSION, runId: meta.runId, asOfSequence: meta.asOfSequence, records: index.records.length, historical: meta.historical, complete: meta.complete && projection.complete,
-    runtime: meta.runtime, counts: { acceptedCurrent: accepted.length, cases: cases.length, coverageCells: cells.length, openGaps: open.length, claims: projection.counts.candidates },
+  if (v2) files.push(...findingFiles(meta, index, orderedFindings(accepted), everyCell, pages), ...wstgChecklistFile(everyCell, cases, pages));
+  const manifest = { format: 'p2o-report', version, runId: meta.runId, asOfSequence: meta.asOfSequence, records: index.records.length, historical: meta.historical, complete: meta.complete && projection.complete,
+    ...(v2 ? { endReason: meta.endReason ?? null } : {}),
+    runtime: meta.runtime, counts: { acceptedCurrent: accepted.length, cases: cases.length, coverageCells: cells.length, openGaps: open.length, claims: projection.counts.candidates, ...(v2 ? { unrated: unrated.length } : {}) },
     files: files.map(file => ({ name: file.name, bytes: Buffer.byteLength(file.body), sha256: sha256Hex(file.body) })), authorityRestored: false,
     warning: 'Deterministic index of attributed committed state; not a verification or a safety statement. Redaction is best effort.' };
   files.push({ name: 'report-manifest.json', body: `${JSON.stringify(manifest, null, 2)}\n` });
-  return { files, counts: manifest.counts };
+  return { files, counts: manifest.counts as RenderedReport['counts'] };
 }

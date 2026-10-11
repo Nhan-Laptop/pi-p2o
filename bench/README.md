@@ -1,7 +1,7 @@
 # Skill benchmark fixtures and opt-in runner
 
 This directory holds the **Phase 5** real-runtime benchmark from
-[`planning_update.md`](../planning_update.md): synthetic vulnerable/fixed fixtures, evaluator truth
+the benchmark design of the earlier plans (`git log --follow planning_update.md`): synthetic vulnerable/fixed fixtures, evaluator truth
 that the assessed agent never sees, and the opt-in runner that compares three library/runtime arms
 with a real Pi lead driving the **real P2O sandbox**.
 

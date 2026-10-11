@@ -75,7 +75,7 @@ No extension build or JSON configuration is needed. Use `/reload` after installi
 ```
 
 The first group starts or controls a run: `hold` refuses new target commands and worker launches without ending the run (running commands finish; reporting and `stop` stay open), `release` lifts it after confirmation, and `stop-worker` withdraws one worker; none of these has a model-callable equivalent. The second group (`status` … `search`, `workers`) is read-only: no model call, no target
-operation, no change to mode, budget or authority. `report export` writes a deterministic `REPORT.md` + CSV from committed state (no model, markup-neutralized, new directory only) after confirmation. The third group (K2) manages retained knowledge and runs on the
+operation, no change to mode, budget or authority. `report export` writes a deterministic `REPORT.md` + CSV/JSON from committed state (no model, markup-neutralized, new directory only) after confirmation; the same report is also written automatically at the end of a durable-local run to `.p2o-reports/report-<run-id>/` (`p2o.autoReport`). The third group (K2) manages retained knowledge and runs on the
 human side only; `open`, `recover` and `close` never resume an assessment. Details: [usage](docs/USAGE.md).
 
 Confirm scope and permission once. The command prepares the sandbox and sends the task directly into the

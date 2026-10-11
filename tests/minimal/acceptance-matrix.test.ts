@@ -3,7 +3,7 @@ import { join, resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 /**
- * docs/ACCEPTANCE_MATRIX.md maps the plan's §13 fixture scenarios to tests. This guard keeps that mapping honest: every cited test
+ * docs/ACCEPTANCE_MATRIX.md maps the fixture scenarios of docs/ACCEPTANCE_BASELINE.md (formerly §13 of planning_update.md) to tests. This guard keeps that mapping honest: every cited test
  * must still exist under its exact title, every scenario of the plan must have a row with evidence, and a scenario added to the plan
  * without a matrix row fails here. It checks that evidence exists, not that the evidence is sufficient.
  */
@@ -28,14 +28,14 @@ describe('acceptance matrix (plan §13) stays tied to real tests', () => {
   });
 
   it('has exactly one evidence-bearing row for every §13.1 scenario of the plan and every §13.3 condition', async () => {
-    const plan = await readFile(join(root, 'planning_update.md'), 'utf8'), matrix = await readFile(join(root, 'docs/ACCEPTANCE_MATRIX.md'), 'utf8');
+    const plan = await readFile(join(root, 'docs/ACCEPTANCE_BASELINE.md'), 'utf8'), matrix = await readFile(join(root, 'docs/ACCEPTANCE_MATRIX.md'), 'utf8');
     const planned = section(plan, /^### 13\.1\./m, /^### 13\.2\./m).split('\n').filter(line => /^\| /.test(line) && !/^\| Case \|/.test(line) && !/^\|---/.test(line));
-    expect(planned, 'the plan lists 22 mandatory fixture scenarios').toHaveLength(22);
+    expect(planned, 'the baseline lists 22 mandatory fixture scenarios').toHaveLength(22);
     const rows = section(matrix, /^## §13\.1/m, /^## §13\.3/m).split('\n').filter(line => /^\| \d+ \|/.test(line));
     expect(rows.map(line => Number(/^\| (\d+) \|/.exec(line)![1]))).toEqual(Array.from({ length: planned.length }, (_, index) => index + 1));
     for (const row of rows) expect(references(row).length, row.slice(0, 80)).toBeGreaterThanOrEqual(1);
     const failures = plan.slice(plan.search(/^### 13\.3\./m)).split('\n').slice(1).join('\n'), bullets = section(failures, /^/m, /^---/m).split('\n').filter(line => /^- /.test(line));
-    expect(bullets, 'the plan lists 7 conditions that fail acceptance').toHaveLength(7);
+    expect(bullets, 'the baseline lists 7 conditions that fail acceptance').toHaveLength(7);
     const conditions = section(matrix, /^## §13\.3/m, /^## Chạy lại/m).split('\n').filter(line => /^\| /.test(line) && !/^\| Điều kiện/.test(line) && !/^\|---/.test(line));
     expect(conditions).toHaveLength(bullets.length);
     for (const row of conditions) expect(references(row).length, row.slice(0, 80)).toBeGreaterThanOrEqual(1);

@@ -106,7 +106,9 @@ describe('fixed context cost per loadout is budgeted (plan principle 16)', () =>
   // Sizes measured on 2026-10-10 after W3 (delegate work params, trimmed ceilings) and W4 (p2o_state search), plus 2% headroom. Baseline before the W phase was
   // 35,514 / 39,904 / 20,458 / 13,627 bytes of declarations (+2.1% / +1.8% / +1.4% / +2.5%). A change that grows a loadout must raise the number here on purpose.
   // 2026-10-11 (S2): the solo owner no longer carries the four worker-control tools (-3,636 B declarations, -179 B guidance), so its budget fell to 36,967 / 921.
-  const budget = { 'delegated Planner': [36_268, 1_003], 'solo owner': [36_967, 921], 'worker': [20_750, 314], 'reporting worker': [13_974, 217] } as const;
+  // 2026-10-11 (P1-P6a of the workflow/report plan, deliberate): p2o_case gained the rate action and its finding schema (+952 B), p2o_coverage the suggest action (+231 B),
+  // p2o_finish the narrative parameter (+167 B), p2o_task externalEvidence (+38 B). Delegated Planner 36,268 -> 37,656 B and solo owner 36,967 -> 38,355 B (+3.8%); workers are unchanged.
+  const budget = { 'delegated Planner': [37_656, 1_003], 'solo owner': [38_355, 921], 'worker': [20_750, 314], 'reporting worker': [13_974, 217] } as const;
   it('keeps tool declarations and guidance inside the recorded budget', () => {
     const tools = registry();
     for (const [label, names] of Object.entries(loadouts)) {

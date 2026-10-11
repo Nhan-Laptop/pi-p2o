@@ -59,7 +59,10 @@ không gọi model. Retained request replay không phát event/wake thứ hai.
 {"action":"revise","id":"case-...","revision":1,"entry":{...}}
 {"action":"list","cursor":0,"limit":20,"status":"pending"}
 {"action":"view","id":"case-..."}
+{"action":"rate","id":"case-...","revision":2,"finding":{"severity":"medium","basis":"...","cvssVector":"CVSS:3.1/AV:N/...","cwe":["CWE-639"],"remediationSteps":"...","references":["wstg-athz-04"],"reproductionEvidenceRefs":["..."]}}
 ```
+
+**Rating (P3).** `rate` ghi một **note riêng của owner** (`data.caseRating`) gắn với revision case đã nêu; nó không phải revision của case, nên **không đổi verdict, review status hay revision và không làm stale các coverage cell đã pin case**. `severity` ∈ critical/high/medium/low/informational là thang p2o cố định (xem rubric ở `skills/remediation/references/risk-rating-criteria.md`); `basis` bắt buộc; `cvssVector` tùy chọn và **host tự tính điểm** CVSS 3.1 (`src/cvss.ts`); `cwe` (`CWE-<số>`), `references` (khóa WSTG hoặc URL https, in dạng code) là chuỗi owner ghi, host không tra MITRE. Case dựa trên policy `inferred` không được rate trên Medium. Rating lưu `caseRevision`; khi case đổi revision, rating cũ vẫn còn nhưng báo cáo và preflight (`STALE_RATING`) đánh dấu để owner xác nhận lại. Case chưa rate vẫn đọc như cũ (không có trường `finding`).
 
 Host bind action, logical input, ID/revision và transport payload vào request HMAC. Lost ACK đọc
 retained result; không chạy lại builder/target. Changed input cùng request ID →

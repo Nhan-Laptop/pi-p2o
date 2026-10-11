@@ -9,7 +9,7 @@ export type WorkspaceCommand = { action: 'graph'; id?: string; limit?: number; c
   | { action: 'checkpoint'; reason: string } | { action: 'checkpoints'; id?: string }
   | { action: 'artifact'; id: string; offset: number }
   | { action: 'heads'; domain?:KnowledgeDomain; cursor:number; limit:number } | { action:'digest' }
-  | { action: 'export'; path: string } | { action: 'import'; path: string } | { action: 'report-export'; path: string } | { action: 'search'; query: string; cursor: number };
+  | { action: 'export'; path: string } | { action: 'import'; path: string } | { action: 'report-export'; path?: string } | { action: 'search'; query: string; cursor: number };
 export function parseWorkspaceCommand(args: string): WorkspaceCommand | undefined {
   const trimmed = args.trim();
   const [action, ...parts] = trimmed.split(/\s+/);
@@ -23,8 +23,8 @@ export function parseWorkspaceCommand(args: string): WorkspaceCommand | undefine
     // `/p2o report` stays the read-only index; only `report export <absolute-dir>` writes, human-only, to a new directory.
     let value = trimmed.slice(trimmed.indexOf('export') + 'export'.length).trim();
     if (value.length > 1 && ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'")))) value = value.slice(1, -1);
-    if (!value) throw Error('Usage: /p2o report export <absolute-host-directory>');
-    return { action: 'report-export', path: bundlePath(value, 'export') };
+    // No directory means the default <cwd>/.p2o-reports/report-<run-id>/ (never overwritten).
+    return { action: 'report-export', ...(value ? { path: bundlePath(value, 'export') } : {}) };
   }
   if (!['open', 'recover', 'close', 'checkpoint', 'checkpoints', 'artifact', 'export', 'import', 'reconcile', 'graph', 'heads', 'digest'].includes(action)) return;
   if (action === 'export' || action === 'import') {

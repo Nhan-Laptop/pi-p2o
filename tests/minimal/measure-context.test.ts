@@ -26,7 +26,7 @@ describe('scripts/measure-context.mjs', () => {
     // Declarations: 24 registered tools and the four loadouts of workflow-policy.test.ts.
     expect(report.declarations.registered).toBe(24);
     expect(Object.fromEntries(Object.entries<any>(report.declarations.loadouts).map(([label, item]) => [label, item.tools]))).toEqual({ 'delegated Planner': 18, 'solo owner': 18, worker: 14, 'reporting worker': 9 });
-    expect(report.declarations.loadouts['solo owner'].bytes).toBeLessThanOrEqual(Math.ceil(36_967 * 1.02));
+    expect(report.declarations.loadouts['solo owner'].bytes).toBeLessThanOrEqual(Math.ceil(38_355 * 1.02)); // raised on purpose from 36,967 by the rate/suggest/narrative additions (workflow-policy.test.ts)
 
     // Skills: the lead pages through the catalog and each role has a default skill whose first page is inlined.
     expect(report.skills.listPages.length).toBeGreaterThanOrEqual(3); expect(report.skills.listTotal).toBe(report.skills.listPages.reduce((sum: number, n: number) => sum + n, 0));

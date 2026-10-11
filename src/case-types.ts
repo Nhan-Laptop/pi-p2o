@@ -1,7 +1,9 @@
+import { CVSS_VECTOR } from './cvss.js';
 import { exact, fieldValidators, plain } from './validate.js';
 export const CASE_VERDICTS=['open','confirmed','ruled_out','inconclusive'] as const;
 export const CASE_REVIEW_STATUSES=['pending','accepted','disputed','withdrawn'] as const;
 export const REMEDIATION_STATUSES=['unplanned','planned','implemented','retest-pending','retested','accepted','failed'] as const;
+export const FINDING_SEVERITIES=['critical','high','medium','low','informational'] as const;
 export type CaseVerdict=typeof CASE_VERDICTS[number];
 export type CaseReviewStatus=typeof CASE_REVIEW_STATUSES[number];
 export interface CaseAssetRef {id:string;revision?:number;variant?:string}
@@ -9,6 +11,14 @@ export interface CaseTaskRef {taskId:string;revision?:number}
 export interface CaseHypothesisRef {id:string;revision:number}
 export interface CaseContradiction {evidenceRef:string;status:'open'|'resolved';reason:string}
 export interface CaseRemediation {status:typeof REMEDIATION_STATUSES[number];reason:string;evidenceRefs:string[];retestTask?:CaseTaskRef}
+/**
+ * Owner-attributed rating of one case, stored as its own owner note (`data.caseRating`) and NOT as a case revision: rating a case neither changes its
+ * verdict or review status nor stales the coverage cells that pin its revision. The score is computed by the host from `cvssVector` (src/cvss.ts);
+ * CWE IDs and references are what the owner recorded, not looked up. A case resting on an `inferred` policy basis may not be rated above Medium.
+ */
+export interface CaseFinding {
+  severity:typeof FINDING_SEVERITIES[number];basis:string;likelihood?:string;impact?:string;cvssVector?:string;cwe:string[];remediationSteps?:string;references:string[];reproductionEvidenceRefs:string[];independenceWaiver?:string;
+}
 export interface CaseDraft {
   id?:string;title:string;policyKey:string;rootCauseKey?:string;hypothesis?:CaseHypothesisRef;
   assetRefs:CaseAssetRef[];claimRefs:string[];independentEvidenceRefs:string[];taskRefs:CaseTaskRef[];reportRefs:string[];
@@ -19,6 +29,20 @@ export interface CaseEntry extends CaseDraft {id:string;runId:string;revision:nu
 
 const {text,key,id,revision,ids}=fieldValidators('case');
 function taskRef(value:unknown,label:string,revisionRequired=false):CaseTaskRef{const row=plain(value,label);exact(row,['taskId','revision'],label);const result:CaseTaskRef={taskId:id(row.taskId,`${label} task ID`)};if(row.revision!==undefined)result.revision=revision(row.revision,`${label} revision`);if(revisionRequired&&result.revision===undefined)throw Error(`${label} revision must be pinned`);return result}
+/** WSTG test keys (lower case, e.g. wstg-athn-02) or https URLs without credentials or fragments; recorded as text, never rendered as a link. */
+const REFERENCE=/^(?:wstg-[a-z]{4}-\d{2}|https:\/\/[a-z0-9.-]+\.[a-z]{2,}(?::\d{1,5})?(?:\/[A-Za-z0-9._~!$&'*+,;=:@%\/-]*)?(?:\?[A-Za-z0-9._~!$&'*+,;=:@%\/?-]*)?)$/;
+export function validateFinding(value:unknown):CaseFinding{
+  const row=plain(value,'case finding');exact(row,['severity','basis','likelihood','impact','cvssVector','cwe','remediationSteps','references','reproductionEvidenceRefs','independenceWaiver'],'Case finding');
+  if(typeof row.severity!=='string'||!(FINDING_SEVERITIES as readonly string[]).includes(row.severity))throw Error('Invalid case finding severity');
+  const cwe=row.cwe===undefined?[]:row.cwe;if(!Array.isArray(cwe)||cwe.length>5||cwe.some(item=>typeof item!=='string'||!/^CWE-[1-9][0-9]{0,4}$/.test(item))||new Set(cwe).size!==cwe.length)throw Error('Invalid case finding CWE list');
+  const references=row.references===undefined?[]:row.references;if(!Array.isArray(references)||references.length>5||references.some(item=>typeof item!=='string'||item.length>300||!REFERENCE.test(item))||new Set(references).size!==references.length)throw Error('Invalid case finding references');
+  const result:CaseFinding={severity:row.severity as CaseFinding['severity'],basis:text(row.basis,'finding basis',1000,10),cwe:cwe as string[],references:references as string[],reproductionEvidenceRefs:row.reproductionEvidenceRefs===undefined?[]:ids(row.reproductionEvidenceRefs,'finding reproduction evidence',5)};
+  if(row.likelihood!==undefined)result.likelihood=text(row.likelihood,'finding likelihood',800,5);if(row.impact!==undefined)result.impact=text(row.impact,'finding impact',800,5);
+  if(row.cvssVector!==undefined){if(typeof row.cvssVector!=='string'||!CVSS_VECTOR.test(row.cvssVector))throw Error('Invalid case finding CVSS:3.1 vector');result.cvssVector=row.cvssVector;}
+  if(row.remediationSteps!==undefined)result.remediationSteps=text(row.remediationSteps,'finding remediation steps',2000,10);
+  if(row.independenceWaiver!==undefined)result.independenceWaiver=text(row.independenceWaiver,'finding independence waiver',300,10);
+  return result;
+}
 function unique<T>(items:T[],identity:(item:T)=>string,label:string):T[]{if(new Set(items.map(identity)).size!==items.length)throw Error(`Duplicate case ${label}`);return items}
 
 /** Untrusted model/operator draft only. Host run/revision/record fields are never accepted here. */

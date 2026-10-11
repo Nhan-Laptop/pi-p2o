@@ -1,739 +1,584 @@
-# Hoạch định p2o: nâng bộ skills/workflow lên chuẩn OWASP WSTG (phân tích, ma trận phủ, lộ trình)
+# planning_update.md — Nâng cấp workflow pentest pi-p2o: không bỏ sót bước, báo cáo chuẩn OWASP
 
-> **Chỉ lập kế hoạch** (2026-10-11, HEAD `6cfb89d`): chưa sửa `skills/`, `src/`, `tests/`, chưa commit/push/cài. Tài liệu này **thay** bản S0–S7 (đã triển khai; đọc ở `git show 6cfb89d:planning_update.md`; các bản cũ hơn ở `git show 41e8157:planning_update.md` và `git show 7e204c3:planning_update.md`). §13 được giữ nguyên bên dưới vì `tests/minimal/acceptance-matrix.test.ts` đọc nó. Các trích dẫn "§D" của `docs/ACCEPTANCE_MATRIX.md:92` và "§0.1/§0.2" của `src/roles.ts:35`, `docs/VERIFICATION_LOG.md` trỏ tới các bản cũ đó; chưa sửa trong lượt này (việc X0.2).
+> **Trạng thái: ĐÃ TRIỂN KHAI P0–P7 trong working tree (2026-10-11), chưa commit/push/install.** Các mục §A–§F bên dưới là phần **phân tích tại thời điểm viết** (số đo MEASURED lấy từ lệnh chỉ đọc liệt kê ở §H, trên mã trước thay đổi). Kết quả triển khai, quyết định G đã dùng và các điểm lệch so với kế hoạch nằm ở **§0** ngay dưới. Chưa chạy benchmark trả phí; không dùng provider codex proxy.
+> **Bản này thay thế hoàn toàn mọi kế hoạch trước** (owner đã xóa bản cũ). Kế hoạch cũ chỉ còn trong git: `git show 41e8157:planning_update.md` (W0–W8), `git show 6cfb89d:planning_update.md` (S0–S7). Phụ lục §13 ở cuối được giữ nguyên vì `tests/minimal/acceptance-matrix.test.ts` đọc đúng hai khối của nó (xem G-1).
 
-> Nhãn bằng chứng: **MEASURED** (đo lại được, có lệnh hoặc file:dòng), **SOURCE-CONFIRMED** (đã đọc trực tiếp nguồn), **DESIGN-INFERENCE** (suy luận thiết kế), **UNVERIFIED** (chưa kiểm). Ký tự là độ dài chuỗi JS, B là byte. WSTG viết tắt cho OWASP Web Security Testing Guide, bản `master` `28553f878d48358767892916d53e59a9d664811c` (2026-10-10).
+## 0. Trạng thái triển khai (2026-10-11, chưa commit)
+
+**Đã làm (hermetic, không gọi model, không chạm target):** P0 tách baseline sang `docs/ACCEPTANCE_BASELINE.md` (G-1), sửa các trích dẫn treo; P1 `src/finish-preflight.ts` + `p2o.finishGate`; P2 báo cáo tự ghi lúc cleanup + `p2o.autoReport`/`reportRoot`, `/p2o report export` có đường dẫn mặc định; P3 `src/cvss.ts` + `p2o_case action=rate`; P4 báo cáo v2 (+ `narrative` của `p2o_finish`, `findings.json/csv`, `wstg-checklist.csv`, `p2o.reportFormat`, `p2o.report`); P5 `p2o.reviewIntegrity`; P6a `p2o_coverage action=suggest` và bỏ capsule trùng khỏi brief worker; P7 docs, `docs/ACCEPTANCE_MATRIX.md` mục P, `docs/VERIFICATION_LOG.md`. Tệp mới: `src/finish-preflight.ts`, `src/cvss.ts`, `docs/ACCEPTANCE_BASELINE.md`, `tests/minimal/{cvss,finish-preflight,case-rating,report-auto,review-integrity,coverage-suggest}.test.ts`, `tests/minimal/helpers/report-fixture.ts`. `npm test` (typecheck, build, check:build, vitest, Python) xanh: vitest 545 pass / 12 skip (557, trong đó 12 là test opt-in Docker/Herdr), Python 155 test. `node .gitnexus/run.cjs detect-changes --scope all --repo .` báo 26 tệp, 123 symbol, "critical" với 983 flow: số này do đồ thị chỉ index `extensions/p2o/index.ts` (không index `src/*.ts`), nên là cận trên theo mô hình đồ thị chứ không phải đo ảnh hưởng thật; caller của các hàm đổi đã xác nhận bằng grep và bằng bộ test.
+
+**Quyết định G đã dùng (theo cột "Khuyến nghị"):** G-1 tách; G-2 bật mặc định cho durable-local, ephemeral tắt, không làm P2b; G-3 `warn`; G-4 thang p2o bắt buộc cho case accepted ở mức preflight (blocking), CVSS/CWE tùy chọn; G-5 chỉ liên kết (địa chỉ trang ghim, in dạng code); G-6 `narrative` + khung tất định; G-7 Markdown + JSON + CSV; G-8 chỉ P6a, **không P6b** nên lead/worker prompt và hash ghim không đổi; G-9 hành vi tool mô tả trong `description`; G-10 `annotate`; G-11 `p2o.report` tùy chọn; G-12 không benchmark trả phí; G-13 `p2o.reportRoot` tùy chọn.
+
+**Điểm lệch so với kế hoạch (có chủ đích):**
+1. **Rating không nằm trong `CaseDraft`** như E.2 viết, mà là note owner riêng (`data.caseRating`) gắn `caseRevision`. Lý do tìm ra khi test: nếu rating là revision mới của case thì mọi coverage cell đã pin revision cũ bị `stale` và preflight báo `STALE_CELL` ngay sau khi rate. Hệ quả tốt: bản p2o cũ đọc run mới vẫn thấy case bình thường (note lạ bị bỏ qua), nên không còn rủi ro `exact()` loại case như E.2 từng cảnh báo.
+2. Chỉ `p2o_case action=rate` (không có `finding` trong `entry`), để khai báo không phình; tổng khai báo tăng 3,8% (delegated 36.268 → 37.656 B, solo 36.967 → 38.355 B), worker không đổi, các số ghim trong `workflow-policy.test.ts` và `measure-context.test.ts` được nâng có chủ đích.
+3. `p2o_task review` nhận thêm `externalEvidence` (P5); `enforce` chỉ kiểm tác giả receipt, còn khoảng trống hợp đồng luôn là thông tin vì chỉ ánh xạ được evidence/gaps/candidates/coverage (assets, facts, controls, artifacts nằm ở store khác và được báo là "unchecked", không phải "thiếu").
+4. Mã preflight chưa làm: `OPEN_GOAL`, `UNMAPPED_NOTE_COVERAGE`. `WSTG_APPLICABLE_UNPLANNED` chỉ xét test có trigger `any` và chỉ khi run có cell `wstg-`; trigger theo feature cần model nêu feature, dùng `suggest`.
+5. Start thất bại (`reason=failed`) không ghi báo cáo. `scripts/measure-context.mjs` chưa thêm số đo capsule/báo cáo.
+6. **Đo:** render báo cáo median 5 ms @10k, 31 ms @100k bản ghi synthetic; preflight 4 ms / 42 ms (xem `docs/VERIFICATION_LOG.md`). Capsule: brief worker bớt đúng một bản capsule (2,6–5,5K ký tự ước lượng ở B.1); chưa đo lại bằng worker thật.
+
+**Chưa kiểm chứng:** hiệu quả của cổng kết thúc và báo cáo lên độ đầy đủ của benchmark pentest (cần benchmark được duyệt); hành vi trên pane Herdr thật (`test:herdr` cần đồng ý riêng); mô hình thật có gọi `rate`/`suggest` hay không khi `toolGuidance` tắt (đây là lý do cổng `warn` nối thẳng vào kết quả `p2o_finish` thay vì dựa vào lời khuyên).
+
+---
 
 ## Tóm tắt
 
-1. **Cây đang đỏ vì hai việc không thuộc kế hoạch này (MEASURED):** `skills/wstg/` (bản raw 5,2 MB, 193 file) nằm trong thư mục mà `scripts/validate_library.py` quét, nên validator báo 156 lỗi (158 khi tính cả M1; `check:library` đỏ); `planning_update.md` bị xóa nên `acceptance-matrix.test.ts` fail (ENOENT) và hai link (README.md, `research/runtime/planner-engine/README.md`) gãy. Hệ quả: `npm test` đỏ ở cả hai chỗ. Đề xuất dời bản raw sang `my_references/wstg/` (X0.1), không đóng gói.
-2. **Bản raw giống từng byte upstream `master` `28553f8`** (chương 4 và 5), và 108 ID test còn hiệu lực khớp 100% với `docs/WSTG_MAP.md` (MEASURED). Giấy phép upstream là CC BY-SA 4.0 (đọc LICENSE trực tiếp), nên "chắt lọc" phải viết lại bằng lời của p2o, trích dẫn ID, không chép văn bản.
-3. **Ma trận phủ chấm lại có bằng chứng:** Đủ 21 / Một phần 40 / Thiếu 43 / Ngoài phạm vi 4. Bản đồ S4 ghi 26/35/43/4; 5 test `D` bị hạ xuống `T` vì skill được gán không nêu lớp lỗi ở thân văn bản (IDNT-01, INJT-04, INJT-13, INJT-15, BUSL-05). "Đủ" nghĩa là đủ tri thức phương pháp, không phải khả năng phát hiện (**UNVERIFIED**).
-4. **Khoảng trống lớn nhất:** Session 11/11 thiếu, Authentication 8/10 thiếu, Business Logic 7/10 thiếu, Client-side 7/14 thiếu, Configuration 4/13 thiếu; Injection có 15/22 test chỉ mới có kỹ thuật chung (không có thẻ riêng cho SQL, XML, lệnh, SSRF); Identity Management, GraphQL, WebAssembly và pha Reporting chưa có hướng dẫn riêng.
-5. **Đề xuất (§D):** 9 playbook mới (sở hữu 75 test) + 7 mục bổ sung vào skill hiện có (6 test được nâng mức; một mục cho pha Reporting), mỗi test WSTG có **đúng một** chủ sở hữu; không tool, trường, trạng thái schema hay dòng nào trong lead prompt. Mỗi skill nhỏ (SKILL.md ≤ 7.000 ký tự, thẻ test nằm ở `references/` đọc theo yêu cầu).
-6. **Hai rào cản kỹ thuật phải làm trước (X0):** provenance hiện chỉ cho **một** upstream (Apache-2.0, `validate_library.py:439`), nên skill dẫn xuất từ WSTG (CC BY-SA 4.0) cần schema v2; và bản đồ phải được chấm lại (X0.4).
-7. **Phát hiện đo được ngoài dự kiến:** Chromium 150 headless chạy được trong chính sandbox đã ghim (read-only, cap-drop ALL, uid 65532, không mạng) và thực thi JS. p2o chủ ý không có transport trình duyệt có quản lý, nên cờ B (20 test) vẫn đúng theo chính sách, nhưng "offline local browser run" khả thi với image hiện có (Q5).
-8. **Lộ trình X0–X5:** X0 nền và guard; X1 hygiene, session, credential và các bổ sung nhỏ (41 test, ít rủi ro nhất); X2 injection, logic, token; X3 trình duyệt và API; X4 crypto và báo cáo; X5 đo lường nâng cao chỉ khi owner cho phép. Đích: **Đủ 102/108**, Một phần 2 (INFO-04, INFO-10), Ngoài 4.
-9. **Không tuyên bố hiệu quả pentest.** Nghiệm thu chỉ bằng kiểm tra miễn phí (validator, test cấu trúc, đo kích thước); benchmark trả phí vẫn bị cấm.
-10. **Cần chốt 12 quyết định (§F.2)**, quan trọng nhất: vị trí bản raw, lập trường giấy phép, schema provenance v2, chính sách trình duyệt, và mức mutation cho các test có tác dụng phụ.
+1. **Lõi vòng lặp chặt về an toàn và provenance nhưng không có gì ép tính đầy đủ.** `p2o_finish` chỉ từ chối khi còn intent xếp hàng hoặc worker chưa báo cáo (`extensions/p2o/index.ts:1235-1242`). Nó không kiểm tra case chờ review, claim `confirmed` chưa thành case, coverage plan, cell chưa terminal, gap mở hay mục tiêu chưa đóng.
+2. **Xác nhận giả thuyết của owner.** `renderReport` chỉ có một call site: lệnh người dùng `/p2o report export` (`index.ts:1316`), sau một hộp xác nhận. `p2o_finish`, `/p2o stop`, shutdown và đổi session đều dọn dẹp rồi đóng store mà không render. Nguyên nhân gốc: quyết định thiết kế "người dùng gọi và xác nhận" (docs/USAGE.md §Báo cáo tất định) cộng với việc không có điểm gọi nào trong `cleanupOwnerPass` (§C.3).
+3. **Lượt trả lời cuối của lead bị đói trạng thái đã review.** Sau `p2o_finish`, mọi tool p2o bị chặn (`index.ts:1618-1628`); thứ duy nhất lead thấy là chuỗi kết quả finish, chỉ chứa 12 dòng coverage dạng note, 8 open item và trạng thái worker, **không có case, coverage plan hay WSTG** (`index.ts:1247-1251`). Báo cáo trong chat vì vậy có thể lệch khỏi báo cáo tất định, và đó cũng là văn bản mà bộ chấm benchmark đọc (`bench/lib/score.mjs`).
+4. **Báo cáo tất định hiện tại là chỉ mục tốt nhưng chưa phải báo cáo OWASP.** Thiếu so với WSTG §5: mức nghiêm trọng gán cho từng finding (chỉ in thang tiêu chí), khả năng khai thác, tác động, CVSS, CWE, khuyến nghị, bước tái hiện, executive summary, phạm vi, giới hạn, timeline. `CaseDraft` không có trường nào cho các mục đó (§E).
+5. **Prompt:** trùng nguyên văn giữa prompt, mô tả tool và skill gần như bằng 0 (đã có test chặn). Trùng thật là khối recon (1.899 ký tự = 33,8% prompt lead đại diện và 32% prompt worker). Khối đó chứa 732 ký tự định tuyến của Planner nằm trong prompt mọi worker (mâu thuẫn với "TACTICAL AUTONOMY") và 596 ký tự chiến thuật của worker nằm trong prompt lead. Capsule mục tiêu (2,6–5,5K ký tự trong mẫu tổng hợp) được gửi hai lần mỗi request cho worker. **Khai báo tool (36K/21K byte) lớn gấp 6–7 lần prompt**, nên cắt prompt có ROI thấp (§B).
+6. **WSTG hiện là phụ lục báo cáo, không điều khiển workflow:** `trigger`, `phase`, `owner` của 108 test không được runtime nào dùng ngoài `report-export.ts`; `p2o_coverage` là tùy chọn (§C, W-04).
+7. **So với ARTEX và strix:** p2o hơn ở provenance, consent, độ an toàn của báo cáo. p2o thua ở (i) báo cáo tự động khi kết thúc, (ii) preflight kết thúc đối soát coverage (strix `finish_scan`), (iii) schema finding giàu (strix tính CVSS từ 8 chỉ số, CWE, counterevidence, update history), (iv) wrap-up khi cạn ngân sách (ARTEX), (v) nghiệm thu mục tiêu định lượng (§D).
+8. **Đề xuất 8 pha P0–P7**, hầu hết ở phía host và có thể kiểm bằng test hermetic, không đụng prompt lead. Mỗi pha có công tắc setting và rollback bằng revert. Chỉ P6b (tùy chọn) sửa văn bản prompt và phải đổi hash ghim có chủ đích (§F).
+9. **13 quyết định cần owner chốt** (§G), quan trọng nhất: bật báo cáo tự động mặc định hay không (G-2), cổng kết thúc `off/warn/confirm` (G-3), mô hình mức nghiêm trọng (G-4).
 
-## Mở đầu: tình trạng cây và nguồn đã đọc
+## Nguồn đã đọc, cách đo, giới hạn
 
-| # | Phát hiện | Bằng chứng | Nhãn |
-|---|---|---|---|
-| M1 | `planning_update.md` đã bị xóa khỏi cây làm việc (còn ở `HEAD`) | `git status`: ` D planning_update.md`. `npx vitest run tests/minimal/acceptance-matrix.test.ts` fail với `ENOENT ... planning_update.md`; `validate_library.py` báo `README.md: broken local link planning_update.md` và `research/runtime/planner-engine/README.md: broken local link ../../../planning_update.md` | MEASURED |
-| M2 | `skills/wstg/` làm hỏng validator và `npm test` | 193 file (151 md, 42 ảnh, 5,2 MB); `scripts/validate_library.py` in 156 dòng FAIL thuộc `skills/wstg/` (158 khi `planning_update.md` còn thiếu, M1): ≥83 `prohibited executable recipe fence`, 38 `document exceeds focused reading budget`, 8 `CVE-specific skill content`, 8 `source-specific endpoint`, link và anchor gãy tới `6-Appendix/`. Nguyên nhân: `validate_library.py:726` lấy mọi `skills/**/*.md`; quy tắc ở `:60-68` cấm code fence, CVE, IP-URL, hex; `:808` giới hạn 1.500 từ. `package.json` chạy `check:library` trong `npm test`, và `tests/test_library.py:128` khẳng định `validate(ROOT) == []`. `files` của package gồm `skills/` nên bản raw sẽ bị đóng gói. Kiểm chứng: bản sao repo **không có** `skills/wstg/` (và có `planning_update.md` mới) cho `validate_library.py` `PASS` và `python3 -m unittest tests.test_library` OK (106 test, 2 skipped); trong cây thật, `npx vitest run` toàn bộ 482 passed / 12 skipped | MEASURED |
-| M3 | Bản raw = upstream `master` `28553f8` | `diff -rq` giữa `skills/wstg/{4-Web_Application_Security_Testing,5-Reporting}` và bản shallow clone `OWASP/wstg` (đọc ngày 2026-10-11, `HEAD` upstream vẫn `28553f8`, 2026-10-10): rỗng. Thiếu `6-Appendix` nên 3 link `../../6-Appendix/*` gãy. Bản raw không kèm LICENSE; `LICENSE` upstream là Attribution-ShareAlike 4.0 International | MEASURED |
-| M4 | 108 ID test còn hiệu lực không trôi | Tách ID từ bảng ID mỗi trang: 108 ID, 9 trang stub (`This content has been merged/removed`: INFO-09, CONF-03, CONF-08, IDNT-05, ATHN-01, INJT-03, INJT-13 bản Buffer Overflow, ERRH-02, CLNT-08); tập ID trùng khớp tập ID của `docs/WSTG_MAP.md` (0 thừa, 0 thiếu) | MEASURED |
-| M5 | Sandbox đã ghim có sẵn nhiều công cụ web, kể cả trình duyệt | Image local `ghcr.io/usestrix/strix-sandbox` có repo digest `sha256:f6906c3114e5…` đúng bằng digest ghim ở `scripts/setup-sandbox-tools.sh:11`. Probe với cờ như `src/sandbox.ts:12-17` (read-only, cap-drop ALL, no-new-privileges, uid 65532, tmpfs, `--network none`): có `curl`, `openssl`, `python3` 3.13 (requests, httpx, websockets, PyJWT, bs4, lxml, cryptography), `node` 24 (WebSocket, WebAssembly, fetch), `jq`, `nc`, `dig`, `sqlmap` 1.10.6, `ffuf`, `nuclei`, `nmap` cùng các NSE `ssl-enum-ciphers`, `http-security-headers`, `http-cors`, `http-cookie-flags`, `http-methods`, `http-enum`, `http-git`, và **Chromium 150**. Không có `sslscan`, `testssl.sh`, `sslyze`, `websocat`, `wabt`, `semgrep`, Playwright. `nmap` thất bại `exec ... Operation not permitted` (file capability bị cap-drop chặn), khớp lời cảnh báo ở `docs/HTTP_TRANSPORT.md`. Chromium `--headless=new --no-sandbox --dump-dom` trên trang `data:` chạy JS và in `p2o-dom-ok:42` | MEASURED (probe tại máy owner, không mạng) |
-| M6 | OWASP Top 10 2025 | Đọc `top10.owasp.org/2025`: A01 Broken Access Control, A02 Security Misconfiguration, A03 Software Supply Chain Failures, A04 Cryptographic Failures, A05 Injection, A06 Insecure Design, A07 Authentication Failures, A08 Software or Data Integrity Failures, A09 Security Logging and Alerting Failures, A10 Mishandling of Exceptional Conditions. Chỉ 4/108 trang WSTG trích một hạng mục `A0x:2025` (A01, A04, A05), nên Top 10 không phải chỉ mục của WSTG; ở đây chỉ dùng làm tín hiệu ưu tiên (§E) | SOURCE-CONFIRMED |
-| M7 | Cơ chế skill, cổng và ngân sách đã chốt | Playbook cần 11 mục (`validate_library.py:27`), `provenance_refs` và ≥ 1 reference được liên kết; skill kỹ thuật cần ≥ 3 nguồn blog độc lập nên **không** dùng cho nội dung WSTG; `non-blog skill cites blog source` (`:801`); ≤ 3 skill mỗi task (`docs/SKILL_RUNTIME.md`); 600 tài liệu tối đa (`src/skills.ts:48` và validator), hiện 141; trang đầu 8 KiB được inline vào brief worker (`extensions/p2o/index.ts:359`) | SOURCE-CONFIRMED |
-| M8 | Chỉ ghim §13 | Test duy nhất đọc `planning_update.md` là `acceptance-matrix.test.ts` (22 hàng ở §13.1, 7 gạch đầu dòng ở §13.3). Các chỗ khác chỉ trích dẫn bằng chữ (`src/wstg-map.ts:8`, `src/roles.ts:35`, README, docs); `research/runtime/planner-engine/installed.json:116` chứa hash cũ của file như biên nhận lịch sử, không test nào đọc | SOURCE-CONFIRMED |
+**Nhãn bằng chứng:** `READ` đã đọc code hoặc tài liệu (có file:dòng) · `MEASURED` lệnh chỉ đọc chạy hôm nay · `INFERRED` suy ra hợp lý, chưa chạy · `UNKNOWN` không đủ bằng chứng.
 
-Giới hạn của lần đọc này: **không đọc lại `my_references/`** (một lệnh liệt kê thư mục bị bộ phân loại an toàn chặn, nên tôi không chạy lại); phần so sánh với strix và ARTEX ở §D.1 dùng kết luận đã đo ở bản trước (`git show 6cfb89d:planning_update.md`, §C), chưa đọc bổ sung. Chưa đọc từng "How to Test" của 108 test ở mức câu; thẻ test sẽ cần đọc chúng khi triển khai (X1 trở đi).
+**Đã đọc (pi-p2o):** `src/prompts.ts`, `roles.ts`, `tool-guidelines.ts`, `tool-policy.ts`, `engine.ts`, `tasks.ts`, `work.ts`, `phase.ts`, `evidence.ts`, `cases.ts`, `case-types.ts`, `coverage.ts`, `coverage-types.ts`, `report.ts`, `report-export.ts`, `skills.ts`, đầu `wstg-map.ts`, `extensions/p2o/index.ts` (các đoạn tool, cleanup, command, hook), `docs/USAGE.md` (mục báo cáo), `docs/ARCHITECTURE.md`, `docs/SKILL_RUNTIME.md`, `bench/lib/score.mjs` (phần đầu), `scripts/benchmark-skills.mjs` (phần đầu), các test ghim.
+**Đã đọc (tham chiếu):** ARTEX `ARTEX_AGENTIC_CORE.vi.md` (§1–8), `guard/guard.go`, `report/report.go`, `report/findings.go`, `agent/finding_workflow.go`, `agent/wrapup.go`, `agent/terminalreason.go`, `agent/planner.go` (mẫu prompt), `server/orchestration.go` (seed reporter); strix `tools/finish/tool.py`, `report/writer.py`, `report/coverage.py` (đầu và hàm `_completeness`), `tools/reporting/tool.py` (hàm CVSS/CWE/trường bắt buộc), `skills/README.md`, `benchmarks/README.md`, `AGENTS.md`; WSTG `5-Reporting/01-Reporting_Structure.md`, `02-Naming_Schemes.md` và đo cấu trúc trang chương 4.
+**Không làm:** không chạy ARTEX hay strix; không đọc thân kỹ thuật của skill tấn công trong `strix/skills/` (không cần để so cơ chế); không chạy target, model, Docker hay Herdr; không chạy full `npm test` (chỉ các test hermetic liên quan tới file này, ở §H).
 
----
+**Giới hạn đã biết.** Snapshot ARTEX không có `.git` riêng và chính tài liệu của nó ghi upstream trả 404, nên "0.3.15" chỉ là nhãn changelog. Con số benchmark của strix (XBEN 96%, ~$337, ~19 phút/bài) là tự công bố trong README, chưa kiểm. Đo trùng lặp dùng shingle 7 từ và regex theo cụm khái niệm: đây là ước lượng có phương pháp, không phải đo ngữ nghĩa. Quy đổi token = ký tự / 4 (văn bản tiếng Anh), chỉ để so cỡ.
 
-## A. Phân tích framework WSTG
+**Câu hỏi của owner → mục trả lời**
 
-### A.1. Cấu trúc theo nhóm (đo trên bản raw)
-
-| Mục | Thư mục | md | Kích thước | Test hiệu lực | Ghi chú |
-|---|---|---|---|---|---|
-| 4.0 | `00-Introduction_and_Objectives` | 1 | 4.715 B | 0 | phương pháp luận, không có ID |
-| 4.1 | `01-Information_Gathering` | 12 | 126.358 B | 9 (`INFO`) | + 1 stub (INFO-09), 1 trang tổng quan |
-| 4.2 | `02-Configuration_and_Deployment_Management` | 16 | 176.809 B | 13 (`CONF`) | + 2 stub (CONF-03, CONF-08) |
-| 4.3 | `03-Identity_Management` | 6 | 22.148 B | 4 (`IDNT`) | + 1 stub (IDNT-05) |
-| 4.4 | `04-Authentication` | 12 | 85.749 B | 10 (`ATHN`) | + 1 stub (ATHN-01) |
-| 4.5 | `05-Authorization` | 8 | 69.404 B | 5 (`ATHZ`) | + 2 trang con OAuth (05.1, 05.2) |
-| 4.6 | `06-Session_Management` | 12 | 111.657 B | 11 (`SESS`) | |
-| 4.7 | `07-Injection` | 34 | 340.717 B | 22 (`INJT`) | + 2 stub (INJT-03, INJT-13 cũ), 9 trang con (SQL theo hệ CSDL 05.1–05.8, File Inclusion 11.1). Mã nhóm cũ `INPV` nay là `INJT` |
-| 4.8 | `08-Error_Handling` | 3 | 6.654 B | 1 (`ERRH`) | + 1 stub (ERRH-02) |
-| 4.9 | `09-Weak_Cryptography` | 5 | 33.130 B | 4 (`CRYP`) | |
-| 4.10 | `10-Business_Logic` | 12 | 92.162 B | 10 (`BUSL`) | + trang tổng quan |
-| 4.11 | `11-Client-side` | 17 | 89.753 B | 14 (`CLNT`) | + 1 stub (CLNT-08), 1 trang con (01.1 Self DOM XSS) |
-| 4.12 | `12-API_Testing` | 7 | 77.800 B | 5 (`APIT`) | + trang tổng quan; ID cuối là `APIT-99` (GraphQL) |
-| 4.13 | `13-WebAssembly_Testing` | 2 | 6.331 B | 0 | chỉ tổng quan, **không có ID** |
-| 5 | `5-Reporting` | 3 | 19.782 B | 0 | cấu trúc báo cáo và sơ đồ đặt tên lỗ hổng |
-
-Tổng: **108 test** trong 12 nhóm có ID, hơn 1,09 MB văn bản của các trang test, 42 ảnh (3,9 MB). Nhóm có nhiều test nhất: Injection (22), Client-side (14), Configuration (13), Session (11).
-
-### A.2. Cấu trúc một trang test (108 trang hiệu lực)
-
-| Phần | Số trang có | Dùng cho p2o |
-|---|---|---|
-| Bảng ID (`WSTG-<NHÓM>-<nn>`) | 108 (106 dạng bảng một cột) | khóa `questionKey` (đã dùng: `wstg-sess-03`) |
-| Summary | 108 | ngữ cảnh; không chép |
-| Test Objectives | 107 (CLNT-14 không có); tổng 236 gạch đầu dòng, trung bình 2,2, tối đa 6 | **phần có hành động nhất**: mỗi mục tiêu là một điều kiện kết luận |
-| How to Test | 108 (107 viết "How to Test", 1 viết "How To Test") | nguồn của các bước và dấu hiệu quan sát; chứa payload, ví dụ dài, hướng dẫn công cụ (không mang theo) |
-| Remediation | 56 | đã có skill `remediation`; chỉ trỏ nguyên tắc |
-| References | 88 | ghi vào provenance, không chép |
-| Tools | 64 | chỉ chọn công cụ có thật trong sandbox (M5), mỗi công cụ một câu |
-| Related Test Cases | 14 | dùng làm cạnh handoff giữa các skill |
-
-Kích thước trang: trung vị 8,2 KB, p90 17,3 KB, lớn nhất 44,6 KB (INJT-05 SQL Injection). Chắt lọc đúng nghĩa là giữ khoảng 20% (DESIGN-INFERENCE; mục tiêu, điều kiện kích hoạt, dấu hiệu phân biệt, cách kết luận, bằng chứng) và bỏ phần còn lại.
-
-### A.3. Phương pháp luận (chương 4.0) so với p2o
-
-| WSTG | p2o | Hệ quả cho thiết kế skill |
-|---|---|---|
-| Black-box: người kiểm thử có ít hoặc không có thông tin | p2o có thêm **white-box** (`source-review` trên bản sao mã nguồn) và bậc bằng chứng `static_trace`/`offline_reproduction`/`live_reproduction` | mỗi thẻ test phải nói rõ chế độ nào áp dụng và trần chứng minh của nó |
-| Passive rồi active testing | recon (passive) → discovery → validation → reporting (`src/roles.ts`) | cột `Phase` của bản đồ đã mô tả; thêm điều kiện kích hoạt từ kết quả recon |
-| 12 nhóm kiểm thử độc lập, không có thứ tự bắt buộc | `questionKey` + cell coverage cho từng (tài sản × câu hỏi × actor × tenant) | một test = một khóa; không cần kiểu "chạy cả nhóm" |
-| Business logic "không tự động hóa được, cần sáng tạo" (`10-Business_Logic/00-…`) | p2o có quy tắc nguồn chính sách (`policyBasis`), suy diễn chỉ được `open_proof_gap` | skill logic nghiệp vụ phải bắt đầu từ nguồn chính sách, không từ payload |
-| Công cụ tự động là phụ trợ | sandbox có `sqlmap`, `ffuf`, `nuclei` (M5) nhưng tài liệu R3/R4 đã loại payload catalog và dò tự động | mặc định không dùng scanner; xem Q7 |
-
-### A.4. Quan hệ với Reporting (chương 5)
-
-WSTG `5-Reporting/01-Reporting_Structure.md` đề xuất: (1) Giới thiệu (version, mục lục, đội, scope, giới hạn, timeline, disclaimer); (2) Executive Summary theo ngôn ngữ kinh doanh; (3) Findings gồm bảng tóm tắt (ID, tiêu đề, mức rủi ro) và chi tiết (ID, tiêu đề, khả năng khai thác, tác động, rủi ro **kèm thang được giải thích ở phụ lục**, mô tả, bước khắc phục, tài nguyên); (4) mục "Human Factors"; (5) "Reproducible Test Artifacts" (curl, PoC, HAR, script); (6) Phụ lục: phương pháp, thang rủi ro, đầu ra công cụ (đã làm sạch), **checklist các test đã làm** (liên kết tới `checklists/` của WSTG). `02-Naming_Schemes.md` mô tả CPE, SWID, PURL để định danh phần mềm. WSTG nói rõ đây là gợi ý cho báo cáo tư vấn, không phải quy tắc cứng. So sánh với `/p2o report export` hiện tại ở §B.5 và §C.
+| Câu hỏi | Trả lời ở |
+|---|---|
+| A. Prompt lead/worker: trùng, mâu thuẫn, đủ context | §B |
+| B. Điểm yếu gây bỏ sót khi chạy benchmark | §C.1–C.2 |
+| C. Vì sao xong pentest vẫn chỉ có output chat; tự động xuất | §C.3, §E.7 |
+| D. Báo cáo chuẩn OWASP | §E |
+| So sánh ARTEX và strix | §D |
+| Lộ trình, nghiệm thu, rollback; quyết định | §F, §G |
 
 ---
 
-## B. Ma trận phủ: WSTG → skill hiện có → mức phủ
+## A. Hiện trạng core loop và hai cơ chế prompt
 
-### B.1. Định nghĩa mức (dùng chung cho cả 108 test)
+### A.1. Bản đồ thành phần (READ)
 
-Giữ nguyên hệ thống `Support` đã được test ghim ở `src/wstg-map.ts` (không tạo hệ thống thứ hai) và đặt tên lại theo yêu cầu: **D = Đủ**, **T = Một phần**, **N = Thiếu**, **O = Ngoài phạm vi**. Điều kiện chấm (áp dụng cho văn bản thân của SKILL.md và các `references/`, không tính frontmatter):
-
-| Mức | Điều kiện | Bằng chứng yêu cầu |
+| Thành phần | Dòng | Vai trò |
 |---|---|---|
-| Đủ | có đoạn gọi tên lớp lỗi hoặc đối tượng được kiểm của test **và** cho phương pháp, tiêu chí kết luận hoặc kiểm tra dương tính giả cho lớp đó, chạy được bằng ít nhất một workflow hiện có | trích file:dòng |
-| Một phần | chỉ có phương pháp chung dùng lại được (dò nguồn tới sink, so sánh hai tầng phân tích, ma trận actor × đối tượng) hoặc chỉ nhắc lớp lỗi một dòng, nên worker phải tự bổ sung tri thức của lớp | nêu rõ phần còn thiếu |
-| Thiếu | không đoạn nào nhắc đối tượng được kiểm | tìm kiếm văn bản rỗng |
-| Ngoài | cần origin khác, DNS hoặc bên thứ ba (`src/prompts.ts` giới hạn scope vào origin đã xác nhận) | theo thiết kế |
+| `extensions/p2o/index.ts` | 1.798 | Vòng đời owner/worker, 24 tool, lệnh `/p2o`, mọi hook Pi |
+| `src/engine.ts` | 164 | Scheduler tất định (không model): hàng intent, debounce 100 ms, wake có đánh số epoch |
+| `src/tasks.ts` + `work.ts` + `phase.ts` | 260 + 119 + 19 | TaskBoard, danh tính công việc có cấu trúc, phase packet khi worker bàn giao |
+| `src/evidence.ts` | 135 | Biên nhận evidence, luật đóng candidate, export JSON legacy |
+| `src/cases.ts` + `case-types.ts` | 106 + 53 | Case do owner review, currentness chỉ hạ, trùng lặp theo rootCauseKey |
+| `src/coverage.ts` + `coverage-types.ts` | 75 + 42 | Plan và cell: mẫu số tường minh, execution tách khỏi assessment |
+| `src/report.ts`, `report-export.ts` | 119, 204 | Đóng băng/chiếu trạng thái; sinh REPORT.md, cases.csv, coverage.csv, manifest |
+| `src/prompts.ts`, `roles.ts`, `tool-guidelines.ts` | 126, 118, 24 | Prompt lead/worker, vai trò và skill mặc định, guidance theo tool (mặc định tắt) |
+| `src/skills.ts`, `skills/catalog.json` | 124, 309 tài liệu | Chỉ phục vụ tài liệu đăng ký theo ID; 30 skill (17 technique, 12 playbook, 1 overlay) |
+| `src/wstg-map.ts` | 403 | 108 test WSTG ghim ở commit `28553f8`, mức hỗ trợ D/T/N/O, cờ B/I, trigger, owner, card |
 
-"Đủ" là **đủ tri thức phương pháp**, không phải đủ để phát hiện lỗi (**UNVERIFIED** cho tới khi có benchmark được phép). Chấm bằng hai bước: quét từ khóa theo lớp lỗi trên toàn bộ `skills/**` (không tính `skills/wstg/`), rồi đọc các dòng trúng; kết quả từ khóa thô có nhiễu (chữ "trace", "options" trúng hàng trăm dòng không liên quan), nên **không** dùng số lần trúng làm bằng chứng, chỉ dùng dòng đã đọc.
+### A.2. Sơ đồ luồng (READ)
 
-### B.2. Ma trận theo nhóm (sau khi chấm lại)
+```text
+Người dùng:  /p2o --target … [--solo|--workers N] [--loop manual|event-driven] [--export] [--retention …]
+   │  hộp xác nhận bắt buộc (cần ctx.hasUI; index.ts:1441, 1461)  → OwnerRun{store, broker, sandbox, engine, board, cases, coverage}
+   ▼
+LEAD (phiên Pi hiện tại)                       prompt: sections['p2o_assessment'] = ownerInstructions(facts)   [ghim]
+   │  tin nhắn kích hoạt: "Begin the confirmed assessment now … report evidence, coverage and unresolved gaps." (index.ts:1605)
+   │  mỗi request: + p2o_objective_state + p2o_knowledge_state(≤12 KiB) + p2o_planner_state (hook context, index.ts:1657-1691)
+   │  p2o_task create/revise/match → TaskBoard (từ chối trùng theo fingerprint công việc)
+   │  p2o_task dispatch → Engine.enqueue (≤100 intent)
+   ▼
+ENGINE (TypeScript, không LLM):  kick → drain: reap pane → sắp theo priority → readiness (prerequisite đã review) → capacity → spawn
+   ▼
+spawnWorkerLocked (index.ts:328-441): hold/pause/sandbox/depth/cap/ngân sách 90% → resolveRole (≤3 skill; trang đầu SKILL.md được nhúng vào brief)
+   ▼  ticket + pane Herdr + Pi worker (--no-extensions --no-skills --no-context-files)
+WORKER:  system += workerInstructions(ticket)  ·  brief = workerBrief(focus, scope, limits, context≤4000, skills, task, capsule)
+   │  p2o_shell/net/http/capture · p2o_candidate (host kiểm: evidence cùng run, luật proof/closure) · p2o_note · p2o_request_subtask
+   ▼  p2o_report → TaskBoard.handoff: report_part + manifest + coverage/open (legacy) + phase packet; task → reported (tasks.ts:196+)
+LEAD:  p2o_task review (cần evidence ID cùng run) → p2o_case create/revise accepted → p2o_coverage cell → vòng lại
+   ▼
+p2o_finish: từ chối nếu còn intent xếp hàng / worker chưa báo cáo → cleanupOwnerPass
+   (engine.stop → revoke → đóng pane → dừng sandbox → freezeReport → [--export: JSON ledger] → usage event → store.finalize('incomplete') → checkpoint → store.close)
+   ▼
+Lead viết "báo cáo cuối" trong chat; mọi tool p2o đã bị chặn.            renderReport: KHÔNG được gọi ở đây.
+```
 
-Cột "S4" là bản đồ hiện có (`docs/WSTG_MAP.md`); cột "Nay" là kết quả chấm lại (B.3); cột "Đích" là mức khi toàn bộ §D hoàn tất. Mỗi ô là Đủ/Một phần/Thiếu/Ngoài.
+Báo cáo tất định chỉ có đường: `người dùng → /p2o open <run> (nếu run đã đóng) → /p2o report export <abs-dir> → xác nhận → renderReport → publishReportFiles` (`index.ts:1310-1324`).
 
-| Nhóm | Test | S4 (Đủ/MP/Thiếu/Ngoài) | Nay | Đích | B | I | Skill hiện có chính | Khoảng trống chính |
-|---|---|---|---|---|---|---|---|---|
-| INFO Thông tin | 9 | 2/6/0/1 | 2/6/0/1 | 6/2/0/1 | 0 | 0 | `web-route-input-inventory`, `attack-surface-mapping` | fingerprint, metafile, rò nội dung trang (INFO-02,03,05,08); INFO-01 ngoài scope |
-| CONF Cấu hình | 13 | 1/5/4/3 | 1/5/4/3 | 10/0/0/3 | 2 | 0 | `parser-differential-auditing` (CONF-13) | header, HSTS, giao diện quản trị, file sao lưu, cấu hình nền tảng, cờ tính năng; CONF-01,10,11 ngoài scope |
-| IDNT Danh tính | 4 | 1/3/0/0 | 0/4/0/0 | 4/0/0/0 | 0 | 3 | `web-object-authorization` (một phần) | đăng ký, cấp tài khoản, liệt kê người dùng |
-| ATHN Xác thực | 10 | 2/0/8/0 | 2/0/8/0 | 10/0/0/0 | 1 | 9 | `authorization-auditing`, `fastapi-security-parity` | mật khẩu mặc định, khóa tài khoản, đặt lại, MFA, câu hỏi bảo mật, nhớ đăng nhập |
-| ATHZ Phân quyền | 5 | 3/1/1/0 | 3/1/1/0 | 5/0/0/0 | 0 | 4 | `web-object-authorization`, `authorization-auditing` | traversal (một phần), OAuth (thiếu) |
-| SESS Phiên | 11 | 0/0/11/0 | 0/0/11/0 | 11/0/0/0 | 1 | 10 | không có | toàn bộ nhóm: token, cookie, cố định, đăng xuất, hết hạn, JWT, CSRF |
-| INJT Injection | 22 | 10/12/0/0 | 7/15/0/0 | 22/0/0/0 | 2 | 1 | `web-output-context`, `deserialization-and-dispatch-auditing`, `parser-differential-auditing` | SQL, XML/XPath/LDAP, lệnh, SSRF, SSI, mail, CSV: chỉ có truy vết nguồn tới sink chung |
-| ERRH Xử lý lỗi | 1 | 0/0/1/0 | 0/0/1/0 | 1/0/0/0 | 0 | 0 | không có | không có skill riêng |
-| CRYP Mật mã | 4 | 0/1/3/0 | 0/1/3/0 | 4/0/0/0 | 0 | 0 | `source-code-auditing` (chung) | TLS, padding oracle, kênh không mã hóa, primitive yếu |
-| BUSL Logic nghiệp vụ | 10 | 1/2/7/0 | 0/3/7/0 | 10/0/0/0 | 0 | 10 | `race-condition-auditing` (một phần) | dữ liệu, giả mạo request, toàn vẹn, quy trình, thanh toán, upload |
-| CLNT Phía client | 14 | 3/4/7/0 | 3/4/7/0 | 14/0/0/0 | 14 | 0 | `web-output-context` (CLNT-01,02,03) | CORS, clickjacking, WebSocket, messaging, storage, XSSI, tabnabbing, chuyển hướng, CSS |
-| APIT API | 5 | 3/1/1/0 | 3/1/1/0 | 5/0/0/0 | 0 | 2 | `web-route-input-inventory`, `web-object-authorization` | GraphQL (thiếu); lộ trường dữ liệu (một phần) |
-| **Tổng** | **108** | **26/35/43/4** | **21/40/43/4** | **102/2/0/4** | **20** | **39** | | |
+### A.3. Máy trạng thái task và các cổng "reviewed" (READ)
 
-Đọc kết quả:
+`proposed → reserved → running → reported → reviewed → closed`, nhánh `blocked/cancelled/expired` (`src/tasks.ts:185`). Cổng `reviewed`: có prerequisite thiếu thì từ chối; worker phải `reported` trước; cần 1–10 evidence ID là bản ghi `evidence` **cùng run** (`tasks.ts:187-190`). Host **không** kiểm evidence thuộc worker/task đó, cũng không kiểm `outputContract` (§C, W-06).
 
-- **Nay: Đủ 21 (19%), Một phần 40 (37%), Thiếu 43 (40%), Ngoài 4 (4%).** 104 test thuộc scope; 61 có ít nhất một skill liên quan, 21 có skill gọi tên đúng lớp lỗi.
-- Nhóm hầu như chưa có tri thức riêng: **SESS (0/11)**, **ATHN (2/10)**, **BUSL (0/10)**, **CRYP (0/4)**, **ERRH (0/1)**, **CLNT (3/14)**.
-- Nhóm có skill nhưng chỉ ở dạng kỹ thuật chung: **INJT** (7 Đủ, 15 Một phần). Việc "dò dữ liệu tới sink" có sẵn (`data-flow-analysis`) nhưng không có tri thức riêng của từng bộ thông dịch (SQL, XML, lệnh hệ điều hành, URL fetch).
-- Nhóm đã tốt: **ATHZ (3/5)**, **APIT (3/5)**: dùng `web-object-authorization` và `web-route-input-inventory`.
+### A.4. Điều kiện dừng (READ)
 
-### B.3. Chấm lại so với bản đồ S4 (bằng chứng)
-
-Bản đồ S4 chấm `D` theo **mô tả** skill. Khi đọc thân văn bản, 15/26 hàng `D` có câu gọi tên lớp lỗi hoặc đối tượng, 6 hàng khác trùng ý bằng chữ khác, và 5 hàng không có gì:
-
-| Test | Skill được gán | Điều tìm thấy ở thân văn bản | Chấm lại |
+| Đường | Ai kích hoạt | Lượt model cuối | Báo cáo tất định |
 |---|---|---|---|
-| IDNT-01 Role Definitions | `web-object-authorization` | chỉ dùng "documented role" làm nguồn chính sách (`SKILL.md:23`); không có phương pháp lập kho vai trò, thử chuyển vai, đánh giá độ mịn quyền (mục tiêu của test) | D → **T** |
-| INJT-04 HTTP Parameter Pollution | `parser-differential-auditing` | `SKILL.md:22-24` nói delimiter, độ dài, giá trị rỗng; chỉ một câu "repeated-field policy" trong `references/cache-selection.md:9` về khóa cache; không có phương pháp cho tham số lặp ở tầng ứng dụng | D → **T** |
-| INJT-13 Format String Injection | `memory-safety-auditing` | `SKILL.md:3` nói biểu diễn số, vùng đệm, khởi tạo, vòng đời; không có "format string" hay conversion specifier ở bất kỳ skill nào | D → **T** |
-| INJT-15 HTTP Response Splitting | `parser-differential-auditing` | không có CR/LF hay chèn header ở bất kỳ skill nào; chỉ có cách tiếp cận so sánh tầng chung (`SKILL.md:22-26`) | D → **T** |
-| BUSL-05 Number of Times a Function Can Be Used | `race-condition-auditing` | `SKILL.md:3` là double-fetch, lock-drop, TOCTOU; giới hạn số lần dùng tuần tự (không cần đua) không được nêu | D → **T** |
+| `p2o_finish` | lead | có (tool đã bị chặn) | không |
+| `/p2o stop` | người dùng, `ctx.abort()` (`index.ts:1429-1436`) | không | không |
+| `session_shutdown`, đổi/fork/tree session | Pi (`index.ts:1741-1757`) | không | không |
+| `storage-failed` | host (`index.ts:620-627`) | không | không |
+| Engine `pause` (vòng tự động cạn `maxPlannerRounds`, backlog sự kiện >256, lỗi scheduler, provider lỗi) | host | không | không; `resume` bị từ chối khi hết vòng (`engine.ts:147`) |
+| `p2o_loop blocked/wait` | lead | kết thúc lượt, không kết thúc run | không |
+| Crash/kill | — | không | không; store không finalize, dùng `/p2o reconcile` |
 
-Giữ `D`, đã xác nhận bằng chữ ở thân văn bản (15): INFO-06 (`web-route-input-inventory/SKILL.md:6,11`), INFO-07 (`references/route-inventory-method.md:3,17`), CONF-13 (`parser-differential-auditing/SKILL.md:20`, `references/cache-selection.md`), ATHN-04 (`authorization-auditing/SKILL.md:20`), ATHN-10 (`:24`), ATHZ-04 (`web-object-authorization/SKILL.md:20`), INJT-01 và INJT-02 (`web-output-context/SKILL.md:6,11`), INJT-16 (`parser-differential-auditing/SKILL.md:26`, chỉ ở mức "framing"), INJT-18 (`deserialization-and-dispatch-auditing/SKILL.md:14`), INJT-20 (`authorization-auditing/SKILL.md:24,31`), INJT-22 (`:30`), INJT-23 (`:6`), CLNT-01 (`web-output-context/SKILL.md:11`), APIT-01 (`web-route-input-inventory/references/route-inventory-method.md:7`). Giữ `D`, trùng ý bằng chữ khác (6): ATHZ-02 và ATHZ-03 (`web-object-authorization/SKILL.md:11`, `authorization-auditing/SKILL.md:24,27`), CLNT-02 và CLNT-03 (`web-output-context/SKILL.md:20`: "HTML text, quoted attribute, URL, script string, style rule"), APIT-02 và APIT-04 (`web-object-authorization/SKILL.md:11`).
+Run kết thúc bình thường vẫn ghi `assessmentOutcome='incomplete'` (`index.ts:598`): hệ thống chủ ý không bao giờ tự tuyên bố "hoàn tất". **Không có tiêu chí dừng khách quan nào** ngoài quyết định của lead hoặc người dùng; prompt ghi "No elapsed-time limit; stop or finish explicitly" (`prompts.ts:49`).
 
-Hai điểm cần owner xem lại (Q4): `APIT-03` (Excessive Data Exposure) vẫn `T` nhưng `web-object-authorization/SKILL.md:11` đã nêu "serializer field policy", gần như cùng đối tượng; và `INJT-16` được giữ `D` chỉ nhờ chữ "framing" (không có CL/TE, H2). Thêm mục `roles-and-field-exposure` ở §D.4 sẽ giải quyết cả IDNT-01, INJT-20 và APIT-03 mà không thêm skill.
+### A.5. Cơ chế prompt #1 — lead (READ + MEASURED)
 
-### B.4. Khả năng thực thi hôm nay (độc lập với tri thức)
+Thành phần theo thứ tự: (1) một section `p2o_assessment` thay thế mỗi lượt (`index.ts:1637-1654`) = `ownerInstructions` (`prompts.ts:48-81`): vai trò, danh tính mục tiêu, scope, kỷ luật dữ liệu không tin cậy, khối recon, ủy quyền, bằng chứng và đóng candidate, dọn dẹp và báo cáo; (2) khai báo tool của lead; (3) `promptGuidelines` từng tool (**mặc định tắt**: `p2o.toolGuidance=false`, `roles.ts:38`, vì benchmark 2026-10-10 cho thấy +73% chi phí, không tăng chất lượng); (4) ba message request-local mỗi lượt: objective, knowledge packet (≤12 KiB), planner state; (5) skill đọc theo yêu cầu.
 
-| Cách thực thi | Điều kiện | Số test bị ảnh hưởng | Trần chứng minh |
-|---|---|---|---|
-| `source-review` | có bản sao mã nguồn chỉ đọc | hầu hết (mọi test có đường mã hoặc cấu hình trong repo) | `static_trace` |
-| HTTP ẩn danh cùng origin (`p2o_http`, `session: none`) | origin đã xác nhận | các test header, cookie, method, lỗi, metafile | `live_reproduction` |
-| HTTP có danh tính (`p2o_http`, session đặt tên) | tài khoản do operator cấp (**cờ I: 39 test**) | SESS, ATHN, IDNT, BUSL, ATHZ, APIT-02/04 | `live_reproduction` |
-| Mạng trong sandbox (`p2o_net`) | host:port đã xác nhận; công cụ người dùng tự cài hoặc có sẵn (`openssl`, Python `websockets`, Node `WebSocket`) | CRYP-01, CLNT-10, một phần CRYP-03 | `live_reproduction` (không lọc origin) |
-| Trình duyệt | p2o **không** có transport có quản lý (`docs/SKILL_RUNTIME.md`, workflow `browser-execution-proof`) | **cờ B: 20 test** (19 chỉ B + SESS-05 là BI) | `offline_reproduction` |
-| Ngoài phạm vi | DNS, tìm kiếm, origin khác | 4 test (INFO-01, CONF-01, CONF-10, CONF-11) | `not_applicable` |
+| Đại lượng (MEASURED `scripts/measure-context.mjs --source`) | Giá trị |
+|---|---|
+| Prompt lead solo directory / url | 4.826 / 4.977 ký tự (trần ghim <5.000) |
+| Prompt lead delegated directory / url / url event-driven | 5.221 / 5.372 / 5.617 ký tự (trần 5.326 / 5.480 / 5.730) |
+| Khai báo tool: delegated Planner / solo owner | 18 tool, 36.268 / 36.967 byte |
+| Tool lớn nhất | `p2o_graph` 7.248, `p2o_task` 5.816, `p2o_case` 4.697, `p2o_coverage` 4.403, `p2o_plan` 2.710 byte |
+| `p2o_skill_list` nếu lướt hết 4 trang | 13.254 + 11.927 + 7.865 + 5.613 = 38.659 ký tự |
 
-Giao: 1 test vừa cờ B vừa cờ I (SESS-05). 50 test không cờ (46 trong scope + 4 Ngoài). Trình duyệt: xem M5 và Q5; Chromium có sẵn trong image cho phép chạy cục bộ bản sao fixture (là `offline_reproduction` theo định nghĩa hiện có), nhưng chạy qua shell thì không có ghim origin hay biên nhận có cấu trúc nên **không** được coi là `live_reproduction`.
+### A.6. Cơ chế prompt #2 — worker (READ + MEASURED)
 
-### B.5. Pha Reporting: WSTG §5 so với `/p2o report export`
+`workerInstructions` (`prompts.ts:83-100`) được nối vào system prompt (`index.ts:1653`), brief gửi qua Herdr (`index.ts:414`). System prompt 5.315–5.912 ký tự theo vai trò; brief tối thiểu 553–584 ký tự cộng context do lead viết (≤4.000), trang đầu của 1–3 skill (6.073–7.981 ký tự cho skill mặc định), và capsule mục tiêu. Khai báo tool của worker 20.750 byte (vai trò `reporting`: 13.974 byte). Mỗi request còn có `p2o_objective_state` và knowledge packet.
 
-| Mục WSTG §5 | p2o hiện có | Mức |
+### A.7. Skills và WSTG khi chạy (READ)
+
+`SkillLibrary` chỉ phục vụ tài liệu có trong `skills/catalog.json` theo ID, viết lại link tương đối thành `p2o-skill:<id>` nếu đích đã đăng ký (`src/skills.ts:78-108`); 309 tài liệu: 104 trang WSTG thô (`wstg-source:`), 101 tài liệu thuộc skill, 94 mục bằng chứng, 10 tài liệu chung. Vai trò chọn skill mặc định (`roles.ts:15-21`): recon → `attack-surface-mapping`, discovery → `source-code-auditing`, validation → `exploitability-assessment`, reporting → `remediation`; lead có thể chỉ định ≤3 skill/task (`roles.ts:28`). Skill sở hữu một test WSTG chỉ được dùng nếu lead tự chọn nó.
+
+**WSTG trong runtime:** `WSTG_MAP` chỉ được `src/report-export.ts` nhập (dòng 9, 76–111). Các trường `trigger` (đặc trưng recon làm test đáng lập kế hoạch), `phase`, `owner`, `card`, `modes` không được tool hay prompt nào dùng. Khóa `wstg-*` chỉ có tác dụng khi lead tự đặt làm `questionKey` của cell.
+
+### A.8. Ràng buộc do test ghim (READ)
+
+| Ràng buộc | Nơi | Hệ quả cho kế hoạch |
 |---|---|---|
-| Version control, mục lục, đội | `## Provenance`: run, sequence, schema, runtime digest (`src/report-export.ts:104-109`) | Một phần (không có bảng phiên bản/tác giả; không áp dụng cho công cụ tự động) |
-| Scope | exclusions và unknownScope của plan trong `## Coverage and gaps` (`:116`) | Đủ |
-| Limitations, disclaimer | `## Limits of this report` (`:163-167`) và câu "Read this first" | Đủ |
-| Timeline | không có | Thiếu (thấp) |
-| Executive Summary theo ngôn ngữ kinh doanh | `## Summary` chỉ là bảng đếm (`:110`) | Thiếu; chủ ý không tự sinh (mô hình dễ nói quá) |
-| Findings summary (ID, tiêu đề, **rủi ro có thang**) | `## Accepted current cases` (`:137`) | Một phần: có ID, tiêu đề, verdict; không có mức rủi ro |
-| Findings detail (khả năng khai thác, tác động, rủi ro, mô tả, bước khắc phục, tài nguyên) | `caseSection` (`:47-55`): verdict, review, policy, tham chiếu bằng chứng, remediation trạng thái, lý do, giới hạn; `risk` chỉ là chuỗi tự do của worker (`src/evidence.ts:10`) | Một phần: thiếu khả năng khai thác, tác động, thang |
-| Human Factors | không | Ngoài (p2o không kiểm con người, quyết định có từ trước) |
-| Reproducible Test Artifacts | biên nhận lệnh/request, artifact giữ lại; không lưu giá trị header/body (`docs/HTTP_TRANSPORT.md`) | Đủ về thực chất, khác dạng (ID biên nhận, không phải lệnh curl) |
-| Phụ lục: checklist test đã làm | mục `WSTG checklist` (`:70`, slice S6) | Đủ |
-| Phụ lục: phương pháp, giải thích thang rủi ro | không có | Thiếu |
-| Naming Schemes (CPE, SWID, PURL) | loại tài sản `package` có sẵn (`src/state/graph.ts:7`) nhưng không có quy ước định danh | Thiếu (tùy chọn) |
+| Prompt lead solo <5.000 ký tự, không chứa `p2o_*`; delegated có trần riêng | `recon.test.ts:29,47,86-88` | Không thể thêm chính sách vào prompt lead; còn ~105–113 ký tự dư ở bản delegated |
+| SHA-256 của `workerInstructions` và `workerBrief` (url, directory) | `recon.test.ts:50-60` | Mọi sửa văn bản worker phải đổi hash có chủ đích |
+| `p2o_*` không được xuất hiện ngoài loadout của vai trò | `recon.test.ts`, `workflow-policy.test.ts` | Guidance theo tool không được nhắc tool khác loadout |
+| Mỗi dòng guidance ≤260 ký tự; tổng ≤1.200 (lead) / ≤800 (worker) | `workflow-policy.test.ts:76-78` | Ngân sách guidance hiện 1.003 / 921 / 314 / 217 |
+| Khai báo và guidance mỗi loadout không tăng quá 2% | `workflow-policy.test.ts:105-114` | Thêm tham số tool phải nâng số ghim có chủ đích |
+| §13.1 đúng 22 hàng, §13.3 đúng 7 gạch đầu dòng trong file này | `acceptance-matrix.test.ts:31-46` | Giữ nguyên phụ lục §13 (G-1) |
+| Đếm D/T/N/O/B/I của bản đồ WSTG | `wstg-map.test.ts:39-42` | Không đổi mức hỗ trợ khi chưa có chủ đích |
+| Bộ chấm benchmark đọc chuỗi kết quả `p2o_finish` ("Coverage:", "Open items:") | `bench/lib/score.mjs`, `benchmark.test.ts:413+` | Chỉ **nối thêm** vào chuỗi finish, không đổi thứ tự cũ |
+
+### A.9. Ba đầu ra hiện có (READ)
+
+| Đầu ra | Khi nào | Nội dung | Ai gọi |
+|---|---|---|---|
+| Báo cáo cuối trong chat | sau `p2o_finish` | văn bản tự do của lead; nguồn duy nhất là chuỗi kết quả finish và trí nhớ hội thoại | model |
+| `.p2o-reports/<run>-<uuid>.json` | lúc cleanup, **chỉ khi `--export`** (`index.ts:585-591`, `evidence.ts:86-118`) | toàn bộ ledger đã redact; không phải báo cáo | host |
+| `REPORT.md` + `cases.csv` + `coverage.csv` + `report-manifest.json` | **chỉ khi người dùng chạy `/p2o report export <abs-dir>`** | chỉ mục tất định, an toàn markup | người dùng |
 
 ---
 
-## C. Khoảng trống chưa được phủ
+## B. Phân tích trùng lặp, mâu thuẫn, mơ hồ (câu hỏi A)
 
-### C.1. Theo cụm kịch bản
+### B.1. Đo trùng lặp (MEASURED, script chỉ đọc trong thư mục scratch)
 
-"Test" là số test WSTG; "Đủ/MP/Thiếu" là mức hiện tại (Nay). Cột cuối là skill đề xuất ở §D.
+| Cặp so sánh | Kết quả |
+|---|---|
+| Lead (delegated url event-driven, 5.617) × worker discovery (5.910) | 243 shingle 7-từ chung = 32,9% của lead, 29,6% của worker |
+| Lead × worker reporting (5.355) | 243 chung = 32,9% / 32,4% |
+| Prompt × mô tả+schema của 10 tool chính | 0 shingle chung, trừ `p2o_report` × prompt worker: 5 shingle (2,8% của tool) |
+| Prompt × trang đầu 4 skill mặc định | 0 |
+| Prompt × `shared:handoffs` (7.940) | 9 shingle (1,2%) |
 
-| Cụm | Test (Đủ/MP/Thiếu) | Vì sao đáng làm | Ràng buộc thực thi | Skill đề xuất |
+Toàn bộ 243 shingle chung là **khối `reconInstructions`**: 1.899 ký tự trong lead, 1.893 trong worker, 7 dòng (80, 159, 274, 322/316, 342, 390, 326 ký tự). Chia theo người dùng thật của từng dòng:
+
+| Dòng | Ký tự | Của ai | Trong lead delegated | Trong worker |
 |---|---|---|---|---|
-| **Identity Management** (IDNT-01..04) | 4 (0/4/0) | đăng ký, cấp tài khoản, liệt kê người dùng là cửa vào của A07 | tài khoản thử hoặc đăng ký mở; gửi email thật | `web-credential-lifecycle` (+ `roles-and-field-exposure`) |
-| **Authentication** (ATHN-02,03,05,07,08,09,11) | 7 (0/0/7) + ATHN-06 | khóa tài khoản, đặt lại mật khẩu, MFA, mật khẩu mặc định | nguy cơ khóa tài khoản thật, email/SMS ngoài | `web-credential-lifecycle` |
-| **Session Management** (SESS-01,02,03,04,06,07,08,09,11) | 9 (0/0/9) | 11/11 test không có tri thức nào | cần danh tính; chờ timeout dài | `web-session-management` |
-| **Token và federation** (SESS-10, ATHZ-05) | 2 (0/0/2) | JWT/OAuth/OIDC phổ biến trong ứng dụng hiện đại | đúng origin của target, không tấn công IdP bên thứ ba | `web-token-and-federation` |
-| **Server-side injection** (INJT-05..14,19,21, ATHZ-01) | 13 (0/13/0) | A05; chỉ có truy vết nguồn tới sink chung | probe trực tiếp có tác dụng phụ (SQL ghi, lệnh, SSRF) | `web-server-side-injection` |
-| **Business Logic và upload** (BUSL-01..04,06..10) | 9 (0/2/7) | A06; WSTG nói rõ không tự động hóa được | cần nguồn chính sách; thanh toán, upload có tác dụng phụ | `web-business-logic-misuse` |
-| **Client-side và kiểm soát cross-origin** (CLNT-04..07,09..15, SESS-05, CONF-12) | 13 (0/4/9) | CORS, CSRF, clickjacking, postMessage, storage | cờ B: chứng minh trình duyệt bị chặn | `web-browser-trust-controls` |
-| **Cấu hình, lộ thông tin, header, TLS, lỗi** (INFO-02,03,05,08, CONF-02,04..07,09,14,15, ATHN-06, CRYP-01,03, ERRH-01) | 16 (0/9/7) | A02; chi phí thấp nhất, thụ động, hầu hết chỉ cần GET | TLS cần `openssl`/NSE; `nmap` có thể không chạy | `web-deployment-hygiene` |
-| **API: GraphQL** (APIT-99) | 1 (0/0/1) | lược đồ tự mô tả, độ sâu/batching | không DoS | `web-graphql-testing` |
-| **API: lộ trường dữ liệu** (APIT-03, INJT-20) | 2 (1/1/0) | trường đọc/ghi thừa | cần hai danh tính | bổ sung `web-object-authorization` |
-| **Crypto sử dụng** (CRYP-02,04) | 2 (0/1/1) | primitive yếu, padding oracle | oracle trực tiếp rủi ro, có thể chỉ đọc nguồn | `web-crypto-usage-review` |
-| **WebAssembly** (chương 13, không ID) | 0 test | khung khái niệm: import/export, bộ nhớ tuyến tính, bảng, WASI | chỉ có tổng quan | bổ sung `binary-auditing` |
-| **Reporting** (WSTG §5) | 0 test | thang rủi ro, chi tiết finding, phụ lục phương pháp | báo cáo xuất tất định, không mô hình ẩn | bổ sung `remediation` (E7) + phụ lục xuất |
+| Tiêu đề, "Read the ledger…", "Recon handoff…" | 80 + 159 + 326 | cả hai | cần | cần |
+| "URL/Source recon: map responses…" và "inventory…" | 274 + 316 | tác nghiệp worker | **thừa 596** (lead bị cấm chạy lệnh target, `prompts.ts:67`) | cần |
+| "Choose a surface… Rank next tasks…", "Unclear entry/gate → …" | 342 + 390 | định tuyến của Planner | cần | **thừa 732** (worker "does not choose new run strategy", `prompts.ts:94`) |
 
-### C.2. Khoảng trống về cơ chế (không phải thiếu skill)
+Vai trò `validation` và `reporting` không lập bản đồ bề mặt: toàn bộ khối 1.893 ký tự là thừa (35% prompt `reporting`).
 
-| # | Khoảng trống | Bằng chứng | Hướng xử lý |
-|---|---|---|---|
-| G1 | Provenance chỉ cho một upstream; mọi reference phải trùng giấy phép upstream | `validate_library.py:439` (`license differs from upstream`), `:413` (5–20 reference), `:420` (id `[RA]\d{1,2}`); `research/SKILL_PROVENANCE.json` có một khối `upstream` Apache-2.0 | schema v2 (X0.3) |
-| G2 | Skill kỹ thuật không có workflow HTTP trực tiếp; nhiều test WSTG cần so sánh qua HTTP | catalog: các skill kỹ thuật chỉ có `source-review` và `offline-reproduction` (`skills/catalog.json`); `p2o_delegate` kiểm workflow theo skill được gán (`docs/SKILL_RUNTIME.md`) | thêm workflow `public-http-review` vào `parser-differential-auditing` (đã có ở `attack-surface-mapping`) |
-| G3 | Lead không có cầu nối từ kết quả recon tới danh sách test cần lập kế hoạch | `shared:wstg-map` (S5) chỉ có ID, tên, mức, skill; không có điều kiện kích hoạt | thêm cột `Kích hoạt` và `Chế độ` (X0.4) |
-| G4 | Thang rủi ro và chi tiết finding theo WSTG §5 | B.5 | skill báo cáo + phụ lục xuất |
-| G5 | `p2o_skill_list` sắp playbook trước kỹ thuật, tối đa 8 mục mỗi trang, tìm theo tên và mô tả (`src/skills.ts:66-77`); thêm 9 playbook đẩy 17 skill kỹ thuật xuống trang 2–4 và kéo dài lượt duyệt | đo hôm nay: 21.659 ký tự cho 3 trang; mục playbook trung bình 1.273 ký tự (`skills/catalog.json`) | mô tả ngắn có mã nhóm WSTG để `query` tìm được; hoãn S3b đã nêu ở bản trước nếu vượt ngân sách (F.1 R4) |
-| G6 | Không có cơ chế chặn hoặc hỏi trước khi mutation (W6b đã bị bỏ) | `docs/HTTP_TRANSPORT.md`: hộp thoại bắt đầu cho phép method ghi, body, xác thực cho cả run | mức mutation M0/M1/M2 chỉ ở dạng hướng dẫn trong Stop Conditions của skill (D.1) |
-| G7 | Trình duyệt | M5, B.4 | quyết định Q5 trước X3 |
-| G8 | Danh sách test của kế hoạch không có kiểm tra tự động | không có | test sở hữu duy nhất 108 test (X0.5) |
+**Trùng theo khái niệm** (regex theo cụm, ước lượng): luật đóng candidate (closure) nằm ở prompt lead 338, prompt worker 436, mô tả `p2o_candidate` 41; "gap/untested không phải clean" ở lead 618, worker 582, `p2o_report` 203, `p2o_coverage` 225, `p2o_candidate` 41; "chỉ người dùng mới mở rộng scope" ở lead 136, worker 148, `p2o_coverage` 107, `p2o_delegate` 77; "dừng retry không đổi" ở lead 411, worker 402, brief 55. Phần lặp **trong cùng một context** chỉ khoảng 380 ký tự (worker) và 500 ký tự (lead), tức ~95–125 token.
 
-### C.3. Ngoài WSTG (không làm ở đây)
+**Ước lượng ký tự và token thừa**
 
-Top 10 2025 có hai hạng mục gần như không có test tương ứng trong WSTG: **A03 Software Supply Chain Failures** và **A09 Security Logging and Alerting Failures** (nhìn thấy khi đối chiếu M6; p2o không có dữ liệu lỗ hổng phụ thuộc offline, và nhật ký chỉ nhìn được qua cấu hình trong mã nguồn; `CONF-02` chỉ nhắc rà soát cấu hình nhật ký). Cũng ngoài phạm vi: SAML/SSO, tấn công bộ nhớ đệm web, đặc thù HTTP/2 ngoài INJT-16, overlay cho framework khác ngoài FastAPI (Express, Django, Spring, Rails, Laravel). Ghi lại để không bị hiểu là "đã phủ mọi kịch bản": mục tiêu ở đây là **108 test WSTG**, không phải mọi kịch bản có thể có.
+| Nguồn thừa | Ký tự | Token (≈/4) | Tần suất | Mức |
+|---|---|---|---|---|
+| Tác nghiệp worker trong prompt lead delegated | 596 | ~150 | mỗi request của lead | thấp |
+| Định tuyến Planner trong prompt mọi worker | 732 | ~183 | mỗi request của worker | thấp–vừa |
+| Toàn bộ khối recon trong worker `validation`/`reporting` | 1.893 | ~473 | mỗi request của worker hai vai trò đó | vừa |
+| Capsule mục tiêu gửi hai lần (brief + `p2o_objective_state`) | 2.555–5.510 (mẫu tổng hợp 0,5×–2×) | ~640–1.380 | **mỗi request của worker** (`index.ts:414` và `1679-1690`) | **cao nhất trong nhóm prompt** |
+| Lặp khái niệm trong một context | ~380–500 | ~95–125 | mỗi request | rất thấp |
+| *So sánh:* khai báo tool | 36.268 / 20.750 byte | ~9K / ~5K | mỗi request | gấp 6–7 lần prompt |
 
+Kết luận đo được: tối ưu lớn nhất không nằm ở chính sách trong prompt mà ở (1) capsule trùng, (2) schema tham số của `p2o_graph`, `p2o_task`, `p2o_case`, `p2o_coverage`, (3) khối recon sai người nhận. Cắt chữ trong prompt lead sẽ rất tốn công (bị ghim) để lấy vài chục token.
+
+### B.2. Mâu thuẫn và mơ hồ
+
+| ID | Phát hiện | Bằng chứng | Hệ quả | Hướng sửa (ràng buộc) |
+|---|---|---|---|---|
+| B-1 | Worker vừa được dặn "Rank next tasks, record the choice in a decision note" vừa "You do not choose new run strategy or accept/spawn subtasks" | `prompts.ts:29-31` vs `94` | Worker `validation`/`reporting` có thể tự mở hướng mới thay vì dừng ở intent | Tách khối recon (P6b); đổi hash ghim có chủ đích |
+| B-2 | Prompt lead delegated chứa hướng dẫn tự chạy recon ("map responses, headers, links/forms") dù lead bị cấm chạy lệnh | `prompts.ts:26-28` vs `67`; `index.ts:461` | Nhiễu; lead có thể cố "tự thăm dò" rồi bị `PLANNER_ONLY` | Như B-1 |
+| B-3 | Hai từ vựng coverage không cầu nối: worker được dặn `p2o_note kind=coverage` (legacy), lead được dặn "Record coverage" nhưng công cụ thật là `p2o_coverage` cell; prompt worker còn ghi note legacy "không phải bảo đảm an toàn" | `prompts.ts:9,96,78` | Coverage của worker không thành mẫu số; finish hiển thị đúng thứ legacy (`index.ts:1247`) | P1 (hiển thị cả hai), P6 (gợi ý cell từ note) |
+| B-4 | Không có tiêu chí dừng nhưng cũng không gọi tên cách kết thúc: "stop or finish explicitly", "complete verified cleanup before the final report"; chỉ tin nhắn kích hoạt nói "report evidence, coverage and unresolved gaps" | `prompts.ts:49,79`; `index.ts:1605` | Lead có thể kết thúc bằng văn xuôi mà không gọi `p2o_finish`; run vẫn `active`, sandbox còn sống tới khi người dùng `/p2o stop` (INFERRED: không có đường code tự kết thúc) | P1 (mô tả `p2o_finish`), P2 (báo cáo cả khi dừng tay) |
+| B-5 | "Independent verification requires a separate worker" nhưng chấp nhận case không đòi `independentCurrent`; chế độ solo không thể có | `prompts.ts:77` vs `cases.ts:86-91` | "Đã xác minh độc lập" phụ thuộc kỷ luật của lead | P5 (luật theo mức nghiêm trọng, có waiver) |
+| B-6 | Prompt bảo "Report findings with reproduction and evidence…" nhưng khi viết báo cáo cuối lead không còn tool và chuỗi finish thiếu case/coverage plan | `prompts.ts:79` vs `index.ts:1618-1628,1251` | Báo cáo chat dựa trí nhớ hội thoại (có thể bị compaction) | P1 |
+| B-7 | `outputContract` có tên "contract" nhưng chỉ mô tả; phase packet đặt tên `unreviewedRequired` như danh sách việc nhưng không ai tính phần thiếu | `phase.ts:17-18`; không có chỗ nào so sánh | Worker giao thiếu mà vẫn review được | P5 |
+| B-8 | Hướng dẫn nhúng `KNOWLEDGE` nói "Main documents are inlined" nhưng trang đầu skill bị cắt ở giới hạn trang; chỉ có dòng "Continued: p2o_skill_read id=… offset=…" | `prompts.ts:5`; `index.ts:359-360` | Worker có thể bỏ phần sau (ví dụ "Validation", "Handoffs") | Đã có chỉ dẫn; chỉ cần đo độ dài trang đầu của các playbook WSTG trước khi P6 |
+
+### B.3. Worker có nhận đủ context không?
+
+| Cần | Có không | Ghi chú |
+|---|---|---|
+| Scope, giới hạn lệnh, hạn chế quyền | Có | brief + system |
+| Mục tiêu, kỳ vọng đúng/sai, điều kiện dừng, prerequisite, output contract | Có | capsule JSON (`tasks.ts:257-260`) |
+| Danh sách bằng chứng đã biết | Chỉ ID | phải gọi `p2o_ledger`/`p2o_state` để lấy nội dung |
+| Inventory bề mặt đã lập | Không tự động | chỉ qua `context` ≤4.000 do lead viết hoặc truy vấn `p2o_graph` |
+| Danh tính/credential do operator cấp | **UNKNOWN** | prompt nói "Credentials must be operator-supplied" nhưng không thấy kênh chuyển chúng vào brief; cần đọc `http-session.ts` trước P6 |
+| Ngân sách còn lại | Một phần | thấy `commandBudget` cố định, không thấy đã dùng bao nhiêu (INFERRED) |
+| Test WSTG tương ứng với intent | Chỉ khi lead đặt `work.questionKey` | không được gợi ý tự động (W-04) |
+| Chính sách xử lý kết quả dở (exhausted/blocked) của các worker trước | Không | ARTEX có, p2o chỉ có enum `outcome` |
+
+Kết luận: đủ cho một intent chiến thuật đơn lẻ; **không đủ** cho (i) danh tính, (ii) học chéo giữa bề mặt, (iii) nhận biết ngân sách.
 
 ---
 
-## D. Đề xuất skill: tái sử dụng hay xây mới
+## C. Điểm yếu gây bỏ sót (câu hỏi B) và vì sao không có báo cáo sau pentest (câu hỏi C)
 
-### D.1. Khuôn mẫu, giới hạn và nguyên tắc chắt lọc
+### C.1. Bảng xếp hạng
 
-**Ánh xạ yêu cầu → cơ chế sẵn có** (không tạo cơ chế song song; mọi skill mới là `playbook`, vì `technique` đòi ≥ 3 nguồn blog độc lập và `Research Heuristics` có trích dẫn `B###`, không áp dụng được cho WSTG):
-
-| Yêu cầu của brief | Đặt ở mục nào của playbook (`validate_library.py:27`) | Ràng buộc có sẵn |
-|---|---|---|
-| Điều kiện kích hoạt | Applicability | nêu sự kiện recon (D.5.2), không nêu tên tool |
-| Input cần có | Workflow Prerequisites | mỗi workflow một dòng; mục này phải nhắc mọi workflow đã khai (`:475-480`) |
-| Các bước | Baseline + Bounded Comparison | đổi **một biến** mỗi lần; làm kiểm soát trước |
-| Tiêu chí kết luận | Controls + Expected Observations + False-Positive Checks | cần kiểm soát dương tính **và** âm tính (`:462-466`); `confirmed` cần `policyBasis` ≠ `inferred` |
-| Bằng chứng cần thu | Evidence Fields | ≥ 3 quan sát có tên (`:470-472`) |
-| Giới hạn an toàn | Stop Conditions | ≥ 2 quy tắc (`:467-469`) |
-| Cách ghi vào state/report | Handoffs + thẻ test | khóa `wstg-*`, cell coverage, case, đồ thị; không trường mới |
-| Phần chưa kiểm | Gaps | phải nêu "untested/gap" (`:473-474`) |
-
-**Giới hạn cứng mà mọi skill mới phải qua** (đều do `scripts/validate_library.py` kiểm; mọi tài liệu dưới `skills/**`): frontmatter chỉ có `name` và `description` (20–1.024 ký tự, không chứa `": "`); ≤ 1.500 từ mỗi tài liệu (`:808`); không code fence, CVE, URL IP, hex `0x…`, chuỗi byte mã hóa, reverse shell (`:60-68`); không `TODO/TBD/FIXME`; không đoạn ≥ 18 từ trùng nguyên văn với tài liệu khác (`:810-816`); playbook không trích `B###` (`:801`); không tên `p2o_*` (guard `tests/minimal/skill-hygiene.test.ts`); mỗi reference nằm trong `skill.json` và được liên kết từ SKILL.md (`:481-483`); `provenance_refs` hợp lệ và reference phải ghi skill vào `used_by` (`:359-367`). Mục tiêu kích thước (đề xuất): SKILL.md ≤ 7.000 ký tự, vì trang đầu 8 KiB được inline vào brief của worker (`extensions/p2o/index.ts:359`); mỗi reference ≤ 6.000 ký tự (một trang đọc).
-
-**Quy tắc chắt lọc (không chép WSTG):**
-
-- **Giữ:** mục tiêu của test (đổi thành điều kiện kết luận), điều kiện tiên quyết, dấu hiệu phân biệt hành vi đúng với sai, kiểm soát, bằng chứng, giới hạn an toàn, liên hệ giữa các test (`Related Test Cases`, 14 trang).
-- **Bỏ:** payload và chuỗi mẫu, hướng dẫn từng công cụ, ảnh chụp, ví dụ dài, cú pháp riêng của sản phẩm, đoạn Summary diễn giải.
-- **Cách ghi nhận nguồn:** viết lại bằng lời của p2o, mỗi thẻ ghi ID WSTG như tham chiếu; ghi attribution theo đúng cách R1–R6 đã làm (tiêu đề tài liệu + sha256 của trang tại commit `28553f8`), với `usage_boundary` "chỉ để review, không có văn bản upstream nào được đóng gói". Lập trường pháp lý (CC BY-SA 4.0 cho phần dẫn xuất) cần owner chốt (Q2); **UNVERIFIED** về mặt pháp lý, đây không phải tư vấn pháp lý.
-
-**Mức mutation** (chỉ là hướng dẫn trong Stop Conditions; không có cưỡng chế ở host vì W6b đã bị bỏ, và hộp thoại bắt đầu đã cho phép method ghi cho cả run theo `docs/HTTP_TRANSPORT.md`):
-
-| Mức | Nghĩa | Quy tắc |
-|---|---|---|
-| M0 | chỉ đọc: GET, HEAD, OPTIONS, đọc nguồn | không cần xác nhận thêm |
-| M1 | thay đổi đảo ngược được trong fixture do assessment tạo (đăng nhập, đăng xuất, tạo rồi xóa đối tượng của chính tài khoản thử) | nêu trong `decision` của task |
-| M2 | hiển thị ra ngoài hoặc khó đảo ngược: email/SMS thật, khóa tài khoản không phải của mình, thanh toán, file upload còn lưu và có thể thực thi, probe có thể làm lệch kết nối dùng chung (request smuggling), tải lớn | chỉ khi văn bản task của operator xác nhận rõ; nếu không: `execution: blocked`, `closure: open_proof_gap` |
-
-**Thẻ test** (đơn vị nội dung của `references/*.md`; mỗi thẻ ≤ 150 từ, tám dòng cố định; ba thẻ mẫu dưới đây viết dài hơn mức mục tiêu để dễ đọc, thẻ thật phải nén lại). Dòng đầu của mỗi file reference là `Tests: wstg-xxx-nn, …` để một test hermetic đối chiếu với bản đồ (X0.5).
-
-| Dòng | Nội dung | Ánh xạ sang trường sẵn có |
-|---|---|---|
-| Kích hoạt | đặc điểm recon làm test này đáng lập kế hoạch | cột `Kích hoạt` của bản đồ |
-| Đầu vào | tài sản, danh tính, nguồn chính sách cần có | workflow + cờ I |
-| Bước | 3–6 bước, đổi một biến mỗi lần, kiểm soát trước | `methodFamily` = id workflow |
-| Kết luận | khi nào `confirmed`, `ruled_out`, `open_proof_gap` | `closure`, `policyBasis` |
-| Bằng chứng | các quan sát cần có biên nhận | `evidenceRefs`, `negativeControlRefs` |
-| Ghi state | cell, case, tài sản, quan hệ cần tạo | `questionKey`, `policyKey`, loại tài sản |
-| Dừng | giới hạn riêng của test (kèm mức M) | Stop Conditions |
-| Dương tính giả | các trường hợp hay nhầm | False-Positive Checks |
-
-**Ba thẻ mẫu** (diễn đạt lại để minh họa mức chắt lọc; không phải nội dung đã viết vào skill):
-
-1. `wstg-sess-03` Session Fixation (skill `web-session-management`, thẻ `fixation-and-hijack`).
-   - Kích hoạt: có token phiên được cấp **trước** đăng nhập và có luồng đăng nhập.
-   - Đầu vào: một tài khoản do operator cấp; route đăng nhập; workflow `controlled-identity-comparison`.
-   - Bước: (1) lấy token T0 bằng session đặt tên `pre`; (2) đăng nhập mang theo T0; (3) so token sau đăng nhập T1 với T0; (4) gọi một route cần đăng nhập bằng T0; (5) lặp với dạng token nhận qua URL nếu ứng dụng chấp nhận.
-   - Kết luận: `confirmed` khi T1 = T0 hoặc T0 dùng được sau đăng nhập, kèm kiểm soát dương tính (route cần đăng nhập thành công với T1) và âm tính (T0 bị từ chối khi chưa đăng nhập); `ruled_out` khi T1 ≠ T0 và T0 bị từ chối, cả hai có biên nhận. `policyBasis`: `boundary_invariant` (định danh phiên phải đổi khi mức đặc quyền đổi).
-   - Bằng chứng: ID biên nhận của bốn request, tên cookie và thuộc tính; **không** ghi giá trị token.
-   - Ghi state: cell `wstg-sess-03` × tài sản route đăng nhập, `actorContext` `actor:user-a`, `methodFamily` `controlled-identity-comparison`.
-   - Dừng (M1): không dùng token của người khác; không gửi tới origin khác.
-   - Dương tính giả: phiên phi trạng thái như JWT (chuyển sang `web-token-and-federation`); proxy gán lại cookie.
-2. `wstg-injt-05` SQL Injection (skill `web-server-side-injection`, thẻ `sql-nosql-orm`).
-   - Kích hoạt: tham số chạm truy vấn (đặc điểm `db-query`) hoặc mã nguồn dựng truy vấn bằng nối chuỗi/ORM thô.
-   - Chế độ ưu tiên: `source-review` tìm chỗ nối chuỗi; `offline-reproduction` dựng lại sink trên CSDL cục bộ; trực tiếp chỉ khi scope cho phép.
-   - Bước (trực tiếp): (1) baseline hợp lệ và kiểm soát âm tính (giá trị vô hại khác); (2) đổi **một** thứ mỗi lần: thêm ký tự phá cú pháp, so status, độ dài, thông báo; (3) cặp biểu thức boolean luôn đúng/luôn sai, hành vi khác biệt ổn định ≥ 3 lần; (4) chỉ khi (3) không phân biệt: trễ có giới hạn ≤ 3 giây; (5) nhận diện hệ CSDL từ lỗi hoặc hàm phiên bản rồi **dừng** (không đọc dữ liệu, không ghi).
-   - Kết luận: `confirmed` khi có hành vi khác biệt quy được cho bộ thông dịch và tái hiện được trên fixture cục bộ; lỗi 500 đơn lẻ chỉ là `open_proof_gap`. `policyBasis`: `boundary_invariant` (đầu vào không được đổi cấu trúc truy vấn).
-   - Dừng (M1): không câu lệnh ghi hoặc xóa; không dùng công cụ khai thác tự động theo mặc định (Q7).
-3. `wstg-conf-07` HTTP Strict Transport Security (skill `web-deployment-hygiene`, thẻ `headers-methods-and-transport`).
-   - Kích hoạt: origin HTTPS đã xác nhận và có cookie phiên.
-   - Bước: (1) GET gốc qua HTTPS, ghi `Strict-Transport-Security`; (2) so `max-age` và `includeSubDomains` với nguồn chuẩn operator chỉ định (mặc định tham chiếu một năm; phải ghi nguồn); (3) request HTTP cổng 80: có chuyển hướng cùng host sang HTTPS không, header HSTS **không** nên xuất hiện trên HTTP; (4) kiểm lớp route khác (lỗi, API, tĩnh).
-   - Kết luận: thiếu header trên origin HTTPS có cookie nhạy cảm là phát hiện mức thấp; `ruled_out` chỉ cho các lớp route đã đo, kèm kiểm soát dương tính (cùng lớp route khác có header).
-   - Dương tính giả: HSTS đặt ở CDN/edge; môi trường phát triển; thiếu header nhưng không có phiên nhạy cảm. Dừng (M0): chỉ đọc.
-
-**So sánh với tham chiếu và nơi lệch** (kế thừa kết luận bản trước, §C cũ, chưa đọc lại `my_references/`):
-
-| Điểm | WSTG / strix / ARTEX | Quyết định | Lý do lệch |
+| ID | Mức | Điểm yếu | Pha |
 |---|---|---|---|
-| Tổ chức tri thức theo lớp lỗi | strix: thư mục `vulnerabilities/`, `frameworks/`, `protocols/` (76 file) | Adapt: playbook theo cụm WSTG, thẻ theo test | WSTG đã có ID ổn định để khóa dữ liệu |
-| Nạp skill cố định | strix luôn nạp 2 skill phân tích (≈14,8 KB mỗi agent) | Reject | p2o nạp theo task, ≤ 3 skill, `Lead prompt` không đổi |
-| Tên tool trong skill/prompt | strix: 66 lần trong 21 file skill | Reject | `skill-hygiene.test.ts` cấm; giữ tri thức độc lập loadout |
-| Bảng "agent làm được gì / không" | strix `owasp-top-10-testing` | Adopt (đã có: cờ B/I/O và `Support`) | giữ nguyên, thêm `Chế độ` |
-| Danh mục payload, quét tự động | WSTG How to Test chứa payload; sandbox có sqlmap/ffuf/nuclei | Reject mặc định | nguồn R3/R4 đã loại payload catalog và dò tự động; validator cấm chuỗi mã hóa (Q7) |
-| Ranh giới vai trò bằng bề mặt tool | ARTEX | Adopt (đã có `tool-policy.ts`) | mức mutation chỉ là hướng dẫn (G6) vì W6b bị bỏ |
+| W-01 | Nghiêm trọng | `p2o_finish` không có cổng hoàn tất | P1 |
+| W-02 | Nghiêm trọng | Lượt báo cáo cuối không thấy case, coverage plan, WSTG | P1 |
+| W-03 | Cao | Báo cáo tất định không tự sinh; đường dừng không để lại báo cáo | P2 |
+| W-04 | Cao | Mẫu số coverage tùy chọn, không được gieo; WSTG không điều khiển workflow | P6 |
+| W-05 | Cao | Chấp nhận finding dựa trên một actor và evidence không kiểm liên quan | P3, P5 |
+| W-06 | Cao | Review task chỉ cần evidence cùng run; output contract không thực thi | P5 |
+| W-07 | Vừa | Hai từ vựng coverage không có cầu nối | P6 |
+| W-08 | Vừa | `ephemeral` không `--export` mất sạch; crash không có báo cáo | P2 |
+| W-09 | Vừa | Mục tiêu (`p2o_plan`) không liên quan tới kết thúc | P1 |
+| W-10 | Vừa | Kết quả worker dở (`partial-budget`, `prerequisite-blocked`, `provider-error`) không có chính sách; vòng tự động cạn không có wrap-up | P1, P2 |
+| W-11 | Vừa | Prompt mâu thuẫn và capsule trùng | P6 |
+| W-12 | Thấp | `report export` thoát im lặng khi `ctx.hasUI` false | P2 |
+| W-13 | Thấp | Tham chiếu treo tới kế hoạch cũ (README, docs, bench) | P0 |
+| W-14 | Thấp | Chi phí khám phá skill (38,7K ký tự) và không gắn test WSTG với skill sở hữu | P6 |
 
-### D.2. Tổng quan skill mới
+### C.2. Chi tiết từng điểm (kịch bản, bằng chứng, đề xuất)
 
-| ID | Skill | Phase | Test sở hữu | Workflow (dùng lại id sẵn có) | Thẻ (reference) | Ước tính | Mutation tối đa |
-|---|---|---|---|---|---|---|---|
-| N7 | `web-deployment-hygiene` | X1 | 16 | `source-review`, `offline-reproduction`, `public-http-review`, `sandbox-network-review` (mới) | 5 | 35 KB | M0 |
-| N1 | `web-session-management` | X1 | 9 | `source-review`, `offline-reproduction`, `public-http-review`, `controlled-identity-comparison` | 3 | 24 KB | M1 |
-| N3 | `web-credential-lifecycle` | X1 | 10 | `source-review`, `offline-reproduction`, `authenticated-navigation` | 4 | 29 KB | M2 (khóa tài khoản, email) |
-| N4 | `web-server-side-injection` | X2 | 13 | `source-review`, `offline-reproduction`, `public-http-review` | 7 | 46 KB | M1 |
-| N2 | `web-token-and-federation` | X2 | 2 | `source-review`, `offline-reproduction`, `controlled-identity-comparison` | 2 | 18 KB | M1 |
-| N5 | `web-business-logic-misuse` | X2 | 9 | `source-review`, `offline-reproduction`, `authenticated-navigation` | 4 | 29 KB | M2 (thanh toán, upload) |
-| N6 | `web-browser-trust-controls` | X3 | 13 | `source-review`, `offline-reproduction`, `public-http-review`, `sandbox-network-review`, `browser-execution-proof` (nếu Q5 cho phép) | 4 | 29 KB | M1 |
-| N8 | `web-graphql-testing` | X3 | 1 | `source-review`, `offline-reproduction`, `public-http-review` | 1 | 13 KB | M0 |
-| N9 | `web-crypto-usage-review` | X4 | 2 | `source-review`, `offline-reproduction` | 2 | 18 KB | M0 |
+**W-01 — Không có cổng hoàn tất.** *Kịch bản:* lead dispatch ba task, hai worker báo cáo `confirmed`, lead không tạo case, không mở coverage plan, gọi `p2o_finish`. *Kết quả hiện tại:* thành công, dọn dẹp, lead viết báo cáo; ledger có hai claim `confirmed` chưa review, không có denominator. *Bằng chứng:* chỉ hai từ chối `INTENTS_QUEUED` (`index.ts:1235`) và `WORKERS_ACTIVE` (`1237-1242`); không đọc `caseViews`, `coverageViews`, `taskFrontier`. *Đề xuất:* P1, một hàm thuần `finishPreflight` trả danh sách mã có kiểu (xem §F P1), cổng mềm `off/warn/confirm`. *Tái hiện hermetic:* `createFakePi` + `InertSandbox` + ledger có candidate `confirmed` không case, gọi `p2o_finish`, mong đợi `FINISH_PREFLIGHT` ở chế độ `confirm`.
 
-Tổng: 9 playbook, 32 reference, khoảng 240 KB văn bản mới (DESIGN-INFERENCE: 7 KB cho mỗi SKILL.md cộng 5,5 KB cho mỗi thẻ), tức khoảng 22% của 1,09 MB trang WSTG nguồn. Catalog thêm 41 tài liệu (141 → 182, thêm 7 reference từ D.4 là 189; trần 600). `sandbox-network-review` là workflow mới duy nhất: "tương tác TCP/TLS/WebSocket có giới hạn với host:port đã xác nhận qua công cụ mạng sandbox; lệnh opaque không lọc origin nên chỉ gửi tới mục tiêu đã xác nhận". Các workflow khác dùng lại id đã có (nội dung điều kiện tiên quyết khớp từng chữ với skill đang giữ id đó, để không sinh biến thể mới).
+**W-02 — Lượt cuối đói trạng thái.** *Bằng chứng:* chuỗi kết quả (`index.ts:1251`) dựng từ `workerView` (`492-519`), trong đó `coverage` = `summary.coverage.slice(-12)` (note legacy) và `open` = 8 mục cuối; `details.report` (có đếm case/coverage) nằm ở `details`, không ở `content` (INFERRED: `details` dành cho UI và log, chỉ `content` tới model; chưa xác minh bằng request thật); sau finish `phase='finished'` nên `tool_call` chặn mọi tool p2o (`index.ts:1618-1628`). *Hệ quả:* "báo cáo cuối" đọc từ trí nhớ; sau compaction các case đã review có thể mất. *Đề xuất:* P1 nối thêm vào `content` một khối đếm tất định (case accepted/pending/stale, cell theo execution và assessment, mức WSTG L0–L3, gap mở chưa có cell, đường dẫn báo cáo) — **nối thêm**, không đổi dòng cũ (bộ chấm benchmark đọc chúng).
 
-### D.3. Đặc tả từng skill
+**W-03 — Báo cáo không tự sinh.** Xem §C.3.
 
-Mỗi khối dưới đây là **hợp đồng** để viết skill, không phải nội dung skill. "Kích hoạt" lấy từ đặc điểm recon (D.5.2).
+**W-04 — Mẫu số tùy chọn và không gieo.** *Kịch bản:* run trên ứng dụng có login, JWT, upload; lead chỉ kiểm vài thứ; báo cáo ghi "No coverage plan was recorded" (`report-export.ts:138`) nhưng run vẫn kết thúc. *Bằng chứng:* `WSTG_MAP.trigger/owner/card` không được runtime dùng (§A.7); prompt lead không nhắc coverage plan; guidance `p2o_coverage` mặc định tắt. *Đề xuất:* P6, hành động chỉ đọc `p2o_coverage action=suggest` (liệt kê test WSTG khớp đặc trưng recon, chưa có cell, kèm skill sở hữu/card) và P1 liệt kê "test áp dụng mà chưa có cell" ở mức advisory. Gieo qua kết quả tool và cổng, **không qua prompt**.
 
-**N7 `web-deployment-hygiene`** (X1, role recon, 16 test: INFO-02,03,05,08; CONF-02,04,05,06,07,09,14,15; ATHN-06; CRYP-01,03; ERRH-01)
+**W-05 — Finding dựa trên một actor.** *Bằng chứng:* `candidate()` chỉ kiểm evidence ID tồn tại trong run (`evidence.ts:57-59`) và không kiểm tác giả hay nội dung; `confirmed` hợp lệ khi `execution='tested'`, `policyBasis!='inferred'` (`cases.ts:47`); chấp nhận case chỉ đòi `currentness='current'` (`cases.ts:86-91`); `independentEvidenceRefs` có thể rỗng. Báo cáo có in "independent validation current: yes/no" (`report-export.ts:50`) nên **trung thực nhưng không ép**. Mục "Accepted current cases" không in proof level (`static_trace/offline/live`) và không có mức nghiêm trọng. *Đề xuất:* P3 thêm `finding.rating` cho case; P5 luật: mức High/Critical cần `independentCurrent` hoặc `independenceWaiver` ghi lý do (solo mặc định có waiver "single-actor"); báo cáo in proof level và tác giả evidence (self/other).
 
-- Trách nhiệm duy nhất: xác định thứ triển khai **tự nói ra và tự rò ra**, và chính sách header/cookie/method/TLS nó khai báo, bằng ít request nhất. Không gửi payload tấn công.
-- Kích hoạt: mọi origin đã xác nhận (luôn); bản sao nguồn có cấu hình máy chủ/ứng dụng.
-- Bước cốt lõi: (1) bộ baseline cố định theo lớp route (gốc, đăng nhập, tài nguyên tĩnh, API, 404, 405) ghi status/header/cookie; (2) đối chiếu từng kiểm soát với chuẩn đã nêu (không "thiếu header = lỗi"); (3) metafile và file sao lưu chỉ theo danh sách tên đã quan sát (≤ 20 request, không từ điển); (4) lỗi: hai request sai chủ ý, so thân; (5) TLS bằng `openssl s_client` (giao thức, chuỗi chứng chỉ, thuật toán ký) và NSE `ssl-enum-ciphers` nếu `nmap` chạy được; (6) chế độ nguồn: cờ debug, thông tin đăng nhập mặc định, CORS, cờ cookie, cấu hình TLS, cờ tính năng.
-- Kết luận: `ruled_out` chỉ với kiểm soát dương tính (cùng lớp route khác có kiểm soát); header thiếu là phát hiện chỉ khi có bối cảnh phơi nhiễm (ví dụ cookie nhạy cảm trên origin có thể hạ cấp).
-- Dừng: không từ điển, không `ffuf`/`nuclei` mặc định; cấm NSE kiểu từ chối dịch vụ (`http-slowloris`); không thử xác thực.
-- Dương tính giả: header do CDN/WAF chèn; môi trường staging; header chỉ có trên HTML.
-- Handoff: `web-route-input-inventory` (route mới), `web-browser-trust-controls` (nghĩa của CSP/CORS), `remediation`.
+**W-06 — Review task và output contract.** *Bằng chứng:* `tasks.ts:190` chỉ kiểm `kind==='evidence'` và `runId`; `phase.ts:17-18` chỉ đếm; `grep` xác nhận không còn nơi nào dùng `outputContract.required/partialAllowed` ngoài validate và hiển thị. *Đề xuất:* P5 tính `contractGap` (trường `required` mà báo cáo không giao) và lưu vào bản ghi review; chế độ mềm (chú thích + preflight BLOCKING khi `partialAllowed=false`), chế độ cứng sau (G-10). Liên kết evidence với worker được giao (hoặc owner khi solo) trừ khi khai `externalEvidence` kèm lý do.
 
-**N1 `web-session-management`** (X1, role discovery, 9 test: SESS-01,02,03,04,06,07,08,09,11)
+**W-07 — Hai từ vựng coverage.** Worker ghi `coverage[]` kiểu `{surface, risk, outcome}` (legacy) vào ledger lúc bàn giao (`tasks.ts:196-205`); lead phải tự chuyển thành cell. *Đề xuất:* P6 đưa vào preflight số note coverage chưa được cell nào tham chiếu (advisory) và cho `suggest` gợi ý cell từ note.
 
-- Trách nhiệm: vòng đời của token phiên: cấp, thuộc tính, cố định, lộ, hủy, hết hạn, đồng thời.
-- Kích hoạt: đặc điểm `session-token` (cookie hoặc header) và luồng đăng nhập/đăng xuất.
-- Đầu vào: ≥ 1 tài khoản do operator cấp (2 cho đồng thời), route đăng nhập và đăng xuất.
-- Bước cốt lõi: kho token (tên, vị trí, định dạng, thuộc tính); entropy và cấu trúc trên ≤ 30 token đã cấp (phân tích cục bộ, không dò); so định danh trước/sau đăng nhập; phát lại token cũ sau đăng xuất; hết hạn qua thuộc tính và hành vi máy chủ **có giới hạn thời gian chờ** (không chờ hàng giờ: nếu quá giới hạn, `open_proof_gap` và đọc chính sách từ cấu hình); chiếm phiên chỉ bằng cách phát lại **token của chính mình** từ ngữ cảnh thứ hai.
-- Kết luận: theo thẻ mẫu 1; `policyKey` như `policy:session-invalidation-on-logout`.
-- Dừng (M1): không dùng hay thu thập token người khác; không brute-force; ghi rõ giới hạn chờ.
-- Dương tính giả: phiên phi trạng thái (JWT) → `web-token-and-federation`; SameSite mặc định của trình duyệt; token "nhớ tôi" khác loại.
-- Handoff: `web-token-and-federation`, `web-browser-trust-controls` (CSRF), `authorization-auditing`.
+**W-08 — Đường ngắt và `ephemeral`.** Xem bảng §A.4 và §C.3. *Đề xuất:* P2.
 
-**N3 `web-credential-lifecycle`** (X1, role discovery, 10 test: IDNT-02,03,04; ATHN-02,03,05,07,08,09,11)
+**W-09 — Mục tiêu không nối với kết thúc.** `p2o_plan` có goal với tiêu chí chấp nhận nhưng được mô tả là "owner coordination, not automatic proof or assessment completion" (`index.ts:827`); finish không đọc goal. ARTEX buộc đóng mục tiêu bằng `prove_goal` (doc §7.4); strix có checklist coverage reconciliation. *Đề xuất:* P1 mã `OPEN_GOAL` (advisory, nâng lên blocking theo setting).
 
-- Trách nhiệm: cách một danh tính ra đời, được xác thực, bị khóa và được khôi phục.
-- Kích hoạt: `registration`, `login`, `password-reset`, `mfa`, `remember-me`.
-- Đầu vào: tài khoản thử do operator cấp hoặc đăng ký mở; hộp thư thử nếu kiểm tra đặt lại/MFA; chính sách mật khẩu được ghi nhận (nguồn bắt buộc).
-- Bước cốt lõi: quy tắc tạo tài khoản và vai trò mặc định; liệt kê tài khoản qua khác biệt status/độ dài/thông báo/thời gian trên đăng nhập, đăng ký, đặt lại (có kiểm soát và số mẫu cố định); mật khẩu mặc định chỉ **mặc định đã công bố của sản phẩm đã nhận diện**, 1–3 lần mỗi tài khoản, không danh sách; khóa tài khoản: số lần thử **dưới** ngưỡng đã nêu, dừng khi có dấu hiệu khóa; đặt lại: đặc tính token (entropy, hết hạn, dùng một lần, gắn với tài khoản); câu hỏi bảo mật: chỉ đánh giá độ mạnh, không đoán; MFA: đường vòng qua kênh phụ.
-- Kết luận: thiếu giới hạn tốc độ là phát hiện khi **không** có hạn chế nào sau số lần thử đã cố định; chính sách chỉ suy diễn → `open_proof_gap`.
-- Dừng (M2): không thử trên tài khoản không thuộc fixture; không gửi email/SMS tới địa chỉ ngoài hộp thư thử; không từ điển mật khẩu; một lần khóa ngoài kế hoạch là dừng.
-- Handoff: `web-session-management`, `authorization-auditing`, `remediation`.
+**W-10 — Kết quả dở.** `p2o_report.outcome` có `partial-budget`, `prerequisite-blocked`, `provider-error`, `cancelled`, `expired`; phase packet đặt `delivery='blocked'` (`phase.ts:15-16`) nhưng prompt lead không có chính sách (ARTEX phân biệt exhausted/blocked và chọn "tiếp tục" hay "đổi cách" dựa trên trace, `planner.go:298+`). Khi `maxPlannerRounds` cạn Engine chỉ `pause` (`engine.ts:109`) rồi `resume` bị từ chối (`147`) nên chỉ còn `/p2o stop`. *Đề xuất:* P1 liệt task `blocked/cancelled/expired` không có task thay thế phủ cùng bề mặt (`ORPHAN_TASK`); P2 bảo đảm `/p2o stop` để lại báo cáo; lời khuyên chính sách cho lead đặt vào `promptGuidelines` của `p2o_task` (mặc định tắt, ghi rõ).
 
-**N4 `web-server-side-injection`** (X2, role discovery, 13 test: INJT-05,06,07,08,09,10,11,12,13,14,19,21; ATHZ-01)
+**W-11, W-14** xem §B, §A.7. **W-12:** `if (!ctx.hasUI || !await ctx.ui.confirm(…)) return;` (`index.ts:1313`) thoát im lặng; chỉ xảy ra ngoài giao diện, nhưng nên báo lý do. **W-13:** 30 dòng trong 19 file (README, docs, `bench/README.md`, `scripts/benchmark-skills.mjs`, `src/`, `tests/`; MEASURED bằng grep) còn nhắc `planning_update.md`, trong đó nhiều chỗ trỏ tới mục (§0.1, §0.2, §13.x, §14, "Phase 5") không còn trong bản này.
 
-- Trách nhiệm: đầu vào không tin cậy đổi cấu trúc của một bộ thông dịch phía máy chủ (SQL/NoSQL/ORM, XML/XPath/LDAP, shell/mã/SSI, đường dẫn, URL gọi ra, thư, bảng tính, chuỗi định dạng). Khác `web-output-context` (đầu ra trình duyệt) và `deserialization-and-dispatch-auditing` (chọn kiểu/hàm).
-- Kích hoạt: đặc điểm `db-query`, `xml-input`, `os-command`, `file-path`, `outbound-fetch`, `mail-send`, `export-csv`, `template-render`, hoặc sink tương ứng trong nguồn (recon của `web-route-input-inventory`).
-- Phương pháp lõi dùng chung: **thăm dò vi sai bằng điểm đánh dấu vô hại** (cặp đầu vào tương đương/bất tương đương, biểu thức cho giá trị phân biệt, trễ có giới hạn); ưu tiên `source-review` để tìm sink rồi `offline-reproduction` trên bản dựng cục bộ (đã có `python3` và `node`; mô-đun `sqlite3` chuẩn của Python: chưa kiểm); trực tiếp chỉ khi scope cho phép. SSRF không có OAST (p2o không cung cấp): chứng minh bằng listener do sandbox sở hữu nếu định tuyến cho phép, ngược lại `open_proof_gap`.
-- Kết luận: `confirmed` cần hành vi khác biệt quy được cho bộ thông dịch, kiểm soát âm tính, và tái hiện cục bộ; một lỗi 500 đơn lẻ là gợi ý.
-- Dừng (M1): không đọc dữ liệu quá một giá trị phân biệt (phiên bản/đếm), không ghi/xóa, không gọi ra ngoài trừ listener sandbox, không dump; scanner tự động chỉ khi Q7 cho phép.
-- Dương tính giả: WAF chặn tạo lỗi; phản xạ không diễn giải; cache.
-- Handoff: `data-flow-analysis`, `parser-differential-auditing` (HPP), `exploitability-assessment`, `remediation`.
+### C.3. Vì sao pentest xong vẫn chỉ có output chat (câu hỏi C): XÁC NHẬN
 
-**N2 `web-token-and-federation`** (X2, 2 test: SESS-10, ATHZ-05)
+**Giả thuyết của owner đúng**, với một chỉnh sửa nhỏ: `renderReport` có một call site (`index.ts:1316`) và còn dùng được cho run lịch sử đã `open`, nhưng vẫn hoàn toàn do người dùng gọi.
 
-- JWT: phân tích cấu trúc cục bộ (PyJWT có sẵn trong sandbox), xử lý `alg`, `kid`/`jwk`, `exp`/`aud`/`iss`, và kiểm tra chữ ký bằng cách gửi **token tự giữ** đã sửa tới đúng origin; không đoán bí mật ngoài bí mật mặc định đã công bố.
-- OAuth/OIDC: kiểm `redirect_uri` khớp chính xác, `state`/`nonce`, PKCE, phạm vi, rò token qua referrer, luồng implicit; chỉ trên endpoint của target, không tấn công IdP bên thứ ba. SAML ngoài phạm vi (C.3).
-- Dừng (M1): chỉ với client đã đăng ký cho assessment.
+| # | Nguyên nhân gốc | Bằng chứng | Loại |
+|---|---|---|---|
+| R1 | Quyết định thiết kế W5: "Người dùng gọi, xác nhận… không gọi model"; lệnh `report` chỉ là chỉ mục | `docs/USAGE.md` mục Báo cáo tất định; `README.md:78` | chủ ý |
+| R2 | `cleanupOwnerPass` đóng store ở `index.ts:606` và không có lệnh gọi `renderReport`; `renderReport` cần store mở (`assetRevision`, `graphScope`) | `index.ts:558-611` | thiếu điểm gọi |
+| R3 | `p2o_finish` trả hướng dẫn "Write the final report now" cho model thay vì đường dẫn báo cáo | `index.ts:1251` | thiết kế |
+| R4 | Lấy lại báo cáo sau run đóng cần hai lệnh (`/p2o open`, `/p2o report export <đường dẫn tuyệt đối>`) và một hộp xác nhận | `index.ts:1295-1323` | UX |
+| R5 | `--export` tạo JSON ledger, không phải báo cáo; mặc định tắt và dễ bị hiểu nhầm | `index.ts:585-591`, `README.md:125` | tài liệu |
+| R6 | `retention=ephemeral` không `--export`: kho tri thức bị xóa, không còn gì để render | `index.ts:1461` (chuỗi xác nhận) | mất dữ liệu |
+| R7 | Đường ngắt (`stop`, shutdown, đổi session, lỗi lưu trữ, crash) không có lượt model cuối và không render | §A.4 | thiếu điểm gọi |
 
-**N5 `web-business-logic-misuse`** (X2, 9 test: BUSL-01,02,03,04,06,07,08,09,10)
+**Đề xuất:** thêm một điểm gọi duy nhất trong `cleanupOwnerPass` (§E.7, P2), sau khi tài nguyên target đã đóng và `freezeReport` xong, trước `store.finalize`; đồng ý (consent) lấy ở hộp xác nhận bắt đầu run chứ không phải cuối run, giống cách `--export` đang làm.
 
-- Bắt đầu từ **nguồn chính sách** (tài liệu hoặc lời operator), không từ payload: bảng bất biến × bước × quy tắc kỳ vọng × ca lạm dụng; chọn ca có giới hạn; chạy trong fixture; upload dùng tệp lành tính có dấu hiệu văn bản (kiểm loại tệp, phần mở rộng kép, kiểu nội dung, kích thước, vị trí lưu, có thực thi không), không bao giờ tệp thực thi; thanh toán chỉ ở chế độ thử.
-- Kết luận: vi phạm cần chính sách `explicit_contract`; suy diễn → `open_proof_gap` (đã là quy tắc của `evidence.ts`).
-- Dừng (M2): dừng trước mọi giao dịch tài chính hoặc đơn hàng thật; vòng lặp vượt giới hạn có số lần cố định.
-- Handoff: `race-condition-auditing` (BUSL-05 khi đua), `state-and-lifetime-auditing`, `web-object-authorization`.
+---
 
-**N6 `web-browser-trust-controls`** (X3, 13 test: SESS-05, CONF-12, CLNT-04,05,06,07,09,10,11,12,13,14,15)
+## D. So sánh với ARTEX và strix
 
-- Trách nhiệm: những gì máy chủ **nói cho trình duyệt** về tin cậy chéo origin và những gì mã phía trình duyệt làm với đầu vào.
-- Phần quan sát được từ phía máy chủ là chứng minh trực tiếp (CORS qua `Origin` giả, nhận request đổi trạng thái thiếu token CSRF/Origin lạ, kiểm tra Origin khi nâng cấp WebSocket, CSP và `frame-ancestors`): `live_reproduction` hợp lệ vì hành vi máy chủ là thứ được chứng minh. Phần cần trình duyệt (thực thi chuỗi khai thác): trần `offline_reproduction`, nếu Q5 cho phép thì chạy Chromium cục bộ trên bản sao fixture.
-- Rà tĩnh JS (nguồn hoặc bundle tải về): sink chuyển hướng, CSS, tài nguyên, bộ xử lý `postMessage` kiểm Origin, lưu trữ nhạy cảm, `target=_blank` thiếu `noopener`, mẫu phía client.
-- Dừng (M1): không tương tác origin thứ ba; không dựng trang tấn công công khai.
+### D.1. Phương pháp và giới hạn
 
-**N8 `web-graphql-testing`** (X3, 1 test: APIT-99): trạng thái introspection, gợi ý trường, giới hạn độ sâu/độ phức tạp/batching/alias (có chặn trên nhỏ, không truy vấn gây từ chối dịch vụ), kiểm soát truy cập theo trường (chuyển cho `web-object-authorization`), tham số truyền vào (chuyển cho N4), CSRF qua GET, điểm cuối gỡ lỗi. Mutation M0.
+So từng cơ chế bằng code và tài liệu đã đọc (xem phần "Nguồn"). Không chạy hai dự án. Nhãn: **Thua / Ngang / Hơn** là so với pi-p2o hiện tại.
 
-**N9 `web-crypto-usage-review`** (X4, 2 test: CRYP-02, CRYP-04): primitive yếu (băm không phù hợp, chế độ khối không an toàn, IV tĩnh, khóa viết cứng, nguồn ngẫu nhiên không mật mã, mật mã tự chế), padding oracle bằng phát hiện tĩnh (CBC có lỗi padding phân biệt được) và, nếu owner cho phép, một kiểm tra oracle có giới hạn; mặc định chỉ `source-review` và `offline-reproduction`. Mutation M0.
+### D.2. Bảng so sánh
 
-### D.4. Bổ sung vào skill hiện có (tái sử dụng)
-
-| ID | Skill | Thay đổi | Test được nâng | Dư địa từ (cap 1.500) | Ghi chú |
+| Cơ chế | pi-p2o | ARTEX | strix | Đánh giá | Đáng học |
 |---|---|---|---|---|---|
-| E1 | `web-object-authorization` | thêm `references/roles-and-field-exposure.md`: kho vai trò, thử chuyển vai (IDNT-01), ghi trường không được ghi (INJT-20), đọc trường thừa (APIT-03); một dòng liên kết trong SKILL.md | IDNT-01, APIT-03 (INJT-20 đã Đủ) | 162 | chỉ đủ chỗ cho một dòng liên kết; cần provenance W (X0.3) |
-| E2 | `parser-differential-auditing` | thêm `references/http-framing-and-parameters.md`: tham số lặp, chèn CR/LF vào header, phát hiện lệch khung an toàn (INJT-16 giữ ở mức phát hiện, **không** xác nhận bằng đầu độc hàng đợi); thêm workflow `public-http-review` vào catalog | INJT-04, INJT-15 | 696 | smuggling thật là M2 |
-| E3 | `attack-surface-mapping` | mở rộng `references/intermediary-trust.md`: tin cậy `Host` và `X-Forwarded-*` | INJT-17 | 929 (reference) | |
-| E4 | `race-condition-auditing` | thêm `references/usage-limit-bypass.md`: giới hạn số lần dùng cả tuần tự lẫn đua | BUSL-05 | 854 | |
-| E5 | `web-route-input-inventory` | thêm `references/workflow-paths.md`: lập bản đồ luồng nhiều bước (điều kiện tiên quyết của BUSL-06) | không đổi mức | 316 | tùy chọn, X3 |
-| E6 | `binary-auditing` | thêm `references/webassembly-modules.md`: import/export, bộ nhớ tuyến tính, bảng và `call_indirect`, không ASLR trong module, WASI; phân tích bằng `WebAssembly` của Node (có sẵn, M5), không có `wabt`; liên kết từ `memory-safety-auditing` | chương 13 (không ID) | 680 | không tạo ID tạm (Q12) |
-| E7 | `remediation` | thêm `references/risk-rating-criteria.md`: thang Informational/Low/Medium/High/Critical, khả năng khai thác × tác động, khi nào "chưa đánh giá"; cộng với phụ lục xuất (D.5.4) | pha Reporting | 654 | |
+| Mô hình điều phối | Lead Planner + Engine tất định + worker mới mỗi intent; hàng ≤100 intent | Planner LLM + N worker goroutine; claim nguyên tử; debounce 800 ms | Agent graph, root + subagent, coordinator | Ngang | — |
+| Tránh việc trùng | Fingerprint công việc có cấu trúc, host từ chối trùng đang chạy | Chủ yếu prompt + context (doc §4.6) | LLM judge `dedupe.py` cho báo cáo | **Hơn** | Giữ; không nhập LLM judge |
+| Điều kiện dừng | Không khách quan; lead hoặc người dùng | Mục tiêu + `prove_goal`; heartbeat; timeout + vòng planner cuối | `finish_scan` có checklist | **Thua** | Preflight kết thúc (P1) |
+| Cổng trước khi kết thúc | Chỉ queue + worker chưa báo cáo | Ép kiểm định lượng trong prompt (planner.go:298+) | Từ chối khi còn agent; trả coverage, gap, rủi ro chưa kiểm ngay trong kết quả (`finish/tool.py:86-135`) | **Thua** | P1 |
+| Vòng đời finding | claim → review → case có currentness, trùng theo rootCauseKey, hạ khi cũ | finding `confirmed` ngay khi ghi; doc §5.1 thừa nhận | `create_vulnerability_report` bắt buộc counterevidence, rationale, PoC | Hơn (độ chặt) / Thua (độ giàu trường) | P3 |
+| Toàn vẹn bằng chứng | ID cùng run do host cấp, hash, redact, proof level | `evidence/store.go`: blob băm SHA-256, phiên bản bằng chứng, cờ báo cáo cũ (`report/findings.go:178-200`) | `http_exchange_ids` được xác thực | Ngang–Hơn | Cờ "báo cáo cũ hơn bằng chứng" (P4) |
+| Guard / chính sách tác dụng phụ | Broker, ticket, scope, hold/release, cổng sandbox | Hook PreToolUse: audit, luật chặn, quyết định `ask`, phân loại lỗi (`guard/guard.go`) | Sandbox Docker | Ngang (khác hướng) | Khung thông báo "chặn do nền tảng, không phải phòng thủ target" (`guard.go:138-141`) |
+| Cạn ngân sách/ngắt | Worker: `agent_before_settle` ghi báo cáo chặn; lead: không | Wrap-up theo lý do (hết lượt / hết giờ) với bộ công cụ bị khóa và 10 lượt riêng (`wrapup.go`) | Trạng thái `complete: false` ghi caveat (`report/coverage.py:314`) | **Thua** | P2 (render khi ngắt) |
+| Phân loại điểm kết thúc | enum `outcome` | `reasonHint` chi tiết và công cụ đang chạy dở (`terminalreason.go`) | thoát mã 0/1/2 | Ngang | Hiển thị tool đang chạy dở trong báo cáo ngắt |
+| Nạp skill | ≤3/task, trang đầu nhúng vào brief, đọc theo ID | tool/skill theo vai trò từ DB | ≤5 skill nhúng vào system prompt | Ngang | — |
+| Coverage | Plan/cell tường minh, execution tách assessment, cũ thì hạ | `coverage.pct` thô: asset có fact neo (doc §4.6) | `coverage.json` tách `agent_reported` và `machine_observed`, báo "gap" khi agent mang skill mà không ghi (`report/coverage.py`) | Hơn (mô hình) / Thua (đối soát tự động) | Gap từ skill/WSTG được giao mà chưa có cell (P1, P6) |
+| Kích hoạt báo cáo | Chỉ lệnh người dùng | Trigger tool-call: `report_finding` → agent `reporter` chạy song song (`orchestration.go:755-780`) | `finish_scan` luôn ghi `.md`, `.csv`, `.json`, SARIF, `run.json` | **Thua** | P2 |
+| Nội dung finding | tiêu đề, verdict, policy, tài sản, claims, giới hạn | tóm tắt, bằng chứng, báo cáo chi tiết, liên kết lưu lượng | ID, mức, CVSS (tính từ 8 chỉ số), CWE/CVE, confidence+lý do, counterevidence, PoC, remediation, update history (`report/writer.py:223-361`) | **Thua** | P3–P4 |
+| An toàn đầu ra | Vô hiệu hóa markup, công thức CSV, bidi, ANSI | Không rõ | `csv_safe`, `safe_fence` | **Hơn** | Dùng fence động cho khối tái hiện (P4) |
+| Retest | disposition `retest`, `remediation.status` | agent retester riêng với 3 kết luận (`retester.go`) | `fix_verification` | Ngang | — |
+| Benchmark | harness cô lập, mù đáp án; kết quả cũ bị nhiễm (bench/README) | không rõ | XBEN 104 bài, tự công bố | Không so được | Không kết luận hiệu quả |
 
-### D.5. Tích hợp vào workflow recon → kiểm → xác minh → báo cáo
+### D.3. Nhận / sửa / loại
 
-**D.5.1. Luồng** (mọi thứ dùng công cụ và trường sẵn có):
-
-| Giai đoạn | Việc | Công cụ/skill đã có | Thêm vào |
-|---|---|---|---|
-| Recon | lập kho route/tham số; ghi tài sản `endpoint`, `config`, `identity`; ghi **đặc điểm** quan sát được | `web-route-input-inventory`, `attack-surface-mapping`, `p2o_graph`, `p2o_note` | từ vựng đặc điểm trong `HANDOFFS.md` (X0.4) |
-| Lập kế hoạch | lead đọc `shared:wstg-map`, chọn test có `Kích hoạt` đúng, tạo plan coverage: cờ O → `not_applicable`; cờ I thiếu danh tính → `blocked` kèm gap; cờ B → trần `offline_reproduction` | `p2o_coverage`, `p2o_task` | hai cột mới của bản đồ |
-| Kiểm | giao việc với `work.questionKey = wstg-…`, một skill chủ sở hữu (+ ≤ 2 skill phụ), workflow theo điều kiện thực tế | `p2o_delegate`, `p2o_skill_read` | không |
-| Xác minh | validator độc lập; `policyBasis` ≠ `inferred`; mức L0–L3 qua `wstgEvidence` | `p2o_candidate`, `p2o_case` | không |
-| Báo cáo | phụ lục WSTG (S6), phụ lục thang rủi ro (E7) | `/p2o report export` | xem D.5.4 |
-
-**D.5.2. Từ vựng đặc điểm (đề xuất, 25 mã chữ thường, không đổi schema):** `login`, `session-token`, `registration`, `password-reset`, `mfa`, `remember-me`, `jwt`, `oauth`, `upload`, `xml-input`, `template-render`, `outbound-fetch`, `db-query`, `os-command`, `file-path`, `mail-send`, `export-csv`, `websocket`, `graphql`, `payment`, `workflow`, `cors`, `frames`, `postmessage`, `client-storage`. Ghi như thuộc tính tài sản (`attributes.feature`) hoặc câu của `fact` (`observed`). Bản đồ thêm hai cột: `Kích hoạt` (đặc điểm nào đủ để lập kế hoạch test) và `Chế độ` (`S` nguồn, `H` HTTP ẩn danh, `A` HTTP có danh tính, `N` mạng sandbox, `B` cần trình duyệt). Kích thước `shared:wstg-map` tăng khoảng +4 K ký tự, vẫn đọc theo yêu cầu (+0 B chi phí cố định).
-
-**D.5.3. Lời khuyên workflow nằm ở `promptGuidelines`, không ở lead prompt.** Lead prompt không đổi một byte (`recon.test.ts` ghim cỡ và hash; 5 biến thể lead đã có trần). Hai dòng đề xuất cho `TOOL_GUIDELINES` (`src/tool-guidelines.ts`), ≤ 400 B tổng, bật bởi `p2o.toolGuidance` (mặc định `false`) và tăng `POLICY_VERSION` lên 2:
-
-- `p2o_coverage`: khi một cell trả lời một test WSTG, dùng ID chữ thường (ví dụ `wstg-sess-03`) làm `questionKey` và id workflow làm `methodFamily`; skill sở hữu nằm ở `shared:wstg-map`.
-- `p2o_task`: đặt khóa WSTG vào `work.questionKey` để kiểm tra trùng áp dụng, và gán skill mà `shared:wstg-map` nêu cho test đó.
-
-Cảnh báo bằng chứng: benchmark W cho thấy guidance **tăng chi phí 73% mà không tăng chất lượng** (`docs/USAGE.md:379`, bản trước §0.2). Vì vậy mặc định vẫn là quy ước ở `HANDOFFS.md` và `shared:wstg-map` (chi phí cố định bằng 0); hai dòng guidance chỉ là tùy chọn, và nếu thêm phải cập nhật ngân sách `workflow-policy.test.ts` có chủ đích (Q8).
-
-**D.5.4. Pha Reporting (thay đổi nhỏ, tất định, không gọi mô hình):** (1) E7 cho worker báo cáo; (2) `src/report-export.ts`: thêm phụ lục "Risk rating" tĩnh (năm mức và tiêu chí), thêm cột khóa WSTG và mức bằng chứng vào bảng case, hiển thị `risk` của worker như **văn bản có quy gán, chưa đánh giá** (`src/evidence.ts:10`) thay vì một xếp hạng, và dòng "Executive summary: không tự sinh, viết tay"; (3) không đổi tiêu đề `coverage.csv`; hash `report-manifest.json` cũ không so sánh được (đã chấp nhận ở S6). Caller của `renderReport`: duy nhất `extensions/p2o/index.ts:1316` (grep; GitNexus không lập chỉ mục `src/*.ts` nên `impact` trả UNKNOWN, **không** coi là an toàn). Quy ước PURL cho tài sản `package` ghi ở `HANDOFFS.md` (3 dòng), tùy chọn.
-
-**D.5.5. Tác động mã (xác nhận bằng grep, không bằng GitNexus):**
-
-| Thay đổi | Caller/đối tượng phụ thuộc đã grep | Test cần cập nhật có chủ đích |
+| Mục | Quyết định | Lý do |
 |---|---|---|
-| `src/wstg-map.ts`: thêm `trigger`, `modes`, chấm lại 5 hàng | `src/report-export.ts:9,68-84`, `scripts/render-wstg-map.mjs`, `tests/minimal/wstg-map.test.ts` | số đếm D/T/N/O (26/35/43/4 → 21/40/43/4), bảng tài liệu |
-| `scripts/validate_library.py`: provenance v2 | `tests/test_library.py` (nhiều dòng quanh `:403-436`, `:479`, `:579`, `:754`) | thêm ca: giấy phép lệch, thiếu bản sao giấy phép, hash lệch |
-| `src/report-export.ts`: phụ lục | `extensions/p2o/index.ts:1316` | `tests/minimal/report-export.test.ts` (+3 ca) |
-| `src/tool-guidelines.ts` (tùy chọn) | `tests/minimal/workflow-policy.test.ts`, digest runtime qua `POLICY_VERSION` | ngân sách guidance |
-| `skills/**`, `skills/catalog.json` | `src/skills.ts` (đọc), `tests/minimal/knowledge.test.ts`, `skill-hygiene.test.ts`, `scripts/validate_library.py` | số tài liệu; số trang của `p2o_skill_list` |
-
+| Preflight kết thúc đối soát coverage và gap (strix) | **Nhận (P1)** | Cheap, tất định, không prompt |
+| Báo cáo tự ghi khi kết thúc (strix) và khi có finding (ARTEX reporter) | **Sửa (P2)**: chỉ khi cleanup, không gọi model | Giữ tính tất định; ARTEX dùng LLM, p2o không |
+| CVSS tính từ 8 chỉ số, CWE hợp lệ hóa (strix) | **Nhận (P3)**, tự cài hàm thuần, không thêm dependency | Giữ ít dependency |
+| Counterevidence, confidence rationale bắt buộc (strix) | Đã có một phần trong luật closure; **bổ sung** `finding.basis` | Tránh trường trùng |
+| Bảng `agent_reported` vs `machine_observed` (strix coverage) | **Nhận (P4)** cho phần "Phạm vi và giới hạn" | Đúng tinh thần p2o |
+| Wrap-up khi cạn (ARTEX) | **Sửa (P2)**: thay bằng render báo cáo khi dừng | Lead không có vòng model sau khi dừng |
+| Quy tắc "sàn cứng" phải sinh intent khi frontier rỗng (ARTEX) | **Loại** | Mâu thuẫn nguyên tắc p2o "không bịa việc"; xem prompts.ts:70 |
+| Auto-ghi `confirmed` (ARTEX) | **Loại** | Trái mô hình case |
+| LLM judge dedupe (strix) | **Loại** | p2o đã có fingerprint và rootCauseKey |
+| Trường PoC script tự do (strix) | **Loại** | Rủi ro an toàn; thay bằng tham chiếu evidence ID đã redact |
+| Khung "chặn do nền tảng" (ARTEX) | **Cân nhắc** sau P2 | Chỉ khi lead thường cố vượt lỗi chặn; chưa có bằng chứng |
+| Tự gom SARIF (strix) | **Hoãn** (G-7) | Hợp với target mã nguồn, không phải web black-box |
 
 ---
 
-## E. Lộ trình theo giai đoạn, nghiệm thu và cách kiểm thử
+## E. Thiết kế báo cáo chuẩn OWASP (câu hỏi D)
 
-### E.1. Tín hiệu ưu tiên
+### E.1. Đối chiếu WSTG §5 với đầu ra hiện tại
 
-Xếp theo: số test chưa có thẻ riêng, tín hiệu rủi ro của Top 10 2025 (M6; ánh xạ nhóm WSTG sang hạng mục là **DESIGN-INFERENCE**), nhu cầu danh tính, cờ trình duyệt, mức mutation tối đa, và khả năng tái sử dụng. Giai đoạn càng sớm càng ít rủi ro và càng rẻ.
+Nguồn chuẩn: `my_references/wstg/5-Reporting/01-Reporting_Structure.md` (WSTG nói rõ đây là gợi ý, không phải quy tắc cứng).
 
-| Skill | Hạng mục Top 10 2025 gần nhất | Test cần thẻ (Một phần + Thiếu) | Cần danh tính | Trình duyệt | Mutation | Phase |
-|---|---|---|---|---|---|---|
-| `web-deployment-hygiene` | A02, A04, A10 | 16 | không | 2 | M0 | X1 |
-| `web-session-management` | A07, A01 | 9 | có (8) | 0 | M1 | X1 |
-| `web-credential-lifecycle` | A07 | 10 | có (9) | 0 | M2 | X1 |
-| 6 bổ sung skill hiện có (E1–E4) | A01, A05, A06 | 6 | một phần | 0 | M0–M1 | X1 |
-| `web-server-side-injection` | A05 | 13 | không | 0 | M1 | X2 |
-| `web-token-and-federation` | A07, A01 | 2 | có (2) | 0 | M1 | X2 |
-| `web-business-logic-misuse` | A06 | 9 | có (9) | 0 | M2 | X2 |
-| `web-browser-trust-controls` | A02, A01, A05 | 13 | một (1) | 13 | M1 | X3 |
-| `web-graphql-testing` | A01, A05 | 1 | không | 0 | M0 | X3 |
-| `web-crypto-usage-review` | A04 | 2 | không | 0 | M0 | X4 |
-| Báo cáo (E7 và phụ lục) | — | 0 | không | 0 | M0 | X4 |
-
-Hai hạng mục gần như không có test WSTG tương ứng (A03 chuỗi cung ứng, A09 nhật ký/cảnh báo) nằm ngoài kế hoạch (C.3).
-
-### E.2. Các giai đoạn
-
-| Giai đoạn | Nội dung | Test đổi mức | Đủ sau giai đoạn |
+| Mục WSTG §5 | Hiện có | Thiếu | Nguồn dữ liệu đề xuất |
 |---|---|---|---|
-| **X0** Nền | X0.1 dời bản raw; X0.2 chốt tài liệu kế hoạch và các trích dẫn cũ; X0.3 provenance v2; X0.4 chấm lại bản đồ và thêm cột `Kích hoạt`/`Chế độ`; X0.5 test sở hữu | 5 hàng D → T (số đếm: 21/40/43/4) | 21 |
-| **X1** Hygiene, session, credential | N7, N1, N3 + E1–E4 | 41 | 62 |
-| **X2** Injection, logic, token | N4, N2, N5 | 24 | 86 |
-| **X3** Trình duyệt và API | N6, N8 (+ E5, E6 không đổi mức) | 14 | 100 |
-| **X4** Crypto và báo cáo | N9, E7, phụ lục xuất | 2 | 102 |
-| **X5** Đo lường nâng cao | tùy chọn, cần phê duyệt riêng | — | — |
+| 1.1 Version control | `report-manifest.json` (format, runtime digest, `asOfSequence`) | Bảng phiên bản/ngày/tác giả | manifest + `p2o.report.author` (G-11); ngày = bản ghi cuối của ledger (tất định) |
+| 1.2 Mục lục | Không | Mục lục | sinh từ tiêu đề |
+| 1.3 Nhóm thực hiện | Không | Thành viên, chuyên môn | **không có dữ liệu**: cấu hình tùy chọn hoặc ghi "do người vận hành cung cấp" |
+| 1.4 Phạm vi | "Target" một dòng, exclusions và unknownScope của plan | Phạm vi theo origin/đường dẫn, thứ nằm ngoài | `manifest.targetDisplay`, `CoveragePlan.exclusions/unknownScope`, loại target |
+| 1.5 Giới hạn | Mục "Limits" chung chung, gap, cell chưa kiểm | Giới hạn của công cụ (không có trình duyệt, OAST), test WSTG cờ B/I/N/O, lý do run kết thúc, worker lỗi, ngân sách | `WSTG_MAP` cờ, `usage`, outcome worker, `endReason`, lifecycle `hold` |
+| 1.6 Timeline | Không | Thời lượng | bản ghi đầu và cuối, sự kiện finalize |
+| 1.7 Disclaimer | Dòng "not a verification" | Tuyên bố "point in time" | văn bản cố định của p2o (tự viết, không chép WSTG) |
+| 2 Executive summary | Bảng đếm | Mục tiêu, phát hiện chính theo bối cảnh kinh doanh, khuyến nghị chiến lược | khung tất định (đếm, top theo mức) + đoạn văn **lead viết, gắn nhãn chưa kiểm chứng** (G-6) |
+| 3.1 Findings summary | Bảng "Other cases", không có cho accepted | Bảng Ref/Title/Risk | `cases` accepted-current + `finding.severity` |
+| 3.2 Chi tiết: Ref ID | `case id` | — | giữ |
+| — Title | có | — | — |
+| — Likelihood/exploitability | không | các yếu tố (độ dễ, mã khai thác, quyền truy cập, động cơ) | `finding.likelihood` (văn bản có cấu trúc) |
+| — Impact | không | tác động hệ thống | `finding.impact` |
+| — Risk (Info/Low/Medium/High/Critical; CVSS tùy chọn) | chỉ in thang `RISK_LEVELS` (`report-export.ts:65-71`), không gán cho case | mức cho từng case, CVSS, CWE | `finding.severity`, `finding.cvss`, `finding.cwe` (E.2) |
+| — Mô tả, cách khai thác, tác hại (dữ liệu nhạy cảm che) | tiêu đề, policy, lý do review, giới hạn | mô tả; tái hiện | case + biên nhận evidence đã redact (lệnh/yêu cầu `data.input`) trong khối fence an toàn |
+| — Remediation | `remediation.status/reason` (trạng thái, không phải khuyến nghị) | các bước, cải tiến, thiếu thực hành | `finding.remediation.steps` + liên kết trang WSTG của test (G-5) |
+| — Tài nguyên bổ sung | không | CVE, hướng dẫn ngoài | `finding.references` (danh sách cho phép) |
+| Human factors | không | quy trình phục hồi, 2FA… | **ngoài phạm vi tự động**; mục tùy chọn do lead/reporting worker nêu trong case, có nhãn |
+| Reproducible test artifacts | ID evidence/artifact | lệnh/yêu cầu tái hiện | `evidence.data.input` đã redact, bound; không xuất HAR/script (không có transport trình duyệt) |
+| Phụ lục: phương pháp | không | phương pháp | văn bản tất định (quy trình p2o, WSTG commit ghim) |
+| Phụ lục: thang rủi ro | có (khi có accepted) | giải thích CVSS | giữ + chú thích |
+| Phụ lục: output công cụ | không | đầu ra đã làm sạch | chỉ biên nhận được case dẫn, giới hạn kích thước |
+| Phụ lục: checklist test | `wstgAppendix` (L0–L3 trên 108 test) | liên kết trang WSTG, nhóm | giữ + liên kết pinned |
+| Naming schemes (CPE/SWID/PURL) | không | định danh phần mềm | **hoãn**: p2o không có inventory phần mềm có cấu trúc |
 
-Đích: **Đủ 102/108, Một phần 2 (INFO-04, INFO-10), Ngoài 4** (D.2 và Phụ lục H). Mỗi giai đoạn tự đứng được: dừng sau X1 vẫn có giá trị (41 test có thẻ, rủi ro thấp nhất).
+**Đã chắc:** WSTG chương 4 (đo hôm nay trên `my_references/wstg`): 129 trang `.md` (không tính README và `00-*`); 61 trang có mục `## Remediation`, 101 có `## References`, 16 nhắc CWE (24 mã duy nhất), **0 nhắc CVSS**. Hệ quả: khuyến nghị theo WSTG chỉ có sẵn cho khoảng một nửa số trang; CWE rải rác; CVSS không có nguồn trong WSTG nên phải do `finding.cvss` cung cấp có kiểm tra.
 
-### E.3. Việc, nghiệm thu và kiểm thử từng giai đoạn
+### E.2. Mô hình dữ liệu đề xuất (phụ thuộc G-4)
 
-**X0 — Nền (không đổi hành vi pentest)**
+Thêm trường **tùy chọn** `finding` vào `CaseDraft` (`src/case-types.ts`), do owner ghi sau khi worker `reporting` soạn (kỹ năng `remediation` đã có thang rủi ro, `skills/remediation/references/risk-rating-criteria.md`):
 
-| Việc | Nghiệm thu (đều miễn phí) | Kiểm thử |
+| Trường | Kiểm tra | Ghi chú |
 |---|---|---|
-| X0.1 Dời `skills/wstg/` ra ngoài `skills/` và ngoài `files` (đề xuất `my_references/wstg/`, Q1) | `python3 scripts/validate_library.py` in `PASS`; `npm test` xanh; `npm pack --dry-run` không chứa văn bản WSTG raw; `git status` không còn `skills/wstg` | lệnh có sẵn |
-| X0.2 Chốt `planning_update.md` này; ghi chú hoặc sửa 2 trích dẫn cũ nếu owner muốn (`docs/ACCEPTANCE_MATRIX.md:92`, `src/roles.ts:35`); receipt lịch sử trong `docs/VERIFICATION_LOG.md` giữ nguyên | `acceptance-matrix.test.ts` 3/3 xanh; hai link README hết gãy | test có sẵn |
-| X0.3 Provenance v2: `upstreams[]` (Strix Apache-2.0; WSTG CC-BY-SA-4.0), mỗi reference khai `upstream`, id `W1…` cho trang WSTG đã dùng (sha256 trang tại `28553f8`); vendored `research/licenses/cc-by-sa-4.0.md` và notice; schema 1 vẫn đọc được; nâng giới hạn 5–20 reference (`validate_library.py:413`) và regex id (`:420`) có chủ đích. Phương án nhẹ hơn: file riêng `research/WSTG_PROVENANCE.json` với hàm kiểm riêng (Q3) | `tests/test_library.py` hiện có xanh; ≥ 6 ca mới: giấy phép lệch upstream, thiếu bản sao giấy phép, hash lệch, reference không ghi skill vào `used_by`, id upstream trùng, schema 1 vẫn pass | unittest Python |
-| X0.4 Chấm lại 5 hàng; thêm `trigger` và `modes` vào `src/wstg-map.ts`; `docs/WSTG_MAP.md` sinh lại; từ vựng đặc điểm ở `HANDOFFS.md` | `wstg-map.test.ts` xanh với 21/40/43/4; bảng khớp dữ liệu (`render-wstg-map.mjs`); `shared:wstg-map` ≤ 16.000 ký tự; lead prompt không đổi byte (`recon.test.ts` xanh, 5 biến thể có trần) | cập nhật có chủ đích số đếm trong test |
-| X0.5 `tests/minimal/wstg-skills.test.ts`: dữ liệu chủ sở hữu (skill, thẻ) nằm trong `src/wstg-map.ts`; test chỉ ép các skill **đã có trong catalog**: thẻ tồn tại, dòng `Tests:` đầu file khớp bản đồ, mỗi test trong scope xuất hiện đúng một lần trong tất cả dòng `Tests:`, `Đủ` chỉ được ghi khi thẻ tồn tại | xanh ở mọi giai đoạn, siết dần khi skill xuất hiện | vitest |
+| `severity` | enum `critical/high/medium/low/informational` | bắt buộc nếu case sẽ `accepted` ở chế độ chuẩn (preflight BLOCKING khi thiếu) |
+| `basis` | văn bản ≤1.000 | yếu tố khả năng/tác động từng dẫn tới mức, trích đúng evidence case đã dẫn |
+| `likelihood`, `impact` | văn bản ≤800 mỗi trường | khớp mục WSTG 3.2 |
+| `cvss` | `{vector}` CVSS:3.1 hợp lệ; host **tính điểm** | hàm thuần trong `src/cvss.ts`; test bằng vector tham chiếu của FIRST (xác minh lại với đặc tả khi cài) |
+| `cwe[]` | `^CWE-[1-9][0-9]{0,4}$`, ≤5 | không tra cứu trực tuyến; báo cáo ghi "do người báo gán, chưa kiểm với MITRE" |
+| `remediation.steps` | ≤2.000 | khác `remediation.status` hiện có |
+| `references[]` | ≤5; chỉ khóa WSTG hoặc URL https của miền cho phép; in dạng code, không thành link | tránh link lừa đảo |
+| `reproduction.evidenceRefs[]` | ≤5 ID evidence cùng run | báo cáo lấy `input` đã redact |
+| `independenceWaiver` | văn bản ≤300 | P5; bắt buộc ghi lý do nếu High/Critical không có validator độc lập |
 
-**X1–X4 — mỗi skill mới** phải qua cùng một cửa (Định nghĩa hoàn thành, DoD):
+Luật nhất quán lấy từ thang đã phát hành: policy `inferred` không được cao hơn Medium (nêu trong tài liệu rubric); `severity` không thay đổi `verdict`/`reviewStatus`; CVSS và thang p2o có thể khác nhau, báo cáo in cả hai và giải thích (WSTG: CVSS tùy chọn).
 
-1. `scripts/validate_library.py` PASS: 11 mục playbook, giới hạn từ, không fence/CVE/hex, không đoạn trùng, provenance hợp lệ, reference được liên kết.
-2. `wstg-skills.test.ts` và `wstg-map.test.ts` xanh; số đếm trong bản đồ và `docs/WSTG_MAP.md` cập nhật có chủ đích (D tăng đúng số test của skill).
-3. `skill-hygiene.test.ts` xanh: không tên `p2o_*` trong skill; mục "chuyển giao" không trỏ tới skill không tồn tại.
-4. Kích thước: SKILL.md ≤ 7.000 ký tự; mỗi reference ≤ 6.000; `scripts/measure-context.mjs --source` cho lượt duyệt `p2o_skill_list` ≤ ngưỡng của giai đoạn (X1 ≤ 27.500, X2 ≤ 32.000, X3 ≤ 35.000, X4 ≤ 36.500 ký tự; **DESIGN-INFERENCE** từ 21.659 hiện tại cộng khoảng 1.450 mỗi mục playbook); lead prompt và prompt worker không đổi (hash, trần); khai báo tool không đổi (24 tool, ngân sách `workflow-policy.test.ts`).
-5. Kiểm đột biến (như các lượt trước): thêm một code fence, đổi tên skill chủ sở hữu, bỏ liên kết reference, thêm tên `p2o_*`, nhân đôi một test sang hai thẻ; mỗi lần phải có đúng một guard đỏ.
-6. Tài liệu: `docs/WSTG_MAP.md` sinh lại; một đoạn ngắn ở `docs/USAGE.md` (cách chọn skill theo test); hàng acceptance mới (đặt tên `F-X1…F-X4`, trỏ test thật) ở `docs/ACCEPTANCE_MATRIX.md` trong mục riêng, **không** chạm §13.
-7. `npm test` đầy đủ xanh; số test ghi lại, không tự ghi cứng trong README.
+**Tương thích:** `validateStoredCase` dùng `exact()` (từ chối khóa lạ), nên bản p2o cũ đọc run mới sẽ loại case có `finding` (ghi chú không được "promote"). Run cũ vẫn đọc bình thường vì trường tùy chọn. Cần ghi vào docs và tăng `POLICY_VERSION` khi phát hành P3.
 
-| Giai đoạn | Thêm | Kiểm thử đặc thù |
-|---|---|---|
-| X1 | N7, N1, N3, E1–E4 | `Chế độ` của N7 chỉ `S`/`H`/`N`, không `A`/`B`; test kiểm thẻ N1 nhắc "token của chính mình"; E2 không cho phép xác nhận smuggling bằng đầu độc hàng đợi (guard văn bản) |
-| X2 | N4, N2, N5 | thẻ N4 không chứa payload (guard validator); thẻ N5 buộc "nguồn chính sách"; thẻ N2 chỉ trên origin của target |
-| X3 | N6, N8, E5, E6 (sau khi chốt Q5) | nếu Q5 cho phép Chromium cục bộ: thêm fixture hermetic chạy `chromium --headless` trong sandbox và so DOM với kết quả kỳ vọng (opt-in Docker như `P2O_TEST_DOCKER=1`); trần chứng minh của thẻ B vẫn `offline_reproduction` |
-| X4 | N9, E7, phụ lục xuất | `report-export.test.ts`: phụ lục thang rủi ro có mặt, `risk` hiển thị là văn bản có quy gán, xuất hai lần cho cùng hash manifest, báo cáo không có khóa `wstg-` không đổi byte |
+### E.3. Cấu trúc báo cáo v2 (Markdown chính; định dạng khác ở G-7)
 
-### E.4. Phụ thuộc
+```text
+REPORT.md
+  0. Đọc trước (giữ tuyên bố "chỉ mục tất định")      [banner KẾT THÚC: finished / INTERRUPTED(stop|shutdown|storage-failed)]
+  1. Giới thiệu: 1.1 Phiên bản · 1.2 Mục lục · 1.3 Nhóm · 1.4 Phạm vi · 1.5 Giới hạn · 1.6 Timeline · 1.7 Miễn trừ
+  2. Tóm tắt điều hành: khung tất định (đếm theo mức, bao phủ, phạm vi, nhận định) + đoạn lead (nhãn "chưa kiểm chứng")
+  3. Bao phủ và khoảng trống (đứng TRƯỚC finding, giữ nguyên nguyên tắc hiện tại): plan/cell, gap, WSTG L0–L3, chưa kiểm
+  4. Phát hiện: 4.1 Bảng tóm tắt (Ref, Title, Severity, CVSS, CWE, WSTG, trạng thái review) · 4.2 Chi tiết từng case
+       Mỗi case: Ref · Title · Severity + basis · Likelihood · Impact · Mô tả · Tái hiện (evidence đã redact, fence an toàn) ·
+       Khuyến nghị · Tham chiếu · Proof level · Độc lập · Mâu thuẫn · Giới hạn · Lịch sử revision
+  5. Case khác (pending/disputed/stale/duplicate/withdrawn) và lý do
+  6. Claims của worker (chưa phải finding)
+  7. Phụ lục: A phương pháp · B thang rủi ro và CVSS · C biên nhận trích dẫn · D checklist WSTG (liên kết ghim) · E nhiệm vụ và bàn giao
+findings.json   toàn bộ trường có kiểu (schema versioned)        findings.csv   tóm tắt, công thức CSV vô hiệu hóa
+cases.csv  coverage.csv  wstg-checklist.csv  report-manifest.json (hash từng file, format 2, endReason, complete)
+```
 
-X0.1 trước mọi việc khác (hiện `npm test` đỏ). X0.3 trước mọi văn bản dẫn xuất từ WSTG, kể cả E1–E4 (mọi reference cần `provenance_refs` hoặc ghi nhận nguồn). X0.4–X0.5 trước X1 (bảng định tuyến và guard). Q5 chỉ chặn phần trình duyệt của X3. Q7 chặn phần quét tự động của N4. Q2 chặn toàn bộ X1 trở đi (cách ghi nhận nguồn).
+Giữ các thuộc tính hiện có: không giờ hệ thống, không random, cùng sequence cho cùng byte (`report-export.ts:12`), mọi chuỗi từ target/model đi qua `mdText`/`csvCell`; khối tái hiện dùng hàm fence động (độ dài rào lớn hơn dãy backtick dài nhất bên trong; tham khảo `safe_fence` của strix) và loại ký tự điều khiển.
 
-### E.5. Điều không thể kiểm miễn phí
+### E.4. CVSS và CWE
 
-Hiệu quả pentest (tỷ lệ phát hiện, dương tính giả, chi phí, độ ổn định của worker khi có skill mới) là **UNVERIFIED**; benchmark hiện có chỉ chạy `--solo` trên 4 fixture thư mục nguồn, không có fixture HTTP, session, injection hay client-side, và việc chạy trả phí đang bị cấm. Nghiệm thu ở trên chỉ chứng minh: cấu trúc đúng, không phình ngữ cảnh cố định, ánh xạ nhất quán, ranh giới an toàn được viết ra. Nếu sau này owner cho phép (X5): (a) phòng thí nghiệm fixture hermetic (ứng dụng web mẫu có lỗi và bản vá, kiểm tra oracle tất định ở phía fixture); (b) benchmark có trần chi phí với model/ngân sách/ngưỡng do owner chọn, không dùng provider `openai-codex-account-*`; (c) "sổ mục tiêu": 236 mục tiêu WSTG mỗi mục ánh xạ tới ≥ 1 dòng thẻ hoặc bị loại trừ có lý do (kiểm được miễn phí và có thể làm sớm hơn nếu owner muốn).
+`src/cvss.ts` (≈40 dòng, không dependency): parse vector `CVSS:3.1/AV:·/AC:·/PR:·/UI:·/S:·/C:·/I:·/A:·`, tính điểm cơ sở và làm tròn lên một chữ số theo đặc tả. Test bắt buộc: vector tham chiếu (ví dụ `AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H` kỳ vọng 9,8; các vector 7,5; 5,3; 6,5; 6,1 phổ biến; **xác minh lại từng giá trị với đặc tả CVSS v3.1 khi cài, không tin trí nhớ**), vector sai, trường thiếu, scope changed, làm tròn biên. Strix làm tương tự bằng thư viện `cvss` (`tools/reporting/tool.py:135-153`).
 
----
+### E.5. Khuyến nghị theo WSTG và giấy phép
 
-## F. Rủi ro và quyết định cần chốt
+Mặc định **chỉ liên kết** tới trang test ở commit ghim: `https://github.com/OWASP/wstg/blob/28553f878d48358767892916d53e59a9d664811c/document/4-Web_Application_Security_Testing/<nhóm>/<tệp>.md` (cây `document/` theo `research/WSTG_PROVENANCE.json`). Nhúng nguyên văn mục Remediation vào báo cáo cần ghi công và share-alike (CC BY-SA 4.0) ảnh hưởng giấy phép của báo cáo: quyết định G-5. 104 trong 108 test có trang đã đăng ký (`wstg-source:`), nên bảng test → đường dẫn tạo được từ catalog.
 
-### F.1. Rủi ro
+### E.6. An toàn đầu ra
 
-| # | Rủi ro | Dấu hiệu / bằng chứng | Giảm thiểu |
-|---|---|---|---|
-| R1 | Giấy phép: WSTG là CC BY-SA 4.0; phần dẫn xuất có thể kéo theo ShareAlike; repo là `private`, `UNLICENSED` (`package.json`) | M3; **UNVERIFIED** về pháp lý | viết lại độc lập, không chép; attribution bằng tiêu đề + hash; `usage_boundary` như R1–R6; vendored license; Q2 |
-| R2 | Thay đổi provenance v2 làm vỡ validator hoặc test Python | `validate_library.py:371-447` và nhiều dòng `tests/test_library.py` | thêm test trước, đọc được schema 1, hoặc phương án file riêng (Q3) |
-| R3 | Chất lượng skill không được chứng minh | E.5 | tuyên bố đúng mức; không viết "pentest tốt hơn"; X5 chỉ khi được phép |
-| R4 | Phình ngữ cảnh: lượt duyệt `p2o_skill_list` tăng từ 21.659 lên khoảng 34.700 ký tự (+60%); playbook xếp trước kỹ thuật nên 17 skill kỹ thuật xuống trang 2–4; trang đầu SKILL.md inline vào brief (khoảng +7 K ký tự khi được gán) | đo `scripts/measure-context.mjs`; `src/skills.ts:66-77` | mô tả ngắn có mã nhóm WSTG để `query` tìm được; `shared:wstg-map` làm bộ định tuyến; ngưỡng theo giai đoạn; làm S3b (gộp workflow trùng trong đầu ra `list`) nếu vượt (bản trước đo −28% khi duyệt hết) |
-| R5 | Lead chọn sai skill hoặc lập quá nhiều test | số test lớn, mỗi task chỉ 3 skill | mỗi test đúng một chủ sở hữu; cột `Kích hoạt`, `Chế độ`; test sở hữu |
-| R6 | Test có tác dụng phụ (khóa tài khoản, email/SMS, thanh toán, upload, smuggling) | W6b đã bị bỏ; hộp thoại bắt đầu cho phép method ghi cho cả run (`docs/HTTP_TRANSPORT.md`) | mức M0/M1/M2 trong Stop Conditions; M2 mặc định `blocked`; fixture riêng; Q6 |
-| R7 | Công cụ quét tự động có sẵn trong image (`sqlmap`, `ffuf`, `nuclei`, NSE gồm `http-slowloris`) gây nhiễu hoặc hại | M5 | không mặc định; cấm NSE từ chối dịch vụ trong thẻ; Q7 |
-| R8 | Nhầm lẫn bằng chứng trình duyệt: Chromium chạy qua shell không có ghim origin hay biên nhận có cấu trúc | M5; `docs/HTTP_TRANSPORT.md` | trần `offline_reproduction`; Q5; test opt-in |
-| R9 | Đổi README, catalog hoặc `HANDOFFS.md` làm đổi hash tài liệu → task method đang mở bị stale (`TASK_METHOD_STALE`, `extensions/p2o/index.ts:349`) | đã gặp ở các lượt trước | chỉ áp dụng giữa các run (`/p2o stop` trước) |
-| R10 | Trùng đoạn nguyên văn giữa các thẻ (validator `duplicate paragraph`) | `validate_library.py:810-816` | văn bản riêng cho từng thẻ; phần chung đặt ở Stop Conditions của playbook |
-| R11 | WSTG đổi ID giữa các bản (INPV → INJT; INJT-13 gán lại) | A.1, M4 | ghim commit; khóa là cặp (ID, tiêu đề); quy trình làm mới ở `docs/WSTG_MAP.md` |
-| R12 | Hiểu nhầm "phủ 100% WSTG" là "phát hiện được mọi thứ" | nhãn Đủ là tri thức | báo cáo cấm câu "phủ 100%" (đã có); tài liệu ghi rõ ngoài WSTG (C.3) |
-| R13 | Công cụ trong image khác nhau giữa các image (`--p2o-image`); `nmap` không chạy do file capability | M5 | thẻ nói "kiểm công cụ bằng probe có biên nhận" (đã là quy tắc ở `docs/SKILL_RUNTIME.md`); không phụ thuộc cứng vào một công cụ |
-| R14 | Phạm vi lớn (khoảng 240 KB văn bản, 41 tài liệu) | D.2 | phân giai đoạn; mỗi giai đoạn tự đứng được; X1 là điểm dừng hợp lý |
-| R15 | Nếu không làm X0.1, `npm test` tiếp tục đỏ và che các hồi quy khác | M2 | X0.1 là việc đầu tiên |
+Thêm: (1) khối fence cho lệnh tái hiện; (2) liên kết tạo bởi host (CWE/WSTG) in dạng code, không phải link; (3) CSV `findings.csv` dùng `csvCell`; (4) kiểm hostile fixture mới cho `finding.*` (markup, fence, bidi, công thức); (5) giới hạn kích thước theo trường và theo báo cáo (đã có 16 MiB trong `publishReportFiles`).
 
-### F.2. Quyết định cần owner chốt
+### E.7. Tự động xuất báo cáo
 
-| # | Câu hỏi | Mặc định đề xuất |
-|---|---|---|
-| Q1 | Bản raw WSTG đặt ở đâu? (ngoài `skills/` và `files`) | `my_references/wstg/` (đúng quy ước tham chiếu tĩnh, không bị quét, không đóng gói) |
-| Q2 | Lập trường giấy phép cho phần dẫn xuất từ WSTG: (a) viết lại độc lập + attribution + vendored license; (b) ghi nhãn CC BY-SA 4.0 cho phần dẫn xuất; (c) chỉ dùng ID, không dùng ý | (a) |
-| Q3 | Provenance: (a) schema v2 nhiều upstream trong `SKILL_PROVENANCE.json`; (b) file riêng cho WSTG | (a) nếu chấp nhận sửa validator; (b) nếu muốn blast radius nhỏ |
-| Q4 | Chấp nhận chấm lại 5 hàng D → T (IDNT-01, INJT-04, INJT-13, INJT-15, BUSL-05) và xem lại APIT-03, INJT-16? | chấp nhận |
-| Q5 | Trình duyệt: (a) giữ chính sách không có trình duyệt, nhưng cho Chromium cục bộ chạy fixture như bằng chứng `offline_reproduction`; (b) không dùng Chromium; (c) nghiên cứu transport có quản lý (ngoài kế hoạch này) | (a) sau khi có thiết kế an toàn; chưa cần trước X3 |
-| Q6 | Mức mutation: chỉ hướng dẫn trong skill, hay cần cưỡng chế ở host (mở lại W6b)? | chỉ hướng dẫn |
-| Q7 | Công cụ quét tự động có sẵn (`sqlmap`, `ffuf`, `nuclei`): cấm mặc định hay cho phép có giới hạn cho một vài test? | cấm mặc định |
-| Q8 | Hai dòng `promptGuidelines` (D.5.3) có bật không, hay chỉ quy ước ở `HANDOFFS.md` và `shared:wstg-map`? | chỉ quy ước (benchmark W: guidance +73% chi phí) |
-| Q9 | Benchmark trả phí sau X2 và X4: có hay không, model, ngân sách, ngưỡng không hồi quy | không (đang cấm) |
-| Q10 | Độ mịn: chín playbook, hay gộp bớt? Có chấp nhận lượt duyệt +60% hoặc làm S3b? | chín playbook; S3b chỉ khi vượt ngưỡng |
-| Q11 | Báo cáo: phụ lục thang rủi ro tất định và `risk` hiển thị như văn bản có quy gán; có muốn enum cho `risk` (đổi schema)? Có muốn cột Top 10 2025 làm nhóm báo cáo (tùy chọn)? | phụ lục tất định, không enum, không cột Top 10 |
-| Q12 | Chương WebAssembly (không ID): chỉ reference ở `binary-auditing`, hay tạo khóa tạm `wstg-wasm-*`? | chỉ reference |
-
----
-
-## G. Tái lập số đo
-
-| Số đo | Cách tái lập |
+| Mục | Đề xuất |
 |---|---|
-| Tình trạng cây (M1, M2) | `git status --short`; `python3 scripts/validate_library.py \| wc -l`; `npx vitest run tests/minimal/acceptance-matrix.test.ts` |
-| Bản raw so với upstream (M3) | `git clone --depth 1 https://github.com/OWASP/wstg <thư mục tạm>`; `diff -rq <tạm>/document/4-Web_Application_Security_Testing skills/wstg/4-Web_Application_Security_Testing`; tương tự `5-Reporting`; `git -C <tạm> log -1` |
-| 108 ID và cấu trúc trang (M4, A.2) | tách `WSTG-<NHÓM>-<nn>` từ bảng ID đầu mỗi trang; trang dưới 800 byte là stub; đếm tiêu đề H2 `Summary`, `Test Objectives`, `How to Test`, `Remediation`, `References`, `Tools` |
-| Mức phủ (B) | đọc `docs/WSTG_MAP.md`; tìm từ khóa theo lớp lỗi trên `skills/**` (loại `skills/wstg/`), đọc các dòng trúng, ghi file:dòng; **không** dùng số lần trúng |
-| Sandbox (M5) | `docker run --rm --network none --user 65532:65532 --cap-drop ALL --read-only --tmpfs /tmp:rw,exec --security-opt no-new-privileges --entrypoint sh <image-id> -c 'command -v curl openssl nmap sqlmap chromium …'`; image-id từ `docker images` (digest phải bằng `scripts/setup-sandbox-tools.sh:11`) |
-| Top 10 2025 (M6) | đọc `https://top10.owasp.org/2025` |
-| Kích thước lượt duyệt skill, prompt, khai báo | `node scripts/measure-context.mjs --source` (hiện: duyệt 3 trang 9.710 + 7.316 + 4.633 = 21.659 ký tự; lead dir 5.221, url 5.372) |
-| Trích dẫn kế hoạch | `git grep -n "planning_update" -- . ':!planning_update.md'` |
+| Điểm gọi | `cleanupOwnerPass`, ngay sau khối `--export` (`index.ts:585-591`) và trước `store.finalize` (`598`); chạy sau khi sandbox đã dừng nên không có thao tác target nào |
+| Lý do kích hoạt | `finished`, `stopped`, `shutdown`, `session-change`, `storage-failed`, `failed`; banner khác nhau cho từng lý do |
+| Đồng ý | Một dòng trong hộp xác nhận đầu run ("báo cáo sẽ ghi vào …"); cờ `--report` hoặc setting `p2o.autoReport` (mặc định: G-2) |
+| Đường dẫn | `<cwd>/.p2o-reports/report-<runId>/` (thư mục mới 0700, tệp 0600, rename nguyên tử qua `publishReportFiles`); nếu thư mục đã có (cleanup chạy lại) thì giữ, không ghi đè |
+| Lỗi | Bọc try/catch như `--export`: ghi `reportError`, thông báo, vẫn hoàn tất dọn dẹp và finalize; không dựng thư mục dở |
+| Kết quả cho model | Dòng nối thêm trong chuỗi `p2o_finish`: đường dẫn, số tệp, bytes, `complete`, đếm accepted/pending/stale |
+| Ephemeral | Báo cáo nằm ngoài thư mục control nên còn sau khi store bị xóa; ghi rõ trong hộp xác nhận |
+| Run bị ngắt | Cùng điểm gọi bao phủ stop/shutdown/switch; crash thì dùng `/p2o open` + `/p2o report export`, và lệnh này sẽ có đường dẫn mặc định và thông báo khi không có UI |
+| Tùy chọn P2b | Bản "checkpoint" khi Engine `pause`/`blocked`/`wait` để crash giữa chừng vẫn để lại bản gần nhất; cần hàm thay thế nguyên tử mới, nên tách riêng (G-2b) |
+| Chi phí | Hàm tất định O(records); đo p95 ở 10k/100k bản ghi trước khi bật mặc định |
+| Rủi ro riêng tư | Thư mục nằm trong project có thể bị commit; chỉ cảnh báo, không sửa `.gitignore` của người dùng |
+
+### E.8. Đoạn văn tường thuật (executive summary, khuyến nghị chiến lược)
+
+Khung tất định không thể viết "tác động kinh doanh". Lựa chọn (G-6): **(a)** tham số tùy chọn `narrative` của `p2o_finish` (≤6K ký tự, được `mdText` vô hiệu hóa, gắn nhãn "do lead viết, chưa kiểm chứng"), giống strix nhận bốn trường văn bản lúc kết thúc; **(b)** worker `reporting` soạn rồi lead dán vào case; **(c)** chỉ khung tất định. Khuyến nghị là (a) cộng khung tất định, vì lead có đủ ngữ cảnh lúc cuối và không cần thêm vòng worker; chi phí là +~350 byte khai báo `p2o_finish`.
 
 ---
 
-## H. Phụ lục: chủ sở hữu và mức phủ của 108 test
+## F. Lộ trình theo giai đoạn
 
-Dữ liệu sinh từ `docs/WSTG_MAP.md` (cột S4) cộng đề xuất ở B.3 (cột Nay) và D.2–D.4 (chủ sở hữu, thẻ). **Mỗi test trong scope có đúng một chủ sở hữu**; 4 test ngoài scope không có. "Thẻ" là tên file trong `references/` của skill chủ sở hữu; dấu `+` đánh dấu reference mới trong skill hiện có (D.4). Mã: D đủ, T một phần, N thiếu, O ngoài; cờ B cần trình duyệt, I cần danh tính do operator cấp. Đây là **đề xuất, chưa áp dụng**; test `wstg-skills.test.ts` (X0.5) sẽ ép bảng này ngay khi dữ liệu vào `src/wstg-map.ts`.
+Nguyên tắc: (1) **đóng vòng bằng code, không bằng prompt** vì prompt lead bị ghim và guidance mặc định tắt vì không thấy lợi; (2) mọi thay đổi thêm hành vi đều sau công tắc setting, mặc định giữ hành vi hiện tại cho tới khi owner chốt; (3) chỉ **nối thêm** vào chuỗi kết quả cũ; (4) test hermetic dùng `createFakePi` + `InertSandbox` + SQLite thật như `report-export.test.ts`; (5) GitNexus không có node cho `src/*.ts`, nên impact là **UNKNOWN**: trước mỗi sửa chạy lệnh impact để ghi nhận, rồi liệt kê caller bằng grep (số liệu hôm nay: `renderReport` 3 dòng/0 test trực tiếp, `caseViews` 15 dòng, `reportProjection` 7, `freezeReport` 5, `workerBrief` 5, `taskCapsule` 5, `p2o_finish` 12 dòng và 14 file test); trước commit chạy `node .gitnexus/run.cjs detect-changes --scope all --repo .` và báo cả khi "critical".
 
-| Key | Test | S4 | Nay | Đích | Cờ | Chủ sở hữu | Thẻ | Phase |
-|---|---|---|---|---|---|---|---|---|
-| wstg-info-01 | Conduct Search Engine Reconnaissance for Info… | O | O | O | - | - | - | - |
-| wstg-info-02 | Fingerprint Web Server | T | T | D | - | `web-deployment-hygiene` | fingerprint-and-metafiles | X1 |
-| wstg-info-03 | Review Webserver Metafiles for Information Le… | T | T | D | - | `web-deployment-hygiene` | fingerprint-and-metafiles | X1 |
-| wstg-info-04 | Attack Surface Identification | T | T | T | - | `attack-surface-mapping` | intermediary-trust | - |
-| wstg-info-05 | Review Web Page Content for Information Leaka… | T | T | D | - | `web-deployment-hygiene` | content-and-backup-exposure | X1 |
-| wstg-info-06 | Identify Application Entry Points | D | D | D | - | `web-route-input-inventory` | route-inventory-method | - |
-| wstg-info-07 | Map Execution Paths Through Application | D | D | D | - | `web-route-input-inventory` | route-inventory-method | - |
-| wstg-info-08 | Fingerprint Web Application Framework | T | T | D | - | `web-deployment-hygiene` | fingerprint-and-metafiles | X1 |
-| wstg-info-10 | Map Application Architecture | T | T | T | - | `attack-surface-mapping` | intermediary-trust | - |
-| wstg-conf-01 | Network Infrastructure Configuration | O | O | O | - | - | - | - |
-| wstg-conf-02 | Application Platform Configuration | T | T | D | - | `web-deployment-hygiene` | platform-config-and-flags | X1 |
-| wstg-conf-04 | Review Old Backup and Unreferenced Files for … | T | T | D | - | `web-deployment-hygiene` | content-and-backup-exposure | X1 |
-| wstg-conf-05 | Enumerate Infrastructure and Application Admi… | T | T | D | - | `web-deployment-hygiene` | content-and-backup-exposure | X1 |
-| wstg-conf-06 | HTTP Methods | T | T | D | - | `web-deployment-hygiene` | headers-methods-and-transport | X1 |
-| wstg-conf-07 | HTTP Strict Transport Security | N | N | D | - | `web-deployment-hygiene` | headers-methods-and-transport | X1 |
-| wstg-conf-09 | File Permissions | N | N | D | - | `web-deployment-hygiene` | platform-config-and-flags | X1 |
-| wstg-conf-10 | Subdomain Takeover | O | O | O | - | - | - | - |
-| wstg-conf-11 | Cloud Storage | O | O | O | - | - | - | - |
-| wstg-conf-12 | Content Security Policy | N | N | D | B | `web-browser-trust-controls` | cross-origin-policy | X3 |
-| wstg-conf-13 | Path Confusion | D | D | D | - | `parser-differential-auditing` | - | - |
-| wstg-conf-14 | Other HTTP Security Header Misconfigurations | N | N | D | B | `web-deployment-hygiene` | headers-methods-and-transport | X1 |
-| wstg-conf-15 | Feature Flag Security Bypass | T | T | D | - | `web-deployment-hygiene` | platform-config-and-flags | X1 |
-| wstg-idnt-01 | Role Definitions | D | T | D | I | `web-object-authorization` | +roles-and-field-exposure | X1 |
-| wstg-idnt-02 | User Registration Process | T | T | D | I | `web-credential-lifecycle` | account-creation-and-enumeration | X1 |
-| wstg-idnt-03 | Account Provisioning Process | T | T | D | I | `web-credential-lifecycle` | account-creation-and-enumeration | X1 |
-| wstg-idnt-04 | Account Enumeration and Guessable User Account | T | T | D | - | `web-credential-lifecycle` | account-creation-and-enumeration | X1 |
-| wstg-athn-02 | Default Credentials | N | N | D | I | `web-credential-lifecycle` | credential-policy-and-defaults | X1 |
-| wstg-athn-03 | Weak Lock Out Mechanism | N | N | D | I | `web-credential-lifecycle` | lockout-and-recovery | X1 |
-| wstg-athn-04 | Bypassing Authentication Schema | D | D | D | I | `authorization-auditing` | - | - |
-| wstg-athn-05 | Vulnerable Remember Password | N | N | D | I | `web-credential-lifecycle` | mfa-and-remember-me | X1 |
-| wstg-athn-06 | Browser Cache Weaknesses | N | N | D | B | `web-deployment-hygiene` | headers-methods-and-transport | X1 |
-| wstg-athn-07 | Weak Authentication Methods | N | N | D | I | `web-credential-lifecycle` | credential-policy-and-defaults | X1 |
-| wstg-athn-08 | Weak Security Question Answer | N | N | D | I | `web-credential-lifecycle` | lockout-and-recovery | X1 |
-| wstg-athn-09 | Weak Password Change or Reset Functionalities | N | N | D | I | `web-credential-lifecycle` | lockout-and-recovery | X1 |
-| wstg-athn-10 | Weaker Authentication in Alternative Channel | D | D | D | I | `authorization-auditing` | - | - |
-| wstg-athn-11 | Multi-Factor Authentication (MFA) | N | N | D | I | `web-credential-lifecycle` | mfa-and-remember-me | X1 |
-| wstg-athz-01 | Directory Traversal File Include | T | T | D | - | `web-server-side-injection` | path-and-file-inclusion | X2 |
-| wstg-athz-02 | Bypassing Authorization Schema | D | D | D | I | `web-object-authorization` | - | - |
-| wstg-athz-03 | Privilege Escalation | D | D | D | I | `web-object-authorization` | - | - |
-| wstg-athz-04 | Insecure Direct Object References | D | D | D | I | `web-object-authorization` | - | - |
-| wstg-athz-05 | OAuth Weaknesses | N | N | D | I | `web-token-and-federation` | oauth-oidc-flows | X2 |
-| wstg-sess-01 | Session Management Schema | N | N | D | I | `web-session-management` | token-issuance-and-attributes | X1 |
-| wstg-sess-02 | Cookies Attributes | N | N | D | - | `web-session-management` | token-issuance-and-attributes | X1 |
-| wstg-sess-03 | Session Fixation | N | N | D | I | `web-session-management` | fixation-and-hijack | X1 |
-| wstg-sess-04 | Exposed Session Variables | N | N | D | I | `web-session-management` | token-issuance-and-attributes | X1 |
-| wstg-sess-05 | Cross Site Request Forgery | N | N | D | BI | `web-browser-trust-controls` | request-forgery-and-origin-checks | X3 |
-| wstg-sess-06 | Logout Functionality | N | N | D | I | `web-session-management` | logout-timeout-concurrency | X1 |
-| wstg-sess-07 | Session Timeout | N | N | D | I | `web-session-management` | logout-timeout-concurrency | X1 |
-| wstg-sess-08 | Session Puzzling | N | N | D | I | `web-session-management` | fixation-and-hijack | X1 |
-| wstg-sess-09 | Session Hijacking | N | N | D | I | `web-session-management` | fixation-and-hijack | X1 |
-| wstg-sess-10 | JSON Web Tokens | N | N | D | I | `web-token-and-federation` | jwt-validation | X2 |
-| wstg-sess-11 | Concurrent Sessions | N | N | D | I | `web-session-management` | logout-timeout-concurrency | X1 |
-| wstg-injt-01 | Reflected Cross Site Scripting | D | D | D | B | `web-output-context` | source-sink-context | - |
-| wstg-injt-02 | Stored Cross Site Scripting | D | D | D | B | `web-output-context` | source-sink-context | - |
-| wstg-injt-04 | HTTP Parameter Pollution | D | T | D | - | `parser-differential-auditing` | +http-framing-and-parameters | X1 |
-| wstg-injt-05 | SQL Injection | T | T | D | - | `web-server-side-injection` | sql-nosql-orm | X2 |
-| wstg-injt-06 | LDAP Injection | T | T | D | - | `web-server-side-injection` | xml-xpath-ldap | X2 |
-| wstg-injt-07 | XML Injection | T | T | D | - | `web-server-side-injection` | xml-xpath-ldap | X2 |
-| wstg-injt-08 | SSI Injection | T | T | D | - | `web-server-side-injection` | command-code-ssi | X2 |
-| wstg-injt-09 | XPath Injection | T | T | D | - | `web-server-side-injection` | xml-xpath-ldap | X2 |
-| wstg-injt-10 | IMAP SMTP Injection | T | T | D | - | `web-server-side-injection` | mail-formula-second-order | X2 |
-| wstg-injt-11 | Code Injection | T | T | D | - | `web-server-side-injection` | command-code-ssi | X2 |
-| wstg-injt-12 | Command Injection | T | T | D | - | `web-server-side-injection` | command-code-ssi | X2 |
-| wstg-injt-13 | Format String Injection | D | T | D | - | `web-server-side-injection` | format-strings | X2 |
-| wstg-injt-14 | Incubated Vulnerability | T | T | D | - | `web-server-side-injection` | mail-formula-second-order | X2 |
-| wstg-injt-15 | HTTP Response Splitting | D | T | D | - | `parser-differential-auditing` | +http-framing-and-parameters | X1 |
-| wstg-injt-16 | HTTP Request Smuggling | D | D | D | - | `parser-differential-auditing` | - | - |
-| wstg-injt-17 | Host Header Injection | T | T | D | - | `attack-surface-mapping` | intermediary-trust (+Host/Forwarded) | X1 |
-| wstg-injt-18 | Server-side Template Injection | D | D | D | - | `deserialization-and-dispatch-auditing` | - | - |
-| wstg-injt-19 | Server-Side Request Forgery | T | T | D | - | `web-server-side-injection` | outbound-request-ssrf | X2 |
-| wstg-injt-20 | Mass Assignment | D | D | D | I | `web-object-authorization` | +roles-and-field-exposure | - |
-| wstg-injt-21 | CSV Injection | T | T | D | - | `web-server-side-injection` | mail-formula-second-order | X2 |
-| wstg-injt-22 | Prototype Pollution | D | D | D | - | `deserialization-and-dispatch-auditing` | - | - |
-| wstg-injt-23 | Insecure Deserialization | D | D | D | - | `deserialization-and-dispatch-auditing` | - | - |
-| wstg-errh-01 | Improper Error Handling | N | N | D | - | `web-deployment-hygiene` | error-disclosure | X1 |
-| wstg-cryp-01 | Weak Transport Layer Security | N | N | D | - | `web-deployment-hygiene` | headers-methods-and-transport | X1 |
-| wstg-cryp-02 | Padding Oracle | N | N | D | - | `web-crypto-usage-review` | padding-oracle | X4 |
-| wstg-cryp-03 | Sensitive Information Sent via Unencrypted Ch… | N | N | D | - | `web-deployment-hygiene` | headers-methods-and-transport | X1 |
-| wstg-cryp-04 | Weak Cryptographic Primitives | T | T | D | - | `web-crypto-usage-review` | weak-primitives | X4 |
-| wstg-busl-01 | Business Logic Data Validation | N | N | D | I | `web-business-logic-misuse` | invariants-and-misuse-cases | X2 |
-| wstg-busl-02 | Ability to Forge Requests | N | N | D | I | `web-business-logic-misuse` | invariants-and-misuse-cases | X2 |
-| wstg-busl-03 | Integrity Checks | N | N | D | I | `web-business-logic-misuse` | invariants-and-misuse-cases | X2 |
-| wstg-busl-04 | Process Timing | T | T | D | I | `web-business-logic-misuse` | workflow-and-timing | X2 |
-| wstg-busl-05 | Number of Times a Function Can Be Used Limits | D | T | D | I | `race-condition-auditing` | +usage-limit-bypass | X1 |
-| wstg-busl-06 | Circumvention of Work Flows | T | T | D | I | `web-business-logic-misuse` | workflow-and-timing | X2 |
-| wstg-busl-07 | Defenses Against Application Misuse | N | N | D | I | `web-business-logic-misuse` | workflow-and-timing | X2 |
-| wstg-busl-08 | Upload of Unexpected File Types | N | N | D | I | `web-business-logic-misuse` | file-upload-handling | X2 |
-| wstg-busl-09 | Upload of Malicious Files | N | N | D | I | `web-business-logic-misuse` | file-upload-handling | X2 |
-| wstg-busl-10 | Payment Functionality | N | N | D | I | `web-business-logic-misuse` | payment-and-pricing | X2 |
-| wstg-clnt-01 | DOM-Based Cross Site Scripting | D | D | D | B | `web-output-context` | source-sink-context | - |
-| wstg-clnt-02 | JavaScript Execution | D | D | D | B | `web-output-context` | source-sink-context | - |
-| wstg-clnt-03 | HTML Injection | D | D | D | B | `web-output-context` | source-sink-context | - |
-| wstg-clnt-04 | Client-side URL Redirect | T | T | D | B | `web-browser-trust-controls` | client-side-sinks | X3 |
-| wstg-clnt-05 | CSS Injection | T | T | D | B | `web-browser-trust-controls` | client-side-sinks | X3 |
-| wstg-clnt-06 | Client-side Resource Manipulation | T | T | D | B | `web-browser-trust-controls` | client-side-sinks | X3 |
-| wstg-clnt-07 | Cross Origin Resource Sharing | N | N | D | B | `web-browser-trust-controls` | cross-origin-policy | X3 |
-| wstg-clnt-09 | Clickjacking | N | N | D | B | `web-browser-trust-controls` | cross-origin-policy | X3 |
-| wstg-clnt-10 | WebSockets | N | N | D | B | `web-browser-trust-controls` | request-forgery-and-origin-checks | X3 |
-| wstg-clnt-11 | Web Messaging | N | N | D | B | `web-browser-trust-controls` | messaging-storage-and-links | X3 |
-| wstg-clnt-12 | Browser Storage | N | N | D | B | `web-browser-trust-controls` | messaging-storage-and-links | X3 |
-| wstg-clnt-13 | Cross Site Script Inclusion | N | N | D | B | `web-browser-trust-controls` | cross-origin-policy | X3 |
-| wstg-clnt-14 | Reverse Tabnabbing | N | N | D | B | `web-browser-trust-controls` | messaging-storage-and-links | X3 |
-| wstg-clnt-15 | Client-side Template Injection | T | T | D | B | `web-browser-trust-controls` | client-side-sinks | X3 |
-| wstg-apit-01 | API Reconnaissance | D | D | D | - | `web-route-input-inventory` | route-inventory-method | - |
-| wstg-apit-02 | API Broken Object Level Authorization | D | D | D | I | `web-object-authorization` | - | - |
-| wstg-apit-03 | Excessive Data Exposure | T | T | D | - | `web-object-authorization` | +roles-and-field-exposure | X1 |
-| wstg-apit-04 | API Broken Function Level Authorization | D | D | D | I | `web-object-authorization` | - | - |
-| wstg-apit-99 | GraphQL | N | N | D | - | `web-graphql-testing` | schema-and-limits | X3 |
+| Pha | Quy mô | Phụ thuộc | Đụng prompt ghim? |
+|---|---|---|---|
+| P0 Nền và ghim | S | — | không |
+| P1 Preflight kết thúc | M | P0 | không |
+| P2 Báo cáo tự động khi dọn dẹp | M | P0 | không |
+| P3 Mô hình rating cho case | M | P0 | không |
+| P4 Báo cáo v2 chuẩn OWASP | L | P2, P3 | không |
+| P5 Toàn vẹn review | M | P3 | không |
+| P6 Hỗ trợ lập kế hoạch (+P6b tùy chọn) | M | P1 | **P6b có** |
+| P7 Kiểm chứng và tài liệu | S | tất cả | không |
 
----
+### P0 — Nền và ghim
 
-## 13. Acceptance matrix: baseline K0–K7, không được regress
+*Việc:* (1) giữ phụ lục §13 và chạy lại `acceptance-matrix.test.ts` (đã ghép sẵn trong file này); (2) theo G-1, hoặc giữ nguyên hoặc chuyển hai khối baseline sang `docs/ACCEPTANCE_BASELINE.md` và trỏ test sang đó; (3) sửa tham chiếu treo (W-13): README.md:202, docs/*, `bench/README.md`, help của `scripts/benchmark-skills.mjs` trỏ sang `git show` của commit tương ứng như `src/roles.ts:35` đã làm; (4) lưu số đo nền (`measure-context.mjs`, script đo trùng) vào docs làm mốc.
+*Test:* `acceptance-matrix.test.ts` giữ xanh; thêm guard "không còn link tới mục không tồn tại của planning_update.md".
+*Nghiệm thu:* test hermetic liên quan xanh; không đổi hành vi runtime.
+*Rủi ro:* thấp. *Rollback:* revert docs.
 
-Mọi giai đoạn X0–X5 của kế hoạch này phải giữ nguyên các fixture và điều kiện này ([ACCEPTANCE_MATRIX](docs/ACCEPTANCE_MATRIX.md) ánh xạ từng hàng tới test thật và có guard tự động). Fixture của giai đoạn W đọc ở §14 của bản `41e8157` (`git show 41e8157:planning_update.md`); các slice S0–S7 đã triển khai đọc ở bản `6cfb89d`.
+### P1 — Preflight kết thúc
 
-### 13.1. Fixture scenarios bắt buộc (baseline K0–K7, không được regress)
+*Việc:* `src/finish-preflight.ts` (hàm thuần trên `LedgerIndex` + `CaseContext` + `CoverageContext` + snapshot Engine + danh sách worker) trả `{blocking, advisory, counts}`; mã cố định:
 
-| Case | Kỳ vọng |
-|---|---|
-| Start chưa có task/asset | Empty state nói đúng, không giả 0 bugs = safe |
-| Worker làm lâu, chưa có result | Hiện running op/start time; không timeout vì quiet và không model polling |
-| Hai workers ghi cùng endpoint | Một asset ID, hai provenance entries, count không tăng đôi |
-| Hai task aliases cho cùng work | Exact known identity conflict ở reserve; fuzzy trường hợp unknown đưa review |
-| Same endpoint khác method/actor/tenant | Không collapse thành cùng security test |
-| Handoff committed, chưa review | `reported / awaiting review`, không completed goal |
-| Worker provider-error/no report | Partial lifecycle packet, gap retained, không cần model retry để có output |
-| Report ACK mất rồi submit lại | Một canonical packet/event effect, không nhân coverage/open/finding |
-| Crash giữa report parts/domain writes | Chỉ committed transaction hiển thị complete; partial có diagnostics |
-| Stop khi operation in flight | Revoke/abort giữ nguyên; checkpoint ghi cancellation/unknown, không fabricated output |
-| Disk full lúc checkpoint/export | No success claim, no authority extension, rõ retained/missing data |
-| Reload/tree/fork đọc checkpoint | Chỉ historical state; không broker/ticket/container/network/model turn mới |
-| Old review bị superseded | Dependent task/candidate/report/digest stale đúng IDs/revisions |
-| Independent validator bị withdraw | Independent badge mất hiệu lực; history không bị xóa |
-| Out-of-scope asset từ response | Có thể ghi observation ngoại vi, không dispatch/probe hay auto-widen scope |
-| Artifact symlink/path traversal/secret | Denied/redacted theo policy, không leak host files hoặc raw token |
-| Same content event delivered N lần | UI merge theo ID/sequence, không N phase cards |
-| History vượt display windows | Exact totals + omitted + drill-down; old blockers vẫn tìm được |
-| Manual mode event storm | Zero automatic paid requests; UI vẫn update |
-| Event-driven pause/stop race | Late wake veto, no dispatch after pause/stop; human pending input priority |
-| Normalization adversarial set | Path case, query repeats/order, `%2F`, trailing slash, IPv6, custom method không merge sai |
-| Negative result reused | Chỉ cùng tested context/method/version; không biến thành global “clean” |
-
-### 13.2. Measurements: đã có và mục tiêu mới
-
-Đã đo (synthetic, không phải hiệu quả pentest; phương pháp và giới hạn ở docs tương ứng):
-
-| Số đo | Kết quả | Nguồn |
+| Mã | Điều kiện | Mức mặc định |
 |---|---|---|
-| Status/widget refresh p95 @100k (simple / mixed) | 114,01 / 110,31 ms (full rescan trước đó 580–642 / 620–668 ms) | `scripts/check-assessment-status.mjs`, KNOWLEDGE_WORKSPACE |
-| Live heap giữ lại | ≈16 MiB @10k, ≈80 MiB @100k | CONTEXT_PACKETS |
-| Event page p95 / checkpoint / RSS @100k | 13,49 ms / ≈498 ms / ≈435 MB | STATE_STORE |
-| Graph 4000 asset: page / history / export p95, checkpoint | 2,89 / 0,76 / 6,32 ms; 475,53 ms | ASSET_GRAPH |
-| Khai báo + chính sách theo loadout | §8, M1 (bản `41e8157`) | probe 2026-10-10 |
+| `UNREVIEWED_TASK` | task `reported` hoặc `blocked` có handoff chờ owner | blocking |
+| `UNREVIEWED_CLAIM` | head candidate `confirmed` không thuộc case nào | blocking |
+| `PENDING_CASE` | case `pending` hoặc `disputed` | blocking |
+| `STALE_CASE`, `STALE_CELL` | `currentness='stale'` | blocking |
+| `NO_COVERAGE_PLAN` | không có plan nào | blocking (G-3) |
+| `NONTERMINAL_CELLS` | cell `planned/running/attempted` | blocking |
+| `OPEN_GAP_UNREFERENCED` | gap mở không cell/case nào tham chiếu | advisory |
+| `ORPHAN_TASK` | task `blocked/cancelled/expired` không task khác phủ cùng bề mặt | advisory |
+| `OPEN_GOAL` | goal `p2o_plan` chưa đóng | advisory |
+| `UNMAPPED_NOTE_COVERAGE` | note coverage của worker chưa cell nào tham chiếu | advisory |
+| `UNPLANNED_ASSETS` | `discoveredUnplannedAssets>0` | advisory |
+| `WSTG_APPLICABLE_UNPLANNED` | test áp dụng theo trigger mà chưa có cell (cần P6) | advisory |
+| `UNRATED_ACCEPTED_CASE`, `HIGH_WITHOUT_INDEPENDENCE` | cần P3/P5 | blocking sau khi có |
 
-Phương pháp giữ nguyên: corpus deterministic 10k/100k, công bố phần cứng và corpus; báo p50/p95, RSS, kích thước on-disk; không lược bỏ dữ liệu rồi vẫn ghi "complete"; dedup phải báo cả suppression đúng lẫn **false suppression**; inert fixture chỉ chứng minh cơ chế, còn "pentest tốt hơn" cần benchmark có ủy quyền (cùng model/scope/budget, chạy lặp, control giữ lại, chấm độc lập), **chưa được thực hiện**. Số đo chi phí ngữ cảnh của giai đoạn W (§8, M1 và M1b) đọc ở bản `41e8157`; mục tiêu hiện hành (kích thước, nhất quán, độ phủ tài liệu) ở §E của file này; hiệu quả pentest vẫn **chưa được đo**.
+`p2o_finish`: tính preflight; nối khối tóm tắt vào `content` (cả ba chế độ); cổng `p2o.finishGate`: `off` (hiện trạng), `warn` (chỉ nối khối), `confirm` (lần gọi đầu có mục blocking: từ chối `FINISH_PREFLIGHT` kèm danh sách; ghi một note lifecycle của owner; **lần gọi thứ hai với cùng tập blocking thì chạy tiếp** và đưa các mục đó vào báo cáo "chưa giải quyết lúc kết thúc"). Không đổi `Type.Object({})` của `p2o_finish` ở P1 (không tăng khai báo).
+*Test mới:* `finish-preflight.test.ts` (đơn vị: mỗi mã bật đúng khi cần, run sạch không mã nào; ngưỡng ledger lớn); mở rộng `extension.test.ts`/`worker.test.ts` cho ba chế độ; `benchmark.test.ts` thêm fixture chuỗi finish có khối mới, bộ chấm vẫn đọc "Coverage:"/"Open items:". *Test sửa:* không đổi dòng cũ nên các test finish hiện có phải xanh nguyên văn.
+*Nghiệm thu:* (1) `off` cho cùng byte đầu ra cũ; (2) `confirm` từ chối tối đa một lần cho mỗi tập blocking, không vòng lặp vô hạn; (3) mọi mã có test dương và âm; (4) không gọi model, không chạm target.
+*Rủi ro:* chặn nhầm gây thêm một lượt model mỗi run; thay đổi hành vi benchmark nên coi là cánh mới khi so sánh (không chạy trả phí nếu chưa được duyệt). *Rollback:* `finishGate: off`; revert một file mới + một khối trong `p2o_finish`.
 
-### 13.3. Không đạt acceptance nếu
+### P2 — Báo cáo tự động khi dọn dẹp
 
-- Có graph nhưng không trả lời được “task nào chưa review, vì sao blocked, output ở đâu”.
-- Checkpoint chỉ là model summary không có snapshot/version/refs.
-- Finish xóa toàn bộ result mà user tưởng đã lưu.
-- Graph dữ liệu được coi như authorization hoặc replay history tự chạy lại request.
-- Mọi `confirmed` đều lên badge verified, hoặc “100% coverage” dựa touched assets.
-- Dedup suppress validator/retest hoặc merge hai bug chỉ vì cùng CWE/title.
-- Thêm background LLM hay đổi budgets/mode mà confirmation không nói.
+*Việc:* mục §E.7; thêm `current.reportPath/reportError`, cờ/setting, dòng nối trong chuỗi finish và thông báo khi dừng; `ReportMeta` thêm `endReason` để banner; `/p2o report export` có đường dẫn mặc định và báo rõ khi không có UI (W-12).
+*Test mới:* `report-auto.test.ts`: (1) finish → thư mục đủ tệp, manifest khớp hash, hai lần render cùng sequence cùng byte; (2) `/p2o stop`, shutdown, đổi session → có báo cáo với banner ngắt; (3) render lỗi (ledger không đầy đủ) → cleanup vẫn xong, `reportError` hiện, không có thư mục dở; (4) ENOSPC theo mẫu `bundle-fault.test.ts`; (5) `ephemeral` → báo cáo còn sau khi kho bị xóa; (6) đích trong private state bị từ chối; (7) cleanup chạy lại không ghi đè. *Test sửa:* `report-export.test.ts` (golden thêm banner), `help-commands.test.ts` (mô tả lệnh).
+*Nghiệm thu:* thời gian render p95 đo ở 10k và 100k bản ghi (báo cáo số, không đặt ngưỡng tùy ý); mọi đường dừng của §A.4 có báo cáo, trừ crash.
+*Rủi ro:* kéo dài cleanup (khi shutdown có hạn giờ của Pi); lộ dữ liệu vì ghi vào cwd (cùng mức nhạy cảm với `.p2o-state`, đã được redact best effort). *Rollback:* tắt setting; xóa một khối chèn.
+
+### P3 — Mô hình rating cho case
+
+*Việc:* §E.2, `src/cvss.ts`, validator, hiển thị trong `p2o_case view`, tài liệu `docs/CASE_REVIEW.md`; preflight `UNRATED_ACCEPTED_CASE`. Đo trước: khai báo `p2o_case` hiện 4.697 byte; thêm `finding` có thể vượt 2% của loadout (≈725 byte) nên cân nhắc chuyển thành hành động riêng `p2o_case action=rate` hoặc rút gọn mô tả schema; nâng số ghim có chủ đích nếu cần.
+*Test mới:* `case-rating.test.ts` (ma trận hợp lệ/không hợp lệ, hostile string, giới hạn kích thước, tương thích ngược với ledger tạo bởi bản `4bd7674`), `cvss.test.ts` (§E.4).
+*Nghiệm thu:* case cũ không có `finding` đọc y hệt; case mới bị từ chối khi `severity` trái luật `inferred ≤ Medium`; không thay đổi `verdict`/`reviewStatus`.
+*Rủi ro:* bản p2o cũ loại case mới (E.2); tăng khai báo tool. *Rollback:* trường tùy chọn nên chỉ cần revert; run đã ghi `finding` sẽ mất trường khi mở bằng bản cũ (ghi vào docs).
+
+### P4 — Báo cáo v2
+
+*Việc:* §E.3, `REPORT_FORMAT_VERSION=2`, thêm `findings.json`, `findings.csv`, `wstg-checklist.csv`; liên kết WSTG ghim; khối tái hiện; cờ "báo cáo cũ hơn bằng chứng"; tham số `narrative` của `p2o_finish` (G-6); setting `p2o.reportFormat: 1|2` để quay lại v1.
+*Test mới:* golden cho v2 (run sạch, run nhiều case, run ngắt); hostile fixture cho mọi trường `finding.*`; tất định hai lần; kiểm kích thước và giới hạn hàng; mapping từng mục WSTG §5 → vị trí trong REPORT.md bằng test cấu trúc (tiêu đề đúng thứ tự). *Test sửa:* `report-export.test.ts`, `help-commands.test.ts`, `acceptance-matrix` (hàng mới F-P4).
+*Nghiệm thu:* mỗi mục ở bảng §E.1 có mặt hoặc có dòng "không có dữ liệu" tường minh; `report-manifest.json` khớp hash; không có chuỗi đầu vào thù địch nào thành link, ảnh, HTML, fence thoát hoặc công thức.
+*Rủi ro:* kích thước báo cáo, độ dài tiêu đề; người dùng quen v1. *Rollback:* `reportFormat: 1`.
+
+### P5 — Toàn vẹn review
+
+*Việc:* (1) `TaskBoard.transition(reviewed)`: yêu cầu evidence do worker được giao (hoặc owner khi solo) tạo ra, trừ khai `externalEvidence`; (2) `contractGap` tính từ `outputContract.required` theo bảng ánh xạ trường → bản ghi (evidence→evidence của worker; gaps→open; candidates→candidate; coverage→coverage; artifacts→artifact; facts/assets/controls→bản ghi graph), lưu vào bản ghi review; chế độ `annotate` trước, `enforce` sau (G-10); (3) mức High/Critical cần `independentCurrent` hoặc `independenceWaiver`; (4) báo cáo hiển thị tác giả evidence (self/other) và proof level.
+*Test mới:* `review-integrity.test.ts` (bao gồm evidence của worker khác, contract thiếu, `partialAllowed` true/false, solo).
+*Nghiệm thu:* không chặn nhầm trường hợp hợp lệ trong bộ fixture K0–K7 (§13 vẫn xanh); `annotate` không thay đổi quyết định nào.
+*Rủi ro:* chặn nhầm khi evidence hợp lệ đến từ worker khác (mitigation: `externalEvidence`). *Rollback:* setting `reviewIntegrity: off`.
+
+### P6 — Hỗ trợ lập kế hoạch
+
+*P6a:* `p2o_coverage action=suggest` (chỉ đọc, bounded): đầu vào `features[]` (từ vựng `WSTG_FEATURES`), `modes?`, `limit`; đầu ra test WSTG khớp trigger mà chưa có cell (khóa, tiêu đề, `support`, cờ B/I, skill sở hữu, card, phase); `WSTG_APPLICABLE_UNPLANNED` ở preflight dùng cùng hàm; cầu nối `UNMAPPED_NOTE_COVERAGE`. *Capsule:* bỏ bản capsule trong brief (giữ bản request-local mới hơn) để bớt 2,6–5,5K ký tự mỗi request của worker; kiểm `P2O STATE GAP` fallback. Brief không còn trùng, hash brief ghim dùng input không có `objective` nên không đổi.
+*P6b (tùy chọn, đụng prompt ghim):* tách `reconInstructions` thành hợp đồng bàn giao chung (~565 ký tự), phần định tuyến Planner (chỉ lead/solo) và phần tác nghiệp worker (chỉ worker/solo); worker `validation` và `reporting` chỉ nhận hợp đồng bàn giao. Ước lượng: lead delegated −596 ký tự, worker −732, `validation/reporting` −1.328 đến −1.893. Phải đổi hash ghim và trần kích thước **có chủ đích** kèm số đo; chỉ làm nếu G-8 cho phép.
+*Test mới:* `coverage-suggest.test.ts`; sửa `worker.test.ts` (capsule một lần); P6b sửa `recon.test.ts` pins.
+*Nghiệm thu:* `suggest` không ghi gì; kết quả bounded; số ký tự đo lại bằng `measure-context.mjs` giảm đúng như ước lượng.
+*Rủi ro:* mô hình không gọi `suggest` nếu không có lời khuyên (nên preflight `WSTG_APPLICABLE_UNPLANNED` là lưới an toàn); P6b làm lệch so sánh với benchmark cũ. *Rollback:* revert; hash cũ khôi phục.
+
+### P7 — Kiểm chứng và tài liệu
+
+*Việc:* cập nhật `docs/USAGE.md` (báo cáo, finish gate), `ARCHITECTURE.md` (luồng), `CASE_REVIEW.md`, `SKILL_RUNTIME.md`, thêm hàng F-P1..F-P6 vào `docs/ACCEPTANCE_MATRIX.md` (giữ 22 + 7 hàng baseline), nhật ký ở `docs/VERIFICATION_LOG.md`, `scripts/measure-context.mjs` thêm số đo capsule và báo cáo.
+*Kiểm chứng miễn phí:* `npm test` (build, vitest, python), `scripts/measure-context.mjs --source`, `scripts/benchmark-skills.mjs plan` và `verify`, `node scripts/render-wstg-map.mjs`, Docker opt-in chỉ dùng ảnh đã có. **Không** claim hiệu quả pentest từ các kiểm này. Benchmark trả phí chỉ khi owner nói rõ (G-12).
+*Nghiệm thu:* toàn bộ test xanh; số đo mới ghi cạnh số đo nền; GitNexus `detect_changes` chạy và kết quả (kể cả "critical" do mô hình đồ thị) được báo lại.
+*Rollback:* theo từng pha.
+
+**Việc không làm trong kế hoạch này (non-goals):** không thêm lời gọi model từ host; không mở rộng scope hay quyền; không thay đổi ticket/broker; không chạy benchmark trả phí; không dùng provider codex proxy; không commit, push, install khi chưa được duyệt; không thêm trailer AI attribution vào commit/PR nếu sau này commit.
+
+---
+
+## G. Các quyết định cần owner chốt
+
+| ID | Quyết định | Khuyến nghị | Hệ quả nếu khác |
+|---|---|---|---|
+| G-1 | Quan hệ plan ↔ test: giữ §13 ở file này hay tách baseline sang `docs/ACCEPTANCE_BASELINE.md` và đổi test | Tách ở P0 (bớt ràng buộc plan↔test) | Giữ: mọi lần viết lại plan phải ghép §13 nguyên văn |
+| G-2 | Báo cáo tự động: mặc định bật/tắt, cờ (`--report`) hay setting, vị trí `.p2o-reports/report-<runId>/`; có làm P2b (checkpoint) không | Bật mặc định cho `durable-local`; đồng ý ở hộp xác nhận đầu run; P2b để sau | Tắt mặc định: nhiều người vẫn chỉ thấy chat |
+| G-3 | Cổng kết thúc mặc định `off/warn/confirm`; mục nào blocking (nhất là `NO_COVERAGE_PLAN`) | `warn` ở P1, nâng `confirm` sau khi có kiểm chứng miễn phí | `confirm` ngay: thêm một lượt model nhưng chặn bỏ sót sớm |
+| G-4 | Mô hình mức nghiêm trọng: chỉ thang p2o; thêm CVSS tùy chọn; CVSS bắt buộc; CWE bắt buộc | Thang p2o bắt buộc cho case accepted, CVSS và CWE tùy chọn (WSTG nói CVSS tùy chọn) | Bắt buộc CVSS: tăng ma sát, mô hình dễ chọn vector tùy ý |
+| G-5 | Khuyến nghị WSTG: chỉ liên kết hay nhúng đoạn Remediation | Chỉ liên kết | Nhúng: phải ghi công và áp dụng share-alike lên báo cáo |
+| G-6 | Đoạn tường thuật: tham số `narrative` của `p2o_finish`, worker `reporting`, hay chỉ khung tất định | `narrative` cộng khung tất định | Chỉ khung: executive summary nghèo ý nghĩa kinh doanh |
+| G-7 | Định dạng ngoài Markdown: JSON, CSV (khuyến nghị), HTML (cần sanitizer, hoãn), SARIF (hợp target mã nguồn, hoãn), PDF (không) | Markdown + JSON + CSV | HTML/SARIF: thêm bề mặt tấn công và công việc kiểm thử |
+| G-8 | Cho phép P6b (sửa văn bản prompt worker/lead và đổi hash ghim)? | Chỉ capsule một lần (P6a); P6b hoãn | Làm: giảm ~600–1.900 ký tự nhưng phá so sánh với benchmark cũ |
+| G-9 | Hành vi của tool (cổng, tham số, chuỗi kết quả) được mô tả trong `description` luôn bật; lời khuyên quy trình ở `promptGuidelines` (mặc định tắt) | Đồng ý | Nếu mọi mô tả phải qua guidelines thì hành vi mới chỉ hiện khi bật `toolGuidance` |
+| G-10 | Độ nghiêm của toàn vẹn review: `annotate` hay `enforce`; waiver cho High/Critical ở chế độ solo | `annotate` trước, `enforce` sau | `enforce` ngay: nguy cơ chặn nhầm |
+| G-11 | Siêu dữ liệu báo cáo (tác giả, tổ chức, nhóm, phân loại, miễn trừ) lấy từ `settings.json` `p2o.report`? | Có, tùy chọn; mặc định chung | Không: mục 1.1–1.3, 1.7 luôn "do người vận hành cung cấp" |
+| G-12 | Có chạy benchmark trả phí sau P1–P2 không, với model/ngân sách nào | Chưa; chờ owner | — |
+| G-13 | Báo cáo trong `cwd` có thể bị commit nhầm: chỉ cảnh báo, hay cho phép đặt `p2o.reportRoot` ngoài project | Thêm `p2o.reportRoot` tùy chọn ở P2 | Chỉ cảnh báo: rủi ro rò rỉ nếu người dùng quên |
+
+---
+
+## H. Phụ lục — tái lập số đo (tất cả chỉ đọc, không model, không mạng, không target)
+
+| Số đo | Lệnh |
+|---|---|
+| Kích thước prompt lead/worker, khai báo tool theo loadout, trang skill | `node scripts/measure-context.mjs --source` (thêm `--json` để máy đọc) |
+| Trùng lặp prompt ↔ tool ↔ skill, cụm khái niệm, dòng khối recon | script tạm trong thư mục scratch của phiên (shingle 7 từ trên `ownerInstructions`, `workerInstructions`, mô tả tool đăng ký bằng Pi giả); nếu cần tái lập vĩnh viễn, P0 đề xuất `scripts/measure-overlap.mjs` |
+| Kích thước capsule mục tiêu | mẫu tổng hợp qua `taskCapsule` (độ dài thật phụ thuộc task) |
+| Cấu trúc trang WSTG chương 4 | `grep -rlE '^## Remediation' my_references/wstg/4-Web_Application_Security_Testing` (và tương tự cho `## References`, `CWE`, `CVSS`) |
+| Số tool và dòng | `wc -l src/*.ts extensions/p2o/*.ts` |
+| Test hermetic liên quan tới file này | `npx vitest run tests/minimal/acceptance-matrix.test.ts tests/minimal/wstg-skills.test.ts tests/minimal/wstg-map.test.ts tests/minimal/measure-context.test.ts` |
+
+---
+
+## 13. Acceptance matrix và baseline
+
+Baseline K0–K7 (22 fixture bắt buộc, các phép đo, 7 điều kiện không đạt) đã chuyển sang [docs/ACCEPTANCE_BASELINE.md](docs/ACCEPTANCE_BASELINE.md) (quyết định G-1). Mọi giai đoạn P0–P7 giữ nguyên chúng; [ACCEPTANCE_MATRIX](docs/ACCEPTANCE_MATRIX.md) ánh xạ từng hàng tới test thật. Kế hoạch này không còn bị `acceptance-matrix.test.ts` đọc.
 
 ---

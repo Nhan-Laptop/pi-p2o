@@ -27,7 +27,7 @@ export const ORIGINAL_SKILLS = [
   'race-condition-auditing', 'remediation', 'sandbox-boundary-analysis', 'source-code-auditing',
   'state-and-lifetime-auditing',
 ];
-/** Arm C additions: the three playbooks and the framework overlay from planning_update.md. */
+/** Arm C additions: the three playbooks and the framework overlay from the earlier plans (git history of planning_update.md). */
 export const PLAYBOOK_SKILLS = ['web-route-input-inventory', 'web-object-authorization', 'web-output-context'];
 export const OVERLAY_SKILLS = ['fastapi-security-parity'];
 export const PLAYBOOK_SET = [...PLAYBOOK_SKILLS, ...OVERLAY_SKILLS];

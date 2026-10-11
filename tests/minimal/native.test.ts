@@ -108,8 +108,9 @@ it.each(['normal', 'quota'])('real Pi + inert sandbox, %s worker: terminal repor
     expect(journal.some(entry => entry.op === 'stop')).toBe(true);
     expect(journal.some(entry => entry.op === 'sweep')).toBe(true);
     expect(records.filter(record => record.protocolError || record.type === 'extension_error')).toEqual([]);
-    const exports = await readdir(join(root, '.p2o-reports'));
+    const exports = (await readdir(join(root, '.p2o-reports'))).filter(name => name.endsWith('.json')); // report-<run>/ is the automatic report directory
     expect(exports).toHaveLength(1);
+    expect((await readdir(join(root, '.p2o-reports'))).filter(name => name.startsWith('report-'))).toHaveLength(1);
     const exported = JSON.parse(await readFile(join(root, '.p2o-reports', exports[0]), 'utf8'));
     expect(exported.manifest).not.toHaveProperty('capabilities');
     expect(exported.reconciliation.complete).toBe(true);

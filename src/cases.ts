@@ -2,11 +2,13 @@ import { randomUUID } from 'node:crypto';
 import { appendGeneratedRecords, appendRecords, readGeneratedRecords, readLedger, type AssessmentRecord, type LedgerIndex, type RecordAck } from './records.js';
 import { taskFrontier, taskHead, taskRevisionAt, type AssessmentTask } from './tasks.js';
 import type { MutationRequest } from './state/store.js';
-import { validateCaseDraft, validateStoredCase, type CaseDraft, type CaseEntry, type CaseTaskRef } from './case-types.js';
+import { validateCaseDraft, validateFinding, validateStoredCase, type CaseDraft, type CaseEntry, type CaseFinding, type CaseTaskRef } from './case-types.js';
 
 export type CaseCurrentness='current'|'stale'|'withdrawn'|'unknown';
 export interface CaseView extends CaseEntry {
   currentness:CaseCurrentness;staleReasons:string[];independentCurrent:boolean;acceptedFinding:boolean;canonicalCaseId:string;
+  /** Latest owner rating of this case id and the case revision it was recorded against; a rating of an older revision is kept but flagged. */
+  finding?:CaseFinding;ratedRevision?:number;ratingCurrent?:boolean;
 }
 export interface CaseContext {assetRevision?:(id:string)=>number|undefined;assertionRevision?:(id:string)=>number|undefined}
 const terminalReview=new Set(['withdrawn']);
@@ -30,9 +32,17 @@ function independentReceiptCurrent(index:LedgerIndex,claim:AssessmentRecord,evid
     &&validator.data?.proof!=='static_trace'&&validator.refs?.includes(evidenceId));
 }
 
+/** Latest owner rating per case id, in ledger order. Malformed or foreign-run notes are not promoted, as for cases. */
+export function caseRatings(index:LedgerIndex):Map<string,{finding:CaseFinding;caseRevision:number;recordId:string}>{
+  const latest=new Map<string,{finding:CaseFinding;caseRevision:number;recordId:string}>();
+  for(const row of index.records){const value=row.kind==='note'&&row.by==='owner'&&!row.workerId?row.data?.caseRating as Record<string,unknown>|undefined:undefined;if(!row.id||!value||typeof value!=='object')continue;
+    try{const caseId=value.caseId,revision=value.caseRevision;if(typeof caseId!=='string'||!/^[a-z0-9][a-z0-9-]{0,79}$/.test(caseId)||!Number.isSafeInteger(revision)||Number(revision)<1)continue;latest.set(caseId,{finding:validateFinding(value.finding),caseRevision:Number(revision),recordId:row.id});}catch{/* Untrusted/legacy notes are not promoted. */}}
+  return latest;
+}
+
 /** Derived, read-only currentness. It cannot upgrade a claim, goal or target authority. */
 export function caseViews(index:LedgerIndex,context:CaseContext={}):CaseView[]{
-  const entries=caseFrontier(index),claims=candidateHeads(index),actors=actorCandidateHeads(index),entryMap=new Map(entries.map(entry=>[entry.id,entry])),views=new Map<string,CaseView>(),visiting=new Set<string>();
+  const entries=caseFrontier(index),ratings=caseRatings(index),claims=candidateHeads(index),actors=actorCandidateHeads(index),entryMap=new Map(entries.map(entry=>[entry.id,entry])),views=new Map<string,CaseView>(),visiting=new Set<string>();
   const view=(entry:CaseEntry):CaseView=>{
     const cached=views.get(entry.id);if(cached)return cached;const reasons:string[]=[];let unknown=false;
     if(entry.reviewStatus==='withdrawn')reasons.push('case-review-withdrawn');
@@ -52,13 +62,18 @@ export function caseViews(index:LedgerIndex,context:CaseContext={}):CaseView[]{
     if(entry.duplicateOf){if(visiting.has(entry.id)){reasons.push('duplicate-cycle');}else{visiting.add(entry.id);const target=entryMap.get(entry.duplicateOf);if(!target)reasons.push(`missing-canonical-case:${entry.duplicateOf}`);else{const canonical=view(target);canonicalCaseId=canonical.canonicalCaseId;if(!entry.rootCauseKey||entry.rootCauseKey!==target.rootCauseKey||entry.policyKey!==target.policyKey)reasons.push('duplicate-without-matching-reviewed-root-cause');if(target.duplicateOf)reasons.push('duplicate-target-is-not-canonical');if(!canonical.acceptedFinding)reasons.push('duplicate-target-not-current-accepted-finding');}visiting.delete(entry.id);}}
     const currentness:CaseCurrentness=entry.reviewStatus==='withdrawn'?'withdrawn':reasons.length?'stale':unknown?'unknown':'current';
     const acceptedFinding=entry.reviewStatus==='accepted'&&entry.verdict==='confirmed'&&!entry.duplicateOf&&currentness==='current';
-    const result:CaseView={...entry,currentness,staleReasons:[...new Set(reasons)].slice(0,40),independentCurrent,acceptedFinding,canonicalCaseId};views.set(entry.id,result);return result;
+    const rating=ratings.get(entry.id),result:CaseView={...entry,currentness,staleReasons:[...new Set(reasons)].slice(0,40),independentCurrent,acceptedFinding,canonicalCaseId,...(rating?{finding:rating.finding,ratedRevision:rating.caseRevision,ratingCurrent:rating.caseRevision===entry.revision}:{})};views.set(entry.id,result);return result;
   };
   return entries.map(view);
 }
 
 export function boundCaseRequest(action:'create'|'revise',input:CaseDraft,request:MutationRequest,id?:string,revision?:number):MutationRequest{
   if(request.actorId!=='owner')throw Error('Case mutations require host-bound owner attribution');return {...request,payload:{kind:'case-entry',action,input,id,revision,submitted:request.payload}};
+}
+
+/** Idempotency binding of a rating request; the finding is validated first so a replay compares the same canonical payload. */
+export function boundRatingRequest(id:string,revision:number,value:unknown,request:MutationRequest):MutationRequest{
+  if(request.actorId!=='owner')throw Error('Case ratings require host-bound owner attribution');return {...request,payload:{kind:'case-rating',id,revision,finding:validateFinding(value),submitted:request.payload}};
 }
 
 /** Owner review service over candidate/task/evidence records; no finding store or execution queue. */
@@ -96,6 +111,24 @@ export class CaseBoard{
   private async retained(request:MutationRequest|undefined):Promise<CaseEntry|undefined>{if(!request)return;const acks=await readGeneratedRecords(this.path,request);if(!acks)return;const index=await readLedger(this.path,this.runId),row=index.byId.get(acks[0].recordId);if(!index.complete||!row?.data?.case)throw Error('Retained case ACK detail unavailable');return validateStoredCase(row.data.case,row.id!);}
   async create(value:CaseDraft,request?:MutationRequest):Promise<CaseEntry>{const input=validateCaseDraft(value),bound=request?boundCaseRequest('create',value,request):undefined,prior=await this.retained(bound);if(prior)return prior;return this.mutate(async(index,cases)=>{const id=input.id??`case-${randomUUID()}`,draft=this.pin({...input,id},index);if(cases.some(entry=>entry.id===id))throw Error('Duplicate case identity');if(cases.filter(entry=>!terminalReview.has(entry.reviewStatus)).length>=100)throw Error('Live case frontier limit reached (100)');if(draft.reviewStatus!=='pending')throw Error('Create a pending case; acceptance/dispute/withdrawal needs an explicit revision');this.references(draft,index,cases);return this.write(()=>({draft,revision:1}),bound);});}
   async revise(id:string,revision:number,value:CaseDraft,request?:MutationRequest):Promise<CaseEntry>{const input=validateCaseDraft(value),bound=request?boundCaseRequest('revise',value,request,id,revision):undefined,prior=await this.retained(bound);if(prior)return prior;return this.mutate(async(index,cases)=>{const old=cases.find(entry=>entry.id===id);if(!old||old.revision!==revision)throw Error('Missing or stale case revision');if(input.id&&input.id!==id)throw Error('Cannot change case identity');const draft=this.pin({...input,id},index),allowed:Record<string,string[]>={pending:['pending','accepted','disputed','withdrawn'],accepted:['pending','accepted','disputed','withdrawn'],disputed:['pending','disputed','withdrawn'],withdrawn:[]};if(!allowed[old.reviewStatus].includes(draft.reviewStatus))throw Error('Invalid case review transition');this.references(draft,index,cases);this.acceptance(draft,index,cases,old);return this.write(()=>({draft,revision:old.revision+1,previous:old}),bound);});}
+  /**
+   * Owner rating of an existing case, recorded against the exact case revision as a separate note. Verdict, review status and revision are untouched, so
+   * coverage cells that pin the case stay current. A case on an inferred policy basis cannot be rated above medium; reproduction evidence must be same-run.
+   */
+  async rate(id:string,revision:number,value:unknown,request?:MutationRequest):Promise<{caseId:string;caseRevision:number;finding:CaseFinding;recordId:string}>{
+    const finding=validateFinding(value),bound=request?boundRatingRequest(id,revision,value,request):undefined;
+    const prior=bound?await readGeneratedRecords(this.path,bound):undefined;
+    const read=async(acks:{recordId:string}[])=>{const index=await readLedger(this.path,this.runId),row=index.byId.get(acks[0].recordId),data=row?.data?.caseRating as {caseId:string;caseRevision:number;finding:CaseFinding}|undefined;if(!index.complete||!row?.id||!data)throw Error('Retained rating detail unavailable');return {caseId:data.caseId,caseRevision:data.caseRevision,finding:validateFinding(data.finding),recordId:row.id};};
+    if(prior)return read(prior);
+    return this.mutate(async(index,cases)=>{
+      const entry=cases.find(item=>item.id===id);if(!entry||entry.revision!==revision)throw Error('Missing or stale case revision');
+      if(entry.reviewStatus==='withdrawn')throw Error('A withdrawn case cannot be rated');
+      for(const ref of finding.reproductionEvidenceRefs)if(index.byId.get(ref)?.kind!=='evidence'||index.byId.get(ref)?.runId!==this.runId)throw Error(`Unknown same-run reproduction evidence ${ref}`);
+      if(['critical','high'].includes(finding.severity)&&entry.claimRefs.some(ref=>index.byId.get(ref)?.data?.policyBasis==='inferred'))throw Error('A case resting on an inferred policy basis cannot be rated above medium');
+      const records=()=>{this.gate();return [{id:randomUUID(),runId:this.runId,at:new Date(this.now()).toISOString(),by:'owner',kind:'note' as const,text:`case ${id}@r${revision} rated ${finding.severity}; owner rating, not review`,refs:finding.reproductionEvidenceRefs.slice(0,10),data:{caseRating:{caseId:id,caseRevision:revision,finding}}}];};
+      const acks=bound?await appendGeneratedRecords(this.path,records,bound):await appendRecords(this.path,records());return read(acks);
+    });
+  }
   async list():Promise<CaseView[]>{const index=await readLedger(this.path,this.runId);if(!index.complete)throw Error('Case reconciliation incomplete');return caseViews(index,this.context);}
 }
 

@@ -46,7 +46,7 @@ export const HELP = `p2o skill benchmark runner (opt-in, live model traffic only
   node scripts/benchmark-skills.mjs run     [options] --live   # real Pi + real P2O Docker sandbox
   node scripts/benchmark-skills.mjs score   <receipt.json>     # re-score a stored run
 
-Arms (methods from planning_update.md Phase 5):
+Arms (methods from Phase 5 of an earlier plan; see the git history of planning_update.md):
   A  baseline revision ${BASELINE_REVISION}, original 17 skills, no durable-export start flag
   B  improved runtime, same original 17 skills, passes --export when the package supports it
   C  improved runtime plus the three web playbooks and the FastAPI parity overlay

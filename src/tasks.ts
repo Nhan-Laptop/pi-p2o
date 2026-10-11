@@ -18,7 +18,12 @@ export interface TaskDraft {
   unknowns?: string[]; missingPrerequisites?: string[]; expectedOutput?: string;
 }
 export type TaskStatus = 'proposed' | 'reserved' | 'running' | 'reported' | 'reviewed' | 'closed' | 'blocked' | 'cancelled' | 'expired';
-export interface AssessmentTask extends TaskDraft { id: string; runId: string; revision: number; status: TaskStatus; assignee?: string; recordId: string; reviewReason?: string; outcome?: string; handoffId?: string; phasePacketId?:string;
+/**
+ * What the host observed about the receipts a review cited, written once with the `reviewed` revision. It is information for the owner and the report:
+ * who authored each receipt, which fields of the output contract no record of the assignee backs, and (enforce mode) whether a foreign receipt was acknowledged.
+ */
+export interface ReviewIntegrityNote { assignee: string; foreignEvidence: string[]; contractGap: string[]; contractUnchecked: string[]; externalAcknowledged?: boolean }
+export interface AssessmentTask extends TaskDraft { id: string; runId: string; revision: number; status: TaskStatus; assignee?: string; recordId: string; reviewReason?: string; outcome?: string; handoffId?: string; phasePacketId?:string; reviewIntegrity?: ReviewIntegrityNote;
   targetRevision?:string; workFingerprint?:string; workOverlapKey?:string; dedupConfidence?:'exact'|'unknown'; overlapWarnings?:string[] }
 export interface TaskWorkMatch { confidence:'exact'|'unknown'; targetRevision:string; fingerprint?:string; overlapKey?:string; reason?:string;
   active:Array<{taskId:string;revision:number;status:string}>; reusable:Array<{taskId:string;revision:number;status:string}>; partial:Array<{taskId:string;revision:number;status:string}>;
@@ -67,8 +72,23 @@ function validate(input: TaskDraft) {
 }
 
 /** Owner-only service. No disk reconstruction ever recreates run authority or workers. */
+/** Contract fields a ledger record of the assignee can back; assets, facts, controls and artifacts live in the graph/artifact stores and are reported as unchecked, never as missing. */
+const CONTRACT_KINDS: Record<string, (row: AssessmentRecord) => boolean> = {
+  evidence: row => row.kind === 'evidence', gaps: row => row.kind === 'open' || (row.kind === 'candidate' && (row.data?.closure === 'open_proof_gap' || row.data?.execution === 'blocked')),
+  candidates: row => row.kind === 'candidate', coverage: row => row.kind === 'coverage',
+};
+export function reviewIntegrityNote(index: LedgerIndex, task: AssessmentTask, evidenceIds: readonly string[], externalAcknowledged: boolean): ReviewIntegrityNote {
+  const assignee = task.assignee ?? 'owner', required = task.outputContract?.required ?? [];
+  const foreignEvidence = evidenceIds.filter(id => index.byId.get(id)?.by !== assignee);
+  const mine = index.records.filter(row => row.by === assignee);
+  return { assignee, foreignEvidence, contractGap: required.filter(field => CONTRACT_KINDS[field] && !mine.some(CONTRACT_KINDS[field])), contractUnchecked: required.filter(field => !CONTRACT_KINDS[field]),
+    ...(externalAcknowledged && foreignEvidence.length ? { externalAcknowledged: true } : {}) };
+}
+
 export class TaskBoard {
   private pending: Promise<unknown> = Promise.resolve();
+  /** off: no note; annotate: note only; enforce: also refuse receipts the assignee did not author unless acknowledged. Set by the extension from p2o.reviewIntegrity. */
+  integrity: 'off' | 'annotate' | 'enforce' = 'annotate';
   constructor(readonly runId: string, readonly path: string, private active: () => boolean, private now = () => Date.now(), private targetRevision:string|(()=>string)=runId,
     private assetRevision?: (id:string)=>number|undefined) {}
   private gate() { if (!this.active()) throw new Error('Task authority inactive'); }
@@ -178,7 +198,7 @@ export class TaskBoard {
       return this.write({ ...decorated,revision:task.revision+1,status:'reserved',assignee },task);
     });
   }
-  async transition(id: string, status: TaskStatus, reason: string, evidenceIds?: string[], expectedRevision?: number): Promise<AssessmentTask> {
+  async transition(id: string, status: TaskStatus, reason: string, evidenceIds?: string[], expectedRevision?: number, externalEvidence = false): Promise<AssessmentTask> {
     bounded(reason,'transition reason',1000,5);
     return this.mutate(async (index,tasks) => {
       const task = this.current(tasks,id,expectedRevision);
@@ -189,7 +209,9 @@ export class TaskBoard {
         if (task.status === 'running' && task.assignee !== 'owner') throw Error('Worker handoff must be reported before lead acceptance');
         if (!evidenceIds?.length || evidenceIds.length > 10 || evidenceIds.some(id => index.byId.get(id)?.kind !== 'evidence' || index.byId.get(id)?.runId !== this.runId)) throw Error('Lead review requires same-run receipts');
       }
-      return this.write({ ...task, revision:task.revision+1,status, ...(status === 'reviewed' ? { reviewReason:reason,evidenceIds:evidenceIds! } : { outcome:reason }) },task);
+      const note = status === 'reviewed' && this.integrity !== 'off' ? reviewIntegrityNote(index, task, evidenceIds!, externalEvidence) : undefined;
+      if (note && this.integrity === 'enforce' && note.foreignEvidence.length && !externalEvidence) throw Error(`REVIEW_INTEGRITY: receipts not authored by ${note.assignee}: ${note.foreignEvidence.join(', ')}; cite the assignee's own receipts, or pass externalEvidence=true to acknowledge that they come from elsewhere`);
+      return this.write({ ...task, revision:task.revision+1,status, ...(status === 'reviewed' ? { reviewReason:reason,evidenceIds:evidenceIds!, ...(note ? { reviewIntegrity:note } : {}) } : { outcome:reason }) },task);
     });
   }
   /** One owner-authored handoff packet, never automatic lead acceptance or goal completion. */

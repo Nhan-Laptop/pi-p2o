@@ -91,7 +91,7 @@ command counts nor automatic-round counts are an aggregate monetary/token govern
 
 Stop closes the Engine gate/increments epoch before draining async work; cancellation cannot reauthorize queued
 operations. Cleanup is idempotent/retryable; failure keeps tools gated and is disclosed. Finish refuses unreported
-live workers and freezes current state before verified cleanup/export. Session navigation/shutdown use the same
+live workers, runs the host preflight (`src/finish-preflight.ts`, gate `p2o.finishGate`), and freezes current state before verified cleanup/export; cleanup then writes the deterministic report (`p2o.autoReport`) before the store is finalized. A report or preflight failure never blocks cleanup. Session navigation/shutdown use the same
 cleanup path. Hard kills or Docker loss may leave containers/panes; no automatic startup reclamation is claimed.
 Assessment, worker and target operations have no mandatory elapsed timeout; explicit optional timeouts and
 infrastructure watchdogs remain. Pausing scheduling does not revoke active workers; stopping does.
@@ -108,6 +108,7 @@ infrastructure watchdogs remain. Pausing scheduling does not revoke active worke
 | `src/source.ts` / `src/http-session.ts` | FD-contained bounded source snapshots and actor-local HTTP state |
 | `src/broker.ts` / `src/ticket.ts` | Socket authority, budgets/control reserve, post-commit report notification, fresh tickets |
 | `src/records.ts` / `src/evidence.ts` / `src/report.ts` | Provenance, complete bounded retrieval, current support, receipts and exports |
+| `src/report-export.ts` / `src/cvss.ts` / `src/finish-preflight.ts` | Deterministic OWASP-shaped report (v2: scope, executive summary, rated findings, JSON/CSV), CVSS 3.1 base score, pre-finish check of unfinished review/coverage |
 | `src/progress.ts` | Observable diagnostics only; quiet time is not proven failure |
 | `src/herdr.ts` / `src/roles.ts` / `src/target.ts` | Fresh pane lifecycle, model/config validation and target/CLI contract |
 

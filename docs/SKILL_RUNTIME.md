@@ -97,7 +97,7 @@ Owner-only questions, accepted prerequisite revisions, role/method hashes, curso
 ## Persistence and failures
 
 Choose `/p2o --target ./source --export` before the assessment. Its confirmation explains retention. Before
-cleanup, an exclusive 0600 JSON export is written under cwd `.p2o-reports/` (0700); no arbitrary export path or
+cleanup, an exclusive 0600 JSON export is written under cwd `.p2o-reports/` (0700, next to the automatic `report-<run-id>/` directory); no arbitrary export path or
 artifact-symlink traversal is accepted. It includes source snapshot hashes, loaded document hashes, lead model,
 image/extension identity and ledger records. Worker role/model selections remain in lifecycle
 records. It never copies tickets or authentication files. **Redaction is best effort: review before sharing.**
