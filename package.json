@@ -8,7 +8,7 @@
   "keywords": ["pi-package", "security-assessment"],
   "engines": { "node": ">=22.19.0" },
   "pi": { "extensions": ["./extensions/p2o/index.ts"], "skills": ["./skills"] },
-  "files": ["src/", "extensions/", "skills/", "research/", "scripts/", "templates/", "docs/", "bench/README.md", "bench/lib/", "bench/fixtures/", "planning_update.md", "HANDOFFS.md", "README.md", "!**/.p2o-state/**", "!**/.p2o-reports/**", "!**/.p2o-export-*/**", "!**/p2o-run-*/**", "!**/assessment.sqlite*", "!**/writer.lock*", "!**/artifact-*.txt", "!**/checkpoint-*.json", "!**/ticket-p2o-*.json"],
+  "files": ["src/", "extensions/", "skills/", "research/", "scripts/", "templates/", "docs/", "bench/README.md", "bench/lib/", "bench/fixtures/", "HANDOFFS.md", "README.md", "!**/.p2o-state/**", "!**/.p2o-reports/**", "!**/.p2o-export-*/**", "!**/p2o-run-*/**", "!**/assessment.sqlite*", "!**/writer.lock*", "!**/artifact-*.txt", "!**/checkpoint-*.json", "!**/ticket-p2o-*.json"],
   "scripts": {
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "build": "tsc -p tsconfig.build.json",
