@@ -196,7 +196,7 @@ The same inert real-Pi/Docker tests can target an installed copy instead of the 
 `P2O_TEST_DOCKER=1 P2O_TEST_INSTALLED_EXTENSION=<installed-checkout>/extensions/p2o/index.ts npx vitest run tests/minimal/native.test.ts tests/minimal/planner-native.test.ts tests/minimal/docker-extension.test.ts`.
 A passing run proves the installed mechanics only, not assessment quality.
 
-Design notes: [architecture](docs/ARCHITECTURE.md), [usage](docs/USAGE.md), [enhancement roadmap](planning_update.md), [acceptance matrix](docs/ACCEPTANCE_MATRIX.md).
+Design notes: [architecture](docs/ARCHITECTURE.md), [usage](docs/USAGE.md), [enhancement roadmap](planning_update.md), [acceptance matrix](docs/ACCEPTANCE_MATRIX.md), [OWASP WSTG map](docs/WSTG_MAP.md).
 [Benchmarks](bench/README.md) are opt-in real-model runs, separate from the hermetic suite; no effectiveness claim is implied by passing unit tests.
 `my_references/` is not shipped or modified.
 

@@ -261,6 +261,8 @@ Người dùng gọi, **xác nhận**, đích là thư mục **mới** ngoài pr
 
 Nội dung theo thứ tự: tuyên bố "không phải verification/không phải bảo đảm an toàn" → provenance và reconciliation → bảng tổng → **coverage và gaps trước** (ô blocked/untested/stale đứng đầu) → case accepted-current → case khác và lý do → claims của worker (chưa phải finding) → task/handoff → giới hạn. Run rỗng ghi "chưa có case accepted-current; không có nghĩa target an toàn", không bao giờ "0 lỗ hổng". Mọi chuỗi do target/model sinh ra bị vô hiệu hóa: không link/ảnh/HTML/fence/autolink, không điều khiển/bidi, CSV chặn công thức (`'=`…). Danh sách bị giới hạn (200 dòng/mục, 500 case) và phần bị bỏ được đếm; dữ liệu đầy đủ ở bundle `/p2o export`. Ghi file nguyên tử (thư mục tạm 0700 → fsync → rename; lỗi ENOSPC không để lại đích hay thư mục tạm) và kèm marker để không bị clone vào source của lần assess sau.
 
+Khi có cell coverage dùng khóa test WSTG (`wstg-…`, xem [WSTG_MAP](WSTG_MAP.md)), báo cáo thêm mục **WSTG checklist** ngay sau coverage và gaps: một mức L0–L3 cho từng test trong 108 test (chỉ phản ánh các cell đã ghi, không phản ánh target), danh sách test chưa có cell làm mẫu số kèm mức hỗ trợ của thư viện (D/T/N/O), và các khóa `wstg-` không có trong bản đồ. Không có khóa `wstg-` nào thì báo cáo không đổi một byte.
+
 ## Work admission / kế hoạch / phase cards — K4
 
 Owner dùng `p2o_task action=match` trước dispatch với structured `work` (asset/policy/question keys, actor/tenant, method family, pins, purpose). Thiếu metadata ⇒ unknown, không hash prose thành semantic match. Exact active duplicate trả `already_covered_by`, historical reviewed/closed result trả `reuse_candidates` với refs/limitations; không auto-spawn hoặc goal met. Structured task cần explicit decision/output contract; retry/validation/retest có prior IDs và reasons, reserve kiểm tra lại trong canonical transaction.
@@ -290,6 +292,8 @@ Owner dùng `p2o_case create/revise/list/view` để review exact candidate/asse
 ```
 
 Reads không gọi model/target. `/p2o report` và checkpoints tách candidate submissions, unique cases, duplicates/pending/stale và coverage currentness. [Contract, defaults và giới hạn K5](CASE_REVIEW.md).
+
+**Khóa test OWASP WSTG:** dùng ID viết thường (ví dụ `wstg-athz-04`) làm `questionKey` của work identity và của cell coverage; `methodFamily` là id workflow của skill, `policyKey` vẫn là chính sách của ứng dụng. [WSTG_MAP](WSTG_MAP.md) liệt kê 108 test với mức hỗ trợ của thư viện (D: có skill gọi tên đúng lớp lỗi, T: chỉ kỹ thuật chung, N: chưa có skill, O: ngoài scope) và hai cờ (B: cần browser, I: cần identity do operator cấp); bảng này là độ phủ kiến thức, không phải khả năng phát hiện. Lead và worker tìm thấy nó qua tài liệu dùng chung `shared:wstg-map` và quy ước trong `shared:handoffs`; prompt không đổi.
 
 ## Asset/fact graph — K3
 
