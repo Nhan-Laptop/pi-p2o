@@ -660,6 +660,11 @@
       "section": "start-here"
     },
     {
+      "id": "shared:wstg-map",
+      "path": "docs/WSTG_MAP.md",
+      "section": "wstg-map-table"
+    },
+    {
       "id": "evidence:b001",
       "path": "research/evidence.md",
       "section": "b001"

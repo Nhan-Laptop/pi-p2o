@@ -38,6 +38,8 @@ During P2O, only owner service operations accept task packets and reserve assign
 
 Review the validator’s **current** conclusion and receipt, including withdrawal and controls. A reported/closed coordination task does not close a security candidate; reporting creates no proof. Missing actor, control or provenance returns the smallest unanswered question. Unsupported URL/authenticated/browser methods remain gaps under the original scope.
 
+When a question is one of the OWASP WSTG tests, name it by its lower-case test ID (for example `wstg-athz-04`) as the question key of the task and of the coverage cell, and use the skill workflow id as the method family, so the same test on the same asset in the same context is recognised as the same work. The [WSTG test map](docs/WSTG_MAP.md#wstg-map-table) shows which tests the shipped skills cover by name (D) or only through general techniques (T), which they do not cover (N), and which are outside this tool's scope (O). A map entry is library knowledge, not a result: record the cell and its evidence as for any other question.
+
 ### Provisional owner review
 
 If an authorized investigation finds unexpected artifacts suggesting a pre-existing incident, stop expanding access and notify the authorized owner/responder. Use the common envelope with minimized, redacted diagnostic/artifact references, collection time/method and integrity provenance, explicit attribution/initial-access unknowns, permitted preservation and containment scope. Do not use credentials or test wider access to resolve attribution.

@@ -1,6 +1,7 @@
 import { readFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { validateCoverageCellDraft } from '../../src/coverage-types.js';
 import { SkillLibrary } from '../../src/skills.js';
 import { fieldValidators } from '../../src/validate.js';
 import { WSTG_BY_KEY, WSTG_COMMIT, WSTG_MAP, isWstgKey, wstgEvidence, wstgKey, wstgTableRows, type WstgCell, type WstgCase, type WstgEvidence } from '../../src/wstg-map.js';
@@ -73,4 +74,34 @@ describe('wstgEvidence (L0 to L3 from the coverage cells that carry a test key)'
     ['a not-applicable cell beside a tested one', [cell('not_applicable', 'current'), cell('tested', 'current')], 'L2'],
   ];
   it.each(table)('%s', (_name, cells, expected) => { expect(wstgEvidence(cells, cases)).toBe(expected); });
+});
+
+describe('the map reaches the lead and the workers without a new prompt line or tool', () => {
+  const library = new SkillLibrary(root);
+  const readAll = async (id: string) => { let page = await library.read(id), text = page.text; while (page.nextOffset !== undefined) { page = await library.read(id, page.nextOffset); text += page.text; } return text; };
+
+  it('serves the table section of docs/WSTG_MAP.md as shared:wstg-map, without the Vietnamese preface or any tool name', async () => {
+    expect((await library.list()).sharedDocuments).toContain('shared:wstg-map');
+    const text = await readAll('shared:wstg-map');
+    expect(text).toMatch(/^## WSTG map table/); expect(text).toContain(WSTG_COMMIT);
+    expect(text.split('\n').filter(line => line.startsWith('| wstg-'))).toEqual(wstgTableRows());
+    expect(text).not.toContain('Cách dùng khóa'); expect(text).not.toMatch(/\bp2o_[a-z_]+\b/);
+    expect(text.length).toBeLessThanOrEqual(12_500); // measured 11,595; a longer section would cost a worker a third page
+  });
+
+  it('is linked from the shared handoff contract by the test-key convention', async () => {
+    const handoffs = await readAll('shared:handoffs');
+    expect(handoffs).toContain('wstg-athz-04'); expect(handoffs).toContain('p2o-skill:shared:wstg-map');
+  });
+
+  it('keeps the coverage-cell example valid and consistent with the map and the catalog', async () => {
+    const doc = await readFile(join(root, 'docs/WSTG_MAP.md'), 'utf8');
+    const block = /^## Ví dụ cell coverage[\s\S]*?```json\n([\s\S]*?)\n```/m.exec(doc)?.[1];
+    expect(block, 'the example block is missing').toBeTruthy();
+    const cell = validateCoverageCellDraft(JSON.parse(block!));
+    const test = WSTG_BY_KEY.get(cell.questionKey);
+    expect(test, 'the example must use a mapped key').toBeDefined();
+    const workflows = (await library.load()).skills.filter(skill => test!.skills.includes(skill.name)).flatMap(skill => skill.workflows.map(workflow => workflow.id));
+    expect(workflows, 'methodFamily must be a workflow id of a skill the map names for that test').toContain(cell.methodFamily);
+  });
 });

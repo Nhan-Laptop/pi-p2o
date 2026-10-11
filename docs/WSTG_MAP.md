@@ -41,6 +41,31 @@ Hàm `wstgEvidence` tính mức cao nhất mà các cell có khóa của test đ
 3. `npm run build`, rồi `node scripts/render-wstg-map.mjs` (hoặc thêm `--source`) và dán kết quả đè lên các hàng dưới "WSTG map table".
 4. Cập nhật số đếm D/T/N/O/B/I ở trên và trong test.
 
+## Ví dụ cell coverage
+
+Một cell kế hoạch cho `wstg-athz-04` (IDOR) so sánh hai danh tính do operator cấp. `assetRef.id` là ID tài sản thật từ `p2o_graph`; test `wstg-map.test.ts` kiểm ví dụ này hợp lệ theo `validateCoverageCellDraft`, dùng khóa có trong bảng và `methodFamily` là workflow của skill mà bảng gắn cho test đó.
+
+```json
+{
+  "assetRef": { "id": "asset-0123456789abcdef01234567", "revision": 1 },
+  "questionKey": "wstg-athz-04",
+  "policyKey": "policy:invoice-owner-only",
+  "actorContext": "actor:user-a",
+  "tenantContext": "tenant:t1",
+  "methodFamily": "controlled-identity-comparison",
+  "execution": "planned",
+  "assessment": "unreviewed",
+  "taskRefs": [],
+  "claimRefs": [],
+  "caseRefs": [],
+  "evidenceRefs": [],
+  "negativeControlRefs": [],
+  "gapRefs": [],
+  "reason": "Planned comparison of invoice objects between two controlled users",
+  "limitations": "Not run yet; no evidence is recorded for this cell"
+}
+```
+
 ## WSTG map table
 
 Pinned to OWASP WSTG commit 28553f878d48358767892916d53e59a9d664811c (https://github.com/OWASP/wstg).
