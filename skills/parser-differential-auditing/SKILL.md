@@ -26,7 +26,7 @@ Representation map → parser rules → semantic discrepancy hypothesis → pair
 5. Observe each layer's parsed fields and final operation in an isolated setup. Distinguish network framing, application parsing, and execution semantics; preserve connection boundaries and rejection paths.
 6. Show whether the discrepancy changes an authorization decision, object selection, buffer access, or execution context. Parser disagreement without a security consequence remains a correctness finding.
 
-For transformation-order, shared-field and re-entry questions, use the owned [semantic-boundary guide](references/semantic-boundaries.md). For indexed reuse and key/consumer equivalence, use [cache selection](references/cache-selection.md).
+For transformation-order, shared-field and re-entry questions, use the owned [semantic-boundary guide](references/semantic-boundaries.md). For indexed reuse and key/consumer equivalence, use [cache selection](references/cache-selection.md). For repeated parameters (wstg-injt-04) and reflected response-header values (wstg-injt-15), use [HTTP framing and parameters](references/http-framing-and-parameters.md).
 
 ## Research Heuristics
 - Accepted structured content can retain surrounding original text that a later shell consumer interprets. [B001](../../research/evidence.md#b001)
@@ -62,4 +62,4 @@ B001, B009, B068, B069, B058, B072, B048, B050, B051, B056, B059, and B017 merge
 
 Additional relationship, implicit-conversion and post-construction lessons come from [O001](../../research/orange/evidence.md#o001), [O004](../../research/orange/evidence.md#o004), and [O005](../../research/orange/evidence.md#o005). These are author-reported methods, not target replications.
 
-[O009](../../research/orange/evidence.md#o009) contributes cache-selection equivalence within a declared context; [O012](../../research/orange/evidence.md#o012) adds selected context and metadata-policy agreement between layers.
+[O009](../../research/orange/evidence.md#o009) contributes cache-selection equivalence within a declared context; [O012](../../research/orange/evidence.md#o012) adds selected context and metadata-policy agreement between layers; [On demand upstream text](references/wstg-source.md).

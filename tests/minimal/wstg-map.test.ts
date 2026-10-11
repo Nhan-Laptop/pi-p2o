@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest';
 import { validateCoverageCellDraft } from '../../src/coverage-types.js';
 import { SkillLibrary } from '../../src/skills.js';
 import { fieldValidators } from '../../src/validate.js';
-import { WSTG_BY_KEY, WSTG_COMMIT, WSTG_MAP, isWstgKey, wstgEvidence, wstgKey, wstgTableRows, type WstgCell, type WstgCase, type WstgEvidence } from '../../src/wstg-map.js';
+import { WSTG_BY_KEY, WSTG_COMMIT, WSTG_FEATURES, WSTG_MAP, WSTG_MODES, isWstgKey, wstgEvidence, wstgKey, wstgTableRows, type WstgCell, type WstgCase, type WstgEvidence } from '../../src/wstg-map.js';
 
 /**
  * S4 (plan): the OWASP WSTG map is data plus two pure helpers. No new state, field or tool: a test is addressed by its lower-case ID in the existing
@@ -39,12 +39,33 @@ describe('WSTG map data', () => {
   it('pins the counts that docs/WSTG_MAP.md and planning_update.md quote', () => {
     const count = (predicate: (test: (typeof WSTG_MAP)[number]) => boolean) => WSTG_MAP.filter(predicate).length;
     expect({ D: count(test => test.support === 'D'), T: count(test => test.support === 'T'), N: count(test => test.support === 'N'), O: count(test => test.support === 'O'), browser: count(test => test.browser), identity: count(test => test.identity) })
-      .toEqual({ D: 26, T: 35, N: 43, O: 4, browser: 20, identity: 39 });
+      .toEqual({ D: 102, T: 2, N: 0, O: 4, browser: 20, identity: 39 }); // D 26 -> 21: five rows whose skill never names the class were re-graded to T (planning_update.md B.3)
     expect(WSTG_COMMIT).toMatch(/^[0-9a-f]{40}$/);
+  });
+
+  it('gives every in-scope test a trigger from the shared vocabulary and modes that agree with its flags', () => {
+    const vocabulary = new Set<string>(WSTG_FEATURES);
+    expect(vocabulary.size).toBe(WSTG_FEATURES.length);
+    for (const test of WSTG_MAP) {
+      if (test.support === 'O') { expect(test.trigger, `${test.id}: out of scope has no trigger`).toEqual([]); expect(test.modes, `${test.id}: out of scope has no modes`).toBe(''); expect(test.owner, `${test.id}: out of scope has no owner`).toBe(''); continue; }
+      expect(test.trigger.length, `${test.id} needs a trigger`).toBeGreaterThan(0);
+      expect(test.trigger.filter(code => !vocabulary.has(code)), `${test.id} uses a word outside the vocabulary`).toEqual([]);
+      expect(new Set(test.trigger).size, `${test.id} repeats a trigger`).toBe(test.trigger.length);
+      expect(test.modes.length, `${test.id} needs a mode`).toBeGreaterThan(0);
+      expect([...test.modes].filter(mode => !WSTG_MODES.includes(mode)), `${test.id} uses an unknown mode`).toEqual([]);
+      expect(test.modes.includes('A'), `${test.id}: A (identity) appears exactly when the identity flag does`).toBe(test.identity);
+      expect(test.modes.includes('B'), `${test.id}: B (browser) appears exactly when the browser flag does`).toBe(test.browser);
+      expect(test.owner, `${test.id} has an owner`).toMatch(/^[a-z0-9]+(?:-[a-z0-9]+)*$/);
+    }
   });
 });
 
 describe('docs/WSTG_MAP.md', () => {
+  it('quotes the support counts of the data', async () => {
+    const doc = await readFile(join(root, 'docs/WSTG_MAP.md'), 'utf8'), quoted = new Map([...doc.matchAll(/^\| ([DTNO]) \| .*\| (\d+) \|$/gm)].map(match => [match[1], Number(match[2])]));
+    for (const level of ['D', 'T', 'N', 'O'] as const) expect(quoted.get(level), `the document quotes the count of ${level}`).toBe(WSTG_MAP.filter(test => test.support === level).length);
+  });
+
   it('quotes the pinned commit and shows exactly the rows of the data', async () => {
     const doc = await readFile(join(root, 'docs/WSTG_MAP.md'), 'utf8');
     expect(doc).toContain(WSTG_COMMIT);
@@ -86,7 +107,7 @@ describe('the map reaches the lead and the workers without a new prompt line or 
     expect(text).toMatch(/^## WSTG map table/); expect(text).toContain(WSTG_COMMIT);
     expect(text.split('\n').filter(line => line.startsWith('| wstg-'))).toEqual(wstgTableRows());
     expect(text).not.toContain('Cách dùng khóa'); expect(text).not.toMatch(/\bp2o_[a-z_]+\b/);
-    expect(text.length).toBeLessThanOrEqual(12_500); // measured 11,595; a longer section would cost a worker a third page
+    expect(text.length).toBeLessThanOrEqual(18_000); // measured 14,425 with the trigger and mode columns (11,595 before); about 17,000 once every owner skill is listed, which is three pages
   });
 
   it('is linked from the shared handoff contract by the test-key convention', async () => {

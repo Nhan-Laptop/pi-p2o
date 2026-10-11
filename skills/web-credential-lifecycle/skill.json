@@ -1,0 +1,44 @@
+{
+  "schema_version": 1,
+  "kind": "playbook",
+  "references": [
+    "references/account-creation-and-enumeration.md",
+    "references/credential-policy-and-defaults.md",
+    "references/lockout-and-recovery.md",
+    "references/mfa-and-remember-me.md"
+  ],
+  "workflows": [
+    {
+      "id": "source-review",
+      "description": "Trace account creation, credential checks, counters, reset tokens and factor verification in the supplied revision",
+      "prerequisites": [
+        "A supplied read-only source snapshot; deployment exposure is not established."
+      ]
+    },
+    {
+      "id": "offline-reproduction",
+      "description": "Run the extracted password rule, token generator or factor check against controlled inputs in a local harness",
+      "prerequisites": [
+        "Bounded execution in your own sandbox scratch; network egress is available and any download or install must be receipted."
+      ]
+    },
+    {
+      "id": "public-http-review",
+      "description": "Anonymous registration, login and recovery requests on the confirmed origin with attempt counts fixed in advance",
+      "prerequisites": [
+        "Authorized same-origin requests through the scoped HTTP client on the confirmed origin, with the method, headers, cookies and body the approved scope declares."
+      ]
+    },
+    {
+      "id": "controlled-identity-comparison",
+      "description": "Drive throwaway principals through lockout, recovery and factor paths; local HTTP alone is not identity",
+      "prerequisites": [
+        "Operator-supplied authorized credentials for controlled authenticated principals, used only inside the confirmed origin."
+      ]
+    }
+  ],
+  "provenance_refs": [
+    "W3",
+    "W4"
+  ]
+}

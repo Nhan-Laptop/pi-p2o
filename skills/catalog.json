@@ -284,6 +284,13 @@
           "prerequisites": [
             "Bounded execution in your own sandbox scratch; network egress is available and any download or install must be receipted."
           ]
+        },
+        {
+          "id": "public-http-review",
+          "description": "Same-origin HTTP comparison with the methods, headers, cookies and bodies the approved scope declares; no browser transport",
+          "prerequisites": [
+            "Authorized same-origin requests through the scoped HTTP client on the confirmed origin, with the method, headers, cookies and body the approved scope declares."
+          ]
         }
       ]
     },
@@ -420,6 +427,187 @@
       ]
     },
     {
+      "name": "web-browser-trust-controls",
+      "description": "Test what a server declares to a browser about cross-origin trust (CORS, framing, content policy, request-origin checks) and what client-side code does with untrusted input in a URL, style, resource reference, message or storage slot, mostly by reading headers and static script, never by running a live exploit in a real browser. Use when a response carries cross-origin headers or client-side script handles untrusted values. Covers WSTG SESS-05, CONF-12 and CLNT-04 to CLNT-07, CLNT-09 to CLNT-14.",
+      "kind": "playbook",
+      "document": "web-browser-trust-controls",
+      "workflows": [
+        {
+          "id": "source-review",
+          "description": "Read client-side script for how it handles untrusted values, and server code for origin and policy checks",
+          "prerequisites": [
+            "A supplied read-only source snapshot; deployment exposure is not established."
+          ]
+        },
+        {
+          "id": "offline-reproduction",
+          "description": "Render a local, static copy of a page or script to confirm a parsing or sink question that does not need live interactivity",
+          "prerequisites": [
+            "Bounded execution in your own sandbox scratch; network egress is available and any download or install must be receipted."
+          ]
+        },
+        {
+          "id": "public-http-review",
+          "description": "Read declared headers and exercise a server-side origin check with request headers you control",
+          "prerequisites": [
+            "Authorized same-origin requests through the scoped HTTP client on the confirmed origin, with the method, headers, cookies and body the approved scope declares."
+          ]
+        }
+      ]
+    },
+    {
+      "name": "web-business-logic-misuse",
+      "description": "Test whether an application's own stated business rules (data validity, workflow order, per-step authority, timing assumptions, pricing and upload acceptance) are enforced where they are checked, not only where they are displayed, starting from a named policy rather than a generic payload. Use when a multi-step process, a priced transaction or an upload feature exists. Covers WSTG BUSL-01 to BUSL-04, BUSL-06 to BUSL-10.",
+      "kind": "playbook",
+      "document": "web-business-logic-misuse",
+      "workflows": [
+        {
+          "id": "source-review",
+          "description": "Find the stated business rule, where it is checked, and whether every path that reaches the protected effect goes through that check",
+          "prerequisites": [
+            "A supplied read-only source snapshot; deployment exposure is not established."
+          ]
+        },
+        {
+          "id": "offline-reproduction",
+          "description": "Reproduce the workflow or computation with disposable fixture data",
+          "prerequisites": [
+            "Bounded execution in your own sandbox scratch; network egress is available and any download or install must be receipted."
+          ]
+        },
+        {
+          "id": "authenticated-navigation",
+          "description": "Drive a real multi-step flow with operator-supplied credentials for a controlled principal",
+          "prerequisites": [
+            "Operator-supplied authorized credentials for controlled authenticated principals, used only inside the confirmed origin."
+          ]
+        }
+      ]
+    },
+    {
+      "name": "web-credential-lifecycle",
+      "description": "Test how an identity is created, proved, locked, recovered and strengthened with a second factor, using throwaway accounts, operator-controlled mailboxes and counted attempts. Use when an application offers registration, password login, reset or MFA. Covers WSTG IDNT-02 to IDNT-04, ATHN-02, ATHN-03, ATHN-05, ATHN-07 to ATHN-09 and ATHN-11.",
+      "kind": "playbook",
+      "document": "web-credential-lifecycle",
+      "workflows": [
+        {
+          "id": "source-review",
+          "description": "Trace account creation, credential checks, counters, reset tokens and factor verification in the supplied revision",
+          "prerequisites": [
+            "A supplied read-only source snapshot; deployment exposure is not established."
+          ]
+        },
+        {
+          "id": "offline-reproduction",
+          "description": "Run the extracted password rule, token generator or factor check against controlled inputs in a local harness",
+          "prerequisites": [
+            "Bounded execution in your own sandbox scratch; network egress is available and any download or install must be receipted."
+          ]
+        },
+        {
+          "id": "public-http-review",
+          "description": "Anonymous registration, login and recovery requests on the confirmed origin with attempt counts fixed in advance",
+          "prerequisites": [
+            "Authorized same-origin requests through the scoped HTTP client on the confirmed origin, with the method, headers, cookies and body the approved scope declares."
+          ]
+        },
+        {
+          "id": "controlled-identity-comparison",
+          "description": "Drive throwaway principals through lockout, recovery and factor paths; local HTTP alone is not identity",
+          "prerequisites": [
+            "Operator-supplied authorized credentials for controlled authenticated principals, used only inside the confirmed origin."
+          ]
+        }
+      ]
+    },
+    {
+      "name": "web-crypto-usage-review",
+      "description": "Review how an application uses cryptographic primitives, primarily by reading source for known-weak algorithms, parameter misuse and client-side-decryptable state, with a live check limited to reading the application's own error behavior rather than breaking any encryption. Use when source shows encryption, hashing or client-held encrypted state. Covers WSTG CRYP-02 and CRYP-04.",
+      "kind": "playbook",
+      "document": "web-crypto-usage-review",
+      "workflows": [
+        {
+          "id": "source-review",
+          "description": "Find every cryptographic call, the algorithm and parameters it uses, and where client-held encrypted state is decrypted",
+          "prerequisites": [
+            "A supplied read-only source snapshot; deployment exposure is not established."
+          ]
+        },
+        {
+          "id": "offline-reproduction",
+          "description": "Exercise an extracted cryptographic call or decryption path against fixture values in a local harness",
+          "prerequisites": [
+            "Bounded execution in your own sandbox scratch; network egress is available and any download or install must be receipted."
+          ]
+        }
+      ]
+    },
+    {
+      "name": "web-deployment-hygiene",
+      "description": "Verify what a deployment volunteers and the policy it declares, including banners, metafiles, leaked page content, backup and admin paths, platform configuration, response headers, methods, cache and TLS settings, and error output. Use first, with few benign requests or a supplied configuration tree. Covers WSTG INFO, CONF, ERRH and CRYP-01/03.",
+      "kind": "playbook",
+      "document": "web-deployment-hygiene",
+      "workflows": [
+        {
+          "id": "source-review",
+          "description": "Read the declared configuration, descriptors, templates and bundles in the supplied revision",
+          "prerequisites": [
+            "A supplied read-only source snapshot; deployment exposure is not established."
+          ]
+        },
+        {
+          "id": "offline-reproduction",
+          "description": "Run the supplied configuration or bundle locally and read the headers, files and errors it produces",
+          "prerequisites": [
+            "Bounded execution in your own sandbox scratch; network egress is available and any download or install must be receipted."
+          ]
+        },
+        {
+          "id": "public-http-review",
+          "description": "Anonymous same-origin retrieval of representative responses with the headers, cookies and errors they carry; no payloads and no browser transport",
+          "prerequisites": [
+            "Authorized same-origin requests through the scoped HTTP client on the confirmed origin, with the method, headers, cookies and body the approved scope declares."
+          ]
+        },
+        {
+          "id": "sandbox-network-review",
+          "description": "Bounded TCP or TLS handshake with the confirmed host and port through the sandbox network tool",
+          "prerequisites": [
+            "Bounded TCP or TLS exchange with the confirmed host and port through the sandbox network tool; opaque commands are not origin-filtered, so address only the confirmed target and port."
+          ]
+        }
+      ]
+    },
+    {
+      "name": "web-graphql-testing",
+      "description": "Test a GraphQL endpoint's own configuration surface, separate from the field-level authorization and parameter-injection questions that belong to other skills, covering schema exposure, a reachable debug interface, and query depth, complexity and batch bounds. Use when an endpoint accepts GraphQL queries. Covers WSTG APIT-99.",
+      "kind": "playbook",
+      "document": "web-graphql-testing",
+      "workflows": [
+        {
+          "id": "source-review",
+          "description": "Read the server\u2019s introspection, depth/complexity and batching configuration",
+          "prerequisites": [
+            "A supplied read-only source snapshot; deployment exposure is not established."
+          ]
+        },
+        {
+          "id": "offline-reproduction",
+          "description": "Reproduce the schema configuration against a local, disposable copy of the server",
+          "prerequisites": [
+            "Bounded execution in your own sandbox scratch; network egress is available and any download or install must be receipted."
+          ]
+        },
+        {
+          "id": "public-http-review",
+          "description": "A small, fixed set of bounded queries against the confirmed origin",
+          "prerequisites": [
+            "Authorized same-origin requests through the scoped HTTP client on the confirmed origin, with the method, headers, cookies and body the approved scope declares."
+          ]
+        }
+      ]
+    },
+    {
       "name": "web-object-authorization",
       "description": "Test whether a principal can reach an object, field, tenant, or delegated action outside the intended policy, using a source policy matrix and controlled local reproduction before any live comparison. Use for application-level authorization review.",
       "kind": "playbook",
@@ -507,6 +695,107 @@
           ]
         }
       ]
+    },
+    {
+      "name": "web-server-side-injection",
+      "description": "Test whether untrusted input changes the structure that a server-side interpreter (a query language, a document parser, a shell, a mail protocol, a file path or an outbound-request target) acts on, using small boundary-class markers compared against a fixed baseline. Use when a parameter reaches such an interpreter. Covers WSTG INJT-05 to INJT-14, INJT-19, INJT-21 and ATHZ-01.",
+      "kind": "playbook",
+      "document": "web-server-side-injection",
+      "workflows": [
+        {
+          "id": "source-review",
+          "description": "Find where a value reaches a server-side interpreter and whether a parameterized or allow-listed path is used",
+          "prerequisites": [
+            "A supplied read-only source snapshot; deployment exposure is not established."
+          ]
+        },
+        {
+          "id": "offline-reproduction",
+          "description": "Reproduce the interpreter and the suspected sink with a local, disposable copy of its data",
+          "prerequisites": [
+            "Bounded execution in your own sandbox scratch; network egress is available and any download or install must be receipted."
+          ]
+        },
+        {
+          "id": "public-http-review",
+          "description": "Boundary-class markers only, on a path the scope allows for this task",
+          "prerequisites": [
+            "Authorized same-origin requests through the scoped HTTP client on the confirmed origin, with the method, headers, cookies and body the approved scope declares."
+          ]
+        },
+        {
+          "id": "sandbox-network-review",
+          "description": "Confirm outbound reachability against a sandbox-owned listener; opaque commands are not origin-filtered, so address only a destination you own",
+          "prerequisites": [
+            "Bounded TCP or TLS exchange with the confirmed host and port through the sandbox network tool; opaque commands are not origin-filtered, so address only the confirmed target and port."
+          ]
+        }
+      ]
+    },
+    {
+      "name": "web-session-management",
+      "description": "Test the life cycle of a session token, from issuance, strength and cookie attributes through fixation, exposure, replay, logout, timeout and concurrent use, using controlled accounts and bounded samples. Use when an application keeps login state in a cookie or bearer token. Covers WSTG SESS-01 to SESS-04, SESS-06 to SESS-09 and SESS-11.",
+      "kind": "playbook",
+      "document": "web-session-management",
+      "workflows": [
+        {
+          "id": "source-review",
+          "description": "Trace token generation, regeneration at login, invalidation and lifetime settings in the supplied revision",
+          "prerequisites": [
+            "A supplied read-only source snapshot; deployment exposure is not established."
+          ]
+        },
+        {
+          "id": "offline-reproduction",
+          "description": "Analyze a bounded sample of issued tokens, or exercise the session library with controlled objects in a local harness",
+          "prerequisites": [
+            "Bounded execution in your own sandbox scratch; network egress is available and any download or install must be receipted."
+          ]
+        },
+        {
+          "id": "public-http-review",
+          "description": "Anonymous retrieval of the pre-login token and its attributes on the confirmed origin",
+          "prerequisites": [
+            "Authorized same-origin requests through the scoped HTTP client on the confirmed origin, with the method, headers, cookies and body the approved scope declares."
+          ]
+        },
+        {
+          "id": "controlled-identity-comparison",
+          "description": "Compare the sessions of controlled principals through login, replay, logout and a bounded wait; local HTTP alone is not identity",
+          "prerequisites": [
+            "Operator-supplied authorized credentials for controlled authenticated principals, used only inside the confirmed origin."
+          ]
+        }
+      ]
+    },
+    {
+      "name": "web-token-and-federation",
+      "description": "Test whether a self-describing bearer token (a signed structured token) and an authorization-delegation flow actually bind the claims they carry and the identity they represent, by reading structure, verifying signature enforcement and checking redirect and parameter handling. Use when login state is a signed token rather than an opaque server-side session, or when a third party issues access on the application's behalf. Covers WSTG SESS-10 and ATHZ-05.",
+      "kind": "playbook",
+      "document": "web-token-and-federation",
+      "workflows": [
+        {
+          "id": "source-review",
+          "description": "Trace signature verification, algorithm selection and claim checks, or the delegation flow\u2019s redirect and state handling, in the supplied revision",
+          "prerequisites": [
+            "A supplied read-only source snapshot; deployment exposure is not established."
+          ]
+        },
+        {
+          "id": "offline-reproduction",
+          "description": "Decode and re-encode a token you hold using a local library",
+          "prerequisites": [
+            "Bounded execution in your own sandbox scratch; network egress is available and any download or install must be receipted."
+          ]
+        },
+        {
+          "id": "controlled-identity-comparison",
+          "description": "Compare acceptance of a structurally changed token or flow step for controlled principals; local HTTP alone is not identity",
+          "prerequisites": [
+            "Operator-supplied authorized credentials for controlled authenticated principals, used only inside the confirmed origin."
+          ]
+        }
+      ]
     }
   ],
   "documents": [
@@ -517,6 +806,10 @@
     {
       "id": "attack-surface-mapping:intermediary-trust",
       "path": "skills/attack-surface-mapping/references/intermediary-trust.md"
+    },
+    {
+      "id": "attack-surface-mapping:host-header-trust",
+      "path": "skills/attack-surface-mapping/references/host-header-trust.md"
     },
     {
       "id": "authorization-auditing",
@@ -599,6 +892,10 @@
       "path": "skills/parser-differential-auditing/references/semantic-boundaries.md"
     },
     {
+      "id": "parser-differential-auditing:http-framing-and-parameters",
+      "path": "skills/parser-differential-auditing/references/http-framing-and-parameters.md"
+    },
+    {
       "id": "patch-diff-analysis",
       "path": "skills/patch-diff-analysis/SKILL.md"
     },
@@ -607,8 +904,16 @@
       "path": "skills/race-condition-auditing/SKILL.md"
     },
     {
+      "id": "race-condition-auditing:usage-limit-bypass",
+      "path": "skills/race-condition-auditing/references/usage-limit-bypass.md"
+    },
+    {
       "id": "remediation",
       "path": "skills/remediation/SKILL.md"
+    },
+    {
+      "id": "remediation:risk-rating-criteria",
+      "path": "skills/remediation/references/risk-rating-criteria.md"
     },
     {
       "id": "sandbox-boundary-analysis",
@@ -627,12 +932,124 @@
       "path": "skills/state-and-lifetime-auditing/SKILL.md"
     },
     {
+      "id": "web-browser-trust-controls",
+      "path": "skills/web-browser-trust-controls/SKILL.md"
+    },
+    {
+      "id": "web-browser-trust-controls:client-side-navigation-and-resource-sinks",
+      "path": "skills/web-browser-trust-controls/references/client-side-navigation-and-resource-sinks.md"
+    },
+    {
+      "id": "web-browser-trust-controls:cross-origin-and-framing-policy",
+      "path": "skills/web-browser-trust-controls/references/cross-origin-and-framing-policy.md"
+    },
+    {
+      "id": "web-browser-trust-controls:messaging-storage-and-outbound-links",
+      "path": "skills/web-browser-trust-controls/references/messaging-storage-and-outbound-links.md"
+    },
+    {
+      "id": "web-browser-trust-controls:request-origin-enforcement",
+      "path": "skills/web-browser-trust-controls/references/request-origin-enforcement.md"
+    },
+    {
+      "id": "web-business-logic-misuse",
+      "path": "skills/web-business-logic-misuse/SKILL.md"
+    },
+    {
+      "id": "web-business-logic-misuse:file-upload-acceptance",
+      "path": "skills/web-business-logic-misuse/references/file-upload-acceptance.md"
+    },
+    {
+      "id": "web-business-logic-misuse:invariants-and-misuse-cases",
+      "path": "skills/web-business-logic-misuse/references/invariants-and-misuse-cases.md"
+    },
+    {
+      "id": "web-business-logic-misuse:payment-and-pricing",
+      "path": "skills/web-business-logic-misuse/references/payment-and-pricing.md"
+    },
+    {
+      "id": "web-business-logic-misuse:workflow-order-timing-and-defenses",
+      "path": "skills/web-business-logic-misuse/references/workflow-order-timing-and-defenses.md"
+    },
+    {
+      "id": "web-credential-lifecycle",
+      "path": "skills/web-credential-lifecycle/SKILL.md"
+    },
+    {
+      "id": "web-credential-lifecycle:account-creation-and-enumeration",
+      "path": "skills/web-credential-lifecycle/references/account-creation-and-enumeration.md"
+    },
+    {
+      "id": "web-credential-lifecycle:credential-policy-and-defaults",
+      "path": "skills/web-credential-lifecycle/references/credential-policy-and-defaults.md"
+    },
+    {
+      "id": "web-credential-lifecycle:lockout-and-recovery",
+      "path": "skills/web-credential-lifecycle/references/lockout-and-recovery.md"
+    },
+    {
+      "id": "web-credential-lifecycle:mfa-and-remember-me",
+      "path": "skills/web-credential-lifecycle/references/mfa-and-remember-me.md"
+    },
+    {
+      "id": "web-crypto-usage-review",
+      "path": "skills/web-crypto-usage-review/SKILL.md"
+    },
+    {
+      "id": "web-crypto-usage-review:decryption-error-path-observation",
+      "path": "skills/web-crypto-usage-review/references/decryption-error-path-observation.md"
+    },
+    {
+      "id": "web-crypto-usage-review:primitive-and-parameter-review",
+      "path": "skills/web-crypto-usage-review/references/primitive-and-parameter-review.md"
+    },
+    {
+      "id": "web-deployment-hygiene",
+      "path": "skills/web-deployment-hygiene/SKILL.md"
+    },
+    {
+      "id": "web-deployment-hygiene:content-and-backup-exposure",
+      "path": "skills/web-deployment-hygiene/references/content-and-backup-exposure.md"
+    },
+    {
+      "id": "web-deployment-hygiene:error-disclosure",
+      "path": "skills/web-deployment-hygiene/references/error-disclosure.md"
+    },
+    {
+      "id": "web-deployment-hygiene:fingerprint-and-metafiles",
+      "path": "skills/web-deployment-hygiene/references/fingerprint-and-metafiles.md"
+    },
+    {
+      "id": "web-deployment-hygiene:platform-config-and-flags",
+      "path": "skills/web-deployment-hygiene/references/platform-config-and-flags.md"
+    },
+    {
+      "id": "web-deployment-hygiene:response-headers-methods-cache",
+      "path": "skills/web-deployment-hygiene/references/response-headers-methods-cache.md"
+    },
+    {
+      "id": "web-deployment-hygiene:transport-security",
+      "path": "skills/web-deployment-hygiene/references/transport-security.md"
+    },
+    {
+      "id": "web-graphql-testing",
+      "path": "skills/web-graphql-testing/SKILL.md"
+    },
+    {
+      "id": "web-graphql-testing:schema-exposure-and-query-bounds",
+      "path": "skills/web-graphql-testing/references/schema-exposure-and-query-bounds.md"
+    },
+    {
       "id": "web-object-authorization",
       "path": "skills/web-object-authorization/SKILL.md"
     },
     {
       "id": "web-object-authorization:principal-object-matrix",
       "path": "skills/web-object-authorization/references/principal-object-matrix.md"
+    },
+    {
+      "id": "web-object-authorization:roles-and-field-exposure",
+      "path": "skills/web-object-authorization/references/roles-and-field-exposure.md"
     },
     {
       "id": "web-output-context",
@@ -649,6 +1066,62 @@
     {
       "id": "web-route-input-inventory:route-inventory-method",
       "path": "skills/web-route-input-inventory/references/route-inventory-method.md"
+    },
+    {
+      "id": "web-server-side-injection",
+      "path": "skills/web-server-side-injection/SKILL.md"
+    },
+    {
+      "id": "web-server-side-injection:document-parsers",
+      "path": "skills/web-server-side-injection/references/document-parsers.md"
+    },
+    {
+      "id": "web-server-side-injection:outbound-requests-and-paths",
+      "path": "skills/web-server-side-injection/references/outbound-requests-and-paths.md"
+    },
+    {
+      "id": "web-server-side-injection:process-and-template-interpreters",
+      "path": "skills/web-server-side-injection/references/process-and-template-interpreters.md"
+    },
+    {
+      "id": "web-server-side-injection:query-languages",
+      "path": "skills/web-server-side-injection/references/query-languages.md"
+    },
+    {
+      "id": "web-server-side-injection:representation-dependent-behavior",
+      "path": "skills/web-server-side-injection/references/representation-dependent-behavior.md"
+    },
+    {
+      "id": "web-server-side-injection:stored-and-second-order-effects",
+      "path": "skills/web-server-side-injection/references/stored-and-second-order-effects.md"
+    },
+    {
+      "id": "web-session-management",
+      "path": "skills/web-session-management/SKILL.md"
+    },
+    {
+      "id": "web-session-management:fixation-and-hijack",
+      "path": "skills/web-session-management/references/fixation-and-hijack.md"
+    },
+    {
+      "id": "web-session-management:logout-timeout-concurrency",
+      "path": "skills/web-session-management/references/logout-timeout-concurrency.md"
+    },
+    {
+      "id": "web-session-management:token-issuance-and-attributes",
+      "path": "skills/web-session-management/references/token-issuance-and-attributes.md"
+    },
+    {
+      "id": "web-token-and-federation",
+      "path": "skills/web-token-and-federation/SKILL.md"
+    },
+    {
+      "id": "web-token-and-federation:delegated-authorization-flow",
+      "path": "skills/web-token-and-federation/references/delegated-authorization-flow.md"
+    },
+    {
+      "id": "web-token-and-federation:signed-token-verification",
+      "path": "skills/web-token-and-federation/references/signed-token-verification.md"
     },
     {
       "id": "shared:handoffs",
@@ -673,6 +1146,10 @@
       "id": "shared:wstg-map",
       "path": "docs/WSTG_MAP.md",
       "section": "wstg-map-table"
+    },
+    {
+      "id": "shared:wstg-provenance",
+      "path": "research/WSTG_PROVENANCE.md"
     },
     {
       "id": "evidence:b001",
@@ -1171,6 +1648,490 @@
     {
       "id": "shared:handoff-scaffold",
       "path": "templates/handoff.json"
+    },
+    {
+      "id": "wstg-source:01-information-gathering-02-fingerprint-web-server",
+      "path": "my_references/wstg/4-Web_Application_Security_Testing/01-Information_Gathering/02-Fingerprint_Web_Server.md"
+    },
+    {
+      "id": "wstg-source:01-information-gathering-03-review-webserver-metafiles-for-information-leakage",
+      "path": "my_references/wstg/4-Web_Application_Security_Testing/01-Information_Gathering/03-Review_Webserver_Metafiles_for_Information_Leakage.md"
+    },
+    {
+      "id": "wstg-source:01-information-gathering-04-attack-surface-identification",
+      "path": "my_references/wstg/4-Web_Application_Security_Testing/01-Information_Gathering/04-Attack_Surface_Identification.md"
+    },
+    {
+      "id": "wstg-source:01-information-gathering-05-review-web-page-content-for-information-leakage",
+      "path": "my_references/wstg/4-Web_Application_Security_Testing/01-Information_Gathering/05-Review_Web_Page_Content_for_Information_Leakage.md"
+    },
+    {
+      "id": "wstg-source:01-information-gathering-06-identify-application-entry-points",
+      "path": "my_references/wstg/4-Web_Application_Security_Testing/01-Information_Gathering/06-Identify_Application_Entry_Points.md"
+    },
+    {
+      "id": "wstg-source:01-information-gathering-07-map-execution-paths-through-application",
+      "path": "my_references/wstg/4-Web_Application_Security_Testing/01-Information_Gathering/07-Map_Execution_Paths_Through_Application.md"
+    },
+    {
+      "id": "wstg-source:01-information-gathering-08-fingerprint-web-application-framework",
+      "path": "my_references/wstg/4-Web_Application_Security_Testing/01-Information_Gathering/08-Fingerprint_Web_Application_Framework.md"
+    },
+    {
+      "id": "wstg-source:01-information-gathering-10-map-application-architecture",
+      "path": "my_references/wstg/4-Web_Application_Security_Testing/01-Information_Gathering/10-Map_Application_Architecture.md"
+    },
+    {
+      "id": "wstg-source:02-configuration-and-deployment-management-02-application-platform-configuration",
+      "path": "my_references/wstg/4-Web_Application_Security_Testing/02-Configuration_and_Deployment_Management/02-Application_Platform_Configuration.md"
+    },
+    {
+      "id": "wstg-source:02-configuration-and-deployment-management-04-review-old-backup-and-unreferenced-files-for-sensitive-information",
+      "path": "my_references/wstg/4-Web_Application_Security_Testing/02-Configuration_and_Deployment_Management/04-Review_Old_Backup_and_Unreferenced_Files_for_Sensitive_Information.md"
+    },
+    {
+      "id": "wstg-source:02-configuration-and-deployment-management-05-enumerate-infrastructure-and-application-admin-interfaces",
+      "path": "my_references/wstg/4-Web_Application_Security_Testing/02-Configuration_and_Deployment_Management/05-Enumerate_Infrastructure_and_Application_Admin_Interfaces.md"
+    },
+    {
+      "id": "wstg-source:02-configuration-and-deployment-management-06-http-methods",
+      "path": "my_references/wstg/4-Web_Application_Security_Testing/02-Configuration_and_Deployment_Management/06-HTTP_Methods.md"
+    },
+    {
+      "id": "wstg-source:02-configuration-and-deployment-management-07-http-strict-transport-security",
+      "path": "my_references/wstg/4-Web_Application_Security_Testing/02-Configuration_and_Deployment_Management/07-HTTP_Strict_Transport_Security.md"
+    },
+    {
+      "id": "wstg-source:02-configuration-and-deployment-management-09-file-permissions",
+      "path": "my_references/wstg/4-Web_Application_Security_Testing/02-Configuration_and_Deployment_Management/09-File_Permissions.md"
+    },
+    {
+      "id": "wstg-source:02-configuration-and-deployment-management-12-content-security-policy",
+      "path": "my_references/wstg/4-Web_Application_Security_Testing/02-Configuration_and_Deployment_Management/12-Content_Security_Policy.md"
+    },
+    {
+      "id": "wstg-source:02-configuration-and-deployment-management-13-path-confusion",
+      "path": "my_references/wstg/4-Web_Application_Security_Testing/02-Configuration_and_Deployment_Management/13-Path_Confusion.md"
+    },
+    {
+      "id": "wstg-source:02-configuration-and-deployment-management-14-other-http-security-header-misconfigurations",
+      "path": "my_references/wstg/4-Web_Application_Security_Testing/02-Configuration_and_Deployment_Management/14-Other_HTTP_Security_Header_Misconfigurations.md"
+    },
+    {
+      "id": "wstg-source:02-configuration-and-deployment-management-15-feature-flag-security-bypass",
+      "path": "my_references/wstg/4-Web_Application_Security_Testing/02-Configuration_and_Deployment_Management/15-Feature_Flag_Security_Bypass.md"
+    },
+    {
+      "id": "wstg-source:03-identity-management-01-role-definitions",
+      "path": "my_references/wstg/4-Web_Application_Security_Testing/03-Identity_Management/01-Role_Definitions.md"
+    },
+    {
+      "id": "wstg-source:03-identity-management-02-user-registration-process",
+      "path": "my_references/wstg/4-Web_Application_Security_Testing/03-Identity_Management/02-User_Registration_Process.md"
+    },
+    {
+      "id": "wstg-source:03-identity-management-03-account-provisioning-process",
+      "path": "my_references/wstg/4-Web_Application_Security_Testing/03-Identity_Management/03-Account_Provisioning_Process.md"
+    },
+    {
+      "id": "wstg-source:03-identity-management-04-account-enumeration-and-guessable-user-account",
+      "path": "my_references/wstg/4-Web_Application_Security_Testing/03-Identity_Management/04-Account_Enumeration_and_Guessable_User_Account.md"
+    },
+    {
+      "id": "wstg-source:04-authentication-02-default-credentials",
+      "path": "my_references/wstg/4-Web_Application_Security_Testing/04-Authentication/02-Default_Credentials.md"
+    },
+    {
+      "id": "wstg-source:04-authentication-03-weak-lock-out-mechanism",
+      "path": "my_references/wstg/4-Web_Application_Security_Testing/04-Authentication/03-Weak_Lock_Out_Mechanism.md"
+    },
+    {
+      "id": "wstg-source:04-authentication-04-bypassing-authentication-schema",
+      "path": "my_references/wstg/4-Web_Application_Security_Testing/04-Authentication/04-Bypassing_Authentication_Schema.md"
+    },
+    {
+      "id": "wstg-source:04-authentication-05-vulnerable-remember-password",
+      "path": "my_references/wstg/4-Web_Application_Security_Testing/04-Authentication/05-Vulnerable_Remember_Password.md"
+    },
+    {
+      "id": "wstg-source:04-authentication-06-browser-cache-weaknesses",
+      "path": "my_references/wstg/4-Web_Application_Security_Testing/04-Authentication/06-Browser_Cache_Weaknesses.md"
+    },
+    {
+      "id": "wstg-source:04-authentication-07-weak-authentication-methods",
+      "path": "my_references/wstg/4-Web_Application_Security_Testing/04-Authentication/07-Weak_Authentication_Methods.md"
+    },
+    {
+      "id": "wstg-source:04-authentication-08-weak-security-question-answer",
+      "path": "my_references/wstg/4-Web_Application_Security_Testing/04-Authentication/08-Weak_Security_Question_Answer.md"
+    },
+    {
+      "id": "wstg-source:04-authentication-09-weak-password-change-or-reset-functionalities",
+      "path": "my_references/wstg/4-Web_Application_Security_Testing/04-Authentication/09-Weak_Password_Change_or_Reset_Functionalities.md"
+    },
+    {
+      "id": "wstg-source:04-authentication-10-weaker-authentication-in-alternative-channel",
+      "path": "my_references/wstg/4-Web_Application_Security_Testing/04-Authentication/10-Weaker_Authentication_in_Alternative_Channel.md"
+    },
+    {
+      "id": "wstg-source:04-authentication-11-multi-factor-authentication",
+      "path": "my_references/wstg/4-Web_Application_Security_Testing/04-Authentication/11-Multi-Factor_Authentication.md"
+    },
+    {
+      "id": "wstg-source:05-authorization-01-directory-traversal-file-include",
+      "path": "my_references/wstg/4-Web_Application_Security_Testing/05-Authorization/01-Directory_Traversal_File_Include.md"
+    },
+    {
+      "id": "wstg-source:05-authorization-02-bypassing-authorization-schema",
+      "path": "my_references/wstg/4-Web_Application_Security_Testing/05-Authorization/02-Bypassing_Authorization_Schema.md"
+    },
+    {
+      "id": "wstg-source:05-authorization-03-privilege-escalation",
+      "path": "my_references/wstg/4-Web_Application_Security_Testing/05-Authorization/03-Privilege_Escalation.md"
+    },
+    {
+      "id": "wstg-source:05-authorization-04-insecure-direct-object-references",
+      "path": "my_references/wstg/4-Web_Application_Security_Testing/05-Authorization/04-Insecure_Direct_Object_References.md"
+    },
+    {
+      "id": "wstg-source:05-authorization-05-oauth-weaknesses",
+      "path": "my_references/wstg/4-Web_Application_Security_Testing/05-Authorization/05-OAuth_Weaknesses.md"
+    },
+    {
+      "id": "wstg-source:06-session-management-01-session-management-schema",
+      "path": "my_references/wstg/4-Web_Application_Security_Testing/06-Session_Management/01-Session_Management_Schema.md"
+    },
+    {
+      "id": "wstg-source:06-session-management-02-cookies-attributes",
+      "path": "my_references/wstg/4-Web_Application_Security_Testing/06-Session_Management/02-Cookies_Attributes.md"
+    },
+    {
+      "id": "wstg-source:06-session-management-03-session-fixation",
+      "path": "my_references/wstg/4-Web_Application_Security_Testing/06-Session_Management/03-Session_Fixation.md"
+    },
+    {
+      "id": "wstg-source:06-session-management-04-exposed-session-variables",
+      "path": "my_references/wstg/4-Web_Application_Security_Testing/06-Session_Management/04-Exposed_Session_Variables.md"
+    },
+    {
+      "id": "wstg-source:06-session-management-05-cross-site-request-forgery",
+      "path": "my_references/wstg/4-Web_Application_Security_Testing/06-Session_Management/05-Cross_Site_Request_Forgery.md"
+    },
+    {
+      "id": "wstg-source:06-session-management-06-logout-functionality",
+      "path": "my_references/wstg/4-Web_Application_Security_Testing/06-Session_Management/06-Logout_Functionality.md"
+    },
+    {
+      "id": "wstg-source:06-session-management-07-session-timeout",
+      "path": "my_references/wstg/4-Web_Application_Security_Testing/06-Session_Management/07-Session_Timeout.md"
+    },
+    {
+      "id": "wstg-source:06-session-management-08-session-puzzling",
+      "path": "my_references/wstg/4-Web_Application_Security_Testing/06-Session_Management/08-Session_Puzzling.md"
+    },
+    {
+      "id": "wstg-source:06-session-management-09-session-hijacking",
+      "path": "my_references/wstg/4-Web_Application_Security_Testing/06-Session_Management/09-Session_Hijacking.md"
+    },
+    {
+      "id": "wstg-source:06-session-management-10-json-web-tokens",
+      "path": "my_references/wstg/4-Web_Application_Security_Testing/06-Session_Management/10-JSON_Web_Tokens.md"
+    },
+    {
+      "id": "wstg-source:06-session-management-11-concurrent-sessions",
+      "path": "my_references/wstg/4-Web_Application_Security_Testing/06-Session_Management/11-Concurrent_Sessions.md"
+    },
+    {
+      "id": "wstg-source:07-injection-01-reflected-cross-site-scripting",
+      "path": "my_references/wstg/4-Web_Application_Security_Testing/07-Injection/01-Reflected_Cross_Site_Scripting.md"
+    },
+    {
+      "id": "wstg-source:07-injection-02-stored-cross-site-scripting",
+      "path": "my_references/wstg/4-Web_Application_Security_Testing/07-Injection/02-Stored_Cross_Site_Scripting.md"
+    },
+    {
+      "id": "wstg-source:07-injection-04-http-parameter-pollution",
+      "path": "my_references/wstg/4-Web_Application_Security_Testing/07-Injection/04-HTTP_Parameter_Pollution.md"
+    },
+    {
+      "id": "wstg-source:07-injection-05-sql-injection",
+      "path": "my_references/wstg/4-Web_Application_Security_Testing/07-Injection/05-SQL_Injection.md"
+    },
+    {
+      "id": "wstg-source:07-injection-06-ldap-injection",
+      "path": "my_references/wstg/4-Web_Application_Security_Testing/07-Injection/06-LDAP_Injection.md"
+    },
+    {
+      "id": "wstg-source:07-injection-07-xml-injection",
+      "path": "my_references/wstg/4-Web_Application_Security_Testing/07-Injection/07-XML_Injection.md"
+    },
+    {
+      "id": "wstg-source:07-injection-08-ssi-injection",
+      "path": "my_references/wstg/4-Web_Application_Security_Testing/07-Injection/08-SSI_Injection.md"
+    },
+    {
+      "id": "wstg-source:07-injection-09-xpath-injection",
+      "path": "my_references/wstg/4-Web_Application_Security_Testing/07-Injection/09-XPath_Injection.md"
+    },
+    {
+      "id": "wstg-source:07-injection-10-imap-smtp-injection",
+      "path": "my_references/wstg/4-Web_Application_Security_Testing/07-Injection/10-IMAP_SMTP_Injection.md"
+    },
+    {
+      "id": "wstg-source:07-injection-11-code-injection",
+      "path": "my_references/wstg/4-Web_Application_Security_Testing/07-Injection/11-Code_Injection.md"
+    },
+    {
+      "id": "wstg-source:07-injection-12-command-injection",
+      "path": "my_references/wstg/4-Web_Application_Security_Testing/07-Injection/12-Command_Injection.md"
+    },
+    {
+      "id": "wstg-source:07-injection-13-format-string-injection",
+      "path": "my_references/wstg/4-Web_Application_Security_Testing/07-Injection/13-Format_String_Injection.md"
+    },
+    {
+      "id": "wstg-source:07-injection-14-incubated-vulnerability",
+      "path": "my_references/wstg/4-Web_Application_Security_Testing/07-Injection/14-Incubated_Vulnerability.md"
+    },
+    {
+      "id": "wstg-source:07-injection-15-http-response-splitting",
+      "path": "my_references/wstg/4-Web_Application_Security_Testing/07-Injection/15-HTTP_Response_Splitting.md"
+    },
+    {
+      "id": "wstg-source:07-injection-16-http-request-smuggling",
+      "path": "my_references/wstg/4-Web_Application_Security_Testing/07-Injection/16-HTTP_Request_Smuggling.md"
+    },
+    {
+      "id": "wstg-source:07-injection-17-host-header-injection",
+      "path": "my_references/wstg/4-Web_Application_Security_Testing/07-Injection/17-Host_Header_Injection.md"
+    },
+    {
+      "id": "wstg-source:07-injection-18-server-side-template-injection",
+      "path": "my_references/wstg/4-Web_Application_Security_Testing/07-Injection/18-Server-side_Template_Injection.md"
+    },
+    {
+      "id": "wstg-source:07-injection-19-server-side-request-forgery",
+      "path": "my_references/wstg/4-Web_Application_Security_Testing/07-Injection/19-Server-Side_Request_Forgery.md"
+    },
+    {
+      "id": "wstg-source:07-injection-20-mass-assignment",
+      "path": "my_references/wstg/4-Web_Application_Security_Testing/07-Injection/20-Mass_Assignment.md"
+    },
+    {
+      "id": "wstg-source:07-injection-21-csv-injection",
+      "path": "my_references/wstg/4-Web_Application_Security_Testing/07-Injection/21-CSV_Injection.md"
+    },
+    {
+      "id": "wstg-source:07-injection-22-prototype-pollution",
+      "path": "my_references/wstg/4-Web_Application_Security_Testing/07-Injection/22-Prototype_Pollution.md"
+    },
+    {
+      "id": "wstg-source:07-injection-23-insecure-deserialization",
+      "path": "my_references/wstg/4-Web_Application_Security_Testing/07-Injection/23-Insecure_Deserialization.md"
+    },
+    {
+      "id": "wstg-source:08-error-handling-01-improper-error-handling",
+      "path": "my_references/wstg/4-Web_Application_Security_Testing/08-Error_Handling/01-Improper_Error_Handling.md"
+    },
+    {
+      "id": "wstg-source:09-weak-cryptography-01-weak-transport-layer-security",
+      "path": "my_references/wstg/4-Web_Application_Security_Testing/09-Weak_Cryptography/01-Weak_Transport_Layer_Security.md"
+    },
+    {
+      "id": "wstg-source:09-weak-cryptography-02-padding-oracle",
+      "path": "my_references/wstg/4-Web_Application_Security_Testing/09-Weak_Cryptography/02-Padding_Oracle.md"
+    },
+    {
+      "id": "wstg-source:09-weak-cryptography-03-sensitive-information-sent-via-unencrypted-channels",
+      "path": "my_references/wstg/4-Web_Application_Security_Testing/09-Weak_Cryptography/03-Sensitive_Information_Sent_via_Unencrypted_Channels.md"
+    },
+    {
+      "id": "wstg-source:09-weak-cryptography-04-weak-cryptographic-primitives",
+      "path": "my_references/wstg/4-Web_Application_Security_Testing/09-Weak_Cryptography/04-Weak_Cryptographic_Primitives.md"
+    },
+    {
+      "id": "wstg-source:10-business-logic-01-business-logic-data-validation",
+      "path": "my_references/wstg/4-Web_Application_Security_Testing/10-Business_Logic/01-Business_Logic_Data_Validation.md"
+    },
+    {
+      "id": "wstg-source:10-business-logic-02-ability-to-forge-requests",
+      "path": "my_references/wstg/4-Web_Application_Security_Testing/10-Business_Logic/02-Ability_to_Forge_Requests.md"
+    },
+    {
+      "id": "wstg-source:10-business-logic-03-integrity-checks",
+      "path": "my_references/wstg/4-Web_Application_Security_Testing/10-Business_Logic/03-Integrity_Checks.md"
+    },
+    {
+      "id": "wstg-source:10-business-logic-04-process-timing",
+      "path": "my_references/wstg/4-Web_Application_Security_Testing/10-Business_Logic/04-Process_Timing.md"
+    },
+    {
+      "id": "wstg-source:10-business-logic-05-number-of-times-a-function-can-be-used-limits",
+      "path": "my_references/wstg/4-Web_Application_Security_Testing/10-Business_Logic/05-Number_of_Times_a_Function_Can_Be_Used_Limits.md"
+    },
+    {
+      "id": "wstg-source:10-business-logic-06-circumvention-of-work-flows",
+      "path": "my_references/wstg/4-Web_Application_Security_Testing/10-Business_Logic/06-Circumvention_of_Work_Flows.md"
+    },
+    {
+      "id": "wstg-source:10-business-logic-07-defenses-against-application-misuse",
+      "path": "my_references/wstg/4-Web_Application_Security_Testing/10-Business_Logic/07-Defenses_Against_Application_Misuse.md"
+    },
+    {
+      "id": "wstg-source:10-business-logic-08-upload-of-unexpected-file-types",
+      "path": "my_references/wstg/4-Web_Application_Security_Testing/10-Business_Logic/08-Upload_of_Unexpected_File_Types.md"
+    },
+    {
+      "id": "wstg-source:10-business-logic-09-upload-of-malicious-files",
+      "path": "my_references/wstg/4-Web_Application_Security_Testing/10-Business_Logic/09-Upload_of_Malicious_Files.md"
+    },
+    {
+      "id": "wstg-source:10-business-logic-10-payment-functionality",
+      "path": "my_references/wstg/4-Web_Application_Security_Testing/10-Business_Logic/10-Payment_Functionality.md"
+    },
+    {
+      "id": "wstg-source:11-client-side-01-dom-based-cross-site-scripting",
+      "path": "my_references/wstg/4-Web_Application_Security_Testing/11-Client-side/01-DOM-based_Cross_Site_Scripting.md"
+    },
+    {
+      "id": "wstg-source:11-client-side-02-javascript-execution",
+      "path": "my_references/wstg/4-Web_Application_Security_Testing/11-Client-side/02-JavaScript_Execution.md"
+    },
+    {
+      "id": "wstg-source:11-client-side-03-html-injection",
+      "path": "my_references/wstg/4-Web_Application_Security_Testing/11-Client-side/03-HTML_Injection.md"
+    },
+    {
+      "id": "wstg-source:11-client-side-04-client-side-url-redirect",
+      "path": "my_references/wstg/4-Web_Application_Security_Testing/11-Client-side/04-Client-side_URL_Redirect.md"
+    },
+    {
+      "id": "wstg-source:11-client-side-05-css-injection",
+      "path": "my_references/wstg/4-Web_Application_Security_Testing/11-Client-side/05-CSS_Injection.md"
+    },
+    {
+      "id": "wstg-source:11-client-side-06-client-side-resource-manipulation",
+      "path": "my_references/wstg/4-Web_Application_Security_Testing/11-Client-side/06-Client-side_Resource_Manipulation.md"
+    },
+    {
+      "id": "wstg-source:11-client-side-07-cross-origin-resource-sharing",
+      "path": "my_references/wstg/4-Web_Application_Security_Testing/11-Client-side/07-Cross_Origin_Resource_Sharing.md"
+    },
+    {
+      "id": "wstg-source:11-client-side-09-clickjacking",
+      "path": "my_references/wstg/4-Web_Application_Security_Testing/11-Client-side/09-Clickjacking.md"
+    },
+    {
+      "id": "wstg-source:11-client-side-10-websockets",
+      "path": "my_references/wstg/4-Web_Application_Security_Testing/11-Client-side/10-WebSockets.md"
+    },
+    {
+      "id": "wstg-source:11-client-side-11-web-messaging",
+      "path": "my_references/wstg/4-Web_Application_Security_Testing/11-Client-side/11-Web_Messaging.md"
+    },
+    {
+      "id": "wstg-source:11-client-side-12-browser-storage",
+      "path": "my_references/wstg/4-Web_Application_Security_Testing/11-Client-side/12-Browser_Storage.md"
+    },
+    {
+      "id": "wstg-source:11-client-side-13-cross-site-script-inclusion",
+      "path": "my_references/wstg/4-Web_Application_Security_Testing/11-Client-side/13-Cross_Site_Script_Inclusion.md"
+    },
+    {
+      "id": "wstg-source:11-client-side-14-reverse-tabnabbing",
+      "path": "my_references/wstg/4-Web_Application_Security_Testing/11-Client-side/14-Reverse_Tabnabbing.md"
+    },
+    {
+      "id": "wstg-source:11-client-side-15-client-side-template-injection",
+      "path": "my_references/wstg/4-Web_Application_Security_Testing/11-Client-side/15-Client-Side_Template_Injection.md"
+    },
+    {
+      "id": "wstg-source:12-api-testing-01-api-reconnaissance",
+      "path": "my_references/wstg/4-Web_Application_Security_Testing/12-API_Testing/01-API_Reconnaissance.md"
+    },
+    {
+      "id": "wstg-source:12-api-testing-02-api-broken-object-level-authorization",
+      "path": "my_references/wstg/4-Web_Application_Security_Testing/12-API_Testing/02-API_Broken_Object_Level_Authorization.md"
+    },
+    {
+      "id": "wstg-source:12-api-testing-03-excessive-data-exposure",
+      "path": "my_references/wstg/4-Web_Application_Security_Testing/12-API_Testing/03-Excessive_Data_Exposure.md"
+    },
+    {
+      "id": "wstg-source:12-api-testing-04-api-broken-function-level-authorization",
+      "path": "my_references/wstg/4-Web_Application_Security_Testing/12-API_Testing/04-API_Broken_Function_Level_Authorization.md"
+    },
+    {
+      "id": "wstg-source:12-api-testing-99-graphql",
+      "path": "my_references/wstg/4-Web_Application_Security_Testing/12-API_Testing/99-GraphQL.md"
+    },
+    {
+      "id": "attack-surface-mapping:wstg-source",
+      "path": "skills/attack-surface-mapping/references/wstg-source.md"
+    },
+    {
+      "id": "authorization-auditing:wstg-source",
+      "path": "skills/authorization-auditing/references/wstg-source.md"
+    },
+    {
+      "id": "deserialization-and-dispatch-auditing:wstg-source",
+      "path": "skills/deserialization-and-dispatch-auditing/references/wstg-source.md"
+    },
+    {
+      "id": "parser-differential-auditing:wstg-source",
+      "path": "skills/parser-differential-auditing/references/wstg-source.md"
+    },
+    {
+      "id": "race-condition-auditing:wstg-source",
+      "path": "skills/race-condition-auditing/references/wstg-source.md"
+    },
+    {
+      "id": "web-browser-trust-controls:wstg-source",
+      "path": "skills/web-browser-trust-controls/references/wstg-source.md"
+    },
+    {
+      "id": "web-business-logic-misuse:wstg-source",
+      "path": "skills/web-business-logic-misuse/references/wstg-source.md"
+    },
+    {
+      "id": "web-credential-lifecycle:wstg-source",
+      "path": "skills/web-credential-lifecycle/references/wstg-source.md"
+    },
+    {
+      "id": "web-crypto-usage-review:wstg-source",
+      "path": "skills/web-crypto-usage-review/references/wstg-source.md"
+    },
+    {
+      "id": "web-deployment-hygiene:wstg-source",
+      "path": "skills/web-deployment-hygiene/references/wstg-source.md"
+    },
+    {
+      "id": "web-graphql-testing:wstg-source",
+      "path": "skills/web-graphql-testing/references/wstg-source.md"
+    },
+    {
+      "id": "web-object-authorization:wstg-source",
+      "path": "skills/web-object-authorization/references/wstg-source.md"
+    },
+    {
+      "id": "web-output-context:wstg-source",
+      "path": "skills/web-output-context/references/wstg-source.md"
+    },
+    {
+      "id": "web-route-input-inventory:wstg-source",
+      "path": "skills/web-route-input-inventory/references/wstg-source.md"
+    },
+    {
+      "id": "web-server-side-injection:wstg-source",
+      "path": "skills/web-server-side-injection/references/wstg-source.md"
+    },
+    {
+      "id": "web-session-management:wstg-source",
+      "path": "skills/web-session-management/references/wstg-source.md"
+    },
+    {
+      "id": "web-token-and-federation:wstg-source",
+      "path": "skills/web-token-and-federation/references/wstg-source.md"
     }
   ]
 }

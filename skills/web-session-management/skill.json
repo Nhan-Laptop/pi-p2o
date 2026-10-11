@@ -1,0 +1,42 @@
+{
+  "schema_version": 1,
+  "kind": "playbook",
+  "references": [
+    "references/token-issuance-and-attributes.md",
+    "references/fixation-and-hijack.md",
+    "references/logout-timeout-concurrency.md"
+  ],
+  "workflows": [
+    {
+      "id": "source-review",
+      "description": "Trace token generation, regeneration at login, invalidation and lifetime settings in the supplied revision",
+      "prerequisites": [
+        "A supplied read-only source snapshot; deployment exposure is not established."
+      ]
+    },
+    {
+      "id": "offline-reproduction",
+      "description": "Analyze a bounded sample of issued tokens, or exercise the session library with controlled objects in a local harness",
+      "prerequisites": [
+        "Bounded execution in your own sandbox scratch; network egress is available and any download or install must be receipted."
+      ]
+    },
+    {
+      "id": "public-http-review",
+      "description": "Anonymous retrieval of the pre-login token and its attributes on the confirmed origin",
+      "prerequisites": [
+        "Authorized same-origin requests through the scoped HTTP client on the confirmed origin, with the method, headers, cookies and body the approved scope declares."
+      ]
+    },
+    {
+      "id": "controlled-identity-comparison",
+      "description": "Compare the sessions of controlled principals through login, replay, logout and a bounded wait; local HTTP alone is not identity",
+      "prerequisites": [
+        "Operator-supplied authorized credentials for controlled authenticated principals, used only inside the confirmed origin."
+      ]
+    }
+  ],
+  "provenance_refs": [
+    "W6"
+  ]
+}

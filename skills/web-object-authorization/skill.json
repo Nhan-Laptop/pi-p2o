@@ -2,7 +2,8 @@
   "schema_version": 1,
   "kind": "playbook",
   "references": [
-    "references/principal-object-matrix.md"
+    "references/principal-object-matrix.md",
+    "references/roles-and-field-exposure.md"
   ],
   "workflows": [
     {
@@ -30,6 +31,9 @@
   ],
   "provenance_refs": [
     "R1",
-    "R2"
+    "R2",
+    "W3",
+    "W7",
+    "W12"
   ]
 }

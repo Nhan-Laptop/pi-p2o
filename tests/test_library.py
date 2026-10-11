@@ -20,23 +20,25 @@ import validate_library as checker
 
 FIXTURE_DIRECTORIES = ("skills", "research", "templates", "scripts", "docs")
 FIXTURE_ROOT_DOCUMENTS = ("README.md", "HANDOFFS.md")
-FIXTURE_SKIP_PARTS = frozenset({"node_modules", "dist", ".git", "tmp", "my_references", "results"})
+FIXTURE_SKIP_PARTS = frozenset({"node_modules", "dist", ".git", "tmp", "strix", "ARTEX", "results"})
 FIXTURE_MAX_BYTES = 512 * 1024
 
 
 def copy_fixture(source_root: Path, destination_root: Path) -> None:
-    """Copy the library plus local targets linked from its validated root documents.
+    """Copy the library plus local targets linked from its validated root documents and skill pages.
 
-    Link validation stays enabled in temporary copies: README and HANDOFFS targets exist
-    in the copy instead of being skipped as broken. Heavy or unrelated trees (dependencies,
-    builds, the untracked review snapshot, benchmark outputs) are not copied, and files
-    beyond the size budget are left out rather than silently accepted as broken links.
+    Link validation stays enabled in temporary copies: README, HANDOFFS and skill targets exist
+    in the copy instead of being skipped as broken, including an on-demand my_references/wstg page
+    a reference card links to. Heavy or unrelated trees (dependencies, builds, the other untracked
+    review snapshots, benchmark outputs) are not copied, and files beyond the size budget are left
+    out rather than silently accepted as broken links.
     """
     for folder in FIXTURE_DIRECTORIES:
         source = source_root / folder
         if source.is_dir():
             shutil.copytree(source, destination_root / folder, ignore=shutil.ignore_patterns("__pycache__"))
     queue = [source_root / name for name in FIXTURE_ROOT_DOCUMENTS]
+    queue += [path for folder in FIXTURE_DIRECTORIES if (source_root / folder).is_dir() for path in (source_root / folder).rglob("*.md")]
     seen: set[Path] = set()
     while queue:
         source = queue.pop()
@@ -659,7 +661,7 @@ class SkillProfileTests(unittest.TestCase):
             def change(catalog):
                 next(item for item in catalog["documents"] if item["id"] == "shared:handoffs")["id"] = "handoffs"
             self.edit_catalog(root, change)
-        self.reject_catalog(mutate, "shared/evidence prefix")
+        self.reject_catalog(mutate, "shared/evidence/wstg-source prefix")
 
     def test_catalog_can_replace_sidecars(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -837,6 +839,147 @@ def handler(payload):
             self.assertEqual(corpus["statistics"]["skills"], 17)
             owners = {owner for entry in corpus["entries"] for owner in entry["skills"]}
             self.assertNotIn("synthetic-playbook", owners)
+
+
+class WstgProvenanceTests(unittest.TestCase):
+    """The second reviewed upstream (OWASP WSTG, CC-BY-SA-4.0) keeps its own record, license copy and credit rules."""
+
+    SNAPSHOT = ROOT / "my_references/wstg"
+    DIGEST = "ab" * 32
+
+    def copied_root(self, directory):
+        root = Path(directory)
+        copy_fixture(ROOT, root)
+        return root
+
+    @staticmethod
+    def edit_json(root, relative, transform):
+        path = root / relative
+        data = json.loads(path.read_text())
+        transform(data)
+        path.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n")
+
+    def add_reference(self, root, used_by=("web-output-context",), in_document=True, **overrides):
+        reference = {
+            "id": "W19", "document": "OWASP WSTG 4.6 Session Management", "source_dir": "4-Web_Application_Security_Testing/06-Session_Management",
+            "pages": 12, "sha256": self.DIGEST, "license": "CC-BY-SA-4.0",
+            "adapted": ["Bounded comparisons for session issuance and invalidation"], "excluded": ["Payload strings, screenshots and tool tutorials"],
+            "used_by": list(used_by),
+        }
+        reference.update(overrides)
+        self.edit_json(root, "research/WSTG_PROVENANCE.json", lambda data: data["references"].append(reference))
+        if in_document:
+            document = root / "research/WSTG_PROVENANCE.md"
+            document.write_text(document.read_text() + f"\n| {reference['id']} | `{reference['sha256']}` |\n")
+        return reference
+
+    def cite(self, root, skill, *identifiers):
+        self.edit_json(root, f"skills/{skill}/skill.json", lambda data: data.setdefault("provenance_refs", []).extend(identifiers))
+
+    def reject(self, mutate, message):
+        with tempfile.TemporaryDirectory() as directory:
+            root = self.copied_root(directory)
+            mutate(root)
+            errors = checker.validate(root)
+            self.assertTrue(errors, "Corrupted fixture was accepted")
+            self.assertTrue(any(message in error for error in errors), errors)
+
+    def test_current_record_is_valid(self):
+        errors = []
+        checker.validate_wstg_provenance(ROOT, errors)
+        self.assertEqual(errors, [])
+        data = json.loads((ROOT / "research/WSTG_PROVENANCE.json").read_text())
+        self.assertEqual(data["upstream"]["license"], "CC-BY-SA-4.0")
+        self.assertEqual(hashlib.sha256((ROOT / data["upstream"]["license_copy"]).read_bytes()).hexdigest(), data["upstream"]["license_sha256"])
+
+    def test_a_credited_reference_is_accepted(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = self.copied_root(directory)
+            self.add_reference(root, used_by=("web-route-input-inventory",))
+            self.cite(root, "web-route-input-inventory", "W19")
+            self.assertEqual(checker.validate(root), [])
+
+    def test_a_playbook_citing_a_reference_that_does_not_credit_it_is_rejected(self):
+        def mutate(root):
+            self.add_reference(root, used_by=("web-output-context",))
+            self.cite(root, "web-route-input-inventory", "W19")
+        self.reject(mutate, "W19 does not credit web-route-input-inventory")
+
+    def test_a_playbook_citing_an_unknown_reference_is_rejected(self):
+        self.reject(lambda root: self.cite(root, "web-route-input-inventory", "W18"), "unknown provenance reference W18")
+
+    def test_license_must_equal_the_upstream_license(self):
+        self.reject(lambda root: self.add_reference(root, license="MIT"), "W19 license differs from upstream")
+
+    def test_missing_or_altered_license_copy_is_rejected(self):
+        self.reject(lambda root: (root / "research/licenses/cc-by-sa-4.0.md").unlink(), "missing license copy")
+        def alter(root):
+            path = root / "research/licenses/cc-by-sa-4.0.md"
+            path.write_text(path.read_text() + "\nedited\n")
+        self.reject(alter, "license copy hash differs from the recorded upstream license")
+
+    def test_missing_notice_or_document_is_rejected(self):
+        self.reject(lambda root: (root / "research/licenses/wstg-notice.md").unlink(), "missing license notice")
+        self.reject(lambda root: (root / "research/WSTG_PROVENANCE.md").unlink(), "missing provenance document")
+
+    def test_document_must_carry_the_recorded_hash(self):
+        self.reject(lambda root: self.add_reference(root, in_document=False), "provenance document omits hash for W19")
+
+    def test_malformed_entries_are_rejected(self):
+        self.reject(lambda root: self.add_reference(root, used_by=("no-such-skill",)), "W19 credits unknown skill no-such-skill")
+        self.reject(lambda root: self.add_reference(root, used_by=()), "W19 invalid used_by list")
+        self.reject(lambda root: self.add_reference(root, sha256="not-a-hash"), "W19 invalid hash")
+        self.reject(lambda root: self.add_reference(root, source_dir="../outside"), "W19 invalid source directory")
+        self.reject(lambda root: self.add_reference(root, pages=0), "W19 invalid page count")
+        self.reject(lambda root: self.add_reference(root, adapted=[]), "W19 invalid adapted list")
+        self.reject(lambda root: self.add_reference(root, id="R9"), "invalid reference id")
+        self.reject(lambda root: (self.add_reference(root), self.add_reference(root)), "duplicate reference W19")
+        self.reject(lambda root: self.edit_json(root, "research/WSTG_PROVENANCE.json", lambda data: data.update(schema_version=2)), "unsupported provenance schema")
+        self.reject(lambda root: self.edit_json(root, "research/WSTG_PROVENANCE.json", lambda data: data["upstream"].update(revision="main")), "revision must be a full commit id")
+
+    def test_tree_digest_is_stable_and_follows_the_pages_only(self):
+        with tempfile.TemporaryDirectory() as directory:
+            base = Path(directory)
+            (base / "sub").mkdir()
+            (base / "a.md").write_text("alpha\n")
+            (base / "sub/b.md").write_text("beta\n")
+            (base / "image.png").write_bytes(b"\x89PNG")
+            digest, pages = checker.tree_digest(base)
+            self.assertEqual(pages, 2)
+            self.assertEqual(checker.tree_digest(base), (digest, 2))
+            (base / "image.png").write_bytes(b"changed")
+            self.assertEqual(checker.tree_digest(base), (digest, 2))
+            (base / "sub/b.md").write_text("beta changed\n")
+            self.assertNotEqual(checker.tree_digest(base)[0], digest)
+            first, second = hashlib.sha256(b"alpha\n").hexdigest(), hashlib.sha256(b"beta changed\n").hexdigest()
+            expected = hashlib.sha256(("a.md\t" + first + "\nsub/b.md\t" + second + "\n").encode()).hexdigest()
+            self.assertEqual(checker.tree_digest(base)[0], expected)
+
+    def test_recorded_digests_match_the_review_copy(self):
+        if not self.SNAPSHOT.is_dir():
+            self.skipTest("review copy is not present")
+        for reference in json.loads((ROOT / "research/WSTG_PROVENANCE.json").read_text())["references"]:
+            digest, pages = checker.tree_digest(self.SNAPSHOT / reference["source_dir"])
+            self.assertEqual((digest, pages), (reference["sha256"], reference["pages"]), reference["id"])
+
+    def test_restated_guidance_shares_no_long_phrase_with_the_guide(self):
+        if not self.SNAPSHOT.is_dir():
+            self.skipTest("review copy is not present")
+        words = lambda text: re.findall(r"[a-z0-9]+", text.lower())
+        run = 8
+        guide = set()
+        for page in self.SNAPSHOT.rglob("*.md"):
+            tokens = words(page.read_text(encoding="utf-8"))
+            guide.update(" ".join(tokens[i:i + run]) for i in range(len(tokens) - run + 1))
+        credited = sorted({name for reference in json.loads((ROOT / "research/WSTG_PROVENANCE.json").read_text())["references"] for name in reference["used_by"]})
+        for name in credited:
+            # wstg-source.md is a generated link index, not restated guidance: its href text mechanically
+            # echoes upstream chapter/file path words (the same words a chapter's own index page lists them
+            # with), which is a path collision, not prose copied from the guide.
+            for document in sorted(p for p in (ROOT / "skills" / name).rglob("*.md") if p.name != "wstg-source.md"):
+                tokens = words(document.read_text(encoding="utf-8"))
+                shared = sorted({" ".join(tokens[i:i + run]) for i in range(len(tokens) - run + 1)} & guide)
+                self.assertEqual(shared[:3], [], f"{document.relative_to(ROOT)} repeats a run of {run} words of the guide")
 
 
 if __name__ == "__main__":

@@ -352,7 +352,9 @@ describe('benchmark plan', () => {
     try {
       const arms = await resolveArms(repo, { workDir: work, prepare: true, only: ['B', 'C'] });
       expect(arms.C.skills).toEqual(expect.arrayContaining([...ORIGINAL_SKILLS, ...PLAYBOOK_SET]));
-      expect(arms.C.skills).toHaveLength(ORIGINAL_SKILLS.length + PLAYBOOK_SET.length);
+      // Arm C is the whole working-tree library, so it grows with every playbook added after the original benchmark (the WSTG playbooks); B stays the original 17.
+      const catalogNames = (JSON.parse(await readFile(join(repo, 'skills', 'catalog.json'), 'utf8')).skills as Array<{ name: string }>).map(skill => skill.name).sort();
+      expect([...arms.C.skills].sort()).toEqual(catalogNames);
       expect(arms.B.skills).toEqual([...ORIGINAL_SKILLS].sort());
       expect(arms.B.hashes.extensionSha256).toMatch(/^[0-9a-f]{64}$/);
       expect(arms.B.hashes.packageHash).toMatch(/^[0-9a-f]{64}$/);

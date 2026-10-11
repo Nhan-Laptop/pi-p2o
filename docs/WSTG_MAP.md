@@ -15,12 +15,18 @@ Dữ liệu nằm ở `src/wstg-map.ts` cùng hai hàm thuần `wstgKey` và `ws
 
 | Mã | Ý nghĩa | Số test |
 |---|---|---|
-| D | có skill mà mô tả gọi tên đúng lớp lỗi của test | 26 |
-| T | chỉ có kỹ thuật chung (`attack-surface-mapping`, `data-flow-analysis`, `source-code-auditing`, `authorization-auditing`) | 35 |
-| N | chưa có skill nào | 43 |
+| D | có skill nêu đối tượng của test ở thân văn bản và cho phương pháp, tiêu chí kết luận hoặc kiểm dương tính giả cho nó (đã kiểm bằng cách đọc, không chỉ theo mô tả) | 102 |
+| T | chỉ có kỹ thuật chung (`attack-surface-mapping`, `data-flow-analysis`, `source-code-auditing`, `authorization-auditing`) hoặc chỉ nhắc lớp lỗi một dòng | 2 |
+| N | chưa có skill nào | 0 |
 | O | ngoài scope của p2o theo thiết kế: cần origin khác, DNS hoặc bên thứ ba | 4 |
 
-Cờ B (20 test): hiệu ứng xảy ra ở trình duyệt; p2o không có browser nên bằng chứng tối đa là `offline_reproduction`. Cờ I (39 test): cần identity do operator cấp. Phân loại là suy luận từ tiêu đề test và mô tả skill trong catalog (DESIGN-INFERENCE), chưa đọc từng `SKILL.md` ở mức câu; owner rà soát được (planning_update.md câu hỏi Q6).
+Cờ B (20 test): hiệu ứng xảy ra ở trình duyệt; p2o không có transport trình duyệt có quản lý nên bằng chứng tối đa là `offline_reproduction`. Cờ I (39 test): cần identity do operator cấp. Phân loại ban đầu suy ra từ tiêu đề test và mô tả skill (DESIGN-INFERENCE); lần chấm lại đọc thân văn bản (`planning_update.md` §B.3) và hạ 5 test từ D xuống T (IDNT-01, INJT-04, INJT-13, INJT-15, BUSL-05). D vẫn chỉ nói về **tri thức phương pháp**, không phải khả năng phát hiện lỗi (UNVERIFIED).
+
+## Chủ sở hữu, thẻ, điều kiện kích hoạt và chế độ
+
+Mỗi test trong scope có đúng **một skill chủ sở hữu** và, khi skill đó đã có thẻ cho test, tên thẻ: một file ở `references/` của skill, dòng đầu của file là `Tests: wstg-…` liệt kê các khóa mà thẻ lo. Dữ liệu (`owner`, `card`) nằm ở `src/wstg-map.ts`. `tests/minimal/wstg-skills.test.ts` ép: thẻ chỉ được tính khi skill và file tồn tại và dòng `Tests:` có khóa; test đã có thẻ phải ở mức D; mỗi khóa xuất hiện trong đúng một dòng `Tests:`; các skill tên trong dữ liệu mà chưa tồn tại là kế hoạch, không phải khẳng định. Trong cột **Skills** của bảng, tên **in đậm** là chủ sở hữu (skill phải nêu đối tượng và phương pháp của test); các tên thường sau đó chỉ là skill liên quan/chạm tới test này trong lúc làm việc khác, không lo test này — một dòng nhiều tên không phải là nhiều skill cùng sở hữu.
+
+Cột **Trigger** liệt kê các đặc điểm recon làm test đáng lập kế hoạch (từ vựng ở đầu bảng bên dưới; ghi như thuộc tính `feature` của tài sản hoặc câu của một fact quan sát được). Cột **Modes** cho biết transport có thể mang test: S đọc nguồn, H HTTP ẩn danh cùng origin, A HTTP với danh tính do operator cấp, N mạng trong sandbox (TCP, TLS, WebSocket), B cần trình duyệt để chứng minh. A có mặt đúng khi cờ I, B đúng khi cờ B. Cả hai chỉ là dữ liệu để lập kế hoạch, không cấp quyền: scope, ticket và các cổng của host vẫn quyết định cái gì được chạy.
 
 ## Mức bằng chứng của một assessment (L0 đến L3)
 
@@ -70,117 +76,119 @@ Một cell kế hoạch cho `wstg-athz-04` (IDOR) so sánh hai danh tính do ope
 
 Pinned to OWASP WSTG commit 28553f878d48358767892916d53e59a9d664811c (https://github.com/OWASP/wstg).
 Use the key (lower case) as the questionKey of a work identity or of a coverage cell, and a skill workflow id as methodFamily.
-Support describes what this library carries, not what the target has: D = a skill names this class of test; T = only generic techniques apply; N = no skill; O = outside this tool's scope by design (other origins, DNS, third parties).
-Flags: B = the effect happens in a browser and none is available, so proof stops at offline reproduction; I = needs identities supplied by the operator; - = none.
+Support describes what this library carries, not what the target has: D = a skill names the object of the test and gives a method, conclusion rules or false-positive checks for it; T = only generic techniques apply; N = no skill; O = outside this tool's scope by design (other origins, DNS, third parties).
+Flags: B = the effect happens in a browser and no managed browser transport is provided, so proof stops at offline reproduction; I = needs identities supplied by the operator; - = none.
+Trigger: the features seen during recon that make the test worth planning (any = always; - = outside scope). Record a feature as an asset attribute named feature or as an observed fact, using these words: login, session-token, registration, password-reset, mfa, remember-me, jwt, oauth, roles, object-id, upload, xml-input, template-render, dynamic-code, outbound-fetch, db-query, os-command, file-path, mail-send, export-csv, serialized-input, crypto-use, reflected-input, stored-input, intermediary, redirect, client-js, client-storage, postmessage, websocket, graphql, api, payment, workflow, cors, frames, https, config, any.
+Modes: S = source review, H = anonymous same-origin HTTP, A = HTTP with an operator-supplied identity, N = sandbox network (TCP, TLS, WebSocket), B = needs a browser to prove the effect. Modes plan work; they grant no access.
 Phase is where the test starts (recon or discovery); a confirmed claim still needs an independent validation worker.
 
-| Key | WSTG ID | Test | Support | Flags | Phase | Skills |
-|---|---|---|---|---|---|---|
-| wstg-info-01 | WSTG-INFO-01 | Conduct Search Engine Reconnaissance for Information Leakage | O | - | recon | - |
-| wstg-info-02 | WSTG-INFO-02 | Fingerprint Web Server | T | - | recon | attack-surface-mapping |
-| wstg-info-03 | WSTG-INFO-03 | Review Webserver Metafiles for Information Leakage | T | - | recon | attack-surface-mapping, web-route-input-inventory |
-| wstg-info-04 | WSTG-INFO-04 | Attack Surface Identification | T | - | recon | attack-surface-mapping |
-| wstg-info-05 | WSTG-INFO-05 | Review Web Page Content for Information Leakage | T | - | recon | attack-surface-mapping, source-code-auditing |
-| wstg-info-06 | WSTG-INFO-06 | Identify Application Entry Points | D | - | recon | web-route-input-inventory |
-| wstg-info-07 | WSTG-INFO-07 | Map Execution Paths Through Application | D | - | recon | web-route-input-inventory, data-flow-analysis |
-| wstg-info-08 | WSTG-INFO-08 | Fingerprint Web Application Framework | T | - | recon | attack-surface-mapping |
-| wstg-info-10 | WSTG-INFO-10 | Map Application Architecture | T | - | recon | attack-surface-mapping |
-| wstg-conf-01 | WSTG-CONF-01 | Network Infrastructure Configuration | O | - | discovery | - |
-| wstg-conf-02 | WSTG-CONF-02 | Application Platform Configuration | T | - | discovery | source-code-auditing, attack-surface-mapping |
-| wstg-conf-04 | WSTG-CONF-04 | Review Old Backup and Unreferenced Files for Sensitive Information | T | - | discovery | source-code-auditing, attack-surface-mapping |
-| wstg-conf-05 | WSTG-CONF-05 | Enumerate Infrastructure and Application Admin Interfaces | T | - | recon | attack-surface-mapping, web-route-input-inventory |
-| wstg-conf-06 | WSTG-CONF-06 | HTTP Methods | T | - | recon | attack-surface-mapping |
-| wstg-conf-07 | WSTG-CONF-07 | HTTP Strict Transport Security | N | - | recon | - |
-| wstg-conf-09 | WSTG-CONF-09 | File Permissions | N | - | discovery | - |
-| wstg-conf-10 | WSTG-CONF-10 | Subdomain Takeover | O | - | discovery | - |
-| wstg-conf-11 | WSTG-CONF-11 | Cloud Storage | O | - | discovery | - |
-| wstg-conf-12 | WSTG-CONF-12 | Content Security Policy | N | B | recon | - |
-| wstg-conf-13 | WSTG-CONF-13 | Path Confusion | D | - | discovery | parser-differential-auditing |
-| wstg-conf-14 | WSTG-CONF-14 | Other HTTP Security Header Misconfigurations | N | B | recon | - |
-| wstg-conf-15 | WSTG-CONF-15 | Feature Flag Security Bypass | T | - | discovery | source-code-auditing |
-| wstg-idnt-01 | WSTG-IDNT-01 | Role Definitions | D | I | discovery | web-object-authorization |
-| wstg-idnt-02 | WSTG-IDNT-02 | User Registration Process | T | I | discovery | authorization-auditing |
-| wstg-idnt-03 | WSTG-IDNT-03 | Account Provisioning Process | T | I | discovery | authorization-auditing |
-| wstg-idnt-04 | WSTG-IDNT-04 | Account Enumeration and Guessable User Account | T | - | discovery | authorization-auditing |
-| wstg-athn-02 | WSTG-ATHN-02 | Default Credentials | N | I | discovery | - |
-| wstg-athn-03 | WSTG-ATHN-03 | Weak Lock Out Mechanism | N | I | discovery | - |
-| wstg-athn-04 | WSTG-ATHN-04 | Bypassing Authentication Schema | D | I | discovery | authorization-auditing, fastapi-security-parity |
-| wstg-athn-05 | WSTG-ATHN-05 | Vulnerable Remember Password | N | I | discovery | - |
-| wstg-athn-06 | WSTG-ATHN-06 | Browser Cache Weaknesses | N | B | discovery | - |
-| wstg-athn-07 | WSTG-ATHN-07 | Weak Authentication Methods | N | I | discovery | - |
-| wstg-athn-08 | WSTG-ATHN-08 | Weak Security Question Answer | N | I | discovery | - |
-| wstg-athn-09 | WSTG-ATHN-09 | Weak Password Change or Reset Functionalities | N | I | discovery | - |
-| wstg-athn-10 | WSTG-ATHN-10 | Weaker Authentication in Alternative Channel | D | I | discovery | authorization-auditing |
-| wstg-athn-11 | WSTG-ATHN-11 | Multi-Factor Authentication (MFA) | N | I | discovery | - |
-| wstg-athz-01 | WSTG-ATHZ-01 | Directory Traversal File Include | T | - | discovery | data-flow-analysis, source-code-auditing |
-| wstg-athz-02 | WSTG-ATHZ-02 | Bypassing Authorization Schema | D | I | discovery | web-object-authorization, authorization-auditing, fastapi-security-parity |
-| wstg-athz-03 | WSTG-ATHZ-03 | Privilege Escalation | D | I | discovery | web-object-authorization, authorization-auditing |
-| wstg-athz-04 | WSTG-ATHZ-04 | Insecure Direct Object References | D | I | discovery | web-object-authorization |
-| wstg-athz-05 | WSTG-ATHZ-05 | OAuth Weaknesses | N | I | discovery | - |
-| wstg-sess-01 | WSTG-SESS-01 | Session Management Schema | N | I | discovery | - |
-| wstg-sess-02 | WSTG-SESS-02 | Cookies Attributes | N | - | discovery | - |
-| wstg-sess-03 | WSTG-SESS-03 | Session Fixation | N | I | discovery | - |
-| wstg-sess-04 | WSTG-SESS-04 | Exposed Session Variables | N | I | discovery | - |
-| wstg-sess-05 | WSTG-SESS-05 | Cross Site Request Forgery | N | BI | discovery | - |
-| wstg-sess-06 | WSTG-SESS-06 | Logout Functionality | N | I | discovery | - |
-| wstg-sess-07 | WSTG-SESS-07 | Session Timeout | N | I | discovery | - |
-| wstg-sess-08 | WSTG-SESS-08 | Session Puzzling | N | I | discovery | - |
-| wstg-sess-09 | WSTG-SESS-09 | Session Hijacking | N | I | discovery | - |
-| wstg-sess-10 | WSTG-SESS-10 | JSON Web Tokens | N | I | discovery | - |
-| wstg-sess-11 | WSTG-SESS-11 | Concurrent Sessions | N | I | discovery | - |
-| wstg-injt-01 | WSTG-INJT-01 | Reflected Cross Site Scripting | D | B | discovery | web-output-context |
-| wstg-injt-02 | WSTG-INJT-02 | Stored Cross Site Scripting | D | B | discovery | web-output-context |
-| wstg-injt-04 | WSTG-INJT-04 | HTTP Parameter Pollution | D | - | discovery | parser-differential-auditing |
-| wstg-injt-05 | WSTG-INJT-05 | SQL Injection | T | - | discovery | data-flow-analysis, source-code-auditing |
-| wstg-injt-06 | WSTG-INJT-06 | LDAP Injection | T | - | discovery | data-flow-analysis |
-| wstg-injt-07 | WSTG-INJT-07 | XML Injection | T | - | discovery | data-flow-analysis, source-code-auditing |
-| wstg-injt-08 | WSTG-INJT-08 | SSI Injection | T | - | discovery | data-flow-analysis |
-| wstg-injt-09 | WSTG-INJT-09 | XPath Injection | T | - | discovery | data-flow-analysis |
-| wstg-injt-10 | WSTG-INJT-10 | IMAP SMTP Injection | T | - | discovery | data-flow-analysis |
-| wstg-injt-11 | WSTG-INJT-11 | Code Injection | T | - | discovery | data-flow-analysis, source-code-auditing |
-| wstg-injt-12 | WSTG-INJT-12 | Command Injection | T | - | discovery | data-flow-analysis |
-| wstg-injt-13 | WSTG-INJT-13 | Format String Injection | D | - | discovery | memory-safety-auditing |
-| wstg-injt-14 | WSTG-INJT-14 | Incubated Vulnerability | T | - | discovery | data-flow-analysis |
-| wstg-injt-15 | WSTG-INJT-15 | HTTP Response Splitting | D | - | discovery | parser-differential-auditing |
-| wstg-injt-16 | WSTG-INJT-16 | HTTP Request Smuggling | D | - | discovery | parser-differential-auditing |
-| wstg-injt-17 | WSTG-INJT-17 | Host Header Injection | T | - | discovery | attack-surface-mapping, data-flow-analysis |
-| wstg-injt-18 | WSTG-INJT-18 | Server-side Template Injection | D | - | discovery | deserialization-and-dispatch-auditing |
-| wstg-injt-19 | WSTG-INJT-19 | Server-Side Request Forgery | T | - | discovery | data-flow-analysis |
-| wstg-injt-20 | WSTG-INJT-20 | Mass Assignment | D | I | discovery | authorization-auditing |
-| wstg-injt-21 | WSTG-INJT-21 | CSV Injection | T | - | discovery | data-flow-analysis |
-| wstg-injt-22 | WSTG-INJT-22 | Prototype Pollution | D | - | discovery | deserialization-and-dispatch-auditing |
-| wstg-injt-23 | WSTG-INJT-23 | Insecure Deserialization | D | - | discovery | deserialization-and-dispatch-auditing |
-| wstg-errh-01 | WSTG-ERRH-01 | Improper Error Handling | N | - | discovery | - |
-| wstg-cryp-01 | WSTG-CRYP-01 | Weak Transport Layer Security | N | - | discovery | - |
-| wstg-cryp-02 | WSTG-CRYP-02 | Padding Oracle | N | - | discovery | - |
-| wstg-cryp-03 | WSTG-CRYP-03 | Sensitive Information Sent via Unencrypted Channels | N | - | discovery | - |
-| wstg-cryp-04 | WSTG-CRYP-04 | Weak Cryptographic Primitives | T | - | discovery | source-code-auditing |
-| wstg-busl-01 | WSTG-BUSL-01 | Business Logic Data Validation | N | I | discovery | - |
-| wstg-busl-02 | WSTG-BUSL-02 | Ability to Forge Requests | N | I | discovery | - |
-| wstg-busl-03 | WSTG-BUSL-03 | Integrity Checks | N | I | discovery | - |
-| wstg-busl-04 | WSTG-BUSL-04 | Process Timing | T | I | discovery | source-code-auditing |
-| wstg-busl-05 | WSTG-BUSL-05 | Number of Times a Function Can Be Used Limits | D | I | discovery | race-condition-auditing |
-| wstg-busl-06 | WSTG-BUSL-06 | Circumvention of Work Flows | T | I | discovery | source-code-auditing, data-flow-analysis |
-| wstg-busl-07 | WSTG-BUSL-07 | Defenses Against Application Misuse | N | I | discovery | - |
-| wstg-busl-08 | WSTG-BUSL-08 | Upload of Unexpected File Types | N | I | discovery | - |
-| wstg-busl-09 | WSTG-BUSL-09 | Upload of Malicious Files | N | I | discovery | - |
-| wstg-busl-10 | WSTG-BUSL-10 | Payment Functionality | N | I | discovery | - |
-| wstg-clnt-01 | WSTG-CLNT-01 | DOM-Based Cross Site Scripting | D | B | discovery | web-output-context |
-| wstg-clnt-02 | WSTG-CLNT-02 | JavaScript Execution | D | B | discovery | web-output-context |
-| wstg-clnt-03 | WSTG-CLNT-03 | HTML Injection | D | B | discovery | web-output-context |
-| wstg-clnt-04 | WSTG-CLNT-04 | Client-side URL Redirect | T | B | discovery | data-flow-analysis |
-| wstg-clnt-05 | WSTG-CLNT-05 | CSS Injection | T | B | discovery | data-flow-analysis |
-| wstg-clnt-06 | WSTG-CLNT-06 | Client-side Resource Manipulation | T | B | discovery | data-flow-analysis |
-| wstg-clnt-07 | WSTG-CLNT-07 | Cross Origin Resource Sharing | N | B | discovery | - |
-| wstg-clnt-09 | WSTG-CLNT-09 | Clickjacking | N | B | discovery | - |
-| wstg-clnt-10 | WSTG-CLNT-10 | WebSockets | N | B | discovery | - |
-| wstg-clnt-11 | WSTG-CLNT-11 | Web Messaging | N | B | discovery | - |
-| wstg-clnt-12 | WSTG-CLNT-12 | Browser Storage | N | B | discovery | - |
-| wstg-clnt-13 | WSTG-CLNT-13 | Cross Site Script Inclusion | N | B | discovery | - |
-| wstg-clnt-14 | WSTG-CLNT-14 | Reverse Tabnabbing | N | B | discovery | - |
-| wstg-clnt-15 | WSTG-CLNT-15 | Client-side Template Injection | T | B | discovery | data-flow-analysis |
-| wstg-apit-01 | WSTG-APIT-01 | API Reconnaissance | D | - | recon | web-route-input-inventory |
-| wstg-apit-02 | WSTG-APIT-02 | API Broken Object Level Authorization | D | I | discovery | web-object-authorization |
-| wstg-apit-03 | WSTG-APIT-03 | Excessive Data Exposure | T | - | discovery | data-flow-analysis |
-| wstg-apit-04 | WSTG-APIT-04 | API Broken Function Level Authorization | D | I | discovery | web-object-authorization, authorization-auditing |
-| wstg-apit-99 | WSTG-APIT-99 | GraphQL | N | - | discovery | - |
+| Key | WSTG ID | Test | Support | Flags | Phase | Skills | Trigger | Modes |
+|---|---|---|---|---|---|---|---|---|
+| wstg-info-01 | WSTG-INFO-01 | Conduct Search Engine Reconnaissance for Information Leakage | O | - | recon | - | - | - |
+| wstg-info-02 | WSTG-INFO-02 | Fingerprint Web Server | D | - | recon | **web-deployment-hygiene**, attack-surface-mapping | any | H |
+| wstg-info-03 | WSTG-INFO-03 | Review Webserver Metafiles for Information Leakage | D | - | recon | **web-deployment-hygiene**, attack-surface-mapping, web-route-input-inventory | any | SH |
+| wstg-info-04 | WSTG-INFO-04 | Attack Surface Identification | T | - | recon | **attack-surface-mapping** | any | H |
+| wstg-info-05 | WSTG-INFO-05 | Review Web Page Content for Information Leakage | D | - | recon | **web-deployment-hygiene**, attack-surface-mapping, source-code-auditing | any | SH |
+| wstg-info-06 | WSTG-INFO-06 | Identify Application Entry Points | D | - | recon | **web-route-input-inventory** | any | SH |
+| wstg-info-07 | WSTG-INFO-07 | Map Execution Paths Through Application | D | - | recon | **web-route-input-inventory**, data-flow-analysis | workflow | SH |
+| wstg-info-08 | WSTG-INFO-08 | Fingerprint Web Application Framework | D | - | recon | **web-deployment-hygiene**, attack-surface-mapping | any | SH |
+| wstg-info-10 | WSTG-INFO-10 | Map Application Architecture | T | - | recon | **attack-surface-mapping** | any | SH |
+| wstg-conf-01 | WSTG-CONF-01 | Network Infrastructure Configuration | O | - | discovery | - | - | - |
+| wstg-conf-02 | WSTG-CONF-02 | Application Platform Configuration | D | - | discovery | **web-deployment-hygiene**, source-code-auditing, attack-surface-mapping | config | SH |
+| wstg-conf-04 | WSTG-CONF-04 | Review Old Backup and Unreferenced Files for Sensitive Information | D | - | discovery | **web-deployment-hygiene**, source-code-auditing, attack-surface-mapping | any | SH |
+| wstg-conf-05 | WSTG-CONF-05 | Enumerate Infrastructure and Application Admin Interfaces | D | - | recon | **web-deployment-hygiene**, attack-surface-mapping, web-route-input-inventory | any | SH |
+| wstg-conf-06 | WSTG-CONF-06 | HTTP Methods | D | - | recon | **web-deployment-hygiene**, attack-surface-mapping | any | H |
+| wstg-conf-07 | WSTG-CONF-07 | HTTP Strict Transport Security | D | - | recon | **web-deployment-hygiene** | https | H |
+| wstg-conf-09 | WSTG-CONF-09 | File Permissions | D | - | discovery | **web-deployment-hygiene** | config | S |
+| wstg-conf-10 | WSTG-CONF-10 | Subdomain Takeover | O | - | discovery | - | - | - |
+| wstg-conf-11 | WSTG-CONF-11 | Cloud Storage | O | - | discovery | - | - | - |
+| wstg-conf-12 | WSTG-CONF-12 | Content Security Policy | D | B | recon | **web-browser-trust-controls** | any | HB |
+| wstg-conf-13 | WSTG-CONF-13 | Path Confusion | D | - | discovery | **parser-differential-auditing** | any | SH |
+| wstg-conf-14 | WSTG-CONF-14 | Other HTTP Security Header Misconfigurations | D | B | recon | **web-deployment-hygiene** | any | HB |
+| wstg-conf-15 | WSTG-CONF-15 | Feature Flag Security Bypass | D | - | discovery | **web-deployment-hygiene**, source-code-auditing | config | SH |
+| wstg-idnt-01 | WSTG-IDNT-01 | Role Definitions | D | I | discovery | **web-object-authorization** | roles | SA |
+| wstg-idnt-02 | WSTG-IDNT-02 | User Registration Process | D | I | discovery | **web-credential-lifecycle**, authorization-auditing | registration | SHA |
+| wstg-idnt-03 | WSTG-IDNT-03 | Account Provisioning Process | D | I | discovery | **web-credential-lifecycle**, authorization-auditing | registration, roles | SA |
+| wstg-idnt-04 | WSTG-IDNT-04 | Account Enumeration and Guessable User Account | D | - | discovery | **web-credential-lifecycle**, authorization-auditing | login, registration, password-reset | SH |
+| wstg-athn-02 | WSTG-ATHN-02 | Default Credentials | D | I | discovery | **web-credential-lifecycle** | login | SHA |
+| wstg-athn-03 | WSTG-ATHN-03 | Weak Lock Out Mechanism | D | I | discovery | **web-credential-lifecycle** | login | SHA |
+| wstg-athn-04 | WSTG-ATHN-04 | Bypassing Authentication Schema | D | I | discovery | **authorization-auditing**, fastapi-security-parity | login | SHA |
+| wstg-athn-05 | WSTG-ATHN-05 | Vulnerable Remember Password | D | I | discovery | **web-credential-lifecycle** | remember-me | SA |
+| wstg-athn-06 | WSTG-ATHN-06 | Browser Cache Weaknesses | D | B | discovery | **web-deployment-hygiene** | session-token | HB |
+| wstg-athn-07 | WSTG-ATHN-07 | Weak Authentication Methods | D | I | discovery | **web-credential-lifecycle** | login, registration | SA |
+| wstg-athn-08 | WSTG-ATHN-08 | Weak Security Question Answer | D | I | discovery | **web-credential-lifecycle** | password-reset | SA |
+| wstg-athn-09 | WSTG-ATHN-09 | Weak Password Change or Reset Functionalities | D | I | discovery | **web-credential-lifecycle** | password-reset | SHA |
+| wstg-athn-10 | WSTG-ATHN-10 | Weaker Authentication in Alternative Channel | D | I | discovery | **authorization-auditing** | login | SA |
+| wstg-athn-11 | WSTG-ATHN-11 | Multi-Factor Authentication (MFA) | D | I | discovery | **web-credential-lifecycle** | mfa | SA |
+| wstg-athz-01 | WSTG-ATHZ-01 | Directory Traversal File Include | D | - | discovery | **web-server-side-injection**, data-flow-analysis, source-code-auditing | file-path | SH |
+| wstg-athz-02 | WSTG-ATHZ-02 | Bypassing Authorization Schema | D | I | discovery | **web-object-authorization**, authorization-auditing, fastapi-security-parity | login, roles | SA |
+| wstg-athz-03 | WSTG-ATHZ-03 | Privilege Escalation | D | I | discovery | **web-object-authorization**, authorization-auditing | roles | SA |
+| wstg-athz-04 | WSTG-ATHZ-04 | Insecure Direct Object References | D | I | discovery | **web-object-authorization** | object-id | SA |
+| wstg-athz-05 | WSTG-ATHZ-05 | OAuth Weaknesses | D | I | discovery | **web-token-and-federation** | oauth | SA |
+| wstg-sess-01 | WSTG-SESS-01 | Session Management Schema | D | I | discovery | **web-session-management** | session-token | SA |
+| wstg-sess-02 | WSTG-SESS-02 | Cookies Attributes | D | - | discovery | **web-session-management** | session-token | SH |
+| wstg-sess-03 | WSTG-SESS-03 | Session Fixation | D | I | discovery | **web-session-management** | session-token, login | SA |
+| wstg-sess-04 | WSTG-SESS-04 | Exposed Session Variables | D | I | discovery | **web-session-management** | session-token | SA |
+| wstg-sess-05 | WSTG-SESS-05 | Cross Site Request Forgery | D | BI | discovery | **web-browser-trust-controls** | session-token, workflow | SAB |
+| wstg-sess-06 | WSTG-SESS-06 | Logout Functionality | D | I | discovery | **web-session-management** | session-token, login | SA |
+| wstg-sess-07 | WSTG-SESS-07 | Session Timeout | D | I | discovery | **web-session-management** | session-token | SA |
+| wstg-sess-08 | WSTG-SESS-08 | Session Puzzling | D | I | discovery | **web-session-management** | session-token, workflow | SA |
+| wstg-sess-09 | WSTG-SESS-09 | Session Hijacking | D | I | discovery | **web-session-management** | session-token | SA |
+| wstg-sess-10 | WSTG-SESS-10 | JSON Web Tokens | D | I | discovery | **web-token-and-federation** | jwt | SA |
+| wstg-sess-11 | WSTG-SESS-11 | Concurrent Sessions | D | I | discovery | **web-session-management** | session-token, login | SA |
+| wstg-injt-01 | WSTG-INJT-01 | Reflected Cross Site Scripting | D | B | discovery | **web-output-context** | reflected-input | SHB |
+| wstg-injt-02 | WSTG-INJT-02 | Stored Cross Site Scripting | D | B | discovery | **web-output-context** | stored-input | SHB |
+| wstg-injt-04 | WSTG-INJT-04 | HTTP Parameter Pollution | D | - | discovery | **parser-differential-auditing** | any | SH |
+| wstg-injt-05 | WSTG-INJT-05 | SQL Injection | D | - | discovery | **web-server-side-injection**, data-flow-analysis, source-code-auditing | db-query | SH |
+| wstg-injt-06 | WSTG-INJT-06 | LDAP Injection | D | - | discovery | **web-server-side-injection**, data-flow-analysis | db-query | SH |
+| wstg-injt-07 | WSTG-INJT-07 | XML Injection | D | - | discovery | **web-server-side-injection**, data-flow-analysis, source-code-auditing | xml-input | SH |
+| wstg-injt-08 | WSTG-INJT-08 | SSI Injection | D | - | discovery | **web-server-side-injection**, data-flow-analysis | template-render | SH |
+| wstg-injt-09 | WSTG-INJT-09 | XPath Injection | D | - | discovery | **web-server-side-injection**, data-flow-analysis | xml-input | SH |
+| wstg-injt-10 | WSTG-INJT-10 | IMAP SMTP Injection | D | - | discovery | **web-server-side-injection**, data-flow-analysis | mail-send | SH |
+| wstg-injt-11 | WSTG-INJT-11 | Code Injection | D | - | discovery | **web-server-side-injection**, data-flow-analysis, source-code-auditing | dynamic-code | SH |
+| wstg-injt-12 | WSTG-INJT-12 | Command Injection | D | - | discovery | **web-server-side-injection**, data-flow-analysis | os-command | SH |
+| wstg-injt-13 | WSTG-INJT-13 | Format String Injection | D | - | discovery | **web-server-side-injection**, memory-safety-auditing | dynamic-code | S |
+| wstg-injt-14 | WSTG-INJT-14 | Incubated Vulnerability | D | - | discovery | **web-server-side-injection**, data-flow-analysis | stored-input | SH |
+| wstg-injt-15 | WSTG-INJT-15 | HTTP Response Splitting | D | - | discovery | **parser-differential-auditing** | reflected-input | SH |
+| wstg-injt-16 | WSTG-INJT-16 | HTTP Request Smuggling | D | - | discovery | **parser-differential-auditing** | intermediary | SN |
+| wstg-injt-17 | WSTG-INJT-17 | Host Header Injection | D | - | discovery | **attack-surface-mapping**, data-flow-analysis | intermediary | SH |
+| wstg-injt-18 | WSTG-INJT-18 | Server-side Template Injection | D | - | discovery | **deserialization-and-dispatch-auditing** | template-render | SH |
+| wstg-injt-19 | WSTG-INJT-19 | Server-Side Request Forgery | D | - | discovery | **web-server-side-injection**, data-flow-analysis | outbound-fetch | SHN |
+| wstg-injt-20 | WSTG-INJT-20 | Mass Assignment | D | I | discovery | **web-object-authorization**, authorization-auditing | api | SA |
+| wstg-injt-21 | WSTG-INJT-21 | CSV Injection | D | - | discovery | **web-server-side-injection**, data-flow-analysis | export-csv | SH |
+| wstg-injt-22 | WSTG-INJT-22 | Prototype Pollution | D | - | discovery | **deserialization-and-dispatch-auditing** | api, client-js | SH |
+| wstg-injt-23 | WSTG-INJT-23 | Insecure Deserialization | D | - | discovery | **deserialization-and-dispatch-auditing** | serialized-input | SH |
+| wstg-errh-01 | WSTG-ERRH-01 | Improper Error Handling | D | - | discovery | **web-deployment-hygiene** | any | SH |
+| wstg-cryp-01 | WSTG-CRYP-01 | Weak Transport Layer Security | D | - | discovery | **web-deployment-hygiene** | https | SHN |
+| wstg-cryp-02 | WSTG-CRYP-02 | Padding Oracle | D | - | discovery | **web-crypto-usage-review** | crypto-use | SH |
+| wstg-cryp-03 | WSTG-CRYP-03 | Sensitive Information Sent via Unencrypted Channels | D | - | discovery | **web-deployment-hygiene** | any | SHN |
+| wstg-cryp-04 | WSTG-CRYP-04 | Weak Cryptographic Primitives | D | - | discovery | **web-crypto-usage-review**, source-code-auditing | crypto-use | S |
+| wstg-busl-01 | WSTG-BUSL-01 | Business Logic Data Validation | D | I | discovery | **web-business-logic-misuse** | workflow | SA |
+| wstg-busl-02 | WSTG-BUSL-02 | Ability to Forge Requests | D | I | discovery | **web-business-logic-misuse** | workflow | SA |
+| wstg-busl-03 | WSTG-BUSL-03 | Integrity Checks | D | I | discovery | **web-business-logic-misuse** | workflow | SA |
+| wstg-busl-04 | WSTG-BUSL-04 | Process Timing | D | I | discovery | **web-business-logic-misuse**, source-code-auditing | workflow | SA |
+| wstg-busl-05 | WSTG-BUSL-05 | Number of Times a Function Can Be Used Limits | D | I | discovery | **race-condition-auditing** | workflow | SA |
+| wstg-busl-06 | WSTG-BUSL-06 | Circumvention of Work Flows | D | I | discovery | **web-business-logic-misuse**, source-code-auditing, data-flow-analysis | workflow | SA |
+| wstg-busl-07 | WSTG-BUSL-07 | Defenses Against Application Misuse | D | I | discovery | **web-business-logic-misuse** | workflow | SA |
+| wstg-busl-08 | WSTG-BUSL-08 | Upload of Unexpected File Types | D | I | discovery | **web-business-logic-misuse** | upload | SA |
+| wstg-busl-09 | WSTG-BUSL-09 | Upload of Malicious Files | D | I | discovery | **web-business-logic-misuse** | upload | SA |
+| wstg-busl-10 | WSTG-BUSL-10 | Payment Functionality | D | I | discovery | **web-business-logic-misuse** | payment | SA |
+| wstg-clnt-01 | WSTG-CLNT-01 | DOM-Based Cross Site Scripting | D | B | discovery | **web-output-context** | client-js | SHB |
+| wstg-clnt-02 | WSTG-CLNT-02 | JavaScript Execution | D | B | discovery | **web-output-context** | client-js | SHB |
+| wstg-clnt-03 | WSTG-CLNT-03 | HTML Injection | D | B | discovery | **web-output-context** | reflected-input | SHB |
+| wstg-clnt-04 | WSTG-CLNT-04 | Client-side URL Redirect | D | B | discovery | **web-browser-trust-controls**, data-flow-analysis | redirect | SHB |
+| wstg-clnt-05 | WSTG-CLNT-05 | CSS Injection | D | B | discovery | **web-browser-trust-controls**, data-flow-analysis | reflected-input | SHB |
+| wstg-clnt-06 | WSTG-CLNT-06 | Client-side Resource Manipulation | D | B | discovery | **web-browser-trust-controls**, data-flow-analysis | client-js | SHB |
+| wstg-clnt-07 | WSTG-CLNT-07 | Cross Origin Resource Sharing | D | B | discovery | **web-browser-trust-controls** | cors | HB |
+| wstg-clnt-09 | WSTG-CLNT-09 | Clickjacking | D | B | discovery | **web-browser-trust-controls** | frames | HB |
+| wstg-clnt-10 | WSTG-CLNT-10 | WebSockets | D | B | discovery | **web-browser-trust-controls** | websocket | SNB |
+| wstg-clnt-11 | WSTG-CLNT-11 | Web Messaging | D | B | discovery | **web-browser-trust-controls** | postmessage | SHB |
+| wstg-clnt-12 | WSTG-CLNT-12 | Browser Storage | D | B | discovery | **web-browser-trust-controls** | client-storage | SHB |
+| wstg-clnt-13 | WSTG-CLNT-13 | Cross Site Script Inclusion | D | B | discovery | **web-browser-trust-controls** | client-js | HB |
+| wstg-clnt-14 | WSTG-CLNT-14 | Reverse Tabnabbing | D | B | discovery | **web-browser-trust-controls** | client-js | SHB |
+| wstg-clnt-15 | WSTG-CLNT-15 | Client-side Template Injection | D | B | discovery | **web-browser-trust-controls**, data-flow-analysis | client-js | SHB |
+| wstg-apit-01 | WSTG-APIT-01 | API Reconnaissance | D | - | recon | **web-route-input-inventory** | api | SH |
+| wstg-apit-02 | WSTG-APIT-02 | API Broken Object Level Authorization | D | I | discovery | **web-object-authorization** | api, object-id | SA |
+| wstg-apit-03 | WSTG-APIT-03 | Excessive Data Exposure | D | - | discovery | **web-object-authorization**, data-flow-analysis | api | SH |
+| wstg-apit-04 | WSTG-APIT-04 | API Broken Function Level Authorization | D | I | discovery | **web-object-authorization**, authorization-auditing | api, roles | SA |
+| wstg-apit-99 | WSTG-APIT-99 | GraphQL | D | - | discovery | **web-graphql-testing** | graphql | SH |

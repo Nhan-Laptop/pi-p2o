@@ -32,7 +32,7 @@ export type RetentionMode = 'durable-local' | 'ephemeral';
 export const DEFAULT_STORAGE_QUOTA_MIB = 256;
 export const DEFAULT_ARTIFACT_CAPTURE_KIB = 1024;
 /**
- * Off by default. The 2026-10-10 benchmark (32-run A/B plus a 16-run ablation, planning_update.md §0.2) showed the guidance steers the model to the
+ * Off by default. The 2026-10-10 benchmark (32-run A/B plus a 16-run ablation, `git show 41e8157:planning_update.md` §0.2) showed the guidance steers the model to the
  * K3-K6 tools 2-7x more often but raised cost ~70%, turns ~60% and invalid (timeout/turn-budget) runs from 1/16 to 3/16 with no recall or precision gain.
  */
 export const DEFAULT_TOOL_GUIDANCE = false;

@@ -60,4 +60,4 @@ B041, B006, B028, B042, B005, B058, B035, B030, B048, and B068 supply identity, 
 
 [O008](../../research/orange/evidence.md#o008) supports consumer-specific identity requirements and compatibility-aware repair. Its outcomes remain historical author reports, not a current-deployment assessment.
 
-[O009](../../research/orange/evidence.md#o009) adds semantic operand coverage; [O012](../../research/orange/evidence.md#o012) separates intermediary and client contracts; [O022](../../research/orange/evidence.md#o022) distinguishes entry admission from effective receiver/action authority.
+[O009](../../research/orange/evidence.md#o009) adds semantic operand coverage; [O012](../../research/orange/evidence.md#o012) separates intermediary and client contracts; [O022](../../research/orange/evidence.md#o022) distinguishes entry admission from effective receiver/action authority; [On demand upstream text](references/wstg-source.md).

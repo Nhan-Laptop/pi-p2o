@@ -53,6 +53,8 @@ Apply the invariant-specific fix: checked arithmetic and complete bounds; consis
 Consume reviewed current claims with their controls and gaps. Invalidate proposals relying on withdrawn validation; separate proposed repair, shipped artifact and active enforcement. Formatting or a fix recommendation is not independent reproduction. Choose role/method from the unanswered question; record expected evidence and a branch stop condition. Use the [owned review contract](../../HANDOFFS.md#focused-method-and-review).
 
 ## Handoffs
+Name a risk level from the [risk rating criteria](references/risk-rating-criteria.md) when reporting an accepted case; it never substitutes for the case's own verdict or review status.
+
 **Root Cause → Engineering:** provide invariant, authoritative enforcement point, all consumers/variants, impact limits, normal controls, regression matrix, and emergency mitigations. **Engineering → Verification/Operations:** provide actual build IDs, test receipts, rollout scope, detection coverage, compatibility changes, and residual reachability. Return to [patch analysis](../patch-diff-analysis/SKILL.md) if artifact contents disagree.
 
 Unexpected incident indicators take the [provisional owner-review route](../../HANDOFFS.md#provisional-owner-review) instead of assuming root cause or completed impact. [O033](../../research/orange/evidence.md#o033) motivates minimized, redacted observations with attribution/access unknowns; containment is not repair closure.

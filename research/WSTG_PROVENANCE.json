@@ -1,0 +1,273 @@
+{
+  "schema_version": 1,
+  "upstream": {
+    "project": "OWASP/wstg",
+    "distribution": "OWASP Web Security Testing Guide (git repository, document/ tree)",
+    "revision": "28553f878d48358767892916d53e59a9d664811c",
+    "revision_basis": "Commit at the head of the master branch when the guide was read; the local review copy is byte-identical to document/4-Web_Application_Security_Testing and document/5-Reporting at this commit.",
+    "snapshot_retrieved_at": "2026-10-11",
+    "reviewed_at": "2026-10-11",
+    "license": "CC-BY-SA-4.0",
+    "license_sha256": "9312b09a6848f26c6046652238ddd6b32ea2124847faed48854c375c5194238d",
+    "license_copy": "research/licenses/cc-by-sa-4.0.md",
+    "license_notice": "research/licenses/wstg-notice.md",
+    "usage_boundary": "Reviewed and, since 2026-10-11, also shipped read-only as on-demand background text: each owning skill's references/wstg-source.md links the unmodified upstream page for its own tests only, behind this library's own bounded-comparison cards, never inlined into a SKILL.md or substituted for a card's controls, stop conditions or evidence fields. No image, tool tutorial or this project's own code depends on the guide at runtime; the condensed cards remain the method this library actually runs. Test identifiers and page titles are used as references.",
+    "attribution": "Adapted material is credited by chapter title and a digest of the pages used, and the upstream license text is vendored for conservative attribution. Changes made: condensed, restructured into bounded comparisons with controls and stop conditions, and tools replaced by those the sandbox provides."
+  },
+  "references": [
+    {
+      "id": "W1",
+      "document": "OWASP WSTG 4.1 Information Gathering",
+      "source_dir": "4-Web_Application_Security_Testing/01-Information_Gathering",
+      "pages": 12,
+      "sha256": "cbb562ef580e5c6c84b12a32987b65c7caea09bb32da423df259b6e0f5a78086",
+      "license": "CC-BY-SA-4.0",
+      "adapted": [
+        "Fingerprint, metafile, page-content and framework identification restated as bounded comparisons against a fixed baseline response set"
+      ],
+      "excluded": [
+        "Search-engine reconnaissance and DNS or virtual-host enumeration (outside the confirmed origin), tool tutorials, screenshots and sample output"
+      ],
+      "used_by": [
+        "web-deployment-hygiene"
+      ]
+    },
+    {
+      "id": "W2",
+      "document": "OWASP WSTG 4.2 Configuration and Deployment Management",
+      "source_dir": "4-Web_Application_Security_Testing/02-Configuration_and_Deployment_Management",
+      "pages": 16,
+      "sha256": "324f6bef84f35d96e0d547b7638373afeab205c392afe2e637bf2f94a214c382",
+      "license": "CC-BY-SA-4.0",
+      "adapted": [
+        "Platform configuration, backup-file, administrative-interface, HTTP-method, HSTS, security-header and feature-flag checks restated with controls, source-review counterparts and stop conditions",
+        "Content security policy header review restated as a directive-weakness check against the baseline route set"
+      ],
+      "excluded": [
+        "Network-infrastructure, cloud-storage and subdomain-takeover tests (other origins), cloud command lines, wordlist enumeration and tool tutorials",
+        "Bypass-technique catalogs and JSONP-callback exploitation walkthroughs"
+      ],
+      "used_by": [
+        "web-deployment-hygiene",
+        "web-browser-trust-controls"
+      ]
+    },
+    {
+      "id": "W3",
+      "document": "OWASP WSTG 4.3 Identity Management",
+      "source_dir": "4-Web_Application_Security_Testing/03-Identity_Management",
+      "pages": 6,
+      "sha256": "e408e14ad8677459f87a0b968d60f1b0c44939100da44b88cebf8ab113e85a71",
+      "license": "CC-BY-SA-4.0",
+      "adapted": [
+        "Registration, provisioning and account-enumeration checks restated with throwaway accounts, fixed sample counts and stop conditions",
+        "Role-inventory and role-switching checks restated as a comparison between documented permissions and observed reach"
+      ],
+      "excluded": [
+        "Screenshots of third-party products and tool tutorials"
+      ],
+      "used_by": [
+        "web-credential-lifecycle",
+        "web-object-authorization"
+      ]
+    },
+    {
+      "id": "W4",
+      "document": "OWASP WSTG 4.4 Authentication",
+      "source_dir": "4-Web_Application_Security_Testing/04-Authentication",
+      "pages": 12,
+      "sha256": "10bbd5a4375020fcd5629d617d1567d07016c93fecaf21adf65ecf8eb3cdeb3a",
+      "license": "CC-BY-SA-4.0",
+      "adapted": [
+        "Browser-cache directive review restated for sensitive authenticated responses",
+        "Default-credential, password-rule, lockout, security-question, reset, remember-me and MFA checks restated with counted attempts, operator-controlled mailboxes and stop conditions"
+      ],
+      "excluded": [
+        "Credential-guessing procedures and tool tutorials; those are handled by cards with their own safeguards",
+        "Password lists, credential-stuffing and spraying procedures, and tool tutorials"
+      ],
+      "used_by": [
+        "web-deployment-hygiene",
+        "web-credential-lifecycle"
+      ]
+    },
+    {
+      "id": "W5",
+      "document": "OWASP WSTG 4.5 Authorization",
+      "source_dir": "4-Web_Application_Security_Testing/05-Authorization",
+      "pages": 8,
+      "sha256": "29b831e7993f9a92dadaf31e5c5399db464ad182d9b6af68324d88c84cc37ac4",
+      "license": "CC-BY-SA-4.0",
+      "adapted": [
+        "Delegated authorization flow checks restated as application-side enforcement of destination matching and one-time value consumption, using a controlled client registration"
+      ],
+      "excluded": [
+        "Credential-leakage-channel catalogs and identity-provider-specific exploitation walkthroughs"
+      ],
+      "used_by": [
+        "web-token-and-federation"
+      ]
+    },
+    {
+      "id": "W6",
+      "document": "OWASP WSTG 4.6 Session Management",
+      "source_dir": "4-Web_Application_Security_Testing/06-Session_Management",
+      "pages": 12,
+      "sha256": "25ae311e57b421bfc63530acbe317fa3c6eafdda1abfd6f59313b322f4da9cb9",
+      "license": "CC-BY-SA-4.0",
+      "adapted": [
+        "Token strength, cookie attribute, fixation, exposure, replay, logout, timeout and concurrency checks restated as bounded comparisons with controls, named HTTP sessions and stop conditions",
+        "Structured bearer token acceptance checks restated as bounded structural-property changes against a baseline, without the signing key",
+        "Cross-site request forgery and request-origin checks restated as a request-bound-token comparison and a SameSite reading, without constructing a live cross-site submission"
+      ],
+      "excluded": [
+        "Token-prediction tooling and brute-force procedures, forced-cookie attack walkthroughs, tool tutorials, screenshots and sample traffic",
+        "Library-specific vulnerability catalogs and tool tutorials",
+        "Proof-of-concept HTML form catalogs"
+      ],
+      "used_by": [
+        "web-session-management",
+        "web-token-and-federation",
+        "web-browser-trust-controls"
+      ]
+    },
+    {
+      "id": "W7",
+      "document": "OWASP WSTG 4.7 Injection",
+      "source_dir": "4-Web_Application_Security_Testing/07-Injection",
+      "pages": 34,
+      "sha256": "9cbe5730ba7588c9a7442767c35bd000082726a909ad1274ca6e10da7f73f333",
+      "license": "CC-BY-SA-4.0",
+      "adapted": [
+        "Mass-assignment field-addition checks restated as a one-field-at-a-time comparison against a declared or source-confirmed field allow list",
+        "HTTP parameter pollution and response-header injection checks restated as a bounded one-marker comparison between layers, with no connection-desynchronization content",
+        "Host and forwarded-host trust checks restated as a one-variable comparison against sinks the application itself reaches, with no cache-poisoning or exploitation walkthrough",
+        "Query-language, document-parser, process/template-interpreter, format-call, outbound-request, path-resolution and stored/second-order injection checks restated as bounded, harmless boundary-class comparisons with an inert control, stopping at structural influence rather than exploitation"
+      ],
+      "excluded": [
+        "Framework-specific binder walkthroughs and payload catalogs",
+        "Payload catalogs, intermediary-specific exploitation walkthroughs and tool tutorials",
+        "Payload catalogs and intermediary-specific exploitation walkthroughs",
+        "Payload catalogs, exploitation walkthroughs, filter-bypass encodings, and any content demonstrating code execution, data exfiltration or denial of service"
+      ],
+      "used_by": [
+        "web-object-authorization",
+        "parser-differential-auditing",
+        "attack-surface-mapping",
+        "web-server-side-injection"
+      ]
+    },
+    {
+      "id": "W8",
+      "document": "OWASP WSTG 4.8 Error Handling",
+      "source_dir": "4-Web_Application_Security_Testing/08-Error_Handling",
+      "pages": 3,
+      "sha256": "3f9770f79245fb2e7cfb5fe3d0170cbc8cf83b8765456223123c5a046d9adc12",
+      "license": "CC-BY-SA-4.0",
+      "adapted": [
+        "Error-output comparison against the stock server error with a small fixed set of malformed requests"
+      ],
+      "excluded": [
+        "Fuzzing and crash-inducing inputs, and product-specific error catalogs"
+      ],
+      "used_by": [
+        "web-deployment-hygiene"
+      ]
+    },
+    {
+      "id": "W9",
+      "document": "OWASP WSTG 4.9 Weak Cryptography",
+      "source_dir": "4-Web_Application_Security_Testing/09-Weak_Cryptography",
+      "pages": 5,
+      "sha256": "7477e961e357fca3d502a812620043174a4afa238f17f3dab94d6a871153398d",
+      "license": "CC-BY-SA-4.0",
+      "adapted": [
+        "TLS configuration facts and clear-channel checks restated around the handshake tools the sandbox provides",
+        "Weak-primitive and decryption-error-path checks restated as a source-reading checklist against a fixed weakness list, and a single distinguishability comparison that stops short of key recovery"
+      ],
+      "excluded": [
+        "Exploit demonstrations of protocol attacks, scanner tutorials and long vulnerability catalogs",
+        "Exploit scripts for recovering key material through repeated oracle queries"
+      ],
+      "used_by": [
+        "web-deployment-hygiene",
+        "web-crypto-usage-review"
+      ]
+    },
+    {
+      "id": "W10",
+      "document": "OWASP WSTG 4.10 Business Logic",
+      "source_dir": "4-Web_Application_Security_Testing/10-Business_Logic",
+      "pages": 12,
+      "sha256": "10eff04633a553ff3fc6e963b33864fdffca8cd89be8abf1582df1aa037270e2",
+      "license": "CC-BY-SA-4.0",
+      "adapted": [
+        "Usage-ceiling bypass restated as sequential replay and step re-entry checked first, with the existing two-actor schedule method applied only if the sequential path is sound",
+        "Business-logic validation, hidden-field, component-integrity, timing, workflow-order, defense-observation, upload-type-boundary, upload-processing and transaction-recomputation checks restated as named-rule comparisons with inert fixture data, deferring any executable or exploit-demonstrating content to other skills as an open proof gap"
+      ],
+      "excluded": [
+        "Payment-specific and provider-specific exploitation walkthroughs",
+        "Payload catalogs, web-shell and archive-exploitation walkthroughs, and PCI-specific compliance checklists"
+      ],
+      "used_by": [
+        "race-condition-auditing",
+        "web-business-logic-misuse"
+      ]
+    },
+    {
+      "id": "W11",
+      "document": "OWASP WSTG 4.11 Client-side",
+      "source_dir": "4-Web_Application_Security_Testing/11-Client-side",
+      "pages": 17,
+      "sha256": "b8c41706446ec85b4c1019f1e65de05e78aa03cef72b76ce89114a62a0576218",
+      "license": "CC-BY-SA-4.0",
+      "adapted": [
+        "CORS, framing, script-loadable-response, WebSocket-origin, client-side sink, messaging, storage and new-tab isolation checks restated as source-to-sink tracing and declared-header comparison, stopping at offline reproduction without a managed browser transport",
+        "Client-side template-evaluation checks restated as a plain-text-versus-template-source source trace, stopping at expression evaluation rather than script execution"
+      ],
+      "excluded": [
+        "DOM-based proof-of-concept payload catalogs and browser-exploitation walkthroughs"
+      ],
+      "used_by": [
+        "web-browser-trust-controls"
+      ]
+    },
+    {
+      "id": "W12",
+      "document": "OWASP WSTG 4.12 API Testing",
+      "source_dir": "4-Web_Application_Security_Testing/12-API_Testing",
+      "pages": 7,
+      "sha256": "210da5fa161edf0a52746af34a9bc56dc976268cb1b0cd28d5c3f8fc9d290813",
+      "license": "CC-BY-SA-4.0",
+      "adapted": [
+        "Field-level response-exposure checks restated as a principal-pair diff of serialized fields, extended to list, search and export variants",
+        "GraphQL schema-exposure, development-interface and depth/complexity/batch-bound checks restated as a handful of bounded requests, routing field-authorization and resolver-injection questions to the skills that already own them"
+      ],
+      "excluded": [
+        "GraphQL introspection tooling and client-bundle scraping tutorials",
+        "Denial-of-service query construction and resource-exhaustion walkthroughs"
+      ],
+      "used_by": [
+        "web-object-authorization",
+        "web-graphql-testing"
+      ]
+    },
+    {
+      "id": "W14",
+      "document": "OWASP WSTG 5 Reporting",
+      "source_dir": "5-Reporting",
+      "pages": 3,
+      "sha256": "959b6fd4f3322cd99d84e6be9a8d9c0fab359ab553b1e37493777c528ba34d1b",
+      "license": "CC-BY-SA-4.0",
+      "adapted": [
+        "Risk-rating scale and reporting-structure guidance restated as a fixed five-level criteria document bound to existing verdict and review-status gates, never substituting for them"
+      ],
+      "excluded": [
+        "Report templates, version-control tables, executive-summary boilerplate, and CVSS mapping guidance"
+      ],
+      "used_by": [
+        "remediation"
+      ]
+    }
+  ]
+}

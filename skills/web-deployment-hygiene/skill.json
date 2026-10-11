@@ -1,0 +1,49 @@
+{
+  "schema_version": 1,
+  "kind": "playbook",
+  "references": [
+    "references/fingerprint-and-metafiles.md",
+    "references/content-and-backup-exposure.md",
+    "references/platform-config-and-flags.md",
+    "references/response-headers-methods-cache.md",
+    "references/transport-security.md",
+    "references/error-disclosure.md"
+  ],
+  "workflows": [
+    {
+      "id": "source-review",
+      "description": "Read the declared configuration, descriptors, templates and bundles in the supplied revision",
+      "prerequisites": [
+        "A supplied read-only source snapshot; deployment exposure is not established."
+      ]
+    },
+    {
+      "id": "offline-reproduction",
+      "description": "Run the supplied configuration or bundle locally and read the headers, files and errors it produces",
+      "prerequisites": [
+        "Bounded execution in your own sandbox scratch; network egress is available and any download or install must be receipted."
+      ]
+    },
+    {
+      "id": "public-http-review",
+      "description": "Anonymous same-origin retrieval of representative responses with the headers, cookies and errors they carry; no payloads and no browser transport",
+      "prerequisites": [
+        "Authorized same-origin requests through the scoped HTTP client on the confirmed origin, with the method, headers, cookies and body the approved scope declares."
+      ]
+    },
+    {
+      "id": "sandbox-network-review",
+      "description": "Bounded TCP or TLS handshake with the confirmed host and port through the sandbox network tool",
+      "prerequisites": [
+        "Bounded TCP or TLS exchange with the confirmed host and port through the sandbox network tool; opaque commands are not origin-filtered, so address only the confirmed target and port."
+      ]
+    }
+  ],
+  "provenance_refs": [
+    "W1",
+    "W2",
+    "W4",
+    "W8",
+    "W9"
+  ]
+}

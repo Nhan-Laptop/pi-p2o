@@ -1,0 +1,33 @@
+{
+  "schema_version": 1,
+  "kind": "playbook",
+  "references": [
+    "references/schema-exposure-and-query-bounds.md"
+  ],
+  "workflows": [
+    {
+      "id": "source-review",
+      "description": "Read the server’s introspection, depth/complexity and batching configuration",
+      "prerequisites": [
+        "A supplied read-only source snapshot; deployment exposure is not established."
+      ]
+    },
+    {
+      "id": "offline-reproduction",
+      "description": "Reproduce the schema configuration against a local, disposable copy of the server",
+      "prerequisites": [
+        "Bounded execution in your own sandbox scratch; network egress is available and any download or install must be receipted."
+      ]
+    },
+    {
+      "id": "public-http-review",
+      "description": "A small, fixed set of bounded queries against the confirmed origin",
+      "prerequisites": [
+        "Authorized same-origin requests through the scoped HTTP client on the confirmed origin, with the method, headers, cookies and body the approved scope declares."
+      ]
+    }
+  ],
+  "provenance_refs": [
+    "W12"
+  ]
+}

@@ -49,7 +49,7 @@ Assuming a lock is never dropped (B002); treating an instrumented precise edit a
 B002 and B024 motivate revalidation/consistent state after waits; B026 illustrates shared-memory double-fetch risk. Derived guidance: copy untrusted values once into trusted storage, use that snapshot consistently, reserve resources before publication, and restore coupled fields on every failure path. Do not rely on sleeps, timing, or volatile qualifiers as synchronization.
 
 ## Handoffs
-**Race Audit → Root Cause/Impact:** provide actor capabilities, invariant, event schedule, lock/wait map, state trace, reproduction denominator, observer effects, and first invalid operation. Route byte consequences to [memory safety](../memory-safety-auditing/SKILL.md), capabilities to [exploitability assessment](../exploitability-assessment/SKILL.md).
+**Race Audit → Root Cause/Impact:** provide actor capabilities, invariant, event schedule, lock/wait map, state trace, reproduction denominator, observer effects, and first invalid operation. Route byte consequences to [memory safety](../memory-safety-auditing/SKILL.md), capabilities to [exploitability assessment](../exploitability-assessment/SKILL.md). For a stated usage ceiling (wstg-busl-05), use [usage limit bypass](references/usage-limit-bypass.md).
 
 ## Evidence
-B002, B003, B022, B024, B026, B043, B045, and B064 merge wait/drop, double-fetch, authorization-time, and reservation races. Schedules here are abstract research artifacts, not article-specific trigger sequences.
+B002, B003, B022, B024, B026, B043, B045, and B064 merge wait/drop, double-fetch, authorization-time, and reservation races. Schedules here are abstract research artifacts, not article-specific trigger sequences; [On demand upstream text](references/wstg-source.md).

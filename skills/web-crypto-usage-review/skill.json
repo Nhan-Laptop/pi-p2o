@@ -1,0 +1,27 @@
+{
+  "schema_version": 1,
+  "kind": "playbook",
+  "references": [
+    "references/primitive-and-parameter-review.md",
+    "references/decryption-error-path-observation.md"
+  ],
+  "workflows": [
+    {
+      "id": "source-review",
+      "description": "Find every cryptographic call, the algorithm and parameters it uses, and where client-held encrypted state is decrypted",
+      "prerequisites": [
+        "A supplied read-only source snapshot; deployment exposure is not established."
+      ]
+    },
+    {
+      "id": "offline-reproduction",
+      "description": "Exercise an extracted cryptographic call or decryption path against fixture values in a local harness",
+      "prerequisites": [
+        "Bounded execution in your own sandbox scratch; network egress is available and any download or install must be receipted."
+      ]
+    }
+  ],
+  "provenance_refs": [
+    "W9"
+  ]
+}

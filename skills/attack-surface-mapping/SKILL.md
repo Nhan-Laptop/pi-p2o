@@ -26,7 +26,7 @@ Architecture → actor/capability model → interface registration → access ch
 5. Exercise a harmless valid operation as the least-privileged relevant actor. Distinguish an interface existing, a handle opening, a request being accepted, and the sensitive handler executing.
 6. Prioritize dense untrusted-input processing, unusual but unprivileged interfaces, new features, asynchronous state, and privileged consumers. History is a ranking signal, not proof of a current bug.
 
-For composed-service identity questions, use [intermediary trust](references/intermediary-trust.md) to separate admission, metadata origin, represented client and final authority.
+For composed-service identity questions, use [intermediary trust](references/intermediary-trust.md) to separate admission, metadata origin, represented client and final authority. For Host and forwarded-host trust (wstg-injt-17), use [host header trust](references/host-header-trust.md).
 
 ## Research Heuristics
 - Follow registration helpers and untrusted/shared-data annotations rather than reading a subsystem alphabetically. [B081](../../research/evidence.md#b081)
@@ -56,7 +56,7 @@ Assuming a default user is an application member; overlooking optional features;
 Derived engineering guidance: enforce policy at the consuming boundary across all entry routes; reduce unnecessary listeners/features; restrict activation and privileged group membership. Access restriction can mitigate exposure without repairing underlying parsing bugs—track these as different outcomes.
 
 ## Handoffs
-**Recon → Static Analysis:** provide a bounded inventory with surface IDs, entry/input, observed actor, gate/handler, sensitive consumer, receipt IDs and extraction method; distinguish fact, inference and hypothesis. Include context, covered/untested scope and a ranked next-task queue. Explain the selected surface/risk using reachable influence, boundary uncertainty, evidence strength, information gain and budget, with expected observation and stop condition. Correct identity assumptions when contradicted; new surfaces return to recon. No whole-target completeness claim is implied. Include the versioned interface table, confirmed lowest-privilege paths, handler locations, sample benign operations, and unresolved gates. Reject the handoff if the actor or tested configuration is unspecified. Next: [source auditing](../source-code-auditing/SKILL.md) or [binary auditing](../binary-auditing/SKILL.md).
+**Recon → Static Analysis:** provide a bounded inventory with surface IDs, entry/input, observed actor, gate/handler, sensitive consumer, receipt IDs and extraction method; distinguish fact, inference and hypothesis. Include context, covered/untested scope and a ranked next-task queue. Explain the selected surface/risk using reachable influence, boundary uncertainty, evidence strength, information gain and budget, with expected observation and stop condition. Correct identity assumptions when contradicted; new surfaces return to recon. No whole-target completeness claim is implied. Include the versioned interface table, confirmed lowest-privilege paths, handler locations, sample benign operations, and unresolved gates. Reject the handoff if the actor or tested configuration is unspecified. Next: [source auditing](../source-code-auditing/SKILL.md) or [binary auditing](../binary-auditing/SKILL.md) for the audit queue; once the target is confirmed to be a web application, continue with [web route and input inventory](../web-route-input-inventory/SKILL.md) for the route-level playbook set instead of treating this inventory as the final word on its surface.
 
 ## Evidence
 Merged interface-registration, driver-access, socket-API, deployment-default, and middleware-scope methods from B081, B028, B002, B003, B005, B006, and B058. See the linked evidence ledger for historical scope and source limitations; this skill does not assert current target vulnerability.
@@ -65,4 +65,4 @@ Distributed peer authority and consumer-specific gate coverage additionally draw
 
 [O012](../../research/orange/evidence.md#o012) contributes separate intermediary/client trust roles and revision-dependent architectural responsibilities. The owned guide records their generic contract, not a source request chain.
 
-[O048](../../research/orange/evidence.md#o048) adds metadata-led auxiliary inventory, not a metadata-acquisition or test-page exploitation sequence.
+[O048](../../research/orange/evidence.md#o048) adds metadata-led auxiliary inventory, not a metadata-acquisition or test-page exploitation sequence; [On demand upstream text](references/wstg-source.md).

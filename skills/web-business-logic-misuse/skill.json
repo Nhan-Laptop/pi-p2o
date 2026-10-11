@@ -1,0 +1,36 @@
+{
+  "schema_version": 1,
+  "kind": "playbook",
+  "references": [
+    "references/invariants-and-misuse-cases.md",
+    "references/workflow-order-timing-and-defenses.md",
+    "references/file-upload-acceptance.md",
+    "references/payment-and-pricing.md"
+  ],
+  "workflows": [
+    {
+      "id": "source-review",
+      "description": "Find the stated business rule, where it is checked, and whether every path that reaches the protected effect goes through that check",
+      "prerequisites": [
+        "A supplied read-only source snapshot; deployment exposure is not established."
+      ]
+    },
+    {
+      "id": "offline-reproduction",
+      "description": "Reproduce the workflow or computation with disposable fixture data",
+      "prerequisites": [
+        "Bounded execution in your own sandbox scratch; network egress is available and any download or install must be receipted."
+      ]
+    },
+    {
+      "id": "authenticated-navigation",
+      "description": "Drive a real multi-step flow with operator-supplied credentials for a controlled principal",
+      "prerequisites": [
+        "Operator-supplied authorized credentials for controlled authenticated principals, used only inside the confirmed origin."
+      ]
+    }
+  ],
+  "provenance_refs": [
+    "W10"
+  ]
+}

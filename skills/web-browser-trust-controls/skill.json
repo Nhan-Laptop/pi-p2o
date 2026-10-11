@@ -1,0 +1,38 @@
+{
+  "schema_version": 1,
+  "kind": "playbook",
+  "references": [
+    "references/cross-origin-and-framing-policy.md",
+    "references/request-origin-enforcement.md",
+    "references/client-side-navigation-and-resource-sinks.md",
+    "references/messaging-storage-and-outbound-links.md"
+  ],
+  "workflows": [
+    {
+      "id": "source-review",
+      "description": "Read client-side script for how it handles untrusted values, and server code for origin and policy checks",
+      "prerequisites": [
+        "A supplied read-only source snapshot; deployment exposure is not established."
+      ]
+    },
+    {
+      "id": "offline-reproduction",
+      "description": "Render a local, static copy of a page or script to confirm a parsing or sink question that does not need live interactivity",
+      "prerequisites": [
+        "Bounded execution in your own sandbox scratch; network egress is available and any download or install must be receipted."
+      ]
+    },
+    {
+      "id": "public-http-review",
+      "description": "Read declared headers and exercise a server-side origin check with request headers you control",
+      "prerequisites": [
+        "Authorized same-origin requests through the scoped HTTP client on the confirmed origin, with the method, headers, cookies and body the approved scope declares."
+      ]
+    }
+  ],
+  "provenance_refs": [
+    "W2",
+    "W6",
+    "W11"
+  ]
+}

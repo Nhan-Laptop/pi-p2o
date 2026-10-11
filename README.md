@@ -174,10 +174,13 @@ The research-method library stays available independently of the extension: [han
 [Deserialization](skills/deserialization-and-dispatch-auditing/SKILL.md) · [Compiler invariants](skills/compiler-invariant-auditing/SKILL.md) ·
 [Sandbox boundaries](skills/sandbox-boundary-analysis/SKILL.md) · [Impact](skills/exploitability-assessment/SKILL.md) · [Remediation](skills/remediation/SKILL.md).
 
-Application guidance: [route inventory](skills/web-route-input-inventory/SKILL.md) ·
-[object authorization](skills/web-object-authorization/SKILL.md) · [output context](skills/web-output-context/SKILL.md) ·
-[FastAPI parity overlay](skills/fastapi-security-parity/SKILL.md).
-These augment the original 17 methods. An overlay occupies one of the existing three assignment slots.
+Web guidance, grouped by where each playbook sits in an assessment (owned WSTG tests: [docs/WSTG_MAP.md](docs/WSTG_MAP.md#wstg-map-table)):
+recon/config — [route inventory](skills/web-route-input-inventory/SKILL.md) · [deployment hygiene](skills/web-deployment-hygiene/SKILL.md);
+identity/session — [credential lifecycle](skills/web-credential-lifecycle/SKILL.md) · [session management](skills/web-session-management/SKILL.md) · [tokens and federation](skills/web-token-and-federation/SKILL.md);
+authorization/logic — [object authorization](skills/web-object-authorization/SKILL.md) · [business logic](skills/web-business-logic-misuse/SKILL.md);
+injection/output — [server-side injection](skills/web-server-side-injection/SKILL.md) · [output context](skills/web-output-context/SKILL.md) · [browser trust controls](skills/web-browser-trust-controls/SKILL.md);
+crypto/API — [crypto usage](skills/web-crypto-usage-review/SKILL.md) · [GraphQL](skills/web-graphql-testing/SKILL.md) · [FastAPI parity overlay](skills/fastapi-security-parity/SKILL.md).
+These augment the original 17 methods; each playbook's own Handoffs section links the others it hands off to or receives from. An overlay occupies one of the existing three assignment slots.
 [Provenance and exclusions](research/SKILL_PROVENANCE.md) document the selected Strix references.
 [Offline Semgrep recipe](skills/source-code-auditing/recipes/offline-python-semgrep.md) requires a successful tool probe;
 tool presence and usable dependencies must never be assumed from the image name. An [explicit tool-image setup](docs/SKILL_RUNTIME.md#optional-offline-tool-image) can add pinned Semgrep to the image; the sandbox itself can also fetch tooling at run time, which is receipted when it happens.
@@ -198,7 +201,7 @@ A passing run proves the installed mechanics only, not assessment quality.
 
 Design notes: [architecture](docs/ARCHITECTURE.md), [usage](docs/USAGE.md), [enhancement roadmap](planning_update.md), [acceptance matrix](docs/ACCEPTANCE_MATRIX.md), [OWASP WSTG map](docs/WSTG_MAP.md).
 [Benchmarks](bench/README.md) are opt-in real-model runs, separate from the hermetic suite; no effectiveness claim is implied by passing unit tests.
-`my_references/` is not shipped or modified.
+`my_references/` is not shipped or modified, except `my_references/wstg/` (the unmodified OWASP WSTG snapshot, pinned and hashed in [research/WSTG_PROVENANCE.md](research/WSTG_PROVENANCE.md)), which ships read-only as on-demand upstream text linked from each owning skill's `references/wstg-source.md`.
 
 ## Offline quality checks
 

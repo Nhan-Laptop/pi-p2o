@@ -1,0 +1,35 @@
+{
+  "schema_version": 1,
+  "kind": "playbook",
+  "references": [
+    "references/signed-token-verification.md",
+    "references/delegated-authorization-flow.md"
+  ],
+  "workflows": [
+    {
+      "id": "source-review",
+      "description": "Trace signature verification, algorithm selection and claim checks, or the delegation flow’s redirect and state handling, in the supplied revision",
+      "prerequisites": [
+        "A supplied read-only source snapshot; deployment exposure is not established."
+      ]
+    },
+    {
+      "id": "offline-reproduction",
+      "description": "Decode and re-encode a token you hold using a local library",
+      "prerequisites": [
+        "Bounded execution in your own sandbox scratch; network egress is available and any download or install must be receipted."
+      ]
+    },
+    {
+      "id": "controlled-identity-comparison",
+      "description": "Compare acceptance of a structurally changed token or flow step for controlled principals; local HTTP alone is not identity",
+      "prerequisites": [
+        "Operator-supplied authorized credentials for controlled authenticated principals, used only inside the confirmed origin."
+      ]
+    }
+  ],
+  "provenance_refs": [
+    "W6",
+    "W5"
+  ]
+}

@@ -8,6 +8,7 @@ import type { CaseView } from '../../src/cases.js';
 import type { CoverageCellView } from '../../src/coverage.js';
 import { csvCell, mdText, wstgAppendix } from '../../src/report-export.js';
 import { AssessmentStore } from '../../src/state/store.js';
+import { WSTG_BY_KEY } from '../../src/wstg-map.js';
 import { parseWorkspaceCommand } from '../../src/ui/workspace.js';
 import { createContext, createFakePi, createSimpleHerdr, EXTENSION_PATH, InertSandbox } from './helpers/fake-pi.js';
 
@@ -69,6 +70,7 @@ describe('mdText and csvCell neutralize hostile target/model text', () => {
 });
 
 describe('WSTG checklist appendix', () => {
+  const support = (key: string) => WSTG_BY_KEY.get(key)!.support;
   const cell = (id: string, questionKey: string, execution: string, currentness = 'current', caseRefs: Array<{ caseId: string; revision: number }> = []) => ({ id, questionKey, execution, currentness, caseRefs }) as unknown as CoverageCellView;
   const accepted = [{ id: 'case-1', revision: 2, acceptedFinding: true }] as unknown as CaseView[];
 
@@ -85,10 +87,11 @@ describe('WSTG checklist appendix', () => {
     ], accepted).join('\n');
     expect(text.startsWith('## WSTG checklist\n')).toBe(true);
     expect(text).toMatch(/\| L3 proven \| 1 \|/); expect(text).toMatch(/\| L2 checked \| 1 \|/); expect(text).toMatch(/\| L1 attempted, blocked or stale \| 1 \|/); expect(text).toMatch(/\| L0 not checked \| 105 \|/);
-    expect(text).toMatch(/\| wstg-athz-04 Insecure Direct Object References \| D \| I \| L3 \| c-a, c-b \|/);
-    expect(text).toMatch(/\| wstg-sess-05 Cross Site Request Forgery \| N \| BI \| L1 \| c-c \|/);
-    expect(text).toMatch(/\| wstg-info-02 Fingerprint Web Server \| T \| - \| L2 \| c-d \|/);
-    expect(text).toContain('- INFO: wstg-info-01 (O), wstg-info-03 (T)'); // the untouched tests are the denominator, each with its support level
+    // The support letter is read from the map, not pinned here: it changes whenever a skill lands for the test.
+    expect(text).toMatch(new RegExp(`\\| wstg-athz-04 Insecure Direct Object References \\| ${support('wstg-athz-04')} \\| I \\| L3 \\| c-a, c-b \\|`));
+    expect(text).toMatch(new RegExp(`\\| wstg-sess-05 Cross Site Request Forgery \\| ${support('wstg-sess-05')} \\| BI \\| L1 \\| c-c \\|`));
+    expect(text).toMatch(new RegExp(`\\| wstg-info-02 Fingerprint Web Server \\| ${support('wstg-info-02')} \\| - \\| L2 \\| c-d \\|`));
+    expect(text).toContain(`- INFO: wstg-info-01 (O), wstg-info-03 (${support('wstg-info-03')})`); // the untouched tests are the denominator, each with its support level
     expect(text).toContain('### Cells with a wstg- key that is not in the pinned map'); expect(text).toContain('wstg-athz-44: 1 cell(s)');
     expect(text).not.toMatch(/\bsafe\b|fully covered|all clear/i);
   });
@@ -107,15 +110,25 @@ describe('WSTG checklist appendix', () => {
     const a = await h.read(join(h.root, 'out-a')), b = await h.read(join(h.root, 'out-b')); expect(a).toEqual(b);
     const report = a['REPORT.md'], checklist = report.slice(report.indexOf('## WSTG checklist'), report.indexOf('## Accepted current cases'));
     expect(report.indexOf('## Coverage and gaps')).toBeLessThan(report.indexOf('## WSTG checklist'));
-    expect(checklist).toMatch(/\| wstg-athz-04 Insecure Direct Object References \| D \| I \| L3 \|/);
-    expect(checklist).toMatch(/\| wstg-sess-05 Cross Site Request Forgery \| N \| BI \| L1 \|/);
+    expect(checklist).toMatch(new RegExp(`\\| wstg-athz-04 Insecure Direct Object References \\| ${support('wstg-athz-04')} \\| I \\| L3 \\|`));
+    expect(checklist).toMatch(new RegExp(`\\| wstg-sess-05 Cross Site Request Forgery \\| ${support('wstg-sess-05')} \\| BI \\| L1 \\|`));
     expect(checklist).toMatch(/\| L0 not checked \| 106 \|/);
     expect(a['coverage.csv']).toContain('"wstg-athz-04"'); // the keys are ordinary question_key values in the unchanged csv shape
+    expect(report.indexOf('## WSTG checklist')).toBeLessThan(report.indexOf('## Risk rating criteria')); expect(report.indexOf('## Risk rating criteria')).toBeLessThan(report.indexOf('## Accepted current cases'));
+    expect(report).toMatch(/\| Critical \|.*\|\n\| High \|/); expect(report).toMatch(/\| Informational \|/);
+    expect(report).toContain('WSTG tests this case addresses (see the WSTG checklist for level): wstg-athz-04');
+    expect(report).toContain('Surface / self-reported risk (unevaluated)'); expect(report).not.toMatch(/\| Surface \/ risk \|/);
   }));
 
-  it('leaves a report without wstg- keys without a checklist', async () => fixture(async h => {
+  it('leaves a report without wstg- keys without a checklist, but still rates risk for its accepted case', async () => fixture(async h => {
     await populate(h); h.ctx.setConfirm(true); await h.command(`report export ${join(h.root, 'out')}`);
-    expect((await h.read(join(h.root, 'out')))['REPORT.md']).not.toContain('WSTG');
+    const report = (await h.read(join(h.root, 'out')))['REPORT.md'];
+    expect(report).not.toContain('WSTG'); expect(report).toContain('## Risk rating criteria'); // the scale is about the accepted case, independent of any WSTG key
+  }));
+
+  it('omits the risk rating criteria entirely when no case is accepted and current', async () => fixture(async h => {
+    await h.command('--target ./source --solo'); h.ctx.setConfirm(true); await h.command(`report export ${join(h.root, 'out')}`);
+    expect((await h.read(join(h.root, 'out')))['REPORT.md']).not.toContain('Risk rating');
   }));
 });
 

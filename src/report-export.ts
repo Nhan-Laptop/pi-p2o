@@ -44,17 +44,38 @@ const ids = (values: readonly string[] | undefined, limit = 6) => !values?.lengt
 const list = (values: readonly string[] | undefined, limit = 6) => !values?.length ? 'none' : `${values.slice(0, limit).join('; ')}${values.length > limit ? `; … +${values.length - limit}` : ''}`;
 const rows = <T>(items: T[], limit: number) => ({ shown: items.slice(0, limit), omitted: Math.max(0, items.length - limit) });
 
-function caseSection(view: CaseView): string {
+function caseSection(view: CaseView, cells: readonly CoverageCellView[]): string {
+  const wstg = caseWstgKeys(view.id, view.revision, cells);
   return [`### ${mdText(view.title, 160)} — case ${mdText(view.id, 80)} r${view.revision}`,
     `- Verdict **${mdText(view.verdict)}**; review **${mdText(view.reviewStatus)}**; currentness **${mdText(view.currentness)}**; independent validation current: ${view.independentCurrent ? 'yes' : 'no'}`,
     `- Policy: ${mdText(view.policyKey, 160)}${view.rootCauseKey ? `; root cause: ${mdText(view.rootCauseKey, 160)}` : ''}`,
     `- Assets: ${ids(view.assetRefs.map(ref => ref.id))}; claims: ${ids(view.claimRefs)}; independent evidence: ${ids(view.independentEvidenceRefs)}; tasks: ${ids(view.taskRefs.map(ref => `${ref.taskId}@r${ref.revision ?? '?'}`))}`,
     `- Contradictions: ${view.contradictions.length ? view.contradictions.slice(0, 6).map(item => `${mdText(item.evidenceRef, 80)} (${mdText(item.status)})`).join(', ') : 'none recorded'}; affected variants: ${list(view.affectedVariants.map(item => mdText(item, 120)))}`,
+    ...(wstg.length ? [`- WSTG tests this case addresses (see the WSTG checklist for level): ${wstg.map(key => mdText(key, 40)).join(', ')}`] : []),
     `- Remediation: ${mdText(view.remediation.status)} — ${mdText(view.remediation.reason, 200)}`,
     `- Reviewer reasoning: ${mdText(view.reviewReason)}`, `- Limitations: ${mdText(view.limitations)}`].join('\n');
 }
 
 const EVIDENCE_LABEL: Record<WstgEvidence, string> = { L3: 'proven', L2: 'checked', L1: 'attempted, blocked or stale', L0: 'not checked', 'n/a': 'not applicable' };
+
+/**
+ * Fixed, documented scale (skills/remediation/references/risk-rating-criteria.md); never computed from a field the host validates and
+ * never a substitute for a case's own verdict or review status. Printed once per report when at least one accepted case exists.
+ */
+const RISK_LEVELS: ReadonlyArray<readonly [name: string, criteria: string]> = [
+  ['Critical', 'exploitable with no prior access and no operator-supplied identity, reaching data or control beyond the tested object’s own owner'],
+  ['High', 'exploitable with no prior access reaching only the tested object’s own owner, or exploitable only with an identity but reaching beyond it'],
+  ['Medium', 'exploitable only with an operator-supplied identity and confined to that identity’s own data, or a confirmed structural weakness whose further reach is an open proof gap'],
+  ['Low', 'a confirmed policy deviation with no demonstrated protected effect beyond the deviation itself'],
+  ['Informational', 'a bounded ruled-out result, a gap whose cause is known, or an observation with no policy to measure it against yet'],
+];
+
+/** Lower-case WSTG keys of non-retired cells that cite this exact case revision, for a one-line cross-reference in a case section. */
+function caseWstgKeys(caseId: string, revision: number, cells: readonly CoverageCellView[]): string[] {
+  const keys = new Set<string>();
+  for (const cell of cells) if (cell.currentness !== 'retired' && isWstgKey(cell.questionKey) && cell.caseRefs.some(ref => ref.caseId === caseId && ref.revision === revision)) keys.add(cell.questionKey);
+  return [...keys].sort();
+}
 
 /**
  * Checklist for runs that address OWASP WSTG tests: one level per test over the recorded cells, and every test with no cell listed as the denominator.
@@ -134,9 +155,12 @@ export function renderReport(index: LedgerIndex, context: ReportProjectionContex
 
   out.push(...wstgAppendix(cells.map(item => item.cell), cases));
 
+  if (accepted.length) out.push('## Risk rating criteria', '', 'A fixed, documented scale, named here for the cases below. It is attributed, not computed from any field the host validates, and it never changes a case’s own verdict or review status.', '',
+    '| Level | Criteria |', '|---|---|', ...RISK_LEVELS.map(([name, criteria]) => `| ${name} | ${criteria} |`), '');
+
   out.push('## Accepted current cases', '');
   if (!accepted.length) out.push(`No case was accepted and current at sequence ${meta.asOfSequence}. This does not mean the target is safe; see the coverage and gaps above.`, '');
-  else { const listed = rows(accepted, CASE_ROWS); for (const view of listed.shown) out.push(caseSection(view), ''); if (listed.omitted) out.push(`… ${listed.omitted} more accepted cases; see cases.csv.`, ''); }
+  else { const listed = rows(accepted, CASE_ROWS); for (const view of listed.shown) out.push(caseSection(view, cells.map(item => item.cell)), ''); if (listed.omitted) out.push(`… ${listed.omitted} more accepted cases; see cases.csv.`, ''); }
 
   out.push('## Other cases', '');
   if (!others.length) out.push('None.', '');
@@ -148,11 +172,11 @@ export function renderReport(index: LedgerIndex, context: ReportProjectionContex
     out.push('');
   }
 
-  out.push('## Worker claims', '', 'Attributed submissions. A claim becomes a finding only through an accepted current case above.', '');
+  out.push('## Worker claims', '', 'Attributed submissions. A claim becomes a finding only through an accepted current case above. "Surface / risk" is the worker’s own unevaluated label, not a rating from the scale above.', '');
   const claims = rows(projection.candidates, ROWS);
   if (!claims.shown.length) out.push('No claim is recorded.', '');
   else {
-    out.push('| Claim | Candidate | Surface / risk | Closure | Execution | Proof | Independent validation current |', '|---|---|---|---|---|---|---|');
+    out.push('| Claim | Candidate | Surface / self-reported risk (unevaluated) | Closure | Execution | Proof | Independent validation current |', '|---|---|---|---|---|---|---|');
     for (const claim of claims.shown) out.push(`| ${mdText(claim.id, 80)} | ${mdText(claim.candidate, 160)} | ${mdText(`${claim.surface ?? ''} / ${claim.risk ?? ''}`, 160)} | ${mdText(claim.closure, 24)} | ${mdText(claim.execution, 24)} | ${mdText(claim.proof, 40)} | ${claim.independentCurrent === undefined ? 'not claimed' : claim.independentCurrent ? 'yes' : 'no'} |`);
     out.push('');
   }

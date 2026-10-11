@@ -1,0 +1,45 @@
+{
+  "schema_version": 1,
+  "kind": "playbook",
+  "references": [
+    "references/query-languages.md",
+    "references/document-parsers.md",
+    "references/process-and-template-interpreters.md",
+    "references/representation-dependent-behavior.md",
+    "references/outbound-requests-and-paths.md",
+    "references/stored-and-second-order-effects.md"
+  ],
+  "workflows": [
+    {
+      "id": "source-review",
+      "description": "Find where a value reaches a server-side interpreter and whether a parameterized or allow-listed path is used",
+      "prerequisites": [
+        "A supplied read-only source snapshot; deployment exposure is not established."
+      ]
+    },
+    {
+      "id": "offline-reproduction",
+      "description": "Reproduce the interpreter and the suspected sink with a local, disposable copy of its data",
+      "prerequisites": [
+        "Bounded execution in your own sandbox scratch; network egress is available and any download or install must be receipted."
+      ]
+    },
+    {
+      "id": "public-http-review",
+      "description": "Boundary-class markers only, on a path the scope allows for this task",
+      "prerequisites": [
+        "Authorized same-origin requests through the scoped HTTP client on the confirmed origin, with the method, headers, cookies and body the approved scope declares."
+      ]
+    },
+    {
+      "id": "sandbox-network-review",
+      "description": "Confirm outbound reachability against a sandbox-owned listener; opaque commands are not origin-filtered, so address only a destination you own",
+      "prerequisites": [
+        "Bounded TCP or TLS exchange with the confirmed host and port through the sandbox network tool; opaque commands are not origin-filtered, so address only the confirmed target and port."
+      ]
+    }
+  ],
+  "provenance_refs": [
+    "W7"
+  ]
+}

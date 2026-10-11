@@ -48,6 +48,11 @@ PROVENANCE_FIELDS = (
     "project", "distribution", "revision", "revision_basis", "snapshot_retrieved_at", "reviewed_at",
     "license", "license_sha256", "license_copy", "license_notice", "version_metadata_sha256", "usage_boundary", "attribution",
 )
+WSTG_UPSTREAM_FIELDS = (
+    "project", "distribution", "revision", "revision_basis", "snapshot_retrieved_at", "reviewed_at",
+    "license", "license_sha256", "license_copy", "license_notice", "usage_boundary", "attribution",
+)
+WSTG_REFERENCE_FIELDS = frozenset({"id", "document", "source_dir", "pages", "sha256", "license", "adapted", "excluded", "used_by"})
 REQUIRED_RECIPE_FLAGS = (
     "--config", "--metrics=off", "--json", "--jobs", "--timeout", "--disable-version-check",
     "SEMGREP_ENABLE_VERSION_CHECK=0", "SEMGREP_SEND_METRICS=off",
@@ -233,8 +238,10 @@ def validate_runtime_document(root: Path, label: str, document: dict, errors: li
         elif re.fullmatch(rf"{re.escape(owner)}/references/[^/]+\.md", relative):
             if identifier.split(":", 1)[1] != Path(relative).stem:
                 errors.append(f"{label}: document id {identifier} does not match {path}")
-    elif not identifier.startswith(("shared:", "evidence:")):
-        errors.append(f"{label}: document {identifier} outside the skill library needs a shared/evidence prefix")
+    elif not identifier.startswith(("shared:", "evidence:", "wstg-source:")):
+        errors.append(f"{label}: document {identifier} outside the skill library needs a shared/evidence/wstg-source prefix")
+    if path.startswith("my_references/") and not path.startswith("my_references/wstg/"):
+        errors.append(f"{label}: only my_references/wstg/ may be a catalog document path")
     if "section" in document:
         section = document["section"]
         if not isinstance(section, str) or not section or not path.endswith(".md"):
@@ -449,6 +456,102 @@ def validate_provenance(root: Path, errors: list[str]) -> dict[str, set[str]]:
         if not isinstance(used_by, list) or any(not isinstance(item, str) for item in used_by):
             errors.append(f"{label}: {identifier} invalid used_by list")
             used_by = []
+        provenance[identifier] = set(used_by)
+    return provenance
+
+
+def tree_digest(directory: Path) -> tuple[str, int]:
+    """Digest of one upstream chapter: SHA-256 over sorted "relative path TAB page SHA-256" lines of every Markdown page below it, and the page count."""
+    lines = [f"{page.relative_to(directory).as_posix()}\t{hashlib.sha256(page.read_bytes()).hexdigest()}\n" for page in sorted(directory.rglob("*.md"))]
+    return hashlib.sha256("".join(lines).encode()).hexdigest(), len(lines)
+
+
+def validate_wstg_provenance(root: Path, errors: list[str]) -> dict[str, set[str]]:
+    """Record of the second reviewed upstream (OWASP WSTG, CC-BY-SA-4.0). It lives in its own file so each upstream keeps its own license; credit rules match the first record."""
+    path = root / "research/WSTG_PROVENANCE.json"
+    label = "research/WSTG_PROVENANCE.json"
+    provenance: dict[str, set[str]] = {}
+    if not path.exists():
+        return provenance
+    try:
+        data = read_json_object(path)
+    except (OSError, TypeError, ValueError) as error:
+        errors.append(f"{label}: invalid provenance ({error})")
+        return provenance
+    document_path = root / "research/WSTG_PROVENANCE.md"
+    document = document_path.read_text(encoding="utf-8") if document_path.is_file() else ""
+    if not document:
+        errors.append("research/WSTG_PROVENANCE.md: missing provenance document")
+    if data.get("schema_version") != 1:
+        errors.append(f"{label}: unsupported provenance schema")
+    upstream = data.get("upstream")
+    if not isinstance(upstream, dict) or not set(WSTG_UPSTREAM_FIELDS) <= set(upstream):
+        errors.append(f"{label}: incomplete upstream identity")
+        upstream = {}
+    else:
+        for key in WSTG_UPSTREAM_FIELDS:
+            if not isinstance(upstream.get(key), str) or not upstream[key]:
+                errors.append(f"{label}: missing upstream {key}")
+        if not HASH.fullmatch(str(upstream.get("license_sha256", ""))):
+            errors.append(f"{label}: invalid license_sha256")
+        if not re.fullmatch(r"[0-9a-f]{40}", str(upstream.get("revision", ""))):
+            errors.append(f"{label}: revision must be a full commit id")
+        for key in ("license", "revision"):
+            value = upstream.get(key)
+            if value and value not in document:
+                errors.append(f"{label}: provenance document omits upstream {key}")
+        copy_name = upstream.get("license_copy")
+        if isinstance(copy_name, str) and copy_name:
+            copy_path = (root / copy_name).resolve()
+            if not copy_path.is_relative_to(root.resolve()) or not copy_path.is_file():
+                errors.append(f"{label}: missing license copy {copy_name}")
+            elif hashlib.sha256(copy_path.read_bytes()).hexdigest() != upstream.get("license_sha256"):
+                errors.append(f"{label}: license copy hash differs from the recorded upstream license")
+        notice_name = upstream.get("license_notice")
+        if isinstance(notice_name, str) and notice_name and not (root / notice_name).resolve().is_file():
+            errors.append(f"{label}: missing license notice {notice_name}")
+    references = data.get("references")
+    if not isinstance(references, list) or len(references) > 20:
+        errors.append(f"{label}: expected at most 20 reviewed references")
+        return provenance
+    for reference in references:
+        if not isinstance(reference, dict):
+            errors.append(f"{label}: invalid reference entry")
+            continue
+        identifier = reference.get("id")
+        if not isinstance(identifier, str) or not re.fullmatch(r"W\d{1,2}", identifier):
+            errors.append(f"{label}: invalid reference id")
+            continue
+        if identifier in provenance:
+            errors.append(f"{label}: duplicate reference {identifier}")
+            continue
+        if set(reference) != WSTG_REFERENCE_FIELDS:
+            errors.append(f"{label}: {identifier} incomplete reference entry")
+            continue
+        if not isinstance(reference.get("document"), str) or not reference["document"]:
+            errors.append(f"{label}: {identifier} missing document title")
+        source_dir = reference.get("source_dir")
+        if not isinstance(source_dir, str) or not source_dir or source_dir.startswith("/") or "\\" in source_dir or ".." in Path(source_dir).parts:
+            errors.append(f"{label}: {identifier} invalid source directory")
+        if not isinstance(reference.get("pages"), int) or isinstance(reference.get("pages"), bool) or reference["pages"] < 1:
+            errors.append(f"{label}: {identifier} invalid page count")
+        if not HASH.fullmatch(str(reference.get("sha256", ""))):
+            errors.append(f"{label}: {identifier} invalid hash")
+        elif reference["sha256"] not in document:
+            errors.append(f"{label}: provenance document omits hash for {identifier}")
+        if upstream and reference.get("license") != upstream.get("license"):
+            errors.append(f"{label}: {identifier} license differs from upstream")
+        for field in ("adapted", "excluded"):
+            items = reference.get(field)
+            if not isinstance(items, list) or not items or any(not isinstance(item, str) or len(item) < 20 for item in items):
+                errors.append(f"{label}: {identifier} invalid {field} list")
+        used_by = reference.get("used_by")
+        if not isinstance(used_by, list) or not used_by or any(not isinstance(item, str) for item in used_by):
+            errors.append(f"{label}: {identifier} invalid used_by list")
+            used_by = []
+        for name in used_by:
+            if not re.fullmatch(r"[a-z0-9]+(?:-[a-z0-9]+)*", name) or not (root / "skills" / name / "SKILL.md").is_file():
+                errors.append(f"{label}: {identifier} credits unknown skill {name}")
         provenance[identifier] = set(used_by)
     return provenance
 
@@ -722,6 +825,7 @@ def validate(root: Path) -> list[str]:
 
         metadata = load_skill_metadata(root, errors)
         provenance = validate_provenance(root, errors)
+        provenance.update(validate_wstg_provenance(root, errors))
         paths = sorted((root / "skills").glob("*/SKILL.md"))
         skill_documents = sorted((root / "skills").rglob("*.md"))
         recipe_documents = set((root / "skills").glob("*/recipes/**/*.md"))
