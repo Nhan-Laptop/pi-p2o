@@ -1,11 +1,12 @@
 import { caseViews, type CaseView } from './cases.js';
-import { coverageViews, type CoverageContext, type CoveragePlanView } from './coverage.js';
+import { coverageViews, type CoverageCellView, type CoverageContext, type CoveragePlanView } from './coverage.js';
 import { redact } from './evidence.js';
 import { cleanText } from './process.js';
 import type { LedgerIndex } from './records.js';
 import { reportProjection, type ReportProjectionContext } from './report.js';
 import { taskFrontier } from './tasks.js';
 import { sha256Hex } from './validate.js';
+import { WSTG_BY_KEY, WSTG_COMMIT, WSTG_MAP, isWstgKey, wstgEvidence, wstgKey, type WstgEvidence } from './wstg-map.js';
 
 /**
  * Deterministic human report rendered from committed state. No model, no clock, no random values: the same state at the same
@@ -53,6 +54,41 @@ function caseSection(view: CaseView): string {
     `- Reviewer reasoning: ${mdText(view.reviewReason)}`, `- Limitations: ${mdText(view.limitations)}`].join('\n');
 }
 
+const EVIDENCE_LABEL: Record<WstgEvidence, string> = { L3: 'proven', L2: 'checked', L1: 'attempted, blocked or stale', L0: 'not checked', 'n/a': 'not applicable' };
+
+/**
+ * Checklist for runs that address OWASP WSTG tests: one level per test over the recorded cells, and every test with no cell listed as the denominator.
+ * Returns nothing (the report is unchanged) unless a coverage cell uses a wstg- question key. The text names no tool and quotes no target data.
+ */
+export function wstgAppendix(cells: readonly CoverageCellView[], cases: readonly CaseView[]): string[] {
+  const used = cells.filter(cell => cell.currentness !== 'retired' && isWstgKey(cell.questionKey));
+  if (!used.length) return [];
+  const byKey = new Map<string, CoverageCellView[]>();
+  for (const cell of used) byKey.set(cell.questionKey, [...(byKey.get(cell.questionKey) ?? []), cell]);
+  const tests = WSTG_MAP.map(test => { const own = [...(byKey.get(wstgKey(test.id)) ?? [])].sort((a, b) => a.id.localeCompare(b.id)); return { test, own, level: wstgEvidence(own, cases) }; });
+  const tally = new Map<WstgEvidence, number>(); for (const item of tests) tally.set(item.level, (tally.get(item.level) ?? 0) + 1);
+  const out = ['## WSTG checklist', '',
+    `Tests are the OWASP WSTG tests pinned at commit ${WSTG_COMMIT.slice(0, 12)} (${WSTG_MAP.length} tests). A coverage cell addresses one test by using its lower-case ID as its question key. Level summarizes only the cells recorded in this run: L0 not checked, L1 attempted, blocked or stale, L2 checked (a current tested cell), L3 proven (that cell cites an accepted, current, confirmed case). A level is not a statement about the target, and L2 does not mean the target is protected. Support describes the shipped skill library, never the target: D a skill names the test, T only general techniques apply, N no skill, O outside the scope of this tool. Flag B marks a test whose effect needs a browser (proof stops at offline reproduction); flag I marks a test that needs operator-supplied identities.`, '',
+    '| Level | Tests |', '|---|---|', ...(['L3', 'L2', 'L1', 'L0', 'n/a'] as const).map(level => `| ${level} ${EVIDENCE_LABEL[level]} | ${tally.get(level) ?? 0} |`), ''];
+  const touched = rows(tests.filter(item => item.own.length), ROWS);
+  out.push('### Tests with a recorded cell', '');
+  if (!touched.shown.length) out.push('No recorded cell matches a test of the pinned map.', '');
+  else {
+    out.push('| Test | Support | Flags | Level | Cells |', '|---|---|---|---|---|');
+    for (const { test, own, level } of touched.shown) out.push(`| ${mdText(wstgKey(test.id), 40)} ${mdText(test.title, 100)} | ${test.support} | ${`${test.browser ? 'B' : ''}${test.identity ? 'I' : ''}` || '-'} | ${level} | ${ids(own.map(cell => cell.id))} |`);
+    if (touched.omitted) out.push('', `… ${touched.omitted} more tests with a recorded cell; see coverage.csv.`);
+    out.push('');
+  }
+  out.push('### Tests without a recorded cell (L0)', '', 'These were not checked in this run. Support N and O mean the shipped library has no skill for the test or the test is outside the scope of this tool, so an empty row can be a limit of the tool and not a result.', '');
+  const groups = new Map<string, string[]>();
+  for (const { test, own } of tests) if (!own.length) groups.set(test.id.split('-')[1], [...(groups.get(test.id.split('-')[1]) ?? []), `${wstgKey(test.id)} (${test.support})`]);
+  for (const [group, names] of groups) out.push(`- ${group}: ${names.join(', ')}`);
+  const unknown = [...byKey.keys()].filter(key => !WSTG_BY_KEY.has(key)).sort();
+  if (unknown.length) out.push('', '### Cells with a wstg- key that is not in the pinned map', '', ...unknown.slice(0, 20).map(key => `- ${mdText(key, 80)}: ${byKey.get(key)!.length} cell(s)`), ...(unknown.length > 20 ? [`- … ${unknown.length - 20} more keys`] : []));
+  out.push('');
+  return out;
+}
+
 export function renderReport(index: LedgerIndex, context: ReportProjectionContext & { coverage?: CoverageContext }, meta: ReportMeta): RenderedReport {
   const projection = reportProjection(index, context), tasks = taskFrontier(index);
   const cases = caseViews(index, context.cases ?? {}), plans: CoveragePlanView[] = context.coverage ? coverageViews(index, context.coverage) : [];
@@ -95,6 +131,8 @@ export function renderReport(index: LedgerIndex, context: ReportProjectionContex
   out.push('### Open gaps', '');
   if (!gaps.shown.length) out.push('No open gap is recorded. This does not mean none exists.', '');
   else { for (const { id, record } of gaps.shown) out.push(`- ${mdText(id, 80)}${record ? ` (${mdText(record.kind, 24)}, ${mdText(record.by, 40)}): ${mdText(record.text)}` : ''}`); if (gaps.omitted) out.push(`- … ${gaps.omitted} more open gaps`); out.push(''); }
+
+  out.push(...wstgAppendix(cells.map(item => item.cell), cases));
 
   out.push('## Accepted current cases', '');
   if (!accepted.length) out.push(`No case was accepted and current at sequence ${meta.asOfSequence}. This does not mean the target is safe; see the coverage and gaps above.`, '');

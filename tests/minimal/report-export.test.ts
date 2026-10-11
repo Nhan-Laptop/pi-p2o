@@ -4,7 +4,9 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { describe, expect, it } from 'vitest';
 import { registerP2O } from '../../extensions/p2o/index.js';
-import { csvCell, mdText } from '../../src/report-export.js';
+import type { CaseView } from '../../src/cases.js';
+import type { CoverageCellView } from '../../src/coverage.js';
+import { csvCell, mdText, wstgAppendix } from '../../src/report-export.js';
 import { AssessmentStore } from '../../src/state/store.js';
 import { parseWorkspaceCommand } from '../../src/ui/workspace.js';
 import { createContext, createFakePi, createSimpleHerdr, EXTENSION_PATH, InertSandbox } from './helpers/fake-pi.js';
@@ -30,7 +32,7 @@ async function fixture(work: (h: any) => Promise<void>) {
 }
 
 /** Builds one accepted case, one pending case, a claim, an open gap and a coverage plan with a tested and an untested cell. */
-async function populate(h: any, titles = { accepted: 'Runtime fixture boundary case', pending: 'Second pending case' }) {
+async function populate(h: any, titles = { accepted: 'Runtime fixture boundary case', pending: 'Second pending case' }, keys: Record<string, string> = {}) {
   await h.command('--target ./source --solo');
   const asset = (await h.call('p2o_graph', { action: 'record', batch: { assets: [{ asset: { kind: 'endpoint', key: 'GET /report-fixture' } }] } })).details.acks[0];
   const taskDraft = { question: 'Does the bounded fixture observation match the declared policy?', surface: '/report-fixture', risk: 'authorization', role: 'general', roleReason: 'Bounded inert observation for report export', expectedTrue: 'Receipt records the expected policy observation', expectedFalse: 'Receipt records the contrasting control', stopCondition: 'Stop after one inert command and owner review', evidenceIds: [], prerequisites: [], skills: [], methodReason: 'One inert command with no external target' };
@@ -43,7 +45,7 @@ async function populate(h: any, titles = { accepted: 'Runtime fixture boundary c
   const accepted = (await h.call('p2o_case', { action: 'revise', id: first.id, revision: 1, entry: { ...draft, reviewStatus: 'accepted', reviewReason: 'Owner reviewed exact current claim, task, asset and limitations' } })).details;
   const pending = (await h.call('p2o_case', { action: 'create', entry: { ...draft, title: titles.pending, policyKey: 'policy:report-other', rootCauseKey: 'root:report-other', claimRefs: [claim.id] }, requestId: 'report-case-2' })).details;
   const plan = (await h.call('p2o_coverage', { action: 'plan-create', plan: { title: 'Report coverage denominator', status: 'active', reason: 'Two declared cells for report export fixtures', exclusions: ['No undeclared endpoints'], unknownScope: ['Deployment parity unknown'] }, requestId: 'report-plan' })).details;
-  const cell = (execution: string, assessment: string, extra: any = {}) => ({ assetRef: { id: asset.entityId, revision: 1 }, questionKey: `question:${execution}`, policyKey: 'policy:report-case', actorContext: 'actor:fixture', tenantContext: 'tenant:fixture', methodFamily: 'offline-observation', execution, assessment, taskRefs: [], claimRefs: [], caseRefs: [], evidenceRefs: [], negativeControlRefs: [], gapRefs: [], reason: `Fixture cell ${execution}`, limitations: 'Says nothing about undeclared actors or assets', ...extra });
+  const cell = (execution: string, assessment: string, extra: any = {}) => ({ assetRef: { id: asset.entityId, revision: 1 }, questionKey: keys[execution] ?? `question:${execution}`, policyKey: 'policy:report-case', actorContext: 'actor:fixture', tenantContext: 'tenant:fixture', methodFamily: 'offline-observation', execution, assessment, taskRefs: [], claimRefs: [], caseRefs: [], evidenceRefs: [], negativeControlRefs: [], gapRefs: [], reason: `Fixture cell ${execution}`, limitations: 'Says nothing about undeclared actors or assets', ...extra });
   const tested = (await h.call('p2o_coverage', { action: 'cell-create', planId: plan.id, planRevision: plan.revision, cell: cell('tested', 'accepted', { taskRefs: [{ taskId: task.id, revision: reviewed.revision }], claimRefs: [claim.id], caseRefs: [{ caseId: accepted.id, revision: accepted.revision }], evidenceRefs: [observation.evidenceId] }) })).details;
   const gapAck = (await h.call('p2o_note', { kind: 'open', text: 'Credentials for the second actor were not available, so that actor was never tested' })).details, gapId = gapAck.recordId ?? gapAck.id;
   await h.call('p2o_coverage', { action: 'cell-create', planId: plan.id, planRevision: tested.plan.revision, cell: cell('blocked', 'open_gap', { gapRefs: [gapId], reason: 'Credentials for the second actor were not available' }) });
@@ -64,6 +66,57 @@ describe('mdText and csvCell neutralize hostile target/model text', () => {
     for (const formula of ['=HYPERLINK("http://evil.example","x")', '+cmd|calc', '-2+3', '@SUM(A1)', '\t=1+1', '=1+1\n=2']) expect(csvCell(formula), formula).toMatch(/^"'?[^=+\-@\t\r\n]/);
     expect(csvCell('=1+1')).toBe(`"'=1+1"`); expect(csvCell('say "hi"\r\nnow')).toBe('"say ""hi"" now"'); expect(csvCell('a‮b​c')).toBe('"abc"'); expect(csvCell(7)).toBe('"7"');
   });
+});
+
+describe('WSTG checklist appendix', () => {
+  const cell = (id: string, questionKey: string, execution: string, currentness = 'current', caseRefs: Array<{ caseId: string; revision: number }> = []) => ({ id, questionKey, execution, currentness, caseRefs }) as unknown as CoverageCellView;
+  const accepted = [{ id: 'case-1', revision: 2, acceptedFinding: true }] as unknown as CaseView[];
+
+  it('adds nothing when no live cell uses a wstg- key, so existing reports are unchanged', () => {
+    expect(wstgAppendix([], accepted)).toEqual([]);
+    expect(wstgAppendix([cell('c1', 'question:tested', 'tested')], accepted)).toEqual([]);
+    expect(wstgAppendix([cell('c2', 'wstg-athz-04', 'tested', 'retired')], accepted)).toEqual([]); // a retired cell does not count
+  });
+
+  it('gives each test one level, counts every other test as not checked, and lists keys that are not in the pinned map', () => {
+    const text = wstgAppendix([
+      cell('c-a', 'wstg-athz-04', 'tested', 'current', [{ caseId: 'case-1', revision: 2 }]), cell('c-b', 'wstg-athz-04', 'blocked'),
+      cell('c-c', 'wstg-sess-05', 'attempted'), cell('c-d', 'wstg-info-02', 'tested'), cell('c-e', 'wstg-athz-44', 'tested'),
+    ], accepted).join('\n');
+    expect(text.startsWith('## WSTG checklist\n')).toBe(true);
+    expect(text).toMatch(/\| L3 proven \| 1 \|/); expect(text).toMatch(/\| L2 checked \| 1 \|/); expect(text).toMatch(/\| L1 attempted, blocked or stale \| 1 \|/); expect(text).toMatch(/\| L0 not checked \| 105 \|/);
+    expect(text).toMatch(/\| wstg-athz-04 Insecure Direct Object References \| D \| I \| L3 \| c-a, c-b \|/);
+    expect(text).toMatch(/\| wstg-sess-05 Cross Site Request Forgery \| N \| BI \| L1 \| c-c \|/);
+    expect(text).toMatch(/\| wstg-info-02 Fingerprint Web Server \| T \| - \| L2 \| c-d \|/);
+    expect(text).toContain('- INFO: wstg-info-01 (O), wstg-info-03 (T)'); // the untouched tests are the denominator, each with its support level
+    expect(text).toContain('### Cells with a wstg- key that is not in the pinned map'); expect(text).toContain('wstg-athz-44: 1 cell(s)');
+    expect(text).not.toMatch(/\bsafe\b|fully covered|all clear/i);
+  });
+
+  it('is independent of input order and neutralizes hostile cell ids', () => {
+    const cells = [cell('c-2', 'wstg-athz-04', 'tested'), cell('c-1', 'wstg-athz-04', 'attempted'), cell(HOSTILE, 'wstg-sess-05', 'tested')];
+    const a = wstgAppendix(cells, []).join('\n');
+    expect(wstgAppendix([...cells].reverse(), []).join('\n')).toBe(a);
+    expect(a).not.toMatch(/(?<!\\)\]\(/); expect(a).not.toMatch(/<(?:img|script)/i); expect(a).not.toMatch(/https?:\/\//); expect(a).not.toMatch(/[\u001b‮​]/); expect(a).not.toMatch(/(?<!\\)`/);
+    expect(a).toContain('evil'); // kept, only made inert
+  });
+
+  it('is part of the exported report only when a cell uses a wstg- key, and the second export is byte-identical', async () => fixture(async h => {
+    await populate(h, undefined, { tested: 'wstg-athz-04', blocked: 'wstg-sess-05' }); h.ctx.setConfirm(true);
+    await h.command(`report export ${join(h.root, 'out-a')}`); await h.command(`report export ${join(h.root, 'out-b')}`);
+    const a = await h.read(join(h.root, 'out-a')), b = await h.read(join(h.root, 'out-b')); expect(a).toEqual(b);
+    const report = a['REPORT.md'], checklist = report.slice(report.indexOf('## WSTG checklist'), report.indexOf('## Accepted current cases'));
+    expect(report.indexOf('## Coverage and gaps')).toBeLessThan(report.indexOf('## WSTG checklist'));
+    expect(checklist).toMatch(/\| wstg-athz-04 Insecure Direct Object References \| D \| I \| L3 \|/);
+    expect(checklist).toMatch(/\| wstg-sess-05 Cross Site Request Forgery \| N \| BI \| L1 \|/);
+    expect(checklist).toMatch(/\| L0 not checked \| 106 \|/);
+    expect(a['coverage.csv']).toContain('"wstg-athz-04"'); // the keys are ordinary question_key values in the unchanged csv shape
+  }));
+
+  it('leaves a report without wstg- keys without a checklist', async () => fixture(async h => {
+    await populate(h); h.ctx.setConfirm(true); await h.command(`report export ${join(h.root, 'out')}`);
+    expect((await h.read(join(h.root, 'out')))['REPORT.md']).not.toContain('WSTG');
+  }));
 });
 
 describe('report export command', () => {
