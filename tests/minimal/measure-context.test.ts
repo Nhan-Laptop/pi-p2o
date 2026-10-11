@@ -4,7 +4,7 @@ import { promisify } from 'node:util';
 import { describe, expect, it } from 'vitest';
 
 /**
- * The numbers in planning_update.md and implement.md come from scripts/measure-context.mjs. This keeps that script working (it loads the real prompts, the real
+ * The numbers in planning_update.md come from scripts/measure-context.mjs. This keeps that script working (it loads the real prompts, the real
  * tool registration and the real skill library from source) and keeps the invariants those documents rely on. It never starts a run, a model or a target.
  */
 const root = resolve(import.meta.dirname, '../..');
