@@ -67,6 +67,7 @@ const HELP = [
   '       /p2o plans [cursor] | plan <id> | phases [cursor] | phase <id> (read-only knowledge)',
   '       /p2o findings [cursor] | finding <case-id> | coverage [cursor] | coverage-cell <id> (review/currentness views)',
   '       /p2o heads [domain|all] [cursor default/min 0] [limit default 20, min 1, max 100] | digest (indexed read-only, no delivery ACK)',
+  '       /p2o graph [asset-id] [cursor] | graph page <cursor> | graph export [limit] [cursor] (read-only asset graph)',
   '       /p2o checkpoint [reason] | checkpoints [id] | artifact <id> [byte-offset]',
   '       /p2o open <run-id> | recover <run-id> | reconcile <run-id> [reason] | close (historical knowledge only; never resumes execution)',
   '       /p2o export <absolute-dir> | import <absolute-dir> (portable redacted knowledge; host paths, human only)',

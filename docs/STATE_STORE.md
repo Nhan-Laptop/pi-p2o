@@ -1,6 +1,6 @@
 # AssessmentStore — nền tảng K0/K2, graph K3 và work/planning K4
 
-**Source checkout đã handover runtime sang canonical store; chưa publish/install. K2 còn các gates artifact/import/export/context, không coi full roadmap đã hoàn tất.**
+**Runtime đã handover sang canonical store, đã push và cài (không có release/version riêng). K2 còn các gates artifact/import/export/context, không coi full roadmap đã hoàn tất.**
 Xem [trạng thái toàn roadmap](KNOWLEDGE_WORKSPACE.md) và [thiết kế K0–K7](../planning_update.md).
 
 ## ADR K0-002: SQLite, một owner writer, rollback journal

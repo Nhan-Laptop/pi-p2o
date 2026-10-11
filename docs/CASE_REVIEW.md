@@ -1,6 +1,6 @@
 # Canonical case review và proof-aware coverage — checkout K5
 
-**Đã nối vào source checkout, chưa publish/install; K0–K7 chưa hoàn tất.**
+**Đã nối vào runtime, đã push và cài (không có release/version riêng); K0–K7 chưa hoàn tất.**
 K5 xây trên candidate/evidence/TaskBoard/Asset Graph hiện có. Nó không tạo finding store,
 execution queue, scope grant hay goal-completion engine thứ hai.
 

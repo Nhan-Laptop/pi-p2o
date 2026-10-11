@@ -1,6 +1,6 @@
 # Asset/fact/hypothesis graph — K3 trong source checkout
 
-**Đã implement và nối runtime; chưa publish/install.** Không coi K3 là hoàn tất [K0–K7](../planning_update.md).
+**Đã implement và nối runtime; đã push và cài (không có release/version riêng).** Không coi K3 là hoàn tất [K0–K7](../planning_update.md).
 Graph là tri thức của run, không phải scope authorization, finding đã verified hay một writable task/finding store khác.
 
 ## Tham khảo ARTEX, không bê nguyên kiến trúc

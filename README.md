@@ -4,7 +4,7 @@ One command. Your **current Pi agent** plans an authorized assessment; a determi
 **visible worker panes**. Workers investigate one intent autonomously. Shared-serial execution is default; isolated
 assignment executors are opt-in. No hidden Planner model, provider harness or dashboard.
 
-**Trạng thái:** `main` từ `7e204c3` đã gồm phần K0–K7 đang triển khai và là bản mà `pi install` lấy về: canonical SQLite/schema 7, durable-local luôn confirm, visibility/checkpoint/bounded capture, [asset/fact graph K3](docs/ASSET_GRAPH.md), [work admission/kế hoạch/phase cards K4](docs/WORK_ADMISSION.md), [canonical case/proof-aware coverage K5](docs/CASE_REVIEW.md), [indexed knowledge heads/context packets K6](docs/CONTEXT_PACKETS.md) và [acceptance matrix K7](docs/ACCEPTANCE_MATRIX.md). `package.json` vẫn **0.5.0** (baseline phát hành `e639029`): chưa có version/release mới, nhãn K2–K6 bên dưới đánh dấu phần thêm sau baseline. K0–K7 **chưa hoàn tất**; installed acceptance mới là 6 test inert, chưa phải ma trận đầy đủ, Herdr thật hay hiệu quả pentest. Xem [trạng thái và gates còn lại](docs/KNOWLEDGE_WORKSPACE.md).
+**Trạng thái:** `main` từ `7e204c3` đã gồm phần K0–K7 đang triển khai (và từ `b7cfa6f` thêm giai đoạn W0–W6a: điều khiển operator, xuất báo cáo tất định, tìm kiếm, usage, digest runtime) và là bản mà `pi install` lấy về: canonical SQLite/schema 7, durable-local luôn confirm, visibility/checkpoint/bounded capture, [asset/fact graph K3](docs/ASSET_GRAPH.md), [work admission/kế hoạch/phase cards K4](docs/WORK_ADMISSION.md), [canonical case/proof-aware coverage K5](docs/CASE_REVIEW.md), [indexed knowledge heads/context packets K6](docs/CONTEXT_PACKETS.md) và [acceptance matrix K7](docs/ACCEPTANCE_MATRIX.md). `package.json` vẫn **0.5.0** (baseline phát hành `e639029`): chưa có version/release mới, nhãn K2–K6 bên dưới đánh dấu phần thêm sau baseline. K0–K7 **chưa hoàn tất**; installed acceptance mới là 6 test inert, chưa phải ma trận đầy đủ, Herdr thật hay hiệu quả pentest. Xem [trạng thái và gates còn lại](docs/KNOWLEDGE_WORKSPACE.md).
 
 ## Install
 
@@ -12,7 +12,7 @@ assignment executors are opt-in. No hidden Planner model, provider harness or da
 pi install https://github.com/Nhan-Laptop/pi-p2o
 ```
 
-Tested with Pi 1.1.0, the pinned development dependency; the installed check of `7e204c3` ran on a managed Pi 1.1.0. Pi 1.0.0 passed the earlier 357-test inert suite and the 0.5.0 installed acceptance, but the current 388-test suite and the installed check were **not** re-run on 1.0.0 (peer dependencies stay `*`). You also need a configured model, a Linux host (`/proc/self/fd` containment), and a running local Linux Docker daemon. Install the sandbox tools image once:
+Tested with Pi 1.1.0, the pinned development dependency; the installed checks (`7e204c3` for K2–K7, `41e8157` for W0–W6a) ran on a managed Pi 1.1.0. Pi 1.0.0 passed the earlier 357-test inert suite and the 0.5.0 installed acceptance, but the current full inert suite and the installed checks were **not** re-run on 1.0.0 (peer dependencies stay `*`). You also need a configured model, a Linux host (`/proc/self/fd` containment), and a running local Linux Docker daemon. Install the sandbox tools image once:
 
 ```sh
 docker pull ghcr.io/usestrix/strix-sandbox@sha256:f6906c3114e504fd1a218fcf028d7a0e46851118403a438b63956de6ea7c4331

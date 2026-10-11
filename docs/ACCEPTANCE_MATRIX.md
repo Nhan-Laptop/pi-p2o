@@ -1,6 +1,6 @@
 # Acceptance matrix — fixture K7 theo [planning_update.md §13](../planning_update.md)
 
-**Source checkout, chưa publish/install; K0–K7 vẫn mở.** Tài liệu này ánh xạ 22 fixture scenario bắt buộc của §13.1 và 7 điều kiện “không đạt” của §13.3
+**Đã push và cài (không có release/version riêng); K0–K7 vẫn mở.** Tài liệu này ánh xạ 22 fixture scenario bắt buộc của §13.1 và 7 điều kiện “không đạt” của §13.3
 tới test thật. Nó chứng minh **cơ chế** (inert fixtures), không chứng minh pentest hiệu quả, phát hiện đúng bug hay chất lượng finding.
 Mọi tham chiếu dạng `<tệp>.test.ts :: <tên test>` bên dưới (đặt trong dấu backtick) được `tests/minimal/acceptance-matrix.test.ts` kiểm tra tự động: đổi tên/xóa test mà không sửa ma trận sẽ làm test này fail.
 

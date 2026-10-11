@@ -1,6 +1,6 @@
 # Work admission, kế hoạch và phase packet — checkout K4
 
-**Đã nối vào source checkout, chưa publish/install; chưa hoàn tất K0–K7.**
+**Đã nối vào runtime, đã push và cài (không có release/version riêng); chưa hoàn tất K0–K7.**
 Đây là slice của [roadmap](../planning_update.md), dùng TaskBoard/Engine/candidate gates hiện có.
 Không có task/finding store thứ hai, Planner ẩn, target retry hoặc ngân sách tự tái cấp.
 “Goal” trong tài liệu này là record mục tiêu assessment; không kích hoạt Goal mode của coding harness.
