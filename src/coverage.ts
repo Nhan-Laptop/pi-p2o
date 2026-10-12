@@ -1,9 +1,11 @@
-import { createHash, randomUUID } from 'node:crypto';
-import { appendGeneratedRecords, appendRecords, readGeneratedRecords, readLedger, type AssessmentRecord, type LedgerIndex, type RecordAck } from './records.js';
+import { randomUUID } from 'node:crypto';
+import { sha256Hex } from './validate.js';
+import { appendGeneratedRecords, appendRecords, ownerNoteFrontier, readGeneratedRecords, readLedger, type AssessmentRecord, type LedgerIndex, type RecordAck } from './records.js';
 import { graphCanonical } from './state/graph.js';
 import { taskFrontier, taskRevisionAt, type AssessmentTask } from './tasks.js';
 import { caseViews, type CaseContext, type CaseView } from './cases.js';
 import type { MutationRequest } from './state/store.js';
+import { LedgerBoard } from './board.js';
 import { validateCoverageCellDraft, validateCoveragePlanDraft, validateStoredCoverageCell, validateStoredCoveragePlan, type CoverageCellDraft, type CoverageCellEntry, type CoveragePlanDraft, type CoveragePlanEntry } from './coverage-types.js';
 
 export interface CoverageContext extends CaseContext {targetRevision:()=>string;assetIds?:()=>string[]}
@@ -12,9 +14,9 @@ export interface CoveragePlanView extends CoveragePlanEntry {cells:CoverageCellV
 
 function taskAt(index:LedgerIndex,id:string,revision:number|undefined):AssessmentTask|undefined{return taskRevisionAt(index,id,revision);}
 function claimHeads(index:LedgerIndex):Map<string,AssessmentRecord>{const result=new Map<string,AssessmentRecord>();for(const row of index.records)if(row.kind==='candidate'&&typeof row.data?.candidate==='string')result.set(row.data.candidate,row);return result;}
-export function coveragePlans(index:LedgerIndex):CoveragePlanEntry[]{const latest=new Map<string,CoveragePlanEntry>();for(const row of index.records){const value=row.kind==='note'&&row.by==='owner'&&!row.workerId?row.data?.coveragePlan:undefined;if(!row.id||!value)continue;try{const entry=validateStoredCoveragePlan(value,row.id);if(entry.runId!==row.runId)continue;const prior=latest.get(entry.id);if(prior&&(entry.revision!==prior.revision+1||row.supersedes!==prior.recordId))continue;if(!prior&&entry.revision!==1)continue;latest.set(entry.id,entry);}catch{/* Invalid notes are not promoted. */}}return [...latest.values()];}
-export function coverageCells(index:LedgerIndex):CoverageCellEntry[]{const latest=new Map<string,CoverageCellEntry>();for(const row of index.records){const value=row.kind==='note'&&row.by==='owner'&&!row.workerId?row.data?.coverageCell:undefined;if(!row.id||!value)continue;try{const entry=validateStoredCoverageCell(value,row.id);if(entry.runId!==row.runId)continue;const prior=latest.get(entry.id);if(prior&&(entry.revision!==prior.revision+1||row.supersedes!==prior.recordId))continue;if(!prior&&entry.revision!==1)continue;latest.set(entry.id,entry);}catch{/* Invalid notes are not promoted. */}}return [...latest.values()];}
-export function coverageFingerprint(targetRevision:string,input:CoverageCellDraft):string{return createHash('sha256').update(graphCanonical({version:1,targetRevision,assetRef:input.assetRef,questionKey:input.questionKey,policyKey:input.policyKey??null,actorContext:input.actorContext,tenantContext:input.tenantContext,methodFamily:input.methodFamily})).digest('hex');}
+export const coveragePlans=(index:LedgerIndex):CoveragePlanEntry[]=>ownerNoteFrontier(index,'coveragePlan',validateStoredCoveragePlan);
+export const coverageCells=(index:LedgerIndex):CoverageCellEntry[]=>ownerNoteFrontier(index,'coverageCell',validateStoredCoverageCell);
+export function coverageFingerprint(targetRevision:string,input:CoverageCellDraft):string{return sha256Hex(graphCanonical({version:1,targetRevision,assetRef:input.assetRef,questionKey:input.questionKey,policyKey:input.policyKey??null,actorContext:input.actorContext,tenantContext:input.tenantContext,methodFamily:input.methodFamily}));}
 
 /** Bounded proof-aware matrix view. Staleness only downgrades; it never upgrades an assessment. */
 export function coverageViews(index:LedgerIndex,context:CoverageContext):CoveragePlanView[]{
@@ -36,11 +38,9 @@ export function coverageViews(index:LedgerIndex,context:CoverageContext):Coverag
 export function boundCoverageRequest(action:string,input:unknown,request:MutationRequest):MutationRequest{if(request.actorId!=='owner')throw Error('Coverage mutations require host-bound owner attribution');return {...request,payload:{kind:'coverage-mutation',action,input,submitted:request.payload}};}
 
 /** Canonical owner matrix service. Records and tasks remain the only writable sources; no execution queue. */
-export class CoverageBoard{
-  private pending:Promise<unknown>=Promise.resolve();
-  constructor(readonly runId:string,readonly path:string,private active:()=>boolean,private context:CoverageContext,private now=()=>Date.now()){}
-  private gate(){if(!this.active())throw Error('Coverage authority inactive');}
-  private mutate<T>(work:(index:LedgerIndex,plans:CoveragePlanEntry[],cells:CoverageCellEntry[])=>Promise<T>):Promise<T>{const next=this.pending.then(async()=>{this.gate();const index=await readLedger(this.path,this.runId);if(!index.complete)throw Error('Coverage reconciliation incomplete');this.gate();return work(index,coveragePlans(index),coverageCells(index));});this.pending=next.catch(()=>{});return next;}
+export class CoverageBoard extends LedgerBoard{
+  constructor(runId:string,path:string,active:()=>boolean,private context:CoverageContext,private now=()=>Date.now()){super(runId,path,active,'Coverage','Coverage');}
+  private mutate<T>(work:(index:LedgerIndex,plans:CoveragePlanEntry[],cells:CoverageCellEntry[])=>Promise<T>):Promise<T>{return this.serialized(index=>work(index,coveragePlans(index),coverageCells(index)));}
   private pin(input:CoverageCellDraft,index:LedgerIndex):CoverageCellDraft{return {...input,assetRef:{...input.assetRef,revision:input.assetRef.revision??this.context.assetRevision?.(input.assetRef.id)},taskRefs:input.taskRefs.map(ref=>({...ref,revision:ref.revision??taskFrontier(index).find(task=>task.id===ref.taskId)?.revision}))};}
   private references(input:CoverageCellDraft,index:LedgerIndex,cases:CaseView[]):void{
     const asset=this.context.assetRevision?.(input.assetRef.id);if(this.context.assetRevision&&asset===undefined)throw Error(`Unknown same-run coverage asset ${input.assetRef.id}`);if(input.assetRef.revision===undefined)throw Error('Coverage asset revision must be pinned');

@@ -129,6 +129,15 @@ describe('canonical owner-only SQLite foundation (not runtime integration)', () 
     expect([...snapshot.events, ...tail.rows].map(e => e.sequence)).toEqual(store.events({ since: 0, limit: 100 }).rows.map(e => e.sequence));
     expect(store.inspectCheckpoint(checkpoint.id).currentness).toBe('changed-since-checkpoint'); expect(store.checkpoints()).toHaveLength(1);
   }));
+  it('lists every unresolved gap in a checkpoint: open items and candidates left as a proof gap or blocked, not replaced ones', async () => fixture(async (_root, store) => {
+    const candidate = (id: string, data: Record<string, unknown>, patch: Partial<AssessmentRecord> = {}): AssessmentRecord =>
+      ({ ...note(id), by: 'worker-a', workerId: 'worker-a', kind: 'candidate', surface: '/a', risk: 'authorization', data: { candidate: id.replace(/-v\d$/, ''), ...data }, ...patch });
+    store.commitRecords([{ ...note('gap-open'), kind: 'open' }, { ...note('gap-answered'), kind: 'open' }]);
+    store.commitRecords([candidate('claim-proof-gap', { closure: 'open_proof_gap', execution: 'not_tested' }), candidate('claim-blocked', { closure: 'open_proof_gap', execution: 'blocked' }),
+      candidate('claim-old-v1', { closure: 'open_proof_gap', execution: 'not_tested' }), candidate('claim-done', { closure: 'confirmed', execution: 'tested' }, { resolves: ['gap-answered'] })]);
+    store.commitRecords([candidate('claim-old-v2', { closure: 'confirmed', execution: 'tested' }, { supersedes: 'claim-old-v1' })]);
+    expect(store.checkpoint('gap definition', request('checkpoint-gaps')).openGapIds).toEqual(['gap-open', 'claim-proof-gap', 'claim-blocked']);
+  }));
   it('does not publish a checkpoint pointer after interrupted file publication and retries safely', async () => {
     let fail = true;
     await fixture(async (_root, store) => {

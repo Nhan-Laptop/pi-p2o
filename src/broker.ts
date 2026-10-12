@@ -11,6 +11,7 @@ import { scratchOffset, scratchPath } from './scratch.js';
 import { graphObject, validateGraphBatch, type GraphAck, type GraphBatch } from './state/graph.js';
 import type { ContextCursor, ContextPacket } from './context.js';
 import type { AssessmentTask } from './tasks.js';
+import { TEXT_CONTROL_G } from './validate.js';
 export type { GraphBatch } from './state/graph.js';
 
 /**
@@ -22,6 +23,8 @@ export const MAX_LINE_BYTES = 64 * 1024;
 export const WORKER_BUDGET_RESERVE = 0.9;
 export const DEFAULT_WORKER_COMMAND_BUDGET = 200;
 
+/** How a worker's assignment ended, as it states it in p2o_report; the host never infers success from it. */
+export const WORKER_OUTCOMES = ['completed', 'partial-budget', 'prerequisite-blocked', 'provider-error', 'cancelled', 'expired', 'unknown'] as const;
 export interface WorkerReport {
   summary: string;
   findings: string[];
@@ -30,7 +33,7 @@ export interface WorkerReport {
   openItems: string[];
   confidence: 'high' | 'medium' | 'low';
   blocked?: string;
-  outcome?: 'completed' | 'partial-budget' | 'prerequisite-blocked' | 'provider-error' | 'cancelled' | 'expired' | 'unknown';
+  outcome?: typeof WORKER_OUTCOMES[number];
 }
 
 export interface WorkerRegistration {
@@ -94,8 +97,14 @@ export interface BrokerLimits { totalCommandBudget: number; maxLineBytes?: numbe
 
 function text(value: unknown, limit: number): string | undefined {
   if (typeof value !== 'string') return undefined;
-  const clean = value.replace(/[\x00-\x08\x0b-\x1f\x7f]/g, '');
+  const clean = value.replace(TEXT_CONTROL_G, '');
   return clean.length > limit ? clean.slice(0, limit) : clean;
+}
+
+const READ_CALLS = 160, COORDINATION_CALLS = 200;
+/** Runs one service call and answers with its value, or with the error text instead of throwing into the socket handler. */
+async function attempt(work: () => Promise<unknown>): Promise<{ ok: true; value: unknown } | { ok: false; error: string }> {
+  try { return { ok: true, value: await work() }; } catch (error) { return { ok: false, error: errText(error) }; }
 }
 
 function stringList(value: unknown, count: number, limit: number): string[] {
@@ -124,7 +133,7 @@ export function normalizeReport(raw: unknown): WorkerReport {
     openItems: stringList(input.openItems, 20, 1000),
     confidence,
     blocked: text(input.blocked, 1000),
-    ...(typeof input.outcome === 'string' && ['completed','partial-budget','prerequisite-blocked','provider-error','cancelled','expired','unknown'].includes(input.outcome) ? { outcome: input.outcome as WorkerReport['outcome'] } : {}),
+    ...(typeof input.outcome === 'string' && (WORKER_OUTCOMES as readonly string[]).includes(input.outcome) ? { outcome: input.outcome as WorkerReport['outcome'] } : {}),
   };
 }
 
@@ -136,6 +145,16 @@ export class Broker {
   private readonly inFlight = new Map<string, Set<AbortController>>();
   private totalUsed = 0;
   private readonly knowledgeUsed = new Map<string, number>();
+  /**
+   * One unit of a worker's knowledge allowance. Reads stop at 160 so that 40 calls stay reserved for notes, candidates and graph records (200 in all).
+   * Returns the refusal to send back, or undefined once the unit is spent.
+   */
+  private charge(workerId: string, cap: typeof READ_CALLS | typeof COORDINATION_CALLS, exhausted: string): { ok: false; error: string } | undefined {
+    const used = this.knowledgeUsed.get(workerId) ?? 0;
+    if (used >= cap) return { ok: false, error: exhausted };
+    this.knowledgeUsed.set(workerId, used + 1);
+    return undefined;
+  }
   private readonly reporting = new Set<string>();
   private readonly socketPath: string;
   constructor(private readonly control: string, private readonly deps: BrokerDeps, private readonly limits: BrokerLimits) {
@@ -247,20 +266,16 @@ export class Broker {
     if (reportingOperationDenied(registration.role,op ?? '')) return {ok:false,error:'Reporting role is synthesis-only; request separate execution/validation'};
     switch (op) {
       case 'skill_list': case 'skill_read': case 'artifact_read': case 'knowledge_heads': case 'knowledge_search': {
-        const used = this.knowledgeUsed.get(workerId) ?? 0;
-        if (used >= 160) return { ok: false, error: 'Knowledge read budget exhausted; 40 coordination calls reserved for notes/candidates (200 total)' };
-        this.knowledgeUsed.set(workerId, used + 1);
+        const refused = this.charge(workerId, READ_CALLS, 'Knowledge read budget exhausted; 40 coordination calls reserved for notes/candidates (200 total)');
+        if (refused) return refused;
         if (!this.deps.knowledge) return { ok: false, error: 'Knowledge service unavailable' };
-        try { return { ok: true, value: await this.deps.knowledge(op, request, registration) }; }
-        catch (error) { return { ok: false, error: errText(error) }; }
+        return attempt(() => this.deps.knowledge!(op, request, registration));
       }
       case 'candidate': {
-        const used = this.knowledgeUsed.get(workerId) ?? 0;
-        if (used >= 200) return { ok: false, error: 'Coordination budget exhausted' };
-        this.knowledgeUsed.set(workerId, used + 1);
+        const refused = this.charge(workerId, COORDINATION_CALLS, 'Coordination budget exhausted');
+        if (refused) return refused;
         if (!this.deps.candidate) return { ok: false, error: 'Candidate service unavailable' };
-        try { return { ok: true, value: await this.deps.candidate(request?.candidate, registration) }; }
-        catch (error) { return { ok: false, error: errText(error) }; }
+        return attempt(() => this.deps.candidate!(request?.candidate, registration));
       }
       case 'context_read': {
         if(registration.effectiveRuntime?.verified!==true)return {ok:false,error:'Verified runtime required before context delivery'};
@@ -335,20 +350,18 @@ export class Broker {
         });
       }
       case 'graph_record': {
-        const used = this.knowledgeUsed.get(workerId) ?? 0;
-        if (used >= 200) return {ok:false,error:'Coordination budget exhausted'};
-        this.knowledgeUsed.set(workerId, used+1);
+        const refused = this.charge(workerId, COORDINATION_CALLS, 'Coordination budget exhausted');
+        if (refused) return refused;
         if (!this.deps.graphRecord) return {ok:false,error:'Graph service unavailable'};
         if(registration.effectiveRuntime?.verified!==true)return {ok:false,error:'Verified runtime required before graph recording'};
         try { graphObject(submitted,['batch'],'Graph recording request'); validateGraphBatch(request?.batch); return {ok:true,value:await this.deps.graphRecord(request.batch, registration, delivery!)}; }
         catch (error) {const prior=await this.deps.graphReplay?.(request?.batch,registration,delivery!);return prior?{ok:true,value:prior,replayed:true}:{ok:false,error:errText(error)};}
       }
       case 'graph_read': {
-        const used = this.knowledgeUsed.get(workerId) ?? 0;
-        if (used >= 160) return {ok:false,error:'Knowledge read budget exhausted; 40 coordination calls reserved'};
-        this.knowledgeUsed.set(workerId, used+1);
+        const refused = this.charge(workerId, READ_CALLS, 'Knowledge read budget exhausted; 40 coordination calls reserved');
+        if (refused) return refused;
         if (!this.deps.graphRead) return {ok:false,error:'Graph service unavailable'};
-        try { return {ok:true,value:await this.deps.graphRead(text(request?.graphOp,32) ?? 'page', (request ?? {}) as Record<string,unknown>, registration)}; } catch (error) { return {ok:false,error:errText(error)}; }
+        return attempt(() => this.deps.graphRead!(text(request?.graphOp,32) ?? 'page', (request ?? {}) as Record<string,unknown>, registration));
       }
       case 'http': {
         let parsed: HttpRequest;
@@ -365,9 +378,8 @@ export class Broker {
         });
       }
       case 'note': {
-        const used = this.knowledgeUsed.get(workerId) ?? 0;
-        if (used >= 200) return { ok: false, error: 'Coordination budget exhausted' };
-        this.knowledgeUsed.set(workerId, used + 1);
+        const refused = this.charge(workerId, COORDINATION_CALLS, 'Coordination budget exhausted');
+        if (refused) return refused;
         if (!isRecordKind(request?.kind) || !['note', 'coverage', 'observation', 'open'].includes(request.kind)) return { ok: false, error: 'kind must be note, coverage, observation or open' };
         const body = text(request?.text, 2000);
         if (!body) return { ok: false, error: 'text is required' };
@@ -384,9 +396,8 @@ export class Broker {
         return { ok: true, ...(ack ?? {}) };
       }
       case 'request_subtask': {
-        const used = this.knowledgeUsed.get(workerId) ?? 0;
-        if (used >= 200) return {ok:false,error:'Coordination budget exhausted; include request in final report'};
-        this.knowledgeUsed.set(workerId,used+1);
+        const refused = this.charge(workerId, COORDINATION_CALLS, 'Coordination budget exhausted; include request in final report');
+        if (refused) return refused;
         if (!this.deps.requestSubtask) return {ok:false,error:'Subtask proposals unavailable'};
         const focus = text(request?.focus,60), task = text(request?.task,4000);
         if (!focus || !task) return {ok:false,error:'focus and task are required'};

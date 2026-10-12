@@ -1,11 +1,11 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { sha256Hex } from './validate.js';
-import { appendRecords, appendGeneratedRecords, readLedger, summarizeRecords, type AssessmentRecord, type LedgerIndex } from './records.js';
+import { appendRecords, appendGeneratedRecords, isOpenGap, readLedger, summarizeRecords, type AssessmentRecord, type LedgerIndex } from './records.js';
 import type { MutationRequest } from './state/store.js';
 import { normalizeReport, type WorkerReport } from './broker.js';
 import { redact } from './evidence.js';
 import { taskFrontier } from './tasks.js';
-import { caseViews, type CaseContext } from './cases.js';
+import { caseViews, needsCaseReview, type CaseContext } from './cases.js';
 import { coverageViews, type CoverageContext } from './coverage.js';
 
 const hash = sha256Hex;
@@ -98,7 +98,8 @@ export function reportProjection(index: LedgerIndex, context:ReportProjectionCon
   let digestValue: string | undefined;
   const versionOf = () => { if (digestValue === undefined) { const digest = createHash('sha256'); for (const record of digested) digest.update(JSON.stringify(record)).update('\n'); digestValue = digest.digest('hex'); } return digestValue; };
   const tasks = taskFrontier(index).map(t => ({id:t.id,recordId:t.recordId,status:t.status}));
-  const openIds = index.records.filter(r => !resolved.has(r.id!) && (r.kind === 'open' || (r.kind === 'candidate' && !replaced.has(r.id!) && (r.data?.closure === 'open_proof_gap' || r.data?.execution === 'blocked')))).map(r => r.id ?? '(legacy-no-id)');
+  const retired = new Set([...replaced, ...resolved]);
+  const openIds = index.records.filter(r => isOpenGap(r, retired)).map(r => r.id ?? '(legacy-no-id)');
   const take = <T>(rows:T[],bytes:number) => {const result:T[]=[];let used=0;for(const row of rows){used+=Buffer.byteLength(JSON.stringify(row))+1;if(used>bytes || result.length===100)break;result.push(row);}return result;};
   const reviewedCases=caseViews(index,context.cases??{}),coveragePlans=context.coverage?coverageViews(index,context.coverage):[],caseRows=reviewedCases.map(entry=>({id:entry.id,recordId:entry.recordId,revision:entry.revision,title:entry.title,verdict:entry.verdict,reviewStatus:entry.reviewStatus,currentness:entry.currentness,acceptedFinding:entry.acceptedFinding,independentCurrent:entry.independentCurrent,canonicalCaseId:entry.canonicalCaseId,duplicateOf:entry.duplicateOf,staleReasons:entry.staleReasons,claimRefs:entry.claimRefs,assetRefs:entry.assetRefs,limitations:entry.limitations,remediation:entry.remediation})),
     coverageRows=coveragePlans.map(plan=>({id:plan.id,recordId:plan.recordId,revision:plan.revision,status:plan.status,title:plan.title,cellCount:plan.cellIds.length,counts:plan.counts,discoveredUnplannedAssets:plan.discoveredUnplannedAssets,unknownScope:plan.unknownScope,exclusions:plan.exclusions,omittedCells:plan.omittedCells}));
@@ -107,7 +108,7 @@ export function reportProjection(index: LedgerIndex, context:ReportProjectionCon
   return {
     get version() { return versionOf(); },complete:index.complete && recovered.diagnostics.length===0,totalRecords:index.records.length,
     counts:{candidates:candidates.length,reports:reports.length,reportHistory:recovered.reports.length,coverage:summary.coverageTotal,open:summary.openTotal,unreviewedTasks:tasks.filter(t => !['reviewed','closed'].includes(t.status)).length,
-      cases:reviewedCases.length,uniqueAcceptedFindings:uniqueAccepted.size,duplicateCases:reviewedCases.filter(entry=>Boolean(entry.duplicateOf)).length,pendingCaseReviews:reviewedCases.filter(entry=>entry.reviewStatus==='pending'||entry.reviewStatus==='disputed').length,staleCases:reviewedCases.filter(entry=>entry.currentness==='stale').length,
+      cases:reviewedCases.length,uniqueAcceptedFindings:uniqueAccepted.size,duplicateCases:reviewedCases.filter(entry=>Boolean(entry.duplicateOf)).length,pendingCaseReviews:reviewedCases.filter(needsCaseReview).length,staleCases:reviewedCases.filter(entry=>entry.currentness==='stale').length,
       coveragePlans:coveragePlans.length,coverageCells:coveragePlans.reduce((sum,plan)=>sum+plan.cellIds.length,0),staleCoverageCells:coveragePlans.reduce((sum,plan)=>sum+plan.counts.stale,0)},
     tasks:shownTasks,candidates:shownCandidates,cases:shownCases,coveragePlans:shownCoverage,reports:shownReports,reportIds:shownReports.map(r => r.id),openIds:shownOpen,
     omitted:frontier.length-shownCandidates.length+reports.length-shownReports.length+tasks.length-shownTasks.length+openIds.length-shownOpen.length+caseRows.length-shownCases.length+coverageRows.length-shownCoverage.length,

@@ -108,7 +108,10 @@ describe('fixed context cost per loadout is budgeted (plan principle 16)', () =>
   // 2026-10-11 (S2): the solo owner no longer carries the four worker-control tools (-3,636 B declarations, -179 B guidance), so its budget fell to 36,967 / 921.
   // 2026-10-11 (P1-P6a of the workflow/report plan, deliberate): p2o_case gained the rate action and its finding schema (+952 B), p2o_coverage the suggest action (+231 B),
   // p2o_finish the narrative parameter (+167 B), p2o_task externalEvidence (+38 B). Delegated Planner 36,268 -> 37,656 B and solo owner 36,967 -> 38,355 B (+3.8%); workers are unchanged.
-  const budget = { 'delegated Planner': [37_656, 1_003], 'solo owner': [38_355, 921], 'worker': [20_750, 314], 'reporting worker': [13_974, 217] } as const;
+  // 2026-10-11 (extension audit S1): enum parameters are declared as {type:'string', enum} (src/schema-kit.ts) instead of an anyOf of const literals: Planner 37,656 -> 32,310 B (-14.2%),
+  // solo owner 38,355 -> 33,328 B, worker 20,750 -> 18,038 B, reporting worker 13,974 -> 11,540 B. Guidance is unchanged.
+  // 2026-10-11 (planning_update.md 3.3): the p2o_skill_list description tells the lead and workers to check the catalog before assigning or starting work (+105 B in every loadout; guidance is unchanged).
+  const budget = { 'delegated Planner': [32_415, 1_003], 'solo owner': [33_433, 921], 'worker': [18_143, 314], 'reporting worker': [11_645, 217] } as const;
   it('keeps tool declarations and guidance inside the recorded budget', () => {
     const tools = registry();
     for (const [label, names] of Object.entries(loadouts)) {

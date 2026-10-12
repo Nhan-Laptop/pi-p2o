@@ -1,8 +1,8 @@
-import { caseViews, type CaseContext } from './cases.js';
+import { caseViews, needsCaseReview, type CaseContext } from './cases.js';
 import { coverageViews, type CoverageContext } from './coverage.js';
-import type { LedgerIndex } from './records.js';
+import { isOpenGap, type LedgerIndex } from './records.js';
 import type { FinishGate } from './roles.js';
-import { taskFrontier } from './tasks.js';
+import { awaitingReview, taskFrontier } from './tasks.js';
 import { sha256Hex } from './validate.js';
 import { WSTG_MAP, isWstgKey, wstgKey } from './wstg-map.js';
 
@@ -48,18 +48,18 @@ export function finishPreflight(index: LedgerIndex, context: PreflightContext = 
   const tasks = taskFrontier(index), cases = caseViews(index, context.cases ?? {});
   const plans = context.coverage ? coverageViews(index, context.coverage) : [];
   const cells = plans.flatMap(plan => plan.cells).filter(cell => cell.currentness !== 'retired');
-  const replaced = new Set(index.records.flatMap(row => row.supersedes ? [row.supersedes] : [])), resolved = new Set(index.records.flatMap(row => row.resolves ?? []));
+  const replaced = new Set(index.records.flatMap(row => row.supersedes ? [row.supersedes] : [])), retired = new Set([...replaced, ...index.records.flatMap(row => row.resolves ?? [])]);
   const cited = new Set(cases.flatMap(view => view.claimRefs));
   const found = new Map<PreflightCode, string[]>();
   const add = (code: PreflightCode, id: string) => { const list = found.get(code) ?? []; list.push(id); found.set(code, list); };
 
   for (const task of tasks) {
-    if (task.status === 'reported' || (task.status === 'blocked' && task.handoffId)) add('UNREVIEWED_TASK', task.id);
+    if (awaitingReview(task)) add('UNREVIEWED_TASK', task.id);
     else if (task.status === 'expired' || (task.status === 'blocked' && !task.handoffId)) add('ORPHAN_TASK', task.id);
   }
   for (const row of index.records) if (row.kind === 'candidate' && row.id && !replaced.has(row.id) && row.data?.closure === 'confirmed' && !cited.has(row.id)) add('UNREVIEWED_CLAIM', row.id);
   for (const view of cases) {
-    if (view.reviewStatus === 'pending' || view.reviewStatus === 'disputed') add('PENDING_CASE', view.id);
+    if (needsCaseReview(view)) add('PENDING_CASE', view.id);
     else if (view.currentness === 'stale' && view.reviewStatus !== 'withdrawn') add('STALE_CASE', view.id);
   }
   if (!plans.length) add('NO_COVERAGE_PLAN', 'no-plan');
@@ -69,9 +69,7 @@ export function finishPreflight(index: LedgerIndex, context: PreflightContext = 
   }
   const referenced = new Set([...cells.flatMap(cell => [...cell.gapRefs, ...cell.claimRefs]), ...cases.flatMap(view => view.contradictions.map(item => item.evidenceRef))]);
   for (const row of index.records) {
-    if (!row.id || resolved.has(row.id)) continue;
-    const gap = row.kind === 'open' || (row.kind === 'candidate' && !replaced.has(row.id) && (row.data?.closure === 'open_proof_gap' || row.data?.execution === 'blocked'));
-    if (gap && !referenced.has(row.id) && !cited.has(row.id)) add('OPEN_GAP_UNREFERENCED', row.id);
+    if (row.id && isOpenGap(row, retired) && !referenced.has(row.id) && !cited.has(row.id)) add('OPEN_GAP_UNREFERENCED', row.id);
   }
   const wstgCells = cells.filter(cell => isWstgKey(cell.questionKey));
   if (wstgCells.length) { // only for runs that address WSTG tests; the always-applicable tests are the part of the guide no recon feature can switch off

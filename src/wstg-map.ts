@@ -8,7 +8,6 @@ import type { CoverageCellView } from './coverage.js';
  * never the target and never detection ability; see docs/WSTG_MAP.md for the meaning of every column and planning_update.md for the rationale.
  */
 export const WSTG_COMMIT = '28553f878d48358767892916d53e59a9d664811c';
-export const WSTG_SOURCE = 'https://github.com/OWASP/wstg';
 
 /** D: a skill names this class of test. T: only generic techniques apply. N: no skill. O: outside p2o's scope by design (other origins, DNS, third parties). */
 export type WstgSupport = 'D' | 'T' | 'N' | 'O';

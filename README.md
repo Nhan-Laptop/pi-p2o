@@ -34,6 +34,7 @@ No extension build or JSON configuration is needed. Use `/reload` after installi
 /p2o --target ./my-repo --export
 /p2o --target ./my-repo --loop event-driven --executors isolated --workers 3 --target-ops 2
 /p2o --target ./my-repo --retention ephemeral
+/p2o --target https://example.com --goal "Can tenant A read tenant B invoices?"
 /p2o pause
 /p2o resume
 /p2o stop
@@ -77,6 +78,8 @@ No extension build or JSON configuration is needed. Use `/reload` after installi
 The first group starts or controls a run: `hold` refuses new target commands and worker launches without ending the run (running commands finish; reporting and `stop` stay open), `release` lifts it after confirmation, and `stop-worker` withdraws one worker; none of these has a model-callable equivalent. The second group (`status` … `search`, `workers`) is read-only: no model call, no target
 operation, no change to mode, budget or authority. `report export` writes a deterministic `REPORT.md` + CSV/JSON from committed state (no model, markup-neutralized, new directory only) after confirmation; the same report is also written automatically at the end of a durable-local run to `.p2o-reports/report-<run-id>/` (`p2o.autoReport`). The third group (K2) manages retained knowledge and runs on the
 human side only; `open`, `recover` and `close` never resume an assessment. Details: [usage](docs/USAGE.md).
+
+`--goal "text"` (optional, 1–600 characters) records what you want established, in your own words. It is shown in the confirmation and given to the lead as quoted operator data, with a request to turn it into goals with acceptance criteria. It neither widens nor narrows the confirmed scope, is not checked by code, and is not kept across a restart; without it the lead prompt is unchanged.
 
 Confirm scope and permission once. The command prepares the sandbox and sends the task directly into the
 **existing conversation**, using the existing model. In delegated mode it is a strategic Planner: target execution
@@ -199,7 +202,7 @@ The same inert real-Pi/Docker tests can target an installed copy instead of the 
 `P2O_TEST_DOCKER=1 P2O_TEST_INSTALLED_EXTENSION=<installed-checkout>/extensions/p2o/index.ts npx vitest run tests/minimal/native.test.ts tests/minimal/planner-native.test.ts tests/minimal/docker-extension.test.ts`.
 A passing run proves the installed mechanics only, not assessment quality.
 
-Design notes: [architecture](docs/ARCHITECTURE.md), [usage](docs/USAGE.md), [enhancement roadmap](planning_update.md), [acceptance matrix](docs/ACCEPTANCE_MATRIX.md), [OWASP WSTG map](docs/WSTG_MAP.md).
+Design notes: [architecture](docs/ARCHITECTURE.md), [usage](docs/USAGE.md), [Strix/ARTEX comparison and proposals](planning_update.md), [acceptance matrix](docs/ACCEPTANCE_MATRIX.md), [OWASP WSTG map](docs/WSTG_MAP.md).
 [Benchmarks](bench/README.md) are opt-in real-model runs, separate from the hermetic suite; no effectiveness claim is implied by passing unit tests.
 `my_references/` is not shipped or modified, except `my_references/wstg/` (the unmodified OWASP WSTG snapshot, pinned and hashed in [research/WSTG_PROVENANCE.md](research/WSTG_PROVENANCE.md)), which ships read-only as on-demand upstream text linked from each owning skill's `references/wstg-source.md`.
 

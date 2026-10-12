@@ -1,4 +1,4 @@
-import { sha256Hex as sha } from '../validate.js';
+import { CONTROL, sha256Hex as sha } from '../validate.js';
 import { redact } from '../evidence.js';
 import { redactArtifactPrefix } from '../artifacts.js';
 
@@ -49,7 +49,7 @@ export function graphObject(value: unknown, fields: readonly string[], label: st
     || Object.keys(value).some(key => !fields.includes(key))) throw Error(`${label} has an invalid shape or unknown fields; producer/scope/authority are host-owned`);
 }
 function text(value: unknown, max: number, label: string, options: {key?: boolean} = {}): string {
-  if (typeof value !== 'string' || !value || value.length > max || Buffer.byteLength(value) > max || /[\u0000-\u001f\u007f-\u009f\u202a-\u202e\u2066-\u2069]/.test(value)
+  if (typeof value !== 'string' || !value || value.length > max || Buffer.byteLength(value) > max || CONTROL.test(value)
     || value !== value.normalize('NFC')) throw Error(`${label} must be 1..${max} NFC text without control characters`);
   if (options.key && value.trim() !== value) throw Error(`${label} must not start or end with whitespace; identity uses exact bytes`);
   return value;

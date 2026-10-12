@@ -34,8 +34,6 @@ export interface AssessmentRecord {
   refs?: string[];
 }
 
-export const RECORD_TEXT_LIMIT = 2000;
-export const RECORD_REF_LIMIT = 10;
 export const RECORD_READ_LIMIT = 500;
 
 export function isRecordKind(value: unknown): value is RecordKind { return typeof value === 'string' && (RECORD_KINDS as readonly string[]).includes(value); }
@@ -278,19 +276,51 @@ export interface RecordsSummary {
   coverageTotal: number; openTotal: number; lifecycleTotal: number; omitted: number;
 }
 
+/** Ids that a later row replaced (`supersedes`) or resolved (`resolves`). */
+export function retiredIds(records: readonly AssessmentRecord[]): Set<string> {
+  const retired = new Set<string>();
+  for (const record of records) { if (record.supersedes) retired.add(record.supersedes); for (const id of record.resolves ?? []) retired.add(id); }
+  return retired;
+}
+/** An unresolved gap: an `open` item, or a candidate left as an open proof gap or blocked, that no later row replaced or resolved. */
+export function isOpenGap(record: AssessmentRecord, retired: ReadonlySet<string>): boolean {
+  if (record.id !== undefined && retired.has(record.id)) return false;
+  return record.kind === 'open' || (record.kind === 'candidate' && (record.data?.closure === 'open_proof_gap' || record.data?.execution === 'blocked'));
+}
+
+/**
+ * Latest revision of every owner-authored entity stored as a note under `data[field]` (cases, coverage plans and cells, plans). A revision counts only
+ * when it is the first (revision 1) or follows the one before it (revision + 1, `supersedes` = that record); `parse` rejects anything malformed.
+ * Anything else is ignored, never promoted, so a forged or out-of-order note cannot become the head.
+ */
+export function ownerNoteFrontier<E extends { id: string; runId: string; revision: number; recordId: string }>(index: LedgerIndex, field: string, parse: (value: unknown, recordId: string) => E): E[] {
+  const latest = new Map<string, E>();
+  for (const row of index.records) {
+    const value = row.kind === 'note' && row.by === 'owner' && !row.workerId ? row.data?.[field] : undefined;
+    if (!row.id || !value) continue;
+    try {
+      const entry = parse(value, row.id);
+      if (entry.runId !== row.runId) continue;
+      const previous = latest.get(entry.id);
+      if (previous ? entry.revision !== previous.revision + 1 || row.supersedes !== previous.recordId : entry.revision !== 1) continue;
+      latest.set(entry.id, entry);
+    } catch { /* Untrusted or legacy notes are not promoted. */ }
+  }
+  return [...latest.values()];
+}
+
 /** Compact projection for p2o_workers: what the owner needs to decide the next move, not the raw log. */
 export function summarizeRecords(records: AssessmentRecord[]): RecordsSummary {
   const workers = new Map<string, WorkerSummary>();
   const coverage: AssessmentRecord[] = [];
   const open: AssessmentRecord[] = [];
-  const superseded = new Set(records.flatMap(r => [r.supersedes, ...(r.resolves ?? [])]).filter(Boolean));
+  const retired = retiredIds(records);
   const lifecycle: AssessmentRecord[] = [];
   for (const record of records) {
     if (record.kind === 'coverage') coverage.push(record);
-    else if (record.kind === 'open' && !superseded.has(record.id)) open.push(record);
-    else if (record.kind === 'candidate' && !superseded.has(record.id)) {
-      coverage.push(record);
-      if (record.data?.closure === 'open_proof_gap' || record.data?.execution === 'blocked') open.push(record);
+    else if (record.kind === 'open') { if (isOpenGap(record, retired)) open.push(record); }
+    else if (record.kind === 'candidate') {
+      if (record.id === undefined || !retired.has(record.id)) { coverage.push(record); if (isOpenGap(record, retired)) open.push(record); }
     }
     else if (record.kind === 'lifecycle') lifecycle.push(record);
     if (!record.workerId) continue;
@@ -322,11 +352,3 @@ export async function waitForRecordChange(path: string, options: { since: number
 
 /** Opaque change token: canonical event sequence or legacy file byte count; not a disk quota. */
 export async function recordsSize(path: string): Promise<number> { const backend = recordBackend(path); return backend ? backend.changeToken() : stat(path).then(value => value.size, () => 0); }
-
-/** Mode check helper for owner-private control files. */
-export async function privateFile(path: string, expected: number): Promise<boolean> {
-  const handle = await open(path, 'r').catch(() => undefined);
-  if (!handle) return false;
-  try { const info = await handle.stat(); return (info.mode & 0o777) === expected; }
-  finally { await handle.close(); }
-}

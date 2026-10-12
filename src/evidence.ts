@@ -1,18 +1,23 @@
 import { randomUUID, createHash } from 'node:crypto';
+import { sha256Hex } from './validate.js';
 import { constants } from 'node:fs';
 import { mkdir, open } from 'node:fs/promises';
 import { join } from 'node:path';
 import { appendRecord, readLedger, type AssessmentRecord } from './records.js';
-import type { ProcessResult } from './process.js';
+import { cleanText, type ProcessResult } from './process.js';
 import { redactArtifactPrefix, type CaptureReceipt } from './artifacts.js';
 
+export const CANDIDATE_CLOSURES = ['confirmed', 'ruled_out', 'open_proof_gap'] as const;
+export const CANDIDATE_EXECUTIONS = ['tested', 'not_tested', 'blocked', 'not_applicable'] as const;
+export const CANDIDATE_PROOFS = ['static_trace', 'offline_reproduction', 'live_reproduction'] as const;
+export const POLICY_BASES = ['explicit_contract', 'boundary_invariant', 'inferred'] as const;
 export interface Candidate {
   candidate: string; surface: string; risk: string;
-  closure: 'confirmed' | 'ruled_out' | 'open_proof_gap';
-  execution: 'tested' | 'not_tested' | 'blocked' | 'not_applicable';
-  proof: 'static_trace' | 'offline_reproduction' | 'live_reproduction';
+  closure: typeof CANDIDATE_CLOSURES[number];
+  execution: typeof CANDIDATE_EXECUTIONS[number];
+  proof: typeof CANDIDATE_PROOFS[number];
   evidenceRefs: string[]; negativeControls: string[]; limitations: string;
-  policyBasis?: 'explicit_contract' | 'boundary_invariant' | 'inferred'; expectedPolicy?: string;
+  policyBasis?: typeof POLICY_BASES[number]; expectedPolicy?: string;
   control?: string; requirement?: string; supersedes?: string; independentEvidenceRef?: string; resolves?: string[];
 }
 /** Best-effort defensive redaction; exports contain only the bounded receipts, never tickets or process env. */
@@ -24,6 +29,8 @@ export function redact(value: string): string {
     .replace(/\b(?:sk-|ghp_|github_pat_)[A-Za-z0-9_-]{12,}/g, '[REDACTED]')
     .replace(/-----BEGIN [^-]*PRIVATE KEY-----[\s\S]*?-----END [^-]*PRIVATE KEY-----/g, '[REDACTED PRIVATE KEY]');
 }
+/** Redacted and control-stripped: the form every display and export surface applies to model- or target-derived strings. */
+export function safeText(value: string): string { return cleanText(redact(value)); }
 const bounded = (s: string, n: number) => {
   let result = redactArtifactPrefix(s,redact).replace(/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/g, '').slice(0, n);
   while (Buffer.byteLength(JSON.stringify(result)) > n) result = result.slice(0, Math.floor(result.length * 0.75));
@@ -106,7 +113,7 @@ export class EvidenceStore {
           // Report parts contain serialized JSON whose fields were redacted before chunking/hashing.
           // Redacting the encoded fragment again would destroy framing and invalidate its manifest.
           const part = (v as Record<string,unknown>);
-          return [k, k === 'value' && reportPartData.has(v as Record<string,unknown>) && part.redacted === true && typeof x === 'string' && part.sha256 === createHash('sha256').update(x).digest('hex') ? x : clean(x)];
+          return [k, k === 'value' && reportPartData.has(v as Record<string,unknown>) && part.redacted === true && typeof x === 'string' && part.sha256 === sha256Hex(x) ? x : clean(x)];
         })) : v;
       const body = JSON.stringify(clean(payload), null, 2);
       if (Buffer.byteLength(body) > 16 * 1024 * 1024) throw new Error('Export exceeds 16 MiB; cleanup will still proceed');
@@ -119,10 +126,10 @@ export class EvidenceStore {
 }
 function validateCandidate(c: Candidate): void {
   if (!c || !/^[a-z0-9][a-z0-9-]{0,79}$/.test(c.candidate) || !c.surface || !c.risk || !c.limitations) throw new Error('Candidate needs id, surface, risk and limitations');
-  if (!['confirmed', 'ruled_out', 'open_proof_gap'].includes(c.closure) || !['tested', 'not_tested', 'blocked', 'not_applicable'].includes(c.execution)
-    || !['static_trace', 'offline_reproduction', 'live_reproduction'].includes(c.proof)) throw new Error('Invalid candidate state');
+  if (!(CANDIDATE_CLOSURES as readonly string[]).includes(c.closure) || !(CANDIDATE_EXECUTIONS as readonly string[]).includes(c.execution)
+    || !(CANDIDATE_PROOFS as readonly string[]).includes(c.proof)) throw new Error('Invalid candidate state');
   if (!Array.isArray(c.evidenceRefs) || !Array.isArray(c.negativeControls) || c.evidenceRefs.length > 10 || c.negativeControls.length > 10) throw new Error('Evidence arrays must be bounded');
-  if (!['explicit_contract', 'boundary_invariant', 'inferred'].includes(c.policyBasis ?? '')) throw new Error('Invalid policy basis');
+  if (!(POLICY_BASES as readonly string[]).includes(c.policyBasis ?? '')) throw new Error('Invalid policy basis');
   if (!c.expectedPolicy?.trim()) throw new Error('Name the expected policy and its provenance');
   if (c.policyBasis === 'inferred' && c.closure !== 'open_proof_gap') throw new Error('Inferred policy is a hypothesis: use open_proof_gap until intended policy is established');
   if (c.closure !== 'open_proof_gap' && !c.evidenceRefs.length) throw new Error('Closure needs evidence; otherwise use open_proof_gap');

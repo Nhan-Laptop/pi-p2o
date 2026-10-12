@@ -1,6 +1,6 @@
 import { sha256Hex as sha } from '../validate.js';
 import { constants } from 'node:fs';
-import { mkdir, open, readdir, realpath, rename, rm, stat } from 'node:fs/promises';
+import { mkdir, open, readdir, rename, rm, stat } from 'node:fs/promises';
 import { isAbsolute, join, relative } from 'node:path';
 import { MAX_ARTIFACT_BYTES, type AssessmentStore } from './store.js';
 import { cleanText } from '../process.js';
@@ -195,10 +195,4 @@ export async function importBundle(store: AssessmentStore, directory: string, ac
       counts: view.manifest.counts, integrityStatus: view.integrityStatus, extras: view.extra.length }, authorityRestored: false,
       note: 'Imported bytes are not same-run evidence; candidates, reviews and currentness still require this run\'s own receipts' } }]);
   return { artifactIds, noteId: note[0].recordId, manifest: view.manifest };
-}
-export async function bundleDirectoryInfo(directory: string): Promise<{ directory: string; bytes: number; files: number }> {
-  const root = await realpath(directory);
-  const listed = (await readdir(root, { recursive: true, withFileTypes: true })).filter(entry => entry.isFile());
-  let bytes = 0; for (const entry of listed) bytes += (await stat(join(entry.parentPath ?? root, entry.name))).size;
-  return { directory: root, bytes, files: listed.length };
 }

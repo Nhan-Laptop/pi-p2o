@@ -5,7 +5,7 @@ import { closeSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { PrivateDirectory } from './files.js';
 import { EVENT_KINDS, STATE_SCHEMA, STATE_SCHEMA_VERSION, type EventKind } from './schema.js';
-import { isRecordKind, LEDGER_BYTES, LEDGER_RECORDS, type AssessmentRecord, type RecordAck } from '../records.js';
+import { isOpenGap, isRecordKind, LEDGER_BYTES, LEDGER_RECORDS, retiredIds, type AssessmentRecord, type RecordAck } from '../records.js';
 import { redact } from '../evidence.js';
 import { cleanText } from '../process.js';
 import { redactArtifactPrefix, redactScratchSegment, utf8Prefix } from '../artifacts.js';
@@ -15,8 +15,9 @@ import { indexRecords } from '../records.js';
 import { validateScratchSnapshot, type ScratchSnapshot } from '../scratch.js';
 import { validateStoredCase } from '../case-types.js';
 import { validateCoverageCellDraft, validateStoredCoverageCell, validateStoredCoveragePlan } from '../coverage-types.js';
-import { caseViews } from '../cases.js';
-import { coverageViews } from '../coverage.js';
+import { caseViews, needsCaseReview, type CaseContext } from '../cases.js';
+import { awaitingReview } from '../tasks.js';
+import { coverageViews, type CoverageContext } from '../coverage.js';
 import { describeKnowledgeRecord, KNOWLEDGE_DOMAINS, type KnowledgeIndexSnapshot, type ContextCursor, type ContextItem, type ContextPacket, type KnowledgeDomain, type KnowledgePage } from '../context.js';
 import { anchorEntityId, assetEntityId, assertionEntityId, graphEntityId, relationEntityId, renderGraph, scopeOf, validateAnchor, validateAsset, validateFact, validateHypothesis, validateRelation,
   graphCanonical, graphObject, validateGraphBatch, GRAPH_IDENTITY_VERSION, GRAPH_ROW_BYTES, GRAPH_RESPONSE_BYTES, GRAPH_ENTITY_LIMIT, GRAPH_ASSERTION_LIMIT, GRAPH_RELATION_LIMIT, GRAPH_ANCHOR_ROWS, GRAPH_PROVENANCE_LIMIT,
@@ -194,7 +195,7 @@ export class AssessmentStore {
       runningTaskRevisions: running.map(row => Number((row.data!.task as Record<string, unknown>).revision)),
       unknownOperationIds: [...operations.values()].filter(row => ['operation.requested','operation.started','operation.unknown-terminal'].includes(row.kind)).map(row => row.operationId!),
       workerIds: [...new Set(records.map(row => row.workerId).filter((id): id is string => typeof id === 'string'))],
-      pendingReviews: [...heads.values()].filter(row => { const task = row.data!.task as Record<string, unknown>; return task.status === 'reported' || (task.status === 'blocked' && task.handoffId); }).map(row => String((row.data!.task as Record<string, unknown>).id)),
+      pendingReviews: [...heads.values()].filter(row => awaitingReview(row.data!.task as Record<string, unknown>)).map(row => String((row.data!.task as Record<string, unknown>).id)),
       latestReconciliation: latest,
     };
   }
@@ -570,18 +571,18 @@ export class AssessmentStore {
       const heads = new Map<string, AssessmentRecord>();
       for (const r of records) if (r.kind === 'task') heads.set(String((r.data?.task as Record<string, unknown>)?.id), r);
       const operations = new Map<string, StateEvent>(); for (const e of events) if (e.operationId && e.kind.startsWith('operation.')) operations.set(e.operationId, e);
-      const graph=this.graphSnapshot(asOfSequence),graphHeads=this.graphSummary(asOfSequence),index=indexRecords(records,this.manifest().runId),plans=planFrontier(index),phases=phasePackets(index),caseContext={assetRevision:(id:string)=>this.assetRevision(id),assertionRevision:(id:string)=>this.assertionRevision(id)},cases=caseViews(index,caseContext),coverage=coverageViews(index,{...caseContext,targetRevision:()=>this.graphScope(),assetIds:()=>this.assetEntityIds()}),
+      const graph=this.graphSnapshot(asOfSequence),graphHeads=this.graphSummary(asOfSequence),index=indexRecords(records,this.manifest().runId),plans=planFrontier(index),phases=phasePackets(index),context=this.reviewContext(),cases=caseViews(index,context.cases),coverage=coverageViews(index,context.coverage),
         planning={goals:plans.filter(row=>row.kind==='goal').length,todo:plans.filter(row=>row.kind==='todo').length,decisions:plans.filter(row=>row.kind==='decision').length,phasePackets:phases.length,
-          pendingPhasePacketIds:phases.filter(row=>{const task=heads.get(row.taskId)?.data?.task as Record<string,unknown>|undefined;return task?.phasePacketId===row.id&&(task.status==='reported'||task.status==='blocked'&&task.handoffId);}).map(row=>row.id)},
-        review={cases:cases.length,uniqueAcceptedFindings:new Set(cases.filter(row=>row.acceptedFinding).map(row=>row.canonicalCaseId)).size,duplicateCases:cases.filter(row=>Boolean(row.duplicateOf)).length,pendingCases:cases.filter(row=>row.reviewStatus==='pending'||row.reviewStatus==='disputed').length,staleCases:cases.filter(row=>row.currentness==='stale').length,coveragePlans:coverage.length,coverageCells:coverage.reduce((sum,row)=>sum+row.cellIds.length,0),staleCoverageCells:coverage.reduce((sum,row)=>sum+row.counts.stale,0),discoveredUnplannedAssets:coverage.reduce((sum,row)=>sum+row.discoveredUnplannedAssets,0)};
+          pendingPhasePacketIds:phases.filter(row=>{const task=heads.get(row.taskId)?.data?.task as Record<string,unknown>|undefined;return task?.phasePacketId===row.id&&awaitingReview(task);}).map(row=>row.id)},
+        review={cases:cases.length,uniqueAcceptedFindings:new Set(cases.filter(row=>row.acceptedFinding).map(row=>row.canonicalCaseId)).size,duplicateCases:cases.filter(row=>Boolean(row.duplicateOf)).length,pendingCases:cases.filter(needsCaseReview).length,staleCases:cases.filter(row=>row.currentness==='stale').length,coveragePlans:coverage.length,coverageCells:coverage.reduce((sum,row)=>sum+row.cellIds.length,0),staleCoverageCells:coverage.reduce((sum,row)=>sum+row.counts.stale,0),discoveredUnplannedAssets:coverage.reduce((sum,row)=>sum+row.discoveredUnplannedAssets,0)};
       const knowledge=this.knowledgeIndex(),snapshot = Buffer.from(JSON.stringify({ schemaVersion: STATE_SCHEMA_VERSION, manifest: this.manifest(), asOfSequence, records, events, artifacts, graph, planning,review,knowledge }));
       if (snapshot.length > LEDGER_BYTES) throw Error('Checkpoint exceeds 64 MiB; portable snapshot requires segmented export');
       this.capacity(snapshot.length,true); this.directory.publish(filename, snapshot); this.fault?.('checkpoint-published');
       const manifest: CheckpointManifest = { id, schemaVersion: STATE_SCHEMA_VERSION, sourceRunId: this.manifest().runId, targetIdentity: this.manifest().targetIdentity,
         asOfSequence, createdAt: new Date().toISOString(), reason: redact(reason), snapshotSha256: sha(snapshot), snapshotBytes: snapshot.length,
         integrityStatus: missingRefs.length ? 'partial' : 'complete', missingRefs, omissions: ['No execution authority, credentials, sockets, cookies or request replay state'],
-        pendingReviews: [...heads.values()].filter(r => { const task = r.data!.task as Record<string, unknown>; return task.status === 'reported' || (task.status === 'blocked' && task.handoffId); }).map(r => String((r.data!.task as Record<string, unknown>).id)).concat(cases.filter(row=>row.reviewStatus==='pending'||row.reviewStatus==='disputed'||row.currentness==='stale').map(row=>row.id)).slice(0,100),
-        openGapIds: (() => { const resolved = new Set(records.flatMap(r => r.resolves ?? [])); return records.filter(r => r.kind === 'open' && !resolved.has(r.id!)).map(r => r.id!); })(),
+        pendingReviews: [...heads.values()].filter(r => awaitingReview(r.data!.task as Record<string, unknown>)).map(r => String((r.data!.task as Record<string, unknown>).id)).concat(cases.filter(row=>needsCaseReview(row)||row.currentness==='stale').map(row=>row.id)).slice(0,100),
+        openGapIds: (() => { const retired = retiredIds(records); return records.filter(r => isOpenGap(r, retired)).map(r => r.id!); })(),
         inFlightOperationIds: [...operations.values()].filter(e => ['operation.requested', 'operation.started', 'operation.unknown-terminal'].includes(e.kind)).map(e => e.operationId!),
         artifacts, retentionStatus: this.manifest().retention,planning,review,
         knowledge:{version:1,sha256:sha(graphCanonical(knowledge)),heads:knowledge.heads.length,links:knowledge.links.length,cursors:knowledge.cursors.length},
@@ -632,6 +633,11 @@ export class AssessmentStore {
   /** Current same-run graph asset identities for explicit coverage denominator comparison. */
   assetEntityIds():string[]{
     this.gate();return this.db.prepare('SELECT DISTINCT entity_id FROM assets ORDER BY entity_id LIMIT ?').all(GRAPH_ENTITY_LIMIT+1).map(row=>String(row.entity_id));
+  }
+  /** Currentness lookups the case and coverage views need, bound to this store: the one place a projection learns the live asset/assertion revisions. */
+  reviewContext():{cases:CaseContext;coverage:CoverageContext}{
+    const cases:CaseContext={assetRevision:id=>this.assetRevision(id),assertionRevision:id=>this.assertionRevision(id)};
+    return {cases,coverage:{...cases,targetRevision:()=>this.graphScope(),assetIds:()=>this.assetEntityIds()}};
   }
   private graphHead(table: GraphTable, entityId: string, asOfSequence=this.sequence()): GraphRow | undefined {
     const row=this.db.prepare(`SELECT body FROM ${table} WHERE entity_id=? AND sequence<=? ORDER BY sequence DESC LIMIT 1`).get(entityId,asOfSequence);

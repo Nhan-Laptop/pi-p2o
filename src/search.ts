@@ -1,5 +1,6 @@
-import { redact } from './evidence.js';
+import { safeText } from './evidence.js';
 import { cleanText } from './process.js';
+import { CONTROL } from './validate.js';
 import type { AssessmentRecord, LedgerIndex } from './records.js';
 
 /**
@@ -19,7 +20,7 @@ export function normalizeQuery(value: unknown): string {
   if (typeof value !== 'string') throw Error('Search query must be text');
   const query = value.normalize('NFC').trim();
   if (query.length < SEARCH_QUERY_MIN || query.length > SEARCH_QUERY_MAX) throw Error(`Search query must be ${SEARCH_QUERY_MIN}..${SEARCH_QUERY_MAX} characters`);
-  if (/[\x00-\x1f\x7f-\x9f‪-‮⁦-⁩]/.test(query)) throw Error('Search query must not contain control or bidirectional characters');
+  if (CONTROL.test(query)) throw Error('Search query must not contain control or bidirectional characters');
   return query;
 }
 
@@ -29,7 +30,7 @@ function fields(record: AssessmentRecord): string[] {
   return values;
 }
 const snippetOf = (value: string, needle: string): string => {
-  const flat = cleanText(redact(value)).replace(/\s+/g, ' ').trim(), at = flat.toLowerCase().indexOf(needle);
+  const flat = safeText(value).replace(/\s+/g, ' ').trim(), at = flat.toLowerCase().indexOf(needle);
   const start = Math.max(0, (at < 0 ? 0 : at) - 30);
   return `${start > 0 ? '…' : ''}${flat.slice(start, start + SNIPPET_CHARS)}${flat.length > start + SNIPPET_CHARS ? '…' : ''}`;
 };

@@ -14,6 +14,13 @@ describe('one target grammar', () => {
     expect(parseCommand('--target https://example.com')).toEqual({ action: 'start', target: 'https://example.com', options: { solo: false } });
     for (const args of ['--target', '--target x --headless', '--target x --target y', '--target x;y extra', 'approve plan-1', 'resume extra', '--target "unterminated', '--target --help']) expect(() => parseCommand(args)).toThrow();
   });
+  it('takes one optional quoted operator objective and refuses anything that could pass for control text', () => {
+    expect(parseCommand('--target x --goal "Check whether tenant A can read tenant B invoices" --solo')).toMatchObject({ options: { solo: true, goal: 'Check whether tenant A can read tenant B invoices' } });
+    expect(parseCommand("--target x --goal 'single quoted goal'")).toMatchObject({ options: { goal: 'single quoted goal' } });
+    expect(parseCommand('--target x --solo')).toEqual({ action: 'start', target: 'x', options: { solo: true } });
+    for (const args of ['--goal', '--goal ""', `--goal "${'a'.repeat(601)}"`, '--goal "bad\u202etext"', '--goal "bad\u0085text"']) expect(() => parseCommand(`--target x ${args}`), args).toThrow(/--goal/);
+  });
+
   it('parses only the delegation limits it understands', () => {
     expect(parseCommand('--target x --solo')).toMatchObject({ options: { solo: true } });
     expect(parseCommand('--target x --workers 12 --loop event-driven --executors isolated --target-ops 2')).toMatchObject({options:{workers:12,loopMode:'event-driven',executorMode:'isolated',maxTargetOperations:2}});

@@ -1,7 +1,8 @@
 import { randomUUID } from 'node:crypto';
-import { appendGeneratedRecords, appendRecords, readGeneratedRecords, readLedger, type AssessmentRecord, type LedgerIndex, type RecordAck } from './records.js';
+import { appendGeneratedRecords, appendRecords, ownerNoteFrontier, readGeneratedRecords, readLedger, type AssessmentRecord, type LedgerIndex } from './records.js';
 import { taskFrontier, taskHead, taskRevisionAt, type AssessmentTask } from './tasks.js';
 import type { MutationRequest } from './state/store.js';
+import { LedgerBoard } from './board.js';
 import { validateCaseDraft, validateFinding, validateStoredCase, type CaseDraft, type CaseEntry, type CaseFinding, type CaseTaskRef } from './case-types.js';
 
 export type CaseCurrentness='current'|'stale'|'withdrawn'|'unknown';
@@ -12,6 +13,8 @@ export interface CaseView extends CaseEntry {
 }
 export interface CaseContext {assetRevision?:(id:string)=>number|undefined;assertionRevision?:(id:string)=>number|undefined}
 const terminalReview=new Set(['withdrawn']);
+/** A case whose review is still open: pending, or disputed after a review. */
+export const needsCaseReview=(view:{reviewStatus?:unknown}):boolean=>view.reviewStatus==='pending'||view.reviewStatus==='disputed';
 
 const candidateKey=(record:AssessmentRecord)=>typeof record.data?.candidate==='string'?record.data.candidate:undefined;
 const candidateRecords=(index:LedgerIndex)=>index.records.filter(row=>row.kind==='candidate'&&row.id&&candidateKey(row));
@@ -19,12 +22,7 @@ function candidateHeads(index:LedgerIndex):Map<string,AssessmentRecord>{const he
 function actorCandidateHeads(index:LedgerIndex):Map<string,AssessmentRecord>{const heads=new Map<string,AssessmentRecord>();for(const row of candidateRecords(index))heads.set(`${row.by}\u0000${candidateKey(row)}`,row);return heads;}
 function taskRevision(index:LedgerIndex,ref:CaseTaskRef):AssessmentTask|undefined{return taskRevisionAt(index,ref.taskId,ref.revision);}
 
-export function caseFrontier(index:LedgerIndex):CaseEntry[]{
-  const latest=new Map<string,CaseEntry>();
-  for(const row of index.records){const value=row.kind==='note'&&row.by==='owner'&&!row.workerId?row.data?.case:undefined;if(!row.id||!value)continue;
-    try{const entry=validateStoredCase(value,row.id);if(entry.runId!==row.runId)continue;const previous=latest.get(entry.id);if(previous&&(entry.revision!==previous.revision+1||row.supersedes!==previous.recordId))continue;if(!previous&&entry.revision!==1)continue;latest.set(entry.id,entry);}catch{/* Untrusted/legacy notes are not promoted. */}}
-  return [...latest.values()];
-}
+export const caseFrontier=(index:LedgerIndex):CaseEntry[]=>ownerNoteFrontier(index,'case',validateStoredCase);
 
 function independentReceiptCurrent(index:LedgerIndex,claim:AssessmentRecord,evidenceId:string,actors:Map<string,AssessmentRecord>):boolean{
   const evidence=index.byId.get(evidenceId),key=candidateKey(claim);if(evidence?.kind!=='evidence'||!evidence.workerId||!key||evidence.by===claim.by)return false;
@@ -77,11 +75,9 @@ export function boundRatingRequest(id:string,revision:number,value:unknown,reque
 }
 
 /** Owner review service over candidate/task/evidence records; no finding store or execution queue. */
-export class CaseBoard{
-  private pending:Promise<unknown>=Promise.resolve();
-  constructor(readonly runId:string,readonly path:string,private active:()=>boolean,private context:CaseContext={},private now=()=>Date.now()){}
-  private gate(){if(!this.active())throw Error('Case review authority inactive');}
-  private mutate<T>(work:(index:LedgerIndex,cases:CaseEntry[])=>Promise<T>):Promise<T>{const next=this.pending.then(async()=>{this.gate();const index=await readLedger(this.path,this.runId);if(!index.complete)throw Error('Case reconciliation incomplete');this.gate();return work(index,caseFrontier(index));});this.pending=next.catch(()=>{});return next;}
+export class CaseBoard extends LedgerBoard{
+  constructor(runId:string,path:string,active:()=>boolean,private context:CaseContext={},private now=()=>Date.now()){super(runId,path,active,'Case review','Case');}
+  private mutate<T>(work:(index:LedgerIndex,cases:CaseEntry[])=>Promise<T>):Promise<T>{return this.serialized(index=>work(index,caseFrontier(index)));}
   private pin(input:CaseDraft,index:LedgerIndex):CaseDraft{return {...input,assetRefs:input.assetRefs.map(ref=>({...ref,revision:ref.revision??this.context.assetRevision?.(ref.id)})),taskRefs:input.taskRefs.map(ref=>({...ref,revision:ref.revision??taskFrontier(index).find(task=>task.id===ref.taskId)?.revision})),
     ...(input.remediation.retestTask?{remediation:{...input.remediation,retestTask:{...input.remediation.retestTask,revision:input.remediation.retestTask.revision??taskFrontier(index).find(task=>task.id===input.remediation.retestTask!.taskId)?.revision}}}:{})};}
   private references(input:CaseDraft,index:LedgerIndex,cases:CaseEntry[]):void{

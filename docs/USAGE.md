@@ -62,6 +62,7 @@ Các mặc định dưới đây là **package defaults khi chưa override setti
 | `--max-depth D` | `2` | `0` | `3` | `0` tắt delegation. Hiện delegation là flat: 1, 2 hoặc 3 không cấp quyền cho workers tự spawn children. |
 | `--solo` | Không bật | Không áp dụng | Flag không nhận giá trị | Pi hiện tại trực tiếp điều tra, không spawn workers. Phải dùng loop manual. |
 | `--export` | Không bật | Không áp dụng | Flag không nhận giá trị | Lưu bounded redacted ledger/export lúc cleanup vào `.p2o-reports/`; không phải checkpoint giữa run. |
+| `--goal "text"` | Không có | 1–600 ký tự | Một câu trong dấu nháy, không ký tự điều khiển | Mục tiêu bằng lời của operator, hiện trong confirmation và đưa vào prompt của lead như dữ liệu được trích dẫn; không mở rộng hay thu hẹp scope đã xác nhận. Lead được nhắc chuyển nó thành goal có acceptance criteria. Bỏ qua thì prompt không đổi một byte. |
 | `--retention MODE` (**K2**) | `durable-local` | — | `durable-local`, `ephemeral` | Luôn hiển thị trong confirmation; không tạo store trước consent. |
 
 Số N/D phải là số nguyên trong khoảng cho phép; CLI không chấp nhận số âm, số thập phân hoặc từ `unlimited`. Không có `--min-workers`, `--max-workers` hay `--max-planner-rounds`: dùng `--workers` cho concurrency; `maxPlannerRounds` là **settings-only** như phần dưới.

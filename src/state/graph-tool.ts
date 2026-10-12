@@ -1,7 +1,7 @@
 import { Type } from 'typebox';
+import { choices } from '../schema-kit.js';
 import { ASSET_KINDS, ANCHOR_KINDS, CONFIDENCE, FACT_KINDS, HYPOTHESIS_STATUS, RELATION_KINDS } from './graph.js';
 
-const choices = <T extends string>(values: readonly T[]) => Type.Union(values.map(value => Type.Literal(value)));
 const id = () => Type.String({ minLength: 1, maxLength: 80 });
 const refs = () => Type.Optional(Type.Array(id(), { maxItems: 10 }));
 const revision = () => Type.Optional(Type.Integer({ minimum: 1 }));
@@ -25,11 +25,12 @@ const batch = object({
     status: Type.Optional(choices(['active','withdrawn'])), supersedes: supersedes() }, { additionalProperties: false }), { maxItems: 128 })),
   anchors: Type.Optional(Type.Array(object({ assetId: id(), assetRevision: revision(), anchor }, { additionalProperties: false }), { maxItems: 128 })),
 }, { additionalProperties: false });
+export const GRAPH_ACTIONS = ['record','view','page','export'] as const;
 /** Keep a root object: Pi's legacy Anthropic adapter reads only root properties/required.
  * A root anyOf silently loses all tool arguments there. Host enforces action-specific fields/limits.
  */
 export const graphParameters = object({
-  action: choices(['record','view','page','export']), batch: Type.Optional(batch), id: Type.Optional(id()),
+  action: choices(GRAPH_ACTIONS), batch: Type.Optional(batch), id: Type.Optional(id()),
   requestId: Type.Optional(Type.String({ minLength: 1, maxLength: 80, pattern: '^[a-zA-Z0-9][a-zA-Z0-9._:-]*$' })),
   cursor: Type.Optional(Type.Integer({ minimum: 0 })), limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 500 })),
   asOfSequence: Type.Optional(Type.Integer({ minimum: 0 })),

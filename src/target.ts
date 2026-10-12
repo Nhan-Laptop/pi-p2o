@@ -4,12 +4,14 @@ import { isIP } from 'node:net';
 import { resolve } from 'node:path';
 import { homedir } from 'node:os';
 import { MAX_DEPTH, MAX_WORKERS, type LoopMode, type RetentionMode } from './roles.js';
+import { TEXT_CONTROL } from './validate.js';
 
 export type Target = { kind: 'directory'; path: string } | { kind: 'url'; url: string; origin: string };
-export interface StartOptions { solo: boolean; workers?: number; maxDepth?: number; export?: boolean; loopMode?: LoopMode; executorMode?: 'shared' | 'isolated'; maxTargetOperations?: number; retention?: RetentionMode }
+export interface StartOptions { solo: boolean; workers?: number; maxDepth?: number; export?: boolean; loopMode?: LoopMode; executorMode?: 'shared' | 'isolated'; maxTargetOperations?: number; retention?: RetentionMode; goal?: string }
 export type Command = { action: 'help' } | { action: 'stop' } | { action: 'pause' } | { action: 'resume' } | { action: 'start'; target: string; options: StartOptions };
 
 /** Deliberately small. One target plus delegation limits; quoting is supported for directory names. */
+const GOAL_CHARS = 600;
 export function parseCommand(args: string): Command {
   const text = args.trim();
   if (!text || text === '--help') return { action: 'help' };
@@ -21,7 +23,7 @@ export function parseCommand(args: string): Command {
   const options: StartOptions = { solo: false };
   const rest = (match[4] ?? '').trim();
   if (rest) {
-    const tokens = rest.split(/\s+/);
+    const tokens = [...rest.matchAll(/"([^"\r\n]*)"|'([^'\r\n]*)'|(\S+)/g)].map(match => match[1] ?? match[2] ?? match[3]);
     for (let index = 0; index < tokens.length; index += 1) {
       const token = tokens[index];
       if (token === '--solo') { options.solo = true; continue; }
@@ -30,6 +32,11 @@ export function parseCommand(args: string): Command {
         const value = tokens[++index];
         if (value !== 'durable-local' && value !== 'ephemeral') throw Error('--retention must be durable-local or ephemeral');
         options.retention = value; continue;
+      }
+      if (token === '--goal') {
+        const value = tokens[++index]?.trim();
+        if (!value || value.length > GOAL_CHARS || value !== value.normalize('NFC') || TEXT_CONTROL.test(value)) throw Error(`--goal needs one quoted sentence of 1..${GOAL_CHARS} characters without control characters`);
+        options.goal = value; continue;
       }
       if (token === '--loop') {
         const value = tokens[++index];
@@ -41,7 +48,7 @@ export function parseCommand(args: string): Command {
         if (value !== 'shared' && value !== 'isolated') throw Error('--executors must be shared or isolated');
         options.executorMode = value; continue;
       }
-      if (token !== '--workers' && token !== '--max-depth' && token !== '--target-ops') throw new Error(`Unknown option ${token.slice(0, 40)}; usage: /p2o --target <directory|http(s)-URL> [--solo] [--workers N] [--max-depth D]`);
+      if (token !== '--workers' && token !== '--max-depth' && token !== '--target-ops') throw new Error(`Unknown option ${token.slice(0, 40)}; usage: /p2o --target <directory|http(s)-URL> [--solo] [--workers N] [--max-depth D] [--goal "text"]`);
       const value = tokens[index + 1];
       if (!value || !/^\d+$/.test(value)) throw new Error(`${token} needs an integer value`);
       index += 1;

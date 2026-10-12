@@ -1,4 +1,4 @@
-import { createHash } from 'node:crypto';
+import { CONTROL, exact, plain, sha256Hex, TEXT_CONTROL } from './validate.js';
 import { redact } from './evidence.js';
 import { redactArtifactPrefix } from './artifacts.js';
 import { graphCanonical } from './state/graph.js';
@@ -31,21 +31,14 @@ export interface WorkTaskLike {
 }
 
 const slugPattern=/^[a-z0-9][a-z0-9._:@/-]{0,159}$/;
-function ownObject(value:unknown,label:string):Record<string,unknown>{
-  if(!value||typeof value!=='object'||Array.isArray(value)||Object.getPrototypeOf(value)!==Object.prototype)throw Error(`Invalid ${label}`);
-  return value as Record<string,unknown>;
-}
-function keys(value:Record<string,unknown>,allowed:string[],label:string){
-  if(Object.keys(value).some(key=>!allowed.includes(key)))throw Error(`${label} contains host-owned or unknown fields`);
-}
 function identity(value:unknown,label:string,max=160):string{
   if(typeof value!=='string'||value.length<1||value.length>max||value!==value.trim()||value!==value.normalize('NFC')
-    ||/[\x00-\x1f\x7f-\x9f\u202a-\u202e\u2066-\u2069]/u.test(value)||!slugPattern.test(value))throw Error(`Invalid work ${label}`);
+    ||CONTROL.test(value)||!slugPattern.test(value))throw Error(`Invalid work ${label}`);
   if(redactArtifactPrefix(value,redact)!==value)throw Error(`Work ${label} contains secret-bearing identity text; use an opaque non-secret handle`);
   return value;
 }
 function prose(value:unknown,label:string,max:number,min=5):string{
-  if(typeof value!=='string'||value.trim().length<min||value.length>max||/[\x00-\x08\x0b-\x1f\x7f]/.test(value))throw Error(`Invalid work ${label}`);
+  if(typeof value!=='string'||value.trim().length<min||value.length>max||TEXT_CONTROL.test(value))throw Error(`Invalid work ${label}`);
   return redactArtifactPrefix(value,redact);
 }
 function taskId(value:unknown,label:string):string{
@@ -56,10 +49,10 @@ function revision(value:unknown,label:string):number|undefined{
 }
 
 export function validateWorkSpec(value:unknown):WorkSpec{
-  const row=ownObject(value,'work identity');keys(row,['assetRefs','questionKey','policyKey','actorContext','tenantContext','methodFamily','purpose'],'Work identity');
+  const row=plain(value,'work identity');exact(row,['assetRefs','questionKey','policyKey','actorContext','tenantContext','methodFamily','purpose'],'Work identity');
   if(!Array.isArray(row.assetRefs)||row.assetRefs.length<1||row.assetRefs.length>10)throw Error('Work identity needs 1..10 asset references');
   const seen=new Set<string>(),assetRefs=row.assetRefs.map((raw,index)=>{
-    const item=ownObject(raw,`work asset ${index}`);keys(item,['id','revision','variant'],`Work asset ${index}`);
+    const item=plain(raw,`work asset ${index}`);exact(item,['id','revision','variant'],`Work asset ${index}`);
     const id=identity(item.id,'asset ID',80);if(!/^asset-[a-f0-9]{24}$/.test(id))throw Error('Work asset ID must be a retained graph entity ID');
     const pinned=revision(item.revision,'work asset revision');
     const result={id,...(pinned!==undefined?{revision:pinned}:{}),...(item.variant!==undefined?{variant:identity(item.variant,'variant',120)}:{})};
@@ -72,7 +65,7 @@ export function validateWorkSpec(value:unknown):WorkSpec{
 }
 
 export function validateWorkDecision(value:unknown,spec:WorkSpec,links:{validationOf?:string;retestOf?:string}):WorkDecision{
-  const row=ownObject(value,'work decision');keys(row,['disposition','reason','relatedTaskId','changeReason'],'Work decision');
+  const row=plain(value,'work decision');exact(row,['disposition','reason','relatedTaskId','changeReason'],'Work decision');
   const disposition=identity(row.disposition,'disposition',20);if(!(WORK_DISPOSITIONS as readonly string[]).includes(disposition))throw Error('Invalid work disposition');
   const result:WorkDecision={disposition:disposition as WorkDecision['disposition'],reason:prose(row.reason,'decision reason',1000,10),
     ...(row.relatedTaskId!==undefined?{relatedTaskId:taskId(row.relatedTaskId,'related task ID')}:{ }),...(row.changeReason!==undefined?{changeReason:prose(row.changeReason,'material change reason',1000,10)}:{ })};
@@ -87,7 +80,7 @@ export function validateWorkDecision(value:unknown,spec:WorkSpec,links:{validati
 }
 
 export function validateOutputContract(value:unknown):TaskOutputContract{
-  const row=ownObject(value,'task output contract');keys(row,['kind','required','partialAllowed','artifactPolicy','notes'],'Task output contract');
+  const row=plain(value,'task output contract');exact(row,['kind','required','partialAllowed','artifactPolicy','notes'],'Task output contract');
   const kind=identity(row.kind,'output kind',32);if(!(OUTPUT_KINDS as readonly string[]).includes(kind))throw Error('Invalid output contract kind');
   if(!Array.isArray(row.required)||row.required.length<1||row.required.length>8)throw Error('Output contract needs 1..8 required fields');
   const required=[...new Set(row.required.map(item=>identity(item,'output field',32)))];
@@ -111,9 +104,9 @@ export function workIdentity(targetRevision:string,task:WorkTaskLike):WorkIdenti
   const work=validateWorkSpec(task.work),prerequisites=task.prerequisites.map(p=>({taskId:taskId(p.taskId,'prerequisite task ID'),revision:revision(p.revision,'prerequisite revision')}))
     .sort((a,b)=>a.taskId<b.taskId?-1:a.taskId>b.taskId?1:(a.revision??0)-(b.revision??0));
   const overlap={version:WORK_IDENTITY_VERSION,targetRevision,assets:work.assetRefs.map(({id,variant})=>({id,variant:variant??null})),questionKey:work.questionKey,policyKey:work.policyKey??null};
-  const overlapKey=createHash('sha256').update(graphCanonical(overlap)).digest('hex');
+  const overlapKey=sha256Hex(graphCanonical(overlap));
   if(prerequisites.some(p=>p.revision===undefined)||work.assetRefs.some(a=>a.revision===undefined)||work.actorContext===undefined||work.tenantContext===undefined)
     return {confidence:'unknown',targetRevision,overlapKey,reason:'Asset/prerequisite revisions or explicit actor/tenant context are missing'};
-  const exact={...overlap,assets:work.assetRefs,actorContext:work.actorContext,tenantContext:work.tenantContext,methodFamily:work.methodFamily,purpose:work.purpose,prerequisites};
-  return {confidence:'exact',targetRevision,overlapKey,fingerprint:createHash('sha256').update(graphCanonical(exact)).digest('hex')};
+  const full={...overlap,assets:work.assetRefs,actorContext:work.actorContext,tenantContext:work.tenantContext,methodFamily:work.methodFamily,purpose:work.purpose,prerequisites};
+  return {confidence:'exact',targetRevision,overlapKey,fingerprint:sha256Hex(graphCanonical(full))};
 }

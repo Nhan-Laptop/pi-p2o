@@ -1,8 +1,7 @@
-import { createHash } from 'node:crypto';
 import type { AssessmentRecord } from './records.js';
 import type { StateEvent } from './state/store.js';
 import { graphCanonical } from './state/graph.js';
-import { validId } from './validate.js';
+import { sha256Hex, validId } from './validate.js';
 
 export const KNOWLEDGE_DOMAINS=['task','goal','todo','decision','case','coverage-plan','coverage-cell','candidate','gap','phase','report','evidence'] as const;
 export type KnowledgeDomain=typeof KNOWLEDGE_DOMAINS[number];
@@ -34,7 +33,7 @@ export function describeKnowledgeRecord(row:AssessmentRecord):{domain:KnowledgeD
   else if(caseEntry&&typeof caseEntry.id==='string'){domain='case';entityId=caseEntry.id;status=String(caseEntry.reviewStatus);many('asset',caseEntry.assetRefs);many('claim',caseEntry.claimRefs);many('evidence',caseEntry.independentEvidenceRefs);many('task',caseEntry.taskRefs);many('report',caseEntry.reportRefs);many('case',caseEntry.relatedCaseIds);add('case',caseEntry.duplicateOf);add('assertion',object(caseEntry.hypothesis)?.id);for(const item of (caseEntry.contradictions as unknown[]|undefined)??[])add('evidence',object(item)?.evidenceRef);const remediation=object(caseEntry.remediation);many('evidence',remediation?.evidenceRefs);add('task',object(remediation?.retestTask)?.taskId);}
   else if(coveragePlan&&typeof coveragePlan.id==='string'){domain='coverage-plan';entityId=coveragePlan.id;status=String(coveragePlan.status);many('coverage-cell',coveragePlan.cellIds);}
   else if(coverageCell&&typeof coverageCell.id==='string'){domain='coverage-cell';entityId=coverageCell.id;status=coverageCell.retired?'retired':`${String(coverageCell.execution)}/${String(coverageCell.assessment)}`;add('coverage-plan',coverageCell.planId);add('asset',object(coverageCell.assetRef)?.id);many('task',coverageCell.taskRefs);many('claim',coverageCell.claimRefs);many('case',coverageCell.caseRefs);many('evidence',coverageCell.evidenceRefs);many('evidence',coverageCell.negativeControlRefs);many('gap',coverageCell.gapRefs);}
-  else if(row.kind==='candidate'&&typeof row.data?.candidate==='string'){domain='candidate';entityId=`claim-head-${createHash('sha256').update(graphCanonical([row.by,row.data.candidate])).digest('hex').slice(0,24)}`;status=String(row.data.closure??'unknown');many('evidence',row.refs);add('evidence',row.data.independentEvidenceRef);}
+  else if(row.kind==='candidate'&&typeof row.data?.candidate==='string'){domain='candidate';entityId=`claim-head-${sha256Hex(graphCanonical([row.by,row.data.candidate])).slice(0,24)}`;status=String(row.data.closure??'unknown');many('evidence',row.refs);add('evidence',row.data.independentEvidenceRef);}
   else if(row.kind==='open'&&row.id){domain='gap';entityId=row.id;status='open';many('ref',row.refs);}
   else if(phase&&typeof phase.id==='string'){domain='phase';entityId=phase.id;status=String(phase.reviewStatus??'pending');add('task',phase.taskId);add('report',phase.reportId);}
   else if(row.kind==='report'&&row.id){domain='report';entityId=row.workerId??row.id;status=String(row.data?.blocked?'blocked':'reported');many('evidence',row.refs);}

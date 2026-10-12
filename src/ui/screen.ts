@@ -1,7 +1,6 @@
 import { matchesKey, Text, truncateToWidth, wrapTextWithAnsi } from '@earendil-works/pi-tui';
 import type { Component } from '@earendil-works/pi-tui';
-import { cleanText } from '../process.js';
-import { redact } from '../evidence.js';
+import { safeText } from '../evidence.js';
 
 /** No authority, IO or model calls. Reflow and bounded viewport handle narrow terminals. */
 export class StateScreen implements Component {
@@ -29,7 +28,7 @@ export class StateScreen implements Component {
 }
 
 export function renderStateEntry(data: { action: string; runId: string; recordCount: number }): Text {
-  const label = (value: unknown) => cleanText(redact(String(value))).replace(/\s+/g, ' ').slice(0, 100);
+  const label = (value: unknown) => safeText(String(value)).replace(/\s+/g, ' ').slice(0, 100);
   return new Text(`p2o ${label(data.action)} · ${label(data.runId)} · records @${Number.isSafeInteger(data.recordCount) ? data.recordCount : 'unknown'}\nRead-only progress marker, not a checkpoint or execution authority.`, 0, 0);
 }
 
@@ -43,5 +42,5 @@ export function renderTaskResult(value: unknown, expanded: boolean): Text {
   const rows = Array.isArray(data?.tasks) ? data.tasks as Array<Record<string, unknown>> : data?.id ? [data] : [];
   const text = rows.length ? rows.slice(0, expanded ? 25 : 5).map(row => `${row.id} · ${row.status === 'reported' ? 'awaiting owner review' : row.status} · ${String(row.question ?? '').slice(0, 250)}`).join('\n')
     : JSON.stringify(data ?? {}).slice(0, expanded ? 4000 : 600);
-  return new Text(cleanText(redact(`${text}${!expanded && rows.length > 5 ? '\n… expand or query task ID for details' : ''}\nCoordination state; not proof of vulnerability or goal completion.`)), 0, 0);
+  return new Text(safeText(`${text}${!expanded && rows.length > 5 ? '\n… expand or query task ID for details' : ''}\nCoordination state; not proof of vulnerability or goal completion.`), 0, 0);
 }

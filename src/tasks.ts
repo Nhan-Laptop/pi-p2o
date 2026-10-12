@@ -7,6 +7,8 @@ import type { MutationRequest } from './state/store.js';
 import { validateWorkFields, workIdentity, type TaskOutputContract, type WorkDecision, type WorkSpec } from './work.js';
 import { makePhasePacket } from './phase.js';
 import { derive } from './ledger-memo.js';
+import { TEXT_CONTROL } from './validate.js';
+import { LedgerBoard } from './board.js';
 
 export interface TaskMethod { skills: Array<{ id: string; sha256: string }>; workflow?: { id: string; description: string; prerequisites?: string[]; skillId?: string }; reason: string }
 export interface TaskDraft {
@@ -29,6 +31,9 @@ export interface TaskWorkMatch { confidence:'exact'|'unknown'; targetRevision:st
   active:Array<{taskId:string;revision:number;status:string}>; reusable:Array<{taskId:string;revision:number;status:string}>; partial:Array<{taskId:string;revision:number;status:string}>;
   overlaps:Array<{taskId:string;revision:number;status:string;fingerprint:string}>; exactOmitted:number; overlapOmitted:number }
 
+
+/** A reported task, or a blocked one that carries a handoff, waits for the owner's review decision. */
+export function awaitingReview(task: { status?: unknown; handoffId?: unknown }): boolean { return task.status === 'reported' || (task.status === 'blocked' && Boolean(task.handoffId)); }
 
 /** One pass per record list: owner-authored heads (last row wins, first-seen order) and the first row of every (id, revision). */
 function taskLookups(index: LedgerIndex) {
@@ -55,7 +60,7 @@ export function taskHead(index: LedgerIndex, id: string): AssessmentTask | undef
 export function taskRevisionAt(index: LedgerIndex, id: string, revision: unknown): AssessmentTask | undefined { return taskLookups(index).revisions.get(id)?.get(revision); }
 
 function bounded(value: unknown, name: string, limit: number, minimum = 1): asserts value is string {
-  if (typeof value !== 'string' || value.trim().length < minimum || value.length > limit || /[\x00-\x08\x0b-\x1f\x7f]/.test(value)) throw new Error(`Invalid task ${name}`);
+  if (typeof value !== 'string' || value.trim().length < minimum || value.length > limit || TEXT_CONTROL.test(value)) throw new Error(`Invalid task ${name}`);
 }
 function validate(input: TaskDraft) {
   const allowed = ['id','question','surface','risk','role','roleReason','expectedTrue','expectedFalse','stopCondition','evidenceIds','prerequisites','validationOf','retestOf','parentTaskId','method','work','decision','outputContract','unknowns','missingPrerequisites','expectedOutput'];
@@ -85,13 +90,11 @@ export function reviewIntegrityNote(index: LedgerIndex, task: AssessmentTask, ev
     ...(externalAcknowledged && foreignEvidence.length ? { externalAcknowledged: true } : {}) };
 }
 
-export class TaskBoard {
-  private pending: Promise<unknown> = Promise.resolve();
+export class TaskBoard extends LedgerBoard {
   /** off: no note; annotate: note only; enforce: also refuse receipts the assignee did not author unless acknowledged. Set by the extension from p2o.reviewIntegrity. */
   integrity: 'off' | 'annotate' | 'enforce' = 'annotate';
-  constructor(readonly runId: string, readonly path: string, private active: () => boolean, private now = () => Date.now(), private targetRevision:string|(()=>string)=runId,
-    private assetRevision?: (id:string)=>number|undefined) {}
-  private gate() { if (!this.active()) throw new Error('Task authority inactive'); }
+  constructor(runId: string, path: string, active: () => boolean, private now = () => Date.now(), private targetRevision:string|(()=>string)=runId,
+    private assetRevision?: (id:string)=>number|undefined) { super(runId, path, active, 'Task', 'Task'); }
   private pinAssets<T extends TaskDraft>(task:T):T {
     if(!task.work)return task;
     return {...task,work:{...task.work,assetRefs:task.work.assetRefs.map(ref=>{const pinned=ref.revision??this.assetRevision?.(ref.id);return {...ref,...(pinned!==undefined?{revision:pinned}:{})};})}};
@@ -124,8 +127,7 @@ export class TaskBoard {
       ...(match.fingerprint?{workFingerprint:match.fingerprint}:{}),...(match.overlapKey?{workOverlapKey:match.overlapKey}:{}),...(warnings.length?{overlapWarnings:warnings}:{})};
   }
   private mutate<T>(work: (index: LedgerIndex, tasks: AssessmentTask[]) => Promise<T>): Promise<T> {
-    const p = this.pending.then(async () => { this.gate(); const index = await readLedger(this.path, this.runId); if (!index.complete) throw Error('Task reconciliation incomplete'); this.gate(); return work(index, taskFrontier(index)); });
-    this.pending = p.catch(() => {}); return p;
+    return this.serialized(index => work(index, taskFrontier(index)));
   }
   private async write(task: Omit<AssessmentTask, 'recordId'>, previous?: AssessmentTask): Promise<AssessmentTask> {
     this.gate(); const recordId = randomUUID();

@@ -1,6 +1,5 @@
 import type { AssessmentStore } from '../state/store.js';
-import { cleanText } from '../process.js';
-import { redact } from '../evidence.js';
+import { safeText } from '../evidence.js';
 import { bundlePath } from '../state/bundle.js';
 import { KNOWLEDGE_DOMAINS, type KnowledgeDomain } from '../context.js';
 import { normalizeQuery } from '../search.js';
@@ -70,7 +69,7 @@ export function parseWorkspaceCommand(args: string): WorkspaceCommand | undefine
   if (parts.length < 1 || parts.length > 2 || !/^artifact-[a-z0-9-]{1,65}$/.test(parts[0]) || (parts[1] && (!/^\d+$/.test(parts[1]) || !Number.isSafeInteger(Number(parts[1]))))) throw Error('Usage: /p2o artifact <artifact-id> [byte-offset]');
   return { action: 'artifact', id: parts[0], offset: Number(parts[1] ?? 0) };
 }
-const safe = (text: string) => cleanText(redact(text));
+const safe = (text: string) => safeText(text);
 /** Indexed read-only UI does not materialize cold history or consume any delivery cursor. */
 export function knowledgeLines(store:AssessmentStore,command:Extract<WorkspaceCommand,{action:'heads'|'digest'}>):string[]{
   if(command.action==='digest'){

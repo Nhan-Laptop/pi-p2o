@@ -1,9 +1,8 @@
-import { taskFrontier, type AssessmentTask } from '../tasks.js';
+import { awaitingReview, taskFrontier, type AssessmentTask } from '../tasks.js';
 import { reportProjection, type ReportProjectionContext } from '../report.js';
 import { caseViews } from '../cases.js';
 import { coverageViews } from '../coverage.js';
-import { redact } from '../evidence.js';
-import { cleanText } from '../process.js';
+import { safeText } from '../evidence.js';
 import type { LedgerIndex } from '../records.js';
 import type { AssessmentEngine } from '../engine.js';
 import { phasePackets, planFrontier } from '../planning.js';
@@ -47,8 +46,8 @@ export function parseStateCommand(args: string): StateCommand | undefined {
   return { action: 'tasks', filter: parts[0] ?? 'all', cursor: parts[1] ? integer(parts[1]) : 0 };
 }
 
-const safe = (text: string, limit = 200) => cleanText(redact(text)).replace(/\s+/g, ' ').slice(0, limit);
-const reviewLabel = (task: AssessmentTask) => task.status === 'reported' || (task.status === 'blocked' && task.handoffId) ? `${task.status} — awaiting owner review` : task.status;
+const safe = (text: string, limit = 200) => safeText(text).replace(/\s+/g, ' ').slice(0, limit);
+const reviewLabel = (task: AssessmentTask) => awaitingReview(task) ? `${task.status} — awaiting owner review` : task.status;
 export interface ViewProfile {
   runId: string; target: string; lifecycle: string; delegation: boolean; maxWorkers: number;
   workerUsed: number; workerCeiling: number; exportEnabled: boolean; exportPath?: string; exportError?: string;
@@ -82,7 +81,7 @@ export function statusView(index: LedgerIndex, profile: ViewProfile, context:Rep
   const tasks = taskFrontier(index), report = reportProjection(index,context);
   const counts: Record<string, number> = {};
   for (const task of tasks) counts[task.status] = (counts[task.status] ?? 0) + 1;
-  const pendingReview = tasks.filter(t => t.status === 'reported' || (t.status === 'blocked' && t.handoffId)).length;
+  const pendingReview = tasks.filter(awaitingReview).length;
   const last = index.records.filter(r => !['report_part', 'evidence'].includes(r.kind) && !(r.kind === 'lifecycle' && /^skill_(list|read)/.test(r.text))).at(-1);
   const retained = profile.retention === 'durable-local' || Boolean(profile.exportPath);
   const retention = profile.storageError ? `RETENTION WARNING: ${safe(profile.storageError,500)}; retained bytes/integrity unknown at ${profile.stateLocation ?? '(unknown)'}`
@@ -189,7 +188,7 @@ export function stateLines(index: LedgerIndex, command: Exclude<StateCommand, { 
   }
   if (command.action === 'tasks') {
     const selected = tasks.filter(t => command.filter === 'all' || (command.filter === 'live' ? !['closed', 'cancelled', 'expired'].includes(t.status)
-      : command.filter === 'awaiting-review' ? t.status === 'reported' || (t.status === 'blocked' && Boolean(t.handoffId)) : command.filter === 'done' ? t.status === 'closed' : t.status === 'blocked'));
+      : command.filter === 'awaiting-review' ? awaitingReview(t) : command.filter === 'done' ? t.status === 'closed' : t.status === 'blocked'));
     if (command.cursor > selected.length) throw Error('Task cursor is beyond the filtered snapshot');
     const page = selected.slice(command.cursor, command.cursor + 20), next = command.cursor + page.length;
     return [health, `Tasks ${command.filter}: total ${selected.length}, displayed ${page.length}, cursor ${command.cursor}`,

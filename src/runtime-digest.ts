@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { lstat, readFile, readdir } from 'node:fs/promises';
 import { dirname, join, relative, resolve } from 'node:path';
 import { packageRoot } from './skills.js';
+import { sha256Hex } from './validate.js';
 
 /**
  * Identity of the code that actually runs: the extension entry file plus every executable module under the sibling `src/`
@@ -50,7 +51,7 @@ export async function runtimeIdentity(extensionPath: string): Promise<RuntimeIde
     const info = await lstat(file);
     if (info.isSymbolicLink() || !info.isFile()) throw new Error(`RUNTIME_DIGEST_UNSAFE: ${name} is not a regular file`);
     if (info.size > MAX_FILE_BYTES || (total += info.size) > MAX_TOTAL_BYTES) throw new Error('RUNTIME_DIGEST_UNSAFE: runtime closure exceeds its size bound');
-    hash.update(`${name}\0${createHash('sha256').update(await readFile(file)).digest('hex')}\n`);
+    hash.update(`${name}\0${sha256Hex(await readFile(file))}\n`);
   }
   return { sha256: hash.digest('hex'), version, files: rows.length };
 }

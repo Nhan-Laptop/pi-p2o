@@ -1,7 +1,9 @@
 import { randomUUID } from 'node:crypto';
-import { appendRecords, appendGeneratedRecords, readLedger, type LedgerIndex } from './records.js';
+import { appendRecords, appendGeneratedRecords, ownerNoteFrontier, readLedger, type LedgerIndex } from './records.js';
 import type { MutationRequest } from './state/store.js';
 import { redact } from './evidence.js';
+import { exact, plain, TEXT_CONTROL } from './validate.js';
+import { LedgerBoard } from './board.js';
 import { taskFrontier } from './tasks.js';
 import type { PhasePacket } from './phase.js';
 
@@ -21,7 +23,7 @@ const transitions:Record<PlanKind,Record<string,string[]>>={
   decision:{recorded:['withdrawn'],withdrawn:[]},
 };
 function text(value:unknown,label:string,max:number,min=5):string{
-  if(typeof value!=='string'||value.trim().length<min||value.length>max||/[\x00-\x08\x0b-\x1f\x7f]/.test(value))throw Error(`Invalid plan ${label}`);return redact(value);
+  if(typeof value!=='string'||value.trim().length<min||value.length>max||TEXT_CONTROL.test(value))throw Error(`Invalid plan ${label}`);return redact(value);
 }
 function id(value:unknown,label='ID'):string{if(typeof value!=='string'||!/^[a-z0-9][a-z0-9-]{0,79}$/.test(value))throw Error(`Invalid plan ${label}`);return value;}
 function list(value:unknown,label:string,max=10,minimum=0):string[]{
@@ -32,8 +34,7 @@ function proseList(value:unknown,label:string):string[]{
   if(value===undefined)return[];if(!Array.isArray(value)||value.length>10)throw Error(`Invalid plan ${label}`);return value.map(item=>text(item,label,500,5));
 }
 export function validatePlanDraft(value:unknown):PlanDraft{
-  if(!value||typeof value!=='object'||Array.isArray(value)||Object.getPrototypeOf(value)!==Object.prototype)throw Error('Invalid plan entry');const row=value as Record<string,unknown>;
-  const allowed=['id','kind','title','status','reason','criteria','exclusions','taskIds','goalIds','supportRefs','decision'];if(Object.keys(row).some(key=>!allowed.includes(key)))throw Error('Plan entry contains host-owned or unknown fields');
+  const row=plain(value,'plan entry');exact(row,['id','kind','title','status','reason','criteria','exclusions','taskIds','goalIds','supportRefs','decision'],'Plan entry');
   if(typeof row.kind!=='string'||!(PLAN_KINDS as readonly string[]).includes(row.kind))throw Error('Invalid plan kind');const kind=row.kind as PlanKind;
   if(typeof row.status!=='string'||!statuses[kind].includes(row.status))throw Error('Invalid plan status');
   const result:PlanDraft={kind,title:text(row.title,'title',500),status:row.status,reason:text(row.reason,'reason',1000,10),
@@ -54,13 +55,13 @@ export function boundPlanRequest(action:'create'|'revise',input:PlanDraft,reques
   if(request.actorId!=='owner')throw Error('Plan mutations require host-bound owner attribution');
   return {...request,payload:{kind:'plan-entry',action,input,id,revision,submitted:request.payload}};
 }
-export function planFrontier(index:LedgerIndex):PlanEntry[]{
-  const latest=new Map<string,PlanEntry>();
-  for(const row of index.records){const value=row.kind==='note'&&row.by==='owner'&&!row.workerId?row.data?.plan:undefined;if(!value||typeof value!=='object'||Array.isArray(value))continue;
-    try{const plan=value as unknown as PlanEntry,{runId:_runId,revision:_revision,recordId:_recordId,...input}=plan,draft=validatePlanDraft(input);if(plan.runId!==row.runId||typeof plan.revision!=='number'||!Number.isSafeInteger(plan.revision)||plan.revision<1||!plan.id)continue;
-      latest.set(plan.id,{...draft,id:plan.id,runId:plan.runId,revision:plan.revision,recordId:row.id!});}catch{/* Invalid legacy/untrusted notes are not promoted into plan state. */}}
-  return [...latest.values()];
+function storedPlan(value:unknown,recordId:string):PlanEntry{
+  if(!value||typeof value!=='object'||Array.isArray(value))throw Error('Invalid stored plan');
+  const plan=value as unknown as PlanEntry,{runId:_runId,revision:_revision,recordId:_recordId,...input}=plan,draft=validatePlanDraft(input);
+  if(typeof plan.revision!=='number'||!Number.isSafeInteger(plan.revision)||plan.revision<1||!plan.id)throw Error('Invalid stored plan');
+  return {...draft,id:plan.id,runId:plan.runId,revision:plan.revision,recordId};
 }
+export const planFrontier=(index:LedgerIndex):PlanEntry[]=>ownerNoteFrontier(index,'plan',storedPlan);
 export function phasePackets(index:LedgerIndex):PhasePacket[]{
   const rows:PhasePacket[]=[];for(const row of index.records){const phase=row.kind==='note'&&row.by==='owner'&&!row.workerId?row.data?.phase:undefined;if(!phase||typeof phase!=='object'||Array.isArray(phase))continue;const p=phase as unknown as PhasePacket;
     if(p.version===1&&typeof p.id==='string'&&p.id===row.id&&p.reviewStatus==='pending'&&['reported','blocked'].includes(p.delivery))rows.push(p);}
@@ -68,11 +69,9 @@ export function phasePackets(index:LedgerIndex):PhasePacket[]{
 }
 
 /** Durable owner-authored planning over the canonical record backend; never a second task queue. */
-export class PlanBoard{
-  private pending:Promise<unknown>=Promise.resolve();
-  constructor(readonly runId:string,readonly path:string,private active:()=>boolean,private now=()=>Date.now()){}
-  private gate(){if(!this.active())throw Error('Plan authority inactive');}
-  private mutate<T>(work:(index:LedgerIndex,plans:PlanEntry[])=>Promise<T>):Promise<T>{const next=this.pending.then(async()=>{this.gate();const index=await readLedger(this.path,this.runId);if(!index.complete)throw Error('Plan reconciliation incomplete');this.gate();return work(index,planFrontier(index));});this.pending=next.catch(()=>{});return next;}
+export class PlanBoard extends LedgerBoard{
+  constructor(runId:string,path:string,active:()=>boolean,private now=()=>Date.now()){super(runId,path,active,'Plan','Plan');}
+  private mutate<T>(work:(index:LedgerIndex,plans:PlanEntry[])=>Promise<T>):Promise<T>{return this.serialized(index=>work(index,planFrontier(index)));}
   private references(draft:PlanDraft,index:LedgerIndex,plans:PlanEntry[]):void{
     const tasks=taskFrontier(index);for(const taskId of draft.taskIds??[])if(!tasks.some(task=>task.id===taskId))throw Error(`Unknown plan task ${taskId}`);
     for(const goalId of draft.goalIds??[])if(!plans.some(plan=>plan.id===goalId&&plan.kind==='goal'))throw Error(`Unknown plan goal ${goalId}`);

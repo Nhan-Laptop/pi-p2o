@@ -1,4 +1,5 @@
-import { createHash, randomBytes } from 'node:crypto';
+import { randomBytes } from 'node:crypto';
+import { sha256Hex } from './validate.js';
 import { lstat, mkdir, open, readFile, rename, rm, stat, writeFile } from 'node:fs/promises';
 import { dirname, isAbsolute, join } from 'node:path';
 
@@ -62,7 +63,7 @@ export async function ensurePrivateDirectory(path: string): Promise<void> {
   if ((info.mode & 0o777) !== 0o700) throw new Error('Control directory must be owner-private (0700)');
 }
 
-export function extensionDigest(source: string): string { return createHash('sha256').update(source).digest('hex'); }
+export function extensionDigest(source: string): string { return sha256Hex(source); }
 
 function bad(detail: string): never { throw new Error(`TICKET_REJECTED: ${detail}`); }
 

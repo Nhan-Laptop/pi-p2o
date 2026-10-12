@@ -1,7 +1,12 @@
 import { createHash } from 'node:crypto';
 
 /** Shared low-level input validators. Each record family keeps its own error noun ("case", "coverage") so messages are unchanged. */
-export const CONTROL=/[\x00-\x1f\x7f-\x9f‪-‮⁦-⁩]/;
+
+/** Characters that never belong in a single-line field: C0 controls, DEL, C1 controls and the bidirectional overrides/isolates that can disguise what a record says. */
+export const CONTROL=/[\x00-\x1f\x7f-\x9f\u202a-\u202e\u2066-\u2069]/;
+/** The same for free text, where a tab or line feed is fine. */
+export const TEXT_CONTROL=/[\x00-\x08\x0b-\x1f\x7f-\x9f\u202a-\u202e\u2066-\u2069]/;
+export const TEXT_CONTROL_G=new RegExp(TEXT_CONTROL.source,'g');
 
 export const sha256Hex=(value:string|Buffer)=>createHash('sha256').update(value).digest('hex');
 

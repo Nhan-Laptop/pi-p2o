@@ -1,4 +1,4 @@
-import { validId } from '../validate.js';
+import { CONTROL, validId } from '../validate.js';
 
 /**
  * Human-only run controls. There is deliberately no model tool for `hold` or `release`: the operator can tighten or loosen the
@@ -13,7 +13,7 @@ export function parseOperatorCommand(args: string): OperatorCommand | undefined 
   if (action !== 'workers' && action !== 'hold' && action !== 'release' && action !== 'stop-worker') return undefined;
   const reason = (value: string[], fallback: string) => {
     const joined = value.join(' ').trim() || fallback;
-    if (joined.length > OPERATOR_REASON_LIMIT || /[\x00-\x1f\x7f-\x9f‪-‮⁦-⁩]/.test(joined)) throw Error(`Reason must be 1..${OPERATOR_REASON_LIMIT} printable characters`);
+    if (joined.length > OPERATOR_REASON_LIMIT || CONTROL.test(joined)) throw Error(`Reason must be 1..${OPERATOR_REASON_LIMIT} printable characters`);
     return joined;
   };
   if (action === 'workers' || action === 'release') { if (parts.length) throw Error(`Usage: /p2o ${action}`); return { action }; }

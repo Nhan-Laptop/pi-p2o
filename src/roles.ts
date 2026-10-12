@@ -8,6 +8,8 @@ import { isAbsolute, join } from 'node:path';
  */
 export const ROLES = ['recon', 'discovery', 'validation', 'reporting', 'general'] as const;
 export type Role = typeof ROLES[number];
+/** Reasoning levels a worker pane can be launched with (the Pi `--thinking` values). */
+export const THINKING_LEVELS = ['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'] as const;
 
 export interface RoleDefaults { model?: string; thinking?: string; skills: string[] }
 export interface RoleSettings { model?: string; thinking?: string; skills?: string[] }

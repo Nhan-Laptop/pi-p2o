@@ -1,13 +1,12 @@
-import { caseViews, type CaseView } from './cases.js';
+import { caseViews, needsCaseReview, type CaseView } from './cases.js';
 import { cvssScore } from './cvss.js';
 import { FINDING_SEVERITIES } from './case-types.js';
 import { coverageViews, type CoverageCellView, type CoverageContext, type CoveragePlanView } from './coverage.js';
-import { redact } from './evidence.js';
-import { cleanText } from './process.js';
+import { safeText } from './evidence.js';
 import type { LedgerIndex } from './records.js';
 import type { FinishPreflight } from './finish-preflight.js';
 import { reportProjection, type ReportProjectionContext } from './report.js';
-import { taskFrontier, taskRevisionAt } from './tasks.js';
+import { awaitingReview, taskFrontier, taskRevisionAt } from './tasks.js';
 import { sha256Hex } from './validate.js';
 import { WSTG_BY_KEY, WSTG_COMMIT, WSTG_MAP, isWstgKey, wstgEvidence, wstgKey, wstgPageUrl, type WstgEvidence } from './wstg-map.js';
 
@@ -43,7 +42,7 @@ export interface RenderedReport { files: ReportFile[]; counts: { acceptedCurrent
 
 /** Inline Markdown-safe text: one line, bounded, HTML and Markdown syntax neutralized, autolinks broken. */
 export function mdText(value: unknown, limit = TEXT): string {
-  let text = cleanText(redact(String(value ?? ''))).replace(INVISIBLE, '').replace(/\s+/g, ' ').trim();
+  let text = safeText(String(value ?? '')).replace(INVISIBLE, '').replace(/\s+/g, ' ').trim();
   const cut = text.length > limit; if (cut) text = text.slice(0, limit);
   text = text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
     .replace(/[\\`*_[\]()!|~#@]/g, match => `\\${match}`)
@@ -52,7 +51,7 @@ export function mdText(value: unknown, limit = TEXT): string {
 }
 /** One quoted CSV field; a leading formula character is defused and line breaks cannot add rows. */
 export function csvCell(value: unknown, limit = CSV_TEXT): string {
-  let text = cleanText(redact(String(value ?? ''))).replace(INVISIBLE, '').replace(/[\r\n\t]+/g, ' ').trim().slice(0, limit);
+  let text = safeText(String(value ?? '')).replace(INVISIBLE, '').replace(/[\r\n\t]+/g, ' ').trim().slice(0, limit);
   if (/^[=+\-@]/.test(text)) text = `'${text}`;
   return `"${text.replace(/"/g, '""')}"`;
 }
@@ -63,7 +62,7 @@ const rows = <T>(items: T[], limit: number) => ({ shown: items.slice(0, limit), 
 
 
 /** Plain bounded text for JSON/CSV/fenced blocks: redacted, control and invisible characters removed, line breaks kept. Not Markdown-safe on its own. */
-const plainText = (value: unknown, limit = 2000) => { const text = cleanText(redact(String(value ?? ''))).replace(INVISIBLE, '').trim(); return text.length > limit ? `${text.slice(0, limit)}…` : text; };
+const plainText = (value: unknown, limit = 2000) => { const text = safeText(String(value ?? '')).replace(INVISIBLE, '').trim(); return text.length > limit ? `${text.slice(0, limit)}…` : text; };
 /** Fenced block that its own content cannot close: the fence is longer than any backtick run inside. */
 export function safeFence(value: unknown, limit = 1200): string {
   const body = plainText(value, limit), longest = Math.max(0, ...[...body.matchAll(/`+/g)].map(match => match[0].length)), bar = '`'.repeat(Math.max(3, longest + 1));
@@ -189,7 +188,7 @@ function scopeAndSummary(meta: ReportMeta, index: LedgerIndex, plans: readonly C
   accepted: readonly CaseView[], rated: readonly CaseView[], unrated: readonly CaseView[], others: readonly CaseView[], openGaps: number, awaiting: number, cases: readonly CaseView[]): string[] {
   const live = cells.filter(({ cell }) => cell.currentness !== 'retired'), notTested = live.filter(({ cell }) => cell.execution !== 'tested').length, stale = live.filter(({ cell }) => cell.currentness === 'stale').length;
   const exclusions = [...new Set(plans.flatMap(plan => plan.exclusions))], unknown = [...new Set(plans.flatMap(plan => plan.unknownScope))], unplanned = Math.max(0, ...plans.map(plan => plan.discoveredUnplannedAssets));
-  const pending = cases.filter(view => view.reviewStatus === 'pending' || view.reviewStatus === 'disputed').length;
+  const pending = cases.filter(needsCaseReview).length;
   const bySeverity = FINDING_SEVERITIES.map(name => `${severityLabel(name)} ${rated.filter(view => view.finding!.severity === name).length}`).join(', ');
   const usesWstg = live.some(({ cell }) => isWstgKey(cell.questionKey)), untouched = usesWstg ? WSTG_MAP.filter(test => !live.some(({ cell }) => cell.questionKey === wstgKey(test.id))).length : 0;
   const paragraphs = (meta.narrative ?? '').split(/\n{2,}/).map(part => part.trim()).filter(Boolean).slice(0, 6);
@@ -244,7 +243,7 @@ export function renderReport(index: LedgerIndex, context: ReportProjectionContex
   const accepted = cases.filter(view => view.acceptedFinding), others = cases.filter(view => !view.acceptedFinding);
   const open = projection.openIds.map(id => ({ id, record: index.byId.get(id) }));
   const status: Record<string, number> = {}; for (const task of tasks) status[task.status] = (status[task.status] ?? 0) + 1;
-  const awaiting = tasks.filter(task => task.status === 'reported' || (task.status === 'blocked' && task.handoffId));
+  const awaiting = tasks.filter(awaitingReview);
   const cells = plans.flatMap(plan => plan.cells.map(cell => ({ plan, cell })));
   const notClean = cells.filter(({ cell }) => cell.currentness !== 'retired' && (cell.execution !== 'tested' || ['unreviewed', 'open_gap', 'stale'].includes(cell.effectiveAssessment)));
   const version = meta.format ?? REPORT_FORMAT_VERSION, v2 = version === 2, pages = meta.wstgPages ?? [], everyCell = cells.map(item => item.cell);

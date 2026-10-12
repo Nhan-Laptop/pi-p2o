@@ -1,4 +1,4 @@
-import { createHash } from 'node:crypto';
+import { sha256Hex } from './validate.js';
 
 export const SCRATCH_PROTOCOL_BYTES = 8192;
 export const SCRATCH_MAX_BYTES = 8 * 1024 * 1024;
@@ -60,7 +60,7 @@ export function validateScratchSnapshot(value: unknown): asserts value is Scratc
   }
   if (v.totalBytes !== v.before.size || v.before.links !== 1 || v.stable !== sameStat(v.before,v.after)) throw Error('Scratch snapshot inconsistent with stat observations');
 }
-export const scratchPrefixHash = (input: Buffer) => createHash('sha256').update(input).digest('hex');
+export const scratchPrefixHash = (input: Buffer) => sha256Hex(input);
 
 /** Fixed isolated Python stdlib reader. Args are JSON data; file bytes never become executable code.
  * Production root is constrained to /work[/actor]; tests can run this exact script against a disposable

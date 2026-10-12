@@ -1,7 +1,7 @@
 import { constants } from 'node:fs';
 import { open, type FileHandle } from 'node:fs/promises';
-import { createHash } from 'node:crypto';
 import { dirname, posix, resolve } from 'node:path';
+import { sha256Hex } from './validate.js';
 export interface Workflow { id: string; description: string; prerequisites?: string[] }
 
 export interface CatalogSkill { name: string; description: string; kind: 'technique' | 'playbook' | 'overlay'; document: string; workflows: Workflow[] }
@@ -92,7 +92,7 @@ export class SkillLibrary {
           ?? catalog.documents.find(d => d.path === target && !d.section);
         return found ? `](p2o-skill:${found.id}${anchor && !found.section ? `#${anchor}` : ''})` : match;
       });
-      cached = { text: linked, sha256: createHash('sha256').update(raw).digest('hex') };
+      cached = { text: linked, sha256: sha256Hex(raw) };
       this.documents.set(id, cached);
     }
     if (offset > cached.text.length) throw new Error('Offset exceeds document');

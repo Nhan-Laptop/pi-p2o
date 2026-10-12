@@ -75,6 +75,11 @@ describe('canonical goals/todo/decisions and read-only cards (K4)',()=>{
     const task=await tasks.create(draft);for(let i=0;i<105;i++)await board.create({kind:'decision',title:'Recorded inert decision '+i,status:'recorded',reason:'Explicit one-round choice retained as immutable history',decision:{disposition:'defer',chosenTaskIds:[],deferredTaskIds:[task.id],revisitCondition:'Fresh reviewed evidence arrives'}});
     const created=await board.create(goal);expect((await board.list()).filter(entry=>entry.kind==='decision')).toHaveLength(105);expect(created.status).toBe('active');
   }));
+  it('refuses bidirectional overrides and C1 controls in task text while keeping multi-line prose',async()=>fixture(async({tasks})=>{
+    await expect(tasks.create({...draft,id:'task-bidi',question:'Which observation reaches the \u202econsumer?'})).rejects.toThrow('Invalid task question');
+    await expect(tasks.create({...draft,id:'task-c1',stopCondition:'Stop when the fixture ends\u0085 and nothing else remains'})).rejects.toThrow('Invalid task stopCondition');
+    const created=await tasks.create({...draft,id:'task-lines',expectedTrue:'The declared fixture observation reaches the consumer\nand is recorded once'});expect(created.expectedTrue).toContain('\n');
+  }));
   it('opens schema 5 metadata-only and refuses a writer rather than migrating in place',async()=>{
     const root=await mkdtemp(join(tmpdir(),'p2o-plan-old-'));let store:AssessmentStore|undefined;
     try{store=AssessmentStore.create(root,{runId,retention:'durable-local',targetKind:'directory',targetIdentity:'inert',targetDisplay:'inert',profile:{runtimeHash:'inert',image:'inert',loopMode:'manual',executorMode:'shared'}});const location=store.location;store.close();store=undefined;
