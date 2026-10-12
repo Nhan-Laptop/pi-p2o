@@ -1,6 +1,7 @@
 import { caseViews, needsCaseReview, type CaseContext } from './cases.js';
 import { coverageViews, type CoverageContext } from './coverage.js';
 import { isOpenGap, type LedgerIndex } from './records.js';
+import { planFrontier } from './planning.js';
 import type { FinishGate } from './roles.js';
 import { awaitingReview, taskFrontier } from './tasks.js';
 import { sha256Hex } from './validate.js';
@@ -13,7 +14,8 @@ import { WSTG_MAP, isWstgKey, wstgKey } from './wstg-map.js';
  * asks the lead to look once more before finishing (`confirm`).
  */
 export type PreflightCode = 'UNREVIEWED_TASK' | 'UNREVIEWED_CLAIM' | 'PENDING_CASE' | 'STALE_CASE' | 'STALE_CELL' | 'NO_COVERAGE_PLAN' | 'NONTERMINAL_CELLS'
-  | 'UNRATED_ACCEPTED_CASE' | 'WSTG_APPLICABLE_UNPLANNED' | 'HIGH_WITHOUT_INDEPENDENCE' | 'FOREIGN_EVIDENCE' | 'CONTRACT_GAP' | 'STALE_RATING' | 'OPEN_GAP_UNREFERENCED' | 'ORPHAN_TASK' | 'UNPLANNED_ASSETS';
+  | 'UNRATED_ACCEPTED_CASE' | 'WSTG_APPLICABLE_UNPLANNED' | 'HIGH_WITHOUT_INDEPENDENCE' | 'FOREIGN_EVIDENCE' | 'CONTRACT_GAP' | 'STALE_RATING' | 'OPEN_GAP_UNREFERENCED' | 'ORPHAN_TASK' | 'UNPLANNED_ASSETS'
+  | 'UNPROMOTED_COVERAGE_NOTE' | 'NO_GOAL_RECORDED';
 export interface PreflightItem { code: PreflightCode; level: 'blocking' | 'advisory'; count: number; ids: string[]; message: string }
 export interface FinishPreflight {
   blocking: PreflightItem[]; advisory: PreflightItem[];
@@ -21,7 +23,7 @@ export interface FinishPreflight {
   signature: string;
   complete: boolean;
 }
-export interface PreflightContext { cases?: CaseContext; coverage?: CoverageContext; integrity?: 'off' | 'annotate' | 'enforce' }
+export interface PreflightContext { cases?: CaseContext; coverage?: CoverageContext; integrity?: 'off' | 'annotate' | 'enforce'; statedObjective?: string }
 
 const SHOWN = 5;
 const MESSAGES: Record<PreflightCode, string> = {
@@ -41,6 +43,8 @@ const MESSAGES: Record<PreflightCode, string> = {
   OPEN_GAP_UNREFERENCED: 'open gap that no coverage cell or case refers to (it will show only as a bare gap)',
   ORPHAN_TASK: 'task blocked or expired without a handoff (re-plan it or record the limit)',
   UNPLANNED_ASSETS: 'asset discovered but absent from every coverage plan (add a cell or list it as out of scope)',
+  UNPROMOTED_COVERAGE_NOTE: 'surface/coverage note recorded but the plan still has no cell (free-text observation never became a counted denominator entry)',
+  NO_GOAL_RECORDED: 'the run was given an operator objective but no goal was ever recorded in the plan (the objective did not become a tracked goal)',
 };
 const BLOCKING: ReadonlySet<PreflightCode> = new Set<PreflightCode>(['UNREVIEWED_TASK', 'UNREVIEWED_CLAIM', 'PENDING_CASE', 'STALE_CASE', 'STALE_CELL', 'NO_COVERAGE_PLAN', 'NONTERMINAL_CELLS', 'UNRATED_ACCEPTED_CASE']);
 
@@ -78,6 +82,11 @@ export function finishPreflight(index: LedgerIndex, context: PreflightContext = 
   }
   const unplanned = Math.max(0, ...plans.map(plan => plan.discoveredUnplannedAssets));
   if (unplanned > 0) add('UNPLANNED_ASSETS', `${unplanned} asset(s)`);
+  // Free-text surface/coverage notes and the structured CoverageBoard live in disjoint identifier spaces (asset hashes vs.
+  // free text), so this cannot match individual entries; it only catches the coarse case the report actually depends on:
+  // recon activity was recorded but never became even one counted denominator cell.
+  if (plans.length && !cells.length) for (const row of index.records) if (row.id && (row.kind === 'coverage' || row.kind === 'surface')) add('UNPROMOTED_COVERAGE_NOTE', row.id);
+  if (context.statedObjective && !planFrontier(index).some(plan => plan.kind === 'goal')) add('NO_GOAL_RECORDED', 'no-goal');
   for (const view of cases) {
     if (view.acceptedFinding && view.finding === undefined) add('UNRATED_ACCEPTED_CASE', view.id);
     else if (view.acceptedFinding && view.ratingCurrent === false) add('STALE_RATING', view.id);

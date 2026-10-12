@@ -1042,7 +1042,7 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
   });
   registerTool({
     name: 'p2o_note', label: 'Record observation', exposure: 'model-only',
-    description: 'Append one entry to the shared assessment ledger: note (fact or decision), coverage (surface × risk × outcome, including clean surfaces), observation, or open (unresolved item). Record ids are refs for later notes and worker briefs.',
+    description: 'Append one entry to the shared assessment ledger: note (fact or rationale), coverage (surface × risk × outcome, including clean surfaces), observation, or open (unresolved item). Record ids are refs for later notes and worker briefs.',
     parameters: noteParameters,
     async execute(_id, params) {
       const current = run;
@@ -1168,7 +1168,7 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
     },
   });
   registerTool({
-    name:'p2o_loop',label:'Planner loop disposition',exposure:'model-only',
+    name:'p2o_loop',label:'Planner pause/resume state',exposure:'model-only',
     description:'OWNER ONLY: status reads the Engine frontier/events/budget. wait ends this planning round without model polling; committed worker reports/proposals can wake another round ONLY in consented event-driven mode. blocked pauses dispatch/automatic wakes until human /p2o resume. No automatic retries, scope changes or allowance renewal. Consult the confirmed executor profile; shared remains serial.',
     parameters:loopParameters,
     async execute(_id,params) {
@@ -1260,7 +1260,7 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
         // Host check over committed state, read before cleanup removes the control directory. A failed check never blocks finishing.
         try {
           const gate = current.settings.finishGate;
-          const pre = finishPreflight(await readLedger(current.records, current.runId), { ...current.store.reviewContext(), integrity: current.settings.reviewIntegrity });
+          const pre = finishPreflight(await readLedger(current.records, current.runId), { ...current.store.reviewContext(), integrity: current.settings.reviewIntegrity, statedObjective: current.statedObjective });
           current.preflight = pre; preflightText = `\n\n${renderPreflight(pre, gate)}`;
           if (gate === 'confirm' && pre.blocking.length && current.finishRefused !== pre.signature) {
             current.finishRefused = pre.signature;
