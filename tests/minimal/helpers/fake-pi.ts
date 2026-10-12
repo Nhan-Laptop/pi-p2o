@@ -13,6 +13,7 @@ export interface FakePi {
   tools: Map<string, any>;
   commands: Map<string, any>;
   events: Map<string, any>;
+  shortcuts: Map<string, any>;
   active: string[];
   messages: string[];
   customMessages: Array<{message:any; options:any}>;
@@ -23,7 +24,7 @@ export interface FakePi {
 }
 
 export function createFakePi(options: { active?: string[] } = {}): FakePi {
-  const tools = new Map<string, any>(); const commands = new Map<string, any>(); const events = new Map<string, any>();
+  const tools = new Map<string, any>(); const commands = new Map<string, any>(); const events = new Map<string, any>(); const shortcuts = new Map<string, any>();
   let active = [...(options.active ?? ['read', 'bash', 'edit', 'write'])];
   const messages: string[] = [];
   const customMessages: Array<{message:any; options:any}> = [];
@@ -32,6 +33,7 @@ export function createFakePi(options: { active?: string[] } = {}): FakePi {
   const api = {
     registerTool: (tool: any) => { tools.set(tool.name, tool); },
     registerCommand: (name: string, command: any) => { commands.set(name, command); },
+    registerShortcut: (key: string, shortcut: any) => { shortcuts.set(key, shortcut); },
     registerFlag: (name: string) => { flags[name] = flags[name] ?? ''; },
     getFlag: (name: string) => flags[name] === '' ? undefined : flags[name],
     on: (event: string, handler: any) => { const list = events.get(event) ?? []; list.push(handler); events.set(event, list); },
@@ -43,7 +45,7 @@ export function createFakePi(options: { active?: string[] } = {}): FakePi {
     registerEntryRenderer: (customType:string, renderer:any) => { entryRenderers.set(customType,renderer); },
   } as unknown as ExtensionAPI;
   const fake: FakePi = {
-    pi: api, tools, commands, events, get active() { return active; }, messages, customMessages, flags, entries, entryRenderers,
+    pi: api, tools, commands, events, shortcuts, get active() { return active; }, messages, customMessages, flags, entries, entryRenderers,
     allowWorkerFlag: (value: string) => { flags['p2o-worker'] = value; },
   } as FakePi;
   Object.defineProperty(fake, 'active', { get: () => active });
@@ -58,7 +60,9 @@ export interface FakeContext {
   aborts: number;
   waitForIdleCalls: number;
   screens: any[];
+  overlays: Array<{ component: any; options: any; handle: any }>;
   widgets: Map<string, any>;
+  renderRequests: number;
   setConfirm: (value: boolean) => void;
   setIdle: (value: boolean) => void;
 }
@@ -67,9 +71,10 @@ export function createContext(options: { cwd: string; hasUI?: boolean; model?: {
   const notices: string[] = []; const dialogs: string[] = [], confirmBodies:string[] = [];
   let confirmed = options.confirm ?? true;
   let idle = true;
-  let aborts = 0; let waitForIdleCalls = 0;
-  const screens: any[] = [], widgets = new Map<string, any>();
+  let aborts = 0; let waitForIdleCalls = 0, renderRequests = 0;
+  const screens: any[] = [], overlays: Array<{ component: any; options: any; handle: any }> = [], widgets = new Map<string, any>();
   const controller = new AbortController();
+  const tui = { requestRender: () => { renderRequests += 1; } };
   const ctx = {
     cwd: options.cwd, hasUI: options.hasUI ?? true, mode: 'tui',
     model: options.model === undefined ? { provider: 'p2o-inert', id: 'current-agent' } : options.model,
@@ -79,7 +84,15 @@ export function createContext(options: { cwd: string; hasUI?: boolean; model?: {
       confirm: async (title: string, body?: string) => { dialogs.push(title); confirmBodies.push(body ?? ''); return confirmed; },
       setStatus: () => {},
       setWidget: (key:string, value:any) => { if (value === undefined) widgets.delete(key); else widgets.set(key,value); },
-      custom: async (factory:any) => { screens.push(factory({}, {}, {}, () => {})); },
+      custom: async (factory:any, custOptions?: any) => {
+        const component = await factory(tui, {}, {}, () => {});
+        if (custOptions?.overlay) {
+          let hidden = false;
+          const handle = { hide: () => { hidden = true; }, setHidden: (v: boolean) => { hidden = v; }, isHidden: () => hidden, focus: () => {}, unfocus: () => {}, isFocused: () => false, getBounds: () => undefined };
+          overlays.push({ component, options: custOptions, handle });
+          custOptions.onHandle?.(handle);
+        } else screens.push(component);
+      },
     },
     abort: () => { aborts += 1; controller.abort(); },
     waitForIdle: async () => { waitForIdleCalls += 1; },
@@ -88,7 +101,7 @@ export function createContext(options: { cwd: string; hasUI?: boolean; model?: {
     sessionManager: { getBranch: () => [] },
   } as unknown as ExtensionCommandContext;
   return {
-    ctx, notices, dialogs, confirmBodies, screens, widgets, get aborts() { return aborts; }, get waitForIdleCalls() { return waitForIdleCalls; },
+    ctx, notices, dialogs, confirmBodies, screens, overlays, widgets, get renderRequests() { return renderRequests; }, get aborts() { return aborts; }, get waitForIdleCalls() { return waitForIdleCalls; },
     setConfirm: (value: boolean) => { confirmed = value; },
     setIdle: (value: boolean) => {idle=value;},
   } as FakeContext;

@@ -129,7 +129,7 @@ describe('model-free assessment visibility (canonical runtime + legacy reader)' 
     await fixture(async h => {
       h.ctx.widgets.set('other-extension', ['keep']);
       await h.call('p2o_task',{action:'create',draft});await delay(80);
-      expect(h.ctx.widgets.get('p2o-progress')({},{}).render(90).join('\n')).toContain('Tasks:');
+      expect(h.ctx.widgets.get('p2o-progress')({},{}).render(90).join('\n')).toContain('Queue:');
       expect(h.pi.messages).toHaveLength(1);
       await h.command('stop');await delay(80);
       expect(h.ctx.widgets.has('p2o-progress')).toBe(false);expect(h.ctx.widgets.get('other-extension')).toEqual(['keep']);
@@ -147,7 +147,7 @@ describe('model-free assessment visibility (canonical runtime + legacy reader)' 
         (h.ctx.ctx as any).mode = 'tui';
         await h.call('p2o_note', { kind: 'observation', text: 'tui-marker' }); await delay(120);
         expect(records).toHaveBeenCalled();
-        expect(h.ctx.widgets.get('p2o-progress')({}, {}).render(90).join('\n')).toContain('Tasks:');
+        expect(h.ctx.widgets.get('p2o-progress')({}, {}).render(90).join('\n')).toContain('Queue:');
         expect(h.pi.messages).toHaveLength(1);
       });
     } finally { records.mockRestore(); }

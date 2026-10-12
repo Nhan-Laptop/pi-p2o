@@ -99,7 +99,7 @@ describe('worker panel in status and widget', () => {
     expect(text).not.toContain('worker-validation-3 ·'); // finished workers are counted, not listed
     expect(text).toContain('not proof of failure, not a timeout and wakes no model');
     expect(view.widget.join('\n')).toContain('Workers: live 2 (quiet 1) | reported 1');
-    expect(view.widget.length).toBeLessThanOrEqual(5);
+    expect(view.widget.length).toBeLessThanOrEqual(8);
     expect(widgetComponent(view.widget).render(40).every(line => visibleWidth(line) <= 40)).toBe(true);
   });
 

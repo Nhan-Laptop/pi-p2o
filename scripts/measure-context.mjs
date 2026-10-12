@@ -48,7 +48,7 @@ for (const kind of ['directory', 'url']) for (const role of ROLES) {
 const dir = mkdtempSync(join(tmpdir(), 'p2o-measure-')), settingsPath = join(dir, 'settings.json');
 try {
   writeFileSync(settingsPath, JSON.stringify({ p2o: { toolGuidance: false } }));
-  const tools = new Map(), api = { registerTool: tool => tools.set(tool.name, tool), registerCommand() {}, registerFlag() {}, getFlag() {}, on() {}, getActiveTools: () => [], setActiveTools() {}, sendUserMessage() {}, sendMessage() {}, appendEntry() {}, registerEntryRenderer() {} };
+  const tools = new Map(), api = { registerTool: tool => tools.set(tool.name, tool), registerCommand() {}, registerShortcut() {}, registerFlag() {}, getFlag() {}, on() {}, getActiveTools: () => [], setActiveTools() {}, sendUserMessage() {}, sendMessage() {}, appendEntry() {}, registerEntryRenderer() {} };
   registerP2O(api, { extensionPath: resolve(root, source ? 'extensions/p2o/index.ts' : 'dist/extensions/p2o/index.js'), settingsPath });
   const bytes = name => { const tool = tools.get(name); return Buffer.byteLength(JSON.stringify({ name: tool.name, description: tool.description, parameters: tool.parameters })); };
   const loadouts = { 'delegated Planner': ownerTools(true), 'solo owner': ownerTools(false), worker: workerTools('discovery'), 'reporting worker': workerTools('reporting') };

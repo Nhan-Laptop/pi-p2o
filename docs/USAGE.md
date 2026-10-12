@@ -97,6 +97,7 @@ Merge vào file hiện có, không ghi đè phần khác. Precedence: **CLI cho 
 
 ```text
 /p2o status
+/p2o dashboard [overview|workers|tasks|coverage|cases|log]
 /p2o tasks [all|live|awaiting-review|blocked|done] [cursor]
 /p2o task <task-id>
 /p2o log [cursor] [task=<id>] [actor=<id>] [operation=<id>]
@@ -105,6 +106,7 @@ Merge vào file hiện có, không ghi đè phần khác. Precedence: **CLI cho 
 ```
 
 - `status`: đếm task, review/blocker, profile loop/executor, allowance, retention, bảng worker, dòng `Runtime: p2o <version> · <12 hex>` (digest entry file **và** `src/**`), `Planner context` (từ Pi, chỉ đo, p2o không tự compact) và **model usage** theo role (chỉ hiển thị: không có trần/retry nào dựa trên nó; message không có usage được đếm là *unknown*, không phải 0).
+- `dashboard`: màn hình đa tab (Overview/Workers/Tasks/Coverage/Cases/Log, phím số 1-6 hoặc ←→, ↑↓/PageUp/PageDown cuộn, `r` vẽ lại, Esc/q đóng) dựng từ đúng một lần quét ledger mà `status`/widget đã dùng — mở thêm tab không quét ledger lần hai. Cập nhật sống khi còn mở (planning_update.md P2); trong RPC trả text cho tab đang chọn, không mở màn hình (P3). Phím tắt **F2** bật/tắt một overlay cùng nội dung nhưng không giữ phím (non-capturing): overlay vẫn hiện trong khi gõ `/p2o hold` hay lệnh khác ở editor (P5, thực nghiệm).
 - `tasks`/`log` 20 mục/trang; cursor là vị trí trong snapshot hoặc sequence đã commit (`log 0` duyệt từ đầu; không cursor xem đuôi; bộ lọc `task=`/`actor=`/`operation=` mang theo qua `Next:`). `done` chỉ nghĩa task đã đóng, không phải finding đã verified.
 - `report` là index các handoff/claim; không tự viết kết luận hay nâng proof. TUI có widget gọn và màn hình cuộn (↑↓/PageUp/PageDown, Esc/q); RPC nhận text.
 

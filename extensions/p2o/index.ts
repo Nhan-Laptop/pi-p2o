@@ -4,6 +4,7 @@ import { readdir, realpath, rm, stat } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { dirname, join, resolve } from 'node:path';
 import type { ExtensionAPI, ExtensionContext } from '@earendil-works/pi-coding-agent';
+import type { OverlayHandle } from '@earendil-works/pi-tui';
 import { Sandbox, IMAGE, validateImage, type SandboxOptions } from '../../src/sandbox.js';
 import { classifyTarget, httpRequest, parseCommand, targetLabel, taskTimeout, type HttpRequest, type Target } from '../../src/target.js';
 import { cleanText, type ProcessResult, type OutputObserver } from '../../src/process.js';
@@ -33,7 +34,7 @@ import {
 } from '../../src/tool-schemas.js';
 import { sha256Hex } from '../../src/validate.js';
 import type { KnowledgeDomain, ContextPacket } from '../../src/context.js';
-import { freezeReport } from '../../src/report.js';
+import { freezeReport, type ReportProjectionContext } from '../../src/report.js';
 import { finishPreflight, renderPreflight, type FinishPreflight } from '../../src/finish-preflight.js';
 import { WSTG_COMMIT, WSTG_FEATURES, isWstgKey, wstgSuggest } from '../../src/wstg-map.js';
 import { ProgressState } from '../../src/progress.js';
@@ -43,8 +44,9 @@ import { plannerWakeMessage, plannerWakePrompt, parseWakePrompt, isWakePrompt, P
 import { ALL_TOOLS, TARGET_TOOLS, ownerTools, workerTools } from '../../src/tool-policy.js';
 import { UsageLedger, compactUsage, usageLines } from '../../src/usage.js';
 import { parseOperatorCommand } from '../../src/ui/operator.js';
-import { parseStateCommand, statusView, stateLines, workerLines, type StatusView, type WorkerView } from '../../src/ui/state.js';
+import { parseStateCommand, statusView, stateLines, workerLines, parseDashboardCommand, dashboardSectionLines, type StatusView, type WorkerView, type DashboardSection } from '../../src/ui/state.js';
 import { StateScreen, widgetComponent, renderTaskResult, renderStateEntry } from '../../src/ui/screen.js';
+import { DashboardScreen } from '../../src/ui/dashboard-screen.js';
 import { uiRefreshDelay } from '../../src/ui/refresh.js';
 import { AssessmentStore, finalizationReserve, type MutationRequest, type StoreFault } from '../../src/state/store.js';
 import { bindAssessmentStore } from '../../src/state/adapter.js';
@@ -69,7 +71,8 @@ const WORKER_FLAG = 'p2o-worker';
 const HELP = [
   'Usage: /p2o --target <directory|http(s)-URL> [--solo] [--workers N] [--loop manual|event-driven] [--executors shared|isolated] [--target-ops N] [--retention durable-local|ephemeral] [--export] [--goal "text"]',
   '       /p2o stop | pause | resume | hold [reason] | release | workers | stop-worker <worker-id> [reason]',
-  '       /p2o status | tasks [all|live|awaiting-review|blocked|done] [cursor] | task <id> | log [cursor] [task=<id>] [actor=<id>] [operation=<id>] | report',
+  '       /p2o status | dashboard [overview|workers|tasks|coverage|cases|log] (multi-tab live view; F2 toggles a non-capturing overlay)',
+  '       /p2o tasks [all|live|awaiting-review|blocked|done] [cursor] | task <id> | log [cursor] [task=<id>] [actor=<id>] [operation=<id>] | report',
   '       /p2o plans [cursor] | plan <id> | phases [cursor] | phase <id> (read-only knowledge)',
   '       /p2o findings [cursor] | finding <case-id> | coverage [cursor] | coverage-cell <id> (review/currentness views)',
   '       /p2o heads [domain|all] [cursor default/min 0] [limit default 20, min 1, max 100] | digest (indexed read-only, no delivery ACK)',
@@ -120,6 +123,12 @@ interface OwnerRun {
   admittedWake?: string;
   /** Operator hold: no new target command or worker launch while set. Running operations finish; reporting, cleanup and /p2o stop stay open. Never settable by a model. */
   held?: { reason: string; at: number };
+  /** Open dashboard views (modal `/p2o dashboard` screens and the F2 overlay) refreshed in place by refreshVisibility; no view triggers its own scan. */
+  dashboardScreens?: Set<DashboardScreen>;
+  /** The latest single-scan model every open dashboard view reads from; set once per refresh, never a second ledger read per view. */
+  lastDashboardData?: { index: LedgerIndex; context: ReportProjectionContext; view: StatusView; workers: { list: WorkerView[]; maxWorkers: number; held?: { reason: string } } };
+  /** The F2 non-capturing overlay handle, if currently shown; toggled rather than recreated so its tab/scroll state survives hide/show. */
+  dashboardOverlay?: { handle: OverlayHandle };
   /** Display-only model usage as reported by Pi (planner here, workers through the broker). */
   usage: UsageLedger;
 }
@@ -278,10 +287,14 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
       const work = (async () => {
         if (current.ctx.mode !== 'tui') return;
         const started = performance.now();
-        const view = await currentStatus(current);
+        const index = await readLedger(current.records, current.runId);
+        const view = await currentStatus(current, undefined, index);
         current.uiScanMs = performance.now() - started;
         if (run !== current || current.phase === 'finished' || current.uiClosed) return;
         current.ctx.ui.setWidget('p2o-progress', () => widgetComponent(view.widget));
+        current.lastDashboardData = { index, context: current.store.reviewContext(), view,
+          workers: { list: operatorWorkers(current), maxWorkers: current.delegation.maxWorkers, held: current.held } };
+        for (const screen of current.dashboardScreens ?? []) screen.refresh();
       })().catch(error => {
         if (run === current && !current.uiClosed) current.ctx.ui.notify(`Progress view unavailable: ${message(error)}; no completeness claim.`, 'warning');
       }).finally(() => {
@@ -298,6 +311,8 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
     clearTimeout(current.uiTimer); current.uiTimer = undefined;
     await current.uiRefresh;
     try { current.ctx.ui.setWidget('p2o-progress', undefined); } catch { /* Cleanup authority never depends on rendering. */ }
+    try { current.dashboardOverlay?.handle.hide(); } catch { /* Cleanup never depends on an overlay closing cleanly. */ }
+    current.dashboardOverlay = undefined; current.dashboardScreens?.clear();
   }
 
   // Pi applies extension flag values after load and before the session starts, so the ticket is read
@@ -1280,6 +1295,30 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
     },
   });
 
+  // F2 is unused by Pi's own built-in or editor keybindings (checked against @earendil-works/pi-tui and
+  // @earendil-works/pi-coding-agent's keybinding tables); every ctrl+<letter> is already bound to editor
+  // movement/app actions, which is why this is a function key rather than a chord.
+  pi.registerShortcut('f2', {
+    description: 'Toggle a live, non-capturing p2o dashboard overlay (editor keeps focus; /p2o hold etc. still work)',
+    handler: async ctx => {
+      if (!run || run.role !== 'owner' || run.phase !== 'active' || ctx.mode !== 'tui') { ctx.ui.notify('p2o dashboard overlay needs an active TUI assessment.', 'info'); return; }
+      const current = run;
+      if (current.dashboardOverlay) { const handle = current.dashboardOverlay.handle; handle.setHidden(!handle.isHidden()); return; }
+      if (!current.lastDashboardData) {
+        const index = await readLedger(current.records, current.runId);
+        const view = await currentStatus(current, current.phase, index);
+        current.lastDashboardData = { index, context: current.store.reviewContext(), view, workers: { list: operatorWorkers(current), maxWorkers: current.delegation.maxWorkers, held: current.held } };
+      }
+      const getLines = (section: DashboardSection) => { const d = current.lastDashboardData; return d ? dashboardSectionLines(section, d.index, d.context, d.view.lines, d.workers) : ['No live data yet.']; };
+      await ctx.ui.custom<void>((tui, _theme, _kb, done) => {
+        const instance: DashboardScreen = new DashboardScreen(getLines, 'overview', () => { current.dashboardScreens?.delete(instance); current.dashboardOverlay = undefined; done(); }, () => tui.requestRender());
+        (current.dashboardScreens ??= new Set()).add(instance);
+        return instance;
+      }, { overlay: true, overlayOptions: { nonCapturing: true, anchor: 'top-right', width: '48%', maxHeight: '70%' }, onHandle: handle => { current.dashboardOverlay = { handle }; } })
+        .catch(() => { current.dashboardOverlay = undefined; });
+    },
+  });
+
   // ---------------------------------------------------------------- command
 
   pi.registerCommand('p2o', {
@@ -1397,6 +1436,39 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
           }
           pi.appendEntry('p2o-state-view', { action: stateCommand.action, runId: view.runId, recordCount: view.asOfRecordCount });
           await showState(ctx, lines);
+          return;
+        }
+        const dashboardCommand = parseDashboardCommand(args);
+        if (dashboardCommand) {
+          if (run?.role === 'worker') throw Error('Worker pane: ask the owner to inspect assessment state; this command cannot open owner state or authority.');
+          const section = dashboardCommand.section;
+          if ((!run || run.phase === 'finished') && historical) {
+            const opened = historical, manifest = opened.store.manifest(), index = await readLedger(opened.records, manifest.runId);
+            const report = await freezeReport(opened.records, manifest.runId, opened.store.reviewContext());
+            const overview = [`HISTORICAL ${manifest.runId} — READ-ONLY; no active authority.`, `Knowledge: ${opened.records}`, `Records @${index.snapshotSequence}: ${index.records.length}; reconciliation complete=${report.complete}`, `Tasks pending review: ${report.counts.unreviewedTasks}; open entries: ${report.counts.open}; claims: ${report.counts.candidates}; accepted-current cases: ${report.counts.uniqueAcceptedFindings}; stale cases/cells: ${report.counts.staleCases}/${report.counts.staleCoverageCells}`, `Outcome: ${JSON.stringify(opened.store.outcome() ?? {assessmentOutcome:'interrupted/unknown',resourceOutcome:'unknown'})}`, 'Running/in-flight historical states are interrupted/unknown, not live execution. Nothing is resumed or replayed.'];
+            await showState(ctx, ['HISTORICAL — no active authority.', ...dashboardSectionLines(section, index, opened.store.reviewContext(), overview)]);
+            return;
+          }
+          if (!run || run.phase === 'finished') {
+            if (section !== 'overview' || !lastStatus) { ctx.ui.notify('No active/open knowledge store. Use /p2o open <run-id> to inspect durable-local history read-only.', 'info'); return; }
+            await showState(ctx, ['HISTORICAL in-memory final summary — no active authority; lost on reload.', ...lastStatus.lines]);
+            return;
+          }
+          const current = run;
+          if (current.phase === 'starting' || current.phase === 'stopping') { ctx.ui.notify(`Assessment ${current.phase}; inspection unavailable until this lifecycle step settles.`, 'info'); return; }
+          const index = await readLedger(current.records, current.runId);
+          const view = await currentStatus(current, current.phase, index);
+          const dashContext = current.store.reviewContext();
+          current.lastDashboardData = { index, context: dashContext, view, workers: { list: operatorWorkers(current), maxWorkers: current.delegation.maxWorkers, held: current.held } };
+          pi.appendEntry('p2o-state-view', { action: 'dashboard', runId: view.runId, recordCount: view.asOfRecordCount });
+          if (ctx.mode === 'tui') {
+            const getLines = (s: DashboardSection) => { const d = current.lastDashboardData; return d ? dashboardSectionLines(s, d.index, d.context, d.view.lines, d.workers) : ['No live data yet.']; };
+            await ctx.ui.custom<void>((tui, _theme, _kb, done) => {
+              const instance: DashboardScreen = new DashboardScreen(getLines, section, () => { current.dashboardScreens?.delete(instance); done(); }, () => tui.requestRender());
+              (current.dashboardScreens ??= new Set()).add(instance);
+              return instance;
+            });
+          } else ctx.ui.notify(dashboardSectionLines(section, index, dashContext, view.lines, current.lastDashboardData.workers).join('\n'), 'info');
           return;
         }
         const operatorCommand = parseOperatorCommand(args);

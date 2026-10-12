@@ -8,6 +8,7 @@ import type { AssessmentEngine } from '../engine.js';
 import { phasePackets, planFrontier } from '../planning.js';
 import { STATE_SCHEMA_VERSION } from '../state/schema.js';
 import { validId } from '../validate.js';
+import { dashboardLines } from './dashboard.js';
 
 export type StateCommand = { action: 'status' } | { action: 'report' } | { action: 'tasks'; filter: string; cursor: number }
   | { action: 'task'; id: string } | { action:'plan';id:string } | { action:'phase';id:string } | {action:'finding';id:string}|{action:'coverage-cell';id:string}
@@ -51,7 +52,7 @@ const reviewLabel = (task: AssessmentTask) => awaitingReview(task) ? `${task.sta
 export interface ViewProfile {
   runId: string; target: string; lifecycle: string; delegation: boolean; maxWorkers: number;
   workerUsed: number; workerCeiling: number; exportEnabled: boolean; exportPath?: string; exportError?: string;
-  engine: ReturnType<AssessmentEngine['snapshot']>; executor: { mode: string; maxTargetOperations: number };
+  engine: ReturnType<AssessmentEngine['snapshot']>; executor: { mode: string; maxTargetOperations: number; runningTargetOperations?: number; waitingTargetOperations?: number };
   retention?: 'durable-local' | 'ephemeral'; stateLocation?: string; storageError?: string;
   runtime?: { version: string; sha256: string; policy?: number | 'off' };
   workers?: WorkerView[]; held?: { reason: string; at: number }; usageLines?: string[];
@@ -78,7 +79,7 @@ export interface StatusView {
 
 /** Legacy v2 projection. Counts are records/tasks, never test cells or validated findings. */
 export function statusView(index: LedgerIndex, profile: ViewProfile, context:ReportProjectionContext={}): StatusView {
-  const tasks = taskFrontier(index), report = reportProjection(index,context);
+  const tasks = taskFrontier(index), report = reportProjection(index,context), cases = caseViews(index, context.cases ?? {});
   const counts: Record<string, number> = {};
   for (const task of tasks) counts[task.status] = (counts[task.status] ?? 0) + 1;
   const pendingReview = tasks.filter(awaitingReview).length;
@@ -117,9 +118,14 @@ export function statusView(index: LedgerIndex, profile: ViewProfile, context:Rep
       `Reconciliation: ${report.complete ? 'complete bounded record scan' : 'INCOMPLETE — no completeness claim'}${diagnostics.length ? `; ${diagnostics.map(x => safe(x, 150)).join('; ')}` : ''}`,
       'Reported ≠ reviewed; closed task ≠ verified finding; resources cleaned ≠ assessment complete.',
       index.snapshotSequence !== undefined ? `Canonical store v${STATE_SCHEMA_VERSION} / records v2; committed sequence @${index.snapshotSequence}. Missing operation correlation stays unknown.` : 'Legacy v2 view: record cursor is not a durable event sequence; operation history/correlation may be unknown.'],
-    widget: [title, ...(profile.held ? [`HOLD: ${safe(profile.held.reason, 120)}`] : []), `Tasks: running ${counts.running ?? 0} | review ${pendingReview} | blocked ${counts.blocked ?? 0} | closed ${counts.closed ?? 0}; cases accepted ${report.counts.uniqueAcceptedFindings} | pending/stale ${report.counts.pendingCaseReviews}/${report.counts.staleCases}`,
-      ...(profile.workers?.length ? [`Workers: live ${profile.workers.filter(w => !w.reported && !w.stopped).length} (quiet ${profile.workers.filter(w => w.quiet && !w.reported && !w.stopped).length}) | reported ${profile.workers.filter(w => w.reported).length}`] : []),
-      `${attention} ${report.complete ? '' : 'STATE INCOMPLETE.'}`, retention],
+    widget: [title, ...(profile.held ? [`HOLD: ${safe(profile.held.reason, 120)}`] : []),
+      ...(profile.workers?.length ? [(() => {
+        const live = profile.workers!.filter(w => !w.reported && !w.stopped);
+        const rows = live.length && live.length <= 3 ? ` · ${live.map(w => `${safe(w.id, 40)}(${safe(w.state, 16)}${w.taskId ? ` ${safe(w.taskId, 40)}` : ''})`).join(', ')}` : '';
+        return `Workers: live ${live.length} (quiet ${live.filter(w => w.quiet).length}) | reported ${profile.workers!.filter(w => w.reported).length}${rows}`;
+      })()] : []),
+      ...dashboardLines(profile, report, cases),
+      `${attention} ${report.complete ? '' : 'STATE INCOMPLETE.'}`],
   };
 }
 
@@ -205,4 +211,42 @@ export function stateLines(index: LedgerIndex, command: Exclude<StateCommand, { 
     ...(next < index.records.length ? [`Next: /p2o log ${next}`] : []),
     ...page.map((r, i) => `${cursor + i} ${r.id ?? 'legacy-no-id'} · ${r.kind} · ${safe(r.by, 80)} · ${safe(r.text, 600)}`),
     'Use /p2o log 0 for traversal. This is existing ledger history, not a complete typed operation checklog.'];
+}
+
+export const DASHBOARD_SECTIONS = ['overview', 'workers', 'tasks', 'coverage', 'cases', 'log'] as const;
+export type DashboardSection = typeof DASHBOARD_SECTIONS[number];
+
+/** Human-only. `/p2o dashboard [section|1-6]`; no section defaults to overview. */
+export function parseDashboardCommand(args: string): { section: DashboardSection } | undefined {
+  const [action, ...parts] = args.trim().split(/\s+/);
+  if (action !== 'dashboard') return undefined;
+  const usage = 'Usage: /p2o dashboard [overview|workers|tasks|coverage|cases|log]';
+  if (parts.length > 1) throw Error(usage);
+  const raw = parts[0];
+  if (!raw) return { section: 'overview' };
+  const section = /^[1-6]$/.test(raw) ? DASHBOARD_SECTIONS[Number(raw) - 1]
+    : (DASHBOARD_SECTIONS as readonly string[]).includes(raw) ? raw as DashboardSection : undefined;
+  if (!section) throw Error(usage);
+  return { section };
+}
+
+/**
+ * Per-tab content for the dashboard screen and its RPC/text fallback. Reuses the same pure projections as
+ * /p2o status|workers|tasks|coverage|findings|log on an already-read LedgerIndex — no extra store read.
+ */
+export function dashboardSectionLines(section: DashboardSection, index: LedgerIndex, context: ReportProjectionContext, overviewLines: string[],
+  workers?: { list: WorkerView[]; maxWorkers: number; held?: { reason: string } }): string[] {
+  switch (section) {
+    case 'overview': return overviewLines;
+    case 'workers': {
+      if (!workers) return ['No live worker data in this view (historical or closed run).'];
+      const lines = workerLines(workers.list, workers.maxWorkers);
+      return [`Workers ${workers.list.length}${workers.held ? ` — HOLD: ${safe(workers.held.reason, 300)}` : ''}`,
+        ...(lines.length ? lines : ['No workers have been launched. A solo run has none.']), 'Local observation only; quiet is not proof of failure.'];
+    }
+    case 'tasks': return stateLines(index, { action: 'tasks', filter: 'all', cursor: 0 }, context);
+    case 'coverage': return stateLines(index, { action: 'coverage', cursor: 0 }, context);
+    case 'cases': return stateLines(index, { action: 'findings', cursor: 0 }, context);
+    case 'log': return stateLines(index, { action: 'log' }, context);
+  }
 }
