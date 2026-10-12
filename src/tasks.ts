@@ -65,14 +65,18 @@ function bounded(value: unknown, name: string, limit: number, minimum = 1): asse
 function validate(input: TaskDraft) {
   const allowed = ['id','question','surface','risk','role','roleReason','expectedTrue','expectedFalse','stopCondition','evidenceIds','prerequisites','validationOf','retestOf','parentTaskId','method','work','decision','outputContract','unknowns','missingPrerequisites','expectedOutput'];
   if (Object.keys(input).some(k => !allowed.includes(k))) throw new Error('Task input cannot change scope, run, expiry or authority');
-  for (const [name, value, size, min] of [['question',input.question,1500,1],['surface',input.surface,200,1],['risk',input.risk,200,1],['roleReason',input.roleReason,1000,10],['expectedTrue',input.expectedTrue,1000,5],['expectedFalse',input.expectedFalse,1000,5],['stopCondition',input.stopCondition,1000,10]] as const) bounded(value,name,size,min);
+  // A recon intent is bounded mapping, not a contrasting hypothesis yet: roleReason/expectedTrue/expectedFalse/stopCondition
+  // and method.reason may be omitted (stored as ''), never required empty for the other roles.
+  const reconLenient = input.role === 'recon';
+  for (const [name, value, size, min] of [['question',input.question,1500,1],['surface',input.surface,200,1],['risk',input.risk,200,1],
+    ['roleReason',input.roleReason,1000,reconLenient?0:10],['expectedTrue',input.expectedTrue,1000,reconLenient?0:5],['expectedFalse',input.expectedFalse,1000,reconLenient?0:5],['stopCondition',input.stopCondition,1000,reconLenient?0:10]] as const) bounded(value,name,size,min);
   if (!isRole(input.role)) throw new Error('Invalid task role');
   for (const id of [input.id, input.validationOf,input.retestOf, input.parentTaskId]) if (id !== undefined && !/^[a-z0-9][a-z0-9-]{0,79}$/.test(id)) throw new Error('Invalid task ID');
   if (!Array.isArray(input.evidenceIds) || input.evidenceIds.length > 10 || input.evidenceIds.some(id => typeof id !== 'string' || id.length > 80)) throw new Error('Invalid task evidence');
   if (!Array.isArray(input.prerequisites) || input.prerequisites.length > 10 || input.prerequisites.some(p => !p || typeof p.taskId !== 'string' || !/^[a-z0-9][a-z0-9-]{0,79}$/.test(p.taskId) || (p.revision !== undefined && (!Number.isSafeInteger(p.revision) || p.revision < 1))) || new Set(input.prerequisites.map(p=>p.taskId)).size!==input.prerequisites.length) throw new Error('Invalid or duplicate task prerequisites');
   for (const list of [input.unknowns,input.missingPrerequisites]) if (list !== undefined && (!Array.isArray(list) || list.length > 10 || list.some(v => typeof v !== 'string' || v.trim().length < 10 || v.length > 500))) throw Error('Invalid task unknowns/prerequisites');
   if (input.expectedOutput !== undefined) bounded(input.expectedOutput,'expected output',1000,5);
-  if (!input.method || typeof input.method.reason !== 'string' || input.method.reason.trim().length < 10 || input.method.reason.length > 1000 || !Array.isArray(input.method.skills) || input.method.skills.length > 3 || input.method.skills.some(s => !s || typeof s.id !== 'string' || s.id.length > 64 || !/^[a-z0-9-]+$/.test(s.id) || !/^[a-f0-9]{64}$/.test(s.sha256))) throw new Error('Invalid task method');
+  if (!input.method || typeof input.method.reason !== 'string' || input.method.reason.trim().length < (reconLenient?0:10) || input.method.reason.length > 1000 || !Array.isArray(input.method.skills) || input.method.skills.length > 3 || input.method.skills.some(s => !s || typeof s.id !== 'string' || s.id.length > 64 || !/^[a-z0-9-]+$/.test(s.id) || !/^[a-f0-9]{64}$/.test(s.sha256))) throw new Error('Invalid task method');
   validateWorkFields(input);
 }
 

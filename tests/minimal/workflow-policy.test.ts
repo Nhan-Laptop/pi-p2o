@@ -98,7 +98,7 @@ describe('the worker-control tools are offered only when workers exist', () => {
     for (const name of DELEGATION_TOOLS) { expect(ownerTools(true), name).toContain(name); expect(ownerTools(false), name).not.toContain(name); expect(workerTools('discovery'), name).not.toContain(name); }
     for (const name of TARGET_TOOLS) { expect(ownerTools(false), name).toContain(name); expect(ownerTools(true), name).not.toContain(name); }
     expect(ownerTools(false)).toContain('p2o_loop'); // engine and frontier status stay available to a solo owner
-    expect(ownerTools(false)).toHaveLength(18); expect(ownerTools(true)).toHaveLength(18);
+    expect(ownerTools(false)).toHaveLength(19); expect(ownerTools(true)).toHaveLength(19);
   });
 });
 
@@ -111,7 +111,9 @@ describe('fixed context cost per loadout is budgeted (plan principle 16)', () =>
   // 2026-10-11 (extension audit S1): enum parameters are declared as {type:'string', enum} (src/schema-kit.ts) instead of an anyOf of const literals: Planner 37,656 -> 32,310 B (-14.2%),
   // solo owner 38,355 -> 33,328 B, worker 20,750 -> 18,038 B, reporting worker 13,974 -> 11,540 B. Guidance is unchanged.
   // 2026-10-11 (planning_update.md 3.3): the p2o_skill_list description tells the lead and workers to check the catalog before assigning or starting work (+105 B in every loadout; guidance is unchanged).
-  const budget = { 'delegated Planner': [32_415, 1_003], 'solo owner': [33_433, 921], 'worker': [18_143, 314], 'reporting worker': [11_645, 217] } as const;
+  // 2026-10-12 (planning_update.md P1.2): new p2o_surface tool (owner + worker loadouts) for a cheap normalized component/entryPoint dedup hint, separate from p2o_note. Declarations rose by
+  // one tool's worth of bytes in every loadout that carries it (reporting worker keeps it too, same as p2o_note); guidance is unchanged since p2o_surface has no promptGuidelines entry.
+  const budget = { 'delegated Planner': [33_144, 1_003], 'solo owner': [34_162, 921], 'worker': [18_867, 314], 'reporting worker': [12_369, 217] } as const;
   it('keeps tool declarations and guidance inside the recorded budget', () => {
     const tools = registry();
     for (const [label, names] of Object.entries(loadouts)) {

@@ -70,7 +70,7 @@ describe('owner role', () => {
   afterEach(async () => { await h.command('stop'); await rm(h.root, { recursive: true, force: true }); });
 
   it('registers the owner and worker tools plus one command, and does no work before the command', () => {
-    expect([...h.pi.tools.keys()].sort()).toEqual(['p2o_artifact', 'p2o_candidate', 'p2o_capture', 'p2o_case', 'p2o_coverage', 'p2o_delegate', 'p2o_finish', 'p2o_graph', 'p2o_http', 'p2o_ledger', 'p2o_loop', 'p2o_net', 'p2o_note', 'p2o_plan', 'p2o_report', 'p2o_request_subtask', 'p2o_shell', 'p2o_skill_list', 'p2o_skill_read', 'p2o_state', 'p2o_steer', 'p2o_stop_worker', 'p2o_task', 'p2o_workers']);
+    expect([...h.pi.tools.keys()].sort()).toEqual(['p2o_artifact', 'p2o_candidate', 'p2o_capture', 'p2o_case', 'p2o_coverage', 'p2o_delegate', 'p2o_finish', 'p2o_graph', 'p2o_http', 'p2o_ledger', 'p2o_loop', 'p2o_net', 'p2o_note', 'p2o_plan', 'p2o_report', 'p2o_request_subtask', 'p2o_shell', 'p2o_skill_list', 'p2o_skill_read', 'p2o_state', 'p2o_steer', 'p2o_stop_worker', 'p2o_surface', 'p2o_task', 'p2o_workers']);
     expect(h.pi.messages).toEqual([]);
     expect(h.sandboxes).toEqual([]);
     expect([...h.pi.commands.keys()]).toEqual(['p2o']);
@@ -92,7 +92,7 @@ describe('owner role', () => {
     expect(event.systemPromptOptions.sections.p2o_assessment).toContain('DELEGATION');
     expect(event.systemPromptOptions.sections.other).toBe('KEEP OTHER GUIDANCE');
     expect(h.sandboxes[0].stopCount).toBe(0);
-    expect(h.pi.active).toEqual(['p2o_task', 'p2o_plan', 'p2o_case', 'p2o_coverage', 'p2o_ledger', 'p2o_state', 'p2o_graph', 'p2o_artifact', 'p2o_skill_list', 'p2o_skill_read', 'p2o_candidate', 'p2o_note', 'p2o_delegate', 'p2o_workers', 'p2o_steer', 'p2o_stop_worker', 'p2o_loop', 'p2o_finish']);
+    expect(h.pi.active).toEqual(['p2o_task', 'p2o_plan', 'p2o_case', 'p2o_coverage', 'p2o_ledger', 'p2o_state', 'p2o_graph', 'p2o_artifact', 'p2o_skill_list', 'p2o_skill_read', 'p2o_candidate', 'p2o_note', 'p2o_surface', 'p2o_delegate', 'p2o_workers', 'p2o_steer', 'p2o_stop_worker', 'p2o_loop', 'p2o_finish']);
     expect(await h.tickets()).toEqual([]);
   });
 
@@ -138,6 +138,39 @@ describe('owner role', () => {
     await expect(h.call('p2o_delegate',{focus:'fault',task:'Do not use stale method',taskId:task.id})).rejects.toThrow('TASK_METHOD_STALE');
     expect(h.herdr.calls.filter(c=>c.op==='start')).toHaveLength(0);
     await h.command('stop');
+  });
+
+  it('lets a recon task omit roleReason/expectedTrue/expectedFalse/stopCondition/methodReason, but still requires them for every other role (planning_update.md P1.1)', async () => {
+    await h.start('--target ./repo --solo');
+    const lean: any = { question: 'What does this endpoint expose?', surface: '/surface', risk: 'mapping', role: 'recon', evidenceIds: [], prerequisites: [] };
+    const recon = (await h.call('p2o_task', { action: 'create', draft: lean })).details;
+    expect(recon.roleReason).toBe(''); expect(recon.expectedTrue).toBe(''); expect(recon.expectedFalse).toBe(''); expect(recon.stopCondition).toBe(''); expect(recon.method.reason).toBe('');
+    await expect(h.call('p2o_task', { action: 'create', draft: { ...lean, role: 'general' } })).rejects.toThrow('Invalid task roleReason');
+    await h.command('stop');
+  });
+
+  it('records a cheap recon surface-inventory entry and flags a normalized-key duplicate without blocking it (planning_update.md P1.2)', async () => {
+    await h.start('--target ./repo --solo');
+    const first = (await h.call('p2o_surface', { component: 'Login API', entryPoint: '/api/login' })).details;
+    expect(first.duplicate).toBe(false);
+    const again = (await h.call('p2o_surface', { component: '  login api  ', entryPoint: 'API/Login' })).details;
+    expect(again.duplicate).toBe(false); // entryPoint is case/whitespace-sensitive beyond NFC/trim/lowercase, so a differently-cased path is a distinct key
+    const repeat = (await h.call('p2o_surface', { component: '  LOGIN api', entryPoint: '/api/login' })).details;
+    expect(repeat.duplicate).toBe(true); expect(repeat.priorRecordId).toBe(first.recordId);
+    await h.command('stop');
+  });
+
+  it('nudges the owner when a worker report lands in manual loop mode, naming the pending-review count (planning_update.md P1.3)', async () => {
+    await h.start('--target ./repo');
+    const draft: any = { question: 'What does this surface expose?', surface: '/surface', risk: 'mapping', role: 'recon', evidenceIds: [], prerequisites: [] };
+    const task = (await h.call('p2o_task', { action: 'create', draft })).details;
+    const worker = (await h.call('p2o_delegate', { focus: 'recon', task: 'map the surface', taskId: task.id })).details;
+    const { BrokerClient } = await import('../../src/broker.js');
+    const ticket = JSON.parse(await readFile(join(await h.runDir(), `ticket-${worker.workerId}.json`), 'utf8'));
+    const client = new BrokerClient(ticket.socket, ticket.token);
+    await client.request('report', { report: { summary: 'bounded recon packet', confidence: 'low' } });
+    client.close();
+    expect(h.contexts.notices.at(-1)).toContain('1 worker report awaiting Planner review');
   });
 
   it('maintains a per-surface recon/discovery/independent-validation loop, rejects stale conclusions and freezes before cleanup', async () => {

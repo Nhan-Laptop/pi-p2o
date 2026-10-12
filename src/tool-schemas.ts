@@ -16,14 +16,15 @@ export const stateParameters = Type.Object({action:choices(['heads', 'search']),
 
 export const taskDraftSchema = Type.Object({
     question:Type.String({minLength:1,maxLength:1500}),surface:Type.String({minLength:1,maxLength:200}),risk:Type.String({minLength:1,maxLength:200}),
-    role:choices(ROLES),roleReason:Type.String({minLength:10,maxLength:1000}),
-    expectedTrue:Type.String({minLength:5,maxLength:1000}),expectedFalse:Type.String({minLength:5,maxLength:1000}),stopCondition:Type.String({minLength:10,maxLength:1000}),
+    // Required for every role except recon, which may omit them for a lighter intent (src/tasks.ts validate() enforces the role-conditional minimum).
+    role:choices(ROLES),roleReason:Type.Optional(Type.String({maxLength:1000})),
+    expectedTrue:Type.Optional(Type.String({maxLength:1000})),expectedFalse:Type.Optional(Type.String({maxLength:1000})),stopCondition:Type.Optional(Type.String({maxLength:1000})),
     expectedOutput:Type.Optional(Type.String({minLength:5,maxLength:1000})),
     unknowns:Type.Optional(Type.Array(Type.String({minLength:10,maxLength:500}),{maxItems:10})),missingPrerequisites:Type.Optional(Type.Array(Type.String({minLength:10,maxLength:500}),{maxItems:10})),
     evidenceIds:Type.Array(Type.String({maxLength:80}),{maxItems:10}),prerequisites:Type.Array(Type.Object({taskId:Type.String({maxLength:80}),revision:Type.Optional(Type.Integer({minimum:1}))}),{maxItems:10}),
     validationOf:Type.Optional(Type.String({maxLength:80})),retestOf:Type.Optional(Type.String({maxLength:80})),parentTaskId:Type.Optional(Type.String({maxLength:80})),
     work:Type.Optional(workSpecSchema),decision:Type.Optional(workDecisionSchema),outputContract:Type.Optional(outputContractSchema),
-    skills:Type.Optional(Type.Array(Type.String({maxLength:64}),{maxItems:3})),workflow:Type.Optional(Type.String({maxLength:64})),methodReason:Type.String({minLength:10,maxLength:1000}),
+    skills:Type.Optional(Type.Array(Type.String({maxLength:64}),{maxItems:3})),workflow:Type.Optional(Type.String({maxLength:64})),methodReason:Type.Optional(Type.String({maxLength:1000})),
   },{additionalProperties:false});
 
 export const TASK_ACTIONS = ['create','revise','match','list','start','review','close','block','cancel','dispatch'] as const;
@@ -32,6 +33,8 @@ export const taskParameters = Type.Object({action:choices(TASK_ACTIONS),
       ids:Type.Optional(Type.Array(Type.String({maxLength:80}),{minItems:1,maxItems:25})),priority:Type.Optional(Type.Integer({minimum:0,maximum:100})),
       cursor:Type.Optional(Type.Integer({minimum:0})),limit:Type.Optional(Type.Integer({minimum:1,maximum:25})),
       reason:Type.Optional(Type.String({minLength:5,maxLength:1000})),evidenceIds:Type.Optional(Type.Array(Type.String({maxLength:80}),{maxItems:10})),externalEvidence:Type.Optional(Type.Boolean())});
+
+export const surfaceParameters = Type.Object({component:Type.String({minLength:1,maxLength:200}),entryPoint:Type.String({minLength:1,maxLength:200}),text:Type.Optional(Type.String({maxLength:1000})),refs:Type.Optional(Type.Array(Type.String({maxLength:80}),{maxItems:10}))},{additionalProperties:false});
 
 export const skillListParameters = Type.Object({ query: Type.Optional(Type.String({ maxLength: 80 })), offset: Type.Optional(Type.Integer({ minimum: 0 })) });
 

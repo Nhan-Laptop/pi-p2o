@@ -17,3 +17,5 @@ examples/live-lab/.runs/
 bench/.arms/
 bench/.work/
 bench/results/
+# Static reference copies of external repos (ARTEX, strix) used for planning_update.md; not p2o source.
+my_references/

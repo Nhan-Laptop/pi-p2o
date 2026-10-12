@@ -100,6 +100,8 @@ describe('model-free assessment visibility (canonical runtime + legacy reader)' 
       await h.command('tasks awaiting-review');expect(h.screen()).toContain('awaiting owner review');
       await h.command(`task ${task.id}`);expect(h.screen()).toContain('History 4 revisions');
       await h.command('status');expect(h.screen()).toContain('awaiting-review 1');expect(h.screen()).toContain('closed 0');
+      // planning_update.md P1.3: the pending-review count surfaces right after the title, not only buried in the task-count/attention lines.
+      const statusLines=h.screen().split('\n');expect(statusLines.findIndex((line:string)=>line.includes('⚠ 1 worker report awaiting Planner review'))).toBeLessThan(statusLines.findIndex((line:string)=>line.startsWith('Tasks ')));
     });
   });
   it('paginates all history and labels counts as records, not unique tested cells', async () => {

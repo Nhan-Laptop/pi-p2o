@@ -70,6 +70,8 @@ export interface BrokerDeps {
   graphReplay?(batch: GraphBatch, worker: WorkerRegistration, request: MutationRequest): Promise<GraphAck[] | undefined>;
   graphRead?(op: string, params: Record<string, unknown>, worker: WorkerRegistration): Promise<unknown>;
   note(record: AssessmentRecord, request?: MutationRequest): Promise<void | RecordAck>;
+  /** Cheap recon surface-inventory dedup hint (src/records.ts recordSurface); never a reservation or gate. */
+  surface?(input: { component: string; entryPoint: string; text?: string; refs?: string[] }, worker: WorkerRegistration): Promise<RecordAck & { duplicate: boolean; priorRecordId?: string }>;
   ledger(limit: number, id?: string, cursor?: number): Promise<AssessmentRecord[] | LedgerPage>;
   objective?(worker: WorkerRegistration): Promise<unknown>;
   /** Fixed host-selected assignment projection/receipt only, never worker-selected scope or cursor. */
@@ -394,6 +396,15 @@ export class Broker {
           ...(stringList(request?.refs, 10, 200).length ? { refs: stringList(request?.refs, 10, 200) } : {}),
         }, delivery);
         return { ok: true, ...(ack ?? {}) };
+      }
+      case 'surface': {
+        const refused = this.charge(workerId, COORDINATION_CALLS, 'Coordination budget exhausted');
+        if (refused) return refused;
+        if (!this.deps.surface) return { ok: false, error: 'Surface inventory unavailable' };
+        const component = text(request?.component, 200), entryPoint = text(request?.entryPoint, 200);
+        if (!component || !entryPoint) return { ok: false, error: 'component and entryPoint are required' };
+        try { return { ok: true, ...await this.deps.surface({ component, entryPoint, text: text(request?.text, 1000), refs: stringList(request?.refs, 10, 200) }, registration) }; }
+        catch (error) { return { ok: false, error: errText(error) }; }
       }
       case 'request_subtask': {
         const refused = this.charge(workerId, COORDINATION_CALLS, 'Coordination budget exhausted; include request in final report');

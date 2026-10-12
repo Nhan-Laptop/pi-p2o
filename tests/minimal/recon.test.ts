@@ -47,9 +47,11 @@ describe('bounded recon contract', () => {
     expect(urlOwner.length).toBeLessThan(5000);
   });
 
+  // 2026-10-12 (planning_update.md P1.2): reconInstructions' tool-guidance-on branch now names p2o_surface for the surface-inventory step, so the
+  // instruction hash moved on purpose; the brief hash is unaffected (workerBrief does not include reconInstructions text).
   it.each([
-    ['url', '7092eb65fd1d34872d5c6b1c152e02eff0dcaac28c53a2b88fbb4a85246c3f71', 'e5f38a11c4965e093216143cc130012c49357182f85127cb5b951317ac2717af'],
-    ['directory', '05dc552ec281d2da8d73924cb58588826e11e3c90cd554cd0b42f9190a8c1b76', '1ee913a605e1e14fe648bd8df189b2d0f518bd127d923a2f01bdedb4eebde53f'],
+    ['url', 'f9d43b2f303d65f367ac05bdb0ed1b816d6376523ec94fcbf4a96e9e00597744', 'e5f38a11c4965e093216143cc130012c49357182f85127cb5b951317ac2717af'],
+    ['directory', 'ebe8284516a70119b5abf340478c50b18e46ef170b6ec9541b4295b4a5438dab', '1ee913a605e1e14fe648bd8df189b2d0f518bd127d923a2f01bdedb4eebde53f'],
   ])('pins %s worker guidance for the Planner/frontier revision; historical acceptance artifacts are not rewritten', (kind, instructionHash, briefHash) => {
     const ticket = { workerId: 'worker-test', role: 'recon', runId: 'run-test', depth: 1, parentWorkerId: null,
       lifetime: 'until-stopped', target: { kind, label: kind === 'url' ? 'https://example.invalid' : '/target' }, commandBudget: 20 } as Ticket;

@@ -9,7 +9,7 @@ import type { MutationRequest } from './state/store.js';
  * mirroring Strix's notes/coverage ledger: the next agent reads state, not someone's reasoning.
  * Nothing in this file is authority — scope comes from the human, evidence is verified elsewhere.
  */
-export const RECORD_KINDS = ['note', 'coverage', 'observation', 'open', 'report', 'lifecycle', 'evidence', 'candidate', 'report_part', 'task'] as const;
+export const RECORD_KINDS = ['note', 'coverage', 'observation', 'open', 'report', 'lifecycle', 'evidence', 'candidate', 'report_part', 'task', 'surface'] as const;
 export type RecordKind = typeof RECORD_KINDS[number];
 export const COVERAGE_OUTCOMES = ['confirmed', 'ruled_out', 'open_proof_gap', 'clean', 'needs_follow_up'] as const;
 export type CoverageOutcome = typeof COVERAGE_OUTCOMES[number];
@@ -242,6 +242,28 @@ export async function readWorkHistory(path:string,fingerprint:string,limit=20):P
 export async function readWorkOverlap(path:string,overlapKey:string,limit=20):Promise<WorkHistoryPage>{
   if(!/^[a-f0-9]{64}$/.test(overlapKey)||!Number.isInteger(limit)||limit<1||limit>100)throw Error('Invalid work-overlap query');
   const backend=recordBackend(path);if(backend?.workOverlap)return backend.workOverlap(overlapKey,limit);return legacyWorkPage(await readLedger(path),'workOverlapKey',overlapKey,limit);
+}
+
+/** Cheap normalized identity for a recon surface-inventory entry — a duplicate hint, not the exact `work` fingerprint of src/work.ts. */
+export function surfaceKey(component: string, entryPoint: string): string {
+  const norm = (value: string) => value.normalize('NFC').trim().toLowerCase();
+  return `${norm(component)}::${norm(entryPoint)}`;
+}
+
+/** Appends one surface-inventory record and reports whether its normalized key already exists in this run.
+ *  A non-blocking hint: it never refuses the write and never reserves the key, unlike task/work admission. */
+export async function recordSurface(path: string, runId: string, attribution: Pick<AssessmentRecord, 'by' | 'workerId' | 'role' | 'depth'>, input: { component: string; entryPoint: string; text?: string; refs?: string[] }): Promise<RecordAck & { duplicate: boolean; priorRecordId?: string }> {
+  if (!input.component.trim() || !input.entryPoint.trim()) throw new Error('Surface component and entryPoint are required');
+  const key = surfaceKey(input.component, input.entryPoint);
+  const index = await readLedger(path, runId);
+  const prior = index.records.find(r => r.kind === 'surface' && (r.data as { key?: unknown } | undefined)?.key === key);
+  const ack = await appendRecord(path, {
+    runId, at: new Date().toISOString(), kind: 'surface', text: input.text?.trim() || `${input.component} · ${input.entryPoint}`,
+    data: { key, component: input.component, entryPoint: input.entryPoint },
+    ...(input.refs?.length ? { refs: input.refs.slice(0, 10) } : {}),
+    ...attribution,
+  });
+  return { ...ack, duplicate: Boolean(prior), ...(prior?.id ? { priorRecordId: prior.id } : {}) };
 }
 
 /** Legacy bounded display API. Integrity-sensitive callers use readLedger directly. */

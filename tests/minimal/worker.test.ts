@@ -98,7 +98,7 @@ describe('worker role', () => {
     worker.flags['p2o-worker'] = join(await h.runDir(), `ticket-${workerId}.json`);
     const freshContext = createContext({ cwd: h.root });
     await worker.events.get('session_start')![0]({}, freshContext.ctx);
-    expect(worker.active).toEqual(['p2o_skill_list', 'p2o_skill_read', 'p2o_candidate', 'p2o_shell', 'p2o_net', 'p2o_http', 'p2o_capture', 'p2o_note', 'p2o_ledger', 'p2o_state', 'p2o_graph', 'p2o_artifact', 'p2o_request_subtask', 'p2o_report']);
+    expect(worker.active).toEqual(['p2o_skill_list', 'p2o_skill_read', 'p2o_candidate', 'p2o_shell', 'p2o_net', 'p2o_http', 'p2o_capture', 'p2o_note', 'p2o_surface', 'p2o_ledger', 'p2o_state', 'p2o_graph', 'p2o_artifact', 'p2o_request_subtask', 'p2o_report']);
     expect(freshContext.notices.join('\n')).not.toContain('rejected');
 
     // Host tools are blocked; sandbox tools run in the owner's container with the worker's own scratch.
@@ -143,6 +143,18 @@ describe('worker role', () => {
     expect(records.some(entry => entry.kind === 'open' && entry.text === 'nothing else tested')).toBe(true);
     // After reporting, the worker keeps no target capability.
     await expect(h.call('p2o_shell', { command: 'id' }, 'worker')).rejects.toThrow(/finished or has no valid ticket/);
+  });
+
+  it('records a worker surface-inventory entry through the broker and flags the owner-recorded duplicate (planning_update.md P1.2)', async () => {
+    const workerId = await h.delegate();
+    const runDir = await h.runDir();
+    await h.activate(join(runDir, `ticket-${workerId}.json`));
+    const owned = (await h.call('p2o_surface', { component: 'Admin panel', entryPoint: '/admin' })).details;
+    expect(owned.duplicate).toBe(false);
+    const fromWorker = (await h.call('p2o_surface', { component: ' admin panel ', entryPoint: '/admin' }, 'worker')).details;
+    expect(fromWorker.duplicate).toBe(true); expect(fromWorker.priorRecordId).toBe(owned.recordId);
+    const records = await h.records();
+    expect(records.some((entry: any) => entry.kind === 'surface' && entry.by === workerId)).toBe(true);
   });
 
   it('lets the owner see the worker report and refuses owner-only tools in the worker', async () => {
