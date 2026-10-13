@@ -35,6 +35,7 @@ No extension build or JSON configuration is needed. Use `/reload` after installi
 /p2o --target ./my-repo --loop event-driven --executors isolated --workers 3 --target-ops 2
 /p2o --target ./my-repo --retention ephemeral
 /p2o --target https://example.com --goal "Can tenant A read tenant B invoices?"
+/p2o --target ./my-repo --refer-workspace latest
 /p2o pause
 /p2o resume
 /p2o stop
@@ -80,6 +81,8 @@ operation, no change to mode, budget or authority. `report export` writes a dete
 human side only; `open`, `recover` and `close` never resume an assessment. Details: [usage](docs/USAGE.md).
 
 `--goal "text"` (optional, 1–600 characters) records what you want established, in your own words. It is shown in the confirmation and given to the lead as quoted operator data, with a request to turn it into goals with acceptance criteria. It neither widens nor narrows the confirmed scope, is not checked by code, and is not kept across a restart; without it the lead prompt is unchanged.
+
+`--refer-workspace [latest|all|<run-id>,...]` (optional) lets a new run point at up to 20 prior durable-local runs on the same target (same path for a directory, same origin for a URL) and tags them as context only in one lifecycle record — never same-run evidence, no restored scope/ticket/worker authority, same principle as `/p2o export|import`. Read back through `p2o_state {action:'heads', domain:'reference'}` or `/p2o digest`; it is never pushed into the lead or worker prompt. Without it, behavior is unchanged. Details: [usage](docs/USAGE.md).
 
 Confirm scope and permission once. The command prepares the sandbox and sends the task directly into the
 **existing conversation**, using the existing model. In delegated mode it is a strategic Planner: target execution

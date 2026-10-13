@@ -11,7 +11,7 @@ import { cleanText, type ProcessResult, type OutputObserver } from '../../src/pr
 import { OutputCapture, type CaptureReceipt } from '../../src/artifacts.js';
 import { scratchOffset, scratchPath, type ScratchSnapshot } from '../../src/scratch.js';
 import { Broker, BrokerClient, DEFAULT_WORKER_COMMAND_BUDGET, type WorkerRegistration, type WorkerReport, type DelegateInput, normalizeReport } from '../../src/broker.js';
-import { appendRecord, observeRecords, readLedger, ledgerPage, recordsSize, summarizeRecords, waitForRecordChange, type AssessmentRecord, type CoverageOutcome, type LedgerPage, type LedgerIndex, type RecordAck, appendGeneratedRecords, recordSurface } from '../../src/records.js';
+import { appendRecord, indexRecords, observeRecords, readLedger, ledgerPage, recordsSize, summarizeRecords, waitForRecordChange, type AssessmentRecord, type CoverageOutcome, type LedgerPage, type LedgerIndex, type RecordAck, appendGeneratedRecords, recordSurface } from '../../src/records.js';
 import { runtimeIdentity } from '../../src/runtime-digest.js';
 import { POLICY_VERSION, withGuidelines } from '../../src/tool-guidelines.js';
 import { ensurePrivateDirectory, mintTicket, mintToken, readTicket, removeTicket, ticketPath, workerName, type Ticket } from '../../src/ticket.js';
@@ -24,7 +24,7 @@ import { TaskBoard, taskCapsule, awaitingReview, type TaskDraft, type TaskMethod
 import { PlanBoard, boundPlanRequest, type PlanDraft } from '../../src/planning.js';
 import { PLAN_ACTIONS, planParameters } from '../../src/work-tool.js';
 import { CaseBoard, boundCaseRequest, boundRatingRequest } from '../../src/cases.js';
-import { CoverageBoard, boundCoverageRequest } from '../../src/coverage.js';
+import { CoverageBoard, boundCoverageRequest, coverageCells } from '../../src/coverage.js';
 import type { CaseDraft } from '../../src/case-types.js';
 import type { CoverageCellDraft, CoveragePlanDraft } from '../../src/coverage-types.js';
 import { CASE_ACTIONS, COVERAGE_ACTIONS, COVERAGE_MUTATIONS, caseParameters, coverageParameters } from '../../src/case-tool.js';
@@ -34,9 +34,9 @@ import {
 } from '../../src/tool-schemas.js';
 import { sha256Hex } from '../../src/validate.js';
 import type { KnowledgeDomain, ContextPacket } from '../../src/context.js';
-import { freezeReport, type ReportProjectionContext } from '../../src/report.js';
+import { freezeReport, reportProjection, type ReportProjectionContext } from '../../src/report.js';
 import { finishPreflight, renderPreflight, type FinishPreflight } from '../../src/finish-preflight.js';
-import { WSTG_COMMIT, WSTG_FEATURES, isWstgKey, wstgSuggest } from '../../src/wstg-map.js';
+import { WSTG_COMMIT, WSTG_FEATURES, WSTG_MAP, isWstgKey, wstgKey, wstgSuggest } from '../../src/wstg-map.js';
 import { ProgressState } from '../../src/progress.js';
 import { AssessmentEngine } from '../../src/engine.js';
 import { ExecutorPool } from '../../src/executors.js';
@@ -48,7 +48,7 @@ import { parseStateCommand, statusView, stateLines, workerLines, parseDashboardC
 import { StateScreen, widgetComponent, renderTaskResult, renderStateEntry } from '../../src/ui/screen.js';
 import { DashboardScreen } from '../../src/ui/dashboard-screen.js';
 import { uiRefreshDelay } from '../../src/ui/refresh.js';
-import { AssessmentStore, finalizationReserve, type MutationRequest, type StoreFault } from '../../src/state/store.js';
+import { AssessmentStore, finalizationReserve, type MutationRequest, type StoreFault, type StoreManifest } from '../../src/state/store.js';
 import { bindAssessmentStore } from '../../src/state/adapter.js';
 import { graphObject, type GraphAck, type GraphBatch, type GraphProducer } from '../../src/state/graph.js';
 import { GRAPH_ACTIONS, graphParameters } from '../../src/state/graph-tool.js';
@@ -69,7 +69,7 @@ import { exportBundle, importBundle, inspectBundle, publishReportFiles } from '.
  */
 const WORKER_FLAG = 'p2o-worker';
 const HELP = [
-  'Usage: /p2o --target <directory|http(s)-URL> [--solo] [--workers N] [--loop manual|event-driven] [--executors shared|isolated] [--target-ops N] [--retention durable-local|ephemeral] [--export] [--goal "text"]',
+  'Usage: /p2o --target <directory|http(s)-URL> [--solo] [--workers N] [--loop manual|event-driven] [--executors shared|isolated] [--target-ops N] [--retention durable-local|ephemeral] [--export] [--goal "text"] [--refer-workspace [latest|all|<run-id>[,<run-id>...]]]',
   '       /p2o stop | pause | resume | hold [reason] | release | workers | stop-worker <worker-id> [reason]',
   '       /p2o status | dashboard [overview|workers|tasks|coverage|cases|log] (multi-tab live view; F2 toggles a non-capturing overlay)',
   '       /p2o tasks [all|live|awaiting-review|blocked|done] [cursor] | task <id> | log [cursor] [task=<id>] [actor=<id>] [operation=<id>] | report',
@@ -232,6 +232,68 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
     const records = join(root, runId, 'assessment.sqlite');
     try { historical = { store, records, root, unbind: bindAssessmentStore(records, store) }; } catch (error) { store.close(); throw error; }
     return { store, records };
+  }
+  /** --refer-workspace eligibility: prior stored runs under `root` on the same target (same path for a directory, same
+   * origin for a URL — broader than an exact match; see TOOL_GUIDELINES.p2o_state for the "context only" boundary this
+   * feeds). Opens each candidate store just long enough to read its manifest; nothing stays open or is migrated.
+   * Newest-first by directory mtime, capped at `cap`. Never throws: an unreadable root or a store this build can't
+   * open/read is simply skipped, matching openHistorical's "metadata-only or skip" handling of a foreign schema. */
+  async function priorRunsOnTarget(root: string, target: Target, cap: number, maxBytes: number): Promise<Array<{ runId: string; manifest: StoreManifest }>> {
+    let entries: Array<{ name: string; isDirectory(): boolean }>;
+    try { entries = await readdir(root, { withFileTypes: true }); } catch { return []; }
+    const dated = await Promise.all(entries.filter(e => e.isDirectory() && e.name.startsWith('run-')).map(async e => {
+      try { return { runId: e.name, mtimeMs: (await stat(join(root, e.name))).mtimeMs }; } catch { return undefined; }
+    }));
+    const newestFirst = dated.filter((d): d is { runId: string; mtimeMs: number } => d !== undefined).sort((a, b) => b.mtimeMs - a.mtimeMs).slice(0, cap);
+    const found: Array<{ runId: string; manifest: StoreManifest }> = [];
+    for (const { runId } of newestFirst) {
+      let store: AssessmentStore;
+      try { store = AssessmentStore.open(root, runId, { readOnly: true, maxBytes }); } catch { continue; }
+      try {
+        if (!store.compatible) continue;
+        const manifest = store.manifest();
+        if (manifest.targetKind !== target.kind) continue;
+        const matches = target.kind === 'directory' ? manifest.targetDisplay === target.path
+          : (() => { try { return new URL(manifest.targetDisplay).origin === target.origin; } catch { return false; } })();
+        if (matches) found.push({ runId, manifest });
+      } catch { continue; }
+      finally { store.close(); }
+    }
+    return found;
+  }
+  /** D's gap report: Covered/Left-open/Stale from each selected prior run's own coverage cells and open candidates,
+   * Never-reached as the union of WSTG tests no selected run's cells ever addressed, Unknown as explicit labelled
+   * reasons (schema-incompatible, incomplete reconciliation, requested-but-not-found) — never folded into "clean"
+   * or silently dropped. "Covered"/"Stale" is decided purely by comparing each cell's own `targetRevision` against
+   * the NEW run's `graphScope()` (both pure functions of target identity, A.5); nothing here reads or writes the
+   * new run's own coverage. Bounded: each bucket is capped, matching reportProjection's own take()/omitted pattern. */
+  async function deriveReferenceGaps(root: string, selected: Array<{ runId: string; manifest: StoreManifest }>, requestedIds: readonly string[] | undefined, newGraphScope: string) {
+    type Item = { kind: 'coverage' | 'candidate'; runId: string; fingerprint?: string; questionKey?: string; candidate?: string };
+    const covered: Item[] = [], leftOpen: Item[] = [], stale: Item[] = [], unknown: string[] = [], reachedKeys = new Set<string>();
+    let usesWstg = false;
+    for (const found of selected) {
+      let store: AssessmentStore;
+      try { store = AssessmentStore.open(root, found.runId, { readOnly: true, maxBytes: 256 * 1024 * 1024 }); } catch { unknown.push(`${found.runId}: could not reopen for the gap report`); continue; }
+      try {
+        if (!store.compatible) { unknown.push(`${found.runId}: unsupported schema, excluded from the gap report`); continue; }
+        const index = indexRecords(store.records(), found.runId);
+        if (!index.complete) unknown.push(`${found.runId}: incomplete/interrupted reconciliation; its gap report is partial`);
+        for (const cell of coverageCells(index)) {
+          if (cell.retired) continue;
+          if (isWstgKey(cell.questionKey)) { usesWstg = true; reachedKeys.add(cell.questionKey); }
+          const item: Item = { kind: 'coverage', runId: found.runId, fingerprint: cell.fingerprint, questionKey: cell.questionKey };
+          if (cell.execution === 'tested') (cell.targetRevision === newGraphScope ? covered : stale).push(item);
+          else if (cell.execution === 'blocked') leftOpen.push(item);
+        }
+        for (const candidate of reportProjection(index).candidates) if (candidate.closure === 'open_proof_gap') leftOpen.push({ kind: 'candidate', runId: found.runId, candidate: typeof candidate.candidate === 'string' ? candidate.candidate : undefined });
+      } catch (error) { unknown.push(`${found.runId}: ${message(error)}`); }
+      finally { store.close(); }
+    }
+    for (const id of requestedIds ?? []) if (!selected.some(found => found.runId === id)) unknown.push(`${id}: requested but not eligible/found on this target`);
+    if (!selected.length && !requestedIds) unknown.push('no eligible prior run exists for --refer-workspace on this target');
+    const neverReached = usesWstg ? WSTG_MAP.filter(test => !reachedKeys.has(wstgKey(test.id))).map(test => wstgKey(test.id)) : [];
+    const cap = <T>(rows: T[], limit: number) => rows.slice(0, limit);
+    return { covered: cap(covered, 40), leftOpen: cap(leftOpen, 40), stale: cap(stale, 40), neverReached: cap(neverReached, 60), unknown: cap(unknown, 20) };
   }
   async function showState(ctx: ExtensionContext, lines: string[]) {
     if (ctx.mode === 'tui') await ctx.ui.custom<void>((_tui, _theme, _kb, done) => new StateScreen(lines, done));
@@ -1539,6 +1601,12 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
           const retention = command.options.retention ?? loaded.retention;
           const runId = `run-${randomUUID()}`;
           const selectedStateRoot = await stateRootFor(ctx);
+          const referWorkspace = command.options.referWorkspace;
+          const eligiblePriorRuns = referWorkspace ? await priorRunsOnTarget(selectedStateRoot, target, 20, loaded.storageQuotaMiB * 1024 * 1024) : [];
+          const selectedPriorRuns = referWorkspace === 'all' ? eligiblePriorRuns.slice(0, 5)
+            : referWorkspace === 'latest' ? eligiblePriorRuns.slice(0, 1)
+            : Array.isArray(referWorkspace) ? eligiblePriorRuns.filter(found => referWorkspace.includes(found.runId))
+            : [];
           const maxWorkers = command.options.workers ?? loaded.maxWorkers;
           const maxDepth = command.options.maxDepth ?? loaded.maxDepth;
           const delegationAvailable = !command.options.solo && maxDepth > 0 && await herdr.available();
@@ -1550,8 +1618,9 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
           const delegationReason = command.options.solo ? '--solo was requested' : maxDepth === 0 ? 'worker admission disabled by --max-depth 0' : 'Pi is not running inside a Herdr session';
           const delegation = maxWorkers > 0 && maxDepth > 0 ? '' : ' (delegation disabled by the configured limits)';
           if (extensionSha === undefined) { const identity = await runtimeIdentity(extensionPath); extensionSha = identity.sha256; runtimeVersion = identity.version; }
+          const referenceNotice = selectedPriorRuns.length ? `\nReferencing ${selectedPriorRuns.length} prior workspace run${selectedPriorRuns.length === 1 ? '' : 's'} on this same target: ${selectedPriorRuns.map(found => found.runId).join(', ')}. Tagged as prior-run context only; never counted as same-run evidence, and no scope, worker or ticket authority is restored.` : referWorkspace ? '\nNo prior workspace run on this same target was found for --refer-workspace; starting with no referenced context.' : '';
           const allowed = await ctx.ui.confirm('Start authorized assessment?',
-            `Runtime: p2o ${runtimeVersion || 'unknown version'} · ${extensionSha.slice(0, 12)}\nTarget: ${cleanText(targetLabel(target))}\n${command.options.goal ? `Stated objective (does not change scope): ${cleanText(command.options.goal)}\n` : ''}${target.kind === 'directory' ? 'A bounded source copy (64 MiB / 20000 entries) is exposed read-only to the sandbox and its contents may reach your model provider. Symlinks, special files, .git, node_modules, owner control/knowledge directories, .p2o-state and .p2o-reports are skipped. Choose a source directory, not your home or a secrets directory.' : `Assessment target: ${target.origin} only. All HTTP methods, bodies, login/auth headers, cookies and state-changing requests are authorized for this run. The HTTP tool validates each URL/redirect against this origin; other HTTP origins are refused.`}\nNetwork authority: both shell and network tools have unrestricted bridge egress (public/private/link-local addresses and reachable host services), plus downloads and user-space tool installs in scratch. Opaque commands are NOT origin-filtered; target scope outside the HTTP tool is agent policy, not an egress firewall. Tool repositories are auxiliary egress, not additional assessment targets. Loopback is container-local; host.docker.internal reaches host-published services. Raw-packet capabilities/root/host Docker are not granted. Never mount a secrets directory. Supplied credentials and returned data may reach your model provider or local Docker inspection; exports are only best-effort redacted.\nConfirm you own this target or have permission to assess it. The current Pi model leads the assessment; normal provider charges apply.\nWorkers: ${delegationAvailable ? `up to ${maxWorkers} simultaneous visible Pi worker panes, fresh assignments across successive batches (retention cap 1000, live frontier cap 100). Flat Planner-to-Worker delegation; workers propose helpers instead of spawning. Each worker has its own model and costs. Model concurrency and target-operation concurrency are separate; the confirmed executor profile below controls execution.` : `none${delegation} (${delegationReason}).`}\nPlanner loop: ${loopMode}. ${loopMode === 'event-driven' ? `Committed semantic events may automatically start additional paid Planner requests (up to ${loaded.maxPlannerRounds} automatic wakes), without another human prompt. Inner model/tool turns, compaction/retries configured in Pi and worker usage are additional; this is NOT a hard monetary/token cap. No automatic provider fallback or target replay. /p2o pause stops dispatch/wakes; /p2o stop revokes and cleans up.` : 'No automatic event-driven model turns. Accepted task queues still dispatch mechanically when slots/prerequisites permit; the Planner resumes through normal interaction.'}\nExecutors: ${executorMode}; target-operation cap ${maxTargetOperations}. Isolated uses a fresh executor per assignment; shared is serial.${executorMode === 'shared' && maxWorkers > 1 ? ` ${maxWorkers} worker panes requested with the shared executor still run target operations ONE AT A TIME (cap ${maxTargetOperations}) — more workers raises model/plan concurrency, not target throughput.` : ''} Per-container RAM/CPU limits multiply (2 GiB/2 CPUs each plus HTTP containers); cancellation destroys the affected executor, shared cancellation can affect peers. Source snapshots must match the initial bounded snapshot.\nDocker image: ${image}. Unprivileged user, no host credentials/socket, 2 GiB memory and 512 PIDs per container. Containers share the host kernel; this is not VM isolation. No elapsed-time limit for the assessment, lead or workers. Commands/HTTP default to no task timeout; explicitly stop/finish the run. Provider costs and resource/command budgets still apply.\nLưu trữ: ${retention === 'durable-local' ? `DURABLE-LOCAL (mặc định): giữ tri thức sau stop/finish tại ${join(selectedStateRoot, runId)}; đọc lại bằng /p2o open ${runId}.` : 'EPHEMERAL: kho tri thức nằm trong thư mục control riêng, bị xóa sau cleanup; không mở lại được nếu không có export.'} Quota/run ${loaded.storageQuotaMiB} MiB (chừa ${Math.round(finalizationReserve(loaded.storageQuotaMiB*1024*1024)/1024)} KiB cho final outcome/checkpoint; artifact thường dừng trước ngưỡng đó); \`p2o_capture\` đọc file text trong scratch đã cấp theo FD/single-link rồi redact trước khi lưu, tối đa ${loaded.artifactCaptureKiB} KiB/operation (stdout+stderr chung cap; output tools vẫn 48 KiB). Bản redacted chỉ là best effort: có thể chứa dữ liệu nhạy cảm, không chia sẻ khi chưa kiểm tra. Không giữ/khôi phục quyền scope, worker, ticket, cookie, request queue hay target replay. Luôn cần xác nhận này cho run mới.${command.options.export ? '\nExport enabled: additional bounded redacted receipts under .p2o-reports before cleanup; review before sharing.' : '\nNo additional portable export selected (--export is separate from durable-local retention).'}${(loaded.autoReport ?? retention === 'durable-local') ? `\nReport: when this run finishes or stops, a deterministic report (REPORT.md, CSV and JSON files, no model call) is written to ${join(loaded.reportRoot ?? join(await realpath(ctx.cwd), '.p2o-reports'), `report-${runId}`)} (new directory, never overwritten${retention === 'ephemeral' ? '; it outlives the ephemeral knowledge store' : ''}). It can contain redacted target data and may sit inside your project: review it, do not commit it. Disable with p2o.autoReport=false.` : ''}`);
+            `Runtime: p2o ${runtimeVersion || 'unknown version'} · ${extensionSha.slice(0, 12)}\nTarget: ${cleanText(targetLabel(target))}\n${command.options.goal ? `Stated objective (does not change scope): ${cleanText(command.options.goal)}\n` : ''}${target.kind === 'directory' ? 'A bounded source copy (64 MiB / 20000 entries) is exposed read-only to the sandbox and its contents may reach your model provider. Symlinks, special files, .git, node_modules, owner control/knowledge directories, .p2o-state and .p2o-reports are skipped. Choose a source directory, not your home or a secrets directory.' : `Assessment target: ${target.origin} only. All HTTP methods, bodies, login/auth headers, cookies and state-changing requests are authorized for this run. The HTTP tool validates each URL/redirect against this origin; other HTTP origins are refused.`}\nNetwork authority: both shell and network tools have unrestricted bridge egress (public/private/link-local addresses and reachable host services), plus downloads and user-space tool installs in scratch. Opaque commands are NOT origin-filtered; target scope outside the HTTP tool is agent policy, not an egress firewall. Tool repositories are auxiliary egress, not additional assessment targets. Loopback is container-local; host.docker.internal reaches host-published services. Raw-packet capabilities/root/host Docker are not granted. Never mount a secrets directory. Supplied credentials and returned data may reach your model provider or local Docker inspection; exports are only best-effort redacted.\nConfirm you own this target or have permission to assess it. The current Pi model leads the assessment; normal provider charges apply.${referenceNotice}\nWorkers: ${delegationAvailable ? `up to ${maxWorkers} simultaneous visible Pi worker panes, fresh assignments across successive batches (retention cap 1000, live frontier cap 100). Flat Planner-to-Worker delegation; workers propose helpers instead of spawning. Each worker has its own model and costs. Model concurrency and target-operation concurrency are separate; the confirmed executor profile below controls execution.` : `none${delegation} (${delegationReason}).`}\nPlanner loop: ${loopMode}. ${loopMode === 'event-driven' ? `Committed semantic events may automatically start additional paid Planner requests (up to ${loaded.maxPlannerRounds} automatic wakes), without another human prompt. Inner model/tool turns, compaction/retries configured in Pi and worker usage are additional; this is NOT a hard monetary/token cap. No automatic provider fallback or target replay. /p2o pause stops dispatch/wakes; /p2o stop revokes and cleans up.` : 'No automatic event-driven model turns. Accepted task queues still dispatch mechanically when slots/prerequisites permit; the Planner resumes through normal interaction.'}\nExecutors: ${executorMode}; target-operation cap ${maxTargetOperations}. Isolated uses a fresh executor per assignment; shared is serial.${executorMode === 'shared' && maxWorkers > 1 ? ` ${maxWorkers} worker panes requested with the shared executor still run target operations ONE AT A TIME (cap ${maxTargetOperations}) — more workers raises model/plan concurrency, not target throughput.` : ''} Per-container RAM/CPU limits multiply (2 GiB/2 CPUs each plus HTTP containers); cancellation destroys the affected executor, shared cancellation can affect peers. Source snapshots must match the initial bounded snapshot.\nDocker image: ${image}. Unprivileged user, no host credentials/socket, 2 GiB memory and 512 PIDs per container. Containers share the host kernel; this is not VM isolation. No elapsed-time limit for the assessment, lead or workers. Commands/HTTP default to no task timeout; explicitly stop/finish the run. Provider costs and resource/command budgets still apply.\nLưu trữ: ${retention === 'durable-local' ? `DURABLE-LOCAL (mặc định): giữ tri thức sau stop/finish tại ${join(selectedStateRoot, runId)}; đọc lại bằng /p2o open ${runId}.` : 'EPHEMERAL: kho tri thức nằm trong thư mục control riêng, bị xóa sau cleanup; không mở lại được nếu không có export.'} Quota/run ${loaded.storageQuotaMiB} MiB (chừa ${Math.round(finalizationReserve(loaded.storageQuotaMiB*1024*1024)/1024)} KiB cho final outcome/checkpoint; artifact thường dừng trước ngưỡng đó); \`p2o_capture\` đọc file text trong scratch đã cấp theo FD/single-link rồi redact trước khi lưu, tối đa ${loaded.artifactCaptureKiB} KiB/operation (stdout+stderr chung cap; output tools vẫn 48 KiB). Bản redacted chỉ là best effort: có thể chứa dữ liệu nhạy cảm, không chia sẻ khi chưa kiểm tra. Không giữ/khôi phục quyền scope, worker, ticket, cookie, request queue hay target replay. Luôn cần xác nhận này cho run mới.${command.options.export ? '\nExport enabled: additional bounded redacted receipts under .p2o-reports before cleanup; review before sharing.' : '\nNo additional portable export selected (--export is separate from durable-local retention).'}${(loaded.autoReport ?? retention === 'durable-local') ? `\nReport: when this run finishes or stops, a deterministic report (REPORT.md, CSV and JSON files, no model call) is written to ${join(loaded.reportRoot ?? join(await realpath(ctx.cwd), '.p2o-reports'), `report-${runId}`)} (new directory, never overwritten${retention === 'ephemeral' ? '; it outlives the ephemeral knowledge store' : ''}). It can contain redacted target data and may sit inside your project: review it, do not commit it. Disable with p2o.autoReport=false.` : ''}`);
           if (!allowed) { ctx.ui.notify('Cancelled. No sandbox, worker or agent turn started.', 'info'); return; }
           ctx.signal?.throwIfAborted();
           closeHistorical();
@@ -1700,6 +1769,19 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
             await appendRecord(records, { at:new Date().toISOString(), runId, by:'owner', kind:'lifecycle', text:`assessment starting for ${cleanText(targetLabel(target))}; retention ${retention}` });
             await sandbox.start();
             store.sealSource(sandbox.sourceManifest, sandbox.sourceSkipped);
+            if (referWorkspace) {
+              const nowSealed = store.manifest(), newGraphScope = store.graphScope();
+              const runs = selectedPriorRuns.map(found => ({
+                runId: found.runId, targetDisplay: found.manifest.targetDisplay,
+                currency: (target.kind === 'directory'
+                  ? found.manifest.sourceSnapshotSha256 !== undefined && found.manifest.sourceSnapshotSha256 === nowSealed.sourceSnapshotSha256
+                  : found.manifest.targetDisplay === target.url) ? 'current' as const : 'stale' as const,
+              }));
+              const gaps = await deriveReferenceGaps(selectedStateRoot, selectedPriorRuns, Array.isArray(referWorkspace) ? referWorkspace : undefined, newGraphScope);
+              await appendRecord(records, { at: new Date().toISOString(), runId, by: 'owner', kind: 'lifecycle',
+                text: `referencing ${runs.length} prior workspace run(s) on this same target as context only, never same-run evidence: ${runs.length ? runs.map(r => `${r.runId} (${r.currency})`).join(', ') : 'none found'}`,
+                data: { reference: { runs, gaps } } });
+            }
             current.socket = await current.broker.start();
           })();
           try { await current.start; }

@@ -30,6 +30,18 @@ describe('one target grammar', () => {
       expect(() => parseCommand(args), args).toThrow();
     }
   });
+
+  it('parses --refer-workspace as latest/all/an explicit run-id list, defaulting to latest with no value and never consuming the next flag', () => {
+    expect(parseCommand('--target x --refer-workspace')).toMatchObject({ options: { referWorkspace: 'latest' } });
+    expect(parseCommand('--target x --refer-workspace latest')).toMatchObject({ options: { referWorkspace: 'latest' } });
+    expect(parseCommand('--target x --refer-workspace all')).toMatchObject({ options: { referWorkspace: 'all' } });
+    expect(parseCommand('--target x --refer-workspace run-abc123,run-def456')).toMatchObject({ options: { referWorkspace: ['run-abc123', 'run-def456'] } });
+    // No value supplied before the next flag: defaults to 'latest' and --solo is still parsed, not consumed as the value.
+    expect(parseCommand('--target x --refer-workspace --solo')).toMatchObject({ options: { referWorkspace: 'latest', solo: true } });
+    // A token that is neither a flag nor a valid value is simply an unknown option, same as any other unrecognized token.
+    expect(() => parseCommand('--target x --refer-workspace not-a-run-id')).toThrow(/Unknown option/);
+    expect(() => parseCommand(`--target x --refer-workspace ${Array.from({ length: 11 }, (_, i) => `run-${i}`).join(',')}`)).toThrow(/Unknown option/);
+  });
   it('resolves directories, refuses files and root, and treats GitHub as an ordinary URL', async () => {
     const root = await mkdtemp(join(tmpdir(), 'p2o-target-'));
     try {

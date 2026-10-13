@@ -113,7 +113,9 @@ describe('fixed context cost per loadout is budgeted (plan principle 16)', () =>
   // 2026-10-11 (planning_update.md 3.3): the p2o_skill_list description tells the lead and workers to check the catalog before assigning or starting work (+105 B in every loadout; guidance is unchanged).
   // 2026-10-12 (planning_update.md P1.2): new p2o_surface tool (owner + worker loadouts) for a cheap normalized component/entryPoint dedup hint, separate from p2o_note. Declarations rose by
   // one tool's worth of bytes in every loadout that carries it (reporting worker keeps it too, same as p2o_note); guidance is unchanged since p2o_surface has no promptGuidelines entry.
-  const budget = { 'delegated Planner': [33_144, 1_003], 'solo owner': [34_162, 921], 'worker': [18_867, 314], 'reporting worker': [12_369, 217] } as const;
+  // 2026-10-13 (planning_update.md --refer-workspace, E3): p2o_state's guidance gained one sentence pointing at domain=reference heads as prior-run context, never same-run evidence
+  // (+159 B guidance in every loadout that carries p2o_state, i.e. all four; declarations unchanged). POLICY_VERSION bumped to 2.
+  const budget = { 'delegated Planner': [33_144, 1_162], 'solo owner': [34_162, 1_080], 'worker': [18_867, 473], 'reporting worker': [12_369, 376] } as const;
   it('keeps tool declarations and guidance inside the recorded budget', () => {
     const tools = registry();
     for (const [label, names] of Object.entries(loadouts)) {

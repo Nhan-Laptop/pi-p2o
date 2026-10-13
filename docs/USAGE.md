@@ -37,6 +37,7 @@ worker hay model turn nào. Delegated: Pi hiện tại là Planner, **không** c
 | `--export` | tắt | flag | giữ bounded redacted ledger ở `.p2o-reports/` lúc cleanup (không phải checkpoint giữa run) |
 | `--goal "text"` | không | 1–600 ký tự, trong dấu nháy, không ký tự điều khiển | mục tiêu bằng lời của bạn, hiện trong confirmation và vào prompt lead như dữ liệu trích dẫn; không mở rộng/thu hẹp scope; không lưu qua restart; bỏ qua thì prompt không đổi một byte |
 | `--retention MODE` | `durable-local` | `durable-local` \| `ephemeral` | luôn hiện trong confirmation; không tạo store trước consent |
+| `--refer-workspace [GIÁ-TRỊ]` | không dùng | không giá trị → `latest`; hoặc `all`; hoặc tối đa 10 `run-id` phân tách dấu phẩy | đọc tối đa các run cũ cùng target làm context; không bao giờ tính là same-run evidence — xem mục dưới |
 
 Số phải là số nguyên trong khoảng cho phép (không âm/thập phân/`unlimited`); giá trị sai bị từ chối, không tự clamp. Không có `--max-planner-rounds`: đó là setting.
 `--target-ops` chỉ là **trần**: một lệnh vẫn có thể tự sinh nhiều subprocess/request; nó không phải rate limiter hay egress firewall.
@@ -132,6 +133,16 @@ Merge vào file hiện có, không ghi đè phần khác. Precedence: **CLI cho 
 - **artifact**: xem 16 KiB mỗi lần, verify hash; model dùng `p2o_artifact {id, offset?, length?}` (≤8 KiB). `p2o_capture` đọc file text trong scratch của chính assignment theo `offset` để giữ file dài thành nhiều artifact. Chi tiết: [STATE_STORE](STATE_STORE.md).
 
 Stop revoke/cancel rồi xác minh container trước checkpoint cuối. Lỗi storage đóng authority target. Chi tiết trạng thái triển khai: [KNOWLEDGE_WORKSPACE](KNOWLEDGE_WORKSPACE.md).
+
+### `--refer-workspace` (ngữ cảnh từ run cũ, không bao giờ là evidence)
+
+Không truyền thì hành vi giống hệt trước đây. Khi dùng:
+
+- **Điều kiện khớp**: cùng `targetKind`; thư mục phải cùng path tuyệt đối, URL chỉ cần cùng origin (rộng hơn so khớp tuyệt đối — khớp "hiện hành"/currency thì chặt hơn, xem `gaps` dưới). Enumerate tối đa 20 run mới nhất dưới state root, mở read-only từng cái chỉ để đọc manifest rồi đóng ngay.
+- `latest` chọn đúng 1 run mới nhất đủ điều kiện; `all` chọn tối đa 5; liệt kê id thì chỉ giữ các id vừa được yêu cầu vừa khớp (id không tồn tại/không khớp bị bỏ, có lý do trong `gaps.unknown`, không bao giờ âm thầm bỏ qua).
+- Hộp xác nhận start thêm một đoạn nêu tên các run được chọn, hoặc báo "không tìm thấy" nếu dùng flag mà không có kết quả.
+- Sau khi sandbox khởi tạo, ghi **một** record lifecycle (`data.reference`) gồm `runs` (run id + trạng thái `current`/`stale`, so theo `sourceSnapshotSha256` với thư mục hoặc URL chính xác) và `gaps` 5 nhóm: **covered** (cell đã `tested`, còn khớp target hiện tại), **leftOpen** (candidate `open_proof_gap` + cell `blocked`), **stale** (từng `tested` nhưng target đã đổi — không gộp vào covered), **neverReached** (test WSTG chưa cell nào chạm tới, hợp trên mọi run được chọn), **unknown** (lý do rõ ràng: không có run đủ điều kiện, run thiếu/sai schema, reconciliation chưa xong — không bao giờ coi là "clean").
+- Đọc lại qua `p2o_state {action:'heads', domain:'reference'}` hoặc `digest`; **không** đẩy vào prompt lead/worker. Không bao giờ là same-run evidence, không khôi phục scope/ticket/worker/budget — cùng nguyên tắc với `/p2o export|import`. Chi tiết thiết kế: [planning_update.md](../planning_update.md).
 
 ## Báo cáo tất định
 

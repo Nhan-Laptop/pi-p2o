@@ -7,11 +7,16 @@ import { MAX_DEPTH, MAX_WORKERS, type LoopMode, type RetentionMode } from './rol
 import { TEXT_CONTROL } from './validate.js';
 
 export type Target = { kind: 'directory'; path: string } | { kind: 'url'; url: string; origin: string };
-export interface StartOptions { solo: boolean; workers?: number; maxDepth?: number; export?: boolean; loopMode?: LoopMode; executorMode?: 'shared' | 'isolated'; maxTargetOperations?: number; retention?: RetentionMode; goal?: string }
+/** 'latest'/'all' pick by eligibility at run start; an explicit id list (≤10, `run-<chars>` shape) names runs directly. Never grants authority — see planning_update.md. */
+export type ReferWorkspaceOption = 'latest' | 'all' | readonly string[];
+export interface StartOptions { solo: boolean; workers?: number; maxDepth?: number; export?: boolean; loopMode?: LoopMode; executorMode?: 'shared' | 'isolated'; maxTargetOperations?: number; retention?: RetentionMode; goal?: string; referWorkspace?: ReferWorkspaceOption }
 export type Command = { action: 'help' } | { action: 'stop' } | { action: 'pause' } | { action: 'resume' } | { action: 'start'; target: string; options: StartOptions };
 
 /** Deliberately small. One target plus delegation limits; quoting is supported for directory names. */
 const GOAL_CHARS = 600;
+/** Same run-ID shape the bundle-import manifest already validates (src/source.ts); ≤10 ids, consistent with other id-list caps in this codebase. */
+const REFER_WORKSPACE_RUN_ID = 'run-[a-zA-Z0-9-]{1,75}';
+const REFER_WORKSPACE_VALUE = new RegExp(`^(?:latest|all|${REFER_WORKSPACE_RUN_ID}(?:,${REFER_WORKSPACE_RUN_ID}){0,9})$`);
 export function parseCommand(args: string): Command {
   const text = args.trim();
   if (!text || text === '--help') return { action: 'help' };
@@ -47,6 +52,13 @@ export function parseCommand(args: string): Command {
         const value = tokens[++index];
         if (value !== 'shared' && value !== 'isolated') throw Error('--executors must be shared or isolated');
         options.executorMode = value; continue;
+      }
+      if (token === '--refer-workspace') {
+        const peek = tokens[index + 1];
+        const value = peek !== undefined && REFER_WORKSPACE_VALUE.test(peek) ? peek : 'latest';
+        if (value === peek) index += 1;
+        options.referWorkspace = value === 'latest' || value === 'all' ? value : value.split(',');
+        continue;
       }
       if (token !== '--workers' && token !== '--max-depth' && token !== '--target-ops') throw new Error(`Unknown option ${token.slice(0, 40)}; usage: /p2o --target <directory|http(s)-URL> [--solo] [--workers N] [--max-depth D] [--goal "text"]`);
       const value = tokens[index + 1];

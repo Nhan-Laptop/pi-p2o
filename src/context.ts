@@ -3,7 +3,7 @@ import type { StateEvent } from './state/store.js';
 import { graphCanonical } from './state/graph.js';
 import { sha256Hex, validId } from './validate.js';
 
-export const KNOWLEDGE_DOMAINS=['task','goal','todo','decision','case','coverage-plan','coverage-cell','candidate','gap','phase','report','evidence'] as const;
+export const KNOWLEDGE_DOMAINS=['task','goal','todo','decision','case','coverage-plan','coverage-cell','candidate','gap','phase','report','evidence','reference'] as const;
 export type KnowledgeDomain=typeof KNOWLEDGE_DOMAINS[number];
 export interface KnowledgeIndexHead {domain:KnowledgeDomain;entityId:string;recordId:string;sequence:number;status:string;actorId:string}
 export interface KnowledgeHead extends KnowledgeIndexHead {summary:string;refs:string[]}
@@ -38,6 +38,7 @@ export function describeKnowledgeRecord(row:AssessmentRecord):{domain:KnowledgeD
   else if(phase&&typeof phase.id==='string'){domain='phase';entityId=phase.id;status=String(phase.reviewStatus??'pending');add('task',phase.taskId);add('report',phase.reportId);}
   else if(row.kind==='report'&&row.id){domain='report';entityId=row.workerId??row.id;status=String(row.data?.blocked?'blocked':'reported');many('evidence',row.refs);}
   else if(row.kind==='evidence'&&row.id){domain='evidence';entityId=row.id;status='retained';}
+  else if(row.kind==='lifecycle'&&object(row.data?.reference)&&row.id){domain='reference';entityId=row.id;status='current';}
   return domain&&entityId?{domain,entityId,status,links}:undefined;
 }
 

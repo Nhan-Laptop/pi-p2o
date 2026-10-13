@@ -1,235 +1,348 @@
-# planning_update.md — Reachable tool surface for a delegated (and solo) p2o worker during an active assessment
+# planning_update.md — `--refer-workspace`: reading prior runs in the same workspace as context
 
-Status: this file started as analysis only; **a follow-up pass (D.1/D.2 below) then implemented the docs-accuracy fix recommended in (E), editing the `## Tools` bullets of the 5 skills named in (D).** No code, test, image, or catalog/schema file was changed — only `## Tools` bullet text in 5 `SKILL.md` files, verified against `scripts/validate_library.py`, `tests/test_library.py` and the relevant vitest suites (all still pass; see D.2). This file is a fresh document and supersedes the previous `planning_update.md` (an operator-UI dashboard proposal; that work was already implemented and committed separately — see `e7f6cbc`, `39bf178`, `dffcb96` in `git log`). This pass answers a different question: *which tools named in the 17 audited skills' "Tools" sections are actually reachable while an assessment is running*, for both a delegated worker and the lead (solo or Planner).
+Status: **planning only. No code changed.** This supersedes the previous `planning_update.md` (the sandbox tool-reachability
+analysis; that work is committed as `115681e`). Stop-condition check done first: nothing below asks a prior run's
+records to count as same-run evidence, or asks for a prior run's authority (ticket/sandbox/cookie/budget/socket) to
+come back — every same-run check in `src/tasks.ts`/`cases.ts`/`planning.ts`/`coverage.ts`/`evidence.ts` keeps
+rejecting a foreign `runId` exactly as today. So this does not hit the "Stop if" clause; the plan proceeds.
 
-Method and limits:
-- Read-only. No `scripts/setup-sandbox-tools.sh` run, no image built/pulled, no sandbox started, no live Herdr session. Where a live check would change a conclusion, it is named as a follow-up below, not assumed.
-- Every "no caller" / "not used" claim below was confirmed by reading and grepping the cited files directly (not by a bare GitNexus zero), per `AGENTS.md`.
-- Base-image contents (what binaries `ghcr.io/usestrix/strix-sandbox@sha256:f690…` ships beyond what the repo's own scripts document) were **not** inspected — doing so means pulling the image, which these guardrails forbid. Every "Bucket 1" call below is therefore a plausible guess, not a confirmed fact, and is flagged as such.
+Method: every claim below was read from the file at the cited line, not assumed from the skill/doc prose. Where
+GitNexus coverage of `src/*.ts` was in doubt, the claim was confirmed by `grep` instead (named per AGENTS.md).
 
 ---
 
-## A. The blocked-channel chain, lead vs. worker, with file:line
+## A. Current state: what each existing reader can show, and what it cannot pass to a new run
 
-**The owner's reading is correct: the contradiction is real.** Every execution-capable path the skills assume collapses to the same four tools, in the same one kind of container, for both roles.
+### A.1 The command-parsing location named in the task is not quite where the flag goes
 
-1. **Only four tools can ever touch a target or run a command at all:** `p2o_shell`, `p2o_net`, `p2o_http`, `p2o_capture` — `TARGET_TOOLS` (`src/tool-policy.ts:2`). Nothing else in `OWNER_TOOLS`/`WORKER_TOOLS` (`:3-4`) executes anything; the rest read/write the shared ledger.
-2. **Who holds those four tools depends on delegation, not on role:**
-   - Solo lead (`delegated=false`): `ownerTools(false)` only drops `DELEGATION_TOOLS` (`:7-8`) — it **keeps** `TARGET_TOOLS`. The solo lead has the full four-tool exec surface.
-   - Delegated lead (`delegated=true`): `ownerTools(true)` **drops** `TARGET_TOOLS` (`:8`) — the moment delegation is active, the lead itself loses all exec tools and must delegate every target action to a worker.
-   - Non-reporting worker: gets `TARGET_TOOLS` through `WORKER_TOOLS` (`:4,9`).
-   - Reporting worker: `workerTools('reporting')` strips `TARGET_TOOLS` and `p2o_candidate` (`:9`); `reportingOperationDenied` (`:10`) blocks `exec/net/http/capture/candidate/delegate/graph_record` outright. A reporting worker has **zero** exec surface.
-   - **Answer to the guardrails' solo-vs-delegated question: there is no asymmetry in the channel itself.** A solo lead and a non-reporting worker get exactly the same four tool names, and — confirmed below — the exact same container. Delegation does not open a wider door for the lead; if anything it closes the lead's own door and hands the only door to whichever worker is holding it.
-3. **All four tools execute in the one and only container shape, for whoever holds them:** `IMAGE` (`src/sandbox.ts:10`) is a single pinned `sha256:` digest; `LIMITS` (`:11-17`) applies `--read-only` rootfs, `--cap-drop ALL`, `--security-opt no-new-privileges`, non-root `--user 65532:65532`, `--pids-limit 512`, `--memory 2g`, `--cpus 2`, and writable space only at `--tmpfs /tmp`/`--tmpfs /work`. **No `--cap-add` of any kind appears anywhere in `src/sandbox.ts`** — confirmed by grep, zero hits. There is exactly one sandbox factory (`extensions/p2o/index.ts:1570-1583`); it is called once per worker and once for a solo lead, with the same `SandboxOptions` shape — mechanically the same container, just a different holder.
-4. **The activation gate that enforces all of this is a full replace, not an allow-list add:** `ctx.setActiveTools(toolNames)` "Set[s] the active tools by name" (`node_modules/@earendil-works/pi-coding-agent/dist/core/extensions/types.d.ts:1264-1267`) — it replaces the model's entire declared toolset. At run start the owner's toolset becomes exactly `ownerTools(delegationAvailable)` (`extensions/p2o/index.ts:1696`); a spawned worker's becomes exactly `workerTools(ticket.role)` (`:330-331`). Anything not in those two functions' output — host tools, `codemode`, the browser, other extensions, **and any other registered Pi tool, named or not** — is simply absent from what the model can call, for the whole life of the run. With no active run, every `p2o_*` name is stripped too (`:1723`), and a replayed call to one is refused outright (`:1729`). This matches README.md:122-124 ("Host tools, `codemode`, the browser, other extensions, `!` shell and the worker's own Docker access are blocked while an assessment is active. A worker reaches the target **only** through the lead's broker socket; if the lead stops, workers fail closed.") — but it is enforced by this one mechanism, not by naming each blocked thing separately in code.
-5. **A concrete, previously undocumented instance of (4):** `skills/attack-surface-mapping/SKILL.md` lists `pi-web-access` as a usable tool ("retrieve an approved public reference page... when the local library and offline sources are insufficient"). `pi-web-access` (`fetch_content`/`get_search_content`/`web_search`, per `research/METHOD.md:11`) is a general Pi-platform research tool, not a `p2o_*` tool — and it is **not** a member of `ownerTools()` or `workerTools()` (`src/tool-policy.ts:3-4`). Because `setActiveTools` fully replaces the toolset at run start, `pi-web-access` is deactivated the instant an assessment begins, for lead and worker alike, exactly like `codemode` and the browser — the skill names a tool that cannot be called during the very assessment the skill is written for.
+The task's "Where" said command parsing is in `extensions/p2o/index.ts`. Partly true: the **usage string**
+(`:72`), the **`/p2o open|recover|reconcile|close` sub-command handler** (`:1328-1420`, dispatched through
+`parseWorkspaceCommand` from `src/ui/workspace.ts`), and the **run-start confirm/create block** (`:1530-1712`) all
+live there. But the actual **`--target ... --solo --workers --loop --executors --target-ops --retention --export
+--goal` tokenizer** is `parseCommand()` in `src/target.ts:15-70` (confirmed by `grep -n "function parseCommand"
+src/target.ts`; `index.ts:9` just imports it). `--refer-workspace` is a start-option flag, so it is added in
+`src/target.ts`, not in `extensions/p2o/index.ts`'s own parsing code — `index.ts` only consumes the already-parsed
+`command.options` object (first read at `:1536` `classifyTarget`, then `:1539-1550`).
 
-## B. Why the optional offline tool image does not close the gap
+### A.2 `/p2o open <run-id>` — the only existing "read a prior run" path, and why it cannot run alongside a new run
 
-This is a timing/authority argument, not just "it exists, so it's fine":
+- `historical` (`index.ts:221`) is a **single optional slot** — one prior run can be open for interactive reading at
+  a time, never several. `openHistorical()` (`:228-235`) calls `AssessmentStore.open(root, runId, {readOnly:true,
+  maxBytes})` (the same static opener `AssessmentStore.create`'s sibling, `src/state/store.ts:118`) and
+  `bindAssessmentStore()` (`src/state/adapter.ts:30-44`) so the normal `readLedger`/report code can read it.
+- It is **mutually exclusive with an active run by construction**: `index.ts:1333` — `if (run || opening) throw
+  Error('Stop the active assessment before opening/recovering/reconciling historical knowledge')`. A new run
+  starting also calls `closeHistorical()` itself (`:1557`), right before creating its own store.
+- `bindRecordBackend` (`src/state/registry.ts:16,18`) is a `Map<string, RecordBackend>` keyed by file path, so
+  **multiple simultaneous bindings are structurally possible** — but `recordsPathOf()` (`index.ts:224-227`) only
+  ever resolves `run.store` or `historical.store`, so a third bound store would not be reachable through any
+  existing command anyway. Conclusion: reusing `historical`/`openHistorical` for `--refer-workspace` is the wrong
+  fit — it is built for one human-driven read when nothing is running, not an automatic multi-run read while a new
+  run is active. The new feature needs its own, separate, **transient** open→read→close path (B.2).
+- What `/p2o open` already shows once opened (`:1418-1422`, `:1445-1448`): `report.counts.unreviewedTasks`,
+  `.open`, `.candidates`, `.uniqueAcceptedFindings`, `.staleCases`, `.staleCoverageCells` — this is
+  `reportProjection()`'s `counts` object (`src/report.ts:110-112`), the exact shape `--refer-workspace`'s gap report
+  should reuse (D), not reinvent.
 
-- `docs/SKILL_RUNTIME.md:31-42` is explicit that the mechanism is **"Explicit operator setup (not an agent tool)"** (`:33`). The only thing the build script actually adds is Semgrep, installed as `root` at image-build time into `/opt/p2o-semgrep` (`scripts/setup-sandbox-tools.sh:10-14`) — a step that is only possible *before* the container exists, because the running container's rootfs is `--read-only` and its user is non-root (`src/sandbox.ts:11-17`). There is no way to repeat that step once a container is up.
-- The resulting image ID must be chosen at Pi startup (`pi --p2o-image sha256:<id>`, `SKILL_RUNTIME.md:37`), before `/p2o --target ...` ever runs. There is no tool, command, or code path anywhere in `extensions/p2o/index.ts` that accepts a new image ID, rebuilds, or swaps the running container's image mid-run — confirmed by grep: `--p2o-image` and `setup-sandbox-tools` do not appear in `extensions/p2o/index.ts` at all.
-- Consequently a worker who discovers mid-task that a skill's chosen tool isn't present has **no recourse at all**: it cannot ask for the tool to be added (no tool exists to ask with), and the one documented fix requires an operator decision made before the run that spawned that worker even started. This is strictly worse than "docs are late" — it is a capability that, once a run is active, no one inside the run (lead or worker) can invoke, by design.
-- Separately, and more fundamentally: even a perfectly-timed custom image would **not** help most of the tools audited below, because their blocker is not "not installed" but `--cap-drop ALL` (no `ptrace`, no raw sockets), `--read-only` rootfs (no package-manager writes to `/usr` regardless of root), no display, no init system, or the wrong/no OS/kernel entirely. No image choice changes any of those. Semgrep is the one tool in this repo's own documentation that a pre-run image genuinely fixes; as it happens, **none of the 17 audited skills actually name Semgrep in their "Tools" sections** (confirmed by the discovery pass below), so the one mitigation that works isn't even aimed at the tools these skills promise.
+### A.3 `/p2o export|import` — the exact "prior material, never same-run evidence" precedent to copy
 
-## C. Per-tool reachability, across all 17 skills' "Tools" sections
+- `index.ts:1386-1399`. Import (`:1388-1397`): confirm dialog literally says *"Bytes are preserved as immutable
+  artifacts in THIS run plus one provenance note. Imported bytes are never same-run evidence, and no scope, ticket,
+  worker, cookie, budget, request queue or execution authority is restored."* (`:1390`). `docs/STATE_STORE.md:58`
+  states the same rule for the underlying mechanism. This is precisely the guardrail's required behavior for
+  `--refer-workspace`, already shipped for the bundle-file case — B.2 proposes the same shape (artifact + one
+  provenance/lifecycle record in the new run) for the **live-sibling-run** case instead of a portable bundle file.
 
-Discovery: each of the 17 files' "Tools" section (and body, where no heading existed) was read and every named external tool extracted verbatim. Classification below applies the guardrails' three buckets, with the correction that **the deciding factor is root / dropped capability / display / hardware / wrong OS or kernel — not "preinstalled or not."** Two capability facts matter most and are confirmed from `src/sandbox.ts:11-17` plus the absence of any `--cap-add` in that file:
-- **`--cap-drop ALL` blocks `ptrace`** (Docker's default seccomp profile denies the `ptrace` syscall unless `CAP_SYS_PTRACE` is present; nothing re-adds it here) → every debugger/DBI/strace-family tool below is blocked by this alone, independent of root.
-- **`--cap-drop ALL` also blocks raw sockets** (`CAP_NET_RAW`) → live packet capture and any raw-socket technique is blocked the same way.
-- **`--read-only` rootfs blocks any package-manager install to `/usr`/`/opt`/`/etc`, even as root** (there is no root inside anyway) — Bucket 2 is therefore limited to what installs entirely under `/tmp` or `/work`: `pip install --user`, a language's own user-local package manager, or a statically-linked binary fetched and `chmod +x`'d.
+### A.4 `report-export.ts` — a deterministic, reusable file, but not an automatic cross-run feed
 
-### Bucket 1 — plausibly already in the pinned base image (unconfirmed; the image was not pulled)
+- `src/report-export.ts:240-354` `renderReport()` writes `REPORT.md`, `cases.csv`, `coverage.csv`,
+  `findings.json/.csv`, `report-manifest.json` from **one run's own `LedgerIndex`** — it takes an index, not a
+  workspace. Nothing reads another run's report files today (`grep -rn "report-manifest" extensions/p2o/index.ts`
+  → 0 hits). `coverage.csv` already has `cell_id, asset_id, question_key, policy_key, actor_context, tenant_context,
+  method_family, execution, assessment, currentness` per row (`:343-344`) — in principle enough to cross-reference
+  without opening the old SQLite file at all, but this file is **only written if the run reaches finish/stop with
+  `--export`, or `autoReport` on** (`index.ts:1554` footer text); an ephemeral run with neither has no file. The
+  live SQLite store (A.2) is always present for a `durable-local` run and is the one source `--refer-workspace` can
+  depend on existing; report files are an optional convenience, not relied on by B.
 
-| Tool | Cited in |
-|---|---|
-| `git` | patch-diff-analysis, source-code-auditing |
-| `strings` | patch-diff-analysis, binary-auditing |
-| `rg` (ripgrep) | source-code-auditing, attack-surface-mapping |
-| `grep` | source-code-auditing |
-| `file`, `readelf`, `nm`, `objdump` | binary-auditing (also `objdump` in attack-surface-mapping, patch-diff-analysis) |
-| `ss` | attack-surface-mapping |
-| local language console (python3/node REPL) | deserialization-and-dispatch-auditing |
-| OS token/descriptor inspectors (`id`, `capsh`, reading your **own** `/proc/self/status`) | sandbox-boundary-analysis, authorization-auditing |
-| IPC source review (reading source, no binary) | sandbox-boundary-analysis |
-| small local runtime tests / isolated unit tests (the target's own language runtime) | parser-differential-auditing, source-code-auditing |
+### A.5 The deterministic part that makes cross-run matching nearly free, already built for same-run staleness
 
-**13 distinct tools/techniques.** The self-state items (OS token inspectors, IPC source review) are reachable precisely *because* they only ever inspect the sandbox's own, already-dropped privilege set — no capability is needed to read your own confinement.
+- `src/state/graph.ts:37`: `assetEntityId = (scope, kind, key) => 'asset-' + sha(scope + '\0' + kind + '\0' + key).slice(0,24)`.
+  **Pure function — no `runId`, no randomness.**
+- `scope` is `store.graphScope()` (`src/state/store.ts:622-623`): `scopeOf(graphCanonical({identityVersion:
+  GRAPH_IDENTITY_VERSION, targetKind, targetIdentity, sourceSnapshotSha256}))` — a pure function of the **manifest**,
+  also with no `runId`.
+- `sourceSnapshotSha256` (directory targets) is sealed once per run at `store.sealSource()` (`:156-167`), called at
+  `index.ts:1702`, **after** sandbox start — i.e. after the confirm dialog, not at `classifyTarget` time (A.1 timing
+  note carries into B.3). `targetIdentity = sha256Hex(targetLabel(target))` (`index.ts:1561`), and
+  `targetLabel()` (`src/target.ts:224`) is `target.path` for a directory, **`target.url` (the full URL, not just
+  `target.origin`)** for a web target.
+- Coverage-cell `fingerprint` (`src/state/store.ts:376`) is `sha(graphCanonical({targetRevision, assetRef,
+  questionKey, policyKey, actorContext, tenantContext, methodFamily}))` where `targetRevision === graphScope()`.
+  Also no `runId`.
 
-### Bucket 2 — installable at runtime without root, entirely under `/tmp` or `/work`
+**Consequence:** if two different runs (old and new) target the exact same directory with an **identical**
+`sourceSnapshotSha256`, or the exact same URL string, their `graphScope()` values are byte-identical, so an asset or
+coverage cell independently (re)discovered in the new run for the same real-world `kind`+`key`/question collapses
+to the **same `asset-*`/fingerprint id** the old run used — in a *different* SQLite file (different run, different
+database), with no new matching code required. If the source hash (directory) or the exact URL (web) differs even
+by one byte, `graphScope()` differs, every old fingerprint becomes foreign, and "stale" falls out for free — this
+is the mechanism B.3/C use to answer "how is staleness shown" without inventing a parallel one.
 
-| Tool | Cited in | Install path |
-|---|---|---|
-| `angr` | data-flow-analysis | `pip install --user angr` |
-| `Triton`* | data-flow-analysis | `pip install --user triton`; *live-tracing submode may want more than this — flagged, not asserted |
-| `Z3` | data-flow-analysis, memory-safety-auditing | `pip install --user z3-solver` |
-| `CodeQL` | data-flow-analysis | fetch the CLI release archive into `/work` |
-| `Joern` | data-flow-analysis | fetch the release archive into `/work` (needs a JVM) |
-| `d8`, `jsc` | compiler-invariant-auditing | fetch a static engine-shell build into `/work` |
-| `binwalk` | binary-auditing | `pip install --user binwalk` |
-| `ilspycmd` | binary-auditing | `dotnet tool install -g` installs under `$HOME` (= `/tmp` here) — needs a .NET SDK present/installable first |
-| `jadx`, `xdis`, `pydisasm` | binary-auditing | `jadx` release archive into `/work`; `xdis`/`pydisasm` via `pip --user` |
-| Socket.IO-capable test client | authorization-auditing | `pip install --user python-socketio` / `npm install socket.io-client` into `/work` |
-| CLI-only intercepting proxy (e.g. `mitmdump`, not Burp) | data-flow-analysis, authorization-auditing, parser-differential-auditing, sandbox-boundary-analysis | `pip install --user mitmproxy` |
-| `Kuna CLI`† | binary-auditing, attack-surface-mapping, patch-diff-analysis | — |
-| `AFL`/`AFL++`* | fuzzing | needs a working C/C++ toolchain already present or installable; **ptrace is not actually required** (AFL's fork-server design avoids it) — the real cost is the toolchain, not a capability |
-| `QEMU` (user-mode)* | fuzzing | fetch a static `qemu-*-static` binary into `/work`; no ptrace needed for TCG-based user-mode translation |
-| sanitizer (ASan/UBSan as a compile flag)* | fuzzing | a compile-time flag, not a capability — same toolchain caveat as AFL |
+**Caveat this creates for the design:** the guardrail asks for "same **origin**" matching for web targets, which is
+broader than `targetIdentity`'s exact-URL hash. Eligibility (B.1, coarse: which runs are even offered) must compare
+`target.origin` separately from the exact-match fingerprint reuse above (A.5), because two runs on
+`https://x/app` and `https://x/api` share an origin but will never share a `graphScope()`/fingerprint — for that
+pair, cross-run comparison can only work at the **coarse** level (B.4: offer the prior run's own summary as leads,
+not per-cell alignment), never at the free, fingerprint-identical level.
 
-**15 distinct tools/techniques**, three marked `*` as genuinely uncertain (toolchain availability unconfirmed — named as a follow-up, not asserted) and one marked `†`:
-`†Kuna CLI` is the **one skill mention in the whole corpus that already self-flags its own uncertainty** — all three citing skills phrase it as "Optional Kuna CLI... when installed and format-supported." No setup path for it exists anywhere in this repo (unlike Semgrep's documented `scripts/setup-sandbox-tools.sh`), so "when installed" currently has no way to become true. Treat it as **not actually reachable today**, despite being honestly worded.
+### A.6 Reference designs actually checked (not just cited)
 
-### Bucket 3 — not reachable mid-run by lead or worker, period (root / dropped capability / display / hardware / wrong OS or kernel)
+- `my_references/ARTEX/db/exploration_sources.go:317-323`: `ActivityTraceSearchAllWithSources` explicitly tags
+  results from a related ("source") task with `markInheritedActivities(acts, source.Task.TaskID)` — comment: *"the
+  local owner is excluded only from the current exploration; inherited traces are immutable historical context."*
+  Independent precedent for "tag every inherited item with its origin, never merge it unmarked."
+- `my_references/ARTEX/db/task_archives_restore.go:695`: *"An archived run cannot resume its former result
+  callback."* Independent precedent for "no authority returns," matching `docs/KNOWLEDGE_WORKSPACE.md:12`.
+- Neither reference repo has a "read a sibling run as context while a new one is active" feature to copy
+  mechanically; both only confirm the **principle** (tag + no authority), not a mechanism to port.
 
-| Tool | Cited in | Why |
-|---|---|---|
-| debugger (generic) | exploitability-assessment, deserialization-and-dispatch-auditing, parser-differential-auditing, sandbox-boundary-analysis, race-condition-auditing, memory-safety-auditing, state-and-lifetime-auditing | ptrace blocked |
-| GDB, `gdbserver` | compiler-invariant-auditing, dynamic-analysis, fuzzing, binary-auditing, state-and-lifetime-auditing | ptrace blocked |
-| LLDB | compiler-invariant-auditing, dynamic-analysis, fuzzing, binary-auditing, state-and-lifetime-auditing | ptrace blocked |
-| WinDbg | memory-safety-auditing, dynamic-analysis, fuzzing, binary-auditing, state-and-lifetime-auditing | wrong OS — container is Linux |
-| `x64dbg` | dynamic-analysis | wrong OS + GUI |
-| `libdebug` | dynamic-analysis | ptrace blocked |
-| Frida (Interceptor/Stalker) | data-flow-analysis, deserialization-and-dispatch-auditing, dynamic-analysis, parser-differential-auditing | ptrace/`process_vm` attach blocked |
-| Procmon | dynamic-analysis | wrong OS + GUI |
-| user-mode crash dumps | dynamic-analysis | needs root-level OS crash-dump config, plus a (blocked) debugger to read them |
-| Wireshark | dynamic-analysis, parser-differential-auditing, sandbox-boundary-analysis | GUI, no display; live capture also needs `CAP_NET_RAW` (dropped) |
-| syscall tracing (strace/eBPF) | dynamic-analysis, sandbox-boundary-analysis | ptrace or `CAP_BPF`/`CAP_SYS_ADMIN` (dropped) |
-| TinyInst, `litecov` | dynamic-analysis, fuzzing | OS debug-API–based DBI, same family as ptrace |
-| Lighthouse | dynamic-analysis | IDA/Binary Ninja plugin — GUI |
-| Jackalope, AFL-Frida | fuzzing | Frida/DBI-based — ptrace blocked |
-| Page Heap | memory-safety-auditing, fuzzing, state-and-lifetime-auditing | wrong OS (Windows-only feature) |
-| GuardMalloc | memory-safety-auditing, fuzzing, state-and-lifetime-auditing | wrong OS (macOS-only) |
-| KASAN | memory-safety-auditing, fuzzing, race-condition-auditing, state-and-lifetime-auditing | needs a KASAN-built **kernel** — impossible from inside any container |
-| `libslub` | memory-safety-auditing | GDB plugin — inherits GDB's block |
-| kprobes | race-condition-auditing | kernel tracing/module privilege (`CAP_SYS_ADMIN`+root), and the skill text itself says "a permitted diagnostic build" |
-| IDA | patch-diff-analysis, attack-surface-mapping, binary-auditing | GUI, no display (named without a headless qualifier) |
-| Ghidra | patch-diff-analysis, attack-surface-mapping, binary-auditing | GUI, no display (named without a headless qualifier) |
-| ImHex | binary-auditing | GUI (Qt hex editor) |
-| BinDiff, Diaphora | patch-diff-analysis | depend on an IDA/Ghidra GUI backend |
-| dnSpy | deserialization-and-dispatch-auditing | wrong OS + GUI |
-| Burp (GUI half of "intercepting proxy") | data-flow-analysis, authorization-auditing, parser-differential-auditing, sandbox-boundary-analysis | GUI, no display |
-| browser / browser developer tools | data-flow-analysis, attack-surface-mapping, sandbox-boundary-analysis | no display, **and** explicitly named as a blocked channel (README.md:122) regardless of sandbox |
-| `libguestfs` | attack-surface-mapping, authorization-auditing | needs loop/NBD mount, `CAP_SYS_ADMIN`-equivalent (dropped) |
-| service-unit inspection (`systemctl`/`journalctl`) | authorization-auditing | no init system/systemd runs in this minimal container at all |
-| System Informer | sandbox-boundary-analysis | wrong OS + GUI |
-| Turbolizer | compiler-invariant-auditing | browser-based visualizer, no display |
-| `flashrom`, OpenOCD | binary-auditing | raw hardware (flash programmer / JTAG-SWD adapter); the skill text itself scopes this to "owned lab hardware" |
+---
 
-**36 distinct tools.** Not bucketed at all (it isn't a sandbox-binary question): **`pi-web-access`**, named in attack-surface-mapping — see A.5. It is blocked by the tool-activation gate, not by the container.
+## B. Proposed `--refer-workspace` behavior
 
-## D. Skills left with zero Bucket 1/2 tools once Bucket 3 is excluded
+### B.1 Argument syntax
 
-Four skills' "Tools" sections are, in their entirety, unreachable during a real run — every named tool is Bucket 3:
+Add to `StartOptions` (`src/target.ts:10`) and the token loop (`:24-67`):
 
-- **dynamic-analysis** — all 13 named tools (GDB/LLDB/WinDbg/x64dbg/libdebug/Frida/Procmon/crash-dumps/Wireshark/syscall-tracing/TinyInst/litecov/Lighthouse).
-- **race-condition-auditing** — all 3 named tools (KASAN/kprobes/debugger).
-- **state-and-lifetime-auditing** — all 6 named tools (WinDbg/GDB/LLDB/debugger/KASAN/Page Heap/GuardMalloc).
-- **exploitability-assessment** — its only *named* external tool is "debugger"; everything else in its Tools section is a technique description (policy/token inspection, timing logs, boundary tests), not an installable/runnable tool.
+```
+--refer-workspace [latest|all|<run-id>[,<run-id>...]]
+```
 
-One more, with a caveat:
+- Bare `--refer-workspace` (no value, or value `latest`): the single most recent **eligible** prior run (by
+  directory mtime under `.p2o-state`) for this target.
+- `--refer-workspace all`: every eligible prior run, capped (B.2) — not literally unbounded.
+- `--refer-workspace <run-id>[,<run-id>]`: an explicit, named list (≤10 ids, same shape as other id lists in this
+  codebase, e.g. `evidenceRefs` caps). An id that does not exist, is not `durable-local`, or fails eligibility (B.3)
+  is reported in the confirm text as excluded, not silently dropped and not an error that blocks the ones that do
+  qualify.
+- Omitted entirely: today's behavior, byte-for-byte (this is additive, default off).
 
-- **memory-safety-auditing** — technically has one Bucket 2 tool (`Z3`), but `Z3` is an auxiliary arithmetic-modeling aid, not this skill's core workflow. The skill's actual named workflow tools — KASAN, Page Heap, GuardMalloc, WinDbg, `libslub`, debugger watchpoints — are 100% Bucket 3. Effectively zero for the skill's stated purpose.
+Usage string update, `index.ts:72`: append `[--refer-workspace latest|all|<run-id>,...]` after `--retention`.
 
-That is **5 of 17 (29%)** of the audited skills whose "Tools" section currently promises a workflow that cannot run inside a real delegated assessment today, with no pre-run image fix available (per B).
+### B.2 Mechanism: transient read, one new same-run record — not a long-lived second store
 
-The remaining 12 skills each keep at least one genuinely reachable Bucket 1/2 tool, though several (memory-safety-auditing aside) still carry a Bucket-3-heavy tail — notably **binary-auditing**, which is the best-designed of the 17: it explicitly ranks `file`/`readelf`/`nm`/`strings`/`objdump` **"before or instead of native decompilation"**, i.e. it already assumes its GUI tools might be unavailable and gives a reachable fallback first. No other audited skill does this.
+Two phases, split by what is knowable when (A.5's timing note):
 
-## D.1 Correction found while implementing the fix below
+**Phase 1 — eligibility, before the confirm dialog (`index.ts:1536`–`1552`, before `:1553`):**
+1. `root = await stateRootFor(ctx)` (already computed at `:1541` as `selectedStateRoot`; reuse it, do not duplicate).
+2. `readdir(root)` (bounded: newest 20 entries by mtime, matching the "not literally unbounded" note above — 20 is
+   a starting number for F, not a claimed-correct one), skip anything without `assessment.sqlite`.
+3. For each candidate (and only the explicitly named ones if `--refer-workspace <ids>` was given), open **read-only**
+   just long enough to read `.manifest()`, then close immediately: `AssessmentStore.open(root, id,
+   {readOnly:true, maxBytes:settings().storageQuotaMiB*1024*1024})` (same call `openHistorical` makes,
+   `index.ts:230` — but without binding into `historical`, so it never touches the slot A.2 described).
+4. Eligibility test: `manifest.targetKind === target.kind`, and for `url` targets
+   `new URL(manifest.targetDisplay).origin === target.origin`; for `directory` targets `manifest.targetDisplay ===
+   target.path` (same resolved path). This is the **coarse** test (A.5's origin caveat) — it does not yet know
+   whether the match is "current" or "stale"; that needs `sourceSnapshotSha256`, which for a directory target does
+   not exist yet at this point in startup (A.5).
+5. Reject (not silently skip) a manifest this build cannot read (`!store.compatible`, same check `openHistorical`
+   already makes, `index.ts:231`) — name it in the confirm text as "unreadable, schema N."
 
-Re-reading the 5 skills' actual `## Tools` bullets (not just the earlier tool-name extraction) found that the "zero reachable" claim in (D) was too strong for 3 of them, because the earlier pass excluded generic-technique bullets (no named binary) from the bucket count even where they are themselves Bucket-1-reachable — the same kind of bullet counted toward Bucket 1 elsewhere in (C) (e.g. "IPC source review", "small local runtime tests"). Corrected status:
+**Phase 2 — the actual digest, after the new store exists and (for directories) after `sealSource` runs:**
+- URL targets: nothing is pending from `sealSource`, so this can run right after store creation (`index.ts:1567`,
+  before the engine/broker are wired at `:1574` on).
+- Directory targets: must run **after** `index.ts:1702` (`store.sealSource(...)`), because only then does
+  `store.graphScope()` reflect the real, sealed `sourceSnapshotSha256` and the "current vs stale" verdict (A.5)
+  becomes knowable. This is a deliberate split, not a bug: showing "which runs will be read" at confirm time (coarse,
+  B.1) and showing "which of their cells are still current" only once source identity is sealed (fine, here).
+- For each eligible run (now a short list, already confirmed by the human in B.4): open read-only again (same call
+  as step 3, this time to actually read), compute:
+  - `reportProjection(index, context).counts` (`src/report.ts:110-112`) — reused verbatim, not recomputed (A.2).
+  - its coverage cells' `fingerprint`s compared against what the **new** run's `graphScope()` would produce for the
+    same `assetRef`/`questionKey`/... tuple (A.5) — for an exact target match this is a direct set comparison; for
+    an origin-only match (A.5 caveat) this step is skipped and only the run-level counts are offered.
+  - close the store immediately.
+- Write **one** new record in the new run's own store — not per prior run, one combined record — of a new kind
+  (proposal: reuse `kind:'lifecycle'` with a `data.reference` payload, so no new record-kind enum is needed; C.2
+  covers the alternative of a dedicated `kind:'reference'`), tagged with every source `runId` read (ARTEX-style
+  tagging, A.6) and the text `'Prior-run context, never same-run evidence; re-verify before citing.'`. This record
+  is what D's gap report and the Planner's `p2o_state` read (B.5) both point at.
 
-- **dynamic-analysis** — confirmed, all 7 bullets are Bucket 3. The only one of the 5 that is actually 100% unreachable.
-- **race-condition-auditing** — bullet 1 ("Source/disassembly expansion") is Bucket 1 (reading code, no capability needed); bullets 2–4 (debugger/KASAN/kprobes) are Bucket 3. 3 of 4 blocked, not 4 of 4.
-- **state-and-lifetime-auditing** — bullet 1 ("Source/call-graph review") and bullet 4 ("Small operation-sequence tests") are Bucket 1; bullets 2–3 (WinDbg/GDB/LLDB, KASAN/Page Heap/GuardMalloc) are Bucket 3. 2 of 4 blocked, not 4 of 4 (the original count of "6 named tools" also miscounted the file's actual 4 bullets).
-- **exploitability-assessment** — only bullet 1 ("Debugger allocation/layout...") is Bucket 3; bullets 2–4 (policy/token inspection, timing logs, isolated boundary tests) are already Bucket 1/2 techniques, not Bucket 3. 1 of 4 blocked, not the whole section.
-- **memory-safety-auditing** — bullet 1 ("Disassembler/decompiler") is mixed (static disassembly tools reachable, an interactive GUI decompiler is not); bullet 4 (Z3) is Bucket 2, as already noted; bullets 2–3 and 5 (KASAN/Page Heap/GuardMalloc, WinDbg/libslub, debugger watchpoints) are Bucket 3.
+Nothing here keeps an old run's store bound past its own read. No ticket, broker, socket, worker or budget object is
+touched for a prior run at any point (unlike `run`/`current`, nothing resembling `OwnerRun` is ever constructed
+for them).
 
-Net correction: only **dynamic-analysis** is genuinely a 100%-blocked Tools section. The other 4 each already have at least one reachable bullet; what they lack is a *labeled* distinction between the reachable technique bullets and the debugger/kernel-sanitizer bullets that cannot run in this sandbox. That labeling gap — not a wholesale missing workflow — is what the fix below closes.
+### B.3 Matching rule (the guardrail's wording, made exact)
 
-## D.2 Fix implemented in this pass
-
-Edited the `## Tools` bullets of the 5 skills above (only — the remaining 12 skills' Bucket-3 rows in (C) are not yet touched; see the follow-up note at the end of this section) to state plainly, in the existing `tool → purpose → when` bullet format (no new arrows added, so `scripts/validate_library.py`'s 2-arrow-per-bullet check still passes), that the blocked tool needs a separate, non-sandboxed authorized lab environment, naming the concrete reason (live-process-attach/`ptrace`, wrong OS, or a kernel feature no container can provide) — modeled on `binary-auditing`'s existing `flashrom`/OpenOCD wording. `dynamic-analysis` additionally got one short lead sentence under the `## Tools` heading (its whole section is blocked, so a per-bullet repeat would have been redundant seven times over).
-
-Verified after editing: `python3 scripts/validate_library.py` → `PASS: 17 skills; ...` (unchanged pass); `python3 -m pytest tests/test_library.py` → 117 passed, 1 skipped; `npx vitest run tests/minimal/wstg-skills.test.ts tests/minimal/roles.test.ts tests/minimal/extension.test.ts` → 34 passed; `node .gitnexus/run.cjs detect-changes --scope all --repo .` → 7 files changed, risk level low, 0 affected processes.
-
-**Not done in this pass, left as a follow-up:** applying the same per-bullet wording to the Bucket-3 rows inside the other 12 skills (the ones that already keep at least one reachable tool, per the original (D) text) — e.g. the GUI/IDA/Ghidra mentions in `patch-diff-analysis`, `attack-surface-mapping`, `binary-auditing`, the Burp/Wireshark mentions in `data-flow-analysis`/`authorization-auditing`/`sandbox-boundary-analysis`/`parser-differential-auditing`, and so on. Those are read-fine-as-is today (none of them claims a skill is 100% runnable when it isn't), so leaving them unedited does not misrepresent any skill's workflow the way the 5 "zero-reachable" skills did; extending the same wording there is optional polish, not a correctness fix, and is why it was left out of this bounded pass rather than done unasked across all 17 files.
-
-## D.3 Implemented: pre-installing Bucket-2 tools into the offline image (operator-chosen)
-
-`scripts/setup-sandbox-tools.sh` now takes an optional `--with=<tool1,tool2,...>` after `--build`, adding any of a
-fixed, pinned list — `angr` 10.0.3, `z3` (`z3-solver` 5.1.0.0), `binwalk` 2.1.0, `mitmproxy` 12.2.3, `unicorn` 2.1.4
-— each into its own venv, installed as root at build time only, exactly like the existing Semgrep block (own
-`requirements.resolved.txt`, `chmod -R a+rX`, binary symlinked into `/usr/local/bin`). Default behavior (`--build`
-with no `--with`) is unchanged: still Semgrep only, verified by counting generated `RUN` lines before/after.
-
-This converts these 5 tools from Bucket 2 (installable at runtime, but costing time/egress and leaving no
-owner-visible record that it happened) to effectively Bucket 1 for whoever builds and selects this image — **it does
-not touch the running container's `LIMITS`** (still `--read-only`, `--cap-drop ALL`, non-root `65532:65532`), so it
-cannot do anything for Bucket 3; see D.1 above, this is a strictly Bucket-2-only mechanism, same timing/authority
-limits as B (operator decision, before `pi` starts, immutable for the run's lifetime).
-
-Why these 5 and not the other 10 Bucket-2 entries in (C): `angr`/`z3`/`binwalk`/`mitmproxy` were already the
-lightest, purely-pip-installable, no-extra-runtime (JVM/.NET SDK/compiler) entries in the Bucket-2 table; `unicorn`
-was added for D.4 below. `CodeQL`/`Joern` (need a JVM + large release archives) and `ilspycmd` (needs a .NET SDK)
-were deliberately left out of the registry — heavier, slower to validate here, and not requested; adding them is a
-mechanical follow-up (same pattern, different `RUN` line) if wanted.
-
-**Verified:** `bash -n` + `shellcheck` clean; a stubbed `docker` confirmed the generated Dockerfile is syntactically
-correct for `--build` alone (1 `RUN` line, unchanged) and for `--with=angr,z3,binwalk,mitmproxy,unicorn` (6 `RUN`
-lines, correct order, `USER root` ... `USER 65532:65532` unchanged); each package's actual pip install + resulting
-console-script names were checked directly in a throwaway venv (not the sandbox image) before being written into
-the script — `angr` ships `angr`/`angr-mcp` scripts (library-first tool, used via `import angr`), `z3-solver` ships
-a `z3` binary, `binwalk` ships `binwalk`, `mitmproxy` ships `mitmdump`/`mitmproxy`/`mitmweb` (only `mitmdump` is
-symlinked — the CLI-only, non-interactive one). **Not done:** an actual `docker build` against the real
-`strix-sandbox` base image (would require pulling it; the Dockerfile mechanics being added are identical in shape
-to the already-proven Semgrep block, so this is a reasonable, named gap rather than an assumed pass). `python3
-scripts/validate_library.py`, `pytest tests/test_library.py` and `node .gitnexus/run.cjs detect-changes --scope
-all` all stayed green after these edits (risk: low, 0 affected processes — `.sh` files aren't graph symbols, so
-GitNexus only reported the `docs/SKILL_RUNTIME.md` prose section changing).
-
-## D.4 Bucket 3: is there an optimization or a similar substitute?
-
-Only for the capability-blocked rows (`ptrace`, raw sockets, user-space heap sanitizers). Nothing substitutes for a
-kernel-only feature, missing OS, raw hardware, or a deliberately policy-blocked channel — those need the separate
-lab environment named in the skill-file edits above, full stop. Where a substitute *does* exist, it works by doing
-the equivalent job through a path `--cap-drop ALL` / `--read-only` / non-root does not touch, not by reopening the
-capability:
-
-| Blocked (Bucket 3) | Substitute reachable in this sandbox | Why it works here | Caveat |
+| Target kind | Eligibility (coarse, Phase 1) | Currency (fine, Phase 2) | Stale means |
 |---|---|---|---|
-| GDB/LLDB/WinDbg/x64dbg/libdebug, Frida Interceptor/Stalker, TinyInst/litecov, Jackalope, AFL-Frida | **Emulation instead of live attach**: Unicorn Engine (now in `--with`) or angr's own concrete-execution mode. The emulator *is* the executing process — breakpoints/hooks/memory-watch are emulator callbacks, not `ptrace`/`process_vm_*` calls into a separate process. | `--cap-drop ALL` blocks attaching to *another* process; it does not block a userspace CPU emulator running as your own process. | Not bit-identical to native execution — library/syscall emulation gaps exist. Verified: `unicorn==2.1.4` installs and imports cleanly here (pure-Python wheel, no compiler). **Tried and rejected:** `qiling` (full OS-emulation framework built on Unicorn) — its `pillow` dependency failed to build from source in this environment (no `libjpeg` headers), so it was **not** added to `--with`; the actual sandbox base image's Python/library versions were not inspected, so this could differ there, but it is not assumed to work without re-checking against that image specifically. |
-| strace/eBPF syscall tracing, Procmon, Wireshark (live capture) | **`LD_PRELOAD` interposition** on libc wrappers (`open`/`read`/`write`/`connect`/`send`/`recv`) in a process you spawn yourself, logging to a file in `/work`. | This is normal dynamic-linker behavior on your *own* child process, not attaching to someone else's — no `ptrace`, no `CAP_NET_RAW` needed. | Only catches calls that go through libc; a statically linked binary or one calling `syscall()` directly bypasses it. Not implemented here (no shim written/shipped); this is a named technique, not a shipped tool. |
-| KASAN/Page Heap/GuardMalloc, WinDbg `!pool`/libslub (for userspace heap bugs on an already-built binary) | **A userspace guard-page allocator via `LD_PRELOAD`** (e.g. AFL++'s `libdislocator.so`), or recompiling with ASan/UBSan when source is available (already Bucket 2, no change needed). | Guard pages + `SIGSEGV` on overrun is implemented entirely with `mmap`/`mprotect` in userspace; no kernel feature, no root. | `libdislocator` is a C source file from AFL++, not a pip package — building it needs a C toolchain in the image and was **not** added to `--with` in this pass (toolchain availability in the base image is unconfirmed, same caveat as the `*`-marked fuzzing entries in Bucket 2 of section C). True KASAN (kernel-space bugs) has **no** substitute — it instruments the kernel itself, which no container changes. |
-| IDA, Ghidra (listed in the 17 skills without a headless qualifier), and by extension BinDiff/Diaphora | **Correction, not just a substitute**: both tools ship an official headless/batch mode — Ghidra's `analyzeHeadless`, IDA's `idat`/`idat64` batch mode — that needs **no display at all**. The skills audited in (C) name these tools generically, which is why they were bucketed as GUI-blocked; that bucketing is right for interactive use and wrong for headless use. | Headless decompilation never opens a window; the actual blocker is acquiring the binary itself (Ghidra is free + JVM-only; IDA is commercial and needs a license), not the sandbox's lack of a display. | Not verified against this repo's sandbox: whether a JVM is present/installable for Ghidra headless, and whether IDA's license terms permit running `idat` inside this container at all, are both open — named as follow-ups, not assumed. This also means the Bucket-3 table in (C) should arguably split "IDA/Ghidra interactive" from "IDA/Ghidra headless" in a future pass; not done here to keep this addendum bounded. |
-| Turbolizer (browser-based V8 pipeline view) | `d8 --trace-turbo`'s own raw text/JSON output, read directly. | `d8` itself is already Bucket 2 (static engine-shell binary); Turbolizer is only a renderer for output `d8` already produces headlessly. | None — this one already works today with no new tool. |
-| ImHex (GUI hex editor) | `xxd`/`hexdump` plus manual struct-aware parsing (Python `struct`). | Pure text-mode tools, no display. | Loses ImHex's pattern-language visualization; fine for the byte-level questions these skills actually ask. |
-| `libguestfs` (needs loop/NBD mount or a VM appliance) | Format-specific userspace parsers that read the image's bytes directly without mounting (e.g. `unsquashfs`, `7z`, or a Python filesystem-forensics library). | Parses the on-disk structure directly; never asks the kernel to mount anything. | Narrower than `libguestfs` — covers one filesystem/archive format at a time, not "mount anything and browse it." |
-| `systemctl`/`journalctl` (no init system running here) | Read the relevant unit files and the application's actual log destination (file or stdout capture) directly as source/text. | No running service manager is needed to read static config or already-written log text. | Loses live service *state* (active/failed/restart-count) — only static config and historical logs are recoverable this way. |
-| `flashrom`/OpenOCD (raw hardware), kprobes/true KASAN (kernel-only), the browser/browser dev tools (policy-blocked, not capability-blocked per README:122) | **None.** | Hardware and kernel-internals cases are physically outside what any container can do; the browser is an intentional access-control boundary (a worker must not reach the operator's real browser), so "optimizing around it" would be undoing a deliberate security decision, not closing a technical gap. | Leave these as-is; the skill text for `flashrom`/OpenOCD already says so correctly. |
+| `url` | same `origin` (`manifest.targetDisplay`'s origin === `target.origin`) | same exact `targetIdentity` (full URL string, A.5) | different path/query on the same origin: offered, but only as run-level leads (B.4), no per-cell alignment |
+| `directory` | same resolved `path` (`manifest.targetDisplay === target.path`) | same `sourceSnapshotSha256` (A.5, sealed after `:1702`) | hash differs: every old fingerprint is foreign (A.5) — shown as "same path, content changed since" |
 
-None of this row set was implemented as shipped tooling beyond `unicorn` (added to `--with` in D.3) — the
-`LD_PRELOAD` shim and `libdislocator` build are named as viable techniques/follow-ups, not delivered here, to keep
-this pass to what was verified rather than what seems plausible.
+### B.4 Confirmation step
 
-## E. Docs-accuracy problem, or a workflow gap worth designing?
+The existing big confirm dialog (`index.ts:1553-1554`) gets one more paragraph, inserted after the retention
+paragraph (same place the existing `--export`/report paragraphs are appended, `:1554`'s trailing template
+segments), **naming every run that passed Phase 1 eligibility** (guardrail: "Name which runs will be read"):
 
-**Mostly a docs-accuracy problem, with one narrow design-worth-considering exception.**
+> `Prior-run reference: N eligible run(s) under this workspace will be read as context — <run-id> (<when>, <counts
+> summary>)[, ...]. Bytes/records stay in their own run; nothing is copied as evidence, no ticket/sandbox/cookie/
+> budget/socket returns. [M run(s) requested but excluded: <id> (<reason>).]`
 
-- For the 5 skills in (D), and for most of the Bucket-3 list in (C): the blocker is `ptrace`/raw-socket capability, no display, no init system, the wrong OS, or a kernel feature — none of which any pre-run image, mid-run tool-add step, or other p2o-side mechanism can fix, because they are properties of *this specific sandbox model* (read-only rootfs, dropped capabilities, headless, Linux-only, one pinned kernel underneath). Reopening any of them means adding back the exact capabilities (`SYS_PTRACE`, `NET_RAW`, a GUI/display, root) that `src/sandbox.ts` deliberately drops to keep this "container isolation, not VM isolation" (README.md:155) — a security-posture change, not a tooling gap. **Recommendation: fix the docs.** Each of the 5 skills in (D), and every Bucket-3 row in (C) elsewhere, should say plainly that the named tool needs a separate, non-sandboxed authorized environment (a real lab machine, VM, or hardware rig) and is not available inside a p2o run — the way `flashrom`/OpenOCD's own skill text already (correctly) scopes itself to "owned lab hardware." Tests already pin skill "Tools" text in places (per the WSTG/skill-catalog conventions used elsewhere in this repo); updating the wording is a docs change, not a code or sandbox change.
-- The one place a real workflow gap exists is the **timing/authority gap in B**, not a capability gap: Semgrep's offline image is a genuine, working mitigation that simply cannot be invoked by anyone once a run has started — and the `pi-web-access` finding (A.5) shows the activation gate can silently drop a tool a skill names, with no error, no warning, and no owner-visible signal that it happened. A **worker-requestable, lead-approved mid-run tool-add step** (worker asks, lead approves, lead's broker rebuilds/respins that worker's container from an operator-pre-approved image list, or installs a Bucket-2-eligible package into that worker's own `/work`) would close this specific gap for the handful of tools that are genuinely just "not pre-installed" rather than structurally blocked (Semgrep-like cases, and the Bucket-2 install-at-runtime tools that already work today but cost time/egress with no owner visibility that it happened). I recommend this as worth a separate design pass — it is **not** designed or implemented here, per guardrails.
+This reuses the same `ctx.ui.confirm(...)` call already there — one dialog, not a second prompt — consistent with
+the guardrail "needs the same human confirmation as export and import" (which are also folded into this one
+dialog's existing text, not separate dialogs).
+
+### B.5 What the new run receives, and how the Planner reads it (no lead-prompt change)
+
+- The lead prompt (`src/prompts.ts:50` `ownerInstructions`) stays untouched — it is tested to contain **no** `p2o_*`
+  tool name (`tests/minimal/workflow-policy.test.ts:83`) and to stay under 5000 characters (`:86`). Nothing about
+  `--refer-workspace` belongs there.
+- Surfacing happens through the **existing** `p2o_state` tool, not a new one. `KNOWLEDGE_DOMAINS`
+  (`src/context.ts:6`) is a plain tuple with **no pinning test** (`grep -rn "KNOWLEDGE_DOMAINS" tests/` → 0 hits) —
+  adding one more value (e.g. `'reference'`) is a narrow, low-risk change, unlike adding a new tool: `ownerTools`'s
+  length is pinned (`tests/minimal/workflow-policy.test.ts:101`, `toHaveLength(19)` for both delegated and solo), so
+  a brand-new `p2o_reference` tool would need that pinned count updated everywhere it is asserted — avoidable by
+  reusing `p2o_state`'s existing `heads`/`search` actions over the new domain.
+- `src/tool-guidelines.ts`'s `TOOL_GUIDELINES.p2o_state` (`:15`) gets **one appended sentence** (guardrail: "put
+  workflow advice in per-tool promptGuidelines, not in the lead prompt"), e.g.: *"If this run was started with
+  --refer-workspace, list domain=reference once before repeating recon; every item there is a lead or coverage
+  hint, never evidence — it needs its own same-run task and evidence to count."* Must stay ≤260 characters (pinned,
+  `workflow-policy.test.ts:78`) and must not push the delegated-Planner/solo-owner aggregate guidance text over
+  1200 characters or the worker aggregate over 800 (`:76-77`) — the appended sentence above is ~230 characters;
+  headroom in the existing budget has to be checked against the current total at implementation time, not assumed.
+- Workers never see this directly: `workerInstructions`/`workerBrief` (`src/prompts.ts:86-128`) are unchanged: the
+  lead is the one who reads the reference record and turns anything relevant into a *fresh* task/brief context
+  string for a worker (`workerBrief`'s existing `context` field, `:105,115-118`) — matching the "no authority
+  carries over" rule and the existing comment that worker args (`index.ts:457-458`, the line the task's "Where"
+  pointed at — actually worker-spawn args, not run-start args, per A.1's correction) never carry a second
+  extension pack or special mode in.
+
+---
+
+## C. Evidence boundary
+
+| Prior item | May become | Rule that enforces it (file:line) |
+|---|---|---|
+| Accepted-current case (not stale) | A **lead/hypothesis** for a brand-new case | `src/cases.ts:84-90` — every `claimRefs`/`independentEvidenceRefs`/`reportRefs`/contradiction/remediation evidence ref must resolve to `runId === this.runId`; a prior case's own refs cannot be cited at all, only its *existence* can prompt a new task |
+| Case flagged stale by B.3 (source hash/URL changed) | A **weaker coverage hint only** ("this question was asked before, under different content") | Same as above, plus the cell/case's own `staleReasons` (`src/coverage.ts:32-33`, `src/cases.ts` currentness) already exist for the *same*-run case; the cross-run digest (B.2) copies this label forward explicitly rather than presenting a stale item as equal to a current one |
+| Open gap / `open_proof_gap` candidate | A **lead** for a new task | `src/evidence.ts:66` — `candidate()` requires every `evidenceRefs`/`negativeControls` id to be same-run (`Unknown same-run evidence ID`); `src/tasks.ts:169` — task `evidenceIds` must be same-run (`Unknown same-run task evidence`) |
+| Coverage cell, `execution:'tested'`, current | A **coverage hint** ("already probed; result X") — not a substitute for a new cell | `src/coverage.ts:46-52` — `assetRef`/`taskRefs`/`claimRefs`/`evidenceRefs`/`gapRefs` all re-validated same-run; `'tested'` requires same-run `evidenceRefs` + a same-run reviewed task, so a new cell cannot just copy the old verdict |
+| Coverage cell, `execution:'blocked'` | A **coverage hint** with its recorded `requirement` carried as context | `src/coverage.ts:53` — blocked coverage must retain its own `open_gap`/`gapRefs`; the *reason* is useful forward, the closure is not |
+| Coverage cell never recorded at all (D's "never reached") | A **coverage hint** flagging an unexplored cell — the strongest kind of lead, since nothing contradicts it yet | Nothing to violate — it is absence of a record, reported as `unknown`/`not covered`, never as "clean" (guardrail D) |
+| Plan goal/todo/decision | A **lead** ("this was the stated next step") | `src/planning.ts:76-81` — `supportRefs` must resolve same-run; task/goal ids referenced must exist in the *current* frontier, so an old plan's own task ids are meaningless here and must not be copied in |
+| Worker report / handoff narrative | **Context only**, never a claim | No direct enforcement needed — `TaskBoard.handoff()` (`docs/STATE_STORE.md:39`) is a same-run commit; an old report's text has no id that resolves in the new run at all |
+| Raw imported bytes (if the operator separately used `/p2o import` instead) | **Nothing** — explicitly "never same-run evidence" already | `index.ts:1390` (A.3) |
+
+Rule in one line, matching the guardrail: **every table row's enforcement is "unknown/foreign `runId`" rejected by
+code that already exists**; `--refer-workspace` adds a reader and a label, never a bypass of any row above.
+
+---
+
+## D. Gap report (deterministic, produced at run start)
+
+Written once, right after Phase 2 (B.2), as the body of the same `kind:'lifecycle'`/`reference` record, built from:
+
+- **Covered** — per eligible run, `reportProjection().counts` (A.2/B.2) plus the cell fingerprints that matched
+  the new run's would-be `graphScope()` (A.5): shown as `<fingerprint-equivalent question>: tested, <when>, <which
+  prior run>`.
+- **Left open** — prior `open_proof_gap` candidates and `blocked` cells, same shape, labelled with their recorded
+  `requirement`/reason (C).
+- **Never reached** — derived the same way `wstgAppendix` already derives its L0 list (`src/report-export.ts:156-
+  182`: tests with no recorded cell) and the way `coverageViews` already derives `omittedCells`
+  (`src/coverage.ts:35`) — reused, not reinvented: union, across every eligible run, of questions/tests with **no**
+  recorded cell at all.
+- **Stale** — any item whose owning run failed B.3's currency test; listed separately from "covered," never merged
+  into it.
+- **Unknown**, explicitly, when: no eligible prior run exists (first run on this target), the only eligible run(s)
+  had `index.complete === false` (interrupted/partial reconciliation, `docs/STATE_STORE.md` migration rules), or a
+  run was named by id but excluded for schema incompatibility (B.2 step 5). Per guardrail D, "unknown" is never
+  rendered as "clean" or silently omitted — it is one more labelled bucket.
+
+This record is read by the Planner through `p2o_state {action:'heads', domain:'reference'}` or `digest`
+(`docs/CONTEXT_PACKETS.md:17-28`, the existing mechanism, no new one) — it is not pushed into any prompt.
+
+---
+
+## E. Phased roadmap
+
+| Phase | Scope | Acceptance test(s) to add/change | Rollback |
+|---|---|---|---|
+| **E0** | `--refer-workspace` flag parsing only (`src/target.ts`), no behavior yet — always resolves to an empty eligible list | New: a `target.ts` parser test (flag accepted, value validated, rejected with other option combinations) | Revert the parser change; zero runtime behavior exists yet, so nothing else to unwind |
+| **E1** | Phase 1 eligibility enumeration + confirm-text paragraph (B.1, B.4); still no Phase 2 read | Extend `tests/minimal/extension.test.ts`'s confirm-dialog assertions (it already asserts dialog text shape, per the earlier worker-briefing test pattern at `:267,278`) to cover the new paragraph; a fixture with 0/1/2 prior runs under a temp `.p2o-state` | Flag stays parseable but the confirm paragraph and enumeration are removed; B.2's Phase 2 never shipped, so no stored data format to migrate away from |
+| **E2** | Phase 2 read + digest record (B.2) + evidence-boundary labelling (C) | New `tests/minimal/refer-workspace.test.ts`: two `AssessmentStore` fixtures (old + new) on the same `targetIdentity`/`sourceSnapshotSha256`, assert the digest record's fingerprints match via A.5's mechanism, assert a *changed* hash fixture produces zero matches and a "stale" label, assert the record's own refs never satisfy `tasks.ts:169`/`cases.ts:84` same-run checks (i.e. literally try to cite it and expect rejection) | Delete the digest-writing call; E1's enumeration/confirm text can stay (harmless without E2) or also be reverted together |
+| **E3** | `KNOWLEDGE_DOMAINS` + `p2o_state` surfacing (B.5), `TOOL_GUIDELINES.p2o_state` sentence | `tests/minimal/workflow-policy.test.ts`'s existing budget assertions (`:76-78`) must still pass with the new sentence counted in; add a `context.test.ts` case for the new domain's head derivation; bump `POLICY_VERSION` (`src/tool-guidelines.ts:7`) and update whatever asserts the runtime closure digest, since it is "part of the runtime closure digest and is shown to the operator" per that file's own comment | Revert the guideline sentence and `POLICY_VERSION` bump; domain stays registered but unused is harmless, or revert it too |
+| **E4** | Gap report content (D) built from `reportProjection`/`wstgAppendix`-style derivation | `tests/minimal/wstg-skills.test.ts`-style fixture extended with a synthetic "prior run" to check the four D buckets (covered/open/never-reached/unknown) render correctly, including the `index.complete===false` → `unknown` case | Revert D's derivation function only; E2's bare digest record (counts only, no bucketed gap report) can ship alone as a smaller final state if D is dropped |
+
+**Tests this touches that are explicitly pinned and must still pass unmodified in intent (only their *numbers* may
+need updates, never their *meaning*):** `docs/ACCEPTANCE_BASELINE.md` row *"Reload/tree/fork đọc checkpoint | Chỉ
+historical state; không broker/ticket/container/network/model turn mới"* (still true: Phase 2 opens read-only and
+closes, grants nothing) and *"Negative result reused | Chỉ cùng tested context/method/version; không biến thành
+global 'clean'"* (still true: B.3/C never let a stale or cross-context match claim cleanliness). `docs/WSTG_MAP.md`
+is unaffected — it is test-key data, not per-run state. No change here touches `docs/ACCEPTANCE_MATRIX.md` row
+identities, only adds new test files alongside them.
+
+**Prompt-size effect:** `ownerInstructions()` — **zero** characters added, by design (B.5). `TOOL_GUIDELINES.p2o_state`
+— one sentence, estimated +230 characters against the existing per-role aggregate ceilings (1200 Planner/solo, 800
+worker; `p2o_state` is available to both roles per `docs/CONTEXT_PACKETS.md:27` budgets, so the sentence counts
+against both ceilings, not just one). Worker prompts (`workerInstructions`/`workerBrief`) — zero, by design (B.5).
+
+---
+
+## F. Open decisions for the owner
+
+1. **Default cap on Phase 1 enumeration** (B.2 step 2 proposed 20 newest runs) — is 20 the right bound, or should it
+   be a setting like `storageQuotaMiB` is?
+2. **`--refer-workspace all` ceiling** — how many eligible runs may Phase 2 actually *read* in one start (reading
+   cost is bounded per run, but N runs multiply it); propose capping at 5 and naming the rest as "eligible but not
+   read, re-run with an explicit id list" in the confirm text.
+3. **Record shape for the digest** (B.2): reuse `kind:'lifecycle'` with a `data.reference` payload (zero schema
+   change, consistent with how `/p2o reconcile` already appends a `kind:'lifecycle'` record per `docs/
+   STATE_STORE.md:59`), or add a dedicated `kind:'reference'` to the record-kind union (clearer `index.byId.get(id)
+   ?.kind` filtering in C's enforcement checks, at the cost of a wider schema/validator change, `src/validate.ts`).
+   This plan assumes the former; the owner may prefer the latter for long-term clarity.
+4. **Origin-level matches (A.5 caveat, B.3's `url` row)** — should these even be eligible by default, or only when
+   explicitly named by run id (since no per-cell alignment is possible, the value is weaker and the "N eligible
+   runs" confirm-text paragraph could get noisy on a workspace that has assessed many different paths on one app)?
+5. **Directory timing split (B.2 Phase 2)** — is it acceptable that the exact stale/current verdict for a directory
+   target is only known *after* sandbox start (post `:1702`), i.e. slightly after the human already confirmed the
+   run, rather than before? The alternative (delaying the confirm dialog itself until after a throwaway source scan)
+   would change today's confirm-then-start sequencing for every run, not just referencing ones — a much larger,
+   probably unwanted, change.
+6. **Should `--refer-workspace` imply anything about `--retention`?** E.g. does referencing only make sense for
+   `durable-local` old runs (ephemeral ones are usually gone), and should an `ephemeral` *new* run even be allowed
+   to use the flag, given its own knowledge will not be referenceable later either?
 
 ---
 
 ## Appendix — evidence index
 
-- `README.md:100-124` (tool table, solo-mode tool removal, blocked-channel statement), `:138-140` (scratch-install guidance), `:151,155` (network egress / container-not-VM limits).
-- `src/tool-policy.ts:2-10` (`TARGET_TOOLS`, `OWNER_TOOLS`, `WORKER_TOOLS`, `DELEGATION_TOOLS`, `ownerTools`, `workerTools`, `reportingOperationDenied`).
-- `src/sandbox.ts:10-17` (`IMAGE`, `LIMITS`); confirmed by grep: no `--cap-add` anywhere in the file.
-- `extensions/p2o/index.ts:330-331,594,767,1570-1583,1696,1723,1729` (sandbox factory wiring; `setActiveTools` calls at worker spawn, run start, run end, and no-run/replay state).
-- `docs/SKILL_RUNTIME.md:28,31-42` (scratch-install guidance; optional offline tool image, "Explicit operator setup (not an agent tool)").
-- `scripts/setup-sandbox-tools.sh:1-18` (the build script: Semgrep only, root-at-build-time, never at runtime).
-- `node_modules/@earendil-works/pi-coding-agent/dist/core/extensions/types.d.ts:1257-1267` (`getActiveTools`/`setActiveTools` semantics: full replace).
-- `research/METHOD.md:11` (`pi-web-access` tool names).
-- 17 skill files read in full: `skills/{patch-diff-analysis,exploitability-assessment,data-flow-analysis,deserialization-and-dispatch-auditing,compiler-invariant-auditing,remediation,memory-safety-auditing,dynamic-analysis,fuzzing,source-code-auditing,parser-differential-auditing,sandbox-boundary-analysis,race-condition-auditing,attack-surface-mapping,authorization-auditing,binary-auditing,state-and-lifetime-auditing}/SKILL.md`.
-- Not inspected (named as follow-ups, not assumed): base-image contents of `ghcr.io/usestrix/strix-sandbox@sha256:f690…` (would require pulling the image); whether a C/C++ toolchain is present for the `*`-marked fuzzing-bucket-2 calls; Triton's live-tracing submode; a real Herdr/TUI session to watch `pi.setActiveTools` actually drop `pi-web-access` at run start.
+- `src/target.ts:8-70` (`Target`, `StartOptions`, `parseCommand`), `:81-91` (`classifyTarget`), `:224` (`targetLabel`).
+- `extensions/p2o/index.ts:72` (usage), `:221-241` (`historical`, `openHistorical`, `recordsPathOf`,
+  `closeHistorical`), `:1328-1420` (workspace sub-command dispatch), `:1386-1399` (export/import confirm text),
+  `:1530-1712` (run-start: target classify → confirm → store create → sandbox start/`sealSource` → active).
+- `src/state/store.ts:29-35` (`StoreManifest`), `:95,118` (`create`/`open`), `:156-167` (`sealSource`), `:376`
+  (coverage fingerprint), `:622-623` (`graphScope`), `:722,727` (asset upsert via `assetEntityId`).
+- `src/state/graph.ts:37` (`assetEntityId`).
+- `src/state/adapter.ts:30-44` (`bindAssessmentStore`), `src/state/registry.ts:16,18` (`bindRecordBackend`, keyed map).
+- `src/report.ts:110-112` (`reportProjection` counts). `src/report-export.ts:156-182` (WSTG L0 derivation, reused
+  for D), `:240-354` (`renderReport`).
+- `src/tasks.ts:169,216`; `src/cases.ts:84-90`; `src/planning.ts:76-99`; `src/coverage.ts:46-53`;
+  `src/evidence.ts:58-79` — all same-run `runId` enforcement cited in C.
+- `src/prompts.ts:50-84` (`ownerInstructions`, no tool names, size-tested), `:86-103` (`workerInstructions`),
+  `:105-128` (`workerBrief`).
+- `src/tool-guidelines.ts:1-24` (`TOOL_GUIDELINES`, `POLICY_VERSION`, budget comment).
+- `src/context.ts:6-7` (`KNOWLEDGE_DOMAINS`, unpinned by any test — confirmed via `grep -rn "KNOWLEDGE_DOMAINS"
+  tests/`).
+- `tests/minimal/workflow-policy.test.ts:67-101` (lead-prompt/guideline budgets, `ownerTools` length pin).
+- `docs/KNOWLEDGE_WORKSPACE.md:7-13` (no-authority-carries-over rule, in the owner's own words).
+- `docs/STATE_STORE.md:17-22,52-60`; `docs/CONTEXT_PACKETS.md:17-30`; `docs/ACCEPTANCE_BASELINE.md` (the two rows
+  quoted in E).
+- `my_references/ARTEX/db/exploration_sources.go:286-323`, `task_archives_restore.go:695` (A.6).
+- Not inspected further (named as follow-ups, not assumed): `my_references/strix`'s own resume semantics beyond the
+  grep hits in A.6 (strix's "resume" is session/conversation resume, a different axis than this plan's run-to-run
+  knowledge reference, and was not needed to validate the two principles actually borrowed); exact current
+  character total of the per-role `TOOL_GUIDELINES` aggregate (E's "+230 characters" is an estimate from the new
+  sentence's own length, not a measured before/after against the live budget).

@@ -67,6 +67,61 @@ describe('canonical owner runtime (inert execution, real SQLite and Unix broker)
       expect(h.sandboxes).toHaveLength(2);expect(h.pi.messages).toHaveLength(2);
     });
   });
+  it('--refer-workspace tags prior same-target runs as context only, never same-run evidence, and ignores runs on a different target',async()=>{
+    await fixture(async h=>{
+      await h.command('--target ./source --solo');const firstRunId=await h.runId();
+      const asset=(await h.call('p2o_graph',{action:'record',batch:{assets:[{asset:{kind:'endpoint',key:'GET /refer-fixture'}}]}})).details.acks[0];
+      const taskDraft={question:'Does the refer-fixture observation match the declared policy?',surface:'/refer-fixture',risk:'authorization',role:'general',roleReason:'Bounded inert observation for the refer-workspace fixture',expectedTrue:'Receipt records the expected policy observation',expectedFalse:'Receipt records the contrasting control',stopCondition:'Stop after one inert command and owner review',evidenceIds:[],prerequisites:[],skills:[],methodReason:'One inert command with no external target'};
+      const task=(await h.call('p2o_task',{action:'create',draft:taskDraft})).details,running=(await h.call('p2o_task',{action:'start',id:task.id})).details;
+      const observation=(await h.call('p2o_shell',{command:'printf bounded-refer-observation'})).details;
+      const reviewed=(await h.call('p2o_task',{action:'review',id:task.id,revision:running.revision,reason:'Owner reviewed the exact inert receipt for the refer-workspace fixture',evidenceIds:[observation.evidenceId]})).details;
+      await h.call('p2o_candidate',{candidate:'refer-leftover-claim',surface:'/refer-fixture',risk:'authorization',closure:'open_proof_gap',execution:'not_tested',proof:'static_trace',evidenceRefs:[],negativeControls:[],policyBasis:'inferred',expectedPolicy:'Declared fixture boundary',limitations:'Proof remains open for this fixture'});
+      const plan=(await h.call('p2o_coverage',{action:'plan-create',plan:{title:'Refer fixture plan',status:'active',reason:'One declared cell for the refer-workspace fixture',exclusions:[],unknownScope:[]}})).details;
+      const cell=(await h.call('p2o_coverage',{action:'cell-create',planId:plan.id,planRevision:plan.revision,cell:{assetRef:{id:asset.entityId,revision:1},questionKey:'wstg-info-01',policyKey:'policy:refer',actorContext:'actor:fixture',tenantContext:'tenant:fixture',methodFamily:'offline-observation',execution:'tested',assessment:'unreviewed',taskRefs:[{taskId:task.id,revision:reviewed.revision}],claimRefs:[],caseRefs:[],evidenceRefs:[observation.evidenceId],negativeControlRefs:[],gapRefs:[],reason:'Bounded reviewed receipt',limitations:'Only this fixture endpoint was checked'}})).details;
+      await h.command('stop');
+      await mkdir(join(h.root,'elsewhere'));
+      await h.pi.commands.get('p2o').handler('--target ./elsewhere --solo',createContext({cwd:h.root}).ctx);const otherRunId=(await readdir(join(h.root,'.p2o-state'))).find(id=>id!==firstRunId)!;await h.command('stop');
+      const fresh=createContext({cwd:h.root});
+      await h.pi.commands.get('p2o').handler('--target ./source --solo --refer-workspace latest',fresh.ctx);
+      expect(fresh.confirmBodies[0]).toContain(`Referencing 1 prior workspace run on this same target: ${firstRunId}`);
+      expect(fresh.confirmBodies[0]).not.toContain(otherRunId);
+      const secondRunId=(await readdir(join(h.root,'.p2o-state'))).find(id=>id!==firstRunId&&id!==otherRunId)!;
+      const store=AssessmentStore.open(join(h.root,'.p2o-state'),secondRunId);
+      try {
+        const reference=store.records().find(r=>r.kind==='lifecycle'&&(r.data as any)?.reference)!;
+        expect((reference.data!.reference as any).runs).toMatchObject([{runId:firstRunId,currency:'current'}]);
+        expect(reference.text).toContain('never same-run evidence');
+        const gaps=(reference.data!.reference as any).gaps;
+        expect(gaps.covered).toMatchObject([{kind:'coverage',runId:firstRunId,fingerprint:cell.cell.fingerprint,questionKey:'wstg-info-01'}]);
+        expect(gaps.leftOpen).toMatchObject([{kind:'candidate',runId:firstRunId,candidate:'refer-leftover-claim'}]);
+        expect(gaps.stale).toEqual([]);expect(gaps.unknown).toEqual([]);
+        expect(gaps.neverReached).not.toContain('wstg-info-01');expect(gaps.neverReached).toContain('wstg-info-02');
+      } finally {store.close();}
+      const heads=(await h.call('p2o_state',{action:'heads',domain:'reference'})).details;
+      expect(heads.rows).toHaveLength(1);expect(heads.rows[0]).toMatchObject({domain:'reference',status:'current'});
+      await h.pi.commands.get('p2o').handler('stop',fresh.ctx);
+    });
+  });
+  it('--refer-workspace records an explicit Unknown reason (never silently clean) when no prior run shares the target, and omitting the flag writes no reference record at all',async()=>{
+    await fixture(async h=>{
+      const fresh=createContext({cwd:h.root});
+      await h.pi.commands.get('p2o').handler('--target ./source --solo --refer-workspace all',fresh.ctx);
+      expect(fresh.confirmBodies[0]).toContain('No prior workspace run on this same target was found for --refer-workspace');
+      const runId=(await readdir(join(h.root,'.p2o-state')))[0];
+      const store=AssessmentStore.open(join(h.root,'.p2o-state'),runId);
+      try {
+        const reference=store.records().find(r=>(r.data as any)?.reference)!;
+        expect((reference.data!.reference as any).runs).toEqual([]);
+        expect((reference.data!.reference as any).gaps.unknown).toEqual(['no eligible prior run exists for --refer-workspace on this target']);
+        expect((reference.data!.reference as any).gaps).toMatchObject({covered:[],leftOpen:[],stale:[],neverReached:[]});
+      } finally {store.close();}
+      await h.pi.commands.get('p2o').handler('stop',fresh.ctx);
+      await h.pi.commands.get('p2o').handler('--target ./source --solo',createContext({cwd:h.root}).ctx);
+      const plainRunId=(await readdir(join(h.root,'.p2o-state'))).find(id=>id!==runId)!;
+      const plainStore=AssessmentStore.open(join(h.root,'.p2o-state'),plainRunId);
+      try {expect(plainStore.records().some(r=>(r.data as any)?.reference)).toBe(false);} finally {plainStore.close();}
+    });
+  });
   it('keeps durable knowledge/checkpoints but destroys control/tickets, and opens without an Engine/model/target',async()=>{
     await fixture(async h=>{
       await h.command('--target ./source --solo');const ack=(await h.call('p2o_note',{kind:'note',text:'retained bounded observation'})).details;
