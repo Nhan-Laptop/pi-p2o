@@ -35,9 +35,9 @@ Mutable state inventory → synchronization map → invariant → event-order hy
 
 ## Tools
 - Source/disassembly expansion → expose hidden lock and wait behavior → when helpers obscure synchronization.
-- Debugger event logging, watchpoints, and thread traces → observe state/order changes → when testing a concrete schedule.
-- KASAN plus allocation/free context → identify the first invalid access → when memory safety is affected.
-- Kernel tracing/kprobes in a permitted diagnostic build → measure blocking and warning costs → when reproduction latency is unexplained; report all changes and do not treat instrumentation as an available attacker capability.
+- Debugger event logging, watchpoints, and thread traces → observe state/order changes → when testing a concrete schedule; needs live process attach, which a p2o sandbox blocks — use a separate authorized lab environment.
+- KASAN plus allocation/free context → identify the first invalid access → when memory safety is affected; KASAN needs a specially built kernel that no container can provide — a separate authorized lab build only.
+- Kernel tracing/kprobes in a permitted diagnostic build → measure blocking and warning costs → when reproduction latency is unexplained; report all changes and do not treat instrumentation as an available attacker capability; that diagnostic build must sit outside the p2o sandbox, whose non-root user has no kernel-tracing privilege.
 
 ## Validation
 Require the violated invariant and feasible ordering, not just a crash rate. Validate every actor's access and configuration. Compare serial and concurrent negative controls. Report successes/attempts, latency distribution, and stability after the observation; debugger-induced timing and suppressed diagnostics can change both reachability and reliability.

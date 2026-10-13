@@ -127,3 +127,16 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 ---
 
 **These guidelines are working if:** fewer unnecessary changes in diffs, fewer rewrites due to overcomplication, and clarifying questions come before implementation rather than after mistakes.
+
+# Compact instructions
+
+When you compact, always keep: the current plan, failing tests with their errors, files changed and why, decisions we made. Drop exploration and dead ends.
+
+
+# Subagents 
+
+With the task require: do a lot of research, ref a lot of references, you should spawn the agent to discover and take a combination to avoid loss context: 
+- Sonnet 5.5 - medium thinking : handles routine work and escalates planning, ambiguous failures -> do with the large resources. 
+- Haiku 5.5 - medium thinking: discovery the small one. 
+
+

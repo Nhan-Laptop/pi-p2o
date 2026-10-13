@@ -30,16 +30,25 @@ owner-managed sandbox.
 
 ## Optional offline tool image
 
-The default pinned base can lack Semgrep. Explicit operator setup (not an agent tool):
+The default pinned base can lack Semgrep and several userspace analysis tools. Explicit operator setup (not an agent tool):
 
 ```sh
 bash scripts/setup-sandbox-tools.sh --build
 pi --p2o-image sha256:<64-hex-image-id>     # use the immutable ID the build printed
 ```
 
-The build pins Semgrep 1.179.0 and records resolved dependencies in `/opt/p2o-semgrep/requirements.resolved.txt`
-(not a bit-for-bit reproducibility claim). Nothing is built or pulled automatically; mutable tags are rejected, and the
-confirmation names the image that is passed into worker tickets.
+The build always pins Semgrep 1.179.0. An optional `--with=<tool1,tool2,...>` adds more tools from a fixed, pinned
+list — `angr` (10.0.3), `z3` (z3-solver 5.1.0.0), `binwalk` (2.1.0), `mitmproxy` (12.2.3), `unicorn` (2.1.4) — e.g.
+`bash scripts/setup-sandbox-tools.sh --build --with=angr,z3,binwalk,mitmproxy,unicorn`. Each is installed into its own venv
+as root at build time only; every resolved dependency set lands in that venv's own `requirements.resolved.txt`
+(not a bit-for-bit reproducibility claim). The running container is unchanged by `--with` — still `--read-only`,
+`--cap-drop ALL`, non-root — so this only pre-installs tools that were already reachable at runtime via `p2o_shell`/
+`p2o_net` (what this repo's own tool-reachability analysis calls Bucket 2); it does not reopen `ptrace`, raw
+sockets, a display, or root, and so cannot make a Bucket-3 tool (a live debugger, a kernel sanitizer, a GUI
+decompiler) reachable — see `planning_update.md` for that distinction and for Bucket-3 substitutes that do work
+inside this sandbox. Resulting binaries on `PATH`: `semgrep`, and with `--with`, `angr`/`angr-python3`,
+`z3`/`z3-python3`, `binwalk`, `mitmdump`, `unicorn-python3`. Nothing is built or pulled automatically; mutable tags are rejected, and
+the confirmation names the image that is passed into worker tickets.
 
 ## Evidence and candidates
 

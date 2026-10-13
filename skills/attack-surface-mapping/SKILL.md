@@ -40,7 +40,6 @@ For composed-service identity questions, use [intermediary trust](references/int
 - Browser developer tools or an intercepting proxy → connect normal UI actions to transport and route → when discovering undocumented application paths.
 - IDA/Ghidra/objdump/kuna → recover dispatch tables and companion-library contracts → when source or interface documentation is incomplete.
 - libguestfs → inspect groups, package state, and activation units offline → when evaluating appliance/cloud-image defaults without boot-time mutation.
-- pi-web-access → retrieve an approved public reference page when the local library and offline sources are insufficient → when the research question needs a current public source and the target itself must not be contacted.
 
 
 ## Focused Method
