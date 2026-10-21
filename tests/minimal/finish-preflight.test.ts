@@ -1,6 +1,8 @@
 import { readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { blockedNegatives, finishPreflight, receiptLooksBlocked } from '../../src/finish-preflight.js';
+import { indexRecords, type AssessmentRecord } from '../../src/records.js';
 import { fixture, populate } from './helpers/report-fixture.js';
 
 /** P1: a host check at p2o_finish. Hermetic: inert sandbox, real SQLite store, no model, no target. */
@@ -103,5 +105,38 @@ describe('finish preflight', () => {
   it('does not flag a run with no stated --goal at all', async () => fixture(async h => {
     await h.command('--target ./source --solo');
     expect(finishText(await h.call('p2o_finish', {}))).not.toContain('NO_GOAL_RECORDED');
+  }));
+});
+
+describe('NEGATIVE_MAY_BE_BLOCKED (U6)', () => {
+  const http = (id: string, hops: string[], exitCode = 0, operation = 'http'): AssessmentRecord => ({ id, runId: 'run-x', at: '2030', by: 'worker-a', workerId: 'worker-a', kind: 'evidence', text: 'receipt', data: { operation, exitCode, http: { hops } } });
+  const hop = (status: string, url = 'https://example.invalid/x') => `${status} GET ${url} → 93.184.216.34 (public)`;
+  it('treats only a final 401, 403 or 429, or no response at all, from p2o_http as blocked', () => {
+    for (const status of ['401', '403', '429']) expect(receiptLooksBlocked(http('r', [hop(status)])), status).toBe(true);
+    expect(receiptLooksBlocked(http('r', [hop('302'), hop('403')]))).toBe(true);
+    expect(receiptLooksBlocked(http('r', [], 7))).toBe(true);
+    expect(receiptLooksBlocked(http('r', [hop('no-status')], 28))).toBe(true);
+    for (const status of ['200', '404', '500', '302']) expect(receiptLooksBlocked(http('r', [hop(status)])), status).toBe(false);
+    expect(receiptLooksBlocked(http('r', [hop('403'), hop('200')]))).toBe(false); // the final response wins
+    expect(receiptLooksBlocked(http('r', Array.from({ length: 6 }, () => hop('403'))))).toBe(false); // capped hop list hides the final response
+    expect(receiptLooksBlocked(http('r', [hop('403')], 0, 'shell'))).toBe(false); // shell and net receipts carry no structured status
+    expect(receiptLooksBlocked(http('r', [], 0))).toBe(false); expect(receiptLooksBlocked(undefined)).toBe(false);
+  });
+  it('flags a ruled-out item only when it cites receipts and every one of them looks blocked', () => {
+    const byId = new Map<string, AssessmentRecord>(['b1', 'b2'].map(id => [id, http(id, [hop('403')])]).concat([['ok', http('ok', [hop('200')])]]) as Array<[string, AssessmentRecord]>);
+    expect(blockedNegatives([{ id: 'all', refs: ['b1', 'b2'] }, { id: 'mixed', refs: ['b1', 'ok'] }, { id: 'none', refs: [] }, { id: 'unknown', refs: ['b1', 'missing'] }], byId)).toEqual(['all']);
+  });
+  it('adds an advisory code for a ruled_out claim resting on blocked receipts, stays silent when integrity is off, and never blocks', () => {
+    const claim = (id: string, refs: string[]): AssessmentRecord => ({ id, runId: 'run-x', at: '2030', by: 'worker-a', kind: 'candidate', surface: '/admin', risk: 'authorization', text: id, refs, data: { candidate: id, closure: 'ruled_out', execution: 'tested', evidenceRefs: refs, negativeControls: [] } });
+    const index = indexRecords([http('b1', [hop('403')]), http('ok', [hop('200')]), claim('c-blocked', ['b1']), claim('c-open', ['ok'])], 'run-x');
+    const on = finishPreflight(index, { integrity: 'annotate' }), item = on.advisory.find(entry => entry.code === 'NEGATIVE_MAY_BE_BLOCKED');
+    expect(item).toMatchObject({ level: 'advisory', count: 1, ids: ['c-blocked'] });
+    expect(on.blocking.map(entry => entry.code)).not.toContain('NEGATIVE_MAY_BE_BLOCKED');
+    expect(on.signature).toBe(finishPreflight(indexRecords([http('b1', [hop('200')]), http('ok', [hop('200')]), claim('c-blocked', ['b1']), claim('c-open', ['ok'])], 'run-x'), { integrity: 'annotate' }).signature);
+    expect(finishPreflight(index, { integrity: 'off' }).advisory.map(entry => entry.code)).not.toContain('NEGATIVE_MAY_BE_BLOCKED');
+  });
+  it('is silent in a run whose receipts are shell output', async () => fixture(async h => {
+    await populate(h, undefined, { tested: 'wstg-athz-04' });
+    expect(finishText(await h.call('p2o_finish', {}))).not.toContain('NEGATIVE_MAY_BE_BLOCKED');
   }));
 });

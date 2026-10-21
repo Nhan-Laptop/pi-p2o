@@ -1,6 +1,6 @@
 import { caseViews, needsCaseReview, type CaseContext } from './cases.js';
 import { coverageViews, type CoverageContext } from './coverage.js';
-import { isOpenGap, type LedgerIndex } from './records.js';
+import { isOpenGap, type AssessmentRecord, type LedgerIndex } from './records.js';
 import { planFrontier } from './planning.js';
 import type { FinishGate } from './roles.js';
 import { awaitingReview, taskFrontier } from './tasks.js';
@@ -15,7 +15,7 @@ import { WSTG_MAP, isWstgKey, wstgKey } from './wstg-map.js';
  */
 export type PreflightCode = 'UNREVIEWED_TASK' | 'UNREVIEWED_CLAIM' | 'PENDING_CASE' | 'STALE_CASE' | 'STALE_CELL' | 'NO_COVERAGE_PLAN' | 'NONTERMINAL_CELLS'
   | 'UNRATED_ACCEPTED_CASE' | 'WSTG_APPLICABLE_UNPLANNED' | 'HIGH_WITHOUT_INDEPENDENCE' | 'FOREIGN_EVIDENCE' | 'CONTRACT_GAP' | 'STALE_RATING' | 'OPEN_GAP_UNREFERENCED' | 'ORPHAN_TASK' | 'UNPLANNED_ASSETS'
-  | 'UNPROMOTED_COVERAGE_NOTE' | 'NO_GOAL_RECORDED';
+  | 'UNPROMOTED_COVERAGE_NOTE' | 'NO_GOAL_RECORDED' | 'NEGATIVE_MAY_BE_BLOCKED';
 export interface PreflightItem { code: PreflightCode; level: 'blocking' | 'advisory'; count: number; ids: string[]; message: string }
 export interface FinishPreflight {
   blocking: PreflightItem[]; advisory: PreflightItem[];
@@ -26,6 +26,7 @@ export interface FinishPreflight {
 export interface PreflightContext { cases?: CaseContext; coverage?: CoverageContext; integrity?: 'off' | 'annotate' | 'enforce'; statedObjective?: string }
 
 const SHOWN = 5;
+const strings = (value: unknown): string[] => Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : [];
 const MESSAGES: Record<PreflightCode, string> = {
   UNREVIEWED_TASK: 'worker handoff not reviewed (review the task with its receipts, or cancel it)',
   UNREVIEWED_CLAIM: 'confirmed worker claim without any owner case (open a case or record why not)',
@@ -44,9 +45,29 @@ const MESSAGES: Record<PreflightCode, string> = {
   ORPHAN_TASK: 'task blocked or expired without a handoff (re-plan it or record the limit)',
   UNPLANNED_ASSETS: 'asset discovered but absent from every coverage plan (add a cell or list it as out of scope)',
   UNPROMOTED_COVERAGE_NOTE: 'surface/coverage note recorded but the plan still has no cell (free-text observation never became a counted denominator entry)',
+  NEGATIVE_MAY_BE_BLOCKED: 'a ruled-out result rests only on HTTP receipts that ended in 401, 403 or 429, or never got a response (that may be an access control or rate limit, not proof the weakness is absent; add a control that reached the code under test)',
   NO_GOAL_RECORDED: 'the run was given an operator objective but no goal was ever recorded in the plan (the objective did not become a tracked goal)',
 };
 const BLOCKING: ReadonlySet<PreflightCode> = new Set<PreflightCode>(['UNREVIEWED_TASK', 'UNREVIEWED_CLAIM', 'PENDING_CASE', 'STALE_CASE', 'STALE_CELL', 'NO_COVERAGE_PLAN', 'NONTERMINAL_CELLS', 'UNRATED_ACCEPTED_CASE']);
+
+const BLOCKED_STATUS: ReadonlySet<number> = new Set([401, 403, 429]);
+/**
+ * True for a p2o_http receipt whose final response was 401, 403 or 429, or that never produced a response (transport error). Everything else is unknown, never
+ * blocked: shell and network receipts carry no structured status, 2xx and 404 are answers, and a hop list at its cap of 6 hides the final response.
+ */
+export function receiptLooksBlocked(record: AssessmentRecord | undefined): boolean {
+  const data = record?.data;
+  if (!record || record.kind !== 'evidence' || !data || data.operation !== 'http') return false;
+  const raw = (data.http as { hops?: unknown } | undefined)?.hops, hops = Array.isArray(raw) ? raw.filter((hop): hop is string => typeof hop === 'string') : [];
+  if (hops.length >= 6) return false;
+  const status = hops.length ? /^(\d{3})\s/.exec(hops[hops.length - 1])?.[1] : undefined;
+  if (status) return BLOCKED_STATUS.has(Number(status));
+  return typeof data.exitCode === 'number' && data.exitCode !== 0;
+}
+/** Ruled-out items whose every cited receipt looks blocked. An item that cites nothing, or any receipt that is not an HTTP block, is left alone. */
+export function blockedNegatives(items: ReadonlyArray<{ id: string; refs: readonly string[] }>, byId: ReadonlyMap<string, AssessmentRecord>): string[] {
+  return items.filter(item => item.refs.length > 0 && item.refs.every(ref => receiptLooksBlocked(byId.get(ref)))).map(item => item.id);
+}
 
 export function finishPreflight(index: LedgerIndex, context: PreflightContext = {}): FinishPreflight {
   const tasks = taskFrontier(index), cases = caseViews(index, context.cases ?? {});
@@ -91,6 +112,14 @@ export function finishPreflight(index: LedgerIndex, context: PreflightContext = 
     if (view.acceptedFinding && view.finding === undefined) add('UNRATED_ACCEPTED_CASE', view.id);
     else if (view.acceptedFinding && view.ratingCurrent === false) add('STALE_RATING', view.id);
     if (view.acceptedFinding && view.finding && ['critical', 'high'].includes(view.finding.severity) && !view.independentCurrent && !view.finding.independenceWaiver) add('HIGH_WITHOUT_INDEPENDENCE', view.id);
+  }
+  if (context.integrity !== 'off') {
+    const ruledOut = [
+      ...index.records.filter(row => row.kind === 'candidate' && row.id && !replaced.has(row.id) && row.data?.closure === 'ruled_out')
+        .map(row => ({ id: row.id!, refs: [...strings(row.data?.negativeControls), ...strings(row.data?.evidenceRefs)] })),
+      ...cells.filter(cell => cell.assessment === 'ruled_out_bounded').map(cell => ({ id: cell.id, refs: [...cell.negativeControlRefs, ...cell.evidenceRefs] })),
+    ];
+    for (const id of blockedNegatives(ruledOut, index.byId)) add('NEGATIVE_MAY_BE_BLOCKED', id);
   }
   if (context.integrity !== 'off') for (const task of tasks) {
     if (!['reviewed', 'closed'].includes(task.status) || !task.reviewIntegrity) continue;
