@@ -273,6 +273,8 @@ no `p2o_*` names, solo < 5000 chars) and put workflow advice in per-tool guideli
 *Evidence:* Strix's `counterevidence.md` lists "control on a different path", "missing information" and "difficulty" as **invalid** reasons to rule a candidate out; ARTEX's G5 hook classifies 403/429/WAF/captcha results as *blocked*, not *ok*. p2o's rule is the same in prose (`prompts.ts:79`) but nothing mechanical checks it.
 *Change:* in case review / finish preflight, annotate (never reject) a `ruled_out` closure or a `ruled_out_bounded` cell whose every `negativeControls`/`evidenceRefs` receipt carries an HTTP status in {401, 403, 429} or a transport error; warning code e.g. `NEGATIVE_MAY_BE_BLOCKED`. Follows the existing `integrity: off | annotate | enforce` switch.
 *First check:* where the HTTP status lives in the receipt (`evidence.ts:47` stores `exitCode`, `input`, `target`; confirm HTTP status is in `data` before relying on it).
+*Checked 2026-10-21:* the receipt has no status field. For `p2o_http` the status is the first token of each `data.http.hops[]` string (`403 GET https://… → addr (public)`), and the list keeps only the first 6 hops; shell and network receipts carry no structured status at all.
+*Implemented 2026-10-21, uncommitted:* advisory preflight code `NEGATIVE_MAY_BE_BLOCKED`, off when `reviewIntegrity=off`, never blocking. It flags a `ruled_out` candidate or a `ruled_out_bounded` cell only when it cites receipts and **every** one is a `p2o_http` receipt whose last hop is 401/403/429, or that has no response and a non-zero exit. A 2xx or 404, a shell or net receipt, a missing receipt or a 6-hop list (final response hidden) leaves it alone. Pure helpers `receiptLooksBlocked` and `blockedNegatives` in `finish-preflight.ts`. Case review itself is untouched; the warning appears only in the finish preflight.
 *Effort S–M.*
 
 **U7. Canonical form for host/URL asset keys (measure first).**
@@ -287,6 +289,7 @@ no `p2o_*` names, solo < 5000 chars) and put workflow advice in per-tool guideli
 *Evidence:* ARTEX binds evidence with `role ∈ baseline | proof | verification | supporting` and an explicit order; the reporter must read the binding version before writing. p2o's `reproductionEvidenceRefs` is an unordered id list (≤5).
 *Change:* accept `{ref, role, note?}` entries (the plain-id form stays valid), keep the same-run check (`cases.ts:122`), and render the ordered steps in the report. Roles are labels for the reader, not proof levels.
 *Effort S–M.* Touches `case-types.ts`, `cases.ts`, `report-export.ts`; `rate` already writes a separate note so revision semantics are unaffected.
+*Implemented 2026-10-21, uncommitted, with one deviation:* the entries are a separate optional `reproductionSteps: [{ref, role, note?}]` (1–5, roles baseline/proof/verification/supporting, note ≤200) next to the unchanged `reproductionEvidenceRefs`, not a mixed string/object array, so the tool schema needs no union type that legacy provider projection can drop. Given steps, the id list is derived in step order; if both are sent they must match. `REPORT.md` numbers the steps with role and note, `findings.json` adds `role` and `note` to each reproduction entry, and a plain id list renders byte-for-byte as before.
 
 ### Tier C — need an owner decision before any code
 
@@ -331,7 +334,7 @@ no `p2o_*` names, solo < 5000 chars) and put workflow advice in per-tool guideli
 | 1 | U1, U2 | **Implemented, uncommitted (2026-10-21):** `--avoid` parser, worker-brief block, ledger record, dialog and REPORT.md lines, scope-denial wording. Vitest 599 passed / 12 skipped; no change without the flags. One Python test (`test_provenance_record_matches_review_snapshot`, R1) fails on a clean tree too: the local `my_references/strix` snapshot no longer matches the pinned hash |
 | 2 | U3 step 1, U7 step 1 | **Done 2026-10-21.** U3: shared prefix 85 of 5,966 chars today, 5,901 if the identity line moves; stop condition not met, effect unquantified. U7: 0 collisions in 130 assets, dropped |
 | 3 | U4, then U5 | **Done 2026-10-21, uncommitted.** U4 first, U5 reuses its derivation; packet-size tests hold (Vitest 603 passed / 12 skipped) |
-| 4 | U6, U8 | Confirm the receipt carries HTTP status (U6); keep the plain-id evidence form (U8) |
+| 4 | U6, U8 | **Done 2026-10-21, uncommitted.** U6: status is in `data.http.hops`, so only `p2o_http` receipts can be judged. U8: plain-id form unchanged. Vitest 610 passed / 12 skipped |
 | 5 | U9 doc part | Owner picks the flag shape |
 | later | U10, U11 | Owner decisions |
 
