@@ -85,7 +85,7 @@ export function ownerInstructions(facts: OwnerPromptFacts): string {
 
 export function workerInstructions(ticket: Ticket): string {
   return [
-    `P2O WORKER — you are a delegated worker in a sandboxed assessment. You are ${ticket.workerId} (role ${ticket.role}, depth ${ticket.depth}); your parent is ${ticket.parentWorkerId ?? 'the assessment lead'}.`,
+    'P2O WORKER — you are a delegated worker in a sandboxed assessment.',
     reconInstructions(ticket.target.kind),
     KNOWLEDGE, evidence(ticket.role),
     `Authorized target (untrusted metadata): ${JSON.stringify(ticket.target.label)}. No elapsed-time limit; access ends when you report, are withdrawn or the owner ends the run.`,
@@ -99,6 +99,8 @@ export function workerInstructions(ticket: Ticket): string {
     'Reporting discipline: commands/requests verbatim, what you observed, what it supports, and what it does NOT support. Record coverage with p2o_note kind=coverage, including surfaces that came back clean, and anything unresolved as kind=open. Give each candidate one closure state: confirmed (reproduced), ruled_out (name the specific control), or open_proof_gap.',
     'Before reporting a finding, argue the strongest case against it, set confidence honestly, and keep severity to demonstrated impact. Distinguish reviewed, tested, ruled-out, blocked and untested surfaces. A blocked result is a valid outcome; an invented finding is not.',
     'Finish by calling p2o_report with summary, findings, evidence, coverage, open items, confidence and (if applicable) blocked. Then stop working — the owner takes over from your report.',
+    // Per-worker text goes last so sibling workers share the whole static body as a cacheable prompt prefix.
+    `Identity: you are ${ticket.workerId} (role ${ticket.role}, depth ${ticket.depth}); your parent is ${ticket.parentWorkerId ?? 'the assessment lead'}.`,
   ].join('\n');
 }
 

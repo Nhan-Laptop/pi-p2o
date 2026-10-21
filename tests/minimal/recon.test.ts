@@ -47,11 +47,13 @@ describe('bounded recon contract', () => {
     expect(urlOwner.length).toBeLessThan(5000);
   });
 
+  // 2026-10-21 (planning_update.md U3): the per-worker identity line moved to the END of workerInstructions so siblings share the static body as a
+  // prompt prefix; the two instruction hashes below moved on purpose. The brief hashes are unchanged.
   // 2026-10-12 (planning_update.md P1.2): reconInstructions' tool-guidance-on branch now names p2o_surface for the surface-inventory step, so the
   // instruction hash moved on purpose; the brief hash is unaffected (workerBrief does not include reconInstructions text).
   it.each([
-    ['url', 'f9d43b2f303d65f367ac05bdb0ed1b816d6376523ec94fcbf4a96e9e00597744', 'e5f38a11c4965e093216143cc130012c49357182f85127cb5b951317ac2717af'],
-    ['directory', 'ebe8284516a70119b5abf340478c50b18e46ef170b6ec9541b4295b4a5438dab', '1ee913a605e1e14fe648bd8df189b2d0f518bd127d923a2f01bdedb4eebde53f'],
+    ['url', '98f73e33d3e7c250d1c4a5b6942dfb62d318ec42dd76e3e58f48ba9c4edec30c', 'e5f38a11c4965e093216143cc130012c49357182f85127cb5b951317ac2717af'],
+    ['directory', '481d62d3b1cf352be6550ba79f976e389621b957ef3deaf0ce0ab47de11f4ed0', '1ee913a605e1e14fe648bd8df189b2d0f518bd127d923a2f01bdedb4eebde53f'],
   ])('pins %s worker guidance for the Planner/frontier revision; historical acceptance artifacts are not rewritten', (kind, instructionHash, briefHash) => {
     const ticket = { workerId: 'worker-test', role: 'recon', runId: 'run-test', depth: 1, parentWorkerId: null,
       lifetime: 'until-stopped', target: { kind, label: kind === 'url' ? 'https://example.invalid' : '/target' }, commandBudget: 20 } as Ticket;
@@ -74,6 +76,16 @@ describe('bounded recon contract', () => {
     expect(brief).toContain('never widen scope');
     expect(brief.indexOf('OPERATOR CONSTRAINTS')).toBeLessThan(brief.indexOf('TASK:'));
     expect(brief.replace(/\n\nOPERATOR CONSTRAINTS[^\n]*\n(?:- [^\n]*\n)+/, '\n')).toBe(workerBrief(input));
+  });
+
+  it('keeps every per-worker value out of the shared prefix so sibling workers share the static body', () => {
+    const make = (workerId: string, role: string, depth: number, parentWorkerId: string | null) => ({ workerId, role, runId: 'run-test', depth, parentWorkerId,
+      lifetime: 'until-stopped', target: { kind: 'url', label: 'https://example.invalid' }, commandBudget: 20 }) as Ticket;
+    const a = workerInstructions(make('p2o-recon-aaaaaa', 'recon', 1, null)), b = workerInstructions(make('p2o-discovery-bbbbbb', 'discovery', 2, 'p2o-recon-aaaaaa'));
+    let shared = 0; while (shared < a.length && shared < b.length && a[shared] === b[shared]) shared += 1;
+    expect(shared / a.length).toBeGreaterThan(0.95);
+    expect(a.slice(shared)).toContain('recon-aaaaaa'); expect(a.slice(0, shared)).not.toContain('recon-aaaaaa');
+    expect(a.split('\n').at(-1)).toBe('Identity: you are p2o-recon-aaaaaa (role recon, depth 1); your parent is the assessment lead.');
   });
 
   it('gives every worker the recon handoff contract exactly once, in its system instructions', () => {
