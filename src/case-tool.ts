@@ -1,6 +1,6 @@
 import { Type } from 'typebox';
 import { choices } from './schema-kit.js';
-import { CASE_REVIEW_STATUSES, CASE_VERDICTS, FINDING_SEVERITIES, REMEDIATION_STATUSES } from './case-types.js';
+import { CASE_REVIEW_STATUSES, CASE_VERDICTS, FINDING_SEVERITIES, REMEDIATION_STATUSES, REPRODUCTION_ROLES } from './case-types.js';
 import { COVERAGE_ASSESSMENT, COVERAGE_EXECUTION, COVERAGE_PLAN_STATUS } from './coverage-types.js';
 const id=()=>Type.String({minLength:1,maxLength:80}),ids=()=>Type.Array(id(),{maxItems:10,uniqueItems:true}),key=(max=160)=>Type.String({minLength:1,maxLength:max});
 const taskRef=Type.Object({taskId:id(),revision:Type.Optional(Type.Integer({minimum:1}))},{additionalProperties:false});
@@ -16,7 +16,7 @@ export const caseEntrySchema=Type.Object({
 /** Rating of one case, supplied only with action=rate. The host validates every field (patterns, lengths, evidence IDs) and computes the CVSS score from the vector, so the schema stays short. */
 export const findingSchema=Type.Object({severity:choices(FINDING_SEVERITIES),basis:Type.String({maxLength:1000}),likelihood:Type.Optional(Type.String({maxLength:800})),impact:Type.Optional(Type.String({maxLength:800})),
   cvssVector:Type.Optional(Type.String()),cwe:Type.Optional(Type.Array(Type.String(),{maxItems:5})),remediationSteps:Type.Optional(Type.String({maxLength:2000})),
-  references:Type.Optional(Type.Array(Type.String(),{maxItems:5})),reproductionEvidenceRefs:Type.Optional(Type.Array(Type.String(),{maxItems:5})),independenceWaiver:Type.Optional(Type.String({maxLength:300}))},{additionalProperties:false});
+  references:Type.Optional(Type.Array(Type.String(),{maxItems:5})),reproductionEvidenceRefs:Type.Optional(Type.Array(Type.String(),{maxItems:5})),reproductionSteps:Type.Optional(Type.Array(Type.Object({ref:Type.String(),role:choices(REPRODUCTION_ROLES),note:Type.Optional(Type.String({maxLength:200}))},{additionalProperties:false}),{minItems:1,maxItems:5})),independenceWaiver:Type.Optional(Type.String({maxLength:300}))},{additionalProperties:false});
 export const CASE_ACTIONS=['create','revise','rate','list','view'] as const;
 /** Root object preserves fields through legacy provider projections. Host enforces action shape. */
 export const caseParameters=Type.Object({action:choices(CASE_ACTIONS),entry:Type.Optional(caseEntrySchema),finding:Type.Optional(findingSchema),id:Type.Optional(id()),revision:Type.Optional(Type.Integer({minimum:1})),requestId:Type.Optional(id()),cursor:Type.Optional(Type.Integer({minimum:0})),limit:Type.Optional(Type.Integer({minimum:1,maximum:100})),status:Type.Optional(choices(CASE_REVIEW_STATUSES))},{additionalProperties:false});

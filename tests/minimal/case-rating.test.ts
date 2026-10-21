@@ -36,6 +36,22 @@ describe('case rating', () => {
     const store = await h.reader(); try { expect(store.records().filter((row: any) => row.data?.caseRating).length).toBe(0); } finally { store.close(); }
   }));
 
+  it('accepts ordered reproduction steps with roles, keeps the plain id list valid, and refuses inconsistent or unknown steps (U8)', async () => fixture(async h => {
+    const built = await populate(h), second = (await h.call('p2o_shell', { command: 'printf second-step' })).details.evidenceId, first = built.observation.evidenceId;
+    const plain = (await rate(h, built, finding({ reproductionEvidenceRefs: [first, second] }))).details;
+    expect(plain.finding.reproductionEvidenceRefs).toEqual([first, second]); expect(plain.finding.reproductionSteps).toBeUndefined();
+    const steps = [{ ref: second, role: 'baseline', note: 'Control request without the session' }, { ref: first, role: 'proof' }];
+    const rated = (await rate(h, built, finding({ reproductionSteps: steps }))).details;
+    expect(rated.finding.reproductionSteps).toEqual(steps); expect(rated.finding.reproductionEvidenceRefs).toEqual([second, first]); // list order is the order to follow
+    expect((await rate(h, built, finding({ reproductionSteps: steps, reproductionEvidenceRefs: [second, first] }))).details.finding.reproductionSteps).toEqual(steps);
+    const reject = (value: unknown, pattern: RegExp) => expect(rate(h, built, value)).rejects.toThrow(pattern);
+    await reject(finding({ reproductionSteps: steps, reproductionEvidenceRefs: [first, second] }), /must match/);
+    await reject(finding({ reproductionSteps: [{ ref: first, role: 'winner' }] }), /role/); await reject(finding({ reproductionSteps: [{ ref: first, role: 'proof' }, { ref: first, role: 'baseline' }] }), /Duplicate/);
+    await reject(finding({ reproductionSteps: [] }), /reproduction steps/); await reject(finding({ reproductionSteps: [{ ref: first, role: 'proof', extra: 1 }] }), /step|unknown|exact/i);
+    await reject(finding({ reproductionSteps: [{ ref: 'evidence-that-does-not-exist', role: 'proof' }] }), /reproduction evidence/);
+    const store = await h.reader(); try { expect(store.records().filter((row: any) => row.data?.caseRating).length).toBe(3); } finally { store.close(); }
+  }));
+
   it('keeps a case that rests on an inferred policy basis at medium or below', async () => fixture(async h => {
     const built = await populate(h);
     const claim = (await h.call('p2o_candidate', { candidate: 'inferred-claim', surface: '/report-fixture', risk: 'authorization', closure: 'open_proof_gap', execution: 'not_tested', proof: 'static_trace', evidenceRefs: [], negativeControls: [], policyBasis: 'inferred', expectedPolicy: 'Policy inferred from names only', limitations: 'No declared policy was found for this fixture' })).details;

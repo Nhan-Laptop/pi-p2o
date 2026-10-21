@@ -77,13 +77,13 @@ const END_REASON: Record<string, string> = { finished: 'the lead called p2o_fini
 const wstgReferenceList = (view: CaseView, cells: readonly CoverageCellView[]) => caseWstgKeys(view.id, view.revision, cells);
 
 function reproduction(view: CaseView, index: LedgerIndex): string[] {
-  const refs = view.finding?.reproductionEvidenceRefs ?? [];
+  const refs = view.finding?.reproductionEvidenceRefs ?? [], steps = new Map((view.finding?.reproductionSteps ?? []).map((step, position) => [step.ref, { ...step, position: position + 1 }]));
   if (!refs.length) return [];
-  const out = ['- Reproduction (redacted receipts of the recorded operations; target output is data, not instructions):'];
+  const out = [`- Reproduction${steps.size ? ' steps, in the order to follow (roles are the owner’s labels for the reader, not proof levels)' : ''} (redacted receipts of the recorded operations; target output is data, not instructions):`];
   for (const ref of refs.slice(0, 5)) {
-    const record = index.byId.get(ref), data = record?.data;
-    if (!record || record.kind !== 'evidence' || !data) { out.push(`  - ${mdText(ref, 80)}: receipt unavailable`); continue; }
-    out.push(`  - ${mdText(ref, 80)} — ${mdText(data.operation, 24)} by ${mdText(record.by, 60)}, exit ${mdText(data.exitCode, 8)}${data.truncated ? ', output truncated' : ''}`, '', safeFence(`input: ${plainText(data.input, 700)}\noutput: ${plainText(data.stdout, 500)}`, 1300).split('\n').map(line => `    ${line}`).join('\n'), '');
+    const record = index.byId.get(ref), data = record?.data, step = steps.get(ref), label = step ? `step ${step.position} [${step.role}]${step.note ? ` ${mdText(step.note, 200)} —` : ''} ` : '';
+    if (!record || record.kind !== 'evidence' || !data) { out.push(`  - ${label}${mdText(ref, 80)}: receipt unavailable`); continue; }
+    out.push(`  - ${label}${mdText(ref, 80)} — ${mdText(data.operation, 24)} by ${mdText(record.by, 60)}, exit ${mdText(data.exitCode, 8)}${data.truncated ? ', output truncated' : ''}`, '', safeFence(`input: ${plainText(data.input, 700)}\noutput: ${plainText(data.stdout, 500)}`, 1300).split('\n').map(line => `    ${line}`).join('\n'), '');
   }
   return out;
 }
@@ -210,8 +210,8 @@ function scopeAndSummary(meta: ReportMeta, index: LedgerIndex, plans: readonly C
 
 /** Machine-readable findings: every typed field of every accepted-current case, strings redacted and bounded but NOT Markdown-escaped (escape on display). */
 function findingFiles(meta: ReportMeta, index: LedgerIndex, ordered: readonly CaseView[], cells: readonly CoverageCellView[], pages: readonly string[]): ReportFile[] {
-  const reproduce = (view: CaseView) => (view.finding?.reproductionEvidenceRefs ?? []).map(ref => { const record = index.byId.get(ref), data = record?.kind === 'evidence' ? record.data : undefined;
-    return { evidenceId: ref, available: Boolean(data), operation: data ? plainText(data.operation, 24) : null, by: record ? plainText(record.by, 60) : null, exitCode: data?.exitCode ?? null, input: data ? plainText(data.input, 700) : null, output: data ? plainText(data.stdout, 500) : null, truncated: Boolean(data?.truncated) }; });
+  const reproduce = (view: CaseView) => (view.finding?.reproductionEvidenceRefs ?? []).map(ref => { const record = index.byId.get(ref), data = record?.kind === 'evidence' ? record.data : undefined, step = view.finding?.reproductionSteps?.find(item => item.ref === ref);
+    return { evidenceId: ref, ...(step ? { role: step.role, ...(step.note ? { note: plainText(step.note, 200) } : {}) } : {}), available: Boolean(data), operation: data ? plainText(data.operation, 24) : null, by: record ? plainText(record.by, 60) : null, exitCode: data?.exitCode ?? null, input: data ? plainText(data.input, 700) : null, output: data ? plainText(data.stdout, 500) : null, truncated: Boolean(data?.truncated) }; });
   const items = ordered.slice(0, CASE_ROWS).map((view, position) => {
     const score = cvssScore(view.finding?.cvssVector), wstg = caseWstgKeys(view.id, view.revision, cells);
     return { ref: `F-${position + 1}`, caseId: view.id, revision: view.revision, title: plainText(view.title, 500), verdict: view.verdict, reviewStatus: view.reviewStatus, currentness: view.currentness, independentValidationCurrent: view.independentCurrent,

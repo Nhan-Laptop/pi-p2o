@@ -104,6 +104,24 @@ describe('report v2 content', () => {
     expect(report).toContain('printf bounded-report-observation'); expect(report).toContain('Independence waiver: Solo run');
   }));
 
+  it('prints reproduction steps in order with their roles and notes, in REPORT.md and findings.json, only when steps were recorded (U8)', async () => fixture(async h => {
+    const built = await populate(h), control = (await h.call('p2o_shell', { command: 'printf control-request' })).details.evidenceId, proof = built.observation.evidenceId;
+    await h.call('p2o_case', { action: 'rate', id: built.accepted.id, revision: built.accepted.revision, finding: finding({ reproductionSteps: [{ ref: control, role: 'baseline', note: 'Control without the session <b>x</b>' }, { ref: proof, role: 'proof' }], independenceWaiver: 'Solo run: no second actor was available' }) });
+    h.ctx.setConfirm(true); await h.command(`report export ${join(h.root, 'out')}`);
+    const files = await h.read(join(h.root, 'out')), report = files['REPORT.md'];
+    expect(report).toContain('Reproduction steps, in the order to follow (roles are the owner’s labels for the reader, not proof levels)');
+    expect(report.indexOf(`step 1 [baseline]`)).toBeGreaterThan(-1); expect(report.indexOf('step 1 [baseline]')).toBeLessThan(report.indexOf('step 2 [proof]'));
+    expect(report).toContain('Control without the session &lt;b&gt;x&lt;/b&gt;'); expect(report).not.toMatch(/(?<!\\)<b>x/);
+    const reproduction = JSON.parse(files['findings.json']).findings[0].reproduction;
+    expect(reproduction.map((item: any) => item.role)).toEqual(['baseline', 'proof']); expect(reproduction[0].note).toContain('Control without the session'); expect(reproduction[1].note).toBeUndefined();
+  }));
+  it('prints no step labels and no role keys for a plain id list', async () => fixture(async h => {
+    await rated(h); h.ctx.setConfirm(true); await h.command(`report export ${join(h.root, 'out')}`);
+    const files = await h.read(join(h.root, 'out'));
+    expect(files['REPORT.md']).not.toContain('step 1 ['); expect(files['REPORT.md']).toContain('- Reproduction (redacted receipts');
+    expect(JSON.parse(files['findings.json']).findings[0].reproduction[0]).not.toHaveProperty('role');
+  }));
+
   it('makes no hostile finding field active outside a fence, and keeps the fence longer than any backtick run inside it', async () => fixture(async h => {
     await rated(h); h.ctx.setConfirm(true); await h.command(`report export ${join(h.root, 'out')}`);
     const report = (await h.read(join(h.root, 'out')))['REPORT.md'], outside = outsideFences(report);

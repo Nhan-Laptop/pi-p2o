@@ -17,8 +17,11 @@ export interface CaseRemediation {status:typeof REMEDIATION_STATUSES[number];rea
  * CWE IDs and references are what the owner recorded, not looked up. A case resting on an `inferred` policy basis may not be rated above Medium.
  */
 export interface CaseFinding {
-  severity:typeof FINDING_SEVERITIES[number];basis:string;likelihood?:string;impact?:string;cvssVector?:string;cwe:string[];remediationSteps?:string;references:string[];reproductionEvidenceRefs:string[];independenceWaiver?:string;
+  severity:typeof FINDING_SEVERITIES[number];basis:string;likelihood?:string;impact?:string;cvssVector?:string;cwe:string[];remediationSteps?:string;references:string[];reproductionEvidenceRefs:string[];reproductionSteps?:ReproductionStep[];independenceWaiver?:string;
 }
+/** Reader-facing label and order for a reproduction receipt. A role is a label, never a proof level; list order is the order to follow. */
+export const REPRODUCTION_ROLES=['baseline','proof','verification','supporting'] as const;
+export interface ReproductionStep {ref:string;role:typeof REPRODUCTION_ROLES[number];note?:string}
 export interface CaseDraft {
   id?:string;title:string;policyKey:string;rootCauseKey?:string;hypothesis?:CaseHypothesisRef;
   assetRefs:CaseAssetRef[];claimRefs:string[];independentEvidenceRefs:string[];taskRefs:CaseTaskRef[];reportRefs:string[];
@@ -32,11 +35,20 @@ function taskRef(value:unknown,label:string,revisionRequired=false):CaseTaskRef{
 /** WSTG test keys (lower case, e.g. wstg-athn-02) or https URLs without credentials or fragments; recorded as text, never rendered as a link. */
 const REFERENCE=/^(?:wstg-[a-z]{4}-\d{2}|https:\/\/[a-z0-9.-]+\.[a-z]{2,}(?::\d{1,5})?(?:\/[A-Za-z0-9._~!$&'*+,;=:@%\/-]*)?(?:\?[A-Za-z0-9._~!$&'*+,;=:@%\/?-]*)?)$/;
 export function validateFinding(value:unknown):CaseFinding{
-  const row=plain(value,'case finding');exact(row,['severity','basis','likelihood','impact','cvssVector','cwe','remediationSteps','references','reproductionEvidenceRefs','independenceWaiver'],'Case finding');
+  const row=plain(value,'case finding');exact(row,['severity','basis','likelihood','impact','cvssVector','cwe','remediationSteps','references','reproductionEvidenceRefs','reproductionSteps','independenceWaiver'],'Case finding');
   if(typeof row.severity!=='string'||!(FINDING_SEVERITIES as readonly string[]).includes(row.severity))throw Error('Invalid case finding severity');
   const cwe=row.cwe===undefined?[]:row.cwe;if(!Array.isArray(cwe)||cwe.length>5||cwe.some(item=>typeof item!=='string'||!/^CWE-[1-9][0-9]{0,4}$/.test(item))||new Set(cwe).size!==cwe.length)throw Error('Invalid case finding CWE list');
   const references=row.references===undefined?[]:row.references;if(!Array.isArray(references)||references.length>5||references.some(item=>typeof item!=='string'||item.length>300||!REFERENCE.test(item))||new Set(references).size!==references.length)throw Error('Invalid case finding references');
   const result:CaseFinding={severity:row.severity as CaseFinding['severity'],basis:text(row.basis,'finding basis',1000,10),cwe:cwe as string[],references:references as string[],reproductionEvidenceRefs:row.reproductionEvidenceRefs===undefined?[]:ids(row.reproductionEvidenceRefs,'finding reproduction evidence',5)};
+  if(row.reproductionSteps!==undefined){
+    const steps=row.reproductionSteps;if(!Array.isArray(steps)||steps.length<1||steps.length>5)throw Error('Invalid case finding reproduction steps');
+    const parsed=steps.map((item):ReproductionStep=>{const step=plain(item,'finding reproduction step');exact(step,['ref','role','note'],'Finding reproduction step');
+      if(typeof step.role!=='string'||!(REPRODUCTION_ROLES as readonly string[]).includes(step.role))throw Error('Invalid case finding reproduction step role');
+      return {ref:id(step.ref,'finding reproduction step ref'),role:step.role as ReproductionStep['role'],...(step.note===undefined?{}:{note:text(step.note,'finding reproduction step note',200,3)})};});
+    if(new Set(parsed.map(step=>step.ref)).size!==parsed.length)throw Error('Duplicate case finding reproduction step ref');
+    if(row.reproductionEvidenceRefs!==undefined&&result.reproductionEvidenceRefs.join('\n')!==parsed.map(step=>step.ref).join('\n'))throw Error('Case finding reproductionEvidenceRefs must match reproductionSteps refs in order, or be omitted');
+    result.reproductionEvidenceRefs=parsed.map(step=>step.ref);result.reproductionSteps=parsed;
+  }
   if(row.likelihood!==undefined)result.likelihood=text(row.likelihood,'finding likelihood',800,5);if(row.impact!==undefined)result.impact=text(row.impact,'finding impact',800,5);
   if(row.cvssVector!==undefined){if(typeof row.cvssVector!=='string'||!CVSS_VECTOR.test(row.cvssVector))throw Error('Invalid case finding CVSS:3.1 vector');result.cvssVector=row.cvssVector;}
   if(row.remediationSteps!==undefined)result.remediationSteps=text(row.remediationSteps,'finding remediation steps',2000,10);

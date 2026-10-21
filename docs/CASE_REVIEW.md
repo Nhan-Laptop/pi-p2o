@@ -31,6 +31,7 @@ Worker/reporting không có `p2o_case`/`p2o_coverage`. Dữ liệu import/checkp
 
 **`rate`** ghi một note riêng (`data.caseRating`) gắn revision case đã nêu — không đổi verdict/revision và không làm stale coverage.
 `severity` ∈ critical/high/medium/low/informational (thang p2o, xem `skills/remediation/references/risk-rating-criteria.md`); `basis` bắt buộc;
+`reproductionEvidenceRefs` (≤5 id receipt cùng run) vẫn hợp lệ; thay bằng `reproductionSteps` `[{ref, role, note?}]` (1–5 bước, `role` ∈ baseline/proof/verification/supporting, `note` ≤200 ký tự) để ghi thứ tự cần làm theo và nhãn cho người đọc — vai trò chỉ là nhãn, không phải mức proof; nếu truyền cả hai thì danh sách id phải khớp thứ tự các bước. Report đánh số bước khi có `reproductionSteps`, không thì giữ nguyên.
 `cvssVector` tùy chọn, host tự tính điểm CVSS 3.1 (`src/cvss.ts`); CWE và references do owner ghi, host không tra MITRE. Case dựa policy `inferred`
 không rate trên Medium. Case đổi revision thì rating cũ bị báo `STALE_RATING` ở báo cáo/preflight. Mọi mutation bind action + input + revision vào request HMAC.
 
