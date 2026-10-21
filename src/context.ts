@@ -12,6 +12,11 @@ export interface ContextCursor {consumerId:string;throughSequence:number;gapThro
 export interface ContextItem extends KnowledgeHead {detail:Record<string,unknown>}
 export interface KnowledgeLink {recordId:string;relation:string;targetId:string}
 export interface KnowledgeIndexSnapshot {version:1;runId:string;asOfSequence:number;heads:KnowledgeIndexHead[];links:KnowledgeLink[];cursors:ContextCursor[];authorityRestored:false}
+export interface ContextBacklog {
+  unplannedAssets?:{total:number;ids:string[]};
+  cellsNotRun?:{total:number;ids:string[]};
+  wstgSuggestions?:{total:number;features:string[]};
+}
 export interface ContextPacket {
   version:1;runId:string;consumerId:string;role:'planner'|'worker'|'reporting';taskId?:string;asOfSequence:number;
   cursorBefore:{throughSequence:number;gapThrough:number;reviewThrough:number};cursorAfter:{throughSequence:number;gapThrough:number;reviewThrough:number};
@@ -19,6 +24,8 @@ export interface ContextPacket {
   changes:Array<{sequence:number;kind:string;actorId:string;taskId?:string;entityId?:string;summary:string;payloadRefs:string[]}>;
   attention:ContextItem[];newGaps:ContextItem[];newReviews:ContextItem[];relevant:ContextItem[];
   omissions:{changes:number;attention:number;newGaps:number;newReviews:number;relevant:number};
+  /** Planner only, present only when something is waiting: pointers (IDs and counts), never a score, a task or a dispatch. */
+  backlog?:ContextBacklog;
   retrieval:{headsCursor:number;eventCursor:number;commands:string[]};warning:string;packetSha256:string;encodedBytes:number;
 }
 

@@ -84,6 +84,26 @@ describe('indexed knowledge context delivery, not proof or authority',()=>{
       expect(replayKnowledgeIndex(snapshot,store.events({since:checkpoint.asOfSequence,limit:100}).rows,id=>store.record(id))).toEqual(store.knowledgeIndex());
     }finally{unbind();}
   }));
+  it('adds a planner-only backlog of pointers (assets with no live cell, cells nobody ran, WSTG suggestions) and leaves a packet without one unchanged',async()=>fixture(async(store,root)=>{
+    const path=join(root,'alias.sqlite'),unbind=bindAssessmentStore(path,store);try{
+      const before=store.contextPacket({consumerId:'planner',role:'planner'});expect(before).not.toHaveProperty('backlog');
+      const ids=store.recordGraph({assets:[...Array.from({length:7},(_,i)=>({asset:{kind:'endpoint' as const,key:`GET /backlog-${i}`,...(i===0?{attributes:{feature:'login, jwt'}}:{})}}))]}).map(ack=>ack.entityId);
+      const packet=store.contextPacket({consumerId:'planner',role:'planner'});
+      expect(packet.backlog?.unplannedAssets).toEqual({total:7,ids:ids.slice(0,5)});expect(packet.backlog?.cellsNotRun).toBeUndefined();expect(packet.backlog?.wstgSuggestions?.features).toEqual(['login','jwt']);expect(packet.backlog?.wstgSuggestions?.total).toBeGreaterThan(0);
+      expect(store.contextPacket({consumerId:'worker-one',role:'worker',taskId:'task-x'})).not.toHaveProperty('backlog');expect(store.contextPacket({consumerId:'reporter-one',role:'reporting',taskId:'task-x'})).not.toHaveProperty('backlog');
+      const context={assetRevision:(id:string)=>store.assetRevision(id),assertionRevision:(id:string)=>store.assertionRevision(id)},coverage=new CoverageBoard(manifest.runId,path,()=>true,{...context,targetRevision:()=>store.graphScope(),assetIds:()=>store.assetEntityIds()});
+      const plan=await coverage.createPlan({title:'Backlog denominator',status:'active',reason:'Explicit inert denominator',exclusions:[],unknownScope:['fixture only']});
+      let revision=plan.revision;const cell=async (asset:string,questionKey:string,execution:'planned')=>{const added=await coverage.addCell(plan.id,revision,{assetRef:{id:asset,revision:1},questionKey,actorContext:'actor:x',tenantContext:'tenant:x',methodFamily:'offline-observation',execution,assessment:'unreviewed',taskRefs:[],claimRefs:[],caseRefs:[],evidenceRefs:[],negativeControlRefs:[],gapRefs:[],reason:'Inert backlog fixture cell',limitations:'Fixture only'});revision=added.plan.revision;return added;};
+      const planned=await cell(ids[0],'wstg-athn-02','planned');
+      const next=store.contextPacket({consumerId:'planner',role:'planner'});
+      expect(next.backlog?.unplannedAssets).toEqual({total:6,ids:ids.slice(1,6)});expect(next.backlog?.cellsNotRun).toEqual({total:1,ids:[planned.cell.id]});
+      expect(next.backlog?.wstgSuggestions?.total).toBeLessThanOrEqual(packet.backlog!.wstgSuggestions!.total);
+      const tiny=store.contextPacket({consumerId:'planner',role:'planner',maxBytes:4096});expect(tiny.encodedBytes).toBeLessThanOrEqual(4096);expect(tiny.backlog?.unplannedAssets?.total).toBe(6);
+      expect(Buffer.byteLength(JSON.stringify(next.backlog))).toBeLessThan(900);
+      for(const [i,asset] of ids.entries())if(i>0)await cell(asset,`question:${i}`,'planned');
+      const done=store.contextPacket({consumerId:'planner',role:'planner'});expect(done.backlog?.unplannedAssets).toBeUndefined();expect(done.backlog?.cellsNotRun?.total).toBe(7);
+    }finally{unbind();}
+  }));
   it('rebuilds the same deterministic hot index/cursors from a checkpoint plus contiguous canonical event tail',async()=>fixture(async(store)=>{
     store.commitRecords([record('gap','open'),task('task-replay')]);store.acknowledgeContext(store.contextPacket({consumerId:'planner',role:'planner'}));const checkpoint=store.checkpoint('Knowledge index barrier fixture'),snapshot=store.inspectCheckpoint(checkpoint.id).snapshot!;
     expect(snapshot.knowledge?.authorityRestored).toBe(false);expect(checkpoint.knowledge).toMatchObject({version:1,heads:2,cursors:1});

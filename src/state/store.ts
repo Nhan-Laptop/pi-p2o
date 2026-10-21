@@ -18,7 +18,8 @@ import { validateCoverageCellDraft, validateStoredCoverageCell, validateStoredCo
 import { caseViews, needsCaseReview, type CaseContext } from '../cases.js';
 import { awaitingReview } from '../tasks.js';
 import { coverageViews, type CoverageContext } from '../coverage.js';
-import { describeKnowledgeRecord, KNOWLEDGE_DOMAINS, type KnowledgeIndexSnapshot, type ContextCursor, type ContextItem, type ContextPacket, type KnowledgeDomain, type KnowledgePage } from '../context.js';
+import { featuresFromAttributeValues, isWstgKey, wstgSuggest } from '../wstg-map.js';
+import { describeKnowledgeRecord, KNOWLEDGE_DOMAINS, type ContextBacklog, type KnowledgeIndexSnapshot, type ContextCursor, type ContextItem, type ContextPacket, type KnowledgeDomain, type KnowledgePage } from '../context.js';
 import { anchorEntityId, assetEntityId, assertionEntityId, graphEntityId, relationEntityId, renderGraph, scopeOf, validateAnchor, validateAsset, validateFact, validateHypothesis, validateRelation,
   graphCanonical, graphObject, validateGraphBatch, GRAPH_IDENTITY_VERSION, GRAPH_ROW_BYTES, GRAPH_RESPONSE_BYTES, GRAPH_ENTITY_LIMIT, GRAPH_ASSERTION_LIMIT, GRAPH_RELATION_LIMIT, GRAPH_ANCHOR_ROWS, GRAPH_PROVENANCE_LIMIT,
   type AnchorInput, type GraphAck, type GraphBatch, type GraphProducer, type GraphRow, type GraphTable, type GraphSnapshot, type GraphObservation } from './graph.js';
@@ -466,8 +467,9 @@ export class AssessmentStore {
     if(options.role==='worker'&&options.taskId){relevantWhere=`(h.domain='task' AND h.entity_id=?) OR h.actor_id=? OR h.record_id IN (SELECT l.record_id FROM knowledge_links l WHERE l.target_id=?) OR h.entity_id IN (SELECT l.target_id FROM knowledge_links l JOIN knowledge_heads t ON t.record_id=l.record_id WHERE t.domain='task' AND t.entity_id=?) OR h.record_id IN (SELECT l.target_id FROM knowledge_links l JOIN knowledge_heads t ON t.record_id=l.record_id WHERE t.domain='task' AND t.entity_id=?)`;relevantParams=[options.taskId,options.consumerId,options.taskId,options.taskId,options.taskId];}
     else {const domains=options.role==='reporting'?"'case','coverage-plan','coverage-cell','report','gap'":"'goal','todo','decision','task','case','coverage-plan','coverage-cell','candidate','gap','phase'";relevantWhere=`h.domain IN (${domains})`;}
     const relevantAll=queryItems(`SELECT h.* FROM knowledge_heads h WHERE ${relevantWhere} ORDER BY CASE WHEN status IN ('stale','pending','disputed','reported','blocked','open') THEN 0 ELSE 1 END,h.sequence DESC LIMIT 20`,...relevantParams),relevantTotal=Number(this.db.prepare(`SELECT count(*) AS n FROM knowledge_heads h WHERE ${relevantWhere}`).get(...relevantParams)!.n),relevant=relevantAll,omissions={changes:Math.max(0,eventsAfter-changes.length),attention:Math.max(0,openGaps+pendingReviews-attention.length),newGaps:Math.max(0,openGaps-newGaps.length),newReviews:Math.max(0,pendingReviews-newReviews.length),relevant:Math.max(0,relevantTotal-relevant.length)};
-    const packetBase={version:1 as const,runId:this.manifest().runId,consumerId:options.consumerId,role:options.role,...(options.taskId?{taskId:options.taskId}:{}),asOfSequence:barrier,cursorBefore:before,cursorAfter:{throughSequence:omissions.changes?changes.at(-1)?.sequence??before.throughSequence:barrier,gapThrough:newGaps.at(-1)?.sequence??0,reviewThrough:newReviews.at(-1)?.sequence??0},counts:{heads:headCount,coldRecords:Math.max(0,recordCount-headCount),openGaps,pendingReviews,eventsAfterCursor:eventsAfter},changes,attention,newGaps,newReviews,relevant,omissions,retrieval:{headsCursor:0,eventCursor:before.throughSequence,commands:['p2o_state action=heads domain/status/cursor/limit','p2o_ledger by exact record ID','p2o_graph by asset ID','p2o_case/p2o_coverage view by ID']},warning:'Indexed navigation packet only; omissions/counts are explicit. Knowledge never grants scope, restores authority, proves a finding or completes a goal.'};
-    const arrays=['relevant','changes','newReviews','attention','newGaps'] as const,budget=maxBytes-160;let encoded=Buffer.byteLength(JSON.stringify(packetBase));for(const key of arrays)while(encoded>budget&&packetBase[key].length){packetBase[key].pop();packetBase.omissions[key==='changes'?'changes':key]=(packetBase.omissions[key==='changes'?'changes':key]??0)+1;if(key==='changes')packetBase.cursorAfter.throughSequence=packetBase.changes.at(-1)?.sequence??before.throughSequence;if(key==='newReviews')packetBase.cursorAfter.reviewThrough=packetBase.newReviews.at(-1)?.sequence??before.reviewThrough;if(key==='newGaps')packetBase.cursorAfter.gapThrough=packetBase.newGaps.at(-1)?.sequence??before.gapThrough;encoded=Buffer.byteLength(JSON.stringify(packetBase));}
+    const backlog=options.role==='planner'?this.contextBacklog():undefined;
+    const packetBase={version:1 as const,runId:this.manifest().runId,consumerId:options.consumerId,role:options.role,...(options.taskId?{taskId:options.taskId}:{}),asOfSequence:barrier,cursorBefore:before,cursorAfter:{throughSequence:omissions.changes?changes.at(-1)?.sequence??before.throughSequence:barrier,gapThrough:newGaps.at(-1)?.sequence??0,reviewThrough:newReviews.at(-1)?.sequence??0},counts:{heads:headCount,coldRecords:Math.max(0,recordCount-headCount),openGaps,pendingReviews,eventsAfterCursor:eventsAfter},changes,attention,newGaps,newReviews,relevant,omissions,...(backlog?{backlog}:{}),retrieval:{headsCursor:0,eventCursor:before.throughSequence,commands:['p2o_state action=heads domain/status/cursor/limit','p2o_ledger by exact record ID','p2o_graph by asset ID','p2o_case/p2o_coverage view by ID']},warning:'Indexed navigation packet only; omissions/counts are explicit. Knowledge never grants scope, restores authority, proves a finding or completes a goal.'};
+    const arrays=['relevant','changes','newReviews','attention','newGaps'] as const,budget=maxBytes-160;let encoded=Buffer.byteLength(JSON.stringify(packetBase));if(encoded>budget&&packetBase.backlog){for(const part of [packetBase.backlog.unplannedAssets,packetBase.backlog.cellsNotRun])if(part)part.ids=[];encoded=Buffer.byteLength(JSON.stringify(packetBase));}for(const key of arrays)while(encoded>budget&&packetBase[key].length){packetBase[key].pop();packetBase.omissions[key==='changes'?'changes':key]=(packetBase.omissions[key==='changes'?'changes':key]??0)+1;if(key==='changes')packetBase.cursorAfter.throughSequence=packetBase.changes.at(-1)?.sequence??before.throughSequence;if(key==='newReviews')packetBase.cursorAfter.reviewThrough=packetBase.newReviews.at(-1)?.sequence??before.reviewThrough;if(key==='newGaps')packetBase.cursorAfter.gapThrough=packetBase.newGaps.at(-1)?.sequence??before.gapThrough;encoded=Buffer.byteLength(JSON.stringify(packetBase));}
     if(encoded>budget)throw Error('Context packet minimum safety sections exceed configured bound');const packetSha256=sha(graphCanonical(packetBase)),packet={...packetBase,packetSha256,encodedBytes:0};
     for(let i=0;i<3;i++)packet.encodedBytes=Buffer.byteLength(JSON.stringify(packet));
     if(Buffer.byteLength(JSON.stringify(packet))!==packet.encodedBytes||packet.encodedBytes>maxBytes)throw Error('Context packet encoded bound exceeded');return packet;
@@ -629,6 +631,39 @@ export class AssessmentStore {
   /** Same-run assertion head lookup for revision-pinned case hypotheses; knowledge only. */
   assertionRevision(entityId:string):number|undefined {
     this.gate();if(!/^assertion-[a-f0-9]{24}$/.test(entityId))throw Error('Invalid case hypothesis ID');return this.graphHead('assertions',entityId)?.revision;
+  }
+  /** Values of the `feature` attribute on current asset heads in this run's scope (recon features for the WSTG planning aid); read-only, bounded. */
+  recordedFeatureValues(limit = 500): string[] {
+    this.gate();
+    return this.db.prepare(`SELECT json_extract(a.body,'$.attributes.feature') AS value FROM assets a WHERE a.scope=? AND a.sequence=(SELECT MAX(b.sequence) FROM assets b WHERE b.entity_id=a.entity_id) AND json_type(a.body,'$.attributes.feature')='text' ORDER BY a.sequence LIMIT ?`)
+      .all(this.graphScope(), limit).map(row => String(row.value));
+  }
+  /**
+   * Planner-only pointers for an empty or stalled frontier (U5): current graph assets with no live coverage cell, declared cells nobody has run, and how many
+   * WSTG tests the recorded features suggest. Read-only SQL over indexed heads; omitted when all are empty, so a packet without a backlog is unchanged.
+   */
+  private contextBacklog(limit = 5): ContextBacklog | undefined {
+    const scope = this.graphScope(), assetHeads = `SELECT a.entity_id AS id, a.sequence AS sequence FROM assets a WHERE a.scope=? AND a.sequence=(SELECT MAX(b.sequence) FROM assets b WHERE b.entity_id=a.entity_id)`;
+    const liveCellAssets = `SELECT l.target_id FROM knowledge_links l JOIN knowledge_heads h ON h.record_id=l.record_id WHERE h.domain='coverage-cell' AND h.status<>'retired' AND l.relation='asset'`;
+    const unplanned = Number(this.db.prepare(`SELECT count(*) AS n FROM (${assetHeads}) WHERE id NOT IN (${liveCellAssets})`).get(scope)!.n);
+    const notRunWhere = `domain='coverage-cell' AND (status LIKE 'unplanned/%' OR status LIKE 'planned/%')`;
+    const notRun = Number(this.db.prepare(`SELECT count(*) AS n FROM knowledge_heads WHERE ${notRunWhere}`).get()!.n);
+    const features = featuresFromAttributeValues(this.recordedFeatureValues()).features;
+    let suggested = 0;
+    if (features.length) {
+      const covered = new Set<string>();
+      for (const row of this.db.prepare(`SELECT record_id FROM knowledge_heads WHERE domain='coverage-cell' AND status<>'retired' LIMIT 2000`).all()) {
+        const key = (this.record(String(row.record_id))?.data?.coverageCell as { questionKey?: unknown } | undefined)?.questionKey;
+        if (typeof key === 'string' && isWstgKey(key)) covered.add(key);
+      }
+      suggested = wstgSuggest(features, { covered, limit: 1 }).matched;
+    }
+    if (!unplanned && !notRun && !suggested) return undefined;
+    return {
+      ...(unplanned ? { unplannedAssets: { total: unplanned, ids: this.db.prepare(`SELECT id FROM (${assetHeads}) WHERE id NOT IN (${liveCellAssets}) ORDER BY sequence LIMIT ?`).all(scope, limit).map(row => String(row.id)) } } : {}),
+      ...(notRun ? { cellsNotRun: { total: notRun, ids: this.db.prepare(`SELECT entity_id FROM knowledge_heads WHERE ${notRunWhere} ORDER BY sequence LIMIT ?`).all(limit).map(row => String(row.entity_id)) } } : {}),
+      ...(suggested ? { wstgSuggestions: { total: suggested, features } } : {}),
+    };
   }
   /** Current same-run graph asset identities for explicit coverage denominator comparison. */
   assetEntityIds():string[]{

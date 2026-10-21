@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { WSTG_FEATURES, WSTG_MAP, wstgKey, wstgSuggest } from '../../src/wstg-map.js';
+import { WSTG_FEATURES, WSTG_MAP, featuresFromAttributeValues, wstgKey, wstgSuggest } from '../../src/wstg-map.js';
 import { fixture, populate } from './helpers/report-fixture.js';
 
 /** P6a: a read-only planning aid over the shipped WSTG map. Hermetic: no model, no target, no write. */
@@ -37,5 +37,28 @@ describe('p2o_coverage suggest', () => {
     await expect(h.call('p2o_coverage', { action: 'suggest', modes: 'XYZ' })).rejects.toThrow(/modes/);
     await expect(h.call('p2o_coverage', { action: 'suggest', limit: 99 })).rejects.toThrow(/limit/);
     expect((await h.call('p2o_coverage', { action: 'suggest' })).details.features).toEqual(['any']);
+  }));
+});
+
+describe('recon features derived from the graph (U4)', () => {
+  it('reads only known feature words from attribute values, in map order, and reports the rest', () => {
+    expect(featuresFromAttributeValues(['Login, JWT', 'client-js; client-js', 'any', 'telepathy  login|api'])).toEqual({ features: ['login', 'jwt', 'client-js', 'api'], ignored: ['telepathy'] });
+    expect(featuresFromAttributeValues([])).toEqual({ features: [], ignored: [] });
+    expect(featuresFromAttributeValues(['x1', 'x2', 'x3', 'x4', 'x5', 'x6', 'x7', 'x8', 'x9', 'x10', 'x11']).ignored).toHaveLength(10);
+  });
+  it('uses the feature attributes of current assets when the call names none, lets an explicit list win, and drops a feature once its asset is revised away', async () => fixture(async h => {
+    await h.command('--target ./source --solo');
+    const suggest = async (extra: Record<string, unknown> = {}) => (await h.call('p2o_coverage', { action: 'suggest', limit: 50, ...extra })).details;
+    expect(await suggest()).toMatchObject({ features: ['any'], featureSource: 'default' });
+    const baseline = (await suggest()).matched;
+    await (h.call('p2o_graph', { action: 'record', batch: { assets: [{ asset: { kind: 'endpoint', key: 'POST /session', attributes: { feature: 'Login, jwt' } } }, { asset: { kind: 'endpoint', key: 'GET /app.js', attributes: { feature: 'client-js telepathy', status: '200' } } }] } }));
+    const derived = await suggest();
+    expect(derived).toMatchObject({ features: ['login', 'jwt', 'client-js'], featureSource: 'graph', ignoredFeatureWords: ['telepathy'] });
+    expect(derived.matched).toBeGreaterThan(baseline);
+    expect(derived.suggestions.map((item: any) => item.key)).toEqual(expect.arrayContaining(WSTG_MAP.filter(test => test.trigger.includes('login')).slice(0, 3).map(test => wstgKey(test.id))));
+    expect(await suggest({ features: ['api'] })).toMatchObject({ features: ['api'], featureSource: 'explicit' });
+    expect((await suggest({ features: ['api'] })).ignoredFeatureWords).toBeUndefined();
+    await h.call('p2o_graph', { action: 'record', batch: { assets: [{ asset: { kind: 'endpoint', key: 'POST /session', attributes: { status: '200' }, expectedRevision: 1 } }, { asset: { kind: 'endpoint', key: 'GET /app.js', attributes: { status: '200' }, expectedRevision: 1 } }] } });
+    expect(await suggest()).toMatchObject({ features: ['any'], featureSource: 'default', matched: baseline });
   }));
 });

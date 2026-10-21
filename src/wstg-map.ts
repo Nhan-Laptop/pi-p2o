@@ -416,6 +416,19 @@ export function wstgPageUrl(id: string, paths: readonly string[]): string | unde
   return found ? `https://github.com/OWASP/wstg/blob/${WSTG_COMMIT}/document/4-Web_Application_Security_Testing/${found.slice(PAGE_ROOT.length)}` : undefined;
 }
 
+/**
+ * Recon features recorded in the graph: values of the asset attribute `feature` (separators: whitespace , ; |), matched case-insensitively against WSTG_FEATURES.
+ * `any` is never derived (it always matches already). Unknown words are returned in `ignored` (at most 10) so the caller can show what was not understood.
+ */
+export function featuresFromAttributeValues(values: readonly string[]): { features: string[]; ignored: string[] } {
+  const seen = new Set<string>(), ignored = new Set<string>();
+  for (const value of values) for (const token of value.toLowerCase().split(/[\s,;|]+/)) {
+    if (!token || token === 'any') continue;
+    if ((WSTG_FEATURES as readonly string[]).includes(token)) seen.add(token); else if (ignored.size < 10) ignored.add(token);
+  }
+  return { features: WSTG_FEATURES.filter(feature => seen.has(feature)), ignored: [...ignored] };
+}
+
 export interface WstgSuggestion { key: string; title: string; support: WstgSupport; flags: string; owner: string; card: string; phase: WstgTest['phase'] }
 /**
  * Planning aid: the in-scope tests whose trigger matches one of the recon features the caller names (`any` always matches) and that have no live cell yet,

@@ -11,6 +11,7 @@ Schema 7. Đã push và cài; toàn K0–K7 vẫn mở. Bản chi tiết (kể c
 - **Packet request-local** (Planner ≤12 KiB, Worker/reporting ≤8 KiB, digest cho người ≤16 KiB): run/role/task, sequence barrier, số đếm chính xác,
   shown/omitted, ID để truy xuất, thay đổi, attention, các trang gap/review xoay vòng và hàng relevance. Mỗi request thay packet cũ (không append, không sửa system prompt/tools,
   không tạo model turn hay retry). Hash chỉ nhận diện bytes, không chứng minh model hiểu.
+- **`backlog` (chỉ packet Planner, chỉ khi có gì đang chờ):** con trỏ để chọn việc khi frontier cạn — `unplannedAssets` (tài sản hiện hành chưa có cell coverage sống), `cellsNotRun` (cell đã khai báo `planned/unplanned` nhưng chưa chạy) và `wstgSuggestions` (số test WSTG khớp feature đã ghi, xem `docs/WSTG_MAP.md`). Chỉ có `total` và tối đa 5 ID mỗi mục; không điểm số, không task, không dispatch — Planner vẫn tự quyết, kể cả `blocked`. Khi packet vượt ngưỡng, ID bị bỏ trước mọi mục khác, `total` giữ nguyên. Không có gì chờ thì không có khóa `backlog` và packet không đổi một byte.
 - **Delivery cursor** chỉ được ACK ở assistant `message_end` thành công (không ở `agent_start`): ghi `context.consumed` + cursor + kết quả request trong một transaction;
   ACK stale/forged/aborted/revoked không làm cursor tiến. ACK là biên nhận giao, không phải review.
 
