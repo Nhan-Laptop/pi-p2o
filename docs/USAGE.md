@@ -8,6 +8,7 @@ Cài: `pi install https://github.com/Nhan-Laptop/pi-p2o` rồi `/reload`. Bật 
 /p2o --target ./source --workers 2
 /p2o --target ./source --loop event-driven --executors isolated --target-ops 2
 /p2o --target ./source --goal "Kiểm tra authorization của API đơn hàng"
+/p2o --target ./source --origin https://staging.example.com
 
 /p2o pause
 /p2o resume
@@ -19,6 +20,7 @@ worker hay model turn nào. Delegated: Pi hiện tại là Planner, **không** c
 
 - **Source**: bản sao regular-file ở `/target` (read-only, ≤64 MiB / 20.000 entry; bỏ symlink, file đặc biệt, `.git`, `node_modules`), `/work` là scratch ghi được. Lệnh chạy qua `p2o_shell`, không bao giờ qua shell của host.
 - **Web**: `p2o_http` gửi mọi method/header/cookie/body tới đúng origin đã xác nhận, ghim IP từng hop, dừng trước redirect ra ngoài origin; `p2o_net` chạy lệnh mạng trong cùng container (egress thật, không phải firewall). URL GitHub **không** được clone. Chi tiết: [HTTP_TRANSPORT](HTTP_TRANSPORT.md).
+- **Hybrid** (`--target <thư mục> --origin <http(s)-URL>`): source snapshot và đúng 1 deployed origin được xác nhận cùng lúc, chia sẻ một graph/scope/report duy nhất. Hai nguồn bằng chứng của một hệ thống, không phải một; một phát hiện ở source không phải chứng minh nó tồn tại ở deployment cho tới khi một probe sống xác nhận, và ngược lại. Không nguồn nào nới scope của nguồn khác: sandbox vẫn chỉ đọc `/target`, `p2o_http` vẫn chỉ mở cho đúng origin đã xác nhận.
 - Lead gọi `p2o_finish` trước báo cáo: nó từ chối tới khi mọi worker đã report hoặc bị rút, rồi xóa sandbox, xác minh container đã gỡ và báo số pane Herdr đã đóng. `/p2o stop` làm tay cùng đường đó.
 
 ## Các option khi start
@@ -28,6 +30,7 @@ worker hay model turn nào. Delegated: Pi hiện tại là Planner, **không** c
 | Option | Mặc định | Giá trị hợp lệ | Ghi chú |
 |---|---|---|---|
 | `--target <path-or-url>` | bắt buộc | thư mục local hoặc URL HTTP(S), ≤4096 ký tự | đặt trước các option khác; quote đường dẫn có dấu cách |
+| `--origin <http(s)-URL>` | không | 1 URL http(s), ≤2048 ký tự, không khoảng trắng/ký tự điều khiển, chỉ truyền 1 lần | chỉ đi cùng `--target <thư mục>`; kết hợp thành target **hybrid** (source + đúng 1 origin đã xác nhận) chia sẻ một graph/scope/report; không đi cùng `--target` dạng URL |
 | `--workers N` | 3 | 1…`MAX_SAFE` | trần worker đồng thời, không phải tổng assignment; tắt delegation bằng `--solo` hoặc `--max-depth 0` |
 | `--loop MODE` | `manual` | `manual` \| `event-driven` | event-driven cần Herdr và consent lúc start |
 | `--executors MODE` | `shared` | `shared` \| `isolated` | shared tuần tự; isolated tách sandbox theo assignment |
@@ -99,18 +102,15 @@ Merge vào file hiện có, không ghi đè phần khác. Precedence: **CLI cho 
 
 ```text
 /p2o status
-/p2o dashboard [overview|workers|tasks|coverage|cases|log]
-/p2o tasks [all|live|awaiting-review|blocked|done] [cursor]
-/p2o task <task-id>
 /p2o log [cursor] [task=<id>] [actor=<id>] [operation=<id>]
 /p2o report
 /p2o search <text> [cursor=N]
 ```
 
-- `status`: đếm task, review/blocker, profile loop/executor, allowance, retention, bảng worker, dòng `Runtime: p2o <version> · <12 hex>` (digest entry file **và** `src/**`), `Planner context` (từ Pi, chỉ đo, p2o không tự compact) và **model usage** theo role (chỉ hiển thị: không có trần/retry nào dựa trên nó; message không có usage được đếm là *unknown*, không phải 0).
-- `dashboard`: màn hình đa tab (Overview/Workers/Tasks/Coverage/Cases/Log, phím số 1-6 hoặc ←→, ↑↓/PageUp/PageDown cuộn, `r` vẽ lại, Esc/q đóng) dựng từ đúng một lần quét ledger mà `status`/widget đã dùng — mở thêm tab không quét ledger lần hai. Cập nhật sống khi còn mở (planning_update.md P2); trong RPC trả text cho tab đang chọn, không mở màn hình (P3). Phím tắt **F2** bật/tắt một overlay cùng nội dung nhưng không giữ phím (non-capturing): overlay vẫn hiện trong khi gõ `/p2o hold` hay lệnh khác ở editor (P5, thực nghiệm).
-- `tasks`/`log` 20 mục/trang; cursor là vị trí trong snapshot hoặc sequence đã commit (`log 0` duyệt từ đầu; không cursor xem đuôi; bộ lọc `task=`/`actor=`/`operation=` mang theo qua `Next:`). `done` chỉ nghĩa task đã đóng, không phải finding đã verified.
+- `status`: đếm task, review/blocker, profile loop/executor, allowance, retention, bảng worker, dòng `Runtime: p2o <version> · <12 hex>` (digest entry file **và** `src/**`), `Planner context` (từ Pi, chỉ đo, p2o không tự compact) và **model usage** theo role (chỉ hiển thị: không có trần/retry nào dựa trên nó; message không có usage được đếm là *unknown*, không phải 0). TUI có widget 3 dòng gọn (`p2o-progress`) cập nhật sống ngoài lệnh này.
+- `log` 20 mục/trang; cursor là vị trí trong snapshot hoặc sequence đã commit (`log 0` duyệt từ đầu; không cursor xem đuôi; bộ lọc `task=`/`actor=`/`operation=` mang theo qua `Next:`).
 - `report` là index các handoff/claim; không tự viết kết luận hay nâng proof. TUI có widget gọn và màn hình cuộn (↑↓/PageUp/PageDown, Esc/q); RPC nhận text.
+- Task/plan/phase/finding/coverage-cell list+detail (từng có các lệnh riêng `tasks`/`task`/`plans`/`plan`/`phases`/`phase`/`findings`/`finding`/`coverage`/`coverage-cell`) nay gộp vào cơ chế chung bên dưới: `/p2o heads <domain> [cursor] [limit] [status]` để liệt kê, `/p2o show <domain> <id>` để xem chi tiết đầy đủ bản ghi hiện hành (planning_update.md S1). `heads task 0 20 blocked` lọc đúng theo status; lịch sử nhiều revision xem qua `/p2o log task=<id>`.
 
 ## Tri thức bền và đọc lại (K2)
 
@@ -139,10 +139,10 @@ Stop revoke/cancel rồi xác minh container trước checkpoint cuối. Lỗi s
 
 Không truyền thì hành vi giống hệt trước đây. Khi dùng:
 
-- **Điều kiện khớp**: cùng `targetKind`; thư mục phải cùng path tuyệt đối, URL chỉ cần cùng origin (rộng hơn so khớp tuyệt đối — khớp "hiện hành"/currency thì chặt hơn, xem `gaps` dưới). Enumerate tối đa 20 run mới nhất dưới state root, mở read-only từng cái chỉ để đọc manifest rồi đóng ngay.
+- **Điều kiện khớp**: cùng `targetKind`; thư mục phải cùng path tuyệt đối, URL chỉ cần cùng origin, hybrid cần cùng path tuyệt đối **và** cùng origin (rộng hơn so khớp tuyệt đối — khớp "hiện hành"/currency thì chặt hơn, xem `gaps` dưới). Enumerate tối đa 20 run mới nhất dưới state root, mở read-only từng cái chỉ để đọc manifest rồi đóng ngay.
 - `latest` chọn đúng 1 run mới nhất đủ điều kiện; `all` chọn tối đa 5; liệt kê id thì chỉ giữ các id vừa được yêu cầu vừa khớp (id không tồn tại/không khớp bị bỏ, có lý do trong `gaps.unknown`, không bao giờ âm thầm bỏ qua).
 - Hộp xác nhận start thêm một đoạn nêu tên các run được chọn, hoặc báo "không tìm thấy" nếu dùng flag mà không có kết quả.
-- Sau khi sandbox khởi tạo, ghi **một** record lifecycle (`data.reference`) gồm `runs` (run id + trạng thái `current`/`stale`, so theo `sourceSnapshotSha256` với thư mục hoặc URL chính xác) và `gaps` 5 nhóm: **covered** (cell đã `tested`, còn khớp target hiện tại), **leftOpen** (candidate `open_proof_gap` + cell `blocked`), **stale** (từng `tested` nhưng target đã đổi — không gộp vào covered), **neverReached** (test WSTG chưa cell nào chạm tới, hợp trên mọi run được chọn), **unknown** (lý do rõ ràng: không có run đủ điều kiện, run thiếu/sai schema, reconciliation chưa xong — không bao giờ coi là "clean").
+- Sau khi sandbox khởi tạo, ghi **một** record lifecycle (`data.reference`) gồm `runs` (run id + trạng thái `current`/`stale`, so theo `sourceSnapshotSha256` với thư mục, hoặc URL chính xác, hoặc với hybrid cả `sourceSnapshotSha256` **và** URL chính xác — đổi 1 trong 2 nửa là `stale`) và `gaps` 5 nhóm: **covered** (cell đã `tested`, còn khớp target hiện tại), **leftOpen** (candidate `open_proof_gap` + cell `blocked`), **stale** (từng `tested` nhưng target đã đổi — không gộp vào covered), **neverReached** (test WSTG chưa cell nào chạm tới, hợp trên mọi run được chọn), **unknown** (lý do rõ ràng: không có run đủ điều kiện, run thiếu/sai schema, reconciliation chưa xong — không bao giờ coi là "clean").
 - Đọc lại qua `p2o_state {action:'heads', domain:'reference'}` hoặc `digest`; **không** đẩy vào prompt lead/worker. Không bao giờ là same-run evidence, không khôi phục scope/ticket/worker/budget — cùng nguyên tắc với `/p2o export|import`. Chi tiết thiết kế: [planning_update.md](../planning_update.md).
 
 ## Báo cáo tất định
@@ -163,11 +163,11 @@ Chuỗi do target/model sinh ra bị vô hiệu hóa (không link/HTML/fence, CS
 ## Công cụ tri thức K3–K6 (đọc, không gọi model)
 
 ```text
-/p2o plans [cursor]            /p2o plan <id>           /p2o phases [cursor]       /p2o phase <id>
-/p2o findings [cursor]         /p2o finding <case-id>   /p2o coverage [cursor]     /p2o coverage-cell <id>
 /p2o graph                     /p2o graph page <cursor> /p2o graph <asset-id>      /p2o graph export [limit] [cursor]
-/p2o heads [domain|all] [cursor] [limit]                /p2o digest
+/p2o heads [domain|all] [cursor] [limit] [status]       /p2o show <domain> <id>    /p2o digest
 ```
+
+Domain (goal/todo/decision/case/coverage-plan/coverage-cell/task/phase/…) thay cho các cặp lệnh riêng `tasks`/`task`, `plans`/`plan`, `phases`/`phase`, `findings`/`finding`, `coverage`/`coverage-cell` trước đây (planning_update.md S1): `heads` liệt kê (lọc thêm theo `status` đúng một giá trị, ví dụ `heads task 0 20 blocked`), `show` trả về bản ghi head hiện hành đầy đủ (không phải bản tóm tắt). Lịch sử nhiều revision của một entity xem qua `/p2o log task=<id>`/`actor=<id>`, không phải qua `show`.
 
 | Mảng | Tool của model (owner) | Tài liệu |
 |---|---|---|
@@ -185,7 +185,7 @@ Trong Herdr, lead có thể spawn worker: mỗi worker là một tiến trình `
 - Một mục tiêu cho mỗi worker; nói cho nó biết đã biết gì và nó sở hữu hàng coverage nào, nếu không nó sẽ lặp việc.
 - Discovery và validation do **hai worker khác nhau**; worker tự validate finding của chính nó không phải xác minh độc lập.
 - Delegation phẳng: `p2o_request_subtask` chỉ là đề xuất, chỉ owner mới accept. Steering không mở rộng scope; report của worker là dữ liệu chưa tin cậy — kiểm tra evidence trước khi lặp lại.
-- `p2o_workers` với `waitFor: "all-report"` chờ cục bộ tới khi mọi worker đã report hoặc bị rút. Pane có thể hiện `idle` ngắn trước khi brief được nộp: sống/chết do report quyết định, và `p2o_finish` từ chối tới khi worker report hoặc bị `p2o_stop_worker`.
+- `p2o_workers` với `waitFor: "all-report"` chờ cục bộ tới khi mọi worker đã report hoặc bị rút. Pane có thể hiện `idle` ngắn trước khi brief được nộp: sống/chết do report quyết định, và `p2o_finish` từ chối tới khi worker report hoặc bị `p2o_workers` (`action: "stop"`) rút.
 - `p2o_delegate` nhận `role` (`recon`, `discovery`, `validation`, `reporting`, `general`), tối đa 3 `skills`, `model`, `thinking`, và tùy chọn `work`/`decision`/`outputContract` (cùng hình dạng `p2o_task create`; không có `work` thì kết quả trả `workMatch:"unknown"`). Skill nêu rõ ghi đè mặc định của role; skill lạ bị từ chối trước khi tạo pane.
 
 | Role | Model mặc định | Skill mặc định |

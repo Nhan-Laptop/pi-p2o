@@ -47,7 +47,7 @@ export function registerInertProvider(pi: ExtensionAPI, mode: 'owner' | 'worker'
         const candidate = descriptions.find(tool => tool.name === 'p2o_candidate');
         if (!(candidate?.parameters as any)?.properties?.evidenceRefs || !(candidate?.parameters as any)?.properties?.policyBasis) throw new Error('candidate schema lost');
         // A solo owner works directly, so it is not offered the worker-control tools; a delegated Planner is.
-        const solo = system.includes('you are the solo working investigator'), workerControl = ['p2o_delegate', 'p2o_workers', 'p2o_steer', 'p2o_stop_worker'];
+        const solo = system.includes('you are the solo working investigator'), workerControl = ['p2o_delegate', 'p2o_workers'];
         if ((solo ? workerControl.some(name => tools.includes(name)) : !workerControl.every(name => tools.includes(name))) || tools.includes('bash') || tools.includes('read')) throw new Error(`owner tool loadout was not applied (${solo ? 'solo' : 'delegated'}): ${tools.join(',')}`);
         if(process.env.P2O_TEST_CASE_OWNER==='1'){
           const caseSchema=descriptions.find(tool=>tool.name==='p2o_case')?.parameters as any,coverageSchema=descriptions.find(tool=>tool.name==='p2o_coverage')?.parameters as any;
@@ -110,7 +110,6 @@ export function registerInertProvider(pi: ExtensionAPI, mode: 'owner' | 'worker'
         else if (lastTool === 'p2o_delegate') content = [{ type: 'toolCall', id: 'workers-1', name: 'p2o_workers', arguments: { waitFor: 'all-report', timeoutSeconds: 30 } }];
         else if (lastTool === 'p2o_workers') content = [{ type: 'toolCall', id: 'finish-1', name: 'p2o_finish', arguments: {} }];
         else if (lastTool === 'p2o_finish') content = [{ type: 'text', text: 'OWNER_FINAL_REPORT: inert owner run; worker claim repeated only as a labelled, unverified assertion.' }];
-        else if (lastTool === 'p2o_stop_worker') content = [{ type: 'text', text: 'OWNER_STOPPED_WORKER.' }];
         else content = [{ type: 'text', text: 'OWNER_UNEXPECTED_TOOL.' }];
       } else {
         if (!system.includes('P2O WORKER')) throw new Error('worker scope section missing');

@@ -53,7 +53,7 @@ thì retire cell cũ, thêm cell mới, plan revision ghi mẫu số +1/−1. Pl
 ## Xem và giới hạn
 
 ```text
-/p2o findings [cursor]   /p2o finding <case-id>   /p2o coverage [cursor]   /p2o coverage-cell <id>   /p2o report
+/p2o heads case [cursor]   /p2o heads coverage-cell [cursor]   /p2o show <domain> <id>   /p2o report
 ```
 
 Chỉ đọc snapshot canonical, không gọi model/target. Báo cáo tách candidate submission / case duy nhất / duplicate / pending / stale và coverage currentness.

@@ -94,7 +94,7 @@ describe('Planner/Engine/Worker extension contract',()=>{
       expect(h.sandboxes).toHaveLength(3);const ca=await h.connect(a.workerId),cb=await h.connect(b.workerId);
       await ca.client.request('exec',{command:'A'});await cb.client.request('exec',{command:'B'});
       expect(h.sandboxes[1].commands[0].command).toBe('A');expect(h.sandboxes[2].commands[0].command).toBe('B');
-      await h.call('p2o_stop_worker',{workerId:a.workerId,reason:'Only withdraw A'});expect(h.sandboxes[1].stopCount).toBe(1);expect(h.sandboxes[2].stopCount).toBe(0);
+      await h.call('p2o_workers',{action:'stop',workerId:a.workerId,reason:'Only withdraw A'});expect(h.sandboxes[1].stopCount).toBe(1);expect(h.sandboxes[2].stopCount).toBe(0);
       await cb.client.request('exec',{command:'B continues'});await h.command('stop');expect(h.sandboxes[2].stopCount).toBe(1);expect(h.sandboxes[0].stopCount).toBe(1);
     },'--executors isolated --target-ops 2');
   });

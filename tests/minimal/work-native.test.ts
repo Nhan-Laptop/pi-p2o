@@ -37,8 +37,8 @@ it('real Pi preserves structured work/plan arguments, dedup/replay and historica
       expect(store.checkpoints().at(-1)?.planning).toMatchObject({goals:1,phasePackets:0});
     }finally{store.close();}
     const accepted=(await readFile(log,'utf8')).split('\n').filter(Boolean).length,settled=records.filter(record=>record.type==='agent_settled').length;
-    for(const command of [`open ${runId}`,'plans',`plan ${plan.id}`,'phases',`task ${task.id}`])expect((await request('prompt',{message:'/p2o '+command})).success).toBe(true);
-    await until(async()=>records.some(record=>record.type==='extension_ui_request'&&record.method==='notify'&&String(record.message).includes('Owner coordination only')));
+    for(const command of [`open ${runId}`,'heads goal',`show goal ${plan.id}`,'heads phase',`show task ${task.id}`])expect((await request('prompt',{message:'/p2o '+command})).success).toBe(true);
+    await until(async()=>records.some(record=>record.type==='extension_ui_request'&&record.method==='notify'&&String(record.message).includes('HISTORICAL — no active authority.')));
     expect((await request('get_messages')).data.messages).toEqual(messages);expect((await readFile(log,'utf8')).split('\n').filter(Boolean)).toHaveLength(accepted);expect(records.filter(record=>record.type==='agent_settled')).toHaveLength(settled);expect((await request('get_state')).data.isStreaming).toBe(false);
   }finally{await request('prompt',{message:'/p2o close'}).catch(()=>{});await request('prompt',{message:'/p2o stop'}).catch(()=>{});child.stdin.end();if(!await Promise.race([closed.then(()=>true),delay(3000).then(()=>false)])){child.kill('SIGTERM');await closed;}await rm(root,{recursive:true,force:true});}
 },180_000);

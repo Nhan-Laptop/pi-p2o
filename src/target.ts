@@ -6,10 +6,15 @@ import { homedir } from 'node:os';
 import { MAX_DEPTH, MAX_WORKERS, type LoopMode, type RetentionMode } from './roles.js';
 import { TEXT_CONTROL } from './validate.js';
 
-export type Target = { kind: 'directory'; path: string } | { kind: 'url'; url: string; origin: string };
+/** `hybrid` is a source snapshot plus one deployed origin of the same system: both are confirmed together, share one graph, and neither widens the other. */
+export type Target = { kind: 'directory'; path: string } | { kind: 'url'; url: string; origin: string } | { kind: 'hybrid'; path: string; url: string; origin: string };
+/** The target mounts a read-only source snapshot in the sandbox. */
+export const hasSource = (target: Target): target is Extract<Target, { path: string }> => target.kind !== 'url';
+/** The target allows scoped HTTP to exactly one origin. */
+export const hasOrigin = (target: Target): target is Extract<Target, { origin: string }> => target.kind !== 'directory';
 /** 'latest'/'all' pick by eligibility at run start; an explicit id list (≤10, `run-<chars>` shape) names runs directly. Never grants authority — see planning_update.md. */
 export type ReferWorkspaceOption = 'latest' | 'all' | readonly string[];
-export interface StartOptions { solo: boolean; workers?: number; maxDepth?: number; export?: boolean; loopMode?: LoopMode; executorMode?: 'shared' | 'isolated'; maxTargetOperations?: number; retention?: RetentionMode; goal?: string; avoid?: string[]; referWorkspace?: ReferWorkspaceOption }
+export interface StartOptions { solo: boolean; workers?: number; maxDepth?: number; export?: boolean; loopMode?: LoopMode; executorMode?: 'shared' | 'isolated'; maxTargetOperations?: number; retention?: RetentionMode; goal?: string; avoid?: string[]; origin?: string; referWorkspace?: ReferWorkspaceOption }
 export type Command = { action: 'help' } | { action: 'stop' } | { action: 'pause' } | { action: 'resume' } | { action: 'start'; target: string; options: StartOptions };
 
 /** Deliberately small. One target plus delegation limits; quoting is supported for directory names. */
@@ -50,6 +55,12 @@ export function parseCommand(args: string): Command {
         if ((options.avoid?.length ?? 0) >= MAX_AVOID) throw Error(`--avoid may be given at most ${MAX_AVOID} times`);
         (options.avoid ??= []).push(value); continue;
       }
+      if (token === '--origin') {
+        const value = tokens[++index]?.trim();
+        if (!value || value.length > 2048 || !/^https?:\/\//i.test(value) || TEXT_CONTROL.test(value) || /[\x00-\x1f\x7f\s]/.test(value)) throw Error('--origin needs one http(s) URL without whitespace or control characters');
+        if (options.origin !== undefined) throw Error('--origin may be given only once');
+        options.origin = value; continue;
+      }
       if (token === '--loop') {
         const value = tokens[++index];
         if (value !== 'manual' && value !== 'event-driven') throw Error('--loop must be manual or event-driven');
@@ -85,6 +96,7 @@ export function parseCommand(args: string): Command {
       }
     }
   }
+  if (options.origin !== undefined && /^[a-z][a-z\d+.-]*:\/\//i.test(target)) throw new Error('--origin goes with a source directory target: use --target <directory> --origin <http(s)-URL>');
   return { action: 'start', target, options };
 }
 
@@ -97,7 +109,13 @@ export function webURL(value: string): URL {
   return url;
 }
 
-export async function classifyTarget(value: string, cwd: string): Promise<Target> {
+export async function classifyTarget(value: string, cwd: string, origin?: string): Promise<Target> {
+  if (origin !== undefined) {
+    const source = await classifyTarget(value, cwd);
+    if (source.kind !== 'directory') throw new Error('--origin goes with a source directory target');
+    const url = webURL(origin);
+    return { kind: 'hybrid', path: source.path, url: url.href, origin: url.origin };
+  }
   if (/^https?:\/\//i.test(value)) {
     const url = webURL(value);
     return { kind: 'url', url: url.href, origin: url.origin };
@@ -154,7 +172,7 @@ export interface ScopedAddress { address: string; addressClass: AddressClass; pi
  * block. A hostname the sandbox resolves itself (the container alias) is deliberately not pinned.
  */
 export async function scopedRequest(target: Target, value: string, resolveIP: ResolveAddress = resolveAddresses): Promise<{ url: URL } & ScopedAddress> {
-  if (target.kind !== 'url') throw new Error('HTTP is unavailable for directory assessments');
+  if (!hasOrigin(target)) throw new Error('HTTP is unavailable for directory assessments');
   const url = webURL(new URL(value, target.url).href);
   if (url.origin !== target.origin) throw new Error(`Out of scope: only ${target.origin} is allowed. This is p2o scope policy, not a target defense; do not retry or route around it, record it as an open item instead.`);
   const hostname = url.hostname.replace(/^\[|\]$/g, '');
@@ -240,4 +258,4 @@ export function httpRequest(input: unknown): NormalizedHttpRequest {
     timeout: taskTimeout(params.timeout), connectTimeout: taskTimeout(params.connectTimeout, 'connectTimeout') } as NormalizedHttpRequest;
 }
 
-export function targetLabel(target: Target): string { return target.kind === 'directory' ? target.path : target.url; }
+export function targetLabel(target: Target): string { return target.kind === 'directory' ? target.path : target.kind === 'hybrid' ? `${target.path} + ${target.url}` : target.url; }

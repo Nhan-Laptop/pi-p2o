@@ -3,7 +3,7 @@ import { realpath, rm } from 'node:fs/promises';
 import { copySource } from './source.js';
 import { abortable, checked, runDocker, type RunProcess, type ProcessResult, type OutputObserver } from './process.js';
 import { isIP } from 'node:net';
-import { httpRequest, scopedRequest, taskTimeout, CONTAINER_HOST_ALIAS, type HttpRequest, type ResolveAddress, type Target } from './target.js';
+import { hasSource, httpRequest, scopedRequest, taskTimeout, CONTAINER_HOST_ALIAS, type HttpRequest, type ResolveAddress, type Target } from './target.js';
 import { HttpSessions, responseHead } from './http-session.js';
 import { SCRATCH_READER, SCRATCH_PROTOCOL_BYTES, scratchPath, scratchRoot, scratchBound, scratchOffset, parseScratchSnapshot, type ScratchSnapshot } from './scratch.js';
 
@@ -60,8 +60,8 @@ export class Sandbox {
     const info = checked(await this.docker(['info', '--format', '{{.OSType}}']));
     if (info.stdout.trim() !== 'linux') throw new Error('A Linux Docker daemon is required');
     checked(await this.docker(['image', 'inspect', this.options.image ?? IMAGE]));
-    if (this.target.kind === 'directory' && await realpath(this.target.path) !== this.target.path) throw new Error('Target directory changed during confirmation');
-    if (this.target.kind === 'directory') {
+    if (hasSource(this.target) && await realpath(this.target.path) !== this.target.path) throw new Error('Target directory changed during confirmation');
+    if (hasSource(this.target)) {
       const source = await copySource(this.target.path, this.options.sourceExcludePaths);
       this.source = source.path; this.sourceSkipped = source.skipped; this.sourceManifest = source.manifest;
     }

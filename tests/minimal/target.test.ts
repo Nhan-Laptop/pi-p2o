@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { mkdtemp, rm, writeFile, symlink } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { parseCommand, classifyTarget, addressClass, publicIPv4, scopedRequest, httpRequest } from '../../src/target.js';
+import { parseCommand, classifyTarget, addressClass, publicIPv4, scopedRequest, httpRequest, hasSource, hasOrigin, targetLabel } from '../../src/target.js';
 
 describe('one target grammar', () => {
   it('has only help, stop and a target', () => {
@@ -27,6 +27,32 @@ describe('one target grammar', () => {
     expect(parseCommand(`--target x ${Array.from({ length: 5 }, (_, i) => `--avoid "c${i}"`).join(' ')}`)).toMatchObject({ options: { avoid: ['c0', 'c1', 'c2', 'c3', 'c4'] } });
     expect(() => parseCommand(`--target x ${Array.from({ length: 6 }, (_, i) => `--avoid "c${i}"`).join(' ')}`)).toThrow(/at most 5/);
     for (const args of ['--avoid', '--avoid ""', `--avoid "${'a'.repeat(301)}"`, '--avoid "bad\u202etext"', '--avoid "bad\u0085text"']) expect(() => parseCommand(`--target x ${args}`), args).toThrow(/--avoid/);
+  });
+  it('classifies a directory plus --origin as one hybrid target, sharing the directory checks and refusing a non-directory base (U10)', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'p2o-target-hybrid-'));
+    try {
+      const hybrid = await classifyTarget(root, '/tmp', 'https://example.com/app');
+      expect(hybrid).toEqual({ kind: 'hybrid', path: root, url: 'https://example.com/app', origin: 'https://example.com' });
+      expect(targetLabel(hybrid)).toBe(`${root} + https://example.com/app`);
+      expect(hasSource(hybrid)).toBe(true); expect(hasOrigin(hybrid)).toBe(true);
+      await expect(classifyTarget('/', '/tmp', 'https://example.com')).rejects.toThrow();
+      await expect(classifyTarget('https://example.com', '/tmp', 'https://other.example')).rejects.toThrow('--origin goes with a source directory target');
+      await expect(classifyTarget(root, '/tmp', 'not-a-url')).rejects.toThrow();
+      const plain = await classifyTarget(root, '/tmp');
+      expect(hasSource(plain)).toBe(true); expect(hasOrigin(plain)).toBe(false);
+      const url = await classifyTarget('https://example.com', '/tmp');
+      expect(hasSource(url)).toBe(false); expect(hasOrigin(url)).toBe(true);
+    } finally { await rm(root, { recursive: true, force: true }); }
+  });
+  it('scopes HTTP for a hybrid target exactly like a url target, by origin only', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'p2o-target-hybrid-http-'));
+    try {
+      const hybrid = await classifyTarget(root, '/tmp', 'https://example.com/app');
+      await expect(scopedRequest(hybrid, '/path', async () => ['93.184.216.34'])).resolves.toMatchObject({ addressClass: 'public' });
+      await expect(scopedRequest(hybrid, 'https://other.example/', async () => ['93.184.216.34'])).rejects.toThrow('Out of scope');
+      const directory = await classifyTarget(root, '/tmp');
+      await expect(scopedRequest(directory, '/', async () => [])).rejects.toThrow('unavailable');
+    } finally { await rm(root, { recursive: true, force: true }); }
   });
   it('words an origin denial as p2o policy so a worker does not read it as a target defense', async () => {
     const target = { kind: 'url' as const, url: 'https://example.invalid/', origin: 'https://example.invalid' };
@@ -56,6 +82,12 @@ describe('one target grammar', () => {
     // A token that is neither a flag nor a valid value is simply an unknown option, same as any other unrecognized token.
     expect(() => parseCommand('--target x --refer-workspace not-a-run-id')).toThrow(/Unknown option/);
     expect(() => parseCommand(`--target x --refer-workspace ${Array.from({ length: 11 }, (_, i) => `run-${i}`).join(',')}`)).toThrow(/Unknown option/);
+  });
+  it('takes one optional --origin that pairs only with a directory target, and classifies the pair as hybrid (U10)', () => {
+    expect(parseCommand('--target ./repo --origin https://example.com')).toMatchObject({ target: './repo', options: { origin: 'https://example.com' } });
+    expect(() => parseCommand('--target https://example.com --origin https://other.example')).toThrow(/--origin goes with a source directory target/);
+    for (const args of ['--origin', '--origin ftp://example.com', '--origin not-a-url', `--origin "${'a'.repeat(2049)}"`, '--origin "https://a b.example"']) expect(() => parseCommand(`--target ./repo ${args}`), args).toThrow(/--origin/);
+    expect(() => parseCommand('--target ./repo --origin https://a.example --origin https://b.example')).toThrow(/--origin may be given only once/);
   });
   it('resolves directories, refuses files and root, and treats GitHub as an ordinary URL', async () => {
     const root = await mkdtemp(join(tmpdir(), 'p2o-target-'));

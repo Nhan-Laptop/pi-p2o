@@ -47,6 +47,23 @@ describe('bounded recon contract', () => {
     expect(urlOwner.length).toBeLessThan(5000);
   });
 
+  it('combines source and URL recon for a hybrid target and treats neither source as proof of the other (U10)', () => {
+    const hybrid = reconInstructions('hybrid');
+    expect(hybrid).toContain('Source recon:');
+    expect(hybrid).toContain('URL recon:');
+    expect(hybrid).toContain('not one proof');
+    expect(hybrid).toContain('not assume the deployment runs this snapshot');
+    const hybridFacts = { runId: 'run-recon', targetLabel: '/target + https://example.invalid', targetKind: 'hybrid' as const,
+      sourceSkipped: 2, delegation: { enabled: false, maxWorkers: 1, maxDepth: 1 }, workerBudget: 20 };
+    const hybridOwner = ownerInstructions(hybridFacts);
+    expect(hybridOwner).toContain('two confirmed parts of one system');
+    expect(hybridOwner).toContain('Only the human can widen scope');
+    expect(hybridOwner).toContain('Shell/network egress is not origin-filtered');
+    expect(hybridOwner).not.toMatch(/\bp2o_[a-z_]+\b/);
+    // Hybrid legitimately carries both single-kind recon playbooks plus the combined-evidence caveat, so its budget is wider than the single-kind 5000 cap.
+    expect(hybridOwner.length).toBeLessThan(6500);
+  });
+
   // 2026-10-21 (planning_update.md U3): the per-worker identity line moved to the END of workerInstructions so siblings share the static body as a
   // prompt prefix; the two instruction hashes below moved on purpose. The brief hashes are unchanged.
   // 2026-10-12 (planning_update.md P1.2): reconInstructions' tool-guidance-on branch now names p2o_surface for the surface-inventory step, so the

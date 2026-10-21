@@ -70,7 +70,7 @@ describe('owner role', () => {
   afterEach(async () => { await h.command('stop'); await rm(h.root, { recursive: true, force: true }); });
 
   it('registers the owner and worker tools plus one command, and does no work before the command', () => {
-    expect([...h.pi.tools.keys()].sort()).toEqual(['p2o_artifact', 'p2o_candidate', 'p2o_capture', 'p2o_case', 'p2o_coverage', 'p2o_delegate', 'p2o_finish', 'p2o_graph', 'p2o_http', 'p2o_ledger', 'p2o_loop', 'p2o_net', 'p2o_note', 'p2o_plan', 'p2o_report', 'p2o_request_subtask', 'p2o_shell', 'p2o_skill_list', 'p2o_skill_read', 'p2o_state', 'p2o_steer', 'p2o_stop_worker', 'p2o_surface', 'p2o_task', 'p2o_workers']);
+    expect([...h.pi.tools.keys()].sort()).toEqual(['p2o_artifact', 'p2o_candidate', 'p2o_capture', 'p2o_case', 'p2o_coverage', 'p2o_delegate', 'p2o_finish', 'p2o_graph', 'p2o_http', 'p2o_ledger', 'p2o_loop', 'p2o_net', 'p2o_note', 'p2o_plan', 'p2o_report', 'p2o_request_subtask', 'p2o_shell', 'p2o_skill_list', 'p2o_skill_read', 'p2o_state', 'p2o_surface', 'p2o_task', 'p2o_workers']);
     expect(h.pi.messages).toEqual([]);
     expect(h.sandboxes).toEqual([]);
     expect([...h.pi.commands.keys()]).toEqual(['p2o']);
@@ -92,7 +92,7 @@ describe('owner role', () => {
     expect(event.systemPromptOptions.sections.p2o_assessment).toContain('DELEGATION');
     expect(event.systemPromptOptions.sections.other).toBe('KEEP OTHER GUIDANCE');
     expect(h.sandboxes[0].stopCount).toBe(0);
-    expect(h.pi.active).toEqual(['p2o_task', 'p2o_plan', 'p2o_case', 'p2o_coverage', 'p2o_ledger', 'p2o_state', 'p2o_graph', 'p2o_artifact', 'p2o_skill_list', 'p2o_skill_read', 'p2o_candidate', 'p2o_note', 'p2o_surface', 'p2o_delegate', 'p2o_workers', 'p2o_steer', 'p2o_stop_worker', 'p2o_loop', 'p2o_finish']);
+    expect(h.pi.active).toEqual(['p2o_task', 'p2o_plan', 'p2o_case', 'p2o_coverage', 'p2o_ledger', 'p2o_state', 'p2o_graph', 'p2o_artifact', 'p2o_skill_list', 'p2o_skill_read', 'p2o_candidate', 'p2o_note', 'p2o_surface', 'p2o_delegate', 'p2o_workers', 'p2o_loop', 'p2o_finish']);
     expect(await h.tickets()).toEqual([]);
   });
 
@@ -296,6 +296,17 @@ describe('owner role', () => {
     await h.call('p2o_delegate', { focus: 'idor', task: 'Validate the idor claim', context: 'nothing known', role: 'validation' });
     expect(String(h.herdr.calls.find(call => call.op === 'prompt')!.text)).not.toContain('OPERATOR CONSTRAINTS');
   });
+  it('shows the hybrid confirm dialog for a source-plus-origin target and mints worker tickets with kind hybrid and the origin (U10)', async () => {
+    const started = await h.start('--target ./repo --origin https://example.com/app');
+    const dialog = started.confirmBodies.at(-1)!;
+    expect(dialog).toContain('Hybrid target: a bounded source copy');
+    expect(dialog).toContain('https://example.com/app');
+    expect(dialog).toContain('neither widens the other');
+    await h.call('p2o_delegate', { focus: 'idor', task: 'Validate the idor claim', context: 'nothing known', role: 'validation' });
+    const ticketFiles = await h.tickets();
+    const ticket = JSON.parse(await readFile(join(await h.runDir(), ticketFiles[0]), 'utf8'));
+    expect(ticket.target).toMatchObject({ kind: 'hybrid', origin: 'https://example.com', label: expect.stringContaining('https://example.com/app') });
+  });
 
   it('refuses delegation when solo, capped, too deep, without the skill, or without Herdr', async () => {
     await h.start('--target ./repo --solo');
@@ -419,19 +430,19 @@ describe('owner role', () => {
     expect(h.herdr.calls.filter(call => call.op === 'start').length).toBe(panes);
   });
 
-  it('steers a worker, refuses unknown ones, and stops one on request', async () => {
+  it('steers a worker, refuses unknown ones, and stops one on request (p2o_workers action steer/stop, S2)', async () => {
     await h.start();
-    await expect(h.call('p2o_steer', { workerId: 'p2o-recon-000000', message: 'hi' })).rejects.toThrow(/WORKER_UNKNOWN/);
+    await expect(h.call('p2o_workers', { action: 'steer', workerId: 'p2o-recon-000000', message: 'hi' })).rejects.toThrow(/WORKER_UNKNOWN/);
     await h.call('p2o_delegate', { focus: 'recon', task: 'map' });
     const workerId = h.herdr.calls.find(call => call.op === 'start')!.name!;
-    await h.call('p2o_steer', { workerId, message: 'narrow to /login only' });
+    await h.call('p2o_workers', { action: 'steer', workerId, message: 'narrow to /login only' });
     const steer = h.herdr.calls.filter(call => call.op === 'prompt').at(-1)!;
     expect(steer.text).toContain('steer from the assessment lead');
     expect(steer.text).toContain('narrow to /login only');
-    const stopped = await h.call('p2o_stop_worker', { workerId, reason: 'objective met' });
+    const stopped = await h.call('p2o_workers', { action: 'stop', workerId, reason: 'objective met' });
     expect(stopped.details.status).toBe('done');
     expect(h.herdr.calls.some(call => call.op === 'close')).toBe(true);
-    await expect(h.call('p2o_steer', { workerId, message: 'again' })).rejects.toThrow(/WORKER_STOPPED/);
+    await expect(h.call('p2o_workers', { action: 'steer', workerId, message: 'again' })).rejects.toThrow(/WORKER_STOPPED/);
   });
 
   it('refuses to finish while a worker is still working, then cleans everything up', async () => {

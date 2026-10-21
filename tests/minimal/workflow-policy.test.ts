@@ -93,12 +93,12 @@ describe('prompt and tool guidance cannot drift apart', () => {
 });
 
 describe('the worker-control tools are offered only when workers exist', () => {
-  it('keeps p2o_delegate, p2o_workers, p2o_steer and p2o_stop_worker out of the solo loadout, and the target tools out of the delegated one', () => {
-    expect(DELEGATION_TOOLS).toEqual(['p2o_delegate', 'p2o_workers', 'p2o_steer', 'p2o_stop_worker']);
+  it('keeps p2o_delegate and p2o_workers (steer/stop folded into it, S2) out of the solo loadout, and the target tools out of the delegated one', () => {
+    expect(DELEGATION_TOOLS).toEqual(['p2o_delegate', 'p2o_workers']);
     for (const name of DELEGATION_TOOLS) { expect(ownerTools(true), name).toContain(name); expect(ownerTools(false), name).not.toContain(name); expect(workerTools('discovery'), name).not.toContain(name); }
     for (const name of TARGET_TOOLS) { expect(ownerTools(false), name).toContain(name); expect(ownerTools(true), name).not.toContain(name); }
     expect(ownerTools(false)).toContain('p2o_loop'); // engine and frontier status stay available to a solo owner
-    expect(ownerTools(false)).toHaveLength(19); expect(ownerTools(true)).toHaveLength(19);
+    expect(ownerTools(false)).toHaveLength(19); expect(ownerTools(true)).toHaveLength(17);
   });
 });
 

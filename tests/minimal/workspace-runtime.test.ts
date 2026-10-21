@@ -53,6 +53,12 @@ describe('canonical owner runtime (inert execution, real SQLite and Unix broker)
     expect(()=>parseWorkspaceCommand('export relative')).toThrow();expect(()=>parseWorkspaceCommand('export')).toThrow();expect(()=>parseWorkspaceCommand('import /tmp/\u0000bad')).toThrow();
     expect(bundlePath('/tmp/ok','export')).toBe('/tmp/ok');
     for(const s of ['open ../../outside','open run-a --resume','recover /tmp/state','close extra','artifact ../../secret','artifact artifact-a -1','checkpoints bad'])expect(()=>parseWorkspaceCommand(s)).toThrow();
+    // S1: the five bespoke list+detail command pairs (tasks/task, plans/plan, phases/phase, findings/finding, coverage/coverage-cell)
+    // are retired in favor of the already-generic heads/show over the same 13 KNOWLEDGE_DOMAINS.
+    expect(parseWorkspaceCommand('heads task 0 20 blocked')).toEqual({action:'heads',domain:'task',cursor:0,limit:20,status:'blocked'});
+    expect(parseWorkspaceCommand('heads goal')).toEqual({action:'heads',domain:'goal',cursor:0,limit:20});
+    expect(parseWorkspaceCommand('show task task-a')).toEqual({action:'show',domain:'task',id:'task-a'});
+    for(const s of ['heads not-a-domain','heads task 0 0','heads task 0 101',`heads task 0 20 ${'x'.repeat(81)}`,'show','show not-a-domain id-a','show task ../../etc'])expect(()=>parseWorkspaceCommand(s)).toThrow();
   });
   it('always confirms retention/location/sensitivity before creating durable knowledge or resources',async()=>{
     await fixture(async h=>{
@@ -120,6 +126,32 @@ describe('canonical owner runtime (inert execution, real SQLite and Unix broker)
       const plainRunId=(await readdir(join(h.root,'.p2o-state'))).find(id=>id!==runId)!;
       const plainStore=AssessmentStore.open(join(h.root,'.p2o-state'),plainRunId);
       try {expect(plainStore.records().some(r=>(r.data as any)?.reference)).toBe(false);} finally {plainStore.close();}
+    });
+  });
+  it('--refer-workspace currency for a hybrid target requires both halves (source snapshot and the full path+origin display) to match (U10)',async()=>{
+    await fixture(async h=>{
+      await h.command('--target ./source --origin https://example.com/app --solo');
+      const firstRunId=await h.runId();
+      await h.command('stop');
+      const fresh=createContext({cwd:h.root});
+      await h.pi.commands.get('p2o').handler(`--target ./source --origin https://example.com/app --solo --refer-workspace ${firstRunId}`,fresh.ctx);
+      const secondRunId=(await readdir(join(h.root,'.p2o-state'))).find(id=>id!==firstRunId)!;
+      const store=AssessmentStore.open(join(h.root,'.p2o-state'),secondRunId);
+      try {
+        const reference=store.records().find(r=>r.kind==='lifecycle'&&(r.data as any)?.reference)!;
+        expect((reference.data!.reference as any).runs).toMatchObject([{runId:firstRunId,currency:'current'}]);
+      } finally {store.close();}
+      await h.pi.commands.get('p2o').handler('stop',fresh.ctx);
+      const fresh2=createContext({cwd:h.root});
+      // Same origin, different path on that origin: still the same eligible target, but the full display no longer matches, so it is stale, not current.
+      await h.pi.commands.get('p2o').handler(`--target ./source --origin https://example.com/other --solo --refer-workspace ${firstRunId}`,fresh2.ctx);
+      const thirdRunId=(await readdir(join(h.root,'.p2o-state'))).find(id=>id!==firstRunId&&id!==secondRunId)!;
+      const store2=AssessmentStore.open(join(h.root,'.p2o-state'),thirdRunId);
+      try {
+        const reference=store2.records().find(r=>r.kind==='lifecycle'&&(r.data as any)?.reference)!;
+        expect((reference.data!.reference as any).runs).toMatchObject([{runId:firstRunId,currency:'stale'}]);
+      } finally {store2.close();}
+      await h.pi.commands.get('p2o').handler('stop',fresh2.ctx);
     });
   });
   it('keeps durable knowledge/checkpoints but destroys control/tickets, and opens without an Engine/model/target',async()=>{
@@ -459,7 +491,7 @@ describe('canonical owner runtime (inert execution, real SQLite and Unix broker)
     const duplicate=(await h.call('p2o_task',{action:'create',draft:{...draft,question:'Different prose for the same structured question',surface:'another textual alias'}})).details;
     expect(duplicate.already_covered_by).toEqual([task.id]);expect((await h.call('p2o_task',{action:'list'})).details.total).toBe(1);
     expect((await h.call('p2o_task',{action:'match',draft})).details.confidence).toBe('exact');
-    await h.call('p2o_plan',{action:'list'});await h.command('plans');expect(h.screen()).toContain(plan.id);await h.command(`plan ${plan.id}`);expect(h.screen()).toContain('Owner coordination only');
+    await h.call('p2o_plan',{action:'list'});await h.command('heads goal');expect(h.screen()).toContain(plan.id);await h.command(`show goal ${plan.id}`);expect(h.ctx.screens.at(-1).render(4000).join('\n')).toContain(goal.reason);
     const read:AssessmentStore=await h.reader();try{expect(read.sequence()).toBe(before);}finally{read.close();}
     const context=await h.pi.events.get('context')[0]({messages:[]},h.ctx.ctx);expect(JSON.stringify(context.messages)).toContain(plan.id);
     await expect(h.call('p2o_plan',{action:'list',entry:goal})).rejects.toThrow('host-owned');await expect(h.call('p2o_task',{action:'bogus',id:task.id})).rejects.toThrow('Unknown task action');
@@ -476,7 +508,7 @@ describe('canonical owner runtime (inert execution, real SQLite and Unix broker)
     const planInput={title:'Runtime explicit coverage denominator',status:'active',reason:'One declared asset/question/actor cell for inert acceptance',exclusions:['No undeclared endpoints or actors'],unknownScope:['Deployment parity remains unknown']},plan=(await h.call('p2o_coverage',{action:'plan-create',plan:planInput,requestId:'runtime-coverage'})).details;expect((await h.call('p2o_coverage',{action:'plan-create',plan:planInput,requestId:'runtime-coverage'})).details).toMatchObject({id:plan.id,replayed:true});
     const cellInput={assetRef:{id:asset.entityId,revision:1},questionKey:'question:runtime-case',policyKey:'policy:runtime-case',actorContext:'actor:fixture',tenantContext:'tenant:fixture',methodFamily:'offline-observation',execution:'tested',assessment:'accepted',taskRefs:[{taskId:task.id,revision:reviewed.revision}],claimRefs:[claim.id],caseRefs:[{caseId:accepted.id,revision:accepted.revision}],evidenceRefs:[observation.evidenceId],negativeControlRefs:[],gapRefs:[],reason:'Reviewed task receipt and accepted case support this bounded cell',limitations:'This cell says nothing about undeclared actors, assets or deployment parity'},packet=(await h.call('p2o_coverage',{action:'cell-create',planId:plan.id,planRevision:plan.revision,cell:cellInput})).details;
     expect(packet.cell).toMatchObject({execution:'tested',assessment:'accepted'});const reader:AssessmentStore=await h.reader(),before=reader.sequence();reader.close();const commands=h.sandboxes[0].commands.length,messages=h.pi.messages.length;
-    await h.call('p2o_case',{action:'list'});await h.call('p2o_coverage',{action:'list'});await h.command('findings');expect(h.screen()).toContain('unique accepted-current findings 1');await h.command(`finding ${accepted.id}`);expect(h.screen()).toContain('accepted unique finding=true');await h.command('coverage');expect(h.screen()).toContain('reviewed=1');await h.command(`coverage-cell ${packet.cell.id}`);expect(h.screen()).toContain('effective=accepted');await h.command('report');expect(h.screen()).toContain('acceptedUnique=true');
+    await h.call('p2o_case',{action:'list'});await h.call('p2o_coverage',{action:'list'});await h.command('heads case');expect(h.screen()).toContain(accepted.id);await h.command(`show case ${accepted.id}`);expect(h.ctx.screens.at(-1).render(4000).join('\n')).toContain(caseDraft.title);await h.command('heads coverage-cell');expect(h.screen()).toContain(packet.cell.id);await h.command(`show coverage-cell ${packet.cell.id}`);expect(h.ctx.screens.at(-1).render(4000).join('\n')).toContain(cellInput.reason);await h.command('report');expect(h.screen()).toContain('acceptedUnique=true');
     const read:AssessmentStore=await h.reader();try{expect(read.sequence()).toBe(before);}finally{read.close();}expect(h.sandboxes[0].commands).toHaveLength(commands);expect(h.pi.messages).toHaveLength(messages);
     await h.call('p2o_candidate',{...candidate,closure:'open_proof_gap',execution:'not_tested',proof:'static_trace',supersedes:claim.id,limitations:'Later review withdrew the effect; proof remains open'});expect((await h.call('p2o_case',{action:'view',id:accepted.id})).details).toMatchObject({currentness:'stale',acceptedFinding:false});expect((await h.call('p2o_coverage',{action:'view',id:packet.cell.id})).details).toMatchObject({currentness:'stale',effectiveAssessment:'stale'});
     await h.command('checkpoint K5 review queue');const store:AssessmentStore=await h.reader();try{expect(store.checkpoints().at(-1)?.review).toMatchObject({cases:1,uniqueAcceptedFindings:0,staleCases:1,coveragePlans:1,coverageCells:1,staleCoverageCells:1});expect(store.events({since:0,limit:100}).rows.some(row=>row.kind==='support.invalidated')).toBe(true);}finally{store.close();}
@@ -493,7 +525,7 @@ describe('canonical owner runtime (inert execution, real SQLite and Unix broker)
         expect(phase).toMatchObject({outcome:'provider-error',delivery:'blocked',reviewStatus:'pending',observed:{evidence:0,findingClaims:0}});
         expect(read.records().filter(row=>row.kind==='report')).toHaveLength(1);expect(read.records().filter(row=>row.kind==='task').at(-1)!.data!.task).toMatchObject({status:'reported',phasePacketId:phaseId});
       }finally{read.close();}
-      await h.command(`phase ${phaseId!}`);expect(h.screen()).toContain('provider-error');await h.command('phases');expect(h.screen()).toContain(phaseId!);
+      await h.command(`show phase ${phaseId!}`);expect(h.screen()).toContain('provider-error');await h.command('heads phase');expect(h.screen()).toContain(phaseId!);
       const client=new BrokerClient(ticket.socket,ticket.token);try{await expect(client.request('exec',{command:'true'})).rejects.toThrow(/stopped|revoked|Unauthorized/);}finally{client.close();}
       expect(pi.messages).toHaveLength(0);expect(h.pi.messages).toHaveLength(1);expect(h.sandboxes[0].commands).toHaveLength(0);
     }finally{for(const fn of pi.events.get('session_shutdown')??[])await fn({},ctx.ctx);}
@@ -506,7 +538,7 @@ describe('canonical owner runtime (inert execution, real SQLite and Unix broker)
       const read:AssessmentStore=await h.reader();try{expect(read.records().filter(row=>row.data?.plan)).toHaveLength(1);expect(read.events({limit:100}).rows.filter(row=>row.correlationId==='lost-plan-ack')).toHaveLength(1);}finally{read.close();}
       await h.call('p2o_finish');await expect(h.call('p2o_plan',{action:'list'})).rejects.toThrow('No active');await h.command('stop');
       const fresh=createFakePi(),context=createContext({cwd:h.root});registerP2O(fresh.pi,h.options);const command=(text:string)=>fresh.commands.get('p2o').handler(text,context.ctx);
-      try{await command(`open ${await h.runId()}`);await command('plans');expect(context.screens.at(-1).render(200).join('\n')).toContain(a.id);expect(fresh.messages).toHaveLength(0);}finally{await command('close');}
+      try{await command(`open ${await h.runId()}`);await command('heads goal');expect(context.screens.at(-1).render(200).join('\n')).toContain(a.id);expect(fresh.messages).toHaveLength(0);}finally{await command('close');}
       expect(h.sandboxes[0].commands).toHaveLength(0);
     },stage=>{if(armed&&stage==='after-commit'){armed=false;throw Error('Lost plan ACK after commit');}});
   });

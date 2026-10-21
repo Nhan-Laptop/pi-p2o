@@ -36,6 +36,7 @@ No extension build or JSON configuration is needed. Use `/reload` after installi
 /p2o --target ./my-repo --retention ephemeral
 /p2o --target https://example.com --goal "Can tenant A read tenant B invoices?"
 /p2o --target ./my-repo --refer-workspace latest
+/p2o --target ./my-repo --origin https://staging.example.com
 /p2o pause
 /p2o resume
 /p2o stop
@@ -45,23 +46,14 @@ No extension build or JSON configuration is needed. Use `/reload` after installi
 /p2o stop-worker <worker-id> [reason]
 
 /p2o status
-/p2o tasks [all|live|awaiting-review|blocked|done] [cursor]
-/p2o task <task-id>
 /p2o log [cursor] [task=<id>] [actor=<id>] [operation=<id>]
 /p2o report
 /p2o report export /abs/path/report-dir
-/p2o plans [cursor]
-/p2o plan <id>
-/p2o phases [cursor]
-/p2o phase <id>
-/p2o findings [cursor]
-/p2o finding <case-id>
-/p2o coverage [cursor]
-/p2o coverage-cell <cell-id>
 /p2o graph
 /p2o graph <asset-id> [cursor]
 /p2o graph export [limit] [cursor]
-/p2o heads [domain|all] [cursor] [limit]
+/p2o heads [domain|all] [cursor] [limit] [status]
+/p2o show <domain> <id>
 /p2o digest
 /p2o search <text> [cursor=N]
 
@@ -84,7 +76,9 @@ human side only; `open`, `recover` and `close` never resume an assessment. Detai
 
 `--avoid "text"` (optional, repeatable up to 5 times, 1–300 characters each) states something workers should stay away from, for example `--avoid "No payment flows"`. It is shown in the confirmation, added to every worker brief as a quoted `OPERATOR CONSTRAINTS` block, recorded in the run ledger and printed in REPORT.md. It is guidance to the model, not enforcement: the confirmed target, scope check, ticket and broker remain the only boundary. Without it worker briefs are unchanged.
 
-`--refer-workspace [latest|all|<run-id>,...]` (optional) lets a new run point at up to 20 prior durable-local runs on the same target (same path for a directory, same origin for a URL) and tags them as context only in one lifecycle record — never same-run evidence, no restored scope/ticket/worker authority, same principle as `/p2o export|import`. Read back through `p2o_state {action:'heads', domain:'reference'}` or `/p2o digest`; it is never pushed into the lead or worker prompt. Without it, behavior is unchanged. Details: [usage](docs/USAGE.md).
+`--origin <http(s)-URL>` (optional, exactly once, pairs only with a directory `--target`) confirms a source snapshot and one deployed origin together as a **hybrid** target, sharing one graph/scope/report. Neither half widens the other: the sandbox still only exposes the bounded read-only source copy at `/target`, and `p2o_http` still only reaches the confirmed origin. Workers are told explicitly that source and origin are two evidence sources for one system, not one proof — a source finding is not deployed reachability until a live probe shows it, and a live anomaly is not a source root cause until traced to code. Without it, targets are classified exactly as before.
+
+`--refer-workspace [latest|all|<run-id>,...]` (optional) lets a new run point at up to 20 prior durable-local runs on the same target (same path for a directory, same origin for a URL, same path **and** origin for a hybrid target) and tags them as context only in one lifecycle record — never same-run evidence, no restored scope/ticket/worker authority, same principle as `/p2o export|import`. Read back through `p2o_state {action:'heads', domain:'reference'}` or `/p2o digest`; it is never pushed into the lead or worker prompt. Without it, behavior is unchanged. Details: [usage](docs/USAGE.md).
 
 Confirm scope and permission once. The command prepares the sandbox and sends the task directly into the
 **existing conversation**, using the existing model. In delegated mode it is a strategic Planner: target execution
@@ -116,13 +110,11 @@ automatic retry/fallback or restored-session authority. See [Planner/Engine cont
 | `p2o_delegate` | Planner | Spawn one focused worker immediately; pass `work` for exact duplicate/history checks (otherwise the identity is reported as unknown); batch/waiting work uses `p2o_task dispatch` |
 | `p2o_request_subtask` | worker | Propose a missing bounded task; never directly spawn or accept work |
 | `p2o_loop` | owner | Engine/frontier status, end round with wait, or explain blocked/human-needed |
-| `p2o_workers` | lead | Worker status, budget, report summary, coverage; optionally wait for a report |
-| `p2o_steer` | lead | Send a follow-up instruction to a worker without stopping it |
-| `p2o_stop_worker` | lead | Revoke a worker's sandbox access and close its pane |
+| `p2o_workers` | lead | action "list" (default): worker status, budget, report summary, coverage, optionally wait for a report; action "steer": send a follow-up instruction to a worker without stopping it; action "stop": revoke a worker's sandbox access and close its pane |
 | `p2o_report` | worker | Report to the lead: summary, findings, evidence, coverage, open items, confidence, blocked |
 | `p2o_finish` | lead | Refuse while a worker has not reported, then remove and verify all sandboxes |
 
-A solo run (`--solo`, no Herdr, or `--max-depth 0`) is not offered the worker-control tools `p2o_delegate`, `p2o_workers`, `p2o_steer` and `p2o_stop_worker`: there are no workers for them to act on. `p2o_loop` stays, and `/p2o workers` remains a human command.
+A solo run (`--solo`, no Herdr, or `--max-depth 0`) is not offered the worker-control tools `p2o_delegate` and `p2o_workers`: there are no workers for them to act on. `p2o_loop` stays, and `/p2o workers` remains a human command.
 
 Host tools, `codemode`, the browser, other extensions, `!` shell and the worker's own Docker access are blocked
 while an assessment is active. A worker reaches the target **only** through the lead's broker socket; if the

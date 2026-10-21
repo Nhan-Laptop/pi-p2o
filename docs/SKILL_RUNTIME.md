@@ -78,5 +78,5 @@ source/skill/image/extension hashes and ledger records (never tickets or auth fi
 before sharing. Without `--export` the ledger is deleted at cleanup; an export error never blocks teardown.
 
 A worker that settles without `p2o_report` yields a blocked report with no extra model call. If its broker is lost,
-the lead must withdraw it with `p2o_stop_worker`; idle Herdr states never prove completion. Linux is required (FD-relative
+the lead must withdraw it with `p2o_workers` (action: 'stop'); idle Herdr states never prove completion. Linux is required (FD-relative
 containment). Real-provider evaluation: `bench/README.md`; unit tests do not establish assessment quality.

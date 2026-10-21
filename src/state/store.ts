@@ -28,7 +28,7 @@ export const DEFAULT_STORE_BYTES = 256 * 1024 * 1024;
 export const DEFAULT_ARTIFACT_BYTES = 1024 * 1024;
 export const MAX_ARTIFACT_BYTES = 8 * 1024 * 1024;
 export interface StoreManifest {
-  runId: string; retention: 'durable-local' | 'ephemeral'; targetKind: 'directory' | 'url';
+  runId: string; retention: 'durable-local' | 'ephemeral'; targetKind: 'directory' | 'url' | 'hybrid';
   targetIdentity: string; targetDisplay: string;
   profile: { runtimeHash: string; image: string; loopMode: string; executorMode: string;
     maxWorkers?: number; maxDepth?: number; maxPlannerRounds?: number; maxTargetOperations?: number;
@@ -95,7 +95,7 @@ export class AssessmentStore {
   get stateRoot(): string { return dirname(this.directory.displayPath); }
   static create(root: string, manifest: StoreManifest, options: { maxBytes?: number; fault?: StoreFault } = {}): AssessmentStore {
     if (!validId(manifest.runId) || !['durable-local', 'ephemeral'].includes(manifest.retention)
-      || !['directory', 'url'].includes(manifest.targetKind) || !manifest.targetIdentity || manifest.targetIdentity.length > 256
+      || !['directory', 'url', 'hybrid'].includes(manifest.targetKind) || !manifest.targetIdentity || manifest.targetIdentity.length > 256
       || typeof manifest.targetDisplay !== 'string' || manifest.targetDisplay.length > 4096) throw Error('Invalid store manifest');
     const parent = PrivateDirectory.open(root, true);
     let directory: PrivateDirectory;

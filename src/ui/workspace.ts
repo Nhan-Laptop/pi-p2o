@@ -3,11 +3,12 @@ import { safeText } from '../evidence.js';
 import { bundlePath } from '../state/bundle.js';
 import { KNOWLEDGE_DOMAINS, type KnowledgeDomain } from '../context.js';
 import { normalizeQuery } from '../search.js';
+import { validId } from '../validate.js';
 
 export type WorkspaceCommand = { action: 'graph'; id?: string; limit?: number; cursor?:number; export?:boolean } | { action: 'open'; runId: string } | { action: 'recover'; runId: string } | { action: 'reconcile'; runId: string; reason?: string } | { action: 'close' }
   | { action: 'checkpoint'; reason: string } | { action: 'checkpoints'; id?: string }
   | { action: 'artifact'; id: string; offset: number }
-  | { action: 'heads'; domain?:KnowledgeDomain; cursor:number; limit:number } | { action:'digest' }
+  | { action: 'heads'; domain?:KnowledgeDomain; cursor:number; limit:number; status?:string } | { action:'digest' } | { action:'show'; domain:KnowledgeDomain; id:string }
   | { action: 'export'; path: string } | { action: 'import'; path: string } | { action: 'report-export'; path?: string } | { action: 'search'; query: string; cursor: number };
 export function parseWorkspaceCommand(args: string): WorkspaceCommand | undefined {
   const trimmed = args.trim();
@@ -25,7 +26,7 @@ export function parseWorkspaceCommand(args: string): WorkspaceCommand | undefine
     // No directory means the default <cwd>/.p2o-reports/report-<run-id>/ (never overwritten).
     return { action: 'report-export', ...(value ? { path: bundlePath(value, 'export') } : {}) };
   }
-  if (!['open', 'recover', 'close', 'checkpoint', 'checkpoints', 'artifact', 'export', 'import', 'reconcile', 'graph', 'heads', 'digest'].includes(action)) return;
+  if (!['open', 'recover', 'close', 'checkpoint', 'checkpoints', 'artifact', 'export', 'import', 'reconcile', 'graph', 'heads', 'digest', 'show'].includes(action)) return;
   if (action === 'export' || action === 'import') {
     // Human-selected absolute host directory. One optional matching quote pair keeps spaces usable.
     let value = trimmed.slice(action.length).trim();
@@ -34,9 +35,14 @@ export function parseWorkspaceCommand(args: string): WorkspaceCommand | undefine
     return { action, path: bundlePath(value, action) };
   }
   if(action==='digest'){if(parts.length)throw Error('Usage: /p2o digest (read-only; no ACK)');return {action};}
+  if(action==='show'){
+    if(parts.length!==2||!(KNOWLEDGE_DOMAINS as readonly string[]).includes(parts[0])||!validId(parts[1]))throw Error('Usage: /p2o show <domain> <id>');
+    return {action,domain:parts[0] as KnowledgeDomain,id:parts[1]};
+  }
   if(action==='heads'){
-    if(parts.length>3||(parts[0]&&parts[0]!=='all'&&!(KNOWLEDGE_DOMAINS as readonly string[]).includes(parts[0]))||parts.slice(1).some(value=>!/^\d+$/.test(value)||!Number.isSafeInteger(Number(value))))throw Error('Usage: /p2o heads [domain|all] [cursor default/min 0] [limit default 20, min 1, max 100]');
-    const cursor=Number(parts[1]??0),limit=Number(parts[2]??20);if(limit<1||limit>100)throw Error('Knowledge head limit must be 1..100 (default 20)');return {action,domain:parts[0]&&parts[0]!=='all'?parts[0] as KnowledgeDomain:undefined,cursor,limit};
+    if(parts.length>4||(parts[0]&&parts[0]!=='all'&&!(KNOWLEDGE_DOMAINS as readonly string[]).includes(parts[0]))||parts.slice(1,3).some(value=>!/^\d+$/.test(value)||!Number.isSafeInteger(Number(value)))||(parts[3]!==undefined&&parts[3].length>80))throw Error('Usage: /p2o heads [domain|all] [cursor default/min 0] [limit default 20, min 1, max 100] [status]');
+    const cursor=Number(parts[1]??0),limit=Number(parts[2]??20);if(limit<1||limit>100)throw Error('Knowledge head limit must be 1..100 (default 20)');
+    return {action,domain:parts[0]&&parts[0]!=='all'?parts[0] as KnowledgeDomain:undefined,cursor,limit,...(parts[3]!==undefined?{status:parts[3]}:{})};
   }
   if (action === 'close') { if (parts.length) throw Error('close takes no arguments'); return { action }; }
   if (action === 'checkpoint') {
@@ -82,10 +88,22 @@ export function knowledgeLines(store:AssessmentStore,command:Extract<WorkspaceCo
       ...packet.relevant.slice(0,10).map(row=>`${row.domain} ${row.entityId} [${row.status}] record=${row.recordId}: ${safe(row.summary)}`),packet.warning];
   }
   const page=store.knowledgePage(command);
-  return [`Knowledge heads @${page.asOfSequence}; domain ${command.domain??'all'}; cursor ${page.cursor}; matching total ${page.total}, shown ${page.shown}, omitted ${page.omitted}`,
-    ...(page.nextCursor!==undefined?[`Next: /p2o heads ${command.domain??'all'} ${page.nextCursor} ${command.limit}`]:[]),
+  return [`Knowledge heads @${page.asOfSequence}; domain ${command.domain??'all'}${command.status?` status=${command.status}`:''}; cursor ${page.cursor}; matching total ${page.total}, shown ${page.shown}, omitted ${page.omitted}`,
+    ...(page.nextCursor!==undefined?[`Next: /p2o heads ${command.domain??'all'} ${page.nextCursor} ${command.limit}${command.status?` ${command.status}`:''}`]:[]),
     ...page.rows.map(row=>`${row.sequence} ${row.domain} ${row.entityId} [${row.status}] record=${row.recordId} by=${row.actorId}: ${safe(row.summary)}`),
     'Current navigation heads only; cold record IDs/history remain retained. Accepted/reported labels are claims, not current proof or permission.',
+    ...(store.readOnly?['HISTORICAL — no active authority.']:[])];
+}
+/** Exact-record detail for one knowledge-head entity: the full stored record, not the bounded list summary. Open one with /p2o heads <domain>. */
+export function showLines(store:AssessmentStore,domain:KnowledgeDomain,id:string):string[]{
+  const record=store.knowledgeRecord(domain,id);
+  if(!record)throw Error(`Unknown ${domain} id in this run`);
+  return [`${record.id??id} · ${domain} · kind=${record.kind} · by=${safe(record.by)}`,
+    `Summary: ${safe(record.text).slice(0,2000)}`,
+    ...(record.surface?[`Surface: ${safe(record.surface)}`]:[]),...(record.risk?[`Risk: ${safe(record.risk)}`]:[]),
+    ...(record.refs?.length?[`Refs: ${record.refs.join(', ')}`]:[]),
+    `Data: ${safe(JSON.stringify(record.data??{})).slice(0,6000)}`,
+    'Full stored record of the current head only; prior revisions are not included — use /p2o log task=<id>/actor=<id> for history.',
     ...(store.readOnly?['HISTORICAL — no active authority.']:[])];
 }
 /** Bounded human view of the asset graph: counts, latest heads, stale pins; never a proof claim. */

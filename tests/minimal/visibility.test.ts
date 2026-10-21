@@ -29,10 +29,9 @@ async function fixture(work: (h: any) => Promise<void>, args = '') {
 describe('model-free assessment visibility (canonical runtime + legacy reader)' , () => {
   it('parses human navigation, strict cursors/IDs and no authority options', () => {
     expect(parseStateCommand('status')).toEqual({action:'status'});
-    expect(parseStateCommand('tasks awaiting-review 20')).toEqual({action:'tasks',filter:'awaiting-review',cursor:20});
     expect(parseStateCommand('log 0')).toEqual({action:'log',cursor:0});
     expect(parseStateCommand('--target ./source')).toBeUndefined();
-    for (const s of ['status --resume','log -1','log 1.5','log 9007199254740992','task ../../etc/passwd','tasks confirmed','report auto']) expect(() => parseStateCommand(s)).toThrow();
+    for (const s of ['status --resume','log -1','log 1.5','log 9007199254740992','report auto']) expect(() => parseStateCommand(s)).toThrow();
   });
   it('renders narrow Unicode views, scrolling, resize and close', () => {
     let closed = 0;
@@ -45,15 +44,15 @@ describe('model-free assessment visibility (canonical runtime + legacy reader)' 
     screen.handleInput('q');expect(closed).toBe(1);
     expect(widgetComponent(source.slice(0,3)).render(10).every(x=>visibleWidth(x)<=10)).toBe(true);
   });
-  it('status/tasks/log/report never consume Planner signals, call a model or execute target work', async () => {
+  it('status/log/report never consume Planner signals, call a model or execute target work', async () => {
     await fixture(async h => {
       const before = (await h.call('p2o_loop',{action:'status'})).details;
-      for (const s of ['status','tasks','log 0','report']) await h.command(s);
+      for (const s of ['status','log 0','report']) await h.command(s);
       const after = (await h.call('p2o_loop',{action:'status'})).details;
       expect(after).toEqual(before);
       expect(h.pi.messages).toHaveLength(1);expect(h.pi.customMessages).toHaveLength(0);
       expect(h.herdr.calls).toHaveLength(0);expect(h.sandboxes[0].commands).toHaveLength(0);
-      expect(h.pi.entries).toHaveLength(4);
+      expect(h.pi.entries).toHaveLength(3);
       expect(h.pi.entries.every((e:any)=>e.customType==='p2o-state-view' && !('lines' in e.data))).toBe(true);
     });
   });
@@ -97,8 +96,8 @@ describe('model-free assessment visibility (canonical runtime + legacy reader)' 
       const ticket=JSON.parse(await readFile(join(await h.path(),'..',`ticket-${spawn.workerId}.json`),'utf8'));
       const c=new BrokerClient(ticket.socket,ticket.token);
       try {await c.request('report',{report:{summary:'Bounded handoff, not proof',confidence:'low',outcome:'completed'}});} finally {c.close();}
-      await h.command('tasks awaiting-review');expect(h.screen()).toContain('awaiting owner review');
-      await h.command(`task ${task.id}`);expect(h.screen()).toContain('History 4 revisions');
+      await h.command('heads task 0 20 reported');expect(h.screen()).toContain(task.id);expect(h.screen()).toContain('[reported]');
+      await h.command(`show task ${task.id}`);expect(h.ctx.screens.at(-1).render(4000).join('\n')).toContain(draft.question);
       await h.command('status');expect(h.screen()).toContain('awaiting-review 1');expect(h.screen()).toContain('closed 0');
       // planning_update.md P1.3: the pending-review count surfaces right after the title, not only buried in the task-count/attention lines.
       const statusLines=h.screen().split('\n');expect(statusLines.findIndex((line:string)=>line.includes('⚠ 1 worker report awaiting Planner review'))).toBeLessThan(statusLines.findIndex((line:string)=>line.startsWith('Tasks ')));

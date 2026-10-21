@@ -13,7 +13,7 @@ export const TICKET_VERSION = 2;
 export const TICKET_LIMIT_BYTES = 8192;
 export const WORKER_ID_PATTERN = /^p2o-[a-z]{3,10}-[0-9a-f]{6}$/;
 
-export interface TicketTarget { kind: 'directory' | 'url'; label: string; origin?: string }
+export interface TicketTarget { kind: 'directory' | 'url' | 'hybrid'; label: string; origin?: string }
 
 export interface Ticket {
   version: 2;
@@ -104,7 +104,8 @@ export async function readTicket(path: string, expected: TicketExpectations): Pr
   if (ticket.taskId !== undefined && !/^[a-z0-9][a-z0-9-]{0,79}$/.test(ticket.taskId)) bad('invalid task ID');
   if (ticket.requestedRuntime !== undefined && (!ticket.requestedRuntime || Object.entries(ticket.requestedRuntime).some(([k,v]) => !['model','thinking'].includes(k) || typeof v !== 'string' || v.length > 200 || /[\x00-\x1f\x7f]/.test(v)))) bad('invalid runtime profile');
   if (typeof ticket.target?.label !== 'string' || !ticket.target.label || ticket.target.label.length > 512 || /[\x00-\x1f\x7f]/.test(ticket.target.label)) bad('invalid target label');
-  if (ticket.target.kind === 'url' && (typeof ticket.target.origin !== 'string' || !/^https?:\/\//.test(ticket.target.origin))) bad('url ticket needs an http(s) origin');
+  if (!['directory', 'url', 'hybrid'].includes(ticket.target.kind)) bad('invalid target kind');
+  if (ticket.target.kind !== 'directory' && (typeof ticket.target.origin !== 'string' || !/^https?:\/\//.test(ticket.target.origin))) bad('url and hybrid tickets need an http(s) origin');
   if (!Number.isInteger(ticket.commandBudget) || ticket.commandBudget < 1 || ticket.commandBudget > 5000) bad('invalid command budget');
   const socket = await lstat(ticket.socket).catch(() => undefined);
   if (!socket?.isSocket()) bad('owner sandbox socket is not available');

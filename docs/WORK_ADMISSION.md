@@ -39,7 +39,8 @@ task giữ `phasePacketId`. Worker kết thúc không report hoặc provider l�
 Card `pending` là lịch sử tại thời điểm giao; trạng thái task hiện tại hiển thị riêng.
 
 ```text
-/p2o plans [cursor]   /p2o plan <id>   /p2o phases [cursor]   /p2o phase <id>   /p2o task <id>
+/p2o heads goal [cursor]   /p2o heads todo [cursor]   /p2o heads decision [cursor]   /p2o heads phase [cursor]   /p2o heads task [cursor]
+/p2o show <domain> <id>
 ```
 
 Đọc không gọi model/target. Sau finish dùng `/p2o open <run-id>` để xem dữ liệu bền.

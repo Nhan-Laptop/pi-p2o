@@ -23,9 +23,9 @@ describe('scripts/measure-context.mjs', () => {
     expect(report.workers).toHaveLength(10);
     for (const worker of report.workers) { expect(worker.reconBlocks, `${worker.role}/${worker.kind}`).toBe(1); expect(worker.toolNamesOutsideLoadout, `${worker.role}/${worker.kind}`).toEqual([]); expect(worker.total).toBe(worker.system + worker.brief); }
 
-    // Declarations: 25 registered tools (p2o_surface added, planning_update.md P1.2) and the four loadouts of workflow-policy.test.ts.
-    expect(report.declarations.registered).toBe(25);
-    expect(Object.fromEntries(Object.entries<any>(report.declarations.loadouts).map(([label, item]) => [label, item.tools]))).toEqual({ 'delegated Planner': 19, 'solo owner': 19, worker: 15, 'reporting worker': 10 });
+    // Declarations: 23 registered tools (p2o_steer/p2o_stop_worker folded into p2o_workers, S2) and the four loadouts of workflow-policy.test.ts.
+    expect(report.declarations.registered).toBe(23);
+    expect(Object.fromEntries(Object.entries<any>(report.declarations.loadouts).map(([label, item]) => [label, item.tools]))).toEqual({ 'delegated Planner': 17, 'solo owner': 19, worker: 15, 'reporting worker': 10 });
     expect(report.declarations.loadouts['solo owner'].bytes).toBeLessThanOrEqual(Math.ceil(34_162 * 1.02)); // 33,328 before p2o_surface (workflow-policy.test.ts)
 
     // Skills: the lead pages through the catalog and each role has a default skill whose first page is inlined.

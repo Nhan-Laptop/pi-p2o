@@ -136,7 +136,7 @@ describe('hold and release (inert executor, real broker)', () => {
   }));
   it('is available only to the human: no tool exists for hold, release or approval, and a worker session cannot use the commands', async () => fixture(async h => {
     expect([...h.pi.tools.keys()].filter((name: string) => /hold|release|approve/.test(name))).toEqual([]);
-    expect(h.pi.tools.has('p2o_stop_worker')).toBe(true); // the model's own withdrawal tool remains
+    expect(h.pi.tools.has('p2o_workers')).toBe(true); // the model's own withdrawal action (p2o_workers action=stop) remains
     await h.command('hold'); expect(h.ctx.notices.at(-1)).toContain('No active assessment');
     await h.command('workers'); expect(h.ctx.notices.at(-1)).toContain('No active assessment');
   }));

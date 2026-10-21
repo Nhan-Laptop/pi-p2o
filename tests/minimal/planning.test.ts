@@ -7,7 +7,7 @@ import { AssessmentStore, type StoreFault } from '../../src/state/store.js';
 import { bindAssessmentStore } from '../../src/state/adapter.js';
 import { PlanBoard, planFrontier, validatePlanDraft, type PlanDraft } from '../../src/planning.js';
 import { readLedger } from '../../src/records.js';
-import { parseStateCommand, stateLines } from '../../src/ui/state.js';
+import { parseWorkspaceCommand, showLines } from '../../src/ui/workspace.js';
 import { planParameters } from '../../src/work-tool.js';
 import { TaskBoard, type TaskDraft } from '../../src/tasks.js';
 
@@ -67,9 +67,9 @@ describe('canonical goals/todo/decisions and read-only cards (K4)',()=>{
   });
   it('refuses mutations after active ownership closes but still permits read-only inspection',async()=>fixture(async({board,setActive,path,store})=>{
     const a=await board.create(goal);setActive(false);await expect(board.create(goal)).rejects.toThrow('authority inactive');
-    expect((await board.list())[0].id).toBe(a.id);const before=store.sequence(),index=await readLedger(path),lines=stateLines(index,parseStateCommand(`plan ${a.id}`) as {action:'plan';id:string});
-    expect(lines.join('\n')).toContain('Owner coordination only');expect(store.sequence()).toBe(before);
-    expect(parseStateCommand('plans 0')).toEqual({action:'plans',cursor:0});expect(parseStateCommand('phases')).toEqual({action:'phases',cursor:0});expect(()=>parseStateCommand('phases -1')).toThrow();
+    expect((await board.list())[0].id).toBe(a.id);const before=store.sequence(),lines=showLines(store,'goal',a.id);
+    expect(lines.join('\n')).toContain(goal.reason);expect(store.sequence()).toBe(before);
+    expect(parseWorkspaceCommand('heads goal 0')).toEqual({action:'heads',domain:'goal',cursor:0,limit:20});expect(parseWorkspaceCommand('heads phase')).toEqual({action:'heads',domain:'phase',cursor:0,limit:20});expect(()=>parseWorkspaceCommand('heads phase -1')).toThrow();
   }));
   it('does not turn retained decision history into a lifetime plan limit',async()=>fixture(async({board,tasks})=>{
     const task=await tasks.create(draft);for(let i=0;i<105;i++)await board.create({kind:'decision',title:'Recorded inert decision '+i,status:'recorded',reason:'Explicit one-round choice retained as immutable history',decision:{disposition:'defer',chosenTaskIds:[],deferredTaskIds:[task.id],revisitCondition:'Fresh reviewed evidence arrives'}});

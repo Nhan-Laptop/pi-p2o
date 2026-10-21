@@ -1,362 +1,231 @@
-# planning_update.md — ARTEX / Strix / incident-report study and proposed p2o updates
+# planning_update.md — the prompt/skill surface sent to a delegated worker
 
-Status: **planning only. No code changed.** Written 2026-10-21. Supersedes the `--refer-workspace` plan (implemented as `7088bfa`).
-It builds on, and does not repeat, the 2026-10-11 study (`git show 656843d:planning_update.md`; of its Phase 3, items 3.1/3.3/3.4 shipped,
-3.2/3.5/3.7/3.8 stayed open and are folded in below where the new evidence changes them).
+Status: **planning only. No code changed in this pass.** Written 2026-10-21. Supersedes the previous (uncommitted)
+"simplifying p2o's operator and tool surface" pass: its D1 (dashboard removal), S2 (merge worker-management tools) and S1
+(retire bespoke list+detail commands) are implemented and green; S3 (`--mode` preset flag) was not started and is carried
+over unchanged below. That pass's own ARTEX/Strix architecture citations (`git show b3789cd:planning_update.md`) are reused
+here, not re-derived.
 
-The question set: (1) how ARTEX delegates, keeps a long-term target, and runs its asset and vulnerability graphs; (2) how Strix plans by
-use case and situation; (3) what the piyolog article adds; (4) where p2o stands; (5) what to change.
+**The prompt that started this pass:** the project is confusing in how it builds the prompt/skill package it sends to a
+delegated agent. Re-examine that specific surface — the system instructions, the first-turn brief, and the skill-delivery
+mechanism — against how ARTEX and Strix do it, and propose what to change.
 
-## 0. Method, sources, limits
+## Carried over from the last pass (uncommitted, still true)
 
-| Source | How it was read | Grade |
+S3 (`--mode solo|team|team-isolated` preset flag) is still open; nothing here changes its status. D1/S1/S2 are implemented
+and `npm test` is green except the pre-existing `test_provenance_record_matches_review_snapshot` Python failure (unrelated,
+documented in memory).
+
+---
+
+## 0. Method
+
+No new reference reading was needed: the ARTEX/Strix prompt-and-skill architecture (§1.1 delegation, §1.2 constraints,
+§2 Strix skills/prefix layout) is already documented with file:line citations in the superseded study
+(`git show b3789cd:planning_update.md`). This pass re-reads p2o's own prompt-assembly code — `src/prompts.ts`,
+`src/roles.ts`, `src/skills.ts`, the `spawnWorkerLocked`/`prepareMethod` path in `extensions/p2o/index.ts`,
+`docs/SKILL_RUNTIME.md` — and compares it line-for-line against those citations. Two measurements below are new and use
+the same no-model-call method as the superseded study's U3/U7 ("measure first"): a small script imports the real,
+built `workerBrief` (`dist/src/prompts.js`) and compares its output for two synthetic sibling workers; nothing was run
+against a target, a model or a paid provider.
+
+---
+
+## 1. How ARTEX and Strix hand a delegate its prompt and its skill
+
+Reused verbatim from the superseded study (not re-derived):
+
+| | What a delegate's prompt is built from | How many knobs choose its "method" |
 |---|---|---|
-| `my_references/ARTEX/ARTEX_AGENTIC_CORE.vi.md` (2026-10-08, own CONFIRMED / STRONGLY INFERRED / UNKNOWN tags) | Read in full for §1–§8; cited as `[core §n]` | Secondary, but it cites its own source lines |
-| ARTEX source | Opened directly: `agent/planner.go:150-345` (trigger rendering + Planner prompt), `agent/finding_workflow.go`, `finding_recorder.go`, `retester.go`, `constraints.go`, `guard/guard.go`, `db/schema.sql:1081-1175` | Primary |
-| Strix | A research agent read `strix/` and wrote `strix_analysis.md`; file:line values are its own (marked `~` where approximate) | Primary, agent-reported, not re-opened by me except where stated |
-| piyolog article, 2026-10-06 (updated to 10-20) | Fetched; summarized in §3 | Secondary news aggregation; attribution in it is explicitly unconfirmed |
-| p2o | Read from files: `docs/*.md`, `src/prompts.ts`, `src/engine.ts`, `src/target.ts`, `src/wstg-map.ts`, `src/state/store.ts:461`, `src/case-types.ts`, `extensions/p2o/index.ts` | Primary |
+| **ARTEX** | No skill system at all. Operator constraints are injected into *every* Planner and Worker system prompt, self-contained, framed above all heuristics (`constraints.go`). A resumed worker does **not** get re-sent the global overview — a bug the core doc calls out (`worker.go:488,508-511`) | 0 — there is nothing to select |
+| **Strix** | `create_agent(skills≤5)`; the model picks from `<available_skills>` itself. Prompt layout is **shared prefix → requested skills → scope**, with a cache breakpoint placed so sibling agents sharing the same skill selection share a cached prefix (`prompt.py:161`, SP:519-527). A post-hoc check flags any carried skill with no matching coverage row (`report/coverage.py:230`) | 1 (`skills`) |
+| **p2o (today)** | `workerInstructions` (static, already reordered so siblings share ~95%+ of it — U3, already shipped) + `workerBrief` (per-spawn: identity, focus, scope, inherited context, **given skills**, operator constraints, task) | 3 (`skills[]` + `workflow` + `methodReason`), described below |
 
-**Limit that matters:** the first ARTEX research agent was stopped by a safety classifier mid-write and left nothing usable. A second
-Sonnet 5.5 agent, scoped to architecture only and read-only, then re-read the ARTEX tree against the core document and wrote a cited report
-(~5.9K words, every claim with a file:line; session scratch file, not in the repo). Its corrections are folded into §1.1–§1.4 and its
-additions are in §1.6. I spot-read the same files earlier (see table) but did not re-open each of its new citations; a few it marks
-unverified because they depend on the private agent SDK that is not in the tree. Nothing in either reference tree was run, built or
-installed. Both are used only for architecture ideas; the prompt text that tells a model to ignore authorization (Strix `scope.jinja`,
-`REFUSAL AVOIDANCE`) is not borrowed, consistent with `src/prompts.ts:14-16`. Mechanics-level evidence says nothing about effectiveness; no
-benchmark was run (standing rule: no paid runs).
+p2o's worker *system* prompt already matches Strix's intent (push skill text once, share what can be shared — that was
+U3). This pass is about what U3 **didn't** touch: the brief, and the three-knob method-selection surface sitting on top
+of the one-knob thing Strix does.
 
 ---
 
-## 1. ARTEX — what it does
+## 2. Three findings, each with file:line evidence
 
-### 1.1 Task delegation  `[core §3, §7]`
+### Finding A — the brief puts the one thing that could be shared last, and the one thing that never can be shared first
 
-```text
-goal decomposer (round 0, one shot) → goals + constraints + scope        agent/goals.go
-Planner LLM  (fresh session every wake)  → add_intent (batch ≤4), prove_goal, steer_work, kill_work, todo
-   intent = graph node kind=intent, state=open, payload {summary, asset_ids}, priority
-N workerLoops claim atomically open→running (priority, id)               server/engine.go
-Worker LLM (one session per intent, resumable by intent id) → insert_assets / record_fact / report_finding
-settle: done | blocked | exhausted | stopped → debounce (800 ms fixed window; 600 s heartbeat fallback) → Planner wakes
-```
+`workerBrief` (`src/prompts.ts:110-138`) opens with `[p2o worker ${ticket.workerId} · role ... · depth ... · run ...]`
+and `You are ${ticket.workerId}; ...` — both unique per worker — then focus/scope/limits/context (also unique), and only
+*then*, conditionally, the `== Given skills ==` block, which is **identical** for every worker who got the same role
+default or the same explicit skill selection. Strix does the opposite on purpose: shared prefix, then skills, then the
+part that varies (SP:519-527, `prompt.py:161`), specifically so sibling agents given the same skill can share a cached
+prefix. p2o's own `workerInstructions` was already reordered the same way for exactly this reason (U3, shipped
+2026-10-21) — the brief was not.
 
-- No agent calls another; the graph is the only channel (blackboard). The Planner is **memoryless between wakes**: each wake renders
-  *what changed* (`renderTriggers`: finished intent + worker conclusion ≤800 runes + IDs of facts it yielded; finding; goal added/edited/deleted;
-  hint; cancelled intent) plus a pre-fetched graph overview plus the in-memory todo (`planner.go:154-285`).
-- **There is no dependency-aware scheduler**: `claimNext` takes `state='open'` by priority. Serial chains are the Planner's job: write the chain
-  into the todo and dispatch only the step whose prerequisite fact exists (`planner.go` prompt, "串行利用链"). `[core §7.1]`
-- **Steering without killing**: `steer_work` queues a message; a PreToolUse hook blocks the worker's *next* tool call and returns the redirect.
-- **Human in the loop**: a thin MainAgent adds hints, goals, constraints and priority 8–10 intents; the Planner is re-woken with a typed trigger.
-- **Guard** (`guard/guard.go`): every tool call passes PreToolUse → audit log → DB intercept rules → LLM fallback judge → optional human `ask`
-  (blocks if refused or timed out). Deny messages are rewritten as *"ARTEX platform governance, not a target defense… this operation is
-  forbidden"* so the agent does not treat them as a WAF to bypass (`systemBlockMessage`). A PostToolUse hook classifies results into
-  ok / blocked / error by regex (`403|waf|429|captcha…`) so the Planner changes tactics instead of giving up (G5 attribution).
-- Role boundary is mostly **prompt policy**, not hard enforcement: only "Worker has no `add_intent`" is a real tool-surface limit; the Planner
-  also holds Bash, and the Planner and MainAgent sessions get no Guard hooks (only the Worker does; `planner.go:405-440`, `mainagent.go:135-166`, `worker.go:471-473`). Verified in source.
+**Measured** (2026-10-21, `dist/` build, no model call, synthetic two-worker brief with one shared skill, same method
+the superseded study's U3 used): with today's field order, two sibling briefs share **14 of ~4,940 characters (0.3%)**
+— the match breaks inside the worker-ID literal on line 1. Rebuilding the same brief with the skills block moved first
+and the per-worker identity/focus/scope/context/constraints/task moved to the end (mirroring `workerInstructions`'
+U3 reorder exactly) raises the shared prefix to **4,146 of ~4,940 characters (84%)** in that synthetic case — the entire
+skill body, which is often the largest single piece of brief text once a worker has a real multi-KB `SKILL.md`.
+*Caveat, stated the same way U3 stated its own:* this is a character count, not a token-cache guarantee; whether it saves
+anything depends on provider-side caching behavior and sibling timing, neither measured nor measurable without a paid run.
 
-**Planner rules worth knowing** (`planner.go` prompt, my translation): *hard floor* — goal unmet and nothing open/running ⇒ must emit ≥1 intent
-(an empty round is a stall); zero intents is fine only if covered or waiting on a dependency; never re-send a `done` intent unless the mechanism
-is materially new; for `exhausted`/`blocked`, read the worker trace first and continue from real progress; a negative observation is re-checked
-**at most once**; **depth over coverage**; keep 2–3 mechanistically different routes alive; operator constraints outrank every heuristic;
-a quantitative goal (e.g. coverage 100%) must be checked against the measured value before `prove_goal`.
+### Finding B — the lead's `workflow` choice is computed, validated, hash-pinned... and never reaches the worker
 
-### 1.2 Keeping the long-term target  `[core §8]`
+`p2o_task`/`p2o_delegate` accept an optional `workflow` ID that must belong to one of the task's selected skills
+(`extensions/p2o/index.ts:887-890`); `prepareMethod` (`:880-891`) resolves it to `{id, description, prerequisites,
+skillId}` and stores it on the task's `method` (`src/tasks.ts:13`); a stale re-send is rejected (`TASK_METHOD_STALE`,
+`:450`). `docs/SKILL_RUNTIME.md:13-14` documents that this ID is *validated* against the assigned skills — it says
+nothing about delivery, because there is none. `spawnWorkerLocked` builds `skillDocs` from the skill's raw `SKILL.md`
+text only (`:452-463`) and calls `workerBrief({ ..., skills: skillDocs, ... })` (`:512`) — `workerBrief`'s signature
+(`src/prompts.ts:110`) has no `workflow` parameter. The catalog entry the lead actually read before choosing — e.g.
+attack-surface-mapping's `offline-reproduction` workflow: *"Bounded offline execution; check target runtime/dependencies
+with a real probe first"* plus its named prerequisite (`skills/catalog.json`) — is real, specific guidance the lead
+validated and paid a hash-staleness check to pin, and the worker executing under it never sees it. This is the same
+shape of gap the superseded study already found and fixed once (U1: the stored objective wasn't reaching workers
+either) — here it is the workflow, not the objective.
 
-| Layer | What persists | Used how |
-|---|---|---|
-| Goals | `goal` nodes (`open/met/abandoned`) + operator **constraints** (allow/deny) + scope, written once at round 0 | Goals are in every overview; **constraints are injected into every Planner and Worker system prompt**, framed above all heuristics (`constraints.go`); constraints must be self-contained (no "the current target") |
-| Exploration graph | intents, facts, findings, hints, digests; edges `spawns / derived_from / yields / proves / covers` | Overview windows: 30 open intents, 20 facts, 12 recent-done, 10 finding details |
-| Compaction | Cold nodes (≥6 planner rounds) summarized by an LLM into `digest --covers--> members`; originals kept, `expand_digest` restores | Separate from conversation compaction |
-| Cross-task | Direct source tasks' blackboard, read-only, tagged inherited (≤8 sources, 48k runes) | Already mirrored by p2o's `--refer-workspace` |
-| Todo | Planner todo is **in-process memory only** | Lost on restart `[core §8.1]` |
-| Completion | `prove_goal(goal, evidence)` per goal; the last goal auto-finishes the task. The judge is the Planner LLM, not code | |
+### Finding C — three knobs for one concept, where Strix has one and ARTEX has none
 
-SDK long-term memory exists but is not enabled in the default Planner/Worker options (UNKNOWN for any deployment). `[core §8.1]`
-
-### 1.3 Asset graph  `[core §4]`
-
-- One global Postgres `assets` table, **six types** (`root_domain, ip, subdomain, service, endpoint, app`); port, technology, credential and
-  parameter are *fields*, not nodes. **No asset-edge table**: parent links are fields, and `BuildCoverageGraph` derives a child→parent
-  containment view on demand.
-- **Natural-key upsert-merge** (`ON CONFLICT DO UPDATE`): endpoint = `url+method`, HTTP service = `url`, subdomain = `domain+record_type`.
-  Normalization is deliberately light (host lower-cased, trailing dot dropped, scheme/host lower-cased; no full URL canonicalization).
-- LLM proposes, Go writes: `insert_assets` → `Upsert*` (infers domain/port/root, merges arrays) → `anchorOwner` links the intent to the asset →
-  auto-scope for directly registered hosts. **Nothing turns stdout into assets automatically.**
-- **Asset graph ≠ exploration graph**: assets answer "what exists", the exploration graph answers "what was concluded, from where";
-  they join through `exploration_anchors(node, asset)`.
-- Coverage proxy = `tested / denominator` where *tested* = asset anchored by a `fact` node (no check on confidence or method); `list_untested_assets`
-  returns a backlog the Planner may act on. Honest in its own doc: a coarse proxy, not certification.
-- Weaknesses it admits: tool-facing reads are task-scoped but the Worker bootstrap reads intent assets unscoped; `Link` errors are ignored on the
-  intent/fact paths, so edges can be missing after a failed write.
-
-### 1.4 Vulnerability / finding graph  `[core §5]` + source
-
-- A finding is **three things written atomically** (`RecordFindingTx`): an exploration node `kind=finding` (`confirmed/dismissed`), a row in
-  `findings` (disposition `pending, in_progress, confirmed, resolved, fixed, false_positive, ignored, duplicate, risk_accepted`; markdown `report`;
-  `asset_ids`), and the edges `intent --yields--> finding` and (when used) `finding --proves--> goal`.
-- The agent never writes evidence bodies: a host-owned `FindingRecorder` does. HTTP evidence is bound through `finding_traffic_bindings`
-  (`role ∈ baseline | proof | verification | supporting`, ordered `position`, unique per finding+snapshot, optional `version`) — `finding_workflow.go`,
-  `schema.sql:1163-1174`. A **reporter agent binds traffic first, then writes the report**, citing the binding `version` it actually read.
-  Domain and timestamp are only candidate filters, never proof of belonging.
-- **Retest is its own entity** (`finding_retests`, `schema.sql:1112-1129`): a snapshot of the finding is frozen at start; one active retest per
-  finding (partial unique index); verdict `reproduced | fixed | inconclusive`; `fixed` needs a comparable environment, the original trigger no longer
-  working, **and a still-working normal control**; one failed request or an unreachable target is `inconclusive`, never `fixed`; a `fixed`
-  verdict flips the disposition automatically, the other two leave it (`retester.go`).
-- Weaknesses: `report_finding` only *requires* `vulnclass, severity, summary`; "confirmed" is the agent's assertion; no PoC is re-run by code;
-  I found **no structural duplicate fingerprint** in what I read (`duplicate` is a human-set disposition) — not proven absent. `[core §5.1]`
-
-### 1.5 ARTEX vs p2o, in one line each
-
-ARTEX optimizes **autonomy and throughput** (stateless planner, claim-by-priority, graph as channel, LLM judges goal completion). p2o optimizes
-**honest closure** (human-confirmed authority, structured work identity, claim → case → finding, explicit coverage denominator, nothing counts as
-clean without a named control). The useful transfers are therefore *inputs and plumbing*, not ARTEX's acceptance logic.
-
-### 1.6 Fresh source sweep — corrections and additions
-
-Corrections to the core document and to my first reading:
-
-- The task-level scheduler is `Engine` plus `admitTaskWhen` / `reconcileConcurrency` (`server/goals.go:99-285`). `server/scheduler.go` is only a
-  5 s ticker for user-defined custom-agent triggers (the reporter runs from it).
-- "Priority 8–10 for the MainAgent" is prompt guidance only (`mainagent.go:92`); code takes any 0–10 and turns a 0 into 5, so "lowest priority"
-  cannot be expressed (`tools.go:1047-1049`).
-- `ClaimIntent` is a single `UPDATE … WHERE state='open'` with no lease or heartbeat; orphaned `running` rows are reset to `open` only at process
-  start (`db/exploration.go:1173-1181`, `server/server.go:269-275`). Single-process assumption.
-
-Additions that bear on p2o's design:
-
-| ARTEX fact | Source | Why it matters here |
-|---|---|---|
-| Operator constraints are prompt text only. The LLM judge is documented as receiving no task goal and no constraints; the MainAgent does not get the block either; the RoE scope mechanism "was removed" | `constraints.go:14-48`, `intercept/prompt.go:12`, `mainagent.go:134`, `guard.go:4` | Confirms U1 should stay *soft* and never be described as enforcement. p2o's hard edge stays the human-confirmed target and scope |
-| The planner has a `goal_met` tool that ends the task, while its own prompt says only `prove_goal` finishes; `prove_goal` accepts any fact or finding as evidence, including `inferred` ones | `tools.go:1205-1214, 1179-1182`, `planner.go:315` | A model-judged close is exactly what p2o's deterministic engine avoids. Strengthens the "not proposed" row for LLM-judged completion |
-| Agents widen their own scope: every top-level `insert_assets` item adds a scope row, and the planner owns `add_task_scope` | `tools_insert.go:359-364`, `tools.go:2047-2050` | p2o's scope is human-only. Keep it that way; do not add an agent-side "extend scope" path |
-| A resumed worker no longer receives the global overview (the first user turn becomes "continue") | `worker.go:488, 508-511` | p2o workers are fresh per assignment, so this class of bug does not apply. A point for U1 (re-send the objective on every worker) |
-| Pending triggers, steer queue and planner todo are RAM-only; hints have a `consumed` state that nothing sets | `manager.go:1762-1860`, `engine.go:134`, `schema.sql:191` | The "what changed" block disappears on restart. p2o's packet is rebuilt from the store, which is the stronger design (U5 builds on it) |
-| The graph reports `false_positive` findings anyway: node state and `findings.status` are never reconciled, the Markdown report ignores triage status, and there is no finding de-duplication | `server/server.go:3847-3858`, `tools.go:444-446` | p2o's claim → case → finding with review verdicts already avoids this; no transfer needed |
-| Coverage "tested" counts any anchoring fact, including negative or inferred; the planner is nevertheless told to use the percentage as an acceptance check | `db/task_scope.go:319-324`, `planner.go:316` | Reinforces keeping p2o's two-axis coverage with a named control |
-| Retest is reachable only from an HTTP handler; `reproduced` and `inconclusive` change no state; only `completed + fixed` flips status | `server/finding_retests.go:119`, `db/finding_retests.go:208-251` | Supports U9 as an operator-started, advisory flow rather than an engine-scheduled one |
-| Denials: a human refusal and an approval timeout produce the same message; the block text names the platform, not the target | `guard.go:119, 138-141` | For U2, keep the "scope policy, not a target defense" wording and, in p2o, make a timeout distinguishable from a refusal |
-| The G5 result classifier (`blocked`/`error`/`ok`) is write-only: nothing under `agent/` reads the counters | `guard.go:143-163`, `server/server.go:3870` | The idea only pays when something consumes it. U6 consumes it (a closure warning), so it is not just a dead counter |
-| The planner prompt names an `asset_neighbors` tool that is not registered | `planner.go:313` | Prompt/tool-surface drift. No p2o change proposed; any new worker-facing text in U1/U2 should name only tools that exist |
-
-None of these changes the ordering in §6. They change the *reasons*: U1 keeps the "soft, not enforcement" label, U9 stays operator-initiated,
-and nothing is proposed that lets a model judge completion or widen scope.
+`skills[]` (≤3, `MAX_SKILLS` in `src/roles.ts:30`, already schema-capped at the tool level so the `.slice` in
+`resolveRole:139` is unreachable defensive code, not a real truncation path — checked, not a finding) +
+`workflow` (optional, must belong to a selected skill) + `methodReason` (free text, stored but — see Finding B's
+sibling question below — also never shown to the worker) is three knobs where Strix's `create_agent` has exactly one
+(`skills≤5`) and ARTEX has zero (no skill system at all). Some of this is justified — `workflow` lets one skill name
+several different applications (attack-surface-mapping alone has three: `source-review`, `offline-reproduction`,
+`public-http-review`) which Strix's flat skill list cannot express — but right now that justification is theoretical,
+because Finding B means the distinction never reaches the agent meant to act on it. `methodReason` has the same
+question mark: it is stored as an audit trail (visible to the owner via `p2o_task view`) and may be intentionally
+owner-only, same as a `p2o_plan` decision's `reason` field — that one is a weaker claim than Finding B's and is not
+proposed as a change here, only asked below.
 
 ---
 
-## 2. Strix — how it plans by use case and situation
+## 3. Proposals
 
-**Planning is prompt-driven; there is no planner code.** Python decides only which text and skills the root receives
-(`core/inputs.py:107 build_root_task`, `core/runner.py:396-401`, `agents/prompt.py:58 _resolve_skills`).
-
-| Situation | What changes | Mechanism |
-|---|---|---|
-| Target type (repo, local code, web app, IP, API spec) | Root task lists targets under typed headings; repos are cloned, API specs parsed for base URLs | `interface/utils.py:1140-1207`, `scan_setup.py` |
-| Depth (`quick / standard / deep`, default `deep`) | A **scan-mode skill** is always loaded; quick = time-boxed, six priority classes, one pivot; deep = six phases, storyboard of flows, chaining, "parallel swarm" | `skills/scan_modes/*.md` |
-| White-box (`local_code`) | Four extra skills; must do static **and** dynamic work; static floor = one semgrep, one secrets, one `trivy fs`, one AST pass | `runner.py:398`, SP:109-123 |
-| Combined code + live | "Use code to steer live tests, live anomalies to steer code review" | SP:125-128 |
-| Multi-target | Build a **Target Map** first, cross-correlate code and endpoints, one subagent per asset × vulnerability class | SP:92-100 |
-| Diff-scoped | `scan_modes/diff` overlay: only bugs *introduced or newly reachable* by the diff; "read the code, not the PR story" | `diff.md` |
-| API spec | Baseline each operation, track every `METHOD path`, probe undocumented sibling verbs, two-account diffs | `custom/api_spec_testing.md` |
-| Operator text | `--instruction` appended **as free text** to the root task; no parser | `inputs.py:~185` |
-| Black-box | Recon and mapping first, then per-vulnerability work; threat model written from recon results | SP:294-300, `coordination/root_agent.md:28-36` |
-
-**Delegation**: root is told to orchestrate and never test (SP:3-11). `create_agent(name, task, inherit_context=True, skills≤5)`; the child gets the
-**parent's whole history** as JSON background and shares sandbox, proxy history, notes, coverage and threat model; todos stay private. Each
-vulnerability gets a **Discovery → Validation → Reporting** chain (white-box: the reporting agent also files the patch). `finish_scan` is the only
-exit and refuses while children are alive, then echoes coverage gaps. **No cap on agent count or concurrency** in code; control is budget bands
-(warn at 70/85/95 %, subagents stopped at 90 % of the dollar budget so the root can report: `core/hooks.py:49-53`).
-
-**Skills** are chosen by the model from an `<available_skills>` list (~85 files), 1–3 pinned per agent (max 5, enforced `skills/__init__.py:224`).
-A post-hoc check (`report/coverage.py:230 skill_coverage_gaps`) flags any carried skill with no matching coverage row. Prompt layout is
-**shared prefix → requested skills → scope**, with a second cache point so sibling agents share a cached prefix.
-
-**State**: shared notes, per-agent todo, a **threat model** (`save_` replaces, `amend_` appends attributed addenda), a coverage ledger keyed by
-(surface, risk_area) with `agent_reported` kept apart from `machine_observed`. Findings: the agent supplies eight CVSS metrics and code computes
-the score; mandatory `counterevidence, confidence, assumptions, severity_change_conditions`; `http_exchange_ids` verified against the proxy;
-dedupe is an LLM judge ("when uncertain lean NOT duplicate"). Premature finish is blocked three ways (text-only turns re-prompted, only
-lifecycle tools end a run, `finish_scan` fails with live children).
-
-**Weaknesses (agent-reported):** no agent-count cap; rules like "only reporting agents file reports" contradict code (`factory.py`); skill choice
-is unguided (no technology→skill map); `is_whitebox` appears to ignore cloned repo targets (**unverified**); no cross-run memory; full-history
-inheritance is expensive; one old CTF benchmark (XBEN 100/104, v0.4.0, ≈$337, ≈19 min/challenge) is the only evaluation.
-
----
-
-## 3. The piyolog article — what it adds
-
-Summary (secondary source; the article itself says attribution is unconfirmed): ARTEX was a Go/Next.js/Postgres multi-agent pentest system
-(asset graph + exploration graph, planner/worker, recording proxy, approval gate, chat intervention). It won Baidu's "Agent+" final on 2026-09-03.
-Public reporting then tied ARTEX artifacts to the late-September attacks on two Korean banks (a title string on attacker web servers; CrowdStrike
-reported ARTEX config and Claude Code session history in an attacker-controlled directory, with an ARTEX-running backend plus extra Claude Code
-sessions on other models). The developer announced closed-source on 10-08 and the repository vanished by 10-09; forks, mirrors and Docker images
-were already circulating (≥12 000 displayed fork count, not de-duplicated); a commercial version appeared later.
-
-What a pentest-agent builder should take from it (design lessons, not attribution claims):
-
-| Fact in the article | Lesson for p2o |
-|---|---|
-| Policy text ("personal learning only; do not attack systems, authorized or not") was the first control; **a consent gate and a default `.gov/.edu` block came in v0.3.13**, three weeks before the incident | Controls must be in the product's startup path, not the README. p2o already requires a typed human confirmation naming scope, resources and models (`ARCHITECTURE.md`); keep that the only source of authority |
-| Approval gate began rule-only; a **model-judged fallback** for unmatched calls came in v0.3.3 | p2o's equivalent is the broker re-checking scope/ticket/budget per operation. A model judge is *not* proposed: it would make a security boundary probabilistic |
-| Proxy default listen address moved to localhost-only in v0.3.12; 359–900 exposed instances were counted | p2o's authority is a local socket + per-worker tickets; no listening service. Worth a one-line statement in docs, nothing to build |
-| Attacker directory held **session histories and config** | `--export` writes `.p2o-reports/` into the working directory (`evidence.ts:95`, `roles.ts:60`), redaction is "best effort". See U11 |
-| Takedown did not stop distribution; "defensive" and localized forks appeared | Open-source release of an offensive loop is irreversible. p2o is a private Pi package; do not publish skills that embed exploit sequences (already the rule in `HANDOFFS.md`) |
-
-Nothing from the article changes what p2o should *do on a target*; it changes how strongly the start-up path and the artifacts it leaves should
-defend the operator.
-
----
-
-## 4. p2o today, against the four questions
-
-| Question | ARTEX | Strix | p2o now (verified) | Verdict |
-|---|---|---|---|---|
-| **Delegation** | Planner LLM → intents → claim pool | Root spawns agents freely, history copied | Operator's Pi conversation is the Planner; deterministic `AssessmentEngine` (`src/engine.ts`) admits an **accepted, reviewed, fingerprint-reserved** frontier into ≤N slots; fresh worker process per assignment; workers only *propose* (`p2o_request_subtask`); pinned prerequisites; wake windows 100 ms, no polling | **Ahead** on control, dedupe, authority. Behind on: backlog suggestions when the frontier is empty |
-| **Long-term target** | goals + constraints in DB, injected everywhere | free-text instruction + threat model | `--goal` → request-local `STATED OBJECTIVE` in the **lead prompt only** (`prompts.ts:63`); `p2o_plan` goals/todos/decisions in SQLite (revisioned, evidence-gated closure); packet header refreshes state; `NO_GOAL_RECORDED` preflight. **Workers never see the objective or any operator exclusion** unless the lead copies it into a brief (`prompts.ts:105-128`, `index.ts:527`). The objective is **not stored** (`OwnerRun.statedObjective` only, `index.ts:95,1649`) and is absent from REPORT.md | **Gap** (U1) |
-| **Asset graph** | 6 types, natural-key merge, derived containment view | none (notes + coverage rows) | SQLite graph, 12 kinds, identity = scope+kind+exact key, revision pins, provenance, stale propagation (`ASSET_GRAPH.md`). Keys are **exact bytes, no normalization** by design. `coverage` knows `discoveredUnplannedAssets` only as a **count** (`coverage.ts:35`) | **Ahead** on rigor. Two gaps: no canonical host/URL form (U7), no pointer backlog (U5) |
-| **Vulnerability graph** | node + row + traffic bindings + retest entity | report tool with mandatory counterevidence fields, CVSS computed | candidate → case → unique accepted-current finding; duplicate by `policyKey`+`rootCauseKey`; `rate` with host-computed CVSS; coverage two-axis; remediation `accepted` needs a reviewed retest. Evidence in a case is a flat id list (`reproductionEvidenceRefs`, ≤5, `case-types.ts:20,39`) | **Ahead**. Gaps: evidence has no role/order (U8); retest has no verdict taxonomy or prior-run entry (U9); no guard against "ruled out" resting on blocked requests (U6) |
-| **Use case / situation planning** | none (open-ended intents) | scan modes, white/black/diff/API/multi-target | `wstg-map.ts` maps ~100 WSTG tests to trigger **features** and skills; `p2o_coverage action=suggest` (`index.ts:1029`, `wstg-map.ts:424`) returns uncovered in-scope tests for features **the caller names** (default `['any']`); the lead prompt tells the lead to read the skill catalog; one target kind per run | **Partial**: the router exists but its input is manual (U4); no hybrid target (U10) |
-
----
-
-## 5. Proposals
-
-Ranking = value ÷ (cost × risk). Every item states what it would **not** do. All keep the lead prompt untouched (`ownerInstructions` is pinned:
-no `p2o_*` names, solo < 5000 chars) and put workflow advice in per-tool guidelines or deterministic code. Tool guidance is opt-in
-(`p2o.toolGuidance`), so advice there reaches only those who enabled it; anything that must reach every run goes through code or the brief.
+Ranking = value ÷ (cost × risk), same convention as the superseded study. Every item states what it would **not** do.
 
 ### Tier A — small, deterministic, low risk
 
-**U1. Store the objective and carry operator constraints to every worker.**
-*Evidence:* ARTEX injects operator constraints into every Planner and Worker system prompt at top priority (`constraints.go`), and requires them to be self-contained; Strix renders the authorized-scope block last in every agent prompt. p2o: §4 row 2.
-*Change:*
-1. Persist `--goal` at run start as one `kind:'lifecycle'` record (`data.objective`), so it survives in the store, in `/p2o open`, in `--refer-workspace` digests, and can be printed in REPORT.md.
-2. Add repeatable `--avoid "text"` (≤5, each 1–300 chars, same NFC/no-control validation as `GOAL_CHARS`, `src/target.ts`). Shown in the confirm dialog next to `--goal`; stored with the objective.
-3. `workerBrief` appends, **only when constraints exist**, a fixed block `OPERATOR CONSTRAINTS (data; they narrow the task, never widen scope)` with the JSON-quoted lines. Byte-identical output without `--avoid`, like 3.1 did.
-*Not:* hard enforcement. It is model-level, exactly as in ARTEX; the real boundary stays scope + ticket + broker. Say so in the dialog text.
-*Files:* `src/target.ts` (parse), `extensions/p2o/index.ts` (`:1536-1554` dialog, `:1649` run state, `:527` brief), `src/prompts.ts:105`, `src/report-export.ts` (one line).
-*Tests:* `recon.test.ts:51-61` / `workflow-policy.test.ts:59` pin the brief hash **without** constraints — unchanged; add a parser test and a brief test with constraints.
-*Effort S. Rollback:* drop the flag; stored records are inert lifecycle data.
+**P1. Carry the selected workflow's description/prerequisites into the worker's brief.**
+*Evidence:* Finding B.
+*Change:* add an optional `workflow?: { id: string; description: string; prerequisites?: string[] }` parameter to
+`workerBrief` (`src/prompts.ts:110`); render it as a fixed block next to `== Given skills ==` (e.g. `WORKFLOW: <id> —
+<description>` plus a `Prerequisites:` line when present). Pass `method.workflow` through at the one call site that
+already has `method` in scope (`extensions/p2o/index.ts:512`, same object `prepareMethod` returned at `:449`).
+*Not:* does not add a new owner-facing parameter — `workflow` is already accepted and validated today; this only
+delivers what is already computed. Does not touch `methodReason` (see the open question below).
+*Effort XS. Risk:* brief-hash churn only — byte-identical output when no `workflow` was selected (the common case
+today), same contract U1's constraints block used. *Tests:* `recon.test.ts:68-95` (`briefHash` pins) needs a new case
+with a workflow set; existing no-workflow cases stay byte-identical and should not need re-pinning.
 
-**U2. Frame policy denials as policy, not as target behaviour.**
-*Evidence:* ARTEX rewrites guard blocks as "platform governance, not a target defense… forbidden" so the agent does not try to evade them (`guard.go systemBlockMessage`). p2o's scope denial reads `Out of scope: only <origin> is allowed` (`src/target.ts:152`), which a worker can read as a redirect to work around.
-*Change:* append a fixed sentence (`p2o scope policy, not a target defense; do not retry or route around it; record a gap instead`) to scope/ticket/budget denials only. Receipts keep the raw reason.
-*Effort XS. Tests:* three tests assert only the substring `'Out of scope'` (`docker.test.ts:68`, `artifacts.test.ts:106`, `artifacts-docker.test.ts:38`), so appending a sentence keeps them green.
+**Implemented 2026-10-21, uncommitted.** Added `workflow?: { id, description, prerequisites? }` to `workerBrief`'s input
+(`src/prompts.ts:114`), rendered inside the existing skills-conditional block right after `== End of given skills ==`:
+`WORKFLOW: <id> — <description>` plus an optional `Prerequisites: <joined>` line, present only when `workflow` is set.
+`spawnWorkerLocked` now passes `workflow: method.workflow` (`extensions/p2o/index.ts:512`), the same `method` object
+`prepareMethod` already returned at `:449` — no new computation, only delivery of what was already there. Verified by
+direct call (not just inspection): a brief built without `workflow` is unchanged byte-for-byte from before this change;
+one built with `workflow` renders the new block correctly. `methodReason` is untouched, per *Not* above.
+No deviation from the plan above.
 
-**U3. Make the worker system prompt prefix shareable across workers (measure first).**
-*Evidence:* Strix lays out shared prefix → requested skills → scope and adds a cache point so siblings share a cached prefix (`prompt.py:161`, SP:519-527). In p2o, `workerInstructions` begins with a per-worker line (`workerId`, `depth`, parent: `src/prompts.ts:88`), so the first characters differ for every worker and the large static body (recon, knowledge, evidence rules) cannot share a provider-side prefix with its siblings.
-*Step 1 (free):* compute the common prefix length of two workers' full instruction text for one run. If the shared prefix is already large (Pi's own base prompt dominates), stop.
-*Step 2 (only if it pays):* move the identity line to the end of `workerInstructions`. The instruction hash in `recon.test.ts` / `workflow-policy.test.ts` moves **on purpose** and is re-pinned.
-*Not:* any claim of dollars saved; that needs a paid run, which is out of bounds. Report the prefix length only.
-*Step 1 measured (2026-10-21, `dist/` build, no model call):* the worker system prompt is Pi's base prompt, then `\n\n`, then `workerInstructions` (`index.ts:1843`); all panes share one cwd, so Pi's part is the same for every worker. Inside `workerInstructions` two sibling workers share **85 of 5,966 characters (1.4 %)**; the other 5,816 characters (about 1,450 tokens at 4 chars/token) sit after the per-worker line and cannot be shared. Pi's base prompt is small here: 1.8 KB with no tool snippets, about 2.7 KB with 110-character snippets for the seven worker tools (an estimate: real snippets and the tool declarations that precede the system prompt were not measured). Pi's base therefore does **not** dominate, so the stop condition did not fire.
-*Simulated step 2:* with the identity line moved to the end, two siblings share **5,901 characters** of the p2o text (5,895 across roles), roughly 1,450 more tokens, taking the shared prefix from about 450–700 tokens to about 2,000. That crosses the roughly 1,024-token minimum that common prompt caches use (confirm for the provider in use). Whether it saves anything depends on that provider's caching and on siblings starting within its TTL, which was not measured and cannot be without a paid run.
-*Verdict:* worth doing; expected effect is real but unquantified. **Implemented 2026-10-21, uncommitted:** `workerInstructions` now opens with a static `P2O WORKER — …` line and ends with `Identity: you are <id> (role, depth); your parent is …`; the two instruction hashes in `recon.test.ts` were re-pinned on purpose (brief hashes unchanged) and a test asserts siblings share over 95 % of the text. The brief repeats `You are <id>`, so the identity is not lost by moving the line.
-*Effort XS–S.*
+**P2. Split the `KNOWLEDGE` prompt constant into one sentence per topic.**
+*Evidence:* `src/prompts.ts:5` currently packs four unrelated topics into one unlabeled paragraph: catalog-read
+mechanics (`p2o_skill_list`/`p2o_skill_read`, pagination, linked IDs), what a document hash identifies (package text,
+not target evidence), how to read a tool's own description (execution limits, not installed binaries), and sandbox
+tool-install policy (install in scratch, record the receipt, never treat an install as target evidence). Strix's system
+prompt is organized by topic with its own headings (SP:3-11, 92-128); ARTEX's constraints doc requires the same
+("constraints must be self-contained", `constraints.go`). p2o's text is accurate but reads as one run-on idea where it
+is actually four.
+*Change:* break `KNOWLEDGE` into four short, separately-readable sentences (no wording changes beyond what splitting
+requires); keep it one constant, concatenated the same way, so the rendered character count is unchanged or smaller.
+*Not:* no content change, no new guidance, no tool-list change.
+*Effort XS. Risk:* none functional — pure text reflow. *Tests:* instruction-hash pins in `recon.test.ts` /
+`workflow-policy.test.ts` move on purpose, same as every prior text-only change in this family (U2, U3 step 2).
 
-**U4. Feed the WSTG router from recorded features instead of from the caller.**
-*Evidence:* Strix's situation→skills mapping is flag-driven; p2o already has the better table (`WSTG_MAP`, trigger features) but `p2o_coverage action=suggest` only sees features the model types in, defaulting to `['any']` (`index.ts:1029`, `wstg-map.ts:424`). `HANDOFFS.md` H1 already tells recon to record each observed feature as an asset attribute named `feature` or as an observed fact.
-*Change:* when the suggest call omits `features` (today it falls back to `['any']`), derive them from the run's graph: attribute `feature` values (and observed-fact tokens) that are members of `WSTG_FEATURES`; report which features were used so the result is auditable. Explicit `features` still wins.
-*Not:* auto-creating cells or tasks. A suggestion is not coverage (`wstg-map.ts` comment).
-*Effort S. Tests:* extend the suggest test with a fixture graph.
-*Implemented 2026-10-21, uncommitted.* `featuresFromAttributeValues` (`wstg-map.ts`) and `recordedFeatureValues` (store, current heads only, bounded) feed the suggest handler when `features` is omitted. The result adds `featureSource` (`explicit`/`graph`/`default`) and `ignoredFeatureWords`. **Deviation:** only the `feature` attribute is read, not observed-fact text: a word like `api` or `roles` appears in most facts, so token matching would inflate the suggestions. No attribute means the old `['any']` behaviour, unchanged.
+**Implemented 2026-10-21, uncommitted.** Split into `KNOWLEDGE_CATALOG`/`KNOWLEDGE_HASHES`/
+`KNOWLEDGE_TOOL_DESCRIPTIONS`/`KNOWLEDGE_SANDBOX_INSTALL` (`src/prompts.ts:5-9`), one topic each, composed back into
+the single `KNOWLEDGE` constant with `.join(' ')`. **Deviation from the plan's own risk note:** the four sentences
+concatenate to the exact original string (verified by direct string comparison against the pre-edit text), so this
+needed **no** instruction-hash re-pin at all — better than the "moves on purpose" outcome anticipated above. Full
+`npm test` confirms: `recon.test.ts`/`workflow-policy.test.ts`/`extension.test.ts` (the three suites touching
+`workerInstructions`/`workerBrief` hashes) pass unchanged. No deviation in content, only in the predicted test impact.
 
-### Tier B — moderate, evidence-backed
+### Tier B — moderate, measure-first (mirrors the superseded study's U3/U7 pattern)
 
-**U5. Give the Planner pointers when the frontier runs dry.**
-*Evidence:* ARTEX forbids an empty round while goals are open and exposes `list_untested_assets`; Strix's `finish_scan` echoes coverage gaps. p2o's stance (no invented work; empty frontier ⇒ explained-blocked, `PLANNER_ENGINE.md`) is right, but the Planner packet's `attention` list holds only **open gaps and pending reviews** (`src/state/store.ts:461`) and `discoveredUnplannedAssets` is a bare count (`coverage.ts:35`). So "blocked" arrives with nothing to choose from.
-*Change:* add a bounded `backlog` section to the request-local packet (inside the existing ≤12 KiB cap), derived by SQL: (a) graph assets with no live coverage cell, (b) `open_proof_gap` / `blocked` cells whose `requirement` references a task that is now reviewed, (c) count of uncovered WSTG suggestions matching recorded features (U4). IDs only, with the usual shown/omitted counts.
-*Not:* a dispatch, a score, or a model summary. The Planner still decides, and may still say `blocked`.
-*Effort M. Risk:* packet-size tests (`context.test.ts`, the `maxBytes` accounting at `store.ts:470`). *Rollback:* remove the section; counts remain.
-*Implemented 2026-10-21, uncommitted.* `ContextPacket.backlog` (planner role only) holds `unplannedAssets`, `cellsNotRun` and `wstgSuggestions` (a count plus the features used). Totals are exact and at most 5 IDs are listed per item; under a tight `maxBytes` the IDs are dropped first and the totals stay. With nothing waiting the key is absent and the packet is unchanged. **Deviation from item (b):** a cell has no `requirement` field, so "cells whose requirement references a now-reviewed task" could not be built; it became "cells declared `planned`/`unplanned` that nobody has run". Tests: a store-level test for the three items, the worker/reporting exclusion, a 4 KiB packet and the 900-byte backlog bound.
+**P3. Reorder `workerBrief` so same-skill siblings can share a prefix, the way `workerInstructions` already does.**
+*Evidence:* Finding A. *Step 1 measured (2026-10-21, no model call):* today's order shares 14 of ~4,940 characters
+(0.3%) between two synthetic same-skill siblings; moving the skills block to the front and the per-worker
+identity/focus/scope/context/constraints/task to the end (same shape as `workerInstructions`' own U3 reorder) raises
+that to 4,146 of ~4,940 (84%) in the same synthetic case.
+*Step 2 (only if it pays):* apply the reorder to `src/prompts.ts`'s real `workerBrief`. The per-worker identity line
+moves to the end, same place U3 put it in `workerInstructions`; the brief still opens with *something* static (a fixed
+label line) so the first bytes match across every brief regardless of skill, and the skills block (when present) comes
+right after it so same-skill siblings match further still.
+*Not:* any claim of dollars or tokens saved — that needs a paid run, out of bounds here, exactly the caveat Finding A
+already states. Does not change what information the worker receives, only where in the text it sits.
+*Effort S. Risk:* brief-hash churn in `recon.test.ts`/`workflow-policy.test.ts` (expected and re-pinned on purpose, same
+as U3 step 2); a worker reading its own brief top-to-bottom now sees skills before its own focus/task, which is a
+real readability tradeoff against the caching gain — flag this explicitly to the owner rather than deciding it here.
+*Decision needed before Step 2:* is the readability tradeoff (skills-before-task reading order) worth the measured
+cache-prefix gain? Recommend doing P1 first regardless — it is needed either way and does not interact with ordering.
 
-**U6. Advisory guard against "ruled out" that rests on blocked requests.**
-*Evidence:* Strix's `counterevidence.md` lists "control on a different path", "missing information" and "difficulty" as **invalid** reasons to rule a candidate out; ARTEX's G5 hook classifies 403/429/WAF/captcha results as *blocked*, not *ok*. p2o's rule is the same in prose (`prompts.ts:79`) but nothing mechanical checks it.
-*Change:* in case review / finish preflight, annotate (never reject) a `ruled_out` closure or a `ruled_out_bounded` cell whose every `negativeControls`/`evidenceRefs` receipt carries an HTTP status in {401, 403, 429} or a transport error; warning code e.g. `NEGATIVE_MAY_BE_BLOCKED`. Follows the existing `integrity: off | annotate | enforce` switch.
-*First check:* where the HTTP status lives in the receipt (`evidence.ts:47` stores `exitCode`, `input`, `target`; confirm HTTP status is in `data` before relying on it).
-*Checked 2026-10-21:* the receipt has no status field. For `p2o_http` the status is the first token of each `data.http.hops[]` string (`403 GET https://… → addr (public)`), and the list keeps only the first 6 hops; shell and network receipts carry no structured status at all.
-*Implemented 2026-10-21, uncommitted:* advisory preflight code `NEGATIVE_MAY_BE_BLOCKED`, off when `reviewIntegrity=off`, never blocking. It flags a `ruled_out` candidate or a `ruled_out_bounded` cell only when it cites receipts and **every** one is a `p2o_http` receipt whose last hop is 401/403/429, or that has no response and a non-zero exit. A 2xx or 404, a shell or net receipt, a missing receipt or a 6-hop list (final response hidden) leaves it alone. Pure helpers `receiptLooksBlocked` and `blockedNegatives` in `finish-preflight.ts`. Case review itself is untouched; the warning appears only in the finish preflight.
-*Effort S–M.*
+### Tier C — owner decision, no code without it
 
-**U7. Canonical form for host/URL asset keys (measure first).**
-*Evidence:* ARTEX merges on lower-cased host / normalized URL + method, so the same service never becomes two rows. p2o keys are exact bytes by design (`ASSET_GRAPH.md`), which preserves truth for paths but lets `https://Example.com` and `https://example.com`, or `:443` vs none, become different assets and therefore different coverage cells, work fingerprints, and `--refer-workspace` matches.
-*Step 1 (free):* scan existing durable-local run stores for asset-key pairs equal after the proposed rules (lower-case scheme+host, drop default port, drop fragment; **never** touch path, query or case of the path). If none, stop.
-*Step 2:* only if it fires: bump `GRAPH_IDENTITY_VERSION` to 2 and apply the rules to kinds `host`, `service`, `endpoint` whose key parses as a URL. The version is already inside the scope hash, so older runs show as foreign/stale in `--refer-workspace`, which is truthful.
-*Step 1 measured (2026-10-21, read-only, every `assessment.sqlite` under any `.p2o-state` on this machine):* 205 stores found, 133 readable (the other 72 predate the `assets` table), 130 asset heads in all, 42 with an http(s) key, **0 pairs** of keys that become equal after the rules, within a scope or across stores. Three real hosts appear (every revision counted: about 37, 8 and 7 keys); the rest are test fixtures. The rules would have changed 7 keys: one service key with an explicit default port (`https://host:443`), and six endpoint keys that are route templates (`/post/{id}`).
-*Lesson from the scan:* a naive WHATWG `URL.href` rewrites `{id}` to `%7Bid%7D`, which breaks the "never touch the path" rule, and endpoint keys can be templates, not URLs. Any real implementation must canonicalize only scheme, host and port by hand and leave path and query bytes alone.
-*Verdict:* the gate says stop when nothing fires, and nothing fired. **Dropped on current evidence**, with the caveat that the sample is small (three real hosts); revisit if a `--refer-workspace` match is ever missed because of case or a default port. *Risk if revived:* identity change; needs the owner's decision. *Effort M.*
+**P4. Is a separate `workflow` knob worth keeping, now that P1 would make it reach the worker?**
+*Evidence:* Finding C. Strix expresses "which application of this skill" with nothing beyond its flat skill list (a
+different skill per variant, or none); ARTEX has no skill system to compare. p2o's `workflow` is the only one of the
+three knobs with no ARTEX/Strix precedent, and until P1 ships it has been provably inert (Finding B).
+*Options, not decided here:*
+1. Ship P1, then watch real runs for whether the lead sets a non-empty `workflow` often enough to justify the extra
+   validation path (`TASK_METHOD_STALE`, the `WORKFLOW_UNKNOWN` checks) it costs.
+2. If it is rarely used even after P1, fold each skill's workflow variants into its own `SKILL.md` text (the lead
+   reads which variant applies the same way it reads everything else in the catalog) and drop the structured
+   `workflow` field, `TASK_METHOD_STALE`, and the `WORKFLOW_UNKNOWN` checks.
+*Not proposing either option now* — this needs usage evidence this planning pass does not have (no paid runs, no
+telemetry), exactly the same posture the superseded study took on U7 and U9.
+*Also open, smaller:* should `methodReason` reach the worker's brief the same way `workflow` would under P1, or is it
+deliberately owner-only audit trail (like a `p2o_plan` decision's `reason`)? Not proposed either way — flagging it so
+the owner can fold an answer into the P1 decision rather than treat it as a second, separate change later.
 
-**U8. Roles and order for reproduction evidence.**
-*Evidence:* ARTEX binds evidence with `role ∈ baseline | proof | verification | supporting` and an explicit order; the reporter must read the binding version before writing. p2o's `reproductionEvidenceRefs` is an unordered id list (≤5).
-*Change:* accept `{ref, role, note?}` entries (the plain-id form stays valid), keep the same-run check (`cases.ts:122`), and render the ordered steps in the report. Roles are labels for the reader, not proof levels.
-*Effort S–M.* Touches `case-types.ts`, `cases.ts`, `report-export.ts`; `rate` already writes a separate note so revision semantics are unaffected.
-*Implemented 2026-10-21, uncommitted, with one deviation:* the entries are a separate optional `reproductionSteps: [{ref, role, note?}]` (1–5, roles baseline/proof/verification/supporting, note ≤200) next to the unchanged `reproductionEvidenceRefs`, not a mixed string/object array, so the tool schema needs no union type that legacy provider projection can drop. Given steps, the id list is derived in step order; if both are sent they must match. `REPORT.md` numbers the steps with role and note, `findings.json` adds `role` and `note` to each reproduction entry, and a plain id list renders byte-for-byte as before.
+### Reviewed, nothing proposed
 
-### Tier C — need an owner decision before any code
+**Recon instructions sent to the lead even when delegation is enabled.** `ownerInstructions` includes
+`reconInstructions(facts.targetKind, false)` unconditionally (`src/prompts.ts:67`), even though a delegating lead never
+executes recon itself. Considered as a possible fifth finding; not proposed, because the same text plausibly doubles as
+the rubric the lead uses to judge whether a worker's recon is adequate ("Unclear entry/gate → focused mapping..." reads
+as a review heuristic, not only an instruction to act) — cutting it needs a judgment call about what the lead actually
+uses it for, which this pass did not test. Flagging it for the owner rather than guessing.
 
-**U9. Retest of a prior finding, built on `--refer-workspace`.**
-*Evidence:* ARTEX models retest as a separate session that starts from a frozen snapshot of one finding, with the three-verdict gate in §1.4. p2o has `purpose:'retest'`, `decision:'retest'`, "remediation `implemented` ≠ fixed", and — since `7088bfa` — a way to read prior same-target runs as context. The old 3.5 stalled on `retestOf` plumbing.
-*Sketch:* `--refer-workspace <run> --retest <case-id>` seeds **one** validation task whose brief quotes the prior case's claim and reproduction steps as *leads*; the verdict is a new case in the new run with a lifecycle link to the prior case id. Verdict gates go into `skills/remediation` (reproduced / fixed / inconclusive; `fixed` needs comparable environment, trigger inactive, working control; one failed request is `inconclusive`). Nothing from the prior run counts as same-run evidence.
-*Decision needed:* new flag vs a `/p2o retest` sub-command; whether the doc-only verdict taxonomy (zero code) ships first. *Recommendation:* ship the doc part now, decide the flag after U1 lands.
-
-**U10. Hybrid target (source snapshot + deployed origin).**
-*Evidence:* Strix treats "code guides live testing, live anomalies guide code review" as a first-class situation and builds a Target Map across assets. p2o runs exactly one target kind, so static findings and live probes cannot share one graph, one coverage plan or one report.
-*Why not now:* identity (`scope = target + sourceSnapshotSha256`), tickets, sandbox mount and the HTTP origin check are all single-target. A hybrid is a design change across scope, store and report, not a feature flag.
-*Decision needed:* is the cross-correlation worth reopening scope? Cheaper substitute available today: run two linked assessments and use `--refer-workspace` (leads only, never evidence).
-
-**U11. Hygiene the incident points at (all optional).**
-1. Create `.p2o-reports/.gitignore` containing `*` when the directory is first made, and tell the operator once that exports are best-effort redacted. (`evidence.ts:95`.)
-2. In the confirm dialog, add one extra paragraph when the URL host ends in `.gov`, `.mil`, `.edu` or a country variant (`.gov.xx`, `.edu.xx`). This is friction, not a boundary; the human remains the only authority. ARTEX's own default was a hard block; p2o should **not** copy a block, only the prompt.
-3. An opt-in setting `p2o.attributionHeader` adding a run-id header to scoped HTTP so the asset owner's defenders can tell authorized testing from an attack. Off by default (it can change WAF behaviour).
-*Effort XS each; the owner decides which, if any.*
-
-### Considered and not proposed
-
-| Idea | Source | Why not |
-|---|---|---|
-| Fresh Planner session every wake | ARTEX | The Planner is the operator's own Pi conversation by contract; the K6 packet already gives a request-local projection |
-| Free agent spawning, "2000+ steps" mandate, "never refuse" framing | Strix | Conflicts with human-only authority, bounded slots and honest `blocked` |
-| LLM-judge duplicate detection | Strix | p2o's structural fingerprints and `rootCauseKey` rule are stricter and free |
-| LLM goal decomposer at start; LLM-judged `prove_goal` | ARTEX | Costs a call; p2o goals close only with same-run evidence and an explicit revision |
-| Cold-digest model summaries of old graph regions | ARTEX | p2o's design forbids model-written summaries as state (`CONTEXT_PACKETS.md`) |
-| Coverage = fact-anchored assets ÷ denominator | ARTEX | Weaker than p2o's two-axis cells |
-| Full parent-history inheritance | Strix | p2o's brief + request-local packet is the cheaper contract |
-| OpenAPI → coverage cells importer | Strix `api_spec_testing` | A skill already covers route inventory; no evidence the Planner spends enough turns on this to justify a new owner action |
-| Scan-mode profiles `quick/standard/deep` | Strix | p2o has no time/cost concept by design; revisit if a cost governor ever lands |
-| Technology/framework skills (django, nextjs…) | Strix | Old 3.8; still no demand signal. Add one only when a real run needs it, with provenance |
-| Threat-model note (old 3.2) | Strix | Not re-argued here; U1's stored objective plus `p2o_plan` covers the "shared, correctable framing" need at lower cost |
+**`p2o_skill_list`/`p2o_skill_read` granted to workers whose skill is already pushed.** Checked: both tools also serve
+`shared:handoffs`/`shared:scope`/`shared:wstg-map` documents (`docs/SKILL_RUNTIME.md:8-10`) that have nothing to do with
+the worker's own assigned skill, and the tool description already says a role's default skill is "a starting point, not
+a ceiling" (`extensions/p2o/index.ts:1025`) — so the pull path is doing real, distinct work, not just duplicating the
+push. No change proposed.
 
 ---
 
-## 6. Order, gates, and what would change my mind
+## 4. Order
 
 | Step | Items | Gate before the next step |
 |---|---|---|
-| 1 | U1, U2 | **Implemented, uncommitted (2026-10-21):** `--avoid` parser, worker-brief block, ledger record, dialog and REPORT.md lines, scope-denial wording. Vitest 599 passed / 12 skipped; no change without the flags. One Python test (`test_provenance_record_matches_review_snapshot`, R1) fails on a clean tree too: the local `my_references/strix` snapshot no longer matches the pinned hash |
-| 2 | U3 step 1, U7 step 1 | **Done 2026-10-21.** U3: shared prefix 85 of 5,966 chars today, 5,901 if the identity line moves; stop condition not met, effect unquantified. U7: 0 collisions in 130 assets, dropped |
-| 3 | U4, then U5 | **Done 2026-10-21, uncommitted.** U4 first, U5 reuses its derivation; packet-size tests hold (Vitest 603 passed / 12 skipped) |
-| 4 | U6, U8 | **Done 2026-10-21, uncommitted.** U6: status is in `data.http.hops`, so only `p2o_http` receipts can be judged. U8: plain-id form unchanged. Vitest 610 passed / 12 skipped |
-| 5 | U9 doc part | Owner picks the flag shape |
-| later | U10, U11 | Owner decisions |
+| 1 | P1, P2 | None — both are deterministic, additive-only when the owner doesn't opt into a workflow, and independent of each other |
+| 2 | P3 step 1 | Already measured above; step 2 needs the owner's read on the readability-vs-cache tradeoff before it is applied |
+| 3 | P4 | Owner decision; needs P1 shipped first to generate the usage signal the decision depends on |
 
-Standing constraints honored: commit/push/install stay owner-initiated; no attribution lines; GitNexus `impact` before any edit (run it for
-`workerBrief`, `parseCommand`, `wstgSuggest`, `contextPacket`/`store.ts:461` — not run in this planning pass, so no blast-radius numbers are claimed);
-no paid or live runs; no reference code executed.
+Standing constraints honored: commit/push/install stay owner-initiated; no attribution lines; GitNexus `impact`/
+`detect-changes` before any edit (not run in this planning-only pass — run it for `workerBrief` and `prepareMethod`
+when P1/P3 are actually implemented); no paid or live runs; no reference code executed.
 
-**Would change the ranking:** a free-prefix measurement showing U3 is already shared (drop it); zero near-duplicate keys in existing stores (drop U7);
-a real run where a worker ignored an operator exclusion the lead had not copied (raises U1's value); a `ruled_out` later overturned because the
-control was a 403 (raises U6).
+## Appendix — where the evidence came from
 
-## Appendix — evidence index
-
-- ARTEX: `ARTEX_AGENTIC_CORE.vi.md` §1–§8; `agent/planner.go:150-345`; `agent/finding_workflow.go`; `agent/finding_recorder.go`; `agent/retester.go`;
-  `agent/constraints.go`; `guard/guard.go` (`applyIntercept`, `systemBlockMessage`, `postToolUse`, `reBlocked`); `db/schema.sql:1081-1129,1163-1174`.
-  Second sweep (agent-reported, §1.6): `server/engine.go:800-960,1030-1156`; `server/goals.go:99-285`; `agent/tools.go:1032-1089,1157-1214`; `agent/tools_insert.go:209-364`;
-  `agent/worker.go:361-535`; `agent/mainagent.go:87-195`; `db/finding_traffic.go:27-409`; `db/finding_retests.go:77-259`; `intercept/intercept.go:338-688`; `intercept/prompt.go:10-47`.
-- Strix (agent-reported): `strix/core/inputs.py:107,344`; `core/runner.py:396-401`; `agents/prompt.py:58`; `agents/prompts/system_prompt.jinja` SP:3-11,92-128,206,290-378,507-527;
-  `tools/agents_graph/tools.py:495`; `tools/finish/tool.py`; `tools/coverage/tools.py:40`; `tools/threat_model/tools.py`; `tools/reporting/tool.py:135,982`; `report/dedupe.py:330`;
-  `report/coverage.py:230`; `skills/__init__.py:224`; `core/hooks.py:49-53`; `benchmarks/README.md`.
-- p2o: `src/prompts.ts:63,86-128`; `src/engine.ts`; `src/target.ts:15-70,81-101,152`; `src/wstg-map.ts:148,372,419-429`; `src/state/store.ts:461-470`;
-  `src/coverage.ts:35`; `src/case-types.ts:20,39`; `src/cases.ts:122`; `src/state/graph.ts:7-12,37`; `src/finish-preflight.ts:89`; `src/evidence.ts:47,95`;
-  `src/tool-guidelines.ts`; `extensions/p2o/index.ts:95,527,1029,1536-1554,1649`; `docs/ARCHITECTURE.md`, `ASSET_GRAPH.md`, `WORK_ADMISSION.md`, `CASE_REVIEW.md`,
-  `CONTEXT_PACKETS.md`, `PLANNER_ENGINE.md`; `HANDOFFS.md` H1.
-- Prior study: `git show 656843d:planning_update.md`; memory notes on pinned lead prompt, opt-in tool guidance, `--refer-workspace` (`7088bfa`).
+- `src/prompts.ts:5` (`KNOWLEDGE`), `:89-108` (`workerInstructions`), `:110-138` (`workerBrief`).
+- `extensions/p2o/index.ts:446-463` (`resolveRole`/skill-doc assembly in `spawnWorkerLocked`), `:512` (the `workerBrief`
+  call site with no `workflow` passed), `:880-891` (`prepareMethod`).
+- `src/tasks.ts:13` (`TaskMethod`, including the `workflow` field that never leaves the owner side).
+- `src/roles.ts:17-23` (`ROLE_DEFAULTS`), `:30` (`MAX_SKILLS`), `:134-146` (`resolveRole`).
+- `src/skills.ts` (`SkillLibrary.load/list/read`, full file).
+- `src/tool-policy.ts:3-4` (`p2o_skill_list`/`p2o_skill_read` on both `OWNER_TOOLS` and `WORKER_TOOLS`).
+- `skills/catalog.json` (attack-surface-mapping's three workflows, used as the Finding B example).
+- `docs/SKILL_RUNTIME.md:8-17` (documented knowledge-tool and workflow-validation behavior).
+- `tests/minimal/recon.test.ts:68-95` (`briefHash`/instruction-hash pins that P1/P2/P3 would touch),
+  `tests/minimal/workflow-policy.test.ts:59`.
+- Prior study for ARTEX/Strix architecture and the U3 precedent this pass extends: `git show b3789cd:planning_update.md`
+  §1.2, §2, Tier A item U3.

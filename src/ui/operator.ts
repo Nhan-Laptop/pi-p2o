@@ -2,7 +2,7 @@ import { CONTROL, validId } from '../validate.js';
 
 /**
  * Human-only run controls. There is deliberately no model tool for `hold` or `release`: the operator can tighten or loosen the
- * target-operation gate, the model cannot. `stop-worker` reaches the same withdrawal path as the model's `p2o_stop_worker`.
+ * target-operation gate, the model cannot. `stop-worker` reaches the same withdrawal path as the model's `p2o_workers` (action: 'stop').
  */
 export type OperatorCommand = { action: 'workers' } | { action: 'hold'; reason: string } | { action: 'release' } | { action: 'stop-worker'; workerId: string; reason: string };
 export const OPERATOR_REASON_LIMIT = 500;

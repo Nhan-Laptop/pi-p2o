@@ -162,7 +162,7 @@ describe('worker role', () => {
     const runDir = await h.runDir();
     await h.activate(join(runDir, `ticket-${workerId}.json`));
     await expect(h.call('p2o_workers', {}, 'worker')).rejects.toThrow(/No active p2o assessment/);
-    await expect(h.call('p2o_stop_worker', { workerId, reason: 'x' }, 'worker')).rejects.toThrow(/No active p2o assessment/);
+    await expect(h.call('p2o_workers', { action: 'stop', workerId, reason: 'x' }, 'worker')).rejects.toThrow(/No active p2o assessment/);
     await h.call('p2o_report', { summary: 'visible to lead', confidence: 'high' }, 'worker');
     const view = await h.call('p2o_workers', {});
     expect(view.content[0].text).toContain('visible to lead');
@@ -179,7 +179,7 @@ describe('worker role', () => {
     // A second process holding the same token is refused once the owner revokes the worker.
     const replay = new BrokerClient(ticket.socket, ticket.token, { connectMs: 2000, requestMs: 3000 });
     await expect(replay.request('status')).resolves.toMatchObject({ workerId });
-    await h.call('p2o_stop_worker', { workerId, reason: 'done' });
+    await h.call('p2o_workers', { action: 'stop', workerId, reason: 'done' });
     await expect(replay.request('exec', { command: 'id' })).rejects.toThrow(/stopped by the owner/);
     replay.close();
     await expect(h.call('p2o_shell', { command: 'id' }, 'worker')).rejects.toThrow(/finished or has no valid ticket|Do not retry|stopped by the owner/);

@@ -103,14 +103,14 @@ export const subtaskParameters = Type.Object({focus:Type.String({minLength:3,max
 export const loopParameters = Type.Object({action:choices(['status','wait','blocked']),reason:Type.Optional(Type.String({minLength:1,maxLength:1000}))});
 
 export const workersParameters = Type.Object({
+      action: Type.Optional(choices(['list', 'steer', 'stop'])),
       waitFor: Type.Optional(choices(['change', 'all-report'])),
       timeoutSeconds: Type.Optional(Type.Integer({ minimum: 5, maximum: 300 })),
       cursor:Type.Optional(Type.Integer({minimum:0,description:'Prior ledger cursor for a bounded change page'})),
+      workerId: Type.Optional(Type.String({ minLength: 1, maxLength: 64, description: 'Required for action steer/stop' })),
+      message: Type.Optional(Type.String({ minLength: 1, maxLength: 2000, description: 'Required for action steer' })),
+      reason: Type.Optional(Type.String({ minLength: 1, maxLength: 300, description: 'Required for action stop' })),
     });
-
-export const steerParameters = Type.Object({ workerId: Type.String({ minLength: 1, maxLength: 64 }), message: Type.String({ minLength: 1, maxLength: 2000 }) });
-
-export const stopWorkerParameters = Type.Object({ workerId: Type.String({ minLength: 1, maxLength: 64 }), reason: Type.String({ minLength: 1, maxLength: 300 }) });
 
 export const reportParameters = Type.Object({
       summary: Type.String({ minLength: 1, maxLength: 4000 }),
