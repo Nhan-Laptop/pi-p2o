@@ -237,6 +237,17 @@ function wstgChecklistFile(cells: readonly CoverageCellView[], cases: readonly C
   return [{ name: 'wstg-checklist.csv', body: `${lines.join('\n')}\n` }];
 }
 
+/** Operator words recorded at run start (U1). Quoted as unverified operator text; empty, so the report is unchanged, when no flag was given. */
+function operatorBrief(index: LedgerIndex): string[] {
+  const recorded = index.records.find(record => record.kind === 'lifecycle' && record.by === 'owner' && typeof record.data?.operator === 'object' && record.data.operator !== null)?.data?.operator as { objective?: unknown; avoid?: unknown } | undefined;
+  if (!recorded) return [];
+  const avoid = Array.isArray(recorded.avoid) ? recorded.avoid.filter((line): line is string => typeof line === 'string').slice(0, 5) : [];
+  return [
+    ...(typeof recorded.objective === 'string' ? [`- Stated objective (operator-supplied, unverified, does not change scope): ${mdText(recorded.objective, 600)}`] : []),
+    ...avoid.map(line => `- Operator constraint (guidance given to workers, not enforcement): ${mdText(line, 300)}`),
+  ];
+}
+
 export function renderReport(index: LedgerIndex, context: ReportProjectionContext & { coverage?: CoverageContext }, meta: ReportMeta): RenderedReport {
   const projection = reportProjection(index, context), tasks = taskFrontier(index);
   const cases = caseViews(index, context.cases ?? {}), plans: CoveragePlanView[] = context.coverage ? coverageViews(index, context.coverage) : [];
@@ -255,6 +266,7 @@ export function renderReport(index: LedgerIndex, context: ReportProjectionContex
     '## Provenance', '',
     `- Run: ${mdText(meta.runId, 80)}${meta.historical ? ' (historical, read-only store)' : ' (active run)'}; as of committed sequence **${meta.asOfSequence}**; ${index.records.length} records; store schema ${meta.storeSchema}`,
     `- Target: ${mdText(meta.target, 400)}; retention ${mdText(meta.retention)}`,
+    ...operatorBrief(index),
     `- Runtime that wrote this run: p2o ${mdText(meta.runtime.version || 'unknown version', 40)} · closure digest ${mdText(meta.runtime.hash.slice(0, 12), 16)}`,
     `- Reconciliation: ${meta.complete && projection.complete ? 'complete bounded record scan' : '**INCOMPLETE** — no completeness claim'}${projection.diagnostics.length ? `; diagnostics: ${projection.diagnostics.slice(0, 10).map(item => mdText(item, 200)).join('; ')}` : ''}`,
     `- Views below are bounded (${ROWS} rows per list, ${CASE_ROWS} cases); omitted rows are counted and the complete data is in the portable bundle (\`/p2o export\`).`,

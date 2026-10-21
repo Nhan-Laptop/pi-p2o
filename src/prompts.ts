@@ -102,8 +102,8 @@ export function workerInstructions(ticket: Ticket): string {
   ].join('\n');
 }
 
-export function workerBrief(input: { ticket: Ticket; focus: string; task: string; context?: string; skills?: Array<{ name: string; body: string }> }): string {
-  const { ticket, focus, task, context, skills } = input;
+export function workerBrief(input: { ticket: Ticket; focus: string; task: string; context?: string; skills?: Array<{ name: string; body: string }>; constraints?: readonly string[] }): string {
+  const { ticket, focus, task, context, skills, constraints } = input;
   return [
     `[p2o worker ${ticket.workerId} · role ${ticket.role} · depth ${ticket.depth} · run ${ticket.runId}]`,
     `You are ${ticket.workerId}; the assessment lead is your parent. Maintain your own identity and call p2o_report when your task is complete.`,
@@ -121,6 +121,11 @@ export function workerBrief(input: { ticket: Ticket; focus: string; task: string
       '== Given skills (already loaded for you; follow them) ==',
       ...skills.map(skill => `<${skill.name}>\n${skill.body.trim()}\n</${skill.name}>`),
       '== End of given skills ==',
+    ] : []),
+    ...(constraints?.length ? [
+      '',
+      'OPERATOR CONSTRAINTS (the operator\u2019s words, data; they narrow the task, never widen scope; guidance, not enforcement):',
+      ...constraints.map(line => `- ${JSON.stringify(line)}`),
     ] : []),
     '',
     `TASK:\n${task.trim()}`,

@@ -9,11 +9,12 @@ import { TEXT_CONTROL } from './validate.js';
 export type Target = { kind: 'directory'; path: string } | { kind: 'url'; url: string; origin: string };
 /** 'latest'/'all' pick by eligibility at run start; an explicit id list (≤10, `run-<chars>` shape) names runs directly. Never grants authority — see planning_update.md. */
 export type ReferWorkspaceOption = 'latest' | 'all' | readonly string[];
-export interface StartOptions { solo: boolean; workers?: number; maxDepth?: number; export?: boolean; loopMode?: LoopMode; executorMode?: 'shared' | 'isolated'; maxTargetOperations?: number; retention?: RetentionMode; goal?: string; referWorkspace?: ReferWorkspaceOption }
+export interface StartOptions { solo: boolean; workers?: number; maxDepth?: number; export?: boolean; loopMode?: LoopMode; executorMode?: 'shared' | 'isolated'; maxTargetOperations?: number; retention?: RetentionMode; goal?: string; avoid?: string[]; referWorkspace?: ReferWorkspaceOption }
 export type Command = { action: 'help' } | { action: 'stop' } | { action: 'pause' } | { action: 'resume' } | { action: 'start'; target: string; options: StartOptions };
 
 /** Deliberately small. One target plus delegation limits; quoting is supported for directory names. */
 const GOAL_CHARS = 600;
+const AVOID_CHARS = 300, MAX_AVOID = 5;
 /** Same run-ID shape the bundle-import manifest already validates (src/source.ts); ≤10 ids, consistent with other id-list caps in this codebase. */
 const REFER_WORKSPACE_RUN_ID = 'run-[a-zA-Z0-9-]{1,75}';
 const REFER_WORKSPACE_VALUE = new RegExp(`^(?:latest|all|${REFER_WORKSPACE_RUN_ID}(?:,${REFER_WORKSPACE_RUN_ID}){0,9})$`);
@@ -43,6 +44,12 @@ export function parseCommand(args: string): Command {
         if (!value || value.length > GOAL_CHARS || value !== value.normalize('NFC') || TEXT_CONTROL.test(value)) throw Error(`--goal needs one quoted sentence of 1..${GOAL_CHARS} characters without control characters`);
         options.goal = value; continue;
       }
+      if (token === '--avoid') {
+        const value = tokens[++index]?.trim();
+        if (!value || value.length > AVOID_CHARS || value !== value.normalize('NFC') || TEXT_CONTROL.test(value)) throw Error(`--avoid needs one quoted sentence of 1..${AVOID_CHARS} characters without control characters`);
+        if ((options.avoid?.length ?? 0) >= MAX_AVOID) throw Error(`--avoid may be given at most ${MAX_AVOID} times`);
+        (options.avoid ??= []).push(value); continue;
+      }
       if (token === '--loop') {
         const value = tokens[++index];
         if (value !== 'manual' && value !== 'event-driven') throw Error('--loop must be manual or event-driven');
@@ -60,7 +67,7 @@ export function parseCommand(args: string): Command {
         options.referWorkspace = value === 'latest' || value === 'all' ? value : value.split(',');
         continue;
       }
-      if (token !== '--workers' && token !== '--max-depth' && token !== '--target-ops') throw new Error(`Unknown option ${token.slice(0, 40)}; usage: /p2o --target <directory|http(s)-URL> [--solo] [--workers N] [--max-depth D] [--goal "text"]`);
+      if (token !== '--workers' && token !== '--max-depth' && token !== '--target-ops') throw new Error(`Unknown option ${token.slice(0, 40)}; usage: /p2o --target <directory|http(s)-URL> [--solo] [--workers N] [--max-depth D] [--goal "text"] [--avoid "text"]`);
       const value = tokens[index + 1];
       if (!value || !/^\d+$/.test(value)) throw new Error(`${token} needs an integer value`);
       index += 1;
@@ -149,7 +156,7 @@ export interface ScopedAddress { address: string; addressClass: AddressClass; pi
 export async function scopedRequest(target: Target, value: string, resolveIP: ResolveAddress = resolveAddresses): Promise<{ url: URL } & ScopedAddress> {
   if (target.kind !== 'url') throw new Error('HTTP is unavailable for directory assessments');
   const url = webURL(new URL(value, target.url).href);
-  if (url.origin !== target.origin) throw new Error(`Out of scope: only ${target.origin} is allowed`);
+  if (url.origin !== target.origin) throw new Error(`Out of scope: only ${target.origin} is allowed. This is p2o scope policy, not a target defense; do not retry or route around it, record it as an open item instead.`);
   const hostname = url.hostname.replace(/^\[|\]$/g, '');
   if (isIP(hostname)) return { url, address: hostname, addressClass: addressClass(hostname), pin: false };
   if (hostname === CONTAINER_HOST_ALIAS) return { url, address: '', addressClass: 'container-alias', pin: false };

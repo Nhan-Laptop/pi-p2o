@@ -21,6 +21,20 @@ describe('automatic report at the end of a run', () => {
     expect(await readFile(join(directory, 'REPORT.md'), 'utf8')).toContain('> **Run end:** the lead called p2o_finish.');
   }));
 
+  it('records the operator objective and constraints in the ledger and REPORT.md only when the flags were given', async () => {
+    await fixture(async h => {
+      await h.command('--target ./source --solo --goal "Assess the login boundary" --avoid "No payment flows"'); await h.call('p2o_finish', {});
+      const report = await readFile(join(await reportDirectory(h), 'REPORT.md'), 'utf8');
+      expect(report).toContain('Stated objective (operator-supplied, unverified, does not change scope): Assess the login boundary');
+      expect(report).toContain('Operator constraint (guidance given to workers, not enforcement): No payment flows');
+    });
+    await fixture(async h => {
+      await h.command('--target ./source --solo'); await h.call('p2o_finish', {});
+      const report = await readFile(join(await reportDirectory(h), 'REPORT.md'), 'utf8');
+      expect(report).not.toContain('Stated objective'); expect(report).not.toContain('Operator constraint');
+    });
+  });
+
   it('is written with an INTERRUPTED banner when the operator stops the run', async () => fixture(async h => {
     await populate(h); await h.command('stop');
     const report = await readFile(join(await reportDirectory(h), 'REPORT.md'), 'utf8');

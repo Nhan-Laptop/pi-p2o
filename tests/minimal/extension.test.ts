@@ -281,6 +281,22 @@ describe('owner role', () => {
     expect(records.some(entry => entry.kind === 'lifecycle' && String(entry.text).includes('delegated'))).toBe(true);
   });
 
+  it('shows --avoid constraints in the confirm dialog and in every worker brief', async () => {
+    const started = await h.start('--target ./repo --avoid "No payment flows" --avoid "Stay off /admin"');
+    const dialog = started.confirmBodies.at(-1)!;
+    expect(dialog).toContain('Operator constraints (sent to every worker as model-level guidance, not enforcement');
+    expect(dialog).toContain('- No payment flows'); expect(dialog).toContain('- Stay off /admin');
+    await h.call('p2o_delegate', { focus: 'idor', task: 'Validate the idor claim', context: 'nothing known', role: 'validation' });
+    const brief = String(h.herdr.calls.find(call => call.op === 'prompt')!.text);
+    expect(brief).toContain('OPERATOR CONSTRAINTS'); expect(brief).toContain('- "No payment flows"'); expect(brief).toContain('- "Stay off /admin"');
+  });
+  it('shows no constraints block in the dialog or the worker brief without --avoid', async () => {
+    const started = await h.start();
+    expect(started.confirmBodies.at(-1)).not.toContain('Operator constraints');
+    await h.call('p2o_delegate', { focus: 'idor', task: 'Validate the idor claim', context: 'nothing known', role: 'validation' });
+    expect(String(h.herdr.calls.find(call => call.op === 'prompt')!.text)).not.toContain('OPERATOR CONSTRAINTS');
+  });
+
   it('refuses delegation when solo, capped, too deep, without the skill, or without Herdr', async () => {
     await h.start('--target ./repo --solo');
     await expect(h.call('p2o_delegate', { focus: 'x', task: 'y' })).rejects.toThrow(/DELEGATION_UNAVAILABLE/);

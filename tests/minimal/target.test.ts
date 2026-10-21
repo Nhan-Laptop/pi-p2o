@@ -21,6 +21,21 @@ describe('one target grammar', () => {
     for (const args of ['--goal', '--goal ""', `--goal "${'a'.repeat(601)}"`, '--goal "bad\u202etext"', '--goal "bad\u0085text"']) expect(() => parseCommand(`--target x ${args}`), args).toThrow(/--goal/);
   });
 
+  it('takes up to five repeatable quoted --avoid constraints and leaves options untouched without them', () => {
+    expect(parseCommand('--target x --avoid "No payment flows" --solo --avoid \'Do not touch /admin\'')).toMatchObject({ options: { solo: true, avoid: ['No payment flows', 'Do not touch /admin'] } });
+    expect(parseCommand('--target x --goal "g" --solo')).toEqual({ action: 'start', target: 'x', options: { solo: true, goal: 'g' } });
+    expect(parseCommand(`--target x ${Array.from({ length: 5 }, (_, i) => `--avoid "c${i}"`).join(' ')}`)).toMatchObject({ options: { avoid: ['c0', 'c1', 'c2', 'c3', 'c4'] } });
+    expect(() => parseCommand(`--target x ${Array.from({ length: 6 }, (_, i) => `--avoid "c${i}"`).join(' ')}`)).toThrow(/at most 5/);
+    for (const args of ['--avoid', '--avoid ""', `--avoid "${'a'.repeat(301)}"`, '--avoid "bad\u202etext"', '--avoid "bad\u0085text"']) expect(() => parseCommand(`--target x ${args}`), args).toThrow(/--avoid/);
+  });
+  it('words an origin denial as p2o policy so a worker does not read it as a target defense', async () => {
+    const target = { kind: 'url' as const, url: 'https://example.invalid/', origin: 'https://example.invalid' };
+    const denial = scopedRequest(target, 'https://other.example/', async () => ['93.184.216.34']);
+    await expect(denial).rejects.toThrow('Out of scope: only https://example.invalid is allowed');
+    await expect(denial).rejects.toThrow('p2o scope policy, not a target defense');
+    await expect(denial).rejects.toThrow('do not retry or route around it');
+  });
+
   it('parses only the delegation limits it understands', () => {
     expect(parseCommand('--target x --solo')).toMatchObject({ options: { solo: true } });
     expect(parseCommand('--target x --workers 12 --loop event-driven --executors isolated --target-ops 2')).toMatchObject({options:{workers:12,loopMode:'event-driven',executorMode:'isolated',maxTargetOperations:2}});
