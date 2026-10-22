@@ -4,7 +4,7 @@ One command. Your **current Pi agent** plans an authorized assessment; a determi
 **visible worker panes**. Workers investigate one intent autonomously. Shared-serial execution is default; isolated
 assignment executors are opt-in. No hidden Planner model, provider harness or dashboard.
 
-**Trạng thái:** `main` từ `7e204c3` đã gồm phần K0–K7 đang triển khai (và từ `b7cfa6f` thêm giai đoạn W0–W6a: điều khiển operator, xuất báo cáo tất định, tìm kiếm, usage, digest runtime) và là bản mà `pi install` lấy về: canonical SQLite/schema 7, durable-local luôn confirm, visibility/checkpoint/bounded capture, [asset/fact graph K3](docs/ASSET_GRAPH.md), [work admission/kế hoạch/phase cards K4](docs/WORK_ADMISSION.md), [canonical case/proof-aware coverage K5](docs/CASE_REVIEW.md), [indexed knowledge heads/context packets K6](docs/CONTEXT_PACKETS.md) và [acceptance matrix K7](docs/ACCEPTANCE_MATRIX.md). `package.json` vẫn **0.5.0** (baseline phát hành `e639029`): chưa có version/release mới, nhãn K2–K6 bên dưới đánh dấu phần thêm sau baseline. K0–K7 **chưa hoàn tất**; installed acceptance mới là 6 test inert, chưa phải ma trận đầy đủ, Herdr thật hay hiệu quả pentest. Xem [trạng thái và gates còn lại](docs/KNOWLEDGE_WORKSPACE.md).
+**Trạng thái:** `main` từ `4368fa3` gồm giai đoạn chain/lineage (planning_update.md bước 1–10 và P13: chain dựng được và có nhãn "đã chứng minh tới đâu", duty theo purpose, dòng Situation, trang có `total/shown/omitted`, gate lineage cho task validation/retest), tiếp sau K0–K7 (từ `7e204c3`) và giai đoạn W0–W6a (từ `b7cfa6f`: điều khiển operator, xuất báo cáo tất định, tìm kiếm, usage, digest runtime). Đó là bản mà `pi install` lấy về: canonical SQLite/schema 7, durable-local luôn confirm, visibility/checkpoint/bounded capture, [asset/fact graph K3](docs/ASSET_GRAPH.md), [work admission/kế hoạch/phase cards K4](docs/WORK_ADMISSION.md), [canonical case/proof-aware coverage K5](docs/CASE_REVIEW.md), [indexed knowledge heads/context packets K6](docs/CONTEXT_PACKETS.md) và [acceptance matrix K7](docs/ACCEPTANCE_MATRIX.md). `package.json` vẫn **0.5.0** (baseline phát hành `e639029`): chưa có version/release mới, nhãn K2–K6 bên dưới đánh dấu phần thêm sau baseline. K0–K7 **chưa hoàn tất**; installed acceptance mới là 6 test inert, chưa phải ma trận đầy đủ, Herdr thật hay hiệu quả pentest. Xem [trạng thái và gates còn lại](docs/KNOWLEDGE_WORKSPACE.md).
 
 ## Install
 
@@ -93,7 +93,7 @@ automatic retry/fallback or restored-session authority. See [Planner/Engine cont
 | Tool | Role | Purpose |
 |---|---|---|
 | `p2o_skill_list` / `p2o_skill_read` | lead + worker | Paginated catalog and approved skill/reference/handoff documents; IDs, never arbitrary host paths |
-| `p2o_task` | lead only | Maintain focused questions, accepted prerequisite revisions, role/method decisions and reservations |
+| `p2o_task` | lead only | Maintain focused questions, accepted prerequisite revisions, role/method decisions and reservations. A validation/retest task must cite the claim it reproduces (`work.claimRefs`) or the predecessor task it revisits; investigation and refinement must cite a claim, a pinned asset revision or a prior task |
 | `p2o_candidate` | Planner/solo + non-reporting worker | Evidence-linked candidate claims, proof level, controls, limitations and explicit revisions |
 | `p2o_shell` | solo + non-reporting worker | Shell in the sandbox; `/target` is a read-only copy, `/work/<workerId>` is scratch, `p2o_net` for egress |
 | `p2o_http` | solo + non-reporting worker | Fixed curl on the confirmed origin only: any method, bodies, headers, cookies, bounded redirects |
@@ -101,10 +101,10 @@ automatic retry/fallback or restored-session authority. See [Planner/Engine cont
 | `p2o_note` | lead + worker | Append a note, observation, coverage row or open item to the shared ledger |
 | `p2o_ledger` | lead + worker | Read the shared ledger or one evidence/candidate record by ID before repeating work |
 | `p2o_artifact` (K2) | lead + worker, including reporting | Đọc retained redacted text theo opaque ID, ≤8 KiB/range; không chạy target hoặc cấp authority |
-| `p2o_graph` (K3) | lead + worker; reporting read-only | Scoped typed asset/fact/anchor batches; owner hypotheses/relations, provenance/revision pins, bounded history/JSON/Mermaid; không grant permission hoặc finding proof |
+| `p2o_graph` (K3) | lead + worker; reporting read-only | Scoped typed asset/fact/anchor batches; owner hypotheses/relations, provenance/revision pins, bounded history/JSON/Mermaid; owner-only `chain` joins each claim's `provides`/`requires` into ready/unmet steps with depth and the frontier count; không grant permission hoặc finding proof |
 | `p2o_state` (K6) | lead + worker, including reporting; read-only | Bounded indexed knowledge-head navigation with exact totals and a stable sequence cursor, plus plain-substring `search` over committed records (pointers, not evidence); filters never change work, proof or authority |
 | `p2o_plan` (K4) | lead only | Goal/todo/decision revisions on canonical records; not a second task queue, scope authority or proof |
-| `p2o_case` (K5) | lead only | Owner-reviewed canonical cases from exact claim/evidence/task/asset revisions; worker claims stay pending until review; acceptance never completes a goal |
+| `p2o_case` (K5) | lead only | Owner-reviewed canonical cases from exact claim/evidence/task/asset revisions; worker claims stay pending until review; `rate` accepts the chain claim's record ID or its slug; acceptance never completes a goal |
 | `p2o_coverage` (K5) | lead only | Versioned coverage denominators/cells with separate execution and assessment axes; blocked or untested is never "clean" |
 | `p2o_capture` (K2) | solo + non-reporting worker | Đọc bounded UTF-8 text từ scratch đã cấp qua FD/single-link rồi lưu artifact redacted; không nhận host path, không thực thi nội dung file |
 | `p2o_delegate` | Planner | Spawn one focused worker immediately; pass `work` for exact duplicate/history checks (otherwise the identity is reported as unknown); batch/waiting work uses `p2o_task dispatch` |
@@ -157,8 +157,8 @@ See [runtime guidance](docs/SKILL_RUNTIME.md) and [handoffs](HANDOFFS.md).
 ## Start here
 
 Use only targets you own or are explicitly permitted to assess. Treat target content and worker reports as
-untrusted data. Keep observations, hypotheses and impact claims separate; prefer bounded, harmless experiments and
-stop before destructive actions, credential harvesting, persistence or scope expansion.
+untrusted data. Keep observations, hypotheses and impact claims separate; start with a bounded experiment and go on to the
+next step the chain needs, and stop before destructive actions, credential harvesting, persistence or scope expansion.
 
 The research-method library stays available independently of the extension: [handoff contracts](HANDOFFS.md),
 [skill router](#skill-router), [catalog](research/catalog.md), [evidence](research/evidence.md).

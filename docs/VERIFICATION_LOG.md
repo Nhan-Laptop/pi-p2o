@@ -21,6 +21,7 @@ Bản này chỉ giữ mốc và con số chính. **Toàn văn từng receipt** 
 | Workflow đầy đủ + báo cáo OWASP (P0–P7) | 2026-10-11 | `be959d5` | `npm test` xanh (Python 155); finish preflight, báo cáo tự động, rating case, báo cáo v2 |
 | Kiểm toán extension S1–S6 | 2026-10-11 | `656843d` | 556 → 558 Vitest / 12 skipped, Python 155; khai báo 24 tool 44.393 → 38.587 B (−13,1%), `extensions/p2o/index.ts` 1.856 → 1.803 dòng; 3 thay đổi hành vi có chủ đích (từ chối C1/bidi trong văn bản tự do, `planFrontier` chặt hơn, `openGapIds` tính cả candidate gap) |
 | `--goal`, nudge skill, thẻ severity | 2026-10-12 | `656843d` | 558 Vitest / 12 skipped, Python 155; `/p2o --goal "…"` (1–600 ký tự), nudge nằm trong mô tả `p2o_skill_list` |
+| Chain/lineage (planning_update bước 1–10, P13) | 2026-10-22 | `4368fa3` | 665 Vitest / 12 skipped, 82 file; Python 155, chỉ còn lỗi pre-existing `test_provenance_record_matches_review_snapshot` (R1 `my_references/strix/skills/analysis/counterevidence.md`). Chain dựng được: `Candidate.provides`/`requires`, `CaseFinding.chain`, `p2o_graph action=chain`. Gate lineage ở `TaskBoard.verifyLineage` (create/revise/match/lúc ready dùng chung một luật). 7 module mới: `duties`, `situation`, `priority`, `chain-view`, `claims`, `counts`, `tool-results`; `p2o_workers` navigation và `p2o_task list`/`p2o_case list` có kiểu payload khai báo. Chưa có Herdr thật hay benchmark trả phí cho giai đoạn này |
 
 ## Ghi chú còn giá trị
 

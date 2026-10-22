@@ -26,7 +26,12 @@ finite coalescing windows (100 ms) that need explicit event-driven consent. See 
 
 ## Tasks, reports, wakes
 
-- Tasks are owner-authored revisions; dispatch pins reviewed support atomically and every worker command rechecks it.
+- Tasks are owner-authored revisions; dispatch pins reviewed support atomically and every worker command rechecks it. A task
+  also states what it stands on: validation/retest cite the claim they reproduce (`work.claimRefs`) or the task they revisit,
+  investigation/refinement cite a claim, a pinned asset revision or a prior task, and mapping/reporting are exempt because they
+  are the starting point. The refusal is a field on the task, not an inference by the reader.
+- A claim may declare `provides`/`requires`; `p2o_graph action=chain` joins those into ready/unmet steps so the lead reads one
+  frontier instead of reconstructing the chain from prose.
 - A report persists (hashed parts, manifest, task transition, coverage, open items) **before** revocation and
   notification. Capacity is reused only after verified pane/executor retirement; each assignment is a fresh process.
 - Manual loop (default) dispatches accepted work but never calls a Planner model by itself. Event-driven wakes use Pi's

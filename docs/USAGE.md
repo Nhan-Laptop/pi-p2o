@@ -173,7 +173,8 @@ Domain (goal/todo/decision/case/coverage-plan/coverage-cell/task/phase/…) thay
 |---|---|---|
 | Work admission, goal/todo/decision, phase card | `p2o_task action=match`, `p2o_plan` | [WORK_ADMISSION](WORK_ADMISSION.md) |
 | Case, rating, coverage | `p2o_case`, `p2o_coverage` | [CASE_REVIEW](CASE_REVIEW.md) |
-| Graph tài sản/fact | `p2o_graph` | [ASSET_GRAPH](ASSET_GRAPH.md) |
+| Graph tài sản/fact | `p2o_graph` (owner thêm `action=chain`) | [ASSET_GRAPH](ASSET_GRAPH.md) |
+| Chain: primitive này cấp gì, bước nào còn thiếu | `p2o_graph action=chain` (owner-only) | [ASSET_GRAPH](ASSET_GRAPH.md) |
 | Heads, digest, search, packet theo role | `p2o_state` (cả worker, read-only) | [CONTEXT_PACKETS](CONTEXT_PACKETS.md) |
 
 **Khóa test OWASP WSTG**: dùng ID viết thường (ví dụ `wstg-athz-04`) làm `questionKey` của work identity và của cell coverage; `methodFamily` là workflow id của skill. [WSTG_MAP](WSTG_MAP.md) liệt kê 108 test với mức hỗ trợ của thư viện (D/T/N/O) và cờ browser/identity — đây là độ phủ kiến thức, không phải khả năng phát hiện. Lead và worker tìm thấy nó qua `shared:wstg-map` và `shared:handoffs`.
@@ -187,6 +188,8 @@ Trong Herdr, lead có thể spawn worker: mỗi worker là một tiến trình `
 - Delegation phẳng: `p2o_request_subtask` chỉ là đề xuất, chỉ owner mới accept. Steering không mở rộng scope; report của worker là dữ liệu chưa tin cậy — kiểm tra evidence trước khi lặp lại.
 - `p2o_workers` với `waitFor: "all-report"` chờ cục bộ tới khi mọi worker đã report hoặc bị rút. Pane có thể hiện `idle` ngắn trước khi brief được nộp: sống/chết do report quyết định, và `p2o_finish` từ chối tới khi worker report hoặc bị `p2o_workers` (`action: "stop"`) rút.
 - `p2o_delegate` nhận `role` (`recon`, `discovery`, `validation`, `reporting`, `general`), tối đa 3 `skills`, `model`, `thinking`, và tùy chọn `work`/`decision`/`outputContract` (cùng hình dạng `p2o_task create`; không có `work` thì kết quả trả `workMatch:"unknown"`). Skill nêu rõ ghi đè mặc định của role; skill lạ bị từ chối trước khi tạo pane.
+- Task phải nói nó **đứng trên cái gì**: `validation`/`retest` cần `work.claimRefs` (claim cùng run) hoặc `validationOf`/`retestOf`; `investigation`/`refinement` cần claim, asset revision đã pin hoặc task trước; `mapping`/`reporting` miễn. Gate chỉ nổ khi run **đã có** claim — trên target mới, intent validation đầu tiên chính là discovery sinh ra claim đó.
+- Skill chọn theo thứ tự: `skills` yêu cầu → `p2o.roles.<role>.skills` → skill theo purpose của work (`mapping` → attack-surface-mapping, `discovery`/`refinement` → source-code-auditing, `validation` → exploitability-assessment, `retest`/`reporting` → remediation, `investigation` → không thêm gì) → mặc định của role.
 
 | Role | Model mặc định | Skill mặc định |
 |---|---|---|
