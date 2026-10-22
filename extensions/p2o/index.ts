@@ -10,6 +10,12 @@ import { cleanText, type ProcessResult, type OutputObserver } from '../../src/pr
 import { OutputCapture, type CaptureReceipt } from '../../src/artifacts.js';
 import { scratchOffset, scratchPath, type ScratchSnapshot } from '../../src/scratch.js';
 import { Broker, BrokerClient, DEFAULT_WORKER_COMMAND_BUDGET, type WorkerRegistration, type WorkerReport, type DelegateInput, normalizeReport } from '../../src/broker.js';
+import { summarizeSituation, type SituationSnapshot } from '../../src/situation.js';
+import { chainJoin, type ChainClaim } from '../../src/chain-view.js';
+import type { Counted } from '../../src/counts.js';
+import type { CaseListPage, ChainViewPage, TaskListPage, WorkersNavigation } from '../../src/tool-results.js';
+import { assertCounted, counted, countedTail } from '../../src/counts.js';
+import { isOpenGap, isTestedCell } from '../../src/claims.js';
 import { appendRecord, indexRecords, observeRecords, readLedger, ledgerPage, recordsSize, summarizeRecords, waitForRecordChange, type AssessmentRecord, type CoverageOutcome, type LedgerPage, type LedgerIndex, type RecordAck, appendGeneratedRecords, recordSurface } from '../../src/records.js';
 import { runtimeIdentity } from '../../src/runtime-digest.js';
 import { POLICY_VERSION, withGuidelines } from '../../src/tool-guidelines.js';
@@ -17,19 +23,20 @@ import { ensurePrivateDirectory, mintTicket, mintToken, readTicket, removeTicket
 import { createHerdrClient, type HerdrClient } from '../../src/herdr.js';
 import { loadSettings, resolveRole, type P2OSettings, type RetentionMode } from '../../src/roles.js';
 import { OWNER_PROMPT_SECTION, ownerInstructions, workerBrief, workerInstructions } from '../../src/prompts.js';
+import { isWorkPurpose, purposeFromRole, type WorkPurpose } from '../../src/duties.js';
 import { SkillLibrary, packageRoot } from '../../src/skills.js';
 import { EvidenceStore, redact, type Candidate } from '../../src/evidence.js';
-import { TaskBoard, taskCapsule, awaitingReview, type TaskDraft, type TaskMethod, type AssessmentTask } from '../../src/tasks.js';
+import { TaskBoard, taskCapsule, awaitingReview, terminalState, type TaskDraft, type TaskMethod, type AssessmentTask } from '../../src/tasks.js';
 import { PlanBoard, boundPlanRequest, type PlanDraft } from '../../src/planning.js';
-import { PLAN_ACTIONS, planParameters } from '../../src/work-tool.js';
+import { PLAN_ACTION_PARAMETERS, PLAN_ACTIONS, planParameters } from '../../src/work-tool.js';
 import { CaseBoard, boundCaseRequest, boundRatingRequest } from '../../src/cases.js';
 import { CoverageBoard, boundCoverageRequest, coverageCells } from '../../src/coverage.js';
 import type { CaseDraft } from '../../src/case-types.js';
 import type { CoverageCellDraft, CoveragePlanDraft } from '../../src/coverage-types.js';
-import { CASE_ACTIONS, COVERAGE_ACTIONS, COVERAGE_MUTATIONS, caseParameters, coverageParameters } from '../../src/case-tool.js';
+import { CASE_ACTION_PARAMETERS, CASE_ACTIONS, COVERAGE_ACTION_PARAMETERS, COVERAGE_ACTIONS, COVERAGE_MUTATIONS, caseParameters, coverageParameters } from '../../src/case-tool.js';
 import {
   artifactParameters, candidateParameters, captureParameters, delegateParameters, execParameters, finishParameters, httpParameters, ledgerParameters, loopParameters, noteParameters,
-  reportParameters, skillListParameters, skillReadParameters, stateParameters, subtaskParameters, surfaceParameters, TASK_ACTIONS, taskParameters, workersParameters,
+  reportParameters, skillListParameters, skillReadParameters, stateParameters, subtaskParameters, surfaceParameters, TASK_ACTION_PARAMETERS, TASK_ACTIONS, taskParameters, workersParameters,
 } from '../../src/tool-schemas.js';
 import { sha256Hex } from '../../src/validate.js';
 import type { KnowledgeDomain, ContextPacket } from '../../src/context.js';
@@ -49,7 +56,7 @@ import { uiRefreshDelay } from '../../src/ui/refresh.js';
 import { AssessmentStore, finalizationReserve, type MutationRequest, type StoreFault, type StoreManifest } from '../../src/state/store.js';
 import { bindAssessmentStore } from '../../src/state/adapter.js';
 import { graphObject, type GraphAck, type GraphBatch, type GraphProducer } from '../../src/state/graph.js';
-import { GRAPH_ACTIONS, graphParameters } from '../../src/state/graph-tool.js';
+import { GRAPH_ACTION_PARAMETERS, GRAPH_ACTIONS, graphParameters } from '../../src/state/graph-tool.js';
 import { renderReport } from '../../src/report-export.js';
 import { searchLines, searchRecords } from '../../src/search.js';
 import { parseWorkspaceCommand, checkpointLines, artifactLines, eventLines, reconciliationLine, graphLines, graphExportLines, knowledgeLines, showLines } from '../../src/ui/workspace.js';
@@ -158,14 +165,9 @@ function boundedResult<V>(value: V, tooLarge: string) { const text = JSON.string
 const OWNER_KNOWLEDGE_BUDGET = 400;
 const COORDINATION_EXHAUSTED = 'Owner knowledge/coordination budget exhausted; finalization remains available';
 function chargeKnowledge(current: OwnerRun, exhausted = 'Owner knowledge budget exhausted') { if (++current.knowledgeUsed > OWNER_KNOWLEDGE_BUDGET) fail('KNOWLEDGE_BUDGET', exhausted); }
-/** Bounded navigation page over an already filtered snapshot: validated cursor/limit, a 23 KiB cap that states what was omitted, and a next cursor. */
-function listPage<T>(selected: readonly T[], params: { cursor?: number; limit?: number }, spec: { label: string; warning: string; project: (item: T) => unknown; key?: string; beyond?: string }) {
-  const cursor = params.cursor ?? 0, limit = params.limit ?? 20;
-  if (!Number.isSafeInteger(cursor) || cursor < 0 || !Number.isInteger(limit) || limit < 1 || limit > 100) throw Error(`Invalid ${spec.label} cursor/limit`);
-  if (cursor > selected.length) throw Error(spec.beyond ?? `Invalid ${spec.label} cursor`);
-  const entries = selected.slice(cursor, cursor + limit).map(spec.project);
-  while (entries.length && Buffer.byteLength(JSON.stringify(entries)) > 23 * 1024) entries.pop();
-  return { total: selected.length, shown: entries.length, omitted: selected.length - entries.length, cursor, ...(cursor + entries.length < selected.length ? { nextCursor: cursor + entries.length } : {}), [spec.key ?? 'entries']: entries, warning: spec.warning };
+/** Bounded navigation page over an already filtered snapshot. The count pair comes from `counted` (src/counts.ts); only the label and warning are local. */
+function listPage<T, P = T, K extends string = 'entries'>(selected: readonly T[], params: { cursor?: number; limit?: number }, spec: { label: string; warning: string; project?: (item: T) => P; key?: K; beyond?: string }): Counted & Record<K, P[]> & { warning: string } {
+  return { ...counted(selected, { cursor: params.cursor, limit: params.limit, label: spec.label, beyond: spec.beyond, key: spec.key, project: spec.project }), warning: spec.warning };
 }
 
 /** Receipt label: method, URL, header names and body size only. Values are never copied into the ledger. */
@@ -274,10 +276,10 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
           if (cell.retired) continue;
           if (isWstgKey(cell.questionKey)) { usesWstg = true; reachedKeys.add(cell.questionKey); }
           const item: Item = { kind: 'coverage', runId: found.runId, fingerprint: cell.fingerprint, questionKey: cell.questionKey };
-          if (cell.execution === 'tested') (cell.targetRevision === newGraphScope ? covered : stale).push(item);
+          if (isTestedCell(cell)) (cell.targetRevision === newGraphScope ? covered : stale).push(item);
           else if (cell.execution === 'blocked') leftOpen.push(item);
         }
-        for (const candidate of reportProjection(index).candidates) if (candidate.closure === 'open_proof_gap') leftOpen.push({ kind: 'candidate', runId: found.runId, candidate: typeof candidate.candidate === 'string' ? candidate.candidate : undefined });
+        for (const candidate of reportProjection(index).candidates) if (isOpenGap(candidate)) leftOpen.push({ kind: 'candidate', runId: found.runId, candidate: typeof candidate.candidate === 'string' ? candidate.candidate : undefined });
       } catch (error) { unknown.push(`${found.runId}: ${message(error)}`); }
       finally { store.close(); }
     }
@@ -327,6 +329,27 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
         summary: `Planner round ${wake.round} (epoch ${wake.epoch}) admitted through sequence ${wake.through}; context ${usage?.percent != null ? `${Math.round(usage.percent)}%` : 'unknown'}`,
         data: { planner: { round: wake.round, epoch: wake.epoch, through: wake.through, contextUsage: usage ? { tokens: usage.tokens, contextWindow: usage.contextWindow, percent: usage.percent } : 'unknown' } } });
     } catch { /* Visibility never blocks a planning round, authority or cleanup. */ }
+  }
+  /** planning_update.md P3: the counters for the lead's one situation line, read from the run's own records. A failed read drops the
+   *  line instead of blocking the turn: the prompt must never depend on a lucky ledger scan. */
+  /** Candidate heads by claim id: the one source for the situation counts and the chain view. */
+  async function candidateClaims(current: OwnerRun): Promise<ChainClaim[]> {
+    const index = await readLedger(current.records, current.runId), heads = new Map<string, Record<string, unknown>>();
+    for (const row of index.records) if (row.kind === 'candidate' && typeof row.data?.candidate === 'string') heads.set(row.data.candidate, row.data as Record<string, unknown>);
+    const text = (value: unknown) => typeof value === 'string' ? value : undefined, ids = new Map<string, string>();
+    for (const row of index.records) if (row.kind === 'candidate' && typeof row.data?.candidate === 'string' && row.id) ids.set(row.data.candidate, row.id);
+    // Both identities travel together: the join keys on the slug, a rating cites the record id (P13a).
+    return [...heads.values()].map(data => ({ candidate: String(data.candidate), closure: text(data.closure) ?? '', execution: text(data.execution), provides: text(data.provides), requires: text(data.requires), recordId: ids.get(String(data.candidate)) }));
+  }
+  /** P10: only the worker progress record distinguishes "ran out of allowance" from "the lead withdrew it". */
+  function budgetExhausted(current: OwnerRun, workerId?: string): boolean {
+    return Boolean(workerId && current.progress.view(workerId).lastProblem === 'budget-exhausted');
+  }
+  async function situationSnapshot(current: OwnerRun): Promise<SituationSnapshot | undefined> {
+    try {
+      const [tasks, cases, coverage, claims] = await Promise.all([current.board.list(), current.cases.list(), current.coverage.list(), candidateClaims(current)]);
+      return summarizeSituation({ tasks, cases, coverage, claims, budgetExhausted: task => budgetExhausted(current, task.assignee) });
+    } catch { return undefined; }
   }
   function refreshVisibility(current: OwnerRun) {
     if (run !== current || current.phase === 'finished' || current.uiClosed) return;
@@ -419,6 +442,12 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
   // One spawn at a time: parallel `p2o_delegate` calls in a single assistant turn would otherwise both pass
   // the cap/depth checks before either registers its worker.
   let spawnQueue: Promise<unknown> = Promise.resolve();
+  /** `work.purpose` arrives untyped from the tool schema; only a known purpose may steer the default skill set (P7). */
+  const workPurpose = (work: unknown): WorkPurpose | undefined => {
+    const value = (work as Record<string, unknown> | undefined)?.purpose;
+    return isWorkPurpose(value) ? value : undefined;
+  };
+
   function serializeSpawn<T>(task: () => Promise<T>): Promise<T> {
     const next = spawnQueue.then(task, task);
     spawnQueue = next.then(() => undefined, () => undefined);
@@ -443,7 +472,8 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
     if (input.taskId && !assigned) fail('TASK_UNKNOWN', 'No owner-authored task with that ID');
     if (parent.workerId && assigned) fail('TASK_OWNER_ONLY', 'Workers may request focused children, not dispatch owner-authored task IDs');
     if (assigned && input.role && input.role !== assigned.role) fail('TASK_ROLE', 'Task role is immutable for this assignment');
-    const resolved = resolveRole({ role: assigned?.role ?? input.role, model: input.model, thinking: input.thinking, skills: assigned ? assigned.method.skills.map(s => s.id) : input.skills, settings: current.settings, parentModel: sessionModel(current.ctx), parentThinking: current.ctx.thinkingLevel });
+    const purpose = assigned?.work?.purpose ?? workPurpose(input.work);
+    const resolved = resolveRole({ role: assigned?.role ?? input.role, model: input.model, thinking: input.thinking, skills: assigned ? assigned.method.skills.map(s => s.id) : input.skills, purpose, settings: current.settings, parentModel: sessionModel(current.ctx), parentThinking: current.ctx.thinkingLevel });
     if (resolved.thinking && !['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'].includes(resolved.thinking)) fail('THINKING_INVALID', 'Unsupported thinking level');
     const skillDocs: Array<{ name: string; body: string }> = [];
     const method = await prepareMethod(current, resolved.skills, assigned?.method.workflow?.id ?? input.workflow, assigned?.method.reason ?? 'Starting method selected from role defaults or explicit lead request');
@@ -478,6 +508,7 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
     const ticketFile = ticketPath(current.control, workerId);
     const ticket: Ticket = {
       version: 2, runId: current.runId, workerId, paneId, parentWorkerId: parent.workerId, depth, role: resolved.role,
+      purpose: purpose ?? purposeFromRole(resolved.role),
       target: { kind: current.target.kind, label: targetLabel(current.target), ...(hasOrigin(current.target) ? { origin: current.target.origin } : {}) },
       image: current.image, socket: current.socket!, records: current.records, reports: current.reports,
       lifetime: 'until-stopped', executorMode:current.executors.mode, commandBudget: DEFAULT_WORKER_COMMAND_BUDGET,
@@ -911,15 +942,14 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
     async execute(_id,params) {
       const current = owner();
       if(!TASK_ACTIONS.includes(params.action))fail('INVALID_INPUT','Unknown task action');
-      graphObject(params,params.action==='create'||params.action==='match'?['action','draft']:params.action==='revise'?['action','draft','id','revision']:params.action==='list'?['action','id','cursor','limit']:params.action==='dispatch'?['action','ids','id','priority']:params.action==='start'?['action','id']:['action','id','revision','reason','evidenceIds','externalEvidence'],'Task action');
+      graphObject(params,TASK_ACTION_PARAMETERS[params.action],'Task action');
       const perform = async () => {
         if (params.action === 'list') {
           const tasks = await current.board.list();
           if (params.id) return tasks.find(t => t.id === params.id) ?? {missing:true};
-          const cursor=params.cursor ?? 0,limit=params.limit ?? 10;
-          if (cursor > tasks.length) throw Error('Invalid task cursor');
-          const shown=tasks.slice(cursor,cursor+limit);
-          return {total:tasks.length,cursor,...(cursor+shown.length < tasks.length ? {nextCursor:cursor+shown.length} : {}),tasks:shown.map(t => ({id:t.id,recordId:t.recordId,revision:t.revision,status:t.status,role:t.role,assignee:t.assignee,question:t.question.slice(0,200)})),warning:'Summaries are navigation; use id for full task details.'};
+          const page:TaskListPage={...counted(tasks,{cursor:params.cursor,limit:params.limit ?? 10,label:'task',beyond:'Invalid task cursor',key:'tasks',
+            project:(t):TaskListPage['tasks'][number] => ({id:t.id,recordId:t.recordId,revision:t.revision,status:t.status,role:t.role,assignee:t.assignee,terminal:terminalState(t,{budgetExhausted:budgetExhausted(current,t.assignee)}),question:t.question.slice(0,200)})}),warning:'Summaries are navigation; use id for full task details.'};
+          return page;
         }
         if (params.action === 'dispatch') {
           if (!current.delegation.enabled) fail('DELEGATION_UNAVAILABLE','No worker backend; use solo work');
@@ -935,7 +965,7 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
         if (params.action === 'create' || params.action === 'revise' || params.action === 'match') {
           if (!params.draft) throw Error('Task draft is required');
           const {skills:names,workflow,methodReason,...draft} = params.draft;
-          const role = resolveRole({role:draft.role,skills:names,settings:current.settings});
+          const role = resolveRole({role:draft.role,skills:names,settings:current.settings,purpose:workPurpose(draft.work)});
           // Optional at the schema level so a recon intent can omit them; validate() still requires them for every other role.
           const input:TaskDraft = {...draft,roleReason:draft.roleReason??'',expectedTrue:draft.expectedTrue??'',expectedFalse:draft.expectedFalse??'',stopCondition:draft.stopCondition??'',method:await prepareMethod(current,role.skills,workflow,methodReason??'')};
           if(params.action==='match'||params.action==='create'&&input.work){
@@ -964,7 +994,7 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
     async execute(_id,params){
       const current=owner();
       if(!PLAN_ACTIONS.includes(params.action))fail('INVALID_INPUT','Unknown plan action');
-      graphObject(params,params.action==='create'?['action','entry','requestId']:params.action==='revise'?['action','entry','id','revision','requestId']:params.action==='view'?['action','id']:['action','cursor','limit','kind'],'Plan action');
+      graphObject(params,PLAN_ACTION_PARAMETERS[params.action],'Plan action');
       const request=params.action==='create'||params.action==='revise'?{actorId:'owner',requestId:params.requestId??randomUUID(),payload:{op:'plan',submitted:params}}:undefined,
         lookup=request?boundPlanRequest(params.action as 'create'|'revise',params.entry as PlanDraft,request,params.id,params.revision):undefined;
       const retained=(acks:RecordAck[])=>{const row=current.store.record(acks[0].recordId);if(!row?.data?.plan)throw Error('Retained plan detail unavailable');return {...row.data.plan as unknown as PlanDraft,recordId:row.id,replayed:true};};
@@ -987,14 +1017,15 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
     name:'p2o_case',label:'Review canonical vulnerability cases',exposure:'model-only',parameters:caseParameters,
     description:'OWNER ONLY: create/revise owner-reviewed canonical cases from exact candidate/evidence/task/asset revisions; list/view bounded review queue. Worker confirmed claims remain pending until review. Duplicates need the same reviewed policy/root-cause identity; uncertain cases stay related, not merged. Currentness can only downgrade on superseded claims/assets/tasks, contradictions or validator withdrawal. Case acceptance never completes a goal or assessment. rate records an owner severity rating (basis, optional CVSS:3.1 vector, CWE, remediation) without changing verdict or review.',
     async execute(_id,params){const current=owner();if(!CASE_ACTIONS.includes(params.action))fail('INVALID_INPUT','Unknown case action');
-      graphObject(params,params.action==='create'?['action','entry','requestId']:params.action==='revise'?['action','entry','id','revision','requestId']:params.action==='rate'?['action','finding','id','revision','requestId']:params.action==='view'?['action','id']:['action','cursor','limit','status'],'Case action');
+      graphObject(params,CASE_ACTION_PARAMETERS[params.action],'Case action');
       if((params.action==='create'||params.action==='revise')&&!params.entry)throw Error('Case entry is required');if((params.action==='revise'||params.action==='rate')&&(!params.id||!Number.isSafeInteger(params.revision)||params.revision!<1))throw Error('Case revise/rate needs ID and expected revision');if(params.action==='rate'&&!params.finding)throw Error('Case rate needs a finding');
       const request=params.action==='create'||params.action==='revise'||params.action==='rate'?{actorId:'owner',requestId:params.requestId??randomUUID(),payload:{op:'case',submitted:params}}:undefined,
         lookup=request?params.action==='rate'?boundRatingRequest(params.id!,params.revision!,params.finding,request):boundCaseRequest(params.action as 'create'|'revise',params.entry as CaseDraft,request,params.id,params.revision):undefined;
       const retained=(acks:RecordAck[])=>{const row=current.store.record(acks[0].recordId);if(params.action==='rate'){if(!row?.data?.caseRating)throw Error('Retained rating detail unavailable');return {...row.data.caseRating as Record<string,unknown>,recordId:row.id,replayed:true};}if(!row?.data?.case)throw Error('Retained case detail unavailable');return {...row.data.case as unknown as CaseDraft,recordId:row.id,replayed:true};};
       const perform=async()=>{if(params.action==='create')return current.cases.create(params.entry as CaseDraft,request);if(params.action==='revise')return current.cases.revise(params.id!,params.revision!,params.entry as CaseDraft,request);if(params.action==='rate')return current.cases.rate(params.id!,params.revision!,params.finding,request);const all=await current.cases.list();assertOwnerActive(current);
         if(params.action==='view'){if(!params.id)throw Error('Case view needs ID');const value=all.find(entry=>entry.id===params.id);if(!value)throw Error('Unknown case ID');return value;}
-        return listPage(all.filter(entry=>!params.status||entry.reviewStatus===params.status),params,{label:'case',warning:'Current owner review queue; Worker claims, duplicate submissions and unique accepted current cases are separate counts. No goal completion.',project:entry=>({id:entry.id,recordId:entry.recordId,revision:entry.revision,title:entry.title.slice(0,200),verdict:entry.verdict,reviewStatus:entry.reviewStatus,currentness:entry.currentness,acceptedFinding:entry.acceptedFinding,independentCurrent:entry.independentCurrent,canonicalCaseId:entry.canonicalCaseId,...(entry.finding?{severity:entry.finding.severity}:{}),staleReasons:entry.staleReasons.slice(0,5)})});};
+        const page:CaseListPage=listPage(all.filter(entry=>!params.status||entry.reviewStatus===params.status),params,{label:'case',warning:'Current owner review queue; Worker claims, duplicate submissions and unique accepted current cases are separate counts. No goal completion.',project:(entry):CaseListPage['entries'][number]=>({id:entry.id,recordId:entry.recordId,revision:entry.revision,title:entry.title.slice(0,200),verdict:entry.verdict,reviewStatus:entry.reviewStatus,currentness:entry.currentness,acceptedFinding:entry.acceptedFinding,readyToRate:entry.readyToRate,independentCurrent:entry.independentCurrent,canonicalCaseId:entry.canonicalCaseId,...(entry.finding?{severity:entry.finding.severity}:{}),staleReasons:entry.staleReasons.slice(0,5)})});
+        return page;};
       const {value,replayed}=await ownerMutation(current,{lookup,retained,perform});
       if(!replayed&&(params.action==='create'||params.action==='revise'||params.action==='rate'))current.engine.notify('case-review',String((value as {id?:unknown}).id??params.id),String((value as {reviewStatus?:unknown}).reviewStatus??'pending'));
       return boundedResult(value,'Case result exceeds 24 KiB');
@@ -1004,7 +1035,7 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
     name:'p2o_coverage',label:'Maintain proof-aware coverage plan',exposure:'model-only',parameters:coverageParameters,
     description:'OWNER ONLY: maintain explicit versioned coverage-plan denominators and cells. Execution and assessment axes stay separate; tested requires reviewed task receipts, accepted/ruled-out needs current reviewed case support, blocked retains a gap. Identity changes retire/add cells instead of overwriting history. list/view are bounded knowledge reads. Coverage never widens scope, dispatches work, marks clean from blocked/untested cells, or completes a goal. suggest (read-only) lists uncovered WSTG tests matching recon features.',
     async execute(_id,params){const current=owner(),action:string=params.action,mutations:readonly string[]=COVERAGE_MUTATIONS;if(!(COVERAGE_ACTIONS as readonly string[]).includes(action))fail('INVALID_INPUT','Unknown coverage action');
-      graphObject(params,params.action==='plan-create'?['action','plan','requestId']:params.action==='plan-revise'?['action','plan','id','revision','requestId']:params.action==='cell-create'?['action','cell','planId','planRevision','requestId']:params.action==='cell-revise'?['action','cell','id','revision','requestId']:params.action==='cell-retire'?['action','id','revision','reason','requestId']:params.action==='view'?['action','id']:params.action==='suggest'?['action','features','modes','cursor','limit']:['action','cursor','limit'],'Coverage action');
+      graphObject(params,COVERAGE_ACTION_PARAMETERS[params.action],'Coverage action');
       if(action.startsWith('plan-')&&!params.plan)throw Error('Coverage plan input is required');if(action.startsWith('cell-')&&action!=='cell-retire'&&!params.cell)throw Error('Coverage cell input is required');
       const logical=params.action==='plan-create'?params.plan:params.action==='plan-revise'?{id:params.id,revision:params.revision,input:params.plan}:params.action==='cell-create'?{planId:params.planId,planRevision:params.planRevision,input:params.cell}:params.action==='cell-revise'?{id:params.id,revision:params.revision,input:params.cell}:params.action==='cell-retire'?{id:params.id,revision:params.revision,reason:params.reason}:undefined,
         request=mutations.includes(action)?{actorId:'owner',requestId:params.requestId??randomUUID(),payload:{op:'coverage',submitted:params}}:undefined,lookup=request?boundCoverageRequest(action,logical,request):undefined;
@@ -1012,7 +1043,7 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
       const perform=async()=>{if(params.action==='plan-create')return current.coverage.createPlan(params.plan as CoveragePlanDraft,request);if(params.action==='plan-revise')return current.coverage.revisePlan(params.id!,params.revision!,params.plan as CoveragePlanDraft,request);if(params.action==='cell-create')return current.coverage.addCell(params.planId!,params.planRevision!,params.cell as CoverageCellDraft,request);if(params.action==='cell-revise')return current.coverage.reviseCell(params.id!,params.revision!,params.cell as CoverageCellDraft,request);if(params.action==='cell-retire')return current.coverage.retireCell(params.id!,params.revision!,params.reason!,request);const all=await current.coverage.list();assertOwnerActive(current);
         if(params.action==='suggest'){const derived=params.features===undefined?featuresFromAttributeValues(current.store.recordedFeatureValues()):undefined,features=params.features??(derived!.features.length?derived!.features:['any']),featureSource=params.features!==undefined?'explicit':derived!.features.length?'graph':'default',unknown=features.filter(item=>!(WSTG_FEATURES as readonly string[]).includes(item));if(unknown.length)throw Error(`Unknown recon feature(s) ${unknown.join(', ')}; use: ${WSTG_FEATURES.join(', ')}`);if(params.modes!==undefined&&!/^[SHANB]{1,5}$/.test(params.modes))throw Error('modes must be letters of SHANB');const offset=params.cursor??0,limit=params.limit??20;if(!Number.isSafeInteger(offset)||offset<0||!Number.isInteger(limit)||limit<1||limit>50)throw Error('Invalid suggest cursor/limit (limit 1..50)');
           const covered=new Set(all.flatMap(plan=>plan.cells).filter(cell=>cell.currentness!=='retired'&&isWstgKey(cell.questionKey)).map(cell=>cell.questionKey)),found=wstgSuggest(features,{modes:params.modes,covered,offset,limit});
-          return {matched:found.matched,shown:found.suggestions.length,cursor:offset,...(offset+found.suggestions.length<found.matched?{nextCursor:offset+found.suggestions.length}:{}),features,featureSource,...(derived?.ignored.length?{ignoredFeatureWords:derived.ignored}:{}),suggestions:found.suggestions,warning:`Planning aid from the shipped WSTG map pinned to ${WSTG_COMMIT.slice(0,12)}: tests with no live cell whose trigger matches the features listed here (named by you or, when none were named, the feature attributes recorded on current graph assets; see featureSource). Not a finding, not permission and not coverage; a test counts only through a cell with its lower-case key as the question key. Support describes the shipped library, never the target.`};}
+          return {total:found.matched,shown:found.suggestions.length,omitted:found.matched-found.suggestions.length,cursor:offset,...(offset+found.suggestions.length<found.matched?{nextCursor:offset+found.suggestions.length}:{}),features,featureSource,...(derived?.ignored.length?{ignoredFeatureWords:derived.ignored}:{}),suggestions:found.suggestions,warning:`Planning aid from the shipped WSTG map pinned to ${WSTG_COMMIT.slice(0,12)}: tests with no live cell whose trigger matches the features listed here (named by you or, when none were named, the feature attributes recorded on current graph assets; see featureSource). Not a finding, not permission and not coverage; a test counts only through a cell with its lower-case key as the question key. Support describes the shipped library, never the target.`};}
         if(params.action==='view'){if(!params.id)throw Error('Coverage view needs a plan/cell ID');const plan=all.find(item=>item.id===params.id),cell=all.flatMap(item=>item.cells).find(item=>item.id===params.id);if(!plan&&!cell)throw Error('Unknown coverage ID');return plan??cell;}
         return listPage(all,params,{label:'coverage',key:'plans',beyond:'Invalid coverage cursor/limit',warning:'Explicit plan denominator only; discovered/unplanned, blocked, untested and stale cells are not clean.',project:plan=>({id:plan.id,recordId:plan.recordId,revision:plan.revision,status:plan.status,title:plan.title.slice(0,200),cells:plan.cellIds.length,counts:plan.counts,discoveredUnplannedAssets:plan.discoveredUnplannedAssets,unknownScope:plan.unknownScope,omittedCells:plan.omittedCells})});};
       const {value,replayed}=await ownerMutation(current,{lookup,retained,perform});
@@ -1158,12 +1189,22 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
   });
   registerTool({
     name:'p2o_graph',label:'Asset graph',exposure:'model-only',parameters:graphParameters,
-    description:'Read bounded scoped graph knowledge or record an atomic batch. Exact kind/key identity is versioned; no implicit URL/path/method normalization, permission or verified finding. Use asset ref labels with @ref within a batch. Records include host-assigned producer/task; duplicate content retains additional producers without duplicate assets. Workers record assets/facts/anchors; hypotheses/relations are owner work and reporting is read-only. Claims need same-run evidence (inferred facts stay unverified). Pin assetRevision/expectedRevision and supersedes to refuse stale updates. Secret-bearing identities are refused; use non-secret labels. view/page default20/max100, export default200/max500, encoded reads at most24KiB with exact omissions/cursors; follow cursor and asOfSequence for stable history. Identical requestId/payload returns the retained ACK; this never replays target operations.',
+    description:'Read bounded scoped graph knowledge or record an atomic batch. Exact kind/key identity is versioned; no implicit URL/path/method normalization, permission or verified finding. Use asset ref labels with @ref within a batch. Records include host-assigned producer/task; duplicate content retains additional producers without duplicate assets. Workers record assets/facts/anchors; hypotheses/relations are owner work and reporting is read-only. Claims need same-run evidence (inferred facts stay unverified). Pin assetRevision/expectedRevision and supersedes to refuse stale updates. Secret-bearing identities are refused; use non-secret labels. view/page default20/max100, export default200/max500, encoded reads at most24KiB with exact omissions/cursors; follow cursor and asOfSequence for stable history. chain joins recorded provides/requires into ready/unmet/frontier (owner coordination). Identical requestId/payload returns the retained ACK; this never replays target operations.',
     async execute(_id,params,_signal,_update,ctx){
       const current=run;
       if(!current||current.phase!=='active'||(current.role==='owner'&&current.ctx.cwd!==ctx.cwd))fail('NO_ASSESSMENT','No active p2o assessment in this session');
       if(!GRAPH_ACTIONS.includes(params.action))fail('INVALID_INPUT','Unknown graph action');
-      graphObject(params,params.action==='record'?['action','batch','requestId']:params.action==='view'?['action','id','cursor','limit','asOfSequence']:['action','cursor','limit','asOfSequence'],'Graph action');
+      graphObject(params,GRAPH_ACTION_PARAMETERS[params.action],'Graph action');
+      if(params.action==='chain'){
+        if(current.role==='worker')fail('PLANNER_ONLY','Chain view is coordination: record provides/requires on the claim and let the lead read the join');
+        return track(current,(async()=>{
+          assertOwnerActive(current);chargeKnowledge(current);
+          const join=chainJoin(await candidateClaims(current)),limit=params.limit??20;
+          const value={...join,ready:join.ready.slice(0,limit),unmet:join.unmet.slice(0,limit),primitives:join.primitives.slice(0,limit),frontier:join.frontier.slice(0,limit)} as unknown as ChainViewPage;
+          const next=join.frontier[0];
+          return textResult(cleanText(JSON.stringify(value)),{...value,counts:{primitives:join.primitives.length,ready:join.ready.length,unmet:join.unmet.length,frontier:join.frontier.length},shown:{primitives:value.primitives.length,ready:value.ready.length,unmet:value.unmet.length,frontier:value.frontier.length},next:next?`${next.claimId}${next.recordId?` [${next.recordId}]`:''} at depth ${next.depth} (${next.path.join(' → ')})`:'none ready'});
+        })());
+      }
       if(params.action==='record'){
         if(!params.batch)fail('INVALID_INPUT','record needs a batch');
         if(current.role==='worker'){
@@ -1208,7 +1249,7 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
   });
   registerTool({
     name: 'p2o_delegate', label: 'Delegate worker', exposure: 'model-only',
-    description: 'OWNER ONLY: immediately spawn one focused worker when capacity is free. For batches/awaiting dependencies use task dispatch; Engine reuses capacity across successive assignments. Fresh session/ticket each time; shared-serial by default or confirmed isolated profile, never scope widening. Worker requests go to the Planner as proposals, not nested spawns.',
+    description: 'OWNER ONLY: immediately spawn one focused worker when capacity is free. For batches/awaiting dependencies use task dispatch; Engine reuses capacity across successive assignments. Fresh session/ticket each time; shared-serial by default or confirmed isolated profile, never scope widening. Worker requests go to the Planner as proposals, not nested spawns. Purpose (work.purpose, else the role) decides what a finished report must contain and, when skills are omitted, its default skill set: mapping surface, discovery candidate, investigation root cause, refinement narrower claim, validation independent reproduction, retest verdict, reporting report.',
     parameters: delegateParameters,
     async execute(_id, params) {
       const current = run;
@@ -1270,12 +1311,15 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
       const lines = view.workers.length
         ? view.workers.map(entry => `${entry.workerId} [${entry.status}] ${entry.role} d${entry.depth} · ${entry.commandsUsed}/${entry.commandBudget} cmds${entry.reported ? ` · reported (${entry.confidence})` : ' · awaiting report'}${entry.blocked ? ' · BLOCKED' : ''}${entry.summary ? `\n    ${cleanText(entry.summary).slice(0, 400)}` : ''}`)
         : ['(no workers spawned)'];
-      const navigation = {engine:view.engine,executors:view.executors,cursor:changes.cursor,nextCursor:changes.nextCursor,total:changes.total,complete:changes.complete,
-        changes:changes.records.map(r => ({id:r.id,by:r.by,kind:r.kind,text:r.text.slice(0,160)})),diagnostics:view.reconciliation.diagnostics,omitted:view.reconciliation.omitted,
+      // Both lists state their own denominator (P11); `reconciliation` keeps its separate meaning of undisplayed reconciliation items.
+      const navigation: WorkersNavigation = {engine:view.engine,executors:view.executors,complete:changes.complete,
+        changes:{total:changes.total,shown:changes.shown,omitted:changes.omitted,cursor:changes.cursor,...(changes.nextCursor!==undefined?{nextCursor:changes.nextCursor}:{}),items:changes.records.map(r => ({id:r.id,by:r.by,kind:r.kind,text:r.text.slice(0,160)}))},
+        tasks:assertCounted(countedTail(view.tasks, view.tasks.slice(-10))),taskItems:view.tasks.slice(-10),
+        diagnostics:view.reconciliation.diagnostics,reconciliation:{omitted:view.reconciliation.omitted},
         budgets:{workerUsed:view.budgets.workerUsed,workerCeiling:view.budgets.workerCeiling,leadSubmitted:view.budgets.lead.commandsSubmitted},
         progress:view.workers.map(w => ({id:w.workerId,state:w.progress.state,lastProblem:w.progress.lastProblem,stallSuspected:w.progress.stallSuspected,outcome:w.outcome})),
-        tasksTotal:view.tasks.length,tasks:view.tasks.slice(-10),warning:'Abbreviated observations, not proof. Use ledger/task IDs for full detail; silence is not failure. Counters are separate, not aggregate.'};
-      return textResult<unknown>(`${lines.join('\n')}\n\ncoverage: ${view.reconciliation.coverageTotal} (displayed ${view.coverage.length}) · open items: ${view.reconciliation.openTotal} (displayed ${view.open.length}) · complete=${view.reconciliation.complete}\nNAVIGATION DATA: ${JSON.stringify(navigation)}${waited ? `\nwait: ${waited}` : ''}`, { ...view, changes, waited, summary: undefined });
+        warning:'Abbreviated observations, not proof. Use ledger/task IDs for full detail; silence is not failure. Counters are separate, not aggregate.'};
+      return textResult<unknown>(`${lines.join('\n')}\n\ncoverage: ${view.reconciliation.coverageTotal} (displayed ${view.coverage.length}) · open items: ${view.reconciliation.openTotal} (displayed ${view.open.length}) · complete=${view.reconciliation.complete}\nNAVIGATION DATA: ${JSON.stringify(navigation)}${waited ? `\nwait: ${waited}` : ''}`, { ...view, changes, navigation, waited, summary: undefined });
     },
   });
   registerTool({
@@ -1750,7 +1794,7 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
     const wake = parseWakePrompt(event.text);
     if (!wake || run?.role !== 'owner' || !run.engine.validWake(wake)) return {action:'handled' as const};
   });
-  pi.on('before_agent_start', event => {
+  pi.on('before_agent_start', async event => {
     const current = run;
     // Own one structured policy section; leave Pi's tools, rules and other extensions untouched.
     delete event.systemPromptOptions.sections[OWNER_PROMPT_SECTION];
@@ -1761,6 +1805,7 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
         sourceSkipped: current.sandbox.sourceSkipped,
         delegation: { enabled: current.delegation.enabled, reason: current.delegation.reason, maxWorkers: current.delegation.maxWorkers, maxDepth: current.delegation.maxDepth },
         workerBudget: current.delegation.totalBudget, phase: current.phase, loopMode:current.engine.mode, executorMode:current.executors.mode, statedObjective: current.statedObjective,
+        situation: current.role === 'owner' ? await situationSnapshot(current) : undefined,
       });
       const wake = parseWakePrompt(event.prompt);
       return wake ? {message:plannerWakeMessage(wake)} : undefined;

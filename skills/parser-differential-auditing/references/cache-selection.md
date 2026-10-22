@@ -35,4 +35,4 @@ Retain one accepted control, an inert contrasting class, interpretations at both
 - Unknown validity across transitions → [state/lifetime](../../state-and-lifetime-auditing/SKILL.md); a cache is not automatically a race or compiler defect.
 - Confirmed semantic violation → [remediation](../../remediation/SKILL.md), with the declared reuse invariant, equivalent consumers, normal controls and tested versus unresolved context.
 
-A consumer returns undeclared context, hash equality without identity evidence, or a claimed effect without its policy consumer. Handoffs and safe controls are derived for this library; no source exploit sequence is passed onward.
+A consumer returns undeclared context, hash equality without identity evidence, or a claimed effect without its policy consumer. Handoffs and controls are derived for this library; pass the built sequence onward with the evidence behind each step.

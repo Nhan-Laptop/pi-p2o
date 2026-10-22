@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { isAbsolute, join } from 'node:path';
+import { purposeFromRole, type WorkPurpose } from './duties.js';
 
 /**
  * Roles preselect a model and a starting skill set for a delegated worker.
@@ -20,6 +21,21 @@ export const ROLE_DEFAULTS: Record<Role, RoleDefaults> = {
   validation: { model: 'opencode-go/kimi-k3', skills: ['exploitability-assessment'] },
   reporting: { model: 'opencode-go/kimi-k3', skills: ['remediation'] },
   general: { skills: [] },
+};
+/**
+ * planning_update.md P7: purpose decides the default skill set, because purpose is what the work *is* while role only picks
+ * the model/authority axis. Used when the lead omits `skills` and the operator configured none for the role; an empty list
+ * means "keep the role default" (investigation does, because root-cause work is guided by the task's own method).
+ * `tests/minimal/roles.test.ts` checks every id against `skills/catalog.json` and against `MAX_SKILLS`.
+ */
+export const PURPOSE_SKILLS: Record<WorkPurpose, readonly string[]> = {
+  mapping: ['attack-surface-mapping'],
+  discovery: ['source-code-auditing'],
+  investigation: [],
+  refinement: ['source-code-auditing'],
+  validation: ['exploitability-assessment'],
+  retest: ['remediation'],
+  reporting: ['remediation'],
 };
 export const DEFAULT_MAX_WORKERS = 3;
 export const DEFAULT_MAX_DEPTH = 2;
@@ -131,12 +147,13 @@ export interface ResolvedRole { role: Role; model?: string; thinking?: string; s
  * Precedence mirrors pi-herdr: per-spawn override > settings role > package default > parent session model.
  * `skills` is validated by the caller against the installed library before any path is used.
  */
-export function resolveRole(input: { role?: string; model?: string; thinking?: string; skills?: string[]; settings: P2OSettings; parentModel?: string; parentThinking?: string }): ResolvedRole {
+export function resolveRole(input: { role?: string; model?: string; thinking?: string; skills?: string[]; purpose?: WorkPurpose; settings: P2OSettings; parentModel?: string; parentThinking?: string }): ResolvedRole {
   const role: Role = isRole(input.role) ? input.role : 'general';
   const configured = input.settings.roles[role] ?? {};
   const fallback = ROLE_DEFAULTS[role];
   const requested = (input.skills ?? []).filter(skill => typeof skill === 'string');
-  const skills = (requested.length ? requested : configured.skills ?? fallback.skills).slice(0, MAX_SKILLS);
+  const byPurpose = PURPOSE_SKILLS[input.purpose ?? purposeFromRole(role)];
+  const skills = (requested.length ? requested : configured.skills ?? (byPurpose.length ? byPurpose : fallback.skills)).slice(0, MAX_SKILLS);
   return {
     role,
     model: input.model ?? configured.model ?? fallback.model ?? input.parentModel,

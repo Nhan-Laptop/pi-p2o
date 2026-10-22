@@ -136,7 +136,7 @@ When you compact, always keep: the current plan, failing tests with their errors
 # Subagents 
 
 With the task require: do a lot of research, ref a lot of references, you should spawn the agent to discover and take a combination to avoid loss context: 
-- Sonnet 5.5 - medium thinking : handles routine work and escalates planning, ambiguous failures -> do with the large resources. 
-- Haiku 5.5 - medium thinking: discovery the small one. 
+-  handles routine work and escalates planning, ambiguous failures -> do with the large resources. 
+-  discovery the small one. 
 
 

@@ -1,4 +1,6 @@
 import { randomBytes } from 'node:crypto';
+import type { WorkPurpose } from './duties.js';
+import { isWorkPurpose } from './duties.js';
 import { sha256Hex } from './validate.js';
 import { lstat, mkdir, open, readFile, rename, rm, stat, writeFile } from 'node:fs/promises';
 import { dirname, isAbsolute, join } from 'node:path';
@@ -23,6 +25,8 @@ export interface Ticket {
   parentWorkerId: string | null;
   depth: number;
   role: string;
+  /** What this worker is for. Absent on tickets minted before purposes existed; the prompt falls back to the role. */
+  purpose?: WorkPurpose;
   target: TicketTarget;
   image: string;
   socket: string;
@@ -102,6 +106,7 @@ export async function readTicket(path: string, expected: TicketExpectations): Pr
   if (ticket.extension?.path !== expected.extensionPath || ticket.extension.sha256 !== expected.extensionSha) bad('ticket extension identity does not match the running code');
   if (!/^[a-f0-9]{32}$/.test(String(ticket.token))) bad('invalid ticket token');
   if (ticket.taskId !== undefined && !/^[a-z0-9][a-z0-9-]{0,79}$/.test(ticket.taskId)) bad('invalid task ID');
+  if (ticket.purpose !== undefined && !isWorkPurpose(ticket.purpose)) bad('invalid work purpose');
   if (ticket.requestedRuntime !== undefined && (!ticket.requestedRuntime || Object.entries(ticket.requestedRuntime).some(([k,v]) => !['model','thinking'].includes(k) || typeof v !== 'string' || v.length > 200 || /[\x00-\x1f\x7f]/.test(v)))) bad('invalid runtime profile');
   if (typeof ticket.target?.label !== 'string' || !ticket.target.label || ticket.target.label.length > 512 || /[\x00-\x1f\x7f]/.test(ticket.target.label)) bad('invalid target label');
   if (!['directory', 'url', 'hybrid'].includes(ticket.target.kind)) bad('invalid target kind');

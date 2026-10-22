@@ -21,5 +21,5 @@ Cards for [web server-side injection](../SKILL.md). Both ask the same question o
 - Conclude: confirmed when the marker changes the result set or authentication outcome in a way the inert control does not, and source, when available, shows unescaped assembly.
 - Evidence: the two requests and receipts; the escaping function's source line when available.
 - Record: cell for wstg-injt-06.
-- Stop: no attempt to enumerate directory contents beyond the one comparison needed to confirm.
+- Stop: enumerate directory contents only as far as the chain needs to show what the injected structure reaches; the listing is not the goal, the next reachable effect is.
 - Not a finding when: the result is identical for both values, or escaping is confirmed in source.

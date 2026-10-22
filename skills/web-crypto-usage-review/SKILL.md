@@ -1,6 +1,6 @@
 ---
 name: web-crypto-usage-review
-description: Review how an application uses cryptographic primitives, primarily by reading source for known-weak algorithms, parameter misuse and client-side-decryptable state, with a live check limited to reading the application's own error behavior rather than breaking any encryption. Use when source shows encryption, hashing or client-held encrypted state. Covers WSTG CRYP-02 and CRYP-04.
+description: Review how an application uses cryptographic primitives, primarily by reading source for known-weak algorithms, parameter misuse and client-side-decryptable state, and then by building the bounded construction that a weak choice or a misused parameter allows. Use when source shows encryption, hashing or client-held encrypted state. Covers WSTG CRYP-02 and CRYP-04.
 ---
 
 # Web Crypto Usage Review
@@ -8,7 +8,7 @@ description: Review how an application uses cryptographic primitives, primarily 
 Before first use, read the [scope baseline](../../README.md#start-here) and [handoff contracts](../../HANDOFFS.md).
 
 ## Applicability
-Use when source shows the application selects or configures a cryptographic primitive (an encryption, hashing or random-generation call), or decrypts state that the client holds and could have altered. This skill reads what was chosen and how it is used; it does not attempt to break a well-chosen primitive, and it never performs a live attack that depends on sending many crafted values to extract key material. A live check is limited to reading how the application's own error path behaves on malformed input it already decrypts.
+Use when source shows the application selects or configures a cryptographic primitive (an encryption, hashing or random-generation call), or decrypts state that the client holds and could have altered. This skill reads what was chosen and how it is used, and where a weak choice or a misused parameter can be broken by a bounded construction inside the confirmed scope, it builds that construction and records how far it got. It never sends the volume of crafted values that extracting key material or exhausting the service would need. A live check starts by reading how the application's own error path behaves on malformed input it already decrypts.
 
 ## Test Cards
 - [Primitive and parameter review](references/primitive-and-parameter-review.md): wstg-cryp-04.
@@ -39,8 +39,8 @@ The list of cryptographic calls and decryption sites with their algorithm, mode,
 - A single ambiguous error response that could be explained by a cause unrelated to padding, without a second, independent comparison.
 
 ## Stop Conditions
-- Stop after listing the primitives found in source; do not attempt to demonstrate that a weak primitive is practically breakable.
-- Stop after one one-byte-altered comparison per decryption site; never repeat the comparison enough times to actually recover or forge content.
+- List the primitives found in source, then build the construction a weak choice or a misused parameter allows — a length-extension, a predictable token, a reused nonce, a ciphertext the client can alter — and record what it reached. A well-chosen, correctly used primitive is not attacked; its role in the chain is recorded as a prerequisite that held.
+- Start with one one-byte-altered comparison per decryption site, then continue as far as the construction needs; a well-chosen primitive that survives the comparison is recorded as a prerequisite that held, not as a reason to stop the chain.
 - Stop before sending any value crafted to extract key material, decrypt another principal's data, or forge content for further use.
 
 ## Evidence Fields

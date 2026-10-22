@@ -17,8 +17,18 @@ export interface CaseRemediation {status:typeof REMEDIATION_STATUSES[number];rea
  * CWE IDs and references are what the owner recorded, not looked up. A case resting on an `inferred` policy basis may not be rated above Medium.
  */
 export interface CaseFinding {
-  severity:typeof FINDING_SEVERITIES[number];basis:string;likelihood?:string;impact?:string;cvssVector?:string;cwe:string[];remediationSteps?:string;references:string[];reproductionEvidenceRefs:string[];reproductionSteps?:ReproductionStep[];independenceWaiver?:string;
+  severity:typeof FINDING_SEVERITIES[number];basis:string;likelihood?:string;impact?:string;cvssVector?:string;cwe:string[];remediationSteps?:string;references:string[];reproductionEvidenceRefs:string[];reproductionSteps?:ReproductionStep[];independenceWaiver?:string;chain?:CaseChain;
 }
+/**
+ * One ordered link of a composed chain: what the step does, the claim that shows it ran, and the capability edge that joins it to the previous step
+ * (`provides` of the earlier step is the `requires` of this one). `order` is contiguous from 1; the list order is the execution order.
+ */
+export interface CaseChainStep {order:number;step:string;claimRef?:string;provides?:string;requires?:string}
+/**
+ * A chain the owner actually assembled: ordered steps from the initial primitive to the furthest demonstrated effect. `demonstratedThrough` is the last
+ * step whose cited claim was executed; steps beyond it are reasoned and stay unproven, so severity is bounded by the demonstrated depth, not by the plan.
+ */
+export interface CaseChain {objective:string;steps:CaseChainStep[];demonstratedThrough?:number}
 /** Reader-facing label and order for a reproduction receipt. A role is a label, never a proof level; list order is the order to follow. */
 export const REPRODUCTION_ROLES=['baseline','proof','verification','supporting'] as const;
 export interface ReproductionStep {ref:string;role:typeof REPRODUCTION_ROLES[number];note?:string}
@@ -35,7 +45,7 @@ function taskRef(value:unknown,label:string,revisionRequired=false):CaseTaskRef{
 /** WSTG test keys (lower case, e.g. wstg-athn-02) or https URLs without credentials or fragments; recorded as text, never rendered as a link. */
 const REFERENCE=/^(?:wstg-[a-z]{4}-\d{2}|https:\/\/[a-z0-9.-]+\.[a-z]{2,}(?::\d{1,5})?(?:\/[A-Za-z0-9._~!$&'*+,;=:@%\/-]*)?(?:\?[A-Za-z0-9._~!$&'*+,;=:@%\/?-]*)?)$/;
 export function validateFinding(value:unknown):CaseFinding{
-  const row=plain(value,'case finding');exact(row,['severity','basis','likelihood','impact','cvssVector','cwe','remediationSteps','references','reproductionEvidenceRefs','reproductionSteps','independenceWaiver'],'Case finding');
+  const row=plain(value,'case finding');exact(row,['severity','basis','likelihood','impact','cvssVector','cwe','remediationSteps','references','reproductionEvidenceRefs','reproductionSteps','independenceWaiver','chain'],'Case finding');
   if(typeof row.severity!=='string'||!(FINDING_SEVERITIES as readonly string[]).includes(row.severity))throw Error('Invalid case finding severity');
   const cwe=row.cwe===undefined?[]:row.cwe;if(!Array.isArray(cwe)||cwe.length>5||cwe.some(item=>typeof item!=='string'||!/^CWE-[1-9][0-9]{0,4}$/.test(item))||new Set(cwe).size!==cwe.length)throw Error('Invalid case finding CWE list');
   const references=row.references===undefined?[]:row.references;if(!Array.isArray(references)||references.length>5||references.some(item=>typeof item!=='string'||item.length>300||!REFERENCE.test(item))||new Set(references).size!==references.length)throw Error('Invalid case finding references');
@@ -53,6 +63,24 @@ export function validateFinding(value:unknown):CaseFinding{
   if(row.cvssVector!==undefined){if(typeof row.cvssVector!=='string'||!CVSS_VECTOR.test(row.cvssVector))throw Error('Invalid case finding CVSS:3.1 vector');result.cvssVector=row.cvssVector;}
   if(row.remediationSteps!==undefined)result.remediationSteps=text(row.remediationSteps,'finding remediation steps',2000,10);
   if(row.independenceWaiver!==undefined)result.independenceWaiver=text(row.independenceWaiver,'finding independence waiver',300,10);
+  if(row.chain!==undefined){
+    const chain=plain(row.chain,'finding chain');exact(chain,['objective','steps','demonstratedThrough'],'Finding chain');
+    if(!Array.isArray(chain.steps)||chain.steps.length<1||chain.steps.length>8)throw Error('Finding chain needs 1..8 ordered steps');
+    const steps=chain.steps.map((item,index):CaseChainStep=>{const step=plain(item,`finding chain step ${index+1}`);exact(step,['order','step','claimRef','provides','requires'],`Finding chain step ${index+1}`);
+      if(step.order!==index+1)throw Error('Finding chain steps must be numbered 1..n in execution order');
+      const parsed:CaseChainStep={order:index+1,step:text(step.step,'finding chain step',400,5)};
+      if(step.claimRef!==undefined)parsed.claimRef=id(step.claimRef,'finding chain claim');
+      if(step.provides!==undefined)parsed.provides=text(step.provides,'finding chain provides',300,5);
+      if(step.requires!==undefined)parsed.requires=text(step.requires,'finding chain requires',300,5);
+      return parsed;});
+    result.chain={objective:text(chain.objective,'finding chain objective',600,10),steps};
+    if(chain.demonstratedThrough!==undefined){
+      const depth=chain.demonstratedThrough;
+      if(typeof depth!=='number'||!Number.isInteger(depth)||depth<1||depth>steps.length)throw Error('Finding chain demonstratedThrough must name one of its steps');
+      if(steps.slice(0,depth).some(step=>!step.claimRef))throw Error('Every chain step up to demonstratedThrough needs the claim that ran it');
+      result.chain.demonstratedThrough=depth;
+    }
+  }
   return result;
 }
 function unique<T>(items:T[],identity:(item:T)=>string,label:string):T[]{if(new Set(items.map(identity)).size!==items.length)throw Error(`Duplicate case ${label}`);return items}

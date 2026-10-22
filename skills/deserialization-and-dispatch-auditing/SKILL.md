@@ -24,7 +24,7 @@ Selector/type source → reachable object graph → behavioral hooks → validat
 3. Enumerate inherited/private methods and nested properties, not only exported root members. Check primitive types before invoking attacker-influenced object methods; coercion itself can execute behavior.
 4. Follow allowlisted types through inheritance, reconstruction callbacks, and secondary deserializers. An approved outer type or byte-array shape is not a transitive safety guarantee.
 5. Compare immediate/stored inputs, archive/file wrappers, adapters, and alternative consumers. Include metadata and I/O paths that decode implicitly; pin the actual runtime rather than inheriting historical behavior. Inspect error-response writes to selectors and whether later dispatch continues after an intended terminal failure. Record environmental prerequisites and authentication separately.
-6. Validate with benign callback instrumentation or a controlled data observation. Include convention-selected, default, returned-receiver and preparation-phase behavior using the owned [framework-resolution guide](references/framework-routing.md). Show unintended behavior selection without constructing a code-execution gadget chain or stealing secrets.
+6. Validate with benign callback instrumentation or a controlled data observation. Include convention-selected, default, returned-receiver and preparation-phase behavior using the owned [framework-resolution guide](references/framework-routing.md). Show unintended behavior selection, and when the selected behavior is a gadget or replacement object, carry the selection through to an executed chain and report the depth you reached.
 
 ## Research Heuristics
 - Removing only a root prototype leaves nested objects/functions' inherited behavior relevant. [B041](../../research/evidence.md#b041)
@@ -40,7 +40,7 @@ Selector/type source → reachable object graph → behavioral hooks → validat
 - Dependency manifest and serializer documentation → identify installed reconstruction behavior → when reachability depends on runtime/library versions; catalogued possibilities are not proof of installed exposure.
 
 ## Validation
-Require the controllable selector/type, receiving object, unintended behavior, execution context, and every prerequisite. Use a negative control for an intended allowed member. Stop if unexpected sensitive data appears; report only redacted boundary evidence. An exception, known gadget catalogue, or dangerous serializer name alone does not establish a feasible path.
+Require the controllable selector/type, receiving object, unintended behavior, execution context, and every prerequisite. Use a negative control for an intended allowed member. Stop if unexpected sensitive data appears; report only redacted boundary evidence. An exception, known gadget catalogue, or dangerous serializer name alone does not establish a feasible path; a catalogue entry earns a link only once you have run it.
 
 ## Common Failure Modes
 Outer-type allowlisting ignores callbacks (B049); root-only prototype repair is incomplete (B041); transport mitigation hides an unrepaired serializer (B049); disabled optional services prevent reproduction (B066). A theoretical method or secret-dependent path is not demonstrated execution (B037).
@@ -52,8 +52,8 @@ Source patterns include own-property dispatch checks (B041), lexical locals, pri
 **Dispatch Audit → Validation/Remediation:** provide the selector/type model, object/inheritance graph, privilege, callbacks/secondary consumers, benign observation, constraints, and allowlist coverage. Next: [remediation](../remediation/SKILL.md), or [sandbox boundaries](../sandbox-boundary-analysis/SKILL.md) when a restricted execution environment is claimed.
 
 ## Evidence
-B037, B041, B007, B049, B066, B068, B063, B009, and B017 support behavioral-boundary analysis; serializer gadgets and original exploitation steps are intentionally absent.
+B037, B041, B007, B049, B066, B068, B063, B009, and B017 support behavioral-boundary analysis, and the boundary is not where the work stops: build the gadget path against the authorized target instead of importing it from an excerpt.
 
-[O001](../../research/orange/evidence.md#o001) reinforces dependency-bounded reconstruction assessment; [O005](../../research/orange/evidence.md#o005) adds error-path selector mutation and continuation review. No source gadget or exploit procedure is imported.
+[O001](../../research/orange/evidence.md#o001) reinforces dependency-bounded reconstruction assessment; [O005](../../research/orange/evidence.md#o005) adds error-path selector mutation and continuation review. No gadget or procedure is imported verbatim from an excerpt; derive yours from the target and run it.
 
 Convention-selected receivers, unmatched-input delegation, preparation hooks and returned-data interpretation additionally draw on [O015](../../research/orange/evidence.md#o015), [O021](../../research/orange/evidence.md#o021), [O022](../../research/orange/evidence.md#o022), and [O024](../../research/orange/evidence.md#o024). Their receiver/phase models are not copied invocation sequences; [On demand upstream text](references/wstg-source.md).

@@ -1,3 +1,4 @@
+import { LEAD_CEILINGS } from './helpers/budgets.js';
 import { describe, expect, it } from 'vitest';
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -26,7 +27,7 @@ describe('bounded recon contract', () => {
     expect(source).toContain('same-run Evidence IDs');
     expect(source).not.toContain('CAPABILITIES');
     expect(source).not.toMatch(/\bp2o_[a-z_]+\b|nextOffset|offset\?|supersedes=|policyBasis=/);
-    expect(source.length).toBeLessThan(5000);
+    expect(source.length).toBeLessThan(LEAD_CEILINGS.soloDirectory);
     expect(source).toContain('Only the human can change confirmed scope');
     expect(source).toContain('never bypass scope');
     expect(source).toContain('missing, blocked or untested proof remain open_proof_gap');
@@ -44,7 +45,7 @@ describe('bounded recon contract', () => {
     expect(urlOwner).not.toMatch(/\bp2o_[a-z_]+\b/);
     expect(urlOwner).toContain('Only the human can widen scope');
     expect(urlOwner).toContain('Shell/network egress is not origin-filtered');
-    expect(urlOwner.length).toBeLessThan(5000);
+    expect(urlOwner.length).toBeLessThan(LEAD_CEILINGS.soloUrl);
   });
 
   it('combines source and URL recon for a hybrid target and treats neither source as proof of the other (U10)', () => {
@@ -61,16 +62,33 @@ describe('bounded recon contract', () => {
     expect(hybridOwner).toContain('Shell/network egress is not origin-filtered');
     expect(hybridOwner).not.toMatch(/\bp2o_[a-z_]+\b/);
     // Hybrid legitimately carries both single-kind recon playbooks plus the combined-evidence caveat, so its budget is wider than the single-kind 5000 cap.
-    expect(hybridOwner.length).toBeLessThan(6500);
+    expect(hybridOwner.length).toBeLessThan(LEAD_CEILINGS.hybridSolo);
   });
 
+  // 2026-10-22 (planning_update.md P6): the lead's DELEGATION block gained the four-intent dispatch cap and the anti-stall floor, so the lead
+  // ceilings moved (solo 5300 -> 5600, delegated 5811/5965/6215 -> 6070/6225/6475, hybrid 6500 -> 6700). Worker text is untouched by P6, so the two
+  // instruction hashes below and both brief hashes are unchanged.
+  // 2026-10-22 (planning_update.md P3): one `Situation:` line (hard cap 240 chars) now renders the run's counters at the top of the owner
+  // section, so every lead ceiling moved by that cap (solo 5600 -> 5700, delegated 6070/6225/6475 -> 6190/6341/6586, hybrid stays 6700);
+  // the pinned measurement below stays without a snapshot so the static body and the per-turn line are budgeted separately.
+  // The situation test after the hashes asserts the with-line worst case stays inside the same ceiling. Worker text is untouched again.
   // 2026-10-21 (planning_update.md U3): the per-worker identity line moved to the END of workerInstructions so siblings share the static body as a
   // prompt prefix; the two instruction hashes below moved on purpose. The brief hashes are unchanged.
+  // 2026-10-21 (chain capability): the lead's DELEGATION block gained one line on scheduling chain steps serially (the lead prompt ceiling moved 5000 -> 5300), and
+  // workerInstructions gained the provides/requires sentence in EVIDENCE_CLOSURE plus a link-reporting sentence; the two instruction hashes moved on purpose
+  // and the brief hashes are still unchanged (workerBrief carries neither).
+  // 2026-10-21 (chain capability, second pass): the worker is now told to take the next link itself when a step's actual output feeds it, and to
+  // record each link's provides/requires instead of stopping at the edge of its brief; the two instruction hashes moved on purpose and the brief
+  // hashes are still unchanged (workerBrief carries neither line).
   // 2026-10-12 (planning_update.md P1.2): reconInstructions' tool-guidance-on branch now names p2o_surface for the surface-inventory step, so the
   // instruction hash moved on purpose; the brief hash is unaffected (workerBrief does not include reconInstructions text).
+  // 2026-10-22 (planning_update.md P1): every worker now reads a duty line keyed by purpose (mapping / discovery / investigation /
+  // refinement / validation / retest / reporting), derived from its role when the lead supplies no structured work. The two instruction
+  // hashes moved on purpose and the brief hashes are still unchanged (workerBrief carries no duty line). The shared-prefix check below
+  // moved from a 95% ratio to a two-line tail: the duty line is per-purpose, so the per-worker zone is now duty + identity.
   it.each([
-    ['url', '98f73e33d3e7c250d1c4a5b6942dfb62d318ec42dd76e3e58f48ba9c4edec30c', 'e5f38a11c4965e093216143cc130012c49357182f85127cb5b951317ac2717af'],
-    ['directory', '481d62d3b1cf352be6550ba79f976e389621b957ef3deaf0ce0ab47de11f4ed0', '1ee913a605e1e14fe648bd8df189b2d0f518bd127d923a2f01bdedb4eebde53f'],
+    ['url', '2a2ef8b5dd4190932c2b4c887819c2b0d4080d731eb4bd0579f043c4f20e1ede', 'e5f38a11c4965e093216143cc130012c49357182f85127cb5b951317ac2717af'],
+    ['directory', '7f84a67b6570d31d07d12d5acb1cc81fb52fa4f863224e37d562a07beef0e1be', '1ee913a605e1e14fe648bd8df189b2d0f518bd127d923a2f01bdedb4eebde53f'],
   ])('pins %s worker guidance for the Planner/frontier revision; historical acceptance artifacts are not rewritten', (kind, instructionHash, briefHash) => {
     const ticket = { workerId: 'worker-test', role: 'recon', runId: 'run-test', depth: 1, parentWorkerId: null,
       lifetime: 'until-stopped', target: { kind, label: kind === 'url' ? 'https://example.invalid' : '/target' }, commandBudget: 20 } as Ticket;
@@ -100,7 +118,9 @@ describe('bounded recon contract', () => {
       lifetime: 'until-stopped', target: { kind: 'url', label: 'https://example.invalid' }, commandBudget: 20 }) as Ticket;
     const a = workerInstructions(make('p2o-recon-aaaaaa', 'recon', 1, null)), b = workerInstructions(make('p2o-discovery-bbbbbb', 'discovery', 2, 'p2o-recon-aaaaaa'));
     let shared = 0; while (shared < a.length && shared < b.length && a[shared] === b[shared]) shared += 1;
-    expect(shared / a.length).toBeGreaterThan(0.95);
+    expect(shared / a.length).toBeGreaterThan(0.93);
+    // Only the per-worker tail may differ: the duty line (purpose) and the identity line.
+    expect(a.slice(shared).split('\n')).toHaveLength(2);
     expect(a.slice(shared)).toContain('recon-aaaaaa'); expect(a.slice(0, shared)).not.toContain('recon-aaaaaa');
     expect(a.split('\n').at(-1)).toBe('Identity: you are p2o-recon-aaaaaa (role recon, depth 1); your parent is the assessment lead.');
   });
@@ -126,13 +146,37 @@ describe('bounded recon contract', () => {
   });
 
   it('keeps the delegated lead prompt variants inside a recorded size (the solo variants are bounded above)', () => {
-    // Measured 2026-10-11 with these facts: 5,221 / 5,372 / 5,617 characters. Ceilings are the measurement plus 2%; raise them on purpose, never to make a test pass.
+    // Measured 2026-10-22 with the validation-contract line, the chain-step rule, the P6 dispatch rules and the 240-character situation allowance:
+    // static 5,950 / 6,101 / 6,346 plus at most 240 for `Situation:`. Ceilings are that total plus headroom; raise them on purpose, never to make a test pass.
     const base = { runId: 'run-recon', sourceSkipped: 2, workerBudget: 20, delegation: { enabled: true, maxWorkers: 3, maxDepth: 2 } };
     const directory = ownerInstructions({ ...base, targetKind: 'directory', targetLabel: '/target' });
     const url = ownerInstructions({ ...base, targetKind: 'url', targetLabel: 'https://example.invalid' });
     const eventDriven = ownerInstructions({ ...base, targetKind: 'url', targetLabel: 'https://example.invalid', loopMode: 'event-driven' });
-    expect(directory.length).toBeLessThanOrEqual(5326); expect(url.length).toBeLessThanOrEqual(5480); expect(eventDriven.length).toBeLessThanOrEqual(5730);
+    expect(directory.length).toBeLessThanOrEqual(LEAD_CEILINGS.delegatedDirectory); expect(url.length).toBeLessThanOrEqual(LEAD_CEILINGS.delegatedUrl); expect(eventDriven.length).toBeLessThanOrEqual(LEAD_CEILINGS.delegatedEventDriven);
     for (const text of [directory, url, eventDriven]) expect(text).not.toMatch(/\bp2o_[a-z_]+\b/);
+  });
+
+  it('renders one bounded situation line when the run has records', () => {
+    const snapshot = { open: 6, running: 2, runningRoles: ['discovery', 'validation'], ready: 3, exhausted: 0, blocked: 1, openContradictions: 1,
+      chainReady: 1, chainUnmet: 2, pendingRating: 4, coverageTested: 12, coverageCells: 31, suggested: { purpose: 'validation' as const, score: 85 } };
+    const base = { runId: 'run-recon', sourceSkipped: 2, workerBudget: 20, targetKind: 'url' as const, targetLabel: 'https://example.invalid' };
+    const solo = ownerInstructions({ ...base, delegation: { enabled: false, maxWorkers: 1, maxDepth: 1 }, situation: snapshot });
+    const delegated = ownerInstructions({ ...base, delegation: { enabled: true, maxWorkers: 3, maxDepth: 2 }, situation: snapshot });
+    for (const text of [solo, delegated]) {
+      const line = text.split('\n').find(entry => entry.startsWith('Situation: '))!;
+      expect(line.length).toBeLessThanOrEqual(240);
+      expect(line).toContain('2 running (discovery, validation)');
+      expect(text).not.toMatch(/\bp2o_[a-z_]+\b/);
+    }
+    expect(solo).toContain('next: validation 85');
+    // The with-line worst case still fits the same ceiling the static body is pinned to.
+    expect(solo.length).toBeLessThan(LEAD_CEILINGS.soloUrl); expect(delegated.length).toBeLessThanOrEqual(LEAD_CEILINGS.delegatedUrl);
+  });
+
+  it('says 0 open instead of leaving an empty frontier to be inferred', () => {
+    const idle = { open: 0, running: 0, runningRoles: [], ready: 0, exhausted: 0, blocked: 0, openContradictions: 0, chainReady: 0, chainUnmet: 0, pendingRating: 0, coverageTested: 0, coverageCells: 0, suggested: null };
+    const text = ownerInstructions({ runId: 'run-recon', sourceSkipped: 2, workerBudget: 20, targetKind: 'directory' as const, targetLabel: '/target', delegation: { enabled: true, maxWorkers: 3, maxDepth: 2 }, situation: idle });
+    expect(text).toContain('Situation: 0 open.');
   });
 
   it('adds the operator objective as quoted data only when one was given, without a tool name or any change otherwise', () => {

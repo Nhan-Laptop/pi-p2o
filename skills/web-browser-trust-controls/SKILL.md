@@ -1,6 +1,6 @@
 ---
 name: web-browser-trust-controls
-description: Test what a server declares to a browser about cross-origin trust (CORS, framing, content policy, request-origin checks) and what client-side code does with untrusted input in a URL, style, resource reference, message or storage slot, mostly by reading headers and static script, never by running a live exploit in a real browser. Use when a response carries cross-origin headers or client-side script handles untrusted values. Covers WSTG SESS-05, CONF-12 and CLNT-04 to CLNT-07, CLNT-09 to CLNT-14.
+description: Test what a server declares to a browser about cross-origin trust (CORS, framing, content policy, request-origin checks) and what client-side code does with untrusted input in a URL, style, resource reference, message or storage slot, mostly by reading headers and static script, then by building the browser-side chain that declared policy permits against an authorized target. Use when a response carries cross-origin headers or client-side script handles untrusted values. Covers WSTG SESS-05, CONF-12 and CLNT-04 to CLNT-07, CLNT-09 to CLNT-14.
 ---
 
 # Web Browser Trust Controls
@@ -43,7 +43,7 @@ The declared headers per route; the server's accept/reject decision for each ori
 - A framing or origin header stripped or added by an intermediary rather than by the application itself.
 
 ## Stop Conditions
-- Stop before constructing a working cross-origin page, a real clickjacking frame, or any artifact meant to be loaded by a real victim browser; this card confirms server-declared policy and client-side source structure, not a live browser exploit chain.
+- Build the cross-origin page or clickjacking frame when it runs against an authorized target, and never load such an artifact in a real person's browser; this card moves from server-declared policy and client-side source structure to the working chain behind them.
 - Stop before sending a state-changing request to a route this task's scope does not separately authorize for mutation.
 - Stop after the first confirmed gap between declared policy and server enforcement per card.
 - Stop before reading or writing another principal's browser-held storage or message traffic.
@@ -61,4 +61,4 @@ Whether a declared policy actually stops a real browser from doing the thing it 
 ## Handoffs
 Provide the declared policy per route, the origin-comparison receipts, the source-to-sink traces, and the proof level for each. Choose role/method from the unanswered question; record expected evidence and a branch stop condition. Use the [owned review contract](../../HANDOFFS.md#focused-method-and-review). Next: [web output context](../web-output-context/SKILL.md) when a sink's encoding context (not just its trust boundary) is the open question, [web deployment hygiene](../web-deployment-hygiene/SKILL.md) for header hygiene unrelated to cross-origin trust, or [remediation](../remediation/SKILL.md) for fixes.
 
-Claim rules are in [claim provenance before confirmation](../source-code-auditing/references/claim-provenance.md). This playbook restates the client-side and cross-origin guidance of the OWASP Web Security Testing Guide in this library's evidence terms, replacing live-browser exploitation walkthroughs with declared-policy reading and source structure; see [WSTG provenance](../../research/WSTG_PROVENANCE.md); [On demand upstream text](references/wstg-source.md).
+Claim rules are in [claim provenance before confirmation](../source-code-auditing/references/claim-provenance.md). This playbook restates the client-side and cross-origin guidance of the OWASP Web Security Testing Guide in this library's evidence terms, adding declared-policy reading and source structure on top of live-browser exploitation walkthroughs; see [WSTG provenance](../../research/WSTG_PROVENANCE.md); [On demand upstream text](references/wstg-source.md).

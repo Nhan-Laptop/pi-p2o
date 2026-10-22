@@ -28,7 +28,7 @@ describe('p2o_coverage suggest', () => {
     const before = await h.reader(); let count: number; try { count = before.records().length; } finally { before.close(); }
     const result = (await h.call('p2o_coverage', { action: 'suggest', features: ['object-id', 'login'], limit: 50 })).details;
     const keys = result.suggestions.map((item: any) => item.key);
-    expect(keys).not.toContain('wstg-athz-04'); expect(keys).not.toContain('wstg-sess-05'); expect(result.matched).toBeGreaterThan(0); expect(result.warning).toMatch(/Not a finding, not permission and not coverage/);
+    expect(keys).not.toContain('wstg-athz-04'); expect(keys).not.toContain('wstg-sess-05'); expect(result.total).toBeGreaterThan(0); expect(result.warning).toMatch(/Not a finding, not permission and not coverage/);
     const after = await h.reader(); try { expect(after.records().length).toBe(count); } finally { after.close(); }
   }));
   it('refuses unknown features and malformed modes or limits', async () => fixture(async h => {
@@ -50,15 +50,15 @@ describe('recon features derived from the graph (U4)', () => {
     await h.command('--target ./source --solo');
     const suggest = async (extra: Record<string, unknown> = {}) => (await h.call('p2o_coverage', { action: 'suggest', limit: 50, ...extra })).details;
     expect(await suggest()).toMatchObject({ features: ['any'], featureSource: 'default' });
-    const baseline = (await suggest()).matched;
+    const baseline = (await suggest()).total;
     await (h.call('p2o_graph', { action: 'record', batch: { assets: [{ asset: { kind: 'endpoint', key: 'POST /session', attributes: { feature: 'Login, jwt' } } }, { asset: { kind: 'endpoint', key: 'GET /app.js', attributes: { feature: 'client-js telepathy', status: '200' } } }] } }));
     const derived = await suggest();
     expect(derived).toMatchObject({ features: ['login', 'jwt', 'client-js'], featureSource: 'graph', ignoredFeatureWords: ['telepathy'] });
-    expect(derived.matched).toBeGreaterThan(baseline);
+    expect(derived.total).toBeGreaterThan(baseline);
     expect(derived.suggestions.map((item: any) => item.key)).toEqual(expect.arrayContaining(WSTG_MAP.filter(test => test.trigger.includes('login')).slice(0, 3).map(test => wstgKey(test.id))));
     expect(await suggest({ features: ['api'] })).toMatchObject({ features: ['api'], featureSource: 'explicit' });
     expect((await suggest({ features: ['api'] })).ignoredFeatureWords).toBeUndefined();
     await h.call('p2o_graph', { action: 'record', batch: { assets: [{ asset: { kind: 'endpoint', key: 'POST /session', attributes: { status: '200' }, expectedRevision: 1 } }, { asset: { kind: 'endpoint', key: 'GET /app.js', attributes: { status: '200' }, expectedRevision: 1 } }] } });
-    expect(await suggest()).toMatchObject({ features: ['any'], featureSource: 'default', matched: baseline });
+    expect(await suggest()).toMatchObject({ features: ['any'], featureSource: 'default', total: baseline });
   }));
 });

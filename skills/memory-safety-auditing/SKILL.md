@@ -24,7 +24,7 @@ Input representation → arithmetic/type model → allocation and ownership → 
 3. For an access of length `n` at offset `o` in capacity `c`, require `o <= c` and `n <= c - o` after validating representations; avoid overflow-prone `o + n` checks. This formula is derived defensive synthesis, not copied patch code.
 4. Verify each consumer independently. Passing checksum/type/container validation does not prove a later copy or index fits. Include zero-length, early-success, partial-initialization, and error paths.
 5. Identify the actual allocator/cache, lifetime, page mapping, and object extent in the tested configuration. Catalog user-reachable allocation families by shared allocation domain, size, controlled fields, input alphabet, lifetime, and cleanup behavior; compatibility remains a hypothesis requiring observation. Observe the first invalid access, not merely the final crash.
-6. Classify read/write direction, width, controllable subset, transformations, repetition, and neighboring damage. Keep allocator characterization descriptive; do not construct replacement layouts or payloads.
+6. Classify read/write direction, width, controllable subset, transformations, repetition, and neighboring damage. Characterize the allocator so a replacement layout can be built: construct it against the authorized target, run it, and record the layout and the furthest effect observed rather than stopping at the description.
 
 ## Research Heuristics
 - A complete required argument count can include terms omitted by a superficially plausible multiplication check. [B077](../../research/evidence.md#b077)

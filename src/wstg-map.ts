@@ -1,3 +1,4 @@
+import { isTestedCell } from './claims.js';
 import type { CaseView } from './cases.js';
 import type { CoverageCellView } from './coverage.js';
 
@@ -394,7 +395,7 @@ export function wstgEvidence(cells: readonly WstgCell[], cases: readonly WstgCas
   if (!live.length) return 'L0';
   if (live.every(cell => cell.execution === 'not_applicable')) return 'n/a';
   const accepted = new Set(cases.filter(item => item.acceptedFinding).map(item => `${item.id}@${item.revision}`));
-  const tested = live.filter(cell => cell.execution === 'tested');
+  const tested = live.filter(cell => isTestedCell(cell));
   if (tested.some(cell => cell.currentness === 'current' && cell.caseRefs.some(ref => accepted.has(`${ref.caseId}@${ref.revision}`)))) return 'L3';
   if (tested.some(cell => cell.currentness === 'current')) return 'L2';
   if (tested.length || live.some(cell => cell.execution === 'attempted' || cell.execution === 'blocked')) return 'L1';

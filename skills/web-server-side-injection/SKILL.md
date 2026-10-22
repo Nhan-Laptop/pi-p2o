@@ -8,7 +8,7 @@ description: Test whether untrusted input changes the structure that a server-si
 Before first use, read the [scope baseline](../../README.md#start-here) and [handoff contracts](../../HANDOFFS.md).
 
 ## Applicability
-Use when a request value reaches a server-side interpreter that gives meaning to structure, not just content: a query language, a document parser, a command shell, a file-path resolver, a mail protocol, or an outbound-request target. Source review covers where a value is concatenated, interpolated or passed unparsed into such an interpreter instead of through a parameterized or allow-listed path. Live work compares a small set of boundary-class markers against a fixed baseline, never a destructive payload. The question is always whether the interpreter's structure changed, not whether a specific exploit succeeds.
+Use when a request value reaches a server-side interpreter that gives meaning to structure, not just content: a query language, a document parser, a command shell, a file-path resolver, a mail protocol, or an outbound-request target. Source review covers where a value is concatenated, interpolated or passed unparsed into such an interpreter instead of through a parameterized or allow-listed path. Live work compares a small set of boundary-class markers against a fixed baseline, never a destructive payload, and then follows the effect the interpreter's changed structure actually produces.
 
 ## Test Cards
 - [Query languages: SQL/NoSQL and LDAP injection](references/query-languages.md): wstg-injt-05, wstg-injt-06.
@@ -26,16 +26,16 @@ Use when a request value reaches a server-side interpreter that gives meaning to
 - A missing prerequisite creates a gap for that workflow only.
 
 ## Baseline
-Before comparing anything, record one normal, valid request per candidate parameter and its full receipt: status, body length, timing class, and any error text. Every later request is read against this baseline, never against assumption.
+Before comparing anything, record one normal, valid request per candidate parameter and its full receipt: status, body length, timing class, and any error text. Every later request is read against this baseline.
 
 ## Bounded Comparison
-Change one candidate parameter at a time. Use a small fixed set of boundary-class markers: a value that keeps the interpreter's grammar intact but shifts a boundary (an extra delimiter, an unescaped structural character, a syntactically closing fragment), paired with an equivalent value that does not. Three samples per marker is enough to judge stability. Prefer a marker that produces an observable but harmless difference (a changed length, status or timing class) over one that would need the interpreter to actually execute or return data. Escalate only within the same bounded set; do not expand toward reading, writing or deleting data, and never use a destructive or spreading payload.
+Change one candidate parameter at a time. Use a small fixed set of boundary-class markers: a value that keeps the interpreter's grammar intact but shifts a boundary (an extra delimiter, an unescaped structural character, a syntactically closing fragment), paired with an equivalent value that does not. Three samples per marker is enough to judge stability. Prefer a marker whose difference shows up in length, status or timing; a marker whose effect only appears in returned data or executed output is the next step, taken under the scope that authorizes it. Escalate inside the set this task authorizes: once a marker shows structure control, the next step is the interpreter's own effect, and a destructive or spreading payload is never used.
 
 ## Controls
 - Positive control: the baseline request succeeds and the error-inducing control is reachable at all.
 - Negative control: an equivalent, syntactically inert value produces the baseline response, so the marker's effect is attributable to the structural shift and not to noise.
 - Timing control: when a difference is read from response time, repeat both the baseline and the marker enough times to compare medians, and keep any deliberate delay inside the bound set for this task.
-- Source control: where source is available, confirm the parameterized or allow-listed path exists (or does not) before reading a live difference as conclusive.
+- Source control: where source is available, confirm the parameterized or allow-listed path exists before reading a live difference as conclusive.
 
 ## Expected Observations
 A per-parameter table: the marker used, the baseline and observed status/length/timing class, and whether the interpreter's own error text or behavior attributes the difference to a structural change. For source review, the file and line of the concatenation or interpolation and whether a safe API was bypassed.
@@ -47,9 +47,9 @@ A per-parameter table: the marker used, the baseline and observed status/length/
 - A parameterized or allow-listed path confirmed in source, where a live difference would be unexplained and needs re-examination.
 
 ## Stop Conditions
-- Stop at the first boundary-class marker that produces an attributable, reproducible structural difference; record it and move to the next candidate parameter rather than deepening the same one.
-- Stop before any marker that would read, write or delete data, change recipient or destination state, or reach a host outside the confirmed origin.
-- Stop before any marker whose purpose is to demonstrate code execution, data exfiltration or denial of service; that is outside this card's evidence ceiling and becomes an open_proof_gap citing exploitability-assessment instead.
+- Record the first boundary-class marker that produces an attributable, reproducible structural difference, then keep going where the next step is reachable inside the confirmed scope: the structural difference is the base of the chain, not its ceiling. Park a parameter only when the next step needs an authorization this task does not have.
+- Stop before any marker that would mutate data, exfiltrate it, degrade availability, or reach a host outside the confirmed origin; those stay an open_proof_gap.
+- Stop before a marker demonstrating code execution inside this card: confirm the injection structure here, then compose the execution step in [exploitability assessment](../exploitability-assessment/SKILL.md) against the authorized target.
 - Stop after three samples per marker; a result that needs more to appear is not reproducible evidence yet.
 
 ## Evidence Fields
@@ -60,9 +60,9 @@ A per-parameter table: the marker used, the baseline and observed status/length/
 - Coverage state and the reason for any card not run.
 
 ## Gaps
-Confirmed structural influence over an interpreter is not the same as demonstrated code execution, data access or a network egress effect; those stay open_proof_gap and route to exploitability-assessment with an explicit missing-capability note, never a confirmed closure here. Interpreters reachable only through a transport this library does not provide (a binary protocol, a non-HTTP channel) remain unverified.
+This card stops at structural influence over an interpreter: code execution, data access or a network egress effect is composed in [exploitability assessment](../exploitability-assessment/SKILL.md) against the authorized target. Interpreters reachable only through a transport this library does not provide (a binary protocol, a non-HTTP channel) remain unverified.
 
 ## Handoffs
 Provide the per-parameter table, the markers and controls used, and the source locations when available. Choose role/method from the unanswered question; record expected evidence and a branch stop condition. Use the [owned review contract](../../HANDOFFS.md#focused-method-and-review). Next: [data flow analysis](../data-flow-analysis/SKILL.md) for tracing a sink's full reach, [exploitability assessment](../exploitability-assessment/SKILL.md) for whether a confirmed structural influence has further reachable impact, or [remediation](../remediation/SKILL.md) for fixes.
 
-Claim rules are in [claim provenance before confirmation](../source-code-auditing/references/claim-provenance.md). This playbook restates the injection-testing guidance of the OWASP Web Security Testing Guide in this library's evidence terms, replacing payload catalogs and exploitation walkthroughs with bounded, harmless comparisons; see [WSTG provenance](../../research/WSTG_PROVENANCE.md); [on demand](references/wstg-source.md).
+Claim rules are in [claim provenance before confirmation](../source-code-auditing/references/claim-provenance.md). This playbook restates the OWASP Web Security Testing Guide's injection guidance in this library's evidence terms; see [WSTG provenance](../../research/WSTG_PROVENANCE.md); [on demand](references/wstg-source.md).

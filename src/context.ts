@@ -1,3 +1,5 @@
+import type { Counted } from './counts.js';
+import { isSatisfiedTask } from './tasks.js';
 import type { AssessmentRecord } from './records.js';
 import type { StateEvent } from './state/store.js';
 import { graphCanonical } from './state/graph.js';
@@ -7,7 +9,7 @@ export const KNOWLEDGE_DOMAINS=['task','goal','todo','decision','case','coverage
 export type KnowledgeDomain=typeof KNOWLEDGE_DOMAINS[number];
 export interface KnowledgeIndexHead {domain:KnowledgeDomain;entityId:string;recordId:string;sequence:number;status:string;actorId:string}
 export interface KnowledgeHead extends KnowledgeIndexHead {summary:string;refs:string[]}
-export interface KnowledgePage {rows:KnowledgeHead[];total:number;shown:number;omitted:number;cursor:number;asOfSequence:number;nextCursor?:number}
+export interface KnowledgePage extends Counted {rows:KnowledgeHead[];asOfSequence:number}
 export interface ContextCursor {consumerId:string;throughSequence:number;gapThrough:number;reviewThrough:number;packetSha256:string;eventSequence:number}
 export interface ContextItem extends KnowledgeHead {detail:Record<string,unknown>}
 export interface KnowledgeLink {recordId:string;relation:string;targetId:string}
@@ -70,7 +72,7 @@ export function replayKnowledgeIndex(base:KnowledgeIndexSnapshot,tail:StateEvent
       const descriptor=describeKnowledgeRecord(row);if(!descriptor||!row.id)continue;const {domain,entityId,status}=descriptor;
       const prior=heads.get(key(domain,entityId));if(prior)links.delete(prior.recordId);
       heads.set(key(domain,entityId),{domain,entityId,recordId:row.id,sequence:event.sequence,status,actorId:row.by});links.set(row.id,descriptor.links.map(([relation,targetId])=>({recordId:row.id!,relation,targetId})));
-      if(domain==='task')for(const head of heads.values())if(head.domain==='phase'&&(links.get(head.recordId)??[]).some(link=>link.relation==='task'&&link.targetId===entityId))head.status=['reviewed','closed'].includes(status)?'reviewed':status==='reported'?'pending':status;
+      if(domain==='task')for(const head of heads.values())if(head.domain==='phase'&&(links.get(head.recordId)??[]).some(link=>link.relation==='task'&&link.targetId===entityId))head.status=isSatisfiedTask(status)?'reviewed':status==='reported'?'pending':status;
       if(row.supersedes){if(domain==='candidate')invalidate(row.supersedes,'claim');if(domain==='task'||domain==='case')invalidate(entityId,domain);}
     }
     const graph=object(event.data?.graph),body=object(graph?.body);if(body&&Number(body.revision)>1&&typeof body.entityId==='string'&&['assets','assertions'].includes(String(graph?.table)))invalidate(body.entityId,graph?.table==='assets'?'asset':'assertion');

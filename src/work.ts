@@ -14,6 +14,8 @@ export interface WorkAssetRef { id:string; revision?:number; variant?:string }
 export interface WorkSpec {
   assetRefs:WorkAssetRef[]; questionKey:string; policyKey?:string; actorContext?:string; tenantContext?:string;
   methodFamily:string; purpose:typeof WORK_PURPOSES[number];
+  /** P9 lineage: same-run candidate record IDs this task builds on. It is what a plan is allowed to stand on, not dedup identity. */
+  claimRefs?:string[];
 }
 export interface WorkDecision {
   disposition:typeof WORK_DISPOSITIONS[number]; reason:string; relatedTaskId?:string; changeReason?:string;
@@ -49,7 +51,7 @@ function revision(value:unknown,label:string):number|undefined{
 }
 
 export function validateWorkSpec(value:unknown):WorkSpec{
-  const row=plain(value,'work identity');exact(row,['assetRefs','questionKey','policyKey','actorContext','tenantContext','methodFamily','purpose'],'Work identity');
+  const row=plain(value,'work identity');exact(row,['assetRefs','questionKey','policyKey','actorContext','tenantContext','methodFamily','purpose','claimRefs'],'Work identity');
   if(!Array.isArray(row.assetRefs)||row.assetRefs.length<1||row.assetRefs.length>10)throw Error('Work identity needs 1..10 asset references');
   const seen=new Set<string>(),assetRefs=row.assetRefs.map((raw,index)=>{
     const item=plain(raw,`work asset ${index}`);exact(item,['id','revision','variant'],`Work asset ${index}`);
@@ -59,7 +61,11 @@ export function validateWorkSpec(value:unknown):WorkSpec{
     const key=graphCanonical(result);if(seen.has(key))throw Error('Duplicate work asset reference');seen.add(key);return result;
   }).sort((a,b)=>graphCanonical(a)<graphCanonical(b)?-1:1);
   const purpose=identity(row.purpose,'purpose',32);if(!(WORK_PURPOSES as readonly string[]).includes(purpose))throw Error('Invalid work purpose');
+  let claimRefs:string[]|undefined;
+  if(row.claimRefs!==undefined){if(!Array.isArray(row.claimRefs)||row.claimRefs.length<1||row.claimRefs.length>10)throw Error('Work lineage needs 1..10 parent claim references');
+    const seenClaim=new Set<string>();claimRefs=row.claimRefs.map((raw,index)=>{const id=identity(raw,`parent claim ${index}`,80);if(seenClaim.has(id))throw Error('Duplicate work parent claim reference');seenClaim.add(id);return id;}).sort();}
   return {assetRefs,questionKey:identity(row.questionKey,'question key'),methodFamily:identity(row.methodFamily,'method family',80),purpose:purpose as WorkSpec['purpose'],
+    ...(claimRefs?{claimRefs}:{}),
     ...(row.policyKey!==undefined?{policyKey:identity(row.policyKey,'policy key')}:{ }),...(row.actorContext!==undefined?{actorContext:identity(row.actorContext,'actor context')}:{ }),
     ...(row.tenantContext!==undefined?{tenantContext:identity(row.tenantContext,'tenant context')}:{ })};
 }

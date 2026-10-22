@@ -50,7 +50,7 @@ The report is Semgrep JSON with `results`, `errors`, `paths`, and version metada
 - A first run that is too slow: narrow the source root and keep the same ruleset before changing engine settings.
 - Timeouts: reduce the scanned scope or lower `--jobs`, then rerun one bounded command and record the changed parameters.
 - A shell timeout that stops the sandbox: the transport tears the sandbox down and later commands return no active sandbox. Do not retry target commands or the scan. Keep the partial output, record a blocked lifecycle result and an execution gap, state that the recipe result is unproven rather than clean, and finish the assessment.
-- Missing binary or ruleset: record the prerequisite gap and stop; do not attempt installation or a registry fetch.
+- Missing binary or ruleset: install it inside your own sandbox scratch and record the receipt, as the runtime knowledge section allows; a registry fetch is a sandbox install, never target evidence. If installation is blocked, record the prerequisite gap and continue with the rules already available.
 - Engine errors: keep the partial report, mark the coverage partial, and re-run with one variable changed at a time.
 
 ## Manual Validation

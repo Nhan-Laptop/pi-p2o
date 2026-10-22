@@ -1,5 +1,7 @@
 import { DatabaseSync, type SQLInputValue } from 'node:sqlite';
 import { createHmac, randomBytes, randomUUID } from 'node:crypto';
+import type { Counted } from '../counts.js';
+import { isSatisfiedTask } from '../tasks.js';
 import { sha256Hex as sha, validId } from '../validate.js';
 import { closeSync } from 'node:fs';
 import { dirname } from 'node:path';
@@ -43,7 +45,7 @@ export interface StateEvent {
   summary: string; payloadRefs: string[]; redactionVersion: 1; data?: Record<string, unknown>;
 }
 export type EventDraft = Omit<StateEvent, 'sequence' | 'eventId' | 'schemaVersion' | 'runId' | 'committedAt' | 'redactionVersion' | 'payloadRefs'> & { payloadRefs?: string[] };
-export interface StorePage<T> { rows: T[]; total: number; shown: number; omitted: number; asOfSequence: number; cursor: number; nextCursor?: number }
+export interface StorePage<T> extends Counted { rows: T[]; asOfSequence: number }
 export interface ArtifactManifest {
   id: string; sequence: number; kind: string; mediaType: string; producer: string; operationId?: string;
   bytes: number; sha256: string; sensitivity: 'redacted'; redactionVersion: 1 | 2 | 3;
@@ -301,7 +303,7 @@ export class AssessmentStore {
       ON CONFLICT(domain,entity_id) DO UPDATE SET record_id=excluded.record_id,sequence=excluded.sequence,status=excluded.status,actor_id=excluded.actor_id`).run(domain,entityId,row.id,sequence,status,row.by);
     const insert=this.db.prepare('INSERT OR IGNORE INTO knowledge_links(record_id,relation,target_id) VALUES (?,?,?)');for(const [relation,target] of links)insert.run(row.id,relation,target);
     if(task){this.db.prepare(`UPDATE knowledge_heads SET status=? WHERE domain='phase' AND record_id IN
-      (SELECT record_id FROM knowledge_links WHERE relation='task' AND target_id=?)`).run(['reviewed','closed'].includes(String(task.status))?'reviewed':String(task.status)==='reported'?'pending':String(task.status),String(task.id));}
+      (SELECT record_id FROM knowledge_links WHERE relation='task' AND target_id=?)`).run(isSatisfiedTask(task.status)?'reviewed':String(task.status)==='reported'?'pending':String(task.status),String(task.id));}
     if(row.supersedes){if(row.kind==='candidate')this.invalidateKnowledge(row.supersedes,'claim');if(task)this.invalidateKnowledge(String(task.id),'task');if(domain==='case')this.invalidateKnowledge(entityId,'case');}
   }
   private invalidateKnowledge(targetId:string,relation:string):void{

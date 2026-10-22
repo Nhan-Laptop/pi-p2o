@@ -4,10 +4,12 @@ import { taskFrontier, taskHead, taskRevisionAt, type AssessmentTask } from './t
 import type { MutationRequest } from './state/store.js';
 import { LedgerBoard } from './board.js';
 import { validateCaseDraft, validateFinding, validateStoredCase, type CaseDraft, type CaseEntry, type CaseFinding, type CaseTaskRef } from './case-types.js';
+import { isDemonstrated } from './claims.js';
+import { isSatisfiedTask } from './tasks.js';
 
 export type CaseCurrentness='current'|'stale'|'withdrawn'|'unknown';
 export interface CaseView extends CaseEntry {
-  currentness:CaseCurrentness;staleReasons:string[];independentCurrent:boolean;acceptedFinding:boolean;canonicalCaseId:string;
+  currentness:CaseCurrentness;staleReasons:string[];independentCurrent:boolean;acceptedFinding:boolean;readyToRate:boolean;canonicalCaseId:string;
   /** Latest owner rating of this case id and the case revision it was recorded against; a rating of an older revision is kept but flagged. */
   finding?:CaseFinding;ratedRevision?:number;ratingCurrent?:boolean;
 }
@@ -26,7 +28,7 @@ export const caseFrontier=(index:LedgerIndex):CaseEntry[]=>ownerNoteFrontier(ind
 
 function independentReceiptCurrent(index:LedgerIndex,claim:AssessmentRecord,evidenceId:string,actors:Map<string,AssessmentRecord>):boolean{
   const evidence=index.byId.get(evidenceId),key=candidateKey(claim);if(evidence?.kind!=='evidence'||!evidence.workerId||!key||evidence.by===claim.by)return false;
-  const validator=actors.get(`${evidence.by}\u0000${key}`);return Boolean(validator&&validator.surface===claim.surface&&validator.risk===claim.risk&&validator.data?.closure==='confirmed'&&validator.data?.execution==='tested'
+  const validator=actors.get(`${evidence.by}\u0000${key}`);return Boolean(validator&&validator.surface===claim.surface&&validator.risk===claim.risk&&isDemonstrated(validator.data??{})
     &&validator.data?.proof!=='static_trace'&&validator.refs?.includes(evidenceId));
 }
 
@@ -52,15 +54,19 @@ export function caseViews(index:LedgerIndex,context:CaseContext={}):CaseView[]{
     for(const item of entry.contradictions)if(index.byId.get(item.evidenceRef)?.kind!=='evidence')reasons.push(`missing-contradiction:${item.evidenceRef}`);else if(item.status==='open')reasons.push(`open-contradiction:${item.evidenceRef}`);
     let independentCurrent=entry.independentEvidenceRefs.length>0;
     for(const evidenceId of entry.independentEvidenceRefs){const supporting=citedClaims.some(claim=>claim.data?.independentEvidenceRef===evidenceId&&independentReceiptCurrent(index,claim,evidenceId,actors));if(!supporting){independentCurrent=false;reasons.push(`independent-support-stale:${evidenceId}`);}}
-    if(entry.verdict==='confirmed'&&!citedClaims.some(claim=>claim.data?.closure==='confirmed'&&claim.data?.execution==='tested'&&claim.data?.policyBasis!=='inferred'))reasons.push('confirmed-verdict-lacks-current-tested-claim');
+    if(entry.verdict==='confirmed'&&!citedClaims.some(claim=>isDemonstrated(claim.data??{})&&claim.data?.policyBasis!=='inferred'))reasons.push('confirmed-verdict-lacks-current-tested-claim');
     if(entry.verdict==='ruled_out'&&!citedClaims.some(claim=>claim.data?.closure==='ruled_out'&&typeof claim.data?.control==='string'))reasons.push('ruled-out-verdict-lacks-bounded-control');
     for(const id of entry.remediation.evidenceRefs)if(index.byId.get(id)?.kind!=='evidence')reasons.push(`missing-remediation-evidence:${id}`);
-    if(entry.remediation.retestTask){const task=taskRevision(index,entry.remediation.retestTask);if(!task||!['reviewed','closed'].includes(task.status)||!task.evidenceIds.length)reasons.push(`retest-not-currently-reviewed:${entry.remediation.retestTask.taskId}`);}
+    if(entry.remediation.retestTask){const task=taskRevision(index,entry.remediation.retestTask);if(!task||!isSatisfiedTask(task.status)||!task.evidenceIds.length)reasons.push(`retest-not-currently-reviewed:${entry.remediation.retestTask.taskId}`);}
     let canonicalCaseId=entry.id;
     if(entry.duplicateOf){if(visiting.has(entry.id)){reasons.push('duplicate-cycle');}else{visiting.add(entry.id);const target=entryMap.get(entry.duplicateOf);if(!target)reasons.push(`missing-canonical-case:${entry.duplicateOf}`);else{const canonical=view(target);canonicalCaseId=canonical.canonicalCaseId;if(!entry.rootCauseKey||entry.rootCauseKey!==target.rootCauseKey||entry.policyKey!==target.policyKey)reasons.push('duplicate-without-matching-reviewed-root-cause');if(target.duplicateOf)reasons.push('duplicate-target-is-not-canonical');if(!canonical.acceptedFinding)reasons.push('duplicate-target-not-current-accepted-finding');}visiting.delete(entry.id);}}
     const currentness:CaseCurrentness=entry.reviewStatus==='withdrawn'?'withdrawn':reasons.length?'stale':unknown?'unknown':'current';
     const acceptedFinding=entry.reviewStatus==='accepted'&&entry.verdict==='confirmed'&&!entry.duplicateOf&&currentness==='current';
-    const rating=ratings.get(entry.id),result:CaseView={...entry,currentness,staleReasons:[...new Set(reasons)].slice(0,40),independentCurrent,acceptedFinding,canonicalCaseId,...(rating?{finding:rating.finding,ratedRevision:rating.caseRevision,ratingCurrent:rating.caseRevision===entry.revision}:{})};views.set(entry.id,result);return result;
+    const rating=ratings.get(entry.id),ratedChain=rating?.finding.chain;
+    // A chain is ready to rate when its executed depth is stated, or the record explicitly has no executed steps.
+    const chainDepthStated=!ratedChain||ratedChain.demonstratedThrough!==undefined||ratedChain.steps.every(step=>step.claimRef===undefined);
+    const readyToRate=currentness==='current'&&independentCurrent&&chainDepthStated;
+    const result:CaseView={...entry,currentness,staleReasons:[...new Set(reasons)].slice(0,40),independentCurrent,acceptedFinding,readyToRate,canonicalCaseId,...(rating?{finding:rating.finding,ratedRevision:rating.caseRevision,ratingCurrent:rating.caseRevision===entry.revision}:{} )};views.set(entry.id,result);return result;
   };
   return entries.map(view);
 }
@@ -120,6 +126,12 @@ export class CaseBoard extends LedgerBoard{
       const entry=cases.find(item=>item.id===id);if(!entry||entry.revision!==revision)throw Error('Missing or stale case revision');
       if(entry.reviewStatus==='withdrawn')throw Error('A withdrawn case cannot be rated');
       for(const ref of finding.reproductionEvidenceRefs)if(index.byId.get(ref)?.kind!=='evidence'||index.byId.get(ref)?.runId!==this.runId)throw Error(`Unknown same-run reproduction evidence ${ref}`);
+      // A chain step may cite the candidate record id or its slug: the join and the rating must speak one language (P13a).
+      const chainClaim=(ref:string)=>{const direct=index.byId.get(ref);if(direct?.kind==='candidate'&&direct.runId===this.runId)return direct;
+        return index.records.filter(row=>row.kind==='candidate'&&row.runId===this.runId&&row.data?.candidate===ref).at(-1);};
+      for(const step of finding.chain?.steps??[])if(step.claimRef&&!chainClaim(step.claimRef))throw Error(`Unknown same-run chain claim ${step.claimRef}`);
+      if(finding.chain?.demonstratedThrough)for(const step of finding.chain.steps.slice(0,finding.chain.demonstratedThrough)){const claim=chainClaim(step.claimRef!);
+        if(claim?.data?.closure!=='confirmed'||claim?.data?.execution!=='tested')throw Error(`Chain step ${step.order} is recorded as executed but its claim is not a confirmed tested result`);}
       if(['critical','high'].includes(finding.severity)&&entry.claimRefs.some(ref=>index.byId.get(ref)?.data?.policyBasis==='inferred'))throw Error('A case resting on an inferred policy basis cannot be rated above medium');
       const records=()=>{this.gate();return [{id:randomUUID(),runId:this.runId,at:new Date(this.now()).toISOString(),by:'owner',kind:'note' as const,text:`case ${id}@r${revision} rated ${finding.severity}; owner rating, not review`,refs:finding.reproductionEvidenceRefs.slice(0,10),data:{caseRating:{caseId:id,caseRevision:revision,finding}}}];};
       const acks=bound?await appendGeneratedRecords(this.path,records,bound):await appendRecords(this.path,records());return read(acks);

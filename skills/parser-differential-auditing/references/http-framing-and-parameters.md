@@ -32,6 +32,6 @@ Evidence: the request, the exact response bytes around the reflected header, and
 
 Record: cell for wstg-injt-15; `methodFamily` `public-http-review`; the sink (which header, which source) as the limitation when ruled out.
 
-Stop: one marker per sink; never escalate to a payload aimed at a specific client or cache; stop at the first confirmed line break and record it rather than exploring further effects.
+Stop: one marker per sink; record the first confirmed line break and then follow the effects it opens inside the confirmed scope, never escalating to a payload aimed at a specific client or cache.
 
 Not a finding when: the framework's HTTP library rejects control characters in header values before the application code runs, which you can confirm by trying the same marker against the library's known-safe header-setting call in source.

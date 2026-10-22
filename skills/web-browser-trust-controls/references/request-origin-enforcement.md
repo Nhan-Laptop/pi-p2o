@@ -11,7 +11,7 @@ Cards for [web browser trust controls](../SKILL.md). Both ask whether a server-s
 - Conclude: confirmed when the state-changing request is accepted with the request-bound token missing or replaced by an unrelated value, or when no such token exists and the cookie's SameSite setting would still let a browser attach it from another site for this request's method. Not a finding when a request-bound token is correctly validated, or when the cookie's SameSite setting would prevent the browser from attaching it to a cross-site request of this method in the first place.
 - Evidence: the baseline and the two altered requests with receipts; the cookie's SameSite setting.
 - Record: cell for wstg-sess-05; `methodFamily` `controlled-identity-comparison`.
-- Stop: use only your own controlled principal's state; never a request that affects another principal's data, and no attempt to host a page that actually submits the forged request from another origin.
+- Stop: use only your own controlled principal's state; never a request that affects another principal's data. The forged request is submitted from an origin the task authorizes and that you control, never from a real third party's page.
 - Not a finding when: the token is validated correctly, or the cookie's SameSite setting blocks the relevant cross-site attachment for this request's method.
 
 ### wstg-clnt-10 WebSocket origin and transport parity

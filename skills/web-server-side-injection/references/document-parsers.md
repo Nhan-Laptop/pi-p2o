@@ -11,7 +11,7 @@ Cards for [web server-side injection](../SKILL.md). Both ask whether a value esc
 - Conclude: confirmed when the structural marker changes what the application reports as parsed, in a way the inert control does not. A parser configuration that leaves external entity resolution enabled, found only in source, is recorded as an open_proof_gap unless the task's scope separately authorizes an out-of-band channel to confirm it live.
 - Evidence: the two requests and receipts; the parser configuration line when available, naming whether external entities are disabled.
 - Record: cell for wstg-injt-07; `execution: blocked` with the missing out-of-band authorization named when the live path is not confirmed.
-- Stop: no attempt to reach a resource outside the document itself without separate, explicit scope for an out-of-band channel; never construct a working external-entity payload.
+- Stop: no attempt to reach a resource outside the document without separate, explicit scope for an out-of-band channel; an external-entity payload that reads inside the document or an authorized in-scope resource is built and run, and one aimed at a host outside scope is not.
 - Not a finding when: the parser rejects the marker as malformed input identically to the inert control, or source shows external entity resolution is disabled.
 
 ### wstg-injt-09 XPath injection
@@ -21,5 +21,5 @@ Cards for [web server-side injection](../SKILL.md). Both ask whether a value esc
 - Conclude: confirmed when the marker changes the selected result in a way the inert control does not, and source, when available, shows unparameterized assembly.
 - Evidence: the two requests and receipts; the source line of the XPath construction when available.
 - Record: cell for wstg-injt-09.
-- Stop: one comparison is enough to confirm; no attempt to enumerate the document's full contents.
+- Stop: one comparison confirms the structure shift; then take the next step the shift enables — reading inside the document or an in-scope resource — instead of enumerating the document's full contents.
 - Not a finding when: the result is identical for both values, or a parameterized XPath API is confirmed in source.

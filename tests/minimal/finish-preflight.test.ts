@@ -49,7 +49,7 @@ describe('finish preflight', () => {
     await settings(h, { finishGate: 'confirm' }); const built = await populate(h);
     await h.call('p2o_case', { action: 'rate', id: built.accepted.id, revision: built.accepted.revision, finding: rating });
     const pending = (await h.call('p2o_case', { action: 'view', id: built.pending.id })).details;
-    const { currentness, staleReasons, independentCurrent, acceptedFinding, canonicalCaseId, recordId, runId, revision, ...draft } = pending;
+    const { currentness, staleReasons, independentCurrent, acceptedFinding, readyToRate, canonicalCaseId, recordId, runId, revision, ...draft } = pending;
     await h.call('p2o_case', { action: 'revise', id: built.pending.id, revision, entry: { ...draft, reviewStatus: 'withdrawn', reviewReason: 'Withdrawn: duplicate of the accepted fixture case' } });
     const text = finishText(await h.call('p2o_finish', {}));
     expect(text).toContain('nothing unfinished found in committed state'); expect(text).toContain('not a statement that the target is safe');

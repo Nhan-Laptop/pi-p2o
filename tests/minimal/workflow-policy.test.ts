@@ -1,3 +1,4 @@
+import { DECLARATION_BUDGET, LEAD_CEILINGS } from './helpers/budgets.js';
 import { describe, expect, it } from 'vitest';
 import { mkdir, mkdtemp, rm, readdir } from 'node:fs/promises';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
@@ -81,9 +82,9 @@ describe('prompt and tool guidance cannot drift apart', () => {
 
   it('leaves the lead policy section and worker guidance untouched: no tool names in the lead prompt', () => {
     for (const enabled of [true, false]) expect(ownerInstructions(facts(enabled))).not.toMatch(/\bp2o_[a-z_]+\b/);
-    // The 5,000-character ceiling of the lead prompt is pinned by recon.test.ts; adding guidance to tools must not eat into it.
+    // The 5,300-character ceiling of the lead prompt is pinned by recon.test.ts; adding guidance to tools must not eat into it.
     const base = { runId: 'run-recon', targetLabel: 'https://example.invalid', targetKind: 'url' as const, sourceSkipped: 2, delegation: { enabled: false, maxWorkers: 1, maxDepth: 1 }, workerBudget: 20 };
-    expect(ownerInstructions(base).length).toBeLessThan(5000);
+    expect(ownerInstructions(base).length).toBeLessThan(LEAD_CEILINGS.soloUrl);
   });
 
   it('no longer advertises the removed 60 s / 300 s command ceilings', () => {
@@ -115,7 +116,16 @@ describe('fixed context cost per loadout is budgeted (plan principle 16)', () =>
   // one tool's worth of bytes in every loadout that carries it (reporting worker keeps it too, same as p2o_note); guidance is unchanged since p2o_surface has no promptGuidelines entry.
   // 2026-10-13 (planning_update.md --refer-workspace, E3): p2o_state's guidance gained one sentence pointing at domain=reference heads as prior-run context, never same-run evidence
   // (+159 B guidance in every loadout that carries p2o_state, i.e. all four; declarations unchanged). POLICY_VERSION bumped to 2.
-  const budget = { 'delegated Planner': [33_144, 1_162], 'solo owner': [34_162, 1_080], 'worker': [18_867, 473], 'reporting worker': [12_369, 376] } as const;
+  // 2026-10-21 (chain capability, deliberate): p2o_candidate gained provides/requires so a worker can name the capability edge a later step consumes (+387 B in the worker
+  // loadouts), and p2o_case's finding schema gained the ordered `chain` block the owner rates an assembled chain through (+781 B where p2o_case is carried). Guidance is
+  // unchanged and POLICY_VERSION stays 2. Chains are recorded structurally here, so no separate chain text is added to the fixed-cost guidance.
+  // 2026-10-22 (planning_update.md P1): p2o_delegate's description now names what a purpose decides, so the lead picks one deliberately (+245 B in the
+  // delegated Planner loadout only; solo owner carries no delegate tool). Guidance is unchanged and POLICY_VERSION stays 2.
+  // 2026-10-22 (planning_update.md P5): p2o_graph gained the read-only `chain` action and one sentence naming it (+95 B in every
+  // loadout, since all four carry the graph tool). Guidance is unchanged and POLICY_VERSION stays 2.
+  // 2026-10-22 (planning_update.md P7): the delegate description names purpose as the source of the default skill set (+52 B,
+  // delegated Planner only — the other three loadouts carry no delegate tool). Guidance is unchanged and POLICY_VERSION stays 2.
+  const budget = DECLARATION_BUDGET; // P13(f): the numbers live in tests/minimal/helpers/budgets.ts
   it('keeps tool declarations and guidance inside the recorded budget', () => {
     const tools = registry();
     for (const [label, names] of Object.entries(loadouts)) {

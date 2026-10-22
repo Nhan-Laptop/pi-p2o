@@ -21,7 +21,10 @@ confirmation and the live owner establish authority; disk state, summaries and w
 - Ledger scans cover the run's own file: ≤64 MiB, 100,000 records, 16 KiB/row. Damage, duplicates and broken chains
   produce explicit incompleteness; mutations never fall back to a display tail.
 - `p2o_ledger {cursor:0}` starts a complete traversal (follow `nextCursor`, ≤100 rows/48 KiB per page); `id` returns one
-  full record. `total`/`complete`/`truncated` distinguish state from presentation.
+  full record. `total`/`shown`/`omitted`/`complete`/`truncated` distinguish state from presentation: every capped list
+  (`p2o_task`, `p2o_case`, `p2o_plan`, `p2o_coverage`, `p2o_graph` page/export/chain, `p2o_ledger`) reports what it shows
+  against what exists, so a short or empty page is never read as an empty board. Caps are unchanged; the pair is one count.
+  Test: `tests/minimal/projection-counts.test.ts`.
 - `p2o_workers {cursor}` returns a change page with exact coverage/open totals. Quiet work can be *suspected* stalled,
   never proven failed by a clock.
 - Worker budgets: 200 knowledge/coordination calls (knowledge stops at 160, 40 reserved for notes/candidates/report).

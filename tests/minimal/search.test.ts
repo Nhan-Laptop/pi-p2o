@@ -21,7 +21,7 @@ describe('searchRecords', () => {
 
   it('matches case-insensitively over text, surface, risk and titles, skips report parts and reports an exact total', () => {
     const page = searchRecords(index, 'login');
-    expect(page).toMatchObject({ total: 4, shown: 4, omittedAfter: 0, cursor: 0, asOfRecords: rows.length }); expect(page.nextCursor).toBeUndefined();
+    expect(page).toMatchObject({ total: 4, shown: 4, omitted: 0, cursor: 0, asOfRecords: rows.length }); expect(page.nextCursor).toBeUndefined();
     expect(ids(page)).toEqual(['rec-0', 'rec-2', 'rec-4', 'rec-5']); // rec-3 is a report part; rec-4 matches through data.candidate
     expect(searchRecords(index, 'AUTHENTICATION').hits.map(hit => hit.id)).toEqual(['rec-2']); // risk field
     expect(searchRecords(index, 'nothing like this').total).toBe(0);
@@ -44,11 +44,11 @@ describe('searchRecords', () => {
     for (;;) {
       const page = searchRecords(many, 'needle', { cursor, limit: 7 }); pages++;
       expect(page.total).toBe(32); seen.push(...ids(page)); expect(page.shown).toBeLessThanOrEqual(7);
-      if (page.nextCursor === undefined) { expect(page.omittedAfter).toBe(0); break; }
+      if (page.nextCursor === undefined) { expect(page.omitted).toBe(0); break; }
       expect(page.nextCursor).toBeGreaterThan(cursor); cursor = page.nextCursor;
     }
     expect(pages).toBe(5); expect(seen).toHaveLength(32); expect(new Set(seen).size).toBe(32);
-    expect(searchRecords(many, 'needle', { cursor: 90 })).toMatchObject({ total: 32, shown: 2, omittedAfter: 0 });
+    expect(searchRecords(many, 'needle', { cursor: 90 })).toMatchObject({ total: 32, shown: 2, omitted: 0 });
     expect(searchLines(searchRecords(many, 'needle', { limit: 3 })).some(line => line.startsWith('Next: /p2o search needle '))).toBe(true);
     expect(searchLines({ ...searchRecords(many, 'needle'), complete: false })[0]).toContain('INCOMPLETE ledger');
   });

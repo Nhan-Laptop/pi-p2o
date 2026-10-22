@@ -26,4 +26,4 @@ When a policy function can be isolated, write a small harness that constructs co
 
 A denial attributed to a named policy location is stronger evidence than any specific response code. A success on a foreign object is only an authorization candidate until the protected effect is observed and the object is confirmed to be outside the intended policy. When a cell cannot be exercised, record the environment and capability that were missing; do not collapse it into a pass.
 
-Adapted from the reviewed object-authorization method, excluding automatic parameter-discovery tooling, cache and timing bypass recipes, header-spoofing guidance, bulk identifier harvesting, and post-exploitation chaining. See [skill provenance](../../../research/SKILL_PROVENANCE.md).
+Adapted from the reviewed object-authorization method; the adaptation itself omits automatic parameter-discovery tooling, cache and timing bypass recipes, header-spoofing guidance and bulk identifier harvesting, and leaves post-exploitation chaining to the impact assessment that composes this object decision with another primitive. See [skill provenance](../../../research/SKILL_PROVENANCE.md).

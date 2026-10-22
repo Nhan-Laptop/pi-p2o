@@ -1,3 +1,4 @@
+import { assertCounted, type Counted } from './counts.js';
 import { safeText } from './evidence.js';
 import { cleanText } from './process.js';
 import { CONTROL } from './validate.js';
@@ -14,7 +15,7 @@ const SKIPPED_KINDS = new Set(['report_part']);
 const DATA_KEYS = ['title', 'candidate', 'question', 'focus'] as const;
 
 export interface SearchHit { id: string; kind: string; by: string; position: number; taskId?: string; surface?: string; snippet: string }
-export interface SearchPage { query: string; asOfRecords: number; snapshotSequence?: number; total: number; shown: number; omittedAfter: number; cursor: number; nextCursor?: number; complete: boolean; hits: SearchHit[]; warning: string }
+export interface SearchPage extends Counted { query: string; asOfRecords: number; snapshotSequence?: number; complete: boolean; hits: SearchHit[]; warning: string }
 
 export function normalizeQuery(value: unknown): string {
   if (typeof value !== 'string') throw Error('Search query must be text');
@@ -51,12 +52,12 @@ export function searchRecords(index: LedgerIndex, queryInput: unknown, options: 
     if (hits.length < limit) hits.push({ id: record.id ?? `legacy-position-${position}`, kind: record.kind, by: record.by, position, ...(typeof record.data?.taskId === 'string' ? { taskId: record.data.taskId } : {}), ...(record.surface ? { surface: cleanText(record.surface).slice(0, 80) } : {}), snippet: snippetOf(matched, needle) });
     else nextCursor ??= position;
   }
-  return { query, asOfRecords: records.length, ...(index.snapshotSequence !== undefined ? { snapshotSequence: index.snapshotSequence } : {}), total, shown: hits.length, omittedAfter: Math.max(0, total - before - hits.length), cursor, ...(nextCursor !== undefined ? { nextCursor } : {}),
+  return { query, asOfRecords: records.length, ...(index.snapshotSequence !== undefined ? { snapshotSequence: index.snapshotSequence } : {}), total, shown: hits.length, omitted: Math.max(0, total - before - hits.length), cursor, ...(nextCursor !== undefined ? { nextCursor } : {}),
     complete: index.complete, hits, warning: 'Navigation pointers into committed records, not evidence or proof. Snippets are redacted and bounded; artifact bytes are not searched. Drill down by exact ID.' };
 }
 
 export function searchLines(page: SearchPage): string[] {
-  return [`Search "${cleanText(page.query)}" over ${page.asOfRecords} committed records${page.snapshotSequence !== undefined ? ` @${page.snapshotSequence}` : ''}: ${page.total} match(es), showing ${page.shown} from position ${page.cursor}${page.omittedAfter ? `, ${page.omittedAfter} more after this page` : ''}${page.complete ? '' : '; INCOMPLETE ledger — no completeness claim'}`,
+  return [`Search "${cleanText(page.query)}" over ${page.asOfRecords} committed records${page.snapshotSequence !== undefined ? ` @${page.snapshotSequence}` : ''}: ${page.total} match(es), showing ${page.shown} from position ${page.cursor}${page.omitted ? `, ${page.omitted} more after this page` : ''}${page.complete ? '' : '; INCOMPLETE ledger — no completeness claim'}`,
     ...(page.nextCursor !== undefined ? [`Next: /p2o search ${cleanText(page.query)} ${page.nextCursor}`] : []),
     ...page.hits.map(hit => `${hit.position} ${hit.id} ${hit.kind} by=${hit.by}${hit.taskId ? ` task=${hit.taskId}` : ''}${hit.surface ? ` surface=${hit.surface}` : ''}: ${hit.snippet}`),
     'Plain case-insensitive substring over record text, surface, risk, outcome and titles. A hit is a pointer, not evidence; use p2o_ledger (or /p2o log, /p2o task) by exact ID.'];

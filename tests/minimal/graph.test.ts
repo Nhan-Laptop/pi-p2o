@@ -23,7 +23,7 @@ describe('asset/fact/hypothesis graph (K3, canonical store only)', () => {
   it('keeps tool arguments in a root object so legacy Pi provider projection does not silently erase them',()=>{
     const projected={type:'object',properties:graphParameters.properties??{},required:graphParameters.required??[]};
     expect(graphParameters.type).toBe('object');expect(projected.required).toContain('action');expect(Object.keys(projected.properties)).toEqual(['action','batch','id','requestId','cursor','limit','asOfSequence']);
-    expect(projected.properties.batch).toMatchObject({type:'object',additionalProperties:false});expect(projected.properties.action).toMatchObject({type:'string',enum:['record','view','page','export']});
+    expect(projected.properties.batch).toMatchObject({type:'object',additionalProperties:false});expect(projected.properties.action).toMatchObject({type:'string',enum:['record','view','page','export','chain']});
   });
   it('derives exact-byte identities, converges duplicates and keeps append-only revisions with history', async () => fixture(async (store) => {
     const key = 'GET https://example.com/auth';

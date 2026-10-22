@@ -40,7 +40,7 @@ Whether the introspection query is answered and in what detail; whether a develo
 
 ## Stop Conditions
 - Stop at the first query that exceeds a bound by the smallest margin needed to show the bound is missing or too high; never scale a query up to actually exhaust resources.
-- Stop before using introspection output to plan a field-level authorization or injection test against this endpoint; hand that off to the owning skill instead of continuing here.
+- The field-level authorization or injection test this endpoint's schema points to belongs to the owning skill: plan it there and run it there rather than running it from this card.
 - Stop before accessing a reachable development interface beyond confirming it responds.
 
 ## Evidence Fields

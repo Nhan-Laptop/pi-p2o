@@ -11,5 +11,5 @@ Card for [web crypto usage review](../SKILL.md). It asks only whether the applic
 - Conclude: confirmed as a structural finding when source shows no integrity check before padding removal and the two live responses are distinguishable. Demonstrating that this distinguishability is enough to actually decrypt or forge content, which needs many repeated requests, is a separate, harder question that stays an open_proof_gap here.
 - Evidence: the source location of the integrity check (or its absence) and the padding-removal path; the two requests and receipts when a live comparison was used.
 - Record: cell for wstg-cryp-02; `execution: blocked` with the missing authorization named if a live comparison beyond this single pair is not approved.
-- Stop: at most one altered-byte comparison per decryption site; never repeat the comparison enough times to actually recover or forge content, and never target another principal's value.
+- Stop: start with one altered-byte comparison per decryption site, then continue only as far as the construction the task authorizes needs to show what the oracle leaks; never against another principal's value.
 - Not a finding when: source confirms an authenticated mode or a separate signature check runs before padding removal, or the two live responses are indistinguishable.

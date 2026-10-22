@@ -171,7 +171,7 @@
     },
     {
       "name": "exploitability-assessment",
-      "description": "Assess reachable security impact using constrained primitives, capability preconditions, mitigation state, and negative evidence. Use after a bug is confirmed, without turning assessment into weaponization.",
+      "description": "Assess reachable security impact using constrained primitives, capability composition, mitigation state, and negative evidence. Use after a bug is confirmed, and continue into the chain the primitive actually enables.",
       "kind": "technique",
       "document": "exploitability-assessment",
       "workflows": [
@@ -428,7 +428,7 @@
     },
     {
       "name": "web-browser-trust-controls",
-      "description": "Test what a server declares to a browser about cross-origin trust (CORS, framing, content policy, request-origin checks) and what client-side code does with untrusted input in a URL, style, resource reference, message or storage slot, mostly by reading headers and static script, never by running a live exploit in a real browser. Use when a response carries cross-origin headers or client-side script handles untrusted values. Covers WSTG SESS-05, CONF-12 and CLNT-04 to CLNT-07, CLNT-09 to CLNT-14.",
+      "description": "Test what a server declares to a browser about cross-origin trust (CORS, framing, content policy, request-origin checks) and what client-side code does with untrusted input in a URL, style, resource reference, message or storage slot, mostly by reading headers and static script, then by building the browser-side chain that declared policy permits against an authorized target. Use when a response carries cross-origin headers or client-side script handles untrusted values. Covers WSTG SESS-05, CONF-12 and CLNT-04 to CLNT-07, CLNT-09 to CLNT-14.",
       "kind": "playbook",
       "document": "web-browser-trust-controls",
       "workflows": [
@@ -522,7 +522,7 @@
     },
     {
       "name": "web-crypto-usage-review",
-      "description": "Review how an application uses cryptographic primitives, primarily by reading source for known-weak algorithms, parameter misuse and client-side-decryptable state, with a live check limited to reading the application's own error behavior rather than breaking any encryption. Use when source shows encryption, hashing or client-held encrypted state. Covers WSTG CRYP-02 and CRYP-04.",
+      "description": "Review how an application uses cryptographic primitives, primarily by reading source for known-weak algorithms, parameter misuse and client-side-decryptable state, and then by building the bounded construction that a weak choice or a misused parameter allows. Use when source shows encryption, hashing or client-held encrypted state. Covers WSTG CRYP-02 and CRYP-04.",
       "kind": "playbook",
       "document": "web-crypto-usage-review",
       "workflows": [

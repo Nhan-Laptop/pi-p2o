@@ -1,6 +1,9 @@
 import { appendFile, open, stat } from 'node:fs/promises';
 import { constants } from 'node:fs';
 import { randomUUID } from 'node:crypto';
+import { assertCounted, type Counted } from './counts.js';
+import { isOpenClaim } from './claims.js';
+import { TASK_STATUSES } from './tasks.js';
 import { recordBackend, type WorkHistoryPage, type WorkHistoryRow } from './state/registry.js';
 import type { MutationRequest } from './state/store.js';
 
@@ -58,7 +61,7 @@ export async function appendRecord(path: string, record: AssessmentRecord): Prom
   const backend = recordBackend(path); if (backend) return backend.append([record])[0];
   const recordId = record.id ?? randomUUID();
   const line = `${JSON.stringify({ ...record, version: 2, id: recordId })}\n`;
-  if (Buffer.byteLength(line) > 16 * 1024) throw new Error('Record is too large');
+  if (Buffer.byteLength(line) > LEDGER_ROW_BYTES) throw new Error('Record is too large');
   await appendFile(path, line, { encoding: 'utf8', mode: 0o600 });
   notifyRecordObservers(path);
   return { recordId, version: 2 };
@@ -85,6 +88,8 @@ export async function readGeneratedRecords(path:string,request:MutationRequest):
 }
 
 export const LEDGER_BYTES = 64 * 1024 * 1024;
+/** One row's serialized bound. Writer, loader and stream share it so a row cannot be written that the reader rejects (P13d). */
+export const LEDGER_ROW_BYTES = 16 * 1024;
 export const LEDGER_RECORDS = 100000;
 export interface LedgerIndex {
   records: AssessmentRecord[]; byId: Map<string, AssessmentRecord>; complete: boolean;
@@ -107,7 +112,7 @@ function ledgerBuilder(runId?: string) {
   const consume = (line: string) => {
     lineNumber++;
     if (!line.trim()) return;
-    if (Buffer.byteLength(line) > 16 * 1024) { issue(`Oversized ledger row ${lineNumber}`); return; }
+    if (Buffer.byteLength(line) > LEDGER_ROW_BYTES) { issue(`Oversized ledger row ${lineNumber}`); return; }
     let row: AssessmentRecord;
     try { row = JSON.parse(line); } catch { issue(`Malformed ledger row ${lineNumber}`); return; }
     if (!row || !isRecordKind(row.kind) || typeof row.text !== 'string' || typeof row.by !== 'string' || typeof row.at !== 'string'
@@ -122,7 +127,7 @@ function ledgerBuilder(runId?: string) {
     if (row.kind === 'task') {
       const t = row.data?.task as Record<string,unknown> | undefined, head = typeof t?.id === 'string' ? taskHeads.get(t.id) : undefined;
       if (!t || row.by !== 'owner' || row.workerId || t.runId !== row.runId || typeof t.id !== 'string' || !Array.isArray(t.prerequisites)
-        || !['proposed','reserved','running','reported','reviewed','closed','blocked','cancelled','expired'].includes(String(t.status))
+        || !(TASK_STATUSES as readonly string[]).includes(String(t.status))
         || !Number.isInteger(t.revision) || (head ? row.supersedes !== head.id || t.revision !== Number((head.data!.task as Record<string,unknown>).revision)+1 : t.revision !== 1)
         || Object.keys(t).some(k => ['deadline','scope','token','authority','target','permissions'].includes(k))) { issue(`Invalid owned task revision ${row.id ?? 'missing'}`); return; }
       taskHeads.set(t.id,row);
@@ -216,7 +221,7 @@ export async function readLedger(path: string, runId?: string): Promise<LedgerIn
       pending += chunk;
       let end: number;
       while ((end = pending.indexOf('\n')) >= 0) { consume(pending.slice(0, end)); pending = pending.slice(end + 1); }
-      if (Buffer.byteLength(pending) > 16 * 1024) { issue('Oversized unterminated ledger row'); break; }
+      if (Buffer.byteLength(pending) > LEDGER_ROW_BYTES) { issue('Oversized unterminated ledger row'); break; }
     }
     if (pending.trim()) issue('Uncommitted or damaged ledger tail');
     return builder.finish();
@@ -272,7 +277,7 @@ export async function readRecords(path: string, limit = RECORD_READ_LIMIT, stric
   catch (error) { if (strict) throw error; return []; }
 }
 
-export interface LedgerPage { records: AssessmentRecord[]; total: number; cursor: number; nextCursor?: number; complete: boolean; truncated: boolean; diagnostics: string[] }
+export interface LedgerPage extends Counted { records: AssessmentRecord[]; complete: boolean; truncated: boolean; diagnostics: string[] }
 export function ledgerPage(index: LedgerIndex, options: { cursor?: number; limit?: number; id?: string } = {}): LedgerPage {
   const cursor = options.cursor ?? Math.max(0, index.records.length - (options.limit ?? 50));
   const limit = options.limit ?? 50;
@@ -281,8 +286,8 @@ export function ledgerPage(index: LedgerIndex, options: { cursor?: number; limit
   const records: AssessmentRecord[] = []; let bytes = 0;
   for (const row of candidates) { const size = Buffer.byteLength(JSON.stringify(row)); if (bytes + size > 48 * 1024) break; records.push(row); bytes += size; }
   const next = cursor + records.length;
-  return { records, total: index.records.length, cursor, ...(!options.id && next < index.records.length ? { nextCursor: next } : {}), complete: index.complete,
-    truncated: records.length < candidates.length || (!options.id && (cursor > 0 || next < index.records.length)), diagnostics: index.diagnostics };
+  return assertCounted({ records, total: index.records.length, shown: records.length, omitted: index.records.length - records.length, cursor, ...(!options.id && next < index.records.length ? { nextCursor: next } : {}), complete: index.complete,
+    truncated: records.length < candidates.length || (!options.id && (cursor > 0 || next < index.records.length)), diagnostics: index.diagnostics });
 }
 
 export interface WorkerSummary {
@@ -307,7 +312,7 @@ export function retiredIds(records: readonly AssessmentRecord[]): Set<string> {
 /** An unresolved gap: an `open` item, or a candidate left as an open proof gap or blocked, that no later row replaced or resolved. */
 export function isOpenGap(record: AssessmentRecord, retired: ReadonlySet<string>): boolean {
   if (record.id !== undefined && retired.has(record.id)) return false;
-  return record.kind === 'open' || (record.kind === 'candidate' && (record.data?.closure === 'open_proof_gap' || record.data?.execution === 'blocked'));
+  return record.kind === 'open' || (record.kind === 'candidate' && isOpenClaim(record.data ?? {}));
 }
 
 /**

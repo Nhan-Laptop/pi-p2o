@@ -25,7 +25,12 @@ const batch = object({
     status: Type.Optional(choices(['active','withdrawn'])), supersedes: supersedes() }, { additionalProperties: false }), { maxItems: 128 })),
   anchors: Type.Optional(Type.Array(object({ assetId: id(), assetRevision: revision(), anchor }, { additionalProperties: false }), { maxItems: 128 })),
 }, { additionalProperties: false });
-export const GRAPH_ACTIONS = ['record','view','page','export'] as const;
+export const GRAPH_ACTIONS = ['record','view','page','export','chain'] as const;
+/** P13e: exhaustive per action; `page` and `export` share a shape but are named separately. */
+export const GRAPH_ACTION_PARAMETERS: Readonly<Record<typeof GRAPH_ACTIONS[number], readonly string[]>> = {
+  record: ['action','batch','requestId'], view: ['action','id','cursor','limit','asOfSequence'], chain: ['action','limit'],
+  page: ['action','cursor','limit','asOfSequence'], export: ['action','cursor','limit','asOfSequence'],
+};
 /** Keep a root object: Pi's legacy Anthropic adapter reads only root properties/required.
  * A root anyOf silently loses all tool arguments there. Host enforces action-specific fields/limits.
  */

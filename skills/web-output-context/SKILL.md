@@ -41,7 +41,7 @@ A chain record per source with the transformation steps, the sink, the context, 
 
 ## Stop Conditions
 - Stop before any credential, session, or personal-data access; proof of execution uses an inert marker only.
-- Stop before persistence, service-worker installation, or any post-exploitation step.
+- Stop at the confirmed sink context unless a separate scope authorizes the composed chain; the step that follows this sink belongs to [exploitability assessment](../exploitability-assessment/SKILL.md), which builds it against the authorized target.
 - Stop when no real execution oracle exists and record the gap rather than promoting a simulated consumer.
 - Stop when the chain cannot name the sink context; that is an open proof gap, not a clean result.
 

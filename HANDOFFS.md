@@ -1,6 +1,6 @@
 # Research Handoff Contracts
 
-Shared by all skills. A handoff is an evidence packet, not a claim of completion. Use only authorized artifacts and benign test designs; do not copy a source exploit sequence. A consumer rejects a packet missing its required fields and returns a specific unanswered question.
+Shared by all skills. A handoff is an evidence packet, not a claim of completion. Use only authorized artifacts and test designs; cite your own reproduction rather than copying someone else's exploit verbatim. A consumer rejects a packet missing its required fields and returns a specific unanswered question.
 
 ## Common envelope
 
@@ -11,7 +11,7 @@ Every packet includes:
 - **Evidence:** file/symbol/section references, trace or test artifact paths and hashes, collection method, timestamps, original versus modified environment. For analyzer output, include tool/version/options, requested versus recovered functions/ranges, truncation, errors, and unresolved coverage; exit status alone is insufficient.
 - **Classification:** independently observed fact, static inference, source-author report, hypothesis, defensive recommendation, or unresolved. Never silently upgrade a classification.
 - **Limits:** negative controls, failed assumptions, reproduction denominator, untested versions/routes, observer effects, residual risks.
-- **Next action:** a bounded observation or review and its stop condition; no vague request to “exploit it”.
+- **Next action:** a bounded next step — an observation, a review, or the next step of the chain with the inputs it needs — and its stop condition; never a vague request to “exploit it”.
 
 Use [templates/handoff.json](templates/handoff.json) as a recording scaffold. A consumer must fill missing information, not interpret empty arrays as proof.
 
@@ -84,11 +84,11 @@ Required additions: seed lineage and hashes; minimized local input/operation-seq
 
 **Producer:** any root-cause skill. **Consumer:** exploitability assessment and, if needed, sandbox-boundary analysis.
 
-Required additions: invariant and earliest violation; constrained primitive (direction, width, controllability, repetition, address-space/lifetime); actor and feature/permission gates; actual mitigations; damage/recovery; evidence classification and missing capabilities. Mediated operations include fixed/controlled fields, framing/encoding, destination and protocol-state limits; layout claims include effective producer emission order/configuration, not trigger order.
+Required additions: invariant and earliest violation; constrained primitive (direction, width, controllability, repetition, address-space/lifetime); actor and feature/permission gates; actual mitigations; damage/recovery; evidence classification and missing capabilities. Mediated operations include fixed/controlled fields, framing/encoding, destination and protocol-state limits; layout claims include effective producer emission order/configuration and the trigger sequence relied on.
 
-**Acceptance gate:** evidence supports a reachable violation or explicitly bounds the analysis as static-only. The consumer may assess a hypothesis but must not present it as demonstrated impact. Capability-graph edges each need preconditions and evidence.
+**Acceptance gate:** evidence supports a reachable violation or explicitly bounds the analysis as static-only. The consumer may assess a hypothesis but must not present it as demonstrated impact. Capability-graph edges each need preconditions and evidence; a composed chain additionally states its ordered steps, the claim that ran each step, and the last step actually executed.
 
-**Return condition:** blanket arbitrary-read/write label, a crash equated with execution, missing address-space context, or debug/security bypass hidden in the setup. Return for constraint characterization. Do not construct gadget/replacement-object chains.
+**Return condition:** blanket arbitrary-read/write label, a crash equated with execution, missing address-space context, or debug/security bypass hidden in the setup. Return for constraint characterization. Build the chain as far as the authorized target allows, and record where it stopped instead of leaving the link unexercised without saying so.
 
 ## H5 — Root Cause → Remediation / Defensive Engineering
 

@@ -14,6 +14,11 @@ owner-managed sandbox.
   `p2o_delegate` validates a workflow ID against the assigned skills (max 3, overlays count) but never infers tools.
 - `p2o_delegate` takes `role`, `skills`, optional `model` and `thinking` (per-spawn → role setting → lead's level). A
   qualified `provider/model` is passed as separate `--provider`/`--model`; no provider fallback.
+- When `skills` is omitted, `PURPOSE_SKILLS` in `src/roles.ts` picks the default set from the work purpose (`work.purpose`,
+  else derived from the role): mapping → `attack-surface-mapping`, discovery/refinement → `source-code-auditing`,
+  validation → `exploitability-assessment`, retest/reporting → `remediation`, investigation → none. An explicit `skills`
+  list or an operator `roles.<role>.skills` setting still wins, an empty purpose list falls back to the role default, and
+  `role` keeps choosing the model. `tests/minimal/roles.test.ts` checks every id against `skills/catalog.json`.
 - Budgets: 400 lead reads; 200 worker knowledge/coordination calls (knowledge stops at 160). These are not command reserves.
 
 ## Prompt and recon
@@ -64,6 +69,9 @@ interpretation is right.
   `requirement` required for `blocked`.
 - `policyBasis` = `explicit_contract` | `boundary_invariant` | `inferred`, with `expectedPolicy` naming rule and source.
   Inferred policy must stay `open_proof_gap`, even when a sibling looks safe.
+- `provides` / `requires`: the capability edge. `provides` is what this primitive hands to a later step (an address-space
+  write, a chosen call target, a token, a state transition); `requires` is what it still needs first. A claim without them
+  can still be true, but nothing downstream can consume it.
 - `supersedes` (latest record ID), `resolves` (open items), `independentEvidenceRef` (another worker's receipt plus its
   matching runtime-tested candidate at the latest revision; withdrawn support is rejected, the lead still judges semantics).
 

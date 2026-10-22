@@ -9,6 +9,7 @@ export const workSpecSchema = Type.Object({
   assetRefs: Type.Array(Type.Object({ id: Type.String({ pattern: '^asset-[a-f0-9]{24}$' }), revision: Type.Optional(Type.Integer({ minimum: 1 })), variant: Type.Optional(key()) }, { additionalProperties: false }), { minItems: 1, maxItems: 10 }),
   questionKey: key(), policyKey: Type.Optional(key()), actorContext: Type.Optional(key()), tenantContext: Type.Optional(key()),
   methodFamily: key(), purpose: choices(WORK_PURPOSES),
+  claimRefs: Type.Optional(Type.Array(Type.String({ maxLength: 80 }), { minItems: 1, maxItems: 10, uniqueItems: true })),
 }, { additionalProperties: false });
 export const workDecisionSchema = Type.Object({
   disposition: choices(WORK_DISPOSITIONS), reason: Type.String({ minLength: 10, maxLength: 1000 }),
@@ -25,6 +26,10 @@ export const planEntrySchema = Type.Object({
   decision: Type.Optional(Type.Object({ disposition: choices(PLAN_DISPOSITIONS), chosenTaskIds: ids(), deferredTaskIds: ids(), revisitCondition: Type.Optional(Type.String({ minLength: 5, maxLength: 500 })) }, { additionalProperties: false })),
 }, { additionalProperties: false });
 export const PLAN_ACTIONS = ['create', 'revise', 'list', 'view'] as const;
+/** P13e: exhaustive per action; `list` is spelled out rather than left to a default branch. */
+export const PLAN_ACTION_PARAMETERS: Readonly<Record<typeof PLAN_ACTIONS[number], readonly string[]>> = {
+  create: ['action','entry','requestId'], revise: ['action','entry','id','revision','requestId'], view: ['action','id'], list: ['action','cursor','limit','kind'],
+};
 /** Root object survives legacy provider projections; the host validates action-specific fields. */
 export const planParameters = Type.Object({
   action: choices(PLAN_ACTIONS),

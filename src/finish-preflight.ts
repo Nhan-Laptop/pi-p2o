@@ -1,3 +1,4 @@
+import { isConfirmedClaim } from './claims.js';
 import { caseViews, needsCaseReview, type CaseContext } from './cases.js';
 import { coverageViews, type CoverageContext } from './coverage.js';
 import { isOpenGap, type AssessmentRecord, type LedgerIndex } from './records.js';
@@ -82,7 +83,7 @@ export function finishPreflight(index: LedgerIndex, context: PreflightContext = 
     if (awaitingReview(task)) add('UNREVIEWED_TASK', task.id);
     else if (task.status === 'expired' || (task.status === 'blocked' && !task.handoffId)) add('ORPHAN_TASK', task.id);
   }
-  for (const row of index.records) if (row.kind === 'candidate' && row.id && !replaced.has(row.id) && row.data?.closure === 'confirmed' && !cited.has(row.id)) add('UNREVIEWED_CLAIM', row.id);
+  for (const row of index.records) if (row.kind === 'candidate' && row.id && !replaced.has(row.id) && isConfirmedClaim(row.data ?? {}) && !cited.has(row.id)) add('UNREVIEWED_CLAIM', row.id);
   for (const view of cases) {
     if (needsCaseReview(view)) add('PENDING_CASE', view.id);
     else if (view.currentness === 'stale' && view.reviewStatus !== 'withdrawn') add('STALE_CASE', view.id);

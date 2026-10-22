@@ -22,12 +22,17 @@ Chi tiết bản cũ: `git show 656843d:docs/ASSET_GRAPH.md`.
 ```text
 p2o_graph {action:"record", requestId, batch:{assets:[{ref, asset:{kind,key,anchors?}}], facts:[{assetId:"@ref", kind, statement, confidence}]}}
 p2o_graph {action:"view", id:<asset>, cursor?, limit?, asOfSequence?}   # page | export tương tự
+p2o_graph {action:"chain", limit?}   # owner-only: join provides/requires → ready | unmet | frontier
 /p2o graph   |   /p2o graph page <cursor>   |   /p2o graph <asset-id> [cursor]   |   /p2o graph export [limit] [cursor]
 ```
 
 `@ref` chỉ có nghĩa trong batch. Quyền: owner/Planner ghi và đọc (Planner vẫn không chạy target); Worker ghi
 assets/facts/anchors, còn hypothesis/relation do owner; reporting **chỉ đọc**. Đọc dùng SQL có index, pin `asOfSequence`
 khi duyệt nhiều trang. Export hiện JSON/Mermaid thật trong màn hình read-only, không ghi file ra host (`/p2o export` là bundle riêng).
+
+`chain` là join chỉ-đọc trên chính các claim đã ghi: `ready` (claim đang mở mà mọi token trong `requires` đã có claim
+confirmed+tested cung cấp), `unmet` (còn token chưa ai cấp), `frontier` (đường ngắn nhất từ một primitive tới claim đó).
+Không lưu gì mới, không thêm quyền, và worker không đọc được — đó là điều phối của lead.
 
 | Giới hạn | Giá trị |
 |---|---|
@@ -44,6 +49,6 @@ không nạp lại thành graph ghi được.
 
 ## Kiểm chứng
 
-`npx vitest run tests/minimal/graph.test.ts tests/minimal/graph-native.test.ts` và `node scripts/check-assessment-graph.mjs --source`
+`npx vitest run tests/minimal/graph.test.ts tests/minimal/graph-native.test.ts tests/minimal/chain-view.test.ts` và `node scripts/check-assessment-graph.mjs --source`
 (`--assets=1000|4000`). Microbench cục bộ ở 4.000 asset: commit batch p95 ≈29 ms, page ≈3 ms, export ≈6 ms, checkpoint ≈0,5 s.
 Không đo effectiveness, tiết kiệm token hay độ đúng của finding.

@@ -14,6 +14,10 @@ describe('case rating', () => {
     expect(view).toMatchObject({ revision: built.accepted.revision, verdict: 'confirmed', reviewStatus: 'accepted', currentness: 'current', acceptedFinding: true, ratedRevision: built.accepted.revision, ratingCurrent: true });
     expect(view.finding).toMatchObject({ severity: 'medium', cwe: ['CWE-639'], cvssVector: 'CVSS:3.1/AV:N/AC:L/PR:L/UI:N/S:U/C:L/I:N/A:N' });
     const list = (await h.call('p2o_case', { action: 'list' })).details.entries; expect(list.find((entry: any) => entry.id === built.accepted.id).severity).toBe('medium'); expect(list.find((entry: any) => entry.id === built.pending.id).severity).toBeUndefined();
+    // P8: the list projection carries rate-readiness so the lead reads it instead of judging from the verdict alone.
+    // This fixture accepted and rated a case without an independent receipt, so the honest reading is "not ready".
+    expect(list.find((entry: any) => entry.id === built.accepted.id)).toMatchObject({ readyToRate: false, currentness: 'current', independentCurrent: false });
+    expect(list.find((entry: any) => entry.id === built.pending.id)).toMatchObject({ readyToRate: false, currentness: 'current', independentCurrent: false });
     expect((await h.call('p2o_coverage', { action: 'list' })).details.plans[0].counts.stale).toBe(0); // the cells keep pinning the same case revision
   }));
 
@@ -64,7 +68,7 @@ describe('case rating', () => {
 
   it('flags a rating recorded against an older revision once the case is revised', async () => fixture(async h => {
     const built = await populate(h); await rate(h, built, finding());
-    const { currentness, staleReasons, independentCurrent, acceptedFinding, canonicalCaseId, recordId, runId, revision, finding: _f, ratedRevision, ratingCurrent, ...draft } = (await h.call('p2o_case', { action: 'view', id: built.accepted.id })).details;
+    const { currentness, staleReasons, independentCurrent, acceptedFinding, readyToRate, canonicalCaseId, recordId, runId, revision, finding: _f, ratedRevision, ratingCurrent, ...draft } = (await h.call('p2o_case', { action: 'view', id: built.accepted.id })).details;
     await h.call('p2o_case', { action: 'revise', id: built.accepted.id, revision, entry: { ...draft, reviewReason: 'Owner re-read the exact current claim, task, asset and limitations' } });
     const view = (await h.call('p2o_case', { action: 'view', id: built.accepted.id })).details;
     expect(view).toMatchObject({ revision: revision + 1, ratedRevision: revision, ratingCurrent: false });

@@ -1,6 +1,6 @@
 # Source and sink context map
 
-Detailed mapping guidance for [web output context](../SKILL.md). The product of this method is a chain record, not a payload.
+Detailed mapping guidance for [web output context](../SKILL.md). The product of this method is a chain record, and once the sink context is confirmed, the payload that reaches it.
 
 ## Classify the source
 

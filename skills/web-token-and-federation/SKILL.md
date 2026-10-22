@@ -43,7 +43,7 @@ For a token: which structural change was accepted or rejected, and under what cl
 ## Stop Conditions
 - Stop before targeting any infrastructure, account or endpoint that is not the application under assessment or a controlled client registration on it.
 - Stop before reusing a modified token or flow result to access another principal's data; confirming acceptance of the modification is the finding, not what it could then reach.
-- Stop after the first confirmed acceptance of an unverified or altered structural property; route further reach to [authorization auditing](../authorization-auditing/SKILL.md) rather than deepening this card.
+- Record the first confirmed acceptance of an unverified or altered structural property and carry the chain from there; hand the composition to [authorization auditing](../authorization-auditing/SKILL.md), which joins it to the object decision and reports the depth reached.
 - Stop if the token or client registration is not attributable to a principal controlled for this assessment.
 
 ## Evidence Fields

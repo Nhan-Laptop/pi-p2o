@@ -63,3 +63,26 @@ describe('canonical vulnerability cases and currentness (K5)',()=>{
     expect(store.records().filter(row=>row.data?.plan&&((row.data.plan as any).kind==='goal'))).toHaveLength(0);
   }));
 });
+
+// planning_update.md P8: readiness to rate is derived from the facts on record instead of asserted when the mood strikes.
+describe('rate-readiness is derived, not asserted (P8)',()=>{
+  it('is true only when the case is current and keeps a current independent receipt',async()=>fixture(async({board,assetId,claim,receipt})=>{
+    const independent=receipt('validator-a'),validator=claim({by:'validator-a',evidenceRefs:[independent]}),ownerClaim=claim({by:'owner',supersedes:validator,independentEvidenceRef:independent,evidenceRefs:[independent]});
+    const pending=await board.create(draft(assetId,ownerClaim)),unready=(await board.list())[0];
+    expect(unready).toMatchObject({currentness:'current',readyToRate:false,independentCurrent:false});
+    const accepted=await board.revise(pending.id,1,{...editable(pending),independentEvidenceRefs:[independent],reviewStatus:'accepted',reviewReason:'Owner reviewed the separate validator receipt and matching current claim'});
+    expect((await board.list())[0]).toMatchObject({readyToRate:true,independentCurrent:true,acceptedFinding:true});
+    // The same case loses readiness the moment its support goes stale: readiness is a reading of the record, not a stored flag.
+    claim({by:'validator-a',closure:'open_proof_gap',supersedes:ownerClaim,evidenceRefs:[independent]});
+    expect((await board.list())[0]).toMatchObject({readyToRate:false,currentness:'stale'});
+    expect(accepted.reviewStatus).toBe('accepted');
+  }));
+  it('is false for a withdrawn case even when its old support is still current',async()=>fixture(async({board,assetId,claim,receipt})=>{
+    const independent=receipt('validator-a'),validator=claim({by:'validator-a',evidenceRefs:[independent]}),ownerClaim=claim({by:'owner',supersedes:validator,independentEvidenceRef:independent,evidenceRefs:[independent]});
+    const created=await board.create(draft(assetId,ownerClaim,{independentEvidenceRefs:[independent]}));
+    const accepted=await board.revise(created.id,1,{...editable(created),independentEvidenceRefs:[independent],reviewStatus:'accepted',reviewReason:'Owner reviewed current support and the separate validator receipt before withdrawing the case'});
+    expect((await board.list())[0]).toMatchObject({readyToRate:true,currentness:'current'});
+    await board.revise(accepted.id,2,{...editable(accepted),independentEvidenceRefs:[independent],reviewStatus:'withdrawn',reviewReason:'Owner withdrew the case after the target changed'});
+    expect((await board.list())[0]).toMatchObject({readyToRate:false,currentness:'withdrawn'});
+  }));
+});

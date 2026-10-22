@@ -16,6 +16,8 @@ export interface PlanDraft {
   taskIds?:string[]; goalIds?:string[]; supportRefs?:string[]; decision?:PlanDecision;
 }
 export interface PlanEntry extends PlanDraft { id:string; runId:string; revision:number; recordId:string }
+/** Goal vocabulary, distinct from tasks and coverage plans. */
+const GOAL_SETTLED=['reviewed','closed'] as const;
 const statuses:Record<PlanKind,readonly string[]>={goal:['proposed','active','reviewed','closed','blocked','cancelled'],todo:['open','in-progress','done','deferred','blocked','cancelled'],decision:['recorded','withdrawn']};
 const transitions:Record<PlanKind,Record<string,string[]>>={
   goal:{proposed:['active','blocked','cancelled'],active:['reviewed','blocked','cancelled'],reviewed:['closed','active','blocked'],closed:[],blocked:['active','cancelled'],cancelled:[]},
@@ -90,13 +92,13 @@ export class PlanBoard extends LedgerBoard{
   create(input:PlanDraft,request?:MutationRequest):Promise<PlanEntry>{const draft=validatePlanDraft(input);return this.mutate((index,plans)=>this.write(()=>{
     const generated=draft.id??`${draft.kind}-${randomUUID()}`,value={...draft,id:generated};if(plans.some(plan=>plan.id===generated))throw Error('Duplicate plan identity');
     if(value.kind!=='decision'&&plans.filter(plan=>plan.kind!=='decision'&&!['closed','done','cancelled'].includes(plan.status)).length>=100)throw Error('Live goal/todo frontier limit reached (100); review/close or cancel retained entries');
-    this.references(value,index,plans);if(value.kind==='goal'&&['reviewed','closed'].includes(value.status))throw Error('Create goals proposed/active; review and close need explicit revisions');return {draft:value,revision:1};
+    this.references(value,index,plans);if(value.kind==='goal'&&(GOAL_SETTLED as readonly string[]).includes(value.status))throw Error('Create goals proposed/active; review and close need explicit revisions');return {draft:value,revision:1};
   },request?boundPlanRequest('create',input,request):undefined));}
   revise(idValue:string,revision:number,input:PlanDraft,request?:MutationRequest):Promise<PlanEntry>{const draft=validatePlanDraft(input);return this.mutate((index,plans)=>this.write(()=>{
     const old=plans.find(plan=>plan.id===idValue);if(!old||old.revision!==revision)throw Error('Missing or stale plan revision');if(draft.id&&draft.id!==idValue||draft.kind!==old.kind)throw Error('Cannot change plan identity/kind');
     if(!transitions[old.kind][old.status]?.includes(draft.status))throw Error('Invalid plan transition');const value={...draft,id:idValue};this.references(value,index,plans);
     if(old.kind==='todo'&&old.status==='done'&&plans.filter(plan=>plan.kind!=='decision'&&!['closed','done','cancelled'].includes(plan.status)).length>=100)throw Error('Live goal/todo frontier limit reached (100); cannot reopen retained todo');
-    if(value.kind==='goal'&&['reviewed','closed'].includes(value.status)&&!value.supportRefs?.length)throw Error('Reviewed/closed goal needs same-run support references');return {draft:value,revision:old.revision+1,previous:old};
+    if(value.kind==='goal'&&(GOAL_SETTLED as readonly string[]).includes(value.status)&&!value.supportRefs?.length)throw Error('Reviewed/closed goal needs same-run support references');return {draft:value,revision:old.revision+1,previous:old};
   },request?boundPlanRequest('revise',input,request,idValue,revision):undefined));}
   async list():Promise<PlanEntry[]>{const index=await readLedger(this.path,this.runId);if(!index.complete)throw Error('Plan reconciliation incomplete');return planFrontier(index);}
 }

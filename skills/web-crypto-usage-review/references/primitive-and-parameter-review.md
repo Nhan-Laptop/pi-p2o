@@ -11,5 +11,5 @@ Card for [web crypto usage review](../SKILL.md). It is a source-reading checklis
 - Conclude: confirmed when a call's actual algorithm, mode or key/IV source matches one of the listed weaknesses, cited to the source line. A matching function or variable name whose actual algorithm argument is not weak is not a finding.
 - Evidence: the source location, the algorithm and parameters read from the call, and which listed weakness applies.
 - Record: cell for wstg-cryp-04 per distinct call site or per shared utility function.
-- Stop: source reading only; no attempt to demonstrate practical breakability.
+- Stop: source reading establishes the choice and the parameters; practical breakability is shown by the bounded construction the chain needs, not asserted from the algorithm name.
 - Not a finding when: the call's actual parameters do not match any listed weakness, or the primitive is used only for a purpose the listed weakness does not apply to.

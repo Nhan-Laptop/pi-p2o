@@ -1,6 +1,6 @@
 # Framework resolution and phase-specific behavior
 
-Use with [dispatch auditing](../SKILL.md) when input selects behavior through conventions, returned objects, fallback handling, or preparation hooks. Supported generic observations are recorded in [O015](../../../research/orange/evidence.md#o015), [O021](../../../research/orange/evidence.md#o021), [O022](../../../research/orange/evidence.md#o022), and [O024](../../../research/orange/evidence.md#o024). The library does not import their routes, object chains, commands or solutions.
+Use with [dispatch auditing](../SKILL.md) when input selects behavior through conventions, returned objects, fallback handling, or preparation hooks. Supported generic observations are recorded in [O015](../../../research/orange/evidence.md#o015), [O021](../../../research/orange/evidence.md#o021), [O022](../../../research/orange/evidence.md#o022), and [O024](../../../research/orange/evidence.md#o024). The library records their routes and object chains for orientation; you still build and run your own against the authorized target.
 
 ## Model the effective selectable set
 
@@ -30,6 +30,6 @@ Choose an intended allowed operation as a control. Compare receiver/phase/check 
 - Unknown selected receiver or prerequisite → [source](../../source-code-auditing/SKILL.md) / [data flow](../../data-flow-analysis/SKILL.md), with the smallest resolution slice and actual eligibility rules.
 - Entry admission versus effective action permission → [authorization](../../authorization-auditing/SKILL.md), with receiver/action, policy expectations, independent gates and denied controls.
 - Preparation behavior outside a claimed runtime guard → [sandbox analysis](../../sandbox-boundary-analysis/SKILL.md), with phase/guard coverage, dependency configuration, execution identity and remaining confinement layers.
-- Confirmed unexpected behavior → [impact assessment](../../exploitability-assessment/SKILL.md), with its constrained capability and missing prerequisites; no executable chain.
+- Confirmed unexpected behavior → [impact assessment](../../exploitability-assessment/SKILL.md), with its constrained capability, the links you actually built and the prerequisites still missing.
 
 Reject packets missing the receiver, phase, actual guard, or classification of inferred edges. Request [compiler-invariant analysis](../../compiler-invariant-auditing/SKILL.md) only if an inferred fact, reachable invalidator and unsound consumer are identified—not merely because compilation is involved. Handoffs and observer choices here are derived library contracts; source outcomes remain author reports.

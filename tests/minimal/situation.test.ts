@@ -1,0 +1,93 @@
+import { describe, expect, it } from 'vitest';
+import { SEGMENT_FIELDS, SITUATION_LIMIT, situationLine, situationSegments, summarizeSituation, type SituationSnapshot } from '../../src/situation.js';
+
+// planning_update.md P3: one bounded line about the run, computed from records so the lead does not infer the frontier
+// from an empty list, and testable without an engine.
+const full: SituationSnapshot = { open: 6, running: 2, runningRoles: ['discovery', 'validation'], ready: 3, exhausted: 0, blocked: 1,
+  openContradictions: 1, chainReady: 1, chainUnmet: 2, pendingRating: 4, coverageTested: 12, coverageCells: 31,
+  suggested: { purpose: 'validation', score: 65 } };
+const idle: SituationSnapshot = { open: 0, running: 0, runningRoles: [], ready: 0, exhausted: 0, blocked: 0, openContradictions: 0,
+  chainReady: 0, chainUnmet: 0, pendingRating: 0, coverageTested: 0, coverageCells: 0, suggested: null };
+
+const task = (id: string, status: string, extra: Record<string, unknown> = {}) => ({ id, status, role: 'discovery', prerequisites: [], ...extra }) as never;
+const view = (extra: Record<string, unknown>) => ({ verdict: 'open', reviewStatus: 'pending', contradictions: [], ...extra }) as never;
+const plan = (cells: Array<Record<string, unknown>>) => ({ cells }) as never;
+const claim = (extra: Record<string, unknown>) => ({ closure: 'confirmed', ...extra });
+
+describe('situation line (P3)', () => {
+  it('renders the documented line for a busy run', () => {
+    expect(situationLine(full)).toBe('Situation: 2 running (discovery, validation) · 3 ready · next: validation 65 · 1 blocked on evidence · 1 open contradiction · chain: 1 step ready, 2 unmet requires · 4 cases pending rating · coverage 12/31.');
+    expect(situationLine(full).length).toBeLessThanOrEqual(SITUATION_LIMIT);
+  });
+
+  it('says 0 open when the frontier is empty, and drops optional segments before exceeding the cap', () => {
+    expect(situationLine(idle)).toBe('Situation: 0 open.');
+    const crowded = { ...full, runningRoles: ['investigation', 'reporting', 'validation'], openContradictions: 12, pendingRating: 99, chainUnmet: 88, coverageTested: 999, coverageCells: 1000 };
+    const line = situationLine(crowded);
+    expect(line.length).toBeLessThanOrEqual(SITUATION_LIMIT);
+    expect(line.startsWith('Situation: 2 running')).toBe(true);
+  });
+
+  it('suggests the highest-scoring dispatchable task and lets a ready chain step outrank it (P4)', () => {
+    const tasks = [
+      task('t-validation', 'proposed', { role: 'validation', work: { purpose: 'validation', questionKey: 'q-open', assetRefs: [{ id: 'asset-a' }] } }),
+      task('t-covered', 'proposed', { work: { purpose: 'discovery', questionKey: 'q-answered', assetRefs: [{ id: 'asset-b' }] } }),
+      task('t-running', 'running'),
+    ];
+    const coverage = [plan([{ questionKey: 'q-answered', currentness: 'current', effectiveAssessment: 'confirmed_claim', execution: 'tested' }])];
+    // Unlocking purpose 50+15 = 65; a question an answered cell already covers 50-20 = 30.
+    const relaxed = summarizeSituation({ tasks, cases: [], coverage, claims: [] });
+    expect(relaxed.suggested).toEqual({ purpose: 'validation', score: 65 });
+    expect(situationLine(relaxed)).toContain('next: validation 65');
+    // A ready chain step is the claim whose every required token is already provided: 50+15+20 = 85.
+    const chained = summarizeSituation({ tasks, cases: [], coverage, claims: [claim({ provides: 'an authenticated session', execution: 'tested' }), claim({ closure: 'open_proof_gap', requires: 'authenticated session' })] });
+    expect(chained.suggested).toEqual({ purpose: 'validation', score: 85 });
+  });
+
+  it('boosts a task whose asset already carries an accepted finding, and stays silent when nothing can start', () => {
+    const tasks = [task('t-mapping', 'proposed', { work: { purpose: 'mapping', questionKey: 'q', assetRefs: [{ id: 'asset-a' }] } })];
+    const accepted = view({ reviewStatus: 'accepted', acceptedFinding: true, assetRefs: [{ id: 'asset-a' }] });
+    expect(summarizeSituation({ tasks, cases: [accepted], coverage: [], claims: [] }).suggested).toEqual({ purpose: 'mapping', score: 60 });
+    expect(summarizeSituation({ tasks: [], cases: [], coverage: [], claims: [] }).suggested).toBeNull();
+  });
+
+  it('keeps the renderer and the snapshot in step: every counter is rendered and every rendered segment has a field', () => {
+    const covered = new Set(Object.values(SEGMENT_FIELDS).flat());
+    expect([...covered].sort()).toEqual(Object.keys(idle).sort());
+    const rendered = new Set(situationSegments(full).map(segment => segment.id));
+    for (const [id, fields] of Object.entries(SEGMENT_FIELDS)) {
+      if (id === 'stall') continue; // renders only when nothing is open, asserted below
+      if (fields.some(field => full[field] !== 0)) expect(rendered.has(id as never), id).toBe(true);
+    }
+    expect(rendered.has('stall')).toBe(full.open === 0);
+    expect(situationSegments(idle).map(segment => segment.id)).toEqual(['stall']);
+  });
+
+  it('counts the frontier, the chain join and the rating backlog from records', () => {
+    const snapshot = summarizeSituation({
+      tasks: [task('a', 'closed'), task('b', 'cancelled'), task('c', 'running'), task('d', 'proposed', { prerequisites: [{ taskId: 'a' }] }),
+        task('e', 'proposed', { prerequisites: [{ taskId: 'c' }] }), task('f', 'blocked')],
+      cases: [view({ contradictions: [{ status: 'open' }, { status: 'resolved' }] }), view({ reviewStatus: 'accepted' }),
+        view({ reviewStatus: 'accepted', finding: { severity: 'high' } }), view({ reviewStatus: 'pending', contradictions: [{ status: 'open' }] })],
+      coverage: [plan([{ execution: 'tested' }, { execution: 'planned' }]), plan([{ execution: 'tested' }])],
+      claims: [claim({ provides: 'an authenticated session as alice', execution: 'tested' }), claim({ closure: 'open_proof_gap', requires: 'authenticated session as alice' }),
+        claim({ closure: 'open_proof_gap', requires: 'write access to the admin bucket', provides: 'read of one object' })],
+    });
+    expect([snapshot.open, snapshot.running, snapshot.ready, snapshot.blocked]).toEqual([4, 1, 1, 1]);
+    expect(snapshot.runningRoles).toEqual(['discovery']);
+    expect(snapshot.openContradictions).toBe(2);
+    expect([snapshot.chainReady, snapshot.chainUnmet]).toEqual([1, 1]);
+    expect(snapshot.pendingRating).toBe(1);
+    expect([snapshot.coverageTested, snapshot.coverageCells]).toEqual([2, 3]);
+  });
+
+  it('counts open claims against confirmed+tested providers, not against every recorded claim', () => {
+    const open = claim({ closure: 'open_proof_gap', requires: 'a session as alice' });
+    const join = (...claims: Array<Record<string, unknown>>) => { const snapshot = summarizeSituation({ tasks: [], cases: [], coverage: [], claims: claims as never }); return [snapshot.chainReady, snapshot.chainUnmet]; };
+    expect(join(open)).toEqual([0, 1]); // nothing recorded provides it yet
+    expect(join(open, claim({ provides: 'a session as alice', execution: 'not_tested' }))).toEqual([0, 1]); // recorded, not tested
+    expect(join(open, claim({ closure: 'ruled_out', provides: 'a session as alice' }))).toEqual([0, 1]); // ruled out is not a primitive
+    expect(join(open, claim({ provides: 'a session as alice', execution: 'tested' }))).toEqual([1, 0]);
+    expect(join(claim({ provides: 'a session as alice', execution: 'tested' }))).toEqual([0, 0]); // a closed claim is not pending work
+  });
+});

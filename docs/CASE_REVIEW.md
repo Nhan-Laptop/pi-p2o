@@ -26,7 +26,7 @@ Worker/reporting không có `p2o_case`/`p2o_coverage`. Dữ liệu import/checkp
 {"action":"create","requestId":"owner-case-1","entry":{}}
 {"action":"revise","id":"case-…","revision":1,"entry":{}}
 {"action":"list","cursor":0,"limit":20,"status":"pending"}
-{"action":"rate","id":"case-…","revision":2,"finding":{"severity":"medium","basis":"…","cvssVector":"CVSS:3.1/AV:N/…","cwe":["CWE-639"],"remediationSteps":"…","references":["wstg-athz-04"],"reproductionEvidenceRefs":["…"]}}
+{"action":"rate","id":"case-…","revision":2,"finding":{"severity":"medium","basis":"…","cvssVector":"CVSS:3.1/AV:N/…","cwe":["CWE-639"],"remediationSteps":"…","references":["wstg-athz-04"],"reproductionEvidenceRefs":["…"],"chain":{"objective":"…","demonstratedThrough":2,"steps":[{"order":1,"step":"…","claimRef":"cand-…","provides":"…"},{"order":2,"step":"…","claimRef":"cand-…","requires":"…","provides":"…"},{"order":3,"step":"…","requires":"…"}]}}}
 ```
 
 **`rate`** ghi một note riêng (`data.caseRating`) gắn revision case đã nêu — không đổi verdict/revision và không làm stale coverage.
@@ -34,6 +34,15 @@ Worker/reporting không có `p2o_case`/`p2o_coverage`. Dữ liệu import/checkp
 `reproductionEvidenceRefs` (≤5 id receipt cùng run) vẫn hợp lệ; thay bằng `reproductionSteps` `[{ref, role, note?}]` (1–5 bước, `role` ∈ baseline/proof/verification/supporting, `note` ≤200 ký tự) để ghi thứ tự cần làm theo và nhãn cho người đọc — vai trò chỉ là nhãn, không phải mức proof; nếu truyền cả hai thì danh sách id phải khớp thứ tự các bước. Report đánh số bước khi có `reproductionSteps`, không thì giữ nguyên.
 `cvssVector` tùy chọn, host tự tính điểm CVSS 3.1 (`src/cvss.ts`); CWE và references do owner ghi, host không tra MITRE. Case dựa policy `inferred`
 không rate trên Medium. Case đổi revision thì rating cũ bị báo `STALE_RATING` ở báo cáo/preflight. Mọi mutation bind action + input + revision vào request HMAC.
+
+**`chain`** (tùy chọn, trong cùng payload `finding`) ghi chuỗi khai thác đã dựng: `{objective, steps:[{order, step, claimRef?, provides?, requires?}], demonstratedThrough?}` — 1–8 bước, `order` phải đúng 1..n, `claimRef` trỏ candidate cùng run. Bước đã thực sự chạy (mọi bước ≤ `demonstratedThrough`) phải có `claimRef` với `closure=confirmed` và `execution=tested`; thiếu thì host từ chối rate. Severity chỉ tính tới bước đã chạy, bước chưa chạy giữ nguyên là gap trong `limitations`. Report in chuỗi theo thứ tự kèm claim từng bước và bước dừng; `findings.json` xuất cùng cấu trúc.
+
+**`readyToRate`** (P8) là trường *dẫn xuất* trong `caseViews` và projection của `p2o_case list`, không lưu xuống ledger và không phải quyền
+mới: `currentness=current` + có receipt độc lập đang còn hiệu lực (`independentCurrent`) + độ sâu chuỗi đã nêu hoặc vắng mặt tường minh
+(rating đã có `chain` mà các bước có `claimRef` nhưng thiếu `demonstratedThrough` thì coi là chưa nêu). Case `withdrawn` luôn `false`.
+Đọc `false` kèm `staleReasons` để biết thiếu gì; rate sớm vẫn bị host từ chối ở các điều kiện cứng (evidence/claim/inferred-policy), và
+`finishPreflight` giữ nguyên cổng cuối. Test: `tests/minimal/cases.test.ts` (dẫn xuất, mất hiệu lực khi support stale, withdrawn) và
+projection trong `tests/minimal/case-rating.test.ts`.
 
 ## Coverage: mẫu số tường minh, hai trục tách biệt
 

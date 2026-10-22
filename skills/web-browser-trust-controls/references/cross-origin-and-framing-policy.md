@@ -11,7 +11,7 @@ Cards for [web browser trust controls](../SKILL.md). All four read a declared he
 - Conclude: report a policy that allows inline script or style without a nonce or hash on a route that also reflects any untrusted value, and a wildcard source on a route carrying sensitive content. A strict policy with nonce- or hash-based script control and no inline allowance is not a finding.
 - Evidence: the header value per route and the directive judged weak.
 - Record: cell for wstg-conf-12.
-- Stop: read only; no attempt to construct a working bypass of the policy.
+- Stop: read the declared policy first, then construct the bypass that policy permits against an origin the task authorizes; the construction never runs against a real third party.
 - Not a finding when: the response carries no sensitive content and no reflected value, or the policy is report-only and not relied upon as the sole control.
 
 ### wstg-clnt-07 Cross-origin resource sharing
@@ -21,7 +21,7 @@ Cards for [web browser trust controls](../SKILL.md). All four read a declared he
 - Conclude: confirmed when the route echoes an arbitrary origin back as allowed and also allows credentials, or uses a wildcard allowed-origin on a response carrying sensitive data. A fixed allow-list of origins that does not echo an arbitrary value is not a finding.
 - Evidence: the two requests and their response headers.
 - Record: cell for wstg-clnt-07.
-- Stop: two requests per route is enough; no attempt to read cross-origin data from an actual third-party page.
+- Stop: two requests per route establish the policy; then build the cross-origin read the policy allows from an origin the task authorizes and you control, and never from an actual third-party page.
 - Not a finding when: the allowed-origin value is a fixed list and does not echo an arbitrary sent value, or the response carries no sensitive data.
 
 ### wstg-clnt-09 Framing policy

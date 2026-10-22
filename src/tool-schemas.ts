@@ -28,6 +28,13 @@ export const taskDraftSchema = Type.Object({
   },{additionalProperties:false});
 
 export const TASK_ACTIONS = ['create','revise','match','list','start','review','close','block','cancel','dispatch'] as const;
+/** P13e: one row per action, so a new action is a type error instead of inheriting a default parameter list. */
+export const TASK_ACTION_PARAMETERS: Readonly<Record<typeof TASK_ACTIONS[number], readonly string[]>> = {
+  create: ['action','draft'], match: ['action','draft'], revise: ['action','draft','id','revision'], list: ['action','id','cursor','limit'],
+  dispatch: ['action','ids','id','priority'], start: ['action','id'],
+  review: ['action','id','revision','reason','evidenceIds','externalEvidence'], close: ['action','id','revision','reason','evidenceIds','externalEvidence'],
+  block: ['action','id','revision','reason','evidenceIds','externalEvidence'], cancel: ['action','id','revision','reason','evidenceIds','externalEvidence'],
+};
 export const taskParameters = Type.Object({action:choices(TASK_ACTIONS),
       id:Type.Optional(Type.String({maxLength:80})),revision:Type.Optional(Type.Integer({minimum:1})),draft:Type.Optional(taskDraftSchema),
       ids:Type.Optional(Type.Array(Type.String({maxLength:80}),{minItems:1,maxItems:25})),priority:Type.Optional(Type.Integer({minimum:0,maximum:100})),
@@ -52,6 +59,8 @@ export const candidateParameters = Type.Object({
       limitations: Type.String({ minLength: 1, maxLength: 1500 }), control: Type.Optional(Type.String({ maxLength: 1000 })),
       resolves: Type.Optional(Type.Array(Type.String({ maxLength: 80 }), { maxItems: 10 })),
       requirement: Type.Optional(Type.String({ minLength: 10, maxLength: 1000, description: 'For blocked execution, describe the actual scope restriction, missing binary/dependency or failed prerequisite; not a capability ID' })), supersedes: Type.Optional(Type.String({ maxLength: 80 })), independentEvidenceRef: Type.Optional(Type.String({ maxLength: 80 })),
+      provides: Type.Optional(Type.String({ minLength: 5, maxLength: 300, description: 'Capability this primitive hands to a later step, so the lead can join it to what another step requires' })),
+      requires: Type.Optional(Type.String({ minLength: 5, maxLength: 300, description: 'Capability this primitive needs from an earlier step or the environment; omit when nothing outside the surface must hold' })),
     });
 
 export const captureParameters = Type.Object({path:Type.String({minLength:1,maxLength:2048}),offset:Type.Optional(Type.Integer({minimum:0})),timeout:Type.Optional(Type.Integer({minimum:0}))});

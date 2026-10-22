@@ -1,4 +1,5 @@
 import { createHash, randomUUID } from 'node:crypto';
+import { isSatisfiedTask } from './tasks.js';
 import { sha256Hex } from './validate.js';
 import { appendRecords, appendGeneratedRecords, isOpenGap, readLedger, summarizeRecords, type AssessmentRecord, type LedgerIndex } from './records.js';
 import type { MutationRequest } from './state/store.js';
@@ -107,7 +108,7 @@ export function reportProjection(index: LedgerIndex, context:ReportProjectionCon
   const proofWarnings=[...(!context.cases&&reviewedCases.length?['Case asset/hypothesis currentness unavailable in this projection; no accepted current finding is inferred.']:[]),...(!context.coverage&&index.records.some(row=>row.data?.coveragePlan)?['Coverage currentness unavailable in this projection; inspect through the active/historical store.']:[])];
   return {
     get version() { return versionOf(); },complete:index.complete && recovered.diagnostics.length===0,totalRecords:index.records.length,
-    counts:{candidates:candidates.length,reports:reports.length,reportHistory:recovered.reports.length,coverage:summary.coverageTotal,open:summary.openTotal,unreviewedTasks:tasks.filter(t => !['reviewed','closed'].includes(t.status)).length,
+    counts:{candidates:candidates.length,reports:reports.length,reportHistory:recovered.reports.length,coverage:summary.coverageTotal,open:summary.openTotal,unreviewedTasks:tasks.filter(t => !isSatisfiedTask(t.status)).length,
       cases:reviewedCases.length,uniqueAcceptedFindings:uniqueAccepted.size,duplicateCases:reviewedCases.filter(entry=>Boolean(entry.duplicateOf)).length,pendingCaseReviews:reviewedCases.filter(needsCaseReview).length,staleCases:reviewedCases.filter(entry=>entry.currentness==='stale').length,
       coveragePlans:coveragePlans.length,coverageCells:coveragePlans.reduce((sum,plan)=>sum+plan.cellIds.length,0),staleCoverageCells:coveragePlans.reduce((sum,plan)=>sum+plan.counts.stale,0)},
     tasks:shownTasks,candidates:shownCandidates,cases:shownCases,coveragePlans:shownCoverage,reports:shownReports,reportIds:shownReports.map(r => r.id),openIds:shownOpen,

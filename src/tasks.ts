@@ -1,10 +1,12 @@
 import { randomUUID } from 'node:crypto';
 import { appendRecord, appendRecords, appendGeneratedRecords, readLedger, readWorkHistory, readWorkOverlap, type AssessmentRecord, type LedgerIndex, type RecordAck } from './records.js';
-import { isRole, type Role } from './roles.js';
+import { isOpenClaim } from './claims.js';
+import { isRole, MAX_SKILLS, type Role } from './roles.js';
+import { purposeFromRole } from './duties.js';
 import { prepareReport } from './report.js';
 import type { WorkerReport } from './broker.js';
 import type { MutationRequest } from './state/store.js';
-import { validateWorkFields, workIdentity, type TaskOutputContract, type WorkDecision, type WorkSpec } from './work.js';
+import { validateWorkFields, validateWorkSpec, workIdentity, type TaskOutputContract, type WorkDecision, type WorkSpec } from './work.js';
 import { makePhasePacket } from './phase.js';
 import { derive } from './ledger-memo.js';
 import { TEXT_CONTROL } from './validate.js';
@@ -19,7 +21,41 @@ export interface TaskDraft {
   method: TaskMethod; work?:WorkSpec; decision?:WorkDecision; outputContract?:TaskOutputContract;
   unknowns?: string[]; missingPrerequisites?: string[]; expectedOutput?: string;
 }
-export type TaskStatus = 'proposed' | 'reserved' | 'running' | 'reported' | 'reviewed' | 'closed' | 'blocked' | 'cancelled' | 'expired';
+/** The one declaration of the task vocabulary (P13c): the loader, the situation line and every gate read this array. */
+export const TASK_STATUSES = ['proposed', 'reserved', 'running', 'reported', 'reviewed', 'closed', 'blocked', 'cancelled', 'expired'] as const;
+export type TaskStatus = typeof TASK_STATUSES[number];
+
+/** Lead-accepted: the task's evidence counts as a satisfied prerequisite and satisfies a coverage cell. */
+export const SATISFIED_TASK_STATUSES = ['reviewed', 'closed'] as const;
+/** No further work will come from this task. */
+export const SETTLED_TASK_STATUSES = ['closed', 'cancelled', 'expired'] as const;
+/** A worker slot may be held by this task. */
+export const EXECUTING_TASK_STATUSES = ['reserved', 'running'] as const;
+export const isSatisfiedTask = (status: unknown): boolean => (SATISFIED_TASK_STATUSES as readonly unknown[]).includes(status);
+export const isSettledTask = (status: unknown): boolean => (SETTLED_TASK_STATUSES as readonly unknown[]).includes(status);
+export const isExecutingTask = (status: unknown): boolean => (EXECUTING_TASK_STATUSES as readonly unknown[]).includes(status);
+
+/**
+ * P10: one terminal state per settled task, so the lead can tell "this direction is answered" from "this direction was cut
+ * short and needs another angle". Derived from the record, never stored: a stored flag would need its own migration and could
+ * disagree with the status it describes. `budgetExhausted` lets the caller pass the worker's own progress signal, which is the
+ * only evidence that distinguishes "ran out of allowance" from "I stopped it".
+ */
+export const TASK_TERMINAL_STATES = ['done', 'exhausted', 'blocked', 'stopped'] as const;
+export type TaskTerminalState = typeof TASK_TERMINAL_STATES[number];
+export function terminalState(task: { status?: unknown; outcome?: unknown }, hint: { budgetExhausted?: boolean } = {}): TaskTerminalState | undefined {
+  if (isSatisfiedTask(task.status)) return 'done';
+  if (task.status === 'expired') return 'exhausted';
+  if (task.status === 'blocked') return hint.budgetExhausted ? 'exhausted' : 'blocked';
+  if (task.status === 'cancelled') return hint.budgetExhausted ? 'exhausted' : 'stopped';
+  return undefined;
+}
+/** Counts for the situation line and the task list: only settled tasks have a terminal state. */
+export function terminalCounts<T extends { status?: unknown; outcome?: unknown }>(tasks: readonly T[], exhausted: (task: T) => boolean = () => false): Record<TaskTerminalState, number> {
+  const counts: Record<TaskTerminalState, number> = { done: 0, exhausted: 0, blocked: 0, stopped: 0 };
+  for (const task of tasks) { const state = terminalState(task, { budgetExhausted: exhausted(task) }); if (state) counts[state] += 1; }
+  return counts;
+}
 /**
  * What the host observed about the receipts a review cited, written once with the `reviewed` revision. It is information for the owner and the report:
  * who authored each receipt, which fields of the output contract no record of the assignee backs, and (enforce mode) whether a foreign receipt was acknowledged.
@@ -76,14 +112,14 @@ function validate(input: TaskDraft) {
   if (!Array.isArray(input.prerequisites) || input.prerequisites.length > 10 || input.prerequisites.some(p => !p || typeof p.taskId !== 'string' || !/^[a-z0-9][a-z0-9-]{0,79}$/.test(p.taskId) || (p.revision !== undefined && (!Number.isSafeInteger(p.revision) || p.revision < 1))) || new Set(input.prerequisites.map(p=>p.taskId)).size!==input.prerequisites.length) throw new Error('Invalid or duplicate task prerequisites');
   for (const list of [input.unknowns,input.missingPrerequisites]) if (list !== undefined && (!Array.isArray(list) || list.length > 10 || list.some(v => typeof v !== 'string' || v.trim().length < 10 || v.length > 500))) throw Error('Invalid task unknowns/prerequisites');
   if (input.expectedOutput !== undefined) bounded(input.expectedOutput,'expected output',1000,5);
-  if (!input.method || typeof input.method.reason !== 'string' || input.method.reason.trim().length < (reconLenient?0:10) || input.method.reason.length > 1000 || !Array.isArray(input.method.skills) || input.method.skills.length > 3 || input.method.skills.some(s => !s || typeof s.id !== 'string' || s.id.length > 64 || !/^[a-z0-9-]+$/.test(s.id) || !/^[a-f0-9]{64}$/.test(s.sha256))) throw new Error('Invalid task method');
+  if (!input.method || typeof input.method.reason !== 'string' || input.method.reason.trim().length < (reconLenient?0:10) || input.method.reason.length > 1000 || !Array.isArray(input.method.skills) || input.method.skills.length > MAX_SKILLS || input.method.skills.some(s => !s || typeof s.id !== 'string' || s.id.length > 64 || !/^[a-z0-9-]+$/.test(s.id) || !/^[a-f0-9]{64}$/.test(s.sha256))) throw new Error('Invalid task method');
   validateWorkFields(input);
 }
 
 /** Owner-only service. No disk reconstruction ever recreates run authority or workers. */
 /** Contract fields a ledger record of the assignee can back; assets, facts, controls and artifacts live in the graph/artifact stores and are reported as unchecked, never as missing. */
 const CONTRACT_KINDS: Record<string, (row: AssessmentRecord) => boolean> = {
-  evidence: row => row.kind === 'evidence', gaps: row => row.kind === 'open' || (row.kind === 'candidate' && (row.data?.closure === 'open_proof_gap' || row.data?.execution === 'blocked')),
+  evidence: row => row.kind === 'evidence', gaps: row => row.kind === 'open' || (row.kind === 'candidate' && isOpenClaim(row.data ?? {})),
   candidates: row => row.kind === 'candidate', coverage: row => row.kind === 'coverage',
 };
 export function reviewIntegrityNote(index: LedgerIndex, task: AssessmentTask, evidenceIds: readonly string[], externalAcknowledged: boolean): ReviewIntegrityNote {
@@ -99,6 +135,8 @@ export class TaskBoard extends LedgerBoard {
   integrity: 'off' | 'annotate' | 'enforce' = 'annotate';
   constructor(runId: string, path: string, active: () => boolean, private now = () => Date.now(), private targetRevision:string|(()=>string)=runId,
     private assetRevision?: (id:string)=>number|undefined) { super(runId, path, active, 'Task', 'Task'); }
+  /** One canonical stored form: the work identity is re-validated so a sorted parent list is what the record holds. */
+  private canonical<T extends TaskDraft>(task:T):T { return task.work?{...task,work:validateWorkSpec(task.work)}:task; }
   private pinAssets<T extends TaskDraft>(task:T):T {
     if(!task.work)return task;
     return {...task,work:{...task.work,assetRefs:task.work.assetRefs.map(ref=>{const pinned=ref.revision??this.assetRevision?.(ref.id);return {...ref,...(pinned!==undefined?{revision:pinned}:{})};})}};
@@ -144,7 +182,7 @@ export class TaskBoard extends LedgerBoard {
       const id = draft.id ?? `task-${randomUUID()}`;
       if (tasks.some(t => t.id === id)) throw Error('Duplicate task');
       if (tasks.filter(t => !['closed','cancelled','expired'].includes(t.status)).length >= 100) throw Error('Live task frontier limit reached (100); review/close or cancel retained work');
-      const candidate={...draft,id};this.checkDependencies(candidate,tasks,index);const decorated=this.decorate(candidate,await this.matching(candidate));
+      const candidate=this.canonical({...draft,id});this.checkDependencies(candidate,tasks,index);const decorated=this.decorate(candidate,await this.matching(candidate));
       return this.write({ ...decorated, runId: this.runId, revision: 1, status: draft.missingPrerequisites?.length ? 'blocked' : 'proposed' });
     });
   }
@@ -155,7 +193,7 @@ export class TaskBoard extends LedgerBoard {
       if (['reserved','running'].includes(old.status)) throw Error('Withdraw active assignment before revising');
       if (['closed','cancelled','expired'].includes(old.status) && tasks.filter(t => !['closed','cancelled','expired'].includes(t.status)).length >= 100) throw Error('Live task frontier limit reached (100); cannot reopen retained task');
       if (draft.id && draft.id !== id) throw Error('Cannot change task identity');
-      const candidate={...draft,id};this.checkDependencies(candidate,tasks.filter(t => t.id !== id),index);const decorated=this.decorate(candidate,await this.matching(candidate));
+      const candidate=this.canonical({...draft,id});this.checkDependencies(candidate,tasks.filter(t => t.id !== id),index);const decorated=this.decorate(candidate,await this.matching(candidate));
       return this.write({ ...decorated,runId:this.runId,revision:old.revision+1,status:draft.missingPrerequisites?.length ? 'blocked' : 'proposed' },old);
     });
   }
@@ -164,8 +202,40 @@ export class TaskBoard extends LedgerBoard {
     if (!t || (revision !== undefined && t.revision !== revision)) throw Error('Missing or stale task revision');
     return t;
   }
+  /**
+   * P9: a task that claims to build on something must name it. `mapping` and `reporting` are legitimate starting points; every
+   * other purpose stands on a parent. Validation/retest are stricter because their whole value is reproducing a named claim, and
+   * a validated result whose parent cannot be read is not evidence — which is also what makes the chain join trustworthy (P5).
+   */
+  private verifyLineage(draft: TaskDraft, index: LedgerIndex): void {
+    // A plain draft carries no work identity, so the role is the purpose signal; a structured one states it explicitly.
+    const purpose = draft.work?.purpose ?? purposeFromRole(draft.role);
+    if (purpose === 'mapping' || purpose === 'reporting') return;
+    const refs = draft.work?.claimRefs ?? [];
+    for (const ref of refs) {
+      const row = index.byId.get(ref);
+      if (row?.kind !== 'candidate' || row.runId !== this.runId) throw Error(`Unknown same-run parent claim ${ref}`);
+    }
+    const hasClaim = refs.length > 0;
+    const hasTask = Boolean(draft.validationOf || draft.retestOf || draft.parentTaskId || draft.prerequisites.length);
+    const hasAsset = (draft.work?.assetRefs ?? []).some(ref => ref.revision !== undefined || this.assetRevision?.(ref.id) !== undefined);
+    if (purpose === 'validation' || purpose === 'retest') {
+      // Asking a worker to cite a claim that does not exist yet would name an unfillable field: on an empty run the first
+      // validation-shaped intent is the discovery that produces the claim, so the gate waits until there is something to cite.
+      const citable = hasClaim || hasTask || index.records.some(row => row.kind === 'candidate' && row.runId === this.runId);
+      if (!citable) return;
+      if (!hasClaim && !hasTask) throw Error(`PURPOSE_NEEDS_LINEAGE: a ${purpose} task must cite the claim it reproduces (work.claimRefs) or the predecessor task it revisits (validationOf/retestOf); this run already holds a claim, so both being absent cannot be read as "nothing to cite yet"`);
+      return;
+    }
+    // A legacy prose draft has no lineage field to fill, so the refusal only bites where the field exists: a structured task that
+    // left every parent empty. Validation/retest are checked above for both shapes because `validationOf`/`retestOf` exist in both.
+    if ((purpose === 'investigation' || purpose === 'refinement') && draft.work) {
+      if (!hasClaim && !hasTask && !hasAsset) throw Error(`PURPOSE_NEEDS_LINEAGE: an ${purpose} task must cite the claim, asset revision or prior task it builds on; work.claimRefs, work.assetRefs revisions and prerequisites are all empty`);
+    }
+  }
   private checkDependencies(draft: TaskDraft & { id: string }, tasks: AssessmentTask[], index: LedgerIndex, ready = false) {
     this.verifyAssets(draft,ready);
+    this.verifyLineage(draft,index);
     for (const id of draft.evidenceIds) if (index.byId.get(id)?.kind !== 'evidence' || index.byId.get(id)?.runId !== this.runId) throw Error('Unknown same-run task evidence');
     if (draft.parentTaskId && !tasks.some(t => t.id === draft.parentTaskId)) throw Error('Missing parent task');
     const edges = (t:TaskDraft) => [...t.prerequisites.map(p => p.taskId),...(t.parentTaskId ? [t.parentTaskId] : [])];
@@ -175,7 +245,7 @@ export class TaskBoard extends LedgerBoard {
     for (const p of draft.prerequisites) {
       const t = this.current(tasks,p.taskId,p.revision);
       if (ready) {
-        if (!['reviewed','closed'].includes(t.status) || !t.reviewReason || !t.evidenceIds.length) throw Error('Prerequisite requires lead-accepted evidence');
+        if (!isSatisfiedTask(t.status) || !t.reviewReason || !t.evidenceIds.length) throw Error('Prerequisite requires lead-accepted evidence');
         for (const ref of t.evidenceIds) if (index.byId.get(ref)?.kind !== 'evidence' || index.byId.get(ref)?.runId !== this.runId) throw Error('Prerequisite evidence missing');
       }
     }
@@ -185,10 +255,10 @@ export class TaskBoard extends LedgerBoard {
     if (draft.validationOf) {
       const prior = this.current(tasks,draft.validationOf);
       if (draft.role !== 'validation' || !draft.prerequisites.some(p => p.taskId === prior.id) || !sameQuestion(draft,prior)) throw Error('Validation overlap needs a matching predecessor');
-      if (ready && (!prior.evidenceIds.length || !['reviewed','closed'].includes(prior.status))) throw Error('Validation overlap needs a reviewed matching predecessor');
+      if (ready && (!prior.evidenceIds.length || !isSatisfiedTask(prior.status))) throw Error('Validation overlap needs a reviewed matching predecessor');
     }
     if(draft.retestOf){const prior=this.current(tasks,draft.retestOf);if(!sameQuestion(draft,prior))throw Error('Retest needs the same canonical asset/question identity');
-      if(ready&&(!prior.evidenceIds.length||!['reviewed','closed'].includes(prior.status)))throw Error('Retest needs a reviewed matching predecessor');}
+      if(ready&&(!prior.evidenceIds.length||!isSatisfiedTask(prior.status)))throw Error('Retest needs a reviewed matching predecessor');}
   }
   reserve(id: string, assignee: string): Promise<AssessmentTask> {
     return this.mutate(async (index,tasks) => {

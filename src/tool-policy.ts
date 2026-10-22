@@ -7,4 +7,16 @@ export const ALL_TOOLS = [...new Set([...OWNER_TOOLS, ...WORKER_TOOLS])];
 export const DELEGATION_TOOLS = ['p2o_delegate', 'p2o_workers'];
 export function ownerTools(delegated: boolean): string[] { return delegated ? OWNER_TOOLS.filter(t => !TARGET_TOOLS.includes(t)) : OWNER_TOOLS.filter(t => !DELEGATION_TOOLS.includes(t)); }
 export function workerTools(role: string): string[] { return role === 'reporting' ? WORKER_TOOLS.filter(t => !TARGET_TOOLS.includes(t) && t !== 'p2o_candidate') : [...WORKER_TOOLS]; }
-export function reportingOperationDenied(role: string, op: string): boolean { return role === 'reporting' && ['exec', 'net', 'http', 'capture', 'candidate', 'delegate', 'graph_record'].includes(op); }
+/**
+ * P13(g): the reporting guard repeated its own list of denied broker operations, so a new target-facing tool could be added to
+ * `WORKER_TOOLS` without the RPC guard learning about it (the tool list alone only hides the tool; the op stays callable).
+ * The map below is the single statement of "this op is target-facing or consumes a work slot", and the guard derives from it.
+ */
+export const TARGET_FACING_OPERATIONS: Readonly<Record<string, { tool: string; whole: boolean }>> = {
+  exec: { tool: 'p2o_shell', whole: true }, net: { tool: 'p2o_net', whole: true }, http: { tool: 'p2o_http', whole: true },
+  capture: { tool: 'p2o_capture', whole: true }, candidate: { tool: 'p2o_candidate', whole: true }, delegate: { tool: 'p2o_delegate', whole: true },
+  // Reporting keeps `p2o_graph` for reads; only its write operation is denied.
+  graph_record: { tool: 'p2o_graph', whole: false },
+};
+/** Reporting is synthesis-only: no target contact, no new claim, no new work. Derived, never restated. */
+export function reportingOperationDenied(role: string, op: string): boolean { return role === 'reporting' && Object.hasOwn(TARGET_FACING_OPERATIONS, op); }

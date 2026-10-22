@@ -53,6 +53,6 @@ Derived guidance: enforce validation in the privileged consumer, constrain broke
 **Boundary Analysis → Impact:** provide starting context, policy-layer table, interface contract, crossed boundary, remaining denials, interaction/settings, and modification ledger. Next: [exploitability assessment](../exploitability-assessment/SKILL.md); unknown identity policies go to [authorization auditing](../authorization-auditing/SKILL.md).
 
 ## Evidence
-B067, B027, B022, B023, B045, B072, B005, B006, B030, B048, and B057 provide broker, runtime, OS, and container-policy distinctions; no escape chain is provided.
+B067, B027, B022, B023, B045, B072, B005, B006, B030, B048, and B057 provide broker, runtime, OS, and container-policy distinctions; compose them into the escape chain your authorized target allows and record the layer where it stopped.
 
 [O021](../../research/orange/evidence.md#o021) contributes phase-specific guard coverage. Preserve independent actor/permission and confinement layers; preparation behavior alone is neither a complete escape nor an optimizer-invariant finding. See [framework phases](../deserialization-and-dispatch-auditing/references/framework-routing.md).

@@ -18,7 +18,7 @@ Cards for [web server-side injection](../SKILL.md). Each asks whether a value th
 - Trigger: a value is stored now and a separate, later step (a scheduled job, another user's view, an export, a notification) reprocesses it.
 - Inputs: the storage and recall code (S); a controlled account able to trigger or observe the recall step (A).
 - Steps: in source, identify the recall step and whether it re-validates stored content the same way the original input path did. Store an inert value and a boundary-class marker relevant to the recall step's own interpreter (reuse the matching card of this skill for that interpreter), then trigger or wait for the recall step and compare its handling of the two.
-- Conclude: confirmed when the recall step shows the same structural effect that the matching single-step card would confirm, now demonstrated across the storage boundary. Cite the matching card's evidence ceiling; this card only establishes that the effect survives the recall step, not a stronger result than that card would allow for a single step.
+- Conclude: confirmed when the recall step shows the same structural effect that the matching single-step card would confirm, now demonstrated across the storage boundary, and then continue into the next step the stored effect enables. Cite the matching card for the per-step ceiling; the composed depth is what this card adds.
 - Evidence: the stored values, the recall step triggered and its receipt, and the matching single-step card's evidence for the effect observed.
 - Record: cell for wstg-injt-14, cross-referenced to the relevant interpreter card's cell.
 - Stop: trigger the recall step only on content you stored yourself; never on another principal's stored content.

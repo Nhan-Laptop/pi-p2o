@@ -4,6 +4,7 @@ import { constants } from 'node:fs';
 import { mkdir, open } from 'node:fs/promises';
 import { join } from 'node:path';
 import { appendRecord, readLedger, type AssessmentRecord } from './records.js';
+import { isDemonstrated, isOpenGap } from './claims.js';
 import { cleanText, type ProcessResult } from './process.js';
 import { redactArtifactPrefix, type CaptureReceipt } from './artifacts.js';
 
@@ -19,6 +20,8 @@ export interface Candidate {
   evidenceRefs: string[]; negativeControls: string[]; limitations: string;
   policyBasis?: typeof POLICY_BASES[number]; expectedPolicy?: string;
   control?: string; requirement?: string; supersedes?: string; independentEvidenceRef?: string; resolves?: string[];
+  /** The capability this primitive hands to a later step, and the capability it needs from an earlier one or the environment; the pair is how a chain link is named without a shared gadget vocabulary. */
+  provides?: string; requires?: string;
 }
 /** Best-effort defensive redaction; exports contain only the bounded receipts, never tickets or process env. */
 export function redact(value: string): string {
@@ -66,7 +69,7 @@ export class EvidenceStore {
       for (const id of references) if (!evidence.some(r => r.id === id)) throw new Error(`Unknown same-run evidence ID: ${id}`);
       for (const id of input.resolves ?? []) {
         if (!records.some(r => r.id === id && r.kind === 'open')) throw new Error(`Unknown open-item ID: ${id}`);
-        if (input.closure === 'open_proof_gap') throw new Error('Resolving an open item needs a closed candidate with evidence');
+        if (isOpenGap(input)) throw new Error('Resolving an open item needs a closed candidate with evidence');
       }
       const previous = records.filter(r => r.kind === 'candidate' && r.data?.candidate === input.candidate).at(-1);
       if (previous && (previous.surface !== input.surface || previous.risk !== input.risk)) throw Error('Candidate revision cannot change surface/risk; use a new candidate ID');
@@ -76,8 +79,8 @@ export class EvidenceStore {
         const independent = evidence.find(r => r.id === input.independentEvidenceRef);
         if (!independent?.workerId || independent.by === by || !references.includes(input.independentEvidenceRef)) throw new Error('Independent validation needs a cited receipt from a different worker');
         const latest = records.filter(r => r.kind === 'candidate' && r.by === independent.by && r.data?.candidate === input.candidate).at(-1);
-        const reproduced = latest && latest.data?.surface === input.surface && latest.data?.risk === input.risk && latest.data?.execution === 'tested'
-          && latest.data?.proof !== 'static_trace' && latest.data?.closure === 'confirmed' && latest.refs?.includes(independent.id!);
+        const reproduced = latest && latest.data?.surface === input.surface && latest.data?.risk === input.risk && isDemonstrated(latest.data ?? {})
+          && latest.data?.proof !== 'static_trace' && latest.refs?.includes(independent.id!);
         if (!reproduced) throw new Error('Independent claim needs the other worker\'s matching runtime candidate and cited receipt');
       }
       const record: AssessmentRecord = { id: randomUUID(), version: 2, runId: this.runId, at: new Date().toISOString(), by,
@@ -136,6 +139,8 @@ function validateCandidate(c: Candidate): void {
   if (c.closure === 'ruled_out' && !c.control?.trim()) throw new Error('ruled_out needs the specific control and its location');
   if (c.resolves && (!Array.isArray(c.resolves) || c.resolves.length > 10 || c.resolves.some(id => typeof id !== 'string'))) throw new Error('Invalid resolved open-item list');
   if (c.requirement !== undefined && (typeof c.requirement !== 'string' || !c.requirement.trim() || c.requirement.length > 1000)) throw new Error('Invalid blocked prerequisite reason');
+  if (c.provides !== undefined && (typeof c.provides !== 'string' || c.provides.trim().length < 5 || c.provides.length > 300)) throw new Error('Invalid capability this primitive provides (5..300 characters)');
+  if (c.requires !== undefined && (typeof c.requires !== 'string' || c.requires.trim().length < 5 || c.requires.length > 300)) throw new Error('Invalid capability this primitive requires (5..300 characters)');
   if (c.execution === 'blocked' && (c.requirement?.trim().length ?? 0) < 10) throw new Error('blocked needs a descriptive prerequisite reason (10..1000 characters)');
   if (c.execution === 'blocked' && c.closure !== 'open_proof_gap') throw new Error('Blocked execution cannot establish closure');
   if (c.proof !== 'static_trace' && c.execution !== 'tested') throw new Error('Runtime proof requires tested execution');

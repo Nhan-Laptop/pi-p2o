@@ -15,7 +15,7 @@ Record effective peer privileges, activation paths and legitimate operations ind
 - Unknown handler/admission path → continue reachability mapping or [source auditing](../../source-code-auditing/SKILL.md); include a benign accepted operation and denied control.
 - Unknown metadata transformation or selected context → [data-flow analysis](../../data-flow-analysis/SKILL.md) or [parser comparison](../../parser-differential-auditing/SKILL.md), with origins, representations and the two consumer interpretations.
 - Unknown represented identity or action permission → [authorization auditing](../../authorization-auditing/SKILL.md), separating peer authentication, client binding and object/action policy.
-- A later capability still needs another prerequisite → [impact assessment](../../exploitability-assessment/SKILL.md); describe the missing edge, not a trigger order or executable chain.
+- A later capability still needs another prerequisite → [impact assessment](../../exploitability-assessment/SKILL.md); state the missing edge, and where the target is authorized for it, the trigger order and the chain that closes it.
 
 ## Tool → purpose → when
 

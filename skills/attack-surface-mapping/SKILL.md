@@ -62,6 +62,6 @@ Merged interface-registration, driver-access, socket-API, deployment-default, an
 
 Distributed peer authority and consumer-specific gate coverage additionally draw on [O008](../../research/orange/evidence.md#o008). A corrected entrance gate is not proof that the same trust assumption is repaired elsewhere.
 
-[O012](../../research/orange/evidence.md#o012) contributes separate intermediary/client trust roles and revision-dependent architectural responsibilities. The owned guide records their generic contract, not a source request chain.
+[O012](../../research/orange/evidence.md#o012) contributes separate intermediary/client trust roles and revision-dependent architectural responsibilities. The owned guide records their generic contract rather than importing a source request chain; build your own against the authorized target.
 
 [O048](../../research/orange/evidence.md#o048) adds metadata-led auxiliary inventory, not a metadata-acquisition or test-page exploitation sequence; [On demand upstream text](references/wstg-source.md).
