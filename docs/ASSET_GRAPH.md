@@ -22,7 +22,7 @@ Chi tiết bản cũ: `git show 656843d:docs/ASSET_GRAPH.md`.
 ```text
 p2o_graph {action:"record", requestId, batch:{assets:[{ref, asset:{kind,key,anchors?}}], facts:[{assetId:"@ref", kind, statement, confidence}]}}
 p2o_graph {action:"view", id:<asset>, cursor?, limit?, asOfSequence?}   # page | export tương tự
-p2o_graph {action:"chain", limit?}   # owner-only: join provides/requires → ready | unmet | frontier
+p2o_graph {action:"chain", limit?}   # owner-only: join typed gained/needs → ready | unmet | frontier
 /p2o graph   |   /p2o graph page <cursor>   |   /p2o graph <asset-id> [cursor]   |   /p2o graph export [limit] [cursor]
 ```
 
@@ -30,9 +30,10 @@ p2o_graph {action:"chain", limit?}   # owner-only: join provides/requires → re
 assets/facts/anchors, còn hypothesis/relation do owner; reporting **chỉ đọc**. Đọc dùng SQL có index, pin `asOfSequence`
 khi duyệt nhiều trang. Export hiện JSON/Mermaid thật trong màn hình read-only, không ghi file ra host (`/p2o export` là bundle riêng).
 
-`chain` là join chỉ-đọc trên chính các claim đã ghi: `ready` (claim đang mở mà mọi token trong `requires` đã có claim
-confirmed+tested cung cấp), `unmet` (còn token chưa ai cấp), `frontier` (đường ngắn nhất từ một primitive tới claim đó).
-Không lưu gì mới, không thêm quyền, và worker không đọc được — đó là điều phối của lead.
+`chain` là join chỉ-đọc trên chính các claim đã ghi: `ready` (claim đang mở mà mọi capability trong `needs` đã có claim
+confirmed+tested khai `gained`), `unmet` (còn capability chưa ai cấp; gap nêu đúng `kind` còn thiếu), `legacy` (claim còn chữ
+tự do `provides`/`requires` từ trước P14: vẫn đọc được, báo ra, nhưng không khớp gì), `frontier` (đường ngắn nhất từ một
+primitive tới claim đó). Không lưu gì mới, không thêm quyền, và worker không đọc được — đó là điều phối của lead.
 
 | Giới hạn | Giá trị |
 |---|---|

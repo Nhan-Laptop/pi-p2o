@@ -2,10 +2,14 @@ import { CONTROL, exact, plain, sha256Hex, TEXT_CONTROL } from './validate.js';
 import { redact } from './evidence.js';
 import { redactArtifactPrefix } from './artifacts.js';
 import { graphCanonical } from './state/graph.js';
+import { capabilityList, type Capability } from './capabilities.js';
+import { isEnvironmentId } from './lab.js';
 
 /** Structured exact-work identity. It is coordination knowledge, never scope authorization. */
 export const WORK_IDENTITY_VERSION = 1;
-export const WORK_PURPOSES = ['mapping','discovery','investigation','refinement','validation','retest','reporting'] as const;
+// planning_update.md P14.4: exploitation and chaining are purposes, so taking a primitive to impact is a job with a duty
+// instead of root-cause work with none.
+export const WORK_PURPOSES = ['mapping','discovery','investigation','refinement','validation','retest','exploitation','chaining','reporting'] as const;
 export const WORK_DISPOSITIONS = ['new','refine','validate','retest','retry'] as const;
 export const OUTPUT_KINDS = ['inventory','policy','investigation','validation','retest','report','custom'] as const;
 export const OUTPUT_FIELDS = ['assets','facts','evidence','controls','gaps','candidates','artifacts','coverage'] as const;
@@ -16,6 +20,19 @@ export interface WorkSpec {
   methodFamily:string; purpose:typeof WORK_PURPOSES[number];
   /** P9 lineage: same-run candidate record IDs this task builds on. It is what a plan is allowed to stand on, not dedup identity. */
   claimRefs?:string[];
+  /**
+   * P14.10: the typed capability this step consumes, so a task copied from the chain frontier says what it stands on instead of describing it
+   * in prose. It is the `needs` the chain view joined, not a permission: a task is dispatched by the lead exactly as before.
+   */
+  needs?:Capability[];
+  /** P14.10: the recorded environment (P14.3) the step must run in, when the chain it came from demonstrated one. */
+  environmentRef?:string;
+  /**
+   * P14.11: the command allowance this task asks for. Omitted means the purpose's class decides (200 for research work, 400 for
+   * exploitation and chaining, which spend commands on build/run/adjust cycles). It is an allowance, not identity: the same work with a
+   * larger allowance is the same work, so it stays out of the fingerprint.
+   */
+  budget?:{commands?:number};
 }
 export interface WorkDecision {
   disposition:typeof WORK_DISPOSITIONS[number]; reason:string; relatedTaskId?:string; changeReason?:string;
@@ -51,7 +68,7 @@ function revision(value:unknown,label:string):number|undefined{
 }
 
 export function validateWorkSpec(value:unknown):WorkSpec{
-  const row=plain(value,'work identity');exact(row,['assetRefs','questionKey','policyKey','actorContext','tenantContext','methodFamily','purpose','claimRefs'],'Work identity');
+  const row=plain(value,'work identity');exact(row,['assetRefs','questionKey','policyKey','actorContext','tenantContext','methodFamily','purpose','claimRefs','needs','environmentRef','budget'],'Work identity');
   if(!Array.isArray(row.assetRefs)||row.assetRefs.length<1||row.assetRefs.length>10)throw Error('Work identity needs 1..10 asset references');
   const seen=new Set<string>(),assetRefs=row.assetRefs.map((raw,index)=>{
     const item=plain(raw,`work asset ${index}`);exact(item,['id','revision','variant'],`Work asset ${index}`);
@@ -64,8 +81,16 @@ export function validateWorkSpec(value:unknown):WorkSpec{
   let claimRefs:string[]|undefined;
   if(row.claimRefs!==undefined){if(!Array.isArray(row.claimRefs)||row.claimRefs.length<1||row.claimRefs.length>10)throw Error('Work lineage needs 1..10 parent claim references');
     const seenClaim=new Set<string>();claimRefs=row.claimRefs.map((raw,index)=>{const id=identity(raw,`parent claim ${index}`,80);if(seenClaim.has(id))throw Error('Duplicate work parent claim reference');seenClaim.add(id);return id;}).sort();}
+  const needs=row.needs===undefined?undefined:capabilityList(row.needs,'work needs');
+  if(row.environmentRef!==undefined&&!isEnvironmentId(row.environmentRef))throw Error('Invalid work environment reference');
+  let budget:{commands?:number}|undefined;
+  if(row.budget!==undefined){
+    const claimed=plain(row.budget,'work budget');exact(claimed,['commands'],'Work budget');
+    if(claimed.commands!==undefined){if(!Number.isSafeInteger(claimed.commands)||Number(claimed.commands)<1||Number(claimed.commands)>5000)throw Error('Invalid work command budget');budget={commands:Number(claimed.commands)};}
+    else budget={};
+  }
   return {assetRefs,questionKey:identity(row.questionKey,'question key'),methodFamily:identity(row.methodFamily,'method family',80),purpose:purpose as WorkSpec['purpose'],
-    ...(claimRefs?{claimRefs}:{}),
+    ...(claimRefs?{claimRefs}:{}),...(needs?{needs}:{}),...(row.environmentRef!==undefined?{environmentRef:row.environmentRef as string}:{}),...(budget?{budget}:{}),
     ...(row.policyKey!==undefined?{policyKey:identity(row.policyKey,'policy key')}:{ }),...(row.actorContext!==undefined?{actorContext:identity(row.actorContext,'actor context')}:{ }),
     ...(row.tenantContext!==undefined?{tenantContext:identity(row.tenantContext,'tenant context')}:{ })};
 }
@@ -113,6 +138,8 @@ export function workIdentity(targetRevision:string,task:WorkTaskLike):WorkIdenti
   const overlapKey=sha256Hex(graphCanonical(overlap));
   if(prerequisites.some(p=>p.revision===undefined)||work.assetRefs.some(a=>a.revision===undefined)||work.actorContext===undefined||work.tenantContext===undefined)
     return {confidence:'unknown',targetRevision,overlapKey,reason:'Asset/prerequisite revisions or explicit actor/tenant context are missing'};
-  const full={...overlap,assets:work.assetRefs,actorContext:work.actorContext,tenantContext:work.tenantContext,methodFamily:work.methodFamily,purpose:work.purpose,prerequisites};
+  // P14.10: what the task needed and where it ran are part of the work identity, not decoration on the task text.
+  const full={...overlap,assets:work.assetRefs,actorContext:work.actorContext,tenantContext:work.tenantContext,methodFamily:work.methodFamily,purpose:work.purpose,
+    needs:work.needs??null,environmentRef:work.environmentRef??null,prerequisites};
   return {confidence:'exact',targetRevision,overlapKey,fingerprint:sha256Hex(graphCanonical(full))};
 }

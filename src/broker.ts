@@ -22,6 +22,19 @@ export type { GraphBatch } from './state/graph.js';
 export const MAX_LINE_BYTES = 64 * 1024;
 export const WORKER_BUDGET_RESERVE = 0.9;
 export const DEFAULT_WORKER_COMMAND_BUDGET = 200;
+/**
+ * P14.11: exploitation is not recon with a different label. Building, running, crashing and adjusting a payload spends commands in a loop, and
+ * a run cut off mid-iteration loses the payload that would have made it replayable. The class is decided by purpose, not by the model or by a
+ * claim about difficulty, and `work.budget.commands` still overrides it in either direction.
+ */
+export const EXPLOITATION_COMMAND_BUDGET = 400;
+export function commandBudgetFor(purpose: string | undefined, declared?: { commands?: number }): number {
+  if (declared?.commands !== undefined) return declared.commands;
+  return purpose === 'exploitation' || purpose === 'chaining' ? EXPLOITATION_COMMAND_BUDGET : DEFAULT_WORKER_COMMAND_BUDGET;
+}
+/** The purposes whose allowance ends mid-iteration, so a report has to say what survived. */
+export const WRAP_UP_PURPOSES = ['exploitation', 'chaining'] as const;
+export const budgetWrapUpRequired = (purpose: string | undefined): boolean => (WRAP_UP_PURPOSES as readonly string[]).includes(purpose ?? '');
 
 /** How a worker's assignment ended, as it states it in p2o_report; the host never infers success from it. */
 export const WORKER_OUTCOMES = ['completed', 'partial-budget', 'prerequisite-blocked', 'provider-error', 'cancelled', 'expired', 'unknown'] as const;
@@ -34,6 +47,11 @@ export interface WorkerReport {
   confidence: 'high' | 'medium' | 'low';
   blocked?: string;
   outcome?: typeof WORKER_OUTCOMES[number];
+  /**
+   * P14.11: when an exploitation or chaining run ends on its allowance, this names the stored payload and the environment it ran in, or says why
+   * the run has neither. It is required only in that case, and it is what makes "the budget ran out" different from "I stopped working".
+   */
+  wrapUp?: string;
 }
 
 export interface WorkerRegistration {
@@ -45,6 +63,8 @@ export interface WorkerRegistration {
   parentWorkerId: string | null;
   token: string;
   commandBudget: number;
+  /** P14.11: the purpose the allowance and the wrap-up duty follow; absent on a legacy registration, which is treated as research work. */
+  purpose?: string;
   used: number;
   startedAt: number;
   stopped: boolean;
@@ -91,7 +111,17 @@ export interface BrokerDeps {
   reportCommitted?(worker: WorkerRegistration): Promise<void>;
   requestSubtask?(input: DelegateInput, parent: WorkerRegistration): Promise<unknown>;
   knowledge?(op: string, request: Record<string, unknown>, worker: WorkerRegistration): Promise<unknown>;
+  /** planning_update.md P14.8: citation lookup over the committed corpus, plus a curated source fetch. Never a target op. */
+  research?(request: Record<string, unknown>, worker: WorkerRegistration): Promise<unknown>;
   candidate?(input: unknown, worker: WorkerRegistration): Promise<unknown>;
+  /** planning_update.md P14.2/P14.3: run-scoped payload artifacts and environment recipes (`op` names the action). */
+  lab?(op: 'payload_write' | 'payload_read', request: Record<string, unknown>, worker: WorkerRegistration): Promise<unknown>;
+  /**
+   * P14.3: the environment is orchestrated by the host, but every command it runs is an ordinary admitted target command in the
+   * caller's own sandbox. `control.admit`/`control.exec` are the broker's own admission, so a recipe cannot dodge the budget.
+   */
+  environment?(op: 'create' | 'verify' | 'destroy', request: Record<string, unknown>, worker: WorkerRegistration,
+    control: { exec: (command: string) => Promise<{ code: number }> }): Promise<unknown>;
   onProblem?(message: string): void;
 }
 
@@ -135,6 +165,7 @@ export function normalizeReport(raw: unknown): WorkerReport {
     openItems: stringList(input.openItems, 20, 1000),
     confidence,
     blocked: text(input.blocked, 1000),
+    wrapUp: text(input.wrapUp, 300),
     ...(typeof input.outcome === 'string' && (WORKER_OUTCOMES as readonly string[]).includes(input.outcome) ? { outcome: input.outcome as WorkerReport['outcome'] } : {}),
   };
 }
@@ -273,11 +304,43 @@ export class Broker {
         if (!this.deps.knowledge) return { ok: false, error: 'Knowledge service unavailable' };
         return attempt(() => this.deps.knowledge!(op, request, registration));
       }
+      case 'research': {
+        // planning_update.md P14.8: research is not a target operation, so it charges neither the command budget nor a
+        // separate counter; it is still recorded in the ledger, which is what keeps a citation auditable afterwards.
+        if (!this.deps.research) return { ok: false, error: 'Research service unavailable' };
+        return attempt(() => this.deps.research!(request ?? {}, registration));
+      }
       case 'candidate': {
         const refused = this.charge(workerId, COORDINATION_CALLS, 'Coordination budget exhausted');
         if (refused) return refused;
         if (!this.deps.candidate) return { ok: false, error: 'Candidate service unavailable' };
         return attempt(() => this.deps.candidate!(request?.candidate, registration));
+      }
+      case 'payload_write': case 'payload_read': {
+        // Reading a payload is a bounded read of run state and writing one is coordination; neither is a target operation.
+        const refused = this.charge(workerId, op === 'payload_read' ? READ_CALLS : COORDINATION_CALLS,
+          op === 'payload_read' ? 'Knowledge read budget exhausted; 40 coordination calls reserved for notes/candidates (200 total)' : 'Coordination budget exhausted');
+        if (refused) return refused;
+        if (!this.deps.lab) return { ok: false, error: 'Payload service unavailable' };
+        graphObject(submitted, op === 'payload_read' ? ['id'] : ['kind', 'name', 'body'], 'Payload request');
+        return attempt(() => this.deps.lab!(op as 'payload_write' | 'payload_read', submitted, registration));
+      }
+      case 'environment': {
+        const refused = this.charge(workerId, COORDINATION_CALLS, 'Coordination budget exhausted');
+        if (refused) return refused;
+        if (!this.deps.environment) return { ok: false, error: 'Environment service unavailable' };
+        const action = text(request?.action, 16);
+        if (!action || !['create', 'verify', 'destroy'].includes(action)) return { ok: false, error: 'Environment action must be create, verify or destroy' };
+        graphObject(submitted, action === 'create' ? ['action', 'name', 'recipe'] : ['action', 'id'], 'Environment request');
+        // Each recipe command spends one admitted target command in the caller's sandbox; nothing here bypasses the budget.
+        const control = { exec: async (command: string) => {
+          const spent = await this.prepareCommand(registration);
+          if (spent) throw Error(String(spent.error));
+          const result = await this.whileRunning(workerId, async signal => ({ ...(await this.deps.exec(command, 0, `/work/${workerId}`, signal)) }));
+          if (typeof (result as { code?: unknown }).code !== 'number') throw Error('Environment command did not run');
+          return { code: (result as { code: number }).code };
+        } };
+        return attempt(() => this.deps.environment!(action as 'create' | 'verify' | 'destroy', submitted, registration, control));
       }
       case 'context_read': {
         if(registration.effectiveRuntime?.verified!==true)return {ok:false,error:'Verified runtime required before context delivery'};
@@ -429,6 +492,10 @@ export class Broker {
       case 'report': {
         if (registration.reported) return { ok: false, error: 'this worker already reported' };
         const report = normalizeReport(request?.report);
+        // P14.11: an exploitation run that ended on its allowance must say what survived — the payload, or why there is none. Unknown is not
+        // accepted as an answer, because "the budget ran out" with no artifact is the exact outcome this phase exists to prevent.
+        if (budgetWrapUpRequired(registration.purpose) && !report.wrapUp && (report.outcome === 'partial-budget' || registration.used >= registration.commandBudget))
+          return { ok: false, error: 'this exploitation run ended on its allowance: send wrapUp naming the stored payload and environment, or why the run has neither, then report again' };
         if (this.reporting.has(workerId)) return {ok:false,error:'Report persistence already in progress'};
         this.reporting.add(workerId);
         try {
@@ -470,7 +537,11 @@ export class Broker {
   /** Workers stop at the reserve so the owner keeps budget for reconciliation and the final report. */
   private spend(registration: WorkerRegistration): Record<string, unknown> | undefined {
     const reserve = Math.floor(this.limits.totalCommandBudget * WORKER_BUDGET_RESERVE);
-    const reason = registration.used >= registration.commandBudget ? 'worker command budget exhausted; report what you have with p2o_report'
+    const exhausted = registration.used >= registration.commandBudget;
+    // The refusal is the last thing the worker reads before it writes its report, so the wrap-up duty is repeated here, not only in the brief.
+    const reason = exhausted ? (budgetWrapUpRequired(registration.purpose)
+      ? 'worker command budget exhausted; store the payload (p2o_lab payload), verify its environment, record the last observation, then report with p2o_report and a wrapUp naming the payload or why none exists'
+      : 'worker command budget exhausted; report what you have with p2o_report')
       : this.totalUsed >= reserve ? 'assessment worker budget reserve reached; report what you have with p2o_report' : undefined;
     if (reason) { this.deps.onBudget?.(registration.workerId,reason); return {ok:false,error:reason}; }
     registration.used += 1; this.totalUsed += 1;

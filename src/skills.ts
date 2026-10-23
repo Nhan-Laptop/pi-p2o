@@ -2,18 +2,25 @@ import { constants } from 'node:fs';
 import { open, type FileHandle } from 'node:fs/promises';
 import { dirname, posix, resolve } from 'node:path';
 import { sha256Hex } from './validate.js';
-export interface Workflow { id: string; description: string; prerequisites?: string[] }
+export interface Workflow { id: string; description: string; prerequisites?: string[]; steps?: string[]; observe?: string[]; wall?: string[] }
 
-export interface CatalogSkill { name: string; description: string; kind: 'technique' | 'playbook' | 'overlay'; document: string; workflows: Workflow[] }
+export interface CatalogSkill { name: string; description: string; kind: 'technique' | 'playbook' | 'overlay' | 'procedure'; document: string; workflows: Workflow[] }
 export interface CatalogDocument { id: string; path: string; section?: string }
 export interface SkillCatalog { version: 1; skills: CatalogSkill[]; documents: CatalogDocument[] }
 export interface DocumentPage { id: string; sha256: string; text: string; offset: number; nextOffset?: number; totalCharacters: number }
 const MAX_FILE = 2 * 1024 * 1024;
 const PAGE_BYTES = 8 * 1024;
 const SLUG = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+/** A materializable document is a shipped harness, not a reference: the package path decides, not the caller. */
+const SCRIPT_DOCUMENT = /^skills\/[a-z0-9]+(?:-[a-z0-9]+)*\/scripts\/[A-Za-z0-9][A-Za-z0-9._-]{0,80}\.py$/;
+const SCRIPT_BYTES = 64 * 1024;
+/** A workflow's recipe fields are additive: absent is valid, present is bounded and descriptive like prerequisites. */
+const phrases = (value: unknown, low: number, high: number) => value === undefined
+  || (Array.isArray(value) && value.length >= low && value.length <= high
+    && value.every(p => typeof p === 'string' && p.trim().length >= 10 && p.length <= 500));
 
 /** Open each component relative to its held Linux directory FD. Never resolve a checked path twice. */
-export async function readPackageFile(root: string, relative: string): Promise<string> {
+export async function readPackageBuffer(root: string, relative: string): Promise<Buffer> {
   const parts = relative.split('/');
   if (!parts.length || parts.some(p => !p || p === '.' || p === '..' || !/^[A-Za-z0-9_.-]+$/.test(p))) throw new Error('Invalid package document');
   const handles: FileHandle[] = [];
@@ -32,9 +39,13 @@ export async function readPackageFile(root: string, relative: string): Promise<s
     let used = 0;
     while (used < buffer.length) { const { bytesRead } = await file.read(buffer, used, buffer.length - used, null); if (!bytesRead) break; used += bytesRead; }
     if (used > MAX_FILE) throw new Error('Package document grew past its limit');
-    return buffer.subarray(0, used).toString('utf8');
+    return buffer.subarray(0, used);
   } catch { throw new Error('Package document unavailable: missing, unsafe or exceeds size limit'); }
   finally { await Promise.allSettled(handles.reverse().map(h => h.close())); }
+}
+
+export async function readPackageFile(root: string, relative: string): Promise<string> {
+  return (await readPackageBuffer(root, relative)).toString('utf8');
 }
 
 /** Registry contains package-relative paths; public callers receive IDs only. Recreated per assessment. */
@@ -48,15 +59,16 @@ export class SkillLibrary {
     if (value.version !== 1 || !Array.isArray(value.skills) || !Array.isArray(value.documents) || value.skills.length > 100 || value.documents.length > 600) throw new Error('Invalid skill catalog');
     const ids = new Set<string>();
     for (const d of value.documents) {
-      if (!/^[a-z0-9][a-z0-9:.-]{0,159}$/.test(d.id) || ids.has(d.id) || typeof d.path !== 'string' || !/\.(md|yaml|yml|json)$/.test(d.path)) throw new Error('Invalid catalog document');
+      if (!/^[a-z0-9][a-z0-9:.-]{0,159}$/.test(d.id) || ids.has(d.id) || typeof d.path !== 'string' || !/\.(md|yaml|yml|json|py)$/.test(d.path) || d.path.split('/').some(part => part === '..' || part === '.')) throw new Error('Invalid catalog document');
       ids.add(d.id);
     }
     const names = new Set<string>();
     for (const s of value.skills) {
-      if (!SLUG.test(s.name) || names.has(s.name) || !ids.has(s.document) || !['technique', 'playbook', 'overlay'].includes(s.kind) || !Array.isArray(s.workflows)) throw new Error('Invalid catalog skill');
+      if (!SLUG.test(s.name) || names.has(s.name) || !ids.has(s.document) || !['technique', 'playbook', 'overlay', 'procedure'].includes(s.kind) || !Array.isArray(s.workflows)) throw new Error('Invalid catalog skill');
       names.add(s.name);
       for (const w of s.workflows) { if (!SLUG.test(w.id) || typeof w.description !== 'string' || w.description.length < 20
-        || Object.keys(w).some(k => !['id', 'description', 'prerequisites'].includes(k))
+        || Object.keys(w).some(k => !['id', 'description', 'prerequisites', 'steps', 'observe', 'wall'].includes(k))
+        || !phrases(w.steps, 2, 12) || !phrases(w.observe, 1, 12) || !phrases(w.wall, 0, 12)
         || (w.prerequisites !== undefined && (!Array.isArray(w.prerequisites) || w.prerequisites.length > 10
           || w.prerequisites.some(p => typeof p !== 'string' || p.trim().length < 10 || p.length > 500)))) throw new Error('Invalid workflow'); }
     }
@@ -68,13 +80,28 @@ export class SkillLibrary {
     if (typeof query !== 'string' || query.length > 80) throw new Error('Invalid catalog query');
     const c = await this.load();
     const words = query.toLowerCase().trim().split(/\s+/).filter(Boolean);
-    const rank = { playbook: 0, overlay: 1, technique: 2 };
+    const rank = { playbook: 0, overlay: 1, procedure: 2, technique: 3 };
     const selected = c.skills.filter(s => words.every(w => `${s.name} ${s.description}`.toLowerCase().includes(w)))
       .sort((a, b) => rank[a.kind] - rank[b.kind] || a.name.localeCompare(b.name));
     const entries = selected.slice(offset, offset + 8).map(s => ({ ...s, documents: c.documents.filter(d => d.id === s.document || d.id.startsWith(`${s.name}:`)).map(d => d.id) }));
     return { entries, sharedDocuments: c.documents.filter(d => d.id.startsWith('shared:')).map(d => d.id), total: selected.length, query,
       ...(offset + entries.length < selected.length ? { nextOffset: offset + entries.length } : {}) };
   }
+  /**
+   * planning_update.md P14.7: the package bytes of one registered skill script, for materialization into a sandbox.
+   * Only `skills/<skill>/scripts/*.py` qualifies — a reference, a SKILL.md or any host path is not a script.
+   */
+  async materialize(id: string): Promise<{ id: string; path: string; bytes: Buffer; sha256: string }> {
+    if (typeof id !== 'string' || !id || id.length > 160) throw new Error('Invalid document request');
+    const catalog = await this.load();
+    const doc = catalog.documents.find(d => d.id === id);
+    if (!doc) throw new Error('Unknown document ID; use p2o_skill_list');
+    if (!SCRIPT_DOCUMENT.test(doc.path)) throw new Error('Only a registered skill script can be materialized; read this document with p2o_skill_read');
+    const bytes = await readPackageBuffer(this.root, doc.path);
+    if (!bytes.length || bytes.length > SCRIPT_BYTES) throw new Error('Registered script is outside the materialization bound');
+    return { id, path: doc.path, bytes, sha256: sha256Hex(bytes) };
+  }
+
   async read(id: string, offset = 0): Promise<DocumentPage> {
     if (typeof id !== 'string' || !Number.isInteger(offset) || offset < 0) throw new Error('Invalid document request');
     const catalog = await this.load();

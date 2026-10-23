@@ -5,6 +5,9 @@ import { join, resolve } from 'node:path';
 import { SkillLibrary, readPackageFile } from '../../src/skills.js';
 import { EvidenceStore, redact, type Candidate } from '../../src/evidence.js';
 import { appendRecord, readRecords, summarizeRecords } from '../../src/records.js';
+import { EnvironmentStore, PayloadStore, normalizeRecipe } from '../../src/lab.js';
+
+const IMAGE = 'p2o-target:fixture';
 
 const ROOT = resolve(import.meta.dirname, '../..');
 describe('approved knowledge', () => {
@@ -79,6 +82,33 @@ describe('evidence contracts and export', () => {
       await expect(store.exportTo(root, {})).rejects.toThrow();
       const malicious = join(root, 'malicious'); await mkdir(malicious); await symlink('/tmp', join(malicious, '.p2o-reports'));
       await expect(store.exportTo(malicious, {})).rejects.toThrow();
+    } finally { await rm(root, { recursive: true, force: true }); }
+  });
+  it('stamps what ran on a claim and refuses an independence claim whose peer ran something else (P14.12)', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'p2o-replay-'));
+    try {
+      const records = join(root, 'records.jsonl'), store = new EvidenceStore('run-replay', records, '/target');
+      const payload = await new PayloadStore(records).put('worker-a', { kind: 'request', name: 'replayed request', body: 'GET /x HTTP/1.1\n\n' });
+      const other = await new PayloadStore(records).put('worker-a', { kind: 'request', name: 'unrelated request', body: 'GET /y HTTP/1.1\n\n' });
+      const environment = await new EnvironmentStore(records).put('worker-a', 'fixture-app', normalizeRecipe({ setup: ['true'] }, IMAGE));
+      const drift = await new EnvironmentStore(records).put('worker-a', 'fixture-other', normalizeRecipe({ setup: ['false'] }, IMAGE));
+      const base: Candidate = { candidate: 'replayed-effect', surface: '/x', risk: 'authorization', closure: 'confirmed', execution: 'tested',
+        proof: 'live_reproduction', evidenceRefs: [], negativeControls: [], policyBasis: 'explicit_contract',
+        expectedPolicy: 'Declared fixture boundary', limitations: 'Fixture only; no live target', payloadRef: payload.id, environmentRef: environment.ref.id };
+      // Two independent productions of the same bytes: the peer stores its own copy, and the sha256 is what makes them the same effect.
+      const peerPayload = await new PayloadStore(records).put('worker-b', { kind: 'request', name: 'replayed request', body: 'GET /x HTTP/1.1\n\n' });
+      expect(peerPayload.sha256).toBe(payload.sha256); expect(peerPayload.id).not.toBe(payload.id);
+      const peerReceipt = await store.receipt('worker-b', 'shell', 'replay', { code: 0, stdout: 'reflected', stderr: '', truncated: false }, new Date().toISOString());
+      const peer = await store.candidate('worker-b', { ...base, candidate: 'peer-replay', evidenceRefs: [peerReceipt], payloadRef: peerPayload.id });
+      expect(peer.data).toMatchObject({ payloadSha256: payload.sha256, environmentFingerprint: environment.ref.fingerprint });
+      const author = await store.candidate('worker-a', { ...base, evidenceRefs: [peerReceipt], independentEvidenceRef: peerReceipt });
+      expect(author.data).toMatchObject({ payloadSha256: payload.sha256, environmentFingerprint: environment.ref.fingerprint });
+      // Fail closed, with the field that differs named: a drifted payload, a drifted recipe, and a claim that names nothing at all.
+      await expect(store.candidate('worker-a', { ...base, supersedes: author.id, payloadRef: other.id, evidenceRefs: [peerReceipt], independentEvidenceRef: peerReceipt })).rejects.toThrow(/Independent replay mismatch/);
+      await expect(store.candidate('worker-a', { ...base, supersedes: author.id, environmentRef: drift.ref.id, evidenceRefs: [peerReceipt], independentEvidenceRef: peerReceipt })).rejects.toThrow(/environment drifted/);
+      await expect(store.candidate('worker-a', { ...base, supersedes: author.id, payloadRef: undefined, evidenceRefs: [peerReceipt], independentEvidenceRef: peerReceipt })).rejects.toThrow(/needs the payload that ran/);
+      // A single-actor run cannot declare itself independent, whatever it stamps.
+      await expect(store.candidate('worker-b', { ...base, candidate: 'peer-replay', supersedes: peer.id, evidenceRefs: [peerReceipt], independentEvidenceRef: peerReceipt })).rejects.toThrow(/different worker/);
     } finally { await rm(root, { recursive: true, force: true }); }
   });
   it('redacts common credentials without treating redaction as a guarantee', () => {

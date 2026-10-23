@@ -16,7 +16,7 @@ import { TaskBoard, type TaskDraft } from '../../src/tasks.js';
  * The gate runs inside `checkDependencies`, so create, revise and the ready-time checks (`reserve`, dispatch) share one rule.
  */
 const runId = 'run-lineage';
-const draft = (assetId: string, purpose: TaskDraft['work'] extends undefined ? never : 'mapping' | 'discovery' | 'investigation' | 'refinement' | 'validation' | 'retest' | 'reporting', extra: Partial<TaskDraft> = {}): TaskDraft => ({
+const draft = (assetId: string, purpose: TaskDraft['work'] extends undefined ? never : 'mapping' | 'discovery' | 'investigation' | 'refinement' | 'exploitation' | 'chaining' | 'validation' | 'retest' | 'reporting', extra: Partial<TaskDraft> = {}): TaskDraft => ({
   id: `task-${randomUUID()}`, question: 'Does the declared fixture boundary hold for the named claim?', surface: '/lineage', risk: 'authorization', role: 'general',
   roleReason: 'Bounded inert source comparison only', expectedTrue: 'Declared actor reaches the consumer', expectedFalse: 'Control actor does not', stopCondition: 'Stop after the bounded observation',
   evidenceIds: [], prerequisites: [], method: { skills: [], reason: 'Controlled offline fixture, not a target assessment' },
@@ -83,5 +83,39 @@ describe('parent-typed lineage gate (P9)', () => {
     const second = claim();
     const created = await board.create({ ...base, work: { ...base.work!, claimRefs: [second, claimId] } });
     expect(created.work!.claimRefs).toEqual([claimId, second].sort());
+  }));
+});
+
+/**
+ * planning_update.md P14.5: exploitation and chaining take a demonstrated primitive further, so the P9 asset-revision exemption
+ * no longer covers them — an exploit step has to name the claim it escalates, and a chain has to name two. A structured draft
+ * without a `work` object stays out of reach (the legacy prose delegate has no field to fill). The claim-plus-demonstrated-
+ * environment alternative is not expressible yet, because a task still cannot name an environment (P14.10).
+ */
+describe('exploitation and chaining lineage (P14.5)', () => {
+  it('refuses an exploitation task whose only parent is an asset revision, and names the field to fill', async () => fixture(async ({ board, assetId, claim }) => {
+    claim();
+    // Same lineage as the accepted investigation below, refused only because the purpose escalates past it.
+    await expect(board.create(draft(assetId, 'exploitation'))).rejects.toThrow(/PURPOSE_NEEDS_LINEAGE: an exploitation task must cite the claim it takes further \(work\.claimRefs\)/);
+    expect(await board.create(draft(assetId, 'investigation'))).toMatchObject({ status: 'proposed' });
+  }));
+
+  it('accepts an exploitation task that cites the claim it takes further', async () => fixture(async ({ board, assetId, claim }) => {
+    const claimId = claim(), { id: _fresh, ...base } = draft(assetId, 'exploitation');
+    const accepted = await board.create({ ...base, work: { ...base.work!, claimRefs: [claimId] } });
+    expect(accepted.work!.claimRefs).toEqual([claimId]);
+  }));
+
+  it('refuses a chaining task with exactly one claim, because one claim is not a chain', async () => fixture(async ({ board, assetId, claim }) => {
+    const claimId = claim(), { id: _fresh, ...base } = draft(assetId, 'chaining');
+    await expect(board.create({ ...base, work: { ...base.work!, claimRefs: [claimId] } })).rejects.toThrow(/PURPOSE_NEEDS_LINEAGE: a chaining task must cite the two claims it composes \(work\.claimRefs\)/);
+    // An asset revision is not a substitute, and neither is a prior task: two claims are what a chain composes.
+    await expect(board.create(draft(assetId, 'chaining'))).rejects.toThrow(/PURPOSE_NEEDS_LINEAGE/);
+  }));
+
+  it('accepts a chaining task that cites two claims', async () => fixture(async ({ board, assetId, claim }) => {
+    const first = claim(), second = claim(), { id: _fresh, ...base } = draft(assetId, 'chaining');
+    const accepted = await board.create({ ...base, work: { ...base.work!, claimRefs: [first, second] } });
+    expect(accepted.work!.claimRefs).toEqual([first, second].sort());
   }));
 });

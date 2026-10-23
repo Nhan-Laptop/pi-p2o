@@ -69,7 +69,7 @@ describe('complete bounded state and report integrity',()=>{
     const a=await store.candidate('validator',candidate(independent));
     const b=await store.candidate('owner',candidate(independent,{supersedes:a.id,independentEvidenceRef:independent}));
     const c=await store.candidate('validator',candidate(independent,{supersedes:b.id,closure:'open_proof_gap',execution:'not_tested',proof:'static_trace'}));
-    await expect(store.candidate('owner',candidate(independent,{supersedes:c.id,independentEvidenceRef:independent}))).rejects.toThrow('matching runtime');
+    await expect(store.candidate('owner',candidate(independent,{supersedes:c.id,independentEvidenceRef:independent}))).rejects.toThrow('own demonstrated claim');
     expect((await readLedger(path)).records.filter(r=>r.kind==='candidate')).toHaveLength(3);
   }));
 });

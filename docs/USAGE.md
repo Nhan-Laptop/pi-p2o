@@ -189,14 +189,15 @@ Trong Herdr, lead có thể spawn worker: mỗi worker là một tiến trình `
 - `p2o_workers` với `waitFor: "all-report"` chờ cục bộ tới khi mọi worker đã report hoặc bị rút. Pane có thể hiện `idle` ngắn trước khi brief được nộp: sống/chết do report quyết định, và `p2o_finish` từ chối tới khi worker report hoặc bị `p2o_workers` (`action: "stop"`) rút.
 - `p2o_delegate` nhận `role` (`recon`, `discovery`, `validation`, `reporting`, `general`), tối đa 3 `skills`, `model`, `thinking`, và tùy chọn `work`/`decision`/`outputContract` (cùng hình dạng `p2o_task create`; không có `work` thì kết quả trả `workMatch:"unknown"`). Skill nêu rõ ghi đè mặc định của role; skill lạ bị từ chối trước khi tạo pane.
 - Task phải nói nó **đứng trên cái gì**: `validation`/`retest` cần `work.claimRefs` (claim cùng run) hoặc `validationOf`/`retestOf`; `investigation`/`refinement` cần claim, asset revision đã pin hoặc task trước; `mapping`/`reporting` miễn. Gate chỉ nổ khi run **đã có** claim — trên target mới, intent validation đầu tiên chính là discovery sinh ra claim đó.
-- Skill chọn theo thứ tự: `skills` yêu cầu → `p2o.roles.<role>.skills` → skill theo purpose của work (`mapping` → attack-surface-mapping, `discovery`/`refinement` → source-code-auditing, `validation` → exploitability-assessment, `retest`/`reporting` → remediation, `investigation` → không thêm gì) → mặc định của role.
+- Skill chọn theo thứ tự: `skills` yêu cầu → `p2o.roles.<role>.skills` → skill theo purpose của work, có xét target kind và `work.needs` → mặc định của role. Purpose quyết định **họ phương pháp**, còn target kind và capability mà bước đó tiêu thụ quyết định **thành viên nào** của họ: `mapping` trên URL → `web-deployment-hygiene`, `discovery` trên URL → `web-route-input-inventory` (directory/hybrid giữ phương pháp source vì vẫn có snapshot); `exploitation`/`chaining` → `exploit-design` cộng ladder theo `work.needs` (`net.egress` → `ssrf-to-internal`, `exec.code` → `binary-exploit-ladder` hoặc `web-injection-to-exec`, `cred.session`/`cred.secret` → `credential-and-pivot`, tối đa 3 và luôn giữ `exploit-design`). `validation` và `reporting` **không** có skill mặc định: validation tái lập claim và bị cấm discovery mới, reporting chỉ tổng hợp và bị cấm viết fix — hai skill cũ (`exploitability-assessment`, `remediation`) dạy đúng việc bị cấm, nên chúng chỉ còn dùng khi operator yêu cầu rõ. Thiếu context (không có kind/needs) thì bảng gốc áp dụng, đúng hành vi trước P15.
 
 | Role | Model mặc định | Skill mặc định |
 |---|---|---|
 | `recon` | `opencode-go/deepseek-v4-flash` | attack-surface-mapping |
 | `discovery` | `opencode-go/deepseek-v4-flash` | source-code-auditing |
-| `validation` | `opencode-go/kimi-k3` | exploitability-assessment |
-| `reporting` | `opencode-go/kimi-k3` | remediation |
+| `exploit` | `opencode-go/kimi-k3` | exploit-design (+ ladder theo `work.needs`) |
+| `validation` | `opencode-go/kimi-k3` | không |
+| `reporting` | `opencode-go/kimi-k3` | không |
 | `general` | model của lead | không |
 
 Thứ tự chọn model: `model` của lần spawn → `p2o.roles.<role>.model` → mặc định gói → model của lead. Giới hạn: 200 lệnh/worker và 90% của 600 mặc định tồn tại qua các identity; lệnh của owner và chi phí provider tách riêng; 100 task/intent chờ, 1.000 registration; cleanup pane thất bại thì chặn admission mới.

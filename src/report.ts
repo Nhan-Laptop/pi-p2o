@@ -2,6 +2,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import { isSatisfiedTask } from './tasks.js';
 import { sha256Hex } from './validate.js';
 import { appendRecords, appendGeneratedRecords, isOpenGap, readLedger, summarizeRecords, type AssessmentRecord, type LedgerIndex } from './records.js';
+import { isReplayable } from './claims.js';
 import type { MutationRequest } from './state/store.js';
 import { normalizeReport, type WorkerReport } from './broker.js';
 import { redact } from './evidence.js';
@@ -88,6 +89,7 @@ export function reportProjection(index: LedgerIndex, context:ReportProjectionCon
   const short = (value:unknown) => typeof value === 'string' ? value.slice(0,250) : undefined;
   const frontier = candidates.map(r => ({id:r.id,candidate:r.data?.candidate,surface:r.surface,risk:r.risk,closure:r.data?.closure,execution:r.data?.execution,proof:r.data?.proof,
     policyBasis:r.data?.policyBasis,controls:r.data?.negativeControls,evidenceRefs:r.refs,control:short(r.data?.control),limitations:short(r.data?.limitations),blocked:short(r.data?.requirement),
+    payloadRef:typeof r.data?.payloadRef === 'string' ? r.data.payloadRef : undefined,replayable:isReplayable(r.data ?? {}),
     independentCurrent:typeof r.data?.independentEvidenceRef === 'string' ? !stale.has(r.id!) : undefined}));
   const latestReports = new Map<string,typeof recovered.reports[number]>();
   for (const report of recovered.reports) latestReports.set(report.workerId ?? report.id,report);

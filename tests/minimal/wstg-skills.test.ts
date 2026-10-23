@@ -1,4 +1,4 @@
-import { readFile } from 'node:fs/promises';
+import { readFile, readdir } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { SkillLibrary } from '../../src/skills.js';
@@ -100,5 +100,58 @@ describe('every in-scope WSTG test has one owner and its card says so', () => {
     expect(inScope).toHaveLength(104);
     for (const test of inScope) expect(test.owner, test.id).toMatch(/^[a-z0-9]+(?:-[a-z0-9]+)*$/);
     for (const name of NEW_PLAYBOOKS) expect(inScope.some(test => test.owner === name), `${name} owns at least one test`).toBe(true);
+  });
+});
+
+/**
+ * planning_update.md P14.6: the exploit skills ship procedure and code rather than advice, so each one is a bounded first
+ * page with four fixed sections, its workflows carry the recipe that replaces a bare prerequisite list, and the scripts
+ * that are the point of a skill take their target from the caller and refuse to guess one.
+ */
+const EXPLOIT_SKILLS = ['exploit-design', 'web-injection-to-exec', 'ssrf-to-internal', 'binary-exploit-ladder', 'credential-and-pivot'];
+const SKILL_BYTES = 8 * 1024, SCRIPT_BYTES = 16 * 1024;
+const SECTIONS = ['## Entry conditions', '## Gates', '## Completion definition', '## The wall'];
+
+describe('the exploit skills ship procedure and code', () => {
+  it('registers all five, inside the byte ceiling, with the four sections in order', async () => {
+    const { skills } = await inspect();
+    for (const name of EXPLOIT_SKILLS) {
+      expect(skills.get(name), `${name} is registered`).toBeDefined();
+      const bytes = await readFile(join(root, 'skills', name, 'SKILL.md'));
+      expect(bytes.byteLength, `${name}/SKILL.md is ${bytes.byteLength} bytes`).toBeLessThanOrEqual(SKILL_BYTES);
+      const text = bytes.toString('utf8'), positions = SECTIONS.map(section => text.indexOf(section));
+      for (const [index, position] of positions.entries()) expect(position, `${name}/SKILL.md has ${SECTIONS[index]}`).toBeGreaterThan(0);
+      expect(positions, `${name}/SKILL.md writes the sections in ladder order`).toEqual([...positions].sort((a, b) => a - b));
+    }
+  });
+
+  it('gives every workflow a recipe: two steps, one observable and the wall that ends it', async () => {
+    const { skills } = await inspect();
+    for (const name of EXPLOIT_SKILLS) {
+      for (const workflow of skills.get(name)!.workflows) {
+        const label = `${name}/${workflow.id}`;
+        expect(workflow.steps?.length ?? 0, `${label} names at least two steps`).toBeGreaterThanOrEqual(2);
+        expect(workflow.observe?.length ?? 0, `${label} names at least one observable`).toBeGreaterThanOrEqual(1);
+        expect(workflow.wall?.length ?? 0, `${label} names the wall`).toBeGreaterThanOrEqual(1);
+      }
+    }
+  });
+
+  it('links references it registers, and ships scripts that take an explicit target and refuse without one', async () => {
+    const { skills, documents } = await inspect();
+    for (const name of EXPLOIT_SKILLS) {
+      const text = await readFile(join(root, 'skills', name, 'SKILL.md'), 'utf8');
+      const linked = [...text.matchAll(/references\/([a-z0-9]+(?:-[a-z0-9]+)*)\.md/g)].map(match => match[1]);
+      for (const reference of linked) expect(documents.has(`${name}:${reference}`), `${name}:${reference} is registered`).toBe(true);
+      const scripts = await readdir(join(root, 'skills', name, 'scripts')).catch(() => [] as string[]);
+      for (const script of scripts) {
+        const source = await readFile(join(root, 'skills', name, 'scripts', script), 'utf8');
+        expect(Buffer.byteLength(source), `${name}/scripts/${script} is small`).toBeLessThanOrEqual(SCRIPT_BYTES);
+        expect(source, `${name}/scripts/${script} requires the caller's target`).toMatch(/--(target|binary|payload)/);
+        expect(source, `${name}/scripts/${script} refuses rather than guessing`).toContain('refused');
+        expect(source, `${name}/scripts/${script} is a runnable program`).toContain('if __name__');
+      }
+      expect(skills.get(name)!.document, `${name} documents itself`).toBe(name);
+    }
   });
 });

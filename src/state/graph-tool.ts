@@ -28,7 +28,7 @@ const batch = object({
 export const GRAPH_ACTIONS = ['record','view','page','export','chain'] as const;
 /** P13e: exhaustive per action; `page` and `export` share a shape but are named separately. */
 export const GRAPH_ACTION_PARAMETERS: Readonly<Record<typeof GRAPH_ACTIONS[number], readonly string[]>> = {
-  record: ['action','batch','requestId'], view: ['action','id','cursor','limit','asOfSequence'], chain: ['action','limit'],
+  record: ['action','batch','requestId'], view: ['action','id','cursor','limit','asOfSequence'], chain: ['action','limit','plan','assetRefs','requestId'],
   page: ['action','cursor','limit','asOfSequence'], export: ['action','cursor','limit','asOfSequence'],
 };
 /** Keep a root object: Pi's legacy Anthropic adapter reads only root properties/required.
@@ -39,4 +39,7 @@ export const graphParameters = object({
   requestId: Type.Optional(Type.String({ minLength: 1, maxLength: 80, pattern: '^[a-zA-Z0-9][a-zA-Z0-9._:-]*$' })),
   cursor: Type.Optional(Type.Integer({ minimum: 0 })), limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 500 })),
   asOfSequence: Type.Optional(Type.Integer({ minimum: 0 })),
+  /** P14.10: `chain` can also hand back the next task draft and record the chain as todos; it never dispatches. */
+  plan: Type.Optional(Type.Boolean()),
+  assetRefs: Type.Optional(Type.Array(Type.Object({ id: Type.String({ pattern: '^asset-[a-f0-9]{24}$' }), revision: Type.Optional(Type.Integer({ minimum: 1 })), variant: Type.Optional(Type.String({ maxLength: 120 })) }, { additionalProperties: false }), { minItems: 1, maxItems: 10, description: 'Assets the drafted task stands on; copied from the graph, never inferred from a surface string' })),
 }, { additionalProperties: false });

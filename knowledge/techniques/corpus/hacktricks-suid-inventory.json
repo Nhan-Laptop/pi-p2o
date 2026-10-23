@@ -1,0 +1,23 @@
+{
+  "id": "hacktricks-suid-inventory",
+  "title": "Auditing SUID and sudo rules before assuming privilege escalation",
+  "kind": "privilege-escalation",
+  "prerequisites": [
+    "command execution as an unprivileged user on the target host",
+    "permission to read the rule files"
+  ],
+  "tags": [
+    "hacktricks",
+    "linux",
+    "privesc",
+    "suid",
+    "sudo"
+  ],
+  "excerpt": "Escalation starts with an inventory: which binaries carry the SUID bit, which sudo rules exist, which capabilities are granted, and which scheduled jobs run as another user. Each entry is a hypothesis about a delegation point; the effect is only established when the delegated process is observed running as the other principal.",
+  "source": {
+    "name": "HackTricks",
+    "url": "https://book.hacktricks.wiki/",
+    "license": "CC-BY-SA-4.0",
+    "retrievedAt": "2026-10-23"
+  }
+}

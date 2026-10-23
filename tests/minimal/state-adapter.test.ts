@@ -98,7 +98,7 @@ describe('same canonical task/evidence/report services, no duplicate JSONL autho
     const accepted = await evidence.candidate('owner', { ...candidate, supersedes: prior.id, independentEvidenceRef: ref });
     await evidence.candidate('validator', { ...candidate, supersedes: accepted.id, closure: 'open_proof_gap' });
     const latest = (await readLedger(path)).records.filter(r => r.kind === 'candidate').at(-1)!;
-    await expect(evidence.candidate('owner', { ...candidate, supersedes: latest.id, independentEvidenceRef: ref })).rejects.toThrow('matching runtime');
+    await expect(evidence.candidate('owner', { ...candidate, supersedes: latest.id, independentEvidenceRef: ref })).rejects.toThrow('own demonstrated claim');
     await expect(evidence.candidate('owner', { ...candidate, candidate: 'another', evidenceRefs: ['foreign'] })).rejects.toThrow('same-run');
   }));
 });

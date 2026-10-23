@@ -330,14 +330,19 @@ class SkillProfileTests(unittest.TestCase):
         path.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n")
 
     def write_catalog(self, root, transform=None, kinds=None):
-        """Build a runtime catalog ({version, skills, documents}) from the current skills."""
+        """Build a runtime catalog ({version, skills, documents}) from the current skills.
+
+        A skill's kind comes from its staging sidecar when it has one, and otherwise from the checked-in catalog: the
+        fixture must not silently reclassify a procedure skill as a technique and then demand the technique sections.
+        """
+        published = {entry["name"]: entry["kind"] for entry in json.loads((ROOT / "skills/catalog.json").read_text()).get("skills", []) if isinstance(entry, dict)}
         entries = []
         for path in sorted((root / "skills").glob("*/SKILL.md")):
             name = path.parent.name
             fields, _ = checker.frontmatter(path.read_text())
             sidecar_path = root / f"skills/{name}/skill.json"
             sidecar = json.loads(sidecar_path.read_text()) if sidecar_path.exists() else None
-            kind = (kinds or {}).get(name, (sidecar or {}).get("kind", "technique"))
+            kind = (kinds or {}).get(name) or (sidecar or {}).get("kind") or published.get(name, "technique")
             workflows = (sidecar or {}).get("workflows") or [
                 {"id": "source-review", "description": "Review the supplied source without claiming runtime proof", "prerequisites": ["A supplied read-only source snapshot"]},
                 {"id": "offline-reproduction", "description": "Bounded offline probe that verifies required runtimes first", "prerequisites": ["Bounded offline execution with required Python dependencies checked"]},

@@ -1,0 +1,23 @@
+{
+  "id": "gtfobins-argument-passthrough",
+  "title": "Shell escape through a tool that passes an argument to a child process",
+  "kind": "shell-escape",
+  "prerequisites": [
+    "a delegated command rule, SUID binary or scheduled job that runs the tool for you",
+    "the tool accepts an argument the parent does not sanitise"
+  ],
+  "tags": [
+    "gtfobins",
+    "linux",
+    "privilege",
+    "shell-escape",
+    "sudo"
+  ],
+  "excerpt": "Many Unix utilities delegate work to a child process or accept a command-shaped argument. When such a utility runs under a rule that grants more privilege than your own shell, the delegated child inherits that privilege. The technique is to find the delegation point, not to guess a payload: check the tool's manual for an option that names a program or an interpreter, then confirm which user the child ran as.",
+  "source": {
+    "name": "GTFOBins",
+    "url": "https://gtfobins.github.io/",
+    "license": "GPL-3.0",
+    "retrievedAt": "2026-10-23"
+  }
+}

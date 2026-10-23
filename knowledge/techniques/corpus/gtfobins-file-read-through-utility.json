@@ -1,0 +1,22 @@
+{
+  "id": "gtfobins-file-read-through-utility",
+  "title": "Reading a file through a utility that echoes its input",
+  "kind": "file-access",
+  "prerequisites": [
+    "a way to run the utility with another user's privilege",
+    "read permission for the target file under that user"
+  ],
+  "tags": [
+    "gtfobins",
+    "linux",
+    "file-read",
+    "privilege"
+  ],
+  "excerpt": "Utilities that print or page file content can act as a read primitive when they run with more privilege than your shell. The useful question is which utility is already permitted by the rule and whether it can be pointed at an arbitrary path, since a permitted utility that takes a path is the read primitive itself.",
+  "source": {
+    "name": "GTFOBins",
+    "url": "https://gtfobins.github.io/",
+    "license": "GPL-3.0",
+    "retrievedAt": "2026-10-23"
+  }
+}

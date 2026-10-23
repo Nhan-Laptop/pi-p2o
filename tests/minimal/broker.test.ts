@@ -23,6 +23,14 @@ async function fixture(patch: { budget?: number; total?: number; stdout?: string
     ledger: async limit => (await readRecords(records, limit)),
     delegate: async (input, parent) => { calls.push(`delegate ${parent.workerId} ${input.role}`); return { workerId: 'p2o-general-bbbbbb', name: 'p2o-general-bbbbbb', paneId: 'w1T:p10', role: input.role ?? 'general', depth: parent.depth + 1 }; },
     report: async (workerId, report) => { if (patch.reportFails) throw Error('inert report storage failure'); calls.push(`report ${workerId} ${report.confidence}`); },
+    // P14.3: the host orchestrates a recipe, but every command it runs is admitted here, in the caller's own sandbox.
+    environment: async (op, request, registration, control) => {
+      calls.push(`env ${op} ${registration.workerId}`);
+      if (op === 'create') return { id: 'env-11111111-1111-4111-8111-111111111111', name: String(request.name), fingerprint: 'a'.repeat(64), revision: 1, created: true };
+      const steps: number[] = [];
+      for (const command of ['prepare', 'launch', 'seed']) steps.push((await control.exec(command)).code);
+      return { id: String(request.id), fingerprint: 'a'.repeat(64), revision: 1, steps };
+    },
     onBudget: (id,reason) => {calls.push(`budget ${id} ${reason}`);},
     onProblem: problem => { calls.push(`problem ${problem}`); },
   }, { totalCommandBudget: patch.total ?? 100 });
@@ -42,6 +50,36 @@ describe('sandbox broker', () => {
       await client.request('report', { report: { summary: 'bounded result', blocked: 'output truncated', confidence: 'low' } });
       expect(f.broker.registration('p2o-recon-aaaaaa')?.reported?.blocked).toBe('output truncated');
     } finally { client.close(); await f.close(); }
+  });
+
+  it('makes a budget-ended exploitation report name what survived, and asks research work for nothing extra', async () => {
+    // P14.11: the allowance follows the purpose, and a run that ended on it must say whether a payload survived.
+    const exploitation = await fixture({ registration: { purpose: 'exploitation', commandBudget: 2, used: 2 } });
+    try {
+      const client = new BrokerClient(exploitation.socket, REGISTRATION({ purpose: 'exploitation', commandBudget: 2, used: 2 }).token, { requestMs: 2000 });
+      try {
+        // A refused command is where the worker last reads the duty, so the refusal names the wrap-up too.
+        await expect(client.request('exec', { command: 'cat /etc/hostname' })).rejects.toThrow(/budget exhausted/);
+        expect(exploitation.calls.some(call => call.startsWith('budget ') && call.includes('wrapUp'))).toBe(true);
+        await expect(client.request('report', { report: { summary: 'ran out mid-iteration', confidence: 'low', outcome: 'partial-budget' } }))
+          .rejects.toThrow(/send wrapUp naming the stored payload/);
+        expect(exploitation.broker.registration('p2o-recon-aaaaaa')?.reported).toBeUndefined();
+        const reported = await client.request('report', { report: { summary: 'ran out mid-iteration', confidence: 'low', outcome: 'partial-budget', wrapUp: 'payload pay-11111111-1111-4111-8111-111111111111 stored; no environment verified' } });
+        expect(reported.ok).toBe(true);
+        expect(exploitation.broker.registration('p2o-recon-aaaaaa')?.reported?.wrapUp).toMatch(/^payload pay-/);
+      } finally { client.close(); }
+    } finally { await exploitation.close(); }
+
+    // A research run that reports without a wrap-up is unchanged: the requirement exists only where the allowance ends mid-iteration.
+    const research = await fixture({ registration: { purpose: 'validation', commandBudget: 2, used: 2 } });
+    try {
+      const client = new BrokerClient(research.socket, REGISTRATION({ purpose: 'validation', commandBudget: 2, used: 2 }).token, { requestMs: 2000 });
+      try {
+        const reported = await client.request('report', { report: { summary: 'one bounded check', confidence: 'medium', outcome: 'partial-budget' } });
+        expect(reported.ok).toBe(true);
+        expect(research.broker.registration('p2o-recon-aaaaaa')?.reported?.wrapUp).toBeUndefined();
+      } finally { client.close(); }
+    } finally { await research.close(); }
   });
 
   it('publishes an owner-private socket and runs exec/http/note/report/delegate for an authenticated worker', async () => {
@@ -223,5 +261,28 @@ describe('sandbox broker', () => {
     await expect(stat(f.socket)).rejects.toThrow();
     await rm(f.control, { recursive: true, force: true });
     expect(await readFile('/dev/null', 'utf8').catch(() => '')).toBeDefined();
+  });
+});
+
+describe('environment recipes over the broker (P14.3)', () => {
+  const SECOND = REGISTRATION({ workerId: 'p2o-discovery-bbbbbb', name: 'p2o-discovery-bbbbbb', role: 'discovery', token: 'd'.repeat(32), commandBudget: 3 });
+  it('runs the recipe as admitted target commands in each caller’s own sandbox, so two workers see one fingerprint', async () => {
+    const f = await fixture();
+    const first = new BrokerClient(f.socket, 'c'.repeat(32), { requestMs: 2000 });
+    const second = new BrokerClient(f.socket, SECOND.token, { requestMs: 2000 });
+    f.broker.register(SECOND);
+    try {
+      const created = await first.request('environment', { action: 'create', name: 'fixture-app', recipe: { setup: ['make'] } });
+      expect(created.value).toMatchObject({ fingerprint: 'a'.repeat(64), created: true });
+      let verified: any;
+      try { verified = await second.request('environment', { action: 'verify', id: created.value.id }); } catch (error) { console.log('DBG-VERIFY-ERR', (error as Error).message, JSON.stringify(f.calls.slice(-6)), 'used', f.broker.registration(SECOND.workerId)?.used, f.broker.registration(SECOND.workerId)?.commandBudget); throw error; }
+      // The second worker reproduces in the same fingerprint, in its own scratch directory.
+      expect(verified.value).toMatchObject({ fingerprint: created.value.fingerprint, revision: 1 });
+      expect(f.calls.filter(call => call.startsWith('exec /work/p2o-discovery-bbbbbb 0'))).toHaveLength(3);
+      expect(f.broker.registration(SECOND.workerId)?.used).toBe(3);
+      // The environment cannot dodge the command budget: with the allowance spent, the next verify is refused before any command runs.
+      await expect(second.request('environment', { action: 'verify', id: created.value.id })).rejects.toThrow(/budget exhausted/);
+      expect(f.calls.filter(call => call.startsWith('exec /work/p2o-discovery-bbbbbb 0'))).toHaveLength(3);
+    } finally { first.close(); second.close(); await f.close(); }
   });
 });

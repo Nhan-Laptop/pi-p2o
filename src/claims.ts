@@ -1,5 +1,7 @@
 import { CANDIDATE_CLOSURES, CANDIDATE_EXECUTIONS } from './evidence.js';
 import { COVERAGE_EXECUTION } from './coverage-types.js';
+import { readCapabilities, type Capability } from './capabilities.js';
+import { isEnvironmentId, isPayloadId } from './lab.js';
 
 /**
  * planning_update.md P13(b): "was this actually demonstrated?" had no owner.
@@ -20,8 +22,15 @@ export type ClaimClosure = typeof CANDIDATE_CLOSURES[number];
 export interface ClaimFields {
   closure?: unknown;
   execution?: unknown;
+  /** Typed capability pair (P14.1). */
+  gained?: unknown;
+  needs?: unknown;
+  /** Pre-P14 text pair: still read, surfaced as legacy entries, never matched. */
   provides?: unknown;
   requires?: unknown;
+  /** Run-scoped payload artifact (P14.2) and environment recipe (P14.3). */
+  payloadRef?: unknown;
+  environmentRef?: unknown;
   control?: unknown;
   policyBasis?: unknown;
 }
@@ -44,14 +53,28 @@ export function isConfirmedClaim(claim: ClaimFields): boolean { return claim.clo
 /** An item still owed an answer: an open gap, or a candidate whose execution was blocked. */
 export function isOpenClaim(claim: ClaimFields): boolean { return isOpenGap(claim) || claim.execution === 'blocked'; }
 
-/** Only a demonstrated claim may hand a capability to a later step; an unproven one must not look consumable. */
-export function demonstratedProvides(claim: ClaimFields): string | undefined {
-  return isDemonstrated(claim) && typeof claim.provides === 'string' && claim.provides.trim() ? claim.provides : undefined;
+/**
+ * The capability pair a claim declares, in the one vocabulary. A pre-P14 record's `provides`/`requires` text becomes a legacy
+ * entry: it stays readable and is reported, but it matches nothing (see `capabilityMatches`).
+ */
+export function claimCapabilities(claim: ClaimFields): { gained: Capability[]; needs: Capability[] } {
+  return { gained: readCapabilities(claim.gained ?? claim.provides, 'gained'), needs: readCapabilities(claim.needs ?? claim.requires, 'needs') };
 }
 
-export function claimRequires(claim: ClaimFields): string | undefined {
-  return typeof claim.requires === 'string' && claim.requires ? claim.requires : undefined;
+/** Only a demonstrated claim may hand a capability to a later step; an unproven one must not look consumable. Legacy entries included. */
+export function demonstratedGained(claim: ClaimFields): Capability[] {
+  return isDemonstrated(claim) ? claimCapabilities(claim).gained : [];
 }
+
+export function claimNeeds(claim: ClaimFields): Capability[] { return claimCapabilities(claim).needs; }
+
+/**
+ * planning_update.md P14.2/P14.3: whether another worker can replay this claim's demonstrated effect, derived and never stored.
+ * The conjunction is the point: a payload without the environment it was demonstrated in is not reproducible, and an
+ * environment without the payload does not say what to run. A report uses it to say "not replayable" instead of implying a
+ * second worker can reproduce what only the author's receipt shows.
+ */
+export function isReplayable(claim: ClaimFields): boolean { return isPayloadId(claim.payloadRef) && isEnvironmentId(claim.environmentRef); }
 
 /** Coverage-cell domain: the cell's own `execution` reached `tested`. Never call this on a claim, or `isDemonstrated` on a cell. */
 export function isTestedCell(cell: { execution?: unknown }): boolean { return cell.execution === ('tested' satisfies CellExecution); }

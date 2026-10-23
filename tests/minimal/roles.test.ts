@@ -14,7 +14,8 @@ describe('role table', () => {
     expect(general).toMatchObject({ role: 'general', model: 'deepseek/deepseek-flash', skills: [] });
     const validation = resolveRole({ role: 'validation', settings, parentModel: 'parent/model' });
     expect(validation.model).toBe('opencode-go/kimi-k3');
-    expect(validation.skills).toEqual(['exploitability-assessment']);
+    // P15 (W5): reproduction is not impact assessment, so the validation role ships no method skill; the duty line carries the contract.
+    expect(validation.skills).toEqual([]);
   });
 
   it('applies per-spawn overrides over settings over defaults, like pi-herdr', () => {
@@ -39,6 +40,38 @@ describe('role table', () => {
       expect(settings.roles.validation).toEqual({ skills: ['ok'] });
       expect(resolveRole({ role: 'validation', settings, model: 'x/y' }).thinking).toBeUndefined();
     } finally { await rm(root, { recursive: true, force: true }); }
+  });
+});
+
+// planning_update.md P15 (W3/W4): the target kind and the capabilities a step consumes decide which method a purpose hands out, so a
+// URL run is not given a source-tree method and an exploit step climbs the ladder its own primitive names.
+describe('purpose → skill defaults follow the target and the consumed capability (P15)', () => {
+  const settings = parseSettings(undefined);
+  it('gives a URL run the web playbooks, keeps the source methods where a source tree exists, and keeps the base table without a kind', () => {
+    expect(resolveRole({ role: 'recon', settings, context: { kind: 'url' } }).skills).toEqual(['web-deployment-hygiene']);
+    expect(resolveRole({ role: 'discovery', settings, context: { kind: 'url' } }).skills).toEqual(['web-route-input-inventory']);
+    expect(resolveRole({ role: 'recon', settings, context: { kind: 'directory' } }).skills).toEqual(['attack-surface-mapping']);
+    expect(resolveRole({ role: 'recon', settings, context: { kind: 'hybrid' } }).skills).toEqual(['attack-surface-mapping']);
+    expect(resolveRole({ role: 'discovery', settings, context: { kind: 'hybrid' } }).skills).toEqual(['source-code-auditing']);
+    // No kind means no guess: a caller that cannot supply context keeps the pre-P15 defaults.
+    expect(resolveRole({ role: 'recon', settings }).skills).toEqual(['attack-surface-mapping']);
+    expect(resolveRole({ role: 'discovery', settings }).skills).toEqual(['source-code-auditing']);
+  });
+
+  it('derives the exploitation ladder from work.needs and never drops the general procedure', () => {
+    const exploit = (needs: string[], kind?: 'directory' | 'url' | 'hybrid') => resolveRole({ role: 'exploit', settings, context: { kind, needs } }).skills;
+    expect(exploit([])).toEqual(['exploit-design']);
+    expect(exploit(['net.egress'])).toEqual(['exploit-design', 'ssrf-to-internal']);
+    expect(exploit(['exec.code'], 'directory')).toEqual(['exploit-design', 'binary-exploit-ladder']);
+    expect(exploit(['exec.code'], 'url')).toEqual(['exploit-design', 'web-injection-to-exec']);
+    expect(exploit(['cred.secret'])).toEqual(['exploit-design', 'credential-and-pivot']);
+    // Three ladders plus the procedure exceed the assignment cap, so the cap keeps the procedure and the first ladders.
+    expect(exploit(['net.egress', 'exec.code', 'cred.session'])).toHaveLength(MAX_SKILLS);
+    expect(exploit(['net.egress', 'exec.code', 'cred.session'])[0]).toBe('exploit-design');
+    // An unknown capability kind selects no ladder instead of guessing one.
+    expect(exploit(['not.a.kind'])).toEqual(['exploit-design']);
+    // An explicit request still wins over every derivation.
+    expect(resolveRole({ role: 'exploit', settings, context: { needs: ['net.egress'] }, skills: ['fuzzing'] }).skills).toEqual(['fuzzing']);
   });
 });
 
@@ -69,6 +102,17 @@ describe('purpose → skill defaults (P7)', () => {
     expect(resolveRole({ role: 'general', settings, purpose: 'investigation' }).skills).toEqual([]);
     // Omitting the purpose derives it from the role, so the two call sites cannot disagree with the worker's duty line.
     expect(resolveRole({ role: 'discovery', settings }).skills).toEqual(['source-code-auditing']);
+  });
+
+  it('accepts the exploit role, resolves a model for it and grants no scope (P14.4, P14.6)', () => {
+    const resolved = resolveRole({ role: 'exploit', settings, parentModel: 'parent/model' });
+    expect(resolved).toMatchObject({ role: 'exploit', model: 'opencode-go/kimi-k3', skills: ['exploit-design'] });
+    // A role selects a model and a starting skill set; the ticket still fixes the target, so nothing here may widen it.
+    expect(Object.keys(resolved).sort()).toEqual(['model', 'role', 'skills', 'thinking']);
+    expect(JSON.stringify(resolved)).not.toMatch(/target|origin|scope/i);
+    // P14.6 ships the exploit skill, so both exploit purposes now start from it instead of from nothing.
+    for (const purpose of ['exploitation', 'chaining'] as const) expect(PURPOSE_SKILLS[purpose]).toEqual(['exploit-design']);
+    expect(resolveRole({ role: 'exploit', settings, purpose: 'chaining' }).skills).toEqual(['exploit-design']);
   });
 
   it('never overrides an explicit request or the operator role setting, and keeps the model axis on the role', () => {

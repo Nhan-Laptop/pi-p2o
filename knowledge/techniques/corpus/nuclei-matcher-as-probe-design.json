@@ -1,0 +1,22 @@
+{
+  "id": "nuclei-matcher-as-probe-design",
+  "title": "Using a detection template as a probe design reference",
+  "kind": "probe-design",
+  "prerequisites": [
+    "a template you have read, not merely run",
+    "an authorised target and a bounded request budget"
+  ],
+  "tags": [
+    "nuclei",
+    "detection",
+    "probe-design",
+    "verification"
+  ],
+  "excerpt": "A community template encodes what a detector believes proves a condition: the request shape, the matcher, and the negative case. Read the matcher before using it, because a template that matches a reflected string proves reflection rather than the condition it names. The template is a hypothesis generator; the probe you run must still carry its own control.",
+  "source": {
+    "name": "nuclei-templates",
+    "url": "https://github.com/projectdiscovery/nuclei-templates",
+    "license": "MIT",
+    "retrievedAt": "2026-10-23"
+  }
+}

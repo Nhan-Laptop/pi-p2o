@@ -137,3 +137,83 @@ finally:
         try: os.close(fd)
         except OSError: pass
 `;
+
+/** A materialized script is bounded like any other harness: 64 KiB is far more than a shipped skill's `scripts/` entry. */
+export const SCRATCH_WRITE_MAX_BYTES = 64 * 1024;
+export const SCRATCH_WRITE_PROTOCOL_BYTES = 4096;
+export interface ScratchWrite { path: string; root: string; bytes: number; sha256: string; mode: number }
+/**
+ * Validate the writer's own report before the host believes it wrote anything. The container hashes what it re-read
+ * from disk, so a truncated or replaced file is a refusal rather than a success with the caller's hash.
+ */
+export function parseScratchWrite(input: Buffer, expected: { path: string; root: string; sha256: string; bytes: number }): ScratchWrite {
+  if (!input.length || input.length > SCRATCH_WRITE_PROTOCOL_BYTES) throw Error('Scratch write protocol missing/oversized; nothing is claimed to be materialized');
+  const value = JSON.parse(input.toString('utf8')) as ScratchWrite & { ok?: boolean; error?: string };
+  if (value?.ok === false) throw Error(`Scratch write denied (${typeof value.error === 'string' && /^[A-Z_]{1,40}$/.test(value.error) ? value.error : 'INVALID_ERROR'}); nothing was materialized`);
+  if (value?.ok !== true || value.path !== expected.path || value.root !== expected.root || value.bytes !== expected.bytes
+    || !/^[a-f0-9]{64}$/.test(String(value.sha256)) || !Number.isSafeInteger(value.mode)) throw Error('Scratch write protocol identity/byte/hash mismatch; nothing is claimed to be materialized');
+  if (value.sha256 !== expected.sha256) throw Error('Materialized bytes do not hash-match the package; refusing the artifact');
+  scratchPath(value.path); scratchRoot(value.root);
+  return { path: value.path, root: value.root, bytes: value.bytes, sha256: value.sha256, mode: value.mode };
+}
+
+/** Fixed isolated Python stdlib writer. Args are JSON data; file bytes never become executable code.
+ * Pins every directory component, replaces an existing entry by unlink (never through a symlink), creates the final
+ * file O_EXCL|NOFOLLOW at a fixed mode, then re-reads the bytes from disk and reports their hash so the host can
+ * refuse a mismatch instead of trusting the write.
+ */
+export const SCRATCH_WRITER = String.raw`
+import base64, hashlib, json, os, stat, sys
+MAX = 65536
+def frame(value):
+    sys.stdout.write(json.dumps(value, separators=(",", ":")) + "\n")
+    sys.stdout.flush()
+def denied(code):
+    frame({"ok": False, "error": code})
+    raise SystemExit(78)
+try:
+    q = json.loads(sys.argv[1])
+    root, path, encoded, mode = q["root"], q["path"], q["base64"], q["mode"]
+    if not isinstance(mode, int) or isinstance(mode, bool) or mode < 256 or mode > 448: denied("INVALID_MODE")
+    parts = path.split("/")
+    if (not isinstance(path, str) or not path or len(path.encode("utf8")) > 2048 or len(parts) > 32
+            or any(p in ("", ".", "..") or len(p.encode("utf8")) > 255 for p in parts)
+            or path.startswith("/") or "\\" in path or any(ord(c) < 32 or ord(c) == 127 for c in path)): denied("INVALID_PATH")
+    if not isinstance(root, str) or not root.startswith("/") or "\\" in root or any(ord(c) < 32 for c in root): denied("INVALID_ROOT")
+    data = base64.b64decode(encoded.encode("ascii"), validate=True)
+    if not data or len(data) > MAX: denied("INVALID_BOUND")
+    dflags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC
+    current = os.open("/", dflags)
+    for p in root.split("/")[1:]:
+        if not p or p in (".", ".."): denied("INVALID_ROOT")
+        current = os.open(p, dflags, dir_fd=current)
+    for p in parts[:-1]:
+        try:
+            current = os.open(p, dflags, dir_fd=current)
+        except FileNotFoundError:
+            os.mkdir(p, 0o700, dir_fd=current)
+            current = os.open(p, dflags, dir_fd=current)
+    try:
+        os.unlink(parts[-1], dir_fd=current)
+    except FileNotFoundError:
+        pass
+    fd = os.open(parts[-1], os.O_RDWR | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW | os.O_CLOEXEC, mode, dir_fd=current)
+    try:
+        written = 0
+        while written < len(data):
+            written += os.write(fd, data[written:])
+        os.fsync(fd)
+        os.lseek(fd, 0, os.SEEK_SET)
+        stored = bytearray()
+        while True:
+            chunk = os.read(fd, 65536)
+            if not chunk: break
+            stored.extend(chunk)
+        info = os.fstat(fd)
+    finally:
+        os.close(fd)
+    if not stat.S_ISREG(info.st_mode) or bytes(stored) != data: denied("CONTENT_MISMATCH")
+    frame({"ok": True, "path": path, "root": root, "bytes": len(data), "sha256": hashlib.sha256(bytes(stored)).hexdigest(), "mode": mode})
+except (OSError, ValueError, TypeError, KeyError, IndexError, UnicodeError):
+    denied("WRITE_OR_PATH_REJECTED")
+`;

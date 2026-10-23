@@ -74,7 +74,9 @@ describe('prompt and tool guidance cannot drift apart', () => {
   it('keeps the guidance short, versioned and free of authority claims', () => {
     const tools = registry();
     expect(POLICY_VERSION).toBeGreaterThanOrEqual(1);
-    expect(guidance(tools, loadouts['delegated Planner'])).toBeLessThanOrEqual(1200); expect(guidance(tools, loadouts['solo owner'])).toBeLessThanOrEqual(1200);
+    // P15 (R7): the payload/environment order-of-work advice moved out of the p2o_lab declaration into its guideline, so both owner
+    // loadouts carry 180 more bytes of guidance. The ceiling rises on purpose; the worker ceilings do not move.
+    expect(guidance(tools, loadouts['delegated Planner'])).toBeLessThanOrEqual(1400); expect(guidance(tools, loadouts['solo owner'])).toBeLessThanOrEqual(1400);
     expect(guidance(tools, loadouts.worker)).toBeLessThanOrEqual(800); expect(guidance(tools, loadouts['reporting worker'])).toBeLessThanOrEqual(800);
     for (const line of Object.values(TOOL_GUIDELINES).flat()) { expect(line.length).toBeLessThanOrEqual(260); expect(line).not.toMatch(/\b(?:you are authorized|ignore|bypass|widen scope)\b/i); }
     expect(TOOL_GUIDELINES.p2o_delegate.join(' ')).toContain('without work the identity is unknown');
@@ -99,7 +101,9 @@ describe('the worker-control tools are offered only when workers exist', () => {
     for (const name of DELEGATION_TOOLS) { expect(ownerTools(true), name).toContain(name); expect(ownerTools(false), name).not.toContain(name); expect(workerTools('discovery'), name).not.toContain(name); }
     for (const name of TARGET_TOOLS) { expect(ownerTools(false), name).toContain(name); expect(ownerTools(true), name).not.toContain(name); }
     expect(ownerTools(false)).toContain('p2o_loop'); // engine and frontier status stay available to a solo owner
-    expect(ownerTools(false)).toHaveLength(19); expect(ownerTools(true)).toHaveLength(17);
+    // 2026-10-22 (planning_update.md P14.2): p2o_lab belongs to both executing loadouts, so both counts moved by one.
+    // 2026-10-23 (planning_update.md P14.8): p2o_research is offered to every loadout, so both counts moved by one again.
+    expect(ownerTools(false)).toHaveLength(21); expect(ownerTools(true)).toHaveLength(19);
   });
 });
 

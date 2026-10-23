@@ -98,7 +98,7 @@ describe('worker role', () => {
     worker.flags['p2o-worker'] = join(await h.runDir(), `ticket-${workerId}.json`);
     const freshContext = createContext({ cwd: h.root });
     await worker.events.get('session_start')![0]({}, freshContext.ctx);
-    expect(worker.active).toEqual(['p2o_skill_list', 'p2o_skill_read', 'p2o_candidate', 'p2o_shell', 'p2o_net', 'p2o_http', 'p2o_capture', 'p2o_note', 'p2o_surface', 'p2o_ledger', 'p2o_state', 'p2o_graph', 'p2o_artifact', 'p2o_request_subtask', 'p2o_report']);
+    expect(worker.active).toEqual(['p2o_skill_list', 'p2o_skill_read', 'p2o_research', 'p2o_candidate', 'p2o_lab', 'p2o_shell', 'p2o_net', 'p2o_http', 'p2o_capture', 'p2o_note', 'p2o_surface', 'p2o_ledger', 'p2o_state', 'p2o_graph', 'p2o_artifact', 'p2o_request_subtask', 'p2o_report']);
     expect(freshContext.notices.join('\n')).not.toContain('rejected');
 
     // Host tools are blocked; sandbox tools run in the owner's container with the worker's own scratch.

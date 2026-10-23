@@ -37,12 +37,20 @@ RECIPE_SECTIONS = (
     "Purpose", "Prerequisites", "Input", "Invocation", "Exit Codes", "Output", "Error Recovery",
     "Manual Validation", "Provenance", "Handoffs",
 )
-SKILL_KINDS = frozenset({"technique", "playbook", "overlay"})
+SKILL_KINDS = frozenset({"technique", "playbook", "overlay", "procedure"})
+# planning_update.md P14.6: an exploit skill ships a procedure — the conditions it may start under, the gates it climbs,
+# what finishes it, and the wall that ends it — plus the scripts that are the point. It is deliberately not surveyed
+# research (no evidence anchors, no provenance record): its authority is the plan and the tooling, not a source library.
+PROCEDURE_SECTIONS = ("Entry conditions", "Gates", "Completion definition", "The wall")
 METADATA_FIELDS = frozenset({"schema_version", "kind", "name", "references", "workflows", "workflow_prerequisites", "provenance_refs", "recipes"})
 CATALOG_FIELDS = frozenset({"version", "skills", "documents"})
 CATALOG_SKILL_FIELDS = frozenset({"name", "description", "kind", "document", "workflows"})
 CATALOG_DOCUMENT_FIELDS = frozenset({"id", "path", "section"})
-WORKFLOW_FIELDS = frozenset({"id", "description", "prerequisites"})
+WORKFLOW_FIELDS = frozenset({"id", "description", "prerequisites", "steps", "observe", "wall"})
+# A workflow may carry the recipe that turns its prerequisite list into procedure: ordered steps, the surfaces that
+# count as an observation, and the conditions that end the attempt. They are additive, so the workflows written before
+# the recipe shape stay valid; when present they are held to the same length and description bounds as prerequisites.
+RECIPE_FIELDS = (("steps", 2, 12), ("observe", 1, 12), ("wall", 0, 12))
 DOCUMENT_ID = re.compile(r"[a-z0-9][a-z0-9:.-]{0,159}")
 PROVENANCE_FIELDS = (
     "project", "distribution", "revision", "revision_basis", "snapshot_retrieved_at", "reviewed_at",
@@ -143,6 +151,13 @@ def validate_workflows(label: str, workflows, errors: list[str]) -> None:
         if (not isinstance(values, list) or len(values) > 10
                 or any(not isinstance(value, str) or len(value.strip()) < 10 or len(value) > 500 for value in values)):
             errors.append(f"{label}: invalid descriptive prerequisites for {identifier}")
+        for key, low, high in RECIPE_FIELDS:
+            recipe = workflow.get(key)
+            if recipe is None:
+                continue
+            if (not isinstance(recipe, list) or not low <= len(recipe) <= high
+                    or any(not isinstance(value, str) or len(value.strip()) < 10 or len(value) > 500 for value in recipe)):
+                errors.append(f"{label}: invalid {key} recipe for {identifier}")
 
 
 def metadata_list(metadata: dict, key: str) -> list:
@@ -153,7 +168,12 @@ def metadata_list(metadata: dict, key: str) -> list:
 def workflow_requirements(workflows) -> dict:
     """Normalize workflow ids to their requirement tuples so catalog drift is detectable."""
     return {
-        workflow.get("id"): tuple(sorted(workflow.get("prerequisites", [])))
+        workflow.get("id"): (
+            tuple(sorted(workflow.get("prerequisites", []))),
+            tuple(workflow.get("steps", [])),
+            tuple(workflow.get("observe", [])),
+            tuple(workflow.get("wall", [])),
+        )
         for workflow in workflows if isinstance(workflow, dict)
     }
 
@@ -221,7 +241,7 @@ def validate_runtime_document(root: Path, label: str, document: dict, errors: li
     if not isinstance(identifier, str) or not DOCUMENT_ID.fullmatch(identifier):
         errors.append(f"{label}: invalid document id")
         return
-    if not isinstance(path, str) or not path.endswith((".md", ".yaml", ".yml", ".json")):
+    if not isinstance(path, str) or not path.endswith((".md", ".yaml", ".yml", ".json", ".py")):
         errors.append(f"{label}: invalid document path for {identifier}")
         return
     target = (root / path).resolve()
@@ -235,9 +255,11 @@ def validate_runtime_document(root: Path, label: str, document: dict, errors: li
             pass
         elif not identifier.startswith(f"{owner}:"):
             errors.append(f"{label}: document id {identifier} does not match {path}")
-        elif re.fullmatch(rf"{re.escape(owner)}/references/[^/]+\.md", relative):
+        elif re.fullmatch(rf"{re.escape(owner)}/(?:references/[^/]+\.md|scripts/[A-Za-z0-9][A-Za-z0-9._-]{{0,80}}\.py)", relative):
             if identifier.split(":", 1)[1] != Path(relative).stem:
                 errors.append(f"{label}: document id {identifier} does not match {path}")
+            if "/scripts/" in relative and target.stat().st_size > 16 * 1024:
+                errors.append(f"{label}: registered script {path} exceeds the harness size budget")
     elif not identifier.startswith(("shared:", "evidence:", "wstg-source:")):
         errors.append(f"{label}: document {identifier} outside the skill library needs a shared/evidence/wstg-source prefix")
     if path.startswith("my_references/") and not path.startswith("my_references/wstg/"):
@@ -618,6 +640,29 @@ def validate_overlay(path: Path, root: Path, body: str, parts: dict, metadata: d
     check_provenance(label, name, metadata, provenance, errors)
 
 
+def validate_procedure(path: Path, root: Path, body: str, parts: dict, errors: list[str]) -> None:
+    """A procedure skill climbs four named gates in order and says where it stops."""
+    label = str(path.relative_to(root))
+    name = path.parent.name
+    for section in PROCEDURE_SECTIONS:
+        if len(parts.get(section, "")) < 30:
+            errors.append(f"{label}: missing/empty {section}")
+    positions = [body.find(f"## {section}") for section in PROCEDURE_SECTIONS]
+    if any(position < 0 for position in positions) or positions != sorted(positions):
+        errors.append(f"{label}: procedure sections are out of order")
+    if not re.search(r"\bwall\b", parts.get("The wall", ""), re.I):
+        errors.append(f"{label}: the wall does not say where the attempt stops")
+    scripts = sorted((path.parent / "scripts").glob("*.py"))
+    for script in scripts:
+        source = script.read_text(encoding="utf-8")
+        if len(source.encode("utf-8")) > 16 * 1024:
+            errors.append(f"{label}: {script.name} exceeds the harness size budget")
+        if not re.search(r"--(?:target|binary|payload)", source) or "refused" not in source:
+            errors.append(f"{label}: {script.name} does not take an explicit target and refuse without one")
+    if not scripts and "credential" not in name:
+        errors.append(f"{label}: procedure ships neither a script nor the reason it has none")
+
+
 def validate_ruleset(path: Path, root: Path, errors: list[str]) -> None:
     label = str(path.relative_to(root))
     text = path.read_text(encoding="utf-8")
@@ -881,6 +926,8 @@ def validate(root: Path) -> list[str]:
                     errors.append(f"{label}: insufficient independent method sources")
                 if any(by_id[i]["disposition"] in {"excluded", "duplicate"} for i in ids & set(by_id)):
                     errors.append(f"{label}: excluded/duplicate counted as evidence")
+            elif kind == "procedure":
+                validate_procedure(path, root, body, parts, errors)
             else:
                 if kind == "playbook":
                     validate_playbook(path, root, body, parts, skill_metadata, provenance, errors)

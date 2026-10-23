@@ -1,4 +1,4 @@
-import { LEAD_CEILINGS } from './helpers/budgets.js';
+import { DECLARATION_BUDGET, LEAD_CEILINGS } from './helpers/budgets.js';
 import { execFile } from 'node:child_process';
 import { resolve } from 'node:path';
 import { promisify } from 'node:util';
@@ -25,16 +25,18 @@ describe('scripts/measure-context.mjs', () => {
     expect(report.lead['delegated directory'].chars).toBeLessThanOrEqual(LEAD_CEILINGS.delegatedDirectory); expect(report.lead['delegated url'].chars).toBeLessThanOrEqual(LEAD_CEILINGS.delegatedUrl); expect(report.lead['delegated url event-driven'].chars).toBeLessThanOrEqual(LEAD_CEILINGS.delegatedEventDriven);
     for (const [label, item] of Object.entries<any>(report.lead)) expect(item.toolNames, label).toEqual([]);
 
-    // Workers: five roles on two target kinds; the recon contract once; no tool outside the role's loadout.
-    expect(report.workers).toHaveLength(10);
+    // Workers: six roles on two target kinds (P14.4 added `exploit`); the recon contract once; no tool outside the role's loadout.
+    expect(report.workers).toHaveLength(12);
     for (const worker of report.workers) { expect(worker.reconBlocks, `${worker.role}/${worker.kind}`).toBe(1); expect(worker.toolNamesOutsideLoadout, `${worker.role}/${worker.kind}`).toEqual([]); expect(worker.total).toBe(worker.system + worker.brief); }
 
-    // Declarations: 23 registered tools (p2o_steer/p2o_stop_worker folded into p2o_workers, S2) and the four loadouts of workflow-policy.test.ts.
-    expect(report.declarations.registered).toBe(23);
-    expect(Object.fromEntries(Object.entries<any>(report.declarations.loadouts).map(([label, item]) => [label, item.tools]))).toEqual({ 'delegated Planner': 17, 'solo owner': 19, worker: 15, 'reporting worker': 10 });
-    expect(report.declarations.loadouts['solo owner'].bytes).toBeLessThanOrEqual(Math.ceil(35_423 * 1.02)); // 33,328 before p2o_surface, 34,162 before the chain line (workflow-policy.test.ts)
+    // Declarations: 24 registered tools (p2o_steer/p2o_stop_worker folded into p2o_workers, S2; p2o_lab added by P14.2) and the four loadouts of workflow-policy.test.ts.
+    expect(report.declarations.registered, 'p2o_research joined every loadout in P14.8').toBe(25);
+    expect(Object.fromEntries(Object.entries<any>(report.declarations.loadouts).map(([label, item]) => [label, item.tools]))).toEqual({ 'delegated Planner': 19, 'solo owner': 21, worker: 17, 'reporting worker': 11 });
+    // P13(f): the number comes from the one table, not a literal here. (33,328 before p2o_surface, 34,162 before the chain line.)
+    expect(report.declarations.loadouts['solo owner'].bytes).toBeLessThanOrEqual(Math.ceil(DECLARATION_BUDGET['solo owner'][0] * 1.02));
     // Skills: the lead pages through the catalog and each role has a default skill whose first page is inlined.
     expect(report.skills.listPages.length).toBeGreaterThanOrEqual(3); expect(report.skills.listTotal).toBe(report.skills.listPages.reduce((sum: number, n: number) => sum + n, 0));
-    expect(Object.keys(report.skills.roleDefaults).sort()).toEqual(['discovery', 'recon', 'reporting', 'validation']);
+    // P15 (W5): validation and reporting ship no default method skill, so only the two role defaults with a skill appear here.
+    expect(Object.keys(report.skills.roleDefaults).sort()).toEqual(['discovery', 'recon']);
   }, 200_000);
 });

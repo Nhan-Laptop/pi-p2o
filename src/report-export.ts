@@ -1,3 +1,4 @@
+import { describeCapability } from './capabilities.js';
 import { caseViews, needsCaseReview, type CaseView } from './cases.js';
 import { cvssScore } from './cvss.js';
 import { FINDING_SEVERITIES } from './case-types.js';
@@ -106,7 +107,8 @@ function findingLines(view: CaseView, cells: readonly CoverageCellView[], index:
   return [`- Severity **${severityLabel(finding.severity)}** (owner-attributed, p2o scale) — basis: ${mdText(finding.basis, 1000)}${view.ratingCurrent === false ? ` (rating recorded against r${view.ratedRevision}; the case is now r${view.revision}, so check that it still applies)` : ''}`,
     ...(finding.likelihood ? [`- Likelihood: ${mdText(finding.likelihood, 800)}`] : []), ...(finding.impact ? [`- Impact: ${mdText(finding.impact, 800)}`] : []),
     ...(finding.chain ? [`- Chain — ${mdText(finding.chain.objective, 600)}: ${finding.chain.demonstratedThrough ? `executed through step ${finding.chain.demonstratedThrough}` : 'no step executed — reasoned only'} of ${finding.chain.steps.length} (ordered; each step cites the claim that ran it).`,
-      ...finding.chain.steps.map(step => `  ${step.order}. ${mdText(step.step, 400)}${step.claimRef ? ` — claim \`${mdText(step.claimRef, 80)}\`` : ''}${step.requires ? `; requires: ${mdText(step.requires, 300)}` : ''}${step.provides ? `; provides: ${mdText(step.provides, 300)}` : ''}`)] : []),
+      ...finding.chain.steps.map(step => `  ${step.order}. ${mdText(step.step, 400)}${step.claimRef ? ` — claim \`${mdText(step.claimRef, 80)}\`` : ''}${step.needs.length ? `; needs: ${step.needs.map(item => mdText(describeCapability(item), 300)).join(', ')}` : ''}${step.gained.length ? `; gained: ${step.gained.map(item => mdText(describeCapability(item), 300)).join(', ')}` : ''}${step.effect ? `; effect: ${step.effect}` : ''}`),
+      ...(finding.chain.impact ? [`  - Demonstrated impact \`${finding.chain.impact.vector}\` = **${finding.chain.impact.score.toFixed(1)}** (${finding.chain.impact.severity}) from the ${finding.chain.impact.effect} the executed chain showed. Computed by the host, not chosen; the p2o severity above cannot exceed it.`] : [])] : []),
     ...(score ? [`- CVSS 3.1 base \`${score.vector}\` = **${score.score.toFixed(1)}** (${score.severity}); vector recorded by the owner, score computed by the host. It may differ from the p2o rating.`] : []),
     ...(finding.cwe.length ? [`- Weakness classes recorded by the owner (not checked against MITRE): ${finding.cwe.map(item => `\`${item}\``).join(', ')}`] : []),
     ...(finding.remediationSteps ? [`- Recommended remediation: ${mdText(finding.remediationSteps, 2000)}`] : []),
@@ -223,7 +225,8 @@ function findingFiles(meta: ReportMeta, index: LedgerIndex, ordered: readonly Ca
       remediation: { status: view.remediation.status, reason: plainText(view.remediation.reason, 1000), steps: view.finding?.remediationSteps ? plainText(view.finding.remediationSteps, 2000) : null },
       references: view.finding?.references ?? [], reproduction: reproduce(view), contradictions: view.contradictions.map(item => ({ evidenceRef: item.evidenceRef, status: item.status })), limitations: plainText(view.limitations, 2000), independenceWaiver: view.finding?.independenceWaiver ? plainText(view.finding.independenceWaiver, 300) : null,
       chain: view.finding?.chain ? { objective: plainText(view.finding.chain.objective, 600), demonstratedThrough: view.finding.chain.demonstratedThrough ?? null,
-        steps: view.finding.chain.steps.map(step => ({ order: step.order, step: plainText(step.step, 400), claimRef: step.claimRef ?? null, provides: step.provides ? plainText(step.provides, 300) : null, requires: step.requires ? plainText(step.requires, 300) : null })) } : null };
+        impact: view.finding.chain.impact ? { vector: view.finding.chain.impact.vector, score: view.finding.chain.impact.score, severity: view.finding.chain.impact.severity, effect: view.finding.chain.impact.effect } : null,
+        steps: view.finding.chain.steps.map(step => ({ order: step.order, step: plainText(step.step, 400), claimRef: step.claimRef ?? null, gained: step.gained.map(item => describeCapability(item)), needs: step.needs.map(item => describeCapability(item)), effect: step.effect ?? null, reach: step.reach ? { ...step.reach } : null })) } : null };
   });
   const body = { format: 'p2o-findings', version: 1, runId: meta.runId, asOfSequence: meta.asOfSequence, complete: meta.complete, endReason: meta.endReason ?? null,
     note: 'Accepted, current cases only. Severity is an attributed owner rating; CVSS scores are computed by the host from the owner-recorded vector. Strings are redacted and bounded but not Markdown-escaped; escape them before display.', findings: items };
@@ -336,8 +339,8 @@ export function renderReport(index: LedgerIndex, context: ReportProjectionContex
   const claims = rows(projection.candidates, ROWS);
   if (!claims.shown.length) out.push('No claim is recorded.', '');
   else {
-    out.push('| Claim | Candidate | Surface / self-reported risk (unevaluated) | Closure | Execution | Proof | Independent validation current |', '|---|---|---|---|---|---|---|');
-    for (const claim of claims.shown) out.push(`| ${mdText(claim.id, 80)} | ${mdText(claim.candidate, 160)} | ${mdText(`${claim.surface ?? ''} / ${claim.risk ?? ''}`, 160)} | ${mdText(claim.closure, 24)} | ${mdText(claim.execution, 24)} | ${mdText(claim.proof, 40)} | ${claim.independentCurrent === undefined ? 'not claimed' : claim.independentCurrent ? 'yes' : 'no'} |`);
+    out.push('| Claim | Candidate | Surface / self-reported risk (unevaluated) | Closure | Execution | Proof | Replayable | Independent validation current |', '|---|---|---|---|---|---|---|---|');
+    for (const claim of claims.shown) out.push(`| ${mdText(claim.id, 80)} | ${mdText(claim.candidate, 160)} | ${mdText(`${claim.surface ?? ''} / ${claim.risk ?? ''}`, 160)} | ${mdText(claim.closure, 24)} | ${mdText(claim.execution, 24)} | ${mdText(claim.proof, 40)} | ${claim.replayable ? `payload \`${mdText(claim.payloadRef, 80)}\`` : 'not replayable'} | ${claim.independentCurrent === undefined ? 'not claimed' : claim.independentCurrent ? 'yes' : 'no'} |`);
     out.push('');
   }
   out.push('## Tasks and handoffs', '', `- Awaiting owner review: ${awaiting.length ? ids(awaiting.map(task => task.id), 20) : 'none'}`);

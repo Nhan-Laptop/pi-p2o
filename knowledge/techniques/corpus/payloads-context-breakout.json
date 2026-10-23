@@ -1,0 +1,23 @@
+{
+  "id": "payloads-context-breakout",
+  "title": "Choosing an injection payload from the parser context",
+  "kind": "injection",
+  "prerequisites": [
+    "a confirmed sink where your value reaches an interpreter",
+    "the context the value lands in (string, identifier, path, template, serialized object)"
+  ],
+  "tags": [
+    "payloadsallthethings",
+    "injection",
+    "sql",
+    "template",
+    "context"
+  ],
+  "excerpt": "The payload family follows the context, not the vulnerability name: a value inside a quoted string needs a delimiter and comment strategy, an identifier needs a different escape, a template needs the engine's own expression syntax. Establish the context with a harmless marker first, then take a payload class from a reference and adapt it to the delimiters you observed.",
+  "source": {
+    "name": "PayloadsAllTheThings",
+    "url": "https://github.com/swisskyrepo/PayloadsAllTheThings",
+    "license": "MIT",
+    "retrievedAt": "2026-10-23"
+  }
+}

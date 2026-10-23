@@ -5,6 +5,7 @@ import type { MutationRequest } from './state/store.js';
 import { LedgerBoard } from './board.js';
 import { validateCaseDraft, validateFinding, validateStoredCase, type CaseDraft, type CaseEntry, type CaseFinding, type CaseTaskRef } from './case-types.js';
 import { isDemonstrated } from './claims.js';
+import { chainImpact, severityRank } from './cvss.js';
 import { isSatisfiedTask } from './tasks.js';
 
 export type CaseCurrentness='current'|'stale'|'withdrawn'|'unknown';
@@ -21,15 +22,34 @@ export const needsCaseReview=(view:{reviewStatus?:unknown}):boolean=>view.review
 const candidateKey=(record:AssessmentRecord)=>typeof record.data?.candidate==='string'?record.data.candidate:undefined;
 const candidateRecords=(index:LedgerIndex)=>index.records.filter(row=>row.kind==='candidate'&&row.id&&candidateKey(row));
 function candidateHeads(index:LedgerIndex):Map<string,AssessmentRecord>{const heads=new Map<string,AssessmentRecord>();for(const row of candidateRecords(index))heads.set(candidateKey(row)!,row);return heads;}
-function actorCandidateHeads(index:LedgerIndex):Map<string,AssessmentRecord>{const heads=new Map<string,AssessmentRecord>();for(const row of candidateRecords(index))heads.set(`${row.by}\u0000${candidateKey(row)}`,row);return heads;}
 function taskRevision(index:LedgerIndex,ref:CaseTaskRef):AssessmentTask|undefined{return taskRevisionAt(index,ref.taskId,ref.revision);}
 
 export const caseFrontier=(index:LedgerIndex):CaseEntry[]=>ownerNoteFrontier(index,'case',validateStoredCase);
 
-function independentReceiptCurrent(index:LedgerIndex,claim:AssessmentRecord,evidenceId:string,actors:Map<string,AssessmentRecord>):boolean{
-  const evidence=index.byId.get(evidenceId),key=candidateKey(claim);if(evidence?.kind!=='evidence'||!evidence.workerId||!key||evidence.by===claim.by)return false;
-  const validator=actors.get(`${evidence.by}\u0000${key}`);return Boolean(validator&&validator.surface===claim.surface&&validator.risk===claim.risk&&isDemonstrated(validator.data??{})
-    &&validator.data?.proof!=='static_trace'&&validator.refs?.includes(evidenceId));
+/**
+ * P14.12: independence is a reproduction, not a second opinion. The old rule asked for another actor's candidate with the *same slug*, which a
+ * peer can only produce by superseding this claim — so it was either self-validation or nothing. The rule now asks for the peer's own
+ * demonstrated claim against the receipt it cites, running the same payload bytes (sha256 stamped at write time) in an environment with the
+ * same recipe fingerprint. A mismatch is named, because "not independent" without a reason is the annotation this phase removes.
+ */
+function independentReceiptCurrent(index:LedgerIndex,claim:AssessmentRecord,evidenceId:string):{ok:boolean;reason?:string}{
+  const evidence=index.byId.get(evidenceId);
+  if(evidence?.kind!=='evidence'||!evidence.workerId)return {ok:false,reason:`independent-receipt-missing:${evidenceId}`};
+  if(evidence.by===claim.by)return {ok:false,reason:`independent-receipt-not-independent:${evidenceId}`};
+  // The peer's *latest* claim against that receipt decides: a later non-demonstrated claim is a withdrawal of support, not a stale note.
+  const validator=index.records.filter(row=>row.kind==='candidate'&&row.by===evidence.by&&row.workerId&&row.refs?.includes(evidenceId)).at(-1);
+  if(!validator)return {ok:false,reason:`independent-receipt-uncited:${evidenceId}`};
+  if(!isDemonstrated(validator.data??{})||validator.data?.proof==='static_trace')return {ok:false,reason:`independent-receipt-withdrawn:${evidenceId}`};
+  if(validator.surface!==claim.surface||validator.risk!==claim.risk)return {ok:false,reason:`independent-receipt-different-surface:${evidenceId}`};
+  const ran=claim.data??{},replayed=validator.data??{},hash=(value:unknown)=>typeof value==='string'&&value.length>=12?value:'';
+  // An effect with no stored artifact has nothing to replay, and its independence stays what it always was: a peer's own demonstrated claim
+  // against the receipt it cites. Once the author names a payload or an environment, the peer must match it exactly.
+  if(!hash(ran.payloadSha256)&&!hash(ran.environmentFingerprint))return {ok:true};
+  if(!hash(ran.payloadSha256))return {ok:false,reason:'independent-payload-missing'};
+  if(hash(ran.payloadSha256)!==hash(replayed.payloadSha256))return {ok:false,reason:`independent-payload-mismatch:${hash(ran.payloadSha256).slice(0,12)}!=${hash(replayed.payloadSha256).slice(0,12)||'none'}`};
+  if(!hash(ran.environmentFingerprint))return {ok:false,reason:'independent-environment-missing'};
+  if(hash(ran.environmentFingerprint)!==hash(replayed.environmentFingerprint))return {ok:false,reason:`independent-environment-mismatch:${hash(ran.environmentFingerprint).slice(0,12)}!=${hash(replayed.environmentFingerprint).slice(0,12)||'none'}`};
+  return {ok:true};
 }
 
 /** Latest owner rating per case id, in ledger order. Malformed or foreign-run notes are not promoted, as for cases. */
@@ -42,7 +62,7 @@ export function caseRatings(index:LedgerIndex):Map<string,{finding:CaseFinding;c
 
 /** Derived, read-only currentness. It cannot upgrade a claim, goal or target authority. */
 export function caseViews(index:LedgerIndex,context:CaseContext={}):CaseView[]{
-  const entries=caseFrontier(index),ratings=caseRatings(index),claims=candidateHeads(index),actors=actorCandidateHeads(index),entryMap=new Map(entries.map(entry=>[entry.id,entry])),views=new Map<string,CaseView>(),visiting=new Set<string>();
+  const entries=caseFrontier(index),ratings=caseRatings(index),claims=candidateHeads(index),entryMap=new Map(entries.map(entry=>[entry.id,entry])),views=new Map<string,CaseView>(),visiting=new Set<string>();
   const view=(entry:CaseEntry):CaseView=>{
     const cached=views.get(entry.id);if(cached)return cached;const reasons:string[]=[];let unknown=false;
     if(entry.reviewStatus==='withdrawn')reasons.push('case-review-withdrawn');
@@ -53,7 +73,12 @@ export function caseViews(index:LedgerIndex,context:CaseContext={}):CaseView[]{
     for(const id of entry.reportRefs)if(index.byId.get(id)?.kind!=='report')reasons.push(`missing-report:${id}`);
     for(const item of entry.contradictions)if(index.byId.get(item.evidenceRef)?.kind!=='evidence')reasons.push(`missing-contradiction:${item.evidenceRef}`);else if(item.status==='open')reasons.push(`open-contradiction:${item.evidenceRef}`);
     let independentCurrent=entry.independentEvidenceRefs.length>0;
-    for(const evidenceId of entry.independentEvidenceRefs){const supporting=citedClaims.some(claim=>claim.data?.independentEvidenceRef===evidenceId&&independentReceiptCurrent(index,claim,evidenceId,actors));if(!supporting){independentCurrent=false;reasons.push(`independent-support-stale:${evidenceId}`);}}
+    for(const evidenceId of entry.independentEvidenceRefs){
+      // Every listed receipt is checked; the first failing one names why, so the reason is actionable instead of "stale".
+      let failure:string|undefined;
+      const supporting=citedClaims.some(claim=>{if(claim.data?.independentEvidenceRef!==evidenceId)return false;const check=independentReceiptCurrent(index,claim,evidenceId);failure??=check.reason;return check.ok;});
+      if(!supporting){independentCurrent=false;reasons.push(failure??`independent-support-stale:${evidenceId}`);}
+    }
     if(entry.verdict==='confirmed'&&!citedClaims.some(claim=>isDemonstrated(claim.data??{})&&claim.data?.policyBasis!=='inferred'))reasons.push('confirmed-verdict-lacks-current-tested-claim');
     if(entry.verdict==='ruled_out'&&!citedClaims.some(claim=>claim.data?.closure==='ruled_out'&&typeof claim.data?.control==='string'))reasons.push('ruled-out-verdict-lacks-bounded-control');
     for(const id of entry.remediation.evidenceRefs)if(index.byId.get(id)?.kind!=='evidence')reasons.push(`missing-remediation-evidence:${id}`);
@@ -132,6 +157,11 @@ export class CaseBoard extends LedgerBoard{
       for(const step of finding.chain?.steps??[])if(step.claimRef&&!chainClaim(step.claimRef))throw Error(`Unknown same-run chain claim ${step.claimRef}`);
       if(finding.chain?.demonstratedThrough)for(const step of finding.chain.steps.slice(0,finding.chain.demonstratedThrough)){const claim=chainClaim(step.claimRef!);
         if(claim?.data?.closure!=='confirmed'||claim?.data?.execution!=='tested')throw Error(`Chain step ${step.order} is recorded as executed but its claim is not a confirmed tested result`);}
+      // P14.9: the rating is derived from the demonstration. Nothing executed demonstrates nothing, and a rating above what the chain showed is
+      // refused instead of recorded. Under-claiming stays allowed: a chain may demonstrate more than the owner chose to write down.
+      if(finding.chain){const depth=finding.chain.demonstratedThrough,impact=depth===undefined?undefined:chainImpact(finding.chain.steps,depth);
+        if(!impact){if(severityRank(finding.severity)>0)throw Error(depth===undefined?'A rating needs a demonstrated effect: state the executed depth with demonstratedThrough and the effect that depth showed, then rate':'The chain depth names no effect, so no impact was demonstrated; record the effect that executed step showed, then rate');}
+        else if(severityRank(finding.severity)>severityRank(impact.severity))throw Error(`Finding severity ${finding.severity} exceeds what step ${depth} demonstrated: ${impact.effect} scores ${impact.severity} (${impact.vector} = ${impact.score.toFixed(1)}). Rate at or below that, or record a deeper executed step.`);}
       if(['critical','high'].includes(finding.severity)&&entry.claimRefs.some(ref=>index.byId.get(ref)?.data?.policyBasis==='inferred'))throw Error('A case resting on an inferred policy basis cannot be rated above medium');
       const records=()=>{this.gate();return [{id:randomUUID(),runId:this.runId,at:new Date(this.now()).toISOString(),by:'owner',kind:'note' as const,text:`case ${id}@r${revision} rated ${finding.severity}; owner rating, not review`,refs:finding.reproductionEvidenceRefs.slice(0,10),data:{caseRating:{caseId:id,caseRevision:revision,finding}}}];};
       const acks=bound?await appendGeneratedRecords(this.path,records,bound):await appendRecords(this.path,records());return read(acks);

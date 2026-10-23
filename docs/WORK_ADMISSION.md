@@ -9,8 +9,20 @@ ngân sách. "Goal" ở đây là record mục tiêu của assessment. Bản chi
   SQLite, không phải hàng đợi có quyền thực thi. `p2o_task`/`p2o_plan` chỉ dành cho owner; Worker/reporting không sửa kế hoạch.
 - **Work identity có cấu trúc**, không hash văn xuôi: `draft.work` gồm `assetRefs` (entity ID graph cùng run), `questionKey`,
   `policyKey?`, `actorContext`/`tenantContext` (handle mờ, không secret), `methodFamily`, `purpose`
-  (`mapping|discovery|investigation|refinement|validation|retest|reporting`). Fingerprint = run + target revision + asset/variant
-  đã sort + keys + context + method + prerequisite pins + purpose. Đổi câu chữ không đổi identity; thiếu metadata → `dedupConfidence:unknown`.
+  (`mapping|discovery|investigation|refinement|validation|retest|exploitation|chaining|reporting`), và từ P14.10 thêm `needs`
+  (capability có kiểu mà bước này tiêu thụ — copy từ `p2o_graph` chain, không phải quyền) cùng `environmentRef` (environment P14.3
+  mà bước phải chạy trong đó). Fingerprint = run + target revision + asset/variant đã sort + keys + context + method + prerequisite
+  pins + purpose + `needs`/`environmentRef`. Đổi câu chữ không đổi identity; thiếu metadata → `dedupConfidence:unknown`.
+- **Ngân sách lệnh là allowance, không phải identity** (P14.11): `work.budget.commands` (1..5000) đặt số lệnh broker cho task đó; bỏ trống
+  thì theo purpose — 200 cho công việc khảo sát, **400 cho `exploitation`/`chaining`** vì vòng build/run/crash/adjust tiêu lệnh nhanh hơn
+  recon. `budget` **không** vào fingerprint: cùng câu hỏi với allowance lớn hơn vẫn là cùng việc. Task exploitation/chaining chạm trần ngân
+  sách phải report `wrapUp` nêu payload đã lưu + environment, hoặc nói rõ vì sao không có; thiếu thì broker từ chối report đó.
+- **Từ frontier ra task, không tự dispatch**: `p2o_graph {"action":"chain","plan":true,"assetRefs":[…]}` trả về đúng object
+  `p2o_task create` cho bước sâu nhất đã sẵn sàng (purpose `exploitation`, `claimRefs` = record id của các provider trên đường đi ngắn
+  nhất + claim của chính bước đó, `needs` = capability đang tiêu thụ, `environmentRef` = environment của provider sâu nhất có ghi) và ghi
+  toàn bộ chuỗi thành `p2o_plan` todo, mỗi bước một todo. Không có task nào được tạo, không có gì được chạy: draft là đề xuất, todo là
+  điều hướng; owner tự gọi `p2o_task create`. Không truyền `assetRefs` thì draft bỏ `work` và nói rõ lý do thay vì đoán asset từ chuỗi
+  `surface`.
 - **Reserve nguyên tử**: task revision + event + history + fingerprint duy nhất commit chung; hai đề xuất đua nhau thì cái sớm hơn
   thắng, conflict rollback cả packet. Pin được kiểm tra lại trước mỗi lệnh; sau crash reservation không tự kích hoạt lại.
 

@@ -1,0 +1,22 @@
+{
+  "id": "capec-66-sql-injection-attack-pattern",
+  "title": "CAPEC-66: SQL injection attack pattern",
+  "kind": "attack-pattern",
+  "prerequisites": [
+    "an application that builds queries from input",
+    "a channel that carries the input to the query"
+  ],
+  "tags": [
+    "capec",
+    "sql",
+    "injection",
+    "attack-pattern"
+  ],
+  "excerpt": "The pattern walks from exploring how input is embedded, through experimenting with syntax that changes the query, to exploiting the resulting capability. It names the stages rather than a payload, which is why it is useful for ordering an exploitation attempt: exploration first, then a controlled experiment, then the smallest effect that demonstrates the change.",
+  "source": {
+    "name": "CAPEC (MITRE)",
+    "url": "https://capec.mitre.org/data/definitions/66.html",
+    "license": "MITRE Terms of Use",
+    "retrievedAt": "2026-10-23"
+  }
+}

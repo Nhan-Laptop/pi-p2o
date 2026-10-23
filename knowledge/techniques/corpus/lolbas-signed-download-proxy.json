@@ -1,0 +1,22 @@
+{
+  "id": "lolbas-signed-download-proxy",
+  "title": "Downloading through a signed system binary",
+  "kind": "proxy-execution",
+  "prerequisites": [
+    "a Windows host where the binary is present and not blocked by policy",
+    "egress from the host to a host you control"
+  ],
+  "tags": [
+    "lolbas",
+    "windows",
+    "egress",
+    "proxy-execution"
+  ],
+  "excerpt": "Windows ships signed binaries that perform network fetches or cache remote content. On an authorised host, such a binary can answer whether egress is filtered by policy rather than by network, because the traffic is attributed to a signed system process. Prefer a fetch to a host you control and record the arrival; do not leave cached files behind.",
+  "source": {
+    "name": "LOLBAS",
+    "url": "https://lolbas-project.github.io/",
+    "license": "GPL-3.0",
+    "retrievedAt": "2026-10-23"
+  }
+}

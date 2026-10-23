@@ -30,8 +30,9 @@ finite coalescing windows (100 ms) that need explicit event-driven consent. See 
   also states what it stands on: validation/retest cite the claim they reproduce (`work.claimRefs`) or the task they revisit,
   investigation/refinement cite a claim, a pinned asset revision or a prior task, and mapping/reporting are exempt because they
   are the starting point. The refusal is a field on the task, not an inference by the reader.
-- A claim may declare `provides`/`requires`; `p2o_graph action=chain` joins those into ready/unmet steps so the lead reads one
-  frontier instead of reconstructing the chain from prose.
+- A claim may declare typed `gained`/`needs` capabilities (`kind` plus optional `subject`/`scope`); `p2o_graph action=chain`
+  joins them into ready/unmet steps so the lead reads one frontier instead of reconstructing the chain from prose. A pre-P14
+  claim that still carries free-text `provides`/`requires` stays readable, is reported as legacy, and joins to nothing.
 - A report persists (hashed parts, manifest, task transition, coverage, open items) **before** revocation and
   notification. Capacity is reused only after verified pane/executor retirement; each assignment is a fresh process.
 - Manual loop (default) dispatches accepted work but never calls a Planner model by itself. Event-driven wakes use Pi's
@@ -51,6 +52,12 @@ finite coalescing windows (100 ms) that need explicit event-driven consent. See 
 - Canonical state is one SQLite file per run ([AssessmentStore](STATE_STORE.md)); the older JSONL ledger is still read.
 - Defaults: 3 model slots (operator-selected, no hard ceiling), 100 live tasks, 1,000 registrations, 256 pending signals,
   200 commands/worker (90% reserve of 600). No elapsed deadline anywhere; unknown cost is not zero.
+- The command allowance follows `work.purpose` (P14.11): 200 for research work, **400 for `exploitation` and `chaining`**, because
+  building, running, crashing and adjusting a payload spends commands in a loop and a run cut off mid-iteration loses the payload
+  that would have made it replayable. `work.budget.commands` overrides the class in either direction (1..5000). An exploitation or
+  chaining run that ends on its allowance must report `wrapUp`: the stored payload and its environment, or why the run has neither;
+  the broker refuses that report until it says which, and repeats the duty in the refusal that spends the last command. The allowance
+  is not part of the work fingerprint: the same question with a larger allowance is the same work.
 - Stop closes the Engine gate first, then drains, revokes, closes panes and verifies containers. Finish refuses while
   workers are unreported, runs the finish preflight (`p2o.finishGate`), freezes state, cleans up and writes the
   deterministic report (`p2o.autoReport`); a report or preflight failure never blocks cleanup. Hard kills can leave

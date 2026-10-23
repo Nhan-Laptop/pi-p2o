@@ -1,0 +1,23 @@
+{
+  "id": "payloads-xxe-entity-shapes",
+  "title": "XML entity shapes for file read and out-of-band confirmation",
+  "kind": "xml-external-entity",
+  "prerequisites": [
+    "an XML parser that resolves external entities",
+    "a document you control reaching that parser"
+  ],
+  "tags": [
+    "payloadsallthethings",
+    "xxe",
+    "xml",
+    "file-read",
+    "oob"
+  ],
+  "excerpt": "External entity support turns a document into a read or a fetch primitive. In-band shapes return file content inside the parsed document; out-of-band shapes make the parser contact a listener you control, which is what proves parsing when the response gives nothing back. Record which shape the parser accepted, because hardened defaults usually reject both.",
+  "source": {
+    "name": "PayloadsAllTheThings",
+    "url": "https://github.com/swisskyrepo/PayloadsAllTheThings",
+    "license": "MIT",
+    "retrievedAt": "2026-10-23"
+  }
+}

@@ -22,7 +22,8 @@ async function fixture(work: (store: AssessmentStore, root: string) => void | Pr
 describe('asset/fact/hypothesis graph (K3, canonical store only)', () => {
   it('keeps tool arguments in a root object so legacy Pi provider projection does not silently erase them',()=>{
     const projected={type:'object',properties:graphParameters.properties??{},required:graphParameters.required??[]};
-    expect(graphParameters.type).toBe('object');expect(projected.required).toContain('action');expect(Object.keys(projected.properties)).toEqual(['action','batch','id','requestId','cursor','limit','asOfSequence']);
+    // P14.10 added `plan` and `assetRefs` for the chain-to-draft step; both are root properties for the same reason as the rest.
+    expect(graphParameters.type).toBe('object');expect(projected.required).toContain('action');expect(Object.keys(projected.properties)).toEqual(['action','batch','id','requestId','cursor','limit','asOfSequence','plan','assetRefs']);
     expect(projected.properties.batch).toMatchObject({type:'object',additionalProperties:false});expect(projected.properties.action).toMatchObject({type:'string',enum:['record','view','page','export','chain']});
   });
   it('derives exact-byte identities, converges duplicates and keeps append-only revisions with history', async () => fixture(async (store) => {

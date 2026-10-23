@@ -1,0 +1,23 @@
+{
+  "id": "gtfobins-file-write-through-utility",
+  "title": "Writing a file through an editor or output option",
+  "kind": "file-access",
+  "prerequisites": [
+    "a permitted utility that accepts a destination path",
+    "write permission in the destination directory under the privileged user"
+  ],
+  "tags": [
+    "gtfobins",
+    "linux",
+    "file-write",
+    "cron",
+    "privilege"
+  ],
+  "excerpt": "Editors, archivers and logging options accept output paths or drop into an editor. A permitted invocation that can name a destination turns into a write primitive, which matters when something else executes what lands there: a cron directory, a systemd unit path, or a startup script.",
+  "source": {
+    "name": "GTFOBins",
+    "url": "https://gtfobins.github.io/",
+    "license": "GPL-3.0",
+    "retrievedAt": "2026-10-23"
+  }
+}

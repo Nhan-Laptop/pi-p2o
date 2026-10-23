@@ -1,0 +1,345 @@
+{
+  "version": 1,
+  "entries": [
+    {
+      "id": "capec-66-sql-injection-attack-pattern",
+      "title": "CAPEC-66: SQL injection attack pattern",
+      "kind": "attack-pattern",
+      "prerequisites": [
+        "an application that builds queries from input",
+        "a channel that carries the input to the query"
+      ],
+      "tags": [
+        "capec",
+        "sql",
+        "injection",
+        "attack-pattern"
+      ],
+      "excerpt": "The pattern walks from exploring how input is embedded, through experimenting with syntax that changes the query, to exploiting the resulting capability. It names the stages rather than a payload, which is why it is useful for ordering an exploitation attempt: exploration first, then a controlled experiment, then the smallest effect that demonstrates the change.",
+      "source": {
+        "name": "CAPEC (MITRE)",
+        "url": "https://capec.mitre.org/data/definitions/66.html",
+        "license": "MITRE Terms of Use",
+        "retrievedAt": "2026-10-23"
+      },
+      "sha256": "6104c35ff89054207bc0b87463958cb65718c7bc1372a6b7ce899a1d14f12917",
+      "path": "knowledge/techniques/corpus/capec-66-sql-injection-attack-pattern.json"
+    },
+    {
+      "id": "cwe-89-sql-injection",
+      "title": "CWE-89: SQL injection",
+      "kind": "weakness-class",
+      "prerequisites": [
+        "untrusted input reaches a query interpreter without a fixed structure"
+      ],
+      "tags": [
+        "cwe",
+        "sql",
+        "injection",
+        "weakness"
+      ],
+      "excerpt": "The weakness is that user-controllable input alters the structure of an SQL command instead of remaining data. Consequence follows the database principal: reads outside the intended rows, modification, authentication bypass, or file and command primitives where the engine offers them. The class describes a cause; the demonstrated effect still has to be observed.",
+      "source": {
+        "name": "CWE (MITRE)",
+        "url": "https://cwe.mitre.org/data/definitions/89.html",
+        "license": "MITRE Terms of Use",
+        "retrievedAt": "2026-10-23"
+      },
+      "sha256": "1e71c8e241056e10e6c92dc061176b4c8f3bfce255cc909ed0a99b0ebfcd9ebd",
+      "path": "knowledge/techniques/corpus/cwe-89-sql-injection.json"
+    },
+    {
+      "id": "cwe-918-server-side-request-forgery",
+      "title": "CWE-918: Server-side request forgery",
+      "kind": "weakness-class",
+      "prerequisites": [
+        "a server-side component that fetches a destination the caller influences"
+      ],
+      "tags": [
+        "cwe",
+        "ssrf",
+        "weakness",
+        "network"
+      ],
+      "excerpt": "The weakness is that the server performs a request to a destination chosen by the caller, so the caller reaches networks and services the server can reach. The consequence depends on what sits behind the fetch: metadata credentials, internal administrative interfaces, or a file scheme the client also supports.",
+      "source": {
+        "name": "CWE (MITRE)",
+        "url": "https://cwe.mitre.org/data/definitions/918.html",
+        "license": "MITRE Terms of Use",
+        "retrievedAt": "2026-10-23"
+      },
+      "sha256": "53fe5f646bb2440da3b524d7c5baf5449768fbb6ffe588964e708306e45fae4f",
+      "path": "knowledge/techniques/corpus/cwe-918-server-side-request-forgery.json"
+    },
+    {
+      "id": "gtfobins-argument-passthrough",
+      "title": "Shell escape through a tool that passes an argument to a child process",
+      "kind": "shell-escape",
+      "prerequisites": [
+        "a delegated command rule, SUID binary or scheduled job that runs the tool for you",
+        "the tool accepts an argument the parent does not sanitise"
+      ],
+      "tags": [
+        "gtfobins",
+        "linux",
+        "privilege",
+        "shell-escape",
+        "sudo"
+      ],
+      "excerpt": "Many Unix utilities delegate work to a child process or accept a command-shaped argument. When such a utility runs under a rule that grants more privilege than your own shell, the delegated child inherits that privilege. The technique is to find the delegation point, not to guess a payload: check the tool's manual for an option that names a program or an interpreter, then confirm which user the child ran as.",
+      "source": {
+        "name": "GTFOBins",
+        "url": "https://gtfobins.github.io/",
+        "license": "GPL-3.0",
+        "retrievedAt": "2026-10-23"
+      },
+      "sha256": "e1f0792bcf70f6065559b807c8b3b09d6179cd5662c20694a4b24270596e30be",
+      "path": "knowledge/techniques/corpus/gtfobins-argument-passthrough.json"
+    },
+    {
+      "id": "gtfobins-file-read-through-utility",
+      "title": "Reading a file through a utility that echoes its input",
+      "kind": "file-access",
+      "prerequisites": [
+        "a way to run the utility with another user's privilege",
+        "read permission for the target file under that user"
+      ],
+      "tags": [
+        "gtfobins",
+        "linux",
+        "file-read",
+        "privilege"
+      ],
+      "excerpt": "Utilities that print or page file content can act as a read primitive when they run with more privilege than your shell. The useful question is which utility is already permitted by the rule and whether it can be pointed at an arbitrary path, since a permitted utility that takes a path is the read primitive itself.",
+      "source": {
+        "name": "GTFOBins",
+        "url": "https://gtfobins.github.io/",
+        "license": "GPL-3.0",
+        "retrievedAt": "2026-10-23"
+      },
+      "sha256": "59408c14ad5c817bca58f788dabe83837c1168f17eefb4d5ce3287b935773cb0",
+      "path": "knowledge/techniques/corpus/gtfobins-file-read-through-utility.json"
+    },
+    {
+      "id": "gtfobins-file-write-through-utility",
+      "title": "Writing a file through an editor or output option",
+      "kind": "file-access",
+      "prerequisites": [
+        "a permitted utility that accepts a destination path",
+        "write permission in the destination directory under the privileged user"
+      ],
+      "tags": [
+        "gtfobins",
+        "linux",
+        "file-write",
+        "cron",
+        "privilege"
+      ],
+      "excerpt": "Editors, archivers and logging options accept output paths or drop into an editor. A permitted invocation that can name a destination turns into a write primitive, which matters when something else executes what lands there: a cron directory, a systemd unit path, or a startup script.",
+      "source": {
+        "name": "GTFOBins",
+        "url": "https://gtfobins.github.io/",
+        "license": "GPL-3.0",
+        "retrievedAt": "2026-10-23"
+      },
+      "sha256": "8b3b3d16b4175b3444f2d18477e8cb1a21b4a6ad94f52d5185dc808e3903a13a",
+      "path": "knowledge/techniques/corpus/gtfobins-file-write-through-utility.json"
+    },
+    {
+      "id": "hacktricks-cloud-metadata-reachability",
+      "title": "Cloud metadata service reachability from an application fetch",
+      "kind": "network-reachability",
+      "prerequisites": [
+        "a server-side fetch whose destination you influence",
+        "the instance role grants the metadata service reachability"
+      ],
+      "tags": [
+        "hacktricks",
+        "ssrf",
+        "cloud",
+        "metadata"
+      ],
+      "excerpt": "Cloud metadata services answer on link-local addresses and often require a provider-specific request header, which is why a plain fetch can look blocked while the service is reachable. The effect worth proving is the content of a credential document read through the application's own fetch, not the fact that a port answered.",
+      "source": {
+        "name": "HackTricks",
+        "url": "https://book.hacktricks.wiki/",
+        "license": "CC-BY-SA-4.0",
+        "retrievedAt": "2026-10-23"
+      },
+      "sha256": "c2c594b86af945bed609565d144dd3b114925593b66062ecd12eb8a1a678719e",
+      "path": "knowledge/techniques/corpus/hacktricks-cloud-metadata-reachability.json"
+    },
+    {
+      "id": "hacktricks-deserialization-gadget-hunt",
+      "title": "Finding a gadget chain in a supplied classpath",
+      "kind": "deserialization",
+      "prerequisites": [
+        "a deserialization sink that accepts attacker-influenced bytes",
+        "the dependency set the application actually loads"
+      ],
+      "tags": [
+        "hacktricks",
+        "deserialization",
+        "gadget",
+        "java",
+        "dotnet"
+      ],
+      "excerpt": "Gadget chains are a property of the loaded libraries, not of the payload format. Inventory the versions in the supplied artefact, look for classes whose read-object path reaches a file, network or process call, and only then ask whether the sink can reach them. A chain you cannot explain class by class is a scanner result rather than a demonstrated effect.",
+      "source": {
+        "name": "HackTricks",
+        "url": "https://book.hacktricks.wiki/",
+        "license": "CC-BY-SA-4.0",
+        "retrievedAt": "2026-10-23"
+      },
+      "sha256": "147772daf9bc7a4096346f3467f7a0391825db57387da8c629fd2b07baa50f9e",
+      "path": "knowledge/techniques/corpus/hacktricks-deserialization-gadget-hunt.json"
+    },
+    {
+      "id": "hacktricks-suid-inventory",
+      "title": "Auditing SUID and sudo rules before assuming privilege escalation",
+      "kind": "privilege-escalation",
+      "prerequisites": [
+        "command execution as an unprivileged user on the target host",
+        "permission to read the rule files"
+      ],
+      "tags": [
+        "hacktricks",
+        "linux",
+        "privesc",
+        "suid",
+        "sudo"
+      ],
+      "excerpt": "Escalation starts with an inventory: which binaries carry the SUID bit, which sudo rules exist, which capabilities are granted, and which scheduled jobs run as another user. Each entry is a hypothesis about a delegation point; the effect is only established when the delegated process is observed running as the other principal.",
+      "source": {
+        "name": "HackTricks",
+        "url": "https://book.hacktricks.wiki/",
+        "license": "CC-BY-SA-4.0",
+        "retrievedAt": "2026-10-23"
+      },
+      "sha256": "da1cd71cb3e257520230aa2a051852a8a940b3eed1bae9acd08adbbb18a9b7e6",
+      "path": "knowledge/techniques/corpus/hacktricks-suid-inventory.json"
+    },
+    {
+      "id": "lolbas-script-host-surrogate",
+      "title": "Running script through a signed script host",
+      "kind": "proxy-execution",
+      "prerequisites": [
+        "a Windows host that permits the script host",
+        "a script the engagement authorises you to run"
+      ],
+      "tags": [
+        "lolbas",
+        "windows",
+        "execution",
+        "proxy-execution"
+      ],
+      "excerpt": "Some signed hosts execute script or installable content named by an argument, so execution is attributed to a trusted binary rather than to your shell. Treat this as an execution route when application allow-listing is the boundary under test, and observe the effect from the host's own side rather than from the shell.",
+      "source": {
+        "name": "LOLBAS",
+        "url": "https://lolbas-project.github.io/",
+        "license": "GPL-3.0",
+        "retrievedAt": "2026-10-23"
+      },
+      "sha256": "b0ac624639f6fe28e2719ce2853cac662f31f0c131965c93f003d2f7b97f8c28",
+      "path": "knowledge/techniques/corpus/lolbas-script-host-surrogate.json"
+    },
+    {
+      "id": "lolbas-signed-download-proxy",
+      "title": "Downloading through a signed system binary",
+      "kind": "proxy-execution",
+      "prerequisites": [
+        "a Windows host where the binary is present and not blocked by policy",
+        "egress from the host to a host you control"
+      ],
+      "tags": [
+        "lolbas",
+        "windows",
+        "egress",
+        "proxy-execution"
+      ],
+      "excerpt": "Windows ships signed binaries that perform network fetches or cache remote content. On an authorised host, such a binary can answer whether egress is filtered by policy rather than by network, because the traffic is attributed to a signed system process. Prefer a fetch to a host you control and record the arrival; do not leave cached files behind.",
+      "source": {
+        "name": "LOLBAS",
+        "url": "https://lolbas-project.github.io/",
+        "license": "GPL-3.0",
+        "retrievedAt": "2026-10-23"
+      },
+      "sha256": "a67ea5e33d9f3ebb3522b09e2ab42d1ce755857e750123f80930b6a324d513f8",
+      "path": "knowledge/techniques/corpus/lolbas-signed-download-proxy.json"
+    },
+    {
+      "id": "nuclei-matcher-as-probe-design",
+      "title": "Using a detection template as a probe design reference",
+      "kind": "probe-design",
+      "prerequisites": [
+        "a template you have read, not merely run",
+        "an authorised target and a bounded request budget"
+      ],
+      "tags": [
+        "nuclei",
+        "detection",
+        "probe-design",
+        "verification"
+      ],
+      "excerpt": "A community template encodes what a detector believes proves a condition: the request shape, the matcher, and the negative case. Read the matcher before using it, because a template that matches a reflected string proves reflection rather than the condition it names. The template is a hypothesis generator; the probe you run must still carry its own control.",
+      "source": {
+        "name": "nuclei-templates",
+        "url": "https://github.com/projectdiscovery/nuclei-templates",
+        "license": "MIT",
+        "retrievedAt": "2026-10-23"
+      },
+      "sha256": "becaba41763232eb59d84321de5e5793cb4d369dda1e02ceb9b86932eb7e66b5",
+      "path": "knowledge/techniques/corpus/nuclei-matcher-as-probe-design.json"
+    },
+    {
+      "id": "payloads-context-breakout",
+      "title": "Choosing an injection payload from the parser context",
+      "kind": "injection",
+      "prerequisites": [
+        "a confirmed sink where your value reaches an interpreter",
+        "the context the value lands in (string, identifier, path, template, serialized object)"
+      ],
+      "tags": [
+        "payloadsallthethings",
+        "injection",
+        "sql",
+        "template",
+        "context"
+      ],
+      "excerpt": "The payload family follows the context, not the vulnerability name: a value inside a quoted string needs a delimiter and comment strategy, an identifier needs a different escape, a template needs the engine's own expression syntax. Establish the context with a harmless marker first, then take a payload class from a reference and adapt it to the delimiters you observed.",
+      "source": {
+        "name": "PayloadsAllTheThings",
+        "url": "https://github.com/swisskyrepo/PayloadsAllTheThings",
+        "license": "MIT",
+        "retrievedAt": "2026-10-23"
+      },
+      "sha256": "e2f3f472c7f12e4d4367582d83dc3f06a593125970785e8af8c267ceca82b266",
+      "path": "knowledge/techniques/corpus/payloads-context-breakout.json"
+    },
+    {
+      "id": "payloads-xxe-entity-shapes",
+      "title": "XML entity shapes for file read and out-of-band confirmation",
+      "kind": "xml-external-entity",
+      "prerequisites": [
+        "an XML parser that resolves external entities",
+        "a document you control reaching that parser"
+      ],
+      "tags": [
+        "payloadsallthethings",
+        "xxe",
+        "xml",
+        "file-read",
+        "oob"
+      ],
+      "excerpt": "External entity support turns a document into a read or a fetch primitive. In-band shapes return file content inside the parsed document; out-of-band shapes make the parser contact a listener you control, which is what proves parsing when the response gives nothing back. Record which shape the parser accepted, because hardened defaults usually reject both.",
+      "source": {
+        "name": "PayloadsAllTheThings",
+        "url": "https://github.com/swisskyrepo/PayloadsAllTheThings",
+        "license": "MIT",
+        "retrievedAt": "2026-10-23"
+      },
+      "sha256": "02cc01df0d3ab6e2029526a28b4ce737e02f41f28111139d496b86a253c728b2",
+      "path": "knowledge/techniques/corpus/payloads-xxe-entity-shapes.json"
+    }
+  ]
+}

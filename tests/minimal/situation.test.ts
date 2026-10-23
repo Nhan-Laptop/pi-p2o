@@ -16,7 +16,7 @@ const claim = (extra: Record<string, unknown>) => ({ closure: 'confirmed', ...ex
 
 describe('situation line (P3)', () => {
   it('renders the documented line for a busy run', () => {
-    expect(situationLine(full)).toBe('Situation: 2 running (discovery, validation) · 3 ready · next: validation 65 · 1 blocked on evidence · 1 open contradiction · chain: 1 step ready, 2 unmet requires · 4 cases pending rating · coverage 12/31.');
+    expect(situationLine(full)).toBe('Situation: 2 running (discovery, validation) · 3 ready · next: validation 65 · 1 blocked on evidence · 1 open contradiction · chain: 1 step ready, 2 unmet needs · 4 cases pending rating · coverage 12/31.');
     expect(situationLine(full).length).toBeLessThanOrEqual(SITUATION_LIMIT);
   });
 
@@ -39,8 +39,8 @@ describe('situation line (P3)', () => {
     const relaxed = summarizeSituation({ tasks, cases: [], coverage, claims: [] });
     expect(relaxed.suggested).toEqual({ purpose: 'validation', score: 65 });
     expect(situationLine(relaxed)).toContain('next: validation 65');
-    // A ready chain step is the claim whose every required token is already provided: 50+15+20 = 85.
-    const chained = summarizeSituation({ tasks, cases: [], coverage, claims: [claim({ provides: 'an authenticated session', execution: 'tested' }), claim({ closure: 'open_proof_gap', requires: 'authenticated session' })] });
+    // A ready chain step is the claim whose every need an existing claim already gains: 50+15+20 = 85.
+    const chained = summarizeSituation({ tasks, cases: [], coverage, claims: [claim({ gained: [{ kind: 'cred.session' }], execution: 'tested' }), claim({ closure: 'open_proof_gap', needs: [{ kind: 'cred.session' }] })] });
     expect(chained.suggested).toEqual({ purpose: 'validation', score: 85 });
   });
 
@@ -70,8 +70,8 @@ describe('situation line (P3)', () => {
       cases: [view({ contradictions: [{ status: 'open' }, { status: 'resolved' }] }), view({ reviewStatus: 'accepted' }),
         view({ reviewStatus: 'accepted', finding: { severity: 'high' } }), view({ reviewStatus: 'pending', contradictions: [{ status: 'open' }] })],
       coverage: [plan([{ execution: 'tested' }, { execution: 'planned' }]), plan([{ execution: 'tested' }])],
-      claims: [claim({ provides: 'an authenticated session as alice', execution: 'tested' }), claim({ closure: 'open_proof_gap', requires: 'authenticated session as alice' }),
-        claim({ closure: 'open_proof_gap', requires: 'write access to the admin bucket', provides: 'read of one object' })],
+      claims: [claim({ gained: [{ kind: 'cred.session', subject: 'alice' }], execution: 'tested' }), claim({ closure: 'open_proof_gap', needs: [{ kind: 'cred.session', subject: 'alice' }] }),
+        claim({ closure: 'open_proof_gap', needs: [{ kind: 'data.read', scope: 'admin-bucket' }], gained: [{ kind: 'data.read' }] })],
     });
     expect([snapshot.open, snapshot.running, snapshot.ready, snapshot.blocked]).toEqual([4, 1, 1, 1]);
     expect(snapshot.runningRoles).toEqual(['discovery']);
@@ -82,12 +82,12 @@ describe('situation line (P3)', () => {
   });
 
   it('counts open claims against confirmed+tested providers, not against every recorded claim', () => {
-    const open = claim({ closure: 'open_proof_gap', requires: 'a session as alice' });
+    const open = claim({ closure: 'open_proof_gap', needs: [{ kind: 'cred.session', subject: 'alice' }] });
     const join = (...claims: Array<Record<string, unknown>>) => { const snapshot = summarizeSituation({ tasks: [], cases: [], coverage: [], claims: claims as never }); return [snapshot.chainReady, snapshot.chainUnmet]; };
-    expect(join(open)).toEqual([0, 1]); // nothing recorded provides it yet
-    expect(join(open, claim({ provides: 'a session as alice', execution: 'not_tested' }))).toEqual([0, 1]); // recorded, not tested
-    expect(join(open, claim({ closure: 'ruled_out', provides: 'a session as alice' }))).toEqual([0, 1]); // ruled out is not a primitive
-    expect(join(open, claim({ provides: 'a session as alice', execution: 'tested' }))).toEqual([1, 0]);
-    expect(join(claim({ provides: 'a session as alice', execution: 'tested' }))).toEqual([0, 0]); // a closed claim is not pending work
+    expect(join(open)).toEqual([0, 1]); // nothing recorded gains it yet
+    expect(join(open, claim({ gained: [{ kind: 'cred.session', subject: 'alice' }], execution: 'not_tested' }))).toEqual([0, 1]); // recorded, not tested
+    expect(join(open, claim({ closure: 'ruled_out', gained: [{ kind: 'cred.session', subject: 'alice' }] }))).toEqual([0, 1]); // ruled out is not a primitive
+    expect(join(open, claim({ gained: [{ kind: 'cred.session', subject: 'alice' }], execution: 'tested' }))).toEqual([1, 0]);
+    expect(join(claim({ gained: [{ kind: 'cred.session', subject: 'alice' }], execution: 'tested' }))).toEqual([0, 0]); // a closed claim is not pending work
   });
 });

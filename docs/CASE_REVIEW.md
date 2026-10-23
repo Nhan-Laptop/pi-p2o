@@ -26,7 +26,7 @@ Worker/reporting không có `p2o_case`/`p2o_coverage`. Dữ liệu import/checkp
 {"action":"create","requestId":"owner-case-1","entry":{}}
 {"action":"revise","id":"case-…","revision":1,"entry":{}}
 {"action":"list","cursor":0,"limit":20,"status":"pending"}
-{"action":"rate","id":"case-…","revision":2,"finding":{"severity":"medium","basis":"…","cvssVector":"CVSS:3.1/AV:N/…","cwe":["CWE-639"],"remediationSteps":"…","references":["wstg-athz-04"],"reproductionEvidenceRefs":["…"],"chain":{"objective":"…","demonstratedThrough":2,"steps":[{"order":1,"step":"…","claimRef":"cand-…","provides":"…"},{"order":2,"step":"…","claimRef":"cand-…","requires":"…","provides":"…"},{"order":3,"step":"…","requires":"…"}]}}}
+{"action":"rate","id":"case-…","revision":2,"finding":{"severity":"medium","basis":"…","cvssVector":"CVSS:3.1/AV:N/…","cwe":["CWE-639"],"remediationSteps":"…","references":["wstg-athz-04"],"reproductionEvidenceRefs":["…"],"chain":{"objective":"…","demonstratedThrough":2,"steps":[{"order":1,"step":"…","claimRef":"cand-…","gained":[{"kind":"exec.code","subject":"fixture-rce"}]},{"order":2,"step":"…","claimRef":"cand-…","needs":[{"kind":"exec.code","subject":"fixture-rce"}],"effect":"code-execution","reach":{"AV":"N","AC":"L","AT":"N","PR":"L","UI":"N"}},{"order":3,"step":"…","needs":[{"kind":"file.write","subject":"/etc/cron.d"}]}]}}}
 ```
 
 **`rate`** ghi một note riêng (`data.caseRating`) gắn revision case đã nêu — không đổi verdict/revision và không làm stale coverage.
@@ -35,7 +35,33 @@ Worker/reporting không có `p2o_case`/`p2o_coverage`. Dữ liệu import/checkp
 `cvssVector` tùy chọn, host tự tính điểm CVSS 3.1 (`src/cvss.ts`); CWE và references do owner ghi, host không tra MITRE. Case dựa policy `inferred`
 không rate trên Medium. Case đổi revision thì rating cũ bị báo `STALE_RATING` ở báo cáo/preflight. Mọi mutation bind action + input + revision vào request HMAC.
 
-**`chain`** (tùy chọn, trong cùng payload `finding`) ghi chuỗi khai thác đã dựng: `{objective, steps:[{order, step, claimRef?, provides?, requires?}], demonstratedThrough?}` — 1–8 bước, `order` phải đúng 1..n, `claimRef` trỏ candidate cùng run. Bước đã thực sự chạy (mọi bước ≤ `demonstratedThrough`) phải có `claimRef` với `closure=confirmed` và `execution=tested`; thiếu thì host từ chối rate. Severity chỉ tính tới bước đã chạy, bước chưa chạy giữ nguyên là gap trong `limitations`. Report in chuỗi theo thứ tự kèm claim từng bước và bước dừng; `findings.json` xuất cùng cấu trúc.
+**`chain`** (tùy chọn, trong cùng payload `finding`) ghi chuỗi khai thác đã dựng: `{objective, steps:[{order, step, claimRef?, gained?, needs?, effect?, reach?}], demonstratedThrough?}` — 1–8 bước, `order` phải đúng 1..n, `claimRef` trỏ candidate cùng run. Cạnh nối hai bước là capability có kiểu (`gained` của bước trước thoả `needs` của bước sau, xem `src/capabilities.ts`); văn xuôi cũ `provides`/`requires` vẫn đọc được nhưng chỉ hiện là `untyped text` và không bao giờ được nối hay tính điểm. Bước đã thực sự chạy (mọi bước ≤ `demonstratedThrough`) phải có `claimRef` với `closure=confirmed` và `execution=tested`; thiếu thì host từ chối rate.
+
+**Severity tính từ thứ đã chứng minh, không phải thứ đã kể** (P14.9). Bước ở đúng `demonstratedThrough` phải khai `effect` (`confidentiality-read`, `integrity-write`, `availability-loss`, `authentication-bypass`, `code-execution`, `cross-tenant-read`, `sandbox-escape`); host map effect đó sang impact CVSS 4.0 (`VC/VI/VA/SC/SI/SA`) rồi tính điểm bằng thuật toán CVSS 4.0 thật (`src/cvss4.ts`). Exploitability lấy theo `reach` dễ nhất mà các bước đã chạy khai; bước không khai `reach` bị tính ở mức bất lợi nhất (`AV:P/AC:H/AT:P/PR:H/UI:A`), nên thiếu bằng chứng chỉ có thể hạ điểm. Kết quả nằm ở `chain.impact` (do host ghi, không nhận từ input) và có ba hệ quả: chuỗi chưa chạy bước nào, hoặc bước đã chạy không khai `effect`, thì **không được rate trên `informational`**; rate cao hơn mức đã chứng minh bị từ chối kèm vector + điểm; rate thấp hơn hoặc bằng thì được. Bước chưa chạy vẫn giữ nguyên là gap trong `limitations`. Report in chuỗi theo thứ tự kèm claim, `gained`/`needs`, `effect` từng bước, dòng `Demonstrated impact` và bước dừng; `findings.json` xuất cùng cấu trúc.
+
+**Từ frontier ra task** (P14.10): `p2o_graph {"action":"chain","plan":true,"assetRefs":[{"id":"asset-…","revision":1}]}` trả về `draft` — đúng
+object `p2o_task create` cho bước sâu nhất đang sẵn sàng (role `exploit`, `work.purpose` `exploitation`, `work.claimRefs` = record id các
+provider trên đường đi ngắn nhất + claim của chính bước đó, `work.needs` = capability đang tiêu thụ, `work.environmentRef` nếu provider sâu
+nhất có ghi, kèm `decision` + `outputContract`) — và ghi cả chuỗi thành `p2o_plan` todo, mỗi bước một todo. Tool **không** tạo task, **không**
+spawn worker: draft là đề xuất, todo là điều hướng, owner tự gọi `p2o_task create`. Không truyền `assetRefs` thì draft bỏ `work` và `planNote`
+nói rõ lý do, thay vì đoán asset từ chuỗi `surface`; frontier rỗng thì từ chối với `Nothing ready to plan`.
+
+**Từ chuỗi ra bước tiếp theo** (P14.10): `p2o_graph {"action":"chain","plan":true,"assetRefs":[{"id":"asset-…","revision":1}]}` trả về
+`draft` — đúng object `p2o_task create` cho bước sâu nhất đã sẵn sàng (role `exploit`, `work.purpose` `exploitation`,
+`work.claimRefs` = record id các provider trên đường đi ngắn nhất + claim của chính bước đó, `work.needs` = capability đang tiêu thụ,
+`work.environmentRef` khi provider sâu nhất có environment) — và ghi cả chuỗi thành `p2o_plan` todo, mỗi bước một todo (replay cùng
+`requestId` trả lại đúng các todo cũ). Không có gì được dispatch: draft chỉ là đề xuất, todo chỉ là điều hướng, và `p2o_task create` vẫn
+là một lời gọi riêng của owner. Không truyền `assetRefs` thì `draft` bỏ `work` (kèm `planNote` nói rõ lý do) chứ không đoán asset từ
+chuỗi `surface`; frontier rỗng thì lời gọi bị từ chối với `Nothing ready to plan`.
+
+**Tính độc lập của bước tái hiện** (P14.12): một receipt chỉ được coi là độc lập khi worker khác có *claim đã được chứng minh của chính nó*
+trích receipt đó, cùng surface/risk. Nếu claim của tác giả có nêu artifact (`payloadRef`/`environmentRef`) thì claim của worker kia phải
+chạy **cùng sha256 payload** và **cùng fingerprint recipe môi trường** — so sánh hai giá trị host đóng dấu lúc ghi (`payloadSha256`,
+`environmentFingerprint`), không so sánh văn xuôi. Lệch hash payload → `independent-payload-mismatch:<a>!=<b>`; lệch fingerprint →
+`independent-environment-mismatch:<a>!=<b>`; claim của tác giả chỉ nêu một nửa artifact → `independent-payload-missing`; worker kia chưa có
+claim trích receipt → `independent-receipt-uncited:<evidence>`; claim mới nhất của worker kia không còn được chứng minh (rút lại) →
+`independent-receipt-withdrawn:<evidence>`. Không nêu artifact nào thì không có gì để replay và độc lập vẫn là claim đã chứng minh của
+worker kia. Case vẫn rate được khi thiếu bằng chứng độc lập, nhưng `independentCurrent` giữ `false` và reason nói rõ thiếu gì.
 
 **`readyToRate`** (P8) là trường *dẫn xuất* trong `caseViews` và projection của `p2o_case list`, không lưu xuống ledger và không phải quyền
 mới: `currentness=current` + có receipt độc lập đang còn hiệu lực (`independentCurrent`) + độ sâu chuỗi đã nêu hoặc vắng mặt tường minh

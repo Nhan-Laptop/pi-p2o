@@ -1,3 +1,5 @@
+import { capabilityList, type Capability } from './capabilities.js';
+import { CASE_EFFECTS, chainImpact, parseChainReach, type CaseEffect, type ChainImpact, type ChainReach } from './cvss.js';
 import { CVSS_VECTOR } from './cvss.js';
 import { exact, fieldValidators, plain } from './validate.js';
 export const CASE_VERDICTS=['open','confirmed','ruled_out','inconclusive'] as const;
@@ -20,15 +22,19 @@ export interface CaseFinding {
   severity:typeof FINDING_SEVERITIES[number];basis:string;likelihood?:string;impact?:string;cvssVector?:string;cwe:string[];remediationSteps?:string;references:string[];reproductionEvidenceRefs:string[];reproductionSteps?:ReproductionStep[];independenceWaiver?:string;chain?:CaseChain;
 }
 /**
- * One ordered link of a composed chain: what the step does, the claim that shows it ran, and the capability edge that joins it to the previous step
- * (`provides` of the earlier step is the `requires` of this one). `order` is contiguous from 1; the list order is the execution order.
+ * One ordered link of a composed chain: what the step does, the claim that shows it ran, and the typed capability edge that joins it to the previous step
+ * (`gained` of the earlier step satisfies the `needs` of this one). `effect` is what this step's own evidence showed, in impact terms; `reach` is how the
+ * step was reached, and is what the impact of the whole chain is scored with. `order` is contiguous from 1; the list order is the execution order.
+ * Pre-P14 chain records carried free text in `provides`/`requires`; that text is read into `gained`/`needs` as `legacy` entries, displayed as legacy and
+ * never joined, matched or scored.
  */
-export interface CaseChainStep {order:number;step:string;claimRef?:string;provides?:string;requires?:string}
+export interface CaseChainStep {order:number;step:string;claimRef?:string;gained:Capability[];needs:Capability[];effect?:CaseEffect;reach?:ChainReach}
 /**
  * A chain the owner actually assembled: ordered steps from the initial primitive to the furthest demonstrated effect. `demonstratedThrough` is the last
  * step whose cited claim was executed; steps beyond it are reasoned and stay unproven, so severity is bounded by the demonstrated depth, not by the plan.
+ * `impact` is computed by the host from the demonstrated depth (src/cvss.ts) and is never taken from the caller: severity follows the demonstration.
  */
-export interface CaseChain {objective:string;steps:CaseChainStep[];demonstratedThrough?:number}
+export interface CaseChain {objective:string;steps:CaseChainStep[];demonstratedThrough?:number;impact?:ChainImpact}
 /** Reader-facing label and order for a reproduction receipt. A role is a label, never a proof level; list order is the order to follow. */
 export const REPRODUCTION_ROLES=['baseline','proof','verification','supporting'] as const;
 export interface ReproductionStep {ref:string;role:typeof REPRODUCTION_ROLES[number];note?:string}
@@ -64,14 +70,23 @@ export function validateFinding(value:unknown):CaseFinding{
   if(row.remediationSteps!==undefined)result.remediationSteps=text(row.remediationSteps,'finding remediation steps',2000,10);
   if(row.independenceWaiver!==undefined)result.independenceWaiver=text(row.independenceWaiver,'finding independence waiver',300,10);
   if(row.chain!==undefined){
-    const chain=plain(row.chain,'finding chain');exact(chain,['objective','steps','demonstratedThrough'],'Finding chain');
+    // `impact` is accepted on a stored row and then recomputed from the depth, so a replay round-trips while no caller can choose a score.
+    const chain=plain(row.chain,'finding chain');exact(chain,['objective','steps','demonstratedThrough','impact'],'Finding chain');
     if(!Array.isArray(chain.steps)||chain.steps.length<1||chain.steps.length>8)throw Error('Finding chain needs 1..8 ordered steps');
-    const steps=chain.steps.map((item,index):CaseChainStep=>{const step=plain(item,`finding chain step ${index+1}`);exact(step,['order','step','claimRef','provides','requires'],`Finding chain step ${index+1}`);
+    const steps=chain.steps.map((item,index):CaseChainStep=>{const step=plain(item,`finding chain step ${index+1}`);exact(step,['order','step','claimRef','provides','requires','gained','needs','effect','reach'],`Finding chain step ${index+1}`);
       if(step.order!==index+1)throw Error('Finding chain steps must be numbered 1..n in execution order');
-      const parsed:CaseChainStep={order:index+1,step:text(step.step,'finding chain step',400,5)};
+      const legacy=(key:'provides'|'requires',target:'gained'|'needs'):Capability[]=>{
+        if(step[key]===undefined)return [];
+        if(step[target]!==undefined)throw Error(`Finding chain step ${index+1} sends both ${key} text and typed ${target}; send only the typed list`);
+        return [{legacy:text(step[key],`finding chain step ${index+1} ${key}`,300,5)}];};
+      // A step declares no edge by sending nothing: an empty list is the stored form of that, so it must re-read as itself.
+      const edges=(key:'gained'|'needs',list:unknown,label:string):Capability[]=>list===undefined?[]:Array.isArray(list)&&list.length===0?[]:capabilityList(list,label);
+      const gained=step.gained===undefined?legacy('provides','gained'):edges('gained',step.gained,`finding chain step ${index+1} gained`);
+      const needs=step.needs===undefined?legacy('requires','needs'):edges('needs',step.needs,`finding chain step ${index+1} needs`);
+      const parsed:CaseChainStep={order:index+1,step:text(step.step,'finding chain step',400,5),gained,needs};
       if(step.claimRef!==undefined)parsed.claimRef=id(step.claimRef,'finding chain claim');
-      if(step.provides!==undefined)parsed.provides=text(step.provides,'finding chain provides',300,5);
-      if(step.requires!==undefined)parsed.requires=text(step.requires,'finding chain requires',300,5);
+      if(step.effect!==undefined){if(typeof step.effect!=='string'||!(CASE_EFFECTS as readonly string[]).includes(step.effect))throw Error(`Finding chain step ${index+1} effect must be one of ${CASE_EFFECTS.join(', ')}`);parsed.effect=step.effect as CaseEffect;}
+      if(step.reach!==undefined)parsed.reach=parseChainReach(step.reach,`Finding chain step ${index+1} reach`);
       return parsed;});
     result.chain={objective:text(chain.objective,'finding chain objective',600,10),steps};
     if(chain.demonstratedThrough!==undefined){
@@ -80,6 +95,9 @@ export function validateFinding(value:unknown):CaseFinding{
       if(steps.slice(0,depth).some(step=>!step.claimRef))throw Error('Every chain step up to demonstratedThrough needs the claim that ran it');
       result.chain.demonstratedThrough=depth;
     }
+    // Computed, never accepted: a caller that repeats the stored impact gets the same answer from the demonstrated depth.
+    const impact=chainImpact(steps,result.chain.demonstratedThrough);
+    if(impact)result.chain.impact=impact;
   }
   return result;
 }

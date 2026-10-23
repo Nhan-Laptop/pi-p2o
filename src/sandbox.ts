@@ -5,7 +5,8 @@ import { abortable, checked, runDocker, type RunProcess, type ProcessResult, typ
 import { isIP } from 'node:net';
 import { hasSource, httpRequest, scopedRequest, taskTimeout, CONTAINER_HOST_ALIAS, type HttpRequest, type ResolveAddress, type Target } from './target.js';
 import { HttpSessions, responseHead } from './http-session.js';
-import { SCRATCH_READER, SCRATCH_PROTOCOL_BYTES, scratchPath, scratchRoot, scratchBound, scratchOffset, parseScratchSnapshot, type ScratchSnapshot } from './scratch.js';
+import { sha256Hex } from './validate.js';
+import { SCRATCH_READER, SCRATCH_PROTOCOL_BYTES, SCRATCH_WRITER, SCRATCH_WRITE_MAX_BYTES, parseScratchWrite, scratchPath, scratchRoot, scratchBound, scratchOffset, parseScratchSnapshot, type ScratchSnapshot, type ScratchWrite } from './scratch.js';
 
 // Fixed content digest, not a mutable tag or a model-selected image. No automatic image pull.
 export const IMAGE = 'ghcr.io/usestrix/strix-sandbox@sha256:f6906c3114e504fd1a218fcf028d7a0e46851118403a438b63956de6ea7c4331';
@@ -154,8 +155,59 @@ export class Sandbox {
     });
   }
 
-  private async ensureWorkdir(workdir: string, signal: AbortSignal): Promise<void> {
-    if (workdir === '/work' || this.workdirs.has(workdir)) return;
+  /**
+   * planning_update.md P14.7: put bounded package bytes into assigned scratch so a worker can run a shipped harness.
+   * The writer is a fixed script, the destination is a relative path inside the caller's own scratch, and the bytes it
+   * reports are the ones it re-read from disk — the host refuses a mismatch instead of trusting the write.
+   */
+  async writeScratch(path: string, bytes: Buffer, signal?: AbortSignal, workdir = '/work', mode = 0o500): Promise<ScratchWrite> {
+    const relative = scratchPath(path), root = scratchRoot(workdir);
+    if (!Buffer.isBuffer(bytes) || !bytes.length || bytes.length > SCRATCH_WRITE_MAX_BYTES) throw Error('Materialized bytes must be 1..64 KiB');
+    return this.enqueue(async () => {
+      if (this.stopped || !this.shell) throw Error('No active sandbox');
+      const combined = AbortSignal.any([this.cancellation.signal, ...(signal ? [signal] : [])]);
+      try {
+        await this.ensureWorkdir(root, combined); combined.throwIfAborted();
+        const result = await this.docker(['exec', '--workdir', root, this.shell!, '/usr/bin/python3', '-I', '-S', '-c', SCRATCH_WRITER,
+          JSON.stringify({ root, path: relative, base64: bytes.toString('base64'), mode })], { timeoutMs: 30_000, signal: combined });
+        const expected = { path: relative, root, sha256: createHash('sha256').update(bytes).digest('hex'), bytes: bytes.length };
+        const frame = parseScratchWrite(Buffer.from(result.stdout ?? '', 'utf8'), expected);
+        if (result.code !== 0) throw Error(`Scratch writer returned ${result.code}; nothing is claimed to be materialized`);
+        return frame;
+      } catch (error) {
+        // A transport fault may have left a partial file: retire the executor rather than leave ambiguous bytes to run.
+        const denial = /^Scratch write denied \(/.test(error instanceof Error ? error.message : '');
+        if (!denial) { this.stopped = true; this.cancellation.abort(); await this.removeAll(); }
+        throw error;
+      }
+    });
+  }
+
+  /**
+   * planning_update.md P14.8: fetch one curated source URL inside the sandbox. The URL is the corpus's, not the model's,
+   * the body is bounded and https-only, and the caller gets a hash of exactly the bytes it may quote.
+   */
+  async fetchResearch(url: string, signal?: AbortSignal, workdir = '/work'): Promise<{ status: string; sha256: string; bytes: number; body: string; truncated: boolean }> {
+    if (typeof url !== 'string' || !/^https:\/\/[^\s'"\\]{1,300}$/.test(url)) throw Error('Research URL must be an https URL the corpus cites');
+    return this.enqueue(async () => {
+      if (this.stopped || !this.shell) throw Error('No active sandbox');
+      const combined = AbortSignal.any([this.cancellation.signal, ...(signal ? [signal] : [])]);
+      await this.ensureWorkdir(scratchRoot(workdir), combined); combined.throwIfAborted();
+      const command = `/usr/bin/curl -sS -L --proto =https --proto-redir =https --max-time 20 --max-filesize ${32 * 1024}`
+        + ` -A p2o-research/1 --write-out '\n__P2O_STATUS__%{http_code}' '${url}'`;
+      const result = await this.docker(['exec', '--workdir', scratchRoot(workdir), this.shell!, '/bin/sh', '-c', command], { timeoutMs: 60_000, signal: combined });
+      if (result.code === 63) return { status: 'too-large', sha256: sha256Hex(''), bytes: 0, body: '', truncated: true };
+      if (result.code !== 0) throw Error(`Research fetch failed (curl exit ${result.code}); nothing was quoted`);
+      const marker = result.stdout.lastIndexOf('\n__P2O_STATUS__');
+      const body = marker < 0 ? result.stdout : result.stdout.slice(0, marker);
+      const status = marker < 0 ? 'unknown' : result.stdout.slice(marker + '\n__P2O_STATUS__'.length).trim();
+      const bytes = Buffer.byteLength(body, 'utf8');
+      if (bytes > 32 * 1024) throw Error('Research fetch returned more than the configured bound');
+      return { status: /^\d{3}$/.test(status) ? status : 'unknown', sha256: sha256Hex(body), bytes, body, truncated: result.truncated === true };
+    });
+  }
+
+  private async ensureWorkdir(workdir: string, signal: AbortSignal): Promise<void> {    if (workdir === '/work' || this.workdirs.has(workdir)) return;
     const created = await this.docker(['exec', this.shell!, '/bin/mkdir', '-p', workdir], { timeoutMs: 15_000, signal });
     // Docker may report failure to attach while the command still ran; only a real absence is fatal.
     const exists = await this.docker(['exec', this.shell!, '/bin/sh', '-c', `test -d ${workdir}`], { timeoutMs: 15_000, signal });

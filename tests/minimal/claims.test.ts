@@ -2,7 +2,7 @@ import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { claimRequires, demonstratedProvides, isDemonstrated, isOpenGap, isTestedCell } from '../../src/claims.js';
+import { claimCapabilities, claimNeeds, demonstratedGained, isDemonstrated, isOpenGap, isTestedCell } from '../../src/claims.js';
 import { CANDIDATE_EXECUTIONS } from '../../src/evidence.js';
 import { COVERAGE_EXECUTION } from '../../src/coverage-types.js';
 
@@ -28,19 +28,27 @@ describe('one owner for "was it demonstrated" (P13b)', () => {
     const cell = { execution: 'tested', currentness: 'current', effectiveAssessment: 'accepted' };
     expect(isTestedCell(cell)).toBe(true);
     expect(isDemonstrated(cell)).toBe(false);
-    expect(demonstratedProvides(cell as { provides?: unknown })).toBeUndefined();
+    expect(demonstratedGained(cell)).toEqual([]);
     // The reverse cannot be distinguished by shape alone, which is exactly why the rule lives in one function: a cell-shaped
     // object never satisfies `isDemonstrated`, and claim readers must not fall back to a bare `execution === 'tested'` check.
     expect(isTestedCell({ execution: 'tested' })).toBe(true);
     expect(isTestedCell({ execution: 'blocked' })).toBe(false);
   });
 
-  it('hands out a capability only from a demonstrated claim', () => {
-    expect(demonstratedProvides({ closure: 'confirmed', execution: 'tested', provides: 'an authenticated session' })).toBe('an authenticated session');
-    expect(demonstratedProvides({ closure: 'open_proof_gap', execution: 'not_tested', provides: 'an authenticated session' })).toBeUndefined();
-    expect(demonstratedProvides({ closure: 'confirmed', execution: 'tested', provides: '   ' })).toBeUndefined();
-    expect(claimRequires({ requires: ' an authenticated session ' })).toBe(' an authenticated session ');
-    expect(claimRequires({ requires: '' })).toBeUndefined();
+  it('hands out a capability only from a demonstrated claim, in the typed vocabulary', () => {
+    expect(demonstratedGained({ closure: 'confirmed', execution: 'tested', gained: [{ kind: 'cred.session' }] })).toEqual([{ kind: 'cred.session' }]);
+    expect(demonstratedGained({ closure: 'open_proof_gap', execution: 'not_tested', gained: [{ kind: 'cred.session' }] })).toEqual([]);
+    expect(claimNeeds({ needs: [{ kind: 'file.write', subject: '/var/www' }] })).toEqual([{ kind: 'file.write', subject: '/var/www' }]);
+    expect(claimNeeds({ needs: [] })).toEqual([]);
+  });
+
+  it('reads a pre-P14 record as legacy text instead of pretending it is typed', () => {
+    // The record is still readable, so an old run is not blanked; and the entry is marked, so the join refuses to match it.
+    expect(claimCapabilities({ provides: 'an authenticated session' })).toEqual({ gained: [{ legacy: 'an authenticated session' }], needs: [] });
+    expect(claimCapabilities({ requires: 'an authenticated session' })).toEqual({ gained: [], needs: [{ legacy: 'an authenticated session' }] });
+    // A typed record wins over a stray legacy field rather than merging the two vocabularies.
+    expect(claimCapabilities({ gained: [{ kind: 'cred.session' }], provides: 'old text' }).gained).toEqual([{ kind: 'cred.session' }]);
+    expect(demonstratedGained({ closure: 'confirmed', execution: 'tested', provides: 'old text' })).toEqual([{ legacy: 'old text' }]);
   });
 
   it('keeps the two vocabularies declared separately even though they overlap', () => {

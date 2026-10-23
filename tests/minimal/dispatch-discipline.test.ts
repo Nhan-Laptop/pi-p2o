@@ -13,7 +13,9 @@ describe('dispatch discipline (P6)', () => {
     for (const prompt of [ownerInstructions(base()), ownerInstructions(base({ loopMode: 'event-driven' })), solo()]) {
       expect(prompt).toContain('A chain step that consumes an earlier step’s actual output is its own task with pinned prerequisites');
       expect(prompt).toMatch(/Dispatch at most four intents per call, highest value first/);
-      expect(prompt).toMatch(/An open goal with nothing open or running must produce at least one intent this round: a round that adds none is a stall, not a wait\./);
+      // P15 (R1): a round with no feasible question is not a stall, so the rule names the blocked path instead of demanding work.
+      expect(prompt).toMatch(/A round that adds no intent is a stall only when a feasible question exists/);
+      expect(prompt).toContain('report blocked/human-needed with the missing prerequisite instead of inventing work');
     }
   });
 

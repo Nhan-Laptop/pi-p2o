@@ -1,0 +1,21 @@
+{
+  "id": "cwe-89-sql-injection",
+  "title": "CWE-89: SQL injection",
+  "kind": "weakness-class",
+  "prerequisites": [
+    "untrusted input reaches a query interpreter without a fixed structure"
+  ],
+  "tags": [
+    "cwe",
+    "sql",
+    "injection",
+    "weakness"
+  ],
+  "excerpt": "The weakness is that user-controllable input alters the structure of an SQL command instead of remaining data. Consequence follows the database principal: reads outside the intended rows, modification, authentication bypass, or file and command primitives where the engine offers them. The class describes a cause; the demonstrated effect still has to be observed.",
+  "source": {
+    "name": "CWE (MITRE)",
+    "url": "https://cwe.mitre.org/data/definitions/89.html",
+    "license": "MITRE Terms of Use",
+    "retrievedAt": "2026-10-23"
+  }
+}

@@ -2,6 +2,7 @@ import type { AssessmentTask } from './tasks.js';
 import type { CaseView } from './cases.js';
 import type { CoveragePlanView } from './coverage.js';
 import { chainJoin } from './chain-view.js';
+import type { ClaimFields } from './claims.js';
 import { isTestedCell } from './claims.js';
 import { isExecutingTask, isSatisfiedTask, isSettledTask, terminalCounts } from './tasks.js';
 import { purposeFromRole, type WorkPurpose } from './duties.js';
@@ -12,7 +13,7 @@ import { suggestPriority } from './priority.js';
  * The snapshot is pure data so the counters can be tested without an engine, and every segment names the field it renders
  * (`SEGMENT_FIELDS`) so the renderer cannot invent a counter the snapshot does not produce.
  */
-export interface SituationClaim { candidate?: string; closure: string; execution?: string; provides?: string; requires?: string }
+export interface SituationClaim extends ClaimFields { candidate?: string; closure: string }
 
 export interface SituationSnapshot {
   /** Tasks that are not settled: proposed, reserved, running, reported, reviewed or blocked. */
@@ -23,9 +24,9 @@ export interface SituationSnapshot {
   ready: number;
   blocked: number;
   openContradictions: number;
-  /** Open claims whose every required token an existing confirmed+tested claim provides (P5 `chainJoin.ready`): dispatchable now. */
+  /** Open claims whose every need an existing confirmed+tested claim gains (P5 `chainJoin.ready`): dispatchable now. */
   chainReady: number;
-  /** Open claims with a token nothing recorded provides (P5 `chainJoin.unmet`). */
+  /** Open claims with a need nothing recorded gains (P5 `chainJoin.unmet`). */
   chainUnmet: number;
   /** Accepted cases with no current rating. */
   pendingRating: number;
@@ -43,7 +44,7 @@ const SETTLED = { has: isSettledTask }, SATISFIED = { has: isSatisfiedTask }, EX
 /** A coverage assessment that answered its question rather than leaving it open. */
 const ANSWERED = new Set(['confirmed_claim', 'ruled_out_bounded', 'accepted']);
 
-// Capability strings are prose; `chainJoin` compares their tokens, so the same join answers the graph view.
+// Capabilities are typed (P14.1) and `chainJoin` owns the match, so the same join answers the graph view and this line.
 
 export function summarizeSituation(input: { tasks: readonly AssessmentTask[]; cases: readonly CaseView[]; coverage: readonly CoveragePlanView[]; claims: readonly SituationClaim[]; budgetExhausted?: (task: AssessmentTask) => boolean }): SituationSnapshot {
   const ranOut = (task: AssessmentTask) => input.budgetExhausted?.(task) ?? false;
@@ -51,7 +52,7 @@ export function summarizeSituation(input: { tasks: readonly AssessmentTask[]; ca
   const byId = new Map(input.tasks.map(task => [task.id, task]));
   const running = input.tasks.filter(task => EXECUTING.has(task.status));
   const ready = input.tasks.filter(task => task.status === 'proposed' && (task.prerequisites ?? []).every(link => SATISFIED.has(byId.get(link.taskId)?.status ?? '')));
-  const join = chainJoin(input.claims.map((claim, index) => ({ candidate: claim.candidate ?? `claim-${index}`, ...claim })));
+  const join = chainJoin(input.claims.map((claim, index) => ({ ...claim, candidate: claim.candidate ?? `claim-${index}` })));
   const cells = input.coverage.flatMap(plan => plan.cells);
   return {
     open: input.tasks.filter(task => !SETTLED.has(task.status)).length,
@@ -76,7 +77,7 @@ export function summarizeSituation(input: { tasks: readonly AssessmentTask[]; ca
  * chain step. It stays a suggestion: the lead's explicit `priority` decides dispatch order, and nothing reads this back.
  *
  * `requiresSatisfiedByConfirmed` is false for a task by construction, because a task record carries no link to the claim
- * it will produce; a ready chain step *is* the claim whose every required token a confirmed+tested claim provides, so the
+ * it will produce; a ready chain step *is* the claim whose every needed capability a confirmed+tested claim gains, so the
  * fact is true there instead (P9's lineage gate is what would let a task inherit it).
  */
 function suggestNext(input: { tasks: readonly AssessmentTask[]; cases: readonly CaseView[]; coverage: readonly CoveragePlanView[] }, ready: readonly AssessmentTask[], cells: readonly { questionKey: string; currentness: string; effectiveAssessment: string }[], chainReady: number): SituationSnapshot['suggested'] {
@@ -127,7 +128,7 @@ export function situationSegments(snapshot: SituationSnapshot): Array<{ id: Situ
     if (snapshot.blocked) segments.push({ id: 'blocked', text: `${snapshot.blocked} blocked on evidence` });
   }
   if (snapshot.openContradictions) segments.push({ id: 'contradictions', text: plural(snapshot.openContradictions, 'open contradiction') });
-  if (snapshot.chainReady || snapshot.chainUnmet) segments.push({ id: 'chain', text: `chain: ${plural(snapshot.chainReady, 'step')} ready, ${snapshot.chainUnmet} unmet requires` });
+  if (snapshot.chainReady || snapshot.chainUnmet) segments.push({ id: 'chain', text: `chain: ${plural(snapshot.chainReady, 'step')} ready, ${snapshot.chainUnmet} unmet needs` });
   if (snapshot.pendingRating) segments.push({ id: 'rating', text: `${plural(snapshot.pendingRating, 'case')} pending rating` });
   if (snapshot.coverageCells) segments.push({ id: 'coverage', text: `coverage ${snapshot.coverageTested}/${snapshot.coverageCells}` });
   return segments;

@@ -70,7 +70,7 @@ describe('owner role', () => {
   afterEach(async () => { await h.command('stop'); await rm(h.root, { recursive: true, force: true }); });
 
   it('registers the owner and worker tools plus one command, and does no work before the command', () => {
-    expect([...h.pi.tools.keys()].sort()).toEqual(['p2o_artifact', 'p2o_candidate', 'p2o_capture', 'p2o_case', 'p2o_coverage', 'p2o_delegate', 'p2o_finish', 'p2o_graph', 'p2o_http', 'p2o_ledger', 'p2o_loop', 'p2o_net', 'p2o_note', 'p2o_plan', 'p2o_report', 'p2o_request_subtask', 'p2o_shell', 'p2o_skill_list', 'p2o_skill_read', 'p2o_state', 'p2o_surface', 'p2o_task', 'p2o_workers']);
+    expect([...h.pi.tools.keys()].sort()).toEqual(['p2o_artifact', 'p2o_candidate', 'p2o_capture', 'p2o_case', 'p2o_coverage', 'p2o_delegate', 'p2o_finish', 'p2o_graph', 'p2o_http', 'p2o_lab', 'p2o_ledger', 'p2o_loop', 'p2o_net', 'p2o_note', 'p2o_plan', 'p2o_report', 'p2o_request_subtask', 'p2o_research', 'p2o_shell', 'p2o_skill_list', 'p2o_skill_read', 'p2o_state', 'p2o_surface', 'p2o_task', 'p2o_workers']);
     expect(h.pi.messages).toEqual([]);
     expect(h.sandboxes).toEqual([]);
     expect([...h.pi.commands.keys()]).toEqual(['p2o']);
@@ -92,7 +92,7 @@ describe('owner role', () => {
     expect(event.systemPromptOptions.sections.p2o_assessment).toContain('DELEGATION');
     expect(event.systemPromptOptions.sections.other).toBe('KEEP OTHER GUIDANCE');
     expect(h.sandboxes[0].stopCount).toBe(0);
-    expect(h.pi.active).toEqual(['p2o_task', 'p2o_plan', 'p2o_case', 'p2o_coverage', 'p2o_ledger', 'p2o_state', 'p2o_graph', 'p2o_artifact', 'p2o_skill_list', 'p2o_skill_read', 'p2o_candidate', 'p2o_note', 'p2o_surface', 'p2o_delegate', 'p2o_workers', 'p2o_loop', 'p2o_finish']);
+    expect(h.pi.active).toEqual(['p2o_task', 'p2o_plan', 'p2o_case', 'p2o_coverage', 'p2o_ledger', 'p2o_state', 'p2o_graph', 'p2o_artifact', 'p2o_skill_list', 'p2o_skill_read', 'p2o_research', 'p2o_candidate', 'p2o_lab', 'p2o_note', 'p2o_surface', 'p2o_delegate', 'p2o_workers', 'p2o_loop', 'p2o_finish']);
     expect(await h.tickets()).toEqual([]);
   });
 
@@ -212,7 +212,7 @@ describe('owner role', () => {
         const v=(await second.request('candidate',{candidate:{...base,closure:'confirmed',execution:'tested',proof:'offline_reproduction',evidenceRefs:[probe.evidenceId],supersedes:initial.id}})).value;
         const claim=(await h.call('p2o_candidate',{...base,closure:'confirmed',execution:'tested',proof:'offline_reproduction',evidenceRefs:[obs.evidenceId,probe.evidenceId],supersedes:v.id,independentEvidenceRef:probe.evidenceId})).details;
         const withdrawn=(await second.request('candidate',{candidate:{...base,closure:'open_proof_gap',execution:'not_tested',proof:'static_trace',evidenceRefs:[probe.evidenceId],supersedes:claim.id}})).value;
-        await expect(h.call('p2o_candidate',{...base,closure:'confirmed',execution:'tested',proof:'offline_reproduction',evidenceRefs:[probe.evidenceId],supersedes:withdrawn.id,independentEvidenceRef:probe.evidenceId})).rejects.toThrow('matching runtime');
+        await expect(h.call('p2o_candidate',{...base,closure:'confirmed',execution:'tested',proof:'offline_reproduction',evidenceRefs:[probe.evidenceId],supersedes:withdrawn.id,independentEvidenceRef:probe.evidenceId})).rejects.toThrow('own demonstrated claim');
         await second.request('report',{report:{summary:'Withdrawn conclusion; retain missing proof',confidence:'low',evidence:[probe.evidenceId],blocked:'Missing independent effect',openItems:['Controlled boundary remains a proof gap'],outcome:'prerequisite-blocked'}});
         await h.call('p2o_task',{action:'review',id:validation.id,reason:'Review accepts the observation only; withdrawn effect remains open',evidenceIds:[probe.evidenceId]});
       } finally {second.close();}
@@ -240,6 +240,52 @@ describe('owner role', () => {
     h.pi.flags['p2o-image'] = 'image:latest';
     await h.command('--target ./repo');
     expect(h.contexts.notices.at(-1)).toContain('immutable');
+  });
+
+  it('gives an exploitation task 400 brokered commands, honours a declared budget, and leaves research work at 200', async () => {
+    // P14.11: the ticket is what the broker enforces, so the allowance class has to reach it.
+    const ticketBudget = async (h: any) => JSON.parse(await readFile(join(await h.runDir(), (await h.tickets())[0]), 'utf8'));
+    const delegated = async (h: any, extra: Record<string, unknown> = {}) => {
+      const asset = (await h.call('p2o_graph', { action: 'record', batch: { assets: [{ asset: { kind: 'endpoint', key: 'GET /fixture' } }] } })).details.acks[0];
+      // P14.5: an exploitation task has to cite the primitive it takes further, so the fixture records one first.
+      const primitive = (await h.call('p2o_candidate', { candidate: 'fixture-primitive', surface: '/fixture', risk: 'authorization', closure: 'open_proof_gap', execution: 'not_tested',
+        proof: 'static_trace', evidenceRefs: [], negativeControls: [], policyBasis: 'inferred', expectedPolicy: 'Declared fixture boundary', limitations: 'Nothing executed yet' })).details;
+      const task = (await h.call('p2o_task', { action: 'create', draft: {
+        question: 'Does the recorded primitive reach the effect the chain claims?', surface: '/fixture', risk: 'authorization', role: 'exploit',
+        roleReason: 'Chain frontier step with every capability already demonstrated', expectedTrue: 'The step runs and is recorded as confirmed and tested',
+        expectedFalse: 'The step is refused and the restriction is recorded as a gap', stopCondition: 'Stop after one bounded attempt', evidenceIds: [], prerequisites: [],
+        methodReason: 'One bounded chain step against the recorded surface', skills: [],
+        work: { assetRefs: [{ id: asset.entityId, revision: 1 }], questionKey: 'chain:fixture', policyKey: 'policy:fixture', actorContext: 'actor:fixture', tenantContext: 'tenant:fixture', methodFamily: 'chain-step', purpose: 'exploitation', claimRefs: [primitive.id], ...extra },
+        decision: { disposition: 'new', reason: 'First task that executes this chain step' },
+        outputContract: { kind: 'validation', required: ['evidence', 'candidates'], partialAllowed: false, artifactPolicy: 'ids-only' },
+      } })).details;
+      await h.call('p2o_delegate', { focus: 'chain-step', task: 'Run the recorded chain step', taskId: task.id });
+      return ticketBudget(h);
+    };
+    h = await harness();
+    await h.start();
+    expect(await delegated(h)).toMatchObject({ purpose: 'exploitation', commandBudget: 400 });
+    await h.command('stop'); await rm(h.root, { recursive: true, force: true });
+
+    h = await harness();
+    await h.start();
+    expect(await delegated(h, { budget: { commands: 60 } })).toMatchObject({ purpose: 'exploitation', commandBudget: 60 });
+    await h.command('stop'); await rm(h.root, { recursive: true, force: true });
+
+    // A validation task is research work: it keeps the recon allowance and asks for no wrap-up.
+    h = await harness();
+    await h.start();
+    const asset = (await h.call('p2o_graph', { action: 'record', batch: { assets: [{ asset: { kind: 'endpoint', key: 'GET /fixture' } }] } })).details.acks[0];
+    const discovery = (await h.call('p2o_task', { action: 'create', draft: {
+      question: 'Which bounded observations describe the recorded fixture?', surface: '/fixture', risk: 'authorization', role: 'discovery',
+      roleReason: 'Bounded enumeration of one recorded surface', expectedTrue: 'The enumeration returns the recorded observation set', expectedFalse: 'The enumeration returns nothing and the receipt says so',
+      stopCondition: 'Stop after one bounded command', evidenceIds: [], prerequisites: [], methodReason: 'One bounded command against the recorded surface', skills: [],
+      work: { assetRefs: [{ id: asset.entityId, revision: 1 }], questionKey: 'discover:fixture', policyKey: 'policy:fixture', actorContext: 'actor:fixture', tenantContext: 'tenant:fixture', methodFamily: 'output-observation', purpose: 'discovery' },
+      decision: { disposition: 'new', reason: 'First bounded enumeration of the recorded surface' },
+      outputContract: { kind: 'inventory', required: ['assets'], partialAllowed: false, artifactPolicy: 'ids-only' },
+    } })).details;
+    await h.call('p2o_delegate', { focus: 'surface-enumeration', task: 'Enumerate the recorded surface', taskId: discovery.id });
+    expect(await ticketBudget(h)).toMatchObject({ purpose: 'discovery', commandBudget: 200 });
   });
 
   it('asks for confirmation with the worker plan, and declining starts nothing', async () => {
@@ -553,6 +599,21 @@ describe('owner role', () => {
       h.sandboxes[0].cleanupFailure = false; await h.command('stop');
     }
   });
+  it('materializes a shipped skill script into the caller\'s own scratch and reports the package hash (P14.7)', async () => {
+    await h.start();
+    const { sha256Hex } = await import('../../src/validate.js');
+    const packageBytes = await readFile(join(EXTENSION_PATH, '..', '..', '..', 'skills/exploit-design/scripts/payload-replay.py'));
+    const result = (await h.call('p2o_skill_read', { id: 'exploit-design:payload-replay', materialize: true })).details as { path: string; sha256: string; bytes: number };
+    expect(result.path).toBe('/work/owner/skills/exploit-design-payload-replay.py');
+    expect(result.sha256).toBe(sha256Hex(packageBytes));
+    expect(result.bytes).toBe(packageBytes.length);
+    const sandbox = h.sandboxes[0];
+    expect(sandbox.writes).toHaveLength(1);
+    expect(sandbox.writes[0]).toMatchObject({ path: 'skills/exploit-design-payload-replay.py', workdir: '/work/owner', bytes: packageBytes.length, mode: 0o500 });
+    // The document is still readable as text; materializing is a copy, not a replacement for reading.
+    expect((await h.call('p2o_skill_read', { id: 'exploit-design:effect-ladder' })).details).toMatchObject({ id: 'exploit-design:effect-ladder' });
+    await expect(h.call('p2o_skill_read', { id: 'exploit-design', materialize: true })).rejects.toThrow(/Only a registered skill script/);
+  }, 20_000);
   it('cleans up when the sandbox cannot start and never briefs the agent', async () => {
     const root = await mkdtemp(join(tmpdir(), 'p2o-failstart-'));
     try {

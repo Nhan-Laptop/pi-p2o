@@ -1,0 +1,23 @@
+{
+  "id": "hacktricks-deserialization-gadget-hunt",
+  "title": "Finding a gadget chain in a supplied classpath",
+  "kind": "deserialization",
+  "prerequisites": [
+    "a deserialization sink that accepts attacker-influenced bytes",
+    "the dependency set the application actually loads"
+  ],
+  "tags": [
+    "hacktricks",
+    "deserialization",
+    "gadget",
+    "java",
+    "dotnet"
+  ],
+  "excerpt": "Gadget chains are a property of the loaded libraries, not of the payload format. Inventory the versions in the supplied artefact, look for classes whose read-object path reaches a file, network or process call, and only then ask whether the sink can reach them. A chain you cannot explain class by class is a scanner result rather than a demonstrated effect.",
+  "source": {
+    "name": "HackTricks",
+    "url": "https://book.hacktricks.wiki/",
+    "license": "CC-BY-SA-4.0",
+    "retrievedAt": "2026-10-23"
+  }
+}

@@ -7,6 +7,8 @@ import { appendRecord, readLedger, type AssessmentRecord } from './records.js';
 import { isDemonstrated, isOpenGap } from './claims.js';
 import { cleanText, type ProcessResult } from './process.js';
 import { redactArtifactPrefix, type CaptureReceipt } from './artifacts.js';
+import { capabilityList, type Capability } from './capabilities.js';
+import { EnvironmentStore, PayloadStore, environmentExists, isEnvironmentId, isPayloadId, payloadExists } from './lab.js';
 
 export const CANDIDATE_CLOSURES = ['confirmed', 'ruled_out', 'open_proof_gap'] as const;
 export const CANDIDATE_EXECUTIONS = ['tested', 'not_tested', 'blocked', 'not_applicable'] as const;
@@ -20,8 +22,22 @@ export interface Candidate {
   evidenceRefs: string[]; negativeControls: string[]; limitations: string;
   policyBasis?: typeof POLICY_BASES[number]; expectedPolicy?: string;
   control?: string; requirement?: string; supersedes?: string; independentEvidenceRef?: string; resolves?: string[];
-  /** The capability this primitive hands to a later step, and the capability it needs from an earlier one or the environment; the pair is how a chain link is named without a shared gadget vocabulary. */
-  provides?: string; requires?: string;
+  /** Capabilities this primitive hands to a later step, and the ones it needs from an earlier step or the environment (P14.1:
+   *  typed, so a chain link is a match rather than a shared word). */
+  gained?: Capability[]; needs?: Capability[];
+  /** Free text caveat about the capability pair: displayed, never matched. */
+  note?: string;
+  /** Run-scoped payload artifact that actually ran (P14.2), so a second worker can replay these exact bytes. */
+  payloadRef?: string;
+  /** Run-scoped environment recipe the payload was demonstrated in (P14.3); `replayable` needs both. */
+  environmentRef?: string;
+  /**
+   * P14.12: what actually ran, stamped by the host when the claim is recorded — the payload's sha256 and the environment's recipe
+   * fingerprint. Independence is then a comparison of these two values and not a comparison of two workers' sentences, and no caller can
+   * assert them because the store overwrites whatever arrives.
+   */
+  payloadSha256?: string;
+  environmentFingerprint?: string;
 }
 /** Best-effort defensive redaction; exports contain only the bounded receipts, never tickets or process env. */
 export function redact(value: string): string {
@@ -61,6 +77,13 @@ export class EvidenceStore {
   candidate(by: string, input: Candidate): Promise<AssessmentRecord> {
     const task = this.pending.then(async () => {
       validateCandidate(input);
+      // P14.2/P14.3: a payload or environment reference is a claim that the artifact exists in this run, so a dangling or foreign
+      // id fails closed instead of reading as replayable.
+      if (input.payloadRef !== undefined && !await payloadExists(this.path, input.payloadRef)) throw new Error(`Unknown payload reference ${input.payloadRef}; store the payload first`);
+      if (input.environmentRef !== undefined && !await environmentExists(this.path, input.environmentRef)) throw new Error(`Unknown environment reference ${input.environmentRef}; create the environment first`);
+      // Read the artifacts once: their identity is stamped on the claim below and compared when another worker replays it (P14.12).
+      const payloadRef = input.payloadRef === undefined ? undefined : (await new PayloadStore(this.path).get(input.payloadRef)).ref;
+      const environmentRef = input.environmentRef === undefined ? undefined : await new EnvironmentStore(this.path).get(input.environmentRef);
       const index = await readLedger(this.path, this.runId);
       if (!index.complete) throw new Error('Ledger reconciliation incomplete; candidate closure is blocked');
       const records = index.records;
@@ -78,15 +101,27 @@ export class EvidenceStore {
       if (input.independentEvidenceRef) {
         const independent = evidence.find(r => r.id === input.independentEvidenceRef);
         if (!independent?.workerId || independent.by === by || !references.includes(input.independentEvidenceRef)) throw new Error('Independent validation needs a cited receipt from a different worker');
-        const latest = records.filter(r => r.kind === 'candidate' && r.by === independent.by && r.data?.candidate === input.candidate).at(-1);
-        const reproduced = latest && latest.data?.surface === input.surface && latest.data?.risk === input.risk && isDemonstrated(latest.data ?? {})
-          && latest.data?.proof !== 'static_trace' && latest.refs?.includes(independent.id!);
-        if (!reproduced) throw new Error('Independent claim needs the other worker\'s matching runtime candidate and cited receipt');
+        // P14.12: the other worker's claim is whichever claim *it* recorded against that receipt — not a copy of this claim's slug,
+        // which could only be produced by superseding this claim.
+        const latest = records.filter(r => r.kind === 'candidate' && r.by === independent.by && r.workerId && r.refs?.includes(independent.id!)).at(-1);
+        const reproduced = latest && latest.surface === input.surface && latest.risk === input.risk && isDemonstrated(latest.data ?? {})
+          && latest.data?.proof !== 'static_trace';
+        if (!reproduced) throw new Error('Independent claim needs the other worker\'s own demonstrated claim and the receipt it cites');
+        // Independence means the same effect was reproduced: same payload bytes and same environment recipe, or the claim is refused.
+        // A claim that names no artifact has nothing to replay, so its independence stays the peer's own demonstrated claim above.
+        if (payloadRef || environmentRef) {
+          if (!payloadRef) throw new Error('Independent validation needs the payload that ran: record payloadRef so a second worker can replay the same bytes');
+          if (latest.data?.payloadSha256 !== payloadRef.sha256) throw new Error(`Independent replay mismatch: the other worker ran ${String(latest.data?.payloadSha256 ?? 'an unrecorded payload').slice(0, 12)}, this claim ran ${payloadRef.sha256.slice(0, 12)}`);
+          if (!environmentRef) throw new Error('Independent validation needs the environment it ran in: record environmentRef so the fingerprint can be compared');
+          if (latest.data?.environmentFingerprint !== environmentRef.fingerprint) throw new Error(`Independent replay environment drifted: ${String(latest.data?.environmentFingerprint ?? 'unrecorded').slice(0, 12)} vs ${environmentRef.fingerprint.slice(0, 12)}`);
+        }
       }
       const record: AssessmentRecord = { id: randomUUID(), version: 2, runId: this.runId, at: new Date().toISOString(), by,
         workerId: by === 'owner' ? undefined : by, kind: 'candidate', text: `${input.candidate}: ${input.closure} (${input.execution}, ${input.proof}); agent claim, not automatic verification`,
         surface: input.surface, risk: input.risk, outcome: input.closure, refs: input.evidenceRefs,
-        supersedes: input.supersedes, resolves: input.resolves, data: { ...input } };
+        supersedes: input.supersedes, resolves: input.resolves,
+        // Stamped after the spread, so a caller cannot claim a payload hash it did not run.
+        data: { ...input, ...(payloadRef ? { payloadSha256: payloadRef.sha256 } : {}), ...(environmentRef ? { environmentFingerprint: environmentRef.fingerprint } : {}) } };
       await appendRecord(this.path, record);
       return record;
     });
@@ -139,8 +174,19 @@ function validateCandidate(c: Candidate): void {
   if (c.closure === 'ruled_out' && !c.control?.trim()) throw new Error('ruled_out needs the specific control and its location');
   if (c.resolves && (!Array.isArray(c.resolves) || c.resolves.length > 10 || c.resolves.some(id => typeof id !== 'string'))) throw new Error('Invalid resolved open-item list');
   if (c.requirement !== undefined && (typeof c.requirement !== 'string' || !c.requirement.trim() || c.requirement.length > 1000)) throw new Error('Invalid blocked prerequisite reason');
-  if (c.provides !== undefined && (typeof c.provides !== 'string' || c.provides.trim().length < 5 || c.provides.length > 300)) throw new Error('Invalid capability this primitive provides (5..300 characters)');
-  if (c.requires !== undefined && (typeof c.requires !== 'string' || c.requires.trim().length < 5 || c.requires.length > 300)) throw new Error('Invalid capability this primitive requires (5..300 characters)');
+  // The pre-P14 text fields are refused rather than ignored: silently dropping them would leave a claim that looks like it names a
+  // capability edge while declaring none.
+  if ('provides' in c || 'requires' in c) throw new Error('Candidate capabilities are typed: send gained/needs, not the pre-P14 provides/requires text');
+  // Validated through the one constructor and assigned back, so the record holds the canonical order and dedup (same rule as P9).
+  if (c.gained !== undefined) c.gained = capabilityList(c.gained, 'candidate gained');
+  if (c.needs !== undefined) c.needs = capabilityList(c.needs, 'candidate needs');
+  if (c.note !== undefined && (typeof c.note !== 'string' || !c.note.trim() || c.note.length > 300)) throw new Error('Invalid capability note (1..300 characters)');
+  // A payload is what ran, so it only makes sense on a claim that ran something; the derived `replayable` reads this field and
+  // never a stored flag (P14.2), and P14.3 adds the environment to the same derivation.
+  if (c.payloadRef !== undefined && (typeof c.payloadRef !== 'string' || !isPayloadId(c.payloadRef))) throw new Error('Invalid payload reference');
+  if (c.payloadRef !== undefined && c.execution !== 'tested') throw new Error('A payload reference requires tested execution');
+  if (c.environmentRef !== undefined && (typeof c.environmentRef !== 'string' || !isEnvironmentId(c.environmentRef))) throw new Error('Invalid environment reference');
+  if (c.environmentRef !== undefined && c.execution !== 'tested') throw new Error('An environment reference requires tested execution');
   if (c.execution === 'blocked' && (c.requirement?.trim().length ?? 0) < 10) throw new Error('blocked needs a descriptive prerequisite reason (10..1000 characters)');
   if (c.execution === 'blocked' && c.closure !== 'open_proof_gap') throw new Error('Blocked execution cannot establish closure');
   if (c.proof !== 'static_trace' && c.execution !== 'tested') throw new Error('Runtime proof requires tested execution');

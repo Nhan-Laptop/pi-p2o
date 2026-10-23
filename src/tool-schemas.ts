@@ -1,10 +1,11 @@
 import { Type } from 'typebox';
-import { choices } from './schema-kit.js';
+import { capabilitySchema, choices } from './schema-kit.js';
 import { KNOWLEDGE_DOMAINS } from './context.js';
 import { COVERAGE_OUTCOMES } from './records.js';
 import { MAX_SKILLS, ROLES, THINKING_LEVELS } from './roles.js';
 import { WORKER_OUTCOMES } from './broker.js';
 import { CANDIDATE_CLOSURES, CANDIDATE_EXECUTIONS, CANDIDATE_PROOFS, POLICY_BASES } from './evidence.js';
+import { PAYLOAD_BYTES, PAYLOAD_KINDS } from './lab.js';
 import { HTTP_METHOD_PATTERN } from './target.js';
 import { outputContractSchema, workDecisionSchema, workSpecSchema } from './work-tool.js';
 
@@ -45,7 +46,11 @@ export const surfaceParameters = Type.Object({component:Type.String({minLength:1
 
 export const skillListParameters = Type.Object({ query: Type.Optional(Type.String({ maxLength: 80 })), offset: Type.Optional(Type.Integer({ minimum: 0 })) });
 
-export const skillReadParameters = Type.Object({ id: Type.String({ maxLength: 160 }), offset: Type.Optional(Type.Integer({ minimum: 0 })) });
+export const skillReadParameters = Type.Object({ id: Type.String({ maxLength: 160 }), offset: Type.Optional(Type.Integer({ minimum: 0 })),
+  materialize: Type.Optional(Type.Boolean({ description: 'Copy a registered skill script into your own scratch and return {path, sha256, bytes}; refuses anything else and never reads a host path' })) });
+
+/** P14.1: the capability shape is declared once in schema-kit.ts, which both this module and the work identity can import without a cycle. */
+export { capabilitySchema };
 
 export const candidateParameters = Type.Object({
       candidate: Type.String({ pattern: '^[a-z0-9][a-z0-9-]{0,79}$' }), surface: Type.String({ minLength: 1, maxLength: 200 }), risk: Type.String({ minLength: 1, maxLength: 200 }),
@@ -59,9 +64,41 @@ export const candidateParameters = Type.Object({
       limitations: Type.String({ minLength: 1, maxLength: 1500 }), control: Type.Optional(Type.String({ maxLength: 1000 })),
       resolves: Type.Optional(Type.Array(Type.String({ maxLength: 80 }), { maxItems: 10 })),
       requirement: Type.Optional(Type.String({ minLength: 10, maxLength: 1000, description: 'For blocked execution, describe the actual scope restriction, missing binary/dependency or failed prerequisite; not a capability ID' })), supersedes: Type.Optional(Type.String({ maxLength: 80 })), independentEvidenceRef: Type.Optional(Type.String({ maxLength: 80 })),
-      provides: Type.Optional(Type.String({ minLength: 5, maxLength: 300, description: 'Capability this primitive hands to a later step, so the lead can join it to what another step requires' })),
-      requires: Type.Optional(Type.String({ minLength: 5, maxLength: 300, description: 'Capability this primitive needs from an earlier step or the environment; omit when nothing outside the surface must hold' })),
+      gained: Type.Optional(Type.Array(capabilitySchema, { maxItems: 10, description: 'Typed capabilities this primitive hands to a later step, so the lead can join them to another step\'s needs' })),
+      needs: Type.Optional(Type.Array(capabilitySchema, { maxItems: 10, description: 'Typed capabilities this primitive needs from an earlier step or the environment; omit when nothing outside the surface must hold' })),
+      note: Type.Optional(Type.String({ maxLength: 300, description: 'Free text caveat about the capability pair; displayed, never matched' })),
+      payloadRef: Type.Optional(Type.String({ maxLength: 80, description: 'Payload artifact ID from p2o_lab for the request, script or command that actually ran; requires tested execution, and the derived replayable flag follows it' })),
+      environmentRef: Type.Optional(Type.String({ maxLength: 80, description: 'Environment artifact ID from p2o_lab for the recipe it was demonstrated in; requires tested execution, and replayable needs it as well as payloadRef' })),
     });
+
+/** planning_update.md P14.2 + P14.3: one tool for the two replayable artifacts — the payload and the environment. */
+export const LAB_ACTIONS = ['payload', 'env', 'verify', 'destroy'] as const;
+export const labServiceSchema = Type.Object({
+  name: Type.String({ minLength: 1, maxLength: 41, description: 'Plain service name; it also names the pid and log file' }),
+  command: Type.String({ minLength: 1, maxLength: 4096, description: 'The process to start in the background; run from your own scratch' }),
+  port: Type.Optional(Type.Integer({ minimum: 1, maximum: 65535, description: 'Port probed over HTTP loopback after launch' })),
+  healthcheck: Type.Optional(Type.String({ minLength: 1, maxLength: 4096, description: 'Shell command that must exit 0; preferred over a port probe for non-HTTP services' })),
+  environment: Type.Optional(Type.Record(Type.String({ maxLength: 64 }), Type.String({ maxLength: 512 }))),
+}, { additionalProperties: false });
+
+export const labParameters = Type.Object({
+  action: choices(LAB_ACTIONS),
+  kind: Type.Optional(choices(PAYLOAD_KINDS)),
+  name: Type.Optional(Type.String({ minLength: 1, maxLength: 120, description: 'Payload label, or the environment name (lowercase slug) for action=env' })),
+  body: Type.Optional(Type.String({ minLength: 1, maxLength: PAYLOAD_BYTES, description: 'The exact bytes to keep: runnable as-is, stored verbatim and deliberately not redacted' })),
+  id: Type.Optional(Type.String({ maxLength: 80, description: 'Payload or environment ID; stored bytes and the recipe hash are checked before use' })),
+  compose: Type.Optional(Type.Boolean({ description: 'action=env only, lead only: read docker-compose.yml|compose.yaml from /target and derive the recipe; refused keys are named' })),
+  setup: Type.Optional(Type.Array(Type.String({ minLength: 1, maxLength: 4096 }), { maxItems: 8, description: 'Commands run in order before services; each must exit 0' })),
+  services: Type.Optional(Type.Array(labServiceSchema, { maxItems: 8 })),
+  seed: Type.Optional(Type.Array(Type.String({ minLength: 1, maxLength: 4096 }), { maxItems: 8, description: 'Commands run after services are healthy; each must exit 0' })),
+}, { additionalProperties: false });
+
+export const RESEARCH_LIMIT_SCHEMA = 5;
+export const researchParameters = Type.Object({
+  query: Type.String({ minLength: 1, maxLength: 200, description: 'Technique words to look up, e.g. "ssrf cloud metadata" or "linux suid privesc"; at most six terms' }),
+  web: Type.Optional(Type.Boolean({ description: 'Default true: also fetch the top hits\' curated source pages inside your sandbox and return quoted excerpts with a hash. Pass false for an offline-only lookup that never touches the network' })),
+  limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 5, description: 'Maximum hits, 1..5, default 5' })),
+}, { additionalProperties: false });
 
 export const captureParameters = Type.Object({path:Type.String({minLength:1,maxLength:2048}),offset:Type.Optional(Type.Integer({minimum:0})),timeout:Type.Optional(Type.Integer({minimum:0}))});
 
@@ -130,6 +167,7 @@ export const reportParameters = Type.Object({
       confidence: choices(['high', 'medium', 'low']),
       blocked: Type.Optional(Type.String({ maxLength: 1000 })),
       outcome:Type.Optional(choices(WORKER_OUTCOMES)),
+      wrapUp:Type.Optional(Type.String({maxLength:300,description:'Required when an exploitation or chaining run ends on its command allowance: the stored payload id and the environment it ran in, or why the run has neither'})),
     });
 
 export const finishParameters = Type.Object({ narrative: Type.Optional(Type.String({ maxLength: 6000 })) });

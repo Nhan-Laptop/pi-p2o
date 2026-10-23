@@ -1,5 +1,6 @@
 import { Type } from 'typebox';
 import { choices } from './schema-kit.js';
+import { capabilitySchema } from './schema-kit.js';
 import { OUTPUT_FIELDS, OUTPUT_KINDS, WORK_DISPOSITIONS, WORK_PURPOSES } from './work.js';
 import { PLAN_DISPOSITIONS, PLAN_KINDS } from './planning.js';
 
@@ -10,6 +11,9 @@ export const workSpecSchema = Type.Object({
   questionKey: key(), policyKey: Type.Optional(key()), actorContext: Type.Optional(key()), tenantContext: Type.Optional(key()),
   methodFamily: key(), purpose: choices(WORK_PURPOSES),
   claimRefs: Type.Optional(Type.Array(Type.String({ maxLength: 80 }), { minItems: 1, maxItems: 10, uniqueItems: true })),
+  needs: Type.Optional(Type.Array(capabilitySchema, { minItems: 1, maxItems: 10, description: 'Typed capability this step consumes; copy it from the chain frontier rather than describing it' })),
+  environmentRef: Type.Optional(Type.String({ pattern: '^env-[a-f0-9-]{36}$', description: 'Recorded environment this step must run in (p2o_lab env); a task without one is a task nobody can replay' })),
+  budget: Type.Optional(Type.Object({ commands: Type.Optional(Type.Integer({ minimum: 1, maximum: 5000, description: 'Brokered commands this task may spend; omit for the purpose default (200, or 400 for exploitation and chaining)' })) }, { additionalProperties: false })),
 }, { additionalProperties: false });
 export const workDecisionSchema = Type.Object({
   disposition: choices(WORK_DISPOSITIONS), reason: Type.String({ minLength: 10, maxLength: 1000 }),

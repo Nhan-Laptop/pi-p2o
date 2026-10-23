@@ -227,6 +227,13 @@ export class TaskBoard extends LedgerBoard {
       if (!hasClaim && !hasTask) throw Error(`PURPOSE_NEEDS_LINEAGE: a ${purpose} task must cite the claim it reproduces (work.claimRefs) or the predecessor task it revisits (validationOf/retestOf); this run already holds a claim, so both being absent cannot be read as "nothing to cite yet"`);
       return;
     }
+    // P14.5: exploitation and chaining are the purposes that take an existing primitive further, so they cannot stand on an asset
+    // revision or a prior task — those exemptions belong to investigation/refinement. Two claims are the strongest chain the task
+    // shape can express today; "a claim plus a demonstrated environment" waits for P14.10, which gives a task a way to name one.
+    if ((purpose === 'exploitation' || purpose === 'chaining') && draft.work) {
+      if (purpose === 'exploitation' && !hasClaim) throw Error(`PURPOSE_NEEDS_LINEAGE: an exploitation task must cite the claim it takes further (work.claimRefs); a pinned asset revision or a prior task is not the primitive to exploit`);
+      if (purpose === 'chaining' && refs.length < 2) throw Error(`PURPOSE_NEEDS_LINEAGE: a chaining task must cite the two claims it composes (work.claimRefs); one claim is not a chain, and naming a demonstrated environment instead arrives with P14.10`);
+    }
     // A legacy prose draft has no lineage field to fill, so the refusal only bites where the field exists: a structured task that
     // left every parent empty. Validation/retest are checked above for both shapes because `validationOf`/`retestOf` exist in both.
     if ((purpose === 'investigation' || purpose === 'refinement') && draft.work) {

@@ -45,7 +45,7 @@ and nothing auto-dispatches by score. Starting from a neutral base of **50**, ea
 | --- | --- |
 | a reviewed prerequisite is still unmet | −30 |
 | purpose is validation or retest (cheap, unlocks a case) | +15 |
-| a confirmed+tested claim already provides every token this claim requires | +20 |
+| a confirmed+tested claim already gains every capability this claim needs | +20 |
 | the target asset already has an owner-accepted finding | +10 |
 | the questionKey is already answered by a non-stale coverage cell | −20 |
 

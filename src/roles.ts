@@ -7,7 +7,9 @@ import { purposeFromRole, type WorkPurpose } from './duties.js';
  * Roles preselect a model and a starting skill set for a delegated worker.
  * They never grant scope: the ticket fixes the target, and only the human can widen it.
  */
-export const ROLES = ['recon', 'discovery', 'validation', 'reporting', 'general'] as const;
+// planning_update.md P14.4: `exploit` exists so taking a primitive to impact has an owner. It grants no scope: a role only
+// selects a model and a starting skill set, and the ticket still fixes the target.
+export const ROLES = ['recon', 'discovery', 'validation', 'reporting', 'exploit', 'general'] as const;
 export type Role = typeof ROLES[number];
 /** Reasoning levels a worker pane can be launched with (the Pi `--thinking` values). */
 export const THINKING_LEVELS = ['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'] as const;
@@ -18,8 +20,12 @@ export interface RoleSettings { model?: string; thinking?: string; skills?: stri
 export const ROLE_DEFAULTS: Record<Role, RoleDefaults> = {
   recon: { model: 'opencode-go/deepseek-v4-flash', skills: ['attack-surface-mapping'] },
   discovery: { model: 'opencode-go/deepseek-v4-flash', skills: ['source-code-auditing'] },
-  validation: { model: 'opencode-go/kimi-k3', skills: ['exploitability-assessment'] },
-  reporting: { model: 'opencode-go/kimi-k3', skills: ['remediation'] },
+  validation: { model: 'opencode-go/kimi-k3', skills: [] },
+  reporting: { model: 'opencode-go/kimi-k3', skills: [] },
+  // The strongest configured model, because this worker has to build something that runs. `skills` stays empty until
+  // planning_update.md P14.6 registers `exploit-design`; pointing at a skill the catalog does not contain would break the
+  // catalog drift test and, worse, silently hand the worker no guidance at all.
+  exploit: { model: 'opencode-go/kimi-k3', skills: [] },
   general: { skills: [] },
 };
 /**
@@ -27,16 +33,54 @@ export const ROLE_DEFAULTS: Record<Role, RoleDefaults> = {
  * the model/authority axis. Used when the lead omits `skills` and the operator configured none for the role; an empty list
  * means "keep the role default" (investigation does, because root-cause work is guided by the task's own method).
  * `tests/minimal/roles.test.ts` checks every id against `skills/catalog.json` and against `MAX_SKILLS`.
+ *
+ * P15 (W3/W5): a default skill may not teach the opposite of its own duty. `validation` reproduces another worker's claim and
+ * must never start a new discovery, so it no longer starts from `exploitability-assessment` (which continues into impact and
+ * the chain); `reporting` synthesizes and may not author fixes, so it no longer starts from `remediation`. Both keep their role
+ * model and their duty line, and either skill stays reachable by an explicit request.
  */
 export const PURPOSE_SKILLS: Record<WorkPurpose, readonly string[]> = {
   mapping: ['attack-surface-mapping'],
   discovery: ['source-code-auditing'],
   investigation: [],
   refinement: ['source-code-auditing'],
-  validation: ['exploitability-assessment'],
+  validation: [],
   retest: ['remediation'],
-  reporting: ['remediation'],
+  exploitation: ['exploit-design'],
+  chaining: ['exploit-design'],
+  reporting: [],
 };
+
+export type TargetKindForSkills = 'directory' | 'url' | 'hybrid';
+export interface SkillContext { kind?: TargetKindForSkills; needs?: readonly string[] }
+
+/**
+ * P15 (W4): a ladder belongs to the primitive the step consumes, so it is derived where that need is known instead of being one
+ * generic default. `exploit-design` comes first so the cap never drops the general procedure; an unknown kind simply selects no
+ * ladder, which is the pre-P15 behaviour rather than a guess.
+ */
+export function exploitationSkills(kind: TargetKindForSkills | undefined, needs: readonly string[] = []): string[] {
+  const ladder: string[] = [];
+  if (needs.includes('net.egress')) ladder.push('ssrf-to-internal');
+  if (needs.includes('exec.code')) ladder.push(kind === 'directory' ? 'binary-exploit-ladder' : 'web-injection-to-exec');
+  if (needs.includes('cred.session') || needs.includes('cred.secret')) ladder.push('credential-and-pivot');
+  return ['exploit-design', ...ladder].slice(0, MAX_SKILLS);
+}
+
+/**
+ * P15 (W3): the method follows the target as well as the purpose. A URL-only run has no source tree to audit, so its mapping and
+ * discovery defaults are the web playbooks; a directory or hybrid run keeps the source methods (a hybrid target still has the
+ * snapshot), and the web playbooks stay requestable. Without a kind the base table applies, so a caller with no target context
+ * keeps the pre-P15 defaults.
+ */
+export function purposeSkills(purpose: WorkPurpose, context: SkillContext = {}): readonly string[] {
+  if (context.kind === 'url') {
+    if (purpose === 'mapping') return ['web-deployment-hygiene'];
+    if (purpose === 'discovery') return ['web-route-input-inventory'];
+  }
+  if (purpose === 'exploitation' || purpose === 'chaining') return exploitationSkills(context.kind, context.needs);
+  return PURPOSE_SKILLS[purpose];
+}
 export const DEFAULT_MAX_WORKERS = 3;
 export const DEFAULT_MAX_DEPTH = 2;
 // Capacity is operator-controlled, not a lifetime assignment budget. Live frontier, command,
@@ -147,12 +191,12 @@ export interface ResolvedRole { role: Role; model?: string; thinking?: string; s
  * Precedence mirrors pi-herdr: per-spawn override > settings role > package default > parent session model.
  * `skills` is validated by the caller against the installed library before any path is used.
  */
-export function resolveRole(input: { role?: string; model?: string; thinking?: string; skills?: string[]; purpose?: WorkPurpose; settings: P2OSettings; parentModel?: string; parentThinking?: string }): ResolvedRole {
+export function resolveRole(input: { role?: string; model?: string; thinking?: string; skills?: string[]; purpose?: WorkPurpose; context?: SkillContext; settings: P2OSettings; parentModel?: string; parentThinking?: string }): ResolvedRole {
   const role: Role = isRole(input.role) ? input.role : 'general';
   const configured = input.settings.roles[role] ?? {};
   const fallback = ROLE_DEFAULTS[role];
   const requested = (input.skills ?? []).filter(skill => typeof skill === 'string');
-  const byPurpose = PURPOSE_SKILLS[input.purpose ?? purposeFromRole(role)];
+  const byPurpose = purposeSkills(input.purpose ?? purposeFromRole(role), input.context);
   const skills = (requested.length ? requested : configured.skills ?? (byPurpose.length ? byPurpose : fallback.skills)).slice(0, MAX_SKILLS);
   return {
     role,

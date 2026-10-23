@@ -10,11 +10,14 @@ import type { CaseDraft, CaseEntry } from '../../src/case-types.js';
 import { readLedger, type AssessmentRecord } from '../../src/records.js';
 
 const runId='run-cases';
-async function fixture(work:(h:{store:AssessmentStore;board:CaseBoard;assetId:string;path:string;receipt:(by:string)=>string;claim:(input:{by:string;candidate?:string;closure?:string;supersedes?:string;independentEvidenceRef?:string;evidenceRefs?:string[]})=>string;views:()=>Promise<CaseView[]>})=>Promise<void>,fault?:StoreFault){
+// P14.12: a claim that names what it ran carries the payload sha256 and the environment recipe fingerprint stamped by the host.
+const PAYLOAD='a'.repeat(64),FINGERPRINT='b'.repeat(64);
+const replay={payloadSha256:PAYLOAD,environmentFingerprint:FINGERPRINT};
+async function fixture(work:(h:{store:AssessmentStore;board:CaseBoard;assetId:string;path:string;receipt:(by:string)=>string;claim:(input:{by:string;candidate?:string;closure?:string;supersedes?:string;independentEvidenceRef?:string;evidenceRefs?:string[];payloadSha256?:string;environmentFingerprint?:string})=>string;views:()=>Promise<CaseView[]>})=>Promise<void>,fault?:StoreFault){
   const root=await mkdtemp(join(tmpdir(),'p2o-cases-')),store=AssessmentStore.create(root,{runId,retention:'durable-local',targetKind:'directory',targetIdentity:'fixture',targetDisplay:'fixture',profile:{runtimeHash:'fixture',image:'fixture',loopMode:'manual',executorMode:'shared'}},{fault}),path=join(root,'alias.sqlite'),unbind=bindAssessmentStore(path,store);
   const assetId=store.recordGraph({assets:[{asset:{kind:'endpoint',key:'GET /object'}}]})[0].entityId,context={assetRevision:(id:string)=>store.assetRevision(id),assertionRevision:(id:string)=>store.assertionRevision(id)},board=new CaseBoard(runId,path,()=>true,context);
   const receipt=(by:string)=>store.commitRecords([{id:randomUUID(),runId,at:'2030-01-01',by,workerId:by==='owner'?undefined:by,kind:'evidence',text:'Bounded inert receipt, not automatic finding proof'}])[0].recordId;
-  const claim=(input:{by:string;candidate?:string;closure?:string;supersedes?:string;independentEvidenceRef?:string;evidenceRefs?:string[]})=>{const candidate=input.candidate??'case-claim',closure=input.closure??'confirmed',evidenceRefs=input.evidenceRefs??[receipt(input.by)],record:AssessmentRecord={id:randomUUID(),runId,at:'2030-01-02',by:input.by,workerId:input.by==='owner'?undefined:input.by,kind:'candidate',text:'Attributed fixture claim',surface:'/object',risk:'authorization',outcome:closure as any,refs:evidenceRefs,supersedes:input.supersedes,data:{candidate,closure,execution:closure==='confirmed'?'tested':'not_tested',proof:closure==='confirmed'?'offline_reproduction':'static_trace',evidenceRefs,negativeControls:[],limitations:'Fixture limitations remain explicit',policyBasis:'boundary_invariant',expectedPolicy:'Declared fixture boundary',...(input.independentEvidenceRef?{independentEvidenceRef:input.independentEvidenceRef}:{})}};store.commitRecords([record]);return record.id!;};
+  const claim=(input:{by:string;candidate?:string;closure?:string;supersedes?:string;independentEvidenceRef?:string;evidenceRefs?:string[];payloadSha256?:string;environmentFingerprint?:string})=>{const candidate=input.candidate??'case-claim',closure=input.closure??'confirmed',evidenceRefs=input.evidenceRefs??[receipt(input.by)],record:AssessmentRecord={id:randomUUID(),runId,at:'2030-01-02',by:input.by,workerId:input.by==='owner'?undefined:input.by,kind:'candidate',text:'Attributed fixture claim',surface:'/object',risk:'authorization',outcome:closure as any,refs:evidenceRefs,supersedes:input.supersedes,data:{candidate,closure,execution:closure==='confirmed'?'tested':'not_tested',proof:closure==='confirmed'?'offline_reproduction':'static_trace',evidenceRefs,negativeControls:[],limitations:'Fixture limitations remain explicit',policyBasis:'boundary_invariant',expectedPolicy:'Declared fixture boundary',...(input.independentEvidenceRef?{independentEvidenceRef:input.independentEvidenceRef}:{}),...(input.payloadSha256?{payloadSha256:input.payloadSha256}:{}),...(input.environmentFingerprint?{environmentFingerprint:input.environmentFingerprint}:{})}};store.commitRecords([record]);return record.id!;};
   try{await work({store,board,assetId,path,receipt,claim,views:async()=>caseViews(await readLedger(path,runId),context)});}finally{unbind();store.close();await rm(root,{recursive:true,force:true});}
 }
 function editable(entry:CaseEntry):CaseDraft{const {runId:_,revision:__,recordId:___,...draft}=entry;return draft;}
@@ -27,9 +30,9 @@ describe('canonical vulnerability cases and currentness (K5)',()=>{
     expect((await board.list())[0]).toMatchObject({currentness:'current',acceptedFinding:true,canonicalCaseId:created.id});
   }));
   it('makes a reviewed case stale when its exact claim is revised or independent validator withdraws, and emits invalidation history',async()=>fixture(async({board,assetId,receipt,claim,store})=>{
-    const independent=receipt('validator-a'),validator=claim({by:'validator-a',evidenceRefs:[independent]}),ownerClaim=claim({by:'owner',supersedes:validator,independentEvidenceRef:independent,evidenceRefs:[independent]}),created=await board.create(draft(assetId,ownerClaim,{independentEvidenceRefs:[independent]}));
+    const independent=receipt('validator-a'),validator=claim({by:'validator-a',candidate:'validator-replay',evidenceRefs:[independent],...replay}),ownerClaim=claim({by:'owner',independentEvidenceRef:independent,evidenceRefs:[independent],...replay}),created=await board.create(draft(assetId,ownerClaim,{independentEvidenceRefs:[independent]}));
     await board.revise(created.id,1,{...editable(created),reviewStatus:'accepted',reviewReason:'Owner reviewed separate validator receipt and matching current claim'});expect((await board.list())[0]).toMatchObject({acceptedFinding:true,independentCurrent:true});
-    claim({by:'validator-a',closure:'open_proof_gap',supersedes:ownerClaim,evidenceRefs:[independent]});const stale=(await board.list())[0];expect(stale.acceptedFinding).toBe(false);expect(stale.currentness).toBe('stale');expect(stale.staleReasons).toEqual(expect.arrayContaining([expect.stringContaining('superseded-claim'),expect.stringContaining('independent-support-stale')]));
+    claim({by:'validator-a',closure:'open_proof_gap',supersedes:ownerClaim,evidenceRefs:[independent]});const stale=(await board.list())[0];expect(stale.acceptedFinding).toBe(false);expect(stale.currentness).toBe('stale');expect(stale.staleReasons).toEqual(expect.arrayContaining([expect.stringContaining('superseded-claim'),expect.stringContaining('independent-receipt-withdrawn')]));
     expect(store.events({since:0,limit:100}).rows.some(event=>event.kind==='support.invalidated'&&event.payloadRefs.includes(stale.recordId))).toBe(true);
   }));
   it('retains contradictions and refuses accepted review until each is explicitly resolved',async()=>fixture(async({board,assetId,claim,receipt})=>{
@@ -65,9 +68,63 @@ describe('canonical vulnerability cases and currentness (K5)',()=>{
 });
 
 // planning_update.md P8: readiness to rate is derived from the facts on record instead of asserted when the mood strikes.
+describe('independent replay of the effect (P14.12)',()=>{
+  it('accepts a peer claim that ran the same payload bytes in the same environment fingerprint',async()=>fixture(async({board,assetId,claim,receipt})=>{
+    const independent=receipt('validator-b'),peer=claim({by:'validator-b',candidate:'validator-b-replay',evidenceRefs:[independent],...replay});
+    const authorClaim=claim({by:'worker-a',independentEvidenceRef:independent,evidenceRefs:[independent],...replay});
+    const created=await board.create(draft(assetId,authorClaim,{independentEvidenceRefs:[independent]}));
+    expect((await board.list())[0]).toMatchObject({independentCurrent:true,currentness:'current',staleReasons:[]});
+    void peer;void created;
+  }));
+  it('names a payload hash mismatch instead of reporting a vague stale support',async()=>fixture(async({board,assetId,claim,receipt})=>{
+    const independent=receipt('validator-b');
+    claim({by:'validator-b',candidate:'validator-b-replay',evidenceRefs:[independent],...replay,payloadSha256:'c'.repeat(64)});
+    const authorClaim=claim({by:'worker-a',independentEvidenceRef:independent,evidenceRefs:[independent],...replay});
+    await board.create(draft(assetId,authorClaim,{independentEvidenceRefs:[independent]}));
+    const view=(await board.list())[0];
+    expect(view.independentCurrent).toBe(false);
+    expect(view.staleReasons).toEqual(expect.arrayContaining([expect.stringMatching(/^independent-payload-mismatch:aaaaaaaaaaaa!=cccccccccccc$/)]));
+  }));
+  it('refuses a replay in a drifted environment fingerprint',async()=>fixture(async({board,assetId,claim,receipt})=>{
+    const independent=receipt('validator-b');
+    claim({by:'validator-b',candidate:'validator-b-replay',evidenceRefs:[independent],...replay,environmentFingerprint:'d'.repeat(64)});
+    const authorClaim=claim({by:'worker-a',independentEvidenceRef:independent,evidenceRefs:[independent],...replay});
+    await board.create(draft(assetId,authorClaim,{independentEvidenceRefs:[independent]}));
+    const view=(await board.list())[0];
+    expect(view.staleReasons).toEqual(expect.arrayContaining([expect.stringMatching(/^independent-environment-mismatch:bbbbbbbbbbbb!=dddddddddddd$/)]));
+  }));
+  it('needs the payload once the claim names an artifact: a half-named replay cannot be independent',async()=>fixture(async({board,assetId,claim,receipt})=>{
+    const independent=receipt('validator-b');
+    claim({by:'validator-b',candidate:'validator-b-replay',evidenceRefs:[independent],...replay});
+    const authorClaim=claim({by:'worker-a',independentEvidenceRef:independent,evidenceRefs:[independent],environmentFingerprint:FINGERPRINT});
+    await board.create(draft(assetId,authorClaim,{independentEvidenceRefs:[independent]}));
+    const view=(await board.list())[0];
+    expect(view.independentCurrent).toBe(false);
+    expect(view.staleReasons).toContain('independent-payload-missing');
+  }));
+  it('keeps the peer-claim rule when the effect names no artifact to replay',async()=>fixture(async({board,assetId,claim,receipt})=>{
+    const independent=receipt('validator-b');
+    claim({by:'validator-b',candidate:'validator-b-replay',evidenceRefs:[independent]});
+    const authorClaim=claim({by:'worker-a',independentEvidenceRef:independent,evidenceRefs:[independent]});
+    await board.create(draft(assetId,authorClaim,{independentEvidenceRefs:[independent]}));
+    // Nothing to replay: independence is the peer's own demonstrated claim against its receipt, and the view says nothing more.
+    expect((await board.list())[0]).toMatchObject({independentCurrent:true,staleReasons:[]});
+  }));
+  it('keeps a case ratable but not independent when no peer reproduced it',async()=>fixture(async({board,assetId,claim,receipt})=>{
+    const independent=receipt('validator-b'),authorClaim=claim({by:'worker-a',independentEvidenceRef:independent,evidenceRefs:[independent],...replay});
+    const created=await board.create(draft(assetId,authorClaim,{independentEvidenceRefs:[independent]}));
+    const view=(await board.list())[0];
+    expect(view).toMatchObject({independentCurrent:false,readyToRate:false});
+    expect(view.staleReasons).toEqual(expect.arrayContaining([expect.stringMatching(/^independent-receipt-uncited:/)]));
+    // Rating is an attributed owner judgement, not a claim of independence: it stays available and says what it covers.
+    const rated=await board.rate(created.id,1,{severity:'medium',basis:'Owner rated the bounded effect without peer replay'});
+    expect(rated.finding.severity).toBe('medium');
+  }));
+});
+
 describe('rate-readiness is derived, not asserted (P8)',()=>{
   it('is true only when the case is current and keeps a current independent receipt',async()=>fixture(async({board,assetId,claim,receipt})=>{
-    const independent=receipt('validator-a'),validator=claim({by:'validator-a',evidenceRefs:[independent]}),ownerClaim=claim({by:'owner',supersedes:validator,independentEvidenceRef:independent,evidenceRefs:[independent]});
+    const independent=receipt('validator-a'),validator=claim({by:'validator-a',candidate:'validator-replay',evidenceRefs:[independent],...replay}),ownerClaim=claim({by:'owner',independentEvidenceRef:independent,evidenceRefs:[independent],...replay});
     const pending=await board.create(draft(assetId,ownerClaim)),unready=(await board.list())[0];
     expect(unready).toMatchObject({currentness:'current',readyToRate:false,independentCurrent:false});
     const accepted=await board.revise(pending.id,1,{...editable(pending),independentEvidenceRefs:[independent],reviewStatus:'accepted',reviewReason:'Owner reviewed the separate validator receipt and matching current claim'});
@@ -78,7 +135,7 @@ describe('rate-readiness is derived, not asserted (P8)',()=>{
     expect(accepted.reviewStatus).toBe('accepted');
   }));
   it('is false for a withdrawn case even when its old support is still current',async()=>fixture(async({board,assetId,claim,receipt})=>{
-    const independent=receipt('validator-a'),validator=claim({by:'validator-a',evidenceRefs:[independent]}),ownerClaim=claim({by:'owner',supersedes:validator,independentEvidenceRef:independent,evidenceRefs:[independent]});
+    const independent=receipt('validator-a'),validator=claim({by:'validator-a',candidate:'validator-replay',evidenceRefs:[independent],...replay}),ownerClaim=claim({by:'owner',independentEvidenceRef:independent,evidenceRefs:[independent],...replay});
     const created=await board.create(draft(assetId,ownerClaim,{independentEvidenceRefs:[independent]}));
     const accepted=await board.revise(created.id,1,{...editable(created),independentEvidenceRefs:[independent],reviewStatus:'accepted',reviewReason:'Owner reviewed current support and the separate validator receipt before withdrawing the case'});
     expect((await board.list())[0]).toMatchObject({readyToRate:true,currentness:'current'});

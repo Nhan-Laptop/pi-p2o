@@ -1,0 +1,22 @@
+{
+  "id": "lolbas-script-host-surrogate",
+  "title": "Running script through a signed script host",
+  "kind": "proxy-execution",
+  "prerequisites": [
+    "a Windows host that permits the script host",
+    "a script the engagement authorises you to run"
+  ],
+  "tags": [
+    "lolbas",
+    "windows",
+    "execution",
+    "proxy-execution"
+  ],
+  "excerpt": "Some signed hosts execute script or installable content named by an argument, so execution is attributed to a trusted binary rather than to your shell. Treat this as an execution route when application allow-listing is the boundary under test, and observe the effect from the host's own side rather than from the shell.",
+  "source": {
+    "name": "LOLBAS",
+    "url": "https://lolbas-project.github.io/",
+    "license": "GPL-3.0",
+    "retrievedAt": "2026-10-23"
+  }
+}

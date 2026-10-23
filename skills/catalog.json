@@ -796,6 +796,227 @@
           ]
         }
       ]
+    },
+    {
+      "name": "exploit-design",
+      "description": "Turn one confirmed primitive into a demonstrated effect by climbing reproduce, control, escalate, prove — choosing the sink and the observation before writing the payload, and stopping at the first rung you cannot observe.",
+      "kind": "procedure",
+      "document": "exploit-design",
+      "workflows": [
+        {
+          "id": "reproduce-to-control",
+          "description": "Climb from a stored reproduction to control of the object the primitive acts on",
+          "prerequisites": [
+            "A confirmed claim whose execution is tested on the recorded revision, a stored payload, and a verified environment."
+          ],
+          "steps": [
+            "Replay the stored payload twice on the recorded revision and keep the control run that differs only in the payload.",
+            "Shrink the payload one field at a time until removing that field stops the effect; that field is the primitive.",
+            "Vary the one input you claim to control and write the two expected outcomes down before sending either.",
+            "Re-store the payload and the environment if either changed, so the claim cites the bytes that actually ran."
+          ],
+          "observe": [
+            "The response diff between payload and control, together with the target's own log line naming the request"
+          ],
+          "wall": [
+            "The effect survives the control run only intermittently, which is a reproduction rate, not control."
+          ]
+        },
+        {
+          "id": "control-to-prove",
+          "description": "Take observed control to the boundary crossing and the artifact that proves it from the far side",
+          "prerequisites": [
+            "Observed control of the object the primitive acts on, and the boundary the ticket names as the effect."
+          ],
+          "steps": [
+            "Name the boundary and the single operation that crosses it, then check whether that operation needs a second primitive.",
+            "Perform the crossing and read the evidence from the far side, not from the payload's own output.",
+            "Store the observation with its timestamp and environment fingerprint, and rate the rung that was observed."
+          ],
+          "observe": [
+            "A record, file hash, socket or target log line that exists after the step and not after the control"
+          ],
+          "wall": [
+            "The crossing needs a second primitive, which belongs to a chaining ticket rather than to this one."
+          ]
+        }
+      ]
+    },
+    {
+      "name": "web-injection-to-exec",
+      "description": "Push a confirmed web injection — SQL, shell, template, expression, deserialization, traversal, XXE — past reflection into a file observation and then into execution, with the marker, the context and the negative control that decide each rung.",
+      "kind": "procedure",
+      "document": "web-injection-to-exec",
+      "workflows": [
+        {
+          "id": "echo-to-observation",
+          "description": "Move from a reflected marker to an observation the payload cannot fabricate",
+          "prerequisites": [
+            "A confirmed claim showing the value reaches an interpreter, the named engine, and the context the value lands in."
+          ],
+          "steps": [
+            "Send a harmless marker and the control without it, and compare the two responses.",
+            "Escape the context the value entered and confirm the escaped payload still produces a predictable difference.",
+            "Read the effect through a second interface or a callback so the observation does not come from the payload."
+          ],
+          "observe": [
+            "The marker appearing without the control, then a file hash, stored row or callback timestamp produced by the target"
+          ],
+          "wall": [
+            "The sanitiser survives every context escape, which is a wall to report rather than a licence to permute encodings."
+          ]
+        },
+        {
+          "id": "observation-to-exec",
+          "description": "Take an established observation to one command the target runs, and read its side effect",
+          "prerequisites": [
+            "An observation that the interpreter acted, plus a write or execution route the target itself reaches."
+          ],
+          "steps": [
+            "Pick the shortest route from the observation to execution and perform one step of it.",
+            "Run one binary with one argument, avoiding an interactive shell and anything that alters service state.",
+            "Read the command's own side effect from the target's log, a created file or an arrived connection."
+          ],
+          "observe": [
+            "The executed command's side effect, quoted from the target's own output or filesystem"
+          ],
+          "wall": [
+            "Write without execute: the upload directory is writable but nothing executes it, so the effect stays file write."
+          ]
+        }
+      ]
+    },
+    {
+      "name": "ssrf-to-internal",
+      "description": "Take a server-side fetch from \"the target made a request\" to \"the target read an internal service\", mapping the reachable network, the parsers that disagree about the URL, and the metadata endpoints that hold credentials.",
+      "kind": "procedure",
+      "document": "ssrf-to-internal",
+      "workflows": [
+        {
+          "id": "blind-reachability",
+          "description": "Establish which destinations answer through the target when the fetched body never comes back",
+          "prerequisites": [
+            "A confirmed claim that the target performs the fetch, a listener the target can reach, and the internal ranges the engagement allows."
+          ],
+          "steps": [
+            "Confirm the fetch happened from the target's side by a callback with a source address and timestamp.",
+            "Send one destination at a time and record status, length, timing and error text for each.",
+            "If a URL check exists, test whether the validator and the fetcher read the same URL the same way."
+          ],
+          "observe": [
+            "A callback arrival, or a response difference between an open and a closed destination measured over five runs"
+          ],
+          "wall": [
+            "No callback and no reflected body leaves the fetch blind, which is a wall for chaining rather than a reachability claim."
+          ]
+        },
+        {
+          "id": "read-via-internal-service",
+          "description": "Read data that only the internal destination holds, through the fetch the target performs",
+          "prerequisites": [
+            "A destination that answers through the target and a service whose response identifies what it is."
+          ],
+          "steps": [
+            "Pick the internal service whose content proves reachability rather than merely answering.",
+            "Read the smallest document that identifies the service, and quote its path without any secret value.",
+            "Record what was reached, through which input, and what remained refused by a check or absent."
+          ],
+          "observe": [
+            "The internal service's own response content, with the destination and the input that reached it"
+          ],
+          "wall": [
+            "A metadata credential document is a secret: quote the path, never the key material, and do not use it here."
+          ]
+        }
+      ]
+    },
+    {
+      "name": "binary-exploit-ladder",
+      "description": "Climb from a reproducible crash to a demonstrated effect on a native binary, with the real mitigation posture of the target build deciding which technique is even open and a crash never counted as proof.",
+      "kind": "procedure",
+      "document": "binary-exploit-ladder",
+      "workflows": [
+        {
+          "id": "crash-to-control",
+          "description": "Move from a reproducible crash to an access that follows the bytes you choose",
+          "prerequisites": [
+            "A confirmed memory-safety claim on the named artifact, its hash and build id, and a control input that does not crash."
+          ],
+          "steps": [
+            "Read the mitigation posture from the binary and record each flag with the evidence that showed it.",
+            "Reproduce the crash twice with the same input and compare the signal, fault address and stack top.",
+            "Shrink the input and then vary the controlled bytes until the fault address or a register holds your values."
+          ],
+          "observe": [
+            "Two crash signatures that match, then two chosen inputs producing two predicted fault addresses"
+          ],
+          "wall": [
+            "A crash that does not move under input is control of a fault, not of execution, and the step stops there."
+          ]
+        },
+        {
+          "id": "control-to-effect",
+          "description": "Turn observed control into an effect the application could not otherwise reach",
+          "prerequisites": [
+            "Observed control of an address, register or object, and the privilege boundary the ticket authorizes."
+          ],
+          "steps": [
+            "Choose the smallest effect the recorded posture permits and preconditions for it from the same table.",
+            "Perform the effect and observe it from outside the payload, under the privilege the target runs with.",
+            "Record the environment facts that would differ in production, including ASLR and sandbox state."
+          ],
+          "observe": [
+            "The target process's own output, a created file or a connected socket after the step"
+          ],
+          "wall": [
+            "Full RELRO with PIE and no leak closes the overwrite; the next step is a leak primitive, which is another claim."
+          ]
+        }
+      ]
+    },
+    {
+      "name": "credential-and-pivot",
+      "description": "Take a credential you are authorized to find from \"it exists\" to \"it opens exactly this door\", verifying it with one bounded act, mapping the privilege it carries, and stopping at the scope boundary instead of walking through every door it opens.",
+      "kind": "procedure",
+      "document": "credential-and-pivot",
+      "workflows": [
+        {
+          "id": "credential-to-boundary",
+          "description": "Establish that the credential is usable and whose privilege it carries, before using it",
+          "prerequisites": [
+            "A confirmed claim showing a credential is reachable, the principal it belongs to, and the systems the engagement names."
+          ],
+          "steps": [
+            "Check the material's format, issuer and expiry, and set aside placeholders from templates and examples.",
+            "Verify once with the smallest act that answers whether the principal works, and record the identity returned.",
+            "Read the privilege map from the system's own authorization data rather than from the credential's name."
+          ],
+          "observe": [
+            "The identity the system returned for that credential, with the timestamp of the single verification"
+          ],
+          "wall": [
+            "Verification refused or a lockout recorded ends the step: report the exposure instead of guessing past it."
+          ]
+        },
+        {
+          "id": "boundary-to-bounded-pivot",
+          "description": "Perform the one operation the privilege map allows on a named system and stop",
+          "prerequisites": [
+            "A verified principal, its privilege map, and a named system the engagement authorizes."
+          ],
+          "steps": [
+            "Choose the single operation that proves access at that privilege, on a system the ticket names.",
+            "Perform it once and read the result from the target's own data or log.",
+            "Record every door the credential opens that was not walked through, and redact the secret from every artifact."
+          ],
+          "observe": [
+            "The target's own record or log line showing the operation performed by that principal"
+          ],
+          "wall": [
+            "A credential that reaches systems outside the named scope is an exposure finding; using it is a scope change."
+          ]
+        }
+      ]
     }
   ],
   "documents": [
@@ -2132,6 +2353,74 @@
     {
       "id": "web-token-and-federation:wstg-source",
       "path": "skills/web-token-and-federation/references/wstg-source.md"
+    },
+    {
+      "id": "exploit-design",
+      "path": "skills/exploit-design/SKILL.md"
+    },
+    {
+      "id": "web-injection-to-exec",
+      "path": "skills/web-injection-to-exec/SKILL.md"
+    },
+    {
+      "id": "ssrf-to-internal",
+      "path": "skills/ssrf-to-internal/SKILL.md"
+    },
+    {
+      "id": "binary-exploit-ladder",
+      "path": "skills/binary-exploit-ladder/SKILL.md"
+    },
+    {
+      "id": "credential-and-pivot",
+      "path": "skills/credential-and-pivot/SKILL.md"
+    },
+    {
+      "id": "exploit-design:effect-ladder",
+      "path": "skills/exploit-design/references/effect-ladder.md"
+    },
+    {
+      "id": "exploit-design:observation-surfaces",
+      "path": "skills/exploit-design/references/observation-surfaces.md"
+    },
+    {
+      "id": "web-injection-to-exec:sink-ladder",
+      "path": "skills/web-injection-to-exec/references/sink-ladder.md"
+    },
+    {
+      "id": "ssrf-to-internal:reachability-targets",
+      "path": "skills/ssrf-to-internal/references/reachability-targets.md"
+    },
+    {
+      "id": "ssrf-to-internal:parser-differentials",
+      "path": "skills/ssrf-to-internal/references/parser-differentials.md"
+    },
+    {
+      "id": "binary-exploit-ladder:mitigations-to-technique",
+      "path": "skills/binary-exploit-ladder/references/mitigations-to-technique.md"
+    },
+    {
+      "id": "binary-exploit-ladder:crash-to-control",
+      "path": "skills/binary-exploit-ladder/references/crash-to-control.md"
+    },
+    {
+      "id": "credential-and-pivot:credential-sources",
+      "path": "skills/credential-and-pivot/references/credential-sources.md"
+    },
+    {
+      "id": "exploit-design:payload-replay",
+      "path": "skills/exploit-design/scripts/payload-replay.py"
+    },
+    {
+      "id": "web-injection-to-exec:marker-probe",
+      "path": "skills/web-injection-to-exec/scripts/marker-probe.py"
+    },
+    {
+      "id": "ssrf-to-internal:ssrf-probe",
+      "path": "skills/ssrf-to-internal/scripts/ssrf-probe.py"
+    },
+    {
+      "id": "binary-exploit-ladder:elf-posture",
+      "path": "skills/binary-exploit-ladder/scripts/elf-posture.py"
     }
   ]
 }

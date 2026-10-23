@@ -12,7 +12,7 @@ export interface PriorityFacts {
   prerequisitesUnmet: boolean;
   /** What the task is for (src/duties.ts). Validation and retest are cheap and tend to close out a pending case. */
   purpose: WorkPurpose;
-  /** Some confirmed+tested claim already provides every token this task's claim requires (P5 chainJoin). */
+  /** Some confirmed+tested claim already gains every capability this task's claim needs (P5 chainJoin). */
   requiresSatisfiedByConfirmed: boolean;
   /** The task's target asset already carries an owner-accepted finding, so it is a proven-productive surface. */
   targetAssetHasAcceptedFinding: boolean;

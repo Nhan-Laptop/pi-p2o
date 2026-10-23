@@ -575,3 +575,581 @@ push and install stay owner-initiated.
 ---
 
 Retired passes are archived outside the tree under `tmp/` (gitignored) so this file holds one live proposal only.
+## 6. P14 — typed capabilities, replayable payloads, severity from demonstration (implemented)
+
+> **Reconstructed 2026-10-23.** The working copy of this file was overwritten with the audit appendix before this section was
+> committed, and git HEAD predates the phase. The items below are rebuilt from the shipped code, its docs and the surviving
+> per-item status paragraphs; they record what exists, not a fresh proposal.
+
+### P14.1 — Typed capability vocabulary (S)
+`src/capabilities.ts` replaces free-text `provides`/`requires` with fifteen closed kinds (`net.egress`, `http.request`,
+`auth.bypass`, `cred.session`, `cred.secret`, `file.read`, `file.write`, `exec.code`, `db.query`, `deserialize`, `cloud.role`,
+`host.shell`, `dns.resolve`, `admin.ui`, `data.read`). One match rule (`capabilityMatches`: same kind; subject and scope compare
+only when both name one; a legacy string never matches). Write path `parseCapability`/`capabilityList` (1..10 items, subject 80 B,
+scope 40 B, legacy 300 B, canonical sort+dedup); read path `readCapabilities` also accepts the stored `{legacy}` form it wrote.
+`src/evidence.ts` refuses the pre-P14 fields by name; `src/chain-view.ts` reports `uncovered` per kind and lists legacy tokens
+instead of silently joining them.
+*Status — done.* Gate: `tests/minimal/capabilities.test.ts`, `chain-view.test.ts`.
+
+### P14.2 — Payloads that survive the worker (S)
+`src/lab.ts` `PayloadStore` keeps `payload-<uuid>.json` under `<control>/lab/payloads` (dir 0700, file 0600, `O_EXCL|O_NOFOLLOW`,
+sha256 verified on read: `Payload integrity failure`, `Unknown payload ID`, `Invalid payload ID`). `Candidate.payloadRef` requires
+`execution: 'tested'` and an existing payload; the report projection prints a `Replayable` column.
+*Status — done.* Gate: `tests/minimal/lab.test.ts`.
+
+### P14.3 — Environments as a recipe, not a claim (M)
+`src/compose.ts` reads a bounded YAML subset under a closed allowlist and refuses by name (`privileged: true`, `cap_add`, `devices`,
+host `network_mode|pid|ipc`, `restart`, host mounts, `build:`, foreign images, unknown keys). `EnvironmentStore` keeps one
+environment per name, one revision per fingerprint, idempotent `put`, and recomputes the fingerprint on `get`
+(`Environment integrity failure`). `runEnvironment`/`stopEnvironment` run in the caller's own sandbox under `/work` (or
+`/work/<workerId>`). `p2o_lab env|verify|destroy`; broker op `environment` charges `prepareCommand` per command.
+Deviation recorded: no `environment` graph asset kind — two revision counters would be worse than one.
+*Status — done.* Gate: `tests/minimal/lab.test.ts` (compose refusals), `broker.test.ts`.
+
+### P14.4 — Purposes and the exploit role (S)
+`WORK_PURPOSES` gains `exploitation` and `chaining`; `DUTIES` gains one entry each; `purposeFromRole('exploit')` is
+`exploitation`, so the exploit role no longer inherits the investigation duty; `ROLES` gains `exploit`
+(`ROLE_DEFAULTS.exploit = {model: 'opencode-go/kimi-k3'}`).
+*Status — done.* Gate: `tests/minimal/duties.test.ts`, `roles.test.ts`.
+
+### P14.5 — Lineage for exploitation and chaining (S)
+`verifyLineage` refuses an exploitation task with no `work.claimRefs` and a chaining task with fewer than two, naming the missing
+primitive or the missing composition; a pinned asset revision or a prior task is not a primitive.
+*Status — done.* Gate: `tests/minimal/lineage.test.ts` (9).
+
+### P14.6 — Procedure skills (M)
+Five procedure skills ship (`exploit-design`, `web-injection-to-exec`, `ssrf-to-internal`, `binary-exploit-ladder`,
+`credential-and-pivot`), each with Entry conditions / Gates / Completion definition / The wall, 8 reference docs and 4 scripts.
+`src/skills.ts` gains the `procedure` kind (rank playbook < overlay < procedure < technique) and `scripts/validate_library.py`
+validates its sections and the additive, bounded recipe fields (`steps` 2..12, `observe` 1..12, `wall` 0..12).
+*Status — done.* Gate: `python3 scripts/validate_library.py`, `tests/minimal/skills.test.ts`.
+
+### P14.7 — Materialize a script into the sandbox (S)
+`SkillLibrary.materialize(id)` copies a registered `skills/**/scripts/*.py` (64 KiB bound, `.`/`..` refused) through a fixed
+FD-pinned writer that re-reads and hashes it; `p2o_skill_read {materialize: true}` returns `{path, sha256, bytes}` under
+`/work/<by>/skills/`. No `docker cp`, no host path.
+*Status — done.* Gate: `tests/minimal/skills.test.ts` (6), `extension.test.ts`.
+
+### P14.8 — Cited research channel (M)
+`knowledge/techniques/` holds 14 corpus cards plus a committed `index.json` (`scripts/techniques/build-index.mjs --check` is the
+drift gate). `src/research.ts` limits a query (≤200 chars, ≤6 terms), labels injection signals in fetched text, and only fetches
+URLs the corpus already cites (`curatedSource`), https only, 32 KiB, inside the caller's sandbox. Research is unbudgeted, is
+recorded as its own record kind, and is never evidence.
+*Status — done.* Gate: `tests/minimal/research.test.ts` (8).
+
+### P14.9 — Severity from demonstration (L)
+`src/cvss4.ts` implements the CVSS 4.0 base score (EQ1–EQ6, macrovector lookup, `max_severity`/`max_composed`, FIRST/Red Hat
+BSD-2-Clause attribution), validated against FIRST's own `cvss_score.js` on all 104,976 base vectors (the run found and fixed an
+EQ5 denominator bug: 9.2 vs 9.3). `src/cvss.ts` maps seven demonstrated effects to a minimum impact, scores the chain at the
+easiest reach any executed step reported, and computes impact on every validation. `p2o_case rate` refuses a severity above what
+the furthest executed step demonstrated, naming that step.
+*Status — done.* Gate: `tests/minimal/cvss4.test.ts` (15), `case-chain.test.ts`, `case-rating.test.ts`.
+
+### P14.10 — Chain → task draft (M)
+`p2o_graph {action: 'chain', plan: true, assetRefs, requestId}` returns a draft (role `exploit`, `work.purpose: 'exploitation'`,
+`work.claimRefs` = the providers on the shortest path plus the own claim, `work.needs`, `work.environmentRef`) and records one
+`p2o_plan` todo per step, replay-safe by `requestId`. It never dispatches, never invents an asset identity, and says
+`Nothing ready to plan` when the frontier is empty.
+*Status — done.* Gate: `tests/minimal/chain-plan.test.ts` (4).
+
+### P14.11 — Budget class (S)
+`commandBudgetFor(purpose, declared)` gives exploitation and chaining 400 commands; `work.budget.commands` (1..5000) overrides it
+and is deliberately not part of the work fingerprint. A wrap-up purpose whose report says `partial-budget` (or reached the
+allowance) without a `wrapUp` is refused rather than annotated, and `dutyLine` appends the wrap-up duty (461/458 chars, so those
+two duty lines have a 470-character ceiling instead of 400).
+*Status — done.* Gate: `tests/minimal/budget-class.test.ts` (3), `broker.test.ts`, `extension.test.ts`.
+
+### P14.12 — Independent replay is a reproduction (M)
+`src/evidence.ts` stamps `payloadSha256` and `environmentFingerprint` on the candidate record after the caller's input is spread
+(they cannot be asserted) and refuses a mismatch. `src/cases.ts` compares the peer's latest claim against the cited receipt and
+requires the same payload hash and the same environment fingerprint, replacing the old generic `independent-support-stale` with
+named reasons (`independent-receipt-missing|uncited|withdrawn|different-surface:<id>`, `independent-payload-missing|mismatch:<a>!=<b>`,
+`independent-environment-missing|mismatch:<a>!=<b>`). An artifact-less claim keeps the peer-claim rule; naming only one half fails
+loudly; the case stays ratable while `independentCurrent`/`readyToRate` stay false with the reason.
+*Status — done.* Gate: `tests/minimal/cases.test.ts`, `case-rating.test.ts`.
+
+### P14 gate as measured (2026-10-23)
+`npm run typecheck` clean; `npm run build` + `check:build` OK; `npx vitest run tests/minimal/` 737 passed / 12 skipped (749 tests,
+89 files); `python3 scripts/validate_library.py` PASS; `python3 -m pytest tests/test_library.py -q` 116 passed, 1 skipped, one
+pre-existing failure (`SkillProfileTests::test_provenance_record_matches_review_snapshot`, R1 `b4d7a8ce…` vs `3e729859…`).
+GitNexus `detect-changes --scope all`: 61 files / 378 symbols / 237 processes, risk **critical** (expected for a phase of this
+size); `impact caseViews` CRITICAL with 26 callers, reviewed before the change.
+
+## 7. P15 — prompt, skill and tool corrections from the 5-dimension audit (implemented)
+
+The audit in **Appendix A** read the composed prompt (lead and worker policy, duty lines, tool declarations, inlined skills) and
+named nine weaknesses, eight conflicts, seven sources of friction and nine duplications. This pass applies its seven refactors
+(R1–R7). Nothing here adds a tool, a store or a gate: every fix is text plus one derivation function.
+
+### R1 — The stall rule stopped demanding invented work (`src/prompts.ts`)
+The old line — *"An open goal with nothing open or running must produce at least one intent this round: a round that adds none is a
+stall, not a wait"* — had no host enforcement, contradicted the blocked/human-needed rule two lines above, and sat next to a host
+segment that renders `0 open` (`src/situation.ts:121`). It now reads: *"A round that adds no intent is a stall only when a feasible
+question exists: add that one; when none exists, report blocked/human-needed with the missing prerequisite instead of inventing
+work."* The scheduling intent survives; the fabrication pressure does not.
+Gates: `tests/minimal/dispatch-discipline.test.ts` (the anti-stall assertion moved to the conditional sentence and keeps the
+batch-cap and serial-chain assertions).
+
+### R2 — The prompt now names what the host actually checks (`src/prompts.ts`)
+Two host gates landed after the prompt text was written, so the model could only learn them from a refusal:
+- **Independence (P14.12)**: the prompt said "a separate worker reproducing the effect with a current matching conclusion and
+  reviewable receipt"; `src/cases.ts` compares the peer claim's `payloadSha256` and the environment fingerprint. The line now says
+  the second worker must reproduce the effect *"in an environment whose recipe fingerprint matches, with its own receipt and the same
+  payload sha256"*, and that a missing half keeps a case ratable but not independent.
+- **Severity (P14.9)**: "limit severity to demonstrated impact" became *"Severity is computed, not chosen: rate each executed chain
+  step with the effect it showed, and no case scores above the furthest step that actually ran."*
+Gates: `tests/minimal/recon.test.ts` (the sentence assertion and the two worker-instruction hashes).
+
+### R3 — One boundary for "your objective" (`src/prompts.ts`)
+`Your assigned objective is your whole job` and `follow the chain that intent opens … instead of stopping at the edge of the brief`
+stated two different boundaries, and the duty line a third. The objective line now says *"Follow it into the effects it directly
+enables when your duty covers them"*, and tactical autonomy says *"take the next step only when this step's actual output is its
+input and your duty covers that purpose; otherwise report the link."* The duty line is now the single owner of how far a purpose
+reaches.
+
+### R4 — Default skills follow the target and the need (`src/roles.ts`)
+- `purposeSkills(purpose, {kind, needs})` is the one derivation: a URL run maps with `web-deployment-hygiene` and discovers with
+  `web-route-input-inventory`; a directory or hybrid run keeps the source methods (a hybrid target still has the snapshot); no
+  context keeps the pre-P15 base table, so a caller without target info behaves exactly as before.
+- `exploitationSkills(kind, needs)` derives the ladder from `work.needs`: `net.egress` → `ssrf-to-internal`, `exec.code` →
+  `binary-exploit-ladder` (directory) or `web-injection-to-exec`, `cred.session`/`cred.secret` → `credential-and-pivot`, with
+  `exploit-design` first so the 3-skill cap never drops the general procedure.
+- `validation` and `reporting` lose their defaults **in both tables** (`PURPOSE_SKILLS` and `ROLE_DEFAULTS`), because leaving the
+  role default in place would silently restore the skill the purpose just removed. Consequence, recorded on purpose:
+  `exploitability-assessment` and `remediation` are now reachable only by explicit request, and the library ships no
+  reproduction/replay procedure skill — that gap is the honest follow-up, not a reason to keep a default that teaches the forbidden
+  failure.
+- Plumbing: `p2o_delegate` and `p2o_task create` pass `context: {kind: current.target.kind, needs: workNeeds(work)}`, where
+  `workNeeds` reads only `kind` strings from an untyped draft (the real validation stays in `validateWorkSpec`).
+Gates: `tests/minimal/roles.test.ts` (two new tests over kind, needs, cap and explicit-request precedence), `measure-context`.
+
+### R5 — Reporting's duty and its tools agree (`src/duties.ts`, `src/tool-policy.ts`)
+The duty said "execute nothing" while the reporting role keeps `p2o_research`, which fetches a curated page inside the sandbox. The
+duty is now *"produce no new claim and run no target command. A curated citation lookup is not target execution."*, and the
+tool-policy comment points at the duty so the two cannot drift apart.
+
+### R6 — One copy of each rule (`src/prompts.ts`)
+- `EVIDENCE_TAIL` lost two benchmark-derived sentences already covered elsewhere (`a simulated bot is not a browser`, the legacy
+  `p2o_note` caveat) and the duplicated export/placeholder wording, so the remaining rules are the ones that change behaviour.
+- `reconInstructions` gained `forLead`: the recon-handoff queue is rendered only into the lead prompt, because a worker cannot
+  delegate and the queue it was told to rank had no consumer.
+- The URL and hybrid scope lines no longer repeat `Only the human can widen scope` and `Tool repositories are not extra targets`;
+  the next line states both once.
+
+### R7 — Payload procedure moved out of the declaration (`src/tool-guidelines.ts`, `extensions/p2o/index.ts`)
+`p2o_lab` gained one guidance line (store the payload before running it, verify the recipe before trusting it, name both in the
+claim) and its description was tightened by 100 B without dropping the compose refusal list — the refusals are contract (what the
+sandbox cannot honour), the order of operations is advice. `POLICY_VERSION` is now 3.
+
+### Measured effect
+| Loadout | Declarations (B) | Guidance (B) |
+|---|---|---|
+| delegated Planner | 45,087 (−100) | 1,342 (+180) |
+| solo owner | 45,818 (−100) | 1,260 (+180) |
+| worker | 26,309 (−100) | 653 (+180) |
+| reporting worker | 14,643 (0) | 376 (0) |
+
+Lead prompt static bodies: 5,892 (directory) / 5,970 (url) / 6,769 (hybrid), delegated 6,538 / 6,616 / 6,861 event-driven. The
+three clarified rules cost more than the removed duplication saved, so `LEAD_CEILINGS` moved on purpose (6,150 / 6,250 / 7,050 /
+6,800 / 6,900 / 7,150) and the owner guidance ceiling moved 1,200 → 1,400 for the new `p2o_lab` line. Every number is dated in
+`tests/minimal/helpers/budgets.ts`.
+
+### P15 gate as measured (2026-10-23)
+`npm run typecheck` clean; `npm run build` + `check:build` OK; `npx vitest run tests/minimal/` **739 passed / 12 skipped** (751
+tests, 89 files, 83 passed + 6 skipped) — two more than P14 because of the new role tests; `python3 scripts/validate_library.py`
+PASS (17 skills, 81 catalog entries, 65 evidence sources); `python3 -m pytest tests/test_library.py -q` 116 passed, 1 skipped, one
+pre-existing failure (`SkillProfileTests::test_provenance_record_matches_review_snapshot`, R1 `b4d7a8ce…` vs `3e729859…`).
+GitNexus `impact`: `resolveRole` **HIGH** (2 direct callers, 3 processes — reviewed; the change is additive, every new field
+optional), `ownerInstructions`/`workerInstructions`/`reconInstructions` LOW.
+
+*Status — done.* R1–R7 applied; the audit that motivated them is preserved below as **Appendix A**.
+
+
+---
+
+## Appendix A — Audit of the prompt, skill and tool architecture (2026-10-23, unchanged)
+
+ Phân tích prompt/skill/tool của pi-p2o
+
+ Phạm vi. "System Prompt" ở repo này không phải một khối duy nhất. Nó là 4 tầng hợp thành:
+
+ ┌─────────────────────────────┬─────────────────────────────────────────────────────┬──────────────────────────────────────────────────────────┐
+ │ Tầng                        │ Nguồn                                               │ Kích thước đo được                                       │
+ ├─────────────────────────────┼─────────────────────────────────────────────────────┼──────────────────────────────────────────────────────────┤
+ │ Lead policy                 │ src/prompts.ts:60-104 (ownerInstructions)           │ 5,611 B (directory) · 5,762 (url) · 6,579 (hybrid) —     │
+ │                             │                                                     │ LEAD_CEILINGS                                            │
+ ├─────────────────────────────┼─────────────────────────────────────────────────────┼──────────────────────────────────────────────────────────┤
+ │ Worker policy               │ src/prompts.ts:106-127 + dutyLine                   │ ~5.7 KB + 250–470 B duty                                 │
+ │                             │ (src/duties.ts:88-93)                               │                                                          │
+ ├─────────────────────────────┼─────────────────────────────────────────────────────┼──────────────────────────────────────────────────────────┤
+ │ Tool declarations +         │ 19 tool, extensions/p2o/index.ts,                   │ 45,187 B tổng khai báo; 9,293 B riêng description        │
+ │ guidelines                  │ src/tool-guidelines.ts                              │                                                          │
+ ├─────────────────────────────┼─────────────────────────────────────────────────────┼──────────────────────────────────────────────────────────┤
+ │ Skills inline               │ skills/*/SKILL.md (35 file, 234,994 B)              │ tối đa 3 file = 27,201 B worst case, trung bình ~20 KB   │
+ └─────────────────────────────┴─────────────────────────────────────────────────────┴──────────────────────────────────────────────────────────┘
+
+ Tổng worst case một worker nhận ~59 KB text hướng dẫn trước dòng TASK (≈15K token). Đó là bối cảnh cho mọi kết luận dưới đây.
+
+ ────────────────────────────────────────────────────────────────────────────────
+
+ 1. Điểm yếu & Edge cases
+
+ W1 — Luật "stall" là mệnh lệnh không thể kiểm chứng và đẩy model tới bịa việc.
+ src/prompts.ts:93: "An open goal with nothing open or running must produce at least one intent this round: a round that adds none is a stall,
+ not a wait." Host không cưỡng chế luật này (không có cap intent trong src/tasks.ts; chỉ p2o_finish kiểm pendingIntents,
+ extensions/p2o/index.ts:1552). Ngược lại host còn đẩy tín hiệu stall: src/situation.ts:121 render segment 0 open. Edge case: manual mode,
+ surface đã cạn, budget worker đã dùng hết → model buộc phải sinh intent mới để "không stall", đúng thứ mà dòng kế bên cấm ("never invent work to
+ sustain the loop"). Đây là đường ngắn nhất từ prompt tới hallucination.
+
+ W2 — Prompt chưa cập nhật gate P14.9/P14.12; model sẽ tuyên bố điều host từ chối.
+ src/prompts.ts:98 nói independence chỉ cần "a separate worker reproducing the effect with a current matching conclusion and reviewable receipt".
+ Nhưng src/cases.ts:independentReceiptCurrent (P14.12) đòi thêm cùng payloadSha256 và cùng environmentFingerprint. src/prompts.ts:99 nói "limit
+ severity to demonstrated impact" trong khi p2o_case rate (P14.9) đòi mỗi bước chain có effect (src/case-tool.ts:6) + reach, và từ chối mức cao
+ hơn effect đã chứng minh. Edge case: chain 3 bước, bước cuối effect=code-execution; lead đọc prompt, rate critical, bị host trả về lỗi nêu tên
+ bước — lead không được báo trước luật nào.
+
+ W3 — PURPOSE_SKILLS không biết target kind → skill sai ngữ cảnh.
+ src/roles.ts:38-46 là map tĩnh. Với --url:
+ - mapping → attack-surface-mapping (8,591 B, mở đầu bằng "Use before choosing code to audit or designing a harness") thay vì
+   web-deployment-hygiene (7,901 B, "Use first") hay web-route-input-inventory (8,855 B).
+ - discovery → source-code-auditing dù không có /target. Edge case hybrid: worker nhận skill nói về source, brief không nói phần nào của bài áp
+   cho origin.
+
+ W4 — 4/5 procedure skill của P14.6 không bao giờ được chọn mặc định.
+ src/roles.ts:44-45 chỉ gán exploit-design. binary-exploit-ladder, web-injection-to-exec, ssrf-to-internal, credential-and-pivot chỉ tới được
+ worker nếu lead tự truyền skills:[...]. Mà lead không được nhắc về skills: grep "p2o_skill|skill" src/prompts.ts:60-104 = 0. Edge case: exploit
+ worker nhận exploit-design chung chung trong khi primitive là SQL injection → phải tự suy ra nhánh ladder.
+
+ W5 — Duty và skill mặc định nói hai việc khác nhau.
+
+ ┌──────────────────┬──────────────────────────────────────────────────┬────────────────────────────────────────────────────────────────────────┐
+ │ Purpose          │ Duty (src/duties.ts)                             │ Skill mặc định (src/roles.ts)                                          │
+ ├──────────────────┼──────────────────────────────────────────────────┼────────────────────────────────────────────────────────────────────────┤
+ │ validation       │ "never a new discovery"                          │ exploitability-assessment = đánh giá impact, tổng hợp primitive →      │
+ │ (42-46)          │                                                  │ chính là phân tích mới                                                 │
+ ├──────────────────┼──────────────────────────────────────────────────┼────────────────────────────────────────────────────────────────────────┤
+ │ reporting        │ "produce no new claim and execute nothing"       │ remediation = viết fix, regression test, detection → claim mới         │
+ │ (64-68)          │                                                  │                                                                        │
+ ├──────────────────┼──────────────────────────────────────────────────┼────────────────────────────────────────────────────────────────────────┤
+ │ retest (47-51)   │ "Re-run the stated reproduction…                 │ remediation (viết fix, không phải chạy lại)                            │
+ │                  │ same-or-different verdict"                       │                                                                        │
+ └──────────────────┴──────────────────────────────────────────────────┴────────────────────────────────────────────────────────────────────────┘
+
+ W6 — p2o_lab nằm trong tay lead nhưng lead không được chạy gì.
+ src/tool-policy.ts:2-4: LAB_TOOLS vào cả OWNER_TOOLS; comment nói payload là "execution evidence, so only an executing role may create or read
+ one". Guard TARGET_FACING_OPERATIONS.payload_write (tool-policy.ts:24) chỉ chặn reporting. Edge: lead delegated tạo payload rồi không có worker
+ nào chạy nó → payload mồ côi, và isReplayable vẫn true vì chỉ so 2 ref.
+
+ W7 — "Execute nothing" của reporting vs p2o_research có fetch mạng.
+ src/duties.ts:65 ("execute nothing"), src/tool-policy.ts:12-14 cố ý giữ p2o_research, và extensions/p2o/index.ts:927-931 chạy
+ sandbox.fetchResearch(...) thật. Chặn bởi curatedSource() (chỉ URL trong corpus) nên không chạm target — nhưng câu chữ trong duty và tool-policy
+ đang nói dối nhau; edge case: corpus chứa URL trùng origin target thì "synthesis-only" vẫn phát request ra ngoài.
+
+ W8 — Không có trần tổng cho skill inline.
+ MAX_SKILLS = 3 (roles.ts:54) chỉ giới hạn số, mỗi body không bị chặn tổng: 3 file lớn nhất = 27,201 B (web-object-authorization 9,755 +
+ web-route-input-inventory 8,855 + attack-surface-mapping 8,591). resolveRole còn câm lặng cắt: roles.ts:164 .slice(0, MAX_SKILLS) — operator cấu
+ hình 4 skill thì mất 1 mà không cảnh báo.
+
+ W9 (edge) — Boilerplate trùng trong 35/35 SKILL.md. 34 file mở đầu bằng đúng một câu "Before first use, read the [scope baseline]… and [handoff
+ contracts]…". Link được rewrite thành p2o-skill:shared:scope (src/skills.ts:114-120) nên resolve được (không phải link chết — tôi đã kiểm),
+ nhưng 3 skill inline = 3 lần cùng hai pointer = 2 lượt gọi tool thừa nếu model tuân thủ.
+
+ ────────────────────────────────────────────────────────────────────────────────
+
+ 2. Xung đột & Mâu thuẫn
+
+ ┌────┬────────────────────────────────────────────────────┬─────────────────────────────────────┬──────────────────────────────────────────────┐
+ │ #  │ Cặp mâu thuẫn                                      │ Vị trí                              │ Bản chất                                     │
+ ├────┼────────────────────────────────────────────────────┼─────────────────────────────────────┼──────────────────────────────────────────────┤
+ │ C1 │ "must produce at least one intent" ↔ "no feasible  │ prompts.ts:93 ↔ prompts.ts:80       │ Một luật bắt hành động, một luật bắt dừng;   │
+ │    │ direction means blocked/human-needed, never invent │                                     │ không nói luật nào thắng. Host không phân    │
+ │    │ work"                                              │                                     │ xử.                                          │
+ ├────┼────────────────────────────────────────────────────┼─────────────────────────────────────┼──────────────────────────────────────────────┤
+ │ C2 │ "Your assigned objective is your whole job" ↔      │ prompts.ts:110 ↔ prompts.ts:116     │ Biên của "objective" bị xoá; duty line lại   │
+ │    │ "follow the chain that intent opens … instead of   │                                     │ nói "nothing that belongs to another         │
+ │    │ stopping at the edge of the brief"                 │                                     │ purpose" (duties.ts:88-93). Ba phát biểu, ba │
+ │    │                                                    │                                     │ biên khác nhau.                              │
+ ├────┼────────────────────────────────────────────────────┼─────────────────────────────────────┼──────────────────────────────────────────────┤
+ │ C3 │ reporting duty "execute nothing" ↔ role giữ        │ duties.ts:65 ↔                      │ Vi phạm chữ nghĩa của chính duty.            │
+ │    │ p2o_research (fetch trong sandbox)                 │ tool-policy.ts:12-14,               │                                              │
+ │    │                                                    │ extensions/p2o/index.ts:927-931     │                                              │
+ ├────┼────────────────────────────────────────────────────┼─────────────────────────────────────┼──────────────────────────────────────────────┤
+ │ C4 │ Validation "never a new discovery" ↔ skill mặc     │ duties.ts:42-46,64-68 ↔             │ Skill dạy đúng việc duty cấm.                │
+ │    │ định exploitability-assessment; reporting "no new  │ roles.ts:42,46                      │                                              │
+ │    │ claim" ↔ remediation                               │                                     │                                              │
+ ├────┼────────────────────────────────────────────────────┼─────────────────────────────────────┼──────────────────────────────────────────────┤
+ │ C5 │ Independence = "matching conclusion + receipt" ↔   │ prompts.ts:98 ↔ src/cases.ts        │ Prompt lỏng hơn gate → lead khai             │
+ │    │ host đòi cùng sha256 payload + fingerprint         │ (P14.12)                            │ independence, host từ chối, tốn 1 vòng.      │
+ ├────┼────────────────────────────────────────────────────┼─────────────────────────────────────┼──────────────────────────────────────────────┤
+ │ C6 │ "limit severity to demonstrated impact" ↔ rate đòi │ prompts.ts:99 ↔                     │ Model phải học luật qua thông báo lỗi.       │
+ │    │ effect/reach/demonstratedThrough                   │ case-tool.ts:6,28-29, cvss.ts:38    │                                              │
+ ├────┼────────────────────────────────────────────────────┼─────────────────────────────────────┼──────────────────────────────────────────────┤
+ │ C7 │ Ba skill cùng nhận vai "làm trước":                │ skills/*/SKILL.md frontmatter       │ Trigger chồng lấn; chỉ một cái là default    │
+ │    │ web-deployment-hygiene "Use first",                │                                     │ của mapping, nên thứ tự đúng không bao giờ   │
+ │    │ web-route-input-inventory "Use before behaviorally │                                     │ được chọn tự động.                           │
+ │    │ testing", attack-surface-mapping "Use before       │                                     │                                              │
+ │    │ choosing code to audit"                            │                                     │                                              │
+ ├────┼────────────────────────────────────────────────────┼─────────────────────────────────────┼──────────────────────────────────────────────┤
+ │ C8 │ "Run p2o_task action=match … before creating" ↔    │ tool-guidelines.ts:13 ↔             │ Một bên đòi lượt gọi trước, một bên thưởng   │
+ │    │ p2o_delegate "immediately spawn one focused worker │ p2o_delegate description            │ cho sự tức thời; p2o_delegate không có work  │
+ │    │ when capacity is free"                             │                                     │ chỉ trả workMatch:'unknown'                  │
+ │    │                                                    │                                     │ (extensions/p2o/index.ts:1463).              │
+ └────┴────────────────────────────────────────────────────┴─────────────────────────────────────┴──────────────────────────────────────────────┘
+
+ ────────────────────────────────────────────────────────────────────────────────
+
+ 3. Hành vi làm giảm năng lực / friction
+
+ D1 — Nghi thức 3–4 lượt cho một câu hỏi. match → create → reserve/dispatch → (sau đó) review. p2o_task description (786 B) mô tả 4 action;
+ guideline bắt buộc match trước. Không có host gate nào cần lượt match — nó là lễ nghi prompt-only, tăng latency tuyến tính theo số task.
+
+ D2 — Đường chain tốn 3 lượt và không được quảng bá. p2o_graph {action:'chain',plan:true} → p2o_task create → dispatch. P14.10 cố ý không
+ auto-create (đúng), nhưng lead prompt không nhắc plan — chỉ declaration 1,132 B của p2o_graph biết. Model chỉ tìm ra bằng cách đọc schema.
+
+ D3 — Trần ngữ cảnh: worst case ~59 KB hướng dẫn/worker (27,201 skill + 26,409 khai báo + ~5.7 KB prompt). attack-surface-mapping một mình 8,591
+ B cho mọi task mapping, kể cả khi nửa tài liệu là source-oriented và target là URL.
+
+ D4 — Ba câu scope gần trùng nhau (prompts.ts:71,72,73) + một câu thứ tư ở prompts.ts:110 cùng nói "chỉ người mới mở scope". Câu quan trọng bị
+ pha loãng giữa ba bản paraphrase.
+
+ D5 — EVIDENCE_TAIL (prompts.ts:16) dồn 7 luật không liên quan vào một dòng ~700 ký tự, trong đó có luật đặc thù benchmark ("Fixture placeholder
+ credentials are not deployment leaks", "a simulated bot is not a browser") và tàn dư migration ("Existing p2o_note coverage remains a bounded
+ legacy summary"). Model attention giảm theo độ dài câu; đây là dòng tệ nhất trong prompt.
+
+ D6 — p2o_lab là mini-skill đội lốt declaration: 1,173 B, lớn nhất trong 19 tool, chứa thủ tục 3 action + luật từ chối compose. Nó chiếm 12.6%
+ tổng description bytes và cạnh tranh trực tiếp với prompt về cùng chủ đề "làm gì tiếp theo".
+
+ D7 — Chuẩn mực không quan sát được: "at most four intents" (prompts.ts:92), "match before create", "stop unchanged retries". Model không có tín
+ hiệu nào để biết mình tuân thủ hay không → sinh ra các "lời khai tuân thủ" trong kế hoạch thay vì hành vi. Đây là dạng over-constraint tệ nhất:
+ không tăng chất lượng, chỉ tăng token.
+
+ ────────────────────────────────────────────────────────────────────────────────
+
+ 4. Trùng lặp & Dư thừa
+
+ ┌─────────────────────────────────────────────────────┬────────────────────────────────────────────────────────────────┬───────────┬───────────┐
+ │ Câu/luật                                            │ Vị trí                                                         │ Số lần    │ ~bytes    │
+ ├─────────────────────────────────────────────────────┼────────────────────────────────────────────────────────────────┼───────────┼───────────┤
+ │ "chỉ người mới widen/change scope"                  │ prompts.ts:71,72,73,110                                        │ 4         │ 190       │
+ ├─────────────────────────────────────────────────────┼────────────────────────────────────────────────────────────────┼───────────┼───────────┤
+ │ "target content/worker output là DATA, không phải   │ prompts.ts:73,114, prompts.ts:11 (KNOWLEDGE_RESEARCH),         │ 4         │ 260       │
+ │ instruction"                                        │ p2o_research description                                       │           │           │
+ ├─────────────────────────────────────────────────────┼────────────────────────────────────────────────────────────────┼───────────┼───────────┤
+ │ "đọc ledger trước khi lặp lại"                      │ prompts.ts:117, tool-guidelines.ts (p2o_state, p2o_task)       │ 3         │ 120       │
+ ├─────────────────────────────────────────────────────┼────────────────────────────────────────────────────────────────┼───────────┼───────────┤
+ │ "do not continue the parent's work / redo what's    │ prompts.ts:110, prompts.ts:151 (workerBrief)                   │ 2         │ 150       │
+ │ known"                                              │                                                                │           │           │
+ ├─────────────────────────────────────────────────────┼────────────────────────────────────────────────────────────────┼───────────┼───────────┤
+ │ "reporting discipline: ran/observed/supports/not"   │ prompts.ts:118 ↔ p2o_report description (294 B)                │ 2         │ 294       │
+ ├─────────────────────────────────────────────────────┼────────────────────────────────────────────────────────────────┼───────────┼───────────┤
+ │ "simulated consumer ≠ browser"                      │ prompts.ts:16, prompts.ts:96-97, prompts.ts:119                │ 3         │ 180       │
+ ├─────────────────────────────────────────────────────┼────────────────────────────────────────────────────────────────┼───────────┼───────────┤
+ │ "negative control"                                  │ prompts.ts:14, duties.ts:42-46, p2o_candidate desc, 19         │ 22        │ —         │
+ │                                                     │ SKILL.md                                                       │           │           │
+ ├─────────────────────────────────────────────────────┼────────────────────────────────────────────────────────────────┼───────────┼───────────┤
+ │ "Recon handoff" (nội dung chỉ lead dùng)            │ prompts.ts:39 render cho cả worker                             │ 2         │ 240       │
+ │                                                     │                                                                │ audience  │           │
+ ├─────────────────────────────────────────────────────┼────────────────────────────────────────────────────────────────┼───────────┼───────────┤
+ │ "Before first use, read scope baseline + handoff    │ 34/35 SKILL.md                                                 │ 34        │ ~2,300    │
+ │ contracts"                                          │                                                                │           │ tổng      │
+ └─────────────────────────────────────────────────────┴────────────────────────────────────────────────────────────────┴───────────┴───────────┘
+
+ Hai mục cuối đáng chú ý nhất: prompts.ts:39 bắt worker "ranked investigation queue" và "handoff" — việc worker không có tool để làm (không
+ p2o_delegate); và boilerplate skill lặp 3 lần trong một brief.
+
+ ────────────────────────────────────────────────────────────────────────────────
+
+ 5. Đề xuất sửa đổi (diff cụ thể)
+
+ │ Tất cả dưới đây là đề xuất, chưa áp dụng. Mỗi thay đổi src/prompts.ts kéo theo repin LEAD_CEILINGS (tests/minimal/helpers/budgets.ts:18-27) +
+ │ hash tests/minimal/recon.test.ts; thay đổi roles.ts kéo theo tests/minimal/roles.test.ts.
+
+ ### R1 — Bỏ mệnh lệnh stall, để host signal nói (src/prompts.ts:93)
+
+ ```ts
+   // TRƯỚC
+       'An open goal with nothing open or running must produce at least one intent this round: a round that adds none is a stall, not a wait.',
+   // SAU
+       'A round that adds no intent is a stall only if a feasible question exists: when it does, add it; when it does not, end the round and
+ report blocked/human-needed with the reason.',
+ ```
+
+ Lý do: giữ đúng ý "đừng ngồi không", bỏ mệnh lệnh tuyệt đối, và trỏ về nhánh blocked đã có ở prompts.ts:80. Host vẫn render 0 open
+ (situation.ts:121) nên tín hiệu không mất.
+
+ ### R2 — Đồng bộ prompt với gate P14.9/P14.12 (src/prompts.ts:98-99)
+
+ ```ts
+   // TRƯỚC (98)
+       'Give each candidate explicit closure: confirmed with evidence, ruled_out with the specific effective control and location, or
+ open_proof_gap. Independent verification requires a separate worker reproducing the effect with a current matching conclusion and reviewable
+ receipt; withdrawn or stale support cannot validate a revised claim.',
+   // SAU (98)
+       'Give each candidate explicit closure: confirmed with evidence, ruled_out with the specific effective control and location, or
+ open_proof_gap. Independent verification means another worker reproduced the same effect with its own receipt and the same payload sha256 in an
+ environment with the same recipe fingerprint: without those the case stays ratable but not independent. Withdrawn or stale support cannot
+ validate a revised claim.',
+ ```
+
+ ```ts
+   // TRƯỚC (99)
+       'Preserve evidence links, controls, limitations and revision history. Record coverage, including ruled-out and unresolved surfaces. Argue
+ counterevidence, calibrate confidence and limit severity to demonstrated impact.',
+   // SAU (99)
+       'Preserve evidence links, controls, limitations and revision history. Record coverage, including ruled-out and unresolved surfaces. Argue
+ counterevidence and calibrate confidence. Severity is computed, not chosen: rate each executed chain step with the effect it showed, and the
+ case cannot score above the furthest step that actually ran.',
+ ```
+
+ Đây là finding quan trọng nhất về mặt vận hành: hai gate mới nhất đang dạy model qua thông báo lỗi thay vì prompt.
+
+ ### R3 — Giải mâu thuẫn objective ↔ chain (src/prompts.ts:110,116)
+
+ ```ts
+   // TRƯỚC (110)
+       'Your assigned objective is your whole job. Do not continue the parent\u2019s work, do not re-derive what the brief lists as already
+ known, and do not widen scope — only the human can change scope.',
+   // SAU (110)
+       'Your assigned objective is your whole job. Follow it into the effects it directly enables (the duty line names how far); do not continue
+ the parent\u2019s work, do not re-derive what the brief lists as already known, and do not widen scope — only the human can change scope.',
+ ```
+
+ và bỏ vế xung đột ở dòng 116:
+
+ ```ts
+   // TRƯỚC (116, nhánh non-reporting)
+       'TACTICAL AUTONOMY: choose the steps/tools for your intent, and follow the chain that intent opens — when one step\u2019s actual output is
+ the input of the next, take the next step instead of stopping at the edge of the brief. Record material observations …',
+   // SAU
+       'TACTICAL AUTONOMY: choose the steps/tools for your intent, and take the next step only when this step\u2019s actual output is its input
+ and the duty line\u2019s purpose covers it; otherwise report the link. Record material observations …',
+ ```
+
+ Nguyên tắc: biên của "objective" phải được duty line định nghĩa, không phải một câu thứ hai trong prompt.
+
+ ### R4 — Skill mặc định theo target kind và theo capability (src/roles.ts:37-47)
+
+ ```ts
+   // TRƯỚC
+   export const PURPOSE_SKILLS: Record<WorkPurpose, readonly string[]> = {
+     mapping: ['attack-surface-mapping'],
+     discovery: ['source-code-auditing'],
+     investigation: [],
+     refinement: ['source-code-auditing'],
+     validation: ['exploitability-assessment'],
+     retest: ['remediation'],
+     exploitation: ['exploit-design'],
+     chaining: ['exploit-design'],
+     reporting: ['remediation'],
+   };
+   // SAU
+   export const PURPOSE_SKILLS: Record<WorkPurpose, readonly string[]> = {
+     mapping: ['attack-surface-mapping'],       // source; URL/hybrid override below
+     discovery: ['source-code-auditing'],
+     investigation: [],
+     refinement: ['source-code-auditing'],
+     // Reproduction is not impact assessment: the duty forbids new discovery.
+     validation: [],
+     retest: [],
+     exploitation: ['exploit-design'],
+     chaining: ['exploit-design'],
+     // Synthesis only: no fix authoring while the reader-ready report is the deliverable.
+     reporting: [],
+   };
+
+   /** W3: a URL or hybrid run maps the deployment, not the source tree, and validation/retest get no method skill. */
+   export function purposeSkills(purpose: WorkPurpose, kind: 'directory' | 'url' | 'hybrid'): readonly string[] {
+     if (purpose === 'mapping' && kind !== 'directory') return ['web-deployment-hygiene'];
+     if (purpose === 'discovery' && kind === 'url') return ['web-route-input-inventory'];
+     return PURPOSE_SKILLS[purpose];
+   }
+
+   /** W4: the ladder follows the primitive a step consumes, so it is derived where the need is known. */
+   export function exploitationSkills(kind: 'directory' | 'url' | 'hybrid', needs: readonly { kind: string }[]): readonly string[] {
+     const ladder: string[] = [];
+     if (needs.some(n => n.kind === 'net.egress')) ladder.push('ssrf-to-internal');
+     if (needs.some(n => n.kind === 'exec.code')) ladder.push(kind === 'directory' ? 'binary-exploit-ladder' : 'web-injection-to-exec');
+     if (needs.some(n => n.kind === 'cred.session' || n.kind === 'cred.secret')) ladder.push('credential-and-pivot');
+     return [...ladder, 'exploit-design'].slice(0, MAX_SKILLS);
+   }
+ ```
+
+ src/roles.ts:163-164 đổi PURPOSE_SKILLS[...] thành purposeSkills(purpose, kind); caller ở extensions/p2o/index.ts:530 phải truyền
+ ticket.target.kind. Sửa tests/minimal/roles.test.ts theo (test đang pin validation → exploitability-assessment).
+
+ ### R5 — Reconcile duty reporting với p2o_research (src/duties.ts:65)
+
+ ```ts
+   // TRƯỚC
+       duty: 'Convert accepted cases into a reader-ready report; produce no new claim and execute nothing.',
+   // SAU
+       duty: 'Convert accepted cases into a reader-ready report; produce no new claim and run no target command. A curated citation lookup is not
+ target execution.',
+ ```
+
+ Đồng thời sửa comment src/tool-policy.ts:12-13 cho khớp (nó đang nói "not target execution" trong khi duty nói "execute nothing").
+
+ ### R6 — Tách EVIDENCE_TAIL, bỏ luật benchmark khỏi prompt phổ quát (src/prompts.ts:16)
+
+ ```ts
+   // TRƯỚC
+   const EVIDENCE_TAIL = 'A source trace is not runtime proof; a simulated bot is not a browser. Blocked execution stays open_proof_gap with its
+ requirement, never clean. Records are claims, not automatic verification. Establish intended policy before claiming its violation: an export can
+ legitimately have different permissions from single-object reads/updates; sibling route differences are hypotheses, not policy. Set
+ policyBasis=inferred and open_proof_gap until the contract is established. Fixture placeholder credentials are not deployment leaks without
+ evidence. Existing p2o_note coverage remains a bounded legacy summary, not universal safety.';
+   // SAU
+   const EVIDENCE_TAIL = 'A source trace is not runtime proof. Blocked execution stays open_proof_gap with its requirement, never clean. Records
+ are claims, not automatic verification. Establish intended policy before claiming its violation: sibling route differences and placeholder
+ credentials are hypotheses, not policy.';
+ ```
+
+ Tiết kiệm ~300 B × mọi worker; hai luật bị bỏ ("simulated bot", "legacy p2o_note coverage") đã có tương đương ở prompts.ts:96-97, và luật legacy
+ nên nằm trong docs/ chứ không trong prompt.
+
+ Và tách prompts.ts:39 để chỉ lead nhận:
+
+ ```ts
+   // TRƯỚC: 'Recon handoff: … ranked investigation queue …' nằm trong mảng dùng chung
+   // SAU: export function reconInstructions(kind, toolGuidance = true, forLead = false) { …
+   //   ...(forLead ? ['Recon handoff: target identity/context, inventory with evidence and unknowns, covered/untested scope, ranked
+ investigation queue, owned surface+risk, expected observation and stop condition.'] : []),
+ ```
+
+ ### R7 — Chuyển thủ tục p2o_lab khỏi declaration sang guideline (src/tool-guidelines.ts)
+
+ ```ts
+   // THÊM vào TOOL_GUIDELINES
+     p2o_lab: ['Store the payload before you run it, verify the environment recipe before you trust it, and name both in the claim so a second
+ worker replays the same bytes in the same recipe.'],
+ ```
+
+ rồi rút description của p2o_lab (extensions/p2o/index.ts, 1,173 B) xuống còn phần cái gì/cấu trúc (~500 B). Lưu ý kỹ thuật: guideline không
+ thuộc DECLARATION_BUDGET mà vào guidance (473 B cho worker) — nên p2o_lab (LAB_TOOLS, worker có) sẽ cần nâng guidance pin; đo lại trước khi sửa.
+
+ ────────────────────────────────────────────────────────────────────────────────
+
+ Thứ tự nên làm
+
+ ┌────────┬──────────────────────────────────┬────────────────────────────────────────────┬─────────────────────────────────────────────────────┐
+ │ Ưu     │ Việc                             │ Rủi ro                                     │ Gate kiểm                                           │
+ │ tiên   │                                  │                                            │                                                     │
+ ├────────┼──────────────────────────────────┼────────────────────────────────────────────┼─────────────────────────────────────────────────────┤
+ │ 1      │ R1 + R2 (an toàn chống           │ Thay đổi bytes prompt → repin              │ npx vitest run tests/minimal/recon.test.ts          │
+ │        │ hallucination, chi phí thấp)     │ LEAD_CEILINGS, hash recon.test.ts          │ tests/minimal/measure-context.test.ts               │
+ ├────────┼──────────────────────────────────┼────────────────────────────────────────────┼─────────────────────────────────────────────────────┤
+ │ 2      │ R3 (biên objective)              │ Tranh chấp với duty line — phải sửa cùng   │ dutyLine drift test + linear worker prompt          │
+ │        │                                  │ lúc duties.ts                              │                                                     │
+ ├────────┼──────────────────────────────────┼────────────────────────────────────────────┼─────────────────────────────────────────────────────┤
+ │ 3      │ R4 (skill theo kind/capability)  │ Đổi hành vi chọn skill; roles.test.ts phải │ tests/minimal/roles.test.ts, wstg-skills.test.ts    │
+ │        │                                  │ viết lại                                   │                                                     │
+ ├────────┼──────────────────────────────────┼────────────────────────────────────────────┼─────────────────────────────────────────────────────┤
+ │ 4      │ R5 + R6 (chữ nghĩa + cắt nhiễu)  │ Prompt ngắn hơn → pin giảm, không được tự  │ python3 scripts/validate_library.py                 │
+ │        │                                  │ ý nới                                      │                                                     │
+ ├────────┼──────────────────────────────────┼────────────────────────────────────────────┼─────────────────────────────────────────────────────┤
+ │ 5      │ R7 (declaration ↔ guideline)     │ Ảnh hưởng DECLARATION_BUDGET/guidance      │ chỉ số đo lại, không đoán                           │
+ └────────┴──────────────────────────────────┴────────────────────────────────────────────┴─────────────────────────────────────────────────────┘
+
+ Bốn phát hiện tôi đánh giá cao nhất về rủi ro thực tế: W1/C1 (luật stall đẩy bịa việc), W2/C5-C6 (prompt lệch hai gate mới nhất nên model chỉ
+ học qua lỗi), W3-W5 (skill mặc định dạy sai việc duty cấm), W8/D3 (trần skill inline không tồn tại, worst case 27 KB/brief). Ba nhóm này đều sửa
+ được mà không cần thêm tool hay bảng dữ liệu mới — chỉ cần sửa văn bản và một hàm dẫn xuất.

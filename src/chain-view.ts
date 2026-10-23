@@ -1,57 +1,72 @@
 /**
- * planning_update.md P5: "which step is next" as a query over the claim graph the run already records.
- * A claim hands out a capability (`provides`) and consumes others (`requires`); the join reads those two prose
- * fields as token sets, so nothing new is persisted and no candidate→candidate edge store exists.
+ * planning_update.md P5 + P14.1: "which step is next" as a query over the claim graph the run already records.
+ * A claim gains capabilities and needs others; both are typed (`src/capabilities.ts`), so a link is one match rule rather than
+ * word overlap. Nothing new is persisted and no candidate→candidate edge store exists: the join is still derived on read.
  */
-import { isDemonstrated, isOpenGap } from './claims.js';
+import { claimCapabilities, isDemonstrated, isOpenGap, type ClaimFields } from './claims.js';
+import { capabilityMatches, isTypedCapability, type Capability } from './capabilities.js';
+import { isEnvironmentId } from './lab.js';
 
-export interface ChainClaim { candidate: string; closure: string; execution?: string; provides?: string; requires?: string; /** Ledger record id of the candidate head; the identity `CaseFinding.chain.steps[].claimRef` cites (P13a). */ recordId?: string }
-export interface ChainPath { claimId: string; depth: number; path: string[]; /** Ledger record id for the slug in `claimId`, when the caller supplied one, so a plan can cite either identity. */ recordId?: string }
+export interface ChainClaim extends ClaimFields {
+  candidate: string;
+  /** Where the primitive lives and what class of weakness it is: the graph records both, the draft needs them (P14.10). */
+  surface?: string; risk?: string;
+  /** Ledger record id of the candidate head; the identity `CaseFinding.chain.steps[].claimRef` cites (P13a). */
+  recordId?: string;
+}
+export interface ChainPath {
+  claimId: string; depth: number; path: string[];
+  /** Ledger record id for the slug in `claimId`, when the caller supplied one, so a plan can cite either identity. */
+  recordId?: string;
+  /** P14.10: the typed capabilities this ready step consumes — what a task created from it has to stand on. */
+  needs: Capability[];
+  /** P14.10: ledger record ids of the providers on the shortest proven path, in execution order; a task cites these as parents. */
+  providers: string[];
+  /** P14.10: the recorded environment of the deepest provider that has one, so the step runs where the chain was demonstrated. */
+  environmentRef?: string;
+}
 export interface ChainJoin {
   /** Confirmed and tested claims that hand out a capability without needing one first. */
   primitives: string[];
-  /** Open claims whose every required token an existing confirmed+tested claim already provides: dispatchable now. */
+  /** Open claims whose every need an existing confirmed+tested claim already gains: dispatchable now. */
   ready: string[];
-  /** Open claims with at least one token nothing recorded provides. */
+  /** Open claims with at least one need nothing recorded gains. */
   unmet: string[];
-  /** Per unmet claim, the tokens still missing. */
-  uncovered: Record<string, string[]>;
+  /** Per unmet claim, the capabilities still missing, named by kind (P14.1: a gap is a capability, not a word). */
+  uncovered: Record<string, Capability[]>;
+  /** Claims whose declared capability is pre-P14 text: readable and reported, joined to nothing. Re-record them to link. */
+  legacy: string[];
   /** Ready claims, deepest first, each with a shortest proven path from a primitive. */
   frontier: ChainPath[];
   /** How far each claim sits from a primitive along its shortest proven route, when that distance is known. */
   depth: Record<string, number>;
 }
 
-const STOP = new Set(['a', 'an', 'the', 'of', 'to', 'and', 'or', 'for', 'in', 'on', 'with', 'by', 'from', 'as', 'that', 'this',
-  'it', 'its', 'is', 'be', 'any', 'one', 'some', 'at', 'into', 'via', 'through', 'own', 'not', 'then', 'than', 'an', 'per']);
 const MAX_DEPTH = 12;
 const MAX_FRONTIER = 10;
-
-/** Lowercased word tokens without stopwords: the unit the join compares. Deterministic and order-free. */
-export function chainTokens(value: string | undefined): string[] {
-  if (!value) return [];
-  return [...new Set(value.toLowerCase().split(/[^a-z0-9]+/).filter(token => token.length > 1 && !STOP.has(token)))].sort();
-}
+const MAX_GAP_KINDS = 8;
 
 // One owner for the rule (src/claims.ts): the coverage-cell vocabulary also spells `tested`, and only this import decides claims.
-const PROVIDES = (claim: ChainClaim) => isDemonstrated(claim);
-const OPEN = (claim: ChainClaim) => isOpenGap(claim);
+const OPEN = (claim: ClaimFields) => isOpenGap(claim);
 
 export function chainJoin(claims: readonly ChainClaim[]): ChainJoin {
-  const byId = new Map(claims.map(claim => [claim.candidate, claim]));
-  const providers = claims.filter(PROVIDES).map(claim => ({ id: claim.candidate, tokens: new Set(chainTokens(claim.provides)) }));
-  const required = new Map(claims.map(claim => [claim.candidate, chainTokens(claim.requires)]));
-  const covers = (claimId: string, tokens: readonly string[]) => providers
-    .filter(provider => provider.id !== claimId && tokens.some(token => provider.tokens.has(token)))
-    .map(provider => provider.id);
-  const missing = (claimId: string) => required.get(claimId)!.filter(token => !providers.some(provider => provider.id !== claimId && provider.tokens.has(token)));
+  // Read both vocabularies once here: a pre-P14 record's text arrives as a legacy entry and matches nothing.
+  const entries = claims.map(claim => ({ claim, ...claimCapabilities(claim) }));
+  const gained = new Map(entries.map(entry => [entry.claim.candidate, entry.gained.filter(isTypedCapability)]));
+  const needs = new Map(entries.map(entry => [entry.claim.candidate, entry.needs]));
+  const providers = entries.filter(entry => isDemonstrated(entry.claim)).map(entry => entry.claim.candidate);
+  const covers = (claimId: string, wanted: readonly Capability[]) => providers
+    .filter(provider => provider !== claimId && wanted.some(need => gained.get(provider)!.some(have => capabilityMatches(need, have))));
+  const missing = (claimId: string) => needs.get(claimId)!
+    .filter(need => !providers.some(provider => provider !== claimId && gained.get(provider)!.some(have => capabilityMatches(need, have))));
+
   const depth = new Map<string, number>();
   const depthOf = (claimId: string, seen: Set<string> = new Set()): number | undefined => {
     if (depth.has(claimId)) return depth.get(claimId);
-    const tokens = required.get(claimId) ?? [];
-    if (!tokens.length) return byId.get(claimId) && PROVIDES(byId.get(claimId)!) ? (depth.set(claimId, 0), 0) : undefined;
+    const wanted = needs.get(claimId) ?? [];
+    if (!wanted.length) return providers.includes(claimId) ? (depth.set(claimId, 0), 0) : undefined;
     if (missing(claimId).length || seen.has(claimId) || seen.size > MAX_DEPTH) return undefined;
-    const parents = covers(claimId, tokens).map(parent => depthOf(parent, new Set([...seen, claimId]))).filter((value): value is number => value !== undefined);
+    const parents = covers(claimId, wanted).map(parent => depthOf(parent, new Set([...seen, claimId]))).filter((value): value is number => value !== undefined);
     if (!parents.length) return undefined;
     // Shortest distance from a primitive: the same path breadth-first search below reports, so depth and path agree.
     const value = Math.min(...parents) + 1;
@@ -59,31 +74,46 @@ export function chainJoin(claims: readonly ChainClaim[]): ChainJoin {
     depth.set(claimId, value);
     return value;
   };
-  for (const claim of claims) depthOf(claim.candidate);
-  const ready = claims.filter(claim => OPEN(claim) && !missing(claim.candidate).length);
-  const unmet = claims.filter(claim => OPEN(claim) && missing(claim.candidate).length > 0);
+  for (const entry of entries) depthOf(entry.claim.candidate);
+
+  const ready = entries.filter(entry => OPEN(entry.claim) && !missing(entry.claim.candidate).length).map(entry => entry.claim.candidate);
+  const unmet = entries.filter(entry => OPEN(entry.claim) && missing(entry.claim.candidate).length > 0).map(entry => entry.claim.candidate);
+
   // Shortest primitive→claim path by breadth-first walk over provider edges; the deepest ready claim is the frontier.
   const parentOf = new Map<string, string | undefined>();
-  const queue = claims.filter(claim => required.get(claim.candidate)!.length === 0 && PROVIDES(claim)).map(claim => claim.candidate);
+  const queue = entries.filter(entry => !needs.get(entry.claim.candidate)!.length && providers.includes(entry.claim.candidate)).map(entry => entry.claim.candidate);
   const seen = new Set(queue);
   for (let index = 0; index < queue.length && index < 500; index++) {
     const id = queue[index]!;
-    for (const claim of claims) {
-      if (seen.has(claim.candidate)) continue;
-      if (!covers(claim.candidate, required.get(claim.candidate)!).includes(id)) continue;
-      if (missing(claim.candidate).length) continue;
-      seen.add(claim.candidate); parentOf.set(claim.candidate, id); queue.push(claim.candidate);
+    for (const entry of entries) {
+      if (seen.has(entry.claim.candidate)) continue;
+      if (!covers(entry.claim.candidate, needs.get(entry.claim.candidate)!).includes(id)) continue;
+      if (missing(entry.claim.candidate).length) continue;
+      seen.add(entry.claim.candidate); parentOf.set(entry.claim.candidate, id); queue.push(entry.claim.candidate);
     }
   }
   const pathTo = (claimId: string) => { const path: string[] = [claimId]; let cursor = parentOf.get(claimId); let guard = 0;
     while (cursor && guard++ < MAX_DEPTH) { path.unshift(cursor); cursor = parentOf.get(cursor); } return path; };
-  const frontier = ready.map(claim => ({ claimId: claim.candidate, depth: depth.get(claim.candidate) ?? 0, path: pathTo(claim.candidate), ...(claim.recordId ? { recordId: claim.recordId } : {}) }))
+  const recordOf = new Map(entries.map(entry => [entry.claim.candidate, entry.claim.recordId]));
+  const environmentOf = new Map(entries.map(entry => [entry.claim.candidate, isEnvironmentId(entry.claim.environmentRef) ? entry.claim.environmentRef : undefined]));
+  const frontier = entries.filter(entry => ready.includes(entry.claim.candidate))
+    .map(entry => {
+      const path = pathTo(entry.claim.candidate), ancestors = path.slice(0, -1);
+      // The environment travels with the deepest provider that recorded one: that is where the consumed capability was demonstrated.
+      const environmentRef = [...ancestors].reverse().map(slug => environmentOf.get(slug)).find((value): value is string => value !== undefined);
+      return { claimId: entry.claim.candidate, depth: depth.get(entry.claim.candidate) ?? 0, path, needs: needs.get(entry.claim.candidate) ?? [],
+        providers: ancestors.map(slug => recordOf.get(slug)).filter((value): value is string => value !== undefined),
+        ...(entry.claim.recordId ? { recordId: entry.claim.recordId } : {}), ...(environmentRef ? { environmentRef } : {}) };
+    })
     .sort((left, right) => right.depth - left.depth || left.claimId.localeCompare(right.claimId)).slice(0, MAX_FRONTIER);
-  const uncovered: Record<string, string[]> = {};
-  for (const claim of unmet.slice(0, MAX_FRONTIER)) uncovered[claim.candidate] = missing(claim.candidate).slice(0, 8);
+
+  const uncovered: Record<string, Capability[]> = {};
+  for (const claimId of unmet.slice(0, MAX_FRONTIER)) uncovered[claimId] = missing(claimId).slice(0, MAX_GAP_KINDS);
+  const legacy = entries.filter(entry => [...entry.gained, ...entry.needs].some(capability => !isTypedCapability(capability)))
+    .map(entry => entry.claim.candidate).sort();
   return {
-    primitives: providers.filter(provider => !required.get(provider.id)!.length).map(provider => provider.id).sort(),
-    ready: ready.map(claim => claim.candidate).sort(), unmet: unmet.map(claim => claim.candidate).sort(), uncovered, frontier,
+    primitives: providers.filter(provider => !needs.get(provider)!.length).sort(),
+    ready: [...ready].sort(), unmet: [...unmet].sort(), uncovered, legacy, frontier,
     depth: Object.fromEntries([...depth.entries()].sort(([left], [right]) => left.localeCompare(right))),
   };
 }

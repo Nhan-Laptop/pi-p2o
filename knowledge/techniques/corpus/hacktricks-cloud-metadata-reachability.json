@@ -1,0 +1,22 @@
+{
+  "id": "hacktricks-cloud-metadata-reachability",
+  "title": "Cloud metadata service reachability from an application fetch",
+  "kind": "network-reachability",
+  "prerequisites": [
+    "a server-side fetch whose destination you influence",
+    "the instance role grants the metadata service reachability"
+  ],
+  "tags": [
+    "hacktricks",
+    "ssrf",
+    "cloud",
+    "metadata"
+  ],
+  "excerpt": "Cloud metadata services answer on link-local addresses and often require a provider-specific request header, which is why a plain fetch can look blocked while the service is reachable. The effect worth proving is the content of a credential document read through the application's own fetch, not the fact that a port answered.",
+  "source": {
+    "name": "HackTricks",
+    "url": "https://book.hacktricks.wiki/",
+    "license": "CC-BY-SA-4.0",
+    "retrievedAt": "2026-10-23"
+  }
+}
