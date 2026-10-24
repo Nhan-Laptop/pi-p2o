@@ -91,7 +91,7 @@ export function ownerInstructions(facts: OwnerPromptFacts): string {
     'A chain step that consumes an earlier step\u2019s actual output is its own task with pinned prerequisites: dispatch the ready step, review its claim, then the next. Severity stops at the furthest step actually executed; an unexecuted link stays a gap.',
     // M2/M4: the create path refuses a breadth task that ignores a ready step or an unconsumed primitive; the lead needs the exit, not just the refusal.
     'A ready chain step and a demonstrated primitive already own their surface: a new task there either cites the claim it stands on (work.claimRefs) or the plan records why the link is deferred, and p2o refuses the create that does neither.',
-    'Dispatch at most four intents per call, highest value first; a fifth waits for a slot instead of riding along unready.',
+    'Dispatch the highest-value intents first; a slot opens as one settles, so a longer batch simply waits its turn and nothing is dropped.',
     'A round that adds no intent is a stall only when a feasible question exists: add that one; when none exists, report blocked/human-needed with the missing prerequisite instead of inventing work.',
     'Each settled task reports one terminal state: done (answered and reviewed), exhausted (its lease expired before it reported — retry the direction differently, never read it as answered), blocked (a prerequisite is missing; reopen only when it exists), stopped (you withdrew it, which says nothing about the target).',
     '', 'EVIDENCE AND CLOSURE',

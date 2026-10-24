@@ -33,7 +33,7 @@ export interface StoreManifest {
   runId: string; retention: 'durable-local' | 'ephemeral'; targetKind: 'directory' | 'url' | 'hybrid';
   targetIdentity: string; targetDisplay: string;
   profile: { runtimeHash: string; image: string; loopMode: string; executorMode: string;
-    maxWorkers?: number; maxDepth?: number; maxPlannerRounds?: number; maxTargetOperations?: number;
+    maxWorkers?: number; maxDepth?: number; maxTargetOperations?: number;
     totalCommandBudget?: number; storageQuotaMiB?: number; artifactCaptureKiB?: number };
   sourceSnapshotSha256?: string; sourceEntries?: number; sourceSkipped?: number;
 }

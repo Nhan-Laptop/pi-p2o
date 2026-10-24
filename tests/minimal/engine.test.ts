@@ -2,14 +2,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AssessmentEngine, type EngineDeps, type PlannerWake } from '../../src/engine.js';
 import type { AssessmentTask } from '../../src/tasks.js';
 
-function fixture(mode:'manual'|'event-driven'='manual',cap=3,maxRounds=100) {
+function fixture(mode:'manual'|'event-driven'='manual',cap=3) {
   let active=true,idle=true,live=0,peak=0;
   const tasks:AssessmentTask[]=Array.from({length:30},(_,i)=>({id:`task-${i}`,revision:1,status:'proposed',question:`Question ${i}`,surface:`surface-${i}`,role:'general'} as AssessmentTask));
   const spawns:string[]=[],wakes:PlannerWake[]=[],journal:unknown[]=[],problems:string[]=[];
   const readiness=new Map<string,string>();
   const deps:EngineDeps={active:()=>active,list:async()=>tasks,readiness:async id=>readiness.has(id)?{ready:false,reason:readiness.get(id)}:{ready:true},capacity:()=>cap-live,reap:async()=>true,
     spawn:async input=>{const t=tasks.find(t=>t.id===input.taskId)!;t.status='running';live++;peak=Math.max(peak,live);spawns.push(t.id);},persist:async(text,data)=>{journal.push({text,data});},wake:w=>wakes.push(w),idle:()=>idle,problem:s=>problems.push(s)};
-  const engine=new AssessmentEngine('run-fixture',mode,maxRounds,deps,10);
+  const engine=new AssessmentEngine('run-fixture',mode,deps,10);
   const queue=(ids:number[])=>engine.enqueue(ids.map(i=>({taskId:`task-${i}`,input:{taskId:`task-${i}`,focus:`surface-${i}`,task:`Question ${i}`}})));
   const complete=(id:string)=>{tasks.find(t=>t.id===id)!.status='reported';live--;engine.notify('worker-report',id);};
   return {engine,queue,complete,tasks,spawns,wakes,journal,problems,readiness,deps,get peak(){return peak;},setActive:(v:boolean)=>{active=v;},setIdle:(v:boolean)=>{idle=v;}};
@@ -65,9 +65,10 @@ describe('deterministic frontier and semantic wake loop',()=>{
     await f.queue([0]);await tick();expect(f.spawns).toEqual([]);f.engine.resume();await tick();expect(f.spawns).toHaveLength(1);expect(f.wakes).toHaveLength(2);
     f.engine.stop();f.engine.notify('worker-report','late');await tick();expect(f.wakes).toHaveLength(2);await expect(f.queue([1])).rejects.toThrow('inactive');
   });
-  it('caps automatic wakes independently of how many commands ran; no silent renewal',async()=>{
-    const f=fixture('event-driven',3,1);f.engine.notify('worker-report','a');await tick();f.engine.consume();f.engine.notify('worker-report','b');await tick();
-    expect(f.wakes).toHaveLength(1);expect(f.engine.snapshot().paused).toContain('round limit');expect(()=>f.engine.resume()).toThrow('round limit');f.engine.stop();
+  it('has no automatic wake ceiling: a productive run keeps waking and resume never refuses',async()=>{
+    // There is no round allowance to renew: only evidence (M6) or the human ends the loop.
+    const f=fixture('event-driven');for(let i=0;i<5;i++){f.engine.notify('worker-report',`w-${i}`);await tick();f.engine.consume();}
+    expect(f.wakes).toHaveLength(5);expect(f.engine.snapshot().paused).toBeUndefined();expect(()=>f.engine.resume()).not.toThrow();f.engine.stop();
   });
   it('stops new dispatch after stop while an asynchronous spawn is still owned',async()=>{
     const f=fixture();let release!:()=>void;f.deps.spawn=()=>new Promise<void>(resolve=>{release=resolve;});await f.queue([0,1]);await tick();f.engine.stop();release();await f.engine.join();expect(f.engine.snapshot().state).toBe('stopped');

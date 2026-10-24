@@ -122,26 +122,45 @@ function stringList(value: unknown, count: number, limit: number): string[] {
   if (!Array.isArray(value)) return [];
   return value.map(item => text(item, limit)).filter((item): item is string => Boolean(item)).slice(0, count);
 }
+/**
+ * A report list is bounded by bytes, not by how many items the worker found: a worker that observed 25 findings is not
+ * lying, and dropping the tail at an arbitrary count would hide work instead of shrinking it. Each item keeps its own
+ * length bound; the list stops only when the bytes the report can carry are spent.
+ */
+const REPORT_LIST_BYTES = 256 * 1024;
+function reportList(value: unknown, limit: number): string[] {
+  if (!Array.isArray(value)) return [];
+  const out: string[] = []; let used = 0;
+  for (const entry of value) {
+    const item = text(entry, limit); if (!item) continue;
+    const size = Buffer.byteLength(item) + 1;
+    if (used + size > REPORT_LIST_BYTES) break;
+    used += size; out.push(item);
+  }
+  return out;
+}
 
 /** Reports are untrusted input: shape them here so no later consumer has to trust worker JSON. */
 export function normalizeReport(raw: unknown): WorkerReport {
   const input = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>;
   const coverage: WorkerReport['coverage'] = [];
   if (Array.isArray(input.coverage)) {
-    for (const entry of input.coverage.slice(0, 40)) {
+    let used = 0;
+    for (const entry of input.coverage) {
       const item = (entry && typeof entry === 'object' ? entry : {}) as Record<string, unknown>;
       const surface = text(item.surface, 200); const risk = text(item.risk, 200);
       if (!surface || !risk || !isOutcome(item.outcome)) continue;
+      used += surface.length + risk.length + 16; if (used > REPORT_LIST_BYTES) break;
       coverage.push({ surface, risk, outcome: item.outcome as CoverageOutcome });
     }
   }
   const confidence = input.confidence === 'high' || input.confidence === 'medium' || input.confidence === 'low' ? input.confidence : 'low';
   return {
     summary: text(input.summary, 4000) ?? '(no summary supplied)',
-    findings: stringList(input.findings, 20, 1000),
-    evidence: stringList(input.evidence, 40, 500),
+    findings: reportList(input.findings, 1000),
+    evidence: reportList(input.evidence, 500),
     coverage,
-    openItems: stringList(input.openItems, 20, 1000),
+    openItems: reportList(input.openItems, 1000),
     confidence,
     blocked: text(input.blocked, 1000),
     ...(typeof input.outcome === 'string' && (WORKER_OUTCOMES as readonly string[]).includes(input.outcome) ? { outcome: input.outcome as WorkerReport['outcome'] } : {}),
@@ -619,11 +638,9 @@ export class BrokerClient {
   close(): void { this.fail('worker session ended'); }
 }
 
-/** M8: one continuation per live worker. A reported or closed worker cannot be continued: its ticket is retired, so a follow-up is a new task. */
-export const CONTINUATIONS_PER_WORKER = 1;
+/** M8: a live worker may be continued as often as it is useful; a reported or closed worker cannot, because its ticket is retired. */
 export function continuationRefusal(registration: { stopped?: boolean; paneClosed?: boolean; reported?: unknown; continues?: number }): string | undefined {
   if (registration.reported) return 'WORKER_CLOSED: the worker already reported and its ticket is retired; its conversation cannot be continued — create a new task for the same question instead';
   if (registration.stopped || registration.paneClosed) return 'WORKER_CLOSED: the worker is stopped or its pane is gone; start a new task rather than continuing a closed conversation';
-  if ((registration.continues ?? 0) >= CONTINUATIONS_PER_WORKER) return 'CONTINUATION_LIMIT: this worker already took its one continuation; dispatch a new task instead of stretching the same conversation';
   return undefined;
 }

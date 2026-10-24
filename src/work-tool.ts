@@ -5,13 +5,13 @@ import { OUTPUT_FIELDS, OUTPUT_KINDS, WORK_DISPOSITIONS, WORK_PURPOSES } from '.
 import { PLAN_DISPOSITIONS, PLAN_KINDS } from './planning.js';
 
 const key = () => Type.String({ minLength: 1, maxLength: 160 });
-const ids = () => Type.Array(Type.String({ minLength: 1, maxLength: 80 }), { maxItems: 10 });
+const ids = () => Type.Array(Type.String({ minLength: 1, maxLength: 80 }));
 export const workSpecSchema = Type.Object({
-  assetRefs: Type.Array(Type.Object({ id: Type.String({ pattern: '^asset-[a-f0-9]{24}$' }), revision: Type.Optional(Type.Integer({ minimum: 1 })), variant: Type.Optional(key()) }, { additionalProperties: false }), { minItems: 1, maxItems: 10 }),
+  assetRefs: Type.Array(Type.Object({ id: Type.String({ pattern: '^asset-[a-f0-9]{24}$' }), revision: Type.Optional(Type.Integer({ minimum: 1 })), variant: Type.Optional(key()) }, { additionalProperties: false }), { minItems: 1 }),
   questionKey: key(), policyKey: Type.Optional(key()), actorContext: Type.Optional(key()), tenantContext: Type.Optional(key()),
   methodFamily: key(), purpose: choices(WORK_PURPOSES),
-  claimRefs: Type.Optional(Type.Array(Type.String({ maxLength: 80 }), { minItems: 1, maxItems: 10, uniqueItems: true })),
-  needs: Type.Optional(Type.Array(capabilitySchema, { minItems: 1, maxItems: 10, description: 'Typed capability this step consumes; copy it from the chain frontier rather than describing it' })),
+  claimRefs: Type.Optional(Type.Array(Type.String({ maxLength: 80 }), { minItems: 1, uniqueItems: true })),
+  needs: Type.Optional(Type.Array(capabilitySchema, { minItems: 1, description: 'Typed capability this step consumes; copy it from the chain frontier rather than describing it' })),
   environmentRef: Type.Optional(Type.String({ pattern: '^env-[a-f0-9-]{36}$', description: 'Recorded environment this step must run in (p2o_lab env); a task without one is a task nobody can replay' })),
 }, { additionalProperties: false });
 export const workDecisionSchema = Type.Object({
@@ -19,18 +19,18 @@ export const workDecisionSchema = Type.Object({
   relatedTaskId: Type.Optional(Type.String({ maxLength: 80 })), changeReason: Type.Optional(Type.String({ minLength: 10, maxLength: 1000 })),
 }, { additionalProperties: false });
 export const outputContractSchema = Type.Object({
-  kind: choices(OUTPUT_KINDS), required: Type.Array(choices(OUTPUT_FIELDS), { minItems: 1, maxItems: 8, uniqueItems: true }),
+  kind: choices(OUTPUT_KINDS), required: Type.Array(choices(OUTPUT_FIELDS), { minItems: 1, uniqueItems: true }),
   partialAllowed: Type.Boolean(), artifactPolicy: choices(['ids-only', 'bounded-text']), notes: Type.Optional(Type.String({ maxLength: 1000 })),
 }, { additionalProperties: false });
 export const planEntrySchema = Type.Object({
   kind: choices(PLAN_KINDS), title: Type.String({ minLength: 5, maxLength: 500 }), status: Type.String({ maxLength: 20 }), reason: Type.String({ minLength: 10, maxLength: 1000 }),
-  criteria: Type.Optional(Type.Array(Type.String({ minLength: 5, maxLength: 500 }), { maxItems: 10 })), exclusions: Type.Optional(Type.Array(Type.String({ minLength: 5, maxLength: 500 }), { maxItems: 10 })),
+  criteria: Type.Optional(Type.Array(Type.String({ minLength: 5, maxLength: 500 }))), exclusions: Type.Optional(Type.Array(Type.String({ minLength: 5, maxLength: 500 }))),
   taskIds: Type.Optional(ids()), goalIds: Type.Optional(ids()), supportRefs: Type.Optional(ids()),
   /** M1: a chain link is derived on read, so the row stores only which claims it stands on and what it consumes. */
   decision: Type.Optional(Type.Object({ disposition: choices(PLAN_DISPOSITIONS), chosenTaskIds: ids(), deferredTaskIds: ids(), revisitCondition: Type.Optional(Type.String({ minLength: 5, maxLength: 500 })) }, { additionalProperties: false })),
   // M1: a chain step names the claims it stands on and the capabilities it consumes; readiness is derived from those, never stored.
-  claimRefs: Type.Optional(Type.Array(Type.String({ minLength: 1, maxLength: 80 }), { minItems: 1, maxItems: 8, uniqueItems: true, description: 'Same-run candidate record IDs this step stands on; a chain step must cite at least one' })),
-  needs: Type.Optional(Type.Array(capabilitySchema, { minItems: 1, maxItems: 8, description: 'Typed capabilities this step consumes; copy them from the chain frontier' })),
+  claimRefs: Type.Optional(Type.Array(Type.String({ minLength: 1, maxLength: 80 }), { minItems: 1, uniqueItems: true, description: 'Same-run candidate record IDs this step stands on; a chain step must cite at least one' })),
+  needs: Type.Optional(Type.Array(capabilitySchema, { minItems: 1, description: 'Typed capabilities this step consumes; copy them from the chain frontier' })),
   environmentRef: Type.Optional(Type.String({ pattern: '^env-[a-f0-9-]{36}$', description: 'Recorded environment this step runs in (p2o_lab env)' })),
   chainOf: Type.Optional(Type.String({ minLength: 1, maxLength: 80, pattern: '^[a-z0-9][a-z0-9-]*$', description: 'Chain identity shared by its steps' })),
   step: Type.Optional(Type.Integer({ minimum: 1, maximum: 8, description: '1-based position in the chain' })),

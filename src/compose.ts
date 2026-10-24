@@ -175,7 +175,6 @@ export function readCompose(source: string, image: string): ComposeResult {
   for (const key of Object.keys(document)) if (!TOP_KEYS.includes(key)) refused.push(`top-level key '${key}' is not part of the supported compose subset`);
   const services = isMap(document.services) ? document.services : undefined;
   if (!services || !Object.keys(services).length) return { refused: [...refused, "compose file declares no 'services'"] };
-  if (Object.keys(services).length > 8) refused.push(`compose file declares ${Object.keys(services).length} services; at most 8 can be verified`);
   const built: EnvironmentService[] = [], order = new Map<string, string[]>();
   for (const [name, raw] of Object.entries(services).sort(([left], [right]) => left.localeCompare(right))) {
     if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,40}$/.test(name)) { refused.push(`service name '${name}' is not a plain identifier`); continue; }

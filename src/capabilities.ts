@@ -78,7 +78,7 @@ export function parseCapability(value: unknown, label: string): Capability {
 
 /** Strict list for a write: 1..10 entries, canonical order, no duplicate identity — the same stored form whoever writes it. */
 export function capabilityList(value: unknown, label: string): Capability[] {
-  if (!Array.isArray(value) || value.length < 1 || value.length > MAX_CAPABILITIES) throw Error(`${label} needs 1..${MAX_CAPABILITIES} capabilities`);
+  if (!Array.isArray(value) || value.length < 1) throw Error(`${label} needs at least one capability`);
   const capabilities = value.map((entry, index) => parseCapability(entry, `${label} ${index + 1}`));
   const keys = capabilities.map(capabilityKey);
   if (new Set(keys).size !== keys.length) throw Error(`Duplicate ${label} capability`);

@@ -45,7 +45,7 @@ export class AssessmentEngine {
   private quiet: number[] = [];
   private readonly revisits = new Map<string, { at: number; timer: ReturnType<typeof setTimeout> }>();
   private decision?: { disposition: 'wait' | 'blocked'; reason: string };
-  constructor(readonly runId: string, readonly mode: LoopMode, readonly maxRounds: number, private deps: EngineDeps, private debounceMs = 100) {}
+  constructor(readonly runId: string, readonly mode: LoopMode, private deps: EngineDeps, private debounceMs = 100) {}
   private live() { return !this.stopped && this.deps.active(); }
   private gate() { if (!this.live()) throw Error('Assessment engine inactive'); }
   private serialize<T>(work: () => Promise<T>): Promise<T> {
@@ -65,7 +65,6 @@ export class AssessmentEngine {
         return {taskId:task.id,revision:task.revision,priority,input:{...i.input}};
       });
       if (new Set(additions.map(i => i.taskId)).size !== additions.length || additions.some(i => this.queue.has(i.taskId))) throw Error('Intent already queued');
-      if (this.queue.size + additions.length > 100) throw Error('Pending intent limit reached (100)');
       await this.deps.persist('Planner accepted intents into the frontier; no new scope or authority', {intents:additions}); this.gate();
       for (const i of additions) this.queue.set(i.taskId,i);
       this.kick(); return this.snapshot();
@@ -121,7 +120,6 @@ export class AssessmentEngine {
   private reserveWake(): PlannerWake | undefined {
     if (!this.live() || this.paused || this.mode !== 'event-driven' || this.reservation || !this.events.size) return;
     const escalated = this.escalated(); if (escalated) {this.pause(escalated);return;}
-    if (this.rounds >= this.maxRounds) {this.pause('Automatic planner round limit reached; manual review remains available');return;}
     const wake = {runId:this.runId,epoch:this.epoch,through:this.sequence,round:++this.rounds};
     this.reservation = wake; return wake;
   }
@@ -167,7 +165,6 @@ export class AssessmentEngine {
     if (!Number.isSafeInteger(notBefore) || notBefore <= Date.now()) throw Error('A revisit needs a future timestamp');
     const pending = this.revisits.get(condition);
     if (pending) throw Error(`REVISIT_DUPLICATE: condition ${condition} already has a pending revisit at ${new Date(pending.at).toISOString()}`);
-    if (this.revisits.size >= 8) throw Error('Revisit limit reached (8 pending); wait for one to fire or stop the run');
     const timer = setTimeout(() => { this.revisits.delete(condition); this.fireRevisit(); }, notBefore - Date.now());
     timer.unref?.();
     this.revisits.set(condition, { at: notBefore, timer });
@@ -194,7 +191,6 @@ export class AssessmentEngine {
   }
   resume() {
     this.gate();
-    if (this.rounds >= this.maxRounds) throw Error('Automatic round limit reached; use manual review/stop (no automatic renewal)');
     this.paused = undefined; this.decision = undefined; this.kick();
   }
   stop() {
@@ -208,7 +204,7 @@ export class AssessmentEngine {
     const intents = [...this.queue.values()].map(({taskId,revision,priority,reason}) => ({taskId,revision,priority,reason}));
     const events = [...this.events.values()];
     return {runId:this.runId,mode:this.mode,epoch:this.epoch,state:this.stopped ? 'stopped' : this.paused ? 'blocked' : this.busy ? 'running' : this.reservation ? 'scheduled' : 'waiting',
-      paused:this.paused,rounds:this.rounds,maxAutomaticRounds:this.maxRounds,decision:this.decision,
+      paused:this.paused,rounds:this.rounds,decision:this.decision,
       sequence:this.sequence,consumedSequence:this.consumed,pendingEvents:events.length,events:events.slice(-20),eventsOmitted:Math.max(0,events.length-20),
       pendingIntents:intents.length,intents:intents.slice(0,20),intentsOmitted:Math.max(0,intents.length-20),
       warning:'Owner-local coordination, not evidence or restored authority. Read the runtime executor profile for target concurrency. Automatic rounds are extra provider requests, not a hard monetary/token cap.'};

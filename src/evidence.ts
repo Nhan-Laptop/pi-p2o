@@ -166,13 +166,13 @@ function validateCandidate(c: Candidate): void {
   if (!c || !/^[a-z0-9][a-z0-9-]{0,79}$/.test(c.candidate) || !c.surface || !c.risk || !c.limitations) throw new Error('Candidate needs id, surface, risk and limitations');
   if (!(CANDIDATE_CLOSURES as readonly string[]).includes(c.closure) || !(CANDIDATE_EXECUTIONS as readonly string[]).includes(c.execution)
     || !(CANDIDATE_PROOFS as readonly string[]).includes(c.proof)) throw new Error('Invalid candidate state');
-  if (!Array.isArray(c.evidenceRefs) || !Array.isArray(c.negativeControls) || c.evidenceRefs.length > 10 || c.negativeControls.length > 10) throw new Error('Evidence arrays must be bounded');
+  if (!Array.isArray(c.evidenceRefs) || !Array.isArray(c.negativeControls)) throw new Error('Evidence arrays must be lists of receipt IDs');
   if (!(POLICY_BASES as readonly string[]).includes(c.policyBasis ?? '')) throw new Error('Invalid policy basis');
   if (!c.expectedPolicy?.trim()) throw new Error('Name the expected policy and its provenance');
   if (c.policyBasis === 'inferred' && c.closure !== 'open_proof_gap') throw new Error('Inferred policy is a hypothesis: use open_proof_gap until intended policy is established');
   if (c.closure !== 'open_proof_gap' && !c.evidenceRefs.length) throw new Error('Closure needs evidence; otherwise use open_proof_gap');
   if (c.closure === 'ruled_out' && !c.control?.trim()) throw new Error('ruled_out needs the specific control and its location');
-  if (c.resolves && (!Array.isArray(c.resolves) || c.resolves.length > 10 || c.resolves.some(id => typeof id !== 'string'))) throw new Error('Invalid resolved open-item list');
+  if (c.resolves && (!Array.isArray(c.resolves) || c.resolves.some(id => typeof id !== 'string'))) throw new Error('Invalid resolved open-item list');
   if (c.requirement !== undefined && (typeof c.requirement !== 'string' || !c.requirement.trim() || c.requirement.length > 1000)) throw new Error('Invalid blocked prerequisite reason');
   // The pre-P14 text fields are refused rather than ignored: silently dropping them would leave a claim that looks like it names a
   // capability edge while declaring none.

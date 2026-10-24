@@ -523,6 +523,39 @@ Measured: `npm run typecheck` clean · `npm run build` + `check:build` OK · `np
 provenance failure). New `tests/minimal/phase-f.test.ts` (11) plus two tool-path tests for the revisit and continuation
 wiring (`REVISIT_DUPLICATE` after one wait; `WORKER_UNKNOWN` for an unregistered continue).
 
+### Phase G — no count cap remains (2026-10-24)
+
+The owner's rule, after the research tool refused an eight-word question: **đếm số mục là biên giả; biên thật là byte**.
+A cap on how many steps, findings, receipts, headers or continuations an agent may have is a guess about the work; a byte
+bound is a fact about the record. Every count cap on tool input was removed rather than raised.
+
+- **Laboratory** (`src/lab.ts`, `src/compose.ts`): `ENVIRONMENT_STEPS` (8) is gone; setup/seed/services are lists of any
+  length, each command still bounded at 4 KiB and each service still validated. A compose file no longer loses services to a
+  count.
+- **Claims and capabilities** (`src/evidence.ts`, `src/capabilities.ts`): `evidenceRefs`, `negativeControls`, `resolves`,
+  `gained`, `needs` are lists with no length limit; `capabilityList` keeps its duplicate/identity rules. `validateWorkSpec`
+  and the plan board accept any number of `claimRefs`/`assetRefs`/`needs` (min 1).
+- **Reports** (`src/broker.ts`): findings/evidence/openItems/coverage are bounded by **256 KiB of bytes per list**, not by
+  20/40 items. `stringList` keeps its count form for internal projections; the report path uses `reportList`.
+- **Plan and tasks** (`src/planning.ts`, `src/tasks.ts`, `src/work-tool.ts`): no live-frontier 100, no `step ≤ 8`, no
+  `claimRefs ≤ 8`, no `ids ≤ 25`, no `evidenceIds/unknowns/prerequisites ≤ 10`, no `skills ≤ 3`.
+- **Engine and workers** (`src/engine.ts`, `src/broker.ts`): `maxPlannerRounds` is deleted (settings, engine argument, status
+  profile, docs); M6 is the only automatic stop. `CONTINUATIONS_PER_WORKER` is deleted — a live ticket can be continued as
+  often as it is useful, and only `WORKER_CLOSED` refuses. The pending-intent cap (100) and the revisit cap (8) are gone; the
+  24-hour `notBefore` horizon stays because it bounds a timer, not a workload.
+- **Prompt** (`src/prompts.ts`): "dispatch at most four intents per call" became "dispatch the highest-value intents first; a
+  slot opens as one settles, so a longer batch simply waits its turn and nothing is dropped".
+
+Kept deliberately: per-item byte/length bounds (4 KiB command, 8 KiB header block, 32 KiB payload/body, 200-char query),
+page sizes (`p2o_ledger` 100, graph 20/200, `p2o_state` `q` 2..80), storage quota, and the authority caps (`--workers`,
+`maxTargetOperations`, redirects inside the origin). Case and coverage record shapes keep their structural limits (1..8
+chain steps, 1..10 asset refs) because they describe one retained record, not an agent's input.
+
+Measured: `npm run typecheck` clean · `npm run build` + `check:build` OK · `npx vitest run tests/minimal/` **775 passed,
+12 skipped (787, 93 files)**. Tests updated where the old cap *was* the assertion (`capabilities`, `lab`, `lineage`,
+`phase-f`, `dispatch-discipline`, `engine`, `broker`) and two new ones hold the line: a 25-finding report keeps all 25 and a
+report list stops only at its byte budget.
+
 ---
 
 ## Part VII — Decisions

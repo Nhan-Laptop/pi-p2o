@@ -17,7 +17,7 @@ function engineFixture(mode: 'manual' | 'event-driven' = 'event-driven') {
     active: () => true, list: async () => [], readiness: async () => ({ ready: true }), capacity: () => 1, reap: async () => true,
     spawn: async () => undefined, persist: async () => undefined, wake: wake => wakes.push(wake), idle: () => true, problem: reason => problems.push(reason),
   };
-  return { engine: new AssessmentEngine('run-f', mode, 100, deps, 5), wakes, problems };
+  return { engine: new AssessmentEngine('run-f', mode, deps, 5), wakes, problems };
 }
 const QUIET = { testedCells: 0, closures: 0, assets: 0, chainDepth: 0 };
 beforeEach(() => vi.useFakeTimers());
@@ -109,12 +109,13 @@ describe('a revisit is condition-bounded and fires once (M7)', () => {
   });
 });
 
-describe('one continuation per live ticket (M8)', () => {
+describe('continuation is bounded by the ticket, not by a count (M8)', () => {
   const worker = (overrides: Partial<WorkerRegistration> = {}) => ({ workerId: 'worker-a', stopped: false, continues: 0, ...overrides } as WorkerRegistration);
 
-  it('allows one continuation, refuses the second, and refuses a reporter or a closed pane', () => {
+  it('continues a live ticket as often as it is useful, and refuses a reporter or a closed pane', () => {
     expect(continuationRefusal(worker())).toBeUndefined();
-    expect(continuationRefusal(worker({ continues: 1 }))).toMatch(/^CONTINUATION_LIMIT: /);
+    // The ticket, not a count, decides: a live conversation can be steered again.
+    expect(continuationRefusal(worker({ continues: 7 }))).toBeUndefined();
     expect(continuationRefusal(worker({ reported: { summary: 'done', findings: [], evidence: [], coverage: [], openItems: [], confidence: 'high' } }))).toMatch(/^WORKER_CLOSED: the worker already reported/);
     expect(continuationRefusal(worker({ stopped: true }))).toMatch(/^WORKER_CLOSED: the worker is stopped/);
     expect(continuationRefusal(worker({ paneClosed: true }))).toMatch(/^WORKER_CLOSED: /);

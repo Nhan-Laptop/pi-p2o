@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { appendRecord, appendRecords, appendGeneratedRecords, readLedger, readWorkHistory, readWorkOverlap, type AssessmentRecord, type LedgerIndex, type RecordAck } from './records.js';
 import { isOpenClaim } from './claims.js';
-import { isRole, MAX_SKILLS, type Role } from './roles.js';
+import { isRole, type Role } from './roles.js';
 import { purposeFromRole } from './duties.js';
 import { prepareReport } from './report.js';
 import type { WorkerReport } from './broker.js';
@@ -111,11 +111,11 @@ function validate(input: TaskDraft) {
     ['roleReason',input.roleReason,1000,reconLenient?0:10],['expectedTrue',input.expectedTrue,1000,reconLenient?0:5],['expectedFalse',input.expectedFalse,1000,reconLenient?0:5],['stopCondition',input.stopCondition,1000,reconLenient?0:10]] as const) bounded(value,name,size,min);
   if (!isRole(input.role)) throw new Error('Invalid task role');
   for (const id of [input.id, input.validationOf,input.retestOf, input.parentTaskId]) if (id !== undefined && !/^[a-z0-9][a-z0-9-]{0,79}$/.test(id)) throw new Error('Invalid task ID');
-  if (!Array.isArray(input.evidenceIds) || input.evidenceIds.length > 10 || input.evidenceIds.some(id => typeof id !== 'string' || id.length > 80)) throw new Error('Invalid task evidence');
-  if (!Array.isArray(input.prerequisites) || input.prerequisites.length > 10 || input.prerequisites.some(p => !p || typeof p.taskId !== 'string' || !/^[a-z0-9][a-z0-9-]{0,79}$/.test(p.taskId) || (p.revision !== undefined && (!Number.isSafeInteger(p.revision) || p.revision < 1))) || new Set(input.prerequisites.map(p=>p.taskId)).size!==input.prerequisites.length) throw new Error('Invalid or duplicate task prerequisites');
-  for (const list of [input.unknowns,input.missingPrerequisites]) if (list !== undefined && (!Array.isArray(list) || list.length > 10 || list.some(v => typeof v !== 'string' || v.trim().length < 10 || v.length > 500))) throw Error('Invalid task unknowns/prerequisites');
+  if (!Array.isArray(input.evidenceIds) || input.evidenceIds.some(id => typeof id !== 'string' || id.length > 80)) throw new Error('Invalid task evidence');
+  if (!Array.isArray(input.prerequisites) || input.prerequisites.some(p => !p || typeof p.taskId !== 'string' || !/^[a-z0-9][a-z0-9-]{0,79}$/.test(p.taskId) || (p.revision !== undefined && (!Number.isSafeInteger(p.revision) || p.revision < 1))) || new Set(input.prerequisites.map(p=>p.taskId)).size!==input.prerequisites.length) throw new Error('Invalid or duplicate task prerequisites');
+  for (const list of [input.unknowns,input.missingPrerequisites]) if (list !== undefined && (!Array.isArray(list) || list.some(v => typeof v !== 'string' || v.trim().length < 10 || v.length > 500))) throw Error('Invalid task unknowns/prerequisites');
   if (input.expectedOutput !== undefined) bounded(input.expectedOutput,'expected output',1000,5);
-  if (!input.method || typeof input.method.reason !== 'string' || input.method.reason.trim().length < (reconLenient?0:10) || input.method.reason.length > 1000 || !Array.isArray(input.method.skills) || input.method.skills.length > MAX_SKILLS || input.method.skills.some(s => !s || typeof s.id !== 'string' || s.id.length > 64 || !/^[a-z0-9-]+$/.test(s.id) || !/^[a-f0-9]{64}$/.test(s.sha256))) throw new Error('Invalid task method');
+  if (!input.method || typeof input.method.reason !== 'string' || input.method.reason.trim().length < (reconLenient?0:10) || input.method.reason.length > 1000 || !Array.isArray(input.method.skills) || input.method.skills.some(s => !s || typeof s.id !== 'string' || s.id.length > 64 || !/^[a-z0-9-]+$/.test(s.id) || !/^[a-f0-9]{64}$/.test(s.sha256))) throw new Error('Invalid task method');
   validateWorkFields(input);
 }
 
@@ -308,7 +308,7 @@ export class TaskBoard extends LedgerBoard {
       if (status === 'reviewed') {
         if (task.missingPrerequisites?.length) throw Error('Revise unresolved prerequisites before accepting a handoff');
         if (task.status === 'running' && task.assignee !== 'owner') throw Error('Worker handoff must be reported before lead acceptance');
-        if (!evidenceIds?.length || evidenceIds.length > 10 || evidenceIds.some(id => index.byId.get(id)?.kind !== 'evidence' || index.byId.get(id)?.runId !== this.runId)) throw Error('Lead review requires same-run receipts');
+        if (!evidenceIds?.length || evidenceIds.some(id => index.byId.get(id)?.kind !== 'evidence' || index.byId.get(id)?.runId !== this.runId)) throw Error('Lead review requires same-run receipts');
       }
       const note = status === 'reviewed' && this.integrity !== 'off' ? reviewIntegrityNote(index, task, evidenceIds!, externalEvidence) : undefined;
       if (note && this.integrity === 'enforce' && note.foreignEvidence.length && !externalEvidence) throw Error(`REVIEW_INTEGRITY: receipts not authored by ${note.assignee}: ${note.foreignEvidence.join(', ')}; cite the assignee's own receipts, or pass externalEvidence=true to acknowledge that they come from elsewhere`);

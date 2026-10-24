@@ -27,9 +27,9 @@ confirmation and the live owner establish authority; disk state, summaries and w
   Test: `tests/minimal/projection-counts.test.ts`.
 - `p2o_workers {cursor}` returns a change page with exact coverage/open totals. Quiet work can be *suspected* stalled,
   never proven failed by a clock.
-- Worker budgets: 200 knowledge/coordination calls (knowledge stops at 160, 40 reserved for notes/candidates/report).
-  Command counters are separate and are not a spend ceiling. Provider/model/thinking are compared locally against the
-  request; a known mismatch blocks investigation; no provider fallback.
+- Counters are observations, not ceilings: worker command/usage counts are shown and reported, and nothing refuses a
+  command because of one. Provider/model/thinking are compared locally against the request; a known mismatch blocks
+  investigation; no provider fallback. A run stops because two rounds added nothing (M6), not because a total ran out.
 - A request-local objective capsule refreshes the current question after context rebuild; it is data, not policy.
 
 ## Hoàn tất được suy ra (M3)

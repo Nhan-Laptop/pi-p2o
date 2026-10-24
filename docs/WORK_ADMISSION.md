@@ -84,6 +84,6 @@ validate; `match` chạy trước `create` nên cả hai đường đều canoni
 
 ## Continuation (M8)
 
-Mỗi worker được nối **một** lần (`CONTINUATIONS_PER_WORKER = 1`) trên cùng ticket. `WORKER_CLOSED` khi ticket đã đóng,
-`CONTINUATION_LIMIT` khi đã nối. Đây là giới hạn theo ticket, không phải ngân sách lệnh: không có bộ đếm nào bị trừ và
-không có lệnh nào bị chặn.
+Một worker còn sống được nối **bao nhiêu lần cũng được** trên cùng ticket; cái chặn là ticket, không phải số lần.
+`WORKER_CLOSED` khi worker đã report, đã stop hoặc pane đã đóng — lúc đó hội thoại không còn để nối, và câu trả lời là một
+task mới. Không có bộ đếm nào bị trừ và không có lệnh nào bị chặn vì số lần nối.

@@ -15,13 +15,13 @@ Cài: `pi install https://github.com/Nhan-Laptop/pi-p2o` rồi `/reload`. Bật 
 /p2o stop
 ```
 
-Một hộp thoại xác nhận quyền sở hữu, scope, giới hạn sandbox, kế hoạch worker, retention và (nếu chọn) các vòng Planner tự động. Từ chối thì không có sandbox,
+Một hộp thoại xác nhận quyền sở hữu, scope, giới hạn sandbox, kế hoạch worker, retention và (nếu chọn) chế độ vòng Planner tự động. Từ chối thì không có sandbox,
 worker hay model turn nào. Delegated: Pi hiện tại là Planner, **không** chạy lệnh target; `--solo`: Pi tự điều tra.
 
 - **Source**: bản sao regular-file ở `/target` (read-only, ≤64 MiB / 20.000 entry; bỏ symlink, file đặc biệt, `.git`, `node_modules`), `/work` là scratch ghi được. Lệnh chạy qua `p2o_shell`, không bao giờ qua shell của host.
 - **Web**: `p2o_http` gửi mọi method/header/cookie/body tới đúng origin đã xác nhận, ghim IP từng hop, dừng trước redirect ra ngoài origin; `p2o_net` chạy lệnh mạng trong cùng container (egress thật, không phải firewall). URL GitHub **không** được clone. Chi tiết: [HTTP_TRANSPORT](HTTP_TRANSPORT.md).
 - **Hybrid** (`--target <thư mục> --origin <http(s)-URL>`): source snapshot và đúng 1 deployed origin được xác nhận cùng lúc, chia sẻ một graph/scope/report duy nhất. Hai nguồn bằng chứng của một hệ thống, không phải một; một phát hiện ở source không phải chứng minh nó tồn tại ở deployment cho tới khi một probe sống xác nhận, và ngược lại. Không nguồn nào nới scope của nguồn khác: sandbox vẫn chỉ đọc `/target`, `p2o_http` vẫn chỉ mở cho đúng origin đã xác nhận.
-- Lead gọi `p2o_finish` trước báo cáo: nó từ chối tới khi mọi worker đã report hoặc bị rút, rồi xóa sandbox, xác minh container đã gỡ và báo số pane Herdr đã đóng. `/p2o stop` làm tay cùng đường đó.
+- Lead gọi `p2o_finish` trước báo cáo: không có cổng finish — nó nối khối `FINISH PREFLIGHT` (report fact), và bản không `export` vẫn từ chối khi còn worker chưa report để không đóng sandbox dưới chân người đang chạy; sau đó xóa sandbox, xác minh container đã gỡ và báo số pane Herdr đã đóng. `p2o_finish {export:true}` ghi báo cáo vào thư mục mới rồi trả về, **không kết thúc gì**; `/p2o stop` làm tay cùng đường và ghi lại phần còn nợ.
 
 ## Các option khi start
 
@@ -43,7 +43,7 @@ worker hay model turn nào. Delegated: Pi hiện tại là Planner, **không** c
 | `--retention MODE` | `durable-local` | `durable-local` \| `ephemeral` | luôn hiện trong confirmation; không tạo store trước consent |
 | `--refer-workspace [GIÁ-TRỊ]` | không dùng | không giá trị → `latest`; hoặc `all`; hoặc tối đa 10 `run-id` phân tách dấu phẩy | đọc tối đa các run cũ cùng target làm context; không bao giờ tính là same-run evidence — xem mục dưới |
 
-Số phải là số nguyên trong khoảng cho phép (không âm/thập phân/`unlimited`); giá trị sai bị từ chối, không tự clamp. Không có `--max-planner-rounds`: đó là setting.
+Số phải là số nguyên trong khoảng cho phép (không âm/thập phân/`unlimited`); giá trị sai bị từ chối, không tự clamp. Không có `--max-planner-rounds` và cũng không còn setting đó: vòng tự động không có trần, chỉ dừng khi hai vòng liền không thêm gì (M6) hoặc khi người dừng.
 `--target-ops` chỉ là **trần**: một lệnh vẫn có thể tự sinh nhiều subprocess/request; nó không phải rate limiter hay egress firewall.
 
 ### Manual và event-driven
@@ -54,7 +54,7 @@ Số phải là số nguyên trong khoảng cho phép (không âm/thập phân/`
 | Task đã dispatch | Engine vẫn tự admit khi có slot và prerequisite | giống nhau |
 | Polling/heartbeat | không | không |
 
-Manual **không** có nghĩa phải launch worker bằng tay; khác biệt chỉ là quyền tự bắt đầu **vòng Planner mới**. `p2o_loop` là tool của Planner (`status` / `wait` / `blocked`),
+Manual **không** có nghĩa phải launch worker bằng tay; khác biệt chỉ là quyền tự bắt đầu **vòng Planner mới**. `p2o_loop` là tool của Planner (`status` / `wait` / `blocked`; `wait` kèm `reason:"block-decay"|"cooldown-expiry"` và `notBefore` trong tương lai ≤24 h sẽ ghi một `decision` và hẹn đúng một revisit cho điều kiện đó),
 không phải slash command: `wait` kết thúc vòng hiện tại chứ không phải assessment; `blocked` tạm dừng dispatch và wake cho tới khi bạn `/p2o resume`.
 Một report/proposal được coalesce và không bảo đảm đánh thức nếu có input người đang chờ, run đã pause/stop hoặc đã hết số vòng Planner tự động.
 
@@ -72,7 +72,6 @@ Merge vào file hiện có, không ghi đè phần khác. Precedence: **CLI cho 
 |---|---|---|
 | `maxWorkers` / `maxDepth` | 3 / 2 | như `--workers` / `--max-depth` |
 | `loopMode` | `manual` | `manual` \| `event-driven` |
-| `maxPlannerRounds` | 100 | 1…`MAX_SAFE`, số **vòng Planner tự động** tối đa (không phải tổng turn/token/chi phí/TTL); hết thì Engine pause và `/p2o resume` không cấp lại. Đây là trần duy nhất còn lại trong loop: **không có ngân sách lệnh** (bỏ 2026-10-24) |
 | `executorMode` | `shared` | `shared` \| `isolated` |
 | `maxTargetOperations` | 3 | shared luôn ép về 1 |
 | `retention` / `storageQuotaMiB` | `durable-local` / 256 | quota 8–1024 MiB (gồm journal và reserve cuối) |
@@ -143,7 +142,7 @@ Không truyền thì hành vi giống hệt trước đây. Khi dùng:
 - `latest` chọn đúng 1 run mới nhất đủ điều kiện; `all` chọn tối đa 5; liệt kê id thì chỉ giữ các id vừa được yêu cầu vừa khớp (id không tồn tại/không khớp bị bỏ, có lý do trong `gaps.unknown`, không bao giờ âm thầm bỏ qua).
 - Hộp xác nhận start thêm một đoạn nêu tên các run được chọn, hoặc báo "không tìm thấy" nếu dùng flag mà không có kết quả.
 - Sau khi sandbox khởi tạo, ghi **một** record lifecycle (`data.reference`) gồm `runs` (run id + trạng thái `current`/`stale`, so theo `sourceSnapshotSha256` với thư mục, hoặc URL chính xác, hoặc với hybrid cả `sourceSnapshotSha256` **và** URL chính xác — đổi 1 trong 2 nửa là `stale`) và `gaps` 5 nhóm: **covered** (cell đã `tested`, còn khớp target hiện tại), **leftOpen** (candidate `open_proof_gap` + cell `blocked`), **stale** (từng `tested` nhưng target đã đổi — không gộp vào covered), **neverReached** (test WSTG chưa cell nào chạm tới, hợp trên mọi run được chọn), **unknown** (lý do rõ ràng: không có run đủ điều kiện, run thiếu/sai schema, reconciliation chưa xong — không bao giờ coi là "clean").
-- Đọc lại qua `p2o_state {action:'heads', domain:'reference'}` hoặc `digest`; **không** đẩy vào prompt lead/worker. Không bao giờ là same-run evidence, không khôi phục scope/ticket/worker/budget — cùng nguyên tắc với `/p2o export|import`. Chi tiết thiết kế: [planning_update.md](../planning_update.md).
+- Đọc lại qua `p2o_state {action:'heads', domain:'reference'}` hoặc `digest`; **không** đẩy vào prompt lead/worker. Không bao giờ là same-run evidence, không khôi phục scope/ticket/worker authority — cùng nguyên tắc với `/p2o export|import`. Chi tiết thiết kế: [planning_update.md](../planning_update.md).
 
 ## Báo cáo tất định
 
@@ -158,7 +157,7 @@ Sau xác nhận, sinh `REPORT.md`, `cases.csv`, `coverage.csv`, `report-manifest
 Chuỗi do target/model sinh ra bị vô hiệu hóa (không link/HTML/fence, CSV chặn công thức). Thứ tự: tuyên bố "không phải bảo đảm an toàn" → provenance → **coverage và gap trước** → case accepted-current → case khác → claim worker → task/handoff → giới hạn. Run rỗng ghi "chưa có case accepted-current", không bao giờ "0 lỗ hổng".
 
 Định dạng v2 (theo OWASP WSTG §5) thêm Scope and limitations, Executive summary (đếm tất định; đoạn `narrative` của lead nếu có luôn gắn nhãn *chưa được host kiểm chứng*), bảng findings và chi tiết từng finding (severity do owner gán bằng `p2o_case action=rate`, CVSS 3.1 host tự tính từ vector, CWE, khuyến nghị, WSTG, mức proof, ai tạo receipt, bước tái hiện từ receipt đã redact), cùng `findings.json`, `findings.csv` và
-`wstg-checklist.csv` (khi có cell `wstg-…`). **Finish preflight** (`src/finish-preflight.ts`, thuần, không model) liệt kê mục chưa xong — blocking: `UNREVIEWED_TASK`, `UNREVIEWED_CLAIM`, `PENDING_CASE`, `STALE_CASE`, `STALE_CELL`, `NO_COVERAGE_PLAN`, `NONTERMINAL_CELLS`, `UNRATED_ACCEPTED_CASE`; advisory: `STALE_RATING`, `OPEN_GAP_UNREFERENCED`, `ORPHAN_TASK`, `UNPLANNED_ASSETS`, `WSTG_APPLICABLE_UNPLANNED`, `FOREIGN_EVIDENCE`, `CONTRACT_GAP`, `HIGH_WITHOUT_INDEPENDENCE` (blocking khi `reviewIntegrity=enforce`), `NEGATIVE_MAY_BE_BLOCKED` (kết luận `ruled_out` chỉ dựa trên receipt `p2o_http` kết thúc bằng 401/403/429 hoặc không có phản hồi — có thể là kiểm soát truy cập hay rate limit chứ chưa chứng minh lỗi không tồn tại; chỉ cảnh báo, tắt khi `reviewIntegrity=off`; receipt shell/net, 2xx và 404 không bao giờ bị gắn cờ). Đây không phải finding và không phải kết luận an toàn.
+`wstg-checklist.csv` (khi có cell `wstg-…`). **Hoàn tất được suy ra** (`src/completion.ts`) là `complete`/`incomplete` với ba mã `GOAL_UNSETTLED`, `PRIMITIVE_UNCHAINED`, `CHAIN_READY`; **Finish preflight** (`src/finish-preflight.ts`, thuần, không model) là report fact, không từ chối gì — obligation: `UNREVIEWED_TASK`, `UNREVIEWED_CLAIM`, `PENDING_CASE`, `STALE_CASE`, `STALE_CELL`, `NO_COVERAGE_PLAN`, `NONTERMINAL_CELLS`, `UNRATED_ACCEPTED_CASE`; advisory: `STALE_RATING`, `OPEN_GAP_UNREFERENCED`, `ORPHAN_TASK`, `UNPLANNED_ASSETS`, `WSTG_APPLICABLE_UNPLANNED`, `FOREIGN_EVIDENCE`, `CONTRACT_GAP`, `HIGH_WITHOUT_INDEPENDENCE` (thành obligation khi `reviewIntegrity=enforce`), `INTERRUPTED_CELL`, `PRIMITIVE_UNCHAINED`, `ADMISSION_REFUSALS`, `UNPROMOTED_COVERAGE_NOTE`, `NO_GOAL_RECORDED`, `NEGATIVE_MAY_BE_BLOCKED` (kết luận `ruled_out` chỉ dựa trên receipt `p2o_http` kết thúc bằng 401/403/429 hoặc không có phản hồi — có thể là kiểm soát truy cập hay rate limit chứ chưa chứng minh lỗi không tồn tại; chỉ cảnh báo, tắt khi `reviewIntegrity=off`; receipt shell/net, 2xx và 404 không bao giờ bị gắn cờ). Đây không phải finding và không phải kết luận an toàn.
 
 ## Công cụ tri thức K3–K6 (đọc, không gọi model)
 
@@ -186,8 +185,8 @@ Trong Herdr, lead có thể spawn worker: mỗi worker là một tiến trình `
 - Một mục tiêu cho mỗi worker; nói cho nó biết đã biết gì và nó sở hữu hàng coverage nào, nếu không nó sẽ lặp việc.
 - Discovery và validation do **hai worker khác nhau**; worker tự validate finding của chính nó không phải xác minh độc lập.
 - Delegation phẳng: `p2o_request_subtask` chỉ là đề xuất, chỉ owner mới accept. Steering không mở rộng scope; report của worker là dữ liệu chưa tin cậy — kiểm tra evidence trước khi lặp lại.
-- `p2o_workers` với `waitFor: "all-report"` chờ cục bộ tới khi mọi worker đã report hoặc bị rút. Pane có thể hiện `idle` ngắn trước khi brief được nộp: sống/chết do report quyết định, và `p2o_finish` từ chối tới khi worker report hoặc bị `p2o_workers` (`action: "stop"`) rút.
-- `p2o_delegate` nhận `role` (`recon`, `discovery`, `validation`, `reporting`, `general`), tối đa 3 `skills`, `model`, `thinking`, và tùy chọn `work`/`decision`/`outputContract` (cùng hình dạng `p2o_task create`; không có `work` thì kết quả trả `workMatch:"unknown"`). Skill nêu rõ ghi đè mặc định của role; skill lạ bị từ chối trước khi tạo pane.
+- `p2o_workers` với `waitFor: "all-report"` chờ cục bộ tới khi mọi worker đã report hoặc bị rút. Pane có thể hiện `idle` ngắn trước khi brief được nộp: sống/chết do report quyết định, và bản `p2o_finish` không `export` từ chối tới khi worker report hoặc bị `p2o_workers` (`action: "stop"`) rút; `p2o_finish {export:true}` thì không.
+- `p2o_delegate` nhận `role` (`recon`, `discovery`, `validation`, `reporting`, `general`), danh sách `skills` (không giới hạn số lượng; loadout mặc định vẫn ghép tối đa 3), `model`, `thinking`, và tùy chọn `work`/`decision`/`outputContract` (cùng hình dạng `p2o_task create`; không có `work` thì kết quả trả `workMatch:"unknown"`). Skill nêu rõ ghi đè mặc định của role; skill lạ bị từ chối trước khi tạo pane.
 - Task phải nói nó **đứng trên cái gì**: `validation`/`retest` cần `work.claimRefs` (claim cùng run) hoặc `validationOf`/`retestOf`; `investigation`/`refinement` cần claim, asset revision đã pin hoặc task trước; `mapping`/`reporting` miễn. Gate chỉ nổ khi run **đã có** claim — trên target mới, intent validation đầu tiên chính là discovery sinh ra claim đó.
 - Skill chọn theo thứ tự: `skills` yêu cầu → `p2o.roles.<role>.skills` → skill theo purpose của work, có xét target kind và `work.needs` → mặc định của role. Purpose quyết định **họ phương pháp**, còn target kind và capability mà bước đó tiêu thụ quyết định **thành viên nào** của họ: `mapping` trên URL → `web-deployment-hygiene`, `discovery` trên URL → `web-route-input-inventory` (directory/hybrid giữ phương pháp source vì vẫn có snapshot); `exploitation`/`chaining` → `exploit-design` cộng ladder theo `work.needs` (`net.egress` → `ssrf-to-internal`, `exec.code` → `binary-exploit-ladder` hoặc `web-injection-to-exec`, `cred.session`/`cred.secret` → `credential-and-pivot`, tối đa 3 và luôn giữ `exploit-design`). `validation` và `reporting` **không** có skill mặc định: validation tái lập claim và bị cấm discovery mới, reporting chỉ tổng hợp và bị cấm viết fix — hai skill cũ (`exploitability-assessment`, `remediation`) dạy đúng việc bị cấm, nên chúng chỉ còn dùng khi operator yêu cầu rõ. Thiếu context (không có kind/needs) thì bảng gốc áp dụng, đúng hành vi trước P15.
 

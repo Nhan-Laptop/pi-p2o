@@ -49,7 +49,7 @@ owner-managed sandbox.
   run is active. A delegated Pi is a strategic Planner; only solo investigates.
 - Recon records a bounded surface inventory (inputs, actors, gates, boundaries, Evidence IDs, extraction method,
   labelled unknowns). Pick the next surface by reachable influence, sensitive effect, boundary uncertainty, evidence,
-  information gain and budget, and note why. Unclear gates go back to mapping, plausible candidates to a *separate*
+  information gain and cost, and note why. Unclear gates go back to mapping, plausible candidates to a *separate*
   validator, blocked proof stays open. Shared contract: [HANDOFFS](../HANDOFFS.md#h1--recon--static-analysis).
 - An unknown tool: run a bounded functional check and cite its receipt; user-space tools can be installed into scratch
   through `p2o_net`. For Semgrep, keep metrics off and use local rules (`--validate` fetches remote meta-lints).

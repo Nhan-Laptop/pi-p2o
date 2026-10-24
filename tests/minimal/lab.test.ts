@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { ENVIRONMENT_STEPS, EnvironmentStore, PAYLOAD_BYTES, PayloadStore, isPayloadId, normalizeRecipe, payloadDirectory, runEnvironment, stopEnvironment } from '../../src/lab.js';
+import { EnvironmentStore, PAYLOAD_BYTES, PayloadStore, isPayloadId, normalizeRecipe, payloadDirectory, runEnvironment, stopEnvironment } from '../../src/lab.js';
 import { readCompose } from '../../src/compose.js';
 import { fixture, populate } from './helpers/report-fixture.js';
 
@@ -198,7 +198,9 @@ describe('environment recipe (P14.3)', () => {
   });
 
   it('bounds the recipe and derives replayable only from a payload and a matching environment', async () => fixture(async h => {
-    expect(() => normalizeRecipe({ setup: ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i'] }, IMAGE)).toThrow(/at most 8 commands/);
+    // Steps are not counted: a long setup is a long setup, and each command is still bounded in bytes.
+    expect(normalizeRecipe({ setup: Array.from({ length: 12 }, (_, i) => `step-${i}`) }, IMAGE).setup).toHaveLength(12);
+    expect(() => normalizeRecipe({ setup: ['x'.repeat(4097)] }, IMAGE)).toThrow(/1\.\.4096 bytes/);
     expect(() => normalizeRecipe({}, IMAGE)).toThrow(/at least one setup command/);
     expect(() => normalizeRecipe({ services: [{ name: 'web', command: 'x', port: 0 }] }, IMAGE)).toThrow(/port/);
     expect(() => normalizeRecipe({ services: [{ name: 'web', command: 'x', extra: 1 }] }, IMAGE)).toThrow(/unknown field extra/);

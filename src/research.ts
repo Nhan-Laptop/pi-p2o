@@ -11,8 +11,9 @@ import { describeCapability, isTypedCapability, type Capability } from './capabi
  * fetched page that instructs the reader is reported, never followed.
  */
 export const RESEARCH_LIMIT = 5;
+/** The only bound is the length of the record this becomes, not how many words a lookup may use: the scorer is linear and
+ * a natural question about a product, a version and a lifecycle must never be refused for being phrased naturally. */
 export const RESEARCH_QUERY_MAX = 200;
-export const RESEARCH_TERMS_MAX = 6;
 export const RESEARCH_EXCERPT_BYTES = 2048;
 export const RESEARCH_PAGE_BYTES = 32 * 1024;
 
@@ -44,9 +45,7 @@ export function researchQuery(value: unknown): string[] {
   if (typeof value !== 'string') throw Error('Research query must be a string');
   const trimmed = value.trim();
   if (!trimmed || trimmed.length > RESEARCH_QUERY_MAX || /[\x00-\x1f\x7f]/.test(trimmed)) throw Error(`Research query must be 1..${RESEARCH_QUERY_MAX} printable characters`);
-  const terms = [...new Set(trimmed.toLowerCase().split(/\s+/).filter(Boolean))];
-  if (terms.length > RESEARCH_TERMS_MAX) throw Error(`Research query is limited to ${RESEARCH_TERMS_MAX} terms`);
-  return terms;
+  return [...new Set(trimmed.toLowerCase().split(/\s+/).filter(Boolean))];
 }
 
 export function researchLimit(value: unknown): number {

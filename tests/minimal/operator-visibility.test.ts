@@ -87,7 +87,7 @@ describe('/p2o log filters', () => {
 
 describe('worker panel in status and widget', () => {
   const profile = (workers: WorkerView[]): ViewProfile => ({ runId: 'run-x', target: 'fixture', lifecycle: 'active', delegation: true, maxWorkers: 3, exportEnabled: false,
-    engine: { mode: 'manual', pendingIntents: 0, rounds: 0, maxAutomaticRounds: 100, paused: undefined, decision: undefined } as ViewProfile['engine'], executor: { mode: 'shared', maxTargetOperations: 1 }, retention: 'ephemeral', workers });
+    engine: { mode: 'manual', pendingIntents: 0, rounds: 0, paused: undefined, decision: undefined } as ViewProfile['engine'], executor: { mode: 'shared', maxTargetOperations: 1 }, retention: 'ephemeral', workers });
   const worker = (over: Partial<WorkerView>): WorkerView => ({ id: 'worker-discovery-1', role: 'discovery', taskId: 'task-1', state: 'running', commandsUsed: 12, idleMs: 4_000, quiet: false, reported: false, stopped: false, ...over });
 
   it('lists live workers with state, command count and idle age, flags quiet ones as observation only, and stays compact in the widget', () => {

@@ -73,12 +73,13 @@ describe('parent-typed lineage gate (P9)', () => {
     expect(await board.create(draft(assetId, 'investigation'))).toMatchObject({ status: 'proposed' });
   }));
 
-  it('bounds and normalizes the parent list', async () => fixture(async ({ board, assetId, claim }) => {
+  it('normalizes the parent list without counting it', async () => fixture(async ({ board, assetId, claim }) => {
     const claimId = claim(), { id: _fresh, ...base } = draft(assetId, 'investigation');
     await expect(board.create({ ...base, work: { ...base.work!, claimRefs: [claimId, claimId] } })).rejects.toThrow(/Duplicate work parent claim reference/);
+    // No count cap: a task may stand on as many claims as it truly consumes.
     const many = Array.from({ length: 11 }, () => claim());
-    await expect(board.create({ ...base, work: { ...base.work!, claimRefs: many } })).rejects.toThrow(/1\.\.10 parent claim references/);
-    await expect(board.create({ ...base, work: { ...base.work!, claimRefs: [] } as never })).rejects.toThrow(/1\.\.10 parent claim references/);
+    expect((await board.create({ ...base, work: { ...base.work!, questionKey: 'policy:investigation-wide', claimRefs: many } })).work!.claimRefs).toHaveLength(11);
+    await expect(board.create({ ...base, work: { ...base.work!, claimRefs: [] } as never })).rejects.toThrow(/at least one parent claim reference/);
     // Sorted on the way in, so the same lineage recorded in another order is the same lineage.
     const second = claim();
     const created = await board.create({ ...base, work: { ...base.work!, claimRefs: [second, claimId] } });

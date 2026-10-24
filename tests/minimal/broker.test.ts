@@ -236,6 +236,16 @@ describe('sandbox broker', () => {
     expect(report.blocked).toBe('no network');
   });
 
+  it('keeps a long report list and bounds it by bytes, not by an item count', () => {
+    // 25 findings is a productive worker, not a malformed report: the old 20-item cap silently dropped the tail.
+    const many = normalizeReport({ summary: 's', confidence: 'high', findings: Array.from({ length: 25 }, (_, i) => `finding-${i}`), evidence: [], coverage: [], openItems: [] });
+    expect(many.findings).toHaveLength(25);
+    // The bound that remains is the bytes this record can carry; each item keeps its own length limit.
+    const huge = normalizeReport({ summary: 's', confidence: 'high', findings: Array.from({ length: 400 }, () => 'y'.repeat(1000)), evidence: [], coverage: [], openItems: [] });
+    expect(huge.findings.length).toBeGreaterThan(100);
+    expect(huge.findings.join('').length).toBeLessThanOrEqual(256 * 1024);
+  });
+
   it('never leaves the socket file behind after stop', async () => {
     const f = await fixture();
     await f.broker.stop();

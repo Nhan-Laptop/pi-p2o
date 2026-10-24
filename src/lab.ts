@@ -115,7 +115,6 @@ export const payloadExists = (storePath: string, id: unknown): Promise<boolean> 
  * sandbox. What the recipe cannot express (a different image, a `build:`, a host mount) is refused by the compose reader
  * before it ever reaches this file.
  */
-export const ENVIRONMENT_STEPS = 8;
 export const ENVIRONMENT_COMMAND_BYTES = 4096;
 export const ENVIRONMENT_POLLS = 20;
 
@@ -144,7 +143,7 @@ const command = (value: unknown, label: string): string => {
 };
 const commands = (value: unknown, label: string): string[] => {
   if (value === undefined) return [];
-  if (!Array.isArray(value) || value.length > ENVIRONMENT_STEPS) throw Error(`${label} must be at most ${ENVIRONMENT_STEPS} commands`);
+  if (!Array.isArray(value)) throw Error(`${label} must be a list of commands`);
   return value.map((entry, index) => command(entry, `${label} ${index + 1}`));
 };
 const shellQuote = (value: string): string => `'${value.replace(/'/g, `'\\''`)}'`;
@@ -156,7 +155,7 @@ export function normalizeRecipe(input: unknown, image: string): EnvironmentRecip
   for (const key of Object.keys(row)) if (!['version', 'source', 'image', 'setup', 'services', 'seed'].includes(key)) throw Error(`Environment recipe has unknown field ${key}`);
   if (typeof image !== 'string' || !image.trim()) throw Error('Environment image is required');
   const services = row.services === undefined ? [] : row.services;
-  if (!Array.isArray(services) || services.length > ENVIRONMENT_STEPS) throw Error(`Environment needs at most ${ENVIRONMENT_STEPS} services`);
+  if (!Array.isArray(services)) throw Error('Environment services must be a list');
   const parsed: EnvironmentService[] = services.map((entry, index) => {
     if (!entry || typeof entry !== 'object' || Array.isArray(entry)) throw Error(`Environment service ${index + 1} must be an object`);
     const service = entry as Record<string, unknown>;

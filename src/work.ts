@@ -63,7 +63,7 @@ function revision(value:unknown,label:string):number|undefined{
 
 export function validateWorkSpec(value:unknown):WorkSpec{
   const row=plain(value,'work identity');exact(row,['assetRefs','questionKey','policyKey','actorContext','tenantContext','methodFamily','purpose','claimRefs','needs','environmentRef'],'Work identity');
-  if(!Array.isArray(row.assetRefs)||row.assetRefs.length<1||row.assetRefs.length>10)throw Error('Work identity needs 1..10 asset references');
+  if(!Array.isArray(row.assetRefs)||row.assetRefs.length<1)throw Error('Work identity needs at least one asset reference');
   const seen=new Set<string>(),assetRefs=row.assetRefs.map((raw,index)=>{
     const item=plain(raw,`work asset ${index}`);exact(item,['id','revision','variant'],`Work asset ${index}`);
     const id=identity(item.id,'asset ID',80);if(!/^asset-[a-f0-9]{24}$/.test(id))throw Error('Work asset ID must be a retained graph entity ID');
@@ -73,7 +73,7 @@ export function validateWorkSpec(value:unknown):WorkSpec{
   }).sort((a,b)=>graphCanonical(a)<graphCanonical(b)?-1:1);
   const purpose=identity(row.purpose,'purpose',32);if(!(WORK_PURPOSES as readonly string[]).includes(purpose))throw Error('Invalid work purpose');
   let claimRefs:string[]|undefined;
-  if(row.claimRefs!==undefined){if(!Array.isArray(row.claimRefs)||row.claimRefs.length<1||row.claimRefs.length>10)throw Error('Work lineage needs 1..10 parent claim references');
+  if(row.claimRefs!==undefined){if(!Array.isArray(row.claimRefs)||row.claimRefs.length<1)throw Error('Work lineage needs at least one parent claim reference');
     const seenClaim=new Set<string>();claimRefs=row.claimRefs.map((raw,index)=>{const id=identity(raw,`parent claim ${index}`,80);if(seenClaim.has(id))throw Error('Duplicate work parent claim reference');seenClaim.add(id);return id;}).sort();}
   const needs=row.needs===undefined?undefined:capabilityList(row.needs,'work needs');
   if(row.environmentRef!==undefined&&!isEnvironmentId(row.environmentRef))throw Error('Invalid work environment reference');
@@ -101,7 +101,7 @@ export function validateWorkDecision(value:unknown,spec:WorkSpec,links:{validati
 export function validateOutputContract(value:unknown):TaskOutputContract{
   const row=plain(value,'task output contract');exact(row,['kind','required','partialAllowed','artifactPolicy','notes'],'Task output contract');
   const kind=identity(row.kind,'output kind',32);if(!(OUTPUT_KINDS as readonly string[]).includes(kind))throw Error('Invalid output contract kind');
-  if(!Array.isArray(row.required)||row.required.length<1||row.required.length>8)throw Error('Output contract needs 1..8 required fields');
+  if(!Array.isArray(row.required)||row.required.length<1)throw Error('Output contract needs at least one required field');
   const required=[...new Set(row.required.map(item=>identity(item,'output field',32)))];
   if(required.length!==row.required.length||required.some(item=>!(OUTPUT_FIELDS as readonly string[]).includes(item)))throw Error('Invalid or duplicate output contract field');
   if(typeof row.partialAllowed!=='boolean'||!['ids-only','bounded-text'].includes(String(row.artifactPolicy)))throw Error('Invalid output partial/artifact policy');

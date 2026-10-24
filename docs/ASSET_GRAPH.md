@@ -40,7 +40,7 @@ primitive tới claim đó). Không lưu gì mới, không thêm quyền, và wo
 | Page / history / export | 20 (≤100) / 20 nhóm sequence (≤100) / 200 head (≤500); kết quả ≤24 KiB |
 | Batch | ≤128 hàng (tính cả anchor lồng, ≤10/asset), payload ≤128 KiB, mỗi hàng ≤8 KiB |
 | Mỗi run | 5.000 asset rev · 10.000 assertion · 2.000 relation · 20.000 anchor · 40.000 provenance |
-| Ngân sách Worker | knowledge dừng ở 160/200 (chừa 40); owner 400; không phải budget token |
+| Đếm lệnh Worker | chỉ là quan sát cho ledger/report; không có ngưỡng nào chặn lệnh (bỏ ngân sách 2026-10-24) |
 
 ## Checkpoint và bundle
 

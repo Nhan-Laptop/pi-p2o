@@ -32,14 +32,15 @@ describe('capability vocabulary (P14.1)', () => {
     expect(capabilityMatches({ legacy: 'a session' }, { legacy: 'a session' })).toBe(false);
   });
 
-  it('stores one canonical list: bounded, deduplicated and ordered, with legacy entries last', () => {
+  it('stores one canonical list: deduplicated and ordered, with legacy entries last', () => {
     const list = capabilityList([{ kind: 'host.shell' }, { kind: 'auth.bypass', subject: 'admin' }, 'pre-P14 text'], 'gained');
     expect(list.map(describeCapability)).toEqual(['auth.bypass (admin)', 'host.shell', 'untyped text "pre-P14 text"']);
     expect(list.map(capabilityKey)).toEqual([...list.map(capabilityKey)].sort());
     expect(isTypedCapability(list[0]!)).toBe(true);
     expect(isTypedCapability(list[2]!)).toBe(false);
-    expect(() => capabilityList([], 'gained')).toThrow(/1\.\.10 capabilities/);
-    expect(() => capabilityList(Array.from({ length: 11 }, () => ({ kind: 'host.shell' })), 'gained')).toThrow(/1\.\.10 capabilities/);
+    expect(() => capabilityList([], 'gained')).toThrow(/at least one capability/);
+    // Breadth is not a limit: eleven distinct capabilities stay eleven capabilities.
+    expect(capabilityList(Array.from({ length: 11 }, (_, i) => ({ kind: 'http.request', subject: `svc-${i}` })), 'gained')).toHaveLength(11);
     expect(() => capabilityList([{ kind: 'host.shell' }, { kind: 'host.shell' }], 'gained')).toThrow(/Duplicate gained capability/);
   });
 

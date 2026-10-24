@@ -3,7 +3,7 @@ import { choices } from '../schema-kit.js';
 import { ASSET_KINDS, ANCHOR_KINDS, CONFIDENCE, FACT_KINDS, HYPOTHESIS_STATUS, RELATION_KINDS } from './graph.js';
 
 const id = () => Type.String({ minLength: 1, maxLength: 80 });
-const refs = () => Type.Optional(Type.Array(id(), { maxItems: 10 }));
+const refs = () => Type.Optional(Type.Array(id()));
 const revision = () => Type.Optional(Type.Integer({ minimum: 1 }));
 const supersedes = () => Type.Optional(id());
 const object = Type.Object;
@@ -14,16 +14,16 @@ const batch = object({
   assets: Type.Optional(Type.Array(object({ asset: object({ kind: choices(ASSET_KINDS), key: Type.String({ minLength: 1, maxLength: 500 }),
     label: Type.Optional(Type.String({ minLength: 1, maxLength: 200 })), expectedRevision: revision(), evidenceRefs: refs(),
     attributes: Type.Optional(Type.Record(Type.String({ maxLength: 64 }), Type.String({ maxLength: 500 }), { maxProperties: 16 })),
-    anchors: Type.Optional(Type.Array(anchor, { maxItems: 10 })) }, { additionalProperties: false }),
-    ref: Type.Optional(Type.String({ minLength: 1, maxLength: 32, pattern: '^[a-zA-Z][a-zA-Z0-9_-]*$' })) }, { additionalProperties: false }), { maxItems: 128 })),
+    anchors: Type.Optional(Type.Array(anchor)) }, { additionalProperties: false }),
+    ref: Type.Optional(Type.String({ minLength: 1, maxLength: 32, pattern: '^[a-zA-Z][a-zA-Z0-9_-]*$' })) }, { additionalProperties: false }))),
   facts: Type.Optional(Type.Array(object({ assetId: id(), assetRevision: revision(), kind: choices(FACT_KINDS),
-    statement: Type.String({ minLength: 1, maxLength: 2000 }), confidence: choices(CONFIDENCE), evidenceRefs: refs(), supersedes: supersedes() }, { additionalProperties: false }), { maxItems: 128 })),
+    statement: Type.String({ minLength: 1, maxLength: 2000 }), confidence: choices(CONFIDENCE), evidenceRefs: refs(), supersedes: supersedes() }, { additionalProperties: false }))),
   hypotheses: Type.Optional(Type.Array(object({ assetId: id(), assetRevision: revision(), statement: Type.String({ minLength: 1, maxLength: 2000 }),
-    status: choices(HYPOTHESIS_STATUS), impact: Type.Optional(Type.String({ minLength: 1, maxLength: 1000 })), evidenceRefs: refs(), counterevidenceRefs: refs(), supersedes: supersedes() }, { additionalProperties: false }), { maxItems: 128 })),
+    status: choices(HYPOTHESIS_STATUS), impact: Type.Optional(Type.String({ minLength: 1, maxLength: 1000 })), evidenceRefs: refs(), counterevidenceRefs: refs(), supersedes: supersedes() }, { additionalProperties: false }))),
   relations: Type.Optional(Type.Array(object({ kind: choices(RELATION_KINDS), fromId: id(), toId: id(), fromRevision: revision(), toRevision: revision(),
     note: Type.Optional(Type.String({ minLength: 1, maxLength: 1000 })), evidenceRefs: refs(), basis: Type.Optional(choices(['observed','inferred'])),
-    status: Type.Optional(choices(['active','withdrawn'])), supersedes: supersedes() }, { additionalProperties: false }), { maxItems: 128 })),
-  anchors: Type.Optional(Type.Array(object({ assetId: id(), assetRevision: revision(), anchor }, { additionalProperties: false }), { maxItems: 128 })),
+    status: Type.Optional(choices(['active','withdrawn'])), supersedes: supersedes() }, { additionalProperties: false }))),
+  anchors: Type.Optional(Type.Array(object({ assetId: id(), assetRevision: revision(), anchor }, { additionalProperties: false }))),
 }, { additionalProperties: false });
 export const GRAPH_ACTIONS = ['record','view','page','export','chain'] as const;
 /** P13e: exhaustive per action; `page` and `export` share a shape but are named separately. */
@@ -41,5 +41,5 @@ export const graphParameters = object({
   asOfSequence: Type.Optional(Type.Integer({ minimum: 0 })),
   /** P14.10: `chain` can also hand back the next task draft and record the chain as todos; it never dispatches. */
   plan: Type.Optional(Type.Boolean()),
-  assetRefs: Type.Optional(Type.Array(Type.Object({ id: Type.String({ pattern: '^asset-[a-f0-9]{24}$' }), revision: Type.Optional(Type.Integer({ minimum: 1 })), variant: Type.Optional(Type.String({ maxLength: 120 })) }, { additionalProperties: false }), { minItems: 1, maxItems: 10, description: 'Assets the drafted task stands on; copied from the graph, never inferred from a surface string' })),
+  assetRefs: Type.Optional(Type.Array(Type.Object({ id: Type.String({ pattern: '^asset-[a-f0-9]{24}$' }), revision: Type.Optional(Type.Integer({ minimum: 1 })), variant: Type.Optional(Type.String({ maxLength: 120 })) }, { additionalProperties: false }), { minItems: 1, description: 'Assets the drafted task stands on; copied from the graph, never inferred from a surface string' })),
 }, { additionalProperties: false });

@@ -15,10 +15,11 @@ Architecture overview: [ARCHITECTURE.md](ARCHITECTURE.md). This page is the oper
   shared always 1; isolated multiplies resources. `--max-depth` is kept for compatibility only: workers
   propose tasks, they never spawn children.
 - Settings live under `p2o` in `~/.pi/agent/settings.json`: `maxWorkers`, `loopMode`, `executorMode`,
-  `maxTargetOperations`, `maxPlannerRounds`, `roles.<role>.model` (full list in [USAGE](USAGE.md)). Bad settings fall
+  `maxTargetOperations`, `roles.<role>.model` (full list in [USAGE](USAGE.md)). Bad settings fall
   back to conservative defaults; bad CLI values are rejected. Precedence: CLI → settings → defaults.
-- Automatic Planner rounds are extra requests to the existing model, bounded by the confirmed round count (not by
-  time or money); `resume` cannot renew a spent count. Command spend is not capped at all (owner decision 2026-10-24). No heartbeat polling, provider fallback or launch replay.
+- Automatic Planner rounds are extra requests to the existing model with **no round ceiling**: only two quietly
+  unproductive rounds (M6) or the human stop them, and `resume` never meets a spent count. Command spend is not capped
+  either (owner decision 2026-10-24). No heartbeat polling, provider fallback or launch replay.
 
 ## Who does what
 
@@ -37,7 +38,7 @@ renew nothing, because there is no command allowance to renew (owner decision 20
 
 ### Chain board (M1)
 
-Chuỗi khai thác sống trên plan board, không có bảng cạnh riêng: mỗi bước là một `todo` với `chainOf`, `step` (1..8),
+Chuỗi khai thác sống trên plan board, không có bảng cạnh riêng: mỗi bước là một `todo` với `chainOf`, `step` (đánh số từ 1, không có trần),
 `claimRefs` (record candidate cùng run mà bước đó đứng trên), `needs` (capability có kiểu) và `environmentRef` nếu có.
 `p2o_graph {action:"chain", plan:true}` ghi đúng các dòng đó — bước đã demonstrated ghi `done`, bước kế tiếp ghi `open` —
 rồi trả `chainOf` để lần sau revise đúng chỗ.
@@ -81,14 +82,15 @@ liên tiếp thì `reserveWake()` không cấp wake nữa và `escalated()` tr�
 quyết định của con người — mở rộng scope, cấp credential, hoặc đổi môi trường — chứ không có từ "budget" nào trong đó. Một
 bộ đếm tăng là đủ để xoá chuỗi im lặng; `manual` mode không tự chấm round vì không có round tự động nào để chấm.
 
-Hệ quả: engine dừng vì *không có gì mới*, không vì hết hạn mức. Con số `maxPlannerRounds` vẫn còn nhưng chỉ là phanh cuối;
-M6 là lý do thường gặp hơn để dừng và lý do đó nói được bằng chứng cứ.
+Hệ quả: engine dừng vì *không có gì mới*, không vì hết hạn mức — và đó là lý do **duy nhất** máy tự dừng. Không còn
+`maxPlannerRounds`: sau khi M6 có hiệu lực, một trần đếm vòng chỉ là quota còn sót lại, và bỏ nó đi thì lý do dừng luôn
+nói được bằng chứng cứ thay vì bằng một con số.
 
 ### Revisit theo điều kiện (M7)
 
 `p2o_loop {action:'wait', reason:'block-decay'|'cooldown-expiry', notBefore}` không phải một khoản chờ: nó ghi **một**
 `decision` (`disposition:'defer'` + `revisitCondition`) lên plan board và hẹn **một** wake tại đúng thời điểm đó. Ba chặn:
-`notBefore` phải ở tương lai và trong 24 giờ, reason phải thuộc hai giá trị trên, và mỗi điều kiện chỉ có một hẹn đang chờ
+`notBefore` phải ở tương lai và trong 24 giờ (biên của một hẹn giờ, không phải quota), reason phải thuộc hai giá trị trên, và mỗi điều kiện chỉ có một hẹn đang chờ
 (`REVISIT_DUPLICATE: condition <c> already has a pending revisit at <iso>`). Revisit không tự hẹn lại, không tính vào gì, và
 không bắn khi run đang pause/stop. Wake bắn một lần rồi biến mất khỏi `revisitAt()`.
 
@@ -96,8 +98,8 @@ không bắn khi run đang pause/stop. Wake bắn một lần rồi biến mất
 
 `p2o_workers {action:'continue', workerId, brief}` dùng lại hội thoại của worker cho **cùng** ticket: đây là cách rẻ nhất để
 "thử lại giả thuyết bị chặn theo hướng khác" mà không phải spawn lại và đọc lại context. Luật nằm trong một hàm
-(`continuationRefusal`): `WORKER_CLOSED` khi worker đã report/stop/pane đóng, `CONTINUATION_LIMIT` sau một lần nối —
-một ticket, một brief thêm, không phải một allowance. Lần nối được ghi thành lifecycle note để báo cáo đếm được.
+(`continuationRefusal`): chỉ `WORKER_CLOSED` khi worker đã report/stop/pane đóng. Một ticket còn sống được nối bao nhiêu
+lần cũng được — số lần nối không phải một allowance — và mỗi lần nối được ghi thành lifecycle note để báo cáo đếm được.
 
 Khi một mắt xích bị chặn, `p2o_graph {action:'chain'}` trả thêm `research` hint cho tối đa ba claim chưa thoả: cặp
 `needs → gained`, câu query dựng từ đúng hai capability đó, và procedure skill sở hữu bước chuyển (`TRANSITION_SKILLS`).

@@ -85,7 +85,7 @@ function dictionary(value: unknown, count: number, label: string): Record<string
 }
 const refs = (value: unknown, label: string): string[] => {
   if (value === undefined) return [];
-  if (!Array.isArray(value) || value.length > 10 || value.some(id => typeof id !== 'string' || !/^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,79}$/.test(id))) throw Error(`${label} must be at most 10 record IDs`);
+  if (!Array.isArray(value) || value.some(id => typeof id !== 'string' || !/^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,79}$/.test(id))) throw Error(`${label} must be at most 10 record IDs`);
   return [...new Set(value as string[])].sort();
 };
 function revision(value: unknown, label: string): number | undefined {

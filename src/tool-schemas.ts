@@ -2,10 +2,11 @@ import { Type } from 'typebox';
 import { capabilitySchema, choices } from './schema-kit.js';
 import { KNOWLEDGE_DOMAINS } from './context.js';
 import { COVERAGE_OUTCOMES } from './records.js';
-import { MAX_SKILLS, ROLES, THINKING_LEVELS } from './roles.js';
+import { ROLES, THINKING_LEVELS } from './roles.js';
 import { WORKER_OUTCOMES } from './broker.js';
 import { CANDIDATE_CLOSURES, CANDIDATE_EXECUTIONS, CANDIDATE_PROOFS, POLICY_BASES } from './evidence.js';
 import { PAYLOAD_BYTES, PAYLOAD_KINDS } from './lab.js';
+import { RESEARCH_QUERY_MAX } from './research.js';
 import { HTTP_METHOD_PATTERN } from './target.js';
 import { outputContractSchema, workDecisionSchema, workSpecSchema } from './work-tool.js';
 
@@ -21,11 +22,11 @@ export const taskDraftSchema = Type.Object({
     role:choices(ROLES),roleReason:Type.Optional(Type.String({maxLength:1000})),
     expectedTrue:Type.Optional(Type.String({maxLength:1000})),expectedFalse:Type.Optional(Type.String({maxLength:1000})),stopCondition:Type.Optional(Type.String({maxLength:1000})),
     expectedOutput:Type.Optional(Type.String({minLength:5,maxLength:1000})),
-    unknowns:Type.Optional(Type.Array(Type.String({minLength:10,maxLength:500}),{maxItems:10})),missingPrerequisites:Type.Optional(Type.Array(Type.String({minLength:10,maxLength:500}),{maxItems:10})),
-    evidenceIds:Type.Array(Type.String({maxLength:80}),{maxItems:10}),prerequisites:Type.Array(Type.Object({taskId:Type.String({maxLength:80}),revision:Type.Optional(Type.Integer({minimum:1}))}),{maxItems:10}),
+    unknowns:Type.Optional(Type.Array(Type.String({minLength:10,maxLength:500}))),missingPrerequisites:Type.Optional(Type.Array(Type.String({minLength:10,maxLength:500}))),
+    evidenceIds:Type.Array(Type.String({maxLength:80})),prerequisites:Type.Array(Type.Object({taskId:Type.String({maxLength:80}),revision:Type.Optional(Type.Integer({minimum:1}))})),
     validationOf:Type.Optional(Type.String({maxLength:80})),retestOf:Type.Optional(Type.String({maxLength:80})),parentTaskId:Type.Optional(Type.String({maxLength:80})),
     work:Type.Optional(workSpecSchema),decision:Type.Optional(workDecisionSchema),outputContract:Type.Optional(outputContractSchema),
-    skills:Type.Optional(Type.Array(Type.String({maxLength:64}),{maxItems:3})),workflow:Type.Optional(Type.String({maxLength:64})),methodReason:Type.Optional(Type.String({maxLength:1000})),
+    skills:Type.Optional(Type.Array(Type.String({maxLength:64}))),workflow:Type.Optional(Type.String({maxLength:64})),methodReason:Type.Optional(Type.String({maxLength:1000})),
   },{additionalProperties:false});
 
 export const TASK_ACTIONS = ['create','revise','match','list','start','review','close','block','cancel','dispatch'] as const;
@@ -38,11 +39,11 @@ export const TASK_ACTION_PARAMETERS: Readonly<Record<typeof TASK_ACTIONS[number]
 };
 export const taskParameters = Type.Object({action:choices(TASK_ACTIONS),
       id:Type.Optional(Type.String({maxLength:80})),revision:Type.Optional(Type.Integer({minimum:1})),draft:Type.Optional(taskDraftSchema),
-      ids:Type.Optional(Type.Array(Type.String({maxLength:80}),{minItems:1,maxItems:25})),priority:Type.Optional(Type.Integer({minimum:0,maximum:100})),
+      ids:Type.Optional(Type.Array(Type.String({maxLength:80}),{minItems:1})),priority:Type.Optional(Type.Integer({minimum:0,maximum:100})),
       cursor:Type.Optional(Type.Integer({minimum:0})),limit:Type.Optional(Type.Integer({minimum:1,maximum:25})),
-      reason:Type.Optional(Type.String({minLength:5,maxLength:1000})),evidenceIds:Type.Optional(Type.Array(Type.String({maxLength:80}),{maxItems:10})),externalEvidence:Type.Optional(Type.Boolean())});
+      reason:Type.Optional(Type.String({minLength:5,maxLength:1000})),evidenceIds:Type.Optional(Type.Array(Type.String({maxLength:80}))),externalEvidence:Type.Optional(Type.Boolean())});
 
-export const surfaceParameters = Type.Object({component:Type.String({minLength:1,maxLength:200}),entryPoint:Type.String({minLength:1,maxLength:200}),text:Type.Optional(Type.String({maxLength:1000})),refs:Type.Optional(Type.Array(Type.String({maxLength:80}),{maxItems:10}))},{additionalProperties:false});
+export const surfaceParameters = Type.Object({component:Type.String({minLength:1,maxLength:200}),entryPoint:Type.String({minLength:1,maxLength:200}),text:Type.Optional(Type.String({maxLength:1000})),refs:Type.Optional(Type.Array(Type.String({maxLength:80})))},{additionalProperties:false});
 
 export const skillListParameters = Type.Object({ query: Type.Optional(Type.String({ maxLength: 80 })), offset: Type.Optional(Type.Integer({ minimum: 0 })) });
 
@@ -57,15 +58,15 @@ export const candidateParameters = Type.Object({
       closure: choices(CANDIDATE_CLOSURES),
       execution: choices(CANDIDATE_EXECUTIONS),
       proof: choices(CANDIDATE_PROOFS),
-      evidenceRefs: Type.Array(Type.String({ maxLength: 80 }), { maxItems: 10, description: 'Owner-generated Evidence ID UUIDs from tool results, not invented labels or probe cell names' }),
-      negativeControls: Type.Array(Type.String({ maxLength: 80 }), { maxItems: 10, description: 'Evidence ID UUIDs of commands containing the negative-control observations; describe individual control cells in limitations, not in this ID array' }),
+      evidenceRefs: Type.Array(Type.String({ maxLength: 80 }), { description: 'Owner-generated Evidence ID UUIDs from tool results, not invented labels or probe cell names' }),
+      negativeControls: Type.Array(Type.String({ maxLength: 80 }), { description: 'Evidence ID UUIDs of commands containing the negative-control observations; describe individual control cells in limitations, not in this ID array' }),
       policyBasis: choices(POLICY_BASES),
       expectedPolicy: Type.String({ minLength: 1, maxLength: 1000, description: 'State the violated intended policy/invariant and its provenance; a sibling route difference alone is only inferred' }),
       limitations: Type.String({ minLength: 1, maxLength: 1500 }), control: Type.Optional(Type.String({ maxLength: 1000 })),
-      resolves: Type.Optional(Type.Array(Type.String({ maxLength: 80 }), { maxItems: 10 })),
+      resolves: Type.Optional(Type.Array(Type.String({ maxLength: 80 }))),
       requirement: Type.Optional(Type.String({ minLength: 10, maxLength: 1000, description: 'For blocked execution, describe the actual scope restriction, missing binary/dependency or failed prerequisite; not a capability ID' })), supersedes: Type.Optional(Type.String({ maxLength: 80 })), independentEvidenceRef: Type.Optional(Type.String({ maxLength: 80 })),
-      gained: Type.Optional(Type.Array(capabilitySchema, { maxItems: 10, description: 'Typed capabilities this primitive hands to a later step, so the lead can join them to another step\'s needs' })),
-      needs: Type.Optional(Type.Array(capabilitySchema, { maxItems: 10, description: 'Typed capabilities this primitive needs from an earlier step or the environment; omit when nothing outside the surface must hold' })),
+      gained: Type.Optional(Type.Array(capabilitySchema, { description: 'Typed capabilities this primitive hands to a later step, so the lead can join them to another step\'s needs' })),
+      needs: Type.Optional(Type.Array(capabilitySchema, { description: 'Typed capabilities this primitive needs from an earlier step or the environment; omit when nothing outside the surface must hold' })),
       note: Type.Optional(Type.String({ maxLength: 300, description: 'Free text caveat about the capability pair; displayed, never matched' })),
       payloadRef: Type.Optional(Type.String({ maxLength: 80, description: 'Payload artifact ID from p2o_lab for the request, script or command that actually ran; requires tested execution, and the derived replayable flag follows it' })),
       environmentRef: Type.Optional(Type.String({ maxLength: 80, description: 'Environment artifact ID from p2o_lab for the recipe it was demonstrated in; requires tested execution, and replayable needs it as well as payloadRef' })),
@@ -88,14 +89,14 @@ export const labParameters = Type.Object({
   body: Type.Optional(Type.String({ minLength: 1, maxLength: PAYLOAD_BYTES, description: 'The exact bytes to keep: runnable as-is, stored verbatim and deliberately not redacted' })),
   id: Type.Optional(Type.String({ maxLength: 80, description: 'Payload or environment ID; stored bytes and the recipe hash are checked before use' })),
   compose: Type.Optional(Type.Boolean({ description: 'action=env only, lead only: read docker-compose.yml|compose.yaml from /target and derive the recipe; refused keys are named' })),
-  setup: Type.Optional(Type.Array(Type.String({ minLength: 1, maxLength: 4096 }), { maxItems: 8, description: 'Commands run in order before services; each must exit 0' })),
-  services: Type.Optional(Type.Array(labServiceSchema, { maxItems: 8 })),
-  seed: Type.Optional(Type.Array(Type.String({ minLength: 1, maxLength: 4096 }), { maxItems: 8, description: 'Commands run after services are healthy; each must exit 0' })),
+  setup: Type.Optional(Type.Array(Type.String({ minLength: 1, maxLength: 4096 }), { description: 'Commands run in order before services; each must exit 0' })),
+  services: Type.Optional(Type.Array(labServiceSchema)),
+  seed: Type.Optional(Type.Array(Type.String({ minLength: 1, maxLength: 4096 }), { description: 'Commands run after services are healthy; each must exit 0' })),
 }, { additionalProperties: false });
 
 export const RESEARCH_LIMIT_SCHEMA = 5;
 export const researchParameters = Type.Object({
-  query: Type.String({ minLength: 1, maxLength: 200, description: 'Technique words to look up, e.g. "ssrf cloud metadata" or "linux suid privesc"; at most six terms' }),
+  query: Type.String({ minLength: 1, maxLength: RESEARCH_QUERY_MAX, description: 'Technique words to look up, e.g. "ssrf cloud metadata" or "joomla 2.5 end of life support lifecycle"; write the question the way you would ask it' }),
   web: Type.Optional(Type.Boolean({ description: 'Default true: also fetch the top hits\' curated source pages inside your sandbox and return quoted excerpts with a hash. Pass false for an offline-only lookup that never touches the network' })),
   limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 5, description: 'Maximum hits, 1..5, default 5' })),
 }, { additionalProperties: false });
@@ -107,7 +108,7 @@ export const execParameters = Type.Object({ command: Type.String({ minLength: 1,
 export const httpParameters = Type.Object({
       url: Type.String({ minLength: 1, maxLength: 4096 }),
       method: Type.Optional(Type.String({ minLength: 1, maxLength: 32, pattern: HTTP_METHOD_PATTERN })),
-      headers: Type.Optional(Type.Record(Type.String({ maxLength: 64 }), Type.String({ maxLength: 4096 }), { maxProperties: 20 })),
+      headers: Type.Optional(Type.Record(Type.String({ maxLength: 64 }), Type.String({ maxLength: 4096 }))),
       body: Type.Optional(Type.String({ maxLength: 32768 })),
       followRedirects: Type.Optional(Type.Boolean()),
       maxRedirects: Type.Optional(Type.Integer({ minimum: 0, maximum: 5 })),
@@ -123,7 +124,7 @@ export const noteParameters = Type.Object({
       surface: Type.Optional(Type.String({ maxLength: 200 })),
       risk: Type.Optional(Type.String({ maxLength: 200 })),
       outcome: Type.Optional(choices(COVERAGE_OUTCOMES)),
-      refs: Type.Optional(Type.Array(Type.String({ maxLength: 200 }), { maxItems: 10 })),
+      refs: Type.Optional(Type.Array(Type.String({ maxLength: 200 }))),
     });
 
 export const artifactParameters = Type.Object({id:Type.String({minLength:45,maxLength:45,pattern:'^artifact-[a-f0-9-]{36}$'}),offset:Type.Optional(Type.Integer({minimum:0})),length:Type.Optional(Type.Integer({minimum:1,maximum:8192}))});
@@ -135,7 +136,7 @@ export const delegateParameters = Type.Object({
       task: Type.String({ minLength: 1, maxLength: 4000, description: 'The objective: what to test/verify, success criteria and stop conditions' }),
       context: Type.Optional(Type.String({ maxLength: 4000, description: 'Background the worker must not re-derive: known facts, covered surfaces, record ids' })),
       role: Type.Optional(choices(ROLES)),
-      skills: Type.Optional(Type.Array(Type.String({ maxLength: 64 }), { maxItems: MAX_SKILLS })),
+      skills: Type.Optional(Type.Array(Type.String({ maxLength: 64 }))),
       model: Type.Optional(Type.String({ maxLength: 200 })),
       workflow: Type.Optional(Type.String({ maxLength: 64, description: 'Optional catalog workflow ID belonging to the selected skills; descriptive prerequisites do not grant permissions' })),
       thinking: Type.Optional(choices(THINKING_LEVELS)),
@@ -163,10 +164,10 @@ export const workersParameters = Type.Object({
 
 export const reportParameters = Type.Object({
       summary: Type.String({ minLength: 1, maxLength: 4000 }),
-      findings: Type.Optional(Type.Array(Type.String({ maxLength: 1000 }), { maxItems: 20 })),
-      evidence: Type.Optional(Type.Array(Type.String({ maxLength: 500 }), { maxItems: 40 })),
-      coverage: Type.Optional(Type.Array(Type.Object({ surface: Type.String({ maxLength: 200 }), risk: Type.String({ maxLength: 200 }), outcome: choices(COVERAGE_OUTCOMES) }), { maxItems: 40 })),
-      openItems: Type.Optional(Type.Array(Type.String({ maxLength: 1000 }), { maxItems: 20 })),
+      findings: Type.Optional(Type.Array(Type.String({ maxLength: 1000 }))),
+      evidence: Type.Optional(Type.Array(Type.String({ maxLength: 500 }))),
+      coverage: Type.Optional(Type.Array(Type.Object({ surface: Type.String({ maxLength: 200 }), risk: Type.String({ maxLength: 200 }), outcome: choices(COVERAGE_OUTCOMES) }))),
+      openItems: Type.Optional(Type.Array(Type.String({ maxLength: 1000 }))),
       confidence: choices(['high', 'medium', 'low']),
       blocked: Type.Optional(Type.String({ maxLength: 1000 })),
       outcome:Type.Optional(choices(WORKER_OUTCOMES)),

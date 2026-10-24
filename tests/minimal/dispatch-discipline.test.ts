@@ -9,10 +9,10 @@ const base = (overrides: Partial<OwnerPromptFacts> = {}): OwnerPromptFacts => ({
 const solo = () => ownerInstructions(base({ delegation: { enabled: false, reason: 'disabled', maxWorkers: 0, maxDepth: 0 } }));
 
 describe('dispatch discipline (P6)', () => {
-  it('states the serial-chain rule, the batch cap and the anti-stall floor', () => {
+  it('states the serial-chain rule, the dispatch order and the anti-stall floor', () => {
     for (const prompt of [ownerInstructions(base()), ownerInstructions(base({ loopMode: 'event-driven' })), solo()]) {
       expect(prompt).toContain('A chain step that consumes an earlier step’s actual output is its own task with pinned prerequisites');
-      expect(prompt).toMatch(/Dispatch at most four intents per call, highest value first/);
+      expect(prompt).toMatch(/Dispatch the highest-value intents first; a slot opens as one settles/);
       // P15 (R1): a round with no feasible question is not a stall, so the rule names the blocked path instead of demanding work.
       expect(prompt).toMatch(/A round that adds no intent is a stall only when a feasible question exists/);
       expect(prompt).toContain('report blocked/human-needed with the missing prerequisite instead of inventing work');
@@ -23,11 +23,11 @@ describe('dispatch discipline (P6)', () => {
     expect(ownerInstructions(base())).not.toMatch(/\bp2o_[a-z_]+\b/);
   });
 
-  it('does not raise the batch cap above what the frontier can schedule', () => {
-    // The cap is a scheduling rule, not a queue limit: one call stays inside the default worker slots so a
-    // readiness miss costs one round rather than a whole batch.
+  it('names no batch size the frontier would have to police', () => {
+    // How many intents a call carries is the lead's judgement: the slots are stated, the batch is not counted.
     const prompt = ownerInstructions(base());
     expect(prompt).toContain('Available: 3 concurrent worker slots');
-    expect(prompt).not.toMatch(/at most (?:[5-9]|\d{2,}) intents per call/);
+    expect(prompt).not.toMatch(/at most \w+ intents per call/);
+    expect(prompt).toContain('nothing is dropped');
   });
 });

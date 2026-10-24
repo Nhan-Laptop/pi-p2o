@@ -10,7 +10,7 @@ Mọi con số kiểm thử cũ nằm ở [VERIFICATION_LOG](VERIFICATION_LOG.md
 - Retention mặc định **durable-local, luôn nằm trong human confirmation**; có `ephemeral`.
 - **Commit, push và install chỉ do chủ repo yêu cầu** (một lần đồng ý không kéo sang lần sau); không chạy paid/live assessment hay reference code.
 - Lịch sử/checkpoint chỉ phục hồi tri thức, không worker/ticket/cookie/socket/request/quyền thực thi.
-- Giữ manual + shared và vòng đời không giới hạn thời gian; không heartbeat/retry/fallback, không tự cấp lại budget.
+- Giữ manual + shared và vòng đời không giới hạn thời gian; không heartbeat/retry/fallback, không tự cấp lại quyền.
 
 ## Các lát đã nối vào checkout
 

@@ -41,6 +41,13 @@ describe('the technique corpus', () => {
     expect(result.status, `${result.stdout}${result.stderr}`).toBe(0);
   });
 
+  it('takes a natural multi-word lookup as written, with no term count to trip over', () => {
+    // The query is a question, not a quota: word count is not policed, only the length of the record it becomes.
+    expect(researchQuery('joomla 2.5 end of life security support lifecycle')).toHaveLength(8);
+    expect(researchQuery(Array.from({ length: 30 }, (_, index) => `term${index}`).join(' '))).toHaveLength(30);
+    expect(() => researchQuery('x'.repeat(201))).toThrow(/1\.\.200 printable characters/);
+  });
+
   it('answers an offline query from local text only, and cites the corpus hash each entry came from', async () => {
     const index = await loadTechniqueIndex(root);
     const hits = searchTechniques(index, researchQuery('ssrf cloud metadata'));

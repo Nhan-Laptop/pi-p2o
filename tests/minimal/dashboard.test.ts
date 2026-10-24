@@ -5,7 +5,7 @@ import type { CaseView } from '../../src/cases.js';
 
 const profile = (overrides: Partial<ViewProfile['engine']> = {}, executor: Partial<ViewProfile['executor']> = {}): ViewProfile => ({
   runId: 'run-x', target: 'fixture', lifecycle: 'active', delegation: true, maxWorkers: 3, exportEnabled: false,
-  engine: { mode: 'manual', pendingIntents: 2, pendingEvents: 1, rounds: 0, maxAutomaticRounds: 100, paused: undefined, decision: undefined, ...overrides } as ViewProfile['engine'],
+  engine: { mode: 'manual', pendingIntents: 2, pendingEvents: 1, rounds: 0, paused: undefined, decision: undefined, ...overrides } as ViewProfile['engine'],
   executor: { mode: 'shared', maxTargetOperations: 2, runningTargetOperations: 1, waitingTargetOperations: 0, ...executor },
 });
 

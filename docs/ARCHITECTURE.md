@@ -53,8 +53,10 @@ finite coalescing windows (100 ms) that need explicit event-driven consent. See 
 - Defaults: 3 model slots (operator-selected, no hard ceiling), 100 live tasks, 1,000 registrations, 256 pending signals.
   **No command allowance exists** (owner decision 2026-10-24): the broker counts every admitted target command for the ledger and the
   report, and refuses none of them. The retired class allowance (200, or 400 for `exploitation`/`chaining`) and its `wrapUp`
-  obligation are gone with it, as are the per-worker read/coordination splits and `work.budget`. The Planner's automatic-round count
-  is the one remaining ceiling in the loop, and it is a wake bound, not a spend bound.
+  obligation are gone with it, as are the per-worker read/coordination splits, `work.budget` and `maxPlannerRounds`. No count in
+  the loop is a ceiling: two quietly unproductive rounds (M6) or the human end a run, and transport bytes bound what a record can
+  carry. **Count caps on tool input are gone too** (owner decision 2026-10-24, second pass): a chain may have more than eight
+  steps, a recipe more than eight commands, a report more than twenty findings, a worker more than one continuation.
 - Stop closes the Engine gate first, then drains, revokes, closes panes and verifies containers. Finish refuses while
   workers are unreported, runs the finish preflight (report only — there is no `p2o.finishGate`), freezes state, cleans up and writes the
   deterministic report (`p2o.autoReport`); a report or preflight failure never blocks cleanup. Hard kills can leave

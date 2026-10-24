@@ -103,7 +103,6 @@ export interface P2OSettings {
   maxWorkers: number;
   maxDepth: number;
   loopMode: LoopMode;
-  maxPlannerRounds: number;
   executorMode: 'shared' | 'isolated';
   maxTargetOperations: number;
   retention: RetentionMode;
@@ -124,7 +123,7 @@ export interface P2OSettings {
   roles: Partial<Record<Role, RoleSettings>>;
 }
 
-const blank = (): P2OSettings => ({ maxWorkers: DEFAULT_MAX_WORKERS, maxDepth: DEFAULT_MAX_DEPTH, loopMode: 'manual', maxPlannerRounds: 100, executorMode: 'shared', maxTargetOperations: 3, retention: 'durable-local', storageQuotaMiB: DEFAULT_STORAGE_QUOTA_MIB, artifactCaptureKiB: DEFAULT_ARTIFACT_CAPTURE_KIB, toolGuidance: DEFAULT_TOOL_GUIDANCE, autoReport: undefined, reportFormat: 2, reviewIntegrity: 'annotate', roles: {} });
+const blank = (): P2OSettings => ({ maxWorkers: DEFAULT_MAX_WORKERS, maxDepth: DEFAULT_MAX_DEPTH, loopMode: 'manual', executorMode: 'shared', maxTargetOperations: 3, retention: 'durable-local', storageQuotaMiB: DEFAULT_STORAGE_QUOTA_MIB, artifactCaptureKiB: DEFAULT_ARTIFACT_CAPTURE_KIB, toolGuidance: DEFAULT_TOOL_GUIDANCE, autoReport: undefined, reportFormat: 2, reviewIntegrity: 'annotate', roles: {} });
 
 export function isRole(value: unknown): value is Role { return typeof value === 'string' && (ROLES as readonly string[]).includes(value); }
 
@@ -138,7 +137,6 @@ export function parseSettings(raw: unknown): P2OSettings {
     typeof value === 'number' && Number.isInteger(value) && value >= 1 && value <= max ? value : fallback;
   settings.maxWorkers = clamp(source.maxWorkers, DEFAULT_MAX_WORKERS, MAX_WORKERS);
   settings.loopMode = source.loopMode === 'event-driven' ? 'event-driven' : 'manual';
-  settings.maxPlannerRounds = clamp(source.maxPlannerRounds, 100, Number.MAX_SAFE_INTEGER);
   settings.executorMode = source.executorMode === 'isolated' ? 'isolated' : 'shared';
   settings.maxTargetOperations = clamp(source.maxTargetOperations,3,Number.MAX_SAFE_INTEGER);
   settings.retention = source.retention === 'ephemeral' ? 'ephemeral' : 'durable-local';

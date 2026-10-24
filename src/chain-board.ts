@@ -15,7 +15,6 @@ import { claimCapabilities } from './claims.js';
 import type { ChainClaim } from './chain-view.js';
 import type { PlanEntry } from './planning.js';
 
-export const CHAIN_STEP_MAX = 8;
 export const CHAIN_LINE_LIMIT = 240;
 
 export type ChainStepState = 'ready' | 'waiting' | 'done' | 'blocked' | 'deferred' | 'cancelled';
