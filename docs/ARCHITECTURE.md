@@ -21,7 +21,7 @@ finite coalescing windows (100 ms) that need explicit event-driven consent. See 
   dispatch; reporting workers cannot execute or record candidates.
 - Worker tickets bind identity, token, run, image, extension bytes and runtime profile; they last until stopped and are
   revoked by report, withdrawal or socket loss. A wrong model/thinking profile fails closed.
-- Every target operation re-checks scope, ticket, task readiness and budget. Scope is agent policy, not an egress
+- Every target operation re-checks scope, ticket and task readiness. Scope is agent policy, not an egress
   firewall; same-user processes can copy a live token (no same-user isolation is claimed).
 
 ## Tasks, reports, wakes
@@ -47,19 +47,16 @@ finite coalescing windows (100 ms) that need explicit event-driven consent. See 
   ([boundaries](HTTP_TRANSPORT.md)). Containers: non-root, read-only root and source, dropped capabilities, no host or
   provider credentials. Docker shares the host kernel; this is not VM isolation.
 
-## Persistence, budgets, teardown
+## Persistence, accounting, teardown
 
 - Canonical state is one SQLite file per run ([AssessmentStore](STATE_STORE.md)); the older JSONL ledger is still read.
-- Defaults: 3 model slots (operator-selected, no hard ceiling), 100 live tasks, 1,000 registrations, 256 pending signals,
-  200 commands/worker (90% reserve of 600). No elapsed deadline anywhere; unknown cost is not zero.
-- The command allowance follows `work.purpose` (P14.11): 200 for research work, **400 for `exploitation` and `chaining`**, because
-  building, running, crashing and adjusting a payload spends commands in a loop and a run cut off mid-iteration loses the payload
-  that would have made it replayable. `work.budget.commands` overrides the class in either direction (1..5000). An exploitation or
-  chaining run that ends on its allowance must report `wrapUp`: the stored payload and its environment, or why the run has neither;
-  the broker refuses that report until it says which, and repeats the duty in the refusal that spends the last command. The allowance
-  is not part of the work fingerprint: the same question with a larger allowance is the same work.
+- Defaults: 3 model slots (operator-selected, no hard ceiling), 100 live tasks, 1,000 registrations, 256 pending signals.
+  **No command allowance exists** (owner decision 2026-10-24): the broker counts every admitted target command for the ledger and the
+  report, and refuses none of them. The retired class allowance (200, or 400 for `exploitation`/`chaining`) and its `wrapUp`
+  obligation are gone with it, as are the per-worker read/coordination splits and `work.budget`. The Planner's automatic-round count
+  is the one remaining ceiling in the loop, and it is a wake bound, not a spend bound.
 - Stop closes the Engine gate first, then drains, revokes, closes panes and verifies containers. Finish refuses while
-  workers are unreported, runs the finish preflight (`p2o.finishGate`), freezes state, cleans up and writes the
+  workers are unreported, runs the finish preflight (report only — there is no `p2o.finishGate`), freezes state, cleans up and writes the
   deterministic report (`p2o.autoReport`); a report or preflight failure never blocks cleanup. Hard kills can leave
   containers or panes behind; nothing reclaims them automatically.
 
@@ -72,7 +69,7 @@ finite coalescing windows (100 ms) that need explicit event-driven consent. See 
 | `src/tool-policy.ts`, `src/prompts.ts` | Capability enforcement; Planner/solo/worker responsibilities |
 | `src/tasks.ts`, `src/board.ts` | Task board, readiness, atomic reservation, `LedgerBoard` mutation queue |
 | `src/executors.ts`, `src/sandbox.ts`, `src/http-session.ts`, `src/source.ts` | Executors, containers, actor-local HTTP state, bounded source snapshots |
-| `src/broker.ts`, `src/ticket.ts` | Socket authority, budgets, fresh tickets |
+| `src/broker.ts`, `src/ticket.ts` | Socket authority, command accounting, fresh tickets |
 | `src/records.ts`, `src/evidence.ts`, `src/report.ts`, `src/report-export.ts`, `src/cvss.ts`, `src/finish-preflight.ts` | Provenance, evidence, report parts, deterministic OWASP-shaped report, CVSS 3.1, finish preflight |
 | `src/state/*` | SQLite store, graph, adapter, artifacts, bundles |
 | `src/herdr.ts`, `src/roles.ts`, `src/target.ts` | Panes, model/config validation, CLI parsing |

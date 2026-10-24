@@ -82,6 +82,11 @@ thì retire cell cũ, thêm cell mới, plan revision ghi mẫu số +1/−1. Pl
 `plan-create|plan-revise|cell-create|cell-revise|cell-retire|list|view`.
 
 - `tested` cần task đã review/đóng + evidence cùng run; `blocked` giữ `open_gap` + open record; `ruled_out_bounded` cần case ruled-out accepted + negative control;
+- **Task kết thúc không có verdict** (`blocked`/`stopped`/`exhausted`, ghim đúng revision mà cell cite) không được đẩy cell qua `attempted`: lần ghi
+  `tested` hoặc assessment thuộc `VERDICT_ASSESSMENTS` bị từ chối (`INTERRUPT_NOT_EVIDENCE: task <id> ended as <state> without a verdict; cell
+  <questionKey> stays attempted, not tested`), còn cell đã lỡ lưu verdict đó được đọc lại là `attempted` + `open_gap`, `stale` với lý do
+  `interrupted-task:<id>:<state>`, không `reviewed`. Nó quay lại backlog và `finishPreflight` nêu dưới mã `INTERRUPTED_CELL` (trước `STALE_CELL`,
+  vì cách sửa là dispatch lại chứ không phải ghim lại evidence). Revision sau có satisfied cũng không xoá dấu, vì cell ghim revision đã dùng.
   `accepted` cần case accepted-current. Candidate/case/task bị supersede, asset đổi hoặc thiếu evidence → `stale` (chỉ hạ, không tự nâng).
 - Asset khám phá ngoài mẫu số và `unknownScope` hiện riêng. 100% cell không có nghĩa an toàn; blocked/untested/not-applicable không phải clean.
 

@@ -23,7 +23,7 @@ async function fixture() {
     version: 2, runId: 'run-1', workerId: workerName('validation'), paneId: 'w1T:p2', parentWorkerId: null, depth: 1,
     role: 'validation', target: { kind: 'url', label: 'https://example.com', origin: 'https://example.com' },
     image: IMAGE, socket, records, reports: join(control, 'reports'), lifetime: 'until-stopped',
-    commandBudget: 20, extension: { path: EXTENSION, sha256: SHA }, token: 'b'.repeat(32),
+    extension: { path: EXTENSION, sha256: SHA }, token: 'b'.repeat(32),
   };
   const path = await mintTicket(control, ticket);
   const expectations = { image: IMAGE, extensionPath: EXTENSION, extensionSha: SHA };
@@ -71,7 +71,6 @@ describe('worker tickets', () => {
         [{ records: '/tmp/records.jsonl' }, /records and reports/],
         [{ depth: 9 }, /depth/],
         [{ token: 'nope' }, /token/],
-        [{ commandBudget: 0 }, /budget/],
         [{ target: { kind: 'url', label: 'x' } as Ticket['target'] }, /origin/],
         [{ version: 1 as any }, /version/],
       ];

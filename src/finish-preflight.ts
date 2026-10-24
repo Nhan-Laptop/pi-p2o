@@ -1,9 +1,10 @@
 import { isConfirmedClaim } from './claims.js';
 import { caseViews, needsCaseReview, type CaseContext } from './cases.js';
 import { coverageViews, type CoverageContext } from './coverage.js';
+import { chainObligations } from './obligations.js';
+import { claimHeadClaims } from './chain-view.js';
 import { isOpenGap, type AssessmentRecord, type LedgerIndex } from './records.js';
 import { planFrontier } from './planning.js';
-import type { FinishGate } from './roles.js';
 import { awaitingReview, taskFrontier } from './tasks.js';
 import { sha256Hex } from './validate.js';
 import { WSTG_MAP, isWstgKey, wstgKey } from './wstg-map.js';
@@ -11,16 +12,17 @@ import { WSTG_MAP, isWstgKey, wstgKey } from './wstg-map.js';
 /**
  * Deterministic pre-finish check over committed state. Pure: no model, no clock, no target access, no write. It names unfinished
  * owner work (unreviewed tasks and claims, pending or stale cases, an absent or unfinished coverage denominator); it never decides
- * that the target is safe and it never changes a task, case or cell. `p2o.finishGate` decides whether it only informs (`warn`) or
+ * that the target is safe and it never changes a task, case or cell. It only informs the report: p2o has no finish gate.
  * asks the lead to look once more before finishing (`confirm`).
  */
 export type PreflightCode = 'UNREVIEWED_TASK' | 'UNREVIEWED_CLAIM' | 'PENDING_CASE' | 'STALE_CASE' | 'STALE_CELL' | 'NO_COVERAGE_PLAN' | 'NONTERMINAL_CELLS'
   | 'UNRATED_ACCEPTED_CASE' | 'WSTG_APPLICABLE_UNPLANNED' | 'HIGH_WITHOUT_INDEPENDENCE' | 'FOREIGN_EVIDENCE' | 'CONTRACT_GAP' | 'STALE_RATING' | 'OPEN_GAP_UNREFERENCED' | 'ORPHAN_TASK' | 'UNPLANNED_ASSETS'
-  | 'UNPROMOTED_COVERAGE_NOTE' | 'NO_GOAL_RECORDED' | 'NEGATIVE_MAY_BE_BLOCKED';
-export interface PreflightItem { code: PreflightCode; level: 'blocking' | 'advisory'; count: number; ids: string[]; message: string }
+  | 'UNPROMOTED_COVERAGE_NOTE' | 'NO_GOAL_RECORDED' | 'NEGATIVE_MAY_BE_BLOCKED' | 'INTERRUPTED_CELL' | 'PRIMITIVE_UNCHAINED' | 'ADMISSION_REFUSALS';
+export interface PreflightItem { code: PreflightCode; level: 'obligation' | 'advisory'; count: number; ids: string[]; message: string }
 export interface FinishPreflight {
-  blocking: PreflightItem[]; advisory: PreflightItem[];
-  /** Stable digest of the blocking set; a repeated finish with the same digest is not asked again. */
+  /** M3: the former `blocking` list. It is a report fact now, not a refusal predicate: nothing refuses a finish. */
+  obligations: PreflightItem[]; advisory: PreflightItem[];
+  /** Stable digest of the obligation set, so a reader can tell a re-export from new work arriving. */
   signature: string;
   complete: boolean;
 }
@@ -48,8 +50,11 @@ const MESSAGES: Record<PreflightCode, string> = {
   UNPROMOTED_COVERAGE_NOTE: 'surface/coverage note recorded but the plan still has no cell (free-text observation never became a counted denominator entry)',
   NEGATIVE_MAY_BE_BLOCKED: 'a ruled-out result rests only on HTTP receipts that ended in 401, 403 or 429, or never got a response (that may be an access control or rate limit, not proof the weakness is absent; add a control that reached the code under test)',
   NO_GOAL_RECORDED: 'the run was given an operator objective but no goal was ever recorded in the plan (the objective did not become a tracked goal)',
+  INTERRUPTED_CELL: 'coverage cell cites a task that ended without a verdict, so it stays attempted and its assessment open_gap (re-dispatch it, or retire it with the reason)',
+  PRIMITIVE_UNCHAINED: 'a confirmed and tested claim has no successor step and no recorded wall (M4: take it further or record which successors were ruled out and why)',
+  ADMISSION_REFUSALS: 'a task create was refused and recorded (the admission tax is visible here instead of only in the transcript)',
 };
-const BLOCKING: ReadonlySet<PreflightCode> = new Set<PreflightCode>(['UNREVIEWED_TASK', 'UNREVIEWED_CLAIM', 'PENDING_CASE', 'STALE_CASE', 'STALE_CELL', 'NO_COVERAGE_PLAN', 'NONTERMINAL_CELLS', 'UNRATED_ACCEPTED_CASE']);
+const OPEN_OBLIGATION: ReadonlySet<PreflightCode> = new Set<PreflightCode>(['UNREVIEWED_TASK', 'UNREVIEWED_CLAIM', 'PENDING_CASE', 'STALE_CASE', 'STALE_CELL', 'NO_COVERAGE_PLAN', 'NONTERMINAL_CELLS', 'UNRATED_ACCEPTED_CASE']);
 
 const BLOCKED_STATUS: ReadonlySet<number> = new Set([401, 403, 429]);
 /**
@@ -89,9 +94,16 @@ export function finishPreflight(index: LedgerIndex, context: PreflightContext = 
     else if (view.currentness === 'stale' && view.reviewStatus !== 'withdrawn') add('STALE_CASE', view.id);
   }
   if (!plans.length) add('NO_COVERAGE_PLAN', 'no-plan');
+  // M6: every refused create left a lifecycle record, so the cost of the rules is a number a reader can see.
+  for (const row of index.records) if (row.kind === 'lifecycle' && typeof row.text === 'string' && row.text.startsWith('admission refused') && row.id) add('ADMISSION_REFUSALS', row.id);
+  // M4: the depth obligation, listed rather than enforced — a finish is not a gate, but the report and Phase E completion read this.
+  for (const primitive of chainObligations({ plans: planFrontier(index), claims: claimHeadClaims(index), tasks: taskFrontier(index) }).unchained) add('PRIMITIVE_UNCHAINED', primitive.recordId);
   for (const cell of cells) {
-    if (cell.currentness === 'stale') add('STALE_CELL', cell.id);
-    else if (['unplanned', 'planned', 'running', 'attempted'].includes(cell.execution)) add('NONTERMINAL_CELLS', cell.id);
+    // M5: a cell downgraded by an interrupted task is named separately from generic staleness, because the next action differs:
+    // re-dispatch the same question rather than re-establish the evidence.
+    if (cell.staleReasons.some(reason => reason.startsWith('interrupted-task:'))) add('INTERRUPTED_CELL', cell.id);
+    else if (cell.currentness === 'stale') add('STALE_CELL', cell.id);
+    else if (['unplanned', 'planned', 'running', 'attempted'].includes(cell.effectiveExecution)) add('NONTERMINAL_CELLS', cell.id);
   }
   const referenced = new Set([...cells.flatMap(cell => [...cell.gapRefs, ...cell.claimRefs]), ...cases.flatMap(view => view.contradictions.map(item => item.evidenceRef))]);
   for (const row of index.records) {
@@ -128,17 +140,17 @@ export function finishPreflight(index: LedgerIndex, context: PreflightContext = 
     if (task.reviewIntegrity.contractGap.length) add('CONTRACT_GAP', task.id);
   }
 
-  const blocks = (code: PreflightCode) => BLOCKING.has(code) || (code === 'HIGH_WITHOUT_INDEPENDENCE' && context.integrity === 'enforce');
-  const items = [...found.entries()].map(([code, ids]): PreflightItem => ({ code, level: blocks(code) ? 'blocking' : 'advisory', count: ids.length, ids: ids.slice(0, SHOWN), message: MESSAGES[code] }))
+  const blocks = (code: PreflightCode) => OPEN_OBLIGATION.has(code) || (code === 'HIGH_WITHOUT_INDEPENDENCE' && context.integrity === 'enforce');
+  const items = [...found.entries()].map(([code, ids]): PreflightItem => ({ code, level: blocks(code) ? 'obligation' : 'advisory', count: ids.length, ids: ids.slice(0, SHOWN), message: MESSAGES[code] }))
     .sort((a, b) => a.code.localeCompare(b.code));
-  const blocking = items.filter(item => item.level === 'blocking'), advisory = items.filter(item => item.level === 'advisory');
-  return { blocking, advisory, signature: sha256Hex(blocking.map(item => `${item.code}:${item.count}`).join('|')).slice(0, 16), complete: index.complete };
+  const obligations = items.filter(item => item.level === 'obligation'), advisory = items.filter(item => item.level === 'advisory');
+  return { obligations, advisory, signature: sha256Hex(obligations.map(item => `${item.code}:${item.count}`).join('|')).slice(0, 16), complete: index.complete };
 }
 
-/** Block appended to the finish result. Terse by design: at most one line per code, at most five IDs per line. */
-export function renderPreflight(result: FinishPreflight, gate: FinishGate): string {
+/** Block appended to the finish result. Terse by design: at most one line per code, at most five IDs per line. It reports, it never refuses. */
+export function renderPreflight(result: FinishPreflight): string {
   const line = (item: PreflightItem) => `- ${item.code} (${item.count}): ${item.ids.join(', ')}${item.count > item.ids.length ? ', …' : ''} — ${item.message}`;
-  if (!result.blocking.length && !result.advisory.length) return `FINISH PREFLIGHT (host check, gate ${gate}): nothing unfinished found in committed state. This is not a statement that the target is safe.`;
-  return [`FINISH PREFLIGHT (host check, gate ${gate}): ${result.blocking.length} blocking code(s), ${result.advisory.length} advisory. These are unfinished review or coverage items, not findings and not a safety verdict. List any that remain in your report.`,
-    ...result.blocking.map(line), ...result.advisory.map(line), ...(result.complete ? [] : ['- INCOMPLETE ledger scan: no completeness claim.'])].join('\n');
+  if (!result.obligations.length && !result.advisory.length) return `FINISH PREFLIGHT (host check): nothing unfinished found in committed state. This is not a statement that the target is safe.`;
+  return [`FINISH PREFLIGHT (host check): ${result.obligations.length} open obligation(s), ${result.advisory.length} advisory. These are unfinished review or coverage items, not findings and not a safety verdict. List any that remain in your report.`,
+    ...result.obligations.map(line), ...result.advisory.map(line), ...(result.complete ? [] : ['- INCOMPLETE ledger scan: no completeness claim.'])].join('\n');
 }

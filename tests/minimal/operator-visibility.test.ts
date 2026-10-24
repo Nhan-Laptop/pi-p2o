@@ -86,16 +86,16 @@ describe('/p2o log filters', () => {
 });
 
 describe('worker panel in status and widget', () => {
-  const profile = (workers: WorkerView[]): ViewProfile => ({ runId: 'run-x', target: 'fixture', lifecycle: 'active', delegation: true, maxWorkers: 3, workerUsed: 4, workerCeiling: 600, exportEnabled: false,
+  const profile = (workers: WorkerView[]): ViewProfile => ({ runId: 'run-x', target: 'fixture', lifecycle: 'active', delegation: true, maxWorkers: 3, exportEnabled: false,
     engine: { mode: 'manual', pendingIntents: 0, rounds: 0, maxAutomaticRounds: 100, paused: undefined, decision: undefined } as ViewProfile['engine'], executor: { mode: 'shared', maxTargetOperations: 1 }, retention: 'ephemeral', workers });
-  const worker = (over: Partial<WorkerView>): WorkerView => ({ id: 'worker-discovery-1', role: 'discovery', taskId: 'task-1', state: 'running', commandsUsed: 12, commandBudget: 200, idleMs: 4_000, quiet: false, reported: false, stopped: false, ...over });
+  const worker = (over: Partial<WorkerView>): WorkerView => ({ id: 'worker-discovery-1', role: 'discovery', taskId: 'task-1', state: 'running', commandsUsed: 12, idleMs: 4_000, quiet: false, reported: false, stopped: false, ...over });
 
-  it('lists live workers with state, budget and idle age, flags quiet ones as observation only, and stays compact in the widget', () => {
+  it('lists live workers with state, command count and idle age, flags quiet ones as observation only, and stays compact in the widget', () => {
     const view = statusView(indexRecords([]), profile([worker({}), worker({ id: 'worker-recon-2', role: 'recon', taskId: undefined, state: 'queued', idleMs: 4 * 60_000 + 5_000, quiet: true }), worker({ id: 'worker-validation-3', reported: true, state: 'reported' }), worker({ id: 'worker-general-4', stopped: true, state: 'stopped' })]));
     const text = view.lines.join('\n');
     expect(text).toContain('Workers: live 2/3 slots (quiet 1) | reported 1 | stopped 1');
-    expect(text).toContain('worker-discovery-1 · discovery · task task-1 · running · 12/200 cmds · idle 4s');
-    expect(text).toContain('worker-recon-2 · recon · task none · queued · 12/200 cmds · idle 4m · QUIET');
+    expect(text).toContain('worker-discovery-1 · discovery · task task-1 · running · 12 cmds · idle 4s');
+    expect(text).toContain('worker-recon-2 · recon · task none · queued · 12 cmds · idle 4m · QUIET');
     expect(text).not.toContain('worker-validation-3 ·'); // finished workers are counted, not listed
     expect(text).toContain('not proof of failure, not a timeout and wakes no model');
     expect(view.widget.join('\n')).toContain('Workers: live 2 (quiet 1) | reported 1');

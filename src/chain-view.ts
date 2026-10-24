@@ -6,6 +6,7 @@
 import { claimCapabilities, isDemonstrated, isOpenGap, type ClaimFields } from './claims.js';
 import { capabilityMatches, isTypedCapability, type Capability } from './capabilities.js';
 import { isEnvironmentId } from './lab.js';
+import type { LedgerIndex } from './records.js';
 
 export interface ChainClaim extends ClaimFields {
   candidate: string;
@@ -116,4 +117,23 @@ export function chainJoin(claims: readonly ChainClaim[]): ChainJoin {
     ready: [...ready].sort(), unmet: [...unmet].sort(), uncovered, legacy, frontier,
     depth: Object.fromEntries([...depth.entries()].sort(([left], [right]) => left.localeCompare(right))),
   };
+}
+
+/**
+ * Candidate heads as chain claims, one per slug, each with the ledger record id the case, plan and task vocabularies cite.
+ * One reader for the situation counts, the graph view, the plan board and the dispatch obligation, so those four cannot drift.
+ */
+export function claimHeadClaims(index: LedgerIndex, runId?: string): Array<ChainClaim & { closure: string }> {
+  const heads = new Map<string, Record<string, unknown>>(), ids = new Map<string, string>();
+  for (const row of index.records) {
+    // The ledger file is already run-scoped; a caller that holds the run id filters anyway, so a detached index cannot mix runs.
+    if (row.kind !== 'candidate' || (runId !== undefined && row.runId !== runId) || typeof row.data?.candidate !== 'string') continue;
+    heads.set(row.data.candidate, row.data as Record<string, unknown>);
+    if (row.id) ids.set(row.data.candidate, row.id);
+  }
+  const text = (value: unknown) => typeof value === 'string' ? value : undefined;
+  return [...heads.values()].map(data => ({ candidate: String(data.candidate), closure: text(data.closure) ?? '', execution: text(data.execution),
+    ...(text(data.surface) ? { surface: text(data.surface) } : {}), ...(text(data.risk) ? { risk: text(data.risk) } : {}),
+    ...claimCapabilities(data as ClaimFields), ...(data.environmentRef === undefined ? {} : { environmentRef: data.environmentRef }),
+    recordId: ids.get(String(data.candidate)) }));
 }

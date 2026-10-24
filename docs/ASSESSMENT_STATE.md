@@ -32,6 +32,21 @@ confirmation and the live owner establish authority; disk state, summaries and w
   request; a known mismatch blocks investigation; no provider fallback.
 - A request-local objective capsule refreshes the current question after context rebuild; it is data, not policy.
 
+## Hoàn tất được suy ra (M3)
+
+Run không có "lệnh hoàn tất". `src/completion.ts` suy ra `complete` chỉ khi: mọi goal đã `reviewed`/`closed`, không còn claim
+`confirmed`+`tested` nào chưa được consume, và không còn bước chain nào ready (trừ bước đang được một task sống nhận).
+`remaining` là tổng số nghĩa vụ đó; mỗi nghĩa vụ có mã (`GOAL_UNSETTLED`, `PRIMITIVE_UNCHAINED`, `CHAIN_READY`) và id.
+
+Hai verb tách quyền: `p2o_finish {export:true}` reconcile rồi ghi `REPORT.md`/CSV và **không kết thúc gì** (worker, sandbox,
+run giữ nguyên; export lại được, thư mục mới `-export-N`); `p2o_finish` không có `export` vẫn là báo cáo cuối (dừng worker,
+dọn sandbox). `/p2o stop` ghi nghĩa vụ còn lại vào outcome (`run.stopped` summary + `remaining`) nên người đọc sau biết run
+dừng giữa đâu. `REPORT.md` có mục `## REMAINING WORK` với trạng thái hoàn tất và bảng nghĩa vụ; preflight codes là **fact của
+báo cáo**, không phải điều kiện từ chối — p2o không có finish gate.
+
+Situation line thêm cặp backlog của coverage: `coverage <tested>/<cells> (planned <n> unreached, <m> omitted)`, để "không
+hiển thị" không bị đọc thành "không nằm trong kế hoạch".
+
 ## Reports and retention
 
 - Independent support must match the validator's **latest** conclusion and receipt; withdrawal invalidates it.

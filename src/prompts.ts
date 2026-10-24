@@ -35,7 +35,7 @@ export function reconInstructions(kind: 'directory' | 'url' | 'hybrid', toolGuid
     'Read the ledger and existing coverage first. Establish a working actor/trust-boundary model; label assumptions and correct them when evidence contradicts them.',
     kind === 'directory' ? SOURCE_RECON : kind === 'url' ? URL_RECON : `${SOURCE_RECON}\n${URL_RECON}\n${HYBRID_RECON}`,
     `${toolGuidance ? 'Record each surface in p2o_surface (component+entryPoint; duplicate is a cheap hint, not a block) and keep detail in p2o_note' : 'Maintain an evidence-linked surface inventory'}: entry/input, actor, gate/handler if observable, trust boundary/sensitive consumer, same-run Evidence IDs and extraction method, observation/inference/hypothesis, unknowns and suggested next task. Do not fabricate policy, versions or handlers from names.`,
-    'Choose a surface mapped enough for a specific question; do not wait to map everything. Rank next tasks qualitatively by reachable influence, sensitive effect, boundary ambiguity, evidence strength, information gain and remaining budget. Record the choice, evidence IDs, uncertainty, expected observation and why it is next in a decision note.',
+    'Choose a surface mapped enough for a specific question; do not wait to map everything. Rank next tasks qualitatively by reachable influence, sensitive effect, boundary ambiguity, evidence strength and information gain. Record the choice, evidence IDs, uncertainty, expected observation and why it is next in a decision note.',
     'Unclear entry/gate → focused mapping; concrete boundary concern → discovery; plausible candidate → bounded separate validation; reproduced effect → evidence review/reporting; specific effective control → ruled_out; blocked/missing proof → open_proof_gap and another feasible surface. New surfaces feed back into the inventory. Stop a recon branch when it yields no new relevant information.',
     ...(forLead ? ['Recon handoff: target identity/context, inventory with evidence and unknowns, covered/untested scope, ranked investigation queue, owned surface+risk, expected observation and stop condition. Recon and discovery may overlap on different surfaces. A specific user question can start with focused mapping rather than broad recon.'] : []),
   ].join('\n');
@@ -47,7 +47,6 @@ export interface OwnerPromptFacts {
   targetKind: 'directory' | 'url' | 'hybrid';
   sourceSkipped: number;
   delegation: { enabled: boolean; reason?: string; maxWorkers: number; maxDepth: number };
-  workerBudget: number;
   phase?: 'starting' | 'active' | 'stopping' | 'finished';
   loopMode?: 'manual' | 'event-driven';
   executorMode?: 'shared' | 'isolated';
@@ -78,7 +77,7 @@ export function ownerInstructions(facts: OwnerPromptFacts): string {
     '', reconInstructions(facts.targetKind, false, true),
     '', 'DELEGATION',
     facts.delegation.enabled
-      ? `Available: ${facts.delegation.maxWorkers} concurrent worker slots across successive assignments; ${facts.workerBudget} worker command allowance with 90% admission reserve. Flat delegation.`
+      ? `Available: ${facts.delegation.maxWorkers} concurrent worker slots across successive assignments. Flat delegation. A run ends when the recorded work is settled or a human stops it, never when a counter is low.`
       : `Delegation is NOT available (${facts.delegation.reason ?? 'disabled'}). Work solo; do not invent independent validation.`,
     facts.delegation.enabled
       ? 'Do not execute target commands yourself. Select bounded questions/roles, accept intents into the frontier, review evidence packets, steer or withdraw, and decide wait/blocked/finish. The Engine schedules accepted work when reviewed prerequisites and worker slots permit. Reuse capacity across successive assignments, not a worker conversation or ticket. Read the confirmed executor profile: model concurrency alone does not imply target concurrency.'
@@ -90,9 +89,11 @@ export function ownerInstructions(facts: OwnerPromptFacts): string {
     'Discovery → separate validation → reviewed reporting. Verify cited observations before repeating a worker claim; discovery cannot independently validate itself.',
     ...(facts.delegation.enabled ? ['Validation runs as a separate worker that cites the claim it reproduces, keeps its own negative control, and may not widen the question; the host refuses an overlapping validation without a matching predecessor. Only that closure counts as confirmed.'] : []),
     'A chain step that consumes an earlier step\u2019s actual output is its own task with pinned prerequisites: dispatch the ready step, review its claim, then the next. Severity stops at the furthest step actually executed; an unexecuted link stays a gap.',
+    // M2/M4: the create path refuses a breadth task that ignores a ready step or an unconsumed primitive; the lead needs the exit, not just the refusal.
+    'A ready chain step and a demonstrated primitive already own their surface: a new task there either cites the claim it stands on (work.claimRefs) or the plan records why the link is deferred, and p2o refuses the create that does neither.',
     'Dispatch at most four intents per call, highest value first; a fifth waits for a slot instead of riding along unready.',
     'A round that adds no intent is a stall only when a feasible question exists: add that one; when none exists, report blocked/human-needed with the missing prerequisite instead of inventing work.',
-    'Each settled task reports one terminal state: done (answered and reviewed), exhausted (the allowance ran out first — retry the direction differently, never read it as answered), blocked (a prerequisite is missing; reopen only when it exists), stopped (you withdrew it, which says nothing about the target).',
+    'Each settled task reports one terminal state: done (answered and reviewed), exhausted (its lease expired before it reported — retry the direction differently, never read it as answered), blocked (a prerequisite is missing; reopen only when it exists), stopped (you withdrew it, which says nothing about the target).',
     '', 'EVIDENCE AND CLOSURE',
     'Evidence receipts and document hashes are not automatic proof. Distinguish observations, inferences and hypotheses, static traces, offline reproduction and live effects. Simulated consumers are not browser execution; source presence is not deployed reachability.',
     'Establish intended-policy provenance before claiming a violation. Sibling-route differences and placeholder credentials alone prove neither broken policy nor deployment leaks. Inferred policy and missing, blocked or untested proof remain open_proof_gap, never safety.',
@@ -116,7 +117,7 @@ export function workerInstructions(ticket: Ticket): string {
     `Executor profile: ${ticket.executorMode ?? 'shared'}. Shared shell cancellation can affect peers; isolated cancellation affects this assignment only. No automatic executor restart.`,
     ticket.role === 'reporting' ? 'REPORTING: synthesize existing attributed evidence and draft a report only. Target execution and candidate-proof mutation are denied. Request a separate validation worker if proof is missing; do not upgrade claims from metadata.' : 'TACTICAL AUTONOMY: choose the steps/tools for your intent, and take the next step only when this step\u2019s actual output is its input and your duty covers that purpose; otherwise report the link. Record material observations and counterevidence incrementally. You do not choose new run strategy or accept/spawn subtasks. If a prerequisite needs help, propose it and report partial progress instead of holding your slot waiting for a child.',
     'Work bounded: read the ledger (p2o_ledger) before repeating a search, keep your scratch in your own working directory, and stop launching commands on a host that does not answer.',
-    'Reporting discipline: commands/requests verbatim, what you observed, what it supports, and what it does NOT support. Record coverage with p2o_note kind=coverage, including surfaces that came back clean, and anything unresolved as kind=open. Give each candidate one closure state: confirmed (reproduced), ruled_out (name the specific control), or open_proof_gap. Follow a chain you can finish inside your command budget and record each link\u2019s gained/needs; report the link that needs another worker or a wider authorization, and say how far you took it.',
+    'Reporting discipline: commands/requests verbatim, what you observed, what it supports, and what it does NOT support. Record coverage with p2o_note kind=coverage, including surfaces that came back clean, and anything unresolved as kind=open. Give each candidate one closure state: confirmed (reproduced), ruled_out (name the specific control), or open_proof_gap. Follow a chain as far as the evidence takes it and record each link\u2019s gained/needs; report the link that needs another worker or a wider authorization, and say how far you took it.',
     'Before reporting a finding, argue the strongest case against it, set confidence honestly, and keep severity to demonstrated impact. Distinguish reviewed, tested, ruled-out, blocked and untested surfaces. A blocked result is a valid outcome; an invented finding is not.',
     'Finish by calling p2o_report with summary, findings, evidence, coverage, open items, confidence and (if applicable) blocked. Then stop working — the owner takes over from your report.',
     // Per-worker text goes last so sibling workers share the whole static body as a cacheable prompt prefix.
@@ -133,7 +134,7 @@ export function workerBrief(input: { ticket: Ticket; focus: string; task: string
     '',
     `FOCUS: ${focus}`,
     `SCOPE: ${ticket.target.label}`,
-    `LIMITS: ${ticket.commandBudget} brokered commands; no elapsed-time limit. Scope, budget and explicit stop conditions still apply.`,
+    `LIMITS: no command or elapsed-time ceiling. Scope and explicit stop conditions still apply.`,
     '',
     '== Inherited context from the lead (background only) ==',
     context?.trim() ? context.trim() : '(none supplied)',

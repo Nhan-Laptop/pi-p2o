@@ -146,16 +146,19 @@ export const delegateParameters = Type.Object({
 
 export const subtaskParameters = Type.Object({focus:Type.String({minLength:3,maxLength:60}),task:Type.String({minLength:1,maxLength:4000}),context:Type.Optional(Type.String({maxLength:4000})),role:Type.Optional(choices(ROLES))});
 
-export const loopParameters = Type.Object({action:choices(['status','wait','blocked']),reason:Type.Optional(Type.String({minLength:1,maxLength:1000}))});
+export const loopParameters = Type.Object({action:choices(['status','wait','blocked']),reason:Type.Optional(Type.String({minLength:1,maxLength:1000})),
+  /** M7: one condition-bounded revisit. With `notBefore`, reason must be `block-decay` or `cooldown-expiry` and the wait is scheduled, not budgeted. */
+  notBefore:Type.Optional(Type.String({maxLength:40,description:'ISO timestamp for a condition-bounded revisit (reason block-decay|cooldown-expiry), within 24h'}))});
 
 export const workersParameters = Type.Object({
-      action: Type.Optional(choices(['list', 'steer', 'stop'])),
+      action: Type.Optional(choices(['list', 'steer', 'stop', 'continue'])),
       waitFor: Type.Optional(choices(['change', 'all-report'])),
       timeoutSeconds: Type.Optional(Type.Integer({ minimum: 5, maximum: 300 })),
       cursor:Type.Optional(Type.Integer({minimum:0,description:'Prior ledger cursor for a bounded change page'})),
       workerId: Type.Optional(Type.String({ minLength: 1, maxLength: 64, description: 'Required for action steer/stop' })),
       message: Type.Optional(Type.String({ minLength: 1, maxLength: 2000, description: 'Required for action steer' })),
       reason: Type.Optional(Type.String({ minLength: 1, maxLength: 300, description: 'Required for action stop' })),
+      brief: Type.Optional(Type.String({ minLength: 1, maxLength: 2000, description: 'Required for action continue: the same ticket, a different approach' })),
     });
 
 export const reportParameters = Type.Object({
@@ -167,7 +170,10 @@ export const reportParameters = Type.Object({
       confidence: choices(['high', 'medium', 'low']),
       blocked: Type.Optional(Type.String({ maxLength: 1000 })),
       outcome:Type.Optional(choices(WORKER_OUTCOMES)),
-      wrapUp:Type.Optional(Type.String({maxLength:300,description:'Required when an exploitation or chaining run ends on its command allowance: the stored payload id and the environment it ran in, or why the run has neither'})),
     });
 
-export const finishParameters = Type.Object({ narrative: Type.Optional(Type.String({ maxLength: 6000 })) });
+export const finishParameters = Type.Object({
+  narrative: Type.Optional(Type.String({ maxLength: 6000 })),
+  /** M3: exporting the report is not termination. `export:true` writes the files and ends nothing. */
+  export: Type.Optional(Type.Boolean({ description: 'Write REPORT.md/CSV from committed state and end nothing; workers, sandboxes and the run stay as they are' })),
+});

@@ -6,8 +6,7 @@ import { fixture, populate } from './helpers/report-fixture.js';
 /**
  * planning_update.md P10: how a task ended is a closed vocabulary, not a free-text reason. ARTEX's taxonomy is the model
  * (`server/engine.go:1135-1145`): "hit the step ceiling" is not "finished". `AssessmentTask.outcome` already holds the human
- * reason for a transition, so it cannot double as the taxonomy — the state is derived, and the two call sites supply the one
- * piece of evidence a task record does not carry (the worker's `budget-exhausted` progress outcome).
+ * reason for a transition, so it cannot double as the taxonomy — the state is derived from the record alone.
  */
 describe('one terminal state per settled task (P10)', () => {
   it('derives done / exhausted / blocked / stopped from the status and leaves open work unstated', () => {
@@ -22,21 +21,18 @@ describe('one terminal state per settled task (P10)', () => {
     expect(terminalState({ status: 'closed', outcome: 'ran out of commands' })).toBe('done');
   });
 
-  it('turns a cut-short task into exhausted only when the budget evidence says so', () => {
-    // A blocked task is something the lead can unblock; one whose allowance ran out is not. Same status, different next action.
-    expect(terminalState({ status: 'blocked' }, { budgetExhausted: true })).toBe('exhausted');
-    expect(terminalState({ status: 'blocked' }, { budgetExhausted: false })).toBe('blocked');
-    expect(terminalState({ status: 'cancelled' }, { budgetExhausted: true })).toBe('exhausted');
-    expect(terminalState({ status: 'cancelled' }, { budgetExhausted: false })).toBe('stopped');
-    // A satisfied task stays done: reporting after the allowance ran out still answered the question.
-    expect(terminalState({ status: 'reviewed' }, { budgetExhausted: true })).toBe('done');
+  it('never reads a command allowance into the state, because a run has none', () => {
+    // Owner decision 2026-10-24: `exhausted` means the lease expired before the task reported, never "ran out of commands".
+    expect(terminalState({ status: 'blocked' })).toBe('blocked');
+    expect(terminalState({ status: 'cancelled' })).toBe('stopped');
+    expect(terminalState({ status: 'expired' })).toBe('exhausted');
+    expect(terminalState({ status: 'reviewed' })).toBe('done');
   });
 
   it('counts each task exactly once', () => {
     const tasks = [{ status: 'proposed' }, { id: 'a', status: 'closed' }, { id: 'b', status: 'expired' }, { id: 'c', status: 'blocked' }, { id: 'd', status: 'cancelled' }, { id: 'e', status: 'running' }];
     expect(terminalCounts(tasks)).toEqual({ done: 1, exhausted: 1, blocked: 1, stopped: 1 });
-    const counted = terminalCounts(tasks, task => (task as { id?: string }).id === 'c');
-    expect(counted).toEqual({ done: 1, exhausted: 2, blocked: 0, stopped: 1 });
+    expect(terminalCounts(tasks)).toEqual({ done: 1, exhausted: 1, blocked: 1, stopped: 1 });
   });
 
   it('renders exhausted next to the work and keeps it out of the blocked count', () => {
@@ -45,15 +41,11 @@ describe('one terminal state per settled task (P10)', () => {
       { id: 't2', status: 'expired', role: 'discovery', assignee: 'worker-b', prerequisites: [] },
       { id: 't3', status: 'closed', role: 'validation', prerequisites: [] },
     ];
-    const snapshot = summarizeSituation({ tasks, cases: [], coverage: [], claims: [], budgetExhausted: (task: { assignee?: string }) => task.assignee === 'worker-a' } as never);
-    // `expired` is settled, so `open` counts only the blocked task; `exhausted` still counts both cut-short tasks.
-    expect(snapshot).toMatchObject({ exhausted: 2, blocked: 0, open: 1 });
-    expect(situationLine(snapshot)).toContain('2 exhausted');
-    // Without the budget evidence the same records read as one blocked task and one expired one.
-    const plain = summarizeSituation({ tasks, cases: [], coverage: [], claims: [] } as never);
-    expect(plain).toMatchObject({ exhausted: 1, blocked: 1 });
-    expect(situationLine(plain)).toContain('1 exhausted');
-    expect(situationLine(plain)).toContain('1 blocked');
+    const snapshot = summarizeSituation({ tasks, cases: [], coverage: [], claims: [] } as never);
+    // `expired` is settled, so `open` counts only the blocked task; only the expired one reads as exhausted.
+    expect(snapshot).toMatchObject({ exhausted: 1, blocked: 1, open: 1 });
+    expect(situationLine(snapshot)).toContain('1 exhausted');
+    expect(situationLine(snapshot)).toContain('1 blocked');
   });
 
   it('carries the state in the task list projection', async () => fixture(async h => {

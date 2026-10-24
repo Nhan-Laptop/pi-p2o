@@ -42,7 +42,12 @@ describe('chain frontier to task draft (P14.10)', () => {
     expect((await h.call('p2o_task', { action: 'list' })).details.total).toBe(1);
     const todos = (await h.call('p2o_plan', { action: 'list', kind: 'todo', limit: 20 })).details;
     expect(todos.total).toBe(2);
-    expect(todos.entries.map((entry: any) => entry.status)).toEqual(['open', 'open']);
+    // M1: the demonstrated step is written as done and linked; only the step that still needs executing stays open.
+    expect(todos.entries.map((entry: any) => entry.status)).toEqual(['done', 'open']);
+    expect(todos.entries.map((entry: any) => [entry.chainOf, entry.step])).toEqual([[planned.chainOf, 1], [planned.chainOf, 2]]);
+    expect(todos.entries[1].needs).toEqual([{ kind: 'http.request', subject: 'internal-api' }]);
+    // The plan view derives the sentence; nothing about the chain was stored as an edge.
+    expect(todos.chains).toEqual([`chain ${planned.chainOf} 1/2 · next: step 2 (ready)`]);
 
     // The draft is accepted unchanged, and the work identity it carries names what the step stands on and where it runs.
     const created = (await h.call('p2o_task', { action: 'create', draft: planned.draft })).details;
@@ -77,7 +82,10 @@ describe('chain frontier to task draft (P14.10)', () => {
     const planned = (await h.call('p2o_graph', { action: 'chain', plan: true, requestId: 'chain-plan-bare' })).details;
     expect(planned.draft.work).toBeUndefined();
     expect(planned.planNote).toMatch(/no asset refs were supplied/);
-    // The draft still passes create unchanged: a task without a work identity is a legacy task, not a broken one.
-    expect((await h.call('p2o_task', { action: 'create', draft: planned.draft })).details.status).toBe('proposed');
+    // M2: a draft with no work identity cannot cite the provider, so on this surface it is refused — that is the whole point of the
+    // obligation, and the refusal names the step to take instead.
+    await expect(h.call('p2o_task', { action: 'create', draft: planned.draft })).rejects.toThrow(/CHAIN_READY_UNDISPATCHED: step 2 of chain chain-/);
+    // The scope rule is per surface: the same shape elsewhere is still a task, so the obligation cannot freeze the run.
+    expect((await h.call('p2o_task', { action: 'create', draft: { ...planned.draft, surface: '/elsewhere' } })).details.status).toBe('proposed');
   }));
 });

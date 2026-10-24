@@ -14,8 +14,6 @@ export interface Duty {
   forbids: string;
   /** What a report from this purpose must contain to count as finished. */
   produces: string;
-  /** P14.11: present only where the allowance ends mid-iteration, so the report has to say what survived. */
-  wrapUp?: string;
 }
 
 export const DUTIES: Readonly<Record<WorkPurpose, Duty>> = {
@@ -53,13 +51,11 @@ export const DUTIES: Readonly<Record<WorkPurpose, Duty>> = {
     duty: 'Take a confirmed primitive to a demonstrated effect; produce the payload, the environment and the observation, or the exact wall.',
     forbids: 'reporting an effect the primitive did not demonstrate',
     produces: 'a stored payload, a verified environment and the observed effect \u2014 or the exact wall',
-    wrapUp: 'store the payload and its environment before the allowance ends, and report a wrapUp naming them or why neither exists',
   },
   chaining: {
     duty: 'Compose two demonstrated primitives into an effect neither reaches alone; produce the link and the proof the composition ran.',
     forbids: 'assuming two primitives compose because they look adjacent',
     produces: 'the link, the observed combined effect and the step where it stopped',
-    wrapUp: 'store the combined payload and its environment before the allowance ends, and report a wrapUp naming them or the step where it stopped',
   },
   reporting: {
     duty: 'Convert accepted cases into a reader-ready report; produce no new claim and run no target command. A curated citation lookup is not target execution.',
@@ -85,10 +81,8 @@ export function isWorkPurpose(value: unknown): value is WorkPurpose {
   return typeof value === 'string' && (WORK_PURPOSES as readonly string[]).includes(value);
 }
 
-/** The one line a worker reads about its own job. Kept short enough to survive the worker prompt budget. */
+/** The one line a worker reads about its own job. */
 export function dutyLine(purpose: WorkPurpose): string {
   const entry = DUTIES[purpose];
-  // P14.11: exploitation and chaining get one extra sentence, because their allowance ends mid-iteration and a cut-off run otherwise leaves nothing.
-  const wrapUp = entry.wrapUp ? ` Before you stop: ${entry.wrapUp}.` : '';
-  return `Your duty (${purpose}): ${entry.duty} Forbidden: ${entry.forbids}. Expected output: ${entry.produces}.${wrapUp}`;
+  return `Your duty (${purpose}): ${entry.duty} Forbidden: ${entry.forbids}. Expected output: ${entry.produces}.`;
 }

@@ -4,7 +4,7 @@ import { ownerInstructions, type OwnerPromptFacts } from '../../src/prompts.js';
 // planning_update.md P6: the lead prompt carries the three scheduling rules that keep a dependent
 // step from being dispatched before the step it consumes, cap the batch, and refuse a silent stall.
 const base = (overrides: Partial<OwnerPromptFacts> = {}): OwnerPromptFacts => ({ runId: 'run-test', targetLabel: 'https://example.invalid',
-  targetKind: 'url', sourceSkipped: 0, workerBudget: 100, delegation: { enabled: true, maxWorkers: 3, maxDepth: 2 }, ...overrides });
+  targetKind: 'url', sourceSkipped: 0, delegation: { enabled: true, maxWorkers: 3, maxDepth: 2 }, ...overrides });
 
 const solo = () => ownerInstructions(base({ delegation: { enabled: false, reason: 'disabled', maxWorkers: 0, maxDepth: 0 } }));
 

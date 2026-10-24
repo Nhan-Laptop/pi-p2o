@@ -13,7 +13,6 @@ export const workSpecSchema = Type.Object({
   claimRefs: Type.Optional(Type.Array(Type.String({ maxLength: 80 }), { minItems: 1, maxItems: 10, uniqueItems: true })),
   needs: Type.Optional(Type.Array(capabilitySchema, { minItems: 1, maxItems: 10, description: 'Typed capability this step consumes; copy it from the chain frontier rather than describing it' })),
   environmentRef: Type.Optional(Type.String({ pattern: '^env-[a-f0-9-]{36}$', description: 'Recorded environment this step must run in (p2o_lab env); a task without one is a task nobody can replay' })),
-  budget: Type.Optional(Type.Object({ commands: Type.Optional(Type.Integer({ minimum: 1, maximum: 5000, description: 'Brokered commands this task may spend; omit for the purpose default (200, or 400 for exploitation and chaining)' })) }, { additionalProperties: false })),
 }, { additionalProperties: false });
 export const workDecisionSchema = Type.Object({
   disposition: choices(WORK_DISPOSITIONS), reason: Type.String({ minLength: 10, maxLength: 1000 }),
@@ -27,7 +26,14 @@ export const planEntrySchema = Type.Object({
   kind: choices(PLAN_KINDS), title: Type.String({ minLength: 5, maxLength: 500 }), status: Type.String({ maxLength: 20 }), reason: Type.String({ minLength: 10, maxLength: 1000 }),
   criteria: Type.Optional(Type.Array(Type.String({ minLength: 5, maxLength: 500 }), { maxItems: 10 })), exclusions: Type.Optional(Type.Array(Type.String({ minLength: 5, maxLength: 500 }), { maxItems: 10 })),
   taskIds: Type.Optional(ids()), goalIds: Type.Optional(ids()), supportRefs: Type.Optional(ids()),
+  /** M1: a chain link is derived on read, so the row stores only which claims it stands on and what it consumes. */
   decision: Type.Optional(Type.Object({ disposition: choices(PLAN_DISPOSITIONS), chosenTaskIds: ids(), deferredTaskIds: ids(), revisitCondition: Type.Optional(Type.String({ minLength: 5, maxLength: 500 })) }, { additionalProperties: false })),
+  // M1: a chain step names the claims it stands on and the capabilities it consumes; readiness is derived from those, never stored.
+  claimRefs: Type.Optional(Type.Array(Type.String({ minLength: 1, maxLength: 80 }), { minItems: 1, maxItems: 8, uniqueItems: true, description: 'Same-run candidate record IDs this step stands on; a chain step must cite at least one' })),
+  needs: Type.Optional(Type.Array(capabilitySchema, { minItems: 1, maxItems: 8, description: 'Typed capabilities this step consumes; copy them from the chain frontier' })),
+  environmentRef: Type.Optional(Type.String({ pattern: '^env-[a-f0-9-]{36}$', description: 'Recorded environment this step runs in (p2o_lab env)' })),
+  chainOf: Type.Optional(Type.String({ minLength: 1, maxLength: 80, pattern: '^[a-z0-9][a-z0-9-]*$', description: 'Chain identity shared by its steps' })),
+  step: Type.Optional(Type.Integer({ minimum: 1, maximum: 8, description: '1-based position in the chain' })),
 }, { additionalProperties: false });
 export const PLAN_ACTIONS = ['create', 'revise', 'list', 'view'] as const;
 /** P13e: exhaustive per action; `list` is spelled out rather than left to a default branch. */

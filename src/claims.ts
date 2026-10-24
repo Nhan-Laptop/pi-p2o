@@ -77,4 +77,11 @@ export function claimNeeds(claim: ClaimFields): Capability[] { return claimCapab
 export function isReplayable(claim: ClaimFields): boolean { return isPayloadId(claim.payloadRef) && isEnvironmentId(claim.environmentRef); }
 
 /** Coverage-cell domain: the cell's own `execution` reached `tested`. Never call this on a claim, or `isDemonstrated` on a cell. */
-export function isTestedCell(cell: { execution?: unknown }): boolean { return cell.execution === ('tested' satisfies CellExecution); }
+/**
+ * M5: a cell is tested only if its *effective* execution says so. A coverage view derives `effectiveExecution` from the tasks the cell
+ * cites, so a cell whose task ended without a verdict reads as `attempted` here even though its stored value says `tested`.
+ */
+export function isTestedCell(cell: { execution?: unknown; effectiveExecution?: unknown }): boolean {
+  const execution = cell.effectiveExecution ?? cell.execution;
+  return execution === ('tested' satisfies CellExecution);
+}

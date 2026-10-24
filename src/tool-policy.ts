@@ -10,7 +10,7 @@ export const DELEGATION_TOOLS = ['p2o_delegate', 'p2o_workers'];
 export function ownerTools(delegated: boolean): string[] { return delegated ? OWNER_TOOLS.filter(t => !TARGET_TOOLS.includes(t)) : OWNER_TOOLS.filter(t => !DELEGATION_TOOLS.includes(t)); }
 // A reporting worker keeps p2o_research: a citation lookup is not target execution and not a work slot, and the shared
 // knowledge prompt names the tool, so hiding it here would make the prompt promise a tool the role cannot call.
-// P15: `DUTIES.reporting` says the same thing in the worker's own duty line ("run no target command"), so the tool allowance and the
+// P15: `DUTIES.reporting` says the same thing in the worker's own duty line ("run no target command"), so the tool policy and the
 // duty cannot read as a contradiction the worker has to resolve for itself.
 export function workerTools(role: string): string[] { return role === 'reporting' ? WORKER_TOOLS.filter(t => !TARGET_TOOLS.includes(t) && !LAB_TOOLS.includes(t) && t !== 'p2o_candidate') : [...WORKER_TOOLS]; }
 /**

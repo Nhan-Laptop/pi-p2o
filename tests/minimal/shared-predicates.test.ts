@@ -39,7 +39,7 @@ describe('one definition of an open gap and of a pending review', () => {
   it('is what the summary, the report projection and the finish preflight all count', () => {
     expect(summarizeRecords(index.records).open.map(record => record.id)).toEqual(['g1', 'g3', 'g4']);
     expect(reportProjection(index).openIds).toEqual(['g1', 'g3', 'g4']);
-    const unreferenced = [...finishPreflight(index).blocking, ...finishPreflight(index).advisory].find(item => item.code === 'OPEN_GAP_UNREFERENCED');
+    const unreferenced = [...finishPreflight(index).obligations, ...finishPreflight(index).advisory].find(item => item.code === 'OPEN_GAP_UNREFERENCED');
     expect(unreferenced?.ids).toEqual(['g1', 'g3', 'g4']);
   });
   it('names the task and case states that wait for the owner', () => {

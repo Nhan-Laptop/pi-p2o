@@ -11,7 +11,7 @@ import { taskTimeout, httpRequest } from '../../src/target.js';
 import { createContext, createFakePi, createSimpleHerdr, sandboxFactory, EXTENSION_PATH, InertSandbox } from './helpers/fake-pi.js';
 
 const result={code:0,stdout:'local fixture',stderr:'',truncated:false};
-const registration:WorkerRegistration={workerId:'p2o-general-aaaaaa',name:'p2o-general-aaaaaa',paneId:'fixture',role:'general',depth:1,parentWorkerId:null,token:'a'.repeat(32),commandBudget:20,used:0,startedAt:0,stopped:false};
+const registration:WorkerRegistration={workerId:'p2o-general-aaaaaa',name:'p2o-general-aaaaaa',paneId:'fixture',role:'general',depth:1,parentWorkerId:null,token:'a'.repeat(32),used:0,startedAt:0,stopped:false};
 
 describe('explicit run ownership, no elapsed-time limits',()=>{
   it('keeps lead, late workers and owned tasks active after a year; stop still revokes tickets and tools',async()=>{
@@ -75,7 +75,7 @@ describe('explicit run ownership, no elapsed-time limits',()=>{
     const broker=new Broker(root,{
       exec:async(command,seconds,_workdir,signal)=>{expect(seconds).toBe(0);if(command==='slow'){await delay(60);return result;}started();return new Promise((_resolve,reject)=>signal.addEventListener('abort',()=>{cancelled=true;reject(Error('Cancelled'));},{once:true}));},
       http:async()=>result,note:async()=>{},ledger:async()=>[],delegate:async()=>{throw Error('unused');},report:async()=>{},
-    },{totalCommandBudget:100});broker.register({...registration});await broker.start();
+    },{});broker.register({...registration});await broker.start();
     const client=new BrokerClient(broker.socket,registration.token,{requestMs:5,connectMs:2000});
     try{
       await expect(client.request('exec',{command:'slow'},{timeoutMs:null})).resolves.toMatchObject(result);

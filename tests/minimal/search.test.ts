@@ -84,7 +84,7 @@ async function fixture(work: (h: any) => Promise<void>) {
 }
 
 describe('search through the runtime', () => {
-  it('serves the owner, a worker over the broker and a reporting worker, shares the knowledge-read budget and never calls a model', async () => fixture(async h => {
+  it('serves the owner, a worker over the broker and a reporting worker, never caps a knowledge read and never calls a model', async () => fixture(async h => {
     await h.call('p2o_note', { kind: 'observation', text: 'The Billing export endpoint leaks the invoice owner field' });
     await h.call('p2o_note', { kind: 'open', text: 'billing admin role could not be tested' });
     const messages = h.pi.messages.length;
@@ -101,8 +101,9 @@ describe('search through the runtime', () => {
       const viaWorker = (await a.request('knowledge_search', { action: 'search', q: 'billing' })).value; expect(viaWorker.total).toBe(2);
       expect((await b.request('knowledge_search', { action: 'search', q: 'invoice' })).value.total).toBe(1); // reporting is read-only knowledge, allowed
       await expect(a.request('knowledge_search', { action: 'search', q: 'billing', extra: 1 })).rejects.toThrow();
-      for (let n = 0; n < 158; n++) await a.request('knowledge_search', { action: 'search', q: 'billing', limit: 1 }); // 1 + 1 refused-but-counted + 158 = the full 160-read allowance
-      await expect(a.request('knowledge_search', { action: 'search', q: 'billing' })).rejects.toThrow('Knowledge read budget exhausted'); // same 160-read class as other knowledge reads
+      // 200 reads from one worker: the retired 160-read split cannot cut a search loop short (owner decision 2026-10-24).
+      for (let n = 0; n < 200; n++) await a.request('knowledge_search', { action: 'search', q: 'billing', limit: 1 });
+      expect((await a.request('knowledge_search', { action: 'search', q: 'billing' })).value.total).toBe(2);
     } finally { a.close(); b.close(); }
     await h.command('search billing'); expect(h.screen()).toContain('2 match(es)'); expect(h.screen()).toContain('Billing export endpoint');
     await h.command('search nothing-matches-this'); expect(h.screen()).toContain('0 match(es)');

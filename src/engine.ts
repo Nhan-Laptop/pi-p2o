@@ -5,6 +5,12 @@ import type { AssessmentTask } from './tasks.js';
 export interface EngineEvent { sequence: number; kind: string; id: string; reason?: string }
 export interface QueuedIntent { taskId: string; revision: number; priority: number; input: DelegateInput; reason?: string }
 export interface PlannerWake { runId: string; epoch: number; through: number; round: number }
+/**
+ * M6: what a round is judged on. Monotone counters, so equality means the round added nothing — no tested cell, no candidate
+ * closure, no asset and no chain depth. The owner computes them at its own consumption barrier; the engine only compares.
+ */
+export interface RoundProgress { testedCells: number; closures: number; assets: number; chainDepth: number }
+const QUIET_ROUNDS = 2;
 export interface EngineDeps {
   active(): boolean;
   list(): Promise<AssessmentTask[]>;
@@ -35,6 +41,9 @@ export class AssessmentEngine {
   private busy = false;
   private reservation?: PlannerWake;
   private rounds = 0;
+  private progress: RoundProgress = { testedCells: 0, closures: 0, assets: 0, chainDepth: 0 };
+  private quiet: number[] = [];
+  private readonly revisits = new Map<string, { at: number; timer: ReturnType<typeof setTimeout> }>();
   private decision?: { disposition: 'wait' | 'blocked'; reason: string };
   constructor(readonly runId: string, readonly mode: LoopMode, readonly maxRounds: number, private deps: EngineDeps, private debounceMs = 100) {}
   private live() { return !this.stopped && this.deps.active(); }
@@ -57,7 +66,7 @@ export class AssessmentEngine {
       });
       if (new Set(additions.map(i => i.taskId)).size !== additions.length || additions.some(i => this.queue.has(i.taskId))) throw Error('Intent already queued');
       if (this.queue.size + additions.length > 100) throw Error('Pending intent limit reached (100)');
-      await this.deps.persist('Planner accepted intents into the frontier; no new scope or budget', {intents:additions}); this.gate();
+      await this.deps.persist('Planner accepted intents into the frontier; no new scope or authority', {intents:additions}); this.gate();
       for (const i of additions) this.queue.set(i.taskId,i);
       this.kick(); return this.snapshot();
     });
@@ -104,9 +113,15 @@ export class AssessmentEngine {
       this.queue.delete(job.taskId);
     }
   }
+  /** M6: two quiet rounds in a row stop automatic wakes with the case a human has to decide, never with a number. */
+  private escalated(): string | undefined {
+    if (this.quiet.length < QUIET_ROUNDS) return;
+    return `Two consecutive rounds added nothing measurable (rounds ${this.quiet.join(' and ')}: no tested cell, candidate closure, asset or chain depth); this is blocked/human-needed: widen the scope, supply a credential, or change the environment`;
+  }
   private reserveWake(): PlannerWake | undefined {
     if (!this.live() || this.paused || this.mode !== 'event-driven' || this.reservation || !this.events.size) return;
-    if (this.rounds >= this.maxRounds) {this.pause('Automatic planner round allowance exhausted; manual review remains available');return;}
+    const escalated = this.escalated(); if (escalated) {this.pause(escalated);return;}
+    if (this.rounds >= this.maxRounds) {this.pause('Automatic planner round limit reached; manual review remains available');return;}
     const wake = {runId:this.runId,epoch:this.epoch,through:this.sequence,round:++this.rounds};
     this.reservation = wake; return wake;
   }
@@ -121,13 +136,48 @@ export class AssessmentEngine {
   started() { this.busy = true; }
   settled() { this.busy = false; this.kick(); }
   /** Delivery ACK only: never discard events committed after the projected barrier. */
-  consume(through = this.sequence) {
+  consume(through = this.sequence, progress?: RoundProgress) {
     if (!Number.isSafeInteger(through) || through < 0 || through > this.sequence) throw Error('Invalid semantic consumption barrier');
     const delta = [...this.events.values()].filter(event => event.sequence <= through).sort((a,b) => a.sequence-b.sequence);
     for (const [key,event] of this.events) if (event.sequence <= through) this.events.delete(key);
     this.consumed = Math.max(this.consumed,through);
     if (this.reservation && this.reservation.through <= through) this.reservation = undefined;
+    if (progress) this.judge(progress);
     return delta;
+  }
+  /** One judgement per round: a round that repeats the previous counters is quiet, anything else clears the streak. */
+  private judge(progress: RoundProgress) {
+    const quiet = progress.testedCells === this.progress.testedCells && progress.closures === this.progress.closures
+      && progress.assets === this.progress.assets && progress.chainDepth === this.progress.chainDepth;
+    this.progress = { ...progress };
+    if (!quiet) { this.quiet = []; return; }
+    if (!this.rounds || this.quiet.includes(this.rounds)) return;
+    this.quiet = [...this.quiet, this.rounds].slice(-QUIET_ROUNDS);
+  }
+  /** Rounds judged quiet right now, oldest first. Read-only: escalation is decided when the next wake is reserved. */
+  quietRounds(): number[] { return [...this.quiet]; }
+  /** M7: the pending revisit for a condition, if one is already scheduled. The caller decides how to refuse a duplicate. */
+  revisitAt(condition: string): number | undefined { return this.revisits.get(condition)?.at; }
+  /**
+   * M7: exactly one revisit, tied to a stated condition and never re-armed by itself. The timer only fires a wake; it restores
+   * nothing and it stays silent while the run is paused, blocked or stopped.
+   */
+  scheduleRevisit(condition: string, notBefore: number): { condition: string; at: string } {
+    this.gate();
+    if (!Number.isSafeInteger(notBefore) || notBefore <= Date.now()) throw Error('A revisit needs a future timestamp');
+    const pending = this.revisits.get(condition);
+    if (pending) throw Error(`REVISIT_DUPLICATE: condition ${condition} already has a pending revisit at ${new Date(pending.at).toISOString()}`);
+    if (this.revisits.size >= 8) throw Error('Revisit limit reached (8 pending); wait for one to fire or stop the run');
+    const timer = setTimeout(() => { this.revisits.delete(condition); this.fireRevisit(); }, notBefore - Date.now());
+    timer.unref?.();
+    this.revisits.set(condition, { at: notBefore, timer });
+    return { condition, at: new Date(notBefore).toISOString() };
+  }
+  /** A revisit is a scheduled wake, so it is not gated on event-driven mode; pause, stop and epoch still win. */
+  private fireRevisit() {
+    if (!this.live() || this.paused) return;
+    const wake = { runId: this.runId, epoch: this.epoch, through: this.sequence, round: ++this.rounds };
+    this.reservation = wake; this.deps.wake(wake);
   }
   async disposition(disposition: 'wait' | 'blocked', reason: string) {
     if (!reason.trim() || reason.length > 1000) throw Error('Disposition needs a bounded reason');
@@ -144,11 +194,13 @@ export class AssessmentEngine {
   }
   resume() {
     this.gate();
-    if (this.rounds >= this.maxRounds) throw Error('Automatic round allowance exhausted; use manual review/stop (no automatic renewal)');
+    if (this.rounds >= this.maxRounds) throw Error('Automatic round limit reached; use manual review/stop (no automatic renewal)');
     this.paused = undefined; this.decision = undefined; this.kick();
   }
   stop() {
     this.stopped = true; this.epoch += 1; this.reservation = undefined;
+    for (const entry of this.revisits.values()) clearTimeout(entry.timer);
+    this.revisits.clear();
     clearTimeout(this.timer); this.timer = undefined; this.events.clear(); this.queue.clear();
   }
   async join() { await this.mutations; await this.pumping; }

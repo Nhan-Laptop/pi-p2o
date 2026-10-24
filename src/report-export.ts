@@ -2,6 +2,9 @@ import { describeCapability } from './capabilities.js';
 import { caseViews, needsCaseReview, type CaseView } from './cases.js';
 import { cvssScore } from './cvss.js';
 import { FINDING_SEVERITIES } from './case-types.js';
+import { completionLine, deriveCompletion } from './completion.js';
+import { claimHeadClaims } from './chain-view.js';
+import { planFrontier } from './planning.js';
 import { coverageViews, type CoverageCellView, type CoverageContext, type CoveragePlanView } from './coverage.js';
 import { safeText } from './evidence.js';
 import type { LedgerIndex } from './records.js';
@@ -74,7 +77,7 @@ const severityLabel = (value: string) => `${value.charAt(0).toUpperCase()}${valu
 const rankOf = (view: CaseView) => view.finding ? SEVERITY_RANK[view.finding.severity] : FINDING_SEVERITIES.length;
 /** Findings in report order: severity first (unrated last), then title, then case ID. The order is a function of the state only. */
 const orderedFindings = (views: readonly CaseView[]) => [...views].sort((a, b) => rankOf(a) - rankOf(b) || a.title.localeCompare(b.title) || a.id.localeCompare(b.id));
-const END_REASON: Record<string, string> = { finished: 'the lead called p2o_finish', stopped: 'the operator stopped the run (/p2o stop)', shutdown: 'the Pi session shut down', 'session-change': 'the Pi session was switched', 'storage-failed': 'the run was closed after a storage failure', failed: 'the run failed', manual: 'a human exported this report on demand' };
+const END_REASON: Record<string, string> = { finished: 'the lead called p2o_finish', export: 'a report was exported while the run stayed active', stopped: 'the operator stopped the run (/p2o stop)', shutdown: 'the Pi session shut down', 'session-change': 'the Pi session was switched', 'storage-failed': 'the run was closed after a storage failure', failed: 'the run failed', manual: 'a human exported this report on demand' };
 const wstgReferenceList = (view: CaseView, cells: readonly CoverageCellView[]) => caseWstgKeys(view.id, view.revision, cells);
 
 function reproduction(view: CaseView, index: LedgerIndex): string[] {
@@ -257,6 +260,9 @@ function operatorBrief(index: LedgerIndex): string[] {
 
 export function renderReport(index: LedgerIndex, context: ReportProjectionContext & { coverage?: CoverageContext }, meta: ReportMeta): RenderedReport {
   const projection = reportProjection(index, context), tasks = taskFrontier(index);
+  // M3: completion is derived here, from the same ledger the rest of the report is rendered from, so the report cannot claim a
+  // state the situation line or the finish result would contradict.
+  const completion = deriveCompletion({ plans: planFrontier(index), claims: claimHeadClaims(index), tasks });
   const cases = caseViews(index, context.cases ?? {}), plans: CoveragePlanView[] = context.coverage ? coverageViews(index, context.coverage) : [];
   const accepted = cases.filter(view => view.acceptedFinding), others = cases.filter(view => !view.acceptedFinding);
   const open = projection.openIds.map(id => ({ id, record: index.byId.get(id) }));
@@ -269,7 +275,7 @@ export function renderReport(index: LedgerIndex, context: ReportProjectionContex
   const out: string[] = [];
   out.push(`# p2o assessment report — run ${mdText(meta.runId, 80)}`, '',
     '> **Read this first.** This is a deterministic index of committed, attributed state at one sequence number. It is **not** a verification, not a penetration-test conclusion and not a statement that the target is safe. A list with no accepted case, or a coverage cell that is blocked or untested, says nothing about the absence of problems. Redaction is best effort; review before sharing.', '',
-    ...(v2 && meta.endReason ? [meta.endReason === 'finished' || meta.endReason === 'manual' ? `> **Run end:** ${(END_REASON[meta.endReason] ?? mdText(meta.endReason, 120))}.` : `> **INTERRUPTED RUN — ${(END_REASON[meta.endReason] ?? mdText(meta.endReason, 120))}.** The lead did not finish normally, so review, coverage and the final narrative may be incomplete. Everything below is what was committed before the end.`, ''] : []),
+    ...(v2 && meta.endReason ? [['finished', 'manual', 'export'].includes(meta.endReason) ? `> **Run end:** ${(END_REASON[meta.endReason] ?? mdText(meta.endReason, 120))}.` : `> **INTERRUPTED RUN — ${(END_REASON[meta.endReason] ?? mdText(meta.endReason, 120))}.** The lead did not finish normally, so review, coverage and the final narrative may be incomplete. Everything below is what was committed before the end.`, ''] : []),
     '## Provenance', '',
     `- Run: ${mdText(meta.runId, 80)}${meta.historical ? ' (historical, read-only store)' : ' (active run)'}; as of committed sequence **${meta.asOfSequence}**; ${index.records.length} records; store schema ${meta.storeSchema}`,
     `- Target: ${mdText(meta.target, 400)}; retention ${mdText(meta.retention)}`,
@@ -347,9 +353,18 @@ export function renderReport(index: LedgerIndex, context: ReportProjectionContex
   const handoffs = rows(projection.reports, ROWS);
   for (const report of handoffs.shown) out.push(`- Handoff ${mdText(report.id, 80)} from ${mdText(report.workerId ?? 'unknown', 80)}: outcome ${mdText(report.outcome ?? 'unknown', 40)}, confidence ${mdText(report.confidence ?? 'unknown', 24)}, ${report.findings} claimed finding(s), ${report.openItems} open item(s)${report.blocked ? `, blocked: ${mdText(report.blocked, 200)}` : ''}`);
   if (handoffs.omitted) out.push(`- … ${handoffs.omitted} more handoffs`);
-  if (v2 && meta.unresolved && (meta.unresolved.blocking.length || meta.unresolved.advisory.length)) {
-    out.push('', '## Unresolved when the lead finished', '', 'Host check over committed state at p2o_finish. These are unfinished review or coverage items, not findings and not a safety statement.', '', '| Code | Level | Count | Examples | Meaning |', '|---|---|---|---|---|');
-    for (const item of [...meta.unresolved.blocking, ...meta.unresolved.advisory]) out.push(`| \`${item.code}\` | ${item.level} | ${item.count} | ${ids(item.ids, 5)} | ${mdText(item.message, 200)} |`);
+  if (v2) {
+    // M3: the obligation list is a report fact. Exporting writes it; it never refuses the export and never claims the run is done.
+    out.push('', '## REMAINING WORK', '', 'Derived at export from committed state, not from a claim of completion. Obligations are unfinished review, coverage or chain items; advisories are hints. Neither is a finding and neither is a safety statement.', '',
+      `- Completion: **${completion.state}** — ${completion.remaining} obligation(s). ${completionLine(completion)}`);
+    if (completion.items.length) {
+      out.push('', '| Code | Count | Examples | Meaning |', '|---|---|---|---|');
+      for (const item of completion.items) out.push(`| ${item.code} | ${item.count} | ${ids(item.ids, 5)} | ${mdText(item.message, 160)} |`);
+    }
+    if (meta.unresolved && (meta.unresolved.obligations.length || meta.unresolved.advisory.length)) {
+      out.push('', `Preflight at ${meta.endReason && meta.endReason !== 'finished' ? 'stop' : 'finish'}: ${meta.unresolved.obligations.length} open obligation code(s), ${meta.unresolved.advisory.length} advisory.`, '', '| Code | Level | Count | Examples | Meaning |', '|---|---|---|---|---|');
+      for (const item of [...meta.unresolved.obligations, ...meta.unresolved.advisory]) out.push(`| ${item.code} | ${item.level} | ${item.count} | ${ids(item.ids, 5)} | ${mdText(item.message, 200)} |`);
+    }
   }
   out.push('', '## Limits of this report', '',
     '- Reported is not reviewed; a closed task is not a verified finding; resources cleaned is not assessment complete.',

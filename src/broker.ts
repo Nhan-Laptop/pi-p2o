@@ -17,27 +17,12 @@ export type { GraphBatch } from './state/graph.js';
 /**
  * Owner-served broker. Strix shares one sandbox session with every agent; Pi workers are separate
  * processes, so the owner exposes exactly the same session over a private unix socket and keeps the
- * policy, the budgets and the single cleanup path in one place. Workers never receive a Docker client.
+ * policy, the operation accounting and the single cleanup path in one place. Workers never receive a Docker client.
  */
 export const MAX_LINE_BYTES = 64 * 1024;
-export const WORKER_BUDGET_RESERVE = 0.9;
-export const DEFAULT_WORKER_COMMAND_BUDGET = 200;
-/**
- * P14.11: exploitation is not recon with a different label. Building, running, crashing and adjusting a payload spends commands in a loop, and
- * a run cut off mid-iteration loses the payload that would have made it replayable. The class is decided by purpose, not by the model or by a
- * claim about difficulty, and `work.budget.commands` still overrides it in either direction.
- */
-export const EXPLOITATION_COMMAND_BUDGET = 400;
-export function commandBudgetFor(purpose: string | undefined, declared?: { commands?: number }): number {
-  if (declared?.commands !== undefined) return declared.commands;
-  return purpose === 'exploitation' || purpose === 'chaining' ? EXPLOITATION_COMMAND_BUDGET : DEFAULT_WORKER_COMMAND_BUDGET;
-}
-/** The purposes whose allowance ends mid-iteration, so a report has to say what survived. */
-export const WRAP_UP_PURPOSES = ['exploitation', 'chaining'] as const;
-export const budgetWrapUpRequired = (purpose: string | undefined): boolean => (WRAP_UP_PURPOSES as readonly string[]).includes(purpose ?? '');
 
 /** How a worker's assignment ended, as it states it in p2o_report; the host never infers success from it. */
-export const WORKER_OUTCOMES = ['completed', 'partial-budget', 'prerequisite-blocked', 'provider-error', 'cancelled', 'expired', 'unknown'] as const;
+export const WORKER_OUTCOMES = ['completed', 'prerequisite-blocked', 'provider-error', 'cancelled', 'expired', 'unknown'] as const;
 export interface WorkerReport {
   summary: string;
   findings: string[];
@@ -47,11 +32,6 @@ export interface WorkerReport {
   confidence: 'high' | 'medium' | 'low';
   blocked?: string;
   outcome?: typeof WORKER_OUTCOMES[number];
-  /**
-   * P14.11: when an exploitation or chaining run ends on its allowance, this names the stored payload and the environment it ran in, or says why
-   * the run has neither. It is required only in that case, and it is what makes "the budget ran out" different from "I stopped working".
-   */
-  wrapUp?: string;
 }
 
 export interface WorkerRegistration {
@@ -62,8 +42,7 @@ export interface WorkerRegistration {
   depth: number;
   parentWorkerId: string | null;
   token: string;
-  commandBudget: number;
-  /** P14.11: the purpose the allowance and the wrap-up duty follow; absent on a legacy registration, which is treated as research work. */
+  /** Observations, not limits: how many commands this worker has run and what it is for. Nothing compares them to a ceiling. */
   purpose?: string;
   used: number;
   startedAt: number;
@@ -72,6 +51,8 @@ export interface WorkerRegistration {
   reported?: WorkerReport;
   taskId?: string;
   requestedRuntime?: { model?: string; thinking?: string };
+  /** M8: how many continuations this worker's conversation has taken. One by default; a reported worker takes none. */
+  continues?: number;
   effectiveRuntime?: { model?: string; thinking?: string; verified: boolean };
 }
 
@@ -104,7 +85,6 @@ export interface BrokerDeps {
   beforeCommand?(worker: WorkerRegistration): Promise<void>;
   /** Display-only model usage counters the worker's Pi reported for one assistant message. Never a limit, budget or gate. */
   usage?(worker: WorkerRegistration, usage: unknown): boolean;
-  onBudget?(workerId: string, reason: string): void;
   delegate(input: DelegateInput, parent: WorkerRegistration): Promise<DelegateResult>;
   report(workerId: string, report: WorkerReport, request?: MutationRequest): Promise<void | RecordAck[]>;
   /** Commit boundary: report persisted, registration terminal and authority revoked. */
@@ -118,14 +98,14 @@ export interface BrokerDeps {
   lab?(op: 'payload_write' | 'payload_read', request: Record<string, unknown>, worker: WorkerRegistration): Promise<unknown>;
   /**
    * P14.3: the environment is orchestrated by the host, but every command it runs is an ordinary admitted target command in the
-   * caller's own sandbox. `control.admit`/`control.exec` are the broker's own admission, so a recipe cannot dodge the budget.
+   * caller's own sandbox. `control.admit`/`control.exec` are the broker's own admission path, so a recipe cannot bypass it.
    */
   environment?(op: 'create' | 'verify' | 'destroy', request: Record<string, unknown>, worker: WorkerRegistration,
     control: { exec: (command: string) => Promise<{ code: number }> }): Promise<unknown>;
   onProblem?(message: string): void;
 }
 
-export interface BrokerLimits { totalCommandBudget: number; maxLineBytes?: number }
+export interface BrokerLimits { maxLineBytes?: number }
 
 function text(value: unknown, limit: number): string | undefined {
   if (typeof value !== 'string') return undefined;
@@ -133,7 +113,6 @@ function text(value: unknown, limit: number): string | undefined {
   return clean.length > limit ? clean.slice(0, limit) : clean;
 }
 
-const READ_CALLS = 160, COORDINATION_CALLS = 200;
 /** Runs one service call and answers with its value, or with the error text instead of throwing into the socket handler. */
 async function attempt(work: () => Promise<unknown>): Promise<{ ok: true; value: unknown } | { ok: false; error: string }> {
   try { return { ok: true, value: await work() }; } catch (error) { return { ok: false, error: errText(error) }; }
@@ -165,7 +144,6 @@ export function normalizeReport(raw: unknown): WorkerReport {
     openItems: stringList(input.openItems, 20, 1000),
     confidence,
     blocked: text(input.blocked, 1000),
-    wrapUp: text(input.wrapUp, 300),
     ...(typeof input.outcome === 'string' && (WORKER_OUTCOMES as readonly string[]).includes(input.outcome) ? { outcome: input.outcome as WorkerReport['outcome'] } : {}),
   };
 }
@@ -177,17 +155,6 @@ export class Broker {
   /** Commands in flight per worker, so revoking a worker ends its wait instead of letting it run on. */
   private readonly inFlight = new Map<string, Set<AbortController>>();
   private totalUsed = 0;
-  private readonly knowledgeUsed = new Map<string, number>();
-  /**
-   * One unit of a worker's knowledge allowance. Reads stop at 160 so that 40 calls stay reserved for notes, candidates and graph records (200 in all).
-   * Returns the refusal to send back, or undefined once the unit is spent.
-   */
-  private charge(workerId: string, cap: typeof READ_CALLS | typeof COORDINATION_CALLS, exhausted: string): { ok: false; error: string } | undefined {
-    const used = this.knowledgeUsed.get(workerId) ?? 0;
-    if (used >= cap) return { ok: false, error: exhausted };
-    this.knowledgeUsed.set(workerId, used + 1);
-    return undefined;
-  }
   private readonly reporting = new Set<string>();
   private readonly socketPath: string;
   constructor(private readonly control: string, private readonly deps: BrokerDeps, private readonly limits: BrokerLimits) {
@@ -235,7 +202,7 @@ export class Broker {
     const fail = (message: string) => { this.deps.onProblem?.(message); send({ ok: false, error: message }); };
     socket.on('data', chunk => {
       buffer += chunk;
-      // Serialize per connection so two tool calls cannot interleave around shared budgets.
+      // Serialize per connection so two tool calls cannot interleave around shared counters.
       for (;;) {
         const index = buffer.indexOf('\n');
         if (index < 0) break;
@@ -299,40 +266,31 @@ export class Broker {
     if (reportingOperationDenied(registration.role,op ?? '')) return {ok:false,error:'Reporting role is synthesis-only; request separate execution/validation'};
     switch (op) {
       case 'skill_list': case 'skill_read': case 'artifact_read': case 'knowledge_heads': case 'knowledge_search': {
-        const refused = this.charge(workerId, READ_CALLS, 'Knowledge read budget exhausted; 40 coordination calls reserved for notes/candidates (200 total)');
-        if (refused) return refused;
         if (!this.deps.knowledge) return { ok: false, error: 'Knowledge service unavailable' };
         return attempt(() => this.deps.knowledge!(op, request, registration));
       }
       case 'research': {
-        // planning_update.md P14.8: research is not a target operation, so it charges neither the command budget nor a
+        // planning_update.md P14.8: research is not a target operation, so it counts as neither a target command nor a
         // separate counter; it is still recorded in the ledger, which is what keeps a citation auditable afterwards.
         if (!this.deps.research) return { ok: false, error: 'Research service unavailable' };
         return attempt(() => this.deps.research!(request ?? {}, registration));
       }
       case 'candidate': {
-        const refused = this.charge(workerId, COORDINATION_CALLS, 'Coordination budget exhausted');
-        if (refused) return refused;
         if (!this.deps.candidate) return { ok: false, error: 'Candidate service unavailable' };
         return attempt(() => this.deps.candidate!(request?.candidate, registration));
       }
       case 'payload_write': case 'payload_read': {
         // Reading a payload is a bounded read of run state and writing one is coordination; neither is a target operation.
-        const refused = this.charge(workerId, op === 'payload_read' ? READ_CALLS : COORDINATION_CALLS,
-          op === 'payload_read' ? 'Knowledge read budget exhausted; 40 coordination calls reserved for notes/candidates (200 total)' : 'Coordination budget exhausted');
-        if (refused) return refused;
         if (!this.deps.lab) return { ok: false, error: 'Payload service unavailable' };
         graphObject(submitted, op === 'payload_read' ? ['id'] : ['kind', 'name', 'body'], 'Payload request');
         return attempt(() => this.deps.lab!(op as 'payload_write' | 'payload_read', submitted, registration));
       }
       case 'environment': {
-        const refused = this.charge(workerId, COORDINATION_CALLS, 'Coordination budget exhausted');
-        if (refused) return refused;
         if (!this.deps.environment) return { ok: false, error: 'Environment service unavailable' };
         const action = text(request?.action, 16);
         if (!action || !['create', 'verify', 'destroy'].includes(action)) return { ok: false, error: 'Environment action must be create, verify or destroy' };
         graphObject(submitted, action === 'create' ? ['action', 'name', 'recipe'] : ['action', 'id'], 'Environment request');
-        // Each recipe command spends one admitted target command in the caller's sandbox; nothing here bypasses the budget.
+        // Each recipe command is one admitted target command in the caller's sandbox; nothing here bypasses admission.
         const control = { exec: async (command: string) => {
           const spent = await this.prepareCommand(registration);
           if (spent) throw Error(String(spent.error));
@@ -368,9 +326,9 @@ export class Broker {
         return {ok:true,...(ack ?? {})};
       }
       case 'status':
-        return { ok: true, workerId, used: registration.used, budget: registration.commandBudget, reported: Boolean(registration.reported) };
+        return { ok: true, workerId, used: registration.used, reported: Boolean(registration.reported) };
       case 'usage':
-        // Counters only, attributed by the authenticated registration (never by the payload); it spends no command budget and gates nothing.
+        // Counters only, attributed by the authenticated registration (never by the payload); it is not a target command and gates nothing.
         return { ok: true, recorded: this.deps.usage?.(registration, request?.usage) === true };
       case 'ledger': {
         // Workers may read the shared ledger: it is how a nested worker sees its parent's notes.
@@ -415,16 +373,12 @@ export class Broker {
         });
       }
       case 'graph_record': {
-        const refused = this.charge(workerId, COORDINATION_CALLS, 'Coordination budget exhausted');
-        if (refused) return refused;
         if (!this.deps.graphRecord) return {ok:false,error:'Graph service unavailable'};
         if(registration.effectiveRuntime?.verified!==true)return {ok:false,error:'Verified runtime required before graph recording'};
         try { graphObject(submitted,['batch'],'Graph recording request'); validateGraphBatch(request?.batch); return {ok:true,value:await this.deps.graphRecord(request.batch, registration, delivery!)}; }
         catch (error) {const prior=await this.deps.graphReplay?.(request?.batch,registration,delivery!);return prior?{ok:true,value:prior,replayed:true}:{ok:false,error:errText(error)};}
       }
       case 'graph_read': {
-        const refused = this.charge(workerId, READ_CALLS, 'Knowledge read budget exhausted; 40 coordination calls reserved');
-        if (refused) return refused;
         if (!this.deps.graphRead) return {ok:false,error:'Graph service unavailable'};
         return attempt(() => this.deps.graphRead!(text(request?.graphOp,32) ?? 'page', (request ?? {}) as Record<string,unknown>, registration));
       }
@@ -443,8 +397,6 @@ export class Broker {
         });
       }
       case 'note': {
-        const refused = this.charge(workerId, COORDINATION_CALLS, 'Coordination budget exhausted');
-        if (refused) return refused;
         if (!isRecordKind(request?.kind) || !['note', 'coverage', 'observation', 'open'].includes(request.kind)) return { ok: false, error: 'kind must be note, coverage, observation or open' };
         const body = text(request?.text, 2000);
         if (!body) return { ok: false, error: 'text is required' };
@@ -461,8 +413,6 @@ export class Broker {
         return { ok: true, ...(ack ?? {}) };
       }
       case 'surface': {
-        const refused = this.charge(workerId, COORDINATION_CALLS, 'Coordination budget exhausted');
-        if (refused) return refused;
         if (!this.deps.surface) return { ok: false, error: 'Surface inventory unavailable' };
         const component = text(request?.component, 200), entryPoint = text(request?.entryPoint, 200);
         if (!component || !entryPoint) return { ok: false, error: 'component and entryPoint are required' };
@@ -470,8 +420,6 @@ export class Broker {
         catch (error) { return { ok: false, error: errText(error) }; }
       }
       case 'request_subtask': {
-        const refused = this.charge(workerId, COORDINATION_CALLS, 'Coordination budget exhausted; include request in final report');
-        if (refused) return refused;
         if (!this.deps.requestSubtask) return {ok:false,error:'Subtask proposals unavailable'};
         const focus = text(request?.focus,60), task = text(request?.task,4000);
         if (!focus || !task) return {ok:false,error:'focus and task are required'};
@@ -492,10 +440,6 @@ export class Broker {
       case 'report': {
         if (registration.reported) return { ok: false, error: 'this worker already reported' };
         const report = normalizeReport(request?.report);
-        // P14.11: an exploitation run that ended on its allowance must say what survived — the payload, or why there is none. Unknown is not
-        // accepted as an answer, because "the budget ran out" with no artifact is the exact outcome this phase exists to prevent.
-        if (budgetWrapUpRequired(registration.purpose) && !report.wrapUp && (report.outcome === 'partial-budget' || registration.used >= registration.commandBudget))
-          return { ok: false, error: 'this exploitation run ended on its allowance: send wrapUp naming the stored payload and environment, or why the run has neither, then report again' };
         if (this.reporting.has(workerId)) return {ok:false,error:'Report persistence already in progress'};
         this.reporting.add(workerId);
         try {
@@ -534,16 +478,8 @@ export class Broker {
     return this.spend(registration);
   }
 
-  /** Workers stop at the reserve so the owner keeps budget for reconciliation and the final report. */
+  /** One target command. Counted for the ledger and the report; never refused, because a run has no allowance (owner decision 2026-10-24). */
   private spend(registration: WorkerRegistration): Record<string, unknown> | undefined {
-    const reserve = Math.floor(this.limits.totalCommandBudget * WORKER_BUDGET_RESERVE);
-    const exhausted = registration.used >= registration.commandBudget;
-    // The refusal is the last thing the worker reads before it writes its report, so the wrap-up duty is repeated here, not only in the brief.
-    const reason = exhausted ? (budgetWrapUpRequired(registration.purpose)
-      ? 'worker command budget exhausted; store the payload (p2o_lab payload), verify its environment, record the last observation, then report with p2o_report and a wrapUp naming the payload or why none exists'
-      : 'worker command budget exhausted; report what you have with p2o_report')
-      : this.totalUsed >= reserve ? 'assessment worker budget reserve reached; report what you have with p2o_report' : undefined;
-    if (reason) { this.deps.onBudget?.(registration.workerId,reason); return {ok:false,error:reason}; }
     registration.used += 1; this.totalUsed += 1;
     return undefined;
   }
@@ -681,4 +617,13 @@ export class BrokerClient {
   }
 
   close(): void { this.fail('worker session ended'); }
+}
+
+/** M8: one continuation per live worker. A reported or closed worker cannot be continued: its ticket is retired, so a follow-up is a new task. */
+export const CONTINUATIONS_PER_WORKER = 1;
+export function continuationRefusal(registration: { stopped?: boolean; paneClosed?: boolean; reported?: unknown; continues?: number }): string | undefined {
+  if (registration.reported) return 'WORKER_CLOSED: the worker already reported and its ticket is retired; its conversation cannot be continued — create a new task for the same question instead';
+  if (registration.stopped || registration.paneClosed) return 'WORKER_CLOSED: the worker is stopped or its pane is gone; start a new task rather than continuing a closed conversation';
+  if ((registration.continues ?? 0) >= CONTINUATIONS_PER_WORKER) return 'CONTINUATION_LIMIT: this worker already took its one continuation; dispatch a new task instead of stretching the same conversation';
+  return undefined;
 }

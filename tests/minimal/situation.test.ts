@@ -4,10 +4,10 @@ import { SEGMENT_FIELDS, SITUATION_LIMIT, situationLine, situationSegments, summ
 // planning_update.md P3: one bounded line about the run, computed from records so the lead does not infer the frontier
 // from an empty list, and testable without an engine.
 const full: SituationSnapshot = { open: 6, running: 2, runningRoles: ['discovery', 'validation'], ready: 3, exhausted: 0, blocked: 1,
-  openContradictions: 1, chainReady: 1, chainUnmet: 2, pendingRating: 4, coverageTested: 12, coverageCells: 31,
+  openContradictions: 1, chainReady: 1, chainUnmet: 2, chainSteps: 0, chainReadySteps: 0, chainWaitingSteps: 0, pendingRating: 4, coverageTested: 12, coverageCells: 31, coveragePlanned: 0, coverageOmitted: 0,
   suggested: { purpose: 'validation', score: 65 } };
 const idle: SituationSnapshot = { open: 0, running: 0, runningRoles: [], ready: 0, exhausted: 0, blocked: 0, openContradictions: 0,
-  chainReady: 0, chainUnmet: 0, pendingRating: 0, coverageTested: 0, coverageCells: 0, suggested: null };
+  chainReady: 0, chainUnmet: 0, chainSteps: 0, chainReadySteps: 0, chainWaitingSteps: 0, pendingRating: 0, coverageTested: 0, coverageCells: 0, coveragePlanned: 0, coverageOmitted: 0, suggested: null };
 
 const task = (id: string, status: string, extra: Record<string, unknown> = {}) => ({ id, status, role: 'discovery', prerequisites: [], ...extra }) as never;
 const view = (extra: Record<string, unknown>) => ({ verdict: 'open', reviewStatus: 'pending', contradictions: [], ...extra }) as never;
@@ -22,7 +22,7 @@ describe('situation line (P3)', () => {
 
   it('says 0 open when the frontier is empty, and drops optional segments before exceeding the cap', () => {
     expect(situationLine(idle)).toBe('Situation: 0 open.');
-    const crowded = { ...full, runningRoles: ['investigation', 'reporting', 'validation'], openContradictions: 12, pendingRating: 99, chainUnmet: 88, coverageTested: 999, coverageCells: 1000 };
+    const crowded = { ...full, runningRoles: ['investigation', 'reporting', 'validation'], openContradictions: 12, pendingRating: 99, chainUnmet: 88, chainSteps: 0, chainReadySteps: 0, chainWaitingSteps: 0, coverageTested: 999, coverageCells: 1000 };
     const line = situationLine(crowded);
     expect(line.length).toBeLessThanOrEqual(SITUATION_LIMIT);
     expect(line.startsWith('Situation: 2 running')).toBe(true);

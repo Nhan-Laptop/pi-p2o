@@ -35,7 +35,7 @@ export function parseStateCommand(args: string): StateCommand | undefined {
 const safe = (text: string, limit = 200) => safeText(text).replace(/\s+/g, ' ').slice(0, limit);
 export interface ViewProfile {
   runId: string; target: string; lifecycle: string; delegation: boolean; maxWorkers: number;
-  workerUsed: number; workerCeiling: number; exportEnabled: boolean; exportPath?: string; exportError?: string;
+  exportEnabled: boolean; exportPath?: string; exportError?: string;
   engine: ReturnType<AssessmentEngine['snapshot']>; executor: { mode: string; maxTargetOperations: number; runningTargetOperations?: number; waitingTargetOperations?: number };
   retention?: 'durable-local' | 'ephemeral'; stateLocation?: string; storageError?: string;
   runtime?: { version: string; sha256: string; policy?: number | 'off' };
@@ -43,14 +43,14 @@ export interface ViewProfile {
   contextUsage?: { tokens: number | null; contextWindow: number; percent: number | null; at: number };
 }
 /** Local observation only. `quiet` means no local event for the quiet window while queued/running; it is not failure proof, a timeout or a model wake. */
-export interface WorkerView { id: string; role: string; taskId?: string; state: string; commandsUsed: number; commandBudget: number; idleMs?: number; quiet: boolean; reported: boolean; stopped: boolean }
+export interface WorkerView { id: string; role: string; taskId?: string; state: string; commandsUsed: number; idleMs?: number; quiet: boolean; reported: boolean; stopped: boolean }
 const age = (ms: number) => ms < 60_000 ? `${Math.max(0, Math.floor(ms / 1000))}s` : ms < 3_600_000 ? `${Math.floor(ms / 60_000)}m` : `${Math.floor(ms / 3_600_000)}h`;
 const MAX_WORKER_LINES = 12;
 export function workerLines(workers: WorkerView[], maxWorkers: number): string[] {
   if (!workers.length) return [];
   const live = workers.filter(w => !w.reported && !w.stopped), quiet = live.filter(w => w.quiet).length;
   const lines = [`Workers: live ${live.length}/${maxWorkers} slots (quiet ${quiet}) | reported ${workers.filter(w => w.reported).length} | stopped ${workers.filter(w => w.stopped && !w.reported).length}`];
-  for (const w of live.slice(0, MAX_WORKER_LINES)) lines.push(`  ${safe(w.id, 80)} · ${safe(w.role, 20)} · task ${w.taskId ? safe(w.taskId, 80) : 'none'} · ${safe(w.state, 24)} · ${w.commandsUsed}/${w.commandBudget} cmds${w.idleMs !== undefined ? ` · idle ${age(w.idleMs)}` : ''}${w.quiet ? ' · QUIET' : ''}`);
+  for (const w of live.slice(0, MAX_WORKER_LINES)) lines.push(`  ${safe(w.id, 80)} · ${safe(w.role, 20)} · task ${w.taskId ? safe(w.taskId, 80) : 'none'} · ${safe(w.state, 24)} · ${w.commandsUsed} cmds${w.idleMs !== undefined ? ` · idle ${age(w.idleMs)}` : ''}${w.quiet ? ' · QUIET' : ''}`);
   if (live.length > MAX_WORKER_LINES) lines.push(`  … ${live.length - MAX_WORKER_LINES} more live workers; /p2o log actor=<worker-id> filters one worker's events`);
   if (quiet) lines.push('QUIET = no local event for 120 s while queued/running. It is not proof of failure, not a timeout and wakes no model; /p2o log actor=<worker-id> shows what it last did.');
   return lines;
@@ -93,7 +93,6 @@ export function statusView(index: LedgerIndex, profile: ViewProfile, context:Rep
       ...(profile.runtime ? [`Runtime: p2o ${safe(profile.runtime.version || 'unknown version', 40)} · ${safe(profile.runtime.sha256, 64).slice(0, 12)} (digest of the entry file + src closure; identifies code, not safety)${profile.runtime.policy !== undefined ? `; tool guidance ${profile.runtime.policy === 'off' ? 'off' : `v${profile.runtime.policy}`}` : ''}`] : []), taskLine,
       `Worker slots: ${profile.delegation ? profile.maxWorkers : 0}; target-operation cap: ${profile.executor.maxTargetOperations} (not network rate/connections)`,
       `Frontier: ${profile.engine.pendingIntents} accepted pending intents; automatic wakes ${profile.engine.rounds}/${profile.engine.maxAutomaticRounds}`,
-      `Worker commands: ${profile.workerUsed}/${profile.workerCeiling} run allowance (worker reserve 90%; owner commands/provider cost separate)`,
       ...workerLines(profile.workers ?? [], profile.maxWorkers),
       ...(profile.usageLines ?? []).map(line => safe(line, 400)),
       `Planner context: ${profile.contextUsage ? (profile.contextUsage.percent != null && profile.contextUsage.tokens != null ? `${Math.round(profile.contextUsage.percent)}% (${profile.contextUsage.tokens} of ${profile.contextUsage.contextWindow} tokens) at the last request` : `unknown right now (window ${profile.contextUsage.contextWindow} tokens)`) : 'not reported yet'}; measurement only, p2o never compacts or summarizes the Planner session itself.`,

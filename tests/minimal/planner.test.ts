@@ -11,7 +11,7 @@ import { createContext, createFakePi, createSimpleHerdr, sandboxFactory, EXTENSI
 async function fixture(work:(h:any)=>Promise<void>,args='',budget?:number) {
   const root=await mkdtemp(join(tmpdir(),'p2o-planner-'));await mkdir(join(root,'source'));
   const pi=createFakePi(),ctx=createContext({cwd:root}),herdr=createSimpleHerdr(),sandboxes:InertSandbox[]=[];
-  registerP2O(pi.pi,{extensionPath:EXTENSION_PATH,controlRoot:join(root,'control'),settingsPath:join(root,'fixture-settings.json'),herdr:herdr.client,createSandbox:sandboxFactory(sandboxes),totalCommandBudget:budget});
+  registerP2O(pi.pi,{extensionPath:EXTENSION_PATH,controlRoot:join(root,'control'),settingsPath:join(root,'fixture-settings.json'),herdr:herdr.client,createSandbox:sandboxFactory(sandboxes)});
   const call=(name:string,params={})=>pi.tools.get(name).execute('call',params,undefined,undefined,ctx.ctx);
   const emit=async(name:string,event:any={})=>{let result:any;for(const f of pi.events.get(name)??[])result=await f(event,ctx.ctx);return result;};
   const command=(s:string)=>pi.commands.get('p2o').handler(s,ctx.ctx);
@@ -37,7 +37,7 @@ describe('Planner/Engine/Worker extension contract',()=>{
     });
     await fixture(async(h)=>{expect(h.pi.active).toContain('p2o_shell');expect((await h.call('p2o_shell',{command:'solo'})).details.exitCode).toBe(0);},'--solo');
   });
-  it('reuses three slots for 30 attributed assignments, with unique tickets and no budget reset',async()=>{
+  it('reuses three slots for 30 attributed assignments with unique tickets and no allowance to reset',async()=>{
     await fixture(async(h)=>{
       const ids:string[]=[];for(let i=0;i<30;i++)ids.push((await h.call('p2o_task',{action:'create',draft:draft(`surface-${i}`)})).details.id);
       await h.call('p2o_task',{action:'dispatch',ids:ids.slice(0,25)});await h.call('p2o_task',{action:'dispatch',ids:ids.slice(25)});
@@ -50,7 +50,7 @@ describe('Planner/Engine/Worker extension contract',()=>{
         const view=(await h.call('p2o_workers')).details;expect(view.workers.filter((w:any)=>w.live).length).toBeLessThanOrEqual(3);
       }
       await until(()=>h.herdr.calls.filter((c:any)=>c.op==='close').length>=27);
-      const view=(await h.call('p2o_workers')).details;expect(view.workers).toHaveLength(30);expect(view.budgets.workerUsed).toBe(30);expect(view.engine.pendingIntents).toBe(0);
+      const view=(await h.call('p2o_workers')).details;expect(view.workers).toHaveLength(30);expect(view.workers.every((w:any)=>w.commandsUsed===1)).toBe(true);expect(view.engine.pendingIntents).toBe(0);
       expect(new Set(h.herdr.calls.filter((c:any)=>c.op==='start').map((c:any)=>c.name)).size).toBe(30);
       expect(h.pi.customMessages).toHaveLength(0);expect(h.sandboxes[0].commands.some((c:any)=>c.command==='stale')).toBe(false);
     },'--workers 3');
@@ -80,11 +80,14 @@ describe('Planner/Engine/Worker extension contract',()=>{
       await expect(h.call('p2o_shell',{command:'must not execute'})).rejects.toThrow('NO_ASSESSMENT');await delay(150);expect(h.pi.messages).toHaveLength(2);
     },'--loop event-driven');
   });
-  it('does not use a new worker identity to renew exhausted target-command allowance',async()=>{
+  it('admits a new worker after a long assignment, because there is no run allowance left to renew',async()=>{
     await fixture(async(h)=>{
-      const s=(await h.call('p2o_delegate',{focus:'bounded',task:'Single-command assignment'})).details;const {client}=await h.connect(s.workerId);
-      await client.request('exec',{command:'one'});await client.request('report',{report:{summary:'Budget consumed; retain gaps',confidence:'low',outcome:'partial-budget'}});
-      await expect(h.call('p2o_delegate',{focus:'renewal',task:'Do not renew budget'})).rejects.toThrow('COMMAND_BUDGET');
+      const s=(await h.call('p2o_delegate',{focus:'bounded',task:'Long single assignment'})).details;const {client}=await h.connect(s.workerId);
+      // 300 commands: 50% past the retired 200-command default, and still admitted one by one.
+      for(let i=0;i<300;i++)await client.request('exec',{command:'observation '+i});
+      await client.request('report',{report:{summary:'Long assignment finished',confidence:'low'}});
+      const next=(await h.call('p2o_delegate',{focus:'renewal',task:'Continue on the next surface'})).details;
+      expect(next.workerId).toBeTruthy();
       expect((await h.call('p2o_loop',{action:'status'})).details.mode).toBe('manual');
     },'',2);
   });

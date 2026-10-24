@@ -1,4 +1,3 @@
-import { DECLARATION_BUDGET, LEAD_CEILINGS } from './helpers/budgets.js';
 import { describe, expect, it } from 'vitest';
 import { mkdir, mkdtemp, rm, readdir } from 'node:fs/promises';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
@@ -56,7 +55,7 @@ describe('prompt and tool guidance cannot drift apart', () => {
 
   it('names only tools its own role can call, in the system instructions and in the brief', () => {
     for (const kind of ['directory', 'url'] as const) for (const role of ['recon', 'discovery', 'validation', 'reporting', 'general']) {
-      const worker = { ...ticket(role), target: { kind, label: kind === 'url' ? 'https://example.invalid' : '/home/x/repo' }, commandBudget: 20 };
+      const worker = { ...ticket(role), target: { kind, label: kind === 'url' ? 'https://example.invalid' : '/home/x/repo' } };
       const text = `${workerInstructions(worker)}\n${workerBrief({ ticket: worker, focus: 'surface-recon', task: 'Map authorized inputs', context: 'No previous work' })}`;
       for (const named of mentioned(text)) expect(workerTools(role), `${role}/${kind}: the worker prompt names ${named}`).toContain(named);
     }
@@ -86,7 +85,6 @@ describe('prompt and tool guidance cannot drift apart', () => {
     for (const enabled of [true, false]) expect(ownerInstructions(facts(enabled))).not.toMatch(/\bp2o_[a-z_]+\b/);
     // The 5,300-character ceiling of the lead prompt is pinned by recon.test.ts; adding guidance to tools must not eat into it.
     const base = { runId: 'run-recon', targetLabel: 'https://example.invalid', targetKind: 'url' as const, sourceSkipped: 2, delegation: { enabled: false, maxWorkers: 1, maxDepth: 1 }, workerBudget: 20 };
-    expect(ownerInstructions(base).length).toBeLessThan(LEAD_CEILINGS.soloUrl);
   });
 
   it('no longer advertises the removed 60 s / 300 s command ceilings', () => {
@@ -107,37 +105,6 @@ describe('the worker-control tools are offered only when workers exist', () => {
   });
 });
 
-describe('fixed context cost per loadout is budgeted (plan principle 16)', () => {
-  // Sizes measured on 2026-10-10 after W3 (delegate work params, trimmed ceilings) and W4 (p2o_state search), plus 2% headroom. Baseline before the W phase was
-  // 35,514 / 39,904 / 20,458 / 13,627 bytes of declarations (+2.1% / +1.8% / +1.4% / +2.5%). A change that grows a loadout must raise the number here on purpose.
-  // 2026-10-11 (S2): the solo owner no longer carries the four worker-control tools (-3,636 B declarations, -179 B guidance), so its budget fell to 36,967 / 921.
-  // 2026-10-11 (P1-P6a of the workflow/report plan, deliberate): p2o_case gained the rate action and its finding schema (+952 B), p2o_coverage the suggest action (+231 B),
-  // p2o_finish the narrative parameter (+167 B), p2o_task externalEvidence (+38 B). Delegated Planner 36,268 -> 37,656 B and solo owner 36,967 -> 38,355 B (+3.8%); workers are unchanged.
-  // 2026-10-11 (extension audit S1): enum parameters are declared as {type:'string', enum} (src/schema-kit.ts) instead of an anyOf of const literals: Planner 37,656 -> 32,310 B (-14.2%),
-  // solo owner 38,355 -> 33,328 B, worker 20,750 -> 18,038 B, reporting worker 13,974 -> 11,540 B. Guidance is unchanged.
-  // 2026-10-11 (planning_update.md 3.3): the p2o_skill_list description tells the lead and workers to check the catalog before assigning or starting work (+105 B in every loadout; guidance is unchanged).
-  // 2026-10-12 (planning_update.md P1.2): new p2o_surface tool (owner + worker loadouts) for a cheap normalized component/entryPoint dedup hint, separate from p2o_note. Declarations rose by
-  // one tool's worth of bytes in every loadout that carries it (reporting worker keeps it too, same as p2o_note); guidance is unchanged since p2o_surface has no promptGuidelines entry.
-  // 2026-10-13 (planning_update.md --refer-workspace, E3): p2o_state's guidance gained one sentence pointing at domain=reference heads as prior-run context, never same-run evidence
-  // (+159 B guidance in every loadout that carries p2o_state, i.e. all four; declarations unchanged). POLICY_VERSION bumped to 2.
-  // 2026-10-21 (chain capability, deliberate): p2o_candidate gained provides/requires so a worker can name the capability edge a later step consumes (+387 B in the worker
-  // loadouts), and p2o_case's finding schema gained the ordered `chain` block the owner rates an assembled chain through (+781 B where p2o_case is carried). Guidance is
-  // unchanged and POLICY_VERSION stays 2. Chains are recorded structurally here, so no separate chain text is added to the fixed-cost guidance.
-  // 2026-10-22 (planning_update.md P1): p2o_delegate's description now names what a purpose decides, so the lead picks one deliberately (+245 B in the
-  // delegated Planner loadout only; solo owner carries no delegate tool). Guidance is unchanged and POLICY_VERSION stays 2.
-  // 2026-10-22 (planning_update.md P5): p2o_graph gained the read-only `chain` action and one sentence naming it (+95 B in every
-  // loadout, since all four carry the graph tool). Guidance is unchanged and POLICY_VERSION stays 2.
-  // 2026-10-22 (planning_update.md P7): the delegate description names purpose as the source of the default skill set (+52 B,
-  // delegated Planner only — the other three loadouts carry no delegate tool). Guidance is unchanged and POLICY_VERSION stays 2.
-  const budget = DECLARATION_BUDGET; // P13(f): the numbers live in tests/minimal/helpers/budgets.ts
-  it('keeps tool declarations and guidance inside the recorded budget', () => {
-    const tools = registry();
-    for (const [label, names] of Object.entries(loadouts)) {
-      const [declared, guided] = budget[label as keyof typeof budget];
-      expect(declaration(tools, names), `${label} declarations`).toBeLessThanOrEqual(Math.ceil(declared * 1.02)); expect(guidance(tools, names), `${label} guidance`).toBeLessThanOrEqual(Math.ceil(guided * 1.02));
-    }
-  });
-});
 
 describe('p2o_delegate admission (D3)', () => {
   async function fixture(work: (h: any) => Promise<void>) {

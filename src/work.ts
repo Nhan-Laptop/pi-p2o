@@ -27,12 +27,6 @@ export interface WorkSpec {
   needs?:Capability[];
   /** P14.10: the recorded environment (P14.3) the step must run in, when the chain it came from demonstrated one. */
   environmentRef?:string;
-  /**
-   * P14.11: the command allowance this task asks for. Omitted means the purpose's class decides (200 for research work, 400 for
-   * exploitation and chaining, which spend commands on build/run/adjust cycles). It is an allowance, not identity: the same work with a
-   * larger allowance is the same work, so it stays out of the fingerprint.
-   */
-  budget?:{commands?:number};
 }
 export interface WorkDecision {
   disposition:typeof WORK_DISPOSITIONS[number]; reason:string; relatedTaskId?:string; changeReason?:string;
@@ -68,7 +62,7 @@ function revision(value:unknown,label:string):number|undefined{
 }
 
 export function validateWorkSpec(value:unknown):WorkSpec{
-  const row=plain(value,'work identity');exact(row,['assetRefs','questionKey','policyKey','actorContext','tenantContext','methodFamily','purpose','claimRefs','needs','environmentRef','budget'],'Work identity');
+  const row=plain(value,'work identity');exact(row,['assetRefs','questionKey','policyKey','actorContext','tenantContext','methodFamily','purpose','claimRefs','needs','environmentRef'],'Work identity');
   if(!Array.isArray(row.assetRefs)||row.assetRefs.length<1||row.assetRefs.length>10)throw Error('Work identity needs 1..10 asset references');
   const seen=new Set<string>(),assetRefs=row.assetRefs.map((raw,index)=>{
     const item=plain(raw,`work asset ${index}`);exact(item,['id','revision','variant'],`Work asset ${index}`);
@@ -83,14 +77,8 @@ export function validateWorkSpec(value:unknown):WorkSpec{
     const seenClaim=new Set<string>();claimRefs=row.claimRefs.map((raw,index)=>{const id=identity(raw,`parent claim ${index}`,80);if(seenClaim.has(id))throw Error('Duplicate work parent claim reference');seenClaim.add(id);return id;}).sort();}
   const needs=row.needs===undefined?undefined:capabilityList(row.needs,'work needs');
   if(row.environmentRef!==undefined&&!isEnvironmentId(row.environmentRef))throw Error('Invalid work environment reference');
-  let budget:{commands?:number}|undefined;
-  if(row.budget!==undefined){
-    const claimed=plain(row.budget,'work budget');exact(claimed,['commands'],'Work budget');
-    if(claimed.commands!==undefined){if(!Number.isSafeInteger(claimed.commands)||Number(claimed.commands)<1||Number(claimed.commands)>5000)throw Error('Invalid work command budget');budget={commands:Number(claimed.commands)};}
-    else budget={};
-  }
   return {assetRefs,questionKey:identity(row.questionKey,'question key'),methodFamily:identity(row.methodFamily,'method family',80),purpose:purpose as WorkSpec['purpose'],
-    ...(claimRefs?{claimRefs}:{}),...(needs?{needs}:{}),...(row.environmentRef!==undefined?{environmentRef:row.environmentRef as string}:{}),...(budget?{budget}:{}),
+    ...(claimRefs?{claimRefs}:{}),...(needs?{needs}:{}),...(row.environmentRef!==undefined?{environmentRef:row.environmentRef as string}:{}),
     ...(row.policyKey!==undefined?{policyKey:identity(row.policyKey,'policy key')}:{ }),...(row.actorContext!==undefined?{actorContext:identity(row.actorContext,'actor context')}:{ }),
     ...(row.tenantContext!==undefined?{tenantContext:identity(row.tenantContext,'tenant context')}:{ })};
 }

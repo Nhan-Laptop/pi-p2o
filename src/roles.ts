@@ -98,9 +98,7 @@ export const DEFAULT_ARTIFACT_CAPTURE_KIB = 1024;
  * K3-K6 tools 2-7x more often but raised cost ~70%, turns ~60% and invalid (timeout/turn-budget) runs from 1/16 to 3/16 with no recall or precision gain.
  */
 export const DEFAULT_TOOL_GUIDANCE = false;
-export type FinishGate = 'off' | 'warn' | 'confirm';
 export type ReviewIntegrity = 'off' | 'annotate' | 'enforce';
-export const DEFAULT_FINISH_GATE: FinishGate = 'warn';
 export interface P2OSettings {
   maxWorkers: number;
   maxDepth: number;
@@ -113,8 +111,6 @@ export interface P2OSettings {
   artifactCaptureKiB: number;
   /** Per-tool workflow guidance (src/tool-guidelines.ts). Read when the extension loads; /reload applies a change. */
   toolGuidance: boolean;
-  /** Host check at p2o_finish (src/finish-preflight.ts): off = unchanged output, warn = append the findings, confirm = refuse once per unchanged blocking set. */
-  finishGate: FinishGate;
   /** Write the deterministic report when a durable-local run is cleaned up (finish, stop, shutdown). Ephemeral runs keep it off unless set explicitly. */
   autoReport: boolean | undefined;
   /** Absolute directory that receives report-<runId>/; default is <cwd>/.p2o-reports. */
@@ -128,7 +124,7 @@ export interface P2OSettings {
   roles: Partial<Record<Role, RoleSettings>>;
 }
 
-const blank = (): P2OSettings => ({ maxWorkers: DEFAULT_MAX_WORKERS, maxDepth: DEFAULT_MAX_DEPTH, loopMode: 'manual', maxPlannerRounds: 100, executorMode: 'shared', maxTargetOperations: 3, retention: 'durable-local', storageQuotaMiB: DEFAULT_STORAGE_QUOTA_MIB, artifactCaptureKiB: DEFAULT_ARTIFACT_CAPTURE_KIB, toolGuidance: DEFAULT_TOOL_GUIDANCE, finishGate: DEFAULT_FINISH_GATE, autoReport: undefined, reportFormat: 2, reviewIntegrity: 'annotate', roles: {} });
+const blank = (): P2OSettings => ({ maxWorkers: DEFAULT_MAX_WORKERS, maxDepth: DEFAULT_MAX_DEPTH, loopMode: 'manual', maxPlannerRounds: 100, executorMode: 'shared', maxTargetOperations: 3, retention: 'durable-local', storageQuotaMiB: DEFAULT_STORAGE_QUOTA_MIB, artifactCaptureKiB: DEFAULT_ARTIFACT_CAPTURE_KIB, toolGuidance: DEFAULT_TOOL_GUIDANCE, autoReport: undefined, reportFormat: 2, reviewIntegrity: 'annotate', roles: {} });
 
 export function isRole(value: unknown): value is Role { return typeof value === 'string' && (ROLES as readonly string[]).includes(value); }
 
@@ -149,7 +145,6 @@ export function parseSettings(raw: unknown): P2OSettings {
   settings.storageQuotaMiB = typeof source.storageQuotaMiB === 'number' && Number.isInteger(source.storageQuotaMiB) && source.storageQuotaMiB >= 8 && source.storageQuotaMiB <= 1024 ? source.storageQuotaMiB : DEFAULT_STORAGE_QUOTA_MIB;
   settings.artifactCaptureKiB = clamp(source.artifactCaptureKiB, DEFAULT_ARTIFACT_CAPTURE_KIB, 8192);
   settings.toolGuidance = typeof source.toolGuidance === 'boolean' ? source.toolGuidance : DEFAULT_TOOL_GUIDANCE;
-  settings.finishGate = source.finishGate === 'off' || source.finishGate === 'warn' || source.finishGate === 'confirm' ? source.finishGate : DEFAULT_FINISH_GATE;
   settings.autoReport = typeof source.autoReport === 'boolean' ? source.autoReport : undefined;
   if (typeof source.reportRoot === 'string' && source.reportRoot.length <= 1024 && isAbsolute(source.reportRoot) && source.reportRoot === source.reportRoot.normalize('NFC') && !/[\x00-\x1f\x7f]/.test(source.reportRoot)) settings.reportRoot = source.reportRoot;
   settings.reportFormat = source.reportFormat === 1 ? 1 : 2;

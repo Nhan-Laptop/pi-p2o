@@ -4,6 +4,8 @@ import type { MutationRequest } from './state/store.js';
 import { redact } from './evidence.js';
 import { exact, plain, TEXT_CONTROL } from './validate.js';
 import { LedgerBoard } from './board.js';
+import { capabilityList, type Capability } from './capabilities.js';
+import { isEnvironmentId } from './lab.js';
 import { taskFrontier } from './tasks.js';
 import type { PhasePacket } from './phase.js';
 
@@ -14,6 +16,14 @@ export interface PlanDecision { disposition:typeof PLAN_DISPOSITIONS[number]; ch
 export interface PlanDraft {
   id?:string; kind:PlanKind; title:string; status:string; reason:string; criteria?:string[]; exclusions?:string[];
   taskIds?:string[]; goalIds?:string[]; supportRefs?:string[]; decision?:PlanDecision;
+  /** M1: the same-run candidate records this row stands on. A chain step must cite at least one; other todos may. */
+  claimRefs?:string[];
+  /** M1: typed capabilities this step consumes. Readiness is derived from what earlier steps' claims gain. */
+  needs?:Capability[];
+  /** M1: the recorded environment this step runs in, so replay travels with the plan row. */
+  environmentRef?:string;
+  /** M1: chain identity shared by its steps, and this row's 1-based position in it. */
+  chainOf?:string; step?:number;
 }
 export interface PlanEntry extends PlanDraft { id:string; runId:string; revision:number; recordId:string }
 /** Goal vocabulary, distinct from tasks and coverage plans. */
@@ -32,23 +42,44 @@ function list(value:unknown,label:string,max=10,minimum=0):string[]{
   if(value===undefined&&minimum===0)return[];if(!Array.isArray(value)||value.length<minimum||value.length>max)throw Error(`Invalid plan ${label}`);
   const result=value.map(item=>id(item,label));if(new Set(result).size!==result.length)throw Error(`Duplicate plan ${label}`);return result;
 }
+function linkEnvironment(value:unknown):string{
+  if(!isEnvironmentId(value))throw Error('Invalid plan environment');return value;
+}
 function proseList(value:unknown,label:string):string[]{
   if(value===undefined)return[];if(!Array.isArray(value)||value.length>10)throw Error(`Invalid plan ${label}`);return value.map(item=>text(item,label,500,5));
 }
 export function validatePlanDraft(value:unknown):PlanDraft{
-  const row=plain(value,'plan entry');exact(row,['id','kind','title','status','reason','criteria','exclusions','taskIds','goalIds','supportRefs','decision'],'Plan entry');
+  const row=plain(value,'plan entry');exact(row,['id','kind','title','status','reason','criteria','exclusions','taskIds','goalIds','supportRefs','decision','claimRefs','needs','environmentRef','chainOf','step'],'Plan entry');
   if(typeof row.kind!=='string'||!(PLAN_KINDS as readonly string[]).includes(row.kind))throw Error('Invalid plan kind');const kind=row.kind as PlanKind;
   if(typeof row.status!=='string'||!statuses[kind].includes(row.status))throw Error('Invalid plan status');
   const result:PlanDraft={kind,title:text(row.title,'title',500),status:row.status,reason:text(row.reason,'reason',1000,10),
     criteria:proseList(row.criteria,'criteria'),exclusions:proseList(row.exclusions,'exclusions'),taskIds:list(row.taskIds,'task ID'),goalIds:list(row.goalIds,'goal ID'),supportRefs:list(row.supportRefs,'support reference')};
   if(row.id!==undefined)result.id=id(row.id);
+  // M1: one link vocabulary on the plan board; the fields only exist on a todo, and a chain step always carries both the
+  // chain and its position, so a reader never has to guess which group a numbered row belongs to.
+  const linkFields=kind==='todo';
+  if(!linkFields&&['claimRefs','needs','environmentRef','chainOf','step'].some(key=>row[key]!==undefined))throw Error('Only a todo holds a chain link');
+  if(linkFields){
+    result.claimRefs=list(row.claimRefs,'claim reference',8);
+    if(row.needs!==undefined)result.needs=capabilityList(row.needs,'Plan needs');
+    if(row.environmentRef!==undefined)result.environmentRef=linkEnvironment(row.environmentRef);
+    const hasChain=row.chainOf!==undefined,hasStep=row.step!==undefined;
+    if(hasChain!==hasStep)throw Error('A chain step needs both chainOf and step');
+    if(hasChain){
+      result.chainOf=id(row.chainOf,'chain ID');
+      if(!Number.isSafeInteger(row.step)||(row.step as number)<1||(row.step as number)>8)throw Error('Invalid plan step');
+      result.step=row.step as number;
+      if(!result.claimRefs.length)throw Error('CHAIN_LINEAGE: a chain step must cite the claim it consumes (claimRefs); a plan row with no lineage cannot hold a link');
+    }
+  }
   if(kind==='goal'&&!result.criteria?.length)throw Error('Goal needs bounded acceptance criteria');
   if(kind!=='goal'&&(result.criteria!.length||result.exclusions!.length))throw Error('Only goals define criteria/exclusions');
   if(kind==='decision'){
     if(!row.decision||typeof row.decision!=='object'||Array.isArray(row.decision)||Object.getPrototypeOf(row.decision)!==Object.prototype)throw Error('Decision entry needs a structured disposition');const d=row.decision as Record<string,unknown>;
     if(Object.keys(d).some(key=>!['disposition','chosenTaskIds','deferredTaskIds','revisitCondition'].includes(key))||typeof d.disposition!=='string'||!(PLAN_DISPOSITIONS as readonly string[]).includes(d.disposition))throw Error('Invalid plan decision');
     result.decision={disposition:d.disposition as PlanDecision['disposition'],chosenTaskIds:list(d.chosenTaskIds,'chosen task ID'),deferredTaskIds:list(d.deferredTaskIds,'deferred task ID'),...(d.revisitCondition!==undefined?{revisitCondition:text(d.revisitCondition,'revisit condition',500,5)}:{})};
-    if(!result.decision.chosenTaskIds.length&&!result.decision.deferredTaskIds.length)throw Error('Decision needs a chosen or deferred task reference');
+    // M7: a condition-bounded revisit is a decision about time, not about a task, so a revisit condition can stand alone.
+    if(!result.decision.chosenTaskIds.length&&!result.decision.deferredTaskIds.length&&!result.decision.revisitCondition)throw Error('Decision needs a chosen or deferred task reference');
   } else if(row.decision!==undefined)throw Error('Only a decision entry may contain a disposition');
   return result;
 }
@@ -81,6 +112,13 @@ export class PlanBoard extends LedgerBoard{
     const visiting=new Set<string>(),visited=new Set<string>();const visit=(key:string)=>{if(visiting.has(key))throw Error('Plan goal cycle');if(visited.has(key))return;visiting.add(key);for(const parent of edges.get(key)??[])visit(parent);visiting.delete(key);visited.add(key);};if(draft.id)visit(draft.id);
     for(const ref of draft.supportRefs??[])if(index.byId.get(ref)?.kind!=='evidence'||index.byId.get(ref)?.runId!==this.runId)throw Error(`Plan support ${ref} is not same-run evidence`);
     for(const taskId of [...(draft.decision?.chosenTaskIds??[]),...(draft.decision?.deferredTaskIds??[])])if(!tasks.some(task=>task.id===taskId))throw Error(`Unknown decision task ${taskId}`);
+    // M1: lineage is a same-run candidate record, so the chain board can resolve a step's needs against what that claim gains.
+    for(const ref of draft.claimRefs??[])if(index.byId.get(ref)?.kind!=='candidate'||index.byId.get(ref)?.runId!==this.runId)throw Error(`Unknown plan claim ${ref}: a claim reference must be a same-run candidate record`);
+    if(draft.chainOf&&draft.step!==undefined){
+      // One row per position: two rows claiming step 2 of the same chain would make readiness ambiguous.
+      const clash=plans.find(plan=>plan.id!==draft.id&&plan.chainOf===draft.chainOf&&plan.step===draft.step);
+      if(clash)throw Error(`Duplicate chain step ${draft.step} in ${draft.chainOf}`);
+    }
   }
   private async write(make:()=>{draft:PlanDraft;revision:number;previous?:PlanEntry},request?:MutationRequest):Promise<PlanEntry>{
     const makeRecords=()=>{this.gate();const {draft,revision,previous}=make(),idValue=draft.id!,recordId=randomUUID(),at=new Date(this.now()).toISOString(),plan={...draft,id:idValue,runId:this.runId,revision};

@@ -103,7 +103,7 @@ it.skipIf(process.env.P2O_TEST_DOCKER !== '1')('real Docker: two delegated worke
   const sandbox = new Sandbox({ kind: 'directory', path: root }, undefined, undefined, { runId: 'broker-docker', tmpBytes: '256m', workBytes: '512m' });
   const registrations: WorkerRegistration[] = ['p2o-recon-aaaaaa', 'p2o-validation-bbbbbb'].map((workerId, index) => ({
     workerId, name: workerId, paneId: `w1T:p${index + 2}`, role: index ? 'validation' : 'recon', depth: 1, parentWorkerId: null,
-    token: String(index + 1).repeat(32), commandBudget: 50, used: 0, startedAt: Date.now(), stopped: false,
+    token: String(index + 1).repeat(32), used: 0, startedAt: Date.now(), stopped: false,
   }));
   const broker = new Broker(root, {
     exec: (command, seconds, workdir, signal) => sandbox.exec(command, seconds, signal, workdir),
@@ -112,7 +112,7 @@ it.skipIf(process.env.P2O_TEST_DOCKER !== '1')('real Docker: two delegated worke
     ledger: limit => readRecords(records, limit),
     delegate: async () => { throw new Error('delegation is not exercised here'); },
     report: async () => {},
-  }, { totalCommandBudget: 200 });
+  }, {});
   const clients: BrokerClient[] = [];
   try {
     await sandbox.start();

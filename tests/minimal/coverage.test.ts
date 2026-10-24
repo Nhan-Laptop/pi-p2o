@@ -12,6 +12,7 @@ import type { CaseDraft, CaseEntry } from '../../src/case-types.js';
 import { TaskBoard, type TaskDraft } from '../../src/tasks.js';
 import { readLedger, type AssessmentRecord } from '../../src/records.js';
 import { prepareReport, reportProjection } from '../../src/report.js';
+import { finishPreflight } from '../../src/finish-preflight.js';
 
 const runId='run-coverage';
 async function fixture(work:(h:{store:AssessmentStore;coverage:CoverageBoard;cases:CaseBoard;tasks:TaskBoard;assetId:string;asset2:string;path:string;receipt:(by:string)=>string;claim:(closure?:string,supersedes?:string)=>string;acceptedCase:(verdict?:'confirmed'|'ruled_out')=>Promise<CaseEntry>;reviewedTask:()=>Promise<{id:string;revision:number;evidenceId:string}>;views:()=>Promise<CoveragePlanView[]>})=>Promise<void>,fault?:StoreFault){
@@ -42,4 +43,69 @@ describe('proof-aware coverage plan and denominator (K5)',()=>{
     const request={actorId:'owner',requestId:'coverage-after',payload:{transport:'after'}};mode='after';await expect(coverage.addCell(planEntry.id,1,cell(assetId,{questionKey:'question:after'}),request)).rejects.toThrow('coverage after commit');expect(store.records().filter(row=>row.data?.coverageCell)).toHaveLength(1);const committed=store.sequence(),replay=await coverage.addCell(planEntry.id,1,cell(assetId,{questionKey:'question:after'}),request);expect(replay.plan.revision).toBe(2);expect(store.sequence()).toBe(committed);expect(store.records().filter(row=>row.data?.coverageCell)).toHaveLength(1);
   },stage=>{if(mode==='before'&&stage==='before-commit'){mode=undefined;throw Error('coverage before commit');}if(mode==='after'&&stage==='after-commit'){mode=undefined;throw Error('coverage after commit');}});});
  it('uses retained mutation ACKs and atomic plan heads under concurrent writers',async()=>fixture(async({coverage,assetId,path,store})=>{const request={actorId:'owner',requestId:'coverage-plan',payload:{transport:'same'}},created=await coverage.createPlan(plan(),request),sequence=store.sequence(),replay=await coverage.createPlan(plan(),request);expect(replay.recordId).toBe(created.recordId);expect(store.sequence()).toBe(sequence);await expect(coverage.createPlan(plan({title:'Changed title'}),request)).rejects.toThrow('IDEMPOTENCY_CONFLICT');const other=new CoverageBoard(runId,path,()=>true,{targetRevision:()=>store.graphScope(),assetRevision:id=>store.assetRevision(id),assertionRevision:id=>store.assertionRevision(id),assetIds:()=>store.assetEntityIds()}),results=await Promise.allSettled([coverage.addCell(created.id,1,cell(assetId,{questionKey:'question:a'})),other.addCell(created.id,1,cell(assetId,{questionKey:'question:b'}))]);expect(results.filter(result=>result.status==='fulfilled')).toHaveLength(1);expect((await coverage.list())[0].cellIds).toHaveLength(1);}));
+});
+
+/**
+ * M5 (interrupt honesty): a task that ends without a verdict may not carry the verdict its cell asserts. The writer refuses the
+ * dishonest revision with the task and its state named; the view downgrades a stored verdict nobody can support, so an opened
+ * old run cannot read as tested; the preflight names the cell under its own code so the report can say what to re-dispatch.
+ */
+describe('interrupted tasks never count as tested coverage (M5)', () => {
+  it('refuses a tested or verified cell whose cited task ended blocked, naming the task and its state', async () => fixture(async ({coverage, tasks, assetId, store, receipt}) => {
+    const p = await coverage.createPlan(plan());
+    const draft: TaskDraft = { question: 'Can the bounded fixture be observed?', surface: '/a', risk: 'authorization', role: 'general',
+      roleReason: 'Interrupt fixture only', expectedTrue: 'The receipt records the observation', expectedFalse: 'The receipt records the control',
+      stopCondition: 'Stop after one inert observation', evidenceIds: [], prerequisites: [],
+      method: { skills: [], reason: 'Inert fixture method without target activity' } } as TaskDraft;
+    const created = await tasks.create(draft);
+    await tasks.reserve(created.id, 'owner');
+    await tasks.transition(created.id, 'running', 'Owner began the inert interrupt fixture');
+    const blockedAt = await tasks.transition(created.id, 'blocked', 'Blocked on an unavailable prerequisite during the fixture', [receipt('owner')]);
+    const gap = store.commitRecords([{ id: randomUUID(), runId, at: '2030', by: 'owner', kind: 'open', text: 'Interrupted cell needs another attempt' }])[0].recordId;
+    const cited = cell(assetId, { execution: 'tested', assessment: 'open_gap', taskRefs: [{ taskId: created.id, revision: blockedAt.revision }], evidenceRefs: [receipt('owner')], gapRefs: [gap] });
+    await expect(coverage.addCell(p.id, p.revision, cited))
+      .rejects.toThrow(/INTERRUPT_NOT_EVIDENCE: task .* ended as blocked without a verdict; cell question:object-access stays attempted, not tested/);
+    // A ruled-out assessment rests on the same impossible verdict, so it is refused by the same rule.
+    await expect(coverage.addCell(p.id, p.revision, cell(assetId, { execution: 'attempted', assessment: 'ruled_out_bounded', taskRefs: [{ taskId: created.id, revision: blockedAt.revision }], evidenceRefs: [receipt('owner')], negativeControlRefs: [receipt('owner')], gapRefs: [gap] })))
+      .rejects.toThrow(/INTERRUPT_NOT_EVIDENCE/);
+    // The honest version is accepted: an attempt, an open gap, and a reason.
+    const added = await coverage.addCell(p.id, p.revision, cell(assetId, { execution: 'attempted', assessment: 'open_gap', taskRefs: [{ taskId: created.id, revision: blockedAt.revision }], gapRefs: [gap] }));
+    expect(added.cell.execution).toBe('attempted');
+    const views = await coverage.list();
+    expect(views[0].counts.execution).toMatchObject({ attempted: 1 });
+    expect(views[0].counts.assessment).toMatchObject({ open_gap: 1 });
+  }));
+
+  it('downgrades a stored verdict to attempted/open_gap and reports it as the interrupted cell it is', async () => fixture(async ({coverage, tasks, assetId, store, receipt, path}) => {
+    const p = await coverage.createPlan(plan());
+    const draft: TaskDraft = { question: 'Can the bounded fixture be observed?', surface: '/a', risk: 'authorization', role: 'general',
+      roleReason: 'Interrupt fixture only', expectedTrue: 'The receipt records the observation', expectedFalse: 'The receipt records the control',
+      stopCondition: 'Stop after one inert observation', evidenceIds: [], prerequisites: [],
+      method: { skills: [], reason: 'Inert fixture method without target activity' } } as TaskDraft;
+    const created = await tasks.create(draft);
+    await tasks.reserve(created.id, 'owner');
+    await tasks.transition(created.id, 'running', 'Owner began the inert interrupt fixture');
+    const evidenceId = receipt('owner');
+    const honest = await coverage.addCell(p.id, p.revision, cell(assetId, { execution: 'planned', assessment: 'unreviewed', taskRefs: [{ taskId: created.id, revision: created.revision }] }));
+    const blockedAt = await tasks.transition(created.id, 'blocked', 'Blocked after the cell was written', [evidenceId]);
+    // A run written before M5 (or a writer that bypassed the board) can still hold a verdict no task supports. Store it directly.
+    const { recordId: _record, ...stored } = { ...honest.cell, execution: 'tested' as const, assessment: 'confirmed_claim' as const, taskRefs: [{ taskId: created.id, revision: blockedAt.revision }], evidenceRefs: [evidenceId], claimRefs: [] };
+    store.commitRecords([{ id: randomUUID(), runId, at: '2030', by: 'owner', kind: 'note', text: `coverage cell ${stored.id}@r${stored.revision + 1}: unsupported verdict retained for the fixture`, supersedes: honest.cell.recordId, data: { coverageCell: { ...stored, revision: stored.revision + 1 } } }]);
+    const views = await coverage.list();
+    const view = views[0].cells[0];
+    expect(view.execution).toBe('tested');                 // what was stored
+    expect(view.effectiveExecution).toBe('attempted');     // what the cited task supports
+    expect(view.effectiveAssessment).toBe('open_gap');
+    expect(view.currentness).toBe('stale');
+    expect(view.staleReasons.some(reason => reason.startsWith('interrupted-task:'))).toBe(true);
+    expect(view.reviewed).toBe(false);
+    // The backlog counts the direction as unattempted-but-open, never as tested.
+    expect(views[0].counts.execution).toMatchObject({ attempted: 1 });
+    expect(views[0].counts.assessment).toMatchObject({ open_gap: 1 });
+    // And the finish check names it, so the report says what to re-dispatch.
+    const index = await readLedger(path, runId);
+    const interrupted = finishPreflight(index, { cases: { assetRevision: () => undefined }, coverage: { targetRevision: () => 'fixture', assetRevision: () => 1 }, integrity: 'annotate' }).advisory.find(item => item.code === 'INTERRUPTED_CELL');
+    expect(interrupted).toMatchObject({ count: 1, ids: [view.id] });
+    expect(interrupted?.message).toContain('stays attempted');
+  }));
 });

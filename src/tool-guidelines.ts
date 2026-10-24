@@ -16,7 +16,7 @@ export const TOOL_GUIDELINES: Readonly<Record<string, readonly string[]>> = {
   p2o_capture: ['Keep long scratch output as a retained artifact and cite its ID instead of pasting it into notes.'],
   p2o_lab: ['Store the payload before you run it and verify the environment recipe before you trust it, then name both in the claim so a second worker replays the same bytes in the same recipe.'],
   p2o_plan: ['Keep goals, todos and decisions that span rounds here rather than in chat.'],
-  p2o_finish: ['Before finishing, review pending or stale cases and list unresolved gaps in the report.'],
+  p2o_finish: ['export writes the report and ends nothing; the final finish stops workers. Review pending/stale cases and list unresolved gaps.'],
 };
 
 export function withGuidelines<T extends { name: string; promptGuidelines?: string[] }>(tool: T): T {

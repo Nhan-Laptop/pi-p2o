@@ -34,7 +34,6 @@ export interface Ticket {
   reports: string;
   lifetime: 'until-stopped';
   executorMode?: 'shared' | 'isolated';
-  commandBudget: number;
   extension: { path: string; sha256: string };
   token: string;
   taskId?: string;
@@ -111,7 +110,6 @@ export async function readTicket(path: string, expected: TicketExpectations): Pr
   if (typeof ticket.target?.label !== 'string' || !ticket.target.label || ticket.target.label.length > 512 || /[\x00-\x1f\x7f]/.test(ticket.target.label)) bad('invalid target label');
   if (!['directory', 'url', 'hybrid'].includes(ticket.target.kind)) bad('invalid target kind');
   if (ticket.target.kind !== 'directory' && (typeof ticket.target.origin !== 'string' || !/^https?:\/\//.test(ticket.target.origin))) bad('url and hybrid tickets need an http(s) origin');
-  if (!Number.isInteger(ticket.commandBudget) || ticket.commandBudget < 1 || ticket.commandBudget > 5000) bad('invalid command budget');
   const socket = await lstat(ticket.socket).catch(() => undefined);
   if (!socket?.isSocket()) bad('owner sandbox socket is not available');
   return ticket;

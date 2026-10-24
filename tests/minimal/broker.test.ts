@@ -7,10 +7,10 @@ import { appendRecord, readRecords } from '../../src/records.js';
 
 const REGISTRATION = (patch: Partial<WorkerRegistration> = {}): WorkerRegistration => ({
   workerId: 'p2o-recon-aaaaaa', name: 'p2o-recon-aaaaaa', paneId: 'w1T:p9', role: 'recon', depth: 1,
-  parentWorkerId: null, token: 'c'.repeat(32), commandBudget: 3, used: 0, startedAt: Date.now(), stopped: false, ...patch,
+  parentWorkerId: null, token: 'c'.repeat(32), used: 0, startedAt: Date.now(), stopped: false, ...patch,
 });
 
-async function fixture(patch: { budget?: number; total?: number; stdout?: string; registration?: Partial<WorkerRegistration>; reportFails?: boolean } = {}) {
+async function fixture(patch: { stdout?: string; registration?: Partial<WorkerRegistration>; reportFails?: boolean } = {}) {
   const control = await mkdtemp(join(tmpdir(), 'p2o-broker-'));
   const records = join(control, 'records.jsonl');
   await writeFile(records, '', { mode: 0o600 });
@@ -31,9 +31,8 @@ async function fixture(patch: { budget?: number; total?: number; stdout?: string
       for (const command of ['prepare', 'launch', 'seed']) steps.push((await control.exec(command)).code);
       return { id: String(request.id), fingerprint: 'a'.repeat(64), revision: 1, steps };
     },
-    onBudget: (id,reason) => {calls.push(`budget ${id} ${reason}`);},
     onProblem: problem => { calls.push(`problem ${problem}`); },
-  }, { totalCommandBudget: patch.total ?? 100 });
+  }, {});
   for (const registration of [REGISTRATION(patch.registration)]) { broker.register(registration); registrations.set(registration.workerId, registration); }
   const socket = await broker.start();
   return { control, records, calls, broker, registrations, socket, close: async () => { await broker.stop(); await rm(control, { recursive: true, force: true }); } };
@@ -52,34 +51,21 @@ describe('sandbox broker', () => {
     } finally { client.close(); await f.close(); }
   });
 
-  it('makes a budget-ended exploitation report name what survived, and asks research work for nothing extra', async () => {
-    // P14.11: the allowance follows the purpose, and a run that ended on it must say whether a payload survived.
-    const exploitation = await fixture({ registration: { purpose: 'exploitation', commandBudget: 2, used: 2 } });
+  it('counts commands without ever refusing them, so a long exploitation iteration is not cut off', async () => {
+    // Owner decision 2026-10-24: p2o has no command allowance. 201 admitted commands is the regression that proves it.
+    const f = await fixture({ registration: { purpose: 'exploitation', used: 0 } });
     try {
-      const client = new BrokerClient(exploitation.socket, REGISTRATION({ purpose: 'exploitation', commandBudget: 2, used: 2 }).token, { requestMs: 2000 });
+      const client = new BrokerClient(f.socket, REGISTRATION({ purpose: 'exploitation' }).token, { requestMs: 10_000 });
       try {
-        // A refused command is where the worker last reads the duty, so the refusal names the wrap-up too.
-        await expect(client.request('exec', { command: 'cat /etc/hostname' })).rejects.toThrow(/budget exhausted/);
-        expect(exploitation.calls.some(call => call.startsWith('budget ') && call.includes('wrapUp'))).toBe(true);
-        await expect(client.request('report', { report: { summary: 'ran out mid-iteration', confidence: 'low', outcome: 'partial-budget' } }))
-          .rejects.toThrow(/send wrapUp naming the stored payload/);
-        expect(exploitation.broker.registration('p2o-recon-aaaaaa')?.reported).toBeUndefined();
-        const reported = await client.request('report', { report: { summary: 'ran out mid-iteration', confidence: 'low', outcome: 'partial-budget', wrapUp: 'payload pay-11111111-1111-4111-8111-111111111111 stored; no environment verified' } });
+        for (let index = 0; index < 201; index += 1) await client.request('exec', { command: `step-${index}` });
+        expect(f.broker.registration('p2o-recon-aaaaaa')?.used).toBe(201);
+        // No refusal is recorded for an allowance, and a report needs no wrap-up: there is nothing to wrap up from.
+        expect(f.calls.some(call => call.startsWith('budget '))).toBe(false);
+        const reported = await client.request('report', { report: { summary: 'ran the whole iteration', confidence: 'medium', outcome: 'partial-budget' } });
         expect(reported.ok).toBe(true);
-        expect(exploitation.broker.registration('p2o-recon-aaaaaa')?.reported?.wrapUp).toMatch(/^payload pay-/);
+        expect(f.broker.registration('p2o-recon-aaaaaa')?.reported?.summary).toBe('ran the whole iteration');
       } finally { client.close(); }
-    } finally { await exploitation.close(); }
-
-    // A research run that reports without a wrap-up is unchanged: the requirement exists only where the allowance ends mid-iteration.
-    const research = await fixture({ registration: { purpose: 'validation', commandBudget: 2, used: 2 } });
-    try {
-      const client = new BrokerClient(research.socket, REGISTRATION({ purpose: 'validation', commandBudget: 2, used: 2 }).token, { requestMs: 2000 });
-      try {
-        const reported = await client.request('report', { report: { summary: 'one bounded check', confidence: 'medium', outcome: 'partial-budget' } });
-        expect(reported.ok).toBe(true);
-        expect(research.broker.registration('p2o-recon-aaaaaa')?.reported?.wrapUp).toBeUndefined();
-      } finally { client.close(); }
-    } finally { await research.close(); }
+    } finally { await f.close(); }
   });
 
   it('publishes an owner-private socket and runs exec/http/note/report/delegate for an authenticated worker', async () => {
@@ -90,7 +76,7 @@ describe('sandbox broker', () => {
       expect(mode.mode & 0o777).toBe(0o600);
       await expect(client.request('capabilities')).rejects.toThrow(/unknown|unsupported/i);
       const status = await client.request('status');
-      expect(status).toMatchObject({ workerId: 'p2o-recon-aaaaaa', used: 0, budget: 3, reported: false });
+      expect(status).toMatchObject({ workerId: 'p2o-recon-aaaaaa', used: 0, reported: false });
       const executed = await client.request('exec', { command: 'id -u', timeout: 10 });
       expect(executed).toMatchObject({ ok: true, code: 0, stdout: 'ran id -u' });
       expect(f.calls).toContain('exec /work/p2o-recon-aaaaaa 10 id -u');
@@ -110,7 +96,7 @@ describe('sandbox broker', () => {
   });
 
   it('carries full HTTP verbs, bodies, headers and network commands across the broker', async () => {
-    const f = await fixture({ budget: 50 });
+    const f = await fixture();
     const client = new BrokerClient(f.socket, 'c'.repeat(32), { requestMs: 5000 });
     try {
       const posted = await client.request('http', { url: '/login', method: 'post', body: 'user=a', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, followRedirects: false });
@@ -133,8 +119,8 @@ describe('sandbox broker', () => {
     } finally { client.close(); await f.close(); }
   });
 
-  it('rejects an unauthenticated or revoked worker and enforces per-worker and reserve budgets', async () => {
-    const f = await fixture({ registration: { commandBudget: 2 } });
+  it('rejects an unauthenticated or revoked worker', async () => {
+    const f = await fixture();
     try {
       const stranger = new BrokerClient(f.socket, 'd'.repeat(32), { connectMs: 2000, requestMs: 3000 });
       await expect(stranger.request('status')).rejects.toThrow(/rejected|unauthorized/i);
@@ -142,20 +128,16 @@ describe('sandbox broker', () => {
       const client = new BrokerClient(f.socket, 'c'.repeat(32), { connectMs: 2000, requestMs: 5000 });
       await client.request('exec', { command: 'one' });
       await client.request('exec', { command: 'two' });
-      await expect(client.request('exec', { command: 'three' })).rejects.toThrow(/budget exhausted/);
-      expect(f.calls.filter(c=>c.startsWith('budget'))).toHaveLength(1);
       f.broker.revoke('p2o-recon-aaaaaa');
       await expect(client.request('exec', { command: 'four' })).rejects.toThrow(/stopped by the owner/);
       client.close();
     } finally { await f.close(); }
   });
 
-  it('stops workers at the shared reserve and refuses oversized or unknown requests', async () => {
-    const f = await fixture({ registration: { commandBudget: 50 }, total: 10 });
+  it('refuses oversized or unknown requests', async () => {
+    const f = await fixture();
     const client = new BrokerClient(f.socket, 'c'.repeat(32), { connectMs: 2000, requestMs: 5000 });
     try {
-      for (let index = 0; index < 9; index += 1) await client.request('exec', { command: `cmd-${index}` });
-      await expect(client.request('exec', { command: 'over-reserve' })).rejects.toThrow(/reserve reached/);
       await expect(client.request('nonsense')).rejects.toThrow(/unsupported broker operation/);
       await expect(client.request('exec', { command: 'x'.repeat(9000) })).rejects.toThrow(/1\.\.8192/);
       await expect(client.request('exec', { command: 'id', timeout: 1.5 })).rejects.toThrow(/non-negative/);
@@ -193,7 +175,7 @@ describe('sandbox broker', () => {
       ledger: async () => [],
       delegate: async () => { throw new Error('unused'); },
       report: async () => {},
-    }, { totalCommandBudget: 50 });
+    }, {});
     broker.register(REGISTRATION());
     await broker.start();
     const client = new BrokerClient(broker.socket, 'c'.repeat(32), { connectMs: 2000, requestMs: 30_000 });
@@ -218,15 +200,14 @@ describe('sandbox broker', () => {
     } finally { await f.close(); }
   });
 
-  it('reserves coordination after knowledge exhaustion without increasing the 200-call ceiling', async () => {
+  it('never refuses a knowledge read or a coordination call, because there is no allowance to exhaust', async () => {
     const f=await fixture();const client=new BrokerClient(f.socket,'c'.repeat(32),{requestMs:2000});
     try {
-      for(let i=0;i<160;i++)await client.request('skill_list').catch(()=>{});
-      await expect(client.request('skill_list')).rejects.toThrow('40 coordination');
-      for(let i=0;i<40;i++)await client.request('note',{kind:'open',text:'bounded fixture gap'});
-      await expect(client.request('note',{kind:'open',text:'over budget'})).rejects.toThrow('Coordination budget');
-      await client.request('report',{report:{summary:'Knowledge exhausted; bounded partial report',confidence:'low',outcome:'partial-budget'}});
-      expect(f.broker.registration('p2o-recon-aaaaaa')?.reported?.outcome).toBe('partial-budget');
+      // 200 reads and 200 notes is ten times the retired read/coordination split; every one must be admitted.
+      for(let i=0;i<200;i++)await client.request('note',{kind:'open',text:'bounded fixture gap '+i});
+      for(let i=0;i<200;i++)await client.request('ledger',{limit:1});
+      await client.request('report',{report:{summary:'Long knowledge loop finished',confidence:'low'}});
+      expect(f.broker.registration('p2o-recon-aaaaaa')?.reported?.summary).toBe('Long knowledge loop finished');
     } finally {client.close();await f.close();}
   });
   it('blocks a known runtime mismatch and preserves correlated report-failure/oversize errors', async () => {
@@ -265,7 +246,7 @@ describe('sandbox broker', () => {
 });
 
 describe('environment recipes over the broker (P14.3)', () => {
-  const SECOND = REGISTRATION({ workerId: 'p2o-discovery-bbbbbb', name: 'p2o-discovery-bbbbbb', role: 'discovery', token: 'd'.repeat(32), commandBudget: 3 });
+  const SECOND = REGISTRATION({ workerId: 'p2o-discovery-bbbbbb', name: 'p2o-discovery-bbbbbb', role: 'discovery', token: 'd'.repeat(32) });
   it('runs the recipe as admitted target commands in each caller’s own sandbox, so two workers see one fingerprint', async () => {
     const f = await fixture();
     const first = new BrokerClient(f.socket, 'c'.repeat(32), { requestMs: 2000 });
@@ -275,14 +256,15 @@ describe('environment recipes over the broker (P14.3)', () => {
       const created = await first.request('environment', { action: 'create', name: 'fixture-app', recipe: { setup: ['make'] } });
       expect(created.value).toMatchObject({ fingerprint: 'a'.repeat(64), created: true });
       let verified: any;
-      try { verified = await second.request('environment', { action: 'verify', id: created.value.id }); } catch (error) { console.log('DBG-VERIFY-ERR', (error as Error).message, JSON.stringify(f.calls.slice(-6)), 'used', f.broker.registration(SECOND.workerId)?.used, f.broker.registration(SECOND.workerId)?.commandBudget); throw error; }
+      try { verified = await second.request('environment', { action: 'verify', id: created.value.id }); } catch (error) { console.log('DBG-VERIFY-ERR', (error as Error).message, JSON.stringify(f.calls.slice(-6)), 'used', f.broker.registration(SECOND.workerId)?.used); throw error; }
       // The second worker reproduces in the same fingerprint, in its own scratch directory.
       expect(verified.value).toMatchObject({ fingerprint: created.value.fingerprint, revision: 1 });
       expect(f.calls.filter(call => call.startsWith('exec /work/p2o-discovery-bbbbbb 0'))).toHaveLength(3);
       expect(f.broker.registration(SECOND.workerId)?.used).toBe(3);
-      // The environment cannot dodge the command budget: with the allowance spent, the next verify is refused before any command runs.
-      await expect(second.request('environment', { action: 'verify', id: created.value.id })).rejects.toThrow(/budget exhausted/);
-      expect(f.calls.filter(call => call.startsWith('exec /work/p2o-discovery-bbbbbb 0'))).toHaveLength(3);
+      // A second verify runs its own three commands; there is no allowance to be spent, so nothing refuses it.
+      const again = await second.request('environment', { action: 'verify', id: created.value.id });
+      expect(again.value).toMatchObject({ fingerprint: created.value.fingerprint });
+      expect(f.calls.filter(call => call.startsWith('exec /work/p2o-discovery-bbbbbb 0'))).toHaveLength(6);
     } finally { first.close(); second.close(); await f.close(); }
   });
 });

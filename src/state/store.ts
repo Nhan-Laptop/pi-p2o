@@ -170,12 +170,13 @@ export class AssessmentStore {
         data: { sourceSnapshotSha256, sourceEntries: entries.length, sourceSkipped: skipped } });
     });
   }
-  finalize(outcome: 'partial' | 'blocked' | 'cancelled' | 'incomplete', reason: string, resourceOutcome: 'cleaned' | 'unresolved'): void {
+  /** `note` is the run's derived completion line (M3): stopped is not complete, so what is still owed is recorded with the ending. */
+  finalize(outcome: 'partial' | 'blocked' | 'cancelled' | 'incomplete', reason: string, resourceOutcome: 'cleaned' | 'unresolved', note?: string): void {
     // Outcome/run.stopped may consume the retained finalization reserve; ordinary writes may not.
     this.atomically(() => {
-      const data = { assessmentOutcome: outcome, resourceOutcome, reason: redact(reason), at: new Date().toISOString() };
+      const data = { assessmentOutcome: outcome, resourceOutcome, reason: redact(reason), at: new Date().toISOString(), ...(note ? { remaining: redact(note) } : {}) };
       this.db.prepare('INSERT OR REPLACE INTO metadata VALUES (?,?)').run('outcome', JSON.stringify(data));
-      this.insertEvent({ kind: 'run.stopped', actorId: 'owner', occurredAt: data.at, summary: `Resources ${resourceOutcome}; assessment ${outcome}`, data });
+      this.insertEvent({ kind: 'run.stopped', actorId: 'owner', occurredAt: data.at, summary: `Resources ${resourceOutcome}; assessment ${outcome}${note ? `; ${note}` : ''}`, data });
     }, undefined, undefined, {finalization:true});
   }
   outcome(): Record<string, unknown> | undefined { this.gate(); const row = this.db.prepare("SELECT body FROM metadata WHERE key='outcome'").get(); return row ? JSON.parse(String(row.body)) : undefined; }
@@ -621,6 +622,8 @@ export class AssessmentStore {
   }
 
   // ---------------------------------------------------------------- asset graph (K3)
+  /** Retained asset heads: an M6 progress counter, never a quota or an authority renewal. */
+  assetCount(): number { this.gate(); return this.graphCount('assets'); }
   /** Target/source identity is knowledge scoping, not live origin permission. */
   graphScope(): string {
     this.gate(); const m=this.manifest();

@@ -1,5 +1,6 @@
 import { readPackageFile } from './skills.js';
 import { sha256Hex } from './validate.js';
+import { describeCapability, isTypedCapability, type Capability } from './capabilities.js';
 
 /**
  * planning_update.md P14.8: technique research is a citation lookup, not an evidence path.
@@ -105,3 +106,25 @@ export function quoteExcerpt(value: string, limit = RESEARCH_EXCERPT_BYTES): Res
 }
 
 export const researchDigest = (body: string | Buffer) => sha256Hex(typeof body === 'string' ? Buffer.from(body, 'utf8') : body);
+
+/**
+ * M8: when a link blocks, the lead is told what to research — the transition it needs, not a topic. The skill is the procedure
+ * that owns that transition, chosen by the capability the step consumes; the hint is advice for `p2o_research`, never scope.
+ */
+export const TRANSITION_SKILLS: Readonly<Record<string, string>> = {
+  'net.egress': 'ssrf-to-internal', 'dns.resolve': 'ssrf-to-internal',
+  'http.request': 'web-injection-to-exec', 'file.read': 'web-injection-to-exec', 'file.write': 'web-injection-to-exec',
+  'db.query': 'web-server-side-injection', 'deserialize': 'deserialization-and-dispatch-auditing',
+  'exec.code': 'binary-exploit-ladder', 'host.shell': 'binary-exploit-ladder',
+  'cred.session': 'credential-and-pivot', 'cred.secret': 'credential-and-pivot',
+  'cloud.role': 'sandbox-boundary-analysis',
+  'admin.ui': 'web-object-authorization', 'data.read': 'web-object-authorization', 'auth.bypass': 'web-object-authorization',
+};
+export interface TransitionHint { tool: 'p2o_research'; needs: string; gained: string; query: string; skill: string }
+export function transitionHint(need: Capability, gained: readonly Capability[], surface?: string): TransitionHint {
+  const to = gained[0] ? describeCapability(gained[0]) : 'the next capability';
+  const from = describeCapability(need);
+  const kind = isTypedCapability(need) ? need.kind : 'legacy';
+  const query = `${from} to ${to}${surface ? ` on ${surface}` : ''}`.slice(0, RESEARCH_QUERY_MAX);
+  return { tool: 'p2o_research', needs: from, gained: to, query, skill: TRANSITION_SKILLS[kind] ?? 'exploit-design' };
+}

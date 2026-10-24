@@ -7,7 +7,7 @@ import type { Ticket } from '../../src/ticket.js';
 // planning_update.md P1/P2: a worker's purpose, not its role name, says what counts as done.
 const ticket = (overrides: Partial<Ticket> = {}) => ({ workerId: 'worker-test', role: 'recon', runId: 'run-test', depth: 1,
   parentWorkerId: null, lifetime: 'until-stopped', target: { kind: 'url', label: 'https://example.invalid' },
-  commandBudget: 20, ...overrides }) as Ticket;
+  ...overrides }) as Ticket;
 
 describe('purpose-keyed duty (P1)', () => {
   it('gives every work purpose a duty, a failure it prevents and an expected output', () => {
@@ -17,12 +17,9 @@ describe('purpose-keyed duty (P1)', () => {
       for (const [field, value] of Object.entries(entry)) { expect(value.trim(), `${purpose}.${field}`).not.toBe(''); expect(value.length, `${purpose}.${field}`).toBeLessThanOrEqual(200); }
       expect(dutyLine(purpose)).toContain(`(${purpose})`);
     }
-    // One line, not a paragraph: the worker prompt budget grows by this much per assignment. Exploitation and chaining carry one extra
-    // sentence (P14.11) because their allowance ends mid-iteration: 3 lines of wrap-up duty are worth more than a cut-off run that leaves
-    // nothing behind, so those two get 480 rather than 400 and the other seven keep the tighter ceiling.
-    for (const purpose of WORK_PURPOSES) expect(dutyLine(purpose).length, purpose).toBeLessThanOrEqual(purpose === 'exploitation' || purpose === 'chaining' ? 480 : 400);
-    // Only the purposes whose allowance can end mid-iteration ask the worker to write a wrap-up; the others must not carry prompt weight.
-    expect(WORK_PURPOSES.filter(purpose => DUTIES[purpose].wrapUp !== undefined)).toEqual(['exploitation', 'chaining']);
+    // One line, not a paragraph: the duty is re-read at every assignment, so it has to stay scannable. No length ceiling beyond that
+    // editorial rule (owner decision 2026-10-24: no context-size budgets).
+    for (const purpose of WORK_PURPOSES) expect(dutyLine(purpose), purpose).not.toContain('Before you stop');
   });
 
   it('derives a purpose from the role when the lead supplied no structured work', () => {

@@ -39,7 +39,7 @@ owner-managed sandbox.
   name a destination — and returns a bounded quoted excerpt with the hash of the page it read, recorded as a `research`
   ledger record (`source`, `url`, `license`, `sha256`, `bytes`, `fetchedAt`, injection signals). Research is never
   evidence and never a finding; a page that instructs the reader is reported as untrusted text and changes no state.
-  Research is not budgeted: a lookup spends no command allowance and carries no separate counter.
+  Research is not a target command: a lookup carries no command and no separate counter.
 - Budgets: 400 lead reads; 200 worker knowledge/coordination calls (knowledge stops at 160). These are not command reserves.
 
 ## Prompt and recon

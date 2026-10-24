@@ -60,14 +60,14 @@ describe('deterministic frontier and semantic wake loop',()=>{
     const wake=f.engine.boundary()!;expect(wake.round).toBe(1);expect(f.engine.boundary()).toBeUndefined();expect(f.engine.validWake(wake)).toBe(true);
     f.engine.consume();f.engine.notify('worker-report','b');expect(f.engine.boundary()!.round).toBe(2);f.engine.stop();
   });
-  it('pause/stop invalidates reserved wakes, preserves allowance and never resurrects authority',async()=>{
+  it('pause/stop invalidates reserved wakes, preserves the round count and never resurrects authority',async()=>{
     const f=fixture('event-driven');f.engine.notify('worker-report','a');await tick();const wake=f.wakes[0];f.engine.pause('Human pause');expect(f.engine.validWake(wake)).toBe(false);
     await f.queue([0]);await tick();expect(f.spawns).toEqual([]);f.engine.resume();await tick();expect(f.spawns).toHaveLength(1);expect(f.wakes).toHaveLength(2);
     f.engine.stop();f.engine.notify('worker-report','late');await tick();expect(f.wakes).toHaveLength(2);await expect(f.queue([1])).rejects.toThrow('inactive');
   });
-  it('caps automatic wakes independently of command/inner-turn budgets; no silent renewal',async()=>{
+  it('caps automatic wakes independently of how many commands ran; no silent renewal',async()=>{
     const f=fixture('event-driven',3,1);f.engine.notify('worker-report','a');await tick();f.engine.consume();f.engine.notify('worker-report','b');await tick();
-    expect(f.wakes).toHaveLength(1);expect(f.engine.snapshot().paused).toContain('allowance');expect(()=>f.engine.resume()).toThrow('exhausted');f.engine.stop();
+    expect(f.wakes).toHaveLength(1);expect(f.engine.snapshot().paused).toContain('round limit');expect(()=>f.engine.resume()).toThrow('round limit');f.engine.stop();
   });
   it('stops new dispatch after stop while an asynchronous spawn is still owned',async()=>{
     const f=fixture();let release!:()=>void;f.deps.spawn=()=>new Promise<void>(resolve=>{release=resolve;});await f.queue([0,1]);await tick();f.engine.stop();release();await f.engine.join();expect(f.engine.snapshot().state).toBe('stopped');

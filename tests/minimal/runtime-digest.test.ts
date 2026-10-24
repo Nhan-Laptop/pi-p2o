@@ -84,7 +84,7 @@ describe('runtime closure digest', () => {
       const old = await runtimeIdentity(entry);
       const ticket: Ticket = { version: 2, runId: 'run-digest', workerId: workerName('discovery'), paneId: 'pane', parentWorkerId: null, depth: 1, role: 'discovery',
         target: { kind: 'directory', label: '/fixture' }, image: 'img', socket, records: join(control, 'records.sqlite'), reports: join(control, 'reports'),
-        lifetime: 'until-stopped', commandBudget: 5, extension: { path: entry, sha256: old.sha256 }, token: 'a'.repeat(32) };
+        lifetime: 'until-stopped', extension: { path: entry, sha256: old.sha256 }, token: 'a'.repeat(32) };
       const path = await mintTicket(control, ticket);
       const expectations = (sha256: string) => ({ image: 'img', extensionPath: entry, extensionSha: sha256 });
       await expect(readTicket(path, expectations(old.sha256))).resolves.toMatchObject({ role: 'discovery' });

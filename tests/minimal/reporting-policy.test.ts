@@ -31,7 +31,7 @@ describe('reporting is synthesis-only, derived from one map (P13g)', () => {
 
   it('keeps the owner loadout a superset and the prompt consistent with the derived lists', () => {
     for (const tool of WORKER_TOOLS) expect(OWNER_TOOLS.includes(tool) || tool === 'p2o_request_subtask' || tool === 'p2o_report', tool).toBe(true);
-    const text = workerInstructions({ workerId: 'worker-test', role: 'reporting', runId: 'run-test', depth: 1, parentWorkerId: null, lifetime: 'until-stopped', target: { kind: 'directory', label: '/target' }, commandBudget: 20 } as never);
+    const text = workerInstructions({ workerId: 'worker-test', role: 'reporting', runId: 'run-test', depth: 1, parentWorkerId: null, lifetime: 'until-stopped', target: { kind: 'directory', label: '/target' } } as never);
     for (const tool of TARGET_TOOLS) expect(text.includes(tool), `reporting prompt must not offer ${tool}`).toBe(false);
     expect(text).toMatch(/synthes/i);
   });

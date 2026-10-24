@@ -230,7 +230,7 @@ describe('incremental canonical ledger projection (K6 index)', () => {
 });
 
 describe('status and report projections over an incremental snapshot', () => {
-  const profile: ViewProfile = { runId: 'run-x', target: 'fixture', lifecycle: 'active', delegation: false, maxWorkers: 3, workerUsed: 0, workerCeiling: 600, exportEnabled: false,
+  const profile: ViewProfile = { runId: 'run-x', target: 'fixture', lifecycle: 'active', delegation: false, maxWorkers: 3, exportEnabled: false,
     engine: { mode: 'manual', pendingIntents: 0, rounds: 0, maxAutomaticRounds: 100, paused: undefined, decision: undefined } as ViewProfile['engine'], executor: { mode: 'shared', maxTargetOperations: 1 }, retention: 'durable-local', stateLocation: '/fixture' };
 
   it('renders the same status, widget and report projection (including the lazily computed version) as a full scan', () => {

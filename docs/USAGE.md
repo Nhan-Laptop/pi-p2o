@@ -50,13 +50,13 @@ Số phải là số nguyên trong khoảng cho phép (không âm/thập phân/`
 
 | | `manual` (mặc định) | `event-driven` |
 |---|---|---|
-| Worker report khi Planner idle | không tự gọi model; bạn tương tác để Planner review tiếp | có thể tự gọi Planner nếu event hợp lệ, chưa pause/stop, còn allowance (tốn phí model) |
+| Worker report khi Planner idle | không tự gọi model; bạn tương tác để Planner review tiếp | có thể tự gọi Planner nếu event hợp lệ, chưa pause/stop, còn vòng Planner tự động (tốn phí model) |
 | Task đã dispatch | Engine vẫn tự admit khi có slot và prerequisite | giống nhau |
 | Polling/heartbeat | không | không |
 
 Manual **không** có nghĩa phải launch worker bằng tay; khác biệt chỉ là quyền tự bắt đầu **vòng Planner mới**. `p2o_loop` là tool của Planner (`status` / `wait` / `blocked`),
 không phải slash command: `wait` kết thúc vòng hiện tại chứ không phải assessment; `blocked` tạm dừng dispatch và wake cho tới khi bạn `/p2o resume`.
-Một report/proposal được coalesce và không bảo đảm đánh thức nếu có input người đang chờ, run đã pause/stop hoặc hết allowance.
+Một report/proposal được coalesce và không bảo đảm đánh thức nếu có input người đang chờ, run đã pause/stop hoặc đã hết số vòng Planner tự động.
 
 ### Shared hay isolated
 
@@ -72,13 +72,13 @@ Merge vào file hiện có, không ghi đè phần khác. Precedence: **CLI cho 
 |---|---|---|
 | `maxWorkers` / `maxDepth` | 3 / 2 | như `--workers` / `--max-depth` |
 | `loopMode` | `manual` | `manual` \| `event-driven` |
-| `maxPlannerRounds` | 100 | 1…`MAX_SAFE`, chỉ là allowance cho **vòng Planner tự động** (không phải tổng turn/token/chi phí/TTL); hết thì Engine pause và `/p2o resume` không cấp lại |
+| `maxPlannerRounds` | 100 | 1…`MAX_SAFE`, số **vòng Planner tự động** tối đa (không phải tổng turn/token/chi phí/TTL); hết thì Engine pause và `/p2o resume` không cấp lại. Đây là trần duy nhất còn lại trong loop: **không có ngân sách lệnh** (bỏ 2026-10-24) |
 | `executorMode` | `shared` | `shared` \| `isolated` |
 | `maxTargetOperations` | 3 | shared luôn ép về 1 |
 | `retention` / `storageQuotaMiB` | `durable-local` / 256 | quota 8–1024 MiB (gồm journal và reserve cuối) |
 | `artifactCaptureKiB` | 1024 | 1–8192; tổng prefix stdout+stderr được capture mỗi thao tác trước khi cắt hiển thị 48 KiB |
 | `toolGuidance` | `false` | bật lời khuyên quy trình knowledge theo từng tool (`src/tool-guidelines.ts`); đọc lúc nạp nên cần `/reload`. Tắt mặc định vì benchmark 2026-10-10 (deepseek-flash, 16 run/nhánh) cho thấy chi phí +≈73% mà recall/precision gần như không đổi |
-| `finishGate` | `warn` | `off`; `warn` nối khối `FINISH PREFLIGHT` vào kết quả `p2o_finish`; `confirm` từ chối **một lần** cho mỗi tập blocking, lần gọi lại giống hệt thì kết thúc |
+| ~~`finishGate`~~ | — | **Đã bỏ 2026-10-24**: không còn cổng finish. Mọi `p2o_finish` đều nối khối `FINISH PREFLIGHT` (report fact) và không bao giờ bị từ chối; khóa cũ trong settings bị bỏ qua. Bản cũ: gọi lại giống hệt thì kết thúc |
 | `autoReport` | durable: bật · ephemeral: tắt | ghi báo cáo tất định lúc run kết thúc |
 | `reportRoot` | `<cwd>/.p2o-reports` | đường dẫn tuyệt đối; báo cáo ở `<reportRoot>/report-<runId>/` |
 | `reportFormat` | `2` | `2` = báo cáo kiểu OWASP (xem dưới); `1` = bộ tệp cũ |
@@ -91,9 +91,9 @@ Merge vào file hiện có, không ghi đè phần khác. Precedence: **CLI cho 
 | Lệnh | Tác dụng |
 |---|---|
 | `/p2o pause` | dừng dispatch và wake tự động, abort lượt Planner; worker đã admit vẫn chạy và report |
-| `/p2o resume` | mở lại scheduling của run hiện tại nếu allowance còn; không cấp lại budget, không đổi mode |
+| `/p2o resume` | mở lại scheduling của run hiện tại nếu còn vòng Planner; không cấp lại gì, không đổi mode |
 | `/p2o stop` | revoke worker, hủy thao tác, cleanup; không cần mọi task thành công |
-| `/p2o hold [lý do]` | chặn lệnh target **mới** (`TARGET_OPS_HELD`, không trừ allowance) và launch worker mới; lệnh đang chạy hoàn tất; notes, report, cleanup và stop luôn mở. Chỉ người dùng gọi được |
+| `/p2o hold [lý do]` | chặn lệnh target **mới** (`TARGET_OPS_HELD`, không tính vào số lệnh) và launch worker mới; lệnh đang chạy hoàn tất; notes, report, cleanup và stop luôn mở. Chỉ người dùng gọi được |
 | `/p2o release` | gỡ hold sau xác nhận; task đã accept được admit lại |
 | `/p2o workers` | bảng worker chỉ đọc (lệnh đã dùng, thời gian im lặng, cờ `QUIET` — quan sát cục bộ, không phải timeout) |
 | `/p2o stop-worker <worker-id> [lý do]` | rút **một** worker sau xác nhận: revoke ticket, hủy lệnh, đóng pane, task → `cancelled` |
@@ -107,7 +107,7 @@ Merge vào file hiện có, không ghi đè phần khác. Precedence: **CLI cho 
 /p2o search <text> [cursor=N]
 ```
 
-- `status`: đếm task, review/blocker, profile loop/executor, allowance, retention, bảng worker, dòng `Runtime: p2o <version> · <12 hex>` (digest entry file **và** `src/**`), `Planner context` (từ Pi, chỉ đo, p2o không tự compact) và **model usage** theo role (chỉ hiển thị: không có trần/retry nào dựa trên nó; message không có usage được đếm là *unknown*, không phải 0). TUI có widget 3 dòng gọn (`p2o-progress`) cập nhật sống ngoài lệnh này.
+- `status`: đếm task, review/blocker, profile loop/executor, số lệnh đã chạy, retention, bảng worker, dòng `Runtime: p2o <version> · <12 hex>` (digest entry file **và** `src/**`), `Planner context` (từ Pi, chỉ đo, p2o không tự compact) và **model usage** theo role (chỉ hiển thị: không có trần/retry nào dựa trên nó; message không có usage được đếm là *unknown*, không phải 0). TUI có widget 3 dòng gọn (`p2o-progress`) cập nhật sống ngoài lệnh này.
 - `log` 20 mục/trang; cursor là vị trí trong snapshot hoặc sequence đã commit (`log 0` duyệt từ đầu; không cursor xem đuôi; bộ lọc `task=`/`actor=`/`operation=` mang theo qua `Next:`).
 - `report` là index các handoff/claim; không tự viết kết luận hay nâng proof. TUI có widget gọn và màn hình cuộn (↑↓/PageUp/PageDown, Esc/q); RPC nhận text.
 - Task/plan/phase/finding/coverage-cell list+detail (từng có các lệnh riêng `tasks`/`task`/`plans`/`plan`/`phases`/`phase`/`findings`/`finding`/`coverage`/`coverage-cell`) nay gộp vào cơ chế chung bên dưới: `/p2o heads <domain> [cursor] [limit] [status]` để liệt kê, `/p2o show <domain> <id>` để xem chi tiết đầy đủ bản ghi hiện hành (planning_update.md S1). `heads task 0 20 blocked` lọc đúng theo status; lịch sử nhiều revision xem qua `/p2o log task=<id>`.

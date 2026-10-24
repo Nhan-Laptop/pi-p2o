@@ -38,7 +38,7 @@ const eventDriven = ownerInstructions(facts('url', true, 'event-driven')); resul
 
 // Worker context per role and target kind.
 for (const kind of ['directory', 'url']) for (const role of ROLES) {
-  const ticket = { workerId: `p2o-${role}-abcdef`, role, runId: 'run-x', depth: 1, parentWorkerId: null, lifetime: 'until-stopped', target: { kind, label: kind === 'url' ? 'https://example.invalid' : '/target' }, commandBudget: 20 };
+  const ticket = { workerId: `p2o-${role}-abcdef`, role, runId: 'run-x', depth: 1, parentWorkerId: null, lifetime: 'until-stopped', target: { kind, label: kind === 'url' ? 'https://example.invalid' : '/target' } };
   const system = workerInstructions(ticket), brief = workerBrief({ ticket, focus: 'F', task: 'T' }), allowed = workerTools(role);
   result.workers.push({ role, kind, system: system.length, brief: brief.length, total: system.length + brief.length, reconBlocks: count(`${system}\n${brief}`, reconInstructions(kind)),
     toolNamesOutsideLoadout: named(`${system}\n${brief}`).filter(name => !allowed.includes(name)) });

@@ -216,7 +216,7 @@ describe('owner role', () => {
         await second.request('report',{report:{summary:'Withdrawn conclusion; retain missing proof',confidence:'low',evidence:[probe.evidenceId],blocked:'Missing independent effect',openItems:['Controlled boundary remains a proof gap'],outcome:'prerequisite-blocked'}});
         await h.call('p2o_task',{action:'review',id:validation.id,reason:'Review accepts the observation only; withdrawn effect remains open',evidenceIds:[probe.evidenceId]});
       } finally {second.close();}
-      const view=await h.call('p2o_workers',{cursor:0});expect(view.details.changes.total).toBeGreaterThan(0);expect(view.details.budgets.workerUsed).toBe(3); // Recon is now a worker, not Planner execution.
+      const view=await h.call('p2o_workers',{cursor:0});expect(view.details.changes.total).toBeGreaterThan(0);expect(view.details.workers).toHaveLength(3); // Recon is now a worker, not Planner execution.
       const finish=await h.call('p2o_finish');expect(finish.details.report.complete).toBe(true);expect(finish.details.report.counts.reports).toBe(3);expect(finish.details.report.counts.open).toBeGreaterThan(0);
       const exported=JSON.parse(await readFile(finish.details.exportPath,'utf8'));expect(exported.manifest.report.version).toBe(finish.details.report.version);
       expect(exported.records.some((r:any)=>r.kind==='task')).toBe(true);
@@ -242,7 +242,7 @@ describe('owner role', () => {
     expect(h.contexts.notices.at(-1)).toContain('immutable');
   });
 
-  it('gives an exploitation task 400 brokered commands, honours a declared budget, and leaves research work at 200', async () => {
+  it('gives every ticket its purpose and no command allowance, so nothing the worker starts can be cut short', async () => {
     // P14.11: the ticket is what the broker enforces, so the allowance class has to reach it.
     const ticketBudget = async (h: any) => JSON.parse(await readFile(join(await h.runDir(), (await h.tickets())[0]), 'utf8'));
     const delegated = async (h: any, extra: Record<string, unknown> = {}) => {
@@ -264,15 +264,19 @@ describe('owner role', () => {
     };
     h = await harness();
     await h.start();
-    expect(await delegated(h)).toMatchObject({ purpose: 'exploitation', commandBudget: 400 });
+    // The purpose still decides the duty line; the allowance it used to decide is gone (owner decision 2026-10-24).
+    const first = await delegated(h);
+    expect(first).toMatchObject({ purpose: 'exploitation' });
+    expect(first).not.toHaveProperty('commandBudget');
     await h.command('stop'); await rm(h.root, { recursive: true, force: true });
 
     h = await harness();
     await h.start();
-    expect(await delegated(h, { budget: { commands: 60 } })).toMatchObject({ purpose: 'exploitation', commandBudget: 60 });
+    // A second assignment on the same run is admitted like the first: nothing about it is measured against a ceiling.
+    expect(await delegated(h)).toMatchObject({ purpose: 'exploitation' });
     await h.command('stop'); await rm(h.root, { recursive: true, force: true });
 
-    // A validation task is research work: it keeps the recon allowance and asks for no wrap-up.
+    // A discovery task carries the recon purpose and, like every other ticket, no allowance.
     h = await harness();
     await h.start();
     const asset = (await h.call('p2o_graph', { action: 'record', batch: { assets: [{ asset: { kind: 'endpoint', key: 'GET /fixture' } }] } })).details.acks[0];
@@ -285,7 +289,8 @@ describe('owner role', () => {
       outputContract: { kind: 'inventory', required: ['assets'], partialAllowed: false, artifactPolicy: 'ids-only' },
     } })).details;
     await h.call('p2o_delegate', { focus: 'surface-enumeration', task: 'Enumerate the recorded surface', taskId: discovery.id });
-    expect(await ticketBudget(h)).toMatchObject({ purpose: 'discovery', commandBudget: 200 });
+    expect(await ticketBudget(h)).toMatchObject({ purpose: 'discovery' });
+    expect(await ticketBudget(h)).not.toHaveProperty('commandBudget');
   });
 
   it('asks for confirmation with the worker plan, and declining starts nothing', async () => {

@@ -8,34 +8,57 @@ import type { MutationRequest } from './state/store.js';
 import { LedgerBoard } from './board.js';
 import { validateCoverageCellDraft, validateCoveragePlanDraft, validateStoredCoverageCell, validateStoredCoveragePlan, type CoverageCellDraft, type CoverageCellEntry, type CoveragePlanDraft, type CoveragePlanEntry } from './coverage-types.js';
 import { isConfirmedClaim, isTestedCell } from './claims.js';
-import { isSatisfiedTask, SETTLED_TASK_STATUSES } from './tasks.js';
+import { isSatisfiedTask, terminalState, SETTLED_TASK_STATUSES } from './tasks.js';
 /** Coverage-plan vocabulary, distinct from tasks: a plan is reviewed/closed, never "satisfied". */
 const COVERAGE_PLAN_REVIEWED=['reviewed','closed'] as const;
 
 export interface CoverageContext extends CaseContext {targetRevision:()=>string;assetIds?:()=>string[]}
-export interface CoverageCellView extends CoverageCellEntry {currentness:'current'|'stale'|'unknown'|'retired';staleReasons:string[];effectiveAssessment:CoverageCellEntry['assessment'];reviewed:boolean}
+export interface CoverageCellView extends CoverageCellEntry {currentness:'current'|'stale'|'unknown'|'retired';staleReasons:string[];effectiveAssessment:CoverageCellEntry['assessment'];effectiveExecution:CoverageCellEntry['execution'];reviewed:boolean}
 export interface CoveragePlanView extends CoveragePlanEntry {cells:CoverageCellView[];counts:{execution:Record<string,number>;assessment:Record<string,number>;stale:number;reviewed:number};discoveredUnplannedAssets:number;omittedCells:number;warning:string}
 
 function taskAt(index:LedgerIndex,id:string,revision:number|undefined):AssessmentTask|undefined{return taskRevisionAt(index,id,revision);}
 function claimHeads(index:LedgerIndex):Map<string,AssessmentRecord>{const result=new Map<string,AssessmentRecord>();for(const row of index.records)if(row.kind==='candidate'&&typeof row.data?.candidate==='string')result.set(row.data.candidate,row);return result;}
 export const coveragePlans=(index:LedgerIndex):CoveragePlanEntry[]=>ownerNoteFrontier(index,'coveragePlan',validateStoredCoveragePlan);
 export const coverageCells=(index:LedgerIndex):CoverageCellEntry[]=>ownerNoteFrontier(index,'coverageCell',validateStoredCoverageCell);
+/** M5: the terminal states in which a task ended without an answer, so nothing it touched can be called tested. */
+export const INTERRUPTED_TASK_STATES = ['blocked','stopped','exhausted'] as const;
+/** Assessments that assert a verdict rather than an attempt, so an interrupted task may not carry them. */
+export const VERDICT_ASSESSMENTS = ['confirmed_claim','ruled_out_bounded','accepted'] as const;
+export interface InterruptedTask {taskId:string;state:string}
+/** M5: which tasks this cell cites that ended without a verdict. Pinned revision, so a later satisfied revision does not launder it. */
+export function interruptedCellTasks(index:LedgerIndex,cell:{taskRefs:readonly {taskId:string;revision?:number}[]}):InterruptedTask[]{
+  const rows:InterruptedTask[]=[];
+  for(const ref of cell.taskRefs){const task=taskAt(index,ref.taskId,ref.revision);if(!task)continue;const state=terminalState(task);if(state&&(INTERRUPTED_TASK_STATES as readonly string[]).includes(state))rows.push({taskId:ref.taskId,state});}
+  return rows;
+}
+/** M5: the cell claims a verdict while a task it cites was interrupted — the one shape the view must downgrade and the writer must refuse. */
+export const interruptedVerdict=(index:LedgerIndex,cell:CoverageCellDraft|CoverageCellEntry):InterruptedTask|undefined=>{
+  const claimsVerdict=isTestedCell(cell)||(VERDICT_ASSESSMENTS as readonly string[]).includes(cell.assessment);
+  return claimsVerdict?interruptedCellTasks(index,cell)[0]:undefined;
+};
 export function coverageFingerprint(targetRevision:string,input:CoverageCellDraft):string{return sha256Hex(graphCanonical({version:1,targetRevision,assetRef:input.assetRef,questionKey:input.questionKey,policyKey:input.policyKey??null,actorContext:input.actorContext,tenantContext:input.tenantContext,methodFamily:input.methodFamily}));}
 
 /** Bounded proof-aware matrix view. Staleness only downgrades; it never upgrades an assessment. */
 export function coverageViews(index:LedgerIndex,context:CoverageContext):CoveragePlanView[]{
   const plans=coveragePlans(index),cells=coverageCells(index),tasks=taskFrontier(index),claims=claimHeads(index),cases=caseViews(index,context),caseMap=new Map(cases.map(item=>[item.id,item])),resolved=new Set(index.records.flatMap(row=>row.resolves??[])),currentTarget=context.targetRevision();
   const cellView=(cell:CoverageCellEntry,plan:CoveragePlanEntry):CoverageCellView=>{const reasons:string[]=[];let unknown=false;
-    if(cell.retired||!plan.cellIds.includes(cell.id))return {...cell,currentness:'retired',staleReasons:[],effectiveAssessment:cell.assessment,reviewed:false};
+    if(cell.retired||!plan.cellIds.includes(cell.id))return {...cell,currentness:'retired',staleReasons:[],effectiveAssessment:cell.assessment,effectiveExecution:cell.execution,reviewed:false};
     if(cell.targetRevision!==currentTarget)reasons.push(`stale-target:${cell.targetRevision}->${currentTarget}`);const asset=context.assetRevision?.(cell.assetRef.id);if(!context.assetRevision)unknown=true;else if(asset===undefined)reasons.push(`missing-asset:${cell.assetRef.id}`);else if(cell.assetRef.revision===undefined)reasons.push(`unpinned-asset:${cell.assetRef.id}`);else if(asset!==cell.assetRef.revision)reasons.push(`stale-asset:${cell.assetRef.id}@r${cell.assetRef.revision}->r${asset}`);
     for(const ref of cell.taskRefs){const task=taskAt(index,ref.taskId,ref.revision),head=tasks.find(item=>item.id===ref.taskId);if(!task)reasons.push(`missing-task:${ref.taskId}@r${ref.revision??'?'}`);else if(head?.revision!==ref.revision)reasons.push(`superseded-task:${ref.taskId}@r${ref.revision}`);}
     for(const id of cell.claimRefs){const claim=index.byId.get(id),key=claim?.data?.candidate;if(claim?.kind!=='candidate'||typeof key!=='string')reasons.push(`missing-claim:${id}`);else if(claims.get(key)?.id!==id)reasons.push(`superseded-claim:${id}`);}
     for(const ref of cell.caseRefs){const item=caseMap.get(ref.caseId);if(!item)reasons.push(`missing-case:${ref.caseId}`);else if(item.revision!==ref.revision)reasons.push(`superseded-case:${ref.caseId}@r${ref.revision}`);else if(item.currentness!=='current')reasons.push(`stale-case:${ref.caseId}`);}
     for(const id of [...cell.evidenceRefs,...cell.negativeControlRefs])if(index.byId.get(id)?.kind!=='evidence')reasons.push(`missing-evidence:${id}`);
     for(const id of cell.gapRefs)if(index.byId.get(id)?.kind!=='open')reasons.push(`missing-gap:${id}`);else if(resolved.has(id))reasons.push(`resolved-gap-pin:${id}`);
-    const currentness=reasons.length?'stale':unknown?'unknown':'current',reviewed=currentness==='current'&&cell.assessment==='accepted'&&cell.caseRefs.some(ref=>{const item=caseMap.get(ref.caseId);return item?.revision===ref.revision&&item.reviewStatus==='accepted';});
-    return {...cell,currentness,staleReasons:[...new Set(reasons)].slice(0,40),effectiveAssessment:currentness==='stale'?'stale':cell.assessment,reviewed};};
-  return plans.map(plan=>{const selected=plan.cellIds.map(id=>cells.find(cell=>cell.id===id)).filter((cell):cell is CoverageCellEntry=>Boolean(cell)).map(cell=>cellView(cell,plan)),execution:Record<string,number>={},assessment:Record<string,number>={};for(const cell of selected){execution[cell.execution]=(execution[cell.execution]??0)+1;assessment[cell.effectiveAssessment]=(assessment[cell.effectiveAssessment]??0)+1;}
+    // M5: a task that ended without a verdict cannot carry the verdict its cell asserts. Downgrade to an attempt, keep it in the backlog,
+    // and say which task did it, so the lead can re-dispatch instead of reading the direction as closed.
+    const interrupted=interruptedVerdict(index,cell);
+    if(interrupted)reasons.push(`interrupted-task:${interrupted.taskId}:${interrupted.state}`);
+    const currentness=reasons.length?'stale':unknown?'unknown':'current',
+      reviewed=!interrupted&&currentness==='current'&&cell.assessment==='accepted'&&cell.caseRefs.some(ref=>{const item=caseMap.get(ref.caseId);return item?.revision===ref.revision&&item.reviewStatus==='accepted';});
+    return {...cell,currentness,staleReasons:[...new Set(reasons)].slice(0,40),
+      effectiveAssessment:interrupted?'open_gap':currentness==='stale'?'stale':cell.assessment,
+      effectiveExecution:interrupted?'attempted':cell.execution,reviewed};};
+  return plans.map(plan=>{const selected=plan.cellIds.map(id=>cells.find(cell=>cell.id===id)).filter((cell):cell is CoverageCellEntry=>Boolean(cell)).map(cell=>cellView(cell,plan)),execution:Record<string,number>={},assessment:Record<string,number>={};for(const cell of selected){execution[cell.effectiveExecution]=(execution[cell.effectiveExecution]??0)+1;assessment[cell.effectiveAssessment]=(assessment[cell.effectiveAssessment]??0)+1;}
     const planned=new Set(selected.map(cell=>cell.assetRef.id)),all=context.assetIds?.(),discoveredUnplannedAssets=all?new Set(all.filter(id=>!planned.has(id))).size:0;return {...plan,cells:selected,counts:{execution,assessment,stale:selected.filter(cell=>cell.currentness==='stale').length,reviewed:selected.filter(cell=>cell.reviewed).length},discoveredUnplannedAssets,omittedCells:Math.max(0,plan.cellIds.length-selected.length),warning:'Coverage denominator is this explicit plan revision. Blocked/untested/unplanned cells and discovered assets never imply clean; case review never completes a goal.'};});
 }
 
@@ -53,6 +76,9 @@ export class CoverageBoard extends LedgerBoard{
     for(const ref of input.caseRefs){const item=cases.find(value=>value.id===ref.caseId);if(!item||item.revision!==ref.revision)throw Error(`Unknown or stale coverage case ${ref.caseId}@r${ref.revision}`);}
     for(const id of [...input.evidenceRefs,...input.negativeControlRefs])if(index.byId.get(id)?.kind!=='evidence'||index.byId.get(id)?.runId!==this.runId)throw Error(`Unknown coverage evidence ${id}`);
     for(const id of input.gapRefs)if(index.byId.get(id)?.kind!=='open'||index.byId.get(id)?.runId!==this.runId)throw Error(`Unknown coverage gap ${id}`);
+    // M5: refuse the dishonest write with the task and its state named, before the generic receipt check can hide it.
+    const interrupted=interruptedVerdict(index,input);
+    if(interrupted)throw Error(`INTERRUPT_NOT_EVIDENCE: task ${interrupted.taskId} ended as ${interrupted.state} without a verdict; cell ${input.questionKey} stays attempted, not tested`);
     if(isTestedCell(input)){if(!input.evidenceRefs.length||!input.taskRefs.length)throw Error('Tested coverage needs evidence and an exact reviewed task revision');for(const ref of input.taskRefs){const task=taskAt(index,ref.taskId,ref.revision)!;if(!isSatisfiedTask(task.status)||!task.evidenceIds.length)throw Error('Tested coverage needs reviewed task receipts');}}
     if(input.execution==='blocked'&&(input.assessment!=='open_gap'||!input.gapRefs.length))throw Error('Blocked coverage must retain an explicit open gap');
     if(input.assessment==='confirmed_claim'&&!input.claimRefs.some(id=>isConfirmedClaim(index.byId.get(id)?.data??{})))throw Error('Confirmed-claim coverage needs an exact confirmed candidate claim');

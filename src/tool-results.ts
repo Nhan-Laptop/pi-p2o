@@ -46,7 +46,6 @@ export interface WorkersNavigation {
   taskItems: unknown[];
   diagnostics: string[];
   reconciliation: { omitted: number };
-  budgets: { workerUsed: number; workerCeiling: number; leadSubmitted: number };
   progress: Array<{ id: string; state: string; lastProblem?: string; stallSuspected: boolean; outcome?: string }>;
   warning: string;
 }

@@ -13,10 +13,10 @@ ngân sách. "Goal" ở đây là record mục tiêu của assessment. Bản chi
   (capability có kiểu mà bước này tiêu thụ — copy từ `p2o_graph` chain, không phải quyền) cùng `environmentRef` (environment P14.3
   mà bước phải chạy trong đó). Fingerprint = run + target revision + asset/variant đã sort + keys + context + method + prerequisite
   pins + purpose + `needs`/`environmentRef`. Đổi câu chữ không đổi identity; thiếu metadata → `dedupConfidence:unknown`.
-- **Ngân sách lệnh là allowance, không phải identity** (P14.11): `work.budget.commands` (1..5000) đặt số lệnh broker cho task đó; bỏ trống
-  thì theo purpose — 200 cho công việc khảo sát, **400 cho `exploitation`/`chaining`** vì vòng build/run/crash/adjust tiêu lệnh nhanh hơn
-  recon. `budget` **không** vào fingerprint: cùng câu hỏi với allowance lớn hơn vẫn là cùng việc. Task exploitation/chaining chạm trần ngân
-  sách phải report `wrapUp` nêu payload đã lưu + environment, hoặc nói rõ vì sao không có; thiếu thì broker từ chối report đó.
+- **Không còn ngân sách lệnh** (quyết định owner 2026-10-24): trường `work.budget`, mức 200/400 theo purpose, nghĩa vụ `wrapUp` và
+  các chia read/coordination của broker đã bị xóa. Broker vẫn **đếm** mỗi lệnh target cho ledger và report nhưng không từ chối lệnh nào;
+  một vòng build/run/crash/adjust của exploitation không bị cắt giữa chừng. Ticket cũ còn `commandBudget` vẫn đọc được (trường bị bỏ
+  qua), nên `p2o open <runId>` của run cũ không hỏng.
 - **Từ frontier ra task, không tự dispatch**: `p2o_graph {"action":"chain","plan":true,"assetRefs":[…]}` trả về đúng object
   `p2o_task create` cho bước sâu nhất đã sẵn sàng (purpose `exploitation`, `claimRefs` = record id của các provider trên đường đi ngắn
   nhất + claim của chính bước đó, `needs` = capability đang tiêu thụ, `environmentRef` = environment của provider sâu nhất có ghi) và ghi
@@ -65,3 +65,25 @@ Không có TTL hay timeout mặc định.
 
 Test: `work.test.ts`, `planning.test.ts`, `workspace-runtime.test.ts`, `work-native.test.ts` (provider inert). Còn thiếu: gợi ý alias/fuzzy,
 typed branch-output review, biến thể crash/interruption. Mechanics pass không chứng minh finding đúng hay tiết kiệm chi phí.
+
+## Frontier obligation lúc create (M2 + M4)
+
+`p2o_task {action:'create'}` từ chối một draft mở hướng mới trên surface đang có bước chain ready
+(`CHAIN_READY_UNDISPATCHED`) hoặc đang có claim confirmed+tested chưa được consume (`PRIMITIVE_UNCHAINED`). Hai đường thoát,
+đều là dữ liệu chứ không phải lời hứa: cite claim trong `work.claimRefs`, hoặc ghi một todo `deferred`/`blocked` nêu claim
+đó kèm lý do. Breadth ở surface khác vẫn được nhận; task `cancelled`/`expired`/`closed` không được tính là đã consume.
+
+## Admission refusal được ghi lại (M6)
+
+Một `create` bị từ chối vì obligation không biến mất khỏi transcript: tool ghi một lifecycle note
+`admission refused: <CODE>: …` rồi mới ném lỗi. Preflight đếm các note đó thành advisory `ADMISSION_REFUSALS`, nên
+"thuế admission" hiện ra trong báo cáo thay vì chỉ nằm trong hội thoại. Con số này là quan sát, không phải hạn mức.
+
+`work.purpose` được điền từ role khi draft bỏ trống (`purposeFromRole`), nên lead không phải nhớ một trường chỉ để qua
+validate; `match` chạy trước `create` nên cả hai đường đều canonicalize trước khi kiểm.
+
+## Continuation (M8)
+
+Mỗi worker được nối **một** lần (`CONTINUATIONS_PER_WORKER = 1`) trên cùng ticket. `WORKER_CLOSED` khi ticket đã đóng,
+`CONTINUATION_LIMIT` khi đã nối. Đây là giới hạn theo ticket, không phải ngân sách lệnh: không có bộ đếm nào bị trừ và
+không có lệnh nào bị chặn.

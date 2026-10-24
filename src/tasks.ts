@@ -11,6 +11,9 @@ import { makePhasePacket } from './phase.js';
 import { derive } from './ledger-memo.js';
 import { TEXT_CONTROL } from './validate.js';
 import { LedgerBoard } from './board.js';
+import { planFrontier } from './planning.js';
+import { chainObligations, dispatchRefusal } from './obligations.js';
+import { claimHeadClaims } from './chain-view.js';
 
 export interface TaskMethod { skills: Array<{ id: string; sha256: string }>; workflow?: { id: string; description: string; prerequisites?: string[]; skillId?: string }; reason: string }
 export interface TaskDraft {
@@ -38,22 +41,22 @@ export const isExecutingTask = (status: unknown): boolean => (EXECUTING_TASK_STA
 /**
  * P10: one terminal state per settled task, so the lead can tell "this direction is answered" from "this direction was cut
  * short and needs another angle". Derived from the record, never stored: a stored flag would need its own migration and could
- * disagree with the status it describes. `budgetExhausted` lets the caller pass the worker's own progress signal, which is the
- * only evidence that distinguishes "ran out of allowance" from "I stopped it".
+ * disagree with the status it describes. `exhausted` means the task's lease expired before it reported; p2o has no command
+ * allowance (owner decision 2026-10-24), so it never means "ran out of budget".
  */
 export const TASK_TERMINAL_STATES = ['done', 'exhausted', 'blocked', 'stopped'] as const;
 export type TaskTerminalState = typeof TASK_TERMINAL_STATES[number];
-export function terminalState(task: { status?: unknown; outcome?: unknown }, hint: { budgetExhausted?: boolean } = {}): TaskTerminalState | undefined {
+export function terminalState(task: { status?: unknown; outcome?: unknown }): TaskTerminalState | undefined {
   if (isSatisfiedTask(task.status)) return 'done';
   if (task.status === 'expired') return 'exhausted';
-  if (task.status === 'blocked') return hint.budgetExhausted ? 'exhausted' : 'blocked';
-  if (task.status === 'cancelled') return hint.budgetExhausted ? 'exhausted' : 'stopped';
+  if (task.status === 'blocked') return 'blocked';
+  if (task.status === 'cancelled') return 'stopped';
   return undefined;
 }
 /** Counts for the situation line and the task list: only settled tasks have a terminal state. */
-export function terminalCounts<T extends { status?: unknown; outcome?: unknown }>(tasks: readonly T[], exhausted: (task: T) => boolean = () => false): Record<TaskTerminalState, number> {
+export function terminalCounts<T extends { status?: unknown; outcome?: unknown }>(tasks: readonly T[]): Record<TaskTerminalState, number> {
   const counts: Record<TaskTerminalState, number> = { done: 0, exhausted: 0, blocked: 0, stopped: 0 };
-  for (const task of tasks) { const state = terminalState(task, { budgetExhausted: exhausted(task) }); if (state) counts[state] += 1; }
+  for (const task of tasks) { const state = terminalState(task); if (state) counts[state] += 1; }
   return counts;
 }
 /**
@@ -136,7 +139,13 @@ export class TaskBoard extends LedgerBoard {
   constructor(runId: string, path: string, active: () => boolean, private now = () => Date.now(), private targetRevision:string|(()=>string)=runId,
     private assetRevision?: (id:string)=>number|undefined) { super(runId, path, active, 'Task', 'Task'); }
   /** One canonical stored form: the work identity is re-validated so a sorted parent list is what the record holds. */
-  private canonical<T extends TaskDraft>(task:T):T { return task.work?{...task,work:validateWorkSpec(task.work)}:task; }
+  private canonical<T extends TaskDraft>(task:T):T {
+    if(!task.work)return task;
+    // M6/B7: the role already names the purpose, so a structured draft may omit it instead of failing a validation it can satisfy.
+    // An explicitly wrong purpose is still the caller's to fix: only the absent field is filled.
+    const work=task.work.purpose===undefined?{...task.work,purpose:purposeFromRole(task.role)}:task.work;
+    return {...task,work:validateWorkSpec(work)};
+  }
   private pinAssets<T extends TaskDraft>(task:T):T {
     if(!task.work)return task;
     return {...task,work:{...task.work,assetRefs:task.work.assetRefs.map(ref=>{const pinned=ref.revision??this.assetRevision?.(ref.id);return {...ref,...(pinned!==undefined?{revision:pinned}:{})};})}};
@@ -145,7 +154,9 @@ export class TaskBoard extends LedgerBoard {
     for(const ref of task.work?.assetRefs??[]){const current=this.assetRevision?.(ref.id);if(this.assetRevision&&!current)throw Error(`Unknown same-run task asset ${ref.id}`);
       if(ready&&ref.revision===undefined)throw Error('Task asset revision must be pinned before assignment');if(current!==undefined&&ref.revision!==undefined&&current!==ref.revision)throw Error(`STALE_WORK_REFERENCE: ${ref.id} expected r${ref.revision}, current r${current}`);}
   }
-  private async matching(task:TaskDraft&{id?:string}):Promise<TaskWorkMatch>{
+  private async matching(value:TaskDraft&{id?:string}):Promise<TaskWorkMatch>{
+    // `match` runs before `create`, so the purpose fill has to hold here too or the fingerprint refuses a draft create accepts.
+    const task=this.canonical(value);
     const identity=workIdentity(typeof this.targetRevision==='function'?this.targetRevision():this.targetRevision,task),summary=(row:{taskId:string;taskRevision:number;status:string})=>({taskId:row.taskId,revision:row.taskRevision,status:row.status});
     if(!identity.overlapKey)return {...identity,active:[],reusable:[],partial:[],overlaps:[],exactOmitted:0,overlapOmitted:0};
     const exact=identity.fingerprint?await readWorkHistory(this.path,identity.fingerprint,100):{rows:[],omitted:0},overlap=await readWorkOverlap(this.path,identity.overlapKey,100);
@@ -177,17 +188,24 @@ export class TaskBoard extends LedgerBoard {
     return { ...task, recordId };
   }
   async create(draft: TaskDraft): Promise<AssessmentTask> {
-    validate(draft);
+    // M6/B7: fill the purpose from the role before validation, so a structured draft that already states the role is not refused
+    // for repeating it. `canonical` is idempotent, so the later call keeps one owner for the fill.
+    const prepared = this.canonical(draft); validate(prepared);
     return this.mutate(async (index, tasks) => {
       const id = draft.id ?? `task-${randomUUID()}`;
       if (tasks.some(t => t.id === id)) throw Error('Duplicate task');
       if (tasks.filter(t => !['closed','cancelled','expired'].includes(t.status)).length >= 100) throw Error('Live task frontier limit reached (100); review/close or cancel retained work');
-      const candidate=this.canonical({...draft,id});this.checkDependencies(candidate,tasks,index);const decorated=this.decorate(candidate,await this.matching(candidate));
+      const candidate=this.canonical({...draft,id});this.checkDependencies(candidate,tasks,index);
+      // M2/M4: the frontier is an obligation. A create that opens a new direction on a surface where a step is ready, or where a
+      // demonstrated primitive has no successor and no wall, is refused with the claim to cite; revise and dispatch are untouched.
+      const plans=planFrontier(index),claims=claimHeadClaims(index,this.runId),refusal=dispatchRefusal({draft:candidate,obligations:chainObligations({plans,claims,tasks}),plans});
+      if(refusal)throw Error(refusal);
+      const decorated=this.decorate(candidate,await this.matching(candidate));
       return this.write({ ...decorated, runId: this.runId, revision: 1, status: draft.missingPrerequisites?.length ? 'blocked' : 'proposed' });
     });
   }
   async revise(id: string, revision: number, draft: TaskDraft): Promise<AssessmentTask> {
-    validate(draft);
+    const prepared = this.canonical(draft); validate(prepared);
     return this.mutate(async (index, tasks) => {
       const old = this.current(tasks,id,revision);
       if (['reserved','running'].includes(old.status)) throw Error('Withdraw active assignment before revising');
@@ -320,7 +338,7 @@ export class TaskBoard extends LedgerBoard {
       return appendRecords(this.path, makeRecords());
     });
   }
-  async match(draft:TaskDraft):Promise<TaskWorkMatch>{validate(draft);this.gate();const index=await readLedger(this.path,this.runId);if(!index.complete)throw Error('Task reconciliation incomplete');const id=draft.id??`proposal-${randomUUID()}`;this.checkDependencies({...draft,id},taskFrontier(index),index);return this.matching({...draft,id});}
+  async match(value:TaskDraft):Promise<TaskWorkMatch>{const draft=this.canonical(value);validate(draft);this.gate();const index=await readLedger(this.path,this.runId);if(!index.complete)throw Error('Task reconciliation incomplete');const id=draft.id??`proposal-${randomUUID()}`;this.checkDependencies({...draft,id},taskFrontier(index),index);return this.matching({...draft,id});}
   async list() { const index = await readLedger(this.path,this.runId); if (!index.complete) throw Error('Task reconciliation incomplete'); return taskFrontier(index); }
   async forWorker(workerId: string) {
     const index = await readLedger(this.path,this.runId);
