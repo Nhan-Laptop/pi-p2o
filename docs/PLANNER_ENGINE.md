@@ -36,6 +36,20 @@ decision. A terminal report frees capacity only after verified retirement; new a
 renew nothing, because there is no command allowance to renew (owner decision 2026-10-24). `p2o_loop wait` ends a round, not the assessment; `blocked` pauses admission and wakes.
 `/p2o pause` leaves admitted workers running; `/p2o stop` revokes them.
 
+### Goal proof (P16.1)
+
+Một goal là một lời hứa về target, không phải một hoạt động. `p2o_plan create` từ chối goal không có `proof`
+(`GOAL_UNPROVEN: a goal needs proof (capability, case or coverage)`), và `revise` lên `reviewed`/`closed` chỉ thành công khi
+supportRefs cùng tồn tại **và** proof còn đúng. Ba loại proof (`src/goal-proof.ts`):
+
+- `capability` — một claim `confirmed`+`tested` trong run đã gain đúng capability đó;
+- `case` — case cùng run đã `accepted`, `confirmed` và `current` (case `disputed`/`stale` không settle được goal);
+- `coverage` — coverage plan cùng run mà mọi cell chưa retire đều ở `tested`/`blocked`/`not_applicable` (dùng cho goal
+  mapping; goal tuyên bố reachability vẫn phải dùng capability hoặc case).
+
+Cùng một resolver chạy ở plan board và ở `deriveCompletion`, nên một goal không thể "settled" ở chỗ này mà "unproven" ở chỗ
+khác. `REPORT.md` in bảng `Goal | Status | Proof | Settled` để người đọc phân biệt status với demonstration.
+
 ### Chain board (M1)
 
 Chuỗi khai thác sống trên plan board, không có bảng cạnh riêng: mỗi bước là một `todo` với `chainOf`, `step` (đánh số từ 1, không có trần),
@@ -74,17 +88,56 @@ Phạm vi **theo surface**, không toàn cục: breadth ở surface khác vẫn 
 `cancelled`/`expired`/`closed` không tính là "đã đứng trên", nên một lần thử chết không xoá nợ. Revise và dispatch không bị
 kiểm lại — luật chỉ chặn việc mở hướng mới.
 
-### Vòng im lặng và escalate (M6)
+### Route diversity và negative evidence (P16.5/P16.6)
 
-Mỗi round engine giữ một `RoundProgress` gồm bốn bộ đếm đơn điệu: `testedCells`, `closures` (chỉ `confirmed`), `assets`,
-`chainDepth` (độ sâu lớn nhất của chain join). Round **im lặng** khi cả bốn không tăng so với round trước. Hai round im lặng
-liên tiếp thì `reserveWake()` không cấp wake nữa và `escalated()` trả về một câu duy nhất nêu **cả hai** round id cùng
-quyết định của con người — mở rộng scope, cấp credential, hoặc đổi môi trường — chứ không có từ "budget" nào trong đó. Một
-bộ đếm tăng là đủ để xoá chuỗi im lặng; `manual` mode không tự chấm round vì không có round tự động nào để chấm.
+Một **route** là họ cơ chế mà một bước chain thử (`upload`, `auth`, `sqli`, `deser`, `ssrf`, `path`, `injection`,
+`business-logic`). `p2o_plan` todo có field `route`; khi lead không nêu, nó lấy từ method family của claim mà bước đó cite
+(`risk` trước, rồi `needs`/`gained` kind). Situation in `routes: N open (a, b), M done`; preflight thêm advisory
+`ROUTE_MONOCULTURE` khi chỉ có **một** route open và capability đã chứng minh khiến họ khác khả dĩ — và demand wake của
+vòng im lặng nói thêm `every open step is on route X — plausible elsewhere: …`. Tất cả chỉ là advisory: tập trung vào một
+route là hợp lệ khi route đó đã cho hiệu ứng được chứng minh.
 
-Hệ quả: engine dừng vì *không có gì mới*, không vì hết hạn mức — và đó là lý do **duy nhất** máy tự dừng. Không còn
-`maxPlannerRounds`: sau khi M6 có hiệu lực, một trần đếm vòng chỉ là quota còn sót lại, và bỏ nó đi thì lý do dừng luôn
-nói được bằng chứng cứ thay vì bằng một con số.
+Negative evidence là checkpoint: `ruled_out` thứ hai trên cùng surface+capability bị từ chối (`RULED_OUT_RECHECK`) trừ khi
+có evidence mới hoặc control/cơ chế khác — tức tối đa **một** lần re-check, đúng luật ARTEX. Một `ruled_out` ghi với
+`execution:not_tested` hiện là `unproven-negation` trên situation line để lead biết phải dispatch đúng một lần kiểm chứng.
+
+### CVE lead: host fetch có allowlist (P16.4)
+
+`p2o_research action=cve` nhận `product`/`version` (kèm `vendor`/`cpe` tuỳ chọn) và `assetRefs`; **host** dựng URL NVD và tự
+fetch — model không bao giờ đưa ra địa chỉ. Kết quả ghi `lead` record với provenance `{url, retrievedAt, sha256}`, trạng thái
+`untriaged`; `action=triage` chuyển sang `tasked`/`ruled_out` (kèm lý do) bằng một revision `supersedes`. Một lead là con trỏ
+để kiểm chứng: claim cite lead chỉ được `policyBasis:"inferred"` + `open_proof_gap`, và `closure:"confirmed"` bị từ chối
+(`LEAD_NOT_EVIDENCE`). Situation có segment `leads: N untriaged (M critical)`; preflight/report hiện advisory
+`LEAD_UNTRIAGED` (không phải cổng) và `REPORT.md` có mục `## LEADS` in kèm source + sha256.
+
+### Graph slice, write-back và NO_GRAPH_WRITE (P16.3/P16.8)
+
+Brief của mỗi worker mang một slice từ graph — asset khớp `task.surface`, fact mới nhất (kèm evidence và người ghi), open
+lead/gap, và chain step đang ready — trong khối `== Graph context from this run ==`, nhãn background. Worker instruction
+yêu cầu ghi lại khi biết (`p2o_graph`, fact kèm evidence, hoặc note `no-new`). Host đếm per-worker bằng
+`src/write-back.ts` và hiển thị ở ba nơi: `p2o_workers list`, dòng handoff trong `REPORT.md`, và advisory
+`NO_GRAPH_WRITE` của preflight/`## REMAINING WORK`. Không có cổng: review và finish không bị từ chối vì worker ghi ít.
+
+### Vòng im lặng, frontier floor và demand wake (M6 + P16.2)
+
+Mỗi round engine giữ một `RoundProgress`: bốn bộ đếm đơn điệu (`testedCells`, `closures` — chỉ `confirmed` —, `assets`,
+`chainDepth`) **và** `remaining`/`demand` do owner tính từ đúng `deriveCompletion` mà kết quả finish in ra. Round **im lặng**
+khi cả bốn bộ đếm không tăng so với round trước. Hai round im lặng liên tiếp thì:
+
+- **còn nghĩa vụ** (`remaining > 0`): `reserveWake()` vẫn cấp wake, mang thêm `demand` nêu tên nghĩa vụ cụ thể
+  (ví dụ `quiet rounds 3 and 4 added nothing measurable (…); step 2 of chain login ready and undispatched; 1 goal(s) not
+  reviewed or closed`). Engine **không** pause; vòng lặp tiếp tục chạy. Đây là frontier floor: "không có gì mới" không
+  bao giờ thắng "vẫn còn việc phải làm".
+- **không còn nghĩa vụ** (`remaining === 0`, completion `complete`): pause, câu lý do nêu cả hai round id và nói rõ
+  completion đã complete nên không lên lịch wake tự động nữa.
+- Lead đã ghi `blocked` bằng `p2o_loop` thì pause như cũ — đó là quyết định của con người, không phải suy đoán của máy.
+
+Một bộ đếm tăng là đủ để xoá chuỗi im lặng; `manual` mode không tự chấm round vì không có round tự động nào để chấm.
+`demand` được ghi vào event `planner.admitted` (summary + data) và vào message wake, nên lý do đánh thức đọc lại được từ
+ledger. Không có từ "budget"/"allowance"/"quota" nào trong các câu này.
+
+Hệ quả: engine chỉ dừng khi completion đã complete hoặc con người bảo dừng — không vì hết hạn mức và không vì một vòng
+"không có gì mới" trong khi việc vẫn còn. Không còn `maxPlannerRounds`.
 
 ### Revisit theo điều kiện (M7)
 

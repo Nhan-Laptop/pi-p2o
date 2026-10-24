@@ -42,6 +42,18 @@ primitive tới claim đó). Không lưu gì mới, không thêm quyền, và wo
 | Mỗi run | 5.000 asset rev · 10.000 assertion · 2.000 relation · 20.000 anchor · 40.000 provenance |
 | Đếm lệnh Worker | chỉ là quan sát cho ledger/report; không có ngưỡng nào chặn lệnh (bỏ ngân sách 2026-10-24) |
 
+## Write-back và slice cho worker (P16.3/P16.8)
+
+Graph là medium của một run: worker instruction yêu cầu ghi lại ngay khi biết — một asset qua `p2o_graph`, một
+`fact:observed`/`fact:inferred` kèm evidence, hoặc một note bắt đầu bằng `no-new` khi bề mặt không thêm gì. Brief của worker
+mang theo một **slice** có giới hạn (asset khớp surface của task, fact mới nhất, open lead/gap, chain step đang ready), gắn
+nhãn *background, never a finding*.
+
+Host đếm những gì mỗi worker đã ghi (`src/write-back.ts`): asset/assertion observation từ `graph_provenance`, receipt
+`evidence` trong ledger và finding trong report. `p2o_workers list` in `wrote …`/`NO_GRAPH_WRITE`, report in cạnh mỗi
+handoff, và preflight thêm advisory `NO_GRAPH_WRITE` khi worker không ghi gì và cũng không để lại note `no-new`. Đây là
+advisory, **không** phải điều kiện để review hay finish.
+
 ## Checkpoint và bundle
 
 Checkpoint chứa graph revisions + provenance; `applyGraphEvents(snapshot, tail)` dựng lại tri thức, từ chối run/scope lạ,

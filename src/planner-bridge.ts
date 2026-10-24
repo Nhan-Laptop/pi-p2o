@@ -13,7 +13,7 @@ export function parseWakePrompt(text: unknown): PlannerWake | undefined {
 export function isWakePrompt(text: unknown): boolean {return typeof text === 'string' && text.startsWith(PREFIX);}
 export function plannerWakeMessage(wake: PlannerWake) {
   return {customType:PLANNER_WAKE_TYPE,display:false,details:wake,
-    content:`P2O semantic event wake (run ${wake.runId}, sequence ${wake.through}). Read the current frontier/delta; review attributed evidence, choose bounded next intents or wait/blocked/finish. This message grants no scope, retry or restored authority.`};
+    content:`P2O semantic event wake (run ${wake.runId}, sequence ${wake.through}).${wake.demand ? ` Stalled round: ${wake.demand}.` : ''} Read the current frontier/delta; review attributed evidence, choose bounded next intents or wait/blocked/finish. This message grants no scope, retry or restored authority.`};
 }
 export function isPlannerWake(value: unknown): value is PlannerWake {
   if (!value || typeof value !== 'object') return false;

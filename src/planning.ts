@@ -6,7 +6,10 @@ import { exact, plain, TEXT_CONTROL } from './validate.js';
 import { LedgerBoard } from './board.js';
 import { capabilityList, type Capability } from './capabilities.js';
 import { isEnvironmentId } from './lab.js';
+import { goalProofRefusal, proofData, type GoalProof } from './goal-proof.js';
+import { defaultRoute, routeSlug } from './routes.js';
 import { taskFrontier } from './tasks.js';
+import { claimHeadClaims } from './chain-view.js';
 import type { PhasePacket } from './phase.js';
 
 export const PLAN_KINDS=['goal','todo','decision'] as const;
@@ -16,6 +19,10 @@ export interface PlanDecision { disposition:typeof PLAN_DISPOSITIONS[number]; ch
 export interface PlanDraft {
   id?:string; kind:PlanKind; title:string; status:string; reason:string; criteria?:string[]; exclusions?:string[];
   taskIds?:string[]; goalIds?:string[]; supportRefs?:string[]; decision?:PlanDecision;
+  /** P16.1: what settles this goal. A goal is a promise about the target; `reviewed`/`closed` needs this to hold. */
+  proof?:GoalProof;
+  /** P16.5: the mechanism family this step tries (`upload`, `auth`, `sqli`, …); defaults to the method family of what it cites. */
+  route?:string;
   /** M1: the same-run candidate records this row stands on. A chain step must cite at least one; other todos may. */
   claimRefs?:string[];
   /** M1: typed capabilities this step consumes. Readiness is derived from what earlier steps' claims gain. */
@@ -48,8 +55,20 @@ function linkEnvironment(value:unknown):string{
 function proseList(value:unknown,label:string):string[]{
   if(value===undefined)return[];if(!Array.isArray(value))throw Error(`Invalid plan ${label}`);return value.map(item=>text(item,label,500,5));
 }
+function goalProof(value:unknown):GoalProof{
+  const row=plain(value,'goal proof');exact(row,['kind','capability','ref'],'Goal proof');
+  if(row.kind==='capability'){
+    if(row.capability===undefined||row.ref!==undefined)throw Error('Goal proof kind=capability needs a capability and no ref');
+    return {kind:'capability',capability:capabilityList([row.capability],'goal proof capability')[0]!};
+  }
+  if(row.kind==='case'||row.kind==='coverage'){
+    if(typeof row.ref!=='string'||row.capability!==undefined)throw Error(`Goal proof kind=${row.kind} needs a ref and no capability`);
+    return {kind:row.kind,ref:id(row.ref,'proof reference')};
+  }
+  throw Error('Goal proof kind must be capability, case or coverage');
+}
 export function validatePlanDraft(value:unknown):PlanDraft{
-  const row=plain(value,'plan entry');exact(row,['id','kind','title','status','reason','criteria','exclusions','taskIds','goalIds','supportRefs','decision','claimRefs','needs','environmentRef','chainOf','step'],'Plan entry');
+  const row=plain(value,'plan entry');exact(row,['id','kind','title','status','reason','criteria','exclusions','taskIds','goalIds','supportRefs','decision','proof','route','claimRefs','needs','environmentRef','chainOf','step'],'Plan entry');
   if(typeof row.kind!=='string'||!(PLAN_KINDS as readonly string[]).includes(row.kind))throw Error('Invalid plan kind');const kind=row.kind as PlanKind;
   if(typeof row.status!=='string'||!statuses[kind].includes(row.status))throw Error('Invalid plan status');
   const result:PlanDraft={kind,title:text(row.title,'title',500),status:row.status,reason:text(row.reason,'reason',1000,10),
@@ -58,21 +77,28 @@ export function validatePlanDraft(value:unknown):PlanDraft{
   // M1: one link vocabulary on the plan board; the fields only exist on a todo, and a chain step always carries both the
   // chain and its position, so a reader never has to guess which group a numbered row belongs to.
   const linkFields=kind==='todo';
-  if(!linkFields&&['claimRefs','needs','environmentRef','chainOf','step'].some(key=>row[key]!==undefined))throw Error('Only a todo holds a chain link');
+  if(!linkFields&&['claimRefs','needs','environmentRef','chainOf','step','route'].some(key=>row[key]!==undefined))throw Error('Only a todo holds a chain link');
   if(linkFields){
-    result.claimRefs=list(row.claimRefs,'claim reference',8);
+    result.claimRefs=list(row.claimRefs,'claim reference',Number.MAX_SAFE_INTEGER);
     if(row.needs!==undefined)result.needs=capabilityList(row.needs,'Plan needs');
+    if(row.route!==undefined)result.route=routeSlug(row.route);
     if(row.environmentRef!==undefined)result.environmentRef=linkEnvironment(row.environmentRef);
     const hasChain=row.chainOf!==undefined,hasStep=row.step!==undefined;
     if(hasChain!==hasStep)throw Error('A chain step needs both chainOf and step');
     if(hasChain){
       result.chainOf=id(row.chainOf,'chain ID');
-      if(!Number.isSafeInteger(row.step)||(row.step as number)<1||(row.step as number)>8)throw Error('Invalid plan step');
+      if(!Number.isSafeInteger(row.step)||(row.step as number)<1)throw Error('Invalid plan step');
       result.step=row.step as number;
       if(!result.claimRefs.length)throw Error('CHAIN_LINEAGE: a chain step must cite the claim it consumes (claimRefs); a plan row with no lineage cannot hold a link');
     }
   }
   if(kind==='goal'&&!result.criteria?.length)throw Error('Goal needs bounded acceptance criteria');
+  // P16.1: a goal states how it will be proved before it is created, so "assess the surface" cannot become a goal that is
+  // settled by writing a summary.
+  if(kind==='goal'){
+    if(row.proof===undefined)throw Error('GOAL_UNPROVEN: a goal needs proof (capability, case or coverage); name what would settle it');
+    result.proof=goalProof(row.proof);
+  } else if(row.proof!==undefined)throw Error('Only a goal carries proof');
   if(kind!=='goal'&&(result.criteria!.length||result.exclusions!.length))throw Error('Only goals define criteria/exclusions');
   if(kind==='decision'){
     if(!row.decision||typeof row.decision!=='object'||Array.isArray(row.decision)||Object.getPrototypeOf(row.decision)!==Object.prototype)throw Error('Decision entry needs a structured disposition');const d=row.decision as Record<string,unknown>;
@@ -129,12 +155,20 @@ export class PlanBoard extends LedgerBoard{
   }
   create(input:PlanDraft,request?:MutationRequest):Promise<PlanEntry>{const draft=validatePlanDraft(input);return this.mutate((index,plans)=>this.write(()=>{
     const generated=draft.id??`${draft.kind}-${randomUUID()}`,value={...draft,id:generated};if(plans.some(plan=>plan.id===generated))throw Error('Duplicate plan identity');
+    // P16.5: a todo always states its route; when the lead did not name one, the method family of what it cites does.
+    if(value.kind==='todo'&&!value.route)value.route=defaultRoute(value,claimHeadClaims(index));
     this.references(value,index,plans);if(value.kind==='goal'&&(GOAL_SETTLED as readonly string[]).includes(value.status))throw Error('Create goals proposed/active; review and close need explicit revisions');return {draft:value,revision:1};
   },request?boundPlanRequest('create',input,request):undefined));}
   revise(idValue:string,revision:number,input:PlanDraft,request?:MutationRequest):Promise<PlanEntry>{const draft=validatePlanDraft(input);return this.mutate((index,plans)=>this.write(()=>{
     const old=plans.find(plan=>plan.id===idValue);if(!old||old.revision!==revision)throw Error('Missing or stale plan revision');if(draft.id&&draft.id!==idValue||draft.kind!==old.kind)throw Error('Cannot change plan identity/kind');
-    if(!transitions[old.kind][old.status]?.includes(draft.status))throw Error('Invalid plan transition');const value={...draft,id:idValue};this.references(value,index,plans);
-    if(value.kind==='goal'&&(GOAL_SETTLED as readonly string[]).includes(value.status)&&!value.supportRefs?.length)throw Error('Reviewed/closed goal needs same-run support references');return {draft:value,revision:old.revision+1,previous:old};
+    if(!transitions[old.kind][old.status]?.includes(draft.status))throw Error('Invalid plan transition');const value={...draft,id:idValue};
+    if(value.kind==='todo'&&!value.route)value.route=defaultRoute(value,claimHeadClaims(index));this.references(value,index,plans);
+    if(value.kind==='goal'&&(GOAL_SETTLED as readonly string[]).includes(value.status)){
+      if(!value.supportRefs?.length)throw Error('Reviewed/closed goal needs same-run support references');
+      // P16.1: status is a statement about the run; the proof is a statement about the target. Both have to hold.
+      const refusal=goalProofRefusal(value.proof!,proofData(index));if(refusal)throw Error(refusal);
+    }
+    return {draft:value,revision:old.revision+1,previous:old};
   },request?boundPlanRequest('revise',input,request,idValue,revision):undefined));}
   async list():Promise<PlanEntry[]>{const index=await readLedger(this.path,this.runId);if(!index.complete)throw Error('Plan reconciliation incomplete');return planFrontier(index);}
 }

@@ -8,6 +8,9 @@ import { planFrontier } from './planning.js';
 import { awaitingReview, taskFrontier } from './tasks.js';
 import { sha256Hex } from './validate.js';
 import { WSTG_MAP, isWstgKey, wstgKey } from './wstg-map.js';
+import type { WorkerWrites } from './write-back.js';
+import { leadFrontier } from './cve.js';
+import { routeMonoculture } from './routes.js';
 
 /**
  * Deterministic pre-finish check over committed state. Pure: no model, no clock, no target access, no write. It names unfinished
@@ -17,7 +20,7 @@ import { WSTG_MAP, isWstgKey, wstgKey } from './wstg-map.js';
  */
 export type PreflightCode = 'UNREVIEWED_TASK' | 'UNREVIEWED_CLAIM' | 'PENDING_CASE' | 'STALE_CASE' | 'STALE_CELL' | 'NO_COVERAGE_PLAN' | 'NONTERMINAL_CELLS'
   | 'UNRATED_ACCEPTED_CASE' | 'WSTG_APPLICABLE_UNPLANNED' | 'HIGH_WITHOUT_INDEPENDENCE' | 'FOREIGN_EVIDENCE' | 'CONTRACT_GAP' | 'STALE_RATING' | 'OPEN_GAP_UNREFERENCED' | 'ORPHAN_TASK' | 'UNPLANNED_ASSETS'
-  | 'UNPROMOTED_COVERAGE_NOTE' | 'NO_GOAL_RECORDED' | 'NEGATIVE_MAY_BE_BLOCKED' | 'INTERRUPTED_CELL' | 'PRIMITIVE_UNCHAINED' | 'ADMISSION_REFUSALS';
+  | 'UNPROMOTED_COVERAGE_NOTE' | 'NO_GOAL_RECORDED' | 'NEGATIVE_MAY_BE_BLOCKED' | 'INTERRUPTED_CELL' | 'PRIMITIVE_UNCHAINED' | 'ADMISSION_REFUSALS' | 'NO_GRAPH_WRITE' | 'LEAD_UNTRIAGED' | 'ROUTE_MONOCULTURE';
 export interface PreflightItem { code: PreflightCode; level: 'obligation' | 'advisory'; count: number; ids: string[]; message: string }
 export interface FinishPreflight {
   /** M3: the former `blocking` list. It is a report fact now, not a refusal predicate: nothing refuses a finish. */
@@ -26,7 +29,11 @@ export interface FinishPreflight {
   signature: string;
   complete: boolean;
 }
-export interface PreflightContext { cases?: CaseContext; coverage?: CoverageContext; integrity?: 'off' | 'annotate' | 'enforce'; statedObjective?: string }
+export interface PreflightContext {
+  cases?: CaseContext; coverage?: CoverageContext; integrity?: 'off' | 'annotate' | 'enforce'; statedObjective?: string;
+  /** P16.8: host-computed write-back counts; a worker with zero writes and no `no-new` note is an advisory, never a refusal. */
+  wrote?: readonly WorkerWrites[];
+}
 
 const SHOWN = 5;
 const strings = (value: unknown): string[] => Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : [];
@@ -53,6 +60,9 @@ const MESSAGES: Record<PreflightCode, string> = {
   INTERRUPTED_CELL: 'coverage cell cites a task that ended without a verdict, so it stays attempted and its assessment open_gap (re-dispatch it, or retire it with the reason)',
   PRIMITIVE_UNCHAINED: 'a confirmed and tested claim has no successor step and no recorded wall (M4: take it further or record which successors were ruled out and why)',
   ADMISSION_REFUSALS: 'a task create was refused and recorded (the admission tax is visible here instead of only in the transcript)',
+  NO_GRAPH_WRITE: 'worker wrote no asset, fact, evidence or finding and left no no-new note (the graph is how a finding becomes reusable; a surface that added nothing says so with one note)',
+  LEAD_UNTRIAGED: 'CVE lead recorded but never triaged (task it, execute it, or mark it ruled_out with the reason; a published CVE is a pointer, not a finding)',
+  ROUTE_MONOCULTURE: 'every open chain step tries the same mechanism family although the recorded capabilities make another family plausible (spread one route there, or record why it is ruled out; concentration is fine once a route showed an effect)',
 };
 const OPEN_OBLIGATION: ReadonlySet<PreflightCode> = new Set<PreflightCode>(['UNREVIEWED_TASK', 'UNREVIEWED_CLAIM', 'PENDING_CASE', 'STALE_CASE', 'STALE_CELL', 'NO_COVERAGE_PLAN', 'NONTERMINAL_CELLS', 'UNRATED_ACCEPTED_CASE']);
 
@@ -140,6 +150,14 @@ export function finishPreflight(index: LedgerIndex, context: PreflightContext = 
     if (task.reviewIntegrity.contractGap.length) add('CONTRACT_GAP', task.id);
   }
 
+  // P16.5: one open route with a plausible alternative is an advisory, never a refusal — the model judges plausibility.
+  const monoculture = routeMonoculture(planFrontier(index), claimHeadClaims(index));
+  if (monoculture) add('ROUTE_MONOCULTURE', monoculture.route);
+  // P16.4: a lead that nobody triaged is unfinished reading, not a finding and not a gate.
+  for (const lead of leadFrontier(index)) if (lead.state === 'untriaged') add('LEAD_UNTRIAGED', lead.id);
+  // P16.3/P16.8: the host counts what each worker persisted. Zero writes is printed for the lead and the human; it never
+  // refuses a review, because "learned nothing" is a legitimate result that deserves a note, not a gate.
+  for (const writes of context.wrote ?? []) if (writes.assets + writes.facts + writes.evidence + writes.findings === 0 && !writes.noNew) add('NO_GRAPH_WRITE', writes.workerId);
   const blocks = (code: PreflightCode) => OPEN_OBLIGATION.has(code) || (code === 'HIGH_WITHOUT_INDEPENDENCE' && context.integrity === 'enforce');
   const items = [...found.entries()].map(([code, ids]): PreflightItem => ({ code, level: blocks(code) ? 'obligation' : 'advisory', count: ids.length, ids: ids.slice(0, SHOWN), message: MESSAGES[code] }))
     .sort((a, b) => a.code.localeCompare(b.code));

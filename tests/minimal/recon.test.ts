@@ -91,10 +91,12 @@ describe('bounded recon contract', () => {
   // 2026-10-24 (owner decision: no budgets): the brief's LIMITS line lost its command count and now states that no ceiling
   // exists, so both brief hashes moved on purpose. The instruction hashes moved in the same pass, for a different reason: the
   // task-ranking line stopped counting "remaining budget" as a ranking factor and the chain line stopped asking for a chain that
-  // fits "inside your command budget".
+  // fits "inside your command budget". P16.3 moved them again on purpose: the worker instruction now says to write back as it
+  // goes (asset, fact with evidence, or a `no-new` note), and the brief's hash is unchanged because the graph slice is an
+  // optional argument that the pinned fixture does not pass.
   it.each([
-    ['url', '5ce4628f7ed771c0492413b01b90b737522ec83464ae55d5b1a4085d595a2c56', '9c42b63acf752ab70bdd2980e05a75db8d1a35a9afc345324e847d90afa226c7'],
-    ['directory', '62967a5647317bd01f90766fd7caa9102171f0abc06894404bf0fbee89cfe6d4', '1a569560f44bef4644c30b8771cd09c6bfe81f90ece813da0a773390412828a9'],
+    ['url', 'f8abd8f857a636c56ce247574ed57c3554a81a46fc65f9ecaf5ff4bf0338628f', '9c42b63acf752ab70bdd2980e05a75db8d1a35a9afc345324e847d90afa226c7'],
+    ['directory', '6713fe25192a25629fa0c74ec739834eb7e937a6503bbbfe0161f03fce869ba8', '1a569560f44bef4644c30b8771cd09c6bfe81f90ece813da0a773390412828a9'],
   ])('pins %s worker guidance for the Planner/frontier revision; historical acceptance artifacts are not rewritten', (kind, instructionHash, briefHash) => {
     const ticket = { workerId: 'worker-test', role: 'recon', runId: 'run-test', depth: 1, parentWorkerId: null,
       lifetime: 'until-stopped', target: { kind, label: kind === 'url' ? 'https://example.invalid' : '/target' } } as Ticket;
@@ -162,7 +164,7 @@ describe('bounded recon contract', () => {
   });
 
   it('renders one bounded situation line when the run has records', () => {
-    const snapshot = { open: 6, running: 2, runningRoles: ['discovery', 'validation'], ready: 3, exhausted: 0, blocked: 1, openContradictions: 1,
+    const snapshot = { open: 6, running: 2, runningRoles: ['discovery', 'validation'], ready: 3, exhausted: 0, leadsUntriaged: 0, leadsCritical: 0, routesOpen: 0, routesDone: 0, routeNames: [], unprovenNegations: 0, blocked: 1, openContradictions: 1,
       chainReady: 1, chainUnmet: 2, chainSteps: 0, chainReadySteps: 0, chainWaitingSteps: 0, pendingRating: 4, coverageTested: 12, coverageCells: 31, coveragePlanned: 0, coverageOmitted: 0, suggested: { purpose: 'validation' as const, score: 85 } };
     const base = { runId: 'run-recon', sourceSkipped: 2, targetKind: 'url' as const, targetLabel: 'https://example.invalid' };
     const solo = ownerInstructions({ ...base, delegation: { enabled: false, maxWorkers: 1, maxDepth: 1 }, situation: snapshot });
@@ -177,7 +179,7 @@ describe('bounded recon contract', () => {
   });
 
   it('says 0 open instead of leaving an empty frontier to be inferred', () => {
-    const idle = { open: 0, running: 0, runningRoles: [], ready: 0, exhausted: 0, blocked: 0, openContradictions: 0, chainReady: 0, chainUnmet: 0, chainSteps: 0, chainReadySteps: 0, chainWaitingSteps: 0, pendingRating: 0, coverageTested: 0, coverageCells: 0, coveragePlanned: 0, coverageOmitted: 0, suggested: null };
+    const idle = { open: 0, running: 0, runningRoles: [], ready: 0, exhausted: 0, leadsUntriaged: 0, leadsCritical: 0, routesOpen: 0, routesDone: 0, routeNames: [], unprovenNegations: 0, blocked: 0, openContradictions: 0, chainReady: 0, chainUnmet: 0, chainSteps: 0, chainReadySteps: 0, chainWaitingSteps: 0, pendingRating: 0, coverageTested: 0, coverageCells: 0, coveragePlanned: 0, coverageOmitted: 0, suggested: null };
     const text = ownerInstructions({ runId: 'run-recon', sourceSkipped: 2, targetKind: 'directory' as const, targetLabel: '/target', delegation: { enabled: true, maxWorkers: 3, maxDepth: 2 }, situation: idle });
     expect(text).toContain('Situation: 0 open.');
   });

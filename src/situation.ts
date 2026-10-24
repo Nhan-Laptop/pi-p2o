@@ -9,6 +9,7 @@ import { isTestedCell } from './claims.js';
 import { isExecutingTask, isSatisfiedTask, isSettledTask, terminalCounts } from './tasks.js';
 import { purposeFromRole, type WorkPurpose } from './duties.js';
 import { suggestPriority } from './priority.js';
+import { routeCounts } from './routes.js';
 
 /**
  * planning_update.md P3: the lead sees one computed line about the run instead of inferring the frontier from an empty list.
@@ -40,6 +41,12 @@ export interface SituationSnapshot {
   coveragePlanned: number; coverageOmitted: number;
   /** P10: settled tasks whose lease expired before an answer. Split from `done` so the line cannot read as covered. */
   exhausted: number;
+  /** P16.4: CVE leads written by `p2o_research action=cve`, and how many are rated critical: pointers to test, not findings. */
+  leadsUntriaged: number; leadsCritical: number;
+  /** P16.5: route diversity — distinct mechanism families among open todo steps, among done ones, and their names. */
+  routesOpen: number; routesDone: number; routeNames: string[];
+  /** P16.6: a `ruled_out` claim recorded without tested execution is a negation nobody checked. */
+  unprovenNegations: number;
   /** P4: the highest suggested priority among the dispatchable work, with the purpose that scored it. A suggestion only. */
   suggested: { purpose: WorkPurpose; score: number } | null;
 }
@@ -52,7 +59,7 @@ const ANSWERED = new Set(['confirmed_claim', 'ruled_out_bounded', 'accepted']);
 
 // Capabilities are typed (P14.1) and `chainJoin` owns the match, so the same join answers the graph view and this line.
 
-export function summarizeSituation(input: { tasks: readonly AssessmentTask[]; cases: readonly CaseView[]; coverage: readonly CoveragePlanView[]; claims: readonly SituationClaim[]; plans?: readonly PlanEntry[] }): SituationSnapshot {
+export function summarizeSituation(input: { tasks: readonly AssessmentTask[]; cases: readonly CaseView[]; coverage: readonly CoveragePlanView[]; claims: readonly SituationClaim[]; plans?: readonly PlanEntry[]; leads?: ReadonlyArray<{ state?: string; severity?: string }> }): SituationSnapshot {
   const terminal = terminalCounts(input.tasks);
   const byId = new Map(input.tasks.map(task => [task.id, task]));
   const running = input.tasks.filter(task => EXECUTING.has(task.status));
@@ -62,6 +69,9 @@ export function summarizeSituation(input: { tasks: readonly AssessmentTask[]; ca
   // M1: the board is the plan's own frontier; the join above stays the candidate-level answer, so each number has one owner.
   const board = chainBoard(input.plans ?? [], claims);
   const cells = input.coverage.flatMap(plan => plan.cells);
+  // P16.5/P16.6: routes are counted from the plan board; a negation counts as unproven when its execution never ran.
+  const routes = routeCounts(input.plans ?? []);
+  const unprovenNegations = input.claims.filter(claim => claim.closure === 'ruled_out' && claim.execution !== 'tested').length;
   return {
     open: input.tasks.filter(task => !SETTLED.has(task.status)).length,
     running: running.length,
@@ -77,6 +87,10 @@ export function summarizeSituation(input: { tasks: readonly AssessmentTask[]; ca
     chainSteps: board.reduce((total, chain) => total + chain.ready.length + chain.waiting.length, 0),
     chainReadySteps: board.reduce((total, chain) => total + chain.ready.length, 0),
     chainWaitingSteps: board.reduce((total, chain) => total + chain.waiting.length, 0),
+    routesOpen: routes.open.length, routesDone: routes.done.length, routeNames: routes.open,
+    unprovenNegations,
+    leadsUntriaged: (input.leads ?? []).filter(lead => (lead.state ?? 'untriaged') === 'untriaged').length,
+    leadsCritical: (input.leads ?? []).filter(lead => (lead.state ?? 'untriaged') === 'untriaged' && lead.severity?.toUpperCase() === 'CRITICAL').length,
     pendingRating: input.cases.filter(item => item.reviewStatus === 'accepted' && !item.finding).length,
     coverageTested: cells.filter(cell => isTestedCell(cell)).length,
     coverageCells: cells.length,
@@ -124,6 +138,9 @@ export const SEGMENT_FIELDS = {
   chain: ['chainReady', 'chainUnmet', 'chainSteps', 'chainReadySteps', 'chainWaitingSteps'],
   rating: ['pendingRating'],
   coverage: ['coverageTested', 'coverageCells', 'coveragePlanned', 'coverageOmitted'],
+  leads: ['leadsUntriaged', 'leadsCritical'],
+  routes: ['routesOpen', 'routesDone', 'routeNames'],
+  negation: ['unprovenNegations'],
 } as const satisfies Record<string, readonly (keyof SituationSnapshot)[]>;
 
 export type SituationSegment = keyof typeof SEGMENT_FIELDS;
@@ -145,6 +162,11 @@ export function situationSegments(snapshot: SituationSnapshot): Array<{ id: Situ
   // M1: when the plan carries a chain, the board decides the sentence; the candidate-level join answers only when no step is planned.
   if (snapshot.chainSteps) segments.push({ id: 'chain', text: `chain: ${plural(snapshot.chainReadySteps, 'step')} ready, ${snapshot.chainWaitingSteps} waiting` });
   else if (snapshot.chainReady || snapshot.chainUnmet) segments.push({ id: 'chain', text: `chain: ${plural(snapshot.chainReady, 'step')} ready, ${snapshot.chainUnmet} unmet needs` });
+  // P16.5: the route sentence makes concentration visible; P16.6 names a negation nobody tested.
+  if (snapshot.routesOpen || snapshot.routesDone) segments.push({ id: 'routes', text: `routes: ${snapshot.routesOpen} open${snapshot.routeNames.length ? ` (${snapshot.routeNames.join(', ')})` : ''}, ${snapshot.routesDone} done` });
+  if (snapshot.unprovenNegations) segments.push({ id: 'negation', text: `${snapshot.unprovenNegations} unproven-negation` });
+  // P16.4: a lead is the one segment that says "there is published work you have not considered yet".
+  if (snapshot.leadsUntriaged) segments.push({ id: 'leads', text: `leads: ${snapshot.leadsUntriaged} untriaged${snapshot.leadsCritical ? ` (${snapshot.leadsCritical} critical)` : ''}` });
   if (snapshot.pendingRating) segments.push({ id: 'rating', text: `${plural(snapshot.pendingRating, 'case')} pending rating` });
   // M3: the backlog pair keeps "not shown" from reading as "not planned" (ARTEX agent/tools.go:436-440).
   if (snapshot.coverageCells) segments.push({ id: 'coverage', text: `coverage ${snapshot.coverageTested}/${snapshot.coverageCells}${snapshot.coveragePlanned || snapshot.coverageOmitted ? ` (planned ${snapshot.coveragePlanned} unreached, ${snapshot.coverageOmitted} omitted)` : ''}` });

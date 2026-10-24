@@ -19,12 +19,12 @@ function engineFixture(mode: 'manual' | 'event-driven' = 'event-driven') {
   };
   return { engine: new AssessmentEngine('run-f', mode, deps, 5), wakes, problems };
 }
-const QUIET = { testedCells: 0, closures: 0, assets: 0, chainDepth: 0 };
+const QUIET = { testedCells: 0, closures: 0, assets: 0, chainDepth: 0, remaining: 0 };
 beforeEach(() => vi.useFakeTimers());
 afterEach(() => vi.useRealTimers());
 
 describe('quiet rounds escalate to a human, never to a number (M6)', () => {
-  it('stops automatic wakes after two quiet rounds and names both of them', () => {
+  it('stops automatic wakes after two quiet rounds on a complete run and names both of them', () => {
     const { engine, problems } = engineFixture();
     engine.notify('worker-report', 'w1');
     const first = engine.boundary()!;
@@ -34,11 +34,11 @@ describe('quiet rounds escalate to a human, never to a number (M6)', () => {
     engine.consume(second.through, QUIET);
     expect(engine.quietRounds()).toEqual([1, 2]);
     engine.notify('worker-report', 'w3');
+    // P16.2: with nothing owed (remaining 0) the loop goes quiet; the demand path is tested in phase-h.
     expect(engine.boundary()).toBeUndefined();
     const message = problems.at(-1)!;
     expect(message).toContain('rounds 1 and 2');
-    expect(message).toContain('blocked/human-needed');
-    expect(message).toContain('widen the scope');
+    expect(message).toContain('completion is complete');
     // No allowance vocabulary: escalation is about progress the run cannot make, not about spending anything.
     expect(message).not.toMatch(/budget|allowance|quota|commands? remaining/i);
     expect(engine.snapshot().state).toBe('blocked');

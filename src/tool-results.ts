@@ -46,6 +46,9 @@ export interface WorkersNavigation {
   taskItems: unknown[];
   diagnostics: string[];
   reconciliation: { omitted: number };
-  progress: Array<{ id: string; state: string; lastProblem?: string; stallSuspected: boolean; outcome?: string }>;
+  progress: Array<{ id: string; state: string; lastProblem?: string; stallSuspected: boolean; outcome?: string;
+    /** P16.7: where the worker wrote last, so "continue from there" has a referent; `continueHint` only for an expired lease. */
+    commands?: number; lastFact?: string; lastEvidence?: string; lastOperation?: string;
+    lastWrite?: { kind: string; id: string; at: string }; continueHint?: string }>;
   warning: string;
 }

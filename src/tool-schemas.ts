@@ -69,6 +69,7 @@ export const candidateParameters = Type.Object({
       needs: Type.Optional(Type.Array(capabilitySchema, { description: 'Typed capabilities this primitive needs from an earlier step or the environment; omit when nothing outside the surface must hold' })),
       note: Type.Optional(Type.String({ maxLength: 300, description: 'Free text caveat about the capability pair; displayed, never matched' })),
       payloadRef: Type.Optional(Type.String({ maxLength: 80, description: 'Payload artifact ID from p2o_lab for the request, script or command that actually ran; requires tested execution, and the derived replayable flag follows it' })),
+      leadRefs: Type.Optional(Type.Array(Type.String({ maxLength: 80 }), { description: 'P16.4: CVE lead record IDs from p2o_research action=cve. A lead can shape a hypothesis but never settle it: policyBasis must be inferred and closure open_proof_gap' })),
       environmentRef: Type.Optional(Type.String({ maxLength: 80, description: 'Environment artifact ID from p2o_lab for the recipe it was demonstrated in; requires tested execution, and replayable needs it as well as payloadRef' })),
     });
 
@@ -96,9 +97,19 @@ export const labParameters = Type.Object({
 
 export const RESEARCH_LIMIT_SCHEMA = 5;
 export const researchParameters = Type.Object({
-  query: Type.String({ minLength: 1, maxLength: RESEARCH_QUERY_MAX, description: 'Technique words to look up, e.g. "ssrf cloud metadata" or "joomla 2.5 end of life support lifecycle"; write the question the way you would ask it' }),
+  action: Type.Optional(choices(['technique', 'cve', 'triage'] as const)),
+  query: Type.Optional(Type.String({ minLength: 1, maxLength: RESEARCH_QUERY_MAX, description: 'Technique words to look up, e.g. "ssrf cloud metadata" or "joomla 2.5 end of life support lifecycle"; write the question the way you would ask it' })),
   web: Type.Optional(Type.Boolean({ description: 'Default true: also fetch the top hits\' curated source pages inside your sandbox and return quoted excerpts with a hash. Pass false for an offline-only lookup that never touches the network' })),
   limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 5, description: 'Maximum hits, 1..5, default 5' })),
+  // P16.4: action=cve names a product/version and lets the HOST fetch from its CVE allowlist; the model never supplies a URL.
+  product: Type.Optional(Type.String({ minLength: 2, maxLength: 120, description: 'action=cve: product name as published (e.g. "joomla", "nginx")' })),
+  version: Type.Optional(Type.String({ minLength: 1, maxLength: 80, description: 'action=cve: version observed on the target, e.g. "2.5.0"' })),
+  vendor: Type.Optional(Type.String({ minLength: 1, maxLength: 80, description: 'action=cve: vendor when it is known (e.g. "apache")' })),
+  cpe: Type.Optional(Type.String({ minLength: 1, maxLength: 300, description: 'action=cve: optional CPE 2.3 name when recon recorded one (cpe:2.3:...)' })),
+  assetRefs: Type.Optional(Type.Array(Type.Object({ id: Type.String({ pattern: '^asset-[a-f0-9]{24}$' }), revision: Type.Optional(Type.Integer({ minimum: 1 })) }), { description: 'action=cve: same-run assets whose version produced this query, so untriaged leads can be tied to scope' })),
+  leadId: Type.Optional(Type.String({ maxLength: 80, description: 'action=triage: lead record ID from action=cve' })),
+  state: Type.Optional(choices(['tasked', 'ruled_out'] as const)),
+  reason: Type.Optional(Type.String({ minLength: 10, maxLength: 1000, description: 'action=triage: why the lead is tasked or ruled out (required for ruled_out)' })),
 }, { additionalProperties: false });
 
 export const captureParameters = Type.Object({path:Type.String({minLength:1,maxLength:2048}),offset:Type.Optional(Type.Integer({minimum:0})),timeout:Type.Optional(Type.Integer({minimum:0}))});

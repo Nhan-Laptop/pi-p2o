@@ -558,6 +558,136 @@ report list stops only at its byte budget.
 
 ---
 
+### Phase G (ARTEX plan) — done: goals that have to be proved (2026-10-24)
+
+The goals-proof work of Part IX, not the count-cap block above (the letters are reused; §IX.4 has the acceptance).
+
+- **`proof` on the plan row (P16.1).** `p2o_plan create` refuses a goal without one: `GOAL_UNPROVEN: a goal needs proof
+  (capability, case or coverage); name what would settle it`. The field is `{kind, capability?, ref?}` and the parser is
+  `exact`, so a typo is a refusal rather than a silently ignored field. A non-goal may not carry it.
+- **One resolver, two callers.** `src/goal-proof.ts` `goalProofRefusal(proof, data)` — capability needs a `confirmed`+`tested`
+  claim whose `gained` matches under the single capability rule; case needs `accepted` + `confirmed` + `current`; coverage
+  needs a same-run plan whose non-retired cells are all `tested`/`blocked`/`not_applicable`. `proofData(index)` reads the
+  same three sources for the plan board; `proofViews(cases, coverage)` lets the report and finish paths pass their own
+  context-aware views instead of default ones that cannot tell freshness. `revise` to `reviewed`/`closed` requires the
+  supportRefs **and** a proof that holds.
+- **Completion cannot be fooled by status.** `deriveCompletion` gains `GOAL_UNPROVEN` and reads `cases`/`coverage`; a goal is
+  settled only when the status says so *and* the proof still holds. A reviewed row whose case was later disputed, whose
+  coverage plan was re-opened, or that predates the field is owed work again. The three call sites
+  (`src/report-export.ts`, `extensions/p2o/index.ts` finish and export paths) pass real views.
+- **The report prints it.** `## REMAINING WORK` carries `| Goal | Status | Proof | Settled |`, with `no — GOAL_UNPROVEN: …`
+  when the proof does not hold, so a reader can separate a status from a demonstration.
+- Owner decisions recorded in §IX.5 are requirements; this phase only implements decision 2 (`coverage` is legal for a
+  mapping goal, never for a reachability claim).
+
+Measured: `npm run typecheck` clean · `npm run build` + `check:build` OK · `npx vitest run tests/minimal/` **774 passed,
+12 skipped (788, 93 files)** with only the pre-existing `planner-native` harness flake under parallel load (3/3 in
+isolation) · `validate_library.py` PASS · pytest 116 passed, 1 skipped (only the pre-existing R1 provenance failure). New
+cases: create refused without proof; review refused while the proof does not hold; `GOAL_UNPROVEN` for a legacy settled row;
+a case proof settles; a coverage proof settles; the report prints the proof.
+
+### Phase H (ARTEX plan) — done: frontier floor and continue (2026-10-24)
+
+- **The frontier floor replaces the stall pause (P16.2).** `RoundProgress` now carries `remaining` and `demand`, computed by
+  the owner from the *same* `deriveCompletion` the finish result prints; `completionDemand` names the obligation
+  (`step 2 of chain login ready and undispatched; 1 goal(s) not reviewed or closed`). Two quiet rounds with
+  `remaining > 0` produce a **demand wake** that carries that text (`PlannerWake.demand`, shown in the wake message and in
+  the `planner.admitted` event) and the engine stays live. Two quiet rounds with `remaining === 0` pause with a sentence
+  naming both rounds and saying the completion is complete; a lead-recorded `blocked` pauses as before. `manual` mode still
+  judges nothing.
+- **Continue from the trace (P16.7).** The terminal-state guidance no longer says "retry the direction differently": an
+  `exhausted` task's progress is in the ledger and its conversation is resumable — continue it on the same ticket with a
+  brief that starts where it stopped, or dispatch a new task with a different mechanism (the lead prompt keeps its
+  no-tool-name vocabulary; the verb lives in the tool). `p2o_workers list` gains `lastWrite` (last evidence, fact/note or
+  graph provenance row authored by that worker) and per-worker `commands`, `lastFact`, `lastEvidence`, `lastOperation`,
+  and `continueHint` for an `expired` lease; the text line prints `last write: <kind> <id>` and the expired hint.
+- Owner decision 5 (§IX.5) is what the engine now implements: pause on `complete` and on a recorded `blocked/human-needed`,
+  keep waking while an obligation remains.
+
+Measured: `npm run typecheck` clean · `npm run build` + `check:build` OK · `npx vitest run tests/minimal/` **780 passed,
+12 skipped (793, 94 files)**, with only the pre-existing `planner-native` harness flake under parallel load (3/3 in
+isolation) · `validate_library.py` PASS · pytest 116 passed, 1 skipped (only the pre-existing R1 provenance failure). New
+`tests/minimal/phase-h.test.ts` (5): demand wake names the step and does not pause; count fallback; recorded blocked pauses;
+`completionDemand` names step and goal; the prompt names continue and keeps its vocabulary. `worker.test.ts` asserts
+`lastWrite` from a real candidate record.
+
+### Phase I (ARTEX plan) — done: the graph is the medium (2026-10-24)
+
+- **Write back as you go (P16.3).** The worker instruction gains the ARTEX rule: an asset with `p2o_graph`, a
+  `fact:observed`/`fact:inferred` assertion with its evidence, or a note whose text starts with `no-new` when the surface
+  added nothing. A worker that learned something and wrote nothing has not finished. The reporting role, which is denied
+  graph recording, does not receive the rule. The two pinned instruction hashes moved on purpose; the brief hashes did not,
+  because the slice is an optional argument.
+- **The brief carries the slice (P16.3).** `src/graph-slice.ts` renders a bounded block (`assets` matching `task.surface`
+  with a recent-assets fallback, latest `fact:*` assertions with their evidence and author, open leads/gaps, ready chain
+  steps) under `== Graph context from this run (recorded state, background, never a finding) ==`. The spawn path builds it
+  from the same ledger read and graph snapshot the worker list uses; a failed read yields no slice, never a failed spawn.
+- **The host counts (P16.3/P16.8).** `src/write-back.ts` counts per worker: asset/assertion observations from
+  `graph_provenance`, `evidence` receipts from the ledger, reported findings from the live report. The counts appear in
+  `p2o_workers list` (`wrote 2 asset(s), …` / `NO_GRAPH_WRITE`), next to each handoff in `REPORT.md`, and as the preflight
+  advisory `NO_GRAPH_WRITE` — which `## REMAINING WORK` already prints. Zero writes is an advisory in every one of those
+  places and never a refusal: review, export and finish are untouched. Decision 4 in §IX.5 is exactly this shape.
+- **Worker progress becomes actionable.** The list also carries `lastFact`, `lastEvidence`, `lastOperation`, `lastWrite`
+  and the per-worker counts in its navigation data, so a lead deciding to continue or stop a worker has the record ids.
+
+Measured: `npm run typecheck` clean · `npm run build` + `check:build` OK · `npx vitest run tests/minimal/` **787 passed,
+12 skipped (801, 95 files)**, with only the two pre-existing load-sensitive harness flakes (`planner-native`,
+`extension` “engine inactive”), each green in isolation · `validate_library.py` PASS · pytest 116 passed, 1 skipped (only
+the pre-existing R1 provenance failure). New `tests/minimal/phase-i.test.ts` (8): slice filters by surface, falls back and
+bounds, brief labels it background, instruction carries the rule (not for reporting), counters per worker, `no-new` clears
+the advisory, preflight keeps it advisory, and the report prints the counts next to the handoff.
+
+### Phase J (ARTEX plan) — done: CVE leads (2026-10-24)
+
+- **The host fetches; the model names no destination (P16.4, decision 1).** `p2o_research action=cve` takes
+  `product`/`version` (+ optional `vendor`/`cpe`/`assetRefs`), builds the NVD query itself, and fetches from an allowlist
+  (`services.nvd.nist.gov`, `nvd.nist.gov`, `cve.org`; https only, redirects refused, 2 MiB bound). The transport is a
+  parameter of `lookupCves`, so tests are hermetic and no test process touches the network.
+- **A lead record, never a confirmation.** `src/cve.ts` parses NVD (severity from CVSS v3.1→v3.0→v2, affected ranges from
+  `cpeMatch`, rejected entries dropped) and writes `lead` records with `{product, version, cve, severity, affected,
+  source:{url, retrievedAt, sha256}, assetRefs, state:'untriaged', reason?}`. A failed fetch writes only the failed
+  `research` row: no lead is invented from an error page. `action=triage` supersedes the lead into `tasked`/`ruled_out`
+  (a reason is required for `ruled_out`), and `leadFrontier` reads the latest revision.
+- **The claim rule, verbatim.** `leadRefs` join the candidate schema; a claim that cites a lead must use
+  `policyBasis:'inferred'` and cannot be `confirmed` (`LEAD_NOT_EVIDENCE: a CVE lead names a published issue, not an
+  executed effect`), checked before the other closure rules so the message names the real reason.
+- **Visible, advisory, printed.** The situation line gains `leads: N untriaged (M critical)` (with `SEGMENT_FIELDS`
+  parity), preflight adds `LEAD_UNTRIAGED` as an **advisory** that clears when the latest revision is triaged, and
+  `REPORT.md` gains `## LEADS` with product/version/CVE/severity/affected/state and the source URL plus its sha256.
+- Routing diversity (`## ROUTES`) is P16.5, Phase K, and is not part of this block.
+
+Measured: `npm run typecheck` clean · `npm run build` + `check:build` OK · `npx vitest run tests/minimal/` **796 passed,
+12 skipped (809, 96 files)**, with only the pre-existing `planner-native` harness flake (3/3 in isolation) ·
+`validate_library.py` PASS · pytest 116 passed, 1 skipped (only the pre-existing R1 provenance failure). New
+`tests/minimal/phase-j.test.ts` (8): query/allowlist, NVD parsing, provenance from fetched bytes and no lead from a failed
+fetch, lead record shape + latest revision, `LEAD_NOT_EVIDENCE` and the inferred-only rule, situation counts, preflight
+advisory clearing on triage, and `## LEADS` rendering.
+
+### Phase K (ARTEX plan) — done: routes and negation (2026-10-24)
+
+- **Routes are a plan dimension (P16.5).** `p2o_plan` todos carry `route` (`upload`, `auth`, `sqli`, …). When the lead does
+  not name one, `src/routes.ts` derives it from the method family of what the row cites (`risk`, then `needs`/`gained`), so
+  every stored todo states its route and two readers derive the same one. The situation line gains
+  `routes: N open (a, b), M done`, `REPORT.md` gains `## ROUTES`, and preflight adds `ROUTE_MONOCULTURE` as an **advisory**
+  when one open route exists and a demonstrated capability makes another family plausible. The demand wake for a stalled
+  round appends `every open step is on route X — plausible elsewhere: …`. Nothing refuses a dispatch: concentration after a
+  demonstrated effect is the ARTEX rule, and the host only counts.
+- **Negative evidence is a checkpoint (P16.6).** A second `ruled_out` on the same surface+capability is refused with
+  `RULED_OUT_RECHECK` unless it cites evidence the earlier negative did not, or a different `control`/mechanism — at most
+  one re-check, then the earlier claim must be revised or cited. A `ruled_out` recorded with `execution:not_tested` is
+  counted as `unproven-negation` on the situation line so the lead can dispatch the one verification.
+- Both are computed from the ledger/plan board only (no model, no clock); the rule literals live in `src/claims.ts`
+  (`isRuledOutClaim`) so the "one owner for claim literals" check stays green.
+
+Measured: `npm run typecheck` clean · `npm run build` + `check:build` OK · `npx vitest run tests/minimal/` **801 passed,
+12 skipped (814, 97 files)**, with only the pre-existing `planner-native` harness flake (3/3 in isolation) ·
+`validate_library.py` PASS · pytest 116 passed, 1 skipped (only the pre-existing R1 provenance failure). New
+`tests/minimal/phase-k.test.ts` (5): route default + explicit route + non-todo refusal, monoculture/route counts, situation
+sentence + preflight advisory + `## ROUTES`, duplicate ruled-out refusal and its two exits, `unproven-negation`.
+
+This closes the ARTEX plan's phases A–K. Standing rules unchanged: no command/time allowance, no finish gate, completion
+derived, a report ends nothing, transport bytes bound records, no count caps on tool input, and nothing refuses a human stop.
+
 ## Part VII — Decisions
 
 ### Settled by the owner, 2026-10-24 (these are now requirements, not options)
@@ -591,6 +721,226 @@ in M2, and `PRIMITIVE_UNCHAINED` accepting a *walled* primitive as settled.
 **Risk 2 — livelock.** With no ceiling, a non-converging loop can wake forever. This is the trade the no-budget decision
 buys; the only automatic brake is M6, and it measures progress, not money. If that proves insufficient, the fix must be a
 *named, visible* stop condition — never a hidden constant.
+
+---
+
+# Part IX — Depth, breadth and the graph: what ARTEX does that p2o does not
+
+Proposed 2026-10-24 after the 45-minute run against `https://cntt.uit.edu.vn/`. The owner's question was three
+questions: why did the workers never use the asset/fact graph, why did the run settle so quickly instead of digging,
+and why can an agent not search the CVE record that recon just made relevant. This part answers them from the code
+(`/home/nhanlaptop/artex/ARTEX`, `src/`, and the run's own ledger) and turns the answer into mechanisms P16.1–P16.9
+and phases G–K.
+
+## IX.0 What the run actually did
+
+Read from the run's ledger (`run-ff934701-f5f4-41e3-8c40-11494bd8f05d`) and the session export
+(`pi-session-2026-10-24T05-07-55-478Z…html`).
+
+| Fact | Value | Why it matters |
+|---|---|---|
+| Wall clock / requests / tool calls / errors | 45 m 06 s · 145 · 86 · 26 | The run was not short of turns; it decided it was done |
+| Candidates | 13: 6 `open_proof_gap`+tested, 5 `ruled_out`, 1 `not_tested`, 1 `blocked` | **Zero confirmed primitives** in three quarters of an hour |
+| Coverage notes / open items | 61 / 41 | The real product of the run was breadth bookkeeping |
+| Plan board | **2 rows**: one `goal` (`active`) and the same goal `reviewed` | No todo, no decision, no chain step: the chain board was never used |
+| Goal text | “Assess … origin: evidence-backed candidate set with explicit coverage and gaps” | A *process* goal, satisfiable by reviewing coverage |
+| Assets / facts / relations in the graph | **5 / 9 / 0** | All written in one batch by one worker at 05:14:45 (minute 7) |
+| Who wrote them | `p2o-recon-e5b76f`, one `p2o_graph` call | No other worker wrote an asset or a fact for the remaining 38 minutes |
+| Outcome | goal `reviewed` with 6 evidence refs → finish | `deriveCompletion` saw no open goal, no confirmed primitive and no ready chain step → `complete` |
+
+So the run did not stop because a brake fired. It stopped because **the schema said it was finished**: a process goal
+was reviewed, and with no confirmed claim there was nothing for `PRIMITIVE_UNCHAINED` to hold open. The graph was used
+once as a dumping ground for a recon batch and never read back; the chain board was never populated; nothing in the
+prompt or in the tool contract made depth the cheaper path than settlement.
+
+## IX.1 What ARTEX does instead
+
+Source references are to `/home/nhanlaptop/artex/ARTEX`.
+
+- **A1 — Goals are verifiable deliverables, and process goals are forbidden.** The goals decomposer splits the task
+  into “final, verifiable results” and explicitly refuses to list reconnaissance, analysis, attack steps or
+  verification steps as goals (`agent/goals.go:38-52`). It also lifts the operator's constraints (`set_constraints`,
+  deny/allow) and the authorized asset scope (`add_task_scope`) once, then injects the constraints into every agent
+  (`goalsScopeTail`).
+- **A2 — `prove_goal` is the only completion verb.** The planner marks a goal met with `prove_goal(goal_id,
+  evidence_id, reason)`; “when the goal you mark is the last unmet one, the system declares the task complete”
+  (`agent/planner.go:322-330`). Quantified goals must be checked against the live metrics before marking — “coverage
+  100 % required and coverage.pct=40 % → not met, dispatch more” (`planner.go:323-325`).
+- **A3 — Hard floor on an empty frontier.** If the goal is unmet and there is no open/running intent, the planner
+  **must** emit at least one intent; emitting zero is legal only with a stated reason (already covered, or waiting on a
+  dependency) (`planner.go:302-305`). There is no “two quiet rounds then stop” that can end an unfinished task.
+- **A4 — The graph is the only medium a worker writes to.** A worker claims one intent and its outputs are
+  `insert_assets` (asset graph), `record_fact(intent_id)` (exploration graph, `confidence=observed|inferred`) and
+  `report_finding(intent_id)` (only after a real trigger) (`agent/worker.go:232-249`). Every worker receives a
+  read-only **global exploration overview** so the next worker does not re-derive what the last one found
+  (`worker.go:325-338`). Write-back is counted per kind, and “an intent that explored but persisted nothing is not
+  mistaken for done” (`worker.go:340-348`).
+- **A5 — Depth-first, with two or three mechanism-different routes.** “Depth comes before coverage: after a high-value
+  entry, push that path through rather than flatten coverage” (`planner.go:330-333`); “keep the routes diverse and do
+  not converge early — ideally two or three mechanistically different routes coexist (e.g. upload chain vs auth
+  bypass); concentrate only after one shows evidence of approaching the goal” (`planner.go:333-335`). A serial chain is
+  written as todos and dispatched one step per wake, the satisfied step marked completed (`planner.go:335-342`).
+- **A6 — A negative observation is not a conclusion.** Workers are told that “the first block is not exhaustion: walk
+  every bypass before you conclude” (`worker.go:233`). The planner treats a worker's “not injectable” as an
+  observation: it reads `node_detail(id)` for the evidence, accepts a negation only when the evidence is solid and the
+  technique was genuinely exhausted, and otherwise dispatches **one** re-check intent — “at most one re-check per
+  negative direction” (`planner.go:313-318`).
+- **A7 — A day-long task is many short runs.** Each round has a turn/time budget; when it fires, a settlement prompt
+  forces the agent to write back before it stops (`agent/wrapup.go`). A run cut by its budget ends `exhausted`, and
+  `exhausted` is a checkpoint, not a failure: the planner reads `get_worker_trace` and dispatches “continue from where
+  it stopped” (`planner.go:326-329`). Worker conversations are persisted per intent and resumed
+  (`WorkerSessionID`, `worker.go:88-92`); context is kept small by cold-digest compaction (`agent/compaction.go`).
+- **A8 — CVE matching generates leads, never evidence.** Every agent may have a web-search backend (ddgs, Brave,
+  Tavily, DeepSeek) (`worker.go:38-52`). The rule is explicit in both the planner and worker prompts: matching a
+  version/fingerprint to a CVE, an advisory, a changelog or a diff **is not a finding**; the worker records an
+  `inferred` fact for the planner, and only a real trigger can become a finding (`worker.go:240`, `promptcatalog.go:40,104`).
+
+## IX.2 The eight gaps in p2o
+
+- **G1 — p2o accepts process goals.** `PlanDraft` has `criteria` but no typed acceptance; a goal about “an
+  evidence-backed candidate set with explicit coverage” is a legal goal and a `reviewed` goal settles it.
+- **G2 — Settlement is a status, not a proof.** `deriveCompletion` asks “is any goal outside reviewed/closed”
+  (`src/completion.ts:41-43`); it never asks whether the goal was *demonstrated*. A goal can be reviewed with six
+  evidence refs and zero primitives and the run reads `complete`.
+- **G3 — M6 stops instead of demanding work.** Two quiet rounds pause the engine (`src/engine.ts:116-125`); ARTEX's
+  equivalent situation is a hard floor that **requires** a new direction. The M6 message even names “blocked/human-needed”
+  while a ready chain step or an unchained primitive may still exist.
+- **G4 — The graph is not in the loop.** `src/prompts.ts` never mentions `p2o_graph`; the brief carries no graph slice;
+  the worker contract never asks for a write; the report does not count writes. `p2o_graph` also demands typed batches
+  with revisions and provenance, which is a much higher ceremony than `record_fact(summary, evidence, confidence)`.
+- **G5 — No CVE/lead pipeline.** `p2o_research` is a citation lookup over the committed corpus and `curatedSource`
+  refuses every other URL (`src/research.ts`); `p2o_net` could reach NVD but nothing asks for it, nothing structures
+  the answer, and nothing stores provenance. A recon asset with `php 5.3.3` and `Apache/2.2.15` produces no lead.
+- **G6 — No route dimension.** Chain steps model one chain (`chainOf`/`step`), not the *approach family*; nothing asks
+  for two or three mechanism-different routes, and nothing notices when every open path is the same mechanism.
+- **G7 — `exhausted` is read as failure.** The lead prompt says an exhausted task is “retry the direction differently,
+  never read it as answered” (`src/prompts.ts:96`) — the opposite of “continue from its trace”. The `continue` verb
+  exists (M8) but the guidance points away from it.
+- **G8 — Nothing forces write-back at settlement.** A worker can report “nothing new” after digging, and the ledger has
+  no per-worker count of assets/facts/evidence to contradict it. The run above is exactly that: 70 evidence receipts
+  but 5 assets and 9 facts, all from one batch.
+
+## IX.3 Mechanisms P16.1–P16.9
+
+**P16.1 — Deliverable goals, proven before they settle.**
+A goal gains `proof: { kind: 'capability' | 'case' | 'coverage', capability?, ref? }`. `p2o_plan` refuses `reviewed`
+or `closed` for a goal without proof: `GOAL_UNPROVEN: goal <id> is a statement about the target, not about the run; cite
+a confirmed primitive, an accepted case or the coverage plan that settles it`. The schema refuses a goal title that
+carries no `proof` at all. `deriveCompletion` adds `GOAL_UNPROVEN` (goal settled by status but not by proof) so the
+report and `p2o_finish` show it. Nothing refuses a finish — the state simply stays `incomplete`.
+*Test:* a process goal without proof is refused at create; a reviewed goal with a confirmed+tested claim is accepted; a
+reviewed goal with only notes stays `incomplete` with `GOAL_UNPROVEN`.
+
+**P16.2 — The frontier floor (revision of M6).**
+Two quiet rounds do not pause an unfinished run. The engine receives `completionRemaining` with the round progress and:
+if a goal is unsettled, a chain step is ready or a primitive is unchained, it emits a **demand** wake that names the
+specific obligation (`quiet round 3 and 4 added nothing; step 2 of chain <id> is ready and undispatched`) and keeps the
+loop live; it pauses only when the completion is `complete` or the lead recorded `blocked/human-needed` with the missing
+prerequisite. A paused engine with remaining work is exactly the “run went quiet while work was owed” failure.
+*Test:* quiet rounds with a ready step produce a wake whose text names the step, not `pause`; quiet rounds on a complete
+run pause; a lead-recorded blocked decision pauses.
+
+**P16.3 — The graph is the medium, and a write is visible (ARTEX rule, no gate).**
+The worker instruction gains the ARTEX rule: “record what you learn as you learn it — an asset with `p2o_graph`, a
+`fact:observed`/`fact:inferred` assertion with evidence, or a `p2o_note` when there is nothing new; a worker that learned
+something and wrote nothing did not finish.” The brief carries a slice: assets on the task surface (≤20), the latest
+facts from other workers (≤20), open leads, and the chain frontier. The host computes `wrote: {assets, facts, evidence}`
+per worker for the run and returns it in `p2o_workers list` and the report; zero writes without a `no-new` note is
+`NO_GRAPH_WRITE` (advisory), visible to the lead and in `REMAINING WORK`. Review is never refused for it.
+*Test:* a brief carries the slice; the counters match the ledger per worker; `NO_GRAPH_WRITE` appears only without the
+note.
+
+**P16.4 — CVE leads from recon, never evidence.**
+`p2o_research` gains `action:'cve'` with `product`, `version`, `vendor?` and optional `cpe`; it returns CVEs with
+severity, affected range and the source URL + `retrievedAt` + sha256, and writes a `lead` record:
+`{product, version, cve, severity, affected, source:{url, retrievedAt, sha256}, assetRefs:[{id, revision}], state:'untriaged'|'tasked'|'ruled_out', reason?}`.
+A claim may cite a lead only as `policyBasis:'inferred'` and stays `open_proof_gap` until triggered — the ARTEX rule,
+verbatim. The situation view gains `leads: N untriaged (M critical)`; a wake after a new version-bearing asset says which
+leads it unlocked. At export/stop, untriaged leads on in-scope assets appear as `LEAD_UNTRIAGED` (advisory, not a gate);
+`REPORT.md` gains `## LEADS` and `## ROUTES`.
+*Test:* `product/version` produces lead records with provenance and no candidate confirmation; a claim citing a lead
+cannot be `confirmed`; the segment counts untriaged leads.
+*Open decision:* the source. (a) host-side fetch with an allowlist (`nvd.nist.gov`, `cve.org`, vendor security pages);
+(b) worker-side fetch through `p2o_net` plus a `record-lead` write; (c) an offline curated mirror. (a) is the only option
+that works for a solo run and keeps provenance under host control; it needs the egress decision below.
+
+**P16.5 — Route diversity as a visible dimension.**
+`p2o_plan todo` gains `route` (slug: `upload`, `auth`, `sqli`, `deser`, `ssrf`, …; default `methodFamily`). The
+situation view gains `routes: 2 open (upload, auth), 1 done`. While the goal is unmet and every open chain step shares
+one route, the wake says so and names the unexplored families that the current facts make plausible; on a run with a
+single open route and a plausible alternative, `ROUTE_MONOCULTURE` appears in the report (advisory). Concentration is
+allowed once a route shows a demonstrated effect — the ARTEX rule.
+*Test:* two routes render; a single-route run produces the advisory; the wake names the alternative family.
+
+**P16.6 — Negative evidence is a checkpoint, not a wall.**
+A `ruled_out` claim already requires its control; a second `ruled_out` on the same surface + capability is refused
+unless it cites a different mechanism or new evidence (`RULED_OUT_RECHECK`), which encodes “at most one re-check”.
+A negation recorded with `execution:not_tested` or without a control is shown as `unproven-negation` in the situation
+view so the lead can dispatch the one re-check.
+*Test:* a duplicate ruled-out is refused; an untested negation is shown as unproven.
+
+**P16.7 — Continue from the trace, never “retry differently”.**
+The exhausted/expired guidance becomes: “its progress is in the ledger and its conversation is resumable; continue it
+with `p2o_workers continue` and a brief that starts where it stopped, or dispatch a new task with a different mechanism.”
+`p2o_workers list` gains `lastWrite` and `progress` (commands, last fact, last evidence) per worker. An `expired`
+worker's record carries the last in-flight operation so the brief can name it.
+*Test:* the prompt line names `continue`; a worker list shows the last write; a worker that reported `expired` yields a
+continue hint rather than a retry-different hint.
+
+**P16.8 — Write-back accounting at settlement.**
+Host-computed per-worker counters (assets, facts, evidence, findings) are attached to the report and shown in the worker
+list; a worker with zero writes and no `no-new` note is flagged `NO_GRAPH_WRITE` (advisory). The report's
+`## REMAINING WORK` lists it next to the obligations.
+*Test:* counters match the ledger; the flag appears only without a note.
+
+**P16.9 — The lead sees what ARTEX's planner sees.**
+The wake text becomes a situational snapshot with the pieces it currently lacks: `graph` (assets and facts on the
+run's surfaces), `leads`, `routes`, `writes` since the last wake, and the chain frontier. `SEGMENT_FIELDS` is extended
+for every new key so the drift test keeps the prompt and the view in step.
+*Test:* the drift test covers each new key; a wake after a fact shows it.
+
+## IX.4 Phases and acceptance
+
+| Phase | Mechanisms | Acceptance (hermetic) |
+|---|---|---|
+| **G** — Goals that have to be proved | P16.1, P16.9 (goal/leads fields) | create refuses a goal without `proof`; `reviewed` without proof stays `incomplete` with `GOAL_UNPROVEN`; a proven goal leaves `complete`; the report prints the proof |
+| **H** — Frontier floor and continue | P16.2, P16.7 | quiet rounds with a ready step wake with the step named and do not pause; `exhausted` guidance names `continue`; worker list shows the last write |
+| **I** — Graph as the medium | P16.3, P16.8 | brief carries the slice; the report and worker list count the writes per worker; `NO_GRAPH_WRITE` is advisory and never a refusal |
+| **J** — CVE leads | P16.4 | version→CVE writes `lead` records with provenance and never a confirmation; a lead-citing claim cannot be confirmed; `LEAD_UNTRIAGED` is advisory; `## LEADS` renders |
+| **K** — Routes and negation | P16.5, P16.6 | two routes render; `ROUTE_MONOCULTURE` fires on a single-route run; a duplicate ruled-out is refused; an untested negation is shown |
+
+Each phase keeps the standing rules: no command/time allowance, no finish gate, completion derived, a report is not
+termination, transport bytes bound records, and nothing refuses a human stop.
+
+## IX.5 Decisions — settled by the owner, 2026-10-24
+
+1. **CVE source: host-side fetch with an allowlist** (`nvd.nist.gov`, `cve.org`, vendor security pages). The host records
+   the URL, the retrieval time and the hash; the model never supplies a destination. Offline mirror later if a target
+   requires it.
+2. **Mapping goals may prove with `proof.kind:'coverage'`** — a plan whose cells are all terminal. A goal whose text
+   claims reachability still needs a capability or an accepted case; coverage cannot stand in for a demonstrated effect.
+3. **Route diversity is advisory** (`ROUTE_MONOCULTURE`): “a plausible alternative exists” is the model's judgement, so
+   the host reports it and never refuses a dispatch over it.
+4. **Graph write-back follows ARTEX, not a gate.** No review refusal. Instead: the worker prompt requires writing as it
+   goes; the host computes `wrote: {assets, facts, evidence}` per worker and returns it in `p2o_workers list` and the
+   report; a worker with zero writes and no `no-new` note is shown as `NO_GRAPH_WRITE` (advisory) everywhere the lead and
+   the report can see it. ARTEX's own line is “an intent that explored but persisted nothing is not mistaken for done”
+   (`agent/worker.go:340-348`) — a fact the next reader can see, not a refusal.
+5. **M6 pauses on `complete` and on a recorded `blocked/human-needed`, and keeps waking while an obligation remains.**
+   Two quiet rounds with a ready step, an unchained primitive or an unsettled goal produce a demand wake that names the
+   obligation; only a run with nothing owed, or one whose lead recorded the missing prerequisite, goes quiet.
+
+Recorded above as requirements, not options. Phase G starts with 1–2.
+
+## IX.6 Expected effect on the measured run
+
+With G alone, the goal would have been refused at create unless it named a proof; the review at 45 minutes would have
+stayed `incomplete` and the wake for the next round would have named `GOAL_UNPROVEN`. With H, the two quiet rounds
+would have woken a direction instead of settling. With I, the 70 evidence receipts would have been accompanied by facts
+and assets from every worker, and the second and third workers would have started from them. With J, `php 5.3.3`,
+`Apache/2.2.15` and the undisclosed Joomla version would have produced leads the next wake had to triage. With K, the
+run would have shown that all its approaches were the same route before it called the surface mapped.
+
 
 ---
 

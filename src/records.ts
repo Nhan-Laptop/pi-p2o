@@ -12,7 +12,7 @@ import type { MutationRequest } from './state/store.js';
  * mirroring Strix's notes/coverage ledger: the next agent reads state, not someone's reasoning.
  * Nothing in this file is authority — scope comes from the human, evidence is verified elsewhere.
  */
-export const RECORD_KINDS = ['note', 'coverage', 'observation', 'open', 'report', 'lifecycle', 'evidence', 'candidate', 'report_part', 'task', 'surface', 'research'] as const;
+export const RECORD_KINDS = ['note', 'coverage', 'observation', 'open', 'report', 'lifecycle', 'evidence', 'candidate', 'report_part', 'task', 'surface', 'research', 'lead'] as const;
 export type RecordKind = typeof RECORD_KINDS[number];
 export const COVERAGE_OUTCOMES = ['confirmed', 'ruled_out', 'open_proof_gap', 'clean', 'needs_follow_up'] as const;
 export type CoverageOutcome = typeof COVERAGE_OUTCOMES[number];

@@ -1,5 +1,9 @@
 import { describeCapability } from './capabilities.js';
 import { caseViews, needsCaseReview, type CaseView } from './cases.js';
+import { goalProofRefusal, proofLabel, proofViews } from './goal-proof.js';
+import { writeBackLine, type WorkerWrites } from './write-back.js';
+import { leadFrontier } from './cve.js';
+import { routeCounts } from './routes.js';
 import { cvssScore } from './cvss.js';
 import { FINDING_SEVERITIES } from './case-types.js';
 import { completionLine, deriveCompletion } from './completion.js';
@@ -38,6 +42,8 @@ export interface ReportMeta {
   operator?: Partial<Record<OperatorField, string>>;
   /** Package-relative paths of the catalog's wstg-source pages, used only to print the pinned upstream address of a test. */
   wstgPages?: readonly string[];
+  /** P16.3: host-computed write-back counts per worker, printed next to each handoff so the report counts what was written. */
+  wrote?: ReadonlyMap<string, WorkerWrites>;
 }
 export const OPERATOR_FIELDS = ['author', 'organization', 'team', 'classification', 'disclaimer'] as const;
 export type OperatorField = typeof OPERATOR_FIELDS[number];
@@ -260,10 +266,12 @@ function operatorBrief(index: LedgerIndex): string[] {
 
 export function renderReport(index: LedgerIndex, context: ReportProjectionContext & { coverage?: CoverageContext }, meta: ReportMeta): RenderedReport {
   const projection = reportProjection(index, context), tasks = taskFrontier(index);
-  // M3: completion is derived here, from the same ledger the rest of the report is rendered from, so the report cannot claim a
-  // state the situation line or the finish result would contradict.
-  const completion = deriveCompletion({ plans: planFrontier(index), claims: claimHeadClaims(index), tasks });
   const cases = caseViews(index, context.cases ?? {}), plans: CoveragePlanView[] = context.coverage ? coverageViews(index, context.coverage) : [];
+  // M3: completion is derived here, from the same ledger the rest of the report is rendered from, so the report cannot claim a
+  // state the situation line or the finish result would contradict. P16.1: goal proofs read the same case/coverage views
+  // the report prints, so a stale case cannot settle a goal in one place and fail in the other.
+  const claimHeads = claimHeadClaims(index), proof = { ...proofViews(cases, plans), claims: claimHeads };
+  const completion = deriveCompletion({ plans: planFrontier(index), claims: claimHeads, tasks, cases: proof.cases, coverage: proof.coverage });
   const accepted = cases.filter(view => view.acceptedFinding), others = cases.filter(view => !view.acceptedFinding);
   const open = projection.openIds.map(id => ({ id, record: index.byId.get(id) }));
   const status: Record<string, number> = {}; for (const task of tasks) status[task.status] = (status[task.status] ?? 0) + 1;
@@ -349,9 +357,25 @@ export function renderReport(index: LedgerIndex, context: ReportProjectionContex
     for (const claim of claims.shown) out.push(`| ${mdText(claim.id, 80)} | ${mdText(claim.candidate, 160)} | ${mdText(`${claim.surface ?? ''} / ${claim.risk ?? ''}`, 160)} | ${mdText(claim.closure, 24)} | ${mdText(claim.execution, 24)} | ${mdText(claim.proof, 40)} | ${claim.replayable ? `payload \`${mdText(claim.payloadRef, 80)}\`` : 'not replayable'} | ${claim.independentCurrent === undefined ? 'not claimed' : claim.independentCurrent ? 'yes' : 'no'} |`);
     out.push('');
   }
+  // P16.5: routes are a dimension of the report, so a single-route run is visible next to its advisory.
+  const routes = routeCounts(planFrontier(index));
+  if (routes.open.length || routes.done.length) {
+    out.push('', '## ROUTES', '', 'Mechanism families the plan is trying. One open route is allowed; concentration should follow a demonstrated effect.', '');
+    out.push('| Route | Open steps | Done steps |', '|---|---|---|');
+    for (const route of [...new Set([...routes.open, ...routes.done])].sort()) out.push(`| ${mdText(route, 32)} | ${mdText(routes.open.includes(route) ? 'yes' : '', 4)} | ${mdText(routes.done.includes(route) ? 'yes' : '', 4)} |`);
+  }
+  // P16.4: a lead is printed with its provenance and state, never among findings: a published CVE is a pointer to test.
+  const leads = leadFrontier(index);
+  if (leads.length) {
+    out.push('', '## LEADS', '', 'Published CVEs attached to observed versions. A lead is a pointer to test; it is never a finding, evidence or a confirmed claim.', '');
+    out.push('| Lead | Product | Version | CVE | Severity | Affected | Source | State |', '|---|---|---|---|---|---|---|---|');
+    const shown = rows(leads, ROWS);
+    for (const lead of shown.shown) out.push(`| ${mdText(lead.id, 80)} | ${mdText(lead.product, 120)} | ${mdText(lead.version ?? '', 80)} | ${mdText(lead.cve, 24)} | ${mdText(lead.severity, 16)} | ${mdText(lead.affected, 200)} | ${mdText(`${lead.source.url} sha256=${lead.source.sha256}`, 240)} | ${mdText(lead.state, 24)} |`);
+    if (shown.omitted) out.push(`| … ${shown.omitted} more lead(s) | | | | | | | |`);
+  }
   out.push('## Tasks and handoffs', '', `- Awaiting owner review: ${awaiting.length ? ids(awaiting.map(task => task.id), 20) : 'none'}`);
   const handoffs = rows(projection.reports, ROWS);
-  for (const report of handoffs.shown) out.push(`- Handoff ${mdText(report.id, 80)} from ${mdText(report.workerId ?? 'unknown', 80)}: outcome ${mdText(report.outcome ?? 'unknown', 40)}, confidence ${mdText(report.confidence ?? 'unknown', 24)}, ${report.findings} claimed finding(s), ${report.openItems} open item(s)${report.blocked ? `, blocked: ${mdText(report.blocked, 200)}` : ''}`);
+  for (const report of handoffs.shown) out.push(`- Handoff ${mdText(report.id, 80)} from ${mdText(report.workerId ?? 'unknown', 80)}: outcome ${mdText(report.outcome ?? 'unknown', 40)}, confidence ${mdText(report.confidence ?? 'unknown', 24)}, ${report.findings} claimed finding(s), ${report.openItems} open item(s)${report.blocked ? `, blocked: ${mdText(report.blocked, 200)}` : ''}${report.workerId && meta.wrote?.get(report.workerId) ? `; ${mdText(writeBackLine(meta.wrote.get(report.workerId)!), 200)}` : ''}`);
   if (handoffs.omitted) out.push(`- … ${handoffs.omitted} more handoffs`);
   if (v2) {
     // M3: the obligation list is a report fact. Exporting writes it; it never refuses the export and never claims the run is done.
@@ -360,6 +384,15 @@ export function renderReport(index: LedgerIndex, context: ReportProjectionContex
     if (completion.items.length) {
       out.push('', '| Code | Count | Examples | Meaning |', '|---|---|---|---|');
       for (const item of completion.items) out.push(`| ${item.code} | ${item.count} | ${ids(item.ids, 5)} | ${mdText(item.message, 160)} |`);
+    }
+    // P16.1: the proof each goal promised to show, and whether it holds, so a reader can tell a status from a demonstration.
+    const goals = planFrontier(index).filter(entry => entry.kind === 'goal');
+    if (goals.length) {
+      out.push('', '| Goal | Status | Proof | Settled |', '|---|---|---|---|');
+      for (const goal of goals) {
+        const refusal = goal.proof ? goalProofRefusal(goal.proof, proof) : 'GOAL_UNPROVEN: no proof is recorded';
+        out.push(`| ${mdText(goal.id, 80)} ${mdText(goal.title, 160)} | ${mdText(goal.status, 24)} | ${goal.proof ? mdText(proofLabel(goal.proof), 120) : 'none'} | ${refusal ? `no — ${mdText(refusal, 200)}` : 'yes'} |`);
+      }
     }
     if (meta.unresolved && (meta.unresolved.obligations.length || meta.unresolved.advisory.length)) {
       out.push('', `Preflight at ${meta.endReason && meta.endReason !== 'finished' ? 'stop' : 'finish'}: ${meta.unresolved.obligations.length} open obligation code(s), ${meta.unresolved.advisory.length} advisory.`, '', '| Code | Level | Count | Examples | Meaning |', '|---|---|---|---|---|');

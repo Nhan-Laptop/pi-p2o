@@ -9,11 +9,12 @@
  * `blocked/human-needed` arrives with M6 (escalation), so today a run is either `complete` or `incomplete` while it is open.
  */
 import { chainObligations, type UnchainedPrimitive } from './obligations.js';
+import { goalProofRefusal, type ProofCase, type ProofCoverage } from './goal-proof.js';
 import type { ChainClaim } from './chain-view.js';
 import type { PlanEntry } from './planning.js';
 import type { AssessmentTask } from './tasks.js';
 
-export const REMAINING_CODES = ['GOAL_UNSETTLED', 'PRIMITIVE_UNCHAINED', 'CHAIN_READY'] as const;
+export const REMAINING_CODES = ['GOAL_UNSETTLED', 'GOAL_UNPROVEN', 'PRIMITIVE_UNCHAINED', 'CHAIN_READY'] as const;
 export type RemainingCode = typeof REMAINING_CODES[number];
 export interface RemainingItem { code: RemainingCode; count: number; ids: string[]; message: string }
 export interface Completion {
@@ -25,10 +26,15 @@ export interface Completion {
   reasons: string[];
   unchained: UnchainedPrimitive[];
 }
-export interface CompletionInput { plans: readonly PlanEntry[]; claims: readonly ChainClaim[]; tasks: readonly AssessmentTask[] }
+export interface CompletionInput {
+  plans: readonly PlanEntry[]; claims: readonly ChainClaim[]; tasks: readonly AssessmentTask[];
+  /** P16.1: the same two sources the plan board reads, so a settled goal cannot be settled here and unproven there. */
+  cases?: readonly ProofCase[]; coverage?: readonly ProofCoverage[];
+}
 
 const MESSAGES: Record<RemainingCode, string> = {
   GOAL_UNSETTLED: 'a goal is not reviewed or closed yet; settlement is a plan revision, not a report',
+  GOAL_UNPROVEN: 'a goal is reviewed or closed but its proof does not hold; a status is not a demonstration',
   PRIMITIVE_UNCHAINED: 'a confirmed and tested claim has no successor step and no recorded wall',
   CHAIN_READY: 'a chain step is ready to take and has not been dispatched',
 };
@@ -37,18 +43,42 @@ const MAX_IDS = 20;
 
 export function deriveCompletion(input: CompletionInput): Completion {
   // Goals are the run's own denominator: an open goal is remaining work even when every other obligation is settled.
-  const openGoals = input.plans.filter(plan => plan.kind === 'goal' && plan.status !== 'reviewed' && plan.status !== 'closed');
+  const goals = input.plans.filter(plan => plan.kind === 'goal');
+  const settledGoals = goals.filter(plan => plan.status === 'reviewed' || plan.status === 'closed');
+  const openGoals = goals.filter(plan => plan.status !== 'reviewed' && plan.status !== 'closed');
+  // P16.1: a reviewed goal whose proof no longer holds (a disputed case, a re-opened coverage plan) is still owed work.
+  const unprovenGoals = settledGoals.filter(plan => plan.proof === undefined
+    || goalProofRefusal(plan.proof, { claims: input.claims, cases: input.cases ?? [], coverage: input.coverage ?? [] }) !== undefined);
   const { ready, unchained } = chainObligations({ plans: input.plans, claims: input.claims, tasks: input.tasks });
   const items: RemainingItem[] = [];
   const push = (code: RemainingCode, ids: string[]) => {
     if (ids.length) items.push({ code, count: ids.length, ids: ids.slice(0, MAX_IDS), message: MESSAGES[code] });
   };
   push('GOAL_UNSETTLED', openGoals.map(plan => plan.id));
+  push('GOAL_UNPROVEN', unprovenGoals.map(plan => plan.id));
   push('PRIMITIVE_UNCHAINED', unchained.map(primitive => primitive.recordId));
   push('CHAIN_READY', ready.map(step => step.planId));
   const remaining = items.reduce((total, item) => total + item.count, 0);
   const reasons = items.map(item => `${item.code} ${item.count}: ${item.message}`);
   return { state: remaining ? 'incomplete' : 'complete', remaining, items, reasons, unchained };
+}
+
+/**
+ * P16.2: the named obligation for a demand wake. The engine may not invent work, so the owner builds the sentence from the
+ * same completion the finish result prints; a quiet round with work owed carries this text instead of pausing.
+ */
+export function completionDemand(completion: Completion, plans: readonly PlanEntry[]): string | undefined {
+  if (!completion.remaining) return undefined;
+  const byId = new Map(plans.map(plan => [plan.id, plan])), parts: string[] = [];
+  for (const item of completion.items) {
+    if (item.code === 'CHAIN_READY') {
+      const steps = item.ids.map(id => byId.get(id)).filter(step => step !== undefined).map(step => step.chainOf ? `step ${step.step} of chain ${step.chainOf}` : `step ${step.step}`);
+      parts.push(`${steps.length ? steps.join(', ') : `${item.count} chain step(s)`} ready and undispatched`);
+    } else if (item.code === 'PRIMITIVE_UNCHAINED') parts.push(`${item.count} demonstrated primitive(s) with no successor step`);
+    else if (item.code === 'GOAL_UNPROVEN') parts.push(`${item.count} goal(s) whose proof no longer holds`);
+    else if (item.code === 'GOAL_UNSETTLED') parts.push(`${item.count} goal(s) not reviewed or closed`);
+  }
+  return parts.join('; ') || `${completion.remaining} obligation(s) remain`;
 }
 
 /** One line for a result or a prompt: what is still owed, and how much of it. */

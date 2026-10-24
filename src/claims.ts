@@ -38,6 +38,7 @@ export interface ClaimFields {
 const DEMONSTRATED_CLOSURE = 'confirmed' satisfies ClaimClosure;
 const DEMONSTRATED_EXECUTION = 'tested' satisfies ClaimExecution;
 const OPEN_CLOSURE = 'open_proof_gap' satisfies ClaimClosure;
+const RULED_OUT_CLOSURE = 'ruled_out' satisfies ClaimClosure;
 
 /** A primitive that actually ran: confirmed closure and tested execution. The only definition in the codebase. */
 export function isDemonstrated(claim: ClaimFields): boolean {
@@ -49,6 +50,8 @@ export function isOpenGap(claim: ClaimFields): boolean { return claim.closure ==
 
 /** A claim whose author states it is confirmed, whether or not it was exercised. Review queues use this, not the provider rule. */
 export function isConfirmedClaim(claim: ClaimFields): boolean { return claim.closure === DEMONSTRATED_CLOSURE; }
+/** P16.6: a negative result, which needs a control and is allowed at most one re-check. */
+export function isRuledOutClaim(claim: ClaimFields): boolean { return claim.closure === RULED_OUT_CLOSURE; }
 
 /** An item still owed an answer: an open gap, or a candidate whose execution was blocked. */
 export function isOpenClaim(claim: ClaimFields): boolean { return isOpenGap(claim) || claim.execution === 'blocked'; }

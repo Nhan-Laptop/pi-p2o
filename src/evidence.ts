@@ -4,7 +4,8 @@ import { constants } from 'node:fs';
 import { mkdir, open } from 'node:fs/promises';
 import { join } from 'node:path';
 import { appendRecord, readLedger, type AssessmentRecord } from './records.js';
-import { isDemonstrated, isOpenGap } from './claims.js';
+import { isConfirmedClaim, isDemonstrated, isOpenGap, isRuledOutClaim } from './claims.js';
+import { capabilityKey, readCapabilities } from './capabilities.js';
 import { cleanText, type ProcessResult } from './process.js';
 import { redactArtifactPrefix, type CaptureReceipt } from './artifacts.js';
 import { capabilityList, type Capability } from './capabilities.js';
@@ -31,6 +32,8 @@ export interface Candidate {
   payloadRef?: string;
   /** Run-scoped environment recipe the payload was demonstrated in (P14.3); `replayable` needs both. */
   environmentRef?: string;
+  /** P16.4: CVE lead record ids this hypothesis cites. A lead is a pointer to test, never the demonstration itself. */
+  leadRefs?: string[];
   /**
    * P14.12: what actually ran, stamped by the host when the claim is recorded — the payload's sha256 and the environment's recipe
    * fingerprint. Independence is then a comparison of these two values and not a comparison of two workers' sentences, and no caller can
@@ -93,6 +96,22 @@ export class EvidenceStore {
       for (const id of input.resolves ?? []) {
         if (!records.some(r => r.id === id && r.kind === 'open')) throw new Error(`Unknown open-item ID: ${id}`);
         if (isOpenGap(input)) throw new Error('Resolving an open item needs a closed candidate with evidence');
+      }
+      // P16.6: negative evidence is a checkpoint, not a wall. A second ruled_out for the same surface+capability needs new
+      // evidence or a different mechanism ("at most one re-check"); otherwise the earlier negative would be re-litigated
+      // forever with the same control, which is exactly the loop ARTEX records as a wasted intent.
+      if (isRuledOutClaim(input) && !input.supersedes) {
+        const replaced = new Set(records.flatMap(r => r.supersedes ? [r.supersedes] : []));
+        const gained = new Set((input.gained ?? []).map(capabilityKey));
+        const same = records.filter(row => row.kind === 'candidate' && row.id && !replaced.has(row.id) && row.surface === input.surface && isRuledOutClaim(row.data ?? {})
+          && (gained.size ? readCapabilities(row.data?.gained, 'gained').some(capability => gained.has(capabilityKey(capability))) : row.data?.risk === input.risk));
+        if (same.length) {
+          const cited = new Set(same.flatMap(row => row.refs ?? []));
+          const freshEvidence = input.evidenceRefs.some(id => !cited.has(id));
+          const control = (input.control ?? '').trim();
+          const differentMechanism = control.length > 0 && same.every(row => String(row.data?.control ?? '').trim() !== control);
+          if (!freshEvidence && !differentMechanism) throw Error('RULED_OUT_RECHECK: this surface and capability were already ruled out; a second negative needs new evidence or a different control/mechanism (at most one re-check)');
+        }
       }
       const previous = records.filter(r => r.kind === 'candidate' && r.data?.candidate === input.candidate).at(-1);
       if (previous && (previous.surface !== input.surface || previous.risk !== input.risk)) throw Error('Candidate revision cannot change surface/risk; use a new candidate ID');
@@ -167,6 +186,14 @@ function validateCandidate(c: Candidate): void {
   if (!(CANDIDATE_CLOSURES as readonly string[]).includes(c.closure) || !(CANDIDATE_EXECUTIONS as readonly string[]).includes(c.execution)
     || !(CANDIDATE_PROOFS as readonly string[]).includes(c.proof)) throw new Error('Invalid candidate state');
   if (!Array.isArray(c.evidenceRefs) || !Array.isArray(c.negativeControls)) throw new Error('Evidence arrays must be lists of receipt IDs');
+  // P16.4: version→CVE is a lead. It may shape a hypothesis, never settle one: the claim stays open until the effect ran.
+  if (c.leadRefs !== undefined) {
+    if (!Array.isArray(c.leadRefs) || c.leadRefs.some(id => typeof id !== 'string' || !id)) throw new Error('leadRefs must be a list of same-run lead record IDs');
+    // The execution rule is checked first: a confirmed claim that cites a lead is the exact error this gate exists for.
+    if (c.leadRefs.length && isConfirmedClaim(c)) throw new Error('LEAD_NOT_EVIDENCE: a CVE lead names a published issue, not an executed effect; keep the claim open_proof_gap until the effect is demonstrated');
+    if (c.leadRefs.length && c.policyBasis !== 'inferred') throw new Error('A CVE lead is not intended-policy provenance: cite it as policyBasis "inferred"');
+  }
+
   if (!(POLICY_BASES as readonly string[]).includes(c.policyBasis ?? '')) throw new Error('Invalid policy basis');
   if (!c.expectedPolicy?.trim()) throw new Error('Name the expected policy and its provenance');
   if (c.policyBasis === 'inferred' && c.closure !== 'open_proof_gap') throw new Error('Inferred policy is a hypothesis: use open_proof_gap until intended policy is established');

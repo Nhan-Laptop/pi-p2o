@@ -199,6 +199,11 @@ describe('worker role', () => {
     const view = await h.call('p2o_workers');
     expect(view.details.open.some((r: any) => r.kind === 'candidate')).toBe(true);
     expect(view.details.workers[0].commandsUsed).toBe(1);
+    // P16.7: the list states where the worker wrote last, so "continue from there" names a real record.
+    expect(view.details.workers[0].lastWrite).toMatchObject({ kind: 'candidate' });
+    expect(view.details.workers[0].lastFact).toContain('test-case');
+    expect(view.details.navigation.progress[0]).toMatchObject({ id: workerId, lastWrite: { kind: 'candidate' } });
+    expect(view.content[0].text).toContain('last write: candidate');
   });
 
   it('delivers a blocked lifecycle report on settled provider failure without a model tool call', async () => {

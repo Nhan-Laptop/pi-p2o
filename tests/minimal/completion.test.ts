@@ -39,8 +39,24 @@ describe('completion is derived, never called (M3)', () => {
 
     const openGoal = deriveCompletion({ plans: [plan({ kind: 'goal', status: 'active', criteria: ['bounded'] })], claims: [], tasks: [] });
     expect(openGoal.items.map(item => item.code)).toEqual(['GOAL_UNSETTLED']);
-    const reviewedGoal = deriveCompletion({ plans: [plan({ kind: 'goal', status: 'reviewed', supportRefs: ['ev-1'] })], claims: [], tasks: [] });
-    expect(reviewedGoal.state).toBe('complete');
+    // P16.1: a reviewed goal is settled only while its proof holds — the capability the run actually gained.
+    const proof = { kind: 'capability', capability: READ } as const;
+    const reviewedGoal = deriveCompletion({ plans: [plan({ kind: 'goal', status: 'reviewed', supportRefs: ['ev-1'], proof })], claims: [demonstrated('rec-a')], tasks: [] });
+    // The goal itself is settled; the demonstrated claim is still owed a successor (M4), so the run is not complete yet.
+    expect(reviewedGoal.items.map(item => item.code)).toEqual(['PRIMITIVE_UNCHAINED']);
+    const settled = deriveCompletion({ plans: [plan({ kind: 'goal', status: 'reviewed', supportRefs: ['ev-1'], proof: { kind: 'case', ref: 'case-1' } })], claims: [], tasks: [],
+      cases: [{ id: 'case-1', verdict: 'confirmed', reviewStatus: 'accepted', currentness: 'current' }] });
+    expect(settled.state).toBe('complete');
+    const unproven = deriveCompletion({ plans: [plan({ kind: 'goal', status: 'reviewed', supportRefs: ['ev-1'], proof })], claims: [claim('rec-a')], tasks: [] });
+    expect(unproven.state).toBe('incomplete');
+    expect(unproven.items.map(item => [item.code, item.ids])).toEqual([['GOAL_UNPROVEN', ['plan-x']]]);
+    expect(completionLine(unproven)).toContain('a status is not a demonstration');
+    // A goal with no proof cannot be trusted as settled: legacy rows and status-only revisions land here.
+    const legacy = deriveCompletion({ plans: [plan({ kind: 'goal', status: 'closed', supportRefs: ['ev-1'] })], claims: [], tasks: [] });
+    expect(legacy.items.map(item => item.code)).toEqual(['GOAL_UNPROVEN']);
+    const coverage = deriveCompletion({ plans: [plan({ kind: 'goal', status: 'reviewed', supportRefs: ['ev-1'], proof: { kind: 'coverage', ref: 'cov-1' } })], claims: [], tasks: [],
+      coverage: [{ planId: 'cov-1', cells: [{ id: 'cell-1', execution: 'tested' }, { id: 'cell-2', execution: 'blocked' }] }] });
+    expect(coverage.state).toBe('complete');
   });
 
   it('counts a ready chain step as remaining work, and stops counting it once dispatched', () => {
@@ -98,6 +114,20 @@ describe('export writes, ends nothing; stop records the obligation (M3)', () => 
     expect(text(settled)).toContain('STATE: complete');
     const after = await readFile(join(settled.details.reportPath, 'REPORT.md'), 'utf8');
     expect(after).toMatch(/- Completion: \*\*complete\*\* — 0 obligation\(s\)/);
+  }));
+
+  it('prints each goal proof and whether it holds (P16.1)', async () => fixture(async h => {
+    await populate(h);
+    await h.call('p2o_plan', { action: 'create', entry: { kind: 'goal', title: 'Demonstrate one inert read on the fixture surface', status: 'active',
+      reason: 'Bounded goal whose proof is a capability this fixture does not gain', criteria: ['A confirmed and tested claim gains the read'],
+      proof: { kind: 'capability', capability: { kind: 'file.read', subject: 'inert-file' } } } });
+    const exported = await h.call('p2o_finish', { export: true });
+    const report = await readFile(join(exported.details.reportPath, 'REPORT.md'), 'utf8');
+    expect(report).toContain('| Goal | Status | Proof | Settled |');
+    expect(report).toContain('file.read');expect(report).toContain('inert-file');
+    // The proof does not hold here, and the report says so rather than letting the row's status speak for it.
+    expect(report).toContain('no — GOAL');expect(report).toContain('UNPROVEN');
+    expect(exported.details.completion.items.map((item: { code: string }) => item.code)).toContain('GOAL_UNSETTLED');
   }));
 
   it('records the outstanding obligation in the stopped outcome', async () => fixture(async h => {

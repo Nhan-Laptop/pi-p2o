@@ -34,9 +34,11 @@ confirmation and the live owner establish authority; disk state, summaries and w
 
 ## Hoàn tất được suy ra (M3)
 
-Run không có "lệnh hoàn tất". `src/completion.ts` suy ra `complete` chỉ khi: mọi goal đã `reviewed`/`closed`, không còn claim
-`confirmed`+`tested` nào chưa được consume, và không còn bước chain nào ready (trừ bước đang được một task sống nhận).
-`remaining` là tổng số nghĩa vụ đó; mỗi nghĩa vụ có mã (`GOAL_UNSETTLED`, `PRIMITIVE_UNCHAINED`, `CHAIN_READY`) và id.
+Run không có "lệnh hoàn tất". `src/completion.ts` suy ra `complete` chỉ khi: mọi goal đã `reviewed`/`closed` **và proof của nó
+còn đúng** (`src/goal-proof.ts`), không còn claim `confirmed`+`tested` nào chưa được consume, và không còn bước chain nào ready
+(trừ bước đang được một task sống nhận). Goal `reviewed` mà proof không còn đúng (case bị `disputed`, cell của coverage plan
+được mở lại, hoặc row cũ không có `proof`) là `GOAL_UNPROVEN`, không phải đã settled.
+`remaining` là tổng số nghĩa vụ đó; mỗi nghĩa vụ có mã (`GOAL_UNSETTLED`, `GOAL_UNPROVEN`, `PRIMITIVE_UNCHAINED`, `CHAIN_READY`) và id.
 
 Hai verb tách quyền: `p2o_finish {export:true}` reconcile rồi ghi `REPORT.md`/CSV và **không kết thúc gì** (worker, sandbox,
 run giữ nguyên; export lại được, thư mục mới `-export-N`); `p2o_finish` không có `export` vẫn là báo cáo cuối (dừng worker,

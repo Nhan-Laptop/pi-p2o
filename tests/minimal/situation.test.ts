@@ -3,10 +3,10 @@ import { SEGMENT_FIELDS, SITUATION_LIMIT, situationLine, situationSegments, summ
 
 // planning_update.md P3: one bounded line about the run, computed from records so the lead does not infer the frontier
 // from an empty list, and testable without an engine.
-const full: SituationSnapshot = { open: 6, running: 2, runningRoles: ['discovery', 'validation'], ready: 3, exhausted: 0, blocked: 1,
+const full: SituationSnapshot = { open: 6, running: 2, runningRoles: ['discovery', 'validation'], ready: 3, exhausted: 0, leadsUntriaged: 2, leadsCritical: 1, routesOpen: 2, routesDone: 1, routeNames: ['auth'], unprovenNegations: 1, blocked: 1,
   openContradictions: 1, chainReady: 1, chainUnmet: 2, chainSteps: 0, chainReadySteps: 0, chainWaitingSteps: 0, pendingRating: 4, coverageTested: 12, coverageCells: 31, coveragePlanned: 0, coverageOmitted: 0,
   suggested: { purpose: 'validation', score: 65 } };
-const idle: SituationSnapshot = { open: 0, running: 0, runningRoles: [], ready: 0, exhausted: 0, blocked: 0, openContradictions: 0,
+const idle: SituationSnapshot = { open: 0, running: 0, runningRoles: [], ready: 0, exhausted: 0, leadsUntriaged: 0, leadsCritical: 0, routesOpen: 0, routesDone: 0, routeNames: [], unprovenNegations: 0, blocked: 0, openContradictions: 0,
   chainReady: 0, chainUnmet: 0, chainSteps: 0, chainReadySteps: 0, chainWaitingSteps: 0, pendingRating: 0, coverageTested: 0, coverageCells: 0, coveragePlanned: 0, coverageOmitted: 0, suggested: null };
 
 const task = (id: string, status: string, extra: Record<string, unknown> = {}) => ({ id, status, role: 'discovery', prerequisites: [], ...extra }) as never;
@@ -16,7 +16,9 @@ const claim = (extra: Record<string, unknown>) => ({ closure: 'confirmed', ...ex
 
 describe('situation line (P3)', () => {
   it('renders the documented line for a busy run', () => {
-    expect(situationLine(full)).toBe('Situation: 2 running (discovery, validation) · 3 ready · next: validation 65 · 1 blocked on evidence · 1 open contradiction · chain: 1 step ready, 2 unmet needs · 4 cases pending rating · coverage 12/31.');
+    // The line is hard-capped at 240 bytes: with the route/negation/lead segments present the chain, rating and coverage
+    // segments fall off the tail in that order (they are the optional ones), and nothing is invented to fill the space.
+    expect(situationLine(full)).toBe('Situation: 2 running (discovery, validation) · 3 ready · next: validation 65 · 1 blocked on evidence · 1 open contradiction · routes: 2 open (auth), 1 done · 1 unproven-negation · leads: 2 untriaged (1 critical).');
     expect(situationLine(full).length).toBeLessThanOrEqual(SITUATION_LIMIT);
   });
 

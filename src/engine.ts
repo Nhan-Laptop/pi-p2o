@@ -4,12 +4,18 @@ import type { AssessmentTask } from './tasks.js';
 
 export interface EngineEvent { sequence: number; kind: string; id: string; reason?: string }
 export interface QueuedIntent { taskId: string; revision: number; priority: number; input: DelegateInput; reason?: string }
-export interface PlannerWake { runId: string; epoch: number; through: number; round: number }
+export interface PlannerWake { runId: string; epoch: number; through: number; round: number; /** P16.2: the named obligations a stalled-but-unfinished round still owes. */ demand?: string }
 /**
  * M6: what a round is judged on. Monotone counters, so equality means the round added nothing — no tested cell, no candidate
  * closure, no asset and no chain depth. The owner computes them at its own consumption barrier; the engine only compares.
  */
-export interface RoundProgress { testedCells: number; closures: number; assets: number; chainDepth: number }
+export interface RoundProgress {
+  testedCells: number; closures: number; assets: number; chainDepth: number;
+  /** P16.3-adjacent P16.2: what the completion still owes at this barrier. Zero pauses; anything else demands by name. */
+  remaining: number;
+  /** The named obligations, built by the owner from the ledger. The engine never invents work or target prose. */
+  demand?: string;
+}
 const QUIET_ROUNDS = 2;
 export interface EngineDeps {
   active(): boolean;
@@ -41,7 +47,7 @@ export class AssessmentEngine {
   private busy = false;
   private reservation?: PlannerWake;
   private rounds = 0;
-  private progress: RoundProgress = { testedCells: 0, closures: 0, assets: 0, chainDepth: 0 };
+  private progress: RoundProgress = { testedCells: 0, closures: 0, assets: 0, chainDepth: 0, remaining: 0 };
   private quiet: number[] = [];
   private readonly revisits = new Map<string, { at: number; timer: ReturnType<typeof setTimeout> }>();
   private decision?: { disposition: 'wait' | 'blocked'; reason: string };
@@ -112,15 +118,23 @@ export class AssessmentEngine {
       this.queue.delete(job.taskId);
     }
   }
-  /** M6: two quiet rounds in a row stop automatic wakes with the case a human has to decide, never with a number. */
-  private escalated(): string | undefined {
+  /** M6: two quiet rounds in a row have to be explained; nothing here counts commands or time. */
+  private quietText(): string | undefined {
     if (this.quiet.length < QUIET_ROUNDS) return;
-    return `Two consecutive rounds added nothing measurable (rounds ${this.quiet.join(' and ')}: no tested cell, candidate closure, asset or chain depth); this is blocked/human-needed: widen the scope, supply a credential, or change the environment`;
+    return `rounds ${this.quiet.join(' and ')} added nothing measurable (no tested cell, candidate closure, asset or chain depth)`;
   }
+  /**
+   * P16.2 frontier floor: a quiet round does not end an unfinished run. Work owed outranks "added nothing", so the wake
+   * carries the obligation by name and the loop stays live; only a complete run (or a lead-recorded blocked) goes quiet.
+   */
   private reserveWake(): PlannerWake | undefined {
     if (!this.live() || this.paused || this.mode !== 'event-driven' || this.reservation || !this.events.size) return;
-    const escalated = this.escalated(); if (escalated) {this.pause(escalated);return;}
-    const wake = {runId:this.runId,epoch:this.epoch,through:this.sequence,round:++this.rounds};
+    const quiet = this.quietText(); let demand: string | undefined;
+    if (quiet) {
+      if (this.progress.remaining > 0) demand = `quiet ${quiet}; ${this.progress.demand ?? `${this.progress.remaining} obligation(s) remain`}`;
+      else {this.pause(`${quiet}; the completion is complete, so no automatic wake is scheduled — add work and /p2o resume`);return;}
+    }
+    const wake = {runId:this.runId,epoch:this.epoch,through:this.sequence,round:++this.rounds,...(demand?{demand}:{})};
     this.reservation = wake; return wake;
   }
   private wakeIdle() {

@@ -484,7 +484,7 @@ describe('canonical owner runtime (inert execution, real SQLite and Unix broker)
     const asset=(await h.call('p2o_graph',{action:'record',batch:{assets:[{asset:{kind:'endpoint',key:'GET /fixture'}}]}})).details.acks[0];
     const draft={question:'Does the declared fixture gate reach the consumer?',surface:'/fixture',risk:'boundary',role:'general',roleReason:'Bounded inert source comparison only',expectedTrue:'Declared actor reaches the consumer',expectedFalse:'Control actor cannot reach the consumer',stopCondition:'Stop after one bounded observation or a concrete gap',evidenceIds:[],prerequisites:[],skills:[],methodReason:'Smallest inert source observation, no live target',
       work:{assetRefs:[{id:asset.entityId,revision:1}],questionKey:'policy:fixture',actorContext:'actor:fixture',tenantContext:'tenant:fixture',methodFamily:'source-trace',purpose:'investigation'},decision:{disposition:'new',reason:'No prior matching structured attempt exists'},outputContract:{kind:'investigation',required:['evidence','gaps'],partialAllowed:true,artifactPolicy:'ids-only'}};
-    const task=(await h.call('p2o_task',{action:'create',draft})).details,goal={kind:'goal',title:'Review one declared fixture boundary',status:'active',reason:'Explicit bounded inert planning fixture only',criteria:['Owner must inspect attribution and an effective control'],taskIds:[task.id]};
+    const task=(await h.call('p2o_task',{action:'create',draft})).details,goal={kind:'goal',title:'Review one declared fixture boundary',status:'active',reason:'Explicit bounded inert planning fixture only',criteria:['Owner must inspect attribution and an effective control'],taskIds:[task.id],proof:{kind:'capability',capability:{kind:'http.request',subject:'fixture'}}};
     const plan=(await h.call('p2o_plan',{action:'create',entry:goal,requestId:'runtime-goal'})).details;
     const reader:AssessmentStore=await h.reader(),before=reader.sequence();reader.close();
     expect((await h.call('p2o_plan',{action:'create',entry:goal,requestId:'runtime-goal'})).details).toMatchObject({id:plan.id,replayed:true});
@@ -532,7 +532,7 @@ describe('canonical owner runtime (inert execution, real SQLite and Unix broker)
   }));
   it('recovers a committed plan ACK without duplicating a goal or event, and remains read-only after finish',async()=>{
     let armed=false;await fixture(async h=>{
-      await h.command('--target ./source --solo');const entry={kind:'goal',title:'One inert planning checkpoint goal',status:'active',reason:'Explicit local fixture with no target execution',criteria:['Owner must review the retained limitations']};armed=true;
+      await h.command('--target ./source --solo');const entry={kind:'goal',title:'One inert planning checkpoint goal',status:'active',reason:'Explicit local fixture with no target execution',criteria:['Owner must review the retained limitations'],proof:{kind:'capability',capability:{kind:'http.request',subject:'fixture'}}};armed=true;
       const a=(await h.call('p2o_plan',{action:'create',entry,requestId:'lost-plan-ack'})).details;expect(a.replayed).toBe(true);
       const b=(await h.call('p2o_plan',{action:'create',entry,requestId:'lost-plan-ack'})).details;expect(b.id).toBe(a.id);await expect(h.call('p2o_plan',{action:'create',entry:{...entry,title:'different payload'},requestId:'lost-plan-ack'})).rejects.toThrow('IDEMPOTENCY_CONFLICT');
       const read:AssessmentStore=await h.reader();try{expect(read.records().filter(row=>row.data?.plan)).toHaveLength(1);expect(read.events({limit:100}).rows.filter(row=>row.correlationId==='lost-plan-ack')).toHaveLength(1);}finally{read.close();}
@@ -545,7 +545,7 @@ describe('canonical owner runtime (inert execution, real SQLite and Unix broker)
   it('rolls back a failed plan mutation and closes target authority before any retry or finalization',async()=>{
     let armed=false;await fixture(async h=>{
       await h.command('--target ./source --solo');armed=true;
-      await expect(h.call('p2o_plan',{action:'create',entry:{kind:'goal',title:'A plan that must not commit',status:'active',reason:'Injected storage fixture only; never retry a target',criteria:['An attributed receipt must be reviewed']},requestId:'failed-plan'})).rejects.toThrow('plan SQLite fault');
+      await expect(h.call('p2o_plan',{action:'create',entry:{kind:'goal',title:'A plan that must not commit',status:'active',reason:'Injected storage fixture only; never retry a target',criteria:['An attributed receipt must be reviewed'],proof:{kind:'capability',capability:{kind:'http.request',subject:'fixture'}}},requestId:'failed-plan'})).rejects.toThrow('plan SQLite fault');
       await expect(h.call('p2o_shell',{command:'true'})).rejects.toThrow(/No active|NO_ASSESSMENT/);expect(h.ctx.notices.join('\n')).toContain('execution authority closed immediately');
       for(let i=0;i<100;i++){const read:AssessmentStore=await h.reader();let done=false;try{done=Boolean(read.outcome());}finally{read.close();}if(done)break;await delay(5);}
       const read:AssessmentStore=await h.reader();try{expect(read.records().filter(row=>row.data?.plan)).toHaveLength(0);expect(read.outcome()).toMatchObject({assessmentOutcome:'blocked',resourceOutcome:'cleaned'});}finally{read.close();}

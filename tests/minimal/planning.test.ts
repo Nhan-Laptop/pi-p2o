@@ -11,7 +11,7 @@ import { parseWorkspaceCommand, showLines } from '../../src/ui/workspace.js';
 import { planParameters } from '../../src/work-tool.js';
 import { TaskBoard, type TaskDraft } from '../../src/tasks.js';
 
-const runId='run-plan',goal:PlanDraft={kind:'goal',title:'Inspect one declared inert boundary',status:'active',reason:'Bounded local planning fixture, not finding verification',criteria:['Attribution and control must be reviewed'],exclusions:['No live target or provider'],supportRefs:[]};
+const runId='run-plan',goal:PlanDraft={kind:'goal',title:'Inspect one declared inert boundary',status:'active',reason:'Bounded local planning fixture, not finding verification',criteria:['Attribution and control must be reviewed'],exclusions:['No live target or provider'],supportRefs:[],proof:{kind:'capability',capability:{kind:'file.read',subject:'inert-boundary'}}};
 const draft:TaskDraft={id:'task-inert',question:'Which inert observation reaches the consumer?',surface:'fixture',risk:'boundary',role:'general',roleReason:'Single offline fixture question',expectedTrue:'Declared fixture observation reaches the consumer',expectedFalse:'Control fixture does not reach the consumer',stopCondition:'Stop after this bounded fixture question',evidenceIds:[],prerequisites:[],method:{skills:[],reason:'One inert observation, not live assessment'}};
 async function fixture(work:(h:{root:string;store:AssessmentStore;board:PlanBoard;tasks:TaskBoard;path:string;setActive:(active:boolean)=>void})=>Promise<void>,fault?:StoreFault){
   const root=await mkdtemp(join(tmpdir(),'p2o-plan-')),store=AssessmentStore.create(root,{runId,retention:'durable-local',targetKind:'directory',targetIdentity:'inert',targetDisplay:'inert',profile:{runtimeHash:'inert',image:'inert',loopMode:'manual',executorMode:'shared'}},{fault}),path=join(root,'alias.sqlite'),unbind=bindAssessmentStore(path,store);
@@ -23,6 +23,7 @@ describe('canonical goals/todo/decisions and read-only cards (K4)',()=>{
   it('uses a root-object tool schema and refuses unknown/authority-bearing entry fields',()=>{
     expect(planParameters.type).toBe('object');expect(planParameters.required).toContain('action');expect(planParameters.properties).toHaveProperty('entry');
     expect(()=>validatePlanDraft({...goal,scope:'outside'})).toThrow('host-owned');expect(()=>validatePlanDraft({...goal,criteria:[]})).toThrow('criteria');
+    expect(()=>validatePlanDraft({kind:'goal',title:'Assess the surface of the target',status:'active',reason:'Process goal with no settleable proof',criteria:['A summary exists']})).toThrow('GOAL_UNPROVEN');
     expect(()=>validatePlanDraft({kind:'todo',title:'one todo',status:'closed',reason:'Explicit local fixture reason'})).toThrow('status');
   });
   it('retains owner revisions on the same record backend, with task/goal references and decision events',async()=>fixture(async({board,tasks,store,path})=>{
@@ -37,6 +38,9 @@ describe('canonical goals/todo/decisions and read-only cards (K4)',()=>{
     const created=await board.create(goal);await expect(board.revise(created.id,1,{...goal,status:'reviewed'})).rejects.toThrow('support');
     await expect(board.create({...goal,status:'closed'})).rejects.toThrow('explicit revisions');
     const ref=store.commitRecords([{runId,by:'owner',at:'2030',kind:'evidence',text:'Inert receipt, not a verified finding'}])[0].recordId;
+    // P16.1: support is the run's own record of the work; proof is what the goal promised to show. Support alone is not enough.
+    await expect(board.revise(created.id,1,{...goal,status:'reviewed',supportRefs:[ref]})).rejects.toThrow('GOAL_UNPROVEN');
+    store.commitRecords([{runId,by:'owner',at:'2030',kind:'candidate',text:'Inert demonstrated read, not a finding',data:{candidate:'inert-claim',closure:'confirmed',execution:'tested',gained:[{kind:'file.read',subject:'inert-boundary'}]}}]);
     const reviewed=await board.revise(created.id,1,{...goal,status:'reviewed',supportRefs:[ref]}),closed=await board.revise(reviewed.id,reviewed.revision,{...goal,status:'closed',supportRefs:[ref]});
     expect(closed.status).toBe('closed');expect(store.events({limit:100}).rows.filter(row=>row.kind.startsWith('operation.'))).toEqual([]);
     const cp=store.checkpoint('planning only');expect(cp.planning).toMatchObject({goals:1,todo:0,decisions:0,phasePackets:0});expect(store.inspectCheckpoint(cp.id).authorityRestored).toBe(false);
