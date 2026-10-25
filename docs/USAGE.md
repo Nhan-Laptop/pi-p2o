@@ -177,6 +177,8 @@ Domain (goal/todo/decision/case/coverage-plan/coverage-cell/task/phase/…) thay
 | Chain: primitive này cấp gì, bước nào còn thiếu | `p2o_graph action=chain` (owner-only) | [ASSET_GRAPH](ASSET_GRAPH.md) |
 | Heads, digest, search, packet theo role | `p2o_state` (cả worker, read-only) | [CONTEXT_PACKETS](CONTEXT_PACKETS.md) |
 
+Mỗi tool đăng ký (25/25, kể cả `p2o_surface`, `p2o_artifact`, `p2o_loop`) có đúng một dòng ranh giới trong `TOOL_GUIDELINES`, nêu khi nào dùng tool này thay vì tool chồng chức năng; `toolGuidance` bật thì các dòng đó được gắn vào khai báo tool, tắt thì chỉ còn description.
+
 **Khóa test OWASP WSTG**: dùng ID viết thường (ví dụ `wstg-athz-04`) làm `questionKey` của work identity và của cell coverage; `methodFamily` là workflow id của skill. [WSTG_MAP](WSTG_MAP.md) liệt kê 108 test với mức hỗ trợ của thư viện (D/T/N/O) và cờ browser/identity — đây là độ phủ kiến thức, không phải khả năng phát hiện. Lead và worker tìm thấy nó qua `shared:wstg-map` và `shared:handoffs`.
 
 ## Delegation

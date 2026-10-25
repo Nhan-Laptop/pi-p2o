@@ -34,5 +34,8 @@ describe('reporting is synthesis-only, derived from one map (P13g)', () => {
     const text = workerInstructions({ workerId: 'worker-test', role: 'reporting', runId: 'run-test', depth: 1, parentWorkerId: null, lifetime: 'until-stopped', target: { kind: 'directory', label: '/target' } } as never);
     for (const tool of TARGET_TOOLS) expect(text.includes(tool), `reporting prompt must not offer ${tool}`).toBe(false);
     expect(text).toMatch(/synthes/i);
+    // 2026-10-25 audit: the branch described its tools in prose only, so a reporting worker could not tell which ledger/note tool to call.
+    for (const tool of ['p2o_note', 'p2o_surface', 'p2o_request_subtask', 'p2o_report', 'p2o_ledger', 'p2o_artifact']) expect(text.includes(tool), tool).toBe(true);
+    for (const tool of workerTools('reporting')) if (tool !== 'p2o_state' && tool !== 'p2o_graph' && !/^p2o_skill_(list|read)$/.test(tool) && tool !== 'p2o_research') expect(text.includes(tool), `loading ${tool} without naming it`).toBe(true);
   });
 });

@@ -73,10 +73,10 @@ describe('prompt and tool guidance cannot drift apart', () => {
   it('keeps the guidance short, versioned and free of authority claims', () => {
     const tools = registry();
     expect(POLICY_VERSION).toBeGreaterThanOrEqual(1);
-    // P15 (R7): the payload/environment order-of-work advice moved out of the p2o_lab declaration into its guideline, so both owner
-    // loadouts carry 180 more bytes of guidance. The ceiling rises on purpose; the worker ceilings do not move.
-    expect(guidance(tools, loadouts['delegated Planner'])).toBeLessThanOrEqual(1400); expect(guidance(tools, loadouts['solo owner'])).toBeLessThanOrEqual(1400);
-    expect(guidance(tools, loadouts.worker)).toBeLessThanOrEqual(800); expect(guidance(tools, loadouts['reporting worker'])).toBeLessThanOrEqual(800);
+    // The 2026-10-25 tool-surface audit gave every registered tool one boundary line (25/25), so both owner and worker loadouts carry
+    // more guidance than before: 2608/2798 and 2244/1443 bytes measured. The ceilings rise on purpose and stay measured, not estimated.
+    expect(guidance(tools, loadouts['delegated Planner'])).toBeLessThanOrEqual(2850); expect(guidance(tools, loadouts['solo owner'])).toBeLessThanOrEqual(2850);
+    expect(guidance(tools, loadouts.worker)).toBeLessThanOrEqual(2350); expect(guidance(tools, loadouts['reporting worker'])).toBeLessThanOrEqual(2350);
     for (const line of Object.values(TOOL_GUIDELINES).flat()) { expect(line.length).toBeLessThanOrEqual(260); expect(line).not.toMatch(/\b(?:you are authorized|ignore|bypass|widen scope)\b/i); }
     expect(TOOL_GUIDELINES.p2o_delegate.join(' ')).toContain('without work the identity is unknown');
   });
@@ -85,6 +85,12 @@ describe('prompt and tool guidance cannot drift apart', () => {
     for (const enabled of [true, false]) expect(ownerInstructions(facts(enabled))).not.toMatch(/\bp2o_[a-z_]+\b/);
     // The 5,300-character ceiling of the lead prompt is pinned by recon.test.ts; adding guidance to tools must not eat into it.
     const base = { runId: 'run-recon', targetLabel: 'https://example.invalid', targetKind: 'url' as const, sourceSkipped: 2, delegation: { enabled: false, maxWorkers: 1, maxDepth: 1 }, workerBudget: 20 };
+  });
+
+  it('gives every tool a boundary line and never names a tool outside the policy', () => {
+    expect([...ALL_TOOLS].sort()).toEqual(Object.keys(TOOL_GUIDELINES).sort());
+    for (const name of ALL_TOOLS) expect(TOOL_GUIDELINES[name].length, name).toBeGreaterThan(0);
+    for (const [name, lines] of Object.entries(TOOL_GUIDELINES)) for (const named of new Set(lines.join(' ').match(/\bp2o_[a-z_]+\b/g) ?? [])) expect(ALL_TOOLS, `${name} names ${named}`).toContain(named);
   });
 
   it('no longer advertises the removed 60 s / 300 s command ceilings', () => {

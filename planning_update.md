@@ -942,6 +942,50 @@ and assets from every worker, and the second and third workers would have starte
 run would have shown that all its approaches were the same route before it called the surface mapped.
 
 
+## Part X — Tool surface direction (2026-10-25)
+
+Measured before changing anything: 25 registered tools; registration and `ALL_TOOLS` agree in both directions; 65 top-level
+`src/*.ts` helpers, every one with a production importer (0 dead); the per-role cross-check finds no prompt naming a tool the
+role cannot call, and the lead prompt still names none. The audit's only real defects were documentation and guidance gaps,
+not a missing or dead surface.
+
+### X.1 Decisions (owner, 2026-10-25)
+
+1. **No merges.** Overlapping tools stay separate. The split is stated in each tool's guideline and pinned by a test, because a
+   merge would move the prompt, the worker hashes and the docs for a benefit no measured run has demonstrated.
+2. **`p2o_lab` keeps its delegated-lead access.** The comment was wrong, not the policy: an executing role creates a payload, a
+   reviewing owner may read or verify it, and a reporting worker gets neither. No permission changed.
+3. **Every registered tool carries exactly one boundary line** in `TOOL_GUIDELINES` (25/25, `POLICY_VERSION` 4). The guidance
+   ceilings rise on purpose, from measured bytes rather than estimates: owner 2,850 B (2,608 delegated / 2,798 solo), worker
+   2,350 B (2,244 discovery / 1,443 reporting).
+4. **The reporting branch names the tools it carries** (`p2o_note`, `p2o_surface`, `p2o_request_subtask`, `p2o_report`, plus the
+   knowledge and ledger readers) instead of describing them as "append notes" and "propose follow-ups".
+
+### X.2 Boundary map — the clusters that stay separate
+
+| Cluster | Tools | Stated split |
+| --- | --- | --- |
+| Read | `p2o_state`, `p2o_ledger`, `p2o_graph` | narrow heads/search → complete record by id → typed assets and facts |
+| Knowledge | `p2o_research`, `p2o_skill_read`, `p2o_skill_list` | technique/web/CVE context (never evidence) → approved playbook by id |
+| Ledger write | `p2o_note`, `p2o_surface` | free text with a narrow kind → one component+entryPoint row with a duplicate hint |
+| Retained bytes | `p2o_capture`, `p2o_artifact` | writes retained text → reads it back by id instead of pasting |
+| Execution | `p2o_shell`, `p2o_net`, `p2o_http` | generic sandbox → target contact and scratch installs → origin-scoped requests |
+
+### X.3 Pins added
+
+- `tests/minimal/workflow-policy.test.ts`: every `ALL_TOOLS` entry has a guideline, no guideline names a tool outside the
+  policy, and the measured ceilings above are asserted.
+- `tests/minimal/reporting-policy.test.ts`: the reporting prompt must name the tools the reporting loadout carries, so a future
+  prose-only rewrite fails instead of silently hiding them.
+- The two pinned recon instruction hashes did not move: the edited branch is reporting-only and both pinned tickets are recon.
+
+### X.4 Deferred
+
+- No tool was removed, merged or renamed, and no permission was widened. If a cluster still confuses a measured run, the next
+  move is evidence from that run, not another rename.
+- Docs stay in sync one step behind the surface: `README.md` now lists all 25 tools with their real role sets, and
+  `docs/USAGE.md` records that every tool has one boundary line.
+
 ---
 
 Retired plans stay outside the tree under `tmp/` (gitignored): `planning-2026-10-22-retired-chain-lineage.md`,
