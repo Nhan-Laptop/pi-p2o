@@ -1448,6 +1448,8 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
     registerTool({name,label,exposure:'model-only',description,parameters,
       async execute(_id:string,params:any){
         const current=owner();
+        if(name==='p2o_coverage_cell'&&params.id!==undefined&&params.planId!==undefined)
+          fail('INVALID_INPUT','p2o_coverage_cell takes planId+planRevision to create, or id+revision to revise; it does not take both. Omit id/revision for create.');
         try{return await executeCoverageAction(_id,{...params,action:action(params)});}
         catch(error){
           if(!/stale/i.test(message(error)))throw error;
@@ -1465,7 +1467,7 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
       }});
 
   taskVerb('p2o_task_create','Create one bounded assessment question',taskCreateParameters,
-    'OWNER ONLY: create one bounded question with its desired output contract, role/method and new/refine/validate/retest/retry disposition. Run p2o_task_match first when a structured work identity is known; exact active duplicates and reviewable history are reported instead of repeated. role=recon may omit roleReason/expectedTrue/expectedFalse/stopCondition/methodReason; every other role still requires them.',()=> 'create');
+    'OWNER ONLY: create one bounded question with its desired output contract, role/method and new/refine/validate/retest/retry disposition. Create performs the exact-work duplicate/history check itself; an exact active duplicate or reviewable history is returned instead of repeated. role=recon may omit roleReason/expectedTrue/expectedFalse/stopCondition/methodReason; every other role still requires them.',()=> 'create');
   taskVerb('p2o_task_revise','Revise one bounded assessment question',taskReviseParameters,
     'OWNER ONLY: revise an existing task at its current revision; keep the same identity and narrow or correct its question, role, method or desired output. A stale revision is refused with the held revision and the legal next verb.',()=> 'revise');
   taskVerb('p2o_task_dispatch','Dispatch proposed tasks into the frontier',taskDispatchParameters,
@@ -1485,7 +1487,7 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
   coverageVerb('p2o_coverage_plan','Create or revise a coverage plan',coveragePlanParameters,
     'OWNER ONLY: create a versioned coverage plan when no id is supplied, or revise the plan at id+revision. The denominator is explicit; reviewed/closed needs at least one cell. Coverage never widens scope or completes a goal.','coveragePlan',planAuthoringAction);
   coverageVerb('p2o_coverage_cell','Add or revise a coverage cell',coverageCellParameters,
-    'OWNER ONLY: add a cell with planId+planRevision, or revise the cell at id+revision. Execution and assessment stay separate; tested needs reviewed task receipts, accepted/ruled-out needs current accepted case support, blocked retains a gap. Identity changes retire the old cell and add a new one.','coverageCell',cellAuthoringAction);
+    'OWNER ONLY: add an additive cell with planId and the planRevision you last saw, or revise the cell at id+revision. A cell under a plan head that is behind current is attached to the current plan; a future revision is refused. Do not send planId with id. Execution and assessment stay separate; tested needs reviewed task receipts, accepted/ruled-out needs current accepted case support, blocked retains a gap. Identity changes retire the old cell and add a new one.','coverageCell',cellAuthoringAction);
   coverageVerb('p2o_coverage_cell_retire','Retire one coverage cell',coverageCellRetireParameters,
     'OWNER ONLY: retire a cell at id+revision with a reason. Retirement preserves history; it never marks the surface clean.','coverageCell',()=>COVERAGE_FIXED_ACTIONS.p2o_coverage_cell_retire);
   coverageVerb('p2o_coverage_suggest','Suggest uncovered WSTG tests',coverageSuggestParameters,
@@ -1495,9 +1497,9 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
   planVerb('p2o_plan_revise','Revise a goal, todo or decision',planReviseParameters,
     'OWNER ONLY: revise a goal/todo/decision at id+revision, including goal review/close through the status field. This is coordination, not automatic proof or assessment completion.','revise');
   registerTool({name:'p2o_board',label:'Read the owner board',exposure:'model-only',parameters:boardParameters,
-    description:'OWNER ONLY read: board=tasks, cases, coverage or plans. Without id it returns the bounded list; with id it returns that exact record (coverage id resolves a plan or cell). board=tasks with match runs the structured work-identity match used before creating or dispatching; a match is coordination evidence, never authority or proof. Summaries are navigation; they grant no authority and complete nothing.',
+    description:'OWNER ONLY read: board=tasks, cases, coverage or plans. Without id it returns the bounded list; with id it returns that exact record (coverage id resolves a plan or cell). board=tasks with match is an optional read-only duplicate/history preflight; it creates nothing, and p2o_task_create performs the same check itself. A match is coordination evidence, never authority or proof. Summaries are navigation; they grant no authority and complete nothing.',
     async execute(_id:string,params:any){graphObject(params,['board','id','match','cursor','limit','status','kind'],'Board read');if(params.match!==undefined&&params.board!=='tasks')fail('INVALID_INPUT','match is only available on board=tasks');const current=owner();const action=params.match?'match':params.board==='tasks'?'list':boardReadAction(params.id as string|undefined);const input:any={action};
-      if(params.match!==undefined){input.draft=params.match;return executeTaskAction(_id,input);}
+      if(params.match!==undefined){input.draft=params.match;try{return await executeTaskAction(_id,input);}catch(error){throw Error(`Read-only task match failed: ${message(error)}. This call created nothing; use p2o_task_create with the corrected draft to create.`);}}
       if(params.id!==undefined)input.id=params.id;
       else {if(params.cursor!==undefined)input.cursor=params.cursor;if(params.limit!==undefined)input.limit=params.limit;}
       if(!params.id&&params.board==='cases'&&params.status!==undefined)input.status=params.status;

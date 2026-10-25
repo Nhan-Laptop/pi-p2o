@@ -23,11 +23,13 @@ export const outputContractSchema = Type.Object({
   partialAllowed: Type.Boolean(), artifactPolicy: choices(['ids-only', 'bounded-text']), notes: Type.Optional(Type.String({ maxLength: 1000 })),
 }, { additionalProperties: false });
 export const planEntrySchema = Type.Object({
-  kind: choices(PLAN_KINDS), title: Type.String({ minLength: 5, maxLength: 500 }), status: Type.String({ maxLength: 20 }), reason: Type.String({ minLength: 10, maxLength: 1000 }),
+  kind: choices(PLAN_KINDS), title: Type.String({ minLength: 5, maxLength: 500 }),
+  status: Type.String({ maxLength: 20, description: 'Use the status vocabulary for the kind. goal: proposed|active|reviewed|closed|blocked|cancelled; todo: open|in-progress|done|deferred|blocked|cancelled; decision: recorded|withdrawn. Create goals proposed/active; create decisions recorded.' }),
+  reason: Type.String({ minLength: 10, maxLength: 1000 }),
   criteria: Type.Optional(Type.Array(Type.String({ minLength: 5, maxLength: 500 }))), exclusions: Type.Optional(Type.Array(Type.String({ minLength: 5, maxLength: 500 }))),
   taskIds: Type.Optional(ids()), goalIds: Type.Optional(ids()), supportRefs: Type.Optional(ids()),
   /** P16.1: what settles this goal. Every goal names one; `reviewed`/`closed` is refused until it holds. */
-  proof: Type.Optional(Type.Object({ kind: choices(['capability', 'case', 'coverage']), capability: Type.Optional(capabilitySchema), ref: Type.Optional(ids()) }, { additionalProperties: false, description: 'capability: a typed capability a confirmed+tested claim gains; case: an accepted confirmed case id; coverage: a coverage plan id whose cells are all terminal' })),
+  proof: Type.Optional(Type.Object({ kind: choices(['capability', 'case', 'coverage']), capability: Type.Optional(capabilitySchema), ref: Type.Optional(Type.String({ maxLength: 80 })) }, { additionalProperties: false, description: 'capability: a typed capability a confirmed+tested claim gains (set capability, omit ref); case: one accepted confirmed case id in ref; coverage: one coverage plan id in ref whose cells are all terminal' })),
   /** M1: a chain link is derived on read, so the row stores only which claims it stands on and what it consumes. */
   decision: Type.Optional(Type.Object({ disposition: choices(PLAN_DISPOSITIONS), chosenTaskIds: ids(), deferredTaskIds: ids(), revisitCondition: Type.Optional(Type.String({ minLength: 5, maxLength: 500 })) }, { additionalProperties: false })),
   // P16.5: the mechanism family this step tries; when omitted the method family of what it cites becomes the route.

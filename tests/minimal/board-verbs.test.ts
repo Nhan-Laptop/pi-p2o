@@ -78,6 +78,8 @@ describe('L1/W2 board verbs', () => {
         limitations: 'Local fixture only', reason: 'The stale plan revision is refused before any coverage claim', methodFamily: 'static-source-review', tenantContext: 'fixture' };
       await expect(h.call('p2o_coverage_cell', { planId: plan.id, planRevision: plan.revision + 5, cell }))
         .rejects.toThrow(new RegExp(`currentRevision=${plan.revision}.*legalNext=p2o_coverage_cell \\(planId=${plan.id}, planRevision=${plan.revision}\\)`));
+      await expect(h.call('p2o_coverage_cell', { id: 'coverage-cell-fixture', revision: 1, planId: plan.id, planRevision: plan.revision, cell }))
+        .rejects.toThrow('does not take both');
     });
   });
 

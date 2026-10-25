@@ -178,6 +178,9 @@ describe('asset/fact/hypothesis graph (K3, canonical store only)', () => {
     expect(retained).not.toContain('VERY_SECRET');expect(retained).toContain('[REDACTED]');
     expect(()=>store.recordGraph({facts:[{assetId:id,kind:'inferred',statement:'token=VERY_SECRET',confidence:'low'}]})).toThrow('secret-bearing');
     expect(()=>store.recordGraph({anchors:[{assetId:id,anchor:{kind:'header',value:'Authorization: Bearer VERY_SECRET'}}]})).toThrow('secret-bearing');
+    // The words "bearer token" are ordinary prose, not a credential value; the same detector still refuses a literal token.
+    expect(store.recordGraph({facts:[{assetId:id,kind:'inferred',statement:'Login returns a random bearer token bound to the session',confidence:'low'}]})).toHaveLength(1);
+    expect(()=>store.recordGraph({facts:[{assetId:id,kind:'inferred',statement:'Authorization: Bearer VERY_SECRET',confidence:'low'}]})).toThrow('secret-bearing');
   }));
   it('deduplicates canonical property/ref order and supports current revision-pinned corrections without losing counterevidence',async()=>fixture(async store=>{
     const first=store.recordGraph({assets:[{asset:{kind:'file',key:'app.py',attributes:{b:'2',a:'1'}}}]})[0];

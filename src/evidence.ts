@@ -46,7 +46,7 @@ export interface Candidate {
 export function redact(value: string): string {
   return value.replace(/["']?(authorization|proxy-authorization|cookie|set-cookie)["']?\s*:[^\r\n]*/gi, '$1: [REDACTED]')
     .replace(/(["']?(?:api[_-]?key|access[_-]?token|refresh[_-]?token|password|secret|token)["']?\s*[:=]\s*)(?:"[^"\r\n]*"|'[^'\r\n]*'|[^\s,;&}]+)/gi, '$1[REDACTED]')
-    .replace(/\bBearer\s+[^\s"',;]+/gi, 'Bearer [REDACTED]')
+    .replace(/\bBearer\s+(?!(?:tokens?|credentials?|values?)\b)[^\s"',;]+/gi, 'Bearer [REDACTED]')
     .replace(/((?:api[_-]?key|access[_-]?token|refresh[_-]?token|password|secret)\s*[=:]\s*)["']?[^\s"'&,;]+/gi, '$1[REDACTED]')
     .replace(/\b(?:sk-|ghp_|github_pat_)[A-Za-z0-9_-]{12,}/g, '[REDACTED]')
     .replace(/-----BEGIN [^-]*PRIVATE KEY-----[\s\S]*?-----END [^-]*PRIVATE KEY-----/g, '[REDACTED PRIVATE KEY]');

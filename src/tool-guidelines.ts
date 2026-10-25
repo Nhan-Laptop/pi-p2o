@@ -4,7 +4,7 @@
  * no flag to set. They never grant, widen or replace a gate the host enforces.
  */
 export const TOOL_BOUNDARIES: Readonly<Record<string, readonly string[]>> = {
-  p2o_task_create: ['Run p2o_board board=tasks match=<draft> before create so an exact active duplicate or reviewable history is reported instead of repeated.'],
+  p2o_task_create: ['Create performs the exact-work duplicate/history check itself; p2o_board board=tasks match is only an optional read-only preflight and never creates.'],
   p2o_task_revise: ['Revise at the current revision; identity and history are not rewritten, and a stale refusal names the held revision and legal next verb.'],
   p2o_task_start: ['Start only a proposed task the owner will execute directly; it is not a worker spawn, scope change or proof.'],
   p2o_task_dispatch: ['Dispatch proposed task IDs only; the frontier waits for reviewed prerequisites and free worker slots.'],

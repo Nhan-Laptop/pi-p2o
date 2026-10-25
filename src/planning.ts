@@ -70,7 +70,7 @@ function goalProof(value:unknown):GoalProof{
 export function validatePlanDraft(value:unknown):PlanDraft{
   const row=plain(value,'plan entry');exact(row,['id','kind','title','status','reason','criteria','exclusions','taskIds','goalIds','supportRefs','decision','proof','route','claimRefs','needs','environmentRef','chainOf','step'],'Plan entry');
   if(typeof row.kind!=='string'||!(PLAN_KINDS as readonly string[]).includes(row.kind))throw Error('Invalid plan kind');const kind=row.kind as PlanKind;
-  if(typeof row.status!=='string'||!statuses[kind].includes(row.status))throw Error('Invalid plan status');
+  if(typeof row.status!=='string'||!statuses[kind].includes(row.status))throw Error(`Invalid plan status ${typeof row.status==='string'?JSON.stringify(row.status):'(missing)'}; ${kind} allows ${statuses[kind].join(', ')}`);
   const result:PlanDraft={kind,title:text(row.title,'title',500),status:row.status,reason:text(row.reason,'reason',1000,10),
     criteria:proseList(row.criteria,'criteria'),exclusions:proseList(row.exclusions,'exclusions'),taskIds:list(row.taskIds,'task ID'),goalIds:list(row.goalIds,'goal ID'),supportRefs:list(row.supportRefs,'support reference')};
   if(row.id!==undefined)result.id=id(row.id);

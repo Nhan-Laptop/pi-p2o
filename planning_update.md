@@ -662,6 +662,17 @@ errors is worse than the 31.7% baseline. Coverage-plan creation produced zero er
 accepted (both were created pending and accepted by an explicit revision), but the `<10%` gate stands unmet. The L2
 target is **met** without a waiver.
 
+**Post-L3 tool-contract pass (working tree, uncommitted).** The L3 error breakdown pointed at four avoidable
+model-visible traps, not another executor defect: `p2o_plan_create` exposed a free-form status and a proof `ref` array that
+the host validator required as a string; `p2o_board board=tasks match` was described as a step before create even though it
+is read-only; an additive coverage cell refused a plan head that was behind only because earlier cells advanced it; and the
+graph secret detector treated the ordinary phrase "bearer token" as a credential. The schema now names the kind-specific
+status vocabulary, the plan proof ref is one ID, create performs the duplicate check and match is documented as read-only,
+a cell attaches to the current plan when the caller's head is behind (a future head is still refused), and the Bearer
+expression no longer redacts prose. Tests: `graph.test.ts`, `planning.test.ts`, `coverage.test.ts`,
+`board-verbs.test.ts`; full minimal suite **815 passed, 12 skipped**; typecheck/build/check pass. This should reduce the
+36.0% error rate but does not yet establish the <10% L1 gate.
+
 **Not done.** No commit or benchmark edit was made. The remaining L1 work is contract/selection quality, not another
 executor or report fix.
 

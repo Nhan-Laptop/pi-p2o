@@ -25,7 +25,7 @@ describe('canonical goals/todo/decisions and read-only cards (K4)',()=>{
     expect(planReviseParameters.required).toEqual(expect.arrayContaining(['entry','id','revision']));
     expect(()=>validatePlanDraft({...goal,scope:'outside'})).toThrow('host-owned');expect(()=>validatePlanDraft({...goal,criteria:[]})).toThrow('criteria');
     expect(()=>validatePlanDraft({kind:'goal',title:'Assess the surface of the target',status:'active',reason:'Process goal with no settleable proof',criteria:['A summary exists']})).toThrow('GOAL_UNPROVEN');
-    expect(()=>validatePlanDraft({kind:'todo',title:'one todo',status:'closed',reason:'Explicit local fixture reason'})).toThrow('status');
+    expect(()=>validatePlanDraft({kind:'todo',title:'one todo',status:'closed',reason:'Explicit local fixture reason'})).toThrow(/todo allows open, in-progress, done, deferred, blocked, cancelled/);
   });
   it('retains owner revisions on the same record backend, with task/goal references and decision events',async()=>fixture(async({board,tasks,store,path})=>{
     const task=await tasks.create(draft),created=await board.create(goal),todo=await board.create({kind:'todo',title:'Review the retained boundary receipt',status:'open',reason:'The owner needs to review this one task',taskIds:[task.id],goalIds:[created.id]});
