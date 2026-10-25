@@ -42,6 +42,7 @@ it.each(['idle','boundary','human-priority'] as const)('real Pi %s wake preserve
     expect(messages.filter((m:any)=>m.role==='user')).toHaveLength(mode==='boundary'?1:2);
     if(mode==='human-priority')expect(messages.some((m:any)=>m.role==='user'&&text(m).includes('HUMAN_PRIORITY'))).toBe(true); // Kickoff + ONE semantic prompt, never periodic polling.
     expect(records.filter(r=>r.type==='extension_error')).toEqual([]);
+    await until(async()=>{try{return (await readdir(join(root,'.p2o-reports'))).some(name=>name.endsWith('.json'));}catch{return false;}});
     const exportFile=join(root,'.p2o-reports',(await readdir(join(root,'.p2o-reports'))).filter(name=>name.endsWith('.json'))[0]);
     const exported=JSON.parse(await readFile(exportFile,'utf8'));expect(exported.reconciliation.complete).toBe(true);expect(exported.manifest.engine).toMatchObject({mode:'event-driven',rounds:mode==='human-priority'?0:1,state:'stopped'});
     const acceptedBefore=(await readFile(log,'utf8')).split('\n').filter(Boolean).length;

@@ -13,7 +13,7 @@ export const IMAGE = 'ghcr.io/usestrix/strix-sandbox@sha256:f6906c3114e504fd1a21
 // 2026-10-25 (planning_update.md Part XI): the operator asked for a real shell, so the container runs as root with a
 // writable rootfs, every capability and no pids/memory/cpu limit. The container is the only blast radius: no host path
 // is mounted and the Docker socket is never exposed.
-const LIMITS = (_options: SandboxOptions) => ['--log-driver', 'none', '--workdir', '/work',
+const LIMITS = (_options: SandboxOptions) => ['--log-driver', 'none', '--workdir', '/work', '--user', 'root',
   '--env', 'HOME=/root', '--env', 'TMPDIR=/tmp',
   '--env', 'SEMGREP_ENABLE_VERSION_CHECK=0', '--env', 'SEMGREP_SEND_METRICS=off'];
 
@@ -42,6 +42,7 @@ export class Sandbox {
   private pending: Promise<unknown> = Promise.resolve();
   private cancellation = new AbortController();
   private readonly workdirs = new Set<string>();
+  private readonly provisioned = new Set<string>();
   private readonly sessions = new HttpSessions();
   constructor(readonly target: Target, private readonly run: RunProcess = runDocker, private readonly resolveIP?: ResolveAddress, private readonly options: SandboxOptions = {}) {
     validateImage(options.image ?? IMAGE);
@@ -81,6 +82,24 @@ export class Sandbox {
     return name;
   }
 
+  /**
+   * Provision the assignment scratch once, before an executor is published. A failure here is a provisioning
+   * failure, not a command failure: the caller removes the sandbox and never starts a worker against it.
+   */
+  async provision(assignment: string): Promise<void> {
+    if (!ID_PATTERN.test(assignment)) throw new Error('Invalid assignment id for executor scratch');
+    const workdir = `/work/${assignment}`;
+    return this.enqueue(async () => {
+      if (this.stopped || !this.shell) throw new Error('No active sandbox');
+      if (this.provisioned.has(workdir)) return;
+      const combined = this.cancellation.signal;
+      await this.ensureWorkdir(workdir, combined);
+      const writable = await this.docker(['exec', '--workdir', workdir, this.shell, '/bin/sh', '-c', 'test -w .'], { timeoutMs: 15_000, signal: combined });
+      if (writable.code !== 0) throw new Error(`Executor scratch ${workdir} is not writable`);
+      this.provisioned.add(workdir);
+    });
+  }
+
   /** Serialize shell, HTTP and close; cleanup cannot race container creation. */
   private enqueue<T>(operation: () => Promise<T>): Promise<T> {
     const next = this.pending.then(operation, operation);
@@ -95,9 +114,11 @@ export class Sandbox {
     return this.enqueue(async () => {
       if (this.stopped || !this.shell) throw new Error('No active sandbox');
       const combined = AbortSignal.any([this.cancellation.signal, ...(signal ? [signal] : [])]);
+      // Provisioning is not a target command: a permission failure here must not retire the executor. The pool
+      // calls provision() before publishing a lease; a later failure leaves the sandbox alive for cleanup.
+      await this.ensureWorkdir(workdir, combined);
+      onRunning?.();
       try {
-        await this.ensureWorkdir(workdir, combined);
-        onRunning?.();
         const deadline = seconds ? ['/usr/bin/timeout', '--signal=KILL', `${seconds}s`] : [];
         const result = await this.docker(['exec', '--workdir', workdir, this.shell, ...deadline, '/bin/sh', '-c', command], { timeoutMs: null, signal: combined, onOutput });
         if (seconds && (result.code === 124 || result.code === 137)) throw new Error('Opt-in sandbox command timed out; stopping the sandbox to remove background processes');
@@ -120,9 +141,9 @@ export class Sandbox {
       const combined = AbortSignal.any([this.cancellation.signal, ...(signal ? [signal] : [])]);
       const metadata = Buffer.alloc(SCRATCH_PROTOCOL_BYTES), hash = createHash('sha256');
       let used = 0, observed = 0, denialFrame = false, readerCode: number | undefined, readerBytes = 0;
+      await this.ensureWorkdir(root,combined); combined.throwIfAborted();
+      onRunning?.();
       try {
-        await this.ensureWorkdir(root,combined); combined.throwIfAborted();
-        onRunning?.();
         const deadline = seconds ? ['/usr/bin/timeout','--signal=KILL',`${seconds}s`] : [];
         const result = await this.docker(['exec','--workdir',root,this.shell,...deadline,'/usr/bin/python3','-I','-S','-c',SCRATCH_READER,JSON.stringify({root,path:relative,maxBytes:bound,offset})], {
           timeoutMs:null,signal:combined,onOutput:(stream,bytes)=>{
@@ -165,8 +186,8 @@ export class Sandbox {
     return this.enqueue(async () => {
       if (this.stopped || !this.shell) throw Error('No active sandbox');
       const combined = AbortSignal.any([this.cancellation.signal, ...(signal ? [signal] : [])]);
+      await this.ensureWorkdir(root, combined); combined.throwIfAborted();
       try {
-        await this.ensureWorkdir(root, combined); combined.throwIfAborted();
         const result = await this.docker(['exec', '--workdir', root, this.shell!, '/usr/bin/python3', '-I', '-S', '-c', SCRATCH_WRITER,
           JSON.stringify({ root, path: relative, base64: bytes.toString('base64'), mode })], { timeoutMs: 30_000, signal: combined });
         const expected = { path: relative, root, sha256: createHash('sha256').update(bytes).digest('hex'), bytes: bytes.length };
@@ -206,7 +227,8 @@ export class Sandbox {
     });
   }
 
-  private async ensureWorkdir(workdir: string, signal: AbortSignal): Promise<void> {    if (workdir === '/work' || this.workdirs.has(workdir)) return;
+  private async ensureWorkdir(workdir: string, signal: AbortSignal): Promise<void> {
+    if (workdir === '/work' || this.workdirs.has(workdir)) return;
     const created = await this.docker(['exec', this.shell!, '/bin/mkdir', '-p', workdir], { timeoutMs: 15_000, signal });
     // Docker may report failure to attach while the command still ran; only a real absence is fatal.
     const exists = await this.docker(['exec', this.shell!, '/bin/sh', '-c', `test -d ${workdir}`], { timeoutMs: 15_000, signal });

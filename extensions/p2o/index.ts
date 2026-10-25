@@ -39,24 +39,31 @@ import { OWNER_PROMPT_SECTION, ownerInstructions, workerBrief, workerInstruction
 import { isWorkPurpose, purposeFromRole, type WorkPurpose } from '../../src/duties.js';
 import { SkillLibrary, packageRoot } from '../../src/skills.js';
 import { EvidenceStore, redact, type Candidate } from '../../src/evidence.js';
-import { TaskBoard, taskCapsule, awaitingReview, taskFrontier, terminalState, type TaskDraft, type TaskMethod, type AssessmentTask } from '../../src/tasks.js';
+import { TaskBoard, taskCapsule, awaitingReview, taskFrontier, isSatisfiedTask, terminalState, type TaskDraft, type TaskMethod, type AssessmentTask } from '../../src/tasks.js';
 import { planFrontier, PlanBoard, boundPlanRequest, type PlanDraft } from '../../src/planning.js';
-import { PLAN_ACTION_PARAMETERS, PLAN_ACTIONS, planParameters } from '../../src/work-tool.js';
+import { PLAN_ACTION_PARAMETERS, PLAN_ACTIONS } from '../../src/work-tool.js';
 import { CaseBoard, boundCaseRequest, boundRatingRequest } from '../../src/cases.js';
+import { validationDraft } from '../../src/validation.js';
 import { CoverageBoard, boundCoverageRequest, coverageCells, coverageViews } from '../../src/coverage.js';
 import { caseViews } from '../../src/cases.js';
 import type { CaseDraft } from '../../src/case-types.js';
 import type { CoverageCellDraft, CoveragePlanDraft } from '../../src/coverage-types.js';
-import { CASE_ACTION_PARAMETERS, CASE_ACTIONS, COVERAGE_ACTION_PARAMETERS, COVERAGE_ACTIONS, COVERAGE_MUTATIONS, caseParameters, coverageParameters } from '../../src/case-tool.js';
+import { CASE_ACTION_PARAMETERS, CASE_ACTIONS, COVERAGE_ACTION_PARAMETERS, COVERAGE_ACTIONS, COVERAGE_MUTATIONS } from '../../src/case-tool.js';
 import {
   artifactParameters, candidateParameters, captureParameters, delegateParameters, execParameters, finishParameters, httpParameters, labParameters, ledgerParameters, loopParameters, noteParameters,
-  reportParameters, researchParameters, skillListParameters, skillReadParameters, stateParameters, subtaskParameters, surfaceParameters, TASK_ACTION_PARAMETERS, TASK_ACTIONS, taskParameters, workersParameters,
+  reportParameters, researchParameters, skillListParameters, skillReadParameters, stateParameters, subtaskParameters, surfaceParameters, TASK_ACTION_PARAMETERS, TASK_ACTIONS, workersParameters,
 } from '../../src/tool-schemas.js';
 import {
-  EnvironmentStore, PayloadStore, normalizeRecipe, runEnvironment, stopEnvironment,
-  type EnvironmentExec, type EnvironmentRecipe, type EnvironmentRef, type EnvironmentRun, type PayloadRecord, type PayloadRef,
+  EnvironmentStore, PayloadStore, materializePayload, normalizeRecipe, runEnvironment, stopEnvironment,
+  type EnvironmentExec, type EnvironmentRecipe, type EnvironmentRef, type EnvironmentRun, type MaterializedPayload, type PayloadRecord, type PayloadRef,
 } from '../../src/lab.js';
 import { readCompose } from '../../src/compose.js';
+import {
+  LEGAL_NEXT, boardParameters, boardReadAction, caseCreateParameters, caseRateParameters, caseReviseParameters, cellAuthoringAction,
+  coverageCellParameters, coverageCellRetireParameters, coveragePlanParameters, coverageSuggestParameters, COVERAGE_FIXED_ACTIONS,
+  planAuthoringAction, planCreateParameters, planReviseParameters, settleAction, taskCreateParameters, taskDispatchParameters,
+  taskReviewParameters, taskReviseParameters, taskSettleParameters, taskStartParameters,
+} from '../../src/board-verbs.js';
 
 /** One bounded read: the compose file the target ships, from the read-only mount, never a host path. */
 const COMPOSE_READ = 'for f in docker-compose.yml docker-compose.yaml compose.yml compose.yaml; do if [ -f "/target/$f" ]; then printf "P2O-COMPOSE %s\\n" "$f"; cat "/target/$f"; exit 0; fi; done; exit 3';
@@ -140,7 +147,7 @@ interface OwnerRun {
   /** The host check kept for the report; it never refuses a finish (owner decision 2026-10-24: no finish gate). */
   preflight?: FinishPreflight; /** M3: derived completion of the run at the last finish/export, read back by the result and the report. */ completion?: Completion; narrative?: string;
   /** Deterministic report written at cleanup (settings p2o.autoReport); the error is kept, never thrown. */
-  reportPath?: string; reportError?: string; reportFiles?: { files: number; bytes: number };
+  reportPath?: string; finalReportPath?: string; reportError?: string; reportFiles?: { files: number; bytes: number };
   unobserve?: () => void; uiTimer?: ReturnType<typeof setTimeout>; uiRefresh?: Promise<void>; uiDirty?: boolean; uiClosed?: boolean;
   /** Measured duration of the last widget scan; only paces the next UI scan. */
   uiScanMs?: number;
@@ -360,7 +367,7 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
       recordId: ids.get(String(data.candidate)) }));
   }
   /**
-   * P14.10: turn the frontier into the next owner decision, never into a dispatch. It returns the exact `p2o_task create` argument for the
+   * P14.10: turn the frontier into the next owner decision, never into a dispatch. It returns the exact `p2o_task_create` argument for the
    * deepest ready step and records the whole chain as plan todos, one per step. Asset refs are copied from the caller, not guessed from a
    * surface string: an execution task that names the wrong asset is worse than one that names none.
    */
@@ -597,13 +604,21 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
     const workerId = workerName(resolved.role);
     assertOwnerActive(current);
     const structured = !assigned && input.work !== undefined;
-    // `work` (+ decision/outputContract) takes the same exact active/history/overlap admission as `p2o_task create` + reserve; without it the task is legacy and its identity is explicitly unknown.
+    // `work` (+ decision/outputContract) takes the same exact active/history/overlap admission as `p2o_task_create` + reserve; without it the task is legacy and its identity is explicitly unknown.
     const objective = assigned ?? await current.board.create({ question: input.task.slice(0,1500), unknowns:input.task.length > 1500 ? ['Compact objective is an excerpt; full original assignment remains in the initial brief'] : structured ? [] : ['Legacy request supplied no structured contrasting predictions or prerequisite packet'], surface: input.focus, risk: resolved.role, role: resolved.role,
       roleReason: 'Legacy focused request; lead remains responsible for question and evidence review', expectedTrue: 'Deliver the bounded requested observation; detailed contrast not supplied', expectedFalse: 'No supporting observation; retain the missing proof and limitations', stopCondition: 'Stop at the assigned objective, unavailable prerequisite or explicit withdrawal', evidenceIds: [], prerequisites: [], method,
       ...(structured ? { work: input.work as never, decision: input.decision as never, outputContract: input.outputContract as never } : {}) });
     if (!assigned && !structured) { try { current.store.event({ actorId: 'owner', kind: 'delegate.unstructured', taskId: objective.id, occurredAt: new Date(now()).toISOString(), summary: `p2o_delegate without structured work: exact duplicate and history checks could not run for ${input.focus.slice(0, 60)}` }); } catch { /* Audit only. */ } }
     await current.board.reserve(objective.id,workerId);
     current.currentTaskId = objective.id;
+    assertOwnerActive(current);
+    // Provision before any pane, ticket or model turn. A failed executor is a host prerequisite on the task,
+    // never a worker that spends turns against a dead lease.
+    try { await current.executors.acquire(workerId); }
+    catch (error) {
+      await current.board.transition(objective.id,'blocked',`Executor provisioning failed: ${message(error)}`).catch(() => {});
+      fail('DELEGATION_SPAWN_FAILED', `could not provision executor for ${workerId}: ${message(error)}`);
+    }
     assertOwnerActive(current);
     let paneId: string;
     try { paneId = await herdr.split({ cwd: current.ctx.cwd }); }
@@ -625,8 +640,6 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
       taskId: objective.id, requestedRuntime: ticket.requestedRuntime,
     };
     try {
-      assertOwnerActive(current);
-      await current.executors.acquire(workerId);
       assertOwnerActive(current);
       await mintTicket(current.control, ticket);
       assertOwnerActive(current);
@@ -810,8 +823,10 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
   }
 
   /** Deterministic report over one store. Shared by the human export command and the automatic report at cleanup; reads committed state only. */
-  async function renderStoreReport(store: AssessmentStore, recordsPath: string, extra: { owner?: OwnerRun; endReason?: string; unresolved?: FinishPreflight; narrative?: string } = {}) {
+  async function renderStoreReport(store: AssessmentStore, recordsPath: string, extra: { owner?: OwnerRun; endReason?: string; unresolved?: FinishPreflight; narrative?: string; kind?: 'draft' | 'final' } = {}) {
     const manifest = store.manifest(), index = await readLedger(recordsPath, manifest.runId), loaded = extra.owner?.settings ?? settings();
+    let outcome: Record<string, unknown> | undefined;
+    try { outcome = store.outcome(); } catch { /* A historical/closed store may not expose an outcome. */ }
     // Pinned upstream addresses of WSTG pages come from the shipped catalog; a missing catalog only removes those addresses.
     const wstgPages = await (extra.owner?.library ?? new SkillLibrary(packageRoot(extensionPath))).load().then(catalog => catalog.documents.filter(item => item.id.startsWith('wstg-source:')).map(item => item.path)).catch(() => []);
     // P16.3: the report counts what each worker wrote, from the same store rows the worker list reads. A store that cannot
@@ -824,24 +839,30 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
     const rendered = renderReport(index, store.reviewContext(),
       { runId: manifest.runId, target: manifest.targetDisplay, retention: manifest.retention, historical: store.readOnly, asOfSequence: index.snapshotSequence ?? store.sequence(), storeSchema: store.schemaVersion,
         runtime: { hash: manifest.profile.runtimeHash, version: extra.owner ? runtimeVersion : undefined }, complete: index.complete,
-        format: loaded.reportFormat, endReason: extra.endReason, unresolved: extra.unresolved, narrative: extra.narrative, operator: loaded.reportMeta, wstgPages, wrote });
+        format: loaded.reportFormat, endReason: extra.endReason, kind: extra.kind, outcome, unresolved: extra.unresolved, narrative: extra.narrative, operator: loaded.reportMeta, wstgPages, wrote });
     return { rendered, index, manifest };
   }
-  /** Where the automatic report goes: <reportRoot or cwd/.p2o-reports>/report-<runId>/. Never inside the private state directory (publishReportFiles refuses that). */
+  /** Base directory for manual/draft exports: never inside the private state directory. */
   async function defaultReportDirectory(ctx: ExtensionContext, runId: string, loaded: P2OSettings): Promise<string> {
     return join(loaded.reportRoot ?? join(await realpath(ctx.cwd), '.p2o-reports'), `report-${runId}`);
   }
-  /** Automatic report at cleanup. Errors are recorded and announced, never thrown: cleanup and finalization must finish. */
+  /** W3: the final snapshot has its own name, so a draft export can never suppress or impersonate it. */
+  async function finalReportDirectory(ctx: ExtensionContext, runId: string, loaded: P2OSettings): Promise<string> {
+    const base = `${await defaultReportDirectory(ctx, runId, loaded)}-final`;
+    let directory = base;
+    for (let attempt = 2; attempt < 10 && await stat(directory).catch(() => undefined); attempt++) directory = `${base}-${attempt}`;
+    return directory;
+  }
+  /** Automatic final report at cleanup. Errors are recorded and announced, never thrown: cleanup and finalization must finish. */
   async function writeAutoReport(current: OwnerRun, reason: string): Promise<void> {
     const enabled = current.settings.autoReport ?? current.retention === 'durable-local';
     // A start that failed has nothing to report; every other end of an owner run does.
-    if (!enabled || current.reportPath || reason === 'failed') return;
+    if (!enabled || current.finalReportPath || reason === 'failed') return;
     try {
-      const directory = await defaultReportDirectory(current.ctx, current.runId, current.settings);
-      if (await stat(directory).catch(() => undefined)) { current.reportPath = directory; return; } // cleanup ran before; never overwrite
-      const { rendered } = await renderStoreReport(current.store, current.records, { owner: current, endReason: reason, unresolved: current.preflight, narrative: current.narrative });
+      const directory = await finalReportDirectory(current.ctx, current.runId, current.settings);
+      const { rendered } = await renderStoreReport(current.store, current.records, { owner: current, endReason: reason, kind: 'final', unresolved: current.preflight, narrative: current.narrative });
       const published = await publishReportFiles(current.store, directory, rendered.files);
-      current.reportPath = published.directory; current.reportFiles = { files: published.files, bytes: published.bytes };
+      current.finalReportPath = published.directory; current.reportPath = published.directory; current.reportFiles = { files: published.files, bytes: published.bytes };
       current.ctx.ui.notify(`Report written: ${published.directory} (${published.files} files, ${published.bytes} bytes; ${rendered.counts.acceptedCurrent} accepted-current case(s), ${rendered.counts.cases} case(s), ${rendered.counts.coverageCells} coverage cell(s)). Deterministic index of attributed state, not a verification; review before sharing.`, 'info');
     } catch (error) {
       current.reportError = message(error);
@@ -903,7 +924,6 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
         progress:{lead:current.progress.view('owner'),workers:[...current.workers.keys()].map(id => ({id,...current.progress.view(id)}))},
       }); } catch (error) { current.exportError = message(error); current.ctx.ui.notify(`Evidence export failed: ${current.exportError}. Cleanup still proceeds.`, 'error'); }
     }
-    await writeAutoReport(current, reason);
     // Target authority/resources are closed BEFORE any optional knowledge finalization.
     try {
       const roles = current.usage.byRole();
@@ -913,6 +933,9 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
       current.store.finalize(reason === 'finished' ? 'incomplete' : ['failed', 'storage-failed'].includes(reason) ? 'blocked' : 'cancelled', reason, unclosed.length ? 'unresolved' : 'cleaned', current.completion ? completionLine(current.completion) : undefined);
       if (current.retention === 'durable-local') current.store.checkpoint(`Finalization: ${reason}`);
     } catch (error) { current.storageError = message(error); current.ctx.ui.notify(`Knowledge finalization incomplete: ${current.storageError}. Target authority is revoked; retained bytes are not a complete checkpoint.`, 'error'); }
+    // W3: the final snapshot is rendered after run.stopped and the final checkpoint, so its sequence and outcome
+    // describe the end of the run rather than the last draft export.
+    await writeAutoReport(current, reason);
     await closeVisibility(current);
     lastStatus = await currentStatus(current, 'finished').catch(error => {
       current.ctx.ui.notify(`Final progress snapshot unavailable: ${message(error)}. Knowledge location: ${join(current.stateRoot, current.runId)}; retention=${current.retention}, integrity unknown.`, 'warning');
@@ -1164,7 +1187,7 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
     current.operations.add(task); void task.catch(error => storageFailure(current,error)); void task.finally(() => current.operations.delete(task)).catch(() => {}); return task;
   }
   /**
-   * Shared flow of p2o_plan, p2o_case and p2o_coverage. An identical retried request (same `lookup`) answers from its retained ACK and spends nothing;
+   * Shared flow of p2o_plan_create, p2o_plan_revise, p2o_case_create, p2o_case_revise, p2o_case_rate and the coverage verbs. An identical retried request (same `lookup`) answers from its retained ACK and spends nothing;
    * anything else runs `perform` once (no allowance to spend). If `perform` fails after its records were committed, the committed
    * result is returned instead of an error, so a lost acknowledgement never makes the model repeat a mutation.
    */
@@ -1180,11 +1203,75 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
     }
     return { value, replayed: Boolean(prior) };
   }
-  async function recordCandidate(current: OwnerRun, by: string, candidate: Candidate) {
-    const record=await track(current,current.evidence.candidate(by, candidate));
+  async function recordCandidate(current: OwnerRun, by: string, candidate: Candidate, taskId?: string) {
+    const record=await track(current,current.evidence.candidate(by, candidate, taskId));
     current.engine.notify(candidate.supersedes?'support-invalidated':'candidate-revised',candidate.candidate,candidate.supersedes?'Exact reviewed support may be stale; inspect cases/coverage before reuse':candidate.closure);
+    if (isDemonstrated(candidate)) await hostValidation(current, by, record, candidate, taskId).catch(async error => {
+      try { await note({ by:'owner', kind:'lifecycle', text:`auto validation blocked for ${candidate.candidate}: ${cleanText(message(error)).slice(0,400)}` }); } catch { /* The claim is already committed; a note failure must not rewrite it. */ }
+    });
     return record;
   }
+
+  /**
+   * W4: one host-created validation task per confirmed, tested claim. The task is admitted through the same TaskBoard path as an
+   * operator draft; creation is what makes the independence claim checkable, not a waiver in the case record.
+   */
+  async function hostValidation(current: OwnerRun, by: string, claim: AssessmentRecord, candidate: Candidate, taskId?: string, allowOwner = false) {
+    if (!isDemonstrated(candidate)) return;
+    if (!taskId) {
+      await note({ by:'owner', kind:'lifecycle', text:`auto validation blocked for ${candidate.candidate}: no discovery task was recorded; create validation manually` });
+      return;
+    }
+    const tasks = await current.board.list();
+    const discovery = tasks.find(task => task.id === taskId);
+    if (!discovery) {
+      await note({ by:'owner', kind:'lifecycle', text:`auto validation blocked for ${candidate.candidate}: discovery task ${taskId} is not on the board` });
+      return;
+    }
+    // A validation worker's own confirmed claim is not re-validated automatically: one replay per claim, not a loop.
+    if (discovery.role === 'validation') return;
+    // The host creates the validation only after the discovery task is reviewed, so its pinned prerequisite revision is the
+    // reviewed one the reserve will check. Before review the case names the missing prerequisite instead of staling the task.
+    if (!isSatisfiedTask(discovery.status)) return;
+    // A legacy owner task (no structured work) stays operator-driven after review; a structured owner claim is still owed the
+    // same second-worker replay. The review trigger includes every owner claim recorded while the discovery ran.
+    if (by === 'owner' && !allowOwner && !discovery.work) return;
+    let draft: TaskDraft;
+    try { draft = validationDraft(claim, candidate, discovery); }
+    catch (error) {
+      await note({ by:'owner', kind:'lifecycle', text:`auto validation blocked for ${candidate.candidate}: ${cleanText(message(error)).slice(0,400)}` });
+      return;
+    }
+    if (tasks.some(task => task.id === draft.id)) return;
+    // No worker backend is a prerequisite gap, not an independence waiver. The task is still visible and blocked by its reason.
+    if (!current.delegation.enabled) {
+      draft = { ...draft, missingPrerequisites: [`Delegation unavailable: ${current.delegation.reason ?? 'no worker backend'}; create a worker and dispatch ${draft.id}`] };
+    }
+    let task: AssessmentTask;
+    try { task = await current.board.create(draft); }
+    catch (error) {
+      await note({ by:'owner', kind:'lifecycle', text:`auto validation blocked for ${candidate.candidate}: ${cleanText(message(error)).slice(0,400)}` });
+      return;
+    }
+    if (task.status === 'proposed') {
+      try { await current.engine.enqueue([{ taskId: task.id, priority: 0, input: { taskId: task.id, focus: task.surface.slice(0,60), task: task.question } }]); }
+      catch (error) {
+        await note({ by:'owner', kind:'lifecycle', text:`auto validation queued but not dispatched for ${candidate.candidate}: ${cleanText(message(error)).slice(0,400)}` });
+        return;
+      }
+    }
+    await note({ by:'owner', kind:'lifecycle', text:`host created validation ${task.id} for ${candidate.candidate}; one independent replay is owed` });
+  }
+
+  /** A candidate is normally posted while its discovery task is running; the review is the moment its revision becomes citable. */
+  async function hostValidationForTask(current: OwnerRun, taskId: string) {
+    const index = await readLedger(current.records, current.runId);
+    for (const record of index.records) {
+      if (record.kind !== 'candidate' || record.data?.taskRef !== taskId || !isDemonstrated(record.data as ClaimFields)) continue;
+      await hostValidation(current, record.by, record, record.data as unknown as Candidate, taskId, true);
+    }
+  }
+
   async function prepareMethod(current: OwnerRun, names: string[], workflowId: string | undefined, reason: string): Promise<TaskMethod> {
     const catalog = await current.library.load();
     const selected: TaskMethod['skills'] = [];
@@ -1211,134 +1298,215 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
       return textResult(cleanText(JSON.stringify(value)), value);
     },
   });
-  registerTool({
-    name:'p2o_task',label:'Maintain assessment question',exposure:'model-only',
-    renderResult: (result, { expanded }) => renderTaskResult(result.details, expanded),
-    description:'OWNER ONLY: match structured exact work against active/indexed history (unknown metadata is explicit), create/revise a bounded question with desired output contract and new/refine/validate/retest/retry disposition, select role/method, review a reported handoff with same-run receipts, close/block/cancel, or list tasks. dispatch accepts 1..25 proposed task IDs into the Engine frontier, which waits for reviewed prerequisites/free worker slots. Omit prerequisite revision to wait for current accepted evidence; reserve pins it. start executes direct work ONLY in solo mode. Review is coordination, not proof. No scope changes. role=recon may omit roleReason/expectedTrue/expectedFalse/stopCondition/methodReason for a lighter mapping intent; every other role still requires them.',
-    parameters:taskParameters,
-    async execute(_id,params) {
+  const executeTaskAction = async (_id:string, q:Record<string,any>) => { const p:any=q;
       const current = owner();
-      if(!TASK_ACTIONS.includes(params.action))fail('INVALID_INPUT','Unknown task action');
-      graphObject(params,TASK_ACTION_PARAMETERS[params.action],'Task action');
+      if(!TASK_ACTIONS.includes(p.action))fail('INVALID_INPUT','Unknown task action');
+      graphObject(p,(TASK_ACTION_PARAMETERS as any)[p.action],'Task action');
       const perform = async () => {
-        if (params.action === 'list') {
+        if (p.action === 'list') {
           const tasks = await current.board.list();
-          if (params.id) return tasks.find(t => t.id === params.id) ?? {missing:true};
-          const page:TaskListPage={...counted(tasks,{cursor:params.cursor,limit:params.limit ?? 10,label:'task',beyond:'Invalid task cursor',key:'tasks',
+          if (p.id) return tasks.find(t => t.id === p.id) ?? {missing:true};
+          const page:TaskListPage={...counted(tasks,{cursor:p.cursor as number|undefined,limit:(p.limit as number|undefined) ?? 10,label:'task',beyond:'Invalid task cursor',key:'tasks',
             project:(t):TaskListPage['tasks'][number] => ({id:t.id,recordId:t.recordId,revision:t.revision,status:t.status,role:t.role,assignee:t.assignee,terminal:terminalState(t),question:t.question.slice(0,200)})}),warning:'Summaries are navigation; use id for full task details.'};
           return page;
         }
-        if (params.action === 'dispatch') {
+        if (p.action === 'dispatch') {
           if (!current.delegation.enabled) fail('DELEGATION_UNAVAILABLE','No worker backend; do the work directly instead');
           const tasks = await current.board.list();
-          const ids = params.ids ?? (params.id ? [params.id] : []);
-          return current.engine.enqueue(ids.map(id => {
+          const ids = (p.ids as string[]|undefined) ?? (p.id ? [p.id as string] : []);
+          return current.engine.enqueue(ids.map((id:string) => {
             const t = tasks.find(t => t.id === id);
             if (!t) throw Error('Unknown task ID');
-            return {taskId:id,priority:params.priority,input:{taskId:id,focus:t.surface.slice(0,60),task:t.question}};
+            return {taskId:id,priority:p.priority as number|undefined,input:{taskId:id,focus:t.surface.slice(0,60),task:t.question}};
           }));
         }
         let task:AssessmentTask;
-        if (params.action === 'create' || params.action === 'revise' || params.action === 'match') {
-          if (!params.draft) throw Error('Task draft is required');
-          const {skills:names,workflow,methodReason,...draft} = params.draft;
+        if (p.action === 'create' || p.action === 'revise' || p.action === 'match') {
+          if (!p.draft) throw Error('Task draft is required');
+          const draft = p.draft as Record<string,any> & {skills?:string[];workflow?:string;methodReason?:string};
+          const {skills:names,workflow,methodReason,...draftFields} = draft;
           const role = resolveRole({role:draft.role,skills:names,settings:current.settings,purpose:workPurpose(draft.work),context:{kind:current.target.kind,needs:workNeeds(draft.work)}});
           // Optional at the schema level so a recon intent can omit them; validate() still requires them for every other role.
-          const input:TaskDraft = {...draft,roleReason:draft.roleReason??'',expectedTrue:draft.expectedTrue??'',expectedFalse:draft.expectedFalse??'',stopCondition:draft.stopCondition??'',method:await prepareMethod(current,role.skills,workflow,methodReason??'')};
-          if(params.action==='match'||params.action==='create'&&input.work){
+          const input = {...draftFields,roleReason:draft.roleReason??'',expectedTrue:draft.expectedTrue??'',expectedFalse:draft.expectedFalse??'',stopCondition:draft.stopCondition??'',method:await prepareMethod(current,role.skills,workflow,methodReason??'')} as TaskDraft;
+          if(p.action==='match'||p.action==='create'&&input.work){
             const matches=await current.board.match(input),tasks=await current.board.list();
             const result={...matches,already_covered_by:matches.active.map(t=>t.taskId),reuse_candidates:matches.reusable.map(t=>{const old=tasks.find(value=>value.id===t.taskId);return {...t,recordId:old?.recordId,evidenceIds:old?.evidenceIds??[],reviewReason:old?.reviewReason,limitations:'Reviewed coordination result only; currentness, contradictions and independent finding proof still require review'};}),warning:'Structured exact matching, not semantic prose equivalence or execution authority; unknown metadata and omissions are explicit'};
-            if(params.action==='match'||matches.active.length||matches.reusable.length)return result;
+            if(p.action==='match'||matches.active.length||matches.reusable.length)return result;
           }
-          if (params.action === 'create') {
+          if (p.action === 'create') {
             try { task = await current.board.create(input); }
             catch (error) {
               // M6: the admission tax is made visible as a record the preflight can count, not as a line in a transcript.
               await note({ by: 'owner', kind: 'lifecycle', text: `admission refused: ${cleanText(message(error)).slice(0, 400)}` }).catch(() => {});
               throw error;
             }
-          } else task = await current.board.revise(params.id!,params.revision!,input);
+          } else task = await current.board.revise(p.id as string,p.revision as number,input);
         } else {
-          if (!params.id) throw Error('Task ID is required');
-          if (params.action === 'start') { assertOwnerExecution(current); await current.board.reserve(params.id,'owner'); task = await current.board.transition(params.id,'running','Lead is investigating this bounded question'); }
-          else task = await current.board.transition(params.id,params.action === 'review' ? 'reviewed' : params.action === 'close' ? 'closed' : params.action === 'block' ? 'blocked' : 'cancelled',params.reason ?? '',params.evidenceIds,params.revision,params.externalEvidence === true);
+          if (!p.id) throw Error('Task ID is required');
+          if (p.action === 'start') { assertOwnerExecution(current); await current.board.reserve(p.id as string,'owner'); task = await current.board.transition(p.id as string,'running','Lead is investigating this bounded question'); }
+          else task = await current.board.transition(p.id as string,p.action === 'review' ? 'reviewed' : p.action === 'close' ? 'closed' : p.action === 'block' ? 'blocked' : 'cancelled',(p.reason as string|undefined) ?? '',p.evidenceIds as string[]|undefined,p.revision as number,p.externalEvidence === true);
         }
+        if (p.action === 'review') await hostValidationForTask(current, task.id).catch(async error => {
+          await note({ by:'owner', kind:'lifecycle', text:`auto validation hook failed for ${task.id}: ${cleanText(message(error)).slice(0,400)}` }).catch(() => {});
+        });
         current.currentTaskId = task.id;
-        if (params.action === 'revise' || params.action === 'cancel' || params.action === 'block') current.engine.forget(task.id);
+        if (p.action === 'revise' || p.action === 'cancel' || p.action === 'block') current.engine.forget(task.id);
         // The caller already receives this mutation; dispatch can progress without a paid wake.
         current.engine.kick(); return task;
       };
       let value;try{value=await track(current,perform());}catch(error){storageFailure(current,error);throw error;}
       return boundedResult(value,'Task result exceeds 24 KiB; request a bounded list or narrower work identity');
-    },
-  });
-  registerTool({
-    name:'p2o_plan',label:'Maintain goals, todo and decisions',exposure:'model-only',parameters:planParameters,
-    description:'OWNER ONLY: explicit goal/todo/decision revisions on canonical records, never another task queue or scope authority. Reference retained task/goal IDs and same-run support receipts; goals need acceptance criteria. list is bounded (20 default, 100 max, 24KiB). view retrieves one ID. A goal review/close is owner coordination, not automatic proof or assessment completion. Decisions record new/reuse/refine/validate/retest/defer with reasons, chosen/deferred task IDs and optional revisit conditions; they never dispatch tasks. A todo may carry a chain link (chainOf, step 1..8, claimRefs, needs, environmentRef): step readiness is derived from the demonstrated claims earlier steps cite, so a chain is closed by revising the step, never by writing an edge. list also returns one line per chain.',
-    async execute(_id,params){
+  };
+
+  const executePlanAction = async (_id:string, q:Record<string,any>) => { const p:any=q;
       const current=owner();
-      if(!PLAN_ACTIONS.includes(params.action))fail('INVALID_INPUT','Unknown plan action');
-      graphObject(params,PLAN_ACTION_PARAMETERS[params.action],'Plan action');
-      const request=params.action==='create'||params.action==='revise'?{actorId:'owner',requestId:params.requestId??randomUUID(),payload:{op:'plan',submitted:params}}:undefined,
-        lookup=request?boundPlanRequest(params.action as 'create'|'revise',params.entry as PlanDraft,request,params.id,params.revision):undefined;
+      if(!PLAN_ACTIONS.includes(p.action))fail('INVALID_INPUT','Unknown plan action');
+      graphObject(p,(PLAN_ACTION_PARAMETERS as any)[p.action],'Plan action');
+      const request=p.action==='create'||p.action==='revise'?{actorId:'owner',requestId:(p.requestId as string|undefined)??randomUUID(),payload:{op:'plan',submitted:p}}:undefined,
+        lookup=request?boundPlanRequest(p.action as 'create'|'revise',p.entry as PlanDraft,request,p.id as string|undefined,p.revision as number|undefined):undefined;
       const retained=(acks:RecordAck[])=>{const row=current.store.record(acks[0].recordId);if(!row?.data?.plan)throw Error('Retained plan detail unavailable');return {...row.data.plan as unknown as PlanDraft,recordId:row.id,replayed:true};};
       const perform=async()=>{
-        if(params.action==='create'||params.action==='revise'){
-          if(!params.entry)throw Error('Plan entry is required');
-          if(params.action==='revise'&&(!params.id||!Number.isSafeInteger(params.revision)||params.revision!<1))throw Error('Plan revise needs ID and expected revision');
-          return params.action==='create'?current.plan.create(params.entry as PlanDraft,request):current.plan.revise(params.id!,params.revision!,params.entry as PlanDraft,request);
+        if(p.action==='create'||p.action==='revise'){
+          if(!p.entry)throw Error('Plan entry is required');
+          if(p.action==='revise'&&(!p.id||!Number.isSafeInteger(p.revision)||(p.revision as number)<1))throw Error('Plan revise needs ID and expected revision');
+          return p.action==='create'?current.plan.create(p.entry as PlanDraft,request):current.plan.revise(p.id as string,p.revision as number,p.entry as PlanDraft,request);
         }
         const all=await current.plan.list();assertOwnerActive(current);
-        if(params.action==='view'){if(!params.id)throw Error('Plan view needs ID');const value=all.find(entry=>entry.id===params.id);if(!value)throw Error('Unknown plan ID');return value;}
-        const page=listPage(all.filter(entry=>!params.kind||entry.kind===params.kind),params,{label:'plan',warning:'Snapshot-relative navigation; use view by ID. No target/model work or authority restoration',project:entry=>({id:entry.id,recordId:entry.recordId,revision:entry.revision,kind:entry.kind,status:entry.status,title:entry.title.slice(0,200),taskIds:entry.taskIds,goalIds:entry.goalIds,...(entry.decision?.revisitCondition?{revisitCondition:entry.decision.revisitCondition}:{}),...(entry.chainOf?{chainOf:entry.chainOf,step:entry.step,claimRefs:entry.claimRefs,needs:entry.needs,environmentRef:entry.environmentRef}:{})})});
+        if(p.action==='view'){if(!p.id)throw Error('Plan view needs ID');const value=all.find(entry=>entry.id===p.id);if(!value)throw Error('Unknown plan ID');return value;}
+        const page=listPage(all.filter(entry=>!p.kind||entry.kind===p.kind),q,{label:'plan',warning:'Snapshot-relative navigation; use view by ID. No target/model work or authority restoration',project:entry=>({id:entry.id,recordId:entry.recordId,revision:entry.revision,kind:entry.kind,status:entry.status,title:entry.title.slice(0,200),taskIds:entry.taskIds,goalIds:entry.goalIds,...(entry.decision?.revisitCondition?{revisitCondition:entry.decision.revisitCondition}:{}),...(entry.chainOf?{chainOf:entry.chainOf,step:entry.step,claimRefs:entry.claimRefs,needs:entry.needs,environmentRef:entry.environmentRef}:{})})});
         // M1: the chain frontier is derived on read; the page carries its sentence so a lead does not have to recompose it.
         const chains=chainLines(chainBoard(all,await candidateClaims(current)));
         return chains.length?{...page,chains}:page;
       };
       const {value,replayed}=await ownerMutation(current,{lookup,retained,perform});
       return boundedResult(value,'Plan result exceeds 24 KiB');
-    },
-  });
+  };
 
-  registerTool({
-    name:'p2o_case',label:'Review canonical vulnerability cases',exposure:'model-only',parameters:caseParameters,
-    description:'OWNER ONLY: create/revise owner-reviewed canonical cases from exact candidate/evidence/task/asset revisions; list/view bounded review queue. Worker confirmed claims remain pending until review. Duplicates need the same reviewed policy/root-cause identity; uncertain cases stay related, not merged. Currentness can only downgrade on superseded claims/assets/tasks, contradictions or validator withdrawal. Case acceptance never completes a goal or assessment. rate records an owner severity rating (basis, optional CVSS:3.1 vector, CWE, remediation) without changing verdict or review.',
-    async execute(_id,params){const current=owner();if(!CASE_ACTIONS.includes(params.action))fail('INVALID_INPUT','Unknown case action');
-      graphObject(params,CASE_ACTION_PARAMETERS[params.action],'Case action');
-      if((params.action==='create'||params.action==='revise')&&!params.entry)throw Error('Case entry is required');if((params.action==='revise'||params.action==='rate')&&(!params.id||!Number.isSafeInteger(params.revision)||params.revision!<1))throw Error('Case revise/rate needs ID and expected revision');if(params.action==='rate'&&!params.finding)throw Error('Case rate needs a finding');
-      const request=params.action==='create'||params.action==='revise'||params.action==='rate'?{actorId:'owner',requestId:params.requestId??randomUUID(),payload:{op:'case',submitted:params}}:undefined,
-        lookup=request?params.action==='rate'?boundRatingRequest(params.id!,params.revision!,params.finding,request):boundCaseRequest(params.action as 'create'|'revise',params.entry as CaseDraft,request,params.id,params.revision):undefined;
-      const retained=(acks:RecordAck[])=>{const row=current.store.record(acks[0].recordId);if(params.action==='rate'){if(!row?.data?.caseRating)throw Error('Retained rating detail unavailable');return {...row.data.caseRating as Record<string,unknown>,recordId:row.id,replayed:true};}if(!row?.data?.case)throw Error('Retained case detail unavailable');return {...row.data.case as unknown as CaseDraft,recordId:row.id,replayed:true};};
-      const perform=async()=>{if(params.action==='create')return current.cases.create(params.entry as CaseDraft,request);if(params.action==='revise')return current.cases.revise(params.id!,params.revision!,params.entry as CaseDraft,request);if(params.action==='rate')return current.cases.rate(params.id!,params.revision!,params.finding,request);const all=await current.cases.list();assertOwnerActive(current);
-        if(params.action==='view'){if(!params.id)throw Error('Case view needs ID');const value=all.find(entry=>entry.id===params.id);if(!value)throw Error('Unknown case ID');return value;}
-        const page:CaseListPage=listPage(all.filter(entry=>!params.status||entry.reviewStatus===params.status),params,{label:'case',warning:'Current owner review queue; Worker claims, duplicate submissions and unique accepted current cases are separate counts. No goal completion.',project:(entry):CaseListPage['entries'][number]=>({id:entry.id,recordId:entry.recordId,revision:entry.revision,title:entry.title.slice(0,200),verdict:entry.verdict,reviewStatus:entry.reviewStatus,currentness:entry.currentness,acceptedFinding:entry.acceptedFinding,readyToRate:entry.readyToRate,independentCurrent:entry.independentCurrent,canonicalCaseId:entry.canonicalCaseId,...(entry.finding?{severity:entry.finding.severity}:{}),staleReasons:entry.staleReasons.slice(0,5)})});
+  const executeCaseAction = async (_id:string, q:Record<string,any>) => { const p:any=q;const current=owner();if(!CASE_ACTIONS.includes(p.action))fail('INVALID_INPUT','Unknown case action');
+      graphObject(p,(CASE_ACTION_PARAMETERS as any)[p.action],'Case action');
+      if((p.action==='create'||p.action==='revise')&&!p.entry)throw Error('Case entry is required');if((p.action==='revise'||p.action==='rate')&&(!p.id||!Number.isSafeInteger(p.revision)||(p.revision as number)<1))throw Error('Case revise/rate needs ID and expected revision');if(p.action==='rate'&&!p.finding)throw Error('Case rate needs a finding');
+      const request=p.action==='create'||p.action==='revise'||p.action==='rate'?{actorId:'owner',requestId:(p.requestId as string|undefined)??randomUUID(),payload:{op:'case',submitted:p}}:undefined,
+        lookup=request?p.action==='rate'?boundRatingRequest(p.id as string,p.revision as number,p.finding as any,request):boundCaseRequest(p.action as 'create'|'revise',p.entry as CaseDraft,request,p.id as string|undefined,p.revision as number|undefined):undefined;
+      const retained=(acks:RecordAck[])=>{const row=current.store.record(acks[0].recordId);if(p.action==='rate'){if(!row?.data?.caseRating)throw Error('Retained rating detail unavailable');return {...row.data.caseRating as Record<string,unknown>,recordId:row.id,replayed:true};}if(!row?.data?.case)throw Error('Retained case detail unavailable');return {...row.data.case as unknown as CaseDraft,recordId:row.id,replayed:true};};
+      const perform=async()=>{if(p.action==='create')return current.cases.create(p.entry as CaseDraft,request);if(p.action==='revise')return current.cases.revise(p.id as string,p.revision as number,p.entry as CaseDraft,request);if(p.action==='rate')return current.cases.rate(p.id as string,p.revision as number,p.finding as any,request);const all=await current.cases.list();assertOwnerActive(current);
+        if(p.action==='view'){if(!p.id)throw Error('Case view needs ID');const value=all.find(entry=>entry.id===p.id);if(!value)throw Error('Unknown case ID');return value;}
+        const page:CaseListPage=listPage(all.filter(entry=>!p.status||entry.reviewStatus===p.status),q,{label:'case',warning:'Current owner review queue; Worker claims, duplicate submissions and unique accepted current cases are separate counts. No goal completion.',project:(entry):CaseListPage['entries'][number]=>({id:entry.id,recordId:entry.recordId,revision:entry.revision,title:entry.title.slice(0,200),verdict:entry.verdict,reviewStatus:entry.reviewStatus,currentness:entry.currentness,acceptedFinding:entry.acceptedFinding,readyToRate:entry.readyToRate,independentCurrent:entry.independentCurrent,canonicalCaseId:entry.canonicalCaseId,...(entry.finding?{severity:entry.finding.severity}:{}),staleReasons:entry.staleReasons.slice(0,5)})});
         return page;};
       const {value,replayed}=await ownerMutation(current,{lookup,retained,perform});
-      if(!replayed&&(params.action==='create'||params.action==='revise'||params.action==='rate'))current.engine.notify('case-review',String((value as {id?:unknown}).id??params.id),String((value as {reviewStatus?:unknown}).reviewStatus??'pending'));
+      if(!replayed&&(p.action==='create'||p.action==='revise'||p.action==='rate'))current.engine.notify('case-review',String((value as {id?:unknown}).id??p.id),String((value as {reviewStatus?:unknown}).reviewStatus??'pending'));
       return boundedResult(value,'Case result exceeds 24 KiB');
-    },
-  });
-  registerTool({
-    name:'p2o_coverage',label:'Maintain proof-aware coverage plan',exposure:'model-only',parameters:coverageParameters,
-    description:'OWNER ONLY: maintain explicit versioned coverage-plan denominators and cells. Execution and assessment axes stay separate; tested requires reviewed task receipts, accepted/ruled-out needs current reviewed case support, blocked retains a gap. Identity changes retire/add cells instead of overwriting history. list/view are bounded knowledge reads. Coverage never widens scope, dispatches work, marks clean from blocked/untested cells, or completes a goal. suggest (read-only) lists uncovered WSTG tests matching recon features.',
-    async execute(_id,params){const current=owner(),action:string=params.action,mutations:readonly string[]=COVERAGE_MUTATIONS;if(!(COVERAGE_ACTIONS as readonly string[]).includes(action))fail('INVALID_INPUT','Unknown coverage action');
-      graphObject(params,COVERAGE_ACTION_PARAMETERS[params.action],'Coverage action');
-      if(action.startsWith('plan-')&&!params.plan)throw Error('Coverage plan input is required');if(action.startsWith('cell-')&&action!=='cell-retire'&&!params.cell)throw Error('Coverage cell input is required');
-      const logical=params.action==='plan-create'?params.plan:params.action==='plan-revise'?{id:params.id,revision:params.revision,input:params.plan}:params.action==='cell-create'?{planId:params.planId,planRevision:params.planRevision,input:params.cell}:params.action==='cell-revise'?{id:params.id,revision:params.revision,input:params.cell}:params.action==='cell-retire'?{id:params.id,revision:params.revision,reason:params.reason}:undefined,
-        request=mutations.includes(action)?{actorId:'owner',requestId:params.requestId??randomUUID(),payload:{op:'coverage',submitted:params}}:undefined,lookup=request?boundCoverageRequest(action,logical,request):undefined;
-      const retained=(acks:RecordAck[])=>{const rows=acks.map(ack=>current.store.record(ack.recordId));if(action.startsWith('plan-')){if(!rows[0]?.data?.coveragePlan)throw Error('Retained coverage plan unavailable');return {...rows[0].data.coveragePlan as Record<string,unknown>,recordId:rows[0].id,replayed:true};}if(!rows[0]?.data?.coveragePlan||!rows[1]?.data?.coverageCell)throw Error('Retained coverage packet unavailable');return {plan:rows[0].data.coveragePlan,cell:rows[1].data.coverageCell,replayed:true};};
-      const perform=async()=>{if(params.action==='plan-create')return current.coverage.createPlan(params.plan as CoveragePlanDraft,request);if(params.action==='plan-revise')return current.coverage.revisePlan(params.id!,params.revision!,params.plan as CoveragePlanDraft,request);if(params.action==='cell-create')return current.coverage.addCell(params.planId!,params.planRevision!,params.cell as CoverageCellDraft,request);if(params.action==='cell-revise')return current.coverage.reviseCell(params.id!,params.revision!,params.cell as CoverageCellDraft,request);if(params.action==='cell-retire')return current.coverage.retireCell(params.id!,params.revision!,params.reason!,request);const all=await current.coverage.list();assertOwnerActive(current);
-        if(params.action==='suggest'){const derived=params.features===undefined?featuresFromAttributeValues(current.store.recordedFeatureValues()):undefined,features=params.features??(derived!.features.length?derived!.features:['any']),featureSource=params.features!==undefined?'explicit':derived!.features.length?'graph':'default',unknown=features.filter(item=>!(WSTG_FEATURES as readonly string[]).includes(item));if(unknown.length)throw Error(`Unknown recon feature(s) ${unknown.join(', ')}; use: ${WSTG_FEATURES.join(', ')}`);if(params.modes!==undefined&&!/^[SHANB]{1,5}$/.test(params.modes))throw Error('modes must be letters of SHANB');const offset=params.cursor??0,limit=params.limit??20;if(!Number.isSafeInteger(offset)||offset<0||!Number.isInteger(limit)||limit<1||limit>50)throw Error('Invalid suggest cursor/limit (limit 1..50)');
-          const covered=new Set(all.flatMap(plan=>plan.cells).filter(cell=>cell.currentness!=='retired'&&isWstgKey(cell.questionKey)).map(cell=>cell.questionKey)),found=wstgSuggest(features,{modes:params.modes,covered,offset,limit});
-          return {total:found.matched,shown:found.suggestions.length,omitted:found.matched-found.suggestions.length,cursor:offset,...(offset+found.suggestions.length<found.matched?{nextCursor:offset+found.suggestions.length}:{}),features,featureSource,...(derived?.ignored.length?{ignoredFeatureWords:derived.ignored}:{}),suggestions:found.suggestions,warning:`Planning aid from the shipped WSTG map pinned to ${WSTG_COMMIT.slice(0,12)}: tests with no live cell whose trigger matches the features listed here (named by you or, when none were named, the feature attributes recorded on current graph assets; see featureSource). Not a finding, not permission and not coverage; a test counts only through a cell with its lower-case key as the question key. Support describes the shipped library, never the target.`};}
-        if(params.action==='view'){if(!params.id)throw Error('Coverage view needs a plan/cell ID');const plan=all.find(item=>item.id===params.id),cell=all.flatMap(item=>item.cells).find(item=>item.id===params.id);if(!plan&&!cell)throw Error('Unknown coverage ID');return plan??cell;}
-        return listPage(all,params,{label:'coverage',key:'plans',beyond:'Invalid coverage cursor/limit',warning:'Explicit plan denominator only; discovered/unplanned, blocked, untested and stale cells are not clean.',project:plan=>({id:plan.id,recordId:plan.recordId,revision:plan.revision,status:plan.status,title:plan.title.slice(0,200),cells:plan.cellIds.length,counts:plan.counts,discoveredUnplannedAssets:plan.discoveredUnplannedAssets,unknownScope:plan.unknownScope,omittedCells:plan.omittedCells})});};
-      const {value,replayed}=await ownerMutation(current,{lookup,retained,perform});
-      if(!replayed&&mutations.includes(action))current.engine.notify('coverage-revised',String((value as {id?:unknown;plan?:{id?:unknown}}).id??(value as {plan?:{id?:unknown}}).plan?.id??params.planId??params.id),action);
-      return boundedResult(value,'Coverage result exceeds 24 KiB');
-    },
-  });
+  };
 
+  const executeCoverageAction = async (_id:string, q:Record<string,any>) => { const p:any=q;const current=owner(),action:string=p.action,mutations:readonly string[]=COVERAGE_MUTATIONS;if(!(COVERAGE_ACTIONS as readonly string[]).includes(action))fail('INVALID_INPUT','Unknown coverage action');
+      graphObject(p,(COVERAGE_ACTION_PARAMETERS as any)[p.action],'Coverage action');
+      if(action.startsWith('plan-')&&!p.plan)throw Error('Coverage plan input is required');if(action.startsWith('cell-')&&action!=='cell-retire'&&!p.cell)throw Error('Coverage cell input is required');
+      const logical=p.action==='plan-create'?p.plan:p.action==='plan-revise'?{id:p.id,revision:p.revision,input:p.plan}:p.action==='cell-create'?{planId:p.planId,planRevision:p.planRevision,input:p.cell}:p.action==='cell-revise'?{id:p.id,revision:p.revision,input:p.cell}:p.action==='cell-retire'?{id:p.id,revision:p.revision,reason:p.reason}:undefined,
+        request=mutations.includes(action)?{actorId:'owner',requestId:(p.requestId as string|undefined)??randomUUID(),payload:{op:'coverage',submitted:p}}:undefined,lookup=request?boundCoverageRequest(action,logical,request):undefined;
+      const retained=(acks:RecordAck[])=>{const rows=acks.map(ack=>current.store.record(ack.recordId));if(action.startsWith('plan-')){if(!rows[0]?.data?.coveragePlan)throw Error('Retained coverage plan unavailable');return {...rows[0].data.coveragePlan as Record<string,unknown>,recordId:rows[0].id,replayed:true};}if(!rows[0]?.data?.coveragePlan||!rows[1]?.data?.coverageCell)throw Error('Retained coverage packet unavailable');return {plan:rows[0].data.coveragePlan,cell:rows[1].data.coverageCell,replayed:true};};
+      const perform=async()=>{if(p.action==='plan-create')return current.coverage.createPlan(p.plan as CoveragePlanDraft,request);if(p.action==='plan-revise')return current.coverage.revisePlan(p.id as string,p.revision as number,p.plan as CoveragePlanDraft,request);if(p.action==='cell-create')return current.coverage.addCell(p.planId as string,p.planRevision as number,p.cell as CoverageCellDraft,request);if(p.action==='cell-revise')return current.coverage.reviseCell(p.id as string,p.revision as number,p.cell as CoverageCellDraft,request);if(p.action==='cell-retire')return current.coverage.retireCell(p.id as string,p.revision as number,p.reason as string,request);const all=await current.coverage.list();assertOwnerActive(current);
+        if(p.action==='suggest'){const derived=p.features===undefined?featuresFromAttributeValues(current.store.recordedFeatureValues()):undefined,features=(p.features as string[]|undefined)??(derived!.features.length?derived!.features:['any']),featureSource=p.features!==undefined?'explicit':derived!.features.length?'graph':'default',unknown=features.filter((item:string)=>!(WSTG_FEATURES as readonly string[]).includes(item));if(unknown.length)throw Error(`Unknown recon feature(s) ${unknown.join(', ')}; use: ${WSTG_FEATURES.join(', ')}`);if(p.modes!==undefined&&!/^[SHANB]{1,5}$/.test(p.modes as string))throw Error('modes must be letters of SHANB');const offset=(p.cursor as number|undefined)??0,limit=(p.limit as number|undefined)??20;if(!Number.isSafeInteger(offset)||offset<0||!Number.isInteger(limit)||limit<1||limit>50)throw Error('Invalid suggest cursor/limit (limit 1..50)');
+          const covered=new Set(all.flatMap(plan=>plan.cells).filter(cell=>cell.currentness!=='retired'&&isWstgKey(cell.questionKey)).map(cell=>cell.questionKey)),found=wstgSuggest(features,{modes:p.modes as string|undefined,covered,offset,limit});
+          return {total:found.matched,shown:found.suggestions.length,omitted:found.matched-found.suggestions.length,cursor:offset,...(offset+found.suggestions.length<found.matched?{nextCursor:offset+found.suggestions.length}:{}),features,featureSource,...(derived?.ignored.length?{ignoredFeatureWords:derived.ignored}:{}),suggestions:found.suggestions,warning:`Planning aid from the shipped WSTG map pinned to ${WSTG_COMMIT.slice(0,12)}: tests with no live cell whose trigger matches the features listed here (named by you or, when none were named, the feature attributes recorded on current graph assets; see featureSource). Not a finding, not permission and not coverage; a test counts only through a cell with its lower-case key as the question key. Support describes the shipped library, never the target.`};}
+        if(p.action==='view'){if(!p.id)throw Error('Coverage view needs a plan/cell ID');const plan=all.find(item=>item.id===p.id),cell=all.flatMap(item=>item.cells).find(item=>item.id===p.id);if(!plan&&!cell)throw Error('Unknown coverage ID');return plan??cell;}
+        return listPage(all,p,{label:'coverage',key:'plans',beyond:'Invalid coverage cursor/limit',warning:'Explicit plan denominator only; discovered/unplanned, blocked, untested and stale cells are not clean.',project:plan=>({id:plan.id,recordId:plan.recordId,revision:plan.revision,status:plan.status,title:plan.title.slice(0,200),cells:plan.cellIds.length,counts:plan.counts,discoveredUnplannedAssets:plan.discoveredUnplannedAssets,unknownScope:plan.unknownScope,omittedCells:plan.omittedCells})});};
+      const {value,replayed}=await ownerMutation(current,{lookup,retained,perform});
+      if(!replayed&&mutations.includes(action))current.engine.notify('coverage-revised',String((value as {id?:unknown;plan?:{id?:unknown}}).id??(value as {plan?:{id?:unknown}}).plan?.id??p.planId??p.id),action);
+      return boundedResult(value,'Coverage result exceeds 24 KiB');
+  };
+
+  /** L1/W2: a stale refusal names the revision the host holds and the verb that can use it. */
+  const revisionOf = async (current:any, kind:string, id:string):Promise<number|undefined> => {
+    try {
+      if(kind==='task')return (await current.board.list()).find((item:any)=>item.id===id)?.revision;
+      if(kind==='case')return (await current.cases.list()).find((item:any)=>item.id===id)?.revision;
+      if(kind==='plan')return (await current.plan.list()).find((item:any)=>item.id===id)?.revision;
+      const plans=await current.coverage.list();
+      if(kind==='coveragePlan')return plans.find((item:any)=>item.id===id)?.revision;
+      return plans.flatMap((item:any)=>item.cells).find((item:any)=>item.id===id)?.revision;
+    } catch { return undefined; }
+  };
+  const withRevisionHint = async (current:any, kind:string, id:string|undefined, run:()=>Promise<any>):Promise<any> => {
+    try { return await run(); }
+    catch(error) {
+      if(!id||!/stale/i.test(message(error)))throw error;
+      const revision=await revisionOf(current,kind,id);
+      if(revision===undefined)throw error;
+      const legalNext=LEGAL_NEXT[kind].replaceAll('<currentRevision>',String(revision)).replaceAll('<id>',id);
+      throw Error(`${message(error)}; currentRevision=${revision}; legalNext=${legalNext}`);
+    }
+  };
+  const taskVerb = (name:string,label:string,parameters:any,description:string,action:(params:any)=>string,prepare:(params:any)=>any=(params)=>params) =>
+    registerTool({name,label,exposure:'model-only',renderResult:(result,{expanded}:any)=>renderTaskResult(result.details,expanded),description,parameters,
+      async execute(_id:string,params:any){const current=owner();return withRevisionHint(current,'task',params.id,()=>executeTaskAction(_id,{...prepare(params),action:action(params)}));}});
+  const caseVerb = (name:string,label:string,parameters:any,description:string,action:string) =>
+    registerTool({name,label,exposure:'model-only',description,parameters,
+      async execute(_id:string,params:any){const current=owner();return withRevisionHint(current,'case',params.id,()=>executeCaseAction(_id,{...params,action}));}});
+  const planVerb = (name:string,label:string,parameters:any,description:string,action:string) =>
+    registerTool({name,label,exposure:'model-only',description,parameters,
+      async execute(_id:string,params:any){const current=owner();return withRevisionHint(current,'plan',params.id,()=>executePlanAction(_id,{...params,action}));}});
+  const coverageVerb = (name:string,label:string,parameters:any,description:string,kind:string,action:(params:any)=>string) =>
+    registerTool({name,label,exposure:'model-only',description,parameters,
+      async execute(_id:string,params:any){
+        const current=owner();
+        try{return await executeCoverageAction(_id,{...params,action:action(params)});}
+        catch(error){
+          if(!/stale/i.test(message(error)))throw error;
+          // A cell create is refused by the plan revision, not the cell id. Name the plan the caller must pass back.
+          const planCreate=kind==='coverageCell'&&params.id===undefined&&typeof params.planId==='string';
+          const hintKind=planCreate?'coveragePlan':kind, hintId=params.id??(planCreate?params.planId:undefined);
+          if(!hintId)throw error;
+          const revision=await revisionOf(current,hintKind,hintId);
+          if(revision===undefined)throw error;
+          const legalNext=planCreate
+            ? 'p2o_coverage_cell (planId=<id>, planRevision=<currentRevision>)'
+            : LEGAL_NEXT[hintKind].replaceAll('<currentRevision>',String(revision)).replaceAll('<id>',hintId);
+          throw Error(`${message(error)}; currentRevision=${revision}; legalNext=${legalNext.replaceAll('<currentRevision>',String(revision)).replaceAll('<id>',hintId)}`);
+        }
+      }});
+
+  taskVerb('p2o_task_create','Create one bounded assessment question',taskCreateParameters,
+    'OWNER ONLY: create one bounded question with its desired output contract, role/method and new/refine/validate/retest/retry disposition. Run p2o_task_match first when a structured work identity is known; exact active duplicates and reviewable history are reported instead of repeated. role=recon may omit roleReason/expectedTrue/expectedFalse/stopCondition/methodReason; every other role still requires them.',()=> 'create');
+  taskVerb('p2o_task_revise','Revise one bounded assessment question',taskReviseParameters,
+    'OWNER ONLY: revise an existing task at its current revision; keep the same identity and narrow or correct its question, role, method or desired output. A stale revision is refused with the held revision and the legal next verb.',()=> 'revise');
+  taskVerb('p2o_task_dispatch','Dispatch proposed tasks into the frontier',taskDispatchParameters,
+    'OWNER ONLY: enqueue 1..25 proposed task IDs. The Engine frontier waits for reviewed prerequisites and free worker slots; dispatch is not execution and does not widen scope.',()=> 'dispatch');
+  taskVerb('p2o_task_start','Start direct owner work on one task',taskStartParameters,
+    'OWNER ONLY: start direct work on a proposed task when the owner, not a worker, will execute it. The task is reserved to the owner and moves to running; this is execution coordination, not proof and not a worker spawn.',()=> 'start');
+  taskVerb('p2o_task_review','Review a reported task handoff',taskReviewParameters,
+    'OWNER ONLY: review a reported handoff at its current revision using same-run receipts. Review is coordination, not proof; it never accepts a case or completes a goal.',()=> 'review');
+  taskVerb('p2o_task_settle','Settle a task as closed, blocked or cancelled',taskSettleParameters,
+    'OWNER ONLY: settle one reviewed task. Outcome is the decision: closed, blocked (record the human prerequisite) or cancelled. Use the current revision and same-run evidence IDs; settlement is not proof of a finding.',(params)=>settleAction(params.outcome),(params)=>{const {outcome,...rest}=params;return rest;});
+  caseVerb('p2o_case_create','Create a pending canonical case',caseCreateParameters,
+    'OWNER ONLY: create a pending canonical case from exact candidate/evidence/task/asset revisions. A worker claim is not a finding until review; create never accepts a case.','create');
+  caseVerb('p2o_case_revise','Revise or review a canonical case',caseReviseParameters,
+    'OWNER ONLY: revise a canonical case at its current revision. The entry carries acceptance, dispute or withdrawal; transitions are checked against the stored review status. Case acceptance never completes a goal or assessment.','revise');
+  caseVerb('p2o_case_rate','Record an owner severity rating',caseRateParameters,
+    'OWNER ONLY: record a severity rating (basis, optional CVSS:3.1 vector, CWE, remediation) on a case at its current revision without changing verdict or review.','rate');
+  coverageVerb('p2o_coverage_plan','Create or revise a coverage plan',coveragePlanParameters,
+    'OWNER ONLY: create a versioned coverage plan when no id is supplied, or revise the plan at id+revision. The denominator is explicit; reviewed/closed needs at least one cell. Coverage never widens scope or completes a goal.','coveragePlan',planAuthoringAction);
+  coverageVerb('p2o_coverage_cell','Add or revise a coverage cell',coverageCellParameters,
+    'OWNER ONLY: add a cell with planId+planRevision, or revise the cell at id+revision. Execution and assessment stay separate; tested needs reviewed task receipts, accepted/ruled-out needs current accepted case support, blocked retains a gap. Identity changes retire the old cell and add a new one.','coverageCell',cellAuthoringAction);
+  coverageVerb('p2o_coverage_cell_retire','Retire one coverage cell',coverageCellRetireParameters,
+    'OWNER ONLY: retire a cell at id+revision with a reason. Retirement preserves history; it never marks the surface clean.','coverageCell',()=>COVERAGE_FIXED_ACTIONS.p2o_coverage_cell_retire);
+  coverageVerb('p2o_coverage_suggest','Suggest uncovered WSTG tests',coverageSuggestParameters,
+    'OWNER ONLY (read-only): list uncovered WSTG tests matching recon features. Not a finding, permission or coverage; a test counts only through a live cell with its key. Support describes the shipped library, never the target.','coveragePlan',()=>COVERAGE_FIXED_ACTIONS.p2o_coverage_suggest);
+  planVerb('p2o_plan_create','Create a goal, todo or decision',planCreateParameters,
+    'OWNER ONLY: create explicit goal/todo/decision revisions on canonical records. Goals need acceptance criteria and a proof contract; decisions never dispatch tasks.','create');
+  planVerb('p2o_plan_revise','Revise a goal, todo or decision',planReviseParameters,
+    'OWNER ONLY: revise a goal/todo/decision at id+revision, including goal review/close through the status field. This is coordination, not automatic proof or assessment completion.','revise');
+  registerTool({name:'p2o_board',label:'Read the owner board',exposure:'model-only',parameters:boardParameters,
+    description:'OWNER ONLY read: board=tasks, cases, coverage or plans. Without id it returns the bounded list; with id it returns that exact record (coverage id resolves a plan or cell). board=tasks with match runs the structured work-identity match used before creating or dispatching; a match is coordination evidence, never authority or proof. Summaries are navigation; they grant no authority and complete nothing.',
+    async execute(_id:string,params:any){graphObject(params,['board','id','match','cursor','limit','status','kind'],'Board read');if(params.match!==undefined&&params.board!=='tasks')fail('INVALID_INPUT','match is only available on board=tasks');const current=owner();const action=params.match?'match':params.board==='tasks'?'list':boardReadAction(params.id as string|undefined);const input:any={action};
+      if(params.match!==undefined){input.draft=params.match;return executeTaskAction(_id,input);}
+      if(params.id!==undefined)input.id=params.id;
+      else {if(params.cursor!==undefined)input.cursor=params.cursor;if(params.limit!==undefined)input.limit=params.limit;}
+      if(!params.id&&params.board==='cases'&&params.status!==undefined)input.status=params.status;
+      if(!params.id&&params.board==='plans'&&params.kind!==undefined)input.kind=params.kind;
+      if(params.board==='tasks')return executeTaskAction(_id,input);
+      if(params.board==='cases')return executeCaseAction(_id,input);
+      if(params.board==='coverage')return executeCoverageAction(_id,input);
+      return executePlanAction(_id,input);
+    }});
   for (const [name, op, description, parameters] of [
     ['p2o_skill_list', 'skill_list', 'Find approved skills by optional query (e.g. route, authorization, output, FastAPI); specialized playbooks appear before general techniques. Check it before assigning or starting work: a role\'s default skills are a starting point, not a ceiling. Lists workflow prerequisites and reference IDs; paginate nextOffset. No host paths.', skillListParameters],
     ['p2o_skill_read', 'skill_read', 'Read an approved skill/reference/handoff/evidence document by catalog ID. Follow nextOffset for the rest. materialize=true copies a registered skill script into your scratch and returns {path, sha256, bytes}; the sandbox re-reads what it wrote and a hash mismatch fails closed. Not an arbitrary host file reader.', skillReadParameters],
@@ -1378,27 +1546,33 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
       if (!current || current.phase !== 'active') fail('NO_ASSESSMENT', 'No active assessment');
       if (current.role === 'worker' && current.ticket.role === 'reporting') fail('REPORTING_ONLY','Reporting cannot mutate candidate proof; request separate validation');
       const record = current.role === 'worker' ? (await worker().client.request('candidate', { candidate: params })).value
-        : await recordCandidate(current, 'owner', params);
+        : await recordCandidate(current, 'owner', params, current.currentTaskId);
       return textResult(JSON.stringify(record), record);
     },
   });
 
   registerTool({
     name: 'p2o_lab', label: 'Keep a replayable payload or environment', exposure: 'model-only', parameters: labParameters,
-    description: 'Keep what a claim actually ran, so a second worker can replay it. action=payload stores kind (request|script|command), name and body up to 32 KiB verbatim — deliberately not redacted, so it may hold credentials — in the run-private control directory (0600, removed with the run, never exported) and returns {id, sha256, bytes}; send id alone to read it back, and a hash mismatch fails closed. action=env records a recipe (setup commands, background services with a port or healthcheck, seed commands) under a name slug and returns {id, fingerprint, revision}; the same recipe is idempotent, a change is the next revision, and compose=true derives it from the target docker-compose.yml, refusing any key the sandbox cannot honour by name (privileged, cap_add, devices, host network/pid/ipc, host mounts, build, restart, a foreign image). action=verify runs it in your own sandbox with a receipt per command and per-service health; action=destroy stops those processes. A candidate citing payloadRef and a matching environmentRef is replayable; the reporting role is refused.',
+    description: 'Keep what a claim actually ran, so a second worker can replay it. action=payload stores kind (request|script|command), name and body up to 32 KiB verbatim — deliberately not redacted, so it may hold credentials — in the run-private control directory (0600, removed with the run, never exported) and returns {id, sha256, bytes}; send id alone to read it back, or id with materialize=true to write the bytes into your own scratch at payload/<id> and return {path, sha256, bytes} without putting the body in the prompt. A hash mismatch fails closed. action=env records a recipe (setup commands, background services with a port or healthcheck, seed commands) under a name slug and returns {id, fingerprint, revision}; the same recipe is idempotent, a change is the next revision, and compose=true derives it from the target docker-compose.yml, refusing any key the sandbox cannot honour by name (privileged, cap_add, devices, host network/pid/ipc, host mounts, build, restart, a foreign image). action=verify runs it in your own sandbox with a receipt per command and per-service health; action=destroy stops those processes. An environment id created in another sandbox is refused: register the same recipe locally with action=env first, then verify. A candidate citing payloadRef and a matching environmentRef is replayable; the reporting role is refused.',
     async execute(_id, params, signal) {
       const current = run;
       if (!current || current.phase !== 'active') fail('NO_ASSESSMENT', 'No active assessment');
       if (current.role === 'worker' && current.ticket.role === 'reporting') fail('REPORTING_ONLY', 'Reporting cannot create or run payloads or environments; request separate validation');
+      if (params.materialize !== undefined && params.action !== 'payload') fail('INVALID_INPUT', 'materialize applies only to action=payload');
       // A worker owns no host path: every artifact it names travels through the broker, which supplies the commands.
       if (current.role === 'worker') {
-        type WorkerResult = PayloadRecord | PayloadRef | (EnvironmentRef & { created: boolean }) | EnvironmentRun | { stopped: boolean };
+        type WorkerResult = PayloadRecord | PayloadRef | MaterializedPayload | (EnvironmentRef & { created: boolean }) | EnvironmentRun | { stopped: boolean };
         if (params.action === 'payload') {
           if (params.id !== undefined) {
             if (params.kind !== undefined || params.name !== undefined || params.body !== undefined) fail('INVALID_INPUT', 'Reading a payload takes only its id');
+            if (params.materialize) {
+              const value = (await worker().client.request<{ value: MaterializedPayload }>('payload_materialize', { id: params.id })).value;
+              return textResult<WorkerResult>(JSON.stringify(value), value);
+            }
             const record = (await worker().client.request<{ value: PayloadRecord }>('payload_read', { id: params.id })).value;
             return textResult<WorkerResult>(JSON.stringify(record), record);
           }
+          if (params.materialize) fail('INVALID_INPUT', 'Materializing a payload needs its id');
           if (params.kind === undefined || params.name === undefined || params.body === undefined) fail('INVALID_INPUT', 'Storing a payload needs kind, name and body');
           const ref = (await worker().client.request<{ value: PayloadRef }>('payload_write', { kind: params.kind, name: params.name, body: params.body })).value;
           return textResult<WorkerResult>(JSON.stringify(ref), ref);
@@ -1423,12 +1597,17 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
         return { code: result.code };
       };
       if (params.action === 'payload') {
-        type LabResult = PayloadRecord | PayloadRef;
+        type LabResult = PayloadRecord | PayloadRef | MaterializedPayload;
         if (params.id !== undefined) {
           if (params.kind !== undefined || params.name !== undefined || params.body !== undefined) fail('INVALID_INPUT', 'Reading a payload takes only its id');
           const record = await new PayloadStore(current.records).get(params.id);
+          if (params.materialize) {
+            const value = await materializePayload(record, current.sandbox, '/work', signal);
+            return textResult<LabResult>(JSON.stringify(value), value);
+          }
           return textResult<LabResult>(JSON.stringify(record), record);
         }
+        if (params.materialize) fail('INVALID_INPUT', 'Materializing a payload needs its id');
         if (params.kind === undefined || params.name === undefined || params.body === undefined) fail('INVALID_INPUT', 'Storing a payload needs kind, name and body');
         const ref = await new PayloadStore(current.records).put('owner', { kind: params.kind, name: params.name, body: params.body });
         return textResult<LabResult>(JSON.stringify(ref), ref);
@@ -1456,7 +1635,10 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
       if (params.id === undefined) fail('INVALID_INPUT', `action=${params.action} needs the environment id`);
       if (params.kind !== undefined || params.body !== undefined || params.name !== undefined || params.compose || params.setup || params.services || params.seed)
         fail('INVALID_INPUT', `action=${params.action} takes only id`);
-      const { recipe, ...ref } = await new EnvironmentStore(current.records).get(params.id);
+      const environment = new EnvironmentStore(current.records), record = await environment.get(params.id);
+      if (!await environment.materialized(params.id, 'owner'))
+        fail('ENVIRONMENT_FOREIGN', `Environment ${params.id} was created in another sandbox; create the same recipe locally with action=env before ${params.action}`);
+      const { recipe, ...ref } = record;
       const value = params.action === 'verify' ? await runEnvironment({ recipe, ref, exec, base: '/work' }) : await stopEnvironment({ ref, exec, base: '/work' });
       return textResult<EnvironmentRun | { stopped: boolean; steps: { step: string; code: number }[] }>(JSON.stringify(value), value);
     },
@@ -1540,7 +1722,7 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
   });
   registerTool({
     name: 'p2o_surface', label: 'Record recon surface', exposure: 'model-only',
-    description: 'Append one recon surface-inventory entry (component + entryPoint). A cheap non-blocking duplicate hint: duplicate=true means a prior entry with the same normalized component/entryPoint already exists in this run, not a block — keep mapping or move to a bounded question either way. Not the exact work identity of p2o_task match.',
+    description: 'Append one recon surface-inventory entry (component + entryPoint). A cheap non-blocking duplicate hint: duplicate=true means a prior entry with the same normalized component/entryPoint already exists in this run, not a block — keep mapping or move to a bounded question either way. Not the exact work identity of p2o_board board=tasks match.',
     parameters: surfaceParameters,
     async execute(_id, params) {
       const current = run;
@@ -1570,7 +1752,7 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
   });
   registerTool({
     name:'p2o_graph',label:'Asset graph',exposure:'model-only',parameters:graphParameters,
-    description:'Read bounded scoped graph knowledge or record an atomic batch. Exact kind/key identity is versioned; no implicit URL/path/method normalization, permission or verified finding. Use asset ref labels with @ref within a batch. Records include host-assigned producer/task; duplicate content retains additional producers without duplicate assets. Workers record assets/facts/anchors; hypotheses/relations are owner work and reporting is read-only. Claims need same-run evidence (inferred facts stay unverified). Pin assetRevision/expectedRevision and supersedes to refuse stale updates. Secret-bearing identities are refused; use non-secret labels. view/page default20/max100, export default200/max500, encoded reads at most24KiB with exact omissions/cursors; follow cursor and asOfSequence for stable history. chain joins the typed gained/needs capabilities into ready/unmet/frontier (owner coordination); plan:true also returns the exact p2o_task create draft for the deepest ready step and records one plan todo per step as a linked chain (chainOf/step/claimRefs/needs; readiness is derived from the claims earlier steps cite, so p2o_plan list shows the step frontier), dispatching nothing. Identical requestId/payload returns the retained ACK; this never replays target operations.',
+    description:'Read bounded scoped graph knowledge or record an atomic batch. Exact kind/key identity is versioned; no implicit URL/path/method normalization, permission or verified finding. Use asset ref labels with @ref within a batch. Records include host-assigned producer/task; duplicate content retains additional producers without duplicate assets. Workers record assets/facts/anchors; hypotheses/relations are owner work and reporting is read-only. Claims need same-run evidence (inferred facts stay unverified). Pin assetRevision/expectedRevision and supersedes to refuse stale updates. Secret-bearing identities are refused; use non-secret labels. view/page default20/max100, export default200/max500, encoded reads at most24KiB with exact omissions/cursors; follow cursor and asOfSequence for stable history. chain joins the typed gained/needs capabilities into ready/unmet/frontier (owner coordination); plan:true also returns the exact p2o_task_create draft for the deepest ready step and records one plan todo per step as a linked chain (chainOf/step/claimRefs/needs; readiness is derived from the claims earlier steps cite, so p2o_board board=plans shows the step frontier), dispatching nothing. Identical requestId/payload returns the retained ACK; this never replays target operations.',
     async execute(_id,params,_signal,_update,ctx){
       const current=run;
       if(!current||current.phase!=='active'||(current.role==='owner'&&current.ctx.cwd!==ctx.cwd))fail('NO_ASSESSMENT','No active p2o assessment in this session');
@@ -1796,10 +1978,11 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
         const completion = deriveCompletion({ plans: planFrontier(index), claims: claimHeadClaims(index), tasks: taskFrontier(index), ...proofViews(caseViews(index, context.cases), coverageViews(index, context.coverage)) });
         current.completion = completion; completionText = `\n\nSTATE: ${completionLine(completion)}`;
         if (exportOnly) {
-          const { rendered } = await renderStoreReport(current.store, current.records, { owner: current, endReason: 'export', unresolved: pre, narrative: current.narrative });
+          const { rendered, index } = await renderStoreReport(current.store, current.records, { owner: current, endReason: 'export', kind: 'draft', unresolved: pre, narrative: current.narrative });
           const base = await defaultReportDirectory(current.ctx, current.runId, current.settings);
-          let destination = base;
-          for (let attempt = 2; attempt < 10 && await stat(destination).catch(() => undefined); attempt++) destination = `${base}-export-${attempt}`;
+          const sequence = index.snapshotSequence ?? current.store.sequence();
+          let destination = `${base}-draft-${sequence}`;
+          for (let attempt = 2; attempt < 10 && await stat(destination).catch(() => undefined); attempt++) destination = `${base}-draft-${sequence}-${attempt}`;
           const published = await publishReportFiles(current.store, destination, rendered.files);
           return textResult<unknown>(`Report exported: ${published.directory} (${published.files} files, ${published.bytes} bytes)${completionText}${preflightText}\n\nNothing was torn down or ended: workers, sandboxes and the run are exactly as they were, and the report says the run is ${completion.state}.`, { reportPath: published.directory, reportFiles: { files: published.files, bytes: published.bytes }, state: completion.state, remaining: completion.remaining, completion, preflight: pre });
         }
@@ -2122,14 +2305,20 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
               if (current.workers.get(registration.workerId) !== registration) throw Error('Registered worker required for research');
               return research(current, request, registration.workerId);
             })()),
-            candidate: (input, registration) => recordCandidate(current, registration.workerId, input as Candidate),
+            candidate: (input, registration) => recordCandidate(current, registration.workerId, input as Candidate, registration.taskId),
             // P14.2: the worker names the bytes; the host writes them into this run's private control directory and records who did.
             lab: (op, request, registration) => track(current,(async () => {
               assertOwnerActive(current);
               if (current.workers.get(registration.workerId) !== registration) throw Error('Registered worker required for payload artifacts');
               const store = new PayloadStore(current.records);
-              return op === 'payload_read' ? store.get(request.id)
-                : store.put(registration.workerId, { kind: request.kind, name: request.name, body: request.body });
+              if (op === 'payload_read') return store.get(request.id);
+              if (op === 'payload_materialize') {
+                const record = await store.get(request.id);
+                return materializePayload(record, {
+                  writeScratch: (path, bytes, signal, workdir, mode) => current.executors.writeScratch(registration.workerId, path, bytes, signal, workdir ?? `/work/${registration.workerId}`, mode),
+                }, `/work/${registration.workerId}`);
+              }
+              return store.put(registration.workerId, { kind: request.kind, name: request.name, body: request.body });
             })()),
             // P14.3: the host normalizes the recipe and runs its commands through the broker's own admission, in this worker's sandbox.
             environment: (op, request, registration, control) => track(current,(async () => {
@@ -2143,6 +2332,8 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
                 return { ...ref, created };
               }
               const { recipe, ...ref } = await store.get(request.id);
+              if (!await store.materialized(request.id, registration.workerId))
+                throw Error(`Environment ${String(request.id)} was created in another sandbox; create the same recipe locally with action=env before ${op}`);
               const exec: EnvironmentExec = async command => control.exec(command);
               const base = `/work/${registration.workerId}`;
               return op === 'verify' ? runEnvironment({ recipe, ref, exec, base }) : stopEnvironment({ ref, exec, base });

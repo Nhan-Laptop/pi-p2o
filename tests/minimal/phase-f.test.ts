@@ -142,12 +142,12 @@ describe('the run tells the lead what to research, and records its refusals (M6 
     const waited = await h.call('p2o_loop', { action: 'wait', reason: 'block-decay', notBefore: at });
     expect(waited.details.revisit).toEqual({ condition: 'block-decay', at });
     expect(waited.terminate).toBe(true);
-    const decisions = (await h.call('p2o_plan', { action: 'list', kind: 'decision', limit: 20 })).details;
+    const decisions = (await h.call('p2o_board', { board: 'plans', kind: 'decision', limit: 20 })).details;
     expect(decisions.total).toBe(1);
     await expect(h.call('p2o_loop', { action: 'wait', reason: 'block-decay', notBefore: at }))
       .rejects.toThrow(/REVISIT_DUPLICATE: condition block-decay already has a pending revisit at/);
     // The duplicate was refused before anything was written: one decision, one schedule.
-    expect((await h.call('p2o_plan', { action: 'list', kind: 'decision', limit: 20 })).details.total).toBe(1);
+    expect((await h.call('p2o_board', { board: 'plans', kind: 'decision', limit: 20 })).details.total).toBe(1);
     // The reason vocabulary is closed: a revisit is a stated condition, not free text with a timer attached.
     await expect(h.call('p2o_loop', { action: 'wait', reason: 'because I said so', notBefore: at }))
       .rejects.toThrow(/needs reason block-decay or cooldown-expiry/);
@@ -166,7 +166,7 @@ describe('the run tells the lead what to research, and records its refusals (M6 
     const parent = (await h.call('p2o_candidate', { candidate: 'purpose-parent', surface: '/report-fixture', risk: 'authorization', closure: 'open_proof_gap',
       execution: 'not_tested', proof: 'static_trace', negativeControls: [], policyBasis: 'inferred', expectedPolicy: 'Declared fixture actor/object boundary',
       limitations: 'Nothing executed in this step yet', evidenceRefs: [observation.evidenceId], gained: [{ kind: 'http.request', subject: 'internal-api' }] })).details;
-    const created = (await h.call('p2o_task', { action: 'create', draft: {
+    const created = (await h.call('p2o_task_create', {draft: {
       question: 'Does the bounded fixture reach the declared effect?', surface: '/report-fixture', risk: 'authorization', role: 'exploit',
       roleReason: 'Purpose fixture role', expectedTrue: 'The bounded observation is recorded', expectedFalse: 'The bounded control is recorded',
       stopCondition: 'Stop after one inert observation', evidenceIds: [], prerequisites: [], skills: [], methodReason: 'One inert observation with no external target',
@@ -187,7 +187,7 @@ describe('the run tells the lead what to research, and records its refusals (M6 
     const broad = { question: 'Does the bounded fixture respond?', surface: '/report-fixture', risk: 'authorization', role: 'general', roleReason: 'Admission fixture breadth',
       expectedTrue: 'The bounded observation is recorded', expectedFalse: 'The bounded control is recorded', stopCondition: 'Stop after one inert observation',
       evidenceIds: [], prerequisites: [], skills: [], methodReason: 'One inert observation with no external target' };
-    await expect(h.call('p2o_task', { action: 'create', draft: broad })).rejects.toThrow(/PRIMITIVE_UNCHAINED/);
+    await expect(h.call('p2o_task_create', {draft: broad })).rejects.toThrow(/PRIMITIVE_UNCHAINED/);
     // The refusal is a record, and the export lists it: the admission tax is visible instead of living only in the transcript.
     const exported = await h.call('p2o_finish', { export: true });
     expect(exported.details.preflight.advisory.find((item: any) => item.code === 'ADMISSION_REFUSALS')).toMatchObject({ count: 1, level: 'advisory' });
@@ -202,7 +202,7 @@ describe('the run tells the lead what to research, and records its refusals (M6 
     // The wake is bound to one condition and one instant: the lead gets a time, not an allowance.
     expect(waited.details.revisit).toMatchObject({ condition: 'block-decay' });
     expect(new Date(waited.details.revisit.at).toISOString()).toBe(at);
-    const plans = await h.call('p2o_plan', { action: 'list', kind: 'decision' });
+    const plans = await h.call('p2o_board', { board: 'plans', kind: 'decision' });
     expect(JSON.stringify(plans.details)).toContain('Revisit block-decay');
     expect(JSON.stringify(plans.details)).toContain(`${'block-decay'} at ${at}`);
     // A second wait for the same condition is a scheduling question the record already answers.

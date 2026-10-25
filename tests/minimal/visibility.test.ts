@@ -90,7 +90,7 @@ describe('model-free assessment visibility (canonical runtime + legacy reader)' 
   });
   it('reported handoff remains awaiting review, not a verified finding or completed goal', async () => {
     await fixture(async h => {
-      const task=(await h.call('p2o_task',{action:'create',draft})).details;
+      const task=(await h.call('p2o_task_create',{draft})).details;
       const spawn=(await h.call('p2o_delegate',{focus:'one fixture',task:task.question,taskId:task.id})).details;
       const {readFile}=await import('node:fs/promises');
       const ticket=JSON.parse(await readFile(join(await h.path(),'..',`ticket-${spawn.workerId}.json`),'utf8'));
@@ -127,7 +127,7 @@ describe('model-free assessment visibility (canonical runtime + legacy reader)' 
   it('updates the compact widget on commits, keeps other widgets and clears on stop', async () => {
     await fixture(async h => {
       h.ctx.widgets.set('other-extension', ['keep']);
-      await h.call('p2o_task',{action:'create',draft});await delay(80);
+      await h.call('p2o_task_create',{draft});await delay(80);
       expect(h.ctx.widgets.get('p2o-progress')({},{}).render(90).join('\n')).toContain('Queue:');
       expect(h.pi.messages).toHaveLength(1);
       await h.command('stop');await delay(80);
@@ -173,8 +173,8 @@ describe('model-free assessment visibility (canonical runtime + legacy reader)' 
     const plan = (title: string) => ({ title, status: 'active', reason: 'Explicit bounded denominator for the storm fixture', exclusions: ['No undeclared actors'], unknownScope: ['Deployment parity is unknown'] });
     const storm = async (h: any) => { // 8 live plans (distinct semantic events) plus 30 revisions that coalesce onto them, plus 40 plain committed notes
       const plans: Array<{ id: string; revision: number }> = [];
-      for (let i = 0; i < 8; i++) { const created = (await h.call('p2o_coverage', { action: 'plan-create', plan: plan(`Storm plan ${i}`) })).details; plans.push({ id: created.id, revision: created.revision }); }
-      for (let n = 0; n < 30; n++) { const entry = plans[n % plans.length], revised = (await h.call('p2o_coverage', { action: 'plan-revise', id: entry.id, revision: entry.revision, plan: plan(`Storm plan revision ${n}`) })).details; entry.revision = revised.revision; }
+      for (let i = 0; i < 8; i++) { const created = (await h.call('p2o_coverage_plan', {plan: plan(`Storm plan ${i}`) })).details; plans.push({ id: created.id, revision: created.revision }); }
+      for (let n = 0; n < 30; n++) { const entry = plans[n % plans.length], revised = (await h.call('p2o_coverage_plan', {id: entry.id, revision: entry.revision, plan: plan(`Storm plan revision ${n}`) })).details; entry.revision = revised.revision; }
       for (let i = 0; i < 40; i++) await h.call('p2o_note', { kind: 'observation', text: `storm-note-${i}` });
       await delay(300);
     };

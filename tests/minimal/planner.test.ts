@@ -40,8 +40,8 @@ describe('Planner/Engine/Worker extension contract',()=>{
   });
   it('reuses three slots for 30 attributed assignments with unique tickets and no allowance to reset',async()=>{
     await fixture(async(h)=>{
-      const ids:string[]=[];for(let i=0;i<30;i++)ids.push((await h.call('p2o_task',{action:'create',draft:draft(`surface-${i}`)})).details.id);
-      await h.call('p2o_task',{action:'dispatch',ids:ids.slice(0,25)});await h.call('p2o_task',{action:'dispatch',ids:ids.slice(25)});
+      const ids:string[]=[];for(let i=0;i<30;i++)ids.push((await h.call('p2o_task_create',{draft:draft(`surface-${i}`)})).details.id);
+      await h.call('p2o_task_dispatch',{ids:ids.slice(0,25)});await h.call('p2o_task_dispatch',{ids:ids.slice(25)});
       for(let i=0;i<30;i++){
         await until(()=>h.herdr.calls.filter((c:any)=>c.op==='start').length>i);
         const starts=h.herdr.calls.filter((c:any)=>c.op==='start');const id=starts[i].name;

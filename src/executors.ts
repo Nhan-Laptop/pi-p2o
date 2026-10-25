@@ -18,14 +18,29 @@ export class ExecutorPool {
   async acquire(id: string) {
     this.gate(); if (this.mode === 'shared' || this.leases.has(id)) return;
     const sandbox = this.factory();
-    // Publish before start: failed/partial starts remain owned until verified removal.
-    const start = (async () => {
+    try {
       await sandbox.start(); this.gate();
       const stable = (m:Record<string,string>) => JSON.stringify(Object.entries(m).sort(([a],[b]) => a.localeCompare(b)));
       if (stable(sandbox.sourceManifest) !== stable(this.primary.sourceManifest) || sandbox.sourceSkipped !== this.primary.sourceSkipped) throw Error('Source snapshot changed; isolated assignment blocked, no execution');
-    })();
-    this.leases.set(id,{sandbox,start});
-    await start;
+      await sandbox.provision(id); this.gate();
+    } catch (error) {
+      // A failed start/provision is never a usable lease. The caller records a host prerequisite and must not
+      // start a worker: publishing the lease first is what turned a mkdir failure into a dead executor.
+      // If verified removal itself fails, retain the lease so /p2o stop can retry instead of leaking ownership.
+      let cleanup: string | undefined;
+      try { await sandbox.stop(); }
+      catch (stopError) { cleanup = stopError instanceof Error ? stopError.message : String(stopError); this.leases.set(id,{sandbox,start:Promise.resolve()}); }
+      const reason = error instanceof Error ? error.message : String(error);
+      throw Error(`EXECUTOR_PROVISION_FAILED: ${reason}${cleanup ? `; cleanup unresolved: ${cleanup}` : ''}`);
+    }
+    this.leases.set(id,{sandbox,start:Promise.resolve()});
+  }
+  /** Host coordination, not a target operation: materialize bytes in the assignment's own scratch without consuming an admission slot. */
+  async writeScratch(id: string, path: string, bytes: Buffer, signal: AbortSignal | undefined, workdir: string, mode = 0o500) {
+    this.gate(); signal?.throwIfAborted();
+    const sandbox = this.mode === 'shared' || id === 'owner' ? this.primary : this.leases.get(id)?.sandbox;
+    if (!sandbox || sandbox.isStopped) throw Error('Assignment executor unavailable; report partial, no automatic restart');
+    return sandbox.writeScratch(path, bytes, signal, workdir, mode);
   }
   async release(id: string) {
     const lease = this.leases.get(id); if (!lease) return;

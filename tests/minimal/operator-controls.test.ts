@@ -115,8 +115,8 @@ describe('hold and release (inert executor, real broker)', () => {
   it('keeps accepted queued tasks waiting during a hold instead of dropping them, and admits them after release', async () => fixture(async h => {
     await h.command('--target ./source');
     await h.command('hold');
-    const task = (await h.call('p2o_task', { action: 'create', draft })).details;
-    await h.call('p2o_task', { action: 'dispatch', ids: [task.id] }); await delay(400);
+    const task = (await h.call('p2o_task_create', {draft })).details;
+    await h.call('p2o_task_dispatch', {ids: [task.id] }); await delay(400);
     expect((await h.call('p2o_workers')).details.workers).toHaveLength(0);
     expect((await h.call('p2o_loop', { action: 'status' })).details.pendingIntents).toBe(1); // still accepted and queued, not invalidated
     h.ctx.setConfirm(true); await h.command('release');

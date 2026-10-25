@@ -9,13 +9,13 @@ import type { ChainJoin } from './chain-view.js';
  * drops a field the lead reads. They describe what the owner sees, not new authority: nothing here is stored or validated.
  */
 
-/** `p2o_task list`: navigation summaries. The full task is read by `id`, never inferred from this page. */
+/** `p2o_board board=tasks`: navigation summaries. The full task is read by `id`, never inferred from this page. */
 export interface TaskListPage extends Counted {
   tasks: Array<{ id: string; recordId: string; revision: number; status: string; role: string; assignee: string | undefined; terminal: TaskTerminalState | undefined; question: string }>;
   warning: string;
 }
 
-/** `p2o_case list`: the review queue with its derived readiness, not the finding bodies. */
+/** `p2o_board board=cases`: the review queue with its derived readiness, not the finding bodies. */
 export interface CaseListPage extends Counted {
   entries: Array<{ id: string; recordId: string; revision: number; title: string; verdict: string; reviewStatus: string; currentness: string;
     acceptedFinding: boolean; readyToRate: boolean; independentCurrent: boolean; canonicalCaseId: string; severity?: string; staleReasons: string[] }>;
@@ -28,7 +28,7 @@ export interface ChainViewPage extends ChainJoin {
   shown: { primitives: number; ready: number; unmet: number; frontier: number };
   next: string;
   /**
-   * P14.10: present only when the owner asked to plan. The draft is exactly the `p2o_task create` argument for the deepest ready step, and
+   * P14.10: present only when the owner asked to plan. The draft is exactly the `p2o_task_create` argument for the deepest ready step, and
    * `todos` are the plan entries already recorded for the chain — this tool never dispatches, so a draft is a proposal and a list is navigation.
    */
   draft?: Record<string, unknown>;

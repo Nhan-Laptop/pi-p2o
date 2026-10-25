@@ -5,7 +5,7 @@ confirmation and the live owner establish authority; disk state, summaries and w
 
 ## Question → observation → review
 
-- `p2o_task` (owner only) creates a bounded question: surface, risk, role, contrasting predictions, evidence IDs,
+- `p2o_task_create` (owner only) creates a bounded question: surface, risk, role, contrasting predictions, evidence IDs,
   prerequisite revisions, method and stop condition. Missing prerequisites create a **blocked** task.
 - Actions: `create`, `revise` (needs current `revision`), `list`, `start`, `dispatch`, `review`, `close`,
   `block`, `cancel`, plus `match` ([work admission](WORK_ADMISSION.md)). Use `list {id}` for one task in full.
@@ -22,7 +22,7 @@ confirmation and the live owner establish authority; disk state, summaries and w
   produce explicit incompleteness; mutations never fall back to a display tail.
 - `p2o_ledger {cursor:0}` starts a complete traversal (follow `nextCursor`, ≤100 rows/48 KiB per page); `id` returns one
   full record. `total`/`shown`/`omitted`/`complete`/`truncated` distinguish state from presentation: every capped list
-  (`p2o_task`, `p2o_case`, `p2o_plan`, `p2o_coverage`, `p2o_graph` page/export/chain, `p2o_ledger`) reports what it shows
+  (`p2o_board`, the task/case/plan/coverage verbs, `p2o_graph` page/export/chain, `p2o_ledger`) reports what it shows
   against what exists, so a short or empty page is never read as an empty board. Caps are unchanged; the pair is one count.
   Test: `tests/minimal/projection-counts.test.ts`.
 - `p2o_workers {cursor}` returns a change page with exact coverage/open totals. Quiet work can be *suspected* stalled,

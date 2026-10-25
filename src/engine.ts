@@ -101,7 +101,8 @@ export class AssessmentEngine {
   private async drain() {
     if (!this.live() || this.paused) return;
     if (!await this.deps.reap()) {this.pause('Completed pane removal unverified; capacity backpressure, retry with /p2o resume');return;}
-    this.gate();
+    // A stop/finish can land while reaping workers. That is not a scheduler failure: the gate is closed, so leave quietly.
+    if (!this.live() || this.paused) return;
     for (const job of [...this.queue.values()].sort((a,b) => b.priority-a.priority)) {
       if (!this.live() || this.paused || this.deps.capacity() <= 0) break;
       const task = (await this.deps.list()).find(t => t.id === job.taskId); this.gate(); if (this.paused) break;

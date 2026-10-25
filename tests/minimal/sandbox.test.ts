@@ -41,7 +41,8 @@ describe('sandbox executor, no agents', () => {
     await sandbox.start(); await sandbox.exec('printf data');
     const create = d.calls.find(args => args.includes('create'))!;
     expect(create).toContain(IMAGE);
-    for (const flag of ['--read-only', '--cap-drop', '--security-opt', '--pids-limit', '--memory', '--cpus', '--user']) expect(create, flag).not.toContain(flag);
+    for (const flag of ['--read-only', '--cap-drop', '--security-opt', '--pids-limit', '--memory', '--cpus']) expect(create, flag).not.toContain(flag);
+    expect(create[create.indexOf('--user') + 1]).toBe('root');
     expect(create[create.indexOf('--network') + 1]).toBe('bridge');
     expect(create).not.toContain('printf data');
     expect(d.calls.find(args => args.includes('exec'))?.at(-1)).toBe('printf data');

@@ -22,21 +22,21 @@ describe('wstgSuggest', () => {
   });
 });
 
-describe('p2o_coverage suggest', () => {
+describe('p2o_coverage_suggest', () => {
   it('lists uncovered tests without writing a record, and drops a test once a cell uses its key', async () => fixture(async h => {
     await populate(h, undefined, { tested: 'wstg-athz-04', blocked: 'wstg-sess-05' });
     const before = await h.reader(); let count: number; try { count = before.records().length; } finally { before.close(); }
-    const result = (await h.call('p2o_coverage', { action: 'suggest', features: ['object-id', 'login'], limit: 50 })).details;
+    const result = (await h.call('p2o_coverage_suggest', {features: ['object-id', 'login'], limit: 50 })).details;
     const keys = result.suggestions.map((item: any) => item.key);
     expect(keys).not.toContain('wstg-athz-04'); expect(keys).not.toContain('wstg-sess-05'); expect(result.total).toBeGreaterThan(0); expect(result.warning).toMatch(/Not a finding, not permission and not coverage/);
     const after = await h.reader(); try { expect(after.records().length).toBe(count); } finally { after.close(); }
   }));
   it('refuses unknown features and malformed modes or limits', async () => fixture(async h => {
     await h.command('--target ./source');
-    await expect(h.call('p2o_coverage', { action: 'suggest', features: ['telepathy'] })).rejects.toThrow(/Unknown recon feature/);
-    await expect(h.call('p2o_coverage', { action: 'suggest', modes: 'XYZ' })).rejects.toThrow(/modes/);
-    await expect(h.call('p2o_coverage', { action: 'suggest', limit: 99 })).rejects.toThrow(/limit/);
-    expect((await h.call('p2o_coverage', { action: 'suggest' })).details.features).toEqual(['any']);
+    await expect(h.call('p2o_coverage_suggest', {features: ['telepathy'] })).rejects.toThrow(/Unknown recon feature/);
+    await expect(h.call('p2o_coverage_suggest', {modes: 'XYZ' })).rejects.toThrow(/modes/);
+    await expect(h.call('p2o_coverage_suggest', {limit: 99 })).rejects.toThrow(/limit/);
+    expect((await h.call('p2o_coverage_suggest', { })).details.features).toEqual(['any']);
   }));
 });
 
@@ -48,7 +48,7 @@ describe('recon features derived from the graph (U4)', () => {
   });
   it('uses the feature attributes of current assets when the call names none, lets an explicit list win, and drops a feature once its asset is revised away', async () => fixture(async h => {
     await h.command('--target ./source');
-    const suggest = async (extra: Record<string, unknown> = {}) => (await h.call('p2o_coverage', { action: 'suggest', limit: 50, ...extra })).details;
+    const suggest = async (extra: Record<string, unknown> = {}) => (await h.call('p2o_coverage_suggest', {limit: 50, ...extra })).details;
     expect(await suggest()).toMatchObject({ features: ['any'], featureSource: 'default' });
     const baseline = (await suggest()).total;
     await (h.call('p2o_graph', { action: 'record', batch: { assets: [{ asset: { kind: 'endpoint', key: 'POST /session', attributes: { feature: 'Login, jwt' } } }, { asset: { kind: 'endpoint', key: 'GET /app.js', attributes: { feature: 'client-js telepathy', status: '200' } } }] } }));

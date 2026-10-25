@@ -4,8 +4,7 @@ import { fixture, populate } from './helpers/report-fixture.js';
 
 /** Chain capability: an owner rating may carry the ordered links actually built, bounded by the last step whose claim ran. Inert sandbox, real store. */
 const OBJECTIVE = 'Reach the fixture object of another actor through the recorded selector and the recorded read primitive';
-const rate = (h: any, built: any, extra: Record<string, unknown> = {}) => h.call('p2o_case', {
-  action: 'rate', id: built.accepted.id, revision: built.accepted.revision,
+const rate = (h: any, built: any, extra: Record<string, unknown> = {}) => h.call('p2o_case_rate', {id: built.accepted.id, revision: built.accepted.revision,
   finding: { severity: 'medium', basis: 'Confirmed boundary deviation reaching only the tested identity’s own object in the fixture', ...extra },
 });
 const step = (order: number, text: string, extra: Record<string, unknown> = {}) => ({ order, step: text, ...extra });
@@ -23,7 +22,7 @@ describe('case finding chain', () => {
     // The rating may sit below what the chain demonstrated (medium ≤ high); the impact itself is the host's arithmetic.
     expect(rated.finding.chain).toMatchObject({ objective: OBJECTIVE, demonstratedThrough: 2, impact: { score: 7.1, severity: 'high', effect: 'confidentiality-read' } });
     expect(rated.finding.chain.steps[1]).toMatchObject({ order: 2, claimRef: second.id, effect: 'confidentiality-read', reach: { AV: 'N', AC: 'L', AT: 'N', PR: 'L', UI: 'N' } });
-    const view = (await h.call('p2o_case', { action: 'view', id: built.accepted.id })).details;
+    const view = (await h.call('p2o_board', { board: 'cases', id: built.accepted.id })).details;
     expect(view.finding.chain.impact).toMatchObject({ score: 7.1, severity: 'high' });
     h.ctx.setConfirm(true); await h.command(`report export ${join(h.root, 'out')}`);
     const { 'REPORT.md': report, 'findings.json': findings } = await h.read(join(h.root, 'out'));
@@ -43,7 +42,7 @@ describe('case finding chain', () => {
     // Old prose is kept, marked, and never joined: nothing about it can score a case.
     expect(reported?.steps[0].gained).toEqual([{ legacy: 'a selected foreign object identity' }]);
     expect(reported?.steps[1].needs).toEqual([{ legacy: 'a selected foreign object identity' }]);
-    expect(JSON.stringify(reported)).toBe(JSON.stringify((await h.call('p2o_case', { action: 'view', id: built.accepted.id })).details.finding.chain));
+    expect(JSON.stringify(reported)).toBe(JSON.stringify((await h.call('p2o_board', { board: 'cases', id: built.accepted.id })).details.finding.chain));
     // The report says the chain is reasoned, and prints old prose as untyped instead of joining it.
     h.ctx.setConfirm(true); await h.command(`report export ${join(h.root, 'out')}`);
     const reasoned = (await h.read(join(h.root, 'out')))['REPORT.md'];

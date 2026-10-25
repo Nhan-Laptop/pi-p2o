@@ -75,10 +75,10 @@ export class PayloadStore {
 
   /** Verified read: the stored bytes are checked against the ref, so a truncated or edited file fails closed instead of replaying. */
   async get(id: unknown): Promise<PayloadRecord> {
-    if (!isPayloadId(id)) throw Error('Invalid payload ID');
+    if (!isPayloadId(id)) throw Error('Invalid payload ID: expected payload-<uuid>; store the payload first with action=payload');
     let handle;
     try { handle = await open(join(this.directory, `${id}.json`), constants.O_RDONLY | constants.O_NOFOLLOW); }
-    catch (error) { if ((error as NodeJS.ErrnoException).code === 'ENOENT') throw Error(`Unknown payload ID ${id}`); throw error; }
+    catch (error) { if ((error as NodeJS.ErrnoException).code === 'ENOENT') throw Error(`Unknown payload ID ${id}; store the payload first with action=payload`); throw error; }
     let raw: string;
     try {
       const info = await handle.stat();
@@ -104,6 +104,26 @@ export class PayloadStore {
 
 /** For the ledger's own validation, which holds only the store path and never a store instance. */
 export const payloadExists = (storePath: string, id: unknown): Promise<boolean> => new PayloadStore(storePath).has(id);
+
+/** What a replaying worker receives: a path in its own scratch, never the payload body in the prompt. */
+export interface MaterializedPayload { path: string; sha256: string; bytes: number }
+interface ScratchWriteLike {
+  writeScratch(path: string, bytes: Buffer, signal?: AbortSignal, workdir?: string, mode?: number):
+    Promise<{ path: string; root: string; bytes: number; sha256: string; mode: number }>;
+}
+
+/**
+ * planning_update.md W4: write the stored bytes through the sandbox's fixed scratch writer. The writer re-reads the file and
+ * reports its own hash, so a truncated or replaced file is a refusal rather than a replay of different bytes.
+ */
+export async function materializePayload(record: PayloadRecord, writer: ScratchWriteLike, base = '/work', signal?: AbortSignal): Promise<MaterializedPayload> {
+  if (base !== '/work' && !/^\/work\/[A-Za-z0-9][A-Za-z0-9._-]{0,60}$/.test(base)) throw Error('Invalid payload sandbox base');
+  const relative = `payload/${record.ref.id}`;
+  const written = await writer.writeScratch(relative, Buffer.from(record.body, 'utf8'), signal, base, 0o500);
+  if (written.sha256 !== record.ref.sha256 || written.bytes !== record.ref.bytes)
+    throw Error('Materialized payload hash mismatch; nothing is claimed to be materialized');
+  return { path: `${base}/${relative}`, sha256: written.sha256, bytes: written.bytes };
+}
 
 // ---------------------------------------------------------------- environment recipe (P14.3)
 
@@ -201,20 +221,21 @@ export class EnvironmentStore {
     await chmod(this.directory, 0o700);
     const fingerprint = fingerprintRecipe(recipe), existing = await this.list(name);
     const same = existing.find(entry => entry.fingerprint === fingerprint);
-    if (same) return { ref: same, created: false };
+    if (same) { await this.markMaterialized(same.id, by); return { ref: same, created: false }; }
     const ref: EnvironmentRef = { id: `env-${randomUUID()}`, name, fingerprint, revision: (existing.at(-1)?.revision ?? 0) + 1, image: recipe.image,
       source: recipe.source, setup: recipe.setup.length, services: recipe.services.length, seed: recipe.seed.length,
       createdAt: new Date().toISOString(), createdBy: by };
     const file = await open(join(this.directory, `${ref.id}.json`), constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW, 0o600);
     try { await file.writeFile(JSON.stringify({ version: 1, ...ref, recipe })); await file.sync(); } finally { await file.close(); }
+    await this.markMaterialized(ref.id, by);
     return { ref, created: true };
   }
 
   async get(id: unknown): Promise<EnvironmentRecord> {
-    if (!isEnvironmentId(id)) throw Error('Invalid environment ID');
+    if (!isEnvironmentId(id)) throw Error('Invalid environment ID: expected env-<uuid>; create the recipe locally with action=env');
     let handle;
     try { handle = await open(join(this.directory, `${id}.json`), constants.O_RDONLY | constants.O_NOFOLLOW); }
-    catch (error) { if ((error as NodeJS.ErrnoException).code === 'ENOENT') throw Error(`Unknown environment ID ${id}`); throw error; }
+    catch (error) { if ((error as NodeJS.ErrnoException).code === 'ENOENT') throw Error(`Unknown environment ID ${id}; create the recipe locally with action=env`); throw error; }
     let raw: string;
     try {
       const info = await handle.stat();
@@ -235,6 +256,26 @@ export class EnvironmentStore {
   async has(id: unknown): Promise<boolean> {
     if (!isEnvironmentId(id)) return false;
     try { return (await stat(join(this.directory, `${id}.json`))).isFile(); } catch { return false; }
+  }
+
+  /**
+   * W4: an environment id is a recipe, not a live process. A worker may verify the same ref only after it has registered the
+   * same recipe in its own sandbox; otherwise an id from another sandbox would silently run somewhere it was never created.
+   */
+  private async markMaterialized(id: string, by: string): Promise<void> {
+    if (!validId(by)) throw Error('Invalid environment producer');
+    const directory = join(this.directory, 'materialized', id);
+    await mkdir(directory, { recursive: true, mode: 0o700 });
+    await chmod(directory, 0o700);
+    let handle;
+    try { handle = await open(join(directory, by), constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW, 0o600); }
+    catch (error) { if ((error as NodeJS.ErrnoException).code === 'EEXIST') return; throw error; }
+    finally { await handle?.close(); }
+  }
+
+  async materialized(id: unknown, by: unknown): Promise<boolean> {
+    if (!isEnvironmentId(id) || typeof by !== 'string' || !validId(by)) return false;
+    try { return (await stat(join(this.directory, 'materialized', id, by))).isFile(); } catch { return false; }
   }
 
   /** Revisions of one name, oldest first; the directory is bounded by the number of names in a run. */

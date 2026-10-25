@@ -34,6 +34,10 @@ export interface ReportMeta {
   format?: 1 | 2;
   /** Why this report was written: finished, stopped, shutdown, session-change, storage-failed, failed, or manual (a human export). */
   endReason?: string;
+  /** W3: a draft export is not the final snapshot. */
+  kind?: 'draft' | 'final';
+  /** Stored run outcome; printed next to the derived completion so a mismatch is visible, never hidden. */
+  outcome?: Record<string, unknown>;
   /** Preflight at finish: items still unresolved when the lead finished. Printed as a section, never counted as findings. */
   unresolved?: FinishPreflight;
   /** Lead-written executive text (p2o_finish narrative). Printed under an "unverified" label. */
@@ -131,7 +135,7 @@ function caseSection(view: CaseView, cells: readonly CoverageCellView[], index?:
   const wstg = caseWstgKeys(view.id, view.revision, cells);
   const v2 = ordinal !== undefined;
   return [`### ${v2 ? `F-${ordinal} ` : ''}${mdText(view.title, 160)} — case ${mdText(view.id, 80)} r${view.revision}`,
-    `- Verdict **${mdText(view.verdict)}**; review **${mdText(view.reviewStatus)}**; currentness **${mdText(view.currentness)}**; independent validation current: ${view.independentCurrent ? 'yes' : 'no'}`,
+    `- Verdict **${mdText(view.verdict)}**; review **${mdText(view.reviewStatus)}**; currentness **${mdText(view.currentness)}**; independent validation current: ${view.independentCurrent ? 'yes' : 'no'}${!view.independentCurrent && view.independenceReason ? ` (${mdText(view.independenceReason, 300)})` : ''}`,
     `- Policy: ${mdText(view.policyKey, 160)}${view.rootCauseKey ? `; root cause: ${mdText(view.rootCauseKey, 160)}` : ''}`,
     `- Assets: ${ids(view.assetRefs.map(ref => ref.id))}; claims: ${ids(view.claimRefs)}; independent evidence: ${ids(view.independentEvidenceRefs)}; tasks: ${ids(view.taskRefs.map(ref => `${ref.taskId}@r${ref.revision ?? '?'}`))}`,
     `- Contradictions: ${view.contradictions.length ? view.contradictions.slice(0, 6).map(item => `${mdText(item.evidenceRef, 80)} (${mdText(item.status)})`).join(', ') : 'none recorded'}; affected variants: ${list(view.affectedVariants.map(item => mdText(item, 120)))}`,
@@ -227,7 +231,7 @@ function findingFiles(meta: ReportMeta, index: LedgerIndex, ordered: readonly Ca
     return { evidenceId: ref, ...(step ? { role: step.role, ...(step.note ? { note: plainText(step.note, 200) } : {}) } : {}), available: Boolean(data), operation: data ? plainText(data.operation, 24) : null, by: record ? plainText(record.by, 60) : null, exitCode: data?.exitCode ?? null, input: data ? plainText(data.input, 700) : null, output: data ? plainText(data.stdout, 500) : null, truncated: Boolean(data?.truncated) }; });
   const items = ordered.slice(0, CASE_ROWS).map((view, position) => {
     const score = cvssScore(view.finding?.cvssVector), wstg = caseWstgKeys(view.id, view.revision, cells);
-    return { ref: `F-${position + 1}`, caseId: view.id, revision: view.revision, title: plainText(view.title, 500), verdict: view.verdict, reviewStatus: view.reviewStatus, currentness: view.currentness, independentValidationCurrent: view.independentCurrent,
+    return { ref: `F-${position + 1}`, caseId: view.id, revision: view.revision, title: plainText(view.title, 500), verdict: view.verdict, reviewStatus: view.reviewStatus, currentness: view.currentness, independentValidationCurrent: view.independentCurrent, independenceReason: view.independenceReason ?? null,
       severity: view.finding?.severity ?? null, severityBasis: view.finding ? plainText(view.finding.basis, 1000) : null, likelihood: view.finding?.likelihood ? plainText(view.finding.likelihood, 800) : null, impact: view.finding?.impact ? plainText(view.finding.impact, 800) : null,
       cvss: score ? { vector: score.vector, baseScore: score.score, severity: score.severity } : null, cwe: view.finding?.cwe ?? [], wstg: wstg.map(key => ({ key, page: isWstgKey(key) ? wstgPageUrl(key, pages) ?? null : null })),
       policyKey: plainText(view.policyKey, 160), rootCauseKey: view.rootCauseKey ? plainText(view.rootCauseKey, 160) : null, assets: view.assetRefs.map(ref => ref.id), claims: view.claimRefs, independentEvidence: view.independentEvidenceRefs,
@@ -290,6 +294,13 @@ export function renderReport(index: LedgerIndex, context: ReportProjectionContex
     ...operatorBrief(index),
     `- Runtime that wrote this run: p2o ${mdText(meta.runtime.version || 'unknown version', 40)} · closure digest ${mdText(meta.runtime.hash.slice(0, 12), 16)}`,
     `- Reconciliation: ${meta.complete && projection.complete ? 'complete bounded record scan' : '**INCOMPLETE** — no completeness claim'}${projection.diagnostics.length ? `; diagnostics: ${projection.diagnostics.slice(0, 10).map(item => mdText(item, 200)).join('; ')}` : ''}`,
+    ...(() => {
+      const stored = typeof meta.outcome?.assessmentOutcome === 'string' ? meta.outcome.assessmentOutcome : undefined;
+      const storedReason = typeof meta.outcome?.reason === 'string' ? meta.outcome.reason : undefined;
+      const assessed = stored === 'complete' || stored === 'incomplete' ? stored : undefined;
+      const mismatch = assessed !== undefined && assessed !== completion.state;
+      return [`- Derived completion: **${completion.state}** — ${completion.remaining} obligation(s)${stored ? `; stored outcome: **${mdText(stored, 40)}**${storedReason ? ` (${mdText(storedReason, 80)})` : ''}${mismatch ? ' — **MISMATCH**: the stored completion differs from the derived completion; the stored value is not rewritten by this report.' : ''}` : ''}`];
+    })(),
     `- Views below are bounded (${ROWS} rows per list, ${CASE_ROWS} cases); omitted rows are counted and the complete data is in the portable bundle (\`/p2o export\`).`,
     ...(v2 ? [`- Records: first at ${mdText(index.records[0]?.at ?? 'n/a', 40)}, last at ${mdText(index.records.at(-1)?.at ?? 'n/a', 40)} (timestamps as stored; this report reads no clock)`,
       ...(meta.operator ? (['author', 'organization', 'team', 'classification'] as const).filter(name => meta.operator![name]).map(name => `- ${severityLabel(name)} (operator-supplied, unverified): ${mdText(meta.operator![name], 200)}`) : [])] : []), '',
@@ -405,14 +416,15 @@ export function renderReport(index: LedgerIndex, context: ReportProjectionContex
     '- Target-derived text was neutralized (links, images, HTML, formulas and control characters), not re-verified.',
     `- No execution authority, ticket, token, cookie or budget is part of, or restored by, this report. Format version ${version}.`, '');
 
-  const caseCsv = [csvRow(['case_id', 'revision', 'title', 'verdict', 'review_status', 'currentness', 'accepted_current', 'duplicate_of', 'independent_current', 'policy_key', 'claims', 'independent_evidence', 'stale_reasons', 'limitations']),
-    ...rows(cases, 5000).shown.map(view => csvRow([view.id, view.revision, view.title, view.verdict, view.reviewStatus, view.currentness, view.acceptedFinding, view.duplicateOf ?? '', view.independentCurrent, view.policyKey, view.claimRefs.join(' '), view.independentEvidenceRefs.join(' '), view.staleReasons.join('; '), view.limitations]))];
+  const caseCsv = [csvRow(['case_id', 'revision', 'title', 'verdict', 'review_status', 'currentness', 'accepted_current', 'duplicate_of', 'independent_current', 'independence_reason', 'policy_key', 'claims', 'independent_evidence', 'stale_reasons', 'limitations']),
+    ...rows(cases, 5000).shown.map(view => csvRow([view.id, view.revision, view.title, view.verdict, view.reviewStatus, view.currentness, view.acceptedFinding, view.duplicateOf ?? '', view.independentCurrent, view.independenceReason ?? '', view.policyKey, view.claimRefs.join(' '), view.independentEvidenceRefs.join(' '), view.staleReasons.join('; '), view.limitations]))];
   const coverageCsv = [csvRow(['plan_id', 'plan_revision', 'cell_id', 'asset_id', 'question_key', 'policy_key', 'actor_context', 'tenant_context', 'method_family', 'execution', 'assessment', 'effective_assessment', 'currentness', 'stale_reasons', 'reason', 'limitations']),
     ...rows(cells, 20000).shown.map(({ plan, cell }) => csvRow([plan.id, plan.revision, cell.id, cell.assetRef.id, cell.questionKey, cell.policyKey ?? '', cell.actorContext, cell.tenantContext, cell.methodFamily, cell.execution, cell.assessment, cell.effectiveAssessment, cell.currentness, cell.staleReasons.join('; '), cell.reason, cell.limitations]))];
   const files: ReportFile[] = [{ name: 'REPORT.md', body: `${out.join('\n')}\n` }, { name: 'cases.csv', body: `${caseCsv.join('\n')}\n` }, { name: 'coverage.csv', body: `${coverageCsv.join('\n')}\n` }];
   if (v2) files.push(...findingFiles(meta, index, orderedFindings(accepted), everyCell, pages), ...wstgChecklistFile(everyCell, cases, pages));
   const manifest = { format: 'p2o-report', version, runId: meta.runId, asOfSequence: meta.asOfSequence, records: index.records.length, historical: meta.historical, complete: meta.complete && projection.complete,
     ...(v2 ? { endReason: meta.endReason ?? null } : {}),
+    ...(v2 ? { kind: meta.kind ?? null, completion: completion.state, remaining: completion.remaining, outcome: meta.outcome ?? null } : {}),
     runtime: meta.runtime, counts: { acceptedCurrent: accepted.length, cases: cases.length, coverageCells: cells.length, openGaps: open.length, claims: projection.counts.candidates, ...(v2 ? { unrated: unrated.length } : {}) },
     files: files.map(file => ({ name: file.name, bytes: Buffer.byteLength(file.body), sha256: sha256Hex(file.body) })), authorityRestored: false,
     warning: 'Deterministic index of attributed committed state; not a verification or a safety statement. Redaction is best effort.' };

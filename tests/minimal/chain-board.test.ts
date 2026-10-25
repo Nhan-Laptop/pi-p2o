@@ -81,15 +81,15 @@ describe('chain plan rows: one lineage, one position (M1)', () => {
   it('refuses a chain row with no lineage and a half-declared position', async () => fixture(async h => {
     await h.command('--target ./source');
     const base = { kind: 'todo', title: 'Chain step without lineage', status: 'open', reason: 'Owner wrote the step before the claim it stands on' };
-    await expect(h.call('p2o_plan', { action: 'create', entry: { ...base, chainOf: 'chain-x', step: 1 } }))
+    await expect(h.call('p2o_plan_create', {entry: { ...base, chainOf: 'chain-x', step: 1 } }))
       .rejects.toThrow(/CHAIN_LINEAGE: a chain step must cite the claim it consumes \(claimRefs\); a plan row with no lineage cannot hold a link/);
-    await expect(h.call('p2o_plan', { action: 'create', entry: { ...base, chainOf: 'chain-x' } })).rejects.toThrow(/needs both chainOf and step/);
-    await expect(h.call('p2o_plan', { action: 'create', entry: { ...base, step: 2 } })).rejects.toThrow(/needs both chainOf and step/);
+    await expect(h.call('p2o_plan_create', {entry: { ...base, chainOf: 'chain-x' } })).rejects.toThrow(/needs both chainOf and step/);
+    await expect(h.call('p2o_plan_create', {entry: { ...base, step: 2 } })).rejects.toThrow(/needs both chainOf and step/);
     // A goal may not carry a link at all: the fields belong to the todo that the work hangs from.
-    await expect(h.call('p2o_plan', { action: 'create', entry: { kind: 'goal', title: 'A goal with a chain link', status: 'active', reason: 'Owner put a link on the wrong kind', criteria: ['bounded'], chainOf: 'chain-x', step: 1 } }))
+    await expect(h.call('p2o_plan_create', {entry: { kind: 'goal', title: 'A goal with a chain link', status: 'active', reason: 'Owner put a link on the wrong kind', criteria: ['bounded'], chainOf: 'chain-x', step: 1 } }))
       .rejects.toThrow(/Only a todo holds a chain link/);
     // A claim reference must resolve to a same-run candidate record, so the board can read what it gains.
-    await expect(h.call('p2o_plan', { action: 'create', entry: { ...base, chainOf: 'chain-x', step: 1, claimRefs: ['rec-missing'] } }))
+    await expect(h.call('p2o_plan_create', {entry: { ...base, chainOf: 'chain-x', step: 1, claimRefs: ['rec-missing'] } }))
       .rejects.toThrow(/Unknown plan claim rec-missing/);
   }));
 
@@ -104,21 +104,21 @@ describe('chain plan rows: one lineage, one position (M1)', () => {
     const first = (await record('chain-a')).details;
     const second = (await record('chain-b', { needs: [READ], gained: [ADMIN] })).details;
     const third = (await record('chain-c', { needs: [ADMIN] })).details;
-    const create = (step: number, claimRef: string, extra: Record<string, unknown> = {}) => h.call('p2o_plan', { action: 'create', entry: {
+    const create = (step: number, claimRef: string, extra: Record<string, unknown> = {}) => h.call('p2o_plan_create', {entry: {
       kind: 'todo', title: `Chain step ${step}`, status: 'open', reason: `Chain step ${step} of 3, written for the M1 acceptance fixture`,
       chainOf: 'chain-m1', step, claimRefs: [claimRef], ...extra } });
     const steps = [await create(1, first.id), await create(2, second.id, { needs: [READ] }), await create(3, third.id, { needs: [ADMIN] })].map(result => result.details);
 
-    const before = (await h.call('p2o_plan', { action: 'list', kind: 'todo', limit: 20 })).details;
+    const before = (await h.call('p2o_board', { board: 'plans', kind: 'todo', limit: 20 })).details;
     expect(before.chains).toEqual(['chain chain-m1 0/3 · next: step 1 (ready) · waiting on: http.request (internal-api), cred.session (internal-api)']);
 
     // Step 1 now stands on a claim that actually ran and gains the capability step 2 consumes.
     const demonstratedFirst = (await record('chain-a', { supersedes: first.id, closure: 'confirmed', execution: 'tested', proof: 'live_reproduction', policyBasis: 'boundary_invariant', gained: [READ] })).details;
-    await h.call('p2o_plan', { action: 'revise', id: steps[0]!.id, revision: steps[0]!.revision, entry: {
+    await h.call('p2o_plan_revise', {id: steps[0]!.id, revision: steps[0]!.revision, entry: {
       kind: 'todo', title: 'Chain step 1', status: 'done', reason: 'Step 1 ran against the recorded surface and now hands out the request capability',
       chainOf: 'chain-m1', step: 1, claimRefs: [demonstratedFirst.id] } });
 
-    const after = (await h.call('p2o_plan', { action: 'list', kind: 'todo', limit: 20 })).details;
+    const after = (await h.call('p2o_board', { board: 'plans', kind: 'todo', limit: 20 })).details;
     // Only step 2 moved: step 3 still waits on a capability nothing demonstrated gains yet.
     expect(after.chains).toEqual(['chain chain-m1 1/3 · next: step 2 (ready) · waiting on: cred.session (internal-api)']);
     const stepRows = after.entries.filter((entry: any) => entry.chainOf === 'chain-m1').sort((left: any, right: any) => left.step - right.step);
@@ -131,8 +131,8 @@ describe('chain plan rows: one lineage, one position (M1)', () => {
     const record = (candidate: string) => h.call('p2o_candidate', { candidate, surface: '/report-fixture', risk: 'authorization', closure: 'open_proof_gap', execution: 'not_tested',
       proof: 'static_trace', negativeControls: [], policyBasis: 'inferred', expectedPolicy: 'Declared fixture actor/object boundary', limitations: 'Nothing executed in this step yet', evidenceRefs: [observation.evidenceId] });
     const first = (await record('chain-a')).details, second = (await record('chain-b')).details;
-    await h.call('p2o_plan', { action: 'create', entry: { kind: 'todo', title: 'Chain step one', status: 'open', reason: 'First row at this position in the fixture chain', chainOf: 'chain-dup', step: 1, claimRefs: [first.id] } });
-    await expect(h.call('p2o_plan', { action: 'create', entry: { kind: 'todo', title: 'Chain step one again', status: 'open', reason: 'Second row at the same position in the fixture chain', chainOf: 'chain-dup', step: 1, claimRefs: [second.id] } }))
+    await h.call('p2o_plan_create', {entry: { kind: 'todo', title: 'Chain step one', status: 'open', reason: 'First row at this position in the fixture chain', chainOf: 'chain-dup', step: 1, claimRefs: [first.id] } });
+    await expect(h.call('p2o_plan_create', {entry: { kind: 'todo', title: 'Chain step one again', status: 'open', reason: 'Second row at the same position in the fixture chain', chainOf: 'chain-dup', step: 1, claimRefs: [second.id] } }))
       .rejects.toThrow(/Duplicate chain step 1 in chain-dup/);
   }));
 });

@@ -50,12 +50,12 @@ describe('one terminal state per settled task (P10)', () => {
 
   it('carries the state in the task list projection', async () => fixture(async h => {
     const built = await populate(h); // its task is reviewed, so it must read as done rather than merely settled
-    const list: any = (await h.call('p2o_task', { action: 'list' })).details;
+    const list: any = (await h.call('p2o_board', { board: 'tasks' })).details;
     const row = list.tasks.find((entry: any) => entry.id === built.task.id);
     expect(row).toMatchObject({ status: 'reviewed', terminal: 'done' });
     // An open task states no terminal state at all, so an empty field cannot be read as "done".
-    const created: any = (await h.call('p2o_task', { action: 'create', draft: { role: 'recon', surface: '/projection', risk: 'recon', question: 'Second bounded mapping question for the projection', expectedTrue: 'A surface list', expectedFalse: 'No surface', stopCondition: 'One review', roleReason: 'Mapping needs a recon worker', methodReason: 'Reading routes is the smallest mapping method', prerequisites: [], evidenceIds: [] } })).details;
-    const after: any = (await h.call('p2o_task', { action: 'list' })).details;
+    const created: any = (await h.call('p2o_task_create', {draft: { role: 'recon', surface: '/projection', risk: 'recon', question: 'Second bounded mapping question for the projection', expectedTrue: 'A surface list', expectedFalse: 'No surface', stopCondition: 'One review', roleReason: 'Mapping needs a recon worker', methodReason: 'Reading routes is the smallest mapping method', prerequisites: [], evidenceIds: [] } })).details;
+    const after: any = (await h.call('p2o_board', { board: 'tasks' })).details;
     expect(after.tasks.find((entry: any) => entry.id === created.id).terminal).toBeUndefined();
   }));
 });

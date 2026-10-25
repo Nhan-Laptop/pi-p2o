@@ -17,6 +17,12 @@ export class InertSandbox extends Sandbox {
     if (!path) return;
     try { appendFileSync(path, `${JSON.stringify({ at: Date.now(), ...line })}\n`); } catch { /* journaling is best effort */ }
   }
+  provisionCount = 0;
+  failProvision = false;
+  override async provision(assignment: string) {
+    this.provisionCount += 1; this.journal({ op: 'provision', assignment });
+    if (this.failProvision) throw new Error('assignment scratch is not writable');
+  }
   override async start() { this.journal({ op: 'start' }); if (this.failStart) throw new Error('docker unavailable'); }
   override async stop() { this.stopCount += 1; this.journal({ op: 'stop' }); if (this.cleanupFailure) throw new Error('cleanup not verified'); }
   override async exec(command: string, seconds = 0, _signal?: AbortSignal, workdir = '/work', _onRunning?: () => void, onOutput?: OutputObserver) {

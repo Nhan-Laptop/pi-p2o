@@ -94,7 +94,7 @@ export interface BrokerDeps {
   research?(request: Record<string, unknown>, worker: WorkerRegistration): Promise<unknown>;
   candidate?(input: unknown, worker: WorkerRegistration): Promise<unknown>;
   /** planning_update.md P14.2/P14.3: run-scoped payload artifacts and environment recipes (`op` names the action). */
-  lab?(op: 'payload_write' | 'payload_read', request: Record<string, unknown>, worker: WorkerRegistration): Promise<unknown>;
+  lab?(op: 'payload_write' | 'payload_read' | 'payload_materialize', request: Record<string, unknown>, worker: WorkerRegistration): Promise<unknown>;
   /**
    * P14.3: the environment is orchestrated by the host, but every command it runs is an ordinary admitted target command in the
    * caller's own sandbox. `control.admit`/`control.exec` are the broker's own admission path, so a recipe cannot bypass it.
@@ -238,8 +238,9 @@ export class Broker {
             send({ ok: true, workerId });
             return;
           }
+          const brokerRequestId = request?.brokerRequestId;
           const response = receiptOnly && request?.op !== 'mutation_ack' ? {ok:false,error:'Receipt-only connection; no execution or mutation authority'} : await this.dispatch(workerId, request).catch(error => ({ok:false,error:errText(error)}));
-          send({ id: request?.id, ...response });
+          send({ brokerRequestId, ...response });
         }).catch(error => { fail(String(error instanceof Error ? error.message : error).slice(0, 400)); });
       }
       if (buffer.length > (this.limits.maxLineBytes ?? MAX_LINE_BYTES)) { fail('Request too large'); socket.destroy(); }
@@ -261,7 +262,9 @@ export class Broker {
     const registration = this.registrations.get(workerId);
     if (!registration) return {ok:false,error:'Worker is not registered'};
     const op = text(request?.op, 32);
-    const {id:_id,op:_op,requestId:_requestId,...submitted} = request;
+    const {brokerRequestId:_brokerRequestId,op:_op,requestId:_requestId,...submitted} = request;
+    // The correlation field is transport, not payload: knowledge/graph/lab validators must not see it.
+    if (request && typeof request === 'object') delete request.brokerRequestId;
     const mutation = (kind: string, payload: unknown): MutationRequest => {
       if (request?.requestId !== undefined && (typeof request.requestId !== 'string' || !/^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,79}$/.test(request.requestId))) throw Error('Invalid mutation request ID');
       return {actorId:workerId,requestId:request.requestId ?? randomUUID(),payload:{op:kind,submitted:payload}};
@@ -296,11 +299,12 @@ export class Broker {
         if (!this.deps.candidate) return { ok: false, error: 'Candidate service unavailable' };
         return attempt(() => this.deps.candidate!(request?.candidate, registration));
       }
-      case 'payload_write': case 'payload_read': {
-        // Reading a payload is a bounded read of run state and writing one is coordination; neither is a target operation.
+      case 'payload_write': case 'payload_read': case 'payload_materialize': {
+        // Reading a payload is a bounded read of run state, writing one is coordination, and materializing one is a host
+        // scratch write; none is a target operation.
         if (!this.deps.lab) return { ok: false, error: 'Payload service unavailable' };
-        graphObject(submitted, op === 'payload_read' ? ['id'] : ['kind', 'name', 'body'], 'Payload request');
-        return attempt(() => this.deps.lab!(op as 'payload_write' | 'payload_read', submitted, registration));
+        graphObject(submitted, op === 'payload_write' ? ['kind', 'name', 'body'] : ['id'], 'Payload request');
+        return attempt(() => this.deps.lab!(op as 'payload_write' | 'payload_read' | 'payload_materialize', submitted, registration));
       }
       case 'environment': {
         if (!this.deps.environment) return { ok: false, error: 'Environment service unavailable' };
@@ -527,7 +531,7 @@ export function boundedResponse(payload: unknown): string {
     encoded = JSON.stringify(value);
   }
   return Buffer.byteLength(encoded) <= MAX_LINE_BYTES - 512 ? encoded
-    : JSON.stringify({ id: value.id, ok: false, error: 'Response exceeds broker frame limit; narrow the request' });
+    : JSON.stringify({ brokerRequestId: value.brokerRequestId, ok: false, error: 'Response exceeds broker frame limit; narrow the request' });
 }
 
 function errText(error: unknown): string { return (error instanceof Error ? error.message : String(error)).slice(0, 600); }
@@ -585,9 +589,9 @@ export class BrokerClient {
             else { this.fail(String(record.error ?? 'owner rejected the worker ticket')); finish(new Error(this.broken!)); }
             continue;
           }
-          const waiter = this.pending.get(record.id);
+          const waiter = this.pending.get(record.brokerRequestId);
           if (!waiter) continue;
-          this.pending.delete(record.id);
+          this.pending.delete(record.brokerRequestId);
           if (record.ok === true) waiter.resolve(record);
           else waiter.reject(new Error(String(record.error ?? 'broker request failed')));
         }
@@ -612,20 +616,20 @@ export class BrokerClient {
       options.signal?.throwIfAborted();
       const socket = this.socket;
       if (!socket) throw new Error(this.broken ?? 'owner broker unavailable');
-      const id = ++this.sequence, requestId = options.requestId ?? randomUUID();
-      if (Buffer.byteLength(JSON.stringify({ ...payload,id,op,requestId })) > MAX_LINE_BYTES - 1) throw new Error('Request exceeds broker frame limit; narrow the report or request');
+      const brokerRequestId = ++this.sequence, requestId = options.requestId ?? randomUUID();
+      if (Buffer.byteLength(JSON.stringify({ ...payload,brokerRequestId,op,requestId })) > MAX_LINE_BYTES - 1) throw new Error('Request exceeds broker frame limit; narrow the report or request');
       const timeoutMs = options.timeoutMs === null ? null : options.timeoutMs ?? this.options.requestMs ?? 60_000;
       return new Promise<T>((resolve, reject) => {
         const abort = () => this.fail('worker request cancelled; revoke its executor access');
         const cleanup = () => { if (timer) clearTimeout(timer); options.signal?.removeEventListener('abort',abort); };
-        const timer = timeoutMs === null ? undefined : setTimeout(() => { this.pending.delete(id); cleanup(); reject(new Error(`p2o ${op} request timed out after ${timeoutMs}ms`)); }, timeoutMs);
-        this.pending.set(id, {
+        const timer = timeoutMs === null ? undefined : setTimeout(() => { this.pending.delete(brokerRequestId); cleanup(); reject(new Error(`p2o ${op} request timed out after ${timeoutMs}ms`)); }, timeoutMs);
+        this.pending.set(brokerRequestId, {
           resolve: value => { cleanup(); resolve(value as T); },
           reject: error => { cleanup(); reject(error); },
         });
         options.signal?.addEventListener('abort',abort,{once:true});
         if (options.signal?.aborted) { abort(); return; }
-        socket.write(`${JSON.stringify({ ...payload, id, op, requestId })}\n`);
+        socket.write(`${JSON.stringify({ ...payload, brokerRequestId, op, requestId })}\n`);
       });
     };
     const next = this.chain.then(run, run);

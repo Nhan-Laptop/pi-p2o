@@ -3,9 +3,9 @@ import { ExecutorPool } from '../../src/executors.js';
 import { InertSandbox } from './helpers/inert-sandbox.js';
 const target={kind:'directory' as const,path:'/inert'};
 
-function fixture(mode:'shared'|'isolated'='isolated',cap=2) {
+function fixture(mode:'shared'|'isolated'='isolated',cap=2,provisionFails=false) {
   const primary=new InertSandbox(target),children:InertSandbox[]=[];let active=true;
-  const pool=new ExecutorPool(mode,cap,primary,()=>{const s=new InertSandbox(target);children.push(s);return s;},()=>active);
+  const pool=new ExecutorPool(mode,cap,primary,()=>{const s=new InertSandbox(target);s.failProvision=provisionFails;children.push(s);return s;},()=>active);
   return {pool,primary,children,deactivate:()=>{active=false;}};
 }
 describe('run-owned isolated executors',()=>{
@@ -26,11 +26,28 @@ describe('run-owned isolated executors',()=>{
   });
   it('fails closed on a source snapshot mismatch without leaking ownership',async()=>{
     const f=fixture();f.primary.sourceManifest={'file':'initial'};await expect(f.pool.acquire('a')).rejects.toThrow('snapshot changed');
-    expect(f.pool.snapshot().ownedAssignmentExecutors).toBe(1);await f.pool.stop();expect(f.children[0].stopCount).toBe(1);
+    expect(f.pool.snapshot().ownedAssignmentExecutors).toBe(0);expect(f.children[0].stopCount).toBe(1);
+    await expect(f.pool.use('a',undefined,s=>s.exec('must not execute'))).rejects.toThrow('unavailable');
+  });
+  it('fails before publishing a lease when the assignment scratch cannot be provisioned',async()=>{
+    const f=fixture('isolated',2,true);await expect(f.pool.acquire('a')).rejects.toThrow('EXECUTOR_PROVISION_FAILED');
+    expect(f.pool.snapshot().ownedAssignmentExecutors).toBe(0);expect(f.children[0].stopCount).toBe(1);
+    expect(f.children[0].provisionCount).toBe(1);
+    await expect(f.pool.use('a',undefined,s=>s.exec('must not execute'))).rejects.toThrow('unavailable');
   });
   it('does not drop failed cleanup and rejects all queued/new work after owner stop',async()=>{
     const f=fixture();await f.pool.acquire('a');f.children[0].cleanupFailure=true;await expect(f.pool.stop()).rejects.toThrow('unresolved');expect(f.pool.snapshot().ownedAssignmentExecutors).toBe(1);
     await expect(f.pool.use('a',undefined,s=>s.exec('must not execute'))).rejects.toThrow('inactive');f.children[0].cleanupFailure=false;await f.pool.stop();expect(f.pool.snapshot().ownedAssignmentExecutors).toBe(0);
+  });
+  it('materializes payload bytes in the assignment scratch without consuming a target-operation slot',async()=>{
+    const f=fixture('isolated',1);await f.pool.acquire('a');
+    const payload='payload-00000000-0000-4000-8000-000000000000';
+    const written=await f.pool.writeScratch('a',`payload/${payload}`,Buffer.from('GET / HTTP/1.1\r\n\r\n'),undefined,'/work/a',0o500);
+    expect(written).toMatchObject({path:`payload/${payload}`,root:'/work/a',bytes:18,mode:0o500});
+    expect(f.pool.snapshot()).toMatchObject({runningTargetOperations:0,waitingTargetOperations:0});
+    expect(f.children[0].writes).toEqual([expect.objectContaining({path:`payload/${payload}`,workdir:'/work/a',mode:0o500})]);
+    await expect(f.pool.writeScratch('missing','payload/x',Buffer.from('x'),undefined,'/work/missing')).rejects.toThrow('unavailable');
+    await f.pool.stop();
   });
   it('shared mode keeps exactly one executor and an explicit serial operation ceiling',async()=>{
     const f=fixture('shared',1);await f.pool.acquire('a');await f.pool.use('a',undefined,s=>s.exec('shared'));

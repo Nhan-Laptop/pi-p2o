@@ -7,7 +7,7 @@ Schema 7. Đã push và cài; toàn K0–K7 vẫn mở. Bản chi tiết (kể c
 - `knowledge_heads` là **index dựng lại được** (task/plan/case/cell/candidate/gap/phase/report/evidence head) và `knowledge_links` nối các
   ID đã giữ, nằm trong `assessment.sqlite`; không có store hay Planner thứ hai, không xóa revision cũ hay observation thô. Candidate head tách theo actor + handle.
 - `src/context.ts` thuần: sinh descriptor và kiểm tra checkpoint + tail; không dispatch, không I/O, không authority. Support của case/cell bị vô hiệu
-  theo link trong cùng transaction (chỉ **hạ**, không nâng proof). Nhãn head `accepted/reported` chỉ để điều hướng — proof vẫn đọc qua `p2o_case`/`p2o_coverage`.
+  theo link trong cùng transaction (chỉ **hạ**, không nâng proof). Nhãn head `accepted/reported` chỉ để điều hướng — proof vẫn đọc qua `p2o_board board=cases|coverage`.
 - **Packet request-local** (Planner ≤12 KiB, Worker/reporting ≤8 KiB, digest cho người ≤16 KiB): run/role/task, sequence barrier, số đếm chính xác,
   shown/omitted, ID để truy xuất, thay đổi, attention, các trang gap/review xoay vòng và hàng relevance. Mỗi request thay packet cũ (không append, không sửa system prompt/tools,
   không tạo model turn hay retry). Hash chỉ nhận diện bytes, không chứng minh model hiểu.

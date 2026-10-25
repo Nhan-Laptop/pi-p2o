@@ -77,9 +77,14 @@ export class EvidenceStore {
         limitations: 'Bounded redacted tool output; command semantics and claimed effect require review.' } });
     return id;
   }
-  candidate(by: string, input: Candidate): Promise<AssessmentRecord> {
+  candidate(by: string, input: Candidate, taskRef?: string): Promise<AssessmentRecord> {
     const task = this.pending.then(async () => {
       validateCandidate(input);
+      // W4: the host, not the caller, stamps which task produced the claim. It is how the automatic validation task names its
+      // predecessor and how a case finds the validation of this exact claim.
+      if (taskRef !== undefined && !/^[a-z0-9][a-z0-9-]{0,79}$/.test(taskRef)) throw Error('Invalid candidate task reference');
+      const storedInput = { ...input } as Record<string, unknown>;
+      delete storedInput.taskRef;
       // P14.2/P14.3: a payload or environment reference is a claim that the artifact exists in this run, so a dangling or foreign
       // id fails closed instead of reading as replayable.
       if (input.payloadRef !== undefined && !await payloadExists(this.path, input.payloadRef)) throw new Error(`Unknown payload reference ${input.payloadRef}; store the payload first`);
@@ -139,8 +144,8 @@ export class EvidenceStore {
         workerId: by === 'owner' ? undefined : by, kind: 'candidate', text: `${input.candidate}: ${input.closure} (${input.execution}, ${input.proof}); agent claim, not automatic verification`,
         surface: input.surface, risk: input.risk, outcome: input.closure, refs: input.evidenceRefs,
         supersedes: input.supersedes, resolves: input.resolves,
-        // Stamped after the spread, so a caller cannot claim a payload hash it did not run.
-        data: { ...input, ...(payloadRef ? { payloadSha256: payloadRef.sha256 } : {}), ...(environmentRef ? { environmentFingerprint: environmentRef.fingerprint } : {}) } };
+        // Stamped after the spread, so a caller cannot claim a payload hash or origin task it did not run.
+        data: { ...storedInput, ...(taskRef ? { taskRef } : {}), ...(payloadRef ? { payloadSha256: payloadRef.sha256 } : {}), ...(environmentRef ? { environmentFingerprint: environmentRef.fingerprint } : {}) } };
       await appendRecord(this.path, record);
       return record;
     });

@@ -18,26 +18,26 @@ const draft = (assetId: string, required: string[]) => ({ question: 'Does the bo
 async function started(h: any, required: string[]) {
   await h.command('--target ./source');
   const asset = (await h.call('p2o_graph', { action: 'record', batch: { assets: [{ asset: { kind: 'endpoint', key: 'GET /integrity-fixture' } }] } })).details.acks[0];
-  const task = (await h.call('p2o_task', { action: 'create', draft: draft(asset.entityId, required) })).details, running = (await h.call('p2o_task', { action: 'start', id: task.id })).details;
+  const task = (await h.call('p2o_task_create', {draft: draft(asset.entityId, required) })).details, running = (await h.call('p2o_task_start', {id: task.id })).details;
   const own = (await h.call('p2o_shell', { command: 'printf integrity-own' })).details;
   return { asset, task, running, own };
 }
-const head = async (h: any, id: string) => (await h.call('p2o_task', { action: 'list', id })).details;
+const head = async (h: any, id: string) => (await h.call('p2o_board', { board: 'tasks', id })).details;
 
 describe('review integrity', () => {
   it('annotates a review with the receipt authors and the output fields no record backs, without changing the decision', async () => fixture(async h => {
     const s = await started(h, ['evidence', 'gaps', 'assets']);
-    const reviewed = (await h.call('p2o_task', { action: 'review', id: s.task.id, revision: s.running.revision, reason: 'Owner reviewed the exact inert receipt for bounded coordination', evidenceIds: [s.own.evidenceId] })).details;
+    const reviewed = (await h.call('p2o_task_review', {id: s.task.id, revision: s.running.revision, reason: 'Owner reviewed the exact inert receipt for bounded coordination', evidenceIds: [s.own.evidenceId] })).details;
     expect(reviewed.status).toBe('reviewed'); expect(reviewed.reviewIntegrity).toEqual({ assignee: 'owner', foreignEvidence: [], contractGap: ['gaps'], contractUnchecked: ['assets'] });
     expect((await head(h, s.task.id)).reviewIntegrity.contractGap).toEqual(['gaps']);
   }));
 
   it('records nothing when the mode is off, and never marks a field with a record as missing', async () => {
     await fixture(async h => { await settings(h, { reviewIntegrity: 'off' }); const s = await started(h, ['evidence']);
-      const reviewed = (await h.call('p2o_task', { action: 'review', id: s.task.id, revision: s.running.revision, reason: 'Owner reviewed the exact inert receipt for bounded coordination', evidenceIds: [s.own.evidenceId] })).details;
+      const reviewed = (await h.call('p2o_task_review', {id: s.task.id, revision: s.running.revision, reason: 'Owner reviewed the exact inert receipt for bounded coordination', evidenceIds: [s.own.evidenceId] })).details;
       expect(reviewed).not.toHaveProperty('reviewIntegrity'); });
     await fixture(async h => { const s = await started(h, ['evidence']);
-      expect((await h.call('p2o_task', { action: 'review', id: s.task.id, revision: s.running.revision, reason: 'Owner reviewed the exact inert receipt for bounded coordination', evidenceIds: [s.own.evidenceId] })).details.reviewIntegrity.contractGap).toEqual([]); });
+      expect((await h.call('p2o_task_review', {id: s.task.id, revision: s.running.revision, reason: 'Owner reviewed the exact inert receipt for bounded coordination', evidenceIds: [s.own.evidenceId] })).details.reviewIntegrity.contractGap).toEqual([]); });
   });
 
 });

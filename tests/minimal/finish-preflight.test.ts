@@ -25,16 +25,16 @@ describe('finish preflight', () => {
     await settings(h, { finishGate: 'confirm' });
     const text = finishText(await h.call('p2o_finish', {}));
     expect(text).toContain('Container removal verified'); expect(text).toContain('FINISH PREFLIGHT (host check)');
-    const report = await readFile(join(h.root, '.p2o-reports', `report-${await h.runId()}`, 'REPORT.md'), 'utf8');
+    const report = await readFile(join(h.root, '.p2o-reports', `report-${await h.runId()}-final`, 'REPORT.md'), 'utf8');
     expect(report).toContain('## REMAINING WORK'); expect(report).toMatch(/- Completion: \*\*incomplete\*\*/); expect(report).toMatch(/\| PENDING_CASE \| obligation \| 1 \|/); expect(report).toMatch(/\| UNRATED_ACCEPTED_CASE \| obligation \| 1 \|/);
   }));
 
   it('reports a clean block once every item is resolved', async () => fixture(async h => {
     const built = await populate(h);
-    await h.call('p2o_case', { action: 'rate', id: built.accepted.id, revision: built.accepted.revision, finding: rating });
-    const pending = (await h.call('p2o_case', { action: 'view', id: built.pending.id })).details;
-    const { currentness, staleReasons, independentCurrent, acceptedFinding, readyToRate, canonicalCaseId, recordId, runId, revision, ...draft } = pending;
-    await h.call('p2o_case', { action: 'revise', id: built.pending.id, revision, entry: { ...draft, reviewStatus: 'withdrawn', reviewReason: 'Withdrawn: duplicate of the accepted fixture case' } });
+    await h.call('p2o_case_rate', {id: built.accepted.id, revision: built.accepted.revision, finding: rating });
+    const pending = (await h.call('p2o_board', { board: 'cases', id: built.pending.id })).details;
+    const { currentness, staleReasons, independentCurrent, independenceReason, acceptedFinding, readyToRate, canonicalCaseId, recordId, runId, revision, ...draft } = pending;
+    await h.call('p2o_case_revise', {id: built.pending.id, revision, entry: { ...draft, reviewStatus: 'withdrawn', reviewReason: 'Withdrawn: duplicate of the accepted fixture case' } });
     const text = finishText(await h.call('p2o_finish', {}));
     // M4: the fixture's one demonstrated claim has no successor and no wall, so the block lists it — as an advisory, because p2o
     // has no finish gate. Nothing is blocking, which is what "clean" now means.
@@ -50,13 +50,13 @@ describe('finish preflight', () => {
 
   it('lists a High finding with no independent validation as advisory, and drops it once a waiver is recorded', async () => fixture(async h => {
     const built = await populate(h), high = { severity: 'high', basis: 'Confirmed boundary deviation reaching beyond the tested identity’s own object in the fixture' };
-    await h.call('p2o_case', { action: 'rate', id: built.accepted.id, revision: built.accepted.revision, finding: high });
+    await h.call('p2o_case_rate', {id: built.accepted.id, revision: built.accepted.revision, finding: high });
     const block = (text: string) => text.slice(text.indexOf('FINISH PREFLIGHT'));
     expect(block(finishText(await h.call('p2o_finish', {})))).toMatch(/- HIGH_WITHOUT_INDEPENDENCE \(1\)/);
   }));
   it('does not list it when the rating carries an independence waiver', async () => fixture(async h => {
     const built = await populate(h);
-    await h.call('p2o_case', { action: 'rate', id: built.accepted.id, revision: built.accepted.revision, finding: { severity: 'high', basis: 'Confirmed boundary deviation reaching beyond the tested identity’s own object in the fixture', independenceWaiver: 'Solo run: no second actor was available to repeat it' } });
+    await h.call('p2o_case_rate', {id: built.accepted.id, revision: built.accepted.revision, finding: { severity: 'high', basis: 'Confirmed boundary deviation reaching beyond the tested identity’s own object in the fixture', independenceWaiver: 'Solo run: no second actor was available to repeat it' } });
     expect(finishText(await h.call('p2o_finish', {}))).not.toContain('HIGH_WITHOUT_INDEPENDENCE');
   }));
 
@@ -67,7 +67,7 @@ describe('finish preflight', () => {
 
   it('flags a surface/coverage note that never became a counted cell, advisory only', async () => fixture(async h => {
     await h.command('--target ./source');
-    await h.call('p2o_coverage', { action: 'plan-create', plan: { title: 'Denominator not yet built', status: 'active', reason: 'Plan created before any cell exists', exclusions: [], unknownScope: ['Full surface not yet enumerated'] } });
+    await h.call('p2o_coverage_plan', {plan: { title: 'Denominator not yet built', status: 'active', reason: 'Plan created before any cell exists', exclusions: [], unknownScope: ['Full surface not yet enumerated'] } });
     await h.call('p2o_note', { kind: 'coverage', text: 'Looked at the login surface informally', surface: '/login', risk: 'authz', outcome: 'clean' });
     await h.call('p2o_surface', { component: 'login-api', entryPoint: 'POST /login' });
     const result = await h.call('p2o_finish', {});
@@ -87,7 +87,7 @@ describe('finish preflight', () => {
   }));
   it('does not flag it once the stated objective is recorded as a goal', async () => fixture(async h => {
     await h.command('--target ./source --goal "Assess the login boundary for IDOR"');
-    await h.call('p2o_plan', { action: 'create', entry: { kind: 'goal', title: 'Assess the login boundary for IDOR', status: 'proposed', reason: 'Operator-stated objective turned into a tracked goal', criteria: ['Login IDOR surface enumerated'], exclusions: ['Out of scope: payment flows'], proof: { kind: 'capability', capability: { kind: 'http.request', subject: 'login' } } } });
+    await h.call('p2o_plan_create', {entry: { kind: 'goal', title: 'Assess the login boundary for IDOR', status: 'proposed', reason: 'Operator-stated objective turned into a tracked goal', criteria: ['Login IDOR surface enumerated'], exclusions: ['Out of scope: payment flows'], proof: { kind: 'capability', capability: { kind: 'http.request', subject: 'login' } } } });
     expect(finishText(await h.call('p2o_finish', {}))).not.toContain('NO_GOAL_RECORDED');
   }));
   it('does not flag a run with no stated --goal at all', async () => fixture(async h => {

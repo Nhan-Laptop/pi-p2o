@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { sha256Hex } from './validate.js';
 import { appendGeneratedRecords, appendRecords, ownerNoteFrontier, readGeneratedRecords, readLedger, type AssessmentRecord, type LedgerIndex, type RecordAck } from './records.js';
 import { graphCanonical } from './state/graph.js';
-import { taskFrontier, taskRevisionAt, type AssessmentTask } from './tasks.js';
+import { taskFrontier, taskRevisionAt, taskReferenceSuperseded, type AssessmentTask } from './tasks.js';
 import { caseViews, type CaseContext, type CaseView } from './cases.js';
 import type { MutationRequest } from './state/store.js';
 import { LedgerBoard } from './board.js';
@@ -44,7 +44,7 @@ export function coverageViews(index:LedgerIndex,context:CoverageContext):Coverag
   const cellView=(cell:CoverageCellEntry,plan:CoveragePlanEntry):CoverageCellView=>{const reasons:string[]=[];let unknown=false;
     if(cell.retired||!plan.cellIds.includes(cell.id))return {...cell,currentness:'retired',staleReasons:[],effectiveAssessment:cell.assessment,effectiveExecution:cell.execution,reviewed:false};
     if(cell.targetRevision!==currentTarget)reasons.push(`stale-target:${cell.targetRevision}->${currentTarget}`);const asset=context.assetRevision?.(cell.assetRef.id);if(!context.assetRevision)unknown=true;else if(asset===undefined)reasons.push(`missing-asset:${cell.assetRef.id}`);else if(cell.assetRef.revision===undefined)reasons.push(`unpinned-asset:${cell.assetRef.id}`);else if(asset!==cell.assetRef.revision)reasons.push(`stale-asset:${cell.assetRef.id}@r${cell.assetRef.revision}->r${asset}`);
-    for(const ref of cell.taskRefs){const task=taskAt(index,ref.taskId,ref.revision),head=tasks.find(item=>item.id===ref.taskId);if(!task)reasons.push(`missing-task:${ref.taskId}@r${ref.revision??'?'}`);else if(head?.revision!==ref.revision)reasons.push(`superseded-task:${ref.taskId}@r${ref.revision}`);}
+    for(const ref of cell.taskRefs){const task=taskAt(index,ref.taskId,ref.revision),head=tasks.find(item=>item.id===ref.taskId);if(!task)reasons.push(`missing-task:${ref.taskId}@r${ref.revision??'?'}`);else if(head&&taskReferenceSuperseded(index,ref.taskId,ref.revision))reasons.push(`superseded-task:${ref.taskId}@r${ref.revision}`);}
     for(const id of cell.claimRefs){const claim=index.byId.get(id),key=claim?.data?.candidate;if(claim?.kind!=='candidate'||typeof key!=='string')reasons.push(`missing-claim:${id}`);else if(claims.get(key)?.id!==id)reasons.push(`superseded-claim:${id}`);}
     for(const ref of cell.caseRefs){const item=caseMap.get(ref.caseId);if(!item)reasons.push(`missing-case:${ref.caseId}`);else if(item.revision!==ref.revision)reasons.push(`superseded-case:${ref.caseId}@r${ref.revision}`);else if(item.currentness!=='current')reasons.push(`stale-case:${ref.caseId}`);}
     for(const id of [...cell.evidenceRefs,...cell.negativeControlRefs])if(index.byId.get(id)?.kind!=='evidence')reasons.push(`missing-evidence:${id}`);

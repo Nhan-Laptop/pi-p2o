@@ -95,7 +95,7 @@ describe('export writes, ends nothing; stop records the obligation (M3)', () => 
     // The run is still active: a second export is allowed and writes a new directory rather than overwriting.
     const second = await h.call('p2o_finish', { export: true });
     expect(second.details.reportPath).not.toBe(first.details.reportPath);
-    expect((await h.call('p2o_task', { action: 'list' })).details.total).toBeGreaterThan(0);
+    expect((await h.call('p2o_board', { board: 'tasks' })).details.total).toBeGreaterThan(0);
   }));
 
   it('reaches complete only once the primitive is walled, and says so in the report', async () => fixture(async h => {
@@ -107,7 +107,7 @@ describe('export writes, ends nothing; stop records the obligation (M3)', () => 
     expect(report).toContain('PRIMITIVE_UNCHAINED');
     expect(report).toMatch(/- Completion: \*\*incomplete\*\* — 1 obligation\(s\)/);
     // A deferred row naming the claim is the wall M4 asks for; nothing else changed.
-    await h.call('p2o_plan', { action: 'create', entry: { kind: 'todo', title: 'Wall for the fixture claim', status: 'deferred',
+    await h.call('p2o_plan_create', {entry: { kind: 'todo', title: 'Wall for the fixture claim', status: 'deferred',
       reason: 'Ruled-out successor: the next step needs an actor this fixture does not model', claimRefs: [built.claim.id] } });
     const settled = await h.call('p2o_finish', { export: true });
     expect(settled.details).toMatchObject({ state: 'complete', remaining: 0 });
@@ -116,9 +116,23 @@ describe('export writes, ends nothing; stop records the obligation (M3)', () => 
     expect(after).toMatch(/- Completion: \*\*complete\*\* — 0 obligation\(s\)/);
   }));
 
+  it('renders the stored outcome next to the derived completion and flags the mismatch in the final snapshot', async () => fixture(async h => {
+    const built = await populate(h);
+    await h.call('p2o_plan_create', {entry: { kind: 'todo', title: 'Wall for the final-snapshot mismatch', status: 'deferred',
+      reason: 'Ruled-out successor: the next step needs an actor this fixture does not model', claimRefs: [built.claim.id] } });
+    const result = await h.call('p2o_finish', {});
+    expect(result.details.reportPath).toMatch(/-final$/);
+    const report = await readFile(join(result.details.reportPath, 'REPORT.md'), 'utf8');
+    expect(report).toContain('Derived completion: **complete**');
+    expect(report).toContain('stored outcome: **incomplete**');
+    expect(report).toContain('**MISMATCH**');
+    const manifest = JSON.parse(await readFile(join(result.details.reportPath, 'report-manifest.json'), 'utf8'));
+    expect(manifest).toMatchObject({ kind: 'final', completion: 'complete', outcome: { assessmentOutcome: 'incomplete' } });
+  }));
+
   it('prints each goal proof and whether it holds (P16.1)', async () => fixture(async h => {
     await populate(h);
-    await h.call('p2o_plan', { action: 'create', entry: { kind: 'goal', title: 'Demonstrate one inert read on the fixture surface', status: 'active',
+    await h.call('p2o_plan_create', {entry: { kind: 'goal', title: 'Demonstrate one inert read on the fixture surface', status: 'active',
       reason: 'Bounded goal whose proof is a capability this fixture does not gain', criteria: ['A confirmed and tested claim gains the read'],
       proof: { kind: 'capability', capability: { kind: 'file.read', subject: 'inert-file' } } } });
     const exported = await h.call('p2o_finish', { export: true });

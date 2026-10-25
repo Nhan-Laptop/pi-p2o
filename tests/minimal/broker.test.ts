@@ -23,6 +23,7 @@ async function fixture(patch: { stdout?: string; registration?: Partial<WorkerRe
     ledger: async limit => (await readRecords(records, limit)),
     delegate: async (input, parent) => { calls.push(`delegate ${parent.workerId} ${input.role}`); return { workerId: 'p2o-general-bbbbbb', name: 'p2o-general-bbbbbb', paneId: 'w1T:p10', role: input.role ?? 'general', depth: parent.depth + 1 }; },
     report: async (workerId, report) => { if (patch.reportFails) throw Error('inert report storage failure'); calls.push(`report ${workerId} ${report.confidence}`); },
+    lab: async (op, request) => { calls.push(`lab ${op} ${String(request.id)}`); return { id: String(request.id), sha256: 'a'.repeat(64), bytes: 1 }; },
     // P14.3: the host orchestrates a recipe, but every command it runs is admitted here, in the caller's own sandbox.
     environment: async (op, request, registration, control) => {
       calls.push(`env ${op} ${registration.workerId}`);
@@ -246,6 +247,14 @@ describe('sandbox broker', () => {
     expect(huge.findings.join('').length).toBeLessThanOrEqual(256 * 1024);
   });
 
+  it('keeps a payload id when the broker correlates the request', async () => {
+    const f = await fixture(); const client = new BrokerClient(f.socket, 'c'.repeat(32), { requestMs: 2000 });
+    const id = 'payload-11111111-1111-4111-8111-111111111111';
+    try {
+      expect((await client.request('payload_materialize', { id })).value).toMatchObject({ id });
+      expect(f.calls).toContain(`lab payload_materialize ${id}`);
+    } finally { client.close(); await f.close(); }
+  });
   it('never leaves the socket file behind after stop', async () => {
     const f = await fixture();
     await f.broker.stop();
@@ -268,12 +277,12 @@ describe('environment recipes over the broker (P14.3)', () => {
       let verified: any;
       try { verified = await second.request('environment', { action: 'verify', id: created.value.id }); } catch (error) { console.log('DBG-VERIFY-ERR', (error as Error).message, JSON.stringify(f.calls.slice(-6)), 'used', f.broker.registration(SECOND.workerId)?.used); throw error; }
       // The second worker reproduces in the same fingerprint, in its own scratch directory.
-      expect(verified.value).toMatchObject({ fingerprint: created.value.fingerprint, revision: 1 });
+      expect(verified.value).toMatchObject({ id: created.value.id, fingerprint: created.value.fingerprint, revision: 1 });
       expect(f.calls.filter(call => call.startsWith('exec /work/p2o-discovery-bbbbbb 0'))).toHaveLength(3);
       expect(f.broker.registration(SECOND.workerId)?.used).toBe(3);
       // A second verify runs its own three commands; there is no allowance to be spent, so nothing refuses it.
       const again = await second.request('environment', { action: 'verify', id: created.value.id });
-      expect(again.value).toMatchObject({ fingerprint: created.value.fingerprint });
+      expect(again.value).toMatchObject({ id: created.value.id, fingerprint: created.value.fingerprint });
       expect(f.calls.filter(call => call.startsWith('exec /work/p2o-discovery-bbbbbb 0'))).toHaveLength(6);
     } finally { first.close(); second.close(); await f.close(); }
   });

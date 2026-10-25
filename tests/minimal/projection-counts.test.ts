@@ -18,10 +18,10 @@ const pair = (value: any, label: string) => {
 describe('capped projections state shown against total (P11)', () => {
   it('answers with a denominator on every list the lead reads', async () => fixture(async h => {
     await populate(h);
-    pair(details(await h.call('p2o_task', { action: 'list' })), 'p2o_task list');
-    pair(details(await h.call('p2o_case', { action: 'list' })), 'p2o_case list');
-    pair(details(await h.call('p2o_plan', { action: 'list' })), 'p2o_plan list');
-    pair(details(await h.call('p2o_coverage', { action: 'list' })), 'p2o_coverage list');
+    pair(details(await h.call('p2o_board', { board: 'tasks' })), 'p2o_board tasks');
+    pair(details(await h.call('p2o_board', { board: 'cases' })), 'p2o_board cases');
+    pair(details(await h.call('p2o_board', { board: 'plans' })), 'p2o_board plans');
+    pair(details(await h.call('p2o_board', { board: 'coverage' })), 'p2o_board coverage');
     pair(details(await h.call('p2o_ledger', {})), 'p2o_ledger');
     // The graph has two shapes: a current-head export (counts + shown per kind) and a sequence page (total/shown/omitted).
     const view: any = details(await h.call('p2o_graph', { action: 'export' }));
@@ -36,7 +36,7 @@ describe('capped projections state shown against total (P11)', () => {
       expect(Number.isInteger(chain.counts[kind]), `chain counts.${kind}`).toBe(true);
     }
     // The planning suggestion page used to name its denominator `matched`, which made it unreadable as a page.
-    pair(details(await h.call('p2o_coverage', { action: 'suggest', features: ['login'] })), 'p2o_coverage suggest');
+    pair(details(await h.call('p2o_coverage_suggest', {features: ['login'] })), 'p2o_coverage_suggest');
     // p2o_workers carries two lists (recent changes, the task tail) plus a separate reconciliation omission count.
     const state: any = details(await h.call('p2o_workers', { action: 'list' }));
     pair(state.navigation.changes, 'p2o_workers changes');
@@ -60,13 +60,13 @@ describe('capped projections state shown against total (P11)', () => {
   it('keeps a truncated page navigable instead of silently dropping the remainder', async () => fixture(async h => {
     await populate(h); // one accepted case and one pending case
     // Two cases against a one-item cap: the second page must be reachable, and both pages must agree on the denominator.
-    const first: any = details(await h.call('p2o_case', { action: 'list', limit: 1 }));
+    const first: any = details(await h.call('p2o_board', { board: 'cases', limit: 1 }));
     expect(first).toMatchObject({ total: 2, shown: 1, omitted: 1, nextCursor: 1 });
-    const second: any = details(await h.call('p2o_case', { action: 'list', limit: 1, cursor: first.nextCursor }));
+    const second: any = details(await h.call('p2o_board', { board: 'cases', limit: 1, cursor: first.nextCursor }));
     expect(second).toMatchObject({ total: 2, shown: 1 });
     expect(second.entries[0].id).not.toBe(first.entries[0].id);
     // An empty page still carries the denominator, so "nothing on this page" cannot be read as "nothing exists".
-    const empty: any = details(await h.call('p2o_case', { action: 'list', cursor: 2 }));
+    const empty: any = details(await h.call('p2o_board', { board: 'cases', cursor: 2 }));
     expect(empty).toMatchObject({ total: 2, shown: 0, omitted: 2 });
   }));
 });

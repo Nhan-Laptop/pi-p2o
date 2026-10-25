@@ -1,8 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
+import { createHash } from 'node:crypto';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { EnvironmentStore, PAYLOAD_BYTES, PayloadStore, isPayloadId, normalizeRecipe, payloadDirectory, runEnvironment, stopEnvironment } from '../../src/lab.js';
+import { EnvironmentStore, PAYLOAD_BYTES, PayloadStore, isPayloadId, materializePayload, normalizeRecipe, payloadDirectory, runEnvironment, stopEnvironment } from '../../src/lab.js';
 import { readCompose } from '../../src/compose.js';
 import { fixture, populate } from './helpers/report-fixture.js';
 
@@ -62,12 +63,33 @@ describe('payload artifacts (P14.2)', () => {
     } finally { await rm(root, { recursive: true, force: true }); }
   });
 
+  it('materializes stored bytes into the caller scratch without putting the body in the result', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'p2o-lab-'));
+    try {
+      const store = new PayloadStore(join(root, 'records.sqlite'));
+      const ref = await store.put('owner', { kind: 'request', name: 'replay me', body: 'GET /orders/7 HTTP/1.1\r\n\r\n' });
+      const record = await store.get(ref.id), writes: Array<{ path: string; workdir: string; bytes: number; sha256: string; mode: number }> = [];
+      const writer = { async writeScratch(path: string, bytes: Buffer, _signal?: AbortSignal, workdir = '/work', mode = 0o500) {
+        const sha256 = createHash('sha256').update(bytes).digest('hex'); writes.push({ path, workdir, bytes: bytes.length, sha256, mode });
+        return { path, root: workdir, bytes: bytes.length, sha256, mode };
+      } };
+      const materialized = await materializePayload(record, writer, '/work/worker-a');
+      expect(materialized).toEqual({ path: `/work/worker-a/payload/${ref.id}`, sha256: ref.sha256, bytes: ref.bytes });
+      expect(writes).toEqual([{ path: `payload/${ref.id}`, workdir: '/work/worker-a', bytes: ref.bytes, sha256: ref.sha256, mode: 0o500 }]);
+      expect(materialized).not.toHaveProperty('body');
+    } finally { await rm(root, { recursive: true, force: true }); }
+  });
+
   it('lets a claim cite the payload, and says "not replayable" for a claim that does not', async () => fixture(async h => {
     const built = await populate(h);
     const stored = (await h.call('p2o_lab', { action: 'payload', kind: 'request', name: 'fixture order read',
       body: 'GET /orders/7 HTTP/1.1\r\nHost: fixture.invalid\r\n\r\n' })).details;
     expect(stored.sha256).toMatch(/^[a-f0-9]{64}$/);
     expect((await h.call('p2o_lab', { action: 'payload', id: stored.id })).details.body).toContain('GET /orders/7');
+    const materialized = (await h.call('p2o_lab', { action: 'payload', id: stored.id, materialize: true })).details;
+    expect(materialized).toEqual({ path: `/work/payload/${stored.id}`, sha256: stored.sha256, bytes: stored.bytes });
+    expect(h.sandboxes[0].writes).toEqual(expect.arrayContaining([expect.objectContaining({ path: `payload/${stored.id}`, workdir: '/work', sha256: stored.sha256 })]));
+    await expect(h.call('p2o_lab', { action: 'payload', id: 'not-a-payload', materialize: true })).rejects.toThrow(/Invalid payload ID: expected payload-/);
     const claim = (extra: Record<string, unknown>) => h.call('p2o_candidate', { surface: '/report-fixture', risk: 'authorization',
       negativeControls: [], policyBasis: 'boundary_invariant', expectedPolicy: 'Declared fixture actor/object boundary',
       limitations: 'One inert fixture actor only', evidenceRefs: [built.observation.evidenceId], ...extra });
@@ -153,6 +175,12 @@ describe('environment recipe (P14.3)', () => {
       const second = await store.put('owner', 'fixture-app', recipe);
       // Registering the same recipe again is what a second worker does; it must not invent a revision.
       expect(second).toEqual({ ref: first.ref, created: false });
+      // W4: a ref is a recipe. The worker must materialize it in its own sandbox before verify/destroy is allowed there.
+      expect(await store.materialized(first.ref.id, 'owner')).toBe(true);
+      expect(await store.materialized(first.ref.id, 'worker-b')).toBe(false);
+      const worker = await store.put('worker-b', 'fixture-app', recipe);
+      expect(worker).toEqual({ ref: first.ref, created: false });
+      expect(await store.materialized(first.ref.id, 'worker-b')).toBe(true);
       expect(second.ref.fingerprint).toBe(first.ref.fingerprint);
       const changed = await store.put('owner', 'fixture-app', normalizeRecipe({ ...recipe, setup: ['cp -r /target/. /work/app', 'make'] }, IMAGE));
       expect(changed.created).toBe(true); expect(changed.ref.revision).toBe(2);

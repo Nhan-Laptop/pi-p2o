@@ -12,7 +12,7 @@ import { outputContractSchema, workDecisionSchema, workSpecSchema } from './work
 
 /**
  * Parameter schemas of the model-facing tools. They are the declaration payload sent on every turn, so the byte sizes are pinned by
- * tests/minimal/workflow-policy.test.ts; the plan, case, coverage and graph tools keep theirs beside their validators (*-tool.ts).
+ * tests/minimal/workflow-policy.test.ts; the L1 task verbs and graph tools keep theirs in board-verbs.ts or beside their validators.
  */
 export const stateParameters = Type.Object({action:choices(['heads', 'search']),q:Type.Optional(Type.String({minLength:2,maxLength:80})),domain:Type.Optional(choices(KNOWLEDGE_DOMAINS)),status:Type.Optional(Type.String({maxLength:80})),cursor:Type.Optional(Type.Integer({minimum:0})),limit:Type.Optional(Type.Integer({minimum:1,maximum:100}))},{additionalProperties:false});
 
@@ -37,11 +37,6 @@ export const TASK_ACTION_PARAMETERS: Readonly<Record<typeof TASK_ACTIONS[number]
   review: ['action','id','revision','reason','evidenceIds','externalEvidence'], close: ['action','id','revision','reason','evidenceIds','externalEvidence'],
   block: ['action','id','revision','reason','evidenceIds','externalEvidence'], cancel: ['action','id','revision','reason','evidenceIds','externalEvidence'],
 };
-export const taskParameters = Type.Object({action:choices(TASK_ACTIONS),
-      id:Type.Optional(Type.String({maxLength:80})),revision:Type.Optional(Type.Integer({minimum:1})),draft:Type.Optional(taskDraftSchema),
-      ids:Type.Optional(Type.Array(Type.String({maxLength:80}),{minItems:1})),priority:Type.Optional(Type.Integer({minimum:0,maximum:100})),
-      cursor:Type.Optional(Type.Integer({minimum:0})),limit:Type.Optional(Type.Integer({minimum:1,maximum:25})),
-      reason:Type.Optional(Type.String({minLength:5,maxLength:1000})),evidenceIds:Type.Optional(Type.Array(Type.String({maxLength:80}))),externalEvidence:Type.Optional(Type.Boolean())});
 
 export const surfaceParameters = Type.Object({component:Type.String({minLength:1,maxLength:200}),entryPoint:Type.String({minLength:1,maxLength:200}),text:Type.Optional(Type.String({maxLength:1000})),refs:Type.Optional(Type.Array(Type.String({maxLength:80})))},{additionalProperties:false});
 
@@ -89,6 +84,7 @@ export const labParameters = Type.Object({
   name: Type.Optional(Type.String({ minLength: 1, maxLength: 120, description: 'Payload label, or the environment name (lowercase slug) for action=env' })),
   body: Type.Optional(Type.String({ minLength: 1, maxLength: PAYLOAD_BYTES, description: 'The exact bytes to keep: runnable as-is, stored verbatim and deliberately not redacted' })),
   id: Type.Optional(Type.String({ maxLength: 80, description: 'Payload or environment ID; stored bytes and the recipe hash are checked before use' })),
+  materialize: Type.Optional(Type.Boolean({ description: 'action=payload with id: write the stored bytes into your own sandbox scratch at payload/<id> and return its path, sha256 and byte count instead of the body' })),
   compose: Type.Optional(Type.Boolean({ description: 'action=env only, lead only: read docker-compose.yml|compose.yaml from /target and derive the recipe; refused keys are named' })),
   setup: Type.Optional(Type.Array(Type.String({ minLength: 1, maxLength: 4096 }), { description: 'Commands run in order before services; each must exit 0' })),
   services: Type.Optional(Type.Array(labServiceSchema)),
@@ -153,7 +149,7 @@ export const delegateParameters = Type.Object({
       workflow: Type.Optional(Type.String({ maxLength: 64, description: 'Optional catalog workflow ID belonging to the selected skills; descriptive prerequisites do not grant permissions' })),
       thinking: Type.Optional(choices(THINKING_LEVELS)),
       taskId:Type.Optional(Type.String({maxLength:80,description:'Owner-authored proposed task ID; prerequisites and reservations are checked. Worker requests cannot dispatch owner task IDs.'})),
-      work:Type.Optional(Type.Object({},{additionalProperties:true,description:'Optional structured work identity exactly as in p2o_task create (with decision and outputContract); enables exact duplicate/history checks. Omitted: identity is unknown.'})),
+      work:Type.Optional(Type.Object({},{additionalProperties:true,description:'Optional structured work identity exactly as in p2o_task_create (with decision and outputContract); enables exact duplicate/history checks. Omitted: identity is unknown.'})),
       decision:Type.Optional(Type.Object({},{additionalProperties:true})),outputContract:Type.Optional(Type.Object({},{additionalProperties:true})),
     });
 

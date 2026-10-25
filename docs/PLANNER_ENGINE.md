@@ -30,7 +30,7 @@ Architecture overview: [ARCHITECTURE.md](ARCHITECTURE.md). This page is the oper
 - **Worker** runs one intent with a fresh process, ticket and context, and reports attributed observations and gaps.
   `p2o_request_subtask` only proposes.
 
-`p2o_task {action:"dispatch", ids:[...]}` accepts 1–25 proposed tasks; `p2o_delegate` stays available for immediate
+`p2o_task_dispatch {ids:[...]}` accepts 1–25 proposed tasks; `p2o_delegate` stays available for immediate
 single dispatch. A failed launch drops the attempt and records a blocked signal; a retry needs an explicit Planner
 decision. A terminal report frees capacity only after verified retirement; new assignments get new identities and
 renew nothing, because there is no command allowance to renew (owner decision 2026-10-24). `p2o_loop wait` ends a round, not the assessment; `blocked` pauses admission and wakes.
@@ -38,7 +38,7 @@ renew nothing, because there is no command allowance to renew (owner decision 20
 
 ### Goal proof (P16.1)
 
-Một goal là một lời hứa về target, không phải một hoạt động. `p2o_plan create` từ chối goal không có `proof`
+Một goal là một lời hứa về target, không phải một hoạt động. `p2o_plan_create` từ chối goal không có `proof`
 (`GOAL_UNPROVEN: a goal needs proof (capability, case or coverage)`), và `revise` lên `reviewed`/`closed` chỉ thành công khi
 supportRefs cùng tồn tại **và** proof còn đúng. Ba loại proof (`src/goal-proof.ts`):
 
@@ -60,7 +60,7 @@ rồi trả `chainOf` để lần sau revise đúng chỗ.
 Readiness **được suy ra khi đọc**, không lưu: bước *n* ready khi mọi `needs` của nó được gain bởi một claim
 confirmed+tested mà một bước *trước đó* của cùng chain cite trong `claimRefs` (cùng `capabilityMatches` với graph join).
 Bước không có `needs` ready theo định nghĩa — nó là primitive mà chuỗi bắt đầu. Trạng thái settled (`done`, `blocked`,
-`deferred`, `cancelled`) do lead quyết và readiness không mở lại. `p2o_plan list` vì thế trả thêm một dòng mỗi chain:
+`deferred`, `cancelled`) do lead quyết và readiness không mở lại. `p2o_board board=plans` vì thế trả thêm một dòng mỗi chain:
 
 `chain <id> 1/3 · next: step 2 (ready) · waiting on: http.request (internal-api)`
 
@@ -74,7 +74,7 @@ board đó nên số bước ready/waiting trong prompt và trong plan view khô
 Create là chỗ duy nhất obligation được thi hành; finish không có gate. `src/obligations.ts` đọc plan + claim head + task
 rồi trả hai danh sách thuần:
 
-- **M2 — `ready`**: bước chain đang ready trên một surface. Một `p2o_task create` mới trên surface đó bị từ chối trừ khi
+- **M2 — `ready`**: bước chain đang ready trên một surface. Một `p2o_task_create` mới trên surface đó bị từ chối trừ khi
   draft cite đúng provider trong `work.claimRefs`, hoặc có một dòng plan `deferred`/`blocked` cite step đó (hoặc provider)
   làm lý do đã ghi. Từ chối: `CHAIN_READY_UNDISPATCHED: step <n> of chain <id> consumes <capability> that claim <recordId>
   already gains; dispatch it, cite it as a parent, or defer it with a reason`.
@@ -91,7 +91,7 @@ kiểm lại — luật chỉ chặn việc mở hướng mới.
 ### Route diversity và negative evidence (P16.5/P16.6)
 
 Một **route** là họ cơ chế mà một bước chain thử (`upload`, `auth`, `sqli`, `deser`, `ssrf`, `path`, `injection`,
-`business-logic`). `p2o_plan` todo có field `route`; khi lead không nêu, nó lấy từ method family của claim mà bước đó cite
+`business-logic`). `p2o_plan_create` todo có field `route`; khi lead không nêu, nó lấy từ method family của claim mà bước đó cite
 (`risk` trước, rồi `needs`/`gained` kind). Situation in `routes: N open (a, b), M done`; preflight thêm advisory
 `ROUTE_MONOCULTURE` khi chỉ có **một** route open và capability đã chứng minh khiến họ khác khả dĩ — và demand wake của
 vòng im lặng nói thêm `every open step is on route X — plausible elsewhere: …`. Tất cả chỉ là advisory: tập trung vào một

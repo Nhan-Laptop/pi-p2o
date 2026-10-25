@@ -6,7 +6,7 @@ ngân sách. "Goal" ở đây là record mục tiêu của assessment. Bản chi
 ## Công nghệ cốt lõi
 
 - Task vẫn là revision do owner viết; `work_history` và `work_reservations` chỉ là index/constraint trong **cùng transaction**
-  SQLite, không phải hàng đợi có quyền thực thi. `p2o_task`/`p2o_plan` chỉ dành cho owner; Worker/reporting không sửa kế hoạch.
+  SQLite, không phải hàng đợi có quyền thực thi. các task/plan verb chỉ dành cho owner; Worker/reporting không sửa kế hoạch.
 - **Work identity có cấu trúc**, không hash văn xuôi: `draft.work` gồm `assetRefs` (entity ID graph cùng run), `questionKey`,
   `policyKey?`, `actorContext`/`tenantContext` (handle mờ, không secret), `methodFamily`, `purpose`
   (`mapping|discovery|investigation|refinement|validation|retest|exploitation|chaining|reporting`), và từ P14.10 thêm `needs`
@@ -18,17 +18,17 @@ ngân sách. "Goal" ở đây là record mục tiêu của assessment. Bản chi
   một vòng build/run/crash/adjust của exploitation không bị cắt giữa chừng. Ticket cũ còn `commandBudget` vẫn đọc được (trường bị bỏ
   qua), nên `p2o open <runId>` của run cũ không hỏng.
 - **Từ frontier ra task, không tự dispatch**: `p2o_graph {"action":"chain","plan":true,"assetRefs":[…]}` trả về đúng object
-  `p2o_task create` cho bước sâu nhất đã sẵn sàng (purpose `exploitation`, `claimRefs` = record id của các provider trên đường đi ngắn
+  `p2o_task_create` cho bước sâu nhất đã sẵn sàng (purpose `exploitation`, `claimRefs` = record id của các provider trên đường đi ngắn
   nhất + claim của chính bước đó, `needs` = capability đang tiêu thụ, `environmentRef` = environment của provider sâu nhất có ghi) và ghi
-  toàn bộ chuỗi thành `p2o_plan` todo, mỗi bước một todo. Không có task nào được tạo, không có gì được chạy: draft là đề xuất, todo là
-  điều hướng; owner tự gọi `p2o_task create`. Không truyền `assetRefs` thì draft bỏ `work` và nói rõ lý do thay vì đoán asset từ chuỗi
+  toàn bộ chuỗi thành `p2o_plan_create` todo, mỗi bước một todo. Không có task nào được tạo, không có gì được chạy: draft là đề xuất, todo là
+  điều hướng; owner tự gọi `p2o_task_create`. Không truyền `assetRefs` thì draft bỏ `work` và nói rõ lý do thay vì đoán asset từ chuỗi
   `surface`.
 - **Reserve nguyên tử**: task revision + event + history + fingerprint duy nhất commit chung; hai đề xuất đua nhau thì cái sớm hơn
   thắng, conflict rollback cả packet. Pin được kiểm tra lại trước mỗi lệnh; sau crash reservation không tự kích hoạt lại.
 
 ## Dùng
 
-`p2o_task {"action":"match","draft":…}` tra cả task đang chạy và lịch sử có index (không phải đuôi hiển thị) trước khi giao việc:
+`p2o_board {"board":"tasks","match":…}` tra cả task đang chạy và lịch sử có index (không phải đuôi hiển thị) trước khi giao việc:
 
 | Kết quả | Ý nghĩa |
 |---|---|
@@ -42,8 +42,7 @@ Task có `work` bắt buộc `decision` (`new|refine|validate|retest|retry`, kè
 đây là yêu cầu giao nhận, không phải oracle. `p2o_delegate` nhận cùng `work/decision/outputContract`; thiếu `work` thì kết quả
 `workMatch:"unknown"` và dùng lại guard surface/risk cũ.
 
-**Goal / todo / decision** qua `p2o_plan {action: create|revise|list|view, requestId, entry:{kind, title, status, reason, criteria, exclusions, taskIds}}`:
-`revise` cần `id` + `revision`; goal đóng cần revision tường minh và evidence cùng run; todo không được tạo chu trình; decision
+**Goal / todo / decision** qua `p2o_plan_create` (không có `id`), `p2o_plan_revise` (`id` + `revision`) hoặc `p2o_board board=plans` (list/view): `entry:{kind, title, status, reason, criteria, exclusions, taskIds}`; goal đóng cần revision tường minh và evidence cùng run; todo không được tạo chu trình; decision
 (`new|reuse|refine|validate|retest|defer`) chỉ ghi lại, không tự dispatch. Cùng `requestId` + payload trả ACK gốc, khác payload → `IDEMPOTENCY_CONFLICT`.
 
 **Phase card**: handoff nguyên tử thêm một note `data.phase` (task revision, worker/report, số output, contract, field chưa review) và
@@ -68,7 +67,7 @@ typed branch-output review, biến thể crash/interruption. Mechanics pass khô
 
 ## Frontier obligation lúc create (M2 + M4)
 
-`p2o_task {action:'create'}` từ chối một draft mở hướng mới trên surface đang có bước chain ready
+`p2o_task_create` từ chối một draft mở hướng mới trên surface đang có bước chain ready
 (`CHAIN_READY_UNDISPATCHED`) hoặc đang có claim confirmed+tested chưa được consume (`PRIMITIVE_UNCHAINED`). Hai đường thoát,
 đều là dữ liệu chứ không phải lời hứa: cite claim trong `work.claimRefs`, hoặc ghi một todo `deferred`/`blocked` nêu claim
 đó kèm lý do. Breadth ở surface khác vẫn được nhận; task `cancelled`/`expired`/`closed` không được tính là đã consume.

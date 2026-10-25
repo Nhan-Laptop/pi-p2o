@@ -14,7 +14,7 @@ import { createContext, createFakePi, createSimpleHerdr, EXTENSION_PATH, InertSa
 /**
  * W3 (plan): the model is taught the K3–K6 workflow through short per-tool guidelines (the lead's own policy section keeps its pinned size
  * and stays free of tool names), tool and guideline names cannot drift, fixed context cost cannot grow silently, and p2o_delegate gets the
- * same exact-work admission as p2o_task when structured work is supplied. Mechanism only: whether the guidance improves results needs an
+ * same exact-work admission as p2o_board board=tasks match when structured work is supplied. Mechanism only: whether the guidance improves results needs an
  * authorized benchmark and is deliberately not claimed here.
  */
 const registry = () => {
@@ -39,6 +39,12 @@ describe('tool descriptions carry the boundary (Part XI: no separate guidance la
       expect(tool.promptGuidelines, name).toBeUndefined();
     }
     for (const [name, lines] of Object.entries(TOOL_BOUNDARIES)) for (const named of mentioned(lines.join(' '))) expect(ALL_TOOLS, `${name} names ${named}`).toContain(named);
+    // L1/W2: a verb inherits its family boundary; the legacy family key itself is no longer a tool.
+    for (const [name, lines] of Object.entries(TOOL_BOUNDARIES)) {
+      const named = ALL_TOOLS.find(tool => tool === name) ?? ALL_TOOLS.find(tool => tool.startsWith(`${name}_`));
+      expect(named, name).toBeDefined();
+      for (const line of lines) expect(tools.get(named!).description, name).toContain(line);
+    }
   });
 
   it('names only tools its own role can call, in the system instructions and in the brief', () => {

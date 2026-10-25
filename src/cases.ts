@@ -1,16 +1,17 @@
 import { randomUUID } from 'node:crypto';
 import { appendGeneratedRecords, appendRecords, ownerNoteFrontier, readGeneratedRecords, readLedger, type AssessmentRecord, type LedgerIndex } from './records.js';
-import { taskFrontier, taskHead, taskRevisionAt, type AssessmentTask } from './tasks.js';
+import { taskFrontier, taskHead, taskRevisionAt, taskReferenceSuperseded, type AssessmentTask } from './tasks.js';
 import type { MutationRequest } from './state/store.js';
 import { LedgerBoard } from './board.js';
 import { validateCaseDraft, validateFinding, validateStoredCase, type CaseDraft, type CaseEntry, type CaseFinding, type CaseTaskRef } from './case-types.js';
 import { isDemonstrated } from './claims.js';
 import { chainImpact, severityRank } from './cvss.js';
 import { isSatisfiedTask } from './tasks.js';
+import { caseValidation } from './validation.js';
 
 export type CaseCurrentness='current'|'stale'|'withdrawn'|'unknown';
 export interface CaseView extends CaseEntry {
-  currentness:CaseCurrentness;staleReasons:string[];independentCurrent:boolean;acceptedFinding:boolean;readyToRate:boolean;canonicalCaseId:string;
+  currentness:CaseCurrentness;staleReasons:string[];independentCurrent:boolean;independenceReason?:string;acceptedFinding:boolean;readyToRate:boolean;canonicalCaseId:string;
   /** Latest owner rating of this case id and the case revision it was recorded against; a rating of an older revision is kept but flagged. */
   finding?:CaseFinding;ratedRevision?:number;ratingCurrent?:boolean;
 }
@@ -62,23 +63,30 @@ export function caseRatings(index:LedgerIndex):Map<string,{finding:CaseFinding;c
 
 /** Derived, read-only currentness. It cannot upgrade a claim, goal or target authority. */
 export function caseViews(index:LedgerIndex,context:CaseContext={}):CaseView[]{
-  const entries=caseFrontier(index),ratings=caseRatings(index),claims=candidateHeads(index),entryMap=new Map(entries.map(entry=>[entry.id,entry])),views=new Map<string,CaseView>(),visiting=new Set<string>();
+  const entries=caseFrontier(index),ratings=caseRatings(index),claims=candidateHeads(index),tasks=taskFrontier(index),entryMap=new Map(entries.map(entry=>[entry.id,entry])),views=new Map<string,CaseView>(),visiting=new Set<string>();
   const view=(entry:CaseEntry):CaseView=>{
     const cached=views.get(entry.id);if(cached)return cached;const reasons:string[]=[];let unknown=false;
     if(entry.reviewStatus==='withdrawn')reasons.push('case-review-withdrawn');
     for(const ref of entry.assetRefs){const current=context.assetRevision?.(ref.id);if(!context.assetRevision)unknown=true;else if(current===undefined)reasons.push(`missing-asset:${ref.id}`);else if(ref.revision===undefined)reasons.push(`unpinned-asset:${ref.id}`);else if(current!==ref.revision)reasons.push(`stale-asset:${ref.id}@r${ref.revision}->r${current}`);}
     if(entry.hypothesis){const current=context.assertionRevision?.(entry.hypothesis.id);if(!context.assertionRevision)unknown=true;else if(current===undefined)reasons.push(`missing-hypothesis:${entry.hypothesis.id}`);else if(current!==entry.hypothesis.revision)reasons.push(`stale-hypothesis:${entry.hypothesis.id}@r${entry.hypothesis.revision}->r${current}`);}
     const citedClaims:AssessmentRecord[]=[];for(const id of entry.claimRefs){const claim=index.byId.get(id),key=claim&&candidateKey(claim);if(!claim||claim.kind!=='candidate'||!key){reasons.push(`missing-claim:${id}`);continue;}citedClaims.push(claim);if(claims.get(key)?.id!==id)reasons.push(`superseded-claim:${id}`);}
-    for(const ref of entry.taskRefs){const task=taskRevision(index,ref);if(!task)reasons.push(`missing-task-revision:${ref.taskId}@r${ref.revision??'?'}`);else{const head=taskHead(index,ref.taskId);if(head&&head.revision!==ref.revision)reasons.push(`superseded-task:${ref.taskId}@r${ref.revision}`);}}
+    for(const ref of entry.taskRefs){const task=taskRevision(index,ref);if(!task)reasons.push(`missing-task-revision:${ref.taskId}@r${ref.revision??'?'}`);else{const head=taskHead(index,ref.taskId);if(head&&taskReferenceSuperseded(index,ref.taskId,ref.revision))reasons.push(`superseded-task:${ref.taskId}@r${ref.revision}`);}}
     for(const id of entry.reportRefs)if(index.byId.get(id)?.kind!=='report')reasons.push(`missing-report:${id}`);
     for(const item of entry.contradictions)if(index.byId.get(item.evidenceRef)?.kind!=='evidence')reasons.push(`missing-contradiction:${item.evidenceRef}`);else if(item.status==='open')reasons.push(`open-contradiction:${item.evidenceRef}`);
     let independentCurrent=entry.independentEvidenceRefs.length>0;
+    const independenceFailures:string[]=[];
     for(const evidenceId of entry.independentEvidenceRefs){
       // Every listed receipt is checked; the first failing one names why, so the reason is actionable instead of "stale".
       let failure:string|undefined;
       const supporting=citedClaims.some(claim=>{if(claim.data?.independentEvidenceRef!==evidenceId)return false;const check=independentReceiptCurrent(index,claim,evidenceId);failure??=check.reason;return check.ok;});
-      if(!supporting){independentCurrent=false;reasons.push(failure??`independent-support-stale:${evidenceId}`);}
+      if(!supporting){independentCurrent=false;independenceFailures.push(failure??`independent-support-stale:${evidenceId}`);reasons.push(failure??`independent-support-stale:${evidenceId}`);}
     }
+    // W4: a reviewed validation task is the host-owned independence path. It can make the case independent even when the older
+    // peer-receipt field is empty; when the older path already holds, its failures still stay visible as stale reasons.
+    const validation=caseValidation(index,citedClaims,entry.taskRefs,tasks);
+    let independenceReason:string|undefined=independenceFailures[0];
+    if(validation.current){independentCurrent=true;independenceReason=undefined;}
+    else if(!independentCurrent)independenceReason=independenceFailures[0]??validation.reason??'validation-missing';
     if(entry.verdict==='confirmed'&&!citedClaims.some(claim=>isDemonstrated(claim.data??{})&&claim.data?.policyBasis!=='inferred'))reasons.push('confirmed-verdict-lacks-current-tested-claim');
     if(entry.verdict==='ruled_out'&&!citedClaims.some(claim=>claim.data?.closure==='ruled_out'&&typeof claim.data?.control==='string'))reasons.push('ruled-out-verdict-lacks-bounded-control');
     for(const id of entry.remediation.evidenceRefs)if(index.byId.get(id)?.kind!=='evidence')reasons.push(`missing-remediation-evidence:${id}`);
@@ -91,7 +99,7 @@ export function caseViews(index:LedgerIndex,context:CaseContext={}):CaseView[]{
     // A chain is ready to rate when its executed depth is stated, or the record explicitly has no executed steps.
     const chainDepthStated=!ratedChain||ratedChain.demonstratedThrough!==undefined||ratedChain.steps.every(step=>step.claimRef===undefined);
     const readyToRate=currentness==='current'&&independentCurrent&&chainDepthStated;
-    const result:CaseView={...entry,currentness,staleReasons:[...new Set(reasons)].slice(0,40),independentCurrent,acceptedFinding,readyToRate,canonicalCaseId,...(rating?{finding:rating.finding,ratedRevision:rating.caseRevision,ratingCurrent:rating.caseRevision===entry.revision}:{} )};views.set(entry.id,result);return result;
+    const result:CaseView={...entry,currentness,staleReasons:[...new Set(reasons)].slice(0,40),independentCurrent,...(independenceReason?{independenceReason}:{}),acceptedFinding,readyToRate,canonicalCaseId,...(rating?{finding:rating.finding,ratedRevision:rating.caseRevision,ratingCurrent:rating.caseRevision===entry.revision}:{} )};views.set(entry.id,result);return result;
   };
   return entries.map(view);
 }

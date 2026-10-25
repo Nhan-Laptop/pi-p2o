@@ -76,10 +76,10 @@ Merge vào file hiện có, không ghi đè phần khác. Precedence: **CLI cho 
 | `maxTargetOperations` | 3 | shared luôn ép về 1 |
 | `retention` / `storageQuotaMiB` | `durable-local` / 256 | quota 8–1024 MiB (gồm journal và reserve cuối) |
 | `artifactCaptureKiB` | 1024 | 1–8192; tổng prefix stdout+stderr được capture mỗi thao tác trước khi cắt hiển thị 48 KiB |
-| ~~`toolGuidance`~~ | — | **Đã bỏ**: ranh giới từng tool nay nằm ngay trong description của tool (`src/tool-guidelines.ts`, `TOOL_BOUNDARIES`). Các dòng còn lại026-10-10 (deepseek-flash, 16 run/nhánh) cho thấy chi phí +≈73% mà recall/precision gần như không đổi |
+| ~~`toolGuidance`~~ | — | **Đã bỏ**: ranh giới từng tool nay nằm ngay trong description của tool (`src/tool-guidelines.ts`, `TOOL_BOUNDARIES`). Thử nghiệm 2026-10-10 (deepseek-flash, 16 run/nhánh) cho thấy chi phí +≈73% mà recall/precision gần như không đổi |
 | ~~`finishGate`~~ | — | **Đã bỏ 2026-10-24**: không còn cổng finish. Mọi `p2o_finish` đều nối khối `FINISH PREFLIGHT` (report fact) và không bao giờ bị từ chối; khóa cũ trong settings bị bỏ qua. Bản cũ: gọi lại giống hệt thì kết thúc |
 | `autoReport` | durable: bật · ephemeral: tắt | ghi báo cáo tất định lúc run kết thúc |
-| `reportRoot` | `<cwd>/.p2o-reports` | đường dẫn tuyệt đối; báo cáo ở `<reportRoot>/report-<runId>/` |
+| `reportRoot` | `<cwd>/.p2o-reports` | đường dẫn tuyệt đối; báo cáo cuối ở `<reportRoot>/report-<runId>-final/`, bản export nháp ở `report-<runId>-draft-<sequence>/` |
 | `reportFormat` | `2` | `2` = báo cáo kiểu OWASP (xem dưới); `1` = bộ tệp cũ |
 | `reviewIntegrity` | `annotate` | `off` \| `annotate` (ghi ai tạo receipt cho từng review) \| `enforce` (từ chối receipt không do assignee tạo, trừ khi review gửi `externalEvidence=true`) |
 | `report` | — | `author`, `organization`, `team`, `classification`, `disclaimer` (≤400 ký tự), in vào Provenance với nhãn "operator-supplied, unverified" |
@@ -146,7 +146,7 @@ Không truyền thì hành vi giống hệt trước đây. Khi dùng:
 
 ## Báo cáo tất định
 
-Run durable-local tự ghi báo cáo lúc cleanup (finish, `/p2o stop`, shutdown, đổi session, lỗi storage) vào `<cwd>/.p2o-reports/report-<runId>/` — thư mục nằm trong project nên **đừng commit**. Kết quả `p2o_finish` có dòng `REPORT: <path>`;
+Run durable-local tự ghi báo cáo lúc cleanup (finish, `/p2o stop`, shutdown, đổi session, lỗi storage) vào `<cwd>/.p2o-reports/report-<runId>-final/` (bản export giữa run là `report-<runId>-draft-<sequence>/`) — thư mục nằm trong project nên **đừng commit**. Kết quả `p2o_finish` có dòng `REPORT: <path>`;
 lỗi ghi báo cáo không chặn cleanup. Crash thì dùng `/p2o open <run-id>` rồi:
 
 ```text
@@ -156,7 +156,7 @@ lỗi ghi báo cáo không chặn cleanup. Crash thì dùng `/p2o open <run-id>`
 Sau xác nhận, sinh `REPORT.md`, `cases.csv`, `coverage.csv`, `report-manifest.json` (hash từng file, `asOfSequence`, digest runtime) từ state đã commit — **không gọi model, không chạm target**, cùng sequence ra cùng byte, ghi nguyên tử vào thư mục mới ngoài state root.
 Chuỗi do target/model sinh ra bị vô hiệu hóa (không link/HTML/fence, CSV chặn công thức). Thứ tự: tuyên bố "không phải bảo đảm an toàn" → provenance → **coverage và gap trước** → case accepted-current → case khác → claim worker → task/handoff → giới hạn. Run rỗng ghi "chưa có case accepted-current", không bao giờ "0 lỗ hổng".
 
-Định dạng v2 (theo OWASP WSTG §5) thêm Scope and limitations, Executive summary (đếm tất định; đoạn `narrative` của lead nếu có luôn gắn nhãn *chưa được host kiểm chứng*), bảng findings và chi tiết từng finding (severity do owner gán bằng `p2o_case action=rate`, CVSS 3.1 host tự tính từ vector, CWE, khuyến nghị, WSTG, mức proof, ai tạo receipt, bước tái hiện từ receipt đã redact), cùng `findings.json`, `findings.csv` và
+Định dạng v2 (theo OWASP WSTG §5) thêm Scope and limitations, Executive summary (đếm tất định; đoạn `narrative` của lead nếu có luôn gắn nhãn *chưa được host kiểm chứng*), bảng findings và chi tiết từng finding (severity do owner gán bằng `p2o_case_rate`, CVSS 3.1 host tự tính từ vector, CWE, khuyến nghị, WSTG, mức proof, ai tạo receipt, bước tái hiện từ receipt đã redact), cùng `findings.json`, `findings.csv` và
 `wstg-checklist.csv` (khi có cell `wstg-…`). **Hoàn tất được suy ra** (`src/completion.ts`) là `complete`/`incomplete` với bốn mã `GOAL_UNSETTLED`, `GOAL_UNPROVEN`, `PRIMITIVE_UNCHAINED`, `CHAIN_READY`; **Finish preflight** (`src/finish-preflight.ts`, thuần, không model) là report fact, không từ chối gì — obligation: `UNREVIEWED_TASK`, `UNREVIEWED_CLAIM`, `PENDING_CASE`, `STALE_CASE`, `STALE_CELL`, `NO_COVERAGE_PLAN`, `NONTERMINAL_CELLS`, `UNRATED_ACCEPTED_CASE`; advisory: `STALE_RATING`, `OPEN_GAP_UNREFERENCED`, `ORPHAN_TASK`, `UNPLANNED_ASSETS`, `WSTG_APPLICABLE_UNPLANNED`, `FOREIGN_EVIDENCE`, `CONTRACT_GAP`, `HIGH_WITHOUT_INDEPENDENCE` (thành obligation khi `reviewIntegrity=enforce`), `INTERRUPTED_CELL`, `PRIMITIVE_UNCHAINED`, `ADMISSION_REFUSALS`, `UNPROMOTED_COVERAGE_NOTE`, `NO_GOAL_RECORDED`, `NEGATIVE_MAY_BE_BLOCKED` (kết luận `ruled_out` chỉ dựa trên receipt `p2o_http` kết thúc bằng 401/403/429 hoặc không có phản hồi — có thể là kiểm soát truy cập hay rate limit chứ chưa chứng minh lỗi không tồn tại; chỉ cảnh báo, tắt khi `reviewIntegrity=off`; receipt shell/net, 2xx và 404 không bao giờ bị gắn cờ). Đây không phải finding và không phải kết luận an toàn.
 
 ## Công cụ tri thức K3–K6 (đọc, không gọi model)
@@ -170,14 +170,14 @@ Domain (goal/todo/decision/case/coverage-plan/coverage-cell/task/phase/…) thay
 
 | Mảng | Tool của model (owner) | Tài liệu |
 |---|---|---|
-| Work admission, goal/todo/decision, phase card | `p2o_task action=match`, `p2o_plan` | [WORK_ADMISSION](WORK_ADMISSION.md) |
+| Work admission, goal/todo/decision, phase card | `p2o_board board=tasks match=…`, `p2o_task_create`, `p2o_plan_create` | [WORK_ADMISSION](WORK_ADMISSION.md) |
 | CVE lead (host fetch, allowlist) | `p2o_research action=cve` → `lead` record; `action=triage` | [PLANNER_ENGINE](PLANNER_ENGINE.md) |
-| Case, rating, coverage | `p2o_case`, `p2o_coverage` | [CASE_REVIEW](CASE_REVIEW.md) |
+| Case, rating, coverage | `p2o_case_create` / `_revise` / `_rate`, `p2o_coverage_plan` / `_cell` / `_cell_retire` / `_suggest` | [CASE_REVIEW](CASE_REVIEW.md) |
 | Graph tài sản/fact | `p2o_graph` (owner thêm `action=chain`) | [ASSET_GRAPH](ASSET_GRAPH.md) |
 | Chain: primitive này cấp gì, bước nào còn thiếu | `p2o_graph action=chain` (owner-only) | [ASSET_GRAPH](ASSET_GRAPH.md) |
 | Heads, digest, search, packet theo role | `p2o_state` (cả worker, read-only) | [CONTEXT_PACKETS](CONTEXT_PACKETS.md) |
 
-Mỗi tool đăng ký (25/25, kể cả `p2o_surface`, `p2o_artifact`, `p2o_loop`) có đúng một câu ranh giới trong `TOOL_BOUNDARIES`, nêu khi nào dùng tool này thay vì tool chồng chức năng; câu đó luôn được gắn vào description
+Mỗi tool đăng ký (37/37, kể cả `p2o_surface`, `p2o_artifact`, `p2o_loop`) có đúng một câu ranh giới trong `TOOL_BOUNDARIES`, nêu khi nào dùng tool này thay vì tool chồng chức năng; câu đó luôn được gắn vào description
 **Khóa test OWASP WSTG**: dùng ID viết thường (ví dụ `wstg-athz-04`) làm `questionKey` của work identity và của cell coverage; `methodFamily` là workflow id của skill. [WSTG_MAP](WSTG_MAP.md) liệt kê 108 test với mức hỗ trợ của thư viện (D/T/N/O) và cờ browser/identity — đây là độ phủ kiến thức, không phải khả năng phát hiện. Lead và worker tìm thấy nó qua `shared:wstg-map` và `shared:handoffs`.
 
 ## Delegation
@@ -188,7 +188,7 @@ Trong Herdr, lead có thể spawn worker: mỗi worker là một tiến trình `
 - Discovery và validation do **hai worker khác nhau**; worker tự validate finding của chính nó không phải xác minh độc lập.
 - Delegation phẳng: `p2o_request_subtask` chỉ là đề xuất, chỉ owner mới accept. Steering không mở rộng scope; report của worker là dữ liệu chưa tin cậy — kiểm tra evidence trước khi lặp lại.
 - `p2o_workers` với `waitFor: "all-report"` chờ cục bộ tới khi mọi worker đã report hoặc bị rút. Pane có thể hiện `idle` ngắn trước khi brief được nộp: sống/chết do report quyết định, và bản `p2o_finish` không `export` từ chối tới khi worker report hoặc bị `p2o_workers` (`action: "stop"`) rút; `p2o_finish {export:true}` thì không.
-- `p2o_delegate` nhận `role` (`recon`, `discovery`, `validation`, `reporting`, `general`), danh sách `skills` (không giới hạn số lượng; loadout mặc định vẫn ghép tối đa 3), `model`, `thinking`, và tùy chọn `work`/`decision`/`outputContract` (cùng hình dạng `p2o_task create`; không có `work` thì kết quả trả `workMatch:"unknown"`). Skill nêu rõ ghi đè mặc định của role; skill lạ bị từ chối trước khi tạo pane.
+- `p2o_delegate` nhận `role` (`recon`, `discovery`, `validation`, `reporting`, `general`), danh sách `skills` (không giới hạn số lượng; loadout mặc định vẫn ghép tối đa 3), `model`, `thinking`, và tùy chọn `work`/`decision`/`outputContract` (cùng hình dạng `p2o_task_create`; không có `work` thì kết quả trả `workMatch:"unknown"`). Skill nêu rõ ghi đè mặc định của role; skill lạ bị từ chối trước khi tạo pane.
 - Task phải nói nó **đứng trên cái gì**: `validation`/`retest` cần `work.claimRefs` (claim cùng run) hoặc `validationOf`/`retestOf`; `investigation`/`refinement` cần claim, asset revision đã pin hoặc task trước; `mapping`/`reporting` miễn. Gate chỉ nổ khi run **đã có** claim — trên target mới, intent validation đầu tiên chính là discovery sinh ra claim đó.
 - Skill chọn theo thứ tự: `skills` yêu cầu → `p2o.roles.<role>.skills` → skill theo purpose của work, có xét target kind và `work.needs` → mặc định của role. Purpose quyết định **họ phương pháp**, còn target kind và capability mà bước đó tiêu thụ quyết định **thành viên nào** của họ: `mapping` trên URL → `web-deployment-hygiene`, `discovery` trên URL → `web-route-input-inventory` (directory/hybrid giữ phương pháp source vì vẫn có snapshot); `exploitation`/`chaining` → `exploit-design` cộng ladder theo `work.needs` (`net.egress` → `ssrf-to-internal`, `exec.code` → `binary-exploit-ladder` hoặc `web-injection-to-exec`, `cred.session`/`cred.secret` → `credential-and-pivot`, tối đa 3 và luôn giữ `exploit-design`). `validation` và `reporting` **không** có skill mặc định: validation tái lập claim và bị cấm discovery mới, reporting chỉ tổng hợp và bị cấm viết fix — hai skill cũ (`exploitability-assessment`, `remediation`) dạy đúng việc bị cấm, nên chúng chỉ còn dùng khi operator yêu cầu rõ. Thiếu context (không có kind/needs) thì bảng gốc áp dụng, đúng hành vi trước P15.
 

@@ -97,6 +97,19 @@ export function taskFrontier(index: LedgerIndex): AssessmentTask[] {
 export function taskHead(index: LedgerIndex, id: string): AssessmentTask | undefined { return taskLookups(index).heads.get(id); }
 /** First recorded row for an exact (id, revision), whoever wrote it. Shared, read-only. */
 export function taskRevisionAt(index: LedgerIndex, id: string, revision: unknown): AssessmentTask | undefined { return taskLookups(index).revisions.get(id)?.get(revision); }
+/** A later close is status-only, so a reference pinned to the previous revision is not superseded by it. */
+function statusOnlyClose(pinned: AssessmentTask, head: AssessmentTask): boolean {
+  return head.revision === pinned.revision + 1 && head.status === 'closed' && isSatisfiedTask(pinned.status)
+    && pinned.evidenceIds.join('\u0000') === head.evidenceIds.join('\u0000')
+    && pinned.question === head.question && pinned.surface === head.surface && pinned.risk === head.risk && pinned.role === head.role
+    && pinned.workFingerprint === head.workFingerprint && pinned.targetRevision === head.targetRevision;
+}
+/** Read-only projection: a pinned task reference goes stale on a substantive revision, not on a status-only close. */
+export function taskReferenceSuperseded(index: LedgerIndex, id: string, revision: unknown): boolean {
+  const pinned = taskRevisionAt(index, id, revision), head = taskHead(index, id);
+  if (!pinned || !head) return true;
+  return head.revision !== revision && !statusOnlyClose(pinned, head);
+}
 
 function bounded(value: unknown, name: string, limit: number, minimum = 1): asserts value is string {
   if (typeof value !== 'string' || value.trim().length < minimum || value.length > limit || TEXT_CONTROL.test(value)) throw new Error(`Invalid task ${name}`);
@@ -218,6 +231,21 @@ export class TaskBoard extends LedgerBoard {
     return t;
   }
   /**
+   * A prerequisite is pinned to the revision the dependent was authored against. Closing that prerequisite is a
+   * status-only terminal step, not a new question; it must not strand a validation worker that is already running.
+   * A substantive revision still requires the caller to re-pin, and only a closed head may stand in for the pinned one.
+   */
+  private prerequisite(tasks: AssessmentTask[], index: LedgerIndex, p: { taskId: string; revision?: number }, advanceTerminal: boolean) {
+    const head = tasks.find(t => t.id === p.taskId);
+    if (!head) throw Error('Missing or stale task revision');
+    if (p.revision === undefined) return head;
+    const pinned = taskRevisionAt(index, p.taskId, p.revision);
+    if (!pinned) throw Error('Missing or stale task revision');
+    if (head.revision === p.revision) return head;
+    if (advanceTerminal && statusOnlyClose(pinned, head)) return head;
+    throw Error('Missing or stale task revision');
+  }
+  /**
    * P9: a task that claims to build on something must name it. `mapping` and `reporting` are legitimate starting points; every
    * other purpose stands on a parent. Validation/retest are stricter because their whole value is reproducing a named claim, and
    * a validated result whose parent cannot be read is not evidence — which is also what makes the chain join trustworthy (P5).
@@ -265,7 +293,7 @@ export class TaskBoard extends LedgerBoard {
     const visiting = new Set<string>(), visited = new Set<string>();
     const visit = (id: string) => { if (visiting.has(id)) throw Error('Task dependency cycle'); if (visited.has(id)) return; visiting.add(id); for (const parent of graph.get(id) ?? []) visit(parent); visiting.delete(id); visited.add(id); }; visit(draft.id);
     for (const p of draft.prerequisites) {
-      const t = this.current(tasks,p.taskId,p.revision);
+      const t = this.prerequisite(tasks,index,p,ready);
       if (ready) {
         if (!isSatisfiedTask(t.status) || !t.reviewReason || !t.evidenceIds.length) throw Error('Prerequisite requires lead-accepted evidence');
         for (const ref of t.evidenceIds) if (index.byId.get(ref)?.kind !== 'evidence' || index.byId.get(ref)?.runId !== this.runId) throw Error('Prerequisite evidence missing');
@@ -286,7 +314,7 @@ export class TaskBoard extends LedgerBoard {
     return this.mutate(async (index,tasks) => {
       const task = this.current(tasks,id);
       if (task.status !== 'proposed') throw Error('Task is not available for assignment');
-      const prerequisites = task.prerequisites.map(p => ({taskId:p.taskId,revision:this.current(tasks,p.taskId,p.revision).revision})),candidate=this.pinAssets({...task,prerequisites});
+      const prerequisites = task.prerequisites.map(p => ({taskId:p.taskId,revision:this.prerequisite(tasks,index,p,true).revision})),candidate=this.pinAssets({...task,prerequisites});
       this.checkDependencies(candidate,tasks.filter(t => t.id !== id),index,true);
       if(candidate.validationOf){const prior=this.current(tasks,candidate.validationOf);if(prior.assignee&&prior.assignee===assignee)throw Error('Independent validation needs a separate worker/attempt');}
       const exact=workIdentity(typeof this.targetRevision==='function'?this.targetRevision():this.targetRevision,candidate).confidence==='exact';
@@ -357,7 +385,7 @@ export class TaskBoard extends LedgerBoard {
     const tasks = taskFrontier(index), task = this.current(tasks,id);
     if (task.status !== 'proposed') return {ready:false,reason:`Task is ${task.status}`};
     try {
-      const prerequisites=task.prerequisites.map(p=>({taskId:p.taskId,revision:this.current(tasks,p.taskId,p.revision).revision})),candidate=this.pinAssets({...task,prerequisites});
+      const prerequisites=task.prerequisites.map(p=>({taskId:p.taskId,revision:this.prerequisite(tasks,index,p,true).revision})),candidate=this.pinAssets({...task,prerequisites});
       this.checkDependencies(candidate,tasks.filter(t => t.id !== id),index,true);
       const exact=workIdentity(typeof this.targetRevision==='function'?this.targetRevision():this.targetRevision,candidate).confidence==='exact';
       if(tasks.some(t=>t.id!==id&&['reserved','running'].includes(t.status)&&t.surface.trim()===candidate.surface.trim()&&t.risk.trim().toLowerCase()===candidate.risk.trim().toLowerCase()&&(!exact||t.dedupConfidence!=='exact')&&!(candidate.validationOf&&!t.validationOf&&candidate.role==='validation')))return {ready:false,reason:'ASSIGNMENT_CONFLICT: surface/risk already reserved with unknown structured identity'};
