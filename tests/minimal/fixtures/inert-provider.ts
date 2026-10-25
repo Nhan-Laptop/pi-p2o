@@ -46,9 +46,9 @@ export function registerInertProvider(pi: ExtensionAPI, mode: 'owner' | 'worker'
         if ((system.match(/<p2o_assessment>/g) ?? []).length !== 1) throw new Error('lead policy duplicated');
         const candidate = descriptions.find(tool => tool.name === 'p2o_candidate');
         if (!(candidate?.parameters as any)?.properties?.evidenceRefs || !(candidate?.parameters as any)?.properties?.policyBasis) throw new Error('candidate schema lost');
-        // A solo owner works directly, so it is not offered the worker-control tools; a delegated Planner is.
-        const solo = system.includes('you are the solo working investigator'), workerControl = ['p2o_delegate', 'p2o_workers'];
-        if ((solo ? workerControl.some(name => tools.includes(name)) : !workerControl.every(name => tools.includes(name))) || tools.includes('bash') || tools.includes('read')) throw new Error(`owner tool loadout was not applied (${solo ? 'solo' : 'delegated'}): ${tools.join(',')}`);
+        // Part XI: one owner role holds both the worker-control and the target tools.
+        const workerControl = ['p2o_delegate', 'p2o_workers'];
+        if (!workerControl.every(name => tools.includes(name)) || !tools.includes('p2o_shell') || tools.includes('bash') || tools.includes('read')) throw new Error(`owner tool loadout was not applied: ${tools.join(',')}`);
         if(process.env.P2O_TEST_CASE_OWNER==='1'){
           const caseSchema=descriptions.find(tool=>tool.name==='p2o_case')?.parameters as any,coverageSchema=descriptions.find(tool=>tool.name==='p2o_coverage')?.parameters as any;
           if(caseSchema?.type!=='object'||!caseSchema.properties?.entry||!caseSchema.required?.includes('action')||coverageSchema?.type!=='object'||!coverageSchema.properties?.cell||!coverageSchema.required?.includes('action'))throw Error('case/coverage root object schema missing in real Pi context');
@@ -82,8 +82,8 @@ export function registerInertProvider(pi: ExtensionAPI, mode: 'owner' | 'worker'
           };
           if(!last)content=[{type:'toolCall',id:'work-asset',name:'p2o_graph',arguments:{action:'record',batch:{assets:[{asset:{kind:'file',key:'src/gate.py'}}]}}}];
           else if(lastTool==='p2o_graph')content=[{type:'toolCall',id:'work-task',name:'p2o_task',arguments:{action:'create',draft}}];
-          else if(lastTool==='p2o_task'&&!(results as any[]).some(r=>r.toolName==='p2o_plan'))content=[{type:'toolCall',id:'work-goal',name:'p2o_plan',arguments:{action:'create',requestId:'native-work-goal',entry:{kind:'goal',title:'Review one declared inert policy boundary',status:'active',reason:'Explicit controlled fixture; no investigation claimed',criteria:['Owner must review attribution and a control'],taskIds:[last.details.id]}}}];
-          else if(lastTool==='p2o_plan'&&results.filter((r:any)=>r.toolName==='p2o_plan').length===1)content=[{type:'toolCall',id:'work-goal-replay',name:'p2o_plan',arguments:{action:'create',requestId:'native-work-goal',entry:{kind:'goal',title:'Review one declared inert policy boundary',status:'active',reason:'Explicit controlled fixture; no investigation claimed',criteria:['Owner must review attribution and a control'],taskIds:[(results.find((r:any)=>r.toolName==='p2o_task') as any).details.id]}}}];
+          else if(lastTool==='p2o_task'&&!(results as any[]).some(r=>r.toolName==='p2o_plan'))content=[{type:'toolCall',id:'work-goal',name:'p2o_plan',arguments:{action:'create',requestId:'native-work-goal',entry:{kind:'goal',title:'Review one declared inert policy boundary',status:'active',reason:'Explicit controlled fixture; no investigation claimed',proof:{kind:'capability',capability:{kind:'file.read'}},criteria:['Owner must review attribution and a control'],taskIds:[last.details.id]}}}];
+          else if(lastTool==='p2o_plan'&&results.filter((r:any)=>r.toolName==='p2o_plan').length===1)content=[{type:'toolCall',id:'work-goal-replay',name:'p2o_plan',arguments:{action:'create',requestId:'native-work-goal',entry:{kind:'goal',title:'Review one declared inert policy boundary',status:'active',reason:'Explicit controlled fixture; no investigation claimed',proof:{kind:'capability',capability:{kind:'file.read'}},criteria:['Owner must review attribution and a control'],taskIds:[(results.find((r:any)=>r.toolName==='p2o_task') as any).details.id]}}}];
           else if(lastTool==='p2o_plan')content=[{type:'toolCall',id:'work-match',name:'p2o_task',arguments:{action:'match',draft}}];
           else if(lastTool==='p2o_task')content=[{type:'toolCall',id:'work-finish',name:'p2o_finish',arguments:{}}];
           else if(lastTool==='p2o_finish')content=[{type:'text',text:'OWNER_WORK_DONE: task cancelled by finish, goal retained active; no proof or investigation.'}];

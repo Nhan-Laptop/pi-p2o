@@ -44,7 +44,7 @@ describe('finish preflight', () => {
   }));
 
   it('names a missing coverage plan and an unreviewed handoff in the same block', async () => fixture(async h => {
-    await h.command('--target ./source --solo');
+    await h.command('--target ./source');
     expect(finishText(await h.call('p2o_finish', {}))).toMatch(/NO_COVERAGE_PLAN/);
   }));
 
@@ -66,7 +66,7 @@ describe('finish preflight', () => {
   });
 
   it('flags a surface/coverage note that never became a counted cell, advisory only', async () => fixture(async h => {
-    await h.command('--target ./source --solo');
+    await h.command('--target ./source');
     await h.call('p2o_coverage', { action: 'plan-create', plan: { title: 'Denominator not yet built', status: 'active', reason: 'Plan created before any cell exists', exclusions: [], unknownScope: ['Full surface not yet enumerated'] } });
     await h.call('p2o_note', { kind: 'coverage', text: 'Looked at the login surface informally', surface: '/login', risk: 'authz', outcome: 'clean' });
     await h.call('p2o_surface', { component: 'login-api', entryPoint: 'POST /login' });
@@ -81,17 +81,17 @@ describe('finish preflight', () => {
   }));
 
   it('flags a stated --goal that never became a recorded plan goal', async () => fixture(async h => {
-    await h.command('--target ./source --solo --goal "Assess the login boundary for IDOR"');
+    await h.command('--target ./source --goal "Assess the login boundary for IDOR"');
     const text = finishText(await h.call('p2o_finish', {}));
     expect(text).toMatch(/- NO_GOAL_RECORDED \(1\)/);
   }));
   it('does not flag it once the stated objective is recorded as a goal', async () => fixture(async h => {
-    await h.command('--target ./source --solo --goal "Assess the login boundary for IDOR"');
+    await h.command('--target ./source --goal "Assess the login boundary for IDOR"');
     await h.call('p2o_plan', { action: 'create', entry: { kind: 'goal', title: 'Assess the login boundary for IDOR', status: 'proposed', reason: 'Operator-stated objective turned into a tracked goal', criteria: ['Login IDOR surface enumerated'], exclusions: ['Out of scope: payment flows'], proof: { kind: 'capability', capability: { kind: 'http.request', subject: 'login' } } } });
     expect(finishText(await h.call('p2o_finish', {}))).not.toContain('NO_GOAL_RECORDED');
   }));
   it('does not flag a run with no stated --goal at all', async () => fixture(async h => {
-    await h.command('--target ./source --solo');
+    await h.command('--target ./source');
     expect(finishText(await h.call('p2o_finish', {}))).not.toContain('NO_GOAL_RECORDED');
   }));
 });

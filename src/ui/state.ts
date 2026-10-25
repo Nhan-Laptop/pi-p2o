@@ -38,7 +38,7 @@ export interface ViewProfile {
   exportEnabled: boolean; exportPath?: string; exportError?: string;
   engine: ReturnType<AssessmentEngine['snapshot']>; executor: { mode: string; maxTargetOperations: number; runningTargetOperations?: number; waitingTargetOperations?: number };
   retention?: 'durable-local' | 'ephemeral'; stateLocation?: string; storageError?: string;
-  runtime?: { version: string; sha256: string; policy?: number | 'off' };
+  runtime?: { version: string; sha256: string };
   workers?: WorkerView[]; held?: { reason: string; at: number }; usageLines?: string[];
   contextUsage?: { tokens: number | null; contextWindow: number; percent: number | null; at: number };
 }
@@ -90,7 +90,7 @@ export function statusView(index: LedgerIndex, profile: ViewProfile, context:Rep
       ...(pendingReview ? [`⚠ ${pendingReview} worker report${pendingReview === 1 ? '' : 's'} awaiting Planner review — report alone does not close a goal.`] : []),
       `Target: ${safe(profile.target, 1000)}`,
       ...(profile.held ? [`HOLD: new target commands and worker launches are refused until /p2o release — ${safe(profile.held.reason, 300)}. Commands already running finish; reporting and /p2o stop stay available.`] : []),
-      ...(profile.runtime ? [`Runtime: p2o ${safe(profile.runtime.version || 'unknown version', 40)} · ${safe(profile.runtime.sha256, 64).slice(0, 12)} (digest of the entry file + src closure; identifies code, not safety)${profile.runtime.policy !== undefined ? `; tool guidance ${profile.runtime.policy === 'off' ? 'off' : `v${profile.runtime.policy}`}` : ''}`] : []), taskLine,
+      ...(profile.runtime ? [`Runtime: p2o ${safe(profile.runtime.version || 'unknown version', 40)} · ${safe(profile.runtime.sha256, 64).slice(0, 12)} (digest of the entry file + src closure; identifies code, not safety)`] : []), taskLine,
       `Worker slots: ${profile.delegation ? profile.maxWorkers : 0}; target-operation cap: ${profile.executor.maxTargetOperations} (not network rate/connections)`,
       `Frontier: ${profile.engine.pendingIntents} accepted pending intents; automatic wakes ${profile.engine.rounds}`,
       ...workerLines(profile.workers ?? [], profile.maxWorkers),

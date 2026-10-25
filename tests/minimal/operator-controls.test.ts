@@ -81,7 +81,7 @@ describe('hold and release (inert executor, real broker)', () => {
   }));
 
   it('also gates the solo owner path (shell, net, http, capture) and the Planner learns of the hold', async () => fixture(async h => {
-    await h.command('--target ./source --solo');
+    await h.command('--target ./source');
     await h.call('p2o_shell', { command: 'echo before' });
     await h.command('hold');
     for (const [tool, params] of [['p2o_shell', { command: 'echo no' }], ['p2o_net', { command: 'echo no' }], ['p2o_capture', { path: 'a.txt' }]] as const)

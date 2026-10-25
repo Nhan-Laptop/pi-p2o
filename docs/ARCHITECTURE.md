@@ -17,8 +17,8 @@ finite coalescing windows (100 ms) that need explicit event-driven consent. See 
 
 - Only the live owner process holds consent, broker, executors and cleanup. Transcripts, ledger history and
   summaries never recreate authority after a restart.
-- `src/tool-policy.ts` enforces loadouts: a delegated Planner cannot shell/net/HTTP; workers cannot accept, review or
-  dispatch; reporting workers cannot execute or record candidates.
+- `src/tool-policy.ts` gives the lead every owner tool (delegation and target execution together) and workers their
+  investigation/reporting set; workers cannot accept, review or dispatch, and no role is denied a tool for reporting.
 - Worker tickets bind identity, token, run, image, extension bytes and runtime profile; they last until stopped and are
   revoked by report, withdrawal or socket loss. A wrong model/thinking profile fails closed.
 - Every target operation re-checks scope, ticket and task readiness. Scope is agent policy, not an egress
@@ -36,21 +36,21 @@ finite coalescing windows (100 ms) that need explicit event-driven consent. See 
 - A report persists (hashed parts, manifest, task transition, coverage, open items) **before** revocation and
   notification. Capacity is reused only after verified pane/executor retirement; each assignment is a fresh process.
 - Manual loop (default) dispatches accepted work but never calls a Planner model by itself. Event-driven wakes use Pi's
-  normal `sendUserMessage` path with a marked extension-origin prompt, so scope instructions stay intact. A provider
+  normal `sendUserMessage` path with a marked extension-origin prompt, so the objective context stays intact. A provider
   error pauses automatic wakes without retry.
 
 ## Execution
 
 - Shared executor: `Sandbox.enqueue` serializes target operations; cancelling can remove the executor and interrupt peers.
   Isolated: fresh source copy, scratch, cookies and container per assignment, gated by a separate target-operation semaphore.
-- HTTP is exact-origin checked on every redirect with the destination pinned; shell/net are not origin-filtered
-  ([boundaries](HTTP_TRANSPORT.md)). Containers: non-root, read-only root and source, dropped capabilities, no host or
-  provider credentials. Docker shares the host kernel; this is not VM isolation.
+- HTTP follows redirects to any http(s) host and pins the destination; shell/net are not origin-filtered either
+  ([boundaries](HTTP_TRANSPORT.md)). Containers: root with a writable rootfs and all capabilities, read-only `/target`,
+  no host or provider credentials. Docker shares the host kernel; this is not VM isolation.
 
 ## Persistence, accounting, teardown
 
 - Canonical state is one SQLite file per run ([AssessmentStore](STATE_STORE.md)); the older JSONL ledger is still read.
-- Defaults: 3 model slots (operator-selected, no hard ceiling), 100 live tasks, 1,000 registrations, 256 pending signals.
+- Defaults: 3 model slots (operator-selected, no hard ceiling), 1,000 registrations, 256 pending signals; no live-task ceiling.
   **No command allowance exists** (owner decision 2026-10-24): the broker counts every admitted target command for the ledger and the
   report, and refuses none of them. The retired class allowance (200, or 400 for `exploitation`/`chaining`) and its `wrapUp`
   obligation are gone with it, as are the per-worker read/coordination splits, `work.budget` and `maxPlannerRounds`. No count in
@@ -68,7 +68,7 @@ finite coalescing windows (100 ms) that need explicit event-driven consent. See 
 |---|---|
 | `extensions/p2o/index.ts` | Pi adapter: commands, tools, lifecycle, consent, loadouts, cleanup |
 | `src/engine.ts`, `src/planner-bridge.ts` | Frontier, slots, semantic signals, rounds, wake encoding |
-| `src/tool-policy.ts`, `src/prompts.ts` | Capability enforcement; Planner/solo/worker responsibilities |
+| `src/tool-policy.ts`, `src/prompts.ts` | Tool loadouts; lead/worker responsibilities |
 | `src/tasks.ts`, `src/board.ts` | Task board, readiness, atomic reservation, `LedgerBoard` mutation queue |
 | `src/executors.ts`, `src/sandbox.ts`, `src/http-session.ts`, `src/source.ts` | Executors, containers, actor-local HTTP state, bounded source snapshots |
 | `src/broker.ts`, `src/ticket.ts` | Socket authority, command accounting, fresh tickets |

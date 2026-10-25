@@ -7,7 +7,7 @@ confirmation and the live owner establish authority; disk state, summaries and w
 
 - `p2o_task` (owner only) creates a bounded question: surface, risk, role, contrasting predictions, evidence IDs,
   prerequisite revisions, method and stop condition. Missing prerequisites create a **blocked** task.
-- Actions: `create`, `revise` (needs current `revision`), `list`, `start` (solo), `dispatch`, `review`, `close`,
+- Actions: `create`, `revise` (needs current `revision`), `list`, `start`, `dispatch`, `review`, `close`,
   `block`, `cancel`, plus `match` ([work admission](WORK_ADMISSION.md)). Use `list {id}` for one task in full.
 - A running worker packet must be reported first. Review is an attributed decision, **not proof**; closing a task and
   closing a candidate are separate. A validation task names `validationOf` and the reviewed predecessor revision.

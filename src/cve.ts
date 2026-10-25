@@ -10,7 +10,8 @@ import { sha256Hex } from './validate.js';
 import type { AssessmentRecord } from './records.js';
 
 /** The only hosts a CVE fetch may reach; the query cannot choose its own destination. */
-export const CVE_HOSTS = ['services.nvd.nist.gov', 'nvd.nist.gov', 'www.cve.org', 'cve.org'] as const;
+/** Suggested starting points for action=fetch; not an allowlist. */
+export const CVE_SUGGESTED_HOSTS = ['services.nvd.nist.gov', 'nvd.nist.gov', 'www.cve.org', 'cve.org'] as const;
 export const LEAD_STATES = ['untriaged', 'tasked', 'ruled_out'] as const;
 export type LeadState = typeof LEAD_STATES[number];
 
@@ -35,10 +36,10 @@ export function cveQuery(input: Record<string, unknown>): CveQuery {
   return { product, ...(version ? { version } : {}), ...(vendor ? { vendor } : {}), ...(cpe ? { cpe } : {}) };
 }
 
+/** Part XI: any http(s) source is allowed; the suggested hosts above are advice, not a gate. */
 export function assertCveSource(value: string): URL {
   const url = new URL(value);
-  if (url.protocol !== 'https:') throw Error('CVE sources are fetched over https only');
-  if (!(CVE_HOSTS as readonly string[]).includes(url.hostname.toLowerCase())) throw Error(`CVE fetch refused: ${url.hostname} is not an allowlisted source (${CVE_HOSTS.join(', ')})`);
+  if (!['http:', 'https:'].includes(url.protocol)) throw Error('CVE sources are fetched over http(s) only');
   return url;
 }
 
@@ -48,7 +49,7 @@ export function cveUrl(query: CveQuery): string {
   const search = query.version ? `${terms} ${query.version}` : terms;
   const url = new URL('https://services.nvd.nist.gov/rest/json/cves/2.0');
   url.searchParams.set('keywordSearch', search.slice(0, 200));
-  url.searchParams.set('resultsPerPage', '20');
+  url.searchParams.set('resultsPerPage', '2000');
   assertCveSource(url.toString());
   return url.toString();
 }

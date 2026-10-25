@@ -15,7 +15,7 @@ const success={message:{role:'assistant',content:[{type:'text',text:'Inert respo
 
 describe('indexed role packets through the active owner/worker hooks',()=>{
   it('does not ACK at agent_start or provider-error; a successful response advances only delivery',async()=>fixture(async(h)=>{
-    await h.command('--target ./source --solo');await h.call('p2o_note',{kind:'open',text:'Old durable unresolved gap'});await h.emit('agent_start');let store=await h.reader();try{expect(store.contextCursor('planner')).toBeUndefined();}finally{store.close();}
+    await h.command('--target ./source');await h.call('p2o_note',{kind:'open',text:'Old durable unresolved gap'});await h.emit('agent_start');let store=await h.reader();try{expect(store.contextCursor('planner')).toBeUndefined();}finally{store.close();}
     const projection=await h.emit('context',{messages:[]}),prepared=h.packet(projection);expect(prepared.counts.openGaps).toBe(1);expect(prepared.newGaps).toHaveLength(1);expect(h.pi.messages).toHaveLength(1);expect(h.sandboxes[0].commands).toEqual([]);
     await h.command('heads all 0 5');await h.command('digest');store=await h.reader();try{expect(store.contextCursor('planner')).toBeUndefined();expect(store.sequence()).toBe(prepared.asOfSequence);}finally{store.close();}
     await h.emit('message_end',{message:{role:'assistant',stopReason:'error',errorMessage:'Inert provider failure'}});store=await h.reader();try{expect(store.contextCursor('planner')).toBeUndefined();}finally{store.close();}
@@ -24,7 +24,7 @@ describe('indexed role packets through the active owner/worker hooks',()=>{
     expect(h.pi.messages).toHaveLength(1);expect(h.sandboxes[0].commands).toEqual([]);
   }));
   it('refuses an aborted projection and keeps pending delta available without a model retry',async()=>fixture(async(h)=>{
-    await h.command('--target ./source --solo');await h.call('p2o_note',{kind:'open',text:'Unresolved abort fixture'});await h.emit('context',{messages:[]});h.ctx.ctx.abort();await h.emit('message_end',success);const store=await h.reader();try{expect(store.contextCursor('planner')).toBeUndefined();expect(store.contextPacket({consumerId:'planner',role:'planner'}).counts.openGaps).toBe(1);}finally{store.close();}expect(h.pi.messages).toHaveLength(1);
+    await h.command('--target ./source');await h.call('p2o_note',{kind:'open',text:'Unresolved abort fixture'});await h.emit('context',{messages:[]});h.ctx.ctx.abort();await h.emit('message_end',success);const store=await h.reader();try{expect(store.contextCursor('planner')).toBeUndefined();expect(store.contextPacket({consumerId:'planner',role:'planner'}).counts.openGaps).toBe(1);}finally{store.close();}expect(h.pi.messages).toHaveLength(1);
   }));
   it('delivers assignment-bound worker context/receipts under verified runtime and refuses forged ACKs',async()=>fixture(async(h)=>{
     await h.command('--target ./source');const delegated=(await h.call('p2o_delegate',{focus:'context-worker',task:'Read one inert authorized assignment',role:'general',skills:[]})).details.workerId,control=join(h.root,'control',(await readdir(join(h.root,'control')))[0]),ticketPath=join(control,`ticket-${delegated}.json`),ticket=JSON.parse(await readFile(ticketPath,'utf8')),client=new BrokerClient(ticket.socket,ticket.token);

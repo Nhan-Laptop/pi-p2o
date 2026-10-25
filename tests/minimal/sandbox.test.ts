@@ -36,13 +36,13 @@ const target = { kind: 'url' as const, url: 'https://example.com', origin: 'http
 const request = { url: '/x', method: 'GET' as const, followRedirects: true, maxRedirects: 3 };
 
 describe('sandbox executor, no agents', () => {
-  it('starts a pinned, unprivileged executor with network egress; model shell only reaches docker exec', async () => {
+  it('starts a pinned, fully privileged executor with network egress; model shell only reaches docker exec', async () => {
     const d = driver(); const sandbox = new Sandbox(target, d.run);
     await sandbox.start(); await sandbox.exec('printf data');
     const create = d.calls.find(args => args.includes('create'))!;
-    for (const flag of ['--read-only', '--cap-drop', '--security-opt', '--pids-limit', '--memory', '--cpus', '--tmpfs', IMAGE]) expect(create).toContain(flag);
+    expect(create).toContain(IMAGE);
+    for (const flag of ['--read-only', '--cap-drop', '--security-opt', '--pids-limit', '--memory', '--cpus', '--user']) expect(create, flag).not.toContain(flag);
     expect(create[create.indexOf('--network') + 1]).toBe('bridge');
-    expect(create[create.indexOf('--user') + 1]).toBe('65532:65532');
     expect(create).not.toContain('printf data');
     expect(d.calls.find(args => args.includes('exec'))?.at(-1)).toBe('printf data');
     await sandbox.stop(); expect(d.names.size).toBe(0);
@@ -70,18 +70,19 @@ describe('sandbox executor, no agents', () => {
     expect(d.streams[index + 1]).toBe('{"a":1}');
     expect(result.hops).toEqual(['200 POST https://example.com/x → 93.184.216.34 (public)']);
     expect(d.names.size).toBe(1); // Only the executor remains; the request container is gone.
-    await expect(sandbox.http({ ...request, url: 'https://other.com/' })).rejects.toThrow('Out of scope');
+    d.script('HTTP/1.1 200 OK\r\n\r\nok');
+    await expect(sandbox.http({ ...request, url: 'https://other.com/' })).resolves.toMatchObject({ hops: [expect.stringContaining('other.com')] });
     await sandbox.stop();
   });
-  it('follows redirects only while every hop stays inside the confirmed origin', async () => {
+  it('follows redirects across origins because there is no scope (Part XI)', async () => {
     const d = driver(); const sandbox = new Sandbox(target, d.run, async () => ['93.184.216.34']);
     await sandbox.start();
     d.script('HTTP/1.1 302 Found\r\nLocation: /next\r\n\r\n', 'HTTP/1.1 200 OK\r\n\r\nok');
     const reached = await sandbox.http(request);
     expect(reached.hops).toEqual(['302 GET https://example.com/x → 93.184.216.34 (public)', '200 GET https://example.com/next → 93.184.216.34 (public)']);
-    d.script('HTTP/1.1 302 Found\r\nLocation: https://other.com/\r\n\r\n');
-    const blocked = await sandbox.http(request);
-    expect(blocked.redirectStopped).toContain('Out of scope');expect(blocked.hops).toHaveLength(1);
+    d.script('HTTP/1.1 302 Found\r\nLocation: https://other.com/\r\n\r\n', 'HTTP/1.1 200 OK\r\n\r\nok');
+    const crossed = await sandbox.http(request);
+    expect(crossed.hops!).toHaveLength(2); expect(crossed.hops![1]).toContain('other.com'); expect(crossed.redirectStopped).toBeUndefined();
     d.script('HTTP/1.1 302 Found\r\nLocation: /next\r\n\r\n');
     const unfollowed = await sandbox.http({ ...request, followRedirects: false });
     expect(unfollowed.hops).toHaveLength(1);

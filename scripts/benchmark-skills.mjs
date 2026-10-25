@@ -67,7 +67,7 @@ Options:
   --max-cost-usd <n>      per-run cost ceiling when the provider reports cost (default: ${DEFAULT_MAX_COST_USD})
   --max-turns <n>         fixed per-run assistant-turn ceiling (default: ${DEFAULT_MAX_TURNS})
   --max-target-commands <n> fixed per-run p2o_shell+p2o_http ceiling (default: ${DEFAULT_MAX_TARGET_COMMANDS})
-  --delegation            allow visible worker panes (default: --solo; needs Herdr)
+  --delegation            allow visible worker panes (default: no delegation; the lead works directly)
   --workers <n>           workers when --delegation is set, 1..${MAX_WORKERS_BOUND} (default: 1)
   --start-flag <flag>     explicit additional /p2o start flag, repeatable (overrides arm defaults)
   --no-export             suppress the arm's --export start flag (A never receives it)
@@ -561,7 +561,7 @@ async function executeRun({ plan, run, truth, options, suiteId, resultsDir }) {
   const dialogs = [];
   const notifications = [];
   const startFlags = p2oStartFlags(arm, options);
-  const p2oCommand = `/p2o --target ./target${options.delegation ? ` --workers ${options.workers}` : ' --solo'}${startFlags.length ? ` ${startFlags.join(' ')}` : ''}`;
+  const p2oCommand = `/p2o --target ./target${options.delegation ? ` --workers ${options.workers}` : ''}${startFlags.length ? ` ${startFlags.join(' ')}` : ''}`;
   // The objective is appended by a wrapper extension loaded after the tested arm; the runner sends
   // no follow-up prompt, so no benchmark work can start after p2o_finish or outside the sandbox.
   const objectiveWrapperSource = objectiveExtensionSource(run.objective);

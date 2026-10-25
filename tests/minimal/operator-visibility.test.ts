@@ -143,9 +143,9 @@ describe('runtime commands (no model, no target work)', () => {
     const command = (text: string) => pi.commands.get('p2o').handler(text, ctx.ctx), screen = () => ctx.screens.at(-1).render(200).join('\n');
     const emit = async (event: string, payload: any, context: any) => { let result: any; for (const handler of pi.events.get(event) ?? []) result = await handler(payload, context); return result; };
     try {
-      await command('--target ./source --solo'); const messages = pi.messages.length;
+      await command('--target ./source'); const messages = pi.messages.length;
       await command('status'); expect(screen()).toContain('Planner context: not reported yet; measurement only');
-      expect(screen()).toMatch(/Runtime: p2o \S+ · [0-9a-f]{12} \(digest of the entry file \+ src closure; identifies code, not safety\); tool guidance off/);
+      expect(screen()).toMatch(/Runtime: p2o \S+ · [0-9a-f]{12} \(digest of the entry file \+ src closure; identifies code, not safety\)/);
       await emit('context', { messages: [] }, { ...ctx.ctx, getContextUsage: () => ({ tokens: 1234, contextWindow: 10_000, percent: 12.34 }) });
       await command('status'); expect(screen()).toContain('Planner context: 12% (1234 of 10000 tokens) at the last request; measurement only, p2o never compacts or summarizes');
       await emit('context', { messages: [] }, { ...ctx.ctx, getContextUsage: () => ({ tokens: null, contextWindow: 10_000, percent: null }) });

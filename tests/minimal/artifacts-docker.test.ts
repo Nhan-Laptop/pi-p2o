@@ -50,7 +50,7 @@ it.skipIf(process.env.P2O_TEST_DOCKER !== '1')('real Docker owner runtime: valid
   registerP2O(pi.pi,{extensionPath:EXTENSION_PATH,controlRoot:join(root,'control'),settingsPath:join(root,'isolated-settings.json'),createSandbox:(target,profile)=>{const s=new Sandbox(target,undefined,undefined,profile);sandboxes.push(s);return s;}});
   const command=(args:string)=>pi.commands.get('p2o').handler(args,ctx.ctx),call=(name:string,params:any)=>pi.tools.get(name).execute(randomUUID(),params,undefined,undefined,ctx.ctx);
   try{
-    await command('--target ./source --solo');expect(sandboxes).toHaveLength(1);
+    await command('--target ./source');expect(sandboxes).toHaveLength(1);
     const made=await call('p2o_shell',{command:`python3 -c "from pathlib import Path; p=Path('/work/sub space'); p.mkdir(); (p/'report;quoted.txt').write_text('password=PRIVATE_CAPTURE_VALUE\\n'+'x'*60000+'SCRATCH-TAIL'); Path('/work/empty').write_text(''); Path('/tmp/outside').write_text('OUTSIDE_NOT_IMPORTED'); Path('/work/binary').write_bytes(bytes([0,1,2]))"; ln -s /tmp/outside /work/link; ln -s /tmp /work/dir-link; printf plain > /work/hard; ln /work/hard /work/hard-link; mkfifo /work/fifo; printf ready`});expect(made.details.exitCode).toBe(0);
     const first=await call('p2o_capture',{path:'sub space/report;quoted.txt'}),id=first.details.capture.artifacts[0].id;expect(JSON.stringify(first)).not.toContain('PRIVATE_CAPTURE_VALUE');expect(first.content[0].text).toContain('Artifact ID:');expect(first.details.capture.artifacts[0]).toMatchObject({truncated:false,capturedInputBytes:60043,totalBytes:60043});
     const run=(await readdir(join(root,'.p2o-state')))[0],store=AssessmentStore.open(join(root,'.p2o-state'),run);

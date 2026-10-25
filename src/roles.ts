@@ -108,8 +108,6 @@ export interface P2OSettings {
   retention: RetentionMode;
   storageQuotaMiB: number;
   artifactCaptureKiB: number;
-  /** Per-tool workflow guidance (src/tool-guidelines.ts). Read when the extension loads; /reload applies a change. */
-  toolGuidance: boolean;
   /** Write the deterministic report when a durable-local run is cleaned up (finish, stop, shutdown). Ephemeral runs keep it off unless set explicitly. */
   autoReport: boolean | undefined;
   /** Absolute directory that receives report-<runId>/; default is <cwd>/.p2o-reports. */
@@ -123,7 +121,7 @@ export interface P2OSettings {
   roles: Partial<Record<Role, RoleSettings>>;
 }
 
-const blank = (): P2OSettings => ({ maxWorkers: DEFAULT_MAX_WORKERS, maxDepth: DEFAULT_MAX_DEPTH, loopMode: 'manual', executorMode: 'shared', maxTargetOperations: 3, retention: 'durable-local', storageQuotaMiB: DEFAULT_STORAGE_QUOTA_MIB, artifactCaptureKiB: DEFAULT_ARTIFACT_CAPTURE_KIB, toolGuidance: DEFAULT_TOOL_GUIDANCE, autoReport: undefined, reportFormat: 2, reviewIntegrity: 'annotate', roles: {} });
+const blank = (): P2OSettings => ({ maxWorkers: DEFAULT_MAX_WORKERS, maxDepth: DEFAULT_MAX_DEPTH, loopMode: 'manual', executorMode: 'shared', maxTargetOperations: 3, retention: 'durable-local', storageQuotaMiB: DEFAULT_STORAGE_QUOTA_MIB, artifactCaptureKiB: DEFAULT_ARTIFACT_CAPTURE_KIB, autoReport: undefined, reportFormat: 2, reviewIntegrity: 'annotate', roles: {} });
 
 export function isRole(value: unknown): value is Role { return typeof value === 'string' && (ROLES as readonly string[]).includes(value); }
 
@@ -142,7 +140,6 @@ export function parseSettings(raw: unknown): P2OSettings {
   settings.retention = source.retention === 'ephemeral' ? 'ephemeral' : 'durable-local';
   settings.storageQuotaMiB = typeof source.storageQuotaMiB === 'number' && Number.isInteger(source.storageQuotaMiB) && source.storageQuotaMiB >= 8 && source.storageQuotaMiB <= 1024 ? source.storageQuotaMiB : DEFAULT_STORAGE_QUOTA_MIB;
   settings.artifactCaptureKiB = clamp(source.artifactCaptureKiB, DEFAULT_ARTIFACT_CAPTURE_KIB, 8192);
-  settings.toolGuidance = typeof source.toolGuidance === 'boolean' ? source.toolGuidance : DEFAULT_TOOL_GUIDANCE;
   settings.autoReport = typeof source.autoReport === 'boolean' ? source.autoReport : undefined;
   if (typeof source.reportRoot === 'string' && source.reportRoot.length <= 1024 && isAbsolute(source.reportRoot) && source.reportRoot === source.reportRoot.normalize('NFC') && !/[\x00-\x1f\x7f]/.test(source.reportRoot)) settings.reportRoot = source.reportRoot;
   settings.reportFormat = source.reportFormat === 1 ? 1 : 2;

@@ -47,12 +47,16 @@ describe('purpose-keyed duty (P1)', () => {
 
   it('keeps the purpose out of the shared prompt prefix so siblings share the body', () => {
     const mapping = workerInstructions(ticket({ workerId: 'p2o-recon-aaaaaa', role: 'recon' }));
+    const sibling = workerInstructions(ticket({ workerId: 'p2o-recon-bbbbbb', role: 'recon' }));
     const reporting = workerInstructions(ticket({ workerId: 'p2o-report-bbbbbb', role: 'reporting' }));
     expect(mapping.split('\n').slice(-2)[0]).toBe(dutyLine('mapping'));
     expect(mapping.split('\n').at(-1)).toContain('Identity:');
     expect(reporting).toContain(dutyLine('reporting'));
-    let shared = 0; while (shared < mapping.length && shared < reporting.length && mapping[shared] === reporting[shared]) shared += 1;
-    expect(mapping.slice(0, shared)).not.toContain('Your duty (');
+    // Everything except the per-purpose duty and the per-worker identity is one shared static body.
+    const strip = (text: string) => text.split('\n').filter(line => !line.startsWith('Your duty (') && !line.startsWith('Identity:')).join('\n');
+    expect(strip(mapping)).toBe(strip(sibling));
+    expect(strip(mapping)).toBe(strip(reporting));
+    expect(dutyLine('mapping')).not.toBe(dutyLine('reporting'));
   });
 });
 

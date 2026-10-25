@@ -986,6 +986,76 @@ not a missing or dead surface.
 - Docs stay in sync one step behind the surface: `README.md` now lists all 25 tools with their real role sets, and
   `docs/USAGE.md` records that every tool has one boundary line.
 
+## Part XI — Remove the limits (owner decisions, 2026-10-25)
+
+This is a product pivot, recorded so no later reader assumes the old guarantees. p2o stops being a harness that
+enforces a confirmed scope and a role split; it becomes an unrestricted research and attack agent whose only
+authorization is the operator's start action. The evidence rules (claim closure, controls, interruption, lead-not-evidence)
+stay: they are what makes the output trustworthy, and none of them limits what the agent may do.
+
+### XI.1 Decisions
+
+| # | Decision | Effect |
+| --- | --- | --- |
+| 0 | Remove solo mode | one owner role with every owner tool (target tools and delegation together); `--solo`, the solo loadout, the "do not execute target commands" branch, and the `solo` usage label are deleted. Without a worker backend the lead simply does the work. |
+| 1 | No task-frontier bound | the 100-live-task cap and the "exact work history exceeds the bounded admission view" refusal are deleted. |
+| 2 | Research is a web fetch | fetch any http(s) URL, no corpus-only rule, no host allowlist, no response cap; the four CVE hosts stay as suggested starting points. CVE lookup loses its allowlist and 2 MiB cap. |
+| 3 | Shell has full container privileges | no `--read-only`, no `--cap-drop ALL`, no `no-new-privileges`, no non-root uid, no pids/memory/cpu limits. No host mount and no Docker socket: full root inside one throwaway container. |
+| 4 | No scope | no origin check, no redirect-hop origin check, no "out of scope" refusal; the target is a starting label for the prompt and evidence. `p2o_http` works on a directory-only run when given an absolute URL. |
+| 5 | Reporting has every right | the reporting tool filter, the `TARGET_FACING_OPERATIONS` denial map and the synthesis-only prompt branch are deleted; a reporting worker is an ordinary worker. |
+| 6 | Export needs no confirmation | `/p2o report export` writes without a UI prompt and without an interactive-session requirement. |
+| 7 | Historical runs are resumable | opening a retained run for write and continuing it is implemented by `/p2o --resume <run-id>` (XI.4); read-only stays the default for inspection. |
+| 8 | No separate guideline layer | the 25 boundary sentences move into each tool's description (always shown); `TOOL_GUIDELINES`, `withGuidelines`, `toolGuidance`, `POLICY_VERSION` and the given-advice-free lead prompt rule are deleted. |
+| 9 | Paid weakness run | one paid weakness run against a configured provider/model with an explicit spend cap (XI.5; completed). |
+
+### XI.2 What this costs
+
+- The prompt no longer claims scope enforcement, so "authorized" becomes the operator's statement, not a property the
+  code checks. Docs and the start confirmation must say so.
+- A root shell with egress and no origin filter can reach the host network, cloud metadata and the operator's LAN. That is
+  the intended capability; it makes the container the only blast-radius boundary left.
+- Deleting the reporting split removes the review separation that made "worker claims" distinct from "owner review".
+  Evidence vocabulary still keeps a claim from being called demonstrated without confirmation + execution.
+- Tests that pin the removed refusals are rewritten or deleted; the suites below are the acceptance surface.
+
+### XI.3 Staged implementation
+
+1. **S1 — descriptions absorb the boundaries. DONE.** Fold `TOOL_GUIDELINES` text into every tool description, delete the
+   flag/version/helper, update `workflow-policy` and `skill-hygiene` tests, remove `toolGuidance` from settings docs.
+2. **S2 — one owner role. DONE.** Delete `--solo`, `ownerTools(delegated)`, the planner-only guard, the solo prompt branch and
+   the `solo` usage label; the lead keeps every owner tool whether or not a worker backend exists.
+3. **S3 — reporting equals worker. DONE.** Delete the tool filter, the denial map, the broker guard and the prompt branches;
+   reporting-policy becomes an equality test.
+4. **S4 — no frontier cap, no export confirmation. DONE.**
+5. **S5 — shell limits out of the Docker create flags. DONE.**
+6. **S6 — scope removal. DONE.** `scopedRequest` validates the URL and resolves the host, never compares origins; prompts lose
+   the scope sentences; directory runs can use `p2o_http`.
+7. **S7 — research fetch. DONE.** Add `action: 'fetch'` (host-side, any URL, full body, provenance row), delete the corpus-only
+   and CVE allowlist checks and the response caps.
+8. **S8 — resume a historical run. DONE.** `/p2o --resume <run-id>` reopens the durable-local store writable, records the
+   interruption boundary, rebuilds the run around the same `runId` and profile, and starts fresh workers; no ticket,
+   operation or worker is restored, and read-only inspection stays available. Tests: `resume.test.ts`.
+
+### XI.4 Resume design (S8)
+
+`AssessmentStore.open(root, runId, { readOnly: false })` is used by `/p2o --resume <run-id>` after a read-only manifest
+admission check. The implementation refuses an active/incompatible run · opens writable · records
+`reconcileInterruption(..., resume:true)` without rewriting task status · builds the same `OwnerRun` around the existing
+store · starts a fresh sandbox/broker/executor/engine · sets `OWNER_TOOLS` · wakes the lead. Historical reader and the
+resumed run must not coexist. Tests: `resume.test.ts` verifies the same `runId`, retained records, interruption boundary,
+empty worker set and refusal of a second live writer.
+
+### XI.5 Paid weakness run (S9) — DONE (2026-10-25)
+
+With explicit operator authorization, the current working tree was run against the hard `fastapi-parity` corpus using
+`opencode-go/deepseek-v4.1-flash`, thinking `off`, a `$29` per-run ceiling, 45-minute wall ceiling, 60-turn ceiling and
+120 target-command ceiling. `bench/` remained untouched; outputs were kept under `tmp/s9-work` and `tmp/s9-results`.
+One vulnerable and one fixed run cost `$0.07362669` and `$0.03542256` respectively (`$0.10904925` total). The vulnerable
+run found all three expected route-authorization findings with recall 1.00, precision 0.75, proof/gap/evidence metrics
+1.00; the fixed run produced zero findings and zero false positives. Detailed receipts and the weakness review are in
+`tmp/s9-report.md`. Findings include finish/export snapshot ordering, cleanup-attestation/evaluator mismatch, worker
+executor loss, owner validation-task friction and benchmark delegation-control mismatch. No provider failure or budget
+exceedance occurred.
 ---
 
 Retired plans stay outside the tree under `tmp/` (gitignored): `planning-2026-10-22-retired-chain-lineage.md`,

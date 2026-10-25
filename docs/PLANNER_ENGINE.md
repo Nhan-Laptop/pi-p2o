@@ -10,7 +10,7 @@ Architecture overview: [ARCHITECTURE.md](ARCHITECTURE.md). This page is the oper
 /p2o pause    /p2o resume    /p2o stop
 ```
 
-- Defaults are manual + shared. Without Herdr, or with `--solo`, Pi stays the working agent and event-driven is rejected.
+- Defaults are manual + shared. Without Herdr the lead does the work itself and event-driven is rejected.
 - `--workers N` is a positive integer cap on concurrent model slots. `--target-ops N` is a separate target-operation
   shared always 1; isolated multiplies resources. `--max-depth` is kept for compatibility only: workers
   propose tasks, they never spawn children.
@@ -101,10 +101,10 @@ Negative evidence là checkpoint: `ruled_out` thứ hai trên cùng surface+capa
 có evidence mới hoặc control/cơ chế khác — tức tối đa **một** lần re-check, đúng luật ARTEX. Một `ruled_out` ghi với
 `execution:not_tested` hiện là `unproven-negation` trên situation line để lead biết phải dispatch đúng một lần kiểm chứng.
 
-### CVE lead: host fetch có allowlist (P16.4)
+### CVE lead: host fetch, host gợi ý (P16.4)
 
 `p2o_research action=cve` nhận `product`/`version` (kèm `vendor`/`cpe` tuỳ chọn) và `assetRefs`; **host** dựng URL NVD và tự
-fetch — model không bao giờ đưa ra địa chỉ. Kết quả ghi `lead` record với provenance `{url, retrievedAt, sha256}`, trạng thái
+fetch — bốn host gợi ý chỉ là lời khuyên, không phải allowlist; `action=fetch` còn cho phép tải thẳng bất kỳ URL http(s). Kết quả ghi `lead` record với provenance `{url, retrievedAt, sha256}`, trạng thái
 `untriaged`; `action=triage` chuyển sang `tasked`/`ruled_out` (kèm lý do) bằng một revision `supersedes`. Một lead là con trỏ
 để kiểm chứng: claim cite lead chỉ được `policyBasis:"inferred"` + `open_proof_gap`, và `closure:"confirmed"` bị từ chối
 (`LEAD_NOT_EVIDENCE`). Situation có segment `leads: N untriaged (M critical)`; preflight/report hiện advisory
@@ -192,7 +192,7 @@ context/abort guards cover late delivery. An accepted remote request cannot be u
 
 Ledger v2, task statuses, owner-only writes, report manifests, evidence/independence gates and until-stopped tickets
 are unchanged; there is no authority recovery from disk. Stop any active assessment before reloading the extension
-(tickets bind its bytes). Rollback = stop, use manual + shared or solo, start a newly confirmed assessment; a failed
+(tickets bind its bytes). Rollback = stop, use manual + shared, start a newly confirmed assessment; a failed
 cleanup stays disclosed and `/p2o stop` retries it.
 
 Still open: incremental indexes and archival checkpoints, durable Planner todo at scale, warm process reuse,

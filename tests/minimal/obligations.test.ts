@@ -77,7 +77,7 @@ describe('the frontier obligation refuses at create, not at finish (M2 + M4)', (
     evidenceRefs: [observation.evidenceId], ...extra })).details;
 
   it('refuses a mapping task on a surface with a ready step and accepts it once the provider is cited or the link is deferred', async () => fixture(async h => {
-    await h.command('--target ./source --solo');
+    await h.command('--target ./source');
     const asset = (await h.call('p2o_graph', { action: 'record', batch: { assets: [{ asset: { kind: 'endpoint', key: 'GET /report-fixture' } }] } })).details.acks[0];
     const observation = (await h.call('p2o_shell', { command: 'printf obligation-observation' })).details;
     const put = record(h, observation);
@@ -99,7 +99,7 @@ describe('the frontier obligation refuses at create, not at finish (M2 + M4)', (
   }));
 
   it('lists an unconsumed primitive and clears it when a wall names it', async () => fixture(async h => {
-    await h.command('--target ./source --solo');
+    await h.command('--target ./source');
     const observation = (await h.call('p2o_shell', { command: 'printf primitive-observation' })).details;
     const put = record(h, observation);
     const primitive = await put('walled-primitive', { closure: 'confirmed', execution: 'tested', proof: 'live_reproduction', policyBasis: 'boundary_invariant', gained: [READ] });

@@ -1,12 +1,9 @@
 /**
- * Workflow guidance attached to the tool it is about, so it appears in the model's instructions exactly when that tool is active and a
- * role never reads advice about a tool it cannot call. The lead's own policy section stays free of tool names and inside its size budget;
- * these lines are operational advice only and never grant, widen or replace a gate the host enforces.
- * Bump POLICY_VERSION when any line changes: it is part of the runtime closure digest and is shown to the operator.
+ * 2026-10-25 (planning_update.md Part XI): there is no separate guidance layer. These boundary sentences are appended to
+ * the tool's own description at registration, so the model sees them exactly where it sees the tool and the operator has
+ * no flag to set. They never grant, widen or replace a gate the host enforces.
  */
-export const POLICY_VERSION = 4;
-
-export const TOOL_GUIDELINES: Readonly<Record<string, readonly string[]>> = {
+export const TOOL_BOUNDARIES: Readonly<Record<string, readonly string[]>> = {
   p2o_task: ['Run p2o_task action=match with a structured work identity before creating or dispatching new work, so an exact active duplicate or reviewable history is reported instead of repeated.'],
   p2o_delegate: ['Pass work with decision and outputContract (the shape p2o_task create uses) so exact duplicate and history checks run; without work the identity is unknown and nothing is checked.'],
   p2o_case: ['Record a reviewed outcome as a case pinned to exact claim, task and asset revisions; a worker claim is not a finding until its case is accepted and current.'],
@@ -26,7 +23,7 @@ export const TOOL_GUIDELINES: Readonly<Record<string, readonly string[]>> = {
   p2o_surface: ['One component+entryPoint per row; duplicate=true is a cheap hint, not a block. Keep detail and evidence in p2o_note.'],
   p2o_artifact: ['Reads a retained artifact by ID, written by the capture step. Cite the ID instead of pasting the text again.'],
   p2o_ledger: ['Read complete records by ID (report parts included). p2o_state narrows heads/search; p2o_graph holds typed assets and facts.'],
-  p2o_research: ['Technique and CVE context only: a cited source is not evidence, and a CVE lead never confirms a claim; playbooks come from p2o_skill_read.'],
+  p2o_research: ['Citation and fetch: action=fetch retrieves any URL, technique search reads the corpus, and a CVE lead never confirms a claim; playbooks come from p2o_skill_read.'],
   p2o_skill_list: ['Find an approved playbook before assigning or starting work; the catalog text is tool-agnostic by design.'],
   p2o_skill_read: ['Read one catalog document by ID and follow nextOffset; materialize copies a registered script into your own scratch.'],
   p2o_request_subtask: ['Propose, never spawn: a bounded missing question with its reason; the lead decides whether it becomes work.'],
@@ -35,7 +32,7 @@ export const TOOL_GUIDELINES: Readonly<Record<string, readonly string[]>> = {
   p2o_workers: ['One row per worker: commands, last write and report state; continue resumes the same ticket, stop revokes it.'],
 };
 
-export function withGuidelines<T extends { name: string; promptGuidelines?: string[] }>(tool: T): T {
-  const lines = TOOL_GUIDELINES[tool.name];
-  return lines && !tool.promptGuidelines ? { ...tool, promptGuidelines: [...lines] } : tool;
+export function withBoundaries<T extends { name: string; description: string }>(tool: T): T {
+  const lines = TOOL_BOUNDARIES[tool.name];
+  return lines?.length ? { ...tool, description: `${tool.description} ${lines.join(' ')}` } : tool;
 }

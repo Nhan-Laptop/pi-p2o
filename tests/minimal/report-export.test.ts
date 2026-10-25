@@ -90,7 +90,7 @@ describe('WSTG checklist appendix', () => {
   }));
 
   it('omits the risk rating criteria entirely when no case is accepted and current', async () => fixture(async h => {
-    await h.command('--target ./source --solo'); h.ctx.setConfirm(true); await h.command(`report export ${join(h.root, 'out')}`);
+    await h.command('--target ./source'); h.ctx.setConfirm(true); await h.command(`report export ${join(h.root, 'out')}`);
     expect((await h.read(join(h.root, 'out')))['REPORT.md']).not.toContain('Risk rating');
   }));
 });
@@ -162,15 +162,16 @@ describe('report export command', () => {
   }));
 
   it('states an empty run honestly instead of reporting zero problems as safe', async () => fixture(async h => {
-    await h.command('--target ./source --solo'); h.ctx.setConfirm(true); await h.command(`report export ${join(h.root, 'out')}`);
+    await h.command('--target ./source'); h.ctx.setConfirm(true); await h.command(`report export ${join(h.root, 'out')}`);
     const report = (await h.read(join(h.root, 'out')))['REPORT.md'];
     expect(report).toContain('No case was accepted and current at sequence'); expect(report).toContain('This does not mean the target is safe');
     expect(report).toContain('No coverage plan was recorded. Without a denominator nothing can be called covered.'); expect(report).toContain('No open gap is recorded. This does not mean none exists.');
   }));
 
-  it('refuses without confirmation, to existing or relative or private paths, and reads a historical run without writing to its store', async () => fixture(async h => {
+  it('exports without a confirmation, refuses existing or relative or private paths, and reads a historical run without writing to its store', async () => fixture(async h => {
     await populate(h);
-    h.ctx.setConfirm(false); await h.command(`report export ${join(h.root, 'declined')}`); await expect(stat(join(h.root, 'declined'))).rejects.toThrow();
+    // Part XI: no UI prompt and no interactive-session requirement for a deterministic export.
+    h.ctx.setConfirm(false); await h.command(`report export ${join(h.root, 'declined')}`); expect((await stat(join(h.root, 'declined'))).isDirectory()).toBe(true);
     h.ctx.setConfirm(true);
     await h.command(`report export ${join(h.root, 'once')}`); await h.command(`report export ${join(h.root, 'once')}`); expect(h.ctx.notices.at(-1)).toContain('already exists');
     await h.command('report export relative/path'); expect(h.ctx.notices.at(-1)).toContain('absolute');

@@ -7,8 +7,7 @@ import { tmpdir } from 'node:os';
 import { registerP2O } from '../../extensions/p2o/index.js';
 import { AssessmentStore } from '../../src/state/store.js';
 import { ALL_TOOLS, DELEGATION_TOOLS, TARGET_TOOLS, ownerTools, workerTools } from '../../src/tool-policy.js';
-import { POLICY_VERSION, TOOL_GUIDELINES } from '../../src/tool-guidelines.js';
-import { DEFAULT_TOOL_GUIDANCE, parseSettings } from '../../src/roles.js';
+import { TOOL_BOUNDARIES } from '../../src/tool-guidelines.js';
 import { ownerInstructions, workerBrief, workerInstructions } from '../../src/prompts.js';
 import { createContext, createFakePi, createSimpleHerdr, EXTENSION_PATH, InertSandbox } from './helpers/fake-pi.js';
 
@@ -18,39 +17,28 @@ import { createContext, createFakePi, createSimpleHerdr, EXTENSION_PATH, InertSa
  * same exact-work admission as p2o_task when structured work is supplied. Mechanism only: whether the guidance improves results needs an
  * authorized benchmark and is deliberately not claimed here.
  */
-const registry = (toolGuidance: boolean | 'missing' = true) => {
-  const dir = mkdtempSync(join(tmpdir(), 'p2o-guidance-')), settingsPath = join(dir, 'settings.json');
-  if (toolGuidance !== 'missing') writeFileSync(settingsPath, JSON.stringify({ p2o: { toolGuidance } }));
-  try { const pi = createFakePi(); registerP2O(pi.pi, { extensionPath: EXTENSION_PATH, settingsPath } as any); return pi.tools; } finally { rmSync(dir, { recursive: true, force: true }); }
+const registry = () => {
+  const pi = createFakePi();
+  registerP2O(pi.pi, { extensionPath: EXTENSION_PATH } as any);
+  return pi.tools;
 };
 const declaration = (tools: Map<string, any>, names: string[]) => names.reduce((sum, name) => { const tool = tools.get(name); return sum + Buffer.byteLength(JSON.stringify({ name: tool.name, description: tool.description, parameters: tool.parameters })); }, 0);
 const guidance = (tools: Map<string, any>, names: string[]) => names.reduce((sum, name) => sum + Buffer.byteLength((tools.get(name).promptGuidelines ?? []).join('\n')), 0);
 const facts = (enabled: boolean) => ({ runId: 'run-x', targetLabel: '/home/x/repo', targetKind: 'directory' as const, sourceSkipped: 0, delegation: { enabled, maxWorkers: enabled ? 3 : 0, maxDepth: enabled ? 2 : 0, reason: enabled ? undefined : 'solo' }, workerBudget: 600, phase: 'active' as const, loopMode: 'event-driven' as const, executorMode: 'isolated' as const });
 const ticket = (role: string) => ({ workerId: 'worker-1', role, depth: 1, parentWorkerId: null, target: { kind: 'directory', label: '/home/x/repo' }, executorMode: 'shared' } as any);
 const mentioned = (text: string) => new Set(text.match(/\bp2o_[a-z_]+\b/g) ?? []);
-const loadouts: Record<string, string[]> = { 'delegated Planner': ownerTools(true), 'solo owner': ownerTools(false), 'worker': workerTools('discovery'), 'reporting worker': workerTools('reporting') };
+const loadouts: Record<string, string[]> = { 'owner': ownerTools(), 'worker': workerTools('discovery'), 'reporting worker': workerTools('reporting') };
 
-describe('tool guidance is opt-in (benchmark 2026-10-10: it steers tool use but raised cost without a quality gain)', () => {
-  it('is off unless p2o.toolGuidance is true, for a missing, malformed or false setting alike', () => {
-    for (const setting of ['missing', false] as const) for (const tool of registry(setting).values()) expect(tool.promptGuidelines, `${tool.name} with toolGuidance=${String(setting)}`).toBeUndefined();
-    expect(registry(true).get('p2o_case').promptGuidelines).toEqual([...TOOL_GUIDELINES.p2o_case]);
-    expect(DEFAULT_TOOL_GUIDANCE).toBe(false);
-    expect(parseSettings({ p2o: { toolGuidance: 'yes' } }).toolGuidance).toBe(false); expect(parseSettings({ p2o: { toolGuidance: 1 } }).toolGuidance).toBe(false);
-    expect(parseSettings({ p2o: { toolGuidance: true } }).toolGuidance).toBe(true); expect(parseSettings({}).toolGuidance).toBe(false);
-  });
-});
-
-describe('prompt and tool guidance cannot drift apart', () => {
-  it('attaches the guidance to the registered tool it is about and names only tools that exist', () => {
-    const tools = registry(), registered = new Set(tools.keys());
-    for (const [name, lines] of Object.entries(TOOL_GUIDELINES)) {
-      expect(registered.has(name), `${name} has guidance but is not registered`).toBe(true);
-      expect(tools.get(name).promptGuidelines, name).toEqual([...lines]);
-      for (const named of mentioned(lines.join('\n'))) expect(registered.has(named), `${name} guidance names ${named}`).toBe(true);
+describe('tool descriptions carry the boundary (Part XI: no separate guidance layer)', () => {
+  it('folds every boundary sentence into the registered description and never sets promptGuidelines', () => {
+    const tools = registry();
+    for (const name of ALL_TOOLS) {
+      const tool = tools.get(name);
+      expect(tool, name).toBeDefined();
+      for (const line of TOOL_BOUNDARIES[name] ?? []) expect(tool.description, name).toContain(line);
+      expect(tool.promptGuidelines, name).toBeUndefined();
     }
-    for (const prompt of [ownerInstructions(facts(true)), ownerInstructions(facts(false)), ...['recon', 'discovery', 'validation', 'reporting', 'general'].map(role => workerInstructions(ticket(role)))])
-      for (const named of mentioned(prompt)) expect(registered.has(named), `a prompt names ${named}`).toBe(true);
-    for (const name of ALL_TOOLS) expect(registered.has(name), name).toBe(true);
+    for (const [name, lines] of Object.entries(TOOL_BOUNDARIES)) for (const named of mentioned(lines.join(' '))) expect(ALL_TOOLS, `${name} names ${named}`).toContain(named);
   });
 
   it('names only tools its own role can call, in the system instructions and in the brief', () => {
@@ -61,36 +49,8 @@ describe('prompt and tool guidance cannot drift apart', () => {
     }
   });
 
-  it('gives every knowledge-workflow tool guidance, or a stated reason why not, and never advises a role about a tool it cannot call', () => {
-    const exempt: Record<string, string> = { p2o_artifact: 'its description already says to read retained output by ID in bounded ranges' };
-    for (const name of ['p2o_task', 'p2o_delegate', 'p2o_case', 'p2o_coverage', 'p2o_graph', 'p2o_state', 'p2o_capture', 'p2o_plan', 'p2o_finish', 'p2o_artifact'])
-      expect(TOOL_GUIDELINES[name] !== undefined || exempt[name] !== undefined, `${name} needs guidance or an exemption`).toBe(true);
-    for (const [label, names] of Object.entries(loadouts))
-      for (const name of names) for (const named of mentioned((TOOL_GUIDELINES[name] ?? []).join('\n'))) expect(names, `${label}: guidance on ${name} names ${named}`).toContain(named);
-    expect(workerTools('reporting')).not.toContain('p2o_capture'); expect(TOOL_GUIDELINES.p2o_capture.join(' ')).not.toMatch(/p2o_(?:case|plan|coverage)/);
-  });
-
-  it('keeps the guidance short, versioned and free of authority claims', () => {
-    const tools = registry();
-    expect(POLICY_VERSION).toBeGreaterThanOrEqual(1);
-    // The 2026-10-25 tool-surface audit gave every registered tool one boundary line (25/25), so both owner and worker loadouts carry
-    // more guidance than before: 2608/2798 and 2244/1443 bytes measured. The ceilings rise on purpose and stay measured, not estimated.
-    expect(guidance(tools, loadouts['delegated Planner'])).toBeLessThanOrEqual(2850); expect(guidance(tools, loadouts['solo owner'])).toBeLessThanOrEqual(2850);
-    expect(guidance(tools, loadouts.worker)).toBeLessThanOrEqual(2350); expect(guidance(tools, loadouts['reporting worker'])).toBeLessThanOrEqual(2350);
-    for (const line of Object.values(TOOL_GUIDELINES).flat()) { expect(line.length).toBeLessThanOrEqual(260); expect(line).not.toMatch(/\b(?:you are authorized|ignore|bypass|widen scope)\b/i); }
-    expect(TOOL_GUIDELINES.p2o_delegate.join(' ')).toContain('without work the identity is unknown');
-  });
-
-  it('leaves the lead policy section and worker guidance untouched: no tool names in the lead prompt', () => {
+  it('leaves the lead policy section free of tool names', () => {
     for (const enabled of [true, false]) expect(ownerInstructions(facts(enabled))).not.toMatch(/\bp2o_[a-z_]+\b/);
-    // The 5,300-character ceiling of the lead prompt is pinned by recon.test.ts; adding guidance to tools must not eat into it.
-    const base = { runId: 'run-recon', targetLabel: 'https://example.invalid', targetKind: 'url' as const, sourceSkipped: 2, delegation: { enabled: false, maxWorkers: 1, maxDepth: 1 }, workerBudget: 20 };
-  });
-
-  it('gives every tool a boundary line and never names a tool outside the policy', () => {
-    expect([...ALL_TOOLS].sort()).toEqual(Object.keys(TOOL_GUIDELINES).sort());
-    for (const name of ALL_TOOLS) expect(TOOL_GUIDELINES[name].length, name).toBeGreaterThan(0);
-    for (const [name, lines] of Object.entries(TOOL_GUIDELINES)) for (const named of new Set(lines.join(' ').match(/\bp2o_[a-z_]+\b/g) ?? [])) expect(ALL_TOOLS, `${name} names ${named}`).toContain(named);
   });
 
   it('no longer advertises the removed 60 s / 300 s command ceilings', () => {
@@ -99,15 +59,13 @@ describe('prompt and tool guidance cannot drift apart', () => {
   });
 });
 
-describe('the worker-control tools are offered only when workers exist', () => {
-  it('keeps p2o_delegate and p2o_workers (steer/stop folded into it, S2) out of the solo loadout, and the target tools out of the delegated one', () => {
+describe('one owner role holds every owner tool (Part XI)', () => {
+  it('offers delegation and target tools to the same lead loadout', () => {
     expect(DELEGATION_TOOLS).toEqual(['p2o_delegate', 'p2o_workers']);
-    for (const name of DELEGATION_TOOLS) { expect(ownerTools(true), name).toContain(name); expect(ownerTools(false), name).not.toContain(name); expect(workerTools('discovery'), name).not.toContain(name); }
-    for (const name of TARGET_TOOLS) { expect(ownerTools(false), name).toContain(name); expect(ownerTools(true), name).not.toContain(name); }
-    expect(ownerTools(false)).toContain('p2o_loop'); // engine and frontier status stay available to a solo owner
-    // 2026-10-22 (planning_update.md P14.2): p2o_lab belongs to both executing loadouts, so both counts moved by one.
-    // 2026-10-23 (planning_update.md P14.8): p2o_research is offered to every loadout, so both counts moved by one again.
-    expect(ownerTools(false)).toHaveLength(21); expect(ownerTools(true)).toHaveLength(19);
+    expect(ownerTools()).toHaveLength(new Set(ownerTools()).size);
+    for (const name of DELEGATION_TOOLS) { expect(ownerTools(), name).toContain(name); expect(workerTools('discovery'), name).not.toContain(name); }
+    for (const name of TARGET_TOOLS) expect(ownerTools(), name).toContain(name);
+    expect(ownerTools()).toContain('p2o_loop');
   });
 });
 

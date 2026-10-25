@@ -196,7 +196,7 @@ describe('model-free assessment visibility (canonical runtime + legacy reader)' 
     await fixture(async h => {
       await appendRecord(await h.path(),{at:new Date().toISOString(),by:'owner',kind:'report_part',text:'Controlled uncommitted fragment',data:{reportId:'missing-manifest',part:0,value:'{}',sha256:'0'.repeat(64),redacted:true}});await h.command('status');
       expect(h.screen()).toContain('INCOMPLETE');expect(h.pi.messages).toHaveLength(1);
-      expect(h.pi.active).not.toContain('p2o_shell');
+      expect(h.pi.active).toContain('p2o_shell');
     });
   });
   it('does not restore history or authority from a fresh extension instance', async () => {

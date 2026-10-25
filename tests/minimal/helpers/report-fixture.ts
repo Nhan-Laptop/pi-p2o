@@ -28,7 +28,7 @@ export async function fixture(work: (h: any) => Promise<void>) {
 
 /** Builds one accepted case, one pending case, a claim, an open gap and a coverage plan with a tested and an untested cell. */
 export async function populate(h: any, titles = { accepted: 'Runtime fixture boundary case', pending: 'Second pending case' }, keys: Record<string, string> = {}) {
-  await h.command('--target ./source --solo');
+  await h.command('--target ./source');
   const asset = (await h.call('p2o_graph', { action: 'record', batch: { assets: [{ asset: { kind: 'endpoint', key: 'GET /report-fixture' } }] } })).details.acks[0];
   const taskDraft = { question: 'Does the bounded fixture observation match the declared policy?', surface: '/report-fixture', risk: 'authorization', role: 'general', roleReason: 'Bounded inert observation for report export', expectedTrue: 'Receipt records the expected policy observation', expectedFalse: 'Receipt records the contrasting control', stopCondition: 'Stop after one inert command and owner review', evidenceIds: [], prerequisites: [], skills: [], methodReason: 'One inert command with no external target' };
   const task = (await h.call('p2o_task', { action: 'create', draft: taskDraft })).details, running = (await h.call('p2o_task', { action: 'start', id: task.id })).details;

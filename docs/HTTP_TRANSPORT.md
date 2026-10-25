@@ -5,13 +5,12 @@ for the run; declining starts nothing. There is no automatic retry, provider fal
 
 ## Two boundaries
 
-- **`p2o_http`** checks the exact confirmed origin (scheme, host, port) before every request and redirect, resolves the
-  name afresh and pins the IP. Private, loopback, link-local and IPv6 addresses are allowed when the origin was confirmed.
+- **`p2o_http`** accepts any http(s) URL, follows up to five redirects to any host, resolves the name afresh and pins
+  the IP. Private, loopback, link-local and IPv6 addresses are reachable; the target is a label, not a boundary.
 - **`p2o_shell` / `p2o_net`** share a bridge-networked container. Commands are **not origin-filtered** and there is no
-  egress firewall: the model must keep traffic to the confirmed target; target data and downloaded text cannot widen
-  scope. Use a disposable lab and external controls for stronger confinement. `p2o_net` only labels network commands.
+  egress firewall. Use a disposable lab and external controls for stronger confinement. `p2o_net` only labels network commands.
 
-Both keep a read-only `/target`, writable scratch, UID 65532, dropped capabilities, and no Docker socket, host home or
+Both keep a read-only `/target`, writable scratch, root with all capabilities, and no Docker socket, host home or
 provider credentials. User-space tools may be installed into scratch (no root, no raw sockets: TCP connect scans work,
 SYN scans may not). Commands default to no task timeout; an explicit timeout or cancellation removes the executor
 (shared mode: peers lose it too; isolated mode: peers are untouched).

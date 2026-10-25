@@ -47,11 +47,11 @@ for (const kind of ['directory', 'url']) for (const role of ROLES) {
 // Tool declarations per loadout, from the real registration against a stub Pi API.
 const dir = mkdtempSync(join(tmpdir(), 'p2o-measure-')), settingsPath = join(dir, 'settings.json');
 try {
-  writeFileSync(settingsPath, JSON.stringify({ p2o: { toolGuidance: false } }));
+  writeFileSync(settingsPath, JSON.stringify({ p2o: {} }));
   const tools = new Map(), api = { registerTool: tool => tools.set(tool.name, tool), registerCommand() {}, registerShortcut() {}, registerFlag() {}, getFlag() {}, on() {}, getActiveTools: () => [], setActiveTools() {}, sendUserMessage() {}, sendMessage() {}, appendEntry() {}, registerEntryRenderer() {} };
   registerP2O(api, { extensionPath: resolve(root, source ? 'extensions/p2o/index.ts' : 'dist/extensions/p2o/index.js'), settingsPath });
   const bytes = name => { const tool = tools.get(name); return Buffer.byteLength(JSON.stringify({ name: tool.name, description: tool.description, parameters: tool.parameters })); };
-  const loadouts = { 'delegated Planner': ownerTools(true), 'solo owner': ownerTools(false), worker: workerTools('discovery'), 'reporting worker': workerTools('reporting') };
+  const loadouts = { owner: ownerTools(), worker: workerTools('discovery'), 'reporting worker': workerTools('reporting') };
   result.declarations = { registered: tools.size, total: [...tools.keys()].reduce((sum, name) => sum + bytes(name), 0), loadouts: Object.fromEntries(Object.entries(loadouts).map(([label, names]) => [label, { tools: names.length, bytes: names.reduce((sum, name) => sum + bytes(name), 0) }])),
     largest: [...tools.keys()].map(name => ({ name, bytes: bytes(name) })).sort((a, b) => b.bytes - a.bytes).slice(0, 5) };
 } finally { rmSync(dir, { recursive: true, force: true }); }

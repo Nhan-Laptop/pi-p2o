@@ -25,17 +25,18 @@ const draft=(surface:string)=>({question:`Inspect the fixture at ${surface}`,sur
 async function until(p:()=>boolean) {for(let i=0;i<400;i++){if(p())return;await delay(20);}throw Error('Fixture did not progress');}
 
 describe('Planner/Engine/Worker extension contract',()=>{
-  it('denies Planner target execution and reporter broker bypass; solo keeps direct access',async()=>{
+  it('lets the lead execute and gives a reporting worker the same tools (Part XI)',async()=>{
     await fixture(async(h)=>{
-      for(const name of ['p2o_shell','p2o_net','p2o_http','p2o_capture']) {expect(h.pi.active).not.toContain(name);expect(await h.emit('tool_call',{toolName:name})).toMatchObject({block:true});}
-      await expect(h.call('p2o_shell',{command:'must not execute'})).rejects.toThrow('PLANNER_ONLY');
-      const spawned=(await h.call('p2o_delegate',{focus:'report-only',task:'Synthesize existing ledger only',role:'reporting'})).details;
+      for(const name of ['p2o_shell','p2o_net','p2o_http','p2o_capture']) {expect(h.pi.active, name).toContain(name);expect(await h.emit('tool_call',{toolName:name}), name).toBeUndefined();}
+      expect((await h.call('p2o_shell',{command:'lead executes'})).details.exitCode).toBe(0);
+      const spawned=(await h.call('p2o_delegate',{focus:'report-only',task:'Report the ledger',role:'reporting'})).details;
       const {client}=await h.connect(spawned.workerId);
-      for(const op of ['exec','net','http','candidate','delegate']) await expect(client.request(op,{command:'must not execute',url:'https://example.invalid/'})).rejects.toThrow('synthesis-only');
+      const executed = await client.request('exec',{command:'reporting may execute'});
+      expect(executed).toBeDefined();
       const proposal=await client.request('request_subtask',{focus:'review-gap',task:'Missing proof requires separate validation'});expect(proposal.value.accepted).toBe(false);
-      expect(h.herdr.calls.filter((c:any)=>c.op==='start')).toHaveLength(1);await client.request('report',{report:{summary:'Existing evidence only',confidence:'low'}});expect(h.sandboxes[0].commands).toHaveLength(0);
+      expect(h.herdr.calls.filter((c:any)=>c.op==='start')).toHaveLength(1);await client.request('report',{report:{summary:'Executed once',confidence:'low'}});
+      expect(h.sandboxes[0].commands.length).toBeGreaterThan(0);
     });
-    await fixture(async(h)=>{expect(h.pi.active).toContain('p2o_shell');expect((await h.call('p2o_shell',{command:'solo'})).details.exitCode).toBe(0);},'--solo');
   });
   it('reuses three slots for 30 attributed assignments with unique tickets and no allowance to reset',async()=>{
     await fixture(async(h)=>{

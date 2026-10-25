@@ -67,15 +67,15 @@ describe('canonical owner runtime (inert execution, real SQLite and Unix broker)
       expect(h.ctx.confirmBodies[0]).toContain('256 MiB');expect(h.ctx.confirmBodies[0]).toContain('nhạy cảm');expect(h.ctx.confirmBodies[0]).toMatch(/^Runtime: p2o \S+ · [0-9a-f]{12}\n/);
       expect(h.sandboxes).toHaveLength(0);expect(h.pi.messages).toHaveLength(0);
       await expect(stat(join(h.root,'.p2o-state'))).rejects.toThrow();await expect(stat(join(h.root,'control'))).rejects.toThrow();
-      h.ctx.setConfirm(true);await h.command('--target ./source --solo');await h.command('stop');
-      const fresh=createContext({cwd:h.root});await h.pi.commands.get('p2o').handler('--target ./source --solo',fresh.ctx);
+      h.ctx.setConfirm(true);await h.command('--target ./source');await h.command('stop');
+      const fresh=createContext({cwd:h.root});await h.pi.commands.get('p2o').handler('--target ./source',fresh.ctx);
       expect(h.ctx.dialogs.length+fresh.dialogs.length).toBe(3);expect(await readdir(join(h.root,'.p2o-state'))).toHaveLength(2);
       expect(h.sandboxes).toHaveLength(2);expect(h.pi.messages).toHaveLength(2);
     });
   });
   it('--refer-workspace tags prior same-target runs as context only, never same-run evidence, and ignores runs on a different target',async()=>{
     await fixture(async h=>{
-      await h.command('--target ./source --solo');const firstRunId=await h.runId();
+      await h.command('--target ./source');const firstRunId=await h.runId();
       const asset=(await h.call('p2o_graph',{action:'record',batch:{assets:[{asset:{kind:'endpoint',key:'GET /refer-fixture'}}]}})).details.acks[0];
       const taskDraft={question:'Does the refer-fixture observation match the declared policy?',surface:'/refer-fixture',risk:'authorization',role:'general',roleReason:'Bounded inert observation for the refer-workspace fixture',expectedTrue:'Receipt records the expected policy observation',expectedFalse:'Receipt records the contrasting control',stopCondition:'Stop after one inert command and owner review',evidenceIds:[],prerequisites:[],skills:[],methodReason:'One inert command with no external target'};
       const task=(await h.call('p2o_task',{action:'create',draft:taskDraft})).details,running=(await h.call('p2o_task',{action:'start',id:task.id})).details;
@@ -86,9 +86,9 @@ describe('canonical owner runtime (inert execution, real SQLite and Unix broker)
       const cell=(await h.call('p2o_coverage',{action:'cell-create',planId:plan.id,planRevision:plan.revision,cell:{assetRef:{id:asset.entityId,revision:1},questionKey:'wstg-info-01',policyKey:'policy:refer',actorContext:'actor:fixture',tenantContext:'tenant:fixture',methodFamily:'offline-observation',execution:'tested',assessment:'unreviewed',taskRefs:[{taskId:task.id,revision:reviewed.revision}],claimRefs:[],caseRefs:[],evidenceRefs:[observation.evidenceId],negativeControlRefs:[],gapRefs:[],reason:'Bounded reviewed receipt',limitations:'Only this fixture endpoint was checked'}})).details;
       await h.command('stop');
       await mkdir(join(h.root,'elsewhere'));
-      await h.pi.commands.get('p2o').handler('--target ./elsewhere --solo',createContext({cwd:h.root}).ctx);const otherRunId=(await readdir(join(h.root,'.p2o-state'))).find(id=>id!==firstRunId)!;await h.command('stop');
+      await h.pi.commands.get('p2o').handler('--target ./elsewhere',createContext({cwd:h.root}).ctx);const otherRunId=(await readdir(join(h.root,'.p2o-state'))).find(id=>id!==firstRunId)!;await h.command('stop');
       const fresh=createContext({cwd:h.root});
-      await h.pi.commands.get('p2o').handler('--target ./source --solo --refer-workspace latest',fresh.ctx);
+      await h.pi.commands.get('p2o').handler('--target ./source --refer-workspace latest',fresh.ctx);
       expect(fresh.confirmBodies[0]).toContain(`Referencing 1 prior workspace run on this same target: ${firstRunId}`);
       expect(fresh.confirmBodies[0]).not.toContain(otherRunId);
       const secondRunId=(await readdir(join(h.root,'.p2o-state'))).find(id=>id!==firstRunId&&id!==otherRunId)!;
@@ -111,7 +111,7 @@ describe('canonical owner runtime (inert execution, real SQLite and Unix broker)
   it('--refer-workspace records an explicit Unknown reason (never silently clean) when no prior run shares the target, and omitting the flag writes no reference record at all',async()=>{
     await fixture(async h=>{
       const fresh=createContext({cwd:h.root});
-      await h.pi.commands.get('p2o').handler('--target ./source --solo --refer-workspace all',fresh.ctx);
+      await h.pi.commands.get('p2o').handler('--target ./source --refer-workspace all',fresh.ctx);
       expect(fresh.confirmBodies[0]).toContain('No prior workspace run on this same target was found for --refer-workspace');
       const runId=(await readdir(join(h.root,'.p2o-state')))[0];
       const store=AssessmentStore.open(join(h.root,'.p2o-state'),runId);
@@ -122,7 +122,7 @@ describe('canonical owner runtime (inert execution, real SQLite and Unix broker)
         expect((reference.data!.reference as any).gaps).toMatchObject({covered:[],leftOpen:[],stale:[],neverReached:[]});
       } finally {store.close();}
       await h.pi.commands.get('p2o').handler('stop',fresh.ctx);
-      await h.pi.commands.get('p2o').handler('--target ./source --solo',createContext({cwd:h.root}).ctx);
+      await h.pi.commands.get('p2o').handler('--target ./source',createContext({cwd:h.root}).ctx);
       const plainRunId=(await readdir(join(h.root,'.p2o-state'))).find(id=>id!==runId)!;
       const plainStore=AssessmentStore.open(join(h.root,'.p2o-state'),plainRunId);
       try {expect(plainStore.records().some(r=>(r.data as any)?.reference)).toBe(false);} finally {plainStore.close();}
@@ -130,11 +130,11 @@ describe('canonical owner runtime (inert execution, real SQLite and Unix broker)
   });
   it('--refer-workspace currency for a hybrid target requires both halves (source snapshot and the full path+origin display) to match (U10)',async()=>{
     await fixture(async h=>{
-      await h.command('--target ./source --origin https://example.com/app --solo');
+      await h.command('--target ./source --origin https://example.com/app');
       const firstRunId=await h.runId();
       await h.command('stop');
       const fresh=createContext({cwd:h.root});
-      await h.pi.commands.get('p2o').handler(`--target ./source --origin https://example.com/app --solo --refer-workspace ${firstRunId}`,fresh.ctx);
+      await h.pi.commands.get('p2o').handler(`--target ./source --origin https://example.com/app --refer-workspace ${firstRunId}`,fresh.ctx);
       const secondRunId=(await readdir(join(h.root,'.p2o-state'))).find(id=>id!==firstRunId)!;
       const store=AssessmentStore.open(join(h.root,'.p2o-state'),secondRunId);
       try {
@@ -144,7 +144,7 @@ describe('canonical owner runtime (inert execution, real SQLite and Unix broker)
       await h.pi.commands.get('p2o').handler('stop',fresh.ctx);
       const fresh2=createContext({cwd:h.root});
       // Same origin, different path on that origin: still the same eligible target, but the full display no longer matches, so it is stale, not current.
-      await h.pi.commands.get('p2o').handler(`--target ./source --origin https://example.com/other --solo --refer-workspace ${firstRunId}`,fresh2.ctx);
+      await h.pi.commands.get('p2o').handler(`--target ./source --origin https://example.com/other --refer-workspace ${firstRunId}`,fresh2.ctx);
       const thirdRunId=(await readdir(join(h.root,'.p2o-state'))).find(id=>id!==firstRunId&&id!==secondRunId)!;
       const store2=AssessmentStore.open(join(h.root,'.p2o-state'),thirdRunId);
       try {
@@ -156,7 +156,7 @@ describe('canonical owner runtime (inert execution, real SQLite and Unix broker)
   });
   it('keeps durable knowledge/checkpoints but destroys control/tickets, and opens without an Engine/model/target',async()=>{
     await fixture(async h=>{
-      await h.command('--target ./source --solo');const ack=(await h.call('p2o_note',{kind:'note',text:'retained bounded observation'})).details;
+      await h.command('--target ./source');const ack=(await h.call('p2o_note',{kind:'note',text:'retained bounded observation'})).details;
       const id=await h.runId();await h.command('checkpoint operator barrier');expect(h.screen()).toContain('integrity complete');
       await h.command('stop');expect(await readdir(join(h.root,'control'))).toEqual([]);
       const store:AssessmentStore=await h.reader();try {expect(store.record(ack.recordId)?.text).toBe('retained bounded observation');expect(store.checkpoints()).toHaveLength(2);expect(store.outcome()).toMatchObject({assessmentOutcome:'cancelled',resourceOutcome:'cleaned'});} finally {store.close();}
@@ -172,7 +172,7 @@ describe('canonical owner runtime (inert execution, real SQLite and Unix broker)
   });
   it('ephemeral uses the same canonical services in-run but deletes knowledge and warns at consent',async()=>{
     await fixture(async h=>{
-      await h.command('--target ./source --solo --retention ephemeral');expect(h.ctx.confirmBodies[0]).toContain('EPHEMERAL');
+      await h.command('--target ./source --retention ephemeral');expect(h.ctx.confirmBodies[0]).toContain('EPHEMERAL');
       await h.call('p2o_note',{kind:'note',text:'temporary observation'});await h.command('checkpoint temporary barrier');expect(h.screen()).toContain('ephemeral');
       await expect(stat(join(h.root,'.p2o-state'))).rejects.toThrow();await h.command('stop');
       expect(await readdir(join(h.root,'control'))).toEqual([]);await h.command('status');expect(h.screen()).toContain('Ephemeral');expect(h.screen()).toMatch(/Runtime: p2o \S+ · [0-9a-f]{12} \(digest of the entry file \+ src closure/);
@@ -242,7 +242,7 @@ describe('canonical owner runtime (inert execution, real SQLite and Unix broker)
   });
   it('checkpoints in-flight work and stop records local cancellation/unknown remote outcome without replay',async()=>{
     await fixture(async h=>{
-      await h.command('--target ./source --solo');const sandbox=h.sandboxes[0] as InertSandbox;
+      await h.command('--target ./source');const sandbox=h.sandboxes[0] as InertSandbox;
       let started!:()=>void,rejectOperation:((e:Error)=>void)|undefined;const ready=new Promise<void>(resolve=>{started=resolve;});
       sandbox.exec=async(_command,_seconds,_signal,_workdir,onRunning)=>{onRunning?.();started();return new Promise((_resolve,reject)=>{rejectOperation=reject;});};
       const stop=sandbox.stop.bind(sandbox);sandbox.stop=async()=>{rejectOperation?.(Error('Cancelled'));await stop();};
@@ -256,7 +256,7 @@ describe('canonical owner runtime (inert execution, real SQLite and Unix broker)
   });
   it('records requested/started/returned with task/actor/receipt links, not finding correctness',async()=>{
     await fixture(async h=>{
-      await h.command('--target ./source --solo');const result=await h.call('p2o_shell',{command:'echo inert'});expect(result.details.operationId).toMatch(/^operation-/);
+      await h.command('--target ./source');const result=await h.call('p2o_shell',{command:'echo inert'});expect(result.details.operationId).toMatch(/^operation-/);
       const store:AssessmentStore=await h.reader();try {
         const events=store.events({operationId:result.details.operationId}).rows;expect(events.map(e=>e.kind)).toEqual(['operation.requested','operation.started','artifact.retained','operation.returned']);
         expect(events.every(e=>e.actorId==='owner')).toBe(true);expect(events.at(-1)?.payloadRefs).toEqual([result.details.evidenceId,...result.details.capture.artifacts.map((a:{id:string})=>a.id)]);
@@ -266,7 +266,7 @@ describe('canonical owner runtime (inert execution, real SQLite and Unix broker)
   });
   it('closes target authority on SQLite directory replacement; failed retention does not hold cleanup open',async()=>{
     await fixture(async h=>{
-      await h.command('--target ./source --solo');await h.call('p2o_note',{kind:'note',text:'prior commit'});
+      await h.command('--target ./source');await h.call('p2o_note',{kind:'note',text:'prior commit'});
       const id=await h.runId(),path=join(h.root,'.p2o-state',id);await rename(path,`${path}-moved`);await mkdir(path,{mode:0o700});
       await expect(h.call('p2o_shell',{command:'must-not-run'})).rejects.toThrow();
       for(let i=0;i<60 && h.sandboxes[0].stopCount===0;i++)await delay(10);
@@ -277,7 +277,7 @@ describe('canonical owner runtime (inert execution, real SQLite and Unix broker)
   });
   it('retains real process output before display truncation with owner receipts/ranges and no raw buffer delivery',async()=>{
     await fixture(async h=>{
-      await h.command('--target ./source --solo');let executed=0;
+      await h.command('--target ./source');let executed=0;
       h.sandboxes[0].exec=async(_c:string,_s:number,signal:AbortSignal,_w:string,onRunning:()=>void,onOutput:any)=>{executed++;onRunning?.();return runFixed(process.execPath,['-e',"process.stdout.write('x'.repeat(60000)+'\\npassword=not-for-retention\\n'+'z'.repeat(10000)+'TAIL-RETAINED')"],{timeoutMs:null,signal,onOutput});};
       const result=await h.call('p2o_shell',{command:'inert large stream'});expect(result.details.truncated).toBe(true);
       const capture=result.details.capture;expect(capture.available).toBe(true);expect(capture.observedBytes).toBeGreaterThan(60000);expect(capture.artifacts).toHaveLength(1);
@@ -297,7 +297,7 @@ describe('canonical owner runtime (inert execution, real SQLite and Unix broker)
       try{await c.request('runtime',{model:ticket.requestedRuntime?.model??'p2o-inert/current-agent',thinking:ticket.requestedRuntime?.thinking??'off'});const result=await c.request('net',{command:'inert bounded stream'});expect(result.capture).toMatchObject({maxBytes:1024,observedBytes:6000,capturedBytes:1024});expect(result.capture.artifacts).toHaveLength(2);expect(result.capture.artifacts.every((a:any)=>a.truncated)).toBe(true);expect(executed).toBe(1);const store:AssessmentStore=await h.reader();try{expect(store.artifacts().reduce((n,a)=>n+a.capturedInputBytes,0)).toBe(1024);expect(store.artifacts().every(a=>a.producer===spawn.workerId)).toBe(true);}finally{store.close();}}finally{c.close();}
     });
   });
-  it('allows bounded reporting-role reads without target budget/writes and denies oversized/foreign/revoked reads',async()=>{
+  it('allows reporting-role reads and target work, and still denies oversized/foreign/revoked reads',async()=>{
     await fixture(async h=>{
       await h.command('--target ./source');const investigator=(await h.call('p2o_delegate',{focus:'fixture',task:'inspect inert fixture'})).details,t=await h.ticket(investigator.workerId),c=new BrokerClient(t.socket,t.token);let artifactId:string;
       h.sandboxes[0].exec=async(_c:string,_s:number,_signal:AbortSignal,_w:string,onRunning:()=>void,onOutput:any)=>{onRunning();onOutput('stdout',Buffer.from('\x01'.repeat(12000)));return {code:0,stdout:'bounded excerpt',stderr:'',truncated:false};};
@@ -305,14 +305,14 @@ describe('canonical owner runtime (inert execution, real SQLite and Unix broker)
       const reporter=(await h.call('p2o_delegate',{focus:'report',task:'synthesize existing receipts',role:'reporting'})).details,rt=await h.ticket(reporter.workerId),r=new BrokerClient(rt.socket,rt.token);
       try{await r.request('runtime',{model:rt.requestedRuntime.model,thinking:rt.requestedRuntime.thinking});const status=await r.request('status');const read=await r.request('artifact_read',{artifactId:artifactId!,length:8192});expect(read.value.returnedBytes).toBe(8192);expect(read.value.nextOffset).toBe(8192);expect(Buffer.byteLength(JSON.stringify(read))).toBeLessThan(64*1024);expect((await r.request('status')).used).toBe(status.used);
         const store:AssessmentStore=await h.reader();let s:number;try{s=store.sequence();}finally{store.close();}await r.request('artifact_read',{artifactId:artifactId!,offset:8192});const after:AssessmentStore=await h.reader();try{expect(after.sequence()).toBe(s!);}finally{after.close();}
-        await expect(r.request('exec',{command:'must-not-run'})).rejects.toThrow('synthesis-only');await expect(r.request('artifact_read',{artifactId:artifactId!,length:8193})).rejects.toThrow('range');await expect(r.request('artifact_read',{artifactId:'../../host-file'})).rejects.toThrow('opaque ID');
+        expect(await r.request('exec',{command:'reporting-may-run'})).toBeDefined();await expect(r.request('artifact_read',{artifactId:artifactId!,length:8193})).rejects.toThrow('range');await expect(r.request('artifact_read',{artifactId:'../../host-file'})).rejects.toThrow('opaque ID');
         await r.request('report',{report:{summary:'bounded synthesis',confidence:'low'}});await expect(r.request('artifact_read',{artifactId:artifactId!})).rejects.toThrow('stopped');
       }finally{r.close();}
     });
   });
   it('keeps cancellation prefixes explicitly interrupted/partial while closing authority before finalization',async()=>{
     await fixture(async h=>{
-      await h.command('--target ./source --solo');let ready!:()=>void,rejectOperation:((error:Error)=>void)|undefined;const started=new Promise<void>(resolve=>{ready=resolve;});
+      await h.command('--target ./source');let ready!:()=>void,rejectOperation:((error:Error)=>void)|undefined;const started=new Promise<void>(resolve=>{ready=resolve;});
       const sandbox=h.sandboxes[0];sandbox.exec=async(_c:string,_s:number,_signal:AbortSignal,_w:string,onRunning:()=>void,onOutput:any)=>{onRunning?.();onOutput('stdout',Buffer.from('observed before cancellation'));ready();return new Promise((_resolve,reject)=>{rejectOperation=reject;});};
       const stop=sandbox.stop.bind(sandbox);sandbox.stop=async()=>{rejectOperation?.(Error('Cancelled'));await stop();};const operation=h.call('p2o_shell',{command:'inert interrupted stream'}).catch((e:Error)=>e);await started;await h.command('stop');expect(await operation).toBeInstanceOf(Error);
       const store:AssessmentStore=await h.reader();try{const a=store.artifacts()[0];expect(a).toMatchObject({captureOutcome:'interrupted',truncated:true});expect(store.artifact(a.id).text).toBe('observed before cancellation');expect(store.events({operationId:a.operationId}).rows.at(-1)?.kind).toBe('operation.unknown-terminal');}finally{store.close();}
@@ -320,7 +320,7 @@ describe('canonical owner runtime (inert execution, real SQLite and Unix broker)
   });
   it('artifact publication/quota failure preserves known return, closes target authority and never retries execution',async()=>{
     let armed=false;await fixture(async h=>{
-      await h.command('--target ./source --solo');await h.call('p2o_note',{kind:'note',text:'prior retained commit'});armed=true;
+      await h.command('--target ./source');await h.call('p2o_note',{kind:'note',text:'prior retained commit'});armed=true;
       await expect(h.call('p2o_shell',{command:'single inert execution'})).rejects.toThrow('artifact publication failure');await h.command('stop');expect(h.sandboxes[0].commands).toHaveLength(1);expect(h.ctx.notices.join('\n')).toContain('execution authority closed');
       const store:AssessmentStore=await h.reader();try{expect(store.artifacts()).toEqual([]);expect(store.records().some(r=>r.text==='prior retained commit')).toBe(true);const returned=store.events({since:0}).rows.find(e=>e.kind==='operation.returned');expect(returned?.data).toMatchObject({retentionIncomplete:true,remoteOutcome:'returned'});expect(store.events({since:0}).rows.some(e=>e.kind==='operation.unknown-terminal')).toBe(false);}finally{store.close();}
     },stage=>{if(armed&&stage==='artifact-published'){armed=false;throw Error('injected private artifact publication failure');}});
@@ -328,7 +328,7 @@ describe('canonical owner runtime (inert execution, real SQLite and Unix broker)
   it('ingests scratch with immutable producer/provenance links, empty-file support, redacted preview and no host path',async()=>{
     await fixture(async h=>{
       await writeFile(join(h.root,'isolated-settings.json'),JSON.stringify({p2o:{artifactCaptureKiB:1}}));
-      await h.command('--target ./source --solo');let bytes=Buffer.from('password=not-for-retention\nfirst retained file'),executed=0;
+      await h.command('--target ./source');let bytes=Buffer.from('password=not-for-retention\nfirst retained file'),executed=0;
       h.sandboxes[0].captureScratch=async(path:string,maxBytes:number,_signal:AbortSignal,workdir:string,onRunning:()=>void,onOutput:any)=>{executed++;onRunning();onOutput('stdout',bytes);const before={size:bytes.length,device:'1',inode:'2',mtimeNs:'3',ctimeNs:'4',links:1};return {code:0,stdout:bytes.toString(),stderr:'',truncated:false,previewLimit:8192,scratchSnapshot:{version:1,path,root:workdir,totalBytes:bytes.length,offset:0,capturedBytes:bytes.length,prefixSha256:scratchPrefixHash(bytes),before,after:before,stable:true,encoding:'utf8-prefix'} as ScratchSnapshot};};
       const first=await h.call('p2o_capture',{path:'out.txt'});expect(first.content[0].text).toContain('first retained file');expect(JSON.stringify(first)).not.toContain('not-for-retention');expect(first.details.capture.artifacts).toHaveLength(1);const id=first.details.capture.artifacts[0].id;
       bytes=Buffer.from('replacement');await h.call('p2o_capture',{path:'out.txt'});const store:AssessmentStore=await h.reader();try{expect(store.artifact(id).text).toContain('first retained file');expect(store.artifact(id).manifest).toMatchObject({kind:'scratch-file',producer:'owner',captureSource:{path:'out.txt',root:'/work'}});expect((store.record(first.details.evidenceId)!.data!.capture as any).source.path).toBe('out.txt');}finally{store.close();}
@@ -344,21 +344,21 @@ describe('canonical owner runtime (inert execution, real SQLite and Unix broker)
       for(const path of ['/etc/passwd','../outside','x/../outside'])await expect(h.call('p2o_capture',{path})).rejects.toThrow('Scratch path');expect(executed).toBe(5);await h.command('stop');await expect(h.call('p2o_capture',{path:'out.txt'})).rejects.toThrow('No active');
     });
   });
-  it('authenticates scratch roots/caps and command budgets; Planner/reporting/stopped roles cannot bypass admission',async()=>{
+  it('authenticates scratch roots/caps and command budgets; a stopped worker still cannot bypass admission',async()=>{
     await fixture(async h=>{
-      await writeFile(join(h.root,'isolated-settings.json'),JSON.stringify({p2o:{artifactCaptureKiB:1}}));await h.command('--target ./source');await expect(h.call('p2o_capture',{path:'out.txt'})).rejects.toThrow('Planner');
+      await writeFile(join(h.root,'isolated-settings.json'),JSON.stringify({p2o:{artifactCaptureKiB:1}}));await h.command('--target ./source');
       const actor=(await h.call('p2o_delegate',{focus:'fixture',task:'capture inert scratch'})).details,ticket=await h.ticket(actor.workerId),c=new BrokerClient(ticket.socket,ticket.token);let rootSeen='',maxSeen=0,executed=0;
       h.sandboxes[0].captureScratch=async(path:string,maxBytes:number,_signal:AbortSignal,workdir:string,onRunning:()=>void,onOutput:any)=>{rootSeen=workdir;maxSeen=maxBytes;executed++;onRunning();const bytes=Buffer.from('x'.repeat(maxBytes)),before={size:4000,device:'1',inode:'2',mtimeNs:'3',ctimeNs:'4',links:1};onOutput('stdout',bytes);return {code:0,stdout:'preview',stderr:'',truncated:true,scratchSnapshot:{version:1,path,root:workdir,totalBytes:4000,offset:0,capturedBytes:bytes.length,prefixSha256:scratchPrefixHash(bytes),before,after:before,stable:true,encoding:'utf8-prefix'}};};
       try{await c.request('runtime',{model:ticket.requestedRuntime.model,thinking:ticket.requestedRuntime.thinking});const before=await c.request('status');const result=await c.request('capture',{path:'out.txt',root:'/etc',workdir:'/work/other',maxBytes:8388608,by:'owner'});expect(rootSeen).toBe(`/work/${actor.workerId}`);expect(maxSeen).toBe(1024);expect((await c.request('status')).used).toBe(before.used+1);expect(result.capture.artifacts[0]).toMatchObject({totalBytes:4000,capturedInputBytes:1024,truncated:true});expect(result.capture.source.root).toBe(rootSeen);await expect(c.request('capture',{path:'../outside'})).rejects.toThrow('Scratch path');expect(executed).toBe(1);}finally{c.close();}
-      const reporter=(await h.call('p2o_delegate',{focus:'report',task:'synthesize existing receipts',role:'reporting'})).details,rt=await h.ticket(reporter.workerId),r=new BrokerClient(rt.socket,rt.token);try{await r.request('runtime',{model:rt.requestedRuntime.model,thinking:rt.requestedRuntime.thinking});await expect(r.request('capture',{path:'out.txt'})).rejects.toThrow('synthesis-only');expect((await r.request('status')).used).toBe(0);await r.request('report',{report:{summary:'partial synthesis',confidence:'low'}});await expect(r.request('capture',{path:'out.txt'})).rejects.toThrow('stopped');}finally{r.close();}
+      const reporter=(await h.call('p2o_delegate',{focus:'report',task:'synthesize existing receipts',role:'reporting'})).details,rt=await h.ticket(reporter.workerId),r=new BrokerClient(rt.socket,rt.token);try{await r.request('runtime',{model:rt.requestedRuntime.model,thinking:rt.requestedRuntime.thinking});expect(await r.request('capture',{path:'out.txt'})).toBeDefined();expect((await r.request('status')).used).toBe(1);await r.request('report',{report:{summary:'partial synthesis',confidence:'low'}});await expect(r.request('capture',{path:'out.txt'})).rejects.toThrow('stopped');}finally{r.close();}
     });
   });
   it('rejects forged scratch producer/hash metadata after a known read and revokes before finalization without replay',async()=>{
-    await fixture(async h=>{await h.command('--target ./source --solo');let executed=0;h.sandboxes[0].captureScratch=async(_path:string,_cap:number,_signal:AbortSignal,_workdir:string,onRunning:()=>void,onOutput:any)=>{executed++;onRunning();const bytes=Buffer.from('captured'),before={size:bytes.length,device:'1',inode:'2',mtimeNs:'3',ctimeNs:'4',links:1};onOutput('stdout',bytes);return {code:0,stdout:'preview',stderr:'',truncated:false,scratchSnapshot:{version:1,path:'out.txt',root:'/work/other',totalBytes:bytes.length,offset:0,capturedBytes:bytes.length,prefixSha256:'a'.repeat(64),before,after:before,stable:true,encoding:'utf8-prefix'}};};await expect(h.call('p2o_capture',{path:'out.txt'})).rejects.toThrow('provenance');await h.command('stop');expect(executed).toBe(1);expect(h.ctx.notices.join('\n')).toContain('execution authority closed');const store:AssessmentStore=await h.reader();try{expect(store.artifacts()).toHaveLength(0);expect(store.events().rows.find(e=>e.kind==='operation.returned')?.data).toMatchObject({retentionIncomplete:true,remoteOutcome:'returned'});}finally{store.close();}});
+    await fixture(async h=>{await h.command('--target ./source');let executed=0;h.sandboxes[0].captureScratch=async(_path:string,_cap:number,_signal:AbortSignal,_workdir:string,onRunning:()=>void,onOutput:any)=>{executed++;onRunning();const bytes=Buffer.from('captured'),before={size:bytes.length,device:'1',inode:'2',mtimeNs:'3',ctimeNs:'4',links:1};onOutput('stdout',bytes);return {code:0,stdout:'preview',stderr:'',truncated:false,scratchSnapshot:{version:1,path:'out.txt',root:'/work/other',totalBytes:bytes.length,offset:0,capturedBytes:bytes.length,prefixSha256:'a'.repeat(64),before,after:before,stable:true,encoding:'utf8-prefix'}};};await expect(h.call('p2o_capture',{path:'out.txt'})).rejects.toThrow('provenance');await h.command('stop');expect(executed).toBe(1);expect(h.ctx.notices.join('\n')).toContain('execution authority closed');const store:AssessmentStore=await h.reader();try{expect(store.artifacts()).toHaveLength(0);expect(store.events().rows.find(e=>e.kind==='operation.returned')?.data).toMatchObject({retentionIncomplete:true,remoteOutcome:'returned'});}finally{store.close();}});
   });
   it('exports and imports a portable bundle through human commands only, preserving knowledge without authority',async()=>{
     await fixture(async h=>{
-      await h.command('--target ./source --solo');const ack=(await h.call('p2o_note',{kind:'note',text:'retained for portable export'})).details;await h.call('p2o_shell',{command:'inert portable artifact'});await h.command('checkpoint before export');
+      await h.command('--target ./source');const ack=(await h.call('p2o_note',{kind:'note',text:'retained for portable export'})).details;await h.call('p2o_shell',{command:'inert portable artifact'});await h.command('checkpoint before export');
       const bundle=join(h.root,'portable-bundle');
       await h.command(`export ${bundle}`);expect(h.screen()).toContain('Exported');expect(h.ctx.confirmBodies.at(-1)).toContain('redacted');
       const index=JSON.parse(await readFile(join(bundle,'manifest.json'),'utf8'));expect(index).toMatchObject({runId:await h.runId(),redactionVersion:2,authorityRestored:false});expect(index.files.length).toBeGreaterThan(1);expect(index.files.some((f:{kind:string})=>f.kind==='artifact')).toBe(true);
@@ -370,7 +370,7 @@ describe('canonical owner runtime (inert execution, real SQLite and Unix broker)
       await freshCommand(`open ${runId}`);await freshCommand(`export ${join(h.root,'historical-bundle')}`);expect(ctx.notices.at(-1)).toContain('requires the active owner run');
       await freshCommand(`import ${bundle}`);expect(ctx.notices.at(-1)).toContain('requires the active owner run');await freshCommand('close');
       const freshCall=(name:string,params:any)=>fresh.tools.get(name).execute(randomUUID(),params,undefined,undefined,ctx.ctx);
-      await freshCommand('--target ./source --solo');await freshCall('p2o_note',{kind:'note',text:'target run knowledge'});
+      await freshCommand('--target ./source');await freshCall('p2o_note',{kind:'note',text:'target run knowledge'});
       ctx.setConfirm(true);await freshCommand(`import ${bundle}`);expect(ctx.confirmBodies.at(-1)).toContain('never same-run evidence');expect(ctx.screens.at(-1).render(200).join('\n')).toContain('Knowledge only');
       const imported=[];for(const id of await readdir(join(h.root,'.p2o-state'))){const candidate=AssessmentStore.open(join(h.root,'.p2o-state'),id);try{if(candidate.records().some(r=>r.data?.bundleSha256===index.bundleSha256))imported.push({id,store:candidate});}catch{/* not a readable run */}finally{if(!imported.some(entry=>entry.store===candidate))candidate.close();}}
       expect(imported).toHaveLength(1);const {id:importRunId,store}=imported[0];
@@ -382,7 +382,7 @@ describe('canonical owner runtime (inert execution, real SQLite and Unix broker)
   });
   it('reconciles a stopped run only with confirmation, and refuses while a live writer holds the lock',async()=>{
     await fixture(async h=>{
-      await h.command('--target ./source --solo');let ready!:()=>void,rejectOperation:((error:Error)=>void)|undefined;const started=new Promise<void>(resolve=>{ready=resolve;});const sandbox=h.sandboxes[0];
+      await h.command('--target ./source');let ready!:()=>void,rejectOperation:((error:Error)=>void)|undefined;const started=new Promise<void>(resolve=>{ready=resolve;});const sandbox=h.sandboxes[0];
       sandbox.exec=async(_c:string,_s:number,_signal:AbortSignal,_w:string,onRunning:()=>void)=>{onRunning?.();ready();return new Promise((_resolve,reject)=>{rejectOperation=reject;});};
       const stop=sandbox.stop.bind(sandbox);sandbox.stop=async()=>{rejectOperation?.(Error('Cancelled'));await stop();};const operation=h.call('p2o_shell',{command:'inert hanging work'}).catch((e:Error)=>e);await started;await h.command('stop');await operation;
       const runId=await h.runId();
@@ -499,7 +499,7 @@ describe('canonical owner runtime (inert execution, real SQLite and Unix broker)
     expect((await h.call('p2o_workers')).details.workers).toHaveLength(1);expect(h.sandboxes[0].commands).toHaveLength(0);expect(h.pi.messages).toHaveLength(1);
   }));
   it('reviews canonical cases and proof-aware coverage without merging claims, widening scope or adding target/model work',async()=>fixture(async h=>{
-    await h.command('--target ./source --solo');expect(h.pi.active).toEqual(expect.arrayContaining(['p2o_case','p2o_coverage']));
+    await h.command('--target ./source');expect(h.pi.active).toEqual(expect.arrayContaining(['p2o_case','p2o_coverage']));
     const asset=(await h.call('p2o_graph',{action:'record',batch:{assets:[{asset:{kind:'endpoint',key:'GET /case-fixture'}}]}})).details.acks[0],taskDraft={question:'Does the bounded fixture observation match the declared policy?',surface:'/case-fixture',risk:'authorization',role:'general',roleReason:'Bounded inert observation for case review only',expectedTrue:'Receipt records the expected policy observation',expectedFalse:'Receipt records the contrasting control',stopCondition:'Stop after one inert command and owner review',evidenceIds:[],prerequisites:[],skills:[],methodReason:'One inert command with no external target'};
     const task=(await h.call('p2o_task',{action:'create',draft:taskDraft})).details,running=(await h.call('p2o_task',{action:'start',id:task.id})).details,observation=(await h.call('p2o_shell',{command:'printf bounded-case-observation'})).details,reviewed=(await h.call('p2o_task',{action:'review',id:task.id,revision:running.revision,reason:'Owner reviewed the exact inert receipt for bounded coordination',evidenceIds:[observation.evidenceId]})).details;
     const candidate={candidate:'runtime-case-claim',surface:'/case-fixture',risk:'authorization',closure:'confirmed',execution:'tested',proof:'offline_reproduction',evidenceRefs:[observation.evidenceId],negativeControls:[],policyBasis:'boundary_invariant',expectedPolicy:'Declared fixture actor/object boundary',limitations:'Only one inert fixture actor and endpoint were reviewed'},claim=(await h.call('p2o_candidate',candidate)).details,
@@ -532,7 +532,7 @@ describe('canonical owner runtime (inert execution, real SQLite and Unix broker)
   }));
   it('recovers a committed plan ACK without duplicating a goal or event, and remains read-only after finish',async()=>{
     let armed=false;await fixture(async h=>{
-      await h.command('--target ./source --solo');const entry={kind:'goal',title:'One inert planning checkpoint goal',status:'active',reason:'Explicit local fixture with no target execution',criteria:['Owner must review the retained limitations'],proof:{kind:'capability',capability:{kind:'http.request',subject:'fixture'}}};armed=true;
+      await h.command('--target ./source');const entry={kind:'goal',title:'One inert planning checkpoint goal',status:'active',reason:'Explicit local fixture with no target execution',criteria:['Owner must review the retained limitations'],proof:{kind:'capability',capability:{kind:'http.request',subject:'fixture'}}};armed=true;
       const a=(await h.call('p2o_plan',{action:'create',entry,requestId:'lost-plan-ack'})).details;expect(a.replayed).toBe(true);
       const b=(await h.call('p2o_plan',{action:'create',entry,requestId:'lost-plan-ack'})).details;expect(b.id).toBe(a.id);await expect(h.call('p2o_plan',{action:'create',entry:{...entry,title:'different payload'},requestId:'lost-plan-ack'})).rejects.toThrow('IDEMPOTENCY_CONFLICT');
       const read:AssessmentStore=await h.reader();try{expect(read.records().filter(row=>row.data?.plan)).toHaveLength(1);expect(read.events({limit:100}).rows.filter(row=>row.correlationId==='lost-plan-ack')).toHaveLength(1);}finally{read.close();}
@@ -544,7 +544,7 @@ describe('canonical owner runtime (inert execution, real SQLite and Unix broker)
   });
   it('rolls back a failed plan mutation and closes target authority before any retry or finalization',async()=>{
     let armed=false;await fixture(async h=>{
-      await h.command('--target ./source --solo');armed=true;
+      await h.command('--target ./source');armed=true;
       await expect(h.call('p2o_plan',{action:'create',entry:{kind:'goal',title:'A plan that must not commit',status:'active',reason:'Injected storage fixture only; never retry a target',criteria:['An attributed receipt must be reviewed'],proof:{kind:'capability',capability:{kind:'http.request',subject:'fixture'}}},requestId:'failed-plan'})).rejects.toThrow('plan SQLite fault');
       await expect(h.call('p2o_shell',{command:'true'})).rejects.toThrow(/No active|NO_ASSESSMENT/);expect(h.ctx.notices.join('\n')).toContain('execution authority closed immediately');
       for(let i=0;i<100;i++){const read:AssessmentStore=await h.reader();let done=false;try{done=Boolean(read.outcome());}finally{read.close();}if(done)break;await delay(5);}
@@ -568,7 +568,7 @@ describe('canonical owner runtime (inert execution, real SQLite and Unix broker)
   });
   it('explicit infrastructure recovery refuses a live writer and never launches target work',async()=>{
     await fixture(async h=>{
-      await h.command('--target ./source --solo');const id=await h.runId();await h.command('stop');
+      await h.command('--target ./source');const id=await h.runId();await h.command('stop');
       const writer=AssessmentStore.open(join(h.root,'.p2o-state'),id,{readOnly:false});
       try {await h.command(`recover ${id}`);expect(h.ctx.notices.at(-1)).toMatch(/locked|busy/i);} finally {writer.close();}
       const before=h.pi.messages.length;await h.command(`recover ${id}`);expect(h.screen()).toContain('HISTORICAL');expect(h.pi.messages).toHaveLength(before);expect(h.sandboxes).toHaveLength(1);

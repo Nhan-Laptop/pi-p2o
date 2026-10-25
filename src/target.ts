@@ -10,12 +10,12 @@ import { TEXT_CONTROL } from './validate.js';
 export type Target = { kind: 'directory'; path: string } | { kind: 'url'; url: string; origin: string } | { kind: 'hybrid'; path: string; url: string; origin: string };
 /** The target mounts a read-only source snapshot in the sandbox. */
 export const hasSource = (target: Target): target is Extract<Target, { path: string }> => target.kind !== 'url';
-/** The target allows scoped HTTP to exactly one origin. */
+/** The target carries a starting URL; HTTP is not restricted to its origin. */
 export const hasOrigin = (target: Target): target is Extract<Target, { origin: string }> => target.kind !== 'directory';
 /** 'latest'/'all' pick by eligibility at run start; an explicit id list (≤10, `run-<chars>` shape) names runs directly. Never grants authority — see planning_update.md. */
 export type ReferWorkspaceOption = 'latest' | 'all' | readonly string[];
-export interface StartOptions { solo: boolean; workers?: number; maxDepth?: number; export?: boolean; loopMode?: LoopMode; executorMode?: 'shared' | 'isolated'; maxTargetOperations?: number; retention?: RetentionMode; goal?: string; avoid?: string[]; origin?: string; referWorkspace?: ReferWorkspaceOption }
-export type Command = { action: 'help' } | { action: 'stop' } | { action: 'pause' } | { action: 'resume' } | { action: 'start'; target: string; options: StartOptions };
+export interface StartOptions { workers?: number; maxDepth?: number; export?: boolean; loopMode?: LoopMode; executorMode?: 'shared' | 'isolated'; maxTargetOperations?: number; retention?: RetentionMode; goal?: string; avoid?: string[]; origin?: string; referWorkspace?: ReferWorkspaceOption }
+export type Command = { action: 'help' } | { action: 'stop' } | { action: 'pause' } | { action: 'resume' } | { action: 'start'; target?: string; resume?: string; options: StartOptions };
 
 /** Deliberately small. One target plus delegation limits; quoting is supported for directory names. */
 const GOAL_CHARS = 600;
@@ -27,17 +27,19 @@ export function parseCommand(args: string): Command {
   const text = args.trim();
   if (!text || text === '--help') return { action: 'help' };
   if (text === 'stop' || text === 'pause' || text === 'resume') return { action: text };
+  // Part XI S8: resume an existing durable-local store instead of creating another run. The stored profile supplies the target.
+  const resume = /^--resume\s+(run-[a-zA-Z0-9-]{1,75})$/.exec(text);
+  if (resume) return { action: 'start', resume: resume[1], options: {} };
   const match = /^--target\s+(?:"([^"\r\n]+)"|'([^'\r\n]+)'|([^\s"']+))(?:\s+(.*))?$/.exec(text);
-  if (!match) throw new Error('Usage: /p2o --target <directory|http(s)-URL> [--solo] [--workers N] [--max-depth D] or /p2o stop');
+  if (!match) throw new Error('Usage: /p2o --target <directory|http(s)-URL> [options] or /p2o --resume <run-id> or /p2o stop');
   const target = match[1] ?? match[2] ?? match[3];
   if (target.length > 4096 || /[\x00-\x1f\x7f]/.test(target) || target.startsWith('-')) throw new Error('Invalid target');
-  const options: StartOptions = { solo: false };
+  const options: StartOptions = {};
   const rest = (match[4] ?? '').trim();
   if (rest) {
     const tokens = [...rest.matchAll(/"([^"\r\n]*)"|'([^'\r\n]*)'|(\S+)/g)].map(match => match[1] ?? match[2] ?? match[3]);
     for (let index = 0; index < tokens.length; index += 1) {
       const token = tokens[index];
-      if (token === '--solo') { options.solo = true; continue; }
       if (token === '--export') { options.export = true; continue; }
       if (token === '--retention') {
         const value = tokens[++index];
@@ -78,7 +80,7 @@ export function parseCommand(args: string): Command {
         options.referWorkspace = value === 'latest' || value === 'all' ? value : value.split(',');
         continue;
       }
-      if (token !== '--workers' && token !== '--max-depth' && token !== '--target-ops') throw new Error(`Unknown option ${token.slice(0, 40)}; usage: /p2o --target <directory|http(s)-URL> [--solo] [--workers N] [--max-depth D] [--goal "text"] [--avoid "text"]`);
+      if (token !== '--workers' && token !== '--max-depth' && token !== '--target-ops') throw new Error(`Unknown option ${token.slice(0, 40)}; usage: /p2o --target <directory|http(s)-URL> [--workers N] [--max-depth D] [--goal "text"] [--avoid "text"]`);
       const value = tokens[index + 1];
       if (!value || !/^\d+$/.test(value)) throw new Error(`${token} needs an integer value`);
       index += 1;
@@ -167,14 +169,13 @@ export const CONTAINER_HOST_ALIAS = 'host.docker.internal';
 export interface ScopedAddress { address: string; addressClass: AddressClass; pin: boolean }
 
 /**
- * Recheck the confirmed origin on every request, then resolve the destination. Private and loopback
- * addresses are allowed by the confirmed scope; the resulting class is recorded rather than used to
- * block. A hostname the sandbox resolves itself (the container alias) is deliberately not pinned.
+ * Resolve the destination and record its address class. There is no origin comparison: any http(s) URL the caller
+ * asks for is allowed, including private, loopback and metadata addresses (planning_update.md Part XI).
  */
 export async function scopedRequest(target: Target, value: string, resolveIP: ResolveAddress = resolveAddresses): Promise<{ url: URL } & ScopedAddress> {
-  if (!hasOrigin(target)) throw new Error('HTTP is unavailable for directory assessments');
-  const url = webURL(new URL(value, target.url).href);
-  if (url.origin !== target.origin) throw new Error(`Out of scope: only ${target.origin} is allowed. This is p2o scope policy, not a target defense; do not retry or route around it, record it as an open item instead.`);
+  // 2026-10-25 (planning_update.md Part XI): the target is a starting label, not a boundary. A relative value resolves
+  // against the target URL when there is one; an absolute value is used as given. Resolution is transport bookkeeping.
+  const url = webURL(hasOrigin(target) ? new URL(value, target.url).href : new URL(value).href);
   const hostname = url.hostname.replace(/^\[|\]$/g, '');
   if (isIP(hostname)) return { url, address: hostname, addressClass: addressClass(hostname), pin: false };
   if (hostname === CONTAINER_HOST_ALIAS) return { url, address: '', addressClass: 'container-alias', pin: false };

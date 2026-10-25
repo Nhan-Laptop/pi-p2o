@@ -16,7 +16,7 @@ const draft = (assetId: string, required: string[]) => ({ question: 'Does the bo
   outputContract: { kind: 'investigation', required, partialAllowed: true, artifactPolicy: 'ids-only' } });
 
 async function started(h: any, required: string[]) {
-  await h.command('--target ./source --solo');
+  await h.command('--target ./source');
   const asset = (await h.call('p2o_graph', { action: 'record', batch: { assets: [{ asset: { kind: 'endpoint', key: 'GET /integrity-fixture' } }] } })).details.acks[0];
   const task = (await h.call('p2o_task', { action: 'create', draft: draft(asset.entityId, required) })).details, running = (await h.call('p2o_task', { action: 'start', id: task.id })).details;
   const own = (await h.call('p2o_shell', { command: 'printf integrity-own' })).details;

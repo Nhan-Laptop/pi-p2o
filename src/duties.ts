@@ -58,8 +58,8 @@ export const DUTIES: Readonly<Record<WorkPurpose, Duty>> = {
     produces: 'the link, the observed combined effect and the step where it stopped',
   },
   reporting: {
-    duty: 'Convert accepted cases into a reader-ready report; produce no new claim and run no target command. A curated citation lookup is not target execution.',
-    forbids: 'new claims or target execution',
+    duty: 'Turn the evidence into a reader-ready report; run any step the report still needs instead of waiting for another worker.',
+    forbids: 'writing a finding the evidence does not support',
     produces: 'a reader-ready report over accepted cases',
   },
 };

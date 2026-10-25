@@ -23,13 +23,13 @@ describe('automatic report at the end of a run', () => {
 
   it('records the operator objective and constraints in the ledger and REPORT.md only when the flags were given', async () => {
     await fixture(async h => {
-      await h.command('--target ./source --solo --goal "Assess the login boundary" --avoid "No payment flows"'); await h.call('p2o_finish', {});
+      await h.command('--target ./source --goal "Assess the login boundary" --avoid "No payment flows"'); await h.call('p2o_finish', {});
       const report = await readFile(join(await reportDirectory(h), 'REPORT.md'), 'utf8');
       expect(report).toContain('Stated objective (operator-supplied, unverified, does not change scope): Assess the login boundary');
       expect(report).toContain('Operator constraint (guidance given to workers, not enforcement): No payment flows');
     });
     await fixture(async h => {
-      await h.command('--target ./source --solo'); await h.call('p2o_finish', {});
+      await h.command('--target ./source'); await h.call('p2o_finish', {});
       const report = await readFile(join(await reportDirectory(h), 'REPORT.md'), 'utf8');
       expect(report).not.toContain('Stated objective'); expect(report).not.toContain('Operator constraint');
     });
@@ -43,22 +43,22 @@ describe('automatic report at the end of a run', () => {
   }));
 
   it('is off for ephemeral runs unless asked, and survives the ephemeral store when it is asked for', async () => fixture(async h => {
-    await h.command('--target ./source --solo --retention ephemeral'); await h.call('p2o_finish', {});
+    await h.command('--target ./source --retention ephemeral'); await h.call('p2o_finish', {});
     expect(await exists(join(h.root, '.p2o-reports'))).toBe(false);
   }));
   it('can be switched on for an ephemeral run and off for a durable one', async () => {
-    await fixture(async h => { await settings(h, { autoReport: true }); await h.command('--target ./source --solo --retention ephemeral'); const result = await h.call('p2o_finish', {}); expect(result.details.reportPath).toMatch(/\.p2o-reports\/report-run-/); expect(await exists(result.details.reportPath)).toBe(true); });
-    await fixture(async h => { await settings(h, { autoReport: false }); await h.command('--target ./source --solo'); const result = await h.call('p2o_finish', {}); expect(result.details.reportPath).toBeUndefined(); expect(await exists(join(h.root, '.p2o-reports'))).toBe(false); });
+    await fixture(async h => { await settings(h, { autoReport: true }); await h.command('--target ./source --retention ephemeral'); const result = await h.call('p2o_finish', {}); expect(result.details.reportPath).toMatch(/\.p2o-reports\/report-run-/); expect(await exists(result.details.reportPath)).toBe(true); });
+    await fixture(async h => { await settings(h, { autoReport: false }); await h.command('--target ./source'); const result = await h.call('p2o_finish', {}); expect(result.details.reportPath).toBeUndefined(); expect(await exists(join(h.root, '.p2o-reports'))).toBe(false); });
   });
 
   it('honours an absolute reportRoot and refuses nothing else about the destination', async () => fixture(async h => {
-    const root = join(h.root, 'elsewhere'); await settings(h, { reportRoot: root }); await h.command('--target ./source --solo'); const result = await h.call('p2o_finish', {});
+    const root = join(h.root, 'elsewhere'); await settings(h, { reportRoot: root }); await h.command('--target ./source'); const result = await h.call('p2o_finish', {});
     expect(result.details.reportPath).toBe(join(root, `report-${await h.runId()}`)); expect(await exists(join(result.details.reportPath, 'REPORT.md'))).toBe(true);
   }));
 
   it('never lets a report failure block cleanup: the error is reported and no half directory is left', async () => fixture(async h => {
     await writeFile(join(h.root, 'afile'), 'x'); await settings(h, { reportRoot: join(h.root, 'afile', 'sub') });
-    await h.command('--target ./source --solo'); const result = await h.call('p2o_finish', {});
+    await h.command('--target ./source'); const result = await h.call('p2o_finish', {});
     expect(result.content[0].text).toMatch(/REPORT NOT WRITTEN: /); expect(result.content[0].text).toContain('Container removal verified'); expect(result.details.reportError).toBeTruthy(); expect(result.details.reportPath).toBeUndefined();
     expect((await readdir(h.root)).filter((name: string) => name.includes('p2o-tmp-report'))).toEqual([]);
   }));

@@ -169,7 +169,6 @@ export class TaskBoard extends LedgerBoard {
     return {...identity,active,reusable,partial,overlaps,exactOmitted:exact.omitted,overlapOmitted:overlap.omitted};
   }
   private enforceMatch(task:TaskDraft,match:TaskWorkMatch):string[]{
-    if(match.exactOmitted)throw Error('Exact work history exceeds the bounded admission view; inspect/defer instead of guessing');
     if(match.active.length)throw Error(`ASSIGNMENT_CONFLICT: exact work already active in ${match.active.map(row=>row.taskId).join(',')}`);
     if(match.reusable.length&&task.decision?.disposition==='new')throw Error(`REUSE_CANDIDATE: reviewed exact work exists in ${match.reusable.map(row=>row.taskId).join(',')}`);
     if(match.partial.length&&task.decision?.disposition==='new')throw Error(`PRIOR_PARTIAL: inspect gaps and record an explicit retry/refinement/validation decision for ${match.partial.map(row=>row.taskId).join(',')}`);
@@ -194,7 +193,6 @@ export class TaskBoard extends LedgerBoard {
     return this.mutate(async (index, tasks) => {
       const id = draft.id ?? `task-${randomUUID()}`;
       if (tasks.some(t => t.id === id)) throw Error('Duplicate task');
-      if (tasks.filter(t => !['closed','cancelled','expired'].includes(t.status)).length >= 100) throw Error('Live task frontier limit reached (100); review/close or cancel retained work');
       const candidate=this.canonical({...draft,id});this.checkDependencies(candidate,tasks,index);
       // M2/M4: the frontier is an obligation. A create that opens a new direction on a surface where a step is ready, or where a
       // demonstrated primitive has no successor and no wall, is refused with the claim to cite; revise and dispatch are untouched.
@@ -209,7 +207,6 @@ export class TaskBoard extends LedgerBoard {
     return this.mutate(async (index, tasks) => {
       const old = this.current(tasks,id,revision);
       if (['reserved','running'].includes(old.status)) throw Error('Withdraw active assignment before revising');
-      if (['closed','cancelled','expired'].includes(old.status) && tasks.filter(t => !['closed','cancelled','expired'].includes(t.status)).length >= 100) throw Error('Live task frontier limit reached (100); cannot reopen retained task');
       if (draft.id && draft.id !== id) throw Error('Cannot change task identity');
       const candidate=this.canonical({...draft,id});this.checkDependencies(candidate,tasks.filter(t => t.id !== id),index);const decorated=this.decorate(candidate,await this.matching(candidate));
       return this.write({ ...decorated,runId:this.runId,revision:old.revision+1,status:draft.missingPrerequisites?.length ? 'blocked' : 'proposed' },old);

@@ -55,7 +55,7 @@ it.skipIf(process.env.P2O_TEST_DOCKER !== '1')('real Docker + real extension: ho
   const text = (message: any) => typeof message.content === 'string' ? message.content : (message.content ?? []).filter((block: any) => block.type === 'text').map((block: any) => block.text).join('\n');
   try {
     await request('get_state');
-    await request('prompt', { message: '/p2o --target ./repo --solo' });
+    await request('prompt', { message: '/p2o --target ./repo' });
     let messages: any[] = [];
     for (let attempt = 0; attempt < 300; attempt += 1) {
       messages = (await request('get_messages')).data?.messages ?? [];

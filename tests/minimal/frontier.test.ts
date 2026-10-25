@@ -9,12 +9,14 @@ let root:string,board:TaskBoard,path:string;
 const draft=(id:string):TaskDraft=>({id,question:'Which harmless observation distinguishes the hypotheses?',surface:id,risk:'boundary',role:'general',roleReason:'Bounded independent source observation',expectedTrue:'An authorized observation supports the hypothesis',expectedFalse:'An effective control contradicts the hypothesis',stopCondition:'Stop after one observation or a missing prerequisite',evidenceIds:[],prerequisites:[],method:{skills:[],reason:'Smallest local observation for this fixture'}});
 beforeEach(async()=>{root=await mkdtemp(join(tmpdir(),'p2o-frontier-'));path=join(root,'ledger.jsonl');await writeFile(path,'',{mode:0o600});board=new TaskBoard('run-frontier',path,()=>true);});
 afterEach(async()=>rm(root,{recursive:true,force:true}));
-it('retains more than 100 terminal tasks, caps 100 live tasks, and cannot bypass admission by reopening history',async()=>{
+it('retains more than 100 terminal tasks and has no live-frontier cap (Part XI)',async()=>{
   for(let i=0;i<120;i++){const t=await board.create(draft(`old-${i}`));await board.transition(t.id,'cancelled','Fixture assignment explicitly withdrawn');}
-  for(let i=0;i<100;i++)await board.create(draft(`live-${i}`));
-  expect(await board.list()).toHaveLength(220);await expect(board.create(draft('overflow'))).rejects.toThrow('frontier limit');
-  const old=(await board.list()).find(t=>t.id==='old-0')!;await expect(board.revise(old.id,old.revision,draft(old.id))).rejects.toThrow('frontier limit');
-},15000);
+  for(let i=0;i<180;i++)await board.create(draft(`live-${i}`));
+  expect(await board.list()).toHaveLength(300);
+  await board.create(draft('overflow'));
+  const old=(await board.list()).find(t=>t.id==='old-0')!;await board.revise(old.id,old.revision,draft(old.id));
+  expect(await board.list()).toHaveLength(301);
+},20000);
 it('allows a future reviewed dependency, pins only accepted revisions and rejects revision changes at command admission',async()=>{
   const a=await board.create(draft('predecessor'));
   const b=await board.create({...draft('dependent'),prerequisites:[{taskId:a.id}]});

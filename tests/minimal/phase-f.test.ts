@@ -124,7 +124,7 @@ describe('continuation is bounded by the ticket, not by a count (M8)', () => {
 
 describe('the run tells the lead what to research, and records its refusals (M6 + M8)', () => {
   it('names the transition and the procedure skill when a link blocks', async () => fixture(async h => {
-    await h.command('--target ./source --solo');
+    await h.command('--target ./source');
     const observation = (await h.call('p2o_shell', { command: 'printf phase-f-observation' })).details;
     await h.call('p2o_candidate', { candidate: 'blocked-link', surface: '/report-fixture', risk: 'authorization', closure: 'open_proof_gap', execution: 'not_tested',
       proof: 'static_trace', negativeControls: [], policyBasis: 'inferred', expectedPolicy: 'Declared fixture actor/object boundary', limitations: 'Nothing executed in this step yet',
@@ -137,7 +137,7 @@ describe('the run tells the lead what to research, and records its refusals (M6 
   }));
 
   it('records a condition-bounded revisit as one decision and refuses the second (M7)', async () => fixture(async h => {
-    await h.command('--target ./source --solo');
+    await h.command('--target ./source');
     const at = new Date(Date.now() + 300_000).toISOString();
     const waited = await h.call('p2o_loop', { action: 'wait', reason: 'block-decay', notBefore: at });
     expect(waited.details.revisit).toEqual({ condition: 'block-decay', at });
@@ -154,13 +154,13 @@ describe('the run tells the lead what to research, and records its refusals (M6 
   }));
 
   it('refuses to continue a worker that is not in this run (M8 wiring)', async () => fixture(async h => {
-    await h.command('--target ./source --solo');
+    await h.command('--target ./source');
     await expect(h.call('p2o_workers', { action: 'continue', workerId: 'worker-missing', brief: 'Try the other parser on the same ticket' }))
       .rejects.toThrow(/WORKER_UNKNOWN/);
   }));
 
   it('fills work.purpose from the role instead of demanding it twice', async () => fixture(async h => {
-    await h.command('--target ./source --solo');
+    await h.command('--target ./source');
     const asset = (await h.call('p2o_graph', { action: 'record', batch: { assets: [{ asset: { kind: 'endpoint', key: 'GET /report-fixture' } }] } })).details.acks[0];
     const observation = (await h.call('p2o_shell', { command: 'printf purpose-observation' })).details;
     const parent = (await h.call('p2o_candidate', { candidate: 'purpose-parent', surface: '/report-fixture', risk: 'authorization', closure: 'open_proof_gap',
@@ -179,7 +179,7 @@ describe('the run tells the lead what to research, and records its refusals (M6 
   }));
 
   it('records an admission refusal once and counts it as an advisory', async () => fixture(async h => {
-    await h.command('--target ./source --solo');
+    await h.command('--target ./source');
     const observation = (await h.call('p2o_shell', { command: 'printf admission-observation' })).details;
     await h.call('p2o_candidate', { candidate: 'unconsumed', surface: '/report-fixture', risk: 'authorization', closure: 'confirmed', execution: 'tested', proof: 'live_reproduction',
       policyBasis: 'boundary_invariant', negativeControls: [], expectedPolicy: 'Declared fixture actor/object boundary', limitations: 'Bounded fixture only', evidenceRefs: [observation.evidenceId],
@@ -196,7 +196,7 @@ describe('the run tells the lead what to research, and records its refusals (M6 
     finally { store.close(); }
   }));
   it('turns a condition-bounded wait into one recorded revisit, and refuses a second one', async () => fixture(async h => {
-    await h.command('--target ./source --solo');
+    await h.command('--target ./source');
     const at = new Date(Date.now() + 60_000).toISOString();
     const waited = await h.call('p2o_loop', { action: 'wait', reason: 'block-decay', notBefore: at });
     // The wake is bound to one condition and one instant: the lead gets a time, not an allowance.
@@ -210,7 +210,7 @@ describe('the run tells the lead what to research, and records its refusals (M6 
   }));
 
   it('refuses a continuation for a worker this assessment never registered', async () => fixture(async h => {
-    await h.command('--target ./source --solo');
+    await h.command('--target ./source');
     await expect(h.call('p2o_workers', { action: 'continue', workerId: 'w-unknown', brief: 'try the blocked hypothesis with a different marker' })).rejects.toThrow(/WORKER_UNKNOWN/);
   }));
 });

@@ -25,14 +25,15 @@ const body = JSON.stringify(nvd);
 const draft: LeadDraft = { product: 'joomla', version: '2.5.0', cve: 'CVE-2024-1111', severity: 'CRITICAL', affected: 'joomla:joomla 2.5.0..2.5.28',
   summary: 'fixture', source: { url: 'https://services.nvd.nist.gov/rest/json/cves/2.0?keywordSearch=joomla', retrievedAt: '2030-01-01T00:00:00.000Z', sha256: sha256Hex(body) } };
 
-describe('the host fetches from an allowlist and the model names no destination (P16.4)', () => {
-  it('builds the NVD query from product/version and refuses any other host', () => {
+describe('the host builds the CVE query; any source is allowed (P16.4, Part XI)', () => {
+  it('builds the NVD query from product/version and no longer refuses another host', () => {
     const query = cveQuery({ product: 'joomla', version: '2.5.0' });
     const url = new URL(cveUrl(query));
     expect(url.hostname).toBe('services.nvd.nist.gov');
     expect(url.searchParams.get('keywordSearch')).toBe('joomla 2.5.0');
-    expect(() => assertCveSource('https://evil.example/cves')).toThrow('not an allowlisted source');
-    expect(() => assertCveSource('http://services.nvd.nist.gov/rest/json/cves/2.0')).toThrow('https only');
+    expect(assertCveSource('https://example.org/cves').hostname).toBe('example.org');
+    expect(assertCveSource('http://services.nvd.nist.gov/rest/json/cves/2.0').protocol).toBe('http:');
+    expect(() => assertCveSource('ftp://example.org/')).toThrow('http(s)');
     expect(() => cveQuery({ product: 'x' })).toThrow('product name');
   });
 

@@ -1,4 +1,4 @@
-// Real extension + real Docker, inert model. Delegation is off (--solo) so no pane is opened.
+// Real extension + real Docker, inert model. Delegation is off (no Herdr) so no pane is opened.
 import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
 import { createAssistantMessageEventStream, getCurrentSystemPrompt, getCurrentTools, type AssistantMessage } from '@earendil-works/pi-ai';
 import { registerP2O } from '../../../extensions/p2o/index.js';

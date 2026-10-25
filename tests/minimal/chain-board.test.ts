@@ -79,7 +79,7 @@ describe('chain board: readiness is derived from earlier steps (M1)', () => {
 
 describe('chain plan rows: one lineage, one position (M1)', () => {
   it('refuses a chain row with no lineage and a half-declared position', async () => fixture(async h => {
-    await h.command('--target ./source --solo');
+    await h.command('--target ./source');
     const base = { kind: 'todo', title: 'Chain step without lineage', status: 'open', reason: 'Owner wrote the step before the claim it stands on' };
     await expect(h.call('p2o_plan', { action: 'create', entry: { ...base, chainOf: 'chain-x', step: 1 } }))
       .rejects.toThrow(/CHAIN_LINEAGE: a chain step must cite the claim it consumes \(claimRefs\); a plan row with no lineage cannot hold a link/);
@@ -94,7 +94,7 @@ describe('chain plan rows: one lineage, one position (M1)', () => {
   }));
 
   it('closing step 1 with a demonstrated claim makes step 2 ready and leaves step 3 waiting', async () => fixture(async h => {
-    await h.command('--target ./source --solo');
+    await h.command('--target ./source');
     const observation = (await h.call('p2o_shell', { command: 'printf chain-board-observation' })).details;
     const record = (candidate: string, extra: Record<string, unknown> = {}) => h.call('p2o_candidate', {
       candidate, surface: '/report-fixture', risk: 'authorization', closure: 'open_proof_gap', execution: 'not_tested', proof: 'static_trace',
@@ -126,7 +126,7 @@ describe('chain plan rows: one lineage, one position (M1)', () => {
   }));
 
   it('refuses a second row for the same chain position', async () => fixture(async h => {
-    await h.command('--target ./source --solo');
+    await h.command('--target ./source');
     const observation = (await h.call('p2o_shell', { command: 'printf chain-duplicate-observation' })).details;
     const record = (candidate: string) => h.call('p2o_candidate', { candidate, surface: '/report-fixture', risk: 'authorization', closure: 'open_proof_gap', execution: 'not_tested',
       proof: 'static_trace', negativeControls: [], policyBasis: 'inferred', expectedPolicy: 'Declared fixture actor/object boundary', limitations: 'Nothing executed in this step yet', evidenceRefs: [observation.evidenceId] });

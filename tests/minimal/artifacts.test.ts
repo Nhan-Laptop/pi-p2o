@@ -103,7 +103,7 @@ describe('host-owned pre-truncation capture',()=>{
       expect(result.hops).toHaveLength(2);expect(http.parts()[0].input.toString()).toBe(first+second);
       const creates=calls.filter(c=>c.args.includes('/usr/bin/curl'));expect(creates[1].args).toContain('Cookie: sid=secret');expect(creates[1].args).toContain('GET');
       expect(calls.filter(c=>c.observed).map(c=>c.args[0])).toEqual(['exec','start','start']);expect(calls.find(c=>c.args.includes('--attach'))?.stdin).toBe('provided-body');
-      await expect(sandbox.http({url:'https://other.com/',method:'GET',followRedirects:false,maxRedirects:0},undefined,undefined,'actor',http.observe)).rejects.toThrow('Out of scope');
+      // Part XI: another origin would be allowed now; the fixture queue has no response for it, so only the wiring is asserted here.
       expect(calls.filter(c=>c.args.includes('--attach'))).toHaveLength(2);
     } finally {shell.dispose();http.dispose();await sandbox.stop();}
   });

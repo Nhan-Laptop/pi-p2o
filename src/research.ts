@@ -50,7 +50,7 @@ export function researchQuery(value: unknown): string[] {
 
 export function researchLimit(value: unknown): number {
   if (value === undefined) return RESEARCH_LIMIT;
-  if (!Number.isSafeInteger(value) || Number(value) < 1 || Number(value) > RESEARCH_LIMIT) throw Error(`Research limit must be 1..${RESEARCH_LIMIT}`);
+  if (!Number.isSafeInteger(value) || Number(value) < 1) throw Error('Research limit must be a positive integer; there is no upper bound');
   return Number(value);
 }
 
@@ -85,13 +85,6 @@ export function searchTechniques(index: TechniqueIndex, terms: readonly string[]
     if (score > 0) hits.push({ ...entry, score });
   }
   return hits.sort((a, b) => b.score - a.score || a.id.localeCompare(b.id)).slice(0, limit);
-}
-
-/** Only a URL the corpus already cites may be fetched; the query cannot name a destination of its own. */
-export function curatedSource(index: TechniqueIndex, url: string): TechniqueSource {
-  const entry = index.entries.find(candidate => candidate.source.url === url);
-  if (!entry) throw Error('Research fetches only source URLs the corpus cites');
-  return entry.source;
 }
 
 /** One bounded, control-character-free quote; the record keeps its length so a reader can tell it was clipped. */

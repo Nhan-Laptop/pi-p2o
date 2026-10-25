@@ -203,15 +203,21 @@ export class AssessmentStore {
       latestReconciliation: latest,
     };
   }
-  /** Human-attributed knowledge record marking interrupted/unknown state. Writes no task status, ticket or authority. */
-  reconcileInterruption(actorId = 'owner', reason = 'Human reconciliation'): AssessmentRecord {
+  /**
+   * Human-attributed knowledge record marking interrupted/unknown state. Writes no task status, ticket or authority.
+   * With `resume`, the same record marks the boundary before the operator continues the run; the live process is still the
+   * only authority, and interrupted work stays interrupted until it is explicitly re-dispatched.
+   */
+  reconcileInterruption(actorId = 'owner', reason = 'Human reconciliation', resume = false): AssessmentRecord {
     if (!validId(actorId) || typeof reason !== 'string' || !reason.trim() || reason.length > 2000) throw Error('Reconciliation needs a valid actor and a bounded reason');
     const state = this.interruptedState();
     const record: AssessmentRecord = { id: randomUUID(), runId: this.manifest().runId, at: new Date().toISOString(), by: actorId, kind: 'lifecycle',
-      text: `Interruption reconciled @${state.asOfSequence}: ${state.runningTaskIds.length} non-terminal task(s) and ${state.unknownOperationIds.length} unknown/in-flight operation(s) labelled interrupted/unknown; no resume, no authority`,
+      text: resume
+        ? `Interruption boundary @${state.asOfSequence} before operator resume: ${state.runningTaskIds.length} non-terminal task(s) and ${state.unknownOperationIds.length} unknown/in-flight operation(s) stay interrupted/unknown; authority is this live process only`
+        : `Interruption reconciled @${state.asOfSequence}: ${state.runningTaskIds.length} non-terminal task(s) and ${state.unknownOperationIds.length} unknown/in-flight operation(s) labelled interrupted/unknown; no resume, no authority`,
       data: { reconciliation: { asOfSequence: state.asOfSequence, at: new Date().toISOString(), by: actorId, reason: redact(reason),
         runningTaskIds: state.runningTaskIds.slice(0,100), unknownOperationIds: state.unknownOperationIds.slice(0,100), workerIds: state.workerIds.slice(0,100),
-        pendingReviews: state.pendingReviews.slice(0,100), authorityRestored: false, resume: false,
+        pendingReviews: state.pendingReviews.slice(0,100), authorityRestored: false, resume,
         note: 'Historical state is evidence of interruption, not live execution. Currentness/proof still require this run\'s own receipts.' } } };
     this.commitRecords([record]);
     return this.record(record.id!)!;

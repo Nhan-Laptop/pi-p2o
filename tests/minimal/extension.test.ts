@@ -1,4 +1,5 @@
 import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { ownerTools } from '../../src/tool-policy.js';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -88,11 +89,11 @@ describe('owner role', () => {
     const event = { systemPrompt: 'BASE PROMPT', systemPromptOptions: { sections: { other: 'KEEP OTHER GUIDANCE' } as Record<string, string> } };
     expect(await h.emit('before_agent_start', event)).toBeUndefined();
     expect(event.systemPromptOptions.sections.p2o_assessment).toContain('P2O ASSESSMENT');
-    expect(event.systemPromptOptions.sections.p2o_assessment).toContain('Only the human can change confirmed scope');
+    expect(event.systemPromptOptions.sections.p2o_assessment).toContain('The sandbox is the only blast radius');
     expect(event.systemPromptOptions.sections.p2o_assessment).toContain('DELEGATION');
     expect(event.systemPromptOptions.sections.other).toBe('KEEP OTHER GUIDANCE');
     expect(h.sandboxes[0].stopCount).toBe(0);
-    expect(h.pi.active).toEqual(['p2o_task', 'p2o_plan', 'p2o_case', 'p2o_coverage', 'p2o_ledger', 'p2o_state', 'p2o_graph', 'p2o_artifact', 'p2o_skill_list', 'p2o_skill_read', 'p2o_research', 'p2o_candidate', 'p2o_lab', 'p2o_note', 'p2o_surface', 'p2o_delegate', 'p2o_workers', 'p2o_loop', 'p2o_finish']);
+    expect(h.pi.active).toEqual(ownerTools());
     expect(await h.tickets()).toEqual([]);
   });
 
@@ -101,7 +102,7 @@ describe('owner role', () => {
     const event = { systemPrompt: 'PI BASE PROMPT', systemPromptOptions: options };
     await h.emit('before_agent_start', event);
     expect(options.sections).toEqual({ other: 'UNRELATED' });
-    await h.start('--target ./repo --solo');
+    await h.start('--target ./repo');
     await h.emit('before_agent_start', event);
     const active = options.sections.p2o_assessment;
     expect(active).not.toMatch(/\bp2o_[a-z_]+\b|nextOffset|supersedes=|policyBasis=/);
@@ -117,7 +118,7 @@ describe('owner role', () => {
     await h.emit('agent_before_settle', { outcome: 'completed' });
     await h.emit('before_agent_start', event);
     expect(options.sections).toEqual({ other: 'UNRELATED' });
-    await h.start('--target ./repo --solo');
+    await h.start('--target ./repo');
     await h.emit('before_agent_start', event);
     await h.command('stop');
     await h.emit('before_agent_start', event);
@@ -141,7 +142,7 @@ describe('owner role', () => {
   });
 
   it('lets a recon task omit roleReason/expectedTrue/expectedFalse/stopCondition/methodReason, but still requires them for every other role (planning_update.md P1.1)', async () => {
-    await h.start('--target ./repo --solo');
+    await h.start('--target ./repo');
     const lean: any = { question: 'What does this endpoint expose?', surface: '/surface', risk: 'mapping', role: 'recon', evidenceIds: [], prerequisites: [] };
     const recon = (await h.call('p2o_task', { action: 'create', draft: lean })).details;
     expect(recon.roleReason).toBe(''); expect(recon.expectedTrue).toBe(''); expect(recon.expectedFalse).toBe(''); expect(recon.stopCondition).toBe(''); expect(recon.method.reason).toBe('');
@@ -150,7 +151,7 @@ describe('owner role', () => {
   });
 
   it('records a cheap recon surface-inventory entry and flags a normalized-key duplicate without blocking it (planning_update.md P1.2)', async () => {
-    await h.start('--target ./repo --solo');
+    await h.start('--target ./repo');
     const first = (await h.call('p2o_surface', { component: 'Login API', entryPoint: '/api/login' })).details;
     expect(first.duplicate).toBe(false);
     const again = (await h.call('p2o_surface', { component: '  login api  ', entryPoint: 'API/Login' })).details;
@@ -179,7 +180,7 @@ describe('owner role', () => {
       roleReason:'Lead selected this role from the current unanswered question',expectedTrue:'Known baseline reaches the intended consumer',expectedFalse:'Contrasting observation refutes the boundary hypothesis',
       stopCondition:'Stop after the contrast, a missing prerequisite or explicit owner withdrawal',evidenceIds:[],prerequisites,validationOf,methodReason:'Bounded offline method; no deployment claims'});
     const recon = (await h.call('p2o_task',{action:'create',draft:makeDraft('recon')})).details;
-    await expect(h.call('p2o_task',{action:'start',id:recon.id})).rejects.toThrow('PLANNER_ONLY');
+    // Part XI: the lead holds target tools; this fixture still delegates the task to a worker.
     const reconWorker = (await h.call('p2o_delegate',{focus:'controlled-recon',task:'Observe the bounded fixture',taskId:recon.id})).details;
     const {BrokerClient:ReconClient}=await import('../../src/broker.js');
     const rt=JSON.parse(await readFile(join(await h.runDir(),`ticket-${reconWorker.workerId}.json`),'utf8'));
@@ -352,24 +353,20 @@ describe('owner role', () => {
     const dialog = started.confirmBodies.at(-1)!;
     expect(dialog).toContain('Hybrid target: a bounded source copy');
     expect(dialog).toContain('https://example.com/app');
-    expect(dialog).toContain('neither widens the other');
+    expect(dialog).toContain('Neither is a boundary');
     await h.call('p2o_delegate', { focus: 'idor', task: 'Validate the idor claim', context: 'nothing known', role: 'validation' });
     const ticketFiles = await h.tickets();
     const ticket = JSON.parse(await readFile(join(await h.runDir(), ticketFiles[0]), 'utf8'));
     expect(ticket.target).toMatchObject({ kind: 'hybrid', origin: 'https://example.com', label: expect.stringContaining('https://example.com/app') });
   });
 
-  it('refuses delegation when solo, capped, too deep, without the skill, or without Herdr', async () => {
-    await h.start('--target ./repo --solo');
-    await expect(h.call('p2o_delegate', { focus: 'x', task: 'y' })).rejects.toThrow(/DELEGATION_UNAVAILABLE/);
-    await h.command('stop');
-
+  it('refuses delegation without a backend, an unknown skill, or beyond the cap', async () => {
     h = await harness({ herdrAvailable: false });
     await h.start();
     await expect(h.call('p2o_delegate', { focus: 'x', task: 'y' })).rejects.toThrow(/DELEGATION_UNAVAILABLE/);
     const event = { systemPrompt: 'BASE', systemPromptOptions: { sections: {} as Record<string, string> } };
     await h.emit('before_agent_start', event);
-    expect(event.systemPromptOptions.sections.p2o_assessment).toContain('Delegation is NOT available');
+    expect(event.systemPromptOptions.sections.p2o_assessment).toContain('No worker backend is available');
     await h.command('stop');
 
     h = await harness({ settings: { p2o: { maxWorkers: 1, maxDepth: 1 } } });
@@ -522,7 +519,7 @@ describe('owner role', () => {
   });
 
   it('blocks host, nested and other-extension tools while active, and no tool can reach the target after stop', async () => {
-    await h.start('--target ./repo --solo');
+    await h.start('--target ./repo');
     for (const toolName of ['read', 'bash', 'edit', 'write', 'codemode', 'herd_spawn', 'agent_browser']) {
       expect(await h.emit('tool_call', { toolName }), toolName).toMatchObject({ block: true });
     }

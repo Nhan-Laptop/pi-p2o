@@ -32,7 +32,7 @@ describe('p2o_coverage suggest', () => {
     const after = await h.reader(); try { expect(after.records().length).toBe(count); } finally { after.close(); }
   }));
   it('refuses unknown features and malformed modes or limits', async () => fixture(async h => {
-    await h.command('--target ./source --solo');
+    await h.command('--target ./source');
     await expect(h.call('p2o_coverage', { action: 'suggest', features: ['telepathy'] })).rejects.toThrow(/Unknown recon feature/);
     await expect(h.call('p2o_coverage', { action: 'suggest', modes: 'XYZ' })).rejects.toThrow(/modes/);
     await expect(h.call('p2o_coverage', { action: 'suggest', limit: 99 })).rejects.toThrow(/limit/);
@@ -47,7 +47,7 @@ describe('recon features derived from the graph (U4)', () => {
     expect(featuresFromAttributeValues(['x1', 'x2', 'x3', 'x4', 'x5', 'x6', 'x7', 'x8', 'x9', 'x10', 'x11']).ignored).toHaveLength(10);
   });
   it('uses the feature attributes of current assets when the call names none, lets an explicit list win, and drops a feature once its asset is revised away', async () => fixture(async h => {
-    await h.command('--target ./source --solo');
+    await h.command('--target ./source');
     const suggest = async (extra: Record<string, unknown> = {}) => (await h.call('p2o_coverage', { action: 'suggest', limit: 50, ...extra })).details;
     expect(await suggest()).toMatchObject({ features: ['any'], featureSource: 'default' });
     const baseline = (await suggest()).total;

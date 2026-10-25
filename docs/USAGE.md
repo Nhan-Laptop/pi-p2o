@@ -15,11 +15,11 @@ Cài: `pi install https://github.com/Nhan-Laptop/pi-p2o` rồi `/reload`. Bật 
 /p2o stop
 ```
 
-Một hộp thoại xác nhận quyền sở hữu, scope, giới hạn sandbox, kế hoạch worker, retention và (nếu chọn) chế độ vòng Planner tự động. Từ chối thì không có sandbox,
-worker hay model turn nào. Delegated: Pi hiện tại là Planner, **không** chạy lệnh target; `--solo`: Pi tự điều tra.
+Một hộp thoại xác nhận quyền sở hữu, target, sandbox, kế hoạch worker, retention và (nếu chọn) chế độ vòng Planner tự động. Từ chối thì không có sandbox,
+worker hay model turn nào. Pi hiện tại giữ toàn bộ tool: có worker backend thì điều phối, không có thì tự điều tra.
 
 - **Source**: bản sao regular-file ở `/target` (read-only, ≤64 MiB / 20.000 entry; bỏ symlink, file đặc biệt, `.git`, `node_modules`), `/work` là scratch ghi được. Lệnh chạy qua `p2o_shell`, không bao giờ qua shell của host.
-- **Web**: `p2o_http` gửi mọi method/header/cookie/body tới đúng origin đã xác nhận, ghim IP từng hop, dừng trước redirect ra ngoài origin; `p2o_net` chạy lệnh mạng trong cùng container (egress thật, không phải firewall). URL GitHub **không** được clone. Chi tiết: [HTTP_TRANSPORT](HTTP_TRANSPORT.md).
+- **Web**: `p2o_http` gửi mọi method/header/cookie/body tới bất kỳ URL http(s) nào; redirect được theo và không bị chặn theo origin; `p2o_net` chạy lệnh mạng trong cùng container (egress thật, không phải firewall). URL GitHub **không** được clone. Chi tiết: [HTTP_TRANSPORT](HTTP_TRANSPORT.md).
 - **Hybrid** (`--target <thư mục> --origin <http(s)-URL>`): source snapshot và đúng 1 deployed origin được xác nhận cùng lúc, chia sẻ một graph/scope/report duy nhất. Hai nguồn bằng chứng của một hệ thống, không phải một; một phát hiện ở source không phải chứng minh nó tồn tại ở deployment cho tới khi một probe sống xác nhận, và ngược lại. Không nguồn nào nới scope của nguồn khác: sandbox vẫn chỉ đọc `/target`, `p2o_http` vẫn chỉ mở cho đúng origin đã xác nhận.
 - Lead gọi `p2o_finish` trước báo cáo: không có cổng finish — nó nối khối `FINISH PREFLIGHT` (report fact), và bản không `export` vẫn từ chối khi còn worker chưa report để không đóng sandbox dưới chân người đang chạy; sau đó xóa sandbox, xác minh container đã gỡ và báo số pane Herdr đã đóng. `p2o_finish {export:true}` ghi báo cáo vào thư mục mới rồi trả về, **không kết thúc gì**; `/p2o stop` làm tay cùng đường và ghi lại phần còn nợ.
 
@@ -31,17 +31,17 @@ worker hay model turn nào. Delegated: Pi hiện tại là Planner, **không** c
 |---|---|---|---|
 | `--target <path-or-url>` | bắt buộc | thư mục local hoặc URL HTTP(S), ≤4096 ký tự | đặt trước các option khác; quote đường dẫn có dấu cách |
 | `--origin <http(s)-URL>` | không | 1 URL http(s), ≤2048 ký tự, không khoảng trắng/ký tự điều khiển, chỉ truyền 1 lần | chỉ đi cùng `--target <thư mục>`; kết hợp thành target **hybrid** (source + đúng 1 origin đã xác nhận) chia sẻ một graph/scope/report; không đi cùng `--target` dạng URL |
-| `--workers N` | 3 | 1…`MAX_SAFE` | trần worker đồng thời, không phải tổng assignment; tắt delegation bằng `--solo` hoặc `--max-depth 0` |
+| `--workers N` | 3 | 1…`MAX_SAFE` | trần worker đồng thời, không phải tổng assignment; tắt delegation bằng `--max-depth 0` |
 | `--loop MODE` | `manual` | `manual` \| `event-driven` | event-driven cần Herdr và consent lúc start |
 | `--executors MODE` | `shared` | `shared` \| `isolated` | shared tuần tự; isolated tách sandbox theo assignment |
 | `--target-ops N` | shared 1 · isolated 3 | shared 1; isolated 1…`MAX_SAFE` | trần thao tác target đồng thời — không phải số worker hay số vòng Planner; shared mà truyền >1 bị từ chối |
 | `--max-depth D` | 2 | 0–3 | 0 tắt delegation; delegation luôn phẳng (không worker nào được spawn con) |
-| `--solo` | tắt | flag | Pi tự điều tra, phải dùng loop manual |
 | `--export` | tắt | flag | giữ bounded redacted ledger ở `.p2o-reports/` lúc cleanup (không phải checkpoint giữa run) |
 | `--goal "text"` | không | 1–600 ký tự, trong dấu nháy, không ký tự điều khiển | mục tiêu bằng lời của bạn, hiện trong confirmation và vào prompt lead như dữ liệu trích dẫn; không mở rộng/thu hẹp scope; được ghi vào ledger và in trong REPORT.md; bỏ qua thì prompt không đổi một byte |
 | `--avoid "text"` | không | lặp lại tối đa 5 lần, mỗi lần 1–300 ký tự, trong dấu nháy, không ký tự điều khiển | điều worker nên tránh (ví dụ `--avoid "không đụng luồng thanh toán"`); hiện trong confirmation, thêm vào mọi worker brief dưới khối `OPERATOR CONSTRAINTS` dạng trích dẫn, ghi vào ledger và REPORT.md; chỉ là hướng dẫn cho model, không phải enforcement — ranh giới vẫn là target đã xác nhận, scope check, ticket và broker; bỏ qua thì brief không đổi một byte |
 | `--retention MODE` | `durable-local` | `durable-local` \| `ephemeral` | luôn hiện trong confirmation; không tạo store trước consent |
 | `--refer-workspace [GIÁ-TRỊ]` | không dùng | không giá trị → `latest`; hoặc `all`; hoặc tối đa 10 `run-id` phân tách dấu phẩy | đọc tối đa các run cũ cùng target làm context; không bao giờ tính là same-run evidence — xem mục dưới |
+| `--resume <run-id>` | — | id `run-…` | mở lại một run **durable-local** dưới cùng `runId`: giữ record cũ, sandbox/worker mới, không phục hồi ticket/operation cũ; việc đang chạy được ghi là gián đoạn và phải dispatch lại; source phải khớp snapshot đã niêm phong |
 
 Số phải là số nguyên trong khoảng cho phép (không âm/thập phân/`unlimited`); giá trị sai bị từ chối, không tự clamp. Không có `--max-planner-rounds` và cũng không còn setting đó: vòng tự động không có trần, chỉ dừng khi hai vòng liền không thêm gì (M6) hoặc khi người dừng.
 `--target-ops` chỉ là **trần**: một lệnh vẫn có thể tự sinh nhiều subprocess/request; nó không phải rate limiter hay egress firewall.
@@ -61,7 +61,7 @@ Một report/proposal được coalesce và không bảo đảm đánh thức n�
 ### Shared hay isolated
 
 Shared: mọi worker dùng chung một executor tuần tự — hủy/timeout shell có thể phá sandbox và ảnh hưởng worker khác. Isolated: mỗi assignment có container, scratch, cookie riêng,
-hủy một cái không đụng peer, nhưng tốn tài nguyên (mỗi container giới hạn 2 GiB RAM / 2 CPU, chưa kể sandbox chính và container HTTP) và vẫn chung kernel host. Ví dụ
+hủy một cái không đụng peer, nhưng tốn tài nguyên (mỗi container không còn trần RAM/CPU, cộng thêm sandbox chính và container HTTP) và vẫn chung kernel host. Ví dụ
 `--workers 3 --executors isolated --target-ops 2`: tối đa 3 worker; thao tác target của worker thứ ba chờ slot; worker vẫn suy luận được khi không chờ tool. Bắt đầu với 2–3 worker và 1–2 target-op rồi cân nhắc RAM/CPU/chi phí provider.
 
 ### Settings (`~/.pi/agent/settings.json`, khóa `p2o`)
@@ -76,7 +76,7 @@ Merge vào file hiện có, không ghi đè phần khác. Precedence: **CLI cho 
 | `maxTargetOperations` | 3 | shared luôn ép về 1 |
 | `retention` / `storageQuotaMiB` | `durable-local` / 256 | quota 8–1024 MiB (gồm journal và reserve cuối) |
 | `artifactCaptureKiB` | 1024 | 1–8192; tổng prefix stdout+stderr được capture mỗi thao tác trước khi cắt hiển thị 48 KiB |
-| `toolGuidance` | `false` | bật lời khuyên quy trình knowledge theo từng tool (`src/tool-guidelines.ts`); đọc lúc nạp nên cần `/reload`. Tắt mặc định vì benchmark 2026-10-10 (deepseek-flash, 16 run/nhánh) cho thấy chi phí +≈73% mà recall/precision gần như không đổi |
+| ~~`toolGuidance`~~ | — | **Đã bỏ**: ranh giới từng tool nay nằm ngay trong description của tool (`src/tool-guidelines.ts`, `TOOL_BOUNDARIES`). Các dòng còn lại026-10-10 (deepseek-flash, 16 run/nhánh) cho thấy chi phí +≈73% mà recall/precision gần như không đổi |
 | ~~`finishGate`~~ | — | **Đã bỏ 2026-10-24**: không còn cổng finish. Mọi `p2o_finish` đều nối khối `FINISH PREFLIGHT` (report fact) và không bao giờ bị từ chối; khóa cũ trong settings bị bỏ qua. Bản cũ: gọi lại giống hệt thì kết thúc |
 | `autoReport` | durable: bật · ephemeral: tắt | ghi báo cáo tất định lúc run kết thúc |
 | `reportRoot` | `<cwd>/.p2o-reports` | đường dẫn tuyệt đối; báo cáo ở `<reportRoot>/report-<runId>/` |
@@ -177,8 +177,7 @@ Domain (goal/todo/decision/case/coverage-plan/coverage-cell/task/phase/…) thay
 | Chain: primitive này cấp gì, bước nào còn thiếu | `p2o_graph action=chain` (owner-only) | [ASSET_GRAPH](ASSET_GRAPH.md) |
 | Heads, digest, search, packet theo role | `p2o_state` (cả worker, read-only) | [CONTEXT_PACKETS](CONTEXT_PACKETS.md) |
 
-Mỗi tool đăng ký (25/25, kể cả `p2o_surface`, `p2o_artifact`, `p2o_loop`) có đúng một dòng ranh giới trong `TOOL_GUIDELINES`, nêu khi nào dùng tool này thay vì tool chồng chức năng; `toolGuidance` bật thì các dòng đó được gắn vào khai báo tool, tắt thì chỉ còn description.
-
+Mỗi tool đăng ký (25/25, kể cả `p2o_surface`, `p2o_artifact`, `p2o_loop`) có đúng một câu ranh giới trong `TOOL_BOUNDARIES`, nêu khi nào dùng tool này thay vì tool chồng chức năng; câu đó luôn được gắn vào description
 **Khóa test OWASP WSTG**: dùng ID viết thường (ví dụ `wstg-athz-04`) làm `questionKey` của work identity và của cell coverage; `methodFamily` là workflow id của skill. [WSTG_MAP](WSTG_MAP.md) liệt kê 108 test với mức hỗ trợ của thư viện (D/T/N/O) và cờ browser/identity — đây là độ phủ kiến thức, không phải khả năng phát hiện. Lead và worker tìm thấy nó qua `shared:wstg-map` và `shared:handoffs`.
 
 ## Delegation
@@ -202,18 +201,18 @@ Trong Herdr, lead có thể spawn worker: mỗi worker là một tiến trình `
 | `reporting` | `opencode-go/kimi-k3` | không |
 | `general` | model của lead | không |
 
-Thứ tự chọn model: `model` của lần spawn → `p2o.roles.<role>.model` → mặc định gói → model của lead. Giới hạn: 200 lệnh/worker và 90% của 600 mặc định tồn tại qua các identity; lệnh của owner và chi phí provider tách riêng; 100 task/intent chờ, 1.000 registration; cleanup pane thất bại thì chặn admission mới.
+Thứ tự chọn model: `model` của lần spawn → `p2o.roles.<role>.model` → mặc định gói → model của lead. Không còn trần lệnh/thời gian cho worker hay owner; usage chỉ được ghi lại. 100 intent chờ, 1.000 registration; cleanup pane thất bại thì chặn admission mới.
 
 ## Sandbox
 
-Ảnh Strix ghim; user 65532; root filesystem read-only; bỏ hết capability; `no-new-privileges`; seccomp mặc định của Docker; 512 PID; 2 GiB RAM; 2 CPU; `/tmp` và `/work` là tmpfs. Container shell có bridge network với egress thật (kể cả private/loopback); quét TCP connect chạy được, raw-socket thì không. Request HTTP chạy trong container tạm với **chỉ tham số curl cố định**, không proxy, đích được resolve và ghim từng hop. Không mount source, Docker socket, home host hay credential provider.
+Ảnh Strix ghim; chạy root trong container với root filesystem ghi được, giữ toàn bộ capability; không trần PID/RAM/CPU (seccomp mặc định của Docker); `/tmp` và `/work` là tmpfs; `/target` mount read-only. Container shell có bridge network với egress thật (kể cả private/loopback); quét TCP connect chạy được, raw-socket thì không. Request HTTP chạy trong container tạm với **chỉ tham số curl cố định**, không proxy, đích được resolve và ghim từng hop. Không mount source, Docker socket, home host hay credential provider.
 Không có thời hạn cho assessment/lead/worker khi owner còn authority; timeout shell/HTTP mặc định `0` (không giới hạn), số dương tùy chọn không bị trần; watchdog hạ tầng vẫn còn. Không có trần token/chi phí ở tầng ứng dụng. Đây là cô lập container, **không phải VM**: tiến trình Pi, extension khác và Docker daemon nằm ngoài ranh giới này.
 
 ## Cleanup và xử lý sự cố
 
 - Docker không khả dụng lúc cleanup: tool vẫn bị khóa — khôi phục Docker rồi `/p2o stop` lại. Reload/đổi session thử cleanup, thất bại thì hủy việc điều hướng. Kill cứng có thể để lại container/pane; liệt kê của extension: `docker ps -a --filter label=pi-p2o=minimal`, kiểm tra không còn run nào cần chúng rồi `docker rm -f <name>`; pane đóng từ Herdr. Extension không tự thu hồi lúc khởi động.
 - Thiếu ảnh: `docker pull` đúng ảnh trong README; không tải tự động. Quyền Docker: tài khoản phải dùng được Unix socket local (không hỗ trợ daemon từ xa).
-- Delegation không khả dụng: Pi không chạy trong Herdr, hoặc `--solo`/giới hạn đã tắt — hộp xác nhận nói rõ lý do. Worker báo `p2o worker ticket rejected`: nó không còn quyền target (ticket v2 `until-stopped`, gắn extension/image, cần owner đang sống; định dạng cũ bị từ chối).
+- Delegation không khả dụng: Pi không chạy trong Herdr hoặc `--max-depth 0` — hộp xác nhận nói rõ lý do; lead tự làm việc. Worker báo `p2o worker ticket rejected`: nó không còn quyền target (ticket v2 `until-stopped`, gắn extension/image, cần owner đang sống; định dạng cũ bị từ chối).
 - Target không dùng được: chọn thư mục tồn tại hoặc URL HTTP(S) có hostname resolve được; IPv6 phụ thuộc routing Docker.
 - Nạp trùng tool: chỉ dùng **một** trong bản cài hoặc `pi --no-extensions -e /path/to/pi-p2o`.
 - `pi update` báo thành công nhưng vẫn chạy code cũ: `PI_OFFLINE=1` (ví dụ export trong shell profile) làm nó thoát ngay mà vẫn in "Updated". Bỏ biến đó cho riêng lệnh này, rồi kiểm tra bằng `git -C ~/.pi/agent/git/github.com/Nhan-Laptop/pi-p2o rev-parse HEAD` — thông báo của CLI không phải bằng chứng. Stop assessment đang chạy trước `/reload`.

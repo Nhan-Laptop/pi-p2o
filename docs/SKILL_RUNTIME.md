@@ -46,7 +46,7 @@ owner-managed sandbox.
 
 - The lead gets one structured `p2o_assessment` section (role, scope, recon strategy, delegation, evidence rules,
   cleanup) — policy, not tool manuals; Pi supplies tool descriptions. It is replaced, never appended, and removed when no
-  run is active. A delegated Pi is a strategic Planner; only solo investigates.
+  run is active. The lead holds every tool: it delegates when a worker backend exists and investigates directly otherwise.
 - Recon records a bounded surface inventory (inputs, actors, gates, boundaries, Evidence IDs, extraction method,
   labelled unknowns). Pick the next surface by reachable influence, sensitive effect, boundary uncertainty, evidence,
   information gain and cost, and note why. Unclear gates go back to mapping, plausible candidates to a *separate*

@@ -60,7 +60,7 @@ Card `pending` là lịch sử tại thời điểm giao; trạng thái task hi�
 ## Giới hạn chính
 
 Asset ref ≤10, prerequisite ≤10; key ≤160 ký tự; output field ≤8; decision reason 10–1000 ký tự; work history 20 (≤100) head;
-100 task live và 100 goal/todo live (decision không tính); plan list 20 (≤100, ≤24 KiB); knowledge owner 400; hàng ≤16 KiB, packet ≤128 hàng.
+Không còn trần 100 task/goal live; plan list 20 (≤100, ≤24 KiB); knowledge owner 400; hàng ≤16 KiB, packet ≤128 hàng.
 Không có TTL hay timeout mặc định.
 
 Test: `work.test.ts`, `planning.test.ts`, `workspace-runtime.test.ts`, `work-native.test.ts` (provider inert). Còn thiếu: gợi ý alias/fuzzy,

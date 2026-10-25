@@ -1,35 +1,70 @@
 import { describe, expect, it } from 'vitest';
-import { mkdtemp, rm, writeFile, symlink } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
+import { mkdtemp, mkdir, rm, symlink, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { parseCommand, classifyTarget, addressClass, publicIPv4, scopedRequest, httpRequest, hasSource, hasOrigin, targetLabel } from '../../src/target.js';
+import { tmpdir } from 'node:os';
+import { classifyTarget, hasOrigin, hasSource, parseCommand, scopedRequest, targetLabel, webURL } from '../../src/target.js';
 
+/**
+ * planning_update.md Part XI (S2/S6): one owner role (no `--solo`) and no scope enforcement. The target is a starting
+ * label, not a boundary: only the URL grammar and the transport still validate anything.
+ */
 describe('one target grammar', () => {
-  it('has only help, stop and a target', () => {
+  it('has only help, stop, pause, resume and a target', () => {
     expect(parseCommand('')).toEqual({ action: 'help' });
     expect(parseCommand('stop')).toEqual({ action: 'stop' });
-    expect(parseCommand('pause')).toEqual({action:'pause'});expect(parseCommand('resume')).toEqual({action:'resume'});
-    expect(parseCommand('--target "./my repo"')).toEqual({ action: 'start', target: './my repo', options: { solo: false } });
-    expect(parseCommand("--target './my repo'")).toEqual({ action: 'start', target: './my repo', options: { solo: false } });
-    expect(parseCommand('--target https://example.com')).toEqual({ action: 'start', target: 'https://example.com', options: { solo: false } });
-    for (const args of ['--target', '--target x --headless', '--target x --target y', '--target x;y extra', 'approve plan-1', 'resume extra', '--target "unterminated', '--target --help']) expect(() => parseCommand(args)).toThrow();
-  });
-  it('takes one optional quoted operator objective and refuses anything that could pass for control text', () => {
-    expect(parseCommand('--target x --goal "Check whether tenant A can read tenant B invoices" --solo')).toMatchObject({ options: { solo: true, goal: 'Check whether tenant A can read tenant B invoices' } });
-    expect(parseCommand("--target x --goal 'single quoted goal'")).toMatchObject({ options: { goal: 'single quoted goal' } });
-    expect(parseCommand('--target x --solo')).toEqual({ action: 'start', target: 'x', options: { solo: true } });
-    for (const args of ['--goal', '--goal ""', `--goal "${'a'.repeat(601)}"`, '--goal "bad\u202etext"', '--goal "bad\u0085text"']) expect(() => parseCommand(`--target x ${args}`), args).toThrow(/--goal/);
+    expect(parseCommand('pause')).toEqual({ action: 'pause' });
+    expect(parseCommand('resume')).toEqual({ action: 'resume' });
+    expect(parseCommand('--target "./my repo"')).toEqual({ action: 'start', target: './my repo', options: {} });
+    expect(parseCommand("--target './my repo'")).toEqual({ action: 'start', target: './my repo', options: {} });
+    expect(parseCommand('--target https://example.com')).toEqual({ action: 'start', target: 'https://example.com', options: {} });
+    expect(parseCommand('--resume run-1234abcd')).toEqual({ action: 'start', resume: 'run-1234abcd', options: {} });
+    for (const args of ['--resume', '--resume ../run-x', '--resume run-abc --workers 2', '--target x --resume run-abc'])
+      expect(() => parseCommand(args), args).toThrow();
+    for (const args of ['--target', '--target x --headless', '--target x --target y', '--target x;y extra', 'approve plan-1', 'resume extra', '--target "unterminated', '--target --help', '--target x --solo'])
+      expect(() => parseCommand(args), args).toThrow();
   });
 
-  it('takes up to five repeatable quoted --avoid constraints and leaves options untouched without them', () => {
-    expect(parseCommand('--target x --avoid "No payment flows" --solo --avoid \'Do not touch /admin\'')).toMatchObject({ options: { solo: true, avoid: ['No payment flows', 'Do not touch /admin'] } });
-    expect(parseCommand('--target x --goal "g" --solo')).toEqual({ action: 'start', target: 'x', options: { solo: true, goal: 'g' } });
+  it('takes one optional quoted operator objective and refuses control text', () => {
+    expect(parseCommand('--target x --goal "Check whether tenant A can read tenant B invoices"')).toMatchObject({ options: { goal: 'Check whether tenant A can read tenant B invoices' } });
+    expect(parseCommand("--target x --goal 'single quoted goal'")).toMatchObject({ options: { goal: 'single quoted goal' } });
+    for (const args of ['--goal', '--goal ""', `--goal "${'a'.repeat(601)}"`, '--goal "bad\u202etext"', '--goal "bad\u0085text"'])
+      expect(() => parseCommand(`--target x ${args}`), args).toThrow(/--goal/);
+  });
+
+  it('takes up to five repeatable quoted --avoid constraints', () => {
+    expect(parseCommand('--target x --avoid "No payment flows" --avoid \'Do not touch /admin\'')).toMatchObject({ options: { avoid: ['No payment flows', 'Do not touch /admin'] } });
     expect(parseCommand(`--target x ${Array.from({ length: 5 }, (_, i) => `--avoid "c${i}"`).join(' ')}`)).toMatchObject({ options: { avoid: ['c0', 'c1', 'c2', 'c3', 'c4'] } });
     expect(() => parseCommand(`--target x ${Array.from({ length: 6 }, (_, i) => `--avoid "c${i}"`).join(' ')}`)).toThrow(/at most 5/);
-    for (const args of ['--avoid', '--avoid ""', `--avoid "${'a'.repeat(301)}"`, '--avoid "bad\u202etext"', '--avoid "bad\u0085text"']) expect(() => parseCommand(`--target x ${args}`), args).toThrow(/--avoid/);
+    for (const args of ['--avoid', '--avoid ""', `--avoid "${'a'.repeat(301)}"`, '--avoid "bad\u202etext"', '--avoid "bad\u0085text"'])
+      expect(() => parseCommand(`--target x ${args}`), args).toThrow(/--avoid/);
   });
-  it('classifies a directory plus --origin as one hybrid target, sharing the directory checks and refusing a non-directory base (U10)', async () => {
-    const root = await mkdtemp(join(tmpdir(), 'p2o-target-hybrid-'));
+
+  it('parses the delegation and loop limits it understands', () => {
+    expect(parseCommand('--target x --workers 12 --loop event-driven --executors isolated --target-ops 2')).toMatchObject({ options: { workers: 12, loopMode: 'event-driven', executorMode: 'isolated', maxTargetOperations: 2 } });
+    for (const args of ['--loop retry', '--executors bad', '--target-ops 0']) expect(() => parseCommand(`--target x ${args}`)).toThrow();
+    expect(parseCommand('--target x --workers 5 --max-depth 1')).toMatchObject({ options: { workers: 5, maxDepth: 1 } });
+  });
+
+  it('parses --refer-workspace as latest/all/an explicit run-id list', () => {
+    expect(parseCommand('--target x --refer-workspace')).toMatchObject({ options: { referWorkspace: 'latest' } });
+    expect(parseCommand('--target x --refer-workspace all')).toMatchObject({ options: { referWorkspace: 'all' } });
+    expect(parseCommand('--target x --refer-workspace run-abc123,run-def456')).toMatchObject({ options: { referWorkspace: ['run-abc123', 'run-def456'] } });
+    expect(parseCommand('--target x --refer-workspace --workers 2')).toMatchObject({ options: { referWorkspace: 'latest', workers: 2 } });
+    expect(() => parseCommand('--target x --refer-workspace not-a-run-id')).toThrow(/Unknown option/);
+  });
+
+  it('takes one optional --origin that pairs only with a directory target', () => {
+    expect(parseCommand('--target ./repo --origin https://example.com')).toMatchObject({ target: './repo', options: { origin: 'https://example.com' } });
+    expect(() => parseCommand('--target https://example.com --origin https://other.example')).toThrow(/--origin goes with a source directory target/);
+    for (const args of ['--origin', '--origin ftp://example.com', '--origin not-a-url', `--origin "${'a'.repeat(2049)}"`, '--origin "https://a b.example"'])
+      expect(() => parseCommand(`--target ./repo ${args}`), args).toThrow(/--origin/);
+    expect(() => parseCommand('--target ./repo --origin https://a.example --origin https://b.example')).toThrow(/only once/);
+  });
+});
+
+describe('targets keep their grammar, not a scope', () => {
+  it('classifies a directory plus --origin as one hybrid target', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'p2o-target-'));
     try {
       const hybrid = await classifyTarget(root, '/tmp', 'https://example.com/app');
       expect(hybrid).toEqual({ kind: 'hybrid', path: root, url: 'https://example.com/app', origin: 'https://example.com' });
@@ -40,109 +75,42 @@ describe('one target grammar', () => {
       await expect(classifyTarget(root, '/tmp', 'not-a-url')).rejects.toThrow();
       const plain = await classifyTarget(root, '/tmp');
       expect(hasSource(plain)).toBe(true); expect(hasOrigin(plain)).toBe(false);
-      const url = await classifyTarget('https://example.com', '/tmp');
+      const url = await classifyTarget('https://example.com/x', '/tmp');
       expect(hasSource(url)).toBe(false); expect(hasOrigin(url)).toBe(true);
     } finally { await rm(root, { recursive: true, force: true }); }
   });
-  it('scopes HTTP for a hybrid target exactly like a url target, by origin only', async () => {
-    const root = await mkdtemp(join(tmpdir(), 'p2o-target-hybrid-http-'));
+
+  it('resolves any destination and records its address class without comparing origins', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'p2o-target-'));
     try {
-      const hybrid = await classifyTarget(root, '/tmp', 'https://example.com/app');
+      const hybrid = await classifyTarget(root, '/tmp', 'https://example.com');
       await expect(scopedRequest(hybrid, '/path', async () => ['93.184.216.34'])).resolves.toMatchObject({ addressClass: 'public' });
-      await expect(scopedRequest(hybrid, 'https://other.example/', async () => ['93.184.216.34'])).rejects.toThrow('Out of scope');
+      // Part XI: a different origin is no longer a refusal.
+      await expect(scopedRequest(hybrid, 'https://other.example/', async () => ['10.0.0.7'])).resolves.toMatchObject({ url: expect.objectContaining({ hostname: 'other.example' }), addressClass: 'private' });
+      // A directory run may still use HTTP when it names an absolute URL; a relative one has no base.
       const directory = await classifyTarget(root, '/tmp');
-      await expect(scopedRequest(directory, '/', async () => [])).rejects.toThrow('unavailable');
+      await expect(scopedRequest(directory, 'https://example.com/abs', async () => ['93.184.216.34'])).resolves.toMatchObject({ addressClass: 'public' });
+      await expect(scopedRequest(directory, '/relative', async () => ['93.184.216.34'])).rejects.toThrow();
     } finally { await rm(root, { recursive: true, force: true }); }
   });
-  it('words an origin denial as p2o policy so a worker does not read it as a target defense', async () => {
-    const target = { kind: 'url' as const, url: 'https://example.invalid/', origin: 'https://example.invalid' };
-    const denial = scopedRequest(target, 'https://other.example/', async () => ['93.184.216.34']);
-    await expect(denial).rejects.toThrow('Out of scope: only https://example.invalid is allowed');
-    await expect(denial).rejects.toThrow('p2o scope policy, not a target defense');
-    await expect(denial).rejects.toThrow('do not retry or route around it');
+
+  it('keeps the URL grammar: no credentials, fragments, trailing dot or non-HTTP scheme', () => {
+    expect(() => webURL('https://user:pass@example.com/')).toThrow();
+    expect(() => webURL('https://example.com/#frag')).toThrow();
+    expect(() => webURL('https://example.com./')).toThrow(/Trailing-dot/);
+    expect(() => webURL('ftp://example.com/')).toThrow();
   });
 
-  it('parses only the delegation limits it understands', () => {
-    expect(parseCommand('--target x --solo')).toMatchObject({ options: { solo: true } });
-    expect(parseCommand('--target x --workers 12 --loop event-driven --executors isolated --target-ops 2')).toMatchObject({options:{workers:12,loopMode:'event-driven',executorMode:'isolated',maxTargetOperations:2}});
-    for (const args of ['--loop retry','--executors bad','--target-ops 0']) expect(() => parseCommand(`--target x ${args}`)).toThrow();
-    expect(parseCommand('--target x --workers 5 --max-depth 1')).toMatchObject({ options: { solo: false, workers: 5, maxDepth: 1 } });
-    for (const args of ['--target x --workers 0', '--target x --workers 9007199254740992', '--target x --workers many', '--target x --max-depth 4', '--target x --max-depth -1', '--target x --delegate', '--target x --solo --solo=1']) {
-      expect(() => parseCommand(args), args).toThrow();
-    }
-  });
-
-  it('parses --refer-workspace as latest/all/an explicit run-id list, defaulting to latest with no value and never consuming the next flag', () => {
-    expect(parseCommand('--target x --refer-workspace')).toMatchObject({ options: { referWorkspace: 'latest' } });
-    expect(parseCommand('--target x --refer-workspace latest')).toMatchObject({ options: { referWorkspace: 'latest' } });
-    expect(parseCommand('--target x --refer-workspace all')).toMatchObject({ options: { referWorkspace: 'all' } });
-    expect(parseCommand('--target x --refer-workspace run-abc123,run-def456')).toMatchObject({ options: { referWorkspace: ['run-abc123', 'run-def456'] } });
-    // No value supplied before the next flag: defaults to 'latest' and --solo is still parsed, not consumed as the value.
-    expect(parseCommand('--target x --refer-workspace --solo')).toMatchObject({ options: { referWorkspace: 'latest', solo: true } });
-    // A token that is neither a flag nor a valid value is simply an unknown option, same as any other unrecognized token.
-    expect(() => parseCommand('--target x --refer-workspace not-a-run-id')).toThrow(/Unknown option/);
-    expect(() => parseCommand(`--target x --refer-workspace ${Array.from({ length: 11 }, (_, i) => `run-${i}`).join(',')}`)).toThrow(/Unknown option/);
-  });
-  it('takes one optional --origin that pairs only with a directory target, and classifies the pair as hybrid (U10)', () => {
-    expect(parseCommand('--target ./repo --origin https://example.com')).toMatchObject({ target: './repo', options: { origin: 'https://example.com' } });
-    expect(() => parseCommand('--target https://example.com --origin https://other.example')).toThrow(/--origin goes with a source directory target/);
-    for (const args of ['--origin', '--origin ftp://example.com', '--origin not-a-url', `--origin "${'a'.repeat(2049)}"`, '--origin "https://a b.example"']) expect(() => parseCommand(`--target ./repo ${args}`), args).toThrow(/--origin/);
-    expect(() => parseCommand('--target ./repo --origin https://a.example --origin https://b.example')).toThrow(/--origin may be given only once/);
-  });
   it('resolves directories, refuses files and root, and treats GitHub as an ordinary URL', async () => {
     const root = await mkdtemp(join(tmpdir(), 'p2o-target-'));
     try {
-      await writeFile(join(root, 'file'), 'data'); await symlink(root, `${root}-link`);
-      expect(await classifyTarget(`${root}-link`, '/tmp')).toEqual({ kind: 'directory', path: root });
+      await mkdir(join(root, 'repo')); await writeFile(join(root, 'file'), 'x'); await symlink(join(root, 'repo'), `${root}-link`);
+      expect(await classifyTarget(join(root, 'repo'), root)).toEqual({ kind: 'directory', path: join(root, 'repo') });
+      expect(await classifyTarget(`${root}-link`, '/tmp')).toEqual({ kind: 'directory', path: join(root, 'repo') });
       await expect(classifyTarget(join(root, 'file'), root)).rejects.toThrow('directory');
       await expect(classifyTarget('/', root)).rejects.toThrow();
       await expect(classifyTarget('ftp://example.com', root)).rejects.toThrow();
-      expect(await classifyTarget('https://github.com/owner/repo', root)).toMatchObject({ kind: 'url', origin: 'https://github.com' });
-    } finally { await rm(`${root}-link`, { force: true }); await rm(root, { recursive: true, force: true }); }
-  });
-});
-
-describe('HTTP scope', () => {
-  const target = { kind: 'url' as const, url: 'https://example.com/start', origin: 'https://example.com' };
-  it('pins a public address and accepts relative URLs', async () => {
-    const request = await scopedRequest(target, '/about', async () => ['93.184.216.34']);
-    expect(request.address).toBe('93.184.216.34'); expect(request.url.href).toBe('https://example.com/about');
-    expect(request).toMatchObject({ addressClass: 'public', pin: true });
-  });
-  it('rejects origin changes, URL credentials, fragments and non-HTTP schemes before DNS', async () => {
-    for (const url of ['https://other.com', 'http://example.com', 'https://example.com:444', 'https://user:pass@example.com', '/#x', 'file:///etc/passwd', 'https://example.com./']) {
-      await expect(scopedRequest(target, url, async () => { throw new Error('DNS must not be called'); })).rejects.not.toThrow('DNS must not be called');
-    }
-    await expect(scopedRequest({ kind: 'directory', path: '/tmp' }, '/', async () => [])).rejects.toThrow('unavailable');
-  });
-  it('classifies every non-public range without blocking it, and leaves IP literals unpinned', async () => {
-    for (const [ip, kind] of [['0.1.2.3', 'reserved'], ['10.0.0.1', 'private'], ['100.64.1.1', 'shared'], ['127.0.0.1', 'loopback'], ['169.254.169.254', 'link-local'], ['172.16.0.1', 'private'], ['192.168.1.1', 'private'], ['192.0.0.9', 'reserved'], ['198.18.0.1', 'reserved'], ['203.0.113.1', 'reserved'], ['224.1.1.1', 'multicast'], ['::1', 'ipv6']] as const) {
-      expect(publicIPv4(ip), ip).toBe(false);
-      expect(addressClass(ip), ip).toBe(kind);
-    }
-    expect(addressClass('93.184.216.34')).toBe('public');
-    // The confirmed scope, not the address class, is what stops a request now.
-    const loopback = { kind: 'url' as const, url: 'http://127.0.0.1:8080/', origin: 'http://127.0.0.1:8080' };
-    await expect(scopedRequest(loopback, '/', async () => ['127.0.0.1'])).resolves.toMatchObject({ addressClass: 'loopback', pin: false });
-    await expect(scopedRequest(target, '/', async () => ['10.0.0.7'])).resolves.toMatchObject({ addressClass: 'private', address: '10.0.0.7' });
-    await expect(scopedRequest(target, '/', async () => ['93.184.216.34', '10.0.0.7'])).resolves.toMatchObject({ address: '93.184.216.34' });
-    await expect(scopedRequest(target, '/', async () => [])).rejects.toThrow('Could not resolve');
-    const ipv6={kind:'url' as const,url:'http://[::1]:8080/',origin:'http://[::1]:8080'};
-    expect(await scopedRequest(ipv6,'/',async()=>{throw Error('No DNS for a literal');})).toMatchObject({address:'::1',addressClass:'ipv6',pin:false});
-  });
-  it('validates methods, headers and bodies before any request is made', () => {
-    expect(httpRequest({ url: '/x' })).toMatchObject({ method: 'GET', followRedirects: true, maxRedirects: 3 });
-    expect(httpRequest({ url: '/x', method: 'post', body: '{}', headers: { 'Content-Type': 'application/json' } })).toMatchObject({ method: 'POST', body: '{}' });
-    for (const method of ['get ', '', 'G\r\nET']) expect(() => httpRequest({ url: '/x', method })).toThrow('HTTP token');
-    for (const method of ['TRACE', 'CONNECT', 'PROPFIND', 'M-SEARCH']) expect(httpRequest({url:'/x',method}).method).toBe(method);
-    for(const input of [{url:'/x',body:123},{url:'/x',method:42},{url:'/x',followRedirects:'yes'},{url:'/x',maxRedirects:1.5},{url:'/x',session:'a/b'}]) expect(()=>httpRequest(input)).toThrow();
-    expect(() => httpRequest({ url: '/x', maxRedirects: 9 })).toThrow('maxRedirects must be 0..5');
-    expect(() => httpRequest({ url: '/x', method: 'HEAD', body: 'x' })).toThrow('cannot carry a body');
-    expect(() => httpRequest({ url: '/x', body: 'x'.repeat(70_000) })).toThrow('at most');
-    expect(() => httpRequest({ url: '/x', headers: { 'Bad Name': 'v' } })).toThrow('Invalid header name');
-    expect(() => httpRequest({ url: '/x', headers: { 'X-Test': 'a\r\nInjected: 1' } })).toThrow('Invalid value');
-    expect(() => httpRequest({ url: '/x', headers: { 'Content-Length': '10' } })).toThrow('cannot be overridden');
-    expect(() => httpRequest({ url: '/x', headers: Object.fromEntries(Array.from({ length: 21 }, (_, i) => [`X-${i}`, 'v'])) })).toThrow('At most 20');
-    expect(() => httpRequest({ url: 'x'.repeat(4100) })).toThrow('1..4096');
+      expect(await classifyTarget('https://github.com/o/r', root)).toMatchObject({ kind: 'url', origin: 'https://github.com' });
+    } finally { await rm(root, { recursive: true, force: true }); }
   });
 });

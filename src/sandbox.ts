@@ -10,12 +10,11 @@ import { SCRATCH_READER, SCRATCH_PROTOCOL_BYTES, SCRATCH_WRITER, SCRATCH_WRITE_M
 
 // Fixed content digest, not a mutable tag or a model-selected image. No automatic image pull.
 export const IMAGE = 'ghcr.io/usestrix/strix-sandbox@sha256:f6906c3114e504fd1a218fcf028d7a0e46851118403a438b63956de6ea7c4331';
-const LIMITS = (options: SandboxOptions) => ['--read-only', '--cap-drop', 'ALL', '--security-opt', 'no-new-privileges',
-  '--user', '65532:65532', '--pids-limit', '512', '--memory', '2g', '--memory-swap', '2g', '--cpus', '2',
-  '--ulimit', 'nofile=4096:4096', '--log-driver', 'none',
-  '--tmpfs', `/tmp:rw,nosuid,nodev,size=${options.tmpBytes ?? '512m'},mode=1777`,
-  '--tmpfs', `/work:rw,nosuid,nodev,size=${options.workBytes ?? '512m'},mode=1777`,
-  '--workdir', '/work', '--env', 'HOME=/tmp', '--env', 'TMPDIR=/tmp',
+// 2026-10-25 (planning_update.md Part XI): the operator asked for a real shell, so the container runs as root with a
+// writable rootfs, every capability and no pids/memory/cpu limit. The container is the only blast radius: no host path
+// is mounted and the Docker socket is never exposed.
+const LIMITS = (_options: SandboxOptions) => ['--log-driver', 'none', '--workdir', '/work',
+  '--env', 'HOME=/root', '--env', 'TMPDIR=/tmp',
   '--env', 'SEMGREP_ENABLE_VERSION_CHECK=0', '--env', 'SEMGREP_SEND_METRICS=off'];
 
 /** The container may reach the host's published ports under this alias; it is not the host's loopback. */
@@ -215,7 +214,7 @@ export class Sandbox {
     this.workdirs.add(workdir);
   }
 
-  /** Fixed curl, actor-local sessions, and origin validation before every redirect hop. */
+  /** Fixed curl and actor-local sessions; any http(s) destination and any redirect hop are allowed (Part XI). */
   async http(input: HttpRequest, signal?: AbortSignal, onRunning?: () => void, actor = 'owner', onOutput?: OutputObserver): Promise<ProcessResult> {
     const request = httpRequest(input);
     return this.enqueue(async () => {
@@ -240,7 +239,8 @@ export class Sandbox {
         const explicitCookie = headers.some(([name]) => name.toLowerCase() === 'cookie');
         const jar = explicitCookie ? undefined : this.sessions.header(actor, request.session, url);
         const args = ['-q', '--proxy', '', '--noproxy', '*', '--proto', '=http,https', '--max-time', String(request.timeout), '--connect-timeout', String(request.connectTimeout),
-          '--max-filesize', '8388608', '--max-redirs', '0', '--no-location', '--silent', '--show-error', '--include'];
+          '--max-redirs', '0', '--no-location', '--silent', '--show-error', '--include'];
+        // Part XI: no response-size cap; the model asked for the body and gets it.
         const port = url.port || (url.protocol === 'https:' ? '443' : '80');
         if (pin) args.push('--resolve', url.hostname + ':' + port + ':' + (isIP(address) === 6 ? '[' + address + ']' : address));
         if (method === 'HEAD') args.push('--head');

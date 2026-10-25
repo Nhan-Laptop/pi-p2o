@@ -25,7 +25,7 @@ it('real Pi preserves structured work/plan arguments, dedup/replay and historica
   const text=(message:any)=>typeof message.content==='string'?message.content:JSON.stringify(message.content??'');
   const until=async(check:()=>Promise<boolean>)=>{for(let i=0;i<300;i++){if(await check())return;await delay(30);}throw Error(`Native work did not progress: ${stderr} ${JSON.stringify(records.slice(-8))}`);};
   try{
-    expect((await request('get_state')).success).toBe(true);expect((await request('prompt',{message:'/p2o --target ./source --solo'})).success).toBe(true);
+    expect((await request('get_state')).success).toBe(true);expect((await request('prompt',{message:'/p2o --target ./source'})).success).toBe(true);
     await until(async()=>((await request('get_messages')).data?.messages??[]).some((message:any)=>text(message).includes('OWNER_WORK_DONE')));await until(async()=>records.some(record=>record.type==='agent_settled'));
     const messages=(await request('get_messages')).data.messages,results=messages.filter((message:any)=>message.role==='toolResult');
     expect(results.map((result:any)=>result.toolName)).toEqual(['p2o_graph','p2o_task','p2o_plan','p2o_plan','p2o_task','p2o_finish']);expect(results.every((result:any)=>!result.isError)).toBe(true);

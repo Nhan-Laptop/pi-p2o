@@ -6,7 +6,6 @@ import { join } from 'node:path';
 import type { ProcessResult } from './process.js';
 import { httpRequest, taskTimeout, type HttpRequest } from './target.js';
 import { isOutcome, isRecordKind, type AssessmentRecord, type CoverageOutcome, type LedgerPage, type RecordAck } from './records.js';
-import { reportingOperationDenied } from './tool-policy.js';
 import { scratchOffset, scratchPath } from './scratch.js';
 import { graphObject, validateGraphBatch, type GraphAck, type GraphBatch } from './state/graph.js';
 import type { ContextCursor, ContextPacket } from './context.js';
@@ -282,7 +281,6 @@ export class Broker {
     if (registration.stopped) return { ok: false, error: 'This worker was stopped by the owner' };
     if (this.reporting.has(workerId) && op !== 'status') return {ok:false,error:'Worker report persistence in progress; no further requests'};
     if (registration.effectiveRuntime?.verified === false && !['runtime','report','status','usage'].includes(op ?? '')) return { ok:false,error:'Runtime profile mismatch; report blocked, no investigation' };
-    if (reportingOperationDenied(registration.role,op ?? '')) return {ok:false,error:'Reporting role is synthesis-only; request separate execution/validation'};
     switch (op) {
       case 'skill_list': case 'skill_read': case 'artifact_read': case 'knowledge_heads': case 'knowledge_search': {
         if (!this.deps.knowledge) return { ok: false, error: 'Knowledge service unavailable' };
