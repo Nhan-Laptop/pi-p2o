@@ -134,7 +134,7 @@ function validate(input: TaskDraft) {
   // P2.3 (measured rerun 2026-10-26): the dominant residual refusal was an omitted `draft.methodReason` for a non-recon
   // role, reported as both missing and over-long only as bare "Invalid task method". The lead read that as the role being
   // unusable and finished partial, so the strictness stays but the message names the field and the one role allowed to omit it.
-  if (input.method.reason.trim().length < (reconLenient ? 0 : 10)) throw new Error(`Invalid task method: draft.methodReason is required for role ${input.role} (at least ${reconLenient ? 0 : 10} characters after trim); only recon may omit it`);
+  if (input.method.reason.trim().length < (reconLenient ? 0 : 10)) throw new Error(`Invalid task method: draft.methodReason is required for role ${input.role} (at least ${reconLenient ? 0 : 10} characters after trim); only recon may omit it. legalNext: resend the same draft with draft.methodReason added`);
   if (input.method.reason.length > 1000) throw new Error('Invalid task method: draft.methodReason must be at most 1000 characters');
   validateWorkFields(input);
 }

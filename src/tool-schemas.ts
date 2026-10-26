@@ -29,7 +29,9 @@ export const taskDraftSchema = Type.Object({
     evidenceIds:Type.Array(Type.String({maxLength:80})),prerequisites:Type.Array(Type.Object({taskId:Type.String({maxLength:80}),revision:Type.Optional(Type.Integer({minimum:1}))})),
     validationOf:Type.Optional(Type.String({maxLength:80})),retestOf:Type.Optional(Type.String({maxLength:80})),parentTaskId:Type.Optional(Type.String({maxLength:80})),
     work:Type.Optional(workSpecSchema),decision:Type.Optional(workDecisionSchema),outputContract:Type.Optional(outputContractSchema),
-    skills:Type.Optional(Type.Array(Type.String({maxLength:64}))),workflow:Type.Optional(Type.String({maxLength:64})),methodReason:Type.Optional(Type.String({maxLength:1000})),
+    skills:Type.Optional(Type.Array(Type.String({maxLength:64}))),workflow:Type.Optional(Type.String({maxLength:64})),
+    // P5.1 measured rerun: the lead omitted this for every discovery intent and could not see why the host refused it.
+    methodReason:Type.Optional(Type.String({maxLength:1000,description:'Why this method answers the question. Required (at least 10 characters) for every role except recon; the host refuses the intent when it is missing'})),
   },{additionalProperties:false});
 
 export const TASK_ACTIONS = ['create','revise','match','list','start','review','close','block','cancel','dispatch'] as const;

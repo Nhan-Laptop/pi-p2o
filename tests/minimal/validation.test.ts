@@ -255,7 +255,7 @@ describe('task admission message for an omitted method reason (P5.1/P2.3)', () =
     const prose: TaskDraft = { ...discoveryDraft(assetId) };
     delete prose.work; delete prose.decision; delete prose.outputContract;
     await expect(task({ ...prose, method: { skills: [], reason: '' } }))
-      .rejects.toThrow(/Invalid task method: draft\.methodReason is required for role discovery \(at least 10 characters after trim\); only recon may omit it/);
+      .rejects.toThrow(/Invalid task method: draft\.methodReason is required for role discovery \(at least 10 characters after trim\); only recon may omit it\. legalNext: resend the same draft with draft\.methodReason added/);
     // Recon keeps the lenient rule documented in ADMISSION: mapping may omit the reason entirely.
     const recon = await task({ ...reconDraft(assetId), method: { skills: [], reason: '' } });
     expect(recon.role).toBe('recon');
