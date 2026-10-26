@@ -58,6 +58,8 @@ export interface ReportMeta {
   campaign?: {
     objective: string; constraints: number; deny: number; allow: number; heartbeatSeconds: number;
     rounds: number; wakeReasons: { event: number; debt: number; heartbeat: number };
+    /** P1: ledger counts of human `/p2o resume` records and recorded stall escalations, printed with the campaign frame. */
+    humanResumes: number; stallEscalations: number;
     startedAt: string; endedAt?: string; partialReason?: string;
   };
 }
@@ -287,6 +289,7 @@ function campaignSection(campaign: NonNullable<ReportMeta['campaign']>): string[
     `- Objective (operator-supplied, unverified; it neither widens nor narrows the authorized scope): ${mdText(campaign.objective, 600)}`,
     `- Recorded constraints: ${campaign.constraints} (${campaign.deny} deny = absolute, ${campaign.allow} allow = permission only). This report does not re-check them against the work below.`,
     `- Heartbeat: ${campaign.heartbeatSeconds === 0 ? 'disabled (0s)' : `${campaign.heartbeatSeconds}s`}; automatic rounds: ${campaign.rounds}; wake reasons: ${reasons}.`,
+    `- Human resumes: ${campaign.humanResumes}; stall escalations: ${campaign.stallEscalations}.`,
     `- Campaign started: ${mdText(campaign.startedAt, 64)}${campaign.endedAt ? `; last committed record: ${mdText(campaign.endedAt, 64)}` : ''}`,
     ...(campaign.partialReason ? ['', '### Why the run stopped', '',
       `- ${mdText(campaign.partialReason, 600)} — quoted as recorded by the lead at the final finish. A partial stop is not a completion and asserts nothing about coverage.`] : []),
@@ -329,7 +332,7 @@ export function renderReport(index: LedgerIndex, context: ReportProjectionContex
     '## Provenance', '',
     `- Run: ${mdText(meta.runId, 80)}${meta.historical ? ' (historical, read-only store)' : ' (active run)'}; as of committed sequence **${meta.asOfSequence}**; ${index.records.length} records; store schema ${meta.storeSchema}`,
     `- Target: ${mdText(meta.target, 400)}; retention ${mdText(meta.retention)}`,
-    `- Authority: planner target operations ${authority.plannerTargetOps} (must be 0); worker target operations ${authority.workerTargetOps}; tasks created ${authority.tasksCreated}, dispatched ${authority.tasksDispatched}${authority.firstDispatchAt ? ` (first dispatch ${mdText(authority.firstDispatchAt, 40)})` : ''}; claims owner ${authority.ownerClaims} (must be 0) / worker ${authority.workerClaims}; validation tasks ${authority.validationTasks}; stalled rounds ${authority.stalledRounds}; automatic wakes ${authority.heartbeatWakes + authority.debtWakes} (debt ${authority.debtWakes}, heartbeat ${authority.heartbeatWakes}); campaign partial stops ${authority.campaignPartial}`,
+    `- Authority: planner target operations ${authority.plannerTargetOps} (must be 0); worker target operations ${authority.workerTargetOps}; tasks created ${authority.tasksCreated}, dispatched ${authority.tasksDispatched}${authority.firstDispatchAt ? ` (first dispatch ${mdText(authority.firstDispatchAt, 40)})` : ''}; claims owner ${authority.ownerClaims} (must be 0) / worker ${authority.workerClaims}; validation tasks ${authority.validationTasks}; stalled rounds ${authority.stalledRounds}; automatic wakes ${authority.heartbeatWakes + authority.debtWakes} (debt ${authority.debtWakes}, heartbeat ${authority.heartbeatWakes}); campaign partial stops ${authority.campaignPartial}; human resumes ${authority.campaignResumes}; stall escalations ${authority.stallEscalations}`,
     `- Mode and role matrix: ${authority.mode ? `${mdText(authority.mode.loopMode ?? 'unknown', 24)} loop / ${mdText(authority.mode.executorMode ?? 'unknown', 24)} executor` : 'mode not recorded in this snapshot'}; planner ${roles.planner} tools (no target or claim tool), worker ${roles.worker}, validation ${roles.validation}, reporter ${roles.reporter} (read-only)`,
     ...operatorBrief(index),
     `- Runtime that wrote this run: p2o ${mdText(meta.runtime.version || 'unknown version', 40)} · closure digest ${mdText(meta.runtime.hash.slice(0, 12), 16)}`,

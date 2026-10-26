@@ -31,6 +31,10 @@ export interface AuthorityCounters {
   debtWakes: number;
   /** A6.6: final finishes that recorded a `campaign.partial` reason instead of a completion. */
   campaignPartial: number;
+  /** P1: recorded `campaign.resumed` lifecycle facts — human `/p2o resume` interventions, counted so a report can self-evidence them. */
+  campaignResumes: number;
+  /** P1: recorded `planner.stall-escalation` lifecycle facts — the pause decisions that asked for a human, not every stalled round. */
+  stallEscalations: number;
 }
 export interface RoleCounts { planner: number; worker: number; validation: number; reporter: number }
 export interface AuthorityMode { loopMode?: string; executorMode?: string }
@@ -80,6 +84,10 @@ export function authorityCounters(index: LedgerIndex): AuthorityCounters {
     debtWakes: wakes.filter(reason => reason === 'debt').length,
     campaignPartial: index.records.filter(record => record.kind === 'lifecycle'
       && (record.data as { event?: unknown } | undefined)?.event === 'campaign.partial').length,
+    campaignResumes: index.records.filter(record => record.kind === 'lifecycle'
+      && (record.data as { event?: unknown } | undefined)?.event === 'campaign.resumed').length,
+    stallEscalations: index.records.filter(record => record.kind === 'lifecycle'
+      && (record.data?.engine as { event?: unknown } | undefined)?.event === 'planner.stall-escalation').length,
   };
 }
 

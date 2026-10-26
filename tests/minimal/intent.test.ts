@@ -159,6 +159,34 @@ describe('intent admission (P1/A2)', () => {
     await expect(board.reserve(created.id, reviewedRecon.assignee ?? 'owner')).rejects.toThrow(/separate worker/);
     expect(await board.reserve(created.id, 'worker-b')).toMatchObject({ status: 'reserved', assignee: 'worker-b' });
   }));
+
+  it('clamps over-long cosmetic risk/surface with a truncation warning instead of refusing the intent', async () => fixture(async ({ board, assetId, path }) => {
+    const risk = 'Anonymous read-only observation; '.padEnd(260, 'r'), surface = `/fixture/${'s'.repeat(260)}`;
+    const created = await board.create({ ...reconDraft(assetId), risk, surface });
+    expect(created.risk).toBe(risk.slice(0, 200));
+    expect(created.surface).toBe(surface.slice(0, 200));
+    expect(created.admissionWarnings).toHaveLength(2);
+    expect(created.admissionWarnings).toContain(`truncated:risk (stored 200 of ${risk.length} characters)`);
+    expect(created.admissionWarnings).toContain(`truncated:surface (stored 200 of ${surface.length} characters)`);
+    // The trace is part of the stored record, so the data loss cannot become silent once the ACK is gone.
+    const stored = (await readLedger(path, runId)).records.filter(row => row.kind === 'task').at(-1)!.data!.task as AssessmentTask;
+    expect(stored.admissionWarnings).toEqual(created.admissionWarnings);
+    expect(stored.risk).toBe(risk.slice(0, 200));
+    // Semantic prose keeps the hard cap: only cosmetic fields are clamped.
+    await expect(board.create({ ...reconDraft(assetId), id: 'long-question', question: 'q'.repeat(1501) })).rejects.toThrow(/Invalid task question/);
+  }));
+
+  it('names the excess decision field and the legal next call when new-work terms ride on a validation intent', async () => fixture(async ({ board, path, assetId, receipt }) => {
+    const recon = await board.create(reconDraft(assetId));
+    const reviewedRecon = await reviewed(board, recon, receipt('owner'));
+    const claim = await new EvidenceStore(runId, path, 'fixture').candidate('worker-a', claimCandidate(), reviewedRecon.id);
+    const refusal = board.create({ ...validationDraftFor(assetId, claim.id!),
+      decision: { disposition: 'new' as const, reason: 'Restated a fresh direction', relatedTaskId: reviewedRecon.id, changeReason: 'Changed inert policy fixture selected' } });
+    await expect(refusal).rejects.toThrow(/NEW_WORK_HAS_PRIOR_CLAIM/);
+    await expect(refusal).rejects.toThrow(/decision\.relatedTaskId and decision\.changeReason/);
+    await expect(refusal).rejects.toThrow(/disposition=new/);
+    await expect(refusal).rejects.toThrow(/legalNext: retry p2o_task_create/);
+  }));
 });
 
 interface ExtensionHarness {
@@ -221,6 +249,21 @@ describe('intent admission at the extension surface (P1/A2)', () => {
       expect((await h.call('p2o_board', { board: 'tasks', id: task.id })).details).toMatchObject({ id: task.id, status: 'blocked' });
       expect(h.herdr.calls.filter((call: any) => call.op === 'split')).toHaveLength(0);
       expect((await readLedger(join(await h.runDir(), 'records.sqlite'))).records.filter(row => row.kind === 'report')).toEqual([]);
+    } finally { try { await h.command('stop'); } catch { /* run may already be stopped */ } await rm(h.root, { recursive: true, force: true }); }
+  });
+
+  it('returns the truncation warning in the task ACK and keeps the clamped cosmetic value on the board', async () => {
+    const h = await extensionFixture();
+    try {
+      await h.command('--target ./repo');
+      const risk = `Anonymous read-only reconnaissance; ${'r'.repeat(260)}`, surface = `/fixture/${'s'.repeat(260)}`;
+      const task = (await h.call('p2o_task_create', { draft: { ...RECON_INTENT, risk, surface } })).details;
+      expect(task).toMatchObject({ risk: risk.slice(0, 200), surface: surface.slice(0, 200) });
+      expect(task.admissionWarnings).toHaveLength(2);
+      expect(task.admissionWarnings).toContain(`truncated:risk (stored 200 of ${risk.length} characters)`);
+      expect(task.admissionWarnings).toContain(`truncated:surface (stored 200 of ${surface.length} characters)`);
+      // The same trace survives the board read: the model can tell what was dropped, and no pane was refused.
+      expect((await h.call('p2o_board', { board: 'tasks', id: task.id })).details).toMatchObject({ risk: risk.slice(0, 200), admissionWarnings: task.admissionWarnings });
     } finally { try { await h.command('stop'); } catch { /* run may already be stopped */ } await rm(h.root, { recursive: true, force: true }); }
   });
 });

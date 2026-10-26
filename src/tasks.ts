@@ -6,7 +6,7 @@ import { purposeFromRole } from './duties.js';
 import { prepareReport } from './report.js';
 import type { WorkerReport } from './broker.js';
 import type { MutationRequest } from './state/store.js';
-import { defaultOutputContract, defaultWorkDecision, validateWorkFields, validateWorkSpec, workIdentity, type TaskOutputContract, type WorkDecision, type WorkSpec } from './work.js';
+import { defaultOutputContract, defaultWorkDecision, deriveValidationWork, validateWorkFields, validateWorkSpec, workIdentity, type TaskOutputContract, type WorkDecision, type WorkSpec } from './work.js';
 import { makePhasePacket } from './phase.js';
 import { derive } from './ledger-memo.js';
 import { TEXT_CONTROL } from './validate.js';
@@ -65,7 +65,9 @@ export function terminalCounts<T extends { status?: unknown; outcome?: unknown }
  */
 export interface ReviewIntegrityNote { assignee: string; foreignEvidence: string[]; contractGap: string[]; contractUnchecked: string[]; externalAcknowledged?: boolean }
 export interface AssessmentTask extends TaskDraft { id: string; runId: string; revision: number; status: TaskStatus; assignee?: string; recordId: string; reviewReason?: string; outcome?: string; handoffId?: string; phasePacketId?:string; reviewIntegrity?: ReviewIntegrityNote;
-  targetRevision?:string; workFingerprint?:string; workOverlapKey?:string; dedupConfidence?:'exact'|'unknown'; overlapWarnings?:string[] }
+  targetRevision?:string; workFingerprint?:string; workOverlapKey?:string; dedupConfidence?:'exact'|'unknown'; overlapWarnings?:string[];
+  /** P2: the host clamped a cosmetic field (surface/risk) at admission instead of refusing it; the trace names what was lost. */
+  admissionWarnings?: string[] }
 export interface TaskWorkMatch { confidence:'exact'|'unknown'; targetRevision:string; fingerprint?:string; overlapKey?:string; reason?:string;
   active:Array<{taskId:string;revision:number;status:string}>; reusable:Array<{taskId:string;revision:number;status:string}>; partial:Array<{taskId:string;revision:number;status:string}>;
   overlaps:Array<{taskId:string;revision:number;status:string;fingerprint:string}>; exactOmitted:number; overlapOmitted:number }
@@ -128,8 +130,46 @@ function validate(input: TaskDraft) {
   if (!Array.isArray(input.prerequisites) || input.prerequisites.some(p => !p || typeof p.taskId !== 'string' || !/^[a-z0-9][a-z0-9-]{0,79}$/.test(p.taskId) || (p.revision !== undefined && (!Number.isSafeInteger(p.revision) || p.revision < 1))) || new Set(input.prerequisites.map(p=>p.taskId)).size!==input.prerequisites.length) throw new Error('Invalid or duplicate task prerequisites');
   for (const list of [input.unknowns,input.missingPrerequisites]) if (list !== undefined && (!Array.isArray(list) || list.some(v => typeof v !== 'string' || v.trim().length < 10 || v.length > 500))) throw Error('Invalid task unknowns/prerequisites');
   if (input.expectedOutput !== undefined) bounded(input.expectedOutput,'expected output',1000,5);
-  if (!input.method || typeof input.method.reason !== 'string' || input.method.reason.trim().length < (reconLenient?0:10) || input.method.reason.length > 1000 || !Array.isArray(input.method.skills) || input.method.skills.some(s => !s || typeof s.id !== 'string' || s.id.length > 64 || !/^[a-z0-9-]+$/.test(s.id) || !/^[a-f0-9]{64}$/.test(s.sha256))) throw new Error('Invalid task method');
+  if (!input.method || typeof input.method.reason !== 'string' || !Array.isArray(input.method.skills) || input.method.skills.some(s => !s || typeof s.id !== 'string' || s.id.length > 64 || !/^[a-z0-9-]+$/.test(s.id) || !/^[a-f0-9]{64}$/.test(s.sha256))) throw new Error('Invalid task method: draft.skills must name catalog skills (the host stamps their sha256) and draft.methodReason must be a string');
+  // P2.3 (measured rerun 2026-10-26): the dominant residual refusal was an omitted `draft.methodReason` for a non-recon
+  // role, reported as both missing and over-long only as bare "Invalid task method". The lead read that as the role being
+  // unusable and finished partial, so the strictness stays but the message names the field and the one role allowed to omit it.
+  if (input.method.reason.trim().length < (reconLenient ? 0 : 10)) throw new Error(`Invalid task method: draft.methodReason is required for role ${input.role} (at least ${reconLenient ? 0 : 10} characters after trim); only recon may omit it`);
+  if (input.method.reason.length > 1000) throw new Error('Invalid task method: draft.methodReason must be at most 1000 characters');
   validateWorkFields(input);
+}
+
+/**
+ * P2: the cosmetic caps. `surface`/`risk` are prose the coordinator reads, not identity the review matches on (structured work
+ * matches assetRefs/questionKey/policyKey), so an over-long value is clamped here instead of refused — the draft still admits and
+ * the returned/ledger task carries the trace. Only a length-only overflow is cosmetic: a wrong type, an empty value or control
+ * text keeps the hard refusal in validate().
+ */
+const COSMETIC_CAPS = [['surface', 200], ['risk', 200]] as const;
+function clampCosmetic<T extends TaskDraft>(draft: T): { draft: T; warnings: string[] } {
+  const warnings: string[] = [];
+  let admitted: T = draft;
+  for (const [field, limit] of COSMETIC_CAPS) {
+    const value = draft[field];
+    if (typeof value !== 'string' || value.length <= limit || value.trim().length < 1 || TEXT_CONTROL.test(value)) continue;
+    admitted = { ...admitted, [field]: value.slice(0, limit) } as T;
+    warnings.push(`truncated:${field} (stored ${limit} of ${value.length} characters)`);
+  }
+  return { draft: admitted, warnings };
+}
+/** P2: the first canonical identity key two drafts disagree on, with both values, so a refusal names what to fix. */
+function questionDifference(a: TaskDraft, b: TaskDraft): string | undefined {
+  if (a.work && b.work) {
+    const assets = (work: WorkSpec) => JSON.stringify(work.assetRefs.map(ref => [ref.id, ref.variant ?? null]).sort());
+    if (assets(a.work) !== assets(b.work)) return `assetRefs draft=${assets(a.work)} predecessor=${assets(b.work)}`;
+    if (a.work.questionKey !== b.work.questionKey) return `questionKey draft=${JSON.stringify(a.work.questionKey)} predecessor=${JSON.stringify(b.work.questionKey)}`;
+    if (a.work.policyKey !== b.work.policyKey) return `policyKey draft=${JSON.stringify(a.work.policyKey)} predecessor=${JSON.stringify(b.work.policyKey)}`;
+    return undefined;
+  }
+  // A legacy prose draft has no structured identity, so the pre-A2 surface/risk pair is what overlap can compare.
+  if (a.surface !== b.surface) return `surface draft=${JSON.stringify(a.surface)} predecessor=${JSON.stringify(b.surface)}`;
+  if (a.risk !== b.risk) return `risk draft=${JSON.stringify(a.risk)} predecessor=${JSON.stringify(b.risk)}`;
+  return undefined;
 }
 
 /** Owner-only service. No disk reconstruction ever recreates run authority or workers. */
@@ -201,7 +241,19 @@ export class TaskBoard extends LedgerBoard {
         ? draft.prerequisites.map(p=>p.taskId===prior.id?{...p,revision:prior.revision}:p)
         : [{taskId:prior.id,revision:prior.revision},...draft.prerequisites];
       const decision=draft.decision&&draft.decision.relatedTaskId===link&&link!==prior.id?{...draft.decision,relatedTaskId:prior.id}:draft.decision;
-      anchored={...draft,validationOf:prior.id,prerequisites,...(decision?{decision}:{})};
+      // The claims the predecessor's worker reported are what the replay stands on. Citing them keeps the demonstrated primitive
+      // chained (M4) as the successor that consumes it, when the caller left the work identity to the host.
+      const replayedClaims:string[]=[];
+      if(!draft.work){
+        const latest=new Map<string,string>();
+        for(const row of index.records) if(row.kind==='candidate'&&row.runId===this.runId&&row.by!=='owner'&&row.workerId&&typeof row.id==='string'
+          &&row.data?.taskRef===prior.id&&typeof row.data?.candidate==='string') latest.set(row.data.candidate,row.id);
+        replayedClaims.push(...latest.values());
+      }
+      // P2/F-A2-4 host-resolve: naming the predecessor is the caller-side input. The host pins the prerequisite revision and, when
+      // the draft omitted its work identity, derives it from the reviewed predecessor so a validation need not restate it.
+      const work=draft.work??deriveValidationWork(prior.work,replayedClaims);
+      anchored={...draft,validationOf:prior.id,prerequisites,...(work?{work}:{}),...(decision?{decision}:{})};
     }
     if(!anchored.work)return anchored;
     if(purpose==='discovery'&&!(anchored.work.claimRefs??[]).length&&!anchored.prerequisites.length)throw Error('PURPOSE_NEEDS_ANCHOR: a discovery intent must cite the worker claim it builds on (work.claimRefs) or a reviewed prerequisite task; an unanchored discovery would run before there is anything to build on. legalNext: cite the reviewed claim with work.claimRefs, or create the recon/mapping intent that produces it first');
@@ -252,15 +304,17 @@ export class TaskBoard extends LedgerBoard {
       const id = draft.id ?? `task-${randomUUID()}`;
       if (tasks.some(t => t.id === id)) throw Error('Duplicate task');
       // A2: the cheap intent is completed and anchored against the board it is joining inside the same serialized mutation, so a
-      // refusal happens before any pane or ticket is created.
-      const candidate = this.canonical(this.anchor({ ...draft, id }, index, tasks)); validate(candidate);
+      // refusal happens before any pane or ticket is created. P2: cosmetic prose is clamped with a warning trace, not refused.
+      const { draft: candidate, warnings } = clampCosmetic(this.canonical(this.anchor({ ...draft, id }, index, tasks)));
+      validate(candidate);
       this.checkDependencies(candidate,tasks,index);
       // M2/M4: the frontier is an obligation. A create that opens a new direction on a surface where a step is ready, or where a
       // demonstrated primitive has no successor and no wall, is refused with the claim to cite; revise and dispatch are untouched.
       const plans=planFrontier(index),claims=claimHeadClaims(index,this.runId),refusal=dispatchRefusal({draft:candidate,obligations:chainObligations({plans,claims,tasks}),plans});
       if(refusal)throw Error(refusal);
       const decorated=this.decorate(candidate,await this.matching(candidate));
-      return this.write({ ...decorated, runId: this.runId, revision: 1, status: draft.missingPrerequisites?.length ? 'blocked' : 'proposed' });
+      return this.write({ ...decorated, runId: this.runId, revision: 1, status: draft.missingPrerequisites?.length ? 'blocked' : 'proposed',
+        ...(warnings.length?{admissionWarnings:warnings}:{}) });
     });
   }
   async revise(id: string, revision: number, draft: TaskDraft): Promise<AssessmentTask> {
@@ -268,9 +322,10 @@ export class TaskBoard extends LedgerBoard {
       const old = this.current(tasks,id,revision);
       if (['reserved','running'].includes(old.status)) throw Error('Withdraw active assignment before revising');
       if (draft.id && draft.id !== id) throw Error('Cannot change task identity');
-      const candidate=this.canonical(this.anchor({...draft,id},index,tasks));validate(candidate);
+      const { draft: candidate, warnings } = clampCosmetic(this.canonical(this.anchor({...draft,id},index,tasks)));validate(candidate);
       this.checkDependencies(candidate,tasks.filter(t => t.id !== id),index);const decorated=this.decorate(candidate,await this.matching(candidate));
-      return this.write({ ...decorated,runId:this.runId,revision:old.revision+1,status:draft.missingPrerequisites?.length ? 'blocked' : 'proposed' },old);
+      return this.write({ ...decorated,runId:this.runId,revision:old.revision+1,status:draft.missingPrerequisites?.length ? 'blocked' : 'proposed',
+        ...(warnings.length?{admissionWarnings:warnings}:{}) },old);
     });
   }
   private current(tasks: AssessmentTask[], id: string, revision?: number) {
@@ -347,13 +402,16 @@ export class TaskBoard extends LedgerBoard {
         for (const ref of t.evidenceIds) if (index.byId.get(ref)?.kind !== 'evidence' || index.byId.get(ref)?.runId !== this.runId) throw Error('Prerequisite evidence missing');
       }
     }
-    const sameQuestion=(a:TaskDraft,b:TaskDraft)=>a.work&&b.work?JSON.stringify(a.work.assetRefs.map(x=>[x.id,x.variant??null]).sort())===JSON.stringify(b.work.assetRefs.map(x=>[x.id,x.variant??null]).sort())&&a.work.questionKey===b.work.questionKey&&a.work.policyKey===b.work.policyKey:a.surface===b.surface&&a.risk===b.risk;
+    const sameQuestion=(a:TaskDraft,b:TaskDraft)=>questionDifference(a,b)===undefined;
     if (draft.decision?.disposition==='refine'||draft.decision?.disposition==='retry') {const prior=this.current(tasks,draft.decision.relatedTaskId!);if(!sameQuestion(draft,prior))throw Error('Refinement/retry needs the same canonical asset/question identity');
       if(draft.decision.disposition==='retry'&&!['blocked','cancelled','expired'].includes(prior.status))throw Error('Retry requires a blocked/cancelled/expired prior attempt, not an active assignment');}
     if (draft.validationOf) {
       const prior = this.current(tasks,draft.validationOf);
-      if (draft.role !== 'validation' || !draft.prerequisites.some(p => p.taskId === prior.id) || !sameQuestion(draft,prior)) throw Error('Validation overlap needs a matching predecessor');
-      if (ready && (!prior.evidenceIds.length || !isSatisfiedTask(prior.status))) throw Error('Validation overlap needs a reviewed matching predecessor');
+      if (draft.role !== 'validation') throw Error(`VALIDATION_ROLE_REQUIRED: validationOf=${prior.id} names the predecessor this task replays, so role must be validation (got role=${draft.role}). legalNext: retry p2o_task_create with role=validation and validationOf=${prior.id}`);
+      if (!draft.prerequisites.some(p => p.taskId === prior.id)) throw Error(`VALIDATION_NEEDS_PREREQUISITE: the host pins validationOf=${prior.id} as prerequisite {taskId:"${prior.id}",revision:${prior.revision}} during admission. legalNext: retry p2o_task_create with validationOf=${prior.id} and omit prerequisites so the host fills it`);
+      const difference=questionDifference(draft,prior);
+      if (difference) throw Error(`VALIDATION_IDENTITY_MISMATCH: the draft does not reproduce ${prior.id}'s canonical identity: ${difference}. A validation replays the predecessor's exact work identity, so assetRefs/questionKey/policyKey must match. legalNext: omit work and let the host derive it from ${prior.id}, or copy the predecessor's work identity verbatim`);
+      if (ready && (!prior.evidenceIds.length || !isSatisfiedTask(prior.status))) throw Error(`VALIDATION_NEEDS_REVIEWED_PREDECESSOR: ${prior.id} is ${prior.status}${prior.evidenceIds.length?'':' with no accepted receipts'}; a validation reproduces reviewed work only. legalNext: review ${prior.id} with its accepted evidence (p2o_task_review), then retry the validation`);
     }
     if(draft.retestOf){const prior=this.current(tasks,draft.retestOf);if(!sameQuestion(draft,prior))throw Error('Retest needs the same canonical asset/question identity');
       if(ready&&(!prior.evidenceIds.length||!isSatisfiedTask(prior.status)))throw Error('Retest needs a reviewed matching predecessor');}
@@ -412,7 +470,7 @@ export class TaskBoard extends LedgerBoard {
     });
   }
   async match(value:TaskDraft):Promise<TaskWorkMatch>{this.gate();const index=await readLedger(this.path,this.runId);if(!index.complete)throw Error('Task reconciliation incomplete');
-    const tasks=taskFrontier(index),draft=this.canonical(this.anchor(value,index,tasks));validate(draft);const id=draft.id??`proposal-${randomUUID()}`;this.checkDependencies({...draft,id},tasks,index);return this.matching({...draft,id});}
+    const tasks=taskFrontier(index),{draft}=clampCosmetic(this.canonical(this.anchor(value,index,tasks)));validate(draft);const id=draft.id??`proposal-${randomUUID()}`;this.checkDependencies({...draft,id},tasks,index);return this.matching({...draft,id});}
   async list() { const index = await readLedger(this.path,this.runId); if (!index.complete) throw Error('Task reconciliation incomplete'); return taskFrontier(index); }
   async forWorker(workerId: string) {
     const index = await readLedger(this.path,this.runId);

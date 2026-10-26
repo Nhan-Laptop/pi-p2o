@@ -10,6 +10,7 @@ import { EvidenceStore, type Candidate } from '../../src/evidence.js';
 import { CaseBoard, caseViews } from '../../src/cases.js';
 import { readLedger } from '../../src/records.js';
 import { reviewedValidation, validationDraft, validationKey } from '../../src/validation.js';
+import type { WorkSpec } from '../../src/work.js';
 
 const runId = 'run-validation';
 
@@ -195,12 +196,68 @@ describe('host-created validation and independence (W4)', () => {
     let index = await readLedger(path, runId);
     expect(reviewedValidation(index, claim).reason).toContain('Delegation unavailable');
 
-    // The manual rule still refuses a validation draft that does not reproduce the predecessor's exact question.
-    await expect(board.create({ ...validationDraft(claim, candidate, reviewed), id: 'validation-mismatch', work: { ...validationDraft(claim, candidate, reviewed).work!, questionKey: 'question:other' } }))
-      .rejects.toThrow(/Validation overlap needs a matching predecessor/);
+    // The manual rule still refuses a validation draft that does not reproduce the predecessor's exact question,
+    // and the refusal now names the differing identity key with both values.
+    const mismatch = board.create({ ...validationDraft(claim, candidate, reviewed), id: 'validation-mismatch', work: { ...validationDraft(claim, candidate, reviewed).work!, questionKey: 'question:other' } });
+    await expect(mismatch).rejects.toThrow(/VALIDATION_IDENTITY_MISMATCH/);
+    await expect(mismatch).rejects.toThrow(/questionKey draft="question:other" predecessor="question:object"/);
     // A validation assigned back to the claim author is not independent, even when its receipt exists.
     const resumed = await board.revise(blocked.id, blocked.revision, validationDraft(claim, candidate, reviewed));
     await expect(board.reserve(resumed.id, 'worker-a')).rejects.toThrow(/separate worker/);
     void index;
+  }));
+
+  it('host-fills a validation prerequisite and derives its work identity when the draft only names the predecessor', async () => fixture(async ({ board, assetId, evidence, task, path }) => {
+    const receipt = evidence('worker-a');
+    const { discovery } = await anchoredDiscovery({ board, assetId, task }, receipt);
+    const candidate = confirmed(receipt);
+    const claim = await new EvidenceStore(runId, path, 'fixture').candidate('worker-a', candidate, discovery.id);
+    const reviewed = await reviewTask(board, discovery, receipt);
+    const full = validationDraft(claim, candidate, reviewed);
+    // A paid-run shape: the model names the worker claim (or task) and omits everything the host can derive.
+    const created = await board.create({ ...full, validationOf: claim.id!, prerequisites: [], work: undefined, decision: undefined, outputContract: undefined });
+    expect(created).toMatchObject({ role: 'validation', validationOf: reviewed.id, status: 'proposed',
+      prerequisites: [{ taskId: reviewed.id, revision: reviewed.revision }],
+      decision: { disposition: 'validate', relatedTaskId: reviewed.id }, outputContract: { kind: 'validation' } });
+    // The host derives the identity a replay must reproduce; the caller did not restate it.
+    expect(created.work).toMatchObject({ purpose: 'validation', assetRefs: reviewed.work!.assetRefs,
+      questionKey: reviewed.work!.questionKey, policyKey: reviewed.work!.policyKey });
+    // The replay cites the claim its reviewed predecessor reported, so it is the successor that consumes the primitive (M4).
+    expect(created.work?.claimRefs).toEqual([claim.id]);
+  }));
+
+  it('names the differing identity key and both values when a validation restates a different work identity', async () => fixture(async ({ board, assetId, evidence, task, path, store }) => {
+    const receipt = evidence('worker-a');
+    const { discovery } = await anchoredDiscovery({ board, assetId, task }, receipt);
+    const candidate = confirmed(receipt);
+    const claim = await new EvidenceStore(runId, path, 'fixture').candidate('worker-a', candidate, discovery.id);
+    const reviewed = await reviewTask(board, discovery, receipt);
+    const full = validationDraft(claim, candidate, reviewed);
+    const otherAsset = store.recordGraph({ assets: [{ asset: { kind: 'endpoint', key: 'GET /other' } }] })[0].entityId;
+    const variants: Array<{ id: string; key: string; work: WorkSpec }> = [
+      { id: 'validation-diff-question', key: 'questionKey', work: { ...full.work!, questionKey: 'question:another' } },
+      { id: 'validation-diff-policy', key: 'policyKey', work: { ...full.work!, policyKey: 'policy:another' } },
+      { id: 'validation-diff-assets', key: 'assetRefs', work: { ...full.work!, assetRefs: [{ id: otherAsset, revision: 1 }] } },
+    ];
+    for (const variant of variants) {
+      const refusal = board.create({ ...full, id: variant.id, work: variant.work });
+      await expect(refusal).rejects.toThrow(/VALIDATION_IDENTITY_MISMATCH/);
+      await expect(refusal).rejects.toThrow(new RegExp(`${variant.key} draft=`));
+      await expect(refusal).rejects.toThrow(/predecessor=/);
+    }
+  }));
+});
+
+describe('task admission message for an omitted method reason (P5.1/P2.3)', () => {
+  it('names draft.methodReason and the only role allowed to omit it instead of a bare "Invalid task method"', async () => fixture(async ({ assetId, task }) => {
+    // Measured gate rerun 2026-10-26: every `role: discovery` intent that omitted draft.methodReason was refused as bare
+    // "Invalid task method"; the lead read the role as unusable. The refusal stays, but it now names the field and the fix.
+    const prose: TaskDraft = { ...discoveryDraft(assetId) };
+    delete prose.work; delete prose.decision; delete prose.outputContract;
+    await expect(task({ ...prose, method: { skills: [], reason: '' } }))
+      .rejects.toThrow(/Invalid task method: draft\.methodReason is required for role discovery \(at least 10 characters after trim\); only recon may omit it/);
+    // Recon keeps the lenient rule documented in ADMISSION: mapping may omit the reason entirely.
+    const recon = await task({ ...reconDraft(assetId), method: { skills: [], reason: '' } });
+    expect(recon.role).toBe('recon');
   }));
 });

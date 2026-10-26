@@ -89,7 +89,9 @@ describe('A4 stalled round is a report fact, never a wake', () => {
     expect(await f.engine.stallRound({ openGoal: true, openIntents: 0 })).toBe(false);
     f.engine.resume();
     expect(await f.engine.stallRound({ openGoal: true, openIntents: 0 })).toBe(true);
-    expect(f.engine.snapshot().stalls).toBe(2);
+    // P5.1: the engine counter is now the consecutive streak since the last human decision, not a lifetime total; the
+    // cumulative count stays ledger-derived (`planner.stalled` records), which the report reads.
+    expect(f.engine.snapshot().stalls).toBe(1);
     f.engine.stop();
   });
 });
@@ -124,7 +126,7 @@ async function harness(): Promise<Harness> {
 }
 
 describe('A4 extension round ACK', () => {
-  it('writes planner.stalled for a zero-intent round with an open goal, and not while an intent is open', async () => {
+  it('writes one planner.stalled per turn-final round, and not for an intermediate tool step or an open intent', async () => {
     const h = await harness();
     try {
       await h.start();
@@ -142,10 +144,18 @@ describe('A4 extension round ACK', () => {
       const first = await stalls();
       expect(first).toHaveLength(1);
       expect(first[0].text).toContain('planner.stalled');
+      // P5.1: an intermediate tool-calling assistant message does not end the round. The measured rerun recorded three
+      // stalls 22 s apart inside one admitted round because every assistant step with no open intent was judged; only the
+      // turn-final `stop` message decides, so a tool step records nothing and the following stop records the single fact.
+      await h.emit('context', { messages: [{ role: 'user', content: 'continue the assessment', timestamp: 0 }] });
+      await h.emit('message_end', { message: { role: 'assistant', stopReason: 'toolUse', content: 'calling a tool' } });
+      expect(await stalls()).toHaveLength(1);
+      await round();
+      expect(await stalls()).toHaveLength(2);
       // A proposed intent is open work, so the same round is not a stall.
       await h.call('p2o_task_create', { draft: { question: 'Does the bounded fixture observation match the declared policy?', surface: '/a', risk: 'authorization', role: 'recon', evidenceIds: [], prerequisites: [] } });
       await round();
-      expect(await stalls()).toHaveLength(1);
+      expect(await stalls()).toHaveLength(2);
     } finally { await h.command('stop').catch(() => {}); await rm(h.root, { recursive: true, force: true }); }
   }, 60_000);
 });

@@ -7,6 +7,7 @@ import {
   plannerTools, reporterTools, workerTools,
 } from '../../src/tool-policy.js';
 import { TOOL_BOUNDARIES } from '../../src/tool-guidelines.js';
+import { taskDraftSchema } from '../../src/tool-schemas.js';
 import { plannerInstructions, workerBrief, workerInstructions } from '../../src/prompts.js';
 import { createFakePi, EXTENSION_PATH } from './helpers/fake-pi.js';
 
@@ -93,5 +94,19 @@ describe('authority split: planner intent, worker execution, reporter read (P0/A
     expect(plannerInstructions(facts(true))).toMatch(/no target, lab or claim tools/i);
     expect(plannerInstructions(facts(true))).not.toMatch(/may execute directly/i);
     expect(workerInstructions(ticket('discovery'))).not.toMatch(/p2o_task_create|p2o_task_dispatch|p2o_workers/);
+  });
+});
+
+describe('task draft schema caps (P2: cosmetic prose is clamped, semantic prose is refused)', () => {
+  it('declares risk/surface caps above the admission clamp so argument validation cannot pre-empt truncation', () => {
+    const properties = (taskDraftSchema as unknown as { properties: Record<string, { maxLength?: number }> }).properties;
+    // The host clamps risk/surface to 200 at admission and records `truncated:<field>`; Pi must let the draft reach that code.
+    expect(properties.risk.maxLength).toBeGreaterThan(200);
+    expect(properties.surface.maxLength).toBeGreaterThan(200);
+    // Semantic fields keep their exact caps: the host refuses those rather than truncating what a review matches on.
+    expect(properties.question.maxLength).toBe(1500);
+    expect(properties.roleReason.maxLength).toBe(1000);
+    expect(properties.expectedTrue.maxLength).toBe(1000);
+    expect(properties.stopCondition.maxLength).toBe(1000);
   });
 });

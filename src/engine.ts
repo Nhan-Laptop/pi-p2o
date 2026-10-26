@@ -58,7 +58,13 @@ export class AssessmentEngine {
   private reservation?: PlannerWake;
   private rounds = 0;
   private progress: RoundProgress = { testedCells: 0, closures: 0, assets: 0, chainDepth: 0, remaining: 0 };
-  private stalls = 0;
+  /**
+   * P5.1 (A6.3): consecutive stalled rounds *since the last human decision*. This is a streak, not a lifetime total:
+   * `/p2o resume` resets it, so one stale round after a resume cannot immediately re-pause the campaign (the measured
+   * gate run paused on stalls 4, 5 and 6 because a cumulative counter could never fall back below the threshold).
+   * The cumulative fact count stays ledger-derived (`planner.stalled` records), never this counter.
+   */
+  private stallStreak = 0;
   private quiet: number[] = [];
   private readonly revisits = new Map<string, { at: number; timer: ReturnType<typeof setTimeout> }>();
   private decision?: { disposition: 'wait' | 'blocked'; reason: string };
@@ -216,22 +222,29 @@ export class AssessmentEngine {
   forget(taskId: string) {this.queue.delete(taskId);}
   started() { this.busy = true; }
   settled() { this.busy = false; this.kick(); }
-  /**
-   * A4: record a stalled round as a durable report fact — never a wake, queue entry, pause or new work budget. A round that
+  /** A4: record a stalled round as a durable report fact — never a wake, queue entry, pause or new work budget. A round that
    * ends with an open goal, no open/running intent and no blocked declaration is not progress, so it must not be silent.
    * Every such round is recorded; the caller's `persist` writes the lifecycle record and the engine shapes nothing else.
+   * P5.1: a round only exists once the engine admitted one. The human `/p2o` command turn that ends before the first wake is
+   * not a campaign round, so it cannot be a stalled round and cannot consume two of the three escalation steps (the measured
+   * gate run escalated on stalls 1-3 with `rounds: 0`, i.e. before any planner round existed).
+   * P5.1: the escalation counter is a streak reset by `resume()`, not a lifetime total.
    */
   async stallRound(facts: RoundStall): Promise<boolean> {
     if (!this.live() || this.paused || this.decision?.disposition === 'blocked' || !facts.openGoal || facts.openIntents > 0) return false;
-    this.stalls += 1;
+    // No admitted round yet in event-driven mode: the human command turn that ends before the first wake is not a campaign
+    // round, so it can be neither a stalled round nor one of the three escalation steps. Manual mode keeps A4 unchanged:
+    // there the human drives every turn, so a zero-intent turn is still the fact A4 promised.
+    if (this.mode === 'event-driven' && this.rounds === 0) return false;
+    this.stallStreak += 1;
     await this.deps.persist(
       'planner.stalled: the round ended with an open goal, no open/running intent and no blocked declaration; recorded as a report fact, never a wake or new budget',
-      { event: 'planner.stalled', openGoal: true, openIntents: 0, rounds: this.rounds, sequence: this.sequence, stalls: this.stalls });
+      { event: 'planner.stalled', openGoal: true, openIntents: 0, rounds: this.rounds, sequence: this.sequence, stalls: this.stallStreak });
     // A6.3: three stalled rounds with gateable debt is no longer a report fact. The loop pauses for a human decision; nothing
     // is retried, restarted or spent automatically, and /p2o resume clears it.
-    if (this.stalls >= 3 && (this.progress.debt?.gateable ?? 0) > 0 && this.live()) {
+    if (this.stallStreak >= 3 && (this.progress.debt?.gateable ?? 0) > 0 && this.live()) {
       await this.deps.persist('planner.stall-escalation: three stalled rounds while research debt remains; the loop needs a human decision',
-        { event: 'planner.stall-escalation', stalls: this.stalls, debt: this.progress.debt, sequence: this.sequence });
+        { event: 'planner.stall-escalation', stalls: this.stallStreak, debt: this.progress.debt, sequence: this.sequence });
       this.pause('three rounds with no open intent while research debt remains; the loop needs a human decision (/p2o resume or /p2o stop)');
     }
     return true;
@@ -296,7 +309,9 @@ export class AssessmentEngine {
   }
   resume() {
     this.gate();
-    this.paused = undefined; this.decision = undefined; this.armHeartbeat(); this.kick();
+    // P5.1 (A6.3): a human decision is a new baseline. The escalation streak starts over, otherwise `stallStreak >= 3` stays
+    // true forever and every later stalled round re-pauses the campaign without any new evidence.
+    this.paused = undefined; this.decision = undefined; this.stallStreak = 0; this.armHeartbeat(); this.kick();
   }
   stop() {
     this.stopped = true; this.epoch += 1; this.reservation = undefined;
@@ -309,7 +324,7 @@ export class AssessmentEngine {
     const intents = [...this.queue.values()].map(({taskId,revision,priority,reason}) => ({taskId,revision,priority,reason}));
     const events = [...this.events.values()];
     return {runId:this.runId,mode:this.mode,epoch:this.epoch,state:this.stopped ? 'stopped' : this.paused ? 'blocked' : this.busy ? 'running' : this.reservation ? 'scheduled' : 'waiting',
-      paused:this.paused,rounds:this.rounds,decision:this.decision,stalls:this.stalls,
+      paused:this.paused,rounds:this.rounds,decision:this.decision,stalls:this.stallStreak,
       heartbeat:{seconds:this.heartbeat(),...(this.heartbeatAt!==undefined?{nextAt:new Date(this.heartbeatAt).toISOString()}:{})},lastWake:this.lastWake,
       ...(this.roundStartedAt!==undefined?{roundStartedAt:new Date(this.roundStartedAt).toISOString()}:{}),
       sequence:this.sequence,consumedSequence:this.consumed,pendingEvents:events.length,events:events.slice(-20),eventsOmitted:Math.max(0,events.length-20),

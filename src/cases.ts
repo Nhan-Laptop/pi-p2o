@@ -76,10 +76,11 @@ export function caseViews(index:LedgerIndex,context:CaseContext={}):CaseView[]{
     let independentCurrent=entry.independentEvidenceRefs.length>0;
     const independenceFailures:string[]=[];
     for(const evidenceId of entry.independentEvidenceRefs){
-      // Every listed receipt is checked; the first failing one names why, so the reason is actionable instead of "stale".
+      // Every listed receipt is checked; the first failing one names why, so the reason is actionable instead of "stale". With no peer
+      // claim even naming the receipt the missing step is a citation, not a stale receipt, and the reason says which evidence is uncited.
       let failure:string|undefined;
       const supporting=citedClaims.some(claim=>{if(claim.data?.independentEvidenceRef!==evidenceId)return false;const check=independentReceiptCurrent(index,claim,evidenceId);failure??=check.reason;return check.ok;});
-      if(!supporting){independentCurrent=false;independenceFailures.push(failure??`independent-support-stale:${evidenceId}`);reasons.push(failure??`independent-support-stale:${evidenceId}`);}
+      if(!supporting){const reason=failure??`independent-support-uncited:${evidenceId}`;independentCurrent=false;independenceFailures.push(reason);reasons.push(reason);}
     }
     // W4: a reviewed validation task is the host-owned independence path. It can make the case independent even when the older
     // peer-receipt field is empty; when the older path already holds, its failures still stay visible as stale reasons.
@@ -136,7 +137,15 @@ export class CaseBoard extends LedgerBoard{
   private acceptance(input:CaseDraft,index:LedgerIndex,cases:CaseEntry[],previous:CaseEntry):void{
     if(input.reviewStatus!=='accepted')return;const provisional:CaseEntry={...input,id:input.id!,runId:this.runId,revision:previous.revision+1,recordId:'case-provisional'};
     const view=caseViews(indexRecordsWithCase(index,provisional,previous),this.context).find(item=>item.id===input.id);
-    if(!view||view.currentness!=='current')throw Error(`Case review is stale/incomplete: ${view?.staleReasons.join(',')||'unknown'}`);
+    if(!view||view.currentness!=='current'){
+      // The refusal and its strictness do not change; the message bounds an otherwise unbounded reason list and names the legal next step.
+      const stale=view?.staleReasons??[],shown=stale.slice(0,3),omitted=stale.length-shown.length;
+      const listed=shown.length?`${shown.join(', ')}${omitted>0?` (+${omitted} more)`:''}`:'unknown';
+      const hint=stale.some(reason=>reason.startsWith('independent-')||reason.startsWith('validation-'))
+        ?' Independence needs a reviewed peer claim whose data.independentEvidenceRef names the evidence id, or a reviewed validation task that the case cites through taskRefs (host-owned W4 path); make one current, then revise again.'
+        :' Fix the listed reasons and revise again.';
+      throw Error(`Case review is stale/incomplete: ${listed}.${hint}`);
+    }
     if(input.duplicateOf&&!input.rootCauseKey)throw Error('Uncertain root cause cannot be merged; use relatedCaseIds');
   }
   private async write(make:()=>{draft:CaseDraft;revision:number;previous?:CaseEntry},request?:MutationRequest):Promise<CaseEntry>{

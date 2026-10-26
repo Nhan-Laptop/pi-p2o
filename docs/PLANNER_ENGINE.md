@@ -190,17 +190,33 @@ ledger. Không có từ "budget"/"allowance"/"quota" nào trong các câu này.
 Hệ quả: engine chỉ dừng khi completion đã complete hoặc con người bảo dừng — không vì hết hạn mức và không vì một vòng
 "không có gì mới" trong khi việc vẫn còn. Không còn `maxPlannerRounds`.
 
-### Vòng không tạo intent: `planner.stalled` (P3/A4)
+### Vòng không tạo intent: `planner.stalled` (P3/A4, siết lại ở P5.1)
 
 Một vòng planner kết thúc khi goal vẫn mở (`proposed`/`active`), không còn intent nào mở/chờ/chạy
 (`proposed`/`reserved`/`running`) và planner không ghi `blocked` thì không phải progress. Host ghi một lifecycle record
 `planner.stalled: …` (text bắt đầu bằng `planner.stalled:`, `data.engine.event='planner.stalled'`, kèm `openGoal`,
-`openIntents:0`, số round/sequence và tổng số lần stall) qua đúng `persist` sẵn có, sau khi round ACK context. Nó không
-wake, không xếp queue, không pause và không cấp budget mới; `snapshot().stalls` đếm các vòng stall engine đã ghi, và round đó
-hiện ở dòng `Frontier: … stalled rounds N` của `/p2o status` cùng provenance REPORT.md. Mọi vòng như vậy đều được ghi
-(không dedupe) vì vòng không tạo intent không được im lặng; goal `blocked`, decision `blocked`, run pause hoặc engine
-không live thì không ghi. Đây là fact của báo cáo — không cổng, không wake, không hạn mức — và việc ghi nó không đổi
-cách M6 chấm vòng im lặng.
+`openIntents:0`, số round/sequence và streak stall hiện tại) qua đúng `persist` sẵn có, sau khi round ACK context. Nó không
+wake, không xếp queue, không pause và không cấp budget mới; round đó hiện ở dòng `Frontier: … stalled rounds N` của
+`/p2o status` cùng provenance REPORT.md. Mọi vòng như vậy đều được ghi (không dedupe) vì vòng không tạo intent không được
+im lặng; goal `blocked`, decision `blocked`, run pause hoặc engine không live thì không ghi. Đây là fact của báo cáo —
+không cổng, không wake, không hạn mức — và việc ghi nó không đổi cách M6 chấm vòng im lặng.
+
+Hai siết của **P5.1** (đo từ gate 2026-10-26, run `run-74c4e640`):
+
+- **Chỉ round đã được engine admit mới là round.** Ở `event-driven`, lượt `/p2o` của người kết thúc trước wake đầu tiên
+  (`rounds: 0`) không ghi fact và không tính vào escalation; trước P5.1 hai fact `rounds:0` như vậy đốt 2/3 ngưỡng và
+  escalation bắn trước khi có bất kỳ planner round nào. `manual` giữ nguyên A4 vì ở đó con người lái từng lượt.
+- **Chỉ message kết thúc lượt mới kết thúc round** (`stop`, không phải `toolUse`). Host ACK context sau mỗi assistant
+  message, nhưng phán "round không tạo intent" chỉ ở message cuối của lượt: một bước tool-calling chưa kịp tạo intent nào
+  là *chưa* có intent, không phải round stall. Gate rerun 2026-10-26 (`run-e16db138`) ghi 3 fact `planner.stalled` trong
+  **cùng một** round đã admit (09:41:14/18/36, cách 22 s) và escalate trước khi round đó kịp dispatch — round đó sau đó tạo
+  4 intent. Từ P5.1, `stallRound` chỉ chạy với message `stopReason==='stop'`; mỗi round đã admit có tối đa một fact.
+- **Bộ đếm escalation là streak, không phải tổng đời.** `snapshot().stalls` = số vòng stall liên tiếp kể từ lần
+  `/p2o resume` gần nhất; `resume()` reset về 0, nên một vòng stall sau resume không pause lại ngay (trước P5.1 escalation
+  bắn ở stalls 3, 4, 5, 6 — mỗi lần resume chỉ cần thêm một stall). Tổng số stall của cả run vẫn suy từ ledger
+  (`planner.stalled` records), tức `authorityCounters.stalledRounds`, không đọc biến đếm trong bộ nhớ.
+- Escalation vẫn là `streak >= 3` **và** debt gateable > 0: pause, persist `planner.stall-escalation`, và người quyết định
+  bằng `/p2o resume` hoặc `/p2o stop`. Heartbeat vẫn là timer 600 s (A6.3) và không bị đổi ngưỡng bởi P5.1.
 
 ### Authority counters (P3/A4)
 
@@ -208,10 +224,15 @@ cách M6 chấm vòng im lặng.
 target) và trả `plannerTargetOps` (evidence receipt không có worker attribution — **phải 0** sau P0/A1), `workerTargetOps`,
 `tasksCreated` (task id phân biệt), `tasksDispatched` (task id đã từng `running`) cùng `firstDispatchAt` (record `running`
 sớm nhất), `ownerClaims`/`workerClaims` (candidate theo attribution; owner **phải 0** sau P1/A2), `validationTasks`,
-`stalledRounds`, cộng `ROLE_COUNTS` tĩnh (planner 23 · worker 17 · validation 16 · reporter 6) và mode chạy. Hai bất biến
+`stalledRounds`, `heartbeatWakes`/`debtWakes` (wake theo reason, A6.3), `campaignPartial` (final finish ghi partial thay
+completion, A6.6), `campaignResumes` (lifecycle `campaign.resumed`, ghi trước khi loop chạy lại ở mỗi `/p2o resume`) và
+`stallEscalations` (lifecycle `planner.stall-escalation` — quyết định pause xin người, **không** phải mọi round stall; P1),
+cộng `ROLE_COUNTS` tĩnh (planner 23 · worker 17 · validation 16 · reporter 6) và mode chạy. Hai bất biến
 0 là thứ gate đo của P0–P3 sẽ đọc; run legacy giữ số owner >0 trung thực thay vì bị viết lại, nên >0 trên run cũ không
 phải lỗi hồi quy. Cùng một object đi vào `reportProjection().authority`, `statusView().authority` và provenance REPORT.md;
-các con số không từ chối lệnh, không kết thúc run và không cấp quyền. Bề mặt người đọc: [USAGE](USAGE.md).
+các con số không từ chối lệnh, không kết thúc run và không cấp quyền. P1 dùng đúng hai counter mới để gate "0 human
+resume" tự chứng minh: `## Campaign` in `Human resumes: N; stall escalations: M` và provenance in `human resumes N; stall
+escalations M` — cùng nguồn ledger với mọi counter khác, không đọc console history. Bề mặt người đọc: [USAGE](USAGE.md).
 
 ### Revisit theo điều kiện (M7)
 

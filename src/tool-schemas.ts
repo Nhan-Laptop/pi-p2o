@@ -17,7 +17,10 @@ import { outputContractSchema, workDecisionSchema, workSpecSchema } from './work
 export const stateParameters = Type.Object({action:choices(['heads', 'search']),q:Type.Optional(Type.String({minLength:2,maxLength:80})),domain:Type.Optional(choices(KNOWLEDGE_DOMAINS)),status:Type.Optional(Type.String({maxLength:80})),cursor:Type.Optional(Type.Integer({minimum:0})),limit:Type.Optional(Type.Integer({minimum:1,maximum:100}))},{additionalProperties:false});
 
 export const taskDraftSchema = Type.Object({
-    question:Type.String({minLength:1,maxLength:1500}),surface:Type.String({minLength:1,maxLength:200}),risk:Type.String({minLength:1,maxLength:200}),
+    // P2: surface/risk are cosmetic prose (admission clamps them to their 200-char cap with a warning trace), so their declared
+    // cap sits well above the admission cap: Pi must let a long draft reach the host instead of hard-refusing it at argument
+    // validation. Semantic fields keep their exact caps — the host refuses those rather than truncating them.
+    question:Type.String({minLength:1,maxLength:1500}),surface:Type.String({minLength:1,maxLength:2000}),risk:Type.String({minLength:1,maxLength:2000}),
     // Required for every role except recon, which may omit them for a lighter intent (src/tasks.ts validate() enforces the role-conditional minimum).
     role:choices(ROLES),roleReason:Type.Optional(Type.String({maxLength:1000})),
     expectedTrue:Type.Optional(Type.String({maxLength:1000})),expectedFalse:Type.Optional(Type.String({maxLength:1000})),stopCondition:Type.Optional(Type.String({maxLength:1000})),

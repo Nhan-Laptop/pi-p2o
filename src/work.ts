@@ -89,7 +89,11 @@ export function validateWorkDecision(value:unknown,spec:WorkSpec,links:{validati
   const result:WorkDecision={disposition:disposition as WorkDecision['disposition'],reason:prose(row.reason,'decision reason',1000,10),
     ...(row.relatedTaskId!==undefined?{relatedTaskId:taskId(row.relatedTaskId,'related task ID')}:{ }),...(row.changeReason!==undefined?{changeReason:prose(row.changeReason,'material change reason',1000,10)}:{ })};
   const linked=result.relatedTaskId;
-  if(disposition==='new'&&(linked||result.changeReason))throw Error('New work cannot claim a prior task/change reason');
+  if(disposition==='new'&&(linked||result.changeReason)){
+    // P2: name the fields the caller has to drop and the legal next call, instead of only rejecting the combination.
+    const offending=[linked?'decision.relatedTaskId':undefined,result.changeReason?'decision.changeReason':undefined].filter(Boolean).join(' and ');
+    throw Error(`NEW_WORK_HAS_PRIOR_CLAIM: disposition=new means "no prior attempt", so ${offending} must be omitted; a prior task link or a material change reason belongs to a refine/retry/validate/retest decision. legalNext: retry p2o_task_create with decision={disposition:"new",reason:"..."} and drop ${offending}, or keep the prior link and set disposition=refine/retry/validate/retest with its required fields`);
+  }
   if(disposition==='refine'&&(spec.purpose!=='refinement'||!linked))throw Error('role=refinement requires purpose=refinement and relatedTaskId (the prior task it refines)');
   if(disposition==='validate'&&(spec.purpose!=='validation'||!links.validationOf||linked!==links.validationOf))throw Error('role=validation requires purpose=validation and a validationOf task/claim with a matching relatedTaskId');
   if(disposition==='retest'&&(spec.purpose!=='retest'||!links.retestOf||linked!==links.retestOf||!result.changeReason))throw Error('role=retest requires purpose=retest, a matching retestOf and a material change reason');
@@ -145,6 +149,22 @@ export function defaultWorkDecision(purpose: WorkSpec['purpose'], links: Decisio
   }
   if (purpose === 'retest') return undefined;
   return { disposition: 'new', reason: 'New intent for this exact work identity; no prior attempt was supplied for reuse.' };
+}
+
+/**
+ * P2/F-A2-4: a validation names its predecessor; the host derives the rest of the identity instead of charging every caller with
+ * restating it. A validation reproduces the predecessor's exact work identity — assets, question/policy keys and the actor/tenant
+ * context and method it ran in — so only those are inherited. The purpose becomes validation (a replay is not a new discovery),
+ * and the predecessor's own parents are not inherited: the replay stands on the task it names (validationOf). The claims the
+ * predecessor's worker reported are cited instead, so the replay is also the successor that consumes the primitive it reproduces.
+ * Returns undefined for a legacy prose predecessor so the draft stays legacy too.
+ */
+export function deriveValidationWork(prior: WorkSpec | undefined, replayedClaims: readonly string[] = []): WorkSpec | undefined {
+  if (!prior) return undefined;
+  return { assetRefs: prior.assetRefs.map(ref => ({ ...ref })), questionKey: prior.questionKey, methodFamily: prior.methodFamily, purpose: 'validation',
+    ...(prior.policyKey !== undefined ? { policyKey: prior.policyKey } : {}), ...(prior.actorContext !== undefined ? { actorContext: prior.actorContext } : {}),
+    ...(prior.tenantContext !== undefined ? { tenantContext: prior.tenantContext } : {}), ...(prior.needs ? { needs: [...prior.needs] } : {}),
+    ...(prior.environmentRef !== undefined ? { environmentRef: prior.environmentRef } : {}), ...(replayedClaims.length ? { claimRefs: [...replayedClaims] } : {}) };
 }
 
 export function validateWorkFields(task:WorkTaskLike):void{

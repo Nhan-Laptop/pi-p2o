@@ -63,6 +63,14 @@ claim trích receipt → `independent-receipt-uncited:<evidence>`; claim mới n
 `independent-receipt-withdrawn:<evidence>`. Không nêu artifact nào thì không có gì để replay và độc lập vẫn là claim đã chứng minh của
 worker kia. Case vẫn rate được khi thiếu bằng chứng độc lập, nhưng `independentCurrent` giữ `false` và reason nói rõ thiếu gì.
 
+**Message khi accept case chưa current** (P5.1/P3): `p2o_case_revise` sang `accepted` mà view chưa current vẫn bị từ chối
+nguyên độ chặt, nhưng message được bound và actionable: `Case review is stale/incomplete: <tối đa 3 reason> (+N more).` kèm
+hint. Nếu có reason `independent-*`/`validation-*`, hint nêu đúng hai đường hợp lệ (claim peer đã review có
+`data.independentEvidenceRef` trỏ evidence id, hoặc validation task đã review mà case cite qua `taskRefs`); còn lại là "fix the
+listed reasons and revise again". Một receipt **không claim peer nào trích** (kể cả claim chưa current) mang nhãn
+`independent-support-uncited:<evidence>` — thiếu bước citation, không phải receipt stale; nếu có claim trích nhưng không còn
+current thì reason vẫn là `independent-receipt-*` cụ thể từ `independentReceiptCurrent`.
+
 **Validation do host tạo** (W4): sau khi task discovery được review, host tạo đúng một task `role=validation` cho mỗi claim
 `confirmed + tested`, với `validationOf`, prerequisite đã pin revision và `work.claimRefs` trỏ claim gốc; task đi qua
 `TaskBoard`/Engine như mọi task khác và worker mới không thể trùng assignee. Validation viết tay vào cùng đường admission đó:

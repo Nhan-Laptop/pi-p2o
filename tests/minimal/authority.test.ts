@@ -4,6 +4,8 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { registerP2O } from '../../extensions/p2o/index.js';
+import { authorityCounters } from '../../src/authority.js';
+import { indexRecords, type AssessmentRecord } from '../../src/records.js';
 import {
   ALL_TOOLS, HIDDEN_TOOLS, LAB_TOOLS, MODEL_TOOLS, PLANNER_TOOLS, REPORTER_TOOLS, TARGET_TOOLS, VALIDATION_TOOLS, WORKER_TOOLS,
   plannerTools, reporterTools, workerTools,
@@ -149,5 +151,25 @@ describe('P0/A1 active surface', () => {
       const text = role === 'reporting' ? reporterInstructions(ticket(role)) : workerInstructions(ticket(role));
       for (const named of mentioned(text)) expect(workerTools(role), `${role} prompt names ${named}`).toContain(named);
     }
+  });
+});
+
+describe('P1 campaign observability counters', () => {
+  it('counts human resumes and stall escalations from lifecycle records, never from prose', () => {
+    const lifecycle = (at: string, text: string, data: Record<string, unknown>): AssessmentRecord => ({ at, runId: 'run-p1', by: 'owner', kind: 'lifecycle', text, data } as AssessmentRecord);
+    const rows = [
+      // P1.1: the `/p2o resume` branch appends exactly this envelope, once per human resume.
+      lifecycle('2026-01-01T00:00:01.000Z', 'campaign.resumed: human resumed the loop; no budgets or authority renewed', { event: 'campaign.resumed' }),
+      lifecycle('2026-01-01T00:00:02.000Z', 'campaign.resumed: human resumed the loop; no budgets or authority renewed', { event: 'campaign.resumed' }),
+      // A6.3: the engine persists this fact under data.engine, like planner.wake and planner.stalled.
+      lifecycle('2026-01-01T00:00:03.000Z', 'planner.stall-escalation: three stalled rounds while research debt remains', { engine: { event: 'planner.stall-escalation', stalls: 3, debt: { gateable: 1, total: 1 } } }),
+      // A prose mention and a neighbouring lifecycle event are not facts, and must not move a counter.
+      lifecycle('2026-01-01T00:00:04.000Z', 'campaign.resumed mentioned in passing', {}),
+      lifecycle('2026-01-01T00:00:05.000Z', 'planner.stalled: a zero-intent round', { engine: { event: 'planner.stalled' } }),
+    ];
+    // P1 counts only the recorded facts; the A4/A6 counters keep reading the same ledger rows unchanged.
+    const counters = authorityCounters(indexRecords(rows, 'run-p1'));
+    expect(counters).toMatchObject({ campaignResumes: 2, stallEscalations: 1 });
+    expect(counters).toMatchObject({ stalledRounds: 1, campaignPartial: 0, debtWakes: 0, heartbeatWakes: 0 });
   });
 });

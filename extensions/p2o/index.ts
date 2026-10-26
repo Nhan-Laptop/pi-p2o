@@ -879,6 +879,8 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
       deny: recordedCampaign.constraints.filter(constraint => constraint.rule === 'deny').length, allow: recordedCampaign.constraints.filter(constraint => constraint.rule === 'allow').length,
       heartbeatSeconds: recordedCampaign.heartbeatSeconds, rounds: extra.owner ? extra.owner.engine.snapshot().rounds : wakeTotal,
       wakeReasons: { event: Math.max(0, wakeTotal - counters.debtWakes - counters.heartbeatWakes), debt: counters.debtWakes, heartbeat: counters.heartbeatWakes },
+      // P1: human interventions recorded in the same ledger, so the report self-evidences them instead of inferring them.
+      humanResumes: counters.campaignResumes, stallEscalations: counters.stallEscalations,
       startedAt: recordedCampaign.startedAt, ...(index.records.length ? { endedAt: index.records.at(-1)!.at } : {}), ...(partialStop ? { partialReason: partialStop.reason } : {}) } } : {};
     const rendered = renderReport(index, context,
       { runId: manifest.runId, target: manifest.targetDisplay, retention: manifest.retention, historical: store.readOnly, asOfSequence: index.snapshotSequence ?? store.sequence(), storeSchema: store.schemaVersion,
@@ -2220,7 +2222,13 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
         if (command.action === 'pause' || command.action === 'resume') {
           const current = owner();
           if (command.action === 'pause') {current.engine.pause('Paused by human; active workers may report, no new dispatch/wake'); ctx.abort();}
-          else current.engine.resume();
+          else {
+            // P1: a human resume is a durable lifecycle fact, so the report counts operator interventions from the ledger
+            // (a gate can then self-evidence "0 human resumes") instead of leaving them only in console history. The record
+            // is committed before the loop resumes; it adds no authority, budget or wake.
+            await note({ by: 'owner', kind: 'lifecycle', text: 'campaign.resumed: human resumed the loop; no budgets or authority renewed', data: { event: 'campaign.resumed' } });
+            current.engine.resume();
+          }
           refreshVisibility(current);
           ctx.ui.notify(`p2o loop ${command.action === 'pause' ? 'paused' : 'resumed'}; no budgets or authority renewed.`, 'info'); return;
         }
@@ -2635,7 +2643,10 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
       if(current.role==='owner'){
         const prepared=pending as {packet:ContextPacket;engineSequence:number};current.store.acknowledgeContext(prepared.packet);const progressed=await roundProgress(current);current.engine.consume(prepared.engineSequence,progressed.progress);
         // A4: a zero-intent round with an open goal is recorded as a report fact after the ACK; it never wakes, queues or pauses.
-        await current.engine.stallRound(progressed.stall);
+        // P5.1: only the message that ends the planner turn ends a round. An intermediate tool-calling step has no open intent
+        // *yet*; judging it recorded three stall facts 22 s apart inside one admitted round in the measured rerun and escalated
+        // before that round could dispatch anything, so the judgement rides on the turn-final `stop` message instead.
+        if(event.message.stopReason==='stop')await current.engine.stallRound(progressed.stall);
       }else await current.client.request('context_ack',{packetSha256:(pending as ContextPacket).packetSha256});
     }catch(error){if(current.role==='owner')storageFailure(current,error);ctx.ui.notify(`Context receipt not acknowledged: ${message(error)}; delta remains available for inspection/redelivery. No automatic retry.`, 'warning');}
   });

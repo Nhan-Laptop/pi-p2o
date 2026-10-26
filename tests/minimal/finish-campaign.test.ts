@@ -1,18 +1,26 @@
-import { readFile } from 'node:fs/promises';
+import { readFile, readdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { readFile as readFileText } from 'node:fs/promises';
-import { indexRecords, type AssessmentRecord } from '../../src/records.js';
+import { appendRecord, indexRecords, type AssessmentRecord } from '../../src/records.js';
 import { authorityCounters } from '../../src/authority.js';
 import { fixture, populate } from './helpers/report-fixture.js';
 
 /**
  * P5/A6.6 (planning_update.md §4, D9 approved 2026-10-26 = refuse): the final finish of a campaign cannot claim a frame it
  * never recorded, an incomplete campaign records why it stopped, and the report prints the campaign and the debt at stop.
+ * P5.1/P1 adds the operator-intervention counts (human resumes, stall escalations) to the same campaign frame.
  * Hermetic: in-process extension, fake Pi, real SQLite store, no model and no target.
  */
 const text = (result: any) => result.content[0].text as string;
 const finalReport = async (result: any) => readFileText(join(result.details.reportPath, 'REPORT.md'), 'utf8');
+/** Seeds the exact lifecycle fact a writer outside this fixture would commit (the engine envelope, like seedClaim for a claim). */
+async function seedLifecycle(h: any, summary: string, data: Record<string, unknown>): Promise<AssessmentRecord> {
+  const [run] = (await readdir(join(h.root, 'control'))).filter((name: string) => name.startsWith('p2o-run-'));
+  const record: AssessmentRecord = { at: new Date().toISOString(), runId: await h.runId(), by: 'owner', kind: 'lifecycle', text: summary, data } as AssessmentRecord;
+  await appendRecord(join(h.root, 'control', run!, 'records.sqlite'), record);
+  return record;
+}
 
 describe('campaign finish and report semantics (A6.6)', () => {
   it('refuses the final finish of a campaign that never recorded a goal, and names the three legal next calls', async () => fixture(async h => {
@@ -121,4 +129,40 @@ describe('campaign finish and report semantics (A6.6)', () => {
     ];
     expect(authorityCounters(indexRecords(rows, 'run-campaign'))).toMatchObject({ debtWakes: 1, heartbeatWakes: 1, campaignPartial: 1 });
   });
+
+  it('records campaign.resumed when the owner resumes the loop and prints the human-resume count in REPORT.md', async () => fixture(async h => {
+    await h.command('--target ./source --goal "Assess the fixture boundary"');
+    await h.command('pause');
+    await h.command('resume');
+    const store = await h.reader();
+    let counters: ReturnType<typeof authorityCounters>;
+    try {
+      const index = indexRecords(store.records(), await h.runId());
+      const resumed = index.records.filter(record => record.kind === 'lifecycle' && (record.data as { event?: unknown } | undefined)?.event === 'campaign.resumed');
+      // P1.1: exactly one durable, owner-attributed record per human resume, and no new field/authority in it.
+      expect(resumed).toHaveLength(1);
+      expect(resumed[0]).toMatchObject({ by: 'owner' });
+      expect(resumed[0].data).toEqual({ event: 'campaign.resumed' });
+      counters = authorityCounters(index);
+    } finally { store.close(); }
+    expect(counters).toMatchObject({ campaignResumes: 1, stallEscalations: 0 });
+    const result = await h.call('p2o_finish', { partial: 'The bounded fixture campaign records the operator resume and stops' });
+    const report = await finalReport(result);
+    expect(report).toContain('## Campaign');
+    // P1.2: the report self-evidences the interventions instead of leaving them in console history.
+    expect(report).toContain('- Human resumes: 1; stall escalations: 0.');
+    expect(report).toContain('human resumes 1; stall escalations 0');
+  }));
+
+  it('counts a recorded stall escalation from the ledger and prints it in the campaign section', async () => fixture(async h => {
+    await h.command('--target ./source --goal "Assess the fixture boundary"');
+    // The engine writer is covered in engine-campaign.test.ts; this covers the counter and the REPORT.md line it feeds.
+    await seedLifecycle(h, 'planner.stall-escalation: three stalled rounds while research debt remains; the loop needs a human decision',
+      { engine: { event: 'planner.stall-escalation', stalls: 3, debt: { gateable: 1, total: 1 }, sequence: 1 } });
+    const result = await h.call('p2o_finish', { partial: 'The bounded fixture campaign stops with the recorded escalation' });
+    const report = await finalReport(result);
+    expect(report).toContain('## Campaign');
+    expect(report).toContain('- Human resumes: 0; stall escalations: 1.');
+    expect(report).toContain('human resumes 0; stall escalations 1');
+  }));
 });

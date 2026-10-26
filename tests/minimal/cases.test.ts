@@ -122,6 +122,28 @@ describe('independent replay of the effect (P14.12)',()=>{
   }));
 });
 
+// P5.1 P3: acceptance is no looser than before, but a refusal now names the uncited receipt and the two legal ways to make a case independent.
+describe('case acceptance refusal is actionable (P5.1 P3)',()=>{
+  it('names the uncited independent receipt and the two legal independence paths when acceptance is refused',async()=>fixture(async({board,assetId,receipt,claim})=>{
+    const independent=receipt('validator-b'),authorClaim=claim({by:'worker-a',evidenceRefs:[independent]}),created=await board.create(draft(assetId,authorClaim,{independentEvidenceRefs:[independent]})),view=(await board.list())[0];
+    expect(view).toMatchObject({currentness:'stale',independentCurrent:false,independenceReason:`independent-support-uncited:${independent}`});
+    expect(view.staleReasons).toContain(`independent-support-uncited:${independent}`);
+    let message='';try{await board.revise(created.id,1,{...editable(created),reviewStatus:'accepted',reviewReason:'Attempted acceptance while the cited receipt has no peer claim and no reviewed validation'});}catch(error){message=(error as Error).message;}
+    expect(message).toMatch(/^Case review is stale\/incomplete: independent-support-uncited:/);
+    expect(message).toContain(`independent-support-uncited:${independent}`);
+    // The two legal paths are named: a peer claim carrying the evidence id, or a cited reviewed validation task (host-owned W4).
+    expect(message).toContain('Independence needs a reviewed peer claim whose data.independentEvidenceRef names the evidence id, or a reviewed validation task that the case cites through taskRefs (host-owned W4 path); make one current, then revise again.');
+    expect((await board.list())[0]).toMatchObject({reviewStatus:'pending',revision:1}); // the refusal wrote nothing
+  }));
+  it('bounds the refusal reason list to three and counts the omitted receipts',async()=>fixture(async({board,assetId,receipt,claim})=>{
+    const independent=Array.from({length:5},(_,index)=>receipt(`validator-${index}`)),authorClaim=claim({by:'worker-a',evidenceRefs:[independent[0]]}),created=await board.create(draft(assetId,authorClaim,{independentEvidenceRefs:independent}));
+    let message='';try{await board.revise(created.id,1,{...editable(created),reviewStatus:'accepted',reviewReason:'Attempted acceptance while five cited receipts have no peer support'});}catch(error){message=(error as Error).message;}
+    expect(message).toContain('(+2 more)');
+    expect(message.match(/independent-support-uncited:/g)).toHaveLength(3);
+    expect(message).toContain(independent[0]);expect(message).not.toContain(independent[3]);expect(message).not.toContain(independent[4]);
+  }));
+});
+
 describe('rate-readiness is derived, not asserted (P8)',()=>{
   it('is true only when the case is current and keeps a current independent receipt',async()=>fixture(async({board,assetId,claim,receipt})=>{
     const independent=receipt('validator-a'),validator=claim({by:'validator-a',candidate:'validator-replay',evidenceRefs:[independent],...replay}),ownerClaim=claim({by:'owner',independentEvidenceRef:independent,evidenceRefs:[independent],...replay});

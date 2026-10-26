@@ -132,9 +132,13 @@ describe('obligation-driven continuation (A6.3)', () => {
     disabled.engine.stop();
   });
 
-  it('pauses after three stalled rounds while research debt remains, and resume clears it', async () => {
+  it('pauses after three stalled rounds while research debt remains, and resume starts a fresh escalation streak', async () => {
     const f = fixture({});
     f.engine.consume(0, f.round({ remaining: 1, debt: { gateable: 1, total: 1 } }));
+    // P5.1: a stalled round only exists after an admitted round; begin one at the boundary before stalling.
+    const debtWake = f.engine.boundary()!;
+    expect(debtWake).toMatchObject({ reason: 'debt', round: 1 });
+    f.engine.consume(debtWake.through, f.round({ remaining: 1, debt: { gateable: 1, total: 1 } }));
     expect(await f.engine.stallRound(stall)).toBe(true);
     expect(await f.engine.stallRound(stall)).toBe(true);
     expect(f.engine.snapshot().paused).toBeUndefined();
@@ -147,6 +151,41 @@ describe('obligation-driven continuation (A6.3)', () => {
     expect(f.journal.every(entry => !('budget' in (entry.data ?? {})))).toBe(true);
     expect(f.engine.snapshot()).not.toHaveProperty('budget');
     f.engine.resume();
+    expect(f.engine.snapshot().paused).toBeUndefined();
+    // P5.1: the measured gate run paused again on the very next stall because the counter was cumulative. A resume is a new
+    // baseline, so three *new* stalled rounds are needed before the loop asks a human again.
+    expect(f.engine.snapshot().stalls).toBe(0);
+    expect(await f.engine.stallRound(stall)).toBe(true);
+    expect(await f.engine.stallRound(stall)).toBe(true);
+    expect(f.engine.snapshot().paused).toBeUndefined();
+    expect(await f.engine.stallRound(stall)).toBe(true);
+    expect(f.engine.snapshot().paused).toMatch(/three rounds with no open intent while research debt remains/);
+    f.engine.resume();
+    f.engine.stop();
+  });
+
+  it('records no stall fact before a planner round is admitted, so the startup command turn cannot escalate', async () => {
+    const f = fixture({});
+    f.engine.consume(0, f.round({ remaining: 1, debt: { gateable: 1, total: 1 } }));
+    // Measured gate run: `planner.stalled` with rounds:0 twice at startup, then a third stall escalated before any round.
+    for (let i = 0; i < 3; i++) expect(await f.engine.stallRound(stall)).toBe(false);
+    expect(f.engine.snapshot()).toMatchObject({ rounds: 0, stalls: 0 });
+    expect(f.journal.some(entry => entry.data?.event === 'planner.stalled')).toBe(false);
+    expect(f.engine.snapshot().paused).toBeUndefined();
+    f.engine.stop();
+  });
+
+  it('lets the heartbeat continue the loop after a single stalled round instead of pausing', async () => {
+    const f = fixture({ heartbeat: 600 });
+    f.engine.start();
+    f.engine.consume(0, f.round(owed()));
+    const debtWake = f.engine.boundary()!;
+    f.engine.consume(debtWake.through, f.round(owed()));
+    // One stalled round is below the escalation threshold, so the campaign must continue by itself on the heartbeat.
+    expect(await f.engine.stallRound(stall)).toBe(true);
+    expect(f.engine.snapshot().paused).toBeUndefined();
+    f.advance(600_000); await vi.advanceTimersByTimeAsync(600_000);
+    expect(f.wakes.at(-1)).toMatchObject({ reason: 'heartbeat' });
     expect(f.engine.snapshot().paused).toBeUndefined();
     f.engine.stop();
   });
@@ -166,7 +205,11 @@ describe('obligation-driven continuation (A6.3)', () => {
 
   it('keeps three stalled rounds without gateable debt as report facts only (A4 unchanged)', async () => {
     const f = fixture({});
-    f.engine.consume(0, f.round());
+    // An admitted round is required before a round can be judged as stalled (P5.1).
+    f.engine.notify('worker-report', 'w1');
+    const eventWake = f.engine.boundary()!;
+    expect(eventWake.reason).toBe('event');
+    f.engine.consume(eventWake.through, f.round());
     for (let i = 0; i < 3; i++) expect(await f.engine.stallRound(stall)).toBe(true);
     expect(f.engine.snapshot().paused).toBeUndefined();
     expect(f.engine.snapshot().stalls).toBe(3);
