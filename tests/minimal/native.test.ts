@@ -18,11 +18,14 @@ it.each(['normal', 'quota'])('real Pi + inert sandbox, %s worker: terminal repor
   const repo = resolve(import.meta.dirname, '../..');
   await mkdir(join(root, 'repo'));
   await writeFile(join(root, 'repo', 'code.txt'), 'authorized inert source');
-  const sandboxLog = join(root, 'sandbox.jsonl');
+  const sandboxLog = join(root, 'sandbox.jsonl'),settings = join(root, 'settings.json');
+  // Hermetic role-model pin: the A2 first intent is recon, whose packaged default model is not the inert provider. Role settings
+  // are the supported production override, so the real child worker runs the inert provider instead of an unreachable model.
+  await writeFile(settings, JSON.stringify({ p2o: { roles: Object.fromEntries(['recon', 'discovery', 'validation', 'reporting', 'exploit', 'general'].map(role => [role, { model: 'p2o-inert/current-agent' }])) } }));
   const env = {
     PATH: process.env.PATH, HOME: root, PI_CODING_AGENT_DIR: join(root, 'agent'),
     PI_OFFLINE: '1', PI_SKIP_VERSION_CHECK: '1', PI_TELEMETRY: '0',
-    P2O_TEST_CONTROL_ROOT: join(root, 'control'), P2O_TEST_SANDBOX_LOG: sandboxLog,
+    P2O_TEST_CONTROL_ROOT: join(root, 'control'), P2O_TEST_SANDBOX_LOG: sandboxLog, P2O_TEST_SETTINGS: settings,
     P2O_TEST_FAKE_HERDR: '1', P2O_TEST_CWD: root, P2O_TEST_PI_BINARY: join(repo, 'node_modules/.bin/pi'),
     P2O_TEST_WORKER_EXT: join(repo, 'tests/minimal/fixtures/worker.ts'),
     P2O_TEST_WORKER_FAULT: mode === 'quota' ? 'quota' : '',
@@ -86,25 +89,31 @@ it.each(['normal', 'quota'])('real Pi + inert sandbox, %s worker: terminal repor
     expect(hasAssessmentStarted(messages)).toBe(true);
     expect(deriveRunId({ messages })).toMatchObject({ runId: expect.stringMatching(/^run-/), source: 'policy-section' });
     const toolResults = messages.filter((message: any) => message.role === 'toolResult');
-    expect(toolResults.map((message: any) => message.toolName)).toEqual(['p2o_delegate', 'p2o_workers', 'p2o_finish']);
-    expect(text(toolResults[0])).toMatch(/Spawned p2o-general-[0-9a-f]{6}/);
+    expect(toolResults.map((message: any) => message.toolName)).toEqual(['p2o_net', 'p2o_task_create', 'p2o_task_dispatch', 'p2o_workers', 'p2o_finish']);
+    // A1 acceptance: the planner holds no target tool, so a real Pi model call to p2o_net is Pi's unknown-tool result, not a
+    // permission error from the extension. The one delegation path is task create -> task dispatch -> Engine-spawned worker.
+    expect(toolResults[0].isError).toBe(true);
+    expect(text(toolResults[0])).toContain('not found');
+    // A2 intent admission: the first intent of an empty run is recon/mapping; it is created, then dispatched (never executed).
+    expect(toolResults[1].details).toMatchObject({ role: 'recon', status: 'proposed' });
+    expect(toolResults[2].details).toMatchObject({ pendingIntents: 1 });
     // The worker's brokered command really executed in the owner's sandbox, in the worker's own scratch directory.
     const journal = (await readFile(sandboxLog, 'utf8')).split('\n').filter(Boolean).map(line => JSON.parse(line));
     const executed = journal.filter(entry => entry.op === 'exec');
     if (mode === 'normal') {
       expect(executed).toHaveLength(1);
       expect(executed[0].command).toContain('cat /target/code.txt');
-      expect(executed[0].workdir).toMatch(/^\/work\/p2o-general-[0-9a-f]{6}$/);
-      expect(text(toolResults[1])).toContain('WORKER_REPORT');
-      expect(text(toolResults[1])).toContain('coverage: 2');
+      expect(executed[0].workdir).toMatch(/^\/work\/p2o-recon-[0-9a-f]{6}$/);
+      expect(text(toolResults[3])).toContain('WORKER_REPORT');
+      expect(text(toolResults[3])).toContain('coverage: 2');
     } else {
       expect(executed).toHaveLength(0);
-      expect(text(toolResults[1])).toContain('429 GoUsageLimitError');
-      expect(text(toolResults[1])).toContain('BLOCKED');
-      expect(toolResults[1].details.workers[0]).toMatchObject({ reported: true, live: false });
+      expect(text(toolResults[3])).toContain('429 GoUsageLimitError');
+      expect(text(toolResults[3])).toContain('BLOCKED');
+      expect(toolResults[3].details.workers[0]).toMatchObject({ reported: true, live: false });
     }
-    expect(text(toolResults[1])).toMatch(/p2o-general-[0-9a-f]{6} \[idle\]|p2o-general-[0-9a-f]{6} \[done\]|reported/);
-    expect(text(toolResults[2])).toContain('Container removal verified');
+    expect(text(toolResults[3])).toMatch(/p2o-recon-[0-9a-f]{6} \[idle\]|p2o-recon-[0-9a-f]{6} \[done\]|reported/);
+    expect(text(toolResults[4])).toContain('Container removal verified');
     expect(journal.some(entry => entry.op === 'stop')).toBe(true);
     expect(journal.some(entry => entry.op === 'sweep')).toBe(true);
     expect(records.filter(record => record.protocolError || record.type === 'extension_error')).toEqual([]);
@@ -117,7 +126,7 @@ it.each(['normal', 'quota'])('real Pi + inert sandbox, %s worker: terminal repor
     expect(exported.manifest.report).toMatchObject({complete:true,counts:{reports:1}});
     expect(exported.records.filter((r:any)=>r.kind==='task').every((r:any)=>r.by==='owner' && !r.workerId)).toBe(true);
     expect(exported.manifest.report.tasks).toHaveLength(1);
-    const workerState=toolResults[1].details.workers[0];expect(workerState.effectiveRuntime).toMatchObject({verified:true,model:'p2o-inert/current-agent',thinking:'off'});
+    const workerState=toolResults[3].details.workers[0];expect(workerState.effectiveRuntime).toMatchObject({verified:true,model:'p2o-inert/current-agent',thinking:'off'});
     const {recoverReports}=await import('../../src/report.js');
     const recovered=recoverReports({records:exported.records,byId:new Map(exported.records.map((r:any)=>[r.id,r])),complete:true,diagnostics:[],issueCount:0,foreign:0,bytes:0});
     expect(recovered.diagnostics).toEqual([]);expect(recovered.reports).toHaveLength(1);

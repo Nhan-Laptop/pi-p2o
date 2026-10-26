@@ -29,7 +29,23 @@ async function fixture(work: (h: {
   finally { unbind(); store.close(); await rm(root, { recursive: true, force: true }); }
 }
 
-function discoveryDraft(assetId: string): TaskDraft {
+/** A2: the first intent of a run is recon/mapping; the discovery builds on its reviewed task. */
+function reconDraft(assetId: string): TaskDraft {
+  return {
+    question: 'Which recorded fixture surfaces does the object expose?',
+    surface: '/object', risk: 'mapping', role: 'recon',
+    roleReason: 'Minimal recon intent that anchors the discovery fixture',
+    expectedTrue: 'The recorded fixture exposes the object surface',
+    expectedFalse: 'The recorded fixture exposes nothing and the receipt says so',
+    stopCondition: 'Stop after one bounded mapping observation and owner review',
+    evidenceIds: [], prerequisites: [],
+    method: { skills: [], reason: 'One inert mapping observation with no target traffic' },
+    work: { assetRefs: [{ id: assetId, revision: 1 }], questionKey: 'question:recon-object', policyKey: 'policy:object',
+      actorContext: 'actor:fixture', tenantContext: 'tenant:fixture', methodFamily: 'offline-observation', purpose: 'mapping' },
+  };
+}
+
+function discoveryDraft(assetId: string, prerequisites: TaskDraft['prerequisites'] = []): TaskDraft {
   return {
     question: 'Does the object boundary permit the declared fixture read?',
     surface: '/object', risk: 'authorization', role: 'discovery',
@@ -37,7 +53,7 @@ function discoveryDraft(assetId: string): TaskDraft {
     expectedTrue: 'The receipt shows the declared boundary observation',
     expectedFalse: 'The receipt shows the contrasting control',
     stopCondition: 'Stop after one inert observation and owner review',
-    evidenceIds: [], prerequisites: [],
+    evidenceIds: [], prerequisites,
     method: { skills: [], reason: 'One inert observation with no target traffic' },
     work: { assetRefs: [{ id: assetId, revision: 1 }], questionKey: 'question:object', policyKey: 'policy:object',
       actorContext: 'actor:fixture', tenantContext: 'tenant:fixture', methodFamily: 'offline-observation', purpose: 'discovery' },
@@ -52,21 +68,28 @@ function confirmed(evidenceRef: string): Candidate {
     policyBasis: 'boundary_invariant', expectedPolicy: 'Declared fixture object boundary' };
 }
 
-async function reviewDiscovery(board: TaskBoard, discovery: AssessmentTask, evidenceRef: string) {
-  await board.reserve(discovery.id, 'worker-a');
-  await board.transition(discovery.id, 'running', 'The discovery worker is exercising the bounded fixture');
-  await board.transition(discovery.id, 'reported', 'The discovery worker reported its bounded receipt', [evidenceRef]);
-  return board.transition(discovery.id, 'reviewed', 'Owner reviewed the discovery receipt and bounded claim', [evidenceRef]);
+async function reviewTask(board: TaskBoard, task: AssessmentTask, evidenceRef: string) {
+  await board.reserve(task.id, 'worker-a');
+  await board.transition(task.id, 'running', 'The assignee is exercising the bounded fixture');
+  await board.transition(task.id, 'reported', 'The assignee reported its bounded receipt', [evidenceRef]);
+  return board.transition(task.id, 'reviewed', 'Owner reviewed the bounded receipt and claim', [evidenceRef]);
+}
+
+/** The A2 admission order: a reviewed recon task first, then the discovery anchored to its reviewed revision. */
+async function anchoredDiscovery(h: { board: TaskBoard; assetId: string; task: (input: TaskDraft) => Promise<AssessmentTask> }, evidenceRef: string) {
+  const recon = await h.task(reconDraft(h.assetId));
+  const reviewedRecon = await reviewTask(h.board, recon, evidenceRef);
+  return { reviewedRecon, discovery: await h.task(discoveryDraft(h.assetId, [{ taskId: reviewedRecon.id, revision: reviewedRecon.revision }])) };
 }
 
 describe('host-created validation and independence (W4)', () => {
   it('builds one deterministic validation task that passes the normal TaskBoard admission and cannot be duplicated', async () => fixture(async ({ board, assetId, evidence, task, path }) => {
-    const discovery = await task(discoveryDraft(assetId));
     const receipt = evidence('worker-a');
+    const { discovery } = await anchoredDiscovery({ board, assetId, task }, receipt);
     const candidate = confirmed(receipt);
     const claim = await new EvidenceStore(runId, path, 'fixture').candidate('worker-a', candidate, discovery.id);
     expect(claim.data?.taskRef).toBe(discovery.id);
-    const reviewed = await reviewDiscovery(board, discovery, receipt);
+    const reviewed = await reviewTask(board, discovery, receipt);
     const draft = validationDraft(claim, candidate, reviewed);
     expect(draft.id).toBe(validationKey(runId, claim, reviewed));
     expect(draft).toMatchObject({ role: 'validation', validationOf: reviewed.id,
@@ -84,8 +107,8 @@ describe('host-created validation and independence (W4)', () => {
   }));
 
   it('marks a case independent only after the validation task is reviewed with its assignee own receipt', async () => fixture(async ({ board, assetId, evidence, task, store, path }) => {
-    const discovery = await task(discoveryDraft(assetId));
     const receipt = evidence('worker-a');
+    const { discovery } = await anchoredDiscovery({ board, assetId, task }, receipt);
     const candidate = confirmed(receipt);
     const claim = await new EvidenceStore(runId, path, 'fixture').candidate('worker-a', candidate, discovery.id);
     const context = { assetRevision: (id: string) => store.assetRevision(id) }, cases = new CaseBoard(runId, path, () => true, context);
@@ -98,7 +121,7 @@ describe('host-created validation and independence (W4)', () => {
     let views = await caseViews(await readLedger(path, runId), context);
     expect(views[0]).toMatchObject({ independentCurrent: false, independenceReason: expect.stringContaining(`validation-discovery-${discovery.status}:${discovery.id}`) });
 
-    const reviewed = await reviewDiscovery(board, discovery, receipt);
+    const reviewed = await reviewTask(board, discovery, receipt);
     const validation = await board.create(validationDraft(claim, candidate, reviewed));
     views = await caseViews(await readLedger(path, runId), context);
     expect(views[0]).toMatchObject({ independentCurrent: false, independenceReason: expect.stringContaining(`validation-${validation.status}:${validation.id}`) });
@@ -117,11 +140,11 @@ describe('host-created validation and independence (W4)', () => {
   }));
 
   it('counts a case-cited validation when a lead claim was stamped with the validation task instead of its discovery', async () => fixture(async ({ board, assetId, evidence, task, store, path }) => {
-    const discovery = await task(discoveryDraft(assetId));
     const receipt = evidence('worker-a');
+    const { discovery } = await anchoredDiscovery({ board, assetId, task }, receipt);
     const candidate = confirmed(receipt);
     const claim = await new EvidenceStore(runId, path, 'fixture').candidate('worker-a', candidate, discovery.id);
-    const reviewed = await reviewDiscovery(board, discovery, receipt);
+    const reviewed = await reviewTask(board, discovery, receipt);
     const validation = await board.create(validationDraft(claim, candidate, reviewed));
     await board.reserve(validation.id, 'validator-b');
     await board.transition(validation.id, 'running', 'A separate worker is replaying the bounded claim');
@@ -146,11 +169,11 @@ describe('host-created validation and independence (W4)', () => {
   }));
 
   it('keeps a validation dispatchable after its reviewed discovery is closed', async () => fixture(async ({ board, assetId, evidence, task, path }) => {
-    const discovery = await task(discoveryDraft(assetId));
     const receipt = evidence('worker-a');
+    const { discovery } = await anchoredDiscovery({ board, assetId, task }, receipt);
     const candidate = confirmed(receipt);
     const claim = await new EvidenceStore(runId, path, 'fixture').candidate('worker-a', candidate, discovery.id);
-    const reviewed = await reviewDiscovery(board, discovery, receipt);
+    const reviewed = await reviewTask(board, discovery, receipt);
     const validation = await board.create(validationDraft(claim, candidate, reviewed));
     const closed = await board.transition(discovery.id, 'closed', 'Owner closed the reviewed discovery after the validation was created', [receipt]);
     expect(closed.revision).toBe(reviewed.revision + 1);
@@ -162,11 +185,11 @@ describe('host-created validation and independence (W4)', () => {
   }));
 
   it('names the prerequisite gap for a blocked host validation and refuses same-actor assignment', async () => fixture(async ({ board, assetId, evidence, task, path }) => {
-    const discovery = await task(discoveryDraft(assetId));
     const receipt = evidence('worker-a');
+    const { discovery } = await anchoredDiscovery({ board, assetId, task }, receipt);
     const candidate = confirmed(receipt);
     const claim = await new EvidenceStore(runId, path, 'fixture').candidate('worker-a', candidate, discovery.id);
-    const reviewed = await reviewDiscovery(board, discovery, receipt);
+    const reviewed = await reviewTask(board, discovery, receipt);
     const blocked = await board.create({ ...validationDraft(claim, candidate, reviewed), missingPrerequisites: ['Delegation unavailable: create a worker locally before validation'] });
     expect(blocked.status).toBe('blocked');
     let index = await readLedger(path, runId);

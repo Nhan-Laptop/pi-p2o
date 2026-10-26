@@ -8,7 +8,8 @@ import { normalizeReport, type WorkerReport } from './broker.js';
 import { redact } from './evidence.js';
 import { taskFrontier } from './tasks.js';
 import { caseViews, needsCaseReview, type CaseContext } from './cases.js';
-import { coverageViews, type CoverageContext } from './coverage.js';
+import { coverageViews, type CoverageContext, type CoveragePlanView } from './coverage.js';
+import { authorityReport, type AuthorityMode } from './authority.js';
 
 const hash = sha256Hex;
 
@@ -69,7 +70,9 @@ export function recoverReports(index: LedgerIndex): { reports: Array<{ id: strin
 }
 
 /** Frozen bounded navigation manifest. Full detail stays in active ID queries / opt-in bounded export. */
-export interface ReportProjectionContext {cases?:CaseContext;coverage?:CoverageContext}
+export interface ReportProjectionContext {cases?:CaseContext;coverage?:CoverageContext;/** A4: the run mode a caller already knows; counters stay ledger-derived and the mode is never invented here. */mode?:AuthorityMode}
+/** A3: a projected plan's denominator is its derived cells; a legacy plan keeps its stored cell count. */
+function derivedCellCount(plan:CoveragePlanView):number{return plan.derivation==='projected'?plan.cells.filter(cell=>cell.currentness!=='retired').length:plan.cellIds.length;}
 export function reportProjection(index: LedgerIndex, context:ReportProjectionContext={}) {
   const summary = summarizeRecords(index.records), recovered = recoverReports(index);
   const replaced = new Set(index.records.flatMap(r => r.supersedes ? [r.supersedes] : []));
@@ -105,15 +108,17 @@ export function reportProjection(index: LedgerIndex, context:ReportProjectionCon
   const openIds = index.records.filter(r => isOpenGap(r, retired)).map(r => r.id ?? '(legacy-no-id)');
   const take = <T>(rows:T[],bytes:number) => {const result:T[]=[];let used=0;for(const row of rows){used+=Buffer.byteLength(JSON.stringify(row))+1;if(used>bytes || result.length===100)break;result.push(row);}return result;};
   const reviewedCases=caseViews(index,context.cases??{}),coveragePlans=context.coverage?coverageViews(index,context.coverage):[],caseRows=reviewedCases.map(entry=>({id:entry.id,recordId:entry.recordId,revision:entry.revision,title:entry.title,verdict:entry.verdict,reviewStatus:entry.reviewStatus,currentness:entry.currentness,acceptedFinding:entry.acceptedFinding,independentCurrent:entry.independentCurrent,independence:entry.independentCurrent?'validated':'none',independenceReason:entry.independenceReason,canonicalCaseId:entry.canonicalCaseId,duplicateOf:entry.duplicateOf,staleReasons:entry.staleReasons,claimRefs:entry.claimRefs,assetRefs:entry.assetRefs,limitations:entry.limitations,remediation:entry.remediation})),
-    coverageRows=coveragePlans.map(plan=>({id:plan.id,recordId:plan.recordId,revision:plan.revision,status:plan.status,title:plan.title,cellCount:plan.cellIds.length,counts:plan.counts,discoveredUnplannedAssets:plan.discoveredUnplannedAssets,unknownScope:plan.unknownScope,exclusions:plan.exclusions,omittedCells:plan.omittedCells}));
+    coverageRows=coveragePlans.map(plan=>({id:plan.id,recordId:plan.recordId,revision:plan.revision,status:plan.status,title:plan.title,cellCount:derivedCellCount(plan),counts:plan.counts,discoveredUnplannedAssets:plan.discoveredUnplannedAssets,unmappedTasks:plan.unmappedCount,unknownScope:plan.unknownScope,exclusions:plan.exclusions,omittedCells:plan.omittedCells}));
   const shownCandidates=take(frontier,12288),shownReports=take(reports,6144),shownTasks=take(tasks,6144),shownOpen=take(openIds,3072),shownCases=take(caseRows,12288),shownCoverage=take(coverageRows,8192),uniqueAccepted=new Set(reviewedCases.filter(entry=>entry.acceptedFinding).map(entry=>entry.canonicalCaseId));
   const proofWarnings=[...(!context.cases&&reviewedCases.length?['Case asset/hypothesis currentness unavailable in this projection; no accepted current finding is inferred.']:[]),...(!context.coverage&&index.records.some(row=>row.data?.coveragePlan)?['Coverage currentness unavailable in this projection; inspect through the active/historical store.']:[])];
   return {
     get version() { return versionOf(); },complete:index.complete && recovered.diagnostics.length===0,totalRecords:index.records.length,
     counts:{candidates:candidates.length,reports:reports.length,reportHistory:recovered.reports.length,coverage:summary.coverageTotal,open:summary.openTotal,unreviewedTasks:tasks.filter(t => !isSatisfiedTask(t.status)).length,
       cases:reviewedCases.length,uniqueAcceptedFindings:uniqueAccepted.size,duplicateCases:reviewedCases.filter(entry=>Boolean(entry.duplicateOf)).length,pendingCaseReviews:reviewedCases.filter(needsCaseReview).length,staleCases:reviewedCases.filter(entry=>entry.currentness==='stale').length,
-      coveragePlans:coveragePlans.length,coverageCells:coveragePlans.reduce((sum,plan)=>sum+plan.cellIds.length,0),staleCoverageCells:coveragePlans.reduce((sum,plan)=>sum+plan.counts.stale,0)},
+      coveragePlans:coveragePlans.length,coverageCells:coveragePlans.reduce((sum,plan)=>sum+derivedCellCount(plan),0),unmappedCoverageTasks:coveragePlans.reduce((sum,plan)=>sum+plan.unmappedCount,0),staleCoverageCells:coveragePlans.reduce((sum,plan)=>sum+plan.counts.stale,0)},
     tasks:shownTasks,candidates:shownCandidates,cases:shownCases,coveragePlans:shownCoverage,reports:shownReports,reportIds:shownReports.map(r => r.id),openIds:shownOpen,
+    // A4: the authority facts stay a separate read-only object, so exact `counts` consumers are not broken by new fields.
+    authority:authorityReport(index,context.mode),
     omitted:frontier.length-shownCandidates.length+reports.length-shownReports.length+tasks.length-shownTasks.length+openIds.length-shownOpen.length+caseRows.length-shownCases.length+coverageRows.length-shownCoverage.length,
     staleIndependent:staleIndependent.slice(0,100),diagnostics:[...index.diagnostics,...recovered.diagnostics,...proofWarnings].slice(0,40),
     warning:index.snapshotSequence !== undefined ? 'Frozen attributed canonical state, not semantic proof. Views can be abbreviated; retention follows the confirmed durable-local/ephemeral profile. Durable history opens read-only, never restores authority.' : 'Frozen attributed state, not semantic proof. Fields/views can be abbreviated; full detail requires pre-cleanup ID queries or opt-in export. No export means temporary records are deleted.',

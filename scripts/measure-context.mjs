@@ -18,8 +18,8 @@ async function load(relative) {
   const require = createRequire(import.meta.resolve('@earendil-works/pi-coding-agent'));
   return require('jiti').createJiti(import.meta.url).import(new URL(`../${relative}.ts`, import.meta.url).href);
 }
-const { ownerInstructions, workerInstructions, workerBrief, reconInstructions } = await load('src/prompts');
-const { ownerTools, workerTools } = await load('src/tool-policy');
+const { plannerInstructions, workerInstructions, workerBrief, reconInstructions } = await load('src/prompts');
+const { plannerTools, workerTools } = await load('src/tool-policy');
 const { ROLE_DEFAULTS, ROLES } = await load('src/roles');
 const { SkillLibrary } = await load('src/skills');
 const { registerP2O } = await load('extensions/p2o/index');
@@ -32,15 +32,17 @@ const result = { lead: {}, workers: [], declarations: {}, skills: {} };
 const facts = (kind, enabled, loopMode) => ({ runId: 'run-recon', targetLabel: kind === 'url' ? 'https://example.invalid' : '/target', targetKind: kind, sourceSkipped: 2, workerBudget: 20,
   delegation: enabled ? { enabled, maxWorkers: 3, maxDepth: 2 } : { enabled, maxWorkers: 1, maxDepth: 1 }, ...(loopMode ? { loopMode } : {}) });
 for (const kind of ['directory', 'url']) for (const enabled of [false, true]) {
-  const text = ownerInstructions(facts(kind, enabled)); result.lead[`${enabled ? 'delegated' : 'solo'} ${kind}`] = { chars: text.length, toolNames: named(text) };
+  const text = plannerInstructions(facts(kind, enabled)); result.lead[`${enabled ? 'delegated' : 'solo'} ${kind}`] = { chars: text.length, toolNames: named(text) };
 }
-const eventDriven = ownerInstructions(facts('url', true, 'event-driven')); result.lead['delegated url event-driven'] = { chars: eventDriven.length, toolNames: named(eventDriven) };
+const eventDriven = plannerInstructions(facts('url', true, 'event-driven')); result.lead['delegated url event-driven'] = { chars: eventDriven.length, toolNames: named(eventDriven) };
 
 // Worker context per role and target kind.
 for (const kind of ['directory', 'url']) for (const role of ROLES) {
   const ticket = { workerId: `p2o-${role}-abcdef`, role, runId: 'run-x', depth: 1, parentWorkerId: null, lifetime: 'until-stopped', target: { kind, label: kind === 'url' ? 'https://example.invalid' : '/target' } };
   const system = workerInstructions(ticket), brief = workerBrief({ ticket, focus: 'F', task: 'T' }), allowed = workerTools(role);
-  result.workers.push({ role, kind, system: system.length, brief: brief.length, total: system.length + brief.length, reconBlocks: count(`${system}\n${brief}`, reconInstructions(kind)),
+  // A1: the read-only reporter and the validation worker have no surface writer, so their contract omits the tool guidance.
+  const expectedRecon = role === 'reporting' || role === 'validation' ? reconInstructions(kind, false) : reconInstructions(kind);
+  result.workers.push({ role, kind, system: system.length, brief: brief.length, total: system.length + brief.length, reconBlocks: count(`${system}\n${brief}`, expectedRecon),
     toolNamesOutsideLoadout: named(`${system}\n${brief}`).filter(name => !allowed.includes(name)) });
 }
 
@@ -51,7 +53,7 @@ try {
   const tools = new Map(), api = { registerTool: tool => tools.set(tool.name, tool), registerCommand() {}, registerShortcut() {}, registerFlag() {}, getFlag() {}, on() {}, getActiveTools: () => [], setActiveTools() {}, sendUserMessage() {}, sendMessage() {}, appendEntry() {}, registerEntryRenderer() {} };
   registerP2O(api, { extensionPath: resolve(root, source ? 'extensions/p2o/index.ts' : 'dist/extensions/p2o/index.js'), settingsPath });
   const bytes = name => { const tool = tools.get(name); return Buffer.byteLength(JSON.stringify({ name: tool.name, description: tool.description, parameters: tool.parameters })); };
-  const loadouts = { owner: ownerTools(), worker: workerTools('discovery'), 'reporting worker': workerTools('reporting') };
+  const loadouts = { planner: plannerTools(), worker: workerTools('discovery'), 'reporting worker': workerTools('reporting') };
   result.declarations = { registered: tools.size, total: [...tools.keys()].reduce((sum, name) => sum + bytes(name), 0), loadouts: Object.fromEntries(Object.entries(loadouts).map(([label, names]) => [label, { tools: names.length, bytes: names.reduce((sum, name) => sum + bytes(name), 0) }])),
     largest: [...tools.keys()].map(name => ({ name, bytes: bytes(name) })).sort((a, b) => b.bytes - a.bytes).slice(0, 5) };
 } finally { rmSync(dir, { recursive: true, force: true }); }

@@ -3,7 +3,7 @@ import { choices } from './schema-kit.js';
 import { CASE_REVIEW_STATUSES } from './case-types.js';
 import { PLAN_KINDS } from './planning.js';
 import { taskDraftSchema } from './tool-schemas.js';
-import { caseEntrySchema, coverageCellSchema, coveragePlanSchema, findingSchema } from './case-tool.js';
+import { caseEntrySchema, coveragePlanSchema, findingSchema } from './case-tool.js';
 import { planEntrySchema } from './work-tool.js';
 
 /**
@@ -28,8 +28,8 @@ export const CASE_VERB_ACTIONS = {
   p2o_case_revise: 'revise',
   p2o_case_rate: 'rate',
 } as const;
+/** A3: cells are host-derived, so the coverage bag keeps one read-only verb and the plan write verb. */
 export const COVERAGE_FIXED_ACTIONS = {
-  p2o_coverage_cell_retire: 'cell-retire',
   p2o_coverage_suggest: 'suggest',
 } as const;
 export const PLAN_VERB_ACTIONS = {
@@ -46,16 +46,15 @@ export const BOARD_ACTION_VERBS: Readonly<Record<string, Readonly<Record<string,
   },
   p2o_case: { create: 'p2o_case_create', revise: 'p2o_case_revise', rate: 'p2o_case_rate', list: 'p2o_board', view: 'p2o_board' },
   p2o_coverage: {
-    'plan-create': 'p2o_coverage_plan', 'plan-revise': 'p2o_coverage_plan', 'cell-create': 'p2o_coverage_cell',
-    'cell-revise': 'p2o_coverage_cell', 'cell-retire': 'p2o_coverage_cell_retire', suggest: 'p2o_coverage_suggest',
-    list: 'p2o_board', view: 'p2o_board',
+    'plan-create': 'p2o_coverage_plan', 'plan-revise': 'p2o_coverage_plan', suggest: 'p2o_coverage_suggest',
+    'cell-create': null, 'cell-revise': null, 'cell-retire': null, list: 'p2o_board', view: 'p2o_board',
   },
   p2o_plan: { create: 'p2o_plan_create', revise: 'p2o_plan_revise', list: 'p2o_board', view: 'p2o_board' },
 };
 
 export const TASK_VERB_NAMES = [...Object.keys(TASK_VERB_ACTIONS), 'p2o_task_settle'] as const;
 export const CASE_VERB_NAMES = Object.keys(CASE_VERB_ACTIONS) as Array<keyof typeof CASE_VERB_ACTIONS>;
-export const COVERAGE_VERB_NAMES = ['p2o_coverage_plan', 'p2o_coverage_cell', ...Object.keys(COVERAGE_FIXED_ACTIONS)] as const;
+export const COVERAGE_VERB_NAMES = ['p2o_coverage_plan', ...Object.keys(COVERAGE_FIXED_ACTIONS)] as const;
 export const PLAN_VERB_NAMES = Object.keys(PLAN_VERB_ACTIONS) as Array<keyof typeof PLAN_VERB_ACTIONS>;
 export const BOARD_VERB_NAMES = [...TASK_VERB_NAMES, ...CASE_VERB_NAMES, ...COVERAGE_VERB_NAMES, ...PLAN_VERB_NAMES, 'p2o_board'] as const;
 export const BOARD_TOOL = 'p2o_board';
@@ -83,13 +82,6 @@ export const caseRateParameters = Type.Object({ finding: findingSchema, id: id()
 export const coveragePlanParameters = Type.Object({
   plan: coveragePlanSchema, id: Type.Optional(id()), revision: Type.Optional(Type.Integer({ minimum: 1 })), requestId: requestId(),
 }, { additionalProperties: false });
-export const coverageCellParameters = Type.Object({
-  cell: coverageCellSchema, id: Type.Optional(id()), revision: Type.Optional(Type.Integer({ minimum: 1 })),
-  planId: Type.Optional(id()), planRevision: Type.Optional(Type.Integer({ minimum: 1 })), requestId: requestId(),
-}, { additionalProperties: false });
-export const coverageCellRetireParameters = Type.Object({
-  id: id(), revision: Type.Integer({ minimum: 1 }), reason: Type.String({ minLength: 10, maxLength: 1000 }), requestId: requestId(),
-}, { additionalProperties: false });
 export const coverageSuggestParameters = Type.Object({
   features: Type.Optional(Type.Array(Type.String({ maxLength: 40 }), { maxItems: 20 })),
   modes: Type.Optional(Type.String({ maxLength: 5 })), cursor: Type.Optional(Type.Integer({ minimum: 0 })),
@@ -105,9 +97,8 @@ export const boardParameters = Type.Object({
   kind: Type.Optional(choices(PLAN_KINDS)),
 }, { additionalProperties: false });
 
-/** Plan/cell authoring select create vs revise by the presence of the identity, never by a second `action` field. */
+/** Plan authoring selects create vs revise by the presence of the identity, never by a second `action` field. */
 export const planAuthoringAction = (params: { id?: string }): 'plan-create' | 'plan-revise' => params.id ? 'plan-revise' : 'plan-create';
-export const cellAuthoringAction = (params: { id?: string }): 'cell-create' | 'cell-revise' => params.id ? 'cell-revise' : 'cell-create';
 export const settleAction = (outcome: keyof typeof TASK_SETTLE_ACTIONS): 'close' | 'block' | 'cancel' => TASK_SETTLE_ACTIONS[outcome];
 export const boardReadAction = (idValue?: string): 'list' | 'view' => idValue ? 'view' : 'list';
 
@@ -116,6 +107,5 @@ export const LEGAL_NEXT: Readonly<Record<string, string>> = {
   task: 'p2o_task_revise (same id, revision=<currentRevision>)',
   case: 'p2o_case_revise or p2o_case_rate (same id, revision=<currentRevision>)',
   coveragePlan: 'p2o_coverage_plan (id=<id>, revision=<currentRevision>)',
-  coverageCell: 'p2o_coverage_cell or p2o_coverage_cell_retire (id=<id>, revision=<currentRevision>)',
   plan: 'p2o_plan_revise (id=<id>, revision=<currentRevision>)',
 };

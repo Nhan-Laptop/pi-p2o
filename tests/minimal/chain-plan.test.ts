@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { fixture, populate } from './helpers/report-fixture.js';
+import { fixture, populate, seedClaim } from './helpers/report-fixture.js';
 
 /**
  * P14.10: the chain frontier is turned into the next owner decision, never into a dispatch. The draft must be exactly the argument
@@ -10,15 +10,15 @@ const OBJECTIVE = 'Take the demonstrated request capability to code execution th
 async function chainFixture(h: any) {
   const built = await populate(h);
   const environment = (await h.call('p2o_lab', { action: 'env', name: 'chain-app', services: [{ name: 'web', command: 'python3 app.py', port: 8080 }], seed: ['curl -sf http://127.0.0.1:8080/'] })).details;
-  const claim = (extra: Record<string, unknown>) => h.call('p2o_candidate', {
+  const claim = (extra: Record<string, unknown>) => seedClaim(h, {
     surface: '/report-fixture', risk: 'authorization', closure: 'open_proof_gap', execution: 'not_tested', proof: 'static_trace',
     negativeControls: [], policyBasis: 'inferred', expectedPolicy: 'Declared fixture actor/object boundary', limitations: 'Nothing executed in this step yet',
     evidenceRefs: [built.observation.evidenceId], ...extra,
   });
   // The primitive that hands out the capability, recorded against the environment it was demonstrated in.
-  const primitive = (await claim({ candidate: 'chain-primitive', closure: 'confirmed', execution: 'tested', proof: 'live_reproduction',
-    policyBasis: 'boundary_invariant', gained: [{ kind: 'http.request', subject: 'internal-api' }], environmentRef: environment.id })).details;
-  const consumer = (await claim({ candidate: 'chain-consumer', needs: [{ kind: 'http.request', subject: 'internal-api' }], gained: [{ kind: 'exec.code', subject: 'app-host' }] })).details;
+  const primitive = await claim({ candidate: 'chain-primitive', closure: 'confirmed', execution: 'tested', proof: 'live_reproduction',
+    policyBasis: 'boundary_invariant', gained: [{ kind: 'http.request', subject: 'internal-api' }], environmentRef: environment.id });
+  const consumer = await claim({ candidate: 'chain-consumer', needs: [{ kind: 'http.request', subject: 'internal-api' }], gained: [{ kind: 'exec.code', subject: 'app-host' }] });
   return { built, environment, primitive, consumer };
 }
 
@@ -38,8 +38,9 @@ describe('chain frontier to task draft (P14.10)', () => {
     });
     expect(planned.todos.map((todo: any) => todo.title)).toEqual(['1/2 chain-primitive', '2/2 chain-consumer']);
 
-    // Nothing was dispatched: the run still has exactly the fixture's task, and the plan exists as navigation only.
-    expect((await h.call('p2o_board', { board: 'tasks' })).details.total).toBe(1);
+    // Nothing was dispatched: the run still has exactly the fixture's two work identities (the reviewed one and the blocked one),
+    // and the plan exists as navigation only.
+    expect((await h.call('p2o_board', { board: 'tasks' })).details.total).toBe(2);
     const todos = (await h.call('p2o_board', { board: 'plans', kind: 'todo', limit: 20 })).details;
     expect(todos.total).toBe(2);
     // M1: the demonstrated step is written as done and linked; only the step that still needs executing stays open.
@@ -66,9 +67,9 @@ describe('chain frontier to task draft (P14.10)', () => {
 
   it('refuses to plan when nothing is ready, instead of drafting a step with no demonstrated support', async () => fixture(async h => {
     const built = await populate(h);
-    const blocked = (await h.call('p2o_candidate', { candidate: 'chain-blocked', surface: '/report-fixture', risk: 'authorization', closure: 'open_proof_gap', execution: 'not_tested', proof: 'static_trace',
+    const blocked = await seedClaim(h, { candidate: 'chain-blocked', surface: '/report-fixture', risk: 'authorization', closure: 'open_proof_gap', execution: 'not_tested', proof: 'static_trace',
       negativeControls: [], policyBasis: 'inferred', expectedPolicy: 'Declared fixture actor/object boundary', limitations: 'Nothing executed yet',
-      evidenceRefs: [built.observation.evidenceId], needs: [{ kind: 'host.shell' }] })).details;
+      evidenceRefs: [built.observation.evidenceId], needs: [{ kind: 'host.shell' }] });
     const join = (await h.call('p2o_graph', { action: 'chain' })).details;
     expect(join.frontier).toEqual([]); expect(join.unmet).toContain('chain-blocked');
     expect(join.uncovered['chain-blocked']).toEqual([{ kind: 'host.shell' }]);

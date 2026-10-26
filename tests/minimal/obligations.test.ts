@@ -3,7 +3,7 @@ import { chainObligations, dispatchRefusal } from '../../src/obligations.js';
 import type { ChainClaim } from '../../src/chain-view.js';
 import type { PlanEntry } from '../../src/planning.js';
 import type { AssessmentTask, TaskDraft } from '../../src/tasks.js';
-import { fixture } from './helpers/report-fixture.js';
+import { fixture, seedClaim } from './helpers/report-fixture.js';
 
 /**
  * Phase D acceptance (M2 + M4). M2: a ready chain step on a surface refuses a new task there unless the draft cites the provider or a
@@ -71,10 +71,11 @@ describe('dispatch obligations are derived, per surface (M2 + M4)', () => {
 });
 
 describe('the frontier obligation refuses at create, not at finish (M2 + M4)', () => {
-  const record = (h: any, observation: any) => async (candidate: string, extra: Record<string, unknown> = {}) => (await h.call('p2o_candidate', {
+  // A2: claims are worker-authored; the fixture seeds the record the broker would commit.
+  const record = (h: any, observation: any) => async (candidate: string, extra: Record<string, unknown> = {}) => seedClaim(h, {
     candidate, surface: '/report-fixture', risk: 'authorization', closure: 'open_proof_gap', execution: 'not_tested', proof: 'static_trace',
     negativeControls: [], policyBasis: 'inferred', expectedPolicy: 'Declared fixture actor/object boundary', limitations: 'Nothing executed in this step yet',
-    evidenceRefs: [observation.evidenceId], ...extra })).details;
+    evidenceRefs: [observation.evidenceId], ...extra });
 
   it('refuses a mapping task on a surface with a ready step and accepts it once the provider is cited or the link is deferred', async () => fixture(async h => {
     await h.command('--target ./source');

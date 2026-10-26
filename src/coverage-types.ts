@@ -8,7 +8,12 @@ export type CoveragePlanStatus=typeof COVERAGE_PLAN_STATUS[number];
 export interface CoverageTaskRef {taskId:string;revision?:number}
 export interface CoverageCaseRef {caseId:string;revision:number}
 export interface CoveragePlanDraft {id?:string;title:string;status:CoveragePlanStatus;reason:string;exclusions:string[];unknownScope:string[]}
-export interface CoveragePlanEntry extends CoveragePlanDraft {id:string;runId:string;revision:number;recordId:string;targetRevision:string;cellIds:string[]}
+/**
+ * A3: the host, not the model, owns how a plan's denominator is produced. `projected` marks a plan whose cells are derived
+ * from reviewed work on read; a stored plan without the marker is a legacy plan and its stored cells are read as stored.
+ */
+export type CoverageDerivation='projected';
+export interface CoveragePlanEntry extends CoveragePlanDraft {id:string;runId:string;revision:number;recordId:string;targetRevision:string;cellIds:string[];derivation?:CoverageDerivation}
 export interface CoverageCellDraft {
   id?:string;assetRef:{id:string;revision?:number;variant?:string};questionKey:string;policyKey?:string;actorContext:string;tenantContext:string;methodFamily:string;
   execution:CoverageExecution;assessment:CoverageAssessment;taskRefs:CoverageTaskRef[];claimRefs:string[];caseRefs:CoverageCaseRef[];evidenceRefs:string[];negativeControlRefs:string[];gapRefs:string[];
@@ -23,8 +28,9 @@ export function validateCoveragePlanDraft(value:unknown):CoveragePlanDraft{
   const result:CoveragePlanDraft={title:text(row.title,'plan title',500,5),status:row.status as CoveragePlanStatus,reason:text(row.reason,'plan reason',1500,10),exclusions:prose(row.exclusions,'plan exclusion'),unknownScope:prose(row.unknownScope,'unknown scope')};if(row.id!==undefined)result.id=id(row.id,'plan ID');return result;
 }
 export function validateStoredCoveragePlan(value:unknown,recordId:string):CoveragePlanEntry{
-  const row=plain(value,'stored coverage plan'),{runId,revision:rev,targetRevision,cellIds,...input}=row,plan=validateCoveragePlanDraft(input);if(!plan.id)throw Error('Stored coverage plan needs an ID');
-  const cells=ids(cellIds,'plan cell ID',100);return {...plan,id:id(plan.id,'plan ID'),runId:id(runId,'run ID'),revision:revision(rev,'plan revision'),recordId:id(recordId,'record ID'),targetRevision:text(targetRevision,'target revision',160),cellIds:cells};
+  const row=plain(value,'stored coverage plan'),{runId,revision:rev,targetRevision,cellIds,derivation,...input}=row,plan=validateCoveragePlanDraft(input);if(!plan.id)throw Error('Stored coverage plan needs an ID');
+  if(derivation!==undefined&&derivation!=='projected')throw Error('Invalid coverage plan derivation');
+  const cells=ids(cellIds,'plan cell ID',100);return {...plan,id:id(plan.id,'plan ID'),runId:id(runId,'run ID'),revision:revision(rev,'plan revision'),recordId:id(recordId,'record ID'),targetRevision:text(targetRevision,'target revision',160),cellIds:cells,...(derivation?{derivation}:{})};
 }
 export function validateCoverageCellDraft(value:unknown):CoverageCellDraft{
   const row=plain(value,'coverage cell');exact(row,['id','assetRef','questionKey','policyKey','actorContext','tenantContext','methodFamily','execution','assessment','taskRefs','claimRefs','caseRefs','evidenceRefs','negativeControlRefs','gapRefs','reason','limitations'],'Coverage cell');

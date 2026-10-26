@@ -1,4 +1,5 @@
 import { spawn, type ChildProcess } from 'node:child_process';
+import { appendFileSync } from 'node:fs';
 import { setTimeout as delay } from 'node:timers/promises';
 import type { HerdrAgent, HerdrClient } from '../../../src/herdr.js';
 
@@ -9,7 +10,7 @@ import type { HerdrAgent, HerdrClient } from '../../../src/herdr.js';
  */
 interface Child {
   name: string; paneId: string; process: ChildProcess; status: string; buffer: string; stderr: string;
-  pending: Map<string, (value: any) => void>; sequence: number; ready: Promise<void>; lastPromptAt: number;
+  pending: Map<string, (value: any) => void>; sequence: number; lastPromptAt: number;
 }
 
 export interface FakeHerdrOptions { cwd: string; env?: NodeJS.ProcessEnv; piBinary: string; replaceExtensionArg?: string }
@@ -40,11 +41,7 @@ export function createFakeHerdr(options: FakeHerdrOptions): HerdrClient & { chil
     const child = spawn(options.piBinary, [...effective, '--mode', 'rpc'], {
       cwd: options.cwd, env: options.env ?? process.env, stdio: ['pipe', 'pipe', 'pipe'],
     }) as ChildProcess;
-    const entry: Child = { name: '', paneId: `w1T:p${panes}`, process: child, status: 'working', buffer: '', stderr: '', pending: new Map(), sequence: 0, ready: Promise.resolve(), lastPromptAt: Date.now() };
-    entry.ready = new Promise<void>((resolve, reject) => {
-      const timer = setTimeout(() => reject(new Error(`fake herdr: worker did not start: ${entry.stderr.slice(-800)}`)), 20_000);
-      entry.pending.set('ready', () => { clearTimeout(timer); resolve(); });
-    });
+    const entry: Child = { name: '', paneId: `w1T:p${panes}`, process: child, status: 'working', buffer: '', stderr: '', pending: new Map(), sequence: 0, lastPromptAt: Date.now() };
     child.stdout?.setEncoding('utf8');
     child.stdout?.on('data', text => {
       entry.buffer += text;
@@ -59,11 +56,16 @@ export function createFakeHerdr(options: FakeHerdrOptions): HerdrClient & { chil
         }
         if (record.type === 'agent_end') entry.status = 'idle';
         if (record.type === 'turn_start') entry.status = 'working';
+        // Wake-boundary fixture observability: p2o_report's tool_execution_end means the broker committed the report, so the
+        // planner turn held in tests/minimal/fixtures/inert-provider.ts may resume and the wake lands at Pi's settle boundary.
+        if (record.type === 'tool_execution_end' && record.toolName === 'p2o_report' && process.env.P2O_TEST_PROVIDER_LOG) {
+          try { appendFileSync(`${process.env.P2O_TEST_PROVIDER_LOG}.worker-report`, `${Date.now()}\n`); } catch { /* best-effort test signal */ }
+        }
       }
     });
     child.stderr?.setEncoding('utf8');
     child.stderr?.on('data', text => { entry.stderr += text; });
-    child.on('exit', () => { entry.status = 'done'; const ready = entry.pending.get('ready'); if (ready) { entry.pending.delete('ready'); ready({}); } });
+    child.on('exit', () => { entry.status = 'done'; });
     return Promise.resolve(entry);
   };
 

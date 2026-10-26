@@ -5,8 +5,8 @@ ngân sách. "Goal" ở đây là record mục tiêu của assessment. Bản chi
 
 ## Công nghệ cốt lõi
 
-- Task vẫn là revision do owner viết; `work_history` và `work_reservations` chỉ là index/constraint trong **cùng transaction**
-  SQLite, không phải hàng đợi có quyền thực thi. các task/plan verb chỉ dành cho owner; Worker/reporting không sửa kế hoạch.
+- Task vẫn là revision do planner viết; `work_history` và `work_reservations` chỉ là index/constraint trong **cùng transaction**
+  SQLite, không phải hàng đợi có quyền thực thi. các task/plan verb chỉ dành cho planner; worker và reporter không sửa kế hoạch.
 - **Work identity có cấu trúc**, không hash văn xuôi: `draft.work` gồm `assetRefs` (entity ID graph cùng run), `questionKey`,
   `policyKey?`, `actorContext`/`tenantContext` (handle mờ, không secret), `methodFamily`, `purpose`
   (`mapping|discovery|investigation|refinement|validation|retest|exploitation|chaining|reporting`), và từ P14.10 thêm `needs`
@@ -21,10 +21,71 @@ ngân sách. "Goal" ở đây là record mục tiêu của assessment. Bản chi
   `p2o_task_create` cho bước sâu nhất đã sẵn sàng (purpose `exploitation`, `claimRefs` = record id của các provider trên đường đi ngắn
   nhất + claim của chính bước đó, `needs` = capability đang tiêu thụ, `environmentRef` = environment của provider sâu nhất có ghi) và ghi
   toàn bộ chuỗi thành `p2o_plan_create` todo, mỗi bước một todo. Không có task nào được tạo, không có gì được chạy: draft là đề xuất, todo là
-  điều hướng; owner tự gọi `p2o_task_create`. Không truyền `assetRefs` thì draft bỏ `work` và nói rõ lý do thay vì đoán asset từ chuỗi
+  điều hướng; planner tự gọi `p2o_task_create`. Không truyền `assetRefs` thì draft bỏ `work` và nói rõ lý do thay vì đoán asset từ chuỗi
   `surface`.
 - **Reserve nguyên tử**: task revision + event + history + fingerprint duy nhất commit chung; hai đề xuất đua nhau thì cái sớm hơn
   thắng, conflict rollback cả packet. Pin được kiểm tra lại trước mỗi lệnh; sau crash reservation không tự kích hoạt lại.
+
+## Intent admission (P1/A2)
+
+Task board là **bảng intent**, không phải form giao việc: planner nói muốn học gì (question, surface, role, `work` identity nếu
+có), host điền các trường chỉ host biết. `p2o_task_create`, `p2o_task_revise` và `p2o_board board=tasks match` chạy cùng một
+bước canonicalize + anchor trong `src/tasks.ts`/`src/work.ts`, nên `match` thấy đúng identity mà create sẽ lưu.
+
+| Trường host suy ra | Lấy từ | Giá trị |
+|---|---|---|
+| `work.purpose` | role khi draft bỏ trống (`purposeFromRole`) | recon→mapping, discovery→discovery, validation→validation, exploit→exploitation, reporting→reporting, còn lại→investigation |
+| `outputContract` | purpose (`PURPOSE_OUTPUT_CONTRACTS`) | shape cố định: mapping→inventory `assets/evidence/gaps`; discovery→investigation `candidates/evidence/controls`; investigation/exploitation→`evidence/controls/gaps`; refinement→`facts/evidence/gaps`; validation→validation `evidence/controls/gaps`; retest→retest `evidence/controls/gaps`; chaining→`evidence/facts/gaps`; reporting→report `coverage/gaps` (`partialAllowed`, `artifactPolicy: ids-only`) |
+| `decision` | anchor có trong draft (`defaultWorkDecision`) | `new` cho mapping/discovery/investigation/exploitation/chaining/reporting; `validate` khi có `validationOf`; `refine` khi có `parentTaskId`/prerequisite; `retest` và `refinement` không có prior vẫn cần `decision` tường minh, lỗi nêu đúng cặp purpose+disposition |
+
+Nhờ vậy intent tối giản chỉ cần `question`, `surface`, `risk`, `role` và — nếu dùng `work` — ít nhất một `work.assetRefs`;
+`role=recon` được bỏ `roleReason`/`expectedTrue`/`expectedFalse`/`stopCondition`/`methodReason`. Ba trường suy ra được lưu cùng
+task để review/report tất định. Intent không có `work` là prose legacy, giữ đường cũ trừ các luật first-intent/validation
+dưới đây (migration tail, không phải đường thiết kế).
+
+### First intent: luôn có một intent hợp lệ
+
+- Intent **đầu tiên** của run là recon/mapping: mapping không cần anchor nào nên luôn có việc hợp lệ để bắt đầu — không có
+  catch-22 khi target mới chưa có claim nào.
+- `role=validation` ở vị trí đầu bị từ chối ở **cả hai shape** (có/không `work`): `PURPOSE_NEEDS_PREDECESSOR` +
+  `legalNext: create a recon task first`. Structured `discovery`/`exploitation`/`chaining`/`retest` đầu tiên cũng bị từ chối
+  (`PURPOSE_NEEDS_ANCHOR` hoặc `PURPOSE_NEEDS_PREDECESSOR`, legalNext nêu recon trước).
+
+### Anchor của intent
+
+Luật anchor đầy đủ áp cho intent **structured** (có `work`); mapping/reporting miễn vì là điểm bắt đầu:
+
+| Purpose | Anchor bắt buộc | Từ chối |
+|---|---|---|
+| `mapping`, `reporting` | không | — |
+| `discovery` (khi run đã có recon) | claim worker trong `work.claimRefs`, **hoặc** `prerequisites`; prerequisite được pin và phải reviewed trước khi task chạy | `PURPOSE_NEEDS_ANCHOR` + legalNext |
+| `exploitation` | `work.claimRefs` của claim đã demonstrated | `PURPOSE_NEEDS_LINEAGE` |
+| `chaining` | `work.claimRefs` của **hai** claim được compose | `PURPOSE_NEEDS_LINEAGE` |
+| `investigation`, `refinement` | claim trong `work.claimRefs`, asset revision đã pin, **hoặc** task trước | `PURPOSE_NEEDS_LINEAGE` |
+| `validation`, `retest` | `validationOf`/`retestOf` (xem mục dưới) | `PURPOSE_NEEDS_PREDECESSOR` / `PURPOSE_NEEDS_LINEAGE` |
+
+### Validation: task đã review hoặc claim của worker
+
+`validationOf` nhận **task ID đã review** hoặc **record ID của claim worker**. Khi nhận claim, host đọc `data.taskRef` (do host
+đóng dấu lúc worker ghi claim), resolve ra task discovery, pin `prerequisites=[{taskId, revision}]` đúng revision đã review, rồi
+rewrite `validationOf` thành task id và `decision.relatedTaskId` cùng giá trị; disposition `validate` là derived. Validation còn
+bị chặn bởi `UNREVIEWED_PREDECESSOR` (task chưa review hoặc không có receipt), `NO_REVALIDATION` (không validate một validation),
+`OWNER_CLAIM_NOT_ANCHORABLE` (claim không do worker viết — owner claim không còn tồn tại) và `CLAIM_WITHOUT_TASK` (worker claim
+thiếu `taskRef`). Hệ quả: validation hợp lệ luôn là replay **công việc đã review**.
+
+Host tạo **đúng một** validation task cho mỗi claim `confirmed+tested` của worker (deterministic `validationKey`, claim lặp lại
+không sinh task thứ hai), chỉ sau khi task discovery đã review, và không bao giờ revalidate một validation. Không có worker
+backend thì validation vẫn được tạo nhưng mang `missingPrerequisites` ("Delegation unavailable: …"), tức task **blocked** thấy
+được chứ không phải waiver.
+
+### Candidate và executor
+
+- `p2o_candidate` là **WORKER ONLY**: planner gọi sẽ nhận `WORKER_ONLY` kèm legalNext. Không còn owner/planner candidate path để
+  model tự viết claim; worker claim được host đóng dấu `data.taskRef` của assignment — đó là thứ validation anchor vào.
+  Auto-validation (`hostValidation`) chỉ chạy cho claim của worker, sau khi discovery task đã review.
+- Dispatch không có executor không biến planner thành executor: không có worker backend thì `p2o_task_dispatch` từ chối với
+  `DELEGATION_UNAVAILABLE` ("blocked prerequisite … not a licence for the planner to execute"); nếu executor/pane provision
+  thất bại sau khi task đã reserve, task chuyển `blocked` kèm lý do — không fake report, không model turn thay thế.
 
 ## Dùng
 
@@ -37,10 +98,12 @@ ngân sách. "Goal" ở đây là record mục tiêu của assessment. Bản chi
 | `partial` | lần trước bị blocked/cancelled/expired — xem gaps, không tự replay |
 | `overlaps` | cùng asset/question/policy nhưng khác method/actor/pin — chỉ là cảnh báo |
 
-Task có `work` bắt buộc `decision` (`new|refine|validate|retest|retry`, kèm lý do/prior ID tương ứng) và `outputContract`
-(`kind`, `required` ⊂ assets/facts/evidence/controls/gaps/candidates/artifacts/coverage, `partialAllowed`, `artifactPolicy`);
-đây là yêu cầu giao nhận, không phải oracle. `p2o_delegate` nhận cùng `work/decision/outputContract`; thiếu `work` thì kết quả
-`workMatch:"unknown"` và dùng lại guard surface/risk cũ.
+Task có `work` không còn bắt model điền sẵn `decision` và `outputContract`: planner chỉ nói **muốn học gì**, host suy ra
+`purpose` từ role, `outputContract` từ purpose và `decision` từ anchor (xem [Intent admission](#intent-admission-p1a2)).
+`outputContract` (`kind`, `required` ⊂ assets/facts/evidence/controls/gaps/candidates/artifacts/coverage, `partialAllowed`,
+`artifactPolicy`) là yêu cầu giao nhận, không phải oracle; model chỉ được thu hẹp `required`, không bỏ shape của purpose.
+Engine dùng đúng `work/decision/outputContract` đã ghi khi dispatch và spawn worker. Draft không có `work` là đường prose
+legacy (migration tail): create bỏ qua kiểm tra exact-work, identity là `unknown` và dùng lại guard surface/risk cũ.
 
 **Goal / todo / decision** qua `p2o_plan_create` (không có `id`), `p2o_plan_revise` (`id` + `revision`) hoặc `p2o_board board=plans` (list/view): `entry:{kind, title, status, reason, criteria, exclusions, taskIds}`; goal đóng cần revision tường minh và evidence cùng run; todo không được tạo chu trình; decision
 (`new|reuse|refine|validate|retest|defer`) chỉ ghi lại, không tự dispatch. Cùng `requestId` + payload trả ACK gốc, khác payload → `IDEMPOTENCY_CONFLICT`.
@@ -59,10 +122,10 @@ Card `pending` là lịch sử tại thời điểm giao; trạng thái task hi�
 ## Giới hạn chính
 
 Asset ref ≤10, prerequisite ≤10; key ≤160 ký tự; output field ≤8; decision reason 10–1000 ký tự; work history 20 (≤100) head;
-Không còn trần 100 task/goal live; plan list 20 (≤100, ≤24 KiB); knowledge owner 400; hàng ≤16 KiB, packet ≤128 hàng.
+Không còn trần 100 task/goal live; plan list 20 (≤100, ≤24 KiB); knowledge planner 400; hàng ≤16 KiB, packet ≤128 hàng.
 Không có TTL hay timeout mặc định.
 
-Test: `work.test.ts`, `planning.test.ts`, `workspace-runtime.test.ts`, `work-native.test.ts` (provider inert). Còn thiếu: gợi ý alias/fuzzy,
+Test: `work.test.ts`, `planning.test.ts`, `intent.test.ts` (A2 admission), `workspace-runtime.test.ts`, `work-native.test.ts` (provider inert). Còn thiếu: gợi ý alias/fuzzy,
 typed branch-output review, biến thể crash/interruption. Mechanics pass không chứng minh finding đúng hay tiết kiệm chi phí.
 
 ## Frontier obligation lúc create (M2 + M4)
@@ -78,8 +141,9 @@ Một `create` bị từ chối vì obligation không biến mất khỏi transc
 `admission refused: <CODE>: …` rồi mới ném lỗi. Preflight đếm các note đó thành advisory `ADMISSION_REFUSALS`, nên
 "thuế admission" hiện ra trong báo cáo thay vì chỉ nằm trong hội thoại. Con số này là quan sát, không phải hạn mức.
 
-`work.purpose` được điền từ role khi draft bỏ trống (`purposeFromRole`), nên lead không phải nhớ một trường chỉ để qua
-validate; `match` chạy trước `create` nên cả hai đường đều canonicalize trước khi kiểm.
+`work.purpose` được điền từ role khi draft bỏ trống (`purposeFromRole`), `outputContract` từ purpose và `decision` từ anchor,
+nên planner không phải nhớ các trường chỉ để qua validate; `match` chạy trước `create` nên cả hai đường đều canonicalize + anchor
+trước khi kiểm (xem [Intent admission](#intent-admission-p1a2)).
 
 ## Continuation (M8)
 

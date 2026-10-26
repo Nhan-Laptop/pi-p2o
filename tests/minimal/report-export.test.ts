@@ -10,7 +10,7 @@ import { csvCell, mdText, wstgAppendix } from '../../src/report-export.js';
 import { AssessmentStore } from '../../src/state/store.js';
 import { WSTG_BY_KEY } from '../../src/wstg-map.js';
 import { parseWorkspaceCommand } from '../../src/ui/workspace.js';
-import { fixture, populate } from './helpers/report-fixture.js';
+import { fixture, populate, seedClaim } from './helpers/report-fixture.js';
 
 /** W5 (plan): deterministic, model-free, markup-safe report export from committed state. Inert sandbox, real SQLite store. */
 const HOSTILE = '[click](https://evil.example/x) ![i](http://evil.example/p.png) <img src=x onerror=alert(1)> <script>1</script> **bold** `code` ```fence www.evil.example user@evil.example | pipe \\ back \u001b[31mRED\u001b[0m bidi‮RTL zero​width';
@@ -142,7 +142,8 @@ describe('report export command', () => {
     const built = await populate(h);
     const claim = (await h.call('p2o_ledger', { id: built.claim.id })).details;
     const base = claim.record ?? claim.records?.[0] ?? {};
-    await h.call('p2o_candidate', { candidate: 'report-claim', surface: '/report-fixture', risk: 'authorization', closure: 'open_proof_gap', execution: 'blocked', proof: 'static_trace', evidenceRefs: base.refs ?? [], negativeControls: [], policyBasis: 'inferred', expectedPolicy: 'Withdrawn after re-review', limitations: 'Re-review found the earlier proof insufficient', requirement: 'A reproducible live observation is still missing', supersedes: built.claim.id });
+    // A2: the superseding claim is authored by a worker; the fixture seeds the record the broker would commit.
+    await seedClaim(h, { candidate: 'report-claim', surface: '/report-fixture', risk: 'authorization', closure: 'open_proof_gap', execution: 'blocked', proof: 'static_trace', evidenceRefs: base.refs ?? [], negativeControls: [], policyBasis: 'inferred', expectedPolicy: 'Withdrawn after re-review', limitations: 'Re-review found the earlier proof insufficient', requirement: 'A reproducible live observation is still missing', supersedes: built.claim.id });
     h.ctx.setConfirm(true); await h.command(`report export ${join(h.root, 'out')}`);
     const report = (await h.read(join(h.root, 'out')))['REPORT.md'];
     const accepted = report.slice(report.indexOf('## Accepted current cases'), report.indexOf('## Other cases')), other = report.slice(report.indexOf('## Other cases'), report.indexOf('## Worker claims'));

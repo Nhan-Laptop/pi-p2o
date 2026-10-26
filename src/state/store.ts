@@ -585,7 +585,7 @@ export class AssessmentStore {
       const graph=this.graphSnapshot(asOfSequence),graphHeads=this.graphSummary(asOfSequence),index=indexRecords(records,this.manifest().runId),plans=planFrontier(index),phases=phasePackets(index),context=this.reviewContext(),cases=caseViews(index,context.cases),coverage=coverageViews(index,context.coverage),
         planning={goals:plans.filter(row=>row.kind==='goal').length,todo:plans.filter(row=>row.kind==='todo').length,decisions:plans.filter(row=>row.kind==='decision').length,phasePackets:phases.length,
           pendingPhasePacketIds:phases.filter(row=>{const task=heads.get(row.taskId)?.data?.task as Record<string,unknown>|undefined;return task?.phasePacketId===row.id&&awaitingReview(task);}).map(row=>row.id)},
-        review={cases:cases.length,uniqueAcceptedFindings:new Set(cases.filter(row=>row.acceptedFinding).map(row=>row.canonicalCaseId)).size,duplicateCases:cases.filter(row=>Boolean(row.duplicateOf)).length,pendingCases:cases.filter(needsCaseReview).length,staleCases:cases.filter(row=>row.currentness==='stale').length,coveragePlans:coverage.length,coverageCells:coverage.reduce((sum,row)=>sum+row.cellIds.length,0),staleCoverageCells:coverage.reduce((sum,row)=>sum+row.counts.stale,0),discoveredUnplannedAssets:coverage.reduce((sum,row)=>sum+row.discoveredUnplannedAssets,0)};
+        review={cases:cases.length,uniqueAcceptedFindings:new Set(cases.filter(row=>row.acceptedFinding).map(row=>row.canonicalCaseId)).size,duplicateCases:cases.filter(row=>Boolean(row.duplicateOf)).length,pendingCases:cases.filter(needsCaseReview).length,staleCases:cases.filter(row=>row.currentness==='stale').length,coveragePlans:coverage.length,coverageCells:coverage.reduce((sum,row)=>sum+(row.derivation==='projected'?row.cells.length:row.cellIds.length),0),staleCoverageCells:coverage.reduce((sum,row)=>sum+row.counts.stale,0),discoveredUnplannedAssets:coverage.reduce((sum,row)=>sum+row.discoveredUnplannedAssets,0)};
       const knowledge=this.knowledgeIndex(),snapshot = Buffer.from(JSON.stringify({ schemaVersion: STATE_SCHEMA_VERSION, manifest: this.manifest(), asOfSequence, records, events, artifacts, graph, planning,review,knowledge }));
       if (snapshot.length > LEDGER_BYTES) throw Error('Checkpoint exceeds 64 MiB; portable snapshot requires segmented export');
       this.capacity(snapshot.length,true); this.directory.publish(filename, snapshot); this.fault?.('checkpoint-published');
@@ -654,25 +654,19 @@ export class AssessmentStore {
    * WSTG tests the recorded features suggest. Read-only SQL over indexed heads; omitted when all are empty, so a packet without a backlog is unchanged.
    */
   private contextBacklog(limit = 5): ContextBacklog | undefined {
-    const scope = this.graphScope(), assetHeads = `SELECT a.entity_id AS id, a.sequence AS sequence FROM assets a WHERE a.scope=? AND a.sequence=(SELECT MAX(b.sequence) FROM assets b WHERE b.entity_id=a.entity_id)`;
-    const liveCellAssets = `SELECT l.target_id FROM knowledge_links l JOIN knowledge_heads h ON h.record_id=l.record_id WHERE h.domain='coverage-cell' AND h.status<>'retired' AND l.relation='asset'`;
-    const unplanned = Number(this.db.prepare(`SELECT count(*) AS n FROM (${assetHeads}) WHERE id NOT IN (${liveCellAssets})`).get(scope)!.n);
-    const notRunWhere = `domain='coverage-cell' AND (status LIKE 'unplanned/%' OR status LIKE 'planned/%')`;
-    const notRun = Number(this.db.prepare(`SELECT count(*) AS n FROM knowledge_heads WHERE ${notRunWhere}`).get()!.n);
+    // A3: cells are derived from reviewed work, so the backlog reads the same projection the board and the report read.
+    // The SQL head index only knows legacy stored cells; a projected run has none, and reading it here would report every
+    // asset as unplanned and every test as uncovered.
+    const index = indexRecords(this.records(), this.manifest().runId), live = coverageViews(index, this.reviewContext().coverage).flatMap(plan => plan.cells).filter(cell => cell.currentness !== 'retired');
+    const coveredAssets = new Set(live.map(cell => cell.assetRef.id)), unplanned = this.assetEntityIds().filter(id => !coveredAssets.has(id));
+    const notRun = live.filter(cell => ['unplanned', 'planned', 'running'].includes(cell.effectiveExecution));
     const features = featuresFromAttributeValues(this.recordedFeatureValues()).features;
     let suggested = 0;
-    if (features.length) {
-      const covered = new Set<string>();
-      for (const row of this.db.prepare(`SELECT record_id FROM knowledge_heads WHERE domain='coverage-cell' AND status<>'retired' LIMIT 2000`).all()) {
-        const key = (this.record(String(row.record_id))?.data?.coverageCell as { questionKey?: unknown } | undefined)?.questionKey;
-        if (typeof key === 'string' && isWstgKey(key)) covered.add(key);
-      }
-      suggested = wstgSuggest(features, { covered, limit: 1 }).matched;
-    }
-    if (!unplanned && !notRun && !suggested) return undefined;
+    if (features.length) { const covered = new Set(live.filter(cell => isWstgKey(cell.questionKey)).map(cell => cell.questionKey)); suggested = wstgSuggest(features, { covered, limit: 1 }).matched; }
+    if (!unplanned.length && !notRun.length && !suggested) return undefined;
     return {
-      ...(unplanned ? { unplannedAssets: { total: unplanned, ids: this.db.prepare(`SELECT id FROM (${assetHeads}) WHERE id NOT IN (${liveCellAssets}) ORDER BY sequence LIMIT ?`).all(scope, limit).map(row => String(row.id)) } } : {}),
-      ...(notRun ? { cellsNotRun: { total: notRun, ids: this.db.prepare(`SELECT entity_id FROM knowledge_heads WHERE ${notRunWhere} ORDER BY sequence LIMIT ?`).all(limit).map(row => String(row.entity_id)) } } : {}),
+      ...(unplanned.length ? { unplannedAssets: { total: unplanned.length, ids: unplanned.slice(0, limit) } } : {}),
+      ...(notRun.length ? { cellsNotRun: { total: notRun.length, ids: notRun.slice(0, limit).map(cell => cell.id) } } : {}),
       ...(suggested ? { wstgSuggestions: { total: suggested, features } } : {}),
     };
   }

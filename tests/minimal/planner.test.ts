@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { setTimeout as delay } from 'node:timers/promises';
 import { registerP2O } from '../../extensions/p2o/index.js';
+import { LAB_TOOLS, TARGET_TOOLS, plannerTools } from '../../src/tool-policy.js';
 import { BrokerClient } from '../../src/broker.js';
 import { parseWakePrompt,plannerWakeMessage } from '../../src/planner-bridge.js';
 import { createContext, createFakePi, createSimpleHerdr, sandboxFactory, EXTENSION_PATH, InertSandbox } from './helpers/fake-pi.js';
@@ -25,16 +26,24 @@ const draft=(surface:string)=>({question:`Inspect the fixture at ${surface}`,sur
 async function until(p:()=>boolean) {for(let i=0;i<400;i++){if(p())return;await delay(20);}throw Error('Fixture did not progress');}
 
 describe('Planner/Engine/Worker extension contract',()=>{
-  it('lets the lead execute and gives a reporting worker the same tools (Part XI)',async()=>{
+  it('keeps target, lab and claim tools with workers: the planner is blocked and a dispatched task spawns the worker that executes (A1)',async()=>{
     await fixture(async(h)=>{
-      for(const name of ['p2o_shell','p2o_net','p2o_http','p2o_capture']) {expect(h.pi.active, name).toContain(name);expect(await h.emit('tool_call',{toolName:name}), name).toBeUndefined();}
-      expect((await h.call('p2o_shell',{command:'lead executes'})).details.exitCode).toBe(0);
-      const spawned=(await h.call('p2o_delegate',{focus:'report-only',task:'Report the ledger',role:'reporting'})).details;
-      const {client}=await h.connect(spawned.workerId);
-      const executed = await client.request('exec',{command:'reporting may execute'});
+      expect(h.pi.active).toEqual(plannerTools());
+      for(const name of [...TARGET_TOOLS,...LAB_TOOLS,'p2o_candidate','p2o_note','p2o_surface','p2o_report']){
+        expect(h.pi.active, name).not.toContain(name);
+        expect(await h.emit('tool_call',{toolName:name}), name).toMatchObject({block:true});
+      }
+      expect(h.sandboxes[0].commands).toEqual([]); // the planner cannot execute target work
+      // One delegation path: create and dispatch an intent; the Engine spawns the worker that genuinely executes.
+      const task=(await h.call('p2o_task_create',{draft:draft('planned-surface')})).details;
+      await h.call('p2o_task_dispatch',{ids:[task.id]});
+      await until(()=>h.herdr.calls.filter((c:any)=>c.op==='start').length===1);
+      const workerId=h.herdr.calls.find((c:any)=>c.op==='start')!.name;
+      const {client}=await h.connect(workerId);
+      const executed=await client.request('exec',{command:'worker executes'});
       expect(executed).toBeDefined();
       const proposal=await client.request('request_subtask',{focus:'review-gap',task:'Missing proof requires separate validation'});expect(proposal.value.accepted).toBe(false);
-      expect(h.herdr.calls.filter((c:any)=>c.op==='start')).toHaveLength(1);await client.request('report',{report:{summary:'Executed once',confidence:'low'}});
+      await client.request('report',{report:{summary:'Executed once',confidence:'low'}});
       expect(h.sandboxes[0].commands.length).toBeGreaterThan(0);
     });
   });

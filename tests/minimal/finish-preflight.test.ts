@@ -37,8 +37,12 @@ describe('finish preflight', () => {
     await h.call('p2o_case_revise', {id: built.pending.id, revision, entry: { ...draft, reviewStatus: 'withdrawn', reviewReason: 'Withdrawn: duplicate of the accepted fixture case' } });
     const text = finishText(await h.call('p2o_finish', {}));
     // M4: the fixture's one demonstrated claim has no successor and no wall, so the block lists it — as an advisory, because p2o
-    // has no finish gate. Nothing is blocking, which is what "clean" now means.
-    expect(text).toMatch(/0 open obligation\(s\), 1 advisory/);
+    // has no finish gate. Nothing is blocking, which is what "clean" now means. A3 adds two honest advisory facts no owner action
+    // resolves here: a derived cell carries no gapRefs, so the fixture's open gap stays unreferenced, and its blocked work identity
+    // was settled without a handoff.
+    expect(text).toMatch(/0 open obligation\(s\), 3 advisory/);
+    expect(text).toMatch(/OPEN_GAP_UNREFERENCED \(1\):/);
+    expect(text).toMatch(/ORPHAN_TASK \(1\):/);
     expect(text).toMatch(/PRIMITIVE_UNCHAINED \(1\):/);
     expect(text).toContain('not a safety verdict');
   }));

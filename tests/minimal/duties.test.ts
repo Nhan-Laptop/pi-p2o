@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { DUTIES, dutyLine, isWorkPurpose, purposeFromRole } from '../../src/duties.js';
 import { WORK_PURPOSES } from '../../src/work.js';
-import { ownerInstructions, workerInstructions } from '../../src/prompts.js';
+import { plannerInstructions, workerInstructions } from '../../src/prompts.js';
 import type { Ticket } from '../../src/ticket.js';
 
 // planning_update.md P1/P2: a worker's purpose, not its role name, says what counts as done.
@@ -52,10 +52,14 @@ describe('purpose-keyed duty (P1)', () => {
     expect(mapping.split('\n').slice(-2)[0]).toBe(dutyLine('mapping'));
     expect(mapping.split('\n').at(-1)).toContain('Identity:');
     expect(reporting).toContain(dutyLine('reporting'));
-    // Everything except the per-purpose duty and the per-worker identity is one shared static body.
+    // Everything except the per-purpose duty and the per-worker identity is one shared static body per role.
     const strip = (text: string) => text.split('\n').filter(line => !line.startsWith('Your duty (') && !line.startsWith('Identity:')).join('\n');
     expect(strip(mapping)).toBe(strip(sibling));
-    expect(strip(mapping)).toBe(strip(reporting));
+    // A1: the reporter is its own read-only role, so it shares a body with other reporters, not with an executing worker.
+    const reportingSibling = workerInstructions(ticket({ workerId: 'p2o-report-cccccc', role: 'reporting' }));
+    expect(strip(reporting)).toBe(strip(reportingSibling));
+    expect(strip(reporting)).not.toBe(strip(mapping));
+    expect(reporting).toContain('read-only second reader');
     expect(dutyLine('mapping')).not.toBe(dutyLine('reporting'));
   });
 });
@@ -65,7 +69,7 @@ describe('validation contract in the lead prompt (P2)', () => {
     delegation: { enabled: true, maxWorkers: 3, maxDepth: 2 }, workerBudget: 600 };
 
   it('states the three rules the host enforces and what a confirmed closure then means', () => {
-    const text = ownerInstructions(facts);
+    const text = plannerInstructions(facts);
     expect(text).toContain('Validation runs as a separate worker');
     expect(text).toContain('cites the claim it reproduces');
     expect(text).toContain('keeps its own negative control');
@@ -74,7 +78,7 @@ describe('validation contract in the lead prompt (P2)', () => {
     expect(text).toContain('Only that closure counts as confirmed');
     // Still a policy section: no tool names, and the rule is absent when delegation is off.
     expect(text).not.toMatch(/\bp2o_[a-z_]+\b/);
-    expect(ownerInstructions({ ...facts, delegation: { enabled: false, maxWorkers: 1, maxDepth: 1 } })).not.toContain('Validation runs as a separate worker');
+    expect(plannerInstructions({ ...facts, delegation: { enabled: false, maxWorkers: 1, maxDepth: 1 } })).not.toContain('Validation runs as a separate worker');
   });
 });
 

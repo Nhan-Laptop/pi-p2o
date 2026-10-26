@@ -67,8 +67,8 @@ describe('the brief carries a bounded graph slice (P16.3)', () => {
     expect(text).toContain('fact:observed or fact:inferred assertion with its evidence');
     expect(text).toContain('`no-new`');
     expect(text).toContain('has not finished');
-    // Part XI: a reporting worker has the same tools, so the rule reaches it too.
-    expect(workerInstructions(ticket('reporting'))).toContain('Write back as you go');
+    // A1: the reporter is read-only and writes no record, so the write-back rule stops at the executing roles.
+    expect(workerInstructions(ticket('reporting'))).not.toContain('Write back as you go');
   });
 });
 

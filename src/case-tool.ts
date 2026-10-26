@@ -6,7 +6,7 @@ import { CASE_EFFECTS, CHAIN_REACH_METRICS } from './cvss.js';
 const effectSchema = Type.Unsafe<CaseEffect>({ type: 'string', enum: [...CASE_EFFECTS], description: 'Effect the executed step itself showed. The host maps it to CVSS 4.0 impact, and the finding severity cannot exceed the result' });
 import { capabilitySchema } from './tool-schemas.js';
 import type { CaseEffect } from './cvss.js';
-import { COVERAGE_ASSESSMENT, COVERAGE_EXECUTION, COVERAGE_PLAN_STATUS } from './coverage-types.js';
+import { COVERAGE_PLAN_STATUS } from './coverage-types.js';
 const id=()=>Type.String({minLength:1,maxLength:80}),ids=()=>Type.Array(id(),{maxItems:10,uniqueItems:true}),key=(max=160)=>Type.String({minLength:1,maxLength:max});
 const taskRef=Type.Object({taskId:id(),revision:Type.Optional(Type.Integer({minimum:1}))},{additionalProperties:false});
 export const caseEntrySchema=Type.Object({
@@ -35,13 +35,11 @@ export const CASE_ACTION_PARAMETERS: Readonly<Record<typeof CASE_ACTIONS[number]
 };
 /** Root object preserves fields through legacy provider projections. Host enforces action shape. */
 export const coveragePlanSchema=Type.Object({title:Type.String({minLength:5,maxLength:500}),status:choices(COVERAGE_PLAN_STATUS),reason:Type.String({minLength:10,maxLength:1500}),exclusions:Type.Array(Type.String({minLength:5,maxLength:500}),{maxItems:10}),unknownScope:Type.Array(Type.String({minLength:5,maxLength:500}),{maxItems:10})},{additionalProperties:false});
-export const coverageCellSchema=Type.Object({assetRef:Type.Object({id:Type.String({pattern:'^asset-[a-f0-9]{24}$'}),revision:Type.Optional(Type.Integer({minimum:1})),variant:Type.Optional(key(120))},{additionalProperties:false}),questionKey:key(),policyKey:Type.Optional(key()),actorContext:key(),tenantContext:key(),methodFamily:key(80),execution:choices(COVERAGE_EXECUTION),assessment:choices(COVERAGE_ASSESSMENT),taskRefs:Type.Array(taskRef,{maxItems:10}),claimRefs:ids(),caseRefs:Type.Array(Type.Object({caseId:id(),revision:Type.Integer({minimum:1})},{additionalProperties:false}),{maxItems:10}),evidenceRefs:ids(),negativeControlRefs:ids(),gapRefs:ids(),reason:Type.String({minLength:10,maxLength:1500}),limitations:Type.String({minLength:10,maxLength:2000})},{additionalProperties:false});
-export const COVERAGE_MUTATIONS=['plan-create','plan-revise','cell-create','cell-revise','cell-retire'] as const;
+export const COVERAGE_MUTATIONS=['plan-create','plan-revise'] as const;
 export const COVERAGE_ACTIONS=[...COVERAGE_MUTATIONS,'list','view','suggest'] as const;
 /** P13e: exhaustive per action, enumerated instead of inferred from COVERAGE_MUTATIONS order. */
 export const COVERAGE_ACTION_PARAMETERS: Readonly<Record<typeof COVERAGE_ACTIONS[number], readonly string[]>> = {
   'plan-create':['action','plan','requestId'], 'plan-revise':['action','plan','id','revision','requestId'],
-  'cell-create':['action','cell','planId','planRevision','requestId'], 'cell-revise':['action','cell','id','revision','requestId'],
-  'cell-retire':['action','id','revision','reason','requestId'], list:['action','cursor','limit'], view:['action','id'],
+  list:['action','cursor','limit'], view:['action','id'],
   suggest:['action','features','modes','cursor','limit'],
 };

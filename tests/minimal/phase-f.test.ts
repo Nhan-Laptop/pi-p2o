@@ -4,7 +4,7 @@ import { AssessmentEngine, type EngineDeps, type PlannerWake } from '../../src/e
 import { continuationRefusal, type WorkerRegistration } from '../../src/broker.js';
 import { finishPreflight } from '../../src/finish-preflight.js';
 import { readLedger } from '../../src/records.js';
-import { fixture } from './helpers/report-fixture.js';
+import { fixture, seedClaim } from './helpers/report-fixture.js';
 
 /**
  * Phase F acceptance (M6 + M7 + M8). Quiet rounds escalate with both round ids and the human decision — never a budget word;
@@ -126,7 +126,7 @@ describe('the run tells the lead what to research, and records its refusals (M6 
   it('names the transition and the procedure skill when a link blocks', async () => fixture(async h => {
     await h.command('--target ./source');
     const observation = (await h.call('p2o_shell', { command: 'printf phase-f-observation' })).details;
-    await h.call('p2o_candidate', { candidate: 'blocked-link', surface: '/report-fixture', risk: 'authorization', closure: 'open_proof_gap', execution: 'not_tested',
+    await seedClaim(h, { candidate: 'blocked-link', surface: '/report-fixture', risk: 'authorization', closure: 'open_proof_gap', execution: 'not_tested',
       proof: 'static_trace', negativeControls: [], policyBasis: 'inferred', expectedPolicy: 'Declared fixture actor/object boundary', limitations: 'Nothing executed in this step yet',
       evidenceRefs: [observation.evidenceId], needs: [{ kind: 'net.egress', subject: 'internal-api' }], gained: [{ kind: 'exec.code', subject: 'app-host' }] });
     const join = (await h.call('p2o_graph', { action: 'chain' })).details;
@@ -163,9 +163,12 @@ describe('the run tells the lead what to research, and records its refusals (M6 
     await h.command('--target ./source');
     const asset = (await h.call('p2o_graph', { action: 'record', batch: { assets: [{ asset: { kind: 'endpoint', key: 'GET /report-fixture' } }] } })).details.acks[0];
     const observation = (await h.call('p2o_shell', { command: 'printf purpose-observation' })).details;
-    const parent = (await h.call('p2o_candidate', { candidate: 'purpose-parent', surface: '/report-fixture', risk: 'authorization', closure: 'open_proof_gap',
+    const parent = await seedClaim(h, { candidate: 'purpose-parent', surface: '/report-fixture', risk: 'authorization', closure: 'open_proof_gap',
       execution: 'not_tested', proof: 'static_trace', negativeControls: [], policyBasis: 'inferred', expectedPolicy: 'Declared fixture actor/object boundary',
-      limitations: 'Nothing executed in this step yet', evidenceRefs: [observation.evidenceId], gained: [{ kind: 'http.request', subject: 'internal-api' }] })).details;
+      limitations: 'Nothing executed in this step yet', evidenceRefs: [observation.evidenceId], gained: [{ kind: 'http.request', subject: 'internal-api' }] });
+    // A2: the first intent of a run must be recon/mapping; this fixture's subject is the later structured intent.
+    await h.call('p2o_task_create', {draft: { question: 'Which recorded surfaces does the retained fixture graph expose?', surface: '/report-fixture',
+      risk: 'mapping', role: 'recon', evidenceIds: [], prerequisites: [] }});
     const created = (await h.call('p2o_task_create', {draft: {
       question: 'Does the bounded fixture reach the declared effect?', surface: '/report-fixture', risk: 'authorization', role: 'exploit',
       roleReason: 'Purpose fixture role', expectedTrue: 'The bounded observation is recorded', expectedFalse: 'The bounded control is recorded',
@@ -181,7 +184,7 @@ describe('the run tells the lead what to research, and records its refusals (M6 
   it('records an admission refusal once and counts it as an advisory', async () => fixture(async h => {
     await h.command('--target ./source');
     const observation = (await h.call('p2o_shell', { command: 'printf admission-observation' })).details;
-    await h.call('p2o_candidate', { candidate: 'unconsumed', surface: '/report-fixture', risk: 'authorization', closure: 'confirmed', execution: 'tested', proof: 'live_reproduction',
+    await seedClaim(h, { candidate: 'unconsumed', surface: '/report-fixture', risk: 'authorization', closure: 'confirmed', execution: 'tested', proof: 'live_reproduction',
       policyBasis: 'boundary_invariant', negativeControls: [], expectedPolicy: 'Declared fixture actor/object boundary', limitations: 'Bounded fixture only', evidenceRefs: [observation.evidenceId],
       gained: [{ kind: 'http.request', subject: 'internal-api' }] });
     const broad = { question: 'Does the bounded fixture respond?', surface: '/report-fixture', risk: 'authorization', role: 'general', roleReason: 'Admission fixture breadth',

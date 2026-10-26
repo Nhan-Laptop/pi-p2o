@@ -1,0 +1,75 @@
+import type { LedgerIndex } from './records.js';
+import { PLANNER_TOOLS, REPORTER_TOOLS, VALIDATION_TOOLS, WORKER_TOOLS } from './tool-policy.js';
+
+/**
+ * planning_update.md A4 — the authority facts a reader needs to see which policy produced a run. Everything here is derived
+ * from committed records plus the static role matrices: no model, no target, no new gate or wake. `plannerTargetOps` and
+ * `ownerClaims` are the two measured invariants (they must be 0 after P0/A1/P1); a legacy run keeps its honest >0.
+ */
+export interface AuthorityCounters {
+  /** Target operations authored by the planner/owner (evidence receipts with no worker attribution). Must be 0 post-A1. */
+  plannerTargetOps: number;
+  /** Target operations authored by a delegated worker. */
+  workerTargetOps: number;
+  /** Distinct task ids created (every status counts; cancellation does not un-create). */
+  tasksCreated: number;
+  /** Distinct task ids that ever reached `running` (a worker launch was registered for them). */
+  tasksDispatched: number;
+  /** Earliest `running` record; the measured "first dispatch before first target operation" reads against this. */
+  firstDispatchAt?: string;
+  /** Candidate claims authored without a worker attribution. Must be 0 post-A2. */
+  ownerClaims: number;
+  /** Candidate claims authored by a delegated worker (the only legal claim author). */
+  workerClaims: number;
+  /** Distinct tasks whose stored role is `validation`. */
+  validationTasks: number;
+  /** Recorded `planner.stalled` lifecycle facts (A4): zero-intent rounds that ended with an open goal. */
+  stalledRounds: number;
+}
+export interface RoleCounts { planner: number; worker: number; validation: number; reporter: number }
+export interface AuthorityMode { loopMode?: string; executorMode?: string }
+export interface AuthorityReport extends AuthorityCounters { mode?: AuthorityMode; roles: RoleCounts }
+
+export const ROLE_COUNTS: Readonly<RoleCounts> = {
+  planner: PLANNER_TOOLS.length, worker: WORKER_TOOLS.length, validation: VALIDATION_TOOLS.length, reporter: REPORTER_TOOLS.length,
+};
+
+interface TaskRow { id: string; role?: string; dispatchedAt?: string }
+function taskRows(index: LedgerIndex): Map<string, TaskRow> {
+  const rows = new Map<string, TaskRow>();
+  for (const record of index.records) {
+    if (record.kind !== 'task') continue;
+    const task = record.data?.task as { id?: unknown; role?: unknown; status?: unknown } | undefined;
+    if (!task || typeof task.id !== 'string') continue;
+    const row = rows.get(task.id) ?? { id: task.id };
+    if (typeof task.role === 'string' && row.role === undefined) row.role = task.role;
+    // A dispatch is the record that first moved the task to running; the earliest such record is the first dispatch.
+    if (task.status === 'running' && (row.dispatchedAt === undefined || record.at < row.dispatchedAt)) row.dispatchedAt = record.at;
+    rows.set(task.id, row);
+  }
+  return rows;
+}
+
+export function authorityCounters(index: LedgerIndex): AuthorityCounters {
+  const tasks = [...taskRows(index).values()];
+  const dispatched = tasks.flatMap(row => row.dispatchedAt === undefined ? [] : [row.dispatchedAt]);
+  const evidence = index.records.filter(record => record.kind === 'evidence');
+  const claims = index.records.filter(record => record.kind === 'candidate');
+  return {
+    plannerTargetOps: evidence.filter(record => !record.workerId).length,
+    workerTargetOps: evidence.filter(record => Boolean(record.workerId)).length,
+    tasksCreated: tasks.length,
+    tasksDispatched: dispatched.length,
+    ...(dispatched.length ? { firstDispatchAt: dispatched.sort()[0] } : {}),
+    ownerClaims: claims.filter(record => !record.workerId).length,
+    workerClaims: claims.filter(record => Boolean(record.workerId)).length,
+    validationTasks: tasks.filter(row => row.role === 'validation').length,
+    stalledRounds: index.records.filter(record => record.kind === 'lifecycle'
+      && (record.data?.engine as { event?: unknown } | undefined)?.event === 'planner.stalled').length,
+  };
+}
+
+/** Ledger counters + the static role matrix (+ the run mode when the caller has it) — one object for report and status. */
+export function authorityReport(index: LedgerIndex, mode?: AuthorityMode): AuthorityReport {
+  return { ...authorityCounters(index), roles: ROLE_COUNTS, ...(mode ? { mode } : {}) };
+}

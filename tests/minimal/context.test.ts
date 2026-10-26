@@ -7,7 +7,8 @@ import type { AssessmentRecord } from '../../src/records.js';
 import { replayKnowledgeIndex, type KnowledgeIndexSnapshot } from '../../src/context.js';
 import { bindAssessmentStore } from '../../src/state/adapter.js';
 import { CaseBoard } from '../../src/cases.js';
-import { CoverageBoard } from '../../src/coverage.js';
+import { CoverageBoard, coverageFingerprint } from '../../src/coverage.js';
+import { TaskBoard } from '../../src/tasks.js';
 import type { CaseDraft } from '../../src/case-types.js';
 
 const manifest:StoreManifest={runId:'run-context',retention:'durable-local',targetKind:'directory',targetIdentity:'fixture-context',targetDisplay:'authorized inert context',profile:{runtimeHash:'inert',image:'inert',loopMode:'manual',executorMode:'shared'}};
@@ -20,8 +21,13 @@ describe('indexed knowledge context delivery, not proof or authority',()=>{
     store.commitRecords([record('old-gap','open'),task('task-old')]);
     for(let page=0;page<20;page++)store.commitRecords(Array.from({length:100},(_,i)=>record(`cold-${page}-${i}`)));
     const sequence=store.sequence();
-    // Packet reads do not fall back to an unbounded whole-history/domain reconciliation.
+    // Packet reads do not fall back to an unbounded whole-history/domain reconciliation. A3 reads committed work for the
+    // planner backlog, so the guard is pinned on the worker packet, whose sections must stay indexed.
+    const records=store.records.bind(store);
     store.records=()=>{throw Error('Whole-history read forbidden in context');};
+    const worker=store.contextPacket({consumerId:'worker-guard',role:'worker',taskId:'task-old'});
+    expect(worker.counts).toMatchObject({heads:2,coldRecords:2000,openGaps:1,pendingReviews:1,eventsAfterCursor:2002});
+    store.records=records;
     const a=store.contextPacket({consumerId:'planner',role:'planner'}),b=store.contextPacket({consumerId:'planner',role:'planner'});
     expect(a).toEqual(b);expect(a.counts).toMatchObject({heads:2,coldRecords:2000,openGaps:1,pendingReviews:1,eventsAfterCursor:2002});
     expect(a.newGaps.map(row=>row.entityId)).toContain('old-gap');expect(a.newReviews.map(row=>row.entityId)).toContain('task-old');expect(a.omissions.changes).toBe(1982);
@@ -72,14 +78,15 @@ describe('indexed knowledge context delivery, not proof or authority',()=>{
     const page=store.knowledgePage({domain:'task',limit:10});expect(page).toMatchObject({total:46,shown:10,omitted:36});expect(page.nextCursor).toBeDefined();const tail=store.knowledgePage({domain:'task',cursor:page.nextCursor,limit:100});expect(tail.rows).toHaveLength(36);
     expect(()=>store.contextPacket({consumerId:'worker-one',role:'worker'})).toThrow('Invalid context');
   }));
-  it('downgrades transitive case/cell hot heads when exact support changes; cold accepted history never masks stale support',async()=>fixture(async(store,root)=>{
+  it('downgrades transitive case/candidate hot heads when exact support changes; cold accepted history never masks stale support',async()=>fixture(async(store,root)=>{
     const path=join(root,'alias.sqlite'),unbind=bindAssessmentStore(path,store);try{
-      const asset=store.recordGraph({assets:[{asset:{kind:'endpoint',key:'GET /context'}}]})[0].entityId,context={assetRevision:(id:string)=>store.assetRevision(id),assertionRevision:(id:string)=>store.assertionRevision(id)},cases=new CaseBoard(manifest.runId,path,()=>true,context),coverage=new CoverageBoard(manifest.runId,path,()=>true,{...context,targetRevision:()=>store.graphScope(),assetIds:()=>store.assetEntityIds()});
+      const asset=store.recordGraph({assets:[{asset:{kind:'endpoint',key:'GET /context'}}]})[0].entityId,context={assetRevision:(id:string)=>store.assetRevision(id),assertionRevision:(id:string)=>store.assertionRevision(id)},cases=new CaseBoard(manifest.runId,path,()=>true,context);
       store.commitRecords([record('receipt','evidence','worker'),{...record('claim','candidate','worker'),surface:'/context',risk:'authorization',refs:['receipt'],data:{candidate:'context-claim',closure:'confirmed',execution:'tested',proof:'offline_reproduction',evidenceRefs:['receipt'],negativeControls:[],limitations:'Bounded inert fixture only',policyBasis:'boundary_invariant',expectedPolicy:'Declared fixture gate'}}]);
-      const draft:CaseDraft={title:'Context support case',policyKey:'policy:context',rootCauseKey:'root:context',assetRefs:[{id:asset,revision:1}],claimRefs:['claim'],independentEvidenceRefs:[],taskRefs:[],reportRefs:[],contradictions:[],affectedVariants:['variant:context'],relatedCaseIds:[],verdict:'confirmed',reviewStatus:'pending',reviewReason:'Pending explicit review of context support',limitations:'No live target or provider proof',remediation:{status:'unplanned',reason:'No remediation or retest was claimed',evidenceRefs:[]}},created=await cases.create(draft),accepted=await cases.revise(created.id,1,{...draft,reviewStatus:'accepted',reviewReason:'Owner reviewed exact inert claim support'}),plan=await coverage.createPlan({title:'Context denominator',status:'active',reason:'Explicit inert context denominator',exclusions:[],unknownScope:['Only this fixture is known']}),added=await coverage.addCell(plan.id,plan.revision,{assetRef:{id:asset,revision:1},questionKey:'question:context',policyKey:'policy:context',actorContext:'actor:context',tenantContext:'tenant:context',methodFamily:'offline-observation',execution:'attempted',assessment:'accepted',taskRefs:[],claimRefs:[],caseRefs:[{caseId:accepted.id,revision:accepted.revision}],evidenceRefs:['receipt'],negativeControlRefs:[],gapRefs:[],reason:'Case support retained without assuming reviewed target execution',limitations:'Only bounded inert support'});
+      const draft:CaseDraft={title:'Context support case',policyKey:'policy:context',rootCauseKey:'root:context',assetRefs:[{id:asset,revision:1}],claimRefs:['claim'],independentEvidenceRefs:[],taskRefs:[],reportRefs:[],contradictions:[],affectedVariants:['variant:context'],relatedCaseIds:[],verdict:'confirmed',reviewStatus:'pending',reviewReason:'Pending explicit review of context support',limitations:'No live target or provider proof',remediation:{status:'unplanned',reason:'No remediation or retest was claimed',evidenceRefs:[]}},created=await cases.create(draft),accepted=await cases.revise(created.id,1,{...draft,reviewStatus:'accepted',reviewReason:'Owner reviewed exact inert claim support'});
       const checkpoint=store.checkpoint('Before support supersession'),snapshot=store.inspectCheckpoint(checkpoint.id).snapshot!.knowledge!;
       store.commitRecords([{...store.record('claim')!,id:'claim-withdrawn',supersedes:'claim',data:{...store.record('claim')!.data,closure:'open_proof_gap',execution:'not_tested',proof:'static_trace'}}]);
-      expect(store.knowledgePage({domain:'case'}).rows[0].status).toBe('stale');expect(store.knowledgePage({domain:'coverage-cell'}).rows[0]).toMatchObject({entityId:added.cell.id,status:'stale'});expect(store.contextPacket({consumerId:'planner',role:'planner'}).newReviews.map(row=>row.status)).toEqual(['stale','stale']);
+      // A3: projected coverage cells have no stored knowledge head, so the transitive heads are the candidate and the case.
+      expect(store.knowledgePage({domain:'candidate'}).rows).toMatchObject([{recordId:'claim-withdrawn',status:'open_proof_gap'}]);expect(store.knowledgePage({domain:'case'}).rows[0].status).toBe('stale');expect(store.contextPacket({consumerId:'planner',role:'planner'}).newReviews.map(row=>row.status)).toEqual(['stale']);
       expect(store.record(accepted.recordId)?.data?.case).toMatchObject({reviewStatus:'accepted'});expect((await cases.list())[0].acceptedFinding).toBe(false);
       expect(replayKnowledgeIndex(snapshot,store.events({since:checkpoint.asOfSequence,limit:100}).rows,id=>store.record(id))).toEqual(store.knowledgeIndex());
     }finally{unbind();}
@@ -87,20 +94,23 @@ describe('indexed knowledge context delivery, not proof or authority',()=>{
   it('adds a planner-only backlog of pointers (assets with no live cell, cells nobody ran, WSTG suggestions) and leaves a packet without one unchanged',async()=>fixture(async(store,root)=>{
     const path=join(root,'alias.sqlite'),unbind=bindAssessmentStore(path,store);try{
       const before=store.contextPacket({consumerId:'planner',role:'planner'});expect(before).not.toHaveProperty('backlog');
-      const ids=store.recordGraph({assets:[...Array.from({length:7},(_,i)=>({asset:{kind:'endpoint' as const,key:`GET /backlog-${i}`,...(i===0?{attributes:{feature:'login, jwt'}}:{})}}))]}).map(ack=>ack.entityId);
+      const ids=store.recordGraph({assets:[...Array.from({length:7},(_,i)=>({asset:{kind:'endpoint' as const,key:`GET /backlog-${i}`,...(i===0?{attributes:{feature:'login, jwt'}}:{})}}))]}).map(ack=>ack.entityId),sorted=[...ids].sort();
       const packet=store.contextPacket({consumerId:'planner',role:'planner'});
-      expect(packet.backlog?.unplannedAssets).toEqual({total:7,ids:ids.slice(0,5)});expect(packet.backlog?.cellsNotRun).toBeUndefined();expect(packet.backlog?.wstgSuggestions?.features).toEqual(['login','jwt']);expect(packet.backlog?.wstgSuggestions?.total).toBeGreaterThan(0);
+      expect(packet.backlog?.unplannedAssets).toEqual({total:7,ids:sorted.slice(0,5)});expect(packet.backlog?.cellsNotRun).toBeUndefined();expect(packet.backlog?.wstgSuggestions?.features).toEqual(['login','jwt']);expect(packet.backlog?.wstgSuggestions?.total).toBeGreaterThan(0);
       expect(store.contextPacket({consumerId:'worker-one',role:'worker',taskId:'task-x'})).not.toHaveProperty('backlog');expect(store.contextPacket({consumerId:'reporter-one',role:'reporting',taskId:'task-x'})).not.toHaveProperty('backlog');
       const context={assetRevision:(id:string)=>store.assetRevision(id),assertionRevision:(id:string)=>store.assertionRevision(id)},coverage=new CoverageBoard(manifest.runId,path,()=>true,{...context,targetRevision:()=>store.graphScope(),assetIds:()=>store.assetEntityIds()});
-      const plan=await coverage.createPlan({title:'Backlog denominator',status:'active',reason:'Explicit inert denominator',exclusions:[],unknownScope:['fixture only']});
-      let revision=plan.revision;const cell=async (asset:string,questionKey:string,execution:'planned')=>{const added=await coverage.addCell(plan.id,revision,{assetRef:{id:asset,revision:1},questionKey,actorContext:'actor:x',tenantContext:'tenant:x',methodFamily:'offline-observation',execution,assessment:'unreviewed',taskRefs:[],claimRefs:[],caseRefs:[],evidenceRefs:[],negativeControlRefs:[],gapRefs:[],reason:'Inert backlog fixture cell',limitations:'Fixture only'});revision=added.plan.revision;return added;};
-      const planned=await cell(ids[0],'wstg-athn-02','planned');
+      await coverage.createPlan({title:'Backlog denominator',status:'active',reason:'Explicit inert denominator',exclusions:[],unknownScope:['fixture only']});
+      // A3: the denominator is a projection of tasks that declare a structured work identity, so the fixture creates intents.
+      const board=new TaskBoard(manifest.runId,path,()=>true,Date.now,()=>store.graphScope(),id=>store.assetRevision(id));
+      const cellTask=(asset:string,questionKey:string)=>board.create({question:`Which bounded observation covers ${questionKey}?`,surface:'/backlog',risk:'mapping',role:'recon',roleReason:'Bounded inert backlog fixture',expectedTrue:'The recorded fixture exposes this question',expectedFalse:'The fixture exposes nothing and the receipt says so',stopCondition:'Stop after one inert mapping intent',evidenceIds:[],prerequisites:[],method:{skills:[],reason:'No target or model work'},work:{assetRefs:[{id:asset,revision:1}],questionKey,policyKey:'policy:backlog',actorContext:'actor:backlog',tenantContext:'tenant:backlog',methodFamily:'offline-observation',purpose:'mapping'}});
+      const fp=coverageFingerprint(store.graphScope(),{assetRef:{id:sorted[0],revision:1},questionKey:'wstg-athn-02',policyKey:'policy:backlog',actorContext:'actor:backlog',tenantContext:'tenant:backlog',methodFamily:'offline-observation',execution:'planned',assessment:'unreviewed',taskRefs:[],claimRefs:[],caseRefs:[],evidenceRefs:[],negativeControlRefs:[],gapRefs:[],reason:'',limitations:''}),derivedId=`coverage-cell-${fp.slice(0,24)}`;
+      await cellTask(sorted[0],'wstg-athn-02');
       const next=store.contextPacket({consumerId:'planner',role:'planner'});
-      expect(next.backlog?.unplannedAssets).toEqual({total:6,ids:ids.slice(1,6)});expect(next.backlog?.cellsNotRun).toEqual({total:1,ids:[planned.cell.id]});
+      expect(next.backlog?.unplannedAssets).toEqual({total:6,ids:sorted.slice(1,6)});expect(next.backlog?.cellsNotRun).toEqual({total:1,ids:[derivedId]});
       expect(next.backlog?.wstgSuggestions?.total).toBeLessThanOrEqual(packet.backlog!.wstgSuggestions!.total);
       const tiny=store.contextPacket({consumerId:'planner',role:'planner',maxBytes:4096});expect(tiny.encodedBytes).toBeLessThanOrEqual(4096);expect(tiny.backlog?.unplannedAssets?.total).toBe(6);
       expect(Buffer.byteLength(JSON.stringify(next.backlog))).toBeLessThan(900);
-      for(const [i,asset] of ids.entries())if(i>0)await cell(asset,`question:${i}`,'planned');
+      for(const [i,asset] of sorted.entries())if(i>0)await cellTask(asset,`question:${i}`);
       const done=store.contextPacket({consumerId:'planner',role:'planner'});expect(done.backlog?.unplannedAssets).toBeUndefined();expect(done.backlog?.cellsNotRun?.total).toBe(7);
     }finally{unbind();}
   }));

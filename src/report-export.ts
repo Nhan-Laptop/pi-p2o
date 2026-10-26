@@ -14,6 +14,7 @@ import { safeText } from './evidence.js';
 import type { LedgerIndex } from './records.js';
 import type { FinishPreflight } from './finish-preflight.js';
 import { reportProjection, type ReportProjectionContext } from './report.js';
+import type { AuthorityMode } from './authority.js';
 import { awaitingReview, taskFrontier, taskRevisionAt } from './tasks.js';
 import { sha256Hex } from './validate.js';
 import { WSTG_BY_KEY, WSTG_COMMIT, WSTG_MAP, isWstgKey, wstgEvidence, wstgKey, wstgPageUrl, type WstgEvidence } from './wstg-map.js';
@@ -48,6 +49,8 @@ export interface ReportMeta {
   wstgPages?: readonly string[];
   /** P16.3: host-computed write-back counts per worker, printed next to each handoff so the report counts what was written. */
   wrote?: ReadonlyMap<string, WorkerWrites>;
+  /** A4: the loop/executor mode that produced the run, printed next to the authority counters and role matrix. */
+  mode?: AuthorityMode;
 }
 export const OPERATOR_FIELDS = ['author', 'organization', 'team', 'classification', 'disclaimer'] as const;
 export type OperatorField = typeof OPERATOR_FIELDS[number];
@@ -211,7 +214,7 @@ function scopeAndSummary(meta: ReportMeta, index: LedgerIndex, plans: readonly C
   const paragraphs = (meta.narrative ?? '').split(/\n{2,}/).map(part => part.trim()).filter(Boolean).slice(0, 6);
   return ['## Scope and limitations', '',
     `- Assessed target: ${mdText(meta.target, 400)}, as authorized by the operator when the run started. The tool never widened this scope.`,
-    `- Coverage denominator: ${plans.length ? `${plans.length} plan(s), ${live.length} live cell(s)` : 'none recorded, so nothing can be called covered'}. Exclusions recorded: ${list(exclusions.map(item => mdText(item, 200)))}. Unknown scope: ${list(unknown.map(item => mdText(item, 200)))}.`,
+    `- Coverage denominator: ${plans.length ? `${plans.length} plan(s), ${live.length} live cell(s), derived from reviewed worker work (no planner-authored cell exists)` : 'none recorded, so nothing can be called covered'}. Exclusions recorded: ${list(exclusions.map(item => mdText(item, 200)))}. Unknown scope: ${list(unknown.map(item => mdText(item, 200)))}.`,
     `- Not examined or not confirmed: ${notClean.length} cell(s) (${notTested} not tested, ${stale} stale), ${unplanned} discovered asset(s) outside every plan, ${openGaps} open gap(s)${usesWstg ? `, ${untouched} WSTG test(s) with no cell` : ''}. Each is listed in the coverage section below; none of them is a result.`,
     '- Tool limits: commands and HTTP requests run from an isolated sandbox against the authorized target only. There is no browser, so an effect that happens only in a browser stops at offline reproduction; a check that needs a credential ran only if the operator supplied that identity; third-party origins and DNS are outside the tool’s scope.',
     '- The severity of a finding is an attributed rating recorded by the lead, with its stated basis. It is not computed from exploit evidence and it never changes a case’s verdict or review status.', '',
@@ -269,7 +272,9 @@ function operatorBrief(index: LedgerIndex): string[] {
 }
 
 export function renderReport(index: LedgerIndex, context: ReportProjectionContext & { coverage?: CoverageContext }, meta: ReportMeta): RenderedReport {
-  const projection = reportProjection(index, context), tasks = taskFrontier(index);
+  const projection = reportProjection(index, meta.mode ? { ...context, mode: meta.mode } : context), tasks = taskFrontier(index);
+  // A4: the authority facts are printed as provenance, never as a gate, permission or finding.
+  const authority = projection.authority, roles = authority.roles;
   const cases = caseViews(index, context.cases ?? {}), plans: CoveragePlanView[] = context.coverage ? coverageViews(index, context.coverage) : [];
   // M3: completion is derived here, from the same ledger the rest of the report is rendered from, so the report cannot claim a
   // state the situation line or the finish result would contradict. P16.1: goal proofs read the same case/coverage views
@@ -291,6 +296,8 @@ export function renderReport(index: LedgerIndex, context: ReportProjectionContex
     '## Provenance', '',
     `- Run: ${mdText(meta.runId, 80)}${meta.historical ? ' (historical, read-only store)' : ' (active run)'}; as of committed sequence **${meta.asOfSequence}**; ${index.records.length} records; store schema ${meta.storeSchema}`,
     `- Target: ${mdText(meta.target, 400)}; retention ${mdText(meta.retention)}`,
+    `- Authority: planner target operations ${authority.plannerTargetOps} (must be 0); worker target operations ${authority.workerTargetOps}; tasks created ${authority.tasksCreated}, dispatched ${authority.tasksDispatched}${authority.firstDispatchAt ? ` (first dispatch ${mdText(authority.firstDispatchAt, 40)})` : ''}; claims owner ${authority.ownerClaims} (must be 0) / worker ${authority.workerClaims}; validation tasks ${authority.validationTasks}; stalled rounds ${authority.stalledRounds}`,
+    `- Mode and role matrix: ${authority.mode ? `${mdText(authority.mode.loopMode ?? 'unknown', 24)} loop / ${mdText(authority.mode.executorMode ?? 'unknown', 24)} executor` : 'mode not recorded in this snapshot'}; planner ${roles.planner} tools (no target or claim tool), worker ${roles.worker}, validation ${roles.validation}, reporter ${roles.reporter} (read-only)`,
     ...operatorBrief(index),
     `- Runtime that wrote this run: p2o ${mdText(meta.runtime.version || 'unknown version', 40)} · closure digest ${mdText(meta.runtime.hash.slice(0, 12), 16)}`,
     `- Reconciliation: ${meta.complete && projection.complete ? 'complete bounded record scan' : '**INCOMPLETE** — no completeness claim'}${projection.diagnostics.length ? `; diagnostics: ${projection.diagnostics.slice(0, 10).map(item => mdText(item, 200)).join('; ')}` : ''}`,

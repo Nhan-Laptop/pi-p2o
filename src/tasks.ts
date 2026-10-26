@@ -6,7 +6,7 @@ import { purposeFromRole } from './duties.js';
 import { prepareReport } from './report.js';
 import type { WorkerReport } from './broker.js';
 import type { MutationRequest } from './state/store.js';
-import { validateWorkFields, validateWorkSpec, workIdentity, type TaskOutputContract, type WorkDecision, type WorkSpec } from './work.js';
+import { defaultOutputContract, defaultWorkDecision, validateWorkFields, validateWorkSpec, workIdentity, type TaskOutputContract, type WorkDecision, type WorkSpec } from './work.js';
 import { makePhasePacket } from './phase.js';
 import { derive } from './ledger-memo.js';
 import { TEXT_CONTROL } from './validate.js';
@@ -151,13 +151,61 @@ export class TaskBoard extends LedgerBoard {
   integrity: 'off' | 'annotate' | 'enforce' = 'annotate';
   constructor(runId: string, path: string, active: () => boolean, private now = () => Date.now(), private targetRevision:string|(()=>string)=runId,
     private assetRevision?: (id:string)=>number|undefined) { super(runId, path, active, 'Task', 'Task'); }
-  /** One canonical stored form: the work identity is re-validated so a sorted parent list is what the record holds. */
+  /**
+   * A2 (planning_update.md §2.4): one canonical stored form. The work identity is re-validated so a sorted parent list is what
+   * the record holds, and the fields the host owns are derived rather than charged to the caller: the purpose the role already
+   * names, the output contract that purpose implies, and the only disposition it can hold. The first task of a run is the one
+   * authored by a human, so the host is the one place that must not lose information by deriving.
+   */
   private canonical<T extends TaskDraft>(task:T):T {
-    if(!task.work)return task;
-    // M6/B7: the role already names the purpose, so a structured draft may omit it instead of failing a validation it can satisfy.
-    // An explicitly wrong purpose is still the caller's to fix: only the absent field is filled.
-    const work=task.work.purpose===undefined?{...task.work,purpose:purposeFromRole(task.role)}:task.work;
-    return {...task,work:validateWorkSpec(work)};
+    if(!task.work){return task;}
+    const work=validateWorkSpec(task.work.purpose===undefined?{...task.work,purpose:purposeFromRole(task.role)}:task.work);
+    const decision=task.decision??defaultWorkDecision(work.purpose,{validationOf:task.validationOf,retestOf:task.retestOf,parentTaskId:task.parentTaskId,prerequisites:task.prerequisites});
+    return {...task,work,...(decision?{decision}:{}),outputContract:task.outputContract??defaultOutputContract(work.purpose)};
+  }
+  /**
+   * A2 intent admission. The first intent of a run is recon/mapping — it is the only one allowed to stand on the target snapshot
+   * alone — and every later intent must anchor to what the run already holds: a first validation is refused with the legal-next
+   * role, a structured discovery needs a claim or a reviewed prerequisite, and a validation names a reviewed task or a worker
+   * claim that the host resolves to its task and pins at the reviewed revision. Legacy prose drafts (no work identity) keep the
+   * pre-A2 path apart from the first-task and validation rules, which hold in both shapes; they are the migration tail.
+   */
+  private anchor<T extends TaskDraft>(draft:T,index:LedgerIndex,tasks:AssessmentTask[]):T {
+    const purpose=draft.work?.purpose??purposeFromRole(draft.role), first=tasks.length===0;
+    if(first&&purpose==='validation')throw Error('PURPOSE_NEEDS_PREDECESSOR: a validation intent replays a reviewed claim, and nothing has been reviewed yet, so it cannot be the first intent of a run. legalNext: create a recon task first (role=recon), then create the validation from the worker claim it produces');
+    if(first&&draft.work){
+      if(purpose==='discovery')throw Error('PURPOSE_NEEDS_ANCHOR: a discovery intent must cite the worker claim (work.claimRefs) or the reviewed task it builds on; with no recon/mapping task in the run there is no anchor and an unanchored discovery is not admitted. legalNext: create a recon task first (role=recon), then cite the reviewed claim the discovery builds on');
+      if(purpose==='exploitation')throw Error('PURPOSE_NEEDS_ANCHOR: an exploitation intent must cite the demonstrated primitive claim it takes further (work.claimRefs), and this run holds no claim yet. legalNext: create a recon task first (role=recon), then cite the demonstrated claim');
+      if(purpose==='chaining')throw Error('PURPOSE_NEEDS_ANCHOR: a chaining intent composes two claims this run has not produced yet. legalNext: create a recon task first (role=recon), then cite the two claims it composes');
+      if(purpose==='retest')throw Error('PURPOSE_NEEDS_PREDECESSOR: a retest revisits a prior attempt on the same identity, and this run has no prior attempt. legalNext: create a recon task first (role=recon), then retest the reviewed task it revisits');
+    }
+    let anchored:T=draft;
+    if(purpose==='validation'){
+      const link=draft.validationOf;
+      if(!link)throw Error('PURPOSE_NEEDS_PREDECESSOR: a validation intent must set validationOf to the reviewed task it reproduces, or to the worker claim (which carries the host taskRef of its discovery) it replays. legalNext: cite a reviewed task ID or a worker claim ID; if neither exists yet, create a recon task first');
+      const board=tasks.filter(task=>task.id!==draft.id);
+      let prior=board.find(task=>task.id===link);
+      if(!prior){
+        const claim=index.byId.get(link);
+        if(!claim||claim.kind!=='candidate'||claim.runId!==this.runId)throw Error(`UNKNOWN_PREDECESSOR: validationOf=${link} is neither a task of this run nor a claim of this run. legalNext: cite the reviewed task ID, or the worker claim ID whose data.taskRef names its task`);
+        if(claim.by==='owner'||!claim.workerId)throw Error(`OWNER_CLAIM_NOT_ANCHORABLE: ${link} was not authored by a worker assignment, so no independent worker replay can reproduce it; owner/planner claims no longer exist. legalNext: create and dispatch a discovery intent, then validate the worker claim it reports`);
+        const taskRef=claim.data?.taskRef;
+        if(typeof taskRef!=='string')throw Error(`CLAIM_WITHOUT_TASK: worker claim ${link} carries no host taskRef, so the host cannot name the discovery task a validation would replay. legalNext: cite the reviewed discovery task ID instead`);
+        prior=board.find(task=>task.id===taskRef);
+        if(!prior)throw Error(`UNKNOWN_PREDECESSOR: worker claim ${link} names task ${taskRef}, which is not on this run's board. legalNext: cite a reviewed task of this run`);
+      }
+      if(prior.role==='validation'||prior.work?.purpose==='validation')throw Error(`NO_REVALIDATION: ${prior.id} is itself a validation, and a validation is never revalidated. legalNext: revise the case or create a new discovery intent instead of replaying a replay`);
+      if(!isSatisfiedTask(prior.status)||!prior.reviewReason||!prior.evidenceIds.length)throw Error(`UNREVIEWED_PREDECESSOR: ${prior.id} is ${prior.status}${prior.evidenceIds.length?'':' with no accepted receipts'}; a validation reproduces reviewed work only. legalNext: review ${prior.id} with its accepted evidence (p2o_task_review), then create the validation`);
+      // The host pins the reviewed revision and rewrites the link to the task, so a claim and its task cannot drift apart later.
+      const prerequisites=draft.prerequisites.some(p=>p.taskId===prior.id)
+        ? draft.prerequisites.map(p=>p.taskId===prior.id?{...p,revision:prior.revision}:p)
+        : [{taskId:prior.id,revision:prior.revision},...draft.prerequisites];
+      const decision=draft.decision&&draft.decision.relatedTaskId===link&&link!==prior.id?{...draft.decision,relatedTaskId:prior.id}:draft.decision;
+      anchored={...draft,validationOf:prior.id,prerequisites,...(decision?{decision}:{})};
+    }
+    if(!anchored.work)return anchored;
+    if(purpose==='discovery'&&!(anchored.work.claimRefs??[]).length&&!anchored.prerequisites.length)throw Error('PURPOSE_NEEDS_ANCHOR: a discovery intent must cite the worker claim it builds on (work.claimRefs) or a reviewed prerequisite task; an unanchored discovery would run before there is anything to build on. legalNext: cite the reviewed claim with work.claimRefs, or create the recon/mapping intent that produces it first');
+    return anchored;
   }
   private pinAssets<T extends TaskDraft>(task:T):T {
     if(!task.work)return task;
@@ -200,13 +248,13 @@ export class TaskBoard extends LedgerBoard {
     return { ...task, recordId };
   }
   async create(draft: TaskDraft): Promise<AssessmentTask> {
-    // M6/B7: fill the purpose from the role before validation, so a structured draft that already states the role is not refused
-    // for repeating it. `canonical` is idempotent, so the later call keeps one owner for the fill.
-    const prepared = this.canonical(draft); validate(prepared);
     return this.mutate(async (index, tasks) => {
       const id = draft.id ?? `task-${randomUUID()}`;
       if (tasks.some(t => t.id === id)) throw Error('Duplicate task');
-      const candidate=this.canonical({...draft,id});this.checkDependencies(candidate,tasks,index);
+      // A2: the cheap intent is completed and anchored against the board it is joining inside the same serialized mutation, so a
+      // refusal happens before any pane or ticket is created.
+      const candidate = this.canonical(this.anchor({ ...draft, id }, index, tasks)); validate(candidate);
+      this.checkDependencies(candidate,tasks,index);
       // M2/M4: the frontier is an obligation. A create that opens a new direction on a surface where a step is ready, or where a
       // demonstrated primitive has no successor and no wall, is refused with the claim to cite; revise and dispatch are untouched.
       const plans=planFrontier(index),claims=claimHeadClaims(index,this.runId),refusal=dispatchRefusal({draft:candidate,obligations:chainObligations({plans,claims,tasks}),plans});
@@ -216,12 +264,12 @@ export class TaskBoard extends LedgerBoard {
     });
   }
   async revise(id: string, revision: number, draft: TaskDraft): Promise<AssessmentTask> {
-    const prepared = this.canonical(draft); validate(prepared);
     return this.mutate(async (index, tasks) => {
       const old = this.current(tasks,id,revision);
       if (['reserved','running'].includes(old.status)) throw Error('Withdraw active assignment before revising');
       if (draft.id && draft.id !== id) throw Error('Cannot change task identity');
-      const candidate=this.canonical({...draft,id});this.checkDependencies(candidate,tasks.filter(t => t.id !== id),index);const decorated=this.decorate(candidate,await this.matching(candidate));
+      const candidate=this.canonical(this.anchor({...draft,id},index,tasks));validate(candidate);
+      this.checkDependencies(candidate,tasks.filter(t => t.id !== id),index);const decorated=this.decorate(candidate,await this.matching(candidate));
       return this.write({ ...decorated,runId:this.runId,revision:old.revision+1,status:draft.missingPrerequisites?.length ? 'blocked' : 'proposed' },old);
     });
   }
@@ -267,20 +315,20 @@ export class TaskBoard extends LedgerBoard {
       // validation-shaped intent is the discovery that produces the claim, so the gate waits until there is something to cite.
       const citable = hasClaim || hasTask || index.records.some(row => row.kind === 'candidate' && row.runId === this.runId);
       if (!citable) return;
-      if (!hasClaim && !hasTask) throw Error(`PURPOSE_NEEDS_LINEAGE: a ${purpose} task must cite the claim it reproduces (work.claimRefs) or the predecessor task it revisits (validationOf/retestOf); this run already holds a claim, so both being absent cannot be read as "nothing to cite yet"`);
+      if (!hasClaim && !hasTask) throw Error(`PURPOSE_NEEDS_LINEAGE: a ${purpose} task must cite the claim it reproduces (work.claimRefs) or the predecessor task it revisits (validationOf/retestOf); this run already holds a claim, so both being absent cannot be read as "nothing to cite yet". legalNext: cite the reviewed task ID or the worker claim ID in validationOf`);
       return;
     }
     // P14.5: exploitation and chaining are the purposes that take an existing primitive further, so they cannot stand on an asset
     // revision or a prior task — those exemptions belong to investigation/refinement. Two claims are the strongest chain the task
     // shape can express today; "a claim plus a demonstrated environment" waits for P14.10, which gives a task a way to name one.
     if ((purpose === 'exploitation' || purpose === 'chaining') && draft.work) {
-      if (purpose === 'exploitation' && !hasClaim) throw Error(`PURPOSE_NEEDS_LINEAGE: an exploitation task must cite the claim it takes further (work.claimRefs); a pinned asset revision or a prior task is not the primitive to exploit`);
-      if (purpose === 'chaining' && refs.length < 2) throw Error(`PURPOSE_NEEDS_LINEAGE: a chaining task must cite the two claims it composes (work.claimRefs); one claim is not a chain, and naming a demonstrated environment instead arrives with P14.10`);
+      if (purpose === 'exploitation' && !hasClaim) throw Error(`PURPOSE_NEEDS_LINEAGE: an exploitation task must cite the claim it takes further (work.claimRefs); a pinned asset revision or a prior task is not the primitive to exploit. legalNext: cite the demonstrated claim the run already reviewed`);
+      if (purpose === 'chaining' && refs.length < 2) throw Error(`PURPOSE_NEEDS_LINEAGE: a chaining task must cite the two claims it composes (work.claimRefs); one claim is not a chain, and naming a demonstrated environment instead arrives with P14.10. legalNext: cite the two reviewed claims this intent composes`);
     }
     // A legacy prose draft has no lineage field to fill, so the refusal only bites where the field exists: a structured task that
     // left every parent empty. Validation/retest are checked above for both shapes because `validationOf`/`retestOf` exist in both.
     if ((purpose === 'investigation' || purpose === 'refinement') && draft.work) {
-      if (!hasClaim && !hasTask && !hasAsset) throw Error(`PURPOSE_NEEDS_LINEAGE: an ${purpose} task must cite the claim, asset revision or prior task it builds on; work.claimRefs, work.assetRefs revisions and prerequisites are all empty`);
+      if (!hasClaim && !hasTask && !hasAsset) throw Error(`PURPOSE_NEEDS_LINEAGE: an ${purpose} task must cite the claim, asset revision or prior task it builds on; work.claimRefs, work.assetRefs revisions and prerequisites are all empty. legalNext: cite the reviewed claim (work.claimRefs), a pinned asset revision, or a prerequisite task`);
     }
   }
   private checkDependencies(draft: TaskDraft & { id: string }, tasks: AssessmentTask[], index: LedgerIndex, ready = false) {
@@ -363,7 +411,8 @@ export class TaskBoard extends LedgerBoard {
       return appendRecords(this.path, makeRecords());
     });
   }
-  async match(value:TaskDraft):Promise<TaskWorkMatch>{const draft=this.canonical(value);validate(draft);this.gate();const index=await readLedger(this.path,this.runId);if(!index.complete)throw Error('Task reconciliation incomplete');const id=draft.id??`proposal-${randomUUID()}`;this.checkDependencies({...draft,id},taskFrontier(index),index);return this.matching({...draft,id});}
+  async match(value:TaskDraft):Promise<TaskWorkMatch>{this.gate();const index=await readLedger(this.path,this.runId);if(!index.complete)throw Error('Task reconciliation incomplete');
+    const tasks=taskFrontier(index),draft=this.canonical(this.anchor(value,index,tasks));validate(draft);const id=draft.id??`proposal-${randomUUID()}`;this.checkDependencies({...draft,id},tasks,index);return this.matching({...draft,id});}
   async list() { const index = await readLedger(this.path,this.runId); if (!index.complete) throw Error('Task reconciliation incomplete'); return taskFrontier(index); }
   async forWorker(workerId: string) {
     const index = await readLedger(this.path,this.runId);

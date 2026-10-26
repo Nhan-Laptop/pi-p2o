@@ -9,9 +9,12 @@ import { setTimeout as delay } from 'node:timers/promises';
 it.each(['idle','boundary','human-priority'] as const)('real Pi %s wake preserves scoped prompts and rejects stale follow-ups',async(mode)=>{
   const root=await mkdtemp(join(tmpdir(),'p2o-planner-native-')),repo=resolve(import.meta.dirname,'../..');
   await mkdir(join(root,'source'));await writeFile(join(root,'source','code.txt'),'authorized fixture');
-  const log=join(root,'provider.jsonl');
+  const log=join(root,'provider.jsonl'),settings=join(root,'settings.json');
+  // Hermetic role-model pin: the A2 first intent is recon, whose packaged default model is not the inert provider. Role settings
+  // are the supported production override, so the real child worker runs the inert provider instead of an unreachable model.
+  await writeFile(settings,JSON.stringify({p2o:{roles:Object.fromEntries(['recon','discovery','validation','reporting','exploit','general'].map(role=>[role,{model:'p2o-inert/current-agent'}]))}}));
   const child=spawn(join(repo,'node_modules/.bin/pi'),['--no-extensions','-e',join(repo,'tests/minimal/fixtures/owner.ts'),'--no-skills','--no-prompt-templates','--no-themes','--no-context-files','--offline','--no-session','--no-approve','--mode','rpc','--provider','p2o-inert','--model','current-agent','--thinking','off'],{
-    cwd:root,stdio:['pipe','pipe','pipe'],env:{PATH:process.env.PATH,HOME:root,PI_CODING_AGENT_DIR:join(root,'agent'),PI_OFFLINE:'1',PI_SKIP_VERSION_CHECK:'1',PI_TELEMETRY:'0',P2O_TEST_EVENT_LOOP:'1',P2O_TEST_WAKE_BOUNDARY:mode==='idle'?'0':'1',P2O_TEST_PROVIDER_LOG:log,P2O_TEST_FAKE_HERDR:'1',P2O_TEST_CWD:root,P2O_TEST_PI_BINARY:join(repo,'node_modules/.bin/pi'),P2O_TEST_WORKER_EXT:join(repo,'tests/minimal/fixtures/worker.ts'),P2O_TEST_CONTROL_ROOT:join(root,'control'),...(process.env.P2O_TEST_INSTALLED_EXTENSION?{P2O_TEST_INSTALLED_EXTENSION:process.env.P2O_TEST_INSTALLED_EXTENSION}:{})},
+    cwd:root,stdio:['pipe','pipe','pipe'],env:{PATH:process.env.PATH,HOME:root,PI_CODING_AGENT_DIR:join(root,'agent'),PI_OFFLINE:'1',PI_SKIP_VERSION_CHECK:'1',PI_TELEMETRY:'0',P2O_TEST_SETTINGS:settings,P2O_TEST_EVENT_LOOP:'1',P2O_TEST_WAKE_BOUNDARY:mode==='idle'?'0':'1',P2O_TEST_PROVIDER_LOG:log,P2O_TEST_FAKE_HERDR:'1',P2O_TEST_CWD:root,P2O_TEST_PI_BINARY:join(repo,'node_modules/.bin/pi'),P2O_TEST_WORKER_EXT:join(repo,'tests/minimal/fixtures/worker.ts'),P2O_TEST_CONTROL_ROOT:join(root,'control'),...(process.env.P2O_TEST_INSTALLED_EXTENSION?{P2O_TEST_INSTALLED_EXTENSION:process.env.P2O_TEST_INSTALLED_EXTENSION}:{})},
   });
   let buffer='',stderr='',seq=0;const records:any[]=[];const pending=new Map<string,(r:any)=>void>();
   const closed=new Promise<void>(r=>child.once('close',()=>r()));
@@ -31,13 +34,20 @@ it.each(['idle','boundary','human-priority'] as const)('real Pi %s wake preserve
     expect((await request('get_state')).success).toBe(true);
     expect((await request('prompt',{message:'/p2o --target ./source --loop event-driven --export'})).success).toBe(true);
     if(mode==='human-priority'){
-      await until(async()=>records.some(r=>r.type==='tool_execution_end'&&r.toolName==='p2o_delegate'));
+      await until(async()=>records.some(r=>r.type==='tool_execution_end'&&r.toolName==='p2o_task_dispatch'));
       expect((await request('prompt',{message:'HUMAN_PRIORITY: retain this follow-up; never replace human input with an automatic wake.',streamingBehavior:'followUp'})).success).toBe(true);
     }
     await until(async()=>((await request('get_messages')).data?.messages??[]).some((m:any)=>text(m).includes('OWNER_FINAL_REPORT')));
     await until(async()=>records.filter(r=>r.type==='agent_settled').length>=(mode==='idle'?2:1));
     const messages=(await request('get_messages')).data.messages;
-    expect(messages.filter((m:any)=>m.role==='toolResult').map((m:any)=>m.toolName)).toEqual(['p2o_delegate','p2o_loop','p2o_workers','p2o_finish']);
+    // A1: the planner can only create/dispatch. Its first scripted call to a worker-only tool is Pi's unknown-tool result;
+    // the Engine, not the planner, spawns the worker from the dispatched intent.
+    const toolResults=messages.filter((m:any)=>m.role==='toolResult');
+    expect(toolResults.map((m:any)=>m.toolName)).toEqual(['p2o_net','p2o_task_create','p2o_task_dispatch','p2o_loop','p2o_workers','p2o_finish']);
+    expect(toolResults[0].isError).toBe(true);expect(text(toolResults[0])).toContain('not found');
+    expect(toolResults.slice(1).every((m:any)=>!m.isError)).toBe(true);
+    // A2 intent admission: the first intent of an empty run is recon/mapping.
+    expect(toolResults[1].details).toMatchObject({role:'recon',status:'proposed'});
     const wakes=messages.filter((m:any)=>m.role==='custom'&&m.customType==='p2o_planner_wake');expect(wakes).toHaveLength(mode==='human-priority'?0:1);
     expect(messages.filter((m:any)=>m.role==='user')).toHaveLength(mode==='boundary'?1:2);
     if(mode==='human-priority')expect(messages.some((m:any)=>m.role==='user'&&text(m).includes('HUMAN_PRIORITY'))).toBe(true); // Kickoff + ONE semantic prompt, never periodic polling.

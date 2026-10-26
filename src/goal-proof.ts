@@ -8,7 +8,7 @@
 import { capabilityMatches, describeCapability, type Capability } from './capabilities.js';
 import { claimCapabilities, isDemonstrated } from './claims.js';
 import { caseViews } from './cases.js';
-import { coverageCells, coveragePlans } from './coverage.js';
+import { coverageCells, coveragePlans, projectCoverage } from './coverage.js';
 import { claimHeadClaims } from './chain-view.js';
 import type { LedgerIndex } from './records.js';
 
@@ -62,9 +62,14 @@ export function proofViews(cases: readonly ProofCaseView[], coverage: readonly P
 /** One reader for both the plan board and the completion derivation, so neither re-implements the other's rule. */
 export function proofData(index: LedgerIndex): ProofData {
   const plans = coveragePlans(index), cells = coverageCells(index);
+  // A3: a projected plan's cells are derived from read work, so the goal proof reads the same projection the views use;
+  // a legacy plan keeps its stored cells. Only the terminal-execution rule matters here, not asset currentness.
+  const projected = plans.some(plan => plan.derivation === 'projected') ? projectCoverage(index, { targetRevision: () => plans.find(plan => plan.derivation === 'projected')!.targetRevision }) : undefined;
   return {
     claims: claimHeadClaims(index).map(claim => ({ closure: claim.closure, execution: claim.execution, gained: claimCapabilities(claim).gained })),
     cases: caseViews(index).map(view => ({ id: view.id, verdict: view.verdict, reviewStatus: view.reviewStatus, currentness: view.currentness })),
-    coverage: plans.map(plan => ({ planId: plan.id, cells: cells.filter(cell => plan.cellIds.includes(cell.id)).map(cell => ({ id: cell.id, execution: cell.execution, retired: cell.retired })) })),
+    coverage: plans.map(plan => plan.derivation === 'projected'
+      ? { planId: plan.id, cells: (projected?.cells ?? []).map(cell => ({ id: `coverage-cell-${cell.fingerprint.slice(0, 24)}`, execution: cell.execution, retired: false })) }
+      : { planId: plan.id, cells: cells.filter(cell => plan.cellIds.includes(cell.id)).map(cell => ({ id: cell.id, execution: cell.execution, retired: cell.retired })) }),
   };
 }

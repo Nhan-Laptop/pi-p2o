@@ -2,19 +2,22 @@ import { randomUUID } from 'node:crypto';
 import { sha256Hex } from './validate.js';
 import { appendGeneratedRecords, appendRecords, ownerNoteFrontier, readGeneratedRecords, readLedger, type AssessmentRecord, type LedgerIndex, type RecordAck } from './records.js';
 import { graphCanonical } from './state/graph.js';
-import { taskFrontier, taskRevisionAt, taskReferenceSuperseded, type AssessmentTask } from './tasks.js';
+import { isSatisfiedTask, taskFrontier, taskReferenceSuperseded, taskRevisionAt, terminalState, type AssessmentTask } from './tasks.js';
 import { caseViews, type CaseContext, type CaseView } from './cases.js';
+import { isConfirmedClaim, isOpenClaim, isRuledOutClaim, isTestedCell } from './claims.js';
 import type { MutationRequest } from './state/store.js';
 import { LedgerBoard } from './board.js';
-import { validateCoverageCellDraft, validateCoveragePlanDraft, validateStoredCoverageCell, validateStoredCoveragePlan, type CoverageCellDraft, type CoverageCellEntry, type CoveragePlanDraft, type CoveragePlanEntry } from './coverage-types.js';
-import { isConfirmedClaim, isTestedCell } from './claims.js';
-import { isSatisfiedTask, terminalState, SETTLED_TASK_STATUSES } from './tasks.js';
+import { validateCoveragePlanDraft, validateStoredCoverageCell, validateStoredCoveragePlan, type CoverageAssessment, type CoverageCaseRef, type CoverageCellDraft, type CoverageCellEntry, type CoverageExecution, type CoveragePlanDraft, type CoveragePlanEntry, type CoverageTaskRef } from './coverage-types.js';
 /** Coverage-plan vocabulary, distinct from tasks: a plan is reviewed/closed, never "satisfied". */
 const COVERAGE_PLAN_REVIEWED=['reviewed','closed'] as const;
+/** A3: a work identity that names no actor/tenant context still has to be placed in one denominator row. */
+const DEFAULT_ACTOR='actor:unspecified',DEFAULT_TENANT='tenant:unspecified';
 
 export interface CoverageContext extends CaseContext {targetRevision:()=>string;assetIds?:()=>string[]}
 export interface CoverageCellView extends CoverageCellEntry {currentness:'current'|'stale'|'unknown'|'retired';staleReasons:string[];effectiveAssessment:CoverageCellEntry['assessment'];effectiveExecution:CoverageCellEntry['execution'];reviewed:boolean}
-export interface CoveragePlanView extends CoveragePlanEntry {cells:CoverageCellView[];counts:{execution:Record<string,number>;assessment:Record<string,number>;stale:number;reviewed:number};discoveredUnplannedAssets:number;omittedCells:number;warning:string}
+/** A3: a task whose work identity names no asset cannot be placed in the denominator. It is reported, never invented into a cell. */
+export interface UnmappedCoverageTask {taskId:string;revision:number;question:string;role:string;status:string;reason:string}
+export interface CoveragePlanView extends CoveragePlanEntry {cells:CoverageCellView[];counts:{execution:Record<string,number>;assessment:Record<string,number>;stale:number;reviewed:number};discoveredUnplannedAssets:number;omittedCells:number;unmapped:UnmappedCoverageTask[];unmappedCount:number;warning:string}
 
 function taskAt(index:LedgerIndex,id:string,revision:number|undefined):AssessmentTask|undefined{return taskRevisionAt(index,id,revision);}
 function claimHeads(index:LedgerIndex):Map<string,AssessmentRecord>{const result=new Map<string,AssessmentRecord>();for(const row of index.records)if(row.kind==='candidate'&&typeof row.data?.candidate==='string')result.set(row.data.candidate,row);return result;}
@@ -31,18 +34,104 @@ export function interruptedCellTasks(index:LedgerIndex,cell:{taskRefs:readonly {
   for(const ref of cell.taskRefs){const task=taskAt(index,ref.taskId,ref.revision);if(!task)continue;const state=terminalState(task);if(state&&(INTERRUPTED_TASK_STATES as readonly string[]).includes(state))rows.push({taskId:ref.taskId,state});}
   return rows;
 }
-/** M5: the cell claims a verdict while a task it cites was interrupted — the one shape the view must downgrade and the writer must refuse. */
+/** M5: the cell claims a verdict while a task it cites was interrupted — the one shape the view must downgrade (legacy stored cells). */
 export const interruptedVerdict=(index:LedgerIndex,cell:CoverageCellDraft|CoverageCellEntry):InterruptedTask|undefined=>{
   const claimsVerdict=isTestedCell(cell)||(VERDICT_ASSESSMENTS as readonly string[]).includes(cell.assessment);
   return claimsVerdict?interruptedCellTasks(index,cell)[0]:undefined;
 };
 export function coverageFingerprint(targetRevision:string,input:CoverageCellDraft):string{return sha256Hex(graphCanonical({version:1,targetRevision,assetRef:input.assetRef,questionKey:input.questionKey,policyKey:input.policyKey??null,actorContext:input.actorContext,tenantContext:input.tenantContext,methodFamily:input.methodFamily}));}
 
+/**
+ * A3 (planning_update.md §2.6): coverage cells are a projection of committed work, not a model-authored denominator row.
+ * The host reads the reviewed task, its worker claims and the cases that cite it, and fills the cell fields. Nothing here writes
+ * to the ledger and nothing here upgrades an assessment: a task without a verdict stays planned or blocked, and a task whose work
+ * identity names no asset becomes an unmapped gap instead of a clean cell.
+ */
+export interface ProjectedCoverageCell extends CoverageCellDraft {fingerprint:string}
+export interface CoverageProjection {cells:ProjectedCoverageCell[];unmapped:UnmappedCoverageTask[];counts:{execution:Record<string,number>;assessment:Record<string,number>};warning:string}
+interface ClaimLink {record:AssessmentRecord;evidenceRefs:string[];negativeControlRefs:string[];limitations?:string;taskRef:string}
+const stringList=(value:unknown):string[]=>Array.isArray(value)?value.filter((item):item is string=>typeof item==='string'):[];
+/** Worker claims only: after A2 the planner cannot author one, so an owner-authored legacy candidate is not coverage work. */
+function workerClaims(index:LedgerIndex):ClaimLink[]{
+  const rows:ClaimLink[]=[];
+  for(const row of index.records){
+    if(row.kind!=='candidate'||!row.id||typeof row.data?.candidate!=='string'||row.by==='owner'||!row.workerId||typeof row.data?.taskRef!=='string')continue;
+    rows.push({record:row,evidenceRefs:stringList(row.data.evidenceRefs).filter(id=>index.byId.get(id)?.kind==='evidence'),negativeControlRefs:stringList(row.data.negativeControls).filter(id=>index.byId.get(id)?.kind==='evidence'),limitations:typeof row.data.limitations==='string'?row.data.limitations:undefined,taskRef:row.data.taskRef});
+  }
+  return rows;
+}
+/** The revision at which the owner accepted the task, which is the work the projection may read. */
+function reviewedRevision(index:LedgerIndex,task:AssessmentTask):{revision:number;order:number}|undefined{
+  let found:{revision:number;order:number}|undefined;
+  for(let position=0;position<index.records.length;position++){
+    const row=index.records[position],value=row.kind==='task'?row.data?.task as AssessmentTask|undefined:undefined;
+    if(!row.id||!value||value.id!==task.id||!isSatisfiedTask(value.status))continue;
+    if(!found||value.revision>found.revision||(value.revision===found.revision&&position>found.order))found={revision:value.revision,order:position};
+  }
+  return found;
+}
+const recordOrder=(index:LedgerIndex):Map<string,number>=>{const order=new Map<string,number>();for(const [position,row] of index.records.entries())if(row.id)order.set(row.id,position);return order;};
+/** Claims the review actually accepted: recorded before the reviewed head, latest record per candidate slug. */
+function reviewedClaims(claims:ClaimLink[],taskId:string,reviewedOrder:number|undefined,order:Map<string,number>):ClaimLink[]{
+  const bySlug=new Map<string,ClaimLink>();
+  for(const claim of claims){if(claim.taskRef!==taskId)continue;const position=order.get(claim.record.id!)??Number.MAX_SAFE_INTEGER;if(reviewedOrder!==undefined&&position>=reviewedOrder)continue;bySlug.set(claim.record.data!.candidate as string,claim);}
+  return [...bySlug.values()];
+}
+function deriveAssessment(task:AssessmentTask,claims:ClaimLink[],accepted:CaseView[]):{execution:CoverageExecution;assessment:CoverageAssessment;claimRefs:string[];caseRefs:CoverageCaseRef[];negativeControlRefs:string[];reason:string;limitations:string}{
+  const satisfied=isSatisfiedTask(task.status),terminal=terminalState(task);
+  if(satisfied){
+    const settled=accepted[0];
+    if(settled)return {execution:'tested',assessment:'accepted',claimRefs:[],caseRefs:[{caseId:settled.id,revision:settled.revision}],negativeControlRefs:[],reason:`current accepted case ${settled.id}@r${settled.revision} settles this derived cell`,limitations:settled.limitations};
+    const confirmed=claims.find(claim=>isConfirmedClaim(claim.record.data??{})),
+      ruledOut=claims.find(claim=>isRuledOutClaim(claim.record.data??{})&&claim.negativeControlRefs.length>0),
+      // A ruled-out claim with no negative control is not bounded: it stays an open gap instead of reading as a negative result.
+      unbounded=claims.find(claim=>isRuledOutClaim(claim.record.data??{})&&!claim.negativeControlRefs.length),
+      open=claims.find(claim=>isOpenClaim(claim.record.data??{}))??unbounded;
+    if(confirmed)return {execution:'tested',assessment:'confirmed_claim',claimRefs:[confirmed.record.id!],caseRefs:[],negativeControlRefs:[],reason:`reviewed task ${task.id}@r${task.revision} accepted the confirmed worker claim ${confirmed.record.id}`,limitations:confirmed.limitations??task.stopCondition};
+    if(ruledOut)return {execution:'tested',assessment:'ruled_out_bounded',claimRefs:[ruledOut.record.id!],caseRefs:[],negativeControlRefs:ruledOut.negativeControlRefs,reason:`reviewed task ${task.id}@r${task.revision} accepted the ruled-out worker claim ${ruledOut.record.id} with its control`,limitations:ruledOut.limitations??task.stopCondition};
+    if(open)return {execution:'tested',assessment:'open_gap',claimRefs:[open.record.id!],caseRefs:[],negativeControlRefs:[],reason:unbounded?`reviewed task ${task.id}@r${task.revision} accepted a ruled-out claim ${open.record.id} with no bounded control, so the cell stays an open gap`:`reviewed task ${task.id}@r${task.revision} accepted an open worker claim ${open.record.id}, so the cell stays an open gap`,limitations:open.limitations??task.stopCondition};
+    return {execution:'planned',assessment:'unreviewed',claimRefs:[],caseRefs:[],negativeControlRefs:[],reason:`reviewed task ${task.id}@r${task.revision} recorded receipts but no claim or case verdict, so the cell stays untested`,limitations:task.stopCondition};
+  }
+  if(terminal)return {execution:'blocked',assessment:'open_gap',claimRefs:[],caseRefs:[],negativeControlRefs:[],reason:`task ${task.id}@r${task.revision} ended as ${task.status} without a verdict${task.outcome?`: ${task.outcome}`:''}`,limitations:task.stopCondition};
+  return {execution:'planned',assessment:'unreviewed',claimRefs:[],caseRefs:[],negativeControlRefs:[],reason:`task ${task.id}@r${task.revision} is ${task.status}; it is planned but not yet tested`,limitations:task.stopCondition};
+}
+/** Latest satisfied revision wins per fingerprint; then the newer task revision; then the later ledger row. */
+function compareCandidate(a:{satisfied:number;revision:number;order:number},b:{satisfied:number;revision:number;order:number}):number{
+  return a.satisfied!==b.satisfied?a.satisfied-b.satisfied:a.revision!==b.revision?a.revision-b.revision:a.order-b.order;
+}
+/** One projection per read; the same values feed every live plan view and the report. */
+export function projectCoverage(index:LedgerIndex,context:CoverageContext):CoverageProjection{
+  const tasks=taskFrontier(index),cases=caseViews(index,context),claims=workerClaims(index),order=recordOrder(index),currentTarget=context.targetRevision(),unmapped:UnmappedCoverageTask[]=[],ranked=new Map<string,{cell:ProjectedCoverageCell;satisfied:number;revision:number;order:number}>();
+  for(const task of tasks){
+    const assets=task.work?.assetRefs??[];
+    if(!task.work||!assets.length){unmapped.push({taskId:task.id,revision:task.revision,question:task.question,role:task.role,status:task.status,reason:'no work.assetRefs: the host has no asset identity to place this task in the coverage denominator'});continue;}
+    const reviewed=reviewedRevision(index,task),linked=cases.filter(view=>view.reviewStatus!=='withdrawn'&&(view.taskRefs.some(ref=>ref.taskId===task.id)||view.claimRefs.some(id=>{
+      const claim=index.byId.get(id);return claim?.kind==='candidate'&&claim.data?.taskRef===task.id;}))),
+      accepted=linked.filter(view=>view.reviewStatus==='accepted'),taskClaims=reviewed?reviewedClaims(claims,task.id,reviewed.order,order):[],
+      derived=deriveAssessment(task,taskClaims,accepted),evidenceRefs=[...new Set([...task.evidenceIds,...taskClaims.flatMap(claim=>claim.evidenceRefs)])].filter(id=>index.byId.get(id)?.kind==='evidence');
+    for(const asset of assets){
+      const draft:CoverageCellDraft={assetRef:{...asset},questionKey:task.work.questionKey,...(task.work.policyKey?{policyKey:task.work.policyKey}:{}),actorContext:task.work.actorContext??DEFAULT_ACTOR,tenantContext:task.work.tenantContext??DEFAULT_TENANT,methodFamily:task.work.methodFamily,
+        execution:derived.execution,assessment:derived.assessment,taskRefs:[{taskId:task.id,revision:reviewed?.revision??task.revision}],claimRefs:derived.claimRefs,caseRefs:derived.caseRefs,evidenceRefs,negativeControlRefs:derived.negativeControlRefs,gapRefs:[],reason:derived.reason,limitations:derived.limitations??'Derived from reviewed work; no per-cell limitation beyond the cited task and claim was recorded.'},
+        fingerprint=coverageFingerprint(currentTarget,draft),candidate={cell:{...draft,fingerprint},satisfied:isSatisfiedTask(task.status)?1:0,revision:task.revision,order:order.get(task.recordId)??0},prior=ranked.get(fingerprint);
+      // Latest satisfied revision wins per fingerprint; an older satisfied row is never a second denominator entry.
+      if(!prior||compareCandidate(candidate,prior)>0)ranked.set(fingerprint,candidate);
+    }
+  }
+  const cells=[...ranked.values()].map(item=>item.cell),execution:Record<string,number>={},assessment:Record<string,number>={};
+  for(const cell of cells){execution[cell.execution]=(execution[cell.execution]??0)+1;assessment[cell.assessment]=(assessment[cell.assessment]??0)+1;}
+  return {cells,unmapped,counts:{execution,assessment},warning:projectionWarning(cells.length,unmapped.length)};
+}
+function projectionWarning(cells:number,unmapped:number):string{
+  const base='Coverage is derived from reviewed worker work; no planner-authored cell exists. The denominator is this explicit plan revision; untested, blocked and unmapped work never implies clean.';
+  if(!cells)return `${base} no denominator work: no task declares a work identity, so this plan has zero derived cells — that is not clean coverage.`;
+  return unmapped?`${base} ${unmapped} task(s) declare no asset reference and are reported as unmapped gaps, never as clean cells.`:base;
+}
+
 /** Bounded proof-aware matrix view. Staleness only downgrades; it never upgrades an assessment. */
 export function coverageViews(index:LedgerIndex,context:CoverageContext):CoveragePlanView[]{
-  const plans=coveragePlans(index),cells=coverageCells(index),tasks=taskFrontier(index),claims=claimHeads(index),cases=caseViews(index,context),caseMap=new Map(cases.map(item=>[item.id,item])),resolved=new Set(index.records.flatMap(row=>row.resolves??[])),currentTarget=context.targetRevision();
-  const cellView=(cell:CoverageCellEntry,plan:CoveragePlanEntry):CoverageCellView=>{const reasons:string[]=[];let unknown=false;
-    if(cell.retired||!plan.cellIds.includes(cell.id))return {...cell,currentness:'retired',staleReasons:[],effectiveAssessment:cell.assessment,effectiveExecution:cell.execution,reviewed:false};
+  const plans=coveragePlans(index),cells=coverageCells(index),tasks=taskFrontier(index),claims=claimHeads(index),cases=caseViews(index,context),caseMap=new Map(cases.map(item=>[item.id,item])),resolved=new Set(index.records.flatMap(row=>row.resolves??[])),currentTarget=context.targetRevision(),projection=plans.some(plan=>plan.derivation==='projected')?projectCoverage(index,context):undefined;
+  const cellView=(cell:CoverageCellEntry,plan:CoveragePlanEntry,derived:boolean):CoverageCellView=>{const reasons:string[]=[];let unknown=false;
+    if(!derived&&(cell.retired||!plan.cellIds.includes(cell.id)))return {...cell,currentness:'retired',staleReasons:[],effectiveAssessment:cell.assessment,effectiveExecution:cell.execution,reviewed:false};
     if(cell.targetRevision!==currentTarget)reasons.push(`stale-target:${cell.targetRevision}->${currentTarget}`);const asset=context.assetRevision?.(cell.assetRef.id);if(!context.assetRevision)unknown=true;else if(asset===undefined)reasons.push(`missing-asset:${cell.assetRef.id}`);else if(cell.assetRef.revision===undefined)reasons.push(`unpinned-asset:${cell.assetRef.id}`);else if(asset!==cell.assetRef.revision)reasons.push(`stale-asset:${cell.assetRef.id}@r${cell.assetRef.revision}->r${asset}`);
     for(const ref of cell.taskRefs){const task=taskAt(index,ref.taskId,ref.revision),head=tasks.find(item=>item.id===ref.taskId);if(!task)reasons.push(`missing-task:${ref.taskId}@r${ref.revision??'?'}`);else if(head&&taskReferenceSuperseded(index,ref.taskId,ref.revision))reasons.push(`superseded-task:${ref.taskId}@r${ref.revision}`);}
     for(const id of cell.claimRefs){const claim=index.byId.get(id),key=claim?.data?.candidate;if(claim?.kind!=='candidate'||typeof key!=='string')reasons.push(`missing-claim:${id}`);else if(claims.get(key)?.id!==id)reasons.push(`superseded-claim:${id}`);}
@@ -58,8 +147,14 @@ export function coverageViews(index:LedgerIndex,context:CoverageContext):Coverag
     return {...cell,currentness,staleReasons:[...new Set(reasons)].slice(0,40),
       effectiveAssessment:interrupted?'open_gap':currentness==='stale'?'stale':cell.assessment,
       effectiveExecution:interrupted?'attempted':cell.execution,reviewed};};
-  return plans.map(plan=>{const selected=plan.cellIds.map(id=>cells.find(cell=>cell.id===id)).filter((cell):cell is CoverageCellEntry=>Boolean(cell)).map(cell=>cellView(cell,plan)),execution:Record<string,number>={},assessment:Record<string,number>={};for(const cell of selected){execution[cell.effectiveExecution]=(execution[cell.effectiveExecution]??0)+1;assessment[cell.effectiveAssessment]=(assessment[cell.effectiveAssessment]??0)+1;}
-    const planned=new Set(selected.map(cell=>cell.assetRef.id)),all=context.assetIds?.(),discoveredUnplannedAssets=all?new Set(all.filter(id=>!planned.has(id))).size:0;return {...plan,cells:selected,counts:{execution,assessment,stale:selected.filter(cell=>cell.currentness==='stale').length,reviewed:selected.filter(cell=>cell.reviewed).length},discoveredUnplannedAssets,omittedCells:Math.max(0,plan.cellIds.length-selected.length),warning:'Coverage denominator is this explicit plan revision. Blocked/untested/unplanned cells and discovered assets never imply clean; case review never completes a goal.'};});
+  return plans.map(plan=>{const derived=plan.derivation==='projected',
+    entries:CoverageCellEntry[]=derived?projection!.cells.map(cell=>({...cell,id:`coverage-cell-${cell.fingerprint.slice(0,24)}`,runId:plan.runId,revision:1,recordId:`derived-${cell.fingerprint.slice(0,32)}`,planId:plan.id,planRevision:plan.revision,targetRevision:plan.targetRevision,retired:false})):
+      plan.cellIds.map(id=>cells.find(cell=>cell.id===id)).filter((cell):cell is CoverageCellEntry=>Boolean(cell)),
+    selected=entries.map(cell=>cellView(cell,plan,derived)),execution:Record<string,number>={},assessment:Record<string,number>={};
+    for(const cell of selected){execution[cell.effectiveExecution]=(execution[cell.effectiveExecution]??0)+1;assessment[cell.effectiveAssessment]=(assessment[cell.effectiveAssessment]??0)+1;}
+    const planned=new Set(selected.map(cell=>cell.assetRef.id)),all=context.assetIds?.(),discoveredUnplannedAssets=all?new Set(all.filter(id=>!planned.has(id))).size:0,unmapped=derived?projection!.unmapped:[];
+    return {...plan,cells:selected,counts:{execution,assessment,stale:selected.filter(cell=>cell.currentness==='stale').length,reviewed:selected.filter(cell=>cell.reviewed).length},discoveredUnplannedAssets,omittedCells:derived?0:Math.max(0,plan.cellIds.length-selected.length),unmapped,unmappedCount:unmapped.length,
+      warning:derived?projection!.warning:'Coverage denominator is this explicit plan revision. Blocked/untested/unplanned cells and discovered assets never imply clean; case review never completes a goal.'};});
 }
 
 export function boundCoverageRequest(action:string,input:unknown,request:MutationRequest):MutationRequest{if(request.actorId!=='owner')throw Error('Coverage mutations require host-bound owner attribution');return {...request,payload:{kind:'coverage-mutation',action,input,submitted:request.payload}};}
@@ -67,39 +162,16 @@ export function boundCoverageRequest(action:string,input:unknown,request:Mutatio
 /** Canonical owner matrix service. Records and tasks remain the only writable sources; no execution queue. */
 export class CoverageBoard extends LedgerBoard{
   constructor(runId:string,path:string,active:()=>boolean,private context:CoverageContext,private now=()=>Date.now()){super(runId,path,active,'Coverage','Coverage');}
-  private mutate<T>(work:(index:LedgerIndex,plans:CoveragePlanEntry[],cells:CoverageCellEntry[])=>Promise<T>):Promise<T>{return this.serialized(index=>work(index,coveragePlans(index),coverageCells(index)));}
-  private pin(input:CoverageCellDraft,index:LedgerIndex):CoverageCellDraft{return {...input,assetRef:{...input.assetRef,revision:input.assetRef.revision??this.context.assetRevision?.(input.assetRef.id)},taskRefs:input.taskRefs.map(ref=>({...ref,revision:ref.revision??taskFrontier(index).find(task=>task.id===ref.taskId)?.revision}))};}
-  private references(input:CoverageCellDraft,index:LedgerIndex,cases:CaseView[]):void{
-    const asset=this.context.assetRevision?.(input.assetRef.id);if(this.context.assetRevision&&asset===undefined)throw Error(`Unknown same-run coverage asset ${input.assetRef.id}`);if(input.assetRef.revision===undefined)throw Error('Coverage asset revision must be pinned');
-    for(const ref of input.taskRefs){if(ref.revision===undefined)throw Error('Coverage task revisions must be pinned');const task=taskAt(index,ref.taskId,ref.revision);if(!task)throw Error(`Unknown coverage task ${ref.taskId}@r${ref.revision}`);}
-    for(const id of input.claimRefs)if(index.byId.get(id)?.kind!=='candidate'||index.byId.get(id)?.runId!==this.runId)throw Error(`Unknown coverage claim ${id}`);
-    for(const ref of input.caseRefs){const item=cases.find(value=>value.id===ref.caseId);if(!item||item.revision!==ref.revision)throw Error(`Unknown or stale coverage case ${ref.caseId}@r${ref.revision}`);}
-    for(const id of [...input.evidenceRefs,...input.negativeControlRefs])if(index.byId.get(id)?.kind!=='evidence'||index.byId.get(id)?.runId!==this.runId)throw Error(`Unknown coverage evidence ${id}`);
-    for(const id of input.gapRefs)if(index.byId.get(id)?.kind!=='open'||index.byId.get(id)?.runId!==this.runId)throw Error(`Unknown coverage gap ${id}`);
-    // M5: refuse the dishonest write with the task and its state named, before the generic receipt check can hide it.
-    const interrupted=interruptedVerdict(index,input);
-    if(interrupted)throw Error(`INTERRUPT_NOT_EVIDENCE: task ${interrupted.taskId} ended as ${interrupted.state} without a verdict; cell ${input.questionKey} stays attempted, not tested`);
-    if(isTestedCell(input)){if(!input.evidenceRefs.length||!input.taskRefs.length)throw Error('Tested coverage needs evidence and an exact reviewed task revision');for(const ref of input.taskRefs){const task=taskAt(index,ref.taskId,ref.revision)!;if(!isSatisfiedTask(task.status)||!task.evidenceIds.length)throw Error('Tested coverage needs reviewed task receipts');}}
-    if(input.execution==='blocked'&&(input.assessment!=='open_gap'||!input.gapRefs.length))throw Error('Blocked coverage must retain an explicit open gap');
-    if(input.assessment==='confirmed_claim'&&!input.claimRefs.some(id=>isConfirmedClaim(index.byId.get(id)?.data??{})))throw Error('Confirmed-claim coverage needs an exact confirmed candidate claim');
-    if(input.assessment==='ruled_out_bounded'){if(!input.evidenceRefs.length||!input.negativeControlRefs.length||!input.caseRefs.some(ref=>{const item=cases.find(value=>value.id===ref.caseId&&value.revision===ref.revision);return item?.reviewStatus==='accepted'&&item.verdict==='ruled_out'&&item.currentness==='current';}))throw Error('Bounded ruled-out coverage needs current accepted case, evidence and negative controls');}
-    if(input.assessment==='accepted'&&!input.caseRefs.some(ref=>{const item=cases.find(value=>value.id===ref.caseId&&value.revision===ref.revision);return item?.reviewStatus==='accepted'&&item.currentness==='current';}))throw Error('Accepted coverage needs a current owner-accepted case revision');
-    if(input.assessment==='open_gap'&&!input.gapRefs.length&&!input.caseRefs.some(ref=>{const item=cases.find(value=>value.id===ref.caseId);return item&&['open','inconclusive'].includes(item.verdict);}))throw Error('Open-gap coverage needs a gap or open/inconclusive case');
-  }
+  private mutate<T>(work:(index:LedgerIndex,plans:CoveragePlanEntry[])=>Promise<T>):Promise<T>{return this.serialized(index=>work(index,coveragePlans(index)));}
   private planTransitions(previous:string,next:string):boolean{return ({draft:['draft','active','cancelled'],active:['active','reviewed','closed','cancelled'],reviewed:['active','reviewed','closed'],closed:[],cancelled:[]} as Record<string,string[]>)[previous]?.includes(next)??false;}
   private async write(records:()=>AssessmentRecord[],request?:MutationRequest):Promise<RecordAck[]>{this.gate();return request?appendGeneratedRecords(this.path,records,request):appendRecords(this.path,records());}
   private retained(request:MutationRequest|undefined){return request?readGeneratedRecords(this.path,request):Promise.resolve(undefined);}
   private async retainedPlan(acks:RecordAck[]):Promise<CoveragePlanEntry>{const index=await readLedger(this.path,this.runId),row=index.byId.get(acks[0].recordId);if(!index.complete||!row?.data?.coveragePlan)throw Error('Retained coverage plan detail unavailable');return validateStoredCoveragePlan(row.data.coveragePlan,row.id!);}
-  private async retainedPacket(acks:RecordAck[]):Promise<{plan:CoveragePlanEntry;cell:CoverageCellEntry}>{if(acks.length!==2)throw Error('Retained coverage packet ACK count mismatch');const index=await readLedger(this.path,this.runId),plan=index.byId.get(acks[0].recordId),cell=index.byId.get(acks[1].recordId);if(!index.complete||!plan?.data?.coveragePlan||!cell?.data?.coverageCell)throw Error('Retained coverage packet detail unavailable');return {plan:validateStoredCoveragePlan(plan.data.coveragePlan,plan.id!),cell:validateStoredCoverageCell(cell.data.coverageCell,cell.id!)};}
-  async createPlan(value:CoveragePlanDraft,request?:MutationRequest):Promise<CoveragePlanEntry>{const input=validateCoveragePlanDraft(value),bound=request?boundCoverageRequest('plan-create',value,request):undefined,prior=await this.retained(bound);if(prior)return this.retainedPlan(prior);return this.mutate(async(_index,plans)=>{const id=input.id??`coverage-plan-${randomUUID()}`;if(plans.some(plan=>plan.id===id))throw Error('Duplicate coverage plan');if(plans.filter(plan=>!['closed','cancelled'].includes(plan.status)).length>=10)throw Error('Live coverage plan limit reached (10)');if(!['draft','active'].includes(input.status))throw Error('Create coverage plans as draft/active; review/close needs a revision');const stored={...input,id,runId:this.runId,revision:1,targetRevision:this.context.targetRevision(),cellIds:[]},make=()=>{const recordId=randomUUID();return [{id:recordId,runId:this.runId,at:new Date(this.now()).toISOString(),by:'owner',kind:'note' as const,text:`coverage plan ${id}@r1: ${input.status}; denominator 0, not assessment completion`,data:{coveragePlan:stored}}];},acks=await this.write(make,bound),index=await readLedger(this.path,this.runId);return validateStoredCoveragePlan(index.byId.get(acks[0].recordId)!.data!.coveragePlan,acks[0].recordId);});}
-  async revisePlan(id:string,revision:number,value:CoveragePlanDraft,request?:MutationRequest):Promise<CoveragePlanEntry>{const input=validateCoveragePlanDraft(value),bound=request?boundCoverageRequest('plan-revise',{id,revision,input},request):undefined,prior=await this.retained(bound);if(prior)return this.retainedPlan(prior);return this.mutate(async(_index,plans)=>{const old=plans.find(plan=>plan.id===id);if(!old||old.revision!==revision)throw Error('Missing or stale coverage plan revision');if(input.id&&input.id!==id)throw Error('Cannot change coverage plan identity');if(!this.planTransitions(old.status,input.status))throw Error('Invalid coverage plan transition');if((COVERAGE_PLAN_REVIEWED as readonly string[]).includes(input.status)&&!old.cellIds.length)throw Error('Reviewed/closed coverage plan needs at least one explicit cell');const stored={...input,id,runId:this.runId,revision:old.revision+1,targetRevision:old.targetRevision,cellIds:old.cellIds},make=()=>[{id:randomUUID(),runId:this.runId,at:new Date(this.now()).toISOString(),by:'owner',kind:'note' as const,text:`coverage plan ${id}@r${stored.revision}: ${input.status}; denominator ${old.cellIds.length}, not whole-target safety`,supersedes:old.recordId,data:{coveragePlan:stored}}],acks=await this.write(make,bound),index=await readLedger(this.path,this.runId);return validateStoredCoveragePlan(index.byId.get(acks[0].recordId)!.data!.coveragePlan,acks[0].recordId);});}
-  async addCell(planId:string,planRevision:number,value:CoverageCellDraft,request?:MutationRequest):Promise<{plan:CoveragePlanEntry;cell:CoverageCellEntry}>{const input=validateCoverageCellDraft(value),bound=request?boundCoverageRequest('cell-create',{planId,planRevision,input:value},request):undefined,prior=await this.retained(bound);if(prior)return this.retainedPacket(prior);return this.mutate(async(index,plans,cells)=>{const plan=plans.find(item=>item.id===planId);if(!plan||planRevision>plan.revision)throw Error('Missing or stale coverage plan revision');if(!['draft','active'].includes(plan.status))throw Error('Coverage plan is not editable');if(plan.cellIds.length>=100)throw Error('Coverage plan cell limit reached (100)');const id=input.id??`coverage-cell-${randomUUID()}`,pinned=this.pin({...input,id},index),fingerprint=coverageFingerprint(plan.targetRevision,pinned);if(cells.some(cell=>cell.id===id))throw Error('Duplicate coverage cell identity');if(cells.some(cell=>!cell.retired&&cell.planId===planId&&cell.fingerprint===fingerprint))throw Error('Duplicate exact coverage cell');const cases=caseViews(index,this.context);this.references(pinned,index,cases);const nextPlan={...plan,revision:plan.revision+1,cellIds:[...plan.cellIds,id]},stored={...pinned,id,runId:this.runId,revision:1,planId,planRevision:nextPlan.revision,targetRevision:plan.targetRevision,fingerprint,retired:false};
-      const make=()=>{const at=new Date(this.now()).toISOString();return [{id:randomUUID(),runId:this.runId,at,by:'owner',kind:'note' as const,text:`coverage plan ${planId}@r${nextPlan.revision}: denominator +1 (${nextPlan.cellIds.length})`,supersedes:plan.recordId,data:{coveragePlan:stripRecord(nextPlan)}},{id:randomUUID(),runId:this.runId,at,by:'owner',kind:'note' as const,text:`coverage cell ${id}@r1: ${stored.execution}/${stored.assessment}; review/currentness separate`,refs:[...stored.evidenceRefs,...stored.caseRefs.map(ref=>ref.caseId)].slice(0,10),data:{coverageCell:stored}}];},acks=await this.write(make,bound),fresh=await readLedger(this.path,this.runId);return {plan:validateStoredCoveragePlan(fresh.byId.get(acks[0].recordId)!.data!.coveragePlan,acks[0].recordId),cell:validateStoredCoverageCell(fresh.byId.get(acks[1].recordId)!.data!.coverageCell,acks[1].recordId)};});}
-  async reviseCell(id:string,revision:number,value:CoverageCellDraft,request?:MutationRequest):Promise<{plan:CoveragePlanEntry;cell:CoverageCellEntry}>{const input=validateCoverageCellDraft(value),bound=request?boundCoverageRequest('cell-revise',{id,revision,input:value},request):undefined,prior=await this.retained(bound);if(prior)return this.retainedPacket(prior);return this.mutate(async(index,plans,cells)=>{const old=cells.find(cell=>cell.id===id);if(!old||old.revision!==revision||old.retired)throw Error('Missing, stale or retired coverage cell revision');if(input.id&&input.id!==id)throw Error('Cannot change coverage cell identity');const plan=plans.find(item=>item.id===old.planId);if(!plan||!['draft','active'].includes(plan.status))throw Error('Coverage plan is not editable');const pinned=this.pin({...input,id},index),fingerprint=coverageFingerprint(plan.targetRevision,pinned);if(fingerprint!==old.fingerprint)throw Error('Coverage identity changes require retiring the old cell and adding a new denominator entry');const cases=caseViews(index,this.context);this.references(pinned,index,cases);const nextPlan={...plan,revision:plan.revision+1},stored={...pinned,id,runId:this.runId,revision:old.revision+1,planId:old.planId,planRevision:nextPlan.revision,targetRevision:old.targetRevision,fingerprint,retired:false};
-      const make=()=>{const at=new Date(this.now()).toISOString();return [{id:randomUUID(),runId:this.runId,at,by:'owner',kind:'note' as const,text:`coverage plan ${plan.id}@r${nextPlan.revision}: cell ${id} revised; denominator unchanged ${plan.cellIds.length}`,supersedes:plan.recordId,data:{coveragePlan:stripRecord(nextPlan)}},{id:randomUUID(),runId:this.runId,at,by:'owner',kind:'note' as const,text:`coverage cell ${id}@r${stored.revision}: ${stored.execution}/${stored.assessment}; not whole-target safety`,supersedes:old.recordId,refs:[...stored.evidenceRefs,...stored.caseRefs.map(ref=>ref.caseId)].slice(0,10),data:{coverageCell:stored}}];},acks=await this.write(make,bound),fresh=await readLedger(this.path,this.runId);return {plan:validateStoredCoveragePlan(fresh.byId.get(acks[0].recordId)!.data!.coveragePlan,acks[0].recordId),cell:validateStoredCoverageCell(fresh.byId.get(acks[1].recordId)!.data!.coverageCell,acks[1].recordId)};});}
-  async retireCell(id:string,revision:number,reason:string,request?:MutationRequest):Promise<{plan:CoveragePlanEntry;cell:CoverageCellEntry}>{if(typeof reason!=='string'||reason.trim().length<10||reason.length>1000)throw Error('Coverage retirement reason must be 10..1000 characters');const bound=request?boundCoverageRequest('cell-retire',{id,revision,reason},request):undefined,prior=await this.retained(bound);if(prior)return this.retainedPacket(prior);return this.mutate(async(_index,plans,cells)=>{const old=cells.find(cell=>cell.id===id);if(!old||old.revision!==revision||old.retired)throw Error('Missing, stale or retired coverage cell revision');const plan=plans.find(item=>item.id===old.planId);if(!plan||!['draft','active'].includes(plan.status))throw Error('Coverage plan is not editable');const nextPlan={...plan,revision:plan.revision+1,cellIds:plan.cellIds.filter(cellId=>cellId!==id)},stored={...stripCell(old),reason,runId:this.runId,revision:old.revision+1,planRevision:nextPlan.revision,retired:true};
-      const make=()=>{const at=new Date(this.now()).toISOString();return [{id:randomUUID(),runId:this.runId,at,by:'owner',kind:'note' as const,text:`coverage plan ${plan.id}@r${nextPlan.revision}: denominator -1 (${nextPlan.cellIds.length}); reason retained`,supersedes:plan.recordId,data:{coveragePlan:stripRecord(nextPlan)}},{id:randomUUID(),runId:this.runId,at,by:'owner',kind:'note' as const,text:`coverage cell ${id}@r${stored.revision}: retired from denominator; ${reason}`,supersedes:old.recordId,data:{coverageCell:stored}}];},acks=await this.write(make,bound),fresh=await readLedger(this.path,this.runId);return {plan:validateStoredCoveragePlan(fresh.byId.get(acks[0].recordId)!.data!.coveragePlan,acks[0].recordId),cell:validateStoredCoverageCell(fresh.byId.get(acks[1].recordId)!.data!.coverageCell,acks[1].recordId)};});}
+  /** A3: the plan is the planner's only coverage write; its denominator is derived, so no cell identity can be submitted. */
+  async createPlan(value:CoveragePlanDraft,request?:MutationRequest):Promise<CoveragePlanEntry>{const input=validateCoveragePlanDraft(value),bound=request?boundCoverageRequest('plan-create',value,request):undefined,prior=await this.retained(bound);if(prior)return this.retainedPlan(prior);return this.mutate(async(_index,plans)=>{const id=input.id??`coverage-plan-${randomUUID()}`;if(plans.some(plan=>plan.id===id))throw Error('Duplicate coverage plan');if(plans.filter(plan=>!['closed','cancelled'].includes(plan.status)).length>=10)throw Error('Live coverage plan limit reached (10)');if(!['draft','active'].includes(input.status))throw Error('Create coverage plans as draft/active; review/close needs a revision');const stored={...input,id,runId:this.runId,revision:1,targetRevision:this.context.targetRevision(),cellIds:[],derivation:'projected' as const},make=()=>{const recordId=randomUUID();return [{id:recordId,runId:this.runId,at:new Date(this.now()).toISOString(),by:'owner',kind:'note' as const,text:`coverage plan ${id}@r1: ${input.status}; denominator derived from reviewed work, not assessment completion`,data:{coveragePlan:stored}}];},acks=await this.write(make,bound),index=await readLedger(this.path,this.runId);return validateStoredCoveragePlan(index.byId.get(acks[0].recordId)!.data!.coveragePlan,acks[0].recordId);});}
+  async revisePlan(id:string,revision:number,value:CoveragePlanDraft,request?:MutationRequest):Promise<CoveragePlanEntry>{const input=validateCoveragePlanDraft(value),bound=request?boundCoverageRequest('plan-revise',{id,revision,input},request):undefined,prior=await this.retained(bound);if(prior)return this.retainedPlan(prior);return this.mutate(async(index,plans)=>{const old=plans.find(plan=>plan.id===id);if(!old||old.revision!==revision)throw Error('Missing or stale coverage plan revision');if(input.id&&input.id!==id)throw Error('Cannot change coverage plan identity');if(!this.planTransitions(old.status,input.status))throw Error('Invalid coverage plan transition');
+    // A3: a legacy plan still owes its stored denominator; a projected plan owes a derived one (a plan with no work cannot be reviewed).
+    if((COVERAGE_PLAN_REVIEWED as readonly string[]).includes(input.status)&&(old.derivation==='projected'?!projectCoverage(index,this.context).cells.length:!old.cellIds.length))throw Error('Reviewed/closed coverage plan needs at least one denominator cell; no task declares a work identity, so there is no coverage work to review yet');
+    const stored={...input,id,runId:this.runId,revision:old.revision+1,targetRevision:old.targetRevision,cellIds:old.cellIds,...(old.derivation?{derivation:old.derivation}:{})},make=()=>[{id:randomUUID(),runId:this.runId,at:new Date(this.now()).toISOString(),by:'owner',kind:'note' as const,text:`coverage plan ${id}@r${stored.revision}: ${input.status}; denominator ${old.derivation==='projected'?'derived from reviewed work':old.cellIds.length}, not whole-target safety`,supersedes:old.recordId,data:{coveragePlan:stored}}],acks=await this.write(make,bound),index2=await readLedger(this.path,this.runId);return validateStoredCoveragePlan(index2.byId.get(acks[0].recordId)!.data!.coveragePlan,acks[0].recordId);});}
   async list():Promise<CoveragePlanView[]>{const index=await readLedger(this.path,this.runId);if(!index.complete)throw Error('Coverage reconciliation incomplete');return coverageViews(index,this.context);}
 }
-function stripRecord(plan:CoveragePlanEntry){const {recordId:_,...stored}=plan;return stored;}
-function stripCell(cell:CoverageCellEntry){const {recordId:_,...stored}=cell;return stored;}

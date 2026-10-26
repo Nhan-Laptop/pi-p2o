@@ -3,7 +3,7 @@ import { chainBoard, chainLines } from '../../src/chain-board.js';
 import { situationLine, summarizeSituation } from '../../src/situation.js';
 import type { ChainClaim } from '../../src/chain-view.js';
 import type { PlanEntry } from '../../src/planning.js';
-import { fixture } from './helpers/report-fixture.js';
+import { fixture, seedClaim } from './helpers/report-fixture.js';
 
 /**
  * M1: the chain lives on the plan board and its edges are derived. Two links make that checkable — a plan row that names the claims it
@@ -96,14 +96,14 @@ describe('chain plan rows: one lineage, one position (M1)', () => {
   it('closing step 1 with a demonstrated claim makes step 2 ready and leaves step 3 waiting', async () => fixture(async h => {
     await h.command('--target ./source');
     const observation = (await h.call('p2o_shell', { command: 'printf chain-board-observation' })).details;
-    const record = (candidate: string, extra: Record<string, unknown> = {}) => h.call('p2o_candidate', {
+    const record = (candidate: string, extra: Record<string, unknown> = {}) => seedClaim(h, {
       candidate, surface: '/report-fixture', risk: 'authorization', closure: 'open_proof_gap', execution: 'not_tested', proof: 'static_trace',
       negativeControls: [], policyBasis: 'inferred', expectedPolicy: 'Declared fixture actor/object boundary', limitations: 'Nothing executed in this step yet',
       evidenceRefs: [observation.evidenceId], ...extra,
     });
-    const first = (await record('chain-a')).details;
-    const second = (await record('chain-b', { needs: [READ], gained: [ADMIN] })).details;
-    const third = (await record('chain-c', { needs: [ADMIN] })).details;
+    const first = await record('chain-a');
+    const second = await record('chain-b', { needs: [READ], gained: [ADMIN] });
+    const third = await record('chain-c', { needs: [ADMIN] });
     const create = (step: number, claimRef: string, extra: Record<string, unknown> = {}) => h.call('p2o_plan_create', {entry: {
       kind: 'todo', title: `Chain step ${step}`, status: 'open', reason: `Chain step ${step} of 3, written for the M1 acceptance fixture`,
       chainOf: 'chain-m1', step, claimRefs: [claimRef], ...extra } });
@@ -113,7 +113,7 @@ describe('chain plan rows: one lineage, one position (M1)', () => {
     expect(before.chains).toEqual(['chain chain-m1 0/3 · next: step 1 (ready) · waiting on: http.request (internal-api), cred.session (internal-api)']);
 
     // Step 1 now stands on a claim that actually ran and gains the capability step 2 consumes.
-    const demonstratedFirst = (await record('chain-a', { supersedes: first.id, closure: 'confirmed', execution: 'tested', proof: 'live_reproduction', policyBasis: 'boundary_invariant', gained: [READ] })).details;
+    const demonstratedFirst = await record('chain-a', { supersedes: first.id, closure: 'confirmed', execution: 'tested', proof: 'live_reproduction', policyBasis: 'boundary_invariant', gained: [READ] });
     await h.call('p2o_plan_revise', {id: steps[0]!.id, revision: steps[0]!.revision, entry: {
       kind: 'todo', title: 'Chain step 1', status: 'done', reason: 'Step 1 ran against the recorded surface and now hands out the request capability',
       chainOf: 'chain-m1', step: 1, claimRefs: [demonstratedFirst.id] } });
@@ -128,9 +128,9 @@ describe('chain plan rows: one lineage, one position (M1)', () => {
   it('refuses a second row for the same chain position', async () => fixture(async h => {
     await h.command('--target ./source');
     const observation = (await h.call('p2o_shell', { command: 'printf chain-duplicate-observation' })).details;
-    const record = (candidate: string) => h.call('p2o_candidate', { candidate, surface: '/report-fixture', risk: 'authorization', closure: 'open_proof_gap', execution: 'not_tested',
+    const record = (candidate: string) => seedClaim(h, { candidate, surface: '/report-fixture', risk: 'authorization', closure: 'open_proof_gap', execution: 'not_tested',
       proof: 'static_trace', negativeControls: [], policyBasis: 'inferred', expectedPolicy: 'Declared fixture actor/object boundary', limitations: 'Nothing executed in this step yet', evidenceRefs: [observation.evidenceId] });
-    const first = (await record('chain-a')).details, second = (await record('chain-b')).details;
+    const first = await record('chain-a'), second = await record('chain-b');
     await h.call('p2o_plan_create', {entry: { kind: 'todo', title: 'Chain step one', status: 'open', reason: 'First row at this position in the fixture chain', chainOf: 'chain-dup', step: 1, claimRefs: [first.id] } });
     await expect(h.call('p2o_plan_create', {entry: { kind: 'todo', title: 'Chain step one again', status: 'open', reason: 'Second row at the same position in the fixture chain', chainOf: 'chain-dup', step: 1, claimRefs: [second.id] } }))
       .rejects.toThrow(/Duplicate chain step 1 in chain-dup/);

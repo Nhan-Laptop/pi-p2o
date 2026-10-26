@@ -58,9 +58,11 @@ export const DUTIES: Readonly<Record<WorkPurpose, Duty>> = {
     produces: 'the link, the observed combined effect and the step where it stopped',
   },
   reporting: {
-    duty: 'Turn the evidence into a reader-ready report; run any step the report still needs instead of waiting for another worker.',
-    forbids: 'writing a finding the evidence does not support',
-    produces: 'a reader-ready report over accepted cases',
+    // planning_update.md A1: the reporter is a read-only second reader. Missing evidence is a limitation to report, not a
+    // reason to run a new probe; the worker that owns execution writes the evidence.
+    duty: 'Read the accepted case, its evidence, traces and artifacts; write a reader-ready report without running target work or creating a claim.',
+    forbids: 'new target work, a new claim or changing a case verdict',
+    produces: 'a reader-ready report over accepted cases, with missing evidence named as a limitation',
   },
 };
 

@@ -85,7 +85,7 @@ export const labParameters = Type.Object({
   body: Type.Optional(Type.String({ minLength: 1, maxLength: PAYLOAD_BYTES, description: 'The exact bytes to keep: runnable as-is, stored verbatim and deliberately not redacted' })),
   id: Type.Optional(Type.String({ maxLength: 80, description: 'Payload or environment ID; stored bytes and the recipe hash are checked before use' })),
   materialize: Type.Optional(Type.Boolean({ description: 'action=payload with id: write the stored bytes into your own sandbox scratch at payload/<id> and return its path, sha256 and byte count instead of the body' })),
-  compose: Type.Optional(Type.Boolean({ description: 'action=env only, lead only: read docker-compose.yml|compose.yaml from /target and derive the recipe; refused keys are named' })),
+  compose: Type.Optional(Type.Boolean({ description: 'action=env only: deriving the recipe from docker-compose.yml|compose.yaml under /target needs planner/host authority and is refused for a worker, which must author setup/services/seed explicitly; refused keys are named' })),
   setup: Type.Optional(Type.Array(Type.String({ minLength: 1, maxLength: 4096 }), { description: 'Commands run in order before services; each must exit 0' })),
   services: Type.Optional(Type.Array(labServiceSchema)),
   seed: Type.Optional(Type.Array(Type.String({ minLength: 1, maxLength: 4096 }), { description: 'Commands run after services are healthy; each must exit 0' })),

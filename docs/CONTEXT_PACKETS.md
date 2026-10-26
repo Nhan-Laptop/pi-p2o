@@ -4,14 +4,14 @@ Schema 7. Đã push và cài; toàn K0–K7 vẫn mở. Bản chi tiết (kể c
 
 ## Công nghệ cốt lõi
 
-- `knowledge_heads` là **index dựng lại được** (task/plan/case/cell/candidate/gap/phase/report/evidence head) và `knowledge_links` nối các
+- `knowledge_heads` là **index dựng lại được** (task/plan/case/cell lưu legacy/candidate/gap/phase/report/evidence head) và `knowledge_links` nối các
   ID đã giữ, nằm trong `assessment.sqlite`; không có store hay Planner thứ hai, không xóa revision cũ hay observation thô. Candidate head tách theo actor + handle.
-- `src/context.ts` thuần: sinh descriptor và kiểm tra checkpoint + tail; không dispatch, không I/O, không authority. Support của case/cell bị vô hiệu
-  theo link trong cùng transaction (chỉ **hạ**, không nâng proof). Nhãn head `accepted/reported` chỉ để điều hướng — proof vẫn đọc qua `p2o_board board=cases|coverage`.
+- `src/context.ts` thuần: sinh descriptor và kiểm tra checkpoint + tail; không dispatch, không I/O, không authority. Support của case và cell lưu legacy bị vô hiệu
+  theo link trong cùng transaction (chỉ **hạ**, không nâng proof); cell dẫn xuất của A3 không nằm trong ledger nên currentness của nó được chiếu lại khi đọc. Nhãn head `accepted/reported` chỉ để điều hướng — proof vẫn đọc qua `p2o_board board=cases|coverage`.
 - **Packet request-local** (Planner ≤12 KiB, Worker/reporting ≤8 KiB, digest cho người ≤16 KiB): run/role/task, sequence barrier, số đếm chính xác,
   shown/omitted, ID để truy xuất, thay đổi, attention, các trang gap/review xoay vòng và hàng relevance. Mỗi request thay packet cũ (không append, không sửa system prompt/tools,
   không tạo model turn hay retry). Hash chỉ nhận diện bytes, không chứng minh model hiểu.
-- **`backlog` (chỉ packet Planner, chỉ khi có gì đang chờ):** con trỏ để chọn việc khi frontier cạn — `unplannedAssets` (tài sản hiện hành chưa có cell coverage sống), `cellsNotRun` (cell đã khai báo `planned/unplanned` nhưng chưa chạy) và `wstgSuggestions` (số test WSTG khớp feature đã ghi, xem `docs/WSTG_MAP.md`). Chỉ có `total` và tối đa 5 ID mỗi mục; không điểm số, không task, không dispatch — Planner vẫn tự quyết, kể cả `blocked`. Khi packet vượt ngưỡng, ID bị bỏ trước mọi mục khác, `total` giữ nguyên. Không có gì chờ thì không có khóa `backlog` và packet không đổi một byte.
+- **`backlog` (chỉ packet Planner, chỉ khi có gì đang chờ):** con trỏ để chọn việc khi frontier cạn — `unplannedAssets` (tài sản hiện hành chưa có cell dẫn xuất còn hiệu lực), `cellsNotRun` (cell dẫn xuất đang `planned`/`running`, hoặc `unplanned` của plan legacy, chưa chạy) và `wstgSuggestions` (số test WSTG khớp feature đã ghi, xem `docs/WSTG_MAP.md`). Backlog đọc chính projection mà board coverage và báo cáo đọc. Chỉ có `total` và tối đa 5 ID mỗi mục; không điểm số, không task, không dispatch — Planner vẫn tự quyết, kể cả `blocked`. Khi packet vượt ngưỡng, ID bị bỏ trước mọi mục khác, `total` giữ nguyên. Không có gì chờ thì không có khóa `backlog` và packet không đổi một byte.
 - **Delivery cursor** chỉ được ACK ở assistant `message_end` thành công (không ở `agent_start`): ghi `context.consumed` + cursor + kết quả request trong một transaction;
   ACK stale/forged/aborted/revoked không làm cursor tiến. ACK là biên nhận giao, không phải review.
 
@@ -23,9 +23,9 @@ p2o_state {"action":"heads","domain":"case","cursor":0,"limit":20}      # | "sea
 ```
 
 Đọc có index, không gọi model/target, không ACK cursor, dùng được sau `open` lịch sử. `domain` ∈ task, goal, todo, decision, case, coverage-plan,
-coverage-cell, candidate, gap, phase, report, evidence; limit mặc định 20 (1–100); trang ≤48 KiB. `search` là chuỗi con 2–80 ký tự, không phân biệt hoa/thường, không
+coverage-cell (chỉ cell lưu legacy; cell dẫn xuất đọc qua `p2o_board board=coverage`), candidate, gap, phase, report, evidence; limit mặc định 20 (1–100); trang ≤48 KiB. `search` là chuỗi con 2–80 ký tự, không phân biệt hoa/thường, không
 regex, trên text/surface/risk/outcome/title của record (không tìm trong artifact); trả ≤20 con trỏ đã redact — không phải evidence. `p2o_state` chia ngân sách đọc
-knowledge hiện có (owner 400, Worker 160/200).
+knowledge hiện có (planner 400, Worker 160/200).
 
 Hot head luôn đọc từ index canonical; revision cũ vẫn bất biến và truy xuất được; không TTL, purge hay tóm tắt do model. Thiếu index/schema thì ghi rõ gap,
 không fallback quét toàn lịch sử. Còn mở: checkpoint/archive >64 MiB, TUI render p95, đếm status từ heads/SQL, fixture replay hỗn hợp lớn.

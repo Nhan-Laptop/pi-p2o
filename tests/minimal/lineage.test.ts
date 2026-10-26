@@ -27,24 +27,37 @@ const draft = (assetId: string, purpose: TaskDraft['work'] extends undefined ? n
 
 /** The same draft without a structured work identity: the legacy shape, whose only lineage fields are validationOf/retestOf/prerequisites. */
 const bare = (assetId: string) => { const { work: _work, decision: _decision, outputContract: _contract, id: _id, ...rest } = draft(assetId, 'investigation'); return rest; };
-async function fixture(work: (h: { board: TaskBoard; store: AssessmentStore; assetId: string; claim: () => string }) => Promise<void>) {
+/** A2: the first intent of a run is recon/mapping; every later intent anchors to it (or to the claim the run already holds). */
+const reconDraft = (assetId: string): TaskDraft => draft(assetId, 'mapping');
+/** A reviewed task is the only task a validation may reproduce (A2: the host pins the reviewed revision). */
+async function reviewed(board: TaskBoard, task: { id: string }, evidenceRef: string, assignee = 'worker-a') {
+  await board.reserve(task.id, assignee);
+  await board.transition(task.id, 'running', 'The assignee is observing the bounded fixture');
+  await board.transition(task.id, 'reported', 'The assignee reported the bounded fixture receipt', [evidenceRef]);
+  return board.transition(task.id, 'reviewed', 'Owner reviewed the bounded fixture receipt', [evidenceRef]);
+}
+async function fixture(work: (h: { board: TaskBoard; store: AssessmentStore; assetId: string; claim: () => string; receipt: (by: string) => string }) => Promise<void>) {
   const root = await mkdtemp(join(tmpdir(), 'p2o-lineage-')), store = AssessmentStore.create(root, { runId, retention: 'durable-local', targetKind: 'directory', targetIdentity: 'inert', targetDisplay: 'inert', profile: { runtimeHash: 'inert', image: 'inert', loopMode: 'manual', executorMode: 'shared' } });
   const path = join(root, 'alias.sqlite'), unbind = bindAssessmentStore(path, store);
   const assetId = store.recordGraph({ assets: [{ asset: { kind: 'endpoint', key: 'GET /lineage' } }] })[0].entityId;
   const claim = () => store.commitRecords([{ id: randomUUID(), runId, at: '2030-01-01', by: 'worker-a', workerId: 'worker-a', kind: 'candidate', text: 'Confirmed fixture primitive', surface: '/lineage', risk: 'authorization', outcome: 'confirmed',
     data: { candidate: `parent-${randomUUID().slice(0, 8)}`, closure: 'confirmed', execution: 'tested', proof: 'offline_reproduction', evidenceRefs: [], negativeControls: [], limitations: 'Fixture only', policyBasis: 'boundary_invariant', expectedPolicy: 'Declared boundary' } }])[0].recordId!;
-  try { await work({ board: new TaskBoard(runId, path, () => true, Date.now, () => store.graphScope(), id => store.assetRevision(id)), store, assetId, claim }); }
+  const receipt = (by: string) => store.commitRecords([{ id: randomUUID(), runId, at: '2030-01-01', by, workerId: by === 'owner' ? undefined : by, kind: 'evidence', text: 'Bounded inert receipt for one reviewed lineage fixture' }])[0].recordId!;
+  try { await work({ board: new TaskBoard(runId, path, () => true, Date.now, () => store.graphScope(), id => store.assetRevision(id)), store, assetId, claim, receipt }); }
   finally { unbind(); store.close(); await rm(root, { recursive: true, force: true }); }
 }
 
 describe('parent-typed lineage gate (P9)', () => {
-  it('refuses a validation task that names no parent at all, once the run holds a claim to cite', async () => fixture(async ({ board, assetId, claim }) => {
-    claim(); // nothing to cite is not the same as refusing to cite: on an empty run the same draft is accepted (see the last test)
+  it('refuses a validation task that names no parent at all, once the run holds a claim to cite', async () => fixture(async ({ board, assetId, claim, receipt }) => {
+    claim(); // nothing to cite is not the same as refusing to cite: the run holds a claim, so an omission is refused.
+    // A2: the first intent of a run is recon/mapping, so the validation probe runs against a board that already has one.
+    await board.create(reconDraft(assetId));
     // The role is the purpose signal for a plain draft: a validation worker must say which claim it reproduces.
-    await expect(board.create({ ...bare(assetId), role: 'validation' })).rejects.toThrow(/PURPOSE_NEEDS_LINEAGE: a validation task must cite the claim it reproduces/);
-    // Naming the predecessor task is the existing idiom and satisfies the gate (structured work already forces validationOf).
+    await expect(board.create({ ...bare(assetId), role: 'validation' })).rejects.toThrow(/PURPOSE_NEEDS_PREDECESSOR: a validation intent must set validationOf/);
+    // Naming the reviewed predecessor task is the existing idiom and satisfies the gate (structured work already forces validationOf).
     const prior = await board.create({ ...bare(assetId), role: 'general' });
-    const linked = { ...bare(assetId), role: 'validation' as const, validationOf: prior.id, prerequisites: [{ taskId: prior.id, revision: 1 }] };
+    const reviewedPrior = await reviewed(board, prior, receipt('worker-a'));
+    const linked = { ...bare(assetId), role: 'validation' as const, validationOf: prior.id, prerequisites: [{ taskId: prior.id, revision: reviewedPrior.revision }] };
     expect(await board.create(linked)).toMatchObject({ status: 'proposed', validationOf: prior.id });
   }));
 
@@ -57,14 +70,16 @@ describe('parent-typed lineage gate (P9)', () => {
     await expect(board.create({ ...base, work: { ...base.work!, claimRefs: [`${claimId}-nope`] } })).rejects.toThrow(/Unknown same-run parent claim/);
   }));
 
-  it('re-runs the gate when a revision drops the parent, so a claim cannot lose its lineage later', async () => fixture(async ({ board, assetId, claim }) => {
+  it('re-runs the gate when a revision drops the parent, so a claim cannot lose its lineage later', async () => fixture(async ({ board, assetId, claim, receipt }) => {
     claim();
+    await board.create(reconDraft(assetId));
     const prior = await board.create({ ...bare(assetId), role: 'general' });
-    const created = await board.create({ ...bare(assetId), role: 'validation', validationOf: prior.id, prerequisites: [{ taskId: prior.id, revision: 1 }] });
+    const reviewedPrior = await reviewed(board, prior, receipt('worker-a'));
+    const created = await board.create({ ...bare(assetId), role: 'validation', validationOf: prior.id, prerequisites: [{ taskId: prior.id, revision: reviewedPrior.revision }] });
     // The same fields are refused on create, which proves the gate reads the lineage rather than the transition.
-    await expect(board.create({ ...bare(assetId), id: 'task-orphan-probe', role: 'validation' })).rejects.toThrow(/PURPOSE_NEEDS_LINEAGE/);
+    await expect(board.create({ ...bare(assetId), id: 'task-orphan-probe', role: 'validation' })).rejects.toThrow(/PURPOSE_NEEDS_PREDECESSOR/);
     // And a revision cannot drop the predecessor to reach that state.
-    await expect(board.revise(created.id, created.revision, { ...bare(assetId), id: created.id, role: 'validation' })).rejects.toThrow(/PURPOSE_NEEDS_LINEAGE/);
+    await expect(board.revise(created.id, created.revision, { ...bare(assetId), id: created.id, role: 'validation' })).rejects.toThrow(/PURPOSE_NEEDS_PREDECESSOR/);
   }));
 
   it('exempts mapping and reporting, and accepts an asset revision as the parent of investigation', async () => fixture(async ({ board, assetId }) => {
@@ -96,6 +111,8 @@ describe('parent-typed lineage gate (P9)', () => {
 describe('exploitation and chaining lineage (P14.5)', () => {
   it('refuses an exploitation task whose only parent is an asset revision, and names the field to fill', async () => fixture(async ({ board, assetId, claim }) => {
     claim();
+    // A2: the first structured intent of a run is recon/mapping, so the escalating intent is refused for its ancestry, not its order.
+    await board.create(reconDraft(assetId));
     // Same lineage as the accepted investigation below, refused only because the purpose escalates past it.
     await expect(board.create(draft(assetId, 'exploitation'))).rejects.toThrow(/PURPOSE_NEEDS_LINEAGE: an exploitation task must cite the claim it takes further \(work\.claimRefs\)/);
     expect(await board.create(draft(assetId, 'investigation'))).toMatchObject({ status: 'proposed' });
@@ -103,12 +120,14 @@ describe('exploitation and chaining lineage (P14.5)', () => {
 
   it('accepts an exploitation task that cites the claim it takes further', async () => fixture(async ({ board, assetId, claim }) => {
     const claimId = claim(), { id: _fresh, ...base } = draft(assetId, 'exploitation');
+    await board.create(reconDraft(assetId));
     const accepted = await board.create({ ...base, work: { ...base.work!, claimRefs: [claimId] } });
     expect(accepted.work!.claimRefs).toEqual([claimId]);
   }));
 
   it('refuses a chaining task with exactly one claim, because one claim is not a chain', async () => fixture(async ({ board, assetId, claim }) => {
     const claimId = claim(), { id: _fresh, ...base } = draft(assetId, 'chaining');
+    await board.create(reconDraft(assetId));
     await expect(board.create({ ...base, work: { ...base.work!, claimRefs: [claimId] } })).rejects.toThrow(/PURPOSE_NEEDS_LINEAGE: a chaining task must cite the two claims it composes \(work\.claimRefs\)/);
     // An asset revision is not a substitute, and neither is a prior task: two claims are what a chain composes.
     await expect(board.create(draft(assetId, 'chaining'))).rejects.toThrow(/PURPOSE_NEEDS_LINEAGE/);
@@ -116,6 +135,7 @@ describe('exploitation and chaining lineage (P14.5)', () => {
 
   it('accepts a chaining task that cites two claims', async () => fixture(async ({ board, assetId, claim }) => {
     const first = claim(), second = claim(), { id: _fresh, ...base } = draft(assetId, 'chaining');
+    await board.create(reconDraft(assetId));
     const accepted = await board.create({ ...base, work: { ...base.work!, claimRefs: [first, second] } });
     expect(accepted.work!.claimRefs).toEqual([first, second].sort());
   }));

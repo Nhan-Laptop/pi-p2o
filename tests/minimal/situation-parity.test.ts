@@ -1,12 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { SEGMENT_FIELDS, situationLine, situationSegments, summarizeSituation, type SituationSnapshot } from '../../src/situation.js';
-import { ownerInstructions, type OwnerPromptFacts } from '../../src/prompts.js';
+import { plannerInstructions, type PlannerPromptFacts } from '../../src/prompts.js';
 
 /**
  * M9 (prompt/view parity). ARTEX's own drift bug is the model of this class: a prompt promised `sites_without_endpoints`, the view
  * stopped emitting it, and nothing failed (`my_references/ARTEX`, `agent/planner.go:309`). Here the chain is three-linked —
  * `summarizeSituation` produces the snapshot, `SEGMENT_FIELDS` declares which fields each segment reads, `situationSegments`
- * renders them, and `ownerInstructions` prints the line into the lead prompt. A field that is declared but never populated, a
+ * renders them, and `plannerInstructions` prints the line into the lead prompt. A field that is declared but never populated, a
  * segment that is never emitted, or a prompt that rewrites the line all have to fail this file.
  */
 const base: SituationSnapshot = { open: 0, running: 0, runningRoles: [], ready: 0, exhausted: 0, leadsUntriaged: 0, leadsCritical: 0, routesOpen: 0, routesDone: 0, routeNames: [], unprovenNegations: 0, blocked: 0, openContradictions: 0,
@@ -61,12 +61,12 @@ describe('situation parity: declared, produced and rendered stay one thing (M9)'
   });
 
   it('prints exactly the rendered line in the lead prompt, never a second count of its own', () => {
-    const facts: OwnerPromptFacts = { runId: 'run-parity', targetKind: 'directory', targetLabel: '/target', sourceSkipped: 0,
+    const facts: PlannerPromptFacts = { runId: 'run-parity', targetKind: 'directory', targetLabel: '/target', sourceSkipped: 0,
       delegation: { enabled: false, maxWorkers: 1, maxDepth: 1 }, phase: 'active', loopMode: 'manual', executorMode: 'shared' };
     for (const trigger of Object.values(triggers)) {
       const snapshot = { ...base, ...trigger };
       const line = situationLine(snapshot);
-      const text = ownerInstructions({ ...facts, situation: snapshot });
+      const text = plannerInstructions({ ...facts, situation: snapshot });
       expect(text).toContain(line);
       // One situation sentence only: a prompt that appended "open=…" would be a second view of the same state.
       expect(text.split('Situation: ').length - 1).toBe(1);

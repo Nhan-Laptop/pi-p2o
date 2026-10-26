@@ -6,7 +6,7 @@ Dữ liệu nằm ở `src/wstg-map.ts` cùng hai hàm thuần `wstgKey` và `ws
 
 ## Cách dùng khóa
 
-- Dùng ID WSTG viết thường làm `questionKey` (ví dụ `wstg-athz-04`) cho work identity (`p2o_task_create`, `p2o_delegate` với `work`) và cho cell coverage (`p2o_coverage_cell`). `key()` chỉ nhận `[a-z0-9._:/-]` nên dạng viết hoa không hợp lệ.
+- Dùng ID WSTG viết thường làm `questionKey` (ví dụ `wstg-athz-04`) cho work identity trong intent (`p2o_task_create` với `work`). Từ A3, host tự chiếu coverage cell từ công việc đã review (task đã review + claim worker + case accepted + revision asset), ghép cùng khóa đó; model không có verb tạo/sửa/retire cell. `key()` chỉ nhận `[a-z0-9._:/-]` nên dạng viết hoa không hợp lệ.
 - `methodFamily` giữ id workflow của skill (`source-review`, `offline-reproduction`...). `policyKey` giữ nghĩa chính sách của ứng dụng, không dùng cho ID WSTG.
 - `questionKey` đi vào vân tay trùng lặp, nên hai worker cùng thử một test WSTG trên cùng asset và cùng ngữ cảnh sẽ bị phát hiện trùng chính xác.
 - ID WSTG đã đổi giữa các bản (nhóm Input Validation `INPV` nay là Injection `INJT`; `INJT-13` được gán lại cho Format String). Luôn đọc ID cùng tiêu đề và commit đã ghim.
@@ -30,13 +30,13 @@ Cột **Trigger** liệt kê các đặc điểm recon làm test đáng lập k�
 
 ## Mức bằng chứng của một assessment (L0 đến L3)
 
-Hàm `wstgEvidence` tính mức cao nhất mà các cell có khóa của test đạt tới; báo cáo xuất (`/p2o report export`, slice S6) dùng nó cho phụ lục WSTG. Mức chỉ phản ánh các cell đã ghi, không phản ánh target.
+Hàm `wstgEvidence` tính mức cao nhất mà các cell có khóa của test đạt tới; báo cáo xuất (`/p2o report export`, slice S6) dùng nó cho phụ lục WSTG. Mức chỉ phản ánh cell host chiếu từ công việc đã review (hoặc cell lưu legacy), không phản ánh target.
 
 | Mức | Điều kiện |
 |---|---|
 | L0 chưa kiểm | không có cell còn hiệu lực, hoặc chỉ có cell `unplanned`, `planned`, `running` |
 | L1 đã thử | cell `attempted` hoặc `blocked`, hoặc cell `tested` đã stale hay chưa xác minh được tính hiện hành |
-| L2 đã kiểm | cell `tested` còn hiện hành (cổng ở `coverage.ts`: có evidence và task đã review); không suy ra "an toàn" ngoài ngữ cảnh đã thử |
+| L2 đã kiểm | cell `tested` còn hiện hành (host chiếu từ task đã review + claim/case theo bảng ở [CASE_REVIEW](CASE_REVIEW.md); plan legacy đọc cell lưu); không suy ra "an toàn" ngoài ngữ cảnh đã thử |
 | L3 đã chứng minh | cell `tested` còn hiện hành và dẫn tới case `confirmed` đã được accept, còn hiệu lực (`acceptedFinding` ở `cases.ts`); mức `proof` luôn phải hiển thị cạnh L3 |
 | n/a | mọi cell của test là `not_applicable` (dùng cho test cờ O) |
 
@@ -49,7 +49,7 @@ Hàm `wstgEvidence` tính mức cao nhất mà các cell có khóa của test đ
 
 ## Ví dụ cell coverage
 
-Một cell kế hoạch cho `wstg-athz-04` (IDOR) so sánh hai danh tính do operator cấp. `assetRef.id` là ID tài sản thật từ `p2o_graph`; test `wstg-map.test.ts` kiểm ví dụ này hợp lệ theo `validateCoverageCellDraft`, dùng khóa có trong bảng và `methodFamily` là workflow của skill mà bảng gắn cho test đó.
+**HOST-DERIVED (A3):** shape dưới đây là shape host dựng khi chiếu coverage từ công việc đã review — input là task đã review, claim worker của task đó (`data.taskRef`), case accepted và revision asset. Plan tạo trước A3 không có marker `derivation:'projected'` vẫn đọc cell lưu đúng shape này (legacy, read-only); test `wstg-map.test.ts` dùng `validateCoverageCellDraft` như parser của stored-cell legacy. Model không có verb tạo/sửa/retire cell. Ví dụ cho `wstg-athz-04` (IDOR) so sánh hai danh tính do operator cấp; `assetRef.id` là ID tài sản thật từ `p2o_graph`, `methodFamily` là workflow id của skill mà bảng gắn cho test đó.
 
 ```json
 {
@@ -75,7 +75,7 @@ Một cell kế hoạch cho `wstg-athz-04` (IDOR) so sánh hai danh tính do ope
 ## WSTG map table
 
 Pinned to OWASP WSTG commit 28553f878d48358767892916d53e59a9d664811c (https://github.com/OWASP/wstg).
-Use the key (lower case) as the questionKey of a work identity or of a coverage cell, and a skill workflow id as methodFamily.
+Use the key (lower case) as the questionKey of a work identity; coverage cells carry the same key when the host derives them from reviewed work. Use a skill workflow id as methodFamily.
 Support describes what this library carries, not what the target has: D = a skill names the object of the test and gives a method, conclusion rules or false-positive checks for it; T = only generic techniques apply; N = no skill; O = outside this tool's scope by design (other origins, DNS, third parties).
 Flags: B = the effect happens in a browser and no managed browser transport is provided, so proof stops at offline reproduction; I = needs identities supplied by the operator; - = none.
 Trigger: the features seen during recon that make the test worth planning (any = always; - = outside scope). Record a feature as an asset attribute named feature or as an observed fact, using these words: login, session-token, registration, password-reset, mfa, remember-me, jwt, oauth, roles, object-id, upload, xml-input, template-render, dynamic-code, outbound-fetch, db-query, os-command, file-path, mail-send, export-csv, serialized-input, crypto-use, reflected-input, stored-input, intermediary, redirect, client-js, client-storage, postmessage, websocket, graphql, api, payment, workflow, cors, frames, https, config, any.

@@ -25,7 +25,7 @@ SYN scans may not). Commands default to no task timeout; an explicit timeout or 
   tunnelling belongs to the network tool. Framing headers are owned by curl.
 - Limits: body 32 KiB (via stdin), 20 headers/8 KiB, URL 4096 chars, 5 redirects, transfer 8 MiB, captured output 48 KiB,
   64 KiB broker frame. Optional `timeout` (per hop) and `connectTimeout` in seconds; omitted/0 = no extension deadline.
-- Curl never follows redirects: the owner checks each hop. A blocked redirect returns the response already seen with
+- Curl never follows redirects: the host checks each hop. A blocked redirect returns the response already seen with
   `redirectStopped`. 307/308 keep method and body; 303 and POST 301/302 become GET. Transport failures are not replayed.
 
 ## Sessions

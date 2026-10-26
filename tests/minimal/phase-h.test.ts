@@ -2,7 +2,7 @@ import { describe, expect, it, vi, afterEach, beforeEach } from 'vitest';
 import { AssessmentEngine, type EngineDeps, type PlannerWake, type RoundProgress } from '../../src/engine.js';
 import { completionDemand, deriveCompletion } from '../../src/completion.js';
 import { plannerWakeMessage, plannerWakePrompt } from '../../src/planner-bridge.js';
-import { ownerInstructions } from '../../src/prompts.js';
+import { plannerInstructions } from '../../src/prompts.js';
 import type { ChainClaim } from '../../src/chain-view.js';
 import type { PlanEntry } from '../../src/planning.js';
 
@@ -98,7 +98,7 @@ describe('completionDemand names what the quiet round still owes (P16.2)', () =>
 
 describe('an expired worker is continued from where it stopped (P16.7)', () => {
   it('names continue and the brief that starts at the last write', () => {
-    const prompt = ownerInstructions({ runId: 'run-h', targetLabel: 'https://example.invalid', targetKind: 'url', sourceSkipped: 0,
+    const prompt = plannerInstructions({ runId: 'run-h', targetLabel: 'https://example.invalid', targetKind: 'url', sourceSkipped: 0,
       delegation: { enabled: true, maxWorkers: 3, maxDepth: 2 } });
     expect(prompt).toContain('its progress is in the ledger and its conversation is resumable');
     expect(prompt).toContain('continue it on the same ticket');

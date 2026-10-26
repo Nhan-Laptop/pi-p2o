@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { fixture, populate } from './helpers/report-fixture.js';
+import { fixture, populate, seedClaim } from './helpers/report-fixture.js';
 
 /** P3: an owner rating is its own note against an exact case revision. Hermetic: inert sandbox, real SQLite store. */
 const finding = (extra: Record<string, unknown> = {}) => ({ severity: 'medium', basis: 'Confirmed boundary deviation reaching only the tested identity’s own object in the fixture', ...extra });
@@ -58,7 +58,7 @@ describe('case rating', () => {
 
   it('keeps a case that rests on an inferred policy basis at medium or below', async () => fixture(async h => {
     const built = await populate(h);
-    const claim = (await h.call('p2o_candidate', { candidate: 'inferred-claim', surface: '/report-fixture', risk: 'authorization', closure: 'open_proof_gap', execution: 'not_tested', proof: 'static_trace', evidenceRefs: [], negativeControls: [], policyBasis: 'inferred', expectedPolicy: 'Policy inferred from names only', limitations: 'No declared policy was found for this fixture' })).details;
+    const claim = await seedClaim(h, { candidate: 'inferred-claim', surface: '/report-fixture', risk: 'authorization', closure: 'open_proof_gap', execution: 'not_tested', proof: 'static_trace', evidenceRefs: [], negativeControls: [], policyBasis: 'inferred', expectedPolicy: 'Policy inferred from names only', limitations: 'No declared policy was found for this fixture' });
     const draft = { title: 'Inferred policy hypothesis case', policyKey: 'policy:inferred', assetRefs: [{ id: built.asset.entityId, revision: 1 }], claimRefs: [claim.id], independentEvidenceRefs: [], taskRefs: [], reportRefs: [], contradictions: [], affectedVariants: [], relatedCaseIds: [], verdict: 'open', reviewStatus: 'pending', reviewReason: 'Pending: policy is only inferred', limitations: 'Policy was inferred, not declared', remediation: { status: 'unplanned', reason: 'No remediation was reviewed for the inferred case', evidenceRefs: [] } };
     const created = (await h.call('p2o_case_create', {entry: draft })).details;
     await expect(h.call('p2o_case_rate', {id: created.id, revision: created.revision, finding: finding({ severity: 'critical' }) })).rejects.toThrow(/inferred policy basis cannot be rated above medium/);

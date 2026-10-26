@@ -1,6 +1,6 @@
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { fixture, populate } from './helpers/report-fixture.js';
+import { fixture, populate, seedClaim, evidenceFor } from './helpers/report-fixture.js';
 
 /** Chain capability: an owner rating may carry the ordered links actually built, bounded by the last step whose claim ran. Inert sandbox, real store. */
 const OBJECTIVE = 'Reach the fixture object of another actor through the recorded selector and the recorded read primitive';
@@ -12,7 +12,7 @@ const step = (order: number, text: string, extra: Record<string, unknown> = {}) 
 describe('case finding chain', () => {
   it('records the ordered links, bounds severity by the executed depth and exports both renderings', async () => fixture(async h => {
     const built = await populate(h);
-    const second = (await h.call('p2o_candidate', { candidate: 'chain-second-link', surface: '/report-fixture', risk: 'authorization', closure: 'confirmed', execution: 'tested', proof: 'live_reproduction', evidenceRefs: [built.observation.evidenceId], negativeControls: [], policyBasis: 'boundary_invariant', expectedPolicy: 'Declared fixture actor/object boundary', limitations: 'One inert fixture actor only', gained: [{ kind: 'data.read', subject: 'foreign-object' }], needs: [{ kind: 'data.read', subject: 'selected-object' }] })).details;
+    const second = await seedClaim(h, { candidate: 'chain-second-link', surface: '/report-fixture', risk: 'authorization', closure: 'confirmed', execution: 'tested', proof: 'live_reproduction', evidenceRefs: [built.observation.evidenceId], negativeControls: [], policyBasis: 'boundary_invariant', expectedPolicy: 'Declared fixture actor/object boundary', limitations: 'One inert fixture actor only', gained: [{ kind: 'data.read', subject: 'foreign-object' }], needs: [{ kind: 'data.read', subject: 'selected-object' }] });
     const chain = { objective: OBJECTIVE, demonstratedThrough: 2, steps: [
       step(1, 'Select an object identity the request does not own through the recorded parameter', { claimRef: built.claim.id, gained: [{ kind: 'data.read', subject: 'selected-object' }] }),
       step(2, 'Read the selected object through the recorded endpoint', { claimRef: second.id, needs: [{ kind: 'data.read', subject: 'selected-object' }], gained: [{ kind: 'data.read', subject: 'foreign-field' }], effect: 'confidentiality-read', reach: { AV: 'N', AC: 'L', AT: 'N', PR: 'L', UI: 'N' } }),
@@ -72,16 +72,18 @@ describe('case finding chain', () => {
     await reject({ ...one({ claimRef: 'claim-that-does-not-exist' }), chain: { objective: OBJECTIVE, demonstratedThrough: 1, steps: [step(1, 'Reach the selector that chooses the object identity', { claimRef: 'claim-that-does-not-exist' })] } }, /Unknown same-run chain claim/);
     await reject(one({ extra: 1 }), /Finding chain step|exact|unknown/i);
     await reject({ chain: { objective: OBJECTIVE, steps: [step(1, 'Reach the selector that chooses the object identity')], plan: 'x' } }, /Finding chain|exact|unknown/i);
-    const unproven = (await h.call('p2o_candidate', { candidate: 'chain-unproven-link', surface: '/report-fixture', risk: 'authorization', closure: 'open_proof_gap', execution: 'not_tested', proof: 'static_trace', evidenceRefs: [], negativeControls: [], policyBasis: 'boundary_invariant', expectedPolicy: 'Declared fixture actor/object boundary', requirement: 'A write-capable selector the fixture does not expose', limitations: 'Never executed in the fixture' })).details;
+    const unproven = await seedClaim(h, { candidate: 'chain-unproven-link', surface: '/report-fixture', risk: 'authorization', closure: 'open_proof_gap', execution: 'not_tested', proof: 'static_trace', evidenceRefs: [], negativeControls: [], policyBasis: 'boundary_invariant', expectedPolicy: 'Declared fixture actor/object boundary', requirement: 'A write-capable selector the fixture does not expose', limitations: 'Never executed in the fixture' });
     await reject({ chain: { objective: OBJECTIVE, demonstratedThrough: 1, steps: [step(1, 'Reach the selector that chooses the object identity', { claimRef: unproven.id })] } }, /not a confirmed tested result/);
     const store = await h.reader(); try { expect(store.records().filter((row: any) => row.data?.caseRating).length).toBe(0); } finally { store.close(); }
   }));
 
   it('validates the provided capability on a candidate claim so a later step can consume it', async () => fixture(async h => {
     const built = await populate(h);
-    const claim = (extra: Record<string, unknown> = {}) => h.call('p2o_candidate', { candidate: 'chain-edge', surface: '/report-fixture', risk: 'authorization', closure: 'confirmed', execution: 'tested', proof: 'offline_reproduction', evidenceRefs: [built.observation.evidenceId], negativeControls: [], policyBasis: 'boundary_invariant', expectedPolicy: 'Declared fixture actor/object boundary', limitations: 'One inert fixture actor only', ...extra });
-    expect((await claim({ gained: [{ kind: 'data.read', subject: 'foreign-object' }], needs: [{ kind: 'auth.bypass' }] })).details.id).toBeTruthy();
-    expect((await claim({ candidate: 'chain-edge-open', gained: undefined })).details.id).toBeTruthy(); // the edge is optional
+    // A2: the worker-side claim service (same validator the broker uses) is the only claim-authoring surface left for a fixture.
+    const evidence = await evidenceFor(h);
+    const claim = (extra: Record<string, unknown> = {}) => evidence.candidate('worker-a', { candidate: 'chain-edge', surface: '/report-fixture', risk: 'authorization', closure: 'confirmed', execution: 'tested', proof: 'offline_reproduction', evidenceRefs: [built.observation.evidenceId], negativeControls: [], policyBasis: 'boundary_invariant', expectedPolicy: 'Declared fixture actor/object boundary', limitations: 'One inert fixture actor only', ...extra } as never);
+    expect((await claim({ gained: [{ kind: 'data.read', subject: 'foreign-object' }], needs: [{ kind: 'auth.bypass' }] })).id).toBeTruthy();
+    expect((await claim({ candidate: 'chain-edge-open', gained: undefined })).id).toBeTruthy(); // the edge is optional
     // P14.1: the pair is typed and closed, so a kind outside the vocabulary or an over-long subject is refused rather than stored
     // as text nothing can ever join to.
     await expect(claim({ candidate: 'chain-edge-unknown-kind', gained: [{ kind: 'made-up-kind' }] })).rejects.toThrow(/kind|made-up-kind/);
@@ -94,8 +96,8 @@ describe('case finding chain', () => {
 describe('chain identities agree (P13a)', () => {
   it('accepts the record id the frontier prints and the slug the join keys on', async () => fixture(async h => {
     const built = await populate(h);
-    const primitive = (await h.call('p2o_candidate', { candidate: 'identity-primitive', surface: '/report-fixture', risk: 'authorization', closure: 'confirmed', execution: 'tested', proof: 'live_reproduction', evidenceRefs: [built.observation.evidenceId], negativeControls: [], policyBasis: 'boundary_invariant', expectedPolicy: 'Declared fixture actor/object boundary', limitations: 'One inert fixture actor only', gained: [{ kind: 'cred.session', subject: 'fixture-actor' }] })).details;
-    await h.call('p2o_candidate', { candidate: 'identity-consumer', surface: '/report-fixture', risk: 'authorization', closure: 'open_proof_gap', execution: 'not_tested', proof: 'static_trace', evidenceRefs: [built.observation.evidenceId], negativeControls: [], policyBasis: 'inferred', expectedPolicy: 'Declared fixture actor/object boundary', limitations: 'Nothing executed yet', needs: [{ kind: 'cred.session', subject: 'fixture-actor' }], requirement: 'Reach the consumer with an authenticated fixture session' });
+    const primitive = await seedClaim(h, { candidate: 'identity-primitive', surface: '/report-fixture', risk: 'authorization', closure: 'confirmed', execution: 'tested', proof: 'live_reproduction', evidenceRefs: [built.observation.evidenceId], negativeControls: [], policyBasis: 'boundary_invariant', expectedPolicy: 'Declared fixture actor/object boundary', limitations: 'One inert fixture actor only', gained: [{ kind: 'cred.session', subject: 'fixture-actor' }] });
+    await seedClaim(h, { candidate: 'identity-consumer', surface: '/report-fixture', risk: 'authorization', closure: 'open_proof_gap', execution: 'not_tested', proof: 'static_trace', evidenceRefs: [built.observation.evidenceId], negativeControls: [], policyBasis: 'inferred', expectedPolicy: 'Declared fixture actor/object boundary', limitations: 'Nothing executed yet', needs: [{ kind: 'cred.session', subject: 'fixture-actor' }], requirement: 'Reach the consumer with an authenticated fixture session' });
     const join = (await h.call('p2o_graph', { action: 'chain' })).details;
     const consumer = join.frontier.find((entry: any) => entry.claimId === 'identity-consumer');
     expect(consumer).toMatchObject({ claimId: 'identity-consumer', depth: 1, path: ['identity-primitive', 'identity-consumer'] });

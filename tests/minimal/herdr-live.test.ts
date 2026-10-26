@@ -15,10 +15,13 @@ it.skipIf(process.env.P2O_TEST_HERDR !== '1')('real Herdr: the owner delegates i
   const repo = resolve(import.meta.dirname, '../..');
   await mkdir(join(root, 'repo'));
   await writeFile(join(root, 'repo', 'code.txt'), 'authorized inert source');
-  const sandboxLog = join(root, 'sandbox.jsonl');
+  const sandboxLog = join(root, 'sandbox.jsonl'), settings = join(root, 'settings.json');
+  // Hermetic role-model pin: the A2 first intent is recon, so the worker role model is pinned to the inert provider instead of
+  // an unreachable packaged default; the transport, not live AI, is what this opt-in test exercises.
+  await writeFile(settings, JSON.stringify({ p2o: { roles: Object.fromEntries(['recon', 'discovery', 'validation', 'reporting', 'exploit', 'general'].map(role => [role, { model: 'p2o-inert/current-agent' }])) } }));
   const env: NodeJS.ProcessEnv = {
     ...process.env,
-    P2O_TEST_CONTROL_ROOT: join(root, 'control'), P2O_TEST_SANDBOX_LOG: sandboxLog,
+    P2O_TEST_CONTROL_ROOT: join(root, 'control'), P2O_TEST_SANDBOX_LOG: sandboxLog, P2O_TEST_SETTINGS: settings,
     P2O_TEST_WORKER_EXT: join(repo, 'tests/minimal/fixtures/worker.ts'),
     HOME: root, PI_CODING_AGENT_DIR: join(root, 'agent'), PI_OFFLINE: '1',
   };
@@ -63,13 +66,16 @@ it.skipIf(process.env.P2O_TEST_HERDR !== '1')('real Herdr: the owner delegates i
     }
     expect(messages.some((message: any) => text(message).includes('OWNER_FINAL_REPORT')), JSON.stringify({ stderr, tail: messages.slice(-6).map(text) })).toBe(true);
     const results = messages.filter((message: any) => message.role === 'toolResult');
-    expect(results.map((message: any) => message.toolName)).toEqual(['p2o_delegate', 'p2o_workers', 'p2o_finish']);
+    expect(results.map((message: any) => message.toolName)).toEqual(['p2o_net', 'p2o_task_create', 'p2o_task_dispatch', 'p2o_workers', 'p2o_finish']);
+    // A1: no target tool on the planner surface; the Engine spawns the worker from the dispatched intent.
+    expect(results[0].isError).toBe(true);
+    expect(text(results[0])).toContain('not found');
     // A real Herdr pane answered: the status the owner read came from `herdr agent get`.
-    expect(text(results[1])).toMatch(/\[(idle|working|done|blocked|reported)\]/);
-    expect(text(results[1])).toContain('WORKER_REPORT');
+    expect(text(results[3])).toMatch(/\[(idle|working|done|blocked|reported)\]/);
+    expect(text(results[3])).toContain('WORKER_REPORT');
     const journal = (await readFile(sandboxLog, 'utf8')).split('\n').filter(Boolean).map(line => JSON.parse(line));
     expect(journal.filter((entry: any) => entry.op === 'exec')).toHaveLength(1);
-    expect(text(results[2])).toContain('Container removal verified');
+    expect(text(results[4])).toContain('Container removal verified');
     expect(dialogs).toEqual(['Start authorized assessment?']);
   } finally {
     child.stdin.end();

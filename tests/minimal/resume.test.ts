@@ -25,7 +25,8 @@ describe('resume a historical run', () => {
       await second.commands.get('p2o')!.handler(`--resume ${runId}`, secondCtx.ctx);
       expect(secondCtx.notices.join(' ')).toContain('Sandbox ready');
       expect(second.messages.at(-1)).toMatch(/^Continue the resumed assessment\./);
-      expect(second.active).toContain('p2o_delegate');
+      expect(second.active).toContain('p2o_task_create');
+      expect(second.active).not.toContain('p2o_delegate');
 
       const reopened = AssessmentStore.open(join(root, '.p2o-state'), runId!, { readOnly: true });
       try {

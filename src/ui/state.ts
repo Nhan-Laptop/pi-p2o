@@ -7,6 +7,7 @@ import type { AssessmentEngine } from '../engine.js';
 import { STATE_SCHEMA_VERSION } from '../state/schema.js';
 import { validId } from '../validate.js';
 import { dashboardLines } from './dashboard.js';
+import type { AuthorityReport } from '../authority.js';
 
 export type StateCommand = { action: 'status' } | { action: 'report' } | { action: 'log'; cursor?: number; taskId?: string; actorId?: string; operationId?: string };
 const integer = (text: string) => {
@@ -59,11 +60,15 @@ export interface StatusView {
   schemaVersion: 1; runId: string; lifecycle: string; asOfRecordCount: number; complete: boolean; diagnostics: string[];
   taskCounts: Record<string, number>; reportCount: number; candidateClaims: number; openEntries: number;
   pendingReview: number; acceptedFindings:number; pendingCaseReviews:number; staleCases:number; coverageCells:number; retained: boolean; lines: string[]; widget: string[];
+  /** A4: planner/worker target ops, task/claim/validation counters, stalled rounds, mode and the static role matrix. */
+  authority: AuthorityReport;
 }
 
 /** Legacy v2 projection. Counts are records/tasks, never test cells or validated findings. */
 export function statusView(index: LedgerIndex, profile: ViewProfile, context:ReportProjectionContext={}): StatusView {
-  const tasks = taskFrontier(index), report = reportProjection(index,context), cases = caseViews(index, context.cases ?? {});
+  const mode = { loopMode: profile.engine.mode, executorMode: profile.executor.mode },
+    tasks = taskFrontier(index), report = reportProjection(index,{ ...context, mode }), cases = caseViews(index, context.cases ?? {}),
+    authority = report.authority;
   const counts: Record<string, number> = {};
   for (const task of tasks) counts[task.status] = (counts[task.status] ?? 0) + 1;
   const pendingReview = tasks.filter(awaitingReview).length;
@@ -85,14 +90,16 @@ export function statusView(index: LedgerIndex, profile: ViewProfile, context:Rep
   return {
     schemaVersion: 1, runId: profile.runId, lifecycle: profile.lifecycle, asOfRecordCount: index.records.length,
     complete: report.complete, diagnostics, taskCounts: counts, reportCount: report.counts.reports,
-    candidateClaims: report.counts.candidates, openEntries: report.counts.open, pendingReview,acceptedFindings:report.counts.uniqueAcceptedFindings,pendingCaseReviews:report.counts.pendingCaseReviews,staleCases:report.counts.staleCases,coverageCells:report.counts.coverageCells, retained,
+    candidateClaims: report.counts.candidates, openEntries: report.counts.open, pendingReview,acceptedFindings:report.counts.uniqueAcceptedFindings,pendingCaseReviews:report.counts.pendingCaseReviews,staleCases:report.counts.staleCases,coverageCells:report.counts.coverageCells, retained, authority,
     lines: [title,
       ...(pendingReview ? [`⚠ ${pendingReview} worker report${pendingReview === 1 ? '' : 's'} awaiting Planner review — report alone does not close a goal.`] : []),
       `Target: ${safe(profile.target, 1000)}`,
       ...(profile.held ? [`HOLD: new target commands and worker launches are refused until /p2o release — ${safe(profile.held.reason, 300)}. Commands already running finish; reporting and /p2o stop stay available.`] : []),
       ...(profile.runtime ? [`Runtime: p2o ${safe(profile.runtime.version || 'unknown version', 40)} · ${safe(profile.runtime.sha256, 64).slice(0, 12)} (digest of the entry file + src closure; identifies code, not safety)`] : []), taskLine,
       `Worker slots: ${profile.delegation ? profile.maxWorkers : 0}; target-operation cap: ${profile.executor.maxTargetOperations} (not network rate/connections)`,
-      `Frontier: ${profile.engine.pendingIntents} accepted pending intents; automatic wakes ${profile.engine.rounds}`,
+      `Frontier: ${profile.engine.pendingIntents} accepted pending intents; automatic wakes ${profile.engine.rounds}; stalled rounds ${authority.stalledRounds}`,
+      // A4: the authority line names the measured invariants, the mode that produced the run and the static role matrix.
+      `Authority: planner target ops ${authority.plannerTargetOps} (must be 0) | worker target ops ${authority.workerTargetOps} | tasks created ${authority.tasksCreated}, dispatched ${authority.tasksDispatched}${authority.firstDispatchAt ? ` (first ${safe(authority.firstDispatchAt, 40)})` : ''} | claims owner ${authority.ownerClaims} (must be 0), worker ${authority.workerClaims} | validation tasks ${authority.validationTasks} | mode ${authority.mode?.loopMode ?? profile.engine.mode}/${authority.mode?.executorMode ?? profile.executor.mode} | roles planner ${authority.roles.planner}, worker ${authority.roles.worker}, validation ${authority.roles.validation}, reporter ${authority.roles.reporter}`,
       ...workerLines(profile.workers ?? [], profile.maxWorkers),
       ...(profile.usageLines ?? []).map(line => safe(line, 400)),
       `Planner context: ${profile.contextUsage ? (profile.contextUsage.percent != null && profile.contextUsage.tokens != null ? `${Math.round(profile.contextUsage.percent)}% (${profile.contextUsage.tokens} of ${profile.contextUsage.contextWindow} tokens) at the last request` : `unknown right now (window ${profile.contextUsage.contextWindow} tokens)`) : 'not reported yet'}; measurement only, p2o never compacts or summarizes the Planner session itself.`,

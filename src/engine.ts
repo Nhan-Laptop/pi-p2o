@@ -16,6 +16,8 @@ export interface RoundProgress {
   /** The named obligations, built by the owner from the ledger. The engine never invents work or target prose. */
   demand?: string;
 }
+/** A4: what a round's ending looks like to the stall rule. Both facts are read from the ledger by the caller, never invented here. */
+export interface RoundStall { openGoal: boolean; openIntents: number }
 const QUIET_ROUNDS = 2;
 export interface EngineDeps {
   active(): boolean;
@@ -48,6 +50,7 @@ export class AssessmentEngine {
   private reservation?: PlannerWake;
   private rounds = 0;
   private progress: RoundProgress = { testedCells: 0, closures: 0, assets: 0, chainDepth: 0, remaining: 0 };
+  private stalls = 0;
   private quiet: number[] = [];
   private readonly revisits = new Map<string, { at: number; timer: ReturnType<typeof setTimeout> }>();
   private decision?: { disposition: 'wait' | 'blocked'; reason: string };
@@ -148,6 +151,19 @@ export class AssessmentEngine {
   forget(taskId: string) {this.queue.delete(taskId);}
   started() { this.busy = true; }
   settled() { this.busy = false; this.kick(); }
+  /**
+   * A4: record a stalled round as a durable report fact — never a wake, queue entry, pause or new work budget. A round that
+   * ends with an open goal, no open/running intent and no blocked declaration is not progress, so it must not be silent.
+   * Every such round is recorded; the caller's `persist` writes the lifecycle record and the engine shapes nothing else.
+   */
+  async stallRound(facts: RoundStall): Promise<boolean> {
+    if (!this.live() || this.paused || this.decision?.disposition === 'blocked' || !facts.openGoal || facts.openIntents > 0) return false;
+    this.stalls += 1;
+    await this.deps.persist(
+      'planner.stalled: the round ended with an open goal, no open/running intent and no blocked declaration; recorded as a report fact, never a wake or new budget',
+      { event: 'planner.stalled', openGoal: true, openIntents: 0, rounds: this.rounds, sequence: this.sequence, stalls: this.stalls });
+    return true;
+  }
   /** Delivery ACK only: never discard events committed after the projected barrier. */
   consume(through = this.sequence, progress?: RoundProgress) {
     if (!Number.isSafeInteger(through) || through < 0 || through > this.sequence) throw Error('Invalid semantic consumption barrier');
@@ -219,7 +235,7 @@ export class AssessmentEngine {
     const intents = [...this.queue.values()].map(({taskId,revision,priority,reason}) => ({taskId,revision,priority,reason}));
     const events = [...this.events.values()];
     return {runId:this.runId,mode:this.mode,epoch:this.epoch,state:this.stopped ? 'stopped' : this.paused ? 'blocked' : this.busy ? 'running' : this.reservation ? 'scheduled' : 'waiting',
-      paused:this.paused,rounds:this.rounds,decision:this.decision,
+      paused:this.paused,rounds:this.rounds,decision:this.decision,stalls:this.stalls,
       sequence:this.sequence,consumedSequence:this.consumed,pendingEvents:events.length,events:events.slice(-20),eventsOmitted:Math.max(0,events.length-20),
       pendingIntents:intents.length,intents:intents.slice(0,20),intentsOmitted:Math.max(0,intents.length-20),
       warning:'Owner-local coordination, not evidence or restored authority. Read the runtime executor profile for target concurrency. Automatic rounds are extra provider requests, not a hard monetary/token cap.'};

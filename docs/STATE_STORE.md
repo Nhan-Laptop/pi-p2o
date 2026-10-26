@@ -37,7 +37,8 @@ chống root hay process cùng UID. Thư mục này không bao giờ mount vào 
 ## Handoff
 
 `TaskBoard.handoff()` commit trong một transaction: report parts + manifest, task revision (`reported`, hoặc `blocked` nếu
-chưa điều tra), coverage/open, phase card. Sai assignee/revision cũ/owner không hoạt động bị từ chối; không tự review hay đóng gì.
+chưa điều tra), coverage/open (coverage ở đây là note/handoff của worker, không phải cell; từ A3 cell coverage do host chiếu từ
+công việc đã review), phase card. Sai assignee/revision cũ/owner không hoạt động bị từ chối; không tự review hay đóng gì.
 Replay trả ACK gốc, không phát lại notification.
 
 ## Artifact và capture

@@ -1,11 +1,11 @@
 # Skills, tool guidance and evidence
 
 Reading knowledge never grants a tool, network route, identity or filesystem capability. Target execution stays in the
-owner-managed sandbox.
+host-managed sandbox.
 
 ## Knowledge tools
 
-- Lead and worker both have `p2o_skill_list {query?, offset?}` (8 per page, keyword search, playbooks and overlays first)
+- Planner, worker and the read-only reporter all have `p2o_skill_list {query?, offset?}` (8 per page, keyword search, playbooks and overlays first)
   and `p2o_skill_read {id, offset?}` (follow `nextOffset`). Document IDs cover skills, their references, recipes, scripts,
   `shared:scope`, `shared:handoffs`, `shared:wstg-map` and approved evidence sections; relative links become `p2o-skill:` IDs.
 - `p2o_skill_read {id, materialize: true}` copies a registered skill script (`skills/<skill>/scripts/*.py`) into the
@@ -14,14 +14,15 @@ owner-managed sandbox.
   reporting an artifact. Anything that is not a registered script is read as a document instead.
 - Catalog IDs are not host paths: every component is opened relative to a held directory FD without following symlinks,
   and only registered documents are reachable. Hashes identify package bytes, not target evidence.
-- `skills/catalog.json` separates technique / playbook / overlay and lists descriptive workflow prerequisites;
-  `p2o_delegate` validates a workflow ID against the assigned skills (max 3, overlays count) but never infers tools.
-- `p2o_delegate` takes `role`, `skills`, optional `model` and `thinking` (per-spawn → role setting → lead's level). A
-  qualified `provider/model` is passed as separate `--provider`/`--model`; no provider fallback.
+- `skills/catalog.json` separates technique / playbook / overlay and lists descriptive workflow prerequisites; a task
+  draft's `workflow` is validated against the skills it assigns (loadout max 3, overlays count) but never infers tools.
+- A worker's `role`, `skills`, `model` and `thinking` are resolved when the planner creates and dispatches the intent:
+  explicit `skills`/`workflow` → `p2o.roles.<role>` setting → purpose default, and model per role setting → planner's
+  level. A qualified `provider/model` is passed to the worker as separate `--provider`/`--model`; no provider fallback.
 - When `skills` is omitted, `PURPOSE_SKILLS` in `src/roles.ts` picks the default set from the work purpose (`work.purpose`,
   else derived from the role): mapping → `attack-surface-mapping`, discovery/refinement → `source-code-auditing`,
-  retest → `remediation`, exploitation/chaining → `exploit-design`, investigation/validation/reporting → none (the legacy
-  general delegate keeps its empty default). P15 adds a second axis: `purposeSkills(purpose, {kind, needs})` lets the target
+  retest → `remediation`, exploitation/chaining → `exploit-design`, investigation/validation/reporting → none (the general
+  role keeps its empty default). P15 adds a second axis: `purposeSkills(purpose, {kind, needs})` lets the target
   kind and the capabilities a step consumes pick the member of the family — a URL run maps with `web-deployment-hygiene` and
   discovers with `web-route-input-inventory`, an exploitation step adds the ladder its `work.needs` names, and no context
   keeps the base table. Validation and reporting ship no default on purpose: reproduction must not discover, and synthesis
@@ -29,7 +30,7 @@ owner-managed sandbox.
   `skills` list or an operator `roles.<role>.skills` setting still wins, an empty purpose list falls back to the role
   default, and `role` keeps choosing the model. `tests/minimal/roles.test.ts` checks every id against `skills/catalog.json`.
 - Nine purposes (`WORK_PURPOSES`) each carry a duty, the failure they prevent and the output that counts as finished; every
-  worker reads its duty line, keyed by purpose and derived from the role only when the lead supplied no structured work.
+  worker reads its duty line, keyed by purpose and derived from the role only when the planner supplied no structured work.
   `exploitation` takes a confirmed primitive to a demonstrated effect (payload, environment, observation — or the exact
   wall) and `chaining` composes two demonstrated primitives into an effect neither reaches alone. The `exploit` role exists
   to dispatch that work; like every role it selects a model and a starting skill set and grants no scope.
@@ -40,13 +41,20 @@ owner-managed sandbox.
   ledger record (`source`, `url`, `license`, `sha256`, `bytes`, `fetchedAt`, injection signals). Research is never
   evidence and never a finding; a page that instructs the reader is reported as untrusted text and changes no state.
   Research is not a target command: a lookup carries no command and no separate counter.
-- Budgets: 400 lead reads; 200 worker knowledge/coordination calls (knowledge stops at 160). These are not command reserves.
+- Budgets: 400 planner reads; 200 worker knowledge/coordination calls (knowledge stops at 160). These are not command reserves.
 
 ## Prompt and recon
 
-- The lead gets one structured `p2o_assessment` section (role, scope, recon strategy, delegation, evidence rules,
+- The planner gets one structured `p2o_assessment` section (role, scope, recon strategy, delegation, evidence rules,
   cleanup) — policy, not tool manuals; Pi supplies tool descriptions. It is replaced, never appended, and removed when no
-  run is active. The lead holds every tool: it delegates when a worker backend exists and investigates directly otherwise.
+  run is active. The planner holds no target, lab or claim tools: it creates and dispatches intents, and workers execute
+  them. Without a worker backend the work is blocked, not taken over.
+- The section states each role's rule in one literal line: planner first action is one recon/mapping intent, no target
+  operations, no claim authorship (a claim comes from a worker task), coverage is a projection of reviewed work, and a
+  zero-intent round is not progress; worker "one intent, write back, report, stop"; reporter read-only second reader with
+  no target operations, no candidate authorship and no verdict or plan change. Those lines are advice — the role loadout is
+  the enforcement (planner 23 tools, worker 17, validation 16, reporter 6), and the same rule is repeated on the tool
+  boundaries in `src/tool-guidelines.ts`.
 - Recon records a bounded surface inventory (inputs, actors, gates, boundaries, Evidence IDs, extraction method,
   labelled unknowns). Pick the next surface by reachable influence, sensitive effect, boundary uncertainty, evidence,
   information gain and cost, and note why. Unclear gates go back to mapping, plausible candidates to a *separate*
@@ -78,7 +86,7 @@ the confirmation names the image that is passed into worker tickets.
 
 ## Evidence and candidates
 
-Every target command or request gets an owner-generated evidence ID; its receipt stores actor, target, timing, command,
+Every target command or request gets a host-generated evidence ID; its receipt stores actor, target, timing, command,
 status, bounded redacted output, truncation and an output hash. A receipt proves what the tool returned, not that the
 interpretation is right.
 
@@ -100,7 +108,7 @@ interpretation is right.
   derives `replayable` from it — the flag is never stored — so a claim without one is labelled "not replayable" instead
   of implying a second worker could reproduce it.
 - `supersedes` (latest record ID), `resolves` (open items), `independentEvidenceRef` (another worker's receipt plus its
-  matching runtime-tested candidate at the latest revision; withdrawn support is rejected, the lead still judges semantics).
+  matching runtime-tested candidate at the latest revision; withdrawn support is rejected, the planner still judges semantics).
 - `payloadRef`: the payload artifact from `p2o_lab` that actually ran — a request, script or command of at most 32 KiB,
   stored verbatim in the run-private control directory and never exported. It requires `tested` execution.
 - `environmentRef`: the environment recipe it was demonstrated in (`p2o_lab action=env`). A recipe is setup commands,
@@ -128,5 +136,5 @@ source/skill/image/extension hashes and ledger records (never tickets or auth fi
 before sharing. Without `--export` the ledger is deleted at cleanup; an export error never blocks teardown.
 
 A worker that settles without `p2o_report` yields a blocked report with no extra model call. If its broker is lost,
-the lead must withdraw it with `p2o_workers` (action: 'stop'); idle Herdr states never prove completion. Linux is required (FD-relative
+the planner must withdraw it with `p2o_workers` (action: 'stop'); idle Herdr states never prove completion. Linux is required (FD-relative
 containment). Real-provider evaluation: `bench/README.md`; unit tests do not establish assessment quality.

@@ -20,7 +20,7 @@ import { routeMonoculture } from './routes.js';
  */
 export type PreflightCode = 'UNREVIEWED_TASK' | 'UNREVIEWED_CLAIM' | 'PENDING_CASE' | 'STALE_CASE' | 'STALE_CELL' | 'NO_COVERAGE_PLAN' | 'NONTERMINAL_CELLS'
   | 'UNRATED_ACCEPTED_CASE' | 'WSTG_APPLICABLE_UNPLANNED' | 'HIGH_WITHOUT_INDEPENDENCE' | 'FOREIGN_EVIDENCE' | 'CONTRACT_GAP' | 'STALE_RATING' | 'OPEN_GAP_UNREFERENCED' | 'ORPHAN_TASK' | 'UNPLANNED_ASSETS'
-  | 'UNPROMOTED_COVERAGE_NOTE' | 'NO_GOAL_RECORDED' | 'NEGATIVE_MAY_BE_BLOCKED' | 'INTERRUPTED_CELL' | 'PRIMITIVE_UNCHAINED' | 'ADMISSION_REFUSALS' | 'NO_GRAPH_WRITE' | 'LEAD_UNTRIAGED' | 'ROUTE_MONOCULTURE';
+  | 'UNPROMOTED_COVERAGE_NOTE' | 'UNMAPPED_TASK' | 'NO_GOAL_RECORDED' | 'NEGATIVE_MAY_BE_BLOCKED' | 'INTERRUPTED_CELL' | 'PRIMITIVE_UNCHAINED' | 'ADMISSION_REFUSALS' | 'NO_GRAPH_WRITE' | 'LEAD_UNTRIAGED' | 'ROUTE_MONOCULTURE';
 export interface PreflightItem { code: PreflightCode; level: 'obligation' | 'advisory'; count: number; ids: string[]; message: string }
 export interface FinishPreflight {
   /** M3: the former `blocking` list. It is a report fact now, not a refusal predicate: nothing refuses a finish. */
@@ -54,7 +54,8 @@ const MESSAGES: Record<PreflightCode, string> = {
   OPEN_GAP_UNREFERENCED: 'open gap that no coverage cell or case refers to (it will show only as a bare gap)',
   ORPHAN_TASK: 'task blocked or expired without a handoff (re-plan it or record the limit)',
   UNPLANNED_ASSETS: 'asset discovered but absent from every coverage plan (add a cell or list it as out of scope)',
-  UNPROMOTED_COVERAGE_NOTE: 'surface/coverage note recorded but the plan still has no cell (free-text observation never became a counted denominator entry)',
+  UNPROMOTED_COVERAGE_NOTE: 'surface/coverage note recorded but the plan still has no derived cell (no task work identity ever became a counted denominator entry)',
+  UNMAPPED_TASK: 'task work identity names no asset reference, so the host reports it as an unmapped gap instead of a coverage cell (record the asset or narrow the task)',
   NEGATIVE_MAY_BE_BLOCKED: 'a ruled-out result rests only on HTTP receipts that ended in 401, 403 or 429, or never got a response (that may be an access control or rate limit, not proof the weakness is absent; add a control that reached the code under test)',
   NO_GOAL_RECORDED: 'the run was given an operator objective but no goal was ever recorded in the plan (the objective did not become a tracked goal)',
   INTERRUPTED_CELL: 'coverage cell cites a task that ended without a verdict, so it stays attempted and its assessment open_gap (re-dispatch it, or retire it with the reason)',
@@ -124,6 +125,8 @@ export function finishPreflight(index: LedgerIndex, context: PreflightContext = 
     const covered = new Set(wstgCells.map(cell => cell.questionKey));
     for (const test of WSTG_MAP) if (test.trigger.includes('any') && !covered.has(wstgKey(test.id))) add('WSTG_APPLICABLE_UNPLANNED', wstgKey(test.id));
   }
+  // A3: a task without a work asset cannot be placed in the denominator; it is a named gap, never a clean cell.
+  for (const plan of plans) for (const item of plan.unmapped) add('UNMAPPED_TASK', item.taskId);
   const unplanned = Math.max(0, ...plans.map(plan => plan.discoveredUnplannedAssets));
   if (unplanned > 0) add('UNPLANNED_ASSETS', `${unplanned} asset(s)`);
   // Free-text surface/coverage notes and the structured CoverageBoard live in disjoint identifier spaces (asset hashes vs.

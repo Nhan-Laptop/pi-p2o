@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { chainJoin } from '../../src/chain-view.js';
-import { fixture, populate } from './helpers/report-fixture.js';
+import { fixture, populate, seedClaim } from './helpers/report-fixture.js';
 import type { Capability, CapabilityKind } from '../../src/capabilities.js';
 
 // planning_update.md P5 + P14.1: a claim's gained/needs pair is the only chain edge, and the pair is typed, so "which step is
@@ -81,7 +81,8 @@ describe('chain join (P5, typed by P14.1)', () => {
 
   it('reads the run’s own claims through the graph view, bounded by limit', async () => fixture(async h => {
     const built = await populate(h);
-    const claim = (params: Record<string, unknown>) => h.call('p2o_candidate', { surface: '/report-fixture', risk: 'authorization', evidenceRefs: [built.observation.evidenceId],
+    // A2: the claims are worker-authored; the fixture seeds the records the broker would commit.
+    const claim = (params: Record<string, unknown>) => seedClaim(h, { surface: '/report-fixture', risk: 'authorization', evidenceRefs: [built.observation.evidenceId],
       negativeControls: [], policyBasis: 'boundary_invariant', expectedPolicy: 'Declared fixture actor/object boundary', limitations: 'One inert fixture actor only', ...params });
     await claim({ candidate: 'chain-primitive', closure: 'confirmed', execution: 'tested', proof: 'live_reproduction', gained: [{ kind: 'data.read', subject: 'object-identity' }] });
     await claim({ candidate: 'chain-consumer', closure: 'open_proof_gap', execution: 'not_tested', proof: 'static_trace', needs: [{ kind: 'data.read', subject: 'object-identity' }] });

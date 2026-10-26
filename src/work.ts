@@ -39,7 +39,7 @@ export interface WorkIdentity {
   confidence:'exact'|'unknown'; targetRevision:string; fingerprint?:string; overlapKey?:string; reason?:string;
 }
 export interface WorkTaskLike {
-  id?:string; prerequisites:Array<{taskId:string;revision?:number}>; work?:WorkSpec; decision?:WorkDecision;
+  id?:string; role?:string; prerequisites:Array<{taskId:string;revision?:number}>; work?:WorkSpec; decision?:WorkDecision;
   validationOf?:string; retestOf?:string; outputContract?:TaskOutputContract;
 }
 
@@ -90,11 +90,11 @@ export function validateWorkDecision(value:unknown,spec:WorkSpec,links:{validati
     ...(row.relatedTaskId!==undefined?{relatedTaskId:taskId(row.relatedTaskId,'related task ID')}:{ }),...(row.changeReason!==undefined?{changeReason:prose(row.changeReason,'material change reason',1000,10)}:{ })};
   const linked=result.relatedTaskId;
   if(disposition==='new'&&(linked||result.changeReason))throw Error('New work cannot claim a prior task/change reason');
-  if(disposition==='refine'&&(spec.purpose!=='refinement'||!linked))throw Error('Refinement needs purpose=refinement and relatedTaskId');
-  if(disposition==='validate'&&(spec.purpose!=='validation'||!links.validationOf||linked!==links.validationOf))throw Error('Validation needs purpose=validation and matching validationOf/relatedTaskId');
-  if(disposition==='retest'&&(spec.purpose!=='retest'||!links.retestOf||linked!==links.retestOf||!result.changeReason))throw Error('Retest needs purpose=retest, matching retestOf and a material change reason');
+  if(disposition==='refine'&&(spec.purpose!=='refinement'||!linked))throw Error('role=refinement requires purpose=refinement and relatedTaskId (the prior task it refines)');
+  if(disposition==='validate'&&(spec.purpose!=='validation'||!links.validationOf||linked!==links.validationOf))throw Error('role=validation requires purpose=validation and a validationOf task/claim with a matching relatedTaskId');
+  if(disposition==='retest'&&(spec.purpose!=='retest'||!links.retestOf||linked!==links.retestOf||!result.changeReason))throw Error('role=retest requires purpose=retest, a matching retestOf and a material change reason');
   if(disposition==='retry'&&(!linked||!result.changeReason))throw Error('Retry needs a prior task and an explicit reason after inspecting its gaps');
-  if(spec.purpose==='refinement'&&disposition!=='refine'||spec.purpose==='validation'&&disposition!=='validate'||spec.purpose==='retest'&&disposition!=='retest')throw Error('Work purpose and disposition do not agree');
+  if(spec.purpose==='refinement'&&disposition!=='refine'||spec.purpose==='validation'&&disposition!=='validate'||spec.purpose==='retest'&&disposition!=='retest')throw Error(`Work purpose ${spec.purpose} and disposition ${disposition} do not agree; allowed pair: purpose=${spec.purpose} + disposition=${spec.purpose==='refinement'?'refine':spec.purpose}`);
   return result;
 }
 
@@ -109,12 +109,50 @@ export function validateOutputContract(value:unknown):TaskOutputContract{
     ...(row.notes!==undefined?{notes:prose(row.notes,'output notes',1000,5)}:{ })};
 }
 
+/**
+ * A2 (planning_update.md §2.4): the host derives the output contract from the purpose. The model may narrow `required`,
+ * never omit the shape of its own purpose; storing the derived contract keeps review/report projections deterministic.
+ */
+export const PURPOSE_OUTPUT_CONTRACTS: Readonly<Record<WorkSpec['purpose'], TaskOutputContract>> = {
+  mapping: { kind: 'inventory', required: ['assets', 'evidence', 'gaps'], partialAllowed: true, artifactPolicy: 'ids-only' },
+  discovery: { kind: 'investigation', required: ['candidates', 'evidence', 'controls'], partialAllowed: true, artifactPolicy: 'ids-only' },
+  investigation: { kind: 'investigation', required: ['evidence', 'controls', 'gaps'], partialAllowed: true, artifactPolicy: 'ids-only' },
+  refinement: { kind: 'investigation', required: ['facts', 'evidence', 'gaps'], partialAllowed: true, artifactPolicy: 'ids-only' },
+  validation: { kind: 'validation', required: ['evidence', 'controls', 'gaps'], partialAllowed: true, artifactPolicy: 'ids-only' },
+  retest: { kind: 'retest', required: ['evidence', 'controls', 'gaps'], partialAllowed: true, artifactPolicy: 'ids-only' },
+  exploitation: { kind: 'investigation', required: ['evidence', 'controls', 'gaps'], partialAllowed: true, artifactPolicy: 'ids-only' },
+  chaining: { kind: 'investigation', required: ['evidence', 'facts', 'gaps'], partialAllowed: true, artifactPolicy: 'ids-only' },
+  reporting: { kind: 'report', required: ['coverage', 'gaps'], partialAllowed: true, artifactPolicy: 'ids-only' },
+};
+export function defaultOutputContract(purpose: WorkSpec['purpose']): TaskOutputContract {
+  const contract = PURPOSE_OUTPUT_CONTRACTS[purpose];
+  return { ...contract, required: [...contract.required] };
+}
+
+export interface DecisionLinks { validationOf?: string; retestOf?: string; parentTaskId?: string; prerequisites?: ReadonlyArray<{ taskId: string }> }
+
+/**
+ * A2: `decision` is optional. The host derives the only disposition its purpose can hold when the draft already names the
+ * prior task: `new` for a first direction, `validate` for a cited predecessor, `refine` for the task it refines. Retest
+ * still needs the caller's material change reason, so it stays explicit and the error names the allowed pair.
+ */
+export function defaultWorkDecision(purpose: WorkSpec['purpose'], links: DecisionLinks): WorkDecision | undefined {
+  if (purpose === 'validation') return links.validationOf
+    ? { disposition: 'validate', reason: 'Independent replay of the cited predecessor; the host pins the reviewed revision.', relatedTaskId: links.validationOf } : undefined;
+  if (purpose === 'refinement') {
+    const prior = links.parentTaskId ?? links.prerequisites?.[0]?.taskId;
+    return prior ? { disposition: 'refine', reason: 'Refines the named prior attempt on the same canonical identity.', relatedTaskId: prior } : undefined;
+  }
+  if (purpose === 'retest') return undefined;
+  return { disposition: 'new', reason: 'New intent for this exact work identity; no prior attempt was supplied for reuse.' };
+}
+
 export function validateWorkFields(task:WorkTaskLike):void{
   if(task.retestOf!==undefined)taskId(task.retestOf,'retest task ID');
   if(task.work===undefined){if(task.decision!==undefined||task.retestOf!==undefined||task.outputContract!==undefined)throw Error('Structured decision/retest/output contract requires a work identity');return;}
-  const spec=validateWorkSpec(task.work);if(task.decision===undefined)throw Error('Structured work needs an explicit dedup disposition/reason');
+  const spec=validateWorkSpec(task.work);if(task.decision===undefined)throw Error(`role=${task.role ?? 'this intent'} with purpose=${spec.purpose} needs an explicit decision; the host derives new/validate/refine only when the draft already names its prior task. legalNext: retry with decision={{disposition:"new",reason:"..."}}`);
   validateWorkDecision(task.decision,spec,{validationOf:task.validationOf,retestOf:task.retestOf});
-  if(task.outputContract===undefined)throw Error('Structured work needs a desired output contract');validateOutputContract(task.outputContract);
+  if(task.outputContract===undefined)throw Error('Structured work needs a desired output contract (the host derives it for drafts created through p2o_task_create)');validateOutputContract(task.outputContract);
 }
 
 export function workIdentity(targetRevision:string,task:WorkTaskLike):WorkIdentity{

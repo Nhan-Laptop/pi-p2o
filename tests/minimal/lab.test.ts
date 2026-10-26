@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { EnvironmentStore, PAYLOAD_BYTES, PayloadStore, isPayloadId, materializePayload, normalizeRecipe, payloadDirectory, runEnvironment, stopEnvironment } from '../../src/lab.js';
 import { readCompose } from '../../src/compose.js';
-import { fixture, populate } from './helpers/report-fixture.js';
+import { fixture, populate, seedClaim, evidenceFor } from './helpers/report-fixture.js';
 
 // planning_update.md P14.2: a receipt is a redacted excerpt, so a claim could not hand the thing that actually ran to a second
 // worker. These tests pin the replacement: byte-exact run-scoped storage, a sha256 the ledger can cite, and a derived
@@ -90,10 +90,10 @@ describe('payload artifacts (P14.2)', () => {
     expect(materialized).toEqual({ path: `/work/payload/${stored.id}`, sha256: stored.sha256, bytes: stored.bytes });
     expect(h.sandboxes[0].writes).toEqual(expect.arrayContaining([expect.objectContaining({ path: `payload/${stored.id}`, workdir: '/work', sha256: stored.sha256 })]));
     await expect(h.call('p2o_lab', { action: 'payload', id: 'not-a-payload', materialize: true })).rejects.toThrow(/Invalid payload ID: expected payload-/);
-    const claim = (extra: Record<string, unknown>) => h.call('p2o_candidate', { surface: '/report-fixture', risk: 'authorization',
+    // A2: the claim is authored by a worker; the fixture seeds the record the broker would commit.
+    await seedClaim(h, { candidate: 'replayable-claim', surface: '/report-fixture', risk: 'authorization', closure: 'confirmed', execution: 'tested', proof: 'live_reproduction',
       negativeControls: [], policyBasis: 'boundary_invariant', expectedPolicy: 'Declared fixture actor/object boundary',
-      limitations: 'One inert fixture actor only', evidenceRefs: [built.observation.evidenceId], ...extra });
-    await claim({ candidate: 'replayable-claim', closure: 'confirmed', execution: 'tested', proof: 'live_reproduction', payloadRef: stored.id });
+      limitations: 'One inert fixture actor only', evidenceRefs: [built.observation.evidenceId], payloadRef: stored.id });
     h.ctx.setConfirm(true); await h.command(`report export ${join(h.root, 'out')}`);
     const report = (await h.read(join(h.root, 'out')))['REPORT.md'];
     // P14.3 tightened `replayable` to payload + environment, so a payload alone is still honestly "not replayable".
@@ -104,12 +104,14 @@ describe('payload artifacts (P14.2)', () => {
 
   it('refuses a payload reference that does not exist, and one on a claim that never ran', async () => fixture(async h => {
     const built = await populate(h);
+    // A2: the owner verb no longer exists as a validation surface, so the same candidate validator is asserted directly.
+    const evidence = await evidenceFor(h);
     const base = { candidate: 'unreplayable-claim', surface: '/report-fixture', risk: 'authorization', evidenceRefs: [built.observation.evidenceId],
       negativeControls: [], policyBasis: 'boundary_invariant', expectedPolicy: 'Declared fixture actor/object boundary', limitations: 'One inert fixture actor only' };
-    await expect(h.call('p2o_candidate', { ...base, closure: 'confirmed', execution: 'tested', proof: 'live_reproduction',
-      payloadRef: 'payload-00000000-0000-4000-8000-000000000000' })).rejects.toThrow(/Unknown payload reference/);
-    await expect(h.call('p2o_candidate', { ...base, closure: 'open_proof_gap', execution: 'not_tested', proof: 'static_trace',
-      payloadRef: 'payload-00000000-0000-4000-8000-000000000000' })).rejects.toThrow(/requires tested execution/);
+    await expect(evidence.candidate('worker-a', { ...base, closure: 'confirmed', execution: 'tested', proof: 'live_reproduction',
+      payloadRef: 'payload-00000000-0000-4000-8000-000000000000' } as never)).rejects.toThrow(/Unknown payload reference/);
+    await expect(evidence.candidate('worker-a', { ...base, closure: 'open_proof_gap', execution: 'not_tested', proof: 'static_trace',
+      payloadRef: 'payload-00000000-0000-4000-8000-000000000000' } as never)).rejects.toThrow(/requires tested execution/);
     await expect(h.call('p2o_lab', { action: 'payload', kind: 'request', name: 'broken', body: 'echo \u0001' })).rejects.toThrow(/control/);
     await expect(h.call('p2o_lab', { action: 'payload', kind: 'request' })).rejects.toThrow(/needs kind, name and body/);
   }));
@@ -241,7 +243,7 @@ describe('environment recipe (P14.3)', () => {
     const again = (await h.call('p2o_lab', { action: 'env', name: 'fixture-app', services: [{ name: 'web', command: 'python3 app.py', port: 8080 }], seed: ['curl -sf http://127.0.0.1:8080/'] })).details;
     expect(again).toMatchObject({ id: environment.id, created: false });
     const payload = (await h.call('p2o_lab', { action: 'payload', kind: 'request', name: 'fixture read', body: 'GET /orders/7 HTTP/1.1\r\n\r\n' })).details;
-    const claim = (extra: Record<string, unknown>) => h.call('p2o_candidate', { surface: '/report-fixture', risk: 'authorization', closure: 'confirmed', execution: 'tested',
+    const claim = (extra: Record<string, unknown>) => seedClaim(h, { surface: '/report-fixture', risk: 'authorization', closure: 'confirmed', execution: 'tested',
       proof: 'live_reproduction', negativeControls: [], policyBasis: 'boundary_invariant', expectedPolicy: 'Declared fixture actor/object boundary',
       limitations: 'One inert fixture actor only', evidenceRefs: [built.observation.evidenceId], ...extra });
     await claim({ candidate: 'payload-only', payloadRef: payload.id });
@@ -251,7 +253,12 @@ describe('environment recipe (P14.3)', () => {
     const row = (name: string) => report.slice(report.indexOf(`| ${name} |`) - 60, report.indexOf(`| ${name} |`) + 400);
     expect(row('both-refs')).toContain(`payload \`${payload.id}\``);
     expect(row('payload-only')).toContain('not replayable');
-    await expect(claim({ candidate: 'dangling-env', payloadRef: payload.id, environmentRef: 'env-00000000-0000-4000-8000-000000000000' })).rejects.toThrow(/Unknown environment reference/);
+    // A2: the dangling reference is refused by the same candidate validator the worker broker uses.
+    const evidence = await evidenceFor(h);
+    await expect(evidence.candidate('worker-a', { candidate: 'dangling-env', surface: '/report-fixture', risk: 'authorization', closure: 'confirmed', execution: 'tested',
+      proof: 'live_reproduction', negativeControls: [], policyBasis: 'boundary_invariant', expectedPolicy: 'Declared fixture actor/object boundary',
+      limitations: 'One inert fixture actor only', evidenceRefs: [built.observation.evidenceId], payloadRef: payload.id,
+      environmentRef: 'env-00000000-0000-4000-8000-000000000000' } as never)).rejects.toThrow(/Unknown environment reference/);
     await expect(h.call('p2o_lab', { action: 'verify', id: 'env-00000000-0000-4000-8000-000000000000' })).rejects.toThrow(/Unknown environment ID/);
     expect((await h.call('p2o_lab', { action: 'destroy', id: environment.id })).details.stopped).toBe(true);
   }));

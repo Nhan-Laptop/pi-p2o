@@ -10,7 +10,8 @@ Architecture overview: [ARCHITECTURE.md](ARCHITECTURE.md). This page is the oper
 /p2o pause    /p2o resume    /p2o stop
 ```
 
-- Defaults are manual + shared. Without Herdr the lead does the work itself and event-driven is rejected.
+- Defaults are manual + shared. Without Herdr there is no worker backend: target work is blocked, the planner reports
+the blocked prerequisite instead of taking over, and event-driven is rejected.
 - `--workers N` is a positive integer cap on concurrent model slots. `--target-ops N` is a separate target-operation
   shared always 1; isolated multiplies resources. `--max-depth` is kept for compatibility only: workers
   propose tasks, they never spawn children.
@@ -24,17 +25,66 @@ Architecture overview: [ARCHITECTURE.md](ARCHITECTURE.md). This page is the oper
 ## Who does what
 
 - **Planner** chooses bounded directions, writes questions/contrasts/stop conditions, reviews evidence, dispatches,
-  steers or withdraws, and decides `wait` / `blocked` / finish. Delegated Planner has no shell/net/HTTP.
+  steers or withdraws, and decides `wait` / `blocked` / finish. The planner has no shell/net/HTTP, lab or claim tools
+  in any mode: it creates and dispatches intents, and a worker executes them.
 - **Engine** admits ready accepted work, owns slots and executors, coalesces committed signals, guards extra rounds.
   It has no model and never invents work; an empty frontier with unmet goals stays explained-blocked.
-- **Worker** runs one intent with a fresh process, ticket and context, and reports attributed observations and gaps.
-  `p2o_request_subtask` only proposes.
+- **Worker** runs one intent with a fresh process, ticket and context, is the only executor and the only author of a
+  candidate claim, note or surface record, and reports attributed observations and gaps. `p2o_request_subtask` only proposes.
+- **Reporter** is a read-only second reader: it reads the accepted case, its evidence and artifacts and writes the
+  report; it has no target, lab or claim tool.
 
-`p2o_task_dispatch {ids:[...]}` accepts 1–25 proposed tasks; `p2o_delegate` stays available for immediate
-single dispatch. A failed launch drops the attempt and records a blocked signal; a retry needs an explicit Planner
+Each role's prompt states its rule in short literal lines, not as a manual. The planner's `p2o_assessment` section states its first action
+(create and dispatch one recon/mapping intent), that it has no target, lab or claim tools, that a confirmed or tested
+claim must come from a worker task, that coverage is a projection of reviewed work, and that a zero-intent round is not
+progress. The worker prompt says "One intent, write back, report, stop". The reporter prompt says "Read-only second reader: no
+target operations, no candidate authorship, no verdict or plan changes." Those lines are *advisory*: the enforcement is
+the role loadout in `src/tool-policy.ts` (planner 23 tools, worker 17, validation 16, reporter 6), where the planner's
+list contains no target or claim tool at all, and the same rule is repeated on the tool boundaries in
+`src/tool-guidelines.ts` so the model reads it where it reads the tool.
+
+`p2o_task_dispatch {ids:[...]}` accepts 1–25 proposed tasks and is the only way to start work: the Engine spawns the
+worker for each dispatched intent. A failed launch drops the attempt and records a blocked signal; a retry needs an explicit Planner
 decision. A terminal report frees capacity only after verified retirement; new assignments get new identities and
 renew nothing, because there is no command allowance to renew (owner decision 2026-10-24). `p2o_loop wait` ends a round, not the assessment; `blocked` pauses admission and wakes.
 `/p2o pause` leaves admitted workers running; `/p2o stop` revokes them.
+
+### Intent admission (P1/A2)
+
+The planner states what to learn; the host derives the rest. `p2o_task_create` stores the purpose the role names
+(`purposeFromRole`), the output contract that purpose implies (`PURPOSE_OUTPUT_CONTRACTS`) and the only disposition the
+anchors allow (`defaultWorkDecision`: `new` by default, `validate` with `validationOf`, `refine` with a prior task; `retest`
+and an unanchored refinement still need an explicit decision). `revise` and the read-only `match` preflight canonicalize and
+anchor through the same code, so a match sees the identity create would store.
+
+The first intent of a run is recon/mapping — the intent that needs nothing earlier in the run to cite, which is why a new run
+always has a legal first intent. A first validation is refused in both shapes (`PURPOSE_NEEDS_PREDECESSOR`,
+`legalNext: create a recon task first`); a first structured discovery/exploitation/chaining/retest is refused with the same
+recon-first legal next. After recon, a structured discovery needs `work.claimRefs` (the worker claim it builds on) or pinned
+prerequisites; exploitation needs a demonstrated claim, chaining two; investigation/refinement need a claim, a pinned asset
+revision or a prior task.
+
+A validation names `validationOf` = a reviewed task ID or a worker claim ID; the claim carries the `data.taskRef` the host
+stamped from the worker's assignment. The host resolves the claim to its discovery task, pins the reviewed revision as the
+prerequisite, rewrites the link to the task and derives `decision=validate`; a validation is never revalidated. When a worker
+claim is confirmed+tested and its discovery task is reviewed, the host creates exactly one validation task (deterministic key) —
+or a visibly blocked one when no worker backend exists. `p2o_candidate` is worker-only: a planner call fails `WORKER_ONLY`, and
+the worker's claim gets the host `taskRef`. A dispatch with no executor is a blocked prerequisite (`DELEGATION_UNAVAILABLE`),
+and a failed executor/pane provisioning moves the reserved task to `blocked`; neither is a planner execution path. Detail:
+[work admission](WORK_ADMISSION.md).
+
+### Coverage projection (P2/A3)
+
+Coverage không phải bảng planner viết: **host chiếu** cell từ công việc đã commit — task head có `work.assetRefs`, claim worker của
+task đó (`data.taskRef`), case accepted cùng run và revision asset trong graph — rồi trả cùng một projection cho
+`p2o_board board=coverage`, báo cáo, situation line, goal proof và finish preflight. `p2o_coverage_plan` chỉ ghi scope (title,
+exclusions, unknownScope) và trạng thái review; không có verb tạo/sửa/retire cell. Plan tạo sau A3 mang marker host-owned
+`derivation:'projected'`; plan tạo trước A3 (không marker) vẫn được đọc đúng cell đã lưu, read-only.
+
+Task không có `work.assetRefs` không thành cell: nó là `unmapped` gap trên board coverage, trong `unmappedTasks`/`unmappedCoverageTasks`
+của báo cáo và advisory `UNMAPPED_TASK` của finish preflight. Cell dẫn xuất chỉ đi từ `planned`/`blocked` sang `tested` khi task đã
+review và claim/case đã accepted; staleness (`stale-asset`, `superseded-claim`, `stale-case`, `superseded-task`, `stale-target`) chỉ hạ.
+Chi tiết bảng suy ra và plan legacy: [case review](CASE_REVIEW.md).
 
 ### Goal proof (P16.1)
 
@@ -44,8 +94,9 @@ supportRefs cùng tồn tại **và** proof còn đúng. Ba loại proof (`src/g
 
 - `capability` — một claim `confirmed`+`tested` trong run đã gain đúng capability đó;
 - `case` — case cùng run đã `accepted`, `confirmed` và `current` (case `disputed`/`stale` không settle được goal);
-- `coverage` — coverage plan cùng run mà mọi cell chưa retire đều ở `tested`/`blocked`/`not_applicable` (dùng cho goal
-  mapping; goal tuyên bố reachability vẫn phải dùng capability hoặc case).
+- `coverage` — coverage plan cùng run mà mọi cell chưa retire đều ở `tested`/`blocked`/`not_applicable` (cell dẫn xuất nếu plan
+  `derivation:'projected'`, cell lưu nếu plan legacy; dùng cho goal mapping — goal tuyên bố reachability vẫn phải dùng capability
+  hoặc case). Plan projected không có cell dẫn xuất nào thì proof không bao giờ "settled".
 
 Cùng một resolver chạy ở plan board và ở `deriveCompletion`, nên một goal không thể "settled" ở chỗ này mà "unproven" ở chỗ
 khác. `REPORT.md` in bảng `Goal | Status | Proof | Settled` để người đọc phân biệt status với demonstration.
@@ -60,7 +111,7 @@ rồi trả `chainOf` để lần sau revise đúng chỗ.
 Readiness **được suy ra khi đọc**, không lưu: bước *n* ready khi mọi `needs` của nó được gain bởi một claim
 confirmed+tested mà một bước *trước đó* của cùng chain cite trong `claimRefs` (cùng `capabilityMatches` với graph join).
 Bước không có `needs` ready theo định nghĩa — nó là primitive mà chuỗi bắt đầu. Trạng thái settled (`done`, `blocked`,
-`deferred`, `cancelled`) do lead quyết và readiness không mở lại. `p2o_board board=plans` vì thế trả thêm một dòng mỗi chain:
+`deferred`, `cancelled`) do planner quyết và readiness không mở lại. `p2o_board board=plans` vì thế trả thêm một dòng mỗi chain:
 
 `chain <id> 1/3 · next: step 2 (ready) · waiting on: http.request (internal-api)`
 
@@ -91,7 +142,7 @@ kiểm lại — luật chỉ chặn việc mở hướng mới.
 ### Route diversity và negative evidence (P16.5/P16.6)
 
 Một **route** là họ cơ chế mà một bước chain thử (`upload`, `auth`, `sqli`, `deser`, `ssrf`, `path`, `injection`,
-`business-logic`). `p2o_plan_create` todo có field `route`; khi lead không nêu, nó lấy từ method family của claim mà bước đó cite
+`business-logic`). `p2o_plan_create` todo có field `route`; khi planner không nêu, nó lấy từ method family của claim mà bước đó cite
 (`risk` trước, rồi `needs`/`gained` kind). Situation in `routes: N open (a, b), M done`; preflight thêm advisory
 `ROUTE_MONOCULTURE` khi chỉ có **một** route open và capability đã chứng minh khiến họ khác khả dĩ — và demand wake của
 vòng im lặng nói thêm `every open step is on route X — plausible elsewhere: …`. Tất cả chỉ là advisory: tập trung vào một
@@ -99,7 +150,7 @@ route là hợp lệ khi route đó đã cho hiệu ứng được chứng minh.
 
 Negative evidence là checkpoint: `ruled_out` thứ hai trên cùng surface+capability bị từ chối (`RULED_OUT_RECHECK`) trừ khi
 có evidence mới hoặc control/cơ chế khác — tức tối đa **một** lần re-check, đúng luật ARTEX. Một `ruled_out` ghi với
-`execution:not_tested` hiện là `unproven-negation` trên situation line để lead biết phải dispatch đúng một lần kiểm chứng.
+`execution:not_tested` hiện là `unproven-negation` trên situation line để planner biết phải dispatch đúng một lần kiểm chứng.
 
 ### CVE lead: host fetch, host gợi ý (P16.4)
 
@@ -121,7 +172,7 @@ yêu cầu ghi lại khi biết (`p2o_graph`, fact kèm evidence, hoặc note `n
 ### Vòng im lặng, frontier floor và demand wake (M6 + P16.2)
 
 Mỗi round engine giữ một `RoundProgress`: bốn bộ đếm đơn điệu (`testedCells`, `closures` — chỉ `confirmed` —, `assets`,
-`chainDepth`) **và** `remaining`/`demand` do owner tính từ đúng `deriveCompletion` mà kết quả finish in ra. Round **im lặng**
+`chainDepth`) **và** `remaining`/`demand` do host tính từ đúng `deriveCompletion` mà kết quả finish in ra. Round **im lặng**
 khi cả bốn bộ đếm không tăng so với round trước. Hai round im lặng liên tiếp thì:
 
 - **còn nghĩa vụ** (`remaining > 0`): `reserveWake()` vẫn cấp wake, mang thêm `demand` nêu tên nghĩa vụ cụ thể
@@ -130,7 +181,7 @@ khi cả bốn bộ đếm không tăng so với round trước. Hai round im l�
   bao giờ thắng "vẫn còn việc phải làm".
 - **không còn nghĩa vụ** (`remaining === 0`, completion `complete`): pause, câu lý do nêu cả hai round id và nói rõ
   completion đã complete nên không lên lịch wake tự động nữa.
-- Lead đã ghi `blocked` bằng `p2o_loop` thì pause như cũ — đó là quyết định của con người, không phải suy đoán của máy.
+- Planner đã ghi `blocked` bằng `p2o_loop` thì pause như cũ — đó là quyết định của con người, không phải suy đoán của máy.
 
 Một bộ đếm tăng là đủ để xoá chuỗi im lặng; `manual` mode không tự chấm round vì không có round tự động nào để chấm.
 `demand` được ghi vào event `planner.admitted` (summary + data) và vào message wake, nên lý do đánh thức đọc lại được từ
@@ -138,6 +189,29 @@ ledger. Không có từ "budget"/"allowance"/"quota" nào trong các câu này.
 
 Hệ quả: engine chỉ dừng khi completion đã complete hoặc con người bảo dừng — không vì hết hạn mức và không vì một vòng
 "không có gì mới" trong khi việc vẫn còn. Không còn `maxPlannerRounds`.
+
+### Vòng không tạo intent: `planner.stalled` (P3/A4)
+
+Một vòng planner kết thúc khi goal vẫn mở (`proposed`/`active`), không còn intent nào mở/chờ/chạy
+(`proposed`/`reserved`/`running`) và planner không ghi `blocked` thì không phải progress. Host ghi một lifecycle record
+`planner.stalled: …` (text bắt đầu bằng `planner.stalled:`, `data.engine.event='planner.stalled'`, kèm `openGoal`,
+`openIntents:0`, số round/sequence và tổng số lần stall) qua đúng `persist` sẵn có, sau khi round ACK context. Nó không
+wake, không xếp queue, không pause và không cấp budget mới; `snapshot().stalls` đếm các vòng stall engine đã ghi, và round đó
+hiện ở dòng `Frontier: … stalled rounds N` của `/p2o status` cùng provenance REPORT.md. Mọi vòng như vậy đều được ghi
+(không dedupe) vì vòng không tạo intent không được im lặng; goal `blocked`, decision `blocked`, run pause hoặc engine
+không live thì không ghi. Đây là fact của báo cáo — không cổng, không wake, không hạn mức — và việc ghi nó không đổi
+cách M6 chấm vòng im lặng.
+
+### Authority counters (P3/A4)
+
+`src/authority.ts` là module read-only: `authorityCounters`/`authorityReport` đọc ledger đã commit (không model, không
+target) và trả `plannerTargetOps` (evidence receipt không có worker attribution — **phải 0** sau P0/A1), `workerTargetOps`,
+`tasksCreated` (task id phân biệt), `tasksDispatched` (task id đã từng `running`) cùng `firstDispatchAt` (record `running`
+sớm nhất), `ownerClaims`/`workerClaims` (candidate theo attribution; owner **phải 0** sau P1/A2), `validationTasks`,
+`stalledRounds`, cộng `ROLE_COUNTS` tĩnh (planner 23 · worker 17 · validation 16 · reporter 6) và mode chạy. Hai bất biến
+0 là thứ gate đo của P0–P3 sẽ đọc; run legacy giữ số owner >0 trung thực thay vì bị viết lại, nên >0 trên run cũ không
+phải lỗi hồi quy. Cùng một object đi vào `reportProjection().authority`, `statusView().authority` và provenance REPORT.md;
+các con số không từ chối lệnh, không kết thúc run và không cấp quyền. Bề mặt người đọc: [USAGE](USAGE.md).
 
 ### Revisit theo điều kiện (M7)
 
@@ -161,7 +235,7 @@ Khi một mắt xích bị chặn, `p2o_graph {action:'chain'}` trả thêm `res
 ### Priority suggestion
 
 `src/priority.ts` derives a suggested 0-100 dispatch priority from recorded facts, so triage order is explainable and
-repeatable instead of a number picked by feel. It is a **suggestion only**: the lead's explicit `priority` always wins
+repeatable instead of a number picked by feel. It is a **suggestion only**: the planner's explicit `priority` always wins
 and nothing auto-dispatches by score. Starting from a neutral base of **50**, each signal shifts it:
 
 | Signal | Delta |
@@ -169,7 +243,7 @@ and nothing auto-dispatches by score. Starting from a neutral base of **50**, ea
 | a reviewed prerequisite is still unmet | −30 |
 | purpose is validation or retest (cheap, unlocks a case) | +15 |
 | a confirmed+tested claim already gains every capability this claim needs | +20 |
-| the target asset already has an owner-accepted finding | +10 |
+| the target asset already has a planner-accepted finding | +10 |
 | the questionKey is already answered by a non-stale coverage cell | −20 |
 
 The result is clamped to 0–100. The weights live in `PRIORITY_WEIGHTS` and are mirrored here; `tests/minimal/priority.test.ts`
@@ -179,7 +253,7 @@ The derivation is applied to the work that can start now and surfaced as one seg
 (`next: validation 65`). Two facts only exist where their data lives: a **ready chain step** is by definition the claim whose
 every required token an existing confirmed+tested claim provides, so the +20 block applies to it; a **task record** carries no
 link to the claim it will produce, so a task never receives that block until the lineage gate (P9) joins them. That gap is
-why the segment names only the purpose and the score — the lead compares it with `p2o_graph {action:"chain"}` and then
+why the segment names only the purpose and the score — the planner compares it with `p2o_graph {action:"chain"}` and then
 decides. Nothing reads the suggestion back: no admission path, no reordering.
 
 ## Pi boundary
@@ -190,7 +264,7 @@ context/abort guards cover late delivery. An accepted remote request cannot be u
 
 ## State, rollback
 
-Ledger v2, task statuses, owner-only writes, report manifests, evidence/independence gates and until-stopped tickets
+Ledger v2, task statuses, planner-only board writes, report manifests, evidence/independence gates and until-stopped tickets
 are unchanged; there is no authority recovery from disk. Stop any active assessment before reloading the extension
 (tickets bind its bytes). Rollback = stop, use manual + shared, start a newly confirmed assessment; a failed
 cleanup stays disclosed and `/p2o stop` retries it.
