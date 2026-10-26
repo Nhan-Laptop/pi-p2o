@@ -14,7 +14,7 @@ export const hasSource = (target: Target): target is Extract<Target, { path: str
 export const hasOrigin = (target: Target): target is Extract<Target, { origin: string }> => target.kind !== 'directory';
 /** 'latest'/'all' pick by eligibility at run start; an explicit id list (≤10, `run-<chars>` shape) names runs directly. Never grants authority — see planning_update.md. */
 export type ReferWorkspaceOption = 'latest' | 'all' | readonly string[];
-export interface StartOptions { workers?: number; maxDepth?: number; export?: boolean; loopMode?: LoopMode; executorMode?: 'shared' | 'isolated'; maxTargetOperations?: number; retention?: RetentionMode; goal?: string; avoid?: string[]; origin?: string; referWorkspace?: ReferWorkspaceOption }
+export interface StartOptions { workers?: number; maxDepth?: number; export?: boolean; loopMode?: LoopMode; executorMode?: 'shared' | 'isolated'; maxTargetOperations?: number; retention?: RetentionMode; goal?: string; avoid?: string[]; /** A6.1: campaign heartbeat in seconds; `0` disables it. */ heartbeatSeconds?: number; origin?: string; referWorkspace?: ReferWorkspaceOption }
 export type Command = { action: 'help' } | { action: 'stop' } | { action: 'pause' } | { action: 'resume' } | { action: 'start'; target?: string; resume?: string; options: StartOptions };
 
 /** Deliberately small. One target plus delegation limits; quoting is supported for directory names. */
@@ -51,6 +51,16 @@ export function parseCommand(args: string): Command {
         if (!value || value.length > GOAL_CHARS || value !== value.normalize('NFC') || TEXT_CONTROL.test(value)) throw Error(`--goal needs one quoted sentence of 1..${GOAL_CHARS} characters without control characters`);
         options.goal = value; continue;
       }
+      if (token === '--heartbeat-seconds') {
+        // A6.1: heartbeats consume paid planner rounds, so the value is explicit: 0 disables, a small non-zero value is
+        // refused at the parser rather than silently raised to the floor the campaign record would clamp to.
+        const value = tokens[++index];
+        if (!value || !/^\d+$/.test(value)) throw Error('--heartbeat-seconds needs an integer value (0 disables)');
+        const seconds = Number(value);
+        if (!Number.isSafeInteger(seconds)) throw Error('--heartbeat-seconds needs a safe integer');
+        if (seconds !== 0 && seconds < 120) throw Error('--heartbeat-seconds must be 0 (disabled) or at least 120 seconds');
+        options.heartbeatSeconds = seconds; continue;
+      }
       if (token === '--avoid') {
         const value = tokens[++index]?.trim();
         if (!value || value.length > AVOID_CHARS || value !== value.normalize('NFC') || TEXT_CONTROL.test(value)) throw Error(`--avoid needs one quoted sentence of 1..${AVOID_CHARS} characters without control characters`);
@@ -80,7 +90,7 @@ export function parseCommand(args: string): Command {
         options.referWorkspace = value === 'latest' || value === 'all' ? value : value.split(',');
         continue;
       }
-      if (token !== '--workers' && token !== '--max-depth' && token !== '--target-ops') throw new Error(`Unknown option ${token.slice(0, 40)}; usage: /p2o --target <directory|http(s)-URL> [--workers N] [--max-depth D] [--goal "text"] [--avoid "text"]`);
+      if (token !== '--workers' && token !== '--max-depth' && token !== '--target-ops') throw new Error(`Unknown option ${token.slice(0, 40)}; usage: /p2o --target <directory|http(s)-URL> [--workers N] [--max-depth D] [--goal "text"] [--avoid "text"] [--heartbeat-seconds N]`);
       const value = tokens[index + 1];
       if (!value || !/^\d+$/.test(value)) throw new Error(`${token} needs an integer value`);
       index += 1;

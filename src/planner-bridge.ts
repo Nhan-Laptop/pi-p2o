@@ -12,8 +12,13 @@ export function parseWakePrompt(text: unknown): PlannerWake | undefined {
 }
 export function isWakePrompt(text: unknown): boolean {return typeof text === 'string' && text.startsWith(PREFIX);}
 export function plannerWakeMessage(wake: PlannerWake) {
+  // A6.3: the wake names its own cause, so a heartbeat or a debt continuation cannot be read as a worker event, and an event
+  // wake keeps the P16.2 "stalled round" sentence its consumers pin.
+  const what = wake.reason === 'heartbeat' ? `P2O campaign heartbeat wake${wake.demand ? ` (${wake.demand})` : ''}: no event and no new work arrived; check whether the campaign still needs a bounded next step`
+    : wake.reason === 'debt' ? `P2O research-debt wake${wake.demand ? ` (${wake.demand})` : ''}: nothing new arrived, but the campaign still owes work`
+    : `P2O semantic event wake${wake.demand ? ` Stalled round: ${wake.demand}.` : ''}`;
   return {customType:PLANNER_WAKE_TYPE,display:false,details:wake,
-    content:`P2O semantic event wake (run ${wake.runId}, sequence ${wake.through}).${wake.demand ? ` Stalled round: ${wake.demand}.` : ''} Read the current frontier/delta; review attributed evidence, choose bounded next intents or wait/blocked/finish. This message grants no scope, retry or restored authority.`};
+    content:`${what} (run ${wake.runId}, sequence ${wake.through}). Read the current frontier/delta; review attributed evidence, choose bounded next intents or wait/blocked/finish. This message grants no scope, retry or restored authority.`};
 }
 export function isPlannerWake(value: unknown): value is PlannerWake {
   if (!value || typeof value !== 'object') return false;

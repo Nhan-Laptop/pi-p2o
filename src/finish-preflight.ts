@@ -11,6 +11,7 @@ import { WSTG_MAP, isWstgKey, wstgKey } from './wstg-map.js';
 import type { WorkerWrites } from './write-back.js';
 import { leadFrontier } from './cve.js';
 import { routeMonoculture } from './routes.js';
+import type { DebtReport } from './debt.js';
 
 /**
  * Deterministic pre-finish check over committed state. Pure: no model, no clock, no target access, no write. It names unfinished
@@ -20,7 +21,7 @@ import { routeMonoculture } from './routes.js';
  */
 export type PreflightCode = 'UNREVIEWED_TASK' | 'UNREVIEWED_CLAIM' | 'PENDING_CASE' | 'STALE_CASE' | 'STALE_CELL' | 'NO_COVERAGE_PLAN' | 'NONTERMINAL_CELLS'
   | 'UNRATED_ACCEPTED_CASE' | 'WSTG_APPLICABLE_UNPLANNED' | 'HIGH_WITHOUT_INDEPENDENCE' | 'FOREIGN_EVIDENCE' | 'CONTRACT_GAP' | 'STALE_RATING' | 'OPEN_GAP_UNREFERENCED' | 'ORPHAN_TASK' | 'UNPLANNED_ASSETS'
-  | 'UNPROMOTED_COVERAGE_NOTE' | 'UNMAPPED_TASK' | 'NO_GOAL_RECORDED' | 'NEGATIVE_MAY_BE_BLOCKED' | 'INTERRUPTED_CELL' | 'PRIMITIVE_UNCHAINED' | 'ADMISSION_REFUSALS' | 'NO_GRAPH_WRITE' | 'LEAD_UNTRIAGED' | 'ROUTE_MONOCULTURE';
+  | 'UNPROMOTED_COVERAGE_NOTE' | 'UNMAPPED_TASK' | 'NO_GOAL_RECORDED' | 'NEGATIVE_MAY_BE_BLOCKED' | 'INTERRUPTED_CELL' | 'PRIMITIVE_UNCHAINED' | 'ADMISSION_REFUSALS' | 'NO_GRAPH_WRITE' | 'LEAD_UNTRIAGED' | 'ROUTE_MONOCULTURE' | 'RESEARCH_DEBT';
 export interface PreflightItem { code: PreflightCode; level: 'obligation' | 'advisory'; count: number; ids: string[]; message: string }
 export interface FinishPreflight {
   /** M3: the former `blocking` list. It is a report fact now, not a refusal predicate: nothing refuses a finish. */
@@ -33,6 +34,8 @@ export interface PreflightContext {
   cases?: CaseContext; coverage?: CoverageContext; integrity?: 'off' | 'annotate' | 'enforce'; statedObjective?: string;
   /** P16.8: host-computed write-back counts; a worker with zero writes and no `no-new` note is an advisory, never a refusal. */
   wrote?: readonly WorkerWrites[];
+  /** A6.2: the same derived report completion counts; listed here so the two checks name the same work. */
+  debt?: DebtReport;
 }
 
 const SHOWN = 5;
@@ -64,6 +67,7 @@ const MESSAGES: Record<PreflightCode, string> = {
   NO_GRAPH_WRITE: 'worker wrote no asset, fact, evidence or finding and left no no-new note (the graph is how a finding becomes reusable; a surface that added nothing says so with one note)',
   LEAD_UNTRIAGED: 'CVE lead recorded but never triaged (task it, execute it, or mark it ruled_out with the reason; a published CVE is a pointer, not a finding)',
   ROUTE_MONOCULTURE: 'every open chain step tries the same mechanism family although the recorded capabilities make another family plausible (spread one route there, or record why it is ruled out; concentration is fine once a route showed an effect)',
+  RESEARCH_DEBT: 'host-derived research debt still outstanding (aggregate: the specific codes above name the same work where they exist); a gap nobody referenced, a mapping that recorded nothing, an unplanned asset, an unrun cell or a demonstrated primitive with no successor (take it, wall it with a deferred/blocked todo, or say why it is out of scope)',
 };
 const OPEN_OBLIGATION: ReadonlySet<PreflightCode> = new Set<PreflightCode>(['UNREVIEWED_TASK', 'UNREVIEWED_CLAIM', 'PENDING_CASE', 'STALE_CASE', 'STALE_CELL', 'NO_COVERAGE_PLAN', 'NONTERMINAL_CELLS', 'UNRATED_ACCEPTED_CASE']);
 
@@ -158,6 +162,8 @@ export function finishPreflight(index: LedgerIndex, context: PreflightContext = 
   if (monoculture) add('ROUTE_MONOCULTURE', monoculture.route);
   // P16.4: a lead that nobody triaged is unfinished reading, not a finding and not a gate.
   for (const lead of leadFrontier(index)) if (lead.state === 'untriaged') add('LEAD_UNTRIAGED', lead.id);
+  // A6.2: one derived debt report feeds both the completion count and this list, so the two sentences cannot disagree.
+  for (const id of context.debt?.gateableIds ?? []) add('RESEARCH_DEBT', id);
   // P16.3/P16.8: the host counts what each worker persisted. Zero writes is printed for the lead and the human; it never
   // refuses a review, because "learned nothing" is a legitimate result that deserves a note, not a gate.
   for (const writes of context.wrote ?? []) if (writes.assets + writes.facts + writes.evidence + writes.findings === 0 && !writes.noNew) add('NO_GRAPH_WRITE', writes.workerId);

@@ -441,3 +441,41 @@ export function wstgSuggest(features: readonly string[], options: { modes?: stri
   const offset = options.offset ?? 0, limit = options.limit ?? 20;
   return { matched: matches.length, suggestions: matches.slice(offset, offset + limit).map(test => ({ key: wstgKey(test.id), title: test.title, support: test.support, flags: `${test.browser ? 'B' : ''}${test.identity ? 'I' : ''}`, owner: test.owner, card: test.card, phase: test.phase })) };
 }
+
+type FeatureAsset = { assetId: string; features: readonly string[] };
+/**
+ * A6.4 in planning_update.md: the applicable-test denominator. A row applies when one of its trigger features is recorded on an asset; `any` is the vocabulary's
+ * always-match trigger (docs/WSTG_MAP.md), so it applies to every asset that records at least one recognised feature. Feature values are normalised with
+ * featuresFromAttributeValues, so raw values like "API, cors ; jwt" are accepted and unknown tokens are ignored, never refused. Browser rows are dropped unless
+ * `browser` is true (p2o has no browser oracle) and identity rows unless `identity` is true (no operator grant). One row per test in WSTG_MAP order, carrying the
+ * sorted unique asset ids that made it applicable. Pure, deterministic, no I/O: being applicable is a planning hint, not permission and not coverage.
+ */
+export function applicableTests(assets: readonly FeatureAsset[], options: { browser?: boolean; identity?: boolean } = {}): { test: WstgTest; assets: string[] }[] {
+  const byAsset = new Map<string, Set<string>>();
+  for (const asset of assets) {
+    const known = byAsset.get(asset.assetId) ?? new Set<string>();
+    for (const feature of featuresFromAttributeValues(asset.features).features) known.add(feature);
+    if (known.size) byAsset.set(asset.assetId, known);
+  }
+  const rows: { test: WstgTest; assets: string[] }[] = [];
+  for (const test of WSTG_MAP) {
+    if (!test.trigger.length || (test.browser && !options.browser) || (test.identity && !options.identity)) continue;
+    const matched = [...byAsset].filter(([, features]) => test.trigger.includes('any') || test.trigger.some(feature => features.has(feature))).map(([assetId]) => assetId).sort();
+    if (matched.length) rows.push({ test, assets: matched });
+  }
+  return rows;
+}
+
+/**
+ * A6.4 in planning_update.md: `applicableTests` minus the tests a live cell already covers, in the shape debt's WSTG_UNPLANNED entry needs. A test counts as
+ * covered when `wstgKey(test.id)` is in `options.covered`. key/title/support/flags carry the same values `wstgSuggest` returns, assetIds are the assets that made
+ * the row applicable, and detail is one deterministic ASCII sentence under 300 characters (no markdown) a report can print. Pure and read-only; a suggestion is
+ * not a finding, not permission and not coverage.
+ */
+export function unplannedTests(assets: readonly FeatureAsset[], options: { browser?: boolean; identity?: boolean; covered?: ReadonlySet<string> } = {}): { key: string; title: string; support: WstgSupport; flags: string; assetIds: string[]; detail: string }[] {
+  const covered = options.covered ?? new Set<string>();
+  return applicableTests(assets, options).filter(({ test }) => !covered.has(wstgKey(test.id))).map(({ test, assets: assetIds }) => {
+    const flags = `${test.browser ? 'B' : ''}${test.identity ? 'I' : ''}`;
+    return { key: wstgKey(test.id), title: test.title, support: test.support, flags, assetIds, detail: `${test.title} (${test.support}${flags ? `, ${flags}` : ''}) applies to recorded feature(s) on ${assetIds.length} asset${assetIds.length === 1 ? '' : 's'}` };
+  });
+}

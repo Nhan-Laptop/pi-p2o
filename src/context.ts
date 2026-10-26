@@ -1,5 +1,6 @@
 import type { Counted } from './counts.js';
 import { isSatisfiedTask } from './tasks.js';
+import type { DebtKind } from './debt.js';
 import type { AssessmentRecord } from './records.js';
 import type { StateEvent } from './state/store.js';
 import { graphCanonical } from './state/graph.js';
@@ -14,10 +15,20 @@ export interface ContextCursor {consumerId:string;throughSequence:number;gapThro
 export interface ContextItem extends KnowledgeHead {detail:Record<string,unknown>}
 export interface KnowledgeLink {recordId:string;relation:string;targetId:string}
 export interface KnowledgeIndexSnapshot {version:1;runId:string;asOfSequence:number;heads:KnowledgeIndexHead[];links:KnowledgeLink[];cursors:ContextCursor[];authorityRestored:false}
-export interface ContextBacklog {
-  unplannedAssets?:{total:number;ids:string[]};
-  cellsNotRun?:{total:number;ids:string[]};
-  wstgSuggestions?:{total:number;features:string[]};
+/** A6.2: the planner-only debt section. Totals are true; `items` is a display page so the packet stays small. */
+export interface ContextDebt {
+  /** Every item the derivation produced, including the ones the page omits. */
+  total: number;
+  /** The subset that makes the run incomplete. */
+  gateable: number;
+  /** Non-zero totals by kind, in report order. */
+  byKind: Partial<Record<DebtKind, number>>;
+  /** The bounded display page: id, kind and one line of why the item is owed. */
+  items: Array<{ id: string; kind: DebtKind; detail: string }>;
+  /** How many ids the display page omits. */
+  omitted: number;
+  /** One sentence for a status line or a wake demand. */
+  summary?: string;
 }
 export interface ContextPacket {
   version:1;runId:string;consumerId:string;role:'planner'|'worker'|'reporting';taskId?:string;asOfSequence:number;
@@ -26,8 +37,10 @@ export interface ContextPacket {
   changes:Array<{sequence:number;kind:string;actorId:string;taskId?:string;entityId?:string;summary:string;payloadRefs:string[]}>;
   attention:ContextItem[];newGaps:ContextItem[];newReviews:ContextItem[];relevant:ContextItem[];
   omissions:{changes:number;attention:number;newGaps:number;newReviews:number;relevant:number};
-  /** Planner only, present only when something is waiting: pointers (IDs and counts), never a score, a task or a dispatch. */
-  backlog?:ContextBacklog;
+  /** Planner only, present only when something is owed: the derived research debt behind an empty or stalled frontier. */
+  debt?:ContextDebt;
+  /** A6.1: planner only, the campaign frame as one bounded line (≤600 bytes) plus the heartbeat the loop will use. */
+  campaign?:{block:string;heartbeatSeconds:number;createdBy:'operator'|'default';startedAt:string};
   retrieval:{headsCursor:number;eventCursor:number;commands:string[]};warning:string;packetSha256:string;encodedBytes:number;
 }
 

@@ -40,7 +40,9 @@ describe('finish preflight', () => {
     // has no finish gate. Nothing is blocking, which is what "clean" now means. A3 adds two honest advisory facts no owner action
     // resolves here: a derived cell carries no gapRefs, so the fixture's open gap stays unreferenced, and its blocked work identity
     // was settled without a handoff.
-    expect(text).toMatch(/0 open obligation\(s\), 3 advisory/);
+    // A6.2: the derived research-debt report now has an aggregate advisory row, so the fixture has four advisories.
+    expect(text).toMatch(/0 open obligation\(s\), 4 advisory/);
+    expect(text).toMatch(/RESEARCH_DEBT \(4\):/);
     expect(text).toMatch(/OPEN_GAP_UNREFERENCED \(1\):/);
     expect(text).toMatch(/ORPHAN_TASK \(1\):/);
     expect(text).toMatch(/PRIMITIVE_UNCHAINED \(1\):/);
@@ -86,7 +88,9 @@ describe('finish preflight', () => {
 
   it('flags a stated --goal that never became a recorded plan goal', async () => fixture(async h => {
     await h.command('--target ./source --goal "Assess the login boundary for IDOR"');
-    const text = finishText(await h.call('p2o_finish', {}));
+    // A6.6 (D9): a stated --goal records a campaign frame, so the final path carries the partial reason; the preflight
+    // advisory is still rendered and still names the missing goal.
+    const text = finishText(await h.call('p2o_finish', { partial: 'Fixture records a stated objective without a plan goal.' }));
     expect(text).toMatch(/- NO_GOAL_RECORDED \(1\)/);
   }));
   it('does not flag it once the stated objective is recorded as a goal', async () => fixture(async h => {

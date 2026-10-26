@@ -42,6 +42,8 @@ export interface ViewProfile {
   runtime?: { version: string; sha256: string };
   workers?: WorkerView[]; held?: { reason: string; at: number }; usageLines?: string[];
   contextUsage?: { tokens: number | null; contextWindow: number; percent: number | null; at: number };
+  /** A6.5: the campaign frame and its continuation, so status shows what the run is for and how it is being driven. */
+  campaign?: { objective: string; heartbeatSeconds: number; createdBy: 'operator' | 'default' };
 }
 /** Local observation only. `quiet` means no local event for the quiet window while queued/running; it is not failure proof, a timeout or a model wake. */
 export interface WorkerView { id: string; role: string; taskId?: string; state: string; commandsUsed: number; idleMs?: number; quiet: boolean; reported: boolean; stopped: boolean }
@@ -98,6 +100,8 @@ export function statusView(index: LedgerIndex, profile: ViewProfile, context:Rep
       ...(profile.runtime ? [`Runtime: p2o ${safe(profile.runtime.version || 'unknown version', 40)} · ${safe(profile.runtime.sha256, 64).slice(0, 12)} (digest of the entry file + src closure; identifies code, not safety)`] : []), taskLine,
       `Worker slots: ${profile.delegation ? profile.maxWorkers : 0}; target-operation cap: ${profile.executor.maxTargetOperations} (not network rate/connections)`,
       `Frontier: ${profile.engine.pendingIntents} accepted pending intents; automatic wakes ${profile.engine.rounds}; stalled rounds ${authority.stalledRounds}`,
+      // A6.5: round hygiene is visible — which round, why it was woken, when it started and what drives the next wake.
+      ...(profile.campaign || profile.engine.rounds || profile.engine.heartbeat?.seconds ? [`Campaign: ${profile.campaign ? `${safe(profile.campaign.objective, 200)} (${profile.campaign.createdBy})` : 'no campaign record'} | heartbeat ${profile.engine.heartbeat?.seconds ? `${profile.engine.heartbeat.seconds}s` : 'off'}${profile.engine.heartbeat?.nextAt ? ` (next ${safe(profile.engine.heartbeat.nextAt, 40)})` : ''} | rounds ${profile.engine.rounds}${profile.engine.lastWake ? ` | last wake ${profile.engine.lastWake.reason} round ${profile.engine.lastWake.round}` : ' | no automatic wake yet'}${profile.engine.roundStartedAt ? ` | round started ${safe(profile.engine.roundStartedAt, 40)}` : ''}`] : []),
       // A4: the authority line names the measured invariants, the mode that produced the run and the static role matrix.
       `Authority: planner target ops ${authority.plannerTargetOps} (must be 0) | worker target ops ${authority.workerTargetOps} | tasks created ${authority.tasksCreated}, dispatched ${authority.tasksDispatched}${authority.firstDispatchAt ? ` (first ${safe(authority.firstDispatchAt, 40)})` : ''} | claims owner ${authority.ownerClaims} (must be 0), worker ${authority.workerClaims} | validation tasks ${authority.validationTasks} | mode ${authority.mode?.loopMode ?? profile.engine.mode}/${authority.mode?.executorMode ?? profile.executor.mode} | roles planner ${authority.roles.planner}, worker ${authority.roles.worker}, validation ${authority.roles.validation}, reporter ${authority.roles.reporter}`,
       ...workerLines(profile.workers ?? [], profile.maxWorkers),
@@ -115,6 +119,7 @@ export function statusView(index: LedgerIndex, profile: ViewProfile, context:Rep
         return `Workers: live ${live.length} (quiet ${live.filter(w => w.quiet).length}) | reported ${profile.workers!.filter(w => w.reported).length}${rows}`;
       })()] : []),
       ...dashboardLines(profile, report, cases),
+      ...(profile.campaign ? [`Campaign: ${safe(profile.campaign.objective, 120)} · rounds ${profile.engine.rounds}${profile.engine.lastWake ? ` · ${profile.engine.lastWake.reason}` : ''}`] : []),
       `${attention} ${report.complete ? '' : 'STATE INCOMPLETE.'}`],
   };
 }

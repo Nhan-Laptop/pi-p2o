@@ -91,13 +91,19 @@ describe('indexed knowledge context delivery, not proof or authority',()=>{
       expect(replayKnowledgeIndex(snapshot,store.events({since:checkpoint.asOfSequence,limit:100}).rows,id=>store.record(id))).toEqual(store.knowledgeIndex());
     }finally{unbind();}
   }));
-  it('adds a planner-only backlog of pointers (assets with no live cell, cells nobody ran, WSTG suggestions) and leaves a packet without one unchanged',async()=>fixture(async(store,root)=>{
+  it('adds a planner-only research-debt page (what the run owes, by kind) and leaves a packet without one unchanged',async()=>fixture(async(store,root)=>{
     const path=join(root,'alias.sqlite'),unbind=bindAssessmentStore(path,store);try{
-      const before=store.contextPacket({consumerId:'planner',role:'planner'});expect(before).not.toHaveProperty('backlog');
+      // A6.2: a run with no denominator already owes one, so the page exists from the first planner packet; the worker and
+      // reporter packets never carry it.
+      const before=store.contextPacket({consumerId:'planner',role:'planner'});expect(before.debt?.byKind.PLAN_MISSING).toBe(1);expect(before.debt?.gateable).toBe(1);
       const ids=store.recordGraph({assets:[...Array.from({length:7},(_,i)=>({asset:{kind:'endpoint' as const,key:`GET /backlog-${i}`,...(i===0?{attributes:{feature:'login, jwt'}}:{})}}))]}).map(ack=>ack.entityId),sorted=[...ids].sort();
       const packet=store.contextPacket({consumerId:'planner',role:'planner'});
-      expect(packet.backlog?.unplannedAssets).toEqual({total:7,ids:sorted.slice(0,5)});expect(packet.backlog?.cellsNotRun).toBeUndefined();expect(packet.backlog?.wstgSuggestions?.features).toEqual(['login','jwt']);expect(packet.backlog?.wstgSuggestions?.total).toBeGreaterThan(0);
-      expect(store.contextPacket({consumerId:'worker-one',role:'worker',taskId:'task-x'})).not.toHaveProperty('backlog');expect(store.contextPacket({consumerId:'reporter-one',role:'reporting',taskId:'task-x'})).not.toHaveProperty('backlog');
+      // A6.2: no plan and seven unmapped assets, so the page names the missing denominator, the unplanned scope and the
+      // WSTG rows the recorded features make applicable; totals are true while `items` is a bounded page.
+      const page=packet.debt!;expect(page.byKind.PLAN_MISSING).toBe(1);expect(page.byKind.SCOPE_UNPLANNED_ASSET).toBe(7);expect(page.byKind.WSTG_UNPLANNED).toBeGreaterThan(0);
+      expect(page.total).toBe(page.items.length+page.omitted);expect(page.items.length).toBeLessThanOrEqual(12);expect(page.items.every(item=>item.id.startsWith('debt-'))).toBe(true);expect(page.summary).toMatch(/research debt/);
+      expect(packet.debt?.byKind.FEATURES_MISSING).toBeUndefined();
+      expect(store.contextPacket({consumerId:'worker-one',role:'worker',taskId:'task-x'})).not.toHaveProperty('debt');expect(store.contextPacket({consumerId:'reporter-one',role:'reporting',taskId:'task-x'})).not.toHaveProperty('debt');
       const context={assetRevision:(id:string)=>store.assetRevision(id),assertionRevision:(id:string)=>store.assertionRevision(id)},coverage=new CoverageBoard(manifest.runId,path,()=>true,{...context,targetRevision:()=>store.graphScope(),assetIds:()=>store.assetEntityIds()});
       await coverage.createPlan({title:'Backlog denominator',status:'active',reason:'Explicit inert denominator',exclusions:[],unknownScope:['fixture only']});
       // A3: the denominator is a projection of tasks that declare a structured work identity, so the fixture creates intents.
@@ -106,12 +112,13 @@ describe('indexed knowledge context delivery, not proof or authority',()=>{
       const fp=coverageFingerprint(store.graphScope(),{assetRef:{id:sorted[0],revision:1},questionKey:'wstg-athn-02',policyKey:'policy:backlog',actorContext:'actor:backlog',tenantContext:'tenant:backlog',methodFamily:'offline-observation',execution:'planned',assessment:'unreviewed',taskRefs:[],claimRefs:[],caseRefs:[],evidenceRefs:[],negativeControlRefs:[],gapRefs:[],reason:'',limitations:''}),derivedId=`coverage-cell-${fp.slice(0,24)}`;
       await cellTask(sorted[0],'wstg-athn-02');
       const next=store.contextPacket({consumerId:'planner',role:'planner'});
-      expect(next.backlog?.unplannedAssets).toEqual({total:6,ids:sorted.slice(1,6)});expect(next.backlog?.cellsNotRun).toEqual({total:1,ids:[derivedId]});
-      expect(next.backlog?.wstgSuggestions?.total).toBeLessThanOrEqual(packet.backlog!.wstgSuggestions!.total);
-      const tiny=store.contextPacket({consumerId:'planner',role:'planner',maxBytes:4096});expect(tiny.encodedBytes).toBeLessThanOrEqual(4096);expect(tiny.backlog?.unplannedAssets?.total).toBe(6);
-      expect(Buffer.byteLength(JSON.stringify(next.backlog))).toBeLessThan(900);
+      expect(next.debt?.byKind.SCOPE_UNPLANNED_ASSET).toBe(6);expect(next.debt?.byKind.CELL_NOT_RUN).toBe(1);
+      expect(next.debt?.byKind.WSTG_UNPLANNED ?? 0).toBeLessThanOrEqual(packet.debt!.byKind.WSTG_UNPLANNED!);
+      // The budget trim drops the page (counts stay true) rather than cutting a total, so a small packet still names the debt.
+      const tiny=store.contextPacket({consumerId:'planner',role:'planner',maxBytes:4096});expect(tiny.encodedBytes).toBeLessThanOrEqual(4096);expect(tiny.debt?.byKind.SCOPE_UNPLANNED_ASSET).toBe(6);expect(tiny.debt?.items).toEqual([]);expect(tiny.debt?.omitted).toBe(tiny.debt?.total);
+      expect(Buffer.byteLength(JSON.stringify(next.debt))).toBeLessThan(2048);
       for(const [i,asset] of sorted.entries())if(i>0)await cellTask(asset,`question:${i}`);
-      const done=store.contextPacket({consumerId:'planner',role:'planner'});expect(done.backlog?.unplannedAssets).toBeUndefined();expect(done.backlog?.cellsNotRun?.total).toBe(7);
+      const done=store.contextPacket({consumerId:'planner',role:'planner'});expect(done.debt?.byKind.SCOPE_UNPLANNED_ASSET).toBeUndefined();expect(done.debt?.byKind.CELL_NOT_RUN).toBe(7);
     }finally{unbind();}
   }));
   it('rebuilds the same deterministic hot index/cursors from a checkpoint plus contiguous canonical event tail',async()=>fixture(async(store)=>{

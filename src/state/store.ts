@@ -20,8 +20,9 @@ import { validateCoverageCellDraft, validateStoredCoverageCell, validateStoredCo
 import { caseViews, needsCaseReview, type CaseContext } from '../cases.js';
 import { awaitingReview } from '../tasks.js';
 import { coverageViews, type CoverageContext } from '../coverage.js';
-import { featuresFromAttributeValues, isWstgKey, wstgSuggest } from '../wstg-map.js';
-import { describeKnowledgeRecord, KNOWLEDGE_DOMAINS, type ContextBacklog, type KnowledgeIndexSnapshot, type ContextCursor, type ContextItem, type ContextPacket, type KnowledgeDomain, type KnowledgePage } from '../context.js';
+import { DEBT_KINDS, debtSummary, deriveDebt } from '../debt.js';
+import { campaignPromptBlock, parseCampaign, type CampaignRecord } from '../campaign.js';
+import { describeKnowledgeRecord, KNOWLEDGE_DOMAINS, type ContextDebt, type KnowledgeIndexSnapshot, type ContextCursor, type ContextItem, type ContextPacket, type KnowledgeDomain, type KnowledgePage } from '../context.js';
 import { anchorEntityId, assetEntityId, assertionEntityId, graphEntityId, relationEntityId, renderGraph, scopeOf, validateAnchor, validateAsset, validateFact, validateHypothesis, validateRelation,
   graphCanonical, graphObject, validateGraphBatch, GRAPH_IDENTITY_VERSION, GRAPH_ROW_BYTES, GRAPH_RESPONSE_BYTES, GRAPH_ENTITY_LIMIT, GRAPH_ASSERTION_LIMIT, GRAPH_RELATION_LIMIT, GRAPH_ANCHOR_ROWS, GRAPH_PROVENANCE_LIMIT,
   type AnchorInput, type GraphAck, type GraphBatch, type GraphProducer, type GraphRow, type GraphTable, type GraphSnapshot, type GraphObservation } from './graph.js';
@@ -476,9 +477,11 @@ export class AssessmentStore {
     if(options.role==='worker'&&options.taskId){relevantWhere=`(h.domain='task' AND h.entity_id=?) OR h.actor_id=? OR h.record_id IN (SELECT l.record_id FROM knowledge_links l WHERE l.target_id=?) OR h.entity_id IN (SELECT l.target_id FROM knowledge_links l JOIN knowledge_heads t ON t.record_id=l.record_id WHERE t.domain='task' AND t.entity_id=?) OR h.record_id IN (SELECT l.target_id FROM knowledge_links l JOIN knowledge_heads t ON t.record_id=l.record_id WHERE t.domain='task' AND t.entity_id=?)`;relevantParams=[options.taskId,options.consumerId,options.taskId,options.taskId,options.taskId];}
     else {const domains=options.role==='reporting'?"'case','coverage-plan','coverage-cell','report','gap'":"'goal','todo','decision','task','case','coverage-plan','coverage-cell','candidate','gap','phase'";relevantWhere=`h.domain IN (${domains})`;}
     const relevantAll=queryItems(`SELECT h.* FROM knowledge_heads h WHERE ${relevantWhere} ORDER BY CASE WHEN status IN ('stale','pending','disputed','reported','blocked','open') THEN 0 ELSE 1 END,h.sequence DESC LIMIT 20`,...relevantParams),relevantTotal=Number(this.db.prepare(`SELECT count(*) AS n FROM knowledge_heads h WHERE ${relevantWhere}`).get(...relevantParams)!.n),relevant=relevantAll,omissions={changes:Math.max(0,eventsAfter-changes.length),attention:Math.max(0,openGaps+pendingReviews-attention.length),newGaps:Math.max(0,openGaps-newGaps.length),newReviews:Math.max(0,pendingReviews-newReviews.length),relevant:Math.max(0,relevantTotal-relevant.length)};
-    const backlog=options.role==='planner'?this.contextBacklog():undefined;
-    const packetBase={version:1 as const,runId:this.manifest().runId,consumerId:options.consumerId,role:options.role,...(options.taskId?{taskId:options.taskId}:{}),asOfSequence:barrier,cursorBefore:before,cursorAfter:{throughSequence:omissions.changes?changes.at(-1)?.sequence??before.throughSequence:barrier,gapThrough:newGaps.at(-1)?.sequence??0,reviewThrough:newReviews.at(-1)?.sequence??0},counts:{heads:headCount,coldRecords:Math.max(0,recordCount-headCount),openGaps,pendingReviews,eventsAfterCursor:eventsAfter},changes,attention,newGaps,newReviews,relevant,omissions,...(backlog?{backlog}:{}),retrieval:{headsCursor:0,eventCursor:before.throughSequence,commands:['p2o_state action=heads domain/status/cursor/limit','p2o_ledger by exact record ID','p2o_graph by asset ID','p2o_board view by ID']},warning:'Indexed navigation packet only; omissions/counts are explicit. Knowledge never grants scope, restores authority, proves a finding or completes a goal.'};
-    const arrays=['relevant','changes','newReviews','attention','newGaps'] as const,budget=maxBytes-160;let encoded=Buffer.byteLength(JSON.stringify(packetBase));if(encoded>budget&&packetBase.backlog){for(const part of [packetBase.backlog.unplannedAssets,packetBase.backlog.cellsNotRun])if(part)part.ids=[];encoded=Buffer.byteLength(JSON.stringify(packetBase));}for(const key of arrays)while(encoded>budget&&packetBase[key].length){packetBase[key].pop();packetBase.omissions[key==='changes'?'changes':key]=(packetBase.omissions[key==='changes'?'changes':key]??0)+1;if(key==='changes')packetBase.cursorAfter.throughSequence=packetBase.changes.at(-1)?.sequence??before.throughSequence;if(key==='newReviews')packetBase.cursorAfter.reviewThrough=packetBase.newReviews.at(-1)?.sequence??before.reviewThrough;if(key==='newGaps')packetBase.cursorAfter.gapThrough=packetBase.newGaps.at(-1)?.sequence??before.gapThrough;encoded=Buffer.byteLength(JSON.stringify(packetBase));}
+    const debt=options.role==='planner'?this.debtReport():undefined;
+    // A6.1: the planner packet carries the campaign frame as the same bounded one-line block the system prompt prints.
+    const campaign=options.role==='planner'?this.campaign():undefined, campaignBlock=campaign?campaignPromptBlock(campaign):undefined;
+    const packetBase={version:1 as const,runId:this.manifest().runId,consumerId:options.consumerId,role:options.role,...(options.taskId?{taskId:options.taskId}:{}),asOfSequence:barrier,cursorBefore:before,cursorAfter:{throughSequence:omissions.changes?changes.at(-1)?.sequence??before.throughSequence:barrier,gapThrough:newGaps.at(-1)?.sequence??0,reviewThrough:newReviews.at(-1)?.sequence??0},counts:{heads:headCount,coldRecords:Math.max(0,recordCount-headCount),openGaps,pendingReviews,eventsAfterCursor:eventsAfter},changes,attention,newGaps,newReviews,relevant,omissions,...(debt?{debt}:{}),...(campaignBlock?{campaign:{block:campaignBlock,heartbeatSeconds:campaign!.heartbeatSeconds,createdBy:campaign!.createdBy,startedAt:campaign!.startedAt}}:{}),retrieval:{headsCursor:0,eventCursor:before.throughSequence,commands:['p2o_state action=heads domain/status/cursor/limit','p2o_ledger by exact record ID','p2o_graph by asset ID','p2o_board view by ID']},warning:'Indexed navigation packet only; omissions/counts are explicit. Knowledge never grants scope, restores authority, proves a finding or completes a goal.'};
+    const arrays=['relevant','changes','newReviews','attention','newGaps'] as const,budget=maxBytes-160;let encoded=Buffer.byteLength(JSON.stringify(packetBase));if(encoded>budget&&packetBase.debt){packetBase.debt={...packetBase.debt,items:[],omitted:packetBase.debt.total};encoded=Buffer.byteLength(JSON.stringify(packetBase));}for(const key of arrays)while(encoded>budget&&packetBase[key].length){packetBase[key].pop();packetBase.omissions[key==='changes'?'changes':key]=(packetBase.omissions[key==='changes'?'changes':key]??0)+1;if(key==='changes')packetBase.cursorAfter.throughSequence=packetBase.changes.at(-1)?.sequence??before.throughSequence;if(key==='newReviews')packetBase.cursorAfter.reviewThrough=packetBase.newReviews.at(-1)?.sequence??before.reviewThrough;if(key==='newGaps')packetBase.cursorAfter.gapThrough=packetBase.newGaps.at(-1)?.sequence??before.gapThrough;encoded=Buffer.byteLength(JSON.stringify(packetBase));}
     if(encoded>budget)throw Error('Context packet minimum safety sections exceed configured bound');const packetSha256=sha(graphCanonical(packetBase)),packet={...packetBase,packetSha256,encodedBytes:0};
     for(let i=0;i<3;i++)packet.encodedBytes=Buffer.byteLength(JSON.stringify(packet));
     if(Buffer.byteLength(JSON.stringify(packet))!==packet.encodedBytes||packet.encodedBytes>maxBytes)throw Error('Context packet encoded bound exceeded');return packet;
@@ -649,35 +652,64 @@ export class AssessmentStore {
     return this.db.prepare(`SELECT json_extract(a.body,'$.attributes.feature') AS value FROM assets a WHERE a.scope=? AND a.sequence=(SELECT MAX(b.sequence) FROM assets b WHERE b.entity_id=a.entity_id) AND json_type(a.body,'$.attributes.feature')='text' ORDER BY a.sequence LIMIT ?`)
       .all(this.graphScope(), limit).map(row => String(row.value));
   }
+  /** A6.4: the same feature values with their asset id, so the applicable-test matrix knows which asset triggers a row; read-only, bounded. */
+  recordedFeatureAssets(limit = 500): Array<{ assetId: string; features: string[] }> {
+    this.gate();
+    return this.db.prepare(`SELECT entity_id AS id, json_extract(a.body,'$.attributes.feature') AS value FROM assets a WHERE a.scope=? AND a.sequence=(SELECT MAX(b.sequence) FROM assets b WHERE b.entity_id=a.entity_id) AND json_type(a.body,'$.attributes.feature')='text' ORDER BY a.sequence LIMIT ?`)
+      .all(this.graphScope(), limit).map(row => ({ assetId: String(row.id), features: [String(row.value)] }));
+  }
   /**
-   * Planner-only pointers for an empty or stalled frontier (U5): current graph assets with no live coverage cell, declared cells nobody has run, and how many
-   * WSTG tests the recorded features suggest. Read-only SQL over indexed heads; omitted when all are empty, so a packet without a backlog is unchanged.
+   * A6.2: the planner-only debt report for an empty or stalled frontier. This replaces the U5 backlog pointers: it is the
+   * same derivation the loop, the finish result and the report read, bounded to a display page so the packet stays small.
+   * Read-only; absent when nothing is owed, so a packet with no debt is byte-identical to one before A6.
    */
-  private contextBacklog(limit = 5): ContextBacklog | undefined {
-    // A3: cells are derived from reviewed work, so the backlog reads the same projection the board and the report read.
-    // The SQL head index only knows legacy stored cells; a projected run has none, and reading it here would report every
-    // asset as unplanned and every test as uncovered.
-    const index = indexRecords(this.records(), this.manifest().runId), live = coverageViews(index, this.reviewContext().coverage).flatMap(plan => plan.cells).filter(cell => cell.currentness !== 'retired');
-    const coveredAssets = new Set(live.map(cell => cell.assetRef.id)), unplanned = this.assetEntityIds().filter(id => !coveredAssets.has(id));
-    const notRun = live.filter(cell => ['unplanned', 'planned', 'running'].includes(cell.effectiveExecution));
-    const features = featuresFromAttributeValues(this.recordedFeatureValues()).features;
-    let suggested = 0;
-    if (features.length) { const covered = new Set(live.filter(cell => isWstgKey(cell.questionKey)).map(cell => cell.questionKey)); suggested = wstgSuggest(features, { covered, limit: 1 }).matched; }
-    if (!unplanned.length && !notRun.length && !suggested) return undefined;
-    return {
-      ...(unplanned.length ? { unplannedAssets: { total: unplanned.length, ids: unplanned.slice(0, limit) } } : {}),
-      ...(notRun.length ? { cellsNotRun: { total: notRun.length, ids: notRun.slice(0, limit).map(cell => cell.id) } } : {}),
-      ...(suggested ? { wstgSuggestions: { total: suggested, features } } : {}),
-    };
+  private debtReport(limit = 12): ContextDebt | undefined {
+    const index = indexRecords(this.records(), this.manifest().runId), featureAssets = this.recordedFeatureAssets(), report = deriveDebt(index, { ...this.reviewContext(), features: this.recordedFeatureValues(), ...(featureAssets.length ? { featureAssets } : {}) });
+    if (!report.total) return undefined;
+    const shown = report.items.slice(0, limit), byKind = Object.fromEntries(DEBT_KINDS.filter(kind => report.totals[kind] > 0).map(kind => [kind, report.totals[kind]]));
+    const summary = debtSummary(report);
+    return { total: report.total, gateable: report.gateable, byKind, items: shown.map(item => ({ id: item.id, kind: item.kind, detail: item.detail })), omitted: report.total - shown.length, ...(summary ? { summary } : {}) };
+  }
+  /**
+   * A6.1: the campaign record this run was started with, folded from lifecycle rows (last by sequence wins). It is data
+   * plus prompt composition, never authority: reading it grants nothing and rewrites nothing.
+   */
+  campaign(): CampaignRecord | undefined { return this.campaignFold().campaign; }
+  /** A6.1: the sequence of the lifecycle row that produced the campaign record, so a reader can cite it. */
+  campaignRevision(): number | undefined { return this.campaignFold().sequence; }
+  /**
+   * A6.6: the reason the lead recorded for a partial finish, when one was recorded. A partial stop is a fact about the run,
+   * never a claim that the coverage is complete.
+   */
+  campaignPartial(): { reason: string; at: string } | undefined {
+    this.gate();
+    for (const row of this.db.prepare("SELECT body FROM records WHERE kind='lifecycle' ORDER BY sequence DESC LIMIT 100").all()) {
+      const record = JSON.parse(String(row.body)) as AssessmentRecord, data = record.data as { event?: unknown; campaignPartial?: unknown } | undefined;
+      if (data?.event !== 'campaign.partial') continue;
+      const reason = record.text && typeof record.text === 'string' ? record.text : typeof data.campaignPartial === 'string' ? data.campaignPartial : '';
+      if (reason) return { reason, at: record.at };
+    }
+    return undefined;
+  }
+  private campaignFold(): { campaign?: CampaignRecord; sequence?: number } {
+    this.gate();
+    for (const row of this.db.prepare("SELECT sequence, body FROM records WHERE kind='lifecycle' ORDER BY sequence DESC LIMIT 100").all()) {
+      const record = JSON.parse(String(row.body)) as AssessmentRecord;
+      const campaign = parseCampaign((record.data as { campaign?: unknown } | undefined)?.campaign);
+      if (campaign) return { campaign, sequence: Number(row.sequence) };
+    }
+    return {};
   }
   /** Current same-run graph asset identities for explicit coverage denominator comparison. */
   assetEntityIds():string[]{
     this.gate();return this.db.prepare('SELECT DISTINCT entity_id FROM assets ORDER BY entity_id LIMIT ?').all(GRAPH_ENTITY_LIMIT+1).map(row=>String(row.entity_id));
   }
   /** Currentness lookups the case and coverage views need, bound to this store: the one place a projection learns the live asset/assertion revisions. */
-  reviewContext():{cases:CaseContext;coverage:CoverageContext}{
+  reviewContext():{cases:CaseContext;coverage:CoverageContext;campaign?:CampaignRecord}{
     const cases:CaseContext={assetRevision:id=>this.assetRevision(id),assertionRevision:id=>this.assertionRevision(id)};
-    return {cases,coverage:{...cases,targetRevision:()=>this.graphScope(),assetIds:()=>this.assetEntityIds()}};
+    // A6.1: the campaign frame rides with the run's read projections, so debt, the finish preflight and the report read the
+    // same record instead of re-folding ledger rows or inferring intent from prose.
+    return {cases,coverage:{...cases,targetRevision:()=>this.graphScope(),assetIds:()=>this.assetEntityIds()},...(this.campaign()?{campaign:this.campaign()!}:{})};
   }
   private graphHead(table: GraphTable, entityId: string, asOfSequence=this.sequence()): GraphRow | undefined {
     const row=this.db.prepare(`SELECT body FROM ${table} WHERE entity_id=? AND sequence<=? ORDER BY sequence DESC LIMIT 1`).get(entityId,asOfSequence);

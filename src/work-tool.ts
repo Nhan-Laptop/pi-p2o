@@ -40,6 +40,8 @@ export const planEntrySchema = Type.Object({
   environmentRef: Type.Optional(Type.String({ pattern: '^env-[a-f0-9-]{36}$', description: 'Recorded environment this step runs in (p2o_lab env)' })),
   chainOf: Type.Optional(Type.String({ minLength: 1, maxLength: 80, pattern: '^[a-z0-9][a-z0-9-]*$', description: 'Chain identity shared by its steps' })),
   step: Type.Optional(Type.Integer({ minimum: 1, description: '1-based position in the chain' })),
+  /** A6.2: a deferred/blocked todo is the only row that can wall research debt; the ids come from the debt report. */
+  debtRefs: Type.Optional(Type.Array(Type.String({ pattern: '^debt-[a-z][a-z0-9-]*-[a-f0-9]{12}$', maxLength: 80 }), { minItems: 1, maxItems: 25, uniqueItems: true, description: 'Research-debt ids this deferred/blocked todo discharges (copy them from the debt report)' })),
 }, { additionalProperties: false });
 export const PLAN_ACTIONS = ['create', 'revise', 'list', 'view'] as const;
 /** P13e: exhaustive per action; `list` is spelled out rather than left to a default branch. */

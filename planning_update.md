@@ -1,742 +1,569 @@
-# planning_update.md — planner-first, worker-executed, projection-derived
+# P5 proposal — campaign horizon: why the run stops after the roadmap, and what to change
 
-**Status: new plan; it replaces the previous L0–L3 plan in this file. No implementation, model call, target contact or
-commit is made by this document.** The previous text remains readable at `git show b7b4679:planning_update.md`; it is
-not carried forward here. The L0–L3 implementation already in the tree is the starting point, not the plan.
+**Status: proposal only; this file is the plan for the P5 update, and nothing else.** The pre-P5 plan (P0–P4, A1–A5,
+D1–D8) is merged at `ae551a4` and remains readable with `git show ae551a4:planning_update.md`; it is not carried forward
+here, so this document stays small enough to act on. No code, model call, target contact or commit is made by it.
 
-**One sentence.** The planner must stop being the executor: the planner owns intent, review and proof; a worker owns each
-bounded execution; the reporter is a separate reader; coverage is a projection of reviewed work, never a model-authored
-gate.
+**Owner decision Q1 (2026-10-26): the final-finish refusal is approved.** D9 below is a decision, not a question. It
+narrows exactly one clause of the old D8 ("no finish gate"); no work budget, planner-round cap or scope/origin
+enforcement is added, the heartbeat is a timer rather than an allowance, and export is never refused.
 
----
+Evidence used:
 
-## 0. Why this revision exists
+| Source | What it establishes |
+| --- | --- |
+| `tmp/p2o-logs/session-postmortem.md` (494 lines) | Turn/call/wait/token accounting for the 2026-10-26 run, admit/refuse counters, plan-board state, stop sequence |
+| `/home/nhanlaptop/tmp/cmp/pi-session-2026-10-26T03-35-19-777Z_01a17646-….html` | The model's own messages: initial roadmap, self-imposed scope and probe budget, wrap-up reasoning |
+| `/home/nhanlaptop/tmp/cmp/.p2o-state/run-3dcd0a27-…/assessment.sqlite` | Goals 0, 4 closed tasks, 5 claims, 1 case, 5 cells, 26 gaps, 11 assets, plan board contents, timestamps |
+| `/home/nhanlaptop/tmp/cmp/.p2o-reports/report-run-3dcd0a27-…-final/REPORT.md` | What the final report could and could not claim |
+| `my_references/ARTEX/` (Go, ~336 files) + `tmp/p2o-logs/artex-long-horizon.md` | The mechanisms that keep an ARTEX task alive for hours, and which of them do not exist there |
 
-### 0.1 The observed failure
-
-A real session (`/home/nhanlaptop/tmp/cmp/pi-session-2026-10-25T14-04-01-701Z_01a17360-1f25-7246-ad7b-9534e63d4ba3.html`)
-on `ise.uit.edu.vn` is the trigger. The planner had 3 worker slots and `p2o_delegate` registered. It did this:
-
-| Observation | Count |
-|---|---:|
-| Tool calls | 54 |
-| Tool results | 53 |
-| Tool errors | **18 / 53 = 34%** |
-| Direct `p2o_net` calls by the lead | **19** |
-| `p2o_coverage_cell` calls | 12 (all 12 failed) |
-| `p2o_candidate` calls | 5 |
-| `p2o_task_create` calls | 4 (3 failed) |
-| `p2o_task_dispatch` calls | 1 |
-| `p2o_delegate` calls | **0** |
-
-The lead ran 19 target operations before its first task-create attempt at call 48, then created one task and dispatched
-it. The task it finally created had `role=validation` but `work.purpose=investigation`, `outputContract.kind=investigation`
-and no `validationOf`; it could not be the independent validation the case board expects.
-
-The 18 errors were not target errors:
-
-- 12/18 were coverage-cell schema/usability errors:
-  - 3 missing required empty arrays (`caseRefs`, `gapRefs`, `claimRefs`);
-  - 4 `Invalid coverage actor context` from the phrase `anonymous internet`;
-  - 4 `Tested coverage needs evidence and an exact reviewed task revision`;
-  - 1 missing `claimRefs`.
-- 3 were task-create lifecycle errors (`purpose`/`disposition`, `validationOf` catch-22).
-- 2 were a correct refusal of a self-supplied `independentEvidenceRef`.
-- 1 was graph identity syntax (`ref:` instead of `@ref`).
-
-### 0.2 The root cause
-
-The model was not lazy. It followed the cheapest legal path:
-
-1. `src/tool-policy.ts` puts `...TARGET_TOOLS` and `...LAB_TOOLS` inside `OWNER_TOOLS`.
-2. `src/prompts.ts` says “you are the lead investigator” and “You may execute directly and you may delegate.”
-3. The direct path is one command. The delegation path requires a structured work identity, a decision, an output
-   contract, a purpose/disposition match, and a task that passes admission.
-4. Coverage only accepts `execution=tested` after a reviewed task. The lead first produces direct evidence, then discovers
-   that its evidence cannot be recorded as tested coverage, then tries to create a task, then hits the validation
-   catch-22.
-5. Owner `p2o_candidate` accepts a confirmed/tested claim with `taskRef=null`. `hostValidation` sees no task and returns.
-   Three owner claims in this session had `taskRef=null`, so the independence path was bypassed entirely.
-
-The result is a planner that is allowed to self-confirm evidence and is not required to delegate, with a task path that
-is harder to use than `p2o_net`. ARTEX does the opposite: the planner cannot execute, and every intent is anchored to a
-fact or finding.
-
-### 0.3 Owner decisions for this phase
-
-These are requirements, not suggestions:
-
-| # | Decision |
-|---|---|
-| **D1** | **Planner-first.** Remove target, lab and candidate authority from the planner. Workers are the only executors and the only source of confirmed/tested claims. |
-| **D2** | **No solo/lead-exec mode.** There is no runtime escape hatch for the planner to run target operations. If no worker can execute, the planner reports a blocked prerequisite; it does not take over. |
-| **D3** | **Worker-only claims.** `p2o_candidate` is worker-only. The planner reads claims and accepts/reviews cases; it never authors a confirmed/tested claim. |
-| **D4** | **Coverage projection.** The planner defines the denominator (plan, scope, exclusions, unknown scope). The host derives cells from reviewed worker tasks, claims, evidence and cases. The planner does not author cells. |
-| **D5** | **One delegation path.** `p2o_task_create` → `p2o_task_dispatch` → Engine claim is the only way to start work. `p2o_delegate` and `p2o_task_start` are removed, not left as competing paths. |
-| **D6** | **Keep the existing board vocabulary.** No new board, no new graph and no new target/scope policy. The task board is the intent board; the plan board is the durable todo; the case board is the finding review; coverage becomes a projection. |
-| **D7** | **Evidence rules stay.** A claim is demonstrated only by confirmed + tested evidence; a lead is not evidence; an interrupted task is not a tested cell; a validation requires a separate worker. |
-| **D8** | **No work budgets, no finish gate and no scope/origin enforcement.** The change is authority separation and projection, not a new quota. |
-
-The previous Part XI decision “the lead holds every owner tool, target execution included” is **superseded by D1/D2**.
-The L0 executor provisioning, W3 final report, L2 portable replay/host validation and L3 broker/task fixes remain.
+The ARTEX study is a source read, not a benchmark. Nothing in it proves ARTEX finds more bugs than
+P2O; it only shows which *continuation* machinery it has and which it lacks. Do not quote P5 as
+"ARTEX finds RCE in hours" — it is quoted here as "ARTEX has these mechanisms, P2O does not".
 
 ---
 
-## 1. What ARTEX actually does
+## 1. The campaign failure this revision answers
 
-The references are `tmp/artex-design-report.md` and `tmp/artex-notes.md`, read from the repository, not from marketing
-material. The patterns below are the ones this plan copies.
+### 1.1 What the run did
 
-### 1.1 The planner is not an executor
+One human turn against `https://hcmussh.edu.vn/`, event-driven mode, isolated executor, 3 workers,
+`maxTargetOperations 2`, `maxDepth 2`, no token/time/round cap, planner
+`opencode-go/deepseek-v4.1-flash`.
 
-ARTEX planner prompt (`agent/planner.go:298`):
+| Measurement | Value |
+| --- | --- |
+| Wall clock | 25 min 52.6 s (`03:35:19.777Z` → `04:01:12.327Z`) |
+| Human turns / assistant turns / tool calls | 1 / 41 / 56 (all `p2o_*`; 12 refused; 0 bash, read or web calls) |
+| Engine rounds / stalled rounds | **0 / 0** |
+| Model time vs tool-wait time | 353.6 s (22.8 %) vs 1163.3 s (74.9 %); `p2o_workers` waits 1161.4 s, three of them hit the 300 s cap |
+| Planner tokens | 311.0 k in / 38.4 k out; all roles 7.81 M, $0.298 |
+| Goals recorded | **0** |
+| Plan board | 0 goal, 0 todo, 1 decision |
+| Tasks | 4 created, 4 reviewed, 4 closed, 0 open |
+| Claims | 5: 1 confirmed, 1 ruled out, 3 `open_proof_gap` |
+| Cases / coverage cells | 1 accepted case (r2, low, CWE-614); 5 cells (3 accepted, 2 `open_gap`) over only 2 question keys |
+| Graph | 11 assets, 0 relations, 0 anchors; 6 assets unplanned in the projection |
+| Open gaps | 26, of which 25 referenced by no plan row and no case |
+| Coverage plan created | `03:59:54` — after all four tasks had closed |
+| Stop | `04:00:58` `p2o_finish{narrative}` → `run.stopped`, outcome `incomplete/cleaned/finished` |
 
-> “你是规划者、不是执行者：本轮所有产物只能是【生成/说清意图】或【判定目标】，绝不在 plan 里把活干了。”
+The model produced a correct-looking four-phase roadmap in its first turn — recon → deployment
+hygiene → browser trust controls/CORS → validation — with an explicit self-imposed boundary:
+"anonymous, read-only, non-destructive observation only" and "Explicitly out of scope: credential
+attacks, injection payloads, authenticated flows, brute force, or any state-changing request". It then
+executed that roadmap once and stopped.
 
-The planner's tool set is built from `PlannerTools()` and `DefaultTools()`; target execution belongs to workers. The
-planner reads the graph and creates intents. It does not probe the target.
+It did not stop because the work ran out. At `03:59` these already-permitted, already-in-scope
+directions were still open and were never dispatched:
 
-The planner is allowed a tiny opening probe (`agent/planner.go:318-320`), but once worker facts exist it is forbidden
-to probe again (“图里已有 worker 产出的 fact →【禁止】再自己探测”). This is a prompt convention on top of a tool-policy
-separation.
+1. a CORS/Origin probe on `/api/state`, whose `Access-Control-Allow-Origin: *` the run had already
+   recorded as an asset attribute;
+2. sibling `/api/*` routes adjacent to the one it had found;
+3. `/chuong-trinh-dao-tao` and `/view-all`, already in the crawled surface;
+4. per-node nginx version drift (1.23.2 on one node, 1.27.1 on another) and intermittent 502s;
+5. the 500-vs-404 error-boundary difference;
+6. identifying the SSR framework behind the rendered pages;
+7. linking assets to the evidence that already cited them.
 
-### 1.2 A worker gets one intent and stops
+Six further directions were genuinely blocked on human grants (CMS subdomain scope, a known private
+article id, whether the HTML header policy is intentional, field-exposure policy, admin paths, a
+browser oracle). None of them was recorded as a *wall* either; they simply disappeared at stop time.
 
-ARTEX worker prompt (`agent/worker.go:230`):
+### 1.2 What the stop looked like from inside
 
-> “你领到【一条意图】…唯一职责：完成这一条意图、把发现写回知识图谱、然后停止返回。”
+- `04:00:27` — `p2o_finish{export:true}`. Output: `STATE: incomplete: 1 obligation(s) —
+  PRIMITIVE_UNCHAINED 1` and, in the same message, `FINISH PREFLIGHT: 0 open obligation(s), 8
+  advisory`. Two host checks over the same state disagreed about whether anything was owed.
+- `04:00:41` — the model tried to answer the obligation with a plan row:
+  `p2o_plan_create kind=decision disposition=defer reason="No successor step is warranted…"`. The row
+  was recorded and the obligation did **not** clear, because only a `todo` can hold the chain link
+  that clears it (`src/obligations.ts:45-52`, `src/planning.ts:80`).
+- `04:00:58` — `p2o_finish{narrative}`. The final path tore everything down and the run ended
+  `incomplete`. No goal existed, so nothing could have been proven.
+- Model text at the end: "Given budget, I should wrap up." Earlier: "Remaining context budget: I've
+  used a fair amount", and on the idea of declaring a block: "record blocked via `p2o_loop blocked`?
+  That pauses dispatch. Better not — I want to finish."
 
-The worker may not create another intent, may not read other workers' facts, and may not chain. A lead for another step
-is written into the fact summary and handed back to the planner. The worker's tool set (`agent/toolcatalog.go:29`) does
-not contain `add_intent`; this is enforced by omission, not by prose.
+So the run ended for three independent reasons at once: the loop had nothing scheduled to continue it,
+the debt that did exist was advisory text, and the model's own context — one giant 41-turn session —
+was running out. Any one of the three would have ended the campaign; all three needed fixing.
 
-### 1.3 Intent must be anchored to evidence
+### 1.3 Why this is a horizon bug, not a prompt bug
 
-`add_intent` (`agent/tools.go:1032-1090`) only accepts parents of kind `fact` or `finding`; an intent with no parents is
-automatically linked to the task's origin fact. The comment states the invariant:
+The model was not lazy and was not confused about the target. It built a plan, dispatched four
+tasks, got one accepted case, and correctly identified the boundary of its self-imposed scope. What it
+lacked was a *host* that treats research as a campaign with an outstanding objective rather than a
+batch of tasks: no goal to prove, no debt ledger to discharge, no wake that fires without a new
+event, no round boundary that resets context, and no finish semantics that distinguish "done" from
+"stopped early". Adding more prompt text cannot fix a loop whose next wake depends on an event that
+the exhausted state will never produce.
 
-> “意图只能锚在已确认的【事实(fact)/发现(finding)】上…这样每个意图都连到 fact 节点、且是发现驱动而非凭空规划.”
+The same shape appears one level up in the failure that produced P0–P3 (recorded at §0.1 of
+`git show ae551a4:planning_update.md`): then the planner held target authority and never delegated; here it
+delegates correctly and never continues.
 
-A chain is not a table. It is `derived_from` (fact → next intent) plus `yields` (intent → fact/finding). Readiness is
-derived by walking the graph.
+### 1.4 Proposed direction in one screen
 
-### 1.4 Coverage is a projection, not a model-authored gate
+Six decisions, then workstreams A6.1–A6.6 to implement them (§4):
 
-ARTEX coverage is SQL (`db/task_scope.go:299-315`):
+| ID | In one line |
+| --- | --- |
+| D9 | The run records a **campaign** (objective + operator constraints + heartbeat), the planner sees the constraints every round, round 1 must record a goal and a coverage plan, and a **final** finish with no goal is refused with a legal next (export exempt) — **owner approved the refusal on 2026-10-26 (Q1)** |
+| D10 | **Research debt** is derived by the host with stable ids and discharged only by a record (tested cell, accepted case, goal proof, or a `deferred`+reason+`debtRefs` todo); decision rows and prose do not discharge — the observed `04:00:41` failure becomes a regression test |
+| D11 | The loop wakes on events **or** outstanding debt **or** a **heartbeat** (default 600 s, event-driven only, disclosed, 0 disables); the first debt wake is immediate, repeats are paced, `p2o_loop wait` suppresses only the immediate one, and 3 stalled rounds with debt pause for a human |
+| D12 | Assets carry **WSTG feature tags**; applicable tests are derived and listed as debt; the planner is told depth-over-coverage, 2–3 mechanism-different routes, and chain-or-wall for a demonstrated primitive |
+| D13 | The **round**, not the turn, is the unit of context: end with `p2o_loop wait`, keep blocking joins short, create plan todos in round 1, checkpoint a closed phase as a plan `decision` |
+| D14 | Status/report/finish carry **campaign + debt + partial-stop** sections; `p2o_finish` gains an optional `partial` reason; export unchanged and never refused |
 
-- denominator = assets joined to the task's declared scope;
-- numerator = distinct assets anchored by a `fact`;
-- `Coverage` is a reference figure for the planner, explicitly “NOT a precise metric”;
-- dispatch never ranks by coverage (`Frontier` is priority/id only);
-- worker view deletes the coverage key (`agent/worker.go:316-330`), because coverage is a planning signal, not a worker
-  mandate.
-
-The planner does not create coverage cells. The database derives them from work.
-
-### 1.5 The second reader is a role with restricted tools
-
-The ARTEX reporter (`server/orchestration.go:729`, `agent/promptcatalog.go:80`) is triggered by `report_finding` and
-has only read/report tools: `update_finding_report`, `get_task_node_detail`, `list_task_findings`,
-`get_task_worker_trace(s)`, `search_task_worker_traces`, `get_task_graph`. It cannot create a finding, run a scan or
-repeat discovery. It writes a report against an evidence version; staleness is computed.
-
-### 1.6 Prompt composition is role-specific
-
-- The planner's intent lives in the **system** prompt; the volatile graph situation lives in the **user** turn.
-- The worker's single intent and its asset rows live in the **system** prompt because losing the intent is worse than
-  losing prompt cache.
-- Tool availability is the final gate: skill/MCP augmentation, DB binding, then evidence-flow decoration.
-- Truncated views announce their own totals (`frontier_open`, `findings_total`) so “not shown” is not read as “not
-  tried.”
-- Prompt fields are tested against the view that produces them; a prompt that names a removed field is a bug.
-
-### 1.7 What this plan does not copy
-
-- Model-chosen priority integers. P2O keeps its derived priority.
-- An in-memory planner todo store. P2O keeps the plan board in the ledger.
-- Prompt-only liveness (“0 intents = stalled”). P2O records a stalled round and reports it; the planner still has to
-  create or declare blocked.
-- No dedup/no evidence gate on findings. P2O keeps stricter claims, cases and validation.
-- Two IDs for one object. P2O keeps one id per board.
-- A direct planner escape hatch. There is none in this phase.
-
----
-
-## 2. Target architecture
-
-### 2.1 Role authority
-
-The planner is the **only** role that creates intents, plans, cases and coverage plans. The worker is the **only**
-role that touches the target, writes candidates, writes facts/anchors, or creates payload/environment recipes. The
-reporter is a read-only second reader for an accepted case. The host, not the prompt, enforces the role boundary by not
-registering the tool.
-
-| Capability | Planner | Worker | Reporter |
-|---|---|---|---|
-| `p2o_shell`, `p2o_net`, `p2o_http`, `p2o_capture` | **no** | yes | **no** |
-| `p2o_lab` payload/env/verify/destroy | **no** | yes | **no** |
-| `p2o_candidate` | **no** | yes | **no** |
-| `p2o_note`, `p2o_surface` | **no** | yes | **no** |
-| `p2o_graph` | **read-only** | read + write facts/anchors | **read-only** |
-| `p2o_ledger`, `p2o_state`, `p2o_artifact` | read | read | read |
-| `p2o_skill_list`, `p2o_skill_read`, `p2o_research` | yes | yes | read |
-| `p2o_task_create/revise/dispatch/review/settle` | **yes** | no | no |
-| `p2o_plan_create/revise` | **yes** | no | no |
-| `p2o_case_create/revise/rate` | **yes** | no | no |
-| `p2o_coverage_plan`, `p2o_coverage_suggest` | **yes** | no | no |
-| `p2o_coverage_cell`, `p2o_coverage_cell_retire` | **removed from model** | no | no |
-| `p2o_board`, `p2o_workers`, `p2o_loop`, `p2o_finish` | yes | no | no |
-| `p2o_report` | no | yes | **yes** |
-| `p2o_request_subtask` | no | yes | no |
-| `p2o_delegate`, `p2o_task_start` | **removed** | no | no |
-
-**Rationale for each removal**
-
-- Target/lab/candidate removal is the ARTEX planner/worker split. Without it, the planner will always have a cheaper
-  self-execution path than delegation.
-- `p2o_task_start` removal closes the owner-task dead end: there is no owner report path after start, so the verb could
-  not produce a reviewed task anyway. The planner starts work by dispatching an intent.
-- `p2o_delegate` removal leaves one durable queue. Two spawn paths caused a choice the model could not make reliably.
-- `p2o_coverage_cell` removal follows D4: coverage cells are derived, so the model cannot create a cell that disagrees
-  with the task/claim/evidence that produced it.
-- `p2o_candidate` removal from the planner is D3: the planner has no target evidence of its own, so a planner-authored
-  confirmed claim is either a copy of worker evidence (redundant) or an unsupported assertion (unsafe).
-
-### 2.2 Flow
-
-```text
-human objective
-   │
-   ▼
-planner: goal + coverage-plan denominator + todo
-   │  p2o_task_create(role=recon/mapping, question, surface, work)
-   ▼
-Engine frontier (priority/id, reviewed prerequisites, free slot)
-   │
-   ▼
-worker: one intent, target tools, payload/env, candidate/facts/notes
-   │  p2o_report + p2o_candidate + p2o_graph
-   ▼
-planner: review task / read claim / require discovery evidence
-   │
-   ├── next intent (discovery/exploitation) needs work.claimRefs or a pinned asset
-   ├── host creates validation after discovery review (different worker)
-   └── case create/revise/rate from reviewed worker claims
-   │
-   ▼
-coverage projection (task + claim + case + gap) and report
-```
-
-A task with a dependent question is not dispatched until its prerequisite is reviewed. The planner uses the plan board
-as the durable todo for a serial chain; each step is its own task.
-
-### 2.3 Invariants
-
-1. **No target operation without a worker task.** The planner has no target tool. A tool that is absent cannot be
-   prompt-injected back.
-2. **No confirmed claim without a worker task.** `p2o_candidate` is worker-only; `data.taskRef` is host-stamped.
-3. **No worker task without a bounded identity.** Every task has `question`, `surface`, `role`, `roleReason`, and
-   `work.assetRefs` or `work.claimRefs` as appropriate.
-4. **No discovery/exploitation task without an anchor.** Recon/mapping may start from the target snapshot; discovery
-   must cite a surface/asset or a reviewed claim; exploitation must cite a demonstrated primitive claim.
-5. **No validation without a predecessor.** A validation task cites a reviewed discovery task or a worker claim; the
-   host creates the automatic one after discovery review. A first task cannot be validation.
-6. **No coverage cell without work.** A cell is a projection of a reviewed task and its claims/cases; no model-written
-   cell.
-7. **One id per object.** Task, case, coverage plan and cell use the existing ids; no second node id.
-8. **Evidence is not authority.** A `p2o_graph` fact or a worker sentence is not a verified finding; the case review and
-   validation remain the only path to accepted current findings.
-
-### 2.4 Intent admission (the task board)
-
-The existing task board remains, but it is now an **intent board**:
-
-- `role` selects default purpose:
-
-  | Role | Default purpose | Default output contract |
-  |---|---|---|
-  | `recon` | `mapping` | inventory + evidence + gaps |
-  | `discovery` | `discovery` | one bounded candidate with evidence/control |
-  | `validation` | `validation` | independent replay with own control |
-  | `exploit` | `exploitation` | effect/impact with evidence and limits |
-  | `reporting` | `reporting` | report only, no new evidence |
-  | `general` | caller must name purpose | derived from purpose |
-
-- `decision` is optional. Default `new`; `reuse`/`refine`/`validate`/`retest` are only accepted when they match the
-  purpose, and `validate` requires a predecessor.
-- `outputContract` is optional. Derive it from purpose; a caller may narrow it, not omit required fields.
-- `role=recon` may omit `expectedTrue`, `expectedFalse`, `stopCondition` and `methodReason`.
-- `discovery`, `validation`, `exploitation` and `reporting` require the full expected/stop condition.
-- A validation draft must set `validationOf` to a reviewed task **or** to a worker claim with a taskRef. The host resolves
-  the claim to its task. If neither exists, the error names the legal next role (`recon`/`discovery`) and creates nothing.
-- A first task with `role=validation` is refused with the same legal-next error. No catch-22.
-- `work.claimRefs` is required for `discovery` after the first recon, and for `exploitation`; `work.assetRefs` is
-  required for `recon`/mapping. A task with neither is refused before any pane/ticket.
-- The task board does not expose `start`; the Engine claims dispatched tasks.
-
-### 2.5 Validation and cases
-
-- The host creates one validation task after a discovery task is reviewed and its claim is confirmed+tested. This is the
-  existing L2 mechanism, now with the only claim author being a worker.
-- The validation worker gets a different assignment; its receipt is its own. A case can be accepted only after the
-  validation task is reviewed or the operator records the exact blocked prerequisite. No waiver is invented.
-- The planner cannot create a confirmed claim to validate; it can create a validation task **from** a worker claim.
-- A validation task is never itself revalidated.
-- The reporter role sees accepted current cases and writes a report; it cannot create a candidate or run target tools.
-
-### 2.6 Coverage projection
-
-`p2o_coverage_plan` remains the planner's only coverage write. It stores:
-
-- title, status, reason, exclusions, unknown scope, target revision;
-- no cell ids supplied by the model.
-
-The host derives cells from **reviewed tasks**:
-
-| Task/result | Derived execution | Derived assessment |
-|---|---|---|
-| proposed/running/blocked/stopped | planned/blocked | unreviewed/open_gap |
-| reviewed + evidence, confirmed claim | tested | confirmed_claim |
-| reviewed + evidence, ruled-out claim | tested | ruled_out_bounded |
-| reviewed + evidence, open claim | tested | open_gap |
-| reviewed + accepted current case | tested | accepted |
-| no task/claim for a declared asset | untested | unreviewed |
-
-For each derived cell, the host fills:
-
-- `assetRef`/`questionKey`/`actorContext`/`tenantContext`/`methodFamily` from `task.work`;
-- `taskRefs` from the task revision;
-- `claimRefs` from the task's worker claims;
-- `caseRefs` from current accepted cases;
-- `gapRefs` from open claims/gaps;
-- `limitations`/`reason` from the reviewed task/claim/report;
-- `currentness`/`staleReasons` from the existing asset/revision/claim/case checks.
-
-Dedup key is the existing coverage fingerprint `(targetRevision, assetRef, questionKey, actorContext, tenantContext,
-methodFamily)`. If more than one reviewed task matches, the latest satisfied revision wins; older revisions remain in the
-ledger but are not a second denominator entry. A task with no `work.assetRefs` produces an **unmapped** gap, not a clean
-cell.
-
-The planner may:
-
-- create/revise the plan and its exclusions;
-- read the derived coverage via `p2o_board board=coverage`;
-- use `p2o_coverage_suggest` for WSTG gaps;
-- not create, revise or retire a cell.
-
-Legacy cells stored by earlier runs remain readable for those runs; new runs use the projection. No historical record is
-rewritten.
-
-### 2.7 Prompt shape
-
-The system prompt is role-specific and code-owned at the boundaries:
-
-- **Planner system**: role, authority, tool absence, first-action rule, intent admission, evidence rules, planning
-  loop.
-- **Planner user turn**: current situation, board view, plan todos, trigger/round line. Volatile graphs stay out of the
-  system so they don't invalidate the cache.
-- **Worker system**: one intent, its asset rows, payload/environment contract, write-back rules, stop rule. The intent is
-  in the system prompt; it must survive compaction.
-- **Worker user turn**: bounded situational overview, without the coverage key.
-- **Reporter system**: read-only second reader; no target, no candidate, no planning.
-
-The planner prompt must say, in substance:
-
-```text
-You are the planner/reviewer, not the executor.
-You have no target, lab or candidate tools. Do not ask for them.
-Your first action is to create and dispatch one recon/mapping intent.
-Read the board and graph; decide; create a bounded intent; review; steer; prove.
-A confirmed claim must come from a worker task. You cannot create one.
-If no worker can execute, report the blocked prerequisite. Do not take over.
-If an open goal has no open/running intent, this round must create one or declare blocked.
-Coverage is derived; do not author cells.
-```
-
-The worker prompt must say:
-
-```text
-You received one intent. Complete that intent, write back assets/facts/findings/claims,
-then call p2o_report and stop. Do not create another intent, dispatch, or widen the question.
-A different step is a handoff to the planner, not your next action.
-```
-
-The reporter prompt must say:
-
-```text
-You are the second reader for one accepted case. You may read evidence, traces and artifacts,
-and write the report. You may not run target tools, create candidates or change the case verdict.
-```
+No token, wall-clock, round or target-operation budget is added. The heartbeat is a timer, not an
+allowance; that keeps D8's "no work budgets" intact and still gives the run a reason to continue.
 
 ---
 
-## 3. Workstreams and implementation order
+## 2. What ARTEX has that this revision must take, and what it does not have
 
-### A1 — Authority split and one delegation path
+Read against `my_references/ARTEX/` (Go). Line references are against that snapshot. The study also
+corrected three claims that had been circulating in the brief; record the corrections so the port does
+not rebuild machinery that is not there.
 
-**Goal.** Remove the planner's execution and claim authority, and leave one path to work.
+| Mechanism | Where it lives | Why it matters for a multi-hour campaign | P2O today |
+| --- | --- | --- | --- |
+| Campaign identity as a durable object; task + exploration row with status, deadline, paused flag | `db/schema.sql:505-534`, `:153-160`; restart rebuild `server/server.go:264-292` | The engagement is an object that can be idle, resumed and inspected, not a conversation | Run record exists (`src/state/store.ts`), but it holds no objective, constraints or heartbeat; a run has status, not a campaign |
+| Round-0 goal decomposition that extracts operator **constraints** (allow/deny) and target **scope**, then goals as the final deliverable | `agent/goals.go:36-130` | The objective and the rules survive every round; they are not retyped by a model that forgets | `--avoid` reaches the worker brief (`extensions/p2o/index.ts:669`); planner prompt has no constraints block, no campaign objective |
+| Constraints re-injected from the store into **both** planner and worker system prompts every round, as the highest-priority block | `agent/constraints.go:38-48`; `db/constraints.go:16-45` | Policy memory survives compaction and context reset — this is the only reason a long run stays inside its authorization | Absent for the planner |
+| Hard floor: goal unmet + no open and no running intent ⇒ this round **must** emit ≥1 intent | `agent/planner.go:303`, per-round message `:461` | An empty frontier is not a stop condition; it is the state the floor exists to break | Planner prompt already says a zero-intent round must add a question or declare blocked (`src/prompts.ts:104-106`), but nothing checks it and nothing wakes the planner to apply it |
+| Heartbeat that fires a planner round with zero external events, floor 600 s, re-armed after every wake | `server/engine.go:779-812`, `:901-913`, `:907-912` | Deadlock backstop and periodic supervision; the loop cannot go permanently quiet | No timer in `src/engine.ts`; `reserveWake` returns unless `events.size > 0` (`src/engine.ts:134-147`) |
+| Goal-proof-only success exit | `agent/tools.go:1157-1203`; `server/engine.go:885-894` | "Done" means a goal was proven, not that the task list emptied | Completion is derived from goals *if any exist* (`src/completion.ts:44-64`), and goal creation is optional; observed goals 0 ⇒ denominator 0 |
+| Deadline settle sequence: stop claiming → drain ≤90 s → one final planner round → terminal | `server/engine_timeout.go:183-267` | A hard stop still ends with a decision round and a writable state, not a silent truncation | None; task ceiling is unlimited by design (D8) |
+| Cold-graph digests: settled subgraphs folded into addressable summaries, hot-set revive rule | `agent/compaction.go:34-46`, `:64-144`; `db/digest.go:17-21`, `:122-147` | Bounded planner context over hundreds of rounds without losing navigability | Ledger + context packet already do the bounding (`src/state/store.ts:475-485`); what is missing is a *round boundary* so each round starts from the ledger rather than from one long transcript |
+| Depth over coverage; 2–3 mechanism-different routes while the goal is unmet; negative fact re-checked at most once | `agent/planner.go:312`, `:330-331` | Prevents the campaign from spending hours re-walking one surface and calling it exhausted | Absent; the observed run ran one direction per phase and never had two mechanism-different routes in flight |
+| Untested-asset backlog tool `list_untested_assets`, coverage overview with true counts | `agent/tools_insert.go:489`; `agent/tools.go:354-560` | The planner can see what remains without inventing it | Data exists (`contextBacklog`: unplanned assets, cells not run, WSTG suggestions — `src/state/store.ts:653-671`) but it is passive context with no obligation and no discharge |
+| Findings wake the planner mid-run; hints/goals can revive a terminal task | `server/manager.go:1771-1808`; `server/goals.go:349-362` | A discovery redirects the next round immediately rather than at intent end | Worker reports do produce events, so this half already works in event-driven mode |
+| Intent terminal states are semantically distinct and resumable: `done` / `exhausted` (budget cut) / `blocked` (external failure) / `stopped` (killed), with reopen-from-transcript | `db/exploration.go:322-336`; `agent/planner.go:327`; `agent/worker.go:500-514` | A cut-short direction is retried or continued next round, not written off | Statuses `reported|reviewed|closed|blocked|cancelled|expired` (`src/tasks.ts`) plus live-pane reuse `p2o_workers action=continue`; after teardown nothing resumes — acceptable for P5, debt items carry the re-entry work instead |
+| Automatic surface expansion: asset insert enqueues DNS/HTTP probe; traffic archive with FTS body search | `enrich/enrich.go:1-6`, `:117-122`; `traffic/traffic.go:1-4`, `:78-84`; `agent/worker.go:250-255` | Turns one discovered host into a larger testable surface without a human-written plan | Manual/model recon only. **Out of P5 scope** (see §7.2 non-goals); the P5 loop must be honest before the surface grows mechanically |
+| Metered LLM usage, retry policy, quota park/reopen | `db/llm_usage.go:9-48`; `server/engine.go:1027-1046`; `server/manager.go:1052-1080` | Long runs survive transient failures; spend is measured, not capped | Usage ledger exists in the ledger/report; no retry/park policy (out of scope for P5) |
+| Per-intent budget with settlement that flushes findings then marks the intent `exhausted` (resumable), `run_seconds` 1200 | `db/schema.sql:798`; `agent/worker.go:151-154`; `server/engine.go:1135-1145`; `agent/planner.go:327` | One run can be cut without losing the campaign; the next round reads the trace and continues or switches | Workers report before they end; no settlement prompt, no `exhausted`-like state, but the ledger keeps the report — acceptable |
+| Retests as human-initiated conversations with evidence snapshots | `db/finding_retests.go:74-124`; `db/schema.sql:1112-1160` | Re-verification is an explicit act, not a scheduler | `retest` work purpose exists (`src/work.ts`); cadence is out of scope |
+
+**Corrections to the brief, recorded so they are not ported as if they were real:**
+
+- There is **no exploration-token / exploration budget** in ARTEX. `db/exploration_tokens.go` does not
+  exist; the only match is a statistics aggregation test (`db/exploration_tokens_test.go`). Spend is
+  metered, never capped (`db/llm_usage.go:9-48`). This *confirms* D8's "no work budgets": autonomy is
+  produced by continuation rules, not by a larger allowance.
+- There is **no plateau detector and no yield-rate strategy switch**. Repetition is made expensive by
+  prompt rules plus state signals (`agent/planner.go:304-331`); 0 intents is legal only with a stated
+  reason. Do not port a numeric "yield" heuristic.
+- `db/exploration_sources.go` is **task-context inheritance**, not a budget; `db/side_questions.go` is
+  a human `/btw` channel that never queues work. Neither is a continuation mechanism.
+- The intent floor is **prompt-level only**. The ARTEX engine "will happily let a task sit with an
+  empty frontier forever if the planner ignores the rule" (study §13, caveat). P2O runs a host loop
+  with a ledger, so it can and should assert this in code rather than only in prose — that is the one
+  place where the port can be strictly stronger than the original.
+
+**What P2O must not copy:** in-memory planner scratchpads (`agent/planner.go:43-49`) — P2O's plan
+board is durable and should stay so; model-chosen priority order; a fresh LLM session per wake with no
+durable plan at all (P2O already keeps the ledger); SQLite/PG assumptions; the web UI; the
+multi-provider quota pool; a scheduler-driven reporter. And one refusal, not a skip: ARTEX's restart
+path re-starts the engine loops for non-terminal tasks (`server/server.go:264-292`, `db/exploration.go:312-320`).
+P2O intentionally never reconstructs execution authority after a restart (`extensions/p2o/index.ts:115`,
+`:2437`; `src/engine.ts:32-35`). P5 must not import auto-resume; the cross-run handoff is the ledger and
+the debt report (A6.2), read by the next run.
+
+---
+
+## 3. Invariants for a campaign run
+
+These extend the invariants of the pre-P5 plan (§2.3 of `git show ae551a4:planning_update.md`). Each is stated so a
+test can fail on it.
+
+1. **A campaign has a recorded objective.** An event-driven run has exactly one `campaign` record
+   (objective, operator constraints, target revision, heartbeat interval, started-at). It is written
+   before the first dispatch and is not editable by model prose.
+2. **Completion has a non-empty denominator.** At the first round, the plan board holds ≥1 goal with
+   bounded criteria and a proof kind; the coverage plan exists before the first task is dispatched,
+   not after the last one closes.
+3. **Owed work wakes the planner.** A round may be woken by an event, by outstanding gateable debt, or
+   by the heartbeat. "No new events" is never by itself a reason to be idle while debt is outstanding.
+4. **Every obligation is a record with a discharge.** Debt items are derived by the host with
+   deterministic ids. An item is discharged by the record that answers it (tested cell, accepted case,
+   goal proof) or by a `deferred`/`blocked` todo naming it and giving a reason. A `decision` row and
+   free-text prose do not discharge — that mismatch is what the observed run hit at `04:00:41`.
+5. **The round, not the turn, is the unit of context.** A planning round ends with `p2o_loop wait`;
+   the next round starts from the ledger. One 41-turn transcript is not a campaign.
+6. **Stopping is explicit.** A final finish records either "goals proven" or an acknowledged partial
+   stop with its reason and remaining debt. There is no third path where the run ends because a turn
+   settled.
+7. **Constraint text is injected by the host every round**, for the planner as it already is for
+   workers; it outranks planning heuristics and the planner may not silently narrow it.
+8. **No new budget.** P5 adds no token, command, round or wall-clock allowance; the heartbeat is a
+   timer, not an allowance. The only possible new refusal is a missing campaign frame at *final*
+   finish (D9), and export is never refused.
+9. **Continuity is in-process.** A process restart does not resume execution: `/p2o recover` and
+   `reconcile` open a run as historical knowledge and never restore authority
+   (`extensions/p2o/index.ts:115`, `:2007-2027`, `:2437`; `src/engine.ts:32-35` comment). ARTEX
+   restarts its engine loops for non-terminal tasks (`server/server.go:264-292`); P2O deliberately
+   does not, and P5 keeps that. What survives is the ledger plus the debt report, which the *next*
+   run reads as knowledge — not as a resumed queue.
+
+---
+
+## 4. A6 — Campaign horizon
+
+Workstream numbering continues A1–A5 of the pre-P5 plan (`ae551a4`). Same style: what changes, where, and how a
+hermetic test knows it worked.
+
+### A6.1 — Campaign frame (objective, constraints, heartbeat)
+
+**Goal.** A run carries its campaign identity in the ledger so continuation, prompting and reporting
+all read one record instead of inferring intent from prose.
 
 **Changes.**
+- `src/campaign.ts` (new, pure): `CampaignRecord` type `{v:1, objective, constraints:[{rule:'allow'|'deny', text}], targetRevision, heartbeatSeconds, startedAt, createdBy:'operator'|'default'}`;
+  `parseCampaign` / `campaignFrom(args, targetRevision)`; `DEFAULT_HEARTBEAT_SECONDS = 600` (ARTEX
+  parity, `:779-787`), `MIN_HEARTBEAT_SECONDS = 120`, `0` disables.
+- `extensions/p2o/index.ts`: `/p2o --goal "<text>" [--avoid "<rule>"]… [--heartbeat-seconds N]`, persisted
+  through `store.persist('lifecycle', {event:'campaign.created', campaign})`. When `--goal` is absent
+  in event-driven mode, derive the objective from `--target` plus the first planner turn's stated
+  objective — recorded once, never rewritten.
+- `src/state/store.ts`: `campaign()` reader that folds the lifecycle record (last wins by sequence) plus
+  `campaignRevision`; exposed in `reviewContext()` and in `ContextPacket` (planner only, ≤600 bytes).
+- `src/prompts.ts`: `PlannerPromptFacts.campaign` ⇒ a `CAMPAIGN` block above the heuristics —
+  objective, operator constraints (`deny` listed as absolute, `allow` as permission), and a line
+  saying the planner may widen but not silently narrow the operator objective. `reconInstructions`
+  unchanged; worker brief already receives `avoid`.
+- Start confirmation (`extensions/p2o/index.ts:2216`) discloses objective, constraint count, heartbeat,
+  and that heartbeats consume paid rounds.
 
-1. `src/tool-policy.ts`
-   - Split into `PLANNER_TOOLS`, `WORKER_TOOLS`, `REPORTER_TOOLS`.
-   - Planner: task/plan/case/coverage-plan/read/artifact/skill/research/board/workers/loop/finish. No `TARGET_TOOLS`,
-     `LAB_TOOLS`, `p2o_candidate`, `p2o_note`, `p2o_surface`, `p2o_coverage_cell*`, `p2o_delegate`, `p2o_task_start`.
-   - Worker: current target/lab/candidate/note/surface/graph/ledger/state/artifact/skill/research/request_subtask/report.
-   - Reporter: `p2o_report`, `p2o_ledger`, `p2o_artifact`, `p2o_skill_list`, `p2o_skill_read`, `p2o_state`; no target,
-     lab, candidate, note, surface or graph write.
-   - `ownerTools()` becomes `plannerTools()`; keep a compatibility alias only for internal call sites, never expose the
-     removed names.
-2. `extensions/p2o/index.ts`
-   - Unregister `p2o_delegate`, `p2o_task_start`, `p2o_coverage_cell` and `p2o_coverage_cell_retire` from the model
-     surface.
-   - Keep `p2o_task_create`, `p2o_task_revise`, `p2o_task_dispatch`, `p2o_task_review`, `p2o_task_settle`,
-     `p2o_plan_create/revise`, `p2o_case_create/revise/rate`, `p2o_coverage_plan`, `p2o_coverage_suggest`, `p2o_board`.
-   - `p2o_board` coverage view returns derived cells, not stored manual cells.
-   - `p2o_graph` is split for the planner: `view`/`export`/read actions only; record/validate writes are worker-only.
-   - `p2o_note`/`p2o_surface` remain worker-only; the planner reads surfaces through the board/ledger.
-3. `src/roles.ts` / `src/duties.ts`
-   - Reporter is a read-only role.
-   - Validation is a separate worker; it gets target/lab/candidate/report but not note/surface? Keep note for its own
-     observations; do not give it `p2o_surface` unless a validation explicitly must record a new surface (it must not).
-   - Role defaults for skills remain.
+**Acceptance (hermetic).** `tests/minimal/campaign.test.ts`: parse/round-trip; objective defaults are
+recorded once and never rewritten by a later `plan` write; planner prompt snapshot contains the
+objective and every deny rule and no worker-only text; start confirmation string contains the
+interval; a campaign record cannot be created by a worker role.
 
-**Hermetic acceptance.**
+**Risk.** Low. It is data plus prompt composition; no new authority. When `--goal` is absent the run is
+in "no campaign" mode and A6.3/A6.6 degrade exactly to today's behaviour.
 
-- Planner tools contain none of: `p2o_shell`, `p2o_net`, `p2o_http`, `p2o_capture`, `p2o_lab`, `p2o_candidate`,
-  `p2o_note`, `p2o_surface`, `p2o_delegate`, `p2o_task_start`, `p2o_coverage_cell`, `p2o_coverage_cell_retire`.
-- Worker tools contain target/lab/candidate; reporter tools contain none of them and contain `p2o_report`.
-- A planner call to `p2o_candidate`/`p2o_net` is an unknown-tool error, not a runtime permission error. The model cannot
-  see the tool at all.
-- Parity test: every registered tool belongs to exactly one role; every prompt name is registered; no old action-bag
-  name remains.
-- `p2o_delegate`/`p2o_task_start` are absent from the active surface and from docs/tool boundaries.
+### A6.2 — Research debt: derived, deterministic, dischargeable
 
-**Risk.** The planner may try to act and fail. The error must say “target execution belongs to a worker; create and
-dispatch an intent” and name the legal next verb, not just “unknown tool.”
-
----
-
-### A2 — Intent admission, anchoring and validation
-
-**Goal.** Make the task contract cheap enough to use, and make every non-recon intent evidence-driven.
+**Goal.** Turn the advisory backlog into an obligation ledger the loop and the report can both use,
+without inventing work from nothing.
 
 **Changes.**
+- `src/debt.ts` (new, pure, read-only; no I/O, no clock): `deriveDebt(index, {campaign, coverage, wstg, limits}) → DebtReport {items: DebtItem[], totals, byKind}`, item =
+  `{id, kind, subject, detail, gateable, source}`. `id = 'debt-' + kind.toLowerCase().replaceAll('_','-') + '-' + fp12(subject)` (stable across runs; tests pin it).
+  Kinds, each with a source and a discharge rule:
 
-1. `src/work-tool.ts` / `src/work.ts` / `src/tasks.ts`
-   - Add the role→purpose→output-contract defaults from §2.4.
-   - Make `decision` optional (default `new` when the identity is unique; `reuse` only when matched).
-   - Derive `outputContract` from purpose; a caller may narrow required fields.
-   - Require `work.assetRefs` for `recon`; require `work.claimRefs` for `discovery` after the first recon and for
-     `exploitation`; require `validationOf` for `validation`.
-   - `validationOf` accepts a reviewed task ID or a worker claim ID with a taskRef. The host resolves the claim and pins
-     the reviewed revision.
-   - A first task with `role=validation`, `role=discovery` after no recon, or `role=exploit` without a claim is refused
-     before any pane/ticket, with a legal next role.
-   - The `decision`/purpose mismatch errors name the allowed pair, e.g.
-     `role=validation requires purpose=validation and a validationOf task/claim`.
-2. `src/validation.ts`
-   - Keep deterministic validation key and one task per claim.
-   - Auto validation triggers only for a worker claim; owner claims no longer exist.
-   - A blocked validation remains a blocked task with the prerequisite; no waiver.
-3. `extensions/p2o/index.ts`
-   - Remove the owner candidate branch. `p2o_candidate` requires a worker registration.
-   - `hostValidation` no longer has a `taskRef=null` early return for owner claims; there is no owner claim path.
-   - `spawnWorker` still acquires the executor before a pane/ticket (L0 behavior).
-4. `src/prompts.ts` / `src/tool-guidelines.ts`
-   - Descriptions of `p2o_task_create` say “intent”; no `p2o_delegate` or `p2o_task_start` references.
-   - A planner cannot create a confirmed claim; the only path is review of a worker claim.
+| Kind | Derived from | Gateable | Discharge |
+| --- | --- | --- | --- |
+| `CAMPAIGN_MISSING` | no campaign record in event-driven mode | yes | creating the record (operator/CLI) |
+| `GOAL_MISSING` | campaign exists, no `goal` plan row | yes | a goal row with criteria + proof |
+| `GOAL_OPEN` | goal row not reviewed/closed | yes | review or close (existing goal settlement) |
+| `PLAN_MISSING` | no coverage plan, or plan created after the last task closed | yes | a coverage plan with cells |
+| `SCOPE_UNPLANNED_ASSET` | graph asset absent from the coverage denominator (`coverageViews().discoveredUnplannedAssets`) | yes | project a cell covering it |
+| `CELL_NOT_RUN` | projected cell not terminal (open_gap / unreviewed) | yes | terminal cell |
+| `GAP_UNTRIAGED` | open gap not referenced by any plan row or case (`OPEN_GAP_UNREFERENCED`) | yes | cite in a plan todo or a case |
+| `WSTG_UNPLANNED` | applicable WSTG test (feature-triggered) with no cell; excludes `browser` rows with no browser oracle and `identity` rows with no operator identity | yes (when features are recorded) | a cell keyed `wstg-…` |
+| `FEATURES_MISSING` | mapped asset with no `feature` attribute value | no (advisory) | recon records `feature` |
+| `TASK_UNMAPPED` | non-mapping task closed with no work identity → mapping | yes | mapped task, or a deferred/blocked todo reason |
+| `MAPPING_UNRECORDED` | mapping/recon task closed with no graph write (`writeBack` empty) | yes | graph write or reason |
+| `PRIMITIVE_UNCHAINED` | confirmed+tested claim with no successor step and no wall (existing `unchained`, `src/obligations.ts:78-89`) | yes | chained todo or walled todo |
+| `CLAIM_UNTRIAGED` | candidate still `open_proof_gap` after its task closed | yes | confirmation, rule-out, or wall |
 
-**Hermetic acceptance.**
+  Bounded: top 5 per kind by recency + full totals (the context packet is 12 KiB, `src/state/store.ts:475-485`).
+- Discharge mechanics: `src/planning.ts` — `p2o_plan_create/revise` accepts optional
+  `debtRefs: string[]` **on todo rows only** (one more link field; still "only a todo holds a chain
+  link"); validation refuses an id that is not in the current debt report, and refuses `debtRefs` on
+  goal/decision rows. `deferred`/`blocked` + `reason` + `debtRefs` is the only prose wall.
+- Integration: `src/completion.ts` — `CompletionInput` gains `debt`; `remaining` and `demand` include
+  gateable debt; existing codes keep their meaning (A6 does not renumber them). `src/finish-preflight.ts` —
+  one new code `RESEARCH_DEBT` (advisory list, in `OPEN_OBLIGATION` only if D9 is approved), and
+  `UNMAPPED_TASK` narrowed to read "a non-mapping task with no work identity".
+- `src/state/store.ts`: `contextBacklog()` becomes `debtReport()`; the skip/caps points that mutate
+  `packetBase.backlog` are updated to the debt shape.
+- `src/ui/state.ts` + `src/report-export.ts`: debt totals by kind; report table (A6.6).
+- Interruption handoff: the existing `reconcileInterruption` path (operator resume of an interrupted
+  run) records the campaign objective and the debt summary in its lifecycle record, so a run that was
+  cut by a restart leaves a debt report behind. It still restores no authority — the next run reads it
+  as knowledge (`extensions/p2o/index.ts:2227`, `:2023`).
 
-- A minimal recon task (`role`, `question`, `surface`, `work.assetRefs`, `roleReason`) is accepted with no `decision` or
-  `outputContract`; the stored task has the derived purpose/decision/contract.
-- A discovery task with no `claimRefs` and no prerequisite is refused with a legal-next message; one with a reviewed
-  claim is accepted.
-- A first validation task is refused with `legalNext: create a recon task first`; a validation task citing a worker
-  claim is accepted and pins the claim's task revision.
-- One confirmed worker claim creates exactly one validation task, for a different worker; a duplicate candidate does not
-  create a second.
-- Owner/planner `p2o_candidate` is not registered; worker candidate gets a host `taskRef`.
-- A task with a blocked executor is a blocked task, not a fake worker report.
+**Acceptance (hermetic).** `tests/minimal/debt.test.ts`: each kind derives from a scripted index and
+only from it; ids are stable across two calls and change when the subject changes; a tested cell and an
+accepted case each discharge their item; a `decision` row does **not** discharge (regression for
+`04:00:41`); a `deferred` todo with `debtRefs` does; unknown `debtRef` refused; goal/decision
+`debtRefs` refused; totals bounded to N per kind; debt never mutates the ledger. Plus a fixture test
+that the observed run's final state now yields ≥1 goalable item and the 25 unreferenced gaps appear as
+`GAP_UNTRIAGED`.
 
-**Risk.** Anchoring can be too strict for an urgent first probe. The first task is explicitly recon/mapping, which may
-use the target snapshot without a claim; that is the only unanchored task.
+**Risk.** Medium. This is the largest new surface: it can flood the prompt if unbounded, and it can
+become a second source of truth about coverage. Mitigation: it derives only from existing projections
+(`coverageViews`, `proofViews`, `planFrontier`) and keeps no state of its own.
 
----
+### A6.3 — Obligation-driven continuation (wake, heartbeat, stall escalation)
 
-### A3 — Coverage projection
-
-**Goal.** Delete the manual coverage-cell authoring path and derive coverage from reviewed work.
-
-**Changes.**
-
-1. `src/coverage.ts` / `src/coverage-types.ts`
-   - Add `projectCoverage(index, context)` that reads `taskFrontier`, worker claims, cases and existing asset revisions.
-   - Derive the cell fields in §2.6; use the existing fingerprint for dedup and the existing stale checks for
-     currentness.
-   - A task without asset refs yields an unmapped gap; it never yields a clean cell.
-   - Keep `coverageViews` as the planner UI, but its cells come from the projection, not stored cell records.
-2. `extensions/p2o/index.ts` / `src/board-verbs.ts`
-   - `p2o_coverage_plan` remains create/revise for title/status/reason/exclusions/unknownScope.
-   - Remove `p2o_coverage_cell` and `p2o_coverage_cell_retire` from the model surface.
-   - `p2o_board board=coverage` returns the derived cells and plan totals.
-   - `p2o_coverage_suggest` remains read-only.
-3. `src/report.ts` / `src/report-export.ts`
-   - Report counts and cells use the projection; no `cellIds` supplied by a model.
-   - The report states “coverage derives from reviewed worker work; no planner-authored cell exists.”
-4. Legacy
-   - Old runs' stored cells are read as stored; no rewrite. New runs use the projection. A run manifest/projection
-     version distinguishes them.
-5. Remove the coverage-cell shape from `TOOL_BOUNDARIES`, prompt names and docs.
-
-**Hermetic acceptance.**
-
-- A plan with no tasks produces zero cells and a clean “no denominator work” warning, not a fake clean.
-- A reviewed recon task with an asset creates one `planned/untested` cell; a reviewed discovery task with a confirmed
-  claim creates one `tested/confirmed_claim` cell with task/claim refs auto-filled.
-- A ruled-out claim creates `tested/ruled_out_bounded`; an open claim creates `tested/open_gap`; an accepted current case
-  adds `caseRefs` and `accepted`.
-- A task with no asset refs creates an unmapped gap, not a cell.
-- A later asset revision stales the cell; a later claim/case revision stales it through the existing rules.
-- No model-facing cell tool exists; a planner cannot call one.
-
-**Risk.** Projection may hide a surface that no worker touched. The plan keeps explicit `unknownScope`, open gaps and an
-unmapped-gap cell for every task/asset mismatch. The denominator is still the plan's scope, not “everything the target
-contains.”
-
----
-
-### A4 — Prompt and reporting roles
-
-**Goal.** Put the ARTEX role split into the prompt without making prose the only enforcement.
+**Goal.** The loop continues because work is owed, not because an event happened to arrive.
 
 **Changes.**
+- `src/engine.ts`: `RoundProgress` gains `debt?: {gateable: number; total: number}`; `EngineDeps` gains
+  `now?: () => number` (default `Date.now`, so fake timers control it).
+- `reserveWake()` gains two branches after the event branch (order: events → debt → quiet handling):
+  1. **debt wake** — `remaining > 0` (or `debt.gateable > 0`) and no open/running intent and no
+     reservation. First occurrence after a round ends reserves immediately (this is the branch that
+     would have continued the observed run at `04:00`); subsequent ones are paced: not before
+     `heartbeatSeconds` since the last debt wake, and suppressed when the last explicit disposition was
+     `p2o_loop wait` (events and heartbeat still wake).
+  2. **heartbeat** — engine arms one `setTimeout(unref)` on `start()`/`resume()`/after each `consume()`;
+     on fire it clears the reservation gate and wakes with `demand: 'heartbeat <n>s; <debt demand>'`
+     and the max round duration of the campaign (sorted `started_at`/`reported_at` pairs: total, max,
+     mean). Disposed on `pause()`, `stop()`, `paused` decision and teardown. A heartbeat never fires
+     while `busy` (the model is inside a turn) and never resurrects a stopped run.
+- `stallRound` escalation: keep recording `planner.stalled` exactly as today
+  (`src/engine.ts:159-166`); when `stalls >= 3` and `debt.gateable > 0`, `pause('three rounds with no
+  open intent while research debt remains; the loop needs a human decision (/p2o resume or /p2o stop)')`
+  and persist `planner.stall-escalation` with the debt summary. No new budget, no auto-restart.
+- `snapshot()` gains `heartbeat: {seconds, nextAt}` and `lastWake: {reason: 'event'|'debt'|'heartbeat',
+  round}` (fields only; no new authority), so status and the P6 metrics can count wakes by reason
+  without re-deriving them. `disposition('wait')` already records `decision.disposition = 'wait'`
+  (`src/engine.ts:211-219`) — that field is the suppression signal, and `resume()` already clears it
+  (`:220-223`), so the debt branch needs no new state.
+- `extensions/p2o/index.ts`: `roundProgress()` (line ~426) computes `debt` from the same ledger read as
+  completion; wake dependency at `:2268` unchanged in shape but carries the heartbeat/debt demand text;
+  `p2o_loop` description and `src/prompt-bridge` text updated; start confirmation lists the effective
+  heartbeat and the 3-stall pause rule.
+- `src/planner-bridge.ts`: `wake.demand` rendering already exists; the heartbeat message names the
+  reason so the planner cannot read it as an event.
 
-1. `src/prompts.ts`
-   - Replace `ownerInstructions` with `plannerInstructions`.
-   - Add `reporterInstructions`; select it for `reporting` tickets.
-   - Keep the worker's intent in the system prompt; keep volatile situation in the user turn.
-   - Add the first-action rule, no-target rule, no-claim rule, zero-intent stall rule, and “coverage is projection.”
-   - Add the worker “one intent, write back, stop” rule and the reporter “read-only second reader” rule.
-2. `src/tool-guidelines.ts`
-   - Rewrite boundaries for the remaining tools; remove `p2o_delegate`, `p2o_task_start`, `p2o_coverage_cell*`.
-   - Planner boundary: “Planner has no target or claim tools; create an intent.”
-   - Worker boundary: “One intent; write back; report; stop.”
-3. `src/engine.ts`
-   - Record a `planner.stalled` event when the planner round ends with an open goal, no open/running intent and no
-     blocked declaration. This is a report fact, not a new work budget.
-   - Do not let a planner round with zero intents be silently treated as progress.
-4. `src/report.ts` / `p2o_status`
-   - Show `plannerTargetOps` (must be 0), `workerTargetOps`, `tasksCreated`, `tasksDispatched`,
-     `firstDispatchAt`, `ownerClaims` (must be 0), `workerClaims`, and `validationTasks`.
-   - Report the mode and the role matrix so a reader can see the policy that produced the run.
-5. Documentation
-   - `README.md`, `docs/USAGE.md`, `docs/ARCHITECTURE.md`, `docs/WORK_ADMISSION.md`, `docs/CASE_REVIEW.md`,
-     `docs/PLANNER_ENGINE.md`, `docs/ACCEPTANCE_MATRIX.md`.
-   - Remove all references to planner target execution, `p2o_delegate`, `p2o_task_start`, manual coverage cells and
-     “lead may execute.”
+**Acceptance (hermetic).** `tests/minimal/engine-campaign.test.ts` with fake timers: zero-event +
+`remaining>0` reserves a wake at the round boundary; `remaining=0` + zero events does not; second debt
+wake inside the interval is suppressed, one after it fires; `p2o_loop wait` suppresses the immediate
+debt wake but not event wakes; heartbeat fires at T with zero events and carries its demand; heartbeat
+does not fire when paused/stopped/busy; three stalled rounds with gateable debt pause with a human-needed
+reason and a persisted fact, and `/p2o resume` clears the pause; no budget field is written anywhere;
+opening/recovering a historical run arms no timer and wakes nothing (the recover path has no engine).
 
-**Hermetic acceptance.**
+**Risk.** Medium-high. A heartbeat that fires while an operator is away spends money — hence the
+explicit consent disclosure at start plus `--heartbeat-seconds 0`. Wakes with nothing new can also cause
+loop churn; the 3-stall pause and quiet-round demand already bound that, and the falsifiable P5 gate is
+"wakes per hour ≤ intervals + events".
 
-- Prompt snapshot/parity: planner prompt contains the no-target/no-claim/first-action lines; it does not contain
-  “you may execute directly.”
-- Worker prompt contains “one intent, write back, stop”; reporter prompt contains “read-only, no target/candidate.”
-- A scripted planner that attempts a target tool gets an unknown-tool result; a scripted planner that creates no intent
-  produces the `planner.stalled` event.
-- Status/report expose the counters; a zero-intent round is visible.
-- Docs/tool-boundary parity test fails on any removed name.
+### A6.4 — Depth ladder and WSTG feature matrix
 
-**Risk.** Long prompts can hurt selection. The rules are short and role-specific; the enforcement is tool absence, so a
-model that ignores prose still cannot execute.
+**Goal.** Give the planner a denominator and a direction beyond "more assets": which tests apply, which
+routes exist, and what a demonstrated primitive owes.
 
----
+**Changes.**
+- Feature contract: recon task brief (`src/prompts.ts:31-41` via worker brief) requires recording
+  `attributes.feature` on every mapped asset using `WSTG_FEATURES` vocabulary; the host validates with
+  `featuresFromAttributeValues` (`src/wstg-map.ts:424-435`) and records unknown tokens as an advisory in
+  the debt report (`FEATURES_INVALID` folded into `FEATURES_MISSING` detail). No host refusal.
+- Applicable-test derivation (pure, `src/wstg-map.ts`): `applicableTests(assets, {browser:boolean,
+  identity:boolean})` = rows whose `trigger` intersects an asset's features, minus `browser` rows when
+  no oracle exists, minus `identity` rows when no identity was granted; `unplannedTests()` feeds
+  `WSTG_UNPLANNED`.
+- Planner prompt (`src/prompts.ts:59-114`): three lines translated from `agent/planner.go:304-331`, kept
+  short — (a) while the goal is unmet, prefer depth on a live finding over breadth on a new asset;
+  (b) keep 2–3 mechanism-different routes open, and open a genuinely different one when all are on the
+  same mechanism; (c) a confirmed+tested primitive must be chained (a follow-up todo) or walled (deferred
+  todo with reason and revisit condition). No new tool; the debt report names the specific tests.
+- Primitive triage: `unchained` (`src/obligations.ts:78-89`) stays the source; `PRIMITIVE_UNCHAINED`
+  becomes gateable and its repair path is a `todo` with `chainOf`/`step` or a wall with `debtRefs`.
+- Exploitation gating stays as in A2 (exploit work requires a demonstrated primitive); P5 does not
+  loosen it.
 
-### A5 — Measurement (L4)
+**Acceptance (hermetic).** `tests/minimal/wstg-applicable.test.ts`: feature vocabulary round-trip;
+`applicableTests` filters exactly the browser/identity rows; a run whose assets record `cors` and `api`
+gets `cors-*`/`api-*` cells suggested as debt; prompt snapshot contains the three lines and the
+vocabulary sentence; `PRIMITIVE_UNCHAINED` in the observed-run fixture is gateable and clearing it
+requires a todo, not a decision.
 
-**Goal.** Prove the authority split changes behavior, not just the prompt.
+**Risk.** Medium. A feature vocabulary is a taxonomy and taxonomies drift; it must stay advisory except
+where a recorded feature already makes a test applicable. Do not make WSTG coverage a goal proof — the
+goal proof stays the run's own cells (`src/goal-proof.ts:46-49`), which is what keeps D8's "coverage is
+a projection" intact.
 
-**Arms.**
+### A6.5 — Round hygiene and campaign memory
 
-- **Control:** commit `b7b4679` (planner keeps target tools).
-- **Treatment:** this plan, planner-first.
-- Same target fixture, model, thinking, worker count, executor mode, target-operation cap and external cost/time cap.
-- Local lab first; an external run only with explicit operator authorization and a cap. No benchmark file changes.
+**Goal.** Make the round — not the transcript — the unit of work, so context can be rebuilt from the
+ledger instead of dying with one long turn.
 
-**Metrics.**
+**Changes.**
+- Planner guidance (`src/prompts.ts` planner block, and `p2o_loop` description): after dispatching or
+  reviewing, end the round with `p2o_loop wait`; use `p2o_workers waitFor=all-report` only for a bounded
+  join you are about to act on (the observed run spent 74.9 % of wall time inside three 300 s waits, and
+  ended with 0 rounds because the whole campaign lived in one turn). No host cap in this phase; counting
+  waiting time as a failure mode in the P5 measured gate is the falsifiable part.
+- First-round contract: the first round creates the goal, the coverage plan and one `todo` per campaign
+  phase (serial phases as `chainOf`/`step` steps) before the first `p2o_task_create`; a second dispatch
+  with no todo referencing it is an admission advisory (`admissionRefusal` unchanged in shape — A2's
+  measured error target is not re-litigated here).
+- Checkpoint on phase close: the planner records a plan `decision` with the next phase's starting
+  question and the closures since the last checkpoint. This is the durable analogue of ARTEX's cold
+  digest: the next round reads it from the ledger, not from the transcript.
+- `src/ui/state.ts`: status shows campaign phase, round number, last wake reason (event/debt/heartbeat)
+  and round-start timestamp.
 
-| Metric | Target |
-|---|---:|
-| Planner target operations | **0** |
-| First task dispatched before first target operation | **100%** |
-| Worker target operations / all target operations | **≥ 80%** |
-| Owner/planner confirmed claims | **0** |
-| `p2o_task_create` errors | **< 5%** |
-| Coverage cell/projection errors | **0** (no manual cells) |
-| Tool-result error rate | **< 10%** |
-| Independent validation for confirmed findings | **≥ 1** |
-| Accepted current cases | no regression |
-| Cost | observe; external cap unchanged |
+**Acceptance (hermetic).** Fixture test on the observed session's scripted calls: the same plan now
+requires a goal before the first dispatch (refusal text names the legal next call), and a closed phase
+with no recorded checkpoint is surfaced in status as debt (`CHECKPOINT_MISSING` optional/advisory);
+prompt snapshot contains the round-ending guidance; a toy 3-round scripted loop produces 3 engine rounds
+and 3 fresh context packets rather than 1.
 
-**Evidence to record.** Run id, workdir, model/thinking, cap, wall time, turns, tool calls/errors, planner target ops,
-worker target ops, first dispatch call/time, task-create errors, coverage errors, validation tasks, independent current
-cases, final report `asOfSequence` vs store end, containers, settings hash. Compare with the session baseline in §0.1 and
-the L3 run-2 baseline (62 turns / 161 calls / 58 errors = 36.0%, 5/5 workers, 2/2 independent).
+**Risk.** Medium. Prompt guidance may be ignored — hence the measured gate counts rounds and wait time.
+Do not add a host cap on `p2o_workers wait` in P5 (it is the only short-join primitive; a cap is a
+deferral to P6 if measurement shows it is needed).
 
-**Acceptance.**
+### A6.6 — Finish and report semantics
 
-- The treatment run has zero planner target operations and zero planner-authored claims. If it does not, the tool split
-  is not effective and the phase fails.
-- The treatment run creates/dispatches a recon task before any worker target operation. If the planner stalls, the
-  report says so; that is a real failure, not a pass.
-- The treatment run has no manual coverage-cell call because the tool does not exist.
-- If the planner cannot produce an intent because admission is still too hard, the task-create error rate above 5% is a
-  phase failure, not a model failure.
+**Goal.** The report and the finish cannot claim more than the campaign did, and cannot call "ran out of
+turn" a completion.
 
----
+**Changes.**
+- `src/tool-schemas.ts:184-188`: `finishParameters` gains `partial?: string` (operator-facing reason,
+  ≤600 chars); `src/tool-schemas.ts:158-160` loop unchanged.
+- Final `p2o_finish` (export path unchanged, `extensions/p2o/index.ts:1945-1985`):
+  - **D9 (approved 2026-10-26, Q1 = refuse):** if a campaign record exists and no goal has ever been
+    recorded, the final path fails with `CAMPAIGN_FRAME_MISSING` and a legal next (`p2o_plan_create
+    kind=goal …`, or `p2o_finish{export:true}`, or `p2o_finish{partial:"…"}`); if a goal exists but the
+    completion is `incomplete`, the final path records `campaign.partial` with the reason from
+    `partial` (required in that case) and proceeds. There is exactly one new refusal, only on the final
+    path, only when a campaign exists. Export is never refused (existing comment at `:1966` preserved
+    and extended: "p2o has one campaign-frame refusal, never a work gate").
+  - The rejected alternative was acknowledgment-only (print the missing frame, never fail); it stays
+    recorded here so the reversal is a one-line change if the refusal turns out to be in the way.
+- `src/report.ts` / `src/report-export.ts`: `ReportMeta.campaign` (`objective`, `constraints count`,
+  `heartbeatSeconds`, `rounds`, `wakeReasons`, `startedAt`, `endedAt`, `partialReason`); report gains
+  `## Campaign`, `## Research debt at stop` (by kind, discharged/remaining) and, for a partial stop, a
+  `### Why the run stopped` section that quotes the recorded reason and never asserts coverage.
+- REPORT.md stays deterministic: sorting by `(kind, subject)`, ids printed, no timestamps inside tables
+  other than the recorded ones.
+- `src/authority.ts`: counters `heartbeatWakes`, `debtWakes`, `campaignPartial`, kept in the existing
+  shape so existing invariants do not renumber.
 
-## 4. Phases and ordering
+**Acceptance (hermetic).** `tests/minimal/finish-campaign.test.ts`: final finish with campaign and no
+goal refuses with `CAMPAIGN_FRAME_MISSING` and lists the three legal next calls (D9, approved 2026-10-26);
+`partial` required when completion is incomplete; `campaign.partial` lifecycle record written once with
+the reason; export path never refuses and never tears down (existing `export` test extended); report
+renders campaign/debt/stop sections deterministically across two renders; a run with no campaign record
+behaves exactly as today.
 
-| Phase | Workstreams | Hermetic gate | Measured gate |
-|---|---|---|---|
-| **P0 — Authority and one path** | A1 | planner/worker/reporter tool matrices; removed tools absent; worker-only candidate; parity test | no paid run required |
-| **P1 — Intent admission** | A2 | minimal recon task; anchoring; first-validation refusal; one validation per worker claim; owner candidate impossible | task-create errors <5% in a paid run |
-| **P2 — Coverage projection** | A3 | derived cells from task/claim/case; unmapped gap; stale; no cell tool | 0 coverage-cell calls/errors |
-| **P3 — Prompt and reporting** | A4 | prompt snapshots/parity; stalled event; reporter read-only; report counters | planner target ops 0; first dispatch before target |
-| **P4 — L4 measure** | A5 | same lab/settings/cap | targets in §3 A5 |
-
-**Order rationale.** P0 removes the illegal path; P1 makes the legal path cheap; P2 removes the manual coverage loop;
-P3 makes the new role legible; P4 measures. A phase can merge alone, but P4 is not meaningful until P0–P2 are in.
-
-**Rollback.** Each phase is a coherent commit. Reverting P0 restores direct execution and should be treated as a policy
-rollback, not a bug fix. There is no runtime `solo` switch in this design; the old behavior is recovered by reverting the
-authority commit, not by a setting.
-
----
-
-## 5. Deletions and migrations
-
-### 5.1 Delete from the active surface
-
-| Site | Action |
-|---|---|
-| `p2o_delegate` registration and handler | delete; one queue path |
-| `p2o_task_start` registration and handler | delete; no owner task dead end |
-| `p2o_coverage_cell`, `p2o_coverage_cell_retire` | delete from model; projection replaces |
-| `OWNER_TOOLS` target/lab/candidate entries | delete from planner; worker retains |
-| owner branch of `p2o_candidate` | delete; worker-only |
-| owner `p2o_graph` record actions | planner read-only; worker writes |
-| `p2o_report` from planner | planner does not report; worker/reporter do |
-| `p2o_note`/`p2o_surface` from planner | worker-only |
-| prompt text “lead investigator”, “may execute directly” | delete |
-| docs/tool tables for removed names | delete |
-
-### 5.2 Keep
-
-- L0 executor provisioning (`--user root`, provision before lease, blocked host prerequisite).
-- W3 final report (`-final`, draft vs final, mismatch rendering).
-- L2 payload/environment materialization and host-created validation.
-- L3 broker correlation fix, status-only close stability, coverage/case task-reference fix, stale hint.
-- Existing boards, ids, evidence vocabulary, case review, plan board, graph.
-- Historical runs: read-only via `/p2o open`; stored cells/claims are not rewritten. A `projectionVersion` on new runs
-  lets the reader distinguish legacy stored cells from derived cells.
-
-### 5.3 Tests to rewrite
-
-- Tool-policy/tool-count tests: new planner/worker/reporter matrices.
-- `p2o_candidate` owner tests: remove or invert to “planner cannot call.”
-- `p2o_task_start`/`p2o_delegate` tests: delete.
-- Coverage cell tests: replace with projection tests; keep legacy stored-cell fixtures for `open`.
-- Prompt/native-provider fixtures: no target tool calls from planner; worker one-intent flow.
-- Report/preflight tests: counters and planner-stalled event.
-- Docs parity: no removed names.
-
----
-
-## 6. Risks, non-goals and success metrics
-
-### 6.1 Risks
-
-1. **Planner starvation.** With no target tools, a planner that cannot create a task does nothing. Mitigation: minimal
-   intent admission, legal-next errors, first-task recon example, and a `planner.stalled` report fact. The treatment
-   fails visibly instead of silently self-executing.
-2. **Task admission remains expensive.** Derived purpose/decision/output contract is the main fix; if task-create errors
-   stay above 5%, simplify the remaining fields rather than reintroducing direct execution.
-3. **Coverage projection loses a surface.** The denominator is the plan's scope, not the target; unmapped tasks become
-   gaps, and `unknownScope`/exclusions stay explicit. No “clean” cell without work.
-4. **Reporter role too weak.** A read-only reporter can only report what the case/evidence contains; missing evidence is
-   a limitation, not a new probe. That is intentional.
-5. **Historical compatibility.** Old stored cells/claims are read as-is; new projection applies to new runs. The
-   `projectionVersion` is the switch, not a silent rewrite.
-6. **Model selection cost.** Fewer planner tools should reduce selection cost; the task surface is still many verbs, so
-   the task-create description must stay short and example-led.
-7. **No emergency direct mode.** If all workers fail, the run is blocked. That is the owner's explicit tradeoff; the
-   report must say so, and rollback is a code revert.
-
-### 6.2 Non-goals
-
-- No new board, no new graph, no new scope/origin enforcement.
-- No work budget, finish gate, planner-round cap or admission reserve.
-- No benchmark file changes, no paid run in the planning pass, no commit in this pass.
-- No model/provider switch.
-- No change to the evidence vocabulary: a claim is demonstrated, not asserted; a validation is a separate worker; a
-  lead is not evidence.
-- No manual coverage cell authoring.
-- No `solo` or `lead-exec` runtime mode.
-
-### 6.3 Success metrics
-
-| Metric | Baseline (session / L3 run 2) | Target after P4 |
-|---|---:|---|
-| Planner target operations | 19 direct `p2o_net` | **0** |
-| First dispatch before first target op | never; first task at call 48 | **100%** |
-| Worker target ops / total | ~0 before late dispatch | **≥ 80%** |
-| Planner/owner confirmed claims | 3 with `taskRef=null` | **0** |
-| Coverage schema errors | 12/18 | **0**; no manual cell tool |
-| Task-create errors | 3/4 | **< 5%** across the run |
-| Tool-result error rate | 34% session; 36% L3 run 2 | **< 10%** |
-| Independent validation | 0 in the session; 2/2 in L3 run 2 | **≥ 1** and no waiver |
-| Cost | observe | observe; cap unchanged |
+**Risk.** Medium because it touches the one owner-decision boundary (D8). Mitigation: gated entirely on
+a campaign record existing; non-campaign and manual runs are untouched; export remains unconditional.
 
 ---
 
-## Appendix A — ARTEX traceability
+## 5. Phases
 
-| Mechanism | ARTEX source | P2O mapping |
-|---|---|---|
-| Planner is not an executor | `agent/planner.go:298`, `:318-320`; planner tool set | planner tools exclude target/lab/candidate |
-| Worker one intent, stop | `agent/worker.go:230-242`; `agent/toolcatalog.go:29` | worker task brief; no dispatch/create |
-| Intent anchor | `agent/tools.go:1032-1090` | `work.claimRefs`/prerequisites/asset anchor |
-| Emergency no direct path | role tool omission | removed `p2o_delegate`/`p2o_task_start` |
-| Coverage projection | `db/task_scope.go:299-315`; `agent/tools.go:519-549` | host-derived coverage cells |
-| Second reader | `server/orchestration.go:729`, `:761-768`; `agent/promptcatalog.go:80` | reporter role, read-only |
-| Intent/task queue | `db/exploration.go:1136-1142`; `server/engine.go:1237-1245` | existing task frontier/queue |
-| Terminal state | `server/engine.go:1135-1145` | existing done/blocked/exhausted/stopped |
-| Truncated views | `agent/tools.go:411/452/470` | `p2o_board` totals/omitted counts |
-| Gate by omission | `agent/tools.go:189/193`; `agent/finding_workflow.go:85` | role-specific tool lists; no removed tools |
+P0–P4 are merged at `ae551a4` and are not repeated in this file. This proposal adds:
 
-## Appendix B — Evidence baseline
+| Phase | Scope | Hermetic gate | Measured gate |
+| --- | --- | --- | --- |
+| **P5 — Campaign horizon (A6)** | Campaign frame, research debt + discharge, obligation/heartbeat wake, feature matrix + depth prompts, round hygiene, finish/report semantics | A6.1–A6.6 suites green; `tsc --noEmit` clean; full vitest green; `detect_changes` clean; `git diff --check`; docs parity (`docs/WSTG_MAP.md`, `docs/ACCEPTANCE_MATRIX.md` P5 section added with exact `<file>.test.ts :: <title>` citations) | Deferred/paid and authorization-gated: one unattended campaign 60–90 min in the local lab profile; success = ≥3 planner rounds without a human turn, ≥1 debt/heartbeat continuation, ≥1 new goal-directed direction dispatched after the roadmap is exhausted, no refusal loop on the first case, report states goal/partial honestly. **Not run in this proposal.** |
+| **P6 — L4 measurement (A5 re-based)** | Metrics only; no behaviour change | Metric derivation tests over a recorded run | Campaign metrics per §7.3: rounds within human input, wakes by reason, target ops per phase, WSTG classes tried, mechanism routes, primitive→chain depth, time-to-first-primitive, debt discharged per round, wall share inside blocking waits, refusals per create, $ and tokens per campaign |
 
-- Session export: `/home/nhanlaptop/tmp/cmp/pi-session-2026-10-25T14-04-01-701Z_01a17360-1f25-7246-ad7b-9534e63d4ba3.html`.
-- Session target: `ise.uit.edu.vn`; 3 worker slots; 54 calls, 18/53 tool errors, 19 direct `p2o_net`, 0
-  `p2o_delegate`, first task-create at call 48.
-- L3 run 2: `run-b7c62120-4644-4a21-8509-96a6ef705228`, 62 planner turns, 161 calls, 58 errors = 36%, 5/5 workers,
-  2/2 independent after re-projection; final as-of 721 = store 721.
-- These are baselines, not acceptance.
+A5/P4 measurement remains unmeasured. P5 does not replace it; P6 defines the campaign-level version of
+it, because the metric set that judged a 25-minute batch is not the one that judges a 90-minute
+campaign.
 
-## Appendix C — Open implementation details
+## 6. Migrations
 
-These do not change the decisions above; they are the first questions for the implementation review:
+- No deletions. `contextBacklog()` is renamed/re-shaped into `debtReport()`; the old shape is not kept.
+- `UNMAPPED_TASK` semantics narrow to "non-mapping task with no work identity"; mapping/recon tasks get
+  `MAPPING_UNRECORDED`. Preflight code list grows by `RESEARCH_DEBT` (and only that one).
+- Vocabulary unification (fixes the observed contradiction): `OPEN_OBLIGATION` in
+  `src/finish-preflight.ts:68` must be derived from the same `REMAINING_CODES`/debt source as
+  `deriveCompletion` (`src/completion.ts:17`), so "N obligation(s)" and "M open obligation(s)" can never
+  disagree again. The observed `1 vs 0` is the acceptance fixture.
+- Legacy runs: absent a campaign lifecycle record, `deriveCompletion`/preflight/engine behave exactly as
+  today (no debt wake, no heartbeat, no goal requirement). Store detection is by lifecycle event
+  presence only; no manifest version bump is needed.
+- Tests to update (mechanical, same commit as the code): `tests/minimal/prompt-roles.test.ts` (planner
+  prompt snapshot), `intent.test.ts` (`debtRefs` on todo), `projection.test.ts` (debt projection),
+  `extension.test.ts` and `dispatch-discipline` (first-round goal/plan refusal text),
+  `finish-preflight.test.ts`, `report-export.test.ts`, `acceptance-matrix.test.ts` (new P5 section;
+  existing row counts F-L1-5 98/840 may change — update the doc row and the test together), plus
+  `docs/KNOWLEDGE_WORKSPACE.md` if the CLI surface (`--goal`, `--avoid`, `--heartbeat-seconds`) is
+  documented there.
 
-1. **Planner `p2o_graph`:** read-only view/export is clear; whether the planner may write a `hypothesis` or a
-   `decision` is separate from fact/claim authority. Default: no write until a concrete planning need is measured.
-2. **Reporter trigger:** the existing reporting worker is selected by role; whether it is triggered automatically after
-   case acceptance or by an explicit `p2o_report` is an implementation detail. It remains read-only either way.
-3. **Legacy projection version:** new runs carry a projection version; old runs keep stored cells. The exact manifest
-   field is an implementation choice, not a new board.
-4. **First-task UX:** the planner should get a short “recon first” example in `p2o_task_create` and in the prompt; the
-   host still enforces the role/parent rules.
+## 7. Risks, non-goals and metrics
+
+### 7.1 Risks
+
+| Risk | Mitigation |
+| --- | --- |
+| Heartbeat spends paid rounds while nobody watches | disclosed at start; `--heartbeat-seconds 0` disables; 3-stall pause; P5 gate measures wake count |
+| Debt list becomes a second coverage truth and drifts from the projection | debt derives only from existing projections, keeps no state; contract test asserts equality with `coverageViews` |
+| A campaign-frame refusal feels like the finish gate D8 removed | gated on campaign presence, final path only, export exempt; owner approved 2026-10-26 (Q1) |
+| Prompt rules (depth/route/round) ignored, as ARTEX's floor can be | the host asserts the debt/wake side in code; prompt side is measured in P5/P6, not assumed |
+| Feature taxonomy produces false "applicable" tests | advisory by default; gateable only where a recorded feature makes the test applicable; browser/identity filtered |
+| Keep-alive waits replaced by premature `p2o_loop wait` churn | short joins still allowed; measured gate counts rounds and idle wakes |
+
+### 7.2 Non-goals
+
+- No token, wall-clock, round or target-operation budget; `--heartbeat-seconds` is a timer, not an
+  allowance. Rated-run ceilings remain the operator's call at launch.
+- No automatic retest schedule; retests stay explicit (`RETEST` work purpose).
+- No exploit automation, no scope widening by the host, no new target authority.
+- No chapter-2 rewrite: A1–A4 remain as committed; A6 is additive and gated.
+- **No auto-resume after a process restart.** Recovering a run opens knowledge and restores no
+  execution authority; P5 adds no engine revival, no suspended queue and no automatic re-dispatch.
+  A long campaign is one uninterrupted process; a restart ends it and leaves a debt report for the
+  next run.
+- **No automatic surface expansion in P5** (no asset-enrichment sweep, no traffic archive/recorder,
+  no api-recon skill port). ARTEX grows the surface mechanically; P2O first has to keep a campaign
+  honest on the surface it already has. Revisit as P6+ if the measured gate shows the loop is stable
+  but the denominator is the bottleneck.
+- No promise of RCE/LPE gain. P5 makes a campaign continue and report honestly; whether it finds deeper
+  bugs is exactly what the deferred measured gate is for, and it needs authorization.
+
+### 7.3 Metrics to add
+
+Per campaign: rounds; rounds without human input; wakes by reason (event/debt/heartbeat); target ops by
+phase; distinct WSTG classes with cells; distinct mechanism routes; primitive→chain depth (max); time to
+first primitive; debt created/discharged per round; wall share inside blocking waits; task-create
+refusals per attempt; tokens/$; and the two honesty metrics: goal proof present at finish, partial reason
+recorded when incomplete.
 
 ---
 
-*End of plan. The old plan is replaced. No code, model call, target contact or commit was made by this document.*
+## Appendix A — open questions for the owner (defaults recommended)
+
+| # | Question | Recommended default |
+| --- | --- | --- |
+| Q1 | Is one campaign-frame refusal at final finish acceptable, or acknowledgment-only? | **Resolved 2026-10-26: refusal approved**, and D9 in §1.4 is the decision |
+| Q2 | Heartbeat default 600 s (ARTEX parity) vs 300 s | 600 s, min 120, `--heartbeat-seconds 0` disables |
+| Q3 | Should event-driven mode require `--goal`? | No: absent → "no campaign" mode with today's behaviour; present → full P5 semantics |
+| Q4 | Can one `deferred` todo discharge many debt ids (bulk)? | Yes, with mandatory reason; cap 25 per row so a wall carries meaning |
+| Q5 | Are feature tags mandatory for mapped assets or advisory? | Mandatory in the recon contract, advisory in preflight (no refusal), gateable only via clearly applicable tests |
+| Q6 | Do we ever add a campaign ceiling (`--max-hours`/`--max-rounds`)? | No in P5. Revisit only if P6 measurement shows unbounded spend without value; ARTEX's task timeout also defaults to unlimited |
+| Q7 | Is `CHECKPOINT_MISSING` a debt kind or advisory? | Advisory in P5 (D13 is guidance); promote to gateable in P6 if rounds churn |
+| Q8 | Should the planner see raw debt ids or human kinds? | Both: kind+subject in the prompt, ids only in `debtRefs` echo, so the model cites rather than invents |
+
+## Appendix B — how to re-verify the evidence
+
+```sh
+# session → transcript numbers (base64 JSON in the <script id="session-data"> block)
+python3 - <<'PY'
+import base64,json,re
+html=open('/home/nhanlaptop/tmp/cmp/pi-session-2026-10-26T03-35-19-777Z_01a17646-e3df-71a0-ba58-70a95e16a45c.html',encoding='utf-8').read()
+data=json.loads(base64.b64decode(re.search(r'<script id="session-data"[^>]*>([^<]+)</script>',html).group(1)))
+print(len(data.get('messages',[])), data.get('startTime'), data.get('endTime'))
+PY
+
+# run store: goals 0, tasks, claims, cells, gaps, plan board
+sqlite3 /home/nhanlaptop/tmp/cmp/.p2o-state/run-3dcd0a27-8ec3-4516-ab96-66b208f0651d/assessment.sqlite \
+  "select kind,count(*) from records group by kind;"
+```
+
+The postmortem at `tmp/p2o-logs/session-postmortem.md` already contains the per-call table, the wait
+breakdown and the extracted quotes; use it rather than re-deriving them.
+
+## Appendix C — what this proposal does *not* claim
+
+- It does not claim ARTEX's effectiveness: the local study and the upstream doc do not measure
+  end-to-end results; P5 copies mechanisms, not outcomes.
+- It does not claim P5 will find RCE or LPE. That needs the deferred measured gate, a lab profile and
+  authorization.
+- It does not change code: this file is a plan, and implementing A6 is a separate, owner-initiated phase.
+- It does not re-open A1–A4 or D1–D7. D8 is the only earlier decision narrowed, only by D9 (refusal, approved by the
+  owner on 2026-10-26).

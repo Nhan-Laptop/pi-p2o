@@ -36,7 +36,7 @@ import { ensurePrivateDirectory, mintTicket, mintToken, readTicket, removeTicket
 import { createHerdrClient, type HerdrClient } from '../../src/herdr.js';
 import { loadSettings, resolveRole, type P2OSettings, type RetentionMode } from '../../src/roles.js';
 import { PLANNER_PROMPT_SECTION, plannerInstructions, workerBrief, workerInstructions } from '../../src/prompts.js';
-import { authorityReport } from '../../src/authority.js';
+import { authorityCounters, authorityReport, wakeRoundCount } from '../../src/authority.js';
 import { isWorkPurpose, purposeFromRole, type WorkPurpose } from '../../src/duties.js';
 import { SkillLibrary, packageRoot } from '../../src/skills.js';
 import { EvidenceStore, redact, type Candidate } from '../../src/evidence.js';
@@ -70,8 +70,10 @@ import {
 const COMPOSE_READ = 'for f in docker-compose.yml docker-compose.yaml compose.yml compose.yaml; do if [ -f "/target/$f" ]; then printf "P2O-COMPOSE %s\\n" "$f"; cat "/target/$f"; exit 0; fi; done; exit 3';
 import { sha256Hex } from '../../src/validate.js';
 import type { KnowledgeDomain, ContextPacket } from '../../src/context.js';
+import { campaignFrom, campaignStartLine, type CampaignRecord } from '../../src/campaign.js';
 import { freezeReport, reportProjection, type ReportProjectionContext } from '../../src/report.js';
 import { finishPreflight, renderPreflight, type FinishPreflight } from '../../src/finish-preflight.js';
+import { debtFor, debtSummary, deriveDebt, type DebtReport } from '../../src/debt.js';
 import { WSTG_COMMIT, WSTG_FEATURES, WSTG_MAP, featuresFromAttributeValues, isWstgKey, wstgKey, wstgSuggest } from '../../src/wstg-map.js';
 import { ProgressState } from '../../src/progress.js';
 import { AssessmentEngine } from '../../src/engine.js';
@@ -104,7 +106,7 @@ import { exportBundle, importBundle, inspectBundle, publishReportFiles } from '.
  */
 const WORKER_FLAG = 'p2o-worker';
 const HELP = [
-  'Usage: /p2o --target <directory|http(s)-URL> [--origin <http(s)-URL>] [--workers N] [--loop manual|event-driven] [--executors shared|isolated] [--target-ops N] [--retention durable-local|ephemeral] [--export] [--goal "text"] [--avoid "text"]... [--refer-workspace [latest|all|<run-id>[,<run-id>...]]]',
+  'Usage: /p2o --target <directory|http(s)-URL> [--origin <http(s)-URL>] [--workers N] [--loop manual|event-driven] [--executors shared|isolated] [--target-ops N] [--retention durable-local|ephemeral] [--export] [--goal "text"] [--avoid "text"]... [--heartbeat-seconds N] [--refer-workspace [latest|all|<run-id>[,<run-id>...]]]',
   '       /p2o stop | pause | resume | hold [reason] | release | workers | stop-worker <worker-id> [reason]',
   '       /p2o --resume <run-id> (reopen one durable-local run under the same runId; new workers, no earlier ticket/operation)',
   '       /p2o status | log [cursor] [task=<id>] [actor=<id>] [operation=<id>] | report',
@@ -127,6 +129,8 @@ interface OwnerRun {
   target: Target; sandbox: Sandbox; executors: ExecutorPool; ctx: ExtensionContext;
   phase: Phase; toolsBefore: string[]; start?: Promise<void>; stop?: Promise<void>;
   runId: string; control: string; records: string; reports: string; socket?: string; statedObjective?: string; avoid?: string[];
+  /** A6.1: the campaign frame recorded once at start; absent for a manual run started without --goal/--avoid/--heartbeat-seconds. */
+  campaign?: CampaignRecord;
   store: AssessmentStore; unbindStore: () => void; stateRoot: string; retention: RetentionMode; storageError?: string;
   broker: Broker; workers: Map<string, WorkerRegistration>;
   delegation: { enabled: boolean; reason?: string; maxWorkers: number; maxDepth: number; spawned: number };
@@ -337,6 +341,7 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
       retention: current.retention, stateLocation: join(current.stateRoot, current.runId), storageError: current.storageError,
       runtime: { version: runtimeVersion, sha256: current.extensionSha }, contextUsage: current.contextUsage, usageLines: usageLines(current.usage),
       workers: operatorWorkers(current), held: current.held,
+      ...(current.campaign ? { campaign: { objective: current.campaign.objective, heartbeatSeconds: current.campaign.heartbeatSeconds, createdBy: current.campaign.createdBy } } : {}),
     }, current.store.reviewContext());
   }
   /** Counters only: the usage Pi reports for the Planner session, remembered for /p2o status and written once per admitted wake. */
@@ -419,6 +424,21 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
       : 'Todos recorded. The draft has no work identity because the ready step has no same-run claim record to cite.' };
   }
   /**
+   * A6.2: one derived research-debt report for a read; the round, the finish result and the report all use this, so the
+   * obligation count cannot be computed twice with different inputs.
+   */
+  function runDebt(current: OwnerRun, index: LedgerIndex): DebtReport {
+    const context = current.store.reviewContext();
+    const wrote = writeBack({ provenance: current.store.graphSnapshot().provenance, records: index.records,
+      findings: new Map([...current.workers.values()].filter(entry => entry.reported).map(entry => [entry.workerId, entry.reported!.findings.length] as const)) });
+    const featureAssets = current.store.recordedFeatureAssets();
+    return deriveDebt(index, { coverage: context.coverage, cases: context.cases, features: current.store.recordedFeatureValues(), ...(featureAssets.length ? { featureAssets } : {}), wrote,
+      // A6.1: the campaign frame is the same record the prompt and the report read; an event-driven run promised a campaign,
+      // so a missing record is named as debt instead of being inferred from prose.
+      ...(context.campaign ? { campaign: { objective: context.campaign.objective } } : {}),
+      expectCampaign: current.engine?.mode === 'event-driven' });
+  }
+  /**
    * M6: what a round is judged on — four monotone counters read from the ledger and the graph the owner already owns. The engine
    * compares them; nothing here decides whether progress is "enough", only whether anything at all was added.
    * A4: the same read yields the stall facts (open goal, no open/running intent) the engine records after the round ACK.
@@ -429,8 +449,8 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
     const cells = coverageViews(index, context.coverage).flatMap(plan => plan.cells).filter(cell => cell.currentness !== 'retired');
     // P16.2: the same completion the finish result prints rides along, so a quiet round that still owes work demands it by
     // name instead of pausing the run — the measured failure was a lead that went quiet while a ready step was owed.
-    const plans = planFrontier(index), tasks = taskFrontier(index);
-    const completion = deriveCompletion({ plans, claims, tasks,
+    const plans = planFrontier(index), tasks = taskFrontier(index), debt = runDebt(current, index);
+    const completion = deriveCompletion({ plans, claims, tasks, debt: debtFor(debt),
       ...proofViews(caseViews(index, context.cases), coverageViews(index, context.coverage)) });
     // P16.5: a stalled round that asks for work must also say when every open step is on one route; the alternative is a hint,
     // never a refusal (the lead may know the other family is out of scope).
@@ -445,6 +465,7 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
       assets: current.store.assetCount(),
       chainDepth: Math.max(0, ...Object.values(chainJoin(claims).depth)),
       remaining: completion.remaining,
+      debt: { gateable: debt.gateable, total: debt.total },
       ...(completion.remaining ? { demand: `${completionDemand(completion, plans) ?? `${completion.remaining} obligation(s) remain`}${monoculture ? `; every open step is on route ${monoculture.route} — plausible elsewhere: ${monoculture.alternatives.slice(0, 4).join(', ')}` : ''}` } : {}),
     };
     return { progress, stall: { openGoal, openIntents } };
@@ -845,12 +866,27 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
       const findings = extra.owner ? new Map([...extra.owner.workers.values()].filter(entry => entry.reported).map(entry => [entry.workerId, entry.reported!.findings.length] as const)) : undefined;
       wrote = new Map(writeBack({ provenance: store.graphSnapshot().provenance, records: index.records, ...(findings ? { findings } : {}) }).map(row => [row.workerId, row]));
     } catch { /* Counts are advisory; the report never depends on a successful graph scan. */ }
-    const rendered = renderReport(index, store.reviewContext(),
+    // A6.2: the report derives the same debt the finish result and the stopped outcome did, so a draft/final report cannot
+    // print "complete" over obligations the finish result listed. A store that cannot answer still renders the report.
+    const context = store.reviewContext();
+    let debt: DebtReport | undefined;
+    const featureAssets = store.recordedFeatureAssets();
+    try { debt = deriveDebt(index, { coverage: context.coverage, cases: context.cases, features: store.recordedFeatureValues(), ...(featureAssets.length ? { featureAssets } : {}), ...(wrote.size ? { wrote: [...wrote.values()] } : {}) }); }
+    catch { /* Debt is advisory to the report; a failure only means the report does not restate it. */ }
+    // A6.6: the campaign frame, the wake counts and a recorded partial reason, from the same ledger the report indexes.
+    const recordedCampaign = store.campaign(), partialStop = store.campaignPartial(), counters = authorityCounters(index), wakeTotal = wakeRoundCount(index);
+    const campaignMeta = recordedCampaign ? { campaign: { objective: recordedCampaign.objective, constraints: recordedCampaign.constraints.length,
+      deny: recordedCampaign.constraints.filter(constraint => constraint.rule === 'deny').length, allow: recordedCampaign.constraints.filter(constraint => constraint.rule === 'allow').length,
+      heartbeatSeconds: recordedCampaign.heartbeatSeconds, rounds: extra.owner ? extra.owner.engine.snapshot().rounds : wakeTotal,
+      wakeReasons: { event: Math.max(0, wakeTotal - counters.debtWakes - counters.heartbeatWakes), debt: counters.debtWakes, heartbeat: counters.heartbeatWakes },
+      startedAt: recordedCampaign.startedAt, ...(index.records.length ? { endedAt: index.records.at(-1)!.at } : {}), ...(partialStop ? { partialReason: partialStop.reason } : {}) } } : {};
+    const rendered = renderReport(index, context,
       { runId: manifest.runId, target: manifest.targetDisplay, retention: manifest.retention, historical: store.readOnly, asOfSequence: index.snapshotSequence ?? store.sequence(), storeSchema: store.schemaVersion,
         runtime: { hash: manifest.profile.runtimeHash, version: extra.owner ? runtimeVersion : undefined }, complete: index.complete,
         // A4: the report states the mode that produced the run next to the authority counters and role matrix.
         mode: { loopMode: manifest.profile.loopMode, executorMode: manifest.profile.executorMode },
-        format: loaded.reportFormat, endReason: extra.endReason, kind: extra.kind, outcome, unresolved: extra.unresolved, narrative: extra.narrative, operator: loaded.reportMeta, wstgPages, wrote });
+        format: loaded.reportFormat, endReason: extra.endReason, kind: extra.kind, outcome, unresolved: extra.unresolved, narrative: extra.narrative, operator: loaded.reportMeta, wstgPages, wrote,
+        ...(debt ? { debt } : {}), ...campaignMeta });
     return { rendered, index, manifest };
   }
   /** Base directory for manual/draft exports: never inside the private state directory. */
@@ -920,10 +956,13 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
     if (!current.preflight) {
       try {
         const index = await readLedger(current.records, current.runId);
-        current.preflight = finishPreflight(index, { ...current.store.reviewContext(), integrity: current.settings.reviewIntegrity, statedObjective: current.statedObjective,
+        // A6.2: the stopped outcome is derived from the same debt report the round and the report read, so "what a resuming
+        // reader still owes" cannot be counted one way at stop and another way in the auto report.
+        const debt = runDebt(current, index);
+        current.preflight = finishPreflight(index, { ...current.store.reviewContext(), integrity: current.settings.reviewIntegrity, statedObjective: current.statedObjective, debt,
           wrote: writeBack({ provenance: current.store.graphSnapshot().provenance, records: index.records, findings: new Map([...current.workers.values()].filter(entry => entry.reported).map(entry => [entry.workerId, entry.reported!.findings.length] as const)) }) });
         const context = current.store.reviewContext();
-        current.completion = deriveCompletion({ plans: planFrontier(index), claims: claimHeadClaims(index), tasks: taskFrontier(index), ...proofViews(caseViews(index, context.cases), coverageViews(index, context.coverage)) });
+        current.completion = deriveCompletion({ plans: planFrontier(index), claims: claimHeadClaims(index), tasks: taskFrontier(index), debt: debtFor(debt), ...proofViews(caseViews(index, context.cases), coverageViews(index, context.coverage)) });
       } catch (error) { current.exportError = current.exportError ?? `Obligation record unavailable: ${message(error)}`; }
     }
     await current.board.releaseAll(reason).catch(error => { current.exportError = `Task finalization incomplete: ${message(error)}`; });
@@ -1838,7 +1877,7 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
   });
   registerTool({
     name:'p2o_loop',label:'Planner pause/resume state',exposure:'model-only',
-    description:'PLANNER ONLY: status reads the Engine frontier/events/rounds. wait ends this planning round without model polling; committed worker reports/proposals can wake another round ONLY in consented event-driven mode. blocked pauses dispatch/automatic wakes until human /p2o resume. No automatic retries, scope changes or renewal of authority. Consult the confirmed executor profile; shared remains serial.',
+    description:'PLANNER ONLY: status reads the Engine frontier/events/rounds and the campaign heartbeat/wake reason. wait ends this planning round without model polling — end every round with action=wait after dispatching or reviewing, because a round that keeps waiting inside the turn cannot be rebuilt from the ledger; committed worker reports/proposals can wake another round ONLY in consented event-driven mode, and a campaign with outstanding work can also be woken by a paced debt wake or its heartbeat. blocked pauses dispatch/automatic wakes until human /p2o resume. No automatic retries, scope changes or renewal of authority. Consult the confirmed executor profile; shared remains serial.',
     parameters:loopParameters,
     async execute(_id,params) {
       const current = owner();
@@ -1961,18 +2000,39 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
           fail('WORKERS_ACTIVE', `workers without a report: ${described}. An idle pane may still be starting, so wait for the report with p2o_workers waitFor=all-report, or call p2o_workers action=stop to withdraw one deliberately`);
         }
       }
-      let preflightText = '', completionText = '';
+      let preflightText = '', completionText = '', debtText = '', partialResult: string | undefined, debtResult: DebtReport | undefined;
       // Host check over committed state, read before cleanup removes the control directory. It informs the report and never refuses the finish:
       // p2o has no finish gate (owner decision 2026-10-24), so what remains is listed as unfinished work rather than turned into a verdict.
       try {
         const index = await readLedger(current.records, current.runId);
-        const pre = finishPreflight(index, { ...current.store.reviewContext(), integrity: current.settings.reviewIntegrity, statedObjective: current.statedObjective,
+        const debt = runDebt(current, index); debtResult = debt;
+        const pre = finishPreflight(index, { ...current.store.reviewContext(), integrity: current.settings.reviewIntegrity, statedObjective: current.statedObjective, debt,
           wrote: writeBack({ provenance: current.store.graphSnapshot().provenance, records: index.records, findings: new Map([...current.workers.values()].filter(entry => entry.reported).map(entry => [entry.workerId, entry.reported!.findings.length] as const)) }) });
         current.preflight = pre; preflightText = `\n\n${renderPreflight(pre)}`;
         // M3: completion is derived from the same ledger read, so the result, the export and the report cannot disagree.
         const context = current.store.reviewContext();
-        const completion = deriveCompletion({ plans: planFrontier(index), claims: claimHeadClaims(index), tasks: taskFrontier(index), ...proofViews(caseViews(index, context.cases), coverageViews(index, context.coverage)) });
+        const completion = deriveCompletion({ plans: planFrontier(index), claims: claimHeadClaims(index), tasks: taskFrontier(index), debt: debtFor(debt), ...proofViews(caseViews(index, context.cases), coverageViews(index, context.coverage)) });
         current.completion = completion; completionText = `\n\nSTATE: ${completionLine(completion)}`;
+        // A6.6 (D9, owner decision 2026-10-26: refuse): a campaign run may not finish as if it had a frame it never recorded.
+        // This is the proposal's one new refusal. It is final-path only, gated on a recorded campaign, and the export path
+        // below never reaches it because an export ends nothing and must stay unconditional. `partial` is the third legal
+        // next call the refusal names: it is an explicit acknowledgment that the campaign stops without a goal, never a
+        // silent complete finish, so a supplied reason proceeds and is recorded like any other partial stop.
+        if (!exportOnly && current.campaign) {
+          partialResult = current.store.campaignPartial()?.reason;
+          const goals = planFrontier(index).filter(entry => entry.kind === 'goal');
+          const supplied = typeof params.partial === 'string' ? params.partial.trim() : '';
+          if (!goals.length && !supplied) fail('CAMPAIGN_FRAME_MISSING', `a campaign was recorded (objective: ${cleanText(current.campaign.objective).slice(0, 200)}) but no goal has ever been recorded, so a final report cannot say what the campaign was for. Legal next calls: (1) p2o_plan_create {kind:"goal", title, status:"proposed", reason, criteria:["..."], proof:{...}}; (2) p2o_finish {export:true} to write the report and keep the run open; (3) p2o_finish {partial:"why this campaign stops here"} to stop with a recorded reason.`);
+          if (!goals.length || completion.state === 'incomplete') {
+            // The partial reason is how a campaign records an honest stop. A missing reason is not a second refusal: the
+            // derived obligation line is recorded instead, so the single approved refusal stays the only gate.
+            const reason = (supplied || `no partial reason was supplied; ${completionLine(completion)}`).slice(0, 600);
+            if (!current.store.campaignPartial()) await appendRecord(current.records, { at: new Date(now()).toISOString(), runId: current.runId, by: 'owner', kind: 'lifecycle',
+              text: reason, data: { event: 'campaign.partial', campaignPartial: reason } });
+            partialResult = reason; completionText += `\n\nPARTIAL: ${reason}`;
+            debtText = supplied ? '' : '\n\nA campaign that stops incomplete should record why: call p2o_finish with partial:\"…\" next time. No reason was supplied, so the derived obligation line was recorded instead.';
+          }
+        }
         if (exportOnly) {
           const { rendered, index } = await renderStoreReport(current.store, current.records, { owner: current, endReason: 'export', kind: 'draft', unresolved: pre, narrative: current.narrative });
           const base = await defaultReportDirectory(current.ctx, current.runId, current.settings);
@@ -1980,9 +2040,13 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
           let destination = `${base}-draft-${sequence}`;
           for (let attempt = 2; attempt < 10 && await stat(destination).catch(() => undefined); attempt++) destination = `${base}-draft-${sequence}-${attempt}`;
           const published = await publishReportFiles(current.store, destination, rendered.files);
-          return textResult<unknown>(`Report exported: ${published.directory} (${published.files} files, ${published.bytes} bytes)${completionText}${preflightText}\n\nNothing was torn down or ended: workers, sandboxes and the run are exactly as they were, and the report says the run is ${completion.state}.`, { reportPath: published.directory, reportFiles: { files: published.files, bytes: published.bytes }, state: completion.state, remaining: completion.remaining, completion, preflight: pre });
+          return textResult<unknown>(`Report exported: ${published.directory} (${published.files} files, ${published.bytes} bytes)${completionText}${preflightText}\n\nNothing was torn down or ended: workers, sandboxes and the run are exactly as they were, and the report says the run is ${completion.state}.`, { reportPath: published.directory, reportFiles: { files: published.files, bytes: published.bytes }, state: completion.state, remaining: completion.remaining, completion, debt, preflight: pre });
         }
-      } catch (error) { preflightText = `\n\nFINISH PREFLIGHT unavailable: ${cleanText(message(error)).slice(0, 200)}`; }
+      } catch (error) {
+        // A6.6: a documented refusal is not an unavailable preflight. Rethrow it; every other read failure stays advisory.
+        if (message(error).startsWith('CAMPAIGN_FRAME_MISSING')) throw error;
+        preflightText = `\n\nFINISH PREFLIGHT unavailable: ${cleanText(message(error)).slice(0, 200)}`;
+      }
       const view = await workerView(current);
       const panesBefore = current.workers.size;
       await cleanupOwner(current, 'finished');
@@ -1990,14 +2054,14 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
       const coverage = view.coverage.slice(-12).map(entry => `${entry.surface} × ${entry.risk}: ${entry.outcome}`).join('; ') || '(none recorded)';
       const open = view.open.slice(-8).map(entry => cleanText(entry.text).slice(0, 160)).join(' | ') || '(none recorded)';
       const workers = view.workers.map(entry => `${entry.workerId} ${entry.status}${entry.reported ? ' reported' : ' no report'}`).join(', ') || '(none)';
-      return textResult(`${current.exportPath ? `Evidence export: ${current.exportPath}\n` : current.exportError ? `EXPORT FAILED: ${current.exportError}\n` : ''}${completionText.replace(/^\n\n/,'')}\n${current.frozen && (!current.frozen.complete || current.frozen.omitted) ? `RECONCILIATION WARNING: complete=${current.frozen.complete}, omitted=${current.frozen.omitted}. No full-coverage or full-retention claim.\n` : ''}Container removal verified${panesBefore ? `; worker panes closed ${panesBefore - (current.unclosedPanes?.length ?? 0)}/${panesBefore}${current.unclosedPanes?.length ? ` (still present: ${current.unclosedPanes.join(', ')} — close them in Herdr; their tickets are revoked and they have no target access)` : ''}` : ''}. Workers: ${workers}.\nCoverage: ${coverage}\nOpen items: ${open}\n\nWrite the final report now: findings with reproduction and evidence, confidence, what was NOT covered, and what you could not verify. Findings are assessed by this agent; "independently verified" needs a separate reproduction, and worker claims you did not verify must be labelled as such.${preflightText}${current.reportPath ? `\n\nREPORT: ${current.reportPath} (${current.reportFiles?.files ?? '?'} files). Deterministic index of attributed state; point the reader to it instead of retyping its tables.` : current.reportError ? `\n\nREPORT NOT WRITTEN: ${current.reportError}` : ''}`, { report:current.frozen, exportPath: current.exportPath, exportError: current.exportError, completion: current.completion, state: current.completion?.state, remaining: current.completion?.remaining, sandboxRemoved: true, panesClosed: panesBefore - (current.unclosedPanes?.length ?? 0), unclosedPanes: current.unclosedPanes ?? [], workers: view.workers, coverage: view.coverage, open: view.open, preflight: current.preflight, reportPath: current.reportPath, reportError: current.reportError });
+      return textResult(`${current.exportPath ? `Evidence export: ${current.exportPath}\n` : current.exportError ? `EXPORT FAILED: ${current.exportError}\n` : ''}${completionText.replace(/^\n\n/,'')}\n${debtText ? `${debtText.replace(/^\n\n/,'')}\n` : ''}${current.frozen && (!current.frozen.complete || current.frozen.omitted) ? `RECONCILIATION WARNING: complete=${current.frozen.complete}, omitted=${current.frozen.omitted}. No full-coverage or full-retention claim.\n` : ''}Container removal verified${panesBefore ? `; worker panes closed ${panesBefore - (current.unclosedPanes?.length ?? 0)}/${panesBefore}${current.unclosedPanes?.length ? ` (still present: ${current.unclosedPanes.join(', ')} — close them in Herdr; their tickets are revoked and they have no target access)` : ''}` : ''}. Workers: ${workers}.\nCoverage: ${coverage}\nOpen items: ${open}\n\nWrite the final report now: findings with reproduction and evidence, confidence, what was NOT covered, and what you could not verify. Findings are assessed by this agent; "independently verified" needs a separate reproduction, and worker claims you did not verify must be labelled as such.${preflightText}${current.reportPath ? `\n\nREPORT: ${current.reportPath} (${current.reportFiles?.files ?? '?'} files). Deterministic index of attributed state; point the reader to it instead of retyping its tables.` : current.reportError ? `\n\nREPORT NOT WRITTEN: ${current.reportError}` : ''}`, { report:current.frozen, exportPath: current.exportPath, exportError: current.exportError, completion: current.completion, state: current.completion?.state, remaining: current.completion?.remaining, sandboxRemoved: true, panesClosed: panesBefore - (current.unclosedPanes?.length ?? 0), unclosedPanes: current.unclosedPanes ?? [], workers: view.workers, coverage: view.coverage, open: view.open, preflight: current.preflight, ...(debtResult ? { debt: debtResult } : {}), campaignPartial: partialResult, reportPath: current.reportPath, reportError: current.reportError });
     },
   });
 
   // ---------------------------------------------------------------- command
 
   pi.registerCommand('p2o', {
-    description: 'Plan and assess: /p2o --target <directory|http(s)-URL> [--workers N] [--loop manual|event-driven] | /p2o stop | pause | resume',
+    description: 'Plan and assess: /p2o --target <directory|http(s)-URL> [--workers N] [--loop manual|event-driven] [--goal "text"] [--heartbeat-seconds N] | /p2o stop | pause | resume',
     handler: async (args, ctx) => {
       try {
         const workspaceCommand = parseWorkspaceCommand(args);
@@ -2212,8 +2276,11 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
           const delegation = maxWorkers > 0 && maxDepth > 0 ? '' : ' (delegation disabled by the configured limits)';
           if (extensionSha === undefined) { const identity = await runtimeIdentity(extensionPath); extensionSha = identity.sha256; runtimeVersion = identity.version; }
           const referenceNotice = selectedPriorRuns.length ? `\nReferencing ${selectedPriorRuns.length} prior workspace run${selectedPriorRuns.length === 1 ? '' : 's'} on this same target: ${selectedPriorRuns.map(found => found.runId).join(', ')}. Tagged as prior-run context only; never counted as same-run evidence, and no scope, worker or ticket authority is restored.` : referWorkspace ? '\nNo prior workspace run on this same target was found for --refer-workspace; starting with no referenced context.' : '';
+          // A6.1: disclose the campaign frame before confirmation, including that a non-zero heartbeat spends paid rounds.
+          const wantsCampaign = Boolean(command.options.goal) || Boolean(command.options.avoid?.length) || command.options.heartbeatSeconds !== undefined || loopMode === 'event-driven';
+          const campaignPreview = wantsCampaign ? `${campaignStartLine(campaignFrom({ ...(command.options.goal ? { goal: command.options.goal } : {}), ...(command.options.avoid?.length ? { avoid: command.options.avoid } : {}), ...(command.options.heartbeatSeconds !== undefined ? { heartbeatSeconds: command.options.heartbeatSeconds } : {}), target: targetLabel(target), at: new Date(now()).toISOString() }))}\n` : '';
           const allowed = await ctx.ui.confirm('Start authorized assessment?',
-            `${resumeManifest ? `Resume: ${runId} — committed records are kept; earlier tickets, operations and workers are NOT restored, and interrupted work stays interrupted until re-dispatched\n` : ''}Runtime: p2o ${runtimeVersion || 'unknown version'} · ${extensionSha.slice(0, 12)}\nTarget: ${cleanText(targetLabel(target))}\n${command.options.goal ? `Stated objective: ${cleanText(command.options.goal)}\n` : ''}${command.options.avoid?.length ? `Operator constraints (sent to every worker as model-level guidance, not enforcement):\n${command.options.avoid.map(line => `- ${cleanText(line)}`).join('\n')}\n` : ''}${target.kind === 'directory' ? 'A bounded source copy (64 MiB / 20000 entries) is exposed read-only to the sandbox and its contents may reach your model provider. Symlinks, special files, .git, node_modules, owner control/knowledge directories, .p2o-state and .p2o-reports are skipped. Choose a source directory, not your home or a secrets directory.' : target.kind === 'hybrid' ? `Hybrid target: a bounded source copy (64 MiB / 20000 entries, same skips as above) is exposed read-only to the sandbox, and ${target.url} is the starting URL. Neither is a boundary: any http(s) URL, any redirect hop and any host the sandbox can reach is allowed.` : `Starting URL: ${target.url}. It is a label, not a boundary: any http(s) URL, any redirect hop and any host the sandbox can reach is allowed.`}\nNetwork authority: both shell and network tools have unrestricted bridge egress (public/private/link-local addresses and reachable host services), plus downloads and user-space tool installs in scratch. Opaque commands are NOT origin-filtered. Loopback is container-local; host.docker.internal reaches host-published services; private, link-local and cloud-metadata addresses are reachable. Root inside the container, writable rootfs and all capabilities; host paths and the Docker socket are never mounted. Never mount a secrets directory. Supplied credentials and returned data may reach your model provider or local Docker inspection; exports are only best-effort redacted.\nConfirm you own this target or have permission to assess it. The current Pi model leads the assessment; normal provider charges apply.${referenceNotice}\nWorkers: ${delegationAvailable ? `up to ${maxWorkers} simultaneous visible Pi worker panes, fresh assignments across successive batches (retention cap 1000). Flat Planner-to-Worker delegation; workers propose helpers instead of spawning. Each worker has its own model and costs. Model concurrency and target-operation concurrency are separate; the confirmed executor profile below controls execution.` : `none${delegation} (${delegationReason}).`}\nPlanner loop: ${loopMode}. ${loopMode === 'event-driven' ? `Committed semantic events may automatically start additional paid Planner requests, without another human prompt; two quietly unproductive rounds stop them and ask for a human decision. Inner model/tool turns, compaction/retries configured in Pi and worker usage are additional; this is NOT a hard monetary/token cap. No automatic provider fallback or target replay. /p2o pause stops dispatch/wakes; /p2o stop revokes and cleans up.` : 'No automatic event-driven model turns. Accepted task queues still dispatch mechanically when slots/prerequisites permit; the Planner resumes through normal interaction.'}\nExecutors: ${executorMode}; target-operation cap ${maxTargetOperations}. Isolated uses a fresh executor per assignment; shared is serial.${executorMode === 'shared' && maxWorkers > 1 ? ` ${maxWorkers} worker panes requested with the shared executor still run target operations ONE AT A TIME (cap ${maxTargetOperations}) — more workers raises model/plan concurrency, not target throughput.` : ''} Containers have no pids/memory/cpu limit; cancellation destroys the affected executor, shared cancellation can affect peers. Source snapshots must match the initial bounded snapshot.\nDocker image: ${image}. Root inside the container with no host mount and no Docker socket. Containers share the host kernel; this is not VM isolation. No elapsed-time limit for the assessment, lead or workers. Commands/HTTP default to no task timeout; explicitly stop/finish the run. Provider costs are the only remaining ceiling.\nLưu trữ: ${retention === 'durable-local' ? `DURABLE-LOCAL (mặc định): giữ tri thức sau stop/finish tại ${join(selectedStateRoot, runId)}; đọc lại bằng /p2o open ${runId}.` : 'EPHEMERAL: kho tri thức nằm trong thư mục control riêng, bị xóa sau cleanup; không mở lại được nếu không có export.'} Quota/run ${loaded.storageQuotaMiB} MiB (chừa ${Math.round(finalizationReserve(loaded.storageQuotaMiB*1024*1024)/1024)} KiB cho final outcome/checkpoint; artifact thường dừng trước ngưỡng đó); \`p2o_capture\` đọc file text trong scratch đã cấp theo FD/single-link rồi redact trước khi lưu, tối đa ${loaded.artifactCaptureKiB} KiB/operation (stdout+stderr chung cap; output tools vẫn 48 KiB). Bản redacted chỉ là best effort: có thể chứa dữ liệu nhạy cảm, không chia sẻ khi chưa kiểm tra. Không giữ/khôi phục quyền scope, worker, ticket, cookie, request queue hay target replay. Luôn cần xác nhận này cho run mới.${command.options.export ? '\nExport enabled: additional bounded redacted receipts under .p2o-reports before cleanup; review before sharing.' : '\nNo additional portable export selected (--export is separate from durable-local retention).'}${(loaded.autoReport ?? retention === 'durable-local') ? `\nReport: when this run finishes or stops, a deterministic report (REPORT.md, CSV and JSON files, no model call) is written to ${join(loaded.reportRoot ?? join(await realpath(ctx.cwd), '.p2o-reports'), `report-${runId}`)} (new directory, never overwritten${retention === 'ephemeral' ? '; it outlives the ephemeral knowledge store' : ''}). It can contain redacted target data and may sit inside your project: review it, do not commit it. Disable with p2o.autoReport=false.` : ''}`);
+            `${resumeManifest ? `Resume: ${runId} — committed records are kept; earlier tickets, operations and workers are NOT restored, and interrupted work stays interrupted until re-dispatched\n` : ''}Runtime: p2o ${runtimeVersion || 'unknown version'} · ${extensionSha.slice(0, 12)}\nTarget: ${cleanText(targetLabel(target))}\n${campaignPreview}${command.options.goal ? `Stated objective: ${cleanText(command.options.goal)}\n` : ''}${command.options.avoid?.length ? `Operator constraints (sent to every worker as model-level guidance, not enforcement):\n${command.options.avoid.map(line => `- ${cleanText(line)}`).join('\n')}\n` : ''}${target.kind === 'directory' ? 'A bounded source copy (64 MiB / 20000 entries) is exposed read-only to the sandbox and its contents may reach your model provider. Symlinks, special files, .git, node_modules, owner control/knowledge directories, .p2o-state and .p2o-reports are skipped. Choose a source directory, not your home or a secrets directory.' : target.kind === 'hybrid' ? `Hybrid target: a bounded source copy (64 MiB / 20000 entries, same skips as above) is exposed read-only to the sandbox, and ${target.url} is the starting URL. Neither is a boundary: any http(s) URL, any redirect hop and any host the sandbox can reach is allowed.` : `Starting URL: ${target.url}. It is a label, not a boundary: any http(s) URL, any redirect hop and any host the sandbox can reach is allowed.`}\nNetwork authority: both shell and network tools have unrestricted bridge egress (public/private/link-local addresses and reachable host services), plus downloads and user-space tool installs in scratch. Opaque commands are NOT origin-filtered. Loopback is container-local; host.docker.internal reaches host-published services; private, link-local and cloud-metadata addresses are reachable. Root inside the container, writable rootfs and all capabilities; host paths and the Docker socket are never mounted. Never mount a secrets directory. Supplied credentials and returned data may reach your model provider or local Docker inspection; exports are only best-effort redacted.\nConfirm you own this target or have permission to assess it. The current Pi model leads the assessment; normal provider charges apply.${referenceNotice}\nWorkers: ${delegationAvailable ? `up to ${maxWorkers} simultaneous visible Pi worker panes, fresh assignments across successive batches (retention cap 1000). Flat Planner-to-Worker delegation; workers propose helpers instead of spawning. Each worker has its own model and costs. Model concurrency and target-operation concurrency are separate; the confirmed executor profile below controls execution.` : `none${delegation} (${delegationReason}).`}\nPlanner loop: ${loopMode}. ${loopMode === 'event-driven' ? `Committed semantic events may automatically start additional paid Planner requests, without another human prompt; two quietly unproductive rounds stop them and ask for a human decision. Inner model/tool turns, compaction/retries configured in Pi and worker usage are additional; this is NOT a hard monetary/token cap. No automatic provider fallback or target replay. /p2o pause stops dispatch/wakes; /p2o stop revokes and cleans up.` : 'No automatic event-driven model turns. Accepted task queues still dispatch mechanically when slots/prerequisites permit; the Planner resumes through normal interaction.'}\nExecutors: ${executorMode}; target-operation cap ${maxTargetOperations}. Isolated uses a fresh executor per assignment; shared is serial.${executorMode === 'shared' && maxWorkers > 1 ? ` ${maxWorkers} worker panes requested with the shared executor still run target operations ONE AT A TIME (cap ${maxTargetOperations}) — more workers raises model/plan concurrency, not target throughput.` : ''} Containers have no pids/memory/cpu limit; cancellation destroys the affected executor, shared cancellation can affect peers. Source snapshots must match the initial bounded snapshot.\nDocker image: ${image}. Root inside the container with no host mount and no Docker socket. Containers share the host kernel; this is not VM isolation. No elapsed-time limit for the assessment, lead or workers. Commands/HTTP default to no task timeout; explicitly stop/finish the run. Provider costs are the only remaining ceiling.\nLưu trữ: ${retention === 'durable-local' ? `DURABLE-LOCAL (mặc định): giữ tri thức sau stop/finish tại ${join(selectedStateRoot, runId)}; đọc lại bằng /p2o open ${runId}.` : 'EPHEMERAL: kho tri thức nằm trong thư mục control riêng, bị xóa sau cleanup; không mở lại được nếu không có export.'} Quota/run ${loaded.storageQuotaMiB} MiB (chừa ${Math.round(finalizationReserve(loaded.storageQuotaMiB*1024*1024)/1024)} KiB cho final outcome/checkpoint; artifact thường dừng trước ngưỡng đó); \`p2o_capture\` đọc file text trong scratch đã cấp theo FD/single-link rồi redact trước khi lưu, tối đa ${loaded.artifactCaptureKiB} KiB/operation (stdout+stderr chung cap; output tools vẫn 48 KiB). Bản redacted chỉ là best effort: có thể chứa dữ liệu nhạy cảm, không chia sẻ khi chưa kiểm tra. Không giữ/khôi phục quyền scope, worker, ticket, cookie, request queue hay target replay. Luôn cần xác nhận này cho run mới.${command.options.export ? '\nExport enabled: additional bounded redacted receipts under .p2o-reports before cleanup; review before sharing.' : '\nNo additional portable export selected (--export is separate from durable-local retention).'}${(loaded.autoReport ?? retention === 'durable-local') ? `\nReport: when this run finishes or stops, a deterministic report (REPORT.md, CSV and JSON files, no model call) is written to ${join(loaded.reportRoot ?? join(await realpath(ctx.cwd), '.p2o-reports'), `report-${runId}`)} (new directory, never overwritten${retention === 'ephemeral' ? '; it outlives the ephemeral knowledge store' : ''}). It can contain redacted target data and may sit inside your project: review it, do not commit it. Disable with p2o.autoReport=false.` : ''}`);
           if (!allowed) { ctx.ui.notify('Cancelled. No sandbox, worker or agent turn started.', 'info'); return; }
           ctx.signal?.throwIfAborted();
           closeHistorical();
@@ -2250,11 +2317,22 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
             knowledgeUsed: 0, image, exportEnabled: command.options.export ?? false, statedObjective: command.options.goal, avoid: command.options.avoid,workerContextPackets:new Map(),
             board:undefined as unknown as TaskBoard,plan:undefined as unknown as PlanBoard,cases:undefined as unknown as CaseBoard,coverage:undefined as unknown as CoverageBoard,engine:undefined as unknown as AssessmentEngine,progress:new ProgressState(now),
           };
+          // A6.1: the campaign frame is recorded once and never rewritten. A resumed run folds the stored record; a manual run
+          // started without a campaign flag records nothing, so A6.3/A6.6 keep today's behaviour for it.
+          if (wantsCampaign) {
+            const stored = store.campaign(), campaign = campaignFrom({ ...(command.options.goal ? { goal: command.options.goal } : {}), ...(command.options.avoid?.length ? { avoid: command.options.avoid } : {}), ...(command.options.heartbeatSeconds !== undefined ? { heartbeatSeconds: command.options.heartbeatSeconds } : {}), target: targetLabel(target), targetRevision: store.graphScope(), at: new Date(now()).toISOString() }, stored);
+            current.campaign = campaign;
+            if (!stored) await appendRecord(records, { at: new Date(now()).toISOString(), runId, by: 'owner', kind: 'lifecycle',
+              text: `campaign.created: ${campaign.objective} (${campaign.constraints.length} constraint(s), heartbeat ${campaign.heartbeatSeconds}s, ${campaign.createdBy})`,
+              data: { event: 'campaign.created', campaign } });
+          }
           current.executors = new ExecutorPool(executorMode,maxTargetOperations,sandbox,() => createSandbox(target,sandboxOptions),() => run === current && current.phase === 'active');
           current.executors.beforeStart = () => assertNotHeld(current);
           current.board = new TaskBoard(runId,records,() => run === current && current.phase === 'active',now,()=>store.graphScope(),id=>store.assetRevision(id));
           current.board.integrity = loaded.reviewIntegrity;
-          current.plan = new PlanBoard(runId,records,() => run === current && current.phase === 'active',now);
+          // A6.2: the board resolves a wall's `debtRefs` against the debt the run currently owes, so an unknown id is refused
+          // instead of reading as a discharge. The resolver reads the same ledger the write is about to be checked against.
+          current.plan = new PlanBoard(runId,records,() => run === current && current.phase === 'active',now,index => runDebt(current,index));
           const review = store.reviewContext();
           current.cases = new CaseBoard(runId,records,() => run === current && current.phase === 'active',review.cases,now);
           current.coverage = new CoverageBoard(runId,records,() => run === current && current.phase === 'active',review.coverage,now);
@@ -2265,8 +2343,17 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
             reap:() => reapWorkers(current),spawn:input => spawnWorker(input,{workerId:null,depth:0}),
             persist:async (text,data) => {assertOwnerActive(current);await track(current,appendRecord(records,{at:new Date().toISOString(),runId,by:'owner',kind:'lifecycle',text,data:{engine:data}}));},
             idle:() => current.ctx.isIdle?.() ?? false,
-            wake:wake => {if (current.engine.validWake(wake)) pi.sendUserMessage(plannerWakePrompt(wake),{deliverAs:'followUp'});},
+            wake:wake => {
+              if (!current.engine.validWake(wake)) return;
+              // A6.3: a wake is a durable lifecycle fact, so the report can count automatic rounds by reason instead of
+              // re-deriving them from prose. The write never blocks delivery.
+              void note({ by: 'owner', kind: 'lifecycle', text: `planner.wake: ${wake.reason ?? 'event'} round ${wake.round}${wake.demand ? `; ${wake.demand}` : ''}`.slice(0, 900),
+                data: { engine: { event: 'planner.wake', reason: wake.reason ?? 'event', round: wake.round } } }).catch(() => { /* delivery does not depend on the audit row */ });
+              pi.sendUserMessage(plannerWakePrompt(wake),{deliverAs:'followUp'});
+            },
             problem:reason => { current.ctx.ui.notify(cleanText(reason),'warning'); refreshVisibility(current); },
+            // A6.3: the campaign heartbeat is the campaign record's interval; a run without a campaign never arms one.
+            now: () => now(), heartbeatSeconds: () => current.campaign?.heartbeatSeconds ?? 0,
           });
           current.broker = new Broker(control, {
             exec: (command, seconds, workdir, signal) => executeWithReceipt(current, workdir.split('/').at(-1)!, 'shell', command, (onRunning,onOutput) => current.executors.use(workdir.split('/').at(-1)!,signal,s => s.exec(command, seconds, signal, workdir,onRunning,onOutput))),
@@ -2432,6 +2519,8 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
           catch (error) { await stopAssessment(current, 'failed').catch(() => {}); throw new Error(`${message(error)}\nDocker must be running and the sandbox image installed. Setup: docker pull ${IMAGE} for the default, or build your explicitly selected tool image. Selected: ${image}`); }
           if (run !== current || current.phase !== 'starting') return;
           current.phase = 'active';
+          // A6.3: the campaign heartbeat starts only once the owner phase is active; a failed start arms nothing.
+          current.engine.start();
           refreshVisibility(current);
           ctx.ui.setStatus('p2o', `p2o: ${cleanText(targetLabel(target))}${current.delegation.enabled ? ` (+${maxWorkers} workers)` : ''}`);
           ctx.ui.notify(`Sandbox ready. ${delegationAvailable ? 'Planning; workers investigate via '+executorMode+' executors.' : 'No worker backend: target work is blocked; report the prerequisite instead of taking over.'}${current.delegation.enabled ? ` Delegation: up to ${maxWorkers} workers, depth ${maxDepth}.` : ''}${sandbox.sourceSkipped ? ` Source entries skipped: ${sandbox.sourceSkipped}.` : ''} Knowledge: ${join(stateRoot,runId)} (${retention}; no recovery authority).`, 'info');
@@ -2482,6 +2571,7 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
         sourceSkipped: current.sandbox.sourceSkipped,
         delegation: { enabled: current.delegation.enabled, reason: current.delegation.reason, maxWorkers: current.delegation.maxWorkers, maxDepth: current.delegation.maxDepth },
         phase: current.phase, loopMode:current.engine.mode, executorMode:current.executors.mode, statedObjective: current.statedObjective,
+        ...(current.campaign ? { campaign: current.campaign } : {}),
         situation: current.role === 'owner' ? await situationSnapshot(current) : undefined,
       });
       const wake = parseWakePrompt(event.prompt);

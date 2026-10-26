@@ -141,7 +141,7 @@ export function registerInertProvider(pi: ExtensionAPI, mode: 'owner' | 'worker'
         else if (lastTool === 'p2o_task_dispatch' && process.env.P2O_TEST_EVENT_LOOP === '1') content = [{type:'toolCall',id:'loop-wait',name:'p2o_loop',arguments:{action:'wait',reason:'Engine should await the delayed worker report without model polling'}}];
         else if (lastTool === 'p2o_loop') content = [{type:'toolCall',id:'workers-after-wake',name:'p2o_workers',arguments:{waitFor:'all-report',timeoutSeconds:30}}];
         else if (lastTool === 'p2o_task_dispatch') content = [{ type: 'toolCall', id: 'workers-1', name: 'p2o_workers', arguments: { waitFor: 'all-report', timeoutSeconds: 30 } }];
-        else if (lastTool === 'p2o_workers') content = [{ type: 'toolCall', id: 'finish-1', name: 'p2o_finish', arguments: {} }];
+        else if (lastTool === 'p2o_workers') content = [{ type: 'toolCall', id: 'finish-1', name: 'p2o_finish', arguments: system.includes('CAMPAIGN objective') ? { partial: 'inert owner fixture reaches its pinned wake boundary without a recorded goal, so the campaign ends incomplete.' } : {} }];
         else if (lastTool === 'p2o_finish') content = [{ type: 'text', text: 'OWNER_FINAL_REPORT: inert owner run; worker claim repeated only as a labelled, unverified assertion.' }];
         else content = [{ type: 'text', text: 'OWNER_UNEXPECTED_TOOL.' }];
       } else {

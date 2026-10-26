@@ -7,6 +7,7 @@ import { routeCounts } from './routes.js';
 import { cvssScore } from './cvss.js';
 import { FINDING_SEVERITIES } from './case-types.js';
 import { completionLine, deriveCompletion } from './completion.js';
+import { DEBT_KINDS, debtFor, type DebtReport } from './debt.js';
 import { claimHeadClaims } from './chain-view.js';
 import { planFrontier } from './planning.js';
 import { coverageViews, type CoverageCellView, type CoverageContext, type CoveragePlanView } from './coverage.js';
@@ -51,6 +52,14 @@ export interface ReportMeta {
   wrote?: ReadonlyMap<string, WorkerWrites>;
   /** A4: the loop/executor mode that produced the run, printed next to the authority counters and role matrix. */
   mode?: AuthorityMode;
+  /** A6.2/A6.6: the derived research debt, so the report's completion cannot disagree with the finish result's. */
+  debt?: DebtReport;
+  /** A6.6: the campaign frame and how the run continued, printed as recorded facts (never re-verified here). */
+  campaign?: {
+    objective: string; constraints: number; deny: number; allow: number; heartbeatSeconds: number;
+    rounds: number; wakeReasons: { event: number; debt: number; heartbeat: number };
+    startedAt: string; endedAt?: string; partialReason?: string;
+  };
 }
 export const OPERATOR_FIELDS = ['author', 'organization', 'team', 'classification', 'disclaimer'] as const;
 export type OperatorField = typeof OPERATOR_FIELDS[number];
@@ -271,6 +280,28 @@ function operatorBrief(index: LedgerIndex): string[] {
   ];
 }
 
+/** A6.6: the campaign frame as recorded, printed above the summary. Nothing here is re-verified or re-derived. */
+function campaignSection(campaign: NonNullable<ReportMeta['campaign']>): string[] {
+  const reasons = `event ${campaign.wakeReasons.event}, debt ${campaign.wakeReasons.debt}, heartbeat ${campaign.wakeReasons.heartbeat}`;
+  return ['## Campaign', '',
+    `- Objective (operator-supplied, unverified; it neither widens nor narrows the authorized scope): ${mdText(campaign.objective, 600)}`,
+    `- Recorded constraints: ${campaign.constraints} (${campaign.deny} deny = absolute, ${campaign.allow} allow = permission only). This report does not re-check them against the work below.`,
+    `- Heartbeat: ${campaign.heartbeatSeconds === 0 ? 'disabled (0s)' : `${campaign.heartbeatSeconds}s`}; automatic rounds: ${campaign.rounds}; wake reasons: ${reasons}.`,
+    `- Campaign started: ${mdText(campaign.startedAt, 64)}${campaign.endedAt ? `; last committed record: ${mdText(campaign.endedAt, 64)}` : ''}`,
+    ...(campaign.partialReason ? ['', '### Why the run stopped', '',
+      `- ${mdText(campaign.partialReason, 600)} — quoted as recorded by the lead at the final finish. A partial stop is not a completion and asserts nothing about coverage.`] : []),
+    ''];
+}
+
+/** A6.2/A6.6: research debt at stop, by kind, with the record-discharged count. A named item is owed work, not a finding. */
+function debtSection(debt: DebtReport): string[] {
+  const kinds = DEBT_KINDS.filter(kind => debt.totals[kind] > 0);
+  return ['## Research debt at stop', '',
+    `- Remaining: **${debt.gateable}** gateable of **${debt.total}** named item(s); **${debt.discharged}** discharged by a deferred/blocked record. A named item is owed work, not a finding and not a safety claim.`,
+    ...(kinds.length ? ['', '| Kind | Remaining |', '|---|---|', ...kinds.map(kind => `| ${kind} | ${debt.totals[kind]} |`)] : ['', 'The derivation produced no research-debt item from the committed state.']),
+    ''];
+}
+
 export function renderReport(index: LedgerIndex, context: ReportProjectionContext & { coverage?: CoverageContext }, meta: ReportMeta): RenderedReport {
   const projection = reportProjection(index, meta.mode ? { ...context, mode: meta.mode } : context), tasks = taskFrontier(index);
   // A4: the authority facts are printed as provenance, never as a gate, permission or finding.
@@ -280,7 +311,9 @@ export function renderReport(index: LedgerIndex, context: ReportProjectionContex
   // state the situation line or the finish result would contradict. P16.1: goal proofs read the same case/coverage views
   // the report prints, so a stale case cannot settle a goal in one place and fail in the other.
   const claimHeads = claimHeadClaims(index), proof = { ...proofViews(cases, plans), claims: claimHeads };
-  const completion = deriveCompletion({ plans: planFrontier(index), claims: claimHeads, tasks, cases: proof.cases, coverage: proof.coverage });
+  const completion = deriveCompletion({ plans: planFrontier(index), claims: claimHeads, tasks, cases: proof.cases, coverage: proof.coverage,
+    // A6.2: the report reads the same debt report the finish result did, so the two cannot print different obligation counts.
+    ...(meta.debt ? { debt: debtFor(meta.debt) } : {}) });
   const accepted = cases.filter(view => view.acceptedFinding), others = cases.filter(view => !view.acceptedFinding);
   const open = projection.openIds.map(id => ({ id, record: index.byId.get(id) }));
   const status: Record<string, number> = {}; for (const task of tasks) status[task.status] = (status[task.status] ?? 0) + 1;
@@ -296,7 +329,7 @@ export function renderReport(index: LedgerIndex, context: ReportProjectionContex
     '## Provenance', '',
     `- Run: ${mdText(meta.runId, 80)}${meta.historical ? ' (historical, read-only store)' : ' (active run)'}; as of committed sequence **${meta.asOfSequence}**; ${index.records.length} records; store schema ${meta.storeSchema}`,
     `- Target: ${mdText(meta.target, 400)}; retention ${mdText(meta.retention)}`,
-    `- Authority: planner target operations ${authority.plannerTargetOps} (must be 0); worker target operations ${authority.workerTargetOps}; tasks created ${authority.tasksCreated}, dispatched ${authority.tasksDispatched}${authority.firstDispatchAt ? ` (first dispatch ${mdText(authority.firstDispatchAt, 40)})` : ''}; claims owner ${authority.ownerClaims} (must be 0) / worker ${authority.workerClaims}; validation tasks ${authority.validationTasks}; stalled rounds ${authority.stalledRounds}`,
+    `- Authority: planner target operations ${authority.plannerTargetOps} (must be 0); worker target operations ${authority.workerTargetOps}; tasks created ${authority.tasksCreated}, dispatched ${authority.tasksDispatched}${authority.firstDispatchAt ? ` (first dispatch ${mdText(authority.firstDispatchAt, 40)})` : ''}; claims owner ${authority.ownerClaims} (must be 0) / worker ${authority.workerClaims}; validation tasks ${authority.validationTasks}; stalled rounds ${authority.stalledRounds}; automatic wakes ${authority.heartbeatWakes + authority.debtWakes} (debt ${authority.debtWakes}, heartbeat ${authority.heartbeatWakes}); campaign partial stops ${authority.campaignPartial}`,
     `- Mode and role matrix: ${authority.mode ? `${mdText(authority.mode.loopMode ?? 'unknown', 24)} loop / ${mdText(authority.mode.executorMode ?? 'unknown', 24)} executor` : 'mode not recorded in this snapshot'}; planner ${roles.planner} tools (no target or claim tool), worker ${roles.worker}, validation ${roles.validation}, reporter ${roles.reporter} (read-only)`,
     ...operatorBrief(index),
     `- Runtime that wrote this run: p2o ${mdText(meta.runtime.version || 'unknown version', 40)} · closure digest ${mdText(meta.runtime.hash.slice(0, 12), 16)}`,
@@ -310,7 +343,8 @@ export function renderReport(index: LedgerIndex, context: ReportProjectionContex
     })(),
     `- Views below are bounded (${ROWS} rows per list, ${CASE_ROWS} cases); omitted rows are counted and the complete data is in the portable bundle (\`/p2o export\`).`,
     ...(v2 ? [`- Records: first at ${mdText(index.records[0]?.at ?? 'n/a', 40)}, last at ${mdText(index.records.at(-1)?.at ?? 'n/a', 40)} (timestamps as stored; this report reads no clock)`,
-      ...(meta.operator ? (['author', 'organization', 'team', 'classification'] as const).filter(name => meta.operator![name]).map(name => `- ${severityLabel(name)} (operator-supplied, unverified): ${mdText(meta.operator![name], 200)}`) : [])] : []), '',
+      ...(meta.operator ? (['author', 'organization', 'team', 'classification'] as const).filter(name => meta.operator![name]).map(name => `- ${severityLabel(name)} (operator-supplied, unverified): ${mdText(meta.operator![name], 200)}`) : [])] : []),
+    ...(v2 && meta.campaign ? campaignSection(meta.campaign) : []),
     ...(v2 ? scopeAndSummary(meta, index, plans, cells, notClean, accepted, rated, unrated, others, open.length, awaiting.length, cases) : []),
     '## Summary', '', '| Item | Count |', '|---|---|',
     `| Accepted current cases | ${accepted.length} |`, `| Cases pending, disputed, stale, withdrawn or duplicate | ${others.length} |`,
@@ -396,6 +430,8 @@ export function renderReport(index: LedgerIndex, context: ReportProjectionContex
   for (const report of handoffs.shown) out.push(`- Handoff ${mdText(report.id, 80)} from ${mdText(report.workerId ?? 'unknown', 80)}: outcome ${mdText(report.outcome ?? 'unknown', 40)}, confidence ${mdText(report.confidence ?? 'unknown', 24)}, ${report.findings} claimed finding(s), ${report.openItems} open item(s)${report.blocked ? `, blocked: ${mdText(report.blocked, 200)}` : ''}${report.workerId && meta.wrote?.get(report.workerId) ? `; ${mdText(writeBackLine(meta.wrote.get(report.workerId)!), 200)}` : ''}`);
   if (handoffs.omitted) out.push(`- … ${handoffs.omitted} more handoffs`);
   if (v2) {
+    // A6.2/A6.6: debt is printed before the obligation list it feeds, so the reader sees why the completion says incomplete.
+    if (meta.debt && (meta.debt.total || meta.debt.discharged)) out.push('', ...debtSection(meta.debt));
     // M3: the obligation list is a report fact. Exporting writes it; it never refuses the export and never claims the run is done.
     out.push('', '## REMAINING WORK', '', 'Derived at export from committed state, not from a claim of completion. Obligations are unfinished review, coverage or chain items; advisories are hints. Neither is a finding and neither is a safety statement.', '',
       `- Completion: **${completion.state}** — ${completion.remaining} obligation(s). ${completionLine(completion)}`);

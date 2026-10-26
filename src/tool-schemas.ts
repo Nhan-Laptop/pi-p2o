@@ -185,4 +185,6 @@ export const finishParameters = Type.Object({
   narrative: Type.Optional(Type.String({ maxLength: 6000 })),
   /** M3: exporting the report is not termination. `export:true` writes the files and ends nothing. */
   export: Type.Optional(Type.Boolean({ description: 'Write REPORT.md/CSV from committed state and end nothing; workers, sandboxes and the run stay as they are' })),
+  /** A6.6/D9: the final finish of an incomplete campaign records a partial stop with this operator-facing reason. */
+  partial: Type.Optional(Type.String({ maxLength: 600, description: 'Final path only: why this campaign stops incomplete (required when the derived completion is incomplete and a campaign was recorded). Recorded as campaign.partial; it never claims coverage' })),
 });

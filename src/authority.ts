@@ -25,6 +25,12 @@ export interface AuthorityCounters {
   validationTasks: number;
   /** Recorded `planner.stalled` lifecycle facts (A4): zero-intent rounds that ended with an open goal. */
   stalledRounds: number;
+  /** A6.3: recorded heartbeats that actually woke the planner (a timer that fired while busy is not a wake). */
+  heartbeatWakes: number;
+  /** A6.3: recorded debt continuations — the wake that continues a campaign because work is owed. */
+  debtWakes: number;
+  /** A6.6: final finishes that recorded a `campaign.partial` reason instead of a completion. */
+  campaignPartial: number;
 }
 export interface RoleCounts { planner: number; worker: number; validation: number; reporter: number }
 export interface AuthorityMode { loopMode?: string; executorMode?: string }
@@ -50,11 +56,15 @@ function taskRows(index: LedgerIndex): Map<string, TaskRow> {
   return rows;
 }
 
+/** A6.3: the lifecycle facts an engine wake writes, so wakes are durable and countable instead of inferred. */
+const wakeRows = (index: LedgerIndex) => index.records.filter(record => record.kind === 'lifecycle'
+  && (record.data?.engine as { event?: unknown } | undefined)?.event === 'planner.wake');
 export function authorityCounters(index: LedgerIndex): AuthorityCounters {
   const tasks = [...taskRows(index).values()];
   const dispatched = tasks.flatMap(row => row.dispatchedAt === undefined ? [] : [row.dispatchedAt]);
   const evidence = index.records.filter(record => record.kind === 'evidence');
   const claims = index.records.filter(record => record.kind === 'candidate');
+  const wakes = wakeRows(index).map(record => String((record.data?.engine as { reason?: unknown }).reason ?? 'event'));
   return {
     plannerTargetOps: evidence.filter(record => !record.workerId).length,
     workerTargetOps: evidence.filter(record => Boolean(record.workerId)).length,
@@ -66,9 +76,15 @@ export function authorityCounters(index: LedgerIndex): AuthorityCounters {
     validationTasks: tasks.filter(row => row.role === 'validation').length,
     stalledRounds: index.records.filter(record => record.kind === 'lifecycle'
       && (record.data?.engine as { event?: unknown } | undefined)?.event === 'planner.stalled').length,
+    heartbeatWakes: wakes.filter(reason => reason === 'heartbeat').length,
+    debtWakes: wakes.filter(reason => reason === 'debt').length,
+    campaignPartial: index.records.filter(record => record.kind === 'lifecycle'
+      && (record.data as { event?: unknown } | undefined)?.event === 'campaign.partial').length,
   };
 }
 
+/** A6.6: campaign rounds recorded as wakes; the engine snapshot is preferred when the owner is live. */
+export const wakeRoundCount = (index: LedgerIndex): number => wakeRows(index).length;
 /** Ledger counters + the static role matrix (+ the run mode when the caller has it) — one object for report and status. */
 export function authorityReport(index: LedgerIndex, mode?: AuthorityMode): AuthorityReport {
   return { ...authorityCounters(index), roles: ROLE_COUNTS, ...(mode ? { mode } : {}) };

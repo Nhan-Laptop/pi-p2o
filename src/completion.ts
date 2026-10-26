@@ -13,8 +13,9 @@ import { goalProofRefusal, type ProofCase, type ProofCoverage } from './goal-pro
 import type { ChainClaim } from './chain-view.js';
 import type { PlanEntry } from './planning.js';
 import type { AssessmentTask } from './tasks.js';
+import type { DebtSummary } from './debt.js';
 
-export const REMAINING_CODES = ['GOAL_UNSETTLED', 'GOAL_UNPROVEN', 'PRIMITIVE_UNCHAINED', 'CHAIN_READY'] as const;
+export const REMAINING_CODES = ['GOAL_UNSETTLED', 'GOAL_UNPROVEN', 'PRIMITIVE_UNCHAINED', 'CHAIN_READY', 'RESEARCH_DEBT'] as const;
 export type RemainingCode = typeof REMAINING_CODES[number];
 export interface RemainingItem { code: RemainingCode; count: number; ids: string[]; message: string }
 export interface Completion {
@@ -30,6 +31,8 @@ export interface CompletionInput {
   plans: readonly PlanEntry[]; claims: readonly ChainClaim[]; tasks: readonly AssessmentTask[];
   /** P16.1: the same two sources the plan board reads, so a settled goal cannot be settled here and unproven there. */
   cases?: readonly ProofCase[]; coverage?: readonly ProofCoverage[];
+  /** A6.2: host-derived research debt; when present it is remaining work like any other obligation. */
+  debt?: DebtSummary;
 }
 
 const MESSAGES: Record<RemainingCode, string> = {
@@ -37,6 +40,7 @@ const MESSAGES: Record<RemainingCode, string> = {
   GOAL_UNPROVEN: 'a goal is reviewed or closed but its proof does not hold; a status is not a demonstration',
   PRIMITIVE_UNCHAINED: 'a confirmed and tested claim has no successor step and no recorded wall',
   CHAIN_READY: 'a chain step is ready to take and has not been dispatched',
+  RESEARCH_DEBT: 'research debt the host can name is outstanding; a decision row and prose do not discharge it',
 };
 
 const MAX_IDS = 20;
@@ -58,6 +62,9 @@ export function deriveCompletion(input: CompletionInput): Completion {
   push('GOAL_UNPROVEN', unprovenGoals.map(plan => plan.id));
   push('PRIMITIVE_UNCHAINED', unchained.map(primitive => primitive.recordId));
   push('CHAIN_READY', ready.map(step => step.planId));
+  // A6.2: the debt report is the same denominator the finish preflight and the report read, so an empty goal board can no
+  // longer be read as "nothing owed" while the host is naming work.
+  if (input.debt && input.debt.gateable > 0) push('RESEARCH_DEBT', [...input.debt.ids]);
   const remaining = items.reduce((total, item) => total + item.count, 0);
   const reasons = items.map(item => `${item.code} ${item.count}: ${item.message}`);
   return { state: remaining ? 'incomplete' : 'complete', remaining, items, reasons, unchained };
@@ -75,6 +82,7 @@ export function completionDemand(completion: Completion, plans: readonly PlanEnt
       const steps = item.ids.map(id => byId.get(id)).filter(step => step !== undefined).map(step => step.chainOf ? `step ${step.step} of chain ${step.chainOf}` : `step ${step.step}`);
       parts.push(`${steps.length ? steps.join(', ') : `${item.count} chain step(s)`} ready and undispatched`);
     } else if (item.code === 'PRIMITIVE_UNCHAINED') parts.push(`${item.count} demonstrated primitive(s) with no successor step`);
+    else if (item.code === 'RESEARCH_DEBT') parts.push(`${item.count} research debt item(s) with no discharge`);
     else if (item.code === 'GOAL_UNPROVEN') parts.push(`${item.count} goal(s) whose proof no longer holds`);
     else if (item.code === 'GOAL_UNSETTLED') parts.push(`${item.count} goal(s) not reviewed or closed`);
   }

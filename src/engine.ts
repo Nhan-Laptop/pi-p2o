@@ -4,7 +4,9 @@ import type { AssessmentTask } from './tasks.js';
 
 export interface EngineEvent { sequence: number; kind: string; id: string; reason?: string }
 export interface QueuedIntent { taskId: string; revision: number; priority: number; input: DelegateInput; reason?: string }
-export interface PlannerWake { runId: string; epoch: number; through: number; round: number; /** P16.2: the named obligations a stalled-but-unfinished round still owes. */ demand?: string }
+/** A6.3: why a wake was reserved, so status and the P6 metrics count wakes without re-deriving them. */
+export type WakeReason = 'event' | 'debt' | 'heartbeat';
+export interface PlannerWake { runId: string; epoch: number; through: number; round: number; /** P16.2: the named obligations a stalled-but-unfinished round still owes. */ demand?: string; /** A6.3: what caused this wake; a heartbeat is not an event. */ reason?: WakeReason }
 /**
  * M6: what a round is judged on. Monotone counters, so equality means the round added nothing — no tested cell, no candidate
  * closure, no asset and no chain depth. The owner computes them at its own consumption barrier; the engine only compares.
@@ -15,6 +17,8 @@ export interface RoundProgress {
   remaining: number;
   /** The named obligations, built by the owner from the ledger. The engine never invents work or target prose. */
   demand?: string;
+  /** A6.2: the derived research-debt numbers behind `remaining`; carried so A6.3 can pace a debt wake without re-reading. */
+  debt?: { gateable: number; total: number };
 }
 /** A4: what a round's ending looks like to the stall rule. Both facts are read from the ledger by the caller, never invented here. */
 export interface RoundStall { openGoal: boolean; openIntents: number }
@@ -30,6 +34,10 @@ export interface EngineDeps {
   wake(wake: PlannerWake): void;
   idle(): boolean;
   problem(reason: string): void;
+  /** A6.3: the caller's clock, so fake timers can drive the heartbeat deterministically. Defaults to `Date.now`. */
+  now?(): number;
+  /** A6.3: the campaign heartbeat in seconds; `0`/absent disables it. Read lazily so the campaign record stays the one source. */
+  heartbeatSeconds?(): number;
 }
 
 /** Deterministic owner-local scheduler. Journal/projections never reconstruct execution authority.
@@ -54,9 +62,52 @@ export class AssessmentEngine {
   private quiet: number[] = [];
   private readonly revisits = new Map<string, { at: number; timer: ReturnType<typeof setTimeout> }>();
   private decision?: { disposition: 'wait' | 'blocked'; reason: string };
-  constructor(readonly runId: string, readonly mode: LoopMode, private deps: EngineDeps, private debounceMs = 100) {}
+  /** A6.3: the single unref'd campaign heartbeat timer, its next fire time and the last debt wake (for pacing). */
+  private heartbeatTimer?: ReturnType<typeof setTimeout>;
+  private heartbeatAt?: number;
+  private lastDebtWakeAt?: number;
+  private lastWake?: { reason: WakeReason; round: number };
+  /** A6.5: the wall-clock at which the current round was reserved, so status can say how long it has been running. */
+  private roundStartedAt?: number;
+  constructor(readonly runId: string, readonly mode: LoopMode, private deps: EngineDeps, private debounceMs = 100) { this.armHeartbeat(); }
   private live() { return !this.stopped && this.deps.active(); }
+  /** A6.5: one place that starts a round, so the counter and the round-start timestamp cannot drift apart. */
+  private beginRound(): number { this.roundStartedAt = this.clock(); return ++this.rounds; }
   private gate() { if (!this.live()) throw Error('Assessment engine inactive'); }
+  /** A6.3: the clock is the caller's, never read directly, so a fake timer can move it. */
+  private clock(): number { return (this.deps.now ?? Date.now)(); }
+  private heartbeat(): number { const seconds = this.deps.heartbeatSeconds?.() ?? 0; return Number.isFinite(seconds) && seconds > 0 ? seconds : 0; }
+  /**
+   * A6.3: arm exactly one heartbeat. It is not a poll: it fires once, re-arms from the fire path, and is disposed by
+   * pause/stop. It never runs for a manual loop, where an automatic paid round would contradict the mode.
+   */
+  private armHeartbeat() {
+    clearTimeout(this.heartbeatTimer); this.heartbeatTimer = undefined; this.heartbeatAt = undefined;
+    if (this.stopped || this.paused || this.mode !== 'event-driven') return;
+    const seconds = this.heartbeat(); if (!seconds) return;
+    this.heartbeatAt = this.clock() + seconds * 1000;
+    this.heartbeatTimer = setTimeout(() => { this.heartbeatTimer = undefined; this.heartbeatAt = undefined; this.fireHeartbeat(); }, seconds * 1000);
+    this.heartbeatTimer.unref?.();
+  }
+  private clearHeartbeat() { clearTimeout(this.heartbeatTimer); this.heartbeatTimer = undefined; this.heartbeatAt = undefined; }
+  /**
+   * A6.3: a heartbeat wake continues a campaign that still owes work when no event arrived. It never fires inside a turn,
+   * never resurrects a stopped/inactive run and never wakes a run whose last judged round was complete.
+   */
+  private fireHeartbeat() {
+    if (!this.live() || this.paused || this.mode !== 'event-driven') return;
+    this.armHeartbeat();
+    if (this.busy || this.reservation) return;
+    const owed = this.progress.remaining > 0 || (this.progress.debt?.gateable ?? 0) > 0;
+    if (!owed && this.rounds > 0) return;
+    const seconds = this.heartbeat();
+    const demand = `heartbeat ${seconds}s${this.progress.demand ? `; ${this.progress.demand}` : this.progress.remaining > 0 ? `; ${this.progress.remaining} obligation(s) remain` : ''}`;
+    const wake: PlannerWake = { runId: this.runId, epoch: this.epoch, through: this.sequence, round: this.beginRound(), demand, reason: 'heartbeat' };
+    this.lastWake = { reason: 'heartbeat', round: wake.round };
+    this.reservation = wake; this.deps.wake(wake);
+  }
+  /** A6.3: arm the campaign heartbeat once the owner phase is active; nothing is dispatched here. */
+  start() { this.gate(); this.armHeartbeat(); }
   private serialize<T>(work: () => Promise<T>): Promise<T> {
     const next = this.mutations.then(async () => {this.gate(); return work();});
     this.mutations = next.catch(() => {}); return next;
@@ -132,13 +183,27 @@ export class AssessmentEngine {
    * carries the obligation by name and the loop stays live; only a complete run (or a lead-recorded blocked) goes quiet.
    */
   private reserveWake(): PlannerWake | undefined {
-    if (!this.live() || this.paused || this.mode !== 'event-driven' || this.reservation || !this.events.size) return;
-    const quiet = this.quietText(); let demand: string | undefined;
-    if (quiet) {
-      if (this.progress.remaining > 0) demand = `quiet ${quiet}; ${this.progress.demand ?? `${this.progress.remaining} obligation(s) remain`}`;
-      else {this.pause(`${quiet}; the completion is complete, so no automatic wake is scheduled — add work and /p2o resume`);return;}
+    if (!this.live() || this.paused || this.mode !== 'event-driven' || this.reservation) return;
+    const quiet = this.quietText(); let demand: string | undefined, reason: WakeReason = 'event';
+    if (this.events.size) {
+      if (quiet) {
+        if (this.progress.remaining > 0) demand = `quiet ${quiet}; ${this.progress.demand ?? `${this.progress.remaining} obligation(s) remain`}`;
+        else {this.pause(`${quiet}; the completion is complete, so no automatic wake is scheduled — add work and /p2o resume`);return;}
+      }
+    } else {
+      // A6.3 debt wake: nothing new arrived, but the round ended owing work. This is the branch that would have continued the
+      // observed run at 04:00 instead of stopping once its first roadmap was exhausted. It is paced by the heartbeat interval
+      // and suppressed by an explicit `p2o_loop wait` (events and the heartbeat still wake).
+      const owed = this.progress.remaining > 0 || (this.progress.debt?.gateable ?? 0) > 0;
+      if (!owed || this.decision?.disposition === 'wait') return;
+      const seconds = this.heartbeat();
+      if (seconds && this.lastDebtWakeAt !== undefined && this.clock() < this.lastDebtWakeAt + seconds * 1000) return;
+      reason = 'debt'; this.lastDebtWakeAt = this.clock();
+      const owedText = this.progress.demand ?? (this.progress.remaining > 0 ? `${this.progress.remaining} obligation(s) remain` : 'research debt remains');
+      demand = quiet ? `quiet ${quiet}; ${owedText}` : owedText;
     }
-    const wake = {runId:this.runId,epoch:this.epoch,through:this.sequence,round:++this.rounds,...(demand?{demand}:{})};
+    const wake: PlannerWake = {runId:this.runId,epoch:this.epoch,through:this.sequence,round:this.beginRound(),...(demand?{demand}:{}),reason};
+    this.lastWake = {reason,round:wake.round};
     this.reservation = wake; return wake;
   }
   private wakeIdle() {
@@ -162,6 +227,13 @@ export class AssessmentEngine {
     await this.deps.persist(
       'planner.stalled: the round ended with an open goal, no open/running intent and no blocked declaration; recorded as a report fact, never a wake or new budget',
       { event: 'planner.stalled', openGoal: true, openIntents: 0, rounds: this.rounds, sequence: this.sequence, stalls: this.stalls });
+    // A6.3: three stalled rounds with gateable debt is no longer a report fact. The loop pauses for a human decision; nothing
+    // is retried, restarted or spent automatically, and /p2o resume clears it.
+    if (this.stalls >= 3 && (this.progress.debt?.gateable ?? 0) > 0 && this.live()) {
+      await this.deps.persist('planner.stall-escalation: three stalled rounds while research debt remains; the loop needs a human decision',
+        { event: 'planner.stall-escalation', stalls: this.stalls, debt: this.progress.debt, sequence: this.sequence });
+      this.pause('three rounds with no open intent while research debt remains; the loop needs a human decision (/p2o resume or /p2o stop)');
+    }
     return true;
   }
   /** Delivery ACK only: never discard events committed after the projected barrier. */
@@ -172,6 +244,8 @@ export class AssessmentEngine {
     this.consumed = Math.max(this.consumed,through);
     if (this.reservation && this.reservation.through <= through) this.reservation = undefined;
     if (progress) this.judge(progress);
+    // A6.3: a round boundary is when the campaign heartbeat is (re)armed; the model is no longer inside a turn once consume runs.
+    this.armHeartbeat();
     return delta;
   }
   /** One judgement per round: a round that repeats the previous counters is quiet, anything else clears the streak. */
@@ -204,7 +278,7 @@ export class AssessmentEngine {
   /** A revisit is a scheduled wake, so it is not gated on event-driven mode; pause, stop and epoch still win. */
   private fireRevisit() {
     if (!this.live() || this.paused) return;
-    const wake = { runId: this.runId, epoch: this.epoch, through: this.sequence, round: ++this.rounds };
+    const wake = { runId: this.runId, epoch: this.epoch, through: this.sequence, round: this.beginRound() };
     this.reservation = wake; this.deps.wake(wake);
   }
   async disposition(disposition: 'wait' | 'blocked', reason: string) {
@@ -218,17 +292,17 @@ export class AssessmentEngine {
   }
   pause(reason: string) {
     this.paused = reason; this.epoch += 1; this.reservation = undefined;
-    clearTimeout(this.timer); this.timer = undefined; this.deps.problem(reason);
+    clearTimeout(this.timer); this.timer = undefined; this.clearHeartbeat(); this.deps.problem(reason);
   }
   resume() {
     this.gate();
-    this.paused = undefined; this.decision = undefined; this.kick();
+    this.paused = undefined; this.decision = undefined; this.armHeartbeat(); this.kick();
   }
   stop() {
     this.stopped = true; this.epoch += 1; this.reservation = undefined;
     for (const entry of this.revisits.values()) clearTimeout(entry.timer);
     this.revisits.clear();
-    clearTimeout(this.timer); this.timer = undefined; this.events.clear(); this.queue.clear();
+    clearTimeout(this.timer); this.timer = undefined; this.clearHeartbeat(); this.events.clear(); this.queue.clear();
   }
   async join() { await this.mutations; await this.pumping; }
   snapshot() {
@@ -236,6 +310,8 @@ export class AssessmentEngine {
     const events = [...this.events.values()];
     return {runId:this.runId,mode:this.mode,epoch:this.epoch,state:this.stopped ? 'stopped' : this.paused ? 'blocked' : this.busy ? 'running' : this.reservation ? 'scheduled' : 'waiting',
       paused:this.paused,rounds:this.rounds,decision:this.decision,stalls:this.stalls,
+      heartbeat:{seconds:this.heartbeat(),...(this.heartbeatAt!==undefined?{nextAt:new Date(this.heartbeatAt).toISOString()}:{})},lastWake:this.lastWake,
+      ...(this.roundStartedAt!==undefined?{roundStartedAt:new Date(this.roundStartedAt).toISOString()}:{}),
       sequence:this.sequence,consumedSequence:this.consumed,pendingEvents:events.length,events:events.slice(-20),eventsOmitted:Math.max(0,events.length-20),
       pendingIntents:intents.length,intents:intents.slice(0,20),intentsOmitted:Math.max(0,intents.length-20),
       warning:'Owner-local coordination, not evidence or restored authority. Read the runtime executor profile for target concurrency. Automatic rounds are extra provider requests, not a hard monetary/token cap.'};

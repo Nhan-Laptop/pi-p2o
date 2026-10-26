@@ -11,6 +11,7 @@ import { defaultRoute, routeSlug } from './routes.js';
 import { taskFrontier } from './tasks.js';
 import { claimHeadClaims } from './chain-view.js';
 import type { PhasePacket } from './phase.js';
+import type { DebtReport } from './debt.js';
 
 export const PLAN_KINDS=['goal','todo','decision'] as const;
 export const PLAN_DISPOSITIONS=['new','reuse','refine','validate','retest','defer'] as const;
@@ -31,6 +32,8 @@ export interface PlanDraft {
   environmentRef?:string;
   /** M1: chain identity shared by its steps, and this row's 1-based position in it. */
   chainOf?:string; step?:number;
+  /** A6.2: the research-debt ids this deferred/blocked todo discharges. The only prose wall; a decision row cannot carry it. */
+  debtRefs?:string[];
 }
 export interface PlanEntry extends PlanDraft { id:string; runId:string; revision:number; recordId:string }
 /** Goal vocabulary, distinct from tasks and coverage plans. */
@@ -68,7 +71,7 @@ function goalProof(value:unknown):GoalProof{
   throw Error('Goal proof kind must be capability, case or coverage');
 }
 export function validatePlanDraft(value:unknown):PlanDraft{
-  const row=plain(value,'plan entry');exact(row,['id','kind','title','status','reason','criteria','exclusions','taskIds','goalIds','supportRefs','decision','proof','route','claimRefs','needs','environmentRef','chainOf','step'],'Plan entry');
+  const row=plain(value,'plan entry');exact(row,['id','kind','title','status','reason','criteria','exclusions','taskIds','goalIds','supportRefs','decision','proof','route','claimRefs','needs','environmentRef','chainOf','step','debtRefs'],'Plan entry');
   if(typeof row.kind!=='string'||!(PLAN_KINDS as readonly string[]).includes(row.kind))throw Error('Invalid plan kind');const kind=row.kind as PlanKind;
   if(typeof row.status!=='string'||!statuses[kind].includes(row.status))throw Error(`Invalid plan status ${typeof row.status==='string'?JSON.stringify(row.status):'(missing)'}; ${kind} allows ${statuses[kind].join(', ')}`);
   const result:PlanDraft={kind,title:text(row.title,'title',500),status:row.status,reason:text(row.reason,'reason',1000,10),
@@ -91,6 +94,15 @@ export function validatePlanDraft(value:unknown):PlanDraft{
       result.step=row.step as number;
       if(!result.claimRefs.length)throw Error('CHAIN_LINEAGE: a chain step must cite the claim it consumes (claimRefs); a plan row with no lineage cannot hold a link');
     }
+  }
+  // A6.2: research debt is discharged by a record (derived absence) or by a deferred/blocked todo that names it. A
+  // `decision` row never walls work, which is exactly the mismatch the observed run hit when it tried to defer a primitive.
+  if(row.debtRefs!==undefined){
+    if(kind!=='todo')throw Error('Only a todo discharges research debt (debtRefs); a goal or decision row cannot wall work');
+    const refs=list(row.debtRefs,'debt reference',25);
+    for(const ref of refs)if(!/^debt-[a-z][a-z0-9-]*-[a-f0-9]{12}$/.test(ref))throw Error(`Invalid research debt reference ${ref}; copy the id from the debt report`);
+    if(row.status!=='deferred'&&row.status!=='blocked')throw Error('Research debt is discharged by a deferred/blocked todo with a reason; mark the row deferred or blocked first');
+    result.debtRefs=refs;
   }
   if(kind==='goal'&&!result.criteria?.length)throw Error('Goal needs bounded acceptance criteria');
   // P16.1: a goal states how it will be proved before it is created, so "assess the surface" cannot become a goal that is
@@ -129,7 +141,9 @@ export function phasePackets(index:LedgerIndex):PhasePacket[]{
 
 /** Durable owner-authored planning over the canonical record backend; never a second task queue. */
 export class PlanBoard extends LedgerBoard{
-  constructor(runId:string,path:string,active:()=>boolean,private now=()=>Date.now()){super(runId,path,active,'Plan','Plan');}
+  /** A6.2: the host passes a debt resolver so an unknown `debtRef` is refused here, not silently ignored. Optional so a
+  // reader-only board (tests, historical views) needs no coverage context to construct one. */
+  constructor(runId:string,path:string,active:()=>boolean,private now=()=>Date.now(),private debt?:(index:LedgerIndex)=>DebtReport){super(runId,path,active,'Plan','Plan');}
   private mutate<T>(work:(index:LedgerIndex,plans:PlanEntry[])=>Promise<T>):Promise<T>{return this.serialized(index=>work(index,planFrontier(index)));}
   private references(draft:PlanDraft,index:LedgerIndex,plans:PlanEntry[]):void{
     const tasks=taskFrontier(index);for(const taskId of draft.taskIds??[])if(!tasks.some(task=>task.id===taskId))throw Error(`Unknown plan task ${taskId}`);
@@ -140,6 +154,8 @@ export class PlanBoard extends LedgerBoard{
     for(const taskId of [...(draft.decision?.chosenTaskIds??[]),...(draft.decision?.deferredTaskIds??[])])if(!tasks.some(task=>task.id===taskId))throw Error(`Unknown decision task ${taskId}`);
     // M1: lineage is a same-run candidate record, so the chain board can resolve a step's needs against what that claim gains.
     for(const ref of draft.claimRefs??[])if(index.byId.get(ref)?.kind!=='candidate'||index.byId.get(ref)?.runId!==this.runId)throw Error(`Unknown plan claim ${ref}: a claim reference must be a same-run candidate record`);
+    // A6.2: a wall must cite a debt the run currently owes; a stale or mistyped id would read as a discharge and is refused.
+    if(draft.debtRefs?.length&&this.debt){const known=new Set(this.debt(index).ids);for(const ref of draft.debtRefs)if(!known.has(ref))throw Error(`Unknown research debt ${ref}: copy the id from the current debt report`);}
     if(draft.chainOf&&draft.step!==undefined){
       // One row per position: two rows claiming step 2 of the same chain would make readiness ambiguous.
       const clash=plans.find(plan=>plan.id!==draft.id&&plan.chainOf===draft.chainOf&&plan.step===draft.step);

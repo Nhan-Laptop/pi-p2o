@@ -86,8 +86,11 @@ describe('export writes, ends nothing; stop records the obligation (M3)', () => 
   it('exports a report with one unchained primitive, leaves the run incomplete and still active', async () => fixture(async h => {
     await populate(h);
     const first = await h.call('p2o_finish', { export: true });
-    expect(first.details).toMatchObject({ state: 'incomplete', remaining: 1 });
+    // A6.2: the one unchained primitive is joined by the four research-debt items the fixture's shape earns
+    // (post-hoc plan, unrun cell, unreferenced gap, and the same primitive named as debt), so 1 + 4.
+    expect(first.details).toMatchObject({ state: 'incomplete', remaining: 5 });
     expect(first.details.completion.items[0].code).toBe('PRIMITIVE_UNCHAINED');
+    expect(first.details.completion.items.map((item: { code: string }) => item.code)).toContain('RESEARCH_DEBT');
     expect(text(first)).toContain('STATE: incomplete');
     expect(text(first)).toContain('Nothing was torn down or ended');
     const files = await readdir(first.details.reportPath);
@@ -98,17 +101,28 @@ describe('export writes, ends nothing; stop records the obligation (M3)', () => 
     expect((await h.call('p2o_board', { board: 'tasks' })).details.total).toBeGreaterThan(0);
   }));
 
-  it('reaches complete only once the primitive is walled, and says so in the report', async () => fixture(async h => {
+  it('reaches complete only once the primitive is walled and every named debt item is discharged', async () => fixture(async h => {
     const built = await populate(h);
     const exported = await h.call('p2o_finish', { export: true });
-    expect(exported.details).toMatchObject({ state: 'incomplete', remaining: 1 });
+    expect(exported.details).toMatchObject({ state: 'incomplete', remaining: 5 });
     const report = await readFile(join(exported.details.reportPath, 'REPORT.md'), 'utf8');
     expect(report).toContain('## REMAINING WORK');
     expect(report).toContain('PRIMITIVE_UNCHAINED');
-    expect(report).toMatch(/- Completion: \*\*incomplete\*\* — 1 obligation\(s\)/);
-    // A deferred row naming the claim is the wall M4 asks for; nothing else changed.
+    expect(report).toMatch(/- Completion: \*\*incomplete\*\* — 5 obligation\(s\)/);
+    const debtItem = exported.details.completion.items.find((item: { code: string }) => item.code === 'RESEARCH_DEBT');
+    expect(debtItem.count).toBe(4);
+    const ids: string[] = [...debtItem.ids];
+    // A deferred row naming the claim is the wall M4 asks for; the same row names the debt item it answers.
+    const primitive = ids.find(id => id.startsWith('debt-primitive-unchained-'))!;
     await h.call('p2o_plan_create', {entry: { kind: 'todo', title: 'Wall for the fixture claim', status: 'deferred',
-      reason: 'Ruled-out successor: the next step needs an actor this fixture does not model', claimRefs: [built.claim.id] } });
+      reason: 'Ruled-out successor: the next step needs an actor this fixture does not model', claimRefs: [built.claim.id], debtRefs: [primitive] } });
+    const walled = await h.call('p2o_finish', { export: true });
+    // One wall answers one named item: the other three are still owed and still printed by id.
+    expect(walled.details).toMatchObject({ state: 'incomplete', remaining: 3 });
+    for (const id of ids.filter(id => id !== primitive)) {
+      await h.call('p2o_plan_create', {entry: { kind: 'todo', title: `Discharge ${id}`, status: 'deferred',
+        reason: 'Bounded discharge recorded for the fixture: the item is answered by a wall, not by declaring the run done', debtRefs: [id] } });
+    }
     const settled = await h.call('p2o_finish', { export: true });
     expect(settled.details).toMatchObject({ state: 'complete', remaining: 0 });
     expect(text(settled)).toContain('STATE: complete');
@@ -118,8 +132,16 @@ describe('export writes, ends nothing; stop records the obligation (M3)', () => 
 
   it('renders the stored outcome next to the derived completion and flags the mismatch in the final snapshot', async () => fixture(async h => {
     const built = await populate(h);
+    // A6.2: derived completion needs every named item discharged before it can read "complete"; only the stored outcome can lag.
+    const exported = await h.call('p2o_finish', { export: true });
+    const ids: string[] = exported.details.completion.items.find((item: { code: string }) => item.code === 'RESEARCH_DEBT').ids;
+    const primitive = ids.find(id => id.startsWith('debt-primitive-unchained-'))!;
     await h.call('p2o_plan_create', {entry: { kind: 'todo', title: 'Wall for the final-snapshot mismatch', status: 'deferred',
-      reason: 'Ruled-out successor: the next step needs an actor this fixture does not model', claimRefs: [built.claim.id] } });
+      reason: 'Ruled-out successor: the next step needs an actor this fixture does not model', claimRefs: [built.claim.id], debtRefs: [primitive] } });
+    for (const id of ids.filter(id => id !== primitive)) {
+      await h.call('p2o_plan_create', {entry: { kind: 'todo', title: `Discharge ${id}`, status: 'deferred',
+        reason: 'Bounded discharge recorded for the fixture: the item is answered by a wall, not by declaring the run done', debtRefs: [id] } });
+    }
     const result = await h.call('p2o_finish', {});
     expect(result.details.reportPath).toMatch(/-final$/);
     const report = await readFile(join(result.details.reportPath, 'REPORT.md'), 'utf8');
@@ -151,8 +173,10 @@ describe('export writes, ends nothing; stop records the obligation (M3)', () => 
     try {
       const outcome = store.outcome() as { assessmentOutcome: string; remaining?: string };
       expect(outcome.assessmentOutcome).toBe('cancelled');
-      expect(outcome.remaining).toContain('incomplete: 1 obligation(s)');
+      expect(outcome.remaining).toContain('incomplete: 5 obligation(s)');
       expect(outcome.remaining).toContain('PRIMITIVE_UNCHAINED');
+      // A6.2: the stopped outcome carries the derived debt too, so a resume reads the same obligation list the round saw.
+      expect(outcome.remaining).toContain('RESEARCH_DEBT');
     } finally { store.close(); }
   }));
 });

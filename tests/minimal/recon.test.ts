@@ -97,9 +97,11 @@ describe('bounded recon contract', () => {
   // gained the label/root-sandbox wording, so both instruction hashes moved on purpose; the brief hashes are unchanged.
   // 2026-10-26 (P3/A4): the worker prompt gained the literal "One intent, write back, report, stop" rule, so both instruction
   // hashes moved on purpose; the brief hashes are unchanged because workerBrief carries no role-policy line.
+  // 2026-10-26 (P5/A6.4): reconInstructions gained the WSTG `feature` attribute contract, so both instruction hashes moved on
+  // purpose; the brief hashes are unchanged because workerBrief carries no recon instructions.
   it.each([
-    ['url', 'e8e9d9e7e19805c53fce007fca37729f515b3821f8f7078378c5cb1b29e4e086', '9c42b63acf752ab70bdd2980e05a75db8d1a35a9afc345324e847d90afa226c7'],
-    ['directory', '76cfaaf7b2ec0e71c9606adfb9cd4b7a4e2a8131724b3e16ca98b4786dd5efc7', '1a569560f44bef4644c30b8771cd09c6bfe81f90ece813da0a773390412828a9'],
+    ['url', '4ea207857dc697b84879850521c7a00b586a66cbde46348c6b17bb443fff4fd3', '9c42b63acf752ab70bdd2980e05a75db8d1a35a9afc345324e847d90afa226c7'],
+    ['directory', '53b9fa00d40104cea8ef3cc8608ae55936c9faedbb7a82ae934c8bed5fd82a13', '1a569560f44bef4644c30b8771cd09c6bfe81f90ece813da0a773390412828a9'],
   ])('pins %s worker guidance for the Planner/frontier revision; historical acceptance artifacts are not rewritten', (kind, instructionHash, briefHash) => {
     const ticket = { workerId: 'worker-test', role: 'recon', runId: 'run-test', depth: 1, parentWorkerId: null,
       lifetime: 'until-stopped', target: { kind, label: kind === 'url' ? 'https://example.invalid' : '/target' } } as Ticket;

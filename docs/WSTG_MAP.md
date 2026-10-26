@@ -28,6 +28,15 @@ Mỗi test trong scope có đúng **một skill chủ sở hữu** và, khi skil
 
 Cột **Trigger** liệt kê các đặc điểm recon làm test đáng lập kế hoạch (từ vựng ở đầu bảng bên dưới; ghi như thuộc tính `feature` của tài sản hoặc câu của một fact quan sát được). `p2o_coverage_suggest` không truyền `features` sẽ tự lấy các từ trong thuộc tính `feature` (phân tách bằng khoảng trắng , ; |) của tài sản hiện hành; kết quả có `featureSource` (`explicit`, `graph` hoặc `default`) và `ignoredFeatureWords` cho từ không thuộc từ vựng. Danh sách truyền tay luôn thắng; câu trong fact không được dò vì từ như `api` xuất hiện ở khắp nơi. Cột **Modes** cho biết transport có thể mang test: S đọc nguồn, H HTTP ẩn danh cùng origin, A HTTP với danh tính do operator cấp, N mạng trong sandbox (TCP, TLS, WebSocket), B cần trình duyệt để chứng minh. A có mặt đúng khi cờ I, B đúng khi cờ B. Cả hai chỉ là dữ liệu để lập kế hoạch, không cấp quyền: scope, ticket và các cổng của host vẫn quyết định cái gì được chạy.
 
+### Test áp dụng được suy ra (A6.4)
+
+Từ P5/A6.4, feature của **từng asset** (không phải câu fact) là thứ làm một test WSTG trở nên áp dụng được. Hai hàm thuần trong `src/wstg-map.ts` biến dữ liệu đó thành kế hoạch đọc được, không phải coverage:
+
+- `applicableTests(assets, {browser, identity})` gộp feature của các asset in-scope (asset không có feature, hoặc đã hết scope, bị bỏ), trả một row cho mỗi test theo đúng thứ tự `WSTG_MAP`, kèm `assets` đã sort/unique của asset đã kích hoạt. Row cờ **B** bị bỏ khi không có browser oracle; row cờ **I** bị bỏ khi operator không cấp identity — hai cờ này lọc quyền chứng minh, không phải quyền chạy.
+- `unplannedTests(featureAssets, {covered, browser, identity})` trả các row chưa có cell cùng `questionKey`, mỗi row một câu detail ASCII dưới 300 ký tự kèm `assetIds` kích hoạt. Đây là nguồn của debt kind `WSTG_UNPLANNED` trong báo cáo research debt: một test áp dụng được mà không ai lập kế hoạch là **nghĩa vụ còn nợ**, không phải "coverage sạch" và không phải finding.
+
+Token lạ trong thuộc tính `feature` chỉ được báo (advisory) và không bao giờ là refusal; từ vựng là danh sách Trigger ở bảng dưới. `tests/minimal/wstg-applicable.test.ts` pin cả hai hàm, thứ tự map, biên detail và luật lọc B/I.
+
 ## Mức bằng chứng của một assessment (L0 đến L3)
 
 Hàm `wstgEvidence` tính mức cao nhất mà các cell có khóa của test đạt tới; báo cáo xuất (`/p2o report export`, slice S6) dùng nó cho phụ lục WSTG. Mức chỉ phản ánh cell host chiếu từ công việc đã review (hoặc cell lưu legacy), không phản ánh target.

@@ -23,7 +23,10 @@ describe('automatic report at the end of a run', () => {
 
   it('records the operator objective and constraints in the ledger and REPORT.md only when the flags were given', async () => {
     await fixture(async h => {
-      await h.command('--target ./source --goal "Assess the login boundary" --avoid "No payment flows"'); await h.call('p2o_finish', {});
+      // A6.6 (D9): the flags record a campaign frame, so a final report must name why it stops; without a recorded goal
+      // the run cannot be reported as complete, and `partial` is the recorded exit.
+      await h.command('--target ./source --goal "Assess the login boundary" --avoid "No payment flows"');
+      await h.call('p2o_finish', { partial: 'Fixture records the operator flags only; no plan goal was ever recorded.' });
       const report = await readFile(join(await reportDirectory(h), 'REPORT.md'), 'utf8');
       expect(report).toContain('Stated objective (operator-supplied, unverified, does not change scope): Assess the login boundary');
       expect(report).toContain('Operator constraint (guidance given to workers, not enforcement): No payment flows');
