@@ -313,3 +313,53 @@ bắt đầu 2026-10-26T09:52Z. Bằng chứng: `tmp/p2o-live/monitor3.jsonl`. K
   ≥$1,22, vượt phần ngân sách còn lại ($1,086) ⇒ không có thêm lần đo nào trong cap.
 - Chi tiết bằng chứng + bảng per-criterion: `tmp/p2o-live/gate-verdict2.md`; chấm trên
   `docs/ACCEPTANCE_MATRIX.md` F-A6-23 + F-A2-9.
+- **Lần đo 3 sau P2.3** (owner cấp thêm cap $5, commit `49930d5`): xem §9.5 — **gate ĐẠT 6/6**.
+
+### 9.5 Lần đo 3 sau P2.3 — gate ĐẠT 6/6 + hai defect hạ tầng (2026-10-26)
+
+Owner cấp cap **$5** cho cả chuỗi đo; P2.3 (message `draft.methodReason` actionable, commit `49930d5`) được build
+(`npm run build` tái lập **byte-identical** bundle mà run đã nạp, 286.755 byte) rồi đo lại trên `https://hcmussh.edu.vn/`
+với objective rộng hơn (`--goal` in-zone host + mọi query parameter/cookie/listing route; hợp lệ qua A6.1, không nới
+gate). Stated objective in nguyên văn ở dòng Provenance của report, theo A6.1.
+
+**Lần 4 — `run-b2d7d43e-8fc4-4d02-9f7a-73e75b7d7372` (voided sau 3,3 phút, $0,0203):** chết vì defect **D1**: monitor
+của operator mở DB read-only trong lúc run đang ghi ⇒ writer (busy_timeout=0, journal DELETE) nhận `database is
+locked` ⇒ `storageFailure()` đóng execution authority (`blocked/storage-failed`, "No target retry"). Không đo được gì;
+bằng chứng ở `tmp/p2o-live/note-run4-storage-busy.md`. Monitor sau đó đọc **bản copy** của DB
+(`tmp/p2o-live/monitor3.mjs`), không mở file sống.
+
+**Lần 5 — `run-615f7a9a-412e-47ed-81d0-5059406dc5ef` (đo chính thức, 69,8 phút, $1,5703, 21 session):** 12
+`planner.admitted`, wake **heartbeat 1** (round 1, 600 s sau start) + **event 9**, debt 0; **0 stall fact, 0
+stall-escalation, 0 `/p2o resume`, 0 pause**; 20 task (3 recon / 12 discovery / 5 validation), 217 worker target
+operation (planner 0), 217 evidence, 27 claim, 38 coverage cell (29 tested, 9 không test, 12 stale), 78 open gap,
+66 asset ngoài plan, **1 case accept-current (Low)**; derived completion `incomplete` (263 obligation) + 254 debt item;
+lead tự `p2o_finish {partial}` ở 69,8 phút với lý do ghi lại. **Gate 6/6 PASS** — bảng per-criterion và bằng chứng ở
+`tmp/p2o-live/gate-verdict3.md`; chấm trên `docs/ACCEPTANCE_MATRIX.md` F-A6-23 (Measured PASS 6/6).
+
+**F-A2-9 lần này:** 31/49 call `p2o_task_create` lỗi = **63,3%** (toàn planner 52/193 = 26,9%) ⇒ vẫn **FAIL** ngưỡng
+<5%, nhưng nhóm "Invalid task method" = **0 occurrence** (patch đúng chỗ); 31 lỗi còn lại là model-side schema/identity
+(`NEW_WORK_HAS_PRIOR_CLAIM` 4, thiếu sub-property `prerequisites` 4, `role=validation` thiếu purpose/predecessor 4,
+`VALIDATION_IDENTITY_MISMATCH` 4, `STALE_WORK_REFERENCE` 3, evidence id lạ 3, field schema lạ 3, lẻ 6) và mọi message
+đều actionable nên lead retry, tạo đủ 20 task — friction không còn là nguyên nhân dừng campaign (đó là điều kiện để
+tiêu chí thời lượng PASS).
+
+**Hai defect phát hiện khi đo — chưa patch (đề xuất P5.2):**
+
+- **D1 — reader ngoài process làm chết run (fail-closed sai chỗ).** `src/state/store.ts` mở writer với
+  `PRAGMA busy_timeout=0` + `journal_mode=DELETE`; mọi `ERR_SQLITE*` đều bị `storageFailure()`
+  (`extensions/p2o/index.ts:1015`) coi là storage fault chí mạng. Bất kỳ reader ngoài process (monitor, `sqlite3` của
+  owner, backup, GUI) giữ SHARED lock lúc COMMIT đều giết run. Tái lập cross-process: `tmp/p2o-live/dbexp/writer.mjs` +
+  `reader.mjs` — 6 s cho 11.907 write fail vs 402 ok; cùng process thì 0 fail (Node single-thread). Fix đề xuất: bounded
+  retry `SQLITE_BUSY`/`SQLITE_LOCKED` (hoặc `busy_timeout` nhỏ) trước khi kết luận storage-failed; giữ fail-closed cho
+  ENOSPC/quota/corruption.
+- **D2 — `campaignFold` chỉ quét 100 lifecycle record ⇒ campaign dài mất `## Campaign`.** `store.ts:694-702` lấy
+  campaign từ 100 lifecycle record mới nhất. Run 5 kết thúc với **116** lifecycle record ⇒ `campaign.created` (sequence
+  1) ra khỏi window từ **11:54:09Z** (phút 16,9) ⇒ `store.campaign()` = `undefined` suốt phần còn lại: (a) 3 lần debt
+  view của planner có item giả `CAMPAIGN_MISSING`; (b) REPORT.md cuối **mất `## Campaign` + `### Why the run stopped`**
+  (lý do partial không được trích; các counter `human resumes 0 / stall escalations 0` vẫn in ở provenance). Run 2
+  (61 lifecycle) và run 3 (99) nằm dưới ngưỡng nên defect chỉ lộ ở campaign ≥60 phút — đúng gate này. Code có từ
+  `18c0427` (P5), không phải P5.1. Fix đề xuất: fold campaign bằng query filter (`json_extract(body,
+  '$.data.event')='campaign.created'` hoặc tương đương) thay vì `LIMIT 100`; `campaignPartial()` dùng cùng cách.
+
+**Chi phí cả chuỗi:** run 1 $0,1241 + run 2 $0,7895 + run 3 $1,2614 + run 4 (voided) $0,0203 + run 5 $1,5703 =
+**$3,7656 / cap $5** (còn $1,2344). Burn run 5: $0,0225/phút.
