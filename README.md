@@ -143,7 +143,7 @@ Terminal worker failures deliver a blocked report without another model call; no
 
 See [focused assessment state](docs/ASSESSMENT_STATE.md) for complete-ledger cursors, task/handoff review, current validation, progress and bounded report retention. Automatic planning is explicit opt-in; automatic retry is not introduced.
 `/p2o status` also shows worker liveness (`QUIET` is a local observation, not a timeout), the runtime closure digest (entry file plus `src/**`), the Planner's context usage and model usage per role as Pi reports it — display only: no cap, retry or limit is ever derived from it, and unreported messages are counted as unknown, not estimated.
-Its `Frontier:` line counts `stalled rounds` — planner rounds that ended with an open goal, no open/running intent and no blocked declaration are recorded as a `planner.stalled` report fact, never a wake, pause or budget (only admitted planner rounds can stall: the startup `/p2o` command turn records nothing, and the pause decision is its own `planner.stall-escalation` fact) — and one `Authority:` line lists planner target operations (must be 0) and worker target operations, tasks created and dispatched with the first dispatch time, owner claims (must be 0) and worker claims, validation tasks, the run mode and the static role matrix (planner 23, worker 17, validation 16, reporter 6). Both are read from committed records only; a legacy run keeps its honest non-zero owner counts, and no counter refuses or finishes anything. The deterministic REPORT.md provenance carries the same two lines, and its `## Campaign` section adds `Human resumes: N; stall escalations: M` so an unattended-gate claim is readable from the ledger instead of console history.
+Its `Frontier:` line counts `stalled rounds` — planner rounds that ended with an open goal, no open/running intent and no blocked declaration are recorded as a `planner.stalled` report fact, never a wake, pause or budget (only admitted planner rounds can stall: the startup `/p2o` command turn records nothing, and the pause decision is its own `planner.stall-escalation` fact) — and one `Authority:` line lists planner target operations (must be 0) and worker target operations, tasks created and dispatched with the first dispatch time, owner claims (must be 0) and worker claims, validation tasks, the run mode and the static role matrix (planner 24, worker 19, validation 18, reporter 6). Both are read from committed records only; a legacy run keeps its honest non-zero owner counts, and no counter refuses or finishes anything. The deterministic REPORT.md provenance carries the same two lines, and its `## Campaign` section adds `Human resumes: N; stall escalations: M` so an unattended-gate claim is readable from the ledger instead of console history.
 
 ## Recon and next-task selection
 
@@ -152,8 +152,8 @@ Startup uses a short kickoff instead of duplicating those instructions. Worker g
 Each role's prompt states its rule in one line, and the role loadout enforces it: the planner starts with one recon/mapping
 intent, has no target or claim tools, cannot author a claim or a coverage cell, and treats a zero-intent round as not
 progress; the worker gets "one intent, write back, report, stop"; the reporter is a read-only second reader with no target
-operations, no candidate authorship and no verdict or plan changes. The counts are static policy: planner 23 tools, worker 17,
-validation 16, reporter 6.
+operations, no candidate authorship and no verdict or plan changes. The counts are static policy: planner 24 tools, worker 19,
+validation 18, reporter 6.
 Pi tool descriptions explain execution limits; they do not guarantee installed binaries. Check only prerequisites
 needed for the chosen task through bounded sandbox execution; a tool the image lacks is installed into your own
 scratch with a receipt, and universal startup probes are never run.

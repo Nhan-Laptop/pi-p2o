@@ -21,8 +21,8 @@ describe('scripts/measure-context.mjs', () => {
     for (const worker of report.workers) { expect(worker.reconBlocks, `${worker.role}/${worker.kind}`).toBe(1); expect(worker.toolNamesOutsideLoadout, `${worker.role}/${worker.kind}`).toEqual([]); expect(worker.total).toBe(worker.system + worker.brief); }
 
     // Declarations: 35 registered tools (L1/W2: four board bags became 16 verbs; A3 removed the two coverage-cell verbs) and the three loadouts of workflow-policy.test.ts.
-    expect(report.declarations.registered, 'L1/W2 board verbs').toBe(35);
-    expect(Object.fromEntries(Object.entries<any>(report.declarations.loadouts).map(([label, item]) => [label, item.tools]))).toEqual({ planner: 23, worker: 17, 'reporting worker': 6 });
+    expect(report.declarations.registered, 'L1/W2 board verbs').toBe(37);
+    expect(Object.fromEntries(Object.entries<any>(report.declarations.loadouts).map(([label, item]) => [label, item.tools]))).toEqual({ planner: 24, worker: 19, 'reporting worker': 6 });
     // Skills: the lead pages through the catalog and each role has a default skill whose first page is inlined.
     expect(report.skills.listPages.length).toBeGreaterThanOrEqual(3); expect(report.skills.listTotal).toBe(report.skills.listPages.reduce((sum: number, n: number) => sum + n, 0));
     // P15 (W5): validation and reporting ship no default method skill, so only the two role defaults with a skill appear here.

@@ -39,7 +39,7 @@ Each role's prompt states its rule in short literal lines, not as a manual. The 
 claim must come from a worker task, that coverage is a projection of reviewed work, and that a zero-intent round is not
 progress. The worker prompt says "One intent, write back, report, stop". The reporter prompt says "Read-only second reader: no
 target operations, no candidate authorship, no verdict or plan changes." Those lines are *advisory*: the enforcement is
-the role loadout in `src/tool-policy.ts` (planner 23 tools, worker 17, validation 16, reporter 6), where the planner's
+the role loadout in `src/tool-policy.ts` (planner 24 tools, worker 19, validation 18, reporter 6), where the planner's
 list contains no target or claim tool at all, and the same rule is repeated on the tool boundaries in
 `src/tool-guidelines.ts` so the model reads it where it reads the tool.
 
@@ -227,7 +227,7 @@ sớm nhất), `ownerClaims`/`workerClaims` (candidate theo attribution; owner *
 `stalledRounds`, `heartbeatWakes`/`debtWakes` (wake theo reason, A6.3), `campaignPartial` (final finish ghi partial thay
 completion, A6.6), `campaignResumes` (lifecycle `campaign.resumed`, ghi trước khi loop chạy lại ở mỗi `/p2o resume`) và
 `stallEscalations` (lifecycle `planner.stall-escalation` — quyết định pause xin người, **không** phải mọi round stall; P1),
-cộng `ROLE_COUNTS` tĩnh (planner 23 · worker 17 · validation 16 · reporter 6) và mode chạy. Hai bất biến
+cộng `ROLE_COUNTS` tĩnh (planner 24 · worker 19 · validation 18 · reporter 6) và mode chạy. Hai bất biến
 0 là thứ gate đo của P0–P3 sẽ đọc; run legacy giữ số owner >0 trung thực thay vì bị viết lại, nên >0 trên run cũ không
 phải lỗi hồi quy. Cùng một object đi vào `reportProjection().authority`, `statusView().authority` và provenance REPORT.md;
 các con số không từ chối lệnh, không kết thúc run và không cấp quyền. P1 dùng đúng hai counter mới để gate "0 human

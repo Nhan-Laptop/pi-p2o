@@ -87,6 +87,10 @@ describe('the frontier obligation refuses at create, not at finish (M2 + M4)', (
     await h.call('p2o_plan_create', {entry: { kind: 'todo', title: 'Chain step 1 demonstrated', status: 'done', reason: 'First step of the fixture chain, demonstrated by the recorded primitive', chainOf: 'chain-obligation', step: 1, claimRefs: [primitive.id] } });
     await h.call('p2o_plan_create', {entry: { kind: 'todo', title: 'Chain step 2 ready', status: 'open', reason: 'Second step of the fixture chain, ready on the demonstrated capability', chainOf: 'chain-obligation', step: 2, claimRefs: [ready.id], needs: [READ] } });
 
+    // P7.1: exploit mode (the default) admits the exploitation-purpose drafts below only under a capability-proof goal.
+    await h.call('p2o_plan_create', {entry: {kind: 'goal', title: 'Reach the fixture effect under an impact goal', status: 'active',
+      proof: {kind: 'capability', capability: {kind: 'file.read'}}, criteria: ['The cited ready step runs'],
+      reason: 'P7.1 exploit-mode admission fixture: the goal these chain-step drafts are settled against'}});
     const breadth = (overrides: Record<string, unknown> = {}): Record<string, unknown> => ({ ...draft('/report-fixture'), ...overrides });
     await expect(h.call('p2o_task_create', {draft: breadth() }))
       .rejects.toThrow(/CHAIN_READY_UNDISPATCHED: step 2 of chain chain-obligation consumes http\.request \(internal-api\) that claim .* already gains; dispatch it, cite it as a parent, or defer it with a reason/);

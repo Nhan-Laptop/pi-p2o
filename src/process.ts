@@ -1,7 +1,7 @@
 import { spawn } from 'node:child_process';
 
 export const OUTPUT_LIMIT = 48 * 1024;
-export interface ProcessResult { code: number; stdout: string; stderr: string; truncated: boolean; evidenceId?: string; hops?: string[]; session?: string; redirectStopped?: string; cookieWarning?: string }
+export interface ProcessResult { code: number; stdout: string; stderr: string; truncated: boolean; evidenceId?: string; hops?: string[]; session?: string; /** A7.2: the session executor the bytes came from, when the operation named one. */ sessionRef?: string; redirectStopped?: string; cookieWarning?: string }
 export type OutputStream = 'stdout' | 'stderr';
 /** Trusted host callback only; raw bytes must never become serializable process/RPC metadata. */
 export type OutputObserver = (stream: OutputStream, bytes: Buffer) => void;

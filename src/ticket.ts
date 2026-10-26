@@ -1,4 +1,6 @@
 import { randomBytes } from 'node:crypto';
+import { CASE_EFFECTS, type CaseEffect } from './cvss.js';
+import type { EngagementMode } from './campaign.js';
 import type { WorkPurpose } from './duties.js';
 import { isWorkPurpose } from './duties.js';
 import { sha256Hex } from './validate.js';
@@ -17,6 +19,9 @@ export const WORKER_ID_PATTERN = /^p2o-[a-z]{3,10}-[0-9a-f]{6}$/;
 
 export interface TicketTarget { kind: 'directory' | 'url' | 'hybrid'; label: string; origin?: string }
 
+/** A7.8: the operator's recorded ingress facts, carried on the ticket so every worker brief states the same path. */
+export interface TicketIngress { callback?: string; labNetwork?: string }
+
 export interface Ticket {
   version: 2;
   runId: string;
@@ -27,13 +32,26 @@ export interface Ticket {
   role: string;
   /** What this worker is for. Absent on tickets minted before purposes existed; the prompt falls back to the role. */
   purpose?: WorkPurpose;
+  /** D15/P7.1: the engagement mode the owner confirmed; absent on a ticket minted before the mode existed. */
+  mode?: EngagementMode;
+  /** D15/Q9: the effect classes the engagement authorizes; empty for assess. */
+  effectClasses?: CaseEffect[];
   target: TicketTarget;
   image: string;
   socket: string;
   records: string;
   reports: string;
   lifetime: 'until-stopped';
-  executorMode?: 'shared' | 'isolated';
+  executorMode?: 'shared' | 'isolated' | 'session';
+  /** A7.2: the session this worker was spawned into, when the owner dispatched it onto one. */
+  session?: string;
+  /**
+   * A7.4: how many operator-sealed secrets exist for this run. Only the count travels on the ticket (the ticket is capped at
+   * 8 KiB and an identity may hold 256 entries); ids and kinds come from p2o_secret, and a value never leaves the host.
+   */
+  secrets?: number;
+  /** A7.8: how a blind effect can be proven from the target; absent when the operator configured no ingress path. */
+  ingress?: TicketIngress;
   extension: { path: string; sha256: string };
   token: string;
   taskId?: string;
@@ -100,12 +118,23 @@ export async function readTicket(path: string, expected: TicketExpectations): Pr
   if (dirname(String(ticket.records)) !== directory || dirname(String(ticket.reports)) !== directory) bad('records and reports must live in the ticket directory');
   if (!Number.isInteger(ticket.depth) || ticket.depth < 1 || ticket.depth > 4) bad('invalid delegation depth');
   if (ticket.lifetime !== 'until-stopped' || 'expiresAt' in ticket || 'deadline' in ticket) bad('invalid ticket lifetime');
-  if (ticket.executorMode !== undefined && !['shared','isolated'].includes(ticket.executorMode)) bad('invalid executor profile');
+  if (ticket.executorMode !== undefined && !['shared','isolated','session'].includes(ticket.executorMode)) bad('invalid executor profile');
   if (ticket.image !== expected.image) bad('ticket image does not match this extension');
   if (ticket.extension?.path !== expected.extensionPath || ticket.extension.sha256 !== expected.extensionSha) bad('ticket extension identity does not match the running code');
   if (!/^[a-f0-9]{32}$/.test(String(ticket.token))) bad('invalid ticket token');
   if (ticket.taskId !== undefined && !/^[a-z0-9][a-z0-9-]{0,79}$/.test(ticket.taskId)) bad('invalid task ID');
   if (ticket.purpose !== undefined && !isWorkPurpose(ticket.purpose)) bad('invalid work purpose');
+  if (ticket.mode !== undefined && ticket.mode !== 'assess' && ticket.mode !== 'exploit') bad('invalid engagement mode');
+  if (ticket.effectClasses !== undefined && (!Array.isArray(ticket.effectClasses) || ticket.effectClasses.length > CASE_EFFECTS.length
+    || ticket.effectClasses.some(effect => typeof effect !== 'string' || !(CASE_EFFECTS as readonly string[]).includes(effect)))) bad('invalid effect classes');
+  if (ticket.secrets !== undefined && (!Number.isInteger(ticket.secrets) || ticket.secrets < 1 || ticket.secrets > 256)) bad('invalid sealed-secret count');
+  if (ticket.ingress !== undefined) {
+    const ingress = ticket.ingress as { callback?: unknown; labNetwork?: unknown };
+    if (!ingress || typeof ingress !== 'object' || Array.isArray(ingress) || (!ingress.callback && !ingress.labNetwork)) bad('invalid ingress facts');
+    if (ingress.callback !== undefined && (typeof ingress.callback !== 'string' || ingress.callback.length > 2048
+      || !/^https?:\/\//i.test(ingress.callback) || /[\x00-\x1f\x7f\s]/u.test(ingress.callback))) bad('invalid callback endpoint');
+    if (ingress.labNetwork !== undefined && (typeof ingress.labNetwork !== 'string' || !/^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,63}$/.test(ingress.labNetwork))) bad('invalid lab network');
+  }
   if (ticket.requestedRuntime !== undefined && (!ticket.requestedRuntime || Object.entries(ticket.requestedRuntime).some(([k,v]) => !['model','thinking'].includes(k) || typeof v !== 'string' || v.length > 200 || /[\x00-\x1f\x7f]/.test(v)))) bad('invalid runtime profile');
   if (typeof ticket.target?.label !== 'string' || !ticket.target.label || ticket.target.label.length > 512 || /[\x00-\x1f\x7f]/.test(ticket.target.label)) bad('invalid target label');
   if (!['directory', 'url', 'hybrid'].includes(ticket.target.kind)) bad('invalid target kind');

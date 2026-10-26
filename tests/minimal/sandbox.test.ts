@@ -101,7 +101,7 @@ describe('sandbox executor, no agents', () => {
     expect(second.join(' ')).toContain('-H Cookie: sid=abc123');
     await sandbox.stop();
   });
-  it('preserves GET bodies and isolates named sessions, actors and explicit Cookie overrides', async () => {
+  it('preserves GET bodies and isolates named sessions, principals and explicit Cookie overrides', async () => {
     const d=driver(),sandbox=new Sandbox(target,d.run,async()=>['93.184.216.34']);await sandbox.start();
     const ok='HTTP/1.1 200 OK\r\n\r\nok';
     d.script('HTTP/1.1 200 OK\r\nSet-Cookie: sid=alice; Path=/\r\n\r\nok');
@@ -111,7 +111,7 @@ describe('sandbox executor, no agents', () => {
     expect(call).toContain('--interactive');
     d.script(ok);await sandbox.http({...request,session:'bob'});
     expect(d.calls.filter(c=>c.includes('/usr/bin/curl')).at(-1)!.join(' ')).not.toContain('Cookie: sid=alice');
-    d.script(ok);await sandbox.http({...request,session:'alice'},undefined,undefined,'worker');
+    d.script(ok);await sandbox.http({...request,session:'alice',principal:'worker'});
     expect(d.calls.filter(c=>c.includes('/usr/bin/curl')).at(-1)!.join(' ')).not.toContain('Cookie: sid=alice');
     d.script(ok);await sandbox.http({...request,session:'alice',headers:{Cookie:'sid=explicit'}});
     call=d.calls.filter(c=>c.includes('/usr/bin/curl')).at(-1)!;

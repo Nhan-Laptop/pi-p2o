@@ -30,7 +30,7 @@ it.skipIf(process.env.P2O_TEST_DOCKER !== '1')('real Docker: bounded shell/curl 
     expect(result.code).toBe(0);expect(result.truncated).toBe(true);expect(result.stdout).not.toContain('SHELL-TAIL');
     const part=shell.parts()[0],a=store.ingestArtifact('owner',part.input,{totalBytes:part.totalBytes,captureOutcome:'returned'});
     expect(store.artifact(a.id,79000).text).toContain('SHELL-TAIL');expect(a.truncated).toBe(false);
-    const received=await sandbox.http({url:'/large',method:'GET',followRedirects:false,maxRedirects:0},undefined,undefined,'owner',http.observe);
+    const received=await sandbox.http({url:'/large',method:'GET',followRedirects:false,maxRedirects:0},undefined,undefined,http.observe);
     expect(received.code).toBe(0);expect(received.truncated).toBe(true);expect(received.stdout).not.toContain('HTTP-TAIL');
     const body=http.parts().find(p=>p.stream==='stdout')!,h=store.ingestArtifact('owner',body.input,{totalBytes:body.totalBytes,captureOutcome:'returned'});
     expect(store.artifact(h.id).text).not.toContain('sensitive-capture-cookie');expect(store.artifact(h.id,119000).text).toContain('HTTP-TAIL');

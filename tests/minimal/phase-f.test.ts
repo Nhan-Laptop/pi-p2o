@@ -169,6 +169,10 @@ describe('the run tells the lead what to research, and records its refusals (M6 
     // A2: the first intent of a run must be recon/mapping; this fixture's subject is the later structured intent.
     await h.call('p2o_task_create', {draft: { question: 'Which recorded surfaces does the retained fixture graph expose?', surface: '/report-fixture',
       risk: 'mapping', role: 'recon', evidenceIds: [], prerequisites: [] }});
+    // P7.1: exploit mode (the default) needs a capability-proof goal before an exploitation intent is admitted.
+    await h.call('p2o_plan_create', {entry: {kind: 'goal', title: 'Reach the fixture effect under an impact goal', status: 'active',
+      proof: {kind: 'capability', capability: {kind: 'file.read'}}, criteria: ['The bounded fixture step is recorded'],
+      reason: 'P7.1 exploit-mode admission fixture: the impact goal the exploitation intent is settled against'}});
     const created = (await h.call('p2o_task_create', {draft: {
       question: 'Does the bounded fixture reach the declared effect?', surface: '/report-fixture', risk: 'authorization', role: 'exploit',
       roleReason: 'Purpose fixture role', expectedTrue: 'The bounded observation is recorded', expectedFalse: 'The bounded control is recorded',

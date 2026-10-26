@@ -82,7 +82,7 @@ describe('owner role', () => {
   afterEach(async () => { await h.command('stop'); await rm(h.root, { recursive: true, force: true }); });
 
   it('registers the owner and worker tools plus one command, and does no work before the command', () => {
-    expect([...h.pi.tools.keys()].sort()).toEqual(['p2o_artifact', 'p2o_board', 'p2o_candidate', 'p2o_capture', 'p2o_case_create', 'p2o_case_rate', 'p2o_case_revise', 'p2o_coverage_plan', 'p2o_coverage_suggest', 'p2o_delegate', 'p2o_finish', 'p2o_graph', 'p2o_http', 'p2o_lab', 'p2o_ledger', 'p2o_loop', 'p2o_net', 'p2o_note', 'p2o_plan_create', 'p2o_plan_revise', 'p2o_report', 'p2o_request_subtask', 'p2o_research', 'p2o_shell', 'p2o_skill_list', 'p2o_skill_read', 'p2o_state', 'p2o_surface', 'p2o_task_create', 'p2o_task_dispatch', 'p2o_task_review', 'p2o_task_revise', 'p2o_task_settle', 'p2o_task_start', 'p2o_workers']);
+    expect([...h.pi.tools.keys()].sort()).toEqual(['p2o_artifact', 'p2o_board', 'p2o_candidate', 'p2o_capture', 'p2o_case_create', 'p2o_case_rate', 'p2o_case_revise', 'p2o_coverage_plan', 'p2o_coverage_suggest', 'p2o_delegate', 'p2o_finish', 'p2o_graph', 'p2o_http', 'p2o_lab', 'p2o_ledger', 'p2o_loop', 'p2o_net', 'p2o_note', 'p2o_plan_create', 'p2o_plan_revise', 'p2o_report', 'p2o_request_subtask', 'p2o_research', 'p2o_secret', 'p2o_session', 'p2o_shell', 'p2o_skill_list', 'p2o_skill_read', 'p2o_state', 'p2o_surface', 'p2o_task_create', 'p2o_task_dispatch', 'p2o_task_review', 'p2o_task_revise', 'p2o_task_settle', 'p2o_task_start', 'p2o_workers']);
     expect(h.pi.messages).toEqual([]);
     expect(h.sandboxes).toEqual([]);
     expect([...h.pi.commands.keys()]).toEqual(['p2o']);
@@ -269,6 +269,9 @@ describe('owner role', () => {
       await minimalRecon(h);
       // P14.5: an exploitation task has to cite the primitive it takes further, so the fixture seeds the worker claim first.
       const primitive = await h.seedClaim(primitiveClaim);
+      // P7.1: exploit mode (the default) admits an exploitation intent only once the plan board holds a capability-proof goal.
+      await h.call('p2o_plan_create', { entry: { kind: 'goal', title: 'Reach the recorded chain effect', status: 'active', proof: { kind: 'capability', capability: { kind: 'file.read' } },
+        criteria: ['The recorded chain step runs and is attributed'], reason: 'P7.1 exploit-mode admission: the impact goal the ladder is settled against' } });
       const task = (await h.call('p2o_task_create', {draft: {
         question: 'Does the recorded primitive reach the effect the chain claims?', surface: '/fixture', risk: 'authorization', role: 'exploit',
         roleReason: 'Chain frontier step with every capability already demonstrated', expectedTrue: 'The step runs and is recorded as confirmed and tested',

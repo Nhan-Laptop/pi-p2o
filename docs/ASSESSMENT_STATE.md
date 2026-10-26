@@ -32,7 +32,7 @@ confirmation and the live owner establish authority; disk state, summaries and w
   investigation; no provider fallback. A run stops because two rounds added nothing (M6), not because a total ran out.
 - `src/authority.ts` derives the run's authority counters from committed records only (no model, no target): planner and
   worker target operations, tasks created/dispatched with the first dispatch timestamp, owner and worker claims, validation
-  tasks and stalled rounds, plus the static role matrix (planner 23, worker 17, validation 16, reporter 6) and the run mode.
+  tasks and stalled rounds, plus the static role matrix (planner 24, worker 19, validation 18, reporter 6) and the run mode.
   `plannerTargetOps` and `ownerClaims` are the two measured invariants (0 after P0/A1 and P1/A2); a legacy run keeps its
   honest >0, and no counter refuses a command, wakes a model or finishes a run.
 - A request-local objective capsule refreshes the current question after context rebuild; it is data, not policy.

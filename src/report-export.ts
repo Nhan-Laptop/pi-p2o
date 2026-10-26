@@ -4,7 +4,10 @@ import { goalProofRefusal, proofLabel, proofViews } from './goal-proof.js';
 import { writeBackLine, type WorkerWrites } from './write-back.js';
 import { leadFrontier } from './cve.js';
 import { routeCounts } from './routes.js';
-import { cvssScore } from './cvss.js';
+import { cvssScore, type CaseEffect } from './cvss.js';
+import { engagementLine, type EngagementMode } from './campaign.js';
+import { deriveLadder, type LadderCaseInput, type LadderView } from './ladder.js';
+import { policyAudit } from './policy.js';
 import { FINDING_SEVERITIES } from './case-types.js';
 import { completionLine, deriveCompletion } from './completion.js';
 import { DEBT_KINDS, debtFor, type DebtReport } from './debt.js';
@@ -52,11 +55,19 @@ export interface ReportMeta {
   wrote?: ReadonlyMap<string, WorkerWrites>;
   /** A4: the loop/executor mode that produced the run, printed next to the authority counters and role matrix. */
   mode?: AuthorityMode;
+  /** D15/P7.1: the engagement mode and authorized effect classes; absent on a run recorded before the mode existed. */
+  engagement?: { mode: EngagementMode; effectClasses: readonly CaseEffect[] };
+  /** A7.6: the facts the access ladder prints beside its rungs. Recorded by P7.4 (sessions), P7.5 (secrets by id) and P7.7 (callback). */
+  ladderFacts?: { sessions?: string; secrets?: string; callback?: string };
+  /** A7.8/P7.7: the ingress path the operator configured, so the scope section states it instead of claiming no inbound ever exists. */
+  ingress?: { callback?: string; labNetwork?: string };
+  /** A7.4/P7.5: the sealed identity this run started with (count and digest only; a value is never a report input). */
+  identity?: { count: number; sha256?: string };
   /** A6.2/A6.6: the derived research debt, so the report's completion cannot disagree with the finish result's. */
   debt?: DebtReport;
   /** A6.6: the campaign frame and how the run continued, printed as recorded facts (never re-verified here). */
   campaign?: {
-    objective: string; constraints: number; deny: number; allow: number; heartbeatSeconds: number;
+    objective: string; mode?: EngagementMode; effectClasses?: readonly CaseEffect[]; constraints: number; deny: number; allow: number; heartbeatSeconds: number;
     rounds: number; wakeReasons: { event: number; debt: number; heartbeat: number };
     /** P1: ledger counts of human `/p2o resume` records and recorded stall escalations, printed with the campaign frame. */
     humanResumes: number; stallEscalations: number;
@@ -104,6 +115,17 @@ const orderedFindings = (views: readonly CaseView[]) => [...views].sort((a, b) =
 const END_REASON: Record<string, string> = { finished: 'the lead called p2o_finish', export: 'a report was exported while the run stayed active', stopped: 'the operator stopped the run (/p2o stop)', shutdown: 'the Pi session shut down', 'session-change': 'the Pi session was switched', 'storage-failed': 'the run was closed after a storage failure', failed: 'the run failed', manual: 'a human exported this report on demand' };
 const wstgReferenceList = (view: CaseView, cells: readonly CoverageCellView[]) => caseWstgKeys(view.id, view.revision, cells);
 
+/** A7.6: a retained capture artifact listed on a receipt, so a citation can name evidence larger than the bounded excerpt. */
+interface CaptureArtifact { id: string; bytes: number; sha256: string; truncated?: boolean }
+function captureArtifacts(data: Record<string, unknown> | undefined): CaptureArtifact[] {
+  const rows = (data?.capture as { artifacts?: unknown } | undefined)?.artifacts;
+  return (Array.isArray(rows) ? rows : []).filter((row): row is CaptureArtifact => Boolean(row) && typeof (row as CaptureArtifact).id === 'string'
+    && typeof (row as CaptureArtifact).sha256 === 'string' && typeof (row as CaptureArtifact).bytes === 'number').slice(0, 4);
+}
+const captureLine = (artifacts: readonly CaptureArtifact[]) => artifacts.length
+  ? `; retained capture: ${artifacts.map(artifact => `\`${mdText(artifact.id, 60)}\` (${artifact.bytes} redacted bytes, sha256 ${mdText(artifact.sha256.slice(0, 12), 16)}${artifact.truncated ? ', partial' : ''})`).join(', ')}`
+  : '';
+
 function reproduction(view: CaseView, index: LedgerIndex): string[] {
   const refs = view.finding?.reproductionEvidenceRefs ?? [], steps = new Map((view.finding?.reproductionSteps ?? []).map((step, position) => [step.ref, { ...step, position: position + 1 }]));
   if (!refs.length) return [];
@@ -111,7 +133,7 @@ function reproduction(view: CaseView, index: LedgerIndex): string[] {
   for (const ref of refs.slice(0, 5)) {
     const record = index.byId.get(ref), data = record?.data, step = steps.get(ref), label = step ? `step ${step.position} [${step.role}]${step.note ? ` ${mdText(step.note, 200)} —` : ''} ` : '';
     if (!record || record.kind !== 'evidence' || !data) { out.push(`  - ${label}${mdText(ref, 80)}: receipt unavailable`); continue; }
-    out.push(`  - ${label}${mdText(ref, 80)} — ${mdText(data.operation, 24)} by ${mdText(record.by, 60)}, exit ${mdText(data.exitCode, 8)}${data.truncated ? ', output truncated' : ''}`, '', safeFence(`input: ${plainText(data.input, 700)}\noutput: ${plainText(data.stdout, 500)}`, 1300).split('\n').map(line => `    ${line}`).join('\n'), '');
+    out.push(`  - ${label}${mdText(ref, 80)} — ${mdText(data.operation, 24)} by ${mdText(record.by, 60)}, exit ${mdText(data.exitCode, 8)}${data.truncated ? ', excerpt truncated' : ''}${captureLine(captureArtifacts(data))}`, '', safeFence(`input: ${plainText(data.input, 700)}\noutput: ${plainText(data.stdout, 500)}`, 1300).split('\n').map(line => `    ${line}`).join('\n'), '');
   }
   return out;
 }
@@ -223,12 +245,22 @@ function scopeAndSummary(meta: ReportMeta, index: LedgerIndex, plans: readonly C
   const bySeverity = FINDING_SEVERITIES.map(name => `${severityLabel(name)} ${rated.filter(view => view.finding!.severity === name).length}`).join(', ');
   const usesWstg = live.some(({ cell }) => isWstgKey(cell.questionKey)), untouched = usesWstg ? WSTG_MAP.filter(test => !live.some(({ cell }) => cell.questionKey === wstgKey(test.id))).length : 0;
   const paragraphs = (meta.narrative ?? '').split(/\n{2,}/).map(part => part.trim()).filter(Boolean).slice(0, 6);
+  // A7.8/A7.10: the truth about inbound is configuration-dependent. A lab-network run really can be reached by a target on
+  // that network, so the fixed "no inbound path" sentence would be false there; the default (no ingress) sentence stays absolute.
+  const inbound = meta.ingress?.labNetwork
+    ? `There is no inbound path from the internet and no host port is ever published; the sandbox joined the operator lab network "${mdText(meta.ingress.labNetwork, 100)}", so a target on that network can reach a session listener, and no tunnel or pivot exists.`
+    : meta.ingress?.callback
+      ? `There is no inbound path into the sandbox (no host port is published, no tunnel or pivot); the operator recorded the out-of-band callback destination "${mdText(meta.ingress.callback, 200)}" as a path the target reaches outward.`
+      : 'There is no inbound path, so a target cannot call back to the sandbox.';
   return ['## Scope and limitations', '',
     `- Assessed target: ${mdText(meta.target, 400)}, as authorized by the operator when the run started. The tool never widened this scope.`,
+    ...(meta.engagement ? [`- Engagement mode: ${mdText(engagementLine(meta.engagement.mode, meta.engagement.effectClasses), 400)}.`] : []),
     `- Coverage denominator: ${plans.length ? `${plans.length} plan(s), ${live.length} live cell(s), derived from reviewed worker work (no planner-authored cell exists)` : 'none recorded, so nothing can be called covered'}. Exclusions recorded: ${list(exclusions.map(item => mdText(item, 200)))}. Unknown scope: ${list(unknown.map(item => mdText(item, 200)))}.`,
     `- Not examined or not confirmed: ${notClean.length} cell(s) (${notTested} not tested, ${stale} stale), ${unplanned} discovered asset(s) outside every plan, ${openGaps} open gap(s)${usesWstg ? `, ${untouched} WSTG test(s) with no cell` : ''}. Each is listed in the coverage section below; none of them is a result.`,
-    '- Tool limits: commands and HTTP requests run from an isolated sandbox against the authorized target only. There is no browser, so an effect that happens only in a browser stops at offline reproduction; a check that needs a credential ran only if the operator supplied that identity; third-party origins and DNS are outside the tool’s scope.',
-    '- The severity of a finding is an attributed rating recorded by the lead, with its stated basis. It is not computed from exploit evidence and it never changes a case’s verdict or review status.', '',
+    meta.identity
+      ? `- Tool limits: commands and HTTP requests run from a sandbox with unrestricted bridge egress; the authorized target is the starting label, not a network boundary. There is no browser, so an effect that happens only in a browser stops at offline reproduction. The operator declared ${meta.identity.count} secret(s) and the host substituted each placeholder by id after the command policy allowed the operation; retained receipts, artifacts, reports and exports redact exact value bytes on a best-effort basis and every use was audited by id. A command that ran with a principal can still print or forward the substituted value, so an effect reached that way is reported as exposed to that scope. ${inbound}`
+      : `- Tool limits: commands and HTTP requests run from a sandbox with unrestricted bridge egress; the authorized target is the starting label, not a network boundary. There is no browser, so an effect that happens only in a browser stops at offline reproduction; there is no host credential channel, so a check that needed a credential ran only with a credential the model wrote into the request. ${inbound}`,
+    '- The severity of a finding is an attributed rating recorded by the lead, with its stated basis. It is bounded by the depth a chain actually demonstrated (a rating above that depth is refused) and it never changes a case’s verdict or review status.', '',
     '## Executive summary', '',
     `- Accepted, current findings: **${accepted.length}** (${bySeverity}${unrated.length ? `, not rated ${unrated.length}` : ''}).`,
     `- Cases not accepted-current: ${others.length} (${pending} awaiting a review decision). Tasks awaiting owner review: ${awaiting}.`,
@@ -242,7 +274,8 @@ function scopeAndSummary(meta: ReportMeta, index: LedgerIndex, plans: readonly C
 /** Machine-readable findings: every typed field of every accepted-current case, strings redacted and bounded but NOT Markdown-escaped (escape on display). */
 function findingFiles(meta: ReportMeta, index: LedgerIndex, ordered: readonly CaseView[], cells: readonly CoverageCellView[], pages: readonly string[]): ReportFile[] {
   const reproduce = (view: CaseView) => (view.finding?.reproductionEvidenceRefs ?? []).map(ref => { const record = index.byId.get(ref), data = record?.kind === 'evidence' ? record.data : undefined, step = view.finding?.reproductionSteps?.find(item => item.ref === ref);
-    return { evidenceId: ref, ...(step ? { role: step.role, ...(step.note ? { note: plainText(step.note, 200) } : {}) } : {}), available: Boolean(data), operation: data ? plainText(data.operation, 24) : null, by: record ? plainText(record.by, 60) : null, exitCode: data?.exitCode ?? null, input: data ? plainText(data.input, 700) : null, output: data ? plainText(data.stdout, 500) : null, truncated: Boolean(data?.truncated) }; });
+    return { evidenceId: ref, ...(step ? { role: step.role, ...(step.note ? { note: plainText(step.note, 200) } : {}) } : {}), available: Boolean(data), operation: data ? plainText(data.operation, 24) : null, by: record ? plainText(record.by, 60) : null, exitCode: data?.exitCode ?? null, input: data ? plainText(data.input, 700) : null, output: data ? plainText(data.stdout, 500) : null, truncated: Boolean(data?.truncated),
+      captures: captureArtifacts(data).map(artifact => ({ id: artifact.id, bytes: artifact.bytes, sha256: artifact.sha256, partial: artifact.truncated === true })) }; });
   const items = ordered.slice(0, CASE_ROWS).map((view, position) => {
     const score = cvssScore(view.finding?.cvssVector), wstg = caseWstgKeys(view.id, view.revision, cells);
     return { ref: `F-${position + 1}`, caseId: view.id, revision: view.revision, title: plainText(view.title, 500), verdict: view.verdict, reviewStatus: view.reviewStatus, currentness: view.currentness, independentValidationCurrent: view.independentCurrent, independenceReason: view.independenceReason ?? null,
@@ -296,6 +329,52 @@ function campaignSection(campaign: NonNullable<ReportMeta['campaign']>): string[
     ''];
 }
 
+/** A7.6: what each derived rung means, printed once so the table below is readable without the source. It quotes no tool and no target data. */
+const LADDER_RULE = 'Rungs are derived by the host from committed records and are never stored: observed = a receipt without a demonstrated claim; executed = a demonstrated claim (confirmed closure, tested execution); controlled = demonstrated with at least one negative control; crossed = a demonstrated capability that names its scope, or a demonstrated step effect that crosses a principal, tenant or sandbox boundary; impact = a demonstrated code execution or integrity write reached at local or adjacent access. A rung is printed only for the evidence that carries it.';
+
+/** The ladder a committed state supports. Claims come from the ledger; cases supply the chain and the owner-attributed severity. */
+function accessLadder(index: LedgerIndex, cases: readonly CaseView[], meta: ReportMeta): LadderView {
+  const claims = index.records.filter(record => record.kind === 'candidate' && record.id).map(record => ({ id: record.id!, data: record.data }));
+  const ladderCases: LadderCaseInput[] = cases.map(view => ({
+    id: view.id, revision: view.revision, accepted: view.acceptedFinding, severity: view.finding?.severity, claimRefs: view.claimRefs,
+    ...(view.finding?.chain ? { chain: { objective: view.finding.chain.objective,
+      ...(view.finding.chain.demonstratedThrough === undefined ? {} : { demonstratedThrough: view.finding.chain.demonstratedThrough }),
+      ...(view.finding.chain.impact ? { impactSeverity: view.finding.chain.impact.severity } : {}), steps: view.finding.chain.steps } } : {}),
+  }));
+  // A run recorded before the mode existed carries no engagement authorization; it reads as assess, the narrower label (Q18).
+  return deriveLadder({ mode: meta.engagement?.mode ?? meta.campaign?.mode ?? 'assess', start: meta.target, claims, cases: ladderCases });
+}
+
+/** A7.6/Q18: the depths this run demonstrated, the walls above them, and nothing the record does not carry. */
+function ladderSection(ladder: LadderView, facts?: ReportMeta['ladderFacts']): string[] {
+  // These facts describe the instrument, not a rung: they print in both engagement modes.
+  const factLines = [
+    ...(facts?.sessions ? [`- Sessions: ${mdText(facts.sessions, 400)}`] : []),
+    ...(facts?.secrets ? [`- Secrets used by id: ${mdText(facts.secrets, 400)}`] : []),
+    ...(facts?.callback ? [`- Callback endpoint: ${mdText(facts.callback, 300)}`] : []),
+  ];
+  if (ladder.mode === 'assess') {
+    return ['## Access ladder', '', 'No ladder: assess mode. This run recorded observations and claims without authorizing the exploitation steps a ladder measures. The claims and their evidence are unchanged above.', ...(factLines.length ? ['', ...factLines] : []), ''];
+  }
+  const out = ['## Access ladder', '', LADDER_RULE, '',
+    `- Start surface: ${mdText(ladder.start, 400)} — the authorized starting point; the ladder measures only what this run demonstrated beyond it.`,
+    ...(ladder.chain ? [`- Chain: ${mdText(ladder.chain.objective, 400)} — case ${mdText(ladder.chain.caseId, 80)} r${ladder.chain.revision}${ladder.chain.accepted ? '' : ' (not an accepted finding)'}${ladder.chain.demonstratedThrough ? `, demonstrated through step ${ladder.chain.demonstratedThrough} of ${ladder.chain.steps.length}` : ', no step demonstrated'}.`]
+      : [`- Chain: none recorded; ${ladder.claims} claim(s) are the only evidence of depth.`])];
+  if (ladder.chain) {
+    out.push('', '| # | Step | Rung | Effect | Capability | Reach |', '|---|---|---|---|---|---|',
+      ...ladder.chain.steps.map(step => `| ${step.order} | ${mdText(step.step, 400)}${step.claimRef ? ` — claim \`${mdText(step.claimRef, 80)}\`` : ''} | ${step.rung ?? 'none'} | ${step.effect ? mdText(step.effect, 40) : 'not recorded'} | ${mdText(step.capability, 300)} | ${step.reach ? mdText(step.reach, 120) : 'not recorded'} |`), '');
+  }
+  out.push(`- Furthest demonstrated rung: ${ladder.furthest ? `**${ladder.furthest}**` : '**none** — no rung was passed'}${ladder.severity ? `; owner-attributed severity **${severityLabel(ladder.severity)}** of case ${mdText(ladder.ratedCase ?? '', 80)}, bounded by the demonstrated depth as above` : '; no accepted case records a rating for it'}.`);
+  out.push(ladder.walls.length
+    ? `- Not reached: ${ladder.walls.map(wall => `**${wall.rung}** — ${mdText(wall.wall, 400)}`).join('; ')}.`
+    : '- Every rung is backed by the recorded evidence.');
+  if (facts?.sessions) out.push(`- Sessions: ${mdText(facts.sessions, 400)}`);
+  if (facts?.secrets) out.push(`- Secrets used by id: ${mdText(facts.secrets, 400)}`);
+  if (facts?.callback) out.push(`- Callback endpoint: ${mdText(facts.callback, 300)}`);
+  out.push('');
+  return out;
+}
+
 /** A6.2/A6.6: research debt at stop, by kind, with the record-discharged count. A named item is owed work, not a finding. */
 function debtSection(debt: DebtReport): string[] {
   const kinds = DEBT_KINDS.filter(kind => debt.totals[kind] > 0);
@@ -334,6 +413,16 @@ export function renderReport(index: LedgerIndex, context: ReportProjectionContex
     `- Target: ${mdText(meta.target, 400)}; retention ${mdText(meta.retention)}`,
     `- Authority: planner target operations ${authority.plannerTargetOps} (must be 0); worker target operations ${authority.workerTargetOps}; tasks created ${authority.tasksCreated}, dispatched ${authority.tasksDispatched}${authority.firstDispatchAt ? ` (first dispatch ${mdText(authority.firstDispatchAt, 40)})` : ''}; claims owner ${authority.ownerClaims} (must be 0) / worker ${authority.workerClaims}; validation tasks ${authority.validationTasks}; stalled rounds ${authority.stalledRounds}; automatic wakes ${authority.heartbeatWakes + authority.debtWakes} (debt ${authority.debtWakes}, heartbeat ${authority.heartbeatWakes}); campaign partial stops ${authority.campaignPartial}; human resumes ${authority.campaignResumes}; stall escalations ${authority.stallEscalations}`,
     `- Mode and role matrix: ${authority.mode ? `${mdText(authority.mode.loopMode ?? 'unknown', 24)} loop / ${mdText(authority.mode.executorMode ?? 'unknown', 24)} executor` : 'mode not recorded in this snapshot'}; planner ${roles.planner} tools (no target or claim tool), worker ${roles.worker}, validation ${roles.validation}, reporter ${roles.reporter} (read-only)`,
+    ...(() => {
+      // A7.7: the policy the run was started with (operator settings, never model text) and what it decided, by rule.
+      const audit = policyAudit(index.records);
+      if (!audit) return [];
+      const decide = (action: 'deny' | 'ask' | 'allow') => {
+        const rows = audit.decisions.filter(row => row.action === action);
+        return rows.length ? `${action} ${rows.reduce((sum, row) => sum + row.count, 0)} (${rows.slice(0, 6).map(row => `${mdText(row.ruleId, 64)} ${row.count}`).join(', ')}${rows.length > 6 ? ', …' : ''})` : `${action} 0`;
+      };
+      return [`- Command policy: ${audit.operatorRules} operator rule(s), ${audit.enabledSeeds.length} seeded deny rule(s) enabled${audit.disabledSeeds.length ? `, disabled seeds: ${audit.disabledSeeds.map(id => mdText(id, 80)).join(', ')}` : ''}. Decisions: ${decide('deny')}, ${decide('ask')}, ${decide('allow')}. Allows are counted by rule in a digest record; every receipt already carries its own command text, and a deny or ask has its own record.`];
+    })(),
     ...operatorBrief(index),
     `- Runtime that wrote this run: p2o ${mdText(meta.runtime.version || 'unknown version', 40)} · closure digest ${mdText(meta.runtime.hash.slice(0, 12), 16)}`,
     `- Reconciliation: ${meta.complete && projection.complete ? 'complete bounded record scan' : '**INCOMPLETE** — no completeness claim'}${projection.diagnostics.length ? `; diagnostics: ${projection.diagnostics.slice(0, 10).map(item => mdText(item, 200)).join('; ')}` : ''}`,
@@ -348,6 +437,8 @@ export function renderReport(index: LedgerIndex, context: ReportProjectionContex
     ...(v2 ? [`- Records: first at ${mdText(index.records[0]?.at ?? 'n/a', 40)}, last at ${mdText(index.records.at(-1)?.at ?? 'n/a', 40)} (timestamps as stored; this report reads no clock)`,
       ...(meta.operator ? (['author', 'organization', 'team', 'classification'] as const).filter(name => meta.operator![name]).map(name => `- ${severityLabel(name)} (operator-supplied, unverified): ${mdText(meta.operator![name], 200)}`) : [])] : []),
     ...(v2 && meta.campaign ? campaignSection(meta.campaign) : []),
+    // A7.6/Q18: derived from the same committed state as the findings above; assess mode prints one line instead of a ladder.
+    ...(v2 ? ladderSection(accessLadder(index, cases, meta), meta.ladderFacts) : []),
     ...(v2 ? scopeAndSummary(meta, index, plans, cells, notClean, accepted, rated, unrated, others, open.length, awaiting.length, cases) : []),
     '## Summary', '', '| Item | Count |', '|---|---|',
     `| Accepted current cases | ${accepted.length} |`, `| Cases pending, disputed, stale, withdrawn or duplicate | ${others.length} |`,

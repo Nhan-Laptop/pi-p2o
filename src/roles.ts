@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { isAbsolute, join } from 'node:path';
 import { purposeFromRole, type WorkPurpose } from './duties.js';
+import { parseCommandPolicy, type OperatorPolicy } from './policy.js';
 
 /**
  * Roles preselect a model and a starting skill set for a delegated worker.
@@ -103,7 +104,7 @@ export interface P2OSettings {
   maxWorkers: number;
   maxDepth: number;
   loopMode: LoopMode;
-  executorMode: 'shared' | 'isolated';
+  executorMode: 'shared' | 'isolated' | 'session';
   maxTargetOperations: number;
   retention: RetentionMode;
   storageQuotaMiB: number;
@@ -116,6 +117,8 @@ export interface P2OSettings {
   reportFormat: 1 | 2;
   /** annotate = report who authored each review receipt; enforce also refuses a review whose receipts the assignee did not author. */
   reviewIntegrity: ReviewIntegrity;
+  /** A7.7/P7.3: operator command-policy rules and seeded denies the operator disabled; absent means the default policy. */
+  commandPolicy?: OperatorPolicy;
   /** Optional operator labels printed in the report (author, organization, team, classification, disclaimer). */
   reportMeta?: Partial<Record<'author' | 'organization' | 'team' | 'classification' | 'disclaimer', string>>;
   roles: Partial<Record<Role, RoleSettings>>;
@@ -135,7 +138,7 @@ export function parseSettings(raw: unknown): P2OSettings {
     typeof value === 'number' && Number.isInteger(value) && value >= 1 && value <= max ? value : fallback;
   settings.maxWorkers = clamp(source.maxWorkers, DEFAULT_MAX_WORKERS, MAX_WORKERS);
   settings.loopMode = source.loopMode === 'event-driven' ? 'event-driven' : 'manual';
-  settings.executorMode = source.executorMode === 'isolated' ? 'isolated' : 'shared';
+  settings.executorMode = source.executorMode === 'isolated' || source.executorMode === 'session' ? source.executorMode : 'shared';
   settings.maxTargetOperations = clamp(source.maxTargetOperations,3,Number.MAX_SAFE_INTEGER);
   settings.retention = source.retention === 'ephemeral' ? 'ephemeral' : 'durable-local';
   settings.storageQuotaMiB = typeof source.storageQuotaMiB === 'number' && Number.isInteger(source.storageQuotaMiB) && source.storageQuotaMiB >= 8 && source.storageQuotaMiB <= 1024 ? source.storageQuotaMiB : DEFAULT_STORAGE_QUOTA_MIB;
@@ -150,6 +153,9 @@ export function parseSettings(raw: unknown): P2OSettings {
     if (Object.keys(labels).length) settings.reportMeta = labels;
   }
   settings.reviewIntegrity = source.reviewIntegrity === 'off' || source.reviewIntegrity === 'enforce' ? source.reviewIntegrity : 'annotate';
+  // A7.7: the policy is user-controlled data and never model text; malformed rules are dropped by the parser, not guessed at.
+  const commandPolicy = parseCommandPolicy(source.commandPolicy);
+  if (commandPolicy.rules.length || commandPolicy.disableSeeds.length) settings.commandPolicy = commandPolicy;
   settings.maxDepth = typeof source.maxDepth === 'number' && Number.isInteger(source.maxDepth) && source.maxDepth >= 0 && source.maxDepth <= MAX_DEPTH
     ? source.maxDepth : DEFAULT_MAX_DEPTH;
   const roles = source.roles;

@@ -7,12 +7,13 @@ import { hasSource, httpRequest, scopedRequest, taskTimeout, CONTAINER_HOST_ALIA
 import { HttpSessions, responseHead } from './http-session.js';
 import { sha256Hex } from './validate.js';
 import { SCRATCH_READER, SCRATCH_PROTOCOL_BYTES, SCRATCH_WRITER, SCRATCH_WRITE_MAX_BYTES, parseScratchWrite, scratchPath, scratchRoot, scratchBound, scratchOffset, parseScratchSnapshot, type ScratchSnapshot, type ScratchWrite } from './scratch.js';
+import { PtySession, dockerPtySpawner, type PtySpawner } from './pty.js';
 
 // Fixed content digest, not a mutable tag or a model-selected image. No automatic image pull.
 export const IMAGE = 'ghcr.io/usestrix/strix-sandbox@sha256:f6906c3114e504fd1a218fcf028d7a0e46851118403a438b63956de6ea7c4331';
 // 2026-10-25 (planning_update.md Part XI): the operator asked for a real shell, so the container runs as root with a
-// writable rootfs, every capability and no pids/memory/cpu limit. The container is the only blast radius: no host path
-// is mounted and the Docker socket is never exposed.
+// writable rootfs, the Docker default capability set (NET_RAW included, so raw sockets work) and no pids/memory/cpu limit.
+// The container is the only blast radius: no host path is mounted and the Docker socket is never exposed.
 const LIMITS = (_options: SandboxOptions) => ['--log-driver', 'none', '--workdir', '/work', '--user', 'root',
   '--env', 'HOME=/root', '--env', 'TMPDIR=/tmp',
   '--env', 'SEMGREP_ENABLE_VERSION_CHECK=0', '--env', 'SEMGREP_SEND_METRICS=off'];
@@ -22,7 +23,13 @@ const HOST_ALIAS_ARGS = ['--add-host', `${CONTAINER_HOST_ALIAS}:host-gateway`];
 const REDIRECT_STATUS = new Set([301, 302, 303, 307, 308]);
 
 /** Optional sizing/labelling. Delegated runs get more scratch and a run label for verified sweeps. */
-export interface SandboxOptions { tmpBytes?: string; workBytes?: string; runId?: string; image?: string; sourceExcludePaths?: readonly string[] }
+export interface SandboxOptions { tmpBytes?: string; workBytes?: string; runId?: string; image?: string; sourceExcludePaths?: readonly string[];
+  /** A7.2: this sandbox is one long-lived session; the id is a container label and picks `/work/sessions/<id>` as its workdir. */
+  session?: string;
+  /** A7.8: the operator's throwaway docker network; bridge (no published port) is the default until then. */
+  network?: string;
+  /** A7.3: injectable child spawner for hermetic PTY tests; production uses the fixed `docker exec` spawner. */
+  ptySpawn?: PtySpawner }
 export function validateImage(image: string): string {
   if (!/^(?:sha256:[a-f0-9]{64}|[a-z0-9][a-z0-9._/:-]*@sha256:[a-f0-9]{64})$/.test(image)) throw new Error('Sandbox image must be an immutable sha256 ID or repository@sha256 digest');
   return image;
@@ -35,6 +42,14 @@ export class Sandbox {
   private shell?: string;
   private source?: string;
   get isStopped(): boolean { return this.stopped; }
+  /** The session this executor belongs to, if any (A7.2). */
+  get session(): string | undefined { return this.options.session; }
+  /** A7.8: the container name a peer on the operator's lab network can resolve by DNS; undefined before start. */
+  get containerName(): string | undefined { return this.shell; }
+  /** The one workdir a session owns; `/work` for every other executor. */
+  get sessionWorkdir(): string { return this.options.session ? `/work/sessions/${this.options.session}` : '/work'; }
+  /** A7.2: a session is a fact about the bytes, not a claim, so every result the sandbox returns carries it. */
+  private attributed<T extends ProcessResult>(result: T): T { return this.options.session ? { ...result, sessionRef: this.options.session } : result; }
   sourceSkipped = 0;
   sourceManifest: Record<string, string> = {};
   private endpoint?: string;
@@ -47,6 +62,8 @@ export class Sandbox {
   constructor(readonly target: Target, private readonly run: RunProcess = runDocker, private readonly resolveIP?: ResolveAddress, private readonly options: SandboxOptions = {}) {
     validateImage(options.image ?? IMAGE);
     if (options.runId !== undefined && !ID_PATTERN.test(options.runId)) throw new Error('Invalid run id for container labels');
+    if (options.session !== undefined && !ID_PATTERN.test(options.session)) throw new Error('Invalid session id for container labels');
+    if (options.network !== undefined && !ID_PATTERN.test(options.network)) throw new Error('Invalid docker network name');
   }
 
   private async docker(args: string[], options?: Parameters<RunProcess>[1]): Promise<ProcessResult> {
@@ -61,13 +78,16 @@ export class Sandbox {
     const info = checked(await this.docker(['info', '--format', '{{.OSType}}']));
     if (info.stdout.trim() !== 'linux') throw new Error('A Linux Docker daemon is required');
     checked(await this.docker(['image', 'inspect', this.options.image ?? IMAGE]));
+    // A7.8: an operator-named lab network must already exist on this daemon. Refuse before creating anything rather than
+    // falling back to bridge, which would silently make the configured ingress path unreachable.
+    if (this.options.network !== undefined) checked(await this.docker(['network', 'inspect', this.options.network]));
     if (hasSource(this.target) && await realpath(this.target.path) !== this.target.path) throw new Error('Target directory changed during confirmation');
     if (hasSource(this.target)) {
       const source = await copySource(this.target.path, this.options.sourceExcludePaths);
       this.source = source.path; this.sourceSkipped = source.skipped; this.sourceManifest = source.manifest;
     }
     const mount = this.source ? ['--volume', `${this.source}:/target:ro`] : [];
-    this.shell = await this.create('bridge', [...HOST_ALIAS_ARGS, ...mount, '--entrypoint', '/bin/sh', this.options.image ?? IMAGE, '-c', 'exec sleep infinity']);
+    this.shell = await this.create(this.options.network ?? 'bridge', [...HOST_ALIAS_ARGS, ...mount, '--entrypoint', '/bin/sh', this.options.image ?? IMAGE, '-c', 'exec sleep infinity']);
     checked(await this.docker(['start', this.shell]));
     const running = checked(await this.docker(['inspect', '--format', '{{.State.Running}}', this.shell]));
     if (running.stdout.trim() !== 'true') throw new Error('Sandbox did not stay running');
@@ -77,7 +97,8 @@ export class Sandbox {
     if (this.stopped) throw new Error('Sandbox is stopped');
     const name = `p2o-${randomUUID()}`;
     this.names.add(name); // Track before dispatch, even if the CLI loses its response.
-    const labels = ['--label', 'pi-p2o=minimal', ...(this.options.runId ? ['--label', `pi-p2o.run=${this.options.runId}`] : [])];
+    const labels = ['--label', 'pi-p2o=minimal', ...(this.options.runId ? ['--label', `pi-p2o.run=${this.options.runId}`] : []),
+      ...(this.options.session ? ['--label', `pi-p2o.session=${this.options.session}`] : [])];
     checked(await this.docker(['create', '--name', name, ...labels, '--network', network, ...LIMITS(this.options), ...command]));
     return name;
   }
@@ -86,9 +107,11 @@ export class Sandbox {
    * Provision the assignment scratch once, before an executor is published. A failure here is a provisioning
    * failure, not a command failure: the caller removes the sandbox and never starts a worker against it.
    */
-  async provision(assignment: string): Promise<void> {
+  async provision(assignment: string, root = '/work'): Promise<void> {
     if (!ID_PATTERN.test(assignment)) throw new Error('Invalid assignment id for executor scratch');
-    const workdir = `/work/${assignment}`;
+    // A7.2: a session provisions `/work/sessions/<id>`; every other executor keeps one directory under /work.
+    if (root !== '/work' && root !== '/work/sessions') throw new Error('Invalid executor scratch root');
+    const workdir = `${root}/${assignment}`;
     return this.enqueue(async () => {
       if (this.stopped || !this.shell) throw new Error('No active sandbox');
       if (this.provisioned.has(workdir)) return;
@@ -110,7 +133,7 @@ export class Sandbox {
   async exec(command: string, seconds = 0, signal?: AbortSignal, workdir = '/work', onRunning?: () => void, onOutput?: OutputObserver): Promise<ProcessResult> {
     if (typeof command !== 'string' || !command.trim() || command.length > 8192) throw new Error('Command must be 1..8192 characters');
     taskTimeout(seconds);
-    if (workdir !== '/work' && !/^\/work\/[A-Za-z0-9][A-Za-z0-9._-]{0,60}$/.test(workdir)) throw new Error('Invalid sandbox working directory');
+    if (workdir !== '/work' && !/^\/work(?:\/sessions)?\/[A-Za-z0-9][A-Za-z0-9._-]{0,60}$/.test(workdir)) throw new Error('Invalid sandbox working directory');
     return this.enqueue(async () => {
       if (this.stopped || !this.shell) throw new Error('No active sandbox');
       const combined = AbortSignal.any([this.cancellation.signal, ...(signal ? [signal] : [])]);
@@ -122,11 +145,11 @@ export class Sandbox {
         const deadline = seconds ? ['/usr/bin/timeout', '--signal=KILL', `${seconds}s`] : [];
         const result = await this.docker(['exec', '--workdir', workdir, this.shell, ...deadline, '/bin/sh', '-c', command], { timeoutMs: null, signal: combined, onOutput });
         if (seconds && (result.code === 124 || result.code === 137)) throw new Error('Opt-in sandbox command timed out; stopping the sandbox to remove background processes');
-        return result;
+        return this.attributed(result);
       } catch (error) {
         // Killing the Docker CLI does not reap commands in the container. With network egress,
         // fail closed: cancel/timeout removes the shared executor, including background children.
-        this.stopped = true; this.cancellation.abort();
+        this.stopped = true; this.cancellation.abort(); this.closePty();
         await this.removeAll();
         throw error;
       }
@@ -162,13 +185,13 @@ export class Sandbox {
         const scratchSnapshot = parseScratchSnapshot(metadata.subarray(0,used),{path:relative,root,maxBytes:bound,offset,observedBytes:observed,sha256:hash.digest('hex')});
         if (result.code !== 0) throw Error(`Scratch reader returned ${result.code}; captured tail/operation uncertain, no retry`);
         const preview = Buffer.from(result.stdout).subarray(0,8192).toString('utf8'); // Replaced by the redacted retained prefix before returning.
-        return {...result,stdout:preview,stderr:'',scratchSnapshot,previewLimit:8192,truncated:result.truncated || readerBytes>8192}; // Bound JSON escaping plus metadata to broker frame; no raw buffers.
+        return this.attributed({...result,stdout:preview,stderr:'',scratchSnapshot,previewLimit:8192,truncated:result.truncated || readerBytes>8192}); // Bound JSON escaping plus metadata to broker frame; no raw buffers.
       } catch(error) {
         // A completed, authenticated denial frame is a safe refusal. Transport/cancel/protocol faults may
         // still have a helper running: retire the executor and never silently rerun the read.
         const denial = denialFrame && readerCode === 78 && observed === 0 && /^Scratch capture denied \(/.test(error instanceof Error ? error.message : '');
         if (!denial) {
-          this.stopped = true; this.cancellation.abort(); await this.removeAll();
+          this.stopped = true; this.cancellation.abort(); this.closePty(); await this.removeAll();
         }
         throw error;
       } finally {metadata.fill(0);}
@@ -197,7 +220,7 @@ export class Sandbox {
       } catch (error) {
         // A transport fault may have left a partial file: retire the executor rather than leave ambiguous bytes to run.
         const denial = /^Scratch write denied \(/.test(error instanceof Error ? error.message : '');
-        if (!denial) { this.stopped = true; this.cancellation.abort(); await this.removeAll(); }
+        if (!denial) { this.stopped = true; this.cancellation.abort(); this.closePty(); await this.removeAll(); }
         throw error;
       }
     });
@@ -236,15 +259,15 @@ export class Sandbox {
     this.workdirs.add(workdir);
   }
 
-  /** Fixed curl and actor-local sessions; any http(s) destination and any redirect hop are allowed (Part XI). */
-  async http(input: HttpRequest, signal?: AbortSignal, onRunning?: () => void, actor = 'owner', onOutput?: OutputObserver): Promise<ProcessResult> {
+  /** Fixed curl and principal-local sessions; any http(s) destination and any redirect hop are allowed (Part XI). */
+  async http(input: HttpRequest, signal?: AbortSignal, onRunning?: () => void, onOutput?: OutputObserver): Promise<ProcessResult> {
     const request = httpRequest(input);
     return this.enqueue(async () => {
       const hops: string[] = [];
       let current = request.url, method = request.method, body = request.body;
       let last: ProcessResult | undefined;
       let rejectedCookies = 0;
-      const finish = (redirectStopped?: string): ProcessResult => ({ ...last!, hops, session: request.session,
+      const finish = (redirectStopped?: string): ProcessResult => this.attributed({ ...last!, hops, session: request.session,
         ...(redirectStopped ? { redirectStopped } : {}), ...(rejectedCookies ? { cookieWarning: 'Some cookies exceeded session limits or were invalid' } : {}) });
       for (let index = 0; ; index++) {
         if (this.stopped || !this.shell) throw new Error('No active sandbox');
@@ -256,10 +279,10 @@ export class Sandbox {
         const { url, address, addressClass: kind, pin } = destination;
         combined.throwIfAborted();
         if (this.stopped) throw new Error('Cancelled');
-        if (!index && request.resetSession) this.sessions.reset(actor, request.session, url);
+        if (!index && request.resetSession) this.sessions.reset(request.principal, request.session, url);
         const headers = Object.entries(request.headers ?? {});
         const explicitCookie = headers.some(([name]) => name.toLowerCase() === 'cookie');
-        const jar = explicitCookie ? undefined : this.sessions.header(actor, request.session, url);
+        const jar = explicitCookie ? undefined : this.sessions.header(request.principal, request.session, url);
         const args = ['-q', '--proxy', '', '--noproxy', '*', '--proto', '=http,https', '--max-time', String(request.timeout), '--connect-timeout', String(request.connectTimeout),
           '--max-redirs', '0', '--no-location', '--silent', '--show-error', '--include'];
         // Part XI: no response-size cap; the model asked for the body and gets it.
@@ -285,7 +308,7 @@ export class Sandbox {
         hops.push((head.status ?? 'no-status') + ' ' + method + ' ' + url.href + ' → ' + (address || CONTAINER_HOST_ALIAS) + ' (' + kind + ')');
         if (last.code !== 0) return finish('Transport failed; no automatic retry or redirect');
         if (!head.complete) return finish('Response headers incomplete; cookies and redirects were not processed');
-        rejectedCookies += this.sessions.store(actor, request.session, url, head.headers);
+        rejectedCookies += this.sessions.store(request.principal, request.session, url, head.headers);
         const locations = head.headers.filter(([name]) => name === 'location').map(([, value]) => value);
         if (!head.status || !REDIRECT_STATUS.has(head.status) || !locations.length || !request.followRedirects) return finish();
         if (locations.length !== 1) return finish('Ambiguous Location headers; no redirect followed');
@@ -299,6 +322,85 @@ export class Sandbox {
         }
       }
     });
+  }
+
+  // ------------------------------------------------------------ A7.3 (P7.4): interactive session PTY
+  private pty?: PtySession;
+  private ptyCursor = 0;
+  /** True while the session's interactive shell child is alive; display-only, never an authority. */
+  get hasLivePty(): boolean { return this.pty !== undefined && !this.pty.closed; }
+  /** One long-lived PTY per session, opened lazily by the first send/read. A dead PTY fails closed and never re-execs. */
+  private ptyHandle(): PtySession {
+    if (!this.options.session) throw Error('PTY_UNAVAILABLE: an interactive PTY belongs to a session; open one with p2o_session action=open and name its id');
+    if (this.stopped || !this.shell) throw Error('No active sandbox');
+    if (this.pty && !this.pty.closed) return this.pty;
+    const endpoint = this.endpoint, base = this.options.ptySpawn ?? dockerPtySpawner;
+    const spawn: PtySpawner = args => base([...(endpoint ? ['--host', endpoint] : []), ...args]);
+    const pty = new PtySession({ container: this.shell, spawn, workdir: this.sessionWorkdir });
+    pty.open(); this.pty = pty; this.ptyCursor = 0;
+    return pty;
+  }
+  /**
+   * Write bytes to the session PTY and collect output until it goes quiet or `timeoutMs` elapses. No sentinel is injected:
+   * a shell, a `sudo -S` prompt, a database REPL and an SSH session each decide what their own input means.
+   */
+  async ptySend(data: string, timeoutMs: number, signal?: AbortSignal, quietMs = 400): Promise<ProcessResult & {stillOutputting?: boolean}> {
+    if (typeof data !== 'string' || Buffer.byteLength(data) > 8192) throw Error('PTY send must be at most 8 KiB of bytes');
+    if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 250 || timeoutMs > 120_000) throw Error('PTY send wait must be 250..120000 ms');
+    if (!Number.isSafeInteger(quietMs) || quietMs < 100 || quietMs > 10_000) throw Error('PTY quiet window must be 100..10000 ms');
+    const pty = this.ptyHandle();
+    const combined = AbortSignal.any([this.cancellation.signal, ...(signal ? [signal] : [])]);
+    combined.throwIfAborted();
+    const start = this.ptyCursor, chunks: string[] = [];
+    let dropped = false, stillOutputting = false;
+    pty.write(data);
+    const deadline = Date.now() + timeoutMs;
+    let lastOutput = Date.now();
+    for (;;) {
+      const page = pty.read(this.ptyCursor);
+      this.ptyCursor = page.cursor;
+      if (page.dropped > start) dropped = true;
+      if (page.text) { chunks.push(page.text); lastOutput = Date.now(); }
+      if (Date.now() - lastOutput >= quietMs) break;
+      if (Date.now() >= deadline) { stillOutputting = true; break; }
+      combined.throwIfAborted();
+      await this.ptySleep(50, combined);
+    }
+    return this.attributed({ code: 0, stdout: chunks.join(''), stderr: stillOutputting ? 'PTY_STILL_OUTPUTTING: the wait ended before the program went quiet; call read again for the rest.' : '',
+      truncated: dropped, ...(stillOutputting ? { stillOutputting } : {}) });
+  }
+  /** Drain what the PTY produced since the host-side cursor, waiting up to `timeoutMs` for the first bytes. */
+  async ptyRead(timeoutMs: number, signal?: AbortSignal): Promise<ProcessResult> {
+    if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 50 || timeoutMs > 120_000) throw Error('PTY read wait must be 50..120000 ms');
+    const pty = this.ptyHandle();
+    const combined = AbortSignal.any([this.cancellation.signal, ...(signal ? [signal] : [])]);
+    combined.throwIfAborted();
+    const start = this.ptyCursor, chunks: string[] = [];
+    let dropped = false;
+    const deadline = Date.now() + timeoutMs;
+    for (;;) {
+      const page = pty.read(this.ptyCursor);
+      this.ptyCursor = page.cursor;
+      if (page.dropped > start) dropped = true;
+      if (page.text) { chunks.push(page.text); break; }
+      if (Date.now() >= deadline) break;
+      combined.throwIfAborted();
+      await this.ptySleep(50, combined);
+    }
+    return this.attributed({ code: 0, stdout: chunks.join(''), stderr: '', truncated: dropped });
+  }
+  private ptySleep(ms: number, signal: AbortSignal): Promise<void> {
+    return new Promise((resolve, reject) => {
+      if (signal.aborted) { reject(Error('Cancelled')); return; }
+      const abort = () => { clearTimeout(timer); reject(Error('Cancelled')); };
+      const timer = setTimeout(() => { signal.removeEventListener('abort', abort); resolve(); }, ms);
+      signal.addEventListener('abort', abort, { once: true });
+    });
+  }
+  /** A7.3 cleanup: the docker exec child dies before the container is removed. */
+  private closePty(): void {
+    const pty = this.pty; this.pty = undefined; this.ptyCursor = 0;
+    try { void pty?.close(); } catch { /* container removal below is the verification */ }
   }
 
   private async remove(name: string): Promise<void> {
@@ -319,6 +421,7 @@ export class Sandbox {
   async stop(): Promise<void> {
     this.stopped = true; this.cancellation.abort();
     await this.pending;
+    this.closePty(); // A7.3: kill the interactive child before its container is removed
     this.sessions.clear();
     await this.removeAll();
   }

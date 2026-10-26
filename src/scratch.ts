@@ -20,7 +20,8 @@ export function scratchPath(value: unknown): string {
   return value; // No URL decode, Unicode normalization, shell expansion or host realpath.
 }
 export function scratchRoot(value: unknown): string {
-  if (value !== '/work' && (typeof value !== 'string' || !/^\/work\/[A-Za-z0-9][A-Za-z0-9._-]{0,60}$/.test(value))) throw Error('Invalid owner-assigned scratch root');
+  // A7.2: a session executor owns /work/sessions/<id>; every other root stays one segment under /work.
+  if (value !== '/work' && (typeof value !== 'string' || !/^\/work(?:\/sessions)?\/[A-Za-z0-9][A-Za-z0-9._-]{0,60}$/.test(value))) throw Error('Invalid owner-assigned scratch root');
   return value as string;
 }
 export function scratchBound(value: unknown): number {

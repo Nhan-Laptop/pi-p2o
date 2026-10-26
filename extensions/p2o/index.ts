@@ -5,11 +5,11 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join, resolve } from 'node:path';
 import type { ExtensionAPI, ExtensionContext } from '@earendil-works/pi-coding-agent';
 import { Sandbox, IMAGE, validateImage, type SandboxOptions } from '../../src/sandbox.js';
-import { classifyTarget, hasOrigin, httpRequest, parseCommand, targetLabel, taskTimeout, type HttpRequest, type Target } from '../../src/target.js';
+import { classifyTarget, hasOrigin, httpHeaders, httpRequest, parseCommand, targetLabel, taskTimeout, type HttpRequest, type Target } from '../../src/target.js';
 import { cleanText, type ProcessResult, type OutputObserver } from '../../src/process.js';
 import { OutputCapture, type CaptureReceipt } from '../../src/artifacts.js';
 import { scratchOffset, scratchPath, type ScratchSnapshot } from '../../src/scratch.js';
-import { Broker, BrokerClient, type WorkerRegistration, type WorkerReport, type DelegateInput, normalizeReport } from '../../src/broker.js';
+import { Broker, BrokerClient, consumeHeldContinuation, type WorkerRegistration, type WorkerReport, type DelegateInput, normalizeReport } from '../../src/broker.js';
 import { summarizeSituation, type SituationSnapshot } from '../../src/situation.js';
 import { continuationRefusal } from '../../src/broker.js';
 import { chainJoin, claimHeadClaims, type ChainClaim, type ChainPath } from '../../src/chain-view.js';
@@ -23,14 +23,15 @@ import { chainBoard, chainLines } from '../../src/chain-board.js';
 import { chainObligations } from '../../src/obligations.js';
 import { graphSliceLines, type SliceAssetRow, type SliceFactRow } from '../../src/graph-slice.js';
 import { writeBack, writeBackLine } from '../../src/write-back.js';
-import { describeCapability } from '../../src/capabilities.js';
+import { capabilityMatches, describeCapability } from '../../src/capabilities.js';
 import type { Counted } from '../../src/counts.js';
 import type { CaseListPage, ChainViewPage, TaskListPage, WorkersNavigation } from '../../src/tool-results.js';
 import { assertCounted, counted, countedTail } from '../../src/counts.js';
-import { claimCapabilities, isDemonstrated, isOpenGap, isTestedCell, type ClaimFields } from '../../src/claims.js';
+import { claimCapabilities, claimNeeds, demonstratedGained, isDemonstrated, isOpenGap, isTestedCell, type ClaimFields } from '../../src/claims.js';
 import { appendRecord, appendRecords, indexRecords, observeRecords, readLedger, ledgerPage, recordsSize, summarizeRecords, waitForRecordChange, type AssessmentRecord, type CoverageOutcome, type LedgerPage, type LedgerIndex, type RecordAck, appendGeneratedRecords, recordSurface } from '../../src/records.js';
 import { runtimeIdentity } from '../../src/runtime-digest.js';
 import { withBoundaries } from '../../src/tool-guidelines.js';
+import { CREDENTIAL_TRUTH, HTTP_TRUTH, NETWORK_TRUTH, SANDBOX_TRUTH } from '../../src/truth.js';
 import { injectionSignals, loadTechniqueIndex, quoteExcerpt, researchDigest, researchLimit, researchQuery, searchTechniques } from '../../src/research.js';
 import { ensurePrivateDirectory, mintTicket, mintToken, readTicket, removeTicket, ticketPath, workerName, type Ticket } from '../../src/ticket.js';
 import { createHerdrClient, type HerdrClient } from '../../src/herdr.js';
@@ -40,6 +41,7 @@ import { authorityCounters, authorityReport, wakeRoundCount } from '../../src/au
 import { isWorkPurpose, purposeFromRole, type WorkPurpose } from '../../src/duties.js';
 import { SkillLibrary, packageRoot } from '../../src/skills.js';
 import { EvidenceStore, redact, type Candidate } from '../../src/evidence.js';
+import { identitySummary, loadIdentityFile, redactSecretBytes, redactSecrets, sealIdentity, secretViews, substituteSecrets, substituteShellSecrets, type IdentityFile } from '../../src/identity.js';
 import { TaskBoard, taskCapsule, awaitingReview, taskFrontier, isSatisfiedTask, terminalState, type TaskDraft, type TaskMethod, type AssessmentTask } from '../../src/tasks.js';
 import { planFrontier, PlanBoard, boundPlanRequest, type PlanDraft } from '../../src/planning.js';
 import { PLAN_ACTION_PARAMETERS, PLAN_ACTIONS } from '../../src/work-tool.js';
@@ -52,7 +54,7 @@ import type { CoveragePlanDraft } from '../../src/coverage-types.js';
 import { CASE_ACTION_PARAMETERS, CASE_ACTIONS, COVERAGE_ACTION_PARAMETERS, COVERAGE_ACTIONS, COVERAGE_MUTATIONS } from '../../src/case-tool.js';
 import {
   artifactParameters, candidateParameters, captureParameters, delegateParameters, execParameters, finishParameters, httpParameters, labParameters, ledgerParameters, loopParameters, noteParameters,
-  reportParameters, researchParameters, skillListParameters, skillReadParameters, stateParameters, subtaskParameters, surfaceParameters, TASK_ACTION_PARAMETERS, TASK_ACTIONS, workersParameters,
+  reportParameters, researchParameters, secretParameters, sessionParameters, skillListParameters, skillReadParameters, stateParameters, subtaskParameters, surfaceParameters, TASK_ACTION_PARAMETERS, TASK_ACTIONS, workersParameters,
 } from '../../src/tool-schemas.js';
 import {
   EnvironmentStore, PayloadStore, materializePayload, normalizeRecipe, runEnvironment, stopEnvironment,
@@ -70,7 +72,9 @@ import {
 const COMPOSE_READ = 'for f in docker-compose.yml docker-compose.yaml compose.yml compose.yaml; do if [ -f "/target/$f" ]; then printf "P2O-COMPOSE %s\\n" "$f"; cat "/target/$f"; exit 0; fi; done; exit 3';
 import { sha256Hex } from '../../src/validate.js';
 import type { KnowledgeDomain, ContextPacket } from '../../src/context.js';
-import { campaignFrom, campaignStartLine, type CampaignRecord } from '../../src/campaign.js';
+import { campaignFrom, campaignStartLine, DEFAULT_EFFECT_CLASSES, DEFAULT_MODE, engagementLine, ingressFacts, parseLabNetwork, type CampaignRecord, type EngagementMode } from '../../src/campaign.js';
+import type { CaseEffect } from '../../src/cvss.js';
+import { commandPolicy, POLICY_KINDS, type CommandPolicy, type PolicyKind, type PolicyOutcome } from '../../src/policy.js';
 import { freezeReport, reportProjection, type ReportProjectionContext } from '../../src/report.js';
 import { finishPreflight, renderPreflight, type FinishPreflight } from '../../src/finish-preflight.js';
 import { debtFor, debtSummary, deriveDebt, type DebtReport } from '../../src/debt.js';
@@ -106,8 +110,10 @@ import { exportBundle, importBundle, inspectBundle, publishReportFiles } from '.
  */
 const WORKER_FLAG = 'p2o-worker';
 const HELP = [
-  'Usage: /p2o --target <directory|http(s)-URL> [--origin <http(s)-URL>] [--workers N] [--loop manual|event-driven] [--executors shared|isolated] [--target-ops N] [--retention durable-local|ephemeral] [--export] [--goal "text"] [--avoid "text"]... [--heartbeat-seconds N] [--refer-workspace [latest|all|<run-id>[,<run-id>...]]]',
+  'Usage: /p2o --target <directory|http(s)-URL> [--origin <http(s)-URL>] [--workers N] [--loop manual|event-driven] [--executors shared|isolated|session[:N]] [--target-ops N] [--retention durable-local|ephemeral] [--export] [--goal "text"] [--avoid "text"]... [--allow "text"]... [--mode assess|exploit] [--effect <class>]... [--heartbeat-seconds N] [--identity <absolute-json-path>] [--callback <http(s)-URL>] [--lab-network <name>] [--refer-workspace [latest|all|<run-id>[,<run-id>...]]]',
+  '       --executors session[:N] keeps N run-owned containers alive (N defaults to, and never exceeds, --target-ops); --identity seals one operator JSON file (values never reach a model); --callback records an operator destination the target reaches, --lab-network joins an operator docker network for an in-sandbox listener (no host port is ever published; no tunnel/pivot)',
   '       /p2o stop | pause | resume | hold [reason] | release | workers | stop-worker <worker-id> [reason]',
+  '       /p2o approve <policy-ask-id> | deny <policy-ask-id> (resolve one pending command-policy ask; the decision is recorded once)',
   '       /p2o --resume <run-id> (reopen one durable-local run under the same runId; new workers, no earlier ticket/operation)',
   '       /p2o status | log [cursor] [task=<id>] [actor=<id>] [operation=<id>] | report',
   '       /p2o heads [domain|all] [cursor default/min 0] [limit default 20, min 1, max 100] [status] | show <domain> <id> | digest (indexed read-only, no delivery ACK)',
@@ -120,15 +126,30 @@ const HELP = [
   '       /p2o search <text> [cursor=N] (plain substring over committed records; read-only, pointers not evidence)',
   'Durable-local is default, always confirmed; private .p2o-state under the current workspace. Ephemeral deletes knowledge at cleanup.',
   'Your CURRENT Pi agent is the planner/reviewer and does not execute target work; it creates intents and workers execute when Herdr is available.',
-  'Workers share a serial executor. Event-driven mode can add paid planning rounds after committed events.',
+  'Workers run on the confirmed executor mode (shared serial by default; isolated or session when chosen). Event-driven mode can add paid planning rounds after committed events.',
 ].join('\n');
 
 type Phase = 'starting' | 'active' | 'stopping' | 'finished';
+/** A7.8: one healthchecked in-sandbox listener. It is a fact about a session's foothold, not a target operation. */
+interface ListenFact { port: number; protocol: 'tcp'; address: string; log: string; openedAt: string; openedBy: string }
+/** A7.2: the ledger-facing facts about one session. The pool owns the container; this is what a surface may report. */
+interface SessionFact { id: string; openedAt: string; openedBy: string; purpose?: string; listens?: ListenFact[] }
 interface OwnerRun {
   role: 'owner';
   target: Target; sandbox: Sandbox; executors: ExecutorPool; ctx: ExtensionContext;
   phase: Phase; toolsBefore: string[]; start?: Promise<void>; stop?: Promise<void>;
   runId: string; control: string; records: string; reports: string; socket?: string; statedObjective?: string; avoid?: string[];
+  /** D15/P7.1: the engagement mode and authorized effect classes the operator confirmed (also folded into the profile). */
+  mode: EngagementMode; effectClasses: CaseEffect[];
+  /** A7.7/P7.3: the operator's ordered rules plus the fixed seed list, evaluated before any bytes reach a container. */
+  policy: CommandPolicy;
+  /** A7.7: allowed operations counted by rule since the last digest record, so an allow costs no ledger row. */
+  policyAllows: Map<string, number>;
+  /** A7.2: sessions this run opened. The pool owns the containers; this map owns the ledger-facing facts and never a sandbox. */
+  sessions: Map<string, SessionFact>;
+  /** A7.4/P7.5: the operator-sealed identity for this run. Values are host-only; nothing in it is model-visible. */
+  identity?: IdentityFile;
+  sealedIdentity?: { path: string; sha256: string; count: number };
   /** A6.1: the campaign frame recorded once at start; absent for a manual run started without --goal/--avoid/--heartbeat-seconds. */
   campaign?: CampaignRecord;
   store: AssessmentStore; unbindStore: () => void; stateRoot: string; retention: RetentionMode; storageError?: string;
@@ -203,7 +224,7 @@ function listPage<T, P = T, K extends string = 'entries'>(selected: readonly T[]
 /** Receipt label: method, URL, header names and body size only. Values are never copied into the ledger. */
 function requestLabel(request: HttpRequest): string {
   const names = request.headers ? ` [${Object.keys(request.headers).sort().join(',')}]` : '';
-  return `${request.method} ${request.url}${request.body !== undefined ? ` (+${Buffer.byteLength(request.body)} byte body)` : ''}${names} [session=${request.session ?? 'default'}${request.resetSession ? ', reset' : ''}; timeout=${request.timeout ?? 0}; connectTimeout=${request.connectTimeout ?? 0}]`;
+  return `${request.method} ${request.url}${request.body !== undefined ? ` (+${Buffer.byteLength(request.body)} byte body)` : ''}${names} [session=${request.session ?? 'default'}, principal=${request.principal ?? 'default'}${request.resetSession ? ', reset' : ''}; timeout=${request.timeout ?? 0}; connectTimeout=${request.connectTimeout ?? 0}]`;
 }
 function message(error: unknown): string { return cleanText(error instanceof Error ? error.message : String(error)); }
 
@@ -575,6 +596,23 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
     const value = (work as Record<string, unknown> | undefined)?.purpose;
     return isWorkPurpose(value) ? value : undefined;
   };
+  /** D15/P7.1: the purposes that produce an effect rather than a proof; only these are gated by the engagement mode. */
+  const EFFECT_PURPOSES: ReadonlySet<WorkPurpose> = new Set(['exploitation', 'chaining']);
+  /**
+   * D15/P7.1: the engagement shape is a host-checked object, not a prompt convention. In `assess` mode an
+   * exploitation/chaining intent is refused outright; in `exploit` mode (the default) it needs a plan-board goal whose
+   * proof is a capability or an accepted case, because that goal is what "depth" is settled against. Returns the refusal
+   * code and message, or undefined when the intent is admitted.
+   */
+  const engagementRefusal = async (current: OwnerRun, draft: { role?: unknown; work?: unknown }): Promise<{ code: string; message: string } | undefined> => {
+    const purpose = workPurpose(draft.work) ?? (typeof draft.role === 'string' ? purposeFromRole(draft.role) : undefined);
+    if (!purpose || !EFFECT_PURPOSES.has(purpose)) return undefined;
+    if (current.mode === 'assess') return { code: 'ASSESS_MODE_REFUSES_EXPLOITATION', message: `this run was confirmed in assess mode, so an ${purpose} intent is refused: assess mode produces exposure proof and never an effect. legalNext: state the exposure question as a mapping, discovery or validation intent, or have the operator confirm a new run with --mode exploit` };
+    const goals = await current.plan.list();
+    const goal = goals.find(entry => entry.kind === 'goal' && (entry.proof?.kind === 'capability' || entry.proof?.kind === 'case') && !['cancelled', 'blocked'].includes(entry.status));
+    if (!goal) return { code: 'EXPLOIT_MODE_NEEDS_IMPACT_GOAL', message: `an ${purpose} intent needs an impact goal on the plan board before it can be admitted, and this run holds no goal whose proof is a capability or an accepted case. legalNext: create one with p2o_plan_create (kind=goal, proof=capability or proof=case) and state its acceptance criteria, then create this intent` };
+    return undefined;
+  };
   /**
    * P15: `work.needs` is untyped here too, and only a capability kind the ladder knows may steer the default skill set. The real
    * validation happens in validateWorkSpec; this only reads what a draft declared, so an unknown or malformed entry selects no ladder
@@ -603,6 +641,8 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
     if (!current.delegation.enabled) fail('DELEGATION_UNAVAILABLE', current.delegation.reason ?? 'delegation is disabled for this assessment');
     const depth = parent.depth + 1;
     if (depth > current.delegation.maxDepth) fail('DELEGATION_DEPTH', `delegation depth limit ${current.delegation.maxDepth} reached; do this work yourself or record it as an open gap`);
+    // A7.5/D19: a held successor reuses a ticket, pane and session, so it must not pass through the new-worker admission below.
+    if (input.continueWorkerId) return continueHeldWorker(current, input, parent);
     const live = [...current.workers.values()].filter(entry => !entry.stopped && !entry.reported);
     if (live.length >= current.delegation.maxWorkers) fail('DELEGATION_CAP', `${live.length} workers already running (cap ${current.delegation.maxWorkers}); collect or stop one first`);
     if (!await reapWorkers(current)) fail('PANE_BACKPRESSURE','Finished pane removal unverified; retry cleanup before allocating more capacity');
@@ -643,11 +683,14 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
     current.currentTaskId = objective.id;
     assertOwnerActive(current);
     // Provision before any pane, ticket or model turn. A failed executor is a host prerequisite on the task,
-    // never a worker that spends turns against a dead lease.
-    try { await current.executors.acquire(workerId); }
-    catch (error) {
-      await current.board.transition(objective.id,'blocked',`Executor provisioning failed: ${message(error)}`).catch(() => {});
-      fail('DELEGATION_SPAWN_FAILED', `could not provision executor for ${workerId}: ${message(error)}`);
+    // never a worker that spends turns against a dead lease. A7.2: session mode has no per-assignment executor — the worker
+    // opens its own ticket-bound session through p2o_session, so there is nothing to lease here.
+    if (current.executors.mode !== 'session') {
+      try { await current.executors.acquire(workerId); }
+      catch (error) {
+        await current.board.transition(objective.id,'blocked',`Executor provisioning failed: ${message(error)}`).catch(() => {});
+        fail('DELEGATION_SPAWN_FAILED', `could not provision executor for ${workerId}: ${message(error)}`);
+      }
     }
     assertOwnerActive(current);
     let paneId: string;
@@ -657,7 +700,9 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
     const ticketPurpose = purpose ?? purposeFromRole(resolved.role);
     const ticket: Ticket = {
       version: 2, runId: current.runId, workerId, paneId, parentWorkerId: parent.workerId, depth, role: resolved.role,
-      purpose: ticketPurpose,
+      purpose: ticketPurpose, mode: current.mode, effectClasses: current.effectClasses,
+      ...(current.identity ? { secrets: current.identity.secrets.length } : {}),
+      ...(ingressFacts(current.campaign) ? { ingress: ingressFacts(current.campaign)! } : {}),
       target: { kind: current.target.kind, label: targetLabel(current.target), ...(hasOrigin(current.target) ? { origin: current.target.origin } : {}) },
       image: current.image, socket: current.socket!, records: current.records, reports: current.reports,
       lifetime: 'until-stopped', executorMode:current.executors.mode,
@@ -716,6 +761,48 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
     return { workerId, name: workerId, paneId, role: resolved.role, model: resolved.model, thinking: resolved.thinking, depth, taskId: objective.id, workMatch: assigned ? 'task' : structured ? 'structured' : 'unknown' };
   }
 
+  /**
+   * A7.5/D19: dispatch a successor onto the predecessor's held ticket, pane and session. The successor is still its own owner
+   * task with its own claim and receipt trail, and its work must cite the predecessor claim this worker demonstrated; what is
+   * reused is the state (container, scratch, conversation), not the review.
+   */
+  async function continueHeldWorker(current: OwnerRun, input: DelegateInput, parent: { workerId: string | null; depth: number }) {
+    const workerId = input.continueWorkerId!;
+    const registration = current.workers.get(workerId);
+    if (!registration) fail('WORKER_UNKNOWN', `no worker ${workerId} in this assessment; a held successor names an existing ticket`);
+    if (parent.workerId) fail('TASK_OWNER_ONLY', 'Workers may request focused children, not dispatch owner-authored task IDs');
+    if (!registration.holdBrief) fail('WORKER_NOT_HELD', `${workerId} holds no report-with-hold, so it has no ticket, pane or session to continue; dispatch a new task instead`);
+    if (registration.stopped || registration.paneClosed) fail('WORKER_CLOSED', `${workerId} is stopped or its pane is gone; a hold cannot revive it`);
+    if (!input.taskId) fail('TASK_UNKNOWN', 'A held continuation must dispatch an owner-authored successor task');
+    const assigned = (await current.board.list()).find(task => task.id === input.taskId);
+    if (!assigned) fail('TASK_UNKNOWN', 'No owner-authored task with that ID');
+    if (assigned.role !== registration.role) fail('TASK_ROLE', `task ${assigned.id} needs role ${assigned.role}, but ${workerId} is a ${registration.role} worker; a held ticket keeps its role`);
+    if (assigned.status !== 'proposed') fail('TASK_STATE', `successor task ${assigned.id} is ${assigned.status}; only a proposed task can be dispatched`);
+    const predecessorClaims = assigned.work?.claimRefs ?? [];
+    if (!predecessorClaims.length) fail('SUCCESSOR_NEEDS_PREDECESSOR', `successor task ${assigned.id} cites no worker claim: work.claimRefs must name the demonstrated output ${workerId} produced`);
+    // The continuation may only consume what this ticket demonstrated, so the conversation's state is the evidence base.
+    const index = await readLedger(current.records, current.runId);
+    const own = new Set(index.records.filter(row => row.kind === 'candidate' && row.workerId === workerId && row.id).map(row => row.id!));
+    const foreign = predecessorClaims.filter(id => !own.has(id));
+    if (foreign.length) fail('SUCCESSOR_NOT_ON_TICKET', `work.claimRefs ${foreign.join(', ')} were not authored by ${workerId}; a held continuation consumes only its own demonstrated output. legalNext: cite ${workerId}'s claim, or dispatch a new task to a new worker`);
+    const heldBrief = consumeHeldContinuation(registration)!;
+    registration.taskId = assigned.id;
+    current.currentTaskId = assigned.id;
+    assertOwnerActive(current);
+    await current.board.reserve(assigned.id, workerId);
+    if (registration.session) current.executors.bind(workerId, registration.session);
+    await current.board.transition(assigned.id, 'running', `Successor dispatched onto held worker ${workerId}: same ticket, pane and session`);
+    await note({ by: 'owner', kind: 'lifecycle', text: `successor ${assigned.id} dispatched onto held ${workerId} (ticket, pane and session kept; predecessor brief was: ${cleanText(heldBrief).slice(0, 160)})`, workerId, role: registration.role, depth: registration.depth });
+    await herdr.prompt({ name: registration.name, text: [
+      `[p2o successor ${assigned.id} · same ticket, pane and session]`,
+      `You already hold this conversation, its container and its scratch. FOCUS: ${cleanText(assigned.surface).slice(0, 60)}`,
+      `TASK:\n${assigned.question}`,
+      'This is a new owner task, not a continuation of the previous question: cite the claim you already demonstrated where the new work depends on it, and report with p2o_report when this successor objective is done (holdFor only when the lead needs the next chain step on this ticket).',
+    ].join('\n') });
+    return { workerId, name: workerId, paneId: registration.paneId, role: registration.role, model: registration.requestedRuntime?.model, thinking: registration.requestedRuntime?.thinking,
+      depth: registration.depth, taskId: assigned.id, workMatch: 'task' as const };
+  }
+
   /** Spawns are serialized and tracked so a parallel finish/stop cannot race a half-registered worker. */
   function spawnWorker(input: DelegateInput, parent: { workerId: string | null; depth: number }) {
     const current = owner();
@@ -737,7 +824,9 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
   }
   /** Reuse capacity, never session/ticket identity. Only verified pane closure releases UI resources. */
   async function reapWorkers(current: OwnerRun): Promise<boolean> {
-    for (const entry of current.workers.values()) if ((entry.reported || entry.stopped) && !entry.paneClosed) {
+    // A7.5: a held worker (or one already running its successor on the held ticket) is live state, not garbage: the reaper must
+    // not close its pane or retire its ticket. stop/finish still force-release it through the cleanup path.
+    for (const entry of current.workers.values()) if ((entry.reported || entry.stopped) && !entry.holdBrief && !entry.holdConsumed && !entry.paneClosed) {
       current.broker.revoke(entry.workerId);
       await current.executors.release(entry.workerId);
       await removeTicket(ticketPath(current.control,entry.workerId));
@@ -779,6 +868,24 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
       });
     } catch { return []; }
   }
+  /** A7.5: the holds a finish/stop would force-release, captured before cleanup clears them. */
+  const heldWorkerFacts = (current: OwnerRun) => [...current.workers.values()].filter(entry => entry.holdBrief).map(entry => ({ workerId: entry.workerId, brief: entry.holdBrief! }));
+  /**
+   * A7.9/D23: operator steering recorded after start. Read from the ledger at prompt time so a resumed or compacted run keeps
+   * the same guidance the live turn had; the campaign record is never rewritten by it.
+   */
+  async function steeringFacts(current: OwnerRun): Promise<{ hints: string[]; constraints: string[] }> {
+    try {
+      const index = await readLedger(current.records, current.runId);
+      const rows = index.records.flatMap(record => {
+        const steering = record.data?.steering as { kind?: unknown; text?: unknown } | undefined;
+        return record.kind === 'lifecycle' && steering && typeof steering.text === 'string' && (steering.kind === 'hint' || steering.kind === 'constraint')
+          ? [{ kind: steering.kind, text: steering.text as string }] : [];
+      });
+      return { hints: rows.filter(row => row.kind === 'hint').map(row => row.text), constraints: rows.filter(row => row.kind === 'constraint').map(row => row.text) };
+    } catch { return { hints: [], constraints: [] }; }
+  }
+
   async function workerView(current: OwnerRun) {
     const statuses = await herdr.statuses([...current.workers.values()].filter(w => !w.paneClosed).map(w => w.workerId));
     const index = await readLedger(current.records,current.runId);
@@ -808,8 +915,9 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
         workerId: entry.workerId, role: entry.role, depth: entry.depth, parentWorkerId: entry.parentWorkerId,
         lastWrite, lastFact: lastFact?.text.slice(0, 160), lastEvidence: lastEvidence?.text.slice(0, 160), lastOperation: tracked.last?.operation,
         wrote: wroteById.get(entry.workerId)!,
-        status: entry.reported ? 'reported' : entry.stopped ? 'stopped' : statuses.get(entry.workerId) ?? 'unknown',
-        live: !entry.reported && !entry.stopped, paneClosed:entry.paneClosed ?? false,
+        status: entry.reported ? entry.holdBrief ? 'held' : entry.holdConsumed ? 'continued' : 'reported' : entry.stopped ? 'stopped' : statuses.get(entry.workerId) ?? 'unknown',
+        live: (!entry.reported && !entry.stopped) || Boolean(entry.holdConsumed), paneClosed:entry.paneClosed ?? false,
+        heldBrief: entry.holdBrief, heldConsumed: entry.holdConsumed ?? false,
         commandsUsed: entry.used, reported: Boolean(report),
         summary: report ? report.summary.slice(0, 160) : record?.text.slice(0, 160),
         confidence: report?.confidence, blocked: report?.blocked?.slice(0, 400),
@@ -875,7 +983,50 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
     catch { /* Debt is advisory to the report; a failure only means the report does not restate it. */ }
     // A6.6: the campaign frame, the wake counts and a recorded partial reason, from the same ledger the report indexes.
     const recordedCampaign = store.campaign(), partialStop = store.campaignPartial(), counters = authorityCounters(index), wakeTotal = wakeRoundCount(index);
-    const campaignMeta = recordedCampaign ? { campaign: { objective: recordedCampaign.objective, constraints: recordedCampaign.constraints.length,
+    // D15/P7.1: the report names the engagement shape even when no campaign was recorded; a manual run still had a mode.
+    const engagement = recordedCampaign ? { mode: recordedCampaign.mode, effectClasses: recordedCampaign.effectClasses }
+      : (manifest.profile.mode ? { mode: manifest.profile.mode, effectClasses: manifest.profile.effectClasses ?? [] } : undefined);
+    // A7.2/P7.4: sessions are printed from committed lifecycle facts, never re-derived from live state, so a final report can
+    // still say what was opened and which removals were verified.
+    const sessionFacts = index.records.flatMap(record => {
+      const data = record.data?.session as Record<string, unknown> | undefined;
+      return data && typeof data === 'object' && !Array.isArray(data) ? [data] : [];
+    });
+    const openedSessionIds = [...new Set(sessionFacts.filter(row => row.event === 'opened' && typeof row.id === 'string').map(row => String(row.id)))];
+    const closedSessionIds = new Set(sessionFacts.filter(row => row.event === 'closed').flatMap(row =>
+      typeof row.id === 'string' ? [row.id] : Array.isArray(row.ids) ? row.ids.filter((id): id is string => typeof id === 'string') : []));
+    const listenFacts = sessionFacts.filter(row => row.event === 'listen');
+    const sessionsFact = openedSessionIds.length
+      ? `${openedSessionIds.length} opened (${openedSessionIds.slice(0, 8).join(', ')}); ${closedSessionIds.size} closed with verified container removal${openedSessionIds.some(id => !closedSessionIds.has(id)) ? `; ${openedSessionIds.filter(id => !closedSessionIds.has(id)).length} not recorded closed in this snapshot` : ''}${listenFacts.length ? `; ${listenFacts.length} in-sandbox listener(s) started (no host port; each removed with its session container)` : ''}`
+      : undefined;
+    // A7.8: which ingress path this run recorded, stated from committed facts rather than live state. A campaign run without an
+    // ingress flag says so, so a blind-effect gap is read as a missing path rather than a missing proof.
+    const recordedIngress = ingressFacts(recordedCampaign);
+    const callbackFact = !recordedCampaign ? undefined : recordedIngress
+      ? [
+          ...(recordedIngress.callback ? [`operator callback ${recordedIngress.callback} (a destination the target reaches, not an in-sandbox listener)`] : []),
+          ...(recordedIngress.labNetwork ? [`lab network "${recordedIngress.labNetwork}" (sandboxes joined it; no host port was published)`] : []),
+          ...(listenFacts.length ? [`${listenFacts.length} listener(s): ${listenFacts.map(row => `tcp ${String(row.port)} at ${String(row.address)}${row.healthy === false ? ' (unverified)' : ' (healthchecked)'}`).join(', ')}`] : []),
+        ].join('; ')
+      : 'none configured (no --callback and no --lab-network); a blind effect is proven by a recorded side effect or timing, or it stays a gap';
+    // A7.4/P7.5: the sealed identity and its audited uses come from committed records, never live memory, so a final report can
+    // still say what was sealed and which ids were used. A value is not a report input on any path.
+    const sealedRecord = index.records.flatMap(record => {
+      const value = record.data?.identity as { sha256?: unknown; count?: unknown } | undefined;
+      return value && typeof value === 'object' && typeof value.count === 'number' ? [value] : [];
+    }).at(-1);
+    const secretUseIds = index.records.flatMap(record => {
+      const value = record.data?.secretUse as { ids?: unknown } | undefined;
+      return value && Array.isArray(value.ids) ? value.ids.filter((id): id is string => typeof id === 'string') : [];
+    });
+    const secretUseCounts = secretUseIds.reduce((all, id) => all.set(id, (all.get(id) ?? 0) + 1), new Map<string, number>());
+    const secretsFact = secretUseIds.length
+      ? `${secretUseIds.length} use(s) by id: ${[...secretUseCounts.entries()].sort(([left], [right]) => left.localeCompare(right)).map(([id, count]) => `${id} (${count})`).join(', ')}`
+      : undefined;
+    const identityMeta = sealedRecord && typeof sealedRecord.count === 'number'
+      ? { count: sealedRecord.count, ...(typeof sealedRecord.sha256 === 'string' ? { sha256: sealedRecord.sha256 } : {}) }
+      : undefined;
+    const campaignMeta = recordedCampaign ? { campaign: { objective: recordedCampaign.objective, mode: recordedCampaign.mode, effectClasses: recordedCampaign.effectClasses, constraints: recordedCampaign.constraints.length,
       deny: recordedCampaign.constraints.filter(constraint => constraint.rule === 'deny').length, allow: recordedCampaign.constraints.filter(constraint => constraint.rule === 'allow').length,
       heartbeatSeconds: recordedCampaign.heartbeatSeconds, rounds: extra.owner ? extra.owner.engine.snapshot().rounds : wakeTotal,
       wakeReasons: { event: Math.max(0, wakeTotal - counters.debtWakes - counters.heartbeatWakes), debt: counters.debtWakes, heartbeat: counters.heartbeatWakes },
@@ -888,7 +1039,10 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
         // A4: the report states the mode that produced the run next to the authority counters and role matrix.
         mode: { loopMode: manifest.profile.loopMode, executorMode: manifest.profile.executorMode },
         format: loaded.reportFormat, endReason: extra.endReason, kind: extra.kind, outcome, unresolved: extra.unresolved, narrative: extra.narrative, operator: loaded.reportMeta, wstgPages, wrote,
-        ...(debt ? { debt } : {}), ...campaignMeta });
+        ...(debt ? { debt } : {}), ...(engagement ? { engagement } : {}),
+        ...((sessionsFact || secretsFact || callbackFact) ? { ladderFacts: { ...(sessionsFact ? { sessions: sessionsFact } : {}), ...(secretsFact ? { secrets: secretsFact } : {}), ...(callbackFact ? { callback: callbackFact } : {}) } } : {}),
+        ...(recordedIngress ? { ingress: recordedIngress } : {}),
+        ...(identityMeta ? { identity: identityMeta } : {}), ...campaignMeta });
     return { rendered, index, manifest };
   }
   /** Base directory for manual/draft exports: never inside the private state directory. */
@@ -938,7 +1092,11 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
     // A spawn that is still starting must register (or fail) before we revoke and tear down.
     if (current.spawns.size) await Promise.allSettled([...current.spawns]);
     const unclosed: string[] = [];
+    // A7.5: the holds released below are a fact the stopped preflight reports; capture them before the fields are cleared.
+    const heldAtStop = heldWorkerFacts(current);
     for (const registration of [...current.workers.values()]) {
+      // A7.5: stop/finish force-release a hold; nothing may outlive the run waiting for a successor.
+      registration.holdBrief = undefined; registration.holdConsumed = false;
       current.broker.revoke(registration.workerId);
       await herdr.interrupt(registration.name);
       const closed = registration.paneClosed || await herdr.closePane(registration.paneId);
@@ -948,10 +1106,22 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
       await removeTicket(ticketPath(current.control, registration.workerId));
     }
     await current.broker.stop();
+    // A7.2: sessions are force-closed by stop/finish; capture the open set before the pool releases the leases.
+    const sessionsAtStop = current.executors.openSessions();
     await current.executors.stop();
     await current.sandbox.stop();
     if (current.operations.size) await Promise.allSettled([...current.operations]);
     await current.sandbox.assertNoRunContainers();
+    // A7.2: stop/finish force-closes every session; the fact is committed before finalization, so the report says the removal
+    // was verified instead of inferring it from live state.
+    if (sessionsAtStop.length) {
+      current.sessions.clear();
+      try {
+        await appendRecord(current.records, { at: new Date(now()).toISOString(), runId: current.runId, by: 'owner', kind: 'lifecycle',
+          text: `sessions closed by ${reason}: ${sessionsAtStop.join(', ')}; container removal was verified`,
+          data: { session: { event: 'closed', ids: sessionsAtStop, by: reason, verified: true } } });
+      } catch (error) { storageFailure(current, error, true); }
+    }
     for (const worker of current.workers.values()) if (!worker.reported) current.progress.record(worker.workerId,'cancelled');
     // M3: stopping is not completion. The obligations the run leaves behind are recorded here, so the ledger and the auto report
     // both say what a resuming reader would still owe rather than only that a human pressed stop.
@@ -962,6 +1132,7 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
         // reader still owes" cannot be counted one way at stop and another way in the auto report.
         const debt = runDebt(current, index);
         current.preflight = finishPreflight(index, { ...current.store.reviewContext(), integrity: current.settings.reviewIntegrity, statedObjective: current.statedObjective, debt,
+          heldWorkers: heldAtStop,
           wrote: writeBack({ provenance: current.store.graphSnapshot().provenance, records: index.records, findings: new Map([...current.workers.values()].filter(entry => entry.reported).map(entry => [entry.workerId, entry.reported!.findings.length] as const)) }) });
         const context = current.store.reviewContext();
         current.completion = deriveCompletion({ plans: planFrontier(index), claims: claimHeadClaims(index), tasks: taskFrontier(index), debt: debtFor(debt), ...proofViews(caseViews(index, context.cases), coverageViews(index, context.coverage)) });
@@ -981,6 +1152,8 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
       const roles = current.usage.byRole();
       if (roles.length) current.store.event({ actorId: 'owner', kind: 'usage.reported', occurredAt: new Date(now()).toISOString(), summary: `Model usage reported by Pi (display only): ${current.usage.totals().messages} message(s) across ${roles.length} role(s)`, data: { usage: { roles, totals: current.usage.totals() } } });
     } catch { /* Visibility only; finalization below never depends on it. */ }
+    // A7.7: allow counts are flushed before the ledger is finalized; a run whose every operation was allowed still reports a digest.
+    await flushPolicyDigest(current);
     try {
       current.store.finalize(reason === 'finished' ? 'incomplete' : ['failed', 'storage-failed'].includes(reason) ? 'blocked' : 'cancelled', reason, unclosed.length ? 'unresolved' : 'cleaned', current.completion ? completionLine(current.completion) : undefined);
       if (current.retention === 'durable-local') current.store.checkpoint(`Finalization: ${reason}`);
@@ -995,6 +1168,8 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
     });
     current.unbindStore(); current.store.close();
     await rm(current.control, { recursive: true, force: true });
+    // A7.4: the sealed copy lived in the control directory just removed; drop the in-memory values with it.
+    current.identity = undefined; current.sealedIdentity = undefined;
     if (unclosed.length) current.unclosedPanes = unclosed;
     current.cleanedReason = reason;
     current.phase = 'finished';
@@ -1015,8 +1190,322 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
     try { current.ctx.ui.notify(`Storage failed; execution authority closed immediately: ${current.storageError}. No target retry.`, 'error'); } catch { /* Rendering cannot hold authority/resources open. */ }
     void stopAssessment(current,'storage-failed').catch(cause => {try {current.ctx.ui.notify(`Cleanup unverified: ${message(cause)}; use /p2o stop.`, 'error');} catch { /* Gate remains closed. */ }});
   }
-  function executeWithReceipt(current: OwnerRun, by: string, operation: string, input: string, perform: (onRunning: () => void, onOutput: OutputObserver) => Promise<ProcessResult & {scratchSnapshot?:ScratchSnapshot}>): Promise<ProcessResult & {operationId:string; capture:CaptureReceipt; scratchSnapshot?:ScratchSnapshot}> {
+
+  /**
+   * A7.7 (planning_update.md P7.3): the policy glue around the pure rules in `src/policy.ts`.
+   *
+   * One evaluation point, not one per tool: every dispatch that can reach a container — the owner tools and the broker's worker
+   * operations, which both come through `executeWithReceipt` — asks `enforcePolicy` first. A deny or an ask is written to the ledger
+   * before it is refused, an allow costs only an in-memory count until the next digest record, and an operator approval is consumed
+   * by the exact request it approved (kind + command hash), so it can never authorize a different command.
+   */
+  const POLICY_ASK_LIMIT = 8;
+  interface PolicyAsk { id: string; requestHash: string; kind: PolicyKind; ruleId: string; reason: string; command: string; by: string; taskRef?: string; at: string }
+  interface PolicyResolution { recordId: string; askId: string; decision: 'allow' | 'deny'; requestHash: string }
+  const policyCommand = (text: string) => cleanText(text).slice(0, 500);
+  const policyHash = (kind: PolicyKind, text: string) => sha256Hex(`${kind}\u0000${text}`);
+  const policyAsks = (records: readonly AssessmentRecord[]) => records.flatMap(record => {
+    const ask = record.data?.policyAsk as PolicyAsk | undefined;
+    return ask && typeof ask.id === 'string' && typeof ask.requestHash === 'string' ? [ask] : [];
+  });
+  const policyResolutions = (records: readonly AssessmentRecord[]) => records.flatMap(record => {
+    const resolution = record.data?.policyResolution as Omit<PolicyResolution, 'recordId'> | undefined;
+    return resolution && typeof resolution.askId === 'string' && typeof resolution.requestHash === 'string' && (resolution.decision === 'allow' || resolution.decision === 'deny')
+      ? [{ ...resolution, recordId: String(record.id) }] : [];
+  });
+  const policyConsumed = (records: readonly AssessmentRecord[]) => new Set(records.flatMap(record => {
+    const consumed = record.data?.policyConsumed as { resolutionId?: unknown } | undefined;
+    return typeof consumed?.resolutionId === 'string' ? [consumed.resolutionId] : [];
+  }));
+  const appendPolicyRecord = async (current: OwnerRun, by: string, text: string, data: Record<string, unknown>) => {
+    const ack = await track(current, appendRecord(current.records, { at: new Date().toISOString(), runId: current.runId, by,
+      ...(by === 'owner' ? {} : { workerId: by }), kind: 'lifecycle', text, data }));
+    return ack.recordId;
+  };
+  /** Allows are counted per rule and flushed as one digest record: a receipt already carries every command's text. */
+  async function flushPolicyDigest(current: OwnerRun): Promise<void> {
+    if (!current.policyAllows.size) return;
+    const counts = Object.fromEntries([...current.policyAllows.entries()].sort(([left], [right]) => left.localeCompare(right)));
+    const total = [...current.policyAllows.values()].reduce((sum, count) => sum + count, 0);
+    current.policyAllows.clear();
+    try { await appendPolicyRecord(current, 'owner', `policy digest: ${total} allowed operation(s) by rule`, { policyDigest: { counts, total } }); }
+    catch (error) { storageFailure(current, error, true); }
+  }
+  async function auditPolicyDeny(current: OwnerRun, by: string, decision: PolicyOutcome, kind: PolicyKind, text: string, taskRef?: string): Promise<void> {
+    const policyDecision = { action: decision.action, ruleId: decision.ruleId, reason: decision.reason, kind, command: policyCommand(text), ...(taskRef ? { taskRef } : {}) };
+    try { await appendPolicyRecord(current, by, `policy ${decision.action}: ${decision.ruleId}; nothing executed`, { policyDecision }); }
+    catch (error) { storageFailure(current, error, true); }
+  }
+  /**
+   * Evaluate one dispatch. Returns only when the operation may run; a deny or a pending ask throws the code the model must read.
+   * `ask` never blocks a pane: it records a bounded pending decision and the run continues with something else.
+   */
+  async function enforcePolicy(current: OwnerRun, kind: PolicyKind, text: string, by: string): Promise<void> {
+    const bounded = policyCommand(text), taskRef = by === 'owner' ? current.currentTaskId : current.workers.get(by)?.taskId;
+    const decision = current.policy.evaluate({ kind, text: bounded });
+    if (decision.action === 'allow') { current.policyAllows.set(decision.ruleId, (current.policyAllows.get(decision.ruleId) ?? 0) + 1); return; }
+    if (decision.action === 'deny') {
+      await flushPolicyDigest(current); await auditPolicyDeny(current, by, decision, kind, bounded, taskRef);
+      fail('POLICY_DENY', `${decision.ruleId}: ${decision.reason}. Nothing was executed; choose a different approach, or the operator can change the rule in p2o.commandPolicy settings.`);
+    }
+    const requestHash = policyHash(kind, bounded), records = current.store.records();
+    const asks = policyAsks(records), resolutions = policyResolutions(records), consumed = policyConsumed(records);
+    const resolution = resolutions.filter(row => row.requestHash === requestHash && !consumed.has(row.recordId)).at(-1);
+    if (resolution?.decision === 'allow') {
+      await appendPolicyRecord(current, by, `policy approval consumed for ${resolution.askId}; one operation allowed`, { policyConsumed: { resolutionId: resolution.recordId, askId: resolution.askId, requestHash } });
+      current.policyAllows.set('operator.approved', (current.policyAllows.get('operator.approved') ?? 0) + 1);
+      return;
+    }
+    if (resolution?.decision === 'deny') {
+      await appendPolicyRecord(current, by, `policy denial consumed for ${resolution.askId}`, { policyConsumed: { resolutionId: resolution.recordId, askId: resolution.askId, requestHash } });
+      await flushPolicyDigest(current);
+      await auditPolicyDeny(current, by, { action: 'deny', ruleId: 'operator.denied', reason: 'the operator denied this exact request' }, kind, bounded, taskRef);
+      fail('POLICY_DENY', 'operator.denied: a human denied this exact request. Nothing was executed; do not repeat it.');
+    }
+    const pending = asks.filter(ask => !resolutions.some(row => row.askId === ask.id));
+    const waiting = asks.find(ask => ask.requestHash === requestHash && !resolutions.some(row => row.askId === ask.id));
+    if (waiting) fail('POLICY_ASK_PENDING', `${waiting.id}: ${decision.ruleId} — ${decision.reason}. Nothing was executed. legalNext: report the pending id and the exact command, and ask a human to run /p2o approve ${waiting.id} or /p2o deny ${waiting.id}`);
+    if (pending.length >= POLICY_ASK_LIMIT) {
+      await flushPolicyDigest(current);
+      await auditPolicyDeny(current, by, { action: 'deny', ruleId: 'policy.ask-limit', reason: `more than ${POLICY_ASK_LIMIT} policy asks await an operator decision` }, kind, bounded, taskRef);
+      fail('POLICY_DENY', `policy.ask-limit: more than ${POLICY_ASK_LIMIT} policy asks await an operator decision, so nothing was executed. legalNext: report the pending ids and wait for /p2o approve or /p2o deny`);
+    }
+    const ask: PolicyAsk = { id: `policy-ask-${randomUUID()}`, requestHash, kind, ruleId: decision.ruleId, reason: decision.reason, command: bounded, by, ...(taskRef ? { taskRef } : {}), at: new Date().toISOString() };
+    await flushPolicyDigest(current);
+    try { await appendPolicyRecord(current, by, `policy ask: ${ask.ruleId}; nothing executed`, { policyAsk: ask }); }
+    catch (error) { storageFailure(current, error, true); }
+    fail('POLICY_ASK_PENDING', `${ask.id}: ${decision.ruleId} — ${decision.reason}. Nothing was executed. legalNext: ask a human to run /p2o approve ${ask.id} or /p2o deny ${ask.id}, then retry the exact command once`);
+  }
+  /** A7.7: the operator resolves one pending ask. The record is owner-attributed and applies once to that exact request. */
+  async function resolvePolicyAsk(current: OwnerRun, action: 'approve' | 'deny', id: string): Promise<string> {
+    const records = current.store.records(), ask = policyAsks(records).find(row => row.id === id);
+    if (!ask) fail('POLICY_ASK_UNKNOWN', `no policy ask ${id} in this run; /p2o status lists pending ids`);
+    const resolved = policyResolutions(records).find(row => row.askId === id);
+    if (resolved) fail('POLICY_ASK_RESOLVED', `policy ask ${id} was already ${resolved.decision === 'allow' ? 'approved' : 'denied'}; that decision applied once to the exact request`);
+    await appendPolicyRecord(current, 'owner', `policy ${action === 'approve' ? 'approval' : 'denial'} by human: ${id}`, { policyResolution: {
+      askId: id, decision: action === 'approve' ? 'allow' : 'deny', requestHash: ask.requestHash, command: ask.command, at: new Date().toISOString() } });
+    return `Policy ask ${id} ${action === 'approve' ? 'approved' : 'denied'} (${ask.ruleId}). Nothing has run yet: ${action === 'approve' ? 'the exact request is allowed once when it is retried' : 'the exact request is refused once if it is retried'}; a different command asks again.`;
+  }
+  // ------------------------------------------------------------------ A7.2: run-owned sessions (P7.4)
+  const SESSION_ID_PATTERN = /^session-[a-f0-9]{8}$/;
+  const sessionPurpose = (value: unknown): string | undefined => {
+    if (value === undefined) return undefined;
+    if (typeof value !== 'string') fail('INVALID_INPUT', 'purpose must be one line of text');
+    const clean = cleanText(value).replace(/\s+/g, ' ').trim().slice(0, 200);
+    if (clean.length < 3) fail('INVALID_INPUT', 'purpose must be 3..200 characters: what this session is for');
+    return clean;
+  };
+  /** Every session-naming tool argument goes through one validator: a malformed id is a caller error, never a lookup. */
+  function sessionIdParam(value: unknown): string {
+    if (typeof value !== 'string' || !SESSION_ID_PATTERN.test(value)) fail('INVALID_INPUT', 'Needs an open session id (p2o_session action=list); a session id is host-generated and case-sensitive');
+    return value;
+  }
+  function requireSessionMode(current: OwnerRun) {
+    if (current.executors.mode !== 'session') fail('SESSION_MODE', 'This run has no session executor: start with --executors session[:N] to keep a long-lived container per session. A shared/isolated run cannot attach a session, and no executor is created implicitly.');
+  }
+  function requireSession(current: OwnerRun, id: unknown): SessionFact {
+    if (typeof id !== 'string' || !SESSION_ID_PATTERN.test(id)) fail('INVALID_INPUT', 'Needs an open session id; p2o_session action=list shows the open ids');
+    requireSessionMode(current);
+    const fact = current.sessions.get(id);
+    if (!fact || !current.executors.openSessions().includes(id)) fail('SESSION_UNKNOWN', `${id} is not an open session of this run; action=list shows the open ids. Closing never reuses an id, and no session is restored after a fault.`);
+    return fact;
+  }
+  /** What every session surface reports: the pool is the truth for open/closed, the map for the facts. */
+  function sessionRows(current: OwnerRun) {
+    return current.executors.openSessions().map(id => {
+      const fact = current.sessions.get(id);
+      return { session: id, openedAt: fact?.openedAt ?? 'unknown', openedBy: fact?.openedBy ?? 'unknown', ...(fact?.purpose ? { purpose: fact.purpose } : {}), pty: current.executors.livePty(id),
+        ...(fact?.listens?.length ? { listens: fact.listens.map(entry => ({ port: entry.port, protocol: entry.protocol, address: entry.address, log: entry.log })) } : {}) };
+    });
+  }
+  async function sessionRecord(current: OwnerRun, by: string, id: string, text: string, data: Record<string, unknown>) {
+    try {
+      await track(current, appendRecord(current.records, { at: new Date(now()).toISOString(), runId: current.runId, by,
+        ...(by === 'owner' ? {} : { workerId: by }), kind: 'lifecycle', text: cleanText(text).slice(0, 900), data: { session: { id, ...data } } }));
+    } catch (error) { storageFailure(current, error, true); throw error; }
+  }
+  async function openSessionFor(current: OwnerRun, by: string, purpose?: string): Promise<SessionFact> {
+    requireSessionMode(current); assertOwnerActive(current);
+    const id = `session-${randomUUID().replace(/-/g, '').slice(0, 8)}`;
+    await current.executors.openSession(id);
+    const fact: SessionFact = { id, openedAt: new Date(now()).toISOString(), openedBy: by, ...(purpose ? { purpose } : {}) };
+    current.sessions.set(id, fact);
+    await sessionRecord(current, by, id, `session opened: ${id}${purpose ? ` — ${purpose}` : ''}; long-lived container, no timer, closed by p2o_session action=close or run cleanup`, { event: 'opened', ...(purpose ? { purpose } : {}) });
+    return fact;
+  }
+  async function closeSessionFor(current: OwnerRun, by: string, id: string, reason: string): Promise<string> {
+    requireSession(current, id);
+    await current.executors.release(id); // Verified container removal is the only stop path; a failure keeps the lease for /p2o stop.
+    current.sessions.delete(id);
+    for (const worker of current.workers.values()) if (worker.session === id) { worker.session = undefined; current.executors.unbind(worker.workerId); }
+    await sessionRecord(current, by, id, `session closed: ${id}; container removal verified (${cleanText(reason).slice(0, 160)})`, { event: 'closed', verified: true, reason: cleanText(reason).slice(0, 200) });
+    return `Session ${id} closed; its container removal is verified. Files, processes and any credential inside it are gone.`;
+  }
+  /** One non-interactive command inside a session container: the same operation gate, policy and receipt as p2o_shell. */
+  function sessionExecFor(current: OwnerRun, by: string, id: string, command: string, seconds: number, signal?: AbortSignal) {
+    requireSession(current, id);
+    return executeWithReceipt(current, by, 'shell', command, (onRunning, onOutput, dispatch) =>
+      current.executors.use(id, signal, sandbox => sandbox.exec(dispatch.text, seconds, signal, sandbox.sessionWorkdir, onRunning, onOutput)));
+  }
+  /** Raw bytes to the session PTY; output is returned up to quiet or the wait, never interpreted as a shell line. */
+  function sessionSendFor(current: OwnerRun, by: string, id: string, data: string, waitMs: number, signal?: AbortSignal) {
+    requireSession(current, id);
+    return executeWithReceipt(current, by, 'shell', data, async (onRunning, onOutput, dispatch) => current.executors.use(id, signal, async sandbox => {
+      onRunning();
+      const result = await sandbox.ptySend(dispatch.text, waitMs, signal);
+      if (result.stdout) onOutput?.('stdout', Buffer.from(result.stdout));
+      return result;
+    }), { substitute: 'raw' });
+  }
+  /** Drain PTY output after the host cursor. Not a target command: no bytes are written to the target, so no policy decision. */
+  function sessionReadFor(current: OwnerRun, by: string, id: string, waitMs: number, signal?: AbortSignal) {
+    requireSession(current, id);
+    return executeWithReceipt(current, by, 'pty-read', `session ${id} interactive read`, async (onRunning, onOutput) => current.executors.use(id, signal, async sandbox => {
+      onRunning();
+      const result = await sandbox.ptyRead(waitMs, signal);
+      if (result.stdout) onOutput?.('stdout', Buffer.from(result.stdout));
+      return result;
+    }));
+  }
+  async function sessionUploadFor(current: OwnerRun, by: string, id: string, path: string, content: string) {
+    requireSession(current, id);
+    const relative = scratchPath(path), bytes = Buffer.from(content, 'utf8');
+    if (!bytes.length || bytes.length > 32 * 1024) fail('INVALID_INPUT', 'action=upload needs 1..32 KiB of UTF-8 text; use a command or the PTY for larger transfers');
+    const written = await current.executors.writeScratch(id, relative, bytes, undefined, `/work/sessions/${id}`, 0o600);
+    await sessionRecord(current, by, id, `session upload: ${relative} (${written.bytes} bytes)`, { event: 'upload', path: relative, bytes: written.bytes, sha256: written.sha256 });
+    return { ...written, note: 'Materialized inside the session container; the sandbox re-read the bytes and the host hash matches.' };
+  }
+  function sessionDownloadFor(current: OwnerRun, by: string, id: string, path: string, signal?: AbortSignal) {
+    requireSession(current, id);
+    return executeWithReceipt(current, by, 'capture', path, (onRunning, onOutput) =>
+      current.executors.use(id, signal, sandbox => sandbox.captureScratch(path, current.settings.artifactCaptureKiB * 1024, signal, sandbox.sessionWorkdir, onRunning, onOutput, 0, 0)));
+  }
+  /**
+   * A7.8/D22: start and healthcheck an in-sandbox TCP listener in one session. A callback catcher is the only way a blind
+   * effect from a NAT'd target becomes a record instead of a guess; the listener runs inside the container the operator
+   * already accepted, off the published-port path, and it is recorded as a session fact so the report can name it.
+   */
+  async function listenFor(current: OwnerRun, by: string, id: string, port: unknown, protocol: unknown): Promise<Record<string, unknown>> {
+    requireSession(current, id);
+    const labNetwork = current.campaign?.labNetwork;
+    if (!labNetwork) {
+      if (current.campaign?.callback) fail('INGRESS_UNAVAILABLE', `this run records the operator callback ${current.campaign.callback}: that is a destination the target reaches, not a listener in the sandbox. An in-sandbox listener needs --lab-network so the target can route back; nothing was started.`);
+      fail('INGRESS_UNAVAILABLE', 'action=listen needs an ingress path: --lab-network <name> so a target on the operator\'s network can reach the sandbox. Neither --callback nor --lab-network is configured, so nothing was started and no host port is published.');
+    }
+    const selected = typeof port === 'number' ? port : Number(port);
+    if (!Number.isInteger(selected) || selected < 1 || selected > 65535) fail('INVALID_INPUT', 'action=listen needs an integer port 1..65535');
+    if (protocol !== undefined && protocol !== 'tcp') fail('INGRESS_UNAVAILABLE', 'a udp listener cannot be healthchecked or catch a reverse shell; use protocol tcp instead of a silent fallback');
+    const fact = current.sessions.get(id)!;
+    const listens = (fact.listens ??= []);
+    if (listens.some(entry => entry.port === selected)) fail('LISTEN_EXISTS', `session ${id} already listens on tcp ${selected}; list it or close the session`);
+    if (listens.length >= 4) fail('LISTEN_LIMIT', `session ${id} already has 4 listeners; a foothold is not a port range`);
+    const container = current.executors.containerName(id);
+    if (!container) fail('INGRESS_UNAVAILABLE', 'the session container has no name a lab-network peer could resolve (no container was created); no listener was started');
+    const address = `${container}:${selected}`;
+    const relative = `listeners/listen-${selected}`;
+    const script = [
+      'import socket, sys',
+      'port = int(sys.argv[1])',
+      'server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)',
+      'server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)',
+      "server.bind(('0.0.0.0', port))",
+      'server.listen(8)',
+      'while True:',
+      '    connection, peer = server.accept()',
+      "    sys.stdout.write('[p2o] connection from %s:%s' % (peer[0], peer[1]) + chr(10))",
+      '    sys.stdout.flush()',
+      '    connection.settimeout(30)',
+      '    try:',
+      '        while True:',
+      '            data = connection.recv(4096)',
+      '            if not data:',
+      '                break',
+      "            sys.stdout.write('[p2o] received %d bytes: %r' % (len(data), data[:400]) + chr(10))",
+      '            sys.stdout.flush()',
+      '    except Exception:',
+      '        pass',
+      '    finally:',
+      '        connection.close()',
+    ].join('\n');
+    // Host-authored fixed bytes only: the port is a validated integer, so the command policy (for model commands) does not apply.
+    const run = (command: string, seconds: number) => current.executors.use(id, undefined, sandbox => sandbox.exec(command, seconds, undefined, sandbox.sessionWorkdir));
+    const started = await track(current, run([
+      'mkdir -p listeners',
+      `cat > ${relative}.py <<'P2O_LISTENER'`,
+      script,
+      'P2O_LISTENER',
+      `nohup sh -c 'echo $$ > ${relative}.pid; exec /usr/bin/python3 -I -S ${relative}.py ${selected}' > ${relative}.log 2>&1 &`,
+      'sleep 0.2',
+    ].join('\n'), 30));
+    if (started.code !== 0) fail('INGRESS_UNAVAILABLE', `could not start the listener (exit ${started.code}): ${cleanText((started.stderr || started.stdout).slice(-400))}`);
+    const probeScript = 'import socket, sys; socket.create_connection(("127.0.0.1", int(sys.argv[1])), 1).close()';
+    const probe = await track(current, run(`i=0; while [ $i -lt 20 ]; do if /usr/bin/python3 -I -S -c '${probeScript}' ${selected} >/dev/null 2>&1; then exit 0; fi; i=$((i+1)); sleep 0.3; done; exit 1`, 20));
+    if (probe.code !== 0) {
+      const logTail = await track(current, run(`tail -c 400 ${relative}.log 2>/dev/null`, 10)).catch(() => undefined);
+      await track(current, run(`kill "$(cat ${relative}.pid)" 2>/dev/null; rm -f ${relative}.py ${relative}.pid`, 10)).catch(() => undefined);
+      fail('INGRESS_UNHEALTHY', `the tcp ${selected} listener did not answer a loopback healthcheck and was stopped; no address is recorded${logTail?.stdout?.trim() ? ` (log: ${cleanText(logTail.stdout).slice(-300)})` : ''}`);
+    }
+    const listener: ListenFact = { port: selected, protocol: 'tcp', address, log: `${relative}.log`, openedAt: new Date(now()).toISOString(), openedBy: by };
+    listens.push(listener);
+    await sessionRecord(current, by, id, `listener started: tcp ${selected} in session ${id}; target-side address ${address} on lab network ${labNetwork}; loopback healthcheck passed; log ${relative}.log; no host port is published`, { event: 'listen', protocol: 'tcp', port: selected, address, log: `${relative}.log`, healthy: true });
+    return { session: id, ...listener, labNetwork,
+      note: `The address ${address} is a container name, resolved only on the operator's lab network "${labNetwork}". Read what arrives with p2o_shell (or p2o_session action=exec) cat ${relative}.log inside the session; the listener dies with the container and no host port was published.` };
+  }
+
+  /** A worker may only name the session its ticket holds; the binding is owner-side state, not a model claim. */
+  function workerSessionId(current: OwnerRun, worker: WorkerRegistration, requested: unknown): string {
+    if (worker.session === undefined) fail('SESSION_UNBOUND', 'This worker holds no session; open one with p2o_session action=open (the owner binds exactly one session to the ticket)');
+    if (requested !== undefined && requested !== worker.session) fail('SESSION_NOT_HELD', `This worker's ticket holds ${worker.session}, not ${String(requested).slice(0, 64)}; a worker cannot name a session it was not given`);
+    return requireSession(current, worker.session).id;
+  }
+
+  // ------------------------------------------------------------------ A7.4: identity substitution (P7.5)
+  /** A7.4: what an executor actually receives: a substituted command in `text`, or a substituted request in `http`. */
+  interface Dispatch { text: string; http?: HttpRequest }
+  /** Exact-value redaction for any host string that could echo a substituted value (error text, recorded input). */
+  const secretText = (current: OwnerRun, text: string) => current.identity ? redactSecrets(text, current.identity).text : text;
+  /** A7.4: one bounded audit row per substituted dispatch. The ids are the fact; a value is never recorded. */
+  async function auditSecretUse(current: OwnerRun, by: string, operation: string, ids: readonly string[]): Promise<void> {
+    const taskRef = by === 'owner' ? current.currentTaskId : current.workers.get(by)?.taskId;
+    const secretUse = { ids: [...ids].sort(), operation, ...(taskRef ? { taskRef } : {}) };
+    try {
+      await track(current, appendRecord(current.records, { at: new Date(now()).toISOString(), runId: current.runId, by,
+        ...(by === 'owner' ? {} : { workerId: by }), kind: 'lifecycle', text: `secrets used: ${secretUse.ids.join(', ')} (${operation}); values never recorded`, data: { secretUse } }));
+    } catch (error) { storageFailure(current, error, true); throw error; }
+  }
+  /** A7.4: substitute one request field by field; the substituted header set is revalidated because a value may now contain a newline. */
+  function secretHttpRequest(request: HttpRequest, identity: IdentityFile): { request: HttpRequest; used: string[] } {
+    const used = new Set<string>();
+    const apply = (value: string): string => { const out = substituteSecrets(value, identity); out.used.forEach(id => used.add(id)); return out.text; };
+    const headers = request.headers ? Object.fromEntries(Object.entries(request.headers).map(([name, value]) => [name, apply(value)])) : undefined;
+    if (headers) httpHeaders(headers);
+    return { request: { ...request, url: apply(request.url), ...(headers ? { headers } : {}), ...(request.body === undefined ? {} : { body: apply(request.body) }) }, used: [...used].sort() };
+  }
+  /**
+   * The one dispatch seam. `options.http` marks an HTTP request (substituted field by field); `options.substitute='raw'` marks
+   * raw PTY bytes (a sudo prompt reads the value verbatim, so shell quoting would change it). Every shell/net command is quoted.
+   */
+  function executeWithReceipt(current: OwnerRun, by: string, operation: string, input: string, perform: (onRunning: () => void, onOutput: OutputObserver, dispatch: Dispatch) => Promise<ProcessResult & {scratchSnapshot?:ScratchSnapshot}>, options: { http?: HttpRequest; substitute?: 'shell' | 'raw' } = {}): Promise<ProcessResult & {operationId:string; capture:CaptureReceipt; scratchSnapshot?:ScratchSnapshot}> {
     const task = (async () => {
+      // A7.7: the one dispatch seam. The owner tools and the broker's worker operations both arrive here, so no bytes reach a
+      // container before the policy has decided; a denial is recorded and thrown before an operation record or receipt exists.
+      // Only a live run has a policy window: a closing run refuses below in assertOwnerActive, and writing an audit record after
+      // finalization would fail closed on a run that is no longer allowed to dispatch anything.
+      if (run === current && current.phase === 'active' && (POLICY_KINDS as readonly string[]).includes(operation)) await enforcePolicy(current, operation as PolicyKind, input, by);
+      // A7.4: substitution happens only AFTER the policy allowed the operation, so a deny never expands a value, and an unknown
+      // secret id fails before any byte exists. The audit row is written before dispatch because a use that starts is a use.
+      const dispatch: Dispatch = { text: input, ...(options.http ? { http: options.http } : {}) };
+      let usedSecrets: string[] = [];
+      if (current.identity) {
+        try {
+          if (options.http) { const substituted = secretHttpRequest(options.http, current.identity); dispatch.http = substituted.request; usedSecrets = substituted.used; }
+          else if (options.substitute === 'raw' || operation === 'shell' || operation === 'net') {
+            const substituted = options.substitute === 'raw' ? substituteSecrets(input, current.identity) : substituteShellSecrets(input, current.identity);
+            dispatch.text = substituted.text; usedSecrets = substituted.used;
+          }
+        } catch (error) { fail('SECRET_SUBSTITUTION', `${message(error)}. Nothing was executed and no value was recorded.`); }
+      }
+      if (usedSecrets.length) await auditSecretUse(current, by, operation, usedSecrets);
       const started = new Date().toISOString(), operationId = `operation-${randomUUID()}`;
       const taskId = by === 'owner' ? current.currentTaskId : current.workers.get(by)?.taskId;
       let running = false, returned = false, retentionAttempted = false;
@@ -1024,7 +1513,11 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
       let captureReceipt = capture.receipt(), scratchSource: ScratchSnapshot | undefined;
       const retain = (captureOutcome: 'returned' | 'interrupted') => {
         retentionAttempted = true; captureReceipt = capture.receipt();
-        const parts=capture.parts();
+        const parts = capture.parts().map(part => {
+          if (!current.identity) return part;
+          const redacted = redactSecretBytes(part.input, current.identity);
+          return redacted.replaced ? { ...part, input: redacted.bytes } : part;
+        });
         if (scratchSource) {
           captureReceipt.source={...scratchSource,path:redact(scratchSource.path)};
           if (!parts.length) parts.push({stream:'stdout',input:Buffer.alloc(0),totalBytes:0}); // An observed empty file is still an artifact.
@@ -1045,12 +1538,24 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
       current.progress.record(by,'queued',operation);
       try {
         assertOwnerActive(current);
-        event('operation.requested',`${operation}: admitted, waiting for executor`,{input:redact(input).slice(0,2000),remoteOutcome:'not-observed'});
-        const result = await perform(() => {
+        event('operation.requested',`${operation}: admitted, waiting for executor`,{input:secretText(current,redact(input)).slice(0,2000),remoteOutcome:'not-observed'});
+        const raw = await perform(() => {
           event('operation.started',`${operation}: executor dispatch started; remote effects unproven`,{remoteOutcome:'unknown'});
           running = true; current.progress.record(by,'running',operation);
-        },capture.observe);
-        returned = true;scratchSource=result.scratchSnapshot;current.progress.record(by,'returned',operation);
+        },capture.observe,dispatch);
+        returned = true;
+        // A7.4: redact what is retained and returned before the receipt and before the model reads it. Exact-value and
+        // best-effort: a literal value the model writes itself, or one split by the target, is outside its reach.
+        const result = current.identity
+          ? { ...raw,
+              stdout: redactSecrets(raw.stdout, current.identity).text,
+              ...(typeof raw.stderr === 'string' ? { stderr: redactSecrets(raw.stderr, current.identity).text } : {}),
+              // A URL or hop line can echo a substituted query value, so every retained string field is redacted too.
+              ...(raw.hops?.length ? { hops: raw.hops.map(hop => redactSecrets(hop, current.identity!).text) } : {}),
+              ...(typeof raw.redirectStopped === 'string' ? { redirectStopped: redactSecrets(raw.redirectStopped, current.identity).text } : {}),
+              ...(typeof raw.cookieWarning === 'string' ? { cookieWarning: redactSecrets(raw.cookieWarning, current.identity).text } : {}) }
+          : raw;
+        scratchSource=result.scratchSnapshot;current.progress.record(by,'returned',operation);
         retain('returned');
         const evidenceId = await current.evidence.receipt(by,operation,input,result,started,captureReceipt);
         event(result.code === 0 ? 'operation.returned' : 'operation.failed',`${operation}: executor returned exit ${result.code}; receipt retained`,{code:result.code,truncated:result.truncated,remoteOutcome:'returned',resultAvailable:true,capture:captureReceipt},[evidenceId,...captureReceipt.artifacts.map(a=>a.id)]);
@@ -1058,7 +1563,7 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
         const preview=scratchSource ? current.store.artifact(captureReceipt.artifacts[0].id,0,8192) : undefined;
         return {...result,...(preview ? {stdout:preview.text,stderr:'',truncated:result.truncated || preview.nextOffset !== undefined} : {}),evidenceId,operationId,capture:captureReceipt};
       } catch (error) {
-        current.progress.record(by,'error',operation,redact(message(error)));
+        current.progress.record(by,'error',operation,secretText(current,redact(message(error))));
         if (returned) storageFailure(current,error,true); // Known return; only host evidence/artifact retention remained.
         if (!retentionAttempted) {try {retain('interrupted');} catch (retentionError) {storageFailure(current,retentionError,true);}}
         try {
@@ -1066,12 +1571,12 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
           else {
             const cancelled = current.phase !== 'active' || /Cancelled|aborted/i.test(message(error));
             if (cancelled) event('operation.cancelled',`${operation}: local cancellation; no remote rollback claim`,{remoteOutcome:running ? 'unknown' : 'not-observed'});
-            event(running ? 'operation.unknown-terminal' : 'operation.failed',`${operation}: ${running ? 'remote outcome unknown; do not replay automatically' : 'executor did not report running'}`,{error:redact(message(error)).slice(0,1000),remoteOutcome:running ? 'unknown' : 'not-observed',capture:captureReceipt},captureReceipt.artifacts.map(a=>a.id));
+            event(running ? 'operation.unknown-terminal' : 'operation.failed',`${operation}: ${running ? 'remote outcome unknown; do not replay automatically' : 'executor did not report running'}`,{error:secretText(current,redact(message(error))).slice(0,1000),remoteOutcome:running ? 'unknown' : 'not-observed',capture:captureReceipt},captureReceipt.artifacts.map(a=>a.id));
           }
         } catch (retentionError) { storageFailure(current,retentionError); }
         storageFailure(current,error);
         // Do not fabricate a failed target result when only retention failed after a known return.
-        if (!returned) await current.evidence.receipt(by,operation,input,{code:-1,stdout:'',stderr:message(error),truncated:false},started,captureReceipt).catch(cause => storageFailure(current,cause,true));
+        if (!returned) await current.evidence.receipt(by,operation,input,{code:-1,stdout:'',stderr:secretText(current,message(error)),truncated:false},started,captureReceipt).catch(cause => storageFailure(current,cause,true));
         throw error;
       } finally {capture.dispose();}
     })();
@@ -1264,6 +1769,25 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
   }
 
   /**
+   * A7.5/D19: effect-level validation economy. A claim that is only a chain intermediate is covered by the replay of the
+   * successor a case actually rests on; validating every packaged rung would add replays without adding independence. The
+   * deepest claim has no demonstrated successor, so it is always the one that gets its own validation.
+   */
+  async function demonstratedSuccessor(current: OwnerRun, claimId: string, claim: AssessmentRecord & { data?: ClaimFields }): Promise<string | undefined> {
+    const gained = demonstratedGained(claim.data ?? {});
+    if (!gained.length || typeof claim.surface !== 'string' || !claim.surface) return undefined;
+    const index = await readLedger(current.records, current.runId);
+    for (const row of index.records) {
+      if (row.kind !== 'candidate' || !row.id || row.id === claimId || row.by === 'owner' || row.surface !== claim.surface) continue;
+      const other = row.data as ClaimFields | undefined;
+      if (!other || !isDemonstrated(other)) continue;
+      // The successor has to consume something this claim demonstrated: a bare sibling on the same surface proves no chain.
+      if (claimNeeds(other).some(need => gained.some(have => capabilityMatches(need, have)))) return row.id;
+    }
+    return undefined;
+  }
+
+  /**
    * W4: one host-created validation task per confirmed, tested claim. The task is admitted through the same TaskBoard path as an
    * operator draft; creation is what makes the independence claim checkable, not a waiver in the case record.
    */
@@ -1287,6 +1811,13 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
     // The host creates the validation only after the discovery task is reviewed, so its pinned prerequisite revision is the
     // reviewed one the reserve will check. Before review the case names the missing prerequisite instead of staling the task.
     if (!isSatisfiedTask(discovery.status)) return;
+    // A7.5/D19: skip only an intermediate claim, and record why, so the report can tell a skipped replay from a missing one.
+    // The deepest claim a case rests on has no demonstrated successor and always reaches the replay below.
+    const successor = claim.id ? await demonstratedSuccessor(current, claim.id, claim).catch(() => undefined) : undefined;
+    if (successor) {
+      await note({ by: 'owner', kind: 'lifecycle', text: `validation skipped for intermediate claim ${cleanText(candidate.candidate).slice(0, 120)}: successor claim ${successor} on the same surface was demonstrated and consumes what it gained; the deepest claim keeps its replay` });
+      return;
+    }
     let draft: TaskDraft;
     try { draft = validationDraft(claim, candidate, discovery); }
     catch (error) {
@@ -1366,10 +1897,13 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
           if (!current.delegation.enabled) fail('DELEGATION_UNAVAILABLE','No worker backend is configured, so this intent cannot be dispatched. A dispatch with no executor is a blocked prerequisite, not a licence for the planner to execute the work. legalNext: configure a worker backend, or settle the task blocked naming the missing prerequisite');
           const tasks = await current.board.list();
           const ids = (p.ids as string[]|undefined) ?? (p.id ? [p.id as string] : []);
+          // A7.5/D19: naming a held worker dispatches the successor onto that ticket, pane and session instead of a new worker.
+          const continueWorkerId = typeof p.workerId === 'string' ? p.workerId : undefined;
+          if (continueWorkerId && ids.length !== 1) fail('INVALID_INPUT', 'workerId names one held successor ticket, so dispatch exactly one task to it');
           return current.engine.enqueue(ids.map((id:string) => {
             const t = tasks.find(t => t.id === id);
             if (!t) throw Error('Unknown task ID');
-            return {taskId:id,priority:p.priority as number|undefined,input:{taskId:id,focus:t.surface.slice(0,60),task:t.question}};
+            return {taskId:id,priority:p.priority as number|undefined,input:{taskId:id,focus:t.surface.slice(0,60),task:t.question,...(continueWorkerId ? { continueWorkerId } : {})}};
           }));
         }
         let task:AssessmentTask;
@@ -1380,6 +1914,10 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
           const role = resolveRole({role:draft.role,skills:names,settings:current.settings,purpose:workPurpose(draft.work),context:{kind:current.target.kind,needs:workNeeds(draft.work)}});
           // Optional at the schema level so a recon intent can omit them; validate() still requires them for every other role.
           const input = {...draftFields,roleReason:draft.roleReason??'',expectedTrue:draft.expectedTrue??'',expectedFalse:draft.expectedFalse??'',stopCondition:draft.stopCondition??'',method:await prepareMethod(current,role.skills,workflow,methodReason??'')} as TaskDraft;
+          if (p.action === 'create' || p.action === 'revise') {
+            const refusal = await engagementRefusal(current, input);
+            if (refusal) fail(refusal.code, refusal.message);
+          }
           if(p.action==='match'||p.action==='create'&&input.work){
             const matches=await current.board.match(input),tasks=await current.board.list();
             const result={...matches,already_covered_by:matches.active.map(t=>t.taskId),reuse_candidates:matches.reusable.map(t=>{const old=tasks.find(value=>value.id===t.taskId);return {...t,recordId:old?.recordId,evidenceIds:old?.evidenceIds??[],reviewReason:old?.reviewReason,limitations:'Reviewed coordination result only; currentness, contradictions and independent finding proof still require review'};}),warning:'Structured exact matching, not semantic prose equivalence or execution authority; unknown metadata and omissions are explicit'};
@@ -1573,7 +2111,7 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
   });
   registerTool({
     name: 'p2o_candidate', label: 'Record candidate closure', exposure: 'model-only',
-    description: 'WORKER ONLY: record an attributed candidate claim written from the receipts of your own assignment; the host stamps data.taskRef, which is what lets a validation anchor to it. Include evidence IDs, proof level, negative controls and limitations. Runtime receipts are observations, not automatic proof. Revise with supersedes=latest record ID. Blocked testing must stay open_proof_gap.',
+    description: 'WORKER ONLY: record an attributed candidate claim written from the receipts of your own assignment; the host stamps data.taskRef, which is what lets a validation anchor to it. Include evidence IDs, proof level, negative controls and limitations. Runtime receipts are observations, not automatic proof. Revise with supersedes=latest record ID. Blocked testing must stay open_proof_gap. When the effect itself establishes the boundary — unauthenticated code execution, a read/write across a principal or tenant boundary that needs no credential, metadata or private-network reach from an attacker-influenced URL, a root-owned write from an unprivileged context — record policyBasis=boundary_invariant with expectedPolicy naming the invariant; sibling routes, placeholder credentials and CVE leads stay inferred and open_proof_gap.',
     parameters: candidateParameters,
     async execute(_id, params) {
       const current = run;
@@ -1699,23 +2237,110 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
     name: spec.name, label: spec.label, exposure: 'model-only', description: spec.description, parameters: execParameters,
     async execute(_id, params, signal, _update, ctx) {
       const timeout = taskTimeout(params.timeout);
+      const forms = [params.command !== undefined, params.send !== undefined, params.read === true].filter(Boolean).length;
+      if (forms !== 1) fail('INVALID_INPUT', 'Provide exactly one of command, send or read: command is a one-shot command, send writes bytes to a session PTY, read drains PTY output after the host cursor');
+      if (params.session !== undefined && !SESSION_ID_PATTERN.test(String(params.session))) fail('INVALID_INPUT', 'session must be an open session id (p2o_session action=list)');
+      const interactive = params.send !== undefined || params.read === true;
+      const waitMs = Math.min(60, Math.max(1, timeout || 5)) * 1000;
       const current = run;
       if (!current) fail('NO_ASSESSMENT', 'No active p2o assessment; start one with /p2o --target …');
       if (current.role === 'owner') {
         if (current.phase !== 'active' || current.ctx.cwd !== ctx.cwd) fail('NO_ASSESSMENT', 'No active p2o assessment in this session');
         assertOwnerExecution(current);
-        return output(await executeWithReceipt(current, 'owner', spec.kind, params.command, (onRunning,onOutput) => current.sandbox.exec(params.command, timeout, signal, '/work',onRunning,onOutput)));
+        if (params.send !== undefined) {
+          if (params.session === undefined) fail('INVALID_INPUT', 'send needs the session id: p2o_shell session=<id> send=<bytes>');
+          return output(await sessionSendFor(current, 'owner', params.session, params.send, waitMs, signal));
+        }
+        if (params.read === true) {
+          if (params.session === undefined) fail('INVALID_INPUT', 'read needs the session id: p2o_shell session=<id> read=true');
+          return output(await sessionReadFor(current, 'owner', params.session, waitMs, signal));
+        }
+        if (params.command === undefined) fail('INVALID_INPUT', 'Provide a command for this execution form');
+        if (params.session !== undefined) return output(await sessionExecFor(current, 'owner', params.session, params.command, timeout, signal));
+        return output(await executeWithReceipt(current, 'owner', spec.kind, params.command, (onRunning,onOutput,dispatch) => current.sandbox.exec(dispatch.text, timeout, signal, '/work',onRunning,onOutput)));
       }
       const active = worker();
-      const result = await active.client.request<ProcessResult>(spec.kind === 'shell' ? 'exec' : 'net', { command: params.command, timeout }, { timeoutMs: null, signal });
+      if (interactive) {
+        const result = await active.client.request<ProcessResult>('pty', { action: params.send !== undefined ? 'send' : 'read', session: params.session, data: params.send, waitMs }, { timeoutMs: null, signal });
+        return output(result);
+      }
+      const result = await active.client.request<ProcessResult>(spec.kind === 'shell' ? 'exec' : 'net', { command: params.command, timeout, session: params.session }, { timeoutMs: null, signal });
       return output(result);
     },
   });
-  registerExecTool({ name: 'p2o_shell', label: 'Sandbox shell', kind: 'shell', description: 'Run a command in the assessment Docker sandbox, not on the host. The container has network egress, so prefer p2o_net for anything that contacts the target or downloads tooling; /target is read-only for directory targets and /work (or your own worker scratch) is writable. No task timeout by default (timeout=0); an optional positive timeout is in seconds. 48 KiB output cap. A timeout/cancellation destroys the affected executor (in shared mode this affects peers).' });
-  registerExecTool({ name: 'p2o_net', label: 'Sandbox network', kind: 'net', description: 'Run network-facing commands in the assessment Docker sandbox: TCP/UDP service probes and connect scans, downloads/tool installs into scratch, or target tunnels. Selected shared or isolated networked executor; no task timeout by default (timeout=0), optional positive seconds; 48 KiB output. No raw-socket capabilities or host Docker. Unlike p2o_http, opaque commands are NOT origin-filtered: keep assessment traffic to the human-confirmed target and use only trusted repositories for needed software. Scope is agent policy here, not an egress firewall. Cancellation/timeout removes the affected executor and background processes; shared mode can interrupt peers.' });
+  registerExecTool({ name: 'p2o_shell', label: 'Sandbox shell', kind: 'shell', description: `Run a command in the assessment Docker sandbox, not on the host. ${SANDBOX_TRUTH} ${NETWORK_TRUTH} /target is read-only for directory targets and /work (or your own worker scratch) is writable. No task timeout by default (timeout=0); an optional positive timeout is in seconds. 48 KiB output cap. A timeout/cancellation destroys the affected executor (in shared mode this affects peers). In a run started with --executors session, name session=<id> to run this command inside that session container, send=<bytes> to write raw bytes to its PTY, or read=true to drain PTY output after the host-side cursor (p2o_session manages the sessions).` });
+  registerExecTool({ name: 'p2o_net', label: 'Sandbox network', kind: 'net', description: `Run network-facing commands in the assessment Docker sandbox: TCP/UDP service probes and connect scans, downloads/tool installs into scratch, or in-sandbox listeners and tunnels. ${NETWORK_TRUTH} Unlike p2o_http, opaque commands are NOT origin-filtered: keep assessment traffic to the human-confirmed target and use only trusted repositories for needed software. Scope is agent policy here, not an egress firewall. Cancellation/timeout removes the affected executor and background processes; shared mode can interrupt peers. In a run started with --executors session, session=<id> plus send=<bytes>/read=true drives that session's interactive PTY (an SSH or database client, a reverse-shell handler) instead of a one-shot command.` });
   registerTool({
-    name: 'p2o_http', label: 'Scoped HTTP', exposure: 'model-only',
-    description: 'Full HTTP with fixed curl: standard verbs including TRACE and custom HTTP method tokens, request bodies (32 KiB UTF-8), custom headers (8 KiB total) including Authorization/Cookie, and bounded redirect following. Each URL/hop must match the confirmed origin; redirects stop before contacting other origins. Response/curl failure is not retried. Actor-local named cookie sessions preserve Path/Secure/expiry; session=none disables persistence, resetSession clears the selected jar, and an explicit Cookie header overrides the jar. Credentials are operator-supplied and can appear in model transcripts and local Docker inspection. No extension-imposed task timeout by default; timeout/connectTimeout optionally bound each hop/connection in seconds (0 disables). Curl transfer limit 8 MiB, 48 KiB captured. Not available for directory targets.',
+    name: 'p2o_session', label: 'Run-owned session', exposure: 'model-only', parameters: sessionParameters,
+    description: 'TARGET TOOL (never the planner): a run-owned container that outlives one assignment, so step N+1 keeps step N\'s files, installed tools, shell process and PTY. Only a run started with --executors session[:N] can open one; the open sessions share the target-operation cap, and every command still passes that gate and the command policy. action=open creates a session with a host-generated id (active run only; no timer, no survival after stop), list/snapshot show open ids and operation pressure, exec runs one non-interactive command inside the session container with the same receipt as p2o_shell, close verifies container removal, upload/download move bounded text into and out of the session scratch (download returns a retained artifact id, never a host path). Interactive work uses p2o_shell session=<id> send=<bytes> and session=<id> read=true on the session PTY: send writes raw bytes (a sudo -S prompt, a database REPL and an SSH session each decide what their input means) and returns output until quiet or the wait, read returns output after the host-side cursor. A dead PTY fails closed: open a new session, never retry. A worker holds exactly one session (its ticket binds it) and cannot name another; a validation worker gets action=open only. action=listen starts and healthchecks an in-sandbox TCP listener (port; protocol tcp only) inside an open session and records the address to hand the target: it needs --lab-network (operator network) so the target can route back, or --callback for an out-of-band destination instead; no host port is ever published, and the listener dies with its session container. Read captured callbacks with p2o_shell cat listeners/listen-<port>.log in that session.',
+    async execute(_id, params, signal, _update, ctx) {
+      const current = run;
+      if (!current) fail('NO_ASSESSMENT', 'No active p2o assessment; start one with /p2o --target …');
+      const action = String(params.action);
+      if (current.role === 'owner') {
+        if (current.phase !== 'active' || current.ctx.cwd !== ctx.cwd) fail('NO_ASSESSMENT', 'No active p2o assessment in this session');
+        if (action === 'open') {
+          const fact = await openSessionFor(current, 'owner', sessionPurpose(params.purpose));
+          const value = { session: fact.id, mode: current.executors.mode, note: 'Long-lived container. Use p2o_shell session=<id> for a one-shot command, send/read on the same session for interactive PTY work, or p2o_session action=exec. It is closed by action=close or run cleanup, never resumed.' };
+          return textResult(cleanText(JSON.stringify(value, null, 2)), value);
+        }
+        requireSessionMode(current);
+        if (action === 'list' || action === 'snapshot') {
+          if (action === 'list') { const sessions = sessionRows(current); return textResult(cleanText(JSON.stringify(sessions, null, 2)), { sessions }); }
+          const snapshot = { ...current.executors.snapshot(), sessions: sessionRows(current) };
+          return textResult(cleanText(JSON.stringify(snapshot, null, 2)), snapshot);
+        }
+        if (action === 'exec') {
+          assertOwnerExecution(current);
+          if (params.command === undefined) fail('INVALID_INPUT', 'action=exec needs a command');
+          return output(await sessionExecFor(current, 'owner', sessionIdParam(params.session), params.command, taskTimeout(params.timeout), signal));
+        }
+        if (action === 'close') {
+          const message = await closeSessionFor(current, 'owner', sessionIdParam(params.session), 'owner requested close');
+          return textResult(message, { closed: params.session, message });
+        }
+        if (action === 'upload') {
+          if (params.path === undefined || params.content === undefined) fail('INVALID_INPUT', 'action=upload needs path and content');
+          const value = await sessionUploadFor(current, 'owner', sessionIdParam(params.session), params.path, params.content);
+          return textResult(cleanText(JSON.stringify(value, null, 2)), value);
+        }
+        if (action === 'download') {
+          if (params.path === undefined) fail('INVALID_INPUT', 'action=download needs path');
+          return output(await sessionDownloadFor(current, 'owner', sessionIdParam(params.session), params.path, signal));
+        }
+        if (action === 'listen') {
+          const value = await listenFor(current, 'owner', sessionIdParam(params.session), params.port, params.protocol);
+          return textResult(cleanText(JSON.stringify(value, null, 2)), value);
+        }
+        fail('INVALID_INPUT', `Unknown session action ${action.slice(0, 20)}`);
+      }
+      const active = worker();
+      const payload = { action, purpose: params.purpose, session: params.session, command: params.command, path: params.path, content: params.content, timeout: params.timeout, port: params.port, protocol: params.protocol };
+      const value = (await active.client.request<{ value: unknown }>('session', payload, { timeoutMs: null, signal })).value;
+      return textResult(cleanText(JSON.stringify(value, null, 2)), value);
+    },
+  });
+  registerTool({
+    // A7.4/P7.5: the identity surface is a list only; no action reads, writes or echoes a value.
+    name: 'p2o_secret', label: 'Sealed secrets', exposure: 'model-only', parameters: secretParameters,
+    description: `List the operator-sealed secrets for this run: ids, kinds, labels and scopes only. A value never crosses this tool in either direction, and an empty list means the operator sealed no identity for this run. To use one, write \${P2O_SECRET:<id>} in a command (a standalone shell word) or in an http url/header/body value; the host substitutes it after the command policy allows the operation, audits the use by id and redacts retained bytes best-effort. Never ask the operator to paste a secret into the prompt: a value written literally is model-authored and has no redaction guarantee beyond the exact bytes this run sealed.`,
+    async execute(_id, params, _signal, _update, ctx) {
+      const current = run;
+      if (!current) fail('NO_ASSESSMENT', 'No active p2o assessment; start one with /p2o --target …');
+      if (params.action !== 'list') fail('INVALID_INPUT', 'Only action=list is available: this tool never reads or writes a secret value');
+      if (current.role === 'owner') {
+        if (current.phase !== 'active' || current.ctx.cwd !== ctx.cwd) fail('NO_ASSESSMENT', 'No active p2o assessment in this session');
+        const secrets = current.identity ? secretViews(current.identity) : [];
+        const value = { action: 'list', secrets, note: secrets.length ? 'Ids and kinds only; use ${P2O_SECRET:<id>} in a command or request.' : 'The operator sealed no identity for this run; a credential written literally is model-authored.' };
+        return textResult(cleanText(JSON.stringify(value, null, 2)), value);
+      }
+      const value = (await worker().client.request<{ value: unknown }>('secret_list', {}, { timeoutMs: null })).value;
+      return textResult(cleanText(JSON.stringify(value, null, 2)), value);
+    },
+  });
+  registerTool({
+    name: 'p2o_http', label: 'HTTP request', exposure: 'model-only',
+    description: `Full HTTP with fixed curl: standard verbs including TRACE and custom HTTP method tokens, request bodies (32 KiB UTF-8), custom headers (8 KiB total) including Authorization/Cookie, and bounded redirect following. ${HTTP_TRUTH} Response/curl failure is not retried. Principal-local named cookie sessions (principal=) preserve Path/Secure/expiry and never share a jar across principals; session=none disables persistence, resetSession clears the selected jar, and an explicit Cookie header overrides the jar. ${CREDENTIAL_TRUTH} No extension-imposed task timeout by default; timeout/connectTimeout optionally bound each hop/connection in seconds (0 disables). Curl transfer limit 8 MiB, 48 KiB captured. Not available for directory targets.`,
     parameters: httpParameters,
     async execute(_id, params, signal, _update, ctx) {
       const request = httpRequest(params);
@@ -1725,7 +2350,7 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
       if (current.role === 'owner') {
         if (current.phase !== 'active' || current.ctx.cwd !== ctx.cwd) fail('NO_ASSESSMENT', 'No active p2o assessment in this session');
         assertOwnerExecution(current);
-        return output(await executeWithReceipt(current, 'owner', 'http', label, (onRunning,onOutput) => current.sandbox.http(request, signal,onRunning,'owner',onOutput)));
+        return output(await executeWithReceipt(current, 'owner', 'http', label, (onRunning,onOutput,dispatch) => current.sandbox.http(dispatch.http!, signal,onRunning,onOutput), { http: request }));
       }
       const active = worker();
       const result = await active.client.request<ProcessResult>('http', { ...request }, { timeoutMs: null, signal });
@@ -1879,10 +2504,30 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
   });
   registerTool({
     name:'p2o_loop',label:'Planner pause/resume state',exposure:'model-only',
-    description:'PLANNER ONLY: status reads the Engine frontier/events/rounds and the campaign heartbeat/wake reason. wait ends this planning round without model polling — end every round with action=wait after dispatching or reviewing, because a round that keeps waiting inside the turn cannot be rebuilt from the ledger; committed worker reports/proposals can wake another round ONLY in consented event-driven mode, and a campaign with outstanding work can also be woken by a paced debt wake or its heartbeat. blocked pauses dispatch/automatic wakes until human /p2o resume. No automatic retries, scope changes or renewal of authority. Consult the confirmed executor profile; shared remains serial.',
+    description:'PLANNER ONLY: status reads the Engine frontier/events/rounds and the campaign heartbeat/wake reason. wait ends this planning round without model polling — end every round with action=wait after dispatching or reviewing, because a round that keeps waiting inside the turn cannot be rebuilt from the ledger; committed worker reports/proposals can wake another round ONLY in consented event-driven mode, and a campaign with outstanding work can also be woken by a paced debt wake or its heartbeat. blocked pauses dispatch/automatic wakes until human /p2o resume. action=hint/constrain records one bounded operator instruction (text 3..300 characters; at most 24 hints and 12 constraints per run) as an append-only lifecycle fact rendered into the next planner prompt: a constraint narrows absolutely, a hint guides and never widens, and neither rewrites the campaign record. No goal action: goals are plan records with a proof (p2o_plan_create/revise). No automatic retries, scope changes or renewal of authority. Consult the confirmed executor profile; shared remains serial.',
     parameters:loopParameters,
     async execute(_id,params) {
       const current = owner();
+      // A7.9/D23: mid-run steering is an append-only fact, not a second campaign authority. A hint guides; a constraint narrows.
+      if (params.action === 'hint' || params.action === 'constrain') {
+        const text = typeof params.text === 'string' ? params.text.replace(/\s+/g, ' ').trim() : '';
+        if (!text || text.length < 3 || text.length > 300) fail('INVALID_INPUT', 'action hint/constrain needs text of 3..300 characters: one sentence the operator wants the next planner round to read');
+        const kind = params.action === 'hint' ? 'hint' : 'constraint';
+        const index = await readLedger(current.records, current.runId);
+        const recorded = index.records.flatMap(record => {
+          const steering = record.data?.steering as { kind?: unknown; text?: unknown } | undefined;
+          return record.kind === 'lifecycle' && steering && steering.kind === kind && typeof steering.text === 'string' ? [steering.text as string] : [];
+        });
+        const limit = kind === 'hint' ? 24 : 12;
+        if (recorded.length >= limit) fail('STEERING_LIMIT', `this run already recorded ${recorded.length} ${kind}(s); the cap is ${limit}. Put the remaining guidance in a plan decision or the next task brief instead.`);
+        if (recorded.includes(text)) fail('STEERING_DUPLICATE', `the same ${kind} is already recorded and is read by every later planner round`);
+        await appendRecord(current.records, { at: new Date(now()).toISOString(), runId: current.runId, by: 'owner', kind: 'lifecycle',
+          text: `operator ${kind}: ${text}`, data: { steering: { kind, text } } });
+        current.engine.notify('steering-recorded', randomUUID(), `${kind} recorded mid-run`);
+        return textResult(`Recorded ${kind} for the next planner round: ${text}`, { kind, text, recorded: recorded.length + 1, limit });
+      }
+      // Goals are plan-board records with a proof (p2o_plan_create/revise); there is deliberately no goal action here.
+      if (!['status', 'wait', 'blocked'].includes(params.action)) fail('INVALID_INPUT', 'Unknown loop action. Goals are plan records: use p2o_plan_create or p2o_plan_revise; use hint/constrain for bounded operator steering.');
       // M7: a wait that names a condition and a time is a scheduled revisit, recorded as a decision and never re-armed by itself.
       if (params.action === 'wait' && params.notBefore !== undefined) {
         const condition = params.reason ?? '';
@@ -1909,7 +2554,7 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
   });
   registerTool({
     name: 'p2o_workers', label: 'Worker status', exposure: 'model-only',
-    description: 'action "list" (default): this assessment\'s workers with Herdr status, command count, report summary, coverage and open items; optionally wait for a ledger change or until every worker has reported or been stopped — this blocks locally instead of polling with model turns. action "steer": send a follow-up instruction (workerId, message) to a running worker pane without stopping it — a correction, an answer to its question, or a narrowed scope; never widens the target scope. action "stop": revoke a worker\'s sandbox access (workerId, reason), interrupt it and close its pane; its report (if any) stays in the shared ledger.',
+    description: 'action "list" (default): this assessment\'s workers with Herdr status, command count, report summary, coverage and open items; a worker that reported with holdFor shows as held and keeps its ticket, pane and session until one successor is dispatched or the run ends. Optionally wait for a ledger change or until every worker has reported or been stopped — this blocks locally instead of polling with model turns. action "steer": send a follow-up instruction (workerId, message) to a running worker pane without stopping it — a correction, an answer to its question, or a narrowed scope; never widens the target scope. action "continue": send one follow-up brief to a live worker, or consume the single hold a reported worker kept for its successor (the same ticket, pane and session). action "stop": revoke a worker\'s sandbox access (workerId, reason), interrupt it and close its pane; its report (if any) stays in the shared ledger.',
     parameters: workersParameters,
     async execute(_id, params, signal) {
       const action = params.action ?? 'list';
@@ -1933,10 +2578,12 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
         if (!registration) fail('WORKER_UNKNOWN', `no worker ${params.workerId} in this assessment`);
         const refusal = continuationRefusal(registration);
         if (refusal) fail(refusal.split(':')[0]!, refusal.slice(refusal.indexOf(':') + 1).trim());
+        // A7.5/D19: a report-with-hold is the only way a reported worker can be continued, and that hold is consumed exactly once.
+        const held = consumeHeldContinuation(registration);
+        if (!held) registration.continues = (registration.continues ?? 0) + 1;
         await herdr.prompt({ name: registration.name, text: `[continuation from the assessment lead] ${params.brief}` });
-        registration.continues = (registration.continues ?? 0) + 1;
-        await note({ by: 'owner', kind: 'lifecycle', text: `continued ${params.workerId}: ${params.brief.slice(0, 300)}`, workerId: params.workerId, role: registration.role, depth: registration.depth });
-        return textResult<unknown>(`Continued ${params.workerId} on the same ticket with a different brief.`, { workerId: params.workerId, continues: registration.continues });
+        await note({ by: 'owner', kind: 'lifecycle', text: `${held ? 'held continuation consumed' : 'continued'} ${params.workerId}: ${params.brief.slice(0, 300)}${held ? ` (held brief was: ${cleanText(held).slice(0, 160)})` : ''}`, workerId: params.workerId, role: registration.role, depth: registration.depth });
+        return textResult<unknown>(`Continued ${params.workerId} on the same ticket with a different brief${held ? '; its one hold is now consumed' : ''}.`, { workerId: params.workerId, continues: registration.continues, held });
       }
       if (action === 'stop') {
         if (!params.workerId || !params.reason) fail('BAD_PARAMS', 'action stop needs workerId and reason');
@@ -1967,15 +2614,23 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
   });
   registerTool({
     name: 'p2o_report', label: 'Report to lead', exposure: 'model-only',
-    description: 'WORKER ONLY: finish your objective by reporting to the assessment lead. Include what you ran, what you observed, what it supports and what it does not, coverage (including clean surfaces), open items, honest confidence and a blocked reason if you could not complete the task. Then stop working.',
+    description: 'WORKER ONLY: finish your objective by reporting to the assessment lead. Include what you ran, what you observed, what it supports and what it does not, coverage (including clean surfaces), open items, honest confidence and a blocked reason if you could not complete the task. Then stop working. holdFor.brief (one sentence) keeps this ticket, pane and session alive for exactly one follow-up brief from the lead when the next chain step continues this exact work; it is not a parking spot and the lead must dispatch the successor or release the hold.',
     parameters: reportParameters,
     async execute(_id, params) {
       const current = worker();
       const report: WorkerReport = {
         summary: params.summary, findings: params.findings ?? [], evidence: params.evidence ?? [],
         coverage: params.coverage ?? [], openItems: params.openItems ?? [], confidence: params.confidence, blocked: params.blocked, outcome:params.outcome,
+        ...(params.holdFor ? { holdFor: params.holdFor } : {}),
       };
       await current.client.request('report', { report }, { timeoutMs: 30_000 });
+      if (report.holdFor) {
+        // A7.5/D19: the report is committed, but the ticket, pane and session stay alive for one continuation. The run stays
+        // active so a single successor brief can use the same conversation; the lead consumes or force-releases the hold.
+        current.ctx.ui.setStatus('p2o', `p2o worker ${current.ticket.workerId}: reported (held)`);
+        current.ctx.ui.notify(`${current.ticket.workerId} reported and is held for one continuation. Stop working now; the lead either sends one successor brief or ends the run.`, 'info');
+        return textResult(`Report delivered. This worker is held for exactly one continuation: the lead may send one successor brief on this same ticket, pane and session, and then this conversation ends. Stop working now; do not start new work while held.`, { reported: true, held: true, blocked: Boolean(report.blocked) });
+      }
       current.phase = 'finished';
       current.ctx.ui.setStatus('p2o', `p2o worker ${current.ticket.workerId}: reported`);
       current.ctx.ui.notify(`${current.ticket.workerId} reported to the assessment lead. Stop working now; the lead owns the assessment.`, 'info');
@@ -2009,6 +2664,7 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
         const index = await readLedger(current.records, current.runId);
         const debt = runDebt(current, index); debtResult = debt;
         const pre = finishPreflight(index, { ...current.store.reviewContext(), integrity: current.settings.reviewIntegrity, statedObjective: current.statedObjective, debt,
+          heldWorkers: heldWorkerFacts(current),
           wrote: writeBack({ provenance: current.store.graphSnapshot().provenance, records: index.records, findings: new Map([...current.workers.values()].filter(entry => entry.reported).map(entry => [entry.workerId, entry.reported!.findings.length] as const)) }) });
         current.preflight = pre; preflightText = `\n\n${renderPreflight(pre)}`;
         // M3: completion is derived from the same ledger read, so the result, the export and the report cannot disagree.
@@ -2090,7 +2746,10 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
                 const reopened = await openHistorical(ctx, root, workspaceCommand.runId, { maxBytes: writable.maxBytes });
                 if (!reopened) return;
                 const { store } = reopened;
-                await showState(ctx, [`Interruption reconciled in ${store.manifest().runId}; lifecycle record ${record.id}.`,
+                // The read-only marker leads the view: the event page below is longer than one screen, so a trailing marker
+                // could be scrolled out of the first page.
+                await showState(ctx, [`HISTORICAL ${store.manifest().runId} — READ-ONLY, no active authority.`,
+                  `Interruption reconciled; lifecycle record ${record.id}.`,
                   'Historical running/in-flight states stay interrupted/unknown; no task status was rewritten and nothing is resumed or replayed.',
                   ...(reconciliationLine(store) ? [reconciliationLine(store)!] : []), ...eventLines(store)]);
                 return;
@@ -2116,6 +2775,8 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
             const recordsPath = recordsPathOf(store);
             if (!recordsPath) throw Error('Report export needs the active owner run or an explicitly opened historical run');
             const destination = workspaceCommand.path ?? await defaultReportDirectory(ctx, store.manifest().runId, run?.role === 'owner' ? run.settings : settings());
+            // A7.7: a manual export flushes the allow digest first, so the report counts the operations that already ran.
+            if (run?.role === 'owner' && store === run.store && run.phase === 'active') await flushPolicyDigest(run);
             const { rendered, index, manifest } = await renderStoreReport(store, recordsPath, { owner: run?.role === 'owner' && store === run.store ? run : undefined, endReason: 'manual' });
             const published = await publishReportFiles(store, destination, rendered.files);
             await showState(ctx, [`Wrote ${published.files} report files / ${published.bytes} bytes to ${published.directory}`,
@@ -2219,6 +2880,12 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
           ctx.ui.notify(`${HELP}${active}`, 'info');
           return;
         }
+        if (command.action === 'approve' || command.action === 'deny') {
+          // A7.7/Q10: only the run that recorded the ask can resolve it, and only a human reaches this command surface.
+          const current = run;
+          if (!current || current.role !== 'owner' || current.phase !== 'active') { ctx.ui.notify('No active p2o assessment; a policy decision resolves an ask in the run that recorded it.', 'info'); return; }
+          ctx.ui.notify(await resolvePolicyAsk(current, command.action, command.id), 'info'); return;
+        }
         if (command.action === 'pause' || command.action === 'resume') {
           const current = owner();
           if (command.action === 'pause') {current.engine.pause('Paused by human; active workers may report, no new dispatch/wake'); ctx.abort();}
@@ -2240,6 +2907,7 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
           ctx.ui.notify(`p2o stopped: sandbox removal verified${current.unclosedPanes?.length ? `; worker panes still present: ${current.unclosedPanes.join(', ')} (close them in Herdr)` : current.workers.size ? '; worker panes closed' : ''}.`, 'info');
           return;
         }
+        if (command.action !== 'start') throw new Error(`Unhandled p2o command: ${command.action}`);
         if (run?.role === 'worker') throw new Error('This session is a delegated worker; it cannot start another assessment.');
         if (opening || run) throw new Error('An assessment is already active or starting. Use /p2o stop first.');
         opening = true;
@@ -2249,14 +2917,20 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
           const loaded = settings();
           const image = selectedImage();
           const selectedStateRoot = await stateRootFor(ctx);
+          // A7.4: validate the identity file before the operator confirms. A typo fails the start instead of an active run whose
+          // credential channel silently does not exist; the file is parsed again and sealed after confirmation.
+          const declaredIdentity = command.options.identityPath
+            ? await loadIdentityFile(command.options.identityPath).catch(error => { throw new Error(`--identity: ${message(error)}`); })
+            : undefined;
           // Part XI S8: `--resume` reopens one durable-local store and rebuilds the live run around it. The stored target and
           // profile decide what is continued; the human still confirms, and no earlier ticket or worker is restored.
-          let resumeManifest: ReturnType<AssessmentStore['manifest']> | undefined, target: Target;
+          let resumeManifest: ReturnType<AssessmentStore['manifest']> | undefined, resumeCampaign: CampaignRecord | undefined, target: Target;
           if (command.resume) {
             const admitted = AssessmentStore.open(selectedStateRoot, command.resume, { readOnly: true, maxBytes: loaded.storageQuotaMiB * 1024 * 1024 });
             try {
               if (!admitted.compatible) throw Error(`Stored run schema ${admitted.schemaVersion} cannot be resumed by this build; inspect it read-only with /p2o state`);
               resumeManifest = admitted.manifest();
+              resumeCampaign = admitted.campaign();
               if (resumeManifest.retention !== 'durable-local') throw Error('Only a durable-local run can resume; an ephemeral run deleted its knowledge at cleanup');
               const hybrid = resumeManifest.targetKind === 'hybrid' ? /^(.*) \+ (https?:\/\/\S+)$/.exec(resumeManifest.targetDisplay) : null;
               if (resumeManifest.targetKind === 'hybrid' && !hybrid) throw Error('Stored hybrid target cannot be split back into a source path and a URL');
@@ -2272,6 +2946,11 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
             : Array.isArray(referWorkspace) ? eligiblePriorRuns.filter(found => referWorkspace.includes(found.runId))
             : [];
           const storedProfile = resumeManifest?.profile;
+          // D15/P7.1: the engagement shape. An explicit flag outranks the resumed campaign/profile; a `v: 1` campaign reads as
+          // assess, so resuming an older run can never silently authorize a ladder its operator did not confirm.
+          const mode: EngagementMode = command.options.mode ?? resumeCampaign?.mode ?? (storedProfile?.mode as EngagementMode | undefined) ?? DEFAULT_MODE;
+          const effectClasses: CaseEffect[] = mode === 'assess' ? [] : command.options.effectClasses ?? resumeCampaign?.effectClasses ?? storedProfile?.effectClasses ?? [...DEFAULT_EFFECT_CLASSES];
+          if (mode === 'assess' && command.options.effectClasses?.length) throw Error('--effect goes with exploit mode; this run resolves to assess mode');
           const maxWorkers = command.options.workers ?? storedProfile?.maxWorkers ?? loaded.maxWorkers;
           const maxDepth = command.options.maxDepth ?? storedProfile?.maxDepth ?? loaded.maxDepth;
           const delegationAvailable = maxDepth > 0 && await herdr.available();
@@ -2279,16 +2958,23 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
           const executorMode = command.options.executorMode ?? storedProfile?.executorMode as 'shared' | 'isolated' | undefined ?? loaded.executorMode;
           const maxTargetOperations = executorMode === 'shared' ? 1 : command.options.maxTargetOperations ?? storedProfile?.maxTargetOperations ?? loaded.maxTargetOperations;
           if (executorMode === 'shared' && command.options.maxTargetOperations !== undefined && command.options.maxTargetOperations !== 1) throw Error('Shared executor is serial; --target-ops >1 requires --executors isolated');
+          // A7.2: an explicit session count may never exceed the target-operation cap: a session multiplies state, not pressure.
+          if (command.options.sessionLimit !== undefined && executorMode !== 'session') throw Error('--executors session:N needs the session executor mode');
+          if (command.options.sessionLimit !== undefined && command.options.sessionLimit > maxTargetOperations) throw Error(`--executors session:${command.options.sessionLimit} exceeds the target-operation cap ${maxTargetOperations}; sessions never multiply target pressure`);
           if (loopMode === 'event-driven' && !delegationAvailable) throw Error('Event-driven mode requires a worker backend (Herdr); use --loop manual');
           const delegationReason = maxDepth === 0 ? 'worker admission disabled by --max-depth 0' : 'Pi is not running inside a Herdr session';
           const delegation = maxWorkers > 0 && maxDepth > 0 ? '' : ' (delegation disabled by the configured limits)';
           if (extensionSha === undefined) { const identity = await runtimeIdentity(extensionPath); extensionSha = identity.sha256; runtimeVersion = identity.version; }
           const referenceNotice = selectedPriorRuns.length ? `\nReferencing ${selectedPriorRuns.length} prior workspace run${selectedPriorRuns.length === 1 ? '' : 's'} on this same target: ${selectedPriorRuns.map(found => found.runId).join(', ')}. Tagged as prior-run context only; never counted as same-run evidence, and no scope, worker or ticket authority is restored.` : referWorkspace ? '\nNo prior workspace run on this same target was found for --refer-workspace; starting with no referenced context.' : '';
           // A6.1: disclose the campaign frame before confirmation, including that a non-zero heartbeat spends paid rounds.
-          const wantsCampaign = Boolean(command.options.goal) || Boolean(command.options.avoid?.length) || command.options.heartbeatSeconds !== undefined || loopMode === 'event-driven';
-          const campaignPreview = wantsCampaign ? `${campaignStartLine(campaignFrom({ ...(command.options.goal ? { goal: command.options.goal } : {}), ...(command.options.avoid?.length ? { avoid: command.options.avoid } : {}), ...(command.options.heartbeatSeconds !== undefined ? { heartbeatSeconds: command.options.heartbeatSeconds } : {}), target: targetLabel(target), at: new Date(now()).toISOString() }))}\n` : '';
+          const wantsCampaign = Boolean(command.options.goal) || Boolean(command.options.avoid?.length) || Boolean(command.options.allow?.length) || command.options.heartbeatSeconds !== undefined || loopMode === 'event-driven' || command.options.callback !== undefined || command.options.labNetwork !== undefined;
+          const campaignPreview = wantsCampaign ? `${campaignStartLine(campaignFrom({ ...(command.options.goal ? { goal: command.options.goal } : {}), ...(command.options.avoid?.length ? { avoid: command.options.avoid } : {}), ...(command.options.allow?.length ? { allow: command.options.allow } : {}), ...(command.options.heartbeatSeconds !== undefined ? { heartbeatSeconds: command.options.heartbeatSeconds } : {}), ...(command.options.callback ? { callback: command.options.callback } : {}), ...(command.options.labNetwork ? { labNetwork: command.options.labNetwork } : {}), mode, effectClasses, target: targetLabel(target), at: new Date(now()).toISOString() }))}\n` : '';
+          // A7.8: the ingress path is disclosed before confirmation, with what it can and cannot prove.
+          const ingressPreview = command.options.callback || command.options.labNetwork
+            ? `Ingress: ${[command.options.callback ? `operator callback ${cleanText(command.options.callback)} (a destination the target reaches out to, not a listener)` : '', command.options.labNetwork ? `sandbox joins operator lab network "${cleanText(command.options.labNetwork)}" (verified with docker network inspect at start; no host port is published)` : ''].filter(Boolean).join('; ')}\n`
+            : '';
           const allowed = await ctx.ui.confirm('Start authorized assessment?',
-            `${resumeManifest ? `Resume: ${runId} — committed records are kept; earlier tickets, operations and workers are NOT restored, and interrupted work stays interrupted until re-dispatched\n` : ''}Runtime: p2o ${runtimeVersion || 'unknown version'} · ${extensionSha.slice(0, 12)}\nTarget: ${cleanText(targetLabel(target))}\n${campaignPreview}${command.options.goal ? `Stated objective: ${cleanText(command.options.goal)}\n` : ''}${command.options.avoid?.length ? `Operator constraints (sent to every worker as model-level guidance, not enforcement):\n${command.options.avoid.map(line => `- ${cleanText(line)}`).join('\n')}\n` : ''}${target.kind === 'directory' ? 'A bounded source copy (64 MiB / 20000 entries) is exposed read-only to the sandbox and its contents may reach your model provider. Symlinks, special files, .git, node_modules, owner control/knowledge directories, .p2o-state and .p2o-reports are skipped. Choose a source directory, not your home or a secrets directory.' : target.kind === 'hybrid' ? `Hybrid target: a bounded source copy (64 MiB / 20000 entries, same skips as above) is exposed read-only to the sandbox, and ${target.url} is the starting URL. Neither is a boundary: any http(s) URL, any redirect hop and any host the sandbox can reach is allowed.` : `Starting URL: ${target.url}. It is a label, not a boundary: any http(s) URL, any redirect hop and any host the sandbox can reach is allowed.`}\nNetwork authority: both shell and network tools have unrestricted bridge egress (public/private/link-local addresses and reachable host services), plus downloads and user-space tool installs in scratch. Opaque commands are NOT origin-filtered. Loopback is container-local; host.docker.internal reaches host-published services; private, link-local and cloud-metadata addresses are reachable. Root inside the container, writable rootfs and all capabilities; host paths and the Docker socket are never mounted. Never mount a secrets directory. Supplied credentials and returned data may reach your model provider or local Docker inspection; exports are only best-effort redacted.\nConfirm you own this target or have permission to assess it. The current Pi model leads the assessment; normal provider charges apply.${referenceNotice}\nWorkers: ${delegationAvailable ? `up to ${maxWorkers} simultaneous visible Pi worker panes, fresh assignments across successive batches (retention cap 1000). Flat Planner-to-Worker delegation; workers propose helpers instead of spawning. Each worker has its own model and costs. Model concurrency and target-operation concurrency are separate; the confirmed executor profile below controls execution.` : `none${delegation} (${delegationReason}).`}\nPlanner loop: ${loopMode}. ${loopMode === 'event-driven' ? `Committed semantic events may automatically start additional paid Planner requests, without another human prompt; two quietly unproductive rounds stop them and ask for a human decision. Inner model/tool turns, compaction/retries configured in Pi and worker usage are additional; this is NOT a hard monetary/token cap. No automatic provider fallback or target replay. /p2o pause stops dispatch/wakes; /p2o stop revokes and cleans up.` : 'No automatic event-driven model turns. Accepted task queues still dispatch mechanically when slots/prerequisites permit; the Planner resumes through normal interaction.'}\nExecutors: ${executorMode}; target-operation cap ${maxTargetOperations}. Isolated uses a fresh executor per assignment; shared is serial.${executorMode === 'shared' && maxWorkers > 1 ? ` ${maxWorkers} worker panes requested with the shared executor still run target operations ONE AT A TIME (cap ${maxTargetOperations}) — more workers raises model/plan concurrency, not target throughput.` : ''} Containers have no pids/memory/cpu limit; cancellation destroys the affected executor, shared cancellation can affect peers. Source snapshots must match the initial bounded snapshot.\nDocker image: ${image}. Root inside the container with no host mount and no Docker socket. Containers share the host kernel; this is not VM isolation. No elapsed-time limit for the assessment, lead or workers. Commands/HTTP default to no task timeout; explicitly stop/finish the run. Provider costs are the only remaining ceiling.\nLưu trữ: ${retention === 'durable-local' ? `DURABLE-LOCAL (mặc định): giữ tri thức sau stop/finish tại ${join(selectedStateRoot, runId)}; đọc lại bằng /p2o open ${runId}.` : 'EPHEMERAL: kho tri thức nằm trong thư mục control riêng, bị xóa sau cleanup; không mở lại được nếu không có export.'} Quota/run ${loaded.storageQuotaMiB} MiB (chừa ${Math.round(finalizationReserve(loaded.storageQuotaMiB*1024*1024)/1024)} KiB cho final outcome/checkpoint; artifact thường dừng trước ngưỡng đó); \`p2o_capture\` đọc file text trong scratch đã cấp theo FD/single-link rồi redact trước khi lưu, tối đa ${loaded.artifactCaptureKiB} KiB/operation (stdout+stderr chung cap; output tools vẫn 48 KiB). Bản redacted chỉ là best effort: có thể chứa dữ liệu nhạy cảm, không chia sẻ khi chưa kiểm tra. Không giữ/khôi phục quyền scope, worker, ticket, cookie, request queue hay target replay. Luôn cần xác nhận này cho run mới.${command.options.export ? '\nExport enabled: additional bounded redacted receipts under .p2o-reports before cleanup; review before sharing.' : '\nNo additional portable export selected (--export is separate from durable-local retention).'}${(loaded.autoReport ?? retention === 'durable-local') ? `\nReport: when this run finishes or stops, a deterministic report (REPORT.md, CSV and JSON files, no model call) is written to ${join(loaded.reportRoot ?? join(await realpath(ctx.cwd), '.p2o-reports'), `report-${runId}`)} (new directory, never overwritten${retention === 'ephemeral' ? '; it outlives the ephemeral knowledge store' : ''}). It can contain redacted target data and may sit inside your project: review it, do not commit it. Disable with p2o.autoReport=false.` : ''}`);
+            `${resumeManifest ? `Resume: ${runId} — committed records are kept; earlier tickets, operations and workers are NOT restored, and interrupted work stays interrupted until re-dispatched\n` : ''}Runtime: p2o ${runtimeVersion || 'unknown version'} · ${extensionSha.slice(0, 12)}\nTarget: ${cleanText(targetLabel(target))}\nEngagement: ${engagementLine(mode, effectClasses)}\n${ingressPreview}${declaredIdentity ? `Identity: ${identitySummary(declaredIdentity)} — sealed from ${cleanText(command.options.identityPath!)}, values stay host-side and only ids and kinds reach a model; the host substitutes a placeholder after the command policy allows an operation, and a command that uses a principal can still print its value.\n` : ''}${campaignPreview}${command.options.goal ? `Stated objective: ${cleanText(command.options.goal)}\n` : ''}${command.options.avoid?.length ? `Operator constraints (sent to every worker as model-level guidance, not enforcement):\n${command.options.avoid.map(line => `- ${cleanText(line)}`).join('\n')}\n` : ''}${command.options.allow?.length ? `Operator permissions (recorded allow = permission only; a deny still wins and the target never widens):\n${command.options.allow.map(line => `- ${cleanText(line)}`).join('\n')}\n` : ''}${target.kind === 'directory' ? 'A bounded source copy (64 MiB / 20000 entries) is exposed read-only to the sandbox and its contents may reach your model provider. Symlinks, special files, .git, node_modules, owner control/knowledge directories, .p2o-state and .p2o-reports are skipped. Choose a source directory, not your home or a secrets directory.' : target.kind === 'hybrid' ? `Hybrid target: a bounded source copy (64 MiB / 20000 entries, same skips as above) is exposed read-only to the sandbox, and ${target.url} is the starting URL. Neither is a boundary: any http(s) URL, any redirect hop and any host the sandbox can reach is allowed.` : `Starting URL: ${target.url}. It is a label, not a boundary: any http(s) URL, any redirect hop and any host the sandbox can reach is allowed.`}\nNetwork authority: both shell and network tools have unrestricted bridge egress (public/private/link-local addresses and reachable host services), plus downloads and user-space tool installs in scratch. Opaque commands are NOT origin-filtered. Loopback is container-local; host.docker.internal reaches host-published services; private, link-local and cloud-metadata addresses are reachable. Root inside the container with a writable rootfs and the Docker default capability set (raw sockets work); host paths and the Docker socket are never mounted. Never mount a secrets directory. ${CREDENTIAL_TRUTH} Returned data may reach your model provider or local Docker inspection; exports are only best-effort redacted.\nConfirm you own this target or have permission to assess it. The current Pi model leads the assessment; normal provider charges apply.${referenceNotice}\nWorkers: ${delegationAvailable ? `up to ${maxWorkers} simultaneous visible Pi worker panes, fresh assignments across successive batches (retention cap 1000). Flat Planner-to-Worker delegation; workers propose helpers instead of spawning. Each worker has its own model and costs. Model concurrency and target-operation concurrency are separate; the confirmed executor profile below controls execution.` : `none${delegation} (${delegationReason}).`}\nPlanner loop: ${loopMode}. ${loopMode === 'event-driven' ? `Committed semantic events may automatically start additional paid Planner requests, without another human prompt; two quietly unproductive rounds stop them and ask for a human decision. Inner model/tool turns, compaction/retries configured in Pi and worker usage are additional; this is NOT a hard monetary/token cap. No automatic provider fallback or target replay. /p2o pause stops dispatch/wakes; /p2o stop revokes and cleans up.` : 'No automatic event-driven model turns. Accepted task queues still dispatch mechanically when slots/prerequisites permit; the Planner resumes through normal interaction.'}\nExecutors: ${executorMode}; target-operation cap ${maxTargetOperations}. Isolated uses a fresh executor per assignment; shared is serial.${executorMode === 'session' ? ` Session keeps one long-lived container per opened session (at most ${command.options.sessionLimit ?? maxTargetOperations}); state persists between steps, every command still counts against the operation cap, and stop/finish verifies removal.` : ''}${executorMode === 'shared' && maxWorkers > 1 ? ` ${maxWorkers} worker panes requested with the shared executor still run target operations ONE AT A TIME (cap ${maxTargetOperations}) — more workers raises model/plan concurrency, not target throughput.` : ''} Containers have no pids/memory/cpu limit; cancellation destroys the affected executor, shared cancellation can affect peers. Source snapshots must match the initial bounded snapshot.\nDocker image: ${image}. Root inside the container with no host mount and no Docker socket. Containers share the host kernel; this is not VM isolation. No elapsed-time limit for the assessment, lead or workers. Commands/HTTP default to no task timeout; explicitly stop/finish the run. Provider costs are the only remaining ceiling.\nLưu trữ: ${retention === 'durable-local' ? `DURABLE-LOCAL (mặc định): giữ tri thức sau stop/finish tại ${join(selectedStateRoot, runId)}; đọc lại bằng /p2o open ${runId}.` : 'EPHEMERAL: kho tri thức nằm trong thư mục control riêng, bị xóa sau cleanup; không mở lại được nếu không có export.'} Quota/run ${loaded.storageQuotaMiB} MiB (chừa ${Math.round(finalizationReserve(loaded.storageQuotaMiB*1024*1024)/1024)} KiB cho final outcome/checkpoint; artifact thường dừng trước ngưỡng đó); \`p2o_capture\` đọc file text trong scratch đã cấp theo FD/single-link rồi redact trước khi lưu, tối đa ${loaded.artifactCaptureKiB} KiB/operation (stdout+stderr chung cap; output tools vẫn 48 KiB). Bản redacted chỉ là best effort: có thể chứa dữ liệu nhạy cảm, không chia sẻ khi chưa kiểm tra. Không giữ/khôi phục quyền scope, worker, ticket, cookie, request queue hay target replay. Luôn cần xác nhận này cho run mới.${command.options.export ? '\nExport enabled: additional bounded redacted receipts under .p2o-reports before cleanup; review before sharing.' : '\nNo additional portable export selected (--export is separate from durable-local retention).'}${(loaded.autoReport ?? retention === 'durable-local') ? `\nReport: when this run finishes or stops, a deterministic report (REPORT.md, CSV and JSON files, no model call) is written to ${join(loaded.reportRoot ?? join(await realpath(ctx.cwd), '.p2o-reports'), `report-${runId}`)} (new directory, never overwritten${retention === 'ephemeral' ? '; it outlives the ephemeral knowledge store' : ''}). It can contain redacted target data and may sit inside your project: review it, do not commit it. Disable with p2o.autoReport=false.` : ''}`);
           if (!allowed) { ctx.ui.notify('Cancelled. No sandbox, worker or agent turn started.', 'info'); return; }
           ctx.signal?.throwIfAborted();
           closeHistorical();
@@ -2303,15 +2989,29 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
             } catch (error) { await rm(control, {recursive:true,force:true}); throw error; }
           } else {
             try { store = AssessmentStore.create(stateRoot, { runId, targetKind:target.kind, targetIdentity: sha256Hex(targetLabel(target)), targetDisplay: targetLabel(target), retention,
-              profile: { runtimeHash: extensionSha!, image, loopMode, executorMode, maxWorkers, maxDepth, maxTargetOperations, storageQuotaMiB:loaded.storageQuotaMiB, artifactCaptureKiB:loaded.artifactCaptureKiB } }, { maxBytes: loaded.storageQuotaMiB * 1024 * 1024, fault:options.storeFault }); }
+              profile: { runtimeHash: extensionSha!, image, loopMode, executorMode, maxWorkers, maxDepth, maxTargetOperations, storageQuotaMiB:loaded.storageQuotaMiB, artifactCaptureKiB:loaded.artifactCaptureKiB, mode, effectClasses } }, { maxBytes: loaded.storageQuotaMiB * 1024 * 1024, fault:options.storeFault }); }
             catch (error) { await rm(control, {recursive:true,force:true}); throw error; }
           }
           const records = join(control, 'records.sqlite'); // Private broker/ticket alias, never a second file/ledger.
           let unbindStore: () => void;
           try { unbindStore = bindAssessmentStore(records, store); }
           catch (error) { store.close(); await rm(control, {recursive:true,force:true}); throw error; }
+          // A7.4: seal the parsed identity as canonical JSON in the private control directory and run from that sealed copy, so
+          // the bytes this run uses are the bytes whose digest the ledger records. Sealing is fail-closed and leaves no run behind.
+          let identity: IdentityFile | undefined, sealedIdentity: { path: string; sha256: string; count: number } | undefined;
+          if (declaredIdentity) {
+            try {
+              sealedIdentity = await sealIdentity(command.options.identityPath!, control);
+              identity = await loadIdentityFile(sealedIdentity.path);
+              if (JSON.stringify(identity) !== JSON.stringify(declaredIdentity)) throw new Error('the identity file changed between validation and sealing; retry the start');
+            } catch (error) { unbindStore(); store.close(); await rm(control, {recursive:true,force:true}); throw new Error(`Identity seal failed: ${message(error)}`); }
+          }
           const reports = join(control, 'reports');
-          const sandboxOptions: SandboxOptions = { runId, image, sourceExcludePaths:[control,stateRoot], ...(delegationAvailable ? { tmpBytes: '768m', workBytes: '1g' } : {}) };
+          // A7.8: the operator network is recorded state: a resumed run keeps the network its campaign named, and an explicit
+          // flag can only add it on a fresh run (a stored campaign is never rewritten).
+          const storedCampaign = store.campaign();
+          const labNetwork = parseLabNetwork(command.options.labNetwork) ?? storedCampaign?.labNetwork;
+          const sandboxOptions: SandboxOptions = { runId, image, sourceExcludePaths:[control,stateRoot], ...(labNetwork ? { network: labNetwork } : {}), ...(delegationAvailable ? { tmpBytes: '768m', workBytes: '1g' } : {}) };
           const createSandbox = options.createSandbox ?? ((value: Target, sandboxOptionsValue: SandboxOptions) => new Sandbox(value, undefined, undefined, sandboxOptionsValue));
           let sandbox: Sandbox;
           try { sandbox = createSandbox(target, sandboxOptions); }
@@ -2322,19 +3022,34 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
             delegation: { enabled: delegationAvailable, reason: delegationAvailable ? undefined : delegationReason, maxWorkers, maxDepth, spawned: 0 },
             settings: loaded, extensionPath, extensionSha: extensionSha!, spawns: new Set(), operations: new Set(),
             library: new SkillLibrary(packageRoot(extensionPath)), evidence: new EvidenceStore(runId, records, targetLabel(target)),
-            knowledgeUsed: 0, image, exportEnabled: command.options.export ?? false, statedObjective: command.options.goal, avoid: command.options.avoid,workerContextPackets:new Map(),
+            knowledgeUsed: 0, image, exportEnabled: command.options.export ?? false, statedObjective: command.options.goal, avoid: command.options.avoid, mode, effectClasses, workerContextPackets:new Map(),
+            // A7.7: the rules the operator's settings define. Nothing model-visible can add, remove or reorder a rule.
+            policy: commandPolicy(loaded.commandPolicy), policyAllows: new Map(), sessions: new Map(),
+            ...(identity ? { identity } : {}), ...(sealedIdentity ? { sealedIdentity } : {}),
             board:undefined as unknown as TaskBoard,plan:undefined as unknown as PlanBoard,cases:undefined as unknown as CaseBoard,coverage:undefined as unknown as CoverageBoard,engine:undefined as unknown as AssessmentEngine,progress:new ProgressState(now),
           };
           // A6.1: the campaign frame is recorded once and never rewritten. A resumed run folds the stored record; a manual run
           // started without a campaign flag records nothing, so A6.3/A6.6 keep today's behaviour for it.
           if (wantsCampaign) {
-            const stored = store.campaign(), campaign = campaignFrom({ ...(command.options.goal ? { goal: command.options.goal } : {}), ...(command.options.avoid?.length ? { avoid: command.options.avoid } : {}), ...(command.options.heartbeatSeconds !== undefined ? { heartbeatSeconds: command.options.heartbeatSeconds } : {}), target: targetLabel(target), targetRevision: store.graphScope(), at: new Date(now()).toISOString() }, stored);
+            const stored = storedCampaign, campaign = campaignFrom({ ...(command.options.goal ? { goal: command.options.goal } : {}), ...(command.options.avoid?.length ? { avoid: command.options.avoid } : {}), ...(command.options.allow?.length ? { allow: command.options.allow } : {}), ...(command.options.heartbeatSeconds !== undefined ? { heartbeatSeconds: command.options.heartbeatSeconds } : {}), ...(command.options.callback ? { callback: command.options.callback } : {}), ...(command.options.labNetwork ? { labNetwork: command.options.labNetwork } : {}), mode, effectClasses, target: targetLabel(target), targetRevision: store.graphScope(), at: new Date(now()).toISOString() }, stored);
             current.campaign = campaign;
             if (!stored) await appendRecord(records, { at: new Date(now()).toISOString(), runId, by: 'owner', kind: 'lifecycle',
               text: `campaign.created: ${campaign.objective} (${campaign.constraints.length} constraint(s), heartbeat ${campaign.heartbeatSeconds}s, ${campaign.createdBy})`,
               data: { event: 'campaign.created', campaign } });
           }
-          current.executors = new ExecutorPool(executorMode,maxTargetOperations,sandbox,() => createSandbox(target,sandboxOptions),() => run === current && current.phase === 'active');
+          // A7.7: the rule shape this run started with is a committed fact. The report prints decisions by rule and names a disabled
+          // seed from this record, never by re-reading settings at export time (the operator may have changed them since).
+          await appendRecord(records, { at: new Date(now()).toISOString(), runId, by: 'owner', kind: 'lifecycle',
+            text: `command policy: ${current.policy.operatorRules} operator rule(s), ${current.policy.enabledSeeds.length} seeded deny rule(s) enabled${current.policy.disabledSeeds.length ? `, disabled: ${current.policy.disabledSeeds.join(', ')}` : ''}`,
+            data: { commandPolicy: { operatorRules: current.policy.operatorRules, enabledSeeds: [...current.policy.enabledSeeds], disabledSeeds: [...current.policy.disabledSeeds] } } });
+          // A7.4: the sealed identity is a committed startup fact. Digest, count and an id/kind summary only — never a value.
+          if (current.identity && current.sealedIdentity) await appendRecord(records, { at: new Date(now()).toISOString(), runId, by: 'owner', kind: 'lifecycle',
+            text: `identity sealed: ${identitySummary(current.identity)}; sha256=${current.sealedIdentity.sha256.slice(0, 16)}; a value never enters the ledger`,
+            data: { identity: { sha256: current.sealedIdentity.sha256, count: current.sealedIdentity.count } } });
+          // A7.2: each session gets its own sandbox with a session label; the factory stays the operator-configured creator.
+          current.executors = new ExecutorPool(executorMode,maxTargetOperations,sandbox,
+            session => createSandbox(target, session ? { ...sandboxOptions, session } : sandboxOptions),
+            () => run === current && current.phase === 'active', command.options.sessionLimit ?? maxTargetOperations);
           current.executors.beforeStart = () => assertNotHeld(current);
           current.board = new TaskBoard(runId,records,() => run === current && current.phase === 'active',now,()=>store.graphScope(),id=>store.assetRevision(id));
           current.board.integrity = loaded.reviewIntegrity;
@@ -2364,10 +3079,57 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
             now: () => now(), heartbeatSeconds: () => current.campaign?.heartbeatSeconds ?? 0,
           });
           current.broker = new Broker(control, {
-            exec: (command, seconds, workdir, signal) => executeWithReceipt(current, workdir.split('/').at(-1)!, 'shell', command, (onRunning,onOutput) => current.executors.use(workdir.split('/').at(-1)!,signal,s => s.exec(command, seconds, signal, workdir,onRunning,onOutput))),
-            net: (command, seconds, workdir, signal) => executeWithReceipt(current, workdir.split('/').at(-1)!, 'net', command, (onRunning,onOutput) => current.executors.use(workdir.split('/').at(-1)!,signal,s => s.exec(command, seconds, signal, workdir,onRunning,onOutput))),
-            http: (request, signal, workerId) => executeWithReceipt(current, workerId ?? 'owner', 'http', requestLabel(request), (onRunning,onOutput) => current.executors.use(workerId ?? 'owner',signal,s => s.http(request, signal,onRunning, workerId ?? 'owner',onOutput))),
-            capture:(path,seconds,workerId,signal,offset)=>executeWithReceipt(current,workerId,'capture',path,(onRunning,onOutput)=>current.executors.use(workerId,signal,s=>s.captureScratch(path,current.settings.artifactCaptureKiB*1024,signal,`/work/${workerId}`,onRunning,onOutput,seconds,offset))),
+            exec: (command, seconds, workdir, signal, session, by) => executeWithReceipt(current, by ?? workdir.split('/').at(-1)!, 'shell', command, (onRunning,onOutput,dispatch) => session
+              ? current.executors.use(session,signal,s => s.exec(dispatch.text, seconds, signal, s.sessionWorkdir,onRunning,onOutput))
+              : current.executors.use(workdir.split('/').at(-1)!,signal,s => s.exec(dispatch.text, seconds, signal, workdir,onRunning,onOutput))),
+            net: (command, seconds, workdir, signal, session, by) => executeWithReceipt(current, by ?? workdir.split('/').at(-1)!, 'net', command, (onRunning,onOutput,dispatch) => session
+              ? current.executors.use(session,signal,s => s.exec(dispatch.text, seconds, signal, s.sessionWorkdir,onRunning,onOutput))
+              : current.executors.use(workdir.split('/').at(-1)!,signal,s => s.exec(dispatch.text, seconds, signal, workdir,onRunning,onOutput))),
+            // A7.3: the owner keeps the PTY child and the host-side cursor; the ticket only lets a worker name its own session.
+            pty: (action, request, registration) => track(current,(async () => {
+              assertOwnerActive(current);
+              if (current.workers.get(registration.workerId) !== registration) throw Error('Registered worker required for session I/O');
+              const id = workerSessionId(current, registration, request.session);
+              const waitMs = request.waitMs ?? 5000;
+              return action === 'send'
+                ? sessionSendFor(current, registration.workerId, id, String(request.data ?? ''), waitMs)
+                : sessionReadFor(current, registration.workerId, id, waitMs);
+            })()),
+            // A7.2: session lifecycle. Validation gets `open` only: independence is not bought by inheriting a shell.
+            session: (action, request, registration) => track(current,(async () => {
+              assertOwnerActive(current);
+              if (current.workers.get(registration.workerId) !== registration) throw Error('Registered worker required for sessions');
+              if (registration.role === 'validation' && action !== 'open') fail('VALIDATION_SESSION', 'A validation worker gets action=open only: it must not attach to the discovery session. Record what you need and report.');
+              if (action === 'open') {
+                if (registration.session !== undefined) fail('SESSION_BOUND', `This worker already holds ${registration.session}; close it before opening another`);
+                const fact = await openSessionFor(current, registration.workerId, sessionPurpose(request.purpose));
+                current.executors.bind(registration.workerId, fact.id);
+                registration.session = fact.id;
+                return { session: fact.id, openedAt: fact.openedAt, ...(fact.purpose ? { purpose: fact.purpose } : {}), note: 'The ticket now holds this session. Use p2o_shell session=<id> (command/send/read) or p2o_session action=exec/upload/download; action=close frees it.' };
+              }
+              const id = workerSessionId(current, registration, request.session);
+              if (action === 'list') return { sessions: sessionRows(current).filter(row => row.session === id) };
+              if (action === 'snapshot') return { ...current.executors.snapshot(), sessions: sessionRows(current).filter(row => row.session === id) };
+              if (action === 'listen') return listenFor(current, registration.workerId, id, request.port, request.protocol);
+              if (action === 'exec') {
+                if (typeof request.command !== 'string' || !request.command.trim()) fail('INVALID_INPUT', 'action=exec needs a command');
+                return sessionExecFor(current, registration.workerId, id, request.command, taskTimeout(request.timeout));
+              }
+              if (action === 'upload') {
+                if (typeof request.path !== 'string' || typeof request.content !== 'string') fail('INVALID_INPUT', 'action=upload needs path and content');
+                return sessionUploadFor(current, registration.workerId, id, request.path, request.content);
+              }
+              if (action === 'download') {
+                if (typeof request.path !== 'string') fail('INVALID_INPUT', 'action=download needs path');
+                return sessionDownloadFor(current, registration.workerId, id, request.path);
+              }
+              if (action === 'close') return { closed: id, message: await closeSessionFor(current, registration.workerId, id, 'worker requested close') };
+              fail('INVALID_INPUT', `Unknown session action ${String(action).slice(0, 20)}`);
+            })()),
+            http: (request, signal, workerId) => executeWithReceipt(current, workerId ?? 'owner', 'http', requestLabel(request), (onRunning,onOutput,dispatch) => current.executors.use(workerId ?? 'owner',signal,s => s.http(dispatch.http!, signal,onRunning,onOutput)), { http: request }),
+            capture:(path,seconds,workerId,signal,offset,session)=>executeWithReceipt(current,workerId,'capture',path,(onRunning,onOutput)=>session
+              ? current.executors.use(session,signal,s=>s.captureScratch(path,current.settings.artifactCaptureKiB*1024,signal,s.sessionWorkdir,onRunning,onOutput,seconds,offset))
+              : current.executors.use(workerId,signal,s=>s.captureScratch(path,current.settings.artifactCaptureKiB*1024,signal,`/work/${workerId}`,onRunning,onOutput,seconds,offset))),
             graphRecord: (batch, registration, request) => track(current,(async () => {
               assertOwnerActive(current);
               if (current.workers.get(registration.workerId)!==registration || !request || request.actorId!==registration.workerId) throw Error('Authenticated graph delivery required');
@@ -2465,6 +3227,12 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
               return current.store.acknowledgeContext(packet);
             },
             usage: (worker, usage) => current.usage.record(worker.workerId, worker.role, usage),
+            // A7.4: ids, kinds, labels and scopes only. Answered from the owner's sealed identity; a value has no path to here.
+            secretList: (worker) => track(current,(async () => {
+              assertOwnerActive(current);
+              if (current.workers.get(worker.workerId) !== worker) throw Error('Registered worker required for the secret list');
+              return { secrets: current.identity ? secretViews(current.identity) : [] };
+            })()),
             beforeCommand: async registration => { if (current.phase !== 'active' || run !== current) throw Error('Assessment inactive'); assertNotHeld(current); if (registration.taskId) await current.board.assertReady(registration.workerId); },
             delegate: async () => fail('PLANNER_ONLY','Worker nested spawning is disabled; submit a subtask proposal'),
             requestSubtask: (input,parent) => track(current,(async () => {
@@ -2574,12 +3342,17 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
     delete event.systemPromptOptions.sections[PLANNER_PROMPT_SECTION];
     if (!current) return;
     if (current.role === 'owner') {
+      const steering = await steeringFacts(current);
       event.systemPromptOptions.sections[PLANNER_PROMPT_SECTION] = plannerInstructions({
         runId: current.runId, targetLabel: targetLabel(current.target), targetKind: current.target.kind,
         sourceSkipped: current.sandbox.sourceSkipped,
         delegation: { enabled: current.delegation.enabled, reason: current.delegation.reason, maxWorkers: current.delegation.maxWorkers, maxDepth: current.delegation.maxDepth },
         phase: current.phase, loopMode:current.engine.mode, executorMode:current.executors.mode, statedObjective: current.statedObjective,
+        mode: current.mode, effectClasses: current.effectClasses,
+        ...(current.identity ? { secrets: current.identity.secrets.length } : {}),
         ...(current.campaign ? { campaign: current.campaign } : {}),
+        ...(ingressFacts(current.campaign) ? { ingress: ingressFacts(current.campaign)! } : {}),
+        ...(steering.hints.length || steering.constraints.length ? { steering } : {}),
         situation: current.role === 'owner' ? await situationSnapshot(current) : undefined,
       });
       const wake = parseWakePrompt(event.prompt);

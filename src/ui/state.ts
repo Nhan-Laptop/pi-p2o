@@ -37,7 +37,7 @@ const safe = (text: string, limit = 200) => safeText(text).replace(/\s+/g, ' ').
 export interface ViewProfile {
   runId: string; target: string; lifecycle: string; delegation: boolean; maxWorkers: number;
   exportEnabled: boolean; exportPath?: string; exportError?: string;
-  engine: ReturnType<AssessmentEngine['snapshot']>; executor: { mode: string; maxTargetOperations: number; runningTargetOperations?: number; waitingTargetOperations?: number };
+  engine: ReturnType<AssessmentEngine['snapshot']>; executor: { mode: string; maxTargetOperations: number; runningTargetOperations?: number; waitingTargetOperations?: number; openSessions?: string[] };
   retention?: 'durable-local' | 'ephemeral'; stateLocation?: string; storageError?: string;
   runtime?: { version: string; sha256: string };
   workers?: WorkerView[]; held?: { reason: string; at: number }; usageLines?: string[];
@@ -99,6 +99,8 @@ export function statusView(index: LedgerIndex, profile: ViewProfile, context:Rep
       ...(profile.held ? [`HOLD: new target commands and worker launches are refused until /p2o release — ${safe(profile.held.reason, 300)}. Commands already running finish; reporting and /p2o stop stay available.`] : []),
       ...(profile.runtime ? [`Runtime: p2o ${safe(profile.runtime.version || 'unknown version', 40)} · ${safe(profile.runtime.sha256, 64).slice(0, 12)} (digest of the entry file + src closure; identifies code, not safety)`] : []), taskLine,
       `Worker slots: ${profile.delegation ? profile.maxWorkers : 0}; target-operation cap: ${profile.executor.maxTargetOperations} (not network rate/connections)`,
+      // A7.2: an open session is visible state the operator can close; it is not authority and never outlives the run.
+      ...(profile.executor.openSessions?.length ? [`Sessions: ${profile.executor.openSessions.slice(0, 8).map(id => safe(id, 64)).join(', ')}${profile.executor.openSessions.length > 8 ? ` (+${profile.executor.openSessions.length - 8} more)` : ''} — long-lived containers; each command still counts against the operation cap, and stop/finish verifies removal.`] : []),
       `Frontier: ${profile.engine.pendingIntents} accepted pending intents; automatic wakes ${profile.engine.rounds}; stalled rounds ${authority.stalledRounds}`,
       // A6.5: round hygiene is visible — which round, why it was woken, when it started and what drives the next wake.
       ...(profile.campaign || profile.engine.rounds || profile.engine.heartbeat?.seconds ? [`Campaign: ${profile.campaign ? `${safe(profile.campaign.objective, 200)} (${profile.campaign.createdBy})` : 'no campaign record'} | heartbeat ${profile.engine.heartbeat?.seconds ? `${profile.engine.heartbeat.seconds}s` : 'off'}${profile.engine.heartbeat?.nextAt ? ` (next ${safe(profile.engine.heartbeat.nextAt, 40)})` : ''} | rounds ${profile.engine.rounds}${profile.engine.lastWake ? ` | last wake ${profile.engine.lastWake.reason} round ${profile.engine.lastWake.round}` : ' | no automatic wake yet'}${profile.engine.roundStartedAt ? ` | round started ${safe(profile.engine.roundStartedAt, 40)}` : ''}`] : []),

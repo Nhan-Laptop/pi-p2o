@@ -24,7 +24,10 @@ describe('campaign frame (A6.1)', () => {
     const store = await h.reader();
     try {
       const campaign = store.campaign();
-      expect(campaign).toMatchObject({ v: 1, objective: 'Assess the fixture boundary without changing state', heartbeatSeconds: 300, createdBy: 'operator' });
+      // P7.1: the record is v2 now. This start named no --mode, so it carries the default exploit frame and the default
+      // authorization (every effect class except availability-loss).
+      expect(campaign).toMatchObject({ v: 2, objective: 'Assess the fixture boundary without changing state', heartbeatSeconds: 300, createdBy: 'operator', mode: 'exploit' });
+      expect(campaign!.effectClasses).toEqual(['confidentiality-read', 'integrity-write', 'authentication-bypass', 'code-execution', 'cross-tenant-read', 'sandbox-escape']);
       expect(campaign!.constraints).toEqual([{ rule: 'deny', text: 'No payment flows' }]);
       expect(campaign!.targetRevision.length).toBeGreaterThan(0);
       expect(store.campaignRevision()).toBeGreaterThan(0);

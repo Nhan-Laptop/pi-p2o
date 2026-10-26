@@ -5,7 +5,8 @@
   → PLANNER   the current Pi conversation: plans, reviews, dispatches, decides wait/blocked/finish
   → ENGINE    deterministic TypeScript, no model: accepted frontier → slot → fresh worker
   → WORKER    fresh Pi process in a visible Herdr pane, one bounded intent, brokered execution
-  → EXECUTOR  shared (one serial queue, default) or isolated (own sandbox per assignment)
+  → EXECUTOR  shared (one serial queue, default), isolated (own sandbox per assignment) or session
+              (long-lived run-owned executor: shell cwd/state, optional PTY, listeners)
   → stop/finish: close Engine gate → drain/cancel → revoke → close panes → verify containers
 ```
 
@@ -57,8 +58,52 @@ finite coalescing windows (100 ms) that need explicit event-driven consent. See 
 - Shared executor: `Sandbox.enqueue` serializes target operations; cancelling can remove the executor and interrupt peers.
   Isolated: fresh source copy, scratch, cookies and container per assignment, gated by a separate target-operation semaphore.
 - HTTP follows redirects to any http(s) host and pins the destination; shell/net are not origin-filtered either
-  ([boundaries](HTTP_TRANSPORT.md)). Containers: root with a writable rootfs and all capabilities, read-only `/target`,
+  ([boundaries](HTTP_TRANSPORT.md)). Containers: root with a writable rootfs and the Docker default capability set (raw sockets work), read-only `/target`,
   no host or provider credentials. Docker shares the host kernel; this is not VM isolation.
+- `--executors session[:N]` adds a third mode: `N` (default `= --target-ops`, never above it) long-lived, run-owned
+  executors each holding one shell cwd/state and one optional PTY, so a chain step can start where the previous one
+  stopped without shipping every byte through a fresh container. `p2o_session` opens/lists/execs/snapshots/closes them,
+  and `send`/`read` drive the PTY of the current assignment; `src/pty.ts` is the in-process PTY family (cursor, bounded
+  tail, fail-closed cleanup) and the broker carries the same verbs to the worker. Cleanup removes sessions with their
+  containers; a session that dies fails closed, so the next step must open a new one — nothing is resumed or recreated
+  automatically.
+- Ingress is operator-provided, never host-published: `--callback <url>` records the out-of-band destination the target
+  reaches (a recorded fact, not a listener), and `--lab-network <name>` joins the sandbox to a throwaway docker network so
+  `p2o_session action=listen {port}` can start a bounded logging catcher inside the session container
+  (`<container>:<port>`, tcp only, at most four per session). No port is ever published and no tunnel/pivot is provided;
+  the report names which ingress path existed.
+
+## Access ladder, policy and identity
+
+- The campaign record (v2) carries the engagement shape the whole run is held to: `mode` `exploit` (default) or
+  `assess` (opt-in, no exploitation step is admitted and the report prints one line instead of a ladder) and the
+  authorized `effectClasses` (default: every `CASE_EFFECTS` class except `availability-loss`). Admission reads that
+  record; a mode/effect it does not admit is refused with the legal next, and the recorded frame is immutable.
+- Evidence is bounded at the receipt: a bounded, best-effort-redacted excerpt (input ≤2000 B, stdout ≤16 KiB, stderr
+  ≤4 KiB), so a claim cites a receipt rather than an unbounded transcript. `src/ladder.ts` derives the rungs
+  (`observed`, `executed`, `controlled`, `crossed`, `impact`) from reviewed claims and their `gained`/`needs` edges at
+  report time; it is a projection, never stored state. `## Access ladder` prints the derivation or the honest reason there is none.
+- One dispatch seam (`executeWithReceipt`) runs the command-policy gate **before** any secret substitution or target
+  operation: 8 seed deny rules (disable-able per seed, disabled seeds are named in the report) plus operator rules evaluated for
+  `shell`, `net`, `http` and `send`; the PTY write path goes through the same seam. A deny refuses with the rule and origin; an ask is written to the ledger and waits
+  for `/p2o approve policy-ask-<id>` or `/p2o deny <id>`, and a decision binds to the exact request hash, so it can never
+  authorize a different command. Policy lives in the `p2o.commandPolicy` setting.
+- Identity is one operator JSON file (`--identity`): the host seals a copy plus sha256 in the control directory, keeps
+  values out of every model-visible surface (`p2o_secret` lists metadata only, a ticket only carries the count), and
+  substitutes values at the seam after policy allows — shell-quoted for shell/net, raw for PTY `send`, request-side for
+  HTTP with the `principal` cookie-jar dimension. Every use is audited; exports and reports carry redacted text only.
+  Redaction is best-effort: a worker can print or encode a value and the container sees the resolved command line, and
+  the report states that limit.
+- Chain economy removes the per-rung tax without weakening independence: a worker may report with `holdFor` and keep its
+  ticket/pane/session for one successor, the owner dispatches that successor onto the same worker
+  (`p2o_task_dispatch {workerId}`, task `proposed`, same role, citing that worker's claims), and `p2o_workers continue`
+  consumes the hold. No timer expires a hold; stop/finish release it, and the finish preflight advises
+  `HELD_WITHOUT_SUCCESSOR`. A demonstrated successor also lets the host skip replaying one intermediate validation claim;
+  the deepest rung always keeps its replay.
+- Runtime steering is append-only: `p2o_loop hint|constrain {text}` records a bounded operator sentence in the ledger
+  (caps 24 hints / 12 constraints), rendered into the next planner prompt. Constraints narrow absolutely, hints never
+  widen the frame, and `--allow` is a recorded permission only — a deny still wins. There is one goal authority (the plan
+  board); `p2o_loop` has no goal action.
 
 ## Persistence, accounting, teardown
 
@@ -86,9 +131,11 @@ finite coalescing windows (100 ms) that need explicit event-driven consent. See 
 |---|---|
 | `extensions/p2o/index.ts` | Pi adapter: commands, tools, lifecycle, consent, loadouts, cleanup |
 | `src/engine.ts`, `src/planner-bridge.ts` | Frontier, slots, semantic signals, rounds, stalled-round facts, wake encoding |
-| `src/tool-policy.ts`, `src/prompts.ts` | Tool loadouts (planner 23, worker 17, validation 16, reporter 6); role prompts state the same split |
+| `src/tool-policy.ts`, `src/prompts.ts` | Tool loadouts (planner 24, worker 19, validation 18, reporter 6); role prompts state the same split |
 | `src/tasks.ts`, `src/board.ts` | Task board, readiness, atomic reservation, `LedgerBoard` mutation queue |
-| `src/executors.ts`, `src/sandbox.ts`, `src/http-session.ts`, `src/source.ts` | Executors, containers, actor-local HTTP state, bounded source snapshots |
+| `src/executors.ts`, `src/sandbox.ts`, `src/pty.ts`, `src/http-session.ts`, `src/source.ts` | Executors (shared/isolated/session), containers, PTY family, actor-local HTTP state, bounded source snapshots |
+| `src/policy.ts`, `src/identity.ts`, `src/truth.ts` | Command-policy gate and seeds; sealed identity, substitution and redaction; the instrument facts composed into descriptions, prompts and consent |
+| `src/campaign.ts`, `src/ladder.ts`, `src/evidence.ts` | Engagement frame v2, derived access ladder, bounded evidence receipts |
 | `src/broker.ts`, `src/ticket.ts` | Socket authority, command accounting, fresh tickets |
 | `src/records.ts`, `src/evidence.ts`, `src/authority.ts`, `src/report.ts`, `src/report-export.ts`, `src/cvss.ts`, `src/finish-preflight.ts` | Provenance, evidence, authority counters, report parts, deterministic OWASP-shaped report, CVSS 3.1, finish preflight |
 | `src/state/*` | SQLite store, graph, adapter, artifacts, bundles |

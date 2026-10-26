@@ -207,6 +207,6 @@ describe('A4 authority counters in report and status', () => {
     const body = rendered.files.find(file => file.name === 'REPORT.md')!.body;
     expect(body).toContain('Authority: planner target operations 1 (must be 0)');
     expect(body).toContain('stalled rounds 1');
-    expect(body).toContain('Mode and role matrix: manual loop / shared executor; planner 23 tools (no target or claim tool), worker 17, validation 16, reporter 6 (read-only)');
+    expect(body).toContain('Mode and role matrix: manual loop / shared executor; planner 24 tools (no target or claim tool), worker 19, validation 18, reporter 6 (read-only)');
   });
 });

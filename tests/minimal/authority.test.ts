@@ -62,14 +62,14 @@ describe('P0/A1 tool matrices', () => {
       'p2o_task_create', 'p2o_task_revise', 'p2o_task_dispatch', 'p2o_task_review', 'p2o_task_settle',
       'p2o_plan_create', 'p2o_plan_revise', 'p2o_case_create', 'p2o_case_revise', 'p2o_case_rate',
       'p2o_coverage_plan', 'p2o_coverage_suggest', 'p2o_board', 'p2o_ledger', 'p2o_state', 'p2o_artifact', 'p2o_graph',
-      'p2o_skill_list', 'p2o_skill_read', 'p2o_research', 'p2o_workers', 'p2o_loop', 'p2o_finish',
+      'p2o_skill_list', 'p2o_skill_read', 'p2o_secret', 'p2o_research', 'p2o_workers', 'p2o_loop', 'p2o_finish',
     ]));
-    expect([...WORKER_TOOLS].sort()).toEqual(['p2o_artifact', 'p2o_candidate', 'p2o_capture', 'p2o_graph', 'p2o_http', 'p2o_lab', 'p2o_ledger', 'p2o_net', 'p2o_note', 'p2o_report', 'p2o_request_subtask', 'p2o_research', 'p2o_shell', 'p2o_skill_list', 'p2o_skill_read', 'p2o_state', 'p2o_surface']);
+    expect([...WORKER_TOOLS].sort()).toEqual(['p2o_artifact', 'p2o_candidate', 'p2o_capture', 'p2o_graph', 'p2o_http', 'p2o_lab', 'p2o_ledger', 'p2o_net', 'p2o_note', 'p2o_report', 'p2o_request_subtask', 'p2o_research', 'p2o_secret', 'p2o_session', 'p2o_shell', 'p2o_skill_list', 'p2o_skill_read', 'p2o_state', 'p2o_surface']);
     expect(VALIDATION_TOOLS).toEqual(WORKER_TOOLS.filter(name => name !== 'p2o_surface'));
     expect([...REPORTER_TOOLS].sort()).toEqual(['p2o_artifact', 'p2o_ledger', 'p2o_report', 'p2o_skill_list', 'p2o_skill_read', 'p2o_state']);
     expect(HIDDEN_TOOLS).toEqual(HIDDEN);
-    expect(MODEL_TOOLS).toHaveLength(33);
-    expect(ALL_TOOLS).toHaveLength(35);
+    expect(MODEL_TOOLS).toHaveLength(35);
+    expect(ALL_TOOLS).toHaveLength(37);
     for (const name of DELETED) {
       expect(ALL_TOOLS, name).not.toContain(name);
       expect(TOOL_BOUNDARIES[name], name).toBeUndefined();

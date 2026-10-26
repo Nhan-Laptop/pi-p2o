@@ -33,28 +33,28 @@ const NAME = /^[!#$%&'*+.^_`|~0-9A-Za-z-]{1,128}$/;
 const pathMatches = (request: string, cookie: string) => request === cookie ||
   (request.startsWith(cookie) && (cookie.endsWith('/') || request[cookie.length] === '/'));
 
-/** Origin-bound, actor-local jars. This is HTTP session state, not browser identity or authorization proof. */
+/** Origin-bound, principal-local jars. This is HTTP session state, not browser identity or authorization proof. */
 export class HttpSessions {
   private readonly jars = new Map<string, Map<string, Cookie>>();
   constructor(private readonly now: () => number = Date.now) {}
-  private key(actor: string, session: string, url: URL) { return JSON.stringify([actor, session, url.origin]); }
+  private key(principal: string, session: string, url: URL) { return JSON.stringify([principal, session, url.origin]); }
   clear() { this.jars.clear(); }
-  reset(actor: string, session: string, url: URL) { this.jars.delete(this.key(actor, session, url)); }
+  reset(principal: string, session: string, url: URL) { this.jars.delete(this.key(principal, session, url)); }
   private prune(jar: Map<string, Cookie>) {
     for (const [key, cookie] of jar) if (cookie.expires !== undefined && cookie.expires <= this.now()) jar.delete(key);
   }
-  header(actor: string, session: string, url: URL): string | undefined {
+  header(principal: string, session: string, url: URL): string | undefined {
     if (session === 'none') return undefined;
-    const jar = this.jars.get(this.key(actor, session, url));
+    const jar = this.jars.get(this.key(principal, session, url));
     if (!jar) return undefined;
     this.prune(jar);
     const values = [...jar.values()].filter(cookie => (!cookie.secure || url.protocol === 'https:') && pathMatches(url.pathname, cookie.path))
       .sort((a, b) => b.path.length - a.path.length).map(cookie => `${cookie.name}=${cookie.value}`);
     return values.length ? values.join('; ') : undefined;
   }
-  store(actor: string, session: string, url: URL, headers: Array<[string, string]>): number {
+  store(principal: string, session: string, url: URL, headers: Array<[string, string]>): number {
     if (session === 'none') return 0;
-    const key = this.key(actor, session, url);
+    const key = this.key(principal, session, url);
     let jar = this.jars.get(key);
     let rejected = 0;
     for (const [header, text] of headers) {

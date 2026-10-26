@@ -7,7 +7,7 @@ import type { OutputObserver } from '../../../src/process.js';
 /** Real Pi, inert sandbox: no Docker, no live AI. Optionally journals calls for a test. */
 export class InertSandbox extends Sandbox {
   commands: Array<{ command: string; workdir: string; timeout: number }> = [];
-  httpCalls: Array<{ url: string; method: string; body?: string; headers?: Record<string, string> }> = [];
+  httpCalls: Array<{ url: string; method: string; body?: string; headers?: Record<string, string>; principal?: string }> = [];
   override sourceSkipped = 0;
   stopCount = 0;
   failStart = false;
@@ -32,9 +32,9 @@ export class InertSandbox extends Sandbox {
     const stdout = `INERT_SANDBOX uid=65532\n${command}`; onOutput?.('stdout',Buffer.from(stdout));
     return { code: 0, stdout, stderr: '', truncated: false };
   }
-  override async http(request: HttpRequest, _signal?:AbortSignal, onRunning?:()=>void, _actor='owner', onOutput?:OutputObserver) {
+  override async http(request: HttpRequest, _signal?:AbortSignal, onRunning?:()=>void, onOutput?:OutputObserver) {
     onRunning?.();
-    this.httpCalls.push({ url: request.url, method: request.method, body: request.body, headers: request.headers });
+    this.httpCalls.push({ url: request.url, method: request.method, body: request.body, headers: request.headers, principal: request.principal });
     this.journal({ op: 'http', url: request.url, method: request.method, body: request.body ?? null, headers: request.headers ?? null });
     const stdout = `HTTP/1.1 200 OK\n${request.method} ${request.url}`; onOutput?.('stdout',Buffer.from(stdout));
     return { code: 0, stdout, stderr: '', truncated: false, hops: [`200 ${request.method} ${request.url}`] };

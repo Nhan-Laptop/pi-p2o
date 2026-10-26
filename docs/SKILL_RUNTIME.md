@@ -53,7 +53,7 @@ host-managed sandbox.
   operations, no claim authorship (a claim comes from a worker task), coverage is a projection of reviewed work, and a
   zero-intent round is not progress; worker "one intent, write back, report, stop"; reporter read-only second reader with
   no target operations, no candidate authorship and no verdict or plan change. Those lines are advice — the role loadout is
-  the enforcement (planner 23 tools, worker 17, validation 16, reporter 6), and the same rule is repeated on the tool
+  the enforcement (planner 24 tools, worker 19, validation 18, reporter 6), and the same rule is repeated on the tool
   boundaries in `src/tool-guidelines.ts`.
 - Recon records a bounded surface inventory (inputs, actors, gates, boundaries, Evidence IDs, extraction method,
   labelled unknowns). Pick the next surface by reachable influence, sensitive effect, boundary uncertainty, evidence,
@@ -97,7 +97,11 @@ interpretation is right.
 - `evidenceRefs` / `negativeControls`: same-run receipt IDs. `limitations` required; `control` required for `ruled_out`;
   `requirement` required for `blocked`.
 - `policyBasis` = `explicit_contract` | `boundary_invariant` | `inferred`, with `expectedPolicy` naming rule and source.
-  Inferred policy must stay `open_proof_gap`, even when a sibling looks safe.
+  Inferred policy must stay `open_proof_gap`, even when a sibling looks safe. When the effect itself establishes the
+  boundary — unauthenticated code execution, a read/write across a principal or tenant boundary that needs no credential,
+  metadata or private-network reach from an attacker-influenced URL, a root-owned write from an unprivileged context —
+  the basis is `boundary_invariant` and `expectedPolicy` names the invariant it breaks. Sibling-route comparisons,
+  placeholder credentials and CVE leads are hypotheses, not policy: they stay `inferred` and `open_proof_gap`.
 - `gained` / `needs`: the capability edge. `gained` is what this primitive hands to a later step (an address-space
   write, a chosen call target, a token, a state transition); `needs` is what it still needs first. Both are typed,
   `{kind, subject?, scope?}` over the closed `CAPABILITY_KINDS`, and `subject`/`scope` only have to agree when both sides
@@ -129,12 +133,48 @@ Blocked execution cannot close runtime proof. Legacy notes and reports stay read
 outcome only summarizes the tested slice. `p2o_ledger {id}` returns one full bounded record so agents cite instead of rerun.
 Skill selection never enables tools. Cases, coverage and graph: [CASE_REVIEW](CASE_REVIEW.md), [ASSET_GRAPH](ASSET_GRAPH.md).
 
+## Sessions, identity, steering and the ladder
+
+- `--executors session[:N]` gives the run `N` long-lived executors (default and ceiling: the target-operation cap).
+  `p2o_session` lists them; `open` starts one with its own shell cwd/state, `exec` runs in it, `snapshot` reports the
+  executor counters plus the open sessions, `close` releases it, and `upload`/`download` move bounded text into or out of
+  the session scratch (download returns a retained artifact id, never a host path). The current assignment's session
+  exposes a PTY: `p2o_shell send {input}` writes and `read` advances a bounded cursor. A dead PTY fails closed and asks
+  for a new session instead of silently running in a fresh container. Sessions are run-owned, die at cleanup and are
+  never restored from history; use them when consecutive steps must share shell state (an ssh login, a tmux pane, a
+  compile tree), not as a privilege boundary.
+- Ingress: with `--lab-network <name>` the sandbox joins an operator-created docker network and
+  `p2o_session {action:'listen', port}` starts a bounded logging catcher inside the session container
+  (`<container>:<port>`, tcp only, at most four per session) for a payload that calls back. No host port is ever
+  published and there is no tunnel or pivot. `--callback <url>` only records the operator's out-of-band destination the
+  target is expected to reach. With no lab network and no reachable collaborator there is no inbound path: a blind
+  exploit is proven by its side effect/timing or not at all, and the report says which path existed.
+- Identity: `--identity <abs path>` is one operator JSON file. No model ever sees a value — `p2o_secret` lists
+  ids/kinds/labels only and a worker ticket carries only a count. The host substitutes a placeholder at execution time
+  (shell-quoted for shell/net, raw for a PTY `send`, request-side for HTTP), only after the command policy allows the
+  command, and audits every use. Receipt/export redaction is best-effort: a worker can print or encode a secret and the
+  container sees the resolved command line, so the report states that limit.
+- Steering: the operator can append `p2o_loop {action:'hint'|'constrain', text}` between rounds (3..300 characters, at
+  most 24 hints and 12 constraints). Both are rendered into the next planner prompt; a constraint is absolute and a hint
+  never widens the campaign frame. `p2o_loop` has no goal action — goals stay on the plan board (`p2o_plan_create`).
+- Ladder: evidence is bounded at the receipt (a redacted excerpt of input ≤2000 B, stdout ≤16 KiB, stderr ≤4 KiB), so
+  cite a bounded receipt instead of pasting a transcript and keep a longer observation in a `p2o_capture` artifact whose
+  id sits beside the receipt. Reviewed claims and their typed `gained`/`needs` edges derive the rungs printed in
+  `## Access ladder` (observed, executed, controlled, crossed, impact): a demonstrated claim reaches `executed`, a
+  negative control reaches `controlled`, a gained capability that names its scope or a crossing step effect reaches
+  `crossed`, and code execution or an integrity write at local/adjacent reach reaches `impact`. Assess mode prints one
+  line instead of a ladder.
+
 ## Persistence and failures
 
 `--export` (chosen before the run) writes an exclusive 0600 JSON export under `.p2o-reports/` before cleanup, with
 source/skill/image/extension hashes and ledger records (never tickets or auth files). Redaction is best effort: review
 before sharing. Without `--export` the ledger is deleted at cleanup; an export error never blocks teardown.
 
-A worker that settles without `p2o_report` yields a blocked report with no extra model call. If its broker is lost,
+A worker that settles without `p2o_report` yields a blocked report with no extra model call. A worker that expects a
+successor may report with `holdFor` and a one-sentence brief: its ticket, pane and session stay open for one
+owner-dispatched successor (`p2o_task_dispatch {workerId}`), or for a different prompt via `p2o_workers continue`,
+instead of paying a fresh worker and re-walking the chain. No timer expires a hold; stop/finish release it and the
+finish preflight advises when a hold has no successor. If its broker is lost,
 the planner must withdraw it with `p2o_workers` (action: 'stop'); idle Herdr states never prove completion. Linux is required (FD-relative
 containment). Real-provider evaluation: `bench/README.md`; unit tests do not establish assessment quality.

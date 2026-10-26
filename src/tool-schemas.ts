@@ -7,6 +7,7 @@ import { WORKER_OUTCOMES } from './broker.js';
 import { CANDIDATE_CLOSURES, CANDIDATE_EXECUTIONS, CANDIDATE_PROOFS, POLICY_BASES } from './evidence.js';
 import { PAYLOAD_BYTES, PAYLOAD_KINDS } from './lab.js';
 import { RESEARCH_QUERY_MAX } from './research.js';
+import { RISK_LABEL_TRUTH } from './truth.js';
 import { HTTP_METHOD_PATTERN } from './target.js';
 import { outputContractSchema, workDecisionSchema, workSpecSchema } from './work-tool.js';
 
@@ -20,7 +21,7 @@ export const taskDraftSchema = Type.Object({
     // P2: surface/risk are cosmetic prose (admission clamps them to their 200-char cap with a warning trace), so their declared
     // cap sits well above the admission cap: Pi must let a long draft reach the host instead of hard-refusing it at argument
     // validation. Semantic fields keep their exact caps — the host refuses those rather than truncating them.
-    question:Type.String({minLength:1,maxLength:1500}),surface:Type.String({minLength:1,maxLength:2000}),risk:Type.String({minLength:1,maxLength:2000}),
+    question:Type.String({minLength:1,maxLength:1500}),surface:Type.String({minLength:1,maxLength:2000}),risk:Type.String({minLength:1,maxLength:2000, description: RISK_LABEL_TRUTH}),
     // Required for every role except recon, which may omit them for a lighter intent (src/tasks.ts validate() enforces the role-conditional minimum).
     role:choices(ROLES),roleReason:Type.Optional(Type.String({maxLength:1000})),
     expectedTrue:Type.Optional(Type.String({maxLength:1000})),expectedFalse:Type.Optional(Type.String({maxLength:1000})),stopCondition:Type.Optional(Type.String({maxLength:1000})),
@@ -38,7 +39,7 @@ export const TASK_ACTIONS = ['create','revise','match','list','start','review','
 /** P13e: one row per action, so a new action is a type error instead of inheriting a default parameter list. */
 export const TASK_ACTION_PARAMETERS: Readonly<Record<typeof TASK_ACTIONS[number], readonly string[]>> = {
   create: ['action','draft'], match: ['action','draft'], revise: ['action','draft','id','revision'], list: ['action','id','cursor','limit'],
-  dispatch: ['action','ids','id','priority'], start: ['action','id'],
+  dispatch: ['action','ids','id','priority','workerId'], start: ['action','id'],
   review: ['action','id','revision','reason','evidenceIds','externalEvidence'], close: ['action','id','revision','reason','evidenceIds','externalEvidence'],
   block: ['action','id','revision','reason','evidenceIds','externalEvidence'], cancel: ['action','id','revision','reason','evidenceIds','externalEvidence'],
 };
@@ -54,7 +55,7 @@ export const skillReadParameters = Type.Object({ id: Type.String({ maxLength: 16
 export { capabilitySchema };
 
 export const candidateParameters = Type.Object({
-      candidate: Type.String({ pattern: '^[a-z0-9][a-z0-9-]{0,79}$' }), surface: Type.String({ minLength: 1, maxLength: 200 }), risk: Type.String({ minLength: 1, maxLength: 200 }),
+      candidate: Type.String({ pattern: '^[a-z0-9][a-z0-9-]{0,79}$' }), surface: Type.String({ minLength: 1, maxLength: 200 }), risk: Type.String({ minLength: 1, maxLength: 200, description: 'Grouping label for this claim; it is compared with the task risk and is never read as a severity or a ceiling.' }),
       closure: choices(CANDIDATE_CLOSURES),
       execution: choices(CANDIDATE_EXECUTIONS),
       proof: choices(CANDIDATE_PROOFS),
@@ -116,7 +117,36 @@ export const researchParameters = Type.Object({
 
 export const captureParameters = Type.Object({path:Type.String({minLength:1,maxLength:2048}),offset:Type.Optional(Type.Integer({minimum:0})),timeout:Type.Optional(Type.Integer({minimum:0}))});
 
-export const execParameters = Type.Object({ command: Type.String({ minLength: 1, maxLength: 8192 }), timeout: Type.Optional(Type.Integer({ minimum: 0, description: 'Optional seconds; 0 or omitted means no task timeout' })) });
+/**
+ * A7.3 (planning_update.md P7.4): the shell/network tools gain an interactive form. `session` names a run-owned session
+ * (required for `send`/`read` and for an `exec` inside one); `send` is raw bytes to the session's PTY; `read` drains output
+ * after the host-side cursor. Exactly one of command/send/read is an operation.
+ */
+export const execParameters = Type.Object({
+  command: Type.Optional(Type.String({ minLength: 1, maxLength: 8192 })),
+  timeout: Type.Optional(Type.Integer({ minimum: 0, description: 'Optional seconds; 0 or omitted means no task timeout. For send: how long to wait for output to settle, default 5s' })),
+  session: Type.Optional(Type.String({ minLength: 1, maxLength: 64, pattern: '^[a-z0-9][a-z0-9-]{0,63}$', description: 'Run in this open session instead of the run shell' })),
+  send: Type.Optional(Type.String({ maxLength: 8192, description: 'Write these exact bytes to the session PTY (include newline yourself); returns output until it goes quiet or the timeout' })),
+  read: Type.Optional(Type.Boolean({ description: 'Return PTY output since the host cursor for the session' })),
+});
+
+/** A7.2/A7.8: run-owned persistent sessions. `listen` is refused until an ingress path is configured (P7.7). */
+export const sessionParameters = Type.Object({
+  action: choices(['open','list','exec','listen','upload','download','snapshot','close'] as const),
+  session: Type.Optional(Type.String({ minLength: 1, maxLength: 64, pattern: '^[a-z0-9][a-z0-9-]{0,63}$' })),
+  command: Type.Optional(Type.String({ minLength: 1, maxLength: 8192, description: 'action=exec: one non-interactive command in the session container' })),
+  purpose: Type.Optional(Type.String({ minLength: 3, maxLength: 200, description: 'action=open: one line naming what the session is for (recorded)' })),
+  path: Type.Optional(Type.String({ minLength: 1, maxLength: 2048, description: 'action=upload/download: relative path inside the session scratch' })),
+  content: Type.Optional(Type.String({ maxLength: 32768, description: 'action=upload: UTF-8 bytes to materialize (1..32 KiB)' })),
+  port: Type.Optional(Type.Integer({ minimum: 1, maximum: 65535 })),
+  protocol: Type.Optional(choices(['tcp','udp'] as const)),
+  timeout: Type.Optional(Type.Integer({ minimum: 0, description: 'action=exec: optional seconds; 0 or omitted means no task timeout' })),
+}, { additionalProperties: false });
+
+/** A7.4/P7.5: the identity surface is a list only. A value never crosses this tool, in either direction. */
+export const secretParameters = Type.Object({
+  action: choices(['list'] as const),
+}, { additionalProperties: false });
 
 export const httpParameters = Type.Object({
       url: Type.String({ minLength: 1, maxLength: 4096 }),
@@ -126,6 +156,7 @@ export const httpParameters = Type.Object({
       followRedirects: Type.Optional(Type.Boolean()),
       maxRedirects: Type.Optional(Type.Integer({ minimum: 0, maximum: 5 })),
       session: Type.Optional(Type.String({ minLength: 1, maxLength: 40, pattern: '^[A-Za-z0-9][A-Za-z0-9._-]{0,39}$' })),
+      principal: Type.Optional(Type.String({ minLength: 1, maxLength: 64, pattern: '^[a-z0-9][a-z0-9-]{0,63}$', description: 'A7.4: declared principal whose cookie jar this request belongs to (default "default"); a name, never a credential value' })),
       resetSession: Type.Optional(Type.Boolean()),
       timeout: Type.Optional(Type.Integer({minimum:0,description:'Optional per-hop seconds; 0 or omitted disables the task timeout'})),
       connectTimeout: Type.Optional(Type.Integer({minimum:0,description:'Optional connect seconds; 0 or omitted uses underlying network/library defaults'})),
@@ -135,7 +166,7 @@ export const noteParameters = Type.Object({
       kind: choices(['note', 'coverage', 'observation', 'open']),
       text: Type.String({ minLength: 1, maxLength: 2000 }),
       surface: Type.Optional(Type.String({ maxLength: 200 })),
-      risk: Type.Optional(Type.String({ maxLength: 200 })),
+      risk: Type.Optional(Type.String({ maxLength: 200, description: 'Grouping label for this coverage row; not a severity, a ceiling or a limit on what may be attempted.' })),
       outcome: Type.Optional(choices(COVERAGE_OUTCOMES)),
       refs: Type.Optional(Type.Array(Type.String({ maxLength: 200 }))),
     });
@@ -160,7 +191,9 @@ export const delegateParameters = Type.Object({
 
 export const subtaskParameters = Type.Object({focus:Type.String({minLength:3,maxLength:60}),task:Type.String({minLength:1,maxLength:4000}),context:Type.Optional(Type.String({maxLength:4000})),role:Type.Optional(choices(ROLES))});
 
-export const loopParameters = Type.Object({action:choices(['status','wait','blocked']),reason:Type.Optional(Type.String({minLength:1,maxLength:1000})),
+export const loopParameters = Type.Object({action:choices(['status','wait','blocked','hint','constrain']),reason:Type.Optional(Type.String({minLength:1,maxLength:1000})),
+  /** A7.9/D23: one bounded operator instruction recorded for the next planner round; constraints narrow absolutely, hints guide. */
+  text:Type.Optional(Type.String({minLength:3,maxLength:300,description:'action hint/constrain: one sentence (3..300 characters) recorded append-only and rendered into the next planner prompt'})),
   /** M7: one condition-bounded revisit. With `notBefore`, reason must be `block-decay` or `cooldown-expiry` and the wait is scheduled, not budgeted. */
   notBefore:Type.Optional(Type.String({maxLength:40,description:'ISO timestamp for a condition-bounded revisit (reason block-decay|cooldown-expiry), within 24h'}))});
 
@@ -179,11 +212,13 @@ export const reportParameters = Type.Object({
       summary: Type.String({ minLength: 1, maxLength: 4000 }),
       findings: Type.Optional(Type.Array(Type.String({ maxLength: 1000 }))),
       evidence: Type.Optional(Type.Array(Type.String({ maxLength: 500 }))),
-      coverage: Type.Optional(Type.Array(Type.Object({ surface: Type.String({ maxLength: 200 }), risk: Type.String({ maxLength: 200 }), outcome: choices(COVERAGE_OUTCOMES) }))),
+      coverage: Type.Optional(Type.Array(Type.Object({ surface: Type.String({ maxLength: 200 }), risk: Type.String({ maxLength: 200, description: 'Grouping label for this covered surface; not a severity or a limit.' }), outcome: choices(COVERAGE_OUTCOMES) }))),
       openItems: Type.Optional(Type.Array(Type.String({ maxLength: 1000 }))),
       confidence: choices(['high', 'medium', 'low']),
       blocked: Type.Optional(Type.String({ maxLength: 1000 })),
       outcome:Type.Optional(choices(WORKER_OUTCOMES)),
+      holdFor: Type.Optional(Type.Object({ brief: Type.String({ minLength: 3, maxLength: 300, description: 'One sentence naming the successor step that continues this exact work' }) },
+        { description: 'A7.5: keep this worker\'s ticket, pane and session alive for exactly one follow-up continuation with this brief' })),
     });
 
 export const finishParameters = Type.Object({

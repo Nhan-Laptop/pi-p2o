@@ -33,7 +33,8 @@ describe('campaign frame (A6.1)', () => {
     const valid = build({ goal: 'Assess invoices', avoid: ['No payment flows'] });
     const cases: unknown[] = [
       undefined, null, 42, 'campaign', [], {},
-      { ...valid, v: 2 },
+      // P7.1: v2 is the current record shape, so only an unknown version is malformed now.
+      { ...valid, v: 3 },
       { ...valid, v: '1' },
       { ...valid, objective: 42 },
       { ...valid, objective: '' },

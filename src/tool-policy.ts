@@ -7,8 +7,11 @@
  * gets Pi's unknown-tool result, not a runtime permission error.
  */
 
-/** Target execution. A worker owns these; the planner never receives them. */
-export const TARGET_TOOLS = ['p2o_shell', 'p2o_net', 'p2o_http', 'p2o_capture'];
+/**
+ * Target execution. A worker owns these; the planner never receives them.
+ * A7.2: `p2o_session` is a target tool too — it creates and drives a run-owned container, so it is never planner-visible.
+ */
+export const TARGET_TOOLS = ['p2o_shell', 'p2o_net', 'p2o_http', 'p2o_capture', 'p2o_session'];
 /** P14.2: the payload artifact is execution evidence. An executing role creates it; the planner reads it at most. */
 export const LAB_TOOLS = ['p2o_lab'];
 
@@ -24,13 +27,13 @@ export const PLANNER_TOOLS = [
   'p2o_case_create', 'p2o_case_revise', 'p2o_case_rate',
   'p2o_coverage_plan', 'p2o_coverage_suggest',
   'p2o_board', 'p2o_ledger', 'p2o_state', 'p2o_artifact', 'p2o_graph',
-  'p2o_skill_list', 'p2o_skill_read', 'p2o_research',
+  'p2o_skill_list', 'p2o_skill_read', 'p2o_secret', 'p2o_research',
   'p2o_workers', 'p2o_loop', 'p2o_finish',
 ];
 
 /** Executing worker loadout: one intent, target tools, write-back and report. Workers never create or dispatch work. */
 export const WORKER_TOOLS = [
-  'p2o_skill_list', 'p2o_skill_read', 'p2o_research', 'p2o_candidate', ...LAB_TOOLS, ...TARGET_TOOLS,
+  'p2o_skill_list', 'p2o_skill_read', 'p2o_secret', 'p2o_research', 'p2o_candidate', ...LAB_TOOLS, ...TARGET_TOOLS,
   'p2o_note', 'p2o_surface', 'p2o_ledger', 'p2o_state', 'p2o_graph', 'p2o_artifact', 'p2o_request_subtask', 'p2o_report',
 ];
 
@@ -39,6 +42,7 @@ export const WORKER_TOOLS = [
  * `p2o_surface`: validation must not record a new surface or widen the question it was given.
  */
 export const VALIDATION_TOOLS = WORKER_TOOLS.filter(name => name !== 'p2o_surface');
+/** A7.2: the validation worker keeps the tool but the handler allows `action=open` only, so it never inherits a shell. */
 
 /** Read-only second reader for an accepted case: evidence, traces, artifacts, report. No target, lab, claim or plan tool. */
 export const REPORTER_TOOLS = ['p2o_report', 'p2o_ledger', 'p2o_artifact', 'p2o_skill_list', 'p2o_skill_read', 'p2o_state'];

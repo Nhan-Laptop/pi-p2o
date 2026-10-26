@@ -21,7 +21,8 @@ import { caseViews, needsCaseReview, type CaseContext } from '../cases.js';
 import { awaitingReview } from '../tasks.js';
 import { coverageViews, type CoverageContext } from '../coverage.js';
 import { DEBT_KINDS, debtSummary, deriveDebt } from '../debt.js';
-import { campaignPromptBlock, parseCampaign, type CampaignRecord } from '../campaign.js';
+import { campaignPromptBlock, parseCampaign, type CampaignRecord, type EngagementMode } from '../campaign.js';
+import type { CaseEffect } from '../cvss.js';
 import { describeKnowledgeRecord, KNOWLEDGE_DOMAINS, type ContextDebt, type KnowledgeIndexSnapshot, type ContextCursor, type ContextItem, type ContextPacket, type KnowledgeDomain, type KnowledgePage } from '../context.js';
 import { anchorEntityId, assetEntityId, assertionEntityId, graphEntityId, relationEntityId, renderGraph, scopeOf, validateAnchor, validateAsset, validateFact, validateHypothesis, validateRelation,
   graphCanonical, graphObject, validateGraphBatch, GRAPH_IDENTITY_VERSION, GRAPH_ROW_BYTES, GRAPH_RESPONSE_BYTES, GRAPH_ENTITY_LIMIT, GRAPH_ASSERTION_LIMIT, GRAPH_RELATION_LIMIT, GRAPH_ANCHOR_ROWS, GRAPH_PROVENANCE_LIMIT,
@@ -35,7 +36,11 @@ export interface StoreManifest {
   targetIdentity: string; targetDisplay: string;
   profile: { runtimeHash: string; image: string; loopMode: string; executorMode: string;
     maxWorkers?: number; maxDepth?: number; maxTargetOperations?: number;
-    totalCommandBudget?: number; storageQuotaMiB?: number; artifactCaptureKiB?: number };
+    totalCommandBudget?: number; storageQuotaMiB?: number; artifactCaptureKiB?: number;
+    /** D15: the engagement mode folded into the run profile, so a report or resume names it even without a campaign record. */
+    mode?: EngagementMode;
+    /** D15/Q9: the effect classes the operator authorized; absent on a pre-P7.1 profile and empty for assess mode. */
+    effectClasses?: CaseEffect[] };
   sourceSnapshotSha256?: string; sourceEntries?: number; sourceSkipped?: number;
 }
 export interface MutationRequest { actorId: string; requestId: string; payload: unknown }

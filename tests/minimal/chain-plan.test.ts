@@ -22,6 +22,9 @@ async function chainFixture(h: any) {
   return { built, environment, primitive, consumer };
 }
 
+const impactGoal = (h: any) => h.call('p2o_plan_create', { entry: { kind: 'goal', title: 'Reach the recorded chain effect', status: 'active',
+  proof: { kind: 'capability', capability: { kind: 'file.read' } }, criteria: ['The chain step runs and is recorded'],
+  reason: 'P7.1 exploit-mode admission: the impact goal the chain ladder is settled against' } });
 describe('chain frontier to task draft (P14.10)', () => {
   it('drafts the exact p2o_task_create argument for the deepest ready step and records one todo per step', async () => fixture(async h => {
     const { built, environment, primitive, consumer } = await chainFixture(h);
@@ -50,6 +53,8 @@ describe('chain frontier to task draft (P14.10)', () => {
     // The plan view derives the sentence; nothing about the chain was stored as an edge.
     expect(todos.chains).toEqual([`chain ${planned.chainOf} 1/2 · next: step 2 (ready)`]);
 
+    // P7.1: exploit mode (the default) admits an exploitation intent only under a capability-proof goal.
+    await impactGoal(h);
     // The draft is accepted unchanged, and the work identity it carries names what the step stands on and where it runs.
     const created = (await h.call('p2o_task_create', {draft: planned.draft })).details;
     expect(created).toMatchObject({ status: 'proposed', role: 'exploit' });
@@ -83,6 +88,8 @@ describe('chain frontier to task draft (P14.10)', () => {
     const planned = (await h.call('p2o_graph', { action: 'chain', plan: true, requestId: 'chain-plan-bare' })).details;
     expect(planned.draft.work).toBeUndefined();
     expect(planned.planNote).toMatch(/no asset refs were supplied/);
+    // P7.1: exploit mode (the default) gates on the impact goal first, so the fixture records one before asserting M2.
+    await impactGoal(h);
     // M2: a draft with no work identity cannot cite the provider, so on this surface it is refused — that is the whole point of the
     // obligation, and the refusal names the step to take instead.
     await expect(h.call('p2o_task_create', {draft: planned.draft })).rejects.toThrow(/CHAIN_READY_UNDISPATCHED: step 2 of chain chain-/);

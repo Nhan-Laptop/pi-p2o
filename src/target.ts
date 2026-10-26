@@ -3,6 +3,8 @@ import { realpath, stat } from 'node:fs/promises';
 import { isIP } from 'node:net';
 import { resolve } from 'node:path';
 import { homedir } from 'node:os';
+import { CASE_EFFECTS, type CaseEffect } from './cvss.js';
+import { parseCallbackUrl, parseLabNetwork, type EngagementMode } from './campaign.js';
 import { MAX_DEPTH, MAX_WORKERS, type LoopMode, type RetentionMode } from './roles.js';
 import { TEXT_CONTROL } from './validate.js';
 
@@ -14,12 +16,16 @@ export const hasSource = (target: Target): target is Extract<Target, { path: str
 export const hasOrigin = (target: Target): target is Extract<Target, { origin: string }> => target.kind !== 'directory';
 /** 'latest'/'all' pick by eligibility at run start; an explicit id list (≤10, `run-<chars>` shape) names runs directly. Never grants authority — see planning_update.md. */
 export type ReferWorkspaceOption = 'latest' | 'all' | readonly string[];
-export interface StartOptions { workers?: number; maxDepth?: number; export?: boolean; loopMode?: LoopMode; executorMode?: 'shared' | 'isolated'; maxTargetOperations?: number; retention?: RetentionMode; goal?: string; avoid?: string[]; /** A6.1: campaign heartbeat in seconds; `0` disables it. */ heartbeatSeconds?: number; origin?: string; referWorkspace?: ReferWorkspaceOption }
-export type Command = { action: 'help' } | { action: 'stop' } | { action: 'pause' } | { action: 'resume' } | { action: 'start'; target?: string; resume?: string; options: StartOptions };
+export interface StartOptions { workers?: number; maxDepth?: number; export?: boolean; loopMode?: LoopMode; executorMode?: 'shared' | 'isolated' | 'session'; /** A7.2: an explicit `--executors session:N`; defaults to, and may never exceed, the target-operation cap. */ sessionLimit?: number; maxTargetOperations?: number; retention?: RetentionMode; goal?: string; avoid?: string[]; /** A6.1: campaign heartbeat in seconds; `0` disables it. */ heartbeatSeconds?: number; /** D15: `exploit` (default) authorizes the access ladder; `assess` is the opt-in read-only shape. */ mode?: EngagementMode; /** D15/Q9: the effect classes `--effect` authorized; the host defaults to every class except `availability-loss`. */ effectClasses?: CaseEffect[]; /** A7.4: one operator-supplied JSON identity file; the host seals a copy and never shows a value to a model. */ identityPath?: string; origin?: string; /** A7.8: the operator's out-of-band callback destination the target may reach (recorded, never a listener). */ callback?: string; /** A7.8: the operator's throwaway docker network the sandbox joins, so the target can route back to a listener. */ labNetwork?: string; /** A7.9/D23: recorded permissions; a deny still wins, an allow never widens the target. */ allow?: string[]; referWorkspace?: ReferWorkspaceOption }
+export type Command = { action: 'help' } | { action: 'stop' } | { action: 'pause' } | { action: 'resume' }
+  /** A7.7: the operator resolves one pending policy ask. The decision is written as an owner-attributed record. */
+  | { action: 'approve' | 'deny'; id: string }
+  | { action: 'start'; target?: string; resume?: string; options: StartOptions };
 
 /** Deliberately small. One target plus delegation limits; quoting is supported for directory names. */
 const GOAL_CHARS = 600;
-const AVOID_CHARS = 300, MAX_AVOID = 5;
+// A7.9/D23: `--avoid` and `--allow` are one constraint list with one budget (deny is absolute, allow is a permission).
+const CONSTRAINT_CHARS = 300, MAX_CONSTRAINTS = 5;
 /** Same run-ID shape the bundle-import manifest already validates (src/source.ts); ≤10 ids, consistent with other id-list caps in this codebase. */
 const REFER_WORKSPACE_RUN_ID = 'run-[a-zA-Z0-9-]{1,75}';
 const REFER_WORKSPACE_VALUE = new RegExp(`^(?:latest|all|${REFER_WORKSPACE_RUN_ID}(?:,${REFER_WORKSPACE_RUN_ID}){0,9})$`);
@@ -27,6 +33,9 @@ export function parseCommand(args: string): Command {
   const text = args.trim();
   if (!text || text === '--help') return { action: 'help' };
   if (text === 'stop' || text === 'pause' || text === 'resume') return { action: text };
+  // A7.7: one pending policy decision, named by the id the refusal returned. Nothing else is accepted here.
+  const resolution = /^(approve|deny)\s+(policy-ask-[a-f0-9-]{36})$/.exec(text);
+  if (resolution) return { action: resolution[1] as 'approve' | 'deny', id: resolution[2] };
   // Part XI S8: resume an existing durable-local store instead of creating another run. The stored profile supplies the target.
   const resume = /^--resume\s+(run-[a-zA-Z0-9-]{1,75})$/.exec(text);
   if (resume) return { action: 'start', resume: resume[1], options: {} };
@@ -61,17 +70,58 @@ export function parseCommand(args: string): Command {
         if (seconds !== 0 && seconds < 120) throw Error('--heartbeat-seconds must be 0 (disabled) or at least 120 seconds');
         options.heartbeatSeconds = seconds; continue;
       }
-      if (token === '--avoid') {
+      if (token === '--avoid' || token === '--allow') {
+        // A7.9: a denial is absolute and a permission is only a permission; both are recorded operator words with one shared budget.
         const value = tokens[++index]?.trim();
-        if (!value || value.length > AVOID_CHARS || value !== value.normalize('NFC') || TEXT_CONTROL.test(value)) throw Error(`--avoid needs one quoted sentence of 1..${AVOID_CHARS} characters without control characters`);
-        if ((options.avoid?.length ?? 0) >= MAX_AVOID) throw Error(`--avoid may be given at most ${MAX_AVOID} times`);
-        (options.avoid ??= []).push(value); continue;
+        if (!value || value.length > CONSTRAINT_CHARS || value !== value.normalize('NFC') || TEXT_CONTROL.test(value)) throw Error(`${token} needs one quoted sentence of 1..${CONSTRAINT_CHARS} characters without control characters`);
+        if (((options.avoid?.length ?? 0) + (options.allow?.length ?? 0)) >= MAX_CONSTRAINTS) throw Error(`--avoid and --allow together may be given at most ${MAX_CONSTRAINTS} times`);
+        (token === '--avoid' ? (options.avoid ??= []) : (options.allow ??= [])).push(value); continue;
+      }
+      if (token === '--mode') {
+        // D15 (owner decision 2026-10-26): `exploit` is the default, so the flag exists to make the frame explicit and to
+        // select the opt-in read-only shape. An explicit mode outranks any stored profile at resume.
+        const value = tokens[++index];
+        if (value !== 'assess' && value !== 'exploit') throw Error('--mode must be assess or exploit');
+        if (options.mode !== undefined) throw Error('--mode may be given only once');
+        options.mode = value; continue;
+      }
+      if (token === '--effect') {
+        // D15: an effect class is part of an explicitly named ladder, never a quiet add-on to the default frame.
+        const value = tokens[++index];
+        if (!value || !(CASE_EFFECTS as readonly string[]).includes(value)) throw Error(`--effect must be one of: ${CASE_EFFECTS.join(', ')}; repeat the flag to authorize more than one`);
+        if (options.mode === 'assess') throw Error('--effect goes with exploit mode; assess mode authorizes no effect classes');
+        const effects = (options.effectClasses ??= []);
+        if (!effects.includes(value as CaseEffect)) effects.push(value as CaseEffect);
+        continue;
+      }
+      if (token === '--identity') {
+        // A7.4: the credential channel is one file the operator names. Absolute only (the host must not resolve a relative
+        // path against a model-chosen cwd), bounded and given once; an unreadable file fails start before any resource exists.
+        const value = tokens[++index];
+        if (!value || value.length > 4096 || !value.startsWith('/') || /[\x00-\x1f\x7f]/.test(value)) throw Error('--identity needs one absolute path to a JSON identity file');
+        if (options.identityPath !== undefined) throw Error('--identity may be given only once');
+        options.identityPath = value; continue;
       }
       if (token === '--origin') {
         const value = tokens[++index]?.trim();
         if (!value || value.length > 2048 || !/^https?:\/\//i.test(value) || TEXT_CONTROL.test(value) || /[\x00-\x1f\x7f\s]/.test(value)) throw Error('--origin needs one http(s) URL without whitespace or control characters');
         if (options.origin !== undefined) throw Error('--origin may be given only once');
         options.origin = value; continue;
+      }
+      if (token === '--callback') {
+        // A7.8: a destination the target reaches out to. It is printed in prompts, so credentials and fragments are refused:
+        // they would either leak a value or turn one endpoint into two different things.
+        const value = tokens[++index]?.trim();
+        if (!value || parseCallbackUrl(value) === undefined) throw Error('--callback needs one absolute http(s) URL without whitespace, control characters, credentials or a fragment');
+        if (options.callback !== undefined) throw Error('--callback may be given only once');
+        options.callback = value; continue;
+      }
+      if (token === '--lab-network') {
+        // A7.8: the operator brings the network; the host verifies it exists at start and never publishes a port.
+        const value = tokens[++index]?.trim();
+        if (value === undefined || parseLabNetwork(value) === undefined) throw Error('--lab-network needs an operator-created docker network name (1..64 of [a-zA-Z0-9_.-]; not host, none or bridge)');
+        if (options.labNetwork !== undefined) throw Error('--lab-network may be given only once');
+        options.labNetwork = value; continue;
       }
       if (token === '--loop') {
         const value = tokens[++index];
@@ -80,8 +130,13 @@ export function parseCommand(args: string): Command {
       }
       if (token === '--executors') {
         const value = tokens[++index];
-        if (value !== 'shared' && value !== 'isolated') throw Error('--executors must be shared or isolated');
-        options.executorMode = value; continue;
+        // A7.2: `session[:N]` opens long-lived, run-owned executors; N defaults to the target-operation cap and can only
+        // narrow it, because a session must never multiply target pressure.
+        const match = typeof value === 'string' ? /^(shared|isolated|session)(?::([1-9][0-9]?))?$/.exec(value) : null;
+        if (!match) throw Error('--executors must be shared, isolated, or session[:N] with N 1..99');
+        options.executorMode = match[1] as 'shared' | 'isolated' | 'session';
+        if (match[2] !== undefined) options.sessionLimit = Number(match[2]);
+        continue;
       }
       if (token === '--refer-workspace') {
         const peek = tokens[index + 1];
@@ -90,7 +145,7 @@ export function parseCommand(args: string): Command {
         options.referWorkspace = value === 'latest' || value === 'all' ? value : value.split(',');
         continue;
       }
-      if (token !== '--workers' && token !== '--max-depth' && token !== '--target-ops') throw new Error(`Unknown option ${token.slice(0, 40)}; usage: /p2o --target <directory|http(s)-URL> [--workers N] [--max-depth D] [--goal "text"] [--avoid "text"] [--heartbeat-seconds N]`);
+      if (token !== '--workers' && token !== '--max-depth' && token !== '--target-ops') throw new Error(`Unknown option ${token.slice(0, 40)}; usage: /p2o --target <directory|http(s)-URL> [--workers N] [--max-depth D] [--goal "text"] [--avoid "text"] [--allow "text"] [--mode assess|exploit] [--effect <class>]... [--heartbeat-seconds N] [--callback <http(s)-URL>] [--lab-network <name>]`);
       const value = tokens[index + 1];
       if (!value || !/^\d+$/.test(value)) throw new Error(`${token} needs an integer value`);
       index += 1;
@@ -109,6 +164,11 @@ export function parseCommand(args: string): Command {
     }
   }
   if (options.origin !== undefined && /^[a-z][a-z\d+.-]*:\/\//i.test(target)) throw new Error('--origin goes with a source directory target: use --target <directory> --origin <http(s)-URL>');
+  // An effect class is only meaningful inside an explicitly named ladder, whatever the flag order was.
+  if (options.effectClasses?.length && options.mode !== 'exploit') throw Error(options.mode === 'assess'
+    ? '--effect goes with exploit mode; assess mode authorizes no effect classes'
+    : '--effect requires --mode exploit: name the ladder explicitly when you narrow its effect classes');
+  if (options.effectClasses) options.effectClasses = CASE_EFFECTS.filter(effect => options.effectClasses!.includes(effect));
   return { action: 'start', target, options };
 }
 
@@ -207,11 +267,13 @@ export interface HttpRequest {
   /** Actor-local named cookie jar. "none" disables cookie persistence and automatic sending. */
   session?: string;
   resetSession?: boolean;
+  /** A7.4/Q11: the operator-declared principal a cookie jar belongs to; the jar key is principal + session + origin. */
+  principal?: string;
   /** Optional per-hop/connect probe deadlines in seconds; zero/omitted disables extension limits. */
   timeout?: number;
   connectTimeout?: number;
 }
-export type NormalizedHttpRequest = HttpRequest & { session: string; resetSession: boolean; timeout: number; connectTimeout: number };
+export type NormalizedHttpRequest = HttpRequest & { principal: string; session: string; resetSession: boolean; timeout: number; connectTimeout: number };
 
 /** Optional task deadline only, never run/worker authority. No 60/300-second ceiling. */
 export function taskTimeout(value: unknown, name = 'timeout'): number {
@@ -257,6 +319,9 @@ export function httpRequest(input: unknown): NormalizedHttpRequest {
   if (params.resetSession !== undefined && typeof params.resetSession !== 'boolean') throw new Error('resetSession must be boolean');
   const session = params.session ?? 'default';
   if (typeof session !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9._-]{0,39}$/.test(session)) throw new Error('session must be a name of 1..40 characters, or none');
+  // A7.4: a principal is a declared name, never a credential: the value the operator sealed never appears here.
+  const principal = params.principal ?? 'default';
+  if (typeof principal !== 'string' || !/^[a-z0-9][a-z0-9-]{0,63}$/.test(principal)) throw new Error('principal must be a name of 1..64 characters of [a-z0-9-]');
   const headers = httpHeaders(params.headers);
   const body = params.body;
   if (body !== undefined && typeof body !== 'string') throw new Error('body must be a string');
@@ -265,7 +330,7 @@ export function httpRequest(input: unknown): NormalizedHttpRequest {
   const normalized = (HTTP_METHODS as readonly string[]).includes(method.toUpperCase()) ? method.toUpperCase() : method;
   if (normalized === 'HEAD' && body !== undefined) throw new Error('HEAD requests cannot carry a body');
   return { url: params.url, method: normalized, headers, body, followRedirects: params.followRedirects ?? true,
-    maxRedirects, session, resetSession: params.resetSession ?? false,
+    maxRedirects, session, resetSession: params.resetSession ?? false, principal,
     timeout: taskTimeout(params.timeout), connectTimeout: taskTimeout(params.connectTimeout, 'connectTimeout') } as NormalizedHttpRequest;
 }
 

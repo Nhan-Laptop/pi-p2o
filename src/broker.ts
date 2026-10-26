@@ -31,6 +31,11 @@ export interface WorkerReport {
   confidence: 'high' | 'medium' | 'low';
   blocked?: string;
   outcome?: typeof WORKER_OUTCOMES[number];
+  /**
+   * A7.5/D19: hold the ticket, pane and session for exactly one follow-up continue. Bounded to one sentence so a hold is a
+   * claim of "the next step continues this exact work", never an unbounded parking spot.
+   */
+  holdFor?: { brief: string };
 }
 
 export interface WorkerRegistration {
@@ -49,22 +54,34 @@ export interface WorkerRegistration {
   paneClosed?: boolean;
   reported?: WorkerReport;
   taskId?: string;
+  /** A7.2: the one session this worker's ticket holds. Owner-side state; a worker cannot name another. */
+  session?: string;
+  /** A7.5: the brief a reported worker is holding its ticket, pane and session for; consumed by exactly one continuation. */
+  holdBrief?: string;
+  /** A7.5: true once that continuation was accepted, so the successor runs on this ticket and a second hold-continue is refused. */
+  holdConsumed?: boolean;
   requestedRuntime?: { model?: string; thinking?: string };
   /** M8: how many continuations this worker's conversation has taken. One by default; a reported worker takes none. */
   continues?: number;
   effectiveRuntime?: { model?: string; thinking?: string; verified: boolean };
 }
 
-export interface DelegateInput { focus: string; task: string; context?: string; role?: string; skills?: string[]; model?: string; workflow?: string; thinking?: string; taskId?: string; work?: Record<string, unknown>; decision?: Record<string, unknown>; outputContract?: Record<string, unknown> }
+export interface DelegateInput { focus: string; task: string; context?: string; role?: string; skills?: string[]; model?: string; workflow?: string; thinking?: string; taskId?: string; work?: Record<string, unknown>; decision?: Record<string, unknown>; outputContract?: Record<string, unknown>;
+  /** A7.5/D19: dispatch this successor onto the named held worker's ticket, pane and session instead of spawning a new worker. */
+  continueWorkerId?: string }
 export interface DelegateResult { workerId: string; name: string; paneId: string; role: string; model?: string; depth: number }
 
 export interface BrokerDeps {
-  exec(command: string, seconds: number, workdir: string, signal: AbortSignal): Promise<ProcessResult>;
+  exec(command: string, seconds: number, workdir: string, signal: AbortSignal, session?: string, by?: string): Promise<ProcessResult>;
   /** Network-egress command: identical executor, separately labelled so its receipts are auditable. */
-  net?(command: string, seconds: number, workdir: string, signal: AbortSignal): Promise<ProcessResult>;
+  net?(command: string, seconds: number, workdir: string, signal: AbortSignal, session?: string, by?: string): Promise<ProcessResult>;
+  /** A7.3: interactive session PTY. The owner keeps the child and the cursor; the worker names only the session it holds. */
+  pty?(action: 'send' | 'read', request: { session?: string; data?: string; waitMs?: number }, worker: WorkerRegistration): Promise<unknown>;
+  /** A7.2: session lifecycle and one-shot operations, bound by the worker's ticket. */
+  session?(action: string, request: Record<string, unknown>, worker: WorkerRegistration): Promise<unknown>;
   http(request: HttpRequest, signal: AbortSignal, workerId?: string): Promise<ProcessResult>;
   /** Fixed scratch read under this authenticated assignment; no caller-selected root/host path. */
-  capture?(path: string, seconds: number, workerId: string, signal: AbortSignal, offset: number): Promise<ProcessResult>;
+  capture?(path: string, seconds: number, workerId: string, signal: AbortSignal, offset: number, session?: string): Promise<ProcessResult>;
   /** Owner-bound asset graph writes and reads; actor identity never comes from the payload. */
   graphRecord?(batch: GraphBatch, worker: WorkerRegistration, request: MutationRequest): Promise<GraphAck[]>;
   graphReplay?(batch: GraphBatch, worker: WorkerRegistration, request: MutationRequest): Promise<GraphAck[] | undefined>;
@@ -84,6 +101,8 @@ export interface BrokerDeps {
   beforeCommand?(worker: WorkerRegistration): Promise<void>;
   /** Display-only model usage counters the worker's Pi reported for one assistant message. Never a limit, budget or gate. */
   usage?(worker: WorkerRegistration, usage: unknown): boolean;
+  /** A7.4: the sealed-secret list by id and kind. Listed through the owner's identity; a value never crosses this socket. */
+  secretList?(worker: WorkerRegistration): Promise<unknown>;
   delegate(input: DelegateInput, parent: WorkerRegistration): Promise<DelegateResult>;
   report(workerId: string, report: WorkerReport, request?: MutationRequest): Promise<void | RecordAck[]>;
   /** Commit boundary: report persisted, registration terminal and authority revoked. */
@@ -110,6 +129,14 @@ function text(value: unknown, limit: number): string | undefined {
   if (typeof value !== 'string') return undefined;
   const clean = value.replace(TEXT_CONTROL_G, '');
   return clean.length > limit ? clean.slice(0, limit) : clean;
+}
+
+/** A ticket binds exactly one session: a worker cannot name a session it was not given. */
+function heldSession(registration: WorkerRegistration, requested: unknown): string | undefined {
+  if (requested === undefined) return registration.session;
+  if (typeof requested !== 'string' || !/^session-[a-f0-9]{8}$/.test(requested)) throw Error('Invalid session id');
+  if (registration.session !== requested) throw Error(`SESSION_NOT_HELD: this ticket holds ${registration.session ?? 'no session'}, not ${requested}`);
+  return requested;
 }
 
 /** Runs one service call and answers with its value, or with the error text instead of throwing into the socket handler. */
@@ -163,7 +190,16 @@ export function normalizeReport(raw: unknown): WorkerReport {
     confidence,
     blocked: text(input.blocked, 1000),
     ...(typeof input.outcome === 'string' && (WORKER_OUTCOMES as readonly string[]).includes(input.outcome) ? { outcome: input.outcome as WorkerReport['outcome'] } : {}),
+    // A7.5: the hold is one bounded sentence, and only a well-formed request can create one.
+    ...(holdFor(input.holdFor) ? { holdFor: holdFor(input.holdFor)! } : {}),
   };
+}
+
+/** A7.5: one bounded sentence naming the successor this worker is worth holding for; malformed input is dropped, not guessed. */
+function holdFor(value: unknown): { brief: string } | undefined {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined;
+  const brief = text((value as Record<string, unknown>).brief, 300)?.replace(/\s+/g, ' ').trim();
+  return brief && brief.length >= 3 ? { brief } : undefined;
 }
 
 export class Broker {
@@ -315,7 +351,8 @@ export class Broker {
         const control = { exec: async (command: string) => {
           const spent = await this.prepareCommand(registration);
           if (spent) throw Error(String(spent.error));
-          const result = await this.whileRunning(workerId, async signal => ({ ...(await this.deps.exec(command, 0, `/work/${workerId}`, signal)) }));
+          const bound = registration.session;
+          const result = await this.whileRunning(workerId, async signal => ({ ...(await this.deps.exec(command, 0, bound ? `/work/sessions/${bound}` : `/work/${workerId}`, signal, bound, registration.workerId)) }));
           if (typeof (result as { code?: unknown }).code !== 'number') throw Error('Environment command did not run');
           return { code: (result as { code: number }).code };
         } };
@@ -348,6 +385,11 @@ export class Broker {
       }
       case 'status':
         return { ok: true, workerId, used: registration.used, reported: Boolean(registration.reported) };
+      case 'secret_list': {
+        // Ids, kinds, labels and scopes only. The owner answers from its sealed identity; there is no path from here to a value.
+        if (!this.deps.secretList) return { ok: false, error: 'Secret listing unavailable' };
+        return attempt(() => this.deps.secretList!(registration));
+      }
       case 'usage':
         // Counters only, attributed by the authenticated registration (never by the payload); it is not a target command and gates nothing.
         return { ok: true, recorded: this.deps.usage?.(registration, request?.usage) === true };
@@ -371,26 +413,60 @@ export class Broker {
         let seconds: number;
         try { seconds = taskTimeout(request?.timeout); } catch (error) { return {ok:false,error:errText(error)}; }
         if (!command || !command.trim()) return { ok: false, error: 'command must be 1..8192 characters' };
+        let session: string | undefined;
+        try { session = heldSession(registration, request?.session); } catch (error) { return { ok: false, error: errText(error) }; }
         const spent = await this.prepareCommand(registration);
         if (spent) return spent;
         return this.whileRunning(workerId, async signal => {
           try {
-            const workdir = `/work/${workerId}`;
+            const workdir = session ? `/work/sessions/${session}` : `/work/${workerId}`;
             const runner = op === 'net' ? this.deps.net : undefined;
-            const result = runner ? await runner(command, seconds, workdir, signal)
-              : await this.deps.exec(command, seconds, workdir, signal);
+            const result = runner ? await runner(command, seconds, workdir, signal, session, workerId)
+              : await this.deps.exec(command, seconds, workdir, signal, session, workerId);
             return { ok: true, ...result };
           } catch (error) { return { ok: false, error: errText(error) }; }
         });
+      }
+      case 'pty': {
+        if (!this.deps.pty) return { ok: false, error: 'Interactive session unavailable' };
+        const action = request?.action;
+        if (action !== 'send' && action !== 'read') return { ok: false, error: 'pty action must be send or read' };
+        if (action === 'send' && (typeof request?.data !== 'string' || !request.data.length || Buffer.byteLength(request.data) > 8192)) return { ok: false, error: 'send must be 1..8192 bytes of text' };
+        let session: string | undefined;
+        try { session = heldSession(registration, request?.session); } catch (error) { return { ok: false, error: errText(error) }; }
+        if (!session) return { ok: false, error: 'SESSION_UNBOUND: open a session first (p2o_session action=open)' };
+        const waitMs = typeof request?.waitMs === 'number' && Number.isSafeInteger(request.waitMs) ? request.waitMs : 5000;
+        const spent = await this.prepareCommand(registration);
+        if (spent) return spent;
+        return this.whileRunning(workerId, async signal => {
+          try {
+            void signal;
+            return { ok: true, ...(await this.deps.pty!(action, { session, data: request?.data, waitMs }, registration) as Record<string, unknown>) };
+          } catch (error) { return { ok: false, error: errText(error) }; }
+        });
+      }
+      case 'session': {
+        if (!this.deps.session) return { ok: false, error: 'Session service unavailable' };
+        const action = request?.action;
+        if (!['open', 'list', 'exec', 'snapshot', 'close', 'upload', 'download', 'listen'].includes(action)) return { ok: false, error: 'Unknown session action' };
+        // The ticket binds exactly one session; anything but opening a new one must name a session this ticket holds.
+        let session: string | undefined;
+        if (action !== 'open') {
+          try { session = heldSession(registration, request?.session); } catch (error) { return { ok: false, error: errText(error) }; }
+          if (!session) return { ok: false, error: 'SESSION_UNBOUND: open a session first (p2o_session action=open)' };
+        }
+        return attempt(() => this.deps.session!(action, { ...(request ?? {}), ...(session ? { session } : {}) }, registration));
       }
       case 'capture': {
         let path: string, seconds: number;
         let offset: number;
         try {path=scratchPath(request?.path);seconds=taskTimeout(request?.timeout);offset=scratchOffset(request?.offset);} catch(error) {return {ok:false,error:errText(error)};}
         const capture=this.deps.capture;if (!capture) return {ok:false,error:'Scratch capture unavailable; no fallback read'};
+        let session: string | undefined;
+        try { session = heldSession(registration, request?.session); } catch (error) { return { ok: false, error: errText(error) }; }
         const spent=await this.prepareCommand(registration);if(spent)return spent;
         return this.whileRunning(workerId,async signal=>{
-          try {return {ok:true,...await capture(path,seconds,workerId,signal,offset)};} catch(error) {return {ok:false,error:errText(error)};}
+          try {return {ok:true,...await capture(path,seconds,workerId,signal,offset,session)};} catch(error) {return {ok:false,error:errText(error)};}
         });
       }
       case 'graph_record': {
@@ -459,7 +535,8 @@ export class Broker {
         } catch (error) { return { ok: false, error: errText(error) }; }
       }
       case 'report': {
-        if (registration.reported) return { ok: false, error: 'this worker already reported' };
+        // A7.5: a held worker reports again only after its one hold-continue was consumed; otherwise reporting is terminal once.
+        if (registration.reported && !registration.holdConsumed) return { ok: false, error: registration.holdBrief ? 'this worker reported and is held for one continuation; wait for the lead brief instead of reporting again' : 'this worker already reported' };
         const report = normalizeReport(request?.report);
         if (this.reporting.has(workerId)) return {ok:false,error:'Report persistence already in progress'};
         this.reporting.add(workerId);
@@ -472,8 +549,16 @@ export class Broker {
             if (!acks) throw error;
           }
           registration.reported = report;
-          // Reporting ends this worker's authority: a copied ticket cannot retain target access.
-          this.revoke(workerId);
+          if (report.holdFor) {
+            // A7.5/D19: the ticket, pane and session stay alive for exactly one follow-up continue. The reaper skips this worker
+            // and the owner consumes the hold on the first continuation; stop/finish force-releases it exactly like any worker.
+            registration.holdBrief = report.holdFor.brief;
+            registration.holdConsumed = false;
+          } else {
+            // Reporting ends this worker's authority: a copied ticket cannot retain target access.
+            registration.holdBrief = undefined; registration.holdConsumed = false;
+            this.revoke(workerId);
+          }
           // Notification failure must not make an already committed report replayable.
           try { await this.deps.reportCommitted?.(registration); }
           catch (error) { this.deps.onProblem?.(`Report committed but notification failed: ${errText(error)}`); }
@@ -640,9 +725,27 @@ export class BrokerClient {
   close(): void { this.fail('worker session ended'); }
 }
 
-/** M8: a live worker may be continued as often as it is useful; a reported or closed worker cannot, because its ticket is retired. */
-export function continuationRefusal(registration: { stopped?: boolean; paneClosed?: boolean; reported?: unknown; continues?: number }): string | undefined {
-  if (registration.reported) return 'WORKER_CLOSED: the worker already reported and its ticket is retired; its conversation cannot be continued — create a new task for the same question instead';
+/**
+ * M8/A7.5: a live worker may be continued as often as it is useful. A reported worker cannot be continued unless it reported with
+ * a hold, and that hold authorizes exactly one continuation (the successor run on the same ticket, pane and session).
+ */
+export function continuationRefusal(registration: { stopped?: boolean; paneClosed?: boolean; reported?: unknown; holdBrief?: string; holdConsumed?: boolean; continues?: number }): string | undefined {
   if (registration.stopped || registration.paneClosed) return 'WORKER_CLOSED: the worker is stopped or its pane is gone; start a new task rather than continuing a closed conversation';
+  if (registration.reported && registration.holdBrief) return undefined;
+  if (registration.reported && registration.holdConsumed) return 'HELD_CONTINUATION_USED: this worker already used its one held continuation for the successor it is running; wait for that successor report, then create a new task for another question';
+  if (registration.reported) return 'WORKER_CLOSED: the worker already reported and its ticket is retired; its conversation cannot be continued — create a new task for the same question instead';
   return undefined;
+}
+
+/**
+ * A7.5: consume the one continuation a hold authorizes. Returns the brief that was held (the owner sends it as the successor
+ * brief) or undefined when this worker held nothing. Pure state transition, so the handler and the tests share one rule.
+ */
+export function consumeHeldContinuation(registration: WorkerRegistration): string | undefined {
+  if (!registration.holdBrief) return undefined;
+  const brief = registration.holdBrief;
+  registration.holdBrief = undefined;
+  registration.holdConsumed = true;
+  registration.continues = (registration.continues ?? 0) + 1;
+  return brief;
 }

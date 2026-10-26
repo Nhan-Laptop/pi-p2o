@@ -99,7 +99,7 @@ describe('host-owned pre-truncation capture',()=>{
     try {
       await sandbox.start();await sandbox.exec('inert command',0,undefined,'/work',undefined,shell.observe);
       expect(shell.receipt().observedBytes).toBe(60000);
-      const result=await sandbox.http({url:'/start',method:'POST',body:'provided-body',followRedirects:true,maxRedirects:3},undefined,undefined,'actor',http.observe);
+      const result=await sandbox.http({url:'/start',method:'POST',body:'provided-body',followRedirects:true,maxRedirects:3},undefined,undefined,http.observe);
       expect(result.hops).toHaveLength(2);expect(http.parts()[0].input.toString()).toBe(first+second);
       const creates=calls.filter(c=>c.args.includes('/usr/bin/curl'));expect(creates[1].args).toContain('Cookie: sid=secret');expect(creates[1].args).toContain('GET');
       expect(calls.filter(c=>c.observed).map(c=>c.args[0])).toEqual(['exec','start','start']);expect(calls.find(c=>c.args.includes('--attach'))?.stdin).toBe('provided-body');

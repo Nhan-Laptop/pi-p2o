@@ -53,6 +53,12 @@ export function redact(value: string): string {
 }
 /** Redacted and control-stripped: the form every display and export surface applies to model- or target-derived strings. */
 export function safeText(value: string): string { return cleanText(redact(value)); }
+/**
+ * A7.6 (planning_update.md P7.2): the citable excerpt one receipt keeps. The visible tool output cap (48 KiB) and the capture cap
+ * are unchanged; a longer observation belongs in a `p2o_capture` artifact, whose ID is cited next to the receipt. Raised from
+ * 4000/1000 on purpose: a proof the reader cannot read is not a citable record, and the bound below is what the receipt itself claims.
+ */
+export const RECEIPT_INPUT_BYTES = 2000, RECEIPT_STDOUT_BYTES = 16 * 1024, RECEIPT_STDERR_BYTES = 4 * 1024;
 const bounded = (s: string, n: number) => {
   let result = redactArtifactPrefix(s,redact).replace(/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/g, '').slice(0, n);
   while (Buffer.byteLength(JSON.stringify(result)) > n) result = result.slice(0, Math.floor(result.length * 0.75));
@@ -66,14 +72,15 @@ export class EvidenceStore {
     const id = randomUUID();
     await appendRecord(this.path, { id, runId: this.runId, at: new Date().toISOString(), by, workerId: by === 'owner' ? undefined : by,
       kind: 'evidence', text: `${operation} exit ${result.code}; untrusted observation, not a finding`,
-      data: { operation, receiptRedactionVersion:2, input: bounded(input, 2000), target: this.target, startedAt, exitCode: result.code,
-        stdout: bounded(result.stdout, 4000), stderr: bounded(result.stderr, 1000),
+      data: { operation, receiptRedactionVersion:2, input: bounded(input, RECEIPT_INPUT_BYTES), target: this.target, startedAt, exitCode: result.code,
+        ...(result.sessionRef ? { sessionRef: result.sessionRef } : {}), // A7.2: next to http.session, never a claim.
+        stdout: bounded(result.stdout, RECEIPT_STDOUT_BYTES), stderr: bounded(result.stderr, RECEIPT_STDERR_BYTES),
         ...(result.hops ? { http: { hops: result.hops.slice(0,6).map(hop => bounded(hop, 256)), session: result.session,
           redirectStopped: result.redirectStopped ? bounded(result.redirectStopped, 1000) : undefined, cookieWarning: result.cookieWarning } } : {}),
         ...(capture ? {capture} : {}),
         outputSha256Scope: 'visible-excerpt-before-redaction',
         outputSha256: createHash('sha256').update(result.stdout).update(result.stderr).digest('hex'),
-        truncated: result.truncated || result.stdout.length > 4000 || result.stderr.length > 1000,
+        truncated: result.truncated || result.stdout.length > RECEIPT_STDOUT_BYTES || result.stderr.length > RECEIPT_STDERR_BYTES,
         limitations: 'Bounded redacted tool output; command semantics and claimed effect require review.' } });
     return id;
   }

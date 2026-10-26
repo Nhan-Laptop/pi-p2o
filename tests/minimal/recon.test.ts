@@ -99,9 +99,15 @@ describe('bounded recon contract', () => {
   // hashes moved on purpose; the brief hashes are unchanged because workerBrief carries no role-policy line.
   // 2026-10-26 (P5/A6.4): reconInstructions gained the WSTG `feature` attribute contract, so both instruction hashes moved on
   // purpose; the brief hashes are unchanged because workerBrief carries no recon instructions.
+  // 2026-10-26 (P7.0/A7.10 truth pass): the worker prompt's sandbox/network/credential sentences are now composed from
+  // src/truth.ts, so both instruction hashes moved on purpose; the brief hashes are unchanged because workerBrief carries
+  // neither the sandbox facts nor the credential limitation.
+  // 2026-10-26 (P7.2/A7.6 evidence ceiling): the worker prompt gained the citable-excerpt line (tee + p2o_capture artifact
+  // ID) and the boundary_invariant teaching in EVIDENCE_TAIL, so both instruction hashes moved on purpose; the brief
+  // hashes are unchanged because workerBrief carries neither the evidence rules nor the capture ceiling.
   it.each([
-    ['url', '4ea207857dc697b84879850521c7a00b586a66cbde46348c6b17bb443fff4fd3', '9c42b63acf752ab70bdd2980e05a75db8d1a35a9afc345324e847d90afa226c7'],
-    ['directory', '53b9fa00d40104cea8ef3cc8608ae55936c9faedbb7a82ae934c8bed5fd82a13', '1a569560f44bef4644c30b8771cd09c6bfe81f90ece813da0a773390412828a9'],
+    ['url', '81bf86cb786e93661c778d2938407d8573ecaa3b6a4b8eebc70060761b6310d3', '9c42b63acf752ab70bdd2980e05a75db8d1a35a9afc345324e847d90afa226c7'],
+    ['directory', '280381f7f563aada7e4135a280fcbf6d3d7b5c57cb1cc1b8d1a6bfd6bb19051b', '1a569560f44bef4644c30b8771cd09c6bfe81f90ece813da0a773390412828a9'],
   ])('pins %s worker guidance for the Planner/frontier revision; historical acceptance artifacts are not rewritten', (kind, instructionHash, briefHash) => {
     const ticket = { workerId: 'worker-test', role: 'recon', runId: 'run-test', depth: 1, parentWorkerId: null,
       lifetime: 'until-stopped', target: { kind, label: kind === 'url' ? 'https://example.invalid' : '/target' } } as Ticket;
