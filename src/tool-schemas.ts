@@ -35,10 +35,11 @@ export const taskDraftSchema = Type.Object({
     methodReason:Type.Optional(Type.String({maxLength:1000,description:'Why this method answers the question. Required (at least 10 characters) for every role except recon; the host refuses the intent when it is missing'})),
   },{additionalProperties:false});
 
-export const TASK_ACTIONS = ['create','revise','match','list','start','review','close','block','cancel','dispatch'] as const;
+/** P8.3: `match` is no longer a task action; create performs the same preflight and returns its payload instead of creating. */
+export const TASK_ACTIONS = ['create','revise','list','start','review','close','block','cancel','dispatch'] as const;
 /** P13e: one row per action, so a new action is a type error instead of inheriting a default parameter list. */
 export const TASK_ACTION_PARAMETERS: Readonly<Record<typeof TASK_ACTIONS[number], readonly string[]>> = {
-  create: ['action','draft'], match: ['action','draft'], revise: ['action','draft','id','revision'], list: ['action','id','cursor','limit'],
+  create: ['action','draft'], revise: ['action','draft','id','revision'], list: ['action','id','cursor','limit'],
   dispatch: ['action','ids','id','priority','workerId'], start: ['action','id'],
   review: ['action','id','revision','reason','evidenceIds','externalEvidence'], close: ['action','id','revision','reason','evidenceIds','externalEvidence'],
   block: ['action','id','revision','reason','evidenceIds','externalEvidence'], cancel: ['action','id','revision','reason','evidenceIds','externalEvidence'],

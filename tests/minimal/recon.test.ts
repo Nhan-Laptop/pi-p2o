@@ -105,9 +105,15 @@ describe('bounded recon contract', () => {
   // 2026-10-26 (P7.2/A7.6 evidence ceiling): the worker prompt gained the citable-excerpt line (tee + p2o_capture artifact
   // ID) and the boundary_invariant teaching in EVIDENCE_TAIL, so both instruction hashes moved on purpose; the brief
   // hashes are unchanged because workerBrief carries neither the evidence rules nor the capture ceiling.
+  // 2026-10-27 (P8.1 tool-surface truth): the worker loadout line now names all 19 active tools (it had omitted
+  // p2o_skill_list/p2o_skill_read/p2o_research/p2o_capture/p2o_session/p2o_state and still said "No host tools"), and the
+  // reporting-discipline line routes coverage through p2o_surface/p2o_candidate instead of a coverage note, so both
+  // instruction hashes moved on purpose; the brief hashes are unchanged because workerBrief carries neither line.
+  // 2026-10-27 (P8.2 fetch truth): the loadout line no longer says "a capped citation fetch" — Part XI leaves the fetch
+  // uncapped and host-side — so both instruction hashes moved on purpose; the brief hashes are unchanged.
   it.each([
-    ['url', '81bf86cb786e93661c778d2938407d8573ecaa3b6a4b8eebc70060761b6310d3', '9c42b63acf752ab70bdd2980e05a75db8d1a35a9afc345324e847d90afa226c7'],
-    ['directory', '280381f7f563aada7e4135a280fcbf6d3d7b5c57cb1cc1b8d1a6bfd6bb19051b', '1a569560f44bef4644c30b8771cd09c6bfe81f90ece813da0a773390412828a9'],
+    ['url', 'de7596afd47a1f10e335353eb5eac01eaacab9367a18350093913857676b131c', '9c42b63acf752ab70bdd2980e05a75db8d1a35a9afc345324e847d90afa226c7'],
+    ['directory', 'bc577ef84e22ceafbcd304884c68d4a179045e0f2e6ad3f8e6ee8958f66e1240', '1a569560f44bef4644c30b8771cd09c6bfe81f90ece813da0a773390412828a9'],
   ])('pins %s worker guidance for the Planner/frontier revision; historical acceptance artifacts are not rewritten', (kind, instructionHash, briefHash) => {
     const ticket = { workerId: 'worker-test', role: 'recon', runId: 'run-test', depth: 1, parentWorkerId: null,
       lifetime: 'until-stopped', target: { kind, label: kind === 'url' ? 'https://example.invalid' : '/target' } } as Ticket;

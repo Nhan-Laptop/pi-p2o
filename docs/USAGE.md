@@ -185,8 +185,8 @@ Domain (goal/todo/decision/case/coverage-plan/coverage-cell/task/phase/…) thay
 
 | Mảng | Tool của model (planner) | Tài liệu |
 |---|---|---|
-| Work admission, goal/todo/decision, phase card | `p2o_board board=tasks match=…`, `p2o_task_create`, `p2o_task_dispatch`, `p2o_plan_create` | [WORK_ADMISSION](WORK_ADMISSION.md) |
-| CVE lead (host fetch, allowlist) | `p2o_research action=cve` → `lead` record; `action=triage` | [PLANNER_ENGINE](PLANNER_ENGINE.md) |
+| Work admission, goal/todo/decision, phase card | `p2o_task_create` (preflight trùng/history nằm trong chính create), `p2o_task_dispatch`, `p2o_plan_create` | [WORK_ADMISSION](WORK_ADMISSION.md) |
+| CVE lead (host fetch; bốn host gợi ý là lời khuyên, không phải allowlist) | `p2o_research action=cve` → `lead` record; `action=triage` | [PLANNER_ENGINE](PLANNER_ENGINE.md) |
 | Case, rating, coverage | `p2o_case_create` / `_revise` / `_rate`, `p2o_coverage_plan` / `p2o_coverage_suggest`; không có verb cell: `p2o_coverage_plan` chỉ ghi scope/exclusions/unknownScope + review state (plan mới mang marker `derivation:'projected'`), còn cell do host chiếu từ task đã review + claim worker + case accepted + revision asset; `p2o_board board=coverage` trả cell dẫn xuất, count dẫn xuất và unmapped gap | [CASE_REVIEW](CASE_REVIEW.md) |
 | Graph tài sản/fact | `p2o_graph` (planner thêm `action=chain`) | [ASSET_GRAPH](ASSET_GRAPH.md) |
 | Chain: primitive này cấp gì, bước nào còn thiếu | `p2o_graph action=chain` (planner-only) | [ASSET_GRAPH](ASSET_GRAPH.md) |

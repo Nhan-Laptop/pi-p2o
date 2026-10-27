@@ -47,6 +47,19 @@ describe('Planner/Engine/Worker extension contract',()=>{
       expect(h.sandboxes[0].commands.length).toBeGreaterThan(0);
     });
   });
+  it('withdraws the dispatched task when the lead stops its worker, at the revision the stop observed (P8.4)',async()=>{
+    await fixture(async(h)=>{
+      const task=(await h.call('p2o_task_create',{draft:draft('withdrawn-surface')})).details;
+      await h.call('p2o_task_dispatch',{ids:[task.id]});
+      await until(()=>h.herdr.calls.filter((c:any)=>c.op==='start').length===1);
+      const workerId=h.herdr.calls.find((c:any)=>c.op==='start')!.name;
+      const stopped=(await h.call('p2o_workers',{action:'stop',workerId,reason:'scope withdrawn'})).details;
+      expect(stopped.taskWithdrawn?.taskId).toBe(task.id);
+      const cancelled=(await h.call('p2o_board',{board:'tasks',id:task.id})).details;
+      expect(cancelled.status).toBe('cancelled');
+      expect(cancelled.revision).toBe(stopped.taskWithdrawn.revision);
+    });
+  });
   it('reuses three slots for 30 attributed assignments with unique tickets and no allowance to reset',async()=>{
     await fixture(async(h)=>{
       const ids:string[]=[];for(let i=0;i<30;i++)ids.push((await h.call('p2o_task_create',{draft:draft(`surface-${i}`)})).details.id);

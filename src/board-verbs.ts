@@ -37,10 +37,11 @@ export const PLAN_VERB_ACTIONS = {
   p2o_plan_revise: 'revise',
 } as const;
 
-/** Old action -> new verb. `null` is deliberately removed; `p2o_board` is the only list/view reader. */
+/** Old action -> new verb. `null` is deliberately removed: `p2o_board` is the only list/view reader, and a task match now
+ * happens inside `p2o_task_create` itself, which returns the match payload instead of creating when an exact attempt exists. */
 export const BOARD_ACTION_VERBS: Readonly<Record<string, Readonly<Record<string, string | null>>>> = {
   p2o_task: {
-    create: 'p2o_task_create', revise: 'p2o_task_revise', match: 'p2o_board', dispatch: 'p2o_task_dispatch',
+    create: 'p2o_task_create', revise: 'p2o_task_revise', match: null, dispatch: 'p2o_task_dispatch',
     review: 'p2o_task_review', close: 'p2o_task_settle', block: 'p2o_task_settle', cancel: 'p2o_task_settle',
     list: 'p2o_board', start: 'p2o_task_start',
   },
@@ -94,7 +95,7 @@ export const planCreateParameters = Type.Object({ entry: planEntrySchema, reques
 export const planReviseParameters = Type.Object({ entry: planEntrySchema, id: id(), revision: Type.Integer({ minimum: 1 }), requestId: requestId() }, { additionalProperties: false });
 
 export const boardParameters = Type.Object({
-  board: choices(BOARD_NAMES), id: Type.Optional(id()), match: Type.Optional(taskDraftSchema), cursor: Type.Optional(Type.Integer({ minimum: 0 })),
+  board: choices(BOARD_NAMES), id: Type.Optional(id()), cursor: Type.Optional(Type.Integer({ minimum: 0 })),
   limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 100 })), status: Type.Optional(choices(CASE_REVIEW_STATUSES)),
   kind: Type.Optional(choices(PLAN_KINDS)),
 }, { additionalProperties: false });

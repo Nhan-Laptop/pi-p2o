@@ -37,7 +37,8 @@ describe('L1/W2 board verbs', () => {
       expect(verb, `${oldTool} ${action}`).not.toBeUndefined();
       if (verb !== null) expect(BOARD_VERB_NAMES, `${oldTool} ${action}`).toContain(verb);
     }
-    expect(BOARD_ACTION_VERBS.p2o_task.match).toBe('p2o_board');
+    // P8.3: the separate read-only match verb was removed; create performs the same preflight and returns its payload.
+    expect(BOARD_ACTION_VERBS.p2o_task.match).toBeNull();
     expect(BOARD_ACTION_VERBS.p2o_task.start).toBe('p2o_task_start');
     expect(BOARD_ACTION_VERBS.p2o_case.view).toBe('p2o_board');
     expect(BOARD_ACTION_VERBS.p2o_coverage.suggest).toBe('p2o_coverage_suggest');

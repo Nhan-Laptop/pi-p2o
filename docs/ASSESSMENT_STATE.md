@@ -8,7 +8,8 @@ confirmation and the live owner establish authority; disk state, summaries and w
 - `p2o_task_create` (planner only) creates a bounded question: surface, risk, role, contrasting predictions, evidence IDs,
   prerequisite revisions, method and stop condition. Missing prerequisites create a **blocked** task.
 - Verbs: `p2o_task_create`, `p2o_task_revise` (needs current `revision`), `p2o_task_dispatch`, `p2o_task_review`,
-  `p2o_task_settle`; `p2o_board` is the only list/view reader and runs `match` on tasks ([work admission](WORK_ADMISSION.md)). Use the board `id` view for one task in full.
+  `p2o_task_settle`; `p2o_board` is the only list/view reader, and the duplicate/history preflight runs inside
+  `p2o_task_create` itself ([work admission](WORK_ADMISSION.md)). Use the board `id` view for one task in full.
 - A running worker packet must be reported first. Review is an attributed decision, **not proof**; closing a task and
   closing a candidate are separate. A validation task names `validationOf` and the reviewed predecessor revision.
 - Dispatch pins accepted support; revised support makes dependents stale. Surface/risk keys cannot overlap between

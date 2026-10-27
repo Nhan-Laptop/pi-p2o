@@ -29,8 +29,9 @@ ngân sách. "Goal" ở đây là record mục tiêu của assessment. Bản chi
 ## Intent admission (P1/A2)
 
 Task board là **bảng intent**, không phải form giao việc: planner nói muốn học gì (question, surface, role, `work` identity nếu
-có), host điền các trường chỉ host biết. `p2o_task_create`, `p2o_task_revise` và `p2o_board board=tasks match` chạy cùng một
-bước canonicalize + anchor trong `src/tasks.ts`/`src/work.ts`, nên `match` thấy đúng identity mà create sẽ lưu.
+có), host điền các trường chỉ host biết. `p2o_task_create` và `p2o_task_revise` chạy cùng một bước canonicalize + anchor
+trong `src/tasks.ts`/`src/work.ts`, và create tự chạy preflight trùng/history trên đúng identity đó, nên không còn verb đọc
+`match` riêng: một attempt active/reusable đúng identity được trả về dưới dạng match payload thay vì tạo task thứ hai.
 
 | Trường host suy ra | Lấy từ | Giá trị |
 |---|---|---|
@@ -89,7 +90,8 @@ backend thì validation vẫn được tạo nhưng mang `missingPrerequisites` 
 
 ## Dùng
 
-`p2o_board {"board":"tasks","match":…}` tra cả task đang chạy và lịch sử có index (không phải đuôi hiển thị) trước khi giao việc:
+`p2o_task_create` với `draft` tra cả task đang chạy và lịch sử có index (không phải đuôi hiển thị) trước khi tạo: nếu có
+attempt đúng identity, nó trả match payload và không tạo task mới.
 
 | Kết quả | Ý nghĩa |
 |---|---|
@@ -142,8 +144,8 @@ Một `create` bị từ chối vì obligation không biến mất khỏi transc
 "thuế admission" hiện ra trong báo cáo thay vì chỉ nằm trong hội thoại. Con số này là quan sát, không phải hạn mức.
 
 `work.purpose` được điền từ role khi draft bỏ trống (`purposeFromRole`), `outputContract` từ purpose và `decision` từ anchor,
-nên planner không phải nhớ các trường chỉ để qua validate; `match` chạy trước `create` nên cả hai đường đều canonicalize + anchor
-trước khi kiểm (xem [Intent admission](#intent-admission-p1a2)).
+nên planner không phải nhớ các trường chỉ để qua validate; preflight trùng/history nằm ngay trong `create` và chạy trên cùng
+bước canonicalize + anchor đó, trước khi task được ghi (xem [Intent admission](#intent-admission-p1a2)).
 
 ## Continuation (M8)
 

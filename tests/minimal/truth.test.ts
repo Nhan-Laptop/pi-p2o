@@ -38,6 +38,10 @@ const RETIRED = [
   'redirects stop before contacting other origins',
   'Credentials must be operator-supplied',
   'Supplied credentials and returned data',
+  // P8.2 truth half: the citation fetch is host-side and uncapped under Part XI. The stale P14.8 comment claimed it ran
+  // inside the caller's own sandbox, and the worker loadout line called it capped; both statements were false.
+  "runs inside the caller's own sandbox",
+  'capped citation fetch',
 ];
 const TEXT_FILE = /\.(?:ts|md|json)$/;
 async function shippedText(directory: string): Promise<Array<{ file: string; text: string }>> {
@@ -106,6 +110,16 @@ describe('P7.0 truth pass', () => {
     expect(worker).not.toContain('operator-supplied');
     expect(TOOL_BOUNDARIES.p2o_http.join(' ')).toContain('starting label');
     expect(TOOL_BOUNDARIES.p2o_http.join(' ')).not.toContain('origin');
+  });
+
+  it('states the citation fetch as Part XI keeps it: host-side, uncapped, and never the caller\'s own sandbox (P8.2)', () => {
+    const research = registrations().get('p2o_research')!.description as string;
+    const worker = workerInstructions(ticket('recon'));
+    // Part XI: the target is a label, not an egress boundary, and the citation fetch is host-side with no allowlist and no
+    // response cap. The retired-claims test above pins the two false statements; this pins the true ones.
+    expect(research).toContain('host-side');
+    expect(research.toLowerCase()).toContain('no size cap');
+    expect(worker).toContain('citation fetch returns quoted data, never target evidence');
   });
 
   it('defines the risk label on every schema that asks for it', () => {

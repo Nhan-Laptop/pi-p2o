@@ -836,7 +836,7 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
     return true;
   }
 
-  async function stopWorker(current: OwnerRun, workerId: string, reason: string): Promise<{ workerId: string; status: string; paneClosed: boolean }> {
+  async function stopWorker(current: OwnerRun, workerId: string, reason: string): Promise<{ workerId: string; status: string; paneClosed: boolean; taskWithdrawn?: { taskId: string; revision: number } }> {
     const registration = current.workers.get(workerId);
     if (!registration) fail('WORKER_UNKNOWN', `no worker ${workerId} in this assessment`);
     current.broker.revoke(workerId);
@@ -847,10 +847,24 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
     const status = (await herdr.statuses([workerId])).get(workerId) ?? 'unknown';
     registration.stopped = true;
     current.progress.record(workerId,'cancelled');
-    if (registration.taskId) await current.board.transition(registration.taskId,'cancelled',`Worker withdrawn: ${reason}`).catch(() => {});
+    // P8.4: the withdrawal is a real task transition, so it carries the revision the stop observed. A stale board refuses it
+    // (the stop itself still wins) and the refusal is recorded instead of being swallowed silently. A board read failure is
+    // recorded the same way: the worker is already revoked and its pane closed, so the stop must not depend on the ledger.
+    let taskWithdrawn: { taskId: string; revision: number } | undefined;
+    if (registration.taskId) {
+      try {
+        const task = (await current.board.list()).find(entry => entry.id === registration.taskId);
+        if (task) {
+          const updated = await current.board.transition(task.id,'cancelled',`Worker withdrawn: ${reason}`, undefined, task.revision);
+          taskWithdrawn = { taskId: updated.id, revision: updated.revision };
+        }
+      } catch (error) {
+        await note({ by: 'owner', kind: 'lifecycle', text: `stop ${workerId}: task ${registration.taskId} withdrawal not committed: ${cleanText(message(error)).slice(0, 300)}`, workerId, role: registration.role, depth: registration.depth });
+      }
+    }
     await note({ by: 'owner', kind: 'lifecycle', text: `stopped ${workerId}: ${reason} (pane ${closed ? 'closed' : 'still present'})`, workerId, role: registration.role, depth: registration.depth });
     current.engine.notify('worker-withdrawn',workerId,reason);
-    return { workerId, status, paneClosed: closed };
+    return { workerId, status, paneClosed: closed, ...(taskWithdrawn ? { taskWithdrawn } : {}) };
   }
 
   /** P16.3: what the run already recorded, bounded and labelled background, so a worker starts from the graph. */
@@ -1583,12 +1597,10 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
     return track(current,task);
   }
   /**
-   * planning_update.md P14.8: a citation lookup, never an evidence path. The corpus is local and hashed; a fetch is one
-   * of the URLs the corpus already cites, runs inside the caller's own sandbox, and lands in the ledger as a `research`
-   * record with its hash. Text inside a fetched page is quoted data — an instruction found there is reported, not obeyed.
+   * planning_update.md P14.8/P16.4 and Part XI: a citation lookup, never an evidence path. The corpus is local and hashed;
+   * a fetch is host-side with no allowlist and no response cap, and lands in the ledger as a `research` record with the
+   * body hash and final URL. Text inside a fetched page is quoted data — an instruction found there is reported, not obeyed.
    */
-  /** P16.4: host-side fetch, allowlisted. The model names a product/version; the destination is the host's choice. */
-  /** Host-side fetch with no allowlist and no response cap (Part XI). Provenance is the URL plus the body hash. */
   async function fetchPage(url: string): Promise<{ status: number; body: string; sha256: string; bytes: number; contentType?: string; finalUrl: string }> {
     const parsed = new URL(url);
     if (!['http:', 'https:'].includes(parsed.protocol)) throw Error('Research fetch accepts http(s) URLs only');
@@ -1907,21 +1919,21 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
           }));
         }
         let task:AssessmentTask;
-        if (p.action === 'create' || p.action === 'revise' || p.action === 'match') {
+        if (p.action === 'create' || p.action === 'revise') {
           if (!p.draft) throw Error('Task draft is required');
           const draft = p.draft as Record<string,any> & {skills?:string[];workflow?:string;methodReason?:string};
           const {skills:names,workflow,methodReason,...draftFields} = draft;
           const role = resolveRole({role:draft.role,skills:names,settings:current.settings,purpose:workPurpose(draft.work),context:{kind:current.target.kind,needs:workNeeds(draft.work)}});
           // Optional at the schema level so a recon intent can omit them; validate() still requires them for every other role.
           const input = {...draftFields,roleReason:draft.roleReason??'',expectedTrue:draft.expectedTrue??'',expectedFalse:draft.expectedFalse??'',stopCondition:draft.stopCondition??'',method:await prepareMethod(current,role.skills,workflow,methodReason??'')} as TaskDraft;
-          if (p.action === 'create' || p.action === 'revise') {
-            const refusal = await engagementRefusal(current, input);
-            if (refusal) fail(refusal.code, refusal.message);
-          }
-          if(p.action==='match'||p.action==='create'&&input.work){
+          const refusal = await engagementRefusal(current, input);
+          if (refusal) fail(refusal.code, refusal.message);
+          // P8.3: create is its own duplicate/history preflight (the separate board match verb was removed). A structured-work
+          // draft gets the match payload instead of a create when an exact active or reusable attempt already exists.
+          if(p.action==='create'&&input.work){
             const matches=await current.board.match(input),tasks=await current.board.list();
             const result={...matches,already_covered_by:matches.active.map(t=>t.taskId),reuse_candidates:matches.reusable.map(t=>{const old=tasks.find(value=>value.id===t.taskId);return {...t,recordId:old?.recordId,evidenceIds:old?.evidenceIds??[],reviewReason:old?.reviewReason,limitations:'Reviewed coordination result only; currentness, contradictions and independent finding proof still require review'};}),warning:'Structured exact matching, not semantic prose equivalence or execution authority; unknown metadata and omissions are explicit'};
-            if(p.action==='match'||matches.active.length||matches.reusable.length)return result;
+            if(matches.active.length||matches.reusable.length)return result;
           }
           if (p.action === 'create') {
             try { task = await current.board.create(input); }
@@ -2067,9 +2079,8 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
   planVerb('p2o_plan_revise','Revise a goal, todo or decision',planReviseParameters,
     'PLANNER ONLY: revise a goal/todo/decision at id+revision, including goal review/close through the status field. This is coordination, not automatic proof or assessment completion.','revise');
   registerTool({name:'p2o_board',label:'Read the owner board',exposure:'model-only',parameters:boardParameters,
-    description:'PLANNER ONLY read: board=tasks, cases, coverage or plans. Without id it returns the bounded list; with id it returns that exact record (coverage id resolves a plan, whose cells are host-derived from reviewed work). board=tasks with match is an optional read-only duplicate/history preflight; it creates nothing, and p2o_task_create performs the same check itself. A match is coordination evidence, never authority or proof. Summaries are navigation; they grant no authority and complete nothing.',
-    async execute(_id:string,params:any){graphObject(params,['board','id','match','cursor','limit','status','kind'],'Board read');if(params.match!==undefined&&params.board!=='tasks')fail('INVALID_INPUT','match is only available on board=tasks');const current=owner();const action=params.match?'match':params.board==='tasks'?'list':boardReadAction(params.id as string|undefined);const input:any={action};
-      if(params.match!==undefined){input.draft=params.match;try{return await executeTaskAction(_id,input);}catch(error){throw Error(`Read-only task match failed: ${message(error)}. This call created nothing; use p2o_task_create with the corrected draft to create.`);}}
+    description:'PLANNER ONLY read: board=tasks, cases, coverage or plans. Without id it returns the bounded list; with id it returns that exact record (coverage id resolves a plan, whose cells are host-derived from reviewed work). This is the only list/view reader for those four entity boards: p2o_state lists indexed knowledge heads and search, and p2o_ledger reads record bytes by ID. Summaries are navigation; they grant no authority and complete nothing.',
+    async execute(_id:string,params:any){graphObject(params,['board','id','cursor','limit','status','kind'],'Board read');const current=owner();const action=params.board==='tasks'?'list':boardReadAction(params.id as string|undefined);const input:any={action};
       if(params.id!==undefined)input.id=params.id;
       else {if(params.cursor!==undefined)input.cursor=params.cursor;if(params.limit!==undefined)input.limit=params.limit;}
       if(!params.id&&params.board==='cases'&&params.status!==undefined)input.status=params.status;
@@ -2383,7 +2394,7 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
   });
   registerTool({
     name: 'p2o_surface', label: 'Record recon surface', exposure: 'model-only',
-    description: 'Append one recon surface-inventory entry (component + entryPoint). A cheap non-blocking duplicate hint: duplicate=true means a prior entry with the same normalized component/entryPoint already exists in this run, not a block — keep mapping or move to a bounded question either way. Not the exact work identity of p2o_board board=tasks match.',
+    description: 'Append one recon surface-inventory entry (component + entryPoint). A cheap non-blocking duplicate hint: duplicate=true means a prior entry with the same normalized component/entryPoint already exists in this run, not a block — keep mapping or move to a bounded question either way. Not the exact work identity p2o_task_create checks before creating.',
     parameters: surfaceParameters,
     async execute(_id, params) {
       const current = run;
@@ -2692,6 +2703,9 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
           }
         }
         if (exportOnly) {
+          // A7.7/P8.0: an export flushes the allow digest before it renders. `/p2o report export` already did; this door did
+          // not, so the same run could print different operation counts depending on which export the operator used.
+          await flushPolicyDigest(current);
           const { rendered, index } = await renderStoreReport(current.store, current.records, { owner: current, endReason: 'export', kind: 'draft', unresolved: pre, narrative: current.narrative });
           const base = await defaultReportDirectory(current.ctx, current.runId, current.settings);
           const sequence = index.snapshotSequence ?? current.store.sequence();

@@ -1,18 +1,22 @@
 # P5 → P7 proposal — campaign horizon (closed), then the access ladder: internal network → RCE → LPE
 
-**Status: the P5 half is implemented and measured; the P7 half is a proposal.** This document now has two parts and one
+**Status: the P5 half is implemented and measured; the P7 half is a proposal.** This document now has three parts and one
 purpose. **Part I** (§1–§7, Appendices A–C) is the P5 campaign-horizon revision: implemented in `18c0427`, `6439eec` and
 `49930d5`, measured 6/6 on `run-615f7a9a-412e-47ed-81d0-5059406dc5ef` (69.8 min, $1.5703, 12 rounds, heartbeat 1 + event 9
 wakes, 0 stall/escalation/resume, one accepted Low case, honest partial report). It is kept as the closed record and is not
 rewritten. **Part II** (§8–§17, Appendices D–F) is **P7: the access ladder** — the extension's actual purpose in the owner's
 words: research bugs and vulnerabilities to get into the internal network, to RCE, then LPE, or something else
-critical/high. Part II is a proposal only; nothing below §8 is implemented. No code, model call, target contact or commit is
-made by this document.
+critical/high. Part II is a proposal only; nothing below §8 is implemented. **Part III** (§18–§26, Appendices G–H) is
+**P8: the tool-surface review** — a read-only audit of the 37 registered tools for duplicate or overlapping features, the
+control gaps the same pass found, and the owner decisions those need; proposal only, nothing below §18 is implemented. No
+code, model call, target contact or commit is made by this document.
 
 **How to read it.** Part I is history and measured evidence for the loop. Part II §8 diagnoses why the current workflow cannot
 climb, §9 sets ARTEX as the mechanism floor, §10 states the invariants, §11 the decisions, §12 the code corrections that
 shape the design, §13 the workstreams with exact seams, §14 what the measured gate must prove, §15–§17 migrations, risks and
-the owner's answers. The owner-decided constraints
+the owner's answers. Part III §18 states the question and the method, §19 how the surface is generated, §20 the verified
+findings, §21 the decisions, §22 the workstreams, §23 the phases, §24–§26 migrations, risks and open questions. The
+owner-decided constraints
 carry over unchanged: no token/wall-clock/round budget, no auto-resume, no host-side scope widening, and commit/push plus any
 paid or target-touching run remain owner-initiated only.
 
@@ -1458,3 +1462,434 @@ is a deliberate improvement, and the provenance note says so.
   requiring V1 ingress each widen the default surface. Their mitigations are named in §11 D15/D16, §16.1 and §14.2, and
   `--mode assess` stays one flag away.
 - It does not add a budget, a firewall or a security boundary the owner did not authorize.
+
+---
+
+# Part III — P8 proposal: tool surface review — deduplicate the real overlaps, keep the deliberate ones, close the control gaps
+
+**Status: P8.0–P8.4 implemented in the working tree on 2026-10-27 (Appendix I records what landed and where it deviates);
+P8.2 is closed at the truth layer because the owner re-confirmed Part XI for the citation fetch, and P8.5–P8.7 remain proposed.** Part III records a read-only review of the extension's registered
+tool surface at `main` @ `a1de686` — 37 tools: 35 model-visible across four role loadouts plus 2 hidden legacy verbs — requested
+by the owner on 2026-10-27 after P7 was committed. The ask was narrow: *the extension registers many helper tools; they may
+duplicate or overlap in feature; inspect each tool deeply so the overlap can be evaluated and fixed.* The answer separates
+three things such a request tends to conflate: a **real duplicate implementation**, a **deliberate façade** (the L1/W2 per-verb
+split, the layered read paths), and a **legacy or dead path** (the two hidden verbs, the unreachable owner branches of the
+target tools). It also records three **control gaps** the same pass found — one of them a report-correctness bug — which should
+not wait for a consolidation decision. The audit made no code change, model call, target contact or commit; it was a
+static read plus the repository's own green suite (Appendix H). Appendix I then records the implementation pass the owner approved.
+
+## 18. The question, the scope and the method
+
+
+Owner's question, verbatim intent: the extension's helper tools may be duplicated or overlapping in feature; inspect the
+feature of each tool deeply so the overlap can be evaluated and fixed; ask when clueless.
+
+**Scope.** All 37 registrations, their schemas, loadouts, boundary sentences, prompts, handlers and the tests that pin them.
+Out of scope: the broker protocol, sandbox/executor internals except where a tool's control claim lives there, and any change
+of authority or scope.
+
+**Method.** Static read at `a1de686`: §19 re-verifies how the surface is built, §20 carries a `file:line` for every finding.
+Three independent cluster reads (governance; target/lab; knowledge/report) were then reconciled against the tree; two claims
+were corrected by that pass (§20.5). The analysis changed no file; the scratch inventory under `tmp/` was deleted.
+
+**What this part is not.** It does not re-run the suite (it was green at `a1de686`: 1,031 tests pass, 12 skipped files), it
+executes no tool, no model call and no target operation, and it does not decide the owner's product tradeoffs — §21 puts those
+in front of the owner with recommended defaults.
+
+## 19. The surface as built today
+
+**Counts and roles.**
+
+| Surface | Count | Definition |
+| --- | --- | --- |
+| Registered | 37 | `ALL_TOOLS` = `MODEL_TOOLS` + `HIDDEN_TOOLS` (`src/tool-policy.ts:56-61`) |
+| Model-visible | 35 | the union of the four role loadouts (`MODEL_TOOLS`) |
+| Hidden | 2 | `p2o_delegate`, `p2o_task_start`; `exposure:'hidden'`, absent from every role matrix |
+| Planner | 24 | coordination only: no target, lab, claim or note tool (`src/tool-policy.ts:24-32`) |
+| Worker | 19 | the only executing role and the only candidate author (`:35-38`) |
+| Validation | 18 | worker minus `p2o_surface` (`:44`) |
+| Reporter | 6 | read-only second reader (`:48`) |
+
+**How it is generated.** Four per-verb generators (`extensions/p2o/index.ts:2028-2041`) wrap the retained action
+implementations; per-verb closed schemas live in `src/board-verbs.ts`; one boundary sentence per tool is appended at
+registration (`src/tool-guidelines.ts`, `withBoundaries`, and the inheritance rule at `:45-49`). Hidden verbs carry no boundary
+by convention (`src/tool-guidelines.ts:4`: a tool removed from the model surface has no line here).
+
+**L1/W2, the decision this part must not silently reverse.** The four owner board bags (`task`, `case`, `coverage`, `plan`) were
+split into one verb per decision; the rationale is `src/board-verbs.ts:11-15` ("Action bags made the model choose an action
+before it could read the shape, and every stale revision had to be narrated in prose"), and the old-action→verb map is
+`BOARD_ACTION_VERBS` (`:30-41`). Consequence: 12 of the 35 model-visible tools are board verbs, and "too many tools" is mostly
+this split working as designed. Any consolidation must say whether it is reversing L1/W2 (§21 D25) or not.
+
+## 20. Verified findings
+
+Severity: **high** = a duplicated execution/record path or a control claim the code does not honour; **medium** = two
+model-visible doors to one decision, or a write with weaker identity; **low** = vocabulary or shape drift with one consumer.
+
+### 20.1 Real duplication
+
+**F1 (medium) — `p2o_shell` and `p2o_net` are one implementation with two labels.** The code says it: "p2o_shell and p2o_net
+share one executor, receipt and broker path; only the receipt class and the guidance shown to the model differ"
+(`extensions/p2o/index.ts:2234-2236`). Both pass the same `execParameters` object (`src/tool-schemas.ts:125`), and enforcement
+cannot distinguish them: operator rules parsed at `src/policy.ts:76-88` **drop** the `kinds` field, and all eight seeds declare
+`['shell','net']` (`:37-44`). The split of *guidance* is deliberate (the 2026-10-25 audit at `src/tool-guidelines.ts:25` requires
+one boundary line per tool); what is accidental is that the split is the only difference. The one real difference is the
+evidence/report `operation` string (`src/report-export.ts:277`). → D26.
+
+**F2 (medium) — `p2o_shell session=<id> command=…` and `p2o_session action=exec` are the same code path.** Both call
+`sessionExecFor` (`:1345`): the shell owner path at `:2259`, the session action at `:2296`; both record a `shell` receipt. The
+`p2o_session` description itself advertises both spellings (`:2274-2280`). Related dead vocabulary: `send` is a declared policy
+kind (`src/policy.ts:16`) but no call site evaluates it — PTY send is gated as `shell` (`:1353`). → A8.3, A8.5.
+
+**F3 (medium) — `p2o_board board=tasks match` is an exact dry-run of `p2o_task_create`.** Both call `board.match` (`:1922`);
+create returns the match payload *instead of creating* on a hit (`:1923-1924`); the input schema is the same `taskDraftSchema`
+(`src/board-verbs.ts:97` vs `:63`). The only behavioural difference is the `work` gate (`:1921`): create preflights only when
+structured work exists, so board match is the only way to preflight a draft without it. Cost: a create with `work` computes work
+identity twice (`:1922`, then `src/tasks.ts:315`). → A8.3.
+
+**F4 (low) — `p2o_graph page` and `export` are two read doors to one store.** Same parameters
+(`src/state/graph-tool.ts:31-34`), different shapes: `page` returns raw asset rows with `uniqueAssets` and limit ≤100
+(`src/state/store.ts:891-898`); `export` returns current heads across four tables as a rendered graph with limit ≤500
+(`:900-908`). Not a strict subset (§20.5). → A8.3.
+
+**F5 (medium) — `p2o_workers action=list` re-emits three other tools' payloads.** It returns `engine: engine.snapshot()`,
+a task projection identical to `p2o_board board=tasks` (`:933` vs `:1893`), and a ledger page that appears twice
+(`changes` and `navigation.changes`, `:2598-2612`) and that `p2o_ledger` returns directly (`:2476-2477`). Shape is pinned by
+`tests/minimal/projection-counts.test.ts:38-44` and `tests/minimal/extension.test.ts:233`. → D30.
+
+**F6 (medium) — one held worker, two continuation verbs, one single-use hold.** `p2o_task_dispatch {workerId}` consumes the hold
+at `:788`; `p2o_workers action=continue` consumes the same hold at `:2582` (``consumeHeldContinuation``,
+`src/broker.ts:744-751`). Guards differ: dispatch demands a proposed owner task, the same role and `work.claimRefs` lineage
+(`:776-787`); continue sends free text with no task (`:2584`). Whichever runs first burns the hold for the other
+(`WORKER_NOT_HELD`, `:774`). → A8.3 (boundary) or D30.
+
+**F7 (medium) — task status `cancelled` has two writers with different guards.** `p2o_task_settle {outcome:'cancelled'}` passes
+the expected revision (`:1937`); `stopWorker` transitions the same status with no revision and swallows a failure
+(`:850`, `.catch(() => {})`). The two half-operations are opposed: settle-cancelled leaves the worker running, stop revokes the
+sandbox and closes the pane. → A8.4.
+
+**F8 (low) — plan/decision records have three authors.** `p2o_plan_create` (`:1962`); `p2o_loop wait + notBefore` writes a
+`decision` with `disposition:'defer'` (`:2542`); `p2o_graph action=chain plan:true` writes one todo per step (`:2429`, `:441`).
+Intentional and documented, but `p2o_board board=plans` shows rows the planner did not author. → A8.4 (boundary line only).
+
+**F9 (medium) — three write paths record "surface X, outcome Y", and only one is consumed.** `p2o_note kind=coverage`,
+`p2o_surface` and `p2o_candidate` all carry a surface; only the claim feeds the proof chain, cases and derived coverage.
+`p2o_surface` output is consumed by the duplicate hint and the unpromoted-coverage advisory; the completion preflight itself
+warns "surface/coverage note recorded but the plan still has no derived cell" (`src/finish-preflight.ts:63`). Worse, the worker
+prompt routes workers to the weak path — "Record coverage with p2o_note kind=coverage" (`src/prompts.ts:244`) — while the
+boundary says "Surfaces belong in p2o_surface" (`src/tool-guidelines.ts:32-33`). → A8.1 (prompt), A8.4 (retire, larger).
+
+**F10 (low) — vocabulary and dead code.** `p2o_note kind=note` and `kind=observation` are one record with one counter
+(`src/records.ts:355`); `lab action=env compose=true` is unreachable (refused for workers, and the only role allowed to use it
+holds no lab tool); `session` names two different things (container id enforced as `^session-[a-f0-9]{8}$` at `:1290`, vs the
+HTTP cookie jar, `src/tool-schemas.ts:158`); `timeout` carries four meanings and the PTY form clamps to 60 s (`:2244`) against
+the "no 60-second ceiling" description; `skillListParameters`, `skillReadParameters` and `ledgerParameters` omit
+`additionalProperties:false` like the rest. → A8.5.
+
+**F11 (medium, structural) — the owner branch of every target/lab handler is unreachable.** `TARGET_TOOLS`/`LAB_TOOLS` are not
+in `PLANNER_TOOLS` (`src/tool-policy.ts:14-32`), and the owner receives exactly `plannerTools()`; the planner is blocked at
+`tool_call` (`tests/minimal/extension.test.ts:552-556`). Yet five handlers keep `if (role === 'owner')` execution branches
+(`:2249`, `:2294`, `:2352`, capture `:2228-2231`, lab `:2166-2218`) and fixtures call them directly. This is dead authority
+kept for tests, not live surface. → D31.
+
+### 20.2 Deliberate façades — do not "fix" without a decision
+
+| Façade | Where it is stated | Verdict |
+| --- | --- | --- |
+| 12 board verbs from 4 bags | `src/board-verbs.ts:11-15,30-41` | Keep (D25); it is the L1/W2 product |
+| board / state / ledger / graph read layering | `src/tool-guidelines.ts:18,23,35` | Keep the layering (D30); the boundaries do not name each other — add a sentence |
+| artifact (read) vs capture (write) | `src/tool-guidelines.ts:19,34` | Complementary, keep |
+| lab payload/env vs candidate `payloadRef`/`environmentRef` | `src/tool-guidelines.ts:20,31` | Complementary, keep |
+| report (worker→lead) vs finish (owner→run end) | `src/tool-guidelines.ts:24,40` | Different roles, keep |
+| `p2o_secret` list-only | `src/tool-guidelines.ts:29` | No duplicate identity surface |
+| `p2o_http` principal-local cookie jars | `docs/HTTP_TRANSPORT.md` | Complementary transport, keep |
+| coverage plan (write) vs coverage suggest (read-only WSTG) | `src/tool-guidelines.ts:15-16` | Different verbs, keep |
+| `p2o_note kind=open` | `src/records.ts:348` | Feeds open gaps; not dead |
+
+One gap inside the layering is real: `p2o_state` search returns record ids (`src/search.ts:47`) while `p2o_board` returns entity
+ids, and only `p2o_ledger id=` accepts the record id — a naming trap, not a duplicate. A boundary sentence fixes it (A8.3).
+
+### 20.3 Legacy and dead paths
+
+- **Hidden `p2o_delegate`** — comment: "A1/D5: removed from the model surface … Hidden until A2 deletes the handler"
+  (`:2482-2483`); the body still creates a task, reserves it, transitions to `running` and spawns, bypassing the frontier
+  (`:678-680,682,733,2491`). It is a second execution path, kept alive by tests: ~21 test files and ~82 references, including a
+  fixture that depends on the synchronous spawn (`tests/minimal/helpers/report-fixture.ts:77` uses `p2o_task_start`).
+- **Hidden `p2o_task_start`** — `HIDDEN LEGACY` (`:2048`); the handler at `:1936` still performs owner execution;
+  `src/board-verbs.ts:21,45` keeps the only internal mapping. The two hidden verbs are absent from every role matrix and from
+  the prompts (`tests/minimal/board-verbs.test.ts:128`, `tests/minimal/authority.test.ts:100-108`).
+- **Decision**: deletion belongs to A2, not to this part (D28). Part III adds only a guard test and records the fixture cost.
+
+### 20.4 Control gaps the same pass found
+
+**G1 (high) — `p2o_research action=fetch` is an uncontrolled host-side fetch.** `fetchPage` (`:1592-1598`) is a plain Node
+`fetch` with `redirect:'follow'`; no allowlist, no read or return cap, no sandbox, no policy kind (`POLICY_KINDS`,
+`src/policy.ts:16`, has no `fetch`), no receipt/evidence id — only a `research` ledger record (`:1650-1663`). The tool
+description is candid ("no allowlist and no size cap", `:2099`), but a worker can reach `127.0.0.1`, RFC1918 and
+`169.254.169.254` from the Pi host, and the fetched body enters the result uncapped. A stale P14.8 comment above the function
+(`:1585-1590`) still claims the fetch "runs inside the caller's own sandbox" — it does not. → D29, A8.2.
+
+**G2 (high) — the worker prompt under-describes its own loadout.** `WORKER_TOOL_LINE` (`src/prompts.ts:210`) lists 13 of the 19
+active tools: it omits `p2o_skill_list`, `p2o_skill_read`, `p2o_research`, `p2o_capture`, `p2o_session` and `p2o_state`
+(loadout: `src/tool-policy.ts:35-38`); `VALIDATION_TOOL_LINE` (`:211`) is the same minus surface. It also says "No host tools"
+while G1 gives every worker a host-side network path, and a later worker line tells it to call `p2o_session action=open`
+(`:241`) — a tool the inventory line never names. → A8.1.
+
+**G3 (medium) — `p2o_finish{export:true}` does not flush the policy digest.** The finish-export branch renders the report
+without `flushPolicyDigest` (`:2694-2701`); the manual `/p2o report export` flushes first with the explicit comment "a manual
+export flushes the allow digest first, so the report counts the operations that already ran" (`:2779`); cleanup also flushes
+(`:1156`). Grep confirms no flush on the finish-export path. Two export surfaces therefore can print different operation
+counts for the same run. → A8.0.
+
+**G4 (medium) — "every command still passes the operation gate and the command policy" is true for three operations, not four.**
+`shell|net|http` are enforced at the one dispatch seam (`:1494`); PTY writes ride the `shell` kind (`:1353`) although `send` is a
+declared kind; `pty-read` is deliberately ungated (no bytes written, `:1369-1370`); `capture` dispatches as `capture`, not a
+policy kind, while its description says "Uses normal target command admission" (`:2223`) — the sentence is true of admission and
+silent about policy. The `p2o_http` decision text is `requestLabel()` (`:225-228`, `:2352`), which names method, URL, body size
+and header **names** only, so an operator rule can never match a header or body value on that path. → A8.5 (wording) and §21
+D30 (accept the asymmetry explicitly).
+
+**G5 (low, to confirm) — the `p2o_http` "8 MiB curl transfer limit" claim has no matching cap in the sandbox call**
+(`:2342` vs `src/sandbox.ts:286-296`, per the target/lab cluster read). Not re-verified by execution. Recorded as an open item
+(§26 Q23), not a workstream.
+
+### 20.5 Corrections made by this pass
+
+- The target/lab cluster read called `p2o_graph page` a strict subset of `export`; the store shows two different result shapes
+  (`src/state/store.ts:891-908`). Recorded as two doors (F4), not a subset.
+- The governance cluster read counted three work-identity computations per create; it is two — the handler preflight (`:1922`)
+  and `TaskBoard.create` (`src/tasks.ts:315`); `:472` is the body of the match the handler already called.
+- The same read called `shell`/`net` "accidental duplication"; this part records it as "deliberate guidance split, accidental
+  alias" — the boundary text is the product, the shared implementation is the debt.
+
+## 21. Decisions (D25–D31, proposed; defaults recommended)
+
+| ID | Decision | Recommended default | Cost of the other choice |
+| --- | --- | --- | --- |
+| D25 | Keep L1/W2: one verb per decision; do **not** merge the task/case/plan/coverage families | Keep | Reversing it collapses 12 verbs into 4 action tools, deletes per-verb schemas and boundary inheritance, and touches every count pin, prompt and doc — for a duplication that is façade, not feature |
+| D26 | Merge `p2o_shell` + `p2o_net` into one exec tool with a required `kind` enum | Merge (37→36) | Two slots for one capability, distinguishable only in prose; the report keeps its granularity either way because `kind` preserves the receipt class and the evidence `operation` |
+| D27 | Merge `p2o_skill_list` + `p2o_skill_read` into one `action` tool | Merge (36→35) | Two slots for one library, carried in four role matrices; the broker already treats them as one family (`src/broker.ts:324-328`) |
+| D28 | Hidden verbs: deletion stays with A2 | Defer; add only a guard test | The two hidden handlers and their fixtures remain until A2 |
+| D29 | `p2o_research` fetch: allowlist + read/return caps + explicit record now; policy/receipt integration later | **Answered 2026-10-27: keep Part XI — truth layer only, no allowlist and no cap (Appendix I)** | Leaving it open keeps a host-side fetch with no allowlist; routing it through policy now costs more and policy is still not an egress firewall (`src/policy.ts:31-37`). Part XI, however, records the opposite owner decision: the target is a label, not an egress boundary, and a citation fetch is any http(s) URL with no response cap |
+| D30 | Read surfaces: no merge; boundary sentences + one canonical read order | Boundary-only | Four model-visible doors remain and a model can still pick the wrong one; F5's duplicated payload stays |
+| D31 | Dead owner branches / `lab compose`: extract the test driver, then delete | Defer extraction; remove `compose=true` with it | Dead authority code and a tool description that advertises a path no role can reach |
+
+**No owner decision needed (fix as part of P8.0–P8.5):** G3 (report parity bug), G2 (prompt truth), F3/F4 (read dedup), F6
+(boundary rule), F7 (single `cancelled` writer), F10 (dead vocabulary). **Status (Appendix I):** G3, G2, F3/F4 and F7 are fixed; F10
+(P8.5) is not started; D29 was reclassified from "fix" to an owner decision because Part XI already answered the other way, and the
+owner re-confirmed Part XI on 2026-10-27, so only the truth layer changed.
+
+## 22. Workstreams (A8.0–A8.8)
+
+Each workstream names its seam, the change, the reason, what breaks and the effort (S ≤ 1 day, M 1–3 days, L > 3 days per the
+owner's review budget; all estimates are static-read judgments).
+
+**A8.0 — Report parity (G3).** Seam: `:2694-2701` (no flush) vs `:2779` (flush) vs `:1156` (cleanup). Change: flush the digest
+before `renderStoreReport` in the finish-export branch; add a test that both export paths report the same policy-digest numbers.
+Breakage: none expected. Effort S.
+
+**A8.1 — Prompt truth (G2, prompt half of F9).** Seam: `src/prompts.ts:210-211`, `:241`, `:244`. Change: complete both loadout
+lines to the real 19/18 names; correct "No host tools"; route coverage recording to `p2o_surface`/`p2o_candidate` + derived
+cells and keep `kind=open`. Breakage: the recon prompt hashes (`tests/minimal/recon.test.ts:109-110`, `url` and `directory`),
+any test pinning prompt text, docs that quote the line. Effort S. **Done (Appendix I):** the loadout sentence is now "The sandbox is
+your only execution surface: no host shell, host filesystem, Docker socket or consent dialogs", the coverage sentence is
+role-aware (validation holds no `p2o_surface`), and both instruction hashes were re-pinned twice — once here, once for the
+P8.2 wording fix. The "once D29 caps the fetch" condition was dropped: the line is true whether or not a cap exists.
+
+**A8.2 — Fetch control (G1).** Seam: `:1585-1598`, description `:2099`, record `:1650-1663`. Change: a fixed allowlist constant
+(`services.nvd.nist.gov`, `nvd.nist.gov`, `www.cve.org`, `cve.org`), a body cap (read ≤1 MiB, return ≤48 KiB), reject a redirect
+that lands off the allowlist, record `hostFetch:true`, delete the stale P14.8 comment. Breakage: `tests/minimal/research.test.ts`,
+the fetch paragraph in `docs/USAGE.md`. Effort S/M. **Closed in Appendix I:** only the truth half landed — the stale comment now
+says host-side/no-allowlist/no-cap and the loadout line no longer claims a cap. The allowlist, caps and redirect refusal would
+reverse **Part XI** (any http(s) destination and redirect is allowed; the citation fetch is host-side with no response cap), and
+on 2026-10-27 the owner re-confirmed Part XI, so the behavioural half is **declined by decision**, not pending.
+
+**A8.3 — Read dedup (F3, F4, F6, boundary half of D30).** Seam: `src/board-verbs.ts:43,97`; `:2071-2072,1921`;
+`src/state/graph-tool.ts:31-34`; `src/tool-guidelines.ts:18,23,35`. Change: drop `match` from `boardParameters` and always
+preflight in create (drop the `&& input.work` gate in the same change); retire `graph page` in favour of `export` with a cursor;
+add the four cross-boundary sentences (board/state/ledger/graph; dispatch names a task vs continue names a brief). Breakage:
+`tests/minimal/board-verbs.test.ts:40`, `tests/minimal/workspace-runtime.test.ts:511`, descriptions, `docs/WORK_ADMISSION.md`,
+`docs/ASSESSMENT_STATE.md`, `docs/USAGE.md`, graph tests. Effort S/M. **Done in Appendix I with two deviations:** board `match` is
+gone end to end and create owns the preflight, but the `&& input.work` gate was **kept** (a draft with no `work` has no
+structured identity, so the preflight returns an empty payload and creates nothing — the removed verb was that payload's only
+consumer), and `graph page` was **kept** because it returns raw rows plus `uniqueAssets`, a shape `graph export` does not
+produce; tests and three docs consume it.
+
+**A8.4 — Canonical writers (F7, F8, larger half of F9).** Seam: `:1937` vs `:850`; `:2542`; `:2429,440`. Change: one writer for
+`cancelled` (either stop passes `taskId`+`expectedRevision` and returns it, or stop stops transitioning and settle owns it);
+document loop/chain plan authorship in the `p2o_plan_create` boundary; decide whether `note kind=coverage` retires (larger, if
+D30 keeps it, say so in the boundary). Breakage: stop tests (none assert the status today), chain/loop tests, docs. Effort S/M.
+**Done (Appendix I):** the first option was taken — stop reads the task, transitions at the revision it observed and returns
+`taskWithdrawn:{taskId,revision}`; a refusal is a lifecycle note, no longer swallowed. `p2o_plan_create`'s boundary names the
+loop-`notBefore` decision and the chain-planning todos. `note kind=coverage` stays (D30) and its boundary now says the note is
+display context while cells come from reviewed claims. A planner fixture asserts the stopped worker's task is `cancelled`.
+
+**A8.5 — Vocabulary and dead code (F10, G4 wording).** Seam: `src/policy.ts:16`; `src/records.ts:355`; `src/tool-schemas.ts:49-50,125-131,158,176`;
+`:2244`. Change: delete or use the `send` kind; collapse `note`/`observation`; add the three missing
+`additionalProperties:false`; rename the PTY wait (`waitSeconds`) and the HTTP jar (`jar`); align `refs`/`command`/`body` caps;
+reword the capture admission sentence to match what it enforces. Breakage: schema-level tests, the timeout pin at
+`tests/minimal/workflow-policy.test.ts:66`, note tests. Effort S.
+
+**A8.6 — Optional surface reduction (D26, D27).** Seam: `src/tool-policy.ts:24-48`, `src/tool-guidelines.ts:6-43`, prompts,
+docs counts. Change: one `p2o_skill` action tool; one `p2o_exec` with `kind`. Breakage (all in one commit): counts at
+`tests/minimal/board-verbs.test.ts:29,61-66`, `tests/minimal/authority.test.ts:71-72`,
+`tests/minimal/workflow-policy.test.ts:82`; registry `tests/minimal/extension.test.ts:85`; worker pins
+`tests/minimal/worker.test.ts:101,115`; boundary keys; prompt hashes; docs counts (`docs/USAGE.md`, `docs/ACCEPTANCE_MATRIX.md`,
+`README.md`). Effort M.
+
+**A8.7 — Hidden deferral guard (D28).** Change: a test that `HIDDEN_TOOLS` ∩ every role matrix = ∅ and no prompt contains a
+hidden name (the second half exists at `tests/minimal/board-verbs.test.ts:128`); record the A2 fixture-migration plan in the
+test comment (synchronous spawn, 21 files). Effort S.
+
+**A8.8 — Dead authority (D31).** Seam: the five owner branches and `lab compose` (`:2155-2157`). Change: extract the owner-branch
+execution into host-side helpers the fixtures call, then delete the branches; remove `compose`. Breakage: five fixture families
+(session, identity-runtime, artifacts-docker, operator-controls, lab). Effort S/M extract + L delete.
+
+## 23. Phases and hermetic gate
+
+Ordering rule: the bug first, then the model-facing truth, then the control gap, then dedup and canonical writes, then
+vocabulary, then the two merges the owner must approve, then the deferred work. Every phase is independently gated; no phase
+depends on a campaign run.
+
+| Phase | Scope | Hermetic gate | Measured gate | Status 2026-10-27 (Appendix I) |
+| --- | --- | --- | --- | --- |
+| **P8.0 — Report parity** (A8.0) | flush before finish-export; parity test | parity test; full vitest | none | **Done** |
+| **P8.1 — Prompt truth** (A8.1) | loadout lines, host-tools sentence, coverage routing | recon hashes; prompt pins; full vitest | none | **Done** (hashes re-pinned) |
+| **P8.2 — Fetch control** (A8.2) | allowlist, caps, redirect rule, record, stale comment | allowlist/cap/redirect tests; no host network in tests | none | **Done at the truth layer — owner re-confirmed Part XI; behavioural half declined** |
+| **P8.3 — Read dedup** (A8.3) | board match, graph page, boundary sentences | mapping tests; docs parity; full vitest | none | **Done with two deviations** (graph page kept, `input.work` gate kept) |
+| **P8.4 — Canonical writers** (A8.4) | `cancelled` writer, plan authorship, coverage path decision | stop/settle tests; full vitest | none | **Done** |
+| **P8.5 — Vocabulary** (A8.5) | `send`, `observation`, `additionalProperties`, param names, caps | schema tests; timeout pin; full vitest | none | Not started |
+| **P8.6 — Surface reduction** (A8.6, owner gate D26/D27) | skill merge; shell/net merge with `kind` | all count pins, prompts, docs | none | Not started, owner gate |
+| **P8.7 — Deferred** (A8.8, A8.7, A2) | dead branches, hidden deletion | fixture migration; registry equality | none | Not started |
+
+The standard hermetic gate of every phase is the Part II §14.1 set: `npm run typecheck`, `npm run build`,
+`npm run check:build`, full `npx vitest run`, `git diff --check`, `detect_changes` clean, and documentation parity in
+`docs/ACCEPTANCE_MATRIX.md` with exact `<file>.test.ts :: <title>` citations. **There is no measured gate in Part III**: it
+changes no target behaviour, needs no paid call, no lab and no campaign run. One commit per phase, owner-initiated, per the
+repository rule.
+
+## 24. Migrations and compatibility
+
+| Surface | Change | Compatibility |
+| --- | --- | --- |
+| Tool count | 37 → 36 (D26) → 35 (D27); after A2 → 33 | Every count pin updated in the same commit as the merge; nothing else reads the number |
+| Tool schemas | `board.match` removed; `graph.page` retired; `session` action `exec` removed (if D25 path chosen) | Model-visible, so it is a breaking schema change for a model that used them; the replacement is named in the refusal/description |
+| Tool descriptions/boundaries | loadout lines corrected; cross-boundary sentences added; capture wording fixed | Prompt hashes change (`tests/minimal/recon.test.ts:109-110`); prompt-cache prefix changes once (cost only) |
+| `p2o_research` | allowlist + caps on `action=fetch` | A URL outside the allowlist is refused with a legal next step; `action=technique`/`cve`/`triage` unchanged |
+| Stored data | none | No record shape, id or status changes; every phase is reversible by reverting its commit |
+| Reports | finish export now includes the flushed digest | Counts can go up for runs whose digest was pending; that is the fix, not a regression |
+| Docs | USAGE, ACCEPTANCE_MATRIX, ARCHITECTURE, README counts, WORK_ADMISSION | Documentation parity gate per phase |
+| Tests | count pins, prompt hashes, registry equality, projection shape | Same-phase updates; no test is deleted to make a phase pass |
+
+No data migration is required: the only stored-byte change is the additive `hostFetch:true` data field on future research
+records.
+
+## 25. Risks, non-goals and metrics
+
+**Risks.** (1) Every merge touches six count pins plus the registry-equality test — do them as one commit per phase, not in a
+batch with other work. (2) Prompt edits invalidate the recon hashes and the static prompt-cache prefix; that is a cost, not a
+bug, but P8.1 must land the hash update in the same commit. (3) Removing `board match` loses the work-less preflight unless the
+gate change ships with it (A8.3 names both). (4) An allowlist could refuse a legitimate citation mirror the description
+advertises — the four hosts are the description's own set, and Q22 keeps the override question open. (5) Deleting the dead owner
+branches churns five fixture families; extract-then-delete is the mitigation, not a bigger diff. (6) A future refactor could
+re-expose a hidden verb; A8.7's guard test is the mitigation until A2 deletes the handlers.
+
+**Non-goals.** No family merge (D25); no read-surface unification (D30); no new tool; no authority, scope, budget or credential
+change; no target contact, no campaign run, no measured gate; no HTML/dashboard rendering change.
+
+**Metrics to record.** Registered tool count (37 → 35, or 33 after A2); duplicate doors per operation (exec 2→1, skill 2→1,
+board match 2→1, graph read 2→1, continuation 2→1 or documented); worker prompt inventory coverage (13/19 → 19/19, validation
+18/18); policy-gated dispatch classes (3/4 → 4/4 or documented); tests added per phase; and the count of findings closed
+(F1–F11, G1–G4) versus explicitly accepted (D30's read doors).
+
+## 26. Open questions for the owner (Q19–Q25)
+
+- **Q19 — L1/W2.** Keep one verb per decision and reject the family merge (recommended), or does surface economy outweigh the
+  per-verb schema and boundary? Reversing it is the largest single change in this part.
+- **Q20 — `shell`/`net`.** Merge into one exec tool with `kind` (recommended), or keep two tools because the two boundary
+  sentences are the product?
+- **Q21 — skills.** Merge `skill_list`/`skill_read` into one action tool (recommended), or keep the pair?
+- **Q22 — fetch.** Allowlist + caps only (recommended), or also route the fetch through `executeWithReceipt`/policy for a
+  receipt and audit — and if so, is a host-level `ask` acceptable for a citation fetch? **Answered 2026-10-27: keep Part XI
+  (any http(s) destination, no allowlist, no cap); the truth layer was fixed and the behavioural half was declined (Appendix I).**
+- **Q23 — hidden verbs.** Defer deletion to A2 (recommended), or delete now and migrate the ~21 test files in the same phase?
+- **Q24 — scope of this pass.** Land P8.0–P8.4 now and defer P8.5–P8.7 (recommended), or do the whole part? **Answered
+  2026-10-27: the owner said "do it"; P8.0–P8.4 are implemented (Appendix I) and P8.5–P8.7 were left for a later pass.**
+- **Q25 — commit cadence.** One commit per phase, owner-initiated — acceptable? No commit or push happens from this
+  document. **Status: no commit or push was made; the working tree holds the change for the owner's review.**
+
+Also to confirm in Q22/Q26-spirit: whether the `p2o_http` "8 MiB curl transfer limit" claim in the description is enforced
+anywhere (G5) — the audit could not find a matching cap.
+
+## Appendix G — traceability: finding → decision → workstream → phase
+
+| Finding | Severity | Decision | Workstream | Phase |
+| --- | --- | --- | --- | --- |
+| F1 shell ≡ net alias | medium | D26 | A8.6 | P8.6 |
+| F2 session exec alias; `send` kind dead | medium | D25, A8.5 | A8.3, A8.5 | P8.3, P8.5 |
+| F3 board match = create dry-run | medium | — | A8.3 | P8.3 |
+| F4 graph page/export two doors | low | D30 | A8.3 | P8.3 |
+| F5 workers list re-emits three payloads | medium | D30 | — (accepted) | — |
+| F6 continuation two consumers | medium | D30 | A8.3 | P8.3 |
+| F7 `cancelled` two writers | medium | — | A8.4 | P8.4 |
+| F8 plan records three authors | low | — | A8.4 | P8.4 |
+| F9 coverage write paths | medium | — | A8.1, A8.4 | P8.1, P8.4 |
+| F10 vocabulary / dead code | low | — | A8.5 | P8.5 |
+| F11 dead owner branches | medium | D31 | A8.8 | P8.7 |
+| G1 research fetch uncontrolled | high | D29 closed: keep Part XI (owner 2026-10-27) | A8.2 (truth half only) | P8.2 |
+| G2 prompt inventory drift | high | — | A8.1 | P8.1 |
+| G3 finish export digest parity | medium | — | A8.0 | P8.0 |
+| G4 gate-coverage wording | medium | D30 | A8.5 | P8.5 |
+| G5 http 8 MiB claim | low | — | open question | — |
+| Legacy hidden verbs | medium | D28 | A8.7 + A2 | P8.7 |
+| Implementation status (Appendix I) | — | — | A8.0–A8.4: P8.0/P8.1/P8.3/P8.4 done, P8.2 truth half only | P8.5–P8.7 open |
+
+## Appendix H — what this part does not claim
+
+- It did not execute the tools, a model call, a target operation or a campaign run. Every finding is a static read at
+  `a1de686`; the suite was green there (1,031 tests pass, 12 skipped files) and was not re-run for the audit.
+- It does not claim any run behaves differently after P8. It claims the code paths named are the code paths that run.
+- It does not claim the two hidden verbs are unreachable by every Pi API path. Their `exposure:'hidden'` contract is asserted by
+  the repository's tests and comments; the Pi runtime was not read to prove it (D28 keeps the guard-test mitigation).
+- It does not provide measured breakage. Effort and breakage lists are static-read judgments (`S/M/L`), and the exact test
+  impact of the two merges must be counted at implementation time.
+- It does not reverse L1/W2 or any owner decision by implication: D25–D31 are proposals with defaults, and every default is
+  one the owner can refuse without the analysis becoming invalid.
+- It does not claim the analysis is the owner's only view: two cluster reads were reconciled into §20.5's corrections, and
+  severity ranks are judgment, not measurement.
+- It does not change authority, scope, credentials, budgets or the record format, and it makes no commit or push.
+- §18–§26 are the audit and stay a static read; only Appendix I records the later implementation pass the owner approved, and even
+  that pass made no commit or push.
+
+## Appendix I — implementation record (2026-10-27, after the owner said "do it")
+
+The owner read §18–§26 and said "do it". That approved the recommended defaults for **P8.0–P8.4**; P8.5–P8.7 — the
+owner-gated merges of D26/D27 and the deferred cleanup — were left unstarted. This is what is actually in the working tree,
+next to where it deviates from the proposal above. The proposal text is kept unchanged so the reasoning can still be audited;
+this table is the implementation of record.
+
+| Phase | Status | What landed | Deviation from the proposal |
+| --- | --- | --- | --- |
+| P8.0 report parity (G3) | **Done** | `flushPolicyDigest` before the finish-export render (`extensions/p2o/index.ts`, finish branch); regression test in `tests/minimal/policy.test.ts` — it failed before the fix (`allow 0`) and passes after (`allow 2`) | none |
+| P8.1 prompt truth (G2, prompt half of F9) | **Done** | `src/prompts.ts`: both loadout lines name the real 19/18 tools; "No host tools" replaced by "The sandbox is your only execution surface: no host shell, host filesystem, Docker socket or consent dialogs"; coverage recording routed to `p2o_surface` for a component/entry point and `p2o_candidate` for an outcome, role-aware because validation holds neither; rewording note in place and both recon instruction hashes re-pinned deliberately | the proposal conditioned the wording on "once D29 caps the fetch"; that coupling proved unnecessary — the truth of the loadout line does not depend on a cap, and Part XI keeps the fetch uncapped |
+| P8.2 fetch control (G1, D29) | **Done at the truth layer; behavioural half declined by owner decision** | deleted the stale P14.8 comment claiming the fetch "runs inside the caller's own sandbox" (`extensions/p2o/index.ts`, above `fetchPage`), replaced with one comment stating host-side, no allowlist, no response cap (Part XI); removed the false "a capped citation fetch" phrase from the worker/validation loadout line; recon hashes re-pinned again; truth guard pins the true statement and retires the two false ones | the allowlist, the ≤1 MiB/≤48 KiB caps and the redirect refusal are **not** implemented. On 2026-10-27 the owner re-confirmed **Part XI** (the target is a label, not an egress boundary; the citation fetch is host-side with no response cap), so D29 is closed as a decision rather than implemented. The behavioural half would need an explicit reversal of Part XI for citation fetches — it is declined, not pending |
+| P8.3 read dedup (F3, F4, F6, boundary half of D30) | **Done, one deviation** | board `match` removed end to end (`TASK_ACTIONS`, `BOARD_ACTION_VERBS`, `boardParameters`, handler branch and description); create keeps its own duplicate/history preflight and returns the match payload on an exact active or reusable hit; cross-reference boundary sentences for the five read/write surfaces (board, state, ledger, graph, workers) plus dispatch-names-a-task vs continue-names-a-brief; two test call sites and the real-Pi fixture migrated | `graph page` was **kept**: it returns raw asset rows plus `uniqueAssets`, a shape `graph export` does not return, and is still consumed by `tests/minimal/workspace-runtime.test.ts`, `projection-counts.test.ts` and three docs. Retiring it would break real readers to save one slot. The create preflight's `&& input.work` gate was **kept** as well: a draft with no `work` has no stable identity to match, so the call returns an empty payload and creates nothing, and the `match` verb (its only consumer) is gone |
+| P8.4 canonical writers (F7, F8, larger half of F9) | **Done** | the `cancelled` writer chosen is the first option: stop passes the revision it observed (`expectedRevision`) and returns `taskWithdrawn:{taskId,revision}`; a refused withdrawal (`Invalid task transition` on a closed task, a stale revision) is recorded as a lifecycle note instead of being swallowed by `.catch(() => {})`. `p2o_plan_create` boundary documents that loop waits with `notBefore` and chain planning also author plan rows. `note kind=coverage` is **kept** per D30, and its boundary now says the note is display context while the host derives cells from reviewed claims. New test in `tests/minimal/planner.test.ts` proves a stopped worker's task ends `cancelled` at the returned revision | none |
+| P8.5 vocabulary (F10, G4 wording) | Not started | — | — |
+| P8.6 surface reduction (D26/D27) | Not started — owner gate | — | — |
+| P8.7 deferred (D28, A2, A8.8) | Not started | — | — |
+
+Gate at this point, all run on 2026-10-27: `npm run typecheck` clean; `npm run build` and `npm run check:build` clean;
+`git diff --check` clean; the touched suites green (policy, recon, workflow-policy, board-verbs, workspace-runtime,
+projection-counts, planner, extension, work-native, truth); full `npx vitest run` **1,034 passed, 12 skipped in 6 skipped
+files**, no failures (the 1,031 baseline plus three new tests: policy P8.0, planner P8.4, truth P8.2). `detect_changes` also
+ran: it lists the expected hub reach through `registerP2O` and the changed files match this pass, but the graph index was
+older than the working tree, so it is a reach signal only, not behavioural proof.
+
+Documentation parity was part of the change: `docs/ACCEPTANCE_MATRIX.md` gained a P8/A8 section with exact
+`file.test.ts :: title` citations (its own guard test passes), and the `match` docs were migrated in `README.md`,
+`docs/USAGE.md`, `docs/WORK_ADMISSION.md`, `docs/ASSESSMENT_STATE.md` and `docs/PLANNER_ENGINE.md`. Migrating the real-Pi
+fixture was part of the change too: it drove the removed board `match` verb and now drives a repeated `p2o_task_create`
+instead (`tests/minimal/fixtures/inert-provider.ts`, `tests/minimal/work-native.test.ts`). **No commit and no push were
+made** — the repository rule leaves that to the owner, and the pre-existing dirty `AGENTS.md` plus untracked files from
+other sessions were left untouched and unstaged.

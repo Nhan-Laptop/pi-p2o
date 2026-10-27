@@ -508,7 +508,8 @@ describe('canonical owner runtime (inert execution, real SQLite and Unix broker)
     expect((await h.call('p2o_plan_create',{entry:goal,requestId:'runtime-goal'})).details).toMatchObject({id:plan.id,replayed:true});
     const duplicate=(await h.call('p2o_task_create',{draft:{...draft,question:'Different prose for the same structured question',surface:'another textual alias'}})).details;
     expect(duplicate.already_covered_by).toEqual([task.id]);expect((await h.call('p2o_board',{board: 'tasks'})).details.total).toBe(1);
-    expect((await h.call('p2o_board',{board: 'tasks',match:draft})).details.confidence).toBe('exact');
+    // P8.3: create is the only duplicate/history preflight, and an exact active attempt returns the match payload instead of creating.
+    expect((await h.call('p2o_task_create',{draft})).details.confidence).toBe('exact');
     await h.call('p2o_board',{board: 'plans'});await h.command('heads goal');expect(h.screen()).toContain(plan.id);await h.command(`show goal ${plan.id}`);expect(h.ctx.screens.at(-1).render(4000).join('\n')).toContain(goal.reason);
     const read:AssessmentStore=await h.reader();try{expect(read.sequence()).toBe(before);}finally{read.close();}
     const context=await h.pi.events.get('context')[0]({messages:[]},h.ctx.ctx);expect(JSON.stringify(context.messages)).toContain(plan.id);

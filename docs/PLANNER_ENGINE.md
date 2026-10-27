@@ -54,8 +54,9 @@ renew nothing, because there is no command allowance to renew (owner decision 20
 The planner states what to learn; the host derives the rest. `p2o_task_create` stores the purpose the role names
 (`purposeFromRole`), the output contract that purpose implies (`PURPOSE_OUTPUT_CONTRACTS`) and the only disposition the
 anchors allow (`defaultWorkDecision`: `new` by default, `validate` with `validationOf`, `refine` with a prior task; `retest`
-and an unanchored refinement still need an explicit decision). `revise` and the read-only `match` preflight canonicalize and
-anchor through the same code, so a match sees the identity create would store.
+and an unanchored refinement still need an explicit decision). `revise` canonicalizes and anchors through the same code, and
+`create` runs the duplicate/history preflight on that identity: an exact active or reusable attempt comes back as a match
+payload instead of a new task.
 
 The first intent of a run is recon/mapping — the intent that needs nothing earlier in the run to cite, which is why a new run
 always has a legal first intent. A first validation is refused in both shapes (`PURPOSE_NEEDS_PREDECESSOR`,
@@ -155,7 +156,7 @@ có evidence mới hoặc control/cơ chế khác — tức tối đa **một** 
 ### CVE lead: host fetch, host gợi ý (P16.4)
 
 `p2o_research action=cve` nhận `product`/`version` (kèm `vendor`/`cpe` tuỳ chọn) và `assetRefs`; **host** dựng URL NVD và tự
-fetch — bốn host gợi ý chỉ là lời khuyên, không phải allowlist; `action=fetch` còn cho phép tải thẳng bất kỳ URL http(s). Kết quả ghi `lead` record với provenance `{url, retrievedAt, sha256}`, trạng thái
+fetch — bốn host gợi ý chỉ là lời khuyên, không phải allowlist; `action=fetch` còn cho phép tải thẳng bất kỳ URL http(s), không giới hạn kích thước response (Part XI). Kết quả ghi `lead` record với provenance `{url, retrievedAt, sha256}`, trạng thái
 `untriaged`; `action=triage` chuyển sang `tasked`/`ruled_out` (kèm lý do) bằng một revision `supersedes`. Một lead là con trỏ
 để kiểm chứng: claim cite lead chỉ được `policyBasis:"inferred"` + `open_proof_gap`, và `closure:"confirmed"` bị từ chối
 (`LEAD_NOT_EVIDENCE`). Situation có segment `leads: N untriaged (M critical)`; preflight/report hiện advisory

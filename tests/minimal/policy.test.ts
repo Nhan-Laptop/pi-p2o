@@ -191,6 +191,24 @@ describe('command policy in a run (A7.7)', () => {
     try { expect(store.records().filter((record: any) => record.data?.policyDigest).length).toBeGreaterThan(0); } finally { store.close(); }
   }));
 
+  it('flushes the allow digest on the finish export too, so both export doors count the same operations (P8.0)', async () => fixture(async h => {
+    await h.command('--target ./source');
+    await h.call('p2o_shell', { command: 'printf finish-export-one' });
+    await h.call('p2o_shell', { command: 'printf finish-export-two' });
+    const exported = await h.call('p2o_finish', { export: true });
+    expect(exported.details.reportPath).toBeTruthy();
+    const report = (await h.read(exported.details.reportPath))['REPORT.md'];
+    const line = report.split('\n').find((row: string) => row.startsWith('- Command policy:'));
+    expect(line).toContain('allow 2 (default.target-operation 2)');
+    // The same digest record the manual `/p2o report export` writes: one export door cannot undercount the other.
+    const store = await h.reader();
+    try {
+      const digests = store.records().filter((record: any) => record.data?.policyDigest);
+      expect(digests).toHaveLength(1);
+      expect(digests[0].data.policyDigest.total).toBe(2);
+    } finally { store.close(); }
+  }));
+
   it('routes the broker worker dispatch through the same seam instead of each tool deciding for itself', async () => {
     // A7.7 "one evaluation point": the worker path (broker) is wired to the same executeWithReceipt closure as the owner tools,
     // so adding a fifth tool cannot quietly skip the policy. This pins the wiring, not the wording of a generated prompt.

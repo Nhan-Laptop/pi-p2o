@@ -111,8 +111,10 @@ export function registerInertProvider(pi: ExtensionAPI, mode: 'owner' | 'worker'
           else if(lastTool==='p2o_graph')content=[{type:'toolCall',id:'work-task',name:'p2o_task_create',arguments:{draft}}];
           else if(lastTool==='p2o_task_create'&&!(results as any[]).some(r=>r.toolName==='p2o_plan_create'))content=[{type:'toolCall',id:'work-goal',name:'p2o_plan_create',arguments:{requestId:'native-work-goal',entry:{kind:'goal',title:'Review one declared inert policy boundary',status:'active',reason:'Explicit controlled fixture; no investigation claimed',proof:{kind:'capability',capability:{kind:'file.read'}},criteria:['Owner must review attribution and a control'],taskIds:[last.details.id]}}}];
           else if(lastTool==='p2o_plan_create'&&results.filter((r:any)=>r.toolName==='p2o_plan_create').length===1)content=[{type:'toolCall',id:'work-goal-replay',name:'p2o_plan_create',arguments:{requestId:'native-work-goal',entry:{kind:'goal',title:'Review one declared inert policy boundary',status:'active',reason:'Explicit controlled fixture; no investigation claimed',proof:{kind:'capability',capability:{kind:'file.read'}},criteria:['Owner must review attribution and a control'],taskIds:[(results.find((r:any)=>r.toolName==='p2o_task_create') as any).details.id]}}}];
-          else if(lastTool==='p2o_plan_create')content=[{type:'toolCall',id:'work-match',name:'p2o_board',arguments:{board: 'tasks',match:draft}}];
-          else if(lastTool==='p2o_board')content=[{type:'toolCall',id:'work-finish',name:'p2o_finish',arguments:{}}];
+          // P8.3: the board match verb is gone; a repeated create is the only duplicate/history preflight and returns the
+          // match payload instead of creating a second task.
+          else if(lastTool==='p2o_plan_create')content=[{type:'toolCall',id:'work-duplicate',name:'p2o_task_create',arguments:{draft}}];
+          else if(lastTool==='p2o_task_create')content=[{type:'toolCall',id:'work-finish',name:'p2o_finish',arguments:{}}];
           else if(lastTool==='p2o_finish')content=[{type:'text',text:'OWNER_WORK_DONE: task cancelled by finish, goal retained active; no proof or investigation.'}];
           else throw Error('Unexpected native work fixture turn');
         }
