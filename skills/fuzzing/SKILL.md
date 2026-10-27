@@ -5,7 +5,7 @@ description: Build and validate stateful, format-aware fuzzing harnesses, choose
 
 # Fuzzing
 
-Before first use, read the [scope baseline](../../README.md#start-here) and [handoff contracts](../../HANDOFFS.md).
+Before first use: [scope baseline](../../README.md#start-here), [handoff method](../../HANDOFFS.md#focused-method-and-review), and [owner review](../../HANDOFFS.md#provisional-owner-review).
 
 ## Technique
 Harness-validity-first exploration.

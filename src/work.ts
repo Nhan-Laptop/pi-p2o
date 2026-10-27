@@ -92,7 +92,7 @@ export function validateWorkDecision(value:unknown,spec:WorkSpec,links:{validati
   if(disposition==='new'&&(linked||result.changeReason)){
     // P2: name the fields the caller has to drop and the legal next call, instead of only rejecting the combination.
     const offending=[linked?'decision.relatedTaskId':undefined,result.changeReason?'decision.changeReason':undefined].filter(Boolean).join(' and ');
-    throw Error(`NEW_WORK_HAS_PRIOR_CLAIM: disposition=new means "no prior attempt", so ${offending} must be omitted; a prior task link or a material change reason belongs to a refine/retry/validate/retest decision. legalNext: retry p2o_task_create with decision={disposition:"new",reason:"..."} and drop ${offending}, or keep the prior link and set disposition=refine/retry/validate/retest with its required fields`);
+    throw Error(`NEW_WORK_HAS_PRIOR_CLAIM: disposition=new means "no prior attempt", so ${offending} must be omitted; a prior task link or a material change reason belongs to a refine/retry/validate/retest decision. legalNext: retry p2o_task_author with decision={disposition:"new",reason:"..."} and drop ${offending}, or keep the prior link and set disposition=refine/retry/validate/retest with its required fields`);
   }
   if(disposition==='refine'&&(spec.purpose!=='refinement'||!linked))throw Error('role=refinement requires purpose=refinement and relatedTaskId (the prior task it refines)');
   if(disposition==='validate'&&(spec.purpose!=='validation'||!links.validationOf||linked!==links.validationOf))throw Error('role=validation requires purpose=validation and a validationOf task/claim with a matching relatedTaskId');
@@ -172,7 +172,7 @@ export function validateWorkFields(task:WorkTaskLike):void{
   if(task.work===undefined){if(task.decision!==undefined||task.retestOf!==undefined||task.outputContract!==undefined)throw Error('Structured decision/retest/output contract requires a work identity');return;}
   const spec=validateWorkSpec(task.work);if(task.decision===undefined)throw Error(`role=${task.role ?? 'this intent'} with purpose=${spec.purpose} needs an explicit decision; the host derives new/validate/refine only when the draft already names its prior task. legalNext: retry with decision={{disposition:"new",reason:"..."}}`);
   validateWorkDecision(task.decision,spec,{validationOf:task.validationOf,retestOf:task.retestOf});
-  if(task.outputContract===undefined)throw Error('Structured work needs a desired output contract (the host derives it for drafts created through p2o_task_create)');validateOutputContract(task.outputContract);
+  if(task.outputContract===undefined)throw Error('Structured work needs a desired output contract (the host derives it for drafts created through p2o_task_author)');validateOutputContract(task.outputContract);
 }
 
 export function workIdentity(targetRevision:string,task:WorkTaskLike):WorkIdentity{

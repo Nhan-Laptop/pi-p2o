@@ -18,7 +18,7 @@ const draft = (assetId: string, required: string[]) => ({ question: 'Does the bo
 async function started(h: any, required: string[]) {
   await h.command('--target ./source');
   const asset = (await h.call('p2o_graph', { action: 'record', batch: { assets: [{ asset: { kind: 'endpoint', key: 'GET /integrity-fixture' } }] } })).details.acks[0];
-  const task = (await h.call('p2o_task_create', {draft: draft(asset.entityId, required) })).details, running = (await h.call('p2o_task_start', {id: task.id })).details;
+  const task = (await h.call('p2o_task_author', {draft: draft(asset.entityId, required) })).details, running = (await h.call('p2o_task_start', {id: task.id })).details;
   const own = (await h.call('p2o_shell', { command: 'printf integrity-own' })).details;
   return { asset, task, running, own };
 }

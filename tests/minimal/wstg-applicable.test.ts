@@ -75,6 +75,8 @@ describe('A6.4 unplannedTests', () => {
     const union = featuresFromAttributeValues(assets.flatMap(asset => asset.features)).features;
     const expected = wstgSuggest(union, { covered: new Set(), limit: 500 }).suggestions;
     expect(rows.map(row => ({ key: row.key, title: row.title, support: row.support, flags: row.flags }))).toEqual(expected.map(item => ({ key: item.key, title: item.title, support: item.support, flags: item.flags })));
+    // wstgSuggest also carries relatedSkills; the debt projection stays four fields + assets + one detail sentence.
+    expect(rows.every(row => !('relatedSkills' in row))).toBe(true);
   });
 
   it('drops a test whose wstgKey is covered and leaves every other row untouched', () => {

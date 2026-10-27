@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
-import { plannerInstructions, reconInstructions, workerInstructions, workerBrief } from '../../src/prompts.js';
+import { plannerInstructions, reconInstructions, reporterInstructions, workerInstructions, workerBrief } from '../../src/prompts.js';
 import { createHash } from 'node:crypto';
 import type { Ticket } from '../../src/ticket.js';
 import { SkillLibrary } from '../../src/skills.js';
@@ -119,6 +119,13 @@ describe('bounded recon contract', () => {
   // continuation pointer, so both instruction hashes moved on purpose; the brief hashes are unchanged because
   // workerBrief carries no catalog text. The new operator-frame/hints sections are conditional, so a brief without
   // them is byte-identical to its P8 form.
+  // 2026-10-27 (dedupe/prompt-budget pass): the planner section lost duplicated rules (the two no-target/no-claim lines
+  // folded into the surviving ones, the intent-contract derivation moved to the active tool descriptions it already appears
+  // in, the zero-intent rule merged, one engagement sentence de-duplicated, and the "missing capability" tail dropped where
+  // the surviving line already says it), so its recorded budget is ~450 chars lower and the size guard below asserts a real
+  // ceiling again. The validation worker lost its second, contradictory AUTHORIZATION paragraph, and the reporter now reads
+  // evidence standards instead of the recon/investigation contract it cannot execute. The recon worker prompt is
+  // byte-identical, so both pinned instruction hashes above and both brief hashes are unchanged.
   it.each([
     ['url', 'd82b23d0c115004011f1b3ccaa13776e826584ffbc1b1474c60f44d3e868e61b', '3ab19669e99655618326725b74092123291916b3f7e3fe4be78f9c8f41b230d3'],
     ['directory', '2a01a0d0d14f9547f691f4960495e027a027f381caf6639289ea685a0a8152a5', '8ab956b5c960afc556e13b7247f4eca244bb4aa978702038847a2a44528ad164'],
@@ -158,17 +165,22 @@ describe('bounded recon contract', () => {
     expect(a.split('\n').at(-1)).toBe('Identity: you are p2o-recon-aaaaaa (role recon, depth 1); your parent is the assessment lead.');
   });
 
-  it('gives every worker the recon handoff contract exactly once, in its system instructions', () => {
+  it('gives every executing worker the recon handoff contract exactly once, and the reporter evidence standards instead', () => {
     for (const kind of ['directory', 'url'] as const) {
-      for (const role of ['recon', 'discovery', 'validation', 'reporting', 'general']) {
+      for (const role of ['recon', 'discovery', 'validation', 'general']) {
         const ticket = { workerId: 'worker-test', role, runId: 'run-test', depth: 1, parentWorkerId: null, lifetime: 'until-stopped',
           target: { kind, label: kind === 'url' ? 'https://example.invalid' : '/target' } } as Ticket;
-        // A1: validation and the read-only reporter have no surface writer, so they get the same handoff contract without the
-        // surface/note tool guidance; every other worker role gets it with the guidance.
-        const block = role === 'validation' || role === 'reporting' ? reconInstructions(kind, false) : reconInstructions(kind);
+        // A1: validation has no surface writer, so it gets the same handoff contract without the surface/note tool guidance.
+        const block = role === 'validation' ? reconInstructions(kind, false) : reconInstructions(kind);
         const context = `${workerInstructions(ticket)}\n${workerBrief({ ticket, focus: 'surface-recon', task: 'Map authorized inputs' })}`;
         expect(context.split(block).length - 1, `${role}/${kind}: recon block occurrences`).toBe(1);
       }
+      // A1: the reporter reads the records a worker produced. It cannot run a probe or record a surface, so the
+      // recon/investigation contract was replaced by the bounded evidence standards it can actually act on.
+      const reporting = reporterInstructions({ workerId: 'worker-test', role: 'reporting', runId: 'run-test', depth: 1, parentWorkerId: null,
+        target: { kind, label: kind === 'url' ? 'https://example.invalid' : '/target' } } as Ticket);
+      expect(reporting, `${kind}: reporter carries the recon contract`).not.toContain('RECON → INVESTIGATION');
+      expect(reporting.split('EVIDENCE STANDARDS').length - 1, `${kind}: evidence standards occurrences`).toBe(1);
     }
   });
 
@@ -180,14 +192,34 @@ describe('bounded recon contract', () => {
     }
   });
 
+  // 2026-10-27 (dedupe/prompt-budget pass): the recorded size ceilings are asserted again — the previous revision of this test
+  // kept the comment and the "inside a recorded size" name but had lost the length assertion, so the planner section silently
+  // grew to 2.2x its recorded 6,346-char ceiling before the dedupe pass. Measured with this test's exact facts after the pass:
+  // planner 13,438 (directory) / 13,438 (url) / 13,749 (event-driven); worker 12,725 (recon/url) / 13,064 (validation/url);
+  // brief 1,510; reporter 2,311. Each ceiling below is that body plus ~3-5% headroom. Raise a ceiling only with a dated comment,
+  // never to make a failing test pass.
+  const PROMPT_CEILINGS = { planner: 14_200, worker: 13_200, validation: 13_500, brief: 1_650, reporter: 2_600 };
   it('keeps the delegated lead prompt variants inside a recorded size (the solo variants are bounded above)', () => {
-    // Measured 2026-10-22 with the validation-contract line, the chain-step rule, the P6 dispatch rules and the 240-character situation allowance:
-    // static 5,950 / 6,101 / 6,346 plus at most 240 for `Situation:`. Ceilings are that total plus headroom; raise them on purpose, never to make a test pass.
     const base = { runId: 'run-recon', sourceSkipped: 2, delegation: { enabled: true, maxWorkers: 3, maxDepth: 2 } };
     const directory = plannerInstructions({ ...base, targetKind: 'directory', targetLabel: '/target' });
     const url = plannerInstructions({ ...base, targetKind: 'url', targetLabel: 'https://example.invalid' });
     const eventDriven = plannerInstructions({ ...base, targetKind: 'url', targetLabel: 'https://example.invalid', loopMode: 'event-driven' });
-    for (const text of [directory, url, eventDriven]) expect(text).not.toMatch(/\bp2o_[a-z_]+\b/);
+    for (const text of [directory, url, eventDriven]) {
+      expect(text).not.toMatch(/\bp2o_[a-z_]+\b/);
+      expect(text.length, 'planner section exceeded its recorded budget').toBeLessThanOrEqual(PROMPT_CEILINGS.planner);
+    }
+  });
+
+  it('keeps the worker, brief and reporter prompts inside the same recorded budget', () => {
+    const ticket = (kind: 'url' | 'directory', role = 'recon') => ({ workerId: 'worker-test', role, runId: 'run-test', depth: 1, parentWorkerId: null,
+      lifetime: 'until-stopped', target: { kind, label: kind === 'url' ? 'https://example.invalid' : '/target' } } as Ticket);
+    const worker = workerInstructions(ticket('url')), validation = workerInstructions(ticket('url', 'validation'));
+    const brief = workerBrief({ ticket: ticket('url'), focus: 'surface-recon', task: 'Map authorized inputs', context: 'No previous work' });
+    const reporter = reporterInstructions(ticket('url', 'reporting'));
+    expect(worker.length, 'worker prompt exceeded its recorded budget').toBeLessThanOrEqual(PROMPT_CEILINGS.worker);
+    expect(validation.length, 'validation prompt exceeded its recorded budget').toBeLessThanOrEqual(PROMPT_CEILINGS.validation);
+    expect(brief.length, 'worker brief exceeded its recorded budget').toBeLessThanOrEqual(PROMPT_CEILINGS.brief);
+    expect(reporter.length, 'reporter prompt exceeded its recorded budget').toBeLessThanOrEqual(PROMPT_CEILINGS.reporter);
   });
 
   it('renders one bounded situation line when the run has records', () => {

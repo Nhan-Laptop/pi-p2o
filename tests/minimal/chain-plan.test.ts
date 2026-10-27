@@ -3,7 +3,7 @@ import { fixture, populate, seedClaim } from './helpers/report-fixture.js';
 
 /**
  * P14.10: the chain frontier is turned into the next owner decision, never into a dispatch. The draft must be exactly the argument
- * `p2o_task_create` takes, the chain must land as one plan todo per step, and neither of those may start work.
+ * `p2o_task_author` takes, the chain must land as one plan todo per step, and neither of those may start work.
  */
 const OBJECTIVE = 'Take the demonstrated request capability to code execution through the recorded chain' as const;
 
@@ -22,11 +22,11 @@ async function chainFixture(h: any) {
   return { built, environment, primitive, consumer };
 }
 
-const impactGoal = (h: any) => h.call('p2o_plan_create', { entry: { kind: 'goal', title: 'Reach the recorded chain effect', status: 'active',
+const impactGoal = (h: any) => h.call('p2o_plan_author', { entry: { kind: 'goal', title: 'Reach the recorded chain effect', status: 'active',
   proof: { kind: 'capability', capability: { kind: 'file.read' } }, criteria: ['The chain step runs and is recorded'],
   reason: 'P7.1 exploit-mode admission: the impact goal the chain ladder is settled against' } });
 describe('chain frontier to task draft (P14.10)', () => {
-  it('drafts the exact p2o_task_create argument for the deepest ready step and records one todo per step', async () => fixture(async h => {
+  it('drafts the exact p2o_task_author argument for the deepest ready step and records one todo per step', async () => fixture(async h => {
     const { built, environment, primitive, consumer } = await chainFixture(h);
     const join = (await h.call('p2o_graph', { action: 'chain' })).details;
     const next = join.frontier.find((entry: any) => entry.claimId === 'chain-consumer');
@@ -56,7 +56,7 @@ describe('chain frontier to task draft (P14.10)', () => {
     // P7.1: exploit mode (the default) admits an exploitation intent only under a capability-proof goal.
     await impactGoal(h);
     // The draft is accepted unchanged, and the work identity it carries names what the step stands on and where it runs.
-    const created = (await h.call('p2o_task_create', {draft: planned.draft })).details;
+    const created = (await h.call('p2o_task_author', {draft: planned.draft })).details;
     expect(created).toMatchObject({ status: 'proposed', role: 'exploit' });
     expect(created.work).toMatchObject({ purpose: 'exploitation', needs: [{ kind: 'http.request', subject: 'internal-api' }], environmentRef: environment.id });
     expect(created.work.claimRefs).toEqual([next.providers[0], consumer.id].sort());
@@ -92,8 +92,8 @@ describe('chain frontier to task draft (P14.10)', () => {
     await impactGoal(h);
     // M2: a draft with no work identity cannot cite the provider, so on this surface it is refused — that is the whole point of the
     // obligation, and the refusal names the step to take instead.
-    await expect(h.call('p2o_task_create', {draft: planned.draft })).rejects.toThrow(/CHAIN_READY_UNDISPATCHED: step 2 of chain chain-/);
+    await expect(h.call('p2o_task_author', {draft: planned.draft })).rejects.toThrow(/CHAIN_READY_UNDISPATCHED: step 2 of chain chain-/);
     // The scope rule is per surface: the same shape elsewhere is still a task, so the obligation cannot freeze the run.
-    expect((await h.call('p2o_task_create', {draft: { ...planned.draft, surface: '/elsewhere' } })).details.status).toBe('proposed');
+    expect((await h.call('p2o_task_author', {draft: { ...planned.draft, surface: '/elsewhere' } })).details.status).toBe('proposed');
   }));
 });

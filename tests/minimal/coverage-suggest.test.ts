@@ -20,6 +20,23 @@ describe('wstgSuggest', () => {
     const browserOnly = wstgSuggest(['client-js'], { modes: 'B', covered: new Set(), limit: 100 }); expect(browserOnly.suggestions.every(item => item.flags.includes('B'))).toBe(true);
     expect(wstgSuggest(['login'], { covered: new Set(), offset: 1000 }).suggestions).toEqual([]);
   });
+  it('carries the map related methods beside the owner so a non-owner skill is discoverable', () => {
+    const all = wstgSuggest(WSTG_FEATURES, { covered: new Set(), limit: 500 }).suggestions;
+    expect(all.length).toBeGreaterThan(0);
+    for (const item of all) {
+      const test = WSTG_MAP.find(candidate => wstgKey(candidate.id) === item.key)!;
+      // The column is surfaced without changing the owner+card contract: relatedSkills is the skills column minus the owner.
+      expect(item.relatedSkills, item.key).toEqual(test.skills.filter(name => name !== test.owner));
+      expect(item.relatedSkills, item.key).not.toContain(item.owner);
+      expect(item.owner).toBe(test.owner);
+    }
+    // data-flow-analysis owns no test, so the rendered skills column was its only trace; it must now reach a caller.
+    expect(WSTG_MAP.some(test => test.owner === 'data-flow-analysis')).toBe(false);
+    const related = all.filter(item => item.relatedSkills.includes('data-flow-analysis')).map(item => item.key);
+    expect(related).toEqual(WSTG_MAP.filter(test => test.skills.includes('data-flow-analysis')).map(test => wstgKey(test.id)));
+    expect(related.length).toBe(20);
+    expect(related).toContain('wstg-injt-05');
+  });
 });
 
 describe('p2o_coverage_suggest', () => {
@@ -29,6 +46,9 @@ describe('p2o_coverage_suggest', () => {
     const result = (await h.call('p2o_coverage_suggest', {features: ['object-id', 'login'], limit: 50 })).details;
     const keys = result.suggestions.map((item: any) => item.key);
     expect(keys).not.toContain('wstg-athz-04'); expect(keys).not.toContain('wstg-sess-05'); expect(result.total).toBeGreaterThan(0); expect(result.warning).toMatch(/Not a finding, not permission and not coverage/);
+    // The tool passes wstgSuggest's suggestions through, so the related methods are part of the read-only planning aid.
+    expect(result.suggestions.every((item: any) => Array.isArray(item.relatedSkills))).toBe(true);
+    expect(result.suggestions.some((item: any) => item.relatedSkills.length > 0)).toBe(true);
     const after = await h.reader(); try { expect(after.records().length).toBe(count); } finally { after.close(); }
   }));
   it('refuses unknown features and malformed modes or limits', async () => fixture(async h => {

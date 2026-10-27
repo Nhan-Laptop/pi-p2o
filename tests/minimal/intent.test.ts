@@ -185,7 +185,7 @@ describe('intent admission (P1/A2)', () => {
     await expect(refusal).rejects.toThrow(/NEW_WORK_HAS_PRIOR_CLAIM/);
     await expect(refusal).rejects.toThrow(/decision\.relatedTaskId and decision\.changeReason/);
     await expect(refusal).rejects.toThrow(/disposition=new/);
-    await expect(refusal).rejects.toThrow(/legalNext: retry p2o_task_create/);
+    await expect(refusal).rejects.toThrow(/legalNext: retry p2o_task_author/);
   }));
 });
 
@@ -222,7 +222,7 @@ describe('intent admission at the extension surface (P1/A2)', () => {
     const h = await extensionFixture();
     try {
       await h.command('--target ./repo');
-      const task = (await h.call('p2o_task_create', { draft: RECON_INTENT })).details;
+      const task = (await h.call('p2o_task_author', { draft: RECON_INTENT })).details;
       // The planner has no confirmed-claim path: review of a worker claim is the only one left.
       await expect(h.call('p2o_candidate', WORKER_CLAIM)).rejects.toThrow(/WORKER_ONLY/);
       expect((await readLedger(join(await h.runDir(), 'records.sqlite'))).records.filter(row => row.kind === 'candidate')).toEqual([]);
@@ -243,7 +243,7 @@ describe('intent admission at the extension surface (P1/A2)', () => {
     const h = await extensionFixture(true);
     try {
       await h.command('--target ./repo --executors isolated --target-ops 2');
-      const task = (await h.call('p2o_task_create', { draft: RECON_INTENT })).details;
+      const task = (await h.call('p2o_task_author', { draft: RECON_INTENT })).details;
       await expect(h.call('p2o_delegate', { focus: 'recon', task: 'Map the retained fixture surface', taskId: task.id })).rejects.toThrow(/provision executor/);
       // The assignment is a blocked prerequisite the planner can see and settle, not a worker that reported.
       expect((await h.call('p2o_board', { board: 'tasks', id: task.id })).details).toMatchObject({ id: task.id, status: 'blocked' });
@@ -257,7 +257,7 @@ describe('intent admission at the extension surface (P1/A2)', () => {
     try {
       await h.command('--target ./repo');
       const risk = `Anonymous read-only reconnaissance; ${'r'.repeat(260)}`, surface = `/fixture/${'s'.repeat(260)}`;
-      const task = (await h.call('p2o_task_create', { draft: { ...RECON_INTENT, risk, surface } })).details;
+      const task = (await h.call('p2o_task_author', { draft: { ...RECON_INTENT, risk, surface } })).details;
       expect(task).toMatchObject({ risk: risk.slice(0, 200), surface: surface.slice(0, 200) });
       expect(task.admissionWarnings).toHaveLength(2);
       expect(task.admissionWarnings).toContain(`truncated:risk (stored 200 of ${risk.length} characters)`);

@@ -84,20 +84,20 @@ describe('the frontier obligation refuses at create, not at finish (M2 + M4)', (
     const put = record(h, observation);
     const primitive = await put('obligation-primitive', { closure: 'confirmed', execution: 'tested', proof: 'live_reproduction', policyBasis: 'boundary_invariant', gained: [READ] });
     const ready = await put('obligation-ready', { needs: [READ] });
-    await h.call('p2o_plan_create', {entry: { kind: 'todo', title: 'Chain step 1 demonstrated', status: 'done', reason: 'First step of the fixture chain, demonstrated by the recorded primitive', chainOf: 'chain-obligation', step: 1, claimRefs: [primitive.id] } });
-    await h.call('p2o_plan_create', {entry: { kind: 'todo', title: 'Chain step 2 ready', status: 'open', reason: 'Second step of the fixture chain, ready on the demonstrated capability', chainOf: 'chain-obligation', step: 2, claimRefs: [ready.id], needs: [READ] } });
+    await h.call('p2o_plan_author', {entry: { kind: 'todo', title: 'Chain step 1 demonstrated', status: 'done', reason: 'First step of the fixture chain, demonstrated by the recorded primitive', chainOf: 'chain-obligation', step: 1, claimRefs: [primitive.id] } });
+    await h.call('p2o_plan_author', {entry: { kind: 'todo', title: 'Chain step 2 ready', status: 'open', reason: 'Second step of the fixture chain, ready on the demonstrated capability', chainOf: 'chain-obligation', step: 2, claimRefs: [ready.id], needs: [READ] } });
 
     // P7.1: exploit mode (the default) admits the exploitation-purpose drafts below only under a capability-proof goal.
-    await h.call('p2o_plan_create', {entry: {kind: 'goal', title: 'Reach the fixture effect under an impact goal', status: 'active',
+    await h.call('p2o_plan_author', {entry: {kind: 'goal', title: 'Reach the fixture effect under an impact goal', status: 'active',
       proof: {kind: 'capability', capability: {kind: 'file.read'}}, criteria: ['The cited ready step runs'],
       reason: 'P7.1 exploit-mode admission fixture: the goal these chain-step drafts are settled against'}});
     const breadth = (overrides: Record<string, unknown> = {}): Record<string, unknown> => ({ ...draft('/report-fixture'), ...overrides });
-    await expect(h.call('p2o_task_create', {draft: breadth() }))
+    await expect(h.call('p2o_task_author', {draft: breadth() }))
       .rejects.toThrow(/CHAIN_READY_UNDISPATCHED: step 2 of chain chain-obligation consumes http\.request \(internal-api\) that claim .* already gains; dispatch it, cite it as a parent, or defer it with a reason/);
     // Breadth elsewhere is still admitted.
-    expect((await h.call('p2o_task_create', {draft: breadth({ surface: '/elsewhere' }) as unknown as TaskDraft })).details.status).toBe('proposed');
+    expect((await h.call('p2o_task_author', {draft: breadth({ surface: '/elsewhere' }) as unknown as TaskDraft })).details.status).toBe('proposed');
     // Citing the provider is taking the step.
-    const cited = await h.call('p2o_task_create', {draft: draft('/report-fixture', [primitive.id], asset.entityId) as unknown as TaskDraft });
+    const cited = await h.call('p2o_task_author', {draft: draft('/report-fixture', [primitive.id], asset.entityId) as unknown as TaskDraft });
     expect(cited.details.work.claimRefs).toEqual([primitive.id]);
     // And the refusal is a create-time obligation, not a finish gate: the run can still finish with the step open.
     expect(JSON.stringify(await h.call('p2o_finish', {}))).not.toMatch(/CHAIN_READY_UNDISPATCHED/);
@@ -109,12 +109,12 @@ describe('the frontier obligation refuses at create, not at finish (M2 + M4)', (
     const put = record(h, observation);
     const primitive = await put('walled-primitive', { closure: 'confirmed', execution: 'tested', proof: 'live_reproduction', policyBasis: 'boundary_invariant', gained: [READ] });
     const breadth: Record<string, unknown> = draft('/report-fixture');
-    await expect(h.call('p2o_task_create', {draft: breadth as unknown as TaskDraft }))
+    await expect(h.call('p2o_task_author', {draft: breadth as unknown as TaskDraft }))
       .rejects.toThrow(new RegExp(`PRIMITIVE_UNCHAINED: claim ${primitive.id} \\(http\\.request \\(internal-api\\)\\) is confirmed and tested on /report-fixture and nothing consumes it`));
     // The same obligation is what the finish preflight lists and what Phase E keeps `complete` false (covered in finish-preflight.test.ts).
     // A deferred row naming the primitive and its ruled-out successor is the wall M4 asks for.
-    await h.call('p2o_plan_create', {entry: { kind: 'todo', title: 'Wall for the fixture primitive', status: 'deferred',
+    await h.call('p2o_plan_author', {entry: { kind: 'todo', title: 'Wall for the fixture primitive', status: 'deferred',
       reason: 'Recorded ruled-out successor: the next step needs a second actor the fixture does not model', claimRefs: [primitive.id] } });
-    expect((await h.call('p2o_task_create', {draft: breadth as unknown as TaskDraft })).details.status).toBe('proposed');
+    expect((await h.call('p2o_task_author', {draft: breadth as unknown as TaskDraft })).details.status).toBe('proposed');
   }));
 });

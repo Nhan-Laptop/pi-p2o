@@ -327,7 +327,7 @@ describe('A7.5 successor dispatch on a held ticket, pane and session', () => {
     const asset = (await h.call('p2o_graph', { action: 'record', batch: { assets: [{ asset: { kind: 'endpoint', key: 'GET /chain-successor' } }] } })).details.acks[0];
     const splits = h.herdr.calls.filter(call => call.op === 'split').length;
     const starts = h.herdr.calls.filter(call => call.op === 'start').length;
-    const successor = (await h.call('p2o_task_create', {
+    const successor = (await h.call('p2o_task_author', {
       draft: {
         question: 'Does the demonstrated session primitive carry the chain one step further?',
         surface: '/chain-surface', risk: 'authorization', role: 'general',
@@ -367,7 +367,7 @@ describe('A7.5 successor dispatch on a held ticket, pane and session', () => {
     const records = await h.records();
     expect(records.some(record => record.kind === 'lifecycle' && String(record.text).includes(`successor ${successor.id} dispatched onto held ${workerId}`))).toBe(true);
     // A second successor on the same consumed hold is not admitted: the worker must report again first.
-    const another = (await h.call('p2o_task_create', {
+    const another = (await h.call('p2o_task_author', {
       draft: {
         question: 'Is a second step on the same consumed hold admissible?',
         surface: '/chain-surface-two', risk: 'authorization', role: 'general',
@@ -409,8 +409,8 @@ describe('A7.5 validation economy', () => {
         decision: { disposition: 'new', reason: 'Bounded chain fixture step' },
         outputContract: { kind: 'investigation', required: ['evidence'], partialAllowed: true, artifactPolicy: 'ids-only' },
       });
-      const intermediateTask = (await h.call('p2o_task_create', { draft: draft('question:chain-first', 'Does the first chain step demonstrate the session primitive?') })).details;
-      const deepestTask = (await h.call('p2o_task_create', { draft: draft('question:chain-deepest', 'Does the deepest chain step consume the session primitive?') })).details;
+      const intermediateTask = (await h.call('p2o_task_author', { draft: draft('question:chain-first', 'Does the first chain step demonstrate the session primitive?') })).details;
+      const deepestTask = (await h.call('p2o_task_author', { draft: draft('question:chain-deepest', 'Does the deepest chain step consume the session primitive?') })).details;
       const runningIntermediate = (await h.call('p2o_task_start', { id: intermediateTask.id })).details;
       const runningDeepest = (await h.call('p2o_task_start', { id: deepestTask.id })).details;
       // The intermediate produced a capability the successor consumes; the successor produces the effect the case rests on.
@@ -418,7 +418,7 @@ describe('A7.5 validation economy', () => {
       const deepestClaim = await seedClaim(h, { candidate: 'chain-deepest', surface: '/chain-fixture', risk: 'authorization', closure: 'confirmed', execution: 'tested', proof: 'offline_reproduction', evidenceRefs: [receipt], negativeControls: [], policyBasis: 'boundary_invariant', expectedPolicy: 'Declared fixture boundary', limitations: 'One inert fixture step', needs: [{ kind: 'cred.session', subject: 'alice' }], gained: [{ kind: 'code-execution', subject: 'shell-1' }] }, deepestTask.id);
       // One live successor task cites the intermediate primitive, so it is chained and admission is not what stops the replay;
       // the deepest claim is only ever consumed by its own replay, exactly the chain a lead records when taking the next step.
-      await h.call('p2o_task_create', { draft: { ...draft('question:chain-successor', 'Does the recorded successor task consume the intermediate primitive?'), work: { assetRefs: [{ id: asset.entityId, revision: 1 }], questionKey: 'question:chain-successor', actorContext: 'actor:fixture', tenantContext: 'tenant:fixture', methodFamily: 'offline-observation', purpose: 'investigation', claimRefs: [intermediateClaim.id] } } });
+      await h.call('p2o_task_author', { draft: { ...draft('question:chain-successor', 'Does the recorded successor task consume the intermediate primitive?'), work: { assetRefs: [{ id: asset.entityId, revision: 1 }], questionKey: 'question:chain-successor', actorContext: 'actor:fixture', tenantContext: 'tenant:fixture', methodFamily: 'offline-observation', purpose: 'investigation', claimRefs: [intermediateClaim.id] } } });
       // The deepest claim is reviewed first and keeps its one independent replay.
       await h.call('p2o_task_review', { id: deepestTask.id, revision: runningDeepest.revision, reason: 'Owner reviewed the deepest demonstrated fixture claim', evidenceIds: [receipt] });
       // The intermediate claim is covered by that replay; reviewing it must not buy a second one.

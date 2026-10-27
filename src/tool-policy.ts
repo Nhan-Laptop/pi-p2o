@@ -22,9 +22,9 @@ export const LAB_TOOLS = ['p2o_lab'];
  * `p2o_graph` stays in the planner loadout for read/query/chain coordination; worker-only write enforcement follows in A2.
  */
 export const PLANNER_TOOLS = [
-  'p2o_task_create', 'p2o_task_revise', 'p2o_task_dispatch', 'p2o_task_review', 'p2o_task_settle',
-  'p2o_plan_create', 'p2o_plan_revise',
-  'p2o_case_create', 'p2o_case_revise', 'p2o_case_rate',
+  'p2o_task_author', 'p2o_task_dispatch', 'p2o_task_review', 'p2o_task_settle',
+  'p2o_plan_author',
+  'p2o_case_author', 'p2o_case_rate',
   'p2o_coverage_plan', 'p2o_coverage_suggest',
   'p2o_board', 'p2o_ledger', 'p2o_state', 'p2o_artifact', 'p2o_graph',
   'p2o_skill_list', 'p2o_skill_read', 'p2o_secret', 'p2o_research',

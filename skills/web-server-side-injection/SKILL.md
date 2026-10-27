@@ -5,7 +5,7 @@ description: Test whether untrusted input changes the structure that a server-si
 
 # Web Server-Side Injection
 
-Before first use, read the [scope baseline](../../README.md#start-here) and [handoff contracts](../../HANDOFFS.md).
+Before first use: [scope baseline](../../README.md#start-here), [handoff method](../../HANDOFFS.md#focused-method-and-review), and [owner review](../../HANDOFFS.md#provisional-owner-review).
 
 ## Applicability
 Use when a request value reaches a server-side interpreter that gives meaning to structure, not just content: a query language, a document parser, a command shell, a file-path resolver, a mail protocol, or an outbound-request target. Source review covers where a value is concatenated, interpolated or passed unparsed into such an interpreter instead of through a parameterized or allow-listed path. Live work compares boundary-class markers against a fixed baseline and then follows the effect the interpreter's changed structure actually produces, including data mutation, code execution and network egress.
@@ -49,7 +49,7 @@ A per-parameter table: the marker used, the baseline and observed status/length/
 ## Stop Conditions
 - Record the first boundary-class marker that produces an attributable, reproducible structural difference, then keep going into the interpreter's own effect: the structural difference is the base of the chain, not its ceiling.
 - Mutate data, exfiltrate it, degrade availability or reach any host the sandbox can route to; the marker and the effect are one chain, and each carries its receipt.
-- Compose the code-execution step here or in [exploitability assessment](../exploitability-assessment/SKILL.md) against the target; it is the same chain as the structural difference, not a separate permission.
+- Compose the code-execution step in [web injection to execution](../web-injection-to-exec/SKILL.md) against the target; it is the same chain as the structural difference, not a separate permission.
 - After three samples per marker, a result that needs more to appear is not reproducible evidence yet; extend the sample when the effect needs it.
 
 ## Evidence Fields
@@ -60,9 +60,9 @@ A per-parameter table: the marker used, the baseline and observed status/length/
 - Coverage state and the reason for any card not run.
 
 ## Gaps
-This card stops at structural influence over an interpreter: code execution, data access or a network egress effect is composed in [exploitability assessment](../exploitability-assessment/SKILL.md) against the target. A non-HTTP channel or binary protocol is reachable through the sandbox network tool; a transport the run did not exercise stays untested.
+This card stops at structural influence over an interpreter: code execution, data access or a network egress effect is composed in [web injection to execution](../web-injection-to-exec/SKILL.md) against the target. A non-HTTP channel or binary protocol is reachable through the sandbox network tool; a transport the run did not exercise stays untested.
 
 ## Handoffs
-Provide the per-parameter table, the markers and controls used, and the source locations when available. Choose role/method from the unanswered question; record expected evidence and a branch stop condition. Use the [owned review contract](../../HANDOFFS.md#focused-method-and-review). Next: [data flow analysis](../data-flow-analysis/SKILL.md) for tracing a sink's full reach, [exploitability assessment](../exploitability-assessment/SKILL.md) for whether a confirmed structural influence has further reachable impact, or [remediation](../remediation/SKILL.md) for fixes.
+Provide the per-parameter table, the markers and controls used, and the source locations when available. Next: [data flow analysis](../data-flow-analysis/SKILL.md) for tracing a sink's full reach, [exploitability assessment](../exploitability-assessment/SKILL.md) for whether a confirmed structural influence has further reachable impact, or [remediation](../remediation/SKILL.md) for fixes.
 
 Claim rules are in [claim provenance before confirmation](../source-code-auditing/references/claim-provenance.md). This playbook restates the OWASP Web Security Testing Guide's injection guidance in this library's evidence terms; see [WSTG provenance](../../research/WSTG_PROVENANCE.md); [on demand](references/wstg-source.md).

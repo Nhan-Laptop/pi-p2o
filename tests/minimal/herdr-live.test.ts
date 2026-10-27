@@ -66,7 +66,7 @@ it.skipIf(process.env.P2O_TEST_HERDR !== '1')('real Herdr: the owner delegates i
     }
     expect(messages.some((message: any) => text(message).includes('OWNER_FINAL_REPORT')), JSON.stringify({ stderr, tail: messages.slice(-6).map(text) })).toBe(true);
     const results = messages.filter((message: any) => message.role === 'toolResult');
-    expect(results.map((message: any) => message.toolName)).toEqual(['p2o_net', 'p2o_task_create', 'p2o_task_dispatch', 'p2o_workers', 'p2o_finish']);
+    expect(results.map((message: any) => message.toolName)).toEqual(['p2o_net', 'p2o_task_author', 'p2o_task_dispatch', 'p2o_workers', 'p2o_finish']);
     // A1: no target tool on the planner surface; the Engine spawns the worker from the dispatched intent.
     expect(results[0].isError).toBe(true);
     expect(text(results[0])).toContain('not found');

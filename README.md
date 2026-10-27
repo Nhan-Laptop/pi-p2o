@@ -51,7 +51,7 @@ consent → PLANNER (this Pi conversation) → ENGINE (deterministic TS) → WOR
         → claims, cases, host-derived coverage → deterministic report
 ```
 
-- **Planner**: plans, reviews, dispatches, steers, decides wait/blocked/finish. No target, lab or claim tool in any mode (24
+- **Planner**: plans, reviews, dispatches, steers, decides wait/blocked/finish. No target, lab or claim tool in any mode (21
   tools). Dispatch of an intent is the only path to target execution.
 - **Engine**: admits accepted work when a slot and reviewed prerequisites allow; owns executors and rounds; never invents work.
 - **Worker**: one intent, one fresh process and ticket; the only executor and the only author of a claim, note or surface

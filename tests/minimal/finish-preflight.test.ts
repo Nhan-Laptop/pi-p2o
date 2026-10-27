@@ -34,7 +34,7 @@ describe('finish preflight', () => {
     await h.call('p2o_case_rate', {id: built.accepted.id, revision: built.accepted.revision, finding: rating });
     const pending = (await h.call('p2o_board', { board: 'cases', id: built.pending.id })).details;
     const { currentness, staleReasons, independentCurrent, independenceReason, acceptedFinding, readyToRate, canonicalCaseId, recordId, runId, revision, ...draft } = pending;
-    await h.call('p2o_case_revise', {id: built.pending.id, revision, entry: { ...draft, reviewStatus: 'withdrawn', reviewReason: 'Withdrawn: duplicate of the accepted fixture case' } });
+    await h.call('p2o_case_author', {id: built.pending.id, revision, entry: { ...draft, reviewStatus: 'withdrawn', reviewReason: 'Withdrawn: duplicate of the accepted fixture case' } });
     const text = finishText(await h.call('p2o_finish', {}));
     // M4: the fixture's one demonstrated claim has no successor and no wall, so the block lists it — as an advisory, because p2o
     // has no finish gate. Nothing is blocking, which is what "clean" now means. A3 adds two honest advisory facts no owner action
@@ -95,7 +95,7 @@ describe('finish preflight', () => {
   }));
   it('does not flag it once the stated objective is recorded as a goal', async () => fixture(async h => {
     await h.command('--target ./source --goal "Assess the login boundary for IDOR"');
-    await h.call('p2o_plan_create', {entry: { kind: 'goal', title: 'Assess the login boundary for IDOR', status: 'proposed', reason: 'Operator-stated objective turned into a tracked goal', criteria: ['Login IDOR surface enumerated'], exclusions: ['Out of scope: payment flows'], proof: { kind: 'capability', capability: { kind: 'http.request', subject: 'login' } } } });
+    await h.call('p2o_plan_author', {entry: { kind: 'goal', title: 'Assess the login boundary for IDOR', status: 'proposed', reason: 'Operator-stated objective turned into a tracked goal', criteria: ['Login IDOR surface enumerated'], exclusions: ['Out of scope: payment flows'], proof: { kind: 'capability', capability: { kind: 'http.request', subject: 'login' } } } });
     expect(finishText(await h.call('p2o_finish', {}))).not.toContain('NO_GOAL_RECORDED');
   }));
   it('does not flag a run with no stated --goal at all', async () => fixture(async h => {

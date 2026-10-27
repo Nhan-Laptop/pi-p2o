@@ -94,21 +94,26 @@ describe('purpose → skill defaults (P7)', () => {
     expect(PURPOSE_SKILLS.reporting).toEqual(ROLE_DEFAULTS.reporting.skills);
   });
 
-  it('uses the purpose when skills are omitted, and an empty purpose list keeps the role default', () => {
+  it('uses the purpose when skills are omitted, and an explicitly empty purpose list means no method default', () => {
     expect(resolveRole({ role: 'discovery', settings, purpose: 'mapping' }).skills).toEqual(['attack-surface-mapping']);
     expect(resolveRole({ role: 'validation', settings, purpose: 'retest' }).skills).toEqual(['remediation']);
     expect(resolveRole({ role: 'general', settings, purpose: 'refinement' }).skills).toEqual(['source-code-auditing']);
-    // investigation ships no default on purpose, so a general-role worker keeps the empty role default it has today.
+    // P15 (W3/W5): validation, reporting and investigation ship [] on purpose, so an explicit purpose must not resurrect the
+    // role default; role=discovery + purpose=validation starting from source-code-auditing was the P15 regression.
+    expect(resolveRole({ role: 'discovery', settings, purpose: 'validation' }).skills).toEqual([]);
+    expect(resolveRole({ role: 'discovery', settings, purpose: 'reporting' }).skills).toEqual([]);
+    expect(resolveRole({ role: 'recon', settings, purpose: 'investigation' }).skills).toEqual([]);
     expect(resolveRole({ role: 'general', settings, purpose: 'investigation' }).skills).toEqual([]);
-    // Omitting the purpose derives it from the role, so the two call sites cannot disagree with the worker's duty line.
+    // A role default applies only when no purpose is supplied, because the derived purpose then speaks for the role.
     expect(resolveRole({ role: 'discovery', settings }).skills).toEqual(['source-code-auditing']);
+    expect(resolveRole({ role: 'recon', settings }).skills).toEqual(['attack-surface-mapping']);
   });
 
   it('accepts the exploit role, resolves a model for it and grants no scope (P14.4, P14.6)', () => {
     const resolved = resolveRole({ role: 'exploit', settings, parentModel: 'parent/model' });
-    expect(resolved).toMatchObject({ role: 'exploit', model: 'opencode-go/kimi-k3', skills: ['exploit-design'] });
+    expect(resolved).toMatchObject({ role: 'exploit', model: 'opencode-go/kimi-k3', skills: ['exploit-design'], requestedSkills: [], omittedSkills: [] });
     // A role selects a model and a starting skill set; the ticket still fixes the target, so nothing here may widen it.
-    expect(Object.keys(resolved).sort()).toEqual(['model', 'role', 'skills', 'thinking']);
+    expect(Object.keys(resolved).sort()).toEqual(['model', 'omittedSkills', 'requestedSkills', 'role', 'skills', 'thinking']);
     expect(JSON.stringify(resolved)).not.toMatch(/target|origin|scope/i);
     // P14.6 ships the exploit skill, so both exploit purposes now start from it instead of from nothing.
     for (const purpose of ['exploitation', 'chaining'] as const) expect(PURPOSE_SKILLS[purpose]).toEqual(['exploit-design']);
@@ -121,6 +126,37 @@ describe('purpose → skill defaults (P7)', () => {
     expect(resolveRole({ role: 'discovery', settings, purpose: 'validation', skills: ['memory-safety-auditing'] }).skills).toEqual(['memory-safety-auditing']);
     expect(resolveRole({ role: 'validation', settings, purpose: 'retest' }).model).toBe('opencode-go/kimi-k3');
     expect(resolveRole({ role: 'discovery', settings, purpose: 'validation' }).model).toBe('opencode-go/deepseek-v4-flash');
+  });
+
+  it('removes the source method from a URL-only refinement or retest and keeps it where a snapshot exists', () => {
+    for (const purpose of ['refinement', 'retest'] as const) {
+      expect(resolveRole({ role: 'general', settings, purpose, context: { kind: 'url' } }).skills, `${purpose} on url`).toEqual([]);
+      expect(resolveRole({ role: 'general', settings, purpose, context: { kind: 'hybrid' } }).skills, `${purpose} on hybrid`).not.toEqual([]);
+      expect(resolveRole({ role: 'general', settings, purpose, context: { kind: 'directory' } }).skills, `${purpose} on directory`).not.toEqual([]);
+    }
+    expect(resolveRole({ role: 'general', settings, purpose: 'refinement', context: { kind: 'hybrid' } }).skills).toEqual(['source-code-auditing']);
+    expect(resolveRole({ role: 'general', settings, purpose: 'retest', context: { kind: 'hybrid' } }).skills).toEqual(['remediation']);
+    // An explicit request still wins, so any skill stays nameable on any target kind.
+    expect(resolveRole({ role: 'general', settings, purpose: 'refinement', context: { kind: 'url' }, skills: ['memory-safety-auditing'] }).skills).toEqual(['memory-safety-auditing']);
+    // The rule only removes source-based methods: a URL discovery keeps its web playbook, and operator settings still outrank it.
+    expect(resolveRole({ role: 'discovery', settings, purpose: 'discovery', context: { kind: 'url' } }).skills).toEqual(['web-route-input-inventory']);
+    const configured = parseSettings({ p2o: { roles: { general: { skills: ['fuzzing'] } } } });
+    expect(resolveRole({ role: 'general', settings: configured, purpose: 'refinement', context: { kind: 'url' } }).skills).toEqual(['fuzzing']);
+  });
+
+  it('reports the requested and omitted skills instead of silently capping at MAX_SKILLS', () => {
+    const requested = ['attack-surface-mapping', 'source-code-auditing', 'web-deployment-hygiene', 'data-flow-analysis'];
+    const capped = resolveRole({ role: 'general', settings, skills: requested });
+    expect(capped.skills).toEqual(requested.slice(0, MAX_SKILLS));
+    expect(capped.requestedSkills).toEqual(requested);
+    expect(capped.omittedSkills).toEqual(requested.slice(MAX_SKILLS));
+    // A derived exploitation ladder can overflow the cap too; without this field that loss would leave no trace anywhere.
+    const ladder = resolveRole({ role: 'exploit', settings, context: { needs: ['net.egress', 'exec.code', 'cred.session'] } });
+    expect(ladder.skills).toHaveLength(MAX_SKILLS);
+    expect(ladder.requestedSkills).toEqual([]);
+    expect(ladder.omittedSkills).toEqual(['credential-and-pivot']);
+    // Nothing cut, nothing reported.
+    expect(resolveRole({ role: 'recon', settings })).toMatchObject({ requestedSkills: [], omittedSkills: [] });
   });
 
   it('P10/WF-02/03 (Q28): validates a per-task worker runtime against the configured role models and thinking levels', () => {

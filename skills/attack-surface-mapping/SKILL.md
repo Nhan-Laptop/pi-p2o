@@ -5,7 +5,7 @@ description: Map an unfamiliar application's, service's, firmware's, kernel's, o
 
 # Attack-Surface Mapping
 
-Before first use, read the [scope baseline](../../README.md#start-here), the [skill router](../../README.md#skill-router) for the full catalog this inventory can route into, and [handoff contracts](../../HANDOFFS.md).
+Before first use: [scope baseline](../../README.md#start-here), [handoff method](../../HANDOFFS.md#focused-method-and-review), and [owner review](../../HANDOFFS.md#provisional-owner-review).
 
 ## Technique
 Reachability-first interface inventory.
@@ -43,7 +43,7 @@ For composed-service identity questions, use [intermediary trust](references/int
 
 
 ## Focused Method
-Give each extracted surface a stable ID and provenance. Distinguish registration, inferred reachability and an observed consumer. Select one next question; stop unchanged extraction when it adds no information. Choose role/method from the unanswered question; record expected evidence and a branch stop condition. Use the [owned review contract](../../HANDOFFS.md#focused-method-and-review).
+Give each extracted surface a stable ID and provenance. Distinguish registration, inferred reachability and an observed consumer. Select one next question; stop unchanged extraction when it adds no information.
 
 ## Validation
 A surface row is **confirmed** only with the tested actor, gate outcome, and handler observation; otherwise label it inferred or unresolved. Recheck on the deployed/default configuration, not just a debug build. A privileged diagnostic path cannot establish unprivileged reachability. Preserve denied operations as negative controls.
@@ -59,9 +59,5 @@ Derived engineering guidance: enforce policy at the consuming boundary across al
 
 ## Evidence
 Merged interface-registration, driver-access, socket-API, deployment-default, and middleware-scope methods from B081, B028, B002, B003, B005, B006, and B058. See the linked evidence ledger for historical scope and source limitations; this skill does not assert current target vulnerability.
-
-Distributed peer authority and consumer-specific gate coverage additionally draw on [O008](../../research/orange/evidence.md#o008). A corrected entrance gate is not proof that the same trust assumption is repaired elsewhere.
-
-[O012](../../research/orange/evidence.md#o012) contributes separate intermediary/client trust roles and revision-dependent architectural responsibilities. The owned guide records their generic contract rather than importing a source request chain; build your own against the target.
 
 [O048](../../research/orange/evidence.md#o048) adds metadata-led auxiliary inventory, not a metadata-acquisition or test-page exploitation sequence; [On demand upstream text](references/wstg-source.md).

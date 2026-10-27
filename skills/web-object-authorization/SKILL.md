@@ -5,57 +5,44 @@ description: Test whether a principal can reach an object, field, tenant, or del
 
 # Web Object Authorization
 
-Before first use, read the [scope baseline](../../README.md#start-here) and [handoff contracts](../../HANDOFFS.md).
+Before first use: [scope baseline](../../README.md#start-here), [handoff method](../../HANDOFFS.md#focused-method-and-review), and [owner review](../../HANDOFFS.md#provisional-owner-review).
 
 ## Applicability
-Use when an action selects a specific object, field, tenant, or delegated role, and the question is whether the effective policy binds that selection to the acting principal. Source review covers handler-level ownership checks, list and export filters, serializer field policy, nested-object policy, batch handlers, and asynchronous consumers. Offline reproduction covers policy functions that can be exercised against controlled objects with a local runtime. A live two-account comparison over authenticated requests is available: register two disposable principals through the target's own signup flow, keep each named principal's cookies in its own jar, or use a sealed secret if one exists. A third identity or transport widens variant coverage; one reachable unauthorized protected effect is enough to establish the policy question.
+Use when an action selects a specific object, field, tenant, or delegated role, and the question is whether the effective policy binds that selection to the acting principal. Source review covers handler-level ownership checks, list and export filters, serializer field policy, nested-object policy, batch handlers, and asynchronous consumers. Offline reproduction covers policy functions that can be exercised against controlled objects with a local runtime. A live two-account comparison over authenticated requests is available with two principals you register yourself. A third identity or transport widens variant coverage; one reachable unauthorized protected effect is enough to establish the policy question.
 
 ## Workflow Prerequisites
 - `source-review` requires a supplied read-only source snapshot. Trace the effective decision and its operands in the supplied revision.
 - `offline-reproduction` requires bounded offline sandbox execution, with the local runtime and required dependencies functionally checked through a bounded offline run. Exercise an extracted policy function against controlled objects in a local harness.
-- `controlled-identity-comparison` obtains identities itself: register at least two disposable principals through the target's own signup flow, keep each named principal's cookies in its own jar, or use a sealed secret if one exists. An unauthenticated request or a session you cannot attribute is a variant to characterize; keep the candidate at a static trace only until the comparison runs.
+- `controlled-identity-comparison` obtains identities itself: register at least two disposable principals through the target's own signup flow, or use sealed secrets if they exist. An unauthenticated request or a session you cannot attribute is a variant to characterize; keep the candidate at a static trace only until the comparison runs.
 - A framework permit or scope annotation is a review lead, not proof that the effective action is authorized; confirm the code path that runs.
 
 ## Baseline
-Establish two expected outcomes with controlled objects. The owner acting on its own object must succeed through the normal endpoint or policy function. The same actor requesting the same action on a controlled foreign object, tenant, or field must be denied by a specific policy location. Record where the decision runs relative to object retrieval and the protected effect, and keep the object identifiers and identities in the ledger so every later comparison uses the same fixtures.
+Establish two expected outcomes with controlled objects: the owner acting on its own object must succeed through the normal endpoint or policy function, and the same actor on a controlled foreign object, tenant or field must be denied by a specific policy location. Record where the decision runs relative to object retrieval and the protected effect, and keep identifiers and identities in the ledger for later comparisons.
 
-Intended-policy provenance comes first:
-- Name the contract, documented role or ownership rule, or policy location that makes the expectation true. A convention, a naming pattern, or a sibling operation is a hypothesis, not provenance.
-- Distinct operations can intentionally grant different permissions. Read, update, export, aggregate, batch, and administrator paths each establish their own policy, and an update-path field constraint does not automatically govern read, list, or export.
-- A sibling surface that looks stricter or different is a review lead only; confirm the effective registration and contract before asserting that this surface must match.
-- `confirmed` requires a stated policy that the observed effect violates. Inferred intent is an `open_proof_gap`; a reachable unauthorized effect against a stated policy stays confirmed and is not dismissed for incomplete documentation.
+Intended-policy provenance comes first: name the contract, documented role or ownership rule, or policy location that makes the expectation true; a convention or sibling operation is a hypothesis, not provenance. Distinct operations can intentionally grant different permissions: read, update, export, aggregate, batch and administrator paths establish their own policy, and an update-path field constraint does not govern read, list or export. A sibling surface that looks stricter is a review lead only; confirm its effective registration and contract. `confirmed` requires a stated policy that the observed effect violates; inferred intent is an `open_proof_gap`, while a reachable unauthorized effect against a stated policy stays confirmed.
 
 ## Bounded Comparison
 Change exactly one variable per comparison: acting principal, object owner, tenant binding, requested field, action verb, or representation of the same identifier. Use objects you created where possible; real records, another principal's objects and production data are valid targets when the policy question needs them. When only local reproduction is available, call the policy function directly with the substituted actor/object pair and compare the returned decision and the effect it guards. Promote a candidate to confirmed only when the unauthorized protected effect is observed and the policy that the effect violates has provenance, not merely when a handler returns success or a UI element appears.
 
 ## Controls
-- Positive control: the protected action must fail for a principal that lacks the required grant, with the denial attributable to the named policy location rather than to a missing route or a broken fixture.
+- Positive control: the protected action must fail for a principal that lacks the required grant, with the denial attributable to the named policy location, not a missing route or broken fixture.
 - Negative control: the same action must succeed for an authorized principal on its own controlled object, proving the harness and the route both work.
 - Fail-open control: where an authorization dependency can be unavailable or raise, observe whether the failure path denies or continues, without exhausting shared production resources.
-- Representation control: top-level and nested forms of the same field or object must obey the same policy; a difference is a variant observation, not a second finding by itself.
 
 ## Expected Observations
-A principal-object-action matrix with the expected decision, the observed decision, the policy location, the protected effect, and the evidence identifier for each cell. Mark cells that could not be exercised in the current environment as not tested. Distinguish a policy denial from a null or empty response that simply hides a record; compare against the owner's own view to establish whether the data was withheld rather than absent.
+A principal-object-action matrix with expected and observed decisions, policy location, protected effect, and evidence identifier per cell. Mark unexercised cells not tested. Distinguish a policy denial from a null or empty response that hides a record; compare the owner's own view to tell withheld from absent.
 
 ## False-Positive Checks
 - Objects that are public or intentionally shared, where the same content is available to every principal.
-- Soft-private records whose content is already exposed through another documented surface.
-- Empty arrays or null responses that indicate silent enforcement rather than successful access.
-- Idempotent metadata lookups that reveal no protected content or state.
 - A privileged-by-design administrative or service interface that is powerful but intended.
 - UI-only restrictions mistaken for server-side policy, or the reverse.
-- A fixture object that turned out to be owned by the acting principal.
-- A different operation that deliberately applies a broader or narrower policy, such as an aggregate or export path assembled for a role that cannot read individual records.
-- An update-path field constraint projected onto a read, list, or export path with no stated policy covering that path.
-- A sibling route, version, or prefix assumed to carry the same intent without a contract or effective registration.
-- A credential-shaped literal in synthetic or test data treated as a deployed secret without provenance and reachability.
 
 ## Stop Conditions
 - Attribute each object and identity to a principal you created or hold; an unattributed object is a variant to characterize.
 - Send destructive, financial or externally visible mutations when that is the effect under test; prefer an object you created and record the effect with its receipt.
 - Record the first reachable unauthorized protected effect and keep enumerating the remaining transports as variant coverage.
 - When the denial cannot be attributed to a policy location, record an open proof gap instead of claiming safety.
-- When the intended policy can only be inferred, record an `open_proof_gap` that names the missing provenance instead of a confirmed violation, and never convert that gap into a dismissal of the reachable effect.
+- When intended policy can only be inferred, record an `open_proof_gap` naming the missing provenance; never convert it into a dismissal of the reachable effect.
 
 ## Evidence Fields
 - Principal identity label and the capability it represents.
@@ -64,14 +51,10 @@ A principal-object-action matrix with the expected decision, the observed decisi
 - Expected decision, observed decision, and the policy location responsible.
 - Protected effect observed, or the explicit absence of one.
 - Proof level: static trace, offline reproduction, or live reproduction.
-- Intended-policy provenance: the contract or policy location, or `inferred` with the missing source named.
-- Coverage state and the reason for any untested cell.
+- Intended-policy provenance: the contract or policy location, or `inferred` with the missing source named; coverage state and the reason for any untested cell.
 
 ## Gaps
 Live authenticated cross-principal comparison is reachable with two identities you register. Batch handlers, import and export pipelines, background jobs, cache-backed responses, and channel operations need their own reachable path before they can be closed. A static policy matrix proves only the code path that was read; unresolved dispatch, dynamic permission composition, and environment-dependent configuration stay untested.
-
-## Focused Method
-Review policy provenance and the actor/object contrast before accepting a packet. A live authenticated comparison you could not run is a gap to record, not a default. Withdraw an earlier conclusion when current counterevidence changes the effective gate. Choose role/method from the unanswered question; record expected evidence and a branch stop condition. Use the [owned review contract](../../HANDOFFS.md#focused-method-and-review).
 
 ## Handoffs
 Provide the matrix, controlled fixtures, policy locations, observed effects, and untested cells. Next: [authorization auditing](../authorization-auditing/SKILL.md) for identity establishment and alternate interfaces, [remediation](../remediation/SKILL.md) for policy repair, or [web route and input inventory](../web-route-input-inventory/SKILL.md) when the missing input is a route map.

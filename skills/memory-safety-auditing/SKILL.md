@@ -5,7 +5,7 @@ description: Audit numeric representations, buffer ranges, initialization, alloc
 
 # Memory-Safety Auditing
 
-Before first use, read the [scope baseline](../../README.md#start-here) and [handoff contracts](../../HANDOFFS.md).
+Before first use: [scope baseline](../../README.md#start-here), [handoff method](../../HANDOFFS.md#focused-method-and-review), and [owner review](../../HANDOFFS.md#provisional-owner-review).
 
 ## Technique
 Representation-to-access invariant checking.
@@ -35,11 +35,11 @@ Input representation → arithmetic/type model → allocation and ownership → 
 - A user-facing action may reuse an identical-value object instead of allocating; verify feature flags, allocator accounting, input alphabet, and reference-counted lifetime. [B046](../../research/evidence.md#b046)
 
 ## Tools
-- Disassembler/decompiler plus format documentation → reconstruct actual widths and access expressions → when source types or layouts are uncertain; `readelf`/`objdump`/`nm`/`strings` run fine in a p2o sandbox, but an interactive decompiler (IDA/Ghidra GUI) needs a separate environment with a display.
-- KASAN/Page Heap/GuardMalloc → expose first invalid accesses → for supported lab builds; coverage and sanitizer blind spots remain explicit; that lab build is necessarily outside the sandbox (Page Heap is Windows-only, GuardMalloc macOS-only, KASAN needs a specially built kernel).
-- WinDbg `!pool`/heap inspection or libslub → identify allocator classes and allocation history → when adjacency/lifetime assumptions affect assessment; both need live process attach, which a p2o sandbox blocks — use a separate lab environment.
+- Disassembler/decompiler plus format documentation → reconstruct actual widths and access expressions → when source types or layouts are uncertain; `readelf`/`objdump`/`nm`/`strings` run fine in a p2o sandbox, a GUI decompiler needs a display the sandbox may not provide, so run its headless mode or record the missing display as the specific blocked fact.
+- KASAN/Page Heap/GuardMalloc → expose first invalid accesses → for supported lab builds; run an instrumented user-space build as an in-sandbox lab recipe (environment build plus verification) or as ordinary sandbox commands, with coverage and sanitizer blind spots explicit; a facility the sandbox refuses, such as kernel KASAN needing a host kernel, is recorded as that specific blocked fact.
+- WinDbg `!pool`/heap inspection or libslub → identify allocator classes and allocation history → when adjacency/lifetime assumptions affect assessment; run the diagnostic build as an in-sandbox lab recipe (environment build plus verification) or as ordinary sandbox commands, and record a refused attach as the specific blocked fact.
 - Small concrete models or optional Z3 bitvectors → compare intended bounds with exact width/signedness/wraparound semantics → for a reduced arithmetic relation, using [model and counterexample checks](../data-flow-analysis/references/reduced-models.md) before runtime tests.
-- Debugger watchpoints and allocation/free stacks → distinguish overwrite, replacement, and stale reuse → when a final crash hides the earlier cause; needs live process attach, which a p2o sandbox blocks — use a separate lab environment.
+- Debugger watchpoints and allocation/free stacks → distinguish overwrite, replacement, and stale reuse → when a final crash hides the earlier cause; run the diagnostic build as an in-sandbox lab recipe (environment build plus verification) or as ordinary sandbox commands, and record a refused attach as the specific blocked fact.
 
 ## Validation
 Correlate the failing instruction with the input-derived expression, live object size, and allocation/free history. Use minimal lab observations and valid negative controls. Reject a hypothesis if a preceding size/type check, unreachable input ceiling, or allocator separation prevents the proposed access. Debug builds and heap instrumentation alter layout; production-equivalent consequences require separate evidence.

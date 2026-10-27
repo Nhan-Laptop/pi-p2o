@@ -5,7 +5,7 @@ description: Push a confirmed web injection — SQL, shell, template, expression
 
 # Web Injection to Execution
 
-Before first use, read the [scope baseline](../../README.md#start-here) and [handoff contracts](../../HANDOFFS.md).
+Before first use: [scope baseline](../../README.md#start-here), [handoff method](../../HANDOFFS.md#focused-method-and-review), and [owner review](../../HANDOFFS.md#provisional-owner-review).
 This skill assumes the injection is already demonstrated. If the only evidence is a payload-shaped string coming back,
 you are still in discovery: go confirm that the value reaches an interpreter.
 
@@ -22,18 +22,23 @@ you are still in discovery: go confirm that the value reaches an interpreter.
 ## Gates
 
 **Gate M — marker.** Use a harmless marker that no natural response contains: an arithmetic result, a random token, a
-path that does not exist. Send it, then send the control without it. *Pass:* the marker appears only with the payload,
-in the same context you predicted. *Fail:* you have reflection, not injection.
+path that does not exist. Send it, then send the control without it; `python3 scripts/marker-probe.py` (registered as
+`web-injection-to-exec:marker-probe`) takes `--target <url with {{payload}}> --payload <marker> --baseline <control>`.
+*Pass:* the marker appears only with the payload, in the same context you predicted. *Fail:* you have reflection, not
+injection.
 
 **Gate C — context escape.** Show that you can leave the context you entered: close the quote and keep the query valid,
 break out of the string into a statement, move from filename to path, from a scalar to an object. *Pass:* the payload
 that escapes still produces a *different*, predictable response from the one that does not. *Fail:* quote the exact
-sanitiser or parser behaviour that stopped you; that is the wall.
+sanitiser or parser behaviour that stopped you; that is the wall. Sink-specific marker and escape shapes are in
+[sink ladders by interpreter](references/sink-ladder.md).
 
 **Gate O — observation.** Reach an observation that is not the response body: a file whose content or hash you compare,
 a row in a table you read through an unrelated feature, a DNS or HTTP callback that arrived with a timestamp, a
 subprocess's own side effect. *Pass:* the artifact exists after the payload and not after the control. *Fail:* record
-blindness honestly; a timing signal alone is a hypothesis about execution, not execution.
+blindness honestly; a timing signal alone is a hypothesis about execution, not execution. Prefer an in-band artifact:
+there is no inbound path by default, so a callback needs an operator lab network, and its absence is an environment
+fact, not a clean negative.
 
 **Gate X — execution.** From the observation, take the shortest step to a command the target runs. One binary, one
 argument, no interactive shell. *Pass:* the command's own side effect is observed — a file it created, a connection it
@@ -56,8 +61,9 @@ your own terminal, a "shell" whose output you never read back through the target
 
 - **Sanitiser that survives context escape.** Report the rule and the input that triggered it; do not spend the budget
   on encoding permutations that the same rule will catch.
-- **Blind with no reachable callback.** The target may execute but you cannot see it. Say so, and hand the unobserved
-  execution to the lead as a wall — not as an effect.
+- **Blind with no reachable callback.** The target may execute but you cannot see it. An absent callback is an
+  environment fact, not a clean negative: say so, and hand the unobserved execution to the lead as a wall — not as an
+  effect.
 - **Write without execute.** A writable upload directory that nothing executes is a file-write effect; check what does
   execute (cron, include path, template cache, plugin loader) before claiming more.
 - **Egress blocked.** Callbacks fail because the target has no route out. That is a fact about the environment; record

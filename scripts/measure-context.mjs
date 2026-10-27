@@ -41,6 +41,7 @@ for (const kind of ['directory', 'url']) for (const role of ROLES) {
   const ticket = { workerId: `p2o-${role}-abcdef`, role, runId: 'run-x', depth: 1, parentWorkerId: null, lifetime: 'until-stopped', target: { kind, label: kind === 'url' ? 'https://example.invalid' : '/target' } };
   const system = workerInstructions(ticket), brief = workerBrief({ ticket, focus: 'F', task: 'T' }), allowed = workerTools(role);
   // A1: the read-only reporter and the validation worker have no surface writer, so their contract omits the tool guidance.
+  // The read-only reporter gets EVIDENCE STANDARDS instead of the recon contract, so its reconBlocks count is 0 by design.
   const expectedRecon = role === 'reporting' || role === 'validation' ? reconInstructions(kind, false) : reconInstructions(kind);
   result.workers.push({ role, kind, system: system.length, brief: brief.length, total: system.length + brief.length, reconBlocks: count(`${system}\n${brief}`, expectedRecon),
     toolNamesOutsideLoadout: named(`${system}\n${brief}`).filter(name => !allowed.includes(name)) });

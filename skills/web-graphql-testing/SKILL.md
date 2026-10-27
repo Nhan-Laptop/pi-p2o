@@ -5,7 +5,7 @@ description: Test a GraphQL endpoint's own configuration surface, separate from 
 
 # Web GraphQL Testing
 
-Before first use, read the [scope baseline](../../README.md#start-here) and [handoff contracts](../../HANDOFFS.md).
+Before first use: [scope baseline](../../README.md#start-here), [handoff method](../../HANDOFFS.md#focused-method-and-review), and [owner review](../../HANDOFFS.md#provisional-owner-review).
 
 ## Applicability
 Use when an endpoint accepts GraphQL queries. This skill owns only what is specific to GraphQL as a query layer: schema self-description, a reachable development interface, and the bounds a server places on query shape. Field-level access control (can this principal read or write this field) belongs to [web object authorization](../web-object-authorization/SKILL.md); a resolver argument reaching an injection-prone sink belongs to [web server-side injection](../web-server-side-injection/SKILL.md); output-encoding questions belong to [web output context](../web-output-context/SKILL.md). This card hands off to those rather than re-testing their questions through GraphQL syntax.
@@ -53,6 +53,6 @@ Whether the introspection query is answered and in what detail; whether a develo
 Whether an exposed schema or a missing bound is then exploited through a field-level authorization gap or an injection-prone resolver argument is answered by the skills this card hands off to, not by this one. A production deployment's actual resource limits are reachable with a load test; run it when that is the question and record the load and receipts.
 
 ## Handoffs
-Provide the introspection and development-interface findings, the bound checks and their receipts, and a list of fields worth a field-level authorization pass. Choose role/method from the unanswered question; record expected evidence and a branch stop condition. Use the [owned review contract](../../HANDOFFS.md#focused-method-and-review). Next: [web object authorization](../web-object-authorization/SKILL.md) for field-level access control, [web server-side injection](../web-server-side-injection/SKILL.md) for a resolver argument reaching an interpreter, or [remediation](../remediation/SKILL.md) for fixes.
+Provide the introspection and development-interface findings, the bound checks and their receipts, and a list of fields worth a field-level authorization pass. Next: [web object authorization](../web-object-authorization/SKILL.md) for field-level access control, [web server-side injection](../web-server-side-injection/SKILL.md) for a resolver argument reaching an interpreter, or [remediation](../remediation/SKILL.md) for fixes.
 
 Claim rules are in [claim provenance before confirmation](../source-code-auditing/references/claim-provenance.md). This playbook restates the GraphQL-specific guidance of the OWASP Web Security Testing Guide in this library's evidence terms, routing its injection and authorization sections to the skills that already own those questions; see [WSTG provenance](../../research/WSTG_PROVENANCE.md); [On demand upstream text](references/wstg-source.md).

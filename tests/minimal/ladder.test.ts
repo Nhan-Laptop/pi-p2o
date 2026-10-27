@@ -162,7 +162,7 @@ describe('access ladder in the report (A7.6/Q18)', () => {
     // An observed claim is observed whether or not its policy is established; the ladder never turns proof of depth into permission to rate.
     expect(claimRung(inferred.data)).toBe('observed');
     const draft = { title: 'Inferred policy ladder case', policyKey: 'policy:ladder-inferred', assetRefs: [{ id: built.asset.entityId, revision: 1 }], claimRefs: [inferred.id], independentEvidenceRefs: [], taskRefs: [], reportRefs: [], contradictions: [], affectedVariants: [], relatedCaseIds: [], verdict: 'open', reviewStatus: 'pending', reviewReason: 'Pending: policy is only inferred', limitations: 'Policy was inferred, not declared', remediation: { status: 'unplanned', reason: 'No remediation was reviewed for this fixture', evidenceRefs: [] } };
-    const created = (await h.call('p2o_case_create', { entry: draft, requestId: 'ladder-inferred-case' })).details;
+    const created = (await h.call('p2o_case_author', { entry: draft, requestId: 'ladder-inferred-case' })).details;
     await expect(h.call('p2o_case_rate', { id: created.id, revision: created.revision, finding: { severity: 'high', basis: 'Inferred policy only' } })).rejects.toThrow(/inferred policy basis cannot be rated above medium/);
   }));
 });

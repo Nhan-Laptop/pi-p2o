@@ -428,7 +428,7 @@
     },
     {
       "name": "web-browser-trust-controls",
-      "description": "Test what a server declares to a browser about cross-origin trust (CORS, framing, content policy, request-origin checks) and what client-side code does with untrusted input in a URL, style, resource reference, message or storage slot, mostly by reading headers and static script, then by building the browser-side chain that declared policy permits on the target. Use when a response carries cross-origin headers or client-side script handles untrusted values. Covers WSTG SESS-05, CONF-12 and CLNT-04 to CLNT-07, CLNT-09 to CLNT-14.",
+      "description": "Test what a server declares to a browser about cross-origin trust (CORS, framing, content policy, request-origin checks) and what client-side code does with untrusted input in a URL, style, resource reference, message or storage slot, mostly by reading headers and static script, then by building the browser-side chain that declared policy permits on the target. Use when a response carries cross-origin headers or client-side script handles untrusted values. Covers WSTG SESS-05, CONF-12 and CLNT-04 to CLNT-07, CLNT-09 to CLNT-15.",
       "kind": "playbook",
       "document": "web-browser-trust-controls",
       "workflows": [
@@ -1367,6 +1367,11 @@
       "id": "shared:wstg-map",
       "path": "docs/WSTG_MAP.md",
       "section": "wstg-map-table"
+    },
+    {
+      "id": "shared:browser-transport",
+      "path": "docs/HTTP_TRANSPORT.md",
+      "section": "browser-transport"
     },
     {
       "id": "shared:wstg-provenance",

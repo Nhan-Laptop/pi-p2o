@@ -5,7 +5,7 @@ description: Find trust failures caused by inconsistent parsing, canonicalizatio
 
 # Parser-Differential Auditing
 
-Before first use, read the [scope baseline](../../README.md#start-here) and [handoff contracts](../../HANDOFFS.md).
+Before first use: [scope baseline](../../README.md#start-here), [handoff method](../../HANDOFFS.md#focused-method-and-review), and [owner review](../../HANDOFFS.md#provisional-owner-review).
 
 ## Technique
 Validate-versus-consume semantic comparison.
@@ -52,7 +52,7 @@ Testing only the default representation; equating encoding with context safety; 
 Derived guidance: parse once into typed canonical values; validate and consume the same result; fail closed on malformed/empty ambiguous states; avoid shell/source construction; validate outbound destinations across redirects and constrain egress. Escape for the final output context, not an earlier parser.
 
 ## Focused Method
-Carry exact representations, parser identities, controlled comparisons and rejected assumptions into the next question. A discrepancy needs an observed consequence; unavailable framing or transport remains a gap the next observation closes. Choose role/method from the unanswered question; record expected evidence and a branch stop condition. Use the [owned review contract](../../HANDOFFS.md#focused-method-and-review).
+Carry exact representations, parser identities, controlled comparisons and rejected assumptions into the next question. A discrepancy needs an observed consequence; unavailable framing or transport remains a gap the next observation closes.
 
 ## Handoffs
 **Parser Comparison → Root Cause:** provide parser/runtime identities, representation table, contrasting interpreted values, policy consequence, and rejected alternatives. **Root Cause → Remediation:** specify the authoritative representation and every consumer needing the same contract. Next: [remediation](../remediation/SKILL.md).

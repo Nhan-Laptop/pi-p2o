@@ -5,7 +5,7 @@ description: Test how an identity is created, proved, locked, recovered and stre
 
 # Web Credential Lifecycle
 
-Before first use, read the [scope baseline](../../README.md#start-here) and [handoff contracts](../../HANDOFFS.md).
+Before first use: [scope baseline](../../README.md#start-here), [handoff method](../../HANDOFFS.md#focused-method-and-review), and [owner review](../../HANDOFFS.md#provisional-owner-review).
 
 ## Applicability
 Use when users can register, sign in with a password, recover access or add a second factor, and the question is whether each step proves what the application's policy says it proves. Source review covers registration code, initial roles, seeded accounts, password rules and storage settings, lockout counters, reset and recovery token generation and the MFA state machine. Live work obtains what it needs itself: register throwaway accounts through the target's own signup flow, use a mailbox or number you can reach (a disposable mailbox in the sandbox, or the target's delivery flow), and state the policy for password strength, lockout, token lifetime and factors before testing. Several steps change state outside the target (mail, locked accounts); count every attempt and record what each changed.
@@ -64,6 +64,6 @@ A request-class table (message, status, length, redirect, timing class, headers)
 SMS, voice, hardware tokens, push approval, mobile apps, delegated single sign-on, captcha and human support are reachable through the matching transport or target flow; what stays untested is a channel no transport exercised. Timing channels need many samples and a quiet network, so a single run does not rule them out. A clean result covers only the throwaway accounts, the counted attempts and the paths tested.
 
 ## Handoffs
-Provide the policy statement, the request-class tables, the attempt counts and the token classes. Choose role/method from the unanswered question; record expected evidence and a branch stop condition. Use the [owned review contract](../../HANDOFFS.md#focused-method-and-review). Next: [web session management](../web-session-management/SKILL.md) for the session after login, [authorization auditing](../authorization-auditing/SKILL.md) for provisioning and role questions, or [remediation](../remediation/SKILL.md) for fixes.
+Provide the policy statement, the request-class tables, the attempt counts and the token classes. Next: [web session management](../web-session-management/SKILL.md) for the session after login, [authorization auditing](../authorization-auditing/SKILL.md) for provisioning and role questions, or [remediation](../remediation/SKILL.md) for fixes.
 
 Claim rules are in [claim provenance before confirmation](../source-code-auditing/references/claim-provenance.md). This playbook restates the identity management and authentication guidance of the OWASP Web Security Testing Guide in this library's evidence terms; see [WSTG provenance](../../research/WSTG_PROVENANCE.md); [On demand upstream text](references/wstg-source.md).

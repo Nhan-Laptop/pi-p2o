@@ -89,7 +89,7 @@ it.each(['normal', 'quota'])('real Pi + inert sandbox, %s worker: terminal repor
     expect(hasAssessmentStarted(messages)).toBe(true);
     expect(deriveRunId({ messages })).toMatchObject({ runId: expect.stringMatching(/^run-/), source: 'policy-section' });
     const toolResults = messages.filter((message: any) => message.role === 'toolResult');
-    expect(toolResults.map((message: any) => message.toolName)).toEqual(['p2o_net', 'p2o_task_create', 'p2o_task_dispatch', 'p2o_workers', 'p2o_finish']);
+    expect(toolResults.map((message: any) => message.toolName)).toEqual(['p2o_net', 'p2o_task_author', 'p2o_task_dispatch', 'p2o_workers', 'p2o_finish']);
     // A1 acceptance: the planner holds no target tool, so a real Pi model call to p2o_net is Pi's unknown-tool result, not a
     // permission error from the extension. The one delegation path is task create -> task dispatch -> Engine-spawned worker.
     expect(toolResults[0].isError).toBe(true);

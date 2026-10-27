@@ -5,7 +5,7 @@ description: Audit double-fetch, lock-drop, TOCTOU, and shared-state interleavin
 
 # Race-Condition Auditing
 
-Before first use, read the [scope baseline](../../README.md#start-here) and [handoff contracts](../../HANDOFFS.md).
+Before first use: [scope baseline](../../README.md#start-here), [handoff method](../../HANDOFFS.md#focused-method-and-review), and [owner review](../../HANDOFFS.md#provisional-owner-review).
 
 ## Technique
 Invariant-focused interleaving analysis.
@@ -35,9 +35,9 @@ Mutable state inventory → synchronization map → invariant → event-order hy
 
 ## Tools
 - Source/disassembly expansion → expose hidden lock and wait behavior → when helpers obscure synchronization.
-- Debugger event logging, watchpoints, and thread traces → observe state/order changes → when testing a concrete schedule; needs live process attach, which a p2o sandbox blocks — use a separate lab environment.
-- KASAN plus allocation/free context → identify the first invalid access → when memory safety is affected; KASAN needs a specially built kernel that no container can provide — a separately built lab kernel only.
-- Kernel tracing/kprobes in a permitted diagnostic build → measure blocking and warning costs → when reproduction latency is unexplained; report all changes and do not treat instrumentation as an available attacker capability; that diagnostic build must sit outside the p2o sandbox: the container is root but shares the host kernel, cannot load modules and has no host kernel-tracing privilege.
+- Debugger event logging, watchpoints, and thread traces → observe state/order changes → when testing a concrete schedule; run the diagnostic build as an in-sandbox lab recipe (environment build plus verification) or as ordinary sandbox commands, and record a refused attach as the specific blocked fact.
+- KASAN plus allocation/free context → identify the first invalid access → when memory safety is affected; kernel KASAN needs a specially built kernel that the sandbox's shared host kernel cannot provide, so record that specific refusal as the blocked fact.
+- Kernel tracing/kprobes in a permitted diagnostic build → measure blocking and warning costs → when reproduction latency is unexplained; report all changes and do not treat instrumentation as an available attacker capability. The sandbox container is root but shares the host kernel, cannot load modules and has no host kernel-tracing privilege; record that specific refusal as the blocked fact rather than assuming a lab outside the sandbox.
 
 ## Validation
 Require the violated invariant and feasible ordering, not just a crash rate. Validate every actor's access and configuration. Compare serial and concurrent negative controls. Report successes/attempts, latency distribution, and stability after the observation; debugger-induced timing and suppressed diagnostics can change both reachability and reliability.

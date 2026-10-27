@@ -34,13 +34,16 @@ describe('approved knowledge', () => {
     await expect(library.read('/etc/passwd')).rejects.toThrow('Unknown document');
     await expect(library.read('source-code-auditing', -1)).rejects.toThrow();
   });
-  it('inlines the default recon playbook whole at the 24 KiB page (P9)', async () => {
-    // P9 raised the inline page from 8 KiB to 24 KiB: attack-surface-mapping/SKILL.md is 8,591 bytes, so before the change
-    // every default recon worker started on a truncated playbook while its brief said the skills were already loaded.
+  it('inlines the default recon playbook whole under the skill size ceiling (P9)', async () => {
+    // P9 raised the inline page from 8 KiB to 24 KiB. The default recon playbook now sits under the 8,000-character
+    // ceiling enforced for every playbook, so its last section still arrives in one read without a "Continued" step;
+    // the synthetic document in the next test covers pagination itself.
     const library = new SkillLibrary(ROOT);
     const page = await library.read('attack-surface-mapping');
-    expect(Buffer.byteLength(page.text)).toBeGreaterThan(8 * 1024);
+    const source = await readFile(resolve(ROOT, 'skills/attack-surface-mapping/SKILL.md'), 'utf8');
+    expect(source.length).toBeLessThanOrEqual(8_000);
     expect(page.nextOffset).toBeUndefined();
+    expect(page.text).toContain('## Handoffs');
   });
 
   it('rejects symlinks, special files, escapes and oversized input; pagination is byte-bounded', async () => {

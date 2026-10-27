@@ -35,7 +35,7 @@ describe('Planner/Engine/Worker extension contract',()=>{
       }
       expect(h.sandboxes[0].commands).toEqual([]); // the planner cannot execute target work
       // One delegation path: create and dispatch an intent; the Engine spawns the worker that genuinely executes.
-      const task=(await h.call('p2o_task_create',{draft:draft('planned-surface')})).details;
+      const task=(await h.call('p2o_task_author',{draft:draft('planned-surface')})).details;
       await h.call('p2o_task_dispatch',{ids:[task.id]});
       await until(()=>h.herdr.calls.filter((c:any)=>c.op==='start').length===1);
       const workerId=h.herdr.calls.find((c:any)=>c.op==='start')!.name;
@@ -49,7 +49,7 @@ describe('Planner/Engine/Worker extension contract',()=>{
   });
   it('withdraws the dispatched task when the lead stops its worker, at the revision the stop observed (P8.4)',async()=>{
     await fixture(async(h)=>{
-      const task=(await h.call('p2o_task_create',{draft:draft('withdrawn-surface')})).details;
+      const task=(await h.call('p2o_task_author',{draft:draft('withdrawn-surface')})).details;
       await h.call('p2o_task_dispatch',{ids:[task.id]});
       await until(()=>h.herdr.calls.filter((c:any)=>c.op==='start').length===1);
       const workerId=h.herdr.calls.find((c:any)=>c.op==='start')!.name;
@@ -62,7 +62,7 @@ describe('Planner/Engine/Worker extension contract',()=>{
   });
   it('reuses three slots for 30 attributed assignments with unique tickets and no allowance to reset',async()=>{
     await fixture(async(h)=>{
-      const ids:string[]=[];for(let i=0;i<30;i++)ids.push((await h.call('p2o_task_create',{draft:draft(`surface-${i}`)})).details.id);
+      const ids:string[]=[];for(let i=0;i<30;i++)ids.push((await h.call('p2o_task_author',{draft:draft(`surface-${i}`)})).details.id);
       await h.call('p2o_task_dispatch',{ids:ids.slice(0,25)});await h.call('p2o_task_dispatch',{ids:ids.slice(25)});
       for(let i=0;i<30;i++){
         await until(()=>h.herdr.calls.filter((c:any)=>c.op==='start').length>i);

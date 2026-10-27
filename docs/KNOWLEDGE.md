@@ -61,8 +61,12 @@ navigation, and reading it changes no authority.
   `workflow` is validated against the skills it assigns (loadout max 3, overlays count), never used to infer tools. When
   `skills` is omitted, `PURPOSE_SKILLS` in `src/roles.ts` picks a default set from the work purpose, and a second axis lets
   target kind and consumed capabilities pick the family member (a URL run maps with `web-deployment-hygiene` and discovers
-  with `web-route-input-inventory`). Validation and reporting deliberately ship no default skill: reproduction must not
-  discover, synthesis must not author fixes. Nine purposes each carry a duty line the worker reads.
+  with `web-route-input-inventory`; URL refinement/retest get no method default, because both are source-tree methods). An
+  empty purpose list is a decision, not a gap: validation and reporting deliberately ship none (reproduction must not
+  discover, synthesis must not author fixes), so the role default applies only when no purpose is supplied at all. The
+  3-skill cap is recorded rather than silent: a capped task stores the delivered set and writes the dropped ids as a
+  lifecycle fact, and `p2o_coverage_suggest` returns the map's related skills next to the owner and card. Nine purposes each
+  carry a duty line the worker reads.
 - `p2o_research {query}` looks a technique up in the committed corpus (`knowledge/techniques/`) and returns cited entries with
   licence and sha256; `web:false` never touches the network. `action=fetch` retrieves any http(s) URL host-side and returns
   the full body with status, content type, size and sha256 plus a `research` record — never evidence (Part XI: no allowlist,

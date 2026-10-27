@@ -5,7 +5,7 @@ description: Design minimal debugger or instrumentation experiments to resolve a
 
 # Dynamic Analysis
 
-Before first use, read the [scope baseline](../../README.md#start-here) and [handoff contracts](../../HANDOFFS.md).
+Before first use: [scope baseline](../../README.md#start-here), [handoff method](../../HANDOFFS.md#focused-method-and-review), and [owner review](../../HANDOFFS.md#provisional-owner-review).
 
 ## Technique
 Question-directed runtime observation.
@@ -37,7 +37,7 @@ Use the owned [runtime probe guide](references/runtime-probes.md) for breakpoint
 - Diagnose denied access and process/session visibility independently; an invisible process is not necessarily an unsuccessful operation. [B022](../../research/evidence.md#b022)
 
 ## Tools
-Every entry below needs process attach, a kernel feature, or a display that a locked-down p2o sandbox does not grant; run them in a separate lab machine or VM outside the sandbox.
+Every entry below needs process attach, a kernel feature, or a display. Run the diagnostic build as an in-sandbox lab recipe (environment build plus verification) or as ordinary sandbox commands; a capability the sandbox genuinely refuses is recorded as that specific blocked fact, not routed around.
 - GDB/LLDB/WinDbg or x64dbg → inspect registers, fields, exceptions, conditional breakpoints, and watchpoints → when a concrete state/lifetime question remains; software breakpoints alter bytes, hardware ones are limited and detectable.
 - Debugger command scripts or optional libdebug → repeat identical bounded input/breakpoint/value observations → when manual sessions drift; check platform/version support and isolate execution.
 - Frida Interceptor → inspect bounded entry/exit values and argument contracts → when hooks are easier than interactive stepping; resolve symbols/offsets for the current version and consult current APIs.
@@ -58,7 +58,7 @@ Detector silence can miss logical boundaries inside a larger allocation or compo
 Derived guidance: add structured diagnostics at state and authorization boundaries; retain security assertions and memory sanitizers. Instrumentation-only changes are not fixes. Turn the confirmed invariant into a regression test rather than shipping a diagnostic bypass.
 
 ## Focused Method
-Report the known-good baseline, matched controls, successes/attempts and original-versus-modified environment. Adapted probes need provenance and observation stage. Stop repeated inconclusive commands; simulation is not deployed-process evidence. Choose role/method from the unanswered question; record expected evidence and a branch stop condition. Use the [owned review contract](../../HANDOFFS.md#focused-method-and-review).
+Report the known-good baseline, matched controls, successes/attempts and original-versus-modified environment. Adapted probes need provenance and observation stage. Stop repeated inconclusive commands; simulation is not deployed-process evidence.
 
 ## Handoffs
 **Static → Dynamic:** require the question, call slice, contrasting predictions, probes, and modification budget. **Dynamic → Root Cause:** return original/modified artifact identities, recorded observations, rejected assumptions, uncertainty, and the narrowest remaining question. Next: the appropriate invariant skill or [exploitability assessment](../exploitability-assessment/SKILL.md).

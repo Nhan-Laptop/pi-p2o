@@ -5,7 +5,7 @@ description: Test the life cycle of a session token, from issuance, strength and
 
 # Web Session Management
 
-Before first use, read the [scope baseline](../../README.md#start-here) and [handoff contracts](../../HANDOFFS.md).
+Before first use: [scope baseline](../../README.md#start-here), [handoff method](../../HANDOFFS.md#focused-method-and-review), and [owner review](../../HANDOFFS.md#provisional-owner-review).
 
 ## Applicability
 Use when a request is tied to a login by a session token (cookie, header or hidden field) and the question is whether that token is issued, protected, bound to a login, replaced and ended the way the application's own policy and basic session hygiene require. Source review covers the session library settings, token generation, regeneration at login and privilege change, invalidation at logout and the lifetime settings. Controlled-account requests cover what the live origin actually does. Stateless signed tokens (JWT) and federated login belong to a different playbook, and CSRF to the browser-trust playbook. A token is a bearer credential: replaying your own token from a second client context proves nothing by itself, and the finding is always about how the token is issued, exposed, kept alive or ended.
@@ -63,6 +63,6 @@ A token inventory with attributes and lengths; a pre-login and post-login compar
 Tokens held in browser storage are reachable by driving the image's Chromium; browser-side cookie defaults, single sign-off across providers, long idle or absolute timeouts, distributed session stores that differ per node, and sessions carried over WebSocket are reachable through the matching transport, and a path the run did not exercise stays untested. A clean result covers the controlled accounts and the flow positions tested.
 
 ## Handoffs
-Provide the token inventory, the sequence receipts, the replay results and the policy used for each comparison. Choose role/method from the unanswered question; record expected evidence and a branch stop condition. Use the [owned review contract](../../HANDOFFS.md#focused-method-and-review). Next: [web deployment hygiene](../web-deployment-hygiene/SKILL.md) for the transport and header side, [authorization auditing](../authorization-auditing/SKILL.md) for what an accepted token may do, or [remediation](../remediation/SKILL.md) for session fixes.
+Provide the token inventory, the sequence receipts, the replay results and the policy used for each comparison. Next: [web deployment hygiene](../web-deployment-hygiene/SKILL.md) for the transport and header side, [authorization auditing](../authorization-auditing/SKILL.md) for what an accepted token may do, or [remediation](../remediation/SKILL.md) for session fixes.
 
 Claim rules are in [claim provenance before confirmation](../source-code-auditing/references/claim-provenance.md). This playbook restates the session management guidance of the OWASP Web Security Testing Guide in this library's evidence terms; see [WSTG provenance](../../research/WSTG_PROVENANCE.md); [On demand upstream text](references/wstg-source.md).

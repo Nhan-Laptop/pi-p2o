@@ -5,7 +5,7 @@ description: Take a credential from "it exists" to "here is every door it opens"
 
 # Credential and Pivot
 
-Before first use, read the [scope baseline](../../README.md#start-here) and [handoff contracts](../../HANDOFFS.md).
+Before first use: [scope baseline](../../README.md#start-here), [handoff method](../../HANDOFFS.md#focused-method-and-review), and [owner review](../../HANDOFFS.md#provisional-owner-review).
 This skill ships no script: credential work is where automation multiplies a single use into an unbounded one, so every
 use is deliberate and written down.
 
@@ -69,5 +69,7 @@ The wall is the far side of the pivot: the point where the privilege map genuine
 - **Rotation during the run.** The credential dies mid-test; that is a fact about the client's response, worth
   recording — then continue from whatever access survives.
 
-A credential is a key, not an invitation. The result this skill produces is every door it opens, named exactly — and the
-wall is the furthest point the map genuinely reaches, stated with the same precision as the doors along the way.
+Credential classes and what each exposure proves are in [credential sources](references/credential-sources.md).
+
+The result this skill produces is every door the credential opens, named exactly — and the wall is the furthest point
+the map genuinely reaches, stated with the same precision as the doors along the way.

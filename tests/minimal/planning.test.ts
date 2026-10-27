@@ -8,7 +8,7 @@ import { bindAssessmentStore } from '../../src/state/adapter.js';
 import { PlanBoard, planFrontier, validatePlanDraft, type PlanDraft } from '../../src/planning.js';
 import { readLedger } from '../../src/records.js';
 import { parseWorkspaceCommand, showLines } from '../../src/ui/workspace.js';
-import { planCreateParameters, planReviseParameters } from '../../src/board-verbs.js';
+import { planAuthorParameters } from '../../src/board-verbs.js';
 import { TaskBoard, type TaskDraft } from '../../src/tasks.js';
 
 const runId='run-plan',goal:PlanDraft={kind:'goal',title:'Inspect one declared inert boundary',status:'active',reason:'Bounded local planning fixture, not finding verification',criteria:['Attribution and control must be reviewed'],exclusions:['No live target or provider'],supportRefs:[],proof:{kind:'capability',capability:{kind:'file.read',subject:'inert-boundary'}}};
@@ -21,8 +21,10 @@ async function fixture(work:(h:{root:string;store:AssessmentStore;board:PlanBoar
 
 describe('canonical goals/todo/decisions and read-only cards (K4)',()=>{
   it('uses a root-object tool schema and refuses unknown/authority-bearing entry fields',()=>{
-    expect(planCreateParameters.type).toBe('object');expect(planCreateParameters.required).toContain('entry');expect(planCreateParameters.properties).not.toHaveProperty('action');
-    expect(planReviseParameters.required).toEqual(expect.arrayContaining(['entry','id','revision']));
+    expect(planAuthorParameters.type).toBe('object');expect(planAuthorParameters.required).toContain('entry');expect(planAuthorParameters.properties).not.toHaveProperty('action');
+    // One authoring tool selects create vs revise by the presence of the identity, so both identity fields are declared but optional.
+    expect(planAuthorParameters.properties).toHaveProperty('id');expect(planAuthorParameters.properties).toHaveProperty('revision');
+    expect(planAuthorParameters.required).not.toContain('id');expect(planAuthorParameters.required).not.toContain('revision');
     expect(()=>validatePlanDraft({...goal,scope:'outside'})).toThrow('host-owned');expect(()=>validatePlanDraft({...goal,criteria:[]})).toThrow('criteria');
     expect(()=>validatePlanDraft({kind:'goal',title:'Assess the surface of the target',status:'active',reason:'Process goal with no settleable proof',criteria:['A summary exists']})).toThrow('GOAL_UNPROVEN');
     expect(()=>validatePlanDraft({kind:'todo',title:'one todo',status:'closed',reason:'Explicit local fixture reason'})).toThrow(/todo allows open, in-progress, done, deferred, blocked, cancelled/);

@@ -5,7 +5,7 @@ description: Verify what a deployment volunteers and the policy it declares, inc
 
 # Web Deployment Hygiene
 
-Before first use, read the [scope baseline](../../README.md#start-here) and [handoff contracts](../../HANDOFFS.md).
+Before first use: [scope baseline](../../README.md#start-here), [handoff method](../../HANDOFFS.md#focused-method-and-review), and [owner review](../../HANDOFFS.md#provisional-owner-review).
 
 ## Applicability
 Use when a run needs to know what a deployment tells any client: server and framework identity, metadata files, page content and script bundles, backup and administrative paths, platform configuration, response headers, cookie and cache directives, HTTP methods, TLS posture and error output. It is the first pass over the supplied target — a starting label, not an egress boundary — and the natural review of a supplied configuration tree; it does not test application logic, authorization or injection. A weakness here is a gap in declared policy or an unintended disclosure whose weight depends on exposure: a missing control matters when something sensitive depends on it, not by itself.
@@ -65,6 +65,6 @@ A response table per route class (status, security-relevant headers, cookie attr
 Authentication is available with an identity you register yourself, content rendered only by a browser is reached through the image's Chromium, and state-changing methods are in scope. Untested: a route class no transport exercised, intermediary behavior that varies by region, and a TLS check beyond what the sandbox tools read. A clean result covers only the route classes and moment of the baseline.
 
 ## Handoffs
-Provide the response table, exposure candidates with receipts and untested route classes; record expected evidence and a stop condition. Use the [owned review contract](../../HANDOFFS.md#focused-method-and-review). Next: [web route and input inventory](../web-route-input-inventory/SKILL.md) for routes first seen here, [authorization auditing](../authorization-auditing/SKILL.md) when an administrative path answers without the expected identity, or [remediation](../remediation/SKILL.md) for fixes.
+Provide the response table, exposure candidates with receipts and untested route classes. Use the [owned review contract](../../HANDOFFS.md#focused-method-and-review). Next: [web route and input inventory](../web-route-input-inventory/SKILL.md) for routes first seen here, [authorization auditing](../authorization-auditing/SKILL.md) when an administrative path answers without the expected identity, or [remediation](../remediation/SKILL.md) for fixes.
 
 Claim rules are in [claim provenance before confirmation](../source-code-auditing/references/claim-provenance.md). This playbook restates the information-gathering, configuration and transport guidance of the OWASP Web Security Testing Guide in this library's evidence terms; see [WSTG provenance](../../research/WSTG_PROVENANCE.md); [On demand upstream text](references/wstg-source.md).

@@ -3,8 +3,8 @@ import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { registerP2O } from '../../extensions/p2o/index.js';
 import {
-  BOARD_ACTION_VERBS, BOARD_VERB_NAMES, CASE_VERB_NAMES, COVERAGE_VERB_NAMES, PLAN_VERB_NAMES,
-  TASK_VERB_NAMES,
+  AUTHORING_VERBS, BOARD_ACTION_VERBS, BOARD_VERB_NAMES, CASE_VERB_NAMES, COVERAGE_VERB_NAMES, PLAN_VERB_NAMES,
+  TASK_VERB_NAMES, authoringAction,
 } from '../../src/board-verbs.js';
 import { ALL_TOOLS, HIDDEN_TOOLS, MODEL_TOOLS, PLANNER_TOOLS, REPORTER_TOOLS, VALIDATION_TOOLS, WORKER_TOOLS, workerTools } from '../../src/tool-policy.js';
 import { TOOL_BOUNDARIES } from '../../src/tool-guidelines.js';
@@ -25,18 +25,25 @@ function parityViolations(names: readonly string[], prose: string): string[] {
 }
 
 describe('L1/W2 board verbs', () => {
-  it('maps every old board action to one verb and composes 14 verbs from 4 bags', () => {
-    expect(TASK_VERB_NAMES).toHaveLength(6);
-    expect(CASE_VERB_NAMES).toHaveLength(3);
+  it('maps every old board action to one verb and composes 11 verbs from 4 bags', () => {
+    expect(TASK_VERB_NAMES).toHaveLength(5);
+    expect(CASE_VERB_NAMES).toHaveLength(2);
     expect(COVERAGE_VERB_NAMES).toHaveLength(2);
-    expect(PLAN_VERB_NAMES).toHaveLength(2);
-    expect(BOARD_VERB_NAMES).toHaveLength(14);
-    expect(new Set(BOARD_VERB_NAMES).size).toBe(14);
+    expect(PLAN_VERB_NAMES).toHaveLength(1);
+    expect(BOARD_VERB_NAMES).toHaveLength(11);
+    expect(new Set(BOARD_VERB_NAMES).size).toBe(11);
 
     for (const [oldTool, actions] of Object.entries(BOARD_ACTION_VERBS)) for (const [action, verb] of Object.entries(actions)) {
       expect(verb, `${oldTool} ${action}`).not.toBeUndefined();
       if (verb !== null) expect(BOARD_VERB_NAMES, `${oldTool} ${action}`).toContain(verb);
     }
+    // The authoring pairs share one verb each: both halves name the merged verb and the identity picks the action.
+    expect(BOARD_ACTION_VERBS.p2o_task.create).toBe(AUTHORING_VERBS.task);
+    expect(BOARD_ACTION_VERBS.p2o_task.revise).toBe(AUTHORING_VERBS.task);
+    expect(BOARD_ACTION_VERBS.p2o_case.create).toBe(AUTHORING_VERBS.case);
+    expect(BOARD_ACTION_VERBS.p2o_case.revise).toBe(AUTHORING_VERBS.case);
+    expect(BOARD_ACTION_VERBS.p2o_plan.create).toBe(AUTHORING_VERBS.plan);
+    expect(BOARD_ACTION_VERBS.p2o_plan.revise).toBe(AUTHORING_VERBS.plan);
     // P8.3: the separate read-only match verb was removed; create performs the same preflight and returns its payload.
     expect(BOARD_ACTION_VERBS.p2o_task.match).toBeNull();
     expect(BOARD_ACTION_VERBS.p2o_task.start).toBe('p2o_task_start');
@@ -46,11 +53,26 @@ describe('L1/W2 board verbs', () => {
     for (const action of ['cell-create', 'cell-revise', 'cell-retire']) expect(BOARD_ACTION_VERBS.p2o_coverage[action], action).toBeNull();
   });
 
+  it('derives create from no identity and revise from id+revision, refusing a half identity with the legal verb', () => {
+    expect(authoringAction('task', {})).toBe('create');
+    expect(authoringAction('plan', { id: 'plan-1', revision: 2 })).toBe('revise');
+    // A second action field is host-owned: the identity picks the action, so an injected one is refused rather than ignored.
+    expect(() => authoringAction('task', { id: 'task-1', revision: 1, action: 'create' })).toThrow(/host-owned/);
+    // revision without id: create takes no revision, so the refusal names the id/revision pair the verb expects.
+    expect(() => authoringAction('task', { revision: 2 })).toThrow(/^INVALID_INPUT: p2o_task_author got revision=2 without an id/);
+    expect(() => authoringAction('task', { revision: 2 })).toThrow(/id=<task id> with revision=<currentRevision>/);
+    // id without revision: the refusal names the board read that yields the revision and the merged verb that takes it.
+    for (const [kind, verb] of [['task', 'p2o_task_author'], ['case', 'p2o_case_author'], ['plan', 'p2o_plan_author']] as const) {
+      expect(() => authoringAction(kind, { id: `${kind}-1` })).toThrow(new RegExp(`^INVALID_INPUT: ${verb} got id=${kind}-1 without a usable revision`));
+      expect(() => authoringAction(kind, { id: `${kind}-1` })).toThrow(new RegExp(`p2o_board board=${kind}s id=${kind}-1`));
+    }
+  });
+
   it('pins the planner surface and keeps the worker loadout unchanged (P0/A1)', () => {
     // A1: the planner plans, reviews and proves; it holds no target, lab, claim, note, surface, report or removed verb.
     expect(new Set(PLANNER_TOOLS)).toEqual(new Set([
-      'p2o_task_create', 'p2o_task_revise', 'p2o_task_dispatch', 'p2o_task_review', 'p2o_task_settle',
-      'p2o_plan_create', 'p2o_plan_revise', 'p2o_case_create', 'p2o_case_revise', 'p2o_case_rate',
+      'p2o_task_author', 'p2o_task_dispatch', 'p2o_task_review', 'p2o_task_settle',
+      'p2o_plan_author', 'p2o_case_author', 'p2o_case_rate',
       'p2o_coverage_plan', 'p2o_coverage_suggest', 'p2o_board', 'p2o_ledger', 'p2o_state', 'p2o_artifact', 'p2o_graph',
       'p2o_skill_list', 'p2o_skill_read', 'p2o_secret', 'p2o_research', 'p2o_workers', 'p2o_loop', 'p2o_finish',
     ]));
@@ -59,12 +81,12 @@ describe('L1/W2 board verbs', () => {
     expect(WORKER_TOOLS).toEqual(WORKER_LOADOUT);
     expect(workerTools('validation')).toEqual(WORKER_LOADOUT.filter(name => name !== 'p2o_surface'));
     expect(new Set(workerTools('reporting'))).toEqual(new Set(REPORTER_TOOLS));
-    expect(PLANNER_TOOLS).toHaveLength(24);
+    expect(PLANNER_TOOLS).toHaveLength(21);
     expect(WORKER_TOOLS).toHaveLength(19);
     expect(VALIDATION_TOOLS).toHaveLength(18);
     expect(REPORTER_TOOLS).toHaveLength(6);
-    expect(MODEL_TOOLS).toHaveLength(35);
-    expect(ALL_TOOLS).toHaveLength(37);
+    expect(MODEL_TOOLS).toHaveLength(32);
+    expect(ALL_TOOLS).toHaveLength(34);
     expect(HIDDEN_TOOLS).toEqual(['p2o_delegate', 'p2o_task_start']);
     for (const name of HIDDEN_TOOLS) expect(PLANNER_TOOLS).not.toContain(name);
     for (const name of ['p2o_task', 'p2o_case', 'p2o_coverage', 'p2o_plan']) expect(ALL_TOOLS).not.toContain(name);
@@ -80,9 +102,9 @@ describe('L1/W2 board verbs', () => {
     await fixture(async h => {
       await h.command('--target ./source');
       const entry = { kind: 'goal', title: 'L1 stale revision fixture', status: 'active', reason: 'Explicit local fixture with no target execution', criteria: ['Owner must review the retained limitations'], proof: { kind: 'capability', capability: { kind: 'http.request', subject: 'fixture' } } };
-      const plan = (await h.call('p2o_plan_create', { entry, requestId: 'board-verbs-plan' })).details;
-      await expect(h.call('p2o_plan_revise', { id: plan.id, revision: plan.revision + 5, entry: { ...entry, title: 'L1 stale revision fixture revised' } }))
-        .rejects.toThrow(new RegExp(`currentRevision=${plan.revision}.*legalNext=p2o_plan_revise`));
+      const plan = (await h.call('p2o_plan_author', { entry, requestId: 'board-verbs-plan' })).details;
+      await expect(h.call('p2o_plan_author', { id: plan.id, revision: plan.revision + 5, entry: { ...entry, title: 'L1 stale revision fixture revised' } }))
+        .rejects.toThrow(new RegExp(`currentRevision=${plan.revision}.*legalNext=p2o_plan_author`));
     });
   });
 
@@ -104,7 +126,7 @@ describe('L1/W2 board verbs', () => {
     await fixture(async h => {
       await h.command('--target ./source');
       const draft = { question: 'Does the board verb fixture settle one task?', surface: '/board-verb-fixture', risk: 'coordination', role: 'general', roleReason: 'Bounded local fixture with no target work', expectedTrue: 'The settle verb reaches the cancelled transition', expectedFalse: 'The action bag is required again', stopCondition: 'Stop after one local transition', evidenceIds: [], prerequisites: [], skills: [], methodReason: 'No target or model work' };
-      const task = (await h.call('p2o_task_create', { draft })).details;
+      const task = (await h.call('p2o_task_author', { draft })).details;
       const settled = (await h.call('p2o_task_settle', { outcome: 'cancelled', id: task.id, revision: task.revision, reason: 'Owner cancelled the local board-verb fixture' })).details;
       expect(settled).toMatchObject({ id: task.id, status: 'cancelled' });
 

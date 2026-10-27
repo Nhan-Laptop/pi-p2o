@@ -167,13 +167,13 @@ describe('the run tells the lead what to research, and records its refusals (M6 
       execution: 'not_tested', proof: 'static_trace', negativeControls: [], policyBasis: 'inferred', expectedPolicy: 'Declared fixture actor/object boundary',
       limitations: 'Nothing executed in this step yet', evidenceRefs: [observation.evidenceId], gained: [{ kind: 'http.request', subject: 'internal-api' }] });
     // A2: the first intent of a run must be recon/mapping; this fixture's subject is the later structured intent.
-    await h.call('p2o_task_create', {draft: { question: 'Which recorded surfaces does the retained fixture graph expose?', surface: '/report-fixture',
+    await h.call('p2o_task_author', {draft: { question: 'Which recorded surfaces does the retained fixture graph expose?', surface: '/report-fixture',
       risk: 'mapping', role: 'recon', evidenceIds: [], prerequisites: [] }});
     // P7.1: exploit mode (the default) needs a capability-proof goal before an exploitation intent is admitted.
-    await h.call('p2o_plan_create', {entry: {kind: 'goal', title: 'Reach the fixture effect under an impact goal', status: 'active',
+    await h.call('p2o_plan_author', {entry: {kind: 'goal', title: 'Reach the fixture effect under an impact goal', status: 'active',
       proof: {kind: 'capability', capability: {kind: 'file.read'}}, criteria: ['The bounded fixture step is recorded'],
       reason: 'P7.1 exploit-mode admission fixture: the impact goal the exploitation intent is settled against'}});
-    const created = (await h.call('p2o_task_create', {draft: {
+    const created = (await h.call('p2o_task_author', {draft: {
       question: 'Does the bounded fixture reach the declared effect?', surface: '/report-fixture', risk: 'authorization', role: 'exploit',
       roleReason: 'Purpose fixture role', expectedTrue: 'The bounded observation is recorded', expectedFalse: 'The bounded control is recorded',
       stopCondition: 'Stop after one inert observation', evidenceIds: [], prerequisites: [], skills: [], methodReason: 'One inert observation with no external target',
@@ -194,7 +194,7 @@ describe('the run tells the lead what to research, and records its refusals (M6 
     const broad = { question: 'Does the bounded fixture respond?', surface: '/report-fixture', risk: 'authorization', role: 'general', roleReason: 'Admission fixture breadth',
       expectedTrue: 'The bounded observation is recorded', expectedFalse: 'The bounded control is recorded', stopCondition: 'Stop after one inert observation',
       evidenceIds: [], prerequisites: [], skills: [], methodReason: 'One inert observation with no external target' };
-    await expect(h.call('p2o_task_create', {draft: broad })).rejects.toThrow(/PRIMITIVE_UNCHAINED/);
+    await expect(h.call('p2o_task_author', {draft: broad })).rejects.toThrow(/PRIMITIVE_UNCHAINED/);
     // The refusal is a record, and the export lists it: the admission tax is visible instead of living only in the transcript.
     const exported = await h.call('p2o_finish', { export: true });
     expect(exported.details.preflight.advisory.find((item: any) => item.code === 'ADMISSION_REFUSALS')).toMatchObject({ count: 1, level: 'advisory' });

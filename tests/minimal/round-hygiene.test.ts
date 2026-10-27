@@ -49,7 +49,7 @@ describe('round hygiene and campaign memory (A6.5)', () => {
     await h.command('--target ./source --goal "Assess the fixture boundary"');
     // A6.5's first-round contract is enforced as debt and prompt guidance, not as a second refusal: the dispatch is admitted
     // and the frame it skipped is named by the same derivation the loop and the report read.
-    await h.call('p2o_task_create', { draft: { question: 'Does the fixture boundary hold for the first recon intent?', surface: '/fixture', risk: 'mapping', role: 'recon',
+    await h.call('p2o_task_author', { draft: { question: 'Does the fixture boundary hold for the first recon intent?', surface: '/fixture', risk: 'mapping', role: 'recon',
       roleReason: 'First-round contract fixture', expectedTrue: 'The recorded fixture exposes the declared boundary', expectedFalse: 'The fixture records nothing and the receipt says so',
       stopCondition: 'Stop after one inert mapping intent', evidenceIds: [], prerequisites: [], skills: [], methodReason: 'No target or model work' } });
     const exported = await h.call('p2o_finish', { export: true });

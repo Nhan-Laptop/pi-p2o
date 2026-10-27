@@ -5,7 +5,7 @@ description: Turn source or binary changes and regression tests into invariant h
 
 # Patch-Diff Analysis
 
-Before first use, read the [scope baseline](../../README.md#start-here) and [handoff contracts](../../HANDOFFS.md).
+Before first use: [scope baseline](../../README.md#start-here), [handoff method](../../HANDOFFS.md#focused-method-and-review), and [owner review](../../HANDOFFS.md#provisional-owner-review).
 
 ## Technique
 Semantic change-to-invariant reconstruction.

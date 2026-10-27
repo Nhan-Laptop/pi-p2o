@@ -22,6 +22,28 @@ A single object can carry nested metadata, computed fields, or related entities 
 
 When a policy function can be isolated, write a small harness that constructs controlled objects and calls the function with each principal. Assert the decision and the effect it guards, not only the return value, and keep every fixture creation and teardown in the ledger. A direct function call proves the decision logic on that path; it does not prove the route invokes it, so a later live or integration check is still required for the reachable path.
 
+## Variant placement
+
+Keep a variant as a review lead, not a second finding: an update-path field constraint does not govern read, list or
+export; a differently named prefix, version or mount is not administrative until its effective registration and
+reachable path are confirmed; an aggregate or export assembled for a role that cannot read individual records applies
+its own policy. A representation control checks that top-level and nested forms of the same field obey the same rule.
+
+## False-positive classes
+
+A soft-private record whose content is already exposed through another documented surface, an idempotent metadata
+lookup that reveals no protected content or state, a UI-only restriction mistaken for server-side policy, or a
+credential-shaped literal in synthetic data treated as a deployed secret are not authorization findings without
+provenance and a reachable effect. Empty and null responses need the owner's own view to separate silent enforcement
+from successful access, and a fixture actually owned by the acting principal invalidates the contrast rather than
+confirming it.
+
+## Method focus
+
+Review policy provenance and the actor/object contrast before accepting a packet; a live authenticated comparison you
+could not run is a gap to record, not a default. Withdraw an earlier conclusion when current counterevidence changes
+the effective gate.
+
 ## Reading the result
 
 A denial attributed to a named policy location is stronger evidence than any specific response code. A success on a foreign object is only an authorization candidate until the protected effect is observed and the object is confirmed to be outside the intended policy. When a cell cannot be exercised, record the environment and capability that were missing; do not collapse it into a pass.

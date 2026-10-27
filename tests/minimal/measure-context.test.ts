@@ -16,13 +16,15 @@ describe('scripts/measure-context.mjs', () => {
 
     for (const [label, item] of Object.entries<any>(report.lead)) expect(item.toolNames, label).toEqual([]);
 
-    // Workers: six roles on two target kinds (P14.4 added `exploit`); the recon contract once; no tool outside the role's loadout.
+    // Workers: six roles on two target kinds (P14.4 added `exploit`); the recon contract once per executing role; no tool outside
+    // the role's loadout. A1's reporter revision gives the read-only reporter evidence standards instead of a contract it cannot
+    // execute, so its count is 0 until scripts/measure-context.mjs measures that block instead.
     expect(report.workers).toHaveLength(12);
-    for (const worker of report.workers) { expect(worker.reconBlocks, `${worker.role}/${worker.kind}`).toBe(1); expect(worker.toolNamesOutsideLoadout, `${worker.role}/${worker.kind}`).toEqual([]); expect(worker.total).toBe(worker.system + worker.brief); }
+    for (const worker of report.workers) { expect(worker.reconBlocks, `${worker.role}/${worker.kind}`).toBe(worker.role === 'reporting' ? 0 : 1); expect(worker.toolNamesOutsideLoadout, `${worker.role}/${worker.kind}`).toEqual([]); expect(worker.total).toBe(worker.system + worker.brief); }
 
-    // Declarations: 35 registered tools (L1/W2: four board bags became 16 verbs; A3 removed the two coverage-cell verbs) and the three loadouts of workflow-policy.test.ts.
-    expect(report.declarations.registered, 'L1/W2 board verbs').toBe(37);
-    expect(Object.fromEntries(Object.entries<any>(report.declarations.loadouts).map(([label, item]) => [label, item.tools]))).toEqual({ planner: 24, worker: 19, 'reporting worker': 6 });
+    // Declarations: 34 registered tools (L1/W2: four board bags became 11 verbs after the three authoring pairs merged; A3 removed the two coverage-cell verbs) and the three loadouts of workflow-policy.test.ts.
+    expect(report.declarations.registered, 'L1/W2 board verbs').toBe(34);
+    expect(Object.fromEntries(Object.entries<any>(report.declarations.loadouts).map(([label, item]) => [label, item.tools]))).toEqual({ planner: 21, worker: 19, 'reporting worker': 6 });
     // Skills: the lead pages through the catalog and each role has a default skill whose first page is inlined.
     expect(report.skills.listPages.length).toBeGreaterThanOrEqual(3); expect(report.skills.listTotal).toBe(report.skills.listPages.reduce((sum: number, n: number) => sum + n, 0));
     // P15 (W5): validation and reporting ship no default method skill, so only the two role defaults with a skill appear here.

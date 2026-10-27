@@ -1,6 +1,8 @@
 # Intermediary trust and represented identities
 
-Use with [attack-surface mapping](../SKILL.md) for composed services, gateways, brokers and client-facing adapters. [O012](../../../research/orange/evidence.md#o012) supports architecture-first separation of intermediary admission, metadata forwarding and reconstructed client identity; [O008](../../../research/orange/evidence.md#o008) adds effective peer authority and consumer-specific legitimate operations. These are generic contracts, not relay or request-bypass procedures.
+Use with [attack-surface mapping](../SKILL.md) for composed services, gateways, brokers and client-facing adapters. [O012](../../../research/orange/evidence.md#o012) supports architecture-first separation of intermediary admission, metadata forwarding and reconstructed client identity; [O008](../../../research/orange/evidence.md#o008) adds effective peer authority and consumer-specific legitimate operations. These are generic contracts, not relay or request-bypass procedures. A corrected entrance gate does not prove
+the same trust assumption is repaired on the peer or consumer path; re-derive each intermediary's role from
+the current registration and revision.
 
 ## Draw roles before reviewing business logic
 

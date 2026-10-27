@@ -430,16 +430,24 @@ export function featuresFromAttributeValues(values: readonly string[]): { featur
   return { features: WSTG_FEATURES.filter(feature => seen.has(feature)), ignored: [...ignored] };
 }
 
-export interface WstgSuggestion { key: string; title: string; support: WstgSupport; flags: string; owner: string; card: string; phase: WstgTest['phase'] }
+export interface WstgSuggestion {
+  key: string; title: string; support: WstgSupport; flags: string;
+  /** The skill that owns the test and the card under it that says how to run it ('' while it only has a generic method). */
+  owner: string; card: string; phase: WstgTest['phase'];
+  /** The map's `skills` column without `owner`: the methods that touch this test without owning it, so they stay discoverable. */
+  relatedSkills: string[];
+}
 /**
  * Planning aid: the in-scope tests whose trigger matches one of the recon features the caller names (`any` always matches) and that have no live cell yet,
- * in map order. Pure and read-only; a suggestion is not a finding, not permission and not coverage until a cell records it.
+ * in map order. Pure and read-only; a suggestion is not a finding, not permission and not coverage until a cell records it. Each suggestion carries the
+ * owner+card contract unchanged plus `relatedSkills`, so a method the map relates to the test (e.g. `data-flow-analysis`) can be found from the suggestion
+ * instead of only from the rendered document.
  */
 export function wstgSuggest(features: readonly string[], options: { modes?: string; covered: ReadonlySet<string>; offset?: number; limit?: number }): { matched: number; suggestions: WstgSuggestion[] } {
   const wanted = new Set(features), matches = WSTG_MAP.filter(test => test.trigger.length > 0 && !options.covered.has(wstgKey(test.id))
     && (test.trigger.includes('any') || test.trigger.some(feature => wanted.has(feature))) && (!options.modes || [...options.modes].some(mode => test.modes.includes(mode))));
   const offset = options.offset ?? 0, limit = options.limit ?? 20;
-  return { matched: matches.length, suggestions: matches.slice(offset, offset + limit).map(test => ({ key: wstgKey(test.id), title: test.title, support: test.support, flags: `${test.browser ? 'B' : ''}${test.identity ? 'I' : ''}`, owner: test.owner, card: test.card, phase: test.phase })) };
+  return { matched: matches.length, suggestions: matches.slice(offset, offset + limit).map(test => ({ key: wstgKey(test.id), title: test.title, support: test.support, flags: `${test.browser ? 'B' : ''}${test.identity ? 'I' : ''}`, owner: test.owner, card: test.card, phase: test.phase, relatedSkills: test.skills.filter(name => name !== test.owner) })) };
 }
 
 type FeatureAsset = { assetId: string; features: readonly string[] };

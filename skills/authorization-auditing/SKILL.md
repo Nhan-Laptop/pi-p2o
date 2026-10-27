@@ -5,7 +5,7 @@ description: Audit identity establishment, object/field authorization, alternate
 
 # Authorization Auditing
 
-Before first use, read the [scope baseline](../../README.md#start-here) and [handoff contracts](../../HANDOFFS.md).
+Before first use: [scope baseline](../../README.md#start-here), [handoff method](../../HANDOFFS.md#focused-method-and-review), and [owner review](../../HANDOFFS.md#provisional-owner-review).
 
 ## Technique
 Actor–action–object policy differential.
@@ -50,7 +50,7 @@ Trusting UI restrictions; conflating authentication with object authorization; a
 Derived guidance: fail closed, bind identity immutably to authenticated context, centralize per-action/object/field checks, and reject unexpected inherited dispatch. Before moving an identity restriction between consumers, document legitimate identity classes and accepted peer operations; the trusted requirement may differ. Use bounded authentication dependency work and explicit administrative membership. For filesystem operations, avoid re-resolving attacker-modifiable paths after policy checks; handle symlink/object identity safely.
 
 ## Focused Method
-Record intended-policy provenance and a controlled actor/object matrix. A sibling route is not the contract. Keep unavailable authenticated comparisons explicit; accept source observations only as source observations. Choose role/method from the unanswered question; record expected evidence and a branch stop condition. Use the [owned review contract](../../HANDOFFS.md#focused-method-and-review).
+Record intended-policy provenance and a controlled actor/object matrix. A sibling route is not the contract. Keep unavailable authenticated comparisons explicit; accept source observations only as source observations.
 
 ## Handoffs
 **Authorization Audit → Impact/Remediation:** provide the policy matrix, actor and state, bypassed gate, observed protected effect, rejected controls, default/optional scope, and equivalent paths. Next: [sandbox boundaries](../sandbox-boundary-analysis/SKILL.md) for layered confinement or [remediation](../remediation/SKILL.md) for policy repair.

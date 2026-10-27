@@ -60,7 +60,7 @@ describe('case rating', () => {
     const built = await populate(h);
     const claim = await seedClaim(h, { candidate: 'inferred-claim', surface: '/report-fixture', risk: 'authorization', closure: 'open_proof_gap', execution: 'not_tested', proof: 'static_trace', evidenceRefs: [], negativeControls: [], policyBasis: 'inferred', expectedPolicy: 'Policy inferred from names only', limitations: 'No declared policy was found for this fixture' });
     const draft = { title: 'Inferred policy hypothesis case', policyKey: 'policy:inferred', assetRefs: [{ id: built.asset.entityId, revision: 1 }], claimRefs: [claim.id], independentEvidenceRefs: [], taskRefs: [], reportRefs: [], contradictions: [], affectedVariants: [], relatedCaseIds: [], verdict: 'open', reviewStatus: 'pending', reviewReason: 'Pending: policy is only inferred', limitations: 'Policy was inferred, not declared', remediation: { status: 'unplanned', reason: 'No remediation was reviewed for the inferred case', evidenceRefs: [] } };
-    const created = (await h.call('p2o_case_create', {entry: draft })).details;
+    const created = (await h.call('p2o_case_author', {entry: draft })).details;
     await expect(h.call('p2o_case_rate', {id: created.id, revision: created.revision, finding: finding({ severity: 'critical' }) })).rejects.toThrow(/inferred policy basis cannot be rated above medium/);
     await expect(h.call('p2o_case_rate', {id: created.id, revision: created.revision, finding: finding({ severity: 'high' }) })).rejects.toThrow(/inferred/);
     expect((await h.call('p2o_case_rate', {id: created.id, revision: created.revision, finding: finding({ severity: 'medium' }) })).details.finding.severity).toBe('medium');
@@ -69,7 +69,7 @@ describe('case rating', () => {
   it('flags a rating recorded against an older revision once the case is revised', async () => fixture(async h => {
     const built = await populate(h); await rate(h, built, finding());
     const { currentness, staleReasons, independentCurrent, independenceReason, acceptedFinding, readyToRate, canonicalCaseId, recordId, runId, revision, finding: _f, ratedRevision, ratingCurrent, ...draft } = (await h.call('p2o_board', { board: 'cases', id: built.accepted.id })).details;
-    await h.call('p2o_case_revise', {id: built.accepted.id, revision, entry: { ...draft, reviewReason: 'Owner re-read the exact current claim, task, asset and limitations' } });
+    await h.call('p2o_case_author', {id: built.accepted.id, revision, entry: { ...draft, reviewReason: 'Owner re-read the exact current claim, task, asset and limitations' } });
     const view = (await h.call('p2o_board', { board: 'cases', id: built.accepted.id })).details;
     expect(view).toMatchObject({ revision: revision + 1, ratedRevision: revision, ratingCurrent: false });
   }));

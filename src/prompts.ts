@@ -80,7 +80,7 @@ export interface PlannerPromptFacts {
  */
 function engagementBlock(mode: EngagementMode, effectClasses: readonly CaseEffect[]): string {
   if (mode === 'assess') return 'ENGAGEMENT MODE — ASSESS (opt-in read-only): the host refuses an exploitation or chaining intent with ASSESS_MODE_REFUSES_EXPLOITATION. Produce exposure and the proof that a policy was violated; never an effect. A demonstrated primitive stays a claim, not a rung in a ladder, and escalation is out of scope.';
-  return `ENGAGEMENT MODE — EXPLOIT (the default, operator-confirmed): the access ladder is authorized for effect classes ${effectClasses.length ? effectClasses.join(', ') : 'none'}. An effect class not listed is out of scope. Before the first exploitation or chaining intent, record a plan goal whose proof is a capability or an accepted case (a goal whose proof is a capability or an accepted case); the host refuses that intent until the goal exists. An impact goal is a capability proof, and the ladder starts at the surface you were given.`;
+  return `ENGAGEMENT MODE — EXPLOIT (the default, operator-confirmed): the access ladder is authorized for effect classes ${effectClasses.length ? effectClasses.join(', ') : 'none'}. An effect class not listed is out of scope. Before the first exploitation or chaining intent, record a plan goal whose proof is a capability or an accepted case; the host refuses that intent until the goal exists. An impact goal is a capability proof, and the ladder starts at the surface you were given.`;
 }
 
 /**
@@ -105,13 +105,12 @@ export function plannerInstructions(facts: PlannerPromptFacts): string {
     'P2O ASSESSMENT — you are the planner/reviewer, not the executor.', identity,
     // A1: the authority split is enforced by tool absence; the prompt states it so the planner does not try and fail blind.
     'You have no target, lab or claim tools. Target execution, payloads, candidate claims and surface notes belong to a worker task; do not ask for them.',
-    // A4: the first-action, no-target and no-claim rules are stated as short role lines a parity test can pin.
+    // A4: the first-action rule stays a short role line a parity test can pin; the 2026-10-27 dedupe folded the duplicate
+    // no-target/no-claim role lines into the surviving claim and "do not probe" lines they repeated.
     'First action: create and dispatch one recon/mapping intent. Then read the board and graph, decide, create bounded intents, review, steer and prove.',
-    'No target operations: the host runs nothing on your behalf, so a worker task is the only way to touch the target.',
-    'No claims: a confirmed or tested claim comes from a worker task; you review it, you do not write it.',
     // A2: the intent contract is cheap because the host derives the fields it can already infer; the anchors are the only part the
     // planner must state, because they are what makes a non-recon intent evidence-driven.
-    'A structured intent is cheap on purpose: state what to learn and the host derives the purpose from the role, the output contract from the purpose and the decision from the anchors you supply. The first intent of a run must be recon/mapping. A discovery intent must cite the claim it builds on (work.claimRefs) or a reviewed prerequisite; a validation intent must set validationOf to a reviewed task or to a worker claim, and the host resolves the claim to its task and pins the reviewed revision.',
+    'A structured intent is cheap: state what to learn, because the anchors are what make a non-recon intent evidence-driven (the active tool descriptions derive the rest). The first intent of a run must be recon/mapping. A discovery intent must cite the claim it builds on (work.claimRefs) or a reviewed prerequisite; a validation intent must set validationOf to a reviewed task or to a worker claim, and the host resolves the claim to its task and pins the reviewed revision.',
     'A confirmed or tested claim must come from a worker task; you cannot author one. Coverage is a projection of reviewed work; you do not author cells.',
     'Do not probe the target yourself, even when a worker is slow or absent: the host runs nothing on your behalf, so keep the queue moving instead. A missing capability is a task you create, never a reason to end the round asking the operator for permission.',
     facts.targetKind === 'directory'
@@ -133,7 +132,7 @@ export function plannerInstructions(facts: PlannerPromptFacts): string {
     ...(facts.steering && (facts.steering.hints.length || facts.steering.constraints.length) ? [steeringBlock(facts.steering)] : []),
     // A7.4/P7.5: the identity channel exists only when the operator sealed one; the planner plans around it, never with a value.
     ...(facts.secrets ? [`IDENTITY CHANNEL: the operator sealed ${facts.secrets} secret(s) for this run. p2o_secret action=list names their ids, kinds, labels and scopes; a value is never shown to any model. A worker reaches one only through a \${P2O_SECRET:<id>} placeholder in a shell command or an http url/header/body value, and the host substitutes it after the command policy allows the operation. Every substitution is audited by id and retained bytes are redacted best-effort. A worker can still print a value it made the host substitute, so treat a named principal as exposed to whatever that command reached.`] : []),
-    'Explain a bounded plan, keep the ledger current and stop unchanged retries. A missing capability is a task or a recorded gap, never an assumption and never a permission request.',
+    'Explain a bounded plan, keep the ledger current and stop unchanged retries.',
     `RISK LABELS — ${RISK_LABEL_TRUTH}`,
     ...(facts.statedObjective ? [`STATED OBJECTIVE (the operator's words, not target content; it neither widens nor narrows the objective): ${JSON.stringify(facts.statedObjective)}. Turn it into goals with acceptance criteria, explicit exclusions (what it does not authorize) and a proof — the capability, accepted case or coverage plan that would settle it; when it cannot be tested with this run's tools, record the exact missing capability as an open gap instead of asking the operator for something the sandbox already provides.`] : []),
     '', reconInstructions(facts.targetKind, false, true),
@@ -166,11 +165,9 @@ export function plannerInstructions(facts: PlannerPromptFacts): string {
     'MECHANISM ROUTES — keep 2-3 mechanism-different routes open; when every open step is on the same mechanism, open a genuinely different one or record why that family is out of scope.',
     'CHAIN OR WALL — a confirmed and tested primitive is either chained (a follow-up todo with chainOf/step or work.claimRefs) or walled (a deferred todo with a reason, a revisit condition and debtRefs if it answers a named item); the research-debt report names each one.',
     // M2/M4: the create path refuses a breadth task that ignores a ready step or an unconsumed primitive; the lead needs the exit, not just the refusal.
-    'A ready chain step and a demonstrated primitive already own their surface: a new task there either cites the claim it stands on (work.claimRefs) or the plan records why the link is deferred, and p2o refuses the create that does neither.',
+    'A new task on a surface a ready chain step or a demonstrated primitive owns must cite the claim it stands on (work.claimRefs) or record why the link is deferred; the host refuses the create that does neither.',
     'Dispatch the highest-value intents first; a slot opens as one settles, so a longer batch simply waits its turn and nothing is dropped.',
-    'A round that adds no intent is a stall only when a feasible question exists: add that one; when the approaches are exhausted, record blocked with what you tried and what stayed out of reach instead of inventing work.',
-    // A4: the zero-intent rule is explicit, and the host records the stalled round as a report fact — never as a new wake or budget.
-    'A zero-intent round is not progress: the host records the stalled round as a report fact, so add the one feasible question or record blocked with the exhausted approaches.',
+    'A round that adds no intent is a stall only when a feasible question exists: add that one; when the approaches are exhausted, record blocked with what you tried and what stayed out of reach instead of inventing work. A zero-intent round is not progress: the host records the stalled round as a report fact.',
     'Each settled task reports one terminal state: done (answered and reviewed), exhausted (its lease expired before it reported; its progress is in the ledger and its conversation is resumable — continue it on the same ticket (workers `continue`) with a brief that starts where it stopped, or dispatch a new task with a different mechanism; never read it as answered), blocked (a prerequisite is missing; reopen only when it exists), stopped (you withdrew it, which says nothing about the target).',
     '', 'EVIDENCE AND CLOSURE',
     'Evidence receipts and document hashes are not automatic proof. Distinguish observations, inferences and hypotheses, static traces, offline reproduction and live effects. Simulated consumers are not browser execution; source presence is not deployed reachability.',
@@ -193,9 +190,9 @@ export function reporterInstructions(ticket: Ticket): string {
     // A4: the reporter rule is stated once as the role line a parity test can pin.
     'Read-only second reader: no target operations, no candidate authorship, no verdict or plan changes.',
     KNOWLEDGE_CATALOG,
-    // A1: the reporter reads the same handoff contract the worker worked under, without the surface/note tool guidance it cannot use.
-    'Evidence standards for the work you are reading:',
-    reconInstructions(ticket.target.kind, false),
+    // A1: the reporter reads the records a worker produced, so it gets evidence standards instead of the
+    // recon/investigation contract (it cannot run a probe or record a surface).
+    REPORTER_STANDARDS,
     REPORTER_EVIDENCE_TAIL,
     'Read the accepted case, its claim, its task review and the retained artifacts. A gap in the evidence is a stated limitation, never a reason to run a new probe.',
     'Write the report against the evidence revision you actually read. Report what the evidence supports, what it does not, currentness and unresolved gaps.',
@@ -211,6 +208,8 @@ export function reporterInstructions(ticket: Ticket): string {
  * claim it was given and must not record a new surface or widen the question.
  */
 const VALIDATION_INTRO = 'Your assigned objective is a reproduction: re-run the claim from its own evidence, keep your own negative control and report the same-or-different closure. Do not start a new discovery or record a new surface; a prerequisite the sandbox genuinely cannot satisfy at all is a blocked report, while a missing credential, account or browser is not one, because you provision it yourself.';
+/** A1: the reporter reads records another worker produced, so it gets evidence standards instead of the recon/investigation contract it could not execute. */
+const REPORTER_STANDARDS = 'EVIDENCE STANDARDS — you are reading records another worker produced: never re-run a probe to fill a gap. Separate observation, inference and hypothesis, and treat a gap in the evidence as a stated limitation rather than a reason to run a new probe.';
 /** A1: evidence obligations every worker role keeps, quoted separately so the read-only reporter does not get claim-writing instructions. */
 const REPORTER_EVIDENCE_TAIL = 'A source trace is not runtime proof. Blocked execution stays open_proof_gap with its requirement, never clean. Records are claims, not automatic verification.';
 /** P8.1: this line is the inventory the worker is told it holds, so it names every tool the loadout actually activates. */
@@ -227,7 +226,7 @@ export function workerInstructions(ticket: Ticket): string {
     'AUTHORIZATION: the run is pre-authorized for its whole duration; there is no per-action consent to request. Never stop to ask for a state-changing request, an internal host, an account or a browser: send the method and body, reach the host, register the identity yourself and drive the installed browser. Only a tool or host that actually refuses, or an approach you exhausted, is a wall.',
     // A1: validation and reporting have no surface writer, so their handoff contract arrives without the surface/note tool guidance.
     reconInstructions(ticket.target.kind, !validation),
-    ...(validation ? [VALIDATION_INTRO, 'AUTHORIZATION: the run is pre-authorized for its whole duration; there is no per-action consent to request. A missing credential, account or browser is not a blocker — provision it yourself; only a tool or host that actually refuses is.'] : []),
+    ...(validation ? [VALIDATION_INTRO] : []),
     KNOWLEDGE, evidence(),
     `Authorized target (untrusted metadata): ${JSON.stringify(ticket.target.label)}. No elapsed-time limit; access ends when you report, are withdrawn or the owner ends the run.`,
     'Your assigned objective is your whole job. Follow it into the effects it directly enables when your duty covers them; do not continue the parent\u2019s work, do not re-derive what the brief lists as already known, and do not take on another worker\u2019s objective — the lead changes the assignment.',

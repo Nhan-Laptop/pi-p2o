@@ -31,8 +31,10 @@ describe('A4 prompt rules and tool boundaries', () => {
   it('states the planner first-action, no-target, no-claim, zero-intent and projection rules', () => {
     const planner = plannerInstructions(plannerFacts());
     expect(planner).toContain('First action: create and dispatch one recon/mapping intent.');
-    expect(planner).toContain('No target operations');
-    expect(planner).toContain('No claims');
+    // The 2026-10-27 dedupe folded the separate "No target operations"/"No claims" role lines into the sentences that state the
+    // same rule without repeating it, so the pin moves to those surviving lines.
+    expect(planner).toContain('Do not probe the target yourself');
+    expect(planner).toContain('A confirmed or tested claim must come from a worker task');
     expect(planner).toContain('no target, lab or claim tools');
     expect(planner).toContain('A zero-intent round is not progress');
     expect(planner).toContain('Coverage is a projection of reviewed work');
@@ -78,7 +80,7 @@ describe('A4 prompt rules and tool boundaries', () => {
   });
 
   it('carries the role split on the tool boundaries and keeps removed verbs out of them', () => {
-    expect(TOOL_BOUNDARIES.p2o_task_create.join(' ')).toContain('planner has no target or claim tools');
+    expect(TOOL_BOUNDARIES.p2o_task_author.join(' ')).toContain('planner has no target or claim tools');
     expect(TOOL_BOUNDARIES.p2o_report.join(' ')).toContain('one intent, write back, report, stop');
     expect(TOOL_BOUNDARIES.p2o_report.join(' ')).toContain('read-only second reader');
     for (const name of ['p2o_delegate', 'p2o_task_start', 'p2o_coverage_cell', 'p2o_coverage_cell_retire']) expect(TOOL_BOUNDARIES[name]).toBeUndefined();
@@ -164,7 +166,7 @@ describe('A4 extension round ACK', () => {
       await round();
       expect(await stalls()).toHaveLength(0);
       // An active goal with no open/running intent → one durable stall fact.
-      await h.call('p2o_plan_create', { entry: { kind: 'goal', title: 'Bound the fixture question', status: 'active', reason: 'A4 stall fixture goal', criteria: ['one bounded fixture observation'], proof: { kind: 'capability', capability: 'net.egress' } }, requestId: 'a4-goal' });
+      await h.call('p2o_plan_author', { entry: { kind: 'goal', title: 'Bound the fixture question', status: 'active', reason: 'A4 stall fixture goal', criteria: ['one bounded fixture observation'], proof: { kind: 'capability', capability: 'net.egress' } }, requestId: 'a4-goal' });
       await round();
       const first = await stalls();
       expect(first).toHaveLength(1);
@@ -178,7 +180,7 @@ describe('A4 extension round ACK', () => {
       await round();
       expect(await stalls()).toHaveLength(2);
       // A proposed intent is open work, so the same round is not a stall.
-      await h.call('p2o_task_create', { draft: { question: 'Does the bounded fixture observation match the declared policy?', surface: '/a', risk: 'authorization', role: 'recon', evidenceIds: [], prerequisites: [] } });
+      await h.call('p2o_task_author', { draft: { question: 'Does the bounded fixture observation match the declared policy?', surface: '/a', risk: 'authorization', role: 'recon', evidenceIds: [], prerequisites: [] } });
       await round();
       expect(await stalls()).toHaveLength(2);
     } finally { await h.command('stop').catch(() => {}); await rm(h.root, { recursive: true, force: true }); }
@@ -232,6 +234,6 @@ describe('A4 authority counters in report and status', () => {
     const body = rendered.files.find(file => file.name === 'REPORT.md')!.body;
     expect(body).toContain('Authority: planner target operations 1 (must be 0)');
     expect(body).toContain('stalled rounds 1');
-    expect(body).toContain('Mode and role matrix: manual loop / shared executor; planner 24 tools (no target or claim tool), worker 19, validation 18, reporter 6 (read-only)');
+    expect(body).toContain('Mode and role matrix: manual loop / shared executor; planner 21 tools (no target or claim tool), worker 19, validation 18, reporter 6 (read-only)');
   });
 });

@@ -31,14 +31,17 @@ export const ROLE_DEFAULTS: Record<Role, RoleDefaults> = {
 };
 /**
  * planning_update.md P7: purpose decides the default skill set, because purpose is what the work *is* while role only picks
- * the model/authority axis. Used when the lead omits `skills` and the operator configured none for the role; an empty list
- * means "keep the role default" (investigation does, because root-cause work is guided by the task's own method).
+ * the model/authority axis. Used when the lead omits `skills` and the operator configured none for the role.
  * `tests/minimal/roles.test.ts` checks every id against `skills/catalog.json` and against `MAX_SKILLS`.
  *
  * P15 (W3/W5): a default skill may not teach the opposite of its own duty. `validation` reproduces another worker's claim and
  * must never start a new discovery, so it no longer starts from `exploitability-assessment` (which continues into impact and
  * the chain); `reporting` synthesizes and may not author fixes, so it no longer starts from `remediation`. Both keep their role
  * model and their duty line, and either skill stays reachable by an explicit request.
+ *
+ * An empty list is a decision, not a gap: "this purpose ships no method default" (investigation is guided by the task's own
+ * method; validation and reporting must not start work). So an explicitly supplied purpose never falls back to the role
+ * default, which applies only when the caller supplies no purpose at all (see `resolveRole`).
  */
 export const PURPOSE_SKILLS: Record<WorkPurpose, readonly string[]> = {
   mapping: ['attack-surface-mapping'],
@@ -57,15 +60,16 @@ export interface SkillContext { kind?: TargetKindForSkills; needs?: readonly str
 
 /**
  * P15 (W4): a ladder belongs to the primitive the step consumes, so it is derived where that need is known instead of being one
- * generic default. `exploit-design` comes first so the cap never drops the general procedure; an unknown kind simply selects no
- * ladder, which is the pre-P15 behaviour rather than a guess.
+ * generic default. `exploit-design` comes first so the single MAX_SKILLS cap in `resolveRole` never drops the general procedure;
+ * that cap is applied once, at the selection point, so `omittedSkills` can report a ladder it cut instead of hiding it here.
+ * An unknown kind simply selects no ladder, which is the pre-P15 behaviour rather than a guess.
  */
 export function exploitationSkills(kind: TargetKindForSkills | undefined, needs: readonly string[] = []): string[] {
   const ladder: string[] = [];
   if (needs.includes('net.egress')) ladder.push('ssrf-to-internal');
   if (needs.includes('exec.code')) ladder.push(kind === 'directory' ? 'binary-exploit-ladder' : 'web-injection-to-exec');
   if (needs.includes('cred.session') || needs.includes('cred.secret')) ladder.push('credential-and-pivot');
-  return ['exploit-design', ...ladder].slice(0, MAX_SKILLS);
+  return ['exploit-design', ...ladder];
 }
 
 /**
@@ -73,11 +77,16 @@ export function exploitationSkills(kind: TargetKindForSkills | undefined, needs:
  * discovery defaults are the web playbooks; a directory or hybrid run keeps the source methods (a hybrid target still has the
  * snapshot), and the web playbooks stay requestable. Without a kind the base table applies, so a caller with no target context
  * keeps the pre-P15 defaults.
+ *
+ * Refinement and retest are source-based methods too: `source-code-auditing` needs a tree and `remediation` a changed revision of
+ * one, so a URL-only run gets no method default for either. A directory or hybrid target keeps them, and an explicit request may
+ * still name any skill regardless of kind, because this rule only chooses defaults.
  */
 export function purposeSkills(purpose: WorkPurpose, context: SkillContext = {}): readonly string[] {
   if (context.kind === 'url') {
     if (purpose === 'mapping') return ['web-deployment-hygiene'];
     if (purpose === 'discovery') return ['web-route-input-inventory'];
+    if (purpose === 'refinement' || purpose === 'retest') return [];
   }
   if (purpose === 'exploitation' || purpose === 'chaining') return exploitationSkills(context.kind, context.needs);
   return PURPOSE_SKILLS[purpose];
@@ -187,7 +196,13 @@ export function loadSettings(path = join(homedir(), '.pi', 'agent', 'settings.js
   catch { return blank(); }
 }
 
-export interface ResolvedRole { role: Role; model?: string; thinking?: string; skills: string[] }
+export interface ResolvedRole {
+  role: Role; model?: string; thinking?: string; skills: string[];
+  /** The explicit request exactly as supplied (non-strings dropped), before the MAX_SKILLS cap, so a caller can record what it asked for. */
+  requestedSkills: string[];
+  /** Ids the MAX_SKILLS cap removed from whichever list won (request, operator setting, purpose or role default); [] when nothing was cut. */
+  omittedSkills: string[];
+}
 
 /**
  * P10/WF-02 (Q28): the worker models a planner may request per task. It is the package role defaults plus every model the
@@ -219,6 +234,11 @@ export function validateTaskRuntime(runtime: { model?: string; thinking?: string
 /**
  * Precedence mirrors pi-herdr: per-spawn override > settings role > package default > parent session model.
  * `skills` is validated by the caller against the installed library before any path is used.
+ *
+ * P15 (W3/W5): an explicitly supplied purpose speaks even when its list is empty, because [] means "no method default by
+ * design"; only a caller that supplies no purpose falls back to the role default. Without that distinction role=discovery +
+ * purpose=validation would start from `source-code-auditing`, which is the P15 regression this rule exists to prevent.
+ * `requestedSkills`/`omittedSkills` make the MAX_SKILLS cap observable, so a caller records what it lost instead of guessing.
  */
 export function resolveRole(input: { role?: string; model?: string; thinking?: string; skills?: string[]; purpose?: WorkPurpose; context?: SkillContext; settings: P2OSettings; parentModel?: string; parentThinking?: string }): ResolvedRole {
   const role: Role = isRole(input.role) ? input.role : 'general';
@@ -226,11 +246,14 @@ export function resolveRole(input: { role?: string; model?: string; thinking?: s
   const fallback = ROLE_DEFAULTS[role];
   const requested = (input.skills ?? []).filter(skill => typeof skill === 'string');
   const byPurpose = purposeSkills(input.purpose ?? purposeFromRole(role), input.context);
-  const skills = (requested.length ? requested : configured.skills ?? (byPurpose.length ? byPurpose : fallback.skills)).slice(0, MAX_SKILLS);
+  const byDefault = input.purpose !== undefined || byPurpose.length ? byPurpose : fallback.skills;
+  const source = requested.length ? requested : configured.skills ?? byDefault;
   return {
     role,
     model: input.model ?? configured.model ?? fallback.model ?? input.parentModel,
     thinking: input.thinking ?? configured.thinking ?? fallback.thinking ?? input.parentThinking,
-    skills,
+    skills: source.slice(0, MAX_SKILLS),
+    requestedSkills: requested,
+    omittedSkills: source.slice(MAX_SKILLS),
   };
 }

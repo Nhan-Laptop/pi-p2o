@@ -62,10 +62,10 @@ import {
 } from '../../src/lab.js';
 import { readCompose } from '../../src/compose.js';
 import {
-  LEGAL_NEXT, boardParameters, boardReadAction, caseCreateParameters, caseRateParameters, caseReviseParameters,
+  LEGAL_NEXT, authoringAction, boardParameters, boardReadAction, caseAuthorParameters, caseRateParameters,
   coveragePlanParameters, coverageSuggestParameters, COVERAGE_FIXED_ACTIONS,
-  planAuthoringAction, planCreateParameters, planReviseParameters, settleAction, taskCreateParameters, taskDispatchParameters,
-  taskReviewParameters, taskReviseParameters, taskSettleParameters, taskStartParameters,
+  planAuthoringAction, planAuthorParameters, settleAction, taskAuthorParameters, taskDispatchParameters,
+  taskReviewParameters, taskSettleParameters, taskStartParameters,
 } from '../../src/board-verbs.js';
 
 /** One bounded read: the compose file the target ships, from the read-only mount, never a host path. */
@@ -396,7 +396,7 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
       recordId: ids.get(String(data.candidate)) }));
   }
   /**
-   * P14.10: turn the frontier into the next owner decision, never into a dispatch. It returns the exact `p2o_task_create` argument for the
+   * P14.10: turn the frontier into the next owner decision, never into a dispatch. It returns the exact `p2o_task_author` argument for the
    * deepest ready step and records the whole chain as plan todos, one per step. Asset refs are copied from the caller, not guessed from a
    * surface string: an execution task that names the wrong asset is worse than one that names none.
    */
@@ -610,7 +610,7 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
     if (current.mode === 'assess') return { code: 'ASSESS_MODE_REFUSES_EXPLOITATION', message: `this run was confirmed in assess mode, so an ${purpose} intent is refused: assess mode produces exposure proof and never an effect. legalNext: state the exposure question as a mapping, discovery or validation intent, or have the operator confirm a new run with --mode exploit` };
     const goals = await current.plan.list();
     const goal = goals.find(entry => entry.kind === 'goal' && (entry.proof?.kind === 'capability' || entry.proof?.kind === 'case') && !['cancelled', 'blocked'].includes(entry.status));
-    if (!goal) return { code: 'EXPLOIT_MODE_NEEDS_IMPACT_GOAL', message: `an ${purpose} intent needs an impact goal on the plan board before it can be admitted, and this run holds no goal whose proof is a capability or an accepted case. legalNext: create one with p2o_plan_create (kind=goal, proof=capability or proof=case) and state its acceptance criteria, then create this intent` };
+    if (!goal) return { code: 'EXPLOIT_MODE_NEEDS_IMPACT_GOAL', message: `an ${purpose} intent needs an impact goal on the plan board before it can be admitted, and this run holds no goal whose proof is a capability or an accepted case. legalNext: create one with p2o_plan_author (kind=goal, proof=capability or proof=case) and state its acceptance criteria, then create this intent` };
     return undefined;
   };
   /**
@@ -658,7 +658,8 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
     // P10/WF-02/03 (Q28): an explicit dispatch runtime wins; otherwise the owner-authored task carries the runtime it was
     // reviewed with. Both are validated against the configured set when the task/dispatch is admitted, so this only resolves.
     const resolved = resolveRole({ role: assigned?.role ?? input.role, model: input.model ?? assigned?.runtime?.model, thinking: input.thinking ?? assigned?.runtime?.thinking, skills: requestedSkills, purpose, context: { kind: current.target.kind, needs: workNeeds(assigned?.work ?? input.work) }, settings: current.settings, parentModel: sessionModel(current.ctx), parentThinking: current.ctx.thinkingLevel });
-    const droppedSkills = requestedSkills.filter(id => !resolved.skills.includes(id));
+    // WF-04: resolveRole already reports the cap (including a derived ladder overflow); do not recompute it locally.
+    const droppedSkills = resolved.omittedSkills;
     if (resolved.thinking && !['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'].includes(resolved.thinking)) fail('THINKING_INVALID', 'Unsupported thinking level');
     const skillDocs: Array<{ name: string; body: string }> = [];
     const method = await prepareMethod(current, resolved.skills, assigned?.method.workflow?.id ?? input.workflow, assigned?.method.reason ?? 'Starting method selected from role defaults or explicit lead request');
@@ -679,7 +680,7 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
     const workerId = workerName(resolved.role);
     assertOwnerActive(current);
     const structured = !assigned && input.work !== undefined;
-    // `work` (+ decision/outputContract) takes the same exact active/history/overlap admission as `p2o_task_create` + reserve; without it the task is legacy and its identity is explicitly unknown.
+    // `work` (+ decision/outputContract) takes the same exact active/history/overlap admission as `p2o_task_author` + reserve; without it the task is legacy and its identity is explicitly unknown.
     const objective = assigned ?? await current.board.create({ question: input.task.slice(0,1500), unknowns:input.task.length > 1500 ? ['Compact objective is an excerpt; full original assignment remains in the initial brief'] : structured ? [] : ['Legacy request supplied no structured contrasting predictions or prerequisite packet'], surface: input.focus, risk: resolved.role, role: resolved.role,
       roleReason: 'Legacy focused request; lead remains responsible for question and evidence review', expectedTrue: 'Deliver the bounded requested observation; detailed contrast not supplied', expectedFalse: 'No supporting observation; retain the missing proof and limitations', stopCondition: 'Stop at the assigned objective, unavailable prerequisite or explicit withdrawal', evidenceIds: [], prerequisites: [], method,
       ...(structured ? { work: input.work as never, decision: input.decision as never, outputContract: input.outputContract as never } : {}) });
@@ -1784,7 +1785,7 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
     current.operations.add(task); void task.catch(error => storageFailure(current,error)); void task.finally(() => current.operations.delete(task)).catch(() => {}); return task;
   }
   /**
-   * Shared flow of p2o_plan_create, p2o_plan_revise, p2o_case_create, p2o_case_revise, p2o_case_rate and the coverage verbs. An identical retried request (same `lookup`) answers from its retained ACK and spends nothing;
+   * Shared flow of p2o_plan_author, p2o_case_author, p2o_case_rate and the coverage verbs. An identical retried request (same `lookup`) answers from its retained ACK and spends nothing;
    * anything else runs `perform` once (no allowance to spend). If `perform` fails after its records were committed, the committed
    * result is returned instead of an error, so a lost acknowledgement never makes the model repeat a mutation.
    */
@@ -1952,11 +1953,14 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
           }));
         }
         let task:AssessmentTask;
+        // WF-04: the selection cap is a recorded fact, not a silent truncation; the ladder and purpose defaults can overflow too.
+        let omittedSkills: string[] = [], deliveredSkills: string[] = [];
         if (p.action === 'create' || p.action === 'revise') {
           if (!p.draft) throw Error('Task draft is required');
           const draft = p.draft as Record<string,any> & {skills?:string[];workflow?:string;methodReason?:string};
           const {skills:names,workflow,methodReason,...draftFields} = draft;
           const role = resolveRole({role:draft.role,skills:names,settings:current.settings,purpose:workPurpose(draft.work),context:{kind:current.target.kind,needs:workNeeds(draft.work)}});
+          omittedSkills = role.omittedSkills; deliveredSkills = role.skills;
           // Optional at the schema level so a recon intent can omit them; validate() still requires them for every other role.
           // P10/TR-L06: both lists are optional at the schema level; the host stores an empty array rather than making the caller
           // restate "none". A non-empty list is still validated against same-run evidence and reviewed prerequisites by admission.
@@ -1991,6 +1995,7 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
           await note({ by:'owner', kind:'lifecycle', text:`auto validation hook failed for ${task.id}: ${cleanText(message(error)).slice(0,400)}` }).catch(() => {});
         });
         current.currentTaskId = task.id;
+        if (omittedSkills.length) await note({ by:'owner', kind:'lifecycle', text:`task ${task.id}: method skills capped at ${MAX_SKILLS} — selected ${[...deliveredSkills, ...omittedSkills].join(', ')} but delivered ${deliveredSkills.join(', ') || 'none'}; the task records the delivered set` }).catch(() => {});
         if (p.action === 'revise' || p.action === 'cancel' || p.action === 'block') current.engine.forget(task.id);
         // The caller already receives this mutation; dispatch can progress without a paid wake.
         current.engine.kick(); return task;
@@ -2080,23 +2085,23 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
       throw Error(`${message(error)}; currentRevision=${revision}; legalNext=${legalNext}`);
     }
   };
+  /** Optional fields can arrive as explicit `undefined` keys from a provider projection; the action shape validators reject them. */
+  const defined = (params:Record<string,any>|undefined) => Object.fromEntries(Object.entries(params ?? {}).filter(([,value]) => value !== undefined));
   const taskVerb = (name:string,label:string,parameters:any,description:string,action:(params:any)=>string,prepare:(params:any)=>any=(params)=>params,exposure:'model-only'|'hidden'='model-only') =>
     registerTool({name,label,exposure,renderResult:(result,{expanded}:any)=>renderTaskResult(result.details,expanded),description,parameters,
-      async execute(_id:string,params:any){const current=owner();return withRevisionHint(current,'task',params.id,()=>executeTaskAction(_id,{...prepare(params),action:action(params)}));}});
-  const caseVerb = (name:string,label:string,parameters:any,description:string,action:string) =>
+      async execute(_id:string,params:any){const current=owner(),clean=defined(params);return withRevisionHint(current,'task',clean.id,()=>executeTaskAction(_id,{...prepare(clean),action:action(clean)}));}});
+  const caseVerb = (name:string,label:string,parameters:any,description:string,action:(params:any)=>string) =>
     registerTool({name,label,exposure:'model-only',description,parameters,
-      async execute(_id:string,params:any){const current=owner();return withRevisionHint(current,'case',params.id,()=>executeCaseAction(_id,{...params,action}));}});
-  const planVerb = (name:string,label:string,parameters:any,description:string,action:string) =>
+      async execute(_id:string,params:any){const current=owner(),clean=defined(params);return withRevisionHint(current,'case',clean.id,()=>executeCaseAction(_id,{...clean,action:action(clean)}));}});
+  const planVerb = (name:string,label:string,parameters:any,description:string,action:(params:any)=>string) =>
     registerTool({name,label,exposure:'model-only',description,parameters,
-      async execute(_id:string,params:any){const current=owner();return withRevisionHint(current,'plan',params.id,()=>executePlanAction(_id,{...params,action}));}});
+      async execute(_id:string,params:any){const current=owner(),clean=defined(params);return withRevisionHint(current,'plan',clean.id,()=>executePlanAction(_id,{...clean,action:action(clean)}));}});
   const coverageVerb = (name:string,label:string,parameters:any,description:string,kind:string,action:(params:any)=>string) =>
     registerTool({name,label,exposure:'model-only',description,parameters,
       async execute(_id:string,params:any){const current=owner();return withRevisionHint(current,kind,params.id,()=>executeCoverageAction(_id,{...params,action:action(params)}));}});
 
-  taskVerb('p2o_task_create','Create one bounded intent',taskCreateParameters,
-    'PLANNER ONLY: create one bounded intent: say what to learn (question, surface, role, optional work identity) and the host derives the purpose from the role, the output contract from the purpose, and the decision from the anchors you supply. evidenceIds and prerequisites are optional: omit them when the intent stands on nothing and the host records empty lists. The first intent of a run is recon/mapping and may omit roleReason/expectedTrue/expectedFalse/stopCondition/methodReason; every other role still requires them. A discovery intent needs work.claimRefs or a reviewed prerequisite; a validation intent needs validationOf = the reviewed task ID or the worker claim ID (the host resolves the claim to its task and pins the reviewed revision). An intent with a blocked executor stays a blocked task. Create performs the exact-work duplicate/history check itself; an exact active duplicate or reviewable history is returned instead of repeated.',()=> 'create');
-  taskVerb('p2o_task_revise','Revise one bounded assessment question',taskReviseParameters,
-    'PLANNER ONLY: revise an existing task at its current revision; keep the same identity and narrow or correct its question, role, method or desired output. A stale revision is refused with the held revision and the legal next verb.',()=> 'revise');
+  taskVerb('p2o_task_author','Create or revise one bounded intent',taskAuthorParameters,
+    'PLANNER ONLY: create one bounded intent when no id is supplied, or revise that intent at id+revision. Create: say what to learn (question, surface, role, optional work identity) and the host derives the purpose from the role, the output contract from the purpose, and the decision from the anchors you supply. evidenceIds and prerequisites are optional: omit them when the intent stands on nothing and the host records empty lists. The first intent of a run is recon/mapping and may omit roleReason/expectedTrue/expectedFalse/stopCondition/methodReason; every other role still requires them. A discovery intent needs work.claimRefs or a reviewed prerequisite; a validation intent needs validationOf = the reviewed task ID or the worker claim ID (the host resolves the claim to its task and pins the reviewed revision). An intent with a blocked executor stays a blocked task. Create performs the exact-work duplicate/history check itself; an exact active duplicate or reviewable history is returned instead of repeated. Revise: keep the same identity and narrow or correct its question, role, method or desired output. A stale revision is refused with the held revision and the legal next verb.',(params)=>authoringAction('task',params));
   taskVerb('p2o_task_dispatch','Dispatch proposed tasks into the frontier',taskDispatchParameters,
     'PLANNER ONLY: enqueue 1..25 proposed task IDs. The Engine frontier waits for reviewed prerequisites and free worker slots; dispatch is not execution and does not widen scope.',()=> 'dispatch');
   // A1: removed from the model surface. No owner report path exists after start, so the verb could not produce a reviewed
@@ -2107,20 +2112,16 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
     'PLANNER ONLY: review a reported handoff at its current revision using same-run receipts. Review is coordination, not proof; it never accepts a case or completes a goal.',()=> 'review');
   taskVerb('p2o_task_settle','Settle a task as closed, blocked or cancelled',taskSettleParameters,
     'PLANNER ONLY: settle one reviewed task. Outcome is the decision: closed, blocked (record the human prerequisite) or cancelled. Use the current revision and same-run evidence IDs; settlement is not proof of a finding.',(params)=>settleAction(params.outcome),(params)=>{const {outcome,...rest}=params;return rest;});
-  caseVerb('p2o_case_create','Create a pending canonical case',caseCreateParameters,
-    'PLANNER ONLY: create a pending canonical case from exact candidate/evidence/task/asset revisions. assetRefs and claimRefs are optional when taskRefs is set: the host derives the pinned asset refs from each cited reviewed task and the claim refs from its reviewed claims; claimRefs also accepts a candidate slug and the host stores the resolved record id. reviewStatus defaults to pending and remediation defaults to unplanned; a worker claim is not a finding until review, and create never accepts a case.','create');
-  caseVerb('p2o_case_revise','Revise or review a canonical case',caseReviseParameters,
-    'PLANNER ONLY: revise a canonical case at its current revision. The entry carries acceptance, dispute or withdrawal (omitting reviewStatus means pending); assetRefs/claimRefs are still derivable from taskRefs and an omitted remediation is recorded as unplanned. Transitions are checked against the stored review status, and case acceptance never completes a goal or assessment.','revise');
+  caseVerb('p2o_case_author','Create or revise a canonical case',caseAuthorParameters,
+    'PLANNER ONLY: create a pending canonical case when no id is supplied, or revise it at id+revision. Create needs exact candidate/evidence/task/asset revisions: assetRefs and claimRefs are optional when taskRefs is set, because the host derives the pinned asset refs from each cited reviewed task and the claim refs from its reviewed claims; claimRefs also accepts a candidate slug and the host stores the resolved record id. reviewStatus defaults to pending and remediation defaults to unplanned, and create never accepts a case. Revise: the entry carries acceptance, dispute or withdrawal (omitting reviewStatus means pending); assetRefs/claimRefs are still derivable from taskRefs and an omitted remediation is recorded as unplanned. Transitions are checked against the stored review status.',(params)=>authoringAction('case',params));
   caseVerb('p2o_case_rate','Record an owner severity rating',caseRateParameters,
-    'PLANNER ONLY: record a severity rating (basis, optional CVSS:3.1 vector, CWE, remediation) on a case at its current revision without changing verdict or review.','rate');
+    'PLANNER ONLY: record a severity rating (basis, optional CVSS:3.1 vector, CWE, remediation) on a case at its current revision without changing verdict or review.',()=> 'rate');
   coverageVerb('p2o_coverage_plan','Create or revise a coverage plan',coveragePlanParameters,
     'PLANNER ONLY: create a versioned coverage plan when no id is supplied, or revise the plan at id+revision. You set scope, exclusions and unknown scope only; the host derives the cells from reviewed tasks, worker claims, cases and graph asset revisions, so no cell is authored here. status defaults to draft and exclusions/unknownScope default to empty. Read the plan and its paged cells with p2o_board board=coverage id=<planId> (cursor/limit; follow nextCursor). Reviewed/closed needs at least one derived cell. Coverage never widens scope or completes a goal.','coveragePlan',planAuthoringAction);
   coverageVerb('p2o_coverage_suggest','Suggest uncovered WSTG tests',coverageSuggestParameters,
     'PLANNER ONLY (read-only): list uncovered WSTG tests matching recon features. Not a finding, permission or coverage; a test counts only through a derived cell with its key. Support describes the shipped library, never the target.','coveragePlan',()=>COVERAGE_FIXED_ACTIONS.p2o_coverage_suggest);
-  planVerb('p2o_plan_create','Create a goal, todo or decision',planCreateParameters,
-    'PLANNER ONLY: create explicit goal/todo/decision revisions on canonical records. Goals need acceptance criteria and a proof contract (status defaults to active: a created goal is being pursued, closing is a separate revision). A todo may carry an advisory criteria/exclusions checklist that never gates completion. Decisions never dispatch tasks.','create');
-  planVerb('p2o_plan_revise','Revise a goal, todo or decision',planReviseParameters,
-    'PLANNER ONLY: revise a goal/todo/decision at id+revision, including goal review/close through the status field. A goal is settled only when its proof holds; supportRefs may then be omitted and the host records the proof that settled it. Advisory todo criteria/exclusions are recorded, never gates. This is coordination, not automatic proof or assessment completion.','revise');
+  planVerb('p2o_plan_author','Create or revise a goal, todo or decision',planAuthorParameters,
+    'PLANNER ONLY: create explicit goal/todo/decision revisions on canonical records when no id is supplied, or revise one at id+revision (goal review/close is a status transition through the status field). Goals need acceptance criteria and a proof contract; status defaults to active, and closing is a separate revision. A todo may carry an advisory criteria/exclusions checklist that never gates completion. supportRefs may be omitted on a revise when the proof that settled the goal holds, and the host records it. Decisions never dispatch tasks.',(params)=>authoringAction('plan',params));
   registerTool({name:'p2o_board',label:'Read the owner board',exposure:'model-only',parameters:boardParameters,
     description:'PLANNER ONLY read: board=tasks, cases, coverage or plans. Without id it returns the bounded list; with id it returns that exact record (coverage id resolves a plan, whose cells are host-derived from reviewed work and paged: optional cursor and limit 1..100 page cells with stable totals and nextCursor, so a large plan is read in pages, never refused for size). This is the only list/view reader for those four entity boards: p2o_state lists indexed knowledge heads and search, and p2o_ledger reads record bytes by ID. Summaries are navigation; they grant no authority and complete nothing.',
     async execute(_id:string,params:any){graphObject(params,['board','id','cursor','limit','status','kind'],'Board read');const current=owner();const action=params.board==='tasks'?'list':boardReadAction(params.id as string|undefined);const input:any={action};
@@ -2174,7 +2175,7 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
       if (!current || current.phase !== 'active') fail('NO_ASSESSMENT', 'No active assessment');
       // A2: a confirmed claim is authored only by the executing worker; the host stamps its taskRef. The planner compiles the
       // intent and reviews the handoff, so there is no owner candidate path left to record one from the model surface.
-      if (current.role !== 'worker') fail('WORKER_ONLY', 'Target execution and claim authorship belong to a worker; the planner compiles an intent and reviews the handoff. A planner-authored confirmed claim would be an unsupported assertion. legalNext: create and dispatch an intent with p2o_task_create (role=recon or discovery), then review the worker claim it reports');
+      if (current.role !== 'worker') fail('WORKER_ONLY', 'Target execution and claim authorship belong to a worker; the planner compiles an intent and reviews the handoff. A planner-authored confirmed claim would be an unsupported assertion. legalNext: create and dispatch an intent with p2o_task_author (role=recon or discovery), then review the worker claim it reports');
       if (current.ticket.role === 'reporting') fail('REPORTING_ONLY','Reporting cannot mutate candidate proof; request separate validation');
       const record = (await worker().client.request('candidate', { candidate: params })).value;
       return textResult(JSON.stringify(record), record);
@@ -2183,7 +2184,7 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
 
   registerTool({
     name: 'p2o_lab', label: 'Keep a replayable payload or environment', exposure: 'model-only', parameters: labParameters,
-    description: 'Keep what a claim actually ran, so a second worker can replay it. action=payload stores kind (request|script|command), name and body up to 48 KiB verbatim — deliberately not redacted, so it may hold credentials — in the run-private control directory (0600, removed with the run, never exported) and returns {id, sha256, bytes}; send id alone to read it back, or id with materialize=true to write the bytes into your own scratch at payload/<id> and return {path, sha256, bytes} without putting the body in the prompt. A hash mismatch fails closed. action=env records a recipe (setup commands, background services with a port or healthcheck, seed commands) under a name slug and returns {id, fingerprint, revision}; the same recipe is idempotent, a change is the next revision, and compose=true derives it from the target docker-compose.yml (planner/host authority only; a worker must author setup/services/seed explicitly), refusing any key the sandbox cannot honour by name (privileged, cap_add, devices, host network/pid/ipc, host mounts, build, restart, a foreign image). action=verify runs it in your own sandbox with a receipt per command and per-service health; action=destroy stops those processes. An environment id created in another sandbox is refused: register the same recipe locally with action=env first, then verify. A candidate citing payloadRef and a matching environmentRef is replayable; the reporting role is refused.',
+    description: 'Keep what a claim actually ran, so a second worker can replay it. action=payload stores kind (request|script|command), name and body up to 48 KiB verbatim — deliberately not redacted, so it may hold credentials — in the run-private control directory (0600, removed with the run, never exported) and returns {id, sha256, bytes}; send id alone to read it back, or id with materialize=true to write the bytes into your own scratch at payload/<id> and return {path, sha256, bytes} without putting the body in the prompt. A hash mismatch fails closed. action=env records a recipe (setup commands, background services with a port or healthcheck, seed commands) under a name slug and returns {id, fingerprint, revision}; the same recipe is idempotent, a change is the next revision, and compose=true derives it from the target docker-compose.yml, but that path is host-internal and not reachable from a model call: the planner holds no lab tool and a worker is refused compose (author setup/services/seed explicitly instead), refusing any key the sandbox cannot honour by name (privileged, cap_add, devices, host network/pid/ipc, host mounts, build, restart, a foreign image). action=verify runs it in your own sandbox with a receipt per command and per-service health; action=destroy stops those processes. An environment id created in another sandbox is refused: register the same recipe locally with action=env first, then verify. A candidate citing payloadRef and a matching environmentRef is replayable; the reporting role is refused.',
     async execute(_id, params, signal) {
       const current = run;
       if (!current || current.phase !== 'active') fail('NO_ASSESSMENT', 'No active assessment');
@@ -2208,7 +2209,7 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
           return textResult<WorkerResult>(JSON.stringify(ref), ref);
         }
         if (params.action === 'env') {
-          if (params.compose) fail('PLANNER_ONLY', 'Only planner/host authority reads the target compose file; author the recipe explicitly instead');
+          if (params.compose) fail('PLANNER_ONLY', 'compose=true is host-internal and not reachable from a model call; author the recipe explicitly instead');
           if (params.name === undefined || !/^[a-z0-9][a-z0-9-]{0,63}$/.test(params.name)) fail('INVALID_INPUT', 'action=env needs a lowercase name slug (a-z, 0-9 and dashes)');
           const recipe = { setup: params.setup, services: params.services, seed: params.seed };
           const ref = (await worker().client.request<{ value: EnvironmentRef & { created: boolean } }>('environment', { action: 'create', name: params.name, recipe })).value;
@@ -2444,7 +2445,7 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
   });
   registerTool({
     name: 'p2o_surface', label: 'Record recon surface', exposure: 'model-only',
-    description: 'Append one recon surface-inventory entry (component + entryPoint). A cheap non-blocking duplicate hint: duplicate=true means a prior entry with the same normalized component/entryPoint already exists in this run, not a block — keep mapping or move to a bounded question either way. Not the exact work identity p2o_task_create checks before creating.',
+    description: 'Append one recon surface-inventory entry (component + entryPoint). A cheap non-blocking duplicate hint: duplicate=true means a prior entry with the same normalized component/entryPoint already exists in this run, not a block — keep mapping or move to a bounded question either way. Not the exact work identity p2o_task_author checks before creating.',
     parameters: surfaceParameters,
     async execute(_id, params) {
       const current = run;
@@ -2474,7 +2475,7 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
   });
   registerTool({
     name:'p2o_graph',label:'Asset graph',exposure:'model-only',parameters:graphParameters,
-    description:'Read bounded scoped graph knowledge or record an atomic batch. Exact kind/key identity is versioned; no implicit URL/path/method normalization, permission or verified finding. Use asset ref labels with @ref within a batch. Records include host-assigned producer/task; duplicate content retains additional producers without duplicate assets. Workers record assets/facts/anchors; hypotheses and relations are coordination work, and reporting is read-only. Claims need same-run evidence (inferred facts stay unverified). Pin assetRevision/expectedRevision and supersedes to refuse stale updates. Secret-bearing identities are refused; use non-secret labels. view/page default20/max100, export default200/max500, encoded reads at most24KiB with exact omissions/cursors; follow cursor and asOfSequence for stable history. chain joins the typed gained/needs capabilities into ready/unmet/frontier (owner coordination); plan:true also returns the exact p2o_task_create draft for the deepest ready step and records one plan todo per step as a linked chain (chainOf/step/claimRefs/needs; readiness is derived from the claims earlier steps cite, so p2o_board board=plans shows the step frontier), dispatching nothing. Identical requestId/payload returns the retained ACK; this never replays target operations.',
+    description:'Read bounded scoped graph knowledge or record an atomic batch. Exact kind/key identity is versioned; no implicit URL/path/method normalization, permission or verified finding. Use asset ref labels with @ref within a batch. Records include host-assigned producer/task; duplicate content retains additional producers without duplicate assets. Workers record assets/facts/anchors; hypotheses and relations are coordination work, and reporting is read-only. Claims need same-run evidence (inferred facts stay unverified). Pin assetRevision/expectedRevision and supersedes to refuse stale updates. Secret-bearing identities are refused; use non-secret labels. view/page default20/max100, export default200/max500, encoded reads at most24KiB with exact omissions/cursors; follow cursor and asOfSequence for stable history. chain joins the typed gained/needs capabilities into ready/unmet/frontier (owner coordination); plan:true also returns the exact p2o_task_author draft for the deepest ready step and records one plan todo per step as a linked chain (chainOf/step/claimRefs/needs; readiness is derived from the claims earlier steps cite, so p2o_board board=plans shows the step frontier), dispatching nothing. Identical requestId/payload returns the retained ACK; this never replays target operations.',
     async execute(_id,params,_signal,_update,ctx){
       const current=run;
       if(!current||current.phase!=='active'||(current.role==='owner'&&current.ctx.cwd!==ctx.cwd))fail('NO_ASSESSMENT','No active p2o assessment in this session');
@@ -2540,7 +2541,7 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
     },
   });
   registerTool({
-    // A1/D5: removed from the model surface. One delegation path remains: p2o_task_create -> p2o_task_dispatch -> Engine claim.
+    // A1/D5: removed from the model surface. One delegation path remains: p2o_task_author -> p2o_task_dispatch -> Engine claim.
     name: 'p2o_delegate', label: 'Delegate worker', exposure: 'hidden',
     description: 'PLANNER ONLY: immediately spawn one focused worker when capacity is free. For batches/awaiting dependencies use task dispatch; Engine reuses capacity across successive assignments. Fresh session/ticket each time; shared-serial by default or confirmed isolated profile, never scope widening. Worker requests go to the Planner as proposals, not nested spawns. Purpose (work.purpose, else the role) decides what a finished report must contain and, when skills are omitted, its default skill set: mapping surface, discovery candidate, investigation root cause, refinement narrower claim, validation independent reproduction, retest verdict, exploitation demonstrated effect, chaining composed effect, reporting report.',
     parameters: delegateParameters,
@@ -2565,7 +2566,7 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
   });
   registerTool({
     name:'p2o_loop',label:'Planner pause/resume state',exposure:'model-only',
-    description:'PLANNER ONLY: status reads the Engine frontier/events/rounds and the campaign heartbeat/wake reason. wait ends this planning round without model polling — end every round with action=wait after dispatching or reviewing, because a round that keeps waiting inside the turn cannot be rebuilt from the ledger; committed worker reports/proposals can wake another round ONLY in consented event-driven mode, and a campaign with outstanding work can also be woken by a paced debt wake or its heartbeat. blocked pauses dispatch/automatic wakes until human /p2o resume. action=hint/constrain records one bounded operator instruction (text 3..300 characters; at most 24 hints and 12 constraints per run) as an append-only lifecycle fact rendered into the next planner prompt: a constraint narrows absolutely, a hint guides and never widens, and neither rewrites the campaign record. No goal action: goals are plan records with a proof (p2o_plan_create/revise). No automatic retries, scope changes or renewal of authority. Consult the confirmed executor profile; shared remains serial.',
+    description:'PLANNER ONLY: status reads the Engine frontier/events/rounds and the campaign heartbeat/wake reason. wait ends this planning round without model polling — end every round with action=wait after dispatching or reviewing, because a round that keeps waiting inside the turn cannot be rebuilt from the ledger; committed worker reports/proposals can wake another round ONLY in consented event-driven mode, and a campaign with outstanding work can also be woken by a paced debt wake or its heartbeat. blocked pauses dispatch/automatic wakes until human /p2o resume. action=hint/constrain records one bounded operator instruction (text 3..300 characters; at most 24 hints and 12 constraints per run) as an append-only lifecycle fact rendered into the next planner prompt: a constraint narrows absolutely, a hint guides and never widens, and neither rewrites the campaign record. No goal action: goals are plan records with a proof (p2o_plan_author). No automatic retries, scope changes or renewal of authority. Consult the confirmed executor profile; shared remains serial.',
     parameters:loopParameters,
     async execute(_id,params) {
       const current = owner();
@@ -2587,8 +2588,8 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
         current.engine.notify('steering-recorded', randomUUID(), `${kind} recorded mid-run`);
         return textResult(`Recorded ${kind} for the next planner round: ${text}`, { kind, text, recorded: recorded.length + 1, limit });
       }
-      // Goals are plan-board records with a proof (p2o_plan_create/revise); there is deliberately no goal action here.
-      if (!['status', 'wait', 'blocked'].includes(params.action)) fail('INVALID_INPUT', 'Unknown loop action. Goals are plan records: use p2o_plan_create or p2o_plan_revise; use hint/constrain for bounded operator steering.');
+      // Goals are plan-board records with a proof (p2o_plan_author); there is deliberately no goal action here.
+      if (!['status', 'wait', 'blocked'].includes(params.action)) fail('INVALID_INPUT', 'Unknown loop action. Goals are plan records: use p2o_plan_author; use hint/constrain for bounded operator steering.');
       // M7: a wait that names a condition and a time is a scheduled revisit, recorded as a decision and never re-armed by itself.
       if (params.action === 'wait' && params.notBefore !== undefined) {
         const condition = params.reason ?? '';
@@ -2615,7 +2616,7 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
   });
   registerTool({
     name: 'p2o_workers', label: 'Worker status', exposure: 'model-only',
-    description: 'action "list" (default): this assessment\'s workers with Herdr status, command count, report summary, coverage and open items; a worker that reported with holdFor shows as held (with the continuation briefs it still authorizes) and keeps its ticket, pane and session until those briefs are used or the run ends. Optionally wait for a ledger change or until every worker has reported or been stopped — this blocks locally instead of polling with model turns. action "steer": send a follow-up instruction (workerId, message) to a running worker pane without stopping it — a correction, an answer to its question, or a narrowed scope; never widens the target scope. action "continue": send one follow-up brief to a live worker, or consume one held continuation a reported worker kept for its successor (the same ticket, pane and session; the hold authorizes holdContinuations briefs, 0..3, default 1). action "stop": revoke a worker\'s sandbox access (workerId, reason), interrupt it and close its pane; its report (if any) stays in the shared ledger.',
+    description: 'PLANNER ONLY: action "list" (default): this assessment\'s workers with Herdr status, command count, report summary, coverage and open items; a worker that reported with holdFor shows as held (with the continuation briefs it still authorizes) and keeps its ticket, pane and session until those briefs are used or the run ends. Optionally wait for a ledger change or until every worker has reported or been stopped — this blocks locally instead of polling with model turns. action "steer": send a follow-up instruction (workerId, message) to a running worker pane without stopping it — a correction, an answer to its question, or a narrowed scope; never widens the target scope. action "continue": send one follow-up brief to a live worker, or consume one held continuation a reported worker kept for its successor (the same ticket, pane and session; the hold authorizes holdContinuations briefs, 0..3, default 1). action "stop": revoke a worker\'s sandbox access (workerId, reason), interrupt it and close its pane; its report (if any) stays in the shared ledger.',
     parameters: workersParameters,
     async execute(_id, params, signal) {
       const action = params.action ?? 'list';
@@ -2677,7 +2678,7 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
   });
   registerTool({
     name: 'p2o_report', label: 'Report to lead', exposure: 'model-only',
-    description: 'WORKER ONLY: finish your objective by reporting to the assessment lead. Include what you ran, what you observed, what it supports and what it does not, coverage (including clean surfaces), open items, honest confidence and a blocked reason if you could not complete the task. Then stop working. holdFor.brief (one sentence) keeps this ticket, pane and session alive for follow-up briefs from the lead when the next chain step continues this exact work; holdContinuations (0..3, default 1) sets how many briefs that hold authorizes — 0 names the successor but retires the ticket. It is not a parking spot: the lead must dispatch the successor or release the hold.',
+    description: 'WORKER/REPORTER: finish your objective by reporting to the assessment lead. Include what you ran, what you observed, what it supports and what it does not, coverage (including clean surfaces), open items, honest confidence and a blocked reason if you could not complete the task. Then stop working. holdFor.brief (one sentence) keeps this ticket, pane and session alive for follow-up briefs from the lead when the next chain step continues this exact work; holdContinuations (0..3, default 1) sets how many briefs that hold authorizes — 0 names the successor but retires the ticket. It is not a parking spot: the lead must dispatch the successor or release the hold.',
     parameters: reportParameters,
     async execute(_id, params) {
       const current = worker();
@@ -2717,7 +2718,7 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
         // P10/TR-H12/Q32: queued intents still refuse a final finish (owner decision 2026-10-27: "nếu còn intent thì không
         // được finish"), but the refusal names every pending intent so the planner can dispatch or withdraw each one.
         const pending = current.engine.snapshot(), pendingIds = pending.intents.map(entry => `${entry.taskId}@r${entry.revision}${entry.reason ? ` (${cleanText(entry.reason).slice(0, 120)})` : ''}`).join(', ');
-        if (pending.pendingIntents) fail('INTENTS_QUEUED',`Accepted frontier still has ${pending.pendingIntents} queued intent(s): ${pendingIds}${pending.intentsOmitted ? `, … ${pending.intentsOmitted} more` : ''}. Dispatch them (p2o_task action=dispatch), withdraw the tasks, or use /p2o stop for an explicit partial report`);
+        if (pending.pendingIntents) fail('INTENTS_QUEUED',`Accepted frontier still has ${pending.pendingIntents} queued intent(s): ${pendingIds}${pending.intentsOmitted ? `, … ${pending.intentsOmitted} more` : ''}. Dispatch them with p2o_task_dispatch, withdraw the tasks, or use /p2o stop for an explicit partial report`);
         if (current.spawns.size) await Promise.allSettled([...current.spawns]);
         const unresolved = [...current.workers.values()].filter(entry => !entry.stopped && !entry.reported);
         if (unresolved.length) {
@@ -2749,7 +2750,7 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
           partialResult = current.store.campaignPartial()?.reason;
           const goals = planFrontier(index).filter(entry => entry.kind === 'goal');
           const supplied = typeof params.partial === 'string' ? params.partial.trim() : '';
-          if (!goals.length && !supplied) fail('CAMPAIGN_FRAME_MISSING', `a campaign was recorded (objective: ${cleanText(current.campaign.objective).slice(0, 200)}) but no goal has ever been recorded, so a final report cannot say what the campaign was for. Legal next calls: (1) p2o_plan_create {kind:"goal", title, status:"proposed", reason, criteria:["..."], proof:{...}}; (2) p2o_finish {export:true} to write the report and keep the run open; (3) p2o_finish {partial:"why this campaign stops here"} to stop with a recorded reason.`);
+          if (!goals.length && !supplied) fail('CAMPAIGN_FRAME_MISSING', `a campaign was recorded (objective: ${cleanText(current.campaign.objective).slice(0, 200)}) but no goal has ever been recorded, so a final report cannot say what the campaign was for. Legal next calls: (1) p2o_plan_author {kind:"goal", title, status:"proposed", reason, criteria:["..."], proof:{...}}; (2) p2o_finish {export:true} to write the report and keep the run open; (3) p2o_finish {partial:"why this campaign stops here"} to stop with a recorded reason.`);
           if (!goals.length || completion.state === 'incomplete') {
             // The partial reason is how a campaign records an honest stop. A missing reason is not a second refusal: the
             // derived obligation line is recorded instead, so the single approved refusal stays the only gate.
@@ -3414,7 +3415,7 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
     const allowed = current.role === 'owner' ? plannerTools() : workerTools(current.ticket.role);
     if (current.phase === 'active' && allowed.includes(event.toolName)) return;
     // Defense in depth for a tool injected back into a turn: name the legal next verb, never offer a lead-exec escape hatch.
-    if (current.role === 'owner') return { block: true, reason: 'Target execution, candidate claims and surface notes belong to a worker task. Create and dispatch an intent (p2o_task_create, then p2o_task_dispatch); the planner reviews the handoff and does not take over. Use /p2o stop to restore ordinary tools.' };
+    if (current.role === 'owner') return { block: true, reason: 'Target execution, candidate claims and surface notes belong to a worker task. Create and dispatch an intent (p2o_task_author, then p2o_task_dispatch); the planner reviews the handoff and does not take over. Use /p2o stop to restore ordinary tools.' };
     return { block: true, reason: `Worker orchestration permits only ${allowed.join(', ')} while active. Report with p2o_report to restore ordinary tools.` };
   });
   pi.on('user_bash', () => {

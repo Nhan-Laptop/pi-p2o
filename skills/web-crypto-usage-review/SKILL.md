@@ -5,7 +5,7 @@ description: Review how an application uses cryptographic primitives, primarily 
 
 # Web Crypto Usage Review
 
-Before first use, read the [scope baseline](../../README.md#start-here) and [handoff contracts](../../HANDOFFS.md).
+Before first use: [scope baseline](../../README.md#start-here), [handoff method](../../HANDOFFS.md#focused-method-and-review), and [owner review](../../HANDOFFS.md#provisional-owner-review).
 
 ## Applicability
 Use when source shows the application selects or configures a cryptographic primitive (an encryption, hashing or random-generation call), or decrypts state that the client holds and could have altered. This skill reads what was chosen and how it is used, and where a weak choice or a misused parameter can be broken by a construction, it builds that construction and records how far it got. It builds the construction a weak choice or a misused parameter allows, including the crafted-value volume that extracting key material or exhausting the service needs; a live check starts by reading how the application's own error path behaves on malformed input it already decrypts.
@@ -53,6 +53,6 @@ The list of cryptographic calls and decryption sites with their algorithm, mode,
 Whether a flagged weak primitive is practically exploitable against this deployment (key size, usage volume, attacker position) is a separate, harder question this card does not answer; it stays an open_proof_gap pointing at the specific weakness found. Compiled or vendored cryptographic code without available source stays unverified by this skill.
 
 ## Handoffs
-Provide the primitive list with source locations and flagged weaknesses, and the error-path comparison when run. Choose role/method from the unanswered question; record expected evidence and a branch stop condition. Use the [owned review contract](../../HANDOFFS.md#focused-method-and-review). Next: [web deployment hygiene](../web-deployment-hygiene/SKILL.md) for transport-level TLS questions, or [remediation](../remediation/SKILL.md) for fixes.
+Provide the primitive list with source locations and flagged weaknesses, and the error-path comparison when run. Next: [web deployment hygiene](../web-deployment-hygiene/SKILL.md) for transport-level TLS questions, or [remediation](../remediation/SKILL.md) for fixes.
 
 Claim rules are in [claim provenance before confirmation](../source-code-auditing/references/claim-provenance.md). This playbook restates the weak-cryptography guidance of the OWASP Web Security Testing Guide in this library's evidence terms; see [WSTG provenance](../../research/WSTG_PROVENANCE.md); [On demand upstream text](references/wstg-source.md).

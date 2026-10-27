@@ -5,7 +5,7 @@ description: Test whether a self-describing bearer token (a signed structured to
 
 # Web Token and Federation
 
-Before first use, read the [scope baseline](../../README.md#start-here) and [handoff contracts](../../HANDOFFS.md).
+Before first use: [scope baseline](../../README.md#start-here), [handoff method](../../HANDOFFS.md#focused-method-and-review), and [owner review](../../HANDOFFS.md#provisional-owner-review).
 
 ## Applicability
 Use when the application accepts a signed, structured bearer token as proof of identity or session state, or delegates authorization to or from another party through a standard authorization-delegation flow. This is distinct from [web session management](../web-session-management/SKILL.md), which covers opaque server-held session identifiers. Source review covers signature verification, algorithm handling and claim validation code, and the delegation flow's redirect and state handling. Live work covers the application's own endpoints and any host or redirect the flow reaches, including a third-party identity provider's infrastructure, which the sandbox can reach: the supplied target is a starting label, not an egress boundary.
@@ -56,6 +56,6 @@ For a token: which structural change was accepted or rejected, and under what cl
 A third-party identity provider's own enforcement is reachable through the sandbox network tool. What stays untested is a hardware-bound or platform-managed token store the run cannot drive, and a flow no transport exercised. A clean result covers only the structural properties compared, not the token format or flow in general.
 
 ## Handoffs
-Provide the baseline and each comparison's receipt, the structural property changed, and the source location of the verification function when available. Choose role/method from the unanswered question; record expected evidence and a branch stop condition. Use the [owned review contract](../../HANDOFFS.md#focused-method-and-review). Next: [web session management](../web-session-management/SKILL.md) when the token is layered over an invalidation question, [authorization auditing](../authorization-auditing/SKILL.md) for what an accepted token or flow result may then do, or [remediation](../remediation/SKILL.md) for fixes.
+Provide the baseline and each comparison's receipt, the structural property changed, and the source location of the verification function when available. Next: [web session management](../web-session-management/SKILL.md) when the token is layered over an invalidation question, [authorization auditing](../authorization-auditing/SKILL.md) for what an accepted token or flow result may then do, or [remediation](../remediation/SKILL.md) for fixes.
 
 Claim rules are in [claim provenance before confirmation](../source-code-auditing/references/claim-provenance.md). This playbook restates the token and authorization-delegation guidance of the OWASP Web Security Testing Guide in this library's evidence terms; see [WSTG provenance](../../research/WSTG_PROVENANCE.md); [On demand upstream text](references/wstg-source.md).

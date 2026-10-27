@@ -59,20 +59,20 @@ export function registerInertProvider(pi: ExtensionAPI, mode: 'owner' | 'worker'
         // A1: the planner holds intent/plan/case/coverage-plan/review/read/worker-control only. Target, lab, claim, note,
         // surface and report tools plus the hidden legacy verbs are never declared, so a model call to one is Pi's
         // `Tool <name> not found` before any extension handler runs. The task schema pins the one delegation path instead.
-        const plannerMust = ['p2o_task_create', 'p2o_task_dispatch', 'p2o_task_review', 'p2o_task_settle', 'p2o_plan_create',
-          'p2o_case_create', 'p2o_coverage_plan', 'p2o_board', 'p2o_ledger', 'p2o_graph', 'p2o_workers', 'p2o_loop', 'p2o_finish'];
+        const plannerMust = ['p2o_task_author', 'p2o_task_dispatch', 'p2o_task_review', 'p2o_task_settle', 'p2o_plan_author',
+          'p2o_case_author', 'p2o_coverage_plan', 'p2o_board', 'p2o_ledger', 'p2o_graph', 'p2o_workers', 'p2o_loop', 'p2o_finish'];
         const plannerMustNot = ['p2o_shell', 'p2o_net', 'p2o_http', 'p2o_capture', 'p2o_lab', 'p2o_candidate', 'p2o_note',
           'p2o_surface', 'p2o_report', 'p2o_request_subtask', 'p2o_delegate', 'p2o_task_start', 'p2o_coverage_cell',
           'p2o_coverage_cell_retire', 'bash', 'read'];
         if (!plannerMust.every(name => tools.includes(name)) || plannerMustNot.some(name => tools.includes(name))) throw new Error(`planner tool loadout was not applied: ${tools.join(',')}`);
-        if (!(descriptions.find(tool => tool.name === 'p2o_task_create')?.parameters as any)?.properties?.draft) throw new Error('task create schema lost');
+        if (!(descriptions.find(tool => tool.name === 'p2o_task_author')?.parameters as any)?.properties?.draft) throw new Error('task create schema lost');
         if(process.env.P2O_TEST_CASE_OWNER==='1'){
-          const caseSchema=descriptions.find(tool=>tool.name==='p2o_case_create')?.parameters as any,coveragePlanSchema=descriptions.find(tool=>tool.name==='p2o_coverage_plan')?.parameters as any;
+          const caseSchema=descriptions.find(tool=>tool.name==='p2o_case_author')?.parameters as any,coveragePlanSchema=descriptions.find(tool=>tool.name==='p2o_coverage_plan')?.parameters as any;
           if(caseSchema?.type!=='object'||!caseSchema.properties?.entry||coveragePlanSchema?.type!=='object'||!coveragePlanSchema.properties?.plan)throw Error('case/coverage verb schemas missing in real Pi context');
           // A1/A3: cell authoring left the model surface, so the planner must not see the cell verb or the worker-only claim/shell verbs.
           if(descriptions.some(tool=>['p2o_coverage_cell','p2o_coverage_cell_retire','p2o_candidate','p2o_shell'].includes(tool.name)))throw Error('removed or worker-only verb exposed to the planner');
           if(last?.isError&&lastTool!=='p2o_net')throw Error('Native case fixture tool rejected: '+JSON.stringify(last));
-          const graphResults:any[]=results.filter((r:any)=>r.toolName==='p2o_graph'),taskResults:any[]=results.filter((r:any)=>r.toolName==='p2o_task_create'),ledgerResults:any[]=results.filter((r:any)=>r.toolName==='p2o_ledger'),
+          const graphResults:any[]=results.filter((r:any)=>r.toolName==='p2o_graph'),taskResults:any[]=results.filter((r:any)=>r.toolName==='p2o_task_author'),ledgerResults:any[]=results.filter((r:any)=>r.toolName==='p2o_ledger'),
             caseResults:any[]=results.filter((r:any)=>String(r.toolName).startsWith('p2o_case_')),coverageResults:any[]=results.filter((r:any)=>String(r.toolName).startsWith('p2o_coverage_')),boardResults:any[]=results.filter((r:any)=>r.toolName==='p2o_board'),
             graph=graphResults[0]?.details.acks[0],ledgerRecords:any[]=ledgerResults[0]?.details.records??[],claim=ledgerRecords.filter((r:any)=>r.kind==='candidate').at(-1),
             pending=caseResults[0]?.details,accepted=caseResults[2]?.details,plan=coverageResults[0]?.details,
@@ -81,17 +81,17 @@ export function registerInertProvider(pi: ExtensionAPI, mode: 'owner' | 'worker'
             planInput={title:'Native inert coverage denominator',status:'active',reason:'No model-authored cells; coverage authoring left the planner surface',exclusions:['No undeclared assets or actors'],unknownScope:['Deployment parity is unknown']};
           if(!last)content=[{type:'toolCall',id:'case-net',name:'p2o_net',arguments:{command:'printf inert-planner-probe'}}];
           else if(lastTool==='p2o_net')content=[{type:'toolCall',id:'case-asset',name:'p2o_graph',arguments:{action:'record',batch:{assets:[{asset:{kind:'endpoint',key:'GET /native-case'}}]}}}];
-          else if(lastTool==='p2o_graph')content=[{type:'toolCall',id:'case-task',name:'p2o_task_create',arguments:{draft}}];
-          else if(lastTool==='p2o_task_create')content=[{type:'toolCall',id:'case-dispatch',name:'p2o_task_dispatch',arguments:{ids:[taskResults[0].details.id]}}];
+          else if(lastTool==='p2o_graph')content=[{type:'toolCall',id:'case-task',name:'p2o_task_author',arguments:{draft}}];
+          else if(lastTool==='p2o_task_author')content=[{type:'toolCall',id:'case-dispatch',name:'p2o_task_dispatch',arguments:{ids:[taskResults[0].details.id]}}];
           else if(lastTool==='p2o_task_dispatch')content=[{type:'toolCall',id:'case-wait',name:'p2o_workers',arguments:{waitFor:'all-report',timeoutSeconds:30}}];
           else if(lastTool==='p2o_workers')content=[{type:'toolCall',id:'case-ledger',name:'p2o_ledger',arguments:{limit:100}}];
           else if(lastTool==='p2o_ledger'){
             if(!claim)throw Error('Native case fixture found no worker claim in the ledger');
-            content=[{type:'toolCall',id:'case-create',name:'p2o_case_create',arguments:{requestId:'native-case-request',entry}}];
+            content=[{type:'toolCall',id:'case-create',name:'p2o_case_author',arguments:{requestId:'native-case-request',entry}}];
           }
-          else if(lastTool==='p2o_case_create'&&caseResults.length===1)content=[{type:'toolCall',id:'case-replay',name:'p2o_case_create',arguments:{requestId:'native-case-request',entry}}];
-          else if(lastTool==='p2o_case_create'&&caseResults.length===2)content=[{type:'toolCall',id:'case-accept',name:'p2o_case_revise',arguments:{id:pending.id,revision:1,entry:{...entry,reviewStatus:'accepted',reviewReason:'Owner reviewed exact native claim, asset and limitations'}}}];
-          else if(lastTool==='p2o_case_revise'&&caseResults.length===3)content=[{type:'toolCall',id:'coverage-plan',name:'p2o_coverage_plan',arguments:{requestId:'native-coverage-request',plan:planInput}}];
+          else if(lastTool==='p2o_case_author'&&caseResults.length===1)content=[{type:'toolCall',id:'case-replay',name:'p2o_case_author',arguments:{requestId:'native-case-request',entry}}];
+          else if(lastTool==='p2o_case_author'&&caseResults.length===2)content=[{type:'toolCall',id:'case-accept',name:'p2o_case_author',arguments:{id:pending.id,revision:1,entry:{...entry,reviewStatus:'accepted',reviewReason:'Owner reviewed exact native claim, asset and limitations'}}}];
+          else if(lastTool==='p2o_case_author'&&caseResults.length===3)content=[{type:'toolCall',id:'coverage-plan',name:'p2o_coverage_plan',arguments:{requestId:'native-coverage-request',plan:planInput}}];
           else if(lastTool==='p2o_coverage_plan'&&coverageResults.length===1)content=[{type:'toolCall',id:'coverage-replay',name:'p2o_coverage_plan',arguments:{requestId:'native-coverage-request',plan:planInput}}];
           else if(lastTool==='p2o_coverage_plan'&&coverageResults.length===2)content=[{type:'toolCall',id:'case-list',name:'p2o_board',arguments:{board: 'cases'}}];
           else if(lastTool==='p2o_board'&&boardResults.length===1)content=[{type:'toolCall',id:'coverage-list',name:'p2o_board',arguments:{board: 'coverage'}}];
@@ -100,7 +100,7 @@ export function registerInertProvider(pi: ExtensionAPI, mode: 'owner' | 'worker'
           else throw Error('Unexpected native case fixture turn');
         }
         else if(process.env.P2O_TEST_WORK_OWNER==='1'){
-          const schema=descriptions.find(tool=>tool.name==='p2o_plan_create')?.parameters as any;
+          const schema=descriptions.find(tool=>tool.name==='p2o_plan_author')?.parameters as any;
           if(schema?.type!=='object'||!schema.properties?.entry)throw Error('plan create schema missing in real Pi context');
           if(last?.isError)throw Error('Native work fixture tool rejected: '+JSON.stringify(last));
           const asset=(results.find((r:any)=>r.toolName==='p2o_graph') as any)?.details.acks[0].entityId,draft={
@@ -108,13 +108,13 @@ export function registerInertProvider(pi: ExtensionAPI, mode: 'owner' | 'worker'
             work:{assetRefs:[{id:asset,revision:1}],questionKey:'policy:inert',actorContext:'actor:source',tenantContext:'tenant:none',methodFamily:'source-trace',purpose:'investigation'},decision:{disposition:'new',reason:'No known matching retained attempt exists yet'},outputContract:{kind:'investigation',required:['evidence','gaps'],partialAllowed:true,artifactPolicy:'ids-only'},
           };
           if(!last)content=[{type:'toolCall',id:'work-asset',name:'p2o_graph',arguments:{action:'record',batch:{assets:[{asset:{kind:'file',key:'src/gate.py'}}]}}}];
-          else if(lastTool==='p2o_graph')content=[{type:'toolCall',id:'work-task',name:'p2o_task_create',arguments:{draft}}];
-          else if(lastTool==='p2o_task_create'&&!(results as any[]).some(r=>r.toolName==='p2o_plan_create'))content=[{type:'toolCall',id:'work-goal',name:'p2o_plan_create',arguments:{requestId:'native-work-goal',entry:{kind:'goal',title:'Review one declared inert policy boundary',status:'active',reason:'Explicit controlled fixture; no investigation claimed',proof:{kind:'capability',capability:{kind:'file.read'}},criteria:['Owner must review attribution and a control'],taskIds:[last.details.id]}}}];
-          else if(lastTool==='p2o_plan_create'&&results.filter((r:any)=>r.toolName==='p2o_plan_create').length===1)content=[{type:'toolCall',id:'work-goal-replay',name:'p2o_plan_create',arguments:{requestId:'native-work-goal',entry:{kind:'goal',title:'Review one declared inert policy boundary',status:'active',reason:'Explicit controlled fixture; no investigation claimed',proof:{kind:'capability',capability:{kind:'file.read'}},criteria:['Owner must review attribution and a control'],taskIds:[(results.find((r:any)=>r.toolName==='p2o_task_create') as any).details.id]}}}];
+          else if(lastTool==='p2o_graph')content=[{type:'toolCall',id:'work-task',name:'p2o_task_author',arguments:{draft}}];
+          else if(lastTool==='p2o_task_author'&&!(results as any[]).some(r=>r.toolName==='p2o_plan_author'))content=[{type:'toolCall',id:'work-goal',name:'p2o_plan_author',arguments:{requestId:'native-work-goal',entry:{kind:'goal',title:'Review one declared inert policy boundary',status:'active',reason:'Explicit controlled fixture; no investigation claimed',proof:{kind:'capability',capability:{kind:'file.read'}},criteria:['Owner must review attribution and a control'],taskIds:[last.details.id]}}}];
+          else if(lastTool==='p2o_plan_author'&&results.filter((r:any)=>r.toolName==='p2o_plan_author').length===1)content=[{type:'toolCall',id:'work-goal-replay',name:'p2o_plan_author',arguments:{requestId:'native-work-goal',entry:{kind:'goal',title:'Review one declared inert policy boundary',status:'active',reason:'Explicit controlled fixture; no investigation claimed',proof:{kind:'capability',capability:{kind:'file.read'}},criteria:['Owner must review attribution and a control'],taskIds:[(results.find((r:any)=>r.toolName==='p2o_task_author') as any).details.id]}}}];
           // P8.3: the board match verb is gone; a repeated create is the only duplicate/history preflight and returns the
           // match payload instead of creating a second task.
-          else if(lastTool==='p2o_plan_create')content=[{type:'toolCall',id:'work-duplicate',name:'p2o_task_create',arguments:{draft}}];
-          else if(lastTool==='p2o_task_create')content=[{type:'toolCall',id:'work-finish',name:'p2o_finish',arguments:{}}];
+          else if(lastTool==='p2o_plan_author')content=[{type:'toolCall',id:'work-duplicate',name:'p2o_task_author',arguments:{draft}}];
+          else if(lastTool==='p2o_task_author')content=[{type:'toolCall',id:'work-finish',name:'p2o_finish',arguments:{}}];
           else if(lastTool==='p2o_finish')content=[{type:'text',text:'OWNER_WORK_DONE: task cancelled by finish, goal retained active; no proof or investigation.'}];
           else throw Error('Unexpected native work fixture turn');
         }
@@ -133,13 +133,13 @@ export function registerInertProvider(pi: ExtensionAPI, mode: 'owner' | 'worker'
         // (p2o_net) to prove the model surface, then creates and dispatches one bounded intent and waits for the Engine-
         // spawned worker. The real child worker fixture performs the shell/note/candidate/report sequence through the broker.
         else if (!last) content = [{ type: 'toolCall', id: 'surface-probe', name: 'p2o_net', arguments: { command: 'printf inert-planner-probe' } }];
-        else if (lastTool === 'p2o_net') content = [{ type: 'toolCall', id: 'task-create', name: 'p2o_task_create', arguments: { draft: {
+        else if (lastTool === 'p2o_net') content = [{ type: 'toolCall', id: 'task-create', name: 'p2o_task_author', arguments: { draft: {
           question: 'Inspect /target/code.txt in the sandbox and report what it contains. Success: a command, its output, and coverage for that surface. Stop if the sandbox is unavailable.',
           surface: 'surface-recon', risk: 'boundary', role: 'recon', roleReason: 'A2: the first intent of an empty run is recon/mapping',
           expectedTrue: 'The declared fixture source is the observed input', expectedFalse: 'The source copy is unavailable or different',
           stopCondition: 'Stop at this one bounded inert question', evidenceIds: [], prerequisites: [], methodReason: 'Controlled source fixture, no target execution',
         } } }];
-        else if (lastTool === 'p2o_task_create') content = [{ type: 'toolCall', id: 'task-dispatch', name: 'p2o_task_dispatch', arguments: { ids: [last.details.id] } }];
+        else if (lastTool === 'p2o_task_author') content = [{ type: 'toolCall', id: 'task-dispatch', name: 'p2o_task_dispatch', arguments: { ids: [last.details.id] } }];
         else if (lastTool === 'p2o_task_dispatch' && process.env.P2O_TEST_EVENT_LOOP === '1') content = [{type:'toolCall',id:'loop-wait',name:'p2o_loop',arguments:{action:'wait',reason:'Engine should await the delayed worker report without model polling'}}];
         else if (lastTool === 'p2o_loop') content = [{type:'toolCall',id:'workers-after-wake',name:'p2o_workers',arguments:{waitFor:'all-report',timeoutSeconds:30}}];
         else if (lastTool === 'p2o_task_dispatch') content = [{ type: 'toolCall', id: 'workers-1', name: 'p2o_workers', arguments: { waitFor: 'all-report', timeoutSeconds: 30 } }];

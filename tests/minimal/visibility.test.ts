@@ -91,7 +91,7 @@ describe('model-free assessment visibility (canonical runtime + legacy reader)' 
   });
   it('reported handoff remains awaiting review, not a verified finding or completed goal', async () => {
     await fixture(async h => {
-      const task=(await h.call('p2o_task_create',{draft})).details;
+      const task=(await h.call('p2o_task_author',{draft})).details;
       const spawn=(await h.call('p2o_delegate',{focus:'one fixture',task:task.question,taskId:task.id})).details;
       const {readFile}=await import('node:fs/promises');
       const ticket=JSON.parse(await readFile(join(await h.path(),'..',`ticket-${spawn.workerId}.json`),'utf8'));
@@ -128,7 +128,7 @@ describe('model-free assessment visibility (canonical runtime + legacy reader)' 
   it('updates the compact widget on commits, keeps other widgets and clears on stop', async () => {
     await fixture(async h => {
       h.ctx.widgets.set('other-extension', ['keep']);
-      await h.call('p2o_task_create',{draft});await delay(80);
+      await h.call('p2o_task_author',{draft});await delay(80);
       expect(h.ctx.widgets.get('p2o-progress')({},{}).render(90).join('\n')).toContain('Queue:');
       expect(h.pi.messages).toHaveLength(1);
       await h.command('stop');await delay(80);

@@ -84,10 +84,10 @@ describe('tool descriptions carry the boundary (A1: no separate guidance layer)'
 describe('authority split: planner intent, worker execution, reporter read (P0/A1)', () => {
   it('gives the planner intent tools and the worker execution tools', () => {
     expect(plannerTools()).toHaveLength(new Set(plannerTools()).size);
-    for (const name of ['p2o_task_create', 'p2o_task_dispatch', 'p2o_task_review', 'p2o_workers', 'p2o_loop', 'p2o_finish', 'p2o_plan_create', 'p2o_case_create', 'p2o_coverage_plan']) expect(plannerTools(), name).toContain(name);
+    for (const name of ['p2o_task_author', 'p2o_task_dispatch', 'p2o_task_review', 'p2o_workers', 'p2o_loop', 'p2o_finish', 'p2o_plan_author', 'p2o_case_author', 'p2o_coverage_plan']) expect(plannerTools(), name).toContain(name);
     for (const name of [...TARGET_TOOLS, ...LAB_TOOLS, 'p2o_candidate', 'p2o_note', 'p2o_surface', 'p2o_report', 'p2o_request_subtask', ...HIDDEN_TOOLS]) expect(plannerTools(), name).not.toContain(name);
     for (const name of [...TARGET_TOOLS, ...LAB_TOOLS, 'p2o_candidate', 'p2o_note', 'p2o_surface', 'p2o_report']) expect(workerTools('discovery'), name).toContain(name);
-    for (const name of ['p2o_task_create', 'p2o_task_dispatch', 'p2o_task_review', 'p2o_plan_create', 'p2o_case_create', 'p2o_finish', ...HIDDEN_TOOLS]) expect(workerTools('discovery'), name).not.toContain(name);
+    for (const name of ['p2o_task_author', 'p2o_task_dispatch', 'p2o_task_review', 'p2o_plan_author', 'p2o_case_author', 'p2o_finish', ...HIDDEN_TOOLS]) expect(workerTools('discovery'), name).not.toContain(name);
     expect(VALIDATION_TOOLS).toEqual(WORKER_TOOLS.filter(name => name !== 'p2o_surface'));
     expect(workerTools('validation')).toEqual(VALIDATION_TOOLS);
     expect(workerTools('reporting')).toEqual(reporterTools());
@@ -107,7 +107,7 @@ describe('authority split: planner intent, worker execution, reporter read (P0/A
     // The planner never executes and the worker never plans: the generated prompts state the same split.
     expect(plannerInstructions(facts(true))).toMatch(/no target, lab or claim tools/i);
     expect(plannerInstructions(facts(true))).not.toMatch(/may execute directly/i);
-    expect(workerInstructions(ticket('discovery'))).not.toMatch(/p2o_task_create|p2o_task_dispatch|p2o_workers/);
+    expect(workerInstructions(ticket('discovery'))).not.toMatch(/p2o_task_author|p2o_task_dispatch|p2o_workers/);
   });
 });
 

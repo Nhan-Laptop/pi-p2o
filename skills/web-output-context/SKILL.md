@@ -5,15 +5,15 @@ description: Map untrusted sources to output sinks and their exact encoding cont
 
 # Web Output Context
 
-Before first use, read the [scope baseline](../../README.md#start-here) and [handoff contracts](../../HANDOFFS.md).
+Before first use: [scope baseline](../../README.md#start-here), [handoff method](../../HANDOFFS.md#focused-method-and-review), and [owner review](../../HANDOFFS.md#provisional-owner-review).
 
 ## Applicability
-Use when user-influenced data reaches a browser, document, template, or script sink and the unresolved question is whether the exact output context is encoded for that parser. Source review covers template rendering, serializers, client-side sink calls, URL construction, DOM updates, and document generators. Offline reproduction covers templates, renderers, and sanitizers that can run against a local fixture. Real browser execution proof is available: the sandbox image ships Chromium 150 and the `agent-browser` CLI on PATH, and the worker drives it through its normal sandbox shell (`agent-browser --session <name> open <url>`, then `snapshot`, `click`, `eval` or `cookies get`), keeping the named session/profile in its own scratch, and a browser-side effect observed there is `live_reproduction`. A reflected string is a candidate context observation; a browser observation promotes it to demonstrated execution.
+Use when user-influenced data reaches a browser, document, template, or script sink and the unresolved question is whether the exact output context is encoded for that parser. Source review covers template rendering, serializers, client-side sink calls, URL construction, DOM updates, and document generators. Offline reproduction covers templates, renderers, and sanitizers that can run against a local fixture. Real browser execution proof is available through the sandbox image's Chromium and `agent-browser` CLI ([browser transport](../../docs/HTTP_TRANSPORT.md#browser-transport)), and a browser-side effect observed there is `live_reproduction`. A reflected string is a candidate context observation; a browser observation promotes it to demonstrated execution.
 
 ## Workflow Prerequisites
 - `source-review` requires a supplied read-only source snapshot. Trace each source through every transformation to the sink and name the context at the sink.
 - `offline-reproduction` requires bounded offline sandbox execution, with the renderer and its required dependencies functionally checked through a bounded offline run. Render a local fixture with the extracted template or sanitizer configuration.
-- `browser-execution-proof` is executable in this run: the sandbox image ships Chromium 150 and the `agent-browser` CLI on PATH, and the worker drives it through its normal sandbox shell (`agent-browser --session <name> open <url>`, then `snapshot`, `click`, `eval` or `cookies get`), keeping the named session/profile in its own scratch. A browser-side effect observed there is `live_reproduction`; a local render or simulated consumer is `offline_reproduction`, never presented as live.
+- `browser-execution-proof` is executable in this run through the image's Chromium and `agent-browser` ([browser transport](../../docs/HTTP_TRANSPORT.md#browser-transport)). A browser-side effect observed there is `live_reproduction`; a local render or simulated consumer is `offline_reproduction`, never presented as live.
 - A sanitizer name or framework default is not a control until the actual call, arguments, configuration, and context are confirmed.
 
 ## Baseline
@@ -41,7 +41,7 @@ A chain record per source with the transformation steps, the sink, the context, 
 
 ## Stop Conditions
 - Use the credential, session or personal data the sink question needs alongside the inert marker; the marker and the live effect are one chain, and each is recorded with its receipt.
-- Continue from the confirmed sink context into the composed chain here or in [exploitability assessment](../exploitability-assessment/SKILL.md), which builds it against the target.
+- Continue from the confirmed sink context into the composed execution chain in [web injection to execution](../web-injection-to-exec/SKILL.md), which climbs the exec ladder against the target.
 - A simulated consumer is not execution proof: drive the image's browser and record `live_reproduction` from it.
 - When the chain cannot name the sink context, that is an open proof gap, not a clean result.
 

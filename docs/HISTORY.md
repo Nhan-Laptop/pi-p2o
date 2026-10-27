@@ -31,6 +31,7 @@ Every number below was true when recorded. None of them replaces a current run: 
 | 2026-10-27 | P8 truth pass: capability text describes the instrument that actually runs; retired claims are pinned by test | test-pinned in `tests/minimal/truth.test.ts` |
 | 2026-10-27 | P9 Option B/C: graph-related ceilings became a setting (`graphCapacity`), queue identity, executor cap, proof-only goal settle | full suite 1,069 pass / 124 files |
 | 2026-10-27 | P11/A11 autonomy pass: one start consent covers the run; browser and self-provisioned identity are instrument facts; the skill library's third-party guardrail doctrine was removed | commit `f5015fd`, pushed to `main` |
+| 2026-10-27 | Dedupe/merge pass: three authoring pairs became identity-selected `p2o_task_author` / `p2o_case_author` / `p2o_plan_author` (no `id` creates, `id`+`revision` revises); tool declarations 95.7 kB → 79.9 kB (−16.5%, planner loadout −24.1%); duplicated prompt rules, tool self-repeats and skill-library scaffolding removed; size budgets and the skill ceiling pinned by test again; five skills stopped describing an off-sandbox lab that does not exist | 34 registered tools (32 on the model surface + 2 hidden), planner 21, worker 19, validation 18, reporter 6; full gate recorded with the change |
 
 ## Decisions that outlive their phase
 
@@ -42,6 +43,9 @@ Every number below was true when recorded. None of them replaces a current run: 
   `agent-browser` CLI; `--identity` is operator convenience, and a worker provisions a disposable principal when it needs one.
 - **No command, token, time or round allowance.** Only two quietly unproductive rounds, an operator decision or an operator
   stop end a run; usage is recorded for the report and never refused.
+- **One authoring verb per entity, selected by identity.** `p2o_task_author` / `p2o_case_author` / `p2o_plan_author` create
+  with no `id` and revise with `id`+`revision`; a half identity is refused with the board read and the legal next verb, so
+  the schema is declared once instead of once per half.
 - **Authority is a loadout, not a prompt.** The planner holds no target, lab or claim tool; a worker is the only claim
   author; the reporter is a read-only second reader. Dispatch is the only path to target execution.
 - **Coverage is host-derived from reviewed work.** No model-authored coverage cell exists; a task without an asset is an

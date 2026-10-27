@@ -5,7 +5,7 @@ description: Plan a high-yield audit of a large source tree using framework conv
 
 # Source-Code Auditing
 
-Before first use, read the [scope baseline](../../README.md#start-here) and [handoff contracts](../../HANDOFFS.md).
+Before first use: [scope baseline](../../README.md#start-here), [handoff method](../../HANDOFFS.md#focused-method-and-review), and [owner review](../../HANDOFFS.md#provisional-owner-review).
 
 ## Technique
 Convention-aware audit slicing.
@@ -50,12 +50,13 @@ Over-filtering hides custom wrappers; under-filtering produces unactionable cand
 Derived guidance: centralize typed input and authorization contracts, remove unsafe dynamic dispatch, and review every caller of shared helpers. Regression tests should assert the invariant across sibling paths, not merely reject one sample.
 
 ## Focused Method
-Hand off the minimal controllable-input → gate → consumer slice, its competing predictions and missing edge. Prefer one targeted observation over another broad sweep; revise the question when a gate assumption fails. Choose role/method from the unanswered question; record expected evidence and a branch stop condition. Use the [owned review contract](../../HANDOFFS.md#focused-method-and-review).
+Hand off the minimal controllable-input → gate → consumer slice, its competing predictions and missing edge. Prefer one targeted observation over another broad sweep; revise the question when a gate assumption fails.
 
 ## Handoffs
 **Static Analysis → Dynamic Analysis:** deliver revision, minimal call/data-flow slice, exact unresolved gate or value, expected observations on both hypothesis outcomes, and proposed instrumentation points. No handoff based solely on a grep hit. **Static Analysis → Fuzzing:** when a reachable processing unit has too many input combinations for manual tests, hand off its harness and reset contract to [fuzzing](../fuzzing/SKILL.md); a crash-free campaign is coverage, not safety. Next: [dynamic analysis](../dynamic-analysis/SKILL.md).
 
 ## Evidence
+Claim validation against intended policy is in [claim provenance](references/claim-provenance.md).
 The audit-selection method merges B068, B064, B063, B037, B006, B001, and B066. Detailed field/trace validation belongs to the specialized skills rather than another whole-codebase sweep.
 
 Shared-state interactions and security-check side effects also draw on [O005](../../research/orange/evidence.md#o005) and [O001](../../research/orange/evidence.md#o001), with handoffs derived for this library rather than attributed to the authors.

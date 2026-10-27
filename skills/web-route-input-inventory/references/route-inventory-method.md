@@ -22,6 +22,13 @@ Specifications, sitemaps, client bundles, and documentation links are untrusted 
 
 ## Inventory ledger
 
+Record the extraction script and supplied revision. Compare controlled representative samples, because one
+response cannot establish required parameters or deployment; after repeated unchanged failures keep the smallest
+extraction gap rather than widening transport. Where two content types are genuinely declared, a parser control
+sends the same values under both and confirms different handling. Exclude CDN, WAF, or rate-limit pages that
+differ without reflecting application policy, and a credential-shaped literal in synthetic data treated as a
+deployed secret without provenance.
+
 Keep the table append-only and revisable. For every line record: identity, source locator, declared identity gate, baseline receipt identifier, coverage state, and the reason for any exclusion. When a later revision changes a route, add a revision note rather than rewriting the earlier line; a comparison is only meaningful against the baseline from the same revision and environment. The ledger is handed to the policy playbooks; it is not itself a finding.
 
 Adapted from the reviewed specification-inventory method, excluding its assumption that specification-provided base addresses authorize traffic, its automatic write-method expansion, and its active fuzzing steps. See [skill provenance](../../../research/SKILL_PROVENANCE.md).

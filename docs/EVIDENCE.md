@@ -58,7 +58,7 @@ anchor to the task that produced it. A planner call is refused with `WORKER_ONLY
 
 1. A worker claim is attributed evidence, not a finding. `confirmed` on a claim only means "claimed confirmed — pending
    review".
-2. `p2o_case_create` / `p2o_case_revise` (planner) pins the exact claim, asset/task/hypothesis revisions, evidence, report,
+2. `p2o_case_author` (planner) pins the exact claim, asset/task/hypothesis revisions, evidence, report,
    contradictions and limitations.
 3. Only a case that is `accepted` + `confirmed` + canonical (no `duplicateOf`) + `currentness=current` counts as a unique
    accepted-current finding. That still does not mean the assessment is done or the target is safe.

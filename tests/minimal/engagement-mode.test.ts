@@ -126,9 +126,9 @@ describe('engagement mode in the run (A7.1)', () => {
       expect(store.manifest().profile).toMatchObject({ mode: 'assess', effectClasses: [] });
       expect(store.campaign()).toBeUndefined();
     } finally { store.close(); }
-    await expect(h.call('p2o_task_create', { draft: exploitationDraft })).rejects.toThrow(/ASSESS_MODE_REFUSES_EXPLOITATION/);
+    await expect(h.call('p2o_task_author', { draft: exploitationDraft })).rejects.toThrow(/ASSESS_MODE_REFUSES_EXPLOITATION/);
     // Mapping/discovery/validation purposes stay admitted: assess refuses effects, not assessment.
-    const recon = await h.call('p2o_task_create', { draft: { question: 'Which surfaces does the fixture expose?', surface: '/fixture', risk: 'mapping', role: 'recon', evidenceIds: [], prerequisites: [] } });
+    const recon = await h.call('p2o_task_author', { draft: { question: 'Which surfaces does the fixture expose?', surface: '/fixture', risk: 'mapping', role: 'recon', evidenceIds: [], prerequisites: [] } });
     expect(recon.details).toMatchObject({ status: 'proposed', role: 'recon' });
     // The report states the engagement shape even without a recorded campaign.
     const exported = await h.call('p2o_finish', { export: true });
@@ -143,19 +143,19 @@ describe('engagement mode in the run (A7.1)', () => {
     const goalDraft = (proof: Record<string, unknown>) => ({ entry: { kind: 'goal', title: 'Reach the recorded effect under an impact goal', status: 'active', proof,
       criteria: ['The exploitation step runs and is attributed'], reason: 'P7.1 admission fixture: the goal the ladder is settled against' } });
     // No goal yet: the host refuses before the intent exists.
-    await expect(h.call('p2o_task_create', { draft: exploitationDraft })).rejects.toThrow(/EXPLOIT_MODE_NEEDS_IMPACT_GOAL/);
-    await h.call('p2o_plan_create', { entry: { kind: 'todo', title: 'A todo is not a goal', status: 'open', reason: 'P7.1 negative control: only a goal authorizes the ladder' } });
-    await expect(h.call('p2o_task_create', { draft: exploitationDraft })).rejects.toThrow(/EXPLOIT_MODE_NEEDS_IMPACT_GOAL/);
+    await expect(h.call('p2o_task_author', { draft: exploitationDraft })).rejects.toThrow(/EXPLOIT_MODE_NEEDS_IMPACT_GOAL/);
+    await h.call('p2o_plan_author', { entry: { kind: 'todo', title: 'A todo is not a goal', status: 'open', reason: 'P7.1 negative control: only a goal authorizes the ladder' } });
+    await expect(h.call('p2o_task_author', { draft: exploitationDraft })).rejects.toThrow(/EXPLOIT_MODE_NEEDS_IMPACT_GOAL/);
     // A capability-proof goal opens the ladder; the intent still has to carry its own lineage.
-    await h.call('p2o_plan_create', { entry: { kind: 'goal', title: 'Reach the recorded effect under an impact goal', status: 'active', proof: { kind: 'capability', capability: { kind: 'file.read' } },
+    await h.call('p2o_plan_author', { entry: { kind: 'goal', title: 'Reach the recorded effect under an impact goal', status: 'active', proof: { kind: 'capability', capability: { kind: 'file.read' } },
       criteria: ['The exploitation step runs and is attributed'], reason: 'P7.1 admission fixture: the goal the ladder is settled against' } });
-    await h.call('p2o_task_create', { draft: { question: 'Which surfaces does the fixture expose?', surface: '/fixture', risk: 'mapping', role: 'recon', evidenceIds: [], prerequisites: [] } });
+    await h.call('p2o_task_author', { draft: { question: 'Which surfaces does the fixture expose?', surface: '/fixture', risk: 'mapping', role: 'recon', evidenceIds: [], prerequisites: [] } });
     const observation = (await h.call('p2o_shell', { command: 'printf engagement-observation' })).details;
     const claim = await seedClaim(h, { candidate: 'engagement-primitive', surface: '/fixture', risk: 'authorization', closure: 'open_proof_gap', execution: 'not_tested',
       proof: 'static_trace', evidenceRefs: [observation.evidenceId], negativeControls: [], policyBasis: 'inferred', expectedPolicy: 'Declared fixture boundary',
       limitations: 'Nothing executed yet' });
     const asset = (await h.call('p2o_graph', { action: 'record', batch: { assets: [{ asset: { kind: 'endpoint', key: 'GET /fixture' } }] } })).details.acks[0];
-    const created = await h.call('p2o_task_create', { draft: { ...exploitationDraft, work: {
+    const created = await h.call('p2o_task_author', { draft: { ...exploitationDraft, work: {
       assetRefs: [{ id: asset.entityId, revision: 1 }], questionKey: 'engagement:fixture', policyKey: 'policy:fixture', actorContext: 'actor:fixture',
       tenantContext: 'tenant:fixture', methodFamily: 'chain-step', purpose: 'exploitation', claimRefs: [claim.id] },
       decision: { disposition: 'new', reason: 'First task that executes this bounded step' } } });

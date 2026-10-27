@@ -712,6 +712,30 @@ class SkillProfileTests(unittest.TestCase):
         self.assertEqual(documents["shared:license-notice"], "research/licenses/README.md")
         self.assertEqual(documents["shared:apache-2.0"], "research/licenses/apache-2.0.md")
 
+    def test_browser_transport_is_one_shared_document(self):
+        # The Chromium/agent-browser command block lives once in a registered shared document; each skill page links it
+        # and keeps the terms its own tests pin, instead of repeating the same paragraph three times.
+        catalog = json.loads((ROOT / "skills/catalog.json").read_text())
+        documents = {document["id"]: document for document in catalog["documents"]}
+        self.assertEqual(documents["shared:browser-transport"]["path"], "docs/HTTP_TRANSPORT.md")
+        self.assertEqual(documents["shared:browser-transport"]["section"], "browser-transport")
+        for name in ("web-route-input-inventory", "web-output-context", "web-browser-trust-controls"):
+            text = (ROOT / f"skills/{name}/SKILL.md").read_text(encoding="utf-8")
+            self.assertIn("../../docs/HTTP_TRANSPORT.md#browser-transport", text, name)
+            self.assertNotIn("agent-browser --session", text, name)
+            self.assertIn("Chromium", text, name)
+            self.assertIn("agent-browser", text, name)
+
+    def test_every_reference_card_is_linked_from_its_skill(self):
+        catalog = json.loads((ROOT / "skills/catalog.json").read_text())
+        for document in catalog["documents"]:
+            path = document["path"]
+            if not path.startswith("skills/") or "/references/" not in path:
+                continue
+            owner = path.split("/")[1]
+            text = (ROOT / f"skills/{owner}/SKILL.md").read_text(encoding="utf-8")
+            self.assertIn(f"references/{Path(path).name}", text, document["id"])
+
     def test_claim_provenance_guidance_present(self):
         reference_path = "skills/source-code-auditing/references/claim-provenance.md"
         reference = (ROOT / reference_path).read_text(encoding="utf-8").lower()

@@ -37,9 +37,9 @@ page is the operator-facing contract for tasks, rounds and the plan board.
 
 ## Tasks are intents
 
-`p2o_task_create` stores an intent, not a work order: the planner says what it wants to learn (question, surface, risk, role,
-and optionally a structured `work` identity), and the host derives the rest in the same canonicalize-and-anchor step used by
-`p2o_task_revise`:
+`p2o_task_author` stores an intent, not a work order: no `id` creates one, `id`+`revision` revises the existing one. The planner
+says what it wants to learn (question, surface, risk, role, and optionally a structured `work` identity), and the host derives
+the rest in the same canonicalize-and-anchor step for both halves:
 
 | Field | Derived from | Value |
 |---|---|---|
@@ -77,7 +77,8 @@ reserve moves the task to `blocked` with the missing prerequisite — never a pl
 
 ## Plan board: goals, todos, decisions
 
-Goals, todos and decisions are records on one plan board (`p2o_plan_create`, `p2o_plan_revise`, `p2o_board board=plans`),
+Goals, todos and decisions are records on one plan board (`p2o_plan_author` creates with no `id` and revises with
+`id`+`revision`; `p2o_board board=plans` reads it),
 not a second task queue.
 
 - A goal is a promise about the target and needs proof: `GOAL_UNPROVEN` unless it names a `capability` (a confirmed+tested
@@ -108,7 +109,7 @@ by a confirmed+tested claim that an earlier step of the same chain cites. `p2o_b
 chain <id> 2/4 · next: step 3 (ready) · waiting on: http.request (internal-api)
 ```
 
-Frontier obligations are enforced where work is opened, not at finish: `p2o_task_create` refuses a new direction on a
+Frontier obligations are enforced where work is opened, not at finish: `p2o_task_author` refuses a new direction on a
 surface that has a ready, undispatched chain step (`CHAIN_READY_UNDISPATCHED`) or a confirmed+tested claim nothing consumes
 (`PRIMITIVE_UNCHAINED`), unless the draft cites the provider or records a deferred/blocked row with a reason. The same
 condition appears as a `REMAINING WORK` advisory, so "what is left" has one source. Cancelled or expired work never counts

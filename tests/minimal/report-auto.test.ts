@@ -160,7 +160,7 @@ describe('report v2 content', () => {
   it('marks a rating recorded against an older case revision and lists unresolved items when the run ended in a stop', async () => fixture(async h => {
     const built = await rated(h), view = (await h.call('p2o_board', { board: 'cases', id: built.accepted.id })).details;
     const { currentness, staleReasons, independentCurrent, independenceReason, acceptedFinding, readyToRate, canonicalCaseId, recordId, runId, revision, finding: _f, ratedRevision, ratingCurrent, ...draft } = view;
-    await h.call('p2o_case_revise', {id: built.accepted.id, revision, entry: { ...draft, reviewReason: 'Owner re-read the exact current claim, task, asset and limitations' } });
+    await h.call('p2o_case_author', {id: built.accepted.id, revision, entry: { ...draft, reviewReason: 'Owner re-read the exact current claim, task, asset and limitations' } });
     h.ctx.setConfirm(true); await h.command(`report export ${join(h.root, 'out')}`);
     expect((await h.read(join(h.root, 'out')))['REPORT.md']).toMatch(/rating recorded against r2; the case is now r3, so check that it still applies/);
   }));

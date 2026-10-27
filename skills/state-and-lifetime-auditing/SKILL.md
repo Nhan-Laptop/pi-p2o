@@ -5,7 +5,7 @@ description: Audit ownership, reference counts, transaction phases, asynchronous
 
 # State-and-Lifetime Auditing
 
-Before first use, read the [scope baseline](../../README.md#start-here) and [handoff contracts](../../HANDOFFS.md).
+Before first use: [scope baseline](../../README.md#start-here), [handoff method](../../HANDOFFS.md#focused-method-and-review), and [owner review](../../HANDOFFS.md#provisional-owner-review).
 
 ## Technique
 Ownership graphs plus transition invariants.
@@ -35,8 +35,8 @@ Object graph → state machine → acquisition/release ledger → transition pat
 
 ## Tools
 - Source/call-graph review → enumerate ownership and cleanup edges → before attempting a lifetime reproduction.
-- WinDbg/GDB/LLDB breakpoints and allocation/free stacks → observe lifetime transitions → when static ownership is ambiguous; all three need live process attach, which a p2o sandbox blocks — use a separate lab environment.
-- KASAN/Page Heap/GuardMalloc → identify stale accesses and nearby allocation history → when supported by the lab build; that lab build is necessarily outside the sandbox (Page Heap is Windows-only, GuardMalloc macOS-only, KASAN needs a specially built kernel).
+- WinDbg/GDB/LLDB breakpoints and allocation/free stacks → observe lifetime transitions → when static ownership is ambiguous; run the diagnostic build as an in-sandbox lab recipe (environment build plus verification) or as ordinary sandbox commands, and record a refused attach as the specific blocked fact.
+- KASAN/Page Heap/GuardMalloc → identify stale accesses and nearby allocation history → when supported by the lab build; build the instrumented target inside the sandbox as a lab recipe (environment build plus verification) or with ordinary sandbox commands; a facility the sandbox refuses, such as Page Heap on Windows, GuardMalloc on macOS or kernel KASAN, is recorded as that specific blocked fact.
 - Small operation-sequence tests → exercise commit/abort, repeat, cancel, and final-close cases → when byte mutation alone cannot cover state transitions.
 
 ## Validation
@@ -49,7 +49,7 @@ Assuming commit means immediate destruction; counting user handles instead of al
 Source-supported patterns include delaying release to final close (B021), state-validity checks at alternate lookups (B043), and browser-side request-state checks (B067). Derived guidance: pair ownership changes atomically, revoke registries/borrowers before destruction, hold appropriate references across callbacks, and make rollback restore the same invariant as commit. Do not terminate a peer for a locally caused transition without tracking provenance.
 
 ## Focused Method
-Preserve state generation, event order, failed assumptions and the smallest next observation. Report partial publication separately from stale use; a timing hypothesis does not authorize parallel or race testing. Choose role/method from the unanswered question; record expected evidence and a branch stop condition. Use the [owned review contract](../../HANDOFFS.md#focused-method-and-review).
+Preserve state generation, event order, failed assumptions and the smallest next observation. Report partial publication separately from stale use; a timing hypothesis does not authorize parallel or race testing.
 
 ## Handoffs
 **Lifetime Audit → Race Audit:** provide the object graph, transition ledger, synchronization gaps, and proposed event ordering. **Discovery → Impact:** provide confirmed invalidated reference, use type, barriers, actor/configuration, and reproduction evidence. Next: [race auditing](../race-condition-auditing/SKILL.md) or [exploitability assessment](../exploitability-assessment/SKILL.md).

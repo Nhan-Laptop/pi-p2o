@@ -5,7 +5,7 @@ description: Trace attacker influence through wrappers, indirect dispatch, persi
 
 # Attacker-Controlled Data-Flow Analysis
 
-Before first use, read the [scope baseline](../../README.md#start-here) and [handoff contracts](../../HANDOFFS.md).
+Before first use: [scope baseline](../../README.md#start-here), [handoff method](../../HANDOFFS.md#focused-method-and-review), and [owner review](../../HANDOFFS.md#provisional-owner-review).
 
 ## Technique
 Bidirectional, representation-aware influence tracing.
@@ -54,7 +54,7 @@ Symbolic path explosion, architecture incompatibility, missing output-parameter 
 Derived guidance: use typed values and structured APIs; validate the final consumed representation; bind stored values to the same policy as immediate ones. Keep untrusted data out of dynamic execution or privileged object selection.
 
 ## Focused Method
-Name the smallest missing transformation or feasibility edge. Preserve controlled marker, representation and revision provenance; compare a matched baseline. Stop the branch when repeated traces add no new constraint. Choose role/method from the unanswered question; record expected evidence and a branch stop condition. Use the [owned review contract](../../HANDOFFS.md#focused-method-and-review).
+Name the smallest missing transformation or feasibility edge. Preserve controlled marker, representation and revision provenance; compare a matched baseline. Stop the branch when repeated traces add no new constraint.
 
 ## Handoffs
 **Flow Analysis → Hypothesis Validation:** provide the annotated chain, controllable subset, gate sheet, exact sink context, sanitizer guarantees, missing edges, and contrasting observations. Next: [dynamic analysis](../dynamic-analysis/SKILL.md) or [parser differentials](../parser-differential-auditing/SKILL.md).

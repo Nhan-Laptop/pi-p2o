@@ -98,7 +98,7 @@ export const labParameters = Type.Object({
   body: Type.Optional(Type.String({ minLength: 1, maxLength: PAYLOAD_BYTES, description: 'The exact bytes to keep: runnable as-is, stored verbatim and deliberately not redacted' })),
   id: Type.Optional(Type.String({ maxLength: 80, description: 'Payload or environment ID; stored bytes and the recipe hash are checked before use' })),
   materialize: Type.Optional(Type.Boolean({ description: 'action=payload with id: write the stored bytes into your own sandbox scratch at payload/<id> and return its path, sha256 and byte count instead of the body' })),
-  compose: Type.Optional(Type.Boolean({ description: 'action=env only: deriving the recipe from docker-compose.yml|compose.yaml under /target needs planner/host authority and is refused for a worker, which must author setup/services/seed explicitly; refused keys are named' })),
+  compose: Type.Optional(Type.Boolean({ description: 'action=env only: deriving the recipe from docker-compose.yml|compose.yaml under /target is a host-internal path no model role can reach (the planner holds no lab tool and a worker is refused), so author setup/services/seed explicitly; refused keys are named' })),
   setup: Type.Optional(Type.Array(Type.String({ minLength: 1, maxLength: 4096 }), { description: 'Commands run in order before services; each must exit 0' })),
   services: Type.Optional(Type.Array(labServiceSchema)),
   seed: Type.Optional(Type.Array(Type.String({ minLength: 1, maxLength: 4096 }), { description: 'Commands run after services are healthy; each must exit 0' })),
@@ -192,7 +192,7 @@ export const delegateParameters = Type.Object({
       workflow: Type.Optional(Type.String({ maxLength: 64, description: 'Optional catalog workflow ID belonging to the selected skills; descriptive prerequisites do not grant permissions' })),
       thinking: Type.Optional(choices(THINKING_LEVELS)),
       taskId:Type.Optional(Type.String({maxLength:80,description:'Owner-authored proposed task ID; prerequisites and reservations are checked. Worker requests cannot dispatch owner task IDs.'})),
-      work:Type.Optional(Type.Object({},{additionalProperties:true,description:'Optional structured work identity exactly as in p2o_task_create (with decision and outputContract); enables exact duplicate/history checks. Omitted: identity is unknown.'})),
+      work:Type.Optional(Type.Object({},{additionalProperties:true,description:'Optional structured work identity exactly as in p2o_task_author (with decision and outputContract); enables exact duplicate/history checks. Omitted: identity is unknown.'})),
       decision:Type.Optional(Type.Object({},{additionalProperties:true})),outputContract:Type.Optional(Type.Object({},{additionalProperties:true})),
     });
 

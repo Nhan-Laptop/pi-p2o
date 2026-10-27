@@ -28,7 +28,7 @@ export interface ChainViewPage extends ChainJoin {
   shown: { primitives: number; ready: number; unmet: number; frontier: number };
   next: string;
   /**
-   * P14.10: present only when the owner asked to plan. The draft is exactly the `p2o_task_create` argument for the deepest ready step, and
+   * P14.10: present only when the owner asked to plan. The draft is exactly the `p2o_task_author` argument for the deepest ready step, and
    * `todos` are the plan entries already recorded for the chain — this tool never dispatches, so a draft is a proposal and a list is navigation.
    */
   draft?: Record<string, unknown>;

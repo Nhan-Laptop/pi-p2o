@@ -6,7 +6,7 @@ Dữ liệu nằm ở `src/wstg-map.ts` cùng hai hàm thuần `wstgKey` và `ws
 
 ## Cách dùng khóa
 
-- Dùng ID WSTG viết thường làm `questionKey` (ví dụ `wstg-athz-04`) cho work identity trong intent (`p2o_task_create` với `work`). Từ A3, host tự chiếu coverage cell từ công việc đã review (task đã review + claim worker + case accepted + revision asset), ghép cùng khóa đó; model không có verb tạo/sửa/retire cell. `key()` chỉ nhận `[a-z0-9._:/-]` nên dạng viết hoa không hợp lệ.
+- Dùng ID WSTG viết thường làm `questionKey` (ví dụ `wstg-athz-04`) cho work identity trong intent (`p2o_task_author` với `work`). Từ A3, host tự chiếu coverage cell từ công việc đã review (task đã review + claim worker + case accepted + revision asset), ghép cùng khóa đó; model không có verb tạo/sửa/retire cell. `key()` chỉ nhận `[a-z0-9._:/-]` nên dạng viết hoa không hợp lệ.
 - `methodFamily` giữ id workflow của skill (`source-review`, `offline-reproduction`...). `policyKey` giữ nghĩa chính sách của ứng dụng, không dùng cho ID WSTG.
 - `questionKey` đi vào vân tay trùng lặp, nên hai worker cùng thử một test WSTG trên cùng asset và cùng ngữ cảnh sẽ bị phát hiện trùng chính xác.
 - ID WSTG đã đổi giữa các bản (nhóm Input Validation `INPV` nay là Injection `INJT`; `INJT-13` được gán lại cho Format String). Luôn đọc ID cùng tiêu đề và commit đã ghim.

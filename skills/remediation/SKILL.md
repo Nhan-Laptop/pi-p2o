@@ -5,7 +5,7 @@ description: Convert a verified vulnerability invariant into root-cause fixes, v
 
 # Remediation and Defensive Verification
 
-Before first use, read the [scope baseline](../../README.md#start-here) and [handoff contracts](../../HANDOFFS.md).
+Before first use: [scope baseline](../../README.md#start-here), [handoff method](../../HANDOFFS.md#focused-method-and-review), and [owner review](../../HANDOFFS.md#provisional-owner-review).
 
 ## Technique
 Invariant repair with explicit coverage and residual risk.
@@ -50,7 +50,7 @@ A source fix is missing from the distributed package (B006); one lookup ignores 
 Apply the invariant-specific fix: checked arithmetic and complete bounds; consistent snapshot parsing; correct final-release ownership; consumer-side state/authorization checks; own-property/fixed dispatch; inert serialization; fail-closed dependency behavior. Supplement with least privilege, restricted activation/listeners, non-executable uploads, network segmentation, bounded work, and secret rotation when exposure is established. Rate limiting, CSP, CFI, allocator separation, and access restriction are defense in depth, not interchangeable root-cause repairs.
 
 ## Focused Method
-Consume reviewed current claims with their controls and gaps. Invalidate proposals relying on withdrawn validation; separate proposed repair, shipped artifact and active enforcement. Formatting or a fix recommendation is not independent reproduction. Choose role/method from the unanswered question; record expected evidence and a branch stop condition. Use the [owned review contract](../../HANDOFFS.md#focused-method-and-review).
+Consume reviewed current claims with their controls and gaps. Invalidate proposals relying on withdrawn validation; separate proposed repair, shipped artifact and active enforcement. Formatting or a fix recommendation is not independent reproduction.
 
 ## Handoffs
 Name a risk level from the [risk rating criteria](references/risk-rating-criteria.md) when reporting an accepted case; it never substitutes for the case's own verdict or review status.
