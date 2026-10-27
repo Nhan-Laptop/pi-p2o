@@ -72,6 +72,8 @@ describe('worker tickets', () => {
         [{ depth: 9 }, /depth/],
         [{ token: 'nope' }, /token/],
         [{ target: { kind: 'url', label: 'x' } as Ticket['target'] }, /origin/],
+        [{ captureKiB: 0 }, /capture cap/],
+        [{ captureKiB: 9000 }, /capture cap/],
         [{ version: 1 as any }, /version/],
       ];
       for (const [patch, pattern] of cases) {

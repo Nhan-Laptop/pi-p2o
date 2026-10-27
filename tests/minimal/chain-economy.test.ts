@@ -42,6 +42,36 @@ describe('A7.5 hold state machine (pure)', () => {
     expect(value.continues).toBe(1);
   });
 
+  it('P10/WF-11: a report may authorize up to three held continuations and each consume spends one', () => {
+    const value = registration({ reported: normalizeReport({ summary: 'held report', confidence: 'high', holdFor: { brief: 'two steps on this ticket' }, holdContinuations: 2 }) });
+    value.holdBrief = value.reported!.holdFor!.brief; value.holdContinuations = 2; value.holdConsumed = false;
+    // The worker is idle-held: a report before the first brief is refused by the broker predicate, not by this one.
+    expect(continuationRefusal(value)).toBeUndefined();
+    expect(consumeHeldContinuation(value)).toBe('two steps on this ticket');
+    expect(value).toMatchObject({ holdBrief: 'two steps on this ticket', holdContinuations: 1, holdConsumed: false, holdActive: true, continues: 1 });
+    // The ticket stays held for the remaining brief: a second continue is allowed, then the hold is spent.
+    expect(continuationRefusal(value)).toBeUndefined();
+    expect(consumeHeldContinuation(value)).toBe('two steps on this ticket');
+    expect(value.holdBrief).toBeUndefined();
+    expect(value.holdContinuations).toBe(0);
+    expect(value.holdConsumed).toBe(true);
+    expect(value.continues).toBe(2);
+    expect(continuationRefusal(value)).toMatch(/^HELD_CONTINUATION_USED:/);
+    expect(consumeHeldContinuation(value)).toBeUndefined();
+  });
+
+  it('P10/WF-11: normalizes holdContinuations to 0..3 with 1 as the fallback, and drops it without a hold', () => {
+    const count = (holdContinuations: unknown) => normalizeReport({ summary: 's', confidence: 'high', holdFor: { brief: 'continue this step' }, holdContinuations }).holdContinuations;
+    expect(count(undefined)).toBeUndefined();
+    expect(count(0)).toBe(0);
+    expect(count(3)).toBe(3);
+    for (const malformed of [2.5, 9, -1, '2']) expect(count(malformed)).toBe(1);
+    // Absent/null is the documented default: the report handler applies 1 when the field is missing.
+    expect(count(null)).toBeUndefined();
+    // A count without a hold names no successor and is meaningless: it cannot keep a ticket.
+    expect(normalizeReport({ summary: 's', confidence: 'low', holdContinuations: 2 }).holdContinuations).toBeUndefined();
+  });
+
   it('keeps the ordinary conversation rules: live workers continue freely, closed or unheld reported workers do not', () => {
     expect(continuationRefusal(registration())).toBeUndefined();
     expect(continuationRefusal(registration({ stopped: true }))).toMatch(/^WORKER_CLOSED:/);
@@ -107,7 +137,7 @@ describe('A7.5 hold across the broker socket', () => {
       // The token still works: reporting with a hold is state reuse, not a second authority.
       await expect(client.request('status')).resolves.toMatchObject({ workerId: f.registration.workerId });
       // A held worker cannot report again instead of waiting for the lead brief.
-      await expect(client.request('report', { report: { summary: 'again', confidence: 'low' } })).rejects.toThrow(/held for one continuation/);
+      await expect(client.request('report', { report: { summary: 'again', confidence: 'low' } })).rejects.toThrow(/reported and is held/);
       // Once the owner consumes the hold, the successor may report; without another hold the ticket is retired as usual.
       expect(consumeHeldContinuation(f.registration)).toBe('continue the chain on this ticket');
       await client.request('report', { report: { summary: 'successor report', confidence: 'medium' } });
@@ -188,14 +218,14 @@ describe('A7.5 report-with-hold keeps a ticket, pane and session', () => {
     await h.activate(join(await h.runDir(), `ticket-${workerId}.json`));
     const reported = await h.call('p2o_report', { summary: 'HELD_REPORT', confidence: 'medium', holdFor: { brief: 'continue onto the demonstrated session' } }, 'worker');
     expect(reported.details).toMatchObject({ reported: true, held: true });
-    expect(reported.content[0].text).toContain('held for exactly one continuation');
+    expect(reported.content[0].text).toContain('held for one follow-up brief');
     // The ticket and its pane are live state now, not garbage the reaper may collect.
     expect(await h.tickets()).toHaveLength(1);
     expect(h.herdr.calls.filter(call => call.op === 'close')).toHaveLength(0);
     const view = (await h.call('p2o_workers', {})).details;
     expect(view.workers[0]).toMatchObject({ workerId, status: 'held', heldBrief: 'continue onto the demonstrated session', heldConsumed: false, reported: true, live: false });
     // Reporting again is not another turn: the broker refuses it while the hold is unconsumed.
-    await expect(h.call('p2o_report', { summary: 'again', confidence: 'low' }, 'worker')).rejects.toThrow(/held for one continuation/);
+    await expect(h.call('p2o_report', { summary: 'again', confidence: 'low' }, 'worker')).rejects.toThrow(/reported and is held/);
     // Ending the run without dispatching the successor names the abandoned hold instead of silently releasing it.
     const exported = await h.call('p2o_finish', { export: true });
     expect(exported.content[0].text).toContain('HELD_WITHOUT_SUCCESSOR (1)');
@@ -212,7 +242,7 @@ describe('A7.5 report-with-hold keeps a ticket, pane and session', () => {
     await h.call('p2o_report', { summary: 'held for one brief', confidence: 'high', holdFor: { brief: 'open the second actor' } }, 'worker');
     const continued = await h.call('p2o_workers', { action: 'continue', workerId, brief: 'Open the second actor and replay the demonstrated step' });
     expect(continued.details).toMatchObject({ workerId, held: 'open the second actor' });
-    expect(continued.content[0].text).toContain('its one hold is now consumed');
+    expect(continued.content[0].text).toContain('one held continuation consumed, the hold is now used up');
     expect(h.herdr.calls.some(call => call.op === 'prompt' && String(call.text).includes('Open the second actor and replay the demonstrated step'))).toBe(true);
     const notes = (await h.records()).filter(record => record.kind === 'lifecycle').map(record => record.text).join('\n');
     expect(notes).toContain('held continuation consumed');
@@ -224,6 +254,37 @@ describe('A7.5 report-with-hold keeps a ticket, pane and session', () => {
     // Reusing the conversation is a prompt, not a second worker.
     expect(h.herdr.calls.filter(call => call.op === 'start')).toHaveLength(1);
     expect(h.herdr.calls.filter(call => call.op === 'split')).toHaveLength(1);
+  });
+
+  it('P10/WF-11: several authorized held continuations survive successive continues on one ticket', async () => {
+    await h.start();
+    const workerId = await h.delegate();
+    await h.activate(join(await h.runDir(), `ticket-${workerId}.json`));
+    const reported = await h.call('p2o_report', { summary: 'two chain steps planned', confidence: 'high', holdFor: { brief: 'open the second actor' }, holdContinuations: 2 }, 'worker');
+    expect(reported.content[0].text).toContain('held for 2 follow-up briefs');
+    const first = await h.call('p2o_workers', { action: 'continue', workerId, brief: 'Open the second actor' });
+    expect(first.details).toMatchObject({ workerId, held: 'open the second actor', remainingHolds: 1 });
+    expect(first.content[0].text).toContain('1 left on this hold');
+    expect((await h.call('p2o_workers', {})).details.workers[0]).toMatchObject({ workerId, status: 'held', heldConsumed: false, reported: true });
+    const second = await h.call('p2o_workers', { action: 'continue', workerId, brief: 'Replay the second actor on the demonstrated session' });
+    expect(second.details).toMatchObject({ workerId, remainingHolds: 0 });
+    expect(second.content[0].text).toContain('the hold is now used up');
+    // Three briefs were never authorized: the ticket cannot be re-used for another step.
+    await expect(h.call('p2o_workers', { action: 'continue', workerId, brief: 'third step' })).rejects.toThrow(/HELD_CONTINUATION_USED/);
+    expect(h.herdr.calls.filter(call => call.op === 'split')).toHaveLength(1);
+  });
+
+  it('P10/WF-11: holdContinuations=0 names the successor in the report but retires the ticket, pane and session', async () => {
+    await h.start();
+    const workerId = await h.delegate();
+    await h.activate(join(await h.runDir(), `ticket-${workerId}.json`));
+    const reported = await h.call('p2o_report', { summary: 'successor named, no ticket kept', confidence: 'high', holdFor: { brief: 'open the second actor' }, holdContinuations: 0 }, 'worker');
+    expect(reported.details).toMatchObject({ reported: true });
+    expect(reported.details.held).toBeUndefined();
+    expect((await h.call('p2o_workers', {})).details.workers[0]).toMatchObject({ workerId, status: 'reported' });
+    await expect(h.call('p2o_workers', { action: 'continue', workerId, brief: 'use the named successor' })).rejects.toThrow(/WORKER_CLOSED/);
+    const exported = await h.call('p2o_finish', { export: true });
+    expect(exported.content[0].text).not.toContain('HELD_WITHOUT_SUCCESSOR');
   });
 
   it('still lets a live worker be continued, and refuses a reported worker that asked for no hold', async () => {

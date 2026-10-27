@@ -94,6 +94,9 @@ export type LoopMode = 'manual' | 'event-driven';
 export type RetentionMode = 'durable-local' | 'ephemeral';
 export const DEFAULT_STORAGE_QUOTA_MIB = 256;
 export const DEFAULT_ARTIFACT_CAPTURE_KIB = 1024;
+export const DEFAULT_GRAPH_CAPACITY = 2;
+/** Must equal `MAX_GRAPH_CAPACITY` in `state/graph.ts`: parse clamps to the same range the store refuses outside of. */
+export const MAX_GRAPH_CAPACITY = 4;
 /**
  * Off by default. The 2026-10-10 benchmark (32-run A/B plus a 16-run ablation, `git show 41e8157:planning_update.md` §0.2) showed the guidance steers the model to the
  * K3-K6 tools 2-7x more often but raised cost ~70%, turns ~60% and invalid (timeout/turn-budget) runs from 1/16 to 3/16 with no recall or precision gain.
@@ -109,6 +112,8 @@ export interface P2OSettings {
   retention: RetentionMode;
   storageQuotaMiB: number;
   artifactCaptureKiB: number;
+  /** P9/B (Q29): multiplier on the hard graph ceilings (1..4); default 2 doubles every capacity the store enforces. */
+  graphCapacity: number;
   /** Write the deterministic report when a durable-local run is cleaned up (finish, stop, shutdown). Ephemeral runs keep it off unless set explicitly. */
   autoReport: boolean | undefined;
   /** Absolute directory that receives report-<runId>/; default is <cwd>/.p2o-reports. */
@@ -124,7 +129,7 @@ export interface P2OSettings {
   roles: Partial<Record<Role, RoleSettings>>;
 }
 
-const blank = (): P2OSettings => ({ maxWorkers: DEFAULT_MAX_WORKERS, maxDepth: DEFAULT_MAX_DEPTH, loopMode: 'manual', executorMode: 'shared', maxTargetOperations: 3, retention: 'durable-local', storageQuotaMiB: DEFAULT_STORAGE_QUOTA_MIB, artifactCaptureKiB: DEFAULT_ARTIFACT_CAPTURE_KIB, autoReport: undefined, reportFormat: 2, reviewIntegrity: 'annotate', roles: {} });
+const blank = (): P2OSettings => ({ maxWorkers: DEFAULT_MAX_WORKERS, maxDepth: DEFAULT_MAX_DEPTH, loopMode: 'manual', executorMode: 'shared', maxTargetOperations: 3, retention: 'durable-local', storageQuotaMiB: DEFAULT_STORAGE_QUOTA_MIB, artifactCaptureKiB: DEFAULT_ARTIFACT_CAPTURE_KIB, graphCapacity: DEFAULT_GRAPH_CAPACITY, autoReport: undefined, reportFormat: 2, reviewIntegrity: 'annotate', roles: {} });
 
 export function isRole(value: unknown): value is Role { return typeof value === 'string' && (ROLES as readonly string[]).includes(value); }
 
@@ -143,6 +148,7 @@ export function parseSettings(raw: unknown): P2OSettings {
   settings.retention = source.retention === 'ephemeral' ? 'ephemeral' : 'durable-local';
   settings.storageQuotaMiB = typeof source.storageQuotaMiB === 'number' && Number.isInteger(source.storageQuotaMiB) && source.storageQuotaMiB >= 8 && source.storageQuotaMiB <= 1024 ? source.storageQuotaMiB : DEFAULT_STORAGE_QUOTA_MIB;
   settings.artifactCaptureKiB = clamp(source.artifactCaptureKiB, DEFAULT_ARTIFACT_CAPTURE_KIB, 8192);
+  settings.graphCapacity = clamp(source.graphCapacity, DEFAULT_GRAPH_CAPACITY, MAX_GRAPH_CAPACITY);
   settings.autoReport = typeof source.autoReport === 'boolean' ? source.autoReport : undefined;
   if (typeof source.reportRoot === 'string' && source.reportRoot.length <= 1024 && isAbsolute(source.reportRoot) && source.reportRoot === source.reportRoot.normalize('NFC') && !/[\x00-\x1f\x7f]/.test(source.reportRoot)) settings.reportRoot = source.reportRoot;
   settings.reportFormat = source.reportFormat === 1 ? 1 : 2;
@@ -182,6 +188,33 @@ export function loadSettings(path = join(homedir(), '.pi', 'agent', 'settings.js
 }
 
 export interface ResolvedRole { role: Role; model?: string; thinking?: string; skills: string[] }
+
+/**
+ * P10/WF-02 (Q28): the worker models a planner may request per task. It is the package role defaults plus every model the
+ * operator configured for a role, so a task can raise or lower cost/quality only inside a set the operator already chose.
+ */
+export function allowedWorkerModels(settings: P2OSettings): string[] {
+  const models = new Set<string>();
+  for (const role of ROLES) { const model = ROLE_DEFAULTS[role].model; if (model) models.add(model); }
+  for (const role of ROLES) { const model = settings.roles[role]?.model; if (model) models.add(model); }
+  return [...models].sort();
+}
+
+/**
+ * P10/WF-02/03 (Q28): host validation of a per-task runtime request. The host, not the model, decides what is configured:
+ * an unconfigured model or an unknown thinking level is refused with the legal set instead of silently inheriting.
+ */
+export function validateTaskRuntime(runtime: { model?: string; thinking?: string } | undefined, settings: P2OSettings): { model?: string; thinking?: string } | undefined {
+  if (!runtime) return undefined;
+  const model = typeof runtime.model === 'string' ? runtime.model.trim() : undefined;
+  const thinking = typeof runtime.thinking === 'string' ? runtime.thinking.trim() : undefined;
+  if (model !== undefined) {
+    const allowed = allowedWorkerModels(settings);
+    if (!allowed.includes(model)) throw Error(`MODEL_UNAVAILABLE: ${model} is not configured for a worker. legalNext: name one of ${allowed.join(', ')} as runtime.model, or configure p2o.roles.<role>.model`);
+  }
+  if (thinking !== undefined && !(THINKING_LEVELS as readonly string[]).includes(thinking)) throw Error(`THINKING_INVALID: ${thinking} is not a thinking level. legalNext: name one of ${THINKING_LEVELS.join(', ')} as runtime.thinking`);
+  return { ...(model ? { model } : {}), ...(thinking ? { thinking } : {}) };
+}
 
 /**
  * Precedence mirrors pi-herdr: per-spawn override > settings role > package default > parent session model.

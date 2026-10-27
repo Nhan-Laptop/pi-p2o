@@ -5,7 +5,7 @@ for the run; declining starts nothing. There is no automatic retry, provider fal
 
 ## Two boundaries
 
-- **`p2o_http`** accepts any http(s) URL, follows up to five redirects to any host, resolves the name afresh and pins
+- **`p2o_http`** accepts any http(s) URL, follows up to twenty redirects (default 3) to any host, resolves the name afresh and pins
   the IP. Private, loopback, link-local and IPv6 addresses are reachable; the target is a label, not a boundary.
 - **`p2o_shell` / `p2o_net`** share a bridge-networked container. Commands are **not origin-filtered** and there is no
   egress firewall. Use a disposable lab and external controls for stronger confinement. `p2o_net` only labels network commands.
@@ -23,7 +23,7 @@ scratch. Commands default to no task timeout; an explicit timeout or cancellatio
 
 - Use only operator-supplied credentials. Standard and custom method tokens (TRACE, PROPFIND…) are accepted; CONNECT
   tunnelling belongs to the network tool. Framing headers are owned by curl.
-- Limits: body 32 KiB (via stdin), 20 headers/8 KiB, URL 4096 chars, 5 redirects, transfer 8 MiB, captured output 48 KiB,
+- Limits: body 48 KiB (via stdin), 20 headers/16 KiB total and 8 KiB per value, URL 8192 chars, 20 redirects (default 3), captured output 48 KiB,
   64 KiB broker frame. Optional `timeout` (per hop) and `connectTimeout` in seconds; omitted/0 = no extension deadline.
 - Curl never follows redirects: the host checks each hop. A blocked redirect returns the response already seen with
   `redirectStopped`. 307/308 keep method and body; 303 and POST 301/302 become GET. Transport failures are not replayed.

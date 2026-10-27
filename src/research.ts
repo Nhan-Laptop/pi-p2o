@@ -15,7 +15,6 @@ export const RESEARCH_LIMIT = 5;
  * a natural question about a product, a version and a lifecycle must never be refused for being phrased naturally. */
 export const RESEARCH_QUERY_MAX = 200;
 export const RESEARCH_EXCERPT_BYTES = 2048;
-export const RESEARCH_PAGE_BYTES = 32 * 1024;
 
 export interface TechniqueSource { name: string; url: string; license: string; retrievedAt: string }
 export interface TechniqueEntry {

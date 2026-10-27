@@ -16,8 +16,8 @@ import type { EnvironmentRecipe, EnvironmentService } from './compose.js';
 export type { EnvironmentRecipe, EnvironmentService } from './compose.js';
 export const PAYLOAD_KINDS = ['request', 'script', 'command'] as const;
 export type PayloadKind = typeof PAYLOAD_KINDS[number];
-/** A payload is a request, a script or one command line; 32 KiB is more than any of those and still a bounded read. */
-export const PAYLOAD_BYTES = 32 * 1024;
+/** A payload is a request, a script or one command line; 48 KiB is more than any of those and still a bounded read. */
+export const PAYLOAD_BYTES = 48 * 1024;
 const NAME_BYTES = 120;
 const FILE_BYTES = PAYLOAD_BYTES + 8 * 1024;
 const PAYLOAD_ID = /^payload-[a-f0-9-]{36}$/;
@@ -136,7 +136,7 @@ export async function materializePayload(record: PayloadRecord, writer: ScratchW
  * before it ever reaches this file.
  */
 export const ENVIRONMENT_COMMAND_BYTES = 4096;
-export const ENVIRONMENT_POLLS = 20;
+export const ENVIRONMENT_POLLS = 60;
 
 export interface EnvironmentRef {
   id: string; name: string; fingerprint: string; revision: number; image: string; source: 'compose' | 'explicit';

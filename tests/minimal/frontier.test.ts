@@ -26,5 +26,7 @@ it('allows a future reviewed dependency, pins only accepted revisions and reject
   const reviewed=await board.transition(a.id,'reviewed','Accept attributed receipt, not a security conclusion',[ref]);
   expect(await board.readiness(b.id)).toMatchObject({ready:true});const reserved=await board.reserve(b.id,'second-worker');expect(reserved.prerequisites).toEqual([{taskId:a.id,revision:reviewed.revision}]);
   await board.transition(b.id,'running','Fixture dependent launched');await board.assertReady('second-worker');
-  await board.revise(a.id,reviewed.revision,draft(a.id));await expect(board.assertReady('second-worker')).rejects.toThrow('stale task revision');
+  // P10/TR-H10: a substantive revision of the prerequisite is refused at the next admission/readiness, not on every command of
+  // the dependent worker that is already running against the pinned premise.
+  await board.revise(a.id,reviewed.revision,draft(a.id));await expect(board.assertReady('second-worker')).resolves.toBeUndefined();
 });

@@ -24,7 +24,10 @@ ngân sách. "Goal" ở đây là record mục tiêu của assessment. Bản chi
   điều hướng; planner tự gọi `p2o_task_create`. Không truyền `assetRefs` thì draft bỏ `work` và nói rõ lý do thay vì đoán asset từ chuỗi
   `surface`.
 - **Reserve nguyên tử**: task revision + event + history + fingerprint duy nhất commit chung; hai đề xuất đua nhau thì cái sớm hơn
-  thắng, conflict rollback cả packet. Pin được kiểm tra lại trước mỗi lệnh; sau crash reservation không tự kích hoạt lại.
+  thắng, conflict rollback cả packet. Surface/risk reservation chỉ chặn khi method trùng hoặc chưa rõ: hai task khai
+  `work.methodFamily` **khác nhau** trên cùng surface/risk vẫn reserve được, và host ghi `method-different-overlap:<taskId>` vào
+  `overlapWarnings` của revision đã reserve để review thấy (P10/TR-L02). Pin được kiểm tra lại trước mỗi lệnh; sau crash
+  reservation không tự kích hoạt lại.
 
 ## Intent admission (P1/A2)
 
@@ -64,6 +67,11 @@ Luật anchor đầy đủ áp cho intent **structured** (có `work`); mapping/r
 | `chaining` | `work.claimRefs` của **hai** claim được compose | `PURPOSE_NEEDS_LINEAGE` |
 | `investigation`, `refinement` | claim trong `work.claimRefs`, asset revision đã pin, **hoặc** task trước | `PURPOSE_NEEDS_LINEAGE` |
 | `validation`, `retest` | `validationOf`/`retestOf` (xem mục dưới) | `PURPOSE_NEEDS_PREDECESSOR` / `PURPOSE_NEEDS_LINEAGE` |
+
+Revision asset đã pin là **premise đã review**, không phải điều kiện sống: sau khi task chạy, trước mỗi lệnh worker host chỉ
+kiểm tra cấu trúc (assignment đang `running`, prerequisite đã pin) và nếu asset đã trôi thì ghi **một** note cảnh báo
+`STALE_WORK_REFERENCE` cho mỗi cặp (task, asset, pin) rồi để assignment tiếp tục; re-pin là một `revise` tường minh. Admission
+(reserve/readiness) vẫn là chỗ pin được kiểm tra lại và từ chối (P10/TR-H10).
 
 ### Validation: task đã review hoặc claim của worker
 
@@ -107,7 +115,7 @@ Task có `work` không còn bắt model điền sẵn `decision` và `outputCont
 Engine dùng đúng `work/decision/outputContract` đã ghi khi dispatch và spawn worker. Draft không có `work` là đường prose
 legacy (migration tail): create bỏ qua kiểm tra exact-work, identity là `unknown` và dùng lại guard surface/risk cũ.
 
-**Goal / todo / decision** qua `p2o_plan_create` (không có `id`), `p2o_plan_revise` (`id` + `revision`) hoặc `p2o_board board=plans` (list/view): `entry:{kind, title, status, reason, criteria, exclusions, taskIds}`; goal đóng cần revision tường minh và evidence cùng run; todo không được tạo chu trình; decision
+**Goal / todo / decision** qua `p2o_plan_create` (không có `id`), `p2o_plan_revise` (`id` + `revision`) hoặc `p2o_board board=plans` (list/view): `entry:{kind, title, status, reason, criteria, exclusions, taskIds}`; goal đóng cần revision tường minh **và proof phải đứng vững** — evidence cùng run không còn là điều kiện thay thế: `capability`/`case`/`coverage` do `goalProofRefusal` kiểm, và nếu caller không nêu `supportRefs` thì host ghi đúng refs của proof đã settle (claim record cho capability, case/plan id cho case/coverage) (P10/TR-L07); `supportRefs` nhận mọi work record cùng run — evidence, candidate, task, plan — còn ref lạ/khác run vẫn bị từ chối (P10/TR-L09). Tạo goal không nêu `status` thì mặc định `active` (đang theo đuổi, `closed` là revision riêng) và completion vẫn đọc `proposed`/`active` như nhau là open work (P10/TR-L05). Todo được ghi `criteria`/`exclusions` như checklist advisory — hiện cho người đọc, không bao giờ là cổng completion; goal vẫn bắt buộc criteria, decision vẫn từ chối hai trường này (P10/TR-L08). Todo không được tạo chu trình; decision
 (`new|reuse|refine|validate|retest|defer`) chỉ ghi lại, không tự dispatch. Cùng `requestId` + payload trả ACK gốc, khác payload → `IDEMPOTENCY_CONFLICT`.
 
 **Phase card**: handoff nguyên tử thêm một note `data.phase` (task revision, worker/report, số output, contract, field chưa review) và

@@ -15,7 +15,7 @@ const root = resolve(import.meta.dirname, '../..');
 const BASELINE_D = new Set(['INFO-06', 'INFO-07', 'CONF-13', 'ATHN-04', 'ATHN-10', 'ATHZ-02', 'ATHZ-03', 'ATHZ-04', 'INJT-01', 'INJT-02', 'INJT-16', 'INJT-18', 'INJT-20', 'INJT-22', 'INJT-23', 'CLNT-01', 'CLNT-02', 'CLNT-03', 'APIT-01', 'APIT-02', 'APIT-04'].map(id => `WSTG-${id}`));
 /** Skills created for the WSTG plan: held to the size targets (the first page of a SKILL.md is inlined into a worker's brief; planning_update.md aims at 7,000 and this guard enforces one page). */
 const NEW_PLAYBOOKS = ['web-deployment-hygiene', 'web-session-management', 'web-credential-lifecycle', 'web-server-side-injection', 'web-token-and-federation', 'web-business-logic-misuse', 'web-browser-trust-controls', 'web-graphql-testing', 'web-crypto-usage-review'];
-const SKILL_CHARS = 8_000, CARD_CHARS = 6_000; // src/skills.ts pages are 8 KiB: a SKILL.md under 8,000 characters is inlined whole, with no "Continued" step
+const SKILL_CHARS = 8_000, CARD_CHARS = 6_000; // src/skills.ts pages are 24 KiB: a SKILL.md under 8,000 characters is inlined whole, with no "Continued" step
 
 interface Landed { id: string; owner: string; card: string; ok: boolean; reason: string }
 

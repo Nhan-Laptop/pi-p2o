@@ -91,7 +91,7 @@ describe('search through the runtime', () => {
     const owner = (await h.call('p2o_state', { action: 'search', q: 'billing' })).details;
     expect(owner).toMatchObject({ total: 2, shown: 2 }); expect(owner.hits.map((hit: any) => hit.kind).sort()).toEqual(['observation', 'open']);
     await expect(h.call('p2o_state', { action: 'search', q: 'x' })).rejects.toThrow(); await expect(h.call('p2o_state', { action: 'search' })).rejects.toThrow();
-    await expect(h.call('p2o_state', { action: 'search', q: 'billing', limit: 21 })).rejects.toThrow(); await expect(h.call('p2o_state', { action: 'search', q: 'billing', domain: 'task' })).rejects.toThrow();
+    await expect(h.call('p2o_state', { action: 'search', q: 'billing', limit: 101 })).rejects.toThrow(); await expect(h.call('p2o_state', { action: 'search', q: 'billing', domain: 'task' })).rejects.toThrow();
     expect((await h.call('p2o_state', { action: 'heads', domain: 'gap' })).details).toBeTruthy(); // heads keep working beside search
 
     const first = (await h.call('p2o_delegate', { focus: 'search-a', task: 'Observe the inert fixture and report', role: 'discovery' })).details;

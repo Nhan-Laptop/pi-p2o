@@ -29,7 +29,10 @@ export interface SandboxOptions { tmpBytes?: string; workBytes?: string; runId?:
   /** A7.8: the operator's throwaway docker network; bridge (no published port) is the default until then. */
   network?: string;
   /** A7.3: injectable child spawner for hermetic PTY tests; production uses the fixed `docker exec` spawner. */
-  ptySpawn?: PtySpawner }
+  ptySpawn?: PtySpawner
+  /** P10/TR-H09: target operations this executor may overlap (1 = the strict serial queue). Set only when the operator
+   *  explicitly raised the shared target-operation cap with --target-ops; the pool still gates the run-wide cap. */
+  concurrentOperations?: number }
 export function validateImage(image: string): string {
   if (!/^(?:sha256:[a-f0-9]{64}|[a-z0-9][a-z0-9._/:-]*@sha256:[a-f0-9]{64})$/.test(image)) throw new Error('Sandbox image must be an immutable sha256 ID or repository@sha256 digest');
   return image;
@@ -58,12 +61,19 @@ export class Sandbox {
   private cancellation = new AbortController();
   private readonly workdirs = new Set<string>();
   private readonly provisioned = new Set<string>();
+  /** P10/TR-H09: how many target operations this one executor may run at once. 1 (the default) keeps the strict serial queue;
+   *  an operator who explicitly raised the shared target-operation cap accepts overlapping commands in the same container. */
+  private readonly concurrency: number;
+  private activeTargets = 0;
+  private readonly targetWaiters: Array<() => void> = [];
   private readonly sessions = new HttpSessions();
   constructor(readonly target: Target, private readonly run: RunProcess = runDocker, private readonly resolveIP?: ResolveAddress, private readonly options: SandboxOptions = {}) {
     validateImage(options.image ?? IMAGE);
     if (options.runId !== undefined && !ID_PATTERN.test(options.runId)) throw new Error('Invalid run id for container labels');
     if (options.session !== undefined && !ID_PATTERN.test(options.session)) throw new Error('Invalid session id for container labels');
     if (options.network !== undefined && !ID_PATTERN.test(options.network)) throw new Error('Invalid docker network name');
+    if (options.concurrentOperations !== undefined && (!Number.isInteger(options.concurrentOperations) || options.concurrentOperations < 1)) throw new Error('Invalid executor concurrency');
+    this.concurrency = options.concurrentOperations ?? 1;
   }
 
   private async docker(args: string[], options?: Parameters<RunProcess>[1]): Promise<ProcessResult> {
@@ -130,11 +140,27 @@ export class Sandbox {
     return next;
   }
 
+  /**
+   * P10/TR-H09: the strict serial queue is the default. Only an operator who explicitly raised the shared
+   * target-operation cap gets overlapping target operations in this one container; provisioning, scratch writes and
+   * cleanup stay serialized, so a concurrent command can never race executor creation.
+   */
+  private enqueueTarget<T>(operation: () => Promise<T>): Promise<T> {
+    if (this.concurrency === 1) return this.enqueue(operation);
+    const slot = async () => {
+      while (this.activeTargets >= this.concurrency) await new Promise<void>(resolve => this.targetWaiters.push(resolve));
+      this.activeTargets += 1;
+      try { return await operation(); }
+      finally { this.activeTargets -= 1; this.targetWaiters.shift()?.(); }
+    };
+    return slot();
+  }
+
   async exec(command: string, seconds = 0, signal?: AbortSignal, workdir = '/work', onRunning?: () => void, onOutput?: OutputObserver): Promise<ProcessResult> {
-    if (typeof command !== 'string' || !command.trim() || command.length > 8192) throw new Error('Command must be 1..8192 characters');
+    if (typeof command !== 'string' || !command.trim() || command.length > 32 * 1024) throw new Error('Command must be 1..32768 characters');
     taskTimeout(seconds);
     if (workdir !== '/work' && !/^\/work(?:\/sessions)?\/[A-Za-z0-9][A-Za-z0-9._-]{0,60}$/.test(workdir)) throw new Error('Invalid sandbox working directory');
-    return this.enqueue(async () => {
+    return this.enqueueTarget(async () => {
       if (this.stopped || !this.shell) throw new Error('No active sandbox');
       const combined = AbortSignal.any([this.cancellation.signal, ...(signal ? [signal] : [])]);
       // Provisioning is not a target command: a permission failure here must not retire the executor. The pool
@@ -159,7 +185,7 @@ export class Sandbox {
   /** Fixed FD-walking text reader in assigned scratch. Never docker-cp to a host/model path. */
   async captureScratch(path: string, maxBytes: number, signal?: AbortSignal, workdir = '/work', onRunning?: () => void, onOutput?: OutputObserver, seconds = 0, offsetBytes = 0): Promise<ProcessResult & {scratchSnapshot:ScratchSnapshot;previewLimit:number}> {
     const relative = scratchPath(path), root = scratchRoot(workdir), bound = scratchBound(maxBytes), offset = scratchOffset(offsetBytes); taskTimeout(seconds);
-    return this.enqueue(async () => {
+    return this.enqueueTarget(async () => {
       if (this.stopped || !this.shell) throw Error('No active sandbox');
       const combined = AbortSignal.any([this.cancellation.signal, ...(signal ? [signal] : [])]);
       const metadata = Buffer.alloc(SCRATCH_PROTOCOL_BYTES), hash = createHash('sha256');
@@ -226,30 +252,6 @@ export class Sandbox {
     });
   }
 
-  /**
-   * planning_update.md P14.8: fetch one curated source URL inside the sandbox. The URL is the corpus's, not the model's,
-   * the body is bounded and https-only, and the caller gets a hash of exactly the bytes it may quote.
-   */
-  async fetchResearch(url: string, signal?: AbortSignal, workdir = '/work'): Promise<{ status: string; sha256: string; bytes: number; body: string; truncated: boolean }> {
-    if (typeof url !== 'string' || !/^https:\/\/[^\s'"\\]{1,300}$/.test(url)) throw Error('Research URL must be an https URL the corpus cites');
-    return this.enqueue(async () => {
-      if (this.stopped || !this.shell) throw Error('No active sandbox');
-      const combined = AbortSignal.any([this.cancellation.signal, ...(signal ? [signal] : [])]);
-      await this.ensureWorkdir(scratchRoot(workdir), combined); combined.throwIfAborted();
-      const command = `/usr/bin/curl -sS -L --proto =https --proto-redir =https --max-time 20 --max-filesize ${32 * 1024}`
-        + ` -A p2o-research/1 --write-out '\n__P2O_STATUS__%{http_code}' '${url}'`;
-      const result = await this.docker(['exec', '--workdir', scratchRoot(workdir), this.shell!, '/bin/sh', '-c', command], { timeoutMs: 60_000, signal: combined });
-      if (result.code === 63) return { status: 'too-large', sha256: sha256Hex(''), bytes: 0, body: '', truncated: true };
-      if (result.code !== 0) throw Error(`Research fetch failed (curl exit ${result.code}); nothing was quoted`);
-      const marker = result.stdout.lastIndexOf('\n__P2O_STATUS__');
-      const body = marker < 0 ? result.stdout : result.stdout.slice(0, marker);
-      const status = marker < 0 ? 'unknown' : result.stdout.slice(marker + '\n__P2O_STATUS__'.length).trim();
-      const bytes = Buffer.byteLength(body, 'utf8');
-      if (bytes > 32 * 1024) throw Error('Research fetch returned more than the configured bound');
-      return { status: /^\d{3}$/.test(status) ? status : 'unknown', sha256: sha256Hex(body), bytes, body, truncated: result.truncated === true };
-    });
-  }
-
   private async ensureWorkdir(workdir: string, signal: AbortSignal): Promise<void> {
     if (workdir === '/work' || this.workdirs.has(workdir)) return;
     const created = await this.docker(['exec', this.shell!, '/bin/mkdir', '-p', workdir], { timeoutMs: 15_000, signal });
@@ -262,7 +264,7 @@ export class Sandbox {
   /** Fixed curl and principal-local sessions; any http(s) destination and any redirect hop are allowed (Part XI). */
   async http(input: HttpRequest, signal?: AbortSignal, onRunning?: () => void, onOutput?: OutputObserver): Promise<ProcessResult> {
     const request = httpRequest(input);
-    return this.enqueue(async () => {
+    return this.enqueueTarget(async () => {
       const hops: string[] = [];
       let current = request.url, method = request.method, body = request.body;
       let last: ProcessResult | undefined;
@@ -345,7 +347,7 @@ export class Sandbox {
    * a shell, a `sudo -S` prompt, a database REPL and an SSH session each decide what their own input means.
    */
   async ptySend(data: string, timeoutMs: number, signal?: AbortSignal, quietMs = 400): Promise<ProcessResult & {stillOutputting?: boolean}> {
-    if (typeof data !== 'string' || Buffer.byteLength(data) > 8192) throw Error('PTY send must be at most 8 KiB of bytes');
+    if (typeof data !== 'string' || Buffer.byteLength(data) > 16 * 1024) throw Error('PTY send must be at most 16 KiB of bytes');
     if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 250 || timeoutMs > 120_000) throw Error('PTY send wait must be 250..120000 ms');
     if (!Number.isSafeInteger(quietMs) || quietMs < 100 || quietMs > 10_000) throw Error('PTY quiet window must be 100..10000 ms');
     const pty = this.ptyHandle();

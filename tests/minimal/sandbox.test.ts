@@ -6,6 +6,8 @@ function driver() {
   const calls: string[][] = []; const streams: Array<string | undefined> = []; const names = new Set<string>();
   const queue: string[] = [];
   let cleanupFails = false; let execFails = false;
+  // P10/TR-H09: a test hook between dispatch and return, so overlap can be observed without real docker.
+  let onExec: ((command: string | undefined) => Promise<void> | void) | undefined;
   const run: RunProcess = async (args, options) => {
     calls.push(args); streams.push(options?.stdin);
     const flags = args[0] === '--host' ? args.slice(2) : args;
@@ -17,6 +19,7 @@ function driver() {
     if (flags[0] === 'exec') {
       if (execFails) throw new Error('Docker operation timed out');
       stdout = 'safe data';
+      await onExec?.(flags.at(-1));
     }
     // Only the ephemeral curl container is scripted; the shell's `sleep infinity` is not.
     if (flags[0] === 'start' && flags.includes('--attach')) stdout = queue.shift() ?? '';
@@ -30,6 +33,7 @@ function driver() {
     cleanupFailure: () => { cleanupFails = true; },
     cleanupRecovery: () => { cleanupFails = false; },
     execFailure: () => { execFails = true; },
+    setExecHook: (hook: typeof onExec) => { onExec = hook; },
   };
 }
 const target = { kind: 'url' as const, url: 'https://example.com', origin: 'https://example.com' };
@@ -166,8 +170,39 @@ describe('sandbox executor, no agents', () => {
     expect(d.calls.filter(c=>c.includes('exec')).find(c=>c.at(-1)==='id')).not.toContain('/usr/bin/timeout');
     for(const seconds of [-1,1.5,NaN,Infinity,'30' as any]) await expect(sandbox.exec('id',seconds)).rejects.toThrow('non-negative');
     expect(d.calls.filter(c=>c.includes('/usr/bin/timeout')).at(-1)).toContain('900s');
-    await expect(sandbox.http({ ...request, url: 'https://example.com/'.concat('x'.repeat(4100)) })).rejects.toThrow('4096');
+    await expect(sandbox.http({ ...request, url: 'https://example.com/'.concat('x'.repeat(8200)) })).rejects.toThrow('8192');
     await sandbox.stop();
+  });
+  it('P10/TR-H09: an explicit shared concurrency cap overlaps target operations, while the default stays strictly serial', async () => {
+    const overlapping = driver(); const gates: Array<() => void> = []; let active = 0, peak = 0;
+    overlapping.setExecHook(async command => {
+      if (command !== 'first' && command !== 'second') return;
+      active += 1; peak = Math.max(peak, active);
+      await new Promise<void>(resolve => gates.push(resolve)); active -= 1;
+    });
+    const shared = new Sandbox(target, overlapping.run, undefined, { concurrentOperations: 2 });
+    await shared.start();
+    const first = shared.exec('first'), second = shared.exec('second');
+    while (gates.length < 2) await new Promise(resolve => setTimeout(resolve, 0));
+    expect(peak).toBe(2);
+    gates.splice(0).forEach(release => release()); await Promise.all([first, second]);
+    await shared.stop();
+
+    const serialDriver = driver(); const serialGates: Array<() => void> = []; let serialPeak = 0, serialActive = 0;
+    serialDriver.setExecHook(async command => {
+      if (command !== 'one' && command !== 'two') return;
+      serialActive += 1; serialPeak = Math.max(serialPeak, serialActive);
+      await new Promise<void>(resolve => serialGates.push(resolve)); serialActive -= 1;
+    });
+    const serial = new Sandbox(target, serialDriver.run);
+    await serial.start();
+    const one = serial.exec('one'), two = serial.exec('two');
+    while (serialGates.length < 1) await new Promise(resolve => setTimeout(resolve, 0));
+    expect(serialPeak, 'without the explicit cap the second command is not dispatched while the first is in flight').toBe(1);
+    serialGates.shift()!(); while (serialGates.length < 1) await new Promise(resolve => setTimeout(resolve, 0));
+    serialGates.shift()!(); await Promise.all([one, two]);
+    expect(serialPeak).toBe(1);
+    await serial.stop();
   });
   it('strips terminal escapes from target-controlled output', () => {
     expect(cleanText('\u001b[31mhello\u001b[0m\u0000')).toBe('hello');

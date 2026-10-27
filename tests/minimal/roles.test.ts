@@ -3,7 +3,7 @@ import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { DEFAULT_MAX_DEPTH, DEFAULT_MAX_WORKERS, MAX_SKILLS, PURPOSE_SKILLS, ROLE_DEFAULTS, loadSettings, parseSettings, resolveRole } from '../../src/roles.js';
+import { allowedWorkerModels, DEFAULT_MAX_DEPTH, DEFAULT_MAX_WORKERS, MAX_SKILLS, PURPOSE_SKILLS, ROLE_DEFAULTS, loadSettings, parseSettings, resolveRole, THINKING_LEVELS, validateTaskRuntime } from '../../src/roles.js';
 import { WORK_PURPOSES } from '../../src/work.js';
 
 describe('role table', () => {
@@ -121,5 +121,21 @@ describe('purpose → skill defaults (P7)', () => {
     expect(resolveRole({ role: 'discovery', settings, purpose: 'validation', skills: ['memory-safety-auditing'] }).skills).toEqual(['memory-safety-auditing']);
     expect(resolveRole({ role: 'validation', settings, purpose: 'retest' }).model).toBe('opencode-go/kimi-k3');
     expect(resolveRole({ role: 'discovery', settings, purpose: 'validation' }).model).toBe('opencode-go/deepseek-v4-flash');
+  });
+
+  it('P10/WF-02/03 (Q28): validates a per-task worker runtime against the configured role models and thinking levels', () => {
+    // The package role defaults plus every operator-configured role model are the whole allowed set.
+    const defaults = allowedWorkerModels(settings);
+    expect(defaults).toContain('opencode-go/kimi-k3');
+    expect(defaults).toContain('opencode-go/deepseek-v4-flash');
+    const configured = parseSettings({ p2o: { roles: { general: { model: 'fixture/provider-model' } } } });
+    expect(allowedWorkerModels(configured)).toContain('fixture/provider-model');
+    expect(validateTaskRuntime(undefined, settings)).toBeUndefined();
+    expect(validateTaskRuntime({ model: ' fixture/provider-model ', thinking: 'high' }, configured)).toEqual({ model: 'fixture/provider-model', thinking: 'high' });
+    expect(() => validateTaskRuntime({ model: 'nope/model' }, settings)).toThrow(/MODEL_UNAVAILABLE: nope\/model.*legalNext: name one of/);
+    expect(() => validateTaskRuntime({ thinking: 'extreme' }, settings)).toThrow(/THINKING_INVALID: extreme is not a thinking level/);
+    expect(THINKING_LEVELS).toEqual(['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max']);
+    // An empty runtime is a valid empty request: the host validates the request, it does not fill defaults into the task.
+    expect(validateTaskRuntime({}, settings)).toEqual({});
   });
 });

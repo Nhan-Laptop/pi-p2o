@@ -2,6 +2,7 @@ import { Type } from 'typebox';
 import { choices } from './schema-kit.js';
 import { CASE_REVIEW_STATUSES } from './case-types.js';
 import { PLAN_KINDS } from './planning.js';
+import { THINKING_LEVELS } from './roles.js';
 import { taskDraftSchema } from './tool-schemas.js';
 import { caseEntrySchema, coveragePlanSchema, findingSchema } from './case-tool.js';
 import { planEntrySchema } from './work-tool.js';
@@ -65,9 +66,13 @@ export const taskCreateParameters = Type.Object({ draft: taskDraftSchema }, { ad
 export const taskReviseParameters = Type.Object({ draft: taskDraftSchema, id: id(), revision: Type.Integer({ minimum: 1 }) }, { additionalProperties: false });
 export const taskStartParameters = Type.Object({ id: id() }, { additionalProperties: false });
 export const taskDispatchParameters = Type.Object({
-  ids: Type.Optional(Type.Array(id(), { minItems: 1 })), id: Type.Optional(id()), priority: Type.Optional(Type.Integer({ minimum: 0, maximum: 100 })),
+  ids: Type.Optional(Type.Array(id(), { minItems: 1, maxItems: 25 })), id: Type.Optional(id()), priority: Type.Optional(Type.Integer({ minimum: 0, maximum: 100 })),
   /** A7.5/D19: dispatch the successor onto a held worker's ticket, pane and session instead of paying for a new one. */
   workerId: Type.Optional(Type.String({ minLength: 3, maxLength: 64, description: 'A held worker to continue with this task: same ticket, pane and session; the task must cite that worker\'s own demonstrated claim in work.claimRefs' })),
+  // P10/WF-02/03 (Q28): one-dispatch runtime override on top of the task draft's runtime. The host validates both against the
+  // configured model set and thinking levels; a held ticket keeps the runtime it was started with.
+  model: Type.Optional(Type.String({ maxLength: 200, description: 'Worker model for this dispatch; must be one of the configured role models (overrides the task draft runtime for this dispatch)' })),
+  thinking: Type.Optional(choices(THINKING_LEVELS)),
 }, { additionalProperties: false });
 export const taskReviewParameters = Type.Object({
   id: id(), revision: Type.Integer({ minimum: 1 }), reason: Type.Optional(Type.String({ minLength: 5, maxLength: 1000 })),

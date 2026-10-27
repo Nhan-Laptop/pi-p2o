@@ -32,10 +32,21 @@ describe('deterministic frontier and semantic wake loop',()=>{
   it('validates a batch before commit and does not double enqueue accepted IDs',async()=>{
     const f=fixture();await expect(f.queue([0,99])).rejects.toThrow('proposed');expect(f.journal).toHaveLength(0);await f.queue([0]);await expect(f.queue([0])).rejects.toThrow('already queued');f.engine.stop();
   });
-  it('waits for evidence readiness, invalidates revisions and never repeats a failed launch',async()=>{
-    const f=fixture();f.readiness.set('task-0','Reviewed receipt prerequisite unavailable');await f.queue([0,1]);f.tasks[1].revision++;
+  it('waits for evidence readiness, invalidates a changed intent and never repeats a failed launch',async()=>{
+    const f=fixture();f.readiness.set('task-0','Reviewed receipt prerequisite unavailable');await f.queue([0,1]);f.tasks[1].question='A different question';
     await tick();expect(f.spawns).toEqual([]);expect(f.engine.snapshot().events[0].kind).toBe('intent-invalidated');expect(f.engine.snapshot().intents[0].reason).toContain('prerequisite');
     f.readiness.delete('task-0');f.deps.spawn=async()=>{throw Error('Pane transport failed');};f.engine.kick();await tick();expect(f.engine.snapshot().pendingIntents).toBe(0);await tick();expect(f.engine.snapshot().events.some(e=>e.kind==='intent-blocked')).toBe(true);f.engine.stop();
+  });
+  it('P10/TR-H12: keeps a queued intent across an identity-preserving revision and invalidates a changed question',async()=>{
+    const f=fixture();await f.queue([0]);
+    // A revision that leaves the accepted work identity alone (here only the revision counter moved) must not discard the intent.
+    const before=f.tasks[0].revision;f.tasks[0].revision+=1;await tick();
+    expect(f.spawns).toEqual(['task-0']);expect(f.tasks[0].revision).toBeGreaterThan(before);expect(f.engine.snapshot().pendingIntents).toBe(0);
+    f.complete('task-0');await tick();
+    // A changed question is a different intent: it is dropped with an explicit event, not silently dispatched.
+    await f.queue([1]);f.tasks[1].revision+=1;f.tasks[1].question='Question 1, rewritten';await tick();
+    expect(f.spawns).toEqual(['task-0']);expect(f.engine.snapshot().pendingIntents).toBe(0);expect(f.engine.snapshot().events.find(event=>event.kind==='intent-invalidated')?.id).toBe('task-1');
+    f.engine.stop();
   });
   it('coalesces semantic events, waits locally, and consumes only at a request projection',async()=>{
     const f=fixture('event-driven');for(let i=0;i<100;i++)f.engine.notify('worker-report','same-worker');await tick();expect(f.wakes).toHaveLength(1);expect(f.engine.snapshot().pendingEvents).toBe(1);
@@ -73,8 +84,14 @@ describe('deterministic frontier and semantic wake loop',()=>{
   it('stops new dispatch after stop while an asynchronous spawn is still owned',async()=>{
     const f=fixture();let release!:()=>void;f.deps.spawn=()=>new Promise<void>(resolve=>{release=resolve;});await f.queue([0,1]);await tick();f.engine.stop();release();await f.engine.join();expect(f.engine.snapshot().state).toBe('stopped');
   });
-  it('pane cleanup uncertainty creates explicit backpressure, not more workers',async()=>{
-    const f=fixture();f.deps.reap=async()=>false;await f.queue([0]);await tick();expect(f.engine.snapshot().paused).toContain('unverified');expect(f.spawns).toHaveLength(0);f.engine.stop();
+  it('P10/TR-H11: pane cleanup uncertainty records one backpressure fact and skips the round instead of pausing the campaign',async()=>{
+    const f=fixture();f.deps.reap=async()=>false;await f.queue([0]);await tick();
+    expect(f.engine.snapshot().paused).toBeUndefined();expect(f.spawns).toHaveLength(0);expect(f.engine.snapshot().pendingIntents).toBe(1);
+    const facts=()=>(f.journal as Array<{data?:{event?:string}}>).filter(entry=>entry.data?.event==='engine.reap-unverified');
+    expect(facts()).toHaveLength(1);
+    f.engine.kick();await tick();expect(f.spawns).toHaveLength(0);expect(facts()).toHaveLength(1);
+    // A later successful reap retries the accepted intent in place; no human resume is needed.
+    f.deps.reap=async()=>true;f.engine.kick();await tick();expect(f.spawns).toEqual(['task-0']);f.engine.stop();
   });
   it('bounded event retention diagnoses overflow and cannot silently resume',async()=>{
     const f=fixture('event-driven');for(let i=0;i<257;i++)f.engine.notify('worker-report',String(i));await tick();expect(f.engine.snapshot().paused).toContain('overflow');expect(f.engine.snapshot().pendingEvents).toBe(256);expect(f.wakes).toEqual([]);f.engine.stop();

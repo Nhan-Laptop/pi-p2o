@@ -24,9 +24,11 @@ export const outputContractSchema = Type.Object({
 }, { additionalProperties: false });
 export const planEntrySchema = Type.Object({
   kind: choices(PLAN_KINDS), title: Type.String({ minLength: 5, maxLength: 500 }),
-  status: Type.String({ maxLength: 20, description: 'Use the status vocabulary for the kind. goal: proposed|active|reviewed|closed|blocked|cancelled; todo: open|in-progress|done|deferred|blocked|cancelled; decision: recorded|withdrawn. Create goals proposed/active; create decisions recorded.' }),
+  status: Type.Optional(Type.String({ maxLength: 20, description: 'Use the status vocabulary for the kind. goal: proposed|active|reviewed|closed|blocked|cancelled (default active: a created goal is being pursued, closing is a separate revision); todo: open|in-progress|done|deferred|blocked|cancelled; decision: recorded|withdrawn. Create decisions recorded.' })),
   reason: Type.String({ minLength: 10, maxLength: 1000 }),
-  criteria: Type.Optional(Type.Array(Type.String({ minLength: 5, maxLength: 500 }))), exclusions: Type.Optional(Type.Array(Type.String({ minLength: 5, maxLength: 500 }))),
+  // P10/TR-L08: a todo may record an advisory checklist; it is displayed for the reader and never gates completion.
+  criteria: Type.Optional(Type.Array(Type.String({ minLength: 5, maxLength: 500 }), { description: 'Goal: bounded acceptance criteria (required). Todo: advisory checklist only — recorded and displayed, never a completion gate' })),
+  exclusions: Type.Optional(Type.Array(Type.String({ minLength: 5, maxLength: 500 }), { description: 'Goal or todo: what this row explicitly does not cover; advisory on a todo and never a gate' })),
   taskIds: Type.Optional(ids()), goalIds: Type.Optional(ids()), supportRefs: Type.Optional(ids()),
   /** P16.1: what settles this goal. Every goal names one; `reviewed`/`closed` is refused until it holds. */
   proof: Type.Optional(Type.Object({ kind: choices(['capability', 'case', 'coverage']), capability: Type.Optional(capabilitySchema), ref: Type.Optional(Type.String({ maxLength: 80 })) }, { additionalProperties: false, description: 'capability: a typed capability a confirmed+tested claim gains (set capability, omit ref); case: one accepted confirmed case id in ref; coverage: one coverage plan id in ref whose cells are all terminal' })),

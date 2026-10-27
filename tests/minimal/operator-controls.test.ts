@@ -112,6 +112,25 @@ describe('hold and release (inert executor, real broker)', () => {
     } finally { a.close(); b.close(); }
   }, 30_000));
 
+  it('P10/WF-02/03 (Q28): a task or dispatch names the worker model/thinking and the host validates it against the configured set', async () => fixture(async h => {
+    await h.command('--target ./source');
+    const question = { ...draft, question: 'Inspect the fixture boundary for the requested worker runtime' };
+    // Unconfigured models and unknown thinking levels are refused with the legal set, not silently inherited.
+    await expect(h.call('p2o_task_create', { draft: { ...question, runtime: { model: 'unconfigured/model' } } })).rejects.toThrow(/MODEL_UNAVAILABLE: unconfigured\/model.*legalNext: name one of/);
+    await expect(h.call('p2o_task_create', { draft: { ...question, runtime: { thinking: 'extreme' } } })).rejects.toThrow(/THINKING_INVALID: extreme/);
+    const task = (await h.call('p2o_task_create', { draft: { ...question, runtime: { model: 'opencode-go/deepseek-v4-flash', thinking: 'high' } } })).details;
+    expect(task.runtime).toEqual({ model: 'opencode-go/deepseek-v4-flash', thinking: 'high' });
+    // A dispatch-level runtime is validated the same way and overrides the task's runtime for this dispatch.
+    await expect(h.call('p2o_task_dispatch', { ids: [task.id], model: 'unconfigured/model' })).rejects.toThrow(/MODEL_UNAVAILABLE/);
+    await h.call('p2o_task_dispatch', { ids: [task.id], model: 'opencode-go/kimi-k3', thinking: 'low' });
+    for (let i = 0; i < 100; i++) { if ((await h.call('p2o_workers')).details.workers.length) break; await delay(10); }
+    expect((await h.call('p2o_workers')).details.workers[0]).toMatchObject({ requestedRuntime: { model: 'opencode-go/kimi-k3', thinking: 'low' } });
+    // The task record keeps the runtime the owner authored it with, so review reads it from the ledger rather than the pane.
+    const store: AssessmentStore = await h.reader();
+    try { expect(store.records().filter(row => row.kind === 'task').at(-1)?.data?.task).toMatchObject({ id: task.id, runtime: { model: 'opencode-go/deepseek-v4-flash', thinking: 'high' } }); }
+    finally { store.close(); }
+  }));
+
   it('keeps accepted queued tasks waiting during a hold instead of dropping them, and admits them after release', async () => fixture(async h => {
     await h.command('--target ./source');
     await h.command('hold');
@@ -119,6 +138,21 @@ describe('hold and release (inert executor, real broker)', () => {
     await h.call('p2o_task_dispatch', {ids: [task.id] }); await delay(400);
     expect((await h.call('p2o_workers')).details.workers).toHaveLength(0);
     expect((await h.call('p2o_loop', { action: 'status' })).details.pendingIntents).toBe(1); // still accepted and queued, not invalidated
+    h.ctx.setConfirm(true); await h.command('release');
+    for (let i = 0; i < 100; i++) { if ((await h.call('p2o_workers')).details.workers.length) break; await delay(10); }
+    expect((await h.call('p2o_workers')).details.workers).toHaveLength(1);
+  }));
+
+  it('P10/TR-H12 (Q32): a final finish is refused while a queued intent remains and names it instead of draining it', async () => fixture(async h => {
+    await h.command('--target ./source');
+    await h.command('hold');
+    const task = (await h.call('p2o_task_create', { draft })).details;
+    await h.call('p2o_task_dispatch', { ids: [task.id] }); await delay(150);
+    const refused = await h.call('p2o_finish', {}).then(() => undefined, (error: unknown) => error);
+    expect(String(refused)).toMatch(/INTENTS_QUEUED/);
+    expect(String(refused)).toContain(`${task.id}@r${task.revision}`);
+    // The refusal is not a drain: the accepted intent is still queued, and release admits it.
+    expect((await h.call('p2o_loop', { action: 'status' })).details.pendingIntents).toBe(1);
     h.ctx.setConfirm(true); await h.command('release');
     for (let i = 0; i < 100; i++) { if ((await h.call('p2o_workers')).details.workers.length) break; await delay(10); }
     expect((await h.call('p2o_workers')).details.workers).toHaveLength(1);

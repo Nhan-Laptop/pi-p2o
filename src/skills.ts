@@ -9,7 +9,7 @@ export interface CatalogDocument { id: string; path: string; section?: string }
 export interface SkillCatalog { version: 1; skills: CatalogSkill[]; documents: CatalogDocument[] }
 export interface DocumentPage { id: string; sha256: string; text: string; offset: number; nextOffset?: number; totalCharacters: number }
 const MAX_FILE = 2 * 1024 * 1024;
-const PAGE_BYTES = 8 * 1024;
+const PAGE_BYTES = 24 * 1024;
 const SLUG = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 /** A materializable document is a shipped harness, not a reference: the package path decides, not the caller. */
 const SCRIPT_DOCUMENT = /^skills\/[a-z0-9]+(?:-[a-z0-9]+)*\/scripts\/[A-Za-z0-9][A-Za-z0-9._-]{0,80}\.py$/;

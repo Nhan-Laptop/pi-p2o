@@ -27,9 +27,15 @@ export const taskDraftSchema = Type.Object({
     expectedTrue:Type.Optional(Type.String({maxLength:1000})),expectedFalse:Type.Optional(Type.String({maxLength:1000})),stopCondition:Type.Optional(Type.String({maxLength:1000})),
     expectedOutput:Type.Optional(Type.String({minLength:5,maxLength:1000})),
     unknowns:Type.Optional(Type.Array(Type.String({minLength:10,maxLength:500}))),missingPrerequisites:Type.Optional(Type.Array(Type.String({minLength:10,maxLength:500}))),
-    evidenceIds:Type.Array(Type.String({maxLength:80})),prerequisites:Type.Array(Type.Object({taskId:Type.String({maxLength:80}),revision:Type.Optional(Type.Integer({minimum:1}))})),
+    // P10/TR-L06: an intent that cites no receipt and no prerequisite omits both lists; the host records [] instead of demanding
+    // the caller restate "none" (a non-empty list is still validated as same-run evidence / pinned prerequisites).
+    evidenceIds:Type.Optional(Type.Array(Type.String({maxLength:80}),{description:'Same-run evidence IDs this intent already stands on; omit when none and the host records an empty list'})),
+    prerequisites:Type.Optional(Type.Array(Type.Object({taskId:Type.String({maxLength:80}),revision:Type.Optional(Type.Integer({minimum:1}))}),{description:'Reviewed prerequisite tasks; omit when none and the host records an empty list'})),
     validationOf:Type.Optional(Type.String({maxLength:80})),retestOf:Type.Optional(Type.String({maxLength:80})),parentTaskId:Type.Optional(Type.String({maxLength:80})),
     work:Type.Optional(workSpecSchema),decision:Type.Optional(workDecisionSchema),outputContract:Type.Optional(outputContractSchema),
+    // P10/WF-02/03 (Q28): optional per-task worker runtime. The host validates the model against the configured role models and
+    // the thinking level against THINKING_LEVELS at admission; dispatch model/thinking override it for one dispatch.
+    runtime:Type.Optional(Type.Object({model:Type.Optional(Type.String({maxLength:200,description:'Worker model for this task; must be one of the configured role models (the host lists them in the planner prompt and refuses others)'})),thinking:Type.Optional(choices(THINKING_LEVELS))},{additionalProperties:false,description:'P10/WF-02/03 (Q28): optional per-task worker runtime; the host validates the model against the configured role models and the level against the supported thinking levels at admission, and dispatch-level model/thinking overrides it for that dispatch'})),
     skills:Type.Optional(Type.Array(Type.String({maxLength:64}))),workflow:Type.Optional(Type.String({maxLength:64})),
     // P5.1 measured rerun: the lead omitted this for every discovery intent and could not see why the host refused it.
     methodReason:Type.Optional(Type.String({maxLength:1000,description:'Why this method answers the question. Required (at least 10 characters) for every role except recon; the host refuses the intent when it is missing'})),
@@ -40,7 +46,7 @@ export const TASK_ACTIONS = ['create','revise','list','start','review','close','
 /** P13e: one row per action, so a new action is a type error instead of inheriting a default parameter list. */
 export const TASK_ACTION_PARAMETERS: Readonly<Record<typeof TASK_ACTIONS[number], readonly string[]>> = {
   create: ['action','draft'], revise: ['action','draft','id','revision'], list: ['action','id','cursor','limit'],
-  dispatch: ['action','ids','id','priority','workerId'], start: ['action','id'],
+  dispatch: ['action','ids','id','priority','workerId','model','thinking'], start: ['action','id'],
   review: ['action','id','revision','reason','evidenceIds','externalEvidence'], close: ['action','id','revision','reason','evidenceIds','externalEvidence'],
   block: ['action','id','revision','reason','evidenceIds','externalEvidence'], cancel: ['action','id','revision','reason','evidenceIds','externalEvidence'],
 };
@@ -116,7 +122,7 @@ export const researchParameters = Type.Object({
   reason: Type.Optional(Type.String({ minLength: 10, maxLength: 1000, description: 'action=triage: why the lead is tasked or ruled out (required for ruled_out)' })),
 }, { additionalProperties: false });
 
-export const captureParameters = Type.Object({path:Type.String({minLength:1,maxLength:2048}),offset:Type.Optional(Type.Integer({minimum:0})),timeout:Type.Optional(Type.Integer({minimum:0}))});
+export const captureParameters = Type.Object({path:Type.String({minLength:1,maxLength:2048}),offset:Type.Optional(Type.Integer({minimum:0})),timeout:Type.Optional(Type.Integer({minimum:0})),maxKiB:Type.Optional(Type.Integer({minimum:1,maximum:8192,description:"Cap this one capture at N KiB of stdout+stderr prefix; never above the run's capture setting (default 1 MiB)"}))});
 
 /**
  * A7.3 (planning_update.md P7.4): the shell/network tools gain an interactive form. `session` names a run-owned session
@@ -124,10 +130,10 @@ export const captureParameters = Type.Object({path:Type.String({minLength:1,maxL
  * after the host-side cursor. Exactly one of command/send/read is an operation.
  */
 export const execParameters = Type.Object({
-  command: Type.Optional(Type.String({ minLength: 1, maxLength: 8192 })),
+  command: Type.Optional(Type.String({ minLength: 1, maxLength: 32 * 1024 })),
   timeout: Type.Optional(Type.Integer({ minimum: 0, description: 'Optional seconds; 0 or omitted means no task timeout. For send: how long to wait for output to settle, default 5s' })),
   session: Type.Optional(Type.String({ minLength: 1, maxLength: 64, pattern: '^[a-z0-9][a-z0-9-]{0,63}$', description: 'Run in this open session instead of the run shell' })),
-  send: Type.Optional(Type.String({ maxLength: 8192, description: 'Write these exact bytes to the session PTY (include newline yourself); returns output until it goes quiet or the timeout' })),
+  send: Type.Optional(Type.String({ maxLength: 16 * 1024, description: 'Write these exact bytes to the session PTY (include newline yourself); returns output until it goes quiet or the timeout' })),
   read: Type.Optional(Type.Boolean({ description: 'Return PTY output since the host cursor for the session' })),
 });
 
@@ -135,10 +141,10 @@ export const execParameters = Type.Object({
 export const sessionParameters = Type.Object({
   action: choices(['open','list','exec','listen','upload','download','snapshot','close'] as const),
   session: Type.Optional(Type.String({ minLength: 1, maxLength: 64, pattern: '^[a-z0-9][a-z0-9-]{0,63}$' })),
-  command: Type.Optional(Type.String({ minLength: 1, maxLength: 8192, description: 'action=exec: one non-interactive command in the session container' })),
+  command: Type.Optional(Type.String({ minLength: 1, maxLength: 32 * 1024, description: 'action=exec: one non-interactive command in the session container' })),
   purpose: Type.Optional(Type.String({ minLength: 3, maxLength: 200, description: 'action=open: one line naming what the session is for (recorded)' })),
   path: Type.Optional(Type.String({ minLength: 1, maxLength: 2048, description: 'action=upload/download: relative path inside the session scratch' })),
-  content: Type.Optional(Type.String({ maxLength: 32768, description: 'action=upload: UTF-8 bytes to materialize (1..32 KiB)' })),
+  content: Type.Optional(Type.String({ maxLength: 48 * 1024, description: 'action=upload: UTF-8 bytes to materialize (1..48 KiB)' })),
   port: Type.Optional(Type.Integer({ minimum: 1, maximum: 65535 })),
   protocol: Type.Optional(choices(['tcp','udp'] as const)),
   timeout: Type.Optional(Type.Integer({ minimum: 0, description: 'action=exec: optional seconds; 0 or omitted means no task timeout' })),
@@ -150,12 +156,12 @@ export const secretParameters = Type.Object({
 }, { additionalProperties: false });
 
 export const httpParameters = Type.Object({
-      url: Type.String({ minLength: 1, maxLength: 4096 }),
+      url: Type.String({ minLength: 1, maxLength: 8 * 1024 }),
       method: Type.Optional(Type.String({ minLength: 1, maxLength: 32, pattern: HTTP_METHOD_PATTERN })),
-      headers: Type.Optional(Type.Record(Type.String({ maxLength: 64 }), Type.String({ maxLength: 4096 }))),
-      body: Type.Optional(Type.String({ maxLength: 32768 })),
+      headers: Type.Optional(Type.Record(Type.String({ maxLength: 64 }), Type.String({ maxLength: 8 * 1024 }))),
+      body: Type.Optional(Type.String({ maxLength: 48 * 1024 })),
       followRedirects: Type.Optional(Type.Boolean()),
-      maxRedirects: Type.Optional(Type.Integer({ minimum: 0, maximum: 5 })),
+      maxRedirects: Type.Optional(Type.Integer({ minimum: 0, maximum: 20 })),
       session: Type.Optional(Type.String({ minLength: 1, maxLength: 40, pattern: '^[A-Za-z0-9][A-Za-z0-9._-]{0,39}$' })),
       principal: Type.Optional(Type.String({ minLength: 1, maxLength: 64, pattern: '^[a-z0-9][a-z0-9-]{0,63}$', description: 'A7.4: declared principal whose cookie jar this request belongs to (default "default"); a name, never a credential value' })),
       resetSession: Type.Optional(Type.Boolean()),
@@ -172,7 +178,7 @@ export const noteParameters = Type.Object({
       refs: Type.Optional(Type.Array(Type.String({ maxLength: 200 }))),
     });
 
-export const artifactParameters = Type.Object({id:Type.String({minLength:45,maxLength:45,pattern:'^artifact-[a-f0-9-]{36}$'}),offset:Type.Optional(Type.Integer({minimum:0})),length:Type.Optional(Type.Integer({minimum:1,maximum:8192}))});
+export const artifactParameters = Type.Object({id:Type.String({minLength:45,maxLength:45,pattern:'^artifact-[a-f0-9-]{36}$'}),offset:Type.Optional(Type.Integer({minimum:0})),length:Type.Optional(Type.Integer({minimum:1,maximum:48*1024}))});
 
 export const ledgerParameters = Type.Object({ limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 100 })), id: Type.Optional(Type.String({ maxLength: 80 })), cursor: Type.Optional(Type.Integer({ minimum:0 })) });
 
@@ -219,7 +225,8 @@ export const reportParameters = Type.Object({
       blocked: Type.Optional(Type.String({ maxLength: 1000 })),
       outcome:Type.Optional(choices(WORKER_OUTCOMES)),
       holdFor: Type.Optional(Type.Object({ brief: Type.String({ minLength: 3, maxLength: 300, description: 'One sentence naming the successor step that continues this exact work' }) },
-        { description: 'A7.5: keep this worker\'s ticket, pane and session alive for exactly one follow-up continuation with this brief' })),
+        { description: 'A7.5: keep this worker\'s ticket, pane and session alive for follow-up continuations with this brief; the count is holdContinuations' })),
+      holdContinuations: Type.Optional(Type.Integer({ minimum: 0, maximum: 3, description: 'P10/WF-11: how many follow-up briefs this hold authorizes (default 1); 0 names the successor in the report but retires the ticket, pane and session' })),
     });
 
 export const finishParameters = Type.Object({

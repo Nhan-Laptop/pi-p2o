@@ -7,7 +7,7 @@
  */
 import { capabilityMatches, describeCapability, type Capability } from './capabilities.js';
 import { claimCapabilities, isDemonstrated } from './claims.js';
-import { caseViews } from './cases.js';
+import { caseViews, type CaseContext } from './cases.js';
 import { coverageCells, coveragePlans, projectCoverage } from './coverage.js';
 import { claimHeadClaims } from './chain-view.js';
 import type { LedgerIndex } from './records.js';
@@ -59,15 +59,30 @@ export function proofViews(cases: readonly ProofCaseView[], coverage: readonly P
   };
 }
 
+/**
+ * P10/TR-L07: the support the committed state already contains for a proof that holds. A settled goal may omit supportRefs;
+ * the host records the exact proof instead of requiring the caller to restate evidence it did not author. Capability proof
+ * names the demonstrated claim records that gained it; a case or coverage proof names the case/plan id it settled on.
+ */
+export function goalProofSupportRefs(proof: GoalProof, index: LedgerIndex): string[] {
+  if (proof.kind === 'capability') {
+    return claimHeadClaims(index)
+      .filter(claim => claim.recordId !== undefined && isDemonstrated(claim) && claimCapabilities(claim).gained.some(gained => capabilityMatches(gained, proof.capability)))
+      .map(claim => claim.recordId!);
+  }
+  return [proof.ref];
+}
+
 /** One reader for both the plan board and the completion derivation, so neither re-implements the other's rule. */
-export function proofData(index: LedgerIndex): ProofData {
+export function proofData(index: LedgerIndex, cases?: CaseContext): ProofData {
   const plans = coveragePlans(index), cells = coverageCells(index);
   // A3: a projected plan's cells are derived from read work, so the goal proof reads the same projection the views use;
   // a legacy plan keeps its stored cells. Only the terminal-execution rule matters here, not asset currentness.
   const projected = plans.some(plan => plan.derivation === 'projected') ? projectCoverage(index, { targetRevision: () => plans.find(plan => plan.derivation === 'projected')!.targetRevision }) : undefined;
   return {
     claims: claimHeadClaims(index).map(claim => ({ closure: claim.closure, execution: claim.execution, gained: claimCapabilities(claim).gained })),
-    cases: caseViews(index).map(view => ({ id: view.id, verdict: view.verdict, reviewStatus: view.reviewStatus, currentness: view.currentness })),
+    // P10/TR-L07: a case proof is settled only by a current accepted case, which needs the same context the case board reads.
+    cases: caseViews(index, cases).map(view => ({ id: view.id, verdict: view.verdict, reviewStatus: view.reviewStatus, currentness: view.currentness })),
     coverage: plans.map(plan => plan.derivation === 'projected'
       ? { planId: plan.id, cells: (projected?.cells ?? []).map(cell => ({ id: `coverage-cell-${cell.fingerprint.slice(0, 24)}`, execution: cell.execution, retired: false })) }
       : { planId: plan.id, cells: cells.filter(cell => plan.cellIds.includes(cell.id)).map(cell => ({ id: cell.id, execution: cell.execution, retired: cell.retired })) }),

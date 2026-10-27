@@ -16,6 +16,16 @@ export const GRAPH_ANCHOR_LIMIT = 10; // nested anchors per submitted asset
 export const GRAPH_ANCHOR_ROWS = 20000;
 export const GRAPH_RELATION_LIMIT = 2000;
 export const GRAPH_PROVENANCE_LIMIT = 40000;
+/**
+ * P9/B (Q29): the ceilings are multiplied by the run's `graphCapacity` setting (1..4). The store enforces the scaled values;
+ * a library caller that opens a store without the option keeps the base ceilings (capacity 1), so nothing here changes for it.
+ */
+export const MAX_GRAPH_CAPACITY = 4;
+export function graphCeilings(capacity = 1): { assets: number; assertions: number; relations: number; anchors: number; provenance: number } {
+  if (!Number.isSafeInteger(capacity) || capacity < 1 || capacity > MAX_GRAPH_CAPACITY) throw Error(`graphCapacity must be 1..${MAX_GRAPH_CAPACITY}`);
+  return { assets: GRAPH_ENTITY_LIMIT * capacity, assertions: GRAPH_ASSERTION_LIMIT * capacity, relations: GRAPH_RELATION_LIMIT * capacity,
+    anchors: GRAPH_ANCHOR_ROWS * capacity, provenance: GRAPH_PROVENANCE_LIMIT * capacity };
+}
 export const GRAPH_BATCH_ROWS = 128; // includes nested anchors and their ACKs
 export const GRAPH_ROW_BYTES = 8 * 1024;
 export const GRAPH_RESPONSE_BYTES = 24 * 1024;

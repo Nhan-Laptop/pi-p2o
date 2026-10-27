@@ -84,7 +84,6 @@ describe('p2o_research', () => {
     expect(result.entries.length).toBeGreaterThan(0);
     expect(result.fetched).toEqual([]);
     expect(result.warning).toMatch(/untrusted data/);
-    expect(h.sandbox().researchPages).toEqual([]);
     expect(h.sandbox().commands).toEqual([]);
     // The lookup is recorded (query, web flag, corpus hashes) even though nothing was fetched.
     const records = (await h.records()).filter(record => record.kind === 'research');
@@ -110,6 +109,25 @@ describe('p2o_research', () => {
     const kinds = new Set((await h.records()).map(record => record.kind));
     expect(kinds.has('evidence')).toBe(false);
     expect(kinds.has('candidate')).toBe(false);
+  }, 30_000);
+
+  it('retains a fetched page larger than the inline budget as a same-run artifact (P9)', async () => {
+    const h = await harness(); cleanup.push(() => rm(h.directory, { recursive: true, force: true }));
+    const body = 'A'.repeat(12 * 1024);
+    vi.stubGlobal('fetch', async () => ({ status: 200, url: 'https://example.test/large', headers: new Headers({ 'content-type': 'text/plain' }), text: async () => body }));
+    const result = (await h.call('p2o_research', { action: 'fetch', url: 'https://example.test/large' })).details as any;
+    // The fetch stays uncapped (the hash and byte count describe the whole body), but the model's visible text is not
+    // clipped inside a JSON string without a pointer: the full body is a retained artifact.
+    expect(result.bodyTruncated).toBe(true);
+    expect(Buffer.byteLength(result.body)).toBe(8 * 1024);
+    expect(result.bytes).toBe(body.length);
+    expect(result.sha256).toBe(sha256Hex(body));
+    expect(result.artifactId).toMatch(/^artifact-/);
+    const page = (await h.call('p2o_artifact', { id: result.artifactId, length: 48 * 1024 })).details as any;
+    expect(page.returnedBytes).toBe(body.length);
+    expect(page.text).toBe(body);
+    const records = (await h.records()).filter(record => record.kind === 'research');
+    expect(records[0].data).toMatchObject({ bytes: body.length, sha256: sha256Hex(body) });
   }, 30_000);
 
   it('reports instructions found in fetched text as untrusted signals and changes no state', async () => {

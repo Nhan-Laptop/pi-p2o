@@ -281,7 +281,7 @@ export function taskTimeout(value: unknown, name = 'timeout'): number {
   if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < 0) throw Error(`${name} must be a non-negative safe integer in seconds; 0 disables it`);
   return value;
 }
-export const MAX_BODY_BYTES = 32 * 1024;
+export const MAX_BODY_BYTES = 48 * 1024;
 const HEADER_NAME = /^[A-Za-z0-9!#$%&'*+.^_`|~-]{1,64}$/;
 const RESERVED_HEADERS = new Set(['content-length', 'transfer-encoding', 'connection', 'expect']);
 
@@ -296,9 +296,9 @@ export function httpHeaders(input: unknown): Record<string, string> | undefined 
   for (const [name, value] of entries) {
     if (!HEADER_NAME.test(name)) throw new Error(`Invalid header name ${name.slice(0, 40)}`);
     if (RESERVED_HEADERS.has(name.toLowerCase())) throw new Error(`${name} is set by the transport and cannot be overridden`);
-    if (typeof value !== 'string' || Buffer.byteLength(value) > 4096 || /[\x00-\x08\x0a-\x1f\x7f]/.test(value)) throw new Error(`Invalid value for header ${name.slice(0, 40)}`);
+    if (typeof value !== 'string' || Buffer.byteLength(value) > 8 * 1024 || /[\x00-\x08\x0a-\x1f\x7f]/.test(value)) throw new Error(`Invalid value for header ${name.slice(0, 40)}`);
     bytes += Buffer.byteLength(name) + Buffer.byteLength(value) + 4;
-    if (bytes > 8192) throw new Error('Request headers must total at most 8192 bytes');
+    if (bytes > 16 * 1024) throw new Error('Request headers must total at most 16384 bytes');
     if (Object.keys(headers).some(key => key.toLowerCase() === name.toLowerCase())) throw new Error('Duplicate case-insensitive header name');
     headers[name] = value;
   }
@@ -309,12 +309,12 @@ export function httpHeaders(input: unknown): Record<string, string> | undefined 
 export function httpRequest(input: unknown): NormalizedHttpRequest {
   if (!input || typeof input !== 'object' || Array.isArray(input)) throw new Error('HTTP request must be an object');
   const params = input as Record<string, unknown>;
-  if (typeof params.url !== 'string' || !params.url || params.url.length > 4096) throw new Error('url must be 1..4096 characters');
+  if (typeof params.url !== 'string' || !params.url || params.url.length > 8 * 1024) throw new Error('url must be 1..8192 characters');
   if (params.method !== undefined && typeof params.method !== 'string') throw new Error('method must be an HTTP token of 1..32 characters');
   const method = (params.method as string | undefined) ?? 'GET';
   if (!new RegExp(HTTP_METHOD_PATTERN).test(method)) throw new Error('method must be an HTTP token of 1..32 characters');
   const maxRedirects = params.maxRedirects ?? 3;
-  if (typeof maxRedirects !== 'number' || !Number.isInteger(maxRedirects) || maxRedirects < 0 || maxRedirects > 5) throw new Error('maxRedirects must be 0..5');
+  if (typeof maxRedirects !== 'number' || !Number.isInteger(maxRedirects) || maxRedirects < 0 || maxRedirects > 20) throw new Error('maxRedirects must be 0..20');
   if (params.followRedirects !== undefined && typeof params.followRedirects !== 'boolean') throw new Error('followRedirects must be boolean');
   if (params.resetSession !== undefined && typeof params.resetSession !== 'boolean') throw new Error('resetSession must be boolean');
   const session = params.session ?? 'default';

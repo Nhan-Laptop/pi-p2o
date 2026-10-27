@@ -111,9 +111,13 @@ describe('bounded recon contract', () => {
   // instruction hashes moved on purpose; the brief hashes are unchanged because workerBrief carries neither line.
   // 2026-10-27 (P8.2 fetch truth): the loadout line no longer says "a capped citation fetch" — Part XI leaves the fetch
   // uncapped and host-side — so both instruction hashes moved on purpose; the brief hashes are unchanged.
+  // 2026-10-27 (P9 capability pass): the knowledge-catalog line now states the real inline page (24 KiB) and the
+  // continuation pointer, so both instruction hashes moved on purpose; the brief hashes are unchanged because
+  // workerBrief carries no catalog text. The new operator-frame/hints sections are conditional, so a brief without
+  // them is byte-identical to its P8 form.
   it.each([
-    ['url', 'de7596afd47a1f10e335353eb5eac01eaacab9367a18350093913857676b131c', '9c42b63acf752ab70bdd2980e05a75db8d1a35a9afc345324e847d90afa226c7'],
-    ['directory', 'bc577ef84e22ceafbcd304884c68d4a179045e0f2e6ad3f8e6ee8958f66e1240', '1a569560f44bef4644c30b8771cd09c6bfe81f90ece813da0a773390412828a9'],
+    ['url', '27bdd7ffe2869b04c4f358a061a8af81fa2e6f934a68f634226509566228b92e', '9c42b63acf752ab70bdd2980e05a75db8d1a35a9afc345324e847d90afa226c7'],
+    ['directory', '55d99afc85854a44f69ea152a9ae5e1bed3f1c6ba5a06c85d3e9bac54d8c2347', '1a569560f44bef4644c30b8771cd09c6bfe81f90ece813da0a773390412828a9'],
   ])('pins %s worker guidance for the Planner/frontier revision; historical acceptance artifacts are not rewritten', (kind, instructionHash, briefHash) => {
     const ticket = { workerId: 'worker-test', role: 'recon', runId: 'run-test', depth: 1, parentWorkerId: null,
       lifetime: 'until-stopped', target: { kind, label: kind === 'url' ? 'https://example.invalid' : '/target' } } as Ticket;

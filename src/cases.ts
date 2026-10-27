@@ -23,6 +23,24 @@ export const needsCaseReview=(view:{reviewStatus?:unknown}):boolean=>view.review
 const candidateKey=(record:AssessmentRecord)=>typeof record.data?.candidate==='string'?record.data.candidate:undefined;
 const candidateRecords=(index:LedgerIndex)=>index.records.filter(row=>row.kind==='candidate'&&row.id&&candidateKey(row));
 function candidateHeads(index:LedgerIndex):Map<string,AssessmentRecord>{const heads=new Map<string,AssessmentRecord>();for(const row of candidateRecords(index))heads.set(candidateKey(row)!,row);return heads;}
+/** The join the chain board and case ratings speak: a candidate record id, or the latest same-run claim with that slug (P13a). */
+function candidateByReference(index:LedgerIndex,runId:string,ref:string):AssessmentRecord|undefined{
+  const direct=index.byId.get(ref);
+  if(direct?.kind==='candidate'&&direct.runId===runId)return direct;
+  return index.records.filter(row=>row.kind==='candidate'&&row.runId===runId&&row.data?.candidate===ref).at(-1);
+}
+/** P10/TR-L01: the claims one task's review accepted — latest record per candidate slug before the reviewed head (mirrors src/coverage.ts). */
+function reviewedClaimRecords(index:LedgerIndex,runId:string,taskId:string):AssessmentRecord[]{
+  let reviewedAt:number|undefined;
+  for(let position=0;position<index.records.length;position++){const row=index.records[position],task=row.kind==='task'?row.data?.task as AssessmentTask|undefined:undefined;
+    if(task?.id===taskId&&task.runId===runId&&isSatisfiedTask(task.status))reviewedAt=position;}
+  const latest=new Map<string,AssessmentRecord>();
+  for(let position=0;position<index.records.length;position++){const row=index.records[position];
+    if(row.kind!=='candidate'||!row.id||row.runId!==runId||typeof row.data?.candidate!=='string'||row.data?.taskRef!==taskId)continue;
+    if(reviewedAt!==undefined&&position>=reviewedAt)continue;
+    latest.set(row.data.candidate as string,row);}
+  return [...latest.values()];
+}
 function taskRevision(index:LedgerIndex,ref:CaseTaskRef):AssessmentTask|undefined{return taskRevisionAt(index,ref.taskId,ref.revision);}
 
 export const caseFrontier=(index:LedgerIndex):CaseEntry[]=>ownerNoteFrontier(index,'case',validateStoredCase);
@@ -118,12 +136,32 @@ export function boundRatingRequest(id:string,revision:number,value:unknown,reque
 export class CaseBoard extends LedgerBoard{
   constructor(runId:string,path:string,active:()=>boolean,private context:CaseContext={},private now=()=>Date.now()){super(runId,path,active,'Case review','Case');}
   private mutate<T>(work:(index:LedgerIndex,cases:CaseEntry[])=>Promise<T>):Promise<T>{return this.serialized(index=>work(index,caseFrontier(index)));}
-  private pin(input:CaseDraft,index:LedgerIndex):CaseDraft{return {...input,assetRefs:input.assetRefs.map(ref=>({...ref,revision:ref.revision??this.context.assetRevision?.(ref.id)})),taskRefs:input.taskRefs.map(ref=>({...ref,revision:ref.revision??taskFrontier(index).find(task=>task.id===ref.taskId)?.revision})),
+  private pin(input:CaseDraft,index:LedgerIndex):CaseDraft{return {...input,assetRefs:(input.assetRefs??[]).map(ref=>({...ref,revision:ref.revision??this.context.assetRevision?.(ref.id)})),taskRefs:input.taskRefs.map(ref=>({...ref,revision:ref.revision??taskFrontier(index).find(task=>task.id===ref.taskId)?.revision})),
     ...(input.remediation.retestTask?{remediation:{...input.remediation,retestTask:{...input.remediation.retestTask,revision:input.remediation.retestTask.revision??taskFrontier(index).find(task=>task.id===input.remediation.retestTask!.taskId)?.revision}}}:{})};}
+  /** P10/TR-L01: a case that cites reviewed tasks may omit both reference lists; the host derives the pinned asset refs and the
+   * claims the review accepted, and resolves a candidate slug to the record id the rest of the case board speaks. */
+  private deriveRefs(input:CaseDraft,index:LedgerIndex):CaseDraft{
+    const suppliedAssets=input.assetRefs??[],suppliedClaims=input.claimRefs??[];
+    const assets=[...suppliedAssets],claims=[...suppliedClaims],seenAssets=new Set(assets.map(ref=>ref.id));
+    for(const ref of input.taskRefs){
+      const task=taskRevision(index,ref);if(!task)continue; // references() names an unknown or unpinned task
+      if(!suppliedAssets.length)for(const asset of task.work?.assetRefs??[])if(!seenAssets.has(asset.id)&&assets.length<10){seenAssets.add(asset.id);assets.push({...asset,revision:asset.revision??this.context.assetRevision?.(asset.id)});}
+      if(!suppliedClaims.length)for(const claim of reviewedClaimRecords(index,this.runId,ref.taskId))if(claims.length<10&&(isDemonstrated(claim.data??{})||claim.data?.closure==='ruled_out'))claims.push(claim.id!);
+    }
+    if(!assets.length)throw Error('Case needs exact asset references: pass assetRefs, or cite the reviewed task(s) in taskRefs whose work identity names the asset so the host derives them; legalNext: create the task with work.assetRefs, or copy the asset id from p2o_graph');
+    if(!claims.length)throw Error('Case needs exact claim references: pass claimRefs (a candidate record id or slug), or cite a reviewed task in taskRefs whose review accepted a demonstrated or ruled-out claim so the host derives them; legalNext: review the worker claim first (p2o_task_review), or copy the claim record id from p2o_ledger');
+    return {...input,assetRefs:assets,claimRefs:[...new Set(claims.map(ref=>this.resolveClaim(ref,index)))]};
+  }
+  /** A claim ref may be a record id or the slug the chain join keys on; the stored case always carries the resolved record id. */
+  private resolveClaim(ref:string,index:LedgerIndex):string{
+    const claim=candidateByReference(index,this.runId,ref);
+    if(!claim?.id)throw Error(`Unknown case claim reference ${ref}: a same-run candidate record ID or its candidate slug is required; legalNext: copy the record ID from p2o_ledger, or the slug the chain join reads (a slug resolves to its latest head)`);
+    return claim.id;
+  }
   private references(input:CaseDraft,index:LedgerIndex,cases:CaseEntry[]):void{
-    for(const ref of input.assetRefs){const current=this.context.assetRevision?.(ref.id);if(this.context.assetRevision&&current===undefined)throw Error(`Unknown same-run case asset ${ref.id}`);if(ref.revision===undefined)throw Error('Case asset revision must be pinned');}
+    for(const ref of input.assetRefs??[]){const current=this.context.assetRevision?.(ref.id);if(this.context.assetRevision&&current===undefined)throw Error(`Unknown same-run case asset ${ref.id}`);if(ref.revision===undefined)throw Error('Case asset revision must be pinned');}
     if(input.hypothesis){const current=this.context.assertionRevision?.(input.hypothesis.id);if(this.context.assertionRevision&&current===undefined)throw Error('Unknown same-run case hypothesis');}
-    for(const ref of input.claimRefs)if(index.byId.get(ref)?.kind!=='candidate'||index.byId.get(ref)?.runId!==this.runId)throw Error(`Unknown same-run candidate claim ${ref}`);
+    for(const ref of input.claimRefs??[])if(index.byId.get(ref)?.kind!=='candidate'||index.byId.get(ref)?.runId!==this.runId)throw Error(`Unknown same-run candidate claim ${ref}`);
     for(const ref of input.independentEvidenceRefs)if(index.byId.get(ref)?.kind!=='evidence'||index.byId.get(ref)?.runId!==this.runId)throw Error(`Unknown same-run independent evidence ${ref}`);
     for(const ref of input.taskRefs)if(ref.revision===undefined||!taskRevision(index,ref))throw Error(`Unknown or unpinned case task ${ref.taskId}`);
     for(const ref of input.reportRefs)if(index.byId.get(ref)?.kind!=='report'||index.byId.get(ref)?.runId!==this.runId)throw Error(`Unknown same-run case report ${ref}`);
@@ -135,7 +173,7 @@ export class CaseBoard extends LedgerBoard{
     const graph=new Map(cases.map(entry=>[entry.id,entry.duplicateOf]));if(input.id)graph.set(input.id,input.duplicateOf);const seen=new Set<string>();let cursor=input.id;while(cursor){if(seen.has(cursor))throw Error('Case duplicate chain cycle');seen.add(cursor);cursor=graph.get(cursor);}
   }
   private acceptance(input:CaseDraft,index:LedgerIndex,cases:CaseEntry[],previous:CaseEntry):void{
-    if(input.reviewStatus!=='accepted')return;const provisional:CaseEntry={...input,id:input.id!,runId:this.runId,revision:previous.revision+1,recordId:'case-provisional'};
+    if(input.reviewStatus!=='accepted')return;const provisional:CaseEntry={...input,assetRefs:input.assetRefs??[],claimRefs:input.claimRefs??[],id:input.id!,runId:this.runId,revision:previous.revision+1,recordId:'case-provisional'};
     const view=caseViews(indexRecordsWithCase(index,provisional,previous),this.context).find(item=>item.id===input.id);
     if(!view||view.currentness!=='current'){
       // The refusal and its strictness do not change; the message bounds an otherwise unbounded reason list and names the legal next step.
@@ -149,12 +187,12 @@ export class CaseBoard extends LedgerBoard{
     if(input.duplicateOf&&!input.rootCauseKey)throw Error('Uncertain root cause cannot be merged; use relatedCaseIds');
   }
   private async write(make:()=>{draft:CaseDraft;revision:number;previous?:CaseEntry},request?:MutationRequest):Promise<CaseEntry>{
-    const records=()=>{this.gate();const {draft,revision,previous}=make(),id=draft.id!,at=new Date(this.now()).toISOString(),value={...draft,id,runId:this.runId,revision},recordId=randomUUID();return [{id:recordId,runId:this.runId,at,by:'owner',kind:'note' as const,text:`case ${id}@r${revision}: ${draft.verdict}/${draft.reviewStatus}; owner review, not goal completion`,supersedes:previous?.recordId,refs:[...draft.claimRefs,...draft.independentEvidenceRefs].slice(0,10),data:{case:value}}];};
+    const records=()=>{this.gate();const {draft,revision,previous}=make(),id=draft.id!,at=new Date(this.now()).toISOString(),value={...draft,id,runId:this.runId,revision},recordId=randomUUID();return [{id:recordId,runId:this.runId,at,by:'owner',kind:'note' as const,text:`case ${id}@r${revision}: ${draft.verdict}/${draft.reviewStatus}; owner review, not goal completion`,supersedes:previous?.recordId,refs:[...(draft.claimRefs??[]),...draft.independentEvidenceRefs].slice(0,10),data:{case:value}}];};
     const acks=request?await appendGeneratedRecords(this.path,records,request):await appendRecords(this.path,records()),index=await readLedger(this.path,this.runId),row=index.byId.get(acks[0].recordId);if(!index.complete||!row?.data?.case)throw Error('Case ACK retained but detail unavailable; inspect without replay');return validateStoredCase(row.data.case,row.id!);
   }
   private async retained(request:MutationRequest|undefined):Promise<CaseEntry|undefined>{if(!request)return;const acks=await readGeneratedRecords(this.path,request);if(!acks)return;const index=await readLedger(this.path,this.runId),row=index.byId.get(acks[0].recordId);if(!index.complete||!row?.data?.case)throw Error('Retained case ACK detail unavailable');return validateStoredCase(row.data.case,row.id!);}
-  async create(value:CaseDraft,request?:MutationRequest):Promise<CaseEntry>{const input=validateCaseDraft(value),bound=request?boundCaseRequest('create',value,request):undefined,prior=await this.retained(bound);if(prior)return prior;return this.mutate(async(index,cases)=>{const id=input.id??`case-${randomUUID()}`,draft=this.pin({...input,id},index);if(cases.some(entry=>entry.id===id))throw Error('Duplicate case identity');if(cases.filter(entry=>!terminalReview.has(entry.reviewStatus)).length>=100)throw Error('Live case frontier limit reached (100)');if(draft.reviewStatus!=='pending')throw Error('Create a pending case; acceptance/dispute/withdrawal needs an explicit revision');this.references(draft,index,cases);return this.write(()=>({draft,revision:1}),bound);});}
-  async revise(id:string,revision:number,value:CaseDraft,request?:MutationRequest):Promise<CaseEntry>{const input=validateCaseDraft(value),bound=request?boundCaseRequest('revise',value,request,id,revision):undefined,prior=await this.retained(bound);if(prior)return prior;return this.mutate(async(index,cases)=>{const old=cases.find(entry=>entry.id===id);if(!old||old.revision!==revision)throw Error('Missing or stale case revision');if(input.id&&input.id!==id)throw Error('Cannot change case identity');const draft=this.pin({...input,id},index),allowed:Record<string,string[]>={pending:['pending','accepted','disputed','withdrawn'],accepted:['pending','accepted','disputed','withdrawn'],disputed:['pending','disputed','withdrawn'],withdrawn:[]};if(!allowed[old.reviewStatus].includes(draft.reviewStatus))throw Error('Invalid case review transition');this.references(draft,index,cases);this.acceptance(draft,index,cases,old);return this.write(()=>({draft,revision:old.revision+1,previous:old}),bound);});}
+  async create(value:CaseDraft,request?:MutationRequest):Promise<CaseEntry>{const input=validateCaseDraft(value),bound=request?boundCaseRequest('create',value,request):undefined,prior=await this.retained(bound);if(prior)return prior;return this.mutate(async(index,cases)=>{const id=input.id??`case-${randomUUID()}`,draft=this.deriveRefs(this.pin({...input,id},index),index);if(cases.some(entry=>entry.id===id))throw Error('Duplicate case identity');if(cases.filter(entry=>!terminalReview.has(entry.reviewStatus)).length>=100)throw Error('Live case frontier limit reached (100)');if(draft.reviewStatus!=='pending')throw Error('Create a pending case; acceptance/dispute/withdrawal needs an explicit revision');this.references(draft,index,cases);return this.write(()=>({draft,revision:1}),bound);});}
+  async revise(id:string,revision:number,value:CaseDraft,request?:MutationRequest):Promise<CaseEntry>{const input=validateCaseDraft(value),bound=request?boundCaseRequest('revise',value,request,id,revision):undefined,prior=await this.retained(bound);if(prior)return prior;return this.mutate(async(index,cases)=>{const old=cases.find(entry=>entry.id===id);if(!old||old.revision!==revision)throw Error('Missing or stale case revision');if(input.id&&input.id!==id)throw Error('Cannot change case identity');const draft=this.deriveRefs(this.pin({...input,id},index),index),allowed:Record<string,string[]>={pending:['pending','accepted','disputed','withdrawn'],accepted:['pending','accepted','disputed','withdrawn'],disputed:['pending','disputed','withdrawn'],withdrawn:[]};if(!allowed[old.reviewStatus].includes(draft.reviewStatus))throw Error('Invalid case review transition');this.references(draft,index,cases);this.acceptance(draft,index,cases,old);return this.write(()=>({draft,revision:old.revision+1,previous:old}),bound);});}
   /**
    * Owner rating of an existing case, recorded against the exact case revision as a separate note. Verdict, review status and revision are untouched, so
    * coverage cells that pin the case stay current. A case on an inferred policy basis cannot be rated above medium; reproduction evidence must be same-run.
@@ -169,8 +207,7 @@ export class CaseBoard extends LedgerBoard{
       if(entry.reviewStatus==='withdrawn')throw Error('A withdrawn case cannot be rated');
       for(const ref of finding.reproductionEvidenceRefs)if(index.byId.get(ref)?.kind!=='evidence'||index.byId.get(ref)?.runId!==this.runId)throw Error(`Unknown same-run reproduction evidence ${ref}`);
       // A chain step may cite the candidate record id or its slug: the join and the rating must speak one language (P13a).
-      const chainClaim=(ref:string)=>{const direct=index.byId.get(ref);if(direct?.kind==='candidate'&&direct.runId===this.runId)return direct;
-        return index.records.filter(row=>row.kind==='candidate'&&row.runId===this.runId&&row.data?.candidate===ref).at(-1);};
+      const chainClaim=(ref:string)=>candidateByReference(index,this.runId,ref);
       for(const step of finding.chain?.steps??[])if(step.claimRef&&!chainClaim(step.claimRef))throw Error(`Unknown same-run chain claim ${step.claimRef}`);
       if(finding.chain?.demonstratedThrough)for(const step of finding.chain.steps.slice(0,finding.chain.demonstratedThrough)){const claim=chainClaim(step.claimRef!);
         if(claim?.data?.closure!=='confirmed'||claim?.data?.execution!=='tested')throw Error(`Chain step ${step.order} is recorded as executed but its claim is not a confirmed tested result`);}

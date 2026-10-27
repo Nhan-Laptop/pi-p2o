@@ -21,11 +21,13 @@ export interface CoverageCellDraft {
 }
 export interface CoverageCellEntry extends CoverageCellDraft {id:string;runId:string;revision:number;recordId:string;planId:string;planRevision:number;targetRevision:string;fingerprint:string;retired:boolean}
 const {text,key,id,revision,ids}=fieldValidators('coverage');
-function prose(value:unknown,label:string,max=10):string[]{if(!Array.isArray(value)||value.length>max)throw Error(`Invalid coverage ${label}`);return value.map(item=>text(item,label,500,5));}
+function prose(value:unknown,label:string,max=10):string[]{if(value===undefined)return[];if(!Array.isArray(value)||value.length>max)throw Error(`Invalid coverage ${label}`);return value.map(item=>text(item,label,500,5));}
 
 export function validateCoveragePlanDraft(value:unknown):CoveragePlanDraft{
-  const row=plain(value,'coverage plan');exact(row,['id','title','status','reason','exclusions','unknownScope'],'Coverage plan');if(typeof row.status!=='string'||!(COVERAGE_PLAN_STATUS as readonly string[]).includes(row.status))throw Error('Invalid coverage plan status');
-  const result:CoveragePlanDraft={title:text(row.title,'plan title',500,5),status:row.status as CoveragePlanStatus,reason:text(row.reason,'plan reason',1500,10),exclusions:prose(row.exclusions,'plan exclusion'),unknownScope:prose(row.unknownScope,'unknown scope')};if(row.id!==undefined)result.id=id(row.id,'plan ID');return result;
+  const row=plain(value,'coverage plan');exact(row,['id','title','status','reason','exclusions','unknownScope'],'Coverage plan');
+  // P10/TR-L06: an omitted scope/status is stated honestly by the host, never invented: draft is not reviewed, empty lists are empty.
+  const status=row.status===undefined?'draft':row.status;if(typeof status!=='string'||!(COVERAGE_PLAN_STATUS as readonly string[]).includes(status))throw Error('Invalid coverage plan status');
+  const result:CoveragePlanDraft={title:text(row.title,'plan title',500,5),status:status as CoveragePlanStatus,reason:text(row.reason,'plan reason',1500,10),exclusions:prose(row.exclusions,'plan exclusion'),unknownScope:prose(row.unknownScope,'unknown scope')};if(row.id!==undefined)result.id=id(row.id,'plan ID');return result;
 }
 export function validateStoredCoveragePlan(value:unknown,recordId:string):CoveragePlanEntry{
   const row=plain(value,'stored coverage plan'),{runId,revision:rev,targetRevision,cellIds,derivation,...input}=row,plan=validateCoveragePlanDraft(input);if(!plan.id)throw Error('Stored coverage plan needs an ID');

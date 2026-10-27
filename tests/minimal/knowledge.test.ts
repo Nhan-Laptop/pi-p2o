@@ -34,6 +34,15 @@ describe('approved knowledge', () => {
     await expect(library.read('/etc/passwd')).rejects.toThrow('Unknown document');
     await expect(library.read('source-code-auditing', -1)).rejects.toThrow();
   });
+  it('inlines the default recon playbook whole at the 24 KiB page (P9)', async () => {
+    // P9 raised the inline page from 8 KiB to 24 KiB: attack-surface-mapping/SKILL.md is 8,591 bytes, so before the change
+    // every default recon worker started on a truncated playbook while its brief said the skills were already loaded.
+    const library = new SkillLibrary(ROOT);
+    const page = await library.read('attack-surface-mapping');
+    expect(Buffer.byteLength(page.text)).toBeGreaterThan(8 * 1024);
+    expect(page.nextOffset).toBeUndefined();
+  });
+
   it('rejects symlinks, special files, escapes and oversized input; pagination is byte-bounded', async () => {
     const root = await mkdtemp(join(tmpdir(), 'p2o-knowledge-'));
     try {

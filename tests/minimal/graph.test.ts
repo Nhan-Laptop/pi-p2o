@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { describe, expect, it } from 'vitest';
 import { AssessmentStore, type StoreManifest } from '../../src/state/store.js';
 import type { AssessmentRecord } from '../../src/records.js';
-import { GRAPH_RESPONSE_BYTES, applyGraphEvents } from '../../src/state/graph.js';
+import { GRAPH_RESPONSE_BYTES, applyGraphEvents, graphCeilings } from '../../src/state/graph.js';
 import { graphParameters } from '../../src/state/graph-tool.js';
 
 const manifest = (runId: string, targetIdentity = 'fixture-target'): StoreManifest => ({ runId, retention: 'durable-local', targetKind: 'directory',
@@ -25,6 +25,22 @@ describe('asset/fact/hypothesis graph (K3, canonical store only)', () => {
     // P14.10 added `plan` and `assetRefs` for the chain-to-draft step; both are root properties for the same reason as the rest.
     expect(graphParameters.type).toBe('object');expect(projected.required).toContain('action');expect(Object.keys(projected.properties)).toEqual(['action','batch','id','requestId','cursor','limit','asOfSequence','plan','assetRefs']);
     expect(projected.properties.batch).toMatchObject({type:'object',additionalProperties:false});expect(projected.properties.action).toMatchObject({type:'string',enum:['record','view','page','export','chain']});
+  });
+  it('scales the run graph ceilings with the configured graphCapacity and refuses a bad capacity (P9/B, Q29)', async () => {
+    // The base ceilings are the library default; the run setting multiplies them so a large engagement grows without a code edit.
+    expect(graphCeilings()).toEqual({ assets: 5000, assertions: 10000, relations: 2000, anchors: 20000, provenance: 40000 });
+    expect(graphCeilings(2)).toEqual({ assets: 10000, assertions: 20000, relations: 4000, anchors: 40000, provenance: 80000 });
+    expect(graphCeilings(4).provenance).toBe(160000);
+    for (const bad of [0, 5, 1.5, Number.NaN]) expect(() => graphCeilings(bad)).toThrow('graphCapacity');
+    const root = await mkdtemp(join(tmpdir(), 'p2o-graph-capacity-'));
+    try {
+      // A library caller that passes no option keeps capacity 1, so direct store users see exactly the old ceilings.
+      const base = AssessmentStore.create(root, manifest('run-capacity'));
+      try { expect(base.graphCapacity).toBe(1); expect(base.graphLimits.assets).toBe(5000); } finally { base.close(); }
+      const widened = AssessmentStore.open(root, 'run-capacity', { readOnly: false, graphCapacity: 3 });
+      try { expect(widened.graphLimits).toEqual({ assets: 15000, assertions: 30000, relations: 6000, anchors: 60000, provenance: 120000 }); } finally { widened.close(); }
+      expect(() => AssessmentStore.open(root, 'run-capacity', { graphCapacity: 9 })).toThrow('graphCapacity');
+    } finally { await rm(root, { recursive: true, force: true }); }
   });
   it('derives exact-byte identities, converges duplicates and keeps append-only revisions with history', async () => fixture(async (store) => {
     const key = 'GET https://example.com/auth';

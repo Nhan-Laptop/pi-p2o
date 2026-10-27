@@ -39,16 +39,6 @@ export class InertSandbox extends Sandbox {
     const stdout = `HTTP/1.1 200 OK\n${request.method} ${request.url}`; onOutput?.('stdout',Buffer.from(stdout));
     return { code: 0, stdout, stderr: '', truncated: false, hops: [`200 ${request.method} ${request.url}`] };
   }
-  /** planning_update.md P14.8: a research page the test can set, or an error it can throw. */
-  researchPages: Array<{ url: string; body: string; status: string }> = [];
-  researchFailure?: string;
-  override async fetchResearch(url: string) {
-    this.journal({ op: 'fetchResearch', url });
-    if (this.researchFailure) throw new Error(this.researchFailure);
-    const page = this.researchPages.find(entry => entry.url === url);
-    if (!page) throw new Error('no fixture page for this URL');
-    return { status: page.status, sha256: createHash('sha256').update(page.body).digest('hex'), bytes: Buffer.byteLength(page.body), body: page.body, truncated: false };
-  }
   writes: Array<{ path: string; workdir: string; bytes: number; sha256: string; mode: number }> = [];
   override async writeScratch(path: string, bytes: Buffer, _signal?: AbortSignal, workdir = '/work', mode = 0o500) {
     const sha256 = createHash('sha256').update(bytes).digest('hex');

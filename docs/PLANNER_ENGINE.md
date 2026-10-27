@@ -13,7 +13,8 @@ Architecture overview: [ARCHITECTURE.md](ARCHITECTURE.md). This page is the oper
 - Defaults are manual + shared. Without Herdr there is no worker backend: target work is blocked, the planner reports
 the blocked prerequisite instead of taking over, and event-driven is rejected.
 - `--workers N` is a positive integer cap on concurrent model slots. `--target-ops N` is a separate target-operation
-  shared always 1; isolated multiplies resources. `--max-depth` is kept for compatibility only: workers
+  cap: `shared` defaults to 1 and an explicit N in shared mode lifts that serial queue (recorded in the run); isolated
+  multiplies resources. `--max-depth` is kept for compatibility only: workers
   propose tasks, they never spawn children.
 - Settings live under `p2o` in `~/.pi/agent/settings.json`: `maxWorkers`, `loopMode`, `executorMode`,
   `maxTargetOperations`, `roles.<role>.model` (full list in [USAGE](USAGE.md)). Bad settings fall
@@ -48,6 +49,16 @@ worker for each dispatched intent. A failed launch drops the attempt and records
 decision. A terminal report frees capacity only after verified retirement; new assignments get new identities and
 renew nothing, because there is no command allowance to renew (owner decision 2026-10-24). `p2o_loop wait` ends a round, not the assessment; `blocked` pauses admission and wakes.
 `/p2o pause` leaves admitted workers running; `/p2o stop` revokes them.
+
+The dispatch queue keeps an accepted intent until capacity and reviewed prerequisites allow, up to 100 queued intents (P9/B), and
+launches in priority then insertion order. A queued intent survives a `revise` that keeps its identity — question, role,
+expected true/false, stop condition, work fingerprint or overlap key, claim/asset refs, prerequisites, parent/validation/retest
+links, method skills and workflow — so only its revision number follows the edit; a revision that changes any of those, or a
+task that stops being `proposed`, invalidates the queued entry and needs a new explicit dispatch. `p2o_finish` without `export`
+is refused while a queued intent remains (`INTENTS_QUEUED`): it names each entry as `taskId@rN (reason)` plus the omitted count
+and never drains the queue; `p2o_finish {export:true}` is unaffected. A pane-cleanup uncertainty while reaping workers records one
+`PANE_REAP_UNVERIFIED` fact and skips that dispatch round without pausing the campaign — the next kick retries the reaper, so
+accepted intents and semantic events stay live (P10/TR-H11).
 
 ### Intent admission (P1/A2)
 
@@ -91,7 +102,9 @@ Chi tiết bảng suy ra và plan legacy: [case review](CASE_REVIEW.md).
 
 Một goal là một lời hứa về target, không phải một hoạt động. `p2o_plan_create` từ chối goal không có `proof`
 (`GOAL_UNPROVEN: a goal needs proof (capability, case or coverage)`), và `revise` lên `reviewed`/`closed` chỉ thành công khi
-supportRefs cùng tồn tại **và** proof còn đúng. Ba loại proof (`src/goal-proof.ts`):
+proof còn đúng; `supportRefs` không còn là điều kiện thứ hai — khi caller bỏ trống, host ghi đúng refs của proof đã settle
+(claim record cho `capability`, case/plan id cho `case`/`coverage`) và `supportRefs` chấp nhận mọi work record cùng run
+(evidence, candidate, task, plan) (P10/TR-L07, P10/TR-L09). Ba loại proof (`src/goal-proof.ts`):
 
 - `capability` — một claim `confirmed`+`tested` trong run đã gain đúng capability đó;
 - `case` — case cùng run đã `accepted`, `confirmed` và `current` (case `disputed`/`stale` không settle được goal);

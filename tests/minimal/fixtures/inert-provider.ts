@@ -42,7 +42,7 @@ export function registerInertProvider(pi: ExtensionAPI, mode: 'owner' | 'worker'
       if (!system.includes('RECON → INVESTIGATION') || !system.includes('decision note')) throw new Error('recon contract missing');
       const descriptions = getCurrentTools(context.messages);
       if (mode === 'worker' && !descriptions.find(tool => tool.name === 'p2o_shell')?.description.includes('network egress')) throw new Error('shell guidance missing');
-      if (mode === 'worker' && !descriptions.find(tool => tool.name === 'p2o_http')?.description.includes('bounded redirect following')) throw new Error('http guidance missing');
+      if (mode === 'worker' && !descriptions.find(tool => tool.name === 'p2o_http')?.description.includes('redirect following up to maxRedirects')) throw new Error('http guidance missing');
       if (mode === 'worker' && !descriptions.find(tool => tool.name === 'p2o_net')?.description.includes('connect scans')) throw new Error('network tool guidance missing');
       const results = context.messages.filter((message: any) => message.role === 'toolResult');
       const last: any = results.at(-1);

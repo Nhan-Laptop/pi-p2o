@@ -1893,3 +1893,362 @@ fixture was part of the change too: it drove the removed board `match` verb and 
 instead (`tests/minimal/fixtures/inert-provider.ts`, `tests/minimal/work-native.test.ts`). **No commit and no push were
 made** — the repository rule leaves that to the owner, and the pre-existing dirty `AGENTS.md` plus untracked files from
 other sessions were left untouched and unstaged.
+
+# Part IV — P9 proposal: capability audit — where the instrument is stricter than its own authority model, and what to lift
+
+## 27. The question, the scope and the method
+
+The owner's request (2026-10-27): *"analyze are there any existing things strict — make the capabilities of workers/planners
+more weak. I need you improve"*, and on the follow-up: **both axes** — the workflow layer (prompt, skills, flow) and the
+tools-register layer (schema, handler, description). This part is the research; it does not implement anything.
+
+**What "strict" means here.** A rule is a defect when it prevents a role from doing something the run has *already
+authorized*, or when it contradicts another surface that promises the same capability, or when a ceiling is hard-coded
+below what the host already supports. A rule that simply enforces a recorded decision (planner has no target tools, workers
+cannot spawn, coverage is host-derived) is not a defect and is not listed as one. Every finding carries one class:
+
+| class | meaning |
+| --- | --- |
+| **A** | deliberately strict, and it enforces a decision — keep; listed only so the audit is honest |
+| **B** | conservative ceiling: the host supports more than its model surface or handler allows, and no setting exposes it |
+| **C** | inconsistency: two surfaces disagree, or the code defeats its own stated contract (the capability is lost silently) |
+| **D** | missing knob: a hard-coded ceiling with no operator setting, even where the surrounding design already has settings |
+
+**Severity (capability cost)** — high: changes whether an authorized campaign can reach evidence it is entitled to;
+med: repeated friction or lost detail on a normal run; low: ergonomics only.
+
+**Method.** Four read-only sweeps over code *and* its model-facing text: execution surface (target tools, sandbox, HTTP,
+PTY, session), admission/lifecycle (tasks, engine, queue, review, finish), runtime/model/context (roles, skills, context
+packets, prompts), knowledge/record/reporting (cases, coverage, plans, graph, search, artifacts, report). Evidence is
+`file:line` in the working tree at `01144a3`. No model call, no Docker run, no test run, no file changed by the audits.
+Where an effect depends on runtime frequency it is stated as an inference, not measured.
+
+## 28. Headline: the ten constraints that cost the most capability
+
+| # | finding | axis | evidence | class | cost |
+| --- | --- | --- | --- | --- | --- |
+| 1 | The operator's campaign frame stops at the delegation boundary: a worker never sees the stated objective, the `--allow` permissions or the planner's steering; the brief carries only the avoid-list. | WF | `index.ts:735`, `prompts.ts:214-253` | C | high |
+| 2 | Default start (`shared` executor) forces `maxTargetOperations=1`; three workers raise model concurrency, never target throughput. | TR | `index.ts:2973-2974`, `roles.ts:127` | D | high |
+| 3 | Every target command re-verifies the task's pinned asset revisions, so any worker (or sibling) that updates an asset makes its own next command fail `STALE_WORK_REFERENCE`. | TR | `tasks.ts:266-268`, `tasks.ts:420-435` | C | high |
+| 4 | The planner cannot choose a worker's model or thinking; those fields exist only on the hidden `p2o_delegate` schema, and role defaults are hard-coded. | WF | `roles.ts:22-29`, `tool-schemas.ts:179-191`, `tool-policy.ts:56` | D | high |
+| 5 | Case authoring demands two opaque host UUIDs the host already joins internally (asset id and candidate record id) at create time. | TR | `case-types.ts:109,120`, `cases.ts:126-128` | C | high |
+| 6 | Workers are told their skills are "already loaded"; only the first 8 KiB page of each playbook is inlined, and the default recon playbook is 8,591 B. | WF | `skills.ts:12`, `index.ts:669-670`, `prompts.ts:270-274` | C | med-high |
+| 7 | `p2o_research action=fetch` is described as returning "the full body ... no size cap" but the visible text is silently cut at 48 KiB while bytes/sha256 describe the full body. | TR | `index.ts:2110`, `index.ts:2120`, `process.ts:3,82-84` | C | high |
+| 8 | One lingering pane pauses the whole campaign scheduler; any task revision edit drops the queued intent; `p2o_finish` refuses while an intent is queued. | TR | `engine.ts:162-163`, `engine.ts:169-170`, `index.ts:2662` | C | med-high |
+| 9 | Skills are silently sliced to three (the exploit ladder can be cut mid-sequence) and the worker/planner context packets are hard-coded at 8 and 12 KiB against a store default of 20 KiB. | WF | `roles.ts:91,68,196`, `index.ts:3237`, `index.ts:3400` | C/B | med-high |
+| 10 | The coverage plan view cannot be paged: the whole view goes through a 24 KiB `boundedResult` that throws, so a large plan's cells are unreachable. | TR | `index.ts:218,2013-2017` | B | med-high |
+
+## 29. Axis 1 — Workflow: prompt · skills · flow
+
+| ID | capability lost | rule and evidence | cost | class | lift |
+| --- | --- | --- | --- | --- | --- |
+| WF-01 | Worker does not know the operator frame | brief passes `constraints: current.avoid` only (`index.ts:735`); worker prompt adds mode/effects/ingress/secrets (`prompts.ts:230-240`) but not `statedObjective` (`prompts.ts:138`), `--allow` permissions or recorded steering (`prompts.ts:90-95`) | high | C | pass objective + allow + steering to the brief as data lines (guidance, no enforcement change) |
+| WF-02 | Planner cannot pick worker model | hard-coded `ROLE_DEFAULTS` (`roles.ts:22-29`); per-role settings only, no per-task field (`roles.ts:138-175`); `model`/`thinking` only on the hidden delegate schema (`tool-schemas.ts:179-191`) | high | D | optional `model`/`thinking` on the task draft + dispatch |
+| WF-03 | Thinking level is inherited, not chosen | `resolveRole` receives `parentThinking` (`index.ts:656`); no per-task requirement | med | D | same as WF-02 |
+| WF-04 | Skills silently sliced to 3 | `MAX_SKILLS=3` (`roles.ts:91`), slice in `resolveRole` (`roles.ts:196`) and in `exploitationSkills` (`roles.ts:68`); no warning or record when a requested skill is dropped | med-high | C | record a note + surface the dropped ids in the create response, or raise the cap (option B) |
+| WF-05 | Playbooks are one page | `PAGE_BYTES=8 KiB` (`skills.ts:12`); only `page.text` is inlined (`index.ts:669-670`); `skills/attack-surface-mapping/SKILL.md` is 8,591 B; the catalog says "Main documents are inlined" (`prompts.ts:11`) and the brief says "already loaded for you; follow them" (`prompts.ts:270-274`) | med-high | C | 24 KiB page (broker frame is 64 KiB), inline up to N pages, and name the continuation pointer in the brief |
+| WF-06 | Worker context packet 8 KiB | hard-coded `maxBytes:8192` (`index.ts:3237`); store default 20 KiB, max 48 KiB (`store.ts:474`); omitted heads are counted as omitted without being shown | med | B | 20 KiB |
+| WF-07 | Planner context packet 12 KiB | hard-coded `maxBytes:12*1024` (`index.ts:3400`) | low-med | B | 20 KiB |
+| WF-08 | No autonomous planning rounds by default | `loopMode:'manual'` (`roles.ts:127,140`); the planner cannot switch; only the operator can start `--loop event-driven` | med | A | keep — it is the operator's cost decision, and the knob exists |
+| WF-09 | Validation prompt advertises verbs it does not hold | `VALIDATION_TOOL_LINE` lists session `open/list/exec/upload/download/listen/snapshot/close` (`prompts.ts:212`); the host allows `action=open` only (`index.ts:3116`) | med | C | name `open` only in the validation line |
+| WF-10 | Every step is a cold start | one intent, write back, report, stop (`prompts.ts:226,248`); each next step is a new spawn + brief + packet | med-high | A | keep the intent discipline (it is what makes review possible), but see WF-11 |
+| WF-11 | Hold = exactly one continuation | `holdFor` is a single brief (`tool-schemas.ts:221-222`); `consumeHeldContinuation` is one-shot (`index.ts:788`); a second continue is refused (`index.ts:774`) | med | D | `holdContinuations` 0..3, default 1 |
+| WF-12 | Effective caps have no single source | `truth.ts` covers sandbox/network/http/credential/risk only; byte ceilings live per handler/description and six have already drifted (TR-D section) | med | C | one cap block composed into every description/prompt, from the exported constants |
+| WF-13 | Planner prompt omits effective caps and queue semantics | the confirmation dialog states executor caps to the operator (`index.ts:2991`), but the planner prompt only says "read the executor profile" (`prompts.ts:144`); queued-intent invalidation (`engine.ts:169-170`) is in no prompt | low-med | C | add one line: shared executor is serial, queued intents are dropped on a revision edit |
+| WF-14 | Planner cannot author an `open` unresolved row | `PLANNER_TOOLS` has no `p2o_note` (`tool-policy.ts:24-32`) | low-med | A | keep — a plan decision or a task gap carries it |
+| WF-15 | Two claim-join languages | case `claimRefs` takes record UUIDs only (`cases.ts:126`); the chain `claimRef` takes a record id **or** a slug (`cases.ts:172-174`) | med | C | accept a slug in both |
+| WF-16 | Brief objective is an excerpt | task `question` max 1500 (`tool-schemas.ts:24`); a 4000-char delegate task is sliced and the remainder recorded only as an "unknown" (`index.ts:678`) | low-med | B/C | raise the cap or record the full text as a fact |
+| WF-17 | Worker cannot see its own effective runtime | `requestedRuntime` is on the ticket (`index.ts:710`) but the worker prompt renders only the executor profile (`prompts.ts:242`), not its model/thinking or the effective capture cap | low-med | C | add one identity line |
+| WF-18 | Finish preflight shows five ids | `SHOWN=5` (`finish-preflight.ts:44,177`) | low | B | 20 |
+
+## 30. Axis 2 — Tools register: schema · handler · description
+
+### 30.1 Schema ceilings
+
+| ID | ceiling | evidence | cost | class | lift |
+| --- | --- | --- | --- | --- | --- |
+| TR-S01 | artifact read `length` max 8192 | schema `tool-schemas.ts:175`; store default 16 KiB, max 48 KiB (`store.ts:575-576`) | med | B | 48 KiB |
+| TR-S02 | `maxRedirects` max 5 | `tool-schemas.ts:155`; the manual redirect loop honours the number (`sandbox.ts:287`) but `HTTP_TRUTH` promises "any redirect hop" (`truth.ts`) and the guideline repeats it (`tool-guidelines.ts:30`) | med-high | C | default 5, max 20, and make the descriptions agree |
+| TR-S03 | HTTP body 32 KiB, URL 4 KiB, header values 4 KiB | `tool-schemas.ts:152-164` | med | B | knob or raise |
+| TR-S04 | exec command/send 8 KiB | `tool-schemas.ts:125-133` | med | B | knob (session upload exists, so this is friction not a wall) |
+| TR-S05 | session upload 32 KiB | `tool-schemas.ts:139-145`, `index.ts:1387` | med | B | knob |
+| TR-S06 | lab payload 32 KiB | `lab.ts:20` | med | B | knob |
+| TR-S07 | artifact capture 1 MiB default / 8 MiB max, no per-call size | `roles.ts:96,145`, `index.ts:2234` | med | D | optional per-call size bounded by the setting |
+| TR-S08 | ledger page limit 100 and 48 KiB | `records.ts:284-287`, `broker.ts:404` | low-med | A | keep (truncation is honest) |
+| TR-S09 | declared maxima do not match enforced maxima | state `limit` declared 100 (`tool-schemas.ts:18`) but search enforces 20 (`search.ts:13,43`); graph declared 500 (`graph-tool.ts:40`) but view/page enforce 100 (`store.ts:857,893`); dispatch `ids` has no `maxItems` (`board-verbs.ts:67-70`) but the engine requires 1..25 (`engine.ts:123`) | low | C | pin declarations to enforcement |
+| TR-S10 | report summary 4000 / narrative 6000 / item 1000 | `tool-schemas.ts:212-230` | low | A | keep — findings are arrays and the ledger is the long-form store |
+| TR-S11 | worker steering message 2000, continue brief 2000 | `tool-schemas.ts:207-209` | low-med | B | 4000 for a steering sentence that must carry a fact |
+| TR-S12 | loop hint/constrain 300 chars | `tool-schemas.ts:197` | low | B | keep — it is one sentence by design |
+
+### 30.2 Handler caps and silent clipping
+
+| ID | cap / behaviour | evidence | cost | class | lift |
+| --- | --- | --- | --- | --- | --- |
+| TR-H01 | research fetch text cut at 48 KiB (description says full body, no cap) | `index.ts:2110` vs `index.ts:2120` + `process.ts:3,82-84`; `bytes`/`sha256` are computed before the cut (`index.ts:1607-1609`) | high | C | when the body exceeds the cap, save it as an artifact and return the artifact id plus a head, or state the cap; never return a count that does not match the text |
+| TR-H02 | coverage plan view unpaged, 24 KiB throw | `boundedResult` (`index.ts:218`) used at `index.ts:2013-2017` | med-high | B | cursor/limit over cells instead of a throw |
+| TR-H03 | research `web=true` fetches only the top 2 hits | `index.ts:1692` | med | B | `min(limit,5)` |
+| TR-H04 | listener callback log keeps the first 400 B | `index.ts:1437` (`data[:400]`), `index.ts:1458` (`tail -c 400`) | med | B | 4-8 KiB |
+| TR-H05 | PTY send/read wait clamped to 60 s | `index.ts:2255`; sandbox allows 120 s (`sandbox.ts:349,374`) | med | B | 120 s |
+| TR-H06 | lab environment healthcheck waits 10 s | 20 polls x 0.5 s (`lab.ts:139,323-325`) | med | B | 60 polls |
+| TR-H07 | receipt excerpt 16 KiB stdout / 4 KiB stderr / 2000 B input | `evidence.ts:61` | low-med | A | keep — the capture artifact is the reproduction record |
+| TR-H08 | graph entity ceilings hard-coded | 5000 asset revisions, 10000 assertions, 2000 relations, 20000 anchors, 40000 provenance (`graph.ts:13-21`) | med-high | D | operator knob with raised ceilings |
+| TR-H09 | shared executor forces target ops = 1 | `index.ts:2973-2974`; the settings default is 3 (`roles.ts:127,142`) and becomes dead in shared mode | high | D/A | isolated default, or allow `shared --target-ops N` with the serial guarantee removed by explicit choice |
+| TR-H10 | stale asset revision re-checked on every command | pinned at admission (`tasks.ts:266-268`) and re-verified per assignment (`tasks.ts:420-435`, `tasks.ts:480-486`) | high | C | verify at reserve time and on an explicit re-pin request; a body change should warn, not freeze |
+| TR-H11 | engine pauses the campaign on reap failure | `engine.ts:162-163` (`deps.reap()` false -> pause) | med-high | C | pause only capacity, keep pumping other work; surface the unverified pane as a fact |
+| TR-H12 | queued intent invalidated by any revision change; finish refuses while queued | `engine.ts:169-170`; `index.ts:2662` | med-high | C | status-only revisions keep the queue; finish lists the pending intents or drains them |
+| TR-H13 | graph slice for the worker brief fails silently | `graphSlice` catches and returns `[]` (`index.ts:871-884`) | low | C | record one lifecycle fact when the slice is unavailable |
+| TR-H14 | secret placeholder only as a standalone shell word or HTTP value | `identity.ts:189-251` | med | B | keep the substitution strict; the worker prompt already states the exact forms (`prompts.ts:239`) |
+| TR-H15 | live frontier caps: 100 cases, 10 coverage plans | `cases.ts:156`, `coverage.ts:171` | low | B | raise, or report remaining |
+| TR-H16 | broker line frame 64 KiB | `broker.ts:21` | low-med | A | keep — every surface cap above is lower |
+
+### 30.3 Description vs code (the contradiction set)
+
+| ID | claim | reality | cost | class | lift |
+| --- | --- | --- | --- | --- | --- |
+| TR-D01 | research returns "the full body ... no size cap" (`index.ts:2110`) | 48 KiB visible text (`process.ts:3,82-84`) | high | C | fix the text, or return the artifact (TR-H01) |
+| TR-D02 | artifact "default/max 8 KiB" (`index.ts:2413`) | store default 16 KiB, max 48 KiB (`store.ts:575-576`) | med | C | make both say 48 KiB |
+| TR-D03 | HTTP "Curl transfer limit 8 MiB" (`index.ts:2354`) and "bounded redirect following" | no `--max-filesize` in the curl args (`sandbox.ts:286-287`); `HTTP_TRUTH` says any redirect hop | med | C | delete the 8 MiB claim; state the real redirect default/max |
+| TR-D04 | `p2o_net` "keep assessment traffic to the human-confirmed target ... Scope is agent policy" (`index.ts:2283`) | Part XI: the target is a label, not a boundary (`prompts.ts:121`, `truth.ts NETWORK_TRUTH`) | med | C | reword to the Part XI sentence |
+| TR-D05 | `p2o_state` says "titles" are searchable (`index.ts:1888`) | `data.title` is indexed (`search.ts:15,30`) but no writer sets it | low | C | drop the word, or index case/plan titles |
+| TR-D06 | `p2o_graph` says "hypotheses/relations are owner work" (`index.ts:2427`) | no per-kind role check on the worker record path (`index.ts:2454`, `store.ts:746-776`) | low-med | C | enforce it, or say "workers write assets/facts/anchors; hypotheses and relations are guidance" |
+| TR-D07 | catalog "Main documents are inlined" (`prompts.ts:11`) | only the first page (`index.ts:669`) | med | C | see WF-05 |
+| TR-D08 | worker prompt "the artifact (up to 8 MiB)" (`prompts.ts:18`) | default capture is 1 MiB (`roles.ts:96`) | med | C | state the effective cap from settings |
+| TR-D09 | a narrower research fetch exists | `fetchResearch` is https-only, 32 KiB, 20 s (`sandbox.ts:233-251`) and production-dead; `RESEARCH_PAGE_BYTES` is exported unused (`research.ts:18`) | low | A | delete both in the cleanup pass, so an old policy cannot be revived by accident |
+
+### 30.4 Admission and lifecycle
+
+| ID | constraint | evidence | cost | class | lift |
+| --- | --- | --- | --- | --- | --- |
+| TR-L01 | case create needs two opaque host ids | `assetRefs` min 1 `asset-[a-f0-9]{24}` and `claimRefs` min 1 candidate UUID (`case-types.ts:109,120`, `cases.ts:126-128`); coverage already joins reviewed claims and pins revisions (`coverage.ts:75-78,107-113`, `cases.ts:121`) | high | C | derive both from `taskRefs`, or accept the candidate slug |
+| TR-L02 | assignment conflict is coarse | exact active duplicate refused (`tasks.ts:285`); any surface/risk overlap with unknown identity refused (`tasks.ts:428,498`) even for a method-different mechanism | med | B | allow the overlap when the method differs, recorded as a decision |
+| TR-L03 | purpose lineage refusals | exploitation/chaining need `work.claimRefs` (`tasks.ts:373-414`) | med | A | keep — this is the authority the run recorded |
+| TR-L04 | validation identity must match predecessor | `VALIDATION_IDENTITY_MISMATCH` and pinned prerequisites (`tasks.ts:373-414`) | med | A | keep — the host derives the identity, so the friction is one "omit work" |
+| TR-L05 | create-time constants must be sent | case `reviewStatus` pending-only (`cases.ts:156`), coverage `status` draft/active (`coverage.ts:171`), goal create proposed/active (`planning.ts:176`) | low | C | default on the host when omitted |
+| TR-L06 | required empty fields | task `evidenceIds`+`prerequisites` (`tool-schemas.ts:30`), coverage `exclusions`+`unknownScope` (`coverage-types.ts:28`), case `remediation{status,reason>=10,evidenceRefs}` (`case-tool.ts:133`) | low | C | default `[]` / `unplanned` |
+| TR-L07 | goal close needs `supportRefs` even when proof is a case or coverage plan | `planning.ts:183,153`; `goal-proof.ts:33-49` | med | C | let the proof alone settle the status; supportRefs optional |
+| TR-L08 | a todo cannot state criteria | "Only goals define criteria/exclusions" (`planning.ts:114`, `work-tool.ts:29`) | med | C | allow criteria/exclusions on todos |
+| TR-L09 | support refs are evidence-only | plan support must be same-run evidence (`planning.ts:153`); candidates only as `claimRefs` on todos (`planning.ts:83`) | med | C | widen to candidate/plan/task record ids |
+| TR-L10 | preflight lists five ids | `finish-preflight.ts:44,177` | low | B | 20 |
+
+## 31. What is deliberately strict and must stay
+
+This is the audit's anchor; lifting anything below would be an authority change, not a capability fix.
+
+- Planner holds no target/lab/claim/surface/report tools (`tool-policy.ts:14,24-32`); the planner plans, reviews and proves.
+- Workers cannot spawn or dispatch (`index.ts:3251`, `tool-policy.ts:34-38`); a worker may only request an unaccepted subtask.
+- Worker is the only claim author; a confirmed claim carries a host-stamped task ref (`index.ts:2130-2133`).
+- `p2o_delegate` and `p2o_task_start` stay hidden (`tool-policy.ts:56`).
+- Coverage cells remain host-derived; no role holds a cell writer (`tool-policy.ts:21`).
+- Review is not proof (`tool-guidelines.ts:10`); receipts are observations (`prompts.ts:20`).
+- Validation loses `p2o_surface` and gets `p2o_session action=open` only.
+- Reporter is read-only (`tool-policy.ts:48`, `prompts.ts:182-200`).
+- Secrets are list-only; a value never crosses `p2o_secret` (`tool-schemas.ts:148`).
+- A CVE lead never confirms a claim (`tool-guidelines.ts:31`).
+- Case create is pending-only; host-bound owner attribution (`cases.ts:109`).
+- The report is deterministic and authoritative; the planner only narrates.
+- Part XI unchanged: the target is a starting label, not an egress boundary; citation fetch has no allowlist and no response cap.
+
+## 32. Options (each with what it buys and what it costs)
+
+**Option A — truth and plumbing (recommended first).**
+Fix the contradiction set (TR-D01..D08), return over-cap research bodies as artifacts (TR-H01), and lift only the ceilings
+that sit below what the host already supports: artifact read 8->48 KiB, skill page 8->24 KiB, worker packet 8->20 KiB,
+planner packet 12->20 KiB, PTY wait 60->120 s, listener log 400 B->8 KiB, environment verify 10->30 s, research web
+top-2->min(limit,5), redirect max 5->20 with honest text, pin declared maxima to enforced ones (TR-S09). Workflow side:
+the brief carries the stated objective, `--allow` lines and steering (WF-01), the worker prompt states its effective
+runtime and capture cap (WF-17), the validation tool line names `open` only (WF-09), and a sliced skill list records a
+warning (WF-04). Delete the dead narrow fetch path (TR-D09). No authority change, no new setting, ~10 files plus tests.
+*Trade-off:* removes the lies and the cheap friction, but the four high-cost behavioural items (serial executor, per-command
+re-stale, engine pause/queue loss, case refs) remain; a campaign still pays them.
+
+**Option B — ceilings become operator settings.**
+Turn the hard-coded ceilings that a real engagement can hit into settings with raised defaults: HTTP body/URL/redirects,
+session upload, lab payload, artifact read, skill page, receipt excerpt, graph entity ceilings (TR-H08), ledger page,
+research pages, preflight shown. Each gets a clamp, a docs row in `docs/USAGE.md` and a pinning test. *Trade-off:* the
+configuration surface grows by roughly ten knobs, and each knob is a new compatibility promise; it also does not fix a
+contradiction by itself, so A is still required. Better as a second pass driven by observed need than as a first move.
+
+**Option C — scheduler and authoring pass (needs your sign-off).**
+Behavioural fixes that buy the most capability: shared/isolated default (TR-H09), stale check at reserve only (TR-H10),
+engine keeps pumping when one pane lingers (TR-H11), the queue survives a status-only revise and finish drains or lists
+pending intents (TR-H12), `holdContinuations` (WF-11), per-task model/thinking (WF-02/WF-03), host-derived case refs
+(TR-L01), paged coverage view (TR-H02), wider search, reporter board read, goal proof settles close (TR-L07), todo criteria
+(TR-L08), conflict granularity (TR-L02), and the search/creation constants defaulted (TR-L05/L06). These touch
+`engine.ts`, `tasks.ts`, `cases.ts`, `coverage.ts`, `planning.ts`, `tool-policy.ts` and the tool schemas; each item is small
+but they change invariants the current tests pin, so they need decisions and a dedicated test pass. *Trade-off:* highest
+capability gain and highest review cost; three of the items (executor default, stale semantics, finish semantics) are
+operator-visible behaviour changes, not bug fixes.
+
+**Recommended sequence:** A now (a day, no decisions needed beyond wording), then C's scheduler half as P10, and B only
+where a run actually hits a ceiling (artifact read and graph ceilings first).
+
+## 33. Open questions for the owner (Q26-Q32)
+
+- **Q26.** Is `shared` + serial the intended default, or should a new run default to `isolated`? (TR-H09)
+- **Q27.** Should a worker receive the operator's objective, `--allow` lines and steering verbatim (as data), or a derived
+  one-line campaign summary? Verbatim is more faithful and longer; derived is cheaper and loses the operator's words. (WF-01)
+- **Q28.** Should the planner be able to choose a worker's model/thinking per task (cost/quality control), or stay with
+  per-role settings? (WF-02)
+- **Q29.** Graph ceilings: raise the hard caps, expose a setting, or add a prune/archive path? (TR-H08)
+- **Q30.** Case create: derive asset/claim refs from `taskRefs` (host joins reviewed claims already), or keep both explicit
+  and only accept the candidate slug? (TR-L01)
+- **Q31.** Skill slice: warn only, or raise `MAX_SKILLS` to 5? (WF-04)
+- **Q32.** Finish with queued intents: keep the refusal, list them, or drain them? (TR-H12)
+
+## Appendix J - traceability: finding -> option
+
+| finding group | option |
+| --- | --- |
+| TR-D01..D08, TR-S09, TR-H01, TR-H03..H06, WF-01, WF-04, WF-05, WF-17 | A |
+| TR-S01..S07, TR-H08, TR-L10, WF-06, WF-07 | B |
+| TR-H09..H12, TR-L01, TR-L02, TR-L05..L09, WF-02, WF-03, WF-11 | C |
+| WF-08, WF-10, WF-14, TR-L03, TR-L04, TR-H07, TR-S08, TR-S10, TR-H16 | keep |
+
+## Appendix K - what this part does not claim
+
+It does not claim any of these rules is *unnecessary* — only that its cost is not matched by a recorded decision (class A
+items are the ones that are matched). It does not measure how often a run hits a given refusal; the sweeps are static. It
+does not propose widening target authority, scope, or the egress model of Part XI. And it does not implement anything:
+`planning_update.md` is the only file this pass touches.
+
+## Appendix L - P9 implementation record (2026-10-27)
+
+Option A of Part IV was implemented on 2026-10-27, without widening authority: the planner still holds no target/lab/claim
+tool, workers still cannot spawn or dispatch, coverage stays host-derived, review is not proof, and the citation fetch stays
+host-side with no allowlist and no response-size cap (Part XI). A worked example of what changed, by axis:
+
+**Workflow layer (prompt · skills · flow).** `KNOWLEDGE_CATALOG` now states the real 24 KiB page and that a longer document
+continues via `nextOffset`; `EVIDENCE_CEILING` says the configured capture cap (default 1 MiB) instead of a hard-coded
+8 MiB; the validation loadout line limits `p2o_session` to `action=open`; `workerBrief` accepts optional
+`hints/objective/permissions` and renders `OPERATOR OBJECTIVE/PERMISSIONS/CONSTRAINTS/HINTS` before `TASK:`; a worker who
+was given a task now receives the operator's own stated objective, allow lines and mid-run steering as data (WF-01);
+`workerInstructions` prints `Capture cap:` and `Requested runtime:` only when the ticket carries them, so legacy tickets
+render byte-identically; the ticket gains the validated `captureKiB` field; and a requested skill list sliced by
+`MAX_SKILLS` now leaves a lifecycle note naming requested vs delivered (WF-04).
+
+**Tools-register layer (schema · handler · description).** Artifact read ceiling 8 KiB -> 48 KiB in the schema, the host
+check and the description; `p2o_http` `maxRedirects` 5 -> 20 (schema, host, description; default stays 3); task dispatch
+declares its real `1..25` id batch; `p2o_state` search reaches 100; `p2o_research action=fetch` keeps the uncapped fetch but
+retains a body larger than the 8 KiB inline head as a same-run `research-fetch` artifact and returns its id; the web lookup
+fetches `min(limit, 5)` pages instead of the top two; `p2o_net`, `p2o_http`, `p2o_graph`, `p2o_artifact` and `p2o_state`
+descriptions were corrected against the code; dead code that contradicted Part XI was deleted (`Sandbox.fetchResearch`,
+`RESEARCH_PAGE_BYTES`, its inert-sandbox override); lab environment polling waits 30 s; PTY wait clamps at 120 s; listener
+logs keep an 8 KiB tail; worker and planner context packets are 20 KiB; finish preflight shows 20 rows.
+
+Gates, run on the working tree (nothing committed or pushed): `npm run typecheck`, `npm run build` and `npm run check:build`
+clean; `git diff --check` clean for every file of this pass (the pre-existing `AGENTS.md` edit still carries its own trailing
+whitespace and was left untouched); full `npx vitest run` 1,038 passed / 12 skipped in 6 skipped files, no failures. The new
+pins are listed in `docs/ACCEPTANCE_MATRIX.md` under "P9/A9".
+
+Owner decisions this pass relied on: scope = Option A (fix contradictions and lift the cheap caps); Q26 for the future P10
+scheduler pass = keep `shared` as the default executor and add `--target-ops N`; P8.2's behavioural half stays closed by
+Part XI. Deferred to their own passes: Q26/P10 scheduler work, the graph/artifact store ceiling raises (the graph half was
+taken by P9/B, Appendix M), stale/finish semantics and per-task model/thinking (Option C). The other files in the working tree (`AGENTS.md`, `Claude outputs/`,
+`pi-p2o-defense-vi.pptx`) predate this pass and are not part of it.
+
+## Appendix M - P9/B implementation record (2026-10-27)
+
+Option B of Part IV was implemented the same day under two owner decisions: the remaining request ceilings are **raised
+constants**, not new settings; the graph ceilings are an **operator setting with a raised default** (Q29). Nothing widened
+authority: the sandbox, Part XI and the role loadouts are untouched, and `graphCapacity` only scales how much typed graph
+data one run may retain.
+
+**Request ceilings (TR-S03..07), broker-safe.** exec command 8 -> 32 KiB, PTY send 8 -> 16 KiB, session upload 32 -> 48 KiB,
+HTTP body 32 -> 48 KiB, HTTP URL 4096 -> 8192 characters, request headers 8 -> 16 KiB total and 4 -> 8 KiB per value, lab
+payload 32 -> 48 KiB. The schema maximum, the handler check and the broker frame now agree, so a declaration cannot accept a
+value the transport will reject; the broker's own exec/PTY checks were raised with the schema instead of being left behind.
+`p2o_capture` gained `maxKiB`, a per-call bound that can only lower the run's `artifactCaptureKiB`: the owner clamps it in
+the handler, and a worker request is clamped again by the owner-side broker handler before the capture runs.
+
+**Graph capacity (TR-H08, Q29).** New `p2o.graphCapacity` setting, integer 1..4, default 2, parsed with the usual
+fallback; it multiplies the five hard ceilings (assets, assertions, relations, anchors, provenance) and is read when the
+store opens, so a resumed run gets the current setting. `AssessmentStore` exposes `graphCapacity`/`graphLimits` and refuses a
+bad capacity before touching the database; a library caller that opens a store without the option keeps capacity 1, so
+direct store users keep the old ceilings. The capacity error stays honest and no prune path was added.
+
+**Truth.** `docs/USAGE.md` (setting row plus the capture per-call note), `docs/HTTP_TRANSPORT.md`, `docs/STATE_STORE.md`,
+`docs/ASSET_GRAPH.md`, `docs/SKILL_RUNTIME.md`, `README.md`, and the stale `docs/CONTEXT_PACKETS.md` packet sizes left over
+from P9/A (Planner/Worker 20 KiB) now state the numbers the code enforces; the `p2o_http`, `p2o_lab` and `p2o_capture`
+descriptions state the new limits too.
+
+Gates on the working tree (nothing committed or pushed): `npm run typecheck`, `npm run build` and `npm run check:build`
+clean; full `npx vitest run` 1,041 passed / 12 skipped in 6 skipped files, no failures; `git diff --check` clean for every
+file of this pass. The matrix rows live in `docs/ACCEPTANCE_MATRIX.md` under "P9/B". Two boundary tests were retargeted to the
+new numbers on purpose (`broker.test.ts` oversized command/body, `sandbox.test.ts` URL length), and the new pins are the P9/B
+schema test, the per-call capture test and the graph-capacity store test.
+
+Still open, unchanged by this pass: Q26/P10 scheduler work (owner chose to keep `shared` as the default and allow
+`--target-ops N`), Option C semantics (stale check, engine pause/queue, finish with queued intents, per-task
+model/thinking, host-derived case refs), and the artifact-store ceiling itself — the TR-S07 lift added the per-call bound,
+while the 8 MiB store maximum was not raised. Working-tree files that predate both passes (`AGENTS.md`,
+`Claude outputs/`, `pi-p2o-defense-vi.pptx`) remain untouched.
+
+## Appendix N - P10 implementation record (2026-10-27)
+
+**Option C** of Part IV was implemented the same day, on top of P9/A and P9/B, under the owner's instruction to do the
+**whole** option ("Toàn bộ Option C"), not a subset: the scheduler/executor/queue half (TR-H09..H12, WF-11, WF-02/03, WF-13,
+TR-L02) and the authoring half (TR-L01, TR-L05..L09, TR-H02). Nothing widened authority: the planner still holds no
+target/lab/claim tool, workers still cannot spawn or dispatch, coverage still has no model cell writer (host-derived only),
+review is still not proof, finish still has no gate, and the citation fetch stays host-side with no allowlist and no response
+cap (Part XI). What changed is information and legal paths: the queue keeps an accepted intent across identity-preserving
+revisions, an explicit `--target-ops N` lifts the shared serial queue and is recorded, a held worker can be continued more
+than once, a per-task runtime is validated instead of inferred, and the authoring verbs stop demanding fields the host can
+derive.
+
+**Scheduler, executor and queue.** `src/sandbox.ts` gains an opt-in `concurrentOperations` bound and a per-target queue used
+by `exec`/`captureScratch`/`http` (provision/write/cleanup stay serial); `extensions/p2o/index.ts` resolves the effective cap
+as explicit CLI → stored profile → default (shared default stays 1), records one `executor profile: shared executor with an
+explicit target-operation cap of N; the default serial guarantee was removed by the operator (--target-ops N)` lifecycle line
+only for that explicit choice, and the confirmation says the same. `src/engine.ts` drains accepted intents against a stable
+identity (`intentIdentity`) instead of any revision change, records one `PANE_REAP_UNVERIFIED` backpressure fact and skips the
+round when a pane reap is unverified instead of pausing the campaign, and a final finish still refuses with `INTENTS_QUEUED`,
+naming each queued intent and the omitted count (it never drains the queue). `src/tasks.ts` makes `assertReady` a structural
+check and records one `STALE_WORK_REFERENCE` warning per drifted (task, asset, pinned revision) rather than freezing the
+worker; admission still pins and refuses. `src/broker.ts`/`src/tool-schemas.ts` add `holdContinuations` 0..3 (default 1) so
+one hold can authorize several briefs: a held worker may report until its first continuation is consumed, each `continue`
+spends one, and `0` retires the ticket while the report still names the successor. `src/roles.ts` adds
+`allowedWorkerModels`/`validateTaskRuntime`, and `src/tasks.ts`/`src/tool-schemas.ts`/`src/board-verbs.ts`/`extensions/p2o`
+carry an optional `runtime:{model,thinking}` on the task draft plus a one-dispatch `model`/`thinking` override, validated
+against the configured role models and `THINKING_LEVELS` (`MODEL_UNAVAILABLE`/`THINKING_INVALID` with legalNext); a held
+ticket keeps the runtime it started with (`RUNTIME_FIXED`), and the planner prompt lists the configured models only when
+delegation is enabled. `src/prompts.ts` adds the `EXECUTOR AND QUEUE` line (cap, serial default, queue identity, finish
+refusal; no tool names). `src/tasks.ts` also allows a same-surface/risk reservation when both tasks declare different
+`work.methodFamily`, recording `method-different-overlap:<taskId>` on the reserved revision instead of refusing.
+
+**Authoring.** Case creation derives `assetRefs`/`claimRefs` from the cited reviewed `taskRefs` when the caller omits them
+and accepts a candidate record id **or** slug in `claimRefs` (stored resolved), with actionable refusals; a case with no
+`reviewStatus` is `pending` and no `remediation` is recorded honestly as `unplanned` with a fixed reason. A coverage plan
+with no status is a `draft` with empty scope lists, and `p2o_board board=coverage id=<plan>` pages its derived `cells`
+(cursor/limit, `nextCursor`, stable totals) instead of throwing at 24 KiB. A goal created without a status is `active`
+(completion already reads every non-settled goal as open work), a goal may be settled by its proof alone with the host
+recording the demonstrating claim or case/plan id as support, plan `supportRefs` accept same-run evidence, candidate, task,
+plan (and case id/case record id, so the host-written TR-L07 row round-trips), a todo may carry an advisory
+`criteria`/`exclusions` list that never gates completion, and an omitted `evidenceIds`/`prerequisites` on a task draft is
+stored as `[]`. All of it is host-side derivation or defaults: no new authoring authority, and review/acceptance remains as
+strict as before.
+
+**Owner decisions this pass relied on:** scope = the whole Option C; Q26 = keep `shared` as the default executor and honour
+an explicit `--target-ops N` (the serial guarantee is removed only by that explicit choice, and the ledger says so); Q28 =
+per-task and one-dispatch worker model/thinking are allowed and host-validated against the configured set; Q32 = a final
+finish with queued intents keeps refusing and lists them instead of draining; Q30/TR-L01 = derive both case reference lists
+from `taskRefs` **and** accept a candidate slug in `claimRefs`; TR-L05 = created goal defaults `active`; TR-L06 = honest
+defaults; TR-L07 = a settled proof alone may close a goal, with host-recorded proof refs; TR-L08 = todo criteria are
+advisory; TR-L09 = support refs widen to same-run evidence/candidate/task/plan ids; TR-H02 = paged coverage plan view.
+
+**Scope note.** §32's prose also mentions a "wider search" and a "reporter board read", but neither has a §28/§29/§30
+finding id in the traceability list (Appendix J); they appear only inside the Option C prose, so this pass implemented the
+items that do have ids and invented no scope for the two that do not.
+
+Gates on the working tree (nothing committed or pushed): `npm run typecheck`, `npm run build` and `npm run check:build`
+clean; `git diff --check` clean for every file of this pass (the pre-existing `AGENTS.md` edit still carries its own trailing
+whitespace and was left untouched); full `npx vitest run` 1,069 passed / 12 skipped in 6 skipped files (124 files), no
+failures. The new pins are listed in `docs/ACCEPTANCE_MATRIX.md` under "P10/C"; one stale citation (the renamed
+`engine.test.ts` queue test) was updated in the same pass. Boundary tests retargeted on purpose: `frontier.test.ts`,
+`loop.test.ts` and `planning.test.ts` bodies (admission/drift ordering, proof-before-support), and the finish-preflight /
+completion fixtures where the new defaults changed counts.
+
+Not claimed or not done: no target/scope/authority widening of any kind, Part XI unchanged; the artifact-store ceiling
+itself is still not raised (P9/B added only the per-call bound); TR-L07 records the proof support it can derive, it does not
+accept a caller-invented note id as support (TR-L09 stays within same-run work records); the "wider search" and "reporter
+board read" scope above remains unimplemented by design. Working-tree files that predate every pass (`AGENTS.md`,
+`Claude outputs/`, `pi-p2o-defense-vi.pptx`) remain untouched.

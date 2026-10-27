@@ -25,7 +25,7 @@ import { campaignPromptBlock, parseCampaign, type CampaignRecord, type Engagemen
 import type { CaseEffect } from '../cvss.js';
 import { describeKnowledgeRecord, KNOWLEDGE_DOMAINS, type ContextDebt, type KnowledgeIndexSnapshot, type ContextCursor, type ContextItem, type ContextPacket, type KnowledgeDomain, type KnowledgePage } from '../context.js';
 import { anchorEntityId, assetEntityId, assertionEntityId, graphEntityId, relationEntityId, renderGraph, scopeOf, validateAnchor, validateAsset, validateFact, validateHypothesis, validateRelation,
-  graphCanonical, graphObject, validateGraphBatch, GRAPH_IDENTITY_VERSION, GRAPH_ROW_BYTES, GRAPH_RESPONSE_BYTES, GRAPH_ENTITY_LIMIT, GRAPH_ASSERTION_LIMIT, GRAPH_RELATION_LIMIT, GRAPH_ANCHOR_ROWS, GRAPH_PROVENANCE_LIMIT,
+  graphCanonical, graphObject, validateGraphBatch, graphCeilings, GRAPH_IDENTITY_VERSION, GRAPH_ROW_BYTES, GRAPH_RESPONSE_BYTES,
   type AnchorInput, type GraphAck, type GraphBatch, type GraphProducer, type GraphRow, type GraphTable, type GraphSnapshot, type GraphObservation } from './graph.js';
 
 export const DEFAULT_STORE_BYTES = 256 * 1024 * 1024;
@@ -92,16 +92,21 @@ export class AssessmentStore {
   private readonly observers = new Set<(sequence: number) => void>();
   readonly schemaVersion: number;
   readonly compatible: boolean;
+  /** P9/B (Q29): the configured graph-capacity multiplier and the ceilings it produces. */
+  readonly graphCapacity: number;
+  readonly graphLimits: ReturnType<typeof graphCeilings>;
   private constructor(private readonly directory: PrivateDirectory, private readonly db: DatabaseSync,
     private readonly writerLock: DatabaseSync | undefined, readonly readOnly: boolean,
-    readonly maxBytes: number, private readonly fault?: StoreFault) {
+    readonly maxBytes: number, private readonly fault?: StoreFault, graphCapacity = 1) {
     this.schemaVersion = Number(db.prepare('PRAGMA user_version').get()!.user_version);
     this.compatible = this.schemaVersion === STATE_SCHEMA_VERSION;
+    this.graphCapacity = graphCapacity;
+    this.graphLimits = graphCeilings(graphCapacity);
   }
   get location(): string { return this.directory.displayPath; }
   /** Operator's private knowledge root; portable bundles/artifacts must stay outside it. */
   get stateRoot(): string { return dirname(this.directory.displayPath); }
-  static create(root: string, manifest: StoreManifest, options: { maxBytes?: number; fault?: StoreFault } = {}): AssessmentStore {
+  static create(root: string, manifest: StoreManifest, options: { maxBytes?: number; fault?: StoreFault; graphCapacity?: number } = {}): AssessmentStore {
     if (!validId(manifest.runId) || !['durable-local', 'ephemeral'].includes(manifest.retention)
       || !['directory', 'url', 'hybrid'].includes(manifest.targetKind) || !manifest.targetIdentity || manifest.targetIdentity.length > 256
       || typeof manifest.targetDisplay !== 'string' || manifest.targetDisplay.length > 4096) throw Error('Invalid store manifest');
@@ -111,7 +116,7 @@ export class AssessmentStore {
     let store: AssessmentStore | undefined;
     try {
       directory.createFile('assessment.sqlite'); directory.createFile('writer.lock');
-      store = this.connect(directory, false, options.maxBytes ?? DEFAULT_STORE_BYTES, options.fault, true);
+      store = this.connect(directory, false, options.maxBytes ?? DEFAULT_STORE_BYTES, options.fault, true, options.graphCapacity);
       store.db.exec('BEGIN IMMEDIATE');
       try {
         store.db.exec(STATE_SCHEMA);
@@ -120,20 +125,22 @@ export class AssessmentStore {
         store.db.exec('COMMIT');
       } catch (error) { try { store.db.exec('ROLLBACK'); } catch { /* SQLite may already have rolled back. */ } throw error; }
       // Initialization is committed before publishing the handle. No migration/replay occurs here.
-      return new AssessmentStore(directory, store.db, store.writerLock, false, store.maxBytes, options.fault);
+      return new AssessmentStore(directory, store.db, store.writerLock, false, store.maxBytes, options.fault, options.graphCapacity);
     } catch (error) { if (store) store.close(); else directory.close(); throw error; }
   }
   /** Explicit host reopen. UI uses readOnly=true; writable reopen never reconstructs the Engine. */
-  static open(root: string, runId: string, options: { readOnly?: boolean; maxBytes?: number; fault?: StoreFault } = {}): AssessmentStore {
+  static open(root: string, runId: string, options: { readOnly?: boolean; maxBytes?: number; fault?: StoreFault; graphCapacity?: number } = {}): AssessmentStore {
     if (!validId(runId)) throw Error('Invalid run ID');
     const parent = PrivateDirectory.open(root);
     let directory: PrivateDirectory;
     try { directory = parent.child(runId); } finally { parent.close(); }
-    try { return this.connect(directory, options.readOnly ?? true, options.maxBytes ?? DEFAULT_STORE_BYTES, options.fault); }
+    try { return this.connect(directory, options.readOnly ?? true, options.maxBytes ?? DEFAULT_STORE_BYTES, options.fault, false, options.graphCapacity); }
     catch (error) { directory.close(); throw error; }
   }
-  private static connect(directory: PrivateDirectory, readOnly: boolean, maxBytes: number, fault?: StoreFault, initialize = false): AssessmentStore {
+  private static connect(directory: PrivateDirectory, readOnly: boolean, maxBytes: number, fault?: StoreFault, initialize = false, graphCapacity?: number): AssessmentStore {
     if (!Number.isSafeInteger(maxBytes) || maxBytes < 8 * 1024 * 1024 || maxBytes > 1024 * 1024 * 1024) throw Error('Storage quota must be 8..1024 MiB');
+    const capacity = graphCapacity ?? 1;
+    graphCeilings(capacity); // refuse a bad capacity before touching the database
     // DELETE journals are bounded by database pages. Do not silently open another journal policy.
     const usage = directory.usage();
     if (usage.bytes > maxBytes) throw Error('State exceeds storage quota');
@@ -152,7 +159,7 @@ export class AssessmentStore {
       if (journal !== 'delete') throw Error('Unsupported state journal mode; expected DELETE');
       if (readOnly) db.exec('PRAGMA query_only=ON');
       else db.exec(`PRAGMA synchronous=FULL; PRAGMA max_page_count=${Math.floor(maxBytes / 3 / 4096)}; PRAGMA journal_size_limit=0`);
-      return new AssessmentStore(directory, db, lock, readOnly, maxBytes, fault);
+      return new AssessmentStore(directory, db, lock, readOnly, maxBytes, fault, capacity);
     } catch (error) { db?.close(); if (lock) { try { lock.exec('ROLLBACK'); } catch { /* OS releases any held lock on close. */ } lock.close(); } throw error; }
   }
   private gate(write = false): void {
@@ -707,7 +714,7 @@ export class AssessmentStore {
   }
   /** Current same-run graph asset identities for explicit coverage denominator comparison. */
   assetEntityIds():string[]{
-    this.gate();return this.db.prepare('SELECT DISTINCT entity_id FROM assets ORDER BY entity_id LIMIT ?').all(GRAPH_ENTITY_LIMIT+1).map(row=>String(row.entity_id));
+    this.gate();return this.db.prepare('SELECT DISTINCT entity_id FROM assets ORDER BY entity_id LIMIT ?').all(this.graphLimits.assets+1).map(row=>String(row.entity_id));
   }
   /** Currentness lookups the case and coverage views need, bound to this store: the one place a projection learns the live asset/assertion revisions. */
   reviewContext():{cases:CaseContext;coverage:CoverageContext;campaign?:CampaignRecord}{
@@ -747,7 +754,7 @@ export class AssessmentStore {
     validateGraphBatch(batch);const attribution=this.graphProducer(request,producer);
     return this.atomically(()=>{
       const scope=this.graphScope(),actorId=attribution.actorId,occurredAt=new Date().toISOString(),acks:GraphAck[]=[],local=new Map<string,string>();
-      const limits={assets:GRAPH_ENTITY_LIMIT,assertions:GRAPH_ASSERTION_LIMIT,relations:GRAPH_RELATION_LIMIT,anchors:GRAPH_ANCHOR_ROWS};
+      const limits={assets:this.graphLimits.assets,assertions:this.graphLimits.assertions,relations:this.graphLimits.relations,anchors:this.graphLimits.anchors};
       const insert={
         assets:'INSERT INTO assets VALUES (?,?,?,?,?,?,?,?,?)',assertions:'INSERT INTO assertions VALUES (?,?,?,?,?,?,?,?)',
         relations:'INSERT INTO relations VALUES (?,?,?,?,?,?,?,?,?,?)',anchors:'INSERT INTO anchors VALUES (?,?,?,?,?,?,?,?,?)',
@@ -755,7 +762,7 @@ export class AssessmentStore {
       const observe=(entityId:string,revisionId:string)=>{
         const prior=this.db.prepare('SELECT body FROM graph_provenance WHERE revision_id=? AND actor_id=? AND task_id=?').get(revisionId,actorId,attribution.taskId??'');
         if(prior)return {prior:JSON.parse(String(prior.body)) as GraphObservation};
-        if(this.graphCount('graph_provenance')>=GRAPH_PROVENANCE_LIMIT)throw Error('Graph provenance capacity reached; no budget renewal');
+        if(this.graphCount('graph_provenance')>=this.graphLimits.provenance)throw Error('Graph provenance capacity reached; no budget renewal');
         const id=`provenance-${sha(graphCanonical({revisionId,...attribution})).slice(0,24)}`;
         return {observation:{...attribution,id,entityId,revisionId,at:occurredAt} as Omit<GraphObservation,'sequence'>};
       };

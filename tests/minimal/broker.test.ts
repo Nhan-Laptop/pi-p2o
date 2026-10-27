@@ -112,7 +112,7 @@ describe('sandbox broker', () => {
       for(const data of [{method:123},{body:42},{followRedirects:'yes'},{maxRedirects:1.5},{session:'../x'}]) await expect(client.request('http',{url:'/a',...data})).rejects.toThrow();
       await expect(client.request('http', { url: '/a', headers: { 'X-Test': 'a\r\nb: 1' } })).rejects.toThrow(/Invalid value/);
       await expect(client.request('http', { url: '/a', headers: { 'Content-Length': '9' } })).rejects.toThrow(/cannot be overridden/);
-      await expect(client.request('http', { url: '/a', body: 'x'.repeat(40_000) })).rejects.toThrow(/at most/);
+      await expect(client.request('http', { url: '/a', body: 'x'.repeat(50_000) })).rejects.toThrow(/at most/);
       await expect(client.request('http', { url: '/a', body: 'x'.repeat(70_000) })).rejects.toThrow(/frame limit/);
       await expect(client.request('net', { command: 'id', timeout: -1 })).rejects.toThrow(/non-negative/);
       await expect(client.request('net', { command: 'id', timeout: 300 })).resolves.toMatchObject({ ok: true });
@@ -140,7 +140,7 @@ describe('sandbox broker', () => {
     const client = new BrokerClient(f.socket, 'c'.repeat(32), { connectMs: 2000, requestMs: 5000 });
     try {
       await expect(client.request('nonsense')).rejects.toThrow(/unsupported broker operation/);
-      await expect(client.request('exec', { command: 'x'.repeat(9000) })).rejects.toThrow(/1\.\.8192/);
+      await expect(client.request('exec', { command: 'x'.repeat(33 * 1024) })).rejects.toThrow(/1\.\.32768/);
       await expect(client.request('exec', { command: 'id', timeout: 1.5 })).rejects.toThrow(/non-negative/);
       await expect(client.request('http', { url: '' })).rejects.toThrow(/url must be/);
       await expect(client.request('note', { kind: 'lifecycle', text: 'nope' })).rejects.toThrow(/kind must be/);

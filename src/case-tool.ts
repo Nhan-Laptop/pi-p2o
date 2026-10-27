@@ -11,12 +11,13 @@ const id=()=>Type.String({minLength:1,maxLength:80}),ids=()=>Type.Array(id(),{ma
 const taskRef=Type.Object({taskId:id(),revision:Type.Optional(Type.Integer({minimum:1}))},{additionalProperties:false});
 export const caseEntrySchema=Type.Object({
   title:Type.String({minLength:5,maxLength:500}),policyKey:key(),rootCauseKey:Type.Optional(key()),hypothesis:Type.Optional(Type.Object({id:Type.String({pattern:'^assertion-[a-f0-9]{24}$'}),revision:Type.Integer({minimum:1})},{additionalProperties:false})),
-  assetRefs:Type.Array(Type.Object({id:Type.String({pattern:'^asset-[a-f0-9]{24}$'}),revision:Type.Optional(Type.Integer({minimum:1})),variant:Type.Optional(key(120))},{additionalProperties:false}),{minItems:1,maxItems:10}),
-  claimRefs:Type.Array(id(),{minItems:1,maxItems:10,uniqueItems:true}),independentEvidenceRefs:ids(),taskRefs:Type.Array(taskRef,{maxItems:10}),reportRefs:ids(),
+  // P10/TR-L01: both reference lists are derivable from taskRefs, so a planner does not have to plumb two joins by hand.
+  assetRefs:Type.Optional(Type.Array(Type.Object({id:Type.String({pattern:'^asset-[a-f0-9]{24}$'}),revision:Type.Optional(Type.Integer({minimum:1})),variant:Type.Optional(key(120))},{additionalProperties:false}),{maxItems:10,description:'Optional when taskRefs is set: the host derives the pinned asset refs from each cited reviewed task\'s work identity'})),
+  claimRefs:Type.Optional(Type.Array(id(),{maxItems:10,uniqueItems:true,description:'Optional when taskRefs is set: the host derives the reviewed claims. A same-run candidate record ID or its candidate slug is accepted; the host stores the resolved record ID'})),independentEvidenceRefs:ids(),taskRefs:Type.Array(taskRef,{maxItems:10}),reportRefs:ids(),
   contradictions:Type.Array(Type.Object({evidenceRef:id(),status:choices(['open', 'resolved']),reason:Type.String({minLength:10,maxLength:1000})},{additionalProperties:false}),{maxItems:10}),
   affectedVariants:Type.Array(key(120),{maxItems:20,uniqueItems:true}),relatedCaseIds:ids(),duplicateOf:Type.Optional(id()),
-  verdict:choices(CASE_VERDICTS),reviewStatus:choices(CASE_REVIEW_STATUSES),reviewReason:Type.String({minLength:10,maxLength:1500}),limitations:Type.String({minLength:10,maxLength:2000}),
-  remediation:Type.Object({status:choices(REMEDIATION_STATUSES),reason:Type.String({minLength:10,maxLength:1000}),evidenceRefs:ids(),retestTask:Type.Optional(taskRef)},{additionalProperties:false}),
+  verdict:choices(CASE_VERDICTS),reviewStatus:Type.Optional(choices(CASE_REVIEW_STATUSES)),reviewReason:Type.String({minLength:10,maxLength:1500}),limitations:Type.String({minLength:10,maxLength:2000}),
+  remediation:Type.Optional(Type.Object({status:choices(REMEDIATION_STATUSES),reason:Type.String({minLength:10,maxLength:1000}),evidenceRefs:ids(),retestTask:Type.Optional(taskRef)},{additionalProperties:false,description:'Optional: an omitted remediation is recorded honestly as {status:"unplanned", reason:"No remediation was planned or reviewed for this case yet", evidenceRefs:[]}'})),
 },{additionalProperties:false});
 /** Rating of one case, supplied only with action=rate. The host validates every field (patterns, lengths, evidence IDs) and computes the CVSS score from the vector, so the schema stays short. `chain` is the ordered execution chain the owner assembled; `claimRef` on a step names the candidate that ran that step. */
 export const findingSchema=Type.Object({severity:choices(FINDING_SEVERITIES),basis:Type.String({maxLength:1000}),likelihood:Type.Optional(Type.String({maxLength:800})),impact:Type.Optional(Type.String({maxLength:800})),
@@ -34,12 +35,13 @@ export const CASE_ACTION_PARAMETERS: Readonly<Record<typeof CASE_ACTIONS[number]
   rate:['action','finding','id','revision','requestId'], view:['action','id'], list:['action','cursor','limit','status'],
 };
 /** Root object preserves fields through legacy provider projections. Host enforces action shape. */
-export const coveragePlanSchema=Type.Object({title:Type.String({minLength:5,maxLength:500}),status:choices(COVERAGE_PLAN_STATUS),reason:Type.String({minLength:10,maxLength:1500}),exclusions:Type.Array(Type.String({minLength:5,maxLength:500}),{maxItems:10}),unknownScope:Type.Array(Type.String({minLength:5,maxLength:500}),{maxItems:10})},{additionalProperties:false});
+export const coveragePlanSchema=Type.Object({title:Type.String({minLength:5,maxLength:500}),status:Type.Optional(choices(COVERAGE_PLAN_STATUS)),reason:Type.String({minLength:10,maxLength:1500}),
+  exclusions:Type.Optional(Type.Array(Type.String({minLength:5,maxLength:500}),{maxItems:10})),unknownScope:Type.Optional(Type.Array(Type.String({minLength:5,maxLength:500}),{maxItems:10}))},{additionalProperties:false});
 export const COVERAGE_MUTATIONS=['plan-create','plan-revise'] as const;
 export const COVERAGE_ACTIONS=[...COVERAGE_MUTATIONS,'list','view','suggest'] as const;
 /** P13e: exhaustive per action, enumerated instead of inferred from COVERAGE_MUTATIONS order. */
 export const COVERAGE_ACTION_PARAMETERS: Readonly<Record<typeof COVERAGE_ACTIONS[number], readonly string[]>> = {
   'plan-create':['action','plan','requestId'], 'plan-revise':['action','plan','id','revision','requestId'],
-  list:['action','cursor','limit'], view:['action','id'],
+  list:['action','cursor','limit'], view:['action','id','cursor','limit'],
   suggest:['action','features','modes','cursor','limit'],
 };

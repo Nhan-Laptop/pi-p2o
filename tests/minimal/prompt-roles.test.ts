@@ -4,7 +4,8 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { registerP2O } from '../../extensions/p2o/index.js';
 import { AssessmentEngine, type EngineDeps, type PlannerWake } from '../../src/engine.js';
-import { plannerInstructions, reporterInstructions, workerInstructions, type PlannerPromptFacts } from '../../src/prompts.js';
+import { plannerInstructions, reporterInstructions, workerBrief, workerInstructions, type PlannerPromptFacts } from '../../src/prompts.js';
+import type { Ticket } from '../../src/ticket.js';
 import { TOOL_BOUNDARIES } from '../../src/tool-guidelines.js';
 import { authorityCounters, authorityReport, ROLE_COUNTS } from '../../src/authority.js';
 import { indexRecords, readLedger, type AssessmentRecord } from '../../src/records.js';
@@ -50,6 +51,30 @@ describe('A4 prompt rules and tool boundaries', () => {
     // The reporter never receives the claim-writing rule.
     expect(reporter).not.toContain('Use p2o_candidate for candidate closure');
     expect(workerInstructions(ticket('reporting'))).toBe(reporter);
+  });
+
+  it('carries the operator frame into the worker brief and states the effective worker caps (P9)', () => {
+    const ticket = { workerId: 'p2o-recon-aaaaaa', role: 'recon', runId: 'run-test', depth: 1, parentWorkerId: null,
+      lifetime: 'until-stopped', target: { kind: 'directory', label: '/target' }, captureKiB: 1024,
+      requestedRuntime: { model: 'p2o-inert/current-agent', thinking: 'off' } } as Ticket;
+    const brief = workerBrief({ ticket, focus: 'surface-recon', task: 'Map authorized inputs', objective: 'Prove tenant isolation',
+      permissions: ['test checkout'], constraints: ['no payment flows'], hints: ['start at login'] });
+    // WF-01: the frame the planner holds travels to the worker as data, and each block keeps its own meaning (a permission
+    // never widens, a constraint always narrows, a hint only guides).
+    expect(brief).toContain('OPERATOR OBJECTIVE');
+    expect(brief).toContain(JSON.stringify('Prove tenant isolation'));
+    expect(brief).toContain('OPERATOR PERMISSIONS');
+    expect(brief).toContain('- "test checkout"');
+    expect(brief).toContain('OPERATOR CONSTRAINTS');
+    expect(brief).toContain('OPERATOR HINTS');
+    expect(brief.indexOf('OPERATOR HINTS')).toBeLessThan(brief.indexOf('TASK:'));
+    expect(workerBrief({ ticket, focus: 'surface-recon', task: 'Map authorized inputs' })).not.toContain('OPERATOR OBJECTIVE');
+    // WF-17: the worker is told the capture ceiling it actually got, not a hard-coded 8 MiB.
+    const instructions = workerInstructions(ticket);
+    expect(instructions).toContain('Capture cap: 1024 KiB');
+    expect(instructions).toContain('Requested runtime: model p2o-inert/current-agent, thinking off');
+    const legacy = { ...ticket, captureKiB: undefined, requestedRuntime: undefined } as Ticket;
+    expect(workerInstructions(legacy)).not.toContain('Capture cap:');
   });
 
   it('carries the role split on the tool boundaries and keeps removed verbs out of them', () => {

@@ -36,15 +36,22 @@ describe('canonical goals/todo/decisions and read-only cards (K4)',()=>{
     expect((await tasks.list())[0].status).toBe('proposed');expect(decision.decision!.disposition).toBe('defer');
   }));
   it('requires explicit evidence-backed goal review/close and preserves no execution authority',async()=>fixture(async({board,store})=>{
-    const created=await board.create(goal);await expect(board.revise(created.id,1,{...goal,status:'reviewed'})).rejects.toThrow('support');
+    const created=await board.create(goal);
+    // P10/TR-L07: the proof gate is checked before support, so an unproven goal refuses review even with no supportRefs stated.
+    await expect(board.revise(created.id,1,{...goal,status:'reviewed'})).rejects.toThrow('GOAL_UNPROVEN');
     await expect(board.create({...goal,status:'closed'})).rejects.toThrow('explicit revisions');
     const ref=store.commitRecords([{runId,by:'owner',at:'2030',kind:'evidence',text:'Inert receipt, not a verified finding'}])[0].recordId;
     // P16.1: support is the run's own record of the work; proof is what the goal promised to show. Support alone is not enough.
     await expect(board.revise(created.id,1,{...goal,status:'reviewed',supportRefs:[ref]})).rejects.toThrow('GOAL_UNPROVEN');
-    store.commitRecords([{runId,by:'owner',at:'2030',kind:'candidate',text:'Inert demonstrated read, not a finding',data:{candidate:'inert-claim',closure:'confirmed',execution:'tested',gained:[{kind:'file.read',subject:'inert-boundary'}]}}]);
+    const claim=store.commitRecords([{runId,by:'owner',at:'2030',kind:'candidate',text:'Inert demonstrated read, not a finding',data:{candidate:'inert-claim',closure:'confirmed',execution:'tested',gained:[{kind:'file.read',subject:'inert-boundary'}]}}])[0].recordId;
+    // P10/TR-L07: once the proof holds, supportRefs may be omitted; the host records the demonstrating claim as the support.
+    const promise=await board.create({...goal,id:'goal-p10-support'}),settled=await board.revise(promise.id,promise.revision,{...goal,id:'goal-p10-support',status:'reviewed'});
+    expect(settled.supportRefs).toEqual([claim]);
+    const reclosed=await board.revise(settled.id,settled.revision,{...goal,id:'goal-p10-support',status:'closed',supportRefs:settled.supportRefs});expect(reclosed.status).toBe('closed');
     const reviewed=await board.revise(created.id,1,{...goal,status:'reviewed',supportRefs:[ref]}),closed=await board.revise(reviewed.id,reviewed.revision,{...goal,status:'closed',supportRefs:[ref]});
     expect(closed.status).toBe('closed');expect(store.events({limit:100}).rows.filter(row=>row.kind.startsWith('operation.'))).toEqual([]);
-    const cp=store.checkpoint('planning only');expect(cp.planning).toMatchObject({goals:1,todo:0,decisions:0,phasePackets:0});expect(store.inspectCheckpoint(cp.id).authorityRestored).toBe(false);
+    // P10/TR-L07: both current goals are counted: the explicitly supported one and the proof-settled one.
+    const cp=store.checkpoint('planning only');expect(cp.planning).toMatchObject({goals:2,todo:0,decisions:0,phasePackets:0});expect(store.inspectCheckpoint(cp.id).authorityRestored).toBe(false);
   }));
   it('rejects stale revisions, unknown references, cycles and foreign support',async()=>fixture(async({board,store})=>{
     const a=await board.create({...goal,id:'goal-a'}),b=await board.create({...goal,id:'goal-b',goalIds:[a.id]});

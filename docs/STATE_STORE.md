@@ -47,7 +47,8 @@ Replay trả ACK gốc, không phát lại notification.
   immutable. `sha256` là hash bytes đã redact; `beforeRedactionSha256` chỉ hash prefix, không toàn output. Redaction là
   best-effort, không bảo đảm hết secret.
 - `p2o_capture` đọc file text trong scratch của assignment (FD-relative, single-link, UTF-8, `offset` 0..1 GiB để chia
-  segment ≤ bound); `p2o_artifact {id, offset?, length?}` đọc lại ≤8 KiB/lần; người dùng có `/p2o artifact <id> [offset]`.
+  segment ≤ bound); `maxKiB` hạ trần capture cho **một** lần gọi nhưng không bao giờ vượt `artifactCaptureKiB` của run;
+  `p2o_artifact {id, offset?, length?}` đọc lại ≤48 KiB/lần (mặc định 8 KiB); người dùng có `/p2o artifact <id> [offset]`.
 - Finalization reserve `max(256 KiB, min(4 MiB, quota/16))` chỉ dành cho outcome cuối và checkpoint. Quota mặc định 256 MiB (8–1024).
 
 ## Checkpoint, bundle, reconcile

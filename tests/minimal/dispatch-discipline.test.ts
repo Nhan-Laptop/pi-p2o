@@ -30,4 +30,17 @@ describe('dispatch discipline (P6)', () => {
     expect(prompt).not.toMatch(/at most \w+ intents per call/);
     expect(prompt).toContain('nothing is dropped');
   });
+
+  // P10/WF-13: the effective executor cap and the queue/finish semantics are stated where intents are formed, in behaviour
+  // words (the prompt keeps no tool names), so the planner does not have to infer them from the confirmation dialog.
+  it('P10/WF-13: states the executor cap, the queue identity rule and the finish refusal with queued intents', () => {
+    for (const prompt of [plannerInstructions(base()), plannerInstructions(base({ loopMode: 'event-driven' })), solo()]) {
+      expect(prompt).toContain('EXECUTOR AND QUEUE');
+      expect(prompt).toContain('runs target operations one at a time unless the operator explicitly raised the cap with --target-ops N');
+      expect(prompt).toContain('model concurrency never implies target concurrency');
+      expect(prompt).toContain('it survives a revision that leaves the question/work identity unchanged');
+      expect(prompt).toContain('Finishing without export refuses while queued intents remain and lists each one');
+      expect(prompt).not.toMatch(/\bp2o_[a-z_]+\b/);
+    }
+  });
 });

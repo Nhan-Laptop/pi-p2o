@@ -32,10 +32,13 @@ export interface WorkerReport {
   blocked?: string;
   outcome?: typeof WORKER_OUTCOMES[number];
   /**
-   * A7.5/D19: hold the ticket, pane and session for exactly one follow-up continue. Bounded to one sentence so a hold is a
-   * claim of "the next step continues this exact work", never an unbounded parking spot.
+   * A7.5/D19: hold the ticket, pane and session for the successor step. Bounded to one sentence so a hold is a claim of
+   * "the next step continues this exact work", never an unbounded parking spot.
    */
   holdFor?: { brief: string };
+  /** P10/WF-11: how many continuation briefs this hold authorizes (0..3, default 1). 0 records the successor brief without
+   *  keeping the ticket. A malformed value falls back to 1 rather than widening anything. */
+  holdContinuations?: number;
 }
 
 export interface WorkerRegistration {
@@ -56,10 +59,14 @@ export interface WorkerRegistration {
   taskId?: string;
   /** A7.2: the one session this worker's ticket holds. Owner-side state; a worker cannot name another. */
   session?: string;
-  /** A7.5: the brief a reported worker is holding its ticket, pane and session for; consumed by exactly one continuation. */
+  /** A7.5/P10: the brief a reported worker is holding its ticket, pane and session for; one continuation consumes one count. */
   holdBrief?: string;
-  /** A7.5: true once that continuation was accepted, so the successor runs on this ticket and a second hold-continue is refused. */
+  /** P10/WF-11: remaining continuation briefs this hold authorizes; absent means the pre-WF-11 single hold. */
+  holdContinuations?: number;
+  /** A7.5: true once the hold is used up (or a continuation was accepted for a single-hold report), so a hold-continue is refused. */
   holdConsumed?: boolean;
+  /** P10/WF-11: a continuation under this hold is in flight, so the worker may report the successor without waiting for a brief. */
+  holdActive?: boolean;
   requestedRuntime?: { model?: string; thinking?: string };
   /** M8: how many continuations this worker's conversation has taken. One by default; a reported worker takes none. */
   continues?: number;
@@ -81,7 +88,7 @@ export interface BrokerDeps {
   session?(action: string, request: Record<string, unknown>, worker: WorkerRegistration): Promise<unknown>;
   http(request: HttpRequest, signal: AbortSignal, workerId?: string): Promise<ProcessResult>;
   /** Fixed scratch read under this authenticated assignment; no caller-selected root/host path. */
-  capture?(path: string, seconds: number, workerId: string, signal: AbortSignal, offset: number, session?: string): Promise<ProcessResult>;
+  capture?(path: string, seconds: number, workerId: string, signal: AbortSignal, offset: number, session?: string, maxBytes?: number): Promise<ProcessResult>;
   /** Owner-bound asset graph writes and reads; actor identity never comes from the payload. */
   graphRecord?(batch: GraphBatch, worker: WorkerRegistration, request: MutationRequest): Promise<GraphAck[]>;
   graphReplay?(batch: GraphBatch, worker: WorkerRegistration, request: MutationRequest): Promise<GraphAck[] | undefined>;
@@ -192,7 +199,16 @@ export function normalizeReport(raw: unknown): WorkerReport {
     ...(typeof input.outcome === 'string' && (WORKER_OUTCOMES as readonly string[]).includes(input.outcome) ? { outcome: input.outcome as WorkerReport['outcome'] } : {}),
     // A7.5: the hold is one bounded sentence, and only a well-formed request can create one.
     ...(holdFor(input.holdFor) ? { holdFor: holdFor(input.holdFor)! } : {}),
+    // P10/WF-11: how many continuations that hold authorizes. Absent means the single hold; malformed (or out-of-range)
+    // input falls back to 1 instead of widening it, and a count without holdFor is meaningless and dropped.
+    ...(holdFor(input.holdFor) && holdContinuations(input.holdContinuations) !== undefined ? { holdContinuations: holdContinuations(input.holdContinuations)! } : {}),
   };
+}
+
+/** P10/WF-11: 0..3 continuation briefs a report-with-hold authorizes; anything else falls back to the single default. */
+function holdContinuations(value: unknown): number | undefined {
+  if (value === undefined || value === null) return undefined;
+  return typeof value === 'number' && Number.isInteger(value) && value >= 0 && value <= 3 ? value : 1;
 }
 
 /** A7.5: one bounded sentence naming the successor this worker is worth holding for; malformed input is dropped, not guessed. */
@@ -408,11 +424,11 @@ export class Broker {
       }
       case 'exec':
       case 'net': {
-        if (typeof request?.command !== 'string' || request.command.length > 8192) return { ok: false, error: 'command must be 1..8192 characters' };
-        const command = text(request.command, 8192);
+        if (typeof request?.command !== 'string' || request.command.length > 32 * 1024) return { ok: false, error: 'command must be 1..32768 characters' };
+        const command = text(request.command, 32 * 1024);
         let seconds: number;
         try { seconds = taskTimeout(request?.timeout); } catch (error) { return {ok:false,error:errText(error)}; }
-        if (!command || !command.trim()) return { ok: false, error: 'command must be 1..8192 characters' };
+        if (!command || !command.trim()) return { ok: false, error: 'command must be 1..32768 characters' };
         let session: string | undefined;
         try { session = heldSession(registration, request?.session); } catch (error) { return { ok: false, error: errText(error) }; }
         const spent = await this.prepareCommand(registration);
@@ -431,7 +447,7 @@ export class Broker {
         if (!this.deps.pty) return { ok: false, error: 'Interactive session unavailable' };
         const action = request?.action;
         if (action !== 'send' && action !== 'read') return { ok: false, error: 'pty action must be send or read' };
-        if (action === 'send' && (typeof request?.data !== 'string' || !request.data.length || Buffer.byteLength(request.data) > 8192)) return { ok: false, error: 'send must be 1..8192 bytes of text' };
+        if (action === 'send' && (typeof request?.data !== 'string' || !request.data.length || Buffer.byteLength(request.data) > 16 * 1024)) return { ok: false, error: 'send must be 1..16384 bytes of text' };
         let session: string | undefined;
         try { session = heldSession(registration, request?.session); } catch (error) { return { ok: false, error: errText(error) }; }
         if (!session) return { ok: false, error: 'SESSION_UNBOUND: open a session first (p2o_session action=open)' };
@@ -461,12 +477,14 @@ export class Broker {
         let path: string, seconds: number;
         let offset: number;
         try {path=scratchPath(request?.path);seconds=taskTimeout(request?.timeout);offset=scratchOffset(request?.offset);} catch(error) {return {ok:false,error:errText(error)};}
+        const requestedMax=request?.maxBytes;
+        if (requestedMax !== undefined && (typeof requestedMax !== 'number' || !Number.isSafeInteger(requestedMax) || requestedMax < 1 || requestedMax > 8192*1024)) return {ok:false,error:'maxBytes must be 1..8388608 bytes'};
         const capture=this.deps.capture;if (!capture) return {ok:false,error:'Scratch capture unavailable; no fallback read'};
         let session: string | undefined;
         try { session = heldSession(registration, request?.session); } catch (error) { return { ok: false, error: errText(error) }; }
         const spent=await this.prepareCommand(registration);if(spent)return spent;
         return this.whileRunning(workerId,async signal=>{
-          try {return {ok:true,...await capture(path,seconds,workerId,signal,offset,session)};} catch(error) {return {ok:false,error:errText(error)};}
+          try {return {ok:true,...await capture(path,seconds,workerId,signal,offset,session,requestedMax)};} catch(error) {return {ok:false,error:errText(error)};}
         });
       }
       case 'graph_record': {
@@ -535,8 +553,8 @@ export class Broker {
         } catch (error) { return { ok: false, error: errText(error) }; }
       }
       case 'report': {
-        // A7.5: a held worker reports again only after its one hold-continue was consumed; otherwise reporting is terminal once.
-        if (registration.reported && !registration.holdConsumed) return { ok: false, error: registration.holdBrief ? 'this worker reported and is held for one continuation; wait for the lead brief instead of reporting again' : 'this worker already reported' };
+        // A7.5/P10: an idle held worker waits for the lead's brief; a worker already running a consumed continuation may report it.
+        if (registration.reported && !registration.holdConsumed && !registration.holdActive) return { ok: false, error: registration.holdBrief ? 'this worker reported and is held; wait for the lead brief instead of reporting again' : 'this worker already reported' };
         const report = normalizeReport(request?.report);
         if (this.reporting.has(workerId)) return {ok:false,error:'Report persistence already in progress'};
         this.reporting.add(workerId);
@@ -549,14 +567,17 @@ export class Broker {
             if (!acks) throw error;
           }
           registration.reported = report;
-          if (report.holdFor) {
-            // A7.5/D19: the ticket, pane and session stay alive for exactly one follow-up continue. The reaper skips this worker
-            // and the owner consumes the hold on the first continuation; stop/finish force-releases it exactly like any worker.
+          const authorized = report.holdFor ? report.holdContinuations ?? 1 : 0;
+          if (report.holdFor && authorized > 0) {
+            // A7.5/D19 + P10/WF-11: the ticket, pane and session stay alive for the authorized number of follow-up briefs (0..3,
+            // default 1). The reaper skips this worker while it holds; stop/finish force-releases it exactly like any worker.
             registration.holdBrief = report.holdFor.brief;
-            registration.holdConsumed = false;
+            registration.holdContinuations = authorized;
+            registration.holdConsumed = false; registration.holdActive = false;
           } else {
-            // Reporting ends this worker's authority: a copied ticket cannot retain target access.
-            registration.holdBrief = undefined; registration.holdConsumed = false;
+            // Reporting ends this worker's authority: a copied ticket cannot retain target access. A hold named with
+            // holdContinuations=0 records the successor brief in the report but keeps no ticket, pane or session.
+            registration.holdBrief = undefined; registration.holdContinuations = 0; registration.holdConsumed = false; registration.holdActive = false;
             this.revoke(workerId);
           }
           // Notification failure must not make an already committed report replayable.
@@ -732,20 +753,23 @@ export class BrokerClient {
 export function continuationRefusal(registration: { stopped?: boolean; paneClosed?: boolean; reported?: unknown; holdBrief?: string; holdConsumed?: boolean; continues?: number }): string | undefined {
   if (registration.stopped || registration.paneClosed) return 'WORKER_CLOSED: the worker is stopped or its pane is gone; start a new task rather than continuing a closed conversation';
   if (registration.reported && registration.holdBrief) return undefined;
-  if (registration.reported && registration.holdConsumed) return 'HELD_CONTINUATION_USED: this worker already used its one held continuation for the successor it is running; wait for that successor report, then create a new task for another question';
+  if (registration.reported && registration.holdConsumed) return 'HELD_CONTINUATION_USED: this worker already used every held continuation this report authorized; wait for its next report, then create a new task for another question';
   if (registration.reported) return 'WORKER_CLOSED: the worker already reported and its ticket is retired; its conversation cannot be continued — create a new task for the same question instead';
   return undefined;
 }
 
 /**
- * A7.5: consume the one continuation a hold authorizes. Returns the brief that was held (the owner sends it as the successor
- * brief) or undefined when this worker held nothing. Pure state transition, so the handler and the tests share one rule.
+ * A7.5/P10: consume one continuation a hold authorizes. Returns the brief that was held (the owner sends it as the successor
+ * brief) or undefined when this worker held nothing. The last continuation retires the hold exactly like the original single
+ * hold; a multi-brief hold keeps the ticket held for the remaining briefs. Pure state transition, so the handler and the tests
+ * share one rule.
  */
 export function consumeHeldContinuation(registration: WorkerRegistration): string | undefined {
   if (!registration.holdBrief) return undefined;
-  const brief = registration.holdBrief;
-  registration.holdBrief = undefined;
-  registration.holdConsumed = true;
+  const brief = registration.holdBrief, remaining = Math.max(1, registration.holdContinuations ?? 1);
   registration.continues = (registration.continues ?? 0) + 1;
+  registration.holdActive = true;
+  if (remaining > 1) { registration.holdContinuations = remaining - 1; return brief; }
+  registration.holdBrief = undefined; registration.holdContinuations = 0; registration.holdConsumed = true;
   return brief;
 }

@@ -3,7 +3,17 @@ import type { LoopMode } from './roles.js';
 import type { AssessmentTask } from './tasks.js';
 
 export interface EngineEvent { sequence: number; kind: string; id: string; reason?: string }
-export interface QueuedIntent { taskId: string; revision: number; priority: number; input: DelegateInput; reason?: string }
+export interface QueuedIntent { taskId: string; revision: number; priority: number; input: DelegateInput; reason?: string; /** P10/TR-H12: the work identity accepted at enqueue time, so a cosmetic/status-only revision keeps the queue. */ identity: string }
+/**
+ * P10/TR-H12: what makes an accepted intent mean the same work. A revision that leaves this unchanged (a cosmetic edit or a
+ * status-only advance) does not discard the queued intent; a changed question/work identity does require a new explicit dispatch.
+ */
+export function intentIdentity(task: AssessmentTask): string {
+  return JSON.stringify([task.question, task.role, task.expectedTrue ?? '', task.expectedFalse ?? '', task.stopCondition ?? '',
+    task.workFingerprint ?? task.workOverlapKey ?? '', task.work?.claimRefs ?? [], task.work?.questionKey ?? '', task.work?.assetRefs ?? [],
+    (task.prerequisites ?? []).map(p => `${p.taskId}@${p.revision ?? '*'}`), task.validationOf ?? '', task.retestOf ?? '', task.parentTaskId ?? '',
+    (task.method?.skills ?? []).map(skill => skill.id), task.method?.workflow?.id ?? '']);
+}
 /** A6.3: why a wake was reserved, so status and the P6 metrics count wakes without re-deriving them. */
 export type WakeReason = 'event' | 'debt' | 'heartbeat';
 export interface PlannerWake { runId: string; epoch: number; through: number; round: number; /** P16.2: the named obligations a stalled-but-unfinished round still owes. */ demand?: string; /** A6.3: what caused this wake; a heartbeat is not an event. */ reason?: WakeReason }
@@ -66,6 +76,8 @@ export class AssessmentEngine {
    */
   private stallStreak = 0;
   private quiet: number[] = [];
+  /** P10/TR-H11: the unverified-removal fact is recorded once per episode, not on every retry. */
+  private reapUnverified = false;
   private readonly revisits = new Map<string, { at: number; timer: ReturnType<typeof setTimeout> }>();
   private decision?: { disposition: 'wait' | 'blocked'; reason: string };
   /** A6.3: the single unref'd campaign heartbeat timer, its next fire time and the last debt wake (for pacing). */
@@ -128,7 +140,7 @@ export class AssessmentEngine {
         if (i.input.taskId !== task.id) throw Error('Intent identity mismatch');
         const priority = i.priority ?? 0;
         if (!Number.isInteger(priority) || priority < 0 || priority > 100) throw Error('Invalid intent priority');
-        return {taskId:task.id,revision:task.revision,priority,input:{...i.input}};
+        return {taskId:task.id,revision:task.revision,priority,input:{...i.input},identity:intentIdentity(task)};
       });
       if (new Set(additions.map(i => i.taskId)).size !== additions.length || additions.some(i => this.queue.has(i.taskId))) throw Error('Intent already queued');
       await this.deps.persist('Planner accepted intents into the frontier; no new scope or authority', {intents:additions}); this.gate();
@@ -160,15 +172,31 @@ export class AssessmentEngine {
   }
   private async drain() {
     if (!this.live() || this.paused) return;
-    if (!await this.deps.reap()) {this.pause('Completed pane removal unverified; capacity backpressure, retry with /p2o resume');return;}
+    // P10/TR-H11: an unverified pane removal is capacity backpressure, not a campaign failure. It is recorded once as a fact and
+    // the dispatch round is skipped; the next kick retries the reaper, so accepted intents and semantic events stay live.
+    if (!await this.deps.reap()) {
+      if (!this.reapUnverified) {
+        this.reapUnverified = true;
+        await this.deps.persist('PANE_REAP_UNVERIFIED: completed pane removal unverified; dispatch waits for the next kick instead of pausing the campaign',
+          { event: 'engine.reap-unverified', runId: this.runId, sequence: this.sequence });
+      }
+      return;
+    }
+    this.reapUnverified = false;
     // A stop/finish can land while reaping workers. That is not a scheduler failure: the gate is closed, so leave quietly.
     if (!this.live() || this.paused) return;
     for (const job of [...this.queue.values()].sort((a,b) => b.priority-a.priority)) {
       if (!this.live() || this.paused || this.deps.capacity() <= 0) break;
       const task = (await this.deps.list()).find(t => t.id === job.taskId); this.gate(); if (this.paused) break;
-      if (!task || task.revision !== job.revision || task.status !== 'proposed') {
-        this.queue.delete(job.taskId); this.notify('intent-invalidated',job.taskId,'Task revised or withdrawn; planner must explicitly dispatch the new revision'); continue;
+      // P10/TR-H12/Q32: withdrawing the task or changing its work identity invalidates the accepted intent; a revision that
+      // leaves the identity unchanged (a status-only or cosmetic edit) updates it and keeps dispatching.
+      if (!task || task.status !== 'proposed') {
+        this.queue.delete(job.taskId); this.notify('intent-invalidated',job.taskId,task ? `Task is ${task.status}; planner must explicitly dispatch a new intent` : 'Task withdrawn; planner must explicitly dispatch a new intent'); continue;
       }
+      if (intentIdentity(task) !== job.identity) {
+        this.queue.delete(job.taskId); this.notify('intent-invalidated',job.taskId,'Question or work identity changed; planner must explicitly dispatch the new revision'); continue;
+      }
+      if (task.revision !== job.revision) job.revision = task.revision;
       const readiness = await this.deps.readiness(job.taskId); this.gate(); if (this.paused) break;
       if (!readiness.ready) {job.reason = readiness.reason; continue;}
       try { await this.deps.spawn(job.input); }

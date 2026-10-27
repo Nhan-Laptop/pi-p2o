@@ -52,6 +52,19 @@ describe('structured work admission over canonical TaskBoard (K4)',()=>{
     const b=await board.create(input);expect(b.workFingerprint).not.toBe(a.workFingerprint);expect(b.overlapWarnings).toContain('overlap:a');
     await board.reserve(a.id,'worker-a');await expect(board.reserve(b.id,'worker-b')).resolves.toMatchObject({status:'reserved'});
   }));
+  it('P10/TR-L02: allows a surface/risk overlap when the declared method differs, and records it on the reserved revision',async()=>fixture(async({board,assetId})=>{
+    // The reserved task declares a method but leaves its structured identity unknown (no actor context): the coarse guard now has
+    // to compare mechanisms instead of refusing every same surface/risk overlap.
+    const busy=base('busy',assetId);busy.work={...busy.work!,actorContext:undefined};
+    const running=await board.create(busy);expect(running.dedupConfidence).toBe('unknown');
+    await board.reserve(running.id,'worker-a');await board.transition(running.id,'running','Inert worker began against the declared mechanism');
+    const same=base('same-method',assetId);expect((await board.readiness((await board.create(same)).id))).toMatchObject({ready:false});
+    await expect(board.reserve('same-method','worker-b')).rejects.toThrow('ASSIGNMENT_CONFLICT');
+    const different=base('different-method',assetId);different.work={...different.work!,methodFamily:'differential'};
+    const created=await board.create(different);expect((await board.readiness(created.id))).toMatchObject({ready:true});
+    const reserved=await board.reserve(created.id,'worker-b');
+    expect(reserved.overlapWarnings).toContain(`method-different-overlap:${running.id}`);
+  }));
   it('indexes full history beyond a recent display tail and returns reviewed reuse without automatic completion',async()=>fixture(async({board,store,assetId})=>{
     const first=await closeReviewed(board,store,await board.create(base('old-work',assetId)));
     for(let i=0;i<35;i++){const input=base('noise-'+i,assetId);delete input.work;delete input.decision;delete input.outputContract;input.surface='noise-'+i;const task=await board.create(input);await board.transition(task.id,'cancelled','Inert irrelevant history withdrawn');}
@@ -76,14 +89,23 @@ describe('structured work admission over canonical TaskBoard (K4)',()=>{
     const outcomes=await Promise.allSettled([board.reserve('a','worker-a'),new TaskBoard(runId,board.path,()=>true,Date.now,()=>store.graphScope(),id=>store.assetRevision(id)).reserve('b','worker-b')]);
     expect(outcomes.filter(result=>result.status==='fulfilled')).toHaveLength(1);expect((await board.list()).filter(t=>t.status==='reserved')).toHaveLength(1);
   }));
-  it('rechecks asset pins during running commands and the atomic running transition',async()=>fixture(async({board,store,assetId})=>{
+  it('P10/TR-H10: records asset drift as one warning while admission still pins the revision it reviews',async()=>fixture(async({board,store,assetId})=>{
     const task=await board.create(base('a',assetId));await board.reserve(task.id,'worker-a');await board.transition(task.id,'running','Inert worker began');
     store.recordGraph({assets:[{asset:{kind:'endpoint',key:'GET /fixture',label:'new confirmed attribute',expectedRevision:1}}]});
-    await expect(board.assertReady('worker-a')).rejects.toThrow('STALE_WORK_REFERENCE');
-    await board.transition(task.id,'blocked','Asset revision changed; review before another attempt');
-    const input=base('b',assetId);input.work!.assetRefs[0].revision=2;const next=await board.create(input);await board.reserve(next.id,'worker-b');
+    // The running worker keeps running against the premise it was dispatched with; the drift is a recorded warning fact.
+    await expect(board.assertReady('worker-a')).resolves.toBeUndefined();
+    const drift=async()=>(await readLedger(board.path,runId)).records.filter(row=>row.kind==='note'&&row.data?.warning==='STALE_WORK_REFERENCE');
+    expect(await drift()).toHaveLength(1);
+    expect((await drift())[0].data).toMatchObject({taskId:task.id,assetId,pinnedRevision:1,currentRevision:2});
+    // Deduplicated: every command re-checks structurally, but the fact is recorded once.
+    await board.assertReady('worker-a');expect(await drift()).toHaveLength(1);
+    // Admission stays authoritative: a new task pinned to the old revision is refused, an explicit re-pin is accepted.
+    const stale=base('b',assetId);const repin=base('c',assetId);repin.work!.assetRefs[0].revision=2;
+    await expect(board.create(stale)).rejects.toThrow('STALE_WORK_REFERENCE');
+    const pinned=await board.create(repin);await expect(board.reserve(pinned.id,'worker-c')).resolves.toMatchObject({status:'reserved'});
+    // The atomic running transition still refuses an asset that moved after reservation.
     store.recordGraph({assets:[{asset:{kind:'endpoint',key:'GET /fixture',label:'third revision',expectedRevision:2}}]});
-    await expect(board.transition(next.id,'running','Inert worker start attempted')).rejects.toThrow('STALE_WORK_REFERENCE');
+    await expect(board.transition(pinned.id,'running','Inert worker start attempted')).rejects.toThrow('STALE_WORK_REFERENCE');
   }));
   it('requires separate validation attempts and retest reasons while retaining discovery history',async()=>fixture(async({board,store,assetId})=>{
     const discovery=await closeReviewed(board,store,await board.create(base('discovery',assetId)),'discovery-worker'),validation=base('validation',assetId);

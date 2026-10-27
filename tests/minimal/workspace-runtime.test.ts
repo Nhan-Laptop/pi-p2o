@@ -41,7 +41,10 @@ async function fixture(work:(h:any)=>Promise<void>,storeFault?:StoreFault,provis
 
 describe('canonical owner runtime (inert execution, real SQLite and Unix broker)',()=>{
   it('parses retention bounds and read-only commands, not arbitrary host paths or resume authority',()=>{
-    expect(parseSettings(undefined)).toMatchObject({retention:'durable-local',storageQuotaMiB:256,artifactCaptureKiB:1024});
+    expect(parseSettings(undefined)).toMatchObject({retention:'durable-local',storageQuotaMiB:256,artifactCaptureKiB:1024,graphCapacity:2});
+    // P9/B (Q29): graph capacity is a multiplier on the hard ceilings; a bad value falls back to the raised default.
+    expect(parseSettings({p2o:{graphCapacity:4}})).toMatchObject({graphCapacity:4});
+    for(const value of [0,5,1.5,'3'])expect(parseSettings({p2o:{graphCapacity:value}}).graphCapacity).toBe(2);
     expect(parseSettings({p2o:{retention:'ephemeral',storageQuotaMiB:8,artifactCaptureKiB:8192}})).toMatchObject({retention:'ephemeral',storageQuotaMiB:8,artifactCaptureKiB:8192});
     for(const value of [0,7,1025,1.5,'256'])expect(parseSettings({p2o:{storageQuotaMiB:value}}).storageQuotaMiB).toBe(256);
     expect(parseCommand('--target x --retention ephemeral')).toMatchObject({options:{retention:'ephemeral'}});
@@ -196,6 +199,28 @@ describe('canonical owner runtime (inert execution, real SQLite and Unix broker)
     const store:AssessmentStore=await h.reader();
     try {const task=store.records().filter(row=>row.kind==='task').at(-1);expect(task?.data?.task).toMatchObject({status:'blocked'});} finally {store.close();}
   },undefined,true));
+  it('P10/TR-H09: shared stays serial by default while an explicit --target-ops N removes that guarantee and is recorded',async()=>{
+    await fixture(async h=>{
+      await h.command('--target ./source');
+      const body=h.ctx.confirmBodies[0] as string;
+      expect(body).toContain('shared is serial');
+      expect(body).toContain('ONE AT A TIME');
+      expect(h.profiles[0].concurrentOperations).toBeUndefined();
+      const store:AssessmentStore=await h.reader();
+      try {expect(store.manifest()).toMatchObject({profile:{executorMode:'shared',maxTargetOperations:1}});expect(store.records().some(row=>row.kind==='lifecycle'&&String(row.text).startsWith('executor profile: shared executor'))).toBe(false);} finally {store.close();}
+    });
+    await fixture(async h=>{
+      await h.command('--target ./source --target-ops 2');
+      const body=h.ctx.confirmBodies[0] as string;
+      expect(body).not.toContain('shared is serial');
+      expect(body).toContain('explicitly raised the cap with --target-ops');
+      expect(body).toContain('share the explicit target-operation cap 2: up to that many target operations may run at once');
+      expect(h.profiles[0].concurrentOperations).toBe(2);
+      const store:AssessmentStore=await h.reader();
+      try {expect(store.manifest()).toMatchObject({profile:{executorMode:'shared',maxTargetOperations:2}});
+        expect(store.records().some(row=>row.kind==='lifecycle'&&String(row.text).includes('the default serial guarantee was removed by the operator (--target-ops 2)'))).toBe(true);} finally {store.close();}
+    });
+  });
   it('hands exclusion paths to both shared and isolated executors outside all container mounts',async()=>{
     await fixture(async h=>{
       await h.command('--target ./source --executors isolated --target-ops 2');
@@ -303,7 +328,7 @@ describe('canonical owner runtime (inert execution, real SQLite and Unix broker)
       const store:AssessmentStore=await h.reader();try{const a=capture.artifacts[0],page=store.artifact(a.id,60000);expect(page.text).toContain('TAIL-RETAINED');expect(page.text).not.toContain('not-for-retention');expect(page.manifest).toMatchObject({operationId:result.details.operationId,producer:'owner',captureOutcome:'returned',truncated:false});expect((store.record(result.details.evidenceId)!.data!.capture as any).artifacts[0].id).toBe(a.id);}finally{store.close();}
       const modelPage=await h.call('p2o_artifact',{id:capture.artifacts[0].id,offset:60000});expect(modelPage.details.returnedBytes).toBe(8192);expect(modelPage.details.nextOffset).toBe(68192);expect(modelPage.content[0].text).not.toContain('not-for-retention');
       const tail=await h.call('p2o_artifact',{id:capture.artifacts[0].id,offset:modelPage.details.nextOffset});expect(tail.content[0].text).toContain('TAIL-RETAINED');
-      await expect(h.call('p2o_artifact',{id:capture.artifacts[0].id,length:8193})).rejects.toThrow('range');await expect(h.call('p2o_artifact',{id:'artifact-00000000-0000-0000-0000-000000000000'})).rejects.toThrow('Unknown artifact ID');
+      await expect(h.call('p2o_artifact',{id:capture.artifacts[0].id,length:49153})).rejects.toThrow('range');await expect(h.call('p2o_artifact',{id:'artifact-00000000-0000-0000-0000-000000000000'})).rejects.toThrow('Unknown artifact ID');
       expect(executed).toBe(1);await h.command(`artifact ${capture.artifacts[0].id} 60000`);h.screen();for(let n=0;n<4;n++)h.ctx.screens.at(-1).handleInput('\u001b[6~');expect(h.screen()).toContain('TAIL-RETAINED');
     });
   });
@@ -323,7 +348,7 @@ describe('canonical owner runtime (inert execution, real SQLite and Unix broker)
       const reporter=(await h.call('p2o_delegate',{focus:'report',task:'synthesize existing receipts',role:'reporting'})).details,rt=await h.ticket(reporter.workerId),r=new BrokerClient(rt.socket,rt.token);
       try{await r.request('runtime',{model:rt.requestedRuntime.model,thinking:rt.requestedRuntime.thinking});const status=await r.request('status');const read=await r.request('artifact_read',{artifactId:artifactId!,length:8192});expect(read.value.returnedBytes).toBe(8192);expect(read.value.nextOffset).toBe(8192);expect(Buffer.byteLength(JSON.stringify(read))).toBeLessThan(64*1024);expect((await r.request('status')).used).toBe(status.used);
         const store:AssessmentStore=await h.reader();let s:number;try{s=store.sequence();}finally{store.close();}await r.request('artifact_read',{artifactId:artifactId!,offset:8192});const after:AssessmentStore=await h.reader();try{expect(after.sequence()).toBe(s!);}finally{after.close();}
-        expect(await r.request('exec',{command:'reporting-may-run'})).toBeDefined();await expect(r.request('artifact_read',{artifactId:artifactId!,length:8193})).rejects.toThrow('range');await expect(r.request('artifact_read',{artifactId:'../../host-file'})).rejects.toThrow('opaque ID');
+        expect(await r.request('exec',{command:'reporting-may-run'})).toBeDefined();await expect(r.request('artifact_read',{artifactId:artifactId!,length:49153})).rejects.toThrow('range');await expect(r.request('artifact_read',{artifactId:'../../host-file'})).rejects.toThrow('opaque ID');
         await r.request('report',{report:{summary:'bounded synthesis',confidence:'low'}});await expect(r.request('artifact_read',{artifactId:artifactId!})).rejects.toThrow('stopped');
       }finally{r.close();}
     });
@@ -362,12 +387,26 @@ describe('canonical owner runtime (inert execution, real SQLite and Unix broker)
       for(const path of ['/etc/passwd','../outside','x/../outside'])await expect(h.call('p2o_capture',{path})).rejects.toThrow('Scratch path');expect(executed).toBe(5);await h.command('stop');await expect(h.call('p2o_capture',{path:'out.txt'})).rejects.toThrow('No active');
     });
   });
+  it('lets one capture lower the run cap but never raise it (P9/B TR-S07)',async()=>{
+    await fixture(async h=>{
+      await writeFile(join(h.root,'isolated-settings.json'),JSON.stringify({p2o:{artifactCaptureKiB:4}}));
+      await h.command('--target ./source');
+      const bounds:number[]=[];
+      h.sandboxes[0].captureScratch=async(path:string,maxBytes:number,_signal:AbortSignal,workdir:string,onRunning:()=>void,onOutput:any)=>{bounds.push(maxBytes);onRunning();const bytes=Buffer.from('x'.repeat(maxBytes));const before={size:bytes.length,device:'1',inode:'2',mtimeNs:'3',ctimeNs:'4',links:1};onOutput('stdout',bytes);return {code:0,stdout:bytes.toString(),stderr:'',truncated:false,scratchSnapshot:{version:1,path,root:workdir,totalBytes:bytes.length,offset:0,capturedBytes:bytes.length,prefixSha256:scratchPrefixHash(bytes),before,after:before,stable:true,encoding:'utf8-prefix'} as ScratchSnapshot};};
+      await h.call('p2o_capture',{path:'out.txt',maxKiB:1});
+      // A per-call cap above the run setting is clamped to the setting, never used to raise it.
+      await h.call('p2o_capture',{path:'out.txt',maxKiB:64});
+      await h.call('p2o_capture',{path:'out.txt'});
+      expect(bounds).toEqual([1024,4096,4096]);
+      await expect(h.call('p2o_capture',{path:'out.txt',maxKiB:0})).rejects.toThrow('maxKiB');
+    });
+  });
   it('authenticates scratch roots/caps and command budgets; a stopped worker still cannot bypass admission',async()=>{
     await fixture(async h=>{
       await writeFile(join(h.root,'isolated-settings.json'),JSON.stringify({p2o:{artifactCaptureKiB:1}}));await h.command('--target ./source');
       const actor=(await h.call('p2o_delegate',{focus:'fixture',task:'capture inert scratch'})).details,ticket=await h.ticket(actor.workerId),c=new BrokerClient(ticket.socket,ticket.token);let rootSeen='',maxSeen=0,executed=0;
       h.sandboxes[0].captureScratch=async(path:string,maxBytes:number,_signal:AbortSignal,workdir:string,onRunning:()=>void,onOutput:any)=>{rootSeen=workdir;maxSeen=maxBytes;executed++;onRunning();const bytes=Buffer.from('x'.repeat(maxBytes)),before={size:4000,device:'1',inode:'2',mtimeNs:'3',ctimeNs:'4',links:1};onOutput('stdout',bytes);return {code:0,stdout:'preview',stderr:'',truncated:true,scratchSnapshot:{version:1,path,root:workdir,totalBytes:4000,offset:0,capturedBytes:bytes.length,prefixSha256:scratchPrefixHash(bytes),before,after:before,stable:true,encoding:'utf8-prefix'}};};
-      try{await c.request('runtime',{model:ticket.requestedRuntime.model,thinking:ticket.requestedRuntime.thinking});const before=await c.request('status');const result=await c.request('capture',{path:'out.txt',root:'/etc',workdir:'/work/other',maxBytes:8388608,by:'owner'});expect(rootSeen).toBe(`/work/${actor.workerId}`);expect(maxSeen).toBe(1024);expect((await c.request('status')).used).toBe(before.used+1);expect(result.capture.artifacts[0]).toMatchObject({totalBytes:4000,capturedInputBytes:1024,truncated:true});expect(result.capture.source.root).toBe(rootSeen);await expect(c.request('capture',{path:'../outside'})).rejects.toThrow('Scratch path');expect(executed).toBe(1);}finally{c.close();}
+      try{await c.request('runtime',{model:ticket.requestedRuntime.model,thinking:ticket.requestedRuntime.thinking});const before=await c.request('status');const result=await c.request('capture',{path:'out.txt',root:'/etc',workdir:'/work/other',maxBytes:8388608,by:'owner'});expect(rootSeen).toBe(`/work/${actor.workerId}`);expect(maxSeen).toBe(1024);expect((await c.request('status')).used).toBe(before.used+1);expect(result.capture.artifacts[0]).toMatchObject({totalBytes:4000,capturedInputBytes:1024,truncated:true});expect(result.capture.source.root).toBe(rootSeen);const lowered=await c.request('capture',{path:'out.txt',maxBytes:512});expect(maxSeen).toBe(512);expect((await c.request('status')).used).toBe(before.used+2);expect(lowered.capture.artifacts[0]).toMatchObject({capturedInputBytes:512});await expect(c.request('capture',{path:'../outside'})).rejects.toThrow('Scratch path');expect(executed).toBe(2);}finally{c.close();}
       const reporter=(await h.call('p2o_delegate',{focus:'report',task:'synthesize existing receipts',role:'reporting'})).details,rt=await h.ticket(reporter.workerId),r=new BrokerClient(rt.socket,rt.token);try{await r.request('runtime',{model:rt.requestedRuntime.model,thinking:rt.requestedRuntime.thinking});expect(await r.request('capture',{path:'out.txt'})).toBeDefined();expect((await r.request('status')).used).toBe(1);await r.request('report',{report:{summary:'partial synthesis',confidence:'low'}});await expect(r.request('capture',{path:'out.txt'})).rejects.toThrow('stopped');}finally{r.close();}
     });
   });

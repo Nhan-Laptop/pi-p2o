@@ -5,7 +5,7 @@
   → PLANNER   the current Pi conversation: plans, reviews, dispatches, decides wait/blocked/finish
   → ENGINE    deterministic TypeScript, no model: accepted frontier → slot → fresh worker
   → WORKER    fresh Pi process in a visible Herdr pane, one bounded intent, brokered execution
-  → EXECUTOR  shared (one serial queue, default), isolated (own sandbox per assignment) or session
+  → EXECUTOR  shared (one serial queue by default; an explicit --target-ops N lifts it), isolated (own sandbox per assignment) or session
               (long-lived run-owned executor: shell cwd/state, optional PTY, listeners)
   → stop/finish: close Engine gate → drain/cancel → revoke → close panes → verify containers
 ```
@@ -55,7 +55,9 @@ finite coalescing windows (100 ms) that need explicit event-driven consent. See 
 
 ## Execution
 
-- Shared executor: `Sandbox.enqueue` serializes target operations; cancelling can remove the executor and interrupt peers.
+- Shared executor: `Sandbox.enqueue` serializes target operations by default; an explicit `--target-ops N` (N>1) with shared
+  sets `concurrentOperations` on that one sandbox so up to N target operations overlap, while provisioning/scratch/cleanup stay
+  serial. Cancelling can remove the executor and interrupt peers.
   Isolated: fresh source copy, scratch, cookies and container per assignment, gated by a separate target-operation semaphore.
 - HTTP follows redirects to any http(s) host and pins the destination; shell/net are not origin-filtered either
   ([boundaries](HTTP_TRANSPORT.md)). Containers: root with a writable rootfs and the Docker default capability set (raw sockets work), read-only `/target`,
@@ -95,9 +97,10 @@ finite coalescing windows (100 ms) that need explicit event-driven consent. See 
   Redaction is best-effort: a worker can print or encode a value and the container sees the resolved command line, and
   the report states that limit.
 - Chain economy removes the per-rung tax without weakening independence: a worker may report with `holdFor` and keep its
-  ticket/pane/session for one successor, the owner dispatches that successor onto the same worker
+  ticket/pane/session for `holdContinuations` successors (0..3, default 1; 0 retires the ticket), the owner dispatches a
+  successor onto the same worker
   (`p2o_task_dispatch {workerId}`, task `proposed`, same role, citing that worker's claims), and `p2o_workers continue`
-  consumes the hold. No timer expires a hold; stop/finish release it, and the finish preflight advises
+  consumes one held continuation. No timer expires a hold; stop/finish release it, and the finish preflight advises
   `HELD_WITHOUT_SUCCESSOR`. A demonstrated successor also lets the host skip replaying one intermediate validation claim;
   the deepest rung always keeps its replay.
 - Runtime steering is append-only: `p2o_loop hint|constrain {text}` records a bounded operator sentence in the ledger

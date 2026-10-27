@@ -107,13 +107,13 @@ interpretation is right.
   `{kind, subject?, scope?}` over the closed `CAPABILITY_KINDS`, and `subject`/`scope` only have to agree when both sides
   name one. A claim without them can still be true, but nothing downstream can consume it. A pre-P14 record's free-text
   `provides`/`requires` is still read and displayed, marks the claim legacy, and satisfies no typed need.
-- `payloadRef`: the payload artifact from `p2o_lab` that actually ran (kind `request` | `script` | `command`, ≤32 KiB,
+- `payloadRef`: the payload artifact from `p2o_lab` that actually ran (kind `request` | `script` | `command`, ≤48 KiB,
   stored verbatim in the run-private control directory and never exported). It requires `tested` execution. The report
   derives `replayable` from it — the flag is never stored — so a claim without one is labelled "not replayable" instead
   of implying a second worker could reproduce it.
 - `supersedes` (latest record ID), `resolves` (open items), `independentEvidenceRef` (another worker's receipt plus its
   matching runtime-tested candidate at the latest revision; withdrawn support is rejected, the planner still judges semantics).
-- `payloadRef`: the payload artifact from `p2o_lab` that actually ran — a request, script or command of at most 32 KiB,
+- `payloadRef`: the payload artifact from `p2o_lab` that actually ran — a request, script or command of at most 48 KiB,
   stored verbatim in the run-private control directory and never exported. It requires `tested` execution.
 - `environmentRef`: the environment recipe it was demonstrated in (`p2o_lab action=env`). A recipe is setup commands,
   background services with a port or healthcheck, and seed commands, run as local processes in the caller's own sandbox —
@@ -172,9 +172,10 @@ source/skill/image/extension hashes and ledger records (never tickets or auth fi
 before sharing. Without `--export` the ledger is deleted at cleanup; an export error never blocks teardown.
 
 A worker that settles without `p2o_report` yields a blocked report with no extra model call. A worker that expects a
-successor may report with `holdFor` and a one-sentence brief: its ticket, pane and session stay open for one
-owner-dispatched successor (`p2o_task_dispatch {workerId}`), or for a different prompt via `p2o_workers continue`,
-instead of paying a fresh worker and re-walking the chain. No timer expires a hold; stop/finish release it and the
+successor may report with `holdFor` and a one-sentence brief: its ticket, pane and session stay open for
+`holdContinuations` owner-dispatched steps (0..3, default 1) — via `p2o_task_dispatch {workerId}` or a different prompt
+with `p2o_workers continue` — instead of paying a fresh worker and re-walking the chain. A count of 0 names the successor
+in the report but retires the ticket. No timer expires a hold; stop/finish release it and the
 finish preflight advises when a hold has no successor. If its broker is lost,
 the planner must withdraw it with `p2o_workers` (action: 'stop'); idle Herdr states never prove completion. Linux is required (FD-relative
 containment). Real-provider evaluation: `bench/README.md`; unit tests do not establish assessment quality.

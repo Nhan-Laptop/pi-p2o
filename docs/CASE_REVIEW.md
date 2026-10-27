@@ -14,7 +14,7 @@ Worker và reporter không có case/plan/coverage verb; reporter là người đ
 
 ## Quy tắc review
 
-- Create luôn `pending`; `accepted|disputed|withdrawn` cần revision mới với `revision` kỳ vọng; không accept khi còn contradiction `open`.
+- Create luôn `pending`: bỏ `reviewStatus` thì host ghi `pending`, bỏ `remediation` thì host ghi `unplanned` với lý do trung thực `No remediation was planned or reviewed for this case yet` và evidence rỗng (P10/TR-L06); `assetRefs`/`claimRefs` được phép bỏ khi đã nêu `taskRefs` — host suy ra asset pin từ `work.assetRefs` của task đã review và claim mà review đã accept, và `claimRefs` nhận **record id hoặc candidate slug** rồi lưu record id đã resolve (P10/TR-L01). `accepted|disputed|withdrawn` cần revision mới với `revision` kỳ vọng; không accept khi còn contradiction `open`.
 - `confirmed` cần claim đã tested có policy basis không phải `inferred`; `ruled_out` cần claim ruled-out hiện tại + control cụ thể.
 - Huy hiệu độc lập cần receipt của Worker khác; validator rút lại thì case/report stale. Asset/task/claim/case đổi → support stale, không tự copy.
 - Duplicate không dựa title/CWE/severity: `duplicateOf` cần cùng `policyKey` + `rootCauseKey`, đích là finding accepted-current, chuỗi không chu trình;
@@ -103,9 +103,12 @@ assessment: unreviewed | confirmed_claim | ruled_out_bounded | open_gap | accept
 Từ A3 (P2), coverage là **projection của công việc đã review**, không phải bảng do model viết. Host đọc task head, claim worker của
 task đó (`data.taskRef`), case accepted cùng run và revision asset trong graph, rồi dựng một cell cho mỗi `work.assetRefs` — mọi lần
 đọc đều chiếu lại, không ghi ledger. Model chỉ ghi **scope** của plan qua `p2o_coverage_plan` (create/revise: `title`, `status`,
-`reason`, `exclusions`, `unknownScope`); không có verb tạo/sửa/retire cell và plan+cell không còn là một transaction. Plan tạo sau A3
+`reason`, `exclusions`, `unknownScope`); không có verb tạo/sửa/retire cell và plan+cell không còn là một transaction. `status` bỏ trống
+thì host ghi `draft`, `exclusions`/`unknownScope` bỏ trống thì `[]` (P10/TR-L06). Plan tạo sau A3
 mang marker host-owned `derivation:'projected'` (revise giữ marker); `p2o_board board=coverage` và báo cáo đọc cell dẫn xuất kèm count
-dẫn xuất và danh sách `unmapped`, còn list coverage trả `derivation` là `projected` (plan sau A3) hay `legacy` (plan cũ).
+dẫn xuất và danh sách `unmapped`, còn list coverage trả `derivation` là `projected` (plan sau A3) hay `legacy` (plan cũ). View một plan
+giữ nguyên totals/counts nhưng **page** trường `cells` (`cursor`, `limit` 1..100 mặc định 20, `nextCursor`) nên plan lớn được đọc theo
+trang thay vì bị từ chối vì vượt 24 KiB (P10/TR-H02).
 
 Cell identity = target revision + asset@revision + question/policy key + actor/tenant + method family (không hash văn xuôi). Id dẫn
 xuất tất định `coverage-cell-<24hex>` (recordId `derived-<32hex>`, revision 1, retired false) từ fingerprint đó. Mỗi plan projected

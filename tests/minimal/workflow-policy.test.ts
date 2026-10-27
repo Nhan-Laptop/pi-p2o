@@ -7,7 +7,11 @@ import {
   plannerTools, reporterTools, workerTools,
 } from '../../src/tool-policy.js';
 import { TOOL_BOUNDARIES } from '../../src/tool-guidelines.js';
-import { taskDraftSchema } from '../../src/tool-schemas.js';
+import { artifactParameters, captureParameters, execParameters, httpParameters, labParameters, sessionParameters, taskDraftSchema } from '../../src/tool-schemas.js';
+import { PAYLOAD_BYTES } from '../../src/lab.js';
+import { MAX_BODY_BYTES } from '../../src/target.js';
+import { taskDispatchParameters } from '../../src/board-verbs.js';
+import { SEARCH_LIMIT_MAX } from '../../src/search.js';
 import { plannerInstructions, workerBrief, workerInstructions } from '../../src/prompts.js';
 import { createFakePi, EXTENSION_PATH } from './helpers/fake-pi.js';
 
@@ -61,6 +65,16 @@ describe('tool descriptions carry the boundary (A1: no separate guidance layer)'
     for (const enabled of [true, false]) expect(plannerInstructions(facts(enabled))).not.toMatch(/\bp2o_[a-z_]+\b/);
   });
 
+  it('P10/WF-02 (Q28): names the configured per-task worker runtime only when the host supplies it', () => {
+    const base = facts(true);
+    const body = plannerInstructions({ ...base, delegation: { ...base.delegation, runtimeModels: ['opencode-go/deepseek-v4-flash', 'opencode-go/kimi-k3'] } });
+    expect(body).toContain('runtime.model to one of opencode-go/deepseek-v4-flash, opencode-go/kimi-k3');
+    expect(body).toContain('runtime.thinking to one of off/minimal/low/medium/high/xhigh/max');
+    expect(body).toContain('a held ticket keeps the runtime it started with');
+    // Without a delegation backend there is no worker runtime to choose, so the line is absent rather than misleading.
+    expect(plannerInstructions(base)).not.toContain('runtime.model to one of');
+  });
+
   it('no longer advertises the removed 60 s / 300 s command ceilings', () => {
     const tools = registry();
     for (const name of ['p2o_shell', 'p2o_net', 'p2o_http']) expect(tools.get(name).description, name).not.toMatch(/60-second|300-second|ceiling of 60|ceiling of 300/i);
@@ -94,6 +108,42 @@ describe('authority split: planner intent, worker execution, reporter read (P0/A
     expect(plannerInstructions(facts(true))).toMatch(/no target, lab or claim tools/i);
     expect(plannerInstructions(facts(true))).not.toMatch(/may execute directly/i);
     expect(workerInstructions(ticket('discovery'))).not.toMatch(/p2o_task_create|p2o_task_dispatch|p2o_workers/);
+  });
+});
+
+describe('P9 capability ceilings (owner-chosen option A)', () => {
+  it('declares the raised artifact, redirect, dispatch and search caps where the host enforces them (P9)', () => {
+    // The schema is the declaration Pi validates before a handler sees it; each value below now matches the host's own
+    // ceiling instead of sitting below it (a 8 KiB artifact read against a 48 KiB store, 5 redirects against 20, a
+    // dispatch batch with no declared maximum against the engine's 1..25, and a 20-hit search against the state
+    // schema's 100).
+    const artifact = (artifactParameters as unknown as { properties: Record<string, { maximum?: number }> }).properties;
+    expect(artifact.length.maximum).toBe(48 * 1024);
+    const http = (httpParameters as unknown as { properties: Record<string, { maximum?: number }> }).properties;
+    expect(http.maxRedirects.maximum).toBe(20);
+    const dispatch = (taskDispatchParameters as unknown as { properties: Record<string, { maxItems?: number }> }).properties;
+    expect(dispatch.ids.maxItems).toBe(25);
+    expect(SEARCH_LIMIT_MAX).toBe(100);
+  });
+  it('raises the remaining request ceilings to the broker-safe maxima (P9/B)', async () => {
+    // P9/B (owner chose raised constants, not settings): each schema maximum now matches its handler/broker bound.
+    const properties = (schema: unknown) => (schema as { properties: Record<string, { maximum?: number; maxLength?: number }> }).properties;
+    expect(properties(execParameters).command.maxLength).toBe(32 * 1024);
+    expect(properties(execParameters).send.maxLength).toBe(16 * 1024);
+    expect(properties(sessionParameters).command.maxLength).toBe(32 * 1024);
+    expect(properties(sessionParameters).content.maxLength).toBe(48 * 1024);
+    expect(properties(httpParameters).body.maxLength).toBe(48 * 1024);
+    expect(properties(httpParameters).url.maxLength).toBe(8 * 1024);
+    expect(properties(labParameters).body.maxLength).toBe(PAYLOAD_BYTES);
+    expect(PAYLOAD_BYTES).toBe(48 * 1024);
+    expect(MAX_BODY_BYTES).toBe(48 * 1024);
+    // TR-S07: a per-call capture bound exists in the schema and the handler clamps it to the run setting.
+    expect(properties(captureParameters).maxKiB.maximum).toBe(8192);
+    // The operator documents and the tool descriptions state the raised numbers, so a model or human reads the real ceiling.
+    const doc = (name: string) => readFile(resolve(import.meta.dirname, `../../docs/${name}`), 'utf8');
+    expect(await doc('HTTP_TRANSPORT.md')).toContain('body 48 KiB');
+    expect(await doc('USAGE.md')).toContain('graphCapacity');
+    expect(await doc('SKILL_RUNTIME.md')).toContain('≤48 KiB');
   });
 });
 

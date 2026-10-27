@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { appendRecord, appendRecords, appendGeneratedRecords, readLedger, readWorkHistory, readWorkOverlap, type AssessmentRecord, type LedgerIndex, type RecordAck } from './records.js';
 import { isOpenClaim } from './claims.js';
-import { isRole, type Role } from './roles.js';
+import { isRole, THINKING_LEVELS, type Role } from './roles.js';
 import { purposeFromRole } from './duties.js';
 import { prepareReport } from './report.js';
 import type { WorkerReport } from './broker.js';
@@ -22,6 +22,9 @@ export interface TaskDraft {
   // Omit revision to wait; reserve pins the accepted revision.
   prerequisites: Array<{ taskId: string; revision?: number }>; validationOf?: string; retestOf?:string; parentTaskId?: string;
   method: TaskMethod; work?:WorkSpec; decision?:WorkDecision; outputContract?:TaskOutputContract;
+  /** P10/WF-02/03 (Q28): optional per-task worker model/thinking; the host validates it against the configured set at admission
+   *  and dispatch, and the resolved value is recorded on the ticket so the worker prompt and review see the same runtime. */
+  runtime?: { model?: string; thinking?: string };
   unknowns?: string[]; missingPrerequisites?: string[]; expectedOutput?: string;
 }
 /** The one declaration of the task vocabulary (P13c): the loader, the situation line and every gate read this array. */
@@ -117,7 +120,7 @@ function bounded(value: unknown, name: string, limit: number, minimum = 1): asse
   if (typeof value !== 'string' || value.trim().length < minimum || value.length > limit || TEXT_CONTROL.test(value)) throw new Error(`Invalid task ${name}`);
 }
 function validate(input: TaskDraft) {
-  const allowed = ['id','question','surface','risk','role','roleReason','expectedTrue','expectedFalse','stopCondition','evidenceIds','prerequisites','validationOf','retestOf','parentTaskId','method','work','decision','outputContract','unknowns','missingPrerequisites','expectedOutput'];
+  const allowed = ['id','question','surface','risk','role','roleReason','expectedTrue','expectedFalse','stopCondition','evidenceIds','prerequisites','validationOf','retestOf','parentTaskId','method','work','decision','outputContract','runtime','unknowns','missingPrerequisites','expectedOutput'];
   if (Object.keys(input).some(k => !allowed.includes(k))) throw new Error('Task input cannot change scope, run, expiry or authority');
   // A recon intent is bounded mapping, not a contrasting hypothesis yet: roleReason/expectedTrue/expectedFalse/stopCondition
   // and method.reason may be omitted (stored as ''), never required empty for the other roles.
@@ -130,6 +133,14 @@ function validate(input: TaskDraft) {
   if (!Array.isArray(input.prerequisites) || input.prerequisites.some(p => !p || typeof p.taskId !== 'string' || !/^[a-z0-9][a-z0-9-]{0,79}$/.test(p.taskId) || (p.revision !== undefined && (!Number.isSafeInteger(p.revision) || p.revision < 1))) || new Set(input.prerequisites.map(p=>p.taskId)).size!==input.prerequisites.length) throw new Error('Invalid or duplicate task prerequisites');
   for (const list of [input.unknowns,input.missingPrerequisites]) if (list !== undefined && (!Array.isArray(list) || list.some(v => typeof v !== 'string' || v.trim().length < 10 || v.length > 500))) throw Error('Invalid task unknowns/prerequisites');
   if (input.expectedOutput !== undefined) bounded(input.expectedOutput,'expected output',1000,5);
+  // P10/WF-02/03 (Q28): shape only; membership in the configured model set is checked by the host at admission and dispatch,
+  // because only the extension holds the operator settings and a refusal must name the configured set.
+  if (input.runtime !== undefined) {
+    const runtime = input.runtime as unknown as Record<string, unknown>;
+    if (!runtime || typeof runtime !== 'object' || Array.isArray(runtime) || Object.keys(runtime).some(key => !['model','thinking'].includes(key))) throw new Error('Invalid task runtime: only runtime.model and runtime.thinking are accepted');
+    if (runtime.model !== undefined && (typeof runtime.model !== 'string' || runtime.model.trim().length < 1 || runtime.model.length > 200 || TEXT_CONTROL.test(runtime.model))) throw new Error('Invalid task runtime model');
+    if (runtime.thinking !== undefined && (typeof runtime.thinking !== 'string' || !(THINKING_LEVELS as readonly string[]).includes(runtime.thinking))) throw new Error('Invalid task runtime thinking level');
+  }
   if (!input.method || typeof input.method.reason !== 'string' || !Array.isArray(input.method.skills) || input.method.skills.some(s => !s || typeof s.id !== 'string' || s.id.length > 64 || !/^[a-z0-9-]+$/.test(s.id) || !/^[a-f0-9]{64}$/.test(s.sha256))) throw new Error('Invalid task method: draft.skills must name catalog skills (the host stamps their sha256) and draft.methodReason must be a string');
   // P2.3 (measured rerun 2026-10-26): the dominant residual refusal was an omitted `draft.methodReason` for a non-recon
   // role, reported as both missing and over-long only as bare "Invalid task method". The lead read that as the role being
@@ -189,6 +200,8 @@ export function reviewIntegrityNote(index: LedgerIndex, task: AssessmentTask, ev
 export class TaskBoard extends LedgerBoard {
   /** off: no note; annotate: note only; enforce: also refuse receipts the assignee did not author unless acknowledged. Set by the extension from p2o.reviewIntegrity. */
   integrity: 'off' | 'annotate' | 'enforce' = 'annotate';
+  /** P10/TR-H10: one drift warning per (task, asset, pinned revision); the fact is recorded once, not on every command. */
+  private readonly driftNoted = new Set<string>();
   constructor(runId: string, path: string, active: () => boolean, private now = () => Date.now(), private targetRevision:string|(()=>string)=runId,
     private assetRevision?: (id:string)=>number|undefined) { super(runId, path, active, 'Task', 'Task'); }
   /**
@@ -416,6 +429,27 @@ export class TaskBoard extends LedgerBoard {
     if(draft.retestOf){const prior=this.current(tasks,draft.retestOf);if(!sameQuestion(draft,prior))throw Error('Retest needs the same canonical asset/question identity');
       if(ready&&(!prior.evidenceIds.length||!isSatisfiedTask(prior.status)))throw Error('Retest needs a reviewed matching predecessor');}
   }
+  /**
+   * P10/TR-L02: the coarse surface/risk guard exists for work whose mechanism cannot be compared. A task that declares a
+   * different `work.methodFamily` is a different mechanism, not a duplicate of the reserved one, so that overlap is allowed
+   * (and recorded on the reserving revision); the independent-validation exemption is unchanged. Everything else that cannot
+   * be told apart is still a conflict.
+   */
+  private surfaceOverlaps(candidate: TaskDraft & { id: string }, tasks: AssessmentTask[]): { conflicts: AssessmentTask[]; methodDiverse: AssessmentTask[] } {
+    const exact = workIdentity(typeof this.targetRevision === 'function' ? this.targetRevision() : this.targetRevision, candidate).confidence === 'exact';
+    const method = candidate.work?.methodFamily?.trim().toLowerCase();
+    const conflicts: AssessmentTask[] = [], methodDiverse: AssessmentTask[] = [];
+    for (const busy of tasks) {
+      if (busy.id === candidate.id || !['reserved', 'running'].includes(busy.status)) continue;
+      if (busy.surface.trim() !== candidate.surface.trim() || busy.risk.trim().toLowerCase() !== candidate.risk.trim().toLowerCase()) continue;
+      if (exact && busy.dedupConfidence === 'exact') continue;
+      if (candidate.validationOf && !busy.validationOf && candidate.role === 'validation') continue;
+      const busyMethod = busy.work?.methodFamily?.trim().toLowerCase();
+      if (method && busyMethod && method !== busyMethod) methodDiverse.push(busy);
+      else conflicts.push(busy);
+    }
+    return { conflicts, methodDiverse };
+  }
   reserve(id: string, assignee: string): Promise<AssessmentTask> {
     return this.mutate(async (index,tasks) => {
       const task = this.current(tasks,id);
@@ -423,11 +457,12 @@ export class TaskBoard extends LedgerBoard {
       const prerequisites = task.prerequisites.map(p => ({taskId:p.taskId,revision:this.prerequisite(tasks,index,p,true).revision})),candidate=this.pinAssets({...task,prerequisites});
       this.checkDependencies(candidate,tasks.filter(t => t.id !== id),index,true);
       if(candidate.validationOf){const prior=this.current(tasks,candidate.validationOf);if(prior.assignee&&prior.assignee===assignee)throw Error('Independent validation needs a separate worker/attempt');}
-      const exact=workIdentity(typeof this.targetRevision==='function'?this.targetRevision():this.targetRevision,candidate).confidence==='exact';
-      const overlaps=tasks.filter(t=>t.id!==id&&['reserved','running'].includes(t.status)&&t.surface.trim()===candidate.surface.trim()&&t.risk.trim().toLowerCase()===candidate.risk.trim().toLowerCase()&&(!exact||t.dedupConfidence!=='exact'));
-      if(overlaps.some(busy=>!(candidate.validationOf&&!busy.validationOf&&candidate.role==='validation')))throw Error('ASSIGNMENT_CONFLICT: surface/risk already reserved with unknown structured identity');
+      const overlaps=this.surfaceOverlaps(candidate,tasks);
+      if(overlaps.conflicts.length)throw Error('ASSIGNMENT_CONFLICT: surface/risk already reserved with the same or unknown mechanism');
       const decorated=this.decorate(candidate,await this.matching(candidate));
-      return this.write({ ...decorated,revision:task.revision+1,status:'reserved',assignee },task);
+      // P10/TR-L02: a method-different overlap is a recorded decision on this revision, visible at review, not a refusal.
+      const overlapWarnings=[...(decorated.overlapWarnings??[]),...overlaps.methodDiverse.map(busy=>`method-different-overlap:${busy.id}`)].slice(0,10);
+      return this.write({ ...decorated,revision:task.revision+1,status:'reserved',assignee,...(overlapWarnings.length?{overlapWarnings}:{}) },task);
     });
   }
   async transition(id: string, status: TaskStatus, reason: string, evidenceIds?: string[], expectedRevision?: number, externalEvidence = false): Promise<AssessmentTask> {
@@ -477,12 +512,33 @@ export class TaskBoard extends LedgerBoard {
     if (!index.complete) throw Error('Objective reconciliation incomplete');
     return taskFrontier(index).find(t => t.assignee === workerId);
   }
+  /**
+   * P10/TR-H10: this runs before every worker command, so it stays a cheap structural check (assigned and running, pinned
+   * prerequisites). It never re-verifies the asset revision: reserve/readiness are the authoritative admission points, and an
+   * asset that moved after the task started is the reviewed premise the worker is still executing against. The drift is
+   * recorded once as a warning fact instead of freezing the worker; re-pinning is an explicit task revise.
+   */
   async assertReady(workerId: string) {
     this.gate(); const index = await readLedger(this.path,this.runId); if (!index.complete) throw Error('Objective reconciliation incomplete');
     const tasks = taskFrontier(index), t = tasks.find(t => t.assignee === workerId);
     if (!t || t.status !== 'running') throw Error('No running assignment');
     if (t.prerequisites.some(p => p.revision === undefined)) throw Error('Unpinned running prerequisite');
-    this.checkDependencies(t,tasks.filter(p => p.id !== t.id),index,true); this.gate();
+    await this.noteAssetDrift(t); this.gate();
+  }
+  /** P10/TR-H10: one warning record per (task, asset, pinned revision); the run keeps moving and review sees the drift. */
+  private async noteAssetDrift(task: AssessmentTask): Promise<void> {
+    if (!this.assetRevision) return;
+    for (const ref of task.work?.assetRefs ?? []) {
+      if (ref.revision === undefined) continue;
+      const current = this.assetRevision(ref.id);
+      if (current === undefined || current === ref.revision) continue;
+      const key = `${task.id}:${ref.id}:r${ref.revision}`;
+      if (this.driftNoted.has(key)) continue;
+      this.driftNoted.add(key);
+      await appendRecord(this.path, { id: randomUUID(), runId: this.runId, at: new Date(this.now()).toISOString(), by: 'owner', kind: 'note',
+        text: `${task.id}: asset ${ref.id} moved from r${ref.revision} to r${current} while the assignment is running; pinned r${ref.revision} stays the reviewed premise until an explicit re-pin`,
+        data: { warning: 'STALE_WORK_REFERENCE', taskId: task.id, assetId: ref.id, pinnedRevision: ref.revision, currentRevision: current } });
+    }
   }
   /** Admission projection only: reserve still repeats the authoritative checks atomically. */
   async readiness(id: string): Promise<{ ready: boolean; reason?: string }> {
@@ -494,8 +550,8 @@ export class TaskBoard extends LedgerBoard {
     try {
       const prerequisites=task.prerequisites.map(p=>({taskId:p.taskId,revision:this.prerequisite(tasks,index,p,true).revision})),candidate=this.pinAssets({...task,prerequisites});
       this.checkDependencies(candidate,tasks.filter(t => t.id !== id),index,true);
-      const exact=workIdentity(typeof this.targetRevision==='function'?this.targetRevision():this.targetRevision,candidate).confidence==='exact';
-      if(tasks.some(t=>t.id!==id&&['reserved','running'].includes(t.status)&&t.surface.trim()===candidate.surface.trim()&&t.risk.trim().toLowerCase()===candidate.risk.trim().toLowerCase()&&(!exact||t.dedupConfidence!=='exact')&&!(candidate.validationOf&&!t.validationOf&&candidate.role==='validation')))return {ready:false,reason:'ASSIGNMENT_CONFLICT: surface/risk already reserved with unknown structured identity'};
+      // P10/TR-L02: a method-different overlap is admitted exactly like it is at reserve; readiness mirrors the same rule.
+      if(this.surfaceOverlaps(candidate,tasks).conflicts.length)return {ready:false,reason:'ASSIGNMENT_CONFLICT: surface/risk already reserved with the same or unknown mechanism'};
       this.enforceMatch(candidate,await this.matching(candidate));this.gate(); return {ready:true};
     } catch (error) { return {ready:false,reason:error instanceof Error ? error.message : String(error)}; }
   }

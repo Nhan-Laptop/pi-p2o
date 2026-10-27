@@ -10,7 +10,7 @@ import type { AssessmentRecord, LedgerIndex } from './records.js';
  * kind, author, short snippet) to be drilled into with the exact-ID readers; a hit is never evidence, proof or authority, and artifact bytes
  * are not searched. Totals are exact for the committed snapshot the search ran on.
  */
-export const SEARCH_QUERY_MIN = 2, SEARCH_QUERY_MAX = 80, SEARCH_LIMIT_MAX = 20, SEARCH_LIMIT_DEFAULT = 10, SNIPPET_CHARS = 100;
+export const SEARCH_QUERY_MIN = 2, SEARCH_QUERY_MAX = 80, SEARCH_LIMIT_MAX = 100, SEARCH_LIMIT_DEFAULT = 10, SNIPPET_CHARS = 100;
 const SKIPPED_KINDS = new Set(['report_part']);
 const DATA_KEYS = ['title', 'candidate', 'question', 'focus'] as const;
 

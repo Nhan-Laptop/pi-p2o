@@ -6,7 +6,8 @@ import { exact, plain, TEXT_CONTROL } from './validate.js';
 import { LedgerBoard } from './board.js';
 import { capabilityList, type Capability } from './capabilities.js';
 import { isEnvironmentId } from './lab.js';
-import { goalProofRefusal, proofData, type GoalProof } from './goal-proof.js';
+import { goalProofRefusal, goalProofSupportRefs, proofData, type GoalProof } from './goal-proof.js';
+import { caseFrontier, type CaseContext } from './cases.js';
 import { defaultRoute, routeSlug } from './routes.js';
 import { taskFrontier } from './tasks.js';
 import { claimHeadClaims } from './chain-view.js';
@@ -73,8 +74,11 @@ function goalProof(value:unknown):GoalProof{
 export function validatePlanDraft(value:unknown):PlanDraft{
   const row=plain(value,'plan entry');exact(row,['id','kind','title','status','reason','criteria','exclusions','taskIds','goalIds','supportRefs','decision','proof','route','claimRefs','needs','environmentRef','chainOf','step','debtRefs'],'Plan entry');
   if(typeof row.kind!=='string'||!(PLAN_KINDS as readonly string[]).includes(row.kind))throw Error('Invalid plan kind');const kind=row.kind as PlanKind;
-  if(typeof row.status!=='string'||!statuses[kind].includes(row.status))throw Error(`Invalid plan status ${typeof row.status==='string'?JSON.stringify(row.status):'(missing)'}; ${kind} allows ${statuses[kind].join(', ')}`);
-  const result:PlanDraft={kind,title:text(row.title,'title',500),status:row.status,reason:text(row.reason,'reason',1000,10),
+  // P10/TR-L05: a created goal is already being pursued; closing is a separate revision. Completion reads every non-settled goal
+  // as open work (src/completion.ts), so `active` and `proposed` derive the same state — the honest default is the one being pursued.
+  const status=row.status===undefined&&kind==='goal'?'active':row.status;
+  if(typeof status!=='string'||!statuses[kind].includes(status))throw Error(`Invalid plan status ${typeof status==='string'?JSON.stringify(status):'(missing)'}; ${kind} allows ${statuses[kind].join(', ')}`);
+  const result:PlanDraft={kind,title:text(row.title,'title',500),status,reason:text(row.reason,'reason',1000,10),
     criteria:proseList(row.criteria,'criteria'),exclusions:proseList(row.exclusions,'exclusions'),taskIds:list(row.taskIds,'task ID'),goalIds:list(row.goalIds,'goal ID'),supportRefs:list(row.supportRefs,'support reference')};
   if(row.id!==undefined)result.id=id(row.id);
   // M1: one link vocabulary on the plan board; the fields only exist on a todo, and a chain step always carries both the
@@ -111,7 +115,9 @@ export function validatePlanDraft(value:unknown):PlanDraft{
     if(row.proof===undefined)throw Error('GOAL_UNPROVEN: a goal needs proof (capability, case or coverage); name what would settle it');
     result.proof=goalProof(row.proof);
   } else if(row.proof!==undefined)throw Error('Only a goal carries proof');
-  if(kind!=='goal'&&(result.criteria!.length||result.exclusions!.length))throw Error('Only goals define criteria/exclusions');
+  // P10/TR-L08: a todo may carry an advisory checklist (recorded and displayed, never a completion gate); goals keep requiring
+  // criteria, and a decision row still refuses them.
+  if(kind==='decision'&&(result.criteria!.length||result.exclusions!.length))throw Error('Only goals and todos define criteria/exclusions');
   if(kind==='decision'){
     if(!row.decision||typeof row.decision!=='object'||Array.isArray(row.decision)||Object.getPrototypeOf(row.decision)!==Object.prototype)throw Error('Decision entry needs a structured disposition');const d=row.decision as Record<string,unknown>;
     if(Object.keys(d).some(key=>!['disposition','chosenTaskIds','deferredTaskIds','revisitCondition'].includes(key))||typeof d.disposition!=='string'||!(PLAN_DISPOSITIONS as readonly string[]).includes(d.disposition))throw Error('Invalid plan decision');
@@ -143,14 +149,27 @@ export function phasePackets(index:LedgerIndex):PhasePacket[]{
 export class PlanBoard extends LedgerBoard{
   /** A6.2: the host passes a debt resolver so an unknown `debtRef` is refused here, not silently ignored. Optional so a
   // reader-only board (tests, historical views) needs no coverage context to construct one. */
-  constructor(runId:string,path:string,active:()=>boolean,private now=()=>Date.now(),private debt?:(index:LedgerIndex)=>DebtReport){super(runId,path,active,'Plan','Plan');}
+  constructor(runId:string,path:string,active:()=>boolean,private now=()=>Date.now(),private debt?:(index:LedgerIndex)=>DebtReport,private cases?:CaseContext){super(runId,path,active,'Plan','Plan');}
   private mutate<T>(work:(index:LedgerIndex,plans:PlanEntry[])=>Promise<T>):Promise<T>{return this.serialized(index=>work(index,planFrontier(index)));}
   private references(draft:PlanDraft,index:LedgerIndex,plans:PlanEntry[]):void{
     const tasks=taskFrontier(index);for(const taskId of draft.taskIds??[])if(!tasks.some(task=>task.id===taskId))throw Error(`Unknown plan task ${taskId}`);
     for(const goalId of draft.goalIds??[])if(!plans.some(plan=>plan.id===goalId&&plan.kind==='goal'))throw Error(`Unknown plan goal ${goalId}`);
     const edges=new Map(plans.map(plan=>[plan.id,plan.goalIds??[]]));if(draft.id)edges.set(draft.id,draft.goalIds??[]);
     const visiting=new Set<string>(),visited=new Set<string>();const visit=(key:string)=>{if(visiting.has(key))throw Error('Plan goal cycle');if(visited.has(key))return;visiting.add(key);for(const parent of edges.get(key)??[])visit(parent);visiting.delete(key);visited.add(key);};if(draft.id)visit(draft.id);
-    for(const ref of draft.supportRefs??[])if(index.byId.get(ref)?.kind!=='evidence'||index.byId.get(ref)?.runId!==this.runId)throw Error(`Plan support ${ref} is not same-run evidence`);
+    // P10/TR-L09: a plan row may stand on any same-run work record, not only evidence: an evidence record, a candidate claim
+    // record, or a task/plan entry. P10/TR-L07 also records the settled case/plan id that closed a goal, so a case head is read
+    // as the support it is. Unknown and foreign references stay refused, and the message names what the field accepts.
+    const taskIds=new Set(tasks.map(task=>task.id)),planIds=new Set(plans.map(plan=>plan.id)),caseIds=new Set(caseFrontier(index).map(entry=>entry.id));
+    const supportKind=(ref:string):string|undefined=>{
+      const row=index.byId.get(ref);
+      if(row&&row.runId===this.runId){
+        if(row.kind==='evidence'||row.kind==='candidate'||row.kind==='task')return row.kind;
+        if(row.kind==='note'&&row.data?.plan)return 'plan';
+        if(row.kind==='note'&&row.data?.case)return 'case';
+      }
+      if(taskIds.has(ref))return 'task';if(planIds.has(ref))return 'plan';if(caseIds.has(ref))return 'case';
+      return undefined;};
+    for(const ref of draft.supportRefs??[])if(!supportKind(ref))throw Error(`Plan support ${ref} is not a same-run evidence, candidate, task or plan reference; legalNext: copy the record or entry id from p2o_ledger or p2o_board instead of inventing one`);
     for(const taskId of [...(draft.decision?.chosenTaskIds??[]),...(draft.decision?.deferredTaskIds??[])])if(!tasks.some(task=>task.id===taskId))throw Error(`Unknown decision task ${taskId}`);
     // M1: lineage is a same-run candidate record, so the chain board can resolve a step's needs against what that claim gains.
     for(const ref of draft.claimRefs??[])if(index.byId.get(ref)?.kind!=='candidate'||index.byId.get(ref)?.runId!==this.runId)throw Error(`Unknown plan claim ${ref}: a claim reference must be a same-run candidate record`);
@@ -180,9 +199,11 @@ export class PlanBoard extends LedgerBoard{
     if(!transitions[old.kind][old.status]?.includes(draft.status))throw Error('Invalid plan transition');const value={...draft,id:idValue};
     if(value.kind==='todo'&&!value.route)value.route=defaultRoute(value,claimHeadClaims(index));this.references(value,index,plans);
     if(value.kind==='goal'&&(GOAL_SETTLED as readonly string[]).includes(value.status)){
-      if(!value.supportRefs?.length)throw Error('Reviewed/closed goal needs same-run support references');
       // P16.1: status is a statement about the run; the proof is a statement about the target. Both have to hold.
-      const refusal=goalProofRefusal(value.proof!,proofData(index));if(refusal)throw Error(refusal);
+      const refusal=goalProofRefusal(value.proof!,proofData(index,this.cases));if(refusal)throw Error(refusal);
+      // P10/TR-L07: the committed proof is the support. A caller that names no supportRefs gets the exact proof that settled the
+      // goal recorded instead of being asked to restate evidence the state already holds.
+      if(!value.supportRefs?.length)value.supportRefs=goalProofSupportRefs(value.proof!,index).slice(0,10);
     }
     return {draft:value,revision:old.revision+1,previous:old};
   },request?boundPlanRequest('revise',input,request,idValue,revision):undefined));}

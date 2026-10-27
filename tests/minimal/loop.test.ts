@@ -91,7 +91,9 @@ describe('owner-maintained tasks and context, not autonomous dispatch',()=>{
     const discovery=await board.create(draft('new-discovery',{prerequisites:[{taskId:'prior',revision:accepted.revision}]}));await board.reserve(discovery.id,'worker');await board.transition(discovery.id,'running','Bounded discovery running');
     const validation=await board.create(draft('independent',{role:'validation',validationOf:'prior',prerequisites:[{taskId:'prior',revision:accepted.revision}]}));await board.reserve(validation.id,'validator');
     await board.revise('prior',accepted.revision,draft('prior',{question:'Revised evidence changes the original gate question'}));
-    await expect(board.assertReady('worker')).rejects.toThrow('stale');
+    // P10/TR-H10: per-command readiness is structural, so a prerequisite revision does not freeze the dependent worker mid-task;
+    // it is refused at the next admission/readiness instead (see frontier.test.ts).
+    await expect(board.assertReady('worker')).resolves.toBeUndefined();
     expect(taskCapsule(await board.forWorker('worker'))).toContain('P2O OBJECTIVE STATE');
   }));
   it('rejects cycles, foreign evidence, authority injection and stopped-run replay, not elapsed time',async()=>fixture(async(_root,path)=>{

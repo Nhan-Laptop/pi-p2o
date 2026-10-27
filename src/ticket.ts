@@ -56,6 +56,8 @@ export interface Ticket {
   token: string;
   taskId?: string;
   requestedRuntime?: { model?: string; thinking?: string };
+  /** WF-17: the run's effective per-operation capture cap, so a worker prompt states the ceiling it actually got. */
+  captureKiB?: number;
 }
 
 export function ticketPath(control: string, workerId: string): string { return join(control, `ticket-${workerId}.json`); }
@@ -136,6 +138,7 @@ export async function readTicket(path: string, expected: TicketExpectations): Pr
     if (ingress.labNetwork !== undefined && (typeof ingress.labNetwork !== 'string' || !/^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,63}$/.test(ingress.labNetwork))) bad('invalid lab network');
   }
   if (ticket.requestedRuntime !== undefined && (!ticket.requestedRuntime || Object.entries(ticket.requestedRuntime).some(([k,v]) => !['model','thinking'].includes(k) || typeof v !== 'string' || v.length > 200 || /[\x00-\x1f\x7f]/.test(v)))) bad('invalid runtime profile');
+  if (ticket.captureKiB !== undefined && (!Number.isInteger(ticket.captureKiB) || ticket.captureKiB < 1 || ticket.captureKiB > 8192)) bad('invalid capture cap');
   if (typeof ticket.target?.label !== 'string' || !ticket.target.label || ticket.target.label.length > 512 || /[\x00-\x1f\x7f]/.test(ticket.target.label)) bad('invalid target label');
   if (!['directory', 'url', 'hybrid'].includes(ticket.target.kind)) bad('invalid target kind');
   if (ticket.target.kind !== 'directory' && (typeof ticket.target.origin !== 'string' || !/^https?:\/\//.test(ticket.target.origin))) bad('url and hybrid tickets need an http(s) origin');

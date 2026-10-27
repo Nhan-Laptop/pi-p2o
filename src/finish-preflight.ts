@@ -41,7 +41,7 @@ export interface PreflightContext {
   heldWorkers?: readonly { workerId: string; brief?: string }[];
 }
 
-const SHOWN = 5;
+const SHOWN = 20;
 const strings = (value: unknown): string[] => Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : [];
 const MESSAGES: Record<PreflightCode, string> = {
   UNREVIEWED_TASK: 'worker handoff not reviewed (review the task with its receipts, or cancel it)',
