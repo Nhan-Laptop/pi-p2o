@@ -111,13 +111,17 @@ describe('bounded recon contract', () => {
   // instruction hashes moved on purpose; the brief hashes are unchanged because workerBrief carries neither line.
   // 2026-10-27 (P8.2 fetch truth): the loadout line no longer says "a capped citation fetch" — Part XI leaves the fetch
   // uncapped and host-side — so both instruction hashes moved on purpose; the brief hashes are unchanged.
+  // 2026-10-27 (P11/A11 autonomy pass): the worker prompt gained the one-line AUTHORIZATION rule and composes the NETWORK/HTTP/
+  // AUTHORIZATION/BROWSER/RISK facts in its loadout line, and workerBrief now carries the AUTHORIZATION line plus scope framed as
+  // "a starting label, not a boundary" and a limits line with no per-action permission ceiling, so both instruction and brief
+  // hashes moved on purpose (the brief hashes were unchanged only until this pass).
   // 2026-10-27 (P9 capability pass): the knowledge-catalog line now states the real inline page (24 KiB) and the
   // continuation pointer, so both instruction hashes moved on purpose; the brief hashes are unchanged because
   // workerBrief carries no catalog text. The new operator-frame/hints sections are conditional, so a brief without
   // them is byte-identical to its P8 form.
   it.each([
-    ['url', '27bdd7ffe2869b04c4f358a061a8af81fa2e6f934a68f634226509566228b92e', '9c42b63acf752ab70bdd2980e05a75db8d1a35a9afc345324e847d90afa226c7'],
-    ['directory', '55d99afc85854a44f69ea152a9ae5e1bed3f1c6ba5a06c85d3e9bac54d8c2347', '1a569560f44bef4644c30b8771cd09c6bfe81f90ece813da0a773390412828a9'],
+    ['url', 'd82b23d0c115004011f1b3ccaa13776e826584ffbc1b1474c60f44d3e868e61b', '3ab19669e99655618326725b74092123291916b3f7e3fe4be78f9c8f41b230d3'],
+    ['directory', '2a01a0d0d14f9547f691f4960495e027a027f381caf6639289ea685a0a8152a5', '8ab956b5c960afc556e13b7247f4eca244bb4aa978702038847a2a44528ad164'],
   ])('pins %s worker guidance for the Planner/frontier revision; historical acceptance artifacts are not rewritten', (kind, instructionHash, briefHash) => {
     const ticket = { workerId: 'worker-test', role: 'recon', runId: 'run-test', depth: 1, parentWorkerId: null,
       lifetime: 'until-stopped', target: { kind, label: kind === 'url' ? 'https://example.invalid' : '/target' } } as Ticket;

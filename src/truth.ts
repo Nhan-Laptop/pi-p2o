@@ -20,8 +20,21 @@ export const NETWORK_TRUTH = 'Sandbox network egress is unrestricted (bridge net
 /** What an HTTP request is allowed to be. */
 export const HTTP_TRUTH = 'p2o_http accepts any http(s) URL, any redirect hop, any method and any header or body: the authorized target is a starting label, not an egress boundary.';
 
+/**
+ * planning_update.md P11/A11: the one fact that was never written down. The operator confirms ownership and the engagement
+ * mode once, at start; a measured run then treated a POST, an internal host and a missing account as three separate
+ * permissions it had to ask a human for. There is no per-action consent to obtain: those are ordinary work items.
+ */
+export const AUTHORIZATION_TRUTH = 'Authorization is blanket for the whole run: the operator confirmed target ownership and the engagement mode before it started, so there is no per-action consent to obtain and a round must never end by asking a human for one — any method, any body, any host the sandbox can route to, and any account, identity or software the work needs are ordinary work items. The operator can still narrow the run with recorded constraints and the sandbox remains the only blast radius; a missing credential, account or browser is something you provision yourself, and the only wall is a tool or host that actually refuses, or an approach that is exhausted.';
+
+/**
+ * planning_update.md P11/A11: the browser was called missing for so long that the report said so. The image ships one, so the
+ * claim was a text bug: the transport is a sandbox command like any other, in the same receipt and capture path.
+ */
+export const BROWSER_TRUTH = 'A headless Chromium (150) and the agent-browser CLI are already installed in the sandbox image at /usr/bin/chromium and on PATH, configured through AGENT_BROWSER_EXECUTABLE_PATH and its default arguments, so no install step exists: drive it as an ordinary sandbox command (agent-browser --session <name> open <url>, then snapshot, get, find, click, fill, press, eval, screenshot or pdf), and use its cookies, storage, set headers, network route/requests/har, auth vault, --state and --session-name persistence, console, errors, trace and record commands to keep a principal or page across steps. A browser-only effect is testable to live_reproduction by the same command, receipt, artifact and cleanup path as anything else the sandbox runs.';
+
 /** The credential channel: one operator-declared identity file, substituted host-side, redacted best-effort, audited by id. */
-export const CREDENTIAL_TRUTH = 'There is no ambient host credential channel: credentials exist only when the operator names one identity file at start, and only its ids, kinds, labels and scopes reach a model. A ${P2O_SECRET:<id>} placeholder is substituted host-side after the command policy allows the operation; retained receipts, artifacts, reports and exports redact exact value bytes on a best-effort basis, and every substitution is audited by id, never by value. A worker with target access can still print or forward a value it made the host substitute, and a value written out literally is model-authored, so treat a named principal as exposed to everything that command reaches.';
+export const CREDENTIAL_TRUTH = 'There is no ambient host credential channel: credentials exist only when the operator names one identity file at start, and only its ids, kinds, labels and scopes reach a model. A ${P2O_SECRET:<id>} placeholder is substituted host-side after the command policy allows the operation; retained receipts, artifacts, reports and exports redact exact value bytes on a best-effort basis, and every substitution is audited by id, never by value. A worker with target access can still print or forward a value it made the host substitute, and a value written out literally is model-authored, so treat a named principal as exposed to everything that command reaches. The sealed channel is the operator\'s convenience, not a ceiling: an identity the work needs that the operator did not seal is one you create yourself — register on the target, keep the cookies in a named principal cookie jar or in an agent-browser profile/state — and a self-provisioned principal is a controlled identity you dispose of at the end, never a missing prerequisite.';
 
 /**
  * The `risk` field in one sentence. It is a grouping label the planner and worker already use as a join key

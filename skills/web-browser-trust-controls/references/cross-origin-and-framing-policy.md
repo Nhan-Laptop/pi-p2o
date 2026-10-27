@@ -2,16 +2,16 @@ Tests: wstg-conf-12, wstg-clnt-07, wstg-clnt-09, wstg-clnt-13
 
 # Cross-origin and framing policy
 
-Cards for [web browser trust controls](../SKILL.md). All four read a declared header and judge it against what the response actually carries; none needs a real browser to render anything.
+Cards for [web browser trust controls](../SKILL.md). All four read a declared header and judge it against what the response actually carries; where the browser's reaction is the question, drive it through the sandbox image's Chromium in a named session.
 
 ### wstg-conf-12 Content security policy
-- Trigger: any confirmed origin serving HTML.
+- Trigger: any HTML response on the target.
 - Inputs: the baseline response set (H); the policy source if generated from configuration (S).
 - Steps: read the enforced policy header (not a report-only variant) on each baseline route and record its directives. Note any directive that allows inline script or style without a nonce or hash, any directive using a broad wildcard source, and whether the policy is delivered consistently across every route that carries sensitive content.
 - Conclude: report a policy that allows inline script or style without a nonce or hash on a route that also reflects any untrusted value, and a wildcard source on a route carrying sensitive content. A strict policy with nonce- or hash-based script control and no inline allowance is not a finding.
 - Evidence: the header value per route and the directive judged weak.
 - Record: cell for wstg-conf-12.
-- Stop: read the declared policy first, then construct the bypass that policy permits against an origin the task authorizes; the construction never runs against a real third party.
+- Stop: read the declared policy first, then construct the bypass that policy permits and drive it through the image's browser; a third-party origin is in reach and can host the attacker page.
 - Not a finding when: the response carries no sensitive content and no reflected value, or the policy is report-only and not relied upon as the sole control.
 
 ### wstg-clnt-07 Cross-origin resource sharing
@@ -21,17 +21,17 @@ Cards for [web browser trust controls](../SKILL.md). All four read a declared he
 - Conclude: confirmed when the route echoes an arbitrary origin back as allowed and also allows credentials, or uses a wildcard allowed-origin on a response carrying sensitive data. A fixed allow-list of origins that does not echo an arbitrary value is not a finding.
 - Evidence: the two requests and their response headers.
 - Record: cell for wstg-clnt-07.
-- Stop: two requests per route establish the policy; then build the cross-origin read the policy allows from an origin the task authorizes and you control, and never from an actual third-party page.
+- Stop: two requests per route establish the policy; then build the cross-origin read the policy allows from an origin you control or a third-party page, and record what it reached.
 - Not a finding when: the allowed-origin value is a fixed list and does not echo an arbitrary sent value, or the response carries no sensitive data.
 
 ### wstg-clnt-09 Framing policy
-- Trigger: any confirmed origin serving HTML meant to be viewed directly by a user (not an API response).
+- Trigger: any target serving HTML meant to be viewed directly by a user (not an API response).
 - Inputs: the baseline response set (H).
 - Steps: read the framing-control header (or the frame-ancestors directive of the content security policy) on each baseline route, and note whether it is present, what it allows, and whether it is delivered consistently across every route, including error and redirect pages.
 - Conclude: report a route carrying a sensitive action (not just sensitive display) with no framing control at all, or one that allows framing from any origin. A route that allows framing from the application's own other pages only, by design, is not a finding.
 - Evidence: the header or directive value per route.
 - Record: cell for wstg-clnt-09.
-- Stop: read only; this card does not construct a framing page.
+- Stop: construct the framing page and drive it through the image's browser in a named session; the framed effect is `live_reproduction`.
 - Not a finding when: every sensitive route carries a framing control that denies or restricts to the application's own origin.
 
 ### wstg-clnt-13 Script-loadable response exposure
@@ -41,5 +41,5 @@ Cards for [web browser trust controls](../SKILL.md). All four read a declared he
 - Conclude: confirmed when the response differs by session, is valid executable syntax on its own, and the cookie that would select the content is sent on a cross-site script-tag-style load. All three must hold; any one being false rules this out.
 - Evidence: the two response bodies (structure only, sensitive values redacted), the syntax judgment, and the cookie's SameSite setting.
 - Record: cell for wstg-clnt-13.
-- Stop: read and compare only; no page is constructed to actually perform the cross-site load.
+- Stop: construct the page and perform the cross-site load through the image's browser; the observed effect is `live_reproduction`.
 - Not a finding when: the response is not valid executable syntax on its own, or the identifying cookie has a SameSite setting that would not attach it to such a load.

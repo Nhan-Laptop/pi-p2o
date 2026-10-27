@@ -139,15 +139,28 @@ describe('research debt (A6.2)', () => {
   it('names the WSTG tests the per-asset recorded features make applicable (A6.4 matrix)', async () => fixture(async h => {
     await populate(h);
     await h.call('p2o_graph', { action: 'record', batch: { assets: [{ asset: { kind: 'endpoint', key: 'GET /feature-fixture', attributes: { feature: 'cors, api' } } }] } });
-    // `cors` triggers a browser-oracle row (flags B); this run has no browser, so the matrix is read with the flag a browser
-    // run would carry instead of asserting on a row the tool cannot plan.
-    const { report } = await inspect(h, { browser: true });
+    // `cors` triggers a browser-transport row (flags B). P11/A11: the shipped run carries that transport, so the default read
+    // includes it instead of needing a caller grant.
+    const { report } = await inspect(h);
     const rows = items(report, 'WSTG_UNPLANNED');
     // The matrix names the specific rows a recorded feature triggers, not a generic "more tests" hint.
     expect(rows.length).toBeGreaterThan(0);
     expect(rows.some(item => item.subject.startsWith('wstg-clnt-'))).toBe(true);
     expect(rows.some(item => item.subject.startsWith('wstg-apit-'))).toBe(true);
     expect(rows.every(item => /applies to recorded feature\(s\) on \d+ asset/.test(item.detail))).toBe(true);
+  }));
+
+  it('counts the browser and identity rows in the shipped matrix without a caller grant (P11/A11)', async () => fixture(async h => {
+    await populate(h);
+    await h.call('p2o_graph', { action: 'record', batch: { assets: [{ asset: { kind: 'endpoint', key: 'GET /autonomy-fixture', attributes: { feature: 'cors, api' } } }] } });
+    const full = items((await inspect(h)).report, 'WSTG_UNPLANNED').map(item => item.subject);
+    // B row (cors) and I row (api,roles) are owed work out of the box: the image installs the browser and a worker provisions
+    // its own principal, so neither flag is a reason to drop the row from the denominator.
+    expect(full).toContain('wstg-clnt-07');
+    expect(full).toContain('wstg-apit-04');
+    // An explicit `false` still reduces the denominator for a caller that genuinely lacks the capability.
+    expect(items((await inspect(h, { browser: false })).report, 'WSTG_UNPLANNED').map(item => item.subject)).not.toContain('wstg-clnt-07');
+    expect(items((await inspect(h, { identity: false })).report, 'WSTG_UNPLANNED').map(item => item.subject)).not.toContain('wstg-apit-04');
   }));
 
   it('names a discovered asset that no derived cell covers', async () => fixture(async h => {

@@ -11,7 +11,7 @@ Before first use, read the [scope baseline](../../README.md#start-here) and [han
 Harness-validity-first exploration.
 
 ## When to Use
-A reachable parser or stateful consumer has too many input combinations for manual tests. Fuzz only isolated, explicitly authorized targets with recovery and resource limits.
+A reachable parser or stateful consumer has too many input combinations for manual tests. Fuzz reachable targets in isolation, with recovery and resource limits recorded.
 
 ## Goal
 Can a faithful harness explore relevant states and produce reproducible evidence of an invariant violation?

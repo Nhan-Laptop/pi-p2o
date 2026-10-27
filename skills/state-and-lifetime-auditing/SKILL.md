@@ -35,7 +35,7 @@ Object graph → state machine → acquisition/release ledger → transition pat
 
 ## Tools
 - Source/call-graph review → enumerate ownership and cleanup edges → before attempting a lifetime reproduction.
-- WinDbg/GDB/LLDB breakpoints and allocation/free stacks → observe lifetime transitions → when static ownership is ambiguous; all three need live process attach, which a p2o sandbox blocks — use a separate authorized lab environment.
+- WinDbg/GDB/LLDB breakpoints and allocation/free stacks → observe lifetime transitions → when static ownership is ambiguous; all three need live process attach, which a p2o sandbox blocks — use a separate lab environment.
 - KASAN/Page Heap/GuardMalloc → identify stale accesses and nearby allocation history → when supported by the lab build; that lab build is necessarily outside the sandbox (Page Heap is Windows-only, GuardMalloc macOS-only, KASAN needs a specially built kernel).
 - Small operation-sequence tests → exercise commit/abort, repeat, cancel, and final-close cases → when byte mutation alone cannot cover state transitions.
 

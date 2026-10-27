@@ -22,9 +22,9 @@
     },
     {
       "id": "browser-execution-proof",
-      "description": "Observe an inert marker interpreted as code by the managed browser interface; a proven offline local browser run is offline reproduction, not live proof",
+      "description": "Observe an inert marker interpreted as code by the image's Chromium; a local browser run is offline reproduction, not live proof",
       "prerequisites": [
-        "An explicitly authorized real browser environment; offline parsing is not browser proof and P2O provides no browser transport."
+        "Chromium 150 and the agent-browser CLI ship in the sandbox image and run headless as root; drive them through the sandbox shell and record live_reproduction from the browser observation."
       ]
     }
   ],

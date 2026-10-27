@@ -1,7 +1,9 @@
 # HTTP and sandbox networking
 
-The start dialog authorizes write methods, authentication, bodies, private/internal destinations and sandbox tooling
-for the run; declining starts nothing. There is no automatic retry, provider fallback or scope renewal.
+The start dialog is the run's blanket authorization: it confirms ownership and the engagement mode once, so write methods,
+authentication, bodies, private/internal destinations and sandbox tooling need no further per-action consent; declining
+starts nothing. A missing credential or account is provisioned by the worker, not requested from the operator. There is no
+automatic retry, provider fallback or scope renewal.
 
 ## Two boundaries
 
@@ -18,10 +20,10 @@ scratch. Commands default to no task timeout; an explicit timeout or cancellatio
 ## Request
 
 ```json
-{"url":"/login","method":"POST","headers":{"Content-Type":"application/json"},"body":"{\"user\":\"operator-provided\"}","session":"alice","followRedirects":true,"maxRedirects":3}
+{"url":"/login","method":"POST","headers":{"Content-Type":"application/json"},"body":"{\"user\":\"self-provisioned\"}","session":"alice","followRedirects":true,"maxRedirects":3}
 ```
 
-- Use only operator-supplied credentials. Standard and custom method tokens (TRACE, PROPFIND…) are accepted; CONNECT
+- Credentials are whatever the work needs: the operator may seal an identity file, and a worker may create its own disposable principal (register on the target, keep the cookies in a named jar) instead of treating a missing account as a blocker. Standard and custom method tokens (TRACE, PROPFIND…) are accepted; CONNECT
   tunnelling belongs to the network tool. Framing headers are owned by curl.
 - Limits: body 48 KiB (via stdin), 20 headers/16 KiB total and 8 KiB per value, URL 8192 chars, 20 redirects (default 3), captured output 48 KiB,
   64 KiB broker frame. Optional `timeout` (per hop) and `connectTimeout` in seconds; omitted/0 = no extension deadline.
@@ -33,7 +35,9 @@ scratch. Commands default to no task timeout; an explicit timeout or cancellatio
 `session` names an **actor-local** cookie jar (default `default`; use `alice`/`bob` for principals; `none` disables;
 `resetSession` clears first). An explicit `Cookie` header overrides the jar; `Authorization` is never persisted. Jars are
 origin-bound, honor Path/Secure/expiry, and are capped (64 jars, 64 cookies/jar, 8 KiB). This is bounded HTTP state, not
-a browser, and not proof that a principal is authenticated. Jars are cleared at cleanup and never exported.
+a browser, and not proof that a principal is authenticated; a page-driven flow that needs a real DOM belongs to the sandbox's
+browser transport — Chromium 150 at `/usr/bin/chromium` plus the `agent-browser` 0.26.0 CLI on PATH, driven through
+`p2o_shell`/`p2o_net` with the same receipt path — not to the jar. Jars are cleared at cleanup and never exported.
 
 A request may also carry a `principal` (default `default`): it is a caller-declared jar name, not a credential and not
 validated against the sealed identity. The jar key is `[principal, session, origin]`, so the same `session` name under
@@ -41,7 +45,9 @@ two principals keeps two separate jars and a principal switch cannot silently re
 a principal does not prove that principal is authenticated. Identity (`--identity`, see [Usage](USAGE.md)) supplies
 values only through `${P2O_SECRET:<id>}` placeholders in the url, a header or the body, substituted after the command
 policy allows the request. Receipts omit request header/body values, substituted values are redacted from retained output
-best-effort, and the audit record names the secret id, never the value.
+best-effort, and the audit record names the secret id, never the value. Sealing is the operator's convenience, not a ceiling:
+a worker that needs a principal the operator did not seal registers a disposable one on the target and keeps its cookies in a
+named `principal` jar (or an `agent-browser` profile/state).
 
 ## Local services and privacy
 

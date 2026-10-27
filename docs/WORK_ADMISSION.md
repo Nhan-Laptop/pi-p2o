@@ -93,7 +93,7 @@ backend thì validation vẫn được tạo nhưng mang `missingPrerequisites` 
   model tự viết claim; worker claim được host đóng dấu `data.taskRef` của assignment — đó là thứ validation anchor vào.
   Auto-validation (`hostValidation`) chỉ chạy cho claim của worker, sau khi discovery task đã review.
 - Dispatch không có executor không biến planner thành executor: không có worker backend thì `p2o_task_dispatch` từ chối với
-  `DELEGATION_UNAVAILABLE` ("blocked prerequisite … not a licence for the planner to execute"); nếu executor/pane provision
+  `DELEGATION_UNAVAILABLE` (không có executor — không phải licence để planner tự execute); nếu executor/pane provision
   thất bại sau khi task đã reserve, task chuyển `blocked` kèm lý do — không fake report, không model turn thay thế.
 
 ## Dùng

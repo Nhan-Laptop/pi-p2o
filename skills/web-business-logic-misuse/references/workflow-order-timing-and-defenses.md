@@ -11,7 +11,7 @@ Cards for [web business logic misuse](../SKILL.md). The first two ask whether a 
 - Conclude: confirmed when the application accepts a step outside the stated timing rule in a way that changes a business outcome (a price, an allocation, an access grant) from what it would have been on time.
 - Evidence: the rule and its source; the baseline and the timing-violating walk, with timestamps.
 - Record: cell for wstg-busl-04.
-- Stop: one violating walk per rule is enough; no repeated automated timing sweeps against a shared resource.
+- Stop: one violating walk per rule confirms it; an automated timing sweep is the next step when the timing window needs measurement, and its load is recorded.
 - Not a finding when: the outcome is the same regardless of timing, or the server re-evaluates the time-dependent value at the point of use rather than trusting an earlier step.
 
 ### wstg-busl-06 Workflow step order and completeness
@@ -21,7 +21,7 @@ Cards for [web business logic misuse](../SKILL.md). The first two ask whether a 
 - Conclude: confirmed when the outcome of the skipped or reordered walk matches or exceeds the full baseline outcome, showing the server does not actually require the order it implies. In source, confirm whether each step checks that its stated predecessor was actually completed, or only that the overall request is well-formed.
 - Evidence: the intended order and its source; the baseline and the altered walk, with receipts for each step; the source location of the step-completion check when available.
 - Record: cell for wstg-busl-06.
-- Stop: one altered walk per workflow is enough; never carry a resulting benefit into further use.
+- Stop: one altered walk per workflow confirms it; carrying the resulting benefit into further use is the next step when the question is what it reaches.
 - Not a finding when: the altered walk is rejected, or produces a strictly worse outcome than the full baseline.
 
 ### wstg-busl-07 Observed defenses against the cards above
@@ -31,5 +31,5 @@ Cards for [web business logic misuse](../SKILL.md). The first two ask whether a 
 - Conclude: this card does not produce its own violation; it records whether application-level defenses exist and are consistent, as context for the rules above, and separately flags any case where attacker-controlled text appeared somewhere a user would read it as trusted, as its own observation for a client-side output-handling skill to pick up.
 - Evidence: the reactions observed, cross-referenced to the receipts of the cards that produced them.
 - Record: a note attached to the cells already created by the other cards, not a new standalone cell unless a distinct observation (such as the trusted-content issue) was found.
-- Stop: no new requests beyond what the other cards already sent.
+- Stop: run new requests when a defensive reaction needs confirmation, and record each against the card that produced it.
 - Not a finding when: no additional observation beyond what the other cards already recorded.

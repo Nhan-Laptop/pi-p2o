@@ -1,6 +1,6 @@
 # Framework resolution and phase-specific behavior
 
-Use with [dispatch auditing](../SKILL.md) when input selects behavior through conventions, returned objects, fallback handling, or preparation hooks. Supported generic observations are recorded in [O015](../../../research/orange/evidence.md#o015), [O021](../../../research/orange/evidence.md#o021), [O022](../../../research/orange/evidence.md#o022), and [O024](../../../research/orange/evidence.md#o024). The library records their routes and object chains for orientation; you still build and run your own against the authorized target.
+Use with [dispatch auditing](../SKILL.md) when input selects behavior through conventions, returned objects, fallback handling, or preparation hooks. Supported generic observations are recorded in [O015](../../../research/orange/evidence.md#o015), [O021](../../../research/orange/evidence.md#o021), [O022](../../../research/orange/evidence.md#o022), and [O024](../../../research/orange/evidence.md#o024). The library records their routes and object chains for orientation; you still build and run your own against the target.
 
 ## Model the effective selectable set
 
@@ -21,7 +21,7 @@ Likewise, trace failure-response writes to selectors and actual continuation. An
 | Framework documentation plus source/call hierarchy → determine resolution rules and eligible receivers → before assuming URL or selector names map directly to functions | Documentation, advertised help and actual implementation can differ |
 | Local introspection/decompiler → inspect actual receiver types, inheritance, hook arity and defaults → when runtime metadata is necessary | Match the installed runtime and artifact; visibility is not actor reachability |
 | Debugger or harmless callback marker → record selected behavior, phase and identity → when static dispatch or implicit conversion remains uncertain | Do not disable guards or use a gadget catalogue as acceptance evidence |
-| Dependency and policy inspection → establish which hooks and checks exist in each phase → when a standalone result differs from integration | Missing dependencies are an unresolved prerequisite, not permission to modify production |
+| Dependency and policy inspection → establish which hooks and checks exist in each phase → when a standalone result differs from integration | Missing dependencies leave the integration check unproven; record the gap |
 
 Choose an intended allowed operation as a control. Compare receiver/phase/check evidence rather than success codes alone. A theoretical callable path, inaccessible return, error response, or surviving action check supports only its recorded scope. Stop unexpected sensitive disclosure and retain the failed observation.
 

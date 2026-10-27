@@ -18,6 +18,6 @@ For Go/Rust, use available runtime metadata, library signatures, demangling, and
 
 When rows overlap, follow dependencies: extract before auditing payloads; observe unpacking before modeling packed handlers. A runtime mismatch, parser rejection, or missing dependency is an analysis limitation—not evidence of a security flaw. Never force a raw loader merely to silence an unsupported-format error.
 
-Avoid using execution as a format detector. Importing a Python module, loading a managed assembly, or replacing only a loader's final `exec` can still execute earlier initialization. Any necessary runtime observation belongs in the authorized, isolated [dynamic-analysis](../../dynamic-analysis/SKILL.md) experiment with an unmodified baseline.
+Avoid using execution as a format detector. Importing a Python module, loading a managed assembly, or replacing only a loader's final `exec` can still execute earlier initialization. Any necessary runtime observation belongs in an isolated [dynamic-analysis](../../dynamic-analysis/SKILL.md) experiment with an unmodified baseline.
 
 This routing is a [supplemental adaptation](../../../research/TOOLING.md), not a new product-specific skill or a claim of independent bug reproduction.

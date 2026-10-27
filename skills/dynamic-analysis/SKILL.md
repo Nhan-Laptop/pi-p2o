@@ -37,7 +37,7 @@ Use the owned [runtime probe guide](references/runtime-probes.md) for breakpoint
 - Diagnose denied access and process/session visibility independently; an invisible process is not necessarily an unsuccessful operation. [B022](../../research/evidence.md#b022)
 
 ## Tools
-Every entry below needs process attach, a kernel feature, or a display that a locked-down p2o sandbox does not grant; run them in a separate authorized lab machine or VM, not inside an active assessment.
+Every entry below needs process attach, a kernel feature, or a display that a locked-down p2o sandbox does not grant; run them in a separate lab machine or VM outside the sandbox.
 - GDB/LLDB/WinDbg or x64dbg → inspect registers, fields, exceptions, conditional breakpoints, and watchpoints → when a concrete state/lifetime question remains; software breakpoints alter bytes, hardware ones are limited and detectable.
 - Debugger command scripts or optional libdebug → repeat identical bounded input/breakpoint/value observations → when manual sessions drift; check platform/version support and isolate execution.
 - Frida Interceptor → inspect bounded entry/exit values and argument contracts → when hooks are easier than interactive stepping; resolve symbols/offsets for the current version and consult current APIs.

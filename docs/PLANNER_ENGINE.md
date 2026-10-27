@@ -11,7 +11,7 @@ Architecture overview: [ARCHITECTURE.md](ARCHITECTURE.md). This page is the oper
 ```
 
 - Defaults are manual + shared. Without Herdr there is no worker backend: target work is blocked, the planner reports
-the blocked prerequisite instead of taking over, and event-driven is rejected.
+the missing executor instead of taking over, and event-driven is rejected.
 - `--workers N` is a positive integer cap on concurrent model slots. `--target-ops N` is a separate target-operation
   cap: `shared` defaults to 1 and an explicit N in shared mode lifts that serial queue (recorded in the run); isolated
   multiplies resources. `--max-depth` is kept for compatibility only: workers
@@ -43,6 +43,14 @@ target operations, no candidate authorship, no verdict or plan changes." Those l
 the role loadout in `src/tool-policy.ts` (planner 24 tools, worker 19, validation 18, reporter 6), where the planner's
 list contains no target or claim tool at all, and the same rule is repeated on the tool boundaries in
 `src/tool-guidelines.ts` so the model reads it where it reads the tool.
+
+Every model surface composes the same instrument facts from `src/truth.ts`: the planner prompt carries
+`AUTHORIZATION_TRUTH` (authorization is blanket for the whole run, so there is no per-action consent; `blocked` means the
+approaches are exhausted) and `BROWSER_TRUTH` (the image's installed Chromium and `agent-browser` transport), beside the
+network, HTTP, credential and risk-label facts; the worker and validation loadout lines carry the
+NETWORK/HTTP/AUTHORIZATION/BROWSER/RISK facts plus one short AUTHORIZATION rule; and every `workerBrief` carries
+AUTHORIZATION and calls `SCOPE` a starting label, never a boundary. A missing credential, account or browser is provisioned
+rather than requested, and the only wall is a tool or host that actually refuses, or an approach that is exhausted.
 
 `p2o_task_dispatch {ids:[...]}` accepts 1–25 proposed tasks and is the only way to start work: the Engine spawns the
 worker for each dispatched intent. A failed launch drops the attempt and records a blocked signal; a retry needs an explicit Planner
@@ -81,7 +89,7 @@ stamped from the worker's assignment. The host resolves the claim to its discove
 prerequisite, rewrites the link to the task and derives `decision=validate`; a validation is never revalidated. When a worker
 claim is confirmed+tested and its discovery task is reviewed, the host creates exactly one validation task (deterministic key) —
 or a visibly blocked one when no worker backend exists. `p2o_candidate` is worker-only: a planner call fails `WORKER_ONLY`, and
-the worker's claim gets the host `taskRef`. A dispatch with no executor is a blocked prerequisite (`DELEGATION_UNAVAILABLE`),
+the worker's claim gets the host `taskRef`. A dispatch with no executor is refused (`DELEGATION_UNAVAILABLE`),
 and a failed executor/pane provisioning moves the reserved task to `blocked`; neither is a planner execution path. Detail:
 [work admission](WORK_ADMISSION.md).
 

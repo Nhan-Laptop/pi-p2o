@@ -1,7 +1,7 @@
 # Sink ladders by interpreter
 
 For each class: the marker that proves you are in the interpreter, the context escapes that usually work, and the
-shortest route to a file observation and then a command. Everything here assumes an authorized target and a payload
+shortest route to a file observation and then a command. Everything here assumes a target you can reach and a payload
 you can store.
 
 ## SQL

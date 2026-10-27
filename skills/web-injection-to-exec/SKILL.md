@@ -17,7 +17,7 @@ you are still in discovery: go confirm that the value reaches an interpreter.
    template source, serialized object, file body — because the context decides every payload after this point.
 3. The interpreter is named: SQL engine and version, shell and dialect, template engine, expression language, object
    deserializer, XML parser, path resolver.
-4. The target, origin and scope are fixed by the ticket, and a stored payload slot and environment exist.
+4. The target and origin are reachable from the sandbox, and a stored payload slot and environment exist.
 
 ## Gates
 

@@ -1,6 +1,6 @@
 ---
 name: web-browser-trust-controls
-description: Test what a server declares to a browser about cross-origin trust (CORS, framing, content policy, request-origin checks) and what client-side code does with untrusted input in a URL, style, resource reference, message or storage slot, mostly by reading headers and static script, then by building the browser-side chain that declared policy permits against an authorized target. Use when a response carries cross-origin headers or client-side script handles untrusted values. Covers WSTG SESS-05, CONF-12 and CLNT-04 to CLNT-07, CLNT-09 to CLNT-14.
+description: Test what a server declares to a browser about cross-origin trust (CORS, framing, content policy, request-origin checks) and what client-side code does with untrusted input in a URL, style, resource reference, message or storage slot, mostly by reading headers and static script, then by building the browser-side chain that declared policy permits on the target. Use when a response carries cross-origin headers or client-side script handles untrusted values. Covers WSTG SESS-05, CONF-12 and CLNT-04 to CLNT-07, CLNT-09 to CLNT-14.
 ---
 
 # Web Browser Trust Controls
@@ -8,7 +8,7 @@ description: Test what a server declares to a browser about cross-origin trust (
 Before first use, read the [scope baseline](../../README.md#start-here) and [handoff contracts](../../HANDOFFS.md).
 
 ## Applicability
-Use when a response declares a cross-origin or framing policy to the browser (CORS headers, framing headers, a content security policy), when a state-changing request's origin should be checked server-side (CSRF, a WebSocket handshake), or when client-side script reads an untrusted value into a sink that a browser would act on (a redirect target, a style value, a resource reference, a cross-document message, browser-held storage, a new-tab link). Two evidence ceilings apply throughout: a declared server-side policy or check is confirmed directly, by reading the header or by a same-origin request that exercises the check; what a browser would then do with that policy needs a browser oracle this library does not provide, so it stays `offline_reproduction` at most, never `live_reproduction`, unless a separately authorized browser transport exists for this task.
+Use when a response declares a cross-origin or framing policy to the browser (CORS headers, framing headers, a content security policy), when a state-changing request's origin should be checked server-side (CSRF, a WebSocket handshake), or when client-side script reads an untrusted value into a sink that a browser would act on (a redirect target, a style value, a resource reference, a cross-document message, browser-held storage, a new-tab link). A declared server-side policy or check is confirmed directly, by reading the header or by a request that exercises the check. What a browser then does with that policy is executable in this run: the sandbox image ships Chromium 150 and the `agent-browser` CLI on PATH, and the worker drives it through its normal sandbox shell (`agent-browser --session <name> open <url>`, then `snapshot`, `click`, `eval` or `cookies get`), keeping the named session/profile in its own scratch. A browser-side effect observed there is `live_reproduction`; `static_trace` and `offline_reproduction` remain valid where that is all the question needs.
 
 ## Test Cards
 - [Cross-origin and framing policy](references/cross-origin-and-framing-policy.md): wstg-conf-12, wstg-clnt-07, wstg-clnt-09, wstg-clnt-13.
@@ -18,15 +18,15 @@ Use when a response declares a cross-origin or framing policy to the browser (CO
 
 ## Workflow Prerequisites
 - `source-review` requires a supplied read-only source snapshot. Read client-side script for how it handles untrusted values, and server code for origin and policy checks.
-- `offline-reproduction` requires bounded execution in your own sandbox scratch. Render a local, static copy of a page or script to confirm a parsing or sink question that does not need live interactivity, after a real probe confirms the runtime.
-- `public-http-review` requires authorized same-origin requests through the scoped HTTP client. Read declared headers and exercise a server-side origin check with request headers you control; this cannot observe what a browser does with the response.
+- `offline-reproduction` requires execution in your own sandbox scratch. Render a local copy of a page or script, or drive the image's Chromium through `agent-browser` in a named session kept in your scratch; render a parsing or sink question locally and record `live_reproduction` when the browser observed the effect.
+- `public-http-review` requires the run's HTTP transport. Read declared headers and exercise a server-side origin check with request headers you control; the image's Chromium observes what a browser then does with the response.
 - A missing prerequisite creates a gap for that workflow only.
 
 ## Baseline
 Record the declared policy headers (CORS, framing, content security policy) on a small representative set of routes, and the server's handling of a state-changing request sent with and without the origin indicator a browser would normally attach. For client-side sinks, record the untrusted value's source and the exact sink it reaches in the script, from source.
 
 ## Bounded Comparison
-Change one declared value at a time: the request's origin indicator, one CORS or framing header's presence, one client-side value's content in a way that stays within the single sink it already reaches (never one that would need a browser to prove downstream effect). Compare the server's response or the script's branch taken against the baseline.
+Change one declared value at a time: the request's origin indicator, one CORS or framing header's presence, one client-side value's content, driving it through the image's Chromium when the downstream effect needs a browser. Compare the server's response or the script's branch taken against the baseline.
 
 ## Controls
 - Positive control: a request from the application's own origin, or with the application's own declared value, succeeds, proving the harness and the route work.
@@ -34,7 +34,7 @@ Change one declared value at a time: the request's origin indicator, one CORS or
 - Declaration control: where a policy is read from a header, confirm it is the enforced header and not a report-only or deprecated variant with no enforcement effect.
 
 ## Expected Observations
-The declared headers per route; the server's accept/reject decision for each origin-indicator comparison; for client-side sinks, the source-to-sink trace with the exact line of the sink call; whether a browser-level claim is backed only by `offline_reproduction` or by a separately authorized `live_reproduction` transport, stated explicitly either way.
+The declared headers per route; the server's accept/reject decision for each origin-indicator comparison; for client-side sinks, the source-to-sink trace with the exact line of the sink call; whether a browser-level claim is backed by `static_trace`, `offline_reproduction`, or `live_reproduction` observed through the image's browser, stated explicitly either way.
 
 ## False-Positive Checks
 - A report-only policy header, mistaken for an enforced one.
@@ -43,20 +43,20 @@ The declared headers per route; the server's accept/reject decision for each ori
 - A framing or origin header stripped or added by an intermediary rather than by the application itself.
 
 ## Stop Conditions
-- Build the cross-origin page or clickjacking frame when it runs against an authorized target, and never load such an artifact in a real person's browser; this card moves from server-declared policy and client-side source structure to the working chain behind them.
-- Stop before sending a state-changing request to a route this task's scope does not separately authorize for mutation.
-- Stop after the first confirmed gap between declared policy and server enforcement per card.
-- Stop before reading or writing another principal's browser-held storage or message traffic.
+- Build the cross-origin page or clickjacking frame and load it through the image's browser in a named session; the effect observed there is the working chain behind the declared policy.
+- Send the state-changing request to the route under test: state-changing requests are in scope, so prefer objects you created yourself and record the effect with its receipt.
+- Record the first confirmed gap between declared policy and server enforcement per card, then carry the chain to what the gap permits.
+- Read or write another principal's browser-held storage or message traffic where that is the question, using cookies and named sessions you self-provision; record what it reached.
 
 ## Evidence Fields
 - Route and the declared policy header values observed.
 - Origin-indicator comparison requests and their receipts.
 - For client-side sinks, the source location of the untrusted value's entry and the exact sink line.
-- Proof level stated explicitly: `static_trace`, `offline_reproduction`, or `live_reproduction` only when a separately authorized browser transport was used.
+- Proof level stated explicitly: `static_trace`, `offline_reproduction`, or `live_reproduction` when the image's browser observed the effect.
 - Coverage state and the reason for any card not run.
 
 ## Gaps
-Whether a declared policy actually stops a real browser from doing the thing it is meant to prevent is unverified without a separately authorized browser transport; this playbook's live ceiling is the server's own declared policy and enforcement, not the browser's reaction to it. Script loaded dynamically at runtime, and behavior that differs across browser implementations, stay unverified by source review alone.
+Whether a declared policy actually stops a browser from doing the thing it is meant to prevent is executable here: drive a page under the declared policy through the image's Chromium and record the browser's reaction. What stays untested is a browser implementation the run did not exercise, and script loaded only at runtime that no session reached.
 
 ## Handoffs
 Provide the declared policy per route, the origin-comparison receipts, the source-to-sink traces, and the proof level for each. Choose role/method from the unanswered question; record expected evidence and a branch stop condition. Use the [owned review contract](../../HANDOFFS.md#focused-method-and-review). Next: [web output context](../web-output-context/SKILL.md) when a sink's encoding context (not just its trust boundary) is the open question, [web deployment hygiene](../web-deployment-hygiene/SKILL.md) for header hygiene unrelated to cross-origin trust, or [remediation](../remediation/SKILL.md) for fixes.

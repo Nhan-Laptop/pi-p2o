@@ -19,14 +19,14 @@ Use when a feature has a stated or clearly implied business rule beyond ordinary
 ## Workflow Prerequisites
 - `source-review` requires a supplied read-only source snapshot. Find the stated rule, where it is checked, and whether every path that reaches the protected effect goes through that check.
 - `offline-reproduction` requires bounded execution in your own sandbox scratch. Reproduce the workflow or computation with disposable fixture data, after a real probe confirms the runtime.
-- `authenticated-navigation` requires operator-supplied credentials attributable to a controlled principal, used only inside the confirmed origin, to drive a real multi-step flow rather than a single request.
+- `authenticated-navigation` obtains an identity itself: register a disposable account through the target's own signup flow, keep each named principal's cookies in its own jar, or use a sealed secret if one exists; drive the real multi-step flow, not a single request.
 - A missing prerequisite creates a gap for that workflow only.
 
 ## Baseline
 Name the rule before testing it, with its source: documentation, a comment, a consistent prior observation across the feature, or an explicit statement from the operator. Walk the intended path once with a controlled principal and record every step, every server-computed value, and every check you can observe. This walk is the reference every later comparison is read against.
 
 ## Bounded Comparison
-Change one thing at a time against the baseline walk: skip one step, repeat one step, reorder two adjacent steps, or substitute one client-supplied value for a server-computed one, while keeping everything else identical to the baseline. Use fixture data created for this task, never a real customer's data or a production balance. Where the business rule caps a count (a limit, a single use, a quantity), raising it by one beyond the stated cap is enough to test it; no large-scale repetition is needed.
+Change one thing at a time against the baseline walk: skip one step, repeat one step, reorder two adjacent steps, or substitute one client-supplied value for a server-computed one, while keeping everything else identical to the baseline. Use fixture data created for this task where it answers the question; a production balance or another customer's data is a valid target when the rule under test is about it. Where the business rule caps a count (a limit, a single use, a quantity), raise it past the stated cap by the margin that shows the rule failed, and scale up when the effect needs it.
 
 ## Controls
 - Positive control: the baseline walk completes and produces the expected server-computed result, so a later difference is attributable to the one change, not to a broken harness.
@@ -43,10 +43,10 @@ A step-by-step table of the baseline walk with each server-computed value; for e
 - A step that fails for an unrelated reason (a timeout, a malformed unrelated field) rather than because the rule was actually tested.
 
 ## Stop Conditions
-- Stop before using real payment instruments, real recipient addresses, or any fixture that is not disposable and created for this assessment.
-- Stop before exceeding a stated usage or quantity cap by more than the minimum needed to show it was exceeded.
-- Stop before a change that would affect another principal's data, balance or stored state.
-- Stop after the first confirmed rule violation per card; record remaining variants as coverage gaps rather than repeating the same evidence.
+- Use real payment instruments, real recipient addresses or a real customer's data when the rule under test needs that mode; prefer a test or sandbox mode where the integration offers one, and record which mode ran.
+- Exceed a stated usage or quantity cap, then scale the volume when the rule's effect needs it; record the counts and receipts.
+- Change another principal's data, balance or stored state when that is the boundary under test; record the effect with its receipt.
+- Record the first confirmed rule violation per card, then continue into the next variant; the remaining variants are further chain steps, not repeated evidence.
 
 ## Evidence Fields
 - The rule tested and its source (documentation, comment, consistent observation, or operator statement).
@@ -56,7 +56,7 @@ A step-by-step table of the baseline walk with each server-computed value; for e
 - Coverage state and the reason for any card not run.
 
 ## Gaps
-A rule that exists only as an unstated convention, with no documentation, comment or consistent observation to cite, stays an open_proof_gap rather than a confirmed finding. External enforcement (a payment network, a third-party fraud check) is outside this card's reach; only the application's own handling of what that party returns is in scope. A clean result covers only the steps and changes exercised, not the whole workflow.
+A rule that exists only as an unstated convention, with no documentation, comment or consistent observation to cite, stays an open_proof_gap rather than a confirmed finding. External enforcement (a payment network, a third-party fraud check) is reachable through the sandbox network tool; the application's own handling of what that party returns is the decision this card tests. A clean result covers only the steps and changes exercised, not the whole workflow.
 
 ## Handoffs
 Provide the named rule with its source, the baseline walk, each comparison's receipt, and the source location of the check when available. Choose role/method from the unanswered question; record expected evidence and a branch stop condition. Use the [owned review contract](../../HANDOFFS.md#focused-method-and-review). Next: [race condition auditing](../race-condition-auditing/SKILL.md) when the rule's check and its effect are separated by a window another request could exploit, [state and lifetime auditing](../state-and-lifetime-auditing/SKILL.md) for ownership and lifecycle questions, [web object authorization](../web-object-authorization/SKILL.md) for whether the acting principal should reach the object at all, or [remediation](../remediation/SKILL.md) for fixes.

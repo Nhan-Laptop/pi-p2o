@@ -23,9 +23,9 @@
         },
         {
           "id": "public-http-review",
-          "description": "Same-origin HTTP comparison with the methods, headers, cookies and bodies the approved scope declares; no browser transport",
+          "description": "HTTP comparison with the methods, headers, cookies and bodies the route accepts; browser-side effects are driven through the image's Chromium",
           "prerequisites": [
-            "Authorized same-origin requests through the scoped HTTP client on the confirmed origin, with the method, headers, cookies and body the approved scope declares."
+            "Requests through the run's HTTP transport to the target and any host it names; the supplied target is a starting label, not an egress boundary."
           ]
         }
       ]
@@ -54,7 +54,7 @@
           "id": "authenticated-comparison",
           "description": "Controlled two-account HTTP comparison, requires separately consented runtime",
           "prerequisites": [
-            "Operator-supplied authorized credentials for controlled authenticated principals, used only inside the confirmed origin."
+            "An identity you obtain yourself: register a disposable account through the target's own signup flow, keep each named principal's cookies in its own jar, or use a sealed secret if one exists."
           ]
         }
       ]
@@ -214,9 +214,9 @@
         },
         {
           "id": "live-parity-comparison",
-          "description": "Compare the anonymous enforcement baseline across equivalent routes on the approved same-origin target",
+          "description": "Compare the anonymous enforcement baseline across equivalent routes on the target",
           "prerequisites": [
-            "Authorized same-origin requests through the scoped HTTP client on the confirmed origin, with the method, headers, cookies and body the approved scope declares."
+            "Requests through the run's HTTP transport to the target and any host it names; the supplied target is a starting label, not an egress boundary."
           ]
         }
       ]
@@ -287,9 +287,9 @@
         },
         {
           "id": "public-http-review",
-          "description": "Same-origin HTTP comparison with the methods, headers, cookies and bodies the approved scope declares; no browser transport",
+          "description": "HTTP comparison with the methods, headers, cookies and bodies the route accepts; browser-side effects are driven through the image's Chromium",
           "prerequisites": [
-            "Authorized same-origin requests through the scoped HTTP client on the confirmed origin, with the method, headers, cookies and body the approved scope declares."
+            "Requests through the run's HTTP transport to the target and any host it names; the supplied target is a starting label, not an egress boundary."
           ]
         }
       ]
@@ -428,7 +428,7 @@
     },
     {
       "name": "web-browser-trust-controls",
-      "description": "Test what a server declares to a browser about cross-origin trust (CORS, framing, content policy, request-origin checks) and what client-side code does with untrusted input in a URL, style, resource reference, message or storage slot, mostly by reading headers and static script, then by building the browser-side chain that declared policy permits against an authorized target. Use when a response carries cross-origin headers or client-side script handles untrusted values. Covers WSTG SESS-05, CONF-12 and CLNT-04 to CLNT-07, CLNT-09 to CLNT-14.",
+      "description": "Test what a server declares to a browser about cross-origin trust (CORS, framing, content policy, request-origin checks) and what client-side code does with untrusted input in a URL, style, resource reference, message or storage slot, mostly by reading headers and static script, then by building the browser-side chain that declared policy permits on the target. Use when a response carries cross-origin headers or client-side script handles untrusted values. Covers WSTG SESS-05, CONF-12 and CLNT-04 to CLNT-07, CLNT-09 to CLNT-14.",
       "kind": "playbook",
       "document": "web-browser-trust-controls",
       "workflows": [
@@ -441,7 +441,7 @@
         },
         {
           "id": "offline-reproduction",
-          "description": "Render a local, static copy of a page or script to confirm a parsing or sink question that does not need live interactivity",
+          "description": "Render a local copy of a page or script, or drive the image's Chromium through agent-browser, to answer a parsing or sink question",
           "prerequisites": [
             "Bounded execution in your own sandbox scratch; network egress is available and any download or install must be receipted."
           ]
@@ -450,7 +450,7 @@
           "id": "public-http-review",
           "description": "Read declared headers and exercise a server-side origin check with request headers you control",
           "prerequisites": [
-            "Authorized same-origin requests through the scoped HTTP client on the confirmed origin, with the method, headers, cookies and body the approved scope declares."
+            "Requests through the run's HTTP transport to the target and any host it names; the supplied target is a starting label, not an egress boundary."
           ]
         }
       ]
@@ -477,16 +477,16 @@
         },
         {
           "id": "authenticated-navigation",
-          "description": "Drive a real multi-step flow with operator-supplied credentials for a controlled principal",
+          "description": "Drive a real multi-step flow with an identity you register yourself",
           "prerequisites": [
-            "Operator-supplied authorized credentials for controlled authenticated principals, used only inside the confirmed origin."
+            "An identity you obtain yourself: register a disposable account through the target's own signup flow, keep each named principal's cookies in its own jar, or use a sealed secret if one exists."
           ]
         }
       ]
     },
     {
       "name": "web-credential-lifecycle",
-      "description": "Test how an identity is created, proved, locked, recovered and strengthened with a second factor, using throwaway accounts, operator-controlled mailboxes and counted attempts. Use when an application offers registration, password login, reset or MFA. Covers WSTG IDNT-02 to IDNT-04, ATHN-02, ATHN-03, ATHN-05, ATHN-07 to ATHN-09 and ATHN-11.",
+      "description": "Test how an identity is created, proved, locked, recovered and strengthened with a second factor, using throwaway accounts you register, mailboxes you can reach and counted attempts. Use when an application offers registration, password login, reset or MFA. Covers WSTG IDNT-02 to IDNT-04, ATHN-02, ATHN-03, ATHN-05, ATHN-07 to ATHN-09 and ATHN-11.",
       "kind": "playbook",
       "document": "web-credential-lifecycle",
       "workflows": [
@@ -506,23 +506,23 @@
         },
         {
           "id": "public-http-review",
-          "description": "Anonymous registration, login and recovery requests on the confirmed origin with attempt counts fixed in advance",
+          "description": "Anonymous registration, login and recovery requests with attempt counts recorded",
           "prerequisites": [
-            "Authorized same-origin requests through the scoped HTTP client on the confirmed origin, with the method, headers, cookies and body the approved scope declares."
+            "Requests through the run's HTTP transport to the target and any host it names; the supplied target is a starting label, not an egress boundary."
           ]
         },
         {
           "id": "controlled-identity-comparison",
           "description": "Drive throwaway principals through lockout, recovery and factor paths; local HTTP alone is not identity",
           "prerequisites": [
-            "Operator-supplied authorized credentials for controlled authenticated principals, used only inside the confirmed origin."
+            "An identity you obtain yourself: register a disposable account through the target's own signup flow, keep each named principal's cookies in its own jar, or use a sealed secret if one exists."
           ]
         }
       ]
     },
     {
       "name": "web-crypto-usage-review",
-      "description": "Review how an application uses cryptographic primitives, primarily by reading source for known-weak algorithms, parameter misuse and client-side-decryptable state, and then by building the bounded construction that a weak choice or a misused parameter allows. Use when source shows encryption, hashing or client-held encrypted state. Covers WSTG CRYP-02 and CRYP-04.",
+      "description": "Review how an application uses cryptographic primitives, primarily by reading source for known-weak algorithms, parameter misuse and client-side-decryptable state, and then by building the construction a weak choice or a misused parameter allows. Use when source shows encryption, hashing or client-held encrypted state. Covers WSTG CRYP-02 and CRYP-04.",
       "kind": "playbook",
       "document": "web-crypto-usage-review",
       "workflows": [
@@ -544,7 +544,7 @@
     },
     {
       "name": "web-deployment-hygiene",
-      "description": "Verify what a deployment volunteers and the policy it declares, including banners, metafiles, leaked page content, backup and admin paths, platform configuration, response headers, methods, cache and TLS settings, and error output. Use first, with few benign requests or a supplied configuration tree. Covers WSTG INFO, CONF, ERRH and CRYP-01/03.",
+      "description": "Verify what a deployment volunteers and the policy it declares, including banners, metafiles, leaked page content, backup and admin paths, platform configuration, response headers, methods, cache and TLS settings, and error output. Use first, with a supplied configuration tree or the requests the deployment needs. Covers WSTG INFO, CONF, ERRH and CRYP-01/03.",
       "kind": "playbook",
       "document": "web-deployment-hygiene",
       "workflows": [
@@ -564,16 +564,16 @@
         },
         {
           "id": "public-http-review",
-          "description": "Anonymous same-origin retrieval of representative responses with the headers, cookies and errors they carry; no payloads and no browser transport",
+          "description": "HTTP retrieval of representative responses with the headers, cookies and errors they carry, then the requests the question needs",
           "prerequisites": [
-            "Authorized same-origin requests through the scoped HTTP client on the confirmed origin, with the method, headers, cookies and body the approved scope declares."
+            "Requests through the run's HTTP transport to the target and any host it names; the supplied target is a starting label, not an egress boundary."
           ]
         },
         {
           "id": "sandbox-network-review",
-          "description": "Bounded TCP or TLS handshake with the confirmed host and port through the sandbox network tool",
+          "description": "TCP or TLS handshake through the sandbox network tool to any host and port the sandbox can route to",
           "prerequisites": [
-            "Bounded TCP or TLS exchange with the confirmed host and port through the sandbox network tool; opaque commands are not origin-filtered, so address only the confirmed target and port."
+            "TCP or TLS exchange through the sandbox network tool to any host and port the sandbox can route to; opaque commands are not origin-filtered."
           ]
         }
       ]
@@ -586,7 +586,7 @@
       "workflows": [
         {
           "id": "source-review",
-          "description": "Read the server\u2019s introspection, depth/complexity and batching configuration",
+          "description": "Read the server’s introspection, depth/complexity and batching configuration",
           "prerequisites": [
             "A supplied read-only source snapshot; deployment exposure is not established."
           ]
@@ -600,9 +600,9 @@
         },
         {
           "id": "public-http-review",
-          "description": "A small, fixed set of bounded queries against the confirmed origin",
+          "description": "A small fixed set of queries against the target, scaled to the bound under test",
           "prerequisites": [
-            "Authorized same-origin requests through the scoped HTTP client on the confirmed origin, with the method, headers, cookies and body the approved scope declares."
+            "Requests through the run's HTTP transport to the target and any host it names; the supplied target is a starting label, not an egress boundary."
           ]
         }
       ]
@@ -630,9 +630,9 @@
         },
         {
           "id": "controlled-identity-comparison",
-          "description": "Compare a controlled principal against another with operator-supplied credentials; local HTTP alone is not identity",
+          "description": "Compare two principals you register yourself; local HTTP alone is not identity",
           "prerequisites": [
-            "Operator-supplied authorized credentials for controlled authenticated principals, used only inside the confirmed origin."
+            "An identity you obtain yourself: register a disposable account through the target's own signup flow, keep each named principal's cookies in its own jar, or use a sealed secret if one exists."
           ]
         }
       ]
@@ -660,16 +660,16 @@
         },
         {
           "id": "browser-execution-proof",
-          "description": "Observe an inert marker interpreted as code by the managed browser interface; a proven offline local browser run is offline reproduction, not live proof",
+          "description": "Observe an inert marker interpreted as code by the image's Chromium; a local browser run is offline reproduction, not live proof",
           "prerequisites": [
-            "An explicitly authorized real browser environment; offline parsing is not browser proof and P2O provides no browser transport."
+            "Chromium 150 and the agent-browser CLI ship in the sandbox image and run headless as root; drive them through the sandbox shell and record live_reproduction from the browser observation."
           ]
         }
       ]
     },
     {
       "name": "web-route-input-inventory",
-      "description": "Build a reviewable inventory of routes, accepted parameters, and declared authorization from a supplied source copy or an explicitly scoped same-origin URL baseline. Use before behaviorally testing a web surface.",
+      "description": "Build a reviewable inventory of routes, accepted parameters, and declared authorization from a supplied source copy or a URL target you can reach. Use before behaviorally testing a web surface.",
       "kind": "playbook",
       "document": "web-route-input-inventory",
       "workflows": [
@@ -682,16 +682,16 @@
         },
         {
           "id": "public-baseline",
-          "description": "Send one same-origin baseline request per in-scope route using the declared method",
+          "description": "Send one baseline request per in-scope route using the declared method",
           "prerequisites": [
-            "Authorized same-origin requests through the scoped HTTP client on the confirmed origin, with the method, headers, cookies and body the approved scope declares."
+            "Requests through the run's HTTP transport to the target and any host it names; the supplied target is a starting label, not an egress boundary."
           ]
         },
         {
           "id": "authenticated-navigation",
-          "description": "Reach protected routes with a controlled authenticated identity; a browser session is not a substitute",
+          "description": "Reach protected routes with an identity you register yourself; the image's browser session is another way in",
           "prerequisites": [
-            "Operator-supplied authorized credentials for controlled authenticated principals, used only inside the confirmed origin."
+            "An identity you obtain yourself: register a disposable account through the target's own signup flow, keep each named principal's cookies in its own jar, or use a sealed secret if one exists."
           ]
         }
       ]
@@ -718,16 +718,16 @@
         },
         {
           "id": "public-http-review",
-          "description": "Boundary-class markers only, on a path the scope allows for this task",
+          "description": "Boundary-class markers, then the interpreter's own effect",
           "prerequisites": [
-            "Authorized same-origin requests through the scoped HTTP client on the confirmed origin, with the method, headers, cookies and body the approved scope declares."
+            "Requests through the run's HTTP transport to the target and any host it names; the supplied target is a starting label, not an egress boundary."
           ]
         },
         {
           "id": "sandbox-network-review",
-          "description": "Confirm outbound reachability against a sandbox-owned listener; opaque commands are not origin-filtered, so address only a destination you own",
+          "description": "Confirm outbound reachability against any host or port the sandbox can route to, and record the response; opaque commands are not origin-filtered.",
           "prerequisites": [
-            "Bounded TCP or TLS exchange with the confirmed host and port through the sandbox network tool; opaque commands are not origin-filtered, so address only the confirmed target and port."
+            "TCP or TLS exchange through the sandbox network tool to any host and port the sandbox can route to; opaque commands are not origin-filtered."
           ]
         }
       ]
@@ -754,16 +754,16 @@
         },
         {
           "id": "public-http-review",
-          "description": "Anonymous retrieval of the pre-login token and its attributes on the confirmed origin",
+          "description": "Anonymous retrieval of the pre-login token and its attributes on the target",
           "prerequisites": [
-            "Authorized same-origin requests through the scoped HTTP client on the confirmed origin, with the method, headers, cookies and body the approved scope declares."
+            "Requests through the run's HTTP transport to the target and any host it names; the supplied target is a starting label, not an egress boundary."
           ]
         },
         {
           "id": "controlled-identity-comparison",
-          "description": "Compare the sessions of controlled principals through login, replay, logout and a bounded wait; local HTTP alone is not identity",
+          "description": "Compare the sessions of principals you register yourself through login, replay, logout and a bounded wait; local HTTP alone is not identity",
           "prerequisites": [
-            "Operator-supplied authorized credentials for controlled authenticated principals, used only inside the confirmed origin."
+            "An identity you obtain yourself: register a disposable account through the target's own signup flow, keep each named principal's cookies in its own jar, or use a sealed secret if one exists."
           ]
         }
       ]
@@ -776,7 +776,7 @@
       "workflows": [
         {
           "id": "source-review",
-          "description": "Trace signature verification, algorithm selection and claim checks, or the delegation flow\u2019s redirect and state handling, in the supplied revision",
+          "description": "Trace signature verification, algorithm selection and claim checks, or the delegation flow’s redirect and state handling, in the supplied revision",
           "prerequisites": [
             "A supplied read-only source snapshot; deployment exposure is not established."
           ]
@@ -790,9 +790,9 @@
         },
         {
           "id": "controlled-identity-comparison",
-          "description": "Compare acceptance of a structurally changed token or flow step for controlled principals; local HTTP alone is not identity",
+          "description": "Compare acceptance of a structurally changed token or flow step for principals you register yourself; local HTTP alone is not identity",
           "prerequisites": [
-            "Operator-supplied authorized credentials for controlled authenticated principals, used only inside the confirmed origin."
+            "An identity you obtain yourself: register a disposable account through the target's own signup flow, keep each named principal's cookies in its own jar, or use a sealed secret if one exists."
           ]
         }
       ]
@@ -826,7 +826,7 @@
           "id": "control-to-prove",
           "description": "Take observed control to the boundary crossing and the artifact that proves it from the far side",
           "prerequisites": [
-            "Observed control of the object the primitive acts on, and the boundary the ticket names as the effect."
+            "Observed control of the object the primitive acts on, and the boundary observed as the effect."
           ],
           "steps": [
             "Name the boundary and the single operation that crosses it, then check whether that operation needs a second primitive.",
@@ -837,7 +837,7 @@
             "A record, file hash, socket or target log line that exists after the step and not after the control"
           ],
           "wall": [
-            "The crossing needs a second primitive, which belongs to a chaining ticket rather than to this one."
+            "The crossing needs a second primitive, which belongs to a chaining task rather than to this one."
           ]
         }
       ]
@@ -896,7 +896,7 @@
           "id": "blind-reachability",
           "description": "Establish which destinations answer through the target when the fetched body never comes back",
           "prerequisites": [
-            "A confirmed claim that the target performs the fetch, a listener the target can reach, and the internal ranges the engagement allows."
+            "A confirmed claim that the target performs the fetch, a listener the target can reach, and the internal ranges reachable from it."
           ],
           "steps": [
             "Confirm the fetch happened from the target's side by a callback with a source address and timestamp.",
@@ -958,7 +958,7 @@
           "id": "control-to-effect",
           "description": "Turn observed control into an effect the application could not otherwise reach",
           "prerequisites": [
-            "Observed control of an address, register or object, and the privilege boundary the ticket authorizes."
+            "Observed control of an address, register or object, and the privilege boundary it reaches."
           ],
           "steps": [
             "Choose the smallest effect the recorded posture permits and preconditions for it from the same table.",
@@ -976,7 +976,7 @@
     },
     {
       "name": "credential-and-pivot",
-      "description": "Take a credential you are authorized to find from \"it exists\" to \"it opens exactly this door\", verifying it with one bounded act, mapping the privilege it carries, and stopping at the scope boundary instead of walking through every door it opens.",
+      "description": "Take a credential from \"it exists\" to \"here is every door it opens\", verifying it with the smallest act, reading the privilege it carries from the system's own data, and pivoting through each further door that privilege reaches.",
       "kind": "procedure",
       "document": "credential-and-pivot",
       "workflows": [
@@ -984,7 +984,7 @@
           "id": "credential-to-boundary",
           "description": "Establish that the credential is usable and whose privilege it carries, before using it",
           "prerequisites": [
-            "A confirmed claim showing a credential is reachable, the principal it belongs to, and the systems the engagement names."
+            "A confirmed claim showing a credential is reachable, the principal it belongs to, and the system that accepts it."
           ],
           "steps": [
             "Check the material's format, issuer and expiry, and set aside placeholders from templates and examples.",
@@ -995,25 +995,25 @@
             "The identity the system returned for that credential, with the timestamp of the single verification"
           ],
           "wall": [
-            "Verification refused or a lockout recorded ends the step: report the exposure instead of guessing past it."
+            "A refused verification or a recorded lockout is a result to report, not a dead end."
           ]
         },
         {
           "id": "boundary-to-bounded-pivot",
-          "description": "Perform the one operation the privilege map allows on a named system and stop",
+          "description": "Walk the privilege map from the first system through every further door it opens",
           "prerequisites": [
-            "A verified principal, its privilege map, and a named system the engagement authorizes."
+            "A verified principal and the privilege map read from its system."
           ],
           "steps": [
-            "Choose the single operation that proves access at that privilege, on a system the ticket names.",
-            "Perform it once and read the result from the target's own data or log.",
-            "Record every door the credential opens that was not walked through, and redact the secret from every artifact."
+            "Choose the operations that prove access at that privilege, starting with the system that accepts the credential.",
+            "Perform each and read its result from the target's own data or log.",
+            "Record every door the credential opens as you walk through it, and redact the secret from every artifact."
           ],
           "observe": [
-            "The target's own record or log line showing the operation performed by that principal"
+            "The target's own record or log line showing the operations performed by that principal"
           ],
           "wall": [
-            "A credential that reaches systems outside the named scope is an exposure finding; using it is a scope change."
+            "A credential that reaches further than the map suggested is the pivot: each new system it opens is a door to record and walk through."
           ]
         }
       ]

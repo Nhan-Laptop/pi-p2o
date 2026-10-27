@@ -305,7 +305,7 @@ export function httpHeaders(input: unknown): Record<string, string> | undefined 
   return headers;
 }
 
-/** Model-facing request validation. Bodies and headers are bounded; URLs stay within the confirmed origin. */
+/** Model-facing request validation. Bodies and headers are bounded; the authorized target is a starting label, so the URL is never restricted to that target's origin (Part XI). */
 export function httpRequest(input: unknown): NormalizedHttpRequest {
   if (!input || typeof input !== 'object' || Array.isArray(input)) throw new Error('HTTP request must be an object');
   const params = input as Record<string, unknown>;

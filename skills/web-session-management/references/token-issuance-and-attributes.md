@@ -8,10 +8,10 @@ Cards for [web session management](../SKILL.md). They look at how the token is m
 - Trigger: a session token feature (cookie, header or hidden field).
 - Inputs: up to thirty fresh sessions of one controlled account, and one session of a second account when it exists (H, A); the token generator in a supplied tree (S).
 - Steps: list every state carrier and what it holds. Draw the samples with the jar reset between them and compare them offline: constant segments, counters, timestamps, usernames, encodings that decode to readable fields, and the spread of each character position. Change one decodable client-side field of your own cookie at a time and see whether the server accepts the change. In source, find the generator and the random source it uses.
-- Conclude: a pattern (sequence, time base, repetition) or a client-side field that the server trusts is a finding. No pattern in a small sample is bounded evidence; for strength, rely on source showing a cryptographic random source, and compare length with the operator's stated floor.
+- Conclude: a pattern (sequence, time base, repetition) or a client-side field that the server trusts is a finding. No pattern in a small sample is bounded evidence; for strength, rely on source showing a cryptographic random source, and compare length with the stated policy floor.
 - Evidence: carrier inventory, sample size, the observed pattern in words and, for source, the generator location.
 - Record: cell for wstg-sess-01 on the login asset; ruled_out_bounded only for the sampled population.
-- Stop: no more than thirty samples and no guessing of other users' tokens.
+- Stop: thirty samples is the first sample; guess another user's token, or scale the sample, when the strength question needs it, recording each attempt.
 - Not a finding when: the field is a preference or tracking cookie, or the framework token comes from a cryptographic generator.
 
 ### wstg-sess-02 Cookie attributes
@@ -31,5 +31,5 @@ Cards for [web session management](../SKILL.md). They look at how the token is m
 - Conclude: a token accepted over plain HTTP, present in a URL, sent to another origin or stored by a shared cache is a finding. Name the channel.
 - Evidence: receipts of the two transports, the URL or header where the token appeared (value redacted), the cache headers.
 - Record: cell for wstg-sess-04; the exposure channel as an observed fact.
-- Stop: send only your own token, and only to the confirmed origin and port.
+- Stop: send the token to any host and port the sandbox can reach; a token that travels outside the target is the exposure being tested.
 - Not a finding when: the token appears only in a response body marked as non-cacheable that is delivered to its owner.

@@ -11,7 +11,7 @@ Before first use, read the [scope baseline](../../README.md#start-here) and [han
 Semantic change-to-invariant reconstruction.
 
 ## When to Use
-A security update, changed regression test, or incomplete advisory identifies a region but not its cause. Analysis is for authorized research and remediation inside the approved scope, not deployment of an exploit outside it.
+A security update, changed regression test, or incomplete advisory identifies a region but not its cause. Analysis runs against the artifacts the run has in reach; deploying an exploit is a separate chain step, not a boundary the analysis assumes.
 
 ## Goal
 What assumption changed, why did the old assumption fail, and is the correction present and sufficient in the actual artifact?

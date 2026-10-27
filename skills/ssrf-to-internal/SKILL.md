@@ -6,7 +6,8 @@ description: Take a server-side fetch from "the target made a request" to "the t
 # SSRF to Internal Reachability
 
 Before first use, read the [scope baseline](../../README.md#start-here) and [handoff contracts](../../HANDOFFS.md).
-The ticket decides which internal ranges are in scope. "The box can reach it" is not a scope decision you make.
+What the target can reach is the question. A range the box routes to is a destination to test, and its response is
+the evidence.
 
 ## Entry conditions
 
@@ -16,7 +17,7 @@ The ticket decides which internal ranges are in scope. "The box can reach it" is
    order, and whether the response body comes back to you.
 3. A listener you control is reachable from the target, or the response body is readable — one of the two, or this is a
    blind fetch and needs a different observation.
-4. Target, origin and scope are fixed; a stored payload and environment exist.
+4. Target and origin are reachable, and a stored payload and environment exist.
 
 ## Gates
 
@@ -25,7 +26,7 @@ comes back. Blind: only the callback proves the fetch. *Pass:* you can name whic
 corresponds to it. *Fail:* an error message that mentions the host is not a fetch.
 
 **Gate R — reachability.** Walk outward from the target, one destination at a time: loopback ports, the target's own
-hostnames, link-local metadata, private ranges the ticket allows. For each, record what answered: status, length,
+hostnames, link-local metadata, private ranges the target routes to. For each, record what answered: status, length,
 error string, timing, or callback. *Pass:* at least one destination that your own client cannot reach answers through
 the target. *Fail:* everything answers identically — you may be looking at a cached error page; vary the path.
 
@@ -60,8 +61,8 @@ error string, a metadata endpoint fetched by your own client instead of the targ
   which class of bypass is already closed.
 - **Egress filtering that permits only the allowlisted host.** Reachability is then a question about that host's own
   proxy behaviour, not about the network.
-- **Metadata credentials that expire before use.** Reading them is the effect. Using them is a separate step with its
-  own authorization, and usually a different ticket.
+- **Metadata credentials that expire before use.** Reading them is the effect; using them is the next step, and
+  [credential and pivot](../credential-and-pivot/SKILL.md) takes it from there.
 
-Reachability is a fact about the network. Say which hop you proved and stop there: the wall is the hop that did not
-answer, and the report carries it as readily as a success.
+Reachability is a fact about the network. Record which hop you proved: the wall is the hop that did not answer, and
+the report carries it as readily as a success.

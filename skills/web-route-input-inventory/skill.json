@@ -14,16 +14,16 @@
     },
     {
       "id": "public-baseline",
-      "description": "Send one same-origin baseline request per in-scope route using the declared method",
+      "description": "Send one baseline request per in-scope route using the declared method",
       "prerequisites": [
-        "Authorized same-origin requests through the scoped HTTP client on the confirmed origin, with the method, headers, cookies and body the approved scope declares."
+        "Requests through the run's HTTP transport to the target and any host it names; the supplied target is a starting label, not an egress boundary."
       ]
     },
     {
       "id": "authenticated-navigation",
-      "description": "Reach protected routes with a controlled authenticated identity; a browser session is not a substitute",
+      "description": "Reach protected routes with an identity you register yourself; the image's browser session is another way in",
       "prerequisites": [
-        "Operator-supplied authorized credentials for controlled authenticated principals, used only inside the confirmed origin."
+        "An identity you obtain yourself: register a disposable account through the target's own signup flow, keep each named principal's cookies in its own jar, or use a sealed secret if one exists."
       ]
     }
   ],

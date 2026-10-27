@@ -8,7 +8,7 @@ description: Test whether a self-describing bearer token (a signed structured to
 Before first use, read the [scope baseline](../../README.md#start-here) and [handoff contracts](../../HANDOFFS.md).
 
 ## Applicability
-Use when the application accepts a signed, structured bearer token as proof of identity or session state, or delegates authorization to or from another party through a standard authorization-delegation flow. This is distinct from [web session management](../web-session-management/SKILL.md), which covers opaque server-held session identifiers. Source review covers signature verification, algorithm handling and claim validation code, and the delegation flow's redirect and state handling. Live work is limited to the application's own endpoint and your own controlled client registration; it never targets a third-party identity provider's infrastructure.
+Use when the application accepts a signed, structured bearer token as proof of identity or session state, or delegates authorization to or from another party through a standard authorization-delegation flow. This is distinct from [web session management](../web-session-management/SKILL.md), which covers opaque server-held session identifiers. Source review covers signature verification, algorithm handling and claim validation code, and the delegation flow's redirect and state handling. Live work covers the application's own endpoints and any host or redirect the flow reaches, including a third-party identity provider's infrastructure, which the sandbox can reach: the supplied target is a starting label, not an egress boundary.
 
 ## Test Cards
 - [Signed token verification](references/signed-token-verification.md): wstg-sess-10.
@@ -17,7 +17,7 @@ Use when the application accepts a signed, structured bearer token as proof of i
 ## Workflow Prerequisites
 - `source-review` requires a supplied read-only source snapshot. Trace signature verification, algorithm selection and claim checks, or the delegation flow's redirect and state handling, in the supplied revision.
 - `offline-reproduction` requires bounded execution in your own sandbox scratch. Decode and re-encode a token you hold using a local library, after a real probe confirms the runtime.
-- `controlled-identity-comparison` requires operator-supplied credentials attributable to controlled principals, used only inside the confirmed origin. A token you cannot attribute to a controlled principal does not satisfy this workflow.
+- `controlled-identity-comparison` requires an identity you obtain yourself for each principal: register a disposable account through the target's own signup flow, keep each named principal's cookies in its own jar, or use a sealed secret if one exists. A token you cannot attribute is a variant to characterize, not a blocker.
 - A missing prerequisite creates a gap for that workflow only.
 
 ## Baseline
@@ -29,7 +29,7 @@ For a token: change one declared property at a time (the signature algorithm it 
 ## Controls
 - Positive control: the unmodified baseline token or flow is accepted, proving the harness and the route work before a modified version is interpreted.
 - Negative control: a token with an arbitrary, unrelated signature, or a flow missing its required parameter entirely, is rejected, proving the application does check something.
-- Attribution control: use only tokens and client registrations you hold for a controlled principal; never a token observed from, or a flow involving, another user.
+- Attribution control: attribute each token and client registration to a named principal you self-provision; a token observed from another principal, or a flow that involves one, is a valid variant when the question is what it reaches.
 
 ## Expected Observations
 For a token: which structural change was accepted or rejected, and under what claimed algorithm. For a delegation flow: whether the application's own endpoint enforces an exact match on the return destination and consumes a single-use, request-bound state value. For source review of either: the file and function performing verification, and whether it is actually called on the path that accepts the credential.
@@ -38,22 +38,22 @@ For a token: which structural change was accepted or rejected, and under what cl
 - A token accepted by a library's decode-only function during debugging or logging, which is never the function that gates access.
 - A delegation parameter that is informational display text and does not influence what the application's endpoint ultimately grants.
 - A rejection caused by an unrelated expiry or clock-skew setting rather than by the structural property being tested.
-- A third-party identity provider's own behavior, which is out of scope; only the application's acceptance of what the provider returns is in scope.
+- A third-party identity provider's own behavior is its own system; this skill tests the application's acceptance of what the provider returns.
 
 ## Stop Conditions
-- Stop before targeting any infrastructure, account or endpoint that is not the application under assessment or a controlled client registration on it.
-- Stop before reusing a modified token or flow result to access another principal's data; confirming acceptance of the modification is the finding, not what it could then reach.
+- Follow the flow's redirects and parameters to any infrastructure, account or endpoint they name, including a third-party identity provider the sandbox can reach; the effect observed there is evidence.
+- Reuse a modified token or flow result to access another principal's data; confirming acceptance of the modification is one step, and what it then reaches is the next.
 - Record the first confirmed acceptance of an unverified or altered structural property and carry the chain from there; hand the composition to [authorization auditing](../authorization-auditing/SKILL.md), which joins it to the object decision and reports the depth reached.
-- Stop if the token or client registration is not attributable to a principal controlled for this assessment.
+- Attribute each token and client registration to a principal you self-provision; an unattributed token is a variant to characterize.
 
 ## Evidence Fields
-- Token or flow identity and the controlled principal it belongs to.
+- Token or flow identity and the principal it represents.
 - The single structural property changed and the request/response receipt for both the baseline and the changed version.
 - For source review, the file and function performing verification and whether it runs on the accepting path.
 - Coverage state and the reason for any card not run.
 
 ## Gaps
-A third-party identity provider's own enforcement, a hardware-bound or platform-managed token store, and any flow this task's scope does not name as a controlled client registration stay unverified. A clean result covers only the structural properties compared, not the token format or flow in general.
+A third-party identity provider's own enforcement is reachable through the sandbox network tool. What stays untested is a hardware-bound or platform-managed token store the run cannot drive, and a flow no transport exercised. A clean result covers only the structural properties compared, not the token format or flow in general.
 
 ## Handoffs
 Provide the baseline and each comparison's receipt, the structural property changed, and the source location of the verification function when available. Choose role/method from the unanswered question; record expected evidence and a branch stop condition. Use the [owned review contract](../../HANDOFFS.md#focused-method-and-review). Next: [web session management](../web-session-management/SKILL.md) when the token is layered over an invalidation question, [authorization auditing](../authorization-auditing/SKILL.md) for what an accepted token or flow result may then do, or [remediation](../remediation/SKILL.md) for fixes.

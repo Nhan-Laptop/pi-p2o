@@ -1,6 +1,6 @@
 # Bounded native slices
 
-Use after [binary auditing](../SKILL.md) has established a native format, architecture, load map, and a relevant anchor. This is analysis of authorized copies, not a checker-bypass or exploit recipe. [Supplemental provenance](../../../research/TOOLING.md) records the source and tool-verification limits.
+Use after [binary auditing](../SKILL.md) has established a native format, architecture, load map, and a relevant anchor. This is analysis of copies of the artifact, not a checker-bypass or exploit recipe. [Supplemental provenance](../../../research/TOOLING.md) records the source and tool-verification limits.
 
 ## Choose the next observation
 

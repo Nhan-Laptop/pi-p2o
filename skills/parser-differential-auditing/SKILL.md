@@ -39,7 +39,7 @@ For transformation-order, shared-field and re-entry questions, use the owned [se
 - Small local runtime tests → measure actual cast/pack/parser behavior → when documentation or modern defaults differ from the deployed runtime.
 - Debugger/Frida → inspect parsed fields and preserved originals → when canonicalization or branch behavior is uncertain.
 - Wireshark → compare application assumptions with real framing/connections → when transport behavior matters.
-- Intercepting proxy and controlled callback endpoint → observe permitted destinations and request metadata → when auditing outbound requests; DNS callbacks alone do not prove response access or code execution.
+- Intercepting proxy and controlled callback endpoint → observe reachable destinations and request metadata → when auditing outbound requests; DNS callbacks alone do not prove response access or code execution.
 - Library documentation plus source/disassembly → compare normative rules with implementation → when validating delimiter, length, or escaping contracts.
 
 ## Validation
@@ -52,7 +52,7 @@ Testing only the default representation; equating encoding with context safety; 
 Derived guidance: parse once into typed canonical values; validate and consume the same result; fail closed on malformed/empty ambiguous states; avoid shell/source construction; validate outbound destinations across redirects and constrain egress. Escape for the final output context, not an earlier parser.
 
 ## Focused Method
-Carry exact representations, parser identities, controlled comparisons and rejected assumptions into the next question. A discrepancy needs an observed consequence; unavailable framing or transport remains a gap, not a reason to broaden scope. Choose role/method from the unanswered question; record expected evidence and a branch stop condition. Use the [owned review contract](../../HANDOFFS.md#focused-method-and-review).
+Carry exact representations, parser identities, controlled comparisons and rejected assumptions into the next question. A discrepancy needs an observed consequence; unavailable framing or transport remains a gap the next observation closes. Choose role/method from the unanswered question; record expected evidence and a branch stop condition. Use the [owned review contract](../../HANDOFFS.md#focused-method-and-review).
 
 ## Handoffs
 **Parser Comparison → Root Cause:** provide parser/runtime identities, representation table, contrasting interpreted values, policy consequence, and rejected alternatives. **Root Cause → Remediation:** specify the authoritative representation and every consumer needing the same contract. Next: [remediation](../remediation/SKILL.md).

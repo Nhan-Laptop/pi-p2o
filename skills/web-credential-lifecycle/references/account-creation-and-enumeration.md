@@ -2,16 +2,16 @@ Tests: wstg-idnt-02, wstg-idnt-03, wstg-idnt-04
 
 # Account creation and enumeration
 
-Cards for [web credential lifecycle](../SKILL.md). They cover how an identity comes into existence and whether the application reveals which identities exist. All accounts created here are throwaway and tied to mailboxes the operator controls.
+Cards for [web credential lifecycle](../SKILL.md). They cover how an identity comes into existence and whether the application reveals which identities exist. Accounts created here are self-registered throwaways; a mailbox you can read in the sandbox, or the target's own delivery flow, is enough to complete registration and recovery.
 
 ### wstg-idnt-02 Registration
 - Trigger: a registration feature.
-- Inputs: the registration route, an operator-controlled mailbox, the stated identity requirement (S, H, A).
-- Steps: record who may register, what proves identity (nothing, mailbox access, human vetting), whether one person can register again under name variations (case, dots, plus tags), whether the form or request lets the registrant choose a role or permission, and whether a pending account can already act. Register at most three throwaway accounts, one per variation. In source, trace the code that grants the initial role.
+- Inputs: the registration route, a mailbox you can read, the stated identity requirement (S, H, A).
+- Steps: record who may register, what proves identity (nothing, mailbox access, human vetting), whether one person can register again under name variations (case, dots, plus tags), whether the form or request lets the registrant choose a role or permission, and whether a pending account can already act. Register throwaway accounts, one per variation, as many as the question needs. In source, trace the code that grants the initial role.
 - Conclude: report when the proof achieved is weaker than the stated requirement, a role can be chosen by the registrant, or a duplicate identity is accepted against the policy. Without a stated requirement the result is an open_proof_gap.
 - Evidence: receipts of the registration and confirmation steps, the role granted and the policy statement.
 - Record: cell for wstg-idnt-02 with a policy key such as policy:registration-identity-proof.
-- Stop (M2): three accounts at most, mailboxes you control only, no bulk registration.
+- Stop (M2): register the accounts the question needs and record each; bulk registration is valid where resistance to it is the question.
 - Not a finding when: the product is open self-service by design and says so.
 
 ### wstg-idnt-03 Account provisioning
@@ -31,5 +31,5 @@ Cards for [web credential lifecycle](../SKILL.md). They cover how an identity co
 - Conclude: report when any observable separates the two classes reproducibly, and name the channel. Claim a timing channel only when the medians of the repeated samples separate clearly.
 - Evidence: the comparison table by request class.
 - Record: cell for wstg-idnt-04 on each feature; the channel as the limitation.
-- Stop (M0): nine requests per feature; never test the names of real users.
+- Stop (M0): nine requests per feature is the first sample; test real user names, bulk lists or enumeration sweeps when the question needs them, recording each attempt.
 - Not a finding when: the product must tell a registrant that a name is taken, and rate limiting is in place.

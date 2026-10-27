@@ -11,7 +11,7 @@ Before first use, read the [scope baseline](../../README.md#start-here), the [sk
 Reachability-first interface inventory.
 
 ## When to Use
-The target is unfamiliar, large, partially documented, or accessible through several interfaces. Work only within an explicitly authorized target and disposable test environment.
+The target is unfamiliar, large, partially documented, or accessible through several interfaces. Work against the supplied target and a disposable test environment; the target is a starting label, not an egress boundary.
 
 ## Goal
 Which attacker-controlled operations reach security-sensitive code, with what identity, configuration, and prerequisites?
@@ -20,7 +20,7 @@ Which attacker-controlled operations reach security-sensitive code, with what id
 Architecture → actor/capability model → interface registration → access checks → handler map → ranked audit queue.
 
 1. Record artifact hashes, deployed version, enabled features, process/service tree, architecture, and intended security boundary. For distributed services, include peer relationships, installation-derived membership, effective authority and activation state. Do not equate installed package names with available capabilities.
-2. Enumerate listeners, routes, dispatch tables, registrations, format loaders and shared-data consumers, mapping actual handlers and identity. Include authorized deployment metadata, diagnostic references and auxiliary development entries. Names are candidates: record extraction provenance/completeness and deployment correspondence before confirming actor, handler or gate.
+2. Enumerate listeners, routes, dispatch tables, registrations, format loaders and shared-data consumers, mapping actual handlers and identity. Include deployment metadata, diagnostic references and auxiliary development entries. Names are candidates: record extraction provenance/completeness and deployment correspondence before confirming actor, handler or gate.
 3. Build a row per interface: `entry | input representation | lowest reachable actor | gate | handler | downstream privilege | evidence | unknowns`. For an intermediary, distinguish execution identity, admission credential, metadata writer, reconstructed client and final policy consumer.
 4. Compare nominal access policy with every naming/dispatch route: root versus descendant object, ordinary API versus alternate transport, UI path versus direct backend call.
 5. Exercise a harmless valid operation as the least-privileged relevant actor. Distinguish an interface existing, a handle opening, a request being accepted, and the sensitive handler executing.
@@ -35,7 +35,7 @@ For composed-service identity questions, use [intermediary trust](references/int
 - Confirm namespace, capability, kernel-feature, hardware, and default-configuration requirements early. [B002](../../research/evidence.md#b002), [B003](../../research/evidence.md#b003), [B006](../../research/evidence.md#b006)
 
 ## Tools
-- `ss -lntup` → attribute local listeners to processes → when mapping a permitted live service; unavailable process information remains an unknown.
+- `ss -lntup` → attribute local listeners to processes → when mapping a reachable live service; unavailable process information remains an unknown.
 - `rg '<registration_symbol>' <source-root>` → enumerate registered callbacks → when framework/device initialization is available.
 - Browser developer tools or an intercepting proxy → connect normal UI actions to transport and route → when discovering undocumented application paths.
 - IDA/Ghidra/objdump/kuna → recover dispatch tables and companion-library contracts → when source or interface documentation is incomplete.
@@ -62,6 +62,6 @@ Merged interface-registration, driver-access, socket-API, deployment-default, an
 
 Distributed peer authority and consumer-specific gate coverage additionally draw on [O008](../../research/orange/evidence.md#o008). A corrected entrance gate is not proof that the same trust assumption is repaired elsewhere.
 
-[O012](../../research/orange/evidence.md#o012) contributes separate intermediary/client trust roles and revision-dependent architectural responsibilities. The owned guide records their generic contract rather than importing a source request chain; build your own against the authorized target.
+[O012](../../research/orange/evidence.md#o012) contributes separate intermediary/client trust roles and revision-dependent architectural responsibilities. The owned guide records their generic contract rather than importing a source request chain; build your own against the target.
 
 [O048](../../research/orange/evidence.md#o048) adds metadata-led auxiliary inventory, not a metadata-acquisition or test-page exploitation sequence; [On demand upstream text](references/wstg-source.md).

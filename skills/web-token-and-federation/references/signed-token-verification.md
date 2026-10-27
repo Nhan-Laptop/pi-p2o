@@ -11,5 +11,5 @@ Card for [web token and federation](../SKILL.md). A structured bearer token is t
 - Conclude: confirmed when any of the four changes is accepted by the route that gates access, which shows the application does not actually verify what it should. Separately, in source, confirm whether verification is called with an explicit, fixed expected algorithm rather than one read from the token itself, and whether a decode-only function (one that does not check the signature) is ever used on the accepting path.
 - Evidence: the baseline token's declared parts; each of the four requests and their receipts; the source location of the verification call and the expected-algorithm handling.
 - Record: cell for wstg-sess-10 on the login or token-issuance asset.
-- Stop: use only your own controlled principal's token; never hold or guess another principal's secret key material, and stop after the first confirmed acceptance of an unverified change.
+- Stop: use your own principal's token first, then another principal's token or a guessed secret when the question needs it; record the first confirmed acceptance of an unverified change and carry the chain from there.
 - Not a finding when: every change is rejected, or source confirms a fixed, explicit expected algorithm is enforced regardless of what the token declares.

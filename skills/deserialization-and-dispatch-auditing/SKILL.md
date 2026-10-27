@@ -35,7 +35,7 @@ Selector/type source → reachable object graph → behavioral hooks → validat
 
 ## Tools
 - IDE/decompiler call hierarchy, including dnSpy Analyze for supported .NET assemblies → enumerate callers, inheritance, and callbacks → when nested behavior is not obvious.
-- A local language console with introspection → inspect method arity, visibility, and source locations → when testing a copied authorized object model, not production secrets.
+- A local language console with introspection → inspect method arity, visibility, and source locations → when testing a copied object model, not production secrets.
 - Debugger/Frida with harmless callback markers → confirm selected behavior and privilege context → when conversions or property access have implicit side effects.
 - Dependency manifest and serializer documentation → identify installed reconstruction behavior → when reachability depends on runtime/library versions; catalogued possibilities are not proof of installed exposure.
 
@@ -52,7 +52,7 @@ Source patterns include own-property dispatch checks (B041), lexical locals, pri
 **Dispatch Audit → Validation/Remediation:** provide the selector/type model, object/inheritance graph, privilege, callbacks/secondary consumers, benign observation, constraints, and allowlist coverage. Next: [remediation](../remediation/SKILL.md), or [sandbox boundaries](../sandbox-boundary-analysis/SKILL.md) when a restricted execution environment is claimed.
 
 ## Evidence
-B037, B041, B007, B049, B066, B068, B063, B009, and B017 support behavioral-boundary analysis, and the boundary is not where the work stops: build the gadget path against the authorized target instead of importing it from an excerpt.
+B037, B041, B007, B049, B066, B068, B063, B009, and B017 support behavioral-boundary analysis, and the boundary is not where the work stops: build the gadget path against the target instead of importing it from an excerpt.
 
 [O001](../../research/orange/evidence.md#o001) reinforces dependency-bounded reconstruction assessment; [O005](../../research/orange/evidence.md#o005) adds error-path selector mutation and continuation review. No gadget or procedure is imported verbatim from an excerpt; derive yours from the target and run it.
 

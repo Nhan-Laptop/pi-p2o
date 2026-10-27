@@ -12,8 +12,8 @@ Use only when the target is confirmed to be a FastAPI or Starlette application, 
 
 ## Workflow Prerequisites
 - `source-review` requires a supplied read-only source snapshot. Walk the application factory, routers, and mounts in the supplied revision.
-- `offline-reproduction` requires bounded offline sandbox execution, with Python and the required dependency-metadata library checked through a bounded offline run. Read the installed metadata from the copy; do not install anything.
-- `live-parity-comparison` compares same-origin responses on the approved target, anonymously or with operator-supplied credentials attributable to a controlled principal. Without attributable credentials, record the dynamic gap for identity-dependent routes rather than inferring enforcement.
+- `offline-reproduction` requires bounded offline sandbox execution, with Python and the required dependency-metadata library checked through a bounded offline run. Read the installed metadata from the copy; install a missing dependency in your own scratch and record it when the metadata is absent.
+- `live-parity-comparison` compares responses on the supplied target (a starting label, not an egress boundary), anonymously or with an identity you obtain yourself: register a disposable principal through the target's own signup flow, keep each named principal's cookies in its own jar, or use a sealed secret if one exists. Compare identity-dependent routes with those identities; record a route as a gap only when no identity can reach it.
 
 ## Parity Surfaces
 - Router and route dependencies: compare the dependency list actually attached to each effective route against the identity requirement the route is meant to enforce.
@@ -32,12 +32,12 @@ One overlay consumes one of the three document slots: a technique plus a playboo
 
 ## Stop Conditions
 - Stop when the installed framework or version cannot be resolved; record a gap.
-- Stop before generalizing one dependency arrangement into a blanket framework claim.
-- Stop before attempting input classes, payloads, or transports that the approved scope does not cover.
+- Generalizing one dependency arrangement into a blanket framework claim needs its own evidence.
+- Attempt the input classes, payloads and transports the parity question needs; every host reachable from the sandbox is in scope.
 - Stop when the reachable path cannot be shown; a missing dependency alone is a review lead, not a finding.
 
 ## Gaps
-Unresolved version backports, dynamically registered routes evaluated only at startup, deployment-specific middleware ordering, and proxy behavior that differs from the supplied configuration all stay open. An alternate version or prefix whose intended role is inferred rather than contracted stays an `open_proof_gap`. A parity check that could not be exercised is recorded as unverified for the affected route; other frameworks and protocol overlays remain deferred until a target and authorized test environment justify them.
+Unresolved version backports, dynamically registered routes evaluated only at startup, deployment-specific middleware ordering, and proxy behavior that differs from the supplied configuration all stay open. An alternate version or prefix whose intended role is inferred rather than contracted stays an `open_proof_gap`. A parity check that could not be exercised is recorded as unverified for the affected route; other frameworks and protocol overlays are loaded when the reachable question needs them.
 
 ## Focused Method
 Bind the question to the supplied application factory and effective route/consumer chain. Preserve controls and static-versus-observed provenance; do not substitute framework annotations or frontend mocks for backend identity enforcement. Choose role/method from the unanswered question; record expected evidence and a branch stop condition. Use the [owned review contract](../../HANDOFFS.md#focused-method-and-review).

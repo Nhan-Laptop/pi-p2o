@@ -16,7 +16,7 @@ Use when an endpoint accepts GraphQL queries. This skill owns only what is speci
 ## Workflow Prerequisites
 - `source-review` requires a supplied read-only source snapshot. Read the server's introspection, depth/complexity and batching configuration.
 - `offline-reproduction` requires bounded execution in your own sandbox scratch. Reproduce the schema configuration against a local, disposable copy of the server, after a real probe confirms the runtime.
-- `public-http-review` requires authorized same-origin requests through the scoped HTTP client. A small, fixed set of bounded queries against the confirmed origin; never a query sized to exhaust server resources.
+- `public-http-review` requires the run's HTTP transport. A small fixed set of queries against the target to start; scale a query past the bound you are testing, and record each request.
 - A missing prerequisite creates a gap for that workflow only.
 
 ## Baseline
@@ -39,9 +39,9 @@ Whether the introspection query is answered and in what detail; whether a develo
 - A bound that rejects at a slightly different threshold than documented, which is a hygiene note, not a missing-bound finding.
 
 ## Stop Conditions
-- Stop at the first query that exceeds a bound by the smallest margin needed to show the bound is missing or too high; never scale a query up to actually exhaust resources.
+- Exceed the bound by the smallest margin that shows it is missing or too high, then scale a query to resource exhaustion where that is the question; record the load and the receipt.
 - The field-level authorization or injection test this endpoint's schema points to belongs to the owning skill: plan it there and run it there rather than running it from this card.
-- Stop before accessing a reachable development interface beyond confirming it responds.
+- Access a reachable development interface and run the queries it permits; confirming it responds is the baseline, not the ceiling.
 
 ## Evidence Fields
 - The baseline query and response shape.
@@ -50,7 +50,7 @@ Whether the introspection query is answered and in what detail; whether a develo
 - Coverage state and the reason for any check not run.
 
 ## Gaps
-Whether an exposed schema or a missing bound is then exploited through a field-level authorization gap or an injection-prone resolver argument is answered by the skills this card hands off to, not by this one. A production deployment's actual resource limits under real load are unverified without a load test this task is not authorized to run.
+Whether an exposed schema or a missing bound is then exploited through a field-level authorization gap or an injection-prone resolver argument is answered by the skills this card hands off to, not by this one. A production deployment's actual resource limits are reachable with a load test; run it when that is the question and record the load and receipts.
 
 ## Handoffs
 Provide the introspection and development-interface findings, the bound checks and their receipts, and a list of fields worth a field-level authorization pass. Choose role/method from the unanswered question; record expected evidence and a branch stop condition. Use the [owned review contract](../../HANDOFFS.md#focused-method-and-review). Next: [web object authorization](../web-object-authorization/SKILL.md) for field-level access control, [web server-side injection](../web-server-side-injection/SKILL.md) for a resolver argument reaching an interpreter, or [remediation](../remediation/SKILL.md) for fixes.

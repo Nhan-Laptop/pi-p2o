@@ -1,7 +1,7 @@
 # Architecture: Planner / Engine / Worker
 
 ```text
-/p2o --target …  parse → classify → human consent (scope, resources, models)
+/p2o --target …  parse → classify → one human consent (ownership + engagement mode, resources, models)
   → PLANNER   the current Pi conversation: plans, reviews, dispatches, decides wait/blocked/finish
   → ENGINE    deterministic TypeScript, no model: accepted frontier → slot → fresh worker
   → WORKER    fresh Pi process in a visible Herdr pane, one bounded intent, brokered execution
@@ -26,10 +26,15 @@ finite coalescing windows (100 ms) that need explicit event-driven consent. See 
   zero-intent round as not progress; worker "one intent, write back, report, stop"; reporter read-only with no target
   operations, no candidate authorship and no verdict or plan change. The prompt is advisory; the loadout is the
   enforcement, and dispatch of an intent is the only path to target execution.
+- The instrument facts are one module (`src/truth.ts`): NETWORK, HTTP, CREDENTIAL, AUTHORIZATION (blanket for the run, so
+  no per-action consent; `blocked` = approaches exhausted) and BROWSER (the image's installed Chromium and `agent-browser`
+  transport), plus the risk-label definition. Tool descriptions, planner/worker prompts, briefs and consent compose the same
+  facts, so no surface can quietly restore a ceiling the others dropped.
 - Worker tickets bind identity, token, run, image, extension bytes and runtime profile; they last until stopped and are
   revoked by report, withdrawal or socket loss. A wrong model/thinking profile fails closed.
-- Every target operation re-checks scope, ticket and task readiness. Scope is agent policy, not an egress
-  firewall; same-user processes can copy a live token (no same-user isolation is claimed).
+- Every target operation re-checks its ticket and task readiness — that is admission, not per-action consent: the run is
+  authorized in blanket when it starts. The target label is agent policy, not an egress firewall; same-user processes can copy
+  a live token (no same-user isolation is claimed).
 
 ## Tasks, reports, wakes
 
@@ -95,7 +100,8 @@ finite coalescing windows (100 ms) that need explicit event-driven consent. See 
   substitutes values at the seam after policy allows — shell-quoted for shell/net, raw for PTY `send`, request-side for
   HTTP with the `principal` cookie-jar dimension. Every use is audited; exports and reports carry redacted text only.
   Redaction is best-effort: a worker can print or encode a value and the container sees the resolved command line, and
-  the report states that limit.
+  the report states that limit. The sealed channel is the operator's convenience, not a ceiling: a worker provisions its own
+  disposable principal (target registration, named principal cookie jar or `agent-browser` profile/state) when the work needs one.
 - Chain economy removes the per-rung tax without weakening independence: a worker may report with `holdFor` and keep its
   ticket/pane/session for `holdContinuations` successors (0..3, default 1; 0 retires the ticket), the owner dispatches a
   successor onto the same worker
@@ -137,7 +143,7 @@ finite coalescing windows (100 ms) that need explicit event-driven consent. See 
 | `src/tool-policy.ts`, `src/prompts.ts` | Tool loadouts (planner 24, worker 19, validation 18, reporter 6); role prompts state the same split |
 | `src/tasks.ts`, `src/board.ts` | Task board, readiness, atomic reservation, `LedgerBoard` mutation queue |
 | `src/executors.ts`, `src/sandbox.ts`, `src/pty.ts`, `src/http-session.ts`, `src/source.ts` | Executors (shared/isolated/session), containers, PTY family, actor-local HTTP state, bounded source snapshots |
-| `src/policy.ts`, `src/identity.ts`, `src/truth.ts` | Command-policy gate and seeds; sealed identity, substitution and redaction; the instrument facts composed into descriptions, prompts and consent |
+| `src/policy.ts`, `src/identity.ts`, `src/truth.ts` | Command-policy gate and seeds; sealed identity, substitution and redaction; the instrument facts (network, HTTP, credential, authorization, browser, risk label) composed into descriptions, prompts and consent |
 | `src/campaign.ts`, `src/ladder.ts`, `src/evidence.ts` | Engagement frame v2, derived access ladder, bounded evidence receipts |
 | `src/broker.ts`, `src/ticket.ts` | Socket authority, command accounting, fresh tickets |
 | `src/records.ts`, `src/evidence.ts`, `src/authority.ts`, `src/report.ts`, `src/report-export.ts`, `src/cvss.ts`, `src/finish-preflight.ts` | Provenance, evidence, authority counters, report parts, deterministic OWASP-shaped report, CVSS 3.1, finish preflight |

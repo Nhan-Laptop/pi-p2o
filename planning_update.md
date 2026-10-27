@@ -2252,3 +2252,75 @@ itself is still not raised (P9/B added only the per-call bound); TR-L07 records 
 accept a caller-invented note id as support (TR-L09 stays within same-run work records); the "wider search" and "reporter
 board read" scope above remains unimplemented by design. Working-tree files that predate every pass (`AGENTS.md`,
 `Claude outputs/`, `pi-p2o-defense-vi.pptx`) remain untouched.
+
+## Appendix O - P11 implementation record (2026-10-27)
+
+**What happened.** A measured run ended by asking a human for three permissions — one read-only POST to a server action,
+reachability of the internal host `192.168.43.110` for an SSRF check, and one provisioned user/admin account — and reported
+"no credentials granted, no internal host, no browser". The owner's instruction was unqualified: the agent may do anything
+it needs to reach the target, remove the strict/banned doctrine. Three questions were put to the owner and answered:
+**Option C** (all three workstreams: prompt+skill rewrite, host authorization frame, browser and identity capability), the
+third-party guardrails in the skill library are **removed** ("bỏ luôn"), and the verification configuration is
+**exploit default, no `--avoid`, no `--identity`** — so every blocker has to be text/doctrine, never operator configuration.
+
+**Diagnosis.** Part XI and `src/truth.ts` were already permissive: the target is a starting label, no origin filtering, any
+method/body, private/metadata hosts reachable. The blockers were elsewhere: (1) worker-facing skill doctrine told the model to
+"stop before any state-changing request", to "contact nothing outside the confirmed origin", and to require
+"operator-supplied credentials"; (2) `HANDOFFS.md` said "other origins, hosts and ports are out of scope"; (3) the planner and
+worker prompts contained escalation vocabulary ("report blocked/human-needed", "report the blocked prerequisite", "keep the
+human informed") that turned a work item into a permission request; (4) the report and the WSTG matrix asserted "there is no
+browser" and "no operator identity means the test is out of reach" — and the browser claim was simply false.
+
+**What the image actually provides (verified, not assumed).** `ghcr.io/usestrix/strix-sandbox` at the pinned digest already
+ships Chromium 150 (`/usr/bin/chromium`, `AGENT_BROWSER_EXECUTABLE_PATH`, UA and args preconfigured), Node v24.18.0, npm
+11.16.0, Python 3.13 and the `agent-browser` 0.26.0 CLI on PATH (open/click/type/fill/press/wait/snapshot/get/find/eval/
+screenshot/pdf/tabs/network route+requests+har/cookies+storage/set headers/auth vault/`--state`/`--session-name`/console/
+errors/trace/record/batch). Running `agent-browser --session t1 open http://127.0.0.1:8123/index.html` inside the image works
+headless as root with no extra flags and no install step.
+
+**Implementation.** `src/truth.ts` gains `AUTHORIZATION_TRUTH` (blanket authorization for the run; no per-action consent;
+only a refusing tool/host or an exhausted approach is a wall) and `BROWSER_TRUTH` (the installed Chromium and agent-browser
+transport, and how it is driven), and `CREDENTIAL_TRUTH` gains the self-provisioned-principal sentence without weakening the
+sealed channel or its redaction/audit rules. `src/prompts.ts` composes those facts into the planner prompt, the worker/validation
+loadout lines and **every** `workerBrief` (which also loses "SCOPE is a boundary" and the per-action ceiling), adds one short
+worker/validation AUTHORIZATION rule, rewrites the escalation lines so `blocked` means "approaches exhausted, with what was
+tried", and states that a missing credential/account/browser is provisioned, not requested. `src/tool-guidelines.ts`,
+`extensions/p2o/index.ts` (shell/network descriptions), `src/tool-schemas.ts` (candidate `requirement` now means a real wall,
+not a missing dependency), `src/report-export.ts` (Tool limits + severity wording + WSTG flag semantics) and `src/debt.ts`
+(browser/identity default to available; an explicit `false` still narrows) carry the same truth. `HANDOFFS.md`,
+`docs/WSTG_MAP.md`, `docs/HTTP_TRANSPORT.md`, `docs/USAGE.md` and `README.md` are corrected; the skill library is rewritten by
+the delegated owner of `skills/**` (scope/egress → starting label, no separate mutation-scope approval, no operator-credential
+requirement, browser transport available, third-party guardrail stop-lines deleted, honesty/proof-level lines kept, `<8000`
+character first-page target preserved).
+
+**What was deliberately not done.** No new tool and no new broker operation: the browser and identity are already image
+capabilities and go through the existing shell/network command, receipt, capture, command-policy and cleanup path, so a
+wrapper would only have duplicated them. Authority is unchanged (planner has no target/lab/claim tools, worker is the only
+executor and claim author, reporter is read-only, coverage is host-derived, review is not proof, Part XI fetch stays host-side
+uncapped), sandbox isolation is unchanged (no host mount, no Docker socket), and start-time ownership confirmation stays.
+Availability-loss (DoS) effect classes remain excluded from the default set; that is a separate owner decision, not part of
+this pass.
+
+**Owner decisions this pass relied on:** Option C for all three workstreams; third-party guardrails removed from the skill
+library; verification run uses exploit default / no `--avoid` / no `--identity`; keep the existing authority architecture and
+Part XI; commit/push only on the owner's explicit request.
+
+Gates on the working tree (nothing committed): `npm run typecheck`, `npm run build`, `npm run check:build` clean; full
+`npx vitest run` **1.071 pass / 12 skip / 6 skipped files (124 files), 0 fail**, after the two pinned-guidance hashes were
+re-pinned on purpose; `git diff --check` clean for every file of this pass (the pre-existing `AGENTS.md` edit keeps its own
+trailing whitespace and was not touched); `npm run check:library` passes and the skill-hygiene/wstg-skills/skills suites cover
+the rewritten library. `npm run check:python` passes `check:render`, `check:orange`, `check:orange-validate`, `check:library`
+and 154 of its 155 python tests: the one failure is pre-existing environment drift, not this pass —
+`test_library.SkillProfileTests.test_provenance_record_matches_review_snapshot` compares the local `my_references/strix`
+checkout (HEAD `fde37a1`, newer than the reviewed 1.7.0 snapshot) against `research/SKILL_PROVENANCE.json`, and R1/A1/A2/A3
+drift while LICENSE/pyproject match; `my_references/` is gitignored, has not changed since 2026-10-21 and was not touched
+here, so recording a new provenance hash would assert a review that did not happen. Three library invariants that pinned the
+retired doctrine were updated with the pass (the browser workflow prerequisite now names Chromium/agent-browser, the
+output-context document must show live-vs-offline proof, and `chromium` is no longer treated as a benchmark-specific word).
+One new test title anchors the pass in `docs/ACCEPTANCE_MATRIX.md` ("P11/A11" section): blanket authorization/browser/identity
+on every model surface, the WSTG denominator including B/I rows by default, and the report/skill docs truth.
+
+Not claimed: no target was touched and no paid model was run for this pass; `agent-browser` was exercised headless against a
+local fixture page inside the pinned image, not against a target. Removing the third-party guardrails is an owner decision,
+not a claim that sandbox, command policy and ownership confirmation replace them. The real gate — a re-run exploit-default
+campaign that no longer stops to ask for a POST, an internal host or an account — is still the owner's to run.

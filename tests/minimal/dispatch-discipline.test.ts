@@ -14,8 +14,11 @@ describe('dispatch discipline (P6)', () => {
       expect(prompt).toContain('A chain step that consumes an earlier step’s actual output is its own task with pinned prerequisites');
       expect(prompt).toMatch(/Dispatch the highest-value intents first; a slot opens as one settles/);
       // P15 (R1): a round with no feasible question is not a stall, so the rule names the blocked path instead of demanding work.
+      // P11/A11: blocked now means the approaches are exhausted, never "a capability nobody handed me"; the planner may not end
+      // a round by asking the operator for a permission the run already grants.
       expect(prompt).toMatch(/A round that adds no intent is a stall only when a feasible question exists/);
-      expect(prompt).toContain('report blocked/human-needed with the missing prerequisite instead of inventing work');
+      expect(prompt).toContain('record blocked with what you tried and what stayed out of reach instead of inventing work');
+      expect(prompt).not.toContain('report blocked/human-needed');
     }
   });
 

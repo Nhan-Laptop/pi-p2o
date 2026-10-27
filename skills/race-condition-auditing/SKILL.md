@@ -35,8 +35,8 @@ Mutable state inventory → synchronization map → invariant → event-order hy
 
 ## Tools
 - Source/disassembly expansion → expose hidden lock and wait behavior → when helpers obscure synchronization.
-- Debugger event logging, watchpoints, and thread traces → observe state/order changes → when testing a concrete schedule; needs live process attach, which a p2o sandbox blocks — use a separate authorized lab environment.
-- KASAN plus allocation/free context → identify the first invalid access → when memory safety is affected; KASAN needs a specially built kernel that no container can provide — a separate authorized lab build only.
+- Debugger event logging, watchpoints, and thread traces → observe state/order changes → when testing a concrete schedule; needs live process attach, which a p2o sandbox blocks — use a separate lab environment.
+- KASAN plus allocation/free context → identify the first invalid access → when memory safety is affected; KASAN needs a specially built kernel that no container can provide — a separately built lab kernel only.
 - Kernel tracing/kprobes in a permitted diagnostic build → measure blocking and warning costs → when reproduction latency is unexplained; report all changes and do not treat instrumentation as an available attacker capability; that diagnostic build must sit outside the p2o sandbox: the container is root but shares the host kernel, cannot load modules and has no host kernel-tracing privilege.
 
 ## Validation

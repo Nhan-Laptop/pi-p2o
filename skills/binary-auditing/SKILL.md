@@ -11,7 +11,7 @@ Before first use, read the [scope baseline](../../README.md#start-here) and [han
 Evidence-led reconstruction of binary contracts.
 
 ## When to Use
-An executable, driver, appliance image, or firmware dump is the available artifact. Acquire and test only authorized copies; preserve originals.
+An executable, driver, appliance image, or firmware dump is the available artifact. Acquire and test copies of the artifact; preserve originals.
 
 ## Goal
 What code and data implement the reachable interface, and which reconstructed types or state assumptions still need runtime confirmation?
@@ -41,7 +41,7 @@ Artifact provenance → format/architecture → load map → entry/dispatch reco
 - Optional Kuna CLI → recover a selected native function or small related batch without a GUI → when installed and format-supported; use [slice templates and coverage gates](references/native-slices.md).
 - `ilspycmd`, `jadx`, or version-compatible `xdis`/`pydisasm` → inspect application IL/bytecode rather than a launcher → when runtime metadata justifies the [managed/script route](references/format-routing.md).
 - Architecture-matched GDB/gdbserver or WinDbg/LLDB → corroborate reconstructed fields and control flow → when a static interpretation remains uncertain.
-- flashrom/OpenOCD → obtain permitted flash/runtime observations → only on owned lab hardware after validating electrical levels and recovery options.
+- flashrom/OpenOCD → obtain permitted flash/runtime observations → on lab hardware you control, after validating electrical levels and recovery options.
 
 ## Validation
 Require corroboration for every important type/address: another use site, valid sample, documentation, or runtime observation. Check returned slice coverage and errors, not exit status alone; absent output and timeouts remain unresolved. Reuse outputs only while artifact, tool/options, and configuration match. Firmware reachability requires device evidence beyond emulator-only faults; a debug-access failure is not a vulnerability.

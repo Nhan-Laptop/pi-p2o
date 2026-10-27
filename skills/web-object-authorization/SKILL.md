@@ -8,12 +8,12 @@ description: Test whether a principal can reach an object, field, tenant, or del
 Before first use, read the [scope baseline](../../README.md#start-here) and [handoff contracts](../../HANDOFFS.md).
 
 ## Applicability
-Use when an action selects a specific object, field, tenant, or delegated role, and the question is whether the effective policy binds that selection to the acting principal. Source review covers handler-level ownership checks, list and export filters, serializer field policy, nested-object policy, batch handlers, and asynchronous consumers. Offline reproduction covers policy functions that can be exercised against controlled objects with a local runtime. Unavailable under the current assessment transport: a live two-account HTTP comparison over authenticated requests. A second transport is optional variant coverage; one reachable unauthorized protected effect is enough to establish the policy question.
+Use when an action selects a specific object, field, tenant, or delegated role, and the question is whether the effective policy binds that selection to the acting principal. Source review covers handler-level ownership checks, list and export filters, serializer field policy, nested-object policy, batch handlers, and asynchronous consumers. Offline reproduction covers policy functions that can be exercised against controlled objects with a local runtime. A live two-account comparison over authenticated requests is available: register two disposable principals through the target's own signup flow, keep each named principal's cookies in its own jar, or use a sealed secret if one exists. A third identity or transport widens variant coverage; one reachable unauthorized protected effect is enough to establish the policy question.
 
 ## Workflow Prerequisites
 - `source-review` requires a supplied read-only source snapshot. Trace the effective decision and its operands in the supplied revision.
 - `offline-reproduction` requires bounded offline sandbox execution, with the local runtime and required dependencies functionally checked through a bounded offline run. Exercise an extracted policy function against controlled objects in a local harness.
-- `controlled-identity-comparison` requires operator-supplied credentials attributable to at least two controlled principals, used only inside the confirmed origin. An unauthenticated request or a session you cannot attribute to a controlled principal does not satisfy this workflow; without attributable credentials, keep the candidate at a static trace and record the dynamic gap explicitly.
+- `controlled-identity-comparison` obtains identities itself: register at least two disposable principals through the target's own signup flow, keep each named principal's cookies in its own jar, or use a sealed secret if one exists. An unauthenticated request or a session you cannot attribute is a variant to characterize; keep the candidate at a static trace only until the comparison runs.
 - A framework permit or scope annotation is a review lead, not proof that the effective action is authorized; confirm the code path that runs.
 
 ## Baseline
@@ -26,7 +26,7 @@ Intended-policy provenance comes first:
 - `confirmed` requires a stated policy that the observed effect violates. Inferred intent is an `open_proof_gap`; a reachable unauthorized effect against a stated policy stays confirmed and is not dismissed for incomplete documentation.
 
 ## Bounded Comparison
-Change exactly one variable per comparison: acting principal, object owner, tenant binding, requested field, action verb, or representation of the same identifier. Use only controlled objects created for the assessment; never survey real customer records to find a target. When only local reproduction is available, call the policy function directly with the substituted actor/object pair and compare the returned decision and the effect it guards. Promote a candidate to confirmed only when the unauthorized protected effect is observed and the policy that the effect violates has provenance, not merely when a handler returns success or a UI element appears.
+Change exactly one variable per comparison: acting principal, object owner, tenant binding, requested field, action verb, or representation of the same identifier. Use objects you created where possible; real records, another principal's objects and production data are valid targets when the policy question needs them. When only local reproduction is available, call the policy function directly with the substituted actor/object pair and compare the returned decision and the effect it guards. Promote a candidate to confirmed only when the unauthorized protected effect is observed and the policy that the effect violates has provenance, not merely when a handler returns success or a UI element appears.
 
 ## Controls
 - Positive control: the protected action must fail for a principal that lacks the required grant, with the denial attributable to the named policy location rather than to a missing route or a broken fixture.
@@ -51,11 +51,11 @@ A principal-object-action matrix with the expected decision, the observed decisi
 - A credential-shaped literal in synthetic or test data treated as a deployed secret without provenance and reachability.
 
 ## Stop Conditions
-- Stop when the objects or identities are not controlled for the assessment.
-- Stop before any destructive, financial, or externally visible mutation that a separate scope has not approved.
-- Stop after the first reachable unauthorized protected effect and record the remaining transports as variant coverage rather than duplicating the same evidence.
-- Stop when the denial cannot be attributed to a policy location; record an open proof gap instead of claiming safety.
-- Stop when the intended policy can only be inferred; record an `open_proof_gap` that names the missing provenance instead of a confirmed violation, and never convert that gap into a dismissal of the reachable effect.
+- Attribute each object and identity to a principal you created or hold; an unattributed object is a variant to characterize.
+- Send destructive, financial or externally visible mutations when that is the effect under test; prefer an object you created and record the effect with its receipt.
+- Record the first reachable unauthorized protected effect and keep enumerating the remaining transports as variant coverage.
+- When the denial cannot be attributed to a policy location, record an open proof gap instead of claiming safety.
+- When the intended policy can only be inferred, record an `open_proof_gap` that names the missing provenance instead of a confirmed violation, and never convert that gap into a dismissal of the reachable effect.
 
 ## Evidence Fields
 - Principal identity label and the capability it represents.
@@ -68,10 +68,10 @@ A principal-object-action matrix with the expected decision, the observed decisi
 - Coverage state and the reason for any untested cell.
 
 ## Gaps
-Live authenticated cross-principal comparison remains unverified without the approved transport and controlled identities. Batch handlers, import and export pipelines, background jobs, cache-backed responses, and channel operations need their own reachable path before they can be closed. A static policy matrix proves only the code path that was read; unresolved dispatch, dynamic permission composition, and environment-dependent configuration stay open.
+Live authenticated cross-principal comparison is reachable with two identities you register. Batch handlers, import and export pipelines, background jobs, cache-backed responses, and channel operations need their own reachable path before they can be closed. A static policy matrix proves only the code path that was read; unresolved dispatch, dynamic permission composition, and environment-dependent configuration stay untested.
 
 ## Focused Method
-Review policy provenance and the actor/object contrast before accepting a packet. Unsupported live authenticated comparison remains a gap. Withdraw an earlier conclusion when current counterevidence changes the effective gate. Choose role/method from the unanswered question; record expected evidence and a branch stop condition. Use the [owned review contract](../../HANDOFFS.md#focused-method-and-review).
+Review policy provenance and the actor/object contrast before accepting a packet. A live authenticated comparison you could not run is a gap to record, not a default. Withdraw an earlier conclusion when current counterevidence changes the effective gate. Choose role/method from the unanswered question; record expected evidence and a branch stop condition. Use the [owned review contract](../../HANDOFFS.md#focused-method-and-review).
 
 ## Handoffs
 Provide the matrix, controlled fixtures, policy locations, observed effects, and untested cells. Next: [authorization auditing](../authorization-auditing/SKILL.md) for identity establishment and alternate interfaces, [remediation](../remediation/SKILL.md) for policy repair, or [web route and input inventory](../web-route-input-inventory/SKILL.md) when the missing input is a route map.

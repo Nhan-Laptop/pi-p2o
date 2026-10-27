@@ -18,15 +18,15 @@ Use when a request is tied to a login by a session token (cookie, header or hidd
 ## Workflow Prerequisites
 - `source-review` requires a supplied read-only source snapshot. Trace how the token is generated, stored, regenerated, invalidated and expired in the supplied revision.
 - `offline-reproduction` requires bounded execution in your own sandbox scratch. Analyze a bounded sample of issued tokens or exercise the session library with controlled objects in a local harness, after a real probe confirms the runtime.
-- `public-http-review` requires authorized same-origin requests through the scoped HTTP client. Anonymous retrieval of the pre-login token and its attributes on the confirmed origin.
-- `controlled-identity-comparison` requires operator-supplied credentials attributable to controlled principals, used only inside the confirmed origin. Without attributable credentials keep the candidate at a static trace and record the dynamic gap.
+- `public-http-review` requires the run's HTTP transport. Anonymous retrieval of the pre-login token and its attributes on the target.
+- `controlled-identity-comparison` obtains identities itself: register a disposable account through the target's own signup flow, keep each named principal's cookies in its own jar, or use a sealed secret if one exists. Anonymous and credential-free comparisons are preferred evidence where available; 'no account' is never a blocker.
 - A missing prerequisite creates a gap for that workflow only.
 
 ## Baseline
 Establish what a healthy session looks like before testing it. Inventory every state carrier (cookies, headers, hidden fields, URL parts) with its name, location and attributes, never its value. With one controlled account record the sequence anonymous request, login, authenticated request, logout, authenticated request again, and keep the receipt of each. Use named HTTP sessions so each context has its own jar. State the expected policy with provenance: a documented timeout or concurrency rule, or a boundary invariant such as a new identifier after login.
 
 ## Bounded Comparison
-Change one variable per comparison: the token carried, the transport, the point in the flow, or the time waited. Waits are bounded and chosen in advance; a timeout longer than the bound becomes a gap and a source reading, never a longer wait. Samples for strength analysis are at most thirty fresh sessions, drawn with the jar reset between them. Use only tokens of your own controlled accounts, and never record a token value; keep a short label and its length.
+Change one variable per comparison: the token carried, the transport, the point in the flow, or the time waited. Waits are bounded and chosen in advance; a timeout longer than the bound becomes a gap and a source reading, never a longer wait. Samples for strength analysis are at most thirty fresh sessions, drawn with the jar reset between them. Use tokens from accounts you self-provision and from other principals where the question needs them; keep a short label and length, not the value.
 
 ## Controls
 - Positive control: a request with the current valid token reaches a protected route, which proves the route and the harness work before any denial is interpreted.
@@ -46,10 +46,10 @@ A token inventory with attributes and lengths; a pre-login and post-login compar
 - Differences caused by a load balancer that sends the two contexts to different nodes.
 
 ## Stop Conditions
-- Stop if the account, token or object is not controlled for the assessment.
-- Stop before brute-forcing identifiers, capturing traffic of other users, or waiting beyond the bound set in advance.
-- Stop before any change of the account that is not reversible by the same account, such as a password change.
-- Stop after the first reachable replay of an invalidated token and record the other transports as variants rather than repeating the evidence.
+- Attribute each account, token and object to a principal you created; an unattributed one is a variant to characterize.
+- Enumerate identifiers, capture another principal's traffic and wait beyond the bound set in advance where the question needs it; record each attempt and its receipt.
+- Change the account state the policy question needs, including a password change; prefer a disposable account you created and record the effect with its receipt.
+- Record the first reachable replay of an invalidated token and keep enumerating the other transports as variants rather than repeating the same evidence.
 
 ## Evidence Fields
 - Token carrier, name, location, attribute list and length class; never the value.
@@ -60,7 +60,7 @@ A token inventory with attributes and lengths; a pre-login and post-login compar
 - Coverage state and the reason for any card not run.
 
 ## Gaps
-Tokens held in browser storage, browser-side cookie defaults, single sign-off across providers, long idle or absolute timeouts, distributed session stores that differ per node, and sessions carried over WebSocket stay unverified without the matching transport or source. A clean result covers the controlled accounts and the flow positions tested.
+Tokens held in browser storage are reachable by driving the image's Chromium; browser-side cookie defaults, single sign-off across providers, long idle or absolute timeouts, distributed session stores that differ per node, and sessions carried over WebSocket are reachable through the matching transport, and a path the run did not exercise stays untested. A clean result covers the controlled accounts and the flow positions tested.
 
 ## Handoffs
 Provide the token inventory, the sequence receipts, the replay results and the policy used for each comparison. Choose role/method from the unanswered question; record expected evidence and a branch stop condition. Use the [owned review contract](../../HANDOFFS.md#focused-method-and-review). Next: [web deployment hygiene](../web-deployment-hygiene/SKILL.md) for the transport and header side, [authorization auditing](../authorization-auditing/SKILL.md) for what an accepted token may do, or [remediation](../remediation/SKILL.md) for session fixes.

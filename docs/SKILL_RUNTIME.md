@@ -1,7 +1,7 @@
 # Skills, tool guidance and evidence
 
-Reading knowledge never grants a tool, network route, identity or filesystem capability. Target execution stays in the
-host-managed sandbox.
+Reading knowledge never grants a tool, network route, identity or filesystem capability: the run's blanket authorization is
+what grants the instrument, and knowledge never widens it. Target execution stays in the host-managed sandbox.
 
 ## Knowledge tools
 
@@ -60,7 +60,9 @@ host-managed sandbox.
   information gain and cost, and note why. Unclear gates go back to mapping, plausible candidates to a *separate*
   validator, blocked proof stays open. Shared contract: [HANDOFFS](../HANDOFFS.md#h1--recon--static-analysis).
 - An unknown tool: run a bounded functional check and cite its receipt; user-space tools can be installed into scratch
-  through `p2o_net`. For Semgrep, keep metrics off and use local rules (`--validate` fetches remote meta-lints).
+  through `p2o_net`. The browser is not an unknown tool: the image ships Chromium 150 and the `agent-browser` CLI, driven as
+  an ordinary sandbox command through `p2o_shell`/`p2o_net` with the same receipt path, and a browser-only effect reaches
+  `live_reproduction` (`BROWSER_TRUTH`). For Semgrep, keep metrics off and use local rules (`--validate` fetches remote meta-lints).
 
 ## Optional offline tool image
 
@@ -95,7 +97,8 @@ interpretation is right.
 - `candidate` slug, `surface`, `risk`; `closure` = `confirmed` | `ruled_out` | `open_proof_gap`; `execution` =
   `tested` | `not_tested` | `blocked` | `not_applicable`; `proof` = `static_trace` | `offline_reproduction` | `live_reproduction`.
 - `evidenceRefs` / `negativeControls`: same-run receipt IDs. `limitations` required; `control` required for `ruled_out`;
-  `requirement` required for `blocked`.
+  `requirement` required for `blocked` and names the tool or host that actually refused, or the exhausted approach — never a
+  missing binary, dependency, credential or browser.
 - `policyBasis` = `explicit_contract` | `boundary_invariant` | `inferred`, with `expectedPolicy` naming rule and source.
   Inferred policy must stay `open_proof_gap`, even when a sibling looks safe. When the effect itself establishes the
   boundary — unauthenticated code execution, a read/write across a principal or tenant boundary that needs no credential,
@@ -153,7 +156,10 @@ Skill selection never enables tools. Cases, coverage and graph: [CASE_REVIEW](CA
   ids/kinds/labels only and a worker ticket carries only a count. The host substitutes a placeholder at execution time
   (shell-quoted for shell/net, raw for a PTY `send`, request-side for HTTP), only after the command policy allows the
   command, and audits every use. Receipt/export redaction is best-effort: a worker can print or encode a secret and the
-  container sees the resolved command line, so the report states that limit.
+  container sees the resolved command line, so the report states that limit. The sealed channel is the operator's convenience,
+  not a ceiling: a worker that needs a principal the operator did not seal registers a disposable one on the target and keeps
+  its cookies in a named principal jar or an `agent-browser` profile/state (`CREDENTIAL_TRUTH`); a self-provisioned principal
+  is controlled and disposed of, never a missing prerequisite.
 - Steering: the operator can append `p2o_loop {action:'hint'|'constrain', text}` between rounds (3..300 characters, at
   most 24 hints and 12 constraints). Both are rendered into the next planner prompt; a constraint is absolute and a hint
   never widens the campaign frame. `p2o_loop` has no goal action — goals stay on the plan board (`p2o_plan_create`).

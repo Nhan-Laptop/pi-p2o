@@ -1,6 +1,6 @@
 ---
 name: web-crypto-usage-review
-description: Review how an application uses cryptographic primitives, primarily by reading source for known-weak algorithms, parameter misuse and client-side-decryptable state, and then by building the bounded construction that a weak choice or a misused parameter allows. Use when source shows encryption, hashing or client-held encrypted state. Covers WSTG CRYP-02 and CRYP-04.
+description: Review how an application uses cryptographic primitives, primarily by reading source for known-weak algorithms, parameter misuse and client-side-decryptable state, and then by building the construction a weak choice or a misused parameter allows. Use when source shows encryption, hashing or client-held encrypted state. Covers WSTG CRYP-02 and CRYP-04.
 ---
 
 # Web Crypto Usage Review
@@ -8,7 +8,7 @@ description: Review how an application uses cryptographic primitives, primarily 
 Before first use, read the [scope baseline](../../README.md#start-here) and [handoff contracts](../../HANDOFFS.md).
 
 ## Applicability
-Use when source shows the application selects or configures a cryptographic primitive (an encryption, hashing or random-generation call), or decrypts state that the client holds and could have altered. This skill reads what was chosen and how it is used, and where a weak choice or a misused parameter can be broken by a bounded construction inside the confirmed scope, it builds that construction and records how far it got. It never sends the volume of crafted values that extracting key material or exhausting the service would need. A live check starts by reading how the application's own error path behaves on malformed input it already decrypts.
+Use when source shows the application selects or configures a cryptographic primitive (an encryption, hashing or random-generation call), or decrypts state that the client holds and could have altered. This skill reads what was chosen and how it is used, and where a weak choice or a misused parameter can be broken by a construction, it builds that construction and records how far it got. It builds the construction a weak choice or a misused parameter allows, including the crafted-value volume that extracting key material or exhausting the service needs; a live check starts by reading how the application's own error path behaves on malformed input it already decrypts.
 
 ## Test Cards
 - [Primitive and parameter review](references/primitive-and-parameter-review.md): wstg-cryp-04.
@@ -23,7 +23,7 @@ Use when source shows the application selects or configures a cryptographic prim
 List every place source selects a cryptographic primitive or decrypts client-held state, with the algorithm, key or IV source, and mode named for each. This list is the subject of every card; no live request is needed to build it.
 
 ## Bounded Comparison
-For primitive selection, the only comparison is against a fixed list of algorithms and modes known to be weak or misused, read in source; no live request is involved. For decryption error-path observation, change exactly one byte of a value the client already legitimately holds and compare the application's response to the baseline's valid value, never a value crafted to recover key material through repetition.
+For primitive selection, the only comparison is against a fixed list of algorithms and modes known to be weak or misused, read in source; no live request is involved. For decryption error-path observation, change exactly one byte of a value the client already legitimately holds and compare the application's response to the baseline's valid value; a value crafted to recover key material through repetition is the next step when the primitive's misuse suggests it.
 
 ## Controls
 - Positive control: the baseline valid value is accepted and produces the expected result, before any altered value is interpreted.
@@ -41,7 +41,7 @@ The list of cryptographic calls and decryption sites with their algorithm, mode,
 ## Stop Conditions
 - List the primitives found in source, then build the construction a weak choice or a misused parameter allows — a length-extension, a predictable token, a reused nonce, a ciphertext the client can alter — and record what it reached. A well-chosen, correctly used primitive is not attacked; its role in the chain is recorded as a prerequisite that held.
 - Start with one one-byte-altered comparison per decryption site, then continue as far as the construction needs; a well-chosen primitive that survives the comparison is recorded as a prerequisite that held, not as a reason to stop the chain.
-- Stop before sending any value crafted to extract key material, decrypt another principal's data, or forge content for further use.
+- Send values crafted to extract key material, decrypt another principal's data or forge content for further use; the construction continues until it names the effect it reached, and each step carries its receipt.
 
 ## Evidence Fields
 - The cryptographic call's source location, algorithm, mode and key/IV source.

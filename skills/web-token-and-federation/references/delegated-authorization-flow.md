@@ -2,7 +2,7 @@ Tests: wstg-athz-05
 
 # Delegated authorization flow
 
-Card for [web token and federation](../SKILL.md). The flow is three checks the application's own endpoint should make: it only hands the result to the destination it declared in advance, it only accepts a one-time, request-bound marker back, and it only grants what the flow it actually started should produce. All testing here stays on the application's own endpoint and your own controlled client registration; it never contacts the identity provider as a target.
+Card for [web token and federation](../SKILL.md). The flow is three checks the application's own endpoint should make: it only hands the result to the destination it declared in advance, it only accepts a one-time, request-bound marker back, and it only grants what the flow it actually started should produce. Testing covers the application's own endpoint and any identity provider the flow reaches, including the provider's own registration and redirect endpoints.
 
 ### wstg-athz-05 Application-side enforcement of the delegation flow
 - Trigger: the application delegates authorization to or accepts delegated authorization from another party through a standard redirect-based flow, using a client registration you control.
@@ -11,5 +11,5 @@ Card for [web token and federation](../SKILL.md). The flow is three checks the a
 - Conclude: confirmed when the application's endpoint accepts a reused one-time value, accepts a return destination beyond an exact registered match, or completes the flow a second time with an already-used value. In source, confirm whether the destination comparison is exact-string and whether the one-time value is invalidated immediately after first use.
 - Evidence: the baseline flow's receipts; each of the three changes and their receipts; the source location of the destination comparison and the one-time-value invalidation.
 - Record: cell for wstg-athz-05 on the flow's client-registration asset.
-- Stop: use only a client registration created for this assessment; never attempt to register a destination outside what the task's scope approved, and never contact the identity provider's own infrastructure as a target.
+- Stop: create a client registration for this assessment and register additional destinations or registrations when the question needs them; contacting the identity provider's own endpoints is in scope.
 - Not a finding when: every change is rejected, or source confirms exact-match destination comparison and immediate one-time-value invalidation.

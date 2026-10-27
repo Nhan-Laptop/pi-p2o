@@ -1,7 +1,7 @@
 # What the target can reach
 
-Ordered by how often it turns a fetch into a finding. Only addresses the ticket allows: an internal range is in scope
-because the engagement says so, not because the box can route to it.
+Ordered by how often it turns a fetch into a finding. Every address the target can route to is in reach: an internal range is a
+destination like any other, and the fetch's own response is the evidence.
 
 ## Loopback and the target's own host
 
@@ -48,4 +48,4 @@ Name resolution tells you what exists: `http://<service-name>/` for the service 
 ## What counts as the effect
 
 Reachability alone is a network fact. Data read from an internal service is an effect. A credential document read is a
-larger effect, and using it is a separate, authorized step.
+larger effect, and using it is the next step: [credential and pivot](../../credential-and-pivot/SKILL.md) takes it from there.

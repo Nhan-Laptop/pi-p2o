@@ -682,14 +682,18 @@ class SkillProfileTests(unittest.TestCase):
 
     def test_workflow_semantics_match_the_proof_class(self):
         browser = self.workflows(ROOT, "web-output-context")["browser-execution-proof"]
-        self.assertIn("real browser", " ".join(browser["prerequisites"]))
+        # P11/A11: the browser transport ships in the sandbox image, so the prerequisite names the installed instrument (Chromium
+        # and the agent-browser CLI) instead of a "real browser" that supposedly does not exist.
+        self.assertIn("Chromium", " ".join(browser["prerequisites"]))
+        self.assertIn("agent-browser", " ".join(browser["prerequisites"]))
         self.assertNotIn("allOf", browser)
         self.assertNotIn("lab.local-http", json.dumps(browser))
         navigation = self.workflows(ROOT, "web-route-input-inventory")["authenticated-navigation"]
-        self.assertIn("authenticated", " ".join(navigation["prerequisites"]))
+        # P11/A11: the prerequisite is a principal the worker can provision itself, not an operator-granted identity.
+        self.assertIn("identity you obtain yourself", " ".join(navigation["prerequisites"]).replace("An ", "an "))
         self.assertNotIn("browser.execution", json.dumps(navigation))
         comparison = self.workflows(ROOT, "web-object-authorization")["controlled-identity-comparison"]
-        self.assertIn("authenticated", " ".join(comparison["prerequisites"]))
+        self.assertIn("identity you obtain yourself", " ".join(comparison["prerequisites"]).replace("An ", "an "))
         self.assertNotIn("lab.local-http", json.dumps(comparison))
 
     def test_runtime_catalog_integrates_new_skills(self):
@@ -729,14 +733,17 @@ class SkillProfileTests(unittest.TestCase):
         self.assertEqual(documents["source-code-auditing:claim-provenance"], reference_path)
 
     def test_browser_guidance_distinguishes_managed_interface(self):
+        # P11/A11: the transport is no longer missing. The invariant is that the installed browser driven through the sandbox is
+        # live proof, while a local render or a simulated consumer stays offline reproduction.
         document = (ROOT / "skills/web-output-context/SKILL.md").read_text(encoding="utf-8").lower()
-        self.assertIn("separately authorized real browser transport (not provided by p2o)", document)
-        self.assertIn("does not establish that no browser binary exists", document)
+        self.assertIn("chromium", document)
+        self.assertIn("agent-browser", document)
+        self.assertIn("live_reproduction", document)
         self.assertIn("offline_reproduction", document)
-        self.assertIn("not live execution", document)
+        self.assertIn("simulated consumer is not execution proof", document)
         sidecar = json.loads((ROOT / "skills/web-output-context/skill.json").read_text(encoding="utf-8"))
         workflow = next(item for item in sidecar["workflows"] if item["id"] == "browser-execution-proof")
-        self.assertIn("real browser", " ".join(workflow["prerequisites"]))
+        self.assertIn("agent-browser", " ".join(workflow["prerequisites"]))
         self.assertIn("offline reproduction", workflow["description"])
         catalog = json.loads((ROOT / "skills/catalog.json").read_text(encoding="utf-8"))
         entry = next(item for item in catalog["skills"] if item["name"] == "web-output-context")
@@ -751,7 +758,8 @@ class SkillProfileTests(unittest.TestCase):
             ROOT / "skills/web-output-context/SKILL.md",
             ROOT / "skills/fastapi-security-parity/SKILL.md",
         ]
-        forbidden = ("can_export_orders", "operator-digest", "render_diagnostics", "o-1001", "api.storefront.invalid", "bench/fixtures", "chromium")
+        # P11/A11: "chromium" is no longer a benchmark-specific word — the image's browser is part of the documented instrument.
+        forbidden = ("can_export_orders", "operator-digest", "render_diagnostics", "o-1001", "api.storefront.invalid", "bench/fixtures")
         for document in documents:
             text = document.read_text(encoding="utf-8").lower()
             for token in forbidden:

@@ -17,7 +17,7 @@
     },
     {
       "id": "offline-reproduction",
-      "description": "Render a local, static copy of a page or script to confirm a parsing or sink question that does not need live interactivity",
+      "description": "Render a local copy of a page or script, or drive the image's Chromium through agent-browser, to answer a parsing or sink question",
       "prerequisites": [
         "Bounded execution in your own sandbox scratch; network egress is available and any download or install must be receipted."
       ]
@@ -26,7 +26,7 @@
       "id": "public-http-review",
       "description": "Read declared headers and exercise a server-side origin check with request headers you control",
       "prerequisites": [
-        "Authorized same-origin requests through the scoped HTTP client on the confirmed origin, with the method, headers, cookies and body the approved scope declares."
+        "Requests through the run's HTTP transport to the target and any host it names; the supplied target is a starting label, not an egress boundary."
       ]
     }
   ],

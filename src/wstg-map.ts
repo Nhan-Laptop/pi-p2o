@@ -14,7 +14,7 @@ export const WSTG_COMMIT = '28553f878d48358767892916d53e59a9d664811c';
 export type WstgSupport = 'D' | 'T' | 'N' | 'O';
 export interface WstgTest {
   id: string; title: string; support: WstgSupport;
-  /** The effect happens in a browser; p2o has none, so proof stops at offline_reproduction. */
+  /** The effect happens in a browser; the sandbox ships Chromium and the agent-browser CLI (P11/A11), so the transport is executable and the flag only marks it. */
   browser: boolean;
   /** Needs identities supplied by the operator. */
   identity: boolean;
@@ -143,8 +143,8 @@ const ROWS: readonly Row[] = [
 /**
  * Planning data kept beside the support level, one row per test (no new state or field; the document and a test pin them).
  * Trigger: the recon features that make the test worth planning, from the vocabulary below (shared with the lead in HANDOFFS.md); empty when the test is out of scope.
- * Modes: the transports that can carry the test. S source review, H anonymous same-origin HTTP, A HTTP with an operator-supplied identity, N sandbox network
- * (TCP, TLS, WebSocket), B the effect needs a browser, so proof stops at offline reproduction. A appears exactly when the identity flag does, B when the browser flag does.
+ * Modes: the transports that can carry the test. S source review, H anonymous same-origin HTTP, A HTTP with an authenticated principal (the operator's sealed identity or one the worker provisions), N sandbox network
+ * (TCP, TLS, WebSocket), B the effect needs the browser transport, which the sandbox image provides and the worker drives as an ordinary command. The flags stay as planning labels: the browser and identity filters below are the caller's.
  */
 export const WSTG_FEATURES = ['any', 'config', 'https', 'login', 'session-token', 'registration', 'password-reset', 'mfa', 'remember-me', 'jwt', 'oauth', 'roles', 'object-id', 'upload', 'xml-input', 'template-render', 'dynamic-code', 'outbound-fetch', 'db-query', 'os-command', 'file-path', 'mail-send', 'export-csv', 'serialized-input', 'crypto-use', 'reflected-input', 'stored-input', 'intermediary', 'redirect', 'client-js', 'client-storage', 'postmessage', 'websocket', 'graphql', 'api', 'payment', 'workflow', 'cors', 'frames'] as const;
 export const WSTG_MODES = 'SHANB';
@@ -447,7 +447,8 @@ type FeatureAsset = { assetId: string; features: readonly string[] };
  * A6.4 in planning_update.md: the applicable-test denominator. A row applies when one of its trigger features is recorded on an asset; `any` is the vocabulary's
  * always-match trigger (docs/WSTG_MAP.md), so it applies to every asset that records at least one recognised feature. Feature values are normalised with
  * featuresFromAttributeValues, so raw values like "API, cors ; jwt" are accepted and unknown tokens are ignored, never refused. Browser rows are dropped unless
- * `browser` is true (p2o has no browser oracle) and identity rows unless `identity` is true (no operator grant). One row per test in WSTG_MAP order, carrying the
+ * `browser` is true and identity rows unless `identity` is true; both are caller-supplied capability facts, and the shipped run supplies both (`src/debt.ts`),
+ * because the sandbox image carries the browser transport and a worker provisions its own principals. One row per test in WSTG_MAP order, carrying the
  * sorted unique asset ids that made it applicable. Pure, deterministic, no I/O: being applicable is a planning hint, not permission and not coverage.
  */
 export function applicableTests(assets: readonly FeatureAsset[], options: { browser?: boolean; identity?: boolean } = {}): { test: WstgTest; assets: string[] }[] {

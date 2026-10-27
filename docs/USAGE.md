@@ -16,11 +16,11 @@ Cài: `pi install https://github.com/Nhan-Laptop/pi-p2o` rồi `/reload`. Bật 
 ```
 
 Một hộp thoại xác nhận quyền sở hữu, target, sandbox, kế hoạch worker, retention và (nếu chọn) chế độ vòng Planner tự động. Từ chối thì không có sandbox,
-worker hay model turn nào. Pi hiện tại là planner/reviewer: nó tạo và dispatch intent, review handoff và chứng minh; worker thi hành target và là tác giả duy nhất của claim/note/surface; reporting worker là người đọc thứ hai chỉ đọc. Không có worker backend thì việc target bị chặn và planner nêu prerequisite thay vì tự điều tra. Prompt của mỗi role nói đúng luật đó bằng những dòng ngắn, nhưng thứ thi hành là loadout tool — planner 24 tool không có target/claim, worker 19, validation 18, reporter 6 — không phải câu chữ.
+worker hay model turn nào. Pi hiện tại là planner/reviewer: nó tạo và dispatch intent, review handoff và chứng minh; worker thi hành target và là tác giả duy nhất của claim/note/surface; reporting worker là người đọc thứ hai chỉ đọc. Không có worker backend thì việc target bị chặn và planner báo thiếu executor thay vì tự điều tra. Prompt của mỗi role nói đúng luật đó bằng những dòng ngắn, nhưng thứ thi hành là loadout tool — planner 24 tool không có target/claim, worker 19, validation 18, reporter 6 — không phải câu chữ.
 
 - **Source**: bản sao regular-file ở `/target` (read-only, ≤64 MiB / 20.000 entry; bỏ symlink, file đặc biệt, `.git`, `node_modules`), `/work` là scratch ghi được. Lệnh chạy qua `p2o_shell`, không bao giờ qua shell của host.
-- **Web**: `p2o_http` gửi mọi method/header/cookie/body tới bất kỳ URL http(s) nào; redirect được theo và không bị chặn theo origin; `p2o_net` chạy lệnh mạng trong cùng container (egress thật, không phải firewall). URL GitHub **không** được clone. Chi tiết: [HTTP_TRANSPORT](HTTP_TRANSPORT.md).
-- **Hybrid** (`--target <thư mục> --origin <http(s)-URL>`): source snapshot và đúng 1 deployed origin được xác nhận cùng lúc, chia sẻ một graph/scope/report duy nhất. Hai nguồn bằng chứng của một hệ thống, không phải một; một phát hiện ở source không phải chứng minh nó tồn tại ở deployment cho tới khi một probe sống xác nhận, và ngược lại. Không nguồn nào nới scope của nguồn khác: sandbox vẫn chỉ đọc `/target`, `p2o_http` vẫn chỉ mở cho đúng origin đã xác nhận.
+- **Web**: `p2o_http` gửi mọi method/header/cookie/body tới bất kỳ URL http(s) nào, kể cả private/link-local/cloud-metadata; redirect được theo và không bị chặn theo origin; `p2o_net` chạy lệnh mạng trong cùng container (egress thật, không phải firewall). URL GitHub **không** được clone. Chi tiết: [HTTP_TRANSPORT](HTTP_TRANSPORT.md).
+- **Hybrid** (`--target <thư mục> --origin <http(s)-URL>`): source snapshot và đúng 1 deployed origin được xác nhận cùng lúc, chia sẻ một graph/scope/report duy nhất. Hai nguồn bằng chứng của một hệ thống, không phải một; một phát hiện ở source không phải chứng minh nó tồn tại ở deployment cho tới khi một probe sống xác nhận, và ngược lại. Không nguồn nào nới scope của nguồn kia: sandbox vẫn chỉ đọc `/target`, còn `p2o_http` vẫn mở cho mọi host http(s) sandbox tới được — origin khai báo chỉ là starting label, không phải biên.
 - Planner gọi `p2o_finish` trước báo cáo: không có cổng finish — nó nối khối `FINISH PREFLIGHT` (report fact), và bản không `export` vẫn từ chối khi còn worker chưa report để không đóng sandbox dưới chân người đang chạy, và từ chối (`INTENTS_QUEUED`) khi frontier đã accept còn intent chờ — nêu từng `taskId@rN (reason)` cùng số còn lại và **không** tự drain (Q32); sau đó xóa sandbox, xác minh container đã gỡ và báo số pane Herdr đã đóng. `p2o_finish {export:true}` ghi báo cáo vào thư mục mới rồi trả về, **không kết thúc gì**; `/p2o stop` làm tay cùng đường và ghi lại phần còn nợ.
 
 ## Các option khi start
@@ -36,7 +36,7 @@ worker hay model turn nào. Pi hiện tại là planner/reviewer: nó tạo và 
 | `--executors MODE[:N]` | `shared` | `shared` \| `isolated` \| `session[:N]` | shared mặc định tuần tự (nêu rõ `--target-ops N` để nới, xem hàng dưới); isolated tách sandbox theo assignment; `session` mở tối đa `N` executor sống suốt run (`N` mặc định và trần là `--target-ops`, 1…99), mỗi cái giữ shell cwd/state và một PTY tùy chọn — xem mục Session |
 | `--mode MODE` | `exploit` | `exploit` \| `assess` | `exploit` cho phép bậc thang khai thác nhưng chỉ nhận exploitation/chaining intent khi plan board đã có goal với `proof` là capability hoặc case (`EXPLOIT_MODE_NEEDS_IMPACT_GOAL`); `assess` là opt-in chỉ ghi exposure, từ chối intent khai thác (`ASSESS_MODE_REFUSES_EXPLOITATION`) và report in một dòng thay cho ladder |
 | `--effect CLASS` | mọi `CASE_EFFECTS` trừ `availability-loss` | lặp lại được: `confidentiality-read` \| `integrity-write` \| `availability-loss` \| `authentication-bypass` \| `code-execution` \| `cross-tenant-read` \| `sandbox-escape` | chỉ đi với `exploit` mode và **thay** bộ mặc định (thu hẹp, không cộng thêm): muốn DoS phải nêu rõ `--effect availability-loss`. Là khung hiệu ứng được phép, ghi vào campaign và report |
-| `--identity <abs path>` | không | 1 đường dẫn tuyệt đối tới file JSON, ≤64 KiB, ≤256 secret | file operator cung cấp; host niêm phong một bản + sha256 trong control dir; model chỉ thấy id/kind/label, **không bao giờ** thấy value — xem mục Identity |
+| `--identity <abs path>` | không | 1 đường dẫn tuyệt đối tới file JSON, ≤64 KiB, ≤256 secret | file operator cung cấp; host niêm phong một bản + sha256 trong control dir; model chỉ thấy id/kind/label, **không bao giờ** thấy value; đây là tiện lợi của operator, **không phải trần**: worker tự tạo principal khi cần — xem mục Tự chủ và mục Identity |
 | `--callback <http(s)-URL>` | không | 1 URL http(s) tuyệt đối ≤2048 ký tự, không khoảng trắng/ký tự điều khiển/credential/fragment | mô tả điểm đến ngoài băng mà target được kỳ vọng gọi tới (beacon/collector của operator); chỉ là fact được ghi, **không** mở listener — xem mục Ingress |
 | `--lab-network <name>` | không | tên docker network do operator tạo: 1…64 ký tự `[a-zA-Z0-9_.-]`, không `host`/`none`/`bridge` | cho sandbox join network đó để target route ngược về listener trong session; từ chối nếu network chưa tồn tại; không bao giờ publish port — xem mục Ingress |
 | `--allow "text"` | không | chia sẻ hạn mức với `--avoid`: tổng cộng ≤5 lần, mỗi lần 1–300 ký tự, trong dấu nháy | quyền được ghi lại (permission), không phải bypass: policy deny vẫn thắng và allow không bao giờ nới rộng target; hiện trong confirmation, prompt planner và REPORT.md |
@@ -52,6 +52,28 @@ worker hay model turn nào. Pi hiện tại là planner/reviewer: nó tạo và 
 Số phải là số nguyên trong khoảng cho phép (không âm/thập phân/`unlimited`); giá trị sai bị từ chối, không tự clamp. Không có `--max-planner-rounds` và cũng không còn setting đó: vòng tự động không có trần, chỉ dừng khi hai vòng liền không thêm gì (M6) hoặc khi người dừng.
 `--target-ops` chỉ là **trần**: một lệnh vẫn có thể tự sinh nhiều subprocess/request; nó không phải rate limiter hay egress firewall.
 
+### Tự chủ: authorization, browser, identity
+
+Hộp xác nhận lúc start là **authorization blanket cho cả run**: operator xác nhận sở hữu target + engagement mode một lần,
+nên không còn per-action consent. Mọi method/body/redirect hop, mọi host sandbox route tới (public, private, link-local,
+cloud metadata, host-published lab service), mọi account/identity/software công việc cần đều là work item bình thường;
+`SCOPE` trong brief worker là starting label, không phải boundary. `blocked` nghĩa là **approach đã cạn**, không bao giờ
+là "chưa được cấp quyền"; operator constraint (`--avoid`, `constrain`, command policy) vẫn thu hẹp tuyệt đối và sandbox
+vẫn là blast radius duy nhất.
+
+**Browser có sẵn trong image**, không phải năng lực thiếu: Chromium 150 tại `/usr/bin/chromium` và CLI `agent-browser`
+0.26.0 trên PATH (Node 24.18, npm 11.16), cấu hình qua `AGENT_BROWSER_EXECUTABLE_PATH`, chạy headless khi là root không
+cần flag, không cần install. Drive nó như một lệnh sandbox bình thường qua `p2o_shell`/`p2o_net`
+(`agent-browser --session <name> open <url>`, rồi `snapshot`/`get`/`find`/`click`/`fill`/`press`/`eval`/`screenshot`/`pdf`,
+cùng `cookies`/`storage`/`set headers`/`network route|requests|har`/`auth vault`/`--state`/`--session-name`/`console`/
+`errors`/`trace`/`record`/`batch`) — cùng receipt/capture/cleanup path như mọi lệnh khác, và browser-only effect đạt
+`live_reproduction`.
+
+`--identity` là **tiện lợi của operator, không phải trần**: nếu work cần một principal mà operator không niêm phong,
+worker tự tạo (đăng ký trên target, giữ cookie trong principal jar đặt tên qua `p2o_http` hoặc trong profile/state của
+`agent-browser`) và bỏ khi xong. `p2o_secret` vẫn chỉ trả id/kind/label/scope, không bao giờ trả value;
+`${P2O_SECRET:<id>}`, audit-by-id và redaction best-effort không đổi.
+
 ### Manual và event-driven
 
 | | `manual` (mặc định) | `event-driven` |
@@ -61,7 +83,7 @@ Số phải là số nguyên trong khoảng cho phép (không âm/thập phân/`
 | Polling/heartbeat | không | không |
 
 Manual **không** có nghĩa phải launch worker bằng tay; khác biệt chỉ là quyền tự bắt đầu **vòng Planner mới**. `p2o_loop` là tool của Planner (`status` / `wait` / `blocked`; `wait` kèm `reason:"block-decay"|"cooldown-expiry"` và `notBefore` trong tương lai ≤24 h sẽ ghi một `decision` và hẹn đúng một revisit cho điều kiện đó),
-không phải slash command: `wait` kết thúc vòng hiện tại chứ không phải assessment; `blocked` tạm dừng dispatch và wake cho tới khi bạn `/p2o resume`.
+không phải slash command: `wait` kết thúc vòng hiện tại chứ không phải assessment; `blocked` là quyết định dừng có chủ đích (approach đã cạn) — tạm dừng dispatch và wake cho tới khi bạn `/p2o resume`.
 Hai action `hint`/`constrain` nhận thêm `text` 3–300 ký tự và ghi **append-only** một dòng steering vào ledger (`data.steering`), được render vào prompt planner ở vòng kế tiếp: `constrain` là ràng buộc tuyệt đối (không bao giờ nới rộng scope, policy deny vẫn thắng), `hint` chỉ là gợi ý hướng đi và cũng không mở rộng khung campaign; trần 24 hint và 12 constraint cho mỗi run. `p2o_loop` **không** có action goal — goal vẫn là record của plan board (`p2o_plan_create`).
 Một report/proposal được coalesce và không bảo đảm đánh thức nếu có input người đang chờ, run đã pause/stop hoặc đã hết số vòng Planner tự động.
 
@@ -197,11 +219,11 @@ Domain (goal/todo/decision/case/coverage-plan/coverage-cell/task/phase/…) thay
 | Steering giữa run | `p2o_loop action=hint/constrain` (planner-only, append-only) | mục [Manual và event-driven](#manual-và-event-driven) |
 
 Mỗi tool trên model surface (35/35, kể cả `p2o_surface`, `p2o_artifact`, `p2o_loop`, `p2o_session`, `p2o_secret`) có đúng một câu ranh giới trong `TOOL_BOUNDARIES`, nêu khi nào dùng tool này thay vì tool chồng chức năng; câu đó luôn được gắn vào description. Hai verb legacy đã rút khỏi model surface vẫn đăng ký `exposure:'hidden'` cho đường replay nội bộ nên không có dòng ranh giới; hai verb cell writer của coverage đã bị xoá hẳn ở A3 vì cell do host dẫn xuất.
-**Khóa test OWASP WSTG**: dùng ID viết thường (ví dụ `wstg-athz-04`) làm `questionKey` của work identity trong intent; cell coverage ghép cùng khóa đó khi host suy ra coverage từ việc đã review — model không có verb cell. `methodFamily` là workflow id của skill. [WSTG_MAP](WSTG_MAP.md) liệt kê 108 test với mức hỗ trợ của thư viện (D/T/N/O) và cờ browser/identity — đây là độ phủ kiến thức, không phải khả năng phát hiện. Planner, worker và reporter tìm thấy nó qua `shared:wstg-map` và `shared:handoffs`.
+**Khóa test OWASP WSTG**: dùng ID viết thường (ví dụ `wstg-athz-04`) làm `questionKey` của work identity trong intent; cell coverage ghép cùng khóa đó khi host suy ra coverage từ việc đã review — model không có verb cell. `methodFamily` là workflow id của skill. [WSTG_MAP](WSTG_MAP.md) liệt kê 108 test với mức hỗ trợ của thư viện (D/T/N/O) và cờ browser/identity — đây là độ phủ kiến thức, không phải khả năng phát hiện. Cờ B/I không phải giới hạn của run: image sandbox đã có Chromium + `agent-browser` CLI và worker tự tạo principal khi cần, nên run mặc định truyền `browser: true, identity: true` vào ma trận test áp dụng. Planner, worker và reporter tìm thấy nó qua `shared:wstg-map` và `shared:handoffs`.
 
 ## Delegation
 
-Trong Herdr, planner tạo intent bằng `p2o_task_create` rồi `p2o_task_dispatch`; Engine mới spawn worker: mỗi worker là một tiến trình `pi` thật trong pane nhìn thấy được, với model riêng và chỉ các skill được giao (nội dung skill được nhúng vào brief). Worker không có tool của host, Docker hay hộp consent; mọi thao tác target đều do host (broker) làm trung gian nên kiểm tra scope, timeout, giới hạn output và cleanup nằm ở một chỗ.
+Trong Herdr, planner tạo intent bằng `p2o_task_create` rồi `p2o_task_dispatch`; Engine mới spawn worker: mỗi worker là một tiến trình `pi` thật trong pane nhìn thấy được, với model riêng và chỉ các skill được giao (nội dung skill được nhúng vào brief). Worker không có tool của host, Docker hay hộp consent; mọi thao tác target đều do host (broker) làm trung gian nên kiểm tra ticket, task readiness, timeout, giới hạn output và cleanup nằm ở một chỗ.
 
 - Một mục tiêu cho mỗi worker; nói cho nó biết đã biết gì và nó sở hữu hàng coverage nào, nếu không nó sẽ lặp việc.
 - Discovery và validation do **hai worker khác nhau**; worker tự validate finding của chính nó không phải xác minh độc lập.
@@ -228,8 +250,14 @@ Thứ tự chọn model: override `model` của lần dispatch → `runtime.mode
 ## Sandbox
 
 Ảnh Strix ghim; chạy root trong container với root filesystem ghi được, giữ bộ capability mặc định của Docker (có NET_RAW, nên raw socket chạy được); không trần PID/RAM/CPU (seccomp mặc định của Docker); `/tmp` và `/work` là tmpfs; `/target` mount read-only. Container shell có bridge network với egress thật (kể cả private/loopback); quét TCP connect và raw socket (SYN scan) đều chạy được. Request HTTP chạy trong container tạm với **chỉ tham số curl cố định**, không proxy, đích được resolve và ghim từng hop. Không mount source, Docker socket, home host hay credential provider.
+Image ghim có sẵn Chromium 150 (`/usr/bin/chromium`) và `agent-browser` 0.26.0 trên PATH (Node 24.18, npm 11.16), cấu hình
+sẵn qua `AGENT_BROWSER_EXECUTABLE_PATH`; chạy headless khi là root không cần flag, không cần install. Browser-driven work là
+một lệnh sandbox bình thường qua `p2o_shell`/`p2o_net` — `agent-browser --session <name> open <url>`, rồi `snapshot`/`get`/
+`find`/`click`/`fill`/`press`/`eval`/`screenshot`/`pdf`, cùng `cookies`/`storage`/`set headers`/`network route|requests|har`/
+`auth vault`/`--state`/`--session-name`/`console`/`errors`/`trace`/`record`/`batch` — với cùng receipt/capture/cleanup path,
+nên browser-only effect chứng minh được tới `live_reproduction`.
 Không có thời hạn cho assessment/planner/worker khi run còn authority; timeout shell/HTTP mặc định `0` (không giới hạn), số dương tùy chọn không bị trần; watchdog hạ tầng vẫn còn. Không có trần token/chi phí ở tầng ứng dụng. Đây là cô lập container, **không phải VM**: tiến trình Pi, extension khác và Docker daemon nằm ngoài ranh giới này.
-Các câu mô tả instrument cho model (tool description, prompt planner/worker, consent) lấy từ `src/truth.ts`; `truth.test.ts` grep cả `src`, `extensions`, `docs` và `skills` để các câu cũ về capability, raw socket và credential channel không quay lại. Mô tả trong mục này là bản người đọc của cùng các fact đó.
+Các câu mô tả instrument cho model (tool description, prompt planner/worker, consent) lấy từ `src/truth.ts` — `NETWORK`, `HTTP`, `CREDENTIAL`, `AUTHORIZATION` (blanket cho cả run, `blocked` = approach đã cạn), `BROWSER` (Chromium + `agent-browser` có sẵn trong image) và `RISK`; `truth.test.ts` grep cả `src`, `extensions`, `docs` và `skills` để các câu cũ về capability, raw socket và credential channel không quay lại. Mô tả trong mục này là bản người đọc của cùng các fact đó.
 
 ## Session và PTY
 
@@ -251,6 +279,7 @@ Các câu mô tả instrument cho model (tool description, prompt planner/worker
 - Host đọc file, **niêm phong** một bản copy + sha256 trong control dir (không mount vào container, không export). Model chỉ thấy id/kind/label/scope qua `p2o_secret {action:'list'}`; worker ticket chỉ mang **số** secret, không mang value.
 - Chỗ cần value thì viết placeholder `${P2O_SECRET:<id>}` trong lệnh/request. Host thay ở seam dispatch, **sau khi command policy cho phép**: shell/net phải là một từ shell độc lập (host tự quote `'…'`), PTY `send` thay raw (không quote), HTTP thay trong url/header/body và cookie jar tách theo `principal`. Placeholder lạ, hoặc không đứng riêng một từ shell, bị từ chối.
 - Mỗi lần thay được audit (`data.secretUse`, theo id) và report in `- Secrets used by id: …`. Receipt/artifact/report/export redact exact bytes **best-effort**: worker có thể in hoặc encode value, và container thấy command line đã resolve — report nêu đúng giới hạn này. Không có credential ambient nào của host.
+- Kênh `--identity` là **tiện lợi của operator, không phải trần** (`CREDENTIAL_TRUTH`): nếu work cần một identity mà operator không niêm phong, worker tự tạo — đăng ký trên target, giữ cookie trong principal jar đặt tên qua `p2o_http` hoặc profile/state của `agent-browser` — và đó là controlled identity, dispose khi xong; nó không bao giờ là "missing prerequisite".
 
 ## Ingress (`--callback`, `--lab-network`)
 
@@ -264,7 +293,7 @@ Không có inbound mặc định. Hai flag chỉ **mô tả** đường operator
 
 - Docker không khả dụng lúc cleanup: tool vẫn bị khóa — khôi phục Docker rồi `/p2o stop` lại. Reload/đổi session thử cleanup, thất bại thì hủy việc điều hướng. Kill cứng có thể để lại container/pane; liệt kê của extension: `docker ps -a --filter label=pi-p2o=minimal`, kiểm tra không còn run nào cần chúng rồi `docker rm -f <name>`; pane đóng từ Herdr. Extension không tự thu hồi lúc khởi động.
 - Thiếu ảnh: `docker pull` đúng ảnh trong README; không tải tự động. Quyền Docker: tài khoản phải dùng được Unix socket local (không hỗ trợ daemon từ xa).
-- Delegation không khả dụng: Pi không chạy trong Herdr hoặc `--max-depth 0` — hộp xác nhận nói rõ lý do; việc target bị chặn và planner báo prerequisite thay vì tự làm việc. Worker báo `p2o worker ticket rejected`: nó không còn quyền target (ticket v2 `until-stopped`, gắn extension/image, cần host đang sống; định dạng cũ bị từ chối).
+- Delegation không khả dụng: Pi không chạy trong Herdr hoặc `--max-depth 0` — hộp xác nhận nói rõ lý do; việc target bị chặn và planner báo thiếu executor thay vì tự làm việc. Worker báo `p2o worker ticket rejected`: nó không còn quyền target (ticket v2 `until-stopped`, gắn extension/image, cần host đang sống; định dạng cũ bị từ chối).
 - Target không dùng được: chọn thư mục tồn tại hoặc URL HTTP(S) có hostname resolve được; IPv6 phụ thuộc routing Docker.
 - Nạp trùng tool: chỉ dùng **một** trong bản cài hoặc `pi --no-extensions -e /path/to/pi-p2o`.
 - `pi update` báo thành công nhưng vẫn chạy code cũ: `PI_OFFLINE=1` (ví dụ export trong shell profile) làm nó thoát ngay mà vẫn in "Updated". Bỏ biến đó cho riêng lệnh này, rồi kiểm tra bằng `git -C ~/.pi/agent/git/github.com/Nhan-Laptop/pi-p2o rev-parse HEAD` — thông báo của CLI không phải bằng chứng. Stop assessment đang chạy trước `/reload`.

@@ -1,6 +1,6 @@
 # Minimal runtime probes
 
-Read with [dynamic analysis](../SKILL.md). Investigate one unresolved contract on an authorized artifact in a recovery-capable lab. Networking stays disabled unless the declared experiment needs an explicitly scoped endpoint. Instrumentation observes behavior; it does not authorize bypasses or establish unmodified-target impact.
+Read with [dynamic analysis](../SKILL.md). Investigate one unresolved contract on the artifact in a recovery-capable lab. Networking stays disabled unless the declared experiment needs a network path, and then it runs through the sandbox network tool. Instrumentation observes behavior; it does not authorize bypasses or establish unmodified-target impact.
 
 ## Observation contract
 

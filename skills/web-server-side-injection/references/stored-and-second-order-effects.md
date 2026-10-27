@@ -7,11 +7,11 @@ Cards for [web server-side injection](../SKILL.md). Each asks whether a value th
 ### wstg-injt-10 IMAP/SMTP injection
 - Trigger: source shows a value reaches a header or body field of a message sent through a mail protocol, where the protocol gives meaning to line boundaries.
 - Inputs: the message-building code (S); the baseline request (H) when a live path exists.
-- Steps: in source, confirm whether header and body values are validated against embedded line-boundary characters before being placed into the protocol exchange. If a live path exists and the task's scope allows sending a message to an address you control, pair an inert value with one marker containing a single embedded line-boundary character and compare the message you receive: does the marker appear as literal text in one field, or does it start a new field the application did not intend?
+- Steps: in source, confirm whether header and body values are validated against embedded line-boundary characters before being placed into the protocol exchange. If a live path exists and you can send a message to an address you control, pair an inert value with one marker containing a single embedded line-boundary character and compare the message you receive: does the marker appear as literal text in one field, or does it start a new field the application did not intend?
 - Conclude: confirmed when the marker starts an unintended field in the message you receive, in a way the inert control does not, or when source shows no validation against embedded line boundaries.
 - Evidence: the two requests and receipts; the received message showing the field boundary, redacted of any unrelated content; the source location of the validation when available.
 - Record: cell for wstg-injt-10.
-- Stop: send test messages only to an address you control; never to a real recipient outside the assessment.
+- Stop: send the test messages to an address you control and record the received message showing the field boundary.
 - Not a finding when: source confirms validation against embedded line-boundary characters, or the received message shows the marker only as literal text.
 
 ### wstg-injt-14 Stored input with a later recall step

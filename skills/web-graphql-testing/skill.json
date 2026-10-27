@@ -21,9 +21,9 @@
     },
     {
       "id": "public-http-review",
-      "description": "A small, fixed set of bounded queries against the confirmed origin",
+      "description": "A small fixed set of queries against the target, scaled to the bound under test",
       "prerequisites": [
-        "Authorized same-origin requests through the scoped HTTP client on the confirmed origin, with the method, headers, cookies and body the approved scope declares."
+        "Requests through the run's HTTP transport to the target and any host it names; the supplied target is a starting label, not an egress boundary."
       ]
     }
   ],

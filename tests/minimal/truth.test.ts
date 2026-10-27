@@ -3,10 +3,10 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { registerP2O } from '../../extensions/p2o/index.js';
-import { plannerInstructions, workerInstructions, type PlannerPromptFacts } from '../../src/prompts.js';
+import { plannerInstructions, workerBrief, workerInstructions, type PlannerPromptFacts } from '../../src/prompts.js';
 import { TOOL_BOUNDARIES } from '../../src/tool-guidelines.js';
 import { candidateParameters, noteParameters, reportParameters, taskDraftSchema } from '../../src/tool-schemas.js';
-import { CREDENTIAL_TRUTH, HTTP_TRUTH, NETWORK_TRUTH, RISK_LABEL_TRUTH, SANDBOX_TRUTH } from '../../src/truth.js';
+import { AUTHORIZATION_TRUTH, BROWSER_TRUTH, CREDENTIAL_TRUTH, HTTP_TRUTH, NETWORK_TRUTH, RISK_LABEL_TRUTH, SANDBOX_TRUTH } from '../../src/truth.js';
 import { createFakePi, EXTENSION_PATH } from './helpers/fake-pi.js';
 import { fixture, populate } from './helpers/report-fixture.js';
 
@@ -38,6 +38,13 @@ const RETIRED = [
   'redirects stop before contacting other origins',
   'Credentials must be operator-supplied',
   'Supplied credentials and returned data',
+  // P11/A11: the two capabilities the measured run called missing were in the image all along. Retiring the sentences keeps a
+  // later edit from re-introducing the wall that made the planner stop and ask a human for a POST, a host and an account.
+  'There is no browser',
+  'no browser oracle',
+  'operator-supplied identities',
+  'proof stops at offline reproduction',
+  'requires operator-supplied credentials',
   // P8.2 truth half: the citation fetch is host-side and uncapped under Part XI. The stale P14.8 comment claimed it ran
   // inside the caller's own sandbox, and the worker loadout line called it capped; both statements were false.
   "runs inside the caller's own sandbox",
@@ -67,7 +74,7 @@ const ticket = (role: string) => ({ workerId: 'worker-1', role, depth: 1, parent
 
 describe('P7.0 truth pass', () => {
   it('states each instrument fact once in the fact module', () => {
-    for (const [name, fact] of Object.entries({ SANDBOX_TRUTH, NETWORK_TRUTH, HTTP_TRUTH, CREDENTIAL_TRUTH, RISK_LABEL_TRUTH })) {
+    for (const [name, fact] of Object.entries({ SANDBOX_TRUTH, NETWORK_TRUTH, HTTP_TRUTH, CREDENTIAL_TRUTH, RISK_LABEL_TRUTH, AUTHORIZATION_TRUTH, BROWSER_TRUTH })) {
       expect(fact.length, name).toBeGreaterThan(80);
       for (const retired of RETIRED) expect(fact.toLowerCase(), `${name} must not repeat a retired claim`).not.toContain(retired.toLowerCase());
     }
@@ -81,6 +88,12 @@ describe('P7.0 truth pass', () => {
     expect(CREDENTIAL_TRUTH).toContain('There is no ambient host credential channel');
     expect(CREDENTIAL_TRUTH).toContain('${P2O_SECRET:<id>}');
     expect(RISK_LABEL_TRUTH).toContain('not a risk appetite');
+    expect(AUTHORIZATION_TRUTH).toContain('blanket');
+    expect(AUTHORIZATION_TRUTH).toContain('no per-action consent');
+    expect(BROWSER_TRUTH).toContain('agent-browser');
+    expect(BROWSER_TRUTH).toContain('/usr/bin/chromium');
+    expect(BROWSER_TRUTH).toContain('no install step');
+    expect(CREDENTIAL_TRUTH).toContain('self-provisioned');
   });
 
   it('composes the truth into the registered execution tools', () => {
@@ -90,6 +103,8 @@ describe('P7.0 truth pass', () => {
     const http = tools.get('p2o_http')!.description as string;
     expect(shell).toContain(SANDBOX_TRUTH);
     expect(shell).toContain(NETWORK_TRUTH);
+    expect(shell).toContain(BROWSER_TRUTH);
+    expect(net).toContain(BROWSER_TRUTH);
     expect(net).toContain(NETWORK_TRUTH);
     expect(http).toContain(HTTP_TRUTH);
     expect(http).toContain(CREDENTIAL_TRUTH);
@@ -105,9 +120,20 @@ describe('P7.0 truth pass', () => {
     expect(planner).toContain(NETWORK_TRUTH);
     expect(planner).toContain(RISK_LABEL_TRUTH);
     expect(planner).not.toContain('full capabilities');
+    // P11/A11: the blanket authorization and the installed browser are facts on both surfaces, not planner-only doctrine.
+    expect(planner).toContain(AUTHORIZATION_TRUTH);
+    expect(planner).toContain(BROWSER_TRUTH);
     const worker = workerInstructions(ticket('recon'));
     expect(worker).toContain(CREDENTIAL_TRUTH);
+    expect(worker).toContain(AUTHORIZATION_TRUTH);
+    expect(worker).toContain(BROWSER_TRUTH);
+    expect(worker).toContain('there is no per-action consent to request');
     expect(worker).not.toContain('operator-supplied');
+    // The brief a worker actually receives repeats the authorization and refuses to describe the label as a boundary.
+    const brief = workerBrief({ ticket: ticket('recon'), focus: 'f', task: 't' });
+    expect(brief).toContain(AUTHORIZATION_TRUTH);
+    expect(brief).toContain('starting label, not a boundary');
+    expect(brief).toContain('no command, elapsed-time or per-action-permission ceiling');
     expect(TOOL_BOUNDARIES.p2o_http.join(' ')).toContain('starting label');
     expect(TOOL_BOUNDARIES.p2o_http.join(' ')).not.toContain('origin');
   });
@@ -151,9 +177,33 @@ describe('P7.0 truth pass', () => {
       expect(report).toContain('starting label, not a network boundary');
       expect(report).toContain('no host credential channel');
       expect(report).toContain('no inbound path');
+      // P11/A11: the report describes the browser transport that ran instead of the old "there is no browser" ceiling.
+      expect(report).toContain('Chromium');
+      expect(report).toContain('agent-browser');
+      expect(report).not.toContain('There is no browser');
       expect(report).toContain('bounded by the depth a chain actually demonstrated');
       expect(report).not.toContain('third-party origins');
       expect(report).not.toContain('not computed from exploit evidence');
     });
+  });
+});
+
+describe('P11/A11 autonomy facts', () => {
+  it('states blanket authorization, the installed browser and a self-provisioned identity on every model surface', () => {
+    const planner = plannerInstructions(plannerFacts());
+    const worker = workerInstructions(ticket('recon'));
+    const brief = workerBrief({ ticket: ticket('recon'), focus: 'f', task: 't' });
+    const shell = registrations().get('p2o_shell')!.description as string;
+    for (const [name, text] of [['planner', planner], ['worker', worker], ['brief', brief]] as const) {
+      expect(text, name).toContain(AUTHORIZATION_TRUTH);
+      // A wall is a refusal, never a capability the sandbox already has.
+      expect(text.toLowerCase(), name).not.toContain('ask the operator for permission');
+    }
+    expect(worker).toContain(BROWSER_TRUTH);
+    expect(shell).toContain(BROWSER_TRUTH);
+    expect(CREDENTIAL_TRUTH).toContain('self-provisioned');
+    // The measured run's three questions are answered as work items, not as prerequisites a human must grant.
+    expect(worker).toContain('missing credential, account or browser');
+    expect(brief).toContain('no command, elapsed-time or per-action-permission ceiling');
   });
 });

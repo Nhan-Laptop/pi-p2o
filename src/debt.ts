@@ -65,8 +65,10 @@ export interface DebtInput {
   featureAssets?: readonly { assetId: string; features: readonly string[] }[];
   /** Host-computed write-back counts (`writeBack`), used for the mapping kinds. */
   wrote?: readonly WorkerWrites[];
-  /** WSTG `modes` filter, and the capabilities the run actually has. Absent means "not available", which filters those rows. */
+  /** WSTG `modes` filter. Absent means "not available", which filters those rows. */
   modes?: string;
+  /** P11/A11: the run has a browser transport and can provision principals, so these default to available; pass `false` only
+   * for a foreign caller that genuinely lacks the capability, and the matrix returns the reduced denominator. */
   browser?: boolean;
   identity?: boolean;
   limits?: { perKind?: number };
@@ -137,20 +139,22 @@ export function deriveDebt(index: LedgerIndex, input: DebtInput = {}): DebtRepor
         add('GAP_UNTRIAGED', row.id, 'open gap referenced by no coverage cell and no case');
       }
     }
-    // WSTG: only where a recorded feature or a cell makes a row applicable. Browser/identity rows need an oracle/grant.
+    // WSTG: only where a recorded feature or a cell makes a row applicable. Browser/identity rows are executable in a shipped
+    // run (the image carries the transport; a worker provisions its own principal), so absence of the flag means available.
     const { features, ignored } = featuresFromAttributeValues(input.features ?? []);
     const covered = new Set(cells.filter(cell => isWstgKey(cell.questionKey)).map(cell => cell.questionKey));
     if (input.featureAssets?.length) {
-      // A6.4: the per-asset matrix is the denominator — an applicable test names the assets whose recorded features trigger it,
-      // and the browser/identity filters are the matrix's own (a row needing an oracle or grant this run does not have is out).
-      for (const test of unplannedTests(input.featureAssets, { covered, browser: Boolean(input.browser), identity: Boolean(input.identity) })) {
+      // A6.4: the per-asset matrix is the denominator — an applicable test names the assets whose recorded features trigger it.
+      // P11/A11: the browser transport and self-provisioned principals exist for every shipped run, so a flag is only excluded
+      // when a foreign caller explicitly says it lacks the capability (`false`), never because the run forgot to grant it.
+      for (const test of unplannedTests(input.featureAssets, { covered, browser: input.browser !== false, identity: input.identity !== false })) {
         add('WSTG_UNPLANNED', test.key, test.detail);
       }
     } else if (features.length) {
       const suggestion = wstgSuggest(features, { covered, ...(input.modes ? { modes: input.modes } : {}), limit: 20 });
       for (const test of suggestion.suggestions) {
-        if (test.flags.includes('B') && !input.browser) continue;
-        if (test.flags.includes('I') && !input.identity) continue;
+        if (test.flags.includes('B') && input.browser === false) continue;
+        if (test.flags.includes('I') && input.identity === false) continue;
         add('WSTG_UNPLANNED', test.key, `${test.title} (${test.support}${test.flags ? `, ${test.flags}` : ''}) applies to the recorded feature(s)`);
       }
     } else if (cells.length && !(input.featureAssets?.length)) {

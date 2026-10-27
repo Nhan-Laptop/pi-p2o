@@ -26,16 +26,16 @@
     },
     {
       "id": "public-http-review",
-      "description": "Anonymous same-origin retrieval of representative responses with the headers, cookies and errors they carry; no payloads and no browser transport",
+      "description": "HTTP retrieval of representative responses with the headers, cookies and errors they carry, then the requests the question needs",
       "prerequisites": [
-        "Authorized same-origin requests through the scoped HTTP client on the confirmed origin, with the method, headers, cookies and body the approved scope declares."
+        "Requests through the run's HTTP transport to the target and any host it names; the supplied target is a starting label, not an egress boundary."
       ]
     },
     {
       "id": "sandbox-network-review",
-      "description": "Bounded TCP or TLS handshake with the confirmed host and port through the sandbox network tool",
+      "description": "TCP or TLS handshake through the sandbox network tool to any host and port the sandbox can route to",
       "prerequisites": [
-        "Bounded TCP or TLS exchange with the confirmed host and port through the sandbox network tool; opaque commands are not origin-filtered, so address only the confirmed target and port."
+        "TCP or TLS exchange through the sandbox network tool to any host and port the sandbox can route to; opaque commands are not origin-filtered."
       ]
     }
   ],

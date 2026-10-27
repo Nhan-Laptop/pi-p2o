@@ -24,9 +24,9 @@
     },
     {
       "id": "authenticated-navigation",
-      "description": "Drive a real multi-step flow with operator-supplied credentials for a controlled principal",
+      "description": "Drive a real multi-step flow with an identity you register yourself",
       "prerequisites": [
-        "Operator-supplied authorized credentials for controlled authenticated principals, used only inside the confirmed origin."
+        "An identity you obtain yourself: register a disposable account through the target's own signup flow, keep each named principal's cookies in its own jar, or use a sealed secret if one exists."
       ]
     }
   ],

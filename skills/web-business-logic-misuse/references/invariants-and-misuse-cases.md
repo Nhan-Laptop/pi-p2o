@@ -11,7 +11,7 @@ Cards for [web business logic misuse](../SKILL.md). All three ask whether a serv
 - Conclude: confirmed when the server accepts a value the stated rule forbids. In source, confirm whether the check exists only in client-rendered code or also runs server-side on every path that reaches the protected effect.
 - Evidence: the rule and its source; the two requests and receipts; the source location of the check when available.
 - Record: cell for wstg-busl-01 with a policy key naming the rule.
-- Stop: use fixture data; one accepted violation per rule is enough.
+- Stop: fixture data confirms this rule; continue into the next rule or variant when the outcome calls for it.
 - Not a finding when: the server rejects the out-of-range value, or the rule is confirmed enforced on every reachable path in source.
 
 ### wstg-busl-02 Hidden or guessable field control
@@ -21,7 +21,7 @@ Cards for [web business logic misuse](../SKILL.md). All three ask whether a serv
 - Conclude: confirmed when the server honors the field's changed value for an effect the acting principal should not control, with the rule named. A field that is read but has no effect on the outcome is not a finding.
 - Evidence: the field, its baseline and changed value, the two receipts, and the source location of where it is consumed when available.
 - Record: cell for wstg-busl-02.
-- Stop: fixture data only; confirming the field has an effect is enough, no further escalation.
+- Stop: confirm the field has an effect, then escalate it into the chain step that uses it; fixture data is enough to confirm this one.
 - Not a finding when: the field has no effect on the outcome, or the server re-derives its own value regardless of what was sent.
 
 ### wstg-busl-03 Integrity of component-handled data
@@ -31,5 +31,5 @@ Cards for [web business logic misuse](../SKILL.md). All three ask whether a serv
 - Conclude: confirmed when the unauthorized principal's attempt succeeds where the rule says it should not, with the rule named. This is a special case of object or field authorization; when the question is purely "which principal may act on this object", prefer [web object authorization](../../web-object-authorization/SKILL.md) instead.
 - Evidence: the component, the rule and its source, and the two principals' receipts.
 - Record: cell for wstg-busl-03.
-- Stop: fixture components and fixture data only; never a production log or audit trail.
+- Stop: confirm the rule with fixture components, then use a production log or audit trail when that is the component the question is about, recording the effect.
 - Not a finding when: the unauthorized attempt is rejected, or the component's stated rule cannot be named from any source.

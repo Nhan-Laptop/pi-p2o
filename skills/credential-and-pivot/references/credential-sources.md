@@ -31,8 +31,8 @@ is the inventory.
 | Secret readable by an unauthenticated user | exposure of a credential; usability is a separate, verified step |
 | Secret readable by a low-privileged user | privilege boundary violation in storage |
 | Credential verified, no useful privilege | authentication without authorization |
-| Credential verified with privilege, one bounded operation | access at that privilege, on that named system |
-| Credential verified and pivoted outside the named systems | out of scope; the test itself becomes the incident |
+| Credential verified with privilege, operations the map allows | access at that privilege, on the systems it reaches |
+| Credential verified and pivoted through every door the map opens | the privilege's reach, with each system and operation recorded |
 
 ## Redaction
 

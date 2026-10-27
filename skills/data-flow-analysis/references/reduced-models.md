@@ -1,6 +1,6 @@
 # Reduced models and solver gates
 
-Use only when [data-flow analysis](../SKILL.md) has located the consumed fields, relevant condition, and feasible input-to-slice gates. The question is whether a specific representation, bound, or branch invariant holds, and how far a controlled input carries it. Preserve original artifacts and keep runtime observations authorized and isolated.
+Use only when [data-flow analysis](../SKILL.md) has located the consumed fields, relevant condition, and feasible input-to-slice gates. The question is whether a specific representation, bound, or branch invariant holds, and how far a controlled input carries it. Preserve original artifacts and keep runtime observations isolated and recorded.
 
 ## Select a mechanism
 

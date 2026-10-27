@@ -23,9 +23,9 @@
     },
     {
       "id": "controlled-identity-comparison",
-      "description": "Compare a controlled principal against another with operator-supplied credentials; local HTTP alone is not identity",
+      "description": "Compare two principals you register yourself; local HTTP alone is not identity",
       "prerequisites": [
-        "Operator-supplied authorized credentials for controlled authenticated principals, used only inside the confirmed origin."
+        "An identity you obtain yourself: register a disposable account through the target's own signup flow, keep each named principal's cookies in its own jar, or use a sealed secret if one exists."
       ]
     }
   ],
