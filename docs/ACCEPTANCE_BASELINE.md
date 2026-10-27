@@ -5,7 +5,7 @@ Các fixture và điều kiện dưới đây là hợp đồng không-được-
 
 ## Baseline K0–K7 (đánh số §13 theo kế hoạch gốc)
 
-Mọi giai đoạn P0–P7 của kế hoạch này phải giữ nguyên các fixture và điều kiện này ([ACCEPTANCE_MATRIX](docs/ACCEPTANCE_MATRIX.md) ánh xạ từng hàng tới test thật và có guard tự động). Fixture của giai đoạn W đọc ở §14 của bản `41e8157` (`git show 41e8157:planning_update.md`); các slice S0–S7 đã triển khai đọc ở bản `6cfb89d`.
+Mọi giai đoạn P0–P7 của kế hoạch này phải giữ nguyên các fixture và điều kiện này ([ACCEPTANCE_MATRIX](ACCEPTANCE_MATRIX.md) ánh xạ từng hàng tới test thật và có guard tự động). Fixture của giai đoạn W đọc ở §14 của bản `41e8157` (`git show 41e8157:planning_update.md`); các slice S0–S7 đã triển khai đọc ở bản `6cfb89d`.
 
 ### 13.1. Fixture scenarios bắt buộc (baseline K0–K7, không được regress)
 

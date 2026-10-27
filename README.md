@@ -1,205 +1,119 @@
 # pi-p2o
 
-One command. Your **current Pi agent** plans an authorized assessment; a deterministic TypeScript Engine schedules
-**visible worker panes**. Workers investigate one intent autonomously. Shared-serial execution is default (an explicit
-`--target-ops N` with `shared` lifts that serial queue by operator choice, recorded in the run); isolated
-assignment executors are opt-in. No hidden Planner model, provider harness or dashboard.
+A TypeScript Pi extension for authorized offensive-security assessments. One command turns the **current Pi conversation**
+into the planner: a deterministic TypeScript engine schedules fresh **visible worker panes**, each worker investigates one
+bounded intent through a host broker, and the result is a deterministic evidence report. There is no hidden planner model, no
+provider harness and no dashboard.
 
-**Trạng thái:** `main` từ `5fab024` gồm P13–P15 và giai đoạn planner A–F: capability có kiểu (15 loại) ghép được,
-payload byte-exact lưu trong control dir riêng, environment là recipe cục bộ, research tuyển chọn và hash, severity CVSS 4.0
-tính từ đúng bước đã chứng minh, replay độc lập theo sha256 payload + fingerprint môi trường. **Không còn ngân sách lệnh
-và không còn cổng finish**: hoàn tất được suy ra (`GOAL_UNSETTLED` / `GOAL_UNPROVEN` / `PRIMITIVE_UNCHAINED` / `CHAIN_READY`),
-`p2o_finish {export:true}` chỉ ghi báo cáo và kết thúc không gì cả. Chain sống trên plan board (`chainOf`/`step`/`claimRefs`/`needs`),
-frontier obligation được thi hành lúc tạo task, hai vòng im lặng liên tiếp mà vẫn còn nghĩa vụ thì wake kèm tên nghĩa vụ chứ không pause (P16.2), brief worker mang slice graph và host đếm write-back (`NO_GRAPH_WRITE` chỉ là advisory), route diversity hiện trên situation/report (`ROUTE_MONOCULTURE` advisory) và ruled-out trùng bị chặn một lần re-check, revisit
-theo điều kiện, và một worker còn sống được nối lại tuỳ ý trên cùng ticket. Đó là bản mà `pi install` lấy về: canonical SQLite/schema 7, durable-local luôn confirm, visibility/checkpoint/bounded capture, [asset/fact graph K3](docs/ASSET_GRAPH.md), [work admission/kế hoạch/phase cards K4](docs/WORK_ADMISSION.md), [canonical case/proof-aware coverage K5](docs/CASE_REVIEW.md), [indexed knowledge heads/context packets K6](docs/CONTEXT_PACKETS.md) và [acceptance matrix K7](docs/ACCEPTANCE_MATRIX.md). `package.json` vẫn **0.5.0** (baseline phát hành `e639029`): chưa có version/release mới, nhãn K2–K6 bên dưới đánh dấu phần thêm sau baseline. K0–K7 **chưa hoàn tất**; installed acceptance mới là 6 test inert, chưa phải ma trận đầy đủ, Herdr thật hay hiệu quả pentest. Xem [trạng thái và gates còn lại](docs/KNOWLEDGE_WORKSPACE.md).
+**Status:** `main` is the current development line; `package.json` is still **0.5.0** (no new release). The K0–K7 knowledge
+workspace and the A1–A11 authority/autonomy passes are implemented and pinned by tests; open work is listed in
+[KNOWLEDGE_WORKSPACE](docs/KNOWLEDGE_WORKSPACE.md). No paid or live benchmark has been run for the current design, so pentest
+effectiveness stays **UNVERIFIED**. Milestones, decisions and retired documents: [HISTORY](docs/HISTORY.md).
 
 ## Install
 
 ```sh
 pi install https://github.com/Nhan-Laptop/pi-p2o
-```
-
-Tested with Pi 1.1.0, the pinned development dependency; the installed checks (`7e204c3` for K2–K7, `41e8157` for W0–W6a) ran on a managed Pi 1.1.0. Pi 1.0.0 passed the earlier 357-test inert suite and the 0.5.0 installed acceptance, but the current full inert suite and the installed checks were **not** re-run on 1.0.0 (peer dependencies stay `*`). You also need a configured model, a Linux host (`/proc/self/fd` containment), and a running local Linux Docker daemon. Install the sandbox tools image once:
-
-```sh
 docker pull ghcr.io/usestrix/strix-sandbox@sha256:f6906c3114e504fd1a218fcf028d7a0e46851118403a438b63956de6ea7c4331
 ```
 
-No extension build or JSON configuration is needed. Use `/reload` after installing/updating, and stop any active assessment first. Load only one copy:
-`pi` for the installed package, or `pi --no-extensions -e "$PWD"` for development.
+You need a configured model, a Linux host (FD containment uses `/proc/self/fd`) and a running local Linux Docker daemon. No
+extension build or JSON configuration is needed. Run `/reload` after installing or updating, and stop any active assessment
+first. Load only one copy: `pi` for the installed package, or `pi --no-extensions -e "$PWD"` for the development tree.
+Tested with Pi 1.1.0, the pinned development dependency (peer dependencies stay `*`).
 
-`pi update` does nothing when `PI_OFFLINE=1` is set, yet still prints "Updated". Unset `PI_OFFLINE` for that one command, then check the revision (`git -C ~/.pi/agent/git/github.com/Nhan-Laptop/pi-p2o rev-parse HEAD`) rather than trusting the message.
+`pi update` does nothing while `PI_OFFLINE=1` is set yet still prints "Updated": unset it for that one command, then check
+the revision (`git -C ~/.pi/agent/git/github.com/Nhan-Laptop/pi-p2o rev-parse HEAD`) instead of trusting the message.
 
 ## Use
 
 ```text
 /p2o --target ./my-repo
-/p2o --target "./directory with spaces"
-/p2o --resume run-1f0c9a2e-8d5b-4c1a-9f3e-2b7d6a4c8e10
-/p2o --target https://example.com
-/p2o --target ./my-repo --workers 2 --max-depth 1
-/p2o --target ./my-repo --export
-/p2o --target ./my-repo --loop event-driven --executors isolated --workers 3 --target-ops 2
-/p2o --target ./my-repo --retention ephemeral
 /p2o --target https://example.com --goal "Can tenant A read tenant B invoices?"
-/p2o --target ./my-repo --refer-workspace latest
-/p2o --target ./my-repo --origin https://staging.example.com
+/p2o --target ./my-repo --workers 2 --executors isolated --target-ops 2
+/p2o --target ./my-repo --resume run-1f0c9a2e-8d5b-4c1a-9f3e-2b7d6a4c8e10
+
 /p2o pause
-/p2o resume
-/p2o stop
-/p2o hold [reason]
-/p2o release
-/p2o workers
-/p2o stop-worker <worker-id> [reason]
-
 /p2o status
-/p2o log [cursor] [task=<id>] [actor=<id>] [operation=<id>]
 /p2o report
-/p2o report export /abs/path/report-dir
-/p2o graph
-/p2o graph <asset-id> [cursor]
-/p2o graph export [limit] [cursor]
-/p2o heads [domain|all] [cursor] [limit] [status]
-/p2o show <domain> <id>
-/p2o digest
-/p2o search <text> [cursor=N]
-
-/p2o checkpoint [reason]
-/p2o checkpoints [checkpoint-id]
-/p2o artifact <artifact-id> [byte-offset]
-/p2o open <run-id>
-/p2o recover <run-id>
-/p2o reconcile <run-id> [reason]
-/p2o close
-/p2o export /abs/path/bundle
-/p2o import /abs/path/bundle
+/p2o open run-1f0c9a2e-8d5b-4c1a-9f3e-2b7d6a4c8e10
+/p2o stop
 ```
 
-The first group starts or controls a run: `hold` refuses new target commands and worker launches without ending the run (running commands finish; reporting and `stop` stay open), `release` lifts it after confirmation, and `stop-worker` withdraws one worker; none of these has a model-callable equivalent. The second group (`status` … `search`, `workers`) is read-only: no model call, no target
-operation, no change to mode or authority. `report export` writes a deterministic `REPORT.md` + CSV/JSON from committed state (no model, markup-neutralized, new directory only) after confirmation; the same report is written automatically at the end of a durable-local run to `.p2o-reports/report-<run-id>-final/`; a mid-run export is a separate `report-<run-id>-draft-<sequence>/` (`p2o.autoReport`). The third group (K2) manages retained knowledge and runs on the
-human side only; `open`, `recover` and `close` never resume an assessment. Details: [usage](docs/USAGE.md).
+One confirmation covers ownership, engagement mode, sandbox, worker count, retention and models; declining starts nothing.
+That consent is **blanket for the run** — there is no per-action consent afterwards. The full command list, every start
+option, settings and the retention/report lifecycle are in [usage](docs/USAGE.md).
 
-`--goal "text"` (optional, 1–600 characters) records what you want established, in your own words. It is shown in the confirmation and given to the planner as quoted operator data, with a request to turn it into goals with acceptance criteria. It neither widens nor narrows the objective, is not checked by code, and is not kept across a restart as planner-prompt text; it is recorded in the run ledger and printed in REPORT.md. Without it the planner prompt is unchanged.
+## How a run works
 
-`--avoid "text"` (optional, repeatable up to 5 times, 1–300 characters each) states something workers should stay away from, for example `--avoid "No payment flows"`. It is shown in the confirmation, added to every worker brief as a quoted `OPERATOR CONSTRAINTS` block, recorded in the run ledger and printed in REPORT.md. It is guidance to the model, not enforcement: the target label, container, ticket and broker remain the only boundary. Without it worker briefs are unchanged.
+```text
+consent → PLANNER (this Pi conversation) → ENGINE (deterministic TS) → WORKER (fresh Pi pane) → BROKER → SANDBOX
+        → claims, cases, host-derived coverage → deterministic report
+```
 
-`--origin <http(s)-URL>` (optional, exactly once, pairs only with a directory `--target`) confirms a source snapshot and one deployed origin together as a **hybrid** target, sharing one graph/report. Neither half widens the other: the sandbox still only exposes the bounded read-only source copy at `/target`, while `p2o_http` may reach any http(s) host. Workers are told explicitly that source and origin are two evidence sources for one system, not one proof — a source finding is not deployed reachability until a live probe shows it, and a live anomaly is not a source root cause until traced to code. Without it, targets are classified exactly as before.
+- **Planner**: plans, reviews, dispatches, steers, decides wait/blocked/finish. No target, lab or claim tool in any mode (24
+  tools). Dispatch of an intent is the only path to target execution.
+- **Engine**: admits accepted work when a slot and reviewed prerequisites allow; owns executors and rounds; never invents work.
+- **Worker**: one intent, one fresh process and ticket; the only executor and the only author of a claim, note or surface
+  record (19 tools; validation 18; reporter 6, read-only).
+- **Broker**: every target operation goes through the host — ticket check, task readiness, command policy, bounded receipts,
+  cleanup. A worker reaches the target only through it; if the run stops, workers fail closed.
+- **Sandbox**: the pinned Strix image, root with a writable root filesystem, read-only `/target`, writable `/work/<workerId>`
+  scratch, real bridge egress, no host mount and no Docker socket.
+- **Report**: deterministic OWASP-shaped `REPORT.md` plus CSV/JSON from committed state, no model call, written at cleanup
+  (or on demand with `report export`).
 
-`--refer-workspace [latest|all|<run-id>,...]` (optional) lets a new run point at up to 20 prior durable-local runs on the same target (same path for a directory, same origin for a URL, same path **and** origin for a hybrid target) and tags them as context only in one lifecycle record — never same-run evidence, no restored ticket/worker authority, same principle as `/p2o export|import`. Read back through `p2o_state {action:'heads', domain:'reference'}` or `/p2o digest`; it is never pushed into the planner or worker prompt. Without it, behavior is unchanged. Details: [usage](docs/USAGE.md).
+Details: [architecture](docs/ARCHITECTURE.md), [planner/engine contract](docs/PLANNER_ENGINE.md),
+[evidence and reports](docs/EVIDENCE.md), [knowledge graph and skills](docs/KNOWLEDGE.md).
 
-`--resume <run-id>` (Part XI S8) reopens one **durable-local** run from `<cwd>/.p2o-state`: same `runId`, same
-committed records, a fresh sandbox and a fresh set of workers. No earlier ticket, operation, worker or session authority
-is restored; work that was running is recorded as an interruption boundary and stays interrupted until it is explicitly
-re-dispatched. The stored source snapshot and profile decide what continues, and the source must still match. Read-only
-inspection stays available through `/p2o state <run-id>`.
-Confirm once. The command prepares the sandbox and sends the task directly into the **existing conversation**,
-using the existing model. The current Pi agent is the planner/reviewer: it creates and dispatches bounded intents,
-reviews handoffs and proves, while workers execute target work and are the only claim authors. Without a worker
-backend target work is blocked and the planner reports the missing executor instead of taking over. No elapsed-time or command limit is imposed
-on the planner, workers or assessment. Commands/HTTP default to no task timeout; stop or finish explicitly. Normal provider charges still apply; no command, token or elapsed-time allowance is imposed on the planner, workers or the assessment. Infrastructure watchdogs do not cap investigation time.
+## Authority and instrument
 
-**Authorization is blanket for the run.** The start confirmation covers target ownership and the engagement mode once;
-there is no per-action consent afterwards. Any method, body or redirect hop, any host the sandbox can route to (public,
-private, link-local, cloud metadata, host-published lab services), and any account, identity or tooling the work needs are
-ordinary work items — `SCOPE` in a worker brief is a starting label, never a boundary. A browser is part of the instrument,
-not a permission: the pinned image ships Chromium 150 at `/usr/bin/chromium` and the `agent-browser` 0.26.0 CLI on PATH
-(Node 24.18, npm 11.16), already configured and headless-capable as root with no install step, so browser-driven work runs
-as an ordinary sandbox command through `p2o_shell`/`p2o_net` with the same receipt, capture and cleanup path, and a
-browser-only effect can reach `live_reproduction`. Identity works the same way: `--identity` is the operator's convenience,
-not a ceiling — a worker that needs a principal registers a disposable one on the target and keeps its cookies in a named
-`p2o_http` jar or an `agent-browser` profile/state. `blocked` means the approaches are exhausted, never that a permission
-was not handed over.
-
-Delegation is available when Pi runs inside [Herdr](https://herdr.dev): each worker is a real Pi process in a
-neighbouring pane with its own role model. Every worker uses the host broker; the confirmed profile selects shared or isolated execution.
-Default `--loop manual` never wakes a model automatically. `--loop event-driven` requires consent for additional
-model rounds on committed reports, proposals and task-review changes. Waiting is local; no periodic model polling,
-automatic retry/fallback or restored-session authority. See [Planner/Engine contract](docs/PLANNER_ENGINE.md).
-
-| Tool | Role | Purpose |
-|---|---|---|
-| `p2o_skill_list` / `p2o_skill_read` | planner + worker + reporter | Paginated catalog and approved skill/reference/handoff documents; IDs, never arbitrary host paths; `materialize` copies a registered script into the caller's own scratch |
-| `p2o_research` | planner + worker | Cited technique lookup from the committed corpus; `action=fetch` retrieves any http(s) URL host-side and returns the full body with status, content type, byte count and sha256, plus a provenance `research` record — never evidence; `action=cve` names a product/version and the host fetches NVD/CVE pages (the suggested hosts are advice, not an allowlist), writing `lead` records with URL+`retrievedAt`+sha256; `action=triage` marks a lead `tasked`/`ruled_out`. A lead is never a finding and a claim citing one cannot be confirmed |
-| `p2o_task_create` / `_revise` / `_dispatch` / `_review` / `_settle` | planner only | One verb per task transition: create, revise, dispatch into the frontier, review a handoff, or settle closed/blocked/cancelled. `p2o_task_dispatch` is the only way to start work: the Engine spawns the worker. `p2o_task_create` performs the exact-work duplicate/history preflight itself: an exact active or reusable attempt returns the match payload instead of creating. A task is an intent: with a structured `work` identity the host derives `work.purpose` from the role, `outputContract` from the purpose and `decision` from the anchors the draft already names, so a minimal draft does not restate them. A run starts with recon/mapping; a first validation (either shape) and a first structured discovery/exploitation/chaining/retest are refused with `legalNext: create a recon task first`. After recon a structured discovery needs `work.claimRefs` or a prerequisite (pinned, and reviewed before the task can run), exploitation/chaining keep their claim refs, and investigation/refinement need a claim, a pinned asset revision or a prior task. `validationOf` accepts a reviewed task ID or a worker claim ID — the host resolves the claim through its host-stamped `data.taskRef` and pins the reviewed revision, so a validation always replays reviewed work |
-| `p2o_candidate` | worker only | Evidence-linked candidate claims, proof level, controls, limitations and explicit revisions; the worker that executed the work is the only claim author, a non-worker caller is refused with `WORKER_ONLY` plus a legal-next action (the planner has no candidate path), and the host stamps `data.taskRef` on a worker claim so a validation can anchor to its task |
-| `p2o_lab` (P14.2/P14.3) | worker only | Replayable artifacts. `payload` keeps the exact request/script/command (≤48 KiB) verbatim in the run-private control directory with its sha256, and `payload` with `materialize:true` writes those bytes into the caller's own scratch at `payload/<id>` and returns the path/hash/byte count instead of the body; `env` records a recipe (setup commands, background services with a port or healthcheck, seed) under a name slug and returns a fingerprint, deriving it from the target `docker-compose.yml` on request and refusing `privileged`, `cap_add`, `devices`, host network/pid/ipc, host mounts, `build`, `restart` and a foreign image by name; `verify` runs the recipe in the caller's own sandbox (one ordinary receipt per command, per-service health, same fingerprint for a second worker), but an id created in another sandbox must first be registered locally with the same recipe; `destroy` stops those processes. A candidate citing `payloadRef` **and** a matching `environmentRef` derives `replayable`; nothing is stored on the claim |
-| `p2o_shell` | worker only | Shell in the sandbox; `/target` is a read-only copy, `/work/<workerId>` is scratch, `p2o_net` for egress |
-| `p2o_http` | worker only | curl for any http(s) URL the sandbox can reach: any method, bodies, headers, cookies, bounded redirects |
-| `p2o_net` | worker only | Network commands in the sandbox: connect scans, service probes, tooling installs; no task timeout by default |
-| `p2o_note` | worker only | Append a note, observation, coverage row or open item to the shared ledger |
-| `p2o_surface` | worker only | Append one recon surface-inventory entry (component + entryPoint) with a non-blocking duplicate hint; detail stays in `p2o_note` |
-| `p2o_ledger` | planner + worker + reporter | Read the shared ledger or one evidence/candidate record by ID before repeating work |
-| `p2o_artifact` (K2) | planner + worker + reporter | Đọc retained redacted text theo opaque ID, ≤48 KiB/range (mặc định 8 KiB mỗi lần); không chạy target hoặc cấp authority |
-| `p2o_graph` (K3) | planner + worker | Scoped typed asset/fact/anchor batches; planner hypotheses/relations, provenance/revision pins, bounded history/JSON/Mermaid; planner-only `chain` joins each claim's typed `gained`/`needs` capabilities into ready/unmet steps with depth and the frontier count, and `plan:true` writes one linked todo per step (`chainOf`, `step`, `claimRefs`, `needs`) returning `chainOf` plus a `research` hint for each blocked link; không grant permission hoặc finding proof |
-| `p2o_state` (K6) | planner + worker + reporter; read-only | Bounded indexed knowledge-head navigation with exact totals and a stable sequence cursor, plus plain-substring `search` over committed records (pointers, not evidence); filters never change work, proof or authority |
-| `p2o_plan_create` / `p2o_plan_revise` (K4) | planner only | Goal/todo/decision revisions on canonical records; `revise` also carries a goal's review/close status. A chain step is a todo carrying `chainOf`, `step` (1-based, no maximum), the claims it stands on (`claimRefs`), the capabilities it needs (`needs`) and an optional `environmentRef`; `p2o_board board=plans` returns each chain's readiness line (`chain <id> 2/4 · next: step 3 (ready) · waiting on: http.request (internal-api)`); not a second task queue, scope authority or proof |
-| `p2o_case_create` / `_revise` / `_rate` (K5) | planner only | Planner-reviewed canonical cases from exact claim/evidence/task/asset revisions; worker claims stay pending until review; `_rate` accepts the chain claim's record ID or its slug; acceptance never completes a goal |
-| `p2o_coverage_plan` / `p2o_coverage_suggest` (K5) | planner only | `p2o_coverage_plan` writes only the scope of a versioned denominator (title, exclusions, unknownScope, plan review state) and marks a new plan `derivation:'projected'`; the host derives the cells from reviewed tasks, their worker claims (`data.taskRef`) and current accepted cases, so no cell is authored anywhere. A task whose work identity names no asset is an unmapped gap, never a cell. Plans written before A3 have no marker and are still read as their stored cells (legacy, read-only). `_suggest` is a read-only WSTG planning aid. Blocked, untested, stale or unmapped is never "clean" |
-| `p2o_board` | planner only | Read-only planner board: `tasks`, `cases`, `coverage` or `plans`; `board=coverage` returns host-derived cells with derived counts, the plan-level derivation marker and unmapped gaps, never a planner-authored cell. No id lists, id views; the exact-work duplicate/history preflight lives in `p2o_task_create`. Summaries are navigation, never authority or proof |
-| `p2o_capture` (K2) | worker only | Đọc bounded UTF-8 text từ scratch đã cấp qua FD/single-link rồi lưu artifact redacted; không nhận host path, không thực thi nội dung file |
-| `p2o_request_subtask` | worker | Propose a missing bounded task; never directly spawn or accept work |
-| `p2o_loop` | planner | Engine/frontier status, end round with wait, or record a `blocked` decision (approaches exhausted); `wait` with `reason:"block-decay"|"cooldown-expiry"` plus a future `notBefore` (≤24 h) records one decision and schedules exactly one revisit for that condition (`REVISIT_DUPLICATE` refuses a second pending one) |
-| `p2o_workers` | planner | action "list" (default): worker status, report summary, coverage, optionally wait for a report; action "steer": follow-up instruction without stopping; action "continue": one more brief on the same ticket, reusing the worker's conversation (refused only when the ticket is retired: `WORKER_CLOSED`); action "stop": revoke sandbox access and close the pane |
-| `p2o_report` | worker + reporter | Report to the planner: summary, findings, evidence, coverage, open items, confidence, blocked. Worker: one intent, write back, report, stop. Reporter: read-only second reader, no target operations and no candidate authorship |
-| `p2o_finish` | planner | Report or end. Without `export` it is the human's terminal report: refuses while a worker has not reported, then removes and verifies all sandboxes. `{export:true}` writes `REPORT.md`/CSV to a fresh directory and **ends nothing**; both paths print the derived completion state and the `REMAINING WORK` section |
-
-The planner holds the worker-control tools even without a worker backend; dispatch then stays refused (`DELEGATION_UNAVAILABLE`) and the planner reports the missing executor instead of executing target work. `--max-depth 0` disables admission without changing the loadout. `/p2o workers` remains a human command.
-
-Pi's host tools, `codemode`, its native browser tool, other extensions, `!` shell and the worker's own Docker access are blocked
-while an assessment is active. A worker reaches the target **only** through the host's broker socket; if the
-run stops, workers fail closed. That is a boundary on Pi's own tools, not on the sandbox: the image already carries Chromium and
-the `agent-browser` CLI, so browser-driven work is an ordinary sandbox command with the same receipt, capture and cleanup path.
-
-**K2 (retention):** durable-local mặc định giữ tri thức tại `.p2o-state/<run-id>` sau cleanup; luôn xác nhận location/quota/sensitivity trước tạo (kèm finalization reserve). File text trong scratch chỉ vào kho qua `p2o_capture` với kiểm tra path/FD/single-link/UTF-8 rồi redact trước khi publish; file ngoài scratch, symlink, hardlink, device, binary bị từ chối. `--retention ephemeral` xóa tri thức với control. `/p2o open <run-id>` chỉ mở lịch sử read-only, không resume assessment. `/p2o export <absolute-dir>` ghi bản sao portable có hash (segments + artifact + manifest, không overwrite); `/p2o import <absolute-dir>` xác minh hash rồi giữ exported bytes thành artifact bất biến + một provenance note (foreign redaction claims không được authenticate) trong run đang chạy — không khôi phục scope/ticket/worker/cookie/authority và không tính là same-run evidence. `/p2o reconcile <run-id>` (cần xác nhận) ghi **một** lifecycle record có attribution đánh dấu task non-terminal và operation unknown là interrupted/unknown; không rewrite task status, không resume, không cấp authority. Shell/net/curl capture prefix trước display cap 48 KiB, tổng stdout+stderr mặc định 1 MiB/operation (setting 1–8192 KiB); trả artifact IDs, total/captured bytes và partial labels. Hash/byte cursor không phải finding proof; redaction best effort, không bảo đảm hết secrets.
-
-With `--export`, cleanup additionally saves bounded redacted receipts and source/skill hashes in `.p2o-reports/` (0700; files 0600); this legacy export is not the portable bundle (`/p2o export <absolute-dir>` writes that, human only). Review before sharing. The 0.5.0 baseline removed its temporary ledger without export; current `main` follows the confirmed retention instead.
-Terminal worker failures deliver a blocked report without another model call; no provider fallback is automatic.
-
-See [focused assessment state](docs/ASSESSMENT_STATE.md) for complete-ledger cursors, task/handoff review, current validation, progress and bounded report retention. Automatic planning is explicit opt-in; automatic retry is not introduced.
-`/p2o status` also shows worker liveness (`QUIET` is a local observation, not a timeout), the runtime closure digest (entry file plus `src/**`), the Planner's context usage and model usage per role as Pi reports it — display only: no cap, retry or limit is ever derived from it, and unreported messages are counted as unknown, not estimated.
-Its `Frontier:` line counts `stalled rounds` — planner rounds that ended with an open goal, no open/running intent and no blocked declaration are recorded as a `planner.stalled` report fact, never a wake, pause or budget (only admitted planner rounds can stall: the startup `/p2o` command turn records nothing, and the pause decision is its own `planner.stall-escalation` fact) — and one `Authority:` line lists planner target operations (must be 0) and worker target operations, tasks created and dispatched with the first dispatch time, owner claims (must be 0) and worker claims, validation tasks, the run mode and the static role matrix (planner 24, worker 19, validation 18, reporter 6). Both are read from committed records only; a legacy run keeps its honest non-zero owner counts, and no counter refuses or finishes anything. The deterministic REPORT.md provenance carries the same two lines, and its `## Campaign` section adds `Human resumes: N; stall escalations: M` so an unattended-gate claim is readable from the ledger instead of console history.
-
-## Recon and next-task selection
-
-The planner’s prompt contains assessment policy, not tool manuals; Pi supplies the active descriptions and schemas.
-Startup uses a short kickoff instead of duplicating those instructions. Worker guidance now describes the networked transport.
-Each role's prompt states its rule in one line, and the role loadout enforces it: the planner starts with one recon/mapping
-intent, has no target or claim tools, cannot author a claim or a coverage cell, and treats a zero-intent round as not
-progress; the worker gets "one intent, write back, report, stop"; the reporter is a read-only second reader with no target
-operations, no candidate authorship and no verdict or plan changes. The counts are static policy: planner 24 tools, worker 19,
-validation 18, reporter 6.
-Pi tool descriptions explain execution limits; they do not guarantee installed binaries beyond the instrument facts the
-run states (network egress, blanket authorization and the image's Chromium/`agent-browser` transport). Check other
-prerequisites for the chosen task through bounded sandbox execution; a tool the image lacks is installed into your own
-scratch with a receipt, and universal startup probes are never run.
-Recon records surfaces, inputs, actors/gates, Evidence IDs and unknowns. A run starts with recon/mapping: the planner
-records why a particular surface/risk is next and creates the matching intent; workers map unclear gates and
-investigate concrete concerns, and plausible candidates get a separate validation task created once from the worker
-claim. Later intents anchor to what the run holds — a reviewed claim or prerequisite for discovery, the demonstrated
-claim for exploitation/chaining — so an unanchored first validation is refused with `legalNext: create a recon task
-first`. New surfaces feed back into recon; incomplete mapping never implies target safety.
-
-Coverage is a projection, not an authored record. The host derives every cell from a reviewed task, the worker claim attached to
-it (`data.taskRef`) and the current accepted case, pinning the graph asset revision, and re-derives on each read for
-`p2o_board board=coverage` and the report. A task whose work identity names no asset is a named unmapped gap (board, report
-counts and `UNMAPPED_TASK` preflight advisory), never a cell. Plans written before A3 carry no `derivation:'projected'` marker
-and are still read as their stored cells; derived cells only ever move from `planned`/`blocked` to `tested`, and staleness only
-downgrades.
-See [runtime guidance](docs/SKILL_RUNTIME.md) and [handoffs](HANDOFFS.md).
+- **One consent, then ordinary work.** The start confirmation covers target ownership and the engagement mode once. Any
+  method, body or redirect hop, any host the sandbox can route to (public, private, link-local, cloud metadata,
+  host-published lab services), and any account, identity or tooling the work needs are ordinary work items. `SCOPE` in a
+  worker brief is a starting label, never a boundary, and `blocked` means the approaches are exhausted.
+- **The target is a label, not an egress boundary.** `p2o_http` follows redirects to any http(s) host, shell/network commands
+  are not origin-filtered, and the citation fetch (`p2o_research action=fetch`) is host-side, uncapped, with no allowlist.
+- **Browser and identity are instrument, not permission.** The pinned image ships Chromium 150 at `/usr/bin/chromium` and the
+  `agent-browser` 0.26.0 CLI (Node 24.18, npm 11.16), already headless-capable as root, so browser-driven work runs as an
+  ordinary sandbox command with the same receipt path and can reach `live_reproduction`. `--identity` seals one operator JSON
+  file (values stay host-side; models see ids only), and a worker that needs a principal provisions a disposable one itself.
+- **No command, time or round allowance.** The broker counts every admitted target operation for the ledger and the report and
+  refuses none. Only two quietly unproductive rounds, an operator decision, or `stop`/finish end a run.
+- **Container isolation, not VM isolation.** Docker shares the host kernel; it is not a claim about kernel escapes. See
+  [transport boundaries](docs/HTTP_TRANSPORT.md).
 
 ## Limits
 
 - Local directories or HTTP(S) URLs only. A GitHub URL is a web target, not a clone; clone it yourself for source review.
-- A URL target is a starting label, not a boundary: `p2o_http` and redirects may reach any http(s) host the sandbox can reach, including private, link-local and metadata addresses. Methods, bodies, headers, actor-local cookie sessions and login flows are available. Opaque shell/network commands are not origin-filtered. IPv6 routing depends on Docker.
-- Source is copied before mounting: regular files only, ≤64 MiB / 20000 entries, symlinks/special files/`.git`/`node_modules` skipped.
-- The sandbox runs as root with a writable root filesystem, all capabilities and no pid/memory/CPU limit; `/target` is a read-only copy. It has real network egress, including private/internal destinations and host-published lab services. Loopback is container-local. No egress firewall, proxy or fuzzing service is provided; user-space tooling can be installed into scratch, and the image already carries Chromium and the `agent-browser` CLI for browser-driven work. See [HTTP/network boundaries](docs/HTTP_TRANSPORT.md).
-- Delegation needs Herdr and fresh worker processes. `--workers` is an operator-selected positive safe integer (default 3); no cumulative 2× spawn ceiling. Model concurrency is not target concurrency. Unverified pane closure blocks new admission. A dispatch with no executor is refused with `DELEGATION_UNAVAILABLE` — the missing executor is named for settlement, never a licence for the planner to execute target work; an executor/pane provisioning failure after reserve transitions the task to `blocked`, and a host-created validation with no backend is created blocked with its `missingPrerequisites`.
-- No command or time budget exists for the planner or a worker; usage is recorded for the report, never refused.
-- Retention remains bounded: 100 pending intents, 1,000 registrations, 256 pending semantic signals; ledger/export limits remain. Unlimited elapsed lifetime is not unlimited retention or cost.
-- Docker shares the host kernel: this is container isolation, **not** VM isolation or a claim about kernel escapes.
-- The report is an agent assessment. "Independently verified" requires a separate worker reproduction, and a
-  worker claim the planner did not check must be labelled as such.
-- Hard-killing Pi or losing Docker can leave a container or pane behind. See [usage and cleanup](docs/USAGE.md).
+- Source is copied before mounting: regular files only, ≤64 MiB / 20,000 entries; symlinks, special files, `.git`,
+  `node_modules`, state and report roots are skipped.
+- The sandbox has no pid/memory/CPU limit, no egress firewall and no fuzzing/proxy service; loopback is container-local,
+  `host.docker.internal` reaches host-published services, and user-space tooling can be installed into scratch.
+- Delegation needs Herdr and fresh worker processes. `--workers` is an operator-selected positive integer (default 3); model
+  concurrency is not target concurrency. A dispatch with no executor is refused (`DELEGATION_UNAVAILABLE`) and a provisioning
+  failure moves the task to `blocked`; neither is a licence for the planner to execute target work.
+- Retention stays bounded (100 queued intents, 1,000 registrations, 256 pending signals, storage quota) even though elapsed
+  lifetime is not. Unlimited time is not unlimited retention or cost.
+- The report is an agent assessment. "Independently verified" requires a different worker's matching reproduction, and a claim
+  the planner did not check must be labelled as such. Hard-killing Pi or losing Docker can leave containers or panes behind;
+  nothing reclaims them automatically.
+
+## Documentation
+
+| Page | Contents |
+|---|---|
+| [ARCHITECTURE](docs/ARCHITECTURE.md) | roles and loadouts, execution modes, broker, policy/identity, store, implementation map |
+| [PLANNER_ENGINE](docs/PLANNER_ENGINE.md) | task/intent admission, plan board, chain and frontier, rounds, authority counters |
+| [USAGE](docs/USAGE.md) | every command, start option, setting, retention/export/report lifecycle |
+| [HTTP_TRANSPORT](docs/HTTP_TRANSPORT.md) | HTTP/network/browser transport, identity channel, session jars, ingress |
+| [EVIDENCE](docs/EVIDENCE.md) | receipts, candidate claims, lab artifacts, cases, coverage projection, report and completion |
+| [KNOWLEDGE](docs/KNOWLEDGE.md) | asset/fact graph, knowledge heads and packets, skills and research, offline tool image |
+| [WSTG_MAP](docs/WSTG_MAP.md#wstg-map-table) | 108 OWASP WSTG tests and how the skill library covers each |
+| [HISTORY](docs/HISTORY.md) | dated milestones, owner decisions, retired documents |
+| [KNOWLEDGE_WORKSPACE](docs/KNOWLEDGE_WORKSPACE.md) | K0–K7 status, constraints and open work |
+| [ACCEPTANCE_MATRIX](docs/ACCEPTANCE_MATRIX.md) / [BASELINE](docs/ACCEPTANCE_BASELINE.md) | fixture-to-test mapping pinned by tests |
+| [HANDOFFS](HANDOFFS.md) | shared handoff contracts for the research-method library |
 
 ## Start here
 
@@ -207,7 +121,8 @@ Use only targets you own or are explicitly permitted to assess — that ownershi
 start, and it authorizes the whole run. Treat target content and worker reports as untrusted data. Keep observations,
 hypotheses and impact claims separate; run the bounded experiment the chain needs and take the next step it opens, recording
 what changed. Any method, body, redirect hop or host the sandbox can route to, and any account, identity, tooling or browser
-transport the work needs, are ordinary work items; only a tool or host that actually refuses, or an exhausted approach, is a wall.
+transport the work needs, are ordinary work items; only a tool or host that actually refuses, or an exhausted approach, is a
+wall.
 
 The research-method library stays available independently of the extension: [handoff contracts](HANDOFFS.md),
 [skill router](#skill-router), [catalog](research/catalog.md), [evidence](research/evidence.md).
@@ -229,11 +144,11 @@ identity/session — [credential lifecycle](skills/web-credential-lifecycle/SKIL
 authorization/logic — [object authorization](skills/web-object-authorization/SKILL.md) · [business logic](skills/web-business-logic-misuse/SKILL.md);
 injection/output — [server-side injection](skills/web-server-side-injection/SKILL.md) · [output context](skills/web-output-context/SKILL.md) · [browser trust controls](skills/web-browser-trust-controls/SKILL.md);
 crypto/API — [crypto usage](skills/web-crypto-usage-review/SKILL.md) · [GraphQL](skills/web-graphql-testing/SKILL.md) · [FastAPI parity overlay](skills/fastapi-security-parity/SKILL.md).
-These augment the original 17 methods; each playbook's own Handoffs section links the others it hands off to or receives from. An overlay occupies one of the existing three assignment slots.
-[Provenance and exclusions](research/SKILL_PROVENANCE.md) document the selected Strix references.
-[Offline Semgrep recipe](skills/source-code-auditing/recipes/offline-python-semgrep.md) requires a successful tool probe;
-tool presence and usable dependencies must not be assumed from the image name except the instrument facts the run states
-(the pinned image's Chromium/`agent-browser` transport is one). An [explicit tool-image setup](docs/SKILL_RUNTIME.md#optional-offline-tool-image) can add pinned Semgrep to the image; the sandbox itself can also fetch tooling at run time, which is receipted when it happens.
+These augment the original 17 methods; each playbook's own Handoffs section links the others it hands off to or receives from.
+An overlay occupies one of the existing three assignment slots. [Provenance and exclusions](research/SKILL_PROVENANCE.md)
+document the selected Strix references. An [explicit tool-image setup](docs/KNOWLEDGE.md#optional-offline-tool-image) can add
+pinned Semgrep and other userspace tools to the image; the sandbox can also fetch tooling at run time, which is receipted when
+it happens.
 
 ## Development
 
@@ -247,18 +162,17 @@ pi --no-extensions -e "$PWD"
 
 The same inert real-Pi/Docker tests can target an installed copy instead of the source tree (no model, no external target):
 `P2O_TEST_DOCKER=1 P2O_TEST_INSTALLED_EXTENSION=<installed-checkout>/extensions/p2o/index.ts npx vitest run tests/minimal/native.test.ts tests/minimal/planner-native.test.ts tests/minimal/docker-extension.test.ts`.
-A passing run proves the installed mechanics only, not assessment quality.
-
-Design notes: [architecture](docs/ARCHITECTURE.md), [usage](docs/USAGE.md), [Strix/ARTEX comparison and proposals](planning_update.md), [acceptance matrix](docs/ACCEPTANCE_MATRIX.md), [OWASP WSTG map](docs/WSTG_MAP.md).
-[Benchmarks](bench/README.md) are opt-in real-model runs, separate from the hermetic suite; no effectiveness claim is implied by passing unit tests.
-`my_references/` is not shipped or modified, except `my_references/wstg/` (the unmodified OWASP WSTG snapshot, pinned and hashed in [research/WSTG_PROVENANCE.md](research/WSTG_PROVENANCE.md)), which ships read-only as on-demand upstream text linked from each owning skill's `references/wstg-source.md`.
+A passing run proves the installed mechanics only, not assessment quality. [Benchmarks](bench/README.md) are opt-in real-model
+runs, separate from the hermetic suite; passing unit tests implies no effectiveness claim. `my_references/` is not shipped or
+modified, except `my_references/wstg/` (the unmodified OWASP WSTG snapshot, pinned and hashed in
+[research/WSTG_PROVENANCE.md](research/WSTG_PROVENANCE.md)), which ships read-only as on-demand upstream text linked from each
+owning skill's `references/wstg-source.md`.
 
 ## Offline quality checks
 
-`npm run check:render` / `check:orange` / `check:library` / `check:python` validate research format, required
-fields, links/anchors, source/skill consistency and evidence coverage. They do **not** establish software
-vulnerability, hostile-code isolation or live-target behavior. Provenance:
-[catalog](research/catalog.md) · [evidence ledger](research/evidence.md) · [audit](research/AUDIT.md) ·
-[taxonomy](research/TAXONOMY.md).
+`npm run check:render` / `check:orange` / `check:library` / `check:python` validate research format, required fields,
+links/anchors, source/skill consistency and evidence coverage. They do **not** establish software vulnerability, hostile-code
+isolation or live-target behavior. Provenance: [catalog](research/catalog.md) · [evidence ledger](research/evidence.md) ·
+[audit](research/AUDIT.md) · [taxonomy](research/TAXONOMY.md).
 
 UNLICENSED (private).

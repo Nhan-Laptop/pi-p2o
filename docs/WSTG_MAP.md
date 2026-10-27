@@ -1,6 +1,6 @@
 # Ánh xạ OWASP WSTG sang thư viện p2o
 
-Bảng 108 test còn hiệu lực của [OWASP WSTG](https://github.com/OWASP/wstg) (commit `28553f878d48358767892916d53e59a9d664811c`, `master` ngày 2026-10-10) với kiến thức mà p2o đang mang. Đây là **độ phủ kiến thức của thư viện**, không phải khả năng phát hiện và không phải kết quả của một lần assessment (hiệu quả pentest vẫn là UNVERIFIED cho tới khi có benchmark được phép). Lý do thiết kế: [planning_update.md](../planning_update.md) §B.
+Bảng 108 test còn hiệu lực của [OWASP WSTG](https://github.com/OWASP/wstg) (commit `28553f878d48358767892916d53e59a9d664811c`, `master` ngày 2026-10-10) với kiến thức mà p2o đang mang. Đây là **độ phủ kiến thức của thư viện**, không phải khả năng phát hiện và không phải kết quả của một lần assessment (hiệu quả pentest vẫn là UNVERIFIED cho tới khi có benchmark được phép). Lý do thiết kế: [HISTORY](HISTORY.md) và bản đầy đủ trong git (`git show f5015fd:planning_update.md` §B).
 
 Dữ liệu nằm ở `src/wstg-map.ts` cùng hai hàm thuần `wstgKey` và `wstgEvidence`. Bảng ở cuối trang là bản đọc được; `tests/minimal/wstg-map.test.ts` ép hai bản bằng nhau. Không có trường schema, trạng thái hay tool mới: khóa test chỉ là một giá trị của `questionKey` sẵn có.
 
@@ -20,7 +20,7 @@ Dữ liệu nằm ở `src/wstg-map.ts` cùng hai hàm thuần `wstgKey` và `ws
 | N | chưa có skill nào | 0 |
 | O | ngoài phạm vi tri thức của thư viện theo thiết kế: cần thu thập ngoài target (search engine, hạ tầng DNS/cloud của bên thứ ba) — không phải giới hạn của run | 4 |
 
-Cờ B (20 test): hiệu ứng xảy ra ở trình duyệt; image sandbox đã có Chromium 150 + `agent-browser` CLI nên worker drive transport và bằng chứng đạt `live_reproduction`. Cờ I (39 test): cần một principal đã xác thực — operator niêm phong qua `--identity` hoặc worker tự tạo. Phân loại ban đầu suy ra từ tiêu đề test và mô tả skill (DESIGN-INFERENCE); lần chấm lại đọc thân văn bản (`planning_update.md` §B.3) và hạ 5 test từ D xuống T (IDNT-01, INJT-04, INJT-13, INJT-15, BUSL-05). D vẫn chỉ nói về **tri thức phương pháp**, không phải khả năng phát hiện lỗi (UNVERIFIED).
+Cờ B (20 test): hiệu ứng xảy ra ở trình duyệt; image sandbox đã có Chromium 150 + `agent-browser` CLI nên worker drive transport và bằng chứng đạt `live_reproduction`. Cờ I (39 test): cần một principal đã xác thực — operator niêm phong qua `--identity` hoặc worker tự tạo. Phân loại ban đầu suy ra từ tiêu đề test và mô tả skill (DESIGN-INFERENCE); lần chấm lại đọc thân văn bản từng skill (bản lịch sử: `git show f5015fd:planning_update.md` §B.3). Hiện chỉ 2 test ở mức T (`wstg-info-04`, `wstg-info-10`) vì chưa skill nào nêu riêng đối tượng của chúng. D vẫn chỉ nói về **tri thức phương pháp**, không phải khả năng phát hiện lỗi (UNVERIFIED).
 
 ## Chủ sở hữu, thẻ, điều kiện kích hoạt và chế độ
 
@@ -45,7 +45,7 @@ Hàm `wstgEvidence` tính mức cao nhất mà các cell có khóa của test đ
 |---|---|
 | L0 chưa kiểm | không có cell còn hiệu lực, hoặc chỉ có cell `unplanned`, `planned`, `running` |
 | L1 đã thử | cell `attempted` hoặc `blocked`, hoặc cell `tested` đã stale hay chưa xác minh được tính hiện hành |
-| L2 đã kiểm | cell `tested` còn hiện hành (host chiếu từ task đã review + claim/case theo bảng ở [CASE_REVIEW](CASE_REVIEW.md); plan legacy đọc cell lưu); không suy ra "an toàn" ngoài ngữ cảnh đã thử |
+| L2 đã kiểm | cell `tested` còn hiện hành (host chiếu từ task đã review + claim/case theo bảng ở [EVIDENCE](EVIDENCE.md); plan legacy đọc cell lưu); không suy ra "an toàn" ngoài ngữ cảnh đã thử |
 | L3 đã chứng minh | cell `tested` còn hiện hành và dẫn tới case `confirmed` đã được accept, còn hiệu lực (`acceptedFinding` ở `cases.ts`); mức `proof` luôn phải hiển thị cạnh L3 |
 | n/a | mọi cell của test là `not_applicable` (dùng cho test cờ O) |
 

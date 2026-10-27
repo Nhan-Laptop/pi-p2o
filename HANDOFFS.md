@@ -25,8 +25,9 @@ an inferred policy remains an open proof gap. Revisions name the superseded cand
 closure may resolve named open-item IDs without erasing their history. Independent validation needs a different
 worker's matching reproduction and its receipt; metadata alone does not prove the claim.
 
-Choose `--export` before assessment to retain bounded redacted receipts and hashes after cleanup. Without export,
-temporary scratch and the ledger are removed. Redaction is best effort; review before sharing.
+Retention is confirmed at start: `durable-local` (default) keeps the redacted ledger and artifacts under
+`.p2o-state/<run-id>` after cleanup, `ephemeral` removes them, and `--export` additionally writes bounded redacted
+receipts and hashes under `.p2o-reports/`. Redaction is best effort; review before sharing.
 
 ### Focused method and review
 

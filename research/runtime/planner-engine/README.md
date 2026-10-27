@@ -3,7 +3,7 @@
 **Source snapshot captured before commit/install.** The source checks below remain baseline-specific;
 installed mechanics acceptance is recorded separately in `installed.json`. Baseline:
 `6f02060f22109df4ff360956adffc5213ad857a0`. Historical artifacts are unchanged.
-See [runtime contract](../../../docs/PLANNER_ENGINE.md) and [phase status](../../../planning_update.md).
+See [runtime contract](../../../docs/PLANNER_ENGINE.md) and [phase history](../../../docs/HISTORY.md).
 
 Verified on this source tree:
 

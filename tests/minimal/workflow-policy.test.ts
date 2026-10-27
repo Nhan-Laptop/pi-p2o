@@ -143,7 +143,7 @@ describe('P9 capability ceilings (owner-chosen option A)', () => {
     const doc = (name: string) => readFile(resolve(import.meta.dirname, `../../docs/${name}`), 'utf8');
     expect(await doc('HTTP_TRANSPORT.md')).toContain('body 48 KiB');
     expect(await doc('USAGE.md')).toContain('graphCapacity');
-    expect(await doc('SKILL_RUNTIME.md')).toContain('≤48 KiB');
+    expect(await doc('EVIDENCE.md')).toContain('≤48 KiB');
   });
 });
 
