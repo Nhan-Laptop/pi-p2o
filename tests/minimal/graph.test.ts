@@ -157,7 +157,51 @@ describe('asset/fact/hypothesis graph (K3, canonical store only)', () => {
     store.recordGraph({anchors:Array.from({length:8},(_,n)=>({assetId:id,anchor:{kind:'symbol',value:'symbol-'+n,locator:Object.fromEntries(Array.from({length:6},(_,k)=>['part'+k,'x'.repeat(500)]))}}))});
     const page=store.graphExport();expect(Buffer.byteLength(JSON.stringify(page))).toBeLessThanOrEqual(GRAPH_RESPONSE_BYTES);
     expect(page.shown.anchors).toBeGreaterThan(0);expect(page.omittedByKind.anchors).toBeGreaterThan(0);expect(page.json.anchors.length+page.omittedByKind.anchors).toBe(8);
-    expect(page).not.toHaveProperty('anchors');expect(page.countScope).toMatchObject({assertions:'selected assets only',relations:'both endpoints selected'});
+    expect(page).not.toHaveProperty('anchors');expect(page.countScope).toMatchObject({assertions:'selected assets only',relations:'either endpoint selected'});
+  }));
+  it('returns and counts a relation whose other endpoint is outside the selected asset page (R0)',async()=>fixture(async store=>{
+    const [first,second]=store.recordGraph({assets:[{asset:{kind:'file',key:'first.py'}},{asset:{kind:'file',key:'second.py'}}]});
+    store.recordGraph({relations:[{kind:'depends_on',fromId:first!.entityId,toId:second!.entityId}]});
+    const page=store.graphExport({limit:1});
+    const rows=page.json.assets as Array<Record<string,unknown>>;
+    expect(rows).toHaveLength(1);
+    const shownId=String(rows[0]!.entityId);
+    const relations=page.json.relations as Array<Record<string,unknown>>;
+    expect(relations).toHaveLength(1);
+    expect([relations[0]!.fromId,relations[0]!.toId]).toContain(shownId);
+    expect(page.counts.relations).toBe(1);
+    expect(page.omittedByKind.relations).toBe(0);
+    expect(page.countScope.relations).toBe('either endpoint selected');
+    expect(page.warning).toContain('never rendered in Mermaid');
+  }));
+  it('refuses more than ten evidence references on a graph row at write time (R0)',async()=>fixture(async store=>{
+    store.recordGraph({assets:[{asset:{kind:'file',key:'refs.py'}}]});
+    expect(()=>store.recordGraph({facts:[{assetId:'asset-'+'0'.repeat(24),kind:'inferred',statement:'too many references',confidence:'low',
+      evidenceRefs:Array.from({length:11},(_,index)=>`r${index}`)}]})).toThrow('at most 10');
+  }));
+  it('projects only same-scope asset identities into the coverage denominator (R0)',async()=>fixture(async store=>{
+    store.recordGraph({assets:[{asset:{kind:'file',key:'in-scope.py'}}]});
+    const {DatabaseSync}=await import('node:sqlite');
+    const db=new DatabaseSync(join(store.location,'assessment.sqlite'));
+    try{
+      const sequence=Number(db.prepare('SELECT MAX(sequence) AS n FROM events').get()!.n);
+      const foreign='asset-'+'f'.repeat(24);
+      db.prepare('INSERT INTO assets(id,entity_id,scope,kind,key,revision,body,sequence) VALUES(?,?,?,?,?,?,?,?)')
+        .run('asset-foreign-row',foreign,'foreign-scope','file','foreign.py',1,JSON.stringify({kind:'file',key:'foreign.py'}),sequence);
+    } finally { db.close(); }
+    const ids=store.assetEntityIds();
+    expect(ids).toHaveLength(1);
+    expect(ids[0]).toMatch(/^asset-[a-f0-9]{24}$/);
+    expect(ids).not.toContain('asset-'+'f'.repeat(24));
+  }));
+  it('counts current asset heads, not retained revisions, in the round progress counter (R0)',async()=>fixture(async store=>{
+    store.recordGraph({assets:[{asset:{kind:'endpoint',key:'GET https://example.com/a'}}]});
+    expect(store.assetCount()).toBe(1);
+    store.recordGraph({assets:[{asset:{kind:'endpoint',key:'GET https://example.com/a',label:'renamed'}}]});
+    expect(store.graphSummary()).toMatchObject({assets:1,assetRevisions:2});
+    expect(store.assetCount()).toBe(1);
+    store.recordGraph({assets:[{asset:{kind:'endpoint',key:'GET https://example.com/b'}}]});
+    expect(store.assetCount()).toBe(2);
   }));
   it('resolves batch-local refs atomically and preserves each producer without duplicate assets or repeat events',async()=>fixture(async store=>{
     const receipt=evidence(store),batch={assets:[{ref:'entry',asset:{kind:'endpoint' as const,key:'GET http://[::1]:8080/objects?x=1&x=2'}}],

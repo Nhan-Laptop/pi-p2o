@@ -70,11 +70,12 @@ navigation, and reading it changes no authority.
   lifecycle fact, and `p2o_coverage_suggest` returns the map's related skills next to the owner and card. Nine purposes each
   carry a duty line the worker reads.
 - `p2o_research {query}` looks a technique up in the committed corpus (`knowledge/techniques/`) and returns cited entries with
-  licence and sha256; `web:false` never touches the network. `action=fetch` retrieves any http(s) URL host-side and returns
-  the full body with status, content type, size and sha256 plus a `research` record — never evidence (Part XI: no allowlist,
-  no response cap). `action=cve` makes the host fetch NVD/CVE pages and writes a `lead` record (`untriaged`, then
-  `tasked`/`ruled_out` by triage). A lead is a pointer: a claim citing one stays `inferred`/`open_proof_gap` and cannot be
-  confirmed. Research is not a target operation and is never a finding.
+  licence and sha256; `web:false` never touches the network. `action=fetch` retrieves any http(s) URL host-side under a bounded
+  citation fetcher (15 s timeout, 4 MiB body cap, ≤5 redirects, loopback/link-local/private/metadata destinations refused) and
+  returns the possibly truncated body with status, content type, size and sha256 plus a `research` record — never evidence
+  (Part XI: no allowlist; R0/D-R1-4 adds the bounds). `action=cve` makes the host fetch NVD/CVE pages and writes a `lead` record
+  (`untriaged`, then `tasked`/`ruled_out` by triage). A lead is a pointer: a claim citing one stays `inferred`/`open_proof_gap`
+  and cannot be confirmed. Research is not a target operation and is never a finding.
 - A bounded tool probe replaces assuming an unknown tool: cite its receipt, install userspace tooling into scratch through
   `p2o_net`. The browser is not an unknown tool — the image ships Chromium and the `agent-browser` CLI (see
   [HTTP transport](HTTP_TRANSPORT.md)).

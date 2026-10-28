@@ -33,13 +33,17 @@ Every number below was true when recorded. None of them replaces a current run: 
 | 2026-10-27 | P11/A11 autonomy pass: one start consent covers the run; browser and self-provisioned identity are instrument facts; the skill library's third-party guardrail doctrine was removed | commit `f5015fd`, pushed to `main` |
 | 2026-10-27 | Dedupe/merge pass: three authoring pairs became identity-selected `p2o_task_author` / `p2o_case_author` / `p2o_plan_author` (no `id` creates, `id`+`revision` revises); tool declarations 95.7 kB → 79.9 kB (−16.5%, planner loadout −24.1%); duplicated prompt rules, tool self-repeats and skill-library scaffolding removed; size budgets and the skill ceiling pinned by test again; five skills stopped describing an off-sandbox lab that does not exist | 34 registered tools (32 on the model surface + 2 hidden), planner 21, worker 19, validation 18, reporter 6; full gate recorded with the change |
 | 2026-10-28 | P18/A9–A13 long-horizon loop: each round opens in a fresh Pi session with a deterministic ≤8 KiB briefing instead of growing one transcript; per-round budget (40 steps / 900 s, wrap-up with a closing loadout, classified stop rather than a failure); single-mode demand floor (one `wait` refusal, at most two settlement nudges); per-round base/escalation model and thinking routing; ledger-only round facts and operator visibility; operator stop settles the in-flight round and drains worker reports inside fixed bounds. The manual loop mode was removed (a start without a worker backend is refused), while the campaign itself stays uncapped. Measurement protocol shipped ready-not-run | full suite 1,185 passed / 13 skipped / 133 files; real-Pi round-session smoke green; P18 bench never run (D52) |
+| 2026-10-28 | R0 of the R1 program (containment/correctness): the host-side citation fetch became a bounded fetcher (15 s, 4 MiB, ≤5 redirects, text/json/xml only, loopback/link-local/private/CGNAT/metadata refused per hop); graph export counts and returns relations whose either endpoint is on the page; coverage's asset identities are scope-filtered; `refs` refuses >10 at write and in the Pi schema; `assetCount` counts current heads, not retained revisions; stale "uncapped fetch" prose was corrected in prompts, descriptions and docs | full suite 1,215 passed / 13 skipped / 142 files; tsc, build and `check:build` green; no live run, no commit (R0/D-R1-4) |
 
 ## Decisions that outlive their phase
 
 - **One consent, blanket authorization.** The start confirmation covers ownership and the engagement mode once. There is
   no per-action consent; `blocked` means the approaches are exhausted, never that a permission was not granted.
 - **The target is a label, not an egress boundary.** HTTP may reach any host the sandbox can route to, shell/network
-  commands are not origin-filtered, and the citation fetch is host-side, uncapped, with no allowlist (Part XI).
+  commands are not origin-filtered, and the citation fetch is host-side, with no allowlist. Amended by R0/D-R1-4: the
+  citation fetch is still host-side and allowlist-free, but now bounded — 15 s, 4 MiB, ≤5 redirects, and
+  loopback/link-local/private/metadata destinations refused — while the target itself stays unreachable only at the
+  network layer the sandbox imposes, never by an allowlist.
 - **The browser and identity channels are instrument, not permission.** The pinned image ships Chromium and the
   `agent-browser` CLI; `--identity` is operator convenience, and a worker provisions a disposable principal when it needs one.
 - **No campaign allowance; the round is bounded.** Amended by P18/D47: there is still no campaign-wide command, token,

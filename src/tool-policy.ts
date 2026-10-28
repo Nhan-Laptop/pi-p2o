@@ -19,7 +19,8 @@ export const LAB_TOOLS = ['p2o_lab'];
  * Planner loadout: intent, plan, case, coverage-plan, review, read, skill/research, worker control and finish.
  * Deliberately absent: every target/lab tool, p2o_candidate, p2o_note, p2o_surface, p2o_report, p2o_request_subtask,
  * p2o_delegate and p2o_task_start. Coverage cells are host-derived (A3), so no role holds a cell writer.
- * `p2o_graph` stays in the planner loadout for read/query/chain coordination; worker-only write enforcement follows in A2.
+ * `p2o_graph` stays in the planner loadout for read/query/chain coordination; worker-only write enforcement is in the
+ * owner broker (`extensions/p2o/index.ts`), so this loadout does not enforce it by itself.
  */
 export const PLANNER_TOOLS = [
   'p2o_task_author', 'p2o_task_dispatch', 'p2o_task_review', 'p2o_task_settle',

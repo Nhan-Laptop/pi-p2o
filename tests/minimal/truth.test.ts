@@ -46,8 +46,9 @@ const RETIRED = [
   'operator-supplied identities',
   'proof stops at offline reproduction',
   'requires operator-supplied credentials',
-  // P8.2 truth half: the citation fetch is host-side and uncapped under Part XI. The stale P14.8 comment claimed it ran
-  // inside the caller's own sandbox, and the worker loadout line called it capped; both statements were false.
+  // P8.2 truth half: the citation fetch is host-side under Part XI. The stale P14.8 comment claimed it ran inside the
+  // caller's own sandbox, and the worker loadout line called it capped; both statements were false. R0/D-R1-4 later bounded
+  // the host-side fetcher (15 s, 4 MiB, ≤5 redirects), which is a fetch bound, not the retired sandbox-cap claim.
   "runs inside the caller's own sandbox",
   'capped citation fetch',
   // A17.9 runtime truth: the measured container is root on a writable rootfs with Docker's default 14-capability set.
@@ -152,13 +153,16 @@ describe('P7.0 truth pass', () => {
     expect(TOOL_BOUNDARIES.p2o_http.join(' ')).not.toContain('origin');
   });
 
-  it('states the citation fetch as Part XI keeps it: host-side, uncapped, and never the caller\'s own sandbox (P8.2)', () => {
+  it('states the citation fetch as R0 keeps it: host-side, bounded, and never the caller\'s own sandbox (R0/D-R1-4)', () => {
     const research = registrations().get('p2o_research')!.description as string;
     const worker = workerInstructions(ticket('recon'));
-    // Part XI: the target is a label, not an egress boundary, and the citation fetch is host-side with no allowlist and no
-    // response cap. The retired-claims test above pins the two false statements; this pins the true ones.
+    // R0/D-R1-4: the target is a label, not an egress boundary; the citation fetch is host-side but bounded (15 s timeout,
+    // 4 MiB body cap, ≤5 redirects, public destinations only). The retired-claims test above pins the old false statements.
     expect(research).toContain('host-side');
-    expect(research.toLowerCase()).toContain('no size cap');
+    expect(research.toLowerCase()).toContain('15 s');
+    expect(research.toLowerCase()).toContain('4 mib');
+    expect(research.toLowerCase()).toContain('redirect');
+    expect(research.toLowerCase()).not.toContain('no size cap');
     expect(worker).toContain('citation fetch returns quoted data, never target evidence');
   });
 

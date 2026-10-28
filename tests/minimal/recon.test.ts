@@ -111,6 +111,8 @@ describe('bounded recon contract', () => {
   // instruction hashes moved on purpose; the brief hashes are unchanged because workerBrief carries neither line.
   // 2026-10-27 (P8.2 fetch truth): the loadout line no longer says "a capped citation fetch" — Part XI leaves the fetch
   // uncapped and host-side — so both instruction hashes moved on purpose; the brief hashes are unchanged.
+  // 2026-10-28 (R0/D-R1-4): the host-side fetch itself is now bounded (15 s, 4 MiB, ≤5 redirects). That bound is not the
+  // retired worker loadout claim, and only the planner section changed, so these worker instruction/brief hashes stayed put.
   // 2026-10-27 (P11/A11 autonomy pass): the worker prompt gained the one-line AUTHORIZATION rule and composes the NETWORK/HTTP/
   // AUTHORIZATION/BROWSER/RISK facts in its loadout line, and workerBrief now carries the AUTHORIZATION line plus scope framed as
   // "a starting label, not a boundary" and a limits line with no per-action permission ceiling, so both instruction and brief

@@ -3,7 +3,7 @@ import { choices } from '../schema-kit.js';
 import { ASSET_KINDS, ANCHOR_KINDS, CONFIDENCE, FACT_KINDS, HYPOTHESIS_STATUS, RELATION_KINDS, graphCanonical, type AssetInput, type GraphBatch } from './graph.js';
 
 const id = () => Type.String({ minLength: 1, maxLength: 80 });
-const refs = () => Type.Optional(Type.Array(id()));
+const refs = () => Type.Optional(Type.Array(id(), { maxItems: 10 }));
 const revision = () => Type.Optional(Type.Integer({ minimum: 1 }));
 /** Optional IDs accept an empty string so a model that writes `supersedes:""` to mean "none" reaches the host, which drops it. */
 const supersedes = () => Type.Optional(Type.String({ maxLength: 80 }));

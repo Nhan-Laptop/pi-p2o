@@ -658,8 +658,9 @@ export class AssessmentStore {
   }
 
   // ---------------------------------------------------------------- asset graph (K3)
-  /** Retained asset heads: an M6 progress counter, never a quota or an authority renewal. */
-  assetCount(): number { this.gate(); return this.graphCount('assets'); }
+  /** Current same-scope asset heads: an M6 progress counter (distinct identities, matching `graphSummary().assets`), never a
+   *  quota or an authority renewal. Counting retained revisions here would report an update as a new asset. */
+  assetCount(): number { this.gate(); return Number(this.db.prepare('SELECT count(DISTINCT entity_id) AS n FROM assets WHERE scope=?').get(this.graphScope())!.n); }
   /** Target/source identity is knowledge scoping, not live origin permission. */
   graphScope(): string {
     this.gate(); const m=this.manifest();
@@ -727,9 +728,9 @@ export class AssessmentStore {
     }
     return {};
   }
-  /** Current same-run graph asset identities for explicit coverage denominator comparison. */
+  /** Current same-run graph asset identities for explicit coverage denominator comparison; scope-filtered like every other reader. */
   assetEntityIds():string[]{
-    this.gate();return this.db.prepare('SELECT DISTINCT entity_id FROM assets ORDER BY entity_id LIMIT ?').all(this.graphLimits.assets+1).map(row=>String(row.entity_id));
+    this.gate();return this.db.prepare('SELECT DISTINCT entity_id FROM assets WHERE scope=? ORDER BY entity_id LIMIT ?').all(this.graphScope(),this.graphLimits.assets+1).map(row=>String(row.entity_id));
   }
   /** Currentness lookups the case and coverage views need, bound to this store: the one place a projection learns the live asset/assertion revisions. */
   reviewContext():{cases:CaseContext;coverage:CoverageContext;campaign?:CampaignRecord}{
@@ -826,6 +827,9 @@ export class AssessmentStore {
         write('assets','asset',entityId,{scope,kind:asset.kind,key:asset.key},{kind:asset.kind,key:asset.key,...asset.body,evidenceRefs:asset.evidenceRefs},'asset.upserted',asset.evidenceRefs);
         for(const anchor of item.asset.anchors??[])anchorWrite(entityId,anchor);
       }
+      // R0/W6: a superseding revision keeps the prior entity id, so the id is the assertion's lineage identity, not a hash of
+      // the current statement. Recording a changed statement without `supersedes` is therefore a different assertion by design;
+      // the old row remains readable and the new row is not silently merged into it.
       const assertionId=(subjectId:string,kind:string,statement:string,priorId?:string)=>{
         if(!priorId)return assertionEntityId(subjectId,kind,statement);
         const row=this.db.prepare('SELECT body FROM assertions WHERE id=?').get(priorId),prior=row?JSON.parse(String(row.body)) as GraphRow:undefined;
@@ -935,7 +939,7 @@ export class AssessmentStore {
     const ids=assets.map(a=>a.entityId),totals={assets:available,assertions:0,relations:0,anchors:0};
     if(ids.length){const marks=ids.map(()=>'?').join(',');
       for(const [table,list,condition,args] of [
-        ['assertions',assertions,`subject_id IN (${marks})`,ids],['relations',relations,`from_id IN (${marks}) AND to_id IN (${marks})`,[...ids,...ids]],['anchors',anchors,`asset_entity IN (${marks})`,ids],
+        ['assertions',assertions,`subject_id IN (${marks})`,ids],['relations',relations,`(from_id IN (${marks}) OR to_id IN (${marks}))`,[...ids,...ids]],['anchors',anchors,`asset_entity IN (${marks})`,ids],
       ] as Array<[GraphTable,GraphRow[],string,string[]]>){
         totals[table as 'assertions']=Number(this.db.prepare(`SELECT count(*) AS n FROM ${table} r WHERE ${condition} AND sequence<=? AND ${latest(table)}`).get(...args,asOfSequence)!.n);
         for(const r of this.db.prepare(`SELECT body FROM ${table} r WHERE ${condition} AND sequence<=? AND ${latest(table)} ORDER BY sequence DESC LIMIT ?`).all(...args,asOfSequence,limit)){
@@ -948,8 +952,8 @@ export class AssessmentStore {
     }
     const rendered=render(),shown={assets:assets.length,assertions:assertions.length,relations:relations.length,anchors:anchors.length};
     const omittedByKind={assets:totals.assets-shown.assets,assertions:totals.assertions-shown.assertions,relations:totals.relations-shown.relations,anchors:totals.anchors-shown.anchors};
-    return {...rendered,asOfSequence,cursor,counts:totals,countScope:{assets:'remaining current heads in this run',assertions:'selected assets only',relations:'both endpoints selected',anchors:'selected assets only'},shown,omittedByKind,truncated:Object.values(omittedByKind).some(n=>n>0),omitted:omittedByKind.assets,
-      ...(omittedByKind.assets&&assets.length?{nextCursor:last}:{}),warning:'Bounded current-head graph; assertion/anchor counts cover selected assets, relation counts require both endpoints. Read asset history for omitted/cross-page data; no execution authority.'};
+    return {...rendered,asOfSequence,cursor,counts:totals,countScope:{assets:'remaining current heads in this run',assertions:'selected assets only',relations:'either endpoint selected',anchors:'selected assets only'},shown,omittedByKind,truncated:Object.values(omittedByKind).some(n=>n>0),omitted:omittedByKind.assets,
+      ...(omittedByKind.assets&&assets.length?{nextCursor:last}:{}),warning:'Bounded current-head graph; assertion/anchor counts cover selected assets, relation counts cover either endpoint. A relation to an asset on another page is counted and returned in JSON, but it is never rendered in Mermaid; increase the limit or read the endpoint assets. No execution authority.'};
   }
 
   close(): void {

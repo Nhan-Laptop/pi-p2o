@@ -120,7 +120,7 @@ export const RESEARCH_LIMIT_SCHEMA = 5;
 export const researchParameters = Type.Object({
   action: Type.Optional(choices(['technique', 'cve', 'triage', 'fetch'] as const)),
   query: Type.Optional(Type.String({ minLength: 1, maxLength: RESEARCH_QUERY_MAX, description: 'Technique words to look up, e.g. "ssrf cloud metadata" or "joomla 2.5 end of life support lifecycle"; write the question the way you would ask it' })),
-  url: Type.Optional(Type.String({ minLength: 1, maxLength: 8192, description: 'action=fetch: any http(s) URL to fetch host-side; the full body is returned with status, content type, byte count and sha256. No allowlist and no size cap.' })),
+  url: Type.Optional(Type.String({ minLength: 1, maxLength: 8192, description: 'action=fetch: any http(s) URL to fetch host-side under the bounded citation fetcher (15 s timeout, 4 MiB body cap, ≤5 redirects, loopback/link-local/private/metadata destinations refused); returns the possibly truncated body with status, content type, byte count and sha256. No allowlist.' })),
   web: Type.Optional(Type.Boolean({ description: 'Default true: also fetch the top hits\' cited source pages host-side and return quoted excerpts with a hash. Pass false for an offline-only lookup that never touches the network' })),
   limit: Type.Optional(Type.Integer({ minimum: 1, description: 'Maximum hits, default 5; no upper bound' })),
   // P16.4: action=cve names a product/version and the host builds the NVD query; action=fetch takes any URL.

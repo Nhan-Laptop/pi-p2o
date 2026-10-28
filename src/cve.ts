@@ -1,16 +1,16 @@
 /**
  * planning_update.md P16.4: a CVE is a lead, never evidence.
  *
- * The owner chose a host-side fetch with an allowlist (2026-10-24): the model names a product/version, never a destination.
- * A lead record carries what was read and from where (`url`, `retrievedAt`, `sha256`) and starts `untriaged`; it can settle
- * only by being executed and demonstrated like any other claim. Attribution (ARTEX agent/promptcatalog.go:40,104) is the
- * reason this file exists at all: "version X is affected by CVE-Y" is a pointer to test, not proof of exploitability.
+ * The owner chose a host-side fetch (2026-10-24, Part XI): the model names a product/version, never a destination. R0/D-R1-4
+ * keeps that choice but bounds the fetch (timeout, 4 MiB, redirect cap, public destinations only). A lead record carries what
+ * was read and from where (`url`, `retrievedAt`, `sha256`) and starts `untriaged`; it can settle only by being executed and
+ * demonstrated like any other claim. Attribution (ARTEX agent/promptcatalog.go:40,104) is the reason this file exists at all:
+ * "version X is affected by CVE-Y" is a pointer to test, not proof of exploitability.
  */
 import { sha256Hex } from './validate.js';
 import type { AssessmentRecord } from './records.js';
 
-/** The only hosts a CVE fetch may reach; the query cannot choose its own destination. */
-/** Suggested starting points for action=fetch; not an allowlist. */
+/** Suggested starting points for a CVE lookup; not an allowlist (Part XI). */
 export const CVE_SUGGESTED_HOSTS = ['services.nvd.nist.gov', 'nvd.nist.gov', 'www.cve.org', 'cve.org'] as const;
 export const LEAD_STATES = ['untriaged', 'tasked', 'ruled_out'] as const;
 export type LeadState = typeof LEAD_STATES[number];

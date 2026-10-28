@@ -26,6 +26,10 @@ describe('p2o_graph record argument tolerance (A1)', () => {
     expect(Value.Check(graphParameters, { action: 'record', batch: { assets: { asset } } })).toBe(false);
     expect(Value.Check(graphParameters, { action: 'record', batch: { facts: [{ kind: 'observed', statement: 'x' }] } })).toBe(false);
     expect(Value.Check(graphParameters, { ...drifted, kind: 'file' })).toBe(false);
+    // R0: the documented ten-reference cap is enforced at the Pi boundary too.
+    const refs = (length: number) => Array.from({ length }, () => receipt);
+    expect(Value.Check(graphParameters, { action: 'record', batch: { facts: [{ assetId: '@a', kind: 'inferred', statement: 'x', confidence: 'low', evidenceRefs: refs(10) }] } })).toBe(true);
+    expect(Value.Check(graphParameters, { action: 'record', batch: { facts: [{ assetId: '@a', kind: 'inferred', statement: 'x', confidence: 'low', evidenceRefs: refs(11) }] } })).toBe(false);
   });
 
   it('folds requestId, row-level asset fields and flat rows into one canonical batch the host accepts', () => {
