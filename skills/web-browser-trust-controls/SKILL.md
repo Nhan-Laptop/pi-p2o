@@ -5,7 +5,7 @@ description: Test what a server declares to a browser about cross-origin trust (
 
 # Web Browser Trust Controls
 
-Before first use: [scope baseline](../../README.md#start-here), [handoff method](../../HANDOFFS.md#focused-method-and-review), and [owner review](../../HANDOFFS.md#provisional-owner-review).
+Before first use, read [focused method and review](../../HANDOFFS.md#focused-method-and-review).
 
 ## Applicability
 Use when a response declares a cross-origin or framing policy to the browser (CORS headers, framing headers, a content security policy), when a state-changing request's origin should be checked server-side (CSRF, a WebSocket handshake), or when client-side script reads an untrusted value into a sink that a browser would act on (a redirect target, a style value, a resource reference, a cross-document message, browser-held storage, a new-tab link). A declared server-side policy or check is confirmed directly, by reading the header or by a request that exercises the check. What a browser then does with that policy is executable in this run through the sandbox image's Chromium and `agent-browser` ([browser transport](../../docs/HTTP_TRANSPORT.md#browser-transport)); a browser-side effect observed there is `live_reproduction`, and `static_trace` and `offline_reproduction` remain valid where that is all the question needs.

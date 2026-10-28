@@ -5,7 +5,7 @@ description: Audit double-fetch, lock-drop, TOCTOU, and shared-state interleavin
 
 # Race-Condition Auditing
 
-Before first use: [scope baseline](../../README.md#start-here), [handoff method](../../HANDOFFS.md#focused-method-and-review), and [owner review](../../HANDOFFS.md#provisional-owner-review).
+Before first use, read [focused method and review](../../HANDOFFS.md#focused-method-and-review).
 
 ## Technique
 Invariant-focused interleaving analysis.

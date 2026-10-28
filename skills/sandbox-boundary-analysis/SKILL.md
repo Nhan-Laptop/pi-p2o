@@ -5,7 +5,7 @@ description: Model browser, desktop-app, container, and OS confinement as layere
 
 # Sandbox-Boundary Analysis
 
-Before first use: [scope baseline](../../README.md#start-here), [handoff method](../../HANDOFFS.md#focused-method-and-review), and [owner review](../../HANDOFFS.md#provisional-owner-review).
+Before first use, read [focused method and review](../../HANDOFFS.md#focused-method-and-review).
 
 ## Technique
 Layered capability and broker-contract modeling.

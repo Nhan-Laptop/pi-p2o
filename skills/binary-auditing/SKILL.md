@@ -5,7 +5,7 @@ description: Route native executables, managed bundles, and firmware to the righ
 
 # Binary Auditing
 
-Before first use: [scope baseline](../../README.md#start-here), [handoff method](../../HANDOFFS.md#focused-method-and-review), and [owner review](../../HANDOFFS.md#provisional-owner-review).
+Before first use, read [focused method and review](../../HANDOFFS.md#focused-method-and-review).
 
 ## Technique
 Evidence-led reconstruction of binary contracts.
@@ -24,7 +24,7 @@ Artifact provenance → format/architecture → load map → entry/dispatch reco
 3. Choose one useful anchor: an input consumer, diagnostic reference, dispatch registration, comparison, or live instruction pointer. Imports and companion libraries can expose handlers; startup metadata alone does not identify application logic.
 4. Recover the smallest relevant slice with an installed tool; batch related functions instead of repeatedly loading the image. Follow [bounded native analysis](references/native-slices.md); missing tools call for a fallback, not an unplanned installation.
 5. Infer counts, discriminants, ownership, and layout from use sites. Compare provisional upstream correspondence and registration tables with the shipped instructions; record modifications and confidence. Check widths, signedness, wraparound, aliases and calling conventions. Component enumeration position is not identity: corroborate the actual selected component. Generated types and boundaries remain hypotheses.
-6. When static output conflicts with execution, check live bytes, image base, instruction alignment, and runtime-generated code. Apply the [start-here two-attempt rule](../../README.md#start-here) rather than merely increasing the timeout.
+6. When static output conflicts with execution, check live bytes, image base, instruction alignment, and runtime-generated code. Re-observe once with a different method before changing tools, and record which method answered; only a tool or host that actually refuses is a wall.
 7. Corroborate a benign handler and selected fields dynamically. Save hash/tool/options, requested versus recovered coverage, failures, and unresolved fields; retain hardware/emulator/debug/production distinctions.
 
 ## Research Heuristics

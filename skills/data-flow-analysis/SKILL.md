@@ -5,7 +5,7 @@ description: Trace attacker influence through wrappers, indirect dispatch, persi
 
 # Attacker-Controlled Data-Flow Analysis
 
-Before first use: [scope baseline](../../README.md#start-here), [handoff method](../../HANDOFFS.md#focused-method-and-review), and [owner review](../../HANDOFFS.md#provisional-owner-review).
+Before first use, read [focused method and review](../../HANDOFFS.md#focused-method-and-review).
 
 ## Technique
 Bidirectional, representation-aware influence tracing.

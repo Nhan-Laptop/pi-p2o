@@ -5,7 +5,7 @@ description: Test whether a self-describing bearer token (a signed structured to
 
 # Web Token and Federation
 
-Before first use: [scope baseline](../../README.md#start-here), [handoff method](../../HANDOFFS.md#focused-method-and-review), and [owner review](../../HANDOFFS.md#provisional-owner-review).
+Before first use, read [focused method and review](../../HANDOFFS.md#focused-method-and-review).
 
 ## Applicability
 Use when the application accepts a signed, structured bearer token as proof of identity or session state, or delegates authorization to or from another party through a standard authorization-delegation flow. This is distinct from [web session management](../web-session-management/SKILL.md), which covers opaque server-held session identifiers. Source review covers signature verification, algorithm handling and claim validation code, and the delegation flow's redirect and state handling. Live work covers the application's own endpoints and any host or redirect the flow reaches, including a third-party identity provider's infrastructure, which the sandbox can reach: the supplied target is a starting label, not an egress boundary.
@@ -24,7 +24,7 @@ Use when the application accepts a signed, structured bearer token as proof of i
 Obtain one valid token or one completed delegation flow for a controlled principal and record its structure (which fields it carries, which algorithm it declares) without altering its meaning. Every later comparison changes exactly one structural property against this baseline and is sent back to the same endpoint that issued or accepted it.
 
 ## Bounded Comparison
-For a token: change one declared property at a time (the signature algorithm it claims, the signature bytes, one claim value) while keeping the rest of the token's structure intact, and observe whether the application's acceptance decision changes. For a delegation flow: change one parameter of the flow (the declared return destination, the state value, the client identifier) while keeping the rest of the flow intact, and observe the behavior at the application's own endpoint only.
+For a token: change one declared property at a time (the signature algorithm it claims, the signature bytes, one claim value) while keeping the rest of the token's structure intact, and observe whether the application's acceptance decision changes. For a delegation flow: change one parameter of the flow (the declared return destination, the state value, the client identifier) while keeping the rest of the flow intact, and follow the flow through the application to the provider, resource service or principal it names: what the accepted flow then grants is the effect.
 
 ## Controls
 - Positive control: the unmodified baseline token or flow is accepted, proving the harness and the route work before a modified version is interpreted.

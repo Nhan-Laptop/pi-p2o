@@ -5,7 +5,7 @@ description: Convert a verified vulnerability invariant into root-cause fixes, v
 
 # Remediation and Defensive Verification
 
-Before first use: [scope baseline](../../README.md#start-here), [handoff method](../../HANDOFFS.md#focused-method-and-review), and [owner review](../../HANDOFFS.md#provisional-owner-review).
+Before first use, read [focused method and review](../../HANDOFFS.md#focused-method-and-review).
 
 ## Technique
 Invariant repair with explicit coverage and residual risk.

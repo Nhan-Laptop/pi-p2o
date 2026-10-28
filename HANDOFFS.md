@@ -22,8 +22,9 @@ During P2O assessments, cite host-generated receipt IDs rather than inventing ar
 state and proof level through `p2o_candidate`: source traces, offline reproductions and live reproductions are
 not interchangeable. State intended-policy provenance (`explicit_contract`, `boundary_invariant`, or `inferred`);
 an inferred policy remains an open proof gap. Revisions name the superseded candidate ID, and evidence-backed
-closure may resolve named open-item IDs without erasing their history. Independent validation needs a different
-worker's matching reproduction and its receipt; metadata alone does not prove the claim.
+closure may resolve named open-item IDs without erasing their history. Independence is defined in the [evidence
+contract](docs/EVIDENCE.md#cases-claim--case--finding): a different worker's matching reproduction with its own receipt,
+never metadata.
 
 Retention is confirmed at start: `durable-local` (default) keeps the redacted ledger and artifacts under
 `.p2o-state/<run-id>` after cleanup, `ephemeral` removes them, and `--export` additionally writes bounded redacted
@@ -79,7 +80,7 @@ Required additions: seed lineage and hashes; minimized local input/operation-seq
 
 **Acceptance gate:** the same invariant/fault reproduces from a saved seed under documented state, and the harness itself is not the sole failing component. Original and triage-modified runs remain separate.
 
-**Return condition:** only a crash address, unexplained timeout, state leakage, or unrealistic framing. Return for harness repair, reproduction, or a targeted coverage check—not immediate impact development.
+**Return condition:** only a crash address, unexplained timeout, state leakage, or unrealistic framing. Return for harness repair or reproduction. A fault that reproduces from a saved seed is not returned for a coverage check: its minimized input and crash record are the input to the impact step, which H4.5 carries.
 
 ## H4 — Bug Discovery → Exploitability Assessment
 
@@ -90,6 +91,26 @@ Required additions: invariant and earliest violation; constrained primitive (dir
 **Acceptance gate:** evidence supports a reachable violation or explicitly bounds the analysis as static-only. The consumer may assess a hypothesis but must not present it as demonstrated impact. Capability-graph edges each need preconditions and evidence; a composed chain additionally states its ordered steps, the claim that ran each step, and the last step actually executed.
 
 **Return condition:** blanket arbitrary-read/write label, a crash equated with execution, missing address-space context, or debug/security bypass hidden in the setup. Return for constraint characterization. Build the chain as far as the authorized target allows, and record where it stopped instead of leaving the link unexercised without saying so.
+
+## H4.5 — Primitive → Effect
+
+**Producer:** exploitability assessment, exploit design, or any root-cause skill holding a constrained primitive. **Consumer:** exploit design, chaining, or the sequence that carries the primitive to its effect.
+
+Required additions: the primitive in one sentence with a verb, an object, an actor and a condition; the stored payload and its hash; the environment fingerprint it ran in; the negative control; the rung reached (reproduce, control, escalate, prove); the effect class the work aims at; the `gained`/`needs` edge; and the observation surface that would show the next rung. A version, banner or advisory match is a lead, not a primitive.
+
+**Acceptance gate:** a same-run receipt for the attempt and a control that did not produce the effect, with the depth stated as observed rather than planned. A crash is not control of execution; a read in one address space is not access in another.
+
+**Return condition:** the missing ingredient — an address, a key, an identifier, a second primitive, a build or a listener — named as a `needs` edge, or the check that refused the next rung. Return the constraint, never a request to “exploit it” and never a rung the sequence has not passed.
+
+## H4.6 — Foothold → Root or Internal Reach
+
+**Producer:** session to root or internal pivot. **Consumer:** credential and pivot, chaining, or the report.
+
+Required additions: the foothold’s identity receipt (user, groups, host, container marker) and the boundary it sits behind; the transport used, and every transport unavailable with the fact that made it so; the path menu or destination table with the check that closed each entry; for root, the root-only artifact that corroborates the identity plus a second observation through a different command; for internal reach, which side made each request and the arrival record when the request was blind; the cleanup of everything the attempt created; and the boundary the root did not cross.
+
+**Acceptance gate:** root is corroborated by an operation only that identity can perform and re-observed through a different command or transport; internal reach is a request the compromised host performed, not one the sandbox performed. A `whoami`-style string alone, a prompt glyph, or a sandbox-side request is not the observation.
+
+**Return condition:** the boundary holds (the checks that refused are the result), no ingress exists (the environment fact), or the next step needs persistence or a destructive change (out of scope). Return the boundary and the depth reached; do not escalate the claim to host root and do not add persistence to make a rung easier to show.
 
 ## H5 — Root Cause → Remediation / Defensive Engineering
 

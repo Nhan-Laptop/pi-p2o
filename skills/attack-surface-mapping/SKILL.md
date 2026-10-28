@@ -5,7 +5,7 @@ description: Map an unfamiliar application's, service's, firmware's, kernel's, o
 
 # Attack-Surface Mapping
 
-Before first use: [scope baseline](../../README.md#start-here), [handoff method](../../HANDOFFS.md#focused-method-and-review), and [owner review](../../HANDOFFS.md#provisional-owner-review).
+Before first use, read [focused method and review](../../HANDOFFS.md#focused-method-and-review).
 
 ## Technique
 Reachability-first interface inventory.

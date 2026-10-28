@@ -5,7 +5,7 @@ description: Review how an application uses cryptographic primitives, primarily 
 
 # Web Crypto Usage Review
 
-Before first use: [scope baseline](../../README.md#start-here), [handoff method](../../HANDOFFS.md#focused-method-and-review), and [owner review](../../HANDOFFS.md#provisional-owner-review).
+Before first use, read [focused method and review](../../HANDOFFS.md#focused-method-and-review).
 
 ## Applicability
 Use when source shows the application selects or configures a cryptographic primitive (an encryption, hashing or random-generation call), or decrypts state that the client holds and could have altered. This skill reads what was chosen and how it is used, and where a weak choice or a misused parameter can be broken by a construction, it builds that construction and records how far it got. It builds the construction a weak choice or a misused parameter allows, including the crafted-value volume that extracting key material or exhausting the service needs; a live check starts by reading how the application's own error path behaves on malformed input it already decrypts.
@@ -50,7 +50,7 @@ The list of cryptographic calls and decryption sites with their algorithm, mode,
 - Coverage state and the reason for any card not run.
 
 ## Gaps
-Whether a flagged weak primitive is practically exploitable against this deployment (key size, usage volume, attacker position) is a separate, harder question this card does not answer; it stays an open_proof_gap pointing at the specific weakness found. Compiled or vendored cryptographic code without available source stays unverified by this skill.
+Whether a flagged weak primitive is practically exploitable against this deployment (key size, usage volume, attacker position) is the next question rather than this card's: take the primitive into [exploit design](../exploit-design/SKILL.md) and test it, and until an effect is observed it stays an open_proof_gap pointing at the specific weakness found. Compiled or vendored cryptographic code without available source stays unverified by this skill.
 
 ## Handoffs
 Provide the primitive list with source locations and flagged weaknesses, and the error-path comparison when run. Next: [web deployment hygiene](../web-deployment-hygiene/SKILL.md) for transport-level TLS questions, or [remediation](../remediation/SKILL.md) for fixes.

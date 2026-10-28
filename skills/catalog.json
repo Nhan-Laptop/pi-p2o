@@ -245,7 +245,7 @@
     },
     {
       "name": "memory-safety-auditing",
-      "description": "Audit numeric representations, buffer ranges, initialization, allocator/lifetime constraints, and crash provenance. Use to distinguish structural validity from safe memory access without developing an exploit.",
+      "description": "Audit numeric representations, buffer ranges, initialization, allocator/lifetime constraints, and crash provenance. Use to distinguish structural validity from safe memory access, and to carry a proven out-of-bounds access into the control and effect the primitive reaches.",
       "kind": "technique",
       "document": "memory-safety-auditing",
       "workflows": [
@@ -609,7 +609,7 @@
     },
     {
       "name": "web-object-authorization",
-      "description": "Test whether a principal can reach an object, field, tenant, or delegated action outside the intended policy, using a source policy matrix and controlled local reproduction before any live comparison. Use for application-level authorization review.",
+      "description": "Test whether a principal can reach an object, field, tenant, or delegated action outside the intended policy, by observing the protected effect with a controlled principal and object and citing the policy location or recording what its provenance rests on. Use for application-level authorization review.",
       "kind": "playbook",
       "document": "web-object-authorization",
       "workflows": [
@@ -799,7 +799,7 @@
     },
     {
       "name": "exploit-design",
-      "description": "Turn one confirmed primitive into a demonstrated effect by climbing reproduce, control, escalate, prove — choosing the sink and the observation before writing the payload, and stopping at the first rung you cannot observe.",
+      "description": "Turn one confirmed primitive into a demonstrated effect by climbing reproduce, control, escalate, prove — choosing the sink and the observation before writing the payload, and reaching the effect the primitive actually enables.",
       "kind": "procedure",
       "document": "exploit-design",
       "workflows": [
@@ -1014,6 +1014,146 @@
           ],
           "wall": [
             "A credential that reaches further than the map suggested is the pivot: each new system it opens is a door to record and walk through."
+          ]
+        }
+      ]
+    },
+    {
+      "name": "session-to-root",
+      "description": "Take a demonstrated shell or in-band command execution to a root observation of the compromised workload — enumeration discipline, the path menu from sudo to the container boundary, the receipt that backs a root claim, and the honest wall when the boundary holds.",
+      "kind": "procedure",
+      "document": "session-to-root",
+      "workflows": [
+        {
+          "id": "identity-to-menu",
+          "description": "Establish the foothold's identity from the target side, then walk the privilege menu and record the check closing each path",
+          "prerequisites": [
+            "A confirmed claim whose effect is a command the target ran, with the receipt and the control that did not run it.",
+            "A transport that can carry further commands: in-band through the exploited service, or a listener on an operator lab network."
+          ],
+          "steps": [
+            "Run one command that reports the foothold's user, groups and host, and record the receipt before attempting anything else.",
+            "Walk every path-menu entry once and record, for each, what would be written or executed and the check that would refuse it.",
+            "Cross with the smallest reversible operation and read the effect from the system's own answer rather than from the payload.",
+            "Corroborate the new identity with a root-only operation observed independently, and clean up everything the attempt created."
+          ],
+          "observe": [
+            "The identity receipt from the target side, then a root-only artifact such as a file read or write that the former identity was refused"
+          ],
+          "wall": [
+            "Every menu entry is closed by a named check, which is the boundary to report rather than a reason to guess."
+          ]
+        },
+        {
+          "id": "boundary-to-report",
+          "description": "State which boundary the root observation crossed, corroborate it a second time and leave the target as it was found",
+          "prerequisites": [
+            "A root observation with its identity receipt and one corroborating root-only artifact."
+          ],
+          "steps": [
+            "Repeat the observation through a different command or transport so the claim rests on two independent reads.",
+            "Name the boundary crossed: the workload's namespace or account, never host kernel and never a container escape.",
+            "Remove every process, file, account and service change created, and record each removal with a receipt.",
+            "Record the rungs not reached, the check that stopped each, and any change that could not be avoided."
+          ],
+          "observe": [
+            "Two observations of the same identity from different commands, and the cleanup receipts"
+          ],
+          "wall": [
+            "A state change that cannot be reversed makes the step a limitation to report, not a silent cost."
+          ]
+        }
+      ]
+    },
+    {
+      "name": "internal-pivot",
+      "description": "Carry a foothold into internal reach — an in-band request the compromised host makes, a reverse shell into the operator's lab listener, a recorded callback — and state the network facts instead of assuming them.",
+      "kind": "procedure",
+      "document": "internal-pivot",
+      "workflows": [
+        {
+          "id": "foothold-to-destination",
+          "description": "State the network facts, name a destination from the target's own data and make the request in-band",
+          "prerequisites": [
+            "A tested claim for a command or request the target side performed, with its receipt and control.",
+            "The foothold's identity and network position recorded: address, resolver, proxy and container context."
+          ],
+          "steps": [
+            "Write down sandbox reach, target reach, configured ingress and transport before the first probe.",
+            "Choose a destination the target's configuration, resolver or error text names, and quote the source.",
+            "Send one in-band request per destination with the same request to a known-closed destination as the control.",
+            "Record body, status or timing per destination and keep the sandbox's own requests in a separate column."
+          ],
+          "observe": [
+            "A response or timing difference between open and closed destinations that the control does not reproduce"
+          ],
+          "wall": [
+            "A request that cannot be shaped through the service leaves the destination untested rather than unreachable."
+          ]
+        },
+        {
+          "id": "blind-to-arrival",
+          "description": "Turn a blind request into an arrival record, or state the ingress fact that made it invisible",
+          "prerequisites": [
+            "A destination named from the target's own data and an ingress path the run actually configured."
+          ],
+          "steps": [
+            "Aim the blind request at the recorded lab listener or the operator callback and record the arrival with its source address.",
+            "Use a lab-network reverse shell for one command's output only, then close the process that carried it.",
+            "Bound the sweep to the destinations the target's own data named, with a control for each open and closed result.",
+            "Record every destination touched so the report states the breadth instead of implying it."
+          ],
+          "observe": [
+            "The arrival record with source address and timestamp, or the absence plus the egress test that explains it"
+          ],
+          "wall": [
+            "No lab network means no listener; in-band requests and a recorded callback are the remaining observations."
+          ]
+        }
+      ]
+    },
+    {
+      "name": "n-day-to-effect",
+      "description": "Take a patch diff or an advisory lead to a triggered effect — test applicability against the installed artifact, build the trigger from the change, and never count a version match as proof.",
+      "kind": "procedure",
+      "document": "n-day-to-effect",
+      "workflows": [
+        {
+          "id": "lead-to-applicability",
+          "description": "Turn an advisory or patch lead into a statement about the installed artifact's code, not its version",
+          "prerequisites": [
+            "A lead with an identity: a changed revision, a patch, an advisory identifier or a regression test.",
+            "The installed artifact reachable for inspection: source, shipped file, image digest or a bounded disassembly."
+          ],
+          "steps": [
+            "Read the change and name the function, the check and the input that reaches it.",
+            "Find that slice in the installed artifact and record whether the correction is present, with the hash or build that anchors it.",
+            "Record the claim as an open proof gap until a trigger shows an effect; a version match stays a lead."
+          ],
+          "observe": [
+            "A named code slice missing the check, plus the route that reaches it"
+          ],
+          "wall": [
+            "A stripped or bundled artifact that cannot answer the question is a named missing artifact, not a version verdict."
+          ]
+        },
+        {
+          "id": "applicability-to-trigger",
+          "description": "Build the trigger from the change, observe the effect from the target's side and record the claim honestly",
+          "prerequisites": [
+            "A named vulnerable slice in the installed artifact and a route that reaches it."
+          ],
+          "steps": [
+            "Write the predicted difference for the trigger and for the control before sending either.",
+            "Shrink the input until removing one more field stops the effect, and store the bytes that ran with their hash.",
+            "Observe the effect away from the payload and state the depth: crash, read, write or execution.",
+            "Record closure, execution, proof and policy basis from what the trigger established, with same-run receipts."
+          ],
+          "observe": [
+            "An effect artifact that moves with the trigger and not with the control, with its depth and timestamp"
+          ],
+          "wall": [
+            "A trigger that needs a precondition the run cannot build is a needs edge, not a confirmation."
           ]
         }
       ]
@@ -2426,6 +2566,30 @@
     {
       "id": "binary-exploit-ladder:elf-posture",
       "path": "skills/binary-exploit-ladder/scripts/elf-posture.py"
+    },
+    {
+      "id": "session-to-root",
+      "path": "skills/session-to-root/SKILL.md"
+    },
+    {
+      "id": "session-to-root:privilege-escalation-paths",
+      "path": "skills/session-to-root/references/privilege-escalation-paths.md"
+    },
+    {
+      "id": "internal-pivot",
+      "path": "skills/internal-pivot/SKILL.md"
+    },
+    {
+      "id": "internal-pivot:pivot-transport",
+      "path": "skills/internal-pivot/references/pivot-transport.md"
+    },
+    {
+      "id": "n-day-to-effect",
+      "path": "skills/n-day-to-effect/SKILL.md"
+    },
+    {
+      "id": "n-day-to-effect:n-day-applicability",
+      "path": "skills/n-day-to-effect/references/n-day-applicability.md"
     }
   ]
 }

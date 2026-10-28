@@ -5,7 +5,7 @@ description: Test a GraphQL endpoint's own configuration surface, separate from 
 
 # Web GraphQL Testing
 
-Before first use: [scope baseline](../../README.md#start-here), [handoff method](../../HANDOFFS.md#focused-method-and-review), and [owner review](../../HANDOFFS.md#provisional-owner-review).
+Before first use, read [focused method and review](../../HANDOFFS.md#focused-method-and-review).
 
 ## Applicability
 Use when an endpoint accepts GraphQL queries. This skill owns only what is specific to GraphQL as a query layer: schema self-description, a reachable development interface, and the bounds a server places on query shape. Field-level access control (can this principal read or write this field) belongs to [web object authorization](../web-object-authorization/SKILL.md); a resolver argument reaching an injection-prone sink belongs to [web server-side injection](../web-server-side-injection/SKILL.md); output-encoding questions belong to [web output context](../web-output-context/SKILL.md). This card hands off to those rather than re-testing their questions through GraphQL syntax.

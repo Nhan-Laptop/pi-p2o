@@ -111,12 +111,13 @@ describe('every in-scope WSTG test has one owner and its card says so', () => {
  * page with four fixed sections, its workflows carry the recipe that replaces a bare prerequisite list, and the scripts
  * that are the point of a skill take their target from the caller and refuse to guess one.
  */
-const EXPLOIT_SKILLS = ['exploit-design', 'web-injection-to-exec', 'ssrf-to-internal', 'binary-exploit-ladder', 'credential-and-pivot'];
+// P17.8/A17.6 (D37): the post-exploitation procedures join the exploit ladder, so the same page and link guards cover them.
+const EXPLOIT_SKILLS = ['exploit-design', 'web-injection-to-exec', 'ssrf-to-internal', 'binary-exploit-ladder', 'credential-and-pivot', 'session-to-root', 'internal-pivot', 'n-day-to-effect'];
 const SKILL_BYTES = 8 * 1024, SCRIPT_BYTES = 16 * 1024;
 const SECTIONS = ['## Entry conditions', '## Gates', '## Completion definition', '## The wall'];
 
 describe('the exploit skills ship procedure and code', () => {
-  it('registers all five, inside the byte ceiling, with the four sections in order', async () => {
+  it('registers all eight, inside the byte ceiling, with the four sections in order', async () => {
     const { skills } = await inspect();
     for (const name of EXPLOIT_SKILLS) {
       expect(skills.get(name), `${name} is registered`).toBeDefined();

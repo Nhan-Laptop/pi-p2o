@@ -69,6 +69,14 @@ Apache-2.0 permits adaptation and redistribution with attribution. This private 
 
 The recipe's ruleset is gated by a local scan over tiny owned positive/negative fixtures with the shipped rules, checking the JSON `errors` array and the expected rule ids; the opt-in `P2O_TEST_SEMGREP=1` Python test reproduces that gate locally with five candidate findings on the vulnerable fixture and none on the fixed fixture. That local probe establishes syntax and candidate orientation only and is **not** a measurement of the production sandbox image. Installed-image recipe evidence is preserved as failure, not success: the ruleset-validation stage timed out at the shell limit and the transport stopped the sandbox even with `SEMGREP_ENABLE_VERSION_CHECK=0`, `SEMGREP_SEND_METRICS=off`, and `--disable-version-check` set (recipe validate test log `tmp/skill-upgrade/tool-recipe-validate-test.log`), and the same stage can fetch remote meta-lint rules. The recipe therefore rejects the validate stage as an offline gate and gates on the local fixture scan instead; every semgrep invocation still sets both environment variables and `--disable-version-check` and bounds memory at 256 MiB of the shared 512 MiB sandbox. A stopped sandbox is a blocked lifecycle result, and the recipe forbids retrying target commands. No target, service, credential, or external origin was contacted during this review.
 
+## Procedures added after this review
+
+The P17 capability pass added three procedure skills — [session to root](../skills/session-to-root/SKILL.md), [internal
+pivot](../skills/internal-pivot/SKILL.md) and [n-day to effect](../skills/n-day-to-effect/SKILL.md) — with one reference card
+each. They carry no upstream hash row and no adaptation entry: their authority is the measured runtime matrix and the
+operator's authorization, not a reviewed source, and the library's non-blog rule forbids them from citing blog evidence. They
+are named here so the record's coverage statement is explicit rather than silently short by three documents.
+
 ## Maintenance
 
 Adding a playbook, overlay, or recipe means adding its sidecar metadata, extending this record with a new hash row and adapted/excluded lists, and updating the validation profiles. Non-blog validation references, such as the [claim-provenance guideline](../skills/source-code-auditing/references/claim-provenance.md), are original P2O guidance added after this review; they are not adaptations of the reviewed snapshot and carry no upstream hash row or adaptation entry. The opt-in `P2O_TEST_SEMGREP=1` case in `tests/test_library.py` reproduces the local vulnerable/fixed ruleset probe; it stays out of the default offline suite. Historical blog provenance is unchanged by these additions: the blog corpus, its source IDs, and its technique owners are the original 17 techniques, and no playbook claims blog evidence.

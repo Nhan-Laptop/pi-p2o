@@ -106,7 +106,10 @@ export const TRANSITION_SKILLS: Readonly<Record<string, string>> = {
   'net.egress': 'ssrf-to-internal', 'dns.resolve': 'ssrf-to-internal',
   'http.request': 'web-injection-to-exec', 'file.read': 'web-injection-to-exec', 'file.write': 'web-injection-to-exec',
   'db.query': 'web-server-side-injection', 'deserialize': 'deserialization-and-dispatch-auditing',
-  'exec.code': 'binary-exploit-ladder', 'host.shell': 'binary-exploit-ladder',
+  'exec.code': 'binary-exploit-ladder',
+  // P17.8/A17.6 (D37): a host shell is now a method of its own, so the hint names the post-exploitation procedure instead
+  // of the binary ladder that used to be the nearest owner.
+  'host.shell': 'session-to-root',
   'cred.session': 'credential-and-pivot', 'cred.secret': 'credential-and-pivot',
   'cloud.role': 'sandbox-boundary-analysis',
   'admin.ui': 'web-object-authorization', 'data.read': 'web-object-authorization', 'auth.bypass': 'web-object-authorization',

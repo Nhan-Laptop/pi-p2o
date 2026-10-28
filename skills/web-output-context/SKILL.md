@@ -5,7 +5,7 @@ description: Map untrusted sources to output sinks and their exact encoding cont
 
 # Web Output Context
 
-Before first use: [scope baseline](../../README.md#start-here), [handoff method](../../HANDOFFS.md#focused-method-and-review), and [owner review](../../HANDOFFS.md#provisional-owner-review).
+Before first use, read [focused method and review](../../HANDOFFS.md#focused-method-and-review).
 
 ## Applicability
 Use when user-influenced data reaches a browser, document, template, or script sink and the unresolved question is whether the exact output context is encoded for that parser. Source review covers template rendering, serializers, client-side sink calls, URL construction, DOM updates, and document generators. Offline reproduction covers templates, renderers, and sanitizers that can run against a local fixture. Real browser execution proof is available through the sandbox image's Chromium and `agent-browser` CLI ([browser transport](../../docs/HTTP_TRANSPORT.md#browser-transport)), and a browser-side effect observed there is `live_reproduction`. A reflected string is a candidate context observation; a browser observation promotes it to demonstrated execution.

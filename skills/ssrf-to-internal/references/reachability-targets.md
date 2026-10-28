@@ -23,7 +23,9 @@ destination like any other, and the fetch's own response is the evidence.
 | Alibaba | `100.100.100.200`, `/latest/meta-data/` | plain GET |
 
 A metadata read that returns a credential document is the strongest data effect this skill reaches. Treat the document
-as a secret: quote the path, not the key material, and never use the credential without its own authorization.
+as a secret: quote the path, not the key material. The credential is a principal, not a dead end — [credential and
+pivot](../../credential-and-pivot/SKILL.md) verifies it once and reads what it opens, because using it is the next rung of
+the same chain.
 
 ## Kubernetes and container services
 

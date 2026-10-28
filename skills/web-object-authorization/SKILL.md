@@ -1,11 +1,11 @@
 ---
 name: web-object-authorization
-description: Test whether a principal can reach an object, field, tenant, or delegated action outside the intended policy, using a source policy matrix and controlled local reproduction before any live comparison. Use for application-level authorization review.
+description: Test whether a principal can reach an object, field, tenant, or delegated action outside the intended policy, by observing the protected effect with a controlled principal and object and citing the policy location or recording what its provenance rests on. Use for application-level authorization review.
 ---
 
 # Web Object Authorization
 
-Before first use: [scope baseline](../../README.md#start-here), [handoff method](../../HANDOFFS.md#focused-method-and-review), and [owner review](../../HANDOFFS.md#provisional-owner-review).
+Before first use, read [focused method and review](../../HANDOFFS.md#focused-method-and-review).
 
 ## Applicability
 Use when an action selects a specific object, field, tenant, or delegated role, and the question is whether the effective policy binds that selection to the acting principal. Source review covers handler-level ownership checks, list and export filters, serializer field policy, nested-object policy, batch handlers, and asynchronous consumers. Offline reproduction covers policy functions that can be exercised against controlled objects with a local runtime. A live two-account comparison over authenticated requests is available with two principals you register yourself. A third identity or transport widens variant coverage; one reachable unauthorized protected effect is enough to establish the policy question.

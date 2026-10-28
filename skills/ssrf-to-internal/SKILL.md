@@ -5,7 +5,7 @@ description: Take a server-side fetch from "the target made a request" to "the t
 
 # SSRF to Internal Reachability
 
-Before first use: [scope baseline](../../README.md#start-here), [handoff method](../../HANDOFFS.md#focused-method-and-review), and [owner review](../../HANDOFFS.md#provisional-owner-review).
+Before first use, read [focused method and review](../../HANDOFFS.md#focused-method-and-review).
 What the target can reach is the question. A range the box routes to is a destination to test, and its response is
 the evidence.
 

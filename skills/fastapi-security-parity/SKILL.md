@@ -5,7 +5,7 @@ description: Verify that FastAPI and Starlette identity, router, middleware, mou
 
 # FastAPI Security Parity
 
-Before first use: [scope baseline](../../README.md#start-here), [handoff method](../../HANDOFFS.md#focused-method-and-review), and [owner review](../../HANDOFFS.md#provisional-owner-review).
+Before first use, read [focused method and review](../../HANDOFFS.md#focused-method-and-review).
 
 ## Applicability
 Use only when the target is confirmed to be a FastAPI or Starlette application, and resolve the installed versions before applying any framework-specific claim. Record the FastAPI version, the Starlette version, the ASGI server, and the front proxy, because their behaviors differ and vendor backports are common. If the framework or version cannot be resolved from the supplied source and installed dependency metadata, record that as a gap rather than assuming the newest behavior. This overlay composes with a technique and a playbook; it does not replace either one.

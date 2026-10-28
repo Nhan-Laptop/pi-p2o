@@ -5,7 +5,7 @@ description: Test whether an application's own stated business rules (data valid
 
 # Web Business Logic Misuse
 
-Before first use: [scope baseline](../../README.md#start-here), [handoff method](../../HANDOFFS.md#focused-method-and-review), and [owner review](../../HANDOFFS.md#provisional-owner-review).
+Before first use, read [focused method and review](../../HANDOFFS.md#focused-method-and-review).
 
 ## Applicability
 Use when a feature has a stated or clearly implied business rule beyond ordinary input types: a workflow with an intended step order, a value with a server-computed meaning (a price, a quantity, a balance), a function with a stated usage limit, or an upload path with an accepted-type policy. This differs from input-shape testing: the question is never "does this field reject a malformed value" but "does this feature enforce the rule the business states for it". Start every card from a named rule (documentation, a comment, a consistent prior observation) rather than from a guessed payload; a rule that cannot be named yields an open_proof_gap, not a confirmed finding.

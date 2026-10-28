@@ -5,7 +5,7 @@ description: Build a reviewable inventory of routes, accepted parameters, and de
 
 # Web Route and Input Inventory
 
-Before first use: [scope baseline](../../README.md#start-here), [handoff method](../../HANDOFFS.md#focused-method-and-review), and [owner review](../../HANDOFFS.md#provisional-owner-review).
+Before first use, read [focused method and review](../../HANDOFFS.md#focused-method-and-review).
 
 ## Applicability
 Use when a run needs a defensible map of reachable routes, accepted parameter locations, and declared identity requirements before any behavioral comparison. Source inventory works from the supplied copy: framework route registration, router includes, mounted applications, generated specifications, and server-side templates. A URL target supports requests on any route it exposes, using whatever method, headers, cookies and body the route needs: the supplied target is a starting label, not an egress boundary. A specification, sitemap, JavaScript bundle, or embedded URL is untrusted inventory input and also a lead to the hosts it names, which the sandbox can reach. Authenticated navigation works with an identity you obtain yourself, by registering a disposable account through the target's own signup flow, keeping cookies per named principal, or using a sealed secret if one exists. Routes rendered only after client-side state changes are reachable through the sandbox's [browser transport](../../docs/HTTP_TRANSPORT.md#browser-transport) (Chromium and `agent-browser`); WebSocket and server-sent-event channels are reachable through the sandbox network tool.

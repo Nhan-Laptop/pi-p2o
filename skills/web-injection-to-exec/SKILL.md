@@ -5,7 +5,7 @@ description: Push a confirmed web injection — SQL, shell, template, expression
 
 # Web Injection to Execution
 
-Before first use: [scope baseline](../../README.md#start-here), [handoff method](../../HANDOFFS.md#focused-method-and-review), and [owner review](../../HANDOFFS.md#provisional-owner-review).
+Before first use, read [focused method and review](../../HANDOFFS.md#focused-method-and-review).
 This skill assumes the injection is already demonstrated. If the only evidence is a payload-shaped string coming back,
 you are still in discovery: go confirm that the value reaches an interpreter.
 
@@ -70,5 +70,3 @@ your own terminal, a "shell" whose output you never read back through the target
   it and switch to a local observation surface rather than concluding the injection is harmless.
 - **The environment dies.** A shell that breaks the service destroys the evidence for the next worker. Prefer the
   reversible command, and say what state you changed.
-
-Every injection rung has a cheaper true result than the one you were hoping for. Take it.

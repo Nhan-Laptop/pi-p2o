@@ -5,7 +5,7 @@ description: Take a credential from "it exists" to "here is every door it opens"
 
 # Credential and Pivot
 
-Before first use: [scope baseline](../../README.md#start-here), [handoff method](../../HANDOFFS.md#focused-method-and-review), and [owner review](../../HANDOFFS.md#provisional-owner-review).
+Before first use, read [focused method and review](../../HANDOFFS.md#focused-method-and-review).
 This skill ships no script: credential work is where automation multiplies a single use into an unbounded one, so every
 use is deliberate and written down.
 

@@ -5,7 +5,7 @@ description: Audit data that selects methods, types, callbacks, templates, or se
 
 # Deserialization-and-Dispatch Auditing
 
-Before first use: [scope baseline](../../README.md#start-here), [handoff method](../../HANDOFFS.md#focused-method-and-review), and [owner review](../../HANDOFFS.md#provisional-owner-review).
+Before first use, read [focused method and review](../../HANDOFFS.md#focused-method-and-review).
 
 ## Technique
 Behavior selection as a trust boundary.
@@ -40,7 +40,7 @@ Selector/type source → reachable object graph → behavioral hooks → validat
 - Dependency manifest and serializer documentation → identify installed reconstruction behavior → when reachability depends on runtime/library versions; catalogued possibilities are not proof of installed exposure.
 
 ## Validation
-Require the controllable selector/type, receiving object, unintended behavior, execution context, and every prerequisite. Use a negative control for an intended allowed member. Stop if unexpected sensitive data appears; report only redacted boundary evidence. An exception, known gadget catalogue, or dangerous serializer name alone does not establish a feasible path; a catalogue entry earns a link only once you have run it.
+Require the controllable selector/type, receiving object, unintended behavior, execution context, and every prerequisite. Use a negative control for an intended allowed member. Stop if unexpected sensitive data appears; report only redacted boundary evidence. An exception, a gadget catalogue or a dangerous serializer name alone does not establish a feasible path — it establishes a lead. Build the catalogue entry against this target and run it, and the entry becomes a link when the effect is observed through it.
 
 ## Common Failure Modes
 Outer-type allowlisting ignores callbacks (B049); root-only prototype repair is incomplete (B041); transport mitigation hides an unrepaired serializer (B049); disabled optional services prevent reproduction (B066). A theoretical method or secret-dependent path is not demonstrated execution (B037).

@@ -5,7 +5,7 @@ description: Audit optimizer assumptions, effect chains, numeric ranges, parser 
 
 # Compiler-Invariant Auditing
 
-Before first use: [scope baseline](../../README.md#start-here), [handoff method](../../HANDOFFS.md#focused-method-and-review), and [owner review](../../HANDOFFS.md#provisional-owner-review).
+Before first use, read [focused method and review](../../HANDOFFS.md#focused-method-and-review).
 
 ## Technique
 Cross-phase assumption validity checking.

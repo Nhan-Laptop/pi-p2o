@@ -5,7 +5,7 @@ description: Audit identity establishment, object/field authorization, alternate
 
 # Authorization Auditing
 
-Before first use: [scope baseline](../../README.md#start-here), [handoff method](../../HANDOFFS.md#focused-method-and-review), and [owner review](../../HANDOFFS.md#provisional-owner-review).
+Before first use, read [focused method and review](../../HANDOFFS.md#focused-method-and-review).
 
 ## Technique
 Actor–action–object policy differential.

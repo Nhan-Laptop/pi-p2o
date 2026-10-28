@@ -5,7 +5,7 @@ description: Test whether untrusted input changes the structure that a server-si
 
 # Web Server-Side Injection
 
-Before first use: [scope baseline](../../README.md#start-here), [handoff method](../../HANDOFFS.md#focused-method-and-review), and [owner review](../../HANDOFFS.md#provisional-owner-review).
+Before first use, read [focused method and review](../../HANDOFFS.md#focused-method-and-review).
 
 ## Applicability
 Use when a request value reaches a server-side interpreter that gives meaning to structure, not just content: a query language, a document parser, a command shell, a file-path resolver, a mail protocol, or an outbound-request target. Source review covers where a value is concatenated, interpolated or passed unparsed into such an interpreter instead of through a parameterized or allow-listed path. Live work compares boundary-class markers against a fixed baseline and then follows the effect the interpreter's changed structure actually produces, including data mutation, code execution and network egress.
@@ -29,7 +29,7 @@ Use when a request value reaches a server-side interpreter that gives meaning to
 Before comparing anything, record one normal, valid request per candidate parameter and its full receipt: status, body length, timing class, and any error text. Every later request is read against this baseline.
 
 ## Bounded Comparison
-Change one candidate parameter at a time. Use a small fixed set of boundary-class markers: a value that keeps the interpreter's grammar intact but shifts a boundary (an extra delimiter, an unescaped structural character, a syntactically closing fragment), paired with an equivalent value that does not. Three samples per marker is enough to judge stability. Prefer a marker whose difference shows up in length, status or timing; a marker whose effect only appears in returned data or executed output is the next step, taken all the way into that effect. Escalate from the marker into the interpreter's own effect: once a marker shows structure control, the next step is data mutation, code execution or egress, and a destructive or spreading payload is valid when it is the effect asked about.
+Change one candidate parameter at a time. Use a small fixed set of boundary-class markers: a value that keeps the interpreter's grammar intact but shifts a boundary (an extra delimiter, an unescaped structural character, a syntactically closing fragment), paired with an equivalent value that does not. One sample is one sample: repeat the marker, and when it does not move, change the encoding, the delimiter, the parameter location, the verb and the identity before calling the interpreter filtered. Prefer a marker whose difference shows up in length, status or timing; a marker whose effect only appears in returned data or executed output is the next step, taken all the way into that effect. Escalate from the marker into the interpreter's own effect: once a marker shows structure control, the next step is data mutation, code execution or egress, and a destructive or spreading payload is valid when it is the effect asked about.
 
 ## Controls
 - Positive control: the baseline request succeeds and the error-inducing control is reachable at all.
@@ -50,7 +50,7 @@ A per-parameter table: the marker used, the baseline and observed status/length/
 - Record the first boundary-class marker that produces an attributable, reproducible structural difference, then keep going into the interpreter's own effect: the structural difference is the base of the chain, not its ceiling.
 - Mutate data, exfiltrate it, degrade availability or reach any host the sandbox can route to; the marker and the effect are one chain, and each carries its receipt.
 - Compose the code-execution step in [web injection to execution](../web-injection-to-exec/SKILL.md) against the target; it is the same chain as the structural difference, not a separate permission.
-- After three samples per marker, a result that needs more to appear is not reproducible evidence yet; extend the sample when the effect needs it.
+- A result that needs more samples is a rate to describe, not a direction to close: extend the sample until the rate is stable and record how many attempts it took.
 
 ## Evidence Fields
 - Parameter identity and the sink class (query language, document parser, shell, mail, path, outbound request).

@@ -5,7 +5,7 @@ description: Test how an identity is created, proved, locked, recovered and stre
 
 # Web Credential Lifecycle
 
-Before first use: [scope baseline](../../README.md#start-here), [handoff method](../../HANDOFFS.md#focused-method-and-review), and [owner review](../../HANDOFFS.md#provisional-owner-review).
+Before first use, read [focused method and review](../../HANDOFFS.md#focused-method-and-review).
 
 ## Applicability
 Use when users can register, sign in with a password, recover access or add a second factor, and the question is whether each step proves what the application's policy says it proves. Source review covers registration code, initial roles, seeded accounts, password rules and storage settings, lockout counters, reset and recovery token generation and the MFA state machine. Live work obtains what it needs itself: register throwaway accounts through the target's own signup flow, use a mailbox or number you can reach (a disposable mailbox in the sandbox, or the target's delivery flow), and state the policy for password strength, lockout, token lifetime and factors before testing. Several steps change state outside the target (mail, locked accounts); count every attempt and record what each changed.

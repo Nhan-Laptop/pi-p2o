@@ -3,6 +3,7 @@ import { mkdtemp, mkdir, writeFile, rm, symlink, readFile } from 'node:fs/promis
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { SkillLibrary, readPackageFile } from '../../src/skills.js';
+import { MAX_SKILLS, parseSettings, purposeSkills, resolveRole } from '../../src/roles.js';
 import { EvidenceStore, redact, type Candidate } from '../../src/evidence.js';
 import { appendRecord, readRecords, summarizeRecords } from '../../src/records.js';
 import { EnvironmentStore, PayloadStore, normalizeRecipe } from '../../src/lab.js';
@@ -126,5 +127,55 @@ describe('evidence contracts and export', () => {
   it('redacts common credentials without treating redaction as a guarantee', () => {
     expect(redact('Authorization: Bearer abc\npassword=secret\nCookie: sid=x')).not.toContain('abc');
     expect(redact('Authorization: Bearer abc\npassword=secret\nCookie: sid=x')).not.toContain('sid=x');
+  });
+});
+
+/**
+ * planning_update.md A17.6 (D37): the library grew three post-exploitation procedures, and the default ladder has to name
+ * them. The mapping lives in `src/roles.ts`; this suite holds it to the shipped catalog so a default can never name a skill
+ * the run cannot read, and keeps the derivation inside the assignment cap.
+ */
+describe('the skill ladder names the post-exploitation procedures (P17.8)', () => {
+  it('gives a host.shell frontier session-to-root on exploitation and chaining, inside the assignment cap', async () => {
+    const catalog = await new SkillLibrary(ROOT).load();
+    const shipped = new Set(catalog.skills.map(skill => skill.name));
+    expect(catalog.skills.length).toBe(38);
+    for (const name of ['session-to-root', 'internal-pivot', 'n-day-to-effect']) expect(shipped.has(name), name).toBe(true);
+    for (const purpose of ['exploitation', 'chaining'] as const) {
+      expect(purposeSkills(purpose, { kind: 'url', needs: ['host.shell'] })).toEqual(['exploit-design', 'session-to-root']);
+      expect(purposeSkills(purpose, { needs: ['exec.code', 'host.shell'] })).toEqual(['exploit-design', 'web-injection-to-exec', 'session-to-root']);
+    }
+    // A directory run's execution ladder is the binary procedure, and the shell rung still follows it.
+    expect(purposeSkills('exploitation', { kind: 'directory', needs: ['exec.code', 'host.shell'] })).toEqual(['exploit-design', 'binary-exploit-ladder', 'session-to-root']);
+    // A shell that also holds egress can reach inward: the pivot procedure follows the root rung, and `ssrf-to-internal`
+    // keeps the egress slot and its place ahead of both.
+    expect(purposeSkills('exploitation', { needs: ['net.egress', 'host.shell'] })).toEqual(['exploit-design', 'ssrf-to-internal', 'session-to-root', 'internal-pivot']);
+    // Egress alone, or a shell without it, is not a pivot: the fetch and execution procedures already own their ladders.
+    for (const needs of [[], ['net.egress'], ['cred.secret'], ['exec.code'], ['not.a.kind']]) {
+      expect(purposeSkills('exploitation', { needs })).not.toContain('session-to-root');
+      expect(purposeSkills('exploitation', { needs })).not.toContain('internal-pivot');
+    }
+    // `n-day-to-effect` stays requestable, not implied by a capability kind: no context field carries a CVE lead yet.
+    expect(purposeSkills('exploitation', { needs: ['exec.code', 'host.shell'] })).not.toContain('n-day-to-effect');
+    // 2026-10-27 (P17/A17.6): five rungs now, because the pivot joins the shell ladder; the cap keeps the general procedure
+    // and the nearest rungs, and the cut is reported by the caller in `omittedSkills`.
+    expect(purposeSkills('exploitation', { needs: ['net.egress', 'exec.code', 'host.shell', 'cred.session'] })).toHaveLength(6);
+  });
+
+  it('hands a validation worker the ladder of the claim it reproduces, and nothing when the claim names no needs', () => {
+    expect(purposeSkills('validation')).toEqual([]);
+    expect(purposeSkills('validation', { kind: 'url', needs: ['exec.code'] })).toEqual(['exploit-design', 'web-injection-to-exec']);
+    expect(purposeSkills('validation', { kind: 'url', needs: ['host.shell'] })).toEqual(['exploit-design', 'session-to-root']);
+    expect(purposeSkills('validation', { needs: ['exec.code', 'host.shell'] })).toHaveLength(MAX_SKILLS);
+    // The role still refuses to start proof work it was not asked to replay: no needs means no method default.
+    expect(resolveRole({ role: 'validation', settings: parseSettings(undefined) }).skills).toEqual([]);
+  });
+
+  it('derives every default it hands a worker from the shipped catalog', async () => {
+    const shipped = new Set((await new SkillLibrary(ROOT).load()).skills.map(skill => skill.name));
+    for (const needs of [[], ['net.egress'], ['exec.code'], ['host.shell'], ['cred.secret'], ['exec.code', 'host.shell', 'cred.session']]) {
+      for (const skill of purposeSkills('exploitation', { kind: 'url', needs })) expect(shipped.has(skill), `${needs.join(',')} → ${skill}`).toBe(true);
+      for (const skill of purposeSkills('validation', { kind: 'directory', needs })) expect(shipped.has(skill), `validation: ${needs.join(',')} → ${skill}`).toBe(true);
+    }
   });
 });

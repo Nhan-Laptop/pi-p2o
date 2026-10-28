@@ -5,7 +5,7 @@ description: Design minimal debugger or instrumentation experiments to resolve a
 
 # Dynamic Analysis
 
-Before first use: [scope baseline](../../README.md#start-here), [handoff method](../../HANDOFFS.md#focused-method-and-review), and [owner review](../../HANDOFFS.md#provisional-owner-review).
+Before first use, read [focused method and review](../../HANDOFFS.md#focused-method-and-review).
 
 ## Technique
 Question-directed runtime observation.

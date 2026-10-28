@@ -5,7 +5,7 @@ description: Test the life cycle of a session token, from issuance, strength and
 
 # Web Session Management
 
-Before first use: [scope baseline](../../README.md#start-here), [handoff method](../../HANDOFFS.md#focused-method-and-review), and [owner review](../../HANDOFFS.md#provisional-owner-review).
+Before first use, read [focused method and review](../../HANDOFFS.md#focused-method-and-review).
 
 ## Applicability
 Use when a request is tied to a login by a session token (cookie, header or hidden field) and the question is whether that token is issued, protected, bound to a login, replaced and ended the way the application's own policy and basic session hygiene require. Source review covers the session library settings, token generation, regeneration at login and privilege change, invalidation at logout and the lifetime settings. Controlled-account requests cover what the live origin actually does. Stateless signed tokens (JWT) and federated login belong to a different playbook, and CSRF to the browser-trust playbook. A token is a bearer credential: replaying your own token from a second client context proves nothing by itself, and the finding is always about how the token is issued, exposed, kept alive or ended.

@@ -37,7 +37,9 @@ export const ROLE_DEFAULTS: Record<Role, RoleDefaults> = {
  * P15 (W3/W5): a default skill may not teach the opposite of its own duty. `validation` reproduces another worker's claim and
  * must never start a new discovery, so it no longer starts from `exploitability-assessment` (which continues into impact and
  * the chain); `reporting` synthesizes and may not author fixes, so it no longer starts from `remediation`. Both keep their role
- * model and their duty line, and either skill stays reachable by an explicit request.
+ * model and their duty line, and either skill stays reachable by an explicit request. P17.8/A17.6 scopes the validation rule:
+ * with the claim's `needs` named, `purposeSkills` hands it that claim's ladder, because replaying the method is reproduction and
+ * not discovery; the empty list here is the no-needs default.
  *
  * An empty list is a decision, not a gap: "this purpose ships no method default" (investigation is guided by the task's own
  * method; validation and reporting must not start work). So an explicitly supplied purpose never falls back to the role
@@ -63,11 +65,19 @@ export interface SkillContext { kind?: TargetKindForSkills; needs?: readonly str
  * generic default. `exploit-design` comes first so the single MAX_SKILLS cap in `resolveRole` never drops the general procedure;
  * that cap is applied once, at the selection point, so `omittedSkills` can report a ladder it cut instead of hiding it here.
  * An unknown kind simply selects no ladder, which is the pre-P15 behaviour rather than a guess.
+ *
+ * P17.8/A17.6 (D37): a demonstrated `host.shell` is the rung after execution, so `session-to-root` is the method for it and it
+ * takes its place ahead of the credential ladder — the cap drops the furthest rung, never the one the frontier just reached.
+ * A shell that also holds egress can reach inward, so `internal-pivot` follows the root rung and behind it in the cap: a
+ * truncated pivot is reported in `omittedSkills`, never silently replaced, and `ssrf-to-internal` keeps the egress slot.
+ * `n-day-to-effect` stays requestable rather than defaulted: no context field carries a CVE or patch-diff lead yet.
  */
 export function exploitationSkills(kind: TargetKindForSkills | undefined, needs: readonly string[] = []): string[] {
   const ladder: string[] = [];
   if (needs.includes('net.egress')) ladder.push('ssrf-to-internal');
   if (needs.includes('exec.code')) ladder.push(kind === 'directory' ? 'binary-exploit-ladder' : 'web-injection-to-exec');
+  if (needs.includes('host.shell')) ladder.push('session-to-root');
+  if (needs.includes('host.shell') && needs.includes('net.egress')) ladder.push('internal-pivot');
   if (needs.includes('cred.session') || needs.includes('cred.secret')) ladder.push('credential-and-pivot');
   return ['exploit-design', ...ladder];
 }
@@ -89,6 +99,11 @@ export function purposeSkills(purpose: WorkPurpose, context: SkillContext = {}):
     if (purpose === 'refinement' || purpose === 'retest') return [];
   }
   if (purpose === 'exploitation' || purpose === 'chaining') return exploitationSkills(context.kind, context.needs);
+  // P17.8/A17.6 (D37): reproduction needs the method that produced the effect. A validation task that names the claim's
+  // `needs` gets the ladder an exploitation task would have climbed — `exploit-design` starts at Gate R (reproduce), and
+  // the family member is what the claim was reached through. With no `needs` the purpose list stays empty (P15/W5): a
+  // validation worker is never handed a method it did not ask to replay, and never starts a new discovery.
+  if (purpose === 'validation' && context.needs?.length) return exploitationSkills(context.kind, context.needs);
   return PURPOSE_SKILLS[purpose];
 }
 export const DEFAULT_MAX_WORKERS = 3;

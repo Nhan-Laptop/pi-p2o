@@ -280,7 +280,10 @@ class LibraryGateTests(unittest.TestCase):
     def test_validator_cli_success(self):
         result = subprocess.run([sys.executable, str(ROOT / "scripts/validate_library.py")], capture_output=True, text=True, check=False)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertIn("17 skills", result.stdout)
+        # planning_update.md A17.6: the catalog grows to 38 while the 17 technique owners stay fixed, because a procedure
+        # may not own blog evidence. Both numbers are reported so the first stops being read as the library's size.
+        self.assertIn("38 skills", result.stdout)
+        self.assertIn("17 technique owners", result.stdout)
 
     def test_phase_context_scaffold_fields(self):
         self.assert_rejected(lambda root: self.edit_json(root, "templates/handoff.json", lambda c: c["contract_specific_fields"].pop("dispatch_phase_model")), "composed pipeline scaffold incomplete")
@@ -454,6 +457,34 @@ class SkillProfileTests(unittest.TestCase):
         techniques = [path for path in paths if metadata.get(path.parent.name, {}).get("kind", "technique") == "technique"]
         self.assertEqual(len(techniques), 17)
         self.assertEqual(len(renderer.blog_owner_map(ROOT)), 17)
+
+    def test_new_procedures_are_registered_bounded_pages(self):
+        """P17.8/A17.6: three procedures, each a bounded page with its card linked, and the catalog at 38 entries."""
+        errors = []
+        metadata = checker.load_skill_metadata(ROOT, errors)
+        self.assertEqual(errors, [])
+        catalog = json.loads((ROOT / "skills/catalog.json").read_text())
+        self.assertEqual(len(catalog["skills"]), 38)
+        self.assertEqual(sum(1 for entry in catalog["skills"] if entry["kind"] == "procedure"), 8)
+        documents = {document["id"]: document["path"] for document in catalog["documents"]}
+        for name in ("session-to-root", "internal-pivot", "n-day-to-effect"):
+            with self.subTest(skill=name):
+                self.assertEqual(metadata[name]["kind"], "procedure")
+                text = (ROOT / f"skills/{name}/SKILL.md").read_text(encoding="utf-8")
+                self.assertLessEqual(len(text), 8000)
+                positions = [text.find(f"## {section}") for section in checker.PROCEDURE_SECTIONS]
+                self.assertTrue(all(position > 0 for position in positions), name)
+                self.assertEqual(positions, sorted(positions), name)
+                self.assertIn("ships no script", text)
+                for reference in metadata[name]["references"]:
+                    self.assertIn(f"]({reference})", text, f"{name} does not link {reference}")
+                    self.assertIn(f"skills/{name}/{reference}", documents.values())
+
+    def test_procedure_without_a_script_must_say_why(self):
+        def mutate(root):
+            path = root / "skills/session-to-root/SKILL.md"
+            path.write_text(path.read_text().replace("This procedure ships no script:", "This procedure is performed by hand."))
+        self.reject(mutate, "procedure ships neither a script nor the reason it has none")
 
     def test_playbook_missing_section_rejected(self):
         self.reject(lambda root: self.edit_skill(root, "web-route-input-inventory", lambda s: s.replace("## Stop Conditions", "## Stop Rules")), "missing/empty Stop Conditions")

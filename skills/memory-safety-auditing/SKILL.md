@@ -1,11 +1,11 @@
 ---
 name: memory-safety-auditing
-description: Audit numeric representations, buffer ranges, initialization, allocator/lifetime constraints, and crash provenance. Use to distinguish structural validity from safe memory access without developing an exploit.
+description: Audit numeric representations, buffer ranges, initialization, allocator/lifetime constraints, and crash provenance. Use to distinguish structural validity from safe memory access, and to carry a proven out-of-bounds access into the control and effect the primitive reaches.
 ---
 
 # Memory-Safety Auditing
 
-Before first use: [scope baseline](../../README.md#start-here), [handoff method](../../HANDOFFS.md#focused-method-and-review), and [owner review](../../HANDOFFS.md#provisional-owner-review).
+Before first use, read [focused method and review](../../HANDOFFS.md#focused-method-and-review).
 
 ## Technique
 Representation-to-access invariant checking.

@@ -659,7 +659,10 @@ def validate_procedure(path: Path, root: Path, body: str, parts: dict, errors: l
             errors.append(f"{label}: {script.name} exceeds the harness size budget")
         if not re.search(r"--(?:target|binary|payload)", source) or "refused" not in source:
             errors.append(f"{label}: {script.name} does not take an explicit target and refuse without one")
-    if not scripts and "credential" not in name:
+    # The message was always "neither a script nor the reason it has none", but only the script branch was enforced.
+    # A procedure whose steps are shaped by the target cannot hand the worker a bounded CLI; it must say so in its body
+    # so the absence is a recorded decision rather than an omission (planning_update.md A17.6).
+    if not scripts and "credential" not in name and not re.search(r"\bships no script\b", body, re.I):
         errors.append(f"{label}: procedure ships neither a script nor the reason it has none")
 
 
@@ -1016,7 +1019,11 @@ def main() -> int:
         return 1
     corpus = load_json(args.root / "research/corpus.json")
     stats = corpus["statistics"]
-    print(f"PASS: {stats['skills']} skills; {stats['index_entries']} catalog entries; {stats['included_sources']} evidence sources; format, links, provenance, mapping, handoffs, freshness, and recipe checks")
+    # planning_update.md A17.6: report both numbers, because 17 counts technique skills that own blog evidence while the
+    # catalog also carries the procedures and playbooks a worker can be assigned. A procedure may not cite blog sources,
+    # so the first number cannot grow with a procedure (D37) and the second is the library's real size.
+    catalog = load_json(args.root / "skills/catalog.json")
+    print(f"PASS: {len(catalog.get('skills', []))} skills ({stats['skills']} technique owners); {len(catalog.get('documents', []))} registered documents; {stats['index_entries']} catalog entries; {stats['included_sources']} evidence sources; format, links, provenance, mapping, handoffs, freshness, and recipe checks")
     return 0
 
 

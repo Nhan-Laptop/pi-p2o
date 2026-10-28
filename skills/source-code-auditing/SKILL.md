@@ -5,7 +5,7 @@ description: Plan a high-yield audit of a large source tree using framework conv
 
 # Source-Code Auditing
 
-Before first use: [scope baseline](../../README.md#start-here), [handoff method](../../HANDOFFS.md#focused-method-and-review), and [owner review](../../HANDOFFS.md#provisional-owner-review).
+Before first use, read [focused method and review](../../HANDOFFS.md#focused-method-and-review).
 
 ## Technique
 Convention-aware audit slicing.

@@ -5,7 +5,7 @@ description: Verify what a deployment volunteers and the policy it declares, inc
 
 # Web Deployment Hygiene
 
-Before first use: [scope baseline](../../README.md#start-here), [handoff method](../../HANDOFFS.md#focused-method-and-review), and [owner review](../../HANDOFFS.md#provisional-owner-review).
+Before first use, read [focused method and review](../../HANDOFFS.md#focused-method-and-review).
 
 ## Applicability
 Use when a run needs to know what a deployment tells any client: server and framework identity, metadata files, page content and script bundles, backup and administrative paths, platform configuration, response headers, cookie and cache directives, HTTP methods, TLS posture and error output. It is the first pass over the supplied target — a starting label, not an egress boundary — and the natural review of a supplied configuration tree; it does not test application logic, authorization or injection. A weakness here is a gap in declared policy or an unintended disclosure whose weight depends on exposure: a missing control matters when something sensitive depends on it, not by itself.
