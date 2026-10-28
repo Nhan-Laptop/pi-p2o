@@ -196,7 +196,7 @@ missing; **KEEP** = honesty/authority invariant to preserve.
 | S6 | `src/prompts.ts:155` | "Use a worker join only for a bounded join you are about to act on in this turn" + manual mode default | After dispatch the campaign idles until a human types; depth is bounded by human attention. | **A17.2**: allow one bounded review join per round in manual mode (no polling, no budget change), or auto-wake on a committed report for review only. |
 | S7 | `src/prompts.ts:257` + `src/finish-preflight.ts:65-72` | "argue the strongest case against it"; a ruled-out negative resting on 401/403/429 is flagged at finish | Argument without re-triggering; the wrong negative is caught only after the run. | **A17.1**: independent re-trigger before claiming; negative observations are observations, one recheck per direction. |
 | S8 | `src/roles.ts:46-56,85-93`; every catalog workflow | Defaults are static-first (`mapping → attack-surface-mapping`, `discovery → source-code-auditing`, `validation → []`, `reporting → []`), and each skill's first workflow is `source-review` | A URL run's default method is reading, and the validation worker — the one that must reproduce an effect — gets no method at all. | **A17.6**: kind- and needs-conditional defaults; validation gets the ladder of the claim's `needs`; workflow order follows target kind. |
-| S9 | Exploit procedures: `skills/exploit-design/SKILL.md:3` ("…and stopping at the first rung you cannot observe"), `:69` ("An exploit step usually ends at a wall rather than at code execution"), `skills/web-injection-to-exec/SKILL.md:74` ("Every injection rung has a cheaper true result… Take it."), `skills/memory-safety-auditing/SKILL.md:3` ("without developing an exploit"), `skills/state-and-lifetime-auditing/SKILL.md:52` ("does not authorize parallel or race testing"), `skills/ssrf-to-internal/references/reachability-targets.md:26` ("never use the credential without its own authorization") | The library's own exploit procedures set a failure base rate, and one passage forbids the method that turns a metadata read into a cloud-role escalation. | **A17.6**: rewrite as "reach what the ladder reaches" with the same honesty gates. |
+| S9 | Exploit procedures | `skills/exploit-design/SKILL.md:3` ("…and stopping at the first rung you cannot observe"), `:69` ("An exploit step usually ends at a wall rather than at code execution"), `skills/web-injection-to-exec/SKILL.md:74` ("Every injection rung has a cheaper true result… Take it."), `skills/memory-safety-auditing/SKILL.md:3` ("without developing an exploit"), `skills/state-and-lifetime-auditing/SKILL.md:52` ("does not authorize parallel or race testing"), `skills/ssrf-to-internal/references/reachability-targets.md:26` ("never use the credential without its own authorization") | The library's own exploit procedures set a failure base rate, and one passage forbids the method that turns a metadata read into a cloud-role escalation. | **A17.6**: rewrite as "reach what the ladder reaches" with the same honesty gates. |
 | S10 | `HANDOFFS.md:74-92` | H3 return condition: "…targeted coverage check—not immediate impact development"; H4 stops at "assess"; no crash→effect or foothold→root contract | Names the crash→impact and shell→root transitions and routes them away; no handoff contract carries a primitive into an exploitation task. | **A17.6**: rewrite H3; add H4.5 (primitive→effect) and H4.6 (foothold→LPE/pivot). |
 
 ### 3.3 Missing methods and missing transport (ABSENT)
@@ -255,8 +255,9 @@ Each is stated so a test can fail on it.
    test-library guards stay green; the third-party guardrail doctrine stays out.
 6. **Runtime claims are true.** Prompts and skills promise only what §2.4 measured. Unverified behaviour is described as
    unverified, never as blocked or absent; the two stale runtime assertions are fixed, not inherited.
-7. **No finish gate, no allowance, no new budget** (owner decision 2026-10-24): changes surface as planners' demands and
-   preflight advisories, never as refusals to finish.
+7. **No finish gate, no allowance, no new budget** (owner decision 2026-10-24): a run always finishes with an honest
+   report. The one admission refusal this pass adds (D32: no task before the impact goal) names the artifact to create,
+   so it cannot trap a run; everything else surfaces as a planner demand or a preflight advisory.
 8. **LPE is bounded by what a foothold proves.** A root observation through a target-side shell is root of that workload;
    the report names the boundary crossed. Container escape and host-kernel exploitation are out of scope.
 9. **Measurement is separate and owner-authorized.** Hermetic tests decide correctness; only a clean, owner-authorized,
@@ -268,7 +269,7 @@ Each is stated so a test can fail on it.
 
 | ID | Decision | Recommended form | Why |
 | --- | --- | --- | --- |
-| D32 | **Impact-first plan shape.** In the default `exploit` mode an impact goal is the campaign's spine, not one goal among many: the first plan round records a capability-proof goal plus a ladder hypothesis; a run holding a confirmed primitive with an unexplored successor, or with no exploitation/chaining task at all, gets an advisory (`IMPACT_UNATTEMPTED`), never a refusal. | Advisory + prompt demand | The measured run's failure was no demand, not a refusal; the owner decision forbids finish gates |
+| D32 | **Impact-first plan shape.** In the default `exploit` mode the host refuses admission of any worker task until the plan board holds a non-cancelled goal whose proof is a capability or an accepted case; the first plan round authors that goal (with its acceptance criteria) before the first dispatch, and the refusal names `p2o_plan_author` and the legal next step. The existing `EXPLOIT_MODE_NEEDS_IMPACT_GOAL` refusal is extended from exploitation/chaining intents to every target-executing intent. An advisory (`IMPACT_UNATTEMPTED`) still reports a run whose impact goal exists but whose progress never becomes an exploitation/chaining task. This is an **admission** refusal, not a finish gate: a run still finishes with an honest report (owner decision 2026-10-24 preserved for finishing). | Admission refusal + prompt demand | Owner decision 2026-10-27 (A3 chose the stricter option); a capability goal needs no evidence to be authored, so the refusal cannot deadlock a run |
 | D33 | **Worker exploitation stance** (conditional block for `purpose ∈ {exploitation, chaining}`): objective is an observable effect; a wall requires a host refusal *or* the recorded bypass classes; one failed sample is not a family; re-trigger independently before claiming; the self-deception list; negative = observation, one recheck; spill adjacent leads. | Prompt block, paid by dedupe | ARTEX worker doctrine; the measured exploit-intent effect; no token-budget change |
 | D34 | **Grey-box handoff contract.** Exploitation/chaining briefs carry a generated `EXPLOIT CONTEXT`: primitive sentence (hypothesis/CWE + claim ref), target revision/build/mitigation facts, known controls and limitations, the `needs` frontier from typed capabilities, available session/secret/ingress handles, expected observation and stop condition. Chain successors carry verbatim payload bytes and response detail, not summaries. | Engine seam + planner fields | 90%-vs-50% decomposition; AXE 3× |
 | D35 | **Severity follows demonstrated effect; policy basis is provenance.** Scope the `inferred` ceiling to cases that did not observe and test an effect. A tested+observed crossing rated on inferred provenance is allowed at demonstrated depth, printed with an `INFERRED_POLICY` provenance flag and a required limitation; a rating above demonstrated depth is still refused. Teach the `boundary_invariant` examples that actually occur (the attacker's own identity across a principal/tenant boundary; metadata/private-network reach from an attacker-influenced URL; unauthenticated code execution). | Scoped code change + docs + tests | H1/H2; keeps the anti-rumour bar |
@@ -276,7 +277,7 @@ Each is stated so a test can fail on it.
 | D37 | **Skill ladder.** Add three procedures (`session-to-root`, `internal-pivot`, `n-day-to-effect`) with one reference card each; rewrite the 12 closure/contradiction passages in §3.2/§3.3; make defaults target-kind and `needs` aware; rewrite H3 and add H4.5/H4.6 to `HANDOFFS.md`. | 35 → 38 skills, all ≤8,000 chars | M1–M3; ARTEX/CVE-lead evidence |
 | D38 | **Restart policy.** When a worker exhausts or stalls a mechanism, the planner dispatches a *fresh* worker with a *different* mechanism (new task, or `continue` with a materially different brief) instead of extending the same thread; the retry admission test and "read the trace position first" are stated. | Prompt + reuse of preflight | XBOW restarts; Context Rot |
 | D39 | **Refusal framing and description craft.** A host-policy refusal says "platform policy, not target defense; this class is refused — do not re-encode or retry an equivalent". Environment refusals state the fact without inviting retries. `p2o_lab` says run the smallest probe and store the bytes in the same step. `p2o_state`/`p2o_board`/`p2o_graph` gain "don't re-list what you know; aggregate writes". The planner gains one surface-family line. A test asserts payload classes (SQLi, command injection, SSTI, deserialization, upload, SSRF, traversal, LFI) are never policy-denied. | Descriptions + planner line + test | ARTEX anti-bypass framing; description craft |
-| D40 | **Interactive foothold.** Add `send`/`read` on an accepted lab-listener connection so a reverse shell can be driven (bounded, audited like PTY: 16 KiB/send, ≤120 s, one session-owned socket); keep the in-band path as the default and the no-ingress wall as a stated fact. No host port is published; no tunnel/pivot subsystem is added. | Small engine seam + skills | M5; a foothold a worker cannot drive is a screenshot, not a post-exploitation rung |
+| D40 | **Persistent interactive foothold (owner decision 2026-10-27).** One accepted connection per session, kept for the session's lifetime: it is interactive `send`/`read` with **no artificial per-send size or per-command idle cap**, the shell survives steps and worker reports (session-owned; a successor continues it through hold/chain-in-session), and attaching requires an **identity confirmation through the shell** (`whoami`/`id`) recorded before any further operation. Interaction is uncapped; what enters the model context is a bounded preview plus a `p2o_capture` artifact for the full transcript. Lab-network only, no host port, no tunnel/pivot subsystem. In-band execution remains the default transport when no ingress exists. | Engine seam + skills | M5; owner decision (A5: one connection, no limits, confirm `whoami`, keep the shell) |
 | D41 | **Runtime truth and drift guard.** Record the §2.4 matrix in docs; fix `scripts/setup-sandbox-tools.sh` usage text; correct `tests/minimal/docker.test.ts:10-20` and `docker-extension.test.ts:76-78` to the measured posture (root, 14 caps, uid 0) so the opt-in Docker suite asserts reality, and add one non-Docker assertion on the sandbox flags so drift is visible without Docker; publish the prompt-safe / forbidden claim lists. | Docs + tests + script text | Stale assertions were already hiding drift |
 | D42 | **Optional operator toolchain image.** Extend `scripts/setup-sandbox-tools.sh --with` with an offensive set (pwntools, strace, socat, ssh client, AFL++, radare2, tcpdump, java) as an operator convenience; the agent still installs into scratch when needed. Not required for the plan. | Operator step, documented | D's ranked gap 3; Anthro ranges 5/9 needed a custom toolkit |
 | D43 | **Measurement protocol.** Two hermetic fixtures (web exploit ladder; credentialed cross-tenant bypass) with evaluator truth, plus an A/B campaign (current prompts/skills vs P17) — 2 fixtures × 2 variants × 2 arms × 3 reps = 24 runs, fixed per-run budgets, seeded randomized order. Criteria: ≥2 rungs executed on the ladder fixture, ≥1 accepted-current high/critical per vulnerable fixture, zero false claims, attempt records present, no leftover containers. | Fixtures + protocol; run only with owner authorization and a cost cap | Existing `bench/` machinery; no effectiveness claim until run |
@@ -317,9 +318,12 @@ Each workstream names the decision, the exact seams, the hermetic gate and the m
   differential, race, type confusion, mass assignment); "read the interrupted worker's ledger position before re-planning";
   the retry admission test next to the existing anti-spin line; "dispatch a different mechanism, not a longer thread";
   impact-goal demand and the `capability` proof option.
+- Admission (D32): extend `EXPLOIT_MODE_NEEDS_IMPACT_GOAL` from exploitation/chaining intents to every target-executing
+  intent in `exploit` mode; refusal names `p2o_plan_author`, the acceptance criteria and the legal next step; the planner
+  first-action line becomes author-the-goal-then-dispatch. Assess mode is unchanged.
 - `src/finish-preflight.ts`: one advisory `IMPACT_UNATTEMPTED` — an `exploit` run whose plan holds a capability-proof goal
   and where no exploitation/chaining task was ever admitted (reusing `NO_GOAL_RECORDED`/`PRIMITIVE_UNCHAINED` where they
-  already fire; no refusal).
+  already fire; advisory only, finish stays gate-free).
 - Manual mode: one bounded review join per round (no polling), documented in the prompt.
 - **Gate:** `tests/minimal/prompt-roles.test.ts` + `dispatch-discipline.test.ts` pins; `tests/minimal/review-integrity.test.ts`
   for the advisory; `tests/minimal/acceptance-matrix.test.ts` after matrix rows are added.
@@ -381,7 +385,8 @@ Each workstream names the decision, the exact seams, the hermetic gate and the m
   `needs` includes `host.shell`; `chaining` likewise; `validation` gets the ladder of the claim it reproduces.
 - Catalog: 35 → 38 skills, version bump; provenance entries for each new skill (`research/SKILL_PROVENANCE.md` and the
   library test's per-skill checks); WSTG map untouched (these are procedures, not WSTG tests).
-- **Gate:** `npm run check:library` (17 → 20 skills), `tests/minimal/knowledge.test.ts` counts,
+- **Gate:** `npm run check:library` (35 → 38 skills; its printed `17` is technique owners with blog evidence, which a
+  procedure cannot change), `tests/minimal/knowledge.test.ts` counts,
   `tests/minimal/wstg-skills.test.ts` ceiling + link guards, `tests/test_library.py`; no orphan cards; ≤8,000 chars.
 - **Measured:** rungs 2–3; LPE rung proven through the foothold.
 
@@ -398,9 +403,11 @@ Each workstream names the decision, the exact seams, the hermetic gate and the m
 
 ### A17.8 — Interactive foothold (D40)
 
-- `extensions/p2o/index.ts` listener implementation (`:1436-1490`): accept `send`/`read` on one accepted connection per
-  session under the existing limits (16 KiB/send, ≤120 s, ≤4 listeners/session), audited as session operations, never a
-  host port; the listener remains lab-network only. `p2o_session` documents the action; `session-to-root` and
+- `extensions/p2o/index.ts` listener implementation (`:1436-1490`): one persistent foothold connection per session,
+  interactive `send`/`read` with no artificial per-send size or idle cap (the operator may still configure one), kept for
+  the session's lifetime across steps and worker reports, attaching only after a recorded identity confirmation through
+  the shell (`whoami`/`id`); full transcript to a `p2o_capture` artifact, bounded preview to the model. Audited as
+  session operations, lab-network only, never a host port. `p2o_session` documents the action; `session-to-root` and
   `internal-pivot` teach the three transports (in-band, listener shell, session PTY) and their walls.
 - Inert tests for the socket state machine; real end-to-end remains an opt-in Docker test (and needs a lab peer).
 - **Gate:** `tests/minimal/session.test.ts` extension; fake-backed listener state test; description pins.
@@ -417,11 +424,12 @@ Each workstream names the decision, the exact seams, the hermetic gate and the m
 - **Gate:** full suite; the new argv test; docs parity. `tests/minimal/truth.test.ts` retired-phrase scan unaffected.
 - **Measured:** none.
 
-### A17.10 — Optional operator toolchain image (D42)
+### A17.10 — Operator toolchain image (D42, owner decision 2026-10-27)
 
 - Extend `scripts/setup-sandbox-tools.sh --with` with `pwntools`, `strace`, `socat`, `ssh`, `afl++`, `radare2`,
-  `tcpdump`, `java` (pinned, same build-time-only rule); document in `docs/KNOWLEDGE.md`. The running container stays as it
-  is; the agent can still install into scratch, so this is convenience.
+  `tcpdump`, `java` (pinned, same build-time-only rule); document in `docs/KNOWLEDGE.md` and list each tool's purpose.
+  The running container stays as it is; the agent can still install into scratch, so this is an operator convenience, not
+  a capability gate.
 - **Gate:** `tests/minimal/knowledge.test.ts` / library checks for the documented list; script shellcheck-style review.
 - **Measured:** none.
 
@@ -432,8 +440,10 @@ Each workstream names the decision, the exact seams, the hermetic gate and the m
   (credentialed cross-tenant read; exercises the D35 severity path). Both hermetic, synthetic, local-only.
 - `bench/lib/plan.mjs`: fixture discovery + arms (A = current prompts/skills, B = P17); scoring extended with "rungs
   reached" and "accepted-current high/critical" counters, keeping the existing false-claim detection.
-- Protocol: 2 fixtures × 2 variants × 2 arms × 3 reps = 24 runs; wall 25 min, turns 60, target commands 120, cost cap set
-  by the owner; seeded shuffle; no implicit fallback; cleanup by run label.
+- Protocol (ready, **not run**): 2 fixtures × 2 variants × 2 arms × 3 reps = 24 runs; wall 25 min, turns 60, target
+  commands 120, cost cap set by the owner; seeded shuffle; no implicit fallback; cleanup by run label. Owner decision
+  2026-10-27 (A6): no paid campaign in this phase; the fixtures and protocol ship, the measured gate is deferred and the
+  pass reports effectiveness UNVERIFIED.
 - **Gate (hermetic):** `tests/minimal/benchmark.test.ts` (fixture isolation, no truth in the visible tree, objective
   neutrality) + scoring unit tests. **Measured (owner-run):** D43's criteria; a failed gate does not pass on an honest
   wall.
@@ -472,6 +482,7 @@ Every phase's gate also includes: `npm run typecheck`, `npm run build`, `npm run
 | Surface | Change | Compatibility |
 | --- | --- | --- |
 | Prompt text | planner/worker conditional blocks, dedupe consolidation | Text only; `tests/minimal/recon.test.ts` ceilings unchanged unless a dated comment raises one; the worker static prefix is unchanged for non-exploit purposes, so cache/parity pins survive |
+| Admission | `exploit` mode refuses a target-executing intent until a capability/accepted-case goal exists (extends the existing exploitation-only rule) | Existing runs are unaffected (policy is read at admission); the refusal names `p2o_plan_author` and the legal next step; assess mode unchanged |
 | Worker brief | new `EXPLOIT CONTEXT` block only for exploitation/chaining tickets | Additive; brief ceiling 1,650 stays; older records say "not recorded" |
 | Case rating | inferred ceiling scoped to untested effects; `INFERRED_POLICY` provenance flag in the report projection | Existing ratings unchanged; a rating above demonstrated depth is still refused; `STALE_RATING` semantics unchanged |
 | Preflight | one new advisory (`IMPACT_UNATTEMPTED`) | Advisory only, no refusal; readers ignore unknown codes |
@@ -494,7 +505,8 @@ Every phase's gate also includes: `npm run typecheck`, `npm run build`, `npm run
 | Skill bloat | Per-skill ceiling, progressive disclosure (description selected, body inlined only when selected, 3-skill cap), cards linked not inlined |
 | Model-specific results | Campaign pins provider/model/thinking; the pass ships "UNVERIFIED" until the run |
 | Benchmark contamination | Fresh synthetic fixtures with inert markers, evaluator truth isolated, one manifest for hashing and copying (existing rule after the historical contamination caveat) |
-| New foothold surface widens blast radius | Listener stays lab-network only, one connection per session, bounded send, audited, no host port, removed with the container |
+| New foothold surface widens blast radius | Listener and foothold stay lab-network only, one connection per session, bounded preview + capture artifact (interaction itself uncapped per A5), every operation audited as a session row, no host port, removed with the container |
+| Admission refusal stalls a run before the first dispatch | The goal needs no evidence and the refusal names the legal next step; one test proves a run with a goal dispatches, and the advisory (not a refusal) covers a goal that never becomes work |
 | Stale runtime assertions mask future drift | A17.9 fixes them and adds a default-suite argv assertion |
 | The campaign is never authorized, so the pass is unmeasured | Every phase is independently valuable; P17.11 leaves fixtures and protocol ready; the report says UNVERIFIED, never "improved" |
 | Changing a rule the owner decided deliberately | D35 keeps the demonstrated-depth bound, D32 keeps the no-finish-gate decision, §4 lists what must not move; open questions are in Appendix A |
@@ -525,18 +537,21 @@ Every phase's gate also includes: `npm run typecheck`, `npm run build`, `npm run
 
 ---
 
-## Appendix A — open questions for the owner (recommended defaults)
+## Appendix A — owner decisions (recorded 2026-10-27)
 
-| # | Question | Options | Recommended |
+All eight questions were answered by the owner before implementation. The two deviations from the recommended default are
+recorded as such and are binding for the phases below.
+
+| # | Question | Owner decision | Effect on the plan |
 | --- | --- | --- | --- |
-| A1 | How far may the inferred-policy severity cap move? | (a) docs/teaching only, cap untouched; (b) scope cap to untested effects + provenance flag; (c) keep cap exactly | **(b)** — the difference between a real IDOR being Medium forever and High with a visible provenance line; (a) does not unblock the common case |
-| A2 | How many new skills? | (a) 3 procedures + 3 cards; (b) 2 (drop n-day); (c) rewrite-only | **(a)** — LPE and pivot are named goals and absent today; n-day is the cheapest critical route in the corpus |
-| A3 | How is impact demanded? | (a) prompt + `IMPACT_UNATTEMPTED` advisory; (b) prompt only; (c) admission refusal when no impact goal exists | **(a)** — honors the 2026-10-24 no-finish-gate decision |
-| A4 | Restart policy | (a) prompt guidance + existing preflight codes; (b) per-task iteration advisory; (c) engine-enforced iteration cap | **(a)**; an engine cap is a bigger decision and no evidence says pi-p2o needs one yet |
-| A5 | Interactive foothold | (a) add listener `send`/`read` (bounded, lab-network only); (b) keep the log-only listener and rely on in-band command execution | **(a)** — a foothold a worker cannot drive caps the LPE rung at a screenshot; (b) is a real fallback if the engine change is unwanted |
-| A6 | Paid campaign | (a) authorize one 24-run local lab campaign after P17.11; (b) defer until the owner watches a hermetic dry run; (c) no paid run yet | **(a)** if the owner is ready to spend; otherwise (b) — implementation needs no paid call |
-| A7 | Target class | (a) web/API + target-side host escalation this phase; (b) add a host/SSH target kind now; (c) add binary/fuzzing-to-exploit | **(a)**; (b) is a separate authority surface and a later phase; (c) is the next phase after the 74.3% vs 25.3% gap |
-| A8 | Runtime image upgrade | (a) keep the current pinned image, record the matrix honestly; (b) add an operator `--with` offensive set when a rung needs it | **(a)** now, (b) as convenience per A17.10 |
+| A1 | Inferred-policy severity cap | **Scope + provenance flag** (recommended) | D35 / A17.4 as written: cap only when the effect is not tested+observed; `INFERRED_POLICY` flag + required limitation |
+| A2 | New skills | **3 procedures + 3 cards** (recommended) | D37 / A17.6 as written; 35 → 38 skills, ≤8,000 chars each |
+| A3 | How impact is demanded | **Refuse admission when no impact goal exists** (stricter than recommended) | D32 rewritten: every target-executing intent in `exploit` mode is refused until a capability/accepted-case goal exists; the first planner round authors it before dispatch; finishing stays gate-free |
+| A4 | Restart policy | **Prompt guidance + existing preflight codes** (recommended) | D38 / A17.2 as written; no new engine limit |
+| A5 | Foothold shell | **One persistent connection per session, no per-send/idle limits, visible `whoami` confirmation, keep the shell** (custom) | D40 / A17.8 rewritten: session-owned persistent interactive shell, uncapped interaction, bounded model preview + capture artifact, identity confirmation before use, lab-network only |
+| A6 | Paid campaign | **No paid run in this phase** | A17.11 ships fixtures + protocol only; every phase stays hermetic-gated; the pass reports effectiveness UNVERIFIED |
+| A7 | Target class | **Web/API + target-side host escalation** (recommended) | D37 targets as written; binary and host/SSH target are later phases |
+| A8 | Runtime image | **Extend `--with` offensive set when needed** | A17.10 delivers the `--with` list as an operator step (not a capability gate) |
 
 ## Appendix B — how to re-verify this proposal
 

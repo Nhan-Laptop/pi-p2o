@@ -65,11 +65,15 @@ hyphenated mechanism ids) or a mechanism term such as `idor`, `xss`, `bypass`, `
 | `object-authorization` | tenant check without owner binding; export accepts any tenant; `FIELD_POLICY` owner rule not enforced | owner/admin binding, own-tenant export, field policy enforced | `python3 probe.py` over controlled principals/objects |
 | `output-context` | `render_search_html` emits the inert marker raw in an HTML text context | `html.escape` in the same context | `python3 probe.py` compares each context |
 | `fastapi-parity` | `Depends(parse_bearer)` on the admin router and `/api/v2/export`; mounted `/internal` app inherits nothing | verifying dependencies plus mounted-app middleware | `python3 probe.py` over a path/actor matrix |
+| `exploit-ladder` | anonymous diagnostics route reaches an inert runner: command marker → session foothold → workload-local escalation → inert workload-root marker | diagnostics requires the operator identity; host input allowlisted; no session or support-tool path | `python3 probe.py` over the rung matrix |
+| `tenant-bypass` | `read_invoice` authenticates but never binds the record tenant, so a controlled principal reads a foreign-tenant invoice | record tenant bound to the authenticated principal | `python3 probe.py` over controlled principals/records |
 
 Probes use only the Python standard library, an inert non-executable marker, and synthetic
 principals/objects. Route inventory stays a source-review fixture by design: a test double is not
 evidence that a production transport works, so the fixture records the missing runtime baseline as a
-gap instead of simulating a server.
+gap instead of simulating a server. `exploit-ladder` starts no process, opens no socket and changes
+no privilege: every rung is an inert constant emitted by a pure function, and its root marker is the
+simulated workload's root, never the host's or the container's.
 
 `expected/truth.json` is a `p2o-bench-truth/1` document with, per variant:
 
@@ -112,10 +116,47 @@ replaces start flags, and `--no-export` suppresses the export flag (arm A never 
 arm record keeps the extension SHA-256, package hash, skill list and effective start flags, so an
 installed package build can be pinned without editing the repository.
 
+## P17 measurement protocol (ready, never run)
+
+Owner decision A6 (2026-10-27): no paid campaign ran in this phase. The two fixtures and this
+protocol ship ready; the P17 pass reports effectiveness **UNVERIFIED** and claims no result.
+`bench/lib/plan.mjs` exports the protocol (`MEASUREMENT_PROTOCOL`), its campaign arms
+(`MEASUREMENT_ARM_DEFINITIONS`, `MEASUREMENT_ARM_MAP`), fixture selection
+(`selectMeasurementFixtures`) and the plan builder (`buildMeasurementPlan`).
+
+- **Fixtures:** `exploit-ladder` and `tenant-bypass`, each `vulnerable`/`fixed`.
+- **Arms:** **A** = the current prompts/skills before the pass (the prepared baseline revision
+  `4321f2b`); **B** = the P17 working-tree prompts and skill library. The campaign map resolves
+  B to the harness's full working-tree arm `C`, and `buildMeasurementPlan` emits the
+  campaign-labelled A/B plan. The existing runner selects the same two surfaces as `--arm A,C`.
+- **Shape:** 2 fixtures × 2 variants × 2 arms × 3 repetitions = **24 runs**, shuffled once with
+  a recorded seed.
+- **Fixed per-run budgets:** wall 25 minutes, 60 assistant turns, 120 target commands. The
+  provider cost cap is set by the owner: `buildMeasurementPlan` refuses to invent one, and the
+  plan/summary receipts record the cap and the planned worst case.
+- **No implicit fallback:** provider, transport and protocol failures are separate outcomes and
+  are excluded from recall/precision aggregates; they are never scored as security negatives.
+- **Cleanup by run label:** only containers matching `pi-p2o.run=<runId>` invalidate a run (see
+  the teardown rules below); global snapshots stay informational.
+- **Status:** ready, owner-authorized only, not run. The D43 criteria (≥2 rungs reached on the
+  vulnerable ladder fixture, ≥1 accepted-current high/critical per vulnerable fixture, zero
+  false claims, attempt records present, no leftover containers) are read from receipts and the
+  ledger, never from the narrative.
+
+```sh
+# Plan only: 24 runs, no model invocation, no network.
+node scripts/benchmark-skills.mjs plan --fixture exploit-ladder --fixture tenant-bypass \
+  --arm A,C --reps 3 --seed random --max-minutes 25 --max-turns 60 --max-target-commands 120 \
+  --max-cost-usd <owner cap> --model <pinned model> --thinking <pinned level>
+
+# Then re-run the same command with --live only after explicit owner authorization.
+```
+
 ## Fixed budget, random order, repetitions
 
-- **Repetitions:** 3 per arm × fixture × variant by default (`--reps`); the default campaign is
-  **4 fixtures × 2 variants × 3 arms × 3 reps = 72 runs**.
+- **Repetitions:** 3 per arm × fixture × variant by default (`--reps`); with every discovered
+  fixture the default campaign is **6 fixtures × 2 variants × 3 arms × 3 reps = 108 runs** (the
+  pre-P17 suite was 4 × 2 × 3 × 3 = 72).
 - **Random order:** all runs are shuffled once with a seeded PRNG. The seed is printed, stored in the
   plan receipt and copied into every run receipt (`--seed 7`; `--seed random` picks one).
 - **Fixed per-run budgets:**
@@ -217,8 +258,15 @@ reproducibility aid, not ground truth. For every run it reports:
 - `proofAccuracy` — the claimed evidence stage (source trace, offline reproduction, live
   reproduction, browser execution) against the supported stage, including a check that an
   `offline_reproduction`/`live_reproduction` claim has a matching observed probe/command;
-- `gapHonesty` — required gaps actually stated;
+- `gapHonesty` — required gaps actually stated, including the `INFERRED_POLICY` limitation on
+  the severity-path fixture;
 - `evidenceReproducibility` and proof-level counts from candidate/proof references;
+- `rungsReached` / `rungsTotal` — ladder rungs whose inert markers appear in command/probe
+  evidence; a claim alone is not an executed rung;
+- `acceptedCurrentHighCritical` — expected high/critical findings that are claimed, backed by
+  same-run evidence and not overclaimed. The tenant-bypass fixture additionally records the
+  expected severity class, the `INFERRED_POLICY` provenance flag and whether the required
+  limitation gap was stated (`score.severityPath`);
 - `scope` — worker delegations, turns, target commands, `p2o_skill_read`/`p2o_skill_list` calls,
   `p2o_candidate` calls and rejected calls, evidence IDs and record-store counters;
 - `validity` — finish observed, "Container removal verified" present, no leaked containers, no

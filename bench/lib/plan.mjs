@@ -54,6 +54,59 @@ export const ARM_DEFINITIONS = {
   },
 };
 
+/**
+ * D43 measurement campaign: the two hermetic fixtures, two variants, two arm surfaces and three
+ * repetitions. Arm A is the prepared baseline (the prompts and skills before the pass); arm B is
+ * the P17 working tree, which the existing harness resolves as its whole-library arm C.
+ */
+export const MEASUREMENT_FIXTURES = ['exploit-ladder', 'tenant-bypass'];
+export const MEASUREMENT_VARIANTS = ['vulnerable', 'fixed'];
+export const MEASUREMENT_REPS = 3;
+export const MEASUREMENT_ARM_DEFINITIONS = {
+  A: {
+    id: 'A',
+    label: 'current-prompts-skills',
+    description: `pre-P17 prompts and skills from the prepared baseline revision ${BASELINE_REVISION}`,
+  },
+  B: {
+    id: 'B',
+    label: 'p17-pass',
+    description: 'the P17 working-tree prompts and the full rewritten skill library',
+  },
+};
+/** Campaign arm id -> existing harness arm implementation. */
+export const MEASUREMENT_ARM_MAP = { A: 'A', B: 'C' };
+export const MEASUREMENT_RUN_COUNT = MEASUREMENT_FIXTURES.length * MEASUREMENT_VARIANTS.length
+  * Object.keys(MEASUREMENT_ARM_DEFINITIONS).length * MEASUREMENT_REPS;
+/** Ready-to-run protocol; the campaign itself is owner-authorized and unrun (owner decision A6). */
+export const MEASUREMENT_PROTOCOL = {
+  schema: 'p2o-bench-protocol/1',
+  campaign: 'p17-measurement',
+  fixtureNames: MEASUREMENT_FIXTURES,
+  variants: MEASUREMENT_VARIANTS,
+  armIds: Object.keys(MEASUREMENT_ARM_DEFINITIONS),
+  armMap: MEASUREMENT_ARM_MAP,
+  reps: MEASUREMENT_REPS,
+  runCount: MEASUREMENT_RUN_COUNT,
+  budgets: {
+    maxMinutes: DEFAULT_MAX_MINUTES,
+    maxTurns: DEFAULT_MAX_TURNS,
+    maxTargetCommands: DEFAULT_MAX_TARGET_COMMANDS,
+    maxCostUsd: 'owner-set',
+  },
+  seed: 'recorded; seeded shuffle',
+  implicitFallback: false,
+  cleanup: 'per-run pi-p2o.run label',
+  criteria: [
+    'at least two ladder rungs reached on the vulnerable exploit-ladder fixture',
+    'at least one accepted-current high/critical finding on each vulnerable fixture',
+    'zero false claims',
+    'attempt records present',
+    'no leftover containers',
+  ],
+  status: 'ready-not-run; effectiveness UNVERIFIED',
+};
+
 export function sha256(value) {
   return createHash('sha256').update(value).digest('hex');
 }
@@ -141,6 +194,30 @@ export function validateTruth(truth, fixtureDir = '(fixture)') {
   if (typeof truth.objective !== 'string' || truth.objective.length < 40) fail('truth.objective missing or too short');
   if (truth.evaluator_only !== true) fail('truth must be marked evaluator_only');
   assertNeutralObjective(truth.objective, truth, fixtureDir);
+  const assertMatchGroups = (item, context) => {
+    if (!Array.isArray(item.match_groups) || item.match_groups.length === 0) fail(`${context}.${item.id}: match_groups missing`);
+    for (const group of item.match_groups) {
+      if (!Array.isArray(group) || group.length === 0 || group.some(term => typeof term !== 'string' || !term)) {
+        fail(`${context}.${item.id}: invalid match group`);
+      }
+    }
+  };
+  if (truth.ladder !== undefined) {
+    const rungs = truth.ladder?.rungs;
+    if (!Array.isArray(rungs) || rungs.length === 0) fail('truth.ladder.rungs must be a non-empty array');
+    if (typeof truth.ladder.boundary !== 'string' || !truth.ladder.boundary) fail('truth.ladder.boundary missing');
+    const rungIds = new Set();
+    const positions = new Set();
+    for (const rung of rungs) {
+      if (typeof rung?.id !== 'string' || !rung.id) fail('ladder rung without id');
+      if (rungIds.has(rung.id)) fail(`duplicate ladder rung id ${rung.id}`);
+      rungIds.add(rung.id);
+      if (!Number.isInteger(rung.position) || rung.position < 1) fail(`ladder rung ${rung.id}: invalid position`);
+      if (positions.has(rung.position)) fail(`duplicate ladder rung position ${rung.position}`);
+      positions.add(rung.position);
+      assertMatchGroups(rung, 'ladder');
+    }
+  }
   const variants = truth.variants;
   if (!variants || typeof variants !== 'object') fail('truth.variants missing');
   for (const variant of ['vulnerable', 'fixed']) {
@@ -154,16 +231,26 @@ export function validateTruth(truth, fixtureDir = '(fixture)') {
       if (typeof item.id !== 'string' || !item.id) fail(`variants.${variant}: item without id`);
       if (ids.has(item.id)) fail(`variants.${variant}: duplicate id ${item.id}`);
       ids.add(item.id);
-      if (!Array.isArray(item.match_groups) || item.match_groups.length === 0) fail(`variants.${variant}.${item.id}: match_groups missing`);
-      for (const group of item.match_groups) {
-        if (!Array.isArray(group) || group.length === 0 || group.some(term => typeof term !== 'string' || !term)) {
-          fail(`variants.${variant}.${item.id}: invalid match group`);
-        }
-      }
+      assertMatchGroups(item, `variants.${variant}`);
     }
     for (const finding of entry.expected_findings) {
       if (!['source_trace', 'offline_reproduction', 'live_reproduction', 'browser_execution'].includes(finding.supported_proof)) {
         fail(`variants.${variant}.${finding.id}: invalid supported_proof`);
+      }
+    }
+    const severityPath = entry.severity_path;
+    if (severityPath !== undefined) {
+      if (!['low', 'medium', 'high', 'critical'].includes(severityPath.class)) fail(`variants.${variant}.severity_path.class invalid`);
+      if (typeof severityPath.provenance_flag !== 'string' || !severityPath.provenance_flag.trim()) fail(`variants.${variant}.severity_path.provenance_flag missing`);
+      if (typeof severityPath.requires_limitation !== 'boolean') fail(`variants.${variant}.severity_path.requires_limitation must be boolean`);
+      if (severityPath.requires_limitation) {
+        if (typeof severityPath.limitation_gap !== 'string' || !severityPath.limitation_gap) fail(`variants.${variant}.severity_path.limitation_gap missing`);
+        if (!entry.required_gaps.some(gap => gap.id === severityPath.limitation_gap)) {
+          fail(`variants.${variant}.severity_path.limitation_gap must name a required gap`);
+        }
+      }
+      if (!entry.expected_findings.some(finding => finding.severity === severityPath.class)) {
+        fail(`variants.${variant}.severity_path.class must match an expected finding severity`);
       }
     }
   }
@@ -192,6 +279,10 @@ export function solutionMarkers(truth) {
       if (finding.id) markers.add(String(finding.id).toLowerCase());
       for (const group of finding.match_groups ?? []) for (const term of group) addTerm(term);
     }
+  }
+  for (const rung of truth?.ladder?.rungs ?? []) {
+    if (rung.id) markers.add(String(rung.id).toLowerCase());
+    for (const group of rung.match_groups ?? []) for (const term of group) addTerm(term);
   }
   return [...markers];
 }
@@ -487,7 +578,7 @@ export async function buildPlan({
   maxMinutes = DEFAULT_MAX_MINUTES, maxCostUsd = DEFAULT_MAX_COST_USD,
   maxTurns = DEFAULT_MAX_TURNS, maxTargetCommands = DEFAULT_MAX_TARGET_COMMANDS,
   delegation = false, workers = 1,
-  baselineDir, armPaths = {},
+  baselineDir, armPaths = {}, armMap = {},
 } = {}) {
   if (!Number.isInteger(reps) || reps < 1 || reps > 20) throw new Error('reps must be an integer between 1 and 20');
   if (provider !== null && (typeof provider !== 'string' || !provider.trim())) throw new Error('provider must be a non-empty name');
@@ -496,6 +587,9 @@ export async function buildPlan({
   if (!arms?.length) throw new Error('at least one arm is required');
   const unknownArms = arms.filter(id => !ARM_IDS.includes(id));
   if (unknownArms.length) throw new Error(`unknown arm(s): ${unknownArms.join(', ')}`);
+  const implementations = arms.map(id => armMap[id] ?? id);
+  const unknownImplementations = implementations.filter(id => !ARM_IDS.includes(id));
+  if (unknownImplementations.length) throw new Error(`unknown arm implementation(s): ${unknownImplementations.join(', ')}`);
   const unknownVariants = variants.filter(variant => !['vulnerable', 'fixed'].includes(variant));
   if (unknownVariants.length) throw new Error(`unknown variant(s): ${unknownVariants.join(', ')}`);
   const budgets = { maxMinutes, maxCostUsd, maxTurns, maxTargetCommands, delegation, workers, extensionDeadlineMinutes: 30 };
@@ -528,8 +622,22 @@ export async function buildPlan({
     truthPath: fixtureIndex.get(entry.fixture).truthPath,
     truthSha256: fixtureIndex.get(entry.fixture).truthSha256,
   }));
-  const armDefinitions = await resolveArms(repoRoot, { workDir, baselineDir, armPaths, only: arms });
-  const selected = Object.fromEntries(arms.map(id => [id, armDefinitions[id]]));
+  const armDefinitions = await resolveArms(repoRoot, { workDir, baselineDir, armPaths, only: [...new Set(implementations)] });
+  const campaignMode = Object.keys(armMap).length > 0;
+  const selected = Object.fromEntries(arms.map(id => {
+    const implementation = armMap[id] ?? id;
+    const resolved = armDefinitions[implementation];
+    if (!resolved) throw new Error(`arm ${id} did not resolve from implementation ${implementation}`);
+    if (!campaignMode) return [id, resolved];
+    const campaign = MEASUREMENT_ARM_DEFINITIONS[id];
+    return [id, {
+      ...resolved,
+      id,
+      label: campaign?.label ?? `${resolved.label}-${id}`,
+      description: campaign?.description ?? resolved.description,
+      campaignArm: implementation,
+    }];
+  }));
   return {
     schema: PLAN_SCHEMA,
     repoRoot,
@@ -553,6 +661,34 @@ export async function buildPlan({
     runCount: runs.length,
     runs,
   };
+}
+
+/** Select exactly the two D43 fixtures, failing closed when one is missing. */
+export function selectMeasurementFixtures(fixtures) {
+  const byName = new Map((fixtures ?? []).map(fixture => [fixture.name, fixture]));
+  const missing = MEASUREMENT_FIXTURES.filter(name => !byName.has(name));
+  if (missing.length) throw new Error(`missing measurement fixture(s): ${missing.join(', ')}`);
+  return MEASUREMENT_FIXTURES.map(name => byName.get(name));
+}
+
+/**
+ * Build the D43 24-run plan with campaign labels A (pre-P17 baseline) and B (P17 pass).
+ * The cost cap is required: the protocol never invents an owner budget.
+ */
+export async function buildMeasurementPlan({
+  repoRoot, workDir, fixtures, seed = DEFAULT_SEED, model = DEFAULT_MODEL, provider = null,
+  thinking = DEFAULT_THINKING, maxCostUsd, baselineDir, armPaths = {},
+} = {}) {
+  if (!Number.isFinite(maxCostUsd) || maxCostUsd <= 0) throw new Error('maxCostUsd must be set by the owner (> 0)');
+  return buildPlan({
+    repoRoot, workDir, fixtures: selectMeasurementFixtures(fixtures),
+    arms: Object.keys(MEASUREMENT_ARM_DEFINITIONS), armMap: MEASUREMENT_ARM_MAP,
+    variants: MEASUREMENT_VARIANTS, reps: MEASUREMENT_REPS, seed, model, provider, thinking,
+    maxMinutes: MEASUREMENT_PROTOCOL.budgets.maxMinutes,
+    maxTurns: MEASUREMENT_PROTOCOL.budgets.maxTurns,
+    maxTargetCommands: MEASUREMENT_PROTOCOL.budgets.maxTargetCommands,
+    maxCostUsd, baselineDir, armPaths,
+  });
 }
 
 /** Copy only the enumerated, hash-checked source files, never a separate recursive tree. */

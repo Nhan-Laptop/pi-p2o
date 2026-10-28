@@ -36,6 +36,8 @@ export const SCORER_LIMITATIONS = [
   'Candidate closure is only as good as the runtime-validated records; rejected calls are excluded and the durable export wins over tool calls.',
   'Proof-level detection reads evidence-stage words near a claim; it does not verify that the cited command ran or what it printed.',
   'No independent validation of probe output or of worker claims is performed.',
+  'Ladder rungs are counted only when their markers appear in command/probe evidence; a rung that ran without a printed marker is missed.',
+  'Accepted-current high/critical counts a claimed finding whose same-run evidence and proof stage agree; it is not a case-rating review.',
 ];
 
 export function redactSecrets(value) {
@@ -382,7 +384,9 @@ export function scoreRun({ truth, variant, extraction, checks = {}, exportData =
       PROOF_RANK[proof] > PROOF_RANK[finding.supported_proof] ||
       (PROOF_RANK[finding.supported_proof] >= PROOF_RANK.offline_reproduction && !supported.matched)
     );
-    return { id: finding.id, severity: finding.severity, supported_proof: finding.supported_proof, claimed: claimed.matched, supported: supported.matched, claimed_proof: proof, overclaim };
+    const acceptedCurrent = claimed.matched && supported.matched && !overclaim
+      && ['high', 'critical'].includes(String(finding.severity).toLowerCase());
+    return { id: finding.id, severity: finding.severity, supported_proof: finding.supported_proof, claimed: claimed.matched, supported: supported.matched, claimed_proof: proof, overclaim, accepted_current: acceptedCurrent };
   });
 
   const confirmedCandidates = candidates.filter(candidate => candidate.closure === 'confirmed');
@@ -410,6 +414,22 @@ export function scoreRun({ truth, variant, extraction, checks = {}, exportData =
     return { id: item.id, mentioned: mention.matched, false_positive: falsePositive };
   });
   const gaps = entry.required_gaps.map(item => ({ id: item.id, reported: matchAnywhere(claimText, item.match_groups).matched }));
+  // Ladder rungs are reached only through observed evidence; a claim alone is not an executed rung.
+  const rungs = (truth.ladder?.rungs ?? []).map(rung => ({
+    id: rung.id,
+    position: rung.position,
+    reached: matchAnywhere(evidenceText, rung.match_groups).matched,
+    claimed: matchAnywhere(claimText, rung.match_groups).matched,
+  }));
+  const severityPath = entry.severity_path ? {
+    class: entry.severity_path.class,
+    provenance_flag: entry.severity_path.provenance_flag,
+    limitation_gap: entry.severity_path.limitation_gap ?? null,
+    limitation_stated: entry.severity_path.requires_limitation
+      ? Boolean(gaps.find(gap => gap.id === entry.severity_path.limitation_gap)?.reported)
+      : true,
+  } : null;
+  const ladder = truth.ladder ? { boundary: truth.ladder.boundary ?? null, rungs } : null;
 
   const truePositives = findings.filter(finding => finding.claimed).length;
   const falsePositives = forbidden.filter(item => item.matched).length + clean.filter(item => item.false_positive).length;
@@ -456,8 +476,11 @@ export function scoreRun({ truth, variant, extraction, checks = {}, exportData =
       candidatesUsed: candidates.length,
       evidenceRefs: totalRefs,
       evidenceRefsLinked: linkedRefs,
+      rungsReached: rungs.filter(rung => rung.reached).length,
+      rungsTotal: rungs.length,
+      acceptedCurrentHighCritical: findings.filter(finding => finding.accepted_current).length,
     },
-    findings, forbidden, clean, gaps,
+    findings, forbidden, clean, gaps, ladder, severityPath,
     validity: {
       runValid, finishSeen, cleanupVerified, leakedContainers,
       providerFailure: Boolean(checks.providerFailure), budgetExceeded: Boolean(checks.budgetExceeded),
@@ -493,7 +516,7 @@ export function summarizeScores(scores) {
       arm: key, runs: 0, valid: 0, outcomes: {},
       recall: [], precision: [], proofAccuracy: [], gapHonesty: [], evidenceReproducibility: [],
       falsePositives: [], overclaims: [], wallMs: [], costUsd: [], costAvailable: 0,
-      targetCommands: [], turns: [],
+      targetCommands: [], turns: [], rungsReached: [], rungsTotal: [], acceptedCurrentHighCritical: [],
     };
     const bucket = byArm[key];
     bucket.runs += 1;
@@ -504,6 +527,9 @@ export function summarizeScores(scores) {
     }
     bucket.falsePositives.push(score.counts.falsePositives);
     bucket.overclaims.push(score.counts.overclaims);
+    bucket.rungsReached.push(score.counts?.rungsReached ?? 0);
+    bucket.rungsTotal.push(score.counts?.rungsTotal ?? 0);
+    bucket.acceptedCurrentHighCritical.push(score.counts?.acceptedCurrentHighCritical ?? 0);
     bucket.targetCommands.push(score.scope?.targetCommands ?? 0);
     bucket.turns.push(score.scope?.turns ?? 0);
     if (Number.isFinite(score.wallMs)) bucket.wallMs.push(score.wallMs);
@@ -522,6 +548,9 @@ export function summarizeScores(scores) {
     evidenceReproducibility: distribution(bucket.evidenceReproducibility),
     falsePositives: distribution(bucket.falsePositives),
     overclaims: distribution(bucket.overclaims),
+    rungsReached: distribution(bucket.rungsReached),
+    rungsTotal: distribution(bucket.rungsTotal),
+    acceptedCurrentHighCritical: distribution(bucket.acceptedCurrentHighCritical),
     targetCommands: distribution(bucket.targetCommands),
     turns: distribution(bucket.turns),
     wallMs: distribution(bucket.wallMs),
