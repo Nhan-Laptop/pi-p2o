@@ -1,29 +1,21 @@
 import { expect, it } from 'vitest';
-import { execFile } from 'node:child_process';
-import { promisify } from 'node:util';
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { spawn } from 'node:child_process';
 import { setTimeout as delay } from 'node:timers/promises';
 
-const run = promisify(execFile);
-
 /**
- * The real extension against real Docker: the lead's host tools must be blocked, its sandbox command must
- * run as root inside the pinned image with Docker's default capability set, and `p2o_finish` must leave no
- * container of this run behind.
+ * A1/D1: the real extension under a real Pi host must activate only the planner loadout. The fixture provider asserts the
+ * declared tool set on every request and asks for a host tool the planner never holds; the sandbox factory is inert, so this
+ * claim needs no Docker and runs in the default suite. The separate real-container claim is opt-in in artifacts-docker.test.ts.
  */
-it.skipIf(process.env.P2O_TEST_DOCKER !== '1')('real Docker + real extension: host tools blocked, sandbox evidence recorded, containers verified gone', async () => {
-  const root = await mkdtemp(join(tmpdir(), 'p2o-docker-owner-'));
+it('real Pi + real extension: the planner loadout is enforced, host tools are refused and no target operation runs', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'p2o-planner-loadout-'));
   const repo = resolve(import.meta.dirname, '../..');
   await mkdir(join(root, 'repo'));
   await writeFile(join(root, 'repo', 'code.txt'), 'authorized docker source');
   const controlRoot = join(root, 'control');
-  const containers = async (runId: string): Promise<string[]> => {
-    const { stdout } = await run('docker', ['ps', '-a', '--filter', `label=pi-p2o.run=${runId}`, '--format', '{{.Names}}']);
-    return stdout.split('\n').map(name => name.trim()).filter(Boolean).sort();
-  };
   const child = spawn(join(repo, 'node_modules/.bin/pi'), ['--no-extensions', '-e', join(repo, 'tests/minimal/fixtures/owner-docker.ts'),
     '--no-skills', '--no-prompt-templates', '--no-themes', '--no-context-files', '--offline', '--no-session', '--no-approve',
     '--mode', 'rpc', '--provider', 'p2o-docker-inert', '--model', 'docker-agent', '--thinking', 'off'],
@@ -47,10 +39,10 @@ it.skipIf(process.env.P2O_TEST_DOCKER !== '1')('real Docker + real extension: ho
     }
   });
   const request = async (type: string, fields = {}): Promise<any> => {
-    const id = `docker-${++sequence}`; let timer: ReturnType<typeof setTimeout> | undefined;
+    const id = `loadout-${++sequence}`; let timer: ReturnType<typeof setTimeout> | undefined;
     try {
       return await Promise.race([new Promise<any>((resolve, reject) => { pending.set(id, { resolve, reject }); child.stdin.write(`${JSON.stringify({ id, type, ...fields })}\n`); }),
-        new Promise((_, reject) => { timer = setTimeout(() => reject(new Error(`RPC timeout ${type}: ${stderr}`)), 180_000); })]);
+        new Promise((_, reject) => { timer = setTimeout(() => reject(new Error(`RPC timeout ${type}: ${stderr}`)), 120_000); })]);
     } finally { clearTimeout(timer); pending.delete(id); }
   };
   const text = (message: any) => typeof message.content === 'string' ? message.content : (message.content ?? []).filter((block: any) => block.type === 'text').map((block: any) => block.text).join('\n');
@@ -60,39 +52,29 @@ it.skipIf(process.env.P2O_TEST_DOCKER !== '1')('real Docker + real extension: ho
     let messages: any[] = [];
     for (let attempt = 0; attempt < 300; attempt += 1) {
       messages = (await request('get_messages')).data?.messages ?? [];
-      if (messages.some((message: any) => text(message).includes('DOCKER_OWNER_FINAL_REPORT'))) break;
+      if (messages.some((message: any) => text(message).includes('PLANNER_LOADOUT_FINAL_REPORT'))) break;
       await delay(200);
     }
-    expect(messages.some((message: any) => text(message).includes('DOCKER_OWNER_FINAL_REPORT')), JSON.stringify({ stderr, tail: messages.slice(-4).map(text) })).toBe(true);
+    expect(messages.some((message: any) => text(message).includes('PLANNER_LOADOUT_FINAL_REPORT')), JSON.stringify({ stderr, tail: messages.slice(-4).map(text) })).toBe(true);
     const results = messages.filter((message: any) => message.role === 'toolResult');
-    // The model tried host bash first: the gate blocked it and no host command ran.
-    // The fixture provider asserts on every request that the declared tool set is sandbox-only (it throws
-    // otherwise), so reaching this point already proves host tools were withdrawn. The refused bash call adds
-    // that even a model-issued host call executed nothing.
+    // The fixture provider asserts on every request that Pi declares exactly the planner set, so reaching this point
+    // already proves the loadout; the refused host call proves a model-issued host tool executed nothing.
     const bash = results.find((message: any) => message.toolName === 'bash');
     expect(text(bash)).toMatch(/Tool bash not found|permits only/);
     expect(text(bash)).not.toContain('HOST_BYPASS');
-    // The sandbox command carries real container evidence: root uid, the mounted source, Docker's default capability set.
-    const shell = results.find((message: any) => message.toolName === 'p2o_shell');
-    expect(text(shell)).toMatch(/^0$/m);
-    expect(text(shell)).toContain('authorized docker source');
-    const capEff = BigInt(`0x${/CapEff:\s*([0-9a-f]+)/i.exec(text(shell))![1]}`);
-    expect([...capEff.toString(2)].filter(bit => bit === '1')).toHaveLength(14);
-    expect(capEff & (1n << 13n)).not.toBe(0n); // NET_RAW: raw sockets work.
-    expect(text(shell)).toContain('NO_DOCKER_SOCKET');
+    // Only the two turns the fixture emits: no target, lab or session tool ever existed in this session.
+    expect(results.map((message: any) => message.toolName)).toEqual(['bash', 'p2o_finish']);
     const finish = results.find((message: any) => message.toolName === 'p2o_finish');
     expect(text(finish)).toContain('Container removal verified');
+    expect(text(finish)).toContain('STATE:');
     expect(dialogs).toEqual(['Start authorized assessment?']);
-    // Verify only this assessment's labels, not concurrently created unrelated test containers.
+    // The runner prompt names no tool the planner does not hold.
     const scope = (messages.find((message: any) => message.role === 'system' && message.sections?.p2o_assessment)?.sections.p2o_assessment ?? '').replace(/^<p2o_assessment>\s*|\s*<\/p2o_assessment>$/g, '');
-    const runId = /Run (run-[a-z0-9-]+)\./.exec(scope ?? '')?.[1];
     expect(scope).not.toMatch(/\bp2o_[a-z_]+\b/);
-    expect(runId).toBeDefined();
-    expect(await containers(runId!)).toEqual([]);
   } finally {
     child.stdin.end();
     const exited = await Promise.race([closed.then(() => true), delay(10_000).then(() => false)]);
     if (!exited) { child.kill('SIGTERM'); await closed; }
     await rm(root, { recursive: true, force: true });
   }
-}, 300_000);
+}, 180_000);

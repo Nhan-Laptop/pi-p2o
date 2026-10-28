@@ -161,7 +161,8 @@ pi --no-extensions -e "$PWD"
 ```
 
 The same inert real-Pi/Docker tests can target an installed copy instead of the source tree (no model, no external target):
-`P2O_TEST_DOCKER=1 P2O_TEST_INSTALLED_EXTENSION=<installed-checkout>/extensions/p2o/index.ts npx vitest run tests/minimal/native.test.ts tests/minimal/planner-native.test.ts tests/minimal/docker-extension.test.ts`.
+`P2O_TEST_DOCKER=1 P2O_TEST_INSTALLED_EXTENSION=<installed-checkout>/extensions/p2o/index.ts npx vitest run tests/minimal/native.test.ts tests/minimal/planner-native.test.ts tests/minimal/docker-extension.test.ts`
+(`docker-extension.test.ts` is inert real-Pi loadout proof and needs no Docker; the Docker cases in that batch are the opt-in ones above).
 A passing run proves the installed mechanics only, not assessment quality. [Benchmarks](bench/README.md) are opt-in real-model
 runs, separate from the hermetic suite; passing unit tests implies no effectiveness claim. `my_references/` is not shipped or
 modified, except `my_references/wstg/` (the unmodified OWASP WSTG snapshot, pinned and hashed in

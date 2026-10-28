@@ -1,5 +1,7 @@
 import { expect, it } from 'vitest';
 import { createServer } from 'node:http';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -11,6 +13,8 @@ import { registerP2O } from '../../extensions/p2o/index.js';
 import { createContext, createFakePi, createSimpleHerdr, EXTENSION_PATH } from './helpers/fake-pi.js';
 import { BrokerClient } from '../../src/broker.js';
 import { mkdir, readFile, readdir, writeFile } from 'node:fs/promises';
+
+const docker = async (...args: string[]) => (await promisify(execFile)('docker', args)).stdout.split('\n').map(line => line.trim()).filter(Boolean);
 
 it.skipIf(process.env.P2O_TEST_DOCKER !== '1')('real Docker: bounded shell/curl capture before display truncation, immutable redaction/ranges, scope and cleanup',async()=>{
   const root=await mkdtemp(join(tmpdir(),'p2o-artifact-docker-')),runId=`run-${randomUUID()}`;
@@ -35,7 +39,11 @@ it.skipIf(process.env.P2O_TEST_DOCKER !== '1')('real Docker: bounded shell/curl 
     const body=http.parts().find(p=>p.stream==='stdout')!,h=store.ingestArtifact('owner',body.input,{totalBytes:body.totalBytes,captureOutcome:'returned'});
     expect(store.artifact(h.id).text).not.toContain('sensitive-capture-cookie');expect(store.artifact(h.id,119000).text).toContain('HTTP-TAIL');
     const reused=await sandbox.http({url:'/session',method:'GET',followRedirects:false,maxRedirects:0});expect(reused.stdout).toContain('SESSION-PRESERVED');
-    await expect(sandbox.http({url:`http://127.0.0.1:${(server.address() as {port:number}).port}/outside`,method:'GET',followRedirects:false,maxRedirects:0})).rejects.toThrow('Out of scope');expect(requests).toEqual(['/large','/session']);
+    // Part XI (056606f): the target is a starting label, not a network boundary, so an absolute loopback URL is attempted
+    // rather than refused. Container loopback is not host loopback: it cannot reach this test server, so no /outside is
+    // recorded and the result is a transport failure, never host access.
+    const outside=await sandbox.http({url:`http://127.0.0.1:${(server.address() as {port:number}).port}/outside`,method:'GET',followRedirects:false,maxRedirects:0});
+    expect(outside.code).not.toBe(0);expect(outside.redirectStopped).toContain('Transport failed');expect(requests).toEqual(['/large','/session']);
     expect(store.checkpoint('captured byte boundary').dataStatus).toBe('complete');
     await sandbox.stop();await sandbox.assertNoRunContainers();
   } finally {
@@ -86,3 +94,51 @@ it.skipIf(process.env.P2O_TEST_DOCKER !== '1')('real isolated Docker + authentic
     await call('p2o_workers',{action:'stop',workerId:actor.workerId,reason:'artifact fixture complete'});await expect(client.request('capture',{path:'out.txt'})).rejects.toThrow('stopped');expect(sandboxes[0].isStopped).toBe(false);await command('stop');for(const sandbox of sandboxes)await sandbox.assertNoRunContainers();
   }finally{client?.close();await command('stop');await command('close');await rm(root,{recursive:true,force:true});}
 },120000);
+
+it.skipIf(process.env.P2O_TEST_DOCKER !== '1')('real Docker owner tools through the real extension: root uid, authorized source, Docker default capability set and verified removal',async()=>{
+  const root=await mkdtemp(join(tmpdir(),'p2o-owner-tools-docker-'));await mkdir(join(root,'source'));await writeFile(join(root,'source','code.txt'),'authorized docker source');
+  const pi=createFakePi(),ctx=createContext({cwd:root}),sandboxes:Sandbox[]=[];
+  registerP2O(pi.pi,{extensionPath:EXTENSION_PATH,controlRoot:join(root,'control'),settingsPath:join(root,'isolated-settings.json'),createSandbox:(target,profile)=>{const s=new Sandbox(target,undefined,undefined,profile);sandboxes.push(s);return s;}});
+  const command=(args:string)=>pi.commands.get('p2o').handler(args,ctx.ctx),call=(name:string,params:any)=>pi.tools.get(name).execute(randomUUID(),params,undefined,undefined,ctx.ctx);
+  try{
+    await command('--target ./source');expect(sandboxes).toHaveLength(1);
+    const shell=await call('p2o_shell',{command:'id -u; cat /target/code.txt; grep CapEff /proc/self/status; test ! -e /var/run/docker.sock && echo NO_DOCKER_SOCKET'});
+    expect(shell.details.exitCode).toBe(0);expect(shell.content[0].text).toMatch(/^0$/m);expect(shell.content[0].text).toContain('authorized docker source');
+    const capEff=BigInt(`0x${/CapEff:\s*([0-9a-f]+)/i.exec(shell.content[0].text)![1]}`);
+    expect([...capEff.toString(2)].filter(bit=>bit==='1')).toHaveLength(14); // Docker's default set, SYS_ADMIN clear
+    expect(capEff&(1n<<13n)).not.toBe(0n); // NET_RAW: raw sockets work in the container.
+    expect(shell.content[0].text).toContain('NO_DOCKER_SOCKET');
+    const runId=(await readdir(join(root,'.p2o-state')))[0];
+    await command('stop');for(const sandbox of sandboxes)await sandbox.assertNoRunContainers();expect(await readdir(join(root,'control'))).toEqual([]);
+    expect(await docker('container','ls','--all','--filter',`label=pi-p2o.run=${runId}`,'--format','{{.Names}}')).toEqual([]);
+  }finally{await command('stop');await command('close');await rm(root,{recursive:true,force:true});}
+},120000);
+
+it.skipIf(process.env.P2O_TEST_DOCKER !== '1')('real Docker session executor: upload materializes in the session workdir and download retains an artifact bound to that session',async()=>{
+  const root=await mkdtemp(join(tmpdir(),'p2o-session-transfer-docker-'));await mkdir(join(root,'source'));await writeFile(join(root,'source','code.txt'),'authorized docker source');
+  const content='session transfer fixture\n';
+  const pi=createFakePi(),ctx=createContext({cwd:root}),sandboxes:Sandbox[]=[];
+  registerP2O(pi.pi,{extensionPath:EXTENSION_PATH,controlRoot:join(root,'control'),settingsPath:join(root,'isolated-settings.json'),createSandbox:(target,profile)=>{const s=new Sandbox(target,undefined,undefined,profile);sandboxes.push(s);return s;}});
+  const command=(args:string)=>pi.commands.get('p2o').handler(args,ctx.ctx),call=(name:string,params:any)=>pi.tools.get(name).execute(randomUUID(),params,undefined,undefined,ctx.ctx);
+  try{
+    await command('--target ./source --executors session');expect(sandboxes).toHaveLength(1);
+    const session=(await call('p2o_session',{action:'open',purpose:'docker session transfer fixture'})).details.session as string;
+    expect(session).toMatch(/^session-[a-f0-9]{8}$/);expect(sandboxes).toHaveLength(2);expect(sandboxes[1].session).toBe(session);
+    const uploaded=await call('p2o_session',{action:'upload',session,path:'note.txt',content});
+    expect(uploaded.details).toMatchObject({path:'note.txt',root:`/work/sessions/${session}`,bytes:Buffer.byteLength(content)});
+    const downloaded=await call('p2o_session',{action:'download',session,path:'note.txt'});
+    expect(downloaded.details).toMatchObject({exitCode:0});
+    expect(downloaded.details.capture.source).toMatchObject({root:`/work/sessions/${session}`,path:'note.txt',stable:true});
+    expect(downloaded.content[0].text).toContain('session transfer fixture');
+    const id=downloaded.details.capture.artifacts[0].id,runId=(await readdir(join(root,'.p2o-state')))[0],store=AssessmentStore.open(join(root,'.p2o-state'),runId);
+    try{const retained=store.artifact(id);
+      expect(retained.manifest).toMatchObject({producer:'owner',kind:'scratch-file',sessionId:session,captureSource:{root:`/work/sessions/${session}`}});
+      expect(retained.text).toContain('session transfer fixture');
+      expect(store.artifactBytes(id).bytes.toString('utf8')).toContain('session transfer fixture');
+    }finally{store.close();}
+    // The session container is the real executor: a command named with the session runs there as root.
+    const inside=await call('p2o_shell',{session,command:'id -u; cat note.txt'});expect(inside.details.exitCode).toBe(0);expect(inside.content[0].text).toMatch(/^0$/m);expect(inside.content[0].text).toContain('session transfer fixture');
+    await command('stop');for(const sandbox of sandboxes)await sandbox.assertNoRunContainers();expect(await readdir(join(root,'control'))).toEqual([]);
+    expect(await docker('container','ls','--all','--filter',`label=pi-p2o.run=${runId}`,'--format','{{.Names}}')).toEqual([]);
+  }finally{await command('stop');await command('close');await rm(root,{recursive:true,force:true});}
+},180000);

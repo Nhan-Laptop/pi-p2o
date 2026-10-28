@@ -1,7 +1,13 @@
-// Real extension + real Docker, inert model. Delegation is off (no Herdr) so no pane is opened.
+// Real Pi host + real extension, inert sandbox and inert model: proves the planner loadout without Docker.
+// The sandbox factory is inert so this fixture runs in the default suite; the real-container claim lives in the
+// opt-in Docker tests (tests/minimal/artifacts-docker.test.ts), where the fake-Pi harness calls owner target tools.
 import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
 import { createAssistantMessageEventStream, getCurrentSystemPrompt, getCurrentTools, type AssistantMessage } from '@earendil-works/pi-ai';
 import { registerP2O } from '../../../extensions/p2o/index.js';
+import type { SandboxOptions } from '../../../src/sandbox.js';
+import type { Target } from '../../../src/target.js';
+import { PLANNER_TOOLS } from '../../../src/tool-policy.js';
+import { InertSandbox } from '../helpers/inert-sandbox.js';
 
 export default async function (pi: ExtensionAPI) {
   const installed = process.env.P2O_TEST_INSTALLED_EXTENSION;
@@ -12,17 +18,19 @@ export default async function (pi: ExtensionAPI) {
       cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }, contextWindow: 128000, maxTokens: 4096 }],
     streamSimple(model, context) {
       const system = getCurrentSystemPrompt(context.messages);
-      const tools = getCurrentTools(context.messages).map(tool => tool.name);
+      const tools = getCurrentTools(context.messages).map(tool => tool.name).sort();
       if (!system.includes('P2O ASSESSMENT') || !system.includes('RECON → INVESTIGATION')) throw new Error('lead scope/recon section missing');
       if (tools.includes('p2o_capabilities') || system.includes('CAPABILITIES')) throw new Error('removed capability interface still exposed');
-      if (tools.includes('bash') || tools.includes('read')) throw new Error(`host tools were declared: ${tools.join(',')}`);
+      // A1/D1: Pi enforces the role by activating only the planner set. Any host tool or target/lab tool here is a leak.
+      const expected = [...PLANNER_TOOLS].sort();
+      if (tools.length !== expected.length || tools.some((name, index) => name !== expected[index])) throw new Error(`declared tools are not the planner loadout: ${tools.join(',')}`);
       const results = context.messages.filter((message: any) => message.role === 'toolResult');
       const last: any = results.at(-1);
       let content: AssistantMessage['content'];
+      // Turn 1 asks for a host tool the planner does not hold: Pi must answer with its unknown-tool result, and nothing runs.
       if (!last) content = [{ type: 'toolCall', id: 'host-1', name: 'bash', arguments: { command: 'echo HOST_BYPASS' } }];
-      else if (last.toolName === 'bash') content = [{ type: 'toolCall', id: 'shell-1', name: 'p2o_shell', arguments: { command: 'id -u; cat /target/code.txt; grep CapEff /proc/self/status; test ! -e /var/run/docker.sock && echo NO_DOCKER_SOCKET' } }];
-      else if (last.toolName === 'p2o_shell') content = [{ type: 'toolCall', id: 'finish-1', name: 'p2o_finish', arguments: {} }];
-      else content = [{ type: 'text', text: 'DOCKER_OWNER_FINAL_REPORT: sandbox evidence recorded from the real container.' }];
+      else if (last.toolName === 'bash') content = [{ type: 'toolCall', id: 'finish-1', name: 'p2o_finish', arguments: {} }];
+      else content = [{ type: 'text', text: 'PLANNER_LOADOUT_FINAL_REPORT: the host tool was refused by the loadout and no target operation ran.' }];
       const message: AssistantMessage = { role: 'assistant', api: 'openai-completions', provider: model.provider, model: model.id,
         content, timestamp: Date.now(), stopReason: content.some(block => block.type === 'toolCall') ? 'toolUse' : 'stop',
         usage: { input: 12, output: 5, cacheRead: 0, cacheWrite: 0, totalTokens: 17, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } } };
@@ -47,5 +55,7 @@ export default async function (pi: ExtensionAPI) {
   register(pi, {
     ...(installed ? { extensionPath: installed } : {}),
     ...(process.env.P2O_TEST_CONTROL_ROOT ? { controlRoot: process.env.P2O_TEST_CONTROL_ROOT } : {}),
+    // No Docker: the loadout claim is about declared tools, and the inert sandbox keeps the run startable offline.
+    createSandbox: (target: Target, profile: SandboxOptions) => new InertSandbox(target, undefined, undefined, profile),
   });
 }
