@@ -20,7 +20,7 @@ same SQLite store as everything else; there is no graph database and no second w
 - **Who writes what:** the planner records hypotheses, settled hypotheses and observed relations; a worker records assets, facts,
   anchors, open hypotheses and `basis=inferred` relations (host-stamped `unverified:true` with its producer role — that row is
   review debt the owner settles by superseding with supported/refuted/inconclusive); the host `extractor` producer writes only
-  what a bounded parse of a retained artifact yields (see **Extraction** below); the reporter reads only. A worker brief carries a bounded slice (matching asset, latest facts, open leads/gaps, ready chain steps) labelled
+  what a bounded parse of a retained artifact yields (see **Extraction** below); the reporter reads only. An owner retest is a note record (`data.caseRetest`), and the project knowledge database is written only by an owner-requested export. A worker brief carries a bounded slice (matching asset, latest facts, open leads/gaps, ready chain steps) labelled
   background, never a finding. The host counts each worker's write-back and shows `NO_GRAPH_WRITE` in `p2o_workers`, the
   report and the preflight as an advisory — not a review or finish condition.
 - `p2o_graph {action:"chain"}` is a read-only join over claims: `ready` (an open step whose `needs` are all gained by a
@@ -55,6 +55,28 @@ same SQLite store as everything else; there is no graph database and no second w
   `exploitability {kev, epss, percentile, retrievedAt, …}` joined by CVE id from CISA KEV and FIRST EPSS with cached
   provenance; when a feed cannot be read the value is `unknown`, never `false` or `0`. `## LEADS` prints both and orders
   KEV-listed first, then EPSS, while the published severity is never re-rated.
+- **Reachability (R3):** every relation kind carries one role — traversable, conditional (traversed but marked) or
+  informational (`variant_of`/`anchors`/`derived_from`, never walked) — exposed as `traversable`/`conditional` on read rows
+  and pinned by test. `p2o_graph {action:"path", fromId, toId?, toKind?, effect?, maxDepth≤6, maxNodes≤500, kinds?}` walks
+  current relation heads breadth-first (≤10 paths, deterministic order, `noPath`/`cycle`/`truncated` markers, withdrawn and
+  stale edges counted but never walked, ≤24 KiB). `effect` is a capability from the one vocabulary: the host reports which
+  hop a demonstrated claim (with host-stamped assets) supplies, or the last hop when nothing does. A `chain` frontier step
+  also names its `startingAsset`, resolved from the deepest provider's host-stamped asset refs.
+- **Technique crosswalk (R3):** `src/attack-map.ts` maps 104 in-scope WSTG tests to a curated, pinned subset of MITRE
+  ATT&CK Enterprise (v18.1); `docs/ATTACK_MAP.md` is the readable table and the tests keep both equal. ATT&CK ids are
+  **derived** from the WSTG keys a case already carries (no model-writable field) and printed in the case section,
+  `findings.json`/`findings.csv` and SARIF/STIX properties. A mapping is a judgement about behaviour, not a detection claim.
+- **Finding identity, retest and interop (R3):** `findingId = sha256(scope, policyKey, rootCauseKey, sorted asset
+  kind/key)[:32]` is host-derived and stable across revisions, ratings and evidence; it appears in `findings.json`, the CSV
+  and SARIF `partialFingerprints`. An owner retest is its own note (`data.caseRetest`) against one accepted case revision
+  with verdict `still_reproducible`/`fixed`/`cannot_confirm` (the first two need same-run evidence, the last may cite none);
+  it never changes the verdict, review status or pinned cells. SARIF 2.1.0 (`findings.sarif`) ships with every v2 report;
+  the STIX 2.1 bundle (`findings.stix.json`) is opt-in with `/p2o report export … --stix` and both are manifest-hashed.
+- **Project knowledge (R3):** an opt-in project-scoped SQLite history (`.p2o-project-knowledge.sqlite` for
+  `/p2o report export … --project-knowledge`), keyed by tenant + target, append-only with run provenance, synced by
+  finding id and asset kind/key. It is **suggested context only**: printed as prior knowledge and written as
+  `prior-knowledge.json`, never a graph fact, never a receipt, and never enough to confirm a claim, a case or a coverage
+  cell; a conflict keeps both rows and a moved target marks the old rows stale instead of deleting them.
 - Limits: pages of 20 (≤100), results ≤24 KiB, batch ≤128 rows (≤128 KiB, ≤8 KiB/row, ≤10 anchors/asset). A run's base caps
   are 5,000 asset revisions, 10,000 assertions, 2,000 relations, 20,000 anchors and 40,000 provenance rows, multiplied by
   `graphCapacity` (settings 1–4, default 2). Reaching a cap says `capacity reached`; nothing is pruned automatically.

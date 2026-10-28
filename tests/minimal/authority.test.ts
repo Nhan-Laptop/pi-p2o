@@ -60,7 +60,7 @@ describe('P0/A1 tool matrices', () => {
   it('pins the planner, worker, validation and reporter matrices and the one delegation path', () => {
     expect(new Set(PLANNER_TOOLS)).toEqual(new Set([
       'p2o_task_author', 'p2o_task_dispatch', 'p2o_task_review', 'p2o_task_settle',
-      'p2o_plan_author', 'p2o_case_author', 'p2o_case_rate',
+      'p2o_plan_author', 'p2o_case_author', 'p2o_case_rate', 'p2o_case_retest',
       'p2o_coverage_plan', 'p2o_coverage_suggest', 'p2o_board', 'p2o_ledger', 'p2o_state', 'p2o_artifact', 'p2o_graph',
       'p2o_skill_list', 'p2o_skill_read', 'p2o_secret', 'p2o_research', 'p2o_workers', 'p2o_loop', 'p2o_finish',
     ]));
@@ -68,8 +68,8 @@ describe('P0/A1 tool matrices', () => {
     expect(VALIDATION_TOOLS).toEqual(WORKER_TOOLS.filter(name => name !== 'p2o_surface'));
     expect([...REPORTER_TOOLS].sort()).toEqual(['p2o_artifact', 'p2o_ledger', 'p2o_report', 'p2o_skill_list', 'p2o_skill_read', 'p2o_state']);
     expect(HIDDEN_TOOLS).toEqual(HIDDEN);
-    expect(MODEL_TOOLS).toHaveLength(32);
-    expect(ALL_TOOLS).toHaveLength(34);
+    expect(MODEL_TOOLS).toHaveLength(33);
+    expect(ALL_TOOLS).toHaveLength(35);
     for (const name of DELETED) {
       expect(ALL_TOOLS, name).not.toContain(name);
       expect(TOOL_BOUNDARIES[name], name).toBeUndefined();
@@ -94,7 +94,7 @@ describe('P0/A1 tool matrices', () => {
     for (const name of [...TARGET_TOOLS, ...LAB_TOOLS, 'p2o_candidate', 'p2o_note', 'p2o_surface', 'p2o_graph', 'p2o_task_author', 'p2o_plan_author', 'p2o_case_author', 'p2o_finish']) expect(REPORTER_TOOLS, name).not.toContain(name);
   });
 
-  it('registers 34 tools: 32 model-visible role tools plus 2 explicitly hidden legacy verbs', () => {
+  it('registers 35 tools: 33 model-visible role tools plus 2 explicitly hidden legacy verbs', () => {
     const tools = registrations();
     expect([...tools.keys()].sort()).toEqual([...ALL_TOOLS].sort());
     for (const name of HIDDEN_TOOLS) expect(tools.get(name).exposure, name).toBe('hidden');

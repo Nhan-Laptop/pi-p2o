@@ -1,6 +1,7 @@
 import { Type } from 'typebox';
 import { choices } from './schema-kit.js';
 import { CASE_REVIEW_STATUSES } from './case-types.js';
+import { CASE_RETEST_VERDICTS } from './retest.js';
 import { PLAN_KINDS } from './planning.js';
 import { THINKING_LEVELS } from './roles.js';
 import { taskDraftSchema } from './tool-schemas.js';
@@ -38,7 +39,7 @@ export const BOARD_ACTION_VERBS: Readonly<Record<string, Readonly<Record<string,
     review: 'p2o_task_review', close: 'p2o_task_settle', block: 'p2o_task_settle', cancel: 'p2o_task_settle',
     list: 'p2o_board', start: 'p2o_task_start',
   },
-  p2o_case: { create: 'p2o_case_author', revise: 'p2o_case_author', rate: 'p2o_case_rate', list: 'p2o_board', view: 'p2o_board' },
+  p2o_case: { create: 'p2o_case_author', revise: 'p2o_case_author', rate: 'p2o_case_rate', retest: 'p2o_case_retest', list: 'p2o_board', view: 'p2o_board' },
   p2o_coverage: {
     'plan-create': 'p2o_coverage_plan', 'plan-revise': 'p2o_coverage_plan', suggest: 'p2o_coverage_suggest',
     'cell-create': null, 'cell-revise': null, 'cell-retire': null, list: 'p2o_board', view: 'p2o_board',
@@ -47,7 +48,7 @@ export const BOARD_ACTION_VERBS: Readonly<Record<string, Readonly<Record<string,
 };
 
 export const TASK_VERB_NAMES = [AUTHORING_VERBS.task, 'p2o_task_start', 'p2o_task_dispatch', 'p2o_task_review', 'p2o_task_settle'] as const;
-export const CASE_VERB_NAMES = [AUTHORING_VERBS.case, 'p2o_case_rate'] as const;
+export const CASE_VERB_NAMES = [AUTHORING_VERBS.case, 'p2o_case_rate', 'p2o_case_retest'] as const;
 export const COVERAGE_VERB_NAMES = ['p2o_coverage_plan', ...Object.keys(COVERAGE_FIXED_ACTIONS)] as const;
 export const PLAN_VERB_NAMES = [AUTHORING_VERBS.plan] as const;
 export const BOARD_VERB_NAMES = [...TASK_VERB_NAMES, ...CASE_VERB_NAMES, ...COVERAGE_VERB_NAMES, ...PLAN_VERB_NAMES, 'p2o_board'] as const;
@@ -91,6 +92,7 @@ export const taskSettleParameters = Type.Object({
 
 export const caseAuthorParameters = Type.Object({ entry: caseEntrySchema, id: Type.Optional(id()), revision: revision(), requestId: requestId() }, { additionalProperties: false });
 export const caseRateParameters = Type.Object({ finding: findingSchema, id: id(), revision: Type.Integer({ minimum: 1 }), requestId: requestId() }, { additionalProperties: false });
+export const caseRetestParameters = Type.Object({ id: id(), revision: Type.Integer({ minimum: 1 }), verdict: choices(CASE_RETEST_VERDICTS), reason: Type.String({ minLength: 10, maxLength: 1000 }), evidenceRefs: evidenceIds(), requestId: requestId() }, { additionalProperties: false });
 
 export const coveragePlanParameters = Type.Object({
   plan: coveragePlanSchema, id: Type.Optional(id()), revision: Type.Optional(Type.Integer({ minimum: 1 })), requestId: requestId(),

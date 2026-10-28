@@ -17,7 +17,9 @@ async function chainFixture(h: any) {
   });
   // The primitive that hands out the capability, recorded against the environment it was demonstrated in.
   const primitive = await claim({ candidate: 'chain-primitive', closure: 'confirmed', execution: 'tested', proof: 'live_reproduction',
-    policyBasis: 'boundary_invariant', gained: [{ kind: 'http.request', subject: 'internal-api' }], environmentRef: environment.id });
+    policyBasis: 'boundary_invariant', gained: [{ kind: 'http.request', subject: 'internal-api' }], environmentRef: environment.id,
+    // R3.3: the host stamps the claim's own asset refs; the fixture seeds them so the ready step's starting surface is testable.
+    assetRefs: [{ id: built.asset.entityId, revision: 1 }] });
   const consumer = await claim({ candidate: 'chain-consumer', needs: [{ kind: 'http.request', subject: 'internal-api' }], gained: [{ kind: 'exec.code', subject: 'app-host' }] });
   return { built, environment, primitive, consumer };
 }
@@ -31,7 +33,9 @@ describe('chain frontier to task draft (P14.10)', () => {
     const join = (await h.call('p2o_graph', { action: 'chain' })).details;
     const next = join.frontier.find((entry: any) => entry.claimId === 'chain-consumer');
     // The frontier states what the step consumes, which recorded claims provide it, and where it was demonstrated.
-    expect(next).toMatchObject({ claimId: 'chain-consumer', depth: 1, path: ['chain-primitive', 'chain-consumer'], providers: [primitive.id], needs: [{ kind: 'http.request', subject: 'internal-api' }], environmentRef: environment.id });
+    expect(next).toMatchObject({ claimId: 'chain-consumer', depth: 1, path: ['chain-primitive', 'chain-consumer'], providers: [primitive.id], needs: [{ kind: 'http.request', subject: 'internal-api' }], environmentRef: environment.id,
+      // R3.3: the ready step names where it starts (the deepest provider's resolved asset), so the lead does not need a second read.
+      startingAsset: { id: built.asset.entityId, kind: 'endpoint', key: 'GET /report-fixture', revision: 1 } });
 
     const planned = (await h.call('p2o_graph', { action: 'chain', plan: true, assetRefs: [{ id: built.asset.entityId, revision: 1 }], requestId: 'chain-plan-1' })).details;
     expect(planned.draft).toMatchObject({

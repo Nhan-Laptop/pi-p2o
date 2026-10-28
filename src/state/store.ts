@@ -8,6 +8,7 @@ import { dirname } from 'node:path';
 import { PrivateDirectory } from './files.js';
 import { EVENT_KINDS, STATE_SCHEMA, STATE_SCHEMA_VERSION, type EventKind } from './schema.js';
 import { isOpenGap, isRecordKind, LEDGER_BYTES, LEDGER_RECORDS, retiredIds, type AssessmentRecord, type RecordAck } from '../records.js';
+import { isConditional, isTraversable } from '../path-view.js';
 import { redact } from '../evidence.js';
 import { cleanText } from '../process.js';
 import { redactArtifactPrefix, redactScratchSegment, utf8Prefix } from '../artifacts.js';
@@ -24,7 +25,7 @@ import { DEBT_KINDS, debtSummary, deriveDebt } from '../debt.js';
 import { campaignPromptBlock, parseCampaign, type CampaignRecord, type EngagementMode } from '../campaign.js';
 import type { CaseEffect } from '../cvss.js';
 import { describeKnowledgeRecord, KNOWLEDGE_DOMAINS, type ContextDebt, type KnowledgeIndexSnapshot, type ContextCursor, type ContextItem, type ContextPacket, type KnowledgeDomain, type KnowledgePage } from '../context.js';
-import { anchorEntityId, assetEntityId, assertionEntityId, graphEntityId, relationEntityId, renderGraph, scopeOf, validateAnchor, validateAsset, validateFact, validateHypothesis, validateRelation,
+import { ASSET_KINDS, RELATION_KINDS, anchorEntityId, assetEntityId, assertionEntityId, graphEntityId, relationEntityId, renderGraph, scopeOf, validateAnchor, validateAsset, validateFact, validateHypothesis, validateRelation,
   graphCanonical, graphObject, validateGraphBatch, graphCeilings, GRAPH_IDENTITY_VERSION, GRAPH_ROW_BYTES, GRAPH_RESPONSE_BYTES,
   type AnchorInput, type GraphAck, type GraphBatch, type GraphProducer, type GraphRow, type GraphTable, type GraphSnapshot, type GraphObservation } from './graph.js';
 
@@ -58,6 +59,18 @@ export interface GraphQueryRow { type: 'asset' | 'assertion'; entityId: string; 
 export interface GraphQueryPage { scope: string; asOfSequence: number; filters: GraphQueryFilters; rows: GraphQueryRow[];
   counts: { assets: number; assertions: number }; shown: { assets: number; assertions: number }; omitted: number; truncated: boolean; nextCursor?: number }
 export interface GraphAssetBrief { id: string; kind: string; key: string; label?: string; revision: number }
+/** R3.2: one walked edge, already reduced to what a path reader needs (no row hash or producer internals). */
+export interface GraphPathRelation { entityId: string; revision: number; kind: string; fromId: string; toId: string;
+  basis?: string; status: string; note?: string; evidenceRefs: string[]; traversable: boolean; conditional: boolean }
+export interface GraphPathHop { relation: GraphPathRelation; from: GraphAssetBrief; to: GraphAssetBrief }
+export interface GraphPathWalk {
+  scope: string; asOfSequence: number; from: GraphAssetBrief; to?: GraphAssetBrief; toKind?: string;
+  paths: Array<{ hops: GraphPathHop[] }>;
+  markers: { noPath: boolean; cycle: boolean; truncated: boolean };
+  excluded: { withdrawn: number; stale: number; informational: number };
+  counts: { paths: number; nodes: number; relations: number };
+  warning: string;
+}
 export interface GraphAssetChange { entityId: string; revision: number; sequence: number; kind: string; key: string; label?: string }
 export interface GraphChanges { scope: string; asOfSequence: number; since: number;
   newAssets: GraphAssetChange[]; changedAssets: GraphAssetChange[]; openHypotheses: Array<{ entityId: string; assetId: string; statement: string; producerRole?: string }>;
@@ -785,6 +798,89 @@ export class AssessmentStore {
     }
     return out;
   }
+  /**
+   * R3.2/D-R1-11: bounded shortest-path walk from one current asset head. Traversal follows only active, non-stale,
+   * traversable relation heads (conditional edges are followed and marked; informational edges never move a path).
+   * Deterministic order, depth <=6, nodes <=500, at most 10 simple paths, and the encoded response stays inside
+   * GRAPH_RESPONSE_BYTES. Withdrawn/stale/informational edges are counted and never walked; a target cycles back to a
+   * visited node marks `cycle` instead of inventing a shorter route through it.
+   */
+  graphPath(input: { fromId: string; toId?: string; toKind?: string; maxDepth?: number; maxNodes?: number; kinds?: readonly string[] }): GraphPathWalk {
+    this.gate();
+    const MAX_PATHS = 10, MAX_EDGES_PER_LEVEL = 2000;
+    const maxDepth = input.maxDepth ?? 4, maxNodes = input.maxNodes ?? 200;
+    if (!Number.isSafeInteger(maxDepth) || maxDepth < 1 || maxDepth > 6) throw Error('Path maxDepth must be 1..6');
+    if (!Number.isSafeInteger(maxNodes) || maxNodes < 1 || maxNodes > 500) throw Error('Path maxNodes must be 1..500');
+    const kinds = input.kinds === undefined ? undefined : [...new Set(input.kinds)];
+    if (kinds !== undefined && (!kinds.length || kinds.length > 16 || kinds.some(kind => !(RELATION_KINDS as readonly string[]).includes(kind))))
+      throw Error(`Path kinds must name 1..16 relation kinds: ${RELATION_KINDS.join(', ')}`);
+    if (input.toKind !== undefined && !(ASSET_KINDS as readonly string[]).includes(input.toKind)) throw Error(`Unknown asset kind "${input.toKind}; use one of ${ASSET_KINDS.join(', ')}"`);
+    const scope = this.graphScope(), asOfSequence = this.sequence();
+    const fromAsset = this.requireAsset(graphEntityId(input.fromId, 'asset'));
+    const toAsset = input.toId === undefined ? undefined : this.requireAsset(graphEntityId(input.toId, 'asset'));
+    if (toAsset !== undefined && toAsset.entityId === fromAsset.entityId) throw Error('Path from and to are the same asset');
+    const brief = (row: GraphRow): GraphAssetBrief => ({ id: String(row.entityId), kind: String(row.kind), key: String(row.key),
+      ...(typeof row.label === 'string' ? { label: row.label } : {}), revision: Number(row.revision) });
+    const from = brief(fromAsset), collectAny = toAsset === undefined && input.toKind === undefined;
+    type State = { tail: string; hops: GraphPathHop[]; visited: Set<string> };
+    let frontier: State[] = [{ tail: from.id, hops: [], visited: new Set([from.id]) }];
+    const results: GraphPathHop[][] = [], seen = new Set([from.id]), excluded = { withdrawn: 0, stale: 0, informational: 0 };
+    let cycle = false, truncated = false, relationsSeen = 0, depth = 0;
+    while (frontier.length && results.length < MAX_PATHS) {
+      if (depth >= maxDepth) break;
+      depth++;
+      const tails = [...new Set(frontier.map(state => state.tail))];
+      const marks = tails.map(() => '?').join(',');
+      const rows = this.db.prepare(`SELECT r.kind, r.body, ta.kind AS to_kind, ta.key AS to_key, ta.revision AS to_revision,
+          json_extract(ta.body,'$.label') AS to_label,
+          json_extract(r.body,'$.fromRevision') AS from_revision, json_extract(r.body,'$.toRevision') AS to_revision_pin,
+          fa.revision AS from_row_revision, ta.revision AS to_row_revision
+        FROM relations r
+        JOIN assets fa ON fa.entity_id=r.from_id AND fa.sequence=(SELECT MAX(fb.sequence) FROM assets fb WHERE fb.entity_id=fa.entity_id)
+        JOIN assets ta ON ta.entity_id=r.to_id AND ta.sequence=(SELECT MAX(tb.sequence) FROM assets tb WHERE tb.entity_id=ta.entity_id)
+        WHERE r.scope=? AND r.from_id IN (${marks}) AND r.sequence=(SELECT MAX(s.sequence) FROM relations s WHERE s.entity_id=r.entity_id)
+        ORDER BY r.kind, r.entity_id LIMIT ?`).all(scope, ...tails, MAX_EDGES_PER_LEVEL) as Array<Record<string, unknown>>;
+      if (rows.length >= MAX_EDGES_PER_LEVEL) truncated = true;
+      const byFrom = new Map<string, Array<Record<string, unknown>>>();
+      for (const row of rows) { const key = String(JSON.parse(String(row.body)).fromId); const list = byFrom.get(key) ?? []; list.push(row); byFrom.set(key, list); }
+      const next: State[] = [];
+      for (const state of frontier) {
+        const fromBrief = state.hops.length ? state.hops[state.hops.length - 1]!.to! : from;
+        for (const row of byFrom.get(state.tail) ?? []) {
+          relationsSeen++;
+          const body = JSON.parse(String(row.body)) as GraphRow, kind = String(row.kind);
+          if ((typeof body.status === 'string' ? body.status : 'active') === 'withdrawn') { excluded.withdrawn++; continue; }
+          if (!isTraversable(kind)) { excluded.informational++; continue; }
+          if (kinds !== undefined && !kinds.includes(kind)) continue;
+          if (Number(row.from_revision) !== Number(row.from_row_revision) || Number(row.to_revision_pin) !== Number(row.to_row_revision)) { excluded.stale++; continue; }
+          const toId = String(body.toId), toKind = String(row.to_kind), toBrief: GraphAssetBrief = { id: toId, kind: toKind, key: String(row.to_key), revision: Number(row.to_revision),
+            ...(typeof row.to_label === 'string' ? { label: row.to_label } : {}) };
+          if (state.visited.has(toId)) { cycle = true; continue; }
+          if (!seen.has(toId) && seen.size >= maxNodes) { truncated = true; continue; }
+          seen.add(toId);
+          const hops = [...state.hops, { relation: { entityId: String(body.entityId), revision: Number(body.revision), kind, fromId: state.tail, toId,
+            ...(typeof body.basis === 'string' ? { basis: body.basis } : {}), status: typeof body.status === 'string' ? body.status : 'active',
+            ...(typeof body.note === 'string' ? { note: body.note } : {}), evidenceRefs: Array.isArray(body.evidenceRefs) ? body.evidenceRefs as string[] : [],
+            traversable: true, conditional: isConditional(kind) }, from: fromBrief, to: toBrief }];
+          const isTarget = toAsset !== undefined ? toId === toAsset.entityId : input.toKind !== undefined ? toKind === input.toKind : false;
+          if (collectAny || isTarget) { results.push(hops); if (results.length >= MAX_PATHS) { truncated = true; break; } }
+          next.push({ tail: toId, hops, visited: new Set([...state.visited, toId]) });
+        }
+        if (results.length >= MAX_PATHS) break;
+      }
+      frontier = next;
+    }
+    // Deterministic and explainable order: shorter paths first, then the hop chain by node kind/key (not by opaque hash).
+    const chainKey = (hops: GraphPathHop[]) => hops.map(hop => `${hop.to.kind}:${hop.to.key}:${hop.to.id}`).join('>');
+    results.sort((left, right) => left.length - right.length || (chainKey(left) < chainKey(right) ? -1 : chainKey(left) > chainKey(right) ? 1 : 0));
+    const result: GraphPathWalk = { scope, asOfSequence, from, ...(toAsset !== undefined ? { to: brief(toAsset) } : input.toKind !== undefined ? { toKind: input.toKind } : {}),
+      paths: results.map(hops => ({ hops })), markers: { noPath: results.length === 0, cycle, truncated }, excluded,
+      counts: { paths: results.length, nodes: seen.size, relations: relationsSeen },
+      warning: 'Reachability claim, not access: conditional edges must be demonstrated, informational edges are not movement, and no hop is a finding or a permission. Stale/withdrawn edges are counted, never walked.' };
+    while (result.paths.length > 1 && Buffer.byteLength(JSON.stringify(result)) > GRAPH_RESPONSE_BYTES - 1024) { result.paths.pop(); result.markers.truncated = true; result.counts.paths = result.paths.length; }
+    if (result.paths.length === 1 && Buffer.byteLength(JSON.stringify(result)) > GRAPH_RESPONSE_BYTES) throw Error('Path response cannot fit the bounded graph response; narrow it with kinds or maxDepth');
+    return result;
+  }
   /** R1.6: the report's bounded asset inventory — newest current heads, plus the true total so the omission is printed. */
   /** R2.5: one current package head by entity id, for `action=cve componentRef`; undefined means it is not a current component. */
   component(entityId: string): { entityId: string; revision: number; key: string; name: string; version: string; ecosystem: string; cpe?: string } | undefined {
@@ -1067,6 +1163,8 @@ export class AssessmentStore {
       for(const entry of additions){const row=entry.body;
         if(entry.section==='assertions')Object.assign(row,{stale:row.subjectRevision!==head.revision,superseded:this.graphHead('assertions',row.entityId,asOfSequence)?.id!==row.id});
         if(entry.section==='relations')Object.assign(row,{direction:row.fromId===entityId?'outgoing':'incoming',superseded:this.graphHead('relations',row.entityId,asOfSequence)?.id!==row.id,
+          // R3.1/D-R1-11: the one traversal classification is exposed on the read row, so a reader separates movement from a reading aid.
+          traversable:isTraversable(String(row.kind)),conditional:isConditional(String(row.kind)),
           stale:row.fromRevision!==this.requireAsset(String(row.fromId),undefined,asOfSequence).revision||row.toRevision!==this.requireAsset(String(row.toId),undefined,asOfSequence).revision});
         (view[entry.section as 'revisions'] as Array<GraphRow|GraphObservation>).push(row);
       }
@@ -1108,7 +1206,8 @@ export class AssessmentStore {
         for(const r of this.db.prepare(`SELECT body FROM ${table} r WHERE ${condition} AND sequence<=? AND ${latest(table)} ORDER BY sequence DESC LIMIT ?`).all(...args,asOfSequence,limit)){
           const row=JSON.parse(String(r.body)) as GraphRow;
           if(table==='assertions')row.stale=row.subjectRevision!==this.requireAsset(String(row.subjectId),undefined,asOfSequence).revision;
-          if(table==='relations')row.stale=row.fromRevision!==this.requireAsset(String(row.fromId),undefined,asOfSequence).revision||row.toRevision!==this.requireAsset(String(row.toId),undefined,asOfSequence).revision;
+          if(table==='relations'){row.stale=row.fromRevision!==this.requireAsset(String(row.fromId),undefined,asOfSequence).revision||row.toRevision!==this.requireAsset(String(row.toId),undefined,asOfSequence).revision;
+            row.traversable=isTraversable(String(row.kind));row.conditional=isConditional(String(row.kind));}
           if(!add(list,row))break;
         }
       }

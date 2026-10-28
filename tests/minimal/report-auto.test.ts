@@ -146,7 +146,7 @@ describe('report v2 content', () => {
     expect(json.findings[0].reproduction).toHaveLength(2); expect(json.findings[0].reproduction[0]).toMatchObject({ available: true, operation: 'shell' }); expect(json.findings[0].wstg[0].page).toContain('05-Authorization/04-Insecure_Direct_Object_References.md');
     expect(a['findings.csv'].split('\n')[0]).toContain('"severity"'); expect(a['findings.csv'].split('\n').some((line: string) => /^"?[=+\-@]/.test(line))).toBe(false);
     const checklist = a['wstg-checklist.csv'].split('\n').filter(Boolean); expect(checklist.length).toBe(109); expect(checklist.find((line: string) => line.includes('"wstg-athz-04"'))).toMatch(/"L3"/);
-    expect(JSON.parse(a['report-manifest.json']).files.map((file: any) => file.name)).toEqual(['REPORT.md', 'cases.csv', 'coverage.csv', 'findings.json', 'findings.csv', 'wstg-checklist.csv']);
+    expect(JSON.parse(a['report-manifest.json']).files.map((file: any) => file.name)).toEqual(['REPORT.md', 'cases.csv', 'coverage.csv', 'findings.json', 'findings.csv', 'findings.sarif', 'wstg-checklist.csv']);
   }));
 
   it('prints the lead narrative under an unverified label and returns to the original file set with reportFormat 1', async () => {

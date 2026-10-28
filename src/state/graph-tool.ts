@@ -35,7 +35,7 @@ const batch = object({
     status: Type.Optional(choices(['active','withdrawn'])), supersedes: supersedes() }))),
   anchors: Type.Optional(Type.Array(object({ assetId: id(), assetRevision: revision(), anchor }))),
 });
-export const GRAPH_ACTIONS = ['record','view','page','export','chain','query','summary','ingest'] as const;
+export const GRAPH_ACTIONS = ['record','view','page','export','chain','query','summary','ingest','path'] as const;
 /** P13e: exhaustive per action; `page` and `export` share a shape but are named separately. */
 export const GRAPH_ACTION_PARAMETERS: Readonly<Record<typeof GRAPH_ACTIONS[number], readonly string[]>> = {
   record: ['action','batch','requestId'], view: ['action','id','cursor','limit','asOfSequence'], chain: ['action','limit','plan','assetRefs','requestId'],
@@ -44,6 +44,8 @@ export const GRAPH_ACTION_PARAMETERS: Readonly<Record<typeof GRAPH_ACTIONS[numbe
   summary: ['action','cursor','limit'],
   // R2.3: `id` is the retained artifact ID; reusing the root id keeps the declaration budget flat (no second identifier field).
   ingest: ['action','id'],
+  // R3.2/D-R1-11: a bounded reachability read; fromId is required, every other field narrows it.
+  path: ['action','fromId','toId','toKind','effect','maxDepth','maxNodes','kinds'],
 };
 /** Keep a root object: Pi's legacy Anthropic adapter reads only root properties/required.
  * A root anyOf silently loses all tool arguments there. Host enforces action-specific fields/limits.
@@ -64,6 +66,13 @@ export const graphParameters = object({
   assertionKind: Type.Optional(Type.String({ minLength: 1, maxLength: 40, description: 'fact:<observed|inferred|contract|configuration> or hypothesis' })),
   statementContains: Type.Optional(Type.String({ minLength: 1, maxLength: 200, description: 'Assertion statement substring' })),
   assetRefs: Type.Optional(Type.Array(Type.Object({ id: Type.String({ pattern: '^asset-[a-f0-9]{24}$' }), revision: Type.Optional(Type.Integer({ minimum: 1 })), variant: Type.Optional(Type.String({ maxLength: 120 })) }, { additionalProperties: false }), { minItems: 1, description: 'Assets the drafted task stands on; copied from the graph, never inferred from a surface string' })),
+  /** R3.2: `path` walks current relation heads from one asset; the rest of the fields narrow the walk. */
+  fromId: Type.Optional(Type.String({ minLength: 1, maxLength: 80, pattern: '^asset-[a-f0-9]{24}$', description: 'Path start asset entity ID' })),
+  toId: Type.Optional(Type.String({ minLength: 1, maxLength: 80, pattern: '^asset-[a-f0-9]{24}$', description: 'Optional target asset ID' })),
+  toKind: Type.Optional(Type.String({ minLength: 1, maxLength: 40, description: 'Optional target asset kind' })),
+  effect: Type.Optional(Type.String({ minLength: 1, maxLength: 40, description: 'Optional typed capability the path should reach (e.g. data.read, db.query, host.shell)' })),
+  maxDepth: Type.Optional(Type.Integer({ minimum: 1, maximum: 6 })), maxNodes: Type.Optional(Type.Integer({ minimum: 1, maximum: 500 })),
+  kinds: Type.Optional(Type.Array(choices(RELATION_KINDS), { minItems: 1, maxItems: 16, description: 'Only walk these relation kinds' })),
 }, { additionalProperties: false });
 
 /** Fields an asset may carry on its row instead of inside the nested `asset` object. */

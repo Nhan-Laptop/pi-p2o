@@ -9,7 +9,7 @@ export type WorkspaceCommand = { action: 'graph'; id?: string; limit?: number; c
   | { action: 'checkpoint'; reason: string } | { action: 'checkpoints'; id?: string }
   | { action: 'artifact'; id: string; offset: number }
   | { action: 'heads'; domain?:KnowledgeDomain; cursor:number; limit:number; status?:string } | { action:'digest' } | { action:'show'; domain:KnowledgeDomain; id:string }
-  | { action: 'export'; path: string } | { action: 'import'; path: string } | { action: 'report-export'; path?: string } | { action: 'search'; query: string; cursor: number };
+  | { action: 'export'; path: string } | { action: 'import'; path: string } | { action: 'report-export'; path?: string; stix?: boolean; projectKnowledge?: boolean } | { action: 'search'; query: string; cursor: number };
 export function parseWorkspaceCommand(args: string): WorkspaceCommand | undefined {
   const trimmed = args.trim();
   const [action, ...parts] = trimmed.split(/\s+/);
@@ -20,11 +20,15 @@ export function parseWorkspaceCommand(args: string): WorkspaceCommand | undefine
     return { action, query: normalizeQuery((paged ? parts.slice(0, -1) : parts).join(' ')), cursor };
   }
   if (action === 'report' && parts[0] === 'export') {
-    // `/p2o report` stays the read-only index; only `report export <absolute-dir>` writes, human-only, to a new directory.
+    // `/p2o report` stays the read-only index; only `report export <absolute-dir> [--stix]` writes, human-only, to a new directory.
     let value = trimmed.slice(trimmed.indexOf('export') + 'export'.length).trim();
+    // R3.8/R3.9: both flags are opt-in because a STIX consumer and a project-level database are explicit decisions; the default
+    // bundle keeps its shape and never writes outside the report directory unless asked.
+    const flags = new Set<string>();
+    for (const flag of ['--stix', '--project-knowledge']) { if (new RegExp(`(?:^|\\s)${flag}$`).test(value)) { flags.add(flag); value = value.slice(0, -flag.length).trim(); } }
     if (value.length > 1 && ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'")))) value = value.slice(1, -1);
     // No directory means the default <cwd>/.p2o-reports/report-<run-id>/ (never overwritten).
-    return { action: 'report-export', ...(value ? { path: bundlePath(value, 'export') } : {}) };
+    return { action: 'report-export', ...(value ? { path: bundlePath(value, 'export') } : {}), ...(flags.has('--stix') ? { stix: true } : {}), ...(flags.has('--project-knowledge') ? { projectKnowledge: true } : {}) };
   }
   if (!['open', 'recover', 'close', 'checkpoint', 'checkpoints', 'artifact', 'export', 'import', 'reconcile', 'graph', 'heads', 'digest', 'show'].includes(action)) return;
   if (action === 'export' || action === 'import') {

@@ -112,11 +112,11 @@ describe('report export command', () => {
     h.ctx.setConfirm(true);
     await h.command(`report export ${join(h.root, 'out-a')}`); await h.command(`report export ${join(h.root, 'out-b')}`);
     const a = await h.read(join(h.root, 'out-a')), b = await h.read(join(h.root, 'out-b'));
-    expect(a).toEqual(b); expect(Object.keys(a).sort()).toEqual(expect.arrayContaining(['.npmignore', 'REPORT.md', 'cases.csv', 'coverage.csv', 'report-manifest.json'])); expect(Object.keys(a)).toHaveLength(8); // the six public files and the two private markers
+    expect(a).toEqual(b); expect(Object.keys(a).sort()).toEqual(expect.arrayContaining(['.npmignore', 'REPORT.md', 'cases.csv', 'coverage.csv', 'report-manifest.json'])); expect(Object.keys(a)).toHaveLength(9); // the seven public files and the two private markers
     const manifest = JSON.parse(a['report-manifest.json']);
     expect(manifest).toMatchObject({ format: 'p2o-report', version: 2, endReason: 'manual', authorityRestored: false, counts: { acceptedCurrent: 1, cases: 2, coverageCells: 2, openGaps: 1 } });
     for (const file of manifest.files) { expect(sha(a[file.name])).toBe(file.sha256); expect(Buffer.byteLength(a[file.name])).toBe(file.bytes); }
-    expect(manifest.files.map((file: any) => file.name)).toEqual(['REPORT.md', 'cases.csv', 'coverage.csv', 'findings.json', 'findings.csv']);
+    expect(manifest.files.map((file: any) => file.name)).toEqual(['REPORT.md', 'cases.csv', 'coverage.csv', 'findings.json', 'findings.csv', 'findings.sarif']);
     expect(JSON.stringify(manifest)).not.toMatch(/createdAt|generatedAt|"at"/); // nothing time-dependent can leak into the digest
     expect(((await stat(join(h.root, 'out-a'))).mode & 0o777)).toBe(0o700); expect(((await stat(join(h.root, 'out-a', 'REPORT.md'))).mode & 0o777)).toBe(0o600);
     expect(h.sandboxes[0].commands).toHaveLength(commands); expect(h.pi.messages).toHaveLength(messages);

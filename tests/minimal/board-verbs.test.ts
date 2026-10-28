@@ -25,13 +25,13 @@ function parityViolations(names: readonly string[], prose: string): string[] {
 }
 
 describe('L1/W2 board verbs', () => {
-  it('maps every old board action to one verb and composes 11 verbs from 4 bags', () => {
+  it('maps every old board action to one verb and composes 12 verbs from 4 bags', () => {
     expect(TASK_VERB_NAMES).toHaveLength(5);
-    expect(CASE_VERB_NAMES).toHaveLength(2);
+    expect(CASE_VERB_NAMES).toHaveLength(3);
     expect(COVERAGE_VERB_NAMES).toHaveLength(2);
     expect(PLAN_VERB_NAMES).toHaveLength(1);
-    expect(BOARD_VERB_NAMES).toHaveLength(11);
-    expect(new Set(BOARD_VERB_NAMES).size).toBe(11);
+    expect(BOARD_VERB_NAMES).toHaveLength(12);
+    expect(new Set(BOARD_VERB_NAMES).size).toBe(12);
 
     for (const [oldTool, actions] of Object.entries(BOARD_ACTION_VERBS)) for (const [action, verb] of Object.entries(actions)) {
       expect(verb, `${oldTool} ${action}`).not.toBeUndefined();
@@ -72,7 +72,7 @@ describe('L1/W2 board verbs', () => {
     // A1: the planner plans, reviews and proves; it holds no target, lab, claim, note, surface, report or removed verb.
     expect(new Set(PLANNER_TOOLS)).toEqual(new Set([
       'p2o_task_author', 'p2o_task_dispatch', 'p2o_task_review', 'p2o_task_settle',
-      'p2o_plan_author', 'p2o_case_author', 'p2o_case_rate',
+      'p2o_plan_author', 'p2o_case_author', 'p2o_case_rate', 'p2o_case_retest',
       'p2o_coverage_plan', 'p2o_coverage_suggest', 'p2o_board', 'p2o_ledger', 'p2o_state', 'p2o_artifact', 'p2o_graph',
       'p2o_skill_list', 'p2o_skill_read', 'p2o_secret', 'p2o_research', 'p2o_workers', 'p2o_loop', 'p2o_finish',
     ]));
@@ -81,12 +81,12 @@ describe('L1/W2 board verbs', () => {
     expect(WORKER_TOOLS).toEqual(WORKER_LOADOUT);
     expect(workerTools('validation')).toEqual(WORKER_LOADOUT.filter(name => name !== 'p2o_surface'));
     expect(new Set(workerTools('reporting'))).toEqual(new Set(REPORTER_TOOLS));
-    expect(PLANNER_TOOLS).toHaveLength(21);
+    expect(PLANNER_TOOLS).toHaveLength(22);
     expect(WORKER_TOOLS).toHaveLength(19);
     expect(VALIDATION_TOOLS).toHaveLength(18);
     expect(REPORTER_TOOLS).toHaveLength(6);
-    expect(MODEL_TOOLS).toHaveLength(32);
-    expect(ALL_TOOLS).toHaveLength(34);
+    expect(MODEL_TOOLS).toHaveLength(33);
+    expect(ALL_TOOLS).toHaveLength(35);
     expect(HIDDEN_TOOLS).toEqual(['p2o_delegate', 'p2o_task_start']);
     for (const name of HIDDEN_TOOLS) expect(PLANNER_TOOLS).not.toContain(name);
     for (const name of ['p2o_task', 'p2o_case', 'p2o_coverage', 'p2o_plan']) expect(ALL_TOOLS).not.toContain(name);

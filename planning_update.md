@@ -1,13 +1,13 @@
-# R2 update — recon ingestion, inventory, exploitability (A+B+C)
+# R3 update — attack paths, red-team technique map, retest, interop (A+B+C)
 
-Status: **approved 2026-10-28; R0 committed as `1d79ec9`; R1 committed as `35176ae`; R2 implemented and verified in the
-working tree (2026-10-28), awaiting owner review before R3.** The owner approved the A+B+C program and chose to start
+Status: **approved 2026-10-28; R0 committed as `1d79ec9`; R1 committed as `35176ae`; R2 committed as `d27346b`; R3
+implemented and verified in the working tree (2026-10-29, uncommitted, awaiting owner review).** The owner approved the A+B+C program and chose to start
 with R0; each remaining phase is implemented only after the previous phase's verification and owner review. This document
 is the plan of record and replaces the A1 text; that text is unchanged in git at `git show bbdfec1:planning_update.md`
-(and the P18 text at `git show 18d1d84:planning_update.md`). Baseline: HEAD `bbdfec1` ("Audit the whole tool surface and
-default conservative omissions (A1.2)"); R0 and R1 are now committed (`1d79ec9`, `35176ae`) and the R2 changes are
-uncommitted working-tree files listed in §R2 and §9. The owner's `AGENTS.md` edit and untracked `pi-p2o-defense-vi.pptx`
-are not part of these milestones and are not touched.
+(and the P18 text at `git show 18d1d84:planning_update.md`). Baseline: HEAD at plan time was `bbdfec1` ("Audit the whole
+tool surface and default conservative omissions (A1.2)"); R0–R2 are committed (`1d79ec9`, `35176ae`, `d27346b`) and R3 is
+implemented in the working tree without a commit. The owner's `AGENTS.md` edit and untracked `pi-p2o-defense-vi.pptx` are not part of these
+milestones and are not touched.
 
 Owner request (2026-10-28, verbatim):
 
@@ -460,7 +460,7 @@ components deterministically, and component versions join CVE/EPSS/KEV.
 gets a CVE lead with KEV/EPSS; the report shows inventory and exploitability; all bounds and no-network tests pass; the
 evidence ladder is unchanged (nuclei → hypothesis, CVE → lead).
 
-**Delivered R2 (working tree, 2026-10-28).** Shipped: `src/extract/` (registry + `nmap`/`httpx`/`nuclei`/HTTP-response/
+**Delivered R2 (committed `d27346b`, 2026-10-28).** Shipped: `src/extract/` (registry + `nmap`/`httpx`/`nuclei`/HTTP-response/
 OpenAPI/package-manifest parsers, every bound in one `types.ts`), `src/graph-ingest.ts` (bounded attributed batches,
 artifact anchor row, evidence-ref refusal), `src/exploitability.ts` (CISA KEV + FIRST EPSS with cached provenance and
 offline `unknown`), `package` asset validation plus `componentInventory`/`component` reads in `src/state/store.ts`,
@@ -539,6 +539,46 @@ and what is the missing capability?" — and make findings survive across a rete
 missing hop; traversable-edge semantics are in code and tested; cases/report carry ATT&CK IDs; a retest verdict is
 recorded and rendered; SARIF validates structurally; cross-run context cannot become same-run evidence.
 
+**Delivered R3 (working tree, 2026-10-29, uncommitted).** Shipped: `src/path-view.ts` (one relation-role constant plus
+`effectCapability`/`annotatePathEffect`), `src/state/store.ts` `graphPath` (BFS over current relation heads with stale/
+withdrawn accounting, depth/node caps, deterministic order, `GRAPH_RESPONSE_BYTES` bound) and `traversable`/`conditional` on
+relation read rows, `p2o_graph action=path` (planner-only; `effect` reports the supplying or missing hop) and a
+`startingAsset` on each ready `chain` step (deepest provider's host-stamped asset refs, resolved to the current head),
+`src/attack-map.ts` + `docs/ATTACK_MAP.md` (59 curated ATT&CK v18.1 techniques, 104/104 in-scope WSTG tests mapped, pure
+derivation helpers), `src/retest.ts` + `CaseBoard.retest` + `p2o_case_retest` (owner note against one accepted case
+revision, evidence-required except `cannot_confirm`, one write per revision), `src/finding-fingerprint.ts`
+(`findingId = sha256(scope, policyKey, rootCauseKey, sorted asset kind/key)[:32]`), `src/report-interop.ts`
+(`sarifLog`/`stixBundle`), `src/project-knowledge-db.ts` (append-only project-scoped history with tenant/target scope,
+conflict surfacing and stale-not-deleted marks), report wiring for `findings.sarif` (always in v2), opt-in
+`findings.stix.json` (`--stix`), opt-in `prior-knowledge.json` (`--project-knowledge`), the derived ATT&CK line and retest
+line in the case section, `findingId`/`techniques`/`retest` in `findings.json`/`findings.csv`, and the declaration
+reconciliation that keeps the planner under 49,300. Tests: `path-semantics.test.ts` 7, `graph-path.test.ts` 10,
+`attack-map.test.ts` 9, `case-retest.test.ts` 5, `finding-fingerprint.test.ts` 5, `report-sarif.test.ts` 9,
+`report-stix.test.ts` 7, `project-knowledge-db.test.ts` 7 (59 new tests), with focused updates to `graph.test.ts`,
+`graph-record-shape.test.ts`, `chain-plan.test.ts`, `report-export.test.ts`, `report-auto.test.ts`,
+`authority.test.ts`, `board-verbs.test.ts` and `docs/ACCEPTANCE_MATRIX.md` (F-R3-1…12).
+
+Deviations, recorded:
+1. Traversable-edge classification is exposed on read rows as a boolean pair rather than a schema field; no migration.
+2. Path is planner/owner-only (a worker gets `PLANNER_ONLY`): reachability is coordination, the worker records the relation.
+3. Conditional edges are traversed and marked; informational edges are never walked, which is what makes a "path" a route.
+4. The path result order is sorted by (length, node kind/key) and not by discovery order, so the same graph yields the same
+   bytes; the fixture pins the diamond and the cycle cases.
+5. ATT&CK ids are derived from the WSTG keys a case already carries; no model-writable `techniques` case field exists, so
+   the crosswalk costs no schema text and cannot be asserted by a model.
+6. Retest is a `note` record (`data.caseRetest`), like a rating, not a case revision: it does not stale the coverage cells
+   that pin the case and it cannot re-accept or re-rate it.
+7. `cannot_confirm` may cite no evidence by design; the other two verdicts need a same-run receipt, since a cross-run
+   observation is a suggestion, not the run's evidence.
+8. Finding identity uses asset `kind:key` (per-run asset ids excluded) so a re-run against the same target derives the same
+   id; a store that cannot resolve an id keeps the raw id and the report says the id is then run-scoped.
+9. SARIF ships with every v2 report; STIX and the project database are opt-in flags on `/p2o report export`, so the default
+   bundle keeps its shape and nothing outside the report directory is written unless the operator asks.
+10. The project database stores identity, provenance and disposition only (no free text beyond label/keys) and its rows are
+    `suggested: true`; the report prints them under a "suggested context, not evidence" heading.
+11. The declaration budget was paid by trimming planner/shared descriptions and boundaries (net −1,934 chars against the
+    R3 additions), not by raising a ceiling; the measured totals are in §5.1.
+
 ### R4 — Measurement (L, gated)
 
 **Goal.** Make capability claims checkable.
@@ -601,7 +641,7 @@ stale section mappings. No live run, no
 target traffic, no paid model call: every R1 test is hermetic (extension + real SQLite store + Unix broker + inert
 sandbox). The owner's `AGENTS.md` edit and untracked `pi-p2o-defense-vi.pptx` remain untouched and unstaged.
 
-**R2 result (working tree, 2026-10-28).** `tsc --noEmit` clean; full `vitest run` **144 passed / 5 skipped files
+**R2 result (committed `d27346b`, 2026-10-28).** `tsc --noEmit` clean; full `vitest run` **144 passed / 5 skipped files
 (149), 1,276 passed / 13 skipped tests (1,289), 0 fail**; `npm run build` + `npm run check:build` → `build import OK`;
 `git diff --check -- src extensions tests docs planning_update.md` clean; `context-budget` and `recon` ceilings green
 (the declaration edits that pay for `ingest`/`componentRef` are net −3 chars, so the planner stays under 49,300). GitNexus:
@@ -614,6 +654,21 @@ affected / risk critical, and like R0/R1 it also sees the owner's `AGENTS.md` ed
 mappings. No live run, no target traffic, no paid model call: every R2 test is hermetic (parsers over fixtures, a real
 SQLite store, mocked NVD/KEV/EPSS transport). The owner's `AGENTS.md` edit and untracked `pi-p2o-defense-vi.pptx` remain
 untouched and unstaged.
+
+**R3 result (working tree, 2026-10-29, uncommitted).** `tsc --noEmit` clean; full `vitest run`
+**152 passed / 5 skipped files (157), 1,335 passed / 13 skipped tests (1,348), 0 fail**; `npm run build` + `npm run check:build` → `build import OK`;
+`git diff --check -- src extensions tests docs planning_update.md` clean; `context-budget` green with planner
+**49,294/49,300**, worker 42,808/44,100, validation 42,000/43,300, reporter 6,551/6,800, model 75,500/77,900 — the R3
+additions (`p2o_graph` path params, `p2o_case_retest`) were paid for by trimming planner/shared descriptions and
+boundaries, not by raising a ceiling, and the planner now has only 6 chars of headroom. GitNexus: `impact` was again
+**not run before this phase's symbol edits** (the same lapse as R1/R2, disclosed rather than dressed up); run after the
+fact, on an index **5 commits behind HEAD**, it reports `renderReport` **CRITICAL** (1 direct caller / 48 processes) and
+`caseViews` **CRITICAL** (14 direct / 68 processes), both `epistemic: exact`, while the R3-only symbols (`graphPath`,
+`ProjectKnowledge`) are **absent from that index** → `UNKNOWN`, which means unmeasured, not empty. So reach is a signal,
+not behavioural proof.
+`detect_changes --scope all` was reviewed before reporting (see §9). No live run, no target traffic, no paid model call:
+every R3 test is hermetic (pure helpers, real SQLite store, inert sandbox, mocked NVD/KEV/EPSS). The owner's `AGENTS.md`
+edit and untracked `pi-p2o-defense-vi.pptx` remain untouched and unstaged.
 
 ### 5.2 Invariants that must not change
 
@@ -636,7 +691,7 @@ untouched and unstaged.
 | R0 | `tests/minimal/research-fetch-containment.test.ts` (new, 7 tests), plus focused additions to `graph.test.ts` (cross-page relation, refs cap, foreign-scope identities, asset-head counter), `graph-record-shape.test.ts` (schema `maxItems: 10`), `truth.test.ts` (bounded fetch description), `research.test.ts` (cap marker under the mocked bounded fetcher) |
 | R1 | `tests/minimal/claim-asset-stamp.test.ts` (new, 4), `graph-dossier.test.ts` (new, 4), `report-assets.test.ts` (new, 6); additions to `graph.test.ts` (query filters/cursor/limits, `graphChanges` delta), `debt.test.ts` (`GRAPH_UNREVIEWED`), `phase-i.test.ts` (slice relations/hypotheses/findings count), `workspace-runtime.test.ts` (worker hypothesis + inferred relation, owner/worker `query`+`summary`, dossier in `view`, dense-summary 8 KiB bound), `round-brief.test.ts` (graph delta present/absent/cap), `round-session.test.ts` (round 2 carries the delta). The planned `graph-query`/`graph-summary`/`worker-hypothesis`/`report-asset-resolution` files were folded into the existing suites so each area keeps one fixture |
 | R2 | Delivered as `tests/minimal/extract.test.ts` (13), `exploitability.test.ts` (11), `graph-ingest.test.ts` (9), `artifact-ingest.test.ts` (6), with focused additions to `graph.test.ts` (ingest verb/params) and `phase-j.test.ts` (exclusive range text). The planned per-parser files were folded into one `extract.test.ts` so every parser shares one fixture; `ingest-dedupe`, `component-inventory` and `cve-enrich` live in `graph-ingest`, `exploitability` and `artifact-ingest` |
-| R3 | `tests/minimal/graph-path.test.ts`, `path-semantics.test.ts`, `attack-map.test.ts`, `case-retest.test.ts`, `finding-fingerprint.test.ts`, `report-sarif.test.ts`, `report-stix.test.ts`, `project-knowledge-db.test.ts` |
+| R3 | Delivered as `path-semantics.test.ts` (7), `graph-path.test.ts` (10), `attack-map.test.ts` (9), `case-retest.test.ts` (5), `finding-fingerprint.test.ts` (5), `report-sarif.test.ts` (9), `report-stix.test.ts` (7), `project-knowledge-db.test.ts` (7) — 59 new tests — with focused updates to `graph.test.ts`, `graph-record-shape.test.ts`, `chain-plan.test.ts`, `report-export.test.ts`, `report-auto.test.ts`, `authority.test.ts` and `board-verbs.test.ts`. The planned `report-sarif`/`report-stix` split was kept because the two formats have different contracts; `path-semantics` and `graph-path` split pure classification from the store query |
 | R4 | `bench/graph/*` + `tests/minimal/bench-graph.test.ts` |
 
 ### 5.4 Verification honesty
@@ -687,6 +742,17 @@ boundaries), `src/report-export.ts` (LEADS ordering and columns), `src/tool-sche
 `extensions/p2o/index.ts` (auto-ingest, ingest action, summary backlog, KEV/EPSS enrichment), `docs/KNOWLEDGE.md`,
 `docs/ACCEPTANCE_MATRIX.md`, `docs/HISTORY.md`.
 
+R3 delivered (uncommitted working tree): new `src/path-view.ts`, `src/attack-map.ts`, `src/retest.ts`,
+`src/finding-fingerprint.ts`, `src/report-interop.ts`, `src/project-knowledge-db.ts`, `docs/ATTACK_MAP.md` and the eight
+R3 test files; touched `src/state/store.ts` (`graphPath`, traversable/conditional relations), `src/state/graph-tool.ts`
+(path action/params), `src/cases.ts` + `src/retest.ts` (retest note, derived retest view), `src/case-tool.ts` +
+`src/board-verbs.ts` + `src/tool-policy.ts` + `src/tool-guidelines.ts` (`p2o_case_retest` verb, loadout, boundary),
+`src/report-export.ts` (ATT&CK/retest lines, `findingId`, `findings.sarif`, opt-in STIX and prior knowledge, project merge),
+`src/ui/workspace.ts` (`--stix`/`--project-knowledge` flags), `extensions/p2o/index.ts` (path action, chain startingAsset,
+retest handler, export flags, meta split), `planning_update.md`, `docs/KNOWLEDGE.md`, `docs/ACCEPTANCE_MATRIX.md`,
+`docs/HISTORY.md`. No store schema migration (schema stays 7), no authority change, no new settings; the only model-facing
+additions are the `p2o_graph` path parameters and the `p2o_case_retest` verb, inside the unchanged declaration ceilings.
+
 Touched: `src/state/store.ts` (query/summary/path/dossier reads, scope filter, relation accounting), `src/state/graph.ts`
 (refs cap, relation classification exposure, identity retention note), `src/state/graph-tool.ts` (actions/params),
 `src/graph-slice.ts`, `src/round-brief.ts`, `src/situation.ts`, `src/evidence.ts` (claim asset stamp), `src/case-types.ts`
@@ -707,8 +773,8 @@ Not touched: owner files, `src/truth.ts` semantics, role loadouts beyond D-R1-3,
 | G0 | This plan approved (or amended) | D-R1-1…D-R1-12 |
 | G1 | R0 implemented + verified (delivered 2026-10-28 in the working tree, awaiting owner review) | none if the plan is approved; research-fetch wording reviewed |
 | G2 | R1 implemented + verified | D-R1-3 (hypothesis write) exercised in the delivered UX |
-| G3 | R2 implemented + verified (delivered 2026-10-28 in the working tree, awaiting owner review) | D-R1-6 sources and D-R1-5 ingestion behaviour reviewed |
-| G4 | R3 implemented + verified | D-R1-7 map reviewed; D-R1-8 project DB reviewed; SARIF + STIX verification |
+| G3 | R2 committed as `d27346b` (2026-10-28) | D-R1-6 sources and D-R1-5 ingestion behaviour reviewed |
+| G4 | R3 implemented + verified in the working tree (2026-10-29), uncommitted and awaiting owner review | D-R1-7 map reviewed; D-R1-8 project DB reviewed; SARIF + STIX verification; whether to commit R3 |
 | G5 | R4 offline bench green; live run optional | explicit authorization + budget cap for any live run |
 
 Sequencing for the quick-win slice if the owner wants to stop early: **G1 + G2**, then reassess. The full program is
@@ -735,12 +801,18 @@ after the previous phase's verification and the owner's review.
   Nothing was pushed.
 - The **R1 pass was committed** on owner instruction as `35176ae` ("Make the asset graph the loop's working memory
   (R1)"); nothing was pushed and no attribution line was added. The owner then asked to continue with R2.
-- The **R2 pass** (2026-10-28) then changed, in the working tree and **without a commit**: the files listed in §7 under
-  "R2 delivered", plus `planning_update.md`, `docs/KNOWLEDGE.md`, `docs/ACCEPTANCE_MATRIX.md`, `docs/HISTORY.md`, and the
-  R2 tests in §5.3. No schema migration (store schema stays 7), no authority change, no new settings and no new
-  model-visible tool; the only model-facing text added is the `ingest` verb, `componentRef` and the trimmed
-  `p2o_graph`/`p2o_research` descriptions, inside the unchanged declaration budgets. Nothing pushed; no live run and no
-  target traffic — KEV, EPSS and NVD are mocked in every test.
+- The **R2 pass was committed** on owner instruction as `d27346b` ("Make captured recon artifacts populate the asset
+  graph (R2)"): 28 files, the owner's `AGENTS.md` edit and the untracked `pi-p2o-defense-vi.pptx` excluded, no attribution
+  line and nothing pushed. It changed the files listed in §7 under "R2 delivered", plus `planning_update.md`,
+  `docs/KNOWLEDGE.md`, `docs/ACCEPTANCE_MATRIX.md`, `docs/HISTORY.md`, and the R2 tests in §5.3. No schema migration (store
+  schema stays 7), no authority change, no new settings and no new model-visible tool; the model-facing text added is the
+  `ingest` verb, `componentRef` and the trimmed `p2o_graph`/`p2o_research` descriptions, inside the unchanged declaration
+  budgets. No live run and no target traffic — KEV, EPSS and NVD are mocked in every test.
+- The **R3 pass** (2026-10-28) then changed, in the working tree and **without a commit**: `src/path-view.ts`,
+  `src/attack-map.ts`, `src/finding-fingerprint.ts`, `src/project-knowledge-db.ts` (new), path/chain reads in
+  `src/state/{store,graph-tool}.ts`, case retest/techniques in `src/{case-types,cases}.ts`, SARIF/STIX in
+  `src/report-export.ts` (or `src/report-interop.ts`), the extension handlers, `docs/ATTACK_MAP.md` (new),
+  `docs/KNOWLEDGE.md`, `docs/ACCEPTANCE_MATRIX.md`, `docs/HISTORY.md`, and the R3 tests in §5.3.
 - R0 verification is the §5.1 result block: tsc clean, full suite 1,215 passed / 13 skipped (1,228), build/`check:build`
   green, `git diff --check` clean, GitNexus impact/detect_changes reviewed with the stale-index caveat. The live benchmark
   was **not** run and no target traffic was generated: R0 only mocks the bounded fetcher and uses inert stores.

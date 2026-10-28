@@ -29,11 +29,12 @@ export const findingSchema=Type.Object({severity:choices(FINDING_SEVERITIES),bas
       needs:Type.Optional(Type.Array(capabilitySchema,{maxItems:10,description:'Typed capabilities this step needs from an earlier step'})),
       effect:Type.Optional(effectSchema),
       reach:Type.Optional(Type.Object({AV:choices(CHAIN_REACH_METRICS.AV),AC:choices(CHAIN_REACH_METRICS.AC),AT:choices(CHAIN_REACH_METRICS.AT),PR:choices(CHAIN_REACH_METRICS.PR),UI:choices(CHAIN_REACH_METRICS.UI)},{additionalProperties:false,description:'How the attacker reached this step. The chain scores at the easiest reach any executed step reported; unreported reach scores at the least favourable values, so missing evidence can only lower the score'}))},{additionalProperties:false}),{minItems:1,maxItems:8}),demonstratedThrough:Type.Optional(Type.Integer())},{additionalProperties:false}))},{additionalProperties:false});
-export const CASE_ACTIONS=['create','revise','rate','list','view'] as const;
+export const CASE_ACTIONS=['create','revise','rate','retest','list','view'] as const;
 /** P13e: exhaustive per action, so dropping `rate`'s requestId cannot slip through a default branch. */
 export const CASE_ACTION_PARAMETERS: Readonly<Record<typeof CASE_ACTIONS[number], readonly string[]>> = {
   create:['action','entry','requestId'], revise:['action','entry','id','revision','requestId'],
-  rate:['action','finding','id','revision','requestId'], view:['action','id'], list:['action','cursor','limit','status'],
+  rate:['action','finding','id','revision','requestId'], retest:['action','id','revision','verdict','reason','evidenceRefs','requestId'],
+  view:['action','id'], list:['action','cursor','limit','status'],
 };
 /** Root object preserves fields through legacy provider projections. Host enforces action shape. */
 export const coveragePlanSchema=Type.Object({title:Type.String({minLength:5,maxLength:500}),status:Type.Optional(choices(COVERAGE_PLAN_STATUS)),reason:Type.String({minLength:10,maxLength:1500}),

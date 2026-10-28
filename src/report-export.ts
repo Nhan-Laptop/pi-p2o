@@ -22,6 +22,10 @@ import type { AuthorityMode } from './authority.js';
 import { awaitingReview, taskFrontier, taskRevisionAt } from './tasks.js';
 import { sha256Hex } from './validate.js';
 import { WSTG_BY_KEY, WSTG_COMMIT, WSTG_MAP, isWstgKey, wstgEvidence, wstgKey, wstgPageUrl, type WstgEvidence } from './wstg-map.js';
+import { attackForWstg } from './attack-map.js';
+import { findingId, findingScope } from './finding-fingerprint.js';
+import { sarifLog, stixBundle, type InteropFinding, type InteropInput } from './report-interop.js';
+import { ProjectKnowledge, type ProjectKnowledgeView } from './project-knowledge-db.js';
 
 /**
  * Deterministic human report rendered from committed state. No model, no clock, no random values: the same state at the same
@@ -55,6 +59,10 @@ export interface ReportMeta {
   wrote?: ReadonlyMap<string, WorkerWrites>;
   /** A4: the loop/executor mode that produced the run, printed next to the authority counters and role matrix. */
   mode?: AuthorityMode;
+  /** R3.8: emit the opt-in STIX 2.1 bundle beside the SARIF log. Never part of the default bundle. */
+  stix?: boolean;
+  /** R3.9: project-level history read back after merging this run; printed as suggested context, never evidence. */
+  prior?: ProjectKnowledgeView;
   /** D15/P7.1: the engagement mode and authorized effect classes; absent on a run recorded before the mode existed. */
   engagement?: { mode: EngagementMode; effectClasses: readonly CaseEffect[] };
   /** A7.6: the facts the access ladder prints beside its rungs. Recorded by P7.4 (sessions), P7.5 (secrets by id) and P7.7 (callback). */
@@ -183,7 +191,7 @@ function findingLines(view: CaseView, cells: readonly CoverageCellView[], index:
 }
 
 function caseSection(view: CaseView, cells: readonly CoverageCellView[], index?: LedgerIndex, pages: readonly string[] = [], ordinal?: number, assets?: Readonly<Record<string, ReportAssetBrief>>): string {
-  const wstg = caseWstgKeys(view.id, view.revision, cells);
+  const wstg = caseWstgKeys(view.id, view.revision, cells), attack = attackForWstg(wstg);
   const v2 = ordinal !== undefined;
   return [`### ${v2 ? `F-${ordinal} ` : ''}${mdText(view.title, 160)} — case ${mdText(view.id, 80)} r${view.revision}`,
     `- Verdict **${mdText(view.verdict)}**; review **${mdText(view.reviewStatus)}**; currentness **${mdText(view.currentness)}**; independent validation current: ${view.independentCurrent ? 'yes' : 'no'}${!view.independentCurrent && view.independenceReason ? ` (${mdText(view.independenceReason, 300)})` : ''}`,
@@ -191,7 +199,9 @@ function caseSection(view: CaseView, cells: readonly CoverageCellView[], index?:
     `- Assets: ${assetIds(view.assetRefs, assets)}; claims: ${ids(view.claimRefs)}; independent evidence: ${ids(view.independentEvidenceRefs)}; tasks: ${ids(view.taskRefs.map(ref => `${ref.taskId}@r${ref.revision ?? '?'}`))}`,
     `- Contradictions: ${view.contradictions.length ? view.contradictions.slice(0, 6).map(item => `${mdText(item.evidenceRef, 80)} (${mdText(item.status)})`).join(', ') : 'none recorded'}; affected variants: ${list(view.affectedVariants.map(item => mdText(item, 120)))}`,
     ...(wstg.length ? [`- WSTG tests this case addresses (see the WSTG checklist for level): ${wstg.map(key => mdText(key, 40)).join(', ')}`] : []),
+    ...(attack.length ? [`- ATT&CK techniques those tests point at (derived from the pinned crosswalk in docs/ATTACK_MAP.md; a mapping is judgement, not detection): ${attack.map(technique => `\`${mdText(technique.id, 20)}\``).join(', ')}`] : []),
     ...(v2 && index ? [...provenanceLines(view, index), ...findingLines(view, cells, index, pages)] : []),
+    ...(view.retest ? [`- Retest (owner-attributed${view.retestCurrent === false ? `, recorded against r${view.retest.caseRevision} so it is history for this revision` : ''}): **${mdText(view.retest.verdict)}** — ${mdText(view.retest.reason, 1000)}${view.retest.evidenceRefs.length ? `; evidence ${ids(view.retest.evidenceRefs)}` : ''}. A retest says whether the effect still reproduced; it never re-rates or re-accepts the finding.`] : []),
     `- Remediation: ${mdText(view.remediation.status)} — ${mdText(view.remediation.reason, 200)}`,
     `- Reviewer reasoning: ${mdText(view.reviewReason)}`, `- Limitations: ${mdText(view.limitations)}`].join('\n');
 }
@@ -286,14 +296,74 @@ function scopeAndSummary(meta: ReportMeta, index: LedgerIndex, plans: readonly C
 }
 
 
+/**
+ * One derivation of a finding's identity and its resolved asset identities, shared by every export surface (findings.json,
+ * SARIF/STIX and the project database) so the same case cannot carry two ids. A store that cannot resolve an id keeps the raw id:
+ * the finding id is then run-scoped, which is a limit the report must state rather than hide.
+ */
+export function findingIdentityFor(meta: ReportMeta, view: CaseView, assets?: Readonly<Record<string, ReportAssetBrief>>): { findingId: string; assets: Array<{ id: string; kind: string; key: string }> } {
+  const resolved = view.assetRefs.map(ref => { const brief = assets?.[ref.id]; return { id: ref.id, kind: brief?.kind ?? 'other', key: brief?.key ?? ref.id }; });
+  return { findingId: findingId({ scope: findingScope(meta.target), policyKey: view.policyKey, ...(view.rootCauseKey ? { rootCauseKey: view.rootCauseKey } : {}), assets: resolved }), assets: resolved };
+}
+
+/**
+ * R3.6/R3.7: the host-derived identity, ATT&CK crosswalk and asset locations of one accepted-current finding. Everything is derived
+ * from stored case, coverage and asset data: the model never writes a finding id or a technique, so the export cannot claim either.
+ * A location is emitted only for asset kinds whose key is a real address (endpoint/route/file/config); other kinds stay identities.
+ */
+function interopFinding(meta: ReportMeta, view: CaseView, cells: readonly CoverageCellView[], position: number, assets?: Readonly<Record<string, ReportAssetBrief>>): InteropFinding {
+  const wstg = caseWstgKeys(view.id, view.revision, cells), identity = findingIdentityFor(meta, view, assets), resolved = identity.assets;
+  const score = cvssScore(view.finding?.cvssVector);
+  const locations = resolved.flatMap((asset): NonNullable<InteropFinding['locations']> => asset.kind === 'endpoint' || asset.kind === 'route' ? [{ kind: 'url' as const, value: asset.key }]
+    : asset.kind === 'file' ? [{ kind: 'path' as const, value: asset.key }] : asset.kind === 'config' ? [{ kind: 'config' as const, value: asset.key }] : []);
+  return { ref: `F-${position}`, caseId: view.id, revision: view.revision, title: view.title, severity: view.finding?.severity ?? null, verdict: view.verdict,
+    policyKey: view.policyKey, ...(view.rootCauseKey ? { rootCauseKey: view.rootCauseKey } : {}), cvss: score ? { vector: score.vector, baseScore: score.score, severity: score.severity } : null,
+    cwe: view.finding?.cwe ?? [], wstg, techniques: attackForWstg(wstg).map(technique => technique.id), assets: resolved,
+    findingId: identity.findingId,
+    ...(locations.length ? { locations } : {}),
+    evidenceRefs: [...new Set([...(view.finding?.reproductionEvidenceRefs ?? []), ...view.independentEvidenceRefs])].slice(0, 20) };
+}
+
+/** The deterministic input both interop builders share; `generatedAt` is the last committed record, never a clock read. */
+function interopInput(meta: ReportMeta, index: LedgerIndex, ordered: readonly CaseView[], cells: readonly CoverageCellView[], assets?: Readonly<Record<string, ReportAssetBrief>>): InteropInput {
+  return { runId: meta.runId, target: meta.target, asOfSequence: meta.asOfSequence, complete: meta.complete,
+    generatedAt: index.records.at(-1)?.at ?? '1970-01-01T00:00:00.000Z', toolVersion: meta.runtime.version ?? 'unknown',
+    findings: ordered.map((view, position) => interopFinding(meta, view, cells, position + 1, assets)) };
+}
+
+/**
+ * R3.9: merge this run's accepted findings (and the cited assets an inventory resolved) into the project-scoped database, then read
+ * the scope back. Only identity-bearing values the run already validated are stored, with provenance. The result is suggested
+ * context: it never becomes a graph fact and never confirms a claim, a case or a coverage cell.
+ */
+export function mergeProjectKnowledge(file: string, meta: ReportMeta, index: LedgerIndex, context: ReportProjectionContext, assets?: Readonly<Record<string, ReportAssetBrief>>): ProjectKnowledgeView | undefined {
+  const accepted = orderedFindings(caseViews(index, context.cases ?? {}).filter(view => view.acceptedFinding));
+  const db = ProjectKnowledge.open(file);
+  try {
+    const findings = accepted.map(view => {
+      const identity = findingIdentityFor(meta, view, assets), retest = view.retest;
+      // The stored state is the disposition the run recorded, not a live verdict: a retest moves it, the case does not.
+      const state = retest?.verdict === 'fixed' ? 'fixed' : retest?.verdict === 'still_reproducible' ? 'still_reproducible' : retest?.verdict === 'cannot_confirm' ? 'cannot_confirm' : 'accepted';
+      return { findingId: identity.findingId, policyKey: view.policyKey, ...(view.rootCauseKey ? { rootCauseKey: view.rootCauseKey } : {}),
+        ...(view.finding?.severity ? { severity: view.finding.severity } : {}), caseRef: view.id, state };
+    });
+    const cited = [...new Set(accepted.flatMap(view => view.assetRefs.map(ref => ref.id)))].map(id => assets?.[id])
+      .filter((brief): brief is ReportAssetBrief => brief !== undefined).map(brief => ({ id: brief.id, kind: brief.kind, key: brief.key, ...(brief.label ? { label: brief.label } : {}) }));
+    db.merge({ scope: { tenant: '', target: meta.target }, runId: meta.runId, retrievedAt: index.records.at(-1)?.at ?? '1970-01-01T00:00:00.000Z', findings, assets: cited });
+    return db.read({ tenant: '', target: meta.target.toLowerCase().trim() })[0];
+  } finally { db.close(); }
+}
+
 /** Machine-readable findings: every typed field of every accepted-current case, strings redacted and bounded but NOT Markdown-escaped (escape on display). */
-function findingFiles(meta: ReportMeta, index: LedgerIndex, ordered: readonly CaseView[], cells: readonly CoverageCellView[], pages: readonly string[]): ReportFile[] {
+function findingFiles(meta: ReportMeta, index: LedgerIndex, ordered: readonly CaseView[], cells: readonly CoverageCellView[], pages: readonly string[], assets?: Readonly<Record<string, ReportAssetBrief>>): ReportFile[] {
   const reproduce = (view: CaseView) => (view.finding?.reproductionEvidenceRefs ?? []).map(ref => { const record = index.byId.get(ref), data = record?.kind === 'evidence' ? record.data : undefined, step = view.finding?.reproductionSteps?.find(item => item.ref === ref);
     return { evidenceId: ref, ...(step ? { role: step.role, ...(step.note ? { note: plainText(step.note, 200) } : {}) } : {}), available: Boolean(data), operation: data ? plainText(data.operation, 24) : null, by: record ? plainText(record.by, 60) : null, exitCode: data?.exitCode ?? null, input: data ? plainText(data.input, 700) : null, output: data ? plainText(data.stdout, 500) : null, truncated: Boolean(data?.truncated),
       captures: captureArtifacts(data).map(artifact => ({ id: artifact.id, bytes: artifact.bytes, sha256: artifact.sha256, partial: artifact.truncated === true })) }; });
   const items = ordered.slice(0, CASE_ROWS).map((view, position) => {
-    const score = cvssScore(view.finding?.cvssVector), wstg = caseWstgKeys(view.id, view.revision, cells);
+    const score = cvssScore(view.finding?.cvssVector), wstg = caseWstgKeys(view.id, view.revision, cells), identity = interopFinding(meta, view, cells, position + 1, assets);
     return { ref: `F-${position + 1}`, caseId: view.id, revision: view.revision, title: plainText(view.title, 500), verdict: view.verdict, reviewStatus: view.reviewStatus, currentness: view.currentness, independentValidationCurrent: view.independentCurrent, independenceReason: view.independenceReason ?? null,
+      findingId: identity.findingId, techniques: identity.techniques,
+      retest: view.retest ? { verdict: view.retest.verdict, caseRevision: view.retest.caseRevision, current: view.retestCurrent === true, reason: plainText(view.retest.reason, 1000), evidenceRefs: view.retest.evidenceRefs } : null,
       severity: view.finding?.severity ?? null, severityBasis: view.finding ? plainText(view.finding.basis, 1000) : null, likelihood: view.finding?.likelihood ? plainText(view.finding.likelihood, 800) : null, impact: view.finding?.impact ? plainText(view.finding.impact, 800) : null,
       ratingLimitations: view.finding?.limitations ? plainText(view.finding.limitations, 2000) : null, ratingProvenance: view.ratingProvenance ?? null,
       cvss: score ? { vector: score.vector, baseScore: score.score, severity: score.severity } : null, cwe: view.finding?.cwe ?? [], wstg: wstg.map(key => ({ key, page: isWstgKey(key) ? wstgPageUrl(key, pages) ?? null : null })),
@@ -306,8 +376,8 @@ function findingFiles(meta: ReportMeta, index: LedgerIndex, ordered: readonly Ca
   });
   const body = { format: 'p2o-findings', version: 1, runId: meta.runId, asOfSequence: meta.asOfSequence, complete: meta.complete, endReason: meta.endReason ?? null,
     note: 'Accepted, current cases only. Severity is an attributed owner rating; CVSS scores are computed by the host from the owner-recorded vector. Strings are redacted and bounded but not Markdown-escaped; escape them before display.', findings: items };
-  const csv = [csvRow(['ref', 'case_id', 'revision', 'title', 'severity', 'cvss_vector', 'cvss_score', 'cwe', 'wstg', 'verdict', 'review_status', 'currentness', 'independent_validation_current', 'policy_key', 'root_cause_key', 'remediation_status', 'remediation_steps', 'references', 'reproduction_evidence']),
-    ...items.map(item => csvRow([item.ref, item.caseId, item.revision, item.title, item.severity ?? 'not rated', item.cvss?.vector ?? '', item.cvss?.baseScore ?? '', item.cwe.join(' '), item.wstg.map(entry => entry.key).join(' '), item.verdict, item.reviewStatus, item.currentness, item.independentValidationCurrent, item.policyKey, item.rootCauseKey ?? '', item.remediation.status, item.remediation.steps ?? '', item.references.join(' '), item.reproduction.map(entry => entry.evidenceId).join(' ')]))];
+  const csv = [csvRow(['ref', 'case_id', 'revision', 'title', 'severity', 'cvss_vector', 'cvss_score', 'cwe', 'wstg', 'techniques', 'finding_id', 'retest_verdict', 'retest_evidence', 'verdict', 'review_status', 'currentness', 'independent_validation_current', 'policy_key', 'root_cause_key', 'remediation_status', 'remediation_steps', 'references', 'reproduction_evidence']),
+    ...items.map(item => csvRow([item.ref, item.caseId, item.revision, item.title, item.severity ?? 'not rated', item.cvss?.vector ?? '', item.cvss?.baseScore ?? '', item.cwe.join(' '), item.wstg.map(entry => entry.key).join(' '), item.techniques.join(' '), item.findingId, item.retest?.verdict ?? '', item.retest?.evidenceRefs.join(' ') ?? '', item.verdict, item.reviewStatus, item.currentness, item.independentValidationCurrent, item.policyKey, item.rootCauseKey ?? '', item.remediation.status, item.remediation.steps ?? '', item.references.join(' '), item.reproduction.map(entry => entry.evidenceId).join(' ')]))];
   return [{ name: 'findings.json', body: `${JSON.stringify(body, null, 2)}\n` }, { name: 'findings.csv', body: `${csv.join('\n')}\n` }];
 }
 /** One row per WSTG test with its level, only for runs that address WSTG tests (same condition as the Markdown checklist). */
@@ -401,6 +471,23 @@ function debtSection(debt: DebtReport): string[] {
     ''];
 }
 
+/** R3.9: project history printed as SUGGESTED context. It is not evidence and cannot confirm a claim, a case or a coverage cell. */
+function priorSection(prior: ProjectKnowledgeView, currentRunId: string): string[] {
+  const rows = [
+    ...prior.findings.slice(0, ROWS).map(row => ({ kind: 'finding' as const, identity: row.identity, state: row.state,
+      detail: `${String(row.detail.policyKey ?? '')}${row.detail.rootCauseKey ? ` / ${String(row.detail.rootCauseKey)}` : ''}${row.detail.severity ? `, severity ${String(row.detail.severity)}` : ''}`,
+      runId: row.runId, priorRunIds: row.priorRunIds, conflict: row.conflict, stale: row.stale })),
+    ...prior.assets.slice(0, ROWS).map(row => ({ kind: 'asset' as const, identity: row.identity, state: row.state,
+      detail: row.detail.label ? String(row.detail.label) : '', runId: row.runId, priorRunIds: row.priorRunIds, conflict: row.conflict, stale: row.stale })),
+  ];
+  return ['## Prior knowledge (suggested context, not evidence)', '',
+    `- Project database schema ${prior.schema}; scope tenant ${mdText(prior.tenant || '(unrecorded)', 120)}, target ${mdText(prior.target, 400)}. ${mdText(prior.note, 400)}`,
+    `- ${prior.conflicts} conflict(s), ${prior.staleRows} stale row(s). A conflict means another run recorded a different disposition for the same identity: both are kept, so read the history and not just the latest id.`,
+    '', '| Kind | Identity | State | Detail | Recorded by | Earlier runs | Flag |', '|---|---|---|---|---|---|---|',
+    ...rows.map(row => `| ${row.kind} | ${mdText(row.identity, 120)} | ${mdText(row.state, 40)} | ${mdText(row.detail, 240) || '—'} | ${row.runId === currentRunId ? 'this run' : mdText(row.runId, 80)} | ${row.priorRunIds.map(run => mdText(run, 80)).join(', ') || '—'} | ${row.conflict ? 'conflict' : row.stale ? 'stale' : '—'} |`),
+    ...(prior.findings.length + prior.assets.length > rows.length ? [`| … ${prior.findings.length + prior.assets.length - rows.length} more row(s) | | | | | | |`] : []), ''];
+}
+
 export function renderReport(index: LedgerIndex, context: ReportProjectionContext & { coverage?: CoverageContext }, meta: ReportMeta): RenderedReport {
   const projection = reportProjection(index, meta.mode ? { ...context, mode: meta.mode } : context), tasks = taskFrontier(index);
   // A4: the authority facts are printed as provenance, never as a gate, permission or finding.
@@ -457,6 +544,7 @@ export function renderReport(index: LedgerIndex, context: ReportProjectionContex
     // A7.6/Q18: derived from the same committed state as the findings above; assess mode prints one line instead of a ladder.
     ...(v2 ? ladderSection(accessLadder(index, cases, meta), meta.ladderFacts) : []),
     ...(v2 ? scopeAndSummary(meta, index, plans, cells, notClean, accepted, rated, unrated, others, open.length, awaiting.length, cases) : []),
+    ...(v2 && meta.prior ? priorSection(meta.prior, meta.runId) : []),
     '## Summary', '', '| Item | Count |', '|---|---|',
     `| Accepted current cases | ${accepted.length} |`, `| Cases pending, disputed, stale, withdrawn or duplicate | ${others.length} |`,
     `| Coverage cells (all plans) | ${cells.length} |`, `| Cells not tested or not confirmed (listed first below) | ${notClean.length} |`,
@@ -598,7 +686,19 @@ export function renderReport(index: LedgerIndex, context: ReportProjectionContex
   const coverageCsv = [csvRow(['plan_id', 'plan_revision', 'cell_id', 'asset_id', 'question_key', 'policy_key', 'actor_context', 'tenant_context', 'method_family', 'execution', 'assessment', 'effective_assessment', 'currentness', 'stale_reasons', 'reason', 'limitations']),
     ...rows(cells, 20000).shown.map(({ plan, cell }) => csvRow([plan.id, plan.revision, cell.id, cell.assetRef.id, cell.questionKey, cell.policyKey ?? '', cell.actorContext, cell.tenantContext, cell.methodFamily, cell.execution, cell.assessment, cell.effectiveAssessment, cell.currentness, cell.staleReasons.join('; '), cell.reason, cell.limitations]))];
   const files: ReportFile[] = [{ name: 'REPORT.md', body: `${out.join('\n')}\n` }, { name: 'cases.csv', body: `${caseCsv.join('\n')}\n` }, { name: 'coverage.csv', body: `${coverageCsv.join('\n')}\n` }];
-  if (v2) files.push(...findingFiles(meta, index, orderedFindings(accepted), everyCell, pages), ...wstgChecklistFile(everyCell, cases, pages));
+  const orderedAccepted = orderedFindings(accepted);
+  if (v2) files.push(...findingFiles(meta, index, orderedAccepted, everyCell, pages, context.assets));
+  // R3.7/R3.8: the SARIF log always travels with a v2 report; the STIX bundle is opt-in only, because a STIX consumer needs an
+  // explicit decision and the default bundle must not change shape. Both are pure functions of the same committed state.
+  if (v2) {
+    const interop = interopInput(meta, index, orderedAccepted, everyCell, context.assets);
+    files.push({ name: 'findings.sarif', body: `${JSON.stringify(sarifLog(interop), null, 2)}\n` });
+    if (meta.stix) files.push({ name: 'findings.stix.json', body: `${JSON.stringify(stixBundle(interop), null, 2)}\n` });
+    if (meta.prior) files.push({ name: 'prior-knowledge.json', body: `${JSON.stringify({ format: 'p2o-prior-knowledge', version: 1, schema: meta.prior.schema,
+      scope: { tenant: meta.prior.tenant, target: meta.prior.target }, suggestedOnly: true, note: meta.prior.note, conflicts: meta.prior.conflicts, staleRows: meta.prior.staleRows,
+      rows: [...meta.prior.findings, ...meta.prior.assets] }, null, 2)}\n` });
+    files.push(...wstgChecklistFile(everyCell, cases, pages));
+  }
   const manifest = { format: 'p2o-report', version, runId: meta.runId, asOfSequence: meta.asOfSequence, records: index.records.length, historical: meta.historical, complete: meta.complete && projection.complete,
     ...(v2 ? { endReason: meta.endReason ?? null } : {}),
     ...(v2 ? { kind: meta.kind ?? null, completion: completion.state, remaining: completion.remaining, outcome: meta.outcome ?? null } : {}),

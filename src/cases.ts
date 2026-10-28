@@ -8,6 +8,7 @@ import { isDemonstrated } from './claims.js';
 import { chainImpact, severityRank } from './cvss.js';
 import { isSatisfiedTask } from './tasks.js';
 import { caseValidation } from './validation.js';
+import { boundRetestRequest, caseRetests, retestCurrent, validateRetest, type CaseRetest } from './retest.js';
 
 export type CaseCurrentness='current'|'stale'|'withdrawn'|'unknown';
 /** Host-set provenance of an accepted high/critical rating: the effect was tested and observed, while the policy basis stays inferred. */
@@ -16,6 +17,8 @@ export interface CaseView extends CaseEntry {
   currentness:CaseCurrentness;staleReasons:string[];independentCurrent:boolean;independenceReason?:string;acceptedFinding:boolean;readyToRate:boolean;canonicalCaseId:string;
   /** Latest owner rating of this case id and the case revision it was recorded against; a rating of an older revision is kept but flagged. */
   finding?:CaseFinding;ratedRevision?:number;ratingCurrent?:boolean;ratingProvenance?:RatingProvenance;
+  /** Latest owner retest of this case id; a retest is recorded once per case revision and an older one stays read-only history. */
+  retest?:CaseRetest;retestCurrent?:boolean;
 }
 export interface CaseContext {assetRevision?:(id:string)=>number|undefined;assertionRevision?:(id:string)=>number|undefined}
 const terminalReview=new Set(['withdrawn']);
@@ -83,7 +86,7 @@ export function caseRatings(index:LedgerIndex):Map<string,{finding:CaseFinding;c
 
 /** Derived, read-only currentness. It cannot upgrade a claim, goal or target authority. */
 export function caseViews(index:LedgerIndex,context:CaseContext={}):CaseView[]{
-  const entries=caseFrontier(index),ratings=caseRatings(index),claims=candidateHeads(index),tasks=taskFrontier(index),entryMap=new Map(entries.map(entry=>[entry.id,entry])),views=new Map<string,CaseView>(),visiting=new Set<string>();
+  const entries=caseFrontier(index),ratings=caseRatings(index),retests=caseRetests(index),claims=candidateHeads(index),tasks=taskFrontier(index),entryMap=new Map(entries.map(entry=>[entry.id,entry])),views=new Map<string,CaseView>(),visiting=new Set<string>();
   const view=(entry:CaseEntry):CaseView=>{
     const cached=views.get(entry.id);if(cached)return cached;const reasons:string[]=[];let unknown=false;
     if(entry.reviewStatus==='withdrawn')reasons.push('case-review-withdrawn');
@@ -120,7 +123,7 @@ export function caseViews(index:LedgerIndex,context:CaseContext={}):CaseView[]{
     // A chain is ready to rate when its executed depth is stated, or the record explicitly has no executed steps.
     const chainDepthStated=!ratedChain||ratedChain.demonstratedThrough!==undefined||ratedChain.steps.every(step=>step.claimRef===undefined);
     const readyToRate=currentness==='current'&&independentCurrent&&chainDepthStated;
-    const result:CaseView={...entry,currentness,staleReasons:[...new Set(reasons)].slice(0,40),independentCurrent,...(independenceReason?{independenceReason}:{}),acceptedFinding,readyToRate,canonicalCaseId,...(rating?{finding:rating.finding,ratedRevision:rating.caseRevision,ratingCurrent:rating.caseRevision===entry.revision,...(rating.provenance?{ratingProvenance:rating.provenance}:{})}:{} )};views.set(entry.id,result);return result;
+    const retest=retests.get(entry.id),result:CaseView={...entry,currentness,staleReasons:[...new Set(reasons)].slice(0,40),independentCurrent,...(independenceReason?{independenceReason}:{}),acceptedFinding,readyToRate,canonicalCaseId,...(rating?{finding:rating.finding,ratedRevision:rating.caseRevision,ratingCurrent:rating.caseRevision===entry.revision,...(rating.provenance?{ratingProvenance:rating.provenance}:{})}:{} ),...(retest?{retest,retestCurrent:retestCurrent(retest,entry.revision)}:{})};views.set(entry.id,result);return result;
   };
   return entries.map(view);
 }
@@ -235,6 +238,35 @@ export class CaseBoard extends LedgerBoard{
       }
       const records=()=>{this.gate();return [{id:randomUUID(),runId:this.runId,at:new Date(this.now()).toISOString(),by:'owner',kind:'note' as const,text:`case ${id}@r${revision} rated ${finding.severity}${provenance?` (${provenance})`:''}; owner rating, not review`,refs:finding.reproductionEvidenceRefs.slice(0,10),data:{caseRating:{caseId:id,caseRevision:revision,finding,...(provenance?{provenance}:{})}}}];};
       const acks=bound?await appendGeneratedRecords(this.path,records,bound):await appendRecords(this.path,records());return read(acks);
+    });
+  }
+  /**
+   * R3.5: record one owner retest against an accepted, current case revision. The retest is a note, not a case revision, so verdict,
+   * review status and coverage cells that pin the case stay current; only the finding's current state changes. A second retest of the
+   * same case revision is refused (a retest answers one revision), a case that is not a current accepted finding is refused, and the
+   * two evidentiary verdicts need same-run evidence while cannot_confirm may cite none. A retest never rates and never re-accepts.
+   */
+  async retest(id:string,revision:number,value:unknown,request?:MutationRequest):Promise<CaseRetest>{
+    const input=validateRetest(value??{}),bound=request?boundRetestRequest(id,revision,value,request):undefined;
+    const prior=bound?await readGeneratedRecords(this.path,bound):undefined;
+    const read=async(acks:{recordId:string}[])=>{const index=await readLedger(this.path,this.runId),row=index.byId.get(acks[0].recordId),data=row?.data?.caseRetest as {caseId?:unknown;caseRevision?:unknown;verdict?:unknown;reason?:unknown;evidenceRefs?:unknown}|undefined;
+      if(!index.complete||!row?.id||!data)throw Error('Retained retest detail unavailable');
+      const stored=validateRetest({verdict:data.verdict,reason:data.reason,evidenceRefs:data.evidenceRefs??[]});
+      return {caseId:data.caseId as string,caseRevision:Number(data.caseRevision),...stored,recordId:row.id};};
+    if(prior)return read(prior);
+    return this.mutate(async(index,cases)=>{
+      const entry=cases.find(item=>item.id===id);if(!entry||entry.revision!==revision)throw Error('Missing or stale case revision');
+      const view=caseViews(index,this.context).find(item=>item.id===id);
+      if(!view)throw Error('Unknown case');
+      if(entry.reviewStatus!=='accepted'||entry.verdict!=='confirmed')throw Error('Only an accepted confirmed finding can be retested: a retest reports whether the demonstrated effect still holds, so the case must first be an accepted finding');
+      if(!view.acceptedFinding){const stale=view.staleReasons.slice(0,3),omitted=view.staleReasons.length-stale.length;throw Error(`A case that is not a current accepted finding cannot be retested: ${stale.join(', ')||'acceptedFinding=false'}${omitted>0?` (+${omitted} more)`:''}; fix the stale references or revise the case, then retest`);}
+      const existing=caseRetests(index).get(id);
+      if(existing?.caseRevision===revision)throw Error(`Case revision ${revision} was already retested (${existing.verdict}): a retest answers one case revision, so revise the case if the assessment changed, or record the next observation against the new revision`);
+      if(input.verdict!=='cannot_confirm'&&!input.evidenceRefs.length)throw Error('A still_reproducible or fixed retest needs same-run evidence IDs: the verdict is the observation, so cite the receipt that shows it; only cannot_confirm may cite none');
+      for(const ref of input.evidenceRefs)if(index.byId.get(ref)?.kind!=='evidence'||index.byId.get(ref)?.runId!==this.runId)throw Error(`Unknown same-run retest evidence ${ref}`);
+      const records=()=>{this.gate();return [{id:randomUUID(),runId:this.runId,at:new Date(this.now()).toISOString(),by:'owner',kind:'note' as const,text:`case ${id}@r${revision} retest ${input.verdict}; owner retest, not a rating`,refs:input.evidenceRefs.slice(0,10),data:{caseRetest:{caseId:id,caseRevision:revision,...input}}}];};
+      const acks=bound?await appendGeneratedRecords(this.path,records,bound):await appendRecords(this.path,records());
+      return read(acks);
     });
   }
   async list():Promise<CaseView[]>{const index=await readLedger(this.path,this.runId);if(!index.complete)throw Error('Case reconciliation incomplete');return caseViews(index,this.context);}
