@@ -8,6 +8,7 @@ import { LAB_TOOLS, TARGET_TOOLS, plannerTools } from '../../src/tool-policy.js'
 import { BrokerClient } from '../../src/broker.js';
 import { parseWakePrompt,plannerWakeMessage } from '../../src/planner-bridge.js';
 import { createContext, createFakePi, createSimpleHerdr, sandboxFactory, EXTENSION_PATH, InertSandbox } from './helpers/fake-pi.js';
+import { seedImpactGoal } from './helpers/report-fixture.js';
 
 async function fixture(work:(h:any)=>Promise<void>,args='',budget?:number) {
   const root=await mkdtemp(join(tmpdir(),'p2o-planner-'));await mkdir(join(root,'source'));
@@ -19,7 +20,9 @@ async function fixture(work:(h:any)=>Promise<void>,args='',budget?:number) {
   const clients:BrokerClient[]=[];
   const control=async()=>join(root,'control',(await readdir(join(root,'control')))[0]);
   const connect=async(id:string)=>{const t=JSON.parse(await readFile(join(await control(),`ticket-${id}.json`),'utf8'));const c=new BrokerClient(t.socket,t.token);clients.push(c);return {client:c,ticket:t};};
-  try {await command(`--target ./source ${args}`);expect(pi.messages).toHaveLength(1);await work({root,pi,ctx,herdr,sandboxes,call,emit,command,connect,control});}
+  try {await command(`--target ./source ${args}`);expect(pi.messages).toHaveLength(1);
+    // A3/D32: exploit mode admits no target-executing intent before the run holds an impact goal.
+    const h={root,pi,ctx,herdr,sandboxes,call,emit,command,connect,control};await seedImpactGoal(h);await work(h);}
   finally {for(const c of clients)c.close();await command('stop');await rm(root,{recursive:true,force:true});}
 }
 const draft=(surface:string)=>({question:`Inspect the fixture at ${surface}`,surface,risk:'fixture',role:'general',roleReason:'Bounded controlled fixture observation',expectedTrue:'Receipt supports this particular observation',expectedFalse:'Receipt refutes this particular observation',stopCondition:'Stop after the bounded observation or missing prerequisite',evidenceIds:[],prerequisites:[],skills:[],methodReason:'Controlled inert fixture; not security proof'});

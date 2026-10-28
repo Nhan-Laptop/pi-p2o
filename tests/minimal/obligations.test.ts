@@ -3,7 +3,7 @@ import { chainObligations, dispatchRefusal } from '../../src/obligations.js';
 import type { ChainClaim } from '../../src/chain-view.js';
 import type { PlanEntry } from '../../src/planning.js';
 import type { AssessmentTask, TaskDraft } from '../../src/tasks.js';
-import { fixture, seedClaim } from './helpers/report-fixture.js';
+import { fixture, seedClaim, seedImpactGoal } from './helpers/report-fixture.js';
 
 /**
  * Phase D acceptance (M2 + M4). M2: a ready chain step on a surface refuses a new task there unless the draft cites the provider or a
@@ -105,6 +105,8 @@ describe('the frontier obligation refuses at create, not at finish (M2 + M4)', (
 
   it('lists an unconsumed primitive and clears it when a wall names it', async () => fixture(async h => {
     await h.command('--target ./source');
+    // A3/D32: the frontier refusal is now reached only once the impact goal admits the intent at all.
+    await seedImpactGoal(h);
     const observation = (await h.call('p2o_shell', { command: 'printf primitive-observation' })).details;
     const put = record(h, observation);
     const primitive = await put('walled-primitive', { closure: 'confirmed', execution: 'tested', proof: 'live_reproduction', policyBasis: 'boundary_invariant', gained: [READ] });

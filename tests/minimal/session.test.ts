@@ -10,21 +10,72 @@ import { Sandbox, type SandboxOptions } from '../../src/sandbox.js';
 import type { PtyChild, PtySpawner } from '../../src/pty.js';
 import type { RunProcess } from '../../src/process.js';
 import { AssessmentStore } from '../../src/state/store.js';
+import { FOOTHOLD_ACTIONS, validationMayUseSession } from '../../src/foothold.js';
+import { TOOL_BOUNDARIES } from '../../src/tool-guidelines.js';
 import { createContext, createFakePi, createSimpleHerdr, EXTENSION_PATH, InertSandbox } from './helpers/fake-pi.js';
 
 const target = { kind: 'directory' as const, path: '/inert' };
 const urlTarget = { kind: 'url' as const, url: 'https://example.com', origin: 'https://example.com' };
 
-/** A fake session sandbox that records its label, its provisioned path and its PTY bytes; no Docker, no child process. */
+/** A fake session sandbox that records its label, its provisioned path, its PTY bytes and an inert foothold; no Docker. */
 class SessionSandbox extends InertSandbox {
   readonly sessionId?: string;
   readonly provisionPaths: string[] = [];
   ptyWrites: string[] = [];
   ptyPending = '';
   ptyKilled = 0;
+  /** A17.8: the fake relay's transcript and peer marker, so the real foothold state machine can run over it. */
+  footholdLog = '';
+  peerConnected = false;
+  readonly footholdSends: string[] = [];
   constructor(options?: SandboxOptions) { super(target, undefined, undefined, options); this.sessionId = options?.session; }
+  override get containerName(): string | undefined { return this.session ? `p2o-${this.session}` : undefined; }
   override async provision(assignment: string, root = '/work') { this.provisionPaths.push(`${root}/${assignment}`); this.provisionCount += 1; }
   override async exec(command: string, seconds = 0, signal?: AbortSignal, workdir = '/work', onRunning?: () => void, onOutput?: any) {
+    if (this.session && command.includes("<<'P2O_FOOTHOLD'")) {
+      this.commands.push({ command, workdir, timeout: seconds });
+      const port = /foothold-(\d+)\.py/.exec(command)?.[1];
+      this.footholdLog = `[p2o] listening on 0.0.0.0:${port}\n`;
+      return { code: 0, stdout: '', stderr: '', truncated: false };
+    }
+    if (this.session && command.includes('while [ $i -lt 20 ]') && command.includes('listening on 0.0.0.0')) {
+      this.commands.push({ command, workdir, timeout: seconds });
+      return { code: 0, stdout: 'listening', stderr: '', truncated: false };
+    }
+    if (this.session && command.startsWith('test -f ') && command.includes('.peer')) {
+      this.commands.push({ command, workdir, timeout: seconds });
+      return { code: this.peerConnected ? 0 : 1, stdout: '', stderr: '', truncated: false };
+    }
+    if (this.session && command.includes('b64decode')) {
+      this.commands.push({ command, workdir, timeout: seconds });
+      this.footholdSends.push(command);
+      return { code: 0, stdout: '', stderr: '', truncated: false };
+    }
+    if (this.session && command.includes('"capturedBytes"')) {
+      this.commands.push({ command, workdir, timeout: seconds });
+      const args = / (\d+) (\d+)$/.exec(command)!;
+      const bytes = Buffer.from(this.footholdLog, 'utf8');
+      const start = Math.min(Number(args[1]), bytes.length);
+      const data = bytes.subarray(start, start + Number(args[2]));
+      return { code: 0, stdout: `${JSON.stringify({ totalBytes: bytes.length, offset: start, capturedBytes: data.length })}\n${data.toString('utf8')}`, stderr: '', truncated: false };
+    }
+    if (this.session && command.startsWith('cat foothold/') && command.endsWith('.log')) {
+      this.commands.push({ command, workdir, timeout: seconds });
+      onOutput?.('stdout', Buffer.from(this.footholdLog, 'utf8'));
+      return { code: 0, stdout: this.footholdLog, stderr: '', truncated: false };
+    }
+    if (this.session && command.startsWith('cat foothold/') && command.endsWith('.pid 2>/dev/null')) {
+      this.commands.push({ command, workdir, timeout: seconds });
+      return { code: 0, stdout: '4242\n', stderr: '', truncated: false };
+    }
+    if (this.session && command.includes('kill -0')) {
+      this.commands.push({ command, workdir, timeout: seconds });
+      return { code: 0, stdout: '', stderr: '', truncated: false };
+    }
+    if (this.session && command.includes('rm -f foothold/') && command.includes('test ! -e')) {
+      this.commands.push({ command, workdir, timeout: seconds });
+      return { code: 0, stdout: '', stderr: '', truncated: false };
+    }
     const result = await super.exec(command, seconds, signal, workdir, onRunning, onOutput);
     return { ...result, ...(this.session ? { sessionRef: this.session } : {}) };
   }
@@ -346,6 +397,146 @@ describe('A7.2 session tool and lifecycle', () => {
         const facts = store.records().flatMap((record: any) => record.data?.session ? [record.data.session] : []);
         expect(facts).toContainEqual(expect.objectContaining({ event: 'closed', ids: [session], by: 'stopped', verified: true }));
       } finally { store.close(); }
+    });
+  });
+});
+
+describe('A17.8 interactive foothold session actions', () => {
+  it('refuses a foothold without --lab-network and names the exact legal next', async () => {
+    await sessionFixture(async h => {
+      await h.command('--target ./source --executors session');
+      const session = (await h.call('p2o_session', { action: 'open' })).details.session as string;
+      await expect(h.call('p2o_session', { action: 'foothold-open', session, port: 4444 })).rejects.toThrow(/INGRESS_UNAVAILABLE:.*--lab-network/);
+      expect(h.sandboxes[1].commands.some((entry: any) => entry.command.includes('P2O_FOOTHOLD'))).toBe(false);
+      // The catcher still needs the same ingress path; nothing else about `listen` moved.
+      await expect(h.call('p2o_session', { action: 'listen', session, port: 4444 })).rejects.toThrow('INGRESS_UNAVAILABLE');
+    });
+  });
+
+  it('drives one persistent foothold: identity gate, uncapped sends, bounded preview + transcript artifact, verified close', async () => {
+    await sessionFixture(async h => {
+      await h.command('--target ./source --executors session --lab-network operator-lab');
+      const session = (await h.call('p2o_session', { action: 'open' })).details.session as string;
+      const sandbox = h.sandboxes[1] as any;
+      const address = `p2o-${session}:4444`;
+      // A catcher on the intended port refuses the collision in both directions; the foothold is one per session.
+      await h.call('p2o_session', { action: 'listen', session, port: 4445 });
+      await expect(h.call('p2o_session', { action: 'foothold-open', session, port: 4445 })).rejects.toThrow('FOOTHOLD_PORT_CONFLICT');
+      const opened = await h.call('p2o_session', { action: 'foothold-open', session, port: 4444 });
+      expect(opened.details).toMatchObject({ session, port: 4444, address, log: 'foothold/foothold-4444.log', connected: false, labNetwork: 'operator-lab' });
+      expect(opened.content[0].text).toContain('No host port is published');
+      expect(opened.content[0].text).toContain('ONE connection');
+      await expect(h.call('p2o_session', { action: 'foothold-open', session, port: 4446 })).rejects.toThrow('FOOTHOLD_EXISTS');
+      await expect(h.call('p2o_session', { action: 'listen', session, port: 4444 })).rejects.toThrow('LISTEN_EXISTS');
+      // No peer yet: identify refuses with the legal next; send/read are gated on the identity that cannot be made.
+      await expect(h.call('p2o_session', { action: 'foothold-identify', session })).rejects.toThrow(/FOOTHOLD_NOT_CONNECTED:.*hand that address/);
+      await expect(h.call('p2o_session', { action: 'foothold-send', session, text: 'id' })).rejects.toThrow('FOOTHOLD_NOT_CONNECTED');
+      sandbox.peerConnected = true;
+      sandbox.footholdLog += 'root\nuid=0(root) gid=0(root) groups=0(root)\n';
+      // Connected but not identified: the identity gate names whoami/id and no model bytes reach the peer.
+      await expect(h.call('p2o_session', { action: 'foothold-send', session, text: 'id' })).rejects.toThrow(/FOOTHOLD_NEEDS_IDENTITY:.*whoami; id/);
+      await expect(h.call('p2o_session', { action: 'foothold-read', session })).rejects.toThrow('FOOTHOLD_NEEDS_IDENTITY');
+      expect(sandbox.footholdSends).toEqual([]); // nothing model-authored reached the peer before the gate
+      const identified = await h.call('p2o_session', { action: 'foothold-identify', session });
+      expect(identified.details.identified.observation).toContain('uid=0(root)');
+      expect(identified.details.identified.at).toMatch(/T/);
+      // Sending is uncapped by the foothold: a 20 KiB line is one shell operation with a receipt.
+      const sent = await h.call('p2o_session', { action: 'foothold-send', session, text: 'B'.repeat(20 * 1024) });
+      expect(sent.details.bytes).toBe(20 * 1024 + 1);
+      expect(sent.details.evidenceId).toMatch(/^[0-9a-f-]{36}$/); // one receipted shell operation, not a bare write
+      expect(sandbox.footholdSends).toHaveLength(2); // the recorded whoami/id probe + this one send
+      // The preview is bounded; the cursor advances; a larger transcript is retained through the capture path.
+      const first = await h.call('p2o_session', { action: 'foothold-read', session });
+      expect(first.details).toMatchObject({ session, port: 4444, truncated: false });
+      expect(first.content[0].text).toContain('[foothold tcp 4444 at');
+      sandbox.footholdLog += 'X'.repeat(9 * 1024);
+      const large = await h.call('p2o_session', { action: 'foothold-read', session });
+      expect(large.details.truncated).toBe(true);
+      expect(large.details.artifact).toMatchObject({ id: expect.stringMatching(/^artifact-/), truncated: false });
+      expect(large.content[0].text).toContain(`transcript ${large.details.artifact.id}`);
+      const listed = (await h.call('p2o_session', { action: 'list' })).details.sessions as any[];
+      expect(listed.find(row => row.session === session).footholds).toEqual([expect.objectContaining({ port: 4444, address, connected: true, identifiedAt: expect.any(String), observation: expect.stringContaining('uid=0(root)') })]);
+      // Close kills the relay and verifies removal; the transcript log stays for its capture path.
+      const closed = await h.call('p2o_session', { action: 'foothold-close', session });
+      expect(closed.details).toMatchObject({ session, port: 4444, closed: true, verified: true });
+      expect(sandbox.commands.some((entry: any) => entry.command.includes('kill 4242'))).toBe(true);
+      expect(sandbox.commands.some((entry: any) => entry.command.includes('test ! -e foothold/foothold-4444.pid'))).toBe(true);
+      await expect(h.call('p2o_session', { action: 'foothold-send', session, text: 'id' })).rejects.toThrow('FOOTHOLD_NOT_OPEN');
+      const after = (await h.call('p2o_session', { action: 'list' })).details.sessions as any[];
+      expect(after.find(row => row.session === session).footholds[0]).toMatchObject({ port: 4444, connected: false, closedAt: expect.any(String) });
+      await h.command(`report export ${join(h.root, 'out')}`);
+      const report = (await readFile(join(h.root, 'out', 'REPORT.md'), 'utf8')).replace(/\\([()])/g, '$1');
+      expect(report).toContain('1 interactive foothold shell(s)');
+      expect(report).toContain('1 identity confirmation(s) recorded');
+      expect(report).toContain('1 relay removal(s) verified');
+      expect(report).toContain(`tcp 4444 at ${address} (identity confirmed through the shell)`);
+    });
+  });
+
+  it('keeps the foothold across steps and closes it with its session, recording every foothold operation', async () => {
+    await sessionFixture(async h => {
+      await h.command('--target ./source --executors session --lab-network operator-lab');
+      const session = (await h.call('p2o_session', { action: 'open' })).details.session as string;
+      const sandbox = h.sandboxes[1] as any;
+      await h.call('p2o_session', { action: 'foothold-open', session, port: 4444 });
+      // A later step in the same session does not tear the foothold down: the relay belongs to the session, not the step.
+      await h.call('p2o_session', { action: 'exec', session, command: 'id' });
+      sandbox.peerConnected = true;
+      sandbox.footholdLog += 'root\nuid=0(root) gid=0(root) groups=0(root)\n';
+      const identified = await h.call('p2o_session', { action: 'foothold-identify', session });
+      expect(identified.details.identified).toMatchObject({ method: 'listener', user: 'root', uid: 0 });
+      await h.call('p2o_session', { action: 'foothold-send', session, text: 'id' });
+      await h.call('p2o_session', { action: 'foothold-read', session });
+      // Every foothold operation is a session operation in the ledger, and the identity row is citable as fields.
+      const store = await h.reader();
+      try {
+        const facts = store.records().flatMap((record: any) => record.data?.session ? [record.data.session] : []);
+        expect(facts).toEqual(expect.arrayContaining([
+          expect.objectContaining({ id: session, event: 'foothold-open', port: 4444 }),
+          expect.objectContaining({ id: session, event: 'foothold-identity', user: 'root', uid: 0, method: 'listener' }),
+          expect.objectContaining({ id: session, event: 'foothold-send', bytes: 3 }),
+          expect.objectContaining({ id: session, event: 'foothold-read', port: 4444 }),
+        ]));
+        expect(facts.find((fact: any) => fact.event === 'foothold-identity').observation).toContain('uid=0(root)');
+      } finally { store.close(); }
+      const listed = (await h.call('p2o_session', { action: 'list' })).details.sessions.find((row: any) => row.session === session);
+      expect(listed.footholds[0]).toMatchObject({ port: 4444, connected: true, user: 'root', uid: 0, method: 'listener' });
+      // Session end removes the container the relay lived in; the foothold cannot be driven afterwards.
+      await h.call('p2o_session', { action: 'close', session });
+      expect(sandbox.stopCount).toBe(1);
+      await expect(h.call('p2o_session', { action: 'foothold-send', session, text: 'id' })).rejects.toThrow('SESSION_UNKNOWN');
+      await expect(h.call('p2o_session', { action: 'foothold-read', session })).rejects.toThrow('SESSION_UNKNOWN');
+    });
+  });
+
+  it('keeps the validation worker at action=open only for every new foothold action', async () => {
+    await sessionFixture(async h => {
+      await h.command('--target ./source --executors session --lab-network operator-lab');
+      // A7.2 kept validation workers independent by allowing `open` alone; A17.8 extends that one predicate, so every
+      // foothold action inherits the same refusal instead of opening a second path into a discovery session.
+      expect(validationMayUseSession('open')).toBe(true);
+      for (const action of FOOTHOLD_ACTIONS) expect(validationMayUseSession(action), action).toBe(false);
+      const description = h.pi.tools.get('p2o_session').description as string;
+      expect(description).toContain('a validation worker gets action=open only');
+      // The broker handler still routes `open` before the foothold actions, and the predicate is what it calls.
+      expect(description).not.toContain('validation worker gets action=foothold');
+    });
+  });
+
+  it('documents the foothold honestly in the declaration and its boundary line', async () => {
+    await sessionFixture(async h => {
+      await h.command('--target ./source');
+      const description = h.pi.tools.get('p2o_session').description as string;
+      for (const phrase of ['action=foothold-open', 'ONE persistent interactive shell', 'whoami; id', 'one peer connection is kept', 'no per-send or idle cap',
+        'max 8 KiB', 'capture artifact', 'no host port', 'no tunnel or pivot', 'kills the relay and verifies removal']) {
+        expect(description, phrase).toContain(phrase);
+      }
+      const actions = (h.pi.tools.get('p2o_session').parameters as any).properties.action.enum as string[];
+      expect(actions).toEqual(expect.arrayContaining([...FOOTHOLD_ACTIONS]));
+      const boundary = TOOL_BOUNDARIES.p2o_session.join(' ');
+      for (const phrase of ['not evidence', 'one connection per session', 'lab-network only', 'no host port', 'no tunnel or pivot', 'identity probe']) {
+        expect(boundary, phrase).toContain(phrase);
+      }
     });
   });
 });

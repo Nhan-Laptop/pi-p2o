@@ -16,10 +16,12 @@ export interface CaseRemediation {status:typeof REMEDIATION_STATUSES[number];rea
 /**
  * Owner-attributed rating of one case, stored as its own owner note (`data.caseRating`) and NOT as a case revision: rating a case neither changes its
  * verdict or review status nor stales the coverage cells that pin its revision. The score is computed by the host from `cvssVector` (src/cvss.ts);
- * CWE IDs and references are what the owner recorded, not looked up. A case resting on an `inferred` policy basis may not be rated above Medium.
+ * CWE IDs and references are what the owner recorded, not looked up. An `inferred` policy basis is provenance, not a ceiling: it refuses a high/critical rating only while an inferred-basis claim is not a tested observation, and the accepted rating then carries the host-set `INFERRED_POLICY` flag and a required `limitations`.
  */
 export interface CaseFinding {
   severity:typeof FINDING_SEVERITIES[number];basis:string;likelihood?:string;impact?:string;cvssVector?:string;cwe:string[];remediationSteps?:string;references:string[];reproductionEvidenceRefs:string[];reproductionSteps?:ReproductionStep[];independenceWaiver?:string;chain?:CaseChain;
+  /** Required when a high/critical rating rests on observed inferred-policy provenance: what the inference still leaves unproven. */
+  limitations?:string;
 }
 /**
  * One ordered link of a composed chain: what the step does, the claim that shows it ran, and the typed capability edge that joins it to the previous step
@@ -54,7 +56,7 @@ function taskRef(value:unknown,label:string,revisionRequired=false):CaseTaskRef{
 /** WSTG test keys (lower case, e.g. wstg-athn-02) or https URLs without credentials or fragments; recorded as text, never rendered as a link. */
 const REFERENCE=/^(?:wstg-[a-z]{4}-\d{2}|https:\/\/[a-z0-9.-]+\.[a-z]{2,}(?::\d{1,5})?(?:\/[A-Za-z0-9._~!$&'*+,;=:@%\/-]*)?(?:\?[A-Za-z0-9._~!$&'*+,;=:@%\/?-]*)?)$/;
 export function validateFinding(value:unknown):CaseFinding{
-  const row=plain(value,'case finding');exact(row,['severity','basis','likelihood','impact','cvssVector','cwe','remediationSteps','references','reproductionEvidenceRefs','reproductionSteps','independenceWaiver','chain'],'Case finding');
+  const row=plain(value,'case finding');exact(row,['severity','basis','likelihood','impact','cvssVector','cwe','remediationSteps','references','reproductionEvidenceRefs','reproductionSteps','independenceWaiver','chain','limitations'],'Case finding');
   if(typeof row.severity!=='string'||!(FINDING_SEVERITIES as readonly string[]).includes(row.severity))throw Error('Invalid case finding severity');
   const cwe=row.cwe===undefined?[]:row.cwe;if(!Array.isArray(cwe)||cwe.length>5||cwe.some(item=>typeof item!=='string'||!/^CWE-[1-9][0-9]{0,4}$/.test(item))||new Set(cwe).size!==cwe.length)throw Error('Invalid case finding CWE list');
   const references=row.references===undefined?[]:row.references;if(!Array.isArray(references)||references.length>5||references.some(item=>typeof item!=='string'||item.length>300||!REFERENCE.test(item))||new Set(references).size!==references.length)throw Error('Invalid case finding references');
@@ -72,6 +74,8 @@ export function validateFinding(value:unknown):CaseFinding{
   if(row.cvssVector!==undefined){if(typeof row.cvssVector!=='string'||!CVSS_VECTOR.test(row.cvssVector))throw Error('Invalid case finding CVSS:3.1 vector');result.cvssVector=row.cvssVector;}
   if(row.remediationSteps!==undefined)result.remediationSteps=text(row.remediationSteps,'finding remediation steps',2000,10);
   if(row.independenceWaiver!==undefined)result.independenceWaiver=text(row.independenceWaiver,'finding independence waiver',300,10);
+  // Empty is accepted here so `rate()` can name `INFERRED_POLICY` when the provenance rule requires a limitation.
+  if(row.limitations!==undefined)result.limitations=text(row.limitations,'finding limitations',2000,0);
   if(row.chain!==undefined){
     // `impact` is accepted on a stored row and then recomputed from the depth, so a replay round-trips while no caller can choose a score.
     const chain=plain(row.chain,'finding chain');exact(chain,['objective','steps','demonstratedThrough','impact'],'Finding chain');

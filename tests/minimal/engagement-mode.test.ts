@@ -113,7 +113,8 @@ describe('engagement mode in the run (A7.1)', () => {
     } finally { store.close(); }
     const prompt = await plannerPrompt(h);
     expect(prompt).toContain('ENGAGEMENT MODE — EXPLOIT');
-    expect(prompt).toContain('An impact goal is a capability proof');
+    // A3/D32: the impact goal is demanded as a plan-board goal whose proof is a capability or an accepted case.
+    expect(prompt).toContain('record a plan goal whose proof is a capability or an accepted case');
     // Planner policy text names no tool: active tool declarations own usage and arguments.
     expect(prompt).not.toMatch(/\bp2o_[a-z_]+\b/);
   }));
@@ -142,8 +143,14 @@ describe('engagement mode in the run (A7.1)', () => {
     await h.command('--target ./source');
     const goalDraft = (proof: Record<string, unknown>) => ({ entry: { kind: 'goal', title: 'Reach the recorded effect under an impact goal', status: 'active', proof,
       criteria: ['The exploitation step runs and is attributed'], reason: 'P7.1 admission fixture: the goal the ladder is settled against' } });
-    // No goal yet: the host refuses before the intent exists.
+    // No goal yet: the host refuses before the intent exists, for every target-executing purpose (A3/D32), not only exploitation.
     await expect(h.call('p2o_task_author', { draft: exploitationDraft })).rejects.toThrow(/EXPLOIT_MODE_NEEDS_IMPACT_GOAL/);
+    await expect(h.call('p2o_task_author', { draft: { question: 'Which surfaces does the fixture expose?', surface: '/fixture', risk: 'mapping', role: 'recon', evidenceIds: [], prerequisites: [] } })).rejects.toThrow(/EXPLOIT_MODE_NEEDS_IMPACT_GOAL/);
+    // Reporting is read-only, so it is admitted without an impact goal.
+    const reportingDraft = { question: 'Summarize the reviewed fixture records?', surface: '/fixture', risk: 'reporting', role: 'reporting',
+      roleReason: 'Reporting is read-only and needs no impact goal', expectedTrue: 'The summary cites reviewed records', expectedFalse: 'The summary names what is missing',
+      stopCondition: 'Stop after one summary of the reviewed records', evidenceIds: [], prerequisites: [], methodReason: 'Read-only summary of the reviewed fixture records' };
+    expect((await h.call('p2o_task_author', { draft: reportingDraft })).details).toMatchObject({ status: 'proposed' });
     await h.call('p2o_plan_author', { entry: { kind: 'todo', title: 'A todo is not a goal', status: 'open', reason: 'P7.1 negative control: only a goal authorizes the ladder' } });
     await expect(h.call('p2o_task_author', { draft: exploitationDraft })).rejects.toThrow(/EXPLOIT_MODE_NEEDS_IMPACT_GOAL/);
     // A capability-proof goal opens the ladder; the intent still has to carry its own lineage.

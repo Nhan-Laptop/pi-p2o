@@ -47,18 +47,26 @@ describe('research debt (A6.2)', () => {
     expect(debtSummary(report)).toMatch(/research debt item\(s\)/);
   }));
 
-  it('derives the campaign frame kinds only when a campaign was promised or recorded', async () => fixture(async h => {
-    await populate(h);
-    const batch = await inspect(h);
-    expect(batch.kinds.has('CAMPAIGN_MISSING')).toBe(false);
-    expect(batch.kinds.has('GOAL_MISSING')).toBe(false);
-    const promised = await inspect(h, { expectCampaign: true });
-    expect(promised.kinds.has('CAMPAIGN_MISSING')).toBe(true);
-    const campaign = await inspect(h, { expectCampaign: true, campaign: { objective: 'Assess the fixture endpoint without changing state' } });
-    expect(campaign.kinds.has('CAMPAIGN_MISSING')).toBe(false);
-    expect(campaign.kinds.has('GOAL_MISSING')).toBe(true);
-    expect(items(campaign.report, 'GOAL_MISSING')[0]!.detail).toContain('no goal on the plan board');
-  }));
+  it('derives the campaign frame kinds only when a campaign was promised or recorded', async () => {
+    await fixture(async h => {
+      await populate(h);
+      const batch = await inspect(h);
+      expect(batch.kinds.has('CAMPAIGN_MISSING')).toBe(false);
+      // A3/D32: the populated fixture now carries the reviewed impact goal, so a recorded campaign has a goal to name.
+      expect(batch.kinds.has('GOAL_MISSING')).toBe(false);
+      const promised = await inspect(h, { expectCampaign: true });
+      expect(promised.kinds.has('CAMPAIGN_MISSING')).toBe(true);
+    });
+    // 2026-10-27 (A3/D32): GOAL_MISSING needs a run with no plan goal at all, so this half starts its own fixture instead of
+    // populating one; a campaign objective with nothing on the goal board is exactly the frame kind under test.
+    await fixture(async h => {
+      await h.command('--target ./source');
+      const campaign = await inspect(h, { expectCampaign: true, campaign: { objective: 'Assess the fixture endpoint without changing state' } });
+      expect(campaign.kinds.has('CAMPAIGN_MISSING')).toBe(false);
+      expect(campaign.kinds.has('GOAL_MISSING')).toBe(true);
+      expect(items(campaign.report, 'GOAL_MISSING')[0]!.detail).toContain('no goal on the plan board');
+    });
+  });
 
   it('keeps ids stable, formatted and bounded while totals stay true', async () => fixture(async h => {
     await populate(h);

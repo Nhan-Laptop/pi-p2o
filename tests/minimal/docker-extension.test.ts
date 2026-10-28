@@ -11,7 +11,8 @@ const run = promisify(execFile);
 
 /**
  * The real extension against real Docker: the lead's host tools must be blocked, its sandbox command must
- * run non-root inside the pinned image, and `p2o_finish` must leave no container of this run behind.
+ * run as root inside the pinned image with Docker's default capability set, and `p2o_finish` must leave no
+ * container of this run behind.
  */
 it.skipIf(process.env.P2O_TEST_DOCKER !== '1')('real Docker + real extension: host tools blocked, sandbox evidence recorded, containers verified gone', async () => {
   const root = await mkdtemp(join(tmpdir(), 'p2o-docker-owner-'));
@@ -71,11 +72,13 @@ it.skipIf(process.env.P2O_TEST_DOCKER !== '1')('real Docker + real extension: ho
     const bash = results.find((message: any) => message.toolName === 'bash');
     expect(text(bash)).toMatch(/Tool bash not found|permits only/);
     expect(text(bash)).not.toContain('HOST_BYPASS');
-    // The sandbox command carries real container evidence: nobody-user, the mounted source, dropped capabilities.
+    // The sandbox command carries real container evidence: root uid, the mounted source, Docker's default capability set.
     const shell = results.find((message: any) => message.toolName === 'p2o_shell');
-    expect(text(shell)).toContain('65532');
+    expect(text(shell)).toMatch(/^0$/m);
     expect(text(shell)).toContain('authorized docker source');
-    expect(text(shell)).toMatch(/CapEff:\s*0000000000000000/);
+    const capEff = BigInt(`0x${/CapEff:\s*([0-9a-f]+)/i.exec(text(shell))![1]}`);
+    expect([...capEff.toString(2)].filter(bit => bit === '1')).toHaveLength(14);
+    expect(capEff & (1n << 13n)).not.toBe(0n); // NET_RAW: raw sockets work.
     expect(text(shell)).toContain('NO_DOCKER_SOCKET');
     const finish = results.find((message: any) => message.toolName === 'p2o_finish');
     expect(text(finish)).toContain('Container removal verified');

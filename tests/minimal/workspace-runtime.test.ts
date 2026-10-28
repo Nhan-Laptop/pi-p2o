@@ -14,7 +14,7 @@ import { parseCommand } from '../../src/target.js';
 import { parseWorkspaceCommand } from '../../src/ui/workspace.js';
 import { bundlePath } from '../../src/state/bundle.js';
 import { createContext, createFakePi, createSimpleHerdr, EXTENSION_PATH, InertSandbox } from './helpers/fake-pi.js';
-import { seedClaim } from './helpers/report-fixture.js';
+import { seedClaim, seedImpactGoal } from './helpers/report-fixture.js';
 import type { SandboxOptions } from '../../src/sandbox.js';
 import { runFixed } from '../../src/process.js';
 import { scratchPrefixHash, type ScratchSnapshot } from '../../src/scratch.js';
@@ -80,7 +80,7 @@ describe('canonical owner runtime (inert execution, real SQLite and Unix broker)
   });
   it('--refer-workspace tags prior same-target runs as context only, never same-run evidence, and ignores runs on a different target',async()=>{
     await fixture(async h=>{
-      await h.command('--target ./source');const firstRunId=await h.runId();
+      await h.command('--target ./source');await seedImpactGoal(h);const firstRunId=await h.runId();
       const asset=(await h.call('p2o_graph',{action:'record',batch:{assets:[{asset:{kind:'endpoint',key:'GET /refer-fixture'}}]}})).details.acks[0];
       const taskDraft={question:'Does the refer-fixture observation match the declared policy?',surface:'/refer-fixture',risk:'authorization',role:'general',roleReason:'Bounded inert observation for the refer-workspace fixture',expectedTrue:'Receipt records the expected policy observation',expectedFalse:'Receipt records the contrasting control',stopCondition:'Stop after one inert command and owner review',evidenceIds:[],prerequisites:[],skills:[],methodReason:'One inert command with no external target',
         // A3: the work identity is what places this reviewed intent in the prior run's derived coverage denominator.
@@ -537,7 +537,7 @@ describe('canonical owner runtime (inert execution, real SQLite and Unix broker)
     void ticket;
   }));
   it('matches exact work before dispatch, keeps owner-only plans, and reads human cards without extra model/target work',async()=>fixture(async h=>{
-    await h.command('--target ./source');expect(h.pi.active).toContain('p2o_plan_author');
+    await h.command('--target ./source');await seedImpactGoal(h);expect(h.pi.active).toContain('p2o_plan_author');
     const asset=(await h.call('p2o_graph',{action:'record',batch:{assets:[{asset:{kind:'endpoint',key:'GET /fixture'}}]}})).details.acks[0];
     const draft={question:'Does the declared fixture gate reach the consumer?',surface:'/fixture',risk:'boundary',role:'general',roleReason:'Bounded inert source comparison only',expectedTrue:'Declared actor reaches the consumer',expectedFalse:'Control actor cannot reach the consumer',stopCondition:'Stop after one bounded observation or a concrete gap',evidenceIds:[],prerequisites:[],skills:[],methodReason:'Smallest inert source observation, no live target',
       work:{assetRefs:[{id:asset.entityId,revision:1}],questionKey:'policy:fixture',actorContext:'actor:fixture',tenantContext:'tenant:fixture',methodFamily:'source-trace',purpose:'investigation'},decision:{disposition:'new',reason:'No prior matching structured attempt exists'},outputContract:{kind:'investigation',required:['evidence','gaps'],partialAllowed:true,artifactPolicy:'ids-only'}};
@@ -557,7 +557,7 @@ describe('canonical owner runtime (inert execution, real SQLite and Unix broker)
     expect((await h.call('p2o_workers')).details.workers).toHaveLength(1);expect(h.sandboxes[0].commands).toHaveLength(0);expect(h.pi.messages).toHaveLength(1);
   }));
   it('reviews canonical cases and proof-aware coverage without merging claims, widening scope or adding target/model work',async()=>fixture(async h=>{
-    await h.command('--target ./source');expect(h.pi.active).toEqual(expect.arrayContaining(['p2o_case_author','p2o_coverage_plan']));
+    await h.command('--target ./source');await seedImpactGoal(h);expect(h.pi.active).toEqual(expect.arrayContaining(['p2o_case_author','p2o_coverage_plan']));
     const asset=(await h.call('p2o_graph',{action:'record',batch:{assets:[{asset:{kind:'endpoint',key:'GET /case-fixture'}}]}})).details.acks[0],taskDraft={question:'Does the bounded fixture observation match the declared policy?',surface:'/case-fixture',risk:'authorization',role:'general',roleReason:'Bounded inert observation for case review only',expectedTrue:'Receipt records the expected policy observation',expectedFalse:'Receipt records the contrasting control',stopCondition:'Stop after one inert command and owner review',evidenceIds:[],prerequisites:[],skills:[],methodReason:'One inert command with no external target',
       // A3: one structured work identity is the whole denominator entry; the host derives its axes from reviewed work.
       work:{assetRefs:[{id:asset.entityId,revision:1}],questionKey:'question:runtime-case',policyKey:'policy:runtime-case',actorContext:'actor:fixture',tenantContext:'tenant:fixture',methodFamily:'offline-observation',purpose:'investigation'}};

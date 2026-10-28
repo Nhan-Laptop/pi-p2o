@@ -28,9 +28,11 @@ anchor to the task that produced it. A planner call is refused with `WORKER_ONLY
   control; a `blocked` claim needs a `requirement` naming the tool or host that actually refused, or the exhausted approach —
   never a missing binary, dependency, credential or browser.
 - `policyBasis` = `explicit_contract` | `boundary_invariant` | `inferred`, with `expectedPolicy` naming the rule and its
-  source. Inferred policy stays `open_proof_gap`; an effect that establishes the boundary itself (unauthenticated code
+  source. Untested inference stays `open_proof_gap`; an effect that establishes the boundary itself (unauthenticated code
   execution, a cross-principal read with no credential, attacker-URL reach into metadata or a private network, an
-  unprivileged root-owned write) is `boundary_invariant`. Sibling routes, placeholder credentials and CVE leads are hypotheses.
+  unprivileged root-owned write, or a crossing observed with only the attacker's own credential) is `boundary_invariant`.
+  A sibling route, a placeholder credential or a CVE advisory alone is a hypothesis, and a functional effect reached
+  through a CVE-seeded hypothesis is confirmed by the trigger, never by the advisory.
 - `gained` / `needs` are the typed capability edge: `{kind, subject?, scope?}` over the closed kinds in
   `src/capabilities.ts` (net.egress, http.request, auth.bypass, cred.session, cred.secret, file.read, file.write, exec.code,
   db.query, deserialize, cloud.role, host.shell, dns.resolve, admin.ui, data.read). A claim without them can be true, but
@@ -79,8 +81,12 @@ that work; if no worker backend exists the task is created visibly `blocked` wit
 
 **Rating** (`p2o_case_rate`) records a separate note bound to the case revision: `severity` (critical…informational), a
 required `basis`, optional `cvssVector` (the host computes CVSS 3.1 in `src/cvss.ts`), CWE and references, and up to five
-reproduction steps `{ref, role, note?}` with roles baseline/proof/verification/supporting as labels only. A case whose policy
-basis is `inferred` cannot be rated above medium; a revised case makes the old rating `STALE_RATING` (reported, not fatal).
+reproduction steps `{ref, role, note?}` with roles baseline/proof/verification/supporting as labels only. A `critical`/`high` rating is refused when
+it rests on an inferred-basis claim that was never tested and observed (`confirmed` + `tested` + a non-static proof). When
+every inferred-basis claim was tested and observed, the rating is allowed at demonstrated depth, records the
+`INFERRED_POLICY` provenance flag
+and needs a `limitations` entry naming what the inference rests on; it still cannot exceed what the chain demonstrated. A
+revised case makes the old rating `STALE_RATING` (reported, not fatal).
 
 **Chain** (`chain` inside the rating) records the exploitation chain the run built: 1–8 ordered steps, each citing a
 same-run claim, with typed `gained`/`needs` edges. Steps up to `demonstratedThrough` must be confirmed+tested; the step at

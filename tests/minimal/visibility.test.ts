@@ -12,6 +12,7 @@ import { AssessmentStore } from '../../src/state/store.js';
 import { parseStateCommand, statusView } from '../../src/ui/state.js';
 import { StateScreen, widgetComponent } from '../../src/ui/screen.js';
 import { createFakePi, createContext, createSimpleHerdr, sandboxFactory, EXTENSION_PATH, type InertSandbox } from './helpers/fake-pi.js';
+import { seedImpactGoal } from './helpers/report-fixture.js';
 
 const draft = {question:'Inspect the fixture boundary',surface:'fixture',risk:'policy',role:'general',roleReason:'Controlled local fixture observation',expectedTrue:'Specific observable support',expectedFalse:'Specific contradictory support',stopCondition:'Stop after the bounded observation',evidenceIds:[],prerequisites:[],skills:[],methodReason:'Controlled inert fixture, not security proof'};
 async function fixture(work: (h: any) => Promise<void>, args = '') {
@@ -23,7 +24,9 @@ async function fixture(work: (h: any) => Promise<void>, args = '') {
   const call = (s:string,p={}) => pi.tools.get(s).execute('call',p,undefined,undefined,ctx.ctx);
   const path = async () => join(root,'control',(await readdir(join(root,'control')))[0],'records.sqlite');
   const screen = () => ctx.screens.at(-1).render(150).join('\n');
-  try {await command(`--target ./source ${args}`);expect(pi.messages).toHaveLength(1);await work({root,pi,ctx,herdr,sandboxes,command,call,path,screen});}
+  try {await command(`--target ./source ${args}`);expect(pi.messages).toHaveLength(1);
+    // A3/D32: exploit mode admits no target-executing intent before the run holds an impact goal.
+    const h={root,pi,ctx,herdr,sandboxes,command,call,path,screen};if(!/--mode assess\b/.test(args))await seedImpactGoal(h);await work(h);}
   finally {await command('stop');await rm(root,{recursive:true,force:true});}
 }
 

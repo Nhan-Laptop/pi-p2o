@@ -213,6 +213,10 @@ async function extensionFixture(provisionFails = false): Promise<ExtensionHarnes
 }
 
 const RECON_INTENT = { question: 'Which recorded surfaces does the retained fixture expose?', surface: '/fixture', risk: 'mapping', role: 'recon', evidenceIds: [], prerequisites: [] };
+/** A3/D32: exploit mode admits no target-executing intent before the run holds an impact goal. */
+const seedGoal = (h: ExtensionHarness) => h.call('p2o_plan_author', { entry: { kind: 'goal', title: 'Reach the recorded fixture effect under an impact goal',
+  status: 'active', proof: { kind: 'capability', capability: { kind: 'data.read' } }, criteria: ['The bounded fixture intent is recorded and attributed'],
+  reason: 'A3/D32 fixture prerequisite: exploit mode needs an impact goal before the first target-executing intent' } });
 const WORKER_CLAIM = { candidate: 'fixture-worker-claim', surface: '/fixture', risk: 'authorization', closure: 'open_proof_gap', execution: 'not_tested',
   proof: 'static_trace', evidenceRefs: [], negativeControls: [], policyBasis: 'inferred', expectedPolicy: 'Declared fixture boundary',
   limitations: 'Inert worker claim; the receipt is mechanical metadata, not proof' };
@@ -222,6 +226,7 @@ describe('intent admission at the extension surface (P1/A2)', () => {
     const h = await extensionFixture();
     try {
       await h.command('--target ./repo');
+      await seedGoal(h);
       const task = (await h.call('p2o_task_author', { draft: RECON_INTENT })).details;
       // The planner has no confirmed-claim path: review of a worker claim is the only one left.
       await expect(h.call('p2o_candidate', WORKER_CLAIM)).rejects.toThrow(/WORKER_ONLY/);
@@ -243,6 +248,7 @@ describe('intent admission at the extension surface (P1/A2)', () => {
     const h = await extensionFixture(true);
     try {
       await h.command('--target ./repo --executors isolated --target-ops 2');
+      await seedGoal(h);
       const task = (await h.call('p2o_task_author', { draft: RECON_INTENT })).details;
       await expect(h.call('p2o_delegate', { focus: 'recon', task: 'Map the retained fixture surface', taskId: task.id })).rejects.toThrow(/provision executor/);
       // The assignment is a blocked prerequisite the planner can see and settle, not a worker that reported.
@@ -256,6 +262,7 @@ describe('intent admission at the extension surface (P1/A2)', () => {
     const h = await extensionFixture();
     try {
       await h.command('--target ./repo');
+      await seedGoal(h);
       const risk = `Anonymous read-only reconnaissance; ${'r'.repeat(260)}`, surface = `/fixture/${'s'.repeat(260)}`;
       const task = (await h.call('p2o_task_author', { draft: { ...RECON_INTENT, risk, surface } })).details;
       expect(task).toMatchObject({ risk: risk.slice(0, 200), surface: surface.slice(0, 200) });

@@ -4,7 +4,7 @@ import { AssessmentEngine, type EngineDeps, type PlannerWake } from '../../src/e
 import { continuationRefusal, type WorkerRegistration } from '../../src/broker.js';
 import { finishPreflight } from '../../src/finish-preflight.js';
 import { readLedger } from '../../src/records.js';
-import { fixture, seedClaim } from './helpers/report-fixture.js';
+import { fixture, seedClaim, seedImpactGoal } from './helpers/report-fixture.js';
 
 /**
  * Phase F acceptance (M6 + M7 + M8). Quiet rounds escalate with both round ids and the human decision — never a budget word;
@@ -161,6 +161,8 @@ describe('the run tells the lead what to research, and records its refusals (M6 
 
   it('fills work.purpose from the role instead of demanding it twice', async () => fixture(async h => {
     await h.command('--target ./source');
+    // A3/D32: the impact goal must exist before the first target-executing intent, which is still this run's recon intent.
+    await seedImpactGoal(h);
     const asset = (await h.call('p2o_graph', { action: 'record', batch: { assets: [{ asset: { kind: 'endpoint', key: 'GET /report-fixture' } }] } })).details.acks[0];
     const observation = (await h.call('p2o_shell', { command: 'printf purpose-observation' })).details;
     const parent = await seedClaim(h, { candidate: 'purpose-parent', surface: '/report-fixture', risk: 'authorization', closure: 'open_proof_gap',
@@ -187,6 +189,8 @@ describe('the run tells the lead what to research, and records its refusals (M6 
 
   it('records an admission refusal once and counts it as an advisory', async () => fixture(async h => {
     await h.command('--target ./source');
+    // A3/D32: seed the impact goal so the refusal under test is the frontier obligation, not the missing goal.
+    await seedImpactGoal(h);
     const observation = (await h.call('p2o_shell', { command: 'printf admission-observation' })).details;
     await seedClaim(h, { candidate: 'unconsumed', surface: '/report-fixture', risk: 'authorization', closure: 'confirmed', execution: 'tested', proof: 'live_reproduction',
       policyBasis: 'boundary_invariant', negativeControls: [], expectedPolicy: 'Declared fixture actor/object boundary', limitations: 'Bounded fixture only', evidenceRefs: [observation.evidenceId],

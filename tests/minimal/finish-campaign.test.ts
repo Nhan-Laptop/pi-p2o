@@ -25,7 +25,11 @@ async function seedLifecycle(h: any, summary: string, data: Record<string, unkno
 describe('campaign finish and report semantics (A6.6)', () => {
   it('refuses the final finish of a campaign that never recorded a goal, and names the three legal next calls', async () => fixture(async h => {
     await h.command('--target ./source --goal "Assess the fixture boundary"');
-    await populate(h);
+    // 2026-10-27 (A3/D32): the populated fixture now carries the reviewed impact goal, so this case keeps its no-goal premise
+    // by starting a bare run and recording only read-only reporting work (which needs no impact goal under A3).
+    await h.call('p2o_task_author', { draft: { question: 'Summarize the records this run holds?', surface: '/report-fixture', risk: 'reporting', role: 'reporting',
+      roleReason: 'Read-only fixture intent so the run holds work to keep', expectedTrue: 'The report reads committed records', expectedFalse: 'The report records the gap instead',
+      stopCondition: 'Stop after one read-only intent', evidenceIds: [], prerequisites: [], skills: [], methodReason: 'Read-only report of committed fixture state' } });
     // The export path stays unconditional: writing the report ends nothing and is one of the legal next calls.
     const exported = await h.call('p2o_finish', { export: true });
     expect(exported.details.state).toBe('incomplete');
@@ -45,7 +49,8 @@ describe('campaign finish and report semantics (A6.6)', () => {
 
   it('lets a goal-less campaign stop by recording why, and still reports it incomplete', async () => fixture(async h => {
     await h.command('--target ./source --goal "Assess the fixture boundary"');
-    await populate(h);
+    // 2026-10-27 (A3/D32): no plan goal is seeded here, so this remains a genuinely goal-less campaign; a target-executing
+    // task would now be refused, and none is needed for the partial-stop path.
     // D9's third legal next call: partial is an explicit acknowledgment that the campaign recorded no goal, never a
     // silent complete finish, so it proceeds and is recorded like any other partial stop.
     const reason = 'The bounded fixture campaign never recorded a goal; it stops with the observation recorded';

@@ -7,16 +7,28 @@ import { Sandbox } from '../../src/sandbox.js';
 import { Broker, BrokerClient, type WorkerRegistration } from '../../src/broker.js';
 import { appendRecord, readRecords } from '../../src/records.js';
 
-it.skipIf(process.env.P2O_TEST_DOCKER !== '1')('real Docker: read-only source, non-root shell, network egress, scratch, cancellation and verified cleanup', async () => {
+/**
+ * Runtime truth (A17.9, measured 2026-10-27): the pinned container is uid 0 on a writable rootfs with Docker's
+ * default 14-capability set, `/target` is a read-only bind mount, and the Docker socket is never mounted.
+ */
+it.skipIf(process.env.P2O_TEST_DOCKER !== '1')('real Docker: read-only source, root shell with the Docker default capability set, network egress, scratch, cancellation and verified cleanup', async () => {
   const root = await mkdtemp(join(tmpdir(), 'p2o-minimal-docker-')); await chmod(root, 0o755);
   await writeFile(join(root, 'source.txt'), 'approved source', { mode: 0o644 });
   const sandbox = new Sandbox({ kind: 'directory', path: root }, undefined, undefined, { runId: 'docker-test' });
   try {
     await sandbox.start();
     const result = await sandbox.exec('id -u; cat /target/source.txt; printf scratch > /work/test; cat /work/test; grep CapEff /proc/self/status');
-    expect(result.code).toBe(0); expect(result.stdout).toContain('65532'); expect(result.stdout).toContain('approved source'); expect(result.stdout).toContain('scratch'); expect(result.stdout).toContain('0000000000000000');
+    expect(result.code).toBe(0);
+    expect(result.stdout).toMatch(/^0$/m);
+    expect(result.stdout).toContain('approved source');
+    expect(result.stdout).toContain('scratch');
+    const capEff = BigInt(`0x${/CapEff:\s*([0-9a-f]+)/i.exec(result.stdout)![1]}`);
+    expect([...capEff.toString(2)].filter(bit => bit === '1')).toHaveLength(14);
+    expect(capEff & (1n << 13n)).not.toBe(0n); // NET_RAW is in the default set, so raw sockets work.
+    expect(capEff & (1n << 21n)).toBe(0n); // CAP_SYS_ADMIN is not part of Docker's default set.
     expect((await sandbox.exec('echo changed > /target/source.txt')).code).not.toBe(0);
-    expect((await sandbox.exec('echo changed > /etc/p2o-test')).code).not.toBe(0);
+    // The root filesystem is writable (the container is removed below, so the marker never survives the test).
+    expect((await sandbox.exec('echo changed > /etc/p2o-test')).code).toBe(0);
     expect((await sandbox.exec('test ! -e /var/run/docker.sock')).code).toBe(0);
     // Egress is real: a host-published service is reachable through the container alias, and an
     // unroutable documentation address still fails instead of being mistaken for success.
@@ -26,10 +38,12 @@ it.skipIf(process.env.P2O_TEST_DOCKER !== '1')('real Docker: read-only source, n
     try {
       const reached = await sandbox.exec(`curl -sS -m 5 http://host.docker.internal:${port}/`);
       expect(reached.code).toBe(0); expect(reached.stdout).toContain('host service');
+      // Part XI: the fixed-curl HTTP transport is not origin-scoped, so the same host-published service is reachable.
+      const http = await sandbox.http({ url: `http://host.docker.internal:${port}/`, method: 'GET', followRedirects: false, maxRedirects: 0 });
+      expect(http.code).toBe(0); expect(http.stdout).toContain('host service');
     } finally { await new Promise<void>(resolve => server.close(() => resolve())); }
     const unroutable = await sandbox.exec('python3 -c "import socket; s=socket.socket(); s.settimeout(1); s.connect((\'192.0.2.1\',80))"');
     expect(unroutable.code).not.toBe(0);
-    await expect(sandbox.http({ url: 'https://example.com', method: 'GET', followRedirects: true, maxRedirects: 0 })).rejects.toThrow('unavailable');
     const abort = new AbortController();
     const task = sandbox.exec('sleep 999', 0, abort.signal); setTimeout(() => abort.abort(), 500);
     await expect(task).rejects.toThrow('Cancelled');
@@ -65,7 +79,10 @@ it.skipIf(process.env.P2O_TEST_DOCKER !== '1')('real Docker: full HTTP against t
     expect(followed.stdout).toContain('ok GET /next');
     const reused = await sandbox.http({ url: '/after', method: 'GET', followRedirects: false, maxRedirects: 0 });
     expect(reused.stdout).toContain('cookie=sid=abc123');
-    await expect(sandbox.http({ url: `http://127.0.0.1:${port}/`, method: 'GET', followRedirects: false, maxRedirects: 0 })).rejects.toThrow('Out of scope');
+    // Part XI: loopback is container-local, so the host's server is not there; the request is attempted, not refused.
+    const loopback = await sandbox.http({ url: `http://127.0.0.1:${port}/`, method: 'GET', followRedirects: false, maxRedirects: 0 });
+    expect(loopback.code).not.toBe(0);
+    expect(loopback.hops?.[0]).toContain('loopback');
     await sandbox.stop();
     await sandbox.assertNoRunContainers();
   } finally { await sandbox.stop(); await new Promise<void>(resolve => server.close(() => resolve())); }

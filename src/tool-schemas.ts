@@ -8,6 +8,7 @@ import { CANDIDATE_CLOSURES, CANDIDATE_EXECUTIONS, CANDIDATE_PROOFS, POLICY_BASE
 import { PAYLOAD_BYTES, PAYLOAD_KINDS } from './lab.js';
 import { RESEARCH_QUERY_MAX } from './research.js';
 import { RISK_LABEL_TRUTH } from './truth.js';
+import { FOOTHOLD_ACTIONS, FOOTHOLD_PREVIEW_BYTES, FOOTHOLD_TRANSPORT_COMMAND_BYTES } from './foothold.js';
 import { HTTP_METHOD_PATTERN } from './target.js';
 import { outputContractSchema, workDecisionSchema, workSpecSchema } from './work-tool.js';
 
@@ -68,7 +69,7 @@ export const candidateParameters = Type.Object({
       proof: choices(CANDIDATE_PROOFS),
       evidenceRefs: Type.Array(Type.String({ maxLength: 80 }), { description: 'Owner-generated Evidence ID UUIDs from tool results, not invented labels or probe cell names' }),
       negativeControls: Type.Array(Type.String({ maxLength: 80 }), { description: 'Evidence ID UUIDs of commands containing the negative-control observations; describe individual control cells in limitations, not in this ID array' }),
-      policyBasis: choices(POLICY_BASES),
+      policyBasis: choices(POLICY_BASES, 'Intended-policy provenance: boundary_invariant only when the effect itself establishes the boundary it breaks; a sibling route, placeholder credential or CVE lead alone is inferred (see your evidence rules)'),
       expectedPolicy: Type.String({ minLength: 1, maxLength: 1000, description: 'State the violated intended policy/invariant and its provenance; a sibling route difference alone is only inferred' }),
       limitations: Type.String({ minLength: 1, maxLength: 1500 }), control: Type.Optional(Type.String({ maxLength: 1000 })),
       resolves: Type.Optional(Type.Array(Type.String({ maxLength: 80 }))),
@@ -137,9 +138,9 @@ export const execParameters = Type.Object({
   read: Type.Optional(Type.Boolean({ description: 'Return PTY output since the host cursor for the session' })),
 });
 
-/** A7.2/A7.8: run-owned persistent sessions. `listen` is refused until an ingress path is configured (P7.7). */
+/** A7.2/A7.8: run-owned persistent sessions. `listen` and the foothold are refused until `--lab-network` exists (P7.7/A17.8). */
 export const sessionParameters = Type.Object({
-  action: choices(['open','list','exec','listen','upload','download','snapshot','close'] as const),
+  action: choices(['open','list','exec','listen','upload','download','snapshot','close', ...FOOTHOLD_ACTIONS] as const),
   session: Type.Optional(Type.String({ minLength: 1, maxLength: 64, pattern: '^[a-z0-9][a-z0-9-]{0,63}$' })),
   command: Type.Optional(Type.String({ minLength: 1, maxLength: 32 * 1024, description: 'action=exec: one non-interactive command in the session container' })),
   purpose: Type.Optional(Type.String({ minLength: 3, maxLength: 200, description: 'action=open: one line naming what the session is for (recorded)' })),
@@ -147,6 +148,8 @@ export const sessionParameters = Type.Object({
   content: Type.Optional(Type.String({ maxLength: 48 * 1024, description: 'action=upload: UTF-8 bytes to materialize (1..48 KiB)' })),
   port: Type.Optional(Type.Integer({ minimum: 1, maximum: 65535 })),
   protocol: Type.Optional(choices(['tcp','udp'] as const)),
+  text: Type.Optional(Type.String({ minLength: 1, maxLength: FOOTHOLD_TRANSPORT_COMMAND_BYTES })),
+  maxBytes: Type.Optional(Type.Integer({ minimum: 1, maximum: FOOTHOLD_PREVIEW_BYTES })),
   timeout: Type.Optional(Type.Integer({ minimum: 0, description: 'action=exec: optional seconds; 0 or omitted means no task timeout' })),
 }, { additionalProperties: false });
 

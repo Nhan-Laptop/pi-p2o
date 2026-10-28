@@ -9,6 +9,7 @@ import { BrokerClient } from '../../src/broker.js';
 import { AssessmentStore } from '../../src/state/store.js';
 import { parseOperatorCommand } from '../../src/ui/operator.js';
 import { createContext, createFakePi, createSimpleHerdr, EXTENSION_PATH, InertSandbox } from './helpers/fake-pi.js';
+import { seedImpactGoal } from './helpers/report-fixture.js';
 
 /**
  * W2 (plan): human-only run controls. Inert sandbox and in-memory Herdr; real SQLite store and real Unix broker.
@@ -114,6 +115,8 @@ describe('hold and release (inert executor, real broker)', () => {
 
   it('P10/WF-02/03 (Q28): a task or dispatch names the worker model/thinking and the host validates it against the configured set', async () => fixture(async h => {
     await h.command('--target ./source');
+    // A3/D32: exploit mode admits no target-executing intent before the run holds an impact goal.
+    await seedImpactGoal(h);
     const question = { ...draft, question: 'Inspect the fixture boundary for the requested worker runtime' };
     // Unconfigured models and unknown thinking levels are refused with the legal set, not silently inherited.
     await expect(h.call('p2o_task_author', { draft: { ...question, runtime: { model: 'unconfigured/model' } } })).rejects.toThrow(/MODEL_UNAVAILABLE: unconfigured\/model.*legalNext: name one of/);
@@ -133,6 +136,7 @@ describe('hold and release (inert executor, real broker)', () => {
 
   it('keeps accepted queued tasks waiting during a hold instead of dropping them, and admits them after release', async () => fixture(async h => {
     await h.command('--target ./source');
+    await seedImpactGoal(h);
     await h.command('hold');
     const task = (await h.call('p2o_task_author', {draft })).details;
     await h.call('p2o_task_dispatch', {ids: [task.id] }); await delay(400);
@@ -145,6 +149,7 @@ describe('hold and release (inert executor, real broker)', () => {
 
   it('P10/TR-H12 (Q32): a final finish is refused while a queued intent remains and names it instead of draining it', async () => fixture(async h => {
     await h.command('--target ./source');
+    await seedImpactGoal(h);
     await h.command('hold');
     const task = (await h.call('p2o_task_author', { draft })).details;
     await h.call('p2o_task_dispatch', { ids: [task.id] }); await delay(150);

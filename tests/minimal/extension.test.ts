@@ -76,6 +76,11 @@ async function harness(options: { settings?: unknown; herdrAvailable?: boolean }
   };
 }
 
+
+/** A3/D32: in exploit mode (the default) every target-executing intent needs an impact goal on the plan board first. */
+const seedGoal = (h: Harness) => h.call('p2o_plan_author', { entry: { kind: 'goal', title: 'Reach the recorded fixture effect under an impact goal',
+  status: 'active', proof: { kind: 'capability', capability: { kind: 'data.read' } }, criteria: ['The bounded fixture step is recorded and attributed'],
+  reason: 'A3/D32 fixture prerequisite: exploit mode admits no target-executing intent before its impact goal exists' } });
 describe('owner role', () => {
   let h: Harness;
   beforeEach(async () => { h = await harness(); });
@@ -138,6 +143,7 @@ describe('owner role', () => {
 
   it('rejects unknown/mismatched methods and changed hashes; URL methods cannot unlock transport', async () => {
     await h.start('--target https://example.com');
+    await seedGoal(h);
     const draft:any={question:'What can the approved anonymous baseline establish?',surface:'/surface',risk:'authorization',role:'general',roleReason:'Lead chose a bounded source-policy question',expectedTrue:'Known permitted observation is available',expectedFalse:'Required identity contrast is unavailable',stopCondition:'Stop at the missing transport prerequisite',evidenceIds:[],prerequisites:[],skills:['web-object-authorization'],methodReason:'Trace policy before selecting an unavailable identity comparison'};
     await expect(h.call('p2o_task_author',{draft:{...draft,workflow:'not-a-workflow'}})).rejects.toThrow('WORKFLOW_UNKNOWN');
     await expect(h.call('p2o_task_author',{draft:{...draft,skills:['not-a-skill']}})).rejects.toThrow(/SKILL_UNKNOWN|unknown/i);
@@ -154,6 +160,7 @@ describe('owner role', () => {
 
   it('lets a recon task omit roleReason/expectedTrue/expectedFalse/stopCondition/methodReason, but still requires them for every other role (planning_update.md P1.1)', async () => {
     await h.start('--target ./repo');
+    await seedGoal(h);
     const lean: any = { question: 'What does this endpoint expose?', surface: '/surface', risk: 'mapping', role: 'recon', evidenceIds: [], prerequisites: [] };
     const recon = (await h.call('p2o_task_author', {draft: lean })).details;
     expect(recon.roleReason).toBe(''); expect(recon.expectedTrue).toBe(''); expect(recon.expectedFalse).toBe(''); expect(recon.stopCondition).toBe(''); expect(recon.method.reason).toBe('');
@@ -174,6 +181,7 @@ describe('owner role', () => {
 
   it('nudges the owner when a worker report lands in manual loop mode, naming the pending-review count (planning_update.md P1.3)', async () => {
     await h.start('--target ./repo');
+    await seedGoal(h);
     const draft: any = { question: 'What does this surface expose?', surface: '/surface', risk: 'mapping', role: 'recon', evidenceIds: [], prerequisites: [] };
     const task = (await h.call('p2o_task_author', {draft })).details;
     const worker = (await h.call('p2o_delegate', { focus: 'recon', task: 'map the surface', taskId: task.id })).details;
@@ -187,6 +195,7 @@ describe('owner role', () => {
 
   it('maintains a per-surface recon/discovery/independent-validation loop, rejects stale conclusions and freezes before cleanup', async () => {
     await h.start('--target ./repo --export');
+    await seedGoal(h);
     const makeDraft = (role: string, prerequisites: any[] = [], validationOf?: string) => ({question:'Which actor reaches the controlled consumer?',surface:'/surface',risk:'authorization',role,
       roleReason:'Lead selected this role from the current unanswered question',expectedTrue:'Known baseline reaches the intended consumer',expectedFalse:'Contrasting observation refutes the boundary hypothesis',
       stopCondition:'Stop after the contrast, a missing prerequisite or explicit owner withdrawal',evidenceIds:[],prerequisites,validationOf,methodReason:'Bounded offline method; no deployment claims'});
@@ -269,9 +278,6 @@ describe('owner role', () => {
       await minimalRecon(h);
       // P14.5: an exploitation task has to cite the primitive it takes further, so the fixture seeds the worker claim first.
       const primitive = await h.seedClaim(primitiveClaim);
-      // P7.1: exploit mode (the default) admits an exploitation intent only once the plan board holds a capability-proof goal.
-      await h.call('p2o_plan_author', { entry: { kind: 'goal', title: 'Reach the recorded chain effect', status: 'active', proof: { kind: 'capability', capability: { kind: 'file.read' } },
-        criteria: ['The recorded chain step runs and is attributed'], reason: 'P7.1 exploit-mode admission: the impact goal the ladder is settled against' } });
       const task = (await h.call('p2o_task_author', {draft: {
         question: 'Does the recorded primitive reach the effect the chain claims?', surface: '/fixture', risk: 'authorization', role: 'exploit',
         roleReason: 'Chain frontier step with every capability already demonstrated', expectedTrue: 'The step runs and is recorded as confirmed and tested',
@@ -286,6 +292,7 @@ describe('owner role', () => {
     };
     h = await harness();
     await h.start();
+    await seedGoal(h);
     // The purpose still decides the duty line; the allowance it used to decide is gone (owner decision 2026-10-24).
     const first = await delegated(h);
     expect(first).toMatchObject({ purpose: 'exploitation' });
@@ -294,6 +301,7 @@ describe('owner role', () => {
 
     h = await harness();
     await h.start();
+    await seedGoal(h);
     // A second assignment on the same run is admitted like the first: nothing about it is measured against a ceiling.
     expect(await delegated(h)).toMatchObject({ purpose: 'exploitation' });
     await h.command('stop'); await rm(h.root, { recursive: true, force: true });
@@ -301,6 +309,7 @@ describe('owner role', () => {
     // A discovery task carries the recon purpose and, like every other ticket, no allowance.
     h = await harness();
     await h.start();
+    await seedGoal(h);
     const asset = (await h.call('p2o_graph', { action: 'record', batch: { assets: [{ asset: { kind: 'endpoint', key: 'GET /fixture' } }] } })).details.acks[0];
     await minimalRecon(h);
     const discoveryClaim = await h.seedClaim({ ...primitiveClaim, candidate: 'fixture-discovery-anchor' });
@@ -599,6 +608,7 @@ describe('owner role', () => {
 
   it('blocks automatic scheduling on provider failure, cleans on explicit stop/navigation, and denies replay', async () => {
     await h.start();
+    await seedGoal(h);
     await h.emit('agent_before_settle', { outcome: 'error' });
     expect(h.sandboxes[0].stopCount).toBe(0);
     expect((await h.call('p2o_loop',{action:'status'})).details.state).toBe('blocked');

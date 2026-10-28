@@ -7,7 +7,7 @@ import { Broker, BrokerClient, consumeHeldContinuation, continuationRefusal, nor
 import { finishPreflight } from '../../src/finish-preflight.js';
 import { indexRecords } from '../../src/records.js';
 import { createContext, createFakePi, createSimpleHerdr, sandboxFactory, EXTENSION_PATH, InertSandbox, type FakePi } from './helpers/fake-pi.js';
-import { fixture as reportFixture, seedClaim } from './helpers/report-fixture.js';
+import { fixture as reportFixture, seedClaim, seedImpactGoal } from './helpers/report-fixture.js';
 
 /**
  * A7.5/D19 (planning_update.md P7.6): the chain economy. Reusing a reported worker's ticket, pane and session is how a second
@@ -192,7 +192,11 @@ async function chainHarness(): Promise<ChainHarness> {
   };
   return {
     root, owner, worker, ownerCtx: ownerContext, workerCtx: workerContext, sandboxes, herdr, runDir,
-    async start(args = '--target ./repo') { await owner.commands.get('p2o').handler(args, ownerContext.ctx); },
+    async start(args = '--target ./repo') {
+      await owner.commands.get('p2o').handler(args, ownerContext.ctx);
+      // A3/D32: exploit mode admits no target-executing intent before the run holds an impact goal.
+      if (!/--mode assess\b/.test(args)) await seedImpactGoal({ call: (name: string, params?: any) => call(name, params) });
+    },
     async delegate(focus = 'surface-recon') {
       const result = await call('p2o_delegate', { focus, task: 'Inspect /target/code.txt', context: 'nothing known yet' });
       return result.details.workerId as string;
@@ -397,7 +401,7 @@ describe('A7.5 successor dispatch on a held ticket, pane and session', () => {
 describe('A7.5 validation economy', () => {
   it('keeps the deepest claim its replay and skips the intermediate claim the successor already covers', async () => {
     await reportFixture(async h => {
-      await h.command('--target ./source --max-depth 0');
+      await h.command('--target ./source --max-depth 0');await seedImpactGoal(h);
       const asset = (await h.call('p2o_graph', { action: 'record', batch: { assets: [{ asset: { kind: 'endpoint', key: 'GET /chain-fixture' } }] } })).details.acks[0];
       const receipt = (await h.call('p2o_shell', { command: 'printf chain-receipt' })).details.evidenceId;
       const draft = (questionKey: string, question: string) => ({

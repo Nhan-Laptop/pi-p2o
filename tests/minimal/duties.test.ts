@@ -70,15 +70,19 @@ describe('validation contract in the lead prompt (P2)', () => {
 
   it('states the three rules the host enforces and what a confirmed closure then means', () => {
     const text = plannerInstructions(facts);
-    expect(text).toContain('Validation runs as a separate worker');
+    expect(text).toContain('a replay owed by a different worker');
     expect(text).toContain('cites the claim it reproduces');
     expect(text).toContain('keeps its own negative control');
     expect(text).toContain('may not widen the question');
-    expect(text).toContain('refuses an overlapping validation without a matching predecessor');
-    expect(text).toContain('Only that closure counts as confirmed');
+    expect(text).toContain('an overlapping validation without a matching predecessor is refused');
+    // A17.5/D36 (2026-10-27): independent validation is a replay owed by a different worker and a case badge, never the
+    // permission gate for the next rung; a confirmed primitive is chained and rated without waiting for the replay.
+    expect(text).toContain('Independence hardens the case badge, not permission to take the next rung');
+    expect(text).toContain('a confirmed primitive is chained and rated without waiting for the replay');
+    expect(text).not.toContain('Only that closure counts as confirmed');
     // Still a policy section: no tool names, and the rule is absent when delegation is off.
     expect(text).not.toMatch(/\bp2o_[a-z_]+\b/);
-    expect(plannerInstructions({ ...facts, delegation: { enabled: false, maxWorkers: 1, maxDepth: 1 } })).not.toContain('Validation runs as a separate worker');
+    expect(plannerInstructions({ ...facts, delegation: { enabled: false, maxWorkers: 1, maxDepth: 1 } })).not.toContain('a replay owed by a different worker');
   });
 });
 

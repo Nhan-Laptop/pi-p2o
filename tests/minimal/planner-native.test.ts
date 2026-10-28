@@ -43,11 +43,12 @@ it.each(['idle','boundary','human-priority'] as const)('real Pi %s wake preserve
     // A1: the planner can only create/dispatch. Its first scripted call to a worker-only tool is Pi's unknown-tool result;
     // the Engine, not the planner, spawns the worker from the dispatched intent.
     const toolResults=messages.filter((m:any)=>m.role==='toolResult');
-    expect(toolResults.map((m:any)=>m.toolName)).toEqual(['p2o_net','p2o_task_author','p2o_task_dispatch','p2o_loop','p2o_workers','p2o_finish']);
+    expect(toolResults.map((m:any)=>m.toolName)).toEqual(['p2o_net','p2o_plan_author','p2o_task_author','p2o_task_dispatch','p2o_loop','p2o_workers','p2o_finish']);
     expect(toolResults[0].isError).toBe(true);expect(text(toolResults[0])).toContain('not found');
     expect(toolResults.slice(1).every((m:any)=>!m.isError)).toBe(true);
     // A2 intent admission: the first intent of an empty run is recon/mapping.
-    expect(toolResults[1].details).toMatchObject({role:'recon',status:'proposed'});
+    // A3/D32: the recon intent follows the impact goal the planner now records first.
+    expect(toolResults[2].details).toMatchObject({role:'recon',status:'proposed'});
     const wakes=messages.filter((m:any)=>m.role==='custom'&&m.customType==='p2o_planner_wake');expect(wakes).toHaveLength(mode==='human-priority'?0:1);
     expect(messages.filter((m:any)=>m.role==='user')).toHaveLength(mode==='boundary'?1:2);
     if(mode==='human-priority')expect(messages.some((m:any)=>m.role==='user'&&text(m).includes('HUMAN_PRIORITY'))).toBe(true); // Kickoff + ONE semantic prompt, never periodic polling.

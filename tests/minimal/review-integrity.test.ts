@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os';
 import { AssessmentStore } from '../../src/state/store.js';
 import { bindAssessmentStore } from '../../src/state/adapter.js';
 import { TaskBoard, type TaskDraft } from '../../src/tasks.js';
-import { fixture } from './helpers/report-fixture.js';
+import { fixture, seedImpactGoal } from './helpers/report-fixture.js';
 
 /** P5: a review records who authored its receipts and which output fields have no record; `enforce` also refuses foreign receipts. Hermetic: inert sandbox, real SQLite store. */
 const settings = (h: any, p2o: Record<string, unknown>) => writeFile(join(h.root, 'settings.json'), JSON.stringify({ p2o }));
@@ -17,6 +17,8 @@ const draft = (assetId: string, required: string[]) => ({ question: 'Does the bo
 
 async function started(h: any, required: string[]) {
   await h.command('--target ./source');
+  // A3/D32: the default exploit mode admits no target-executing intent before the run holds an impact goal.
+  await seedImpactGoal(h);
   const asset = (await h.call('p2o_graph', { action: 'record', batch: { assets: [{ asset: { kind: 'endpoint', key: 'GET /integrity-fixture' } }] } })).details.acks[0];
   const task = (await h.call('p2o_task_author', {draft: draft(asset.entityId, required) })).details, running = (await h.call('p2o_task_start', {id: task.id })).details;
   const own = (await h.call('p2o_shell', { command: 'printf integrity-own' })).details;

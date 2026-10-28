@@ -131,8 +131,8 @@ describe('A6.4 prompt contract', () => {
     // Three lines translated from ARTEX agent/planner.go:304-331; no new tool is introduced by stating them.
     expect(planner).toContain('DEPTH OVER BREADTH');
     expect(planner).toContain('prefer depth on a live finding over breadth on a new asset');
-    expect(planner).toContain('MECHANISM ROUTES');
-    expect(planner).toContain('2-3 mechanism-different routes');
+    expect(planner).toContain('MECHANISM FAMILIES');
+    expect(planner).toContain('keep 2-3 families open');
     expect(planner).toContain('CHAIN OR WALL');
     expect(planner).toContain('confirmed and tested primitive');
   });

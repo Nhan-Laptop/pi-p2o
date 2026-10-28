@@ -30,6 +30,16 @@ export async function fixture(work: (h: any) => Promise<void>) {
 }
 
 /**
+ * A3/D32: in exploit mode (the default) the host refuses every target-executing intent until the plan holds an impact goal
+ * whose proof is a capability or an accepted case. The planner's first round authors it; a fixture that calls the task tools
+ * directly authors the same row here. Reporting intents are read-only and need none.
+ */
+export async function seedImpactGoal(h: any, title = 'Reach the recorded effect under an impact goal') {
+  return (await h.call('p2o_plan_author', { entry: { kind: 'goal', title, status: 'active', proof: { kind: 'capability', capability: { kind: 'data.read' } },
+    criteria: ['The recorded effect is demonstrated and attributed'], reason: 'A3 fixture prerequisite: exploit mode admits no target-executing intent before its impact goal exists' } })).details;
+}
+
+/**
  * A2 (planning_update.md P1): `p2o_candidate` is worker-only, so an in-process fixture cannot author a claim from the owner
  * surface. This seeds the exact candidate record the worker broker would commit, through the same canonical ledger adapter the
  * extension holds (the store's own writable handle), attributed to `worker-a`. The old owner call returned the record itself;
@@ -65,6 +75,8 @@ export async function evidenceFor(h: any): Promise<EvidenceStore> {
  */
 export async function populate(h: any, titles = { accepted: 'Runtime fixture boundary case', pending: 'Second pending case' }, keys: Record<string, string> = {}) {
   await h.command('--target ./source');
+  // A3/D32: the run defaults to exploit mode, so the impact goal has to exist before the fixture's first task intent.
+  const goal = await seedImpactGoal(h);
   const asset = (await h.call('p2o_graph', { action: 'record', batch: { assets: [{ asset: { kind: 'endpoint', key: 'GET /report-fixture' } }] } })).details.acks[0];
   // The work identity is what places a task in the denominator; the reviewed or blocked status then decides the axes on read.
   const work = (questionKey: string) => ({ assetRefs: [{ id: asset.entityId, revision: 1 }], questionKey, policyKey: 'policy:report-case', actorContext: 'actor:fixture', tenantContext: 'tenant:fixture', methodFamily: 'offline-observation', purpose: 'investigation' });
@@ -81,7 +93,13 @@ export async function populate(h: any, titles = { accepted: 'Runtime fixture bou
   // purpose: review auto-creates a validation intent for a demonstrated worker claim it sees, and a fixture that queued one paid
   // validation would leave every finish consumer blocked on INTENTS_QUEUED. The accepted-case branch of the projection does not
   // read claim record order (that order only matters for the claim-only derivation), so the tested/accepted cell is unaffected.
-  const claim = await seedClaim(h, { candidate: 'report-claim', surface: '/report-fixture', risk: 'authorization', closure: 'confirmed', execution: 'tested', proof: 'offline_reproduction', evidenceRefs: [observation.evidenceId], negativeControls: [], policyBasis: 'boundary_invariant', expectedPolicy: 'Declared fixture actor/object boundary', limitations: 'Only one inert fixture actor and endpoint were reviewed' }, task.id);
+  // `gained` is what settles the A3 impact goal: the fixture's claim demonstrates one data read, so the goal can be reviewed
+  // without adding an open obligation the fixture never intended to owe.
+  const claim = await seedClaim(h, { candidate: 'report-claim', surface: '/report-fixture', risk: 'authorization', closure: 'confirmed', execution: 'tested', proof: 'offline_reproduction', evidenceRefs: [observation.evidenceId], negativeControls: [], policyBasis: 'boundary_invariant', expectedPolicy: 'Declared fixture actor/object boundary', limitations: 'Only one inert fixture actor and endpoint were reviewed', gained: [{ kind: 'data.read', subject: 'fixture-read' }] }, task.id);
+  // P16.1/A3: once the demonstrated claim exists the fixture's goal is reviewed with the proof it promised, so the plan board
+  // has no open goal for completion/debt to count as an obligation the fixture never intended to leave behind.
+  const settledGoal = (await h.call('p2o_plan_author', { id: goal.id, revision: goal.revision, entry: { kind: 'goal', title: goal.title, status: 'reviewed',
+    criteria: goal.criteria, proof: { kind: 'capability', capability: { kind: 'data.read' } }, reason: 'A3 fixture: the seeded claim demonstrates the capability this goal promised' } })).details;
   const draft = { title: titles.accepted, policyKey: 'policy:report-case', rootCauseKey: 'root:report-gate', assetRefs: [{ id: asset.entityId, revision: 1 }], claimRefs: [claim.id], independentEvidenceRefs: [], taskRefs: [{ taskId: task.id, revision: reviewed.revision }], reportRefs: [], contradictions: [], affectedVariants: ['variant:read'], relatedCaseIds: [], verdict: 'confirmed', reviewStatus: 'pending', reviewReason: 'Pending exact owner review of current support', limitations: 'Only the retained inert fixture receipt and declared policy are covered', remediation: { status: 'unplanned', reason: 'No remediation was implemented or reviewed in this fixture', evidenceRefs: [] } };
   const first = (await h.call('p2o_case_author', {entry: draft, requestId: 'report-case-1' })).details;
   const accepted = (await h.call('p2o_case_author', {id: first.id, revision: 1, entry: { ...draft, reviewStatus: 'accepted', reviewReason: 'Owner reviewed exact current claim, task, asset and limitations' } })).details;
@@ -90,5 +108,5 @@ export async function populate(h: any, titles = { accepted: 'Runtime fixture bou
   const gapAck = (await h.call('p2o_note', { kind: 'open', text: 'Credentials for the second actor were not available, so that actor was never tested' })).details, gapId = gapAck.recordId ?? gapAck.id;
   // A3: the cells are read back from the projection, never authored; the plan is the fixture's only coverage write.
   const view = (await h.call('p2o_board', { board: 'coverage', id: plan.id })).details;
-  return { asset, task, claim, accepted, pending, plan: view, observation, reviewed, blocked, gapId, cells: view.cells, tested: view.cells.find((cell: any) => cell.questionKey === (keys.tested ?? 'question:tested')), unmapped: view.unmapped };
+  return { asset, task, claim, accepted, pending, plan: view, goal: settledGoal, observation, reviewed, blocked, gapId, cells: view.cells, tested: view.cells.find((cell: any) => cell.questionKey === (keys.tested ?? 'question:tested')), unmapped: view.unmapped };
 }

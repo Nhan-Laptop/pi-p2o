@@ -41,7 +41,10 @@ describe('finish preflight', () => {
     // resolves here: a derived cell carries no gapRefs, so the fixture's open gap stays unreferenced, and its blocked work identity
     // was settled without a handoff.
     // A6.2: the derived research-debt report now has an aggregate advisory row, so the fixture has four advisories.
-    expect(text).toMatch(/0 open obligation\(s\), 4 advisory/);
+    // 2026-10-27 (A3/D32): the A3-settled impact goal adds IMPACT_UNATTEMPTED, because the fixture's work is investigation and
+    // no exploitation/chaining step was ever admitted; the goal alone is not an attempt, so this is an honest fifth advisory.
+    expect(text).toMatch(/0 open obligation\(s\), 5 advisory/);
+    expect(text).toMatch(/IMPACT_UNATTEMPTED \(1\):/);
     expect(text).toMatch(/RESEARCH_DEBT \(4\):/);
     expect(text).toMatch(/OPEN_GAP_UNREFERENCED \(1\):/);
     expect(text).toMatch(/ORPHAN_TASK \(1\):/);

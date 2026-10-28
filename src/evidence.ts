@@ -208,7 +208,10 @@ function validateCandidate(c: Candidate): void {
 
   if (!(POLICY_BASES as readonly string[]).includes(c.policyBasis ?? '')) throw new Error('Invalid policy basis');
   if (!c.expectedPolicy?.trim()) throw new Error('Name the expected policy and its provenance');
-  if (c.policyBasis === 'inferred' && c.closure !== 'open_proof_gap') throw new Error('Inferred policy is a hypothesis: use open_proof_gap until intended policy is established');
+  // D35: policy provenance is not a ceiling by itself, but inference is not proof either. An inferred claim stays a hypothesis
+  // until the effect itself was tested and observed; only then may it be confirmed while its basis stays inferred.
+  if (c.policyBasis === 'inferred' && !isOpenGap(c) && !(isDemonstrated(c) && c.proof !== 'static_trace'))
+    throw new Error('Inferred policy is a hypothesis: use open_proof_gap until intended policy is established or the effect is tested and observed');
   if (c.closure !== 'open_proof_gap' && !c.evidenceRefs.length) throw new Error('Closure needs evidence; otherwise use open_proof_gap');
   if (c.closure === 'ruled_out' && !c.control?.trim()) throw new Error('ruled_out needs the specific control and its location');
   if (c.resolves && (!Array.isArray(c.resolves) || c.resolves.some(id => typeof id !== 'string'))) throw new Error('Invalid resolved open-item list');

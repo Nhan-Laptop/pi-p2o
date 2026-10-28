@@ -13,7 +13,7 @@ import { appendRecord, type AssessmentRecord } from '../../src/records.js';
 import type { CaseDraft } from '../../src/case-types.js';
 import type { CoverageCellDraft, CoveragePlanDraft } from '../../src/coverage-types.js';
 import type { PlanDraft } from '../../src/planning.js';
-import { fixture } from './helpers/report-fixture.js';
+import { fixture, seedImpactGoal } from './helpers/report-fixture.js';
 
 /**
  * P10 authoring half: the host carries the honest defaults and the joins the planner previously had to restate by hand.
@@ -129,6 +129,7 @@ describe('P10 host defaults (TR-L05/L06)', () => {
   it('P10/TR-L06: the task-create host stores empty evidence/prerequisite arrays when the intent omits them', async () => {
     await fixture(async h => {
       await h.command('--target ./source');
+      await seedImpactGoal(h);
       const draft = { question: 'Does the bounded P10 fixture record empty task arrays?', surface: '/p10-fixture', risk: 'coordination', role: 'general',
         roleReason: 'Bounded local fixture with no target work', expectedTrue: 'The host records empty arrays', expectedFalse: 'The caller must restate none',
         stopCondition: 'Stop after one local admission', skills: [], methodReason: 'No target or model work' };

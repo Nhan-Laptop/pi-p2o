@@ -49,6 +49,11 @@ const RETIRED = [
   // inside the caller's own sandbox, and the worker loadout line called it capped; both statements were false.
   "runs inside the caller's own sandbox",
   'capped citation fetch',
+  // A17.9 runtime truth: the measured container is root on a writable rootfs with Docker's default 14-capability set.
+  // These are the claims the stale runtime tests and setup text carried; they must not return to shipped prose.
+  'read-only root filesystem',
+  'non-root container',
+  'capabilities dropped',
 ];
 const TEXT_FILE = /\.(?:ts|md|json)$/;
 async function shippedText(directory: string): Promise<Array<{ file: string; text: string }>> {
@@ -120,18 +125,20 @@ describe('P7.0 truth pass', () => {
     expect(planner).toContain(NETWORK_TRUTH);
     expect(planner).toContain(RISK_LABEL_TRUTH);
     expect(planner).not.toContain('full capabilities');
-    // P11/A11: the blanket authorization and the installed browser are facts on both surfaces, not planner-only doctrine.
+    // P11/A11 + A17.0: blanket authorization is a fact on every surface. The full constant is composed into the planner; the
+    // worker prompt and the brief carry the operative short form instead (the verbose constant was one of three copies inside
+    // one worker context before the A17.0 pay-down), so this pin checks the behaviour, not the identity of a constant.
     expect(planner).toContain(AUTHORIZATION_TRUTH);
     expect(planner).toContain(BROWSER_TRUTH);
     const worker = workerInstructions(ticket('recon'));
     expect(worker).toContain(CREDENTIAL_TRUTH);
-    expect(worker).toContain(AUTHORIZATION_TRUTH);
+    expect(worker).toContain('Authorization is blanket for the whole run: no per-action consent exists');
     expect(worker).toContain(BROWSER_TRUTH);
     expect(worker).toContain('there is no per-action consent to request');
     expect(worker).not.toContain('operator-supplied');
-    // The brief a worker actually receives repeats the authorization and refuses to describe the label as a boundary.
+    // The brief a worker actually receives restates the authorization and refuses to describe the label as a boundary.
     const brief = workerBrief({ ticket: ticket('recon'), focus: 'f', task: 't' });
-    expect(brief).toContain(AUTHORIZATION_TRUTH);
+    expect(brief).toContain('AUTHORIZATION: blanket for the whole run');
     expect(brief).toContain('starting label, not a boundary');
     expect(brief).toContain('no command, elapsed-time or per-action-permission ceiling');
     expect(TOOL_BOUNDARIES.p2o_http.join(' ')).toContain('starting label');
@@ -194,8 +201,11 @@ describe('P11/A11 autonomy facts', () => {
     const worker = workerInstructions(ticket('recon'));
     const brief = workerBrief({ ticket: ticket('recon'), focus: 'f', task: 't' });
     const shell = registrations().get('p2o_shell')!.description as string;
-    for (const [name, text] of [['planner', planner], ['worker', worker], ['brief', brief]] as const) {
-      expect(text, name).toContain(AUTHORIZATION_TRUTH);
+    // A17.0: the planner holds the full truth text; the worker prompt and the brief hold the operative short form of the
+    // same fact, which is what keeps one worker context from stating it three times.
+    expect(planner).toContain(AUTHORIZATION_TRUTH);
+    for (const [name, text] of [['worker', worker], ['brief', brief]] as const) {
+      expect(text.toLowerCase(), name).toContain('blanket for the whole run');
       // A wall is a refusal, never a capability the sandbox already has.
       expect(text.toLowerCase(), name).not.toContain('ask the operator for permission');
     }

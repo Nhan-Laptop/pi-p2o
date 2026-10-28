@@ -14,7 +14,7 @@ export const IMAGE = 'ghcr.io/usestrix/strix-sandbox@sha256:f6906c3114e504fd1a21
 // 2026-10-25 (planning_update.md Part XI): the operator asked for a real shell, so the container runs as root with a
 // writable rootfs, the Docker default capability set (NET_RAW included, so raw sockets work) and no pids/memory/cpu limit.
 // The container is the only blast radius: no host path is mounted and the Docker socket is never exposed.
-const LIMITS = (_options: SandboxOptions) => ['--log-driver', 'none', '--workdir', '/work', '--user', 'root',
+export const LIMITS = (_options: SandboxOptions) => ['--log-driver', 'none', '--workdir', '/work', '--user', 'root',
   '--env', 'HOME=/root', '--env', 'TMPDIR=/tmp',
   '--env', 'SEMGREP_ENABLE_VERSION_CHECK=0', '--env', 'SEMGREP_SEND_METRICS=off'];
 

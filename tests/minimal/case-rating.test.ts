@@ -1,5 +1,6 @@
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { fixture, populate, seedClaim } from './helpers/report-fixture.js';
+import { evidenceFor, fixture, populate, seedClaim } from './helpers/report-fixture.js';
 
 /** P3: an owner rating is its own note against an exact case revision. Hermetic: inert sandbox, real SQLite store. */
 const finding = (extra: Record<string, unknown> = {}) => ({ severity: 'medium', basis: 'Confirmed boundary deviation reaching only the tested identity’s own object in the fixture', ...extra });
@@ -56,7 +57,7 @@ describe('case rating', () => {
     const store = await h.reader(); try { expect(store.records().filter((row: any) => row.data?.caseRating).length).toBe(3); } finally { store.close(); }
   }));
 
-  it('keeps a case that rests on an inferred policy basis at medium or below', async () => fixture(async h => {
+  it('keeps a case whose inferred-policy claims were never tested or observed capped at medium', async () => fixture(async h => {
     const built = await populate(h);
     const claim = await seedClaim(h, { candidate: 'inferred-claim', surface: '/report-fixture', risk: 'authorization', closure: 'open_proof_gap', execution: 'not_tested', proof: 'static_trace', evidenceRefs: [], negativeControls: [], policyBasis: 'inferred', expectedPolicy: 'Policy inferred from names only', limitations: 'No declared policy was found for this fixture' });
     const draft = { title: 'Inferred policy hypothesis case', policyKey: 'policy:inferred', assetRefs: [{ id: built.asset.entityId, revision: 1 }], claimRefs: [claim.id], independentEvidenceRefs: [], taskRefs: [], reportRefs: [], contradictions: [], affectedVariants: [], relatedCaseIds: [], verdict: 'open', reviewStatus: 'pending', reviewReason: 'Pending: policy is only inferred', limitations: 'Policy was inferred, not declared', remediation: { status: 'unplanned', reason: 'No remediation was reviewed for the inferred case', evidenceRefs: [] } };
@@ -64,6 +65,34 @@ describe('case rating', () => {
     await expect(h.call('p2o_case_rate', {id: created.id, revision: created.revision, finding: finding({ severity: 'critical' }) })).rejects.toThrow(/inferred policy basis cannot be rated above medium/);
     await expect(h.call('p2o_case_rate', {id: created.id, revision: created.revision, finding: finding({ severity: 'high' }) })).rejects.toThrow(/inferred/);
     expect((await h.call('p2o_case_rate', {id: created.id, revision: created.revision, finding: finding({ severity: 'medium' }) })).details.finding.severity).toBe('medium');
+  }));
+
+  it('rates a tested and observed cross-tenant effect high on inferred provenance with the INFERRED_POLICY flag and a required limitation', async () => fixture(async h => {
+    const built = await populate(h);
+    const evidence = await evidenceFor(h);
+    // D35: the policy basis is provenance. The production writer accepts it because the effect ran and was observed; a static or
+    // untested inference would still be refused, which is what keeps the medium ceiling meaningful.
+    const inferred = await evidence.candidate('worker-a', { candidate: 'inferred-observed-claim', surface: '/report-fixture', risk: 'authorization', closure: 'confirmed', execution: 'tested', proof: 'live_reproduction',
+      evidenceRefs: [built.observation.evidenceId], negativeControls: [], policyBasis: 'inferred', expectedPolicy: 'Cross-tenant object ownership inferred from the sibling route; no tenant contract is published', limitations: 'No declared tenant ownership contract for the sibling route' } as never);
+    await expect(evidence.candidate('worker-a', { candidate: 'inferred-untested-claim', surface: '/report-fixture', risk: 'authorization', closure: 'confirmed', execution: 'not_tested', proof: 'static_trace',
+      evidenceRefs: [built.observation.evidenceId], negativeControls: [], policyBasis: 'inferred', expectedPolicy: 'Cross-tenant object ownership inferred from a name only', limitations: 'Nothing executed yet' } as never)).rejects.toThrow(/open_proof_gap/);
+    const draft = { title: 'Observed cross-tenant read on inferred policy provenance', policyKey: 'policy:inferred-observed', assetRefs: [{ id: built.asset.entityId, revision: 1 }], claimRefs: [built.claim.id, inferred.id], independentEvidenceRefs: [], taskRefs: [], reportRefs: [], contradictions: [], affectedVariants: ['variant:read'], relatedCaseIds: [], verdict: 'confirmed', reviewStatus: 'pending', reviewReason: 'Pending: the effect was observed, the policy basis is inferred', limitations: 'Only the fixture object and the sibling route were observed', remediation: { status: 'unplanned', reason: 'No remediation was reviewed for the observed cross-tenant case', evidenceRefs: [] } };
+    const created = (await h.call('p2o_case_author', { entry: draft })).details;
+    const accepted = (await h.call('p2o_case_author', { id: created.id, revision: created.revision, entry: { ...draft, reviewStatus: 'accepted', reviewReason: 'Owner reviewed the observed cross-tenant effect and the inferred policy provenance' } })).details;
+    const limitations = 'Policy basis is inferred from the sibling route; the cross-tenant read was reproduced live, but the tenant ownership contract remains unverified';
+    const rated = (await h.call('p2o_case_rate', { id: accepted.id, revision: accepted.revision, finding: finding({ severity: 'high', limitations }) })).details;
+    expect(rated).toMatchObject({ caseId: accepted.id, caseRevision: accepted.revision, provenance: 'INFERRED_POLICY' });
+    expect(rated.finding).toMatchObject({ severity: 'high', limitations });
+    const view = (await h.call('p2o_board', { board: 'cases', id: accepted.id })).details;
+    expect(view).toMatchObject({ ratingProvenance: 'INFERRED_POLICY', ratingCurrent: true, finding: { severity: 'high', limitations } });
+    const store = await h.reader(); try { const row = store.records().filter((item: any) => item.data?.caseRating?.caseId === accepted.id).at(-1); expect(row.data.caseRating).toMatchObject({ provenance: 'INFERRED_POLICY' }); } finally { store.close(); }
+    h.ctx.setConfirm(true); await h.command(`report export ${join(h.root, 'inferred-out')}`);
+    const report = (await h.read(join(h.root, 'inferred-out')))['REPORT.md'];
+    expect(report).toContain('provenance **INFERRED_POLICY**'); expect(report).toContain(`- Rating limitation: ${limitations}`);
+    // The flag is not a waiver: without the required limitation the same rating is refused and nothing is written.
+    await expect(h.call('p2o_case_rate', { id: accepted.id, revision: accepted.revision, finding: finding({ severity: 'high', limitations: '   ' }) })).rejects.toThrow(/INFERRED_POLICY/);
+    await expect(h.call('p2o_case_rate', { id: accepted.id, revision: accepted.revision, finding: finding({ severity: 'high' }) })).rejects.toThrow(/INFERRED_POLICY/);
+    const after = await h.reader(); try { expect(after.records().filter((item: any) => item.data?.caseRating).length).toBe(1); } finally { after.close(); }
   }));
 
   it('flags a rating recorded against an older revision once the case is revised', async () => fixture(async h => {

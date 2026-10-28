@@ -155,7 +155,7 @@ describe('access ladder in the report (A7.6/Q18)', () => {
     expect(finding.reproduction[0].captures).toEqual([{ id: artifact.id, bytes: 16384, sha256: artifact.sha256, partial: true }]);
   }));
 
-  it('keeps the inferred-policy severity refusal, and a rung does not override it', async () => fixture(async h => {
+  it('keeps the inferred-policy severity refusal for an untested claim, and a rung does not override it', async () => fixture(async h => {
     const built = await populate(h);
     const inferred = await seedClaim(h, { ...claim(), candidate: 'ladder-inferred', surface: '/report-fixture', risk: 'authorization', evidenceRefs: [built.observation.evidenceId], negativeControls: [built.observation.evidenceId],
       closure: 'open_proof_gap', execution: 'not_tested', proof: 'static_trace', policyBasis: 'inferred', expectedPolicy: 'Policy inferred from route names only' });

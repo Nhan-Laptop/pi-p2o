@@ -22,7 +22,7 @@ import type { DebtReport } from './debt.js';
 export type PreflightCode = 'UNREVIEWED_TASK' | 'UNREVIEWED_CLAIM' | 'PENDING_CASE' | 'STALE_CASE' | 'STALE_CELL' | 'NO_COVERAGE_PLAN' | 'NONTERMINAL_CELLS'
   | 'UNRATED_ACCEPTED_CASE' | 'WSTG_APPLICABLE_UNPLANNED' | 'HIGH_WITHOUT_INDEPENDENCE' | 'FOREIGN_EVIDENCE' | 'CONTRACT_GAP' | 'STALE_RATING' | 'OPEN_GAP_UNREFERENCED' | 'ORPHAN_TASK' | 'UNPLANNED_ASSETS'
   | 'UNPROMOTED_COVERAGE_NOTE' | 'UNMAPPED_TASK' | 'NO_GOAL_RECORDED' | 'NEGATIVE_MAY_BE_BLOCKED' | 'INTERRUPTED_CELL' | 'PRIMITIVE_UNCHAINED' | 'ADMISSION_REFUSALS' | 'NO_GRAPH_WRITE' | 'LEAD_UNTRIAGED' | 'ROUTE_MONOCULTURE' | 'RESEARCH_DEBT'
-  | 'HELD_WITHOUT_SUCCESSOR';
+  | 'HELD_WITHOUT_SUCCESSOR' | 'IMPACT_UNATTEMPTED';
 export interface PreflightItem { code: PreflightCode; level: 'obligation' | 'advisory'; count: number; ids: string[]; message: string }
 export interface FinishPreflight {
   /** M3: the former `blocking` list. It is a report fact now, not a refusal predicate: nothing refuses a finish. */
@@ -39,6 +39,8 @@ export interface PreflightContext {
   debt?: DebtReport;
   /** A7.5/D19: workers still holding a ticket, pane and session for one successor when the run ends without dispatching it. */
   heldWorkers?: readonly { workerId: string; brief?: string }[];
+  /** A17.2/D32: the engagement mode the operator confirmed, so the impact-attempt advisory only fires for a run that wanted effects. */
+  engagement?: 'assess' | 'exploit';
 }
 
 const SHOWN = 20;
@@ -72,6 +74,7 @@ const MESSAGES: Record<PreflightCode, string> = {
   ROUTE_MONOCULTURE: 'every open chain step tries the same mechanism family although the recorded capabilities make another family plausible (spread one route there, or record why it is ruled out; concentration is fine once a route showed an effect)',
   RESEARCH_DEBT: 'host-derived research debt still outstanding (aggregate: the specific codes above name the same work where they exist); a gap nobody referenced, a mapping that recorded nothing, an unplanned asset, an unrun cell or a demonstrated primitive with no successor (take it, wall it with a deferred/blocked todo, or say why it is out of scope)',
   HELD_WITHOUT_SUCCESSOR: 'worker reported with a hold but no successor was dispatched onto that ticket, pane and session (dispatch the successor or stop the worker so the hold is released, never leave it held)',
+  IMPACT_UNATTEMPTED: 'exploit run holds an impact goal whose proof is a capability or an accepted case, and no exploitation or chaining intent was ever admitted (dispatch the ladder step the goal names, or record why the goal is deferred; the goal alone is not an attempt)',
 };
 const OPEN_OBLIGATION: ReadonlySet<PreflightCode> = new Set<PreflightCode>(['UNREVIEWED_TASK', 'UNREVIEWED_CLAIM', 'PENDING_CASE', 'STALE_CASE', 'STALE_CELL', 'NO_COVERAGE_PLAN', 'NONTERMINAL_CELLS', 'UNRATED_ACCEPTED_CASE']);
 
@@ -144,6 +147,14 @@ export function finishPreflight(index: LedgerIndex, context: PreflightContext = 
   // recon activity was recorded but never became even one counted denominator cell.
   if (plans.length && !cells.length) for (const row of index.records) if (row.id && (row.kind === 'coverage' || row.kind === 'surface')) add('UNPROMOTED_COVERAGE_NOTE', row.id);
   if (context.statedObjective && !planFrontier(index).some(plan => plan.kind === 'goal')) add('NO_GOAL_RECORDED', 'no-goal');
+  // A17.2/D32: an exploit run that recorded an impact goal and never admitted a step toward it wanted an effect and attempted
+  // none. Advisory only, like every other item here: it names the unspent goal, it never refuses the finish or calls the target
+  // safe. The task test is against every task revision, because a withdrawn attempt is still an attempt that happened.
+  if (context.engagement === 'exploit') {
+    const goal = planFrontier(index).find(plan => plan.kind === 'goal' && (plan.proof?.kind === 'capability' || plan.proof?.kind === 'case'));
+    const attempted = index.records.some(row => row.kind === 'task' && ['exploitation', 'chaining'].includes((row.data as { task?: { work?: { purpose?: string } } } | undefined)?.task?.work?.purpose ?? ''));
+    if (goal && !attempted) add('IMPACT_UNATTEMPTED', goal.id);
+  }
   for (const view of cases) {
     if (view.acceptedFinding && view.finding === undefined) add('UNRATED_ACCEPTED_CASE', view.id);
     else if (view.acceptedFinding && view.ratingCurrent === false) add('STALE_RATING', view.id);

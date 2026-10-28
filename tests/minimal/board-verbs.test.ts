@@ -9,7 +9,7 @@ import {
 import { ALL_TOOLS, HIDDEN_TOOLS, MODEL_TOOLS, PLANNER_TOOLS, REPORTER_TOOLS, VALIDATION_TOOLS, WORKER_TOOLS, workerTools } from '../../src/tool-policy.js';
 import { TOOL_BOUNDARIES } from '../../src/tool-guidelines.js';
 import { createFakePi, EXTENSION_PATH } from './helpers/fake-pi.js';
-import { fixture } from './helpers/report-fixture.js';
+import { fixture, seedImpactGoal } from './helpers/report-fixture.js';
 
 const WORKER_LOADOUT = [
   'p2o_skill_list', 'p2o_skill_read', 'p2o_secret', 'p2o_research', 'p2o_candidate', 'p2o_lab', 'p2o_shell', 'p2o_net', 'p2o_http',
@@ -125,6 +125,7 @@ describe('L1/W2 board verbs', () => {
   it('routes settle and coverage authoring through their verb actions', async () => {
     await fixture(async h => {
       await h.command('--target ./source');
+      await seedImpactGoal(h);
       const draft = { question: 'Does the board verb fixture settle one task?', surface: '/board-verb-fixture', risk: 'coordination', role: 'general', roleReason: 'Bounded local fixture with no target work', expectedTrue: 'The settle verb reaches the cancelled transition', expectedFalse: 'The action bag is required again', stopCondition: 'Stop after one local transition', evidenceIds: [], prerequisites: [], skills: [], methodReason: 'No target or model work' };
       const task = (await h.call('p2o_task_author', { draft })).details;
       const settled = (await h.call('p2o_task_settle', { outcome: 'cancelled', id: task.id, revision: task.revision, reason: 'Owner cancelled the local board-verb fixture' })).details;

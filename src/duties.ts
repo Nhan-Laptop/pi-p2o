@@ -48,12 +48,12 @@ export const DUTIES: Readonly<Record<WorkPurpose, Duty>> = {
     produces: 'the same-or-different verdict with receipts',
   },
   exploitation: {
-    duty: 'Take a confirmed primitive to a demonstrated effect; produce the payload, the environment and the observation, or the exact wall.',
+    duty: 'Take a confirmed primitive to a demonstrated effect; produce the payload, the environment and the observation, or the exact wall. A wall is a refusal or an exhausted family, never a first failure.',
     forbids: 'reporting an effect the primitive did not demonstrate',
     produces: 'a stored payload, a verified environment and the observed effect \u2014 or the exact wall',
   },
   chaining: {
-    duty: 'Compose two demonstrated primitives into an effect neither reaches alone; produce the link and the proof the composition ran.',
+    duty: 'Compose two demonstrated primitives into an effect neither reaches alone; produce the link and the proof the composition ran. A wall is a refusal or an exhausted family, never a first failure.',
     forbids: 'assuming two primitives compose because they look adjacent',
     produces: 'the link, the observed combined effect and the step where it stopped',
   },

@@ -30,7 +30,8 @@ const ticket = (role: string) => ({ workerId: 'worker-1', role, depth: 1, parent
 describe('A4 prompt rules and tool boundaries', () => {
   it('states the planner first-action, no-target, no-claim, zero-intent and projection rules', () => {
     const planner = plannerInstructions(plannerFacts());
-    expect(planner).toContain('First action: create and dispatch one recon/mapping intent.');
+    // A17.2/D32: exploit mode authors the impact goal before the first dispatch, so the first-action pin names both modes.
+    expect(planner).toContain('First action: in exploit mode record the impact goal first');
     // The 2026-10-27 dedupe folded the separate "No target operations"/"No claims" role lines into the sentences that state the
     // same rule without repeating it, so the pin moves to those surviving lines.
     expect(planner).toContain('Do not probe the target yourself');
@@ -43,9 +44,12 @@ describe('A4 prompt rules and tool boundaries', () => {
     expect(planner).not.toMatch(/\bp2o_[a-z_]+\b/);
   });
 
-  it('gives the worker the one-intent write-back rule and the reporter a read-only rule', () => {
+  it('states the one-intent rule once on the report boundary and gives the reporter a read-only rule', () => {
     const worker = workerInstructions(ticket('recon'));
-    expect(worker).toContain('One intent, write back, report, stop');
+    // A17.0: the rule is canonical on the p2o_report boundary (pinned below); the worker prompt keeps only the operational
+    // write-back and finish rules, so one prompt does not state it twice.
+    expect(worker).not.toContain('One intent, write back, report, stop');
+    expect(worker).toContain('Finish by calling p2o_report');
     const reporter = reporterInstructions(ticket('reporting'));
     expect(reporter).toContain('Read-only second reader');
     expect(reporter).toContain('no target operations');
@@ -77,6 +81,32 @@ describe('A4 prompt rules and tool boundaries', () => {
     expect(instructions).toContain('Requested runtime: model p2o-inert/current-agent, thinking off');
     const legacy = { ...ticket, captureKiB: undefined, requestedRuntime: undefined } as Ticket;
     expect(workerInstructions(legacy)).not.toContain('Capture cap:');
+  });
+
+  // A17.5/D36 (2026-10-27): validation is a replay owed by a different worker and a case badge; it is no longer described as
+  // the confirmation gate for the next rung, because a confirmed primitive can be chained and rated without waiting for it.
+  it('keeps independent validation a badge, not the gate for the next rung (A17.5)', () => {
+    const planner = plannerInstructions(plannerFacts());
+    expect(planner).toContain('Independence hardens the case badge, not permission to take the next rung');
+    expect(planner).toContain('a confirmed primitive is chained and rated without waiting for the replay');
+    expect(planner).not.toContain('Only that closure counts as confirmed');
+  });
+
+  // A17.1/D33 (2026-10-27): the exploitation stance is conditional, so every other worker prompt pays nothing for it. The
+  // ticket purpose is the switch; a ticket without one keeps the pre-P17 prompt byte for byte.
+  it('adds the exploitation stance only to an exploitation or chaining ticket (A17.1)', () => {
+    const withPurpose = (purpose: string) => ({ workerId: 'worker-1', role: 'general', depth: 1, parentWorkerId: null,
+      target: { kind: 'directory', label: '/fixture' }, executorMode: 'shared', purpose } as never);
+    for (const purpose of ['exploitation', 'chaining']) {
+      const text = workerInstructions(withPurpose(purpose));
+      expect(text, purpose).toContain('EXPLOITATION STANCE');
+      expect(text, purpose).toContain('a wall is a refusal or an exhausted family, never one failed payload');
+      expect(text, purpose).toContain('re-trigger independently (fresh session, payload or encoding)');
+      expect(text, purpose).toContain('tee long output into a p2o_capture artifact');
+      expect(text, purpose).toContain('gained/needs');
+    }
+    for (const purpose of ['mapping', 'discovery', 'validation', 'reporting']) expect(workerInstructions(withPurpose(purpose)), purpose).not.toContain('EXPLOITATION STANCE');
+    expect(workerInstructions(ticket('recon'))).not.toContain('EXPLOITATION STANCE');
   });
 
   it('carries the role split on the tool boundaries and keeps removed verbs out of them', () => {

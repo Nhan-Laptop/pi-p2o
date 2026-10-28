@@ -100,9 +100,9 @@ describe('an expired worker is continued from where it stopped (P16.7)', () => {
   it('names continue and the brief that starts at the last write', () => {
     const prompt = plannerInstructions({ runId: 'run-h', targetLabel: 'https://example.invalid', targetKind: 'url', sourceSkipped: 0,
       delegation: { enabled: true, maxWorkers: 3, maxDepth: 2 } });
-    expect(prompt).toContain('its progress is in the ledger and its conversation is resumable');
+    expect(prompt).toContain('its ledger position and conversation are resumable');
     expect(prompt).toContain('continue it on the same ticket');
-    expect(prompt).toContain('dispatch a new task with a different mechanism');
+    expect(prompt).toContain('dispatch a different mechanism');
     // The lead prompt still carries no tool-name vocabulary; the tool itself owns the exact verb.
     expect(prompt).not.toMatch(/\bp2o_[a-z_]+\b/);
   });

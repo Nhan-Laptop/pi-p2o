@@ -61,6 +61,51 @@ no surface can quietly restore a ceiling another surface dropped (`tests/minimal
   tcp only, at most four per session). No host port is ever published and no tunnel or pivot is provided; the report names
   which ingress path existed.
 
+### Sandbox capability matrix
+
+Distilled from the 2026-10-27 probe in `planning_update.md` §2.4 and the code that enforces each row; prose that promises
+capability must agree with this table.
+
+| Axis | Measured, enforced | Where |
+|---|---|---|
+| Container | uid 0 (`--user root`, `HOME=/root`), writable rootfs, Docker's default 14-capability set (CHOWN, DAC_OVERRIDE, FOWNER, FSETID, KILL, SETGID, SETUID, SETPCAP, NET_BIND_SERVICE, NET_RAW, SYS_CHROOT, MKNOD, AUDIT_WRITE, SETFCAP); not privileged; shares the host kernel; no pid/memory/CPU limit | `src/sandbox.ts:17-19`, `src/truth.ts:15` |
+| Filesystem | `/target` is a read-only bind mount of the bounded source copy; `/work` is writable scratch; no other host path is mounted; the Docker socket is never exposed | `src/sandbox.ts:99` |
+| Network | bridge egress unrestricted, including public, private, link-local, cloud-metadata and host-published addresses (`host.docker.internal`); loopback is container-local; no inbound path by default; `--lab-network` plus a session listener is the only ingress (at most four per session, TCP, logs bytes and never answers); no published host port, no tunnel or pivot | `src/sandbox.ts:93,100`, `src/truth.ts:18`, `extensions/p2o/index.ts:1436-1490` |
+
+| Bound | Value | Where |
+|---|---|---|
+| Visible command output | 48 KiB | `src/process.ts:3` |
+| HTTP request body | 48 KiB | `src/target.ts:284` |
+| Lab payload | 48 KiB | `src/lab.ts:20` |
+| Upload into scratch | 48 KiB | `extensions/p2o/index.ts:1408` |
+| Scratch write | 64 KiB | `src/scratch.ts:143` |
+| Command string | 32 KiB | `src/sandbox.ts:160` |
+| Capture | reads up to 8 MiB, stores 1 MiB by default, returns an 8 KiB preview | `src/scratch.ts:4`, `src/roles.ts:105`, `src/sandbox.ts:213` |
+| Receipt | 16 KiB stdout / 4 KiB stderr | `src/evidence.ts:61` |
+| Time | no command or elapsed-time budget by default; an opt-in command timeout that fires retires the sandbox | `src/target.ts:279-282`, `src/sandbox.ts:171-181` |
+
+**Installed vs installable.** The image ships gcc 15.3.0, objdump/readelf/nm/objcopy, gdb 17.2, nmap 7.99, nuclei 3.11,
+ffuf, sqlmap 1.10.6, httpx, subfinder, nc/ncat, Python 3.13 with pip, Node, Chromium 150 and agent-browser 0.26; gcc's
+ASan works out of the box. The preinstalled `nmap` launcher carries CAP_NET_ADMIN file capabilities that the default
+bounding set refuses (exec fails with EPERM); a copy of `/usr/lib/nmap/nmap` in scratch, with its file capabilities
+stripped, runs as root and SYN scans work. g++/make/clang/rustc, AFL++, pwntools, radare2/ghidra, metasploit and
+strace/socat/ssh/tcpdump install into scratch from the unrestricted egress; `scripts/setup-sandbox-tools.sh --with`
+preinstalls its fixed `--with` list at build time (angr, z3, binwalk, mitmproxy, unicorn, pwntools 4.15.0, strace,
+socat, ssh, afl++, radare2, tcpdump, java): python packages carry exact pins, apt packages are named against the rolling
+base and only the image ID pins them, and `--with` is operator convenience rather than a capability gate — the running
+container is unchanged and the agent can still install into scratch. A missing tool is a work item, not a wall.
+
+**Prompt-safe claims.** Prompts, tool descriptions and docs may assert: a root shell on a writable root filesystem with
+the Docker default capability set (raw sockets and SYN scans work); compilers, a debugger and recon tooling present; a
+browser installed; egress to any address the container routes to; `/target` read-only; no host path or Docker socket; no
+command or elapsed-time budget by default; 1 MiB capture of otherwise truncated output; the container as the only blast
+radius (not a VM; host-kernel escape untested).
+
+**Forbidden claims.** A later edit must not assert: the root filesystem is mounted read-only; the container runs
+unprivileged; capabilities have been removed or restricted; egress is filtered to the authorized origin; an inbound path
+exists without `--lab-network`; a host port is published or a tunnel/pivot exists; a command, elapsed-time or token budget
+exists by default; VM isolation or a proven host-kernel compromise; or the retired "no shell" / "no browser" ceilings.
+
 ## Command policy and identity
 
 One dispatch seam (`executeWithReceipt`) evaluates the command-policy gate **before** any secret substitution or target

@@ -47,17 +47,22 @@ describe('round hygiene and campaign memory (A6.5)', () => {
 
   it('names a dispatch made before a goal or plan as research debt instead of refusing it (design boundary)', async () => fixture(async h => {
     await h.command('--target ./source --goal "Assess the fixture boundary"');
-    // A6.5's first-round contract is enforced as debt and prompt guidance, not as a second refusal: the dispatch is admitted
-    // and the frame it skipped is named by the same derivation the loop and the report read.
-    await h.call('p2o_task_author', { draft: { question: 'Does the fixture boundary hold for the first recon intent?', surface: '/fixture', risk: 'mapping', role: 'recon',
+    // 2026-10-27 (A3/D32): the exploit-mode admission gate now refuses this dispatch, but the A6.5 design boundary is still
+    // tested on the debt side: the skipped frame is named by the same derivation the loop and the report read, and the
+    // refusal itself is recorded as an admission fact instead of vanishing into the transcript.
+    await expect(h.call('p2o_task_author', { draft: { question: 'Does the fixture boundary hold for the first recon intent?', surface: '/fixture', risk: 'mapping', role: 'recon',
       roleReason: 'First-round contract fixture', expectedTrue: 'The recorded fixture exposes the declared boundary', expectedFalse: 'The fixture records nothing and the receipt says so',
-      stopCondition: 'Stop after one inert mapping intent', evidenceIds: [], prerequisites: [], skills: [], methodReason: 'No target or model work' } });
+      stopCondition: 'Stop after one inert mapping intent', evidenceIds: [], prerequisites: [], skills: [], methodReason: 'No target or model work' } }))
+      .rejects.toThrow(/EXPLOIT_MODE_NEEDS_IMPACT_GOAL/);
     const exported = await h.call('p2o_finish', { export: true });
     const codes = exported.details.completion.items.map((item: { code: string }) => item.code);
     expect(codes).toContain('RESEARCH_DEBT');
     const debt = exported.details.debt;
     expect(debt.totals.GOAL_MISSING).toBe(1);
     expect(debt.totals.PLAN_MISSING).toBe(1);
+    // A3/D32: the gate throws before the board-create try/catch that records M6 admission refusals, so the refusal is not
+    // counted by ADMISSION_REFUSALS here; the skipped frame is still described as research debt, which is what A6.5 asserts.
+    expect(exported.details.preflight.advisory.find((item: any) => item.code === 'ADMISSION_REFUSALS')).toBeUndefined();
     expect(text(exported)).toContain('STATE: incomplete');
     // The prompt names the legal path, so the advisory is actionable rather than just a counter.
     const prompt = await (async () => {

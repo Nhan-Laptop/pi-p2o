@@ -10,10 +10,12 @@ import { isSatisfiedTask } from './tasks.js';
 import { caseValidation } from './validation.js';
 
 export type CaseCurrentness='current'|'stale'|'withdrawn'|'unknown';
+/** Host-set provenance of an accepted high/critical rating: the effect was tested and observed, while the policy basis stays inferred. */
+export type RatingProvenance='INFERRED_POLICY';
 export interface CaseView extends CaseEntry {
   currentness:CaseCurrentness;staleReasons:string[];independentCurrent:boolean;independenceReason?:string;acceptedFinding:boolean;readyToRate:boolean;canonicalCaseId:string;
   /** Latest owner rating of this case id and the case revision it was recorded against; a rating of an older revision is kept but flagged. */
-  finding?:CaseFinding;ratedRevision?:number;ratingCurrent?:boolean;
+  finding?:CaseFinding;ratedRevision?:number;ratingCurrent?:boolean;ratingProvenance?:RatingProvenance;
 }
 export interface CaseContext {assetRevision?:(id:string)=>number|undefined;assertionRevision?:(id:string)=>number|undefined}
 const terminalReview=new Set(['withdrawn']);
@@ -72,10 +74,10 @@ function independentReceiptCurrent(index:LedgerIndex,claim:AssessmentRecord,evid
 }
 
 /** Latest owner rating per case id, in ledger order. Malformed or foreign-run notes are not promoted, as for cases. */
-export function caseRatings(index:LedgerIndex):Map<string,{finding:CaseFinding;caseRevision:number;recordId:string}>{
-  const latest=new Map<string,{finding:CaseFinding;caseRevision:number;recordId:string}>();
+export function caseRatings(index:LedgerIndex):Map<string,{finding:CaseFinding;caseRevision:number;recordId:string;provenance?:RatingProvenance}>{
+  const latest=new Map<string,{finding:CaseFinding;caseRevision:number;recordId:string;provenance?:RatingProvenance}>();
   for(const row of index.records){const value=row.kind==='note'&&row.by==='owner'&&!row.workerId?row.data?.caseRating as Record<string,unknown>|undefined:undefined;if(!row.id||!value||typeof value!=='object')continue;
-    try{const caseId=value.caseId,revision=value.caseRevision;if(typeof caseId!=='string'||!/^[a-z0-9][a-z0-9-]{0,79}$/.test(caseId)||!Number.isSafeInteger(revision)||Number(revision)<1)continue;latest.set(caseId,{finding:validateFinding(value.finding),caseRevision:Number(revision),recordId:row.id});}catch{/* Untrusted/legacy notes are not promoted. */}}
+    try{const caseId=value.caseId,revision=value.caseRevision;if(typeof caseId!=='string'||!/^[a-z0-9][a-z0-9-]{0,79}$/.test(caseId)||!Number.isSafeInteger(revision)||Number(revision)<1)continue;const provenance=value.provenance==='INFERRED_POLICY'?'INFERRED_POLICY' as const:undefined;latest.set(caseId,{finding:validateFinding(value.finding),caseRevision:Number(revision),recordId:row.id,...(provenance?{provenance}:{})});}catch{/* Untrusted/legacy notes are not promoted. */}}
   return latest;
 }
 
@@ -118,7 +120,7 @@ export function caseViews(index:LedgerIndex,context:CaseContext={}):CaseView[]{
     // A chain is ready to rate when its executed depth is stated, or the record explicitly has no executed steps.
     const chainDepthStated=!ratedChain||ratedChain.demonstratedThrough!==undefined||ratedChain.steps.every(step=>step.claimRef===undefined);
     const readyToRate=currentness==='current'&&independentCurrent&&chainDepthStated;
-    const result:CaseView={...entry,currentness,staleReasons:[...new Set(reasons)].slice(0,40),independentCurrent,...(independenceReason?{independenceReason}:{}),acceptedFinding,readyToRate,canonicalCaseId,...(rating?{finding:rating.finding,ratedRevision:rating.caseRevision,ratingCurrent:rating.caseRevision===entry.revision}:{} )};views.set(entry.id,result);return result;
+    const result:CaseView={...entry,currentness,staleReasons:[...new Set(reasons)].slice(0,40),independentCurrent,...(independenceReason?{independenceReason}:{}),acceptedFinding,readyToRate,canonicalCaseId,...(rating?{finding:rating.finding,ratedRevision:rating.caseRevision,ratingCurrent:rating.caseRevision===entry.revision,...(rating.provenance?{ratingProvenance:rating.provenance}:{})}:{} )};views.set(entry.id,result);return result;
   };
   return entries.map(view);
 }
@@ -195,12 +197,14 @@ export class CaseBoard extends LedgerBoard{
   async revise(id:string,revision:number,value:CaseDraft,request?:MutationRequest):Promise<CaseEntry>{const input=validateCaseDraft(value),bound=request?boundCaseRequest('revise',value,request,id,revision):undefined,prior=await this.retained(bound);if(prior)return prior;return this.mutate(async(index,cases)=>{const old=cases.find(entry=>entry.id===id);if(!old||old.revision!==revision)throw Error('Missing or stale case revision');if(input.id&&input.id!==id)throw Error('Cannot change case identity');const draft=this.deriveRefs(this.pin({...input,id},index),index),allowed:Record<string,string[]>={pending:['pending','accepted','disputed','withdrawn'],accepted:['pending','accepted','disputed','withdrawn'],disputed:['pending','disputed','withdrawn'],withdrawn:[]};if(!allowed[old.reviewStatus].includes(draft.reviewStatus))throw Error('Invalid case review transition');this.references(draft,index,cases);this.acceptance(draft,index,cases,old);return this.write(()=>({draft,revision:old.revision+1,previous:old}),bound);});}
   /**
    * Owner rating of an existing case, recorded against the exact case revision as a separate note. Verdict, review status and revision are untouched, so
-   * coverage cells that pin the case stay current. A case on an inferred policy basis cannot be rated above medium; reproduction evidence must be same-run.
+   * coverage cells that pin the case stay current. A high/critical rating is refused while any inferred-basis claim is not a tested observation
+   * (confirmed closure, tested execution, non-static proof); when every inferred-basis claim was observed it is allowed at demonstrated depth,
+   * records the INFERRED_POLICY provenance flag and needs a non-empty finding limitation. Reproduction evidence must be same-run.
    */
-  async rate(id:string,revision:number,value:unknown,request?:MutationRequest):Promise<{caseId:string;caseRevision:number;finding:CaseFinding;recordId:string}>{
+  async rate(id:string,revision:number,value:unknown,request?:MutationRequest):Promise<{caseId:string;caseRevision:number;finding:CaseFinding;recordId:string;provenance?:RatingProvenance}>{
     const finding=validateFinding(value),bound=request?boundRatingRequest(id,revision,value,request):undefined;
     const prior=bound?await readGeneratedRecords(this.path,bound):undefined;
-    const read=async(acks:{recordId:string}[])=>{const index=await readLedger(this.path,this.runId),row=index.byId.get(acks[0].recordId),data=row?.data?.caseRating as {caseId:string;caseRevision:number;finding:CaseFinding}|undefined;if(!index.complete||!row?.id||!data)throw Error('Retained rating detail unavailable');return {caseId:data.caseId,caseRevision:data.caseRevision,finding:validateFinding(data.finding),recordId:row.id};};
+    const read=async(acks:{recordId:string}[])=>{const index=await readLedger(this.path,this.runId),row=index.byId.get(acks[0].recordId),data=row?.data?.caseRating as {caseId:string;caseRevision:number;finding:CaseFinding;provenance?:unknown}|undefined;if(!index.complete||!row?.id||!data)throw Error('Retained rating detail unavailable');const provenance=data.provenance==='INFERRED_POLICY'?'INFERRED_POLICY' as const:undefined;return {caseId:data.caseId,caseRevision:data.caseRevision,finding:validateFinding(data.finding),recordId:row.id,...(provenance?{provenance}:{})};};
     if(prior)return read(prior);
     return this.mutate(async(index,cases)=>{
       const entry=cases.find(item=>item.id===id);if(!entry||entry.revision!==revision)throw Error('Missing or stale case revision');
@@ -216,8 +220,20 @@ export class CaseBoard extends LedgerBoard{
       if(finding.chain){const depth=finding.chain.demonstratedThrough,impact=depth===undefined?undefined:chainImpact(finding.chain.steps,depth);
         if(!impact){if(severityRank(finding.severity)>0)throw Error(depth===undefined?'A rating needs a demonstrated effect: state the executed depth with demonstratedThrough and the effect that depth showed, then rate':'The chain depth names no effect, so no impact was demonstrated; record the effect that executed step showed, then rate');}
         else if(severityRank(finding.severity)>severityRank(impact.severity))throw Error(`Finding severity ${finding.severity} exceeds what step ${depth} demonstrated: ${impact.effect} scores ${impact.severity} (${impact.vector} = ${impact.score.toFixed(1)}). Rate at or below that, or record a deeper executed step.`);}
-      if(['critical','high'].includes(finding.severity)&&entry.claimRefs.some(ref=>index.byId.get(ref)?.data?.policyBasis==='inferred'))throw Error('A case resting on an inferred policy basis cannot be rated above medium');
-      const records=()=>{this.gate();return [{id:randomUUID(),runId:this.runId,at:new Date(this.now()).toISOString(),by:'owner',kind:'note' as const,text:`case ${id}@r${revision} rated ${finding.severity}; owner rating, not review`,refs:finding.reproductionEvidenceRefs.slice(0,10),data:{caseRating:{caseId:id,caseRevision:revision,finding}}}];};
+      // D35: the inferred ceiling is about what the effect showed, not where the policy came from. An inferred-basis claim that ran and was
+      // observed is a demonstration; an untested one is still a hypothesis, so the medium ceiling and the authority invariants do not move.
+      let provenance:RatingProvenance|undefined;
+      if(['critical','high'].includes(finding.severity)){
+        const inferred=entry.claimRefs.filter(ref=>index.byId.get(ref)?.data?.policyBasis==='inferred');
+        const observed=(ref:string)=>{const data=index.byId.get(ref)?.data;return isDemonstrated(data??{})&&data?.proof!=='static_trace';};
+        const unobserved=inferred.find(ref=>!observed(ref));
+        if(unobserved)throw Error(`A case resting on an inferred policy basis cannot be rated above medium while claim ${unobserved} is not a tested observation: inference is provenance, not proof. Record the effect as a confirmed+tested claim with a non-static proof, or rate at medium or below.`);
+        if(inferred.length){
+          if(!finding.limitations?.trim())throw Error('INFERRED_POLICY: a high/critical rating on inferred policy provenance needs a non-empty finding.limitations naming what the inference leaves unproven');
+          provenance='INFERRED_POLICY';
+        }
+      }
+      const records=()=>{this.gate();return [{id:randomUUID(),runId:this.runId,at:new Date(this.now()).toISOString(),by:'owner',kind:'note' as const,text:`case ${id}@r${revision} rated ${finding.severity}${provenance?` (${provenance})`:''}; owner rating, not review`,refs:finding.reproductionEvidenceRefs.slice(0,10),data:{caseRating:{caseId:id,caseRevision:revision,finding,...(provenance?{provenance}:{})}}}];};
       const acks=bound?await appendGeneratedRecords(this.path,records,bound):await appendRecords(this.path,records());return read(acks);
     });
   }

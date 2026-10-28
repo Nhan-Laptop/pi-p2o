@@ -28,9 +28,9 @@ describe('bounded recon contract', () => {
     expect(source).not.toMatch(/\bp2o_[a-z_]+\b|nextOffset|offset\?|supersedes=|policyBasis=/);
     expect(source).toContain('Starting point:');
     expect(source).toContain('The sandbox is the only blast radius');
-    expect(source).toContain('missing, blocked or untested proof remain open_proof_gap');
+    expect(source).toContain('stays inferred, open_proof_gap, never safety');
     expect(source).toContain('specific effective control and location');
-    expect(source).toContain('a separate worker reproduced the same effect');
+    expect(source).toContain('matching reproduction — same effect, matching recipe fingerprint');
     expect(source).toContain('complete verified cleanup before the final report');
     const url = reconInstructions('url');
     expect(url).toContain('any HTTP method');
@@ -126,9 +126,16 @@ describe('bounded recon contract', () => {
   // ceiling again. The validation worker lost its second, contradictory AUTHORIZATION paragraph, and the reporter now reads
   // evidence standards instead of the recon/investigation contract it cannot execute. The recon worker prompt is
   // byte-identical, so both pinned instruction hashes above and both brief hashes are unchanged.
+  // 2026-10-27 (P17.0/P17.2/P17.3 exploitation-capability pass): the worker prompt's authorization rule absorbed the clauses
+  // the full AUTHORIZATION_TRUTH used to carry (the truth text is now composed into the planner only, plus a short anchor in
+  // the loadout line and in the brief), the one-intent rule moved to the p2o_report boundary it belongs to, and EVIDENCE_TAIL
+  // gained the canonical policy-provenance rule (H2/A17.4); a purpose=exploitation ticket additionally receives the
+  // EXPLOITATION STANCE block. Both instruction hashes and both brief hashes moved on purpose; the brief hashes moved because
+  // its AUTHORIZATION paragraph is now the short anchor instead of the full truth. The planner body changes are covered by the
+  // size assertion further down.
   it.each([
-    ['url', 'd82b23d0c115004011f1b3ccaa13776e826584ffbc1b1474c60f44d3e868e61b', '3ab19669e99655618326725b74092123291916b3f7e3fe4be78f9c8f41b230d3'],
-    ['directory', '2a01a0d0d14f9547f691f4960495e027a027f381caf6639289ea685a0a8152a5', '8ab956b5c960afc556e13b7247f4eca244bb4aa978702038847a2a44528ad164'],
+    ['url', '9d640b8592d439363d83e5a2177f2b179518c1852e7640773d17d9f8cf9debf7', '9cfd0c6e094e00eb8fcd27325a93ed3b355bc60c959953c6c152fcef0170b6c5'],
+    ['directory', 'aa6cdff4b985197eb806211610dc7b2f356a3760d0115ed3759d5d02c01818b5', 'f55cca810efda3781871d1131f4a05d8eb34949b138811ef1d90cf7b4cbe8f44'],
   ])('pins %s worker guidance for the Planner/frontier revision; historical acceptance artifacts are not rewritten', (kind, instructionHash, briefHash) => {
     const ticket = { workerId: 'worker-test', role: 'recon', runId: 'run-test', depth: 1, parentWorkerId: null,
       lifetime: 'until-stopped', target: { kind, label: kind === 'url' ? 'https://example.invalid' : '/target' } } as Ticket;
@@ -194,10 +201,13 @@ describe('bounded recon contract', () => {
 
   // 2026-10-27 (dedupe/prompt-budget pass): the recorded size ceilings are asserted again — the previous revision of this test
   // kept the comment and the "inside a recorded size" name but had lost the length assertion, so the planner section silently
-  // grew to 2.2x its recorded 6,346-char ceiling before the dedupe pass. Measured with this test's exact facts after the pass:
-  // planner 13,438 (directory) / 13,438 (url) / 13,749 (event-driven); worker 12,725 (recon/url) / 13,064 (validation/url);
-  // brief 1,510; reporter 2,311. Each ceiling below is that body plus ~3-5% headroom. Raise a ceiling only with a dated comment,
-  // never to make a failing test pass.
+  // grew to 2.2x its recorded 6,346-char ceiling before the dedupe pass. Measured with this test's exact facts after the P17.0
+  // budget pay-down plus the P17.2/P17.3/A17.5 stance and admission lines (re-measured 2026-10-27 after the last prompt edit):
+  // planner 13,882 (directory) / 13,891 (url) / 14,159 (event-driven); worker 12,598 (recon/url) / 12,937 (validation/url,
+  // which never gets the exploitation stance); brief 905; reporter 2,311.
+  // The ceilings are unchanged from the dedupe pass; the event-driven planner variant is now the tightest (~0.3% headroom), so
+  // the next planner line has to pay for itself first and should replace a line rather than add one. Raise a ceiling only with a
+  // dated comment, never to make a failing test pass.
   const PROMPT_CEILINGS = { planner: 14_200, worker: 13_200, validation: 13_500, brief: 1_650, reporter: 2_600 };
   it('keeps the delegated lead prompt variants inside a recorded size (the solo variants are bounded above)', () => {
     const base = { runId: 'run-recon', sourceSkipped: 2, delegation: { enabled: true, maxWorkers: 3, maxDepth: 2 } };

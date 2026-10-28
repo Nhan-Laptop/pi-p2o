@@ -23,6 +23,7 @@ export const caseEntrySchema=Type.Object({
 export const findingSchema=Type.Object({severity:choices(FINDING_SEVERITIES),basis:Type.String({maxLength:1000}),likelihood:Type.Optional(Type.String({maxLength:800})),impact:Type.Optional(Type.String({maxLength:800})),
   cvssVector:Type.Optional(Type.String()),cwe:Type.Optional(Type.Array(Type.String(),{maxItems:5})),remediationSteps:Type.Optional(Type.String({maxLength:2000})),
   references:Type.Optional(Type.Array(Type.String(),{maxItems:5})),reproductionEvidenceRefs:Type.Optional(Type.Array(Type.String(),{maxItems:5})),reproductionSteps:Type.Optional(Type.Array(Type.Object({ref:Type.String(),role:choices(REPRODUCTION_ROLES),note:Type.Optional(Type.String({maxLength:200}))},{additionalProperties:false}),{minItems:1,maxItems:5})),independenceWaiver:Type.Optional(Type.String({maxLength:300})),
+  limitations:Type.Optional(Type.String({maxLength:2000,description:'Required for a high/critical rating on observed inferred-policy provenance: name what the inference still leaves unproven'})),
   chain:Type.Optional(Type.Object({objective:Type.String({maxLength:600}),steps:Type.Array(Type.Object({order:Type.Integer(),step:Type.String({minLength:5,maxLength:400}),claimRef:Type.Optional(id()),
       gained:Type.Optional(Type.Array(capabilitySchema,{maxItems:10,description:'Typed capabilities this step hands to the next one; prose is not joined'})),
       needs:Type.Optional(Type.Array(capabilitySchema,{maxItems:10,description:'Typed capabilities this step needs from an earlier step'})),

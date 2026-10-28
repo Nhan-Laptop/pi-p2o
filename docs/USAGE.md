@@ -188,3 +188,45 @@ lập container, **không phải** VM và không phải claim về kernel escape
 `p2o_http`/`p2o_net` không bị lọc theo origin. Retention bị chặn (queue 100 intent, 1.000 registration, 256 pending signal,
 quota/run) dù thời gian chạy không có trần. Report là đánh giá của agent: "independently verified" cần một worker khác tái
 lập, và claim worker chưa được planner kiểm phải được ghi đúng như vậy.
+
+### Sandbox: điều có thể dựa vào và điều không có
+
+Đo 2026-10-27 trên đúng image pin và argv trong `src/sandbox.ts:17-19` (matrix đầy đủ:
+[ARCHITECTURE](ARCHITECTURE.md#sandbox-capability-matrix)):
+
+- **Container:** uid 0, `HOME=/root`, rootfs ghi được, giữ 14 capability mặc định của Docker (gồm `NET_RAW` nên raw
+  socket/SYN scan chạy), không privileged, chia sẻ kernel host, không trần pid/RAM/CPU. `/target` là bản bind mount
+  chỉ đọc; `/work` ghi được; không mount host path nào khác và không mount Docker socket.
+- **Mạng:** bridge, egress không lọc — public, private, link-local, cloud metadata và service host publish qua
+  `host.docker.internal` đều tới được; loopback là container-local. Mặc định **không có inbound**. Chỉ khi start với
+  `--lab-network`, sandbox join network đó và `p2o_session action=listen` mở listener trong container (tối đa 4/session,
+  TCP, ghi bytes và không bao giờ trả lời); không publish host port, không tunnel/pivot.
+- **Foothold tương tác (A17.8/D40):** cũng chỉ trong `--lab-network`, `p2o_session action=foothold-open port=<port>` mở
+  một foothold thật: relay do host sinh (không mở shell), accept **đúng một** peer rồi đóng listener — peer thứ hai không
+  bao giờ vào được. Worker phải `foothold-identify` (probe cố định `whoami; id`) và identity được ghi lại trước khi
+  `foothold-send`/`foothold-read` mở; tối đa một foothold/session, không cap per-send hay idle do foothold đặt (chỉ còn
+  trần 32 KiB của lệnh shell trong sandbox, refusal nói rõ), preview 8 KiB cho model còn transcript đầy đủ nằm trong log
+  để `p2o_capture` lấy; foothold sống qua các step và report, chết cùng session. Không publish host port.
+- **Công cụ:** image có sẵn compiler, gdb, recon và Chromium/agent-browser; nmap có sẵn nhưng launcher bị file-capability
+  chặn, copy `/usr/lib/nmap/nmap` vào scratch để chạy; tool thiếu thì cài vào scratch, còn
+  `scripts/setup-sandbox-tools.sh --with` chỉ cài trước danh sách pin lúc build (angr, z3, binwalk, mitmproxy, unicorn, pwntools 4.15.0, strace, socat, ssh, afl++, radare2, tcpdump, java; python package pin chính xác, apt package chỉ pin bằng image ID). Đây là tiện ích operator, không phải capability gate: container đang chạy không đổi và agent vẫn tự cài được tool vào scratch.
+
+| Trần | Giá trị | Enforce tại |
+|---|---|---|
+| Output hiển thị | 48 KiB | `src/process.ts:3` |
+| HTTP body / payload lab / upload | 48 KiB mỗi loại | `src/target.ts:284`, `src/lab.ts:20`, `extensions/p2o/index.ts:1408` |
+| Ghi scratch | 64 KiB mỗi lần | `src/scratch.ts:143` |
+| Command | 32 KiB | `src/sandbox.ts:160` |
+| Capture | đọc ≤8 MiB, lưu 1 MiB mặc định, preview 8 KiB | `src/scratch.ts:4`, `src/roles.ts:105`, `src/sandbox.ts:213` |
+| Receipt | 16 KiB stdout / 4 KiB stderr | `src/evidence.ts:61` |
+
+**Không được cấp** (đừng hứa trong prompt, tool description hay tài liệu):
+
+- per-action consent: consent lúc start là blanket cho cả run (`src/truth.ts:28`);
+- host port publish và inbound mặc định: sandbox chỉ join bridge trừ khi operator nêu `--lab-network`, và argv không có
+  `--publish` (`src/sandbox.ts:17-22,100`, `src/truth.ts:18`);
+- tunnel/pivot: listener chỉ log bytes và không trả lời, còn foothold là một kết nối reverse duy nhất do model điều
+  khiển trong `--lab-network` (`src/foothold.ts`); không có port forward, proxy, SOCKS hay pivot subsystem;
+- trần lệnh hay thời gian: `timeout` mặc định 0 (tắt) và chỉ khi opt-in mới áp; timeout fire thì sandbox bị retire
+  (`src/target.ts:279-282`, `src/sandbox.ts:171-181`);
+- cô lập kiểu VM hay kernel escape: đây là cô lập container, chia sẻ kernel host (`src/truth.ts:15`).
