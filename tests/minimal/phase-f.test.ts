@@ -11,13 +11,13 @@ import { fixture, seedClaim, seedImpactGoal } from './helpers/report-fixture.js'
  * a revisit is one condition-bound wake, recorded once and refused twice; a continuation is one more brief on a live ticket and
  * a refusal once that ticket is retired; and a blocked link names the transition to research instead of leaving the lead guessing.
  */
-function engineFixture(mode: 'manual' | 'event-driven' = 'event-driven') {
+function engineFixture() {
   const wakes: PlannerWake[] = [], problems: string[] = [];
   const deps: EngineDeps = {
     active: () => true, list: async () => [], readiness: async () => ({ ready: true }), capacity: () => 1, reap: async () => true,
     spawn: async () => undefined, persist: async () => undefined, wake: wake => wakes.push(wake), idle: () => true, problem: reason => problems.push(reason),
   };
-  return { engine: new AssessmentEngine('run-f', mode, deps, 5), wakes, problems };
+  return { engine: new AssessmentEngine('run-f', 'event-driven', deps, 5), wakes, problems };
 }
 const QUIET = { testedCells: 0, closures: 0, assets: 0, chainDepth: 0, remaining: 0 };
 beforeEach(() => vi.useFakeTimers());
@@ -60,21 +60,11 @@ describe('quiet rounds escalate to a human, never to a number (M6)', () => {
     engine.stop();
   });
 
-  it('does not escalate or wake at all in manual mode', () => {
-    const { engine } = engineFixture('manual');
-    engine.notify('worker-report', 'w1');
-    expect(engine.boundary()).toBeUndefined();
-    engine.consume(engine.snapshot().sequence, QUIET);
-    engine.consume(engine.snapshot().sequence, QUIET);
-    expect(engine.quietRounds()).toEqual([]);   // nothing was reserved, so nothing was judged
-    expect(engine.snapshot().state).toBe('waiting');
-    engine.stop();
-  });
 });
 
 describe('a revisit is condition-bounded and fires once (M7)', () => {
   it('schedules one wake per condition and refuses a second pending one for the same condition', async () => {
-    const { engine, wakes } = engineFixture('manual');
+    const { engine, wakes } = engineFixture();
     const at = Date.now() + 1000;
     expect(engine.revisitAt('block-decay')).toBeUndefined();
     expect(engine.scheduleRevisit('block-decay', at)).toMatchObject({ condition: 'block-decay' });
@@ -95,13 +85,13 @@ describe('a revisit is condition-bounded and fires once (M7)', () => {
   });
 
   it('fires nothing while the run is paused or stopped', async () => {
-    const { engine, wakes } = engineFixture('manual');
+    const { engine, wakes } = engineFixture();
     engine.scheduleRevisit('block-decay', Date.now() + 1000);
     engine.pause('operator hold');
     await vi.advanceTimersByTimeAsync(2000);
     expect(wakes).toEqual([]);
     engine.resume();
-    const second = engineFixture('manual');
+    const second = engineFixture();
     second.engine.scheduleRevisit('cooldown-expiry', Date.now() + 1000);
     second.engine.stop();
     await vi.advanceTimersByTimeAsync(2000);

@@ -29,10 +29,14 @@ Một hộp xác nhận duy nhất nêu quyền sở hữu target, engagement mo
 không có sandbox, worker hay model turn nào. Consent đó **authorization blanket cho cả run**: không có per-action consent
 sau đó (xem [Tự chủ](#tự-chủ-authorization-browser-identity)). Pi hiện tại là planner/reviewer; nó tạo và dispatch intent,
 review và chứng minh, còn worker thi hành target và là tác giả duy nhất của claim/note/surface. Không có worker backend
-(Herdr) thì target work bị chặn và planner báo thiếu executor thay vì tự điều tra.
+(Herdr) thì **không start được run**: manual mode đã bị xoá nên planner không có đường thi hành target, và lệnh start bị
+từ chối trước khi run tồn tại.
 
 `pause` dừng dispatch và wake tự động (worker đã admit vẫn chạy tới khi report); `resume` mở lại scheduling, không cấp lại
-quyền; `stop` revoke worker, huỷ thao tác và cleanup; `hold` chặn lệnh target **mới** và launch worker mới nhưng không kết
+quyền; `stop` revoke worker, huỷ thao tác và cleanup — nếu một round đang chạy, loop pause trước, round đó được settle tối
+đa 30 s và ghi `planner.round-end reason=operator-stop` thay vì bị kill giữa lượt, rồi worker còn sống có tối đa 90 s để
+gửi report đã hứa trước khi teardown cứng (quá hạn thì dừng cứng như cũ); `hold` chặn lệnh target **mới** và launch worker
+mới nhưng không kết
 thúc run; `release` gỡ hold sau xác nhận; `stop-worker` rút một worker (task → `cancelled`). `approve`/`deny` xử lý một
 command-policy ask đang chờ, quyết định gắn với đúng hash request và chỉ ghi một lần.
 
@@ -52,7 +56,9 @@ command-policy ask đang chờ, quyết định gắn với đúng hash request 
 ```
 
 - `status` in task/review/blocker, profile loop/executor, số lệnh đã chạy, retention, bảng worker, dòng `Runtime:`,
-  `Planner context` (Pi báo, chỉ hiển thị), model usage theo role, dòng `Frontier:` (gồm `stalled rounds N`) và dòng
+  `Planner context` (Pi báo, chỉ hiển thị), model usage theo role, dòng `Frontier:` (gồm `stalled rounds N`), dòng
+  `Round:` khi đã có round được admit (số round, session thay thế, trạng thái ngân sách kèm trục đã chạm, model/thinking
+  đã route và round fact mới nhất) và dòng
   `Authority:` (planner target ops phải 0, worker ops, task, claim, validation, role matrix). Tất cả đọc từ record đã
   commit; không counter nào từ chối hay kết thúc run.
 - `log` 20 mục/trang, cursor là vị trí snapshot hoặc sequence đã commit; `report` là index handoff/claim, không tự viết kết
@@ -70,7 +76,7 @@ command-policy ask đang chờ, quyết định gắn với đúng hash request 
 | `--origin <http(s)-URL>` | — | 1 URL, ≤2048 ký tự, không khoảng trắng/ký tự điều khiển | chỉ đi với `--target <thư mục>`; tạo target **hybrid** (source snapshot + đúng 1 origin), chia sẻ một graph/report. Origin là starting label, không phải biên |
 | `--workers N` | 3 | 1…`Number.MAX_SAFE_INTEGER` | trần worker đồng thời, không phải tổng assignment; `--max-depth 0` tắt delegation |
 | `--max-depth D` | 2 | 0–3 | giữ cho tương thích: delegation luôn phẳng, worker không spawn con |
-| `--loop MODE` | `manual` | `manual` \| `event-driven` | `event-driven` cần Herdr và consent lúc start; có thể phát sinh lượt planner trả phí |
+| `--round-steps N` / `--round-seconds N` | 40 / 900 | steps 0–200, seconds 0–7200; `0` tắt trục đó | ngân sách **một round** (work package), không phải trần campaign; wrap sớm ở 6 step cuối / 90% thời gian / 80% context, dừng cứng ở 92% context |
 | `--executors MODE[:N]` | `shared` | `shared` \| `isolated` \| `session[:N]` (N 1–99) | shared mặc định tuần tự; isolated tách sandbox theo assignment; `session` giữ N container sống suốt run, N mặc định và trần là `--target-ops` |
 | `--target-ops N` | shared 1 · isolated/session 3 | ≥1 | trần thao tác target đồng thời, không phải số worker/vòng planner. Shared chỉ nới khi nêu rõ N>1 (confirmation và ledger ghi lại) |
 | `--mode MODE` | `exploit` | `exploit` \| `assess` | `exploit` cho phép access ladder; `assess` chỉ ghi exposure, từ chối intent khai thác và in một dòng thay cho ladder |
@@ -86,8 +92,9 @@ command-policy ask đang chờ, quyết định gắn với đúng hash request 
 | `--export` | tắt | flag | thêm bản sao bounded redacted receipt/hash vào `.p2o-reports/` lúc cleanup (khác bundle `/p2o export`) |
 | `--resume <run-id>` | — | id `run-…` | mở lại một run durable-local dưới cùng runId: giữ record, sandbox/worker mới, **không** phục hồi ticket/operation; source phải khớp snapshot đã niêm phong |
 
-Số phải là số nguyên trong khoảng cho phép; giá trị sai bị từ chối, không tự clamp. Không có `--max-planner-rounds` và không
-có trần lệnh/thời gian: `--target-ops` chỉ là trần đồng thời, không phải rate limiter hay egress firewall.
+Số phải là số nguyên trong khoảng cho phép; giá trị sai bị từ chối, không tự clamp. Không có trần cho cả campaign (không
+`--max-planner-rounds`, không trần lệnh/thời gian): round budget chỉ giới hạn một round làm việc, `--target-ops` chỉ là trần
+đồng thời, không phải rate limiter hay egress firewall.
 
 ## Cấu hình (`~/.pi/agent/settings.json`, khóa `p2o`)
 
@@ -97,7 +104,8 @@ kiểu/ngoài khoảng quay về mặc định. Hộp xác nhận luôn xuất h
 | Khóa | Mặc định | Ghi chú |
 |---|---|---|
 | `maxWorkers` / `maxDepth` | 3 / 2 | như `--workers` / `--max-depth` |
-| `loopMode` | `manual` | `manual` \| `event-driven` |
+| `plannerRound` | `{steps:40,seconds:900,wrapSteps:6,contextWrapPercent:80,contextHardPercent:92}` | ngân sách một round; `0` tắt từng trục; `--round-steps`/`--round-seconds` override cho run đó |
+| `plannerModels` | — | `{base?, escalate?, thinkingBase?, thinkingEscalate?}`, model id dạng `provider/model`. Round được route trước lượt đầu: base cho review/mapping/validation, escalate cho exploitation/chaining, chain step đã ready, primitive chưa nối hoặc hai round liền không đóng gì; model không resolve/set được thì giữ loadout hiện tại và ghi `planner.round-model-fallback` |
 | `executorMode` | `shared` | `shared` \| `isolated` \| `session` |
 | `maxTargetOperations` | 3 | trần target-op cho isolated/session; shared mặc định 1 và settings **không** tự nới shared của run mới |
 | `commandPolicy` | 8 seed deny rule | `{rules:[{action:'allow'\|'deny'\|'ask', match:'<literal>', reason, kinds?:['shell'\|'net'\|'http'\|'send']}], disableSeeds:[…]}`; tối đa 20 rule; seed tắt được nêu tên trong report |
@@ -125,19 +133,23 @@ Browser có sẵn trong image (Chromium 150 + CLI `agent-browser` 0.26.0), khôn
 operator niêm phong qua `--identity`, hoặc worker tự tạo principal dùng một lần khi công việc cần. Chi tiết cách drive và
 giới hạn redaction: [HTTP_TRANSPORT](HTTP_TRANSPORT.md).
 
-## Manual / event-driven
+## Vòng lặp tự động và round budget
 
-| | `manual` (mặc định) | `event-driven` |
-|---|---|---|
-| Worker report khi planner idle | không tự gọi model; người tương tác để planner review tiếp | có thể tự gọi planner sau event đã commit (tốn phí), trừ khi pause/stop |
-| Task đã dispatch | engine vẫn admit khi có slot và prerequisite đã review | giống nhau |
-| Polling/heartbeat | không (trừ khi bật `--heartbeat-seconds`) | wake theo event + heartbeat tùy chọn |
+Loop chỉ còn một chế độ: **tự động** (manual mode đã bị xoá — P18/D48). Worker report/proposal đã commit có thể tự mở một
+lượt planner trả phí; pause/stop hoặc input người đang chờ chặn điều đó. Task đã dispatch vẫn được engine admit khi có slot
+và prerequisite đã review. Polling bị cấm: planner kết thúc lượt bằng `wait` thay vì giữ lượt chờ, và heartbeat campaign
+(mặc định 600 s) là wake có nhịp khi campaign còn nợ việc.
 
-Manual không có nghĩa phải launch worker bằng tay: khác biệt chỉ là quyền tự bắt đầu **lượt planner mới**. `p2o_loop` là
-tool của planner (`status`/`wait`/`blocked`, thêm `hint`/`constrain` 3–300 ký tự, trần 24 hint và 12 constraint), không
-phải slash command; `wait` kết thúc lượt chứ không kết thúc assessment; `blocked` là quyết định dừng có chủ đích và chờ
-`/p2o resume`. Event được coalesce và không bảo đảm đánh thức khi có input người đang chờ, run đã pause/stop hoặc campaign
-đã kết thúc.
+Mỗi round là một work package có ngân sách: mặc định 40 step / 900 s, bắt đầu wrap ở 6 step cuối, 90% thời gian hoặc 80%
+context, dừng cứng ở 92% context. `--round-steps 0 --round-seconds 0` tắt cả hai trục. Ngân sách này **không** giới hạn
+campaign: không có trần round/token/thời gian cho cả chiến dịch. Mặc định mỗi round mở một Pi session mới và nhận briefing
+tất định ≤8 KiB thay vì nối dài một transcript; round đang chạy hiện số round, session, trạng thái ngân sách, model được
+route và round fact mới nhất trong `/p2o status`. `p2o_loop` là tool của planner (`status`/`wait`/`blocked`,
+thêm `hint`/`constrain` 3–300 ký tự, trần 24 hint và 12 constraint), không phải slash command; `wait` kết thúc lượt chứ
+không kết thúc assessment — khi campaign còn obligation, `wait` đầu tiên của round bị từ chối một lần kèm demand và legal
+next, lần hai được chấp nhận, và một round kết thúc mà không có tool call nào nhận tối đa hai nudge nhắc ghi lại kết quả;
+`blocked` là quyết định dừng có chủ đích và chờ `/p2o resume`. Event được coalesce và không bảo
+đảm đánh thức khi có input người đang chờ, run đã pause/stop hoặc campaign đã kết thúc.
 
 ## Tri thức bền và báo cáo
 

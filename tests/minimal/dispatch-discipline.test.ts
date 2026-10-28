@@ -10,7 +10,7 @@ const solo = () => plannerInstructions(base({ delegation: { enabled: false, reas
 
 describe('dispatch discipline (P6)', () => {
   it('states the serial-chain rule, the dispatch order and the anti-stall floor', () => {
-    for (const prompt of [plannerInstructions(base()), plannerInstructions(base({ loopMode: 'event-driven' })), solo()]) {
+    for (const prompt of [plannerInstructions(base()), solo()]) {
       expect(prompt).toContain('A chain step that consumes an earlier step’s actual output is its own task with pinned prerequisites');
       expect(prompt).toMatch(/Dispatch the highest-value intents first; a slot opens as one settles/);
       // P15 (R1): a round with no feasible question is not a stall, so the rule names the blocked path instead of demanding work.
@@ -37,7 +37,7 @@ describe('dispatch discipline (P6)', () => {
   // P10/WF-13: the effective executor cap and the queue/finish semantics are stated where intents are formed, in behaviour
   // words (the prompt keeps no tool names), so the planner does not have to infer them from the confirmation dialog.
   it('P10/WF-13: states the executor cap, the queue identity rule and the finish refusal with queued intents', () => {
-    for (const prompt of [plannerInstructions(base()), plannerInstructions(base({ loopMode: 'event-driven' })), solo()]) {
+    for (const prompt of [plannerInstructions(base()), solo()]) {
       expect(prompt).toContain('EXECUTOR AND QUEUE');
       expect(prompt).toContain('runs target operations one at a time unless the operator explicitly raised the cap with --target-ops N');
       expect(prompt).toContain('model concurrency never implies target concurrency');

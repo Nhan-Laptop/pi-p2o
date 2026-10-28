@@ -125,13 +125,14 @@ describe('engagement mode in the run (A7.1)', () => {
     const store = await h.reader();
     try {
       expect(store.manifest().profile).toMatchObject({ mode: 'assess', effectClasses: [] });
-      expect(store.campaign()).toBeUndefined();
+      // P18/A9: every run records a campaign frame; assess mode records the read-only shape in it.
+      expect(store.campaign()).toMatchObject({ createdBy: 'default', mode: 'assess', effectClasses: [] });
     } finally { store.close(); }
     await expect(h.call('p2o_task_author', { draft: exploitationDraft })).rejects.toThrow(/ASSESS_MODE_REFUSES_EXPLOITATION/);
     // Mapping/discovery/validation purposes stay admitted: assess refuses effects, not assessment.
     const recon = await h.call('p2o_task_author', { draft: { question: 'Which surfaces does the fixture expose?', surface: '/fixture', risk: 'mapping', role: 'recon', evidenceIds: [], prerequisites: [] } });
     expect(recon.details).toMatchObject({ status: 'proposed', role: 'recon' });
-    // The report states the engagement shape even without a recorded campaign.
+    // The report states the engagement shape from the recorded campaign mode.
     const exported = await h.call('p2o_finish', { export: true });
     const directory = exported.details.reportPath as string;
     const report = await readFile(join(directory, 'REPORT.md'), 'utf8');

@@ -3,6 +3,7 @@ import { homedir } from 'node:os';
 import { isAbsolute, join } from 'node:path';
 import { purposeFromRole, type WorkPurpose } from './duties.js';
 import { parseCommandPolicy, type OperatorPolicy } from './policy.js';
+import { DEFAULT_ROUND_BUDGET, parseRoundBudget, type RoundBudget } from './round-budget.js';
 
 /**
  * Roles preselect a model and a starting skill set for a delegated worker.
@@ -17,6 +18,12 @@ export const THINKING_LEVELS = ['off', 'minimal', 'low', 'medium', 'high', 'xhig
 
 export interface RoleDefaults { model?: string; thinking?: string; skills: string[] }
 export interface RoleSettings { model?: string; thinking?: string; skills?: string[] }
+/**
+ * planning_update.md P18.6 / D50: opt-in per-round model routing. The model and thinking axes are independent, so an
+ * operator may change only the thinking level; an absent field keeps the session's current value. All fields absent means
+ * routing stays off (A12), which is today's one-model behaviour.
+ */
+export interface PlannerModels { base?: string; escalate?: string; thinkingBase?: string; thinkingEscalate?: string }
 
 export const ROLE_DEFAULTS: Record<Role, RoleDefaults> = {
   recon: { model: 'opencode-go/deepseek-v4-flash', skills: ['attack-surface-mapping'] },
@@ -114,6 +121,10 @@ export const MAX_WORKERS = Number.MAX_SAFE_INTEGER;
 export const MAX_DEPTH = 3;
 export const MAX_SKILLS = 3;
 
+/**
+ * P18/D48: the manual loop mode is removed; every run is the automatic loop. This type stays as the stored-profile
+ * vocabulary a resume may still read (`profile.loopMode` in an existing store), never as a start option or a settings value.
+ */
 export type LoopMode = 'manual' | 'event-driven';
 export type RetentionMode = 'durable-local' | 'ephemeral';
 export const DEFAULT_STORAGE_QUOTA_MIB = 256;
@@ -130,7 +141,10 @@ export type ReviewIntegrity = 'off' | 'annotate' | 'enforce';
 export interface P2OSettings {
   maxWorkers: number;
   maxDepth: number;
-  loopMode: LoopMode;
+  /** P18/A9: the per-round work-package budget; `0` on an axis disables it. Campaign scope stays uncapped. */
+  plannerRound: RoundBudget;
+  /** P18.6/D50: opt-in per-round model/thinking routing; an empty object keeps one model for the whole campaign (A12). */
+  plannerModels: PlannerModels;
   executorMode: 'shared' | 'isolated' | 'session';
   maxTargetOperations: number;
   retention: RetentionMode;
@@ -146,6 +160,12 @@ export interface P2OSettings {
   reportFormat: 1 | 2;
   /** annotate = report who authored each review receipt; enforce also refuses a review whose receipts the assignee did not author. */
   reviewIntegrity: ReviewIntegrity;
+  /**
+   * P18/D45: run each Planner round in a fresh Pi session (default on). Off keeps one long session and delivers every wake
+   * as a follow-up prompt, which is the P17 shape the P18 benchmark compares against; the switch exists for that A/B, not
+   * as a second loop.
+   */
+  roundSessions: boolean;
   /** A7.7/P7.3: operator command-policy rules and seeded denies the operator disabled; absent means the default policy. */
   commandPolicy?: OperatorPolicy;
   /** Optional operator labels printed in the report (author, organization, team, classification, disclaimer). */
@@ -153,9 +173,28 @@ export interface P2OSettings {
   roles: Partial<Record<Role, RoleSettings>>;
 }
 
-const blank = (): P2OSettings => ({ maxWorkers: DEFAULT_MAX_WORKERS, maxDepth: DEFAULT_MAX_DEPTH, loopMode: 'manual', executorMode: 'shared', maxTargetOperations: 3, retention: 'durable-local', storageQuotaMiB: DEFAULT_STORAGE_QUOTA_MIB, artifactCaptureKiB: DEFAULT_ARTIFACT_CAPTURE_KIB, graphCapacity: DEFAULT_GRAPH_CAPACITY, autoReport: undefined, reportFormat: 2, reviewIntegrity: 'annotate', roles: {} });
+const blank = (): P2OSettings => ({ maxWorkers: DEFAULT_MAX_WORKERS, maxDepth: DEFAULT_MAX_DEPTH, plannerRound: { ...DEFAULT_ROUND_BUDGET }, plannerModels: {}, roundSessions: true, executorMode: 'shared', maxTargetOperations: 3, retention: 'durable-local', storageQuotaMiB: DEFAULT_STORAGE_QUOTA_MIB, artifactCaptureKiB: DEFAULT_ARTIFACT_CAPTURE_KIB, graphCapacity: DEFAULT_GRAPH_CAPACITY, autoReport: undefined, reportFormat: 2, reviewIntegrity: 'annotate', roles: {} });
 
 export function isRole(value: unknown): value is Role { return typeof value === 'string' && (ROLES as readonly string[]).includes(value); }
+
+/**
+ * P18.6/D50: `p2o.plannerModels` is user-controlled data. Model ids keep the role-setting bounds (the registry still has to
+ * know the id); thinking is limited to the Pi levels because the value is passed to `setThinkingLevel` unchanged. A malformed
+ * field is dropped, never guessed at, so that axis keeps the session's current value (A12).
+ */
+function parsePlannerModels(raw: unknown): PlannerModels {
+  const models: PlannerModels = {};
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return models;
+  const source = raw as Record<string, unknown>;
+  const model = (value: unknown) => typeof value === 'string' && value.trim().length > 0 && value.length <= 200 && !/[\x00-\x1f\x7f]/.test(value) ? value.trim() : undefined;
+  const thinking = (value: unknown) => typeof value === 'string' && (THINKING_LEVELS as readonly string[]).includes(value) ? value : undefined;
+  const base = model(source.base), escalate = model(source.escalate), thinkingBase = thinking(source.thinkingBase), thinkingEscalate = thinking(source.thinkingEscalate);
+  if (base) models.base = base;
+  if (escalate) models.escalate = escalate;
+  if (thinkingBase) models.thinkingBase = thinkingBase;
+  if (thinkingEscalate) models.thinkingEscalate = thinkingEscalate;
+  return models;
+}
 
 /** Settings are user-controlled data: parse defensively and ignore anything malformed. */
 export function parseSettings(raw: unknown): P2OSettings {
@@ -166,7 +205,9 @@ export function parseSettings(raw: unknown): P2OSettings {
   const clamp = (value: unknown, fallback: number, max: number) =>
     typeof value === 'number' && Number.isInteger(value) && value >= 1 && value <= max ? value : fallback;
   settings.maxWorkers = clamp(source.maxWorkers, DEFAULT_MAX_WORKERS, MAX_WORKERS);
-  settings.loopMode = source.loopMode === 'event-driven' ? 'event-driven' : 'manual';
+  settings.plannerRound = parseRoundBudget(source.plannerRound);
+  settings.roundSessions = source.roundSessions !== false;
+  settings.plannerModels = parsePlannerModels(source.plannerModels);
   settings.executorMode = source.executorMode === 'isolated' || source.executorMode === 'session' ? source.executorMode : 'shared';
   settings.maxTargetOperations = clamp(source.maxTargetOperations,3,Number.MAX_SAFE_INTEGER);
   settings.retention = source.retention === 'ephemeral' ? 'ephemeral' : 'durable-local';
@@ -227,6 +268,18 @@ export function allowedWorkerModels(settings: P2OSettings): string[] {
   const models = new Set<string>();
   for (const role of ROLES) { const model = ROLE_DEFAULTS[role].model; if (model) models.add(model); }
   for (const role of ROLES) { const model = settings.roles[role]?.model; if (model) models.add(model); }
+  return [...models].sort();
+}
+
+/**
+ * P18.6/D50: the model ids `p2o.plannerModels` names. The extension validates this set (plus the current model, which is a
+ * legal keep-current target but not a routing target) against `ctx.modelRegistry` before `pi.setModel`, so a configured id
+ * the registry does not have becomes a recorded fallback instead of a failed round switch. Worker models are not included:
+ * routing a planner round never widens what a worker may run.
+ */
+export function plannerModelCatalogue(settings: P2OSettings): string[] {
+  const models = new Set<string>();
+  for (const model of [settings.plannerModels.base, settings.plannerModels.escalate]) if (model) models.add(model);
   return [...models].sort();
 }
 

@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { setTimeout as delay } from 'node:timers/promises';
 import { visibleWidth } from '@earendil-works/pi-tui';
-import { registerP2O } from '../../extensions/p2o/index.js';
+import { registerP2O, resetP2OStateForTests } from '../../extensions/p2o/index.js';
 import { plannerTools } from '../../src/tool-policy.js';
 import { appendRecord, observeRecords, readLedger } from '../../src/records.js';
 import { BrokerClient } from '../../src/broker.js';
@@ -30,6 +30,17 @@ async function fixture(work: (h: any) => Promise<void>, args = '') {
   finally {await command('stop');await rm(root,{recursive:true,force:true});}
 }
 
+/**
+ * The status view is one 18-line TUI page; P18's always-recorded campaign line pushed two asserted lines below the fold, so
+ * these tests page to the end (down arrows, the same key the scrolling test uses) and assert the whole view.
+ */
+const statusText = (h: any) => {
+  const first = h.screen();
+  const state = h.ctx.screens.at(-1);
+  state.render(150);
+  for (let i = 0; i < 24; i += 1) state.handleInput('\u001b[B');
+  return `${first}\n${state.render(150).join('\n')}`;
+};
 describe('model-free assessment visibility (canonical runtime + legacy reader)' , () => {
   it('parses human navigation, strict cursors/IDs and no authority options', () => {
     expect(parseStateCommand('status')).toEqual({action:'status'});
@@ -63,11 +74,11 @@ describe('model-free assessment visibility (canonical runtime + legacy reader)' 
   it('empty state and retention warning do not pretend safety, persistence or phase completion', async () => {
     await fixture(async h => {
       await h.command('status');
-      const text=h.screen();
+      const text=statusText(h);
       expect(text).toContain('Empty findings/queue do not mean');
       expect(text).toContain('Durable-local knowledge');
       expect(text).toContain('Reported ≠ reviewed');
-      expect(text).toContain('manual/shared');
+      expect(text).toContain('event-driven/shared');
     });
   });
   it('returns durable note IDs/sequence and resolves exactly the same ledger row', async () => {
@@ -173,7 +184,7 @@ describe('model-free assessment visibility (canonical runtime + legacy reader)' 
       });
     } finally { records.mockRestore(); }
   });
-  it('keeps the widget current through a storm of semantic state in manual mode with no model message, while event-driven coalesces the same storm into one wake', async () => {
+  it('keeps the widget current through a storm of semantic state while one coalesced reservation wakes the planner', async () => {
     const plan = (title: string) => ({ title, status: 'active', reason: 'Explicit bounded denominator for the storm fixture', exclusions: ['No undeclared actors'], unknownScope: ['Deployment parity is unknown'] });
     const storm = async (h: any) => { // 8 live plans (distinct semantic events) plus 30 revisions that coalesce onto them, plus 40 plain committed notes
       const plans: Array<{ id: string; revision: number }> = [];
@@ -186,26 +197,26 @@ describe('model-free assessment visibility (canonical runtime + legacy reader)' 
       await storm(h);
       const widget = h.ctx.widgets.get('p2o-progress')({}, {}).render(120).join('\n');
       expect(Number(/records @(\d+)/.exec(widget)?.[1]), 'the widget follows every committed row').toBeGreaterThanOrEqual(78);
-      expect(h.pi.messages, 'a manual run never spends a model request on committed state').toHaveLength(1);
-      expect(h.sandboxes.flatMap((s: InertSandbox) => s.commands)).toEqual([]);
-      expect((await h.call('p2o_loop', { action: 'status' })).details).toMatchObject({ mode: 'manual', rounds: 0, pendingEvents: 8 }); // retained for inspection, never consumed by a wake
-    });
-    await fixture(async h => {
-      await storm(h);
+      // P18/D49: the 800 ms fixed window coalesces the storm into one reservation, so exactly one model message is spent.
+      for (let attempt = 0; attempt < 80 && h.pi.messages.length < 2; attempt += 1) await delay(50);
       expect(h.pi.messages, 'one coalesced reservation, not one per event').toHaveLength(2);
-      expect((await h.call('p2o_loop', { action: 'status' })).details).toMatchObject({ mode: 'event-driven', rounds: 1 });
-    }, '--loop event-driven');
+      expect(h.sandboxes.flatMap((s: InertSandbox) => s.commands)).toEqual([]);
+      expect((await h.call('p2o_loop', { action: 'status' })).details).toMatchObject({ mode: 'event-driven', rounds: 1, pendingEvents: 8 });
+    });
   });
   it('flags corrupt/uncommitted state and never grants authority through navigation', async () => {
     await fixture(async h => {
       await appendRecord(await h.path(),{at:new Date().toISOString(),by:'owner',kind:'report_part',text:'Controlled uncommitted fragment',data:{reportId:'missing-manifest',part:0,value:'{}',sha256:'0'.repeat(64),redacted:true}});await h.command('status');
-      expect(h.screen()).toContain('INCOMPLETE');expect(h.pi.messages).toHaveLength(1);
+      expect(statusText(h)).toContain('INCOMPLETE');expect(h.pi.messages).toHaveLength(1);
       expect(h.pi.active).toEqual(plannerTools()); // navigation never grants target authority
     });
   });
   it('does not restore history or authority from a fresh extension instance', async () => {
     await fixture(async h => {
       await h.command('stop');
+      // A genuinely fresh process, not another instance in this one: the host re-runs the factory for a replacement session,
+      // so module state outlives an instance by design and only a process start clears it.
+      resetP2OStateForTests();
       const pi=createFakePi(),ctx=createContext({cwd:h.root});registerP2O(pi.pi,{extensionPath:EXTENSION_PATH});
       await pi.commands.get('p2o').handler('status',ctx.ctx);
       expect(ctx.notices.at(-1)).toContain('No active');expect(pi.messages).toHaveLength(0);

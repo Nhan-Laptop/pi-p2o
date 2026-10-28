@@ -116,7 +116,99 @@ replaces start flags, and `--no-export` suppresses the export flag (arm A never 
 arm record keeps the extension SHA-256, package hash, skill list and effective start flags, so an
 installed package build can be pinned without editing the repository.
 
-## P17 measurement protocol (ready, never run)
+## P18 measurement protocol (ready, not run)
+
+**Status: ready; owner-authorized only; not run.** P18 ships the runner support, the fixtures and
+this protocol (D52/A13). Effectiveness of rounds-as-sessions stays **UNVERIFIED** until the owner
+runs the 24-run campaign with a pinned model/thinking and a cost cap. No P18 result is comparable
+with the superseded P17 protocol below.
+
+**What the runner enforces now.** A live run needs a worker backend: `run` refuses without
+`HERDR_ENV=1` and a reachable Herdr server (`herdr status server`), with the same refusal sentence
+the extension start path uses, before a plan, sandbox or paid turn exists. Every composed command
+carries `--workers N` explicitly; there is no `--delegation`/`--solo` switch and no single-prompt
+path left, so the old non-delegating composition survives only as a test double. A run now waits for
+the campaign to finish (`p2o_finish` without `export:true`) or pause (a settled campaign with no
+further activity for 20 s) instead of stopping at the first assistant stop; `p2o_finish {export:true}`
+is a draft export and does not end a run. Round facts come from the run's own ledger — `lifecycle`
+rows whose `data.engine.event` starts with `planner.round-` (`planner.round-start`,
+`planner.round-end`, `planner.round-budget`, plus any later round row) — read with a read-only SQLite
+connection before the workspace is deleted, with the durable export as the fallback. Each receipt
+records `rounds.source`, `rounds.rounds`, `rounds.starts`, `rounds.ends`, `rounds.budgets`,
+`rounds.endReasons` and `rounds.byEvent`; the suite summary aggregates them per run and lists
+`pausedRuns`.
+
+**Question.** Does a fresh Pi session per automatic round (rounds-as-sessions) change yield relative
+to the same multi-round, event-driven campaign continued in one session?
+
+**Arms.**
+- **A — rounds-as-sessions off.** `p2o.roundSessions: false` in the pinned agent settings
+  (`~/.pi/agent/settings.json`, the file the extension reads at start): the automatic loop keeps
+  continuing in the same session.
+- **B — rounds-as-sessions on (the P18 default; the multi-round event-driven arm).** Each automatic
+  round opens a fresh session named `p2o <runId> round N`.
+
+Both arms run the same P18 build: pin `--arm-a-path` and `--arm-b-path` to the same prepared package
+so the recorded extension SHA-256 is identical across arms and the only experimental difference is
+the setting. (`A`/`B` are the harness's arm ids, not build labels; the recorded hash identifies the
+build.) Both arms pass the same `--workers N` (one value pinned across both arms; the example
+uses 2), the same pinned model/provider/thinking and the same budgets. `--start-flag --export` is
+given explicitly because the resolver suppresses the default export flag on the baseline-labelled
+arm A; without it the two arms would differ in export surface, which the scorer uses. Because
+`p2o.roundSessions` is read once at start, it must not change mid-block.
+
+**Fixtures and shape.** The same two P17 fixtures, frozen objectives and evaluator truth:
+`exploit-ladder` and `tenant-bypass`, each `vulnerable` and `fixed`. 2 fixtures × 2 variants × 2 arms
+× 3 repetitions = **24 runs**, run as two 12-run arm blocks because `p2o.roundSessions` is read at
+process start. Each run copies exactly one variant; evaluator truth stays a sibling the assessed
+agent never sees.
+
+**Fixed per-run budgets.**
+- wall clock **60 minutes** (`--max-minutes 60`);
+- **200 assistant turns** (`--max-turns 200`), enforced from `turn_end` counters;
+- **240 target operations** (`--max-target-commands 240`), enforced from `p2o_shell`/`p2o_http`
+  counters;
+- the extension's round budget stays the default **40 steps / 900 s**, context wrap at 80 % and hard
+  stop at 92 %; a budget-ended round is not a finished campaign, and the next round continues;
+- provider cost ceiling **set by the owner** (`--max-cost-usd <cap>`). The plan and summary receipts
+  record the cap and the planned worst case; the runner never invents one.
+
+**Seeded order.** Each 12-run block is shuffled with a seeded PRNG; the seed is recorded in that
+block's plan receipt and copied into every run receipt, and the effective start flags are recorded
+too. The block order is chosen from the same seed and recorded in the campaign log (A→B or B→A).
+Record the pinned settings-file SHA-256 beside the plan for each block, so a block whose
+`p2o.roundSessions` drifted from its profile can be invalidated; the runner does not read the agent
+settings file itself.
+
+**No implicit fallback.** Provider, transport and protocol failures stay separate outcomes and are
+excluded from recall/precision aggregates; a paused or budget-ended run is reported as that outcome,
+never scored as a security negative.
+
+```sh
+# Plan one 12-run arm block; the other arm is the same command with its arm/path and its pinned
+# p2o.roundSessions value (false for A, true for B).
+node scripts/benchmark-skills.mjs plan --fixture exploit-ladder --fixture tenant-bypass \
+  --arm A --reps 3 --seed 7 --workers 2 --start-flag --export --arm-a-path <p18-package> \
+  --max-minutes 60 --max-turns 200 --max-target-commands 240 --max-cost-usd <owner cap> \
+  --model <pinned> --provider <pinned> --thinking <pinned>
+
+# Then re-run each block's command with --live, only after explicit owner authorization and from a
+# Herdr pane (HERDR_ENV=1 and a reachable Herdr server), with that block's pinned settings in place.
+```
+
+**Read out.** Rounds per run and round-budget hits (`planner.round-start`/`planner.round-budget`
+rows), rungs reached, accepted-current high/critical, false-claim rate and the D43 criteria — from
+receipts and the ledger, never from the narrative. The measured criterion for P18.8 is this 24-run
+campaign; until it runs, effectiveness stays UNVERIFIED.
+
+## P17 measurement protocol (superseded, not re-run)
+
+**Superseded by the P18 protocol above.** The P17 protocol ran with `delegation:false` (a
+single-session lead with no worker backend) and the pre-P18 engine. P18/D48 removes that path: a live
+start now requires Herdr, every run is the automatic multi-round loop, and round facts are recorded
+per run. The protocol below therefore cannot be re-run as written, and no P17 result is comparable
+with a P18 result. Its fixtures, frozen objectives, evaluator truth and scorer remain the P18
+baseline; the record is kept for provenance.
 
 Owner decision A6 (2026-10-27): no paid campaign ran in this phase. The two fixtures and this
 protocol ship ready; the P17 pass reports effectiveness **UNVERIFIED** and claims no result.
@@ -138,10 +230,11 @@ protocol ship ready; the P17 pass reports effectiveness **UNVERIFIED** and claim
   are excluded from recall/precision aggregates; they are never scored as security negatives.
 - **Cleanup by run label:** only containers matching `pi-p2o.run=<runId>` invalidate a run (see
   the teardown rules below); global snapshots stay informational.
-- **Status:** ready, owner-authorized only, not run. The D43 criteria (≥2 rungs reached on the
-  vulnerable ladder fixture, ≥1 accepted-current high/critical per vulnerable fixture, zero
-  false claims, attempt records present, no leftover containers) are read from receipts and the
-  ledger, never from the narrative.
+- **Status:** superseded, not re-run; no paid campaign ran, so the P17 pass reports effectiveness
+  UNVERIFIED and claims no result. The D43 criteria (≥2 rungs reached on the vulnerable ladder
+  fixture, ≥1 accepted-current high/critical per vulnerable fixture, zero false claims, attempt
+  records present, no leftover containers) are read from receipts and the ledger, never from the
+  narrative.
 
 ```sh
 # Plan only: 24 runs, no model invocation, no network.
@@ -156,10 +249,11 @@ node scripts/benchmark-skills.mjs plan --fixture exploit-ladder --fixture tenant
 
 - **Repetitions:** 3 per arm × fixture × variant by default (`--reps`); with every discovered
   fixture the default campaign is **6 fixtures × 2 variants × 3 arms × 3 reps = 108 runs** (the
-  pre-P17 suite was 4 × 2 × 3 × 3 = 72).
+  pre-P17 suite was 4 × 2 × 3 × 3 = 72). The P18 protocol above pins its own 24-run shape.
 - **Random order:** all runs are shuffled once with a seeded PRNG. The seed is printed, stored in the
   plan receipt and copied into every run receipt (`--seed 7`; `--seed random` picks one).
-- **Fixed per-run budgets:**
+- **Fixed per-run budgets:** the values below are the runner defaults; the P18 protocol above pins
+  60 minutes / 200 turns / 240 target commands explicitly.
   - wall clock 25 minutes (`--max-minutes`);
   - assistant turns 60 (`--max-turns`) — enforced from `turn_end` counters;
   - target commands 120 (`--max-target-commands`) — enforced from `p2o_shell`/`p2o_http` counters;
@@ -168,16 +262,16 @@ node scripts/benchmark-skills.mjs plan --fixture exploit-ladder --fixture tenant
   The runner aborts on any limit and records `timeout`, `turn_budget`, `command_budget` or
   `cost_budget` instead of scoring it as a security negative. The extension's own 30-minute deadline
   stays above the default wall budget.
+- **No implicit fallback:** provider failures, protocol errors and transport failures are separate
+  outcomes (`provider_error`, `transport_error`, `no_assessment`) and are excluded from
+  recall/precision aggregates; the suite summary lists `invalidRuns`, `providerFailures`,
+  `budgetOutcomes`, `pausedRuns` and `costAvailableRuns`.
 - **Suite cost control:** the per-run cap is the lever for an agreed total ceiling. The first 72-run
   campaign used `--max-cost-usd 0.13` because `72 × $0.13 = $9.36 < $10`; the default $3/run cap
   would allow a $216 worst case and could not honor a $10 suite budget. The cap did not bind (all 72
   runs finished normally; actual total $1.5736). Every suite plan and summary records
   `costControl: {perRunCapUsd, runCount, plannedWorstCaseUsd, note}`, and each receipt keeps the
   actual `usage.cost`; the cap is never silently raised during a run.
-- **No implicit fallback:** provider failures, protocol errors and transport failures are separate
-  outcomes (`provider_error`, `transport_error`, `no_assessment`) and are excluded from
-  recall/precision aggregates; the suite summary lists `invalidRuns`, `providerFailures`,
-  `budgetOutcomes` and `costAvailableRuns`.
 - **Teardown (per-run label, concurrency-safe):** every P2O container carries a
   `pi-p2o.run=<runId>` label. The runner derives its own runId in priority order from the finish
   export payload, the export filename, or the P2O assessment brief ("... Run <runId>. Deadline
@@ -201,7 +295,7 @@ pi --no-extensions -e <arm extension path> -e <run objective wrapper> --no-skill
 ```
 
 The runner answers the extension's "Start authorized assessment?" confirmation mechanically and
-sends exactly one prompt: `/p2o --target ./target [--solo | --workers N] [<arm start flags>]`.
+sends exactly one prompt: `/p2o --target ./target --workers N [<arm start flags>]`.
 
 **Objective delivery (no follow-up runs).** The fixture objective is appended to the system prompt
 by a generated wrapper extension loaded **immediately after the tested arm**, for all arms A/B/C
@@ -218,8 +312,10 @@ wrapper. Hermetic tests cover the generated source invariants, the absence of an
 command, and real-Pi ordering (P2O hook first, objective only in scope).
 
 The lead runs inside the **real P2O Docker sandbox** (pinned image digest, no network, read-only
-`/target`); delegation is off by default and available with `--delegation` where Herdr can spawn
-visible panes. `--workers` is capped at 6, matching the runtime's own `MAX_WORKERS`.
+`/target`); delegation is not optional: every live run requires a Herdr worker backend and starts
+with `--workers N`, capped at 6, matching the runtime's own `MAX_WORKERS`. The runner refuses with
+the extension's start-refusal sentence when `HERDR_ENV=1`/`herdr status server` is not satisfied,
+before a campaign, sandbox or paid turn exists; there is no single-prompt/no-worker path left.
 
 The historical default model remains `deepseek/deepseek-flash` with thinking `off`; never rely on
 ambient Pi settings for an approved experiment. Select an exact account/model with
@@ -331,8 +427,10 @@ node scripts/benchmark-skills.mjs plan --seed 7 \
   --model gpt-6.1-sol --provider openai-codex-account-3 --thinking xhigh
 
 # Examples only: do not start live runs until separately authorized after push/install.
+# Every live run needs Herdr (HERDR_ENV=1 and a reachable server) and starts with --workers N.
 # Opt-in pilot: one arm, one fixture, one repetition
 node scripts/benchmark-skills.mjs run --arm C --fixture object-authorization --reps 1 \
+  --workers 1 \
   --model gpt-6.1-sol --provider openai-codex-account-3 --thinking xhigh --live
 
 # Clean 72-run campaign: pin installed C, prepare B from the approved committed content.
@@ -349,6 +447,9 @@ node scripts/benchmark-skills.mjs score bench/results/suite-....3-C-object-autho
 ## Safety and privacy
 
 - `run` refuses to start without `--live`; there is no automatic model call.
+- `run` also refuses without a Herdr worker backend (`HERDR_ENV=1` and a reachable
+  `herdr status server`), before any campaign, sandbox or paid turn exists; that gate is stated in the
+  refusal with the same sentence the extension start path uses.
 - The script never reads `pi auth` output, `auth.json`, bearer tokens or any credential file, and
   never writes environment values into receipts. Transcript text is passed through
   `redactSecrets()` before storage.

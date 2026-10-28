@@ -1,13 +1,14 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { spawn, spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { mkdir, mkdtemp, readFile, readdir, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
+import { DatabaseSync } from 'node:sqlite';
 import { setTimeout as delay } from 'node:timers/promises';
 // @ts-ignore - the benchmark harness is plain JavaScript, outside the TypeScript build.
-import { BoundedRecords, MAX_RECORDS, RUN_ID_PATTERN, deriveRunId, hasAssessmentStarted, exportDataFrom, main, modelSelection, parseArgs, piModelArgs, p2oStartFlags, readExportFile, runContainerQueryArgs } from '../../scripts/benchmark-skills.mjs';
+import { BoundedRecords, CAMPAIGN_IDLE_GRACE_MS, MAX_RECORDS, ROUND_EVENT_PREFIX, RUN_ID_PATTERN, campaignEndState, collectRoundFacts, deriveRunId, hasAssessmentStarted, exportDataFrom, herdrAvailability, herdrRefusal, main, modelSelection, parseArgs, piModelArgs, p2oCommandFor, p2oStartFlags, readExportFile, readRunLedger, roundFactsFromRecords, runContainerQueryArgs } from '../../scripts/benchmark-skills.mjs';
 // @ts-ignore - the benchmark harness is plain JavaScript, outside the TypeScript build.
 import { BASELINE_REVISION, buildMeasurementPlan, buildPlan, catalogDocuments, copyVariant, discoverFixtures, hashTree, isSharedDocument, MEASUREMENT_FIXTURES, MEASUREMENT_PROTOCOL, mulberry32, objectiveProblems, parseSeed, resolveArms, selectMeasurementFixtures, shuffle, solutionMarkers, supportsStartFlag, ORIGINAL_SKILLS, PLAYBOOK_SET } from '../../bench/lib/plan.mjs';
 // @ts-ignore - the benchmark harness is plain JavaScript, outside the TypeScript build.
@@ -569,6 +570,174 @@ describe('P17 measurement protocol', () => {
       const perFixture = new Map<string, number>();
       for (const run of plan.runs) perFixture.set(run.fixture, (perFixture.get(run.fixture) ?? 0) + 1);
       expect(Object.fromEntries(perFixture)).toEqual({ 'exploit-ladder': 12, 'tenant-bypass': 12 });
+    } finally {
+      await rm(work, { recursive: true, force: true });
+    }
+  }, 60_000);
+});
+
+describe('P18 runner protocol', () => {
+  it('composes /p2o with an explicit worker count and no single-prompt path', async () => {
+    expect(p2oCommandFor({ workers: 3, startFlags: ['--export'] })).toBe('/p2o --target ./target --workers 3 --export');
+    expect(p2oCommandFor({ workers: 1 })).toBe('/p2o --target ./target --workers 1');
+    expect(p2oCommandFor({ workers: 2, startFlags: [] })).not.toMatch(/--solo|--delegation/);
+    expect(() => p2oCommandFor({ workers: 0 })).toThrow(/workers/);
+    expect(() => p2oCommandFor({ workers: 7 })).toThrow(/workers/);
+    expect(parseArgs(['run']).workers).toBe(1);
+    expect(() => parseArgs(['run', '--delegation'])).toThrow(/unknown option/);
+    const source = await readFile(join(repo, 'scripts', 'benchmark-skills.mjs'), 'utf8');
+    expect(source).not.toMatch(/--solo/);
+    expect(source).not.toMatch(/options\.delegation/);
+  });
+
+  it('checks Herdr before a live campaign exists and shares the extension refusal text', async () => {
+    expect(await herdrAvailability({ env: {} })).toEqual({ available: false, reason: 'Pi is not running inside a Herdr session' });
+    expect(await herdrAvailability({ env: { HERDR_ENV: '0' } })).toEqual({ available: false, reason: 'Pi is not running inside a Herdr session' });
+    expect((await herdrAvailability({ env: { HERDR_ENV: '1' }, run: async () => ({ code: 0 }) })).available).toBe(true);
+    expect(await herdrAvailability({ env: { HERDR_ENV: '1' }, run: async () => ({ code: 1 }) }))
+      .toEqual({ available: false, reason: 'the Herdr server is not reachable' });
+    expect((await herdrAvailability({ env: { HERDR_ENV: '1' }, run: async () => { throw new Error('ENOENT'); } })).available).toBe(false);
+    expect(herdrRefusal('the Herdr server is not reachable'))
+      .toBe('A p2o run needs a worker backend (Herdr): the Herdr server is not reachable. The manual loop mode was removed, so the planner can no longer drive target work by hand.');
+    const [runner, extension] = await Promise.all([
+      readFile(join(repo, 'scripts', 'benchmark-skills.mjs'), 'utf8'),
+      readFile(join(repo, 'extensions', 'p2o', 'index.ts'), 'utf8'),
+    ]);
+    const refusal = 'A p2o run needs a worker backend (Herdr):';
+    const reason = 'The manual loop mode was removed, so the planner can no longer drive target work by hand.';
+    expect(runner).toContain(refusal);
+    expect(runner).toContain(reason);
+    expect(extension).toContain(refusal);
+    expect(extension).toContain(reason);
+  });
+
+  it('refuses a live run without Herdr before resolving arms or starting Pi', async () => {
+    const resultDir = await mkdtemp(join(tmpdir(), 'p2o-bench-herdr-'));
+    const errors: string[] = [];
+    const spy = vi.spyOn(console, 'error').mockImplementation((message: unknown) => { errors.push(String(message)); });
+    const inherited = process.env.HERDR_ENV;
+    delete process.env.HERDR_ENV;
+    try {
+      const code = await main(['run', '--live', '--repo', repo, '--results', resultDir,
+        '--arm', 'C', '--fixture', 'object-authorization', '--reps', '1']);
+      expect(code).toBe(2);
+      expect(errors.join('\n')).toContain('A p2o run needs a worker backend (Herdr): Pi is not running inside a Herdr session.');
+      // Nothing was planned, spawned or written: the refusal happens before a campaign exists.
+      expect(await readdir(resultDir)).toEqual([]);
+    } finally {
+      if (inherited === undefined) delete process.env.HERDR_ENV;
+      else process.env.HERDR_ENV = inherited;
+      spy.mockRestore();
+      await rm(resultDir, { recursive: true, force: true });
+    }
+  });
+
+  it('distinguishes a final finish from a draft export and tracks agent settle state', () => {
+    const store = new BoundedRecords();
+    store.push({ type: 'agent_start' });
+    expect(store.summary.agentActive).toBe(true);
+    store.push({ type: 'agent_settled' });
+    expect(store.summary.agentActive).toBe(false);
+    expect(store.summary.settledCount).toBe(1);
+    store.push({ type: 'tool_execution_end', toolName: 'p2o_finish', isError: false, result: { details: { state: 'open', remaining: 3, reportPath: '/w/report' } } });
+    expect(store.summary.finish).toMatchObject({ calls: 1, finalCalls: 0, exportCalls: 1, last: { final: false, state: 'open', remaining: 3 } });
+    store.push({ type: 'tool_execution_end', toolName: 'p2o_finish', isError: false, result: { details: { sandboxRemoved: true, state: 'complete', remaining: 0 } } });
+    expect(store.summary.finish.finalCalls).toBe(1);
+    expect(store.summary.finish.last).toEqual({ final: true, state: 'complete', remaining: 0 });
+    // A refused finish is not an end.
+    store.push({ type: 'tool_execution_end', toolName: 'p2o_finish', isError: true, result: { details: { sandboxRemoved: true } } });
+    expect(store.summary.finish.calls).toBe(2);
+  });
+
+  it('waits for campaign end or pause instead of the first assistant stop', () => {
+    const grace = CAMPAIGN_IDLE_GRACE_MS;
+    // One settled round is not the end of a multi-round campaign.
+    expect(campaignEndState({ finalFinishSeen: false, settledCount: 1, agentActive: false, idleMs: 0 })).toEqual({ ended: false, outcome: null });
+    // A campaign that settles with no further automatic wake is a pause, not a finish.
+    expect(campaignEndState({ finalFinishSeen: false, settledCount: 1, agentActive: false, idleMs: grace })).toEqual({ ended: true, outcome: 'paused' });
+    // A running round never ends while it is active, however long the gap between records.
+    expect(campaignEndState({ finalFinishSeen: false, settledCount: 1, agentActive: true, idleMs: grace * 4 }).ended).toBe(false);
+    // Before any round settled there is nothing to classify as a pause.
+    expect(campaignEndState({ finalFinishSeen: false, settledCount: 0, agentActive: false, idleMs: grace * 4 }).ended).toBe(false);
+    // Only the final finish ends the campaign; export:true keeps it open (thus finalFinishSeen stays false).
+    expect(campaignEndState({ finalFinishSeen: true, settledCount: 1, agentActive: false })).toEqual({ ended: true, outcome: 'finished' });
+    expect(campaignEndState({ finalFinishSeen: true, reportAfterFinish: true, agentActive: true }).outcome).toBe('finished');
+    expect(campaignEndState({ finalFinishSeen: true, settledCount: 0, agentActive: false, idleMs: grace }).outcome).toBe('finished');
+  });
+
+  it('extracts round count and budget/end facts from planner.round-* lifecycle rows', () => {
+    const records = [
+      { kind: 'lifecycle', data: { engine: { event: 'planner.round-start', round: 1 } } },
+      { kind: 'lifecycle', data: { engine: { event: 'planner.round-end', round: 1, reason: 'completed' } } },
+      { kind: 'lifecycle', data: { engine: { event: 'planner.wake', round: 2 } } },
+      { kind: 'lifecycle', data: { engine: { event: 'planner.stalled' } } },
+      { kind: 'note', data: { engine: { event: 'planner.round-start' } } },
+      { kind: 'lifecycle', data: { engine: { event: 'planner.round-start', round: 2 } } },
+      { kind: 'lifecycle', data: { engine: { event: 'planner.round-budget', round: 2, bound: 'steps' } } },
+      { kind: 'lifecycle', data: { engine: { event: 'planner.round-end', round: 2, reason: 'round-budget' } } },
+    ];
+    expect(ROUND_EVENT_PREFIX).toBe('planner.round-');
+    const facts = roundFactsFromRecords(records);
+    expect(facts.events).toBe(5);
+    expect(facts.rounds).toBe(2);
+    expect(facts.starts).toBe(2);
+    expect(facts.ends).toBe(2);
+    expect(facts.budgets).toBe(1);
+    expect(facts.byEvent).toEqual({ 'planner.round-start': 2, 'planner.round-end': 2, 'planner.round-budget': 1 });
+    expect(facts.endReasons).toEqual({ completed: 1, 'round-budget': 1 });
+    expect(facts.budgetBounds).toEqual({ steps: 1 });
+    expect(facts.lastEndReason).toBe('round-budget');
+    expect(roundFactsFromRecords([])).toMatchObject({ events: 0, rounds: null, starts: 0, ends: 0, budgets: 0 });
+  });
+
+  it('reads round facts from the run ledger and falls back to exported ledger records', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'p2o-bench-rounds-'));
+    try {
+      const stateRoot = join(root, '.p2o-state');
+      const runId = 'run-p18-rounds';
+      await mkdir(join(stateRoot, runId), { recursive: true });
+      const db = new DatabaseSync(join(stateRoot, runId, 'assessment.sqlite'));
+      try {
+        db.exec(`CREATE TABLE records (id TEXT PRIMARY KEY, sequence INTEGER NOT NULL, kind TEXT NOT NULL, body TEXT NOT NULL)`);
+        const insert = db.prepare('INSERT INTO records VALUES (?, ?, ?, ?)');
+        insert.run('r1', 1, 'lifecycle', JSON.stringify({ kind: 'lifecycle', data: { engine: { event: 'planner.round-start', round: 1 } } }));
+        insert.run('r2', 2, 'lifecycle', JSON.stringify({ kind: 'lifecycle', data: { engine: { event: 'planner.round-budget', round: 1, bound: 'seconds' } } }));
+        insert.run('r3', 3, 'lifecycle', JSON.stringify({ kind: 'lifecycle', data: { engine: { event: 'planner.round-end', round: 1, reason: 'round-budget' } } }));
+        insert.run('r4', 4, 'note', JSON.stringify({ kind: 'note', text: 'not a round fact' }));
+      } finally { db.close(); }
+
+      const ledger = await readRunLedger({ stateRoot, runId });
+      expect(ledger.found).toBe(true);
+      expect(ledger.records.map((record: any) => record.data.engine.event)).toEqual(['planner.round-start', 'planner.round-budget', 'planner.round-end']);
+      const fromLedger = await collectRoundFacts({ stateRoot, runId });
+      expect(fromLedger).toMatchObject({ source: 'ledger', rounds: 1, starts: 1, ends: 1, budgets: 1, lastEndReason: 'round-budget' });
+
+      const exportRecords = [{ kind: 'lifecycle', data: { engine: { event: 'planner.round-start', round: 1 } } }];
+      const fromExport = await collectRoundFacts({ stateRoot: join(root, 'missing'), runId, exportRecords });
+      expect(fromExport).toMatchObject({ source: 'export', rounds: 1, starts: 1 });
+      expect((await collectRoundFacts({ stateRoot: join(root, 'missing'), runId })).source).toBe('none');
+      expect((await readRunLedger({ stateRoot: join(root, 'missing'), runId }))).toEqual({ found: false, records: [], error: null });
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it('keeps the P18 live path on one variant copy and outside evaluator truth', async () => {
+    const work = await mkdtemp(join(tmpdir(), 'p2o-bench-p18-'));
+    try {
+      const fixtures = selectMeasurementFixtures(await discoverFixtures(repo));
+      const plan = await buildPlan({
+        repoRoot: repo, workDir: work, fixtures, arms: ['C'], variants: ['vulnerable', 'fixed'], reps: 1, seed: 7,
+        workers: 2, delegation: true,
+      });
+      expect(plan.runCount).toBe(4);
+      for (const run of plan.runs) {
+        expect(run.sourceDir).not.toContain('expected');
+        expect(existsSync(run.truthPath)).toBe(true);
+        expect(existsSync(join(run.sourceDir, 'expected'))).toBe(false);
+      }
+      const command = p2oCommandFor({ workers: 2, startFlags: ['--export'] });
+      expect(command).not.toMatch(/truth|expected|finding|objective/i);
     } finally {
       await rm(work, { recursive: true, force: true });
     }

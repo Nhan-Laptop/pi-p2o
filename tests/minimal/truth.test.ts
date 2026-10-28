@@ -54,6 +54,10 @@ const RETIRED = [
   'read-only root filesystem',
   'non-root container',
   'capabilities dropped',
+  // P18/A9/D47: a round is a bounded work package now, so no shipped sentence may claim the loop runs without a round budget
+  // or has a spendable round allowance; the campaign is the only unbounded scope.
+  'no round budget',
+  'round allowance exhausted',
 ];
 const TEXT_FILE = /\.(?:ts|md|json)$/;
 async function shippedText(directory: string): Promise<Array<{ file: string; text: string }>> {
@@ -73,7 +77,7 @@ const registrations = () => {
 };
 const plannerFacts = (overrides: Partial<PlannerPromptFacts> = {}): PlannerPromptFacts => ({
   runId: 'run-truth', targetLabel: '/fixture', targetKind: 'directory', sourceSkipped: 0,
-  delegation: { enabled: true, maxWorkers: 3, maxDepth: 2 }, phase: 'active', loopMode: 'manual', executorMode: 'shared', ...overrides,
+  delegation: { enabled: true, maxWorkers: 3, maxDepth: 2 }, phase: 'active', executorMode: 'shared', ...overrides,
 });
 const ticket = (role: string) => ({ workerId: 'worker-1', role, depth: 1, parentWorkerId: null, target: { kind: 'directory', label: '/fixture' }, executorMode: 'shared' } as never);
 

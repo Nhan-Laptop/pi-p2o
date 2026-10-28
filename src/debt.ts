@@ -53,7 +53,7 @@ export interface DebtReport {
 /** The campaign record the goal kinds read. `src/campaign.ts` (A6.1) satisfies this structurally. */
 export interface CampaignLike { objective: string }
 export interface DebtInput {
-  /** A6.1: present when the run recorded a campaign; `expectCampaign` says the mode promised one. */
+  /** A6.1: present when the run recorded a campaign; `expectCampaign` says the run expected one (every automatic run does). */
   campaign?: CampaignLike;
   expectCampaign?: boolean;
   /** The live coverage context; without it the coverage-derived kinds are skipped rather than guessed. */

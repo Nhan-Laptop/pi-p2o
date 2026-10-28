@@ -35,6 +35,10 @@ const HARD_CAP_MINUTES = 90;
 const ASSESSMENT_START_TIMEOUT_MS = 120_000;
 const MAX_WORKERS_BOUND = 6;
 const MAX_EXPORT_BYTES = 16 * 1024 * 1024;
+/** P18/D48: a settled campaign with no further automatic wake is a pause, not the end of a round. */
+export const CAMPAIGN_IDLE_GRACE_MS = 20_000;
+/** P18/D51: round lifecycle rows are existing `lifecycle` records under `data.engine.event`. */
+export const ROUND_EVENT_PREFIX = 'planner.round-';
 export const MAX_RECORDS = 20_000;
 export const MAX_RECORD_BYTES = 32 * 1024 * 1024;
 
@@ -67,8 +71,7 @@ Options:
   --max-cost-usd <n>      per-run cost ceiling when the provider reports cost (default: ${DEFAULT_MAX_COST_USD})
   --max-turns <n>         fixed per-run assistant-turn ceiling (default: ${DEFAULT_MAX_TURNS})
   --max-target-commands <n> fixed per-run p2o_shell+p2o_http ceiling (default: ${DEFAULT_MAX_TARGET_COMMANDS})
-  --delegation            allow visible worker panes (default: no delegation; the lead works directly)
-  --workers <n>           workers when --delegation is set, 1..${MAX_WORKERS_BOUND} (default: 1)
+  --workers <n>           workers on the composed /p2o command, 1..${MAX_WORKERS_BOUND} (default: 1)
   --start-flag <flag>     explicit additional /p2o start flag, repeatable (overrides arm defaults)
   --no-export             suppress the arm's --export start flag (A never receives it)
   --pi <path>             Pi binary (default: <repo>/node_modules/.bin/pi)
@@ -84,7 +87,9 @@ The objective text always comes from the frozen evaluator manifest; the runner a
 caller-supplied prompt, and objectives are validated offline for leaked solution terms. A tiny
 generated wrapper extension is loaded immediately after the tested arm and appends the objective to
 the system prompt only while the P2O scope text is present — the runner sends no follow-up prompt,
-so no benchmark work can start after p2o_finish or outside the sandbox. Live runs
+so no benchmark work can start after p2o_finish or outside the sandbox. A live run needs a worker
+backend: without Herdr (\`HERDR_ENV=1\` and a reachable server) the runner refuses instead of starting
+a campaign that can never dispatch, and every composed /p2o command carries --workers N. Live runs
 use the real P2O extension against a local synthetic fixture with the real Docker sandbox. Budgets
 are fixed per run, the run order is seeded and recorded, and provider failures are reported
 separately, never scored as security negatives.`;
@@ -104,7 +109,7 @@ export function parseArgs(argv) {
     seed: undefined, model: DEFAULT_MODEL, provider: null, thinking: DEFAULT_THINKING,
     maxMinutes: DEFAULT_MAX_MINUTES, maxCostUsd: DEFAULT_MAX_COST_USD,
     maxTurns: DEFAULT_MAX_TURNS, maxTargetCommands: DEFAULT_MAX_TARGET_COMMANDS,
-    delegation: false, workers: 1, pi: undefined, baselineDir: undefined,
+    workers: 1, pi: undefined, baselineDir: undefined,
     armPaths: {}, extensionPath: undefined, startFlags: [], noExport: false,
     live: false, keepWork: false, json: false, positional: [],
   };
@@ -144,7 +149,6 @@ export function parseArgs(argv) {
       case 'max-cost-usd': options.maxCostUsd = Number(value); break;
       case 'max-turns': options.maxTurns = Number(value); break;
       case 'max-target-commands': options.maxTargetCommands = Number(value); break;
-      case 'delegation': options.delegation = true; break;
       case 'workers': options.workers = Number(value); break;
       case 'start-flag': options.startFlags.push(String(value)); break;
       case 'no-export': options.noExport = true; break;
@@ -197,6 +201,34 @@ export function modelSelection({ model, provider = null, thinking }) {
 export function piModelArgs(options) {
   const { model, provider, thinking } = modelSelection(options);
   return ['--model', model, ...(provider !== null ? ['--provider', provider] : []), '--thinking', thinking];
+}
+
+/**
+ * P18/D48: every live run is the automatic loop and needs workers, so the worker selection is
+ * explicit in the composed command instead of being omitted when delegation used to be optional.
+ */
+export function p2oCommandFor({ workers, startFlags = [] } = {}) {
+  if (!Number.isInteger(workers) || workers < 1 || workers > MAX_WORKERS_BOUND) throw usageError(`--workers must be between 1 and ${MAX_WORKERS_BOUND}`);
+  return `/p2o --target ./target --workers ${workers}${startFlags.length ? ` ${startFlags.join(' ')}` : ''}`;
+}
+
+/** The extension's start refusal for a run without a worker backend; keep the sentences identical. */
+export function herdrRefusal(reason) {
+  return `A p2o run needs a worker backend (Herdr): ${reason}. The manual loop mode was removed, so the planner can no longer drive target work by hand.`;
+}
+
+/**
+ * The same availability test the extension uses: `HERDR_ENV=1` plus a reachable Herdr server.
+ * A live campaign is refused before it exists instead of being planned into an unrunnable state.
+ */
+export async function herdrAvailability({ env = process.env, run = runCommand } = {}) {
+  if (env?.HERDR_ENV !== '1') return { available: false, reason: 'Pi is not running inside a Herdr session' };
+  try {
+    const { code } = await run('herdr', ['status', 'server'], { timeoutMs: 10_000 });
+    return code === 0 ? { available: true, reason: null } : { available: false, reason: 'the Herdr server is not reachable' };
+  } catch {
+    return { available: false, reason: 'the Herdr server is not reachable' };
+  }
 }
 
 function selectedArmIds(options) {
@@ -274,7 +306,8 @@ export class BoundedRecords {
     this.bytes = 0;
     this.summary = {
       recordsSeen: 0, recordsStored: 0, recordsDropped: 0, logTruncated: false,
-      settled: false, settledCount: 0, turns: 0, targetCommands: 0,
+      settled: false, settledCount: 0, turns: 0, targetCommands: 0, agentStarts: 0, agentActive: false,
+      finish: { calls: 0, finalCalls: 0, exportCalls: 0, last: null },
       evidenceIds: [], toolDetails: [], providerErrors: [], extensionErrors: [], protocolErrors: [],
     };
   }
@@ -282,7 +315,8 @@ export class BoundedRecords {
   push(record) {
     const summary = this.summary;
     summary.recordsSeen += 1;
-    if (record?.type === 'agent_settled') { summary.settled = true; summary.settledCount += 1; }
+    if (record?.type === 'agent_start') { summary.agentStarts += 1; summary.agentActive = true; }
+    if (record?.type === 'agent_settled') { summary.settled = true; summary.settledCount += 1; summary.agentActive = false; }
     if (record?.type === 'turn_end') summary.turns += 1;
     if (record?.type === 'tool_execution_start' && (record.toolName === 'p2o_shell' || record.toolName === 'p2o_http')) summary.targetCommands += 1;
     if (record?.type === 'extension_error') pushBounded(summary.extensionErrors, redactSecrets(record.error), 50);
@@ -293,6 +327,13 @@ export class BoundedRecords {
     }
     if (record?.type === 'tool_execution_end') {
       const details = record.result?.details ?? null;
+      if (record.toolName === 'p2o_finish' && record.isError !== true) {
+        // P18: export:true is a draft export and ends nothing; only the final finish ends the campaign.
+        const final = details?.sandboxRemoved === true;
+        summary.finish.calls += 1;
+        if (final) summary.finish.finalCalls += 1; else summary.finish.exportCalls += 1;
+        summary.finish.last = { final, state: details?.state ?? null, remaining: details?.remaining ?? null };
+      }
       const evidenceId = details?.evidenceId;
       if (record.isError === true && record.toolName === 'p2o_candidate') summary.failedCandidateCalls = (summary.failedCandidateCalls ?? 0) + 1;
       if (typeof evidenceId === 'string' && evidenceId) pushBounded(summary.evidenceIds, evidenceId.toLowerCase(), 400);
@@ -551,6 +592,124 @@ function exportPathFrom(extraction) {
   return match ? match[1].trim() : null;
 }
 
+/**
+ * P18/D48: a final `p2o_finish` ends the campaign; an export-only finish keeps it open and a
+ * settled campaign with no further automatic wake is a pause. The first assistant stop must not
+ * end a multi-round run by itself, so only these states do.
+ */
+export function campaignEndState({
+  finalFinishSeen = false, reportAfterFinish = false, settledAfterFinish = false,
+  agentActive = false, settledCount = 0, idleMs = 0, graceMs = CAMPAIGN_IDLE_GRACE_MS,
+} = {}) {
+  if (finalFinishSeen && (reportAfterFinish || settledAfterFinish || (!agentActive && settledCount > 0))) {
+    return { ended: true, outcome: 'finished' };
+  }
+  // A final finish is authoritative even when the settle event was not observed: the turn's own
+  // activity keeps resetting idle while the final report is written.
+  if (finalFinishSeen && !agentActive && idleMs >= graceMs) return { ended: true, outcome: 'finished' };
+  if (!finalFinishSeen && !agentActive && settledCount > 0 && idleMs >= graceMs) return { ended: true, outcome: 'paused' };
+  return { ended: false, outcome: null };
+}
+
+function engineEvent(record) {
+  const event = record?.data?.engine?.event;
+  return record?.kind === 'lifecycle' && typeof event === 'string' ? event : null;
+}
+
+/**
+ * Round facts from ledger lifecycle rows. The names are read generically under
+ * `planner.round-` so P18.1-P18.3 can add start/end/budget/nudge/session/model rows without
+ * changing this reader; `reason`/`bound`/`round` are consumed only when present.
+ */
+export function roundFactsFromRecords(records = []) {
+  const roundRecords = records.filter(record => engineEvent(record)?.startsWith(ROUND_EVENT_PREFIX));
+  const byEvent = {}, endReasons = {}, budgetBounds = {};
+  const roundNumbers = new Set();
+  let lastEndReason = null;
+  for (const record of roundRecords) {
+    const engine = record.data.engine;
+    byEvent[engine.event] = (byEvent[engine.event] ?? 0) + 1;
+    if (Number.isSafeInteger(engine.round)) roundNumbers.add(engine.round);
+    if (engine.event === 'planner.round-end') {
+      const reason = typeof engine.reason === 'string' && engine.reason ? engine.reason : 'unspecified';
+      endReasons[reason] = (endReasons[reason] ?? 0) + 1;
+      lastEndReason = reason;
+    }
+    if (engine.event === 'planner.round-budget') {
+      const bound = typeof engine.bound === 'string' && engine.bound ? engine.bound
+        : typeof engine.reason === 'string' && engine.reason ? engine.reason : 'unspecified';
+      budgetBounds[bound] = (budgetBounds[bound] ?? 0) + 1;
+    }
+  }
+  const starts = byEvent['planner.round-start'] ?? 0;
+  return {
+    events: roundRecords.length,
+    rounds: starts || roundNumbers.size ? Math.max(starts, roundNumbers.size) : null,
+    starts,
+    ends: byEvent['planner.round-end'] ?? 0,
+    budgets: byEvent['planner.round-budget'] ?? 0,
+    byEvent, endReasons, budgetBounds, lastEndReason,
+  };
+}
+
+/**
+ * Read the run's round lifecycle rows from its durable ledger before the workspace is deleted.
+ * `assessment.sqlite` is opened read-only; a concurrent writer may briefly hold the database, so
+ * the read is retried without ever writing. Returns `found: false` when no state store exists
+ * (for example the old ephemeral retention), which lets the caller fall back to the export.
+ */
+export async function readRunLedger({ stateRoot, runId = null, attempts = 6, retryMs = 250 } = {}) {
+  // Loaded lazily so the hermetic plan/verify/score commands never touch the native SQLite module.
+  const { DatabaseSync } = await import('node:sqlite');
+  const root = resolve(stateRoot);
+  const candidates = [];
+  if (runId) candidates.push(join(root, runId));
+  else {
+    try {
+      const entries = await readdir(root, { withFileTypes: true });
+      candidates.push(...entries.filter(entry => entry.isDirectory()).map(entry => join(root, entry.name)));
+    } catch {
+      return { found: false, records: [], error: null };
+    }
+  }
+  let found = false, lastError = null;
+  for (const directory of candidates) {
+    const file = join(directory, 'assessment.sqlite');
+    if (!existsSync(file)) continue;
+    found = true;
+    for (let attempt = 0; attempt < attempts; attempt += 1) {
+      let db;
+      try {
+        db = new DatabaseSync(file, { readOnly: true });
+        const rows = db.prepare("SELECT body FROM records WHERE kind = 'lifecycle' ORDER BY sequence ASC").all();
+        const records = rows.map(row => JSON.parse(String(row.body))).filter(record => record && typeof record === 'object');
+        return { found: true, records, error: null };
+      } catch (error) {
+        lastError = error instanceof Error ? error.message : String(error);
+        if (attempt + 1 < attempts) await delay(retryMs);
+      } finally {
+        try { db?.close(); } catch { /* already closed */ }
+      }
+    }
+  }
+  return { found, records: [], error: lastError };
+}
+
+/** Prefer the run's own ledger; fall back to the exported ledger records when the store is gone. */
+export async function collectRoundFacts({ stateRoot, runId = null, exportRecords = null } = {}) {
+  let ledger = { found: false, records: [], error: null };
+  try {
+    ledger = await readRunLedger({ stateRoot, runId });
+  } catch (error) {
+    ledger = { found: false, records: [], error: error instanceof Error ? error.message : String(error) };
+  }
+  if (ledger.found && !ledger.error) return { ...roundFactsFromRecords(ledger.records), source: 'ledger', error: null };
+  if (Array.isArray(exportRecords) && exportRecords.length) {
+    return { ...roundFactsFromRecords(exportRecords), source: 'export', error: ledger.error };
+  }
+  return { ...roundFactsFromRecords([]), source: 'none', error: ledger.error };
+}
+
 /** The live half: spawn real Pi, drive the real extension through RPC, then score the run. */
 async function executeRun({ plan, run, truth, options, suiteId, resultsDir }) {
   const arm = plan.arms[run.arm];
@@ -561,7 +720,7 @@ async function executeRun({ plan, run, truth, options, suiteId, resultsDir }) {
   const dialogs = [];
   const notifications = [];
   const startFlags = p2oStartFlags(arm, options);
-  const p2oCommand = `/p2o --target ./target${options.delegation ? ` --workers ${options.workers}` : ''}${startFlags.length ? ` ${startFlags.join(' ')}` : ''}`;
+  const p2oCommand = p2oCommandFor({ workers: options.workers, startFlags });
   // The objective is appended by a wrapper extension loaded after the tested arm; the runner sends
   // no follow-up prompt, so no benchmark work can start after p2o_finish or outside the sandbox.
   const objectiveWrapperSource = objectiveExtensionSource(run.objective);
@@ -576,13 +735,17 @@ async function executeRun({ plan, run, truth, options, suiteId, resultsDir }) {
   const checks = {
     exitOk: null, providerFailure: false, budgetExceeded: false, protocolDirty: false,
     assessmentStarted: false, cleanupVerified: false, turnsUsed: 0, targetCommandsUsed: 0, budget: null,
+    finalFinishSeen: false, campaignIdle: false,
     runId: null, runIdSource: 'unknown', cleanupVerification: 'unverified', leakedContainers: [], globalNewContainers: [],
   };
   let runIdInfo = { runId: null, source: 'unknown' };
   let outcome = 'transport_error';
   let rpc;
   try {
-    rpc = new PiRpc(child, { onDialog: request => dialogs.push({ method: request.method, title: request.title }) });
+    rpc = new PiRpc(child, { onDialog: request => {
+      dialogs.push({ method: request.method, title: request.title });
+      if (request.method === 'notify' && typeof request.message === 'string') notifications.push(request.message.slice(0, 2000));
+    } });
     rpc.answerDialogs();
     await rpc.request('get_state', {}, 30_000);
     const prompt = await rpc.request('prompt', { message: p2oCommand }, 30_000);
@@ -607,22 +770,36 @@ async function executeRun({ plan, run, truth, options, suiteId, resultsDir }) {
       outcome = 'no_assessment';
     }
 
-    let finishSeen = false;
-    let settledAtFinish = 0;
+    let finalFinishSeen = false;
+    let settledAtFinalFinish = 0;
+    let lastRecordsSeen = 0;
+    let lastActivityAt = Date.now();
     const deadline = startedAt + options.maxMinutes * 60_000;
     let lastStatsAt = 0;
     if (checks.assessmentStarted) {
       for (;;) {
         await delay(POLL_MS);
         messages = await readMessages();
-        const finish = messages.findIndex(message => message.role === 'toolResult' && message.toolName === 'p2o_finish');
-        if (finish >= 0 && !finishSeen) { finishSeen = true; settledAtFinish = rpc.recordSummary.settledCount; }
-        checks.turnsUsed = Math.max(checks.turnsUsed, rpc.recordSummary.turns);
-        checks.targetCommandsUsed = rpc.recordSummary.targetCommands;
-        if (finishSeen) {
-          const reportAfter = messages.slice(finish + 1).some(message => message.role === 'assistant' && textOfMessage(message).trim());
-          if (reportAfter || rpc.recordSummary.settledCount > settledAtFinish) { outcome = 'finished'; break; }
+        const summary = rpc.recordSummary;
+        if (summary.recordsSeen !== lastRecordsSeen) { lastRecordsSeen = summary.recordsSeen; lastActivityAt = Date.now(); }
+        let finish = -1;
+        for (let index = messages.length - 1; index >= 0; index -= 1) {
+          if (messages[index].role === 'toolResult' && messages[index].toolName === 'p2o_finish') { finish = index; break; }
         }
+        // P18: only the final finish ends the campaign; `p2o_finish {export:true}` keeps it open.
+        if (summary.finish.finalCalls > 0 && !finalFinishSeen) { finalFinishSeen = true; settledAtFinalFinish = summary.settledCount; }
+        checks.finalFinishSeen = finalFinishSeen;
+        checks.turnsUsed = Math.max(checks.turnsUsed, summary.turns);
+        checks.targetCommandsUsed = summary.targetCommands;
+        const reportAfterFinish = finish >= 0 && messages.slice(finish + 1)
+          .some(message => message.role === 'assistant' && textOfMessage(message).trim());
+        const end = campaignEndState({
+          finalFinishSeen, reportAfterFinish,
+          settledAfterFinish: summary.settledCount > settledAtFinalFinish,
+          agentActive: summary.agentActive, settledCount: summary.settledCount,
+          idleMs: Date.now() - lastActivityAt,
+        });
+        if (end.ended) { outcome = end.outcome; checks.campaignIdle = outcome === 'paused'; break; }
         if (messages.some(message => message.role === 'assistant' && (message.stopReason === 'error' || message.errorMessage))) {
           checks.providerFailure = true; outcome = 'provider_error'; break;
         }
@@ -676,7 +853,7 @@ async function executeRun({ plan, run, truth, options, suiteId, resultsDir }) {
 
     // Preserve the durable export before the workspace is removed.
     let exportInfo = { exportPath: null, copiedPath: null, bytes: null, sha256: null, candidates: 0, evidence: 0, error: null };
-    let exportData = null;
+    let exportData = null, exportRecords = null;
     const exportPath = exportPathFrom(extraction);
     if (extraction.finishDetails?.exportError) exportInfo.error = String(extraction.finishDetails.exportError);
     if (exportPath) {
@@ -687,12 +864,16 @@ async function executeRun({ plan, run, truth, options, suiteId, resultsDir }) {
         await mkdir(resultsDir, { recursive: true });
         await writeFile(copiedPath, JSON.stringify(captured.data, null, 2));
         exportData = exportDataFrom(captured.data);
+        exportRecords = Array.isArray(captured.data?.records) ? captured.data.records : null;
         exportInfo = { ...exportInfo, copiedPath, bytes: captured.bytes, sha256: captured.sha256, candidates: exportData.candidates.length, evidence: exportData.evidenceIds.length };
       } catch (error) {
         exportInfo.error = redactSecrets(error instanceof Error ? error.message : String(error));
       }
     }
     runIdInfo = deriveRunId({ messages: messagesFinal, exportData, exportPath: exportInfo.exportPath });
+    // P18/D51: rounds are lifecycle rows in the run's own ledger. Read them before the workspace is
+    // removed; the export (when the arm has one) is the same ledger records and is the fallback.
+    const rounds = await collectRoundFacts({ stateRoot: join(runDir, '.p2o-state'), runId: runIdInfo.runId, exportRecords });
     await rpc.close();
 
     // Authoritative cleanup check: query only this run's own container label. Global snapshots
@@ -718,7 +899,7 @@ async function executeRun({ plan, run, truth, options, suiteId, resultsDir }) {
       config: {
         ...modelSelection(options), maxMinutes: options.maxMinutes, maxCostUsd: options.maxCostUsd,
         maxTurns: options.maxTurns, maxTargetCommands: options.maxTargetCommands,
-        delegation: options.delegation, workers: options.workers, piBinary: options.pi, piVersion: piVersion(options.pi), seed: plan.seed,
+        delegation: true, workers: options.workers, piBinary: options.pi, piVersion: piVersion(options.pi), seed: plan.seed,
       },
       p2oCommand,
       extensions: { owner: arm.extensionPath, objectiveWrapper: objectiveWrapperPath },
@@ -730,6 +911,7 @@ async function executeRun({ plan, run, truth, options, suiteId, resultsDir }) {
       checks: { ...checks, containersBefore: containersBefore.names, containersAfter: containersAfter.names },
       usage: extraction.usage,
       export: exportInfo,
+      rounds,
       score,
       extraction: {
         counts: extraction.counts, records: extraction.records,
@@ -763,6 +945,8 @@ async function executeRun({ plan, run, truth, options, suiteId, resultsDir }) {
     checks.globalNewContainers = newLeakedContainers(containersBefore, containersAfter);
     checks.cleanupVerification = ownContainers.names.length ? 'own-label-leak'
       : (runIdInfo.runId && ownContainers.available ? 'own-label-clean' : 'unverified');
+    // A transport failure can still leave committed round facts; record them best-effort.
+    const rounds = await collectRoundFacts({ stateRoot: join(runDir, '.p2o-state'), runId: runIdInfo.runId }).catch(() => null);
     return {
       schema: RUN_SCHEMA, suiteId, runId: run.runId, orderIndex: run.orderIndex, outcome: 'transport_error',
       error: redactSecrets(error instanceof Error ? error.message : String(error)),
@@ -770,6 +954,7 @@ async function executeRun({ plan, run, truth, options, suiteId, resultsDir }) {
       checks: { ...checks, containersBefore: containersBefore.names, containersAfter: containersAfter.names },
       startedAt: new Date(startedAt).toISOString(), finishedAt: new Date().toISOString(), wallMs: Date.now() - startedAt,
       arm: jsonSafe(arm), fixture: { name: run.fixture, variant: run.variant, sourceHash: source.hash, truthSha256: run.truthSha256 },
+      ...(rounds ? { rounds } : {}),
       config: { ...modelSelection(options), ...planBudgets(options), seed: plan.seed },
     };
   } finally {
@@ -810,7 +995,7 @@ function planBudgets(options) {
   return {
     maxMinutes: options.maxMinutes, maxCostUsd: options.maxCostUsd,
     maxTurns: options.maxTurns, maxTargetCommands: options.maxTargetCommands,
-    delegation: options.delegation, workers: options.workers,
+    delegation: true, workers: options.workers,
   };
 }
 
@@ -826,11 +1011,12 @@ async function planCommand(options) {
     ...modelSelection(options),
     maxMinutes: options.maxMinutes, maxCostUsd: options.maxCostUsd,
     maxTurns: options.maxTurns, maxTargetCommands: options.maxTargetCommands,
-    delegation: options.delegation, workers: options.workers, baselineDir: options.baselineDir, armPaths: options.armPaths,
+    delegation: true, workers: options.workers, baselineDir: options.baselineDir, armPaths: options.armPaths,
   });
   const receipt = {
     schema: PLAN_SCHEMA, command: 'plan', createdAt: plan.createdAt, repoRoot: options.repo,
     seed: plan.seed, ...modelSelection(plan), budgets: plan.budgets, reps: plan.reps,
+    startFlags: Object.fromEntries(Object.entries(plan.arms).map(([id, arm]) => [id, p2oStartFlags(arm, options)])),
     arms: jsonSafe(plan.arms), fixtures: jsonSafe(plan.fixtures), skippedArms: skipped, runCount: plan.runCount,
     order: plan.runs.map(run => `#${run.orderIndex} ${run.arm} ${run.fixture}/${run.variant} r${run.rep}`),
     runs: plan.runs,
@@ -839,7 +1025,7 @@ async function planCommand(options) {
   if (options.json) console.log(JSON.stringify(receipt, null, 2));
   else {
     console.log(`plan: ${plan.runCount} runs (${plan.armIds.join('/')} x ${fixtures.length} fixtures x ${plan.variants.join('/')} x ${plan.reps} reps, seed ${plan.seed})`);
-    for (const [id, arm] of Object.entries(plan.arms)) console.log(`  arm ${id}: ${arm.label} · ${arm.skills.length} skills · flags [${(arm.startFlags ?? []).join(' ') || 'none'}] · ${arm.extensionPath}`);
+    for (const [id, arm] of Object.entries(plan.arms)) console.log(`  arm ${id}: ${arm.label} · ${arm.skills.length} skills · flags [${p2oStartFlags(arm, options).join(' ') || 'none'}] · ${arm.extensionPath}`);
     for (const entry of skipped) console.log(`  arm ${entry.arm}: SKIPPED (${entry.reason})`);
     for (const run of plan.runs) console.log(`  #${run.orderIndex} ${run.arm} ${run.fixture}/${run.variant} r${run.rep}`);
   }
@@ -926,6 +1112,10 @@ async function runCommandLive(options) {
     return 2;
   }
   const fixtures = await loadSelectedFixtures(options.repo, options.fixtures);
+  // P18/D48: a live run without a worker backend has no execution path. Refuse before a campaign,
+  // a sandbox or a paid turn exists instead of producing an unrunnable suite.
+  const herdr = await herdrAvailability();
+  if (!herdr.available) { console.error(`error: ${herdrRefusal(herdr.reason)}`); return 2; }
   requirePi(options);
   const { seed } = parseSeed(options.seed);
   const { available, skipped } = await selectAvailableArms(options);
@@ -936,7 +1126,7 @@ async function runCommandLive(options) {
     ...modelSelection(options),
     maxMinutes: options.maxMinutes, maxCostUsd: options.maxCostUsd,
     maxTurns: options.maxTurns, maxTargetCommands: options.maxTargetCommands,
-    delegation: options.delegation, workers: options.workers, baselineDir: options.baselineDir, armPaths: options.armPaths,
+    delegation: true, workers: options.workers, baselineDir: options.baselineDir, armPaths: options.armPaths,
   });
   const truthByFixture = new Map(fixtures.map(fixture => [fixture.name, fixture.truth]));
   const suiteId = `suite-${new Date().toISOString().replace(/[:.]/g, '-')}-seed${plan.seed}`;
@@ -974,7 +1164,16 @@ async function runCommandLive(options) {
     ...modelSelection(plan), budgets: plan.budgets,
     controls: { maxTurns: options.maxTurns, maxTargetCommands: options.maxTargetCommands },
     arms: summarizeScores(scores),
+    rounds: {
+      total: receipts.reduce((sum, receipt) => sum + (receipt.rounds?.rounds ?? 0), 0),
+      perRun: receipts.map(receipt => ({
+        runId: receipt.runId, arm: receipt.arm?.id ?? null, fixture: receipt.fixture?.name ?? null, variant: receipt.fixture?.variant ?? null,
+        source: receipt.rounds?.source ?? null, rounds: receipt.rounds?.rounds ?? null,
+        budgets: receipt.rounds?.budgets ?? null, endReasons: receipt.rounds?.endReasons ?? {},
+      })),
+    },
     invalidRuns: receipts.filter(receipt => !receipt.score?.validity?.runValid).map(receipt => ({ runId: receipt.runId, outcome: receipt.outcome, providerFailure: receipt.checks?.providerFailure })),
+    pausedRuns: receipts.filter(receipt => receipt.outcome === 'paused').map(receipt => receipt.runId),
     providerFailures: receipts.filter(receipt => receipt.checks?.providerFailure || receipt.outcome === 'provider_error').map(receipt => receipt.runId),
     budgetOutcomes,
     costAvailableRuns: receipts.filter(receipt => receipt.usage?.costAvailable).length,

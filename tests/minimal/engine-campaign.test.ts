@@ -5,7 +5,7 @@ import { AssessmentEngine, type EngineDeps, type PlannerWake, type RoundProgress
  * P5/A6.3 (planning_update.md §4): the loop continues because work is owed, not because an event happened to arrive.
  * Hermetic: no model, no target, no store — a fake clock and fake timers drive the debt wake and the campaign heartbeat.
  */
-function fixture(options: { mode?: 'manual' | 'event-driven'; heartbeat?: number; active?: boolean } = {}) {
+function fixture(options: { heartbeat?: number; active?: boolean } = {}) {
   let active = options.active ?? true, clock = 1_000_000;
   const wakes: PlannerWake[] = [], journal: Array<{ text: string; data: any }> = [], problems: string[] = [];
   const deps: EngineDeps = {
@@ -14,7 +14,7 @@ function fixture(options: { mode?: 'manual' | 'event-driven'; heartbeat?: number
     wake: wake => wakes.push(wake), idle: () => true, problem: reason => problems.push(reason),
     now: () => clock, heartbeatSeconds: () => options.heartbeat ?? 0,
   };
-  const engine = new AssessmentEngine('run-campaign', options.mode ?? 'event-driven', deps, 5);
+  const engine = new AssessmentEngine('run-campaign', 'event-driven', deps, 5);
   const round = (patch: Partial<RoundProgress> = {}): RoundProgress => ({ testedCells: 0, closures: 0, assets: 0, chainDepth: 0, remaining: 0, ...patch });
   /** Move the caller-owned clock without firing timers, so pacing and heartbeat timing are tested separately. */
   const advance = (ms: number) => { clock += ms; };
@@ -75,13 +75,6 @@ describe('obligation-driven continuation (A6.3)', () => {
     f.engine.consume(f.engine.snapshot().sequence, f.round(owed()));
     f.engine.resume();
     expect(f.engine.boundary()?.reason).toBe('debt');
-    f.engine.stop();
-  });
-
-  it('does not wake on debt in manual mode, where an automatic round would contradict the mode', () => {
-    const f = fixture({ mode: 'manual' });
-    f.engine.consume(0, f.round(owed()));
-    expect(f.engine.boundary()).toBeUndefined();
     f.engine.stop();
   });
 

@@ -9,6 +9,8 @@ import { fixture, populate } from './helpers/report-fixture.js';
 const settings = (h: any, p2o: Record<string, unknown>) => writeFile(join(h.root, 'settings.json'), JSON.stringify({ p2o }));
 const finishText = (result: any) => result.content[0].text as string;
 const rating = { severity: 'medium', basis: 'Confirmed boundary deviation reaching only the tested identity’s own object in the fixture' };
+/** P18/A9: every run records a default campaign, so a finish without a plan goal records why the campaign stops. */
+const PARTIAL = 'Fixture run stops before any plan goal was recorded, so the campaign ends incomplete.';
 
 describe('finish preflight', () => {
   it('always appends the unfinished items after the existing text and never refuses a finish', async () => fixture(async h => {
@@ -54,7 +56,7 @@ describe('finish preflight', () => {
 
   it('names a missing coverage plan and an unreviewed handoff in the same block', async () => fixture(async h => {
     await h.command('--target ./source');
-    expect(finishText(await h.call('p2o_finish', {}))).toMatch(/NO_COVERAGE_PLAN/);
+    expect(finishText(await h.call('p2o_finish', { partial: PARTIAL }))).toMatch(/NO_COVERAGE_PLAN/);
   }));
 
   it('lists a High finding with no independent validation as advisory, and drops it once a waiver is recorded', async () => fixture(async h => {
@@ -79,7 +81,7 @@ describe('finish preflight', () => {
     await h.call('p2o_coverage_plan', {plan: { title: 'Denominator not yet built', status: 'active', reason: 'Plan created before any cell exists', exclusions: [], unknownScope: ['Full surface not yet enumerated'] } });
     await h.call('p2o_note', { kind: 'coverage', text: 'Looked at the login surface informally', surface: '/login', risk: 'authz', outcome: 'clean' });
     await h.call('p2o_surface', { component: 'login-api', entryPoint: 'POST /login' });
-    const result = await h.call('p2o_finish', {});
+    const result = await h.call('p2o_finish', { partial: PARTIAL });
     expect(finishText(result)).toMatch(/- UNPROMOTED_COVERAGE_NOTE \(2\)/);
     expect(result.details.preflight.advisory.map((item: any) => item.code)).toContain('UNPROMOTED_COVERAGE_NOTE');
     expect(result.details.preflight.obligations.map((item: any) => item.code)).not.toContain('UNPROMOTED_COVERAGE_NOTE');
@@ -103,7 +105,7 @@ describe('finish preflight', () => {
   }));
   it('does not flag a run with no stated --goal at all', async () => fixture(async h => {
     await h.command('--target ./source');
-    expect(finishText(await h.call('p2o_finish', {}))).not.toContain('NO_GOAL_RECORDED');
+    expect(finishText(await h.call('p2o_finish', { partial: PARTIAL }))).not.toContain('NO_GOAL_RECORDED');
   }));
 });
 

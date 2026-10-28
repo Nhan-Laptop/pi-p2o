@@ -351,7 +351,8 @@ function accessLadder(index: LedgerIndex, cases: readonly CaseView[], meta: Repo
 
 /** A7.6/Q18: the depths this run demonstrated, the walls above them, and nothing the record does not carry. */
 function ladderSection(ladder: LadderView, facts?: ReportMeta['ladderFacts']): string[] {
-  // These facts describe the instrument, not a rung: they print in both engagement modes.
+  // These facts describe the instrument, not a rung: sessions and secrets print in both engagement modes, and the caller
+  // supplies the ingress path only for a run whose engagement mode authorizes an effect.
   const factLines = [
     ...(facts?.sessions ? [`- Sessions: ${mdText(facts.sessions, 400)}`] : []),
     ...(facts?.secrets ? [`- Secrets used by id: ${mdText(facts.secrets, 400)}`] : []),

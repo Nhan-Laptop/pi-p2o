@@ -8,6 +8,7 @@ import type { SandboxOptions } from '../../../src/sandbox.js';
 import type { Target } from '../../../src/target.js';
 import { PLANNER_TOOLS } from '../../../src/tool-policy.js';
 import { InertSandbox } from '../helpers/inert-sandbox.js';
+import { createFakeHerdr } from './fake-herdr.js';
 
 export default async function (pi: ExtensionAPI) {
   const installed = process.env.P2O_TEST_INSTALLED_EXTENSION;
@@ -29,7 +30,7 @@ export default async function (pi: ExtensionAPI) {
       let content: AssistantMessage['content'];
       // Turn 1 asks for a host tool the planner does not hold: Pi must answer with its unknown-tool result, and nothing runs.
       if (!last) content = [{ type: 'toolCall', id: 'host-1', name: 'bash', arguments: { command: 'echo HOST_BYPASS' } }];
-      else if (last.toolName === 'bash') content = [{ type: 'toolCall', id: 'finish-1', name: 'p2o_finish', arguments: {} }];
+      else if (last.toolName === 'bash') content = [{ type: 'toolCall', id: 'finish-1', name: 'p2o_finish', arguments: { partial: 'inert loadout fixture stops before any plan goal was recorded, so its default campaign ends incomplete.' } }];
       else content = [{ type: 'text', text: 'PLANNER_LOADOUT_FINAL_REPORT: the host tool was refused by the loadout and no target operation ran.' }];
       const message: AssistantMessage = { role: 'assistant', api: 'openai-completions', provider: model.provider, model: model.id,
         content, timestamp: Date.now(), stopReason: content.some(block => block.type === 'toolCall') ? 'toolUse' : 'stop',
@@ -55,6 +56,9 @@ export default async function (pi: ExtensionAPI) {
   register(pi, {
     ...(installed ? { extensionPath: installed } : {}),
     ...(process.env.P2O_TEST_CONTROL_ROOT ? { controlRoot: process.env.P2O_TEST_CONTROL_ROOT } : {}),
+    // P18/D48: a run refuses to start without a worker backend, so the fixture supplies the test transport. Nothing is ever
+    // dispatched here (the scripted model only asks for a host tool and then finishes); no pane or child process is opened.
+    herdr: createFakeHerdr({ cwd: process.env.P2O_TEST_CWD ?? process.cwd(), piBinary: process.env.P2O_TEST_PI_BINARY ?? 'pi' }),
     // No Docker: the loadout claim is about declared tools, and the inert sandbox keeps the run startable offline.
     createSandbox: (target: Target, profile: SandboxOptions) => new InertSandbox(target, undefined, undefined, profile),
   });

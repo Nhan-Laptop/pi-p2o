@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { mkdtemp, mkdir, readFile, readdir, rm } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { setTimeout as delay } from 'node:timers/promises';
@@ -10,10 +10,12 @@ import { parseWakePrompt,plannerWakeMessage } from '../../src/planner-bridge.js'
 import { createContext, createFakePi, createSimpleHerdr, sandboxFactory, EXTENSION_PATH, InertSandbox } from './helpers/fake-pi.js';
 import { seedImpactGoal } from './helpers/report-fixture.js';
 
-async function fixture(work:(h:any)=>Promise<void>,args='',budget?:number) {
+async function fixture(work:(h:any)=>Promise<void>,args='',budget?:number,settings?:unknown) {
   const root=await mkdtemp(join(tmpdir(),'p2o-planner-'));await mkdir(join(root,'source'));
+  const settingsPath=join(root,'fixture-settings.json');
+  if(settings)await writeFile(settingsPath,JSON.stringify(settings),{mode:0o600});
   const pi=createFakePi(),ctx=createContext({cwd:root}),herdr=createSimpleHerdr(),sandboxes:InertSandbox[]=[];
-  registerP2O(pi.pi,{extensionPath:EXTENSION_PATH,controlRoot:join(root,'control'),settingsPath:join(root,'fixture-settings.json'),herdr:herdr.client,createSandbox:sandboxFactory(sandboxes)});
+  registerP2O(pi.pi,{extensionPath:EXTENSION_PATH,controlRoot:join(root,'control'),settingsPath,herdr:herdr.client,createSandbox:sandboxFactory(sandboxes)});
   const call=(name:string,params={})=>pi.tools.get(name).execute('call',params,undefined,undefined,ctx.ctx);
   const emit=async(name:string,event:any={})=>{let result:any;for(const f of pi.events.get(name)??[])result=await f(event,ctx.ctx);return result;};
   const command=(s:string)=>pi.commands.get('p2o').handler(s,ctx.ctx);
@@ -92,7 +94,11 @@ describe('Planner/Engine/Worker extension contract',()=>{
       const boundary=await h.emit('agent_before_settle',{outcome:'completed',continue:false,context:{pendingMessages:[]}});expect(boundary.continue).toBe(true);expect(boundary.entries[0].customType).toBe('p2o_planner_wake');
       const message={role:'custom',...boundary.entries[0],timestamp:0};const projection=await h.emit('context',{messages:[message]});expect(JSON.stringify(projection)).toContain('worker-report');
       expect(await h.emit('agent_before_settle',{outcome:'completed',continue:false,context:{pendingMessages:[]}})).toBeUndefined();expect(h.pi.customMessages).toHaveLength(0);
-    },'--loop event-driven');
+      // P18.7/D47: the simulated stream is over before the fixture stops the run, so the operator stop has no turn to settle.
+      h.ctx.setIdle(true);
+      // P18.3/D47: the in-session boundary continuation is the documented single-session fallback, so this wake-plumbing test runs
+      // the control arm. With rounds-as-sessions on, settlement ends the round and the engine kick opens the next round instead.
+    },'--loop event-driven',undefined,{p2o:{roundSessions:false}});
   });
   it('wakes after idle but stop invalidates a late/deferred wake before target access',async()=>{
     await fixture(async(h)=>{
@@ -114,7 +120,7 @@ describe('Planner/Engine/Worker extension contract',()=>{
       await client.request('report',{report:{summary:'Long assignment finished',confidence:'low'}});
       const next=(await h.call('p2o_delegate',{focus:'renewal',task:'Continue on the next surface'})).details;
       expect(next.workerId).toBeTruthy();
-      expect((await h.call('p2o_loop',{action:'status'})).details.mode).toBe('manual');
+      expect((await h.call('p2o_loop',{action:'status'})).details.mode).toBe('event-driven');
     },'',2);
   });
   it('isolated profile allocates fresh owned executors, leaves peers alive when one is withdrawn, and cleans all leases',async()=>{

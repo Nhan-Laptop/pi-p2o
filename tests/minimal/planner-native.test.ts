@@ -12,7 +12,10 @@ it.each(['idle','boundary','human-priority'] as const)('real Pi %s wake preserve
   const log=join(root,'provider.jsonl'),settings=join(root,'settings.json');
   // Hermetic role-model pin: the A2 first intent is recon, whose packaged default model is not the inert provider. Role settings
   // are the supported production override, so the real child worker runs the inert provider instead of an unreachable model.
-  await writeFile(settings,JSON.stringify({p2o:{roles:Object.fromEntries(['recon','discovery','validation','reporting','exploit','general'].map(role=>[role,{model:'p2o-inert/current-agent'}]))}}));
+  // This fixture proves wake delivery, the skip-on-demand path and the stale-wake veto, all of which are session-scoped, so it
+  // pins the single-session shape (P18/D45's A/B control arm). rounds-as-sessions has its own real-Pi proof in
+  // round-session-native.test.ts, and that one runs with the default so the default itself is gated.
+  await writeFile(settings,JSON.stringify({p2o:{roundSessions:false,roles:Object.fromEntries(['recon','discovery','validation','reporting','exploit','general'].map(role=>[role,{model:'p2o-inert/current-agent'}]))}}));
   const child=spawn(join(repo,'node_modules/.bin/pi'),['--no-extensions','-e',join(repo,'tests/minimal/fixtures/owner.ts'),'--no-skills','--no-prompt-templates','--no-themes','--no-context-files','--offline','--no-session','--no-approve','--mode','rpc','--provider','p2o-inert','--model','current-agent','--thinking','off'],{
     cwd:root,stdio:['pipe','pipe','pipe'],env:{PATH:process.env.PATH,HOME:root,PI_CODING_AGENT_DIR:join(root,'agent'),PI_OFFLINE:'1',PI_SKIP_VERSION_CHECK:'1',PI_TELEMETRY:'0',P2O_TEST_SETTINGS:settings,P2O_TEST_EVENT_LOOP:'1',P2O_TEST_WAKE_BOUNDARY:mode==='idle'?'0':'1',P2O_TEST_PROVIDER_LOG:log,P2O_TEST_FAKE_HERDR:'1',P2O_TEST_CWD:root,P2O_TEST_PI_BINARY:join(repo,'node_modules/.bin/pi'),P2O_TEST_WORKER_EXT:join(repo,'tests/minimal/fixtures/worker.ts'),P2O_TEST_CONTROL_ROOT:join(root,'control'),...(process.env.P2O_TEST_INSTALLED_EXTENSION?{P2O_TEST_INSTALLED_EXTENSION:process.env.P2O_TEST_INSTALLED_EXTENSION}:{})},
   });

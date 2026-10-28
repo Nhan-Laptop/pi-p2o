@@ -90,7 +90,9 @@ describe('owner role', () => {
     expect([...h.pi.tools.keys()].sort()).toEqual(['p2o_artifact', 'p2o_board', 'p2o_candidate', 'p2o_capture', 'p2o_case_author', 'p2o_case_rate', 'p2o_coverage_plan', 'p2o_coverage_suggest', 'p2o_delegate', 'p2o_finish', 'p2o_graph', 'p2o_http', 'p2o_lab', 'p2o_ledger', 'p2o_loop', 'p2o_net', 'p2o_note', 'p2o_plan_author', 'p2o_report', 'p2o_request_subtask', 'p2o_research', 'p2o_secret', 'p2o_session', 'p2o_shell', 'p2o_skill_list', 'p2o_skill_read', 'p2o_state', 'p2o_surface', 'p2o_task_author', 'p2o_task_dispatch', 'p2o_task_review', 'p2o_task_settle', 'p2o_task_start', 'p2o_workers']);
     expect(h.pi.messages).toEqual([]);
     expect(h.sandboxes).toEqual([]);
-    expect([...h.pi.commands.keys()]).toEqual(['p2o']);
+    // P18.1/D45: the round opener is a second, internal command the Engine dispatches; no help surface promises it to operators.
+    expect([...h.pi.commands.keys()]).toEqual(['p2o','p2o-round']);
+    expect(h.pi.commands.get('p2o-round').description).toContain('Internal');
     expect(h.pi.flags['p2o-worker']).toBeDefined();
   });
 
@@ -119,6 +121,7 @@ describe('owner role', () => {
     await h.emit('before_agent_start', event);
     expect(options.sections).toEqual({ other: 'UNRELATED' });
     await h.start('--target ./repo');
+    await seedGoal(h); // P18/A9: every run records a campaign frame, so a finish needs a recorded goal
     await h.emit('before_agent_start', event);
     const active = options.sections.p2o_assessment;
     expect(active).not.toMatch(/\bp2o_[a-z_]+\b|nextOffset|supersedes=|policyBasis=/);
@@ -179,7 +182,7 @@ describe('owner role', () => {
     await h.command('stop');
   });
 
-  it('nudges the owner when a worker report lands in manual loop mode, naming the pending-review count (planning_update.md P1.3)', async () => {
+  it('commits a worker report as a semantic event instead of nudging a human (manual loop removed, P18/D48)', async () => {
     await h.start('--target ./repo');
     await seedGoal(h);
     const draft: any = { question: 'What does this surface expose?', surface: '/surface', risk: 'mapping', role: 'recon', evidenceIds: [], prerequisites: [] };
@@ -190,7 +193,11 @@ describe('owner role', () => {
     const client = new BrokerClient(ticket.socket, ticket.token);
     await client.request('report', { report: { summary: 'bounded recon packet', confidence: 'low' } });
     client.close();
-    expect(h.contexts.notices.at(-1)).toContain('1 worker report awaiting Planner review');
+    // The removed manual mode posted a "pending review" nudge and waited for a human message. The automatic loop owns the
+    // review instead, so the report is one engine event and no human-only prompt is emitted.
+    expect((await h.call('p2o_loop', { action: 'status' })).details.pendingEvents).toBeGreaterThanOrEqual(1);
+    expect(h.contexts.notices.join(' ')).not.toContain('awaiting Planner review');
+    await h.command('stop');
   });
 
   it('maintains a per-surface recon/discovery/independent-validation loop, rejects stale conclusions and freezes before cleanup', async () => {
@@ -393,15 +400,9 @@ describe('owner role', () => {
     expect(ticket.target).toMatchObject({ kind: 'hybrid', origin: 'https://example.com', label: expect.stringContaining('https://example.com/app') });
   });
 
-  it('refuses delegation without a backend, an unknown skill, or beyond the cap', async () => {
-    h = await harness({ herdrAvailable: false });
-    await h.start();
-    await expect(h.call('p2o_delegate', { focus: 'x', task: 'y' })).rejects.toThrow(/DELEGATION_UNAVAILABLE/);
-    const event = { systemPrompt: 'BASE', systemPromptOptions: { sections: {} as Record<string, string> } };
-    await h.emit('before_agent_start', event);
-    expect(event.systemPromptOptions.sections.p2o_assessment).toContain('No worker backend is available');
-    await h.command('stop');
-
+  it('refuses an unknown skill or a delegation beyond the cap', async () => {
+    // P18/D48: a run can no longer start without a worker backend at all (the manual loop was removed), so the
+    // no-backend refusal is proven at start in loop-mode-removed.test.ts instead of from a live owner.
     h = await harness({ settings: { p2o: { maxWorkers: 1, maxDepth: 1 } } });
     await h.start();
     await expect(h.call('p2o_delegate', { focus: 'x', task: 'y', skills: ['not-a-skill'] })).rejects.toThrow(/SKILL_UNKNOWN/);
@@ -478,6 +479,7 @@ describe('owner role', () => {
 
   it('reports a pane Herdr refused to close instead of claiming verified teardown', async () => {
     await h.start();
+    await seedGoal(h); // P18/A9: every run records a campaign frame, so a finish needs a recorded goal
     await h.call('p2o_delegate', { focus: 'recon', task: 'map' });
     const workerId = h.herdr.calls.find(call => call.op === 'start')!.name!;
     const ticket = JSON.parse(await readFile(join(await h.runDir(), `ticket-${workerId}.json`), 'utf8'));
@@ -528,6 +530,7 @@ describe('owner role', () => {
 
   it('refuses to finish while a worker is still working, then cleans everything up', async () => {
     await h.start();
+    await seedGoal(h); // P18/A9: every run records a campaign frame, so a finish needs a recorded goal
     await h.call('p2o_delegate', { focus: 'recon', task: 'map' });
     await expect(h.call('p2o_finish')).rejects.toThrow(/WORKERS_ACTIVE/);
     const workerId = h.herdr.calls.find(call => call.op === 'start')!.name!;

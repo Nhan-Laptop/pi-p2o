@@ -45,5 +45,10 @@ export function dashboardLines(profile: ViewProfile, report: ReportView, cases: 
     casesLine = `Cases: accepted-current ${accepted.length}${severityText ? ` (${severityText})` : ''}${unrated ? `, unrated ${unrated}` : ''}${ratingStale ? `, rating-stale ${ratingStale}` : ''} | pending ${report.counts.pendingCaseReviews}, stale ${report.counts.staleCases}`;
   }
 
-  return [queue, coverage, casesLine].map(line => safe(line, 300));
+  // P18.5/D47: rounds-as-sessions made the round the unit of work, so the widget names the round in flight beside the queue.
+  const round = profile.round
+    ? `Round ${profile.round.round}: ${profile.round.state}${profile.round.budget.steps > 0 ? ` · ${profile.round.steps}/${profile.round.budget.steps} steps` : ` · ${profile.round.steps} steps`}${profile.round.model ? ` · ${safe(profile.round.model, 60)}` : ''}`
+    : undefined;
+
+  return [queue, coverage, casesLine, ...(round ? [round] : [])].map(line => safe(line, 300));
 }

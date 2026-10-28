@@ -62,7 +62,7 @@ describe('situation parity: declared, produced and rendered stay one thing (M9)'
 
   it('prints exactly the rendered line in the lead prompt, never a second count of its own', () => {
     const facts: PlannerPromptFacts = { runId: 'run-parity', targetKind: 'directory', targetLabel: '/target', sourceSkipped: 0,
-      delegation: { enabled: false, maxWorkers: 1, maxDepth: 1 }, phase: 'active', loopMode: 'manual', executorMode: 'shared' };
+      delegation: { enabled: false, maxWorkers: 1, maxDepth: 1 }, phase: 'active', executorMode: 'shared' };
     for (const trigger of Object.values(triggers)) {
       const snapshot = { ...base, ...trigger };
       const line = situationLine(snapshot);

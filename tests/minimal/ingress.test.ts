@@ -180,7 +180,8 @@ describe('A7.8 ingress in prompts, tickets and reports', () => {
     expect(planner).not.toContain('INGRESS —');
     expect((h.sandboxes[0] as IngressSandbox).network).toBeUndefined();
     const store = await h.reader();
-    try { expect(store.campaign()).toBeUndefined(); } finally { store.close(); }
+    // P18/A9: the default campaign exists, and it records no ingress path the operator never configured.
+    try { expect(store.campaign()).toMatchObject({ createdBy: 'default' }); expect(store.campaign()).not.toHaveProperty('callback'); expect(store.campaign()).not.toHaveProperty('labNetwork'); } finally { store.close(); }
   }));
 });
 

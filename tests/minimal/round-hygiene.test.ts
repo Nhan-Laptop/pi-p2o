@@ -14,7 +14,7 @@ const text = (result: any) => result.content[0].text as string;
 describe('round hygiene and campaign memory (A6.5)', () => {
   it('states the round-ending guidance, the first-round contract and the phase checkpoint in the planner policy', () => {
     const planner = plannerInstructions({ runId: 'run-hygiene', targetLabel: 'https://fixture.invalid', targetKind: 'url', sourceSkipped: 0,
-      delegation: { enabled: true, maxWorkers: 3, maxDepth: 2 }, phase: 'active', loopMode: 'event-driven', executorMode: 'shared' });
+      delegation: { enabled: true, maxWorkers: 3, maxDepth: 2 }, phase: 'active', executorMode: 'shared' });
     expect(planner).toContain('ROUND HYGIENE');
     // A1: the policy section carries the rule, not tool names — the tool descriptions own usage (workflow-policy pins it).
     expect(planner).toContain('end the round explicitly with the loop wait action');
@@ -43,6 +43,37 @@ describe('round hygiene and campaign memory (A6.5)', () => {
     expect(lines).toContain('round started 2030-01-01T00:10:00.000Z');
     // The round/wake facts render even without a campaign record; only the objective line changes.
     expect(statusView(indexRecords([]), { ...profile, campaign: undefined }).lines.join('\n')).toContain('Campaign: no campaign record');
+  });
+
+  it('names the round in flight, its budget state, its routed model and the newest round fact in status (P18.5)', () => {
+    const profile = {
+      runId: 'run-hygiene', target: '/target', lifecycle: 'active', delegation: true, maxWorkers: 3,
+      exportEnabled: false, engine: { mode: 'event-driven', rounds: 4, pendingIntents: 0, paused: undefined, decision: undefined,
+        lastWake: { reason: 'debt', round: 4 }, roundStartedAt: '2030-01-01T00:10:00.000Z', heartbeat: { seconds: 600 } },
+      executor: { mode: 'shared', maxTargetOperations: 1 }, workers: [],
+      contextUsage: { tokens: 5000, contextWindow: 10000, percent: 50, at: 0 },
+      round: { round: 4, sessionId: 'ses-round-4', state: 'wrap', reason: 'round step 35/40, inside the last 6 steps', steps: 35, elapsedSeconds: 212,
+        budget: { steps: 40, seconds: 900, wrapSteps: 6, contextWrapPercent: 80, contextHardPercent: 92 },
+        model: 'fixture/escalate', thinking: 'high',
+        lastFact: { text: 'planner.round-budget: round 4 wrapping up (round step 35/40, inside the last 6 steps)', ageMs: 12_000 } },
+    } as unknown as ViewProfile;
+    const view = statusView(indexRecords([]), profile), line = view.lines.find(entry => entry.startsWith('Round: '));
+    // P18.5/D47: the operator sees which round runs where, how close it is to its budget, and what the loop last did.
+    expect(line).toContain('Round: 4 in session ses-round-4');
+    expect(line).toContain('budget wrapping up (round step 35/40, inside the last 6 steps)');
+    expect(line).toContain('35/40 steps, 212s of 900s');
+    expect(line).toContain('context 50% (wrap 80%, hard stop 92%)');
+    expect(line).toContain('model fixture/escalate at thinking high');
+    expect(line).toContain('last round fact: planner.round-budget: round 4 wrapping up');
+    expect(line).toContain('(12s ago)');
+    // The widget names the same round, and a disabled step axis reads as such instead of dividing by zero.
+    expect(view.widget.join('\n')).toContain('Round 4: wrap · 35/40 steps · fixture/escalate');
+    expect(statusView(indexRecords([]), { ...profile, round: { ...profile.round!, budget: { ...(profile.round!.budget), steps: 0 } } }).lines.join('\n'))
+      .toContain('35 steps (no step limit)');
+    // A hard budget stop is its own word; no round yet keeps the pre-P18 status unchanged.
+    expect(statusView(indexRecords([]), { ...profile, round: { ...profile.round!, state: 'exhausted', reason: 'round step limit 40/40 reached' } }).lines.join('\n'))
+      .toContain('budget stopped at its budget (round step limit 40/40 reached)');
+    expect(statusView(indexRecords([]), { ...profile, round: undefined }).lines.join('\n')).not.toContain('Round: ');
   });
 
   it('names a dispatch made before a goal or plan as research debt instead of refusing it (design boundary)', async () => fixture(async h => {

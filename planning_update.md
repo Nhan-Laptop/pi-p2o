@@ -1,479 +1,427 @@
-# P17 proposal — exploitation capability: the prompt and skill pass
+# P18 proposal — long-horizon loop: rounds as fresh sessions
 
-Status: **proposal, nothing here is implemented.** This file replaces the retired archive pointer. The previous 2,326-line
-design record (Parts I–XI) is still in git at `f5015fd` and its milestones are summarised in
-[docs/HISTORY.md](docs/HISTORY.md); it is not the current specification and this proposal does not revive it.
+Status: **proposal, nothing here is implemented.** This file replaces the P17 text; that text is unchanged in git at
+`git show bacbb6d:planning_update.md` and its implementation landed in `431b916`, `0eeda8a`, `aaa8ed0`, `bacbb6d`
+(impact-goal admission, worker stance, grey-box brief, scoped severity, foothold, skill ladder, fixtures). P18 does not
+reopen P17's decisions D32–D43; it changes the machine those texts run on.
 
-Owner request (2026-10-27): *"enhance the capabilities of exploit of model — prompt (provide for agent), skills as powerful
-as possible to exploit; research ARTEX and the internet; find what in the current prompt/skills restricts the agent from
-getting high/critical bugs (RCE, LPE, …); rewrite planning_update.md."* This document is that research plus the resulting
-plan. The working tree already carries the 2026-10-27 dedupe/tool-merge pass; this proposal builds on it and changes
-nothing in it.
+Owner request (2026-10-28): *"base on the current propose: B — planner run mới mỗi round, rehydrate từ ledger + graph;
+round budget + pha wrap-up; hard floor ở tầng engine cho cả hai mode; model routing theo pha; các chi tiết vay được
+(debounce 800 ms, drain + final round, cold-digest, nudge cap 2). Deeply research and give me the plan to update this
+extension. Replace all new plan into planning_update.md."* This document is that research and plan.
 
-Scope: **prompt and skill text first, the small engine seams those texts depend on second, measurement third.** It adds
-no permission, target tool, role, budget or finish gate. Two engine seams are proposed where the text would otherwise
-promise something the instrument cannot do: an interactive foothold (§5 D40) and a runtime-truth guard (§5 D41).
+Scope: **the loop, not the doctrine.** P18 adds no permission, target tool, role, skill, effect class or finish gate. It
+also carries one owner decision that removes a branch rather than adds one: the `manual` loop mode is deleted, so every
+run is the automatic loop (D48) and a start requires a worker backend.
+It changes when a planner round starts, what context it starts with, how it is bounded, how it ends, and which model
+runs it. The campaign itself stays uncapped: no token, spend, elapsed-time or round-count ceiling on the run (owner
+decision 2026-10-24, preserved). It does not fix provider-failure recovery or worker liveness; those are named as the
+next pass (P19) in §9.2 so they cannot be assumed fixed by accident.
 
 ---
 
-## 1. What this revision answers
+## 1. Why this pass
 
-### 1.1 The substrate is no longer the binding constraint
+### 1.1 The loop as it is, verified
 
-The earlier access-ladder revision (P7) found six binding constraints: no session, no interactive execution, no identity
-channel, no ingress, a chain tax, and semantics that suppressed depth. All six were then implemented: the `session`
-executor and `p2o_session`, PTY `send`/`read`, `--identity` with host-injected secrets, `--callback` / `--lab-network`
-ingress, chain-in-session successors, the `boundary_invariant` policy basis, the installed browser, and the 2026-10-27
-tool-surface cleanup. A measured probe of the pinned image (§2.4) confirms the sandbox itself is a full Kali-class root
-container with gcc, gdb/ptrace, nmap, nuclei, ffuf, sqlmap, Python/Node, egress, package installs and Chromium.
+Line references are at `HEAD a392f2b`. The loop has three layers: Pi's inner tool loop, the deterministic
+`AssessmentEngine` (`src/engine.ts`), and the worker process. The engine starts and bounds nothing; the planner owns
+the conversation for the entire campaign.
 
-A run can therefore hold a foothold, keep a shell, act as a provisioned principal and drive a browser without asking for
-consent. What a run still rarely does is **exploit**.
+| Fact | Evidence | Consequence for a long campaign |
+| --- | --- | --- |
+| Default loop is `manual`; a committed worker report only raises a UI notice | `src/roles.ts:156`, `src/engine.ts:220`, `extensions/p2o/index.ts:3545-3552` | The "loop" is a human typing. Autonomy is opt-in. |
+| Automatic rounds exist only in `event-driven`, which requires Herdr | `extensions/p2o/index.ts:3245` | The autonomy path is not portable to a headless or RPC measurement run. |
+| Wakes come from committed events, paced debt, and a heartbeat; two quiet rounds with nothing owed pause the campaign | `src/engine.ts:219-242`, `:261-279`; `src/campaign.ts:12-14` | The loop stops when the model runs out of ideas, which is exactly when a different mechanism is needed. |
+| A planner outcome other than `completed` pauses the campaign with no retry | `extensions/p2o/index.ts:3748-3751` | One provider error or abort ends the paid run's remaining hours. |
+| There is one planner conversation for the whole run; prompt sections are pinned at 14,200/13,200/13,500/1,650/2,600 chars | `tests/minimal/recon.test.ts:211` | Context grows monotonically (Context Rot); ending a round asks the planner to rebuild from the ledger but the transcript stays. |
+| `p2o_loop wait` is the documented way to end a round and it suppresses the debt wake | `src/prompts.ts:163`; `src/engine.ts:232` | A planner that waits for a slow worker can sleep until an event or a human, with work still owed. |
+| Round progress is four monotone counters plus remaining obligations; no severity or impact counter | `extensions/p2o/index.ts:483-489` | The loop optimises obligation closure. Depth is prompt will, not loop structure. |
+| Completion is derived from plan obligations; `p2o_finish` has no gate (owner decision) | `src/completion.ts`, `src/finish-preflight.ts:14-28`, `extensions/p2o/index.ts:2924-2930` | An honest but shallow run can finish incomplete; nothing makes the loop try the next rung. |
+| The measurement instrument cannot see this architecture: one prompt, `delegation:false`, no `--loop` | `scripts/benchmark-skills.mjs:107,564` | No clean number exists for the current loop. Effectiveness stays UNVERIFIED. |
 
-### 1.2 The only measured campaign is an assessment, not an exploitation
+### 1.2 The mechanism chain that loses high/critical yield
 
-The P5.1 measured run (`run-615f7a9a`, 69.8 min, $1.57):
+High/critical findings are chain-shaped: recon → primitive → bypass → effect → depth. That chain needs several
+consecutive rounds on one line of reasoning, each carrying the previous round's exact payload and state. The current
+loop makes each round expensive in context and fragile in continuity:
 
-| Measurement | Value |
-| --- | --- |
-| Tasks | 20 created/dispatched: 3 recon, 12 discovery, 5 validation |
-| Tasks with `purpose=exploitation` or `chaining` | **0** |
-| Goals whose proof was a typed capability | **0** |
-| Worker target operations | 217, all exit 0 |
-| Accepted cases | 1 (Low: zone-wide cookie name collision) |
-| The run's own recorded exclusions | "read-only risk limit", "operator credential required", "exploitation outside an HTTP evidence contract" |
+1. Round N's reasoning stays in the conversation; round N+1 re-reads it through a growing transcript, so the planner's
+   attention per ledger fact falls as the campaign succeeds (Context Rot is measured, not asserted, §2.3).
+2. A quiet round pauses; a stalled round pauses at 3 with debt; a wait suppresses the debt wake. Three independent
+   off-ramps from the state that precedes a breakthrough.
+3. A single provider failure — likely once in a 1–3 hour run — ends autonomy and asks a human to restart.
+4. Nothing bounds a round, so a round that is going nowhere is indistinguishable from one that is nearly there, and
+   nothing makes it write back before it ends.
+5. Model choice is fixed for the whole run, so the cheap model does the hard link (or the expensive model does
+   triage).
 
-The "read-only risk limit" existed nowhere in the code even then; it was the model's own risk appetite written into an
-undefined field. The substrate has improved since, but the instruction surface has not: the prompts teach a reviewer's
-discipline far more explicitly than an operator's objective. The owner's question — *what in the prompt and skills caps
-the ceiling?* — has a concrete answer in §3: **two hard seams, ten soft seams, six missing methods.**
+### 1.3 What P18 changes
 
-### 1.3 The claim this revision makes
+Rounds become the unit of work, and a round becomes an object the harness can start, bound, and end:
 
-> The remaining gap between pi-p2o and a high/critical-finding workflow is mostly **instructional and handoff quality** —
-> not permission, tooling, time or model capability — and it can be narrowed by demanding an effect, defining exhaustion,
-> carrying exploit context into the worker brief, un-taxing the severity model, and giving the library a post-exploitation
-> method. Measurement, not assertion, decides whether it narrowed.
+- **A fresh planner session per automatic round**, rehydrated from the ledger and graph by a deterministic briefing.
+  The conversation stops being the campaign's memory; the ledger already is (`docs/PLANNER_ENGINE.md` "Rounds").
+- **A round budget with a wrap-up phase**: soft bounds that force write-back while tools are still available, and a
+  classified hard stop that ends the round without ending the campaign.
+- **A demand floor**: while the host can name owed work, a quiet round cannot silently pause, and `wait` cannot be
+  used to sleep through it.
+- **One loop mode**: the `manual` mode, its settings value, its CLI flag and its prompt branch are removed; a run is
+  always the consented automatic loop, and without a worker backend the start is refused instead of starting a run that
+  can never execute.
+- **Per-round model/thinking routing**, recorded, with an escalation rule that is visible in the report.
+- The ARTEX details that survive translation: a short burst debounce, a bounded nudge for text-only endings, a
+  per-round cold digest of old ledger material, and one closing round before an operator stop.
 
-This is narrower than "better prompts find more bugs". §2 separates measured evidence from mechanistic reasoning;
-Appendix C lists what this proposal explicitly does not claim.
+What it deliberately does not change: the planner still holds no target tool, workers still own execution and claims,
+a finding still needs receipts, severity still stops at demonstrated depth, and `p2o_finish` still has no gate.
 
 ---
 
 ## 2. Research
 
-### 2.1 ARTEX v0.3.15 (local snapshot, `my_references/ARTEX/`)
+### 2.1 ARTEX v0.3.15 (`my_references/ARTEX/`)
 
-ARTEX is the closest peer: an autonomous pentest system whose prompts are explicitly exploitation-shaped. Half of its
-doctrine was already ported in P5 — `src/prompts.ts:162-166` is annotated "translated from ARTEX `agent/planner.go:304-331`"
-(depth over breadth, mechanism routes, chain-or-wall), and `src/finish-preflight.ts:56-74` host-enforces what ARTEX only
-asks in prose (`PRIMITIVE_UNCHAINED`, `ROUTE_MONOCULTURE`, `HIGH_WITHOUT_INDEPENDENCE`, `NEGATIVE_MAY_BE_BLOCKED`,
-`LEAD_UNTRIAGED`). The **worker** half is not ported.
+The closest peer. P17 ported ARTEX's *worker doctrine*; P18 ports its *round machinery*. Verified against Go source.
 
-| ARTEX mechanism | Quote (translated) | Why it raises high/critical yield | pi-p2o landing |
+| Mechanism | Where | Why it matters | P18 landing |
 | --- | --- | --- | --- |
-| Bypass exhaustion before "dead" | "First obstruction — a filtered payload, a 404, an injection with no echo — does not mean the path is closed. Change the encoding, the method, the parameter, the path; walk the reasonable means of this direction before judging it a dead end." `agent/worker.go:234`, `agent/promptcatalog.go:38` | A filtered payload is one sample of a family. One sample closing upload/SSTI/command-injection/deserialization is the single largest loss of RCE-class findings. | `src/prompts.ts:226` defines a wall but never exhaustion → **A17.1** |
-| Independent re-trigger | "When you think you found it, switch to skeptic and trigger it again through a *different path or independent command*, not by restating the same evidence." `agent/promptcatalog.go:40` | A second transport kills reflection-as-execution and edge-cache artifacts before they become rated findings, and forces the effect to be stable enough to rate. | `src/prompts.ts:257` argues against the finding but never re-triggers → **A17.1** |
-| Self-deception list | "Version/fingerprint→CVE match, 'the parameter looks injectable', external advisories or changelog/diff inference are not confirmed vulnerabilities; never use a CVE lookup or patch-version comparison in place of an actual trigger." `agent/worker.go:240` | Names the three common false positives at the moment of claiming. | host-side rule exists (`tool-guidelines.ts:28`); claim-time prose missing → **A17.1** |
-| High-value surface families | "Input parsing/encoding and charset boundaries, file upload, (de)serialization, built-in routes and pre-auth reachable surface, error leakage, cache (poisoning/race), race conditions, type confusion (scalar vs array), mass assignment." `agent/promptcatalog.go:45` | Route selection wins criticals; a planner asked only for "surfaces" rediscovers IDOR and reflection while pre-auth routes, deserialization and race stay unopened. | planner heuristics name direction, not families → **A17.2** |
-| Spill every adjacent lead | "If you glimpse a lead outside this intent — a path leaked by an error, a link to another asset, a suspected second exploit chain — write it into a fact and hand it to the planner. Better one extra report than swallowing it." `agent/worker.go:336` | SSRF→internal and credential→lateral pivots are noticed inside a worker context and die there if only the planner is asked to infer them. | "one intent" line at `src/prompts.ts:232` has no over-report imperative → **A17.1** |
-| Trace before re-planning | "Read the worker trace to see how far it actually got; the basis is the real progress in the trace, not the state alone." `agent/planner.go:327` | An interrupted discovery is usually near a breakthrough; treating state as a verdict either duplicates or abandons a live path. | `src/prompts.ts:171` distinguishes states but not "read the position first" → **A17.2** |
-| Negative observation ≠ verdict, one recheck | "A negative is a worker's observation, not a conclusion; a missing-evidence or single-probe negative counts as not-yet-explored. Recheck the same negative direction at most once." `agent/planner.go:312`, `agent/tools.go:1357` | Premature `ruled_out` removes a live surface from the denominator. | preflight catches only the 401/403/429 variant after the fact; no write-time rule → **A17.1/A17.2** |
-| Retry admission test | "Re-dispatch only when a *materially new mechanism* exists — a new fact, asset, parameter or clearly different construction — and say how it differs from last time." `agent/planner.go:326` | Converts "retry" into a falsifiable statement about what changed, separating persistence from busy-spin. | `src/prompts.ts:135` bans the act without the admission test → **A17.2** |
-| Explicit effect objective | The solo agent prompt is one imperative: "recon → attack surface → deep exploitation → verification → wrap-up; you are your own planner and your own auditor." `agent/promptcatalog.go:33` | The one measured prompt-wording effect in the literature (§2.2: 0.26→0.72) is exactly this: an explicit exploit instruction, not a permission. | worker prompt says "assessment"; the duty line is one line → **A17.1** |
-| Report bar in prose | `agent/worker.go:240` (same list as above) | Prose is read at claim time; a host rule is read only on refusal. | **A17.1** |
+| Planner is a fresh LLM session per wake; the plan survives in a per-task todo store | `agent/planner.go:44-49,355-472` | Context per round is constant, so attention on the current frontier does not decay over a 5-hour run. | D45, P18.2 |
+| A round ends when `Plan()` returns; signals are typed (`done`/`finding`/`goal`/`hint`/kill/resume) plus a ≥600 s heartbeat; bursts coalesce through an 800 ms debounce | `server/engine.go:781-912,390`; `db/tasks.go:81-83` | A round knows *what changed*, not just "something happened". | D49, P18.4 |
+| Hard floor: with an unmet goal and no open/running intent, the round **must** produce at least one intent | `agent/planner.go:303-304,455-459` | The loop cannot rest while the goal is open; "0 intents" is legal only with a stated reason (covered / waiting on a dependency). | D48, P18.3 |
+| Typed terminal states: `max_turns`/timeout → `exhausted`, model/API error → `blocked`, normal → `done`; `NotifyDone` wakes the planner with the intent id | `server/engine.go:1128-1155` | Budget exhaustion is *replannable*, not a failure of the campaign. | D47, P18.3 |
+| Settlement at the budget wall: hide Bash → inject "write back everything now" → 10 extra turns → terminate as `exhausted` | `agent/worker.go:424-462`; `agent/wrapup.go:28-40,90-106` | A bounded run still lands its evidence instead of dying mid-thought. | D47, P18.3 |
+| Per-agent `max_turns`/`run_seconds` are configuration, not code; task deadline clamps a run's wall clock | `server/server.go:296-320`; `agent/taskclock.go` | Bounds live in operator settings; the campaign stays open-ended. | D44 |
+| Model pool with health/cooldown failover | `llmpool/pool.go`, `llmpool/health.go` | A provider failure swaps models instead of stopping the campaign. | **Out of scope (P19)**; note in §9.2 |
+| Graph cold-digest: nodes idle ≥6 planner rounds are summarised, hidden from the view, expandable on demand | `agent/coldgraph.go:40-45`, `agent/compaction.go:68-103` | Old material stays available without crowding the current decision. | D46, P18.2 (ledger digest) |
+| Thinking-only turn gets a Stop-hook nudge, capped at two | `server/engine.go:547-620` | A silent end-of-turn is retried rather than lost. | D49, P18.5 |
+| Timed shutdown: stop new claims → drain in-flight 90 s → one final planner round for goal judgment | `server/engine_timeout.go:16-18,199-233` | A stop is an evidence-preserving transition, not a kill. | P18.7 (operator stop path) |
 
-**What not to copy.** ARTEX has no blanket authority: its boundary is a human approval queue plus model self-check of
-prose constraints (`agent/worker.go:235`, `agent/constraints.go:38`). Its deny seeds block legitimate proof steps —
-creating a high-privilege account (an LPE proof), editing service configuration (persistence validation), any
-`DELETE/PUT/PATCH` on real records (`intercept/prompt.go:79-83`). Its finding schema treats evidence as optional, and its
-self-check is prose, not enforcement. pi-p2o is stronger on all four and stays that way: port the *wording*, never the
-ASK culture or the deny list.
+**What not to copy.** ARTEX's findings are self-attested (`report_finding` needs only vulnclass/severity/summary;
+evidence optional, `agent/tools.go:1220-1226`), no dedup, severity unvalidated at write time, `max_turns` defaults to
+0 (unlimited), and `Options.TokenBudget` is never set. Its budget story is narrower than it looks: the *worker run* is
+bounded, the planner round is not, and cost is metered, not capped. pi-p2o stays stricter on evidence and takes only
+the round machinery.
 
-### 2.2 Internet evidence (2023–2026)
+### 2.2 Strix (`my_references/strix/`)
 
-Full URLs in Appendix D. Evidence strength is marked; nothing here is presented as a measured effect of *this* plan.
+Strix runs one long SDK run per agent and defends it differently: plain text never terminates a run — only the
+lifecycle tools (`finish_scan`/`agent_finish`) do, and a text-only ending is re-driven with a nudge
+(`strix/core/execution.py:534,643,985`). It bounds the run with two axes — 500 turns per agent
+(`strix/config/settings.py:14`) and dollars per scan — and injects progressive wrap-up directives at 70/85/95 % of
+each, with a 90 % subagent reserve (`strix/core/hooks.py:50,255-277,399-407`). Its compaction is security-shaped: keep
+8,000 tokens verbatim, summarise the head under an anti-loss rubric (findings, credentials, dead ends, next move),
+and snap the split so no tool call is left open (`strix/llm/compaction.py:35,96-143,208-221,340`). Evidence fields are
+gated in code at the report tool (`strix/tools/reporting/tool.py:183-330`).
 
-| Source | Finding | Number | Strength |
-| --- | --- | --- | --- |
-| CyberGym (2025) | Real-world PoC reproduction across 188 OSS projects; best agent+model combination reproduces | 11.9% of 1,507 vulnerabilities; 15 new zero-days found | measured, primary |
-| Naptime / Big Sleep (Google Project Zero, 2024) | Harness redesign (code browser, Python, ASan debugger, auto-verification, multi-trajectory sampling) improved CyberSecEval2 | up to **20×**; buffer-overflow success 0.05→1.00 | measured, primary |
-| Naptime prompt sentence (same) | One explicit exploit-intent sentence ("find a vulnerability and exploit it to make the program output …") | 0.26 → **0.72** | measured, small n — the only measured prompt-wording effect found |
-| AXE (2026) | Grey-box metadata (CWE class + file:line) in the task contract vs black-box | 30% vs ~10% on CVE-Bench (3×); single-agent grey-box still 1.75× | measured |
-| AutoPenBench (EMNLP 2025) | Autonomous milestone completion vs human-assisted | 21% vs 64% (33 tasks) | measured |
-| XBOW HackerOne (2025–2026) | Production submissions and triage over 90 days | 1,060 submissions → 130 resolved, 303 triaged, 208 duplicates, 209 informative; 54 critical + 242 high | observed, vendor |
-| XBOW Alloy (2025) | Model routing + architecture: thousands of short-lived narrow agents, persistent coordinator, deterministic validation | alloy 68.8% vs 57.5% best single; hard cap near 80 iterations because restarts beat accumulated false assumptions | observed, vendor |
-| XBOW 48-step chain (2026) | Blind SSRF escalated through image parsing, VRT files, one-pixel PNG to file exfiltration | 48 autonomous steps | observed, vendor |
-| DARPA AIxCC final (2025) | Engineering the cyber-reasoning system between rounds | synthetic vulns found 37%→86%, patched 25%→68%; 18 real vulns; ~$152/task | measured, primary |
-| Anthropic cyber ranges (2025) | Simulated Equifax-like intrusion; 5 of 9 networks still needed a custom toolkit | Sonnet 4.5: 2/5 trials (Sonnet 3.5: 0/5) | measured, small n |
-| Refusal study (Jones et al., 2026) | Frontier models on offensive web tasks | 6 of 8 near-zero refusal | measured — safety refusal is **not** the binding constraint |
-| Context Rot (Chroma, 2025) | Performance degrades with input length across 18 models; distractors compound | monotone degradation | measured |
-| Decoupling recon/exploitation (2026) | Separates exploit execution from recon: 70 web testbeds, 50 aligned vulns, 5 agents; accurate context vs autonomous recon | functional success up to **90.0%**; autonomous recall ≈ **50.0%**, dominated by failure to parse telemetry | measured |
-| Agentic architecture study (2026) | 20 interactive targets, 600 runs, 5 architectures: detection-any 58.0%, *validated* 49.8%; independent multi-agent best 64.2%; whitebox 67.0% vs blackbox 32.7%; web 74.3% vs binary 25.3%; non-monotonic cost-quality | as listed | measured |
-| Big Sleep seeded variant analysis (2024) | Patch-diff-seeded search found an exploitable SQLite stack underflow that AFL missed in 150 CPU-hours | 1 real exploitable bug | measured, one case |
-| Anthropic Agent Skills (2025) | Progressive disclosure: name+description preloaded, body on demand, bundled files only when needed | design guidance | industry |
+What P18 takes: the *progressive, content-bearing wrap-up* (a warning that says what to write, not just "hurry"),
+and the nudge-as-default for text-only endings. What it does not take: one immortal session, and a wall-clock-free
+run. Weaknesses Strix shares with the current pi-p2o loop: no wall-clock bound on a run, methodology enforced by
+prompt volume, headless runs can die quietly (`runner.py:633-646`), and no in-repo reproducible benchmark.
 
-### 2.3 What the evidence says — and does not
+### 2.3 Industry evidence (numbers already recorded in P17 §2.2, Appendix D)
 
-1. **Proof, not detection, is the bottleneck.** PoC-required benchmarks score 12–20% while production systems with
-   validators, restarts and grey-box context scale. pi-p2o is already proof-shaped; the lesson is not to loosen the claim
-   bar but to stop letting proof-shaped discipline *prevent attempts*.
-2. **Context beats autonomy.** The 90%-vs-50% decomposition, AXE's 3× and Naptime's single sentence point at the same
-   seam: a worker given a precise, grey-box-shaped question performs far better than one asked to rediscover it.
-   pi-p2o's brief carries prose and graph slices but no exploit contract (**A17.3**).
-3. **Architecture matters as much as the model.** Short-lived narrow agents + persistent coordinator + programmatic
-   validation is the best-evidenced shape; pi-p2o already matches it (fresh workers, durable plan board, host-derived
-   validation). What it lacks is a *restart policy that varies the mechanism* rather than extending a stuck thread
-   (**A17.2**).
-4. **Exhaustion before closure is the worker-level doctrine.** ARTEX states it; benchmark failure analyses repeat it
-   (misinterpreted semantics and unmet preconditions, not proof of absence); XBOW's iteration cap exists because restarts
-   beat accumulated false assumptions. pi-p2o defines a wall without defining exhaustion (**A17.1**).
-5. **Verification gates are not measurably costly — but attempt gates are.** No study measures the recall cost of
-   verification gates in pentest agents (flagged unverified). Mechanistic reasoning plus the ARTEX comparison support one
-   rule: gate the *claim*, not the *attempt*. pi-p2o currently mixes them: closure vocabulary leaked into the procedures
-   and the severity cap reaches back to attempts (**A17.4**).
-6. **Target class matters.** Web 74.3% vs binary 25.3% validated detection in one 600-run study. This phase targets
-   web/API and target-side host escalation whose foothold runs over HTTP or a reverse shell; binary exploitation is a
-   later phase.
-7. **Safety wording is not the cap.** Refusals are near-zero for most frontier models on web tasks; the caps are
-   structural. This proposal edits meaning and ordering, not "be less careful" wording.
+- XBOW: thousands of short-lived narrow agents + a persistent coordinator + deterministic validation; alloy model
+  routing 68.8 % vs 57.5 % for the best single model, with a hard cap near **80 iterations because restarts beat
+  accumulated false assumptions** — [xbow.com/blog/alloy-agents](https://xbow.com/blog/alloy-agents).
+- Context Rot: performance degrades monotonically with input length across 18 models; distractors compound —
+  [trychroma.com/research/context-rot](https://www.trychroma.com/research/context-rot).
+- Naptime / Big Sleep: harness redesign (including auto-verification and multi-trajectory sampling) improved results
+  up to 20×; one explicit exploit-intent sentence moved 0.26 → 0.72 —
+  [projectzero.google/2024/06/project-naptime.html](https://projectzero.google/2024/06/project-naptime.html).
+- CyberGym: best agent+model reproduces 11.9 % of 1,507 real vulnerabilities — [arxiv.org/abs/2506.02548](https://arxiv.org/abs/2506.02548).
+- AutoPenBench: 21 % autonomous vs 64 % human-assisted — [aclanthology.org/2025.emnlp-industry.114/](https://aclanthology.org/2025.emnlp-industry.114/).
+- Decoupling recon from exploitation: up to 90.0 % functional success when context is accurate vs ≈ 50.0 %
+  autonomous recall — [arxiv.org/abs/2606.25332](https://arxiv.org/abs/2606.25332).
+- AIxCC: engineering between rounds moved synthetic vuln discovery 37 % → 86 % — [darpa.mil/news/2025/aixcc-results](https://www.darpa.mil/news/2025/aixcc-results).
 
-### 2.4 The instrument, measured
+The consistent lesson: **bounded runs, durable external state, fresh context per decision, and routing**. That is
+exactly the pair (fresh session, round budget) ARTEX and Strix each implement from different ends. P17 already fixed
+the doctrine; P18 fixes the machine.
 
-A read-only probe of the pinned image (`ghcr.io/usestrix/strix-sandbox@sha256:f6906c…`, `src/sandbox.ts:13`) under the
-exact `src/sandbox.ts:17-19` limits, 2026-10-27 (Docker 28.5.2), plus a code audit of the harness. This matters because a
-prompt may only promise what the instrument does.
+### 2.4 The Pi SDK can carry this design — verified in the installed package
 
-| Verified capability | Result | Evidence |
+This is the load-bearing research: the design below is only legal if the extension can start and end a model context.
+`@earendil-works/pi-coding-agent` **1.1.0** is installed in-repo; the following was read from its declarations and
+compiled runtime.
+
+| Capability | Evidence | P18 use |
 | --- | --- | --- |
-| Compile/run exploits | gcc 15.2 yes; objdump/readelf/nm/objcopy yes; g++/make/clang/rustc, ASan, AFL++, pwntools, radare2/ghidra, metasploit, strace/socat/ssh/tcpdump installable in scratch | probe |
-| Debugging | gdb 17.2; attach to a live child works (`ptrace_scope=0`, seccomp allows ptrace); strace installs and works | probe |
-| Recon tooling present | nmap 7.99, nuclei 3.11, ffuf, sqlmap 1.10.6, httpx, subfinder, nc/ncat, Python 3.13 + pip, Node; Chromium 150 + agent-browser 0.26 | probe |
-| Network | unrestricted egress including private/link-local/metadata and `host.docker.internal`; bind ports; reverse shell out; `nohup` services | probe |
-| Container posture | uid 0, writable rootfs, `/target` read-only, `/work` writable, 14 default caps, not privileged, shared host kernel; **no** nested Docker/podman, no `unshare`, no ASLR disable | probe |
-| Foothold transport | session mode gives a persistent container + PTY (16 KiB/send, ≤120 s); in-sandbox TCP listener works on an operator `--lab-network` (≤4/session, binds 0.0.0.0, **logs bytes and never answers**); no published host port; no built-in tunnel/pivot | probe + `extensions/p2o/index.ts:1436-1490`, `src/sandbox.ts:335-393` |
-| Hard limits | 48 KiB visible command output (`src/process.ts:3`); 48 KiB HTTP body (`src/target.ts:284`); 48 KiB payload (`src/lab.ts:16`); 48 KiB upload (`extensions/p2o/index.ts:1408`); 64 KiB scratch write (`src/scratch.ts:143`); 32 KiB command (`src/sandbox.ts:160`); capture 8 KiB preview / ≤8 MiB read / 1 MiB stored (`src/sandbox.ts:213`, `src/roles.ts:105`); no timeout by default (`src/target.ts:279-282`), and an opt-in timeout that fires retires the sandbox (`src/sandbox.ts:171-181`) | code |
-| Run limits | quiet rounds 2 (advisory, `src/engine.ts:35,212`); pause only at 3 stalls + gateable debt (`src/engine.ts:273`); no command budget (`src/broker.ts:608-612`); no finish gate (`src/finish-preflight.ts:14-28`), though queued intents refuse a final finish (`extensions/p2o/index.ts:2718`); `MAX_SKILLS` 3; no token ceiling | code |
-| Target model | `directory \| url \| hybrid` only (`src/target.ts:12`). There is no first-class host/SSH target kind: a target-side shell is reached **in-band through the exploited service**, or out-of-band into the run's lab listener | code |
+| An extension can dispatch its own command programmatically: `pi.sendUserMessage('/p2o-round …', {expandPromptTemplates:true})` runs the registered command handler and does **not** send a model prompt | `dist/core/agent-session.js:1526-1532` ("Extension command executed, no prompt to send"), `:1636-1648`; `dist/core/extensions/types.d.ts:1241-1245` | The wake path can call an internal command instead of injecting a model message. `sendUserMessage` is fire-and-forget and, while streaming, **throws** if `deliverAs` is omitted (`:1551-1554`) — the dispatch must be guarded by `ctx.isIdle()`. |
+| Command handlers get session control: `newSession({setup, withSession})`, `fork`, `switchSession`, `navigateTree` | `dist/core/extensions/types.d.ts:286-320`; `RegisteredCommand.handler(args, ctx: ExtensionCommandContext)` `:1147-1153` | A round can begin in a **new session** without an external process. |
+| A new session is created by `newSession`, which first emits a cancellable `session_before_switch`, then tears down and rebinds the runtime, then calls `withSession(replacedCtx)` | `dist/core/agent-session-runtime.js:147-170`, `:120-127` | Our existing "stop the run on session change" handler must allow an *internal* switch and rebind `run.ctx`. |
+| In `withSession`, `sendMessage(..., {triggerTurn:true})` starts a turn; `before_agent_start` fires once per **user prompt**, not per continuation | `dist/core/agent-session.js:1588,1591` | The planner system-prompt section and wake parsing keep working inside the fresh session; boundary continuations reuse the run's prompt, so a round must carry everything its continuation needs. |
+| After a replacement, the old context is invalidated ("stale after session replacement") and command handlers are re-entrant/undocumented mid-run | `dist/core/agent-session.js:1003`; `runner.js:724-758`; `docs/extensions.md` (session changes "command-only") | Round start must move post-switch work into `withSession` and rebind; the self-dispatch escape hatch is the design's main risk (D45, §9.1) and needs the fallback. |
+| Continuation at settlement: returning `{entries:[{type:'custom_message',…}], continue:true}` is the only way to add a turn; `continue` alone is refused unless the projected context ends non-assistant, and the settle loop is otherwise **unbounded** | `dist/core/extensions/types.d.ts:729-771`; `dist/core/agent-session.js:616-648,1389-1413` | The nudge must append a `custom_message` draft each time, and the extension — not Pi — owns the nudge budget (D49: max 2/round). |
+| Context usage and manual compaction are exposed on the event context: `getContextUsage()` → `{tokens, contextWindow, percent}`; `compact({customInstructions, onComplete, onError})` | `dist/core/extensions/types.d.ts:197-262`; `dist/core/agent-session.js:2168-2169` | Wrap-up triggers on context percentage; compaction **aborts the current run first**, so it is only legal between rounds, never mid-turn. |
+| Model and thinking level are switchable at runtime: `pi.setModel(model): Promise<boolean>`, `pi.setThinkingLevel(level)`, `pi.getThinkingLevel()`; `pi.registerVirtualModel(...).route()` runs before every request with `reason` (`user|continuation|retry|direct`) and persisted state | `dist/core/extensions/types.d.ts:1274-1290,1371-1378`; `dist/core/agent-session.js:1946-1963` | Round-level routing via `setModel` at round start (a fresh session has no cache to lose, and it appends a recorded `model_change`); per-request escalation inside a round can use a virtual model later without transcript entries. |
+| Tool loadout is swappable mid-run: `pi.setActiveTools(names)`; the live loadout is authoritative for the next request | `dist/core/extensions/types.d.ts:1263-1267`; `dist/core/agent-session.js:1592-1600` | A closing loadout can remove dispatch tools during wrap-up without touching authority. |
+| Step counting: one `message_end` per assistant message; the ending message's `stopReason` distinguishes `stop` from `error`/`aborted`; `turnIndex` resets per low-level run and is not a budget | `extensions/p2o/index.ts:3708-3729` (existing use); `agent-session.js:878-899` | Round budget, nudges and classified aborts all have a hook; the counter must be the extension's own. |
+| Abort and idle: `ctx.abort()`, `ctx.isIdle()`, `hasPendingMessages()`; usage (tokens + cost) arrives on every assistant `message_end`; no aggregate usage API | `dist/core/extensions/types.d.ts:213-262`; `pi-ai/dist/types.d.ts:291-312` | A hard-stop backstop, a safe switch window, and per-round cost accounting from the messages the extension already records. |
 
-Two consequences the plan must respect:
-
-- **LPE is demonstrable only through a foothold.** In-band command execution through the exploited service (the typical
-  web RCE) already runs commands on the target side, so host enumeration and a privilege escalation attempt are
-  expressible there. A reverse shell is the higher-throughput path and needs the operator lab network, because the
-  listener does not answer today. Root observed this way is root inside the compromised workload, not proof of host-kernel
-  compromise — the report must say which boundary was crossed. Container escape and kernel exploitation of the host are
-  out of scope and untested.
-- **Runtime truth is currently unguarded.** `tests/minimal/docker.test.ts:10-20` and
-  `tests/minimal/docker-extension.test.ts:76-78` still assert `uid 65532` and `CapEff 0`, while the runtime is root with
-  14 caps; nine `skipIf(P2O_TEST_DOCKER !== '1')` gates keep the default suite blind to that drift.
-  `scripts/setup-sandbox-tools.sh`'s usage text still describes the container as "read-only and non-root"; those two
-  statements are false against `src/sandbox.ts:14-19`. Fixing them is **A17.9**, not an optional cleanup.
+What the SDK does **not** provide, and must not be promised: no extension-initiated session switch outside a command
+context (event handlers get the plain `ExtensionContext`), no in-turn timer or extra turn after a hard abort, no cost
+cap, no way to disable auto-compaction or set keep budgets from code (`pi.getSettings()` is read-only), and no way to
+reopen a previous session's planner context automatically. The design works around each: the command indirection for
+switching, the `context`-hook injected directive for wrap-up, `getContextUsage()` + step counts for bounds, and the
+ledger for recovery. An external `pi --mode json -p --no-session` subprocess per round would remove the re-entrancy
+risk but adds a second process, a second model surface and a worker-style transport; it is recorded as the fallback
+architecture if the command route fails its real-Pi gate (§9.1).
 
 ---
 
-## 3. Constraint census 2.0 — what restricts the ceiling now
+## 3. Constraint census 3.0 — what still caps the horizon
 
-Legend: **HARD** = enforced by code and will refuse; **SOFT** = prose the model obeys; **ABSENT** = mechanism or method
-missing; **KEEP** = honesty/authority invariant to preserve.
+Legend: **HARD** = code refuses; **SOFT** = prose; **ABSENT** = mechanism missing; **KEEP** = invariant.
 
-### 3.1 The two hard seams
-
-| # | Where | Current | Why it caps HIGH/CRITICAL | Proposal |
+| # | Where | Current | Why it caps duration or severity | P18 |
 | --- | --- | --- | --- | --- |
-| H1 | `src/cases.ts:219`, `docs/EVIDENCE.md:83`; pinned by `tests/minimal/case-rating.test.ts:59`, `tests/minimal/ladder.test.ts:166`, matrix row F-P3-3 | "A case resting on an inferred policy basis cannot be rated above medium" — a hard `Error` when any claim ref is `policyBasis=inferred` | The most common real HIGH, a credentialed cross-tenant/object authorization bypass, usually has no documented policy to cite, so it lands on `inferred` and is capped at Medium even when the crossing was observed and repeated. The rating ceiling becomes the run's ambition. | **A17.4 / D35**: scope the cap to cases whose effect was not observed/tested; a tested+observed crossing on inferred provenance is ratable at demonstrated depth with a visible `INFERRED_POLICY` flag and a required limitation. Rating above demonstrated depth is still refused. |
-| H2 | `src/prompts.ts:20` (EVIDENCE_TAIL) | "Sibling route differences, placeholder credentials and CVE leads are hypotheses, not policy: keep them `policyBasis=inferred` and `open_proof_gap` until the contract is established" | This sentence forces the state H1 punishes. In black-box work the sibling route or second principal *is* the cheapest real evidence, and for a patch-diff lead the effect is the contract. | **A17.4**: keep the anti-rumour bar (a version match is never proof) but name the exceptions: a crossing observed with only the attacker's own credential is `boundary_invariant`; a functional effect reached through a CVE-seeded hypothesis is confirmed by the trigger, not by the advisory. |
-
-### 3.2 The soft seams (prose that ends exploitation early)
-
-| # | Where | Current | Why it caps yield | Proposal |
-| --- | --- | --- | --- | --- |
-| S1 | `src/prompts.ts:226` | "Only a tool or host that actually refuses, or an approach you exhausted, is a wall" | Defines a wall, never defines *exhausted*; the cheapest reading is "one payload failed". | **A17.1**: enumerate the bypass classes that make an approach exhausted (encoding/wrapper, method, parameter location, path/route alias, identity context, alternate sink) and say one sample is not a family. |
-| S2 | `src/prompts.ts:242` | purpose=exploitation line ends "…and stop at the wall you did not cross" | Primes closure at the moment depth matters. | Delete the trailing clause; keep "take the primitive to the effect class the goal names". |
-| S3 | `src/prompts.ts:253` | "take the next step only when this step's actual output is its input and your duty covers that purpose; otherwise report the link" | Turns every two-step escalation into a handoff that needs review and a new dispatch. | Reword: continue when the duty covers the effect class; report only the step outside the duty. |
-| S4 | `src/prompts.ts:159-160` | "Validation runs as a separate worker… Only that closure counts as confirmed." | Reads as: an executed RCE is unconfirmed until a second worker replays it, so the planner serialises every rung behind a validation round. The host does not require this: a worker's confirmed+tested claim is accepted at review; independent validation is the `independentCurrent` rating flag (`docs/EVIDENCE.md:73-78`). | **A17.5**: state the actual rule — review confirms; independent validation earns the badge; a replay is not a precondition for the next rung. |
-| S5 | `src/prompts.ts:83` | An exploitation/chaining intent needs a plan goal whose proof is "a capability or an accepted case" | An accepted case is downstream of the exploitation it gates; the sentence steers the planner to a downstream artifact. | **A17.2**: allow and teach `proof: capability` from a reviewed confirmed+tested claim, with acceptance criteria named at goal creation. |
-| S6 | `src/prompts.ts:155` | "Use a worker join only for a bounded join you are about to act on in this turn" + manual mode default | After dispatch the campaign idles until a human types; depth is bounded by human attention. | **A17.2**: allow one bounded review join per round in manual mode (no polling, no budget change), or auto-wake on a committed report for review only. |
-| S7 | `src/prompts.ts:257` + `src/finish-preflight.ts:65-72` | "argue the strongest case against it"; a ruled-out negative resting on 401/403/429 is flagged at finish | Argument without re-triggering; the wrong negative is caught only after the run. | **A17.1**: independent re-trigger before claiming; negative observations are observations, one recheck per direction. |
-| S8 | `src/roles.ts:46-56,85-93`; every catalog workflow | Defaults are static-first (`mapping → attack-surface-mapping`, `discovery → source-code-auditing`, `validation → []`, `reporting → []`), and each skill's first workflow is `source-review` | A URL run's default method is reading, and the validation worker — the one that must reproduce an effect — gets no method at all. | **A17.6**: kind- and needs-conditional defaults; validation gets the ladder of the claim's `needs`; workflow order follows target kind. |
-| S9 | Exploit procedures | `skills/exploit-design/SKILL.md:3` ("…and stopping at the first rung you cannot observe"), `:69` ("An exploit step usually ends at a wall rather than at code execution"), `skills/web-injection-to-exec/SKILL.md:74` ("Every injection rung has a cheaper true result… Take it."), `skills/memory-safety-auditing/SKILL.md:3` ("without developing an exploit"), `skills/state-and-lifetime-auditing/SKILL.md:52` ("does not authorize parallel or race testing"), `skills/ssrf-to-internal/references/reachability-targets.md:26` ("never use the credential without its own authorization") | The library's own exploit procedures set a failure base rate, and one passage forbids the method that turns a metadata read into a cloud-role escalation. | **A17.6**: rewrite as "reach what the ladder reaches" with the same honesty gates. |
-| S10 | `HANDOFFS.md:74-92` | H3 return condition: "…targeted coverage check—not immediate impact development"; H4 stops at "assess"; no crash→effect or foothold→root contract | Names the crash→impact and shell→root transitions and routes them away; no handoff contract carries a primitive into an exploitation task. | **A17.6**: rewrite H3; add H4.5 (primitive→effect) and H4.6 (foothold→LPE/pivot). |
-
-### 3.3 Missing methods and missing transport (ABSENT)
-
-| # | Gap | Consequence | Proposal |
-| --- | --- | --- | --- |
-| M1 | No post-exploitation / local privilege escalation procedure among the 35 skills; "privilege escalation" appears once, inside fix guidance (`skills/exploitability-assessment/SKILL.md:49`) | RCE→root, the rung the owner names, has no method: no enumeration discipline, no path menu (sudo/misconfig/SUID/services/cron/container boundary), no proof rules for a root observation | **A17.6**: new procedure `session-to-root` + reference card |
-| M2 | No internal-pivot procedure; `credential-and-pivot` covers identity, not network path; tunnel/listener guidance exists only in tool descriptions and one SSRF sentence | An RCE'd host that reaches an internal-only service has no method for an in-band request, a reverse-shell listener (lab network), or a forward | **A17.6**: new procedure `internal-pivot` + reference card |
-| M3 | No N-day weaponization procedure; `patch-diff-analysis` stops at applicability analysis, `exploit-design` assumes an already-confirmed primitive | Patch-diff→trigger is the cheapest critical route in the corpus (Big Sleep's measured win) and the one the CVE-lead machinery points at | **A17.6**: new procedure `n-day-to-effect` + reference card, honest that version ≠ proof |
-| M4 | Worker brief has no exploit-context contract: `workerBrief` carries focus/task/context/graph slice/skills, nothing structured about build, mitigations, primitive or handles | The 90%-vs-50% evidence says this is the largest fixable yield loss | **A17.3**: generated `EXPLOIT CONTEXT` block for exploitation/chaining purposes |
-| M5 | Foothold transport is not taught: an in-band RCE (commands executed through the exploited service) is the default path when no ingress exists; a reverse shell needs the operator lab network because the listener logs bytes and never answers (`extensions/p2o/index.ts:1436-1490`); session-mode PTY exists but only in `--executors session` | Workers prove a one-shot effect and stop; the shell/LPE rung is described as unreachable even when the lab network was provided | **A17.8**: teach both transports in `session-to-root`/`internal-pivot`; add `send`/`read` on the accepted listener connection so a foothold can be driven; state the no-ingress wall precisely |
-| M6 | Exploit-tooling output discipline is not taught: 48 KiB visible output, 48 KiB HTTP body/upload/payload, 64 KiB scratch write, 32 KiB command; `p2o_capture` reads up to 1 MiB | gdb/fuzz/nmap/msf transcripts truncate, so an exploit attempt looks like a failed one; the cap is mistaken for a target fact | **A17.6/A17.9**: teach "tee to scratch, cite a `p2o_capture` artifact" as the default for exploit tooling; record the caps in the capability matrix |
-
-### 3.4 What is not the bottleneck (do not re-fix)
-
-Time, tokens, turns: no elapsed-time/token/spend ceiling; commands default `timeout=0`. Sandbox: root, writable rootfs,
-default caps, compilers/debugger/recon tooling, installs, egress, browser, listeners, reverse shells (measured §2.4).
-Egress and identity: `p2o_http` accepts any URL/method/header/body; opaque commands are not origin-filtered; sealed
-secrets and self-provisioned principals. Ingress: `--callback` / `--lab-network`. Sessions/PTY: `session` executor.
-Tool surface: 34 registered / 32 model-visible / planner 21 / worker 19 / validation 18 / reporter 6 after the dedupe
-pass. Authority: blanket one-time consent; no per-action ask. None of these need changing in P17, and prompts must not
-undersell them again ("no shell", "no browser", "read-only" were already retired once — `tests/minimal/truth.test.ts`).
-
-### 3.5 Attention cost and duplication (paid for by A17.0)
-
-| Rule | Copies |
-| --- | --- |
-| Policy provenance / `boundary_invariant` | `src/prompts.ts:20`, `:174`; `src/tool-guidelines.ts:28`; `extensions/p2o/index.ts:2171`; `src/tool-schemas.ts:72`; `docs/EVIDENCE.md:30-33`; `skills/web-object-authorization/SKILL.md:22,25,44,45` |
-| Independence / validation | `src/prompts.ts:159-160`, `:175`; `docs/EVIDENCE.md:68-78`; `HANDOFFS.md:38-40` |
-| "One intent, write back, report, stop" | `src/prompts.ts:234`, `:258`; `src/tool-guidelines.ts:37` |
-| `AUTHORIZATION_TRUTH` | `src/prompts.ts:216` (tool line) and `:271` (worker brief) |
-| "Before first use: scope baseline / handoff / owner review" | 35 × in `skills/*/SKILL.md` |
-| "record a refused attach as the specific blocked fact" | 5 × across the memory/race/state skills |
-
-A17.0 removes or consolidates these so new lines are net-neutral to the prompt ceilings (`tests/minimal/recon.test.ts`
-`PROMPT_CEILINGS`: planner 14,200 / worker 13,200 / validation 13,500 / brief 1,650 / reporter 2,600; current: planner
-13,436 / worker 12,725 / validation 13,064 / reporter 2,311).
+| L1 | `src/roles.ts:156`, `src/engine.ts:220` | `manual` is the default; no automatic round | A campaign needs a human at the keyboard; latency is human attention | D45/D48: rounds-as-sessions run in the only loop mode; the mode choice is removed and the start refuses without a worker backend |
+| L2 | `src/engine.ts:219-242` | Wake only on events/debt/heartbeat | No strategy-driven continuation: a planner cannot schedule "do the next rung in 10 minutes" except via a revisit condition | D46/D48: demand wake while work owed; revisit unchanged |
+| L3 | `src/prompts.ts:163`, `src/engine.ts:232` | `wait` ends the round and suppresses the debt wake | Correct for "waiting on a dependency", wrong when work is still owed and unnamed | D48: `wait` records a demand signature; a changed obligation set re-arms the wake |
+| L4 | `src/engine.ts:224-225,261-279` | Quiet with nothing owed pauses; 3 stalls + debt pauses | The loop exits at the moment a change of mechanism is required | D48: quiet + owed ⇒ demand wake; pause only when nothing is owed or the planner declares `blocked` |
+| L5 | `extensions/p2o/index.ts:3748-3751` | Non-`completed` outcome pauses | One provider error ends autonomy | Out of scope (P19); P18 must not make it worse (round-budget aborts are classified, not paused) |
+| L6 | `extensions/p2o/index.ts:3708-3729` | One long conversation; no round lifecycle object | Context Rot and no per-round accounting | D45: a fresh session per automatic round with a generated briefing; D47: round records |
+| L7 | absence of a round budget | A round can run for hours or stop in one step | No write-back pressure, no graceful close, no way to distinguish stuck from nearly-there | D44/D47: soft steps/seconds/context bands + wrap-up + classified hard stop |
+| L8 | `src/completion.ts`; `extensions/p2o/index.ts:483-489` | Progress counters have no severity/impact axis | Completion can be reached with no high/critical attempt | D46: the briefing carries the impact obligation and the untried-mechanism demand; no new gate |
+| L9 | `src/tools/...` (no routing) | One model per run | The hard link and the triage run on the same model | D50: per-round model/thinking with an escalation rule, recorded |
+| L10 | `extensions/p2o/index.ts:3730-3744` | Worker silence only surfaces when Pi settles | A dead worker holds a slot; finish refuses | Out of scope (P19); P18 keeps the demand visible in the briefing |
+| L11 | `scripts/benchmark-skills.mjs:107,564` | Single prompt, `delegation:false`, no `--loop` | Cannot measure the autonomous loop | D52: bench support for a multi-round event-driven arm |
+| L12 | `src/engine.ts:90` (`debounceMs=100`) | Signal bursts wake after 100 ms | Three reports in a second can cost three rounds at full model price | D49: 800 ms fixed window, deterministic tests |
 
 ---
 
-## 4. Invariants for an exploitation-capability pass
+## 4. Invariants for a loop pass
 
 Each is stated so a test can fail on it.
 
-1. **Authority is unchanged.** The planner still holds no target, lab or claim tool; a worker is the only claim author;
-   the target is a label, not an egress boundary; one start consent covers the run; no per-action consent; no new
-   permission.
-2. **Honesty is unchanged.** A claim still needs same-run receipts and closure; a finding still needs an accepted,
-   current case; severity is still bounded by demonstrated depth; a version/CVE/banner match is never proof; the report
-   still states what it did not establish.
-3. **Only attempts get cheaper; claims do not.** Every relaxation removes an obstacle to *trying* and leaves an
-   observation requirement in front of *claiming*.
-4. **The prompt budget is paid, not raised.** Every added line is offset by removing duplication or a stale clause. A
-   ceiling moves only with a dated comment in the test saying which capability grew and why.
-5. **The skill ceiling holds.** Every `SKILL.md` stays ≤8,000 chars in every kind; catalog ids, links, provenance and
-   test-library guards stay green; the third-party guardrail doctrine stays out.
-6. **Runtime claims are true.** Prompts and skills promise only what §2.4 measured. Unverified behaviour is described as
-   unverified, never as blocked or absent; the two stale runtime assertions are fixed, not inherited.
-7. **No finish gate, no allowance, no new budget** (owner decision 2026-10-24): a run always finishes with an honest
-   report. The one admission refusal this pass adds (D32: no task before the impact goal) names the artifact to create,
-   so it cannot trap a run; everything else surfaces as a planner demand or a preflight advisory.
-8. **LPE is bounded by what a foothold proves.** A root observation through a target-side shell is root of that workload;
-   the report names the boundary crossed. Container escape and host-kernel exploitation are out of scope.
-9. **Measurement is separate and owner-authorized.** Hermetic tests decide correctness; only a clean, owner-authorized,
-   cost-capped campaign decides penetration effectiveness, and the pass ships as "effectiveness UNVERIFIED" until then.
+1. **Authority unchanged.** Planner still holds no target, lab or claim tool; dispatch is the only path to execution;
+   one start consent; no per-action consent. A round session is still the planner role.
+2. **Evidence unchanged.** Receipts, review, independent validation, severity bounded by demonstrated depth,
+   version/banner match never proof.
+3. **The campaign is uncapped.** No token, spend, elapsed-time or round-count ceiling on the run. A *round* is bounded
+   (D44); the campaign is not. `/p2o resume` never refuses because a budget ran out.
+4. **No finish gate.** `p2o_finish` keeps its existing refusals only (queued intents, campaign frame); preflight stays
+   advisory.
+5. **No invented work.** A demand may only name obligations the host already derives (`deriveCompletion`,
+   `chainObligations`, research debt, planned goal proof); the engine never writes target prose.
+6. **The ledger is the campaign's memory.** A fresh session must be reconstructible from committed records plus the
+   graph; the briefing is a projection, never a second store.
+7. **One round, one reservation, one session.** No overlapping planner turns; a session switch happens only while
+   idle and only for a valid reserved wake.
+8. **Prompt budget is paid.** New static prompt lines are offset by removing duplication; a ceiling changes only with
+   a dated comment naming the capability that grew. Runtime-injected texts (briefing, wrap-up, nudge) have their own
+   byte caps and are not part of the pinned prompt.
+9. **A failed optimization degrades to today's loop.** If session switching, model setting or the budget cannot run
+   (mode, auth, platform), the run falls back to the in-session wake path and records the fallback.
 
 ---
 
-## 5. Decisions (D32–D43, proposed; defaults recommended)
+## 5. Decisions (D44–D52, proposed)
+
+Each was asked in chat with its recommended form; the answers are recorded in Appendix A (2026-10-28) and this table
+carries the resulting form. D44 amends a recorded allowance decision and D48 deletes a mode, so both carry their cost in
+§9; each decision is isolated behind one workstream so a later reversal stays local.
 
 | ID | Decision | Recommended form | Why |
 | --- | --- | --- | --- |
-| D32 | **Impact-first plan shape.** In the default `exploit` mode the host refuses admission of any worker task until the plan board holds a non-cancelled goal whose proof is a capability or an accepted case; the first plan round authors that goal (with its acceptance criteria) before the first dispatch, and the refusal names `p2o_plan_author` and the legal next step. The existing `EXPLOIT_MODE_NEEDS_IMPACT_GOAL` refusal is extended from exploitation/chaining intents to every target-executing intent. An advisory (`IMPACT_UNATTEMPTED`) still reports a run whose impact goal exists but whose progress never becomes an exploitation/chaining task. This is an **admission** refusal, not a finish gate: a run still finishes with an honest report (owner decision 2026-10-24 preserved for finishing). | Admission refusal + prompt demand | Owner decision 2026-10-27 (A3 chose the stricter option); a capability goal needs no evidence to be authored, so the refusal cannot deadlock a run |
-| D33 | **Worker exploitation stance** (conditional block for `purpose ∈ {exploitation, chaining}`): objective is an observable effect; a wall requires a host refusal *or* the recorded bypass classes; one failed sample is not a family; re-trigger independently before claiming; the self-deception list; negative = observation, one recheck; spill adjacent leads. | Prompt block, paid by dedupe | ARTEX worker doctrine; the measured exploit-intent effect; no token-budget change |
-| D34 | **Grey-box handoff contract.** Exploitation/chaining briefs carry a generated `EXPLOIT CONTEXT`: primitive sentence (hypothesis/CWE + claim ref), target revision/build/mitigation facts, known controls and limitations, the `needs` frontier from typed capabilities, available session/secret/ingress handles, expected observation and stop condition. Chain successors carry verbatim payload bytes and response detail, not summaries. | Engine seam + planner fields | 90%-vs-50% decomposition; AXE 3× |
-| D35 | **Severity follows demonstrated effect; policy basis is provenance.** Scope the `inferred` ceiling to cases that did not observe and test an effect. A tested+observed crossing rated on inferred provenance is allowed at demonstrated depth, printed with an `INFERRED_POLICY` provenance flag and a required limitation; a rating above demonstrated depth is still refused. Teach the `boundary_invariant` examples that actually occur (the attacker's own identity across a principal/tenant boundary; metadata/private-network reach from an attacker-influenced URL; unauthenticated code execution). | Scoped code change + docs + tests | H1/H2; keeps the anti-rumour bar |
-| D36 | **Confirmation ≠ independence.** Review confirms a claim; a second worker's replay earns `independentCurrent`; neither is a precondition for the next rung. The planner prompt states this and stops serialising rungs behind validation. | Prompt + docs; no host change | Host already works this way; the prose overstates it |
-| D37 | **Skill ladder.** Add three procedures (`session-to-root`, `internal-pivot`, `n-day-to-effect`) with one reference card each; rewrite the 12 closure/contradiction passages in §3.2/§3.3; make defaults target-kind and `needs` aware; rewrite H3 and add H4.5/H4.6 to `HANDOFFS.md`. | 35 → 38 skills, all ≤8,000 chars | M1–M3; ARTEX/CVE-lead evidence |
-| D38 | **Restart policy.** When a worker exhausts or stalls a mechanism, the planner dispatches a *fresh* worker with a *different* mechanism (new task, or `continue` with a materially different brief) instead of extending the same thread; the retry admission test and "read the trace position first" are stated. | Prompt + reuse of preflight | XBOW restarts; Context Rot |
-| D39 | **Refusal framing and description craft.** A host-policy refusal says "platform policy, not target defense; this class is refused — do not re-encode or retry an equivalent". Environment refusals state the fact without inviting retries. `p2o_lab` says run the smallest probe and store the bytes in the same step. `p2o_state`/`p2o_board`/`p2o_graph` gain "don't re-list what you know; aggregate writes". The planner gains one surface-family line. A test asserts payload classes (SQLi, command injection, SSTI, deserialization, upload, SSRF, traversal, LFI) are never policy-denied. | Descriptions + planner line + test | ARTEX anti-bypass framing; description craft |
-| D40 | **Persistent interactive foothold (owner decision 2026-10-27).** One accepted connection per session, kept for the session's lifetime: it is interactive `send`/`read` with **no artificial per-send size or per-command idle cap**, the shell survives steps and worker reports (session-owned; a successor continues it through hold/chain-in-session), and attaching requires an **identity confirmation through the shell** (`whoami`/`id`) recorded before any further operation. Interaction is uncapped; what enters the model context is a bounded preview plus a `p2o_capture` artifact for the full transcript. Lab-network only, no host port, no tunnel/pivot subsystem. In-band execution remains the default transport when no ingress exists. | Engine seam + skills | M5; owner decision (A5: one connection, no limits, confirm `whoami`, keep the shell) |
-| D41 | **Runtime truth and drift guard.** Record the §2.4 matrix in docs; fix `scripts/setup-sandbox-tools.sh` usage text; correct `tests/minimal/docker.test.ts:10-20` and `docker-extension.test.ts:76-78` to the measured posture (root, 14 caps, uid 0) so the opt-in Docker suite asserts reality, and add one non-Docker assertion on the sandbox flags so drift is visible without Docker; publish the prompt-safe / forbidden claim lists. | Docs + tests + script text | Stale assertions were already hiding drift |
-| D42 | **Optional operator toolchain image.** Extend `scripts/setup-sandbox-tools.sh --with` with an offensive set (pwntools, strace, socat, ssh client, AFL++, radare2, tcpdump, java) as an operator convenience; the agent still installs into scratch when needed. Not required for the plan. | Operator step, documented | D's ranked gap 3; Anthro ranges 5/9 needed a custom toolkit |
-| D43 | **Measurement protocol.** Two hermetic fixtures (web exploit ladder; credentialed cross-tenant bypass) with evaluator truth, plus an A/B campaign (current prompts/skills vs P17) — 2 fixtures × 2 variants × 2 arms × 3 reps = 24 runs, fixed per-run budgets, seeded randomized order. Criteria: ≥2 rungs executed on the ladder fixture, ≥1 accepted-current high/critical per vulnerable fixture, zero false claims, attempt records present, no leftover containers. | Fixtures + protocol; run only with owner authorization and a cost cap | Existing `bench/` machinery; no effectiveness claim until run |
+| D44 | **Round budget exists, campaign stays uncapped.** A round is bounded by assistant steps (`roundSteps`, default 40), wall clock (`roundSeconds`, default 900) and context percentage (wrap at 80 %, hard at 92 %). The bound is recorded on the round and never on the run; `/p2o resume` and the report do not treat it as an allowance. Applies to every round, because there is only one loop mode (D48). `--round-steps 0 --round-seconds 0` restores unbounded rounds. Settings under `p2o.plannerRound`. | Amend the recorded "no round allowance" decision: it protected the campaign, and that protection is kept; a round is a work package, not the engagement. |
+| D45 | **Rounds are sessions.** Each round starts a fresh Pi session: `p2o-round` internal command → `validWake` → `newSession` → `withSession` rebinds `run.ctx` and sends the briefing with `triggerTurn`. The planner system-prompt section is rebuilt by `before_agent_start` in the new session. Session name `p2o <runId> round N`. The dispatch is guarded: only when the engine holds a valid reservation and `ctx.isIdle()`, never while streaming; a cancelled/failed switch falls back to today's in-session wake and records `planner.round-session-fallback`. `roundSessions` is a setting so the whole route can be turned off. | Fresh context per round is the single measured defence against Context Rot, and it is what makes the briefing (not the transcript) the unit of continuity; the fallback keeps a failed experiment from costing a round. |
+| D46 | **The round briefing is deterministic.** `src/round-brief.ts` builds a bounded (≤ 8 KiB) projection from ledger + graph: campaign frame, objective and constraints, completion line and named demand, goals and proof status, ready chain steps, unchained primitives, coverage gaps and route monoculture hint, unreviewed tasks/claims/cases, worker states, round delta since the last round, research debt, revisit conditions, and the round's model/budget. No model call, no second store, no authority. Old material is folded into a per-round digest (cold-digest analogue) rather than truncated silently. | The 90 %-vs-50 % evidence says accurate context is the largest fixable yield loss; a deterministic projection is testable and cannot hallucinate. |
+| D47 | **Wrap-up phase and classified hard stop.** At `roundSteps − wrapSteps` (default 6) steps, or `roundSeconds × 0.9`, or 80 % context: inject a wrap-up directive via the `context` hook and switch to a closing loadout (read board/ledger, author write-back, `p2o_loop`; dispatch removed). At the hard bound: record `planner.round-budget`, set a flag, `ctx.abort()`; `agent_before_settle` classifies an aborted outcome under this flag as `round-budget` (never a pause), consumes the reservation, and lets the next wake start a new round. The next brief names the unfinished obligations. Compaction is only triggered between rounds (`ctx.compact()` aborts the current run by design); inside a round the only context lever is the closing loadout and the round bound. | ARTEX's settlement 10 turns is the proven shape; Pi cannot grant post-abort turns, so write-back must be *inside* the round and the stop must be classified rather than treated as a provider abort. |
+| D48 | **One loop mode, and a demand floor in it.** Owner decision 2026-10-28 (custom, stricter than the recommendation): the `manual` loop mode is **removed**. No `--loop` choice, no `loopMode` setting, no manual-only engine branch, prompt branch, help line or test path: every run is the consented automatic loop. `--loop` is still parsed only so an old script gets a clear refusal/`event-driven` no-op; a resumed run stored with `loopMode: manual` maps to the automatic loop and records one lifecycle warning. A start without a worker backend is refused before the run exists (today's `DELEGATION_UNAVAILABLE` path becomes the only path) instead of starting a run that can never execute. The engine keeps the demand floor: while `remaining > 0` (completion obligations, unchained primitives, ready chain steps, gateable debt) it never pauses for quiet; it demands by name. `p2o_loop wait` records a demand signature; the debt wake is suppressed only while that signature is unchanged, and re-arms when a new obligation appears. | With rounds-as-sessions there is no second loop to maintain; deleting it removes a branch from the engine, the prompts, the settings, the CLI, the docs and the tests, and removes the half-configured state where a run starts without a worker backend. Cost, stated in §9.2: pi-p2o can no longer run without Herdr. |
+| D49 | **Bounded continuation and coalescing.** Burst debounce 800 ms (fixed window, no periodic polling); a text-only round ending with demand and no `blocked` declaration gets a nudge at settlement, at most 2 per round. The nudge must be a `custom_message` boundary draft plus `continue:true` (a bare `continue` is refused by Pi unless the projected context ends non-assistant); Pi's settle loop is otherwise unbounded, so the counter lives in the extension and is recorded. Revisit and heartbeat semantics unchanged. | Cheapest two fixes from the peer review; each is testable with fake timers and a fake settle event. |
+| D50 | **Per-round model and thinking routing.** Before the round turn: resolve the configured round model via `ctx.modelRegistry` and `pi.setModel`/`setThinkingLevel`; record `planner.round-model`. Default rule: base model for rounds whose demand is review/mapping/validation; escalation model for rounds whose demand is exploitation/chaining, or after two consecutive rounds that closed nothing, or when the round's brief carries an unchained primitive or ready chain step. A fresh session has no cache to lose and `setModel` appends a recorded `model_change` entry, so round-level switching is cheap; per-request escalation *inside* a round, if it is ever needed, uses `registerVirtualModel().route()` instead of a second session entry. No auth/model → keep current model, record `planner.round-model-fallback`. Operator stop path gets one closing round (§P18.7); no campaign deadline. | Alloy's routing result (68.8 % vs 57.5 %) is the best-evidenced lever after context; recording the choice keeps it honest and auditable. |
+| D51 | **Instrumentation without migration.** New lifecycle records only (`lifecycle` with `data.engine.event`): `planner.round-start`, `planner.round-end`, `planner.round-budget`, `planner.round-nudge`, `planner.round-session`, `planner.round-model`, `planner.round-session-fallback`, `planner.round-fallback`. `src/authority.ts` counts them for `/p2o status` and report provenance. No schema bump, no new `EVENT_KINDS`, no new DB column. | The report must be able to say how many rounds ran, how many hit a budget and which model ran them, without a migration. |
+| D52 | **Measurement is a separate, owner-authorized step.** The bench runner gains a multi-round, event-driven arm; P18 ships an A/B protocol (single-session vs rounds-as-sessions; 2 fixtures × 2 variants × 2 arms × 3 reps = 24 runs) and does **not** run it. Effectiveness of P18 stays UNVERIFIED until that campaign. | P17's rule stands: hermetic tests decide correctness, a clean owner-authorized campaign decides penetration effectiveness. |
 
 ---
 
 ## 6. Workstreams
 
-Each workstream names the decision, the exact seams, the hermetic gate and the measured criterion it feeds.
+Each names its decision, exact seams, hermetic gate and the measured criterion it feeds. Workstream P18.1 must land
+before P18.2/P18.3 can be exercised end to end; P18.0 and P18.4 are independent. P18.0 also lands D48's code half: the
+loop-mode removal and the start refusal without a worker backend.
 
-### A17.0 — Pay the prompt budget (no behaviour change)
+### P18.0 — Round lifecycle in the engine (D44, D49, D51)
 
-- Consolidate policy-provenance prose to one canonical place (the evidence section of `src/prompts.ts`) and have the
-  others point at it: `src/tool-guidelines.ts:28`, `extensions/p2o/index.ts:2171`, `src/tool-schemas.ts:72`; same for the
-  independence rule. Remove the duplicated `AUTHORIZATION_TRUTH` in `workerBrief`, the repeated "one intent" line, and the
-  35 identical skill preambles (one canonical line pointing at `HANDOFFS.md#focused-method-and-review`).
-- **Gate:** full `npx vitest run tests/minimal` (prompt-pin tests updated only where the canonical text moved),
-  `npm run check:library`, no ceiling changes.
-- **Measured:** none; this is budget.
+- `src/engine.ts`: add `roundBudget` to `EngineDeps` (read lazily like `heartbeatSeconds`) and a `RoundBudget` type
+  (`steps`, `seconds`, `wrapSteps`, `contextWrapPercent`, `contextHardPercent`); add `roundStartedAt`/`budget` to
+  `snapshot()`; add `reserveWake`/`fireHeartbeat` demand-signature comparison (D48 lives here too); change the
+  constructor debounce default from 100 ms to 800 ms and pass it explicitly from `extensions/p2o/index.ts:3352`.
+  Keep `QUIET_ROUNDS`, `stallStreak`, revisit and heartbeat semantics intact.
+- New `src/round-budget.ts` (pure): `judgeRound({steps, startedAt, contextPercent, budget})` →
+  `{state:'open'|'wrap'|'exhausted', reason}`; `demandSignature(demand)`; both tested with a matrix of boundaries.
+- `src/state/schema.ts`: **no change**; records ride the existing `lifecycle` kind through `deps.persist`.
+- D48 code half: `src/roles.ts` drops `LoopMode`/`loopMode` from `P2OSettings` and `blank()`; `src/target.ts:128` stops
+  accepting `manual` (`--loop event-driven` is a recorded no-op, `--loop manual` is refused with the removal reason);
+  `src/prompts.ts` drops the `loopMode` fact and the manual branch (`:66,159-160`) — a net prompt saving; the engine
+  keeps one internal mode constant so `snapshot()`/consumers do not churn; `extensions/p2o/index.ts` drops the
+  `loopMode` resolution (`:3233`), turns `:3245` into the start refusal when no worker backend is available, deletes
+  the manual-report UI branch (`:3549-3552`) and the `--loop` help lines (`:114,2998`); `/p2o open`/resume maps a
+  stored `loopMode: manual` profile to the automatic loop and records one lifecycle warning.
+- Gate: `tests/minimal/engine.test.ts` (new budget/demand cases; existing pins still pass — the "no automatic wake
+  ceiling" test must be re-read as "no campaign ceiling"; the manual-storm test moves to the removed-mode suite), new
+  `tests/minimal/round-budget.test.ts`, new `tests/minimal/loop-mode-removed.test.ts` (start refuses without a backend,
+  `--loop manual` refused, resume mapping recorded, no manual prompt branch remains).
+- Measured: rounds per audit row; budget-hit rate.
 
-### A17.1 — Worker exploitation stance (D33)
+### P18.1 — Rounds as fresh sessions (D45, D51)
 
-- `src/prompts.ts` worker body: add the conditional exploitation block (only when the ticket purpose is exploitation or
-  chaining, so the static prefix for every other worker is unchanged): effect objective; exhaustion definition;
-  independent re-trigger; the three self-deception patterns; negative-as-observation with one recheck; spill adjacent
-  leads; cite a `p2o_capture` artifact when the observation is larger than the visible cap.
-- `src/tool-guidelines.ts`: mirror the re-trigger/self-deception rule on `p2o_candidate` (claim time) and the
-  "propose, never spawn — and over-report adjacent leads" imperative on `p2o_request_subtask`.
-- `src/duties.ts`: exploitation/chaining duty lines gain "a wall is a refusal or an exhausted family, never a first
-  failure".
-- **Gate:** new pins in `tests/minimal/prompt-roles.test.ts`; `tests/minimal/recon.test.ts` ceilings (worker headroom
-  ≤475 chars, paid by A17.0); `tests/minimal/dispatch-discipline.test.ts` unchanged.
-- **Measured:** attempts recorded per primitive; rung 1 completed.
+- `extensions/p2o/index.ts`: register an internal `p2o-round` command (registered but hidden from `/help`; description
+  says internal). Handler: `validWake(parse args)` → `current.ctx.isIdle()` and no `roundSwitchInFlight` → record
+  `planner.round-start`/`planner.round-session` → `ctx.newSession({ setup: seed session name, withSession: async
+  replaced => { rebind run.ctx; record session id; replaced.sendMessage(briefing, {triggerTurn:true}); } })` → on
+  `{cancelled:true}` or throw, fall back to `pi.sendUserMessage(plannerWakePrompt(wake))` in the current session and
+  record `planner.round-session-fallback`. Never dispatch while streaming (`sendUserMessage` throws without
+  `deliverAs`) and never while operator messages are pending (deliver them first, then let the next wake switch).
+- `wake` dep (`extensions/p2o/index.ts:3359-3366`): in event-driven mode with `roundSessions` on, dispatch
+  `pi.sendUserMessage('/p2o-round ' + JSON.stringify(wake), {expandPromptTemplates:true})`; otherwise keep today's
+  followUp wake. A wake delivered from `agent_before_settle` stays a `continue` `custom_message` draft (no nested
+  command dispatch, and the draft is what makes the continuation acceptable to Pi).
+- `session_before_switch`/`session_before_fork` handlers (`:3759-3769`): allow an internal round switch while
+  `roundSwitchInFlight` is set (and rebind `run.ctx` inside `withSession`); any operator switch/fork during an active
+  run keeps today's stop + cleanup behavior. Add a `ctx` staleness guard: no captured old ctx after a switch.
+- `src/planner-bridge.ts`: add `roundBriefPrompt(briefing)` / `parseRoundBrief`; keep the wake marker path for the
+  fallback so `before_agent_start` and the stale-wake abort at `:3674-3681` keep working.
+- Gate: `tests/minimal/helpers/fake-pi.ts` gains `newSession`/`withSession` doubles, a command-dispatching
+  `sendUserMessage` (`expandPromptTemplates`), `getContextUsage`, `compact`, `setModel`/`setThinkingLevel` and
+  boundary-draft handling for `continue`; new `tests/minimal/round-session.test.ts` (switch allowed while idle, wake
+  validated, streaming/pending-message guards, fallback path, stale-ctx refusal, no double dispatch, operator switch
+  still stops). Existing extension tests unchanged. Opt-in real-Pi test: one scripted-provider run (existing real-Pi
+  harness) proving the round command produces a second session and a planner turn; this test is the gate for keeping
+  `roundSessions` on by default.
+- Measured: session count per run; fallback rate.
 
-### A17.2 — Planner demand, mechanism diversity, restart (D32, D38)
+### P18.2 — Round briefing and digest (D46)
 
-- `src/prompts.ts` planner body: one bounded surface-family line (pre-auth routes, upload→exec, deserialization, parser
-  differential, race, type confusion, mass assignment); "read the interrupted worker's ledger position before re-planning";
-  the retry admission test next to the existing anti-spin line; "dispatch a different mechanism, not a longer thread";
-  impact-goal demand and the `capability` proof option.
-- Admission (D32): extend `EXPLOIT_MODE_NEEDS_IMPACT_GOAL` from exploitation/chaining intents to every target-executing
-  intent in `exploit` mode; refusal names `p2o_plan_author`, the acceptance criteria and the legal next step; the planner
-  first-action line becomes author-the-goal-then-dispatch. Assess mode is unchanged.
-- `src/finish-preflight.ts`: one advisory `IMPACT_UNATTEMPTED` — an `exploit` run whose plan holds a capability-proof goal
-  and where no exploitation/chaining task was ever admitted (reusing `NO_GOAL_RECORDED`/`PRIMITIVE_UNCHAINED` where they
-  already fire; advisory only, finish stays gate-free).
-- Manual mode: one bounded review join per round (no polling), documented in the prompt.
-- **Gate:** `tests/minimal/prompt-roles.test.ts` + `dispatch-discipline.test.ts` pins; `tests/minimal/review-integrity.test.ts`
-  for the advisory; `tests/minimal/acceptance-matrix.test.ts` after matrix rows are added.
-- **Measured:** exploitation/chaining task count; mechanism-family diversity.
+- New `src/round-brief.ts` (pure, no I/O): `buildRoundBrief(input)` with the sections in D46, each with a byte cap and
+  a truncation marker; `buildRoundDigest(records, since)` for material older than the last N rounds. Reuse
+  `deriveCompletion`, `completionDemand`, `chainObligations`, `planFrontier`, `taskFrontier`, `runDebt`,
+  `routeMonoculture`, `situation.ts` — do not re-derive rules.
+- `extensions/p2o/index.ts`: the briefing is attached by the round command from the same `roundProgress` read path
+  (`:470-496`), so engine progress and brief cannot disagree. Cap ≤ 8 KiB, tested. It is a **user message**, not a
+  system prompt mutation, so `before_agent_start` still owns policy.
+- Gate: new `tests/minimal/round-brief.test.ts` (golden sections on a fixture ledger; empty-ledger case; byte caps;
+  no target prose invented; `remaining` agrees with `deriveCompletion`); `tests/minimal/context-budget.test.ts`
+  unchanged.
+- Measured: first-action latency per round; duplicate tasks per round.
 
-### A17.3 — Grey-box handoff contract (D34)
+### P18.3 — Wrap-up and classified stop (D47)
 
-- `src/prompts.ts` `workerBrief`: add the `EXPLOIT CONTEXT` block for exploitation/chaining tickets: primitive sentence
-  (from the claim's `gained`/`needs` and the task's `work.claimRefs`), target facts from the graph slice (revision,
-  build, mitigations; labelled inference), known controls/limitations, the `needs` frontier, handles (`session`,
-  `p2o_secret` ids, ingress path), expected observation, stop condition. Absent fields say "not recorded", never a guess.
-- `src/tool-schemas.ts` task draft: the planner supplies the primitive sentence and expected observation; the host
-  validates length only (no new required field that would raise admission refusals).
-- Chain successors carry verbatim payload ids/bytes and response excerpts, not summaries (`p2o_task_dispatch` path).
-- **Gate:** new `tests/minimal/brief-context.test.ts` (block present/absent by purpose; brief ceiling ≤1,650; no
-  fabricated facts on an empty graph); `tests/minimal/extension.test.ts` dispatch path.
-- **Measured:** first-attempt rung success.
+- `extensions/p2o/index.ts`: a per-round `RoundState` (`steps`, `startedAt`, `nudges`, `wrapSent`, `budgetAbort`).
+  Step increment in `message_end` (owner role only). Trigger in the `context` hook: inject a `p2o_round_directive`
+  custom message (not persisted as authority) when `judgeRound` says `wrap`, and call `pi.setActiveTools(CLOSING_TOOLS)`
+  where `CLOSING_TOOLS` = planner tools minus `p2o_task_dispatch` and `p2o_task_author` (authoring write-back stays
+  possible). At `exhausted`: record `planner.round-budget`, set `budgetAbort`, `ctx.abort()`.
+- `agent_before_settle` (`:3748-3751`): branch order — budgetAbort first (record `planner.round-end` with reason
+  `round-budget`, consume the reservation with the current progress via `engine.consume(wake.through, progress)`,
+  **do not pause**, return undefined); then today's `outcome !== 'completed'` pause; then the boundary continuation.
+  After settle, `engine.settled()` → kick → the demand wake opens the next round (session).
+- `src/prompts.ts`: ≤ 6 new static lines (one wrap-up line, one "a round is a work package" line) paid by dedupe;
+  ceilings may move only with a dated comment in `tests/minimal/recon.test.ts`.
+- Gate: new `tests/minimal/round-wrapup.test.ts` (wrap at each boundary, closing loadout, abort classified as
+  round-budget, no pause, reservation consumed once, `planner.round-end` recorded); `tests/minimal/authority.test.ts`
+  extended for the new counters; prompt ceilings updated with the dated comment.
+- Measured: budget-hit rounds that recorded write-back; rounds ending without a `p2o_loop` action.
 
-### A17.4 — Severity and policy semantics (D35)
+### P18.4 — Demand floor, wait semantics, coalescing (D48, D49)
 
-- `src/cases.ts`: scope the inferred ceiling to cases whose claims have no tested observation
-  (`closure === 'open_proof_gap' || execution !== 'tested' || proof === 'static_trace'`); a tested+observed effect rated
-  on inferred provenance records and prints an `INFERRED_POLICY` provenance flag, requires a non-empty `limitations`, and
-  is still refused above demonstrated depth. Update the docstring at `:198`.
-- `docs/EVIDENCE.md`: restate the rule and the `boundary_invariant` examples that occur; rewrite `src/prompts.ts:20` (H2);
-  point `src/tool-guidelines.ts:28` and `src/tool-schemas.ts:72` at the canonical text.
-- `docs/ACCEPTANCE_MATRIX.md` row F-P3-3 gains the scoped wording and the new test title.
-- **Gate:** update `tests/minimal/case-rating.test.ts:59` (the cap still binds a static/untested claim) and
-  `tests/minimal/ladder.test.ts:166`; add one test that a tested+observed cross-tenant effect on inferred provenance rates
-  high with the flag and a limitation; `tests/minimal/extension.test.ts` report provenance line.
-- **Measured:** high/critical accepted-current count; false-claim rate stays 0.
+- `src/engine.ts`: with one mode, delete the `this.mode !== 'event-driven'` guards in `armHeartbeat`/`reserveWake` and
+  the manual branch in `stallRound` (`:266`); `reserveWake` keeps the quiet+owed demand branch and pauses for quiet only
+  when nothing is owed (the completion reason text names the completion); the debt-wake suppression compares
+  `demandSignature` recorded by `disposition('wait')` (store on the decision) instead of suppressing unconditionally;
+  quiet streak no longer prevents a debt wake while owed (it already carries the demand text).
+- `extensions/p2o/index.ts` `p2o_loop` (`:2770-2819`): `action=wait` with a non-empty current demand and no
+  `blocked` declaration → return `terminate:false` with the demand and the two legal next actions (dispatch, declare
+  blocked) **once per round** (nudge counter); a second wait is accepted and the round ends with `planner.stalled`
+  recorded by the existing settle path. `action=blocked` unchanged (pauses).
+- Nudge (D49): a `stopReason==='stop'` ending with demand and no `p2o_loop` call → `agent_before_settle` returns
+  `{entries:[{type:'custom_message', content:<demand>}], continue:true}` (a bare `continue` is refused by Pi), max 2
+  per round, recorded as `planner.round-nudge`; after that the round settles and the stall fact is recorded as today.
+- Gate: `tests/minimal/engine.test.ts` (demand re-arm after a new obligation; wait no longer suppresses a changed
+  demand; complete run still pauses), `tests/minimal/loop-actions.test.ts` (wait refusal once, second wait accepted,
+  blocked unchanged), nudge tests with fake timers and fake settle events.
+- Measured: quiet rounds with owed work; runs that pause while `remaining > 0`.
 
-### A17.5 — Confirmation vs independence (D36)
+### P18.5 — Wake dispatch and operator visibility (D45, D51)
 
-- `src/prompts.ts:159-160` rewrite; `docs/EVIDENCE.md` already states the host rule — reference it. Keep the validation
-  task and the badge.
-- **Gate:** `tests/minimal/prompt-roles.test.ts` pin update; a test that the planner prompt no longer states validation as
-  the confirmation gate for the next rung.
-- **Measured:** rounds per rung from the ledger.
+- `/p2o status` and `/p2o state` (`src/ui/state.ts`, `src/ui/dashboard.ts`): print round number, current round session
+  id, budget state, model, last nudge/budget fact; keep the existing executor/queue lines.
+- `docs/PLANNER_ENGINE.md`: rewrite "Controls and defaults" (no `--loop`, no manual default; a start needs a worker
+  backend) and "Rounds: quiet, stalled, woken" for rounds-as-sessions, round budgets, the demand floor and the
+  classified stop; each round is a bounded work package while the campaign is uncapped. `docs/ARCHITECTURE.md` bounds
+  table: add the round budget rows. `docs/USAGE.md`: `p2o.plannerRound`, `p2o.plannerModels`, and the removal of
+  `loopMode`. `docs/HISTORY.md`: amend the recorded "no round allowance" decision (round is bounded, campaign is not)
+  and record the manual-mode removal.
+- Gate: `tests/minimal/help-commands.test.ts`, `context-runtime.test.ts` (state rendering), docs parity checks.
+- Measured: operator-visible round count in the report provenance.
 
-### A17.6 — Skill ladder (D37)
+### P18.6 — Model routing (D50)
 
-- New procedures (each ≤8,000 chars, frontmatter, first-use line, honest completion definition):
-  - `session-to-root` — post-exploitation and privilege escalation from a demonstrated shell/in-band execution to a root
-    observation *of the compromised workload*: enumeration discipline; path menu (sudo/SUID/misconfiguration/services/
-    cron/container boundary); proof rules for a root observation; in-band vs reverse-shell transport; the wall; cleanup;
-    no destructive persistence and no "stay quiet" instruction.
-  - `internal-pivot` — from a foothold to internal reach: in-band requests from the compromised host, reverse shell into the
-    operator lab listener, the callback path, and the honest wall when no ingress exists; how to state the network facts.
-  - `n-day-to-effect` — patch-diff/CVE lead to a triggered effect: applicability test, trigger construction, version≠proof
-    rule, effect observation.
-- Reference cards: `privilege-escalation-paths.md`, `pivot-transport.md`, `n-day-applicability.md`.
-- Rewrites in §3.2 S9 and `HANDOFFS.md` H3 + new H4.5/H4.6; `skills/exploit-design/SKILL.md` description and "The wall"
-  section; delete `skills/web-injection-to-exec/SKILL.md:74`; `memory-safety-auditing` description;
-  `state-and-lifetime-auditing:52`; `ssrf-to-internal` reference; `web-token-and-federation:27`;
-  `web-server-side-injection:32,53`; `exploitability-assessment:46`; `deserialization-and-dispatch-auditing:43`;
-  `web-object-authorization:3`; `web-crypto-usage-review:53`; `binary-auditing:27` stale link.
-- Defaults (`src/roles.ts`): `exploitation` = `exploit-design` + ladder from `needs` (already) + `session-to-root` when
-  `needs` includes `host.shell`; `chaining` likewise; `validation` gets the ladder of the claim it reproduces.
-- Catalog: 35 → 38 skills, version bump; provenance entries for each new skill (`research/SKILL_PROVENANCE.md` and the
-  library test's per-skill checks); WSTG map untouched (these are procedures, not WSTG tests).
-- **Gate:** `npm run check:library` (35 → 38 skills; its printed `17` is technique owners with blog evidence, which a
-  procedure cannot change), `tests/minimal/knowledge.test.ts` counts,
-  `tests/minimal/wstg-skills.test.ts` ceiling + link guards, `tests/test_library.py`; no orphan cards; ≤8,000 chars.
-- **Measured:** rungs 2–3; LPE rung proven through the foothold.
+- `src/roles.ts`: `plannerModels` setting (`{base?: string, escalate?: string, thinkingBase?, thinkingEscalate?}`),
+  parsed defensively like role settings; validate against `allowedWorkerModels`-style catalogue plus the current
+  model id.
+- `extensions/p2o/index.ts`: a `routeRound(brief)` pure function in `src/round-model.ts` returns
+  `{modelId, thinking, reason}` from the brief's demand; the round command resolves it via `ctx.modelRegistry` and
+  calls `pi.setModel`/`setThinkingLevel` **before** sending the briefing; `false` → keep current model, record
+  fallback.
+- Gate: `tests/minimal/round-model.test.ts` (rule table, escalation trigger, fallback), extension test that
+  `setModel` is called with the resolved model and recorded; docs.
+- Measured (campaign only): cost per closed obligation by model; share of escalation rounds that closed something.
 
-### A17.7 — Refusal framing and description craft (D39)
+### P18.7 — Operator stop path: one closing round (D50-adjacent, from ARTEX §2.1)
 
-- `extensions/p2o/index.ts` policy-refusal path (`:1284` region): platform-policy wording, no "different approach" that
-  invites evasion; environment refusals moved to the tail (`:2337`, `:2405`); `p2o_lab` ordering
-  (`src/tool-guidelines.ts:18`); batching/no-relist lines on `p2o_state`/`p2o_board`/`p2o_graph`.
-- Test: a policy test that a synthetic payload set across classes never produces a deny rule (seeds are self-destruction
-  only); `tests/minimal/truth.test.ts` still passes (no retired phrase reintroduced).
-- **Gate:** `tests/minimal/workflow-policy.test.ts`, `authority.test.ts`, `truth.test.ts`; description budget
-  `tests/minimal/context-budget.test.ts` unchanged ceilings.
-- **Measured:** none; friction and budget.
+- `/p2o stop` (`extensions/p2o/index.ts:3180-3186`): if an active round is in flight, do not kill it: set
+  `engine.pause('operator stop')`, wait for the current round to settle (≤ 30 s; then today's hard stop), record
+  `planner.round-end reason=operator-stop` and drain worker reports for ≤ 90 s before cleanup. No new campaign timer.
+- Gate: extension stop tests (in-flight round settles, drain bounded, cleanup verified, no authority restored),
+  existing `shutdown` tests unchanged.
+- Measured: evidence records preserved across stop (count of reports committed after the stop request).
 
-### A17.8 — Interactive foothold (D40)
+### P18.8 — Measurement support and protocol (D52)
 
-- `extensions/p2o/index.ts` listener implementation (`:1436-1490`): one persistent foothold connection per session,
-  interactive `send`/`read` with no artificial per-send size or idle cap (the operator may still configure one), kept for
-  the session's lifetime across steps and worker reports, attaching only after a recorded identity confirmation through
-  the shell (`whoami`/`id`); full transcript to a `p2o_capture` artifact, bounded preview to the model. Audited as
-  session operations, lab-network only, never a host port. `p2o_session` documents the action; `session-to-root` and
-  `internal-pivot` teach the three transports (in-band, listener shell, session PTY) and their walls.
-- Inert tests for the socket state machine; real end-to-end remains an opt-in Docker test (and needs a lab peer).
-- **Gate:** `tests/minimal/session.test.ts` extension; fake-backed listener state test; description pins.
-- **Measured:** reverse-shell foothold rung (ladder fixture); internal-reach rung.
+- `scripts/benchmark-skills.mjs`: a live run now needs a worker backend, so the runner requires Herdr
+  (`HERDR_ENV=1` + server status) and passes `--workers` in the composed prompt (today it deliberately omits them,
+  `:564`); it waits for campaign end/pause instead of the first assistant stop and records round count and
+  round-budget facts from the ledger. The old non-delegating single-prompt path can no longer start an assessment
+  (D48); it is kept only as a unit-test double, and the P17 24-run protocol is recorded as superseded rather than
+  silently re-run.
+- `bench/README.md`: P18 protocol — A/B rounds-as-sessions on/off, multi-round event-driven arm, same fixtures as P17
+  (2 fixtures × 2 variants × 2 arms × 3 reps = 24 runs), budgets: 60 min / 200 assistant turns / 240 target operations
+  per run, cost cap set by the owner; seeded order; no fallback. Status: **ready, not run**.
+- Gate: `tests/minimal/benchmark.test.ts` (prompt composition, fixture isolation, truth isolation), scoring unit tests.
+- Measured: rounds per run, rungs reached, accepted-current high/critical, false-claim rate.
 
-### A17.9 — Runtime truth and drift guard (D41)
+### P18.9 — Docs, matrix, migration (D51)
 
-- Docs: §2.4 matrix distilled into `docs/ARCHITECTURE.md` (sandbox facts) and `docs/USAGE.md` (operator-visible limits),
-  with the prompt-safe and forbidden claim lists.
-- Fix `scripts/setup-sandbox-tools.sh` usage text ("read-only and non-root" → root with default caps).
-- Fix `tests/minimal/docker.test.ts:10-20` and `tests/minimal/docker-extension.test.ts:76-78` to the measured posture
-  (uid 0, 14 caps); add a non-Docker assertion over the `LIMITS`/`docker create` argv so drift is visible in the default
-  suite; keep the Docker suite opt-in.
-- **Gate:** full suite; the new argv test; docs parity. `tests/minimal/truth.test.ts` retired-phrase scan unaffected.
-- **Measured:** none.
-
-### A17.10 — Operator toolchain image (D42, owner decision 2026-10-27)
-
-- Extend `scripts/setup-sandbox-tools.sh --with` with `pwntools`, `strace`, `socat`, `ssh`, `afl++`, `radare2`,
-  `tcpdump`, `java` (pinned, same build-time-only rule); document in `docs/KNOWLEDGE.md` and list each tool's purpose.
-  The running container stays as it is; the agent can still install into scratch, so this is an operator convenience, not
-  a capability gate.
-- **Gate:** `tests/minimal/knowledge.test.ts` / library checks for the documented list; script shellcheck-style review.
-- **Measured:** none.
-
-### A17.11 — Measurement (D43)
-
-- Bench fixtures: `bench/fixtures/exploit-ladder/` (entry bug → command execution marker → foothold → local escalation →
-  inert root marker; `expected/truth.json` with rungs, gaps and forbidden claims) and `bench/fixtures/tenant-bypass/`
-  (credentialed cross-tenant read; exercises the D35 severity path). Both hermetic, synthetic, local-only.
-- `bench/lib/plan.mjs`: fixture discovery + arms (A = current prompts/skills, B = P17); scoring extended with "rungs
-  reached" and "accepted-current high/critical" counters, keeping the existing false-claim detection.
-- Protocol (ready, **not run**): 2 fixtures × 2 variants × 2 arms × 3 reps = 24 runs; wall 25 min, turns 60, target
-  commands 120, cost cap set by the owner; seeded shuffle; no implicit fallback; cleanup by run label. Owner decision
-  2026-10-27 (A6): no paid campaign in this phase; the fixtures and protocol ship, the measured gate is deferred and the
-  pass reports effectiveness UNVERIFIED.
-- **Gate (hermetic):** `tests/minimal/benchmark.test.ts` (fixture isolation, no truth in the visible tree, objective
-  neutrality) + scoring unit tests. **Measured (owner-run):** D43's criteria; a failed gate does not pass on an honest
-  wall.
-- **Measured:** all.
+- `docs/HISTORY.md`: new milestone row recording P18 and the amended round-budget decision.
+- `docs/ACCEPTANCE_MATRIX.md`: rows for rounds-as-sessions, round budget/wrap-up, demand floor, routing.
+- `README.md` / `HANDOFFS.md`: one line each where they describe loop behaviour.
+- `tests/minimal/truth.test.ts` retired-phrase scan: no stale "no round budget" sentence may survive in docs/prompts.
+- Gate: full suite, `check:library` unaffected, `git diff --check`, GitNexus `detect-changes` before any commit.
 
 ---
 
 ## 7. Phases
 
-Ordering: pay the budget, then runtime truth, then worker doctrine, then planner demand, then the handoff seam, then
-semantics, then the library, then descriptions, then the foothold, then measurement. Every phase is additive and
-independently gated; no phase requires the paid campaign.
-
 | Phase | Scope | Hermetic gate | Measured criterion |
 | --- | --- | --- | --- |
-| P17.0 | A17.0 budget pay-down | full vitest; prompt pins updated only where canonical text moves; ceilings unchanged | — |
-| P17.1 | A17.9 runtime truth (first: no prompt may lie) | docs parity; fixed Docker assertions; new argv test; full suite | — |
-| P17.2 | A17.1 worker stance | prompt pins; worker ceiling | attempts recorded; rung 1 |
-| P17.3 | A17.2 planner demand + restart + advisory | prompt/preflight tests; manual-join test | exploitation task count; mechanism diversity |
-| P17.4 | A17.3 grey-box brief | new brief-context suite; brief ceiling | first-attempt rung success |
-| P17.5 | A17.4 severity semantics | case-rating + ladder revised; provenance-flag test; matrix row | accepted-current high/critical; false claims 0 |
-| P17.6 | A17.5 confirmation wording | prompt pins | rounds per rung |
-| P17.7 | A17.8 interactive foothold (engine) | socket state tests; session tests; description pins | reverse-shell rung |
-| P17.8 | A17.6 skill ladder | check:library (20 skills); knowledge/wstg-skills/py tests; ceilings | rungs 2–3; LPE rung |
-| P17.9 | A17.7 descriptions/refusals | policy/authority/truth/context-budget tests | — |
-| P17.10 | A17.10 optional toolchain | library/knowledge checks | — |
-| P17.11 | A17.11 fixtures + protocol | benchmark/scoring tests | the 24-run campaign (owner) |
+| P18.0 | round budget + demand signature in the engine; debounce 800 ms; **manual loop mode removed** (settings/CLI/prompt/engine branches, start refusal) | engine/round-budget/loop-mode-removed tests; existing pins | rounds; budget-hit rate |
+| P18.1 | `p2o-round` command + fresh session + fallback | round-session tests; opt-in real-Pi smoke | sessions per run; fallback rate |
+| P18.2 | deterministic briefing + digest | round-brief tests; context-budget unchanged | duplicate tasks per round; first-action latency |
+| P18.3 | wrap-up + closing loadout + classified stop | round-wrapup tests; authority counters; prompt ceiling comment | rounds that wrote back before ending |
+| P18.4 | single-mode demand floor + wait semantics + nudge | engine/loop-actions tests | quiet rounds with owed work |
+| P18.5 | status/state/docs | context-runtime; help; docs parity | report provenance round count |
+| P18.6 | per-round routing | round-model tests; extension routing test | cost per closed obligation (campaign only) |
+| P18.7 | operator stop closing round | stop/shutdown tests | reports preserved across stop |
+| P18.8 | bench support + protocol | benchmark/scoring tests | the 24-run campaign (owner) |
+| P18.9 | docs/matrix/history | full suite; retired-phrase scan | — |
 
-Every phase's gate also includes: `npm run typecheck`, `npm run build`, `npm run check:build`, full `npx vitest run`,
-`npm run check:library`, `git diff --check`, and the GitNexus `detect-changes --scope all` pass before any commit.
+P18.1 must precede P18.2/P18.3 end-to-end; P18.0 and P18.4 are independent; P18.6 needs P18.2's brief; P18.8 needs
+P18.1–P18.4. Every phase's gate also includes `npm run typecheck`, `npm run build`, `npm run check:build`, full
+`npx vitest run`, `npm run check:library`, `git diff --check`, and GitNexus `detect-changes --scope all` before any
+commit.
 
 ---
 
@@ -481,16 +429,16 @@ Every phase's gate also includes: `npm run typecheck`, `npm run build`, `npm run
 
 | Surface | Change | Compatibility |
 | --- | --- | --- |
-| Prompt text | planner/worker conditional blocks, dedupe consolidation | Text only; `tests/minimal/recon.test.ts` ceilings unchanged unless a dated comment raises one; the worker static prefix is unchanged for non-exploit purposes, so cache/parity pins survive |
-| Admission | `exploit` mode refuses a target-executing intent until a capability/accepted-case goal exists (extends the existing exploitation-only rule) | Existing runs are unaffected (policy is read at admission); the refusal names `p2o_plan_author` and the legal next step; assess mode unchanged |
-| Worker brief | new `EXPLOIT CONTEXT` block only for exploitation/chaining tickets | Additive; brief ceiling 1,650 stays; older records say "not recorded" |
-| Case rating | inferred ceiling scoped to untested effects; `INFERRED_POLICY` provenance flag in the report projection | Existing ratings unchanged; a rating above demonstrated depth is still refused; `STALE_RATING` semantics unchanged |
-| Preflight | one new advisory (`IMPACT_UNATTEMPTED`) | Advisory only, no refusal; readers ignore unknown codes |
-| Skills | 35 → 38 skills + 3 reference cards; rewrites in 12 files | Catalog version bump; provenance entries; ≤8,000 chars held; no WSTG-map change |
-| Runtime | listener `send`/`read` (lab-network only, bounded) | Additive action; no host port; no tunnel/pivot subsystem; existing sessions unaffected |
-| Tests/docs | corrected Docker posture assertions; new argv drift test; capability matrix; ACCEPTANCE_MATRIX rows | Docker suite stays opt-in; the drift test runs by default |
-| Bench | 2 fixtures + arm/scoring extensions | Existing fixtures untouched; truth isolation rules unchanged |
-| Records | no new record kind, no schema migration | `policyBasis` vocabulary unchanged |
+| Loop mode | `manual` is removed (D48): no `--loop` choice, no `loopMode` setting, no manual prompt/engine branch; every run is the automatic loop; rounds are sessions | A start without Herdr is refused before a run exists (the same message the old event-driven rejection used); a stored `loopMode: manual` profile resumes as the automatic loop with one lifecycle warning; `--loop manual` gets the removal reason instead of silently changing behaviour |
+| Herdr requirement | the extension no longer has a Herdr-free operating mode | Operators without Herdr can no longer run an assessment; this is stated in the start refusal, USAGE and PLANNER_ENGINE. Tests, scripts and bench that relied on a manual run now provide a worker-backend double or run inside Herdr |
+| Round budget | new operator settings/flags; `0` restores unbounded rounds; defaults bounded for automatic rounds only | Existing runs read settings at start; no stored data changes; a resumed run uses the new defaults unless the operator narrows them |
+| Prompt text | ≤ 6 new static planner lines; the rest is runtime-injected | Ceilings move only with the dated comment; runtime texts have their own byte caps |
+| Engine API | `roundBudget` dep, demand signature, `judgeRound`, new snapshot fields | `EngineDeps` additions are optional so a test double that omits them behaves like today |
+| Records | new `lifecycle` events only | No schema version bump, no new `EVENT_KINDS`, no column; old builds ignore unknown `data.engine.event` |
+| Sessions | one Pi session file per automatic round | Operator-visible session list gains round sessions; ledger/report unchanged; session-name prefix identifies them |
+| `p2o_loop wait` | may be refused once per round while demand is owed | Still returns `terminate:true` when accepted; the refusal names the two legal next calls, so no planner can be trapped |
+| Stop path | waits for the in-flight round and drains worker reports before cleanup | Bounded (30 s + 90 s); `shutdown` keeps the hard path; cleanup verification unchanged |
+| Docs | PLANNER_ENGINE/ARCHITECTURE/USAGE/HISTORY/ACCEPTANCE_MATRIX updated | `truth.test.ts` keeps retired phrases out |
 
 ---
 
@@ -500,98 +448,118 @@ Every phase's gate also includes: `npm run typecheck`, `npm run build`, `npm run
 
 | Risk | Mitigation |
 | --- | --- |
-| Over-claiming: "try harder" turns into severity inflation | D35 keeps the demonstrated-depth bound and requires limitations; false-claim rate is a hard campaign criterion and must stay 0 |
-| Prompt bloat | A17.0 pays every line; ceilings pinned; one dated comment per ceiling change |
-| Skill bloat | Per-skill ceiling, progressive disclosure (description selected, body inlined only when selected, 3-skill cap), cards linked not inlined |
-| Model-specific results | Campaign pins provider/model/thinking; the pass ships "UNVERIFIED" until the run |
-| Benchmark contamination | Fresh synthetic fixtures with inert markers, evaluator truth isolated, one manifest for hashing and copying (existing rule after the historical contamination caveat) |
-| New foothold surface widens blast radius | Listener and foothold stay lab-network only, one connection per session, bounded preview + capture artifact (interaction itself uncapped per A5), every operation audited as a session row, no host port, removed with the container |
-| Admission refusal stalls a run before the first dispatch | The goal needs no evidence and the refusal names the legal next step; one test proves a run with a goal dispatches, and the advisory (not a refusal) covers a goal that never becomes work |
-| Stale runtime assertions mask future drift | A17.9 fixes them and adds a default-suite argv assertion |
-| The campaign is never authorized, so the pass is unmeasured | Every phase is independently valuable; P17.11 leaves fixtures and protocol ready; the report says UNVERIFIED, never "improved" |
-| Changing a rule the owner decided deliberately | D35 keeps the demonstrated-depth bound, D32 keeps the no-finish-gate decision, §4 lists what must not move; open questions are in Appendix A |
+| Session churn fragments the operator's transcript | Name every round session `p2o <runId> round N`; `/p2o status` lists rounds; the report and ledger remain the single narrative |
+| A fresh session loses something the transcript held | The briefing is generated from the same rules the board/report use and is tested against `deriveCompletion`; nothing may exist only in the transcript (invariant 6) |
+| `newSession` cancels or is unavailable (mode, platform) | Fallback to today's in-session wake is first-class, recorded as `planner.round-session-fallback`; no wake is lost |
+| The command route is a re-entrant, undocumented use: a timer dispatches a command that replaces the session mid-idle | Gate it behind `roundSessions` + the opt-in real-Pi scripted test; guards `isIdle()`/no pending messages/`roundSwitchInFlight`; a failed switch falls back to the in-session wake. If the real-Pi gate fails, P18 ships the in-session fallback plus forced compaction bands and records the external `pi --mode json -p --no-session` per-round process as the next architecture (§2.4) |
+| Budget converts "refuse to stop" into "stop early" | Wrap-up forces write-back; the next brief names unfinished obligations; the campaign is uncapped and the demand floor re-arms the next round; D43's criteria stay the arbiter |
+| Classified abort masks a real provider failure | The classification is a flag set only by the extension's own budget path in the same round; any other aborted outcome still pauses |
+| Model routing raises cost or breaks an account | Routing is opt-in config; `setModel` returning `false` keeps the current model and records the fallback; campaigns pin model/thinking |
+| Removing manual mode removes the only Herdr-free path | This is the owner decision, not a side effect: the start refusal names the backend requirement, USAGE/PLANNER_ENGINE/README state it, and the bench runner refuses with the same message instead of producing an unrunnable campaign. If a Herdr-free mode is wanted later it comes back as a headless worker backend (P19), not as a second loop semantics |
+| The P17 24-run protocol becomes unrunnable (it ran with `delegation:false`) | Recorded as superseded in bench/README; the fixtures and scoring stay, and every live arm now requires Herdr. No result from the old protocol is compared with a P18 result |
+| Prompt bloat | New static lines are paid by dedupe; ceilings pinned; runtime texts have byte caps and their own tests |
+| Stale extension context after a switch | All post-switch work happens inside `withSession`; a stale-ctx guard refuses anything captured before the switch |
+| New per-round bound re-creates the very churn it fights | One run per round, one reservation, no retry inside a round; a stuck round ends and the next one starts with a different demand, not a longer thread |
+| Owner decisions in §5 are answered differently | Each decision is isolated in one workstream; the plan states where an alternative answer lands, and no phase depends on more than one |
 
-### 9.2 Non-goals
+### 9.2 Non-goals and named follow-ups
 
-- No new permission, scope, role, loadout, budget, allowance or finish gate; no change to authorization texts.
-- No destructive, persistence, evasion, anti-forensic or real-target campaign work.
-- No container escape, no host-kernel exploitation, no nested Docker (impossible in this image anyway), no ASLR disabling
-  (measured EPERM).
-- No first-class host/SSH target kind in this phase; target-side footholds are in-band or a reverse shell into the lab
-  listener. (Appendix A Q7.)
-- No binary exploitation improvement; no model/provider change; no fine-tuning.
-- No benchmark claim without the measured run; no new record kind or DB migration.
+- **No provider-failure recovery, no worker liveness watchdog** (both are the earlier option A): a provider error
+  still pauses, and a silent worker still holds its slot. P18 must not be read as fixing them. P19 is the intended
+  pass.
+- No finish gate, no campaign deadline, no token/spend ceiling.
+- No manual loop mode and no Herdr-free mode: P18 removes the first and does not replace the second (owner decision A11).
+- No new permission, tool, role, skill, effect class or target kind; no authority text change.
+- No model fine-tuning; no cross-run negative memory (separate item).
+- No binary/AD/cloud-takeover scope; no real-target campaign without owner authorization.
+- No claim that rounds-as-sessions raises yield; D52 measures that.
 
 ### 9.3 Metrics to add (reported, never scored as a gate)
 
 | Metric | Source |
 | --- | --- |
-| Exploitation/chaining tasks per run; mechanism families per primitive | task purpose + `ROUTE_MONOCULTURE` |
-| Rungs executed per demonstrated primitive | derived chain view |
-| Attempts recorded before a wall | graph facts/notes + claim limitations |
-| High/critical accepted-current findings, and how many carry `INFERRED_POLICY` | case ratings |
-| False-claim rate (untriggered/version-only claims) | campaign scoring + review |
-| Rounds per rung; target operations per rung | ledger timestamps |
-| Footholds driven vs one-shot effects | session/listener facts |
-| Cost per validated finding (campaign only) | provider usage receipts |
+| Rounds per run; rounds per obligation closed | `planner.round-start/end` lifecycle rows |
+| Rounds that hit steps / seconds / context budgets | `planner.round-budget` rows |
+| Rounds that wrote back anything before ending | `planner.round-end` + ledger delta |
+| Nudges per round; stalled rounds with demand | `planner.round-nudge`, `planner.stalled` |
+| Session switches and fallbacks | `planner.round-session`, `-session-fallback` |
+| Model per round; escalation rounds that closed something | `planner.round-model` + closure rows |
+| Quiet rounds with owed work (must trend to 0) | engine snapshot at wake + `planner.wake` rows |
+| Cost per closed obligation (campaign only) | usage receipts + closures |
 
 ---
 
-## Appendix A — owner decisions (recorded 2026-10-27)
+## Appendix A — owner decisions (recorded 2026-10-28)
 
-All eight questions were answered by the owner before implementation. The two deviations from the recommended default are
-recorded as such and are binding for the phases below.
+Asked in chat with the recommended form and alternatives; the owner answered before implementation. One answer is
+deliberately stricter than the recommendation and changes the plan as noted.
 
 | # | Question | Owner decision | Effect on the plan |
 | --- | --- | --- | --- |
-| A1 | Inferred-policy severity cap | **Scope + provenance flag** (recommended) | D35 / A17.4 as written: cap only when the effect is not tested+observed; `INFERRED_POLICY` flag + required limitation |
-| A2 | New skills | **3 procedures + 3 cards** (recommended) | D37 / A17.6 as written; 35 → 38 skills, ≤8,000 chars each |
-| A3 | How impact is demanded | **Refuse admission when no impact goal exists** (stricter than recommended) | D32 rewritten: every target-executing intent in `exploit` mode is refused until a capability/accepted-case goal exists; the first planner round authors it before dispatch; finishing stays gate-free |
-| A4 | Restart policy | **Prompt guidance + existing preflight codes** (recommended) | D38 / A17.2 as written; no new engine limit |
-| A5 | Foothold shell | **One persistent connection per session, no per-send/idle limits, visible `whoami` confirmation, keep the shell** (custom) | D40 / A17.8 rewritten: session-owned persistent interactive shell, uncapped interaction, bounded model preview + capture artifact, identity confirmation before use, lab-network only |
-| A6 | Paid campaign | **No paid run in this phase** | A17.11 ships fixtures + protocol only; every phase stays hermetic-gated; the pass reports effectiveness UNVERIFIED |
-| A7 | Target class | **Web/API + target-side host escalation** (recommended) | D37 targets as written; binary and host/SSH target are later phases |
-| A8 | Runtime image | **Extend `--with` offensive set when needed** | A17.10 delivers the `--with` list as an operator step (not a capability gate) |
+| A9 | Round budget vs "no round allowance" | **Yes — a round is a bounded work package by default (40 steps / 900 s / wrap at 80 % context); the campaign stays uncapped** | D44/P18.0/P18.3 as written; `--round-steps 0 --round-seconds 0` still restores unbounded rounds |
+| A10 | Session switch route | **(a) internal command + `newSession`**, with the re-entrancy risk accepted behind `roundSessions`, the guards and the real-Pi scripted gate | D45/P18.1 as written; the in-session fallback (b) and external `pi --mode json` (c) stay documented as the fallbacks if the gate fails |
+| A11 | Manual loop mode | **Remove it entirely** (custom, stricter than "refuse wait once + nudge") | D48/P18.0/P18.4/P18.5 rewritten: no `--loop`, no `loopMode` setting, no manual prompt/engine branch; a start without Herdr is refused; a resumed `manual` run maps to the automatic loop with a warning; the P17 bench protocol is superseded; the Herdr-free path is gone (recorded cost) |
+| A12 | Model routing default | **Opt-in config, same model by default** | D50/P18.6 as written; escalation only when `p2o.plannerModels` is configured |
+| A13 | Measurement in this phase | **Ship fixtures + the 24-run protocol, do not run it** | D52/P18.8 as written; effectiveness stays UNVERIFIED until the owner authorizes the campaign and its cost cap |
 
 ## Appendix B — how to re-verify this proposal
 
 ```sh
-npx vitest run tests/minimal/context-budget.test.ts   # declaration budget
-npx vitest run tests/minimal/recon.test.ts            # prompt ceilings + hashes
-npx vitest run tests/minimal/case-rating.test.ts tests/minimal/ladder.test.ts
-npm run check:library                                 # skills/catalog/provenance/links
+git show bacbb6d:planning_update.md                   # the P17 record this file replaces
+npx vitest run tests/minimal/engine.test.ts            # demand floor + no campaign ceiling
+npx vitest run tests/minimal/round-budget.test.ts tests/minimal/round-brief.test.ts
+npx vitest run tests/minimal/round-session.test.ts tests/minimal/round-wrapup.test.ts
+npx vitest run tests/minimal/loop-mode-removed.test.ts                  # D48: no manual mode, start needs a backend
+npx vitest run tests/minimal/recon.test.ts tests/minimal/context-budget.test.ts   # prompt/declaration budgets
+npm run check:library
 npx vitest run                                        # full hermetic gate
 ```
 
-Measured gate (owner-authorized, not run by this proposal): `node scripts/benchmark-skills.mjs prepare`, then the fixture
-campaign per `bench/README.md` with a pinned model/thinking, cost cap and seeded order; read rungs and accepted-current
-high/critical from the ledger, never from the narrative.
+Pi SDK capability claims re-verify against the installed 1.1.0:
+
+```sh
+grep -n "newSession" node_modules/@earendil-works/pi-coding-agent/dist/core/extensions/types.d.ts
+grep -n "Extension command executed" node_modules/@earendil-works/pi-coding-agent/dist/core/agent-session.js
+grep -n "setModel(model" node_modules/@earendil-works/pi-coding-agent/dist/core/extensions/types.d.ts
+grep -n "requested continuation without runnable model context" node_modules/@earendil-works/pi-coding-agent/dist/core/agent-session.js
+grep -n "registerVirtualModel" node_modules/@earendil-works/pi-coding-agent/dist/core/extensions/types.d.ts
+```
+
+Measured gate (owner-authorized, not run by this proposal): `node scripts/benchmark-skills.mjs prepare`, then the P18
+protocol with pinned model/thinking, cost cap and seeded order; read rounds, rungs and accepted-current high/critical
+from the ledger, never from the narrative.
 
 ## Appendix C — what this proposal does not claim
 
-- It does not claim ARTEX finds more bugs than pi-p2o; it claims ARTEX has worker-level mechanisms pi-p2o lacks, and the
-  comparison is a mechanism floor, not a scoreboard.
-- It does not claim the prompt changes will raise yield by a number. The one measured prompt-wording effect found
-  (0.26→0.72) is a single small study; everything else in §2.2 is harness/architecture effect, and this plan's campaign is
-  unrun.
-- It does not claim verification gates cost recall; no study measures that and the audit's claim is mechanistic. The
-  proposal only separates attempt gates from claim gates.
-- It does not claim binary, Windows/AD, cloud-takeover or real-target effectiveness; those are out of scope or a later
-  phase, and prompts will not pretend otherwise.
-- It does not claim a target-side root is host root: the report must name the boundary the shell actually crossed; container
-  escape and host-kernel exploitation are out of scope and unproven.
-- It does not claim "more findings means better pentesting": a true wall, an honest Medium and a blocked report remain
-  valid outcomes; the change is that they must come after the reasonable paths were walked, not before.
+- It does not claim a fresh session per round finds more bugs. It claims the transcript stops being the campaign's
+  memory, which is the measured Context Rot seam; D52 decides whether it helps.
+- It does not claim ARTEX or Strix is better than pi-p2o; both have weaker evidence models (self-attested findings,
+  no dedup, unvalidated severity). The comparison is a mechanism floor.
+- It does not claim a round budget improves yield; it claims it makes a round finishable and write-back forced, which
+  is a precondition for running many of them.
+- It does not claim model routing raises yield in this harness; the 68.8 % figure is XBOW's, not ours.
+- It does not fix provider failure, worker death, or cross-run memory; those are P19.
+- It does not claim the campaign was measured; effectiveness stays UNVERIFIED until the owner runs D52.
+- It does not claim pi-p2o still runs without Herdr: with the manual mode removed, a worker backend is a precondition
+  for starting a run, and the plan does not add a headless one (P19 candidate).
 
 ## Appendix D — sources
 
+- P17 record — `git show bacbb6d:planning_update.md`; implementation `431b916`, `0eeda8a`, `aaa8ed0`, `bacbb6d`
+- ARTEX — https://github.com/Autumn-27/ARTEX (local snapshot `my_references/ARTEX/`, v0.3.15; planner loop
+  `agent/planner.go`, wrap-up `agent/wrapup.go`, deadlines `agent/taskclock.go`, terminal states
+  `server/engine.go`, pool `llmpool/`)
+- Strix — https://github.com/usestrix/strix (local snapshot `my_references/strix/`; `strix/core/execution.py`,
+  `core/hooks.py`, `llm/compaction.py`, `tools/reporting/tool.py`)
+- Pi SDK — `@earendil-works/pi-coding-agent` 1.1.0, `dist/core/extensions/types.d.ts`,
+  `dist/core/agent-session.js`, `dist/core/agent-session-runtime.js` (read in-repo, §2.4)
 - CyberGym — https://arxiv.org/abs/2506.02548
 - Naptime — https://projectzero.google/2024/06/project-naptime.html ; Big Sleep —
   https://projectzero.google/2024/10/big-sleep.html
 - AXE — https://arxiv.org/abs/2602.14345
 - AutoPenBench — https://aclanthology.org/2025.emnlp-industry.114/
-- XBOW 1,060 attacks — https://xbow.com/blog/we-ran-1060-autonomous-attacks ; alloy — https://xbow.com/blog/alloy-agents ;
-  HackerOne #1 — https://xbow.com/blog/top-1-how-xbow-did-it
+- XBOW 1,060 attacks — https://xbow.com/blog/we-ran-1060-autonomous-attacks ; alloy —
+  https://xbow.com/blog/alloy-agents ; HackerOne #1 — https://xbow.com/blog/top-1-how-xbow-did-it
 - DARPA AIxCC — https://www.darpa.mil/news/2025/aixcc-results
 - Anthropic cyber ranges — https://www.anthropic.com/research/cyber-toolkits-update
 - Refusal study — https://arxiv.org/abs/2606.02644
@@ -599,5 +567,3 @@ high/critical from the ledger, never from the narrative.
 - Decoupling recon/exploitation — https://arxiv.org/abs/2606.25332
 - Agentic architectures for offensive security — https://arxiv.org/abs/2604.18718
 - Anthropic Agent Skills — https://www.anthropic.com/research/equipping-agents-for-the-real-world-with-agent-skills
-- ARTEX — https://github.com/Autumn-27/ARTEX (local snapshot `my_references/ARTEX/`, v0.3.15)
-- Runtime matrix — read-only probe of the pinned image + source audit, 2026-10-27 (see §2.4; no target was touched)

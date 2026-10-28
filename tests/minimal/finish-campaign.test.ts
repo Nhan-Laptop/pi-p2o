@@ -110,16 +110,20 @@ describe('campaign finish and report semantics (A6.6)', () => {
     expect((await h.call('p2o_board', { board: 'tasks' })).details.total).toBeGreaterThan(0);
   }));
 
-  it('leaves a run with no campaign exactly as before: no refusal and no campaign.partial', async () => fixture(async h => {
+  it('records a default campaign for a run started without campaign flags, and its derived stop reason (P18/A9)', async () => fixture(async h => {
     await populate(h);
     const result = await h.call('p2o_finish', {});
     expect(result.details.reportPath).toMatch(/-final$/);
     expect(result.details.state).toBe('incomplete');
     const report = await finalReport(result);
-    expect(report).not.toContain('## Campaign');
-    expect(report).not.toContain('### Why the run stopped');
+    // The manual loop was removed, so a plain start is still the automatic loop and still records the frame A6.3 reads.
+    expect(report).toContain('## Campaign');
+    expect(report).toContain('### Why the run stopped');
     const store = await h.reader();
-    try { expect(store.campaign()).toBeUndefined(); expect(store.campaignPartial()).toBeUndefined(); } finally { store.close(); }
+    try {
+      expect(store.campaign()).toMatchObject({ createdBy: 'default', heartbeatSeconds: 600 });
+      expect(store.campaignPartial()?.reason).toBeTruthy();
+    } finally { store.close(); }
   }));
 
   it('counts automatic wakes by reason and campaign partial stops from the ledger, never from prose', () => {

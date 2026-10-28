@@ -216,7 +216,8 @@ describe('worker role', () => {
     await expect(h.call('p2o_shell', { command: 'id' }, 'worker')).rejects.toThrow();
     await h.emit('agent_before_settle', { outcome: 'error' }, 'worker');
     expect((await h.records()).filter(r => r.kind === 'report')).toHaveLength(1);
-    await h.call('p2o_finish');
+    // P18/A9: every run records a default campaign, so a finish without a plan goal records why the campaign stops.
+    await h.call('p2o_finish', { partial: 'Fixture run stops after its single blocked lifecycle report, before any plan goal was recorded.' });
   });
 
   it('does not close a worker while an automatic continuation is still pending', async () => {

@@ -1,4 +1,5 @@
 import type { DelegateInput } from './broker.js';
+import { demandSignature, type RoundBudget } from './round-budget.js';
 import type { LoopMode } from './roles.js';
 import type { AssessmentTask } from './tasks.js';
 
@@ -48,6 +49,8 @@ export interface EngineDeps {
   now?(): number;
   /** A6.3: the campaign heartbeat in seconds; `0`/absent disables it. Read lazily so the campaign record stays the one source. */
   heartbeatSeconds?(): number;
+  /** P18/A9: the round budget in force, or `undefined` when the caller did not supply one. Reported in the snapshot only. */
+  roundBudget?(): RoundBudget | undefined;
 }
 
 /** Deterministic owner-local scheduler. Journal/projections never reconstruct execution authority.
@@ -79,7 +82,8 @@ export class AssessmentEngine {
   /** P10/TR-H11: the unverified-removal fact is recorded once per episode, not on every retry. */
   private reapUnverified = false;
   private readonly revisits = new Map<string, { at: number; timer: ReturnType<typeof setTimeout> }>();
-  private decision?: { disposition: 'wait' | 'blocked'; reason: string };
+  /** P18/A9: the demand a `wait` answered, so only an unchanged demand is suppressed by it (a new obligation can wake). */
+  private decision?: { disposition: 'wait' | 'blocked'; reason: string; demand: string };
   /** A6.3: the single unref'd campaign heartbeat timer, its next fire time and the last debt wake (for pacing). */
   private heartbeatTimer?: ReturnType<typeof setTimeout>;
   private heartbeatAt?: number;
@@ -87,7 +91,11 @@ export class AssessmentEngine {
   private lastWake?: { reason: WakeReason; round: number };
   /** A6.5: the wall-clock at which the current round was reserved, so status can say how long it has been running. */
   private roundStartedAt?: number;
-  constructor(readonly runId: string, readonly mode: LoopMode, private deps: EngineDeps, private debounceMs = 100) { this.armHeartbeat(); }
+  /**
+   * P18/D48: `mode` is recorded for readers of older snapshots; a live run is always the automatic loop. P18: the fixed
+   * debounce window is 800 ms so a burst of committed events becomes one round instead of several.
+   */
+  constructor(readonly runId: string, readonly mode: LoopMode, private deps: EngineDeps, private debounceMs = 800) { this.armHeartbeat(); }
   private live() { return !this.stopped && this.deps.active(); }
   /** A6.5: one place that starts a round, so the counter and the round-start timestamp cannot drift apart. */
   private beginRound(): number { this.roundStartedAt = this.clock(); return ++this.rounds; }
@@ -97,11 +105,11 @@ export class AssessmentEngine {
   private heartbeat(): number { const seconds = this.deps.heartbeatSeconds?.() ?? 0; return Number.isFinite(seconds) && seconds > 0 ? seconds : 0; }
   /**
    * A6.3: arm exactly one heartbeat. It is not a poll: it fires once, re-arms from the fire path, and is disposed by
-   * pause/stop. It never runs for a manual loop, where an automatic paid round would contradict the mode.
+   * pause/stop. A run has one loop mode (P18/D48), so the heartbeat is never suppressed by a mode test.
    */
   private armHeartbeat() {
     clearTimeout(this.heartbeatTimer); this.heartbeatTimer = undefined; this.heartbeatAt = undefined;
-    if (this.stopped || this.paused || this.mode !== 'event-driven') return;
+    if (this.stopped || this.paused) return;
     const seconds = this.heartbeat(); if (!seconds) return;
     this.heartbeatAt = this.clock() + seconds * 1000;
     this.heartbeatTimer = setTimeout(() => { this.heartbeatTimer = undefined; this.heartbeatAt = undefined; this.fireHeartbeat(); }, seconds * 1000);
@@ -113,7 +121,7 @@ export class AssessmentEngine {
    * never resurrects a stopped/inactive run and never wakes a run whose last judged round was complete.
    */
   private fireHeartbeat() {
-    if (!this.live() || this.paused || this.mode !== 'event-driven') return;
+    if (!this.live() || this.paused) return;
     this.armHeartbeat();
     if (this.busy || this.reservation) return;
     const owed = this.progress.remaining > 0 || (this.progress.debt?.gateable ?? 0) > 0;
@@ -217,7 +225,7 @@ export class AssessmentEngine {
    * carries the obligation by name and the loop stays live; only a complete run (or a lead-recorded blocked) goes quiet.
    */
   private reserveWake(): PlannerWake | undefined {
-    if (!this.live() || this.paused || this.mode !== 'event-driven' || this.reservation) return;
+    if (!this.live() || this.paused || this.reservation) return;
     const quiet = this.quietText(); let demand: string | undefined, reason: WakeReason = 'event';
     if (this.events.size) {
       if (quiet) {
@@ -227,9 +235,9 @@ export class AssessmentEngine {
     } else {
       // A6.3 debt wake: nothing new arrived, but the round ended owing work. This is the branch that would have continued the
       // observed run at 04:00 instead of stopping once its first roadmap was exhausted. It is paced by the heartbeat interval
-      // and suppressed by an explicit `p2o_loop wait` (events and the heartbeat still wake).
+      // and suppressed by a `p2o_loop wait` that still answers the same demand (P18/A9: new named demand wakes again).
       const owed = this.progress.remaining > 0 || (this.progress.debt?.gateable ?? 0) > 0;
-      if (!owed || this.decision?.disposition === 'wait') return;
+      if (!owed || (this.decision?.disposition === 'wait' && this.decision.demand === demandSignature(this.progress.demand))) return;
       const seconds = this.heartbeat();
       if (seconds && this.lastDebtWakeAt !== undefined && this.clock() < this.lastDebtWakeAt + seconds * 1000) return;
       reason = 'debt'; this.lastDebtWakeAt = this.clock();
@@ -260,10 +268,9 @@ export class AssessmentEngine {
    */
   async stallRound(facts: RoundStall): Promise<boolean> {
     if (!this.live() || this.paused || this.decision?.disposition === 'blocked' || !facts.openGoal || facts.openIntents > 0) return false;
-    // No admitted round yet in event-driven mode: the human command turn that ends before the first wake is not a campaign
-    // round, so it can be neither a stalled round nor one of the three escalation steps. Manual mode keeps A4 unchanged:
-    // there the human drives every turn, so a zero-intent turn is still the fact A4 promised.
-    if (this.mode === 'event-driven' && this.rounds === 0) return false;
+    // No admitted round yet: the human command turn that ends before the first wake is not a campaign round, so it can be
+    // neither a stalled round nor one of the three escalation steps (P5.1; one automatic loop mode since P18/D48).
+    if (this.rounds === 0) return false;
     this.stallStreak += 1;
     await this.deps.persist(
       'planner.stalled: the round ended with an open goal, no open/running intent and no blocked declaration; recorded as a report fact, never a wake or new budget',
@@ -300,6 +307,19 @@ export class AssessmentEngine {
   }
   /** Rounds judged quiet right now, oldest first. Read-only: escalation is decided when the next wake is reserved. */
   quietRounds(): number[] { return [...this.quiet]; }
+  /**
+   * P18.2/D46: the counters the last judged round left behind, or nothing before a round was judged. The round briefing's
+   * "delta since the last round" reads this copy, so it compares against the same numbers `judge` compared instead of
+   * keeping a second counter that could drift.
+   */
+  previousProgress(): RoundProgress | undefined { return this.rounds > 1 ? { ...this.progress } : undefined; }
+  /**
+   * P18.2/D46: the revisits that are still scheduled, read from the same map the timers live in, so a brief cannot name a
+   * revisit that already fired. Order is by condition, never by scheduler insertion.
+   */
+  pendingRevisits(): Array<{ condition: string; at: string }> {
+    return [...this.revisits].sort(([left], [right]) => left.localeCompare(right)).map(([condition, entry]) => ({ condition, at: new Date(entry.at).toISOString() }));
+  }
   /** M7: the pending revisit for a condition, if one is already scheduled. The caller decides how to refuse a duplicate. */
   revisitAt(condition: string): number | undefined { return this.revisits.get(condition)?.at; }
   /**
@@ -316,7 +336,7 @@ export class AssessmentEngine {
     this.revisits.set(condition, { at: notBefore, timer });
     return { condition, at: new Date(notBefore).toISOString() };
   }
-  /** A revisit is a scheduled wake, so it is not gated on event-driven mode; pause, stop and epoch still win. */
+  /** A revisit is a scheduled wake; pause, stop and epoch still win. */
   private fireRevisit() {
     if (!this.live() || this.paused) return;
     const wake = { runId: this.runId, epoch: this.epoch, through: this.sequence, round: this.beginRound() };
@@ -325,8 +345,9 @@ export class AssessmentEngine {
   async disposition(disposition: 'wait' | 'blocked', reason: string) {
     if (!reason.trim() || reason.length > 1000) throw Error('Disposition needs a bounded reason');
     return this.serialize(async () => {
+      const demand = demandSignature(this.progress.demand);
       await this.deps.persist(`Planner ${disposition}: ${reason}`,{decision:{disposition,reason}}); this.gate();
-      this.decision = {disposition,reason};
+      this.decision = {disposition,reason,demand};
       if (disposition === 'blocked') this.pause(reason);
       return this.snapshot();
     });
@@ -353,8 +374,12 @@ export class AssessmentEngine {
     const events = [...this.events.values()];
     return {runId:this.runId,mode:this.mode,epoch:this.epoch,state:this.stopped ? 'stopped' : this.paused ? 'blocked' : this.busy ? 'running' : this.reservation ? 'scheduled' : 'waiting',
       paused:this.paused,rounds:this.rounds,decision:this.decision,stalls:this.stallStreak,
+      // P18.4/D48: the demand floor reads these two without a ledger scan: the last judged round's obligation count and the name
+      // the owner gave it. `remaining` is always present so a consumer cannot read absence as "unknown".
+      remaining:this.progress.remaining,...(this.progress.demand?{demand:this.progress.demand}:{}),
       heartbeat:{seconds:this.heartbeat(),...(this.heartbeatAt!==undefined?{nextAt:new Date(this.heartbeatAt).toISOString()}:{})},lastWake:this.lastWake,
       ...(this.roundStartedAt!==undefined?{roundStartedAt:new Date(this.roundStartedAt).toISOString()}:{}),
+      ...(this.deps.roundBudget?.()!==undefined?{roundBudget:this.deps.roundBudget!()}:{}),
       sequence:this.sequence,consumedSequence:this.consumed,pendingEvents:events.length,events:events.slice(-20),eventsOmitted:Math.max(0,events.length-20),
       pendingIntents:intents.length,intents:intents.slice(0,20),intentsOmitted:Math.max(0,intents.length-20),
       warning:'Owner-local coordination, not evidence or restored authority. Read the runtime executor profile for target concurrency. Automatic rounds are extra provider requests, not a hard monetary/token cap.'};

@@ -8,6 +8,7 @@ import { STATE_SCHEMA_VERSION } from '../state/schema.js';
 import { validId } from '../validate.js';
 import { dashboardLines } from './dashboard.js';
 import type { AuthorityReport } from '../authority.js';
+import type { RoundBudget, RoundBudgetState } from '../round-budget.js';
 
 export type StateCommand = { action: 'status' } | { action: 'report' } | { action: 'log'; cursor?: number; taskId?: string; actorId?: string; operationId?: string };
 const integer = (text: string) => {
@@ -44,10 +45,39 @@ export interface ViewProfile {
   contextUsage?: { tokens: number | null; contextWindow: number; percent: number | null; at: number };
   /** A6.5: the campaign frame and its continuation, so status shows what the run is for and how it is being driven. */
   campaign?: { objective: string; heartbeatSeconds: number; createdBy: 'operator' | 'default' };
+  /** P18.5/D47: the round the automatic loop is driving, once one has been admitted. */
+  round?: RoundView;
+}
+/**
+ * P18.5/D45/D47/D50: the round in flight as an operator sees it. The number, replacement session, budget state and last
+ * lifecycle fact come from the run's own round state and ledger; `steps` counts the owner turns the provider answered. This is
+ * a projection only — reading it never wakes the loop, spends a model call or changes a budget.
+ */
+export interface RoundView {
+  round: number; sessionId?: string; state: RoundBudgetState; reason?: string;
+  steps: number; elapsedSeconds: number; budget: RoundBudget;
+  model?: string; thinking?: string;
+  lastFact?: { text: string; ageMs: number };
 }
 /** Local observation only. `quiet` means no local event for the quiet window while queued/running; it is not failure proof, a timeout or a model wake. */
 export interface WorkerView { id: string; role: string; taskId?: string; state: string; commandsUsed: number; idleMs?: number; quiet: boolean; reported: boolean; stopped: boolean }
 const age = (ms: number) => ms < 60_000 ? `${Math.max(0, Math.floor(ms / 1000))}s` : ms < 3_600_000 ? `${Math.floor(ms / 60_000)}m` : `${Math.floor(ms / 3_600_000)}h`;
+/** P18.5/D47: a wrap and a hard budget stop are different operator situations, so they never render as the same word. */
+const ROUND_STATE_TEXT: Record<RoundBudgetState, string> = { open: 'open', wrap: 'wrapping up', exhausted: 'stopped at its budget' };
+/**
+ * P18.5/D47/D50: one operator line for the round in flight, naming the round, its replacement session, the budget axis that
+ * governs it, the routed model and the newest round fact. It is a read-only projection; no field here is authority.
+ */
+function roundLine(round: RoundView, contextPercent?: number | null): string {
+  const budget = round.budget, elapsed = Math.max(0, Math.round(round.elapsedSeconds));
+  const steps = budget.steps > 0 ? `${round.steps}/${budget.steps} steps` : `${round.steps} steps (no step limit)`;
+  const seconds = budget.seconds > 0 ? `${elapsed}s of ${budget.seconds}s` : `${elapsed}s (no time limit)`;
+  const context = contextPercent != null && Number.isFinite(contextPercent) && (budget.contextWrapPercent > 0 || budget.contextHardPercent > 0)
+    ? `, context ${Math.round(contextPercent)}% (wrap ${budget.contextWrapPercent}%, hard stop ${budget.contextHardPercent}%)` : '';
+  const routing = round.model ? ` | model ${safe(round.model, 80)}${round.thinking ? ` at thinking ${safe(round.thinking, 20)}` : ''}` : '';
+  const fact = round.lastFact ? ` | last round fact: ${safe(round.lastFact.text, 240)} (${age(round.lastFact.ageMs)} ago)` : '';
+  return safe(`Round: ${round.round}${round.sessionId ? ` in session ${safe(round.sessionId, 80)}` : ' (no replacement session yet)'} — budget ${ROUND_STATE_TEXT[round.state]}${round.reason ? ` (${round.reason})` : ''} | ${steps}, ${seconds}${context}${routing}${fact}`, 900);
+}
 const MAX_WORKER_LINES = 12;
 export function workerLines(workers: WorkerView[], maxWorkers: number): string[] {
   if (!workers.length) return [];
@@ -104,6 +134,8 @@ export function statusView(index: LedgerIndex, profile: ViewProfile, context:Rep
       `Frontier: ${profile.engine.pendingIntents} accepted pending intents; automatic wakes ${profile.engine.rounds}; stalled rounds ${authority.stalledRounds}`,
       // A6.5: round hygiene is visible — which round, why it was woken, when it started and what drives the next wake.
       ...(profile.campaign || profile.engine.rounds || profile.engine.heartbeat?.seconds ? [`Campaign: ${profile.campaign ? `${safe(profile.campaign.objective, 200)} (${profile.campaign.createdBy})` : 'no campaign record'} | heartbeat ${profile.engine.heartbeat?.seconds ? `${profile.engine.heartbeat.seconds}s` : 'off'}${profile.engine.heartbeat?.nextAt ? ` (next ${safe(profile.engine.heartbeat.nextAt, 40)})` : ''} | rounds ${profile.engine.rounds}${profile.engine.lastWake ? ` | last wake ${profile.engine.lastWake.reason} round ${profile.engine.lastWake.round}` : ' | no automatic wake yet'}${profile.engine.roundStartedAt ? ` | round started ${safe(profile.engine.roundStartedAt, 40)}` : ''}`] : []),
+      // P18.5/D47: the round itself — its replacement session, budget axis, routed loadout and newest round fact.
+      ...(profile.round ? [roundLine(profile.round, profile.contextUsage?.percent)] : []),
       // A4: the authority line names the measured invariants, the mode that produced the run and the static role matrix.
       `Authority: planner target ops ${authority.plannerTargetOps} (must be 0) | worker target ops ${authority.workerTargetOps} | tasks created ${authority.tasksCreated}, dispatched ${authority.tasksDispatched}${authority.firstDispatchAt ? ` (first ${safe(authority.firstDispatchAt, 40)})` : ''} | claims owner ${authority.ownerClaims} (must be 0), worker ${authority.workerClaims} | validation tasks ${authority.validationTasks} | mode ${authority.mode?.loopMode ?? profile.engine.mode}/${authority.mode?.executorMode ?? profile.executor.mode} | roles planner ${authority.roles.planner}, worker ${authority.roles.worker}, validation ${authority.roles.validation}, reporter ${authority.roles.reporter}`,
       ...workerLines(profile.workers ?? [], profile.maxWorkers),

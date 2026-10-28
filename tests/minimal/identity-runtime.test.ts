@@ -38,7 +38,7 @@ const controlRun = async (h: any): Promise<string> =>
 const ledgerJson = (records: readonly any[]) => JSON.stringify(records);
 const facts = (overrides: Partial<PlannerPromptFacts> = {}): PlannerPromptFacts => ({
   runId: 'run-identity', targetLabel: '/fixture', targetKind: 'directory', sourceSkipped: 0,
-  delegation: { enabled: false, reason: 'fixture', maxWorkers: 0, maxDepth: 0 }, phase: 'active', loopMode: 'manual', executorMode: 'shared', ...overrides,
+  delegation: { enabled: false, reason: 'fixture', maxWorkers: 0, maxDepth: 0 }, phase: 'active', executorMode: 'shared', ...overrides,
 });
 const ticket = (overrides: Record<string, unknown> = {}) => ({ workerId: 'p2o-general-abc123', role: 'general', depth: 1, parentWorkerId: null,
   target: { kind: 'directory', label: '/fixture' }, executorMode: 'shared', ...overrides } as never);

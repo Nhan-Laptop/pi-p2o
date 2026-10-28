@@ -11,7 +11,7 @@ describe('resume a historical run', () => {
   it('keeps the runId and prior records, records the interruption boundary, and refuses a second live resume', async () => {
     const root = await mkdtemp(join(tmpdir(), 'p2o-resume-')); await mkdir(join(root, 'source'));
     const settingsPath = join(root, 'settings.json'), controlRoot = join(root, 'control');
-    const open = () => registerP2O(createFakePi().pi, { extensionPath: EXTENSION_PATH, controlRoot, settingsPath, herdr: createSimpleHerdr({ available: false }).client, createSandbox: sandboxFactory([]) });
+    const open = () => registerP2O(createFakePi().pi, { extensionPath: EXTENSION_PATH, controlRoot, settingsPath, herdr: createSimpleHerdr().client, createSandbox: sandboxFactory([]) });
     const first = createFakePi(), firstCtx = createContext({ cwd: root });
     openWith(first);
     try {
@@ -51,7 +51,7 @@ describe('resume a historical run', () => {
     }
 
     function openWith(fake: ReturnType<typeof createFakePi>) {
-      registerP2O(fake.pi, { extensionPath: EXTENSION_PATH, controlRoot, settingsPath, herdr: createSimpleHerdr({ available: false }).client, createSandbox: sandboxFactory([]) });
+      registerP2O(fake.pi, { extensionPath: EXTENSION_PATH, controlRoot, settingsPath, herdr: createSimpleHerdr().client, createSandbox: sandboxFactory([]) });
     }
   }, 60_000);
 
@@ -59,14 +59,14 @@ describe('resume a historical run', () => {
     const root = await mkdtemp(join(tmpdir(), 'p2o-resume-empty-')); await mkdir(join(root, 'source'));
     const settingsPath = join(root, 'settings.json'), controlRoot = join(root, 'control');
     const fake = createFakePi(), ctx = createContext({ cwd: root });
-    registerP2O(fake.pi, { extensionPath: EXTENSION_PATH, controlRoot, settingsPath, herdr: createSimpleHerdr({ available: false }).client, createSandbox: sandboxFactory([]) });
+    registerP2O(fake.pi, { extensionPath: EXTENSION_PATH, controlRoot, settingsPath, herdr: createSimpleHerdr().client, createSandbox: sandboxFactory([]) });
     try {
       await fake.commands.get('p2o')!.handler('--target ./source', ctx.ctx);
       const [runId] = (await readdir(join(root, '.p2o-state'))).filter(name => name.startsWith('run-'));
       await fake.commands.get('p2o')!.handler('stop', ctx.ctx);
 
       const resumed = createFakePi(), resumedCtx = createContext({ cwd: root });
-      registerP2O(resumed.pi, { extensionPath: EXTENSION_PATH, controlRoot, settingsPath, herdr: createSimpleHerdr({ available: false }).client, createSandbox: sandboxFactory([]) });
+      registerP2O(resumed.pi, { extensionPath: EXTENSION_PATH, controlRoot, settingsPath, herdr: createSimpleHerdr().client, createSandbox: sandboxFactory([]) });
       await resumed.commands.get('p2o')!.handler(`--resume ${runId}`, resumedCtx.ctx);
       const workers = await resumed.tools.get('p2o_workers')!.execute('list', { action: 'list' }, undefined, undefined, resumedCtx.ctx);
       expect(workers.details.workers ?? workers.details.rows ?? []).toHaveLength(0);

@@ -8,7 +8,9 @@ const PREFIX = '[p2o semantic wake] ';
 export function plannerWakePrompt(wake: PlannerWake) {return PREFIX+JSON.stringify(wake);}
 export function parseWakePrompt(text: unknown): PlannerWake | undefined {
   if (typeof text !== 'string' || !text.startsWith(PREFIX)) return;
-  try {const value=JSON.parse(text.slice(PREFIX.length));return isPlannerWake(value) ? value : undefined;}catch {return;}
+  // P18/D45: the marker line stays the whole wake for a fallback prompt, and a round prompt appends its briefing after a
+  // newline. The marker JSON never contains a newline, so reading to the first one parses both shapes.
+  try {const value=JSON.parse(text.slice(PREFIX.length).split('\n', 1)[0]);return isPlannerWake(value) ? value : undefined;}catch {return;}
 }
 export function isWakePrompt(text: unknown): boolean {return typeof text === 'string' && text.startsWith(PREFIX);}
 export function plannerWakeMessage(wake: PlannerWake) {
@@ -24,4 +26,28 @@ export function isPlannerWake(value: unknown): value is PlannerWake {
   if (!value || typeof value !== 'object') return false;
   const w = value as PlannerWake;
   return typeof w.runId === 'string' && Number.isSafeInteger(w.epoch) && Number.isSafeInteger(w.through) && Number.isSafeInteger(w.round);
+}
+
+/**
+ * P18/D45: a round opens a fresh Pi session, so its opening prompt is the wake marker plus whatever deterministic
+ * material the round carries. Keeping the marker first means the fallback prompt, the `before_agent_start` wake message
+ * and the stale-wake abort all keep using one parser instead of three.
+ */
+export const ROUND_COMMAND = 'p2o-round';
+const ROUND_MARKER = '\n--- p2o round ---\n';
+/** P18.2 fills the briefing; until then the opening is the one sentence a fresh session needs to start lawfully. */
+const ROUND_OPENING = 'This is a fresh Planner session for one bounded round. Read the current frontier/delta; review attributed evidence, choose bounded next intents or wait/blocked/finish.';
+export function roundBriefPrompt(wake: PlannerWake, brief?: string): string {
+  return `${plannerWakePrompt(wake)}${ROUND_MARKER}${brief ?? ROUND_OPENING}`;
+}
+export function parseRoundBrief(text: unknown): {wake: PlannerWake; brief: string} | undefined {
+  if (typeof text !== 'string') return;
+  const at = text.indexOf(ROUND_MARKER);
+  if (at < 0) return;
+  const wake = parseWakePrompt(text);
+  return wake ? {wake, brief: text.slice(at + ROUND_MARKER.length)} : undefined;
+}
+export function roundCommandText(wake: PlannerWake): string {return `/${ROUND_COMMAND} ${JSON.stringify(wake)}`;}
+export function parseRoundCommandArgs(args: unknown): PlannerWake | undefined {
+  try {const value=JSON.parse(String(args ?? '').trim());return isPlannerWake(value) ? value : undefined;}catch {return;}
 }

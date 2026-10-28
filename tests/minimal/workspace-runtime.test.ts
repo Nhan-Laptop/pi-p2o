@@ -556,7 +556,8 @@ describe('canonical owner runtime (inert execution, real SQLite and Unix broker)
     const read:AssessmentStore=await h.reader();try{expect(read.sequence()).toBe(before);}finally{read.close();}
     const context=await h.pi.events.get('context')[0]({messages:[]},h.ctx.ctx);expect(JSON.stringify(context.messages)).toContain(plan.id);
     await expect(h.call('p2o_board',{board: 'plans',entry:goal})).rejects.toThrow('host-owned');await expect(h.call('p2o_task_author',{action:'bogus',id:task.id})).rejects.toThrow('host-owned');
-    await h.call('p2o_task_dispatch',{ids:[task.id]});for(let i=0;i<100;i++){if((await h.call('p2o_workers')).details.workers.length)break;await delay(5);}
+    await h.call('p2o_task_dispatch',{ids:[task.id]});// P18/D49: the fixed 800 ms coalescing window delays the spawn, so wait past it.
+    for(let i=0;i<400;i++){if((await h.call('p2o_workers')).details.workers.length)break;await delay(5);}
     expect((await h.call('p2o_workers')).details.workers).toHaveLength(1);expect(h.sandboxes[0].commands).toHaveLength(0);expect(h.pi.messages).toHaveLength(1);
   }));
   it('reviews canonical cases and proof-aware coverage without merging claims, widening scope or adding target/model work',async()=>fixture(async h=>{

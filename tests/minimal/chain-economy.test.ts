@@ -401,7 +401,8 @@ describe('A7.5 successor dispatch on a held ticket, pane and session', () => {
 describe('A7.5 validation economy', () => {
   it('keeps the deepest claim its replay and skips the intermediate claim the successor already covers', async () => {
     await reportFixture(async h => {
-      await h.command('--target ./source --max-depth 0');await seedImpactGoal(h);
+      // P18/D48: a start without worker admission is refused, so the fixture keeps delegation enabled and never dispatches.
+      await h.command('--target ./source --max-depth 1');await seedImpactGoal(h);
       const asset = (await h.call('p2o_graph', { action: 'record', batch: { assets: [{ asset: { kind: 'endpoint', key: 'GET /chain-fixture' } }] } })).details.acks[0];
       const receipt = (await h.call('p2o_shell', { command: 'printf chain-receipt' })).details.evidenceId;
       const draft = (questionKey: string, question: string) => ({
@@ -431,9 +432,10 @@ describe('A7.5 validation economy', () => {
       const validations = board.filter((task: any) => task.role === 'validation');
       expect(validations).toHaveLength(1);
       const validation = (await h.call('p2o_board', { board: 'tasks', id: validations[0].id })).details;
-      // No worker backend in this fixture, so the replay is a blocked task with its prerequisite named, never a waiver.
-      expect(validation).toMatchObject({ role: 'validation', validationOf: deepestTask.id, status: 'blocked' });
-      expect(validation.missingPrerequisites.join('\n')).toContain('Delegation unavailable');
+      // P18/D48: a run now exists only with a worker backend, so the replay is a proposed validation task instead of a
+      // blocked one. It still cites the claim it reproduces, and a replay is never a waiver.
+      expect(validation).toMatchObject({ role: 'validation', validationOf: deepestTask.id, status: 'proposed' });
+      expect(validation.missingPrerequisites ?? []).toEqual([]);
       expect(validation.work?.claimRefs).toEqual([deepestClaim.id]);
       const store = await h.reader();
       try {

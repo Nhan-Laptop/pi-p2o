@@ -15,7 +15,7 @@ import { summarizeSituation, type SituationSnapshot } from '../../src/situation.
 import { continuationRefusal } from '../../src/broker.js';
 import { chainJoin, claimHeadClaims, type ChainClaim, type ChainPath } from '../../src/chain-view.js';
 import { proofViews } from '../../src/goal-proof.js';
-import type { RoundProgress, RoundStall } from '../../src/engine.js';
+import type { PlannerWake, RoundProgress, RoundStall } from '../../src/engine.js';
 import { transitionHint } from '../../src/research.js';
 import { assertCveSource, cveQuery, leadFrontier, leadRecords, lookupCves, type CveFetch } from '../../src/cve.js';
 import { routeMonoculture } from '../../src/routes.js';
@@ -37,16 +37,19 @@ import { injectionSignals, loadTechniqueIndex, quoteExcerpt, researchDigest, res
 import { ensurePrivateDirectory, mintTicket, mintToken, readTicket, removeTicket, ticketPath, workerName, type Ticket } from '../../src/ticket.js';
 import { createHerdrClient, type HerdrClient } from '../../src/herdr.js';
 import { allowedWorkerModels, loadSettings, MAX_SKILLS, resolveRole, validateTaskRuntime, type P2OSettings, type RetentionMode } from '../../src/roles.js';
-import { PLANNER_PROMPT_SECTION, plannerInstructions, workerBrief, workerInstructions, type ExploitBriefFacts } from '../../src/prompts.js';
+import { DEFAULT_ROUND_BUDGET, judgeRound, type RoundBudget } from '../../src/round-budget.js';
+import { buildRoundBrief, buildRoundDigest, type RoundBrief } from '../../src/round-brief.js';
+import { routeRound, type RoundDemand, type RoundRoute } from '../../src/round-model.js';
+import { PLANNER_PROMPT_SECTION, plannerInstructions, roundWrapDirective, workerBrief, workerInstructions, type ExploitBriefFacts } from '../../src/prompts.js';
 import { authorityCounters, authorityReport, wakeRoundCount } from '../../src/authority.js';
 import { isWorkPurpose, purposeFromRole, type WorkPurpose } from '../../src/duties.js';
 import { SkillLibrary, packageRoot } from '../../src/skills.js';
 import { EvidenceStore, redact, type Candidate } from '../../src/evidence.js';
 import { identitySummary, loadIdentityFile, redactSecretBytes, redactSecrets, sealIdentity, secretViews, substituteSecrets, substituteShellSecrets, type IdentityFile } from '../../src/identity.js';
-import { TaskBoard, taskCapsule, awaitingReview, taskFrontier, isSatisfiedTask, terminalState, type TaskDraft, type TaskMethod, type AssessmentTask } from '../../src/tasks.js';
+import { TaskBoard, taskCapsule, taskFrontier, awaitingReview, isSatisfiedTask, terminalState, type TaskDraft, type TaskMethod, type AssessmentTask } from '../../src/tasks.js';
 import { planFrontier, PlanBoard, boundPlanRequest, type PlanDraft } from '../../src/planning.js';
 import { PLAN_ACTION_PARAMETERS, PLAN_ACTIONS } from '../../src/work-tool.js';
-import { CaseBoard, boundCaseRequest, boundRatingRequest } from '../../src/cases.js';
+import { CaseBoard, boundCaseRequest, boundRatingRequest, needsCaseReview } from '../../src/cases.js';
 import { validationDraft } from '../../src/validation.js';
 import { CoverageBoard, boundCoverageRequest, coverageViews } from '../../src/coverage.js';
 import { caseViews } from '../../src/cases.js';
@@ -83,11 +86,11 @@ import { WSTG_COMMIT, WSTG_FEATURES, WSTG_MAP, featuresFromAttributeValues, isWs
 import { ProgressState } from '../../src/progress.js';
 import { AssessmentEngine } from '../../src/engine.js';
 import { ExecutorPool } from '../../src/executors.js';
-import { plannerWakeMessage, plannerWakePrompt, parseWakePrompt, isWakePrompt, PLANNER_WAKE_TYPE, isPlannerWake } from '../../src/planner-bridge.js';
-import { ALL_TOOLS, plannerTools, workerTools } from '../../src/tool-policy.js';
+import { plannerWakeMessage, plannerWakePrompt, parseWakePrompt, isWakePrompt, PLANNER_WAKE_TYPE, isPlannerWake, ROUND_COMMAND, roundCommandText, parseRoundCommandArgs, roundBriefPrompt } from '../../src/planner-bridge.js';
+import { ALL_TOOLS, closingTools, plannerTools, workerTools } from '../../src/tool-policy.js';
 import { UsageLedger, compactUsage, usageLines } from '../../src/usage.js';
 import { parseOperatorCommand } from '../../src/ui/operator.js';
-import { parseStateCommand, statusView, stateLines, workerLines, type StatusView, type WorkerView } from '../../src/ui/state.js';
+import { parseStateCommand, statusView, stateLines, workerLines, type RoundView, type StatusView, type WorkerView } from '../../src/ui/state.js';
 import { StateScreen, widgetComponent, renderTaskResult, renderStateEntry } from '../../src/ui/screen.js';
 import { uiRefreshDelay } from '../../src/ui/refresh.js';
 import { ARTIFACT_INVALID, AssessmentStore, finalizationReserve, MAX_ARTIFACT_BYTES, type MutationRequest, type StoreFault, type StoreManifest } from '../../src/state/store.js';
@@ -111,7 +114,7 @@ import { exportBundle, importBundle, inspectBundle, publishReportFiles } from '.
  */
 const WORKER_FLAG = 'p2o-worker';
 const HELP = [
-  'Usage: /p2o --target <directory|http(s)-URL> [--origin <http(s)-URL>] [--workers N] [--loop manual|event-driven] [--executors shared|isolated|session[:N]] [--target-ops N] [--retention durable-local|ephemeral] [--export] [--goal "text"] [--avoid "text"]... [--allow "text"]... [--mode assess|exploit] [--effect <class>]... [--heartbeat-seconds N] [--identity <absolute-json-path>] [--callback <http(s)-URL>] [--lab-network <name>] [--refer-workspace [latest|all|<run-id>[,<run-id>...]]]',
+  'Usage: /p2o --target <directory|http(s)-URL> [--origin <http(s)-URL>] [--workers N] [--round-steps N] [--round-seconds N] [--executors shared|isolated|session[:N]] [--target-ops N] [--retention durable-local|ephemeral] [--export] [--goal "text"] [--avoid "text"]... [--allow "text"]... [--mode assess|exploit] [--effect <class>]... [--heartbeat-seconds N] [--identity <absolute-json-path>] [--callback <http(s)-URL>] [--lab-network <name>] [--refer-workspace [latest|all|<run-id>[,<run-id>...]]]',
   '       --executors session[:N] keeps N run-owned containers alive (N defaults to, and never exceeds, --target-ops); --identity seals one operator JSON file (values never reach a model); --callback records an operator destination the target reaches, --lab-network joins an operator docker network for an in-sandbox listener (no host port is ever published; no tunnel/pivot)',
   '       /p2o stop | pause | resume | hold [reason] | release | workers | stop-worker <worker-id> [reason]',
   '       /p2o approve <policy-ask-id> | deny <policy-ask-id> (resolve one pending command-policy ask; the decision is recorded once)',
@@ -127,7 +130,7 @@ const HELP = [
   '       /p2o search <text> [cursor=N] (plain substring over committed records; read-only, pointers not evidence)',
   'Durable-local is default, always confirmed; private .p2o-state under the current workspace. Ephemeral deletes knowledge at cleanup.',
   'Your CURRENT Pi agent is the planner/reviewer and does not execute target work; it creates intents and workers execute when Herdr is available.',
-  'Workers run on the confirmed executor mode (shared serial by default; isolated or session when chosen). Event-driven mode can add paid planning rounds after committed events.',
+  'Workers run on the confirmed executor mode (shared serial by default; isolated or session when chosen). A run is the automatic loop: committed events can add paid planning rounds, and each round is bounded by the round budget (default 40 steps / 900s, --round-steps 0 --round-seconds 0 disables it).',
 ].join('\n');
 
 type Phase = 'starting' | 'active' | 'stopping' | 'finished';
@@ -137,6 +140,24 @@ interface ListenFact { port: number; protocol: 'tcp'; address: string; log: stri
 interface FootholdFact { port: number; address: string; log: string; openedAt: string; openedBy: string; connected: boolean; identifiedAt?: string; observation?: string; user?: string; uid?: number; method?: 'listener'; closedAt?: string; closeVerified?: boolean }
 /** A7.2: the ledger-facing facts about one session. The pool owns the container; this is what a surface may report. */
 interface SessionFact { id: string; openedAt: string; openedBy: string; purpose?: string; listens?: ListenFact[]; footholds?: FootholdFact[] }
+/**
+ * P18.3/D47: one round's budget state. `steps` counts owner assistant messages (what the provider actually turned), `wrapSent`
+ * and `budgetAbort` make each boundary action happen once per round, and `wake` is the reservation the round was admitted for,
+ * which the classified stop consumes. It lives on the run rather than the session, so a replacement session keeps the count.
+ */
+interface RoundState {
+  round: number; wake: PlannerWake; steps: number; startedAt: number; wrapSent: boolean; budgetAbort: boolean;
+  /** P18.4/D49: settlement nudges already sent this round; the demand floor allows at most two. */
+  nudges: number;
+  /** P18.4/D49: assistant tool calls and `p2o_loop` calls this round; a round with none is the "text-only round" a nudge targets. */
+  toolCalls: number; loopCalls: number;
+  /** P18.4/D48: the one demand-floor wait refusal this round, so a second wait is accepted. */
+  waitRefused: boolean;
+  /** P18.5/D47: the budget axis that put the round into `wrap`/`exhausted`, so status names why the round is closing. */
+  reason?: string;
+  /** P18.7/D47: the round-end fact already written for this round, so an operator stop cannot double-record a budget end. */
+  ended?: 'round-budget' | 'operator-stop';
+}
 interface OwnerRun {
   role: 'owner';
   target: Target; sandbox: Sandbox; executors: ExecutorPool; ctx: ExtensionContext;
@@ -168,6 +189,25 @@ interface OwnerRun {
   library: SkillLibrary; evidence: EvidenceStore; knowledgeUsed: number;
   image: string;
   exportEnabled: boolean; exportPath?: string; exportError?: string;
+  /** P18/A9: the per-round work-package budget this run started with (CLI overrides applied); never a campaign cap. */
+  roundBudget: RoundBudget;
+  /** P18/D45: the session the current round runs in, and its round number. Absent before the first switch, and reset per round. */
+  roundSession?: { id: string; round: number };
+  /** P18/D45: the last reservation this run opened a session for, so a duplicated dispatch cannot open a second one. */
+  roundOpened?: { through: number; round: number };
+  /** P18.2/D46: the ledger position the previous round opened at, so its own records stay the round window and older material
+   *  folds into the briefing's digest instead of disappearing with the replaced session. */
+  roundWindow?: { round: number; records: number };
+  /** P18.6/D50: what each earlier round closed, oldest first, so routing can prove the two-round escalation streak. A count is
+   *  the difference between consecutive round openings, read from the same closures counter the engine judges. */
+  roundClosed?: number[];
+  /** P18.6/D50: the closures counter at the current round's opening, which is what the next round's delta is measured from. */
+  roundClosedAt?: number;
+  /** P18.3/D47: the current round's budget state, created when its wake is dispatched and reset by the next round. */
+  roundState?: RoundState;
+  /** P18.7/D47: an operator stop is waiting for the round in flight; the settle handler ends the round instead of nudging it
+   *  to continue, and this is what `planner.round-end reason=operator-stop` names. Cleared once the stop has finished. */
+  stopRound?: { round: number; at: number };
   board: TaskBoard; plan: PlanBoard; cases:CaseBoard; coverage:CoverageBoard; engine: AssessmentEngine; progress: ProgressState; currentTaskId?: string;
   pendingContext?:{packet:ContextPacket;engineSequence:number};
   /** Ephemeral host-prepared delivery receipts; not a work queue, store or execution capability. */
@@ -244,7 +284,36 @@ export async function availableSkills(root: string): Promise<string[]> {
   return entries.filter(entry => entry.isDirectory() && existsSync(join(root, entry.name, 'SKILL.md'))).map(entry => entry.name).sort();
 }
 
+/**
+ * P18.1/D45: the host re-runs this factory for every replacement session, so the two objects a running campaign needs must
+ * outlive the instance that created them: the live owner run (so the replacement can adopt it instead of starting over) and
+ * the host API object of the *current* owner instance (so a closure the previous instance created — the Engine deps — sends
+ * through a live host instead of a captured stale one). Everything else is per-instance state: a worker process and an owner
+ * process share nothing, and a second registration in the same process (a worker child double) must never adopt the owner's
+ * run or steal its host.
+ */
+let ownerRun: OwnerRun | undefined;
+let ownerApi: ExtensionAPI | undefined;
+
+/**
+ * Test-only seam: a test that models a genuinely fresh process clears the adoption handoff, so a later instance in the same
+ * process cannot adopt an earlier fixture's run. Production never calls this.
+ */
+export function resetP2OStateForTests(): void {
+  ownerRun = undefined; ownerApi = undefined;
+}
+
 export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
+  let run: Run | undefined;
+  let opening = false;
+  let staleWakeInFlight = false;
+  /** P18.7/D47: whether a planner turn is open in this instance's session (agent_start → agent_settled). The operator-stop
+   * settle window reads it, so it cannot be confused with a paused engine that still reports `blocked` while the turn runs. */
+  let roundTurnInFlight = false;
+  /** P18/D45: true only inside our own `ctx.newSession` call, so the session-change handlers can tell an internal round switch
+   * from an operator `/new`, `/fork` or resume and stop the run only for the latter. */
+  let roundSwitchInFlight = false;
+  let lastStatus: StatusView | undefined;
   // Every tool is registered through this wrapper, which folds its boundary sentence into the description (src/tool-guidelines.ts).
   const registerTool: ExtensionAPI['registerTool'] = tool => pi.registerTool(withBoundaries(tool));
   const extensionPath = options.extensionPath ?? fileURLToPath(import.meta.url);
@@ -256,11 +325,7 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
   const settings = () => loadSettings(settingsPath);
   const skills = skillsRoot(extensionPath);
 
-  let run: Run | undefined;
-  let opening = false;
   let extensionSha: string | undefined, runtimeVersion = '';
-  let staleWakeInFlight = false;
-  let lastStatus: StatusView | undefined;
   let historical: { store: AssessmentStore; records: string; unbind: () => void; root: string } | undefined;
   const stateRootFor = async (ctx: ExtensionContext) => options.stateRoot ? resolve(options.stateRoot) : join(await realpath(ctx.cwd), '.p2o-state');
   function closeHistorical() { if (historical) { historical.unbind(); historical.store.close(); historical = undefined; } }
@@ -357,7 +422,8 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
     });
   }
   async function currentStatus(current: OwnerRun, lifecycle = current.phase, index?: LedgerIndex): Promise<StatusView> {
-    return statusView(index ?? await readLedger(current.records, current.runId), {
+    const ledger = index ?? await readLedger(current.records, current.runId), round = roundView(current, ledger);
+    return statusView(ledger, {
       runId: current.runId, target: targetLabel(current.target), lifecycle,
       delegation: current.delegation.enabled, maxWorkers: current.delegation.maxWorkers,
       engine: current.engine.snapshot(), executor: current.executors.snapshot(),
@@ -366,6 +432,7 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
       runtime: { version: runtimeVersion, sha256: current.extensionSha }, contextUsage: current.contextUsage, usageLines: usageLines(current.usage),
       workers: operatorWorkers(current), held: current.held,
       ...(current.campaign ? { campaign: { objective: current.campaign.objective, heartbeatSeconds: current.campaign.heartbeatSeconds, createdBy: current.campaign.createdBy } } : {}),
+      ...(round ? { round } : {}),
     }, current.store.reviewContext());
   }
   /** Counters only: the usage Pi reports for the Planner session, remembered for /p2o status and written once per admitted wake. */
@@ -457,31 +524,32 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
       findings: new Map([...current.workers.values()].filter(entry => entry.reported).map(entry => [entry.workerId, entry.reported!.findings.length] as const)) });
     const featureAssets = current.store.recordedFeatureAssets();
     return deriveDebt(index, { coverage: context.coverage, cases: context.cases, features: current.store.recordedFeatureValues(), ...(featureAssets.length ? { featureAssets } : {}), wrote,
-      // A6.1: the campaign frame is the same record the prompt and the report read; an event-driven run promised a campaign,
+      // A6.1/P18/A9: the campaign frame is the same record the prompt and the report read. Every automatic run records one,
       // so a missing record is named as debt instead of being inferred from prose.
       ...(context.campaign ? { campaign: { objective: context.campaign.objective } } : {}),
-      expectCampaign: current.engine?.mode === 'event-driven' });
+      expectCampaign: true });
   }
   /**
-   * M6: what a round is judged on — four monotone counters read from the ledger and the graph the owner already owns. The engine
-   * compares them; nothing here decides whether progress is "enough", only whether anything at all was added.
-   * A4: the same read yields the stall facts (open goal, no open/running intent) the engine records after the round ACK.
+   * M6/P18.2: the one read a round is both judged and briefed on. The engine's progress and the opening briefing project
+   * these values, so the counters the round is compared on and the sentences it is told cannot disagree (D46).
    */
-  async function roundProgress(current: OwnerRun): Promise<{ progress: RoundProgress; stall: RoundStall }> {
+  async function roundRead(current: OwnerRun) {
     const index = await readLedger(current.records, current.runId), claims = claimHeadClaims(index, current.runId), context = current.store.reviewContext();
     // A3: coverage cells are derived from reviewed work, so the counter reads the projection, never a stored cell note.
-    const cells = coverageViews(index, context.coverage).flatMap(plan => plan.cells).filter(cell => cell.currentness !== 'retired');
+    const cases = caseViews(index, context.cases), coverage = coverageViews(index, context.coverage),
+      cells = coverage.flatMap(plan => plan.cells).filter(cell => cell.currentness !== 'retired');
     // P16.2: the same completion the finish result prints rides along, so a quiet round that still owes work demands it by
     // name instead of pausing the run — the measured failure was a lead that went quiet while a ready step was owed.
     const plans = planFrontier(index), tasks = taskFrontier(index), debt = runDebt(current, index);
-    const completion = deriveCompletion({ plans, claims, tasks, debt: debtFor(debt),
-      ...proofViews(caseViews(index, context.cases), coverageViews(index, context.coverage)) });
+    const completion = deriveCompletion({ plans, claims, tasks, debt: debtFor(debt), ...proofViews(cases, coverage) });
     // P16.5: a stalled round that asks for work must also say when every open step is on one route; the alternative is a hint,
     // never a refusal (the lead may know the other family is out of scope).
     const monoculture = routeMonoculture(plans, claims);
     // A4: an open goal is still proposed/active; an open intent is work the planner has not settled (proposed/reserved/running).
     const openGoal = plans.some(plan => plan.kind === 'goal' && ['proposed', 'active'].includes(plan.status)),
       openIntents = tasks.filter(task => ['proposed', 'reserved', 'running'].includes(task.status)).length;
+    // P18.6/D50: the ready chain step count is a routing fact as well as a briefing section, so it is read once here.
+    const obligations = chainObligations({ plans, claims, tasks });
     // One owner for the literals (P13b): the same predicates the join and the coverage view use decide what counts as progress.
     const progress: RoundProgress = {
       closures: index.records.filter(row => row.kind === 'candidate' && isDemonstrated(row.data as ClaimFields)).length,
@@ -492,7 +560,160 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
       debt: { gateable: debt.gateable, total: debt.total },
       ...(completion.remaining ? { demand: `${completionDemand(completion, plans) ?? `${completion.remaining} obligation(s) remain`}${monoculture ? `; every open step is on route ${monoculture.route} — plausible elsewhere: ${monoculture.alternatives.slice(0, 4).join(', ')}` : ''}` } : {}),
     };
-    return { progress, stall: { openGoal, openIntents } };
+    return { index, claims, cases, coverage, plans, tasks, obligations, debt, completion, progress, stall: { openGoal, openIntents } };
+  }
+  /**
+   * M6: what a round is judged on — four monotone counters read from the ledger and the graph the owner already owns. The engine
+   * compares them; nothing here decides whether progress is "enough", only whether anything at all was added.
+   * A4: the same read yields the stall facts (open goal, no open/running intent) the engine records after the round ACK.
+   */
+  async function roundProgress(current: OwnerRun): Promise<{ progress: RoundProgress; stall: RoundStall }> {
+    const { progress, stall } = await roundRead(current);
+    return { progress, stall };
+  }
+  /**
+   * P18.2/D46: the round's opening briefing, projected from the same read the round is judged on. Deterministic and bounded
+   * (buildRoundBrief enforces 8 KiB); the caller sends it as a user message, so `before_agent_start` still owns policy.
+   */
+  async function roundBriefing(current: OwnerRun, wake: PlannerWake): Promise<{ brief: RoundBrief; records: number; route: RoundRoute }> {
+    const read = await roundRead(current);
+    // Older material folds at the position the previous round opened at: the last round's own records stay in the current
+    // window and everything before them becomes one bounded digest instead of vanishing with the replaced session.
+    const digest = buildRoundDigest(read.index.records, current.roundWindow?.records ?? 0);
+    const situation = (() => {
+      try {
+        return summarizeSituation({ tasks: read.tasks, cases: read.cases, coverage: read.coverage, claims: read.claims, plans: read.plans,
+          leads: leadFrontier(read.index).map(lead => ({ state: lead.state, severity: lead.severity })) });
+      } catch { return undefined; }
+    })();
+    const brief = buildRoundBrief({
+      ...(current.campaign ? { campaign: current.campaign } : {}),
+      completion: read.completion,
+      ...(wake.demand ? { demand: wake.demand } : {}),
+      plans: read.plans, claims: read.claims, tasks: read.tasks, cases: read.cases, coverage: read.coverage, debt: read.debt,
+      workers: operatorWorkers(current), revisits: current.engine.pendingRevisits(),
+      progress: read.progress, previous: current.engine.previousProgress(),
+      digest, round: { number: wake.round, budget: current.roundBudget },
+      ...(situation ? { situation } : {}),
+    });
+    // P18.6/D50: the loadout is routed from the same read, so the round's model and its brief cannot describe different rounds.
+    const route = routeRound({
+      ...(roundDemand(read) ? { demand: roundDemand(read)! } : {}),
+      unchainedPrimitive: read.completion.unchained.length,
+      readyChainStep: read.obligations.ready.length,
+      plannerModels: current.settings.plannerModels,
+      ...(sessionModel(current.ctx) ? { currentModel: sessionModel(current.ctx)! } : {}),
+      ...(current.ctx.thinkingLevel ? { currentThinking: current.ctx.thinkingLevel } : {}),
+      ...(current.roundClosed?.length ? { previousRounds: current.roundClosed.slice(-2).map(closed => ({ closed })) } : {}),
+    });
+    // P18.6/D50: what each opening closed becomes the next round's streak evidence. The delta is against the previous round's
+    // opening, so a round's own work is what it is credited with.
+    if (current.roundWindow) current.roundClosed = [...(current.roundClosed ?? []), read.progress.closures - (current.roundClosedAt ?? read.progress.closures)].slice(-8);
+    current.roundClosedAt = read.progress.closures;
+    return { brief, records: read.index.records.length, route };
+  }
+  /**
+   * P18.6/D50: the round's demand class, derived from the same facts the briefing prints rather than parsed out of its prose.
+   * D50 routes base for review/mapping/validation and escalation for exploitation/chaining; the two escalation facts arrive as
+   * counts, so this only names the class a sentence would otherwise have to be read for.
+   */
+  function roundDemand(read: Awaited<ReturnType<typeof roundRead>>): RoundDemand | undefined {
+    if (read.obligations.ready.length) return 'chaining';
+    if (read.completion.unchained.length) return 'exploitation';
+    if (read.tasks.some(awaitingReview) || read.cases.some(needsCaseReview)) return 'review';
+    return undefined;
+  }
+  /** P18.6/D50: a configured `provider/model` id resolved through the registry, or nothing when the host does not have it. */
+  function plannerModel(ctx: ExtensionContext, id: string): Parameters<ExtensionAPI['setModel']>[0] | undefined {
+    const at = id.indexOf('/');
+    if (at <= 0 || at === id.length - 1) return undefined;
+    try { return ctx.modelRegistry.find(id.slice(0, at), id.slice(at + 1)); } catch { return undefined; }
+  }
+  /**
+   * P18.6/D50: apply the routed loadout to the replacement session before its first turn, and record which loadout ran. A
+   * model the registry does not have, a provider with no auth or a refused set keeps the current model and thinking: a failed
+   * optimization degrades to today's loop (A12) instead of failing the round, and the ledger says which happened.
+   */
+  async function applyRoundRoute(current: OwnerRun, round: number, route: RoundRoute, model: Parameters<ExtensionAPI['setModel']>[0] | undefined, missing?: string): Promise<void> {
+    const fallback = (reason: string) => roundFact(current, 'planner.round-model-fallback', `planner.round-model-fallback: round ${round} kept the current model (${reason})`,
+      { round, reason, ...(route.modelId ? { requested: route.modelId } : {}) }).catch(() => { /* routing never blocks the round */ });
+    if (missing) { await fallback(missing); return; }
+    if (route.modelId) {
+      if (!model) { await fallback(`model ${route.modelId} is not in the host registry`); return; }
+      const changed = await ownerApi!.setModel(model).catch(() => false);
+      if (!changed) { await fallback(`the host refused ${route.modelId}: no usable auth for that provider`); return; }
+    }
+    const applied: { model?: string; thinking?: string } = route.modelId ? { model: route.modelId } : {};
+    if (route.thinking) {
+      try { ownerApi!.setThinkingLevel(route.thinking as Parameters<ExtensionAPI['setThinkingLevel']>[0]); applied.thinking = route.thinking; }
+      catch { await fallback(`the host refused thinking level ${route.thinking}`); return; }
+    }
+    if (!applied.model && !applied.thinking) return;
+    await roundFact(current, 'planner.round-model', `planner.round-model: round ${round} ran ${applied.model ?? 'the current model'}${applied.thinking ? ` at thinking ${applied.thinking}` : ''} (${route.reason})`,
+      { round, ...applied, escalated: route.escalated, reason: route.reason }).catch(() => { /* the audit row is best effort */ });
+  }
+  /**
+   * P18.3/D47: start one round's budget. Idempotent for the round that is already running, so a duplicated dispatch cannot reset
+   * the counters the wrap decision reads; the next round number starts a new state.
+   */
+  function beginRoundState(current: OwnerRun, wake: PlannerWake): RoundState {
+    if (current.roundState?.round === wake.round) return current.roundState;
+    const state: RoundState = { round: wake.round, wake, steps: 0, startedAt: now(), wrapSent: false, budgetAbort: false, nudges: 0, toolCalls: 0, loopCalls: 0, waitRefused: false };
+    current.roundState = state;
+    return state;
+  }
+  /**
+   * P18.3/D47: judge the current round against its budget on every provider request, so the wrap-up arrives while the round still
+   * has steps to write back with. `wrap` injects the directive and switches to the closing loadout once; `exhausted` records the
+   * budget fact and aborts the turn, which settlement classifies as a round-budget stop rather than a provider failure.
+   */
+  function roundBudgetGate(current: OwnerRun, ctx: ExtensionContext): { directive?: string; aborted?: boolean } {
+    const state = current.roundState;
+    if (!state || state.budgetAbort) return {};
+    const budget = current.roundBudget, contextPercent = current.contextUsage?.percent ?? null;
+    const judged = judgeRound({ steps: state.steps, startedAt: state.startedAt, now: now(), contextPercent, budget });
+    if (judged.state === 'open') return {};
+    if (judged.state === 'exhausted') {
+      state.budgetAbort = true; state.reason = judged.reason;
+      void roundFact(current, 'planner.round-budget', `planner.round-budget: round ${state.round} exhausted (${judged.reason}); aborting the round, never the campaign`,
+        { round: state.round, state: 'exhausted', reason: judged.reason, steps: state.steps }).catch(() => { /* the audit row is best effort */ });
+      ctx.abort();
+      return { aborted: true };
+    }
+    if (!state.wrapSent) {
+      state.wrapSent = true; state.reason = judged.reason;
+      // Authoring and dispatch leave the loadout, so a wrapping round cannot start work it has no steps left to finish.
+      try { pi.setActiveTools(closingTools()); } catch { /* a stale host keeps the full loadout; the directive still names the shape */ }
+      void roundFact(current, 'planner.round-budget', `planner.round-budget: round ${state.round} wrapping up (${judged.reason})`,
+        { round: state.round, state: 'wrap', reason: judged.reason, steps: state.steps }).catch(() => { /* the audit row is best effort */ });
+    }
+    return { directive: roundWrapDirective({ round: state.round, reason: judged.reason, steps: state.steps, stepsLimit: budget.steps,
+      seconds: Math.max(0, Math.floor((now() - state.startedAt) / 1000)), secondsLimit: budget.seconds, contextPercent }) };
+  }
+  /**
+   * P18.5/D51: the newest round lifecycle fact, so `/p2o status` can name what the loop last did instead of only counting it.
+   * The scan is bounded to the records already read for the same status call and treats every `planner.*` envelope as a fact.
+   */
+  function lastRoundFact(index: LedgerIndex): RoundView['lastFact'] {
+    for (let cursor = index.records.length - 1; cursor >= 0; cursor--) {
+      const row = index.records[cursor], event = (row.data?.engine as { event?: unknown } | undefined)?.event;
+      if (row.kind !== 'lifecycle' || typeof event !== 'string' || !event.startsWith('planner.')) continue;
+      const at = Date.parse(row.at);
+      return { text: row.text, ageMs: Number.isFinite(at) ? Math.max(0, now() - at) : 0 };
+    }
+    return undefined;
+  }
+  /** P18.5/D47/D50: the round projection `/p2o status` shows — number, replacement session, budget state and routed loadout. */
+  function roundView(current: OwnerRun, index: LedgerIndex): RoundView | undefined {
+    const state = current.roundState;
+    if (!state) return undefined;
+    const model = sessionModel(current.ctx), thinking = current.ctx.thinkingLevel, lastFact = lastRoundFact(index);
+    // A wrapped or aborted round keeps its last state until the next round starts, so status names the outcome it ended on.
+    const budget = state.budgetAbort ? 'exhausted' as const : state.wrapSent ? 'wrap' as const : 'open' as const;
+    return { round: state.round, ...(current.roundSession?.id ? { sessionId: current.roundSession.id } : {}), state: budget,
+      ...(state.reason ? { reason: state.reason } : {}), steps: state.steps,
+      elapsedSeconds: Math.max(0, Math.floor((now() - state.startedAt) / 1000)), budget: current.roundBudget,
+      ...(model ? { model } : {}), ...(thinking ? { thinking } : {}), ...(lastFact ? { lastFact } : {}) };
   }
   async function situationSnapshot(current: OwnerRun): Promise<SituationSnapshot | undefined> {
     try {
@@ -584,6 +805,14 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
   async function note(record: Omit<AssessmentRecord, 'at'>): Promise<void> {
     const current = owner();
     await track(current,appendRecord(current.records, { at: new Date().toISOString(), runId: current.runId, ...record }));
+  }
+  /**
+   * P18/D51: one writer for the round lifecycle facts. They ride the existing `lifecycle` kind with `data.engine.event`, so
+   * the report can count rounds, budget hits, model choices and session fallbacks without a schema bump.
+   */
+  async function roundFact(current: OwnerRun, event: string, text: string, data: Record<string, unknown> = {}): Promise<void> {
+    await track(current, appendRecord(current.records, { at: new Date().toISOString(), runId: current.runId, by: 'owner', kind: 'lifecycle',
+      text: text.slice(0, 900), data: { engine: { event, ...data } } }));
   }
 
   function boundDelivery(current: OwnerRun, registration: WorkerRegistration, op: string, request: MutationRequest): MutationRequest {
@@ -1039,6 +1268,8 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
   function restore(current: Run): void {
     if (run !== current) return;
     run = undefined;
+    // P18.1/D45: a finished run must not be adopted by a later replacement, so the handoff dies with it.
+    if (ownerRun === current) { ownerRun = undefined; ownerApi = undefined; }
     pi.setActiveTools(current.toolsBefore);
     current.ctx.ui.setStatus('p2o', undefined);
     current.ctx.ui.setWidget('p2o-progress', undefined);
@@ -1088,10 +1319,11 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
     const sessionsFact = openedSessionIds.length
       ? `${openedSessionIds.length} opened (${openedSessionIds.slice(0, 8).join(', ')}); ${closedSessionIds.size} closed with verified container removal${openedSessionIds.some(id => !closedSessionIds.has(id)) ? `; ${openedSessionIds.filter(id => !closedSessionIds.has(id)).length} not recorded closed in this snapshot` : ''}${listenFacts.length ? `; ${listenFacts.length} in-sandbox listener(s) started (no host port; each removed with its session container)` : ''}${footholdFacts.length ? `; ${footholdFacts.length} interactive foothold shell(s) (one connection per session; ${footholdIdentityFacts.length} identity confirmation(s) recorded; ${footholdCloseFacts.length} relay removal(s) verified; no host port)` : ''}`
       : undefined;
-    // A7.8: which ingress path this run recorded, stated from committed facts rather than live state. A campaign run without an
-    // ingress flag says so, so a blind-effect gap is read as a missing path rather than a missing proof.
+    // A7.8: which ingress path this run recorded, stated from committed facts rather than live state. An exploit run without an
+    // ingress flag says so, so a blind-effect gap is read as a missing path rather than a missing proof. Assess mode authorizes
+    // no effect, so the line would describe a gap that mode cannot have and is not printed.
     const recordedIngress = ingressFacts(recordedCampaign);
-    const callbackFact = !recordedCampaign ? undefined : recordedIngress
+    const callbackFact = !recordedCampaign || recordedCampaign.mode === 'assess' ? undefined : recordedIngress
       ? [
           ...(recordedIngress.callback ? [`operator callback ${recordedIngress.callback} (a destination the target reaches, not an in-sandbox listener)`] : []),
           ...(recordedIngress.labNetwork ? [`lab network "${recordedIngress.labNetwork}" (sandboxes joined it; no host port was published)`] : []),
@@ -1270,6 +1502,64 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
     current.stop = (async () => { await current.start?.catch(() => {}); await cleanupOwner(current, reason); restore(current); })()
       .catch(error => { current.stop = undefined; throw error; });
     return current.stop;
+  }
+
+  /** P18.7/D47: bounded windows for an operator stop. They pace teardown only; no campaign timer is added. */
+  const STOP_ROUND_SETTLE_MS = 30_000, STOP_REPORT_DRAIN_MS = 90_000, STOP_POLL_MS = 100;
+  const sleep = (ms: number) => new Promise<void>(resolve => { const timer = setTimeout(resolve, ms); timer.unref?.(); });
+  /** Local poll only: no model call, no target operation, no wake. */
+  async function boundedWait(check: () => boolean, limitMs: number): Promise<boolean> {
+    const deadline = now() + limitMs;
+    while (!check()) {
+      if (now() >= deadline) return false;
+      await sleep(Math.min(STOP_POLL_MS, Math.max(0, deadline - now())));
+    }
+    return true;
+  }
+  /**
+   * P18.7/D47: ctrl-c each live worker so its own settle writes the blocked report it owes, then wait (≤ 90 s) for those
+   * reports to land. Herdr status is a local fact: a pane that is no longer working gets one extra quiet poll before the drain
+   * ends, so a report already on its way is not cut off. Nothing here renews authority or starts a round.
+   */
+  async function drainWorkerReports(current: OwnerRun): Promise<number> {
+    const live = [...current.workers.values()].filter(entry => !entry.reported && !entry.stopped);
+    if (!live.length) return 0;
+    for (const entry of live) await herdr.interrupt(entry.name).catch(() => { /* a vanished pane has already stopped reporting */ });
+    const deadline = now() + STOP_REPORT_DRAIN_MS;
+    let quiet = 0;
+    while (now() < deadline) {
+      const pending = live.filter(entry => !entry.reported && !entry.stopped);
+      if (!pending.length) break;
+      const statuses = await herdr.statuses(pending.map(entry => entry.name)).catch(() => new Map<string, string>());
+      if (pending.some(entry => ['working', 'blocked'].includes(statuses.get(entry.name) ?? 'unknown'))) quiet = 0;
+      else if (++quiet >= 2) break;
+      await sleep(Math.min(STOP_POLL_MS, Math.max(0, deadline - now())));
+    }
+    return live.filter(entry => entry.reported).length;
+  }
+  /**
+   * P18.7/D47: an operator stop is an evidence-preserving transition, not a kill. The loop pauses first (no new dispatch or
+   * wake), a round that is mid-turn is allowed to settle for up to 30 s and then recorded as
+   * `planner.round-end reason=operator-stop`, and live workers get their bounded report drain. A round that misses the bound
+   * takes today's hard stop; nothing is renewed and no campaign timer is added.
+   */
+  async function settleOperatorStop(current: OwnerRun, ctx: ExtensionContext): Promise<{ settled: boolean; drained: number }> {
+    // The host's idle flag is the second witness: a closed turn leaves no settle to wait for, even if a hello/abort skipped the
+    // settle event. Without it a stale turn marker would hold every stop for the full bound.
+    const busy = (() => { try { return ctx.isIdle ? !ctx.isIdle() : true; } catch { return true; } })();
+    const state = current.roundState, running = roundTurnInFlight && busy;
+    current.engine.pause('operator stop: no new dispatch or wake; the current round may settle');
+    let settled = false;
+    if (running) {
+      if (state) current.stopRound = { round: state.round, at: now() };
+      settled = await boundedWait(() => !roundTurnInFlight, STOP_ROUND_SETTLE_MS);
+      if (state && state.ended === undefined) {
+        state.ended = 'operator-stop';
+        await roundFact(current, 'planner.round-end', `planner.round-end: round ${state.round} closed by the operator${settled ? '' : ' after the settle bound'}; no new dispatch or wake follows`,
+          { round: state.round, reason: 'operator-stop', settled }).catch(() => { /* the audit row is best effort */ });
+      }
+    }
+    return { settled, drained: await drainWorkerReports(current) };
   }
 
   /**
@@ -2769,7 +3059,7 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
   });
   registerTool({
     name:'p2o_loop',label:'Planner pause/resume state',exposure:'model-only',
-    description:'PLANNER ONLY: status reads the Engine frontier/events/rounds and the campaign heartbeat/wake reason. wait ends this planning round without model polling — end every round with action=wait after dispatching or reviewing, because a round that keeps waiting inside the turn cannot be rebuilt from the ledger; committed worker reports/proposals can wake another round ONLY in consented event-driven mode, and a campaign with outstanding work can also be woken by a paced debt wake or its heartbeat. blocked pauses dispatch/automatic wakes until human /p2o resume. action=hint/constrain records one bounded operator instruction (text 3..300 characters; at most 24 hints and 12 constraints per run) as an append-only lifecycle fact rendered into the next planner prompt: a constraint narrows absolutely, a hint guides and never widens, and neither rewrites the campaign record. No goal action: goals are plan records with a proof (p2o_plan_author). No automatic retries, scope changes or renewal of authority. Consult the confirmed executor profile; shared remains serial.',
+    description:'PLANNER ONLY: status reads the Engine frontier/events/rounds and the campaign heartbeat/wake reason. wait ends this planning round without model polling — end every round with action=wait after dispatching or reviewing, because a round that keeps waiting inside the turn cannot be rebuilt from the ledger; committed worker reports/proposals can wake another round (the loop is automatic since P18/D48), and a campaign with outstanding work can also be woken by a paced debt wake or its heartbeat. blocked pauses dispatch/automatic wakes until human /p2o resume. action=hint/constrain records one bounded operator instruction (text 3..300 characters; at most 24 hints and 12 constraints per run) as an append-only lifecycle fact rendered into the next planner prompt: a constraint narrows absolutely, a hint guides and never widens, and neither rewrites the campaign record. No goal action: goals are plan records with a proof (p2o_plan_author). No automatic retries, scope changes or renewal of authority. Consult the confirmed executor profile; shared remains serial.',
     parameters:loopParameters,
     async execute(_id,params) {
       const current = owner();
@@ -2812,6 +3102,24 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
         const snapshot = await track(current, current.engine.disposition('wait', `waiting for ${condition} until ${scheduled.at}`));
         const value = { ...snapshot, revisit: scheduled } as unknown as Record<string, unknown>;
         return { ...textResult(JSON.stringify(value), value), terminate: true };
+      }
+      // P18.4/D48 demand floor: the first `wait` that answers a named demand while work is still owed is refused with the demand
+      // and the two legal next actions. A second wait is accepted — the planner may genuinely be at a wall, and the round then ends
+      // with the existing `planner.stalled` fact. The refusal spends one model turn; ending the round in prose costs the same
+      // turn and leaves the obligation unnamed.
+      if (params.action === 'wait' && current.roundState && !current.roundState.waitRefused) {
+        const owed = current.engine.snapshot();
+        if (owed.remaining > 0) {
+          const state = current.roundState;
+          state.waitRefused = true;
+          const demand = owed.demand ?? `${owed.remaining} obligation(s) remain`;
+          void roundFact(current, 'planner.round-nudge', `planner.round-nudge: round ${state.round} wait refused once; the round still owes ${demand}`,
+            { round: state.round, kind: 'wait', demand }).catch(() => { /* the audit row is best effort */ });
+          const value = { refused: 'WAIT_REFUSED', round: state.round, remaining: owed.remaining, demand,
+            legalNext: ['create and dispatch one bounded intent that answers the demand', 'record blocked with the approaches already exhausted and why (a second wait is also accepted and ends the round)'],
+            note: 'The demand floor refuses one wait per round so a round with named work cannot end in prose. This refusal is not an error and changes no authority.' };
+          return { ...textResult(JSON.stringify(value), value), terminate: false };
+        }
       }
       const value = params.action === 'status' ? current.engine.snapshot() : await track(current,current.engine.disposition(params.action,params.reason ?? ''));
       return { ...textResult(JSON.stringify(value), value), ...(params.action === 'status' ? {} : {terminate:true}) };
@@ -2995,7 +3303,7 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
   // ---------------------------------------------------------------- command
 
   pi.registerCommand('p2o', {
-    description: 'Plan and assess: /p2o --target <directory|http(s)-URL> [--workers N] [--loop manual|event-driven] [--goal "text"] [--heartbeat-seconds N] | /p2o stop | pause | resume',
+    description: 'Plan and assess: /p2o --target <directory|http(s)-URL> [--workers N] [--round-steps N] [--round-seconds N] [--goal "text"] [--heartbeat-seconds N] | /p2o stop | pause | resume',
     handler: async (args, ctx) => {
       try {
         const workspaceCommand = parseWorkspaceCommand(args);
@@ -3178,9 +3486,15 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
         if (command.action === 'stop') {
           if (!run) { ctx.ui.notify('No active p2o assessment.', 'info'); return; }
           if (run.role === 'worker') { ctx.ui.notify('This is a delegated worker; the assessment lead owns the sandbox. Ask the lead to stop it.', 'info'); return; }
-          const current = run; ctx.abort();
+          const current = run;
+          // P18.7/D47: an operator stop is an evidence-preserving transition. An active run pauses, lets the round in flight
+          // settle and drains worker reports inside fixed bounds; only then does the hard teardown run (and a round that misses
+          // its bound takes today's hard stop). The gate is closed by the cleanup itself, so a failed settle cannot leave it open.
+          const closing = current.phase === 'active' ? await settleOperatorStop(current, ctx) : { settled: false, drained: 0 };
+          ctx.abort();
           await stopAssessment(current, 'stopped');
-          ctx.ui.notify(`p2o stopped: sandbox removal verified${current.unclosedPanes?.length ? `; worker panes still present: ${current.unclosedPanes.join(', ')} (close them in Herdr)` : current.workers.size ? '; worker panes closed' : ''}.`, 'info');
+          current.stopRound = undefined;
+          ctx.ui.notify(`p2o stopped: sandbox removal verified${closing.settled ? '; the in-flight round settled and recorded its end' : ''}${closing.drained ? `; ${closing.drained} worker report(s) drained after the stop request` : ''}${current.unclosedPanes?.length ? `; worker panes still present: ${current.unclosedPanes.join(', ')} (close them in Herdr)` : current.workers.size ? '; worker panes closed' : ''}.`, 'info');
           return;
         }
         if (command.action !== 'start') throw new Error(`Unhandled p2o command: ${command.action}`);
@@ -3230,7 +3544,13 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
           const maxWorkers = command.options.workers ?? storedProfile?.maxWorkers ?? loaded.maxWorkers;
           const maxDepth = command.options.maxDepth ?? storedProfile?.maxDepth ?? loaded.maxDepth;
           const delegationAvailable = maxDepth > 0 && await herdr.available();
-          const loopMode = command.options.loopMode ?? storedProfile?.loopMode as 'manual' | 'event-driven' | undefined ?? loaded.loopMode;
+          // P18/A9: the round budget in force for this run. CLI overrides land on the operator's settings, and a resumed run
+          // scores against the current settings rather than a budget an older build never recorded.
+          const roundBudget: RoundBudget = {
+            ...loaded.plannerRound,
+            ...(command.options.roundSteps !== undefined ? { steps: command.options.roundSteps } : {}),
+            ...(command.options.roundSeconds !== undefined ? { seconds: command.options.roundSeconds } : {}),
+          };
           const executorMode = command.options.executorMode ?? storedProfile?.executorMode as 'shared' | 'isolated' | undefined ?? loaded.executorMode;
           // P10/TR-H09 (Q26): the shared executor stays serial by default. An explicit --target-ops N is an operator choice that
           // removes that default guarantee for this run (and is recorded as a lifecycle fact below); resuming keeps the cap the
@@ -3242,20 +3562,22 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
           // A7.2: an explicit session count may never exceed the target-operation cap: a session multiplies state, not pressure.
           if (command.options.sessionLimit !== undefined && executorMode !== 'session') throw Error('--executors session:N needs the session executor mode');
           if (command.options.sessionLimit !== undefined && command.options.sessionLimit > maxTargetOperations) throw Error(`--executors session:${command.options.sessionLimit} exceeds the target-operation cap ${maxTargetOperations}; sessions never multiply target pressure`);
-          if (loopMode === 'event-driven' && !delegationAvailable) throw Error('Event-driven mode requires a worker backend (Herdr); use --loop manual');
           const delegationReason = maxDepth === 0 ? 'worker admission disabled by --max-depth 0' : 'Pi is not running inside a Herdr session';
+          // P18/D48: with the manual loop removed, a run without a worker backend has no execution path at all (the planner
+          // holds no target tools). Refuse before consent instead of starting a run that can never dispatch.
+          if (!delegationAvailable) throw Error(`A p2o run needs a worker backend (Herdr): ${delegationReason}. The manual loop mode was removed, so the planner can no longer drive target work by hand.`);
           const delegation = maxWorkers > 0 && maxDepth > 0 ? '' : ' (delegation disabled by the configured limits)';
           if (extensionSha === undefined) { const identity = await runtimeIdentity(extensionPath); extensionSha = identity.sha256; runtimeVersion = identity.version; }
           const referenceNotice = selectedPriorRuns.length ? `\nReferencing ${selectedPriorRuns.length} prior workspace run${selectedPriorRuns.length === 1 ? '' : 's'} on this same target: ${selectedPriorRuns.map(found => found.runId).join(', ')}. Tagged as prior-run context only; never counted as same-run evidence, and no scope, worker or ticket authority is restored.` : referWorkspace ? '\nNo prior workspace run on this same target was found for --refer-workspace; starting with no referenced context.' : '';
           // A6.1: disclose the campaign frame before confirmation, including that a non-zero heartbeat spends paid rounds.
-          const wantsCampaign = Boolean(command.options.goal) || Boolean(command.options.avoid?.length) || Boolean(command.options.allow?.length) || command.options.heartbeatSeconds !== undefined || loopMode === 'event-driven' || command.options.callback !== undefined || command.options.labNetwork !== undefined;
-          const campaignPreview = wantsCampaign ? `${campaignStartLine(campaignFrom({ ...(command.options.goal ? { goal: command.options.goal } : {}), ...(command.options.avoid?.length ? { avoid: command.options.avoid } : {}), ...(command.options.allow?.length ? { allow: command.options.allow } : {}), ...(command.options.heartbeatSeconds !== undefined ? { heartbeatSeconds: command.options.heartbeatSeconds } : {}), ...(command.options.callback ? { callback: command.options.callback } : {}), ...(command.options.labNetwork ? { labNetwork: command.options.labNetwork } : {}), mode, effectClasses, target: targetLabel(target), at: new Date(now()).toISOString() }))}\n` : '';
+          // P18/A9: every run is the automatic loop, so a campaign frame is always recorded; the flags fill it in.
+          const campaignPreview = `${campaignStartLine(campaignFrom({ ...(command.options.goal ? { goal: command.options.goal } : {}), ...(command.options.avoid?.length ? { avoid: command.options.avoid } : {}), ...(command.options.allow?.length ? { allow: command.options.allow } : {}), ...(command.options.heartbeatSeconds !== undefined ? { heartbeatSeconds: command.options.heartbeatSeconds } : {}), ...(command.options.callback ? { callback: command.options.callback } : {}), ...(command.options.labNetwork ? { labNetwork: command.options.labNetwork } : {}), mode, effectClasses, target: targetLabel(target), at: new Date(now()).toISOString() }))}\n`;
           // A7.8: the ingress path is disclosed before confirmation, with what it can and cannot prove.
           const ingressPreview = command.options.callback || command.options.labNetwork
             ? `Ingress: ${[command.options.callback ? `operator callback ${cleanText(command.options.callback)} (a destination the target reaches out to, not a listener)` : '', command.options.labNetwork ? `sandbox joins operator lab network "${cleanText(command.options.labNetwork)}" (verified with docker network inspect at start; no host port is published)` : ''].filter(Boolean).join('; ')}\n`
             : '';
           const allowed = await ctx.ui.confirm('Start authorized assessment?',
-            `${resumeManifest ? `Resume: ${runId} — committed records are kept; earlier tickets, operations and workers are NOT restored, and interrupted work stays interrupted until re-dispatched\n` : ''}Runtime: p2o ${runtimeVersion || 'unknown version'} · ${extensionSha.slice(0, 12)}\nTarget: ${cleanText(targetLabel(target))}\nEngagement: ${engagementLine(mode, effectClasses)}\n${ingressPreview}${declaredIdentity ? `Identity: ${identitySummary(declaredIdentity)} — sealed from ${cleanText(command.options.identityPath!)}, values stay host-side and only ids and kinds reach a model; the host substitutes a placeholder after the command policy allows an operation, and a command that uses a principal can still print its value.\n` : ''}${campaignPreview}${command.options.goal ? `Stated objective: ${cleanText(command.options.goal)}\n` : ''}${command.options.avoid?.length ? `Operator constraints (sent to every worker as model-level guidance, not enforcement):\n${command.options.avoid.map(line => `- ${cleanText(line)}`).join('\n')}\n` : ''}${command.options.allow?.length ? `Operator permissions (recorded allow = permission only; a deny still wins and the target never widens):\n${command.options.allow.map(line => `- ${cleanText(line)}`).join('\n')}\n` : ''}${target.kind === 'directory' ? 'A bounded source copy (64 MiB / 20000 entries) is exposed read-only to the sandbox and its contents may reach your model provider. Symlinks, special files, .git, node_modules, owner control/knowledge directories, .p2o-state and .p2o-reports are skipped. Choose a source directory, not your home or a secrets directory.' : target.kind === 'hybrid' ? `Hybrid target: a bounded source copy (64 MiB / 20000 entries, same skips as above) is exposed read-only to the sandbox, and ${target.url} is the starting URL. Neither is a boundary: any http(s) URL, any redirect hop and any host the sandbox can reach is allowed.` : `Starting URL: ${target.url}. It is a label, not a boundary: any http(s) URL, any redirect hop and any host the sandbox can reach is allowed.`}\nNetwork authority: both shell and network tools have unrestricted bridge egress (public/private/link-local addresses and reachable host services), plus downloads and user-space tool installs in scratch. Opaque commands are NOT origin-filtered. Loopback is container-local; host.docker.internal reaches host-published services; private, link-local and cloud-metadata addresses are reachable. Root inside the container with a writable rootfs and the Docker default capability set (raw sockets work); host paths and the Docker socket are never mounted. Never mount a secrets directory. ${CREDENTIAL_TRUTH} Returned data may reach your model provider or local Docker inspection; exports are only best-effort redacted.\nConfirm you own this target or have permission to assess it. The current Pi model leads the assessment; normal provider charges apply.${referenceNotice}\nWorkers: ${delegationAvailable ? `up to ${maxWorkers} simultaneous visible Pi worker panes, fresh assignments across successive batches (retention cap 1000). Flat Planner-to-Worker delegation; workers propose helpers instead of spawning. Each worker has its own model and costs. Model concurrency and target-operation concurrency are separate; the confirmed executor profile below controls execution.` : `none${delegation} (${delegationReason}).`}\nPlanner loop: ${loopMode}. ${loopMode === 'event-driven' ? `Committed semantic events may automatically start additional paid Planner requests, without another human prompt; two quietly unproductive rounds stop them and ask for a human decision. Inner model/tool turns, compaction/retries configured in Pi and worker usage are additional; this is NOT a hard monetary/token cap. No automatic provider fallback or target replay. /p2o pause stops dispatch/wakes; /p2o stop revokes and cleans up.` : 'No automatic event-driven model turns. Accepted task queues still dispatch mechanically when slots/prerequisites permit; the Planner resumes through normal interaction.'}\nExecutors: ${executorMode}; target-operation cap ${maxTargetOperations}. Isolated uses a fresh executor per assignment; shared ${sharedParallel ? `runs up to ${maxTargetOperations} target operations at once because the operator explicitly raised the cap with --target-ops, so the default serial guarantee is removed` : 'is serial'}.${executorMode === 'session' ? ` Session keeps one long-lived container per opened session (at most ${command.options.sessionLimit ?? maxTargetOperations}); state persists between steps, every command still counts against the operation cap, and stop/finish verifies removal.` : ''}${executorMode === 'shared' && maxWorkers > 1 ? ` ${maxWorkers} worker panes requested with the shared executor ${sharedSerial ? `still run target operations ONE AT A TIME (cap ${maxTargetOperations}) — more workers raises model/plan concurrency, not target throughput` : `share the explicit target-operation cap ${maxTargetOperations}: up to that many target operations may run at once, and more workers can now raise target throughput`}.` : ''} Containers have no pids/memory/cpu limit; cancellation destroys the affected executor, shared cancellation can affect peers. Source snapshots must match the initial bounded snapshot.\nDocker image: ${image}. Root inside the container with no host mount and no Docker socket. Containers share the host kernel; this is not VM isolation. No elapsed-time limit for the assessment, lead or workers. Commands/HTTP default to no task timeout; explicitly stop/finish the run. Provider costs are the only remaining ceiling.\nLưu trữ: ${retention === 'durable-local' ? `DURABLE-LOCAL (mặc định): giữ tri thức sau stop/finish tại ${join(selectedStateRoot, runId)}; đọc lại bằng /p2o open ${runId}.` : 'EPHEMERAL: kho tri thức nằm trong thư mục control riêng, bị xóa sau cleanup; không mở lại được nếu không có export.'} Quota/run ${loaded.storageQuotaMiB} MiB (chừa ${Math.round(finalizationReserve(loaded.storageQuotaMiB*1024*1024)/1024)} KiB cho final outcome/checkpoint; artifact thường dừng trước ngưỡng đó); \`p2o_capture\` đọc file text trong scratch đã cấp theo FD/single-link rồi redact trước khi lưu, tối đa ${loaded.artifactCaptureKiB} KiB/operation (stdout+stderr chung cap; output tools vẫn 48 KiB). Bản redacted chỉ là best effort: có thể chứa dữ liệu nhạy cảm, không chia sẻ khi chưa kiểm tra. Không giữ/khôi phục quyền scope, worker, ticket, cookie, request queue hay target replay. Luôn cần xác nhận này cho run mới.${command.options.export ? '\nExport enabled: additional bounded redacted receipts under .p2o-reports before cleanup; review before sharing.' : '\nNo additional portable export selected (--export is separate from durable-local retention).'}${(loaded.autoReport ?? retention === 'durable-local') ? `\nReport: when this run finishes or stops, a deterministic report (REPORT.md, CSV and JSON files, no model call) is written to ${join(loaded.reportRoot ?? join(await realpath(ctx.cwd), '.p2o-reports'), `report-${runId}`)} (new directory, never overwritten${retention === 'ephemeral' ? '; it outlives the ephemeral knowledge store' : ''}). It can contain redacted target data and may sit inside your project: review it, do not commit it. Disable with p2o.autoReport=false.` : ''}`);
+            `${resumeManifest ? `Resume: ${runId} — committed records are kept; earlier tickets, operations and workers are NOT restored, and interrupted work stays interrupted until re-dispatched\n` : ''}Runtime: p2o ${runtimeVersion || 'unknown version'} · ${extensionSha.slice(0, 12)}\nTarget: ${cleanText(targetLabel(target))}\nEngagement: ${engagementLine(mode, effectClasses)}\n${ingressPreview}${declaredIdentity ? `Identity: ${identitySummary(declaredIdentity)} — sealed from ${cleanText(command.options.identityPath!)}, values stay host-side and only ids and kinds reach a model; the host substitutes a placeholder after the command policy allows an operation, and a command that uses a principal can still print its value.\n` : ''}${campaignPreview}${command.options.goal ? `Stated objective: ${cleanText(command.options.goal)}\n` : ''}${command.options.avoid?.length ? `Operator constraints (sent to every worker as model-level guidance, not enforcement):\n${command.options.avoid.map(line => `- ${cleanText(line)}`).join('\n')}\n` : ''}${command.options.allow?.length ? `Operator permissions (recorded allow = permission only; a deny still wins and the target never widens):\n${command.options.allow.map(line => `- ${cleanText(line)}`).join('\n')}\n` : ''}${target.kind === 'directory' ? 'A bounded source copy (64 MiB / 20000 entries) is exposed read-only to the sandbox and its contents may reach your model provider. Symlinks, special files, .git, node_modules, owner control/knowledge directories, .p2o-state and .p2o-reports are skipped. Choose a source directory, not your home or a secrets directory.' : target.kind === 'hybrid' ? `Hybrid target: a bounded source copy (64 MiB / 20000 entries, same skips as above) is exposed read-only to the sandbox, and ${target.url} is the starting URL. Neither is a boundary: any http(s) URL, any redirect hop and any host the sandbox can reach is allowed.` : `Starting URL: ${target.url}. It is a label, not a boundary: any http(s) URL, any redirect hop and any host the sandbox can reach is allowed.`}\nNetwork authority: both shell and network tools have unrestricted bridge egress (public/private/link-local addresses and reachable host services), plus downloads and user-space tool installs in scratch. Opaque commands are NOT origin-filtered. Loopback is container-local; host.docker.internal reaches host-published services; private, link-local and cloud-metadata addresses are reachable. Root inside the container with a writable rootfs and the Docker default capability set (raw sockets work); host paths and the Docker socket are never mounted. Never mount a secrets directory. ${CREDENTIAL_TRUTH} Returned data may reach your model provider or local Docker inspection; exports are only best-effort redacted.\nConfirm you own this target or have permission to assess it. The current Pi model leads the assessment; normal provider charges apply.${referenceNotice}\nWorkers: ${delegationAvailable ? `up to ${maxWorkers} simultaneous visible Pi worker panes, fresh assignments across successive batches (retention cap 1000). Flat Planner-to-Worker delegation; workers propose helpers instead of spawning. Each worker has its own model and costs. Model concurrency and target-operation concurrency are separate; the confirmed executor profile below controls execution.` : `none${delegation} (${delegationReason}).`}\nPlanner loop: automatic (the manual loop mode was removed). Committed semantic events may automatically start additional paid Planner requests, without another human prompt; two quietly unproductive rounds stop them and ask for a human decision. Each round is bounded by the round budget (${roundBudget.steps} steps / ${roundBudget.seconds}s, context wrap ${roundBudget.contextWrapPercent}% and hard stop ${roundBudget.contextHardPercent}%); the campaign itself stays uncapped. Inner model/tool turns, compaction/retries configured in Pi and worker usage are additional; this is NOT a hard monetary/token cap. No automatic provider fallback or target replay. /p2o pause stops dispatch/wakes; /p2o stop revokes and cleans up.\nExecutors: ${executorMode}; target-operation cap ${maxTargetOperations}. Isolated uses a fresh executor per assignment; shared ${sharedParallel ? `runs up to ${maxTargetOperations} target operations at once because the operator explicitly raised the cap with --target-ops, so the default serial guarantee is removed` : 'is serial'}.${executorMode === 'session' ? ` Session keeps one long-lived container per opened session (at most ${command.options.sessionLimit ?? maxTargetOperations}); state persists between steps, every command still counts against the operation cap, and stop/finish verifies removal.` : ''}${executorMode === 'shared' && maxWorkers > 1 ? ` ${maxWorkers} worker panes requested with the shared executor ${sharedSerial ? `still run target operations ONE AT A TIME (cap ${maxTargetOperations}) — more workers raises model/plan concurrency, not target throughput` : `share the explicit target-operation cap ${maxTargetOperations}: up to that many target operations may run at once, and more workers can now raise target throughput`}.` : ''} Containers have no pids/memory/cpu limit; cancellation destroys the affected executor, shared cancellation can affect peers. Source snapshots must match the initial bounded snapshot.\nDocker image: ${image}. Root inside the container with no host mount and no Docker socket. Containers share the host kernel; this is not VM isolation. No elapsed-time limit for the assessment, lead or workers. Commands/HTTP default to no task timeout; explicitly stop/finish the run. Provider costs are the only remaining ceiling.\nLưu trữ: ${retention === 'durable-local' ? `DURABLE-LOCAL (mặc định): giữ tri thức sau stop/finish tại ${join(selectedStateRoot, runId)}; đọc lại bằng /p2o open ${runId}.` : 'EPHEMERAL: kho tri thức nằm trong thư mục control riêng, bị xóa sau cleanup; không mở lại được nếu không có export.'} Quota/run ${loaded.storageQuotaMiB} MiB (chừa ${Math.round(finalizationReserve(loaded.storageQuotaMiB*1024*1024)/1024)} KiB cho final outcome/checkpoint; artifact thường dừng trước ngưỡng đó); \`p2o_capture\` đọc file text trong scratch đã cấp theo FD/single-link rồi redact trước khi lưu, tối đa ${loaded.artifactCaptureKiB} KiB/operation (stdout+stderr chung cap; output tools vẫn 48 KiB). Bản redacted chỉ là best effort: có thể chứa dữ liệu nhạy cảm, không chia sẻ khi chưa kiểm tra. Không giữ/khôi phục quyền scope, worker, ticket, cookie, request queue hay target replay. Luôn cần xác nhận này cho run mới.${command.options.export ? '\nExport enabled: additional bounded redacted receipts under .p2o-reports before cleanup; review before sharing.' : '\nNo additional portable export selected (--export is separate from durable-local retention).'}${(loaded.autoReport ?? retention === 'durable-local') ? `\nReport: when this run finishes or stops, a deterministic report (REPORT.md, CSV and JSON files, no model call) is written to ${join(loaded.reportRoot ?? join(await realpath(ctx.cwd), '.p2o-reports'), `report-${runId}`)} (new directory, never overwritten${retention === 'ephemeral' ? '; it outlives the ephemeral knowledge store' : ''}). It can contain redacted target data and may sit inside your project: review it, do not commit it. Disable with p2o.autoReport=false.` : ''}`);
           if (!allowed) { ctx.ui.notify('Cancelled. No sandbox, worker or agent turn started.', 'info'); return; }
           ctx.signal?.throwIfAborted();
           closeHistorical();
@@ -3270,7 +3592,7 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
             } catch (error) { await rm(control, {recursive:true,force:true}); throw error; }
           } else {
             try { store = AssessmentStore.create(stateRoot, { runId, targetKind:target.kind, targetIdentity: sha256Hex(targetLabel(target)), targetDisplay: targetLabel(target), retention,
-              profile: { runtimeHash: extensionSha!, image, loopMode, executorMode, maxWorkers, maxDepth, maxTargetOperations, storageQuotaMiB:loaded.storageQuotaMiB, artifactCaptureKiB:loaded.artifactCaptureKiB, mode, effectClasses } }, { maxBytes: loaded.storageQuotaMiB * 1024 * 1024, fault:options.storeFault, graphCapacity: loaded.graphCapacity }); }
+              profile: { runtimeHash: extensionSha!, image, loopMode: 'event-driven', executorMode, maxWorkers, maxDepth, maxTargetOperations, storageQuotaMiB:loaded.storageQuotaMiB, artifactCaptureKiB:loaded.artifactCaptureKiB, mode, effectClasses } }, { maxBytes: loaded.storageQuotaMiB * 1024 * 1024, fault:options.storeFault, graphCapacity: loaded.graphCapacity }); }
             catch (error) { await rm(control, {recursive:true,force:true}); throw error; }
           }
           const records = join(control, 'records.sqlite'); // Private broker/ticket alias, never a second file/ledger.
@@ -3306,15 +3628,15 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
             delegation: { enabled: delegationAvailable, reason: delegationAvailable ? undefined : delegationReason, maxWorkers, maxDepth, spawned: 0 },
             settings: loaded, extensionPath, extensionSha: extensionSha!, spawns: new Set(), operations: new Set(),
             library: new SkillLibrary(packageRoot(extensionPath)), evidence: new EvidenceStore(runId, records, targetLabel(target)),
-            knowledgeUsed: 0, image, exportEnabled: command.options.export ?? false, statedObjective: command.options.goal, avoid: command.options.avoid, mode, effectClasses, workerContextPackets:new Map(),
+            knowledgeUsed: 0, image, exportEnabled: command.options.export ?? false, statedObjective: command.options.goal, avoid: command.options.avoid, mode, effectClasses, roundBudget, workerContextPackets:new Map(),
             // A7.7: the rules the operator's settings define. Nothing model-visible can add, remove or reorder a rule.
             policy: commandPolicy(loaded.commandPolicy), policyAllows: new Map(), sessions: new Map(),
             ...(identity ? { identity } : {}), ...(sealedIdentity ? { sealedIdentity } : {}),
             board:undefined as unknown as TaskBoard,plan:undefined as unknown as PlanBoard,cases:undefined as unknown as CaseBoard,coverage:undefined as unknown as CoverageBoard,engine:undefined as unknown as AssessmentEngine,progress:new ProgressState(now),
           };
-          // A6.1: the campaign frame is recorded once and never rewritten. A resumed run folds the stored record; a manual run
-          // started without a campaign flag records nothing, so A6.3/A6.6 keep today's behaviour for it.
-          if (wantsCampaign) {
+          // A6.1/P18/A9: the campaign frame is recorded once and never rewritten. A resumed run folds the stored record; a
+          // fresh automatic run always records one, so the heartbeat and the prompt block exist without a campaign flag.
+          {
             const stored = storedCampaign, campaign = campaignFrom({ ...(command.options.goal ? { goal: command.options.goal } : {}), ...(command.options.avoid?.length ? { avoid: command.options.avoid } : {}), ...(command.options.allow?.length ? { allow: command.options.allow } : {}), ...(command.options.heartbeatSeconds !== undefined ? { heartbeatSeconds: command.options.heartbeatSeconds } : {}), ...(command.options.callback ? { callback: command.options.callback } : {}), ...(command.options.labNetwork ? { labNetwork: command.options.labNetwork } : {}), mode, effectClasses, target: targetLabel(target), targetRevision: store.graphScope(), at: new Date(now()).toISOString() }, stored);
             current.campaign = campaign;
             if (!stored) await appendRecord(records, { at: new Date(now()).toISOString(), runId, by: 'owner', kind: 'lifecycle',
@@ -3349,7 +3671,7 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
           current.plan = new PlanBoard(runId,records,() => run === current && current.phase === 'active',now,index => runDebt(current,index),review.cases);
           current.cases = new CaseBoard(runId,records,() => run === current && current.phase === 'active',review.cases,now);
           current.coverage = new CoverageBoard(runId,records,() => run === current && current.phase === 'active',review.coverage,now);
-          current.engine = new AssessmentEngine(runId,loopMode,{
+          current.engine = new AssessmentEngine(runId,'event-driven',{
             active:() => run === current && current.phase === 'active',
             list:() => current.board.list(),readiness:id => current.board.readiness(id),
             capacity:() => current.held ? 0 : current.delegation.maxWorkers-[...current.workers.values()].filter(w => !w.reported && !w.stopped).length,
@@ -3358,16 +3680,32 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
             idle:() => current.ctx.isIdle?.() ?? false,
             wake:wake => {
               if (!current.engine.validWake(wake)) return;
+              // P18.3/D47: the round's budget starts when its wake is dispatched, so a round delivered as a follow-up prompt (the
+              // fallback shape) is bounded exactly like one delivered into a fresh session.
+              beginRoundState(current, wake);
               // A6.3: a wake is a durable lifecycle fact, so the report can count automatic rounds by reason instead of
               // re-deriving them from prose. The write never blocks delivery.
               void note({ by: 'owner', kind: 'lifecycle', text: `planner.wake: ${wake.reason ?? 'event'} round ${wake.round}${wake.demand ? `; ${wake.demand}` : ''}`.slice(0, 900),
                 data: { engine: { event: 'planner.wake', reason: wake.reason ?? 'event', round: wake.round } } }).catch(() => { /* delivery does not depend on the audit row */ });
-              pi.sendUserMessage(plannerWakePrompt(wake),{deliverAs:'followUp'});
+              // P18.1/D45: the round opener is dispatched as a command, not as a prompt, so it can replace the session before
+              // any turn starts. Dispatching while streaming or with operator input queued would either throw or bury that
+              // input, so those cases keep today's follow-up wake; the command records which path a round took.
+              if (current.settings.roundSessions) {
+                const busy = !(current.ctx.isIdle?.() ?? true), pending = current.ctx.hasPendingMessages?.() ?? false;
+                if (!busy && !pending) {
+                  try { ownerApi!.sendUserMessage(roundCommandText(wake),{expandPromptTemplates:true}); return; }
+                  catch { void roundFact(current, 'planner.round-session-fallback', `planner.round-session-fallback: round ${wake.round} stayed in the current session because the host cannot dispatch the round command`, { round: wake.round, reason: 'command-dispatch-unavailable' }).catch(() => { /* delivery does not depend on the audit row */ }); }
+                } else void roundFact(current, 'planner.round-session-fallback', `planner.round-session-fallback: round ${wake.round} stayed in the current session (${busy ? 'session busy' : 'operator messages pending'})`, { round: wake.round, reason: busy ? 'session busy' : 'operator messages pending' }).catch(() => { /* delivery does not depend on the audit row */ });
+              }
+              ownerApi!.sendUserMessage(plannerWakePrompt(wake),{deliverAs:'followUp'});
             },
             problem:reason => { current.ctx.ui.notify(cleanText(reason),'warning'); refreshVisibility(current); },
             // A6.3: the campaign heartbeat is the campaign record's interval; a run without a campaign never arms one.
             now: () => now(), heartbeatSeconds: () => current.campaign?.heartbeatSeconds ?? 0,
-          });
+            // P18/A9: reported in the engine snapshot; the round itself is judged by the loop in P18.1+.
+            roundBudget: () => current.roundBudget,
+          // P18/D49: the fixed 800 ms coalescing window is passed explicitly, so the constructor default is not its only record.
+          }, 800);
           current.broker = new Broker(control, {
             exec: (command, seconds, workdir, signal, session, by) => executeWithReceipt(current, by ?? workdir.split('/').at(-1)!, 'shell', command, (onRunning,onOutput,dispatch) => session
               ? current.executors.use(session,signal,s => s.exec(dispatch.text, seconds, signal, s.sessionWorkdir,onRunning,onOutput))
@@ -3545,11 +3883,6 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
             reportCommitted: async registration => {
               if (current.phase !== 'active' || run !== current) return;
               current.engine.notify('worker-report',registration.workerId,registration.reported?.outcome ?? 'unknown');
-              // Manual loop never calls the Planner by itself; make the pending review visible instead of a silent commit.
-              if (current.engine.mode === 'manual') {
-                const pending = (await current.board.list()).filter(awaitingReview).length;
-                current.ctx.ui.notify(`${registration.workerId} reported — ${pending} worker report${pending === 1 ? '' : 's'} awaiting Planner review. Send any message to continue (manual loop never reviews by itself).`, 'info');
-              }
             },
             report: (workerId, report, request) => track(current,(async () => {
               const registration = current.workers.get(workerId);
@@ -3562,6 +3895,8 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
             onProblem: problem => ctx.ui.notify(cleanText(problem), 'warning'),
           }, {});
           run = current;
+          // P18.1/D45: publish the owner run and this host for the replacement instance the round opener will create.
+          ownerRun = current; ownerApi = pi;
           current.unobserve = observeRecords(records, () => refreshVisibility(current));
           current.progress = new ProgressState(now, () => refreshVisibility(current));
           pi.setActiveTools(plannerTools());
@@ -3572,6 +3907,11 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
               ? `run resumed for ${cleanText(targetLabel(target))}; earlier records are preserved, and no earlier ticket, operation or worker is restored`
               : `assessment starting for ${cleanText(targetLabel(target))}; retention ${retention}` });
             if (!command.resume && (command.options.goal || command.options.avoid?.length)) await appendRecord(records, { at:new Date().toISOString(), runId, by:'owner', kind:'lifecycle', text:`operator-stated ${[command.options.goal ? 'objective' : '', command.options.avoid?.length ? `${command.options.avoid.length} constraint(s)` : ''].filter(Boolean).join(' and ')} recorded; guidance only, scope is unchanged`, data:{ operator:{ objective: command.options.goal, avoid: command.options.avoid } } });
+            // P18/D48: the manual loop was removed. A stored profile that recorded it resumes as the automatic loop; the
+            // mapping is one lifecycle fact so the report and the next round read it instead of inferring it from a version.
+            if (command.resume && storedProfile?.loopMode === 'manual') await appendRecord(records, { at:new Date().toISOString(), runId, by:'owner', kind:'lifecycle',
+              text: 'loop mode mapping: the stored run recorded the removed manual loop; this resumed run continues as the automatic loop',
+              data:{ event:'engine.loop-mode-mapped', from:'manual', to:'event-driven' } });
             await sandbox.start();
             store.sealSource(sandbox.sourceManifest, sandbox.sourceSkipped);
             if (referWorkspace) {
@@ -3610,12 +3950,111 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
     },
   });
 
+  // ---------------------------------------------------------------- rounds
+
+  /**
+   * P18.1/D45: one round is one fresh Pi session. The engine wake dispatches this command with the wake it is about to
+   * deliver; the command replaces the session and sends the round prompt into the replacement, so the new round starts with
+   * a clean context and a recorded identity. It is internal: the description says so and no help surface lists it.
+   *
+   * The switch is refused in four cases, each with a fallback to the P17 shape (a follow-up wake in the current session)
+   * rather than a failed round: a stale captured context, a switch already in flight, a busy/queued session, and a host whose
+   * session switch is cancelled or unavailable. Every refusal is recorded, because a report must not claim a session per
+   * round that never happened.
+   */
+  pi.registerCommand(ROUND_COMMAND, {
+    description: 'Internal: opens one bounded Planner round in a fresh session. The engine dispatches it automatically; operators do not run it.',
+    handler: async (args, ctx) => {
+      const current = run;
+      if (!current || current.role !== 'owner' || current.phase !== 'active') return;
+      const wake = parseRoundCommandArgs(args);
+      if (!wake || !current.engine.validWake(wake)) return;
+      // The host builds a fresh command context per dispatch, so identity is not how a stale capture is recognised; the
+      // reservation is. A duplicate carries the same `through`/`round` the run already opened, and a secondopening would
+      // replace the session out from under the round that is already running. Pi also refuses a stale captured context itself.
+      if (current.roundOpened?.through === wake.through && current.roundOpened?.round === wake.round) return;
+      // P18.3/D47: the wake dep starts the round state at dispatch; a direct or retried invocation starts it here, idempotently.
+      beginRoundState(current, wake);
+      if (roundSwitchInFlight) return;
+      const live = () => run === current && current.phase === 'active';
+      const fallBack = async (reason: string) => {
+        if (!live()) return;
+        pi.sendUserMessage(plannerWakePrompt(wake),{deliverAs:'followUp'});
+        await roundFact(current, 'planner.round-session-fallback', `planner.round-session-fallback: round ${wake.round} stayed in the current session (${reason})`, { round: wake.round, reason }).catch(() => { /* delivery does not depend on the audit row */ });
+      };
+      if (!current.settings.roundSessions) return fallBack('round sessions disabled');
+      // A streaming turn would reject the command dispatch, and queued operator input must be delivered before a switch
+      // takes the session away; the next wake retries.
+      if (!(current.ctx.isIdle?.() ?? true)) return fallBack('session busy');
+      if (current.ctx.hasPendingMessages?.() ?? false) return fallBack('operator messages pending');
+      roundSwitchInFlight = true;
+      try {
+        // P18.2/D46: the briefing is built before the switch, from the same read the round is judged on, so the replacement
+        // session opens on the round's projection instead of a summary of a transcript it does not have. A failed read still
+        // opens the round with the default opening sentence and says so in the round-start fact.
+        let briefing: Awaited<ReturnType<typeof roundBriefing>> | undefined;
+        try { briefing = await roundBriefing(current, wake); } catch { briefing = undefined; }
+        // P18.6/D50: the routing target is resolved on the outgoing context, before the switch. The replacement exposes only
+        // its own session surface (no model registry), and a resolved Model is plain data, so it survives the replacement.
+        const routeModel = briefing?.route.modelId ? plannerModel(current.ctx, briefing.route.modelId) : undefined;
+        const routeMissing = briefing?.route.modelId && !routeModel ? `model ${briefing.route.modelId} is not in the host registry` : undefined;
+        const briefFacts = briefing ? { bytes: briefing.brief.bytes, truncated: briefing.brief.truncated, omitted: briefing.brief.omitted } : undefined;
+        await roundFact(current, 'planner.round-start',
+          `planner.round-start: round ${wake.round} opened (${wake.reason ?? 'event'}${wake.demand ? `; ${wake.demand}` : ''}; brief ${briefing ? `${briefing.brief.bytes} bytes${briefing.brief.truncated ? ', capped' : ''}` : 'unavailable'}${briefing?.route.modelId ? `; routed to ${briefing.route.modelId}` : ''})`,
+          { round: wake.round, reason: wake.reason ?? 'event', ...(briefFacts ? { brief: briefFacts } : {}) });
+        if (!live()) return;
+        // The replacement's `session_start` runs before `withSession`, so the round number must be known by then.
+        current.roundSession = { id: '', round: wake.round };
+        current.roundOpened = { through: wake.through, round: wake.round };
+        if (briefing) current.roundWindow = { round: wake.round, records: briefing.records };
+        const outcome = await ctx.newSession({
+          withSession: async replaced => {
+            if (!live()) return;
+            const id = replaced.sessionManager.getSessionId();
+            current.ctx = replaced;
+            current.roundSession = { id, round: wake.round };
+            await roundFact(current, 'planner.round-session', `planner.round-session: round ${wake.round} opened in session ${id}`, { round: wake.round, session: id });
+            // P18.6/D50: the routed model and thinking level are applied to the fresh session before its first turn; a failed
+            // application keeps the current loadout and records the fallback, so the round still starts.
+            if (briefing) await applyRoundRoute(current, wake.round, briefing.route, routeModel, routeMissing).catch(() => { /* routing never blocks the round */ });
+            // P18.2/D46: a user message, not a system-prompt mutation, so `before_agent_start` still owns policy and the
+            // wake marker at the front keeps the stale-wake abort working. `sendUserMessage` always starts its turn.
+            await replaced.sendUserMessage(roundBriefPrompt(wake, briefing?.brief.text));
+          },
+        });
+        if (outcome.cancelled) await fallBack('session switch cancelled');
+      } catch (error) {
+        await fallBack(`session switch failed: ${message(error)}`).catch(() => { /* the fallback fact is best effort */ });
+      } finally { roundSwitchInFlight = false; }
+    },
+  });
+
   // ---------------------------------------------------------------- lifecycle
 
-  pi.on('session_start', async (_event, ctx) => {
+  pi.on('session_start', async (event, ctx) => {
     pendingTicket = pendingTicket ?? workerTicketFlag(pi);
-    if (pendingTicket && !run) { await activateWorker(ctx); return; }
-    if (!run) pi.setActiveTools(pi.getActiveTools().filter(name => !ALL_TOOLS.includes(name)));
+    // A worker ticket always activates this instance as the worker: it is a separate process in production, and in a test it
+    // must not adopt the owner run another registration in the same process still holds.
+    if (pendingTicket) { if (!run) await activateWorker(ctx); return; }
+    // P18.1/D45: the round opener replaces the session, and this host re-runs the extension factory for the replacement. Only a
+    // replacement session adopts — never a fresh process start, which is what keeps an unrelated instance from inheriting a
+    // fixture's run — and the adopted run must still be live.
+    if (!run && event.reason !== 'startup' && ownerRun && ownerRun.phase === 'active') run = ownerRun;
+    if (!run) { pi.setActiveTools(pi.getActiveTools().filter(name => !ALL_TOOLS.includes(name))); return; }
+    // The campaign keeps running here: rebind the browser-facing context and restore the planner boundary a fresh session
+    // cannot inherit (a new session starts with the host's default tool loadout and no name).
+    if (run.role === 'owner') {
+      run.ctx = ctx;
+      ownerRun = run; ownerApi = pi;
+      if (event.reason !== 'startup') {
+        // P18.3/D47: a round that was already wrapping keeps the closing loadout across a host reload.
+        pi.setActiveTools(run.roundState?.wrapSent ? closingTools() : plannerTools());
+        if (run.roundSession) pi.setSessionName(`p2o ${run.runId} round ${run.roundSession.round}`);
+        refreshVisibility(run);
+      }
+      return;
+    }
+    run.ctx = ctx;
   });
   pi.on('tool_call', event => {
     if (staleWakeInFlight) return {block:true,reason:'Obsolete automatic wake cancelled; no host or target tools in this turn'};
@@ -3651,7 +4090,7 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
         delegation: { enabled: current.delegation.enabled, reason: current.delegation.reason, maxWorkers: current.delegation.maxWorkers, maxDepth: current.delegation.maxDepth,
           // P10/WF-02 (Q28): the same configured set the admission check enforces, so the planner chooses from a known list.
           runtimeModels: current.delegation.enabled ? allowedWorkerModels(current.settings) : [] },
-        phase: current.phase, loopMode:current.engine.mode, executorMode:current.executors.mode, statedObjective: current.statedObjective,
+        phase: current.phase, executorMode:current.executors.mode, statedObjective: current.statedObjective,
         mode: current.mode, effectClasses: current.effectClasses,
         ...(current.identity ? { secrets: current.identity.secrets.length } : {}),
         ...(current.campaign ? { campaign: current.campaign } : {}),
@@ -3679,9 +4118,17 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
     if ((customWake || isWakePrompt(promptText)) && (!isPlannerWake(wake) || current?.role !== 'owner' || !current.engine.validWake(wake))) {
       staleWakeInFlight = true; ctx.abort(); return {messages:event.messages};
     }
-    const messages = event.messages.filter(m => !(m.role === 'custom' && ['p2o_objective_state','p2o_planner_state','p2o_knowledge_state'].includes(m.customType)));
+    const messages = event.messages.filter(m => !(m.role === 'custom' && ['p2o_objective_state','p2o_planner_state','p2o_knowledge_state','p2o_round_directive'].includes(m.customType)));
     if (!current || current.phase !== 'active') return {messages};
-    if (current.role === 'owner') recordPlannerContext(current, ctx, wake);
+    // P18.3/D47: the round budget is judged before every provider request, from the context usage the same read recorded, so a
+    // wrapping round learns it while it still has steps. An exhausted round aborts here and settlement classifies the stop.
+    let directive: string | undefined;
+    if (current.role === 'owner') {
+      recordPlannerContext(current, ctx, wake);
+      const budget = roundBudgetGate(current, ctx);
+      if (budget.aborted) return {messages:event.messages};
+      directive = budget.directive;
+    }
     current.pendingContext=undefined;
     let text='',packet:ContextPacket|undefined;
     try {
@@ -3697,7 +4144,9 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
     if (current.role === 'owner') {
       const snapshot=current.engine.snapshot(),state={...snapshot,events:snapshot.events.slice(-5),eventsOmitted:Math.max(0,snapshot.pendingEvents-5),intents:snapshot.intents.slice(0,5),intentsOmitted:Math.max(0,snapshot.pendingIntents-5),executors:current.executors.snapshot(),...(current.held ? {operatorHold:current.held.reason} : {})};
       if(packet)current.pendingContext={packet,engineSequence:snapshot.sequence};
-      return {messages:[...messages,...(text ? [{role:'custom' as const,customType:'p2o_objective_state',content:text,display:false,timestamp:now()}] : []),...knowledge,{role:'custom' as const,customType:'p2o_planner_state',content:`P2O PLANNER STATE — navigation/claims, not proof or authority. ${JSON.stringify(state)}`,display:false,timestamp:now()}]};
+      return {messages:[...messages,...(text ? [{role:'custom' as const,customType:'p2o_objective_state',content:text,display:false,timestamp:now()}] : []),...knowledge,
+        ...(directive ? [{role:'custom' as const,customType:'p2o_round_directive',content:directive,display:false,timestamp:now()}] : []),
+        {role:'custom' as const,customType:'p2o_planner_state',content:`P2O PLANNER STATE — navigation/claims, not proof or authority. ${JSON.stringify(state)}`,display:false,timestamp:now()}]};
     }
     current.pendingContext=packet;
     return {messages:[...messages,...(text?[{role:'custom' as const,customType:'p2o_objective_state',content:text,display:false,timestamp:now()}]:[]),...knowledge]};
@@ -3709,8 +4158,20 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
     const current = run;
     if (!current || current.phase !== 'active' || event.message.role !== 'assistant') return;
     const reported = (event.message as { usage?: unknown }).usage;
-    if (current.role === 'owner') current.usage.record('planner', 'planner', reported);
-    else void current.client.request('usage', { usage: compactUsage(reported) }).catch(() => { /* Usage is never allowed to affect a worker's turn. */ });
+    if (current.role === 'owner') {
+      current.usage.record('planner', 'planner', reported);
+      // P18.3/D47: one assistant message is one planner step. The budget is judged from this count (the same turn the provider
+      // charged for), never from tool executions or ledger writes. P18.4/D49 reads the tool calls from the same message: a round
+      // that made none is a text-only round.
+      const state = current.roundState;
+      if (state) {
+        const content = (event.message as {content?: unknown}).content;
+        const parts = Array.isArray(content) ? content as Array<{type?: unknown; name?: unknown}> : [];
+        state.steps += 1;
+        state.toolCalls += parts.filter(part => part?.type === 'toolCall').length;
+        if (parts.some(part => part?.type === 'toolCall' && part?.name === 'p2o_loop')) state.loopCalls += 1;
+      }
+    } else void current.client.request('usage', { usage: compactUsage(reported) }).catch(() => { /* Usage is never allowed to affect a worker's turn. */ });
   });
   pi.on('message_end',async(event,ctx)=>{
     const current=run;if(event.message.role!=='assistant'||!current||current.phase!=='active')return;
@@ -3745,19 +4206,56 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
       return;
     }
     if (current.phase === 'finished') { restore(current); return; }
+    // P18.3/D47: a stop at the round's hard bound is classified, never read as a provider abort. The reservation is consumed with
+    // the round's last measured progress, nothing pauses, and the engine kick opens the next round (a fresh session) instead of
+    // ending the campaign. `planner.round-end` names the resource that ended the round, so the report can count them.
+    const state = current.roundState;
+    if (state?.budgetAbort && state.round === (current.roundSession?.round ?? state.round)) {
+      state.budgetAbort = false; state.ended = 'round-budget';
+      try {
+        const progressed = await roundProgress(current);
+        current.engine.consume(state.wake.through, progressed.progress);
+        await current.engine.stallRound(progressed.stall);
+      } catch (error) { current.ctx.ui.notify(`Round budget stop could not record its progress: ${message(error)}; the ledger is unchanged.`, 'warning'); }
+      await roundFact(current, 'planner.round-end', `planner.round-end: round ${state.round} ended at its round budget; the campaign continues`,
+        { round: state.round, reason: 'round-budget' }).catch(() => { /* the audit row is best effort */ });
+      refreshVisibility(current);
+      return;
+    }
     if (event.outcome !== 'completed') {
       current.engine.pause(`Planner ${event.outcome}; no automatic retry/fallback. Review manually or stop.`);
       return;
     }
-    if (!event.continue && !event.context?.pendingMessages?.length) {
+    // P18.4/D49: a text-only round (no tool call at all) that still owes work is nudged at settlement with the demand and the two
+    // legal next actions, at most twice per round. Pi refuses a bare `continue`, so the demand rides a `custom_message` draft; the
+    // nudge continues the same round and reserves no new one. After the second nudge the round settles as today.
+    // P18.7/D47: an operator stop in progress ends the round instead of extending it, so neither the nudge nor the fallback
+    // continuation is injected while `stopRound` is set.
+    if (state && !current.stopRound && !event.continue && !event.context?.pendingMessages?.length && state.nudges < 2 && state.toolCalls === 0) {
+      const owed = current.engine.snapshot();
+      if (owed.remaining > 0) {
+        state.nudges += 1;
+        const demand = owed.demand ?? `${owed.remaining} obligation(s) remain`;
+        await roundFact(current, 'planner.round-nudge', `planner.round-nudge: round ${state.round} settlement nudge ${state.nudges}/2; the round owes ${demand}`,
+          { round: state.round, kind: 'settle', nudge: state.nudges, demand }).catch(() => { /* the audit row is best effort */ });
+        return { entries: [{ type: 'custom_message' as const, customType: 'p2o_round_nudge', display: false, details: { round: state.round, nudge: state.nudges, demand },
+          content: `P2O SETTLEMENT NUDGE (${state.nudges}/2, round ${state.round}): this round has made no tool call while the ledger still owes ${demand}. Act now on one of the two legal next steps: create and dispatch one bounded intent that answers the demand, or record blocked with the approaches already exhausted and why. Ending the round with prose alone leaves the obligation to the next round.` }], continue: true };
+      }
+    }
+    // P18.3/D47: with rounds-as-sessions the settlement wake is opened by the engine kick as the next round's session, so the
+    // in-session continue draft is the P17 fallback shape and is used only when session rounds are off.
+    if (!current.settings.roundSessions && !current.stopRound && !event.continue && !event.context?.pendingMessages?.length) {
       const wake = current.engine.boundary();
       if (wake) return {entries:[{type:'custom_message' as const,...plannerWakeMessage(wake)}],continue:true};
     }
   });
-  pi.on('agent_start',(_event,ctx) => {if (run?.role === 'owner') {run.ctx=ctx;run.engine.started();refreshVisibility(run);}});
-  pi.on('agent_settled',() => {staleWakeInFlight=false;if (run?.role === 'owner') {run.engine.settled();refreshVisibility(run);}});
+  pi.on('agent_start',(_event,ctx) => {if (run?.role === 'owner') {roundTurnInFlight=true;run.ctx=ctx;run.engine.started();refreshVisibility(run);}});
+  pi.on('agent_settled',() => {staleWakeInFlight=false;if (run?.role === 'owner') {run.engine.settled();refreshVisibility(run);roundTurnInFlight=false;}});
   const leave = async (_event: unknown, ctx: ExtensionContext) => {
     const current = run;
+    // P18.1/D45: the round opener replaces the session on purpose. Cancelling or stopping here would make rounds impossible;
+    // any operator-initiated switch, fork or resume keeps the stop-and-cleanup path below.
+    if (roundSwitchInFlight) return;
     if (!current) { closeHistorical(); return opening ? { cancel: true } : undefined; }
     if (current.role === 'worker') { current.client.close(); return; }
     ctx.abort();
@@ -3771,6 +4269,9 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
     const current = run;
     if (!current) { closeHistorical(); return; }
     if (current.role === 'worker') { current.client.close(); return; }
+    // P18.1/D45: Pi tears the outgoing session down as part of our own round switch and reports it as a shutdown. The run
+    // keeps its authority across the replacement; only a host shutdown (or an operator stop) cleans up.
+    if (roundSwitchInFlight) return;
     try { await stopAssessment(current, 'shutdown'); } catch { /* the gate stays closed; Docker may need attention */ }
   });
 

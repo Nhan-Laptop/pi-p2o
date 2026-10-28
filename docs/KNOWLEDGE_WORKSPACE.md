@@ -13,8 +13,8 @@ pentest vẫn **UNVERIFIED**. Tài liệu hiện hành: [ARCHITECTURE](ARCHITECT
 - **Commit, push và install chỉ do chủ repo yêu cầu** (một lần đồng ý không kéo sang lần sau); không chạy paid/live
   assessment, không chạy reference code.
 - Lịch sử/checkpoint chỉ phục hồi tri thức, không worker/ticket/cookie/socket/request/quyền thực thi.
-- Giữ manual + shared làm mặc định và vòng đời không giới hạn thời gian; không heartbeat mặc định, không retry/fallback,
-  không tự cấp lại quyền.
+- Giữ automatic loop + shared làm mặc định và vòng đời campaign không giới hạn thời gian; round budget mặc định bật (40
+  step / 900 s) nhưng chỉ giới hạn một round, không giới hạn campaign; không retry/fallback, không tự cấp lại quyền.
 
 ## Các lát đã nối vào checkout
 

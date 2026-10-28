@@ -66,7 +66,21 @@ export function registerInertProvider(pi: ExtensionAPI, mode: 'owner' | 'worker'
           'p2o_coverage_cell_retire', 'bash', 'read'];
         if (!plannerMust.every(name => tools.includes(name)) || plannerMustNot.some(name => tools.includes(name))) throw new Error(`planner tool loadout was not applied: ${tools.join(',')}`);
         if (!(descriptions.find(tool => tool.name === 'p2o_task_author')?.parameters as any)?.properties?.draft) throw new Error('task create schema lost');
-        if(process.env.P2O_TEST_CASE_OWNER==='1'){
+        // P18.1/D45: rounds-as-sessions proof. The kickoff turn ends with the wait verb instead of blocking on the worker, so the
+        // committed report finds an idle host and the Engine's wake is an idle wake — the path that opens a fresh session. The
+        // round opening then carries the round marker as its only user message, and the branch proves a planner turn ran there.
+        if(process.env.P2O_TEST_ROUND_SESSION==='1'){
+          const roundPrompt=context.messages.some((m:any)=>m.role==='user'&&(typeof m.content==='string'?m.content:JSON.stringify(m.content??'')).includes('--- p2o round ---'));
+          if(roundPrompt)content=last?[{type:'text',text:'ROUND_SESSION_OPENED: a fresh Planner session read the engine frontier.'}]:[{type:'toolCall',id:'round-open',name:'p2o_loop',arguments:{action:'status',reason:'A fresh round session opened; read the engine frontier before choosing bounded work'}}];
+          else if(!last)content=[{type:'toolCall',id:'round-net',name:'p2o_net',arguments:{command:'printf inert-planner-probe'}}];
+          else if(lastTool==='p2o_net')content=[{type:'toolCall',id:'round-goal',name:'p2o_plan_author',arguments:{entry:{kind:'goal',title:'Reach the recorded effect under an impact goal',status:'active',proof:{kind:'capability',capability:{kind:'data.read'}},criteria:['The bounded recon intent is recorded under this goal'],reason:'A3/D32: exploit mode admits no target-executing intent before its impact goal exists'}}}];
+          else if(lastTool==='p2o_plan_author')content=[{type:'toolCall',id:'round-task',name:'p2o_task_author',arguments:{draft:{question:'Inspect /target/code.txt in the sandbox and report what it contains.',surface:'surface-recon',risk:'boundary',role:'recon',roleReason:'A2: the first intent of an empty run is recon/mapping',expectedTrue:'The declared fixture source is the observed input',expectedFalse:'The source copy is unavailable or different',stopCondition:'Stop at this one bounded inert question',evidenceIds:[],prerequisites:[],methodReason:'Controlled source fixture, no target execution'}}}];
+          else if(lastTool==='p2o_task_author')content=[{type:'toolCall',id:'round-dispatch',name:'p2o_task_dispatch',arguments:{ids:[last.details.id]}}];
+          else if(lastTool==='p2o_task_dispatch')content=[{type:'toolCall',id:'round-wait',name:'p2o_loop',arguments:{action:'wait',reason:'End the kickoff turn so the committed report reaches an idle host'}}];
+          else if(lastTool==='p2o_loop')content=[{type:'text',text:'ROUND_KICKOFF_WAITING: the Engine owns the wait; no model polling.'}];
+          else content=[{type:'text',text:'ROUND_SESSION_UNEXPECTED.'}];
+        }
+        else if(process.env.P2O_TEST_CASE_OWNER==='1'){
           const caseSchema=descriptions.find(tool=>tool.name==='p2o_case_author')?.parameters as any,coveragePlanSchema=descriptions.find(tool=>tool.name==='p2o_coverage_plan')?.parameters as any;
           if(caseSchema?.type!=='object'||!caseSchema.properties?.entry||coveragePlanSchema?.type!=='object'||!coveragePlanSchema.properties?.plan)throw Error('case/coverage verb schemas missing in real Pi context');
           // A1/A3: cell authoring left the model surface, so the planner must not see the cell verb or the worker-only claim/shell verbs.
@@ -129,7 +143,7 @@ export function registerInertProvider(pi: ExtensionAPI, mode: 'owner' | 'worker'
           if(!last||graphResults.length===1)content=[{type:'toolCall',id:'native-graph-'+graphResults.length,name:'p2o_graph',arguments:{action:'record',requestId:'native-graph-request',batch}}];
           else if(graphResults.length===2)content=[{type:'toolCall',id:'native-graph-view',name:'p2o_graph',arguments:{action:'view',id:graphResults[0].details.acks[0].entityId}}];
           else if(graphResults.length===3)content=[{type:'toolCall',id:'native-graph-export',name:'p2o_graph',arguments:{action:'export'}}];
-          else if(lastTool==='p2o_graph')content=[{type:'toolCall',id:'native-graph-finish',name:'p2o_finish',arguments:{}}];
+          else if(lastTool==='p2o_graph')content=[{type:'toolCall',id:'native-graph-finish',name:'p2o_finish',arguments:{partial:'inert graph fixture stops before any plan goal was recorded, so its default campaign ends incomplete.'}}];
           else if(lastTool==='p2o_finish')content=[{type:'text',text:'OWNER_GRAPH_DONE: knowledge retained; no investigation or finding verified.'}];
           else throw Error('Unexpected native graph fixture turn');
         }

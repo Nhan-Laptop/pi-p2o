@@ -5,7 +5,8 @@ import { resolve } from 'node:path';
 import { homedir } from 'node:os';
 import { CASE_EFFECTS, type CaseEffect } from './cvss.js';
 import { parseCallbackUrl, parseLabNetwork, type EngagementMode } from './campaign.js';
-import { MAX_DEPTH, MAX_WORKERS, type LoopMode, type RetentionMode } from './roles.js';
+import { MAX_DEPTH, MAX_WORKERS, type RetentionMode } from './roles.js';
+import { MAX_ROUND_SECONDS, MAX_ROUND_STEPS } from './round-budget.js';
 import { TEXT_CONTROL } from './validate.js';
 
 /** `hybrid` is a source snapshot plus one deployed origin of the same system: both are confirmed together, share one graph, and neither widens the other. */
@@ -16,7 +17,7 @@ export const hasSource = (target: Target): target is Extract<Target, { path: str
 export const hasOrigin = (target: Target): target is Extract<Target, { origin: string }> => target.kind !== 'directory';
 /** 'latest'/'all' pick by eligibility at run start; an explicit id list (≤10, `run-<chars>` shape) names runs directly. Never grants authority — see planning_update.md. */
 export type ReferWorkspaceOption = 'latest' | 'all' | readonly string[];
-export interface StartOptions { workers?: number; maxDepth?: number; export?: boolean; loopMode?: LoopMode; executorMode?: 'shared' | 'isolated' | 'session'; /** A7.2: an explicit `--executors session:N`; defaults to, and may never exceed, the target-operation cap. */ sessionLimit?: number; maxTargetOperations?: number; retention?: RetentionMode; goal?: string; avoid?: string[]; /** A6.1: campaign heartbeat in seconds; `0` disables it. */ heartbeatSeconds?: number; /** D15: `exploit` (default) authorizes the access ladder; `assess` is the opt-in read-only shape. */ mode?: EngagementMode; /** D15/Q9: the effect classes `--effect` authorized; the host defaults to every class except `availability-loss`. */ effectClasses?: CaseEffect[]; /** A7.4: one operator-supplied JSON identity file; the host seals a copy and never shows a value to a model. */ identityPath?: string; origin?: string; /** A7.8: the operator's out-of-band callback destination the target may reach (recorded, never a listener). */ callback?: string; /** A7.8: the operator's throwaway docker network the sandbox joins, so the target can route back to a listener. */ labNetwork?: string; /** A7.9/D23: recorded permissions; a deny still wins, an allow never widens the target. */ allow?: string[]; referWorkspace?: ReferWorkspaceOption }
+export interface StartOptions { workers?: number; maxDepth?: number; export?: boolean; /** P18/A9: per-round overrides; `0` disables that round-budget axis (the campaign stays uncapped). */ roundSteps?: number; roundSeconds?: number; executorMode?: 'shared' | 'isolated' | 'session'; /** A7.2: an explicit `--executors session:N`; defaults to, and may never exceed, the target-operation cap. */ sessionLimit?: number; maxTargetOperations?: number; retention?: RetentionMode; goal?: string; avoid?: string[]; /** A6.1: campaign heartbeat in seconds; `0` disables it. */ heartbeatSeconds?: number; /** D15: `exploit` (default) authorizes the access ladder; `assess` is the opt-in read-only shape. */ mode?: EngagementMode; /** D15/Q9: the effect classes `--effect` authorized; the host defaults to every class except `availability-loss`. */ effectClasses?: CaseEffect[]; /** A7.4: one operator-supplied JSON identity file; the host seals a copy and never shows a value to a model. */ identityPath?: string; origin?: string; /** A7.8: the operator's out-of-band callback destination the target may reach (recorded, never a listener). */ callback?: string; /** A7.8: the operator's throwaway docker network the sandbox joins, so the target can route back to a listener. */ labNetwork?: string; /** A7.9/D23: recorded permissions; a deny still wins, an allow never widens the target. */ allow?: string[]; referWorkspace?: ReferWorkspaceOption }
 export type Command = { action: 'help' } | { action: 'stop' } | { action: 'pause' } | { action: 'resume' }
   /** A7.7: the operator resolves one pending policy ask. The decision is written as an owner-attributed record. */
   | { action: 'approve' | 'deny'; id: string }
@@ -124,9 +125,23 @@ export function parseCommand(args: string): Command {
         options.labNetwork = value; continue;
       }
       if (token === '--loop') {
+        // P18/D48: one automatic loop mode. The old flag is accepted only as the confirmation of that mode; `manual` was
+        // removed and refuses by name instead of silently starting an automatic run the operator did not ask for.
         const value = tokens[++index];
-        if (value !== 'manual' && value !== 'event-driven') throw Error('--loop must be manual or event-driven');
-        options.loopMode = value; continue;
+        if (value === 'manual') throw Error('MANUAL_LOOP_REMOVED: the manual loop mode was removed; every run uses the automatic loop and needs a worker backend (Herdr)');
+        if (value !== 'event-driven') throw Error('--loop only accepts event-driven (the only loop mode since the manual loop was removed)');
+        continue;
+      }
+      if (token === '--round-steps' || token === '--round-seconds') {
+        // P18/A9: the round budget is a work-package bound, not a campaign cap. `0` disables that axis; both flags at 0
+        // restore an unbounded round and are the operator's explicit choice, so they are recorded rather than defaulted away.
+        const value = tokens[++index];
+        if (!value || !/^\d+$/.test(value)) throw Error(`${token} needs an integer value (0 disables that round-budget axis)`);
+        const parsed = Number(value);
+        const max = token === '--round-steps' ? MAX_ROUND_STEPS : MAX_ROUND_SECONDS;
+        if (!Number.isSafeInteger(parsed) || parsed > max) throw Error(`${token} must be 0..${max}`);
+        if (token === '--round-steps') options.roundSteps = parsed; else options.roundSeconds = parsed;
+        continue;
       }
       if (token === '--executors') {
         const value = tokens[++index];
@@ -145,7 +160,7 @@ export function parseCommand(args: string): Command {
         options.referWorkspace = value === 'latest' || value === 'all' ? value : value.split(',');
         continue;
       }
-      if (token !== '--workers' && token !== '--max-depth' && token !== '--target-ops') throw new Error(`Unknown option ${token.slice(0, 40)}; usage: /p2o --target <directory|http(s)-URL> [--workers N] [--max-depth D] [--goal "text"] [--avoid "text"] [--allow "text"] [--mode assess|exploit] [--effect <class>]... [--heartbeat-seconds N] [--callback <http(s)-URL>] [--lab-network <name>]`);
+      if (token !== '--workers' && token !== '--max-depth' && token !== '--target-ops') throw new Error(`Unknown option ${token.slice(0, 40)}; usage: /p2o --target <directory|http(s)-URL> [--workers N] [--max-depth D] [--round-steps N] [--round-seconds N] [--goal "text"] [--avoid "text"] [--allow "text"] [--mode assess|exploit] [--effect <class>]... [--heartbeat-seconds N] [--callback <http(s)-URL>] [--lab-network <name>]`);
       const value = tokens[index + 1];
       if (!value || !/^\d+$/.test(value)) throw new Error(`${token} needs an integer value`);
       index += 1;

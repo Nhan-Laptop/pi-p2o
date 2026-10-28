@@ -3,8 +3,8 @@ import { fixture, populate } from './helpers/report-fixture.js';
 
 /**
  * P5/A6.1 (planning_update.md §4): the campaign frame is recorded once, read by every projection, printed in the planner
- * prompt and the start confirmation, and absent for a manual run that never asked for one. Hermetic: the in-process
- * extension on a fake Pi, a real SQLite store, no model and no target.
+ * prompt and the start confirmation. P18/A9: every run is the automatic loop, so every run records a frame even without a
+ * campaign flag. Hermetic: the in-process extension on a fake Pi, a real SQLite store, no model and no target.
  */
 const PROMPT_SECTION = 'p2o_assessment';
 const plannerPrompt = async (h: any): Promise<string> => {
@@ -68,16 +68,18 @@ describe('campaign frame (A6.1)', () => {
     expect(prompt).toContain('CAMPAIGN objective');
   }));
 
-  it('records no campaign for a manual run that asked for none, so A6.3/A6.6 keep today\'s behaviour', async () => fixture(async h => {
+  it('records a default campaign for every automatic run even with no campaign flag (P18/A9/D48)', async () => fixture(async h => {
     await populate(h);
     const store = await h.reader();
     try {
-      expect(store.campaign()).toBeUndefined();
-      expect(store.campaignRevision()).toBeUndefined();
-      expect(store.contextPacket({ consumerId: 'planner-plain', role: 'planner' })).not.toHaveProperty('campaign');
+      // The manual loop was removed, so a run without --goal is still the automatic loop and still needs the frame A6.3 reads.
+      const campaign = store.campaign();
+      expect(campaign).toMatchObject({ createdBy: 'default', heartbeatSeconds: 600 });
+      expect(store.campaignRevision()).toBeGreaterThan(0);
+      expect(store.contextPacket({ consumerId: 'planner-plain', role: 'planner' }).campaign).toMatchObject({ heartbeatSeconds: 600 });
     } finally { store.close(); }
     const prompt = await plannerPrompt(h);
-    expect(prompt).not.toContain('CAMPAIGN objective');
+    expect(prompt).toContain('CAMPAIGN objective');
     // There is no tool that authors a campaign: the only writer is the human-confirmed start path.
     expect([...h.pi.tools.keys()].filter((name: string) => /campaign/i.test(name))).toEqual([]);
   }));

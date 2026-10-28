@@ -6,19 +6,23 @@ page is the operator-facing contract for tasks, rounds and the plan board.
 ## Controls and defaults
 
 ```text
-/p2o --target ./source --workers 3 --loop manual
-/p2o --target ./source --workers 3 --loop event-driven --executors isolated --target-ops 2 --export
+/p2o --target ./source --workers 3
+/p2o --target ./source --workers 3 --round-steps 25 --round-seconds 600 --executors isolated --target-ops 2 --export
 /p2o pause    /p2o resume    /p2o stop
 ```
 
-- Defaults are `manual` loop, `shared` executor, 3 model slots. Without Herdr there is no worker backend: target work is
-  blocked, the planner reports the missing executor instead of taking over, and `event-driven` is rejected.
+- Defaults are the automatic loop (the manual loop was removed by P18/D48), `shared` executor, 3 model slots, and a
+  40-step / 900-second round budget. Without Herdr a run refuses to start: the planner holds no target tools, so there is no
+  manual fallback for target work.
 - `--workers N` caps concurrent model slots; `--target-ops N` caps concurrent target operations. `--max-depth` is kept for
   compatibility only: workers propose tasks and never spawn children.
-- Automatic planner rounds are extra requests to the existing model with **no round ceiling**. Two quietly unproductive
-  rounds, or the operator, end a run. There is no command spend limit either: the broker counts every admitted target
-  command for the ledger and refuses none.
-- Settings live under `p2o` in `~/.pi/agent/settings.json`: `maxWorkers`, `loopMode`, `executorMode`,
+- Automatic planner rounds are extra requests to the existing model. The campaign has **no round ceiling**; each round is
+  bounded by the round budget instead, so a long campaign becomes many bounded rounds rather than one growing conversation.
+  Each round opens in a fresh Pi session by default (P18/D45) and can be routed to a base or escalation model and thinking
+  level through `p2o.plannerModels` (P18/D50); `/p2o status` names the round in flight.
+  Two quietly unproductive rounds, or the operator, end a run. There is no command spend limit either: the broker counts every
+  admitted target command for the ledger and refuses none.
+- Settings live under `p2o` in `~/.pi/agent/settings.json`: `maxWorkers`, `plannerRound`, `plannerModels`, `executorMode`,
   `maxTargetOperations`, `roles.<role>.model` and the rest of the list in [USAGE](USAGE.md). Precedence is CLI → settings →
   default for a new run; bad CLI values are rejected, bad settings fall back.
 
@@ -115,13 +119,39 @@ surface that has a ready, undispatched chain step (`CHAIN_READY_UNDISPATCHED`) o
 condition appears as a `REMAINING WORK` advisory, so "what is left" has one source. Cancelled or expired work never counts
 as having consumed a claim.
 
-## Rounds: quiet, stalled, woken
+## Rounds: sessions, budgets and demand
 
+- A round is a bounded work package, not a transcript. By default each admitted round opens a fresh Pi session (P18/D45):
+  the engine dispatches an internal `p2o-round` command with the wake it is about to deliver, the host replaces the session,
+  and the round opening is the first user message there. When the host is streaming or holds queued operator input the round
+  stays in the current session as a marked follow-up prompt and `planner.round-session-fallback` records why; the same wake
+  is never dispatched twice.
+- The round opening is deterministic and bounded (≤ 8 KiB): campaign frame, completion and demand, goals and proof, ready
+  chain steps, workers, round facts, the previous round's delta and a digest of older records. The round's own records are the
+  live window; everything before the previous opening folds into the digest instead of vanishing with the replaced session.
 - Each engine round keeps monotonic counters (tested cells, confirmed claims, assets, chain depth) plus the host-computed
   `remaining` obligations. A round is **quiet** when all four counters fail to increase.
 - Two quiet rounds with obligations left still get a wake that names the demand (ready step, unreviewed goal, …): the loop is
   not paused while work is owed. Two quiet rounds with nothing owed pause the campaign and say the completion state is
   `complete`.
+- The budget bounds one round, never the campaign (P18/D47): 40 steps or 900 s by default, wrapping once at the last six
+  steps, 90 % of the time axis or 80 % of the reported planner context, and a hard stop at 92 % context. A wrap switches the
+  loadout to the closing set (no authoring, no dispatch) and injects one wrap-up directive, so the round writes back instead
+  of starting work it cannot finish. A hard stop aborts the turn and settlement records
+  `planner.round-end reason=round-budget`: a classified round end, not a failure and not a pause, so the next round opens
+  normally. `--round-steps 0 --round-seconds 0` disables the step and time axes; the context axes stay.
+- `/p2o stop` is an evidence-preserving transition, not a kill: the loop pauses (no new dispatch or wake), a round that is
+  mid-turn settles for up to 30 s and closes as `planner.round-end reason=operator-stop` instead of being nudged onward, and
+  live workers get up to 90 s to deliver the blocked report their own settle writes before the hard teardown runs. A round
+  that misses the bound takes the hard stop.
+- A round that ends without a single tool call while obligations remain gets up to two settlement nudges
+  (`planner.round-nudge kind=settle`). The first demand-floor `wait` of a round while obligations remain is refused once with
+  the demand, the legal next actions and `terminate:false`; the second is accepted (`kind=wait`). Both replace the removed
+  manual mode (P18/D48) with a fixed shape instead of an unbounded polling turn.
+- Per-round routing (P18/D50): when `p2o.plannerModels` names a base or escalation model and thinking level, the round is
+  routed before its first turn — base for review/mapping/validation demand, escalation for exploitation/chaining, a ready
+  chain step, an unchained primitive or two consecutive rounds that closed nothing. A model the host cannot resolve or set
+  keeps the current loadout and records `planner.round-model-fallback`; routing never fails a round.
 - A planner round that ends with an open goal, no open/running intent and no `blocked` declaration is recorded as one
   `planner.stalled` lifecycle fact — report material, never a wake, queue entry, pause or budget. Only engine-admitted rounds
   count, and only the message that ends the turn can stall (a tool-calling step is not a round). The escalation counter is a
@@ -130,8 +160,14 @@ as having consumed a claim.
 - `p2o_loop {action:'wait', reason:'block-decay'|'cooldown-expiry', notBefore}` records one decision and schedules exactly one
   revisit for that condition (future, within 24 h, one pending revisit per condition). `wait` ends a round, not the
   assessment; `blocked` pauses admission and wakes until the operator resumes.
-- Manual loop dispatches accepted work but never calls a planner model by itself. Event-driven wakes use Pi's normal message
-  path with a marked extension-origin prompt; a provider error pauses automatic wakes without retry.
+- The loop is automatic: committed events, owed research debt and the campaign heartbeat wake a new round through Pi's
+  normal message path with a marked extension-origin prompt, and only an admitted round can stall. A provider error pauses
+  automatic wakes without retry; committed signals coalesce in a fixed 800 ms window, so a burst becomes one round.
+- Every round lifecycle fact rides the existing `lifecycle` kind with `data.engine.event` (no schema bump):
+  `planner.round-start`, `round-end` (`reason`: `round-budget`/`operator-stop`), `round-budget` (`state`: `wrap`/`exhausted`),
+  `round-nudge` (`kind`: `settle`/`wait`), `round-session`, `round-model`, `round-model-fallback`, `round-session-fallback`,
+  beside `planner.wake`, `planner.stalled` and `planner.stall-escalation`. `/p2o status` prints the round number, its
+  session, the budget state, the routed model and the newest round fact.
 
 ## Priority suggestion
 

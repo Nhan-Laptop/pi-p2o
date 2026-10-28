@@ -11,7 +11,7 @@
 ```
 
 The planner is the model the operator already selected; Pi owns its inner tool loop and `AssessmentEngine` owns the outer
-scheduling loop. Nothing runs at load time and nothing polls: event wakes are finite coalescing windows (100 ms) that need
+scheduling loop. Nothing runs at load time and nothing polls: event wakes are finite coalescing windows (800 ms) that need
 explicit event-driven consent. Engine/task semantics: [PLANNER_ENGINE](PLANNER_ENGINE.md).
 
 ## Roles and authority
@@ -83,6 +83,8 @@ capability must agree with this table.
 | Capture | reads up to 8 MiB, stores 1 MiB by default, returns an 8 KiB preview | `src/scratch.ts:4`, `src/roles.ts:105`, `src/sandbox.ts:213` |
 | Receipt | 16 KiB stdout / 4 KiB stderr | `src/evidence.ts:61` |
 | Time | no command or elapsed-time budget by default; an opt-in command timeout that fires retires the sandbox | `src/target.ts:279-282`, `src/sandbox.ts:171-181` |
+| Planner round | 40 steps or 900 s by default, wrapping at the last 6 steps, 90 % of the time axis or 80 % of the reported context, hard stop at 92 % context; `0` disables an axis and the campaign itself is uncapped | `src/round-budget.ts:22,40-54` |
+| Round opening | deterministic, ≤ 8 KiB, with older records folded into a bounded digest | `src/round-brief.ts:30`, `tests/minimal/round-brief.test.ts` |
 
 **Installed vs installable.** The image ships gcc 15.3.0, objdump/readelf/nm/objcopy, gdb 17.2, nmap 7.99, nuclei 3.11,
 ffuf, sqlmap 1.10.6, httpx, subfinder, nc/ncat, Python 3.13 with pip, Node, Chromium 150 and agent-browser 0.26; gcc's
@@ -142,6 +144,7 @@ ceiling: a worker provisions a disposable principal when the work needs one (see
 |---|---|
 | `extensions/p2o/index.ts` | Pi adapter: commands, tools, lifecycle, consent, loadouts, cleanup |
 | `src/engine.ts`, `src/planner-bridge.ts` | Frontier, slots, semantic signals, rounds, stalled-round facts, wake encoding |
+| `src/round-budget.ts`, `src/round-brief.ts`, `src/round-model.ts` | Round budget judge, deterministic round opening, per-round model/thinking routing |
 | `src/tool-policy.ts`, `src/prompts.ts` | Tool loadouts and role prompts |
 | `src/tasks.ts`, `src/board.ts` | Task board, readiness, atomic reservation, shared mutation queue |
 | `src/executors.ts`, `src/sandbox.ts`, `src/pty.ts`, `src/source.ts`, `src/http-session.ts` | Executors, containers, PTY family, bounded source snapshots, actor-local HTTP state |

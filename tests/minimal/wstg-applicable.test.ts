@@ -127,7 +127,7 @@ describe('A6.4 prompt contract', () => {
     for (const feature of ['login', 'cors', 'api', 'jwt', 'upload']) expect(recon).toContain(feature);
     expect(recon).toContain('unrecognised token is advisory');
     const planner = plannerInstructions({ runId: 'run-wstg', targetLabel: 'https://fixture.invalid', targetKind: 'url', sourceSkipped: 0,
-      delegation: { enabled: true, maxWorkers: 3, maxDepth: 2 }, phase: 'active', loopMode: 'event-driven', executorMode: 'shared' });
+      delegation: { enabled: true, maxWorkers: 3, maxDepth: 2 }, phase: 'active', executorMode: 'shared' });
     // Three lines translated from ARTEX agent/planner.go:304-331; no new tool is introduced by stating them.
     expect(planner).toContain('DEPTH OVER BREADTH');
     expect(planner).toContain('prefer depth on a live finding over breadth on a new asset');

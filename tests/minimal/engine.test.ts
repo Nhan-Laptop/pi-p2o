@@ -2,14 +2,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AssessmentEngine, type EngineDeps, type PlannerWake } from '../../src/engine.js';
 import type { AssessmentTask } from '../../src/tasks.js';
 
-function fixture(mode:'manual'|'event-driven'='manual',cap=3) {
-  let active=true,idle=true,live=0,peak=0;
+function fixture(ownerIdle=false,cap=3) {
+  let active=true,idle=ownerIdle,live=0,peak=0;
   const tasks:AssessmentTask[]=Array.from({length:30},(_,i)=>({id:`task-${i}`,revision:1,status:'proposed',question:`Question ${i}`,surface:`surface-${i}`,role:'general'} as AssessmentTask));
   const spawns:string[]=[],wakes:PlannerWake[]=[],journal:unknown[]=[],problems:string[]=[];
   const readiness=new Map<string,string>();
   const deps:EngineDeps={active:()=>active,list:async()=>tasks,readiness:async id=>readiness.has(id)?{ready:false,reason:readiness.get(id)}:{ready:true},capacity:()=>cap-live,reap:async()=>true,
     spawn:async input=>{const t=tasks.find(t=>t.id===input.taskId)!;t.status='running';live++;peak=Math.max(peak,live);spawns.push(t.id);},persist:async(text,data)=>{journal.push({text,data});},wake:w=>wakes.push(w),idle:()=>idle,problem:s=>problems.push(s)};
-  const engine=new AssessmentEngine('run-fixture',mode,deps,10);
+  const engine=new AssessmentEngine('run-fixture','event-driven',deps,10);
   const queue=(ids:number[])=>engine.enqueue(ids.map(i=>({taskId:`task-${i}`,input:{taskId:`task-${i}`,focus:`surface-${i}`,task:`Question ${i}`}})));
   const complete=(id:string)=>{tasks.find(t=>t.id===id)!.status='reported';live--;engine.notify('worker-report',id);};
   return {engine,queue,complete,tasks,spawns,wakes,journal,problems,readiness,deps,get peak(){return peak;},setActive:(v:boolean)=>{active=v;},setIdle:(v:boolean)=>{idle=v;}};
@@ -49,36 +49,35 @@ describe('deterministic frontier and semantic wake loop',()=>{
     f.engine.stop();
   });
   it('coalesces semantic events, waits locally, and consumes only at a request projection',async()=>{
-    const f=fixture('event-driven');for(let i=0;i<100;i++)f.engine.notify('worker-report','same-worker');await tick();expect(f.wakes).toHaveLength(1);expect(f.engine.snapshot().pendingEvents).toBe(1);
+    const f=fixture(true);for(let i=0;i<100;i++)f.engine.notify('worker-report','same-worker');await tick();expect(f.wakes).toHaveLength(1);expect(f.engine.snapshot().pendingEvents).toBe(1);
     expect(f.engine.validWake(f.wakes[0])).toBe(true);await vi.advanceTimersByTimeAsync(24*60*60*1000);expect(f.wakes).toHaveLength(1);
     f.engine.started();expect(f.engine.consume()).toHaveLength(1);f.engine.settled();await tick();expect(f.wakes).toHaveLength(1);f.engine.stop();
   });
   it('ACKs only projected semantic events and never drops a signal arriving during the request',()=>{
-    const f=fixture('event-driven');f.engine.started();f.engine.notify('worker-report','old');const through=f.engine.snapshot().sequence;
+    const f=fixture(true);f.engine.started();f.engine.notify('worker-report','old');const through=f.engine.snapshot().sequence;
     f.engine.notify('worker-report','late');expect(f.engine.consume(through).map(event=>event.id)).toEqual(['old']);
     expect(f.engine.snapshot()).toMatchObject({pendingEvents:1,consumedSequence:through});expect(f.engine.snapshot().events[0].id).toBe('late');
     expect(()=>f.engine.consume(through+2)).toThrow('barrier');expect(f.engine.consume().map(event=>event.id)).toEqual(['late']);f.engine.stop();
   });
-  it('manual mode never wakes under a semantic event storm, while event-driven coalesces the same storm into one reservation',async()=>{
-    const manual=fixture('manual');for(let i=0;i<200;i++)manual.engine.notify('worker-report',`worker-${i}`);await tick();await tick();
-    expect(manual.wakes).toEqual([]);expect(manual.engine.snapshot()).toMatchObject({mode:'manual',rounds:0,pendingEvents:200,state:'waiting'});manual.engine.stop();
-    const driven=fixture('event-driven');for(let i=0;i<200;i++)driven.engine.notify('worker-report',`worker-${i}`);await tick();await tick();
-    expect(driven.wakes).toHaveLength(1);expect(driven.wakes[0]).toMatchObject({round:1,through:200});expect(driven.engine.snapshot()).toMatchObject({rounds:1,pendingEvents:200});
+  it('coalesces a semantic event storm into one reservation until a request projection consumes it',async()=>{
+    // P18/D48: every run is the automatic loop, so the storm path has one shape instead of a manual-mode contrast.
+    const driven=fixture(true);for(let i=0;i<200;i++)driven.engine.notify('worker-report',`worker-${i}`);await tick();await tick();
+    expect(driven.wakes).toHaveLength(1);expect(driven.wakes[0]).toMatchObject({round:1,through:200,reason:'event'});expect(driven.engine.snapshot()).toMatchObject({rounds:1,pendingEvents:200});
     for(let i=0;i<200;i++)driven.engine.notify('worker-report',`worker-${i}`);await tick();await tick();await tick();expect(driven.wakes,'repeats coalesce onto the same keys and one reservation stays in flight until a request projection consumes it').toHaveLength(1);expect(driven.engine.snapshot()).toMatchObject({rounds:1,pendingEvents:200,sequence:400});driven.engine.stop();
   });
   it('retains events while busy and supplies exactly one boundary continuation',async()=>{
-    const f=fixture('event-driven');f.engine.started();f.setIdle(false);f.engine.notify('worker-report','a');await tick();expect(f.wakes).toEqual([]);
+    const f=fixture(true);f.engine.started();f.setIdle(false);f.engine.notify('worker-report','a');await tick();expect(f.wakes).toEqual([]);
     const wake=f.engine.boundary()!;expect(wake.round).toBe(1);expect(f.engine.boundary()).toBeUndefined();expect(f.engine.validWake(wake)).toBe(true);
     f.engine.consume();f.engine.notify('worker-report','b');expect(f.engine.boundary()!.round).toBe(2);f.engine.stop();
   });
   it('pause/stop invalidates reserved wakes, preserves the round count and never resurrects authority',async()=>{
-    const f=fixture('event-driven');f.engine.notify('worker-report','a');await tick();const wake=f.wakes[0];f.engine.pause('Human pause');expect(f.engine.validWake(wake)).toBe(false);
+    const f=fixture(true);f.engine.notify('worker-report','a');await tick();const wake=f.wakes[0];f.engine.pause('Human pause');expect(f.engine.validWake(wake)).toBe(false);
     await f.queue([0]);await tick();expect(f.spawns).toEqual([]);f.engine.resume();await tick();expect(f.spawns).toHaveLength(1);expect(f.wakes).toHaveLength(2);
     f.engine.stop();f.engine.notify('worker-report','late');await tick();expect(f.wakes).toHaveLength(2);await expect(f.queue([1])).rejects.toThrow('inactive');
   });
   it('has no automatic wake ceiling: a productive run keeps waking and resume never refuses',async()=>{
     // There is no round allowance to renew: only evidence (M6) or the human ends the loop.
-    const f=fixture('event-driven');for(let i=0;i<5;i++){f.engine.notify('worker-report',`w-${i}`);await tick();f.engine.consume();}
+    const f=fixture(true);for(let i=0;i<5;i++){f.engine.notify('worker-report',`w-${i}`);await tick();f.engine.consume();}
     expect(f.wakes).toHaveLength(5);expect(f.engine.snapshot().paused).toBeUndefined();expect(()=>f.engine.resume()).not.toThrow();f.engine.stop();
   });
   it('stops new dispatch after stop while an asynchronous spawn is still owned',async()=>{
@@ -93,7 +92,21 @@ describe('deterministic frontier and semantic wake loop',()=>{
     // A later successful reap retries the accepted intent in place; no human resume is needed.
     f.deps.reap=async()=>true;f.engine.kick();await tick();expect(f.spawns).toEqual(['task-0']);f.engine.stop();
   });
+  it('P18/A9: reports the round budget and wakes on a demand the wait never answered',async()=>{
+    const f=fixture(true);
+    const budget={steps:40,seconds:900,wrapSteps:6,contextWrapPercent:80,contextHardPercent:92};
+    f.deps.roundBudget=()=>budget;
+    expect(f.engine.snapshot().roundBudget).toEqual(budget);
+    f.engine.consume(undefined,{testedCells:0,closures:0,assets:0,chainDepth:0,remaining:2,demand:'review the two open proofs'});
+    await f.engine.disposition('wait','No feasible direction in this round');
+    f.engine.settled();await tick();expect(f.wakes,'the wait answered this exact demand, so no debt wake').toEqual([]);
+    // The round still owes work and the ledger now names a different obligation: that demand is not the one the wait answered.
+    f.engine.notify('worker-report','w-1');f.engine.consume(undefined,{testedCells:1,closures:0,assets:0,chainDepth:0,remaining:2,demand:'a new handoff needs review'});
+    f.engine.settled();await tick();
+    expect(f.wakes).toHaveLength(1);expect(f.wakes[0]).toMatchObject({reason:'debt',demand:'a new handoff needs review'});
+    f.engine.stop();
+  });
   it('bounded event retention diagnoses overflow and cannot silently resume',async()=>{
-    const f=fixture('event-driven');for(let i=0;i<257;i++)f.engine.notify('worker-report',String(i));await tick();expect(f.engine.snapshot().paused).toContain('overflow');expect(f.engine.snapshot().pendingEvents).toBe(256);expect(f.wakes).toEqual([]);f.engine.stop();
+    const f=fixture(true);for(let i=0;i<257;i++)f.engine.notify('worker-report',String(i));await tick();expect(f.engine.snapshot().paused).toContain('overflow');expect(f.engine.snapshot().pendingEvents).toBe(256);expect(f.wakes).toEqual([]);f.engine.stop();
   });
 });

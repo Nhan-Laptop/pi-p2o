@@ -35,6 +35,18 @@ export interface AuthorityCounters {
   campaignResumes: number;
   /** P1: recorded `planner.stall-escalation` lifecycle facts — the pause decisions that asked for a human, not every stalled round. */
   stallEscalations: number;
+  /** P18.3/D47: recorded `planner.round-start` facts — the rounds the engine admitted, which is the report's round count. */
+  roundsStarted: number;
+  /** P18.3/D47: rounds a wrap-up directive reached (`planner.round-budget` with state `wrap`), once per round. */
+  roundsWrapped: number;
+  /** P18.3/D47: rounds that ended at their hard bound (`planner.round-budget` with state `exhausted`). */
+  roundBudgetStops: number;
+  /** P18.3/D47: recorded `planner.round-end` facts; the reason travels in the row (round-budget, operator-stop). */
+  roundsEnded: number;
+  /** P18.6/D50: rounds whose loadout the host routed and applied (`planner.round-model`). */
+  roundsRouted: number;
+  /** P18.6/D50: the distinct model ids those rounds ran, sorted; the rows keep the per-round detail. */
+  roundModels: string[];
 }
 export interface RoleCounts { planner: number; worker: number; validation: number; reporter: number }
 export interface AuthorityMode { loopMode?: string; executorMode?: string }
@@ -63,6 +75,9 @@ function taskRows(index: LedgerIndex): Map<string, TaskRow> {
 /** A6.3: the lifecycle facts an engine wake writes, so wakes are durable and countable instead of inferred. */
 const wakeRows = (index: LedgerIndex) => index.records.filter(record => record.kind === 'lifecycle'
   && (record.data?.engine as { event?: unknown } | undefined)?.event === 'planner.wake');
+/** P18.3/D51: one round's lifecycle facts, read through the same `data.engine.event` envelope as wakes and stalls. */
+const roundRows = (index: LedgerIndex, event: string) => index.records.filter(record => record.kind === 'lifecycle'
+  && (record.data?.engine as { event?: unknown } | undefined)?.event === event);
 export function authorityCounters(index: LedgerIndex): AuthorityCounters {
   const tasks = [...taskRows(index).values()];
   const dispatched = tasks.flatMap(row => row.dispatchedAt === undefined ? [] : [row.dispatchedAt]);
@@ -82,6 +97,15 @@ export function authorityCounters(index: LedgerIndex): AuthorityCounters {
       && (record.data?.engine as { event?: unknown } | undefined)?.event === 'planner.stalled').length,
     heartbeatWakes: wakes.filter(reason => reason === 'heartbeat').length,
     debtWakes: wakes.filter(reason => reason === 'debt').length,
+    roundsStarted: roundRows(index, 'planner.round-start').length,
+    roundsWrapped: roundRows(index, 'planner.round-budget').filter(record => (record.data?.engine as { state?: unknown }).state === 'wrap').length,
+    roundBudgetStops: roundRows(index, 'planner.round-budget').filter(record => (record.data?.engine as { state?: unknown }).state === 'exhausted').length,
+    roundsEnded: roundRows(index, 'planner.round-end').length,
+    roundsRouted: roundRows(index, 'planner.round-model').length,
+    roundModels: [...new Set(roundRows(index, 'planner.round-model').flatMap(record => {
+      const model = (record.data?.engine as { model?: unknown }).model;
+      return typeof model === 'string' && model ? [model] : [];
+    }))].sort(),
     campaignPartial: index.records.filter(record => record.kind === 'lifecycle'
       && (record.data as { event?: unknown } | undefined)?.event === 'campaign.partial').length,
     campaignResumes: index.records.filter(record => record.kind === 'lifecycle'

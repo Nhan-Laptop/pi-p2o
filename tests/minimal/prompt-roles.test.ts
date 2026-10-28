@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, readdir, rm } from 'node:fs/promises';
+import { mkdir, mkdtemp, readdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -23,7 +23,7 @@ import { createContext, createFakePi, createSimpleHerdr, sandboxFactory, EXTENSI
  */
 const plannerFacts = (overrides: Partial<PlannerPromptFacts> = {}): PlannerPromptFacts => ({
   runId: 'run-a4', targetLabel: '/fixture', targetKind: 'directory', sourceSkipped: 0,
-  delegation: { enabled: true, maxWorkers: 3, maxDepth: 2 }, phase: 'active', loopMode: 'manual', executorMode: 'shared', ...overrides,
+  delegation: { enabled: true, maxWorkers: 3, maxDepth: 2 }, phase: 'active', executorMode: 'shared', ...overrides,
 });
 const ticket = (role: string) => ({ workerId: 'worker-1', role, depth: 1, parentWorkerId: null, target: { kind: 'directory', label: '/fixture' }, executorMode: 'shared' } as never);
 
@@ -124,12 +124,15 @@ function engineFixture() {
     spawn: async () => undefined, persist: async (text, data) => { journal.push({ text, data }); }, wake: wake => { wakes.push(wake); },
     idle: () => true, problem: reason => { problems.push(reason); },
   };
-  return { engine: new AssessmentEngine('run-a4', 'manual', deps, 10), journal, wakes, problems };
+  return { engine: new AssessmentEngine('run-a4', 'event-driven', deps, 10), journal, wakes, problems };
 }
 
 describe('A4 stalled round is a report fact, never a wake', () => {
   it('records exactly the open-goal/no-intent/no-blocked rounds and nothing else', async () => {
     const f = engineFixture();
+    // P5.1/P18/D48: only an admitted round can stall. There is no manual mode fallback any more, so admit round 1 first.
+    f.engine.notify('worker-report', 'w0');
+    f.engine.consume(f.engine.boundary()!.through);
     expect(await f.engine.stallRound({ openGoal: false, openIntents: 0 })).toBe(false);
     expect(await f.engine.stallRound({ openGoal: true, openIntents: 1 })).toBe(false);
     expect(f.journal).toHaveLength(0);
@@ -165,7 +168,11 @@ async function harness(): Promise<Harness> {
   const root = await mkdtemp(join(tmpdir(), 'p2o-a4-'));
   await mkdir(join(root, 'repo'), { recursive: true });
   const pi = createFakePi(), context = createContext({ cwd: root });
-  registerP2O(pi.pi, { createSandbox: sandboxFactory([]), herdr: createSimpleHerdr().client, settingsPath: join(root, 'settings.json'), controlRoot: join(root, 'control'), extensionPath: EXTENSION_PATH });
+  // P18.3/D47: this suite exercises round ACK accounting through the settle boundary continuation, which is the documented
+  // single-session fallback; session rounds (the default) open the next round from the engine kick instead.
+  const settingsPath = join(root, 'settings.json');
+  await writeFile(settingsPath, JSON.stringify({ p2o: { roundSessions: false } }), { mode: 0o600 });
+  registerP2O(pi.pi, { createSandbox: sandboxFactory([]), herdr: createSimpleHerdr().client, settingsPath, controlRoot: join(root, 'control'), extensionPath: EXTENSION_PATH });
   const runDirectory = async () => {
     const entries = await readdir(join(root, 'control')), created = entries.find(name => name.startsWith('p2o-run-'));
     if (!created) throw new Error('no control directory was created');
@@ -187,6 +194,11 @@ describe('A4 extension round ACK', () => {
     const h = await harness();
     try {
       await h.start();
+      // P5.1/P18/D48: a turn that ends before the first wake is not a campaign round, so admit round 1 through the same
+      // automatic path the engine uses (a committed semantic event plus the settle boundary continuation).
+      await h.call('p2o_loop', { action: 'hint', text: 'Bounded fixture hint so the first wake admits a round' });
+      expect(await h.emit('agent_before_settle', { outcome: 'completed', continue: false, context: { pendingMessages: [] } }))
+        .toMatchObject({ continue: true });
       const round = async () => {
         await h.emit('context', { messages: [{ role: 'user', content: 'continue the assessment', timestamp: 0 }] });
         await h.emit('message_end', { message: { role: 'assistant', stopReason: 'stop', content: 'no new intent' } });

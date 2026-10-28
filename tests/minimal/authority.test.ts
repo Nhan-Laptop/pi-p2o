@@ -143,7 +143,7 @@ describe('P0/A1 active surface', () => {
     }
     // One model-facing delegation path: the planner prompt names neither removed verb nor a target tool, and the
     // reporter/worker prompts name only tools their own loadout contains.
-    const planner = plannerInstructions({ runId: 'run-x', targetLabel: '/home/x/repo', targetKind: 'directory', sourceSkipped: 0, delegation: { enabled: true, maxWorkers: 3, maxDepth: 2 }, phase: 'active', loopMode: 'manual', executorMode: 'shared' });
+    const planner = plannerInstructions({ runId: 'run-x', targetLabel: '/home/x/repo', targetKind: 'directory', sourceSkipped: 0, delegation: { enabled: true, maxWorkers: 3, maxDepth: 2 }, phase: 'active', executorMode: 'shared' });
     expect(planner).toMatch(/no target, lab or claim tools/i);
     expect(planner).not.toMatch(/may execute directly/i);
     for (const name of REMOVED) expect(planner, name).not.toContain(name);
@@ -151,6 +151,30 @@ describe('P0/A1 active surface', () => {
       const text = role === 'reporting' ? reporterInstructions(ticket(role)) : workerInstructions(ticket(role));
       for (const named of mentioned(text)) expect(workerTools(role), `${role} prompt names ${named}`).toContain(named);
     }
+  });
+});
+
+describe('P18 round counters (D47/D51)', () => {
+  it('counts rounds started, wrapped, stopped and routed from the round lifecycle facts, never from prose', () => {
+    const lifecycle = (at: string, text: string, data: Record<string, unknown>): AssessmentRecord => ({ at, runId: 'run-p18', by: 'owner', kind: 'lifecycle', text, data } as AssessmentRecord);
+    const rows = [
+      lifecycle('2026-01-01T00:00:01.000Z', 'planner.round-start: round 1 opened (event)', { engine: { event: 'planner.round-start', round: 1, reason: 'event' } }),
+      lifecycle('2026-01-01T00:00:02.000Z', 'planner.round-budget: round 1 wrapping up', { engine: { event: 'planner.round-budget', round: 1, state: 'wrap' } }),
+      lifecycle('2026-01-01T00:00:03.000Z', 'planner.round-model: round 1 ran fixture/escalate', { engine: { event: 'planner.round-model', round: 1, model: 'fixture/escalate' } }),
+      lifecycle('2026-01-01T00:00:04.000Z', 'planner.round-end: round 1 ended at its round budget', { engine: { event: 'planner.round-end', round: 1, reason: 'round-budget' } }),
+      lifecycle('2026-01-01T00:00:05.000Z', 'planner.round-start: round 2 opened (debt)', { engine: { event: 'planner.round-start', round: 2, reason: 'debt' } }),
+      lifecycle('2026-01-01T00:00:06.000Z', 'planner.round-budget: round 2 exhausted', { engine: { event: 'planner.round-budget', round: 2, state: 'exhausted' } }),
+      lifecycle('2026-01-01T00:00:07.000Z', 'planner.round-model: round 2 ran fixture/base', { engine: { event: 'planner.round-model', round: 2, model: 'fixture/base' } }),
+      lifecycle('2026-01-01T00:00:08.000Z', 'planner.round-model-fallback: round 2 kept the current model', { engine: { event: 'planner.round-model-fallback', round: 2, reason: 'no auth' } }),
+      // A prose mention and a neighbouring lifecycle event are not round facts and must not move a counter.
+      lifecycle('2026-01-01T00:00:09.000Z', 'planner.round-start mentioned in passing', {}),
+      lifecycle('2026-01-01T00:00:10.000Z', 'planner.stalled: a zero-intent round', { engine: { event: 'planner.stalled' } }),
+    ];
+    const counters = authorityCounters(indexRecords(rows, 'run-p18'));
+    expect(counters).toMatchObject({ roundsStarted: 2, roundsWrapped: 1, roundBudgetStops: 1, roundsEnded: 1, roundsRouted: 2 });
+    expect(counters.roundModels).toEqual(['fixture/base', 'fixture/escalate']);
+    // The pre-existing counters keep reading the same ledger unchanged: a fallback is not a routed round.
+    expect(counters).toMatchObject({ stalledRounds: 1, campaignResumes: 0, heartbeatWakes: 0 });
   });
 });
 

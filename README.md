@@ -78,8 +78,10 @@ Details: [architecture](docs/ARCHITECTURE.md), [planner/engine contract](docs/PL
   `agent-browser` 0.26.0 CLI (Node 24.18, npm 11.16), already headless-capable as root, so browser-driven work runs as an
   ordinary sandbox command with the same receipt path and can reach `live_reproduction`. `--identity` seals one operator JSON
   file (values stay host-side; models see ids only), and a worker that needs a principal provisions a disposable one itself.
-- **No command, time or round allowance.** The broker counts every admitted target operation for the ledger and the report and
-  refuses none. Only two quietly unproductive rounds, an operator decision, or `stop`/finish end a run.
+- **No campaign allowance; each round is bounded.** The broker counts every admitted target operation for the ledger and the
+  report and refuses none. A round carries its own 40-step / 900-s budget and wraps up before the end, so a long campaign is
+  many bounded rounds rather than one growing conversation; only two quietly unproductive rounds, an operator decision, or
+  `stop`/finish end a run.
 - **Container isolation, not VM isolation.** Docker shares the host kernel; it is not a claim about kernel escapes. See
   [transport boundaries](docs/HTTP_TRANSPORT.md).
 
@@ -90,7 +92,8 @@ Details: [architecture](docs/ARCHITECTURE.md), [planner/engine contract](docs/PL
   `node_modules`, state and report roots are skipped.
 - The sandbox has no pid/memory/CPU limit, no egress firewall and no fuzzing/proxy service; loopback is container-local,
   `host.docker.internal` reaches host-published services, and user-space tooling can be installed into scratch.
-- Delegation needs Herdr and fresh worker processes. `--workers` is an operator-selected positive integer (default 3); model
+- A run needs Herdr and fresh worker processes: the manual loop was removed (P18/D48), so a start without a worker backend is
+  refused before the run exists. `--workers` is an operator-selected positive integer (default 3); model
   concurrency is not target concurrency. A dispatch with no executor is refused (`DELEGATION_UNAVAILABLE`) and a provisioning
   failure moves the task to `blocked`; neither is a licence for the planner to execute target work.
 - Retention stays bounded (100 queued intents, 1,000 registrations, 256 pending signals, storage quota) even though elapsed

@@ -9,10 +9,12 @@ const reportDirectory = async (h: any) => join(h.root, '.p2o-reports', `report-$
 const exists = (path: string) => stat(path).then(() => true, () => false);
 const finding = (extra: Record<string, unknown> = {}) => ({ severity: 'medium', basis: 'Confirmed boundary deviation reaching only the tested identity’s own object in the fixture', ...extra });
 const HOSTILE = '<script>alert(1)</script> [click](https://evil.example/x) ![i](http://evil.example/p.png) <img src=x onerror=alert(1)> ```fence ````longer www.evil.example **bold**';
+/** P18/A9: every run records a default campaign, so a finish without a plan goal records why the campaign stops. */
+const PARTIAL = 'Fixture run stops before any plan goal was recorded, so the campaign ends incomplete.';
 
 describe('automatic report at the end of a run', () => {
   it('is written when the lead finishes, named in the finish result, private, and consistent with its manifest', async () => fixture(async h => {
-    await populate(h); const result = await h.call('p2o_finish', {}), directory = await reportDirectory(h);
+    await populate(h); const result = await h.call('p2o_finish', { partial: PARTIAL }), directory = await reportDirectory(h);
     expect(result.content[0].text).toContain(`REPORT: ${directory}`); expect(result.details.reportPath).toBe(directory);
     expect((await stat(directory)).mode & 0o777).toBe(0o700);
     const names = (await readdir(directory)).sort(); expect(names).toEqual(expect.arrayContaining(['REPORT.md', 'cases.csv', 'coverage.csv', 'findings.csv', 'findings.json', 'report-manifest.json']));
@@ -32,7 +34,7 @@ describe('automatic report at the end of a run', () => {
       expect(report).toContain('Operator constraint (guidance given to workers, not enforcement): No payment flows');
     });
     await fixture(async h => {
-      await h.command('--target ./source'); await h.call('p2o_finish', {});
+      await h.command('--target ./source'); await h.call('p2o_finish', { partial: PARTIAL });
       const report = await readFile(join(await reportDirectory(h), 'REPORT.md'), 'utf8');
       expect(report).not.toContain('Stated objective'); expect(report).not.toContain('Operator constraint');
     });
@@ -46,22 +48,22 @@ describe('automatic report at the end of a run', () => {
   }));
 
   it('is off for ephemeral runs unless asked, and survives the ephemeral store when it is asked for', async () => fixture(async h => {
-    await h.command('--target ./source --retention ephemeral'); await h.call('p2o_finish', {});
+    await h.command('--target ./source --retention ephemeral'); await h.call('p2o_finish', { partial: PARTIAL });
     expect(await exists(join(h.root, '.p2o-reports'))).toBe(false);
   }));
   it('can be switched on for an ephemeral run and off for a durable one', async () => {
-    await fixture(async h => { await settings(h, { autoReport: true }); await h.command('--target ./source --retention ephemeral'); const result = await h.call('p2o_finish', {}); expect(result.details.reportPath).toMatch(/\.p2o-reports\/report-run-/); expect(await exists(result.details.reportPath)).toBe(true); });
-    await fixture(async h => { await settings(h, { autoReport: false }); await h.command('--target ./source'); const result = await h.call('p2o_finish', {}); expect(result.details.reportPath).toBeUndefined(); expect(await exists(join(h.root, '.p2o-reports'))).toBe(false); });
+    await fixture(async h => { await settings(h, { autoReport: true }); await h.command('--target ./source --retention ephemeral'); const result = await h.call('p2o_finish', { partial: PARTIAL }); expect(result.details.reportPath).toMatch(/\.p2o-reports\/report-run-/); expect(await exists(result.details.reportPath)).toBe(true); });
+    await fixture(async h => { await settings(h, { autoReport: false }); await h.command('--target ./source'); const result = await h.call('p2o_finish', { partial: PARTIAL }); expect(result.details.reportPath).toBeUndefined(); expect(await exists(join(h.root, '.p2o-reports'))).toBe(false); });
   });
 
   it('honours an absolute reportRoot and refuses nothing else about the destination', async () => fixture(async h => {
-    const root = join(h.root, 'elsewhere'); await settings(h, { reportRoot: root }); await h.command('--target ./source'); const result = await h.call('p2o_finish', {});
+    const root = join(h.root, 'elsewhere'); await settings(h, { reportRoot: root }); await h.command('--target ./source'); const result = await h.call('p2o_finish', { partial: PARTIAL });
     expect(result.details.reportPath).toBe(join(root, `report-${await h.runId()}-final`)); expect(await exists(join(result.details.reportPath, 'REPORT.md'))).toBe(true);
   }));
 
   it('never lets a report failure block cleanup: the error is reported and no half directory is left', async () => fixture(async h => {
     await writeFile(join(h.root, 'afile'), 'x'); await settings(h, { reportRoot: join(h.root, 'afile', 'sub') });
-    await h.command('--target ./source'); const result = await h.call('p2o_finish', {});
+    await h.command('--target ./source'); const result = await h.call('p2o_finish', { partial: PARTIAL });
     expect(result.content[0].text).toMatch(/REPORT NOT WRITTEN: /); expect(result.content[0].text).toContain('Container removal verified'); expect(result.details.reportError).toBeTruthy(); expect(result.details.reportPath).toBeUndefined();
     expect((await readdir(h.root)).filter((name: string) => name.includes('p2o-tmp-report'))).toEqual([]);
   }));
@@ -151,7 +153,7 @@ describe('report v2 content', () => {
     await fixture(async h => { await populate(h); const result = await h.call('p2o_finish', { narrative: 'Impact is limited to one fixture object.\n\nNo production data was reached.' });
       const report = await readFile(join(await reportDirectory(h), 'REPORT.md'), 'utf8'); expect(result.details.reportPath).toBeTruthy();
       expect(report).toContain('> **Lead narrative — written by the lead agent, not verified by the host:**'); expect(report).toContain('> Impact is limited to one fixture object.'); expect(report).toContain('> No production data was reached.'); });
-    await fixture(async h => { await settings(h, { reportFormat: 1 }); await populate(h); await h.call('p2o_finish', {});
+    await fixture(async h => { await settings(h, { reportFormat: 1 }); await populate(h); await h.call('p2o_finish', { partial: PARTIAL });
       const directory = await reportDirectory(h), report = await readFile(join(directory, 'REPORT.md'), 'utf8');
       expect((await readdir(directory)).filter((name: string) => !name.startsWith('.')).sort()).toEqual(['REPORT.md', 'cases.csv', 'coverage.csv', 'report-manifest.json']);
       expect(report).not.toContain('## Executive summary'); expect(report).toContain('Format version 1.'); });

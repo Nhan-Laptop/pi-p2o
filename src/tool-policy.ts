@@ -31,6 +31,13 @@ export const PLANNER_TOOLS = [
   'p2o_workers', 'p2o_loop', 'p2o_finish',
 ];
 
+/**
+ * P18.3/D47: the closing loadout a wrapping round switches to. Reading the board/ledger, authoring write-back and the loop stay
+ * available; creating or dispatching a new intent is what a wrapping round must not start, because the next round owns the next
+ * work package. Authority is unchanged: this is the planner loadout with two verbs removed, never a wider one.
+ */
+export const CLOSING_TOOLS = PLANNER_TOOLS.filter(name => name !== 'p2o_task_dispatch' && name !== 'p2o_task_author');
+
 /** Executing worker loadout: one intent, target tools, write-back and report. Workers never create or dispatch work. */
 export const WORKER_TOOLS = [
   'p2o_skill_list', 'p2o_skill_read', 'p2o_secret', 'p2o_research', 'p2o_candidate', ...LAB_TOOLS, ...TARGET_TOOLS,
@@ -61,6 +68,8 @@ export const MODEL_TOOLS = [...new Set([...PLANNER_TOOLS, ...WORKER_TOOLS, ...VA
 export const ALL_TOOLS = [...new Set([...MODEL_TOOLS, ...HIDDEN_TOOLS])];
 
 export function plannerTools(): string[] { return [...PLANNER_TOOLS]; }
+/** P18.3/D47: the loadout a round uses once it is wrapping up. */
+export function closingTools(): string[] { return [...CLOSING_TOOLS]; }
 export function reporterTools(): string[] { return [...REPORTER_TOOLS]; }
 /** Role loadout: the reporting role is read-only; validation loses the surface writer; every other worker gets the full set. */
 export function workerTools(role?: string): string[] {

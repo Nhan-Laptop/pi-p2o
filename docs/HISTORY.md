@@ -32,6 +32,7 @@ Every number below was true when recorded. None of them replaces a current run: 
 | 2026-10-27 | P9 Option B/C: graph-related ceilings became a setting (`graphCapacity`), queue identity, executor cap, proof-only goal settle | full suite 1,069 pass / 124 files |
 | 2026-10-27 | P11/A11 autonomy pass: one start consent covers the run; browser and self-provisioned identity are instrument facts; the skill library's third-party guardrail doctrine was removed | commit `f5015fd`, pushed to `main` |
 | 2026-10-27 | Dedupe/merge pass: three authoring pairs became identity-selected `p2o_task_author` / `p2o_case_author` / `p2o_plan_author` (no `id` creates, `id`+`revision` revises); tool declarations 95.7 kB → 79.9 kB (−16.5%, planner loadout −24.1%); duplicated prompt rules, tool self-repeats and skill-library scaffolding removed; size budgets and the skill ceiling pinned by test again; five skills stopped describing an off-sandbox lab that does not exist | 34 registered tools (32 on the model surface + 2 hidden), planner 21, worker 19, validation 18, reporter 6; full gate recorded with the change |
+| 2026-10-28 | P18/A9–A13 long-horizon loop: each round opens in a fresh Pi session with a deterministic ≤8 KiB briefing instead of growing one transcript; per-round budget (40 steps / 900 s, wrap-up with a closing loadout, classified stop rather than a failure); single-mode demand floor (one `wait` refusal, at most two settlement nudges); per-round base/escalation model and thinking routing; ledger-only round facts and operator visibility; operator stop settles the in-flight round and drains worker reports inside fixed bounds. The manual loop mode was removed (a start without a worker backend is refused), while the campaign itself stays uncapped. Measurement protocol shipped ready-not-run | full suite 1,185 passed / 13 skipped / 133 files; real-Pi round-session smoke green; P18 bench never run (D52) |
 
 ## Decisions that outlive their phase
 
@@ -41,8 +42,12 @@ Every number below was true when recorded. None of them replaces a current run: 
   commands are not origin-filtered, and the citation fetch is host-side, uncapped, with no allowlist (Part XI).
 - **The browser and identity channels are instrument, not permission.** The pinned image ships Chromium and the
   `agent-browser` CLI; `--identity` is operator convenience, and a worker provisions a disposable principal when it needs one.
-- **No command, token, time or round allowance.** Only two quietly unproductive rounds, an operator decision or an operator
-  stop end a run; usage is recorded for the report and never refused.
+- **No campaign allowance; the round is bounded.** Amended by P18/D47: there is still no campaign-wide command, token,
+  time or round ceiling, and only two quietly unproductive rounds, an operator decision or an operator stop end a run; usage
+  is recorded for the report and never refused. What is bounded is the round itself (40 steps or 900 s by default, wrapping
+  once before the end): a hard stop is a classified round end, not a failure and not a campaign decision. The same pass
+  removed the manual loop mode (P18/D48): a run that cannot delegate refuses to start instead of letting the planner take
+  over target work, and the planner stand-in is the demand floor, not a manual turn.
 - **One authoring verb per entity, selected by identity.** `p2o_task_author` / `p2o_case_author` / `p2o_plan_author` create
   with no `id` and revise with `id`+`revision`; a half identity is refused with the board read and the legal next verb, so
   the schema is declared once instead of once per half.

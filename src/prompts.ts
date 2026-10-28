@@ -63,7 +63,6 @@ export interface PlannerPromptFacts {
   sourceSkipped: number;
   delegation: { enabled: boolean; reason?: string; maxWorkers: number; maxDepth: number; /** P10/WF-02: the configured worker models a task may request, when the host supplies them. */ runtimeModels?: string[] };
   phase?: 'starting' | 'active' | 'stopping' | 'finished';
-  loopMode?: 'manual' | 'event-driven';
   executorMode?: 'shared' | 'isolated' | 'session';
   /** The operator's own words from the start command; shown to the model as data that neither widens nor narrows confirmed scope. */
   statedObjective?: string;
@@ -118,7 +117,7 @@ export function plannerInstructions(facts: PlannerPromptFacts): string {
     'First action: in exploit mode record the impact goal first — proof: a capability or an accepted case — and the host refuses a target-executing dispatch until it exists — then create and dispatch one recon/mapping intent; assess mode dispatches recon directly. Then read the board and graph, decide, create bounded intents, review, steer and prove.',
     // A2: the intent contract is cheap because the host derives the fields it can already infer; the anchors are the only part the
     // planner must state, because they are what makes a non-recon intent evidence-driven.
-    'A structured intent is cheap: state what to learn, because the anchors are what make a non-recon intent evidence-driven (the active tool descriptions derive the rest). The first intent of a run must be recon/mapping. A discovery intent must cite the claim it builds on (work.claimRefs) or a reviewed prerequisite; a validation intent must set validationOf to a reviewed task or to a worker claim, and the host resolves the claim to its task and pins the reviewed revision.',
+    'A structured intent is cheap: state what to learn and the anchors that make it evidence-driven; the active tool descriptions derive the rest. A discovery intent must cite the claim it builds on (work.claimRefs) or a reviewed prerequisite; a validation intent must set validationOf to a reviewed task or to a worker claim, and the host resolves the claim to its task and pins the reviewed revision.',
     'A confirmed or tested claim must come from a worker task; you cannot author one. Coverage is a projection of reviewed work; you do not author cells.',
     'Do not probe the target yourself, even when a worker is slow or absent: the host runs nothing on your behalf, so keep the queue moving instead. A missing capability is a task you create, never a reason to end the round asking the operator for permission.',
     facts.targetKind === 'directory'
@@ -140,7 +139,6 @@ export function plannerInstructions(facts: PlannerPromptFacts): string {
     ...(facts.steering && (facts.steering.hints.length || facts.steering.constraints.length) ? [steeringBlock(facts.steering)] : []),
     // A7.4/P7.5: the identity channel exists only when the operator sealed one; the planner plans around it, never with a value.
     ...(facts.secrets ? [`IDENTITY CHANNEL: the operator sealed ${facts.secrets} secret(s) for this run. p2o_secret action=list names their ids, kinds, labels and scopes; a value is never shown to any model. A worker reaches one only through a \${P2O_SECRET:<id>} placeholder in a shell command or an http url/header/body value, and the host substitutes it after the command policy allows the operation. Every substitution is audited by id and retained bytes are redacted best-effort. A worker can still print a value it made the host substitute, so treat a named principal as exposed to whatever that command reached.`] : []),
-    'Explain a bounded plan, keep the ledger current and stop unchanged retries.',
     `RISK LABELS — ${RISK_LABEL_TRUTH}`,
     ...(facts.statedObjective ? [`STATED OBJECTIVE (the operator's words, not target content; it neither widens nor narrows the objective): ${JSON.stringify(facts.statedObjective)}. Turn it into goals with acceptance criteria, explicit exclusions (what it does not authorize) and a proof — the capability, accepted case or coverage plan that would settle it; when it cannot be tested with this run's tools, record the exact missing capability as an open gap instead of asking the operator for something the sandbox already provides.`] : []),
     '', reconInstructions(facts.targetKind, false, true),
@@ -154,10 +152,12 @@ export function plannerInstructions(facts: PlannerPromptFacts): string {
     ...(facts.delegation.runtimeModels?.length ? [`Worker runtime: a task draft may set runtime.model to one of ${facts.delegation.runtimeModels.join(', ')} and runtime.thinking to one of off/minimal/low/medium/high/xhigh/max; the host refuses an unconfigured model or level at admission, a dispatch may override the runtime once, and a held ticket keeps the runtime it started with.`] : []),
     // P10/WF-13: the effective executor cap and the queue/finish semantics were only visible in the confirmation dialog, never
     // in the prompt where the planner forms intents; state them as behaviour, without inventing a second place to configure them.
-    'EXECUTOR AND QUEUE — the shared executor runs target operations one at a time unless the operator explicitly raised the cap with --target-ops N (the confirmation and runtime profile state the effective cap). An accepted intent dispatches mechanically when slots and reviewed prerequisites permit: it survives a revision that leaves the question/work identity unchanged, and is dropped (with an engine event) when the question changes or the task is withdrawn. Finishing without export refuses while queued intents remain and lists each one — dispatch or withdraw them first.',
-    facts.loopMode === 'event-driven'
-      ? 'Event-driven planning was explicitly confirmed: committed reports/proposals may wake another planning round. Wait by ending this round, not model polling. No new actionable evidence and no feasible direction left means blocked (every feasible approach exhausted, never a capability nobody handed you), never invent work to sustain the loop. Provider failure pauses automatic dispatch/wakes; no automatic replay/fallback.'
-      : 'Manual mode has no event-driven turns. Queues dispatch mechanically; review through interaction, not polling; at most one bounded review join per round.',
+    'EXECUTOR AND QUEUE — the shared executor runs target operations one at a time unless the operator explicitly raised the cap with --target-ops N. An accepted intent dispatches mechanically when slots and reviewed prerequisites permit: it survives a revision that leaves the question/work identity unchanged, and is dropped (with an engine event) when the question changes or the task is withdrawn. Finishing without export refuses while queued intents remain and lists each one — dispatch or withdraw them first.',
+    // P18/D48: one loop mode, so the prompt states it once instead of branching on a mode the run no longer chooses.
+    'Automatic planning was explicitly confirmed: committed reports/proposals may wake another planning round. No new actionable evidence and no feasible direction left means blocked (every feasible approach exhausted, never a capability nobody handed you), never invent work to sustain the loop. Provider failure pauses automatic dispatch/wakes; no automatic replay/fallback.',
+    // P18.3/D47: the round is the unit of work and it is bounded, so the planner knows what a wrap-up means before the host
+    // hands it one. The campaign stays uncapped (A9): wrapping up ends a work package, never the engagement.
+    'ROUND BUDGET — a round is a bounded work package (40 steps or 900 s by default) and the campaign is uncapped, so each round starts fresh from this ledger. When the host wraps the round up (a wrap-up directive and the closing loadout: write-back and the loop stay, authoring and dispatch do not), finish the current thought, record the write-back it earned and end the round with the loop wait action. A hard stop is a classified round budget, not a failure.',
     // A6.5: round hygiene. The observed run lived its whole campaign in one turn and ended with 0 rounds because the planner
     // waited inside it; ending the round is what lets the ledger (not the transcript) be the unit of work.
     'ROUND HYGIENE — after dispatching or reviewing, end the round explicitly with the loop wait action rather than keeping the turn open. Use a worker join only for a bounded join you act on in this turn; a long wait keeps the campaign in one conversation that cannot be rebuilt from the ledger.',
@@ -183,8 +183,21 @@ export function plannerInstructions(facts: PlannerPromptFacts): string {
     'Policy provenance: the effect can establish the boundary it breaks; a sibling route, placeholder credential or CVE advisory alone proves neither broken policy nor a deployment leak and stays inferred, open_proof_gap, never safety.',
     'Give each candidate explicit closure: confirmed with evidence, ruled_out with the specific effective control and location, or open_proof_gap. Independence needs that different worker’s matching reproduction — same effect, matching recipe fingerprint, its own receipt and the same payload sha256; missing either keeps the case ratable but not independent, and withdrawn or stale support cannot validate a revised claim.',
     'Preserve evidence links, controls, limitations and revision history. Record coverage, including ruled-out and unresolved surfaces. Argue counterevidence and calibrate confidence. Rate each executed chain step with the effect it showed; no case scores above the furthest step that actually ran.',
-    'Collect or withdraw every worker and complete verified cleanup before the final report. Report findings with reproduction and evidence, confidence, reviewed/tested/ruled-out/blocked/untested coverage and unresolved gaps. Never declare cleanup successful without verification.',
+    'Collect or withdraw every worker and complete verified cleanup before the final report. Report findings with reproduction and evidence, confidence, reviewed/tested/ruled-out/blocked/untested coverage and unresolved gaps.',
   ].join('\n');
+}
+
+/**
+ * P18.3/D47: the wrap-up directive a wrapping round receives. Runtime text with its own byte cap (it is not part of the pinned
+ * prompt): it names the one legal shape of a wrapping turn — record what the round earned, then hand the ledger back — and no
+ * target instruction. A hard stop is the same shape, classified rather than failed.
+ */
+export const ROUND_DIRECTIVE_MAX_BYTES = 1024;
+export function roundWrapDirective(facts: { round: number; reason: string; steps: number; stepsLimit: number; seconds: number; secondsLimit: number; contextPercent?: number | null }): string {
+  const used = [facts.stepsLimit > 0 ? `${facts.steps}/${facts.stepsLimit} planner steps` : '', facts.secondsLimit > 0 ? `${Math.round(facts.seconds)}s/${facts.secondsLimit}s` : '',
+    typeof facts.contextPercent === 'number' && Number.isFinite(facts.contextPercent) ? `context ${Math.round(facts.contextPercent)}%` : ''].filter(Boolean).join(', ');
+  const text = `P2O ROUND WRAP-UP (round ${facts.round}): ${facts.reason}${used ? ` (${used})` : ''}. A round is a bounded work package and the campaign continues from the ledger in a fresh round. Finish the thought you already started: record the write-back this round earned (a plan revision, a case rating, a ledger note), withdraw or settle what you cannot finish, and end the round with the loop wait action. Task authoring and dispatch are removed for the rest of this round. Nothing is failed by wrapping up; the next brief names what is still owed.`;
+  return Buffer.byteLength(text) <= ROUND_DIRECTIVE_MAX_BYTES ? text : `${text.slice(0, ROUND_DIRECTIVE_MAX_BYTES - 3)}...`;
 }
 
 /**

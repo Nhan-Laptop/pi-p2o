@@ -39,9 +39,16 @@ describe('one target grammar', () => {
       expect(() => parseCommand(`--target x ${args}`), args).toThrow(/--avoid/);
   });
 
-  it('parses the delegation and loop limits it understands', () => {
-    expect(parseCommand('--target x --workers 12 --loop event-driven --executors isolated --target-ops 2')).toMatchObject({ options: { workers: 12, loopMode: 'event-driven', executorMode: 'isolated', maxTargetOperations: 2 } });
+  it('parses the delegation, round and loop limits it understands', () => {
+    expect(parseCommand('--target x --workers 12 --loop event-driven --executors isolated --target-ops 2')).toMatchObject({ options: { workers: 12, executorMode: 'isolated', maxTargetOperations: 2 } });
+    // P18/D48: the manual loop was removed; event-driven remains as the only (and default) loop mode.
+    expect(() => parseCommand('--target x --loop manual')).toThrow(/MANUAL_LOOP_REMOVED/);
     for (const args of ['--loop retry', '--executors bad', '--target-ops 0']) expect(() => parseCommand(`--target x ${args}`)).toThrow();
+    // P18/A9: the round budget is per round; `0` disables an axis and both at 0 is an explicit unbounded round.
+    expect(parseCommand('--target x --round-steps 25 --round-seconds 600')).toMatchObject({ options: { roundSteps: 25, roundSeconds: 600 } });
+    expect(parseCommand('--target x --round-steps 0 --round-seconds 0')).toMatchObject({ options: { roundSteps: 0, roundSeconds: 0 } });
+    for (const args of ['--round-steps', '--round-steps -1', '--round-steps 201', '--round-seconds 7201', '--round-seconds 1.5'])
+      expect(() => parseCommand(`--target x ${args}`), args).toThrow(/--round-/);
     expect(parseCommand('--target x --workers 5 --max-depth 1')).toMatchObject({ options: { workers: 5, maxDepth: 1 } });
   });
 
