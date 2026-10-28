@@ -5,10 +5,14 @@
  * origin scoping the implementation had removed, `p2o_net` said raw sockets were unavailable while the container runs as
  * root with the Docker default capability set (NET_RAW included), the consent and report text claimed more capability than
  * that set grants and a credential channel the host does not provide, and the report claimed the tool never left the
- * authorized target. Each fact below is stated once and composed into every model-facing surface.
+ * authorized target. Each fact below is stated once and composed into the surfaces that carry it: the planner/worker system
+ * prompts and the input schemas. The execution tool descriptions (`p2o_shell`/`p2o_net`/`p2o_http`) do not repeat a fact the
+ * worker prompt already states (A1 dedupe, owner decision 2026-10-28); only `SANDBOX_TRUTH` stays there because no worker
+ * prompt states it.
  *
- * `tests/minimal/truth.test.ts` pins both the presence of the truth on the three surfaces and the absence of the retired
- * claims across `src`, `extensions`, `docs` and `skills`, so a later edit fails loudly instead of re-introducing a ceiling.
+ * `tests/minimal/truth.test.ts` pins both the presence of each fact on the prompt and schema surfaces, the absence of the
+ * duplicates on the execution tool descriptions, and the absence of the retired claims across `src`, `extensions`, `docs` and
+ * `skills`, so a later edit fails loudly instead of re-introducing a ceiling.
  */
 
 /** What execution inside the one container is, exactly. */

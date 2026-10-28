@@ -69,7 +69,7 @@ describe('canonical owner runtime (inert execution, real SQLite and Unix broker)
     await fixture(async h=>{
       h.ctx.setConfirm(false);await h.command('--target ./source');
       expect(h.ctx.confirmBodies[0]).toContain('DURABLE-LOCAL');expect(h.ctx.confirmBodies[0]).toContain(join(h.root,'.p2o-state'));
-      expect(h.ctx.confirmBodies[0]).toContain('256 MiB');expect(h.ctx.confirmBodies[0]).toContain('nhạy cảm');expect(h.ctx.confirmBodies[0]).toMatch(/^Runtime: p2o \S+ · [0-9a-f]{12}\n/);
+      expect(h.ctx.confirmBodies[0]).toContain('256 MiB');expect(h.ctx.confirmBodies[0]).toContain('sensitive data');expect(h.ctx.confirmBodies[0]).toMatch(/^Runtime: p2o \S+ · [0-9a-f]{12}\n/);
       expect(h.sandboxes).toHaveLength(0);expect(h.pi.messages).toHaveLength(0);
       await expect(stat(join(h.root,'.p2o-state'))).rejects.toThrow();await expect(stat(join(h.root,'control'))).rejects.toThrow();
       h.ctx.setConfirm(true);await h.command('--target ./source');await h.command('stop');
@@ -118,6 +118,31 @@ describe('canonical owner runtime (inert execution, real SQLite and Unix broker)
       const heads=(await h.call('p2o_state',{action:'heads',domain:'reference'})).details;
       expect(heads.rows).toHaveLength(1);expect(heads.rows[0]).toMatchObject({domain:'reference',status:'current'});
       await h.pi.commands.get('p2o').handler('stop',fresh.ctx);
+    });
+  });
+  it('p2o_state names the action that filters when search is called with domain/status (A1 host-shape fix)',async()=>{
+    await fixture(async h=>{
+      await h.command('--target ./source');
+      // The search RPC takes q/cursor/limit only. Forwarding domain/status used to fail host-side shape validation with
+      // "Knowledge search has an invalid shape or unknown fields" instead of naming the action that does filter by them.
+      await expect(h.call('p2o_state',{action:'search',q:'fixture',domain:'task'})).rejects.toThrow(/domain\/status filter action=heads/);
+      await expect(h.call('p2o_state',{action:'search',q:'fixture',status:'current'})).rejects.toThrow(/action=search takes q, cursor and limit only/);
+      await expect(h.call('p2o_state',{action:'heads',q:'fixture'})).rejects.toThrow(/action=heads takes domain, status, cursor and limit only/);
+      await expect(h.call('p2o_state',{action:'search',q:'fixture'})).resolves.toBeTruthy();
+    });
+  });
+  it('stores over-long cosmetic prose truncated with a warning instead of failing argument validation (A1)',async()=>{
+    await fixture(async h=>{
+      await h.command('--target ./source');
+      const note=await h.call('p2o_note',{kind:'note',text:'N'.repeat(3000),surface:'S'.repeat(400),risk:'R'.repeat(400)});
+      expect(note.details.warnings).toEqual(['truncated:text (stored 2000 of 3000 characters)','truncated:surface (stored 200 of 400 characters)','truncated:risk (stored 200 of 400 characters)']);
+      expect(note.content[0].text).toContain('Admission warnings:');
+      const notes=await h.reader();
+      try{const row=notes.records().filter((r:any)=>r.kind==='note').at(-1)!;expect(row.text).toHaveLength(2000);expect(row).toMatchObject({surface:'S'.repeat(200),risk:'R'.repeat(200)});}finally{notes.close();}
+      const surface=await h.call('p2o_surface',{component:'C'.repeat(300),entryPoint:'E'.repeat(300),text:'T'.repeat(1500)});
+      expect(surface.details.warnings).toHaveLength(3);
+      const inventory=await h.reader();
+      try{const row=inventory.records().filter((r:any)=>r.kind==='surface').at(-1)!;expect((row.data as any).component).toHaveLength(200);expect(row.text).toHaveLength(1000);}finally{inventory.close();}
     });
   });
   it('--refer-workspace records an explicit Unknown reason (never silently clean) when no prior run shares the target, and omitting the flag writes no reference record at all',async()=>{

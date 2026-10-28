@@ -1,5 +1,5 @@
 import { randomUUID, createHash } from 'node:crypto';
-import { sha256Hex } from './validate.js';
+import { clampProseInPlace, PROSE_CAPS, sha256Hex } from './validate.js';
 import { constants } from 'node:fs';
 import { mkdir, open } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -86,6 +86,8 @@ export class EvidenceStore {
   }
   candidate(by: string, input: Candidate, taskRef?: string): Promise<AssessmentRecord> {
     const task = this.pending.then(async () => {
+      // A1: cosmetic prose is clamped at its stored bound with a trace on the record (identity fields keep their strict caps).
+      const admissionWarnings = clampProseInPlace(input as unknown as Record<string, unknown>, PROSE_CAPS.candidate);
       validateCandidate(input);
       // W4: the host, not the caller, stamps which task produced the claim. It is how the automatic validation task names its
       // predecessor and how a case finds the validation of this exact claim.
@@ -152,7 +154,7 @@ export class EvidenceStore {
         surface: input.surface, risk: input.risk, outcome: input.closure, refs: input.evidenceRefs,
         supersedes: input.supersedes, resolves: input.resolves,
         // Stamped after the spread, so a caller cannot claim a payload hash or origin task it did not run.
-        data: { ...storedInput, ...(taskRef ? { taskRef } : {}), ...(payloadRef ? { payloadSha256: payloadRef.sha256 } : {}), ...(environmentRef ? { environmentFingerprint: environmentRef.fingerprint } : {}) } };
+        data: { ...storedInput, ...(admissionWarnings.length ? { admissionWarnings } : {}), ...(taskRef ? { taskRef } : {}), ...(payloadRef ? { payloadSha256: payloadRef.sha256 } : {}), ...(environmentRef ? { environmentFingerprint: environmentRef.fingerprint } : {}) } };
       await appendRecord(this.path, record);
       return record;
     });

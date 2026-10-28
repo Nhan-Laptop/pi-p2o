@@ -41,7 +41,12 @@ export function registerInertProvider(pi: ExtensionAPI, mode: 'owner' | 'worker'
       if (tools.includes('p2o_capabilities') || system.includes('CAPABILITIES')) throw new Error('removed capability subsystem is exposed');
       if (!system.includes('RECON → INVESTIGATION') || !system.includes('decision note')) throw new Error('recon contract missing');
       const descriptions = getCurrentTools(context.messages);
-      if (mode === 'worker' && !descriptions.find(tool => tool.name === 'p2o_shell')?.description.includes('network egress')) throw new Error('shell guidance missing');
+      // A1 (2026-10-28): the capability facts are composed into the worker system prompt, and the execution tool descriptions no
+      // longer repeat them (a worker context used to read the same fact up to three times). The shell keeps SANDBOX_TRUTH, the
+      // one instrument fact no worker prompt states, so its own guidance still has to reach the real tool declaration.
+      if (mode === 'worker' && (!system.includes('network egress') || !system.includes('agent-browser'))) throw new Error('capability guidance missing from the worker prompt');
+      if (mode === 'worker' && !descriptions.find(tool => tool.name === 'p2o_shell')?.description.includes('sandbox runs as root')) throw new Error('shell guidance missing');
+      if (mode === 'worker' && descriptions.find(tool => tool.name === 'p2o_shell')?.description.includes('network egress')) throw new Error('shell description repeats the prompt fact');
       if (mode === 'worker' && !descriptions.find(tool => tool.name === 'p2o_http')?.description.includes('redirect following up to maxRedirects')) throw new Error('http guidance missing');
       if (mode === 'worker' && !descriptions.find(tool => tool.name === 'p2o_net')?.description.includes('connect scans')) throw new Error('network tool guidance missing');
       const results = context.messages.filter((message: any) => message.role === 'toolResult');

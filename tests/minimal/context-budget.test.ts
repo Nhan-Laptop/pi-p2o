@@ -21,6 +21,10 @@ import { createFakePi, EXTENSION_PATH } from './helpers/fake-pi.js';
  * Measured 2026-10-27 after the merge: planner 47,820; worker 42,751; validation 41,945; reporter 6,599; model 75,586.
  * The ceilings below are those numbers +3%, rounded up. Raise one only on purpose, with a dated comment here saying
  * which tool grew and why — a silent creep past these numbers is the failure this test exists to catch.
+ *
+ * 2026-10-28 (A1 dedupe): the three execution tool descriptions stopped repeating capability facts the prompts already
+ * state, which removes 3,845 chars from the worker and validation declarations (and from the model union). The ceilings
+ * stay put: the freed bytes are deliberate headroom, not an entitlement for the surface to grow by.
  */
 const DECLARATION_CEILINGS = { planner: 49_300, worker: 44_100, validation: 43_300, reporter: 6_800, model: 77_900 };
 

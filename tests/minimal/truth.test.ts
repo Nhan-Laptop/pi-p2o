@@ -17,7 +17,8 @@ import { fixture, populate } from './helpers/report-fixture.js';
  * undefined field, and the shipped strings undersold what the sandbox can do (origin scoping, "no raw sockets", a
  * non-root user) while claiming a credential channel the host does not provide. This suite pins the replacement:
  *
- *  1. every model-facing surface composes the same fact module (`src/truth.ts`),
+ *  1. the system prompts and the input schemas compose the same fact module (`src/truth.ts`), and the execution tool
+ *     descriptions do not repeat a fact a prompt already states (A1 dedupe, owner decision 2026-10-28),
  *  2. the retired claims are gone from `src`, `extensions`, `docs` and `skills`, so an edit cannot quietly restore them,
  *  3. `risk` is defined where the model is asked to write it,
  *  4. the exported report describes the instrument that actually ran.
@@ -105,18 +106,20 @@ describe('P7.0 truth pass', () => {
     expect(CREDENTIAL_TRUTH).toContain('self-provisioned');
   });
 
-  it('composes the truth into the registered execution tools', () => {
+  it('keeps the execution tool descriptions free of facts the prompts already state (A1)', () => {
     const tools = registrations();
     const shell = tools.get('p2o_shell')!.description as string;
     const net = tools.get('p2o_net')!.description as string;
     const http = tools.get('p2o_http')!.description as string;
+    // A1: SANDBOX_TRUTH is the one fact no worker prompt states, so the shell keeps it.
     expect(shell).toContain(SANDBOX_TRUTH);
-    expect(shell).toContain(NETWORK_TRUTH);
-    expect(shell).toContain(BROWSER_TRUTH);
-    expect(net).toContain(BROWSER_TRUTH);
-    expect(net).toContain(NETWORK_TRUTH);
-    expect(http).toContain(HTTP_TRUTH);
-    expect(http).toContain(CREDENTIAL_TRUTH);
+    // The worker prompt carries these facts once. Repeating them on the tool descriptions made one worker context read the
+    // same capability text up to three times, so the execution tools no longer compose them.
+    for (const fact of [NETWORK_TRUTH, BROWSER_TRUTH]) {
+      expect(shell, 'p2o_shell must not repeat a prompt fact').not.toContain(fact);
+      expect(net, 'p2o_net must not repeat a prompt fact').not.toContain(fact);
+    }
+    for (const fact of [HTTP_TRUTH, CREDENTIAL_TRUTH]) expect(http, 'p2o_http must not repeat a prompt fact').not.toContain(fact);
     expect(tools.get('p2o_http')!.label).toBe('HTTP request');
     for (const [name, description] of [['p2o_shell', shell], ['p2o_net', net], ['p2o_http', http]] as const) {
       for (const retired of RETIRED) expect(description.toLowerCase(), `${name} still says ${retired}`).not.toContain(retired.toLowerCase());
@@ -200,13 +203,13 @@ describe('P7.0 truth pass', () => {
 });
 
 describe('P11/A11 autonomy facts', () => {
-  it('states blanket authorization, the installed browser and a self-provisioned identity on every model surface', () => {
+  it('states blanket authorization, the installed browser and a self-provisioned identity in the prompts (not again on the tool descriptions)', () => {
     const planner = plannerInstructions(plannerFacts());
     const worker = workerInstructions(ticket('recon'));
     const brief = workerBrief({ ticket: ticket('recon'), focus: 'f', task: 't' });
     const shell = registrations().get('p2o_shell')!.description as string;
-    // A17.0: the planner holds the full truth text; the worker prompt and the brief hold the operative short form of the
-    // same fact, which is what keeps one worker context from stating it three times.
+    // A17.0/A1: the planner holds the full truth text; the worker prompt and the brief hold the operative short form, and the
+    // execution tool descriptions no longer repeat either (the worker context used to read the same fact up to three times).
     expect(planner).toContain(AUTHORIZATION_TRUTH);
     for (const [name, text] of [['worker', worker], ['brief', brief]] as const) {
       expect(text.toLowerCase(), name).toContain('blanket for the whole run');
@@ -214,7 +217,7 @@ describe('P11/A11 autonomy facts', () => {
       expect(text.toLowerCase(), name).not.toContain('ask the operator for permission');
     }
     expect(worker).toContain(BROWSER_TRUTH);
-    expect(shell).toContain(BROWSER_TRUTH);
+    expect(shell).not.toContain(BROWSER_TRUTH);
     expect(CREDENTIAL_TRUTH).toContain('self-provisioned');
     // The measured run's three questions are answered as work items, not as prerequisites a human must grant.
     expect(worker).toContain('missing credential, account or browser');

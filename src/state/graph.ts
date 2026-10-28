@@ -55,8 +55,12 @@ export function graphCanonical(value: unknown): string {
   return JSON.stringify(normalize(value));
 }
 export function graphObject(value: unknown, fields: readonly string[], label: string): asserts value is Record<string, unknown> {
-  if (!value || typeof value !== 'object' || Array.isArray(value) || ![Object.prototype, null].includes(Object.getPrototypeOf(value))
-    || Object.keys(value).some(key => !fields.includes(key))) throw Error(`${label} has an invalid shape or unknown fields; producer/scope/authority are host-owned`);
+  if (!value || typeof value !== 'object' || Array.isArray(value) || ![Object.prototype, null].includes(Object.getPrototypeOf(value)))
+    throw Error(`${label} must be an object${fields.length ? ` with fields: ${fields.join(', ')}` : ' with no fields'}; producer/scope/authority are host-owned`);
+  const unknown = Object.keys(value).filter(key => !fields.includes(key));
+  // A1: name the offending keys and the allowed ones. The model reads this one line instead of re-deriving the shape from a
+  // rejected payload (Pi's argument validator echoes the whole call; a host error is ~100 characters).
+  if (unknown.length) throw Error(`${label} has unknown field(s): ${unknown.slice(0, 8).join(', ')} (allowed: ${fields.join(', ')}); producer/scope/authority are host-owned`);
 }
 function text(value: unknown, max: number, label: string, options: {key?: boolean} = {}): string {
   if (typeof value !== 'string' || !value || value.length > max || Buffer.byteLength(value) > max || CONTROL.test(value)
@@ -69,16 +73,53 @@ const oneOf = <T extends readonly string[]>(value: unknown, allowed: T, label: s
   return value as T[number];
 };
 const secretName = (value: string) => /^(?:authorization|proxy[-_]?authorization|cookie|set[-_]?cookie|api[-_]?key|access[-_]?token|refresh[-_]?token|password|secret|token|private[-_]?key|environment|tickets?|socket)$/i.test(value);
-/** Detection is best effort. Identifying text is refused, not redacted into a colliding public hash. */
+/** Cookie attributes are policy flags, not credential values: quoting them is exactly what recon evidence looks like. */
+const COOKIE_ATTRIBUTE = /^(?:path|domain|max-age|expires|samesite|secure|httponly|priority|partitioned|comment|version|port)$/i;
+/** A placeholder is what a model writes once a value was redacted or is unknown; it is not a credential. */
+const PLACEHOLDER_VALUE = /^(?:<[^<>\s]{0,120}>|\$\{?[A-Za-z_][A-Za-z0-9_]*\}?|\[(?:REDACTED|redacted)[^\]]*\]|%[sd]|x{3,}|\*{3,}|\.{2,}|redacted|placeholder|omitted|none|null|undefined|n\/a|uuid4?)$/i;
+/** Words that describe a credential rather than carry one ("a random bearer token", "the value was not captured"). */
+const CREDENTIAL_WORD = /^(?:tokens?|credentials?|values?|headers?|auth|authentication|cookies?|secrets?|strings?|redacted|unknown|omitted)$/i;
+/** One concrete value: no whitespace, not a placeholder and not a word about credentials. */
+const concreteValue = (raw: string | undefined): boolean => {
+  if (raw === undefined) return false;
+  const value = raw.trim().replace(/^["']|["',.;:)\]}]+$/g, '');
+  return Boolean(value) && !/\s/.test(value) && !PLACEHOLDER_VALUE.test(value) && !CREDENTIAL_WORD.test(value);
+};
+/** A Cookie/Set-Cookie header is secret-bearing only when a pair carries a concrete (non-attribute) value. */
+const cookiePairValue = (header: string): boolean => {
+  for (const part of header.split(';')) {
+    const at = part.indexOf('=');
+    if (at < 0) continue;
+    if (COOKIE_ATTRIBUTE.test(part.slice(0, at).trim())) continue;
+    if (concreteValue(part.slice(at + 1))) return true;
+  }
+  return false;
+};
+/**
+ * A1: detection is by credential shape, not by redaction side-effect. `redact()` rewrites any `cookie:`/`set-cookie:` text,
+ * which used to refuse a legitimate cookie NAME (`cookie:hcmussh-visit-id`) and observations that quote a placeholder value
+ * (`Set-Cookie: hcmussh-visit-id=<uuid4>`); those are the identity and the attributes, not the secret. A concrete value in
+ * the same position is still refused. Detection remains best effort.
+ */
+function secretMaterial(value: string): boolean {
+  if (/\b(?:sk-|ghp_|github_pat_)[A-Za-z0-9_-]{12,}/.test(value) || /-----BEGIN [^-\r\n]*PRIVATE KEY-----/.test(value)) return true;
+  for (const match of value.matchAll(/\b(?:authorization|proxy[-_]?authorization)\s*:\s*([^\r\n]+)/gi))
+    if (concreteValue(match[1].replace(/^(?:basic|bearer|digest|token)\s+/i, ''))) return true;
+  for (const match of value.matchAll(/\b(?:set[-_]?cookie|cookie)\s*:\s*([^\r\n]+)/gi)) if (cookiePairValue(match[1])) return true;
+  for (const match of value.matchAll(/\b(?:api[-_]?key|access[-_]?token|refresh[-_]?token|password|secret|token)\s*[:=]\s*([^\s"',;&}]+)/gi))
+    if (concreteValue(match[1])) return true;
+  for (const match of value.matchAll(/\bBearer\s+([^\s"',;]+)/gi)) if (concreteValue(match[1])) return true;
+  return false;
+}
 function identityText(value: unknown, max: number, label: string): string {
   const exact = text(value, max, label, {key:true});
   let sensitiveQuery = false;
   for (const part of exact.matchAll(/[?&;]([^?&;=\s]+)=([^&;\s]*)/g)) {
     let name = part[1]; try { name = decodeURIComponent(name.replace(/\+/g,' ')); } catch { /* Never normalize the identity itself. */ }
-    if (secretName(name) && part[2] && part[2] !== '[REDACTED]') sensitiveQuery = true;
+    if (secretName(name) && part[2] && part[2] !== '[REDACTED]' && !PLACEHOLDER_VALUE.test(part[2])) sensitiveQuery = true;
   }
-  if (redactArtifactPrefix(exact,redact) !== exact || /[a-z][a-z0-9+.-]*:\/\/[^/\s?#]*@/i.test(exact) || sensitiveQuery)
-    throw Error(`${label} contains secret-bearing identity text; use a non-secret operator label or opaque handle`);
+  if (secretMaterial(exact) || /[a-z][a-z0-9+.-]*:\/\/[^/\s?#]*@/i.test(exact) || sensitiveQuery)
+    throw Error(`${label} contains a secret-bearing value; replace it with a placeholder (for example <uuid>) or use a non-secret operator label`);
   return exact;
 }
 const safeText = (value: unknown, max: number, label: string) => redactArtifactPrefix(text(value,max,label),redact);

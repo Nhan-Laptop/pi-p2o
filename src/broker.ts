@@ -173,6 +173,24 @@ function reportList(value: unknown, limit: number): string[] {
   return out;
 }
 
+/** A1: the stored bounds of report prose. normalizeReport enforces them and reportProseWarnings names what it will cut. */
+export const REPORT_PROSE_CAPS = { summary: 4000, findings: 1000, evidence: 500, coverageSurface: 200, coverageRisk: 200, openItems: 1000, blocked: 1000 } as const;
+
+/** A1 (owner decision 2026-10-28): a long report field is stored truncated, not refused; this names each cut for the worker. */
+export function reportProseWarnings(report: WorkerReport): string[] {
+  const warnings: string[] = [];
+  const cut = (field: string, value: string | undefined, limit: number) => {
+    if (typeof value === 'string' && value.length > limit) warnings.push(`truncated:${field} (stored ${limit} of ${value.length} characters)`);
+  };
+  cut('summary', report.summary, REPORT_PROSE_CAPS.summary);
+  report.findings.forEach((value, index) => cut(`findings[${index}]`, value, REPORT_PROSE_CAPS.findings));
+  report.evidence.forEach((value, index) => cut(`evidence[${index}]`, value, REPORT_PROSE_CAPS.evidence));
+  report.coverage.forEach((item, index) => { cut(`coverage[${index}].surface`, item.surface, REPORT_PROSE_CAPS.coverageSurface); cut(`coverage[${index}].risk`, item.risk, REPORT_PROSE_CAPS.coverageRisk); });
+  report.openItems.forEach((value, index) => cut(`openItems[${index}]`, value, REPORT_PROSE_CAPS.openItems));
+  cut('blocked', report.blocked, REPORT_PROSE_CAPS.blocked);
+  return warnings;
+}
+
 /** Reports are untrusted input: shape them here so no later consumer has to trust worker JSON. */
 export function normalizeReport(raw: unknown): WorkerReport {
   const input = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>;
@@ -181,7 +199,7 @@ export function normalizeReport(raw: unknown): WorkerReport {
     let used = 0;
     for (const entry of input.coverage) {
       const item = (entry && typeof entry === 'object' ? entry : {}) as Record<string, unknown>;
-      const surface = text(item.surface, 200); const risk = text(item.risk, 200);
+      const surface = text(item.surface, REPORT_PROSE_CAPS.coverageSurface); const risk = text(item.risk, REPORT_PROSE_CAPS.coverageRisk);
       if (!surface || !risk || !isOutcome(item.outcome)) continue;
       used += surface.length + risk.length + 16; if (used > REPORT_LIST_BYTES) break;
       coverage.push({ surface, risk, outcome: item.outcome as CoverageOutcome });
@@ -189,13 +207,13 @@ export function normalizeReport(raw: unknown): WorkerReport {
   }
   const confidence = input.confidence === 'high' || input.confidence === 'medium' || input.confidence === 'low' ? input.confidence : 'low';
   return {
-    summary: text(input.summary, 4000) ?? '(no summary supplied)',
-    findings: reportList(input.findings, 1000),
-    evidence: reportList(input.evidence, 500),
+    summary: text(input.summary, REPORT_PROSE_CAPS.summary) ?? '(no summary supplied)',
+    findings: reportList(input.findings, REPORT_PROSE_CAPS.findings),
+    evidence: reportList(input.evidence, REPORT_PROSE_CAPS.evidence),
     coverage,
-    openItems: reportList(input.openItems, 1000),
+    openItems: reportList(input.openItems, REPORT_PROSE_CAPS.openItems),
     confidence,
-    blocked: text(input.blocked, 1000),
+    blocked: text(input.blocked, REPORT_PROSE_CAPS.blocked),
     ...(typeof input.outcome === 'string' && (WORKER_OUTCOMES as readonly string[]).includes(input.outcome) ? { outcome: input.outcome as WorkerReport['outcome'] } : {}),
     // A7.5: the hold is one bounded sentence, and only a well-formed request can create one.
     ...(holdFor(input.holdFor) ? { holdFor: holdFor(input.holdFor)! } : {}),

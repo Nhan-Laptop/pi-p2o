@@ -52,7 +52,14 @@ export const TASK_ACTION_PARAMETERS: Readonly<Record<typeof TASK_ACTIONS[number]
   block: ['action','id','revision','reason','evidenceIds','externalEvidence'], cancel: ['action','id','revision','reason','evidenceIds','externalEvidence'],
 };
 
-export const surfaceParameters = Type.Object({component:Type.String({minLength:1,maxLength:200}),entryPoint:Type.String({minLength:1,maxLength:200}),text:Type.Optional(Type.String({maxLength:1000})),refs:Type.Optional(Type.Array(Type.String({maxLength:80})))},{additionalProperties:false});
+/**
+ * A1 (owner decision 2026-10-28): a cosmetic-prose field declares a bound well above its stored cap (PROSE_CAPS in validate.ts
+ * and REPORT_PROSE_CAPS in broker.ts; at least 4x, never below 2000 characters), so a
+ * verbose value reaches the host, which truncates it and returns a `truncated:` warning, instead of Pi's argument validator
+ * refusing the whole call and echoing the payload back. Identity-shaped fields (ids, slugs, capability subjects) keep their
+ * strict caps: truncating those would silently change what the record means.
+ */
+export const surfaceParameters = Type.Object({component:Type.String({minLength:1,maxLength:2000}),entryPoint:Type.String({minLength:1,maxLength:2000}),text:Type.Optional(Type.String({maxLength:4000})),refs:Type.Optional(Type.Array(Type.String({maxLength:80})))},{additionalProperties:false});
 
 export const skillListParameters = Type.Object({ query: Type.Optional(Type.String({ maxLength: 80 })), offset: Type.Optional(Type.Integer({ minimum: 0 })) });
 
@@ -63,7 +70,7 @@ export const skillReadParameters = Type.Object({ id: Type.String({ maxLength: 16
 export { capabilitySchema };
 
 export const candidateParameters = Type.Object({
-      candidate: Type.String({ pattern: '^[a-z0-9][a-z0-9-]{0,79}$' }), surface: Type.String({ minLength: 1, maxLength: 200 }), risk: Type.String({ minLength: 1, maxLength: 200, description: 'Grouping label for this claim; it is compared with the task risk and is never read as a severity or a ceiling.' }),
+      candidate: Type.String({ pattern: '^[a-z0-9][a-z0-9-]{0,79}$' }), surface: Type.String({ minLength: 1, maxLength: 2000 }), risk: Type.String({ minLength: 1, maxLength: 2000, description: 'Grouping label for this claim; it is compared with the task risk and is never read as a severity or a ceiling.' }),
       closure: choices(CANDIDATE_CLOSURES),
       execution: choices(CANDIDATE_EXECUTIONS),
       proof: choices(CANDIDATE_PROOFS),
@@ -71,12 +78,12 @@ export const candidateParameters = Type.Object({
       negativeControls: Type.Array(Type.String({ maxLength: 80 }), { description: 'Evidence ID UUIDs of commands containing the negative-control observations; describe individual control cells in limitations, not in this ID array' }),
       policyBasis: choices(POLICY_BASES, 'Intended-policy provenance: boundary_invariant only when the effect itself establishes the boundary it breaks; a sibling route, placeholder credential or CVE lead alone is inferred (see your evidence rules)'),
       expectedPolicy: Type.String({ minLength: 1, maxLength: 1000, description: 'State the violated intended policy/invariant and its provenance; a sibling route difference alone is only inferred' }),
-      limitations: Type.String({ minLength: 1, maxLength: 1500 }), control: Type.Optional(Type.String({ maxLength: 1000 })),
+      limitations: Type.String({ minLength: 1, maxLength: 6000 }), control: Type.Optional(Type.String({ maxLength: 4000 })),
       resolves: Type.Optional(Type.Array(Type.String({ maxLength: 80 }))),
       requirement: Type.Optional(Type.String({ minLength: 10, maxLength: 1000, description: 'For blocked execution, describe the wall that actually stopped it: a tool or host that refused, a permission the host enforces, or an approach you exhausted. A missing credential, account or browser is not a wall — provision it and retry. Not a capability ID' })), supersedes: Type.Optional(Type.String({ maxLength: 80 })), independentEvidenceRef: Type.Optional(Type.String({ maxLength: 80 })),
       gained: Type.Optional(Type.Array(capabilitySchema, { description: 'Typed capabilities this primitive hands to a later step, so the lead can join them to another step\'s needs' })),
       needs: Type.Optional(Type.Array(capabilitySchema, { description: 'Typed capabilities this primitive needs from an earlier step or the environment; omit when nothing outside the surface must hold' })),
-      note: Type.Optional(Type.String({ maxLength: 300, description: 'Free text caveat about the capability pair; displayed, never matched' })),
+      note: Type.Optional(Type.String({ maxLength: 2000, description: 'Free text caveat about the capability pair; displayed, never matched' })),
       payloadRef: Type.Optional(Type.String({ maxLength: 80, description: 'Payload artifact ID from p2o_lab for the request, script or command that actually ran; requires tested execution, and the derived replayable flag follows it' })),
       leadRefs: Type.Optional(Type.Array(Type.String({ maxLength: 80 }), { description: 'P16.4: CVE lead record IDs from p2o_research action=cve. A lead can shape a hypothesis but never settle it: policyBasis must be inferred and closure open_proof_gap' })),
       environmentRef: Type.Optional(Type.String({ maxLength: 80, description: 'Environment artifact ID from p2o_lab for the recipe it was demonstrated in; requires tested execution, and replayable needs it as well as payloadRef' })),
@@ -174,9 +181,9 @@ export const httpParameters = Type.Object({
 
 export const noteParameters = Type.Object({
       kind: choices(['note', 'coverage', 'observation', 'open']),
-      text: Type.String({ minLength: 1, maxLength: 2000 }),
-      surface: Type.Optional(Type.String({ maxLength: 200 })),
-      risk: Type.Optional(Type.String({ maxLength: 200, description: 'Grouping label for this coverage row; not a severity, a ceiling or a limit on what may be attempted.' })),
+      text: Type.String({ minLength: 1, maxLength: 8000 }),
+      surface: Type.Optional(Type.String({ maxLength: 2000 })),
+      risk: Type.Optional(Type.String({ maxLength: 2000, description: 'Grouping label for this coverage row; not a severity, a ceiling or a limit on what may be attempted.' })),
       outcome: Type.Optional(choices(COVERAGE_OUTCOMES)),
       refs: Type.Optional(Type.Array(Type.String({ maxLength: 200 }))),
     });
@@ -219,13 +226,13 @@ export const workersParameters = Type.Object({
     });
 
 export const reportParameters = Type.Object({
-      summary: Type.String({ minLength: 1, maxLength: 4000 }),
-      findings: Type.Optional(Type.Array(Type.String({ maxLength: 1000 }))),
-      evidence: Type.Optional(Type.Array(Type.String({ maxLength: 500 }))),
-      coverage: Type.Optional(Type.Array(Type.Object({ surface: Type.String({ maxLength: 200 }), risk: Type.String({ maxLength: 200, description: 'Grouping label for this covered surface; not a severity or a limit.' }), outcome: choices(COVERAGE_OUTCOMES) }))),
-      openItems: Type.Optional(Type.Array(Type.String({ maxLength: 1000 }))),
+      summary: Type.String({ minLength: 1, maxLength: 16000 }),
+      findings: Type.Optional(Type.Array(Type.String({ maxLength: 4000 }))),
+      evidence: Type.Optional(Type.Array(Type.String({ maxLength: 2000 }))),
+      coverage: Type.Optional(Type.Array(Type.Object({ surface: Type.String({ maxLength: 2000 }), risk: Type.String({ maxLength: 2000, description: 'Grouping label for this covered surface; not a severity or a limit.' }), outcome: choices(COVERAGE_OUTCOMES) }))),
+      openItems: Type.Optional(Type.Array(Type.String({ maxLength: 4000 }))),
       confidence: choices(['high', 'medium', 'low']),
-      blocked: Type.Optional(Type.String({ maxLength: 1000 })),
+      blocked: Type.Optional(Type.String({ maxLength: 4000 })),
       outcome:Type.Optional(choices(WORKER_OUTCOMES)),
       holdFor: Type.Optional(Type.Object({ brief: Type.String({ minLength: 3, maxLength: 300, description: 'One sentence naming the successor step that continues this exact work' }) },
         { description: 'A7.5: keep this worker\'s ticket, pane and session alive for follow-up continuations with this brief; the count is holdContinuations' })),
@@ -237,5 +244,5 @@ export const finishParameters = Type.Object({
   /** M3: exporting the report is not termination. `export:true` writes the files and ends nothing. */
   export: Type.Optional(Type.Boolean({ description: 'Write REPORT.md/CSV from committed state and end nothing; workers, sandboxes and the run stay as they are' })),
   /** A6.6/D9: the final finish of an incomplete campaign records a partial stop with this operator-facing reason. */
-  partial: Type.Optional(Type.String({ maxLength: 600, description: 'Final path only: why this campaign stops incomplete (required when the derived completion is incomplete and a campaign was recorded). Recorded as campaign.partial; it never claims coverage' })),
+  partial: Type.Optional(Type.String({ maxLength: 2400, description: 'Final path only: why this campaign stops incomplete (required when the derived completion is incomplete and a campaign was recorded). Recorded as campaign.partial; it never claims coverage' })),
 });

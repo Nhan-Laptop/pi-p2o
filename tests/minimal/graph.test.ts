@@ -24,7 +24,10 @@ describe('asset/fact/hypothesis graph (K3, canonical store only)', () => {
     const projected={type:'object',properties:graphParameters.properties??{},required:graphParameters.required??[]};
     // P14.10 added `plan` and `assetRefs` for the chain-to-draft step; both are root properties for the same reason as the rest.
     expect(graphParameters.type).toBe('object');expect(projected.required).toContain('action');expect(Object.keys(projected.properties)).toEqual(['action','batch','id','requestId','cursor','limit','asOfSequence','plan','assetRefs']);
-    expect(projected.properties.batch).toMatchObject({type:'object',additionalProperties:false});expect(projected.properties.action).toMatchObject({type:'string',enum:['record','view','page','export','chain']});
+    // A1: the root stays closed, but the batch subtree is deliberately open at the schema layer so a misplaced requestId
+    // or a row-level asset field reaches normalizeGraphRecord instead of dying in Pi's argument validator.
+    expect(projected.properties.batch).toMatchObject({type:'object'});expect(projected.properties.batch).not.toMatchObject({additionalProperties:false});
+    expect(graphParameters).toMatchObject({additionalProperties:false});expect(projected.properties.action).toMatchObject({type:'string',enum:['record','view','page','export','chain']});
   });
   it('scales the run graph ceilings with the configured graphCapacity and refuses a bad capacity (P9/B, Q29)', async () => {
     // The base ceilings are the library default; the run setting multiplies them so a large engagement grows without a code edit.
@@ -197,6 +200,18 @@ describe('asset/fact/hypothesis graph (K3, canonical store only)', () => {
     // The words "bearer token" are ordinary prose, not a credential value; the same detector still refuses a literal token.
     expect(store.recordGraph({facts:[{assetId:id,kind:'inferred',statement:'Login returns a random bearer token bound to the session',confidence:'low'}]})).toHaveLength(1);
     expect(()=>store.recordGraph({facts:[{assetId:id,kind:'inferred',statement:'Authorization: Bearer VERY_SECRET',confidence:'low'}]})).toThrow('secret-bearing');
+  }));
+  it('accepts cookie names, header attributes and quoted placeholders as identities while refusing concrete credential values',async()=>fixture(async store=>{
+    // A1: identification is by credential shape, not by `redact()` side-effects. These are exactly the observations a recon
+    // claim quotes (a cookie NAME, a Set-Cookie attribute list, a redacted placeholder) and they are not secrets.
+    const accepted=['cookie:hcmussh-visit-id','Set-Cookie: hcmussh-visit-id=<uuid4>; Max-Age=31536000; Path=/; HttpOnly; SameSite=Lax',
+      'Set-Cookie: MoodleSession=<id>; path=/; secure','Authorization: Bearer <token>'];
+    for(const key of accepted)expect(store.recordGraph({assets:[{asset:{kind:'data',key}}]})).toHaveLength(1);
+    for(const key of ['cookie:sid=9f8a7b6c5d4e3f2a1b0c','Set-Cookie: MoodleSession=9f8a7b6c5d4e3f2a1b0c; path=/','Authorization: Bearer abcdef1234567890'])
+      expect(()=>store.recordGraph({assets:[{asset:{kind:'data',key}}]})).toThrow('secret-bearing');
+    const id=store.recordGraph({assets:[{asset:{kind:'file',key:'cookie-notes.md'}}]})[0].entityId;
+    expect(store.recordGraph({facts:[{assetId:id,kind:'inferred',statement:'Set-Cookie: hcmussh-visit-id=<uuid4>; Path=/; HttpOnly',confidence:'low'}]})).toHaveLength(1);
+    expect(()=>store.recordGraph({facts:[{assetId:id,kind:'inferred',statement:'Set-Cookie: hcmussh-visit-id=9f8a7b6c5d4e3f2a1b0c; Path=/',confidence:'low'}]})).toThrow('secret-bearing');
   }));
   it('deduplicates canonical property/ref order and supports current revision-pinned corrections without losing counterevidence',async()=>fixture(async store=>{
     const first=store.recordGraph({assets:[{asset:{kind:'file',key:'app.py',attributes:{b:'2',a:'1'}}}]})[0];
