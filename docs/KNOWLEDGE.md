@@ -62,8 +62,10 @@ navigation, and reading it changes no authority.
   `skills` is omitted, `PURPOSE_SKILLS` in `src/roles.ts` picks a default set from the work purpose, and a second axis lets
   target kind and consumed capabilities pick the family member (a URL run maps with `web-deployment-hygiene` and discovers
   with `web-route-input-inventory`; URL refinement/retest get no method default, because both are source-tree methods). An
-  empty purpose list is a decision, not a gap: validation and reporting deliberately ship none (reproduction must not
-  discover, synthesis must not author fixes), so the role default applies only when no purpose is supplied at all. The
+  empty purpose list is a decision, not a gap: validation and reporting ship none by default (reproduction must not
+  discover, synthesis must not author fixes), so the role default applies only when no purpose is supplied at all. A
+  validation task that names the claim's `needs` gets that claim's ladder instead (D37): replaying the method is
+  reproduction, not discovery. The
   3-skill cap is recorded rather than silent: a capped task stores the delivered set and writes the dropped ids as a
   lifecycle fact, and `p2o_coverage_suggest` returns the map's related skills next to the owner and card. Nine purposes each
   carry a duty line the worker reads.
@@ -87,7 +89,28 @@ bash scripts/setup-sandbox-tools.sh --build
 pi --p2o-image sha256:<64-hex image id the build printed>
 ```
 
-The build always pins Semgrep 1.179.0; `--with=<tool1,tool2,…>` adds tools from a fixed list (angr 10.0.3, z3 5.1.0.0,
-binwalk 2.1.0, mitmproxy 12.2.3, unicorn 2.1.4), each in its own venv at build time. Nothing is built or pulled
-automatically, mutable tags are rejected, and the confirmation names the image that worker tickets bind. The running
-container is otherwise unchanged; this only pre-installs tools that were already reachable at runtime through the sandbox.
+The build always pins Semgrep 1.179.0; `--with=<tool1,tool2,…>` adds tools from a fixed list at build time. Nothing is
+built or pulled automatically, mutable tags are rejected, and the confirmation names the image that worker tickets bind.
+The running container is otherwise unchanged: `--with` is operator convenience, not a capability gate, and an agent
+can still install tooling into scratch at run time. It only pre-installs tools that were already reachable through
+the sandbox.
+
+| `--with` name | Install | Purpose |
+|---|---|---|
+| `angr` | pip `angr==10.0.3` in `/opt/p2o-angr` | symbolic execution and binary analysis library |
+| `z3` | pip `z3-solver==5.1.0.0` in `/opt/p2o-z3` | SMT solver library and `z3` CLI |
+| `binwalk` | pip `binwalk==2.1.0` in `/opt/p2o-binwalk` | firmware and image signature scanning |
+| `mitmproxy` | pip `mitmproxy==12.2.3` in `/opt/p2o-mitmproxy` | intercepting proxy (`mitmdump`) for lab traffic |
+| `unicorn` | pip `unicorn==2.1.4` in `/opt/p2o-unicorn` | CPU-emulation library for small emulation probes |
+| `pwntools` | pip `pwntools==4.15.0` in `/opt/p2o-pwntools` | binary/CTF scaffolding: ELF/ROP helpers and tube I/O |
+| `strace` | apt package `strace` | syscall tracing for runtime differentials |
+| `socat` | apt package `socat` | ad-hoc relays and listeners for a lab peer |
+| `ssh` | apt package `openssh-client` | `ssh`/`scp`/`sftp` client for a lab peer |
+| `afl++` | apt package `afl++` | coverage-guided fuzzing (`afl-fuzz`) |
+| `radare2` | apt package `radare2` | binary inspection and disassembly (`r2`, `rabin2`) |
+| `tcpdump` | apt package `tcpdump` | packet capture on the container's interfaces |
+| `java` | apt package `default-jre-headless` | Java runtime for JVM-based tooling |
+
+Python tools are exact-pinned in their own venv. The apt tools are installed by package name: the base image is Kali
+rolling, ships no package lists, and publishes no stable version to pin, so the build records the resolved `dpkg`
+versions in `/opt/p2o-apt/versions.txt` and the printed immutable image ID is the pin.

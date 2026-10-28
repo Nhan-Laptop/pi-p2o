@@ -6,14 +6,29 @@ usage() {
   printf '%s\n' \
     'Usage: scripts/setup-sandbox-tools.sh --build [--with=<tool1,tool2,...>]' \
     'Builds the pinned base plus Semgrep 1.179.0, using package-download network access during setup only.' \
-    'Optional --with adds more userspace tools from this fixed, pinned list (comma-separated, any order):' \
-    '  angr      -> angr 10.0.3      (python3 library; CLI shims: angr, angr-python3)' \
-    '  z3        -> z3-solver 5.1.0.0 (CLI: z3; python3 library via z3-python3)' \
-    '  binwalk   -> binwalk 2.1.0    (CLI: binwalk)' \
-    '  mitmproxy -> mitmproxy 12.2.3 (CLI: mitmdump)' \
-    '  unicorn   -> unicorn 2.1.4    (python3 CPU-emulation library via unicorn-python3; no CLI)' \
-    'Each tool is installed as root, into its own venv, at build time only; the running container' \
-    'stays read-only and non-root regardless of --with, so this does not change what the sandbox can do.'
+    'Optional --with adds more userspace tools from this fixed list (comma-separated, any order):' \
+    '  angr      -> angr 10.0.3        (python3 library; CLI shims: angr, angr-python3)' \
+    '  z3        -> z3-solver 5.1.0.0  (CLI: z3; python3 library via z3-python3)' \
+    '  binwalk   -> binwalk 2.1.0      (CLI: binwalk)' \
+    '  mitmproxy -> mitmproxy 12.2.3   (CLI: mitmdump)' \
+    '  unicorn   -> unicorn 2.1.4      (python3 CPU-emulation library via unicorn-python3; no CLI)' \
+    '  pwntools  -> pwntools 4.15.0    (python3 library; CLI shims: pwn, pwntools-python3)' \
+    '  strace    -> strace             (apt package; syscall tracing)' \
+    '  socat     -> socat              (apt package; relay and listener plumbing)' \
+    '  ssh       -> openssh-client     (apt package; ssh/scp/sftp client)' \
+    '  afl++     -> afl++              (apt package; afl-fuzz and companions)' \
+    '  radare2   -> radare2            (apt package; r2/rabin2 analysis CLIs)' \
+    '  tcpdump   -> tcpdump            (apt package; packet capture)' \
+    '  java      -> default-jre-headless (apt package; Java runtime)' \
+    'Pinning: the python tools are exact-pinned inside their venv. The apt tools are installed by' \
+    'package name because the Kali rolling base ships no package lists and publishes no stable' \
+    'version to pin; the build records the resolved dpkg versions in /opt/p2o-apt/versions.txt and' \
+    'the printed immutable image ID is the pin.' \
+    'Each tool is installed as root, at build time only. At run time the sandbox is root' \
+    'on a writable root filesystem with the Docker default capability set; the container is the only blast' \
+    'radius: no host path is mounted and the Docker socket is never exposed.' \
+    'The running container stays as-is: --with is operator convenience, not a capability gate, and an' \
+    'agent can still install into scratch at run time.'
 }
 
 if [[ "${1:-}" != "--build" ]]; then
@@ -27,7 +42,7 @@ if [[ -n "$with_arg" && "$with_arg" != --with=* ]]; then
   exit 2
 fi
 
-KNOWN_TOOLS=(angr z3 binwalk mitmproxy unicorn)
+KNOWN_TOOLS=(angr z3 binwalk mitmproxy unicorn pwntools strace socat ssh 'afl++' radare2 tcpdump java)
 IFS=',' read -ra REQUESTED_TOOLS <<< "${with_arg#--with=}"
 for tool in "${REQUESTED_TOOLS[@]}"; do
   [[ -z "$tool" ]] && continue
@@ -41,6 +56,19 @@ for tool in "${REQUESTED_TOOLS[@]}"; do
   fi
 done
 
+# Apt package names for the tools that do not install into their own venv. The base image is
+# Kali rolling: no stable apt version pin exists, so the resolved versions are recorded in the
+# image and the emitted image ID is the immutable pin.
+apt_package() {
+  case "$1" in
+    strace|socat|tcpdump) printf '%s' "$1" ;;
+    ssh) printf '%s' 'openssh-client' ;;
+    'afl++'|radare2) printf '%s' "$1" ;;
+    java) printf '%s' 'default-jre-headless' ;;
+    *) return 1 ;;
+  esac
+}
+
 root=$(mktemp -d)
 trap 'rm -rf "$root"' EXIT
 
@@ -49,6 +77,7 @@ trap 'rm -rf "$root"' EXIT
   printf '%s\n' 'USER root'
   printf '%s\n' "RUN python3 -m venv /opt/p2o-semgrep && /opt/p2o-semgrep/bin/pip install --no-cache-dir 'semgrep==1.179.0' && /opt/p2o-semgrep/bin/pip freeze > /opt/p2o-semgrep/requirements.resolved.txt && ln -s /opt/p2o-semgrep/bin/semgrep /usr/local/bin/semgrep && chmod -R a+rX /opt/p2o-semgrep"
   for tool in "${REQUESTED_TOOLS[@]}"; do
+    [[ -z "$tool" ]] && continue
     case "$tool" in
       angr)
         printf '%s\n' "RUN python3 -m venv /opt/p2o-angr && /opt/p2o-angr/bin/pip install --no-cache-dir 'angr==10.0.3' && /opt/p2o-angr/bin/pip freeze > /opt/p2o-angr/requirements.resolved.txt && ln -s /opt/p2o-angr/bin/angr /usr/local/bin/angr && ln -s /opt/p2o-angr/bin/python3 /usr/local/bin/angr-python3 && chmod -R a+rX /opt/p2o-angr"
@@ -65,9 +94,20 @@ trap 'rm -rf "$root"' EXIT
       unicorn)
         printf '%s\n' "RUN python3 -m venv /opt/p2o-unicorn && /opt/p2o-unicorn/bin/pip install --no-cache-dir 'unicorn==2.1.4' && /opt/p2o-unicorn/bin/pip freeze > /opt/p2o-unicorn/requirements.resolved.txt && ln -s /opt/p2o-unicorn/bin/python3 /usr/local/bin/unicorn-python3 && chmod -R a+rX /opt/p2o-unicorn"
         ;;
+      pwntools)
+        printf '%s\n' "RUN python3 -m venv /opt/p2o-pwntools && /opt/p2o-pwntools/bin/pip install --no-cache-dir 'pwntools==4.15.0' && /opt/p2o-pwntools/bin/pip freeze > /opt/p2o-pwntools/requirements.resolved.txt && ln -s /opt/p2o-pwntools/bin/pwn /usr/local/bin/pwn && ln -s /opt/p2o-pwntools/bin/python3 /usr/local/bin/pwntools-python3 && chmod -R a+rX /opt/p2o-pwntools"
+        ;;
+      strace|socat|ssh|'afl++'|radare2|tcpdump|java)
+        package=$(apt_package "$tool")
+        printf '%s\n' "RUN mkdir -p /opt/p2o-apt && apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends '${package}' && dpkg-query -W -f='\${Package}=\${Version}\\n' '${package}' >> /opt/p2o-apt/versions.txt && rm -rf /var/lib/apt/lists/*"
+        ;;
+      *)
+        printf 'Unknown --with tool: %s\n' "$tool" >&2
+        exit 2
+        ;;
     esac
   done
-  printf '%s\n' 'USER 65532:65532'
+  printf '%s\n' 'USER root'
 } > "$root/Dockerfile"
 
 docker build --iidfile "$root/image-id" "$root" >&2
