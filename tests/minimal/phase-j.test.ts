@@ -41,7 +41,7 @@ describe('the host builds the CVE query; any source is allowed (P16.4, Part XI)'
     const hits = parseNvd(nvd);
     expect(hits).toHaveLength(1);
     expect(hits[0]).toMatchObject({ cve: 'CVE-2024-1111', severity: 'CRITICAL', score: 9.8 });
-    expect(hits[0].affected).toContain('2.5.0..2.5.28');
+    expect(hits[0].affected).toContain('2.5.0..<2.5.28');
   });
 
   it('records provenance from the fetched bytes and invents nothing from a failed fetch', async () => {

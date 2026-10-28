@@ -151,11 +151,35 @@ function supersedes(value: unknown, prefix: string): string | undefined {
   if (typeof value !== 'string' || !new RegExp(`^${prefix}-[a-f0-9]{24}-r[1-9][0-9]{0,8}$`).test(value)) throw Error('supersedes must name a retained graph revision');
   return value;
 }
+/**
+ * R2.4: component ecosystems the CVE join knows how to query. `other` is inventory-only; a new ecosystem is a deliberate edit
+ * here rather than a free-text string that silently misses the join.
+ */
+export const PACKAGE_ECOSYSTEMS = ['npm','pypi','go','cargo','rubygems','maven','nuget','composer','other'] as const;
+const PACKAGE_NAME = /^[A-Za-z0-9@][A-Za-z0-9@._+~:/-]{0,199}$/, PACKAGE_VERSION = /^[A-Za-z0-9][A-Za-z0-9._+~:-]{0,99}$/, CPE_23 = /^cpe:2\.3:[aho*]:/;
+/**
+ * R2.4: a `package` asset is the inventory row the CVE join starts from, so its three identity fields are required and its key is
+ * the canonical `${ecosystem}:${name}@${version}` composition. Enforcing the composition makes two manifests that describe the
+ * same component land on one identity instead of two spellings of it; it also means an unversioned package cannot be recorded,
+ * because the join cannot query it and a component that cannot be queried is not inventory.
+ */
+function validatePackage(key: string, attributes: Record<string,string>|null) {
+  const name=attributes?.name,version=attributes?.version,ecosystem=attributes?.ecosystem,cpe=attributes?.cpe;
+  if(typeof name!=='string'||!PACKAGE_NAME.test(name))throw Error('A package asset needs attributes.name (1..200 component-name characters)');
+  if(typeof version!=='string'||!PACKAGE_VERSION.test(version))throw Error('A package asset needs attributes.version (1..100 version characters); an unversioned component cannot be joined to a CVE');
+  if(typeof ecosystem!=='string'||!(PACKAGE_ECOSYSTEMS as readonly string[]).includes(ecosystem))throw Error(`A package asset needs attributes.ecosystem (one of ${PACKAGE_ECOSYSTEMS.join(', ')})`);
+  if(cpe!==undefined&&!CPE_23.test(cpe))throw Error('A package asset attributes.cpe must be a CPE 2.3 name (cpe:2.3:...)');
+  const canonical=`${ecosystem}:${name}@${version}`;
+  if(key!==canonical)throw Error(`A package asset key is its canonical component identity ${canonical}; got ${key}`);
+}
 export function validateAsset(input: AssetInput) {
   graphObject(input,['kind','key','label','attributes','anchors','evidenceRefs','expectedRevision'],'Asset input');
   if (input.anchors !== undefined && (!Array.isArray(input.anchors) || input.anchors.length > GRAPH_ANCHOR_LIMIT)) throw Error(`Asset anchors are limited to ${GRAPH_ANCHOR_LIMIT}`);
-  return {kind:oneOf(input.kind,ASSET_KINDS,'Asset kind'),key:identityText(input.key,500,'Asset key'),expectedRevision:revision(input.expectedRevision,'Expected asset revision'),evidenceRefs:refs(input.evidenceRefs,'Asset evidence'),
-    body:{label:input.label===undefined?null:safeText(input.label,200,'Asset label'),attributes:dictionary(input.attributes,16,'Asset attributes')??null,
+  const kind=oneOf(input.kind,ASSET_KINDS,'Asset kind'),key=identityText(input.key,500,'Asset key'),expectedRevision=revision(input.expectedRevision,'Expected asset revision'),
+    evidenceRefs=refs(input.evidenceRefs,'Asset evidence'),attributes=dictionary(input.attributes,16,'Asset attributes')??null;
+  if(kind==='package')validatePackage(key,attributes);
+  return {kind,key,expectedRevision,evidenceRefs,
+    body:{label:input.label===undefined?null:safeText(input.label,200,'Asset label'),attributes,
       anchors:(input.anchors??[]).map(validateAnchor).sort((a,b)=>graphCanonical(a)<graphCanonical(b)?-1:1)}};
 }
 export function validateAnchor(input: AnchorInput) {

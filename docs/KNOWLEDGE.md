@@ -19,7 +19,8 @@ same SQLite store as everything else; there is no graph database and no second w
   stale write rolls back the whole batch and makes dependent claims stale. History and counterevidence are kept.
 - **Who writes what:** the planner records hypotheses, settled hypotheses and observed relations; a worker records assets, facts,
   anchors, open hypotheses and `basis=inferred` relations (host-stamped `unverified:true` with its producer role — that row is
-  review debt the owner settles by superseding with supported/refuted/inconclusive); the reporter reads only. A worker brief carries a bounded slice (matching asset, latest facts, open leads/gaps, ready chain steps) labelled
+  review debt the owner settles by superseding with supported/refuted/inconclusive); the host `extractor` producer writes only
+  what a bounded parse of a retained artifact yields (see **Extraction** below); the reporter reads only. A worker brief carries a bounded slice (matching asset, latest facts, open leads/gaps, ready chain steps) labelled
   background, never a finding. The host counts each worker's write-back and shows `NO_GRAPH_WRITE` in `p2o_workers`, the
   report and the preflight as an advisory — not a review or finish condition.
 - `p2o_graph {action:"chain"}` is a read-only join over claims: `ready` (an open step whose `needs` are all gained by a
@@ -34,6 +35,26 @@ same SQLite store as everything else; there is no graph database and no second w
 - `view` also returns a **derived dossier** for the one asset (facts, hypothesis counts and open rows, relations, claims
   with stale/demonstrated, cases, coverage cells with `noCell`, tasks, gaps) capped at 24 KiB with omission counters. A
   dossier, summary, query row or brief delta is background: none of them can satisfy a claim, case or coverage cell.
+- **Extraction (R2):** `src/extract/` holds pure parsers for nmap XML, httpx JSON/JSONL, nuclei JSONL, a raw HTTP response,
+  OpenAPI/Swagger and the common package manifests (npm/pnpm locks, requirements pins, go.mod, Cargo.lock, Gemfile.lock,
+  pom.xml); each ingest is bounded to 4 MiB of input, 200 assets / 1,000 facts / 200 components, 7 KiB per row and 2,000
+  records, and malformed bytes produce a warning rather than an error into the model call. Parsers normalize identity
+  deterministically (URL/route/package key) while the raw value stays in an anchor or attribute — a scoped exception to the
+  exact-bytes rule above, recorded as D-R1-2. A nuclei match becomes an **open hypothesis**, never a fact, claim or case.
+- **Ingest path (R2):** a recognized capture artifact of a `shell`/`capture`/`http` receipt is extracted automatically (best
+  effort, ≤50 per run, stdout stream only), and `p2o_graph {action:"ingest", id:"artifact-…"}` retries it by hand. Rows are
+  written by the host `extractor` producer (depth 0) with the artifact's receipt as `evidenceRefs`; an ingest without a
+  same-run receipt is refused. The artifact is recorded as an anchor row on the first ingested asset, so the same bytes
+  produce one asset and only add observation lineage on re-ingest. Extracted rows are `unverified` background and do not
+  enter the owner's `GRAPH_UNREVIEWED` queue.
+- **Inventory and CVE join (R2):** a `package` asset requires `name`/`version`/`ecosystem` and the canonical key
+  `ecosystem:name@version` (duplicate versions merge; an unversioned package is refused; optional CPE 2.3). `query
+  {kind:"package"}` returns the inventory with attributes, `summary` counts components without a CVE query, and
+  `p2o_research {action:"cve", componentRef:"asset-…"}` derives the NVD query from the ecosystem's naming convention. A lead
+  may carry `versionMatch` (`in-range`/`out-of-range`/`unparsed` — a labelled suggestion, never proof) and
+  `exploitability {kev, epss, percentile, retrievedAt, …}` joined by CVE id from CISA KEV and FIRST EPSS with cached
+  provenance; when a feed cannot be read the value is `unknown`, never `false` or `0`. `## LEADS` prints both and orders
+  KEV-listed first, then EPSS, while the published severity is never re-rated.
 - Limits: pages of 20 (≤100), results ≤24 KiB, batch ≤128 rows (≤128 KiB, ≤8 KiB/row, ≤10 anchors/asset). A run's base caps
   are 5,000 asset revisions, 10,000 assertions, 2,000 relations, 20,000 anchors and 40,000 provenance rows, multiplied by
   `graphCapacity` (settings 1–4, default 2). Reaching a cap says `capacity reached`; nothing is pruned automatically.

@@ -123,6 +123,8 @@ export const researchParameters = Type.Object({
   url: Type.Optional(Type.String({ minLength: 1, maxLength: 8192, description: 'action=fetch: any http(s) URL to fetch host-side under the bounded citation fetcher (15 s timeout, 4 MiB body cap, ≤5 redirects, loopback/link-local/private/metadata destinations refused); returns the possibly truncated body with status, content type, byte count and sha256. No allowlist.' })),
   web: Type.Optional(Type.Boolean({ description: 'Default true: also fetch the top hits\' cited source pages host-side and return quoted excerpts with a hash. Pass false for an offline-only lookup that never touches the network' })),
   limit: Type.Optional(Type.Integer({ minimum: 1, description: 'Maximum hits, default 5; no upper bound' })),
+  // R2.5: a component asset can supply product/version instead of retyping what the inventory already recorded.
+  componentRef: Type.Optional(Type.String({ maxLength: 80, description: 'action=cve: package asset ID from the inventory; the host derives product/version from it' })),
   // P16.4: action=cve names a product/version and the host builds the NVD query; action=fetch takes any URL.
   product: Type.Optional(Type.String({ minLength: 2, maxLength: 120, description: 'action=cve: product name as published (e.g. "joomla", "nginx")' })),
   version: Type.Optional(Type.String({ minLength: 1, maxLength: 80, description: 'action=cve: version observed on the target, e.g. "2.5.0"' })),

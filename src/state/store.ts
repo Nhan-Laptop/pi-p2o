@@ -53,7 +53,8 @@ export interface StoreManifest {
 }
 export interface GraphQueryFilters { kind?: string; keyPrefix?: string; labelContains?: string; attributeKey?: string; attributeValue?: string; assertionKind?: string; statementContains?: string }
 export interface GraphQueryRow { type: 'asset' | 'assertion'; entityId: string; revision: number; sequence: number; kind: string;
-  key?: string; label?: string; subjectId?: string; statement?: string; status?: string; confidence?: string; producerRole?: string; unverified?: boolean }
+  key?: string; label?: string; /** R2.4: a package row carries the name/version/ecosystem attributes a component query needs. */ attributes?: Record<string, unknown>;
+  subjectId?: string; statement?: string; status?: string; confidence?: string; producerRole?: string; unverified?: boolean }
 export interface GraphQueryPage { scope: string; asOfSequence: number; filters: GraphQueryFilters; rows: GraphQueryRow[];
   counts: { assets: number; assertions: number }; shown: { assets: number; assertions: number }; omitted: number; truncated: boolean; nextCursor?: number }
 export interface GraphAssetBrief { id: string; kind: string; key: string; label?: string; revision: number }
@@ -718,8 +719,11 @@ export class AssessmentStore {
       const where = `WHERE ${head('assets')} AND ${assetWhere.join(' AND ')}`, base = `FROM assets a ${where}`;
       assetsTotal = Number(this.db.prepare(`SELECT count(*) AS n ${base}`).get(...assetArgs)!.n);
       for (const row of this.db.prepare(`SELECT a.entity_id,a.revision,a.sequence,a.kind,a.key,a.body ${base} AND a.sequence<? ORDER BY a.sequence DESC,a.entity_id LIMIT ?`).all(...assetArgs, cursor, limit + 1) as Array<Record<string, unknown>>) {
-        const body = JSON.parse(String(row.body)) as { label?: unknown };
-        rows.push({ type: 'asset', entityId: String(row.entity_id), revision: Number(row.revision), sequence: Number(row.sequence), kind: String(row.kind), key: String(row.key), ...(typeof body.label === 'string' ? { label: body.label } : {}) });
+        const body = JSON.parse(String(row.body)) as { label?: unknown; attributes?: unknown };
+        // R2.4: a component query is only useful with the version it was recorded at; other asset kinds keep the R1 row shape.
+        const attributes = row.kind === 'package' && body.attributes && typeof body.attributes === 'object' ? body.attributes as Record<string, unknown> : undefined;
+        rows.push({ type: 'asset', entityId: String(row.entity_id), revision: Number(row.revision), sequence: Number(row.sequence), kind: String(row.kind), key: String(row.key),
+          ...(typeof body.label === 'string' ? { label: body.label } : {}), ...(attributes ? { attributes } : {}) });
       }
     }
     if (includeAssertions) {
@@ -782,6 +786,31 @@ export class AssessmentStore {
     return out;
   }
   /** R1.6: the report's bounded asset inventory — newest current heads, plus the true total so the omission is printed. */
+  /** R2.5: one current package head by entity id, for `action=cve componentRef`; undefined means it is not a current component. */
+  component(entityId: string): { entityId: string; revision: number; key: string; name: string; version: string; ecosystem: string; cpe?: string } | undefined {
+    this.gate();
+    if (typeof entityId !== 'string' || !/^asset-[a-f0-9]{24}$/.test(entityId)) return undefined;
+    const head = this.graphHead('assets', entityId);
+    if (!head || head.kind !== 'package') return undefined;
+    const body = head as unknown as { key: string; attributes?: Record<string, unknown> }, attributes = body.attributes ?? {};
+    const cpe = typeof attributes.cpe === 'string' ? attributes.cpe : undefined;
+    return { entityId, revision: head.revision, key: body.key, name: String(attributes.name ?? ''), version: String(attributes.version ?? ''),
+      ecosystem: String(attributes.ecosystem ?? ''), ...(cpe ? { cpe } : {}) };
+  }
+  /** R2.4: the component inventory the CVE join starts from — current `package` heads with their declared version and ecosystem. */
+  componentInventory(limit = 20): { total: number; rows: Array<{ entityId: string; revision: number; key: string; name: string; version: string; ecosystem: string; cpe?: string }>; omitted: number } {
+    this.gate();
+    if (!Number.isSafeInteger(limit) || limit < 1 || limit > 50) throw Error('Invalid component inventory limit; use 1..50');
+    const scope = this.graphScope(), head = 'a.sequence=(SELECT MAX(b.sequence) FROM assets b WHERE b.entity_id=a.entity_id)';
+    const total = Number(this.db.prepare(`SELECT count(*) AS n FROM assets a WHERE ${head} AND a.scope=? AND a.kind='package'`).get(scope)!.n);
+    const rows = this.db.prepare(`SELECT a.entity_id,a.revision,a.key,a.body FROM assets a WHERE ${head} AND a.scope=? AND a.kind='package' ORDER BY a.key LIMIT ?`).all(scope, limit).map(row => {
+      const body = JSON.parse(String(row.body)) as { attributes?: Record<string, unknown> }, attributes = body.attributes ?? {};
+      const cpe = typeof attributes.cpe === 'string' ? attributes.cpe : undefined;
+      return { entityId: String(row.entity_id), revision: Number(row.revision), key: String(row.key),
+        name: String(attributes.name ?? ''), version: String(attributes.version ?? ''), ecosystem: String(attributes.ecosystem ?? ''), ...(cpe ? { cpe } : {}) };
+    });
+    return { total, rows, omitted: total - rows.length };
+  }
   assetInventory(limit = 20): { rows: GraphAssetBrief[]; total: number } {
     this.gate();
     if (!Number.isSafeInteger(limit) || limit < 1 || limit > 100) throw Error('Invalid asset inventory limit; use 1..100');
@@ -887,7 +916,7 @@ export class AssessmentStore {
   private graphProducer(request?:MutationRequest,producer?:GraphProducer):GraphProducer {
     const actorId=request?.actorId??'owner',value=producer??{actorId};
     if(value.actorId!==actorId||!validId(value.actorId)||(value.taskId!==undefined&&!validId(value.taskId))
-      ||(value.role!==undefined&&!['owner','general','recon','discovery','validation','reporting'].includes(value.role))
+      ||(value.role!==undefined&&!['owner','general','recon','discovery','validation','reporting','extractor'].includes(value.role))
       ||(value.depth!==undefined&&(!Number.isInteger(value.depth)||value.depth<0||value.depth>3)))throw Error('Invalid host graph provenance');
     return value;
   }

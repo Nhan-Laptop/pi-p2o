@@ -9,6 +9,7 @@
  */
 import { sha256Hex } from './validate.js';
 import type { AssessmentRecord } from './records.js';
+import type { Exploitability } from './exploitability.js';
 
 /** Suggested starting points for a CVE lookup; not an allowlist (Part XI). */
 export const CVE_SUGGESTED_HOSTS = ['services.nvd.nist.gov', 'nvd.nist.gov', 'www.cve.org', 'cve.org'] as const;
@@ -19,8 +20,13 @@ export interface CveQuery { product: string; version?: string; vendor?: string; 
 export interface CveHit { cve: string; severity: string; score?: number; affected: string; summary: string }
 export interface CveFetch { status: number; body: string; sha256: string }
 export interface LeadSource { url: string; retrievedAt: string; sha256: string }
-export interface LeadDraft { product: string; version?: string; vendor?: string; cpe?: string; cve: string; severity: string; affected: string; summary: string; source: LeadSource }
-export interface LeadView { id: string; product: string; version?: string; vendor?: string; cve: string; severity: string; affected: string; source: LeadSource; state: LeadState; assetRefs: Array<{ id: string; revision?: number }>; reason?: string; record: AssessmentRecord }
+export type VersionMatch = 'in-range' | 'out-of-range' | 'unparsed';
+export interface LeadDraft { product: string; version?: string; vendor?: string; cpe?: string; cve: string; severity: string; affected: string; summary: string; source: LeadSource;
+  /** R2.5: whether the recorded version falls inside a published range. `unparsed` is honest, not a guess. */
+  versionMatch?: VersionMatch;
+  /** R2.5/D-R1-6: KEV/EPSS context joined by CVE id; never a severity or a finding. */
+  exploitability?: Exploitability }
+export interface LeadView { id: string; product: string; version?: string; vendor?: string; cve: string; severity: string; affected: string; source: LeadSource; state: LeadState; assetRefs: Array<{ id: string; revision?: number }>; reason?: string; versionMatch?: VersionMatch; exploitability?: Exploitability; record: AssessmentRecord }
 
 const clip = (value: unknown, max: number): string => typeof value === 'string' ? value.trim().slice(0, max) : '';
 const text = (value: unknown): string => typeof value === 'string' ? value : '';
@@ -76,7 +82,11 @@ const affectedOf = (cve: Record<string, unknown>): string => {
       for (const match of matches) {
         const row = match as Record<string, unknown>;
         if (row.vulnerable === false) continue;
-        const criteria = text(row.criteria), from = text(row.versionStartIncluding) || text(row.versionStartExcluding), to = text(row.versionEndIncluding) || text(row.versionEndExcluding);
+        const criteria = text(row.criteria);
+        // R2.5: keep which boundary is inclusive, because `2.5.28` is in range for an inclusive end and out for an exclusive
+        // one. `(` marks an exclusive start, `<` an exclusive end; the version comparison reads the same marks.
+        const from = text(row.versionStartIncluding) ? text(row.versionStartIncluding) : text(row.versionStartExcluding) ? `(${text(row.versionStartExcluding)}` : '';
+        const to = text(row.versionEndIncluding) ? text(row.versionEndIncluding) : text(row.versionEndExcluding) ? `<${text(row.versionEndExcluding)}` : '';
         const range = from && to ? `${from}..${to}` : criteria.split(':').slice(4, 5)[0] || criteria;
         ranges.push([criteria.split(':').slice(3, 5).join(':'), range].filter(Boolean).join(' '));
         if (ranges.length >= 3) break;
@@ -115,6 +125,57 @@ export async function lookupCves(query: CveQuery, fetchText: (url: string) => Pr
   return { url, retrievedAt, sha256, leads };
 }
 
+const numbers = (value: string): number[] | undefined => {
+  const parts = value.trim().replace(/^v/i, '').split(/[^0-9]+/).filter(part => /^\d+$/.test(part)).map(Number);
+  return parts.length ? parts : undefined;
+};
+const compareVersions = (left: readonly number[], right: readonly number[]): number => {
+  for (let index = 0; index < Math.max(left.length, right.length); index += 1) {
+    const a = left[index] ?? 0, b = right[index] ?? 0;
+    if (a !== b) return a < b ? -1 : 1;
+  }
+  return 0;
+};
+/**
+ * R2.5: a labelled suggestion, never proof. NVD ranges are published strings ("2.5.0..2.5.9", "as published"); a version that
+ * parses is compared numerically against every range, and anything unparseable stays `unparsed` instead of being guessed.
+ */
+export function versionMatch(version: string | undefined, affected: string): VersionMatch {
+  const parsed = version === undefined ? undefined : numbers(version);
+  if (!parsed) return 'unparsed';
+  let compared = 0;
+  for (const segment of affected.split(';')) {
+    const token = segment.trim().split(/\s+/).at(-1) ?? '';
+    if (!/\d/.test(token)) continue;
+    const [from, to] = token.includes('..') ? token.split('..') : [token, token];
+    const low = numbers((from ?? '').replace(/^\(/, '')), high = numbers((to ?? '').replace(/^</, ''));
+    if (!low || !high) continue;
+    compared += 1;
+    const above = compareVersions(parsed, low) >= (from?.startsWith('(') ? 1 : 0), below = compareVersions(parsed, high) <= (to?.startsWith('<') ? -1 : 0);
+    if (above && below) return 'in-range';
+  }
+  return compared ? 'out-of-range' : 'unparsed';
+}
+
+/** R2.5: join exploitation context by CVE id and label the version comparison. Both stay context on the lead. */
+export function enrichLeads(leads: readonly LeadDraft[], entries: ReadonlyMap<string, Exploitability>): LeadDraft[] {
+  return leads.map(lead => ({ ...lead, ...(lead.version === undefined ? {} : { versionMatch: versionMatch(lead.version, lead.affected) }),
+    ...(entries.get(lead.cve) ? { exploitability: entries.get(lead.cve)! } : {}) }));
+}
+
+/** R2.5: derive the one NVD query a component inventory row supports. Vendor/product follow the ecosystem's name convention. */
+export function componentQuery(component: { name: string; version?: string; ecosystem: string; cpe?: string }): CveQuery {
+  let product = component.name, vendor: string | undefined;
+  if (component.ecosystem === 'maven' && component.name.includes(':')) [vendor, product] = component.name.split(':') as [string, string];
+  else if (component.name.startsWith('@') && component.name.includes('/')) [vendor, product] = component.name.slice(1).split('/') as [string, string];
+  else if (component.ecosystem === 'go' && component.name.includes('/')) {
+    const parts = component.name.split('/');
+    product = parts.at(-1)!;
+    vendor = parts.length >= 3 ? parts.at(-2) : undefined;
+  }
+  return cveQuery({ product, ...(component.version ? { version: component.version } : {}), ...(vendor ? { vendor } : {}), ...(component.cpe ? { cpe: component.cpe } : {}) });
+}
+
 /** `lead` records: one per CVE, state `untriaged`. Provenance is host-recorded; the text says it is a pointer, not a finding. */
 export function leadRecords(runId: string, by: string, leads: readonly LeadDraft[], options: { workerId?: string; assetRefs?: Array<{ id: string; revision?: number }> } = {}): AssessmentRecord[] {
   return leads.map(lead => ({
@@ -123,9 +184,26 @@ export function leadRecords(runId: string, by: string, leads: readonly LeadDraft
     data: {
       product: lead.product, ...(lead.version ? { version: lead.version } : {}), ...(lead.vendor ? { vendor: lead.vendor } : {}), ...(lead.cpe ? { cpe: lead.cpe } : {}),
       cve: lead.cve, severity: lead.severity, affected: lead.affected, summary: lead.summary, source: lead.source,
+      ...(lead.versionMatch ? { versionMatch: lead.versionMatch } : {}), ...(lead.exploitability ? { exploitability: lead.exploitability } : {}),
       assetRefs: options.assetRefs ?? [], state: 'untriaged' satisfies LeadState,
     },
   }));
+}
+
+/** A stored lead is read back through an allowlist: a hand-written record cannot inject extra shapes into a report row. */
+function exploitabilityOf(value: unknown): Exploitability | undefined {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined;
+  const row = value as Record<string, unknown>;
+  const kev = row.kev === 'unknown' ? 'unknown' as const : typeof row.kev === 'boolean' ? row.kev : undefined;
+  const epss = row.epss === 'unknown' ? 'unknown' as const : typeof row.epss === 'number' && row.epss >= 0 && row.epss <= 1 ? row.epss : undefined;
+  if (kev === undefined || epss === undefined || typeof row.retrievedAt !== 'string') return undefined;
+  const source = (input: unknown) => input && typeof input === 'object' && typeof (input as { url?: unknown }).url === 'string'
+    && typeof (input as { sha256?: unknown }).sha256 === 'string' && typeof (input as { retrievedAt?: unknown }).retrievedAt === 'string'
+    ? { url: String((input as { url: string }).url), sha256: String((input as { sha256: string }).sha256), retrievedAt: String((input as { retrievedAt: string }).retrievedAt) } : undefined;
+  const percentile = typeof row.percentile === 'number' && row.percentile >= 0 && row.percentile <= 100 ? row.percentile : undefined;
+  const kevSource = source(row.kevSource), epssSource = source(row.epssSource);
+  return { kev, epss, ...(percentile === undefined ? {} : { percentile }), retrievedAt: row.retrievedAt,
+    ...(kevSource ? { kevSource } : {}), ...(epssSource ? { epssSource } : {}) };
 }
 
 /** Latest revision per lead record (a triage supersedes the untriaged row). */
@@ -139,8 +217,12 @@ export function leadFrontier(index: { records: readonly AssessmentRecord[]; byId
     if (!source || typeof source.url !== 'string' || typeof source.sha256 !== 'string') continue;
     const state = (LEAD_STATES as readonly string[]).includes(String(data.state)) ? data.state as LeadState : 'untriaged';
     const assetRefs = Array.isArray(data.assetRefs) ? (data.assetRefs as Array<{ id?: unknown; revision?: unknown }>).flatMap(ref => typeof ref.id === 'string' ? [{ id: ref.id, ...(typeof ref.revision === 'number' ? { revision: ref.revision } : {}) }] : []) : [];
+    const versionMatchRaw = data.versionMatch;
+    const versionMatch = versionMatchRaw === 'in-range' || versionMatchRaw === 'out-of-range' || versionMatchRaw === 'unparsed' ? versionMatchRaw : undefined;
     views.push({ id: row.id, product: text(data.product), ...(text(data.version) ? { version: text(data.version) } : {}), ...(text(data.vendor) ? { vendor: text(data.vendor) } : {}),
-      cve: text(data.cve), severity: text(data.severity) || 'UNKNOWN', affected: text(data.affected), source, state, assetRefs, ...(text(data.reason) ? { reason: text(data.reason) } : {}), record: row });
+      cve: text(data.cve), severity: text(data.severity) || 'UNKNOWN', affected: text(data.affected), source, state, assetRefs,
+      ...(text(data.reason) ? { reason: text(data.reason) } : {}), ...(versionMatch ? { versionMatch } : {}),
+      ...(exploitabilityOf(data.exploitability) ? { exploitability: exploitabilityOf(data.exploitability)! } : {}), record: row });
   }
   return views;
 }

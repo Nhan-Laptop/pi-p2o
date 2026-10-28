@@ -1,13 +1,13 @@
-# R1 update — graph as working memory, recon-to-exploitability, attack paths (A+B+C)
+# R2 update — recon ingestion, inventory, exploitability (A+B+C)
 
-Status: **approved 2026-10-28; R0 committed as `1d79ec9`; R1 implemented and verified in the working tree
-(2026-10-28), awaiting owner review before R2.** The owner approved the A+B+C program and chose to start with R0; the
-remaining phases are implemented only after each phase's verification and owner review. This document is the plan of
-record and replaces the A1 text; that text is unchanged in git at `git show bbdfec1:planning_update.md` (and the P18 text
-at `git show 18d1d84:planning_update.md`). Baseline: HEAD `bbdfec1` ("Audit the whole tool surface and default conservative
-omissions (A1.2)"); R0 is now the committed head `1d79ec9` and the R1 changes are uncommitted working-tree files listed in
-§R1 and §9. The owner's `AGENTS.md` edit and untracked `pi-p2o-defense-vi.pptx` are not part of these milestones and are
-not touched.
+Status: **approved 2026-10-28; R0 committed as `1d79ec9`; R1 committed as `35176ae`; R2 implemented and verified in the
+working tree (2026-10-28), awaiting owner review before R3.** The owner approved the A+B+C program and chose to start
+with R0; each remaining phase is implemented only after the previous phase's verification and owner review. This document
+is the plan of record and replaces the A1 text; that text is unchanged in git at `git show bbdfec1:planning_update.md`
+(and the P18 text at `git show 18d1d84:planning_update.md`). Baseline: HEAD `bbdfec1` ("Audit the whole tool surface and
+default conservative omissions (A1.2)"); R0 and R1 are now committed (`1d79ec9`, `35176ae`) and the R2 changes are
+uncommitted working-tree files listed in §R2 and §9. The owner's `AGENTS.md` edit and untracked `pi-p2o-defense-vi.pptx`
+are not part of these milestones and are not touched.
 
 Owner request (2026-10-28, verbatim):
 
@@ -460,6 +460,33 @@ components deterministically, and component versions join CVE/EPSS/KEV.
 gets a CVE lead with KEV/EPSS; the report shows inventory and exploitability; all bounds and no-network tests pass; the
 evidence ladder is unchanged (nuclei → hypothesis, CVE → lead).
 
+**Delivered R2 (working tree, 2026-10-28).** Shipped: `src/extract/` (registry + `nmap`/`httpx`/`nuclei`/HTTP-response/
+OpenAPI/package-manifest parsers, every bound in one `types.ts`), `src/graph-ingest.ts` (bounded attributed batches,
+artifact anchor row, evidence-ref refusal), `src/exploitability.ts` (CISA KEV + FIRST EPSS with cached provenance and
+offline `unknown`), `package` asset validation plus `componentInventory`/`component` reads in `src/state/store.ts`,
+auto-ingest after a receipt and `p2o_graph action=ingest` in `extensions/p2o/index.ts`, `componentRef` and KEV/EPSS
+enrichment on `p2o_research action=cve`, `versionMatch`/`exploitability` on leads, KEV→EPSS lead ordering with new LEADS
+columns in `src/report-export.ts`, and the `summary` component backlog. Tests: `extract.test.ts` 13,
+`exploitability.test.ts` 11, `graph-ingest.test.ts` 9, `artifact-ingest.test.ts` 6, plus focused updates to
+`graph.test.ts` and `phase-j.test.ts` (§5.3).
+
+Deviations, recorded:
+1. The artifact anchor is a separate anchor row on the first ingested asset, not asset content: an identical capture keeps
+   one asset identity and a re-ingest only adds observation lineage.
+2. `p2o_graph action=ingest` reuses the root `id` as the artifact ID (no new parameter); the `p2o_graph`/`p2o_research`
+   declarations were trimmed to pay for it under the unchanged planner ceiling.
+3. The component inventory read ships as `p2o_graph action=query {kind:"package"}` (+`attributes`) and the `summary`
+   backlog, not a new `components` verb (declaration budget).
+4. Exploitability is attached to leads (LEADS columns, research reply, lead `data`), not to case findings: a case has no
+   structured CVE field and adding one would change `p2o_case_author` schema text.
+5. Extractor-written hypotheses are deliberately excluded from `GRAPH_UNREVIEWED` debt so automatic ingestion cannot flood
+   the owner's review queue; they stay `unverified:true` with their producer role.
+6. Auto-ingest covers stdout artifacts of `shell`, `capture` and `http` receipts only, skips research-fetch citations, and
+   is capped at 50 per run.
+7. NVD affected ranges now encode exclusive boundaries (`2.5.0..<2.5.28`); inferred relations and leads keep their
+   `unverified`/`lead` status.
+8. EPSS `percentile` is stored as the API's 0..1 fraction and printed as a percentage.
+
 ### R3 — Attack paths, red-team technique map, retest, interop (L, two to three passes)
 
 **Goal.** Answer the question a red team actually asks — "from this entry point, what can I reach, through which edges,
@@ -574,6 +601,20 @@ stale section mappings. No live run, no
 target traffic, no paid model call: every R1 test is hermetic (extension + real SQLite store + Unix broker + inert
 sandbox). The owner's `AGENTS.md` edit and untracked `pi-p2o-defense-vi.pptx` remain untouched and unstaged.
 
+**R2 result (working tree, 2026-10-28).** `tsc --noEmit` clean; full `vitest run` **144 passed / 5 skipped files
+(149), 1,276 passed / 13 skipped tests (1,289), 0 fail**; `npm run build` + `npm run check:build` → `build import OK`;
+`git diff --check -- src extensions tests docs planning_update.md` clean; `context-budget` and `recon` ceilings green
+(the declaration edits that pay for `ingest`/`componentRef` are net −3 chars, so the planner stays under 49,300). GitNexus:
+**`impact` was not run before this phase's symbol edits** — disclosed rather than dressed up, the same lapse as R1; the
+run after the edits reports `renderReport` **CRITICAL** (1 direct caller / 48 processes), `leadFrontier` **CRITICAL**
+(5 direct / 57 processes) and `validateGraphBatch` **HIGH** (2 direct), all `epistemic: exact`; the tool reports the index
+is **4 commits behind HEAD**, and R2's new files are untracked and therefore unindexed, so reach is a signal, not
+behavioural proof. `detect_changes --scope all` was reviewed before reporting: 158 changed symbols / 14 files / 98
+affected / risk critical, and like R0/R1 it also sees the owner's `AGENTS.md` edit and this plan's own stale section
+mappings. No live run, no target traffic, no paid model call: every R2 test is hermetic (parsers over fixtures, a real
+SQLite store, mocked NVD/KEV/EPSS transport). The owner's `AGENTS.md` edit and untracked `pi-p2o-defense-vi.pptx` remain
+untouched and unstaged.
+
 ### 5.2 Invariants that must not change
 
 - A scanner output, extracted fact, CVE lead, dossier row or hypothesis is **not** evidence for a claim/case; only a
@@ -594,7 +635,7 @@ sandbox). The owner's `AGENTS.md` edit and untracked `pi-p2o-defense-vi.pptx` re
 | --- | --- |
 | R0 | `tests/minimal/research-fetch-containment.test.ts` (new, 7 tests), plus focused additions to `graph.test.ts` (cross-page relation, refs cap, foreign-scope identities, asset-head counter), `graph-record-shape.test.ts` (schema `maxItems: 10`), `truth.test.ts` (bounded fetch description), `research.test.ts` (cap marker under the mocked bounded fetcher) |
 | R1 | `tests/minimal/claim-asset-stamp.test.ts` (new, 4), `graph-dossier.test.ts` (new, 4), `report-assets.test.ts` (new, 6); additions to `graph.test.ts` (query filters/cursor/limits, `graphChanges` delta), `debt.test.ts` (`GRAPH_UNREVIEWED`), `phase-i.test.ts` (slice relations/hypotheses/findings count), `workspace-runtime.test.ts` (worker hypothesis + inferred relation, owner/worker `query`+`summary`, dossier in `view`, dense-summary 8 KiB bound), `round-brief.test.ts` (graph delta present/absent/cap), `round-session.test.ts` (round 2 carries the delta). The planned `graph-query`/`graph-summary`/`worker-hypothesis`/`report-asset-resolution` files were folded into the existing suites so each area keeps one fixture |
-| R2 | `tests/minimal/extract-nmap.test.ts`, `extract-http.test.ts`, `extract-openapi.test.ts`, `extract-packages.test.ts`, `ingest-dedupe.test.ts`, `component-inventory.test.ts`, `cve-enrich.test.ts`, fixtures under `tests/minimal/fixtures/extract/` |
+| R2 | Delivered as `tests/minimal/extract.test.ts` (13), `exploitability.test.ts` (11), `graph-ingest.test.ts` (9), `artifact-ingest.test.ts` (6), with focused additions to `graph.test.ts` (ingest verb/params) and `phase-j.test.ts` (exclusive range text). The planned per-parser files were folded into one `extract.test.ts` so every parser shares one fixture; `ingest-dedupe`, `component-inventory` and `cve-enrich` live in `graph-ingest`, `exploitability` and `artifact-ingest` |
 | R3 | `tests/minimal/graph-path.test.ts`, `path-semantics.test.ts`, `attack-map.test.ts`, `case-retest.test.ts`, `finding-fingerprint.test.ts`, `report-sarif.test.ts`, `report-stix.test.ts`, `project-knowledge-db.test.ts` |
 | R4 | `bench/graph/*` + `tests/minimal/bench-graph.test.ts` |
 
@@ -638,6 +679,13 @@ R1 delivered: new `src/graph-dossier.ts` and the three test files above; touched
 `src/report.ts`, `src/report-export.ts` (asset resolution, inventory), `src/round-brief.ts` (graph delta),
 `extensions/p2o/index.ts` (handlers, worker gate, report context, round-delta read), `docs/KNOWLEDGE.md`,
 `docs/ACCEPTANCE_MATRIX.md`, `docs/HISTORY.md`.
+R2 delivered: new `src/extract/{index,types,sanitize,nmap,httpx,nuclei,http-response,openapi,packages}.ts`,
+`src/graph-ingest.ts`, `src/exploitability.ts` and the four test files above; touched `src/state/graph.ts` (package
+validation), `src/state/store.ts` (`componentInventory`/`component`, package `attributes` on query rows, producer role),
+`src/state/graph-tool.ts` (ingest verb/params), `src/cve.ts` (`versionMatch`, `enrichLeads`, `componentQuery`, range
+boundaries), `src/report-export.ts` (LEADS ordering and columns), `src/tool-schemas.ts` (`componentRef`),
+`extensions/p2o/index.ts` (auto-ingest, ingest action, summary backlog, KEV/EPSS enrichment), `docs/KNOWLEDGE.md`,
+`docs/ACCEPTANCE_MATRIX.md`, `docs/HISTORY.md`.
 
 Touched: `src/state/store.ts` (query/summary/path/dossier reads, scope filter, relation accounting), `src/state/graph.ts`
 (refs cap, relation classification exposure, identity retention note), `src/state/graph-tool.ts` (actions/params),
@@ -659,7 +707,7 @@ Not touched: owner files, `src/truth.ts` semantics, role loadouts beyond D-R1-3,
 | G0 | This plan approved (or amended) | D-R1-1…D-R1-12 |
 | G1 | R0 implemented + verified (delivered 2026-10-28 in the working tree, awaiting owner review) | none if the plan is approved; research-fetch wording reviewed |
 | G2 | R1 implemented + verified | D-R1-3 (hypothesis write) exercised in the delivered UX |
-| G3 | R2 implemented + verified | D-R1-6 sources and D-R1-5 ingestion behaviour reviewed |
+| G3 | R2 implemented + verified (delivered 2026-10-28 in the working tree, awaiting owner review) | D-R1-6 sources and D-R1-5 ingestion behaviour reviewed |
 | G4 | R3 implemented + verified | D-R1-7 map reviewed; D-R1-8 project DB reviewed; SARIF + STIX verification |
 | G5 | R4 offline bench green; live run optional | explicit authorization + budget cap for any live run |
 
@@ -685,12 +733,14 @@ after the previous phase's verification and the owner's review.
 - **R0 was committed** on 2026-10-28 as `1d79ec9` ("Bound the host research fetch and fix graph export accounting
   (R0)"): 19 files, the owner's `AGENTS.md` edit and the untracked `pi-p2o-defense-vi.pptx` excluded, no attribution line.
   Nothing was pushed.
-- The **R1 pass** (2026-10-28) then changed, in the working tree and **without a commit**: `src/graph-dossier.ts` (new),
-  `src/state/store.ts`, `src/state/graph-tool.ts`, `src/state/graph.ts`, `src/claims.ts`, `src/evidence.ts`, `src/debt.ts`,
-  `src/graph-slice.ts`, `src/report.ts`, `src/report-export.ts`, `src/round-brief.ts`, `extensions/p2o/index.ts`,
-  `docs/KNOWLEDGE.md`, `docs/ACCEPTANCE_MATRIX.md`, `docs/HISTORY.md`, and the R1 tests in §5.3. No schema migration (store
-  schema stays 7), no authority change, no new settings; the only model-facing text added is the two `p2o_graph` verbs and
-  their root filters, inside the unchanged declaration budgets. Nothing pushed; no live run and no target traffic.
+- The **R1 pass was committed** on owner instruction as `35176ae` ("Make the asset graph the loop's working memory
+  (R1)"); nothing was pushed and no attribution line was added. The owner then asked to continue with R2.
+- The **R2 pass** (2026-10-28) then changed, in the working tree and **without a commit**: the files listed in §7 under
+  "R2 delivered", plus `planning_update.md`, `docs/KNOWLEDGE.md`, `docs/ACCEPTANCE_MATRIX.md`, `docs/HISTORY.md`, and the
+  R2 tests in §5.3. No schema migration (store schema stays 7), no authority change, no new settings and no new
+  model-visible tool; the only model-facing text added is the `ingest` verb, `componentRef` and the trimmed
+  `p2o_graph`/`p2o_research` descriptions, inside the unchanged declaration budgets. Nothing pushed; no live run and no
+  target traffic — KEV, EPSS and NVD are mocked in every test.
 - R0 verification is the §5.1 result block: tsc clean, full suite 1,215 passed / 13 skipped (1,228), build/`check:build`
   green, `git diff --check` clean, GitNexus impact/detect_changes reviewed with the stale-index caveat. The live benchmark
   was **not** run and no target traffic was generated: R0 only mocks the bounded fetcher and uses inert stores.

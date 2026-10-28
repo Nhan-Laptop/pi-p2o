@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest';
 import { AssessmentStore, type StoreManifest } from '../../src/state/store.js';
 import type { AssessmentRecord } from '../../src/records.js';
 import { GRAPH_RESPONSE_BYTES, applyGraphEvents, graphCeilings } from '../../src/state/graph.js';
-import { graphParameters } from '../../src/state/graph-tool.js';
+import { GRAPH_ACTION_PARAMETERS, graphParameters } from '../../src/state/graph-tool.js';
 
 const manifest = (runId: string, targetIdentity = 'fixture-target'): StoreManifest => ({ runId, retention: 'durable-local', targetKind: 'directory',
   targetIdentity, targetDisplay: 'inert fixture', profile: { runtimeHash: 'fixture', image: 'fixture', loopMode: 'manual', executorMode: 'shared' } });
@@ -27,7 +27,9 @@ describe('asset/fact/hypothesis graph (K3, canonical store only)', () => {
     // A1: the root stays closed, but the batch subtree is deliberately open at the schema layer so a misplaced requestId
     // or a row-level asset field reaches normalizeGraphRecord instead of dying in Pi's argument validator.
     expect(projected.properties.batch).toMatchObject({type:'object'});expect(projected.properties.batch).not.toMatchObject({additionalProperties:false});
-    expect(graphParameters).toMatchObject({additionalProperties:false});expect(projected.properties.action).toMatchObject({type:'string',enum:['record','view','page','export','chain','query','summary']});
+    // R2.3 adds the host-side `ingest` verb; it reuses the root `id` as the artifact ID, so the root property set is unchanged.
+    expect(graphParameters).toMatchObject({additionalProperties:false});expect(projected.properties.action).toMatchObject({type:'string',enum:['record','view','page','export','chain','query','summary','ingest']});
+    expect(GRAPH_ACTION_PARAMETERS.ingest).toEqual(['action','id']);
   });
   it('scales the run graph ceilings with the configured graphCapacity and refuses a bad capacity (P9/B, Q29)', async () => {
     // The base ceilings are the library default; the run setting multiplies them so a large engagement grows without a code edit.
