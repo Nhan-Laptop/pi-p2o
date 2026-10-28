@@ -90,7 +90,7 @@ import { parseOperatorCommand } from '../../src/ui/operator.js';
 import { parseStateCommand, statusView, stateLines, workerLines, type StatusView, type WorkerView } from '../../src/ui/state.js';
 import { StateScreen, widgetComponent, renderTaskResult, renderStateEntry } from '../../src/ui/screen.js';
 import { uiRefreshDelay } from '../../src/ui/refresh.js';
-import { AssessmentStore, finalizationReserve, MAX_ARTIFACT_BYTES, type MutationRequest, type StoreFault, type StoreManifest } from '../../src/state/store.js';
+import { ARTIFACT_INVALID, AssessmentStore, finalizationReserve, MAX_ARTIFACT_BYTES, type MutationRequest, type StoreFault, type StoreManifest } from '../../src/state/store.js';
 import { bindAssessmentStore } from '../../src/state/adapter.js';
 import { graphObject, type GraphAck, type GraphBatch, type GraphProducer } from '../../src/state/graph.js';
 import { GRAPH_ACTION_PARAMETERS, GRAPH_ACTIONS, graphParameters } from '../../src/state/graph-tool.js';
@@ -1272,6 +1272,12 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
     return current.stop;
   }
 
+  /**
+   * The store's artifact-input refusal is not a storage fault: after a known return it must not close execution authority.
+   * Any other retention failure still reaches storageFailure, which keeps its own storage-fault filter.
+   */
+  function retentionRefusal(error: unknown) { return (error as {code?:string})?.code === ARTIFACT_INVALID; }
+
   function storageFailure(current: OwnerRun, error: unknown, knownRetentionFailure = false) {
     const code = (error as {code?:string})?.code;
     if (current.storageError || current.phase === 'finished' || (!knownRetentionFailure && !(code?.startsWith('ERR_SQLITE') || ['ENOSPC','EROFS','EIO','EACCES','EMFILE'].includes(code ?? '') || /Storage quota|State record count|State record payload exceeds/.test(message(error))))) return;
@@ -1472,7 +1478,8 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
   function sessionDownloadFor(current: OwnerRun, by: string, id: string, path: string, signal?: AbortSignal) {
     requireSession(current, id);
     return executeWithReceipt(current, by, 'capture', path, (onRunning, onOutput) =>
-      current.executors.use(id, signal, sandbox => sandbox.captureScratch(path, current.settings.artifactCaptureKiB * 1024, signal, sandbox.sessionWorkdir, onRunning, onOutput, 0, 0)));
+      current.executors.use(id, signal, sandbox => sandbox.captureScratch(path, current.settings.artifactCaptureKiB * 1024, signal, sandbox.sessionWorkdir, onRunning, onOutput, 0, 0)),
+      { sessionId: id });
   }
   /**
    * A17.8/D40 (owner decision A5): the interactive foothold. `listen` records bytes and never answers; a foothold is ONE
@@ -1561,7 +1568,8 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
     let artifactError: string | undefined;
     // The design: full transcript retained as a p2o_capture artifact, model sees the bounded preview. Same receipt,
     // redaction and artifact store as any other retained output — no new evidence path. The log is read inside the session
-    // (a fixed `cat`, no model bytes) because the artifact store's scratch-provenance check predates session workdirs.
+    // with a fixed `cat` (no model bytes) because the transcript is the relay's own file, not model-named scratch: the
+    // capture keeps the command receipt shape while the session root is only used for provenance when the model asks.
     if (page.totalBytes > FOOTHOLD_PREVIEW_BYTES) {
       try {
         const captured = await executeWithReceipt(current, by, 'capture', `${state.log} (foothold transcript)`, (onRunning, onOutput) =>
@@ -1692,7 +1700,7 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
    * The one dispatch seam. `options.http` marks an HTTP request (substituted field by field); `options.substitute='raw'` marks
    * raw PTY bytes (a sudo prompt reads the value verbatim, so shell quoting would change it). Every shell/net command is quoted.
    */
-  function executeWithReceipt(current: OwnerRun, by: string, operation: string, input: string, perform: (onRunning: () => void, onOutput: OutputObserver, dispatch: Dispatch) => Promise<ProcessResult & {scratchSnapshot?:ScratchSnapshot}>, options: { http?: HttpRequest; substitute?: 'shell' | 'raw' } = {}): Promise<ProcessResult & {operationId:string; capture:CaptureReceipt; scratchSnapshot?:ScratchSnapshot}> {
+  function executeWithReceipt(current: OwnerRun, by: string, operation: string, input: string, perform: (onRunning: () => void, onOutput: OutputObserver, dispatch: Dispatch) => Promise<ProcessResult & {scratchSnapshot?:ScratchSnapshot}>, options: { http?: HttpRequest; substitute?: 'shell' | 'raw'; sessionId?: string } = {}): Promise<ProcessResult & {operationId:string; capture:CaptureReceipt; scratchSnapshot?:ScratchSnapshot}> {
     const task = (async () => {
       // A7.7: the one dispatch seam. The owner tools and the broker's worker operations both arrive here, so no bytes reach a
       // container before the policy has decided; a denial is recorded and thrown before an operation record or receipt exists.
@@ -1732,6 +1740,7 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
         for (const part of parts) {
           const a = current.store.ingestArtifact(by,part.input,{kind:scratchSource ? 'scratch-file' : `${operation}-${part.stream}`,totalBytes:scratchSource?.totalBytes ?? part.totalBytes,
             maxBytes:current.settings.artifactCaptureKiB * 1024,operationId,captureOutcome,captureSource:scratchSource,offset:scratchSource?.offset ?? 0,
+            ...(options.sessionId ? {sessionId:options.sessionId} : {}),
             captureReason:captureOutcome === 'interrupted' ? 'Runner interrupted; unseen tail unknown, no replay' : undefined});
           captureReceipt.artifacts.push({id:a.id,stream:part.stream,totalBytes:a.totalBytes,capturedInputBytes:a.capturedInputBytes,
             bytes:a.bytes,sha256:a.sha256,truncated:a.truncated,captureOutcome,...(a.captureSource ? {offset:a.captureSource.offset} : {})});
@@ -1771,8 +1780,10 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
         return {...result,...(preview ? {stdout:preview.text,stderr:'',truncated:result.truncated || preview.nextOffset !== undefined} : {}),evidenceId,operationId,capture:captureReceipt};
       } catch (error) {
         current.progress.record(by,'error',operation,secretText(current,redact(message(error))));
-        if (returned) storageFailure(current,error,true); // Known return; only host evidence/artifact retention remained.
-        if (!retentionAttempted) {try {retain('interrupted');} catch (retentionError) {storageFailure(current,retentionError,true);}}
+        // A known return means only host evidence/artifact retention remained. A store input refusal on that path is not a
+        // storage fault: the executor already returned, so the run stays active and the tool reports the refusal itself.
+        if (returned && !retentionRefusal(error)) storageFailure(current,error,true);
+        if (!retentionAttempted) {try {retain('interrupted');} catch (retentionError) {if (!retentionRefusal(retentionError)) storageFailure(current,retentionError,true);}}
         try {
           if (returned) event('operation.returned',`${operation}: executor returned; evidence/terminal retention incomplete`,{retentionIncomplete:true,remoteOutcome:'returned',capture:captureReceipt},captureReceipt.artifacts.map(a=>a.id));
           else {
@@ -3420,7 +3431,7 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
               return session
                 ? current.executors.use(session,signal,s=>s.captureScratch(path,bound,signal,s.sessionWorkdir,onRunning,onOutput,seconds,offset))
                 : current.executors.use(workerId,signal,s=>s.captureScratch(path,bound,signal,`/work/${workerId}`,onRunning,onOutput,seconds,offset));
-            }),
+            }, session ? { sessionId: session } : {}),
             graphRecord: (batch, registration, request) => track(current,(async () => {
               assertOwnerActive(current);
               if (current.workers.get(registration.workerId)!==registration || !request || request.actorId!==registration.workerId) throw Error('Authenticated graph delivery required');

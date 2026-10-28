@@ -93,6 +93,37 @@ describe('scratch path/FD reader and provenance (native local fixture, not host/
       }finally{store.close();}
     });
   });
+  it('accepts a run-assigned session root only with the session id that names it, and records that id',async()=>{
+    await fixture(async root=>{
+      const store=AssessmentStore.create(join(root,'state'),{runId:'run-session-root',retention:'ephemeral',targetKind:'directory',targetIdentity:'fixture',targetDisplay:'fixture',profile:{runtimeHash:'fixture',image:'fixture',loopMode:'manual',executorMode:'session'}});
+      try{
+        const input=Buffer.from('session file'),total=input.length,session='session-0a1b2c3d',sessionSnapshot=snapshot(input,total,'note.txt',`/work/sessions/${session}`);
+        // A7.2: the session executor's own root is not a producer root; the caller must name the session it captured in.
+        const a=store.ingestArtifact('owner',input,{kind:'scratch-file',captureSource:sessionSnapshot,sessionId:session});
+        expect(a).toMatchObject({producer:'owner',sessionId:session,captureSource:{root:`/work/sessions/${session}`,path:'note.txt'}});
+        const worker=store.ingestArtifact('worker',input,{kind:'scratch-file',captureSource:sessionSnapshot,sessionId:session});
+        expect(worker).toMatchObject({producer:'worker',sessionId:session});
+        // The producer roots keep working, with or without a session id in scope.
+        expect(store.ingestArtifact('owner',input,{captureSource:snapshot(input)})).toMatchObject({captureSource:{root:'/work'}});
+        expect(store.ingestArtifact('worker',input,{captureSource:snapshot(input,total,'out.txt','/work/worker')})).toMatchObject({captureSource:{root:'/work/worker'}});
+        const count=store.artifacts().length;
+        const rejected: Array<{ sessionId?: string; why: string }> = [
+          { why: 'no session id names the session root' },
+          { sessionId: 'session-deadbeef', why: 'a different session id names a different root' },
+          { sessionId: 'session-0a1b2c3d0', why: 'overlong id' },
+          { sessionId: 'SESSION-0A1B2C3D', why: 'case-changed id' },
+          { sessionId: `/work/sessions/${session}`, why: 'a path instead of an id' }];
+        for(const { sessionId, why } of rejected){
+          const invalid=sessionId!==undefined&&!/^session-[a-f0-9]{8}$/.test(sessionId);
+          expect(()=>store.ingestArtifact('owner',input,{captureSource:sessionSnapshot,...(sessionId===undefined?{}:{sessionId})}),why).toThrow(invalid?'session reference':'producer');
+        }
+        // A worker cannot borrow the owner's /work root, and a mismatched session root is never accepted as its own.
+        expect(()=>store.ingestArtifact('worker',input,{captureSource:sessionSnapshot,sessionId:'session-ffffffff'})).toThrow('producer');
+        expect(store.artifacts()).toHaveLength(count);
+      }finally{store.close();}
+    });
+  });
+
   it('redacts credential/header/PEM continuations selected across segment boundaries and labels bounded unknown context',async()=>{
     await fixture(async root=>{
       const secret='PRIVATE_CAPTURE_VALUE',body=`password=${secret}\npublic observation\n`,header=`Authorization: Bearer ${secret}\npublic observation\n`,pem=`-----BEGIN RSA PRIVATE KEY-----\n${secret}\n-----END RSA PRIVATE KEY-----\npublic observation\n`;

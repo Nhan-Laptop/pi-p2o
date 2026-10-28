@@ -369,6 +369,41 @@ describe('A7.2 session tool and lifecycle', () => {
       expect(h.sandboxes[1].writes).toEqual([expect.objectContaining({ path: 'payload/tool.sh', workdir: `/work/sessions/${session}`, mode: 0o600 })]);
       await expect(h.call('p2o_session', { action: 'upload', session, path: '/etc/passwd', content: 'x' })).rejects.toThrow('relative UTF-8 path');
       await expect(h.call('p2o_session', { action: 'download', session, path: '../secret' })).rejects.toThrow('traversal');
+      expect(h.sandboxes[1].captures).toHaveLength(0); // a refused path never reaches the sandbox
+      const downloaded = await h.call('p2o_session', { action: 'download', session, path: 'payload/tool.sh' });
+      expect(downloaded.details).toMatchObject({ exitCode: 0 });
+      expect(downloaded.details.capture.source).toMatchObject({ root: `/work/sessions/${session}`, path: 'payload/tool.sh' });
+      expect(h.sandboxes[1].captures).toEqual([expect.objectContaining({ path: 'payload/tool.sh', workdir: `/work/sessions/${session}`, root: `/work/sessions/${session}` })]);
+      const artifact = downloaded.details.capture.artifacts[0];
+      expect(downloaded.content[0].text).toContain(`Artifact ID: ${artifact.id}`);
+      expect(downloaded.content[0].text).toContain('echo hi');
+      const store = await h.reader();
+      try {
+        // The retained manifest names the producer root and the session the capture came from, not just a loose path.
+        expect(store.artifacts().find((row: any) => row.id === artifact.id)).toMatchObject({ producer: 'owner', kind: 'scratch-file',
+          sessionId: session, captureSource: { root: `/work/sessions/${session}` } });
+        expect(store.artifact(artifact.id, 0, 8192).text).toContain('#!/bin/sh');
+      } finally { store.close(); }
+    });
+  });
+
+  it('keeps execution authority when a session download is refused on provenance, instead of reporting a storage failure', async () => {
+    await sessionFixture(async h => {
+      await h.command('--target ./source --executors session');
+      const session = (await h.call('p2o_session', { action: 'open' })).details.session as string;
+      await h.call('p2o_session', { action: 'upload', session, path: 'note.txt', content: 'proof of concept\n' });
+      // A capture that claims a root this run never assigned is refused by the store, after the executor returned.
+      h.sandboxes[1].captureRootOverride = '/work/elsewhere';
+      await expect(h.call('p2o_session', { action: 'download', session, path: 'note.txt' })).rejects.toThrow('producer');
+      expect(h.ctx.notices.filter((notice: string) => notice.includes('Storage failed'))).toEqual([]);
+      const after = await h.call('p2o_shell', { command: 'id' });
+      expect(after.details.exitCode).toBe(0);
+      const store = await h.reader();
+      try {
+        const returned = store.events({ limit: 100 }).rows.filter((event: any) => event.kind === 'operation.returned' && event.data?.retentionIncomplete);
+        expect(returned).toHaveLength(1); // the operation reports an incomplete retention, not a closed authority
+        expect(store.manifest().runId).toBeTruthy();
+      } finally { store.close(); }
     });
   });
 

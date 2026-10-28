@@ -31,6 +31,14 @@ import { anchorEntityId, assetEntityId, assertionEntityId, graphEntityId, relati
 export const DEFAULT_STORE_BYTES = 256 * 1024 * 1024;
 export const DEFAULT_ARTIFACT_BYTES = 1024 * 1024;
 export const MAX_ARTIFACT_BYTES = 8 * 1024 * 1024;
+/** A7.2: a session executor owns `/work/sessions/<id>`; the store accepts that root only with this explicit id. */
+const SESSION_ID = /^session-[a-f0-9]{8}$/;
+/**
+ * An artifact *input* refusal (forged metadata, out-of-contract bounds), distinct from a storage fault. The caller can let
+ * the run keep execution authority after a known return; a real storage fault still carries its own code/message.
+ */
+export const ARTIFACT_INVALID = 'ERR_ARTIFACT_INVALID';
+const invalidArtifact = (text: string): never => { throw Object.assign(Error(text), { code: ARTIFACT_INVALID }); };
 export interface StoreManifest {
   runId: string; retention: 'durable-local' | 'ephemeral'; targetKind: 'directory' | 'url' | 'hybrid';
   targetIdentity: string; targetDisplay: string;
@@ -58,6 +66,7 @@ export interface ArtifactManifest {
   totalBytes: number; capturedInputBytes: number; truncated: boolean; evidenceRefs: string[];
   beforeRedactionSha256?: string; hashScope?: 'captured-prefix-before-redaction' | 'preserved-exported-bytes';
   captureOutcome?: 'returned' | 'interrupted'; captureReason?: string; decodingLossy?: boolean; captureSource?: ScratchSnapshot;
+  sessionId?: string;
   importedFrom?: { bundleSha256: string; file: string; sourceRunId: string; originalSha256: string };
 }
 export interface CheckpointManifest {
@@ -527,30 +536,35 @@ export class AssessmentStore {
     this.gate(true); if (!Number.isSafeInteger(sequence) || sequence < 1) throw Error('Invalid outbox sequence');
     this.db.prepare('UPDATE outbox SET delivered=1 WHERE sequence=?').run(sequence);
   }
-  ingestArtifact(actorId: string, input: Buffer, options: { kind?: string; mediaType?: string; totalBytes?: number; maxBytes?: number; operationId?: string; evidenceRefs?: string[]; captureOutcome?: 'returned' | 'interrupted'; captureReason?: string; captureSource?: ScratchSnapshot; offset?: number; importedFrom?: { bundleSha256: string; file: string; sourceRunId: string; originalSha256: string }; preserveBytes?: boolean } = {}, request?: MutationRequest): ArtifactManifest {
+  ingestArtifact(actorId: string, input: Buffer, options: { kind?: string; mediaType?: string; totalBytes?: number; maxBytes?: number; operationId?: string; evidenceRefs?: string[]; captureOutcome?: 'returned' | 'interrupted'; captureReason?: string; captureSource?: ScratchSnapshot; sessionId?: string; offset?: number; importedFrom?: { bundleSha256: string; file: string; sourceRunId: string; originalSha256: string }; preserveBytes?: boolean } = {}, request?: MutationRequest): ArtifactManifest {
     return this.atomically(() => {
       const max = options.maxBytes ?? DEFAULT_ARTIFACT_BYTES, total = options.totalBytes ?? input.length;
       if (!Buffer.isBuffer(input) || !Number.isSafeInteger(max) || max < 1 || max > MAX_ARTIFACT_BYTES || !Number.isSafeInteger(total) || total < input.length
-        || (options.mediaType !== undefined && !['text/plain', 'application/json'].includes(options.mediaType))) throw Error('Invalid bounded text artifact');
+        || (options.mediaType !== undefined && !['text/plain', 'application/json'].includes(options.mediaType))) throw invalidArtifact('Invalid bounded text artifact');
       if (!validId(actorId) || (options.operationId !== undefined && !validId(options.operationId))
         || (options.kind !== undefined && (typeof options.kind !== 'string' || !options.kind.trim() || options.kind.length > 80))
-        || (options.evidenceRefs !== undefined && (!Array.isArray(options.evidenceRefs) || options.evidenceRefs.length > 10 || options.evidenceRefs.some(ref => this.record(ref)?.kind !== 'evidence')))) throw Error('Unknown artifact evidence reference or invalid producer metadata');
+        || (options.evidenceRefs !== undefined && (!Array.isArray(options.evidenceRefs) || options.evidenceRefs.length > 10 || options.evidenceRefs.some(ref => this.record(ref)?.kind !== 'evidence')))) throw invalidArtifact('Unknown artifact evidence reference or invalid producer metadata');
       if ((options.captureOutcome !== undefined && !['returned','interrupted'].includes(options.captureOutcome))
-        || (options.captureReason !== undefined && (typeof options.captureReason !== 'string' || options.captureReason.length > 200))) throw Error('Invalid artifact capture outcome');
+        || (options.captureReason !== undefined && (typeof options.captureReason !== 'string' || options.captureReason.length > 200))) throw invalidArtifact('Invalid artifact capture outcome');
       const captured = input.subarray(0, max), decoded = captured.toString('utf8');
-      if (options.offset !== undefined && (!Number.isSafeInteger(options.offset) || options.offset < 0)) throw Error('Invalid artifact segment offset');
+      if (options.offset !== undefined && (!Number.isSafeInteger(options.offset) || options.offset < 0)) throw invalidArtifact('Invalid artifact segment offset');
+      if (options.sessionId !== undefined && (typeof options.sessionId !== 'string' || !SESSION_ID.test(options.sessionId))) throw invalidArtifact('Invalid artifact session reference');
       if (options.captureSource) {
         validateScratchSnapshot(options.captureSource);
-        if (options.captureSource.root !== (actorId === 'owner' ? '/work' : `/work/${actorId}`) || options.captureSource.capturedBytes !== captured.length
+        // A7.2: a session capture is produced inside `/work/sessions/<id>`, so the accepted root is either the producer's
+        // own root or the one session root the caller names. Every other capture remains bound to its producer root.
+        const producerRoot = actorId === 'owner' ? '/work' : `/work/${actorId}`;
+        const sessionRoot = options.sessionId === undefined ? undefined : `/work/sessions/${options.sessionId}`;
+        if ((options.captureSource.root !== producerRoot && options.captureSource.root !== sessionRoot) || options.captureSource.capturedBytes !== captured.length
           || options.captureSource.totalBytes !== total || options.captureSource.prefixSha256 !== sha(captured)
-          || options.captureSource.offset !== (options.offset ?? 0)) throw Error('Artifact scratch provenance/producer/byte/hash mismatch');
+          || options.captureSource.offset !== (options.offset ?? 0)) throw invalidArtifact('Artifact scratch provenance/producer/byte/hash mismatch');
       }
       if (options.importedFrom) {
         const source = options.importedFrom;
         if (!/^[a-f0-9]{64}$/.test(source.bundleSha256) || !/^run-[a-zA-Z0-9-]{1,75}$/.test(source.sourceRunId) || source.originalSha256 !== sha(captured)
-          || !/^(?:segments\/(?:records|events|graph)-[0-9]{5}\.ndjson|artifacts\/artifact-[a-f0-9-]{36}\.txt)$/.test(source.file)) throw Error('Invalid imported-bundle provenance');
+          || !/^(?:segments\/(?:records|events|graph)-[0-9]{5}\.ndjson|artifacts\/artifact-[a-f0-9-]{36}\.txt)$/.test(source.file)) throw invalidArtifact('Invalid imported-bundle provenance');
       }
-      if (options.preserveBytes && !options.importedFrom) throw Error('Preserving unredacted bytes requires imported-bundle provenance');
+      if (options.preserveBytes && !options.importedFrom) throw invalidArtifact('Preserving unredacted bytes requires imported-bundle provenance');
       const segment=options.captureSource&&!options.preserveBytes?redactScratchSegment(decoded,options.captureSource,redact):undefined;
       const redacted = options.preserveBytes ? captured : Buffer.from(segment?.text??redactArtifactPrefix(decoded, redact)), bytes = options.preserveBytes?redacted.subarray(0,max):utf8Prefix(redacted,max);
       const id = `artifact-${randomUUID()}`, filename = `${id}.txt`;
@@ -563,8 +577,9 @@ export class AssessmentStore {
         ...(options.captureOutcome ? {captureOutcome:options.captureOutcome} : {}),
         ...(options.importedFrom ? {importedFrom: options.importedFrom} : {}),
         captureReason: options.importedFrom ? 'imported portable bundle bytes; preserved without re-redaction' : options.captureSource?.stable === false ? 'Scratch stat changed during capture; not an atomic snapshot' : segment?.reason??(total > captured.length ? 'capture byte cap' : redacted.length > max ? 'redaction expansion byte cap' : options.captureReason),
-        ...(options.captureSource ? {captureSource:safe(options.captureSource)} : {}) };
-      if (manifest.evidenceRefs.length > 10 || manifest.evidenceRefs.some(ref => this.record(ref)?.kind !== 'evidence')) throw Error('Unknown artifact evidence reference');
+        ...(options.captureSource ? {captureSource:safe(options.captureSource)} : {}),
+        ...(options.sessionId ? {sessionId: options.sessionId} : {}) };
+      if (manifest.evidenceRefs.length > 10 || manifest.evidenceRefs.some(ref => this.record(ref)?.kind !== 'evidence')) throw invalidArtifact('Unknown artifact evidence reference');
       this.db.prepare('INSERT INTO artifacts VALUES (?,?,?,?,?,?)').run(id, event.sequence, filename, manifest.sha256, bytes.length, JSON.stringify(manifest));
       return manifest;
     }, request, { artifact: { actorId, inputHash: sha(input), options } });
