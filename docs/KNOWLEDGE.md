@@ -17,13 +17,23 @@ same SQLite store as everything else; there is no graph database and no second w
   missing, foreign or imported ids are refused.
 - **Pinning:** `expectedRevision`, `assetRevision`, `fromRevision`/`toRevision` and `supersedes` are checked before commit; a
   stale write rolls back the whole batch and makes dependent claims stale. History and counterevidence are kept.
-- **Who writes what:** the planner records hypotheses and relations, a worker records assets, facts and anchors, the reporter
-  reads only. A worker brief carries a bounded slice (matching asset, latest facts, open leads/gaps, ready chain steps) labelled
+- **Who writes what:** the planner records hypotheses, settled hypotheses and observed relations; a worker records assets, facts,
+  anchors, open hypotheses and `basis=inferred` relations (host-stamped `unverified:true` with its producer role — that row is
+  review debt the owner settles by superseding with supported/refuted/inconclusive); the reporter reads only. A worker brief carries a bounded slice (matching asset, latest facts, open leads/gaps, ready chain steps) labelled
   background, never a finding. The host counts each worker's write-back and shows `NO_GRAPH_WRITE` in `p2o_workers`, the
   report and the preflight as an advisory — not a review or finish condition.
 - `p2o_graph {action:"chain"}` is a read-only join over claims: `ready` (an open step whose `needs` are all gained by a
   confirmed+tested claim), `unmet` (naming the missing capability kind), `legacy` (free-text edges that match nothing) and
   `frontier` (shortest primitive-to-claim path). Planner-only, writes nothing, grants nothing.
+- `p2o_graph {action:"query"}` answers "which current rows match" with bounded filters (`kind`, `keyPrefix` requiring a
+  kind, `labelContains`, `attributeKey`+`attributeValue`, `assertionKind`, `statementContains`); it is SQL over current
+  heads with a sequence cursor, true totals and `omitted`/`nextCursor`, and its encoded response is trimmed to ≤24 KiB.
+  `action:"summary"` answers "what moved and what is missing" (new/changed assets, assets with no claim or coverage cell,
+  open hypotheses, inferred relations, accepted findings by asset, chain frontier) with ≤10 rows per list and its own
+  8 KiB bound; when a dense graph overflows it drops machine rows and reports `omittedRows` while the counts stay true.
+- `view` also returns a **derived dossier** for the one asset (facts, hypothesis counts and open rows, relations, claims
+  with stale/demonstrated, cases, coverage cells with `noCell`, tasks, gaps) capped at 24 KiB with omission counters. A
+  dossier, summary, query row or brief delta is background: none of them can satisfy a claim, case or coverage cell.
 - Limits: pages of 20 (≤100), results ≤24 KiB, batch ≤128 rows (≤128 KiB, ≤8 KiB/row, ≤10 anchors/asset). A run's base caps
   are 5,000 asset revisions, 10,000 assertions, 2,000 relations, 20,000 anchors and 40,000 provenance rows, multiplied by
   `graphCapacity` (settings 1–4, default 2). Reaching a cap says `capacity reached`; nothing is pruned automatically.

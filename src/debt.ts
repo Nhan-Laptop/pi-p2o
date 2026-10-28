@@ -28,7 +28,7 @@ import type { WorkerWrites } from './write-back.js';
 export const DEBT_KINDS = [
   'CAMPAIGN_MISSING', 'GOAL_MISSING', 'GOAL_OPEN', 'PLAN_MISSING', 'SCOPE_UNPLANNED_ASSET', 'CELL_NOT_RUN',
   'GAP_UNTRIAGED', 'WSTG_UNPLANNED', 'FEATURES_MISSING', 'TASK_UNMAPPED', 'MAPPING_UNRECORDED', 'PRIMITIVE_UNCHAINED',
-  'CLAIM_UNTRIAGED',
+  'CLAIM_UNTRIAGED', 'GRAPH_UNREVIEWED',
 ] as const;
 export type DebtKind = typeof DEBT_KINDS[number];
 /** Kinds that inform the report but never make a run incomplete: a missing feature tag is a prompt gap, not owed work. */
@@ -65,6 +65,8 @@ export interface DebtInput {
   featureAssets?: readonly { assetId: string; features: readonly string[] }[];
   /** Host-computed write-back counts (`writeBack`), used for the mapping kinds. */
   wrote?: readonly WorkerWrites[];
+  /** R1.4/D-R1-3: worker-authored graph rows still awaiting owner review (hypotheses and inferred relations). */
+  graph?: { hypotheses?: readonly { entityId: string; assetId?: string; statement: string }[]; inferredRelations?: number };
   /** WSTG `modes` filter. Absent means "not available", which filters those rows. */
   modes?: string;
   /** P11/A11: the run has a browser transport and can provision principals, so these default to available; pass `false` only
@@ -186,6 +188,10 @@ export function deriveDebt(index: LedgerIndex, input: DebtInput = {}): DebtRepor
     const task = taskById.get(data.taskRef);
     if (task && isSatisfiedTask(task.status)) add('CLAIM_UNTRIAGED', row.id, `open claim on ${task.surface} was accepted with the task review and never confirmed, ruled out or walled`);
   }
+
+  // --- R1.4/D-R1-3: a worker hypothesis or inferred relation is review debt, not a fact; an owner/planner supersede settles it ---
+  for (const row of (input.graph?.hypotheses ?? []).slice(0, 20)) add('GRAPH_UNREVIEWED', row.entityId, `worker hypothesis on ${row.assetId || 'an asset'} awaits owner review: ${row.statement.slice(0, 160)}`);
+  if ((input.graph?.inferredRelations ?? 0) > 0) add('GRAPH_UNREVIEWED', 'inferred-relations', `${input.graph!.inferredRelations} worker-inferred relation(s) await owner review; a path query must not treat them as observed edges`);
 
   // --- discharge: a deferred/blocked todo with a reason is the only prose wall ---
   const walls = new Set<string>();

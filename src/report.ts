@@ -70,7 +70,10 @@ export function recoverReports(index: LedgerIndex): { reports: Array<{ id: strin
 }
 
 /** Frozen bounded navigation manifest. Full detail stays in active ID queries / opt-in bounded export. */
-export interface ReportProjectionContext {cases?:CaseContext;coverage?:CoverageContext;/** A4: the run mode a caller already knows; counters stay ledger-derived and the mode is never invented here. */mode?:AuthorityMode}
+export interface ReportAssetBrief { id: string; kind: string; key: string; label?: string; revision: number }
+export interface ReportProjectionContext {cases?:CaseContext;coverage?:CoverageContext;/** A4: the run mode a caller already knows; counters stay ledger-derived and the mode is never invented here. */mode?:AuthorityMode
+  /** R1.6: bounded asset identity resolution for the ids a report references; absent keeps the raw-id rendering of earlier formats. */
+  assets?:Readonly<Record<string,ReportAssetBrief>>; /** R1.6: the bounded inventory section and its true total. */ inventory?:{rows:readonly ReportAssetBrief[];total:number}}
 /** A3: a projected plan's denominator is its derived cells; a legacy plan keeps its stored cell count. */
 function derivedCellCount(plan:CoveragePlanView):number{return plan.derivation==='projected'?plan.cells.filter(cell=>cell.currentness!=='retired').length:plan.cellIds.length;}
 export function reportProjection(index: LedgerIndex, context:ReportProjectionContext={}) {

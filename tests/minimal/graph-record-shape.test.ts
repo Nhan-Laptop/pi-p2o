@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { Value } from 'typebox/value';
-import { graphParameters, normalizeGraphRecord } from '../../src/state/graph-tool.js';
+import { GRAPH_ACTION_PARAMETERS, graphParameters, normalizeGraphRecord } from '../../src/state/graph-tool.js';
 import { validateGraphBatch } from '../../src/state/graph.js';
 
 const receipt = '11111111-1111-1111-1111-111111111111';
@@ -25,7 +25,11 @@ describe('p2o_graph record argument tolerance (A1)', () => {
     // Tolerating placement drift is not tolerating wrong types: the batch still has to be the canonical object.
     expect(Value.Check(graphParameters, { action: 'record', batch: { assets: { asset } } })).toBe(false);
     expect(Value.Check(graphParameters, { action: 'record', batch: { facts: [{ kind: 'observed', statement: 'x' }] } })).toBe(false);
-    expect(Value.Check(graphParameters, { ...drifted, kind: 'file' })).toBe(false);
+    expect(Value.Check(graphParameters, { ...drifted, bogus: 'file' })).toBe(false);
+    // R1.3 added the bounded query filters to the shared root (Pi's legacy adapter reads root properties only), so the
+    // per-action refusal lives in GRAPH_ACTION_PARAMETERS and the host's field check, not in the Pi schema.
+    expect(GRAPH_ACTION_PARAMETERS.record).not.toContain('kind');
+    expect(GRAPH_ACTION_PARAMETERS.query).toContain('kind');
     // R0: the documented ten-reference cap is enforced at the Pi boundary too.
     const refs = (length: number) => Array.from({ length }, () => receipt);
     expect(Value.Check(graphParameters, { action: 'record', batch: { facts: [{ assetId: '@a', kind: 'inferred', statement: 'x', confidence: 'low', evidenceRefs: refs(10) }] } })).toBe(true);

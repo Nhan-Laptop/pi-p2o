@@ -23,11 +23,11 @@ describe('asset/fact/hypothesis graph (K3, canonical store only)', () => {
   it('keeps tool arguments in a root object so legacy Pi provider projection does not silently erase them',()=>{
     const projected={type:'object',properties:graphParameters.properties??{},required:graphParameters.required??[]};
     // P14.10 added `plan` and `assetRefs` for the chain-to-draft step; both are root properties for the same reason as the rest.
-    expect(graphParameters.type).toBe('object');expect(projected.required).toContain('action');expect(Object.keys(projected.properties)).toEqual(['action','batch','id','requestId','cursor','limit','asOfSequence','plan','assetRefs']);
+    expect(graphParameters.type).toBe('object');expect(projected.required).toContain('action');expect(Object.keys(projected.properties)).toEqual(['action','batch','id','requestId','cursor','limit','asOfSequence','plan','kind','keyPrefix','labelContains','attributeKey','attributeValue','assertionKind','statementContains','assetRefs']);
     // A1: the root stays closed, but the batch subtree is deliberately open at the schema layer so a misplaced requestId
     // or a row-level asset field reaches normalizeGraphRecord instead of dying in Pi's argument validator.
     expect(projected.properties.batch).toMatchObject({type:'object'});expect(projected.properties.batch).not.toMatchObject({additionalProperties:false});
-    expect(graphParameters).toMatchObject({additionalProperties:false});expect(projected.properties.action).toMatchObject({type:'string',enum:['record','view','page','export','chain']});
+    expect(graphParameters).toMatchObject({additionalProperties:false});expect(projected.properties.action).toMatchObject({type:'string',enum:['record','view','page','export','chain','query','summary']});
   });
   it('scales the run graph ceilings with the configured graphCapacity and refuses a bad capacity (P9/B, Q29)', async () => {
     // The base ceilings are the library default; the run setting multiplies them so a large engagement grows without a code edit.
@@ -202,6 +202,39 @@ describe('asset/fact/hypothesis graph (K3, canonical store only)', () => {
     expect(store.assetCount()).toBe(1);
     store.recordGraph({assets:[{asset:{kind:'endpoint',key:'GET https://example.com/b'}}]});
     expect(store.assetCount()).toBe(2);
+  }));
+  it('queries current heads by kind, key prefix, label, attribute and statement with a sequence cursor (R1.3)',async()=>fixture(async store=>{
+    const admin=store.recordGraph({assets:[{asset:{kind:'endpoint',key:'GET https://example.com/admin',label:'admin gate',attributes:{feature:'admin'}}}]})[0];
+    store.recordGraph({assets:[{asset:{kind:'file',key:'src/app.py',label:'application',attributes:{feature:'upload'}}}]});
+    store.recordGraph({facts:[{assetId:admin.entityId,kind:'inferred',statement:'admin gate trusts a header',confidence:'low'}]});
+    const byKind=store.graphQuery({kind:'endpoint'});
+    expect(byKind.rows.map(row=>row.type)).toEqual(['asset']);
+    expect(byKind.rows[0]).toMatchObject({kind:'endpoint',key:'GET https://example.com/admin',label:'admin gate'});
+    expect(byKind.counts).toEqual({assets:1,assertions:0});
+    expect(store.graphQuery({kind:'file',keyPrefix:'src/'}).rows).toHaveLength(1);
+    expect(()=>store.graphQuery({keyPrefix:'src/'})).toThrow('keyPrefix needs a kind');
+    expect(store.graphQuery({labelContains:'admin'}).rows).toHaveLength(1);
+    expect(store.graphQuery({attributeKey:'feature',attributeValue:'upload'}).rows[0]).toMatchObject({key:'src/app.py'});
+    expect(store.graphQuery({assertionKind:'fact:inferred',statementContains:'header'}).rows).toHaveLength(1);
+    expect(store.graphQuery({assertionKind:'fact:observed'}).rows).toEqual([]);
+    expect(store.graphQuery({kind:'host'}).rows).toEqual([]);
+    const page=store.graphQuery({}, {limit:1});
+    expect(page.rows).toHaveLength(1);expect(page.truncated).toBe(true);expect(page.nextCursor).toBeDefined();
+    const next=store.graphQuery({}, {limit:10, cursor:page.nextCursor});
+    expect(next.rows.every(row=>row.sequence<page.nextCursor!)).toBe(true);
+    expect(()=>store.graphQuery({attributeKey:'feature'})).toThrow('pass both or neither');
+  }));
+  it('reports the new/changed asset delta and the open-hypothesis frontier (R1.3)',async()=>fixture(async store=>{
+    const one=store.recordGraph({assets:[{asset:{kind:'endpoint',key:'GET /one'}}]})[0];
+    const afterFirst=store.sequence();
+    store.recordGraph({assets:[{asset:{kind:'endpoint',key:'GET /one',label:'renamed'}},{asset:{kind:'file',key:'src/two.py'}}]});
+    store.recordGraph({hypotheses:[{assetId:one.entityId,statement:'one may be open',status:'open'}]});
+    const changes=store.graphChanges(afterFirst);
+    expect(changes.counts).toMatchObject({newAssets:1,changedAssets:1,openHypotheses:1});
+    expect(changes.changedAssets[0]).toMatchObject({entityId:one.entityId,revision:2});
+    expect(changes.newAssets[0]).toMatchObject({key:'src/two.py',revision:1});
+    expect(changes.openHypotheses[0]).toMatchObject({assetId:one.entityId,statement:'one may be open'});
+    expect(store.graphChanges(store.sequence()).counts).toMatchObject({newAssets:0,changedAssets:0});
   }));
   it('resolves batch-local refs atomically and preserves each producer without duplicate assets or repeat events',async()=>fixture(async store=>{
     const receipt=evidence(store),batch={assets:[{ref:'entry',asset:{kind:'endpoint' as const,key:'GET http://[::1]:8080/objects?x=1&x=2'}}],

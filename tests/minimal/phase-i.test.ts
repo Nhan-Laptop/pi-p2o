@@ -45,6 +45,23 @@ describe('the brief carries a bounded graph slice (P16.3)', () => {
     expect(text).toContain('step 2 of chain login ready');
   });
 
+  it('carries open hypotheses, immediate relations and one findings count as bounded background (R1.5)', () => {
+    const lines = graphSliceLines({ surface: '/login', assets: [{ entityId: 'asset-1', kind: 'route', key: '/login' }], facts: [], gaps: [], ready: [],
+      hypotheses: [{ entityId: 'assertion-h1', statement: 'trusts a forwarded header', status: 'open', producerRole: 'recon', unverified: true },
+        { entityId: 'assertion-h2', statement: 'settled already', status: 'supported' }],
+      relations: [{ entityId: 'relation-1', kind: 'exposes', fromId: 'asset-1', toId: 'asset-9', basis: 'inferred', unverified: true }],
+      acceptedFindings: { 'asset-1': 2 } });
+    const text = lines.join('\n');
+    expect(text).toContain('open hypotheses (1');
+    expect(text).toContain('trusts a forwarded header');
+    expect(text).not.toContain('settled already');
+    expect(text).toContain('immediate relations (1)');
+    expect(text).toContain('asset-1 -[exposes inferred]-> asset-9');
+    expect(text).toContain('accepted findings on these assets: 2');
+    expect(text).toContain('not evidence');
+    expect(Buffer.byteLength(text)).toBeLessThanOrEqual(8 * 1024);
+  });
+
   it('falls back to recent assets when nothing matches the surface and bounds the list', () => {
     const assets = Array.from({ length: 30 }, (_, i) => ({ entityId: `asset-${i}`, kind: 'route', key: `/other/${i}` }));
     const text = graphSliceLines({ surface: '/login', assets, facts: [], gaps: [], ready: [], limit: 5 }).join('\n');

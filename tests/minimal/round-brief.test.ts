@@ -3,7 +3,7 @@ import {
   ROUND_BRIEF_MAX_BYTES, ROUND_BRIEF_SECTION_CAPS, ROUND_DIGEST_MAX_BYTES,
   buildRoundBrief, buildRoundDigest,
   type BriefCampaign, type BriefCase, type BriefCoveragePlan, type BriefProgress, type BriefRevisit,
-  type BriefWorker, type RoundBriefInput,
+  type BriefGraphDelta, type BriefWorker, type RoundBriefInput,
 } from '../../src/round-brief.js';
 import { completionLine, deriveCompletion } from '../../src/completion.js';
 import { DEBT_KINDS, debtFor, type DebtItem, type DebtKind, type DebtReport } from '../../src/debt.js';
@@ -341,3 +341,47 @@ describe('round brief (P18.2/D46)', () => {
   });
 });
 
+describe('the brief carries the graph delta the round opened on (R1.7)', () => {
+  const graph = (overrides: Partial<BriefGraphDelta> = {}): BriefGraphDelta => ({
+    since: 42, counts: { newAssets: 2, changedAssets: 1, openHypotheses: 1, inferredRelations: 3 },
+    newAssets: [{ kind: 'endpoint', key: '/api/export' }, { kind: 'route', key: '/admin/export' }],
+    assetsWithoutClaim: 4, acceptedFindingsByAsset: [{ assetId: 'asset-aaaaaaaaaaaaaaaaaaaaaaaa', findings: 2 }],
+    openHypotheses: [{ statement: 'the export route trusts a forwarded tenant header' }], ...overrides,
+  });
+
+  it('names the new and changed assets, the unreviewed frontier and the claims that already exist', () => {
+    const brief = buildRoundBrief(fixture({ graph: graph() }));
+    expect(brief.text).toContain('Graph since 42: 2 new asset(s), 1 changed; 4 with no claim; 1 open hypothesis(es), 3 inferred relation(s) awaiting review.');
+    expect(brief.text).toContain('New assets: endpoint /api/export, route /admin/export.');
+    expect(brief.text).toContain('Accepted findings on the busiest assets: asset-aaaaaaaaaaaaaaaaaaaaaaaa 2.');
+    expect(brief.text).toContain('Open hypotheses: the export route trusts a forwarded tenant header.');
+    // It rides in the delta section, so the D46 section list does not change.
+    expect(brief.sections.map(section => section.id)).toContain('delta');
+    expect(brief.sections.find(section => section.id === 'delta')!.bytes).toBeLessThanOrEqual(ROUND_BRIEF_SECTION_CAPS.delta);
+    expect(brief.text).not.toMatch(/https?:\/\//);
+  });
+
+  it('prints nothing about the graph when the round supplied no delta, instead of claiming zero movement', () => {
+    const brief = buildRoundBrief(fixture());
+    expect(brief.text).not.toContain('Graph since');
+    expect(brief.text).toContain('Since the last round:');
+    expect(buildRoundBrief(fixture({ graph: { since: 0, counts: { newAssets: 0, changedAssets: 0, openHypotheses: 0, inferredRelations: 0 } } })).text)
+      .toContain('Graph since 0: 0 new asset(s), 0 changed; assets without a claim unknown; 0 open hypothesis(es), 0 inferred relation(s) awaiting review.');
+  });
+
+  it('bounds the graph rows it prints and reports the section cut instead of growing the brief', () => {
+    const many = graph({ counts: { newAssets: 9, changedAssets: 1, openHypotheses: 0, inferredRelations: 0 },
+      newAssets: Array.from({ length: 9 }, (_, index) => ({ kind: 'endpoint', key: `/busy/${index}` })), acceptedFindingsByAsset: [], openHypotheses: [] });
+    const brief = buildRoundBrief(fixture({ graph: many }));
+    expect(brief.text).toContain('New assets: endpoint /busy/0, endpoint /busy/1, endpoint /busy/2, ... (+6).'); // three rows, true total kept in the count
+    expect(brief.text).not.toContain('/busy/3');
+    const busy = graph({ newAssets: Array.from({ length: 9 }, (_, index) => ({ kind: 'endpoint', key: `/busy/${index}/${'x'.repeat(80)}` })),
+      acceptedFindingsByAsset: Array.from({ length: 6 }, (_, index) => ({ assetId: `asset-${String(index).padStart(24, '0')}`, findings: index + 1 })),
+      openHypotheses: [{ statement: 'h'.repeat(200) }, { statement: 'i'.repeat(200) }] });
+    const capped = buildRoundBrief(fixture({ graph: busy }));
+    expect(capped.sections.find(item => item.id === 'delta')!.truncated).toBe(true);
+    expect(capped.text).toMatch(/\[\.\.\. truncated \d+ bytes\]/);
+    expect(capped.bytes).toBeLessThanOrEqual(ROUND_BRIEF_MAX_BYTES);
+    expect(buildRoundBrief(fixture({ graph: busy })).text).toBe(capped.text);
+  });
+});

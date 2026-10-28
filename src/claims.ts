@@ -33,6 +33,20 @@ export interface ClaimFields {
   environmentRef?: unknown;
   control?: unknown;
   policyBasis?: unknown;
+  proof?: unknown;
+  taskRef?: unknown;
+  /**
+   * R1.2/D-R1-1: the pinned assets the producing task stood on, stamped by the host when the claim is recorded. It is never
+   * model input — `p2o_candidate` has no such field — so a claim's asset attachment cannot be asserted into existence.
+   */
+  assetRefs?: unknown;
+}
+
+/** R1.2: typed view of the host-stamped claim assets; legacy claims recorded before R1.2 stay asset-less. */
+export function claimAssetRefs(claim: ClaimFields): Array<{ id: string; revision?: number }> {
+  if (!Array.isArray(claim.assetRefs)) return [];
+  return (claim.assetRefs as Array<Record<string, unknown>>).flatMap(ref =>
+    ref && typeof ref.id === 'string' ? [{ id: ref.id, ...(typeof ref.revision === 'number' ? { revision: ref.revision } : {}) }] : []);
 }
 
 const DEMONSTRATED_CLOSURE = 'confirmed' satisfies ClaimClosure;

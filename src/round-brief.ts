@@ -124,12 +124,34 @@ export interface RoundBriefInput {
   progress?: BriefProgress;
   previous?: BriefProgress;
   digest?: RoundDigest;
+  /** R1.7: the graph's movement since the previous round opened, so the brief names it instead of leaving it to the tool. */
+  graph?: BriefGraphDelta;
   round: BriefRound;
   /** The same situation snapshot `/p2o status` reads; rendered as one line under the title when supplied. */
   situation?: SituationSnapshot;
 }
 
 export interface BriefSection { id: BriefSectionId; title: string; bytes: number; truncated: boolean; omitted: boolean }
+
+/**
+ * R1.7: the graph delta the round opening prints, reduced by the caller from the store's own read (`graphChanges` plus the
+ * coverage/claim joins it already has). Rows are plain strings, so this module still cannot fetch a value the caller did not
+ * derive. Absent means the graph was not read this round — the brief then says nothing rather than claiming zero movement.
+ */
+export interface BriefGraphDelta {
+  /** The committed sequence the delta starts at (the previous round's opening). */
+  since: number;
+  /** How many current assets were first recorded after `since`, and how many heads changed. */
+  counts: { newAssets: number; changedAssets: number; openHypotheses: number; inferredRelations: number };
+  /** Recorded kind and key of the new assets, bounded by the caller. */
+  newAssets?: readonly { kind: string; key: string }[];
+  /** The current-scope asset count that no claim cites: recorded surface still without even a claim. */
+  assetsWithoutClaim?: number;
+  /** Accepted (current) findings per asset, busiest first; a finding is reviewed evidence, not proof of safety elsewhere. */
+  acceptedFindingsByAsset?: readonly { assetId: string; findings: number }[];
+  /** Open hypotheses recorded by a worker, waiting for owner review. */
+  openHypotheses?: readonly { statement: string }[];
+}
 
 export interface RoundBrief {
   text: string;
@@ -337,15 +359,29 @@ function workersSection(workers: readonly BriefWorker[] | undefined): Rendered {
   return body('workers', lines);
 }
 
+/** R1.7: the graph lines the delta section carries, bounded so a busy graph cannot crowd out the counters above them. */
+function graphDeltaLines(graph: BriefGraphDelta): string[] {
+  const lines = [`Graph since ${graph.since}: ${graph.counts.newAssets} new asset(s), ${graph.counts.changedAssets} changed; `
+    + `${graph.assetsWithoutClaim === undefined ? 'assets without a claim unknown' : `${graph.assetsWithoutClaim} with no claim`}; `
+    + `${graph.counts.openHypotheses} open hypothesis(es), ${graph.counts.inferredRelations} inferred relation(s) awaiting review.`];
+  const newAssets = (graph.newAssets ?? []).slice(0, 3).map(row => `${oneLine(row.kind, 16)} ${oneLine(row.key, 60)}`);
+  if (newAssets.length) lines.push(`New assets: ${newAssets.join(', ')}${graph.counts.newAssets > newAssets.length ? `, ... (+${graph.counts.newAssets - newAssets.length})` : ''}.`);
+  const findings = (graph.acceptedFindingsByAsset ?? []).slice(0, 3);
+  if (findings.length) lines.push(`Accepted findings on the busiest assets: ${findings.map(row => `${oneLine(row.assetId, 80)} ${row.findings}`).join(', ')}.`);
+  const hypotheses = (graph.openHypotheses ?? []).slice(0, 2).map(row => oneLine(row.statement, 60)).filter(Boolean);
+  if (hypotheses.length) lines.push(`Open hypotheses: ${hypotheses.join(' | ')}.`);
+  return lines;
+}
+
 /** What changed since the previous round's counters; `remaining` always comes from the completion, not a second counter. */
 function deltaSection(input: RoundBriefInput, completion: Completion): Rendered {
-  const progress = input.progress;
-  if (!progress) return body('delta', ['No round counters were supplied; the delta since the last round is unavailable.']);
+  const progress = input.progress, graph = input.graph ? graphDeltaLines(input.graph) : [];
+  if (!progress) return body('delta', ['No round counters were supplied; the delta since the last round is unavailable.', ...graph]);
   const currentDebt = input.debt ? { gateable: input.debt.gateable, total: input.debt.total } : progress.debt;
   const previous = input.previous;
   if (!previous) {
     return body('delta', [`First round: closures ${progress.closures}; tested cells ${progress.testedCells}; assets ${progress.assets}; `
-      + `chain depth ${progress.chainDepth}; remaining ${completion.remaining}${currentDebt ? `; debt ${currentDebt.gateable} gateable` : ''}.`]);
+      + `chain depth ${progress.chainDepth}; remaining ${completion.remaining}${currentDebt ? `; debt ${currentDebt.gateable} gateable` : ''}.`, ...graph]);
   }
   const parts = [
     delta('closures', previous.closures, progress.closures),
@@ -355,7 +391,7 @@ function deltaSection(input: RoundBriefInput, completion: Completion): Rendered 
     previous.remaining !== undefined ? delta('remaining', previous.remaining, completion.remaining) : `remaining ${completion.remaining} (previous not recorded)`,
   ];
   if (currentDebt) parts.push(previous.debt ? delta('debt (gateable)', previous.debt.gateable, currentDebt.gateable) : `debt (gateable) ${currentDebt.gateable}`);
-  return body('delta', [`Since the last round: ${parts.join('; ')}.`]);
+  return body('delta', [`Since the last round: ${parts.join('; ')}.`, ...graph]);
 }
 
 /** A6.2: the derived report's own summary, plus citable ids a later plan row can wall. */

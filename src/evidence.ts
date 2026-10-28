@@ -42,6 +42,16 @@ export interface Candidate {
   payloadSha256?: string;
   environmentFingerprint?: string;
 }
+/**
+ * R1.2/D-R1-1: the pinned asset reference the host stamps on a claim from the producing task's work identity. Kept outside
+ * `Candidate` on purpose: a claim's attachment to an asset is a host derivation, not a model assertion.
+ */
+export interface ClaimAssetRef { id: string; revision?: number }
+
+/** R1.2: derive the host-stamped claim assets from a task's pinned work identity (≤10, revision kept when the task pinned it). */
+export function claimAssetRefsFromWork(work: { assetRefs?: ReadonlyArray<{ id: string; revision?: number }> } | undefined): ClaimAssetRef[] {
+  return (work?.assetRefs ?? []).slice(0, 10).map(ref => ({ id: ref.id, ...(ref.revision === undefined ? {} : { revision: ref.revision }) }));
+}
 /** Best-effort defensive redaction; exports contain only the bounded receipts, never tickets or process env. */
 export function redact(value: string): string {
   return value.replace(/["']?(authorization|proxy-authorization|cookie|set-cookie)["']?\s*:[^\r\n]*/gi, '$1: [REDACTED]')
@@ -84,7 +94,12 @@ export class EvidenceStore {
         limitations: 'Bounded redacted tool output; command semantics and claimed effect require review.' } });
     return id;
   }
-  candidate(by: string, input: Candidate, taskRef?: string): Promise<AssessmentRecord> {
+  /**
+   * R1.2/D-R1-1: `hostAssetRefs` is host-derived from the executing task's pinned work identity. It is a separate argument,
+   * not a Candidate field, so no model input can name a claim's assets; a claim recorded without a task (legacy/owner path)
+   * stays asset-less and the dossier reports it as such.
+   */
+  candidate(by: string, input: Candidate, taskRef?: string, hostAssetRefs?: readonly ClaimAssetRef[]): Promise<AssessmentRecord> {
     const task = this.pending.then(async () => {
       // A1: cosmetic prose is clamped at its stored bound with a trace on the record (identity fields keep their strict caps).
       const admissionWarnings = clampProseInPlace(input as unknown as Record<string, unknown>, PROSE_CAPS.candidate);
@@ -99,6 +114,13 @@ export class EvidenceStore {
       if (taskRef !== undefined && !/^[a-z0-9][a-z0-9-]{0,79}$/.test(taskRef)) throw Error('Invalid candidate task reference');
       const storedInput = { ...input } as Record<string, unknown>;
       delete storedInput.taskRef;
+      // R1.2/D-R1-1: host-derived asset refs are validated once, deduped and bounded, so a bad derivation cannot write a claim
+      // that points at a foreign or malformed asset id. The model never reaches this argument (see the signature note).
+      const claimAssets = [...new Map((hostAssetRefs ?? []).slice(0, 10).map(ref => [ref.id, { id: ref.id, ...(ref.revision === undefined ? {} : { revision: ref.revision }) }])).values()];
+      // The host stamp is the only writer: an `assetRefs` field arriving on the input is dropped rather than merged.
+      delete storedInput.assetRefs;
+      if (claimAssets.some(ref => !/^asset-[a-f0-9]{24}$/.test(ref.id) || (ref.revision !== undefined && (!Number.isSafeInteger(ref.revision) || ref.revision < 1))))
+        throw Error('Host claim asset reference must name an asset-<24 hex> id with a positive revision');
       // P14.2/P14.3: a payload or environment reference is a claim that the artifact exists in this run, so a dangling or foreign
       // id fails closed instead of reading as replayable.
       if (input.payloadRef !== undefined && !await payloadExists(this.path, input.payloadRef)) throw new Error(`Unknown payload reference ${input.payloadRef}; store the payload first`);
@@ -159,7 +181,7 @@ export class EvidenceStore {
         surface: input.surface, risk: input.risk, outcome: input.closure, refs: input.evidenceRefs,
         supersedes: input.supersedes, resolves: input.resolves,
         // Stamped after the spread, so a caller cannot claim a payload hash or origin task it did not run.
-        data: { ...storedInput, ...(admissionWarnings.length ? { admissionWarnings } : {}), ...(taskRef ? { taskRef } : {}), ...(payloadRef ? { payloadSha256: payloadRef.sha256 } : {}), ...(environmentRef ? { environmentFingerprint: environmentRef.fingerprint } : {}) } };
+        data: { ...storedInput, ...(admissionWarnings.length ? { admissionWarnings } : {}), ...(taskRef ? { taskRef } : {}), ...(claimAssets.length ? { assetRefs: claimAssets } : {}), ...(payloadRef ? { payloadSha256: payloadRef.sha256 } : {}), ...(environmentRef ? { environmentFingerprint: environmentRef.fingerprint } : {}) } };
       await appendRecord(this.path, record);
       return record;
     });

@@ -35,11 +35,13 @@ const batch = object({
     status: Type.Optional(choices(['active','withdrawn'])), supersedes: supersedes() }))),
   anchors: Type.Optional(Type.Array(object({ assetId: id(), assetRevision: revision(), anchor }))),
 });
-export const GRAPH_ACTIONS = ['record','view','page','export','chain'] as const;
+export const GRAPH_ACTIONS = ['record','view','page','export','chain','query','summary'] as const;
 /** P13e: exhaustive per action; `page` and `export` share a shape but are named separately. */
 export const GRAPH_ACTION_PARAMETERS: Readonly<Record<typeof GRAPH_ACTIONS[number], readonly string[]>> = {
   record: ['action','batch','requestId'], view: ['action','id','cursor','limit','asOfSequence'], chain: ['action','limit','plan','assetRefs','requestId'],
   page: ['action','cursor','limit','asOfSequence'], export: ['action','cursor','limit','asOfSequence'],
+  query: ['action','kind','keyPrefix','labelContains','attributeKey','attributeValue','assertionKind','statementContains','cursor','limit'],
+  summary: ['action','cursor','limit'],
 };
 /** Keep a root object: Pi's legacy Anthropic adapter reads only root properties/required.
  * A root anyOf silently loses all tool arguments there. Host enforces action-specific fields/limits.
@@ -51,6 +53,14 @@ export const graphParameters = object({
   asOfSequence: Type.Optional(Type.Integer({ minimum: 0 })),
   /** P14.10: `chain` can also hand back the next task draft and record the chain as todos; it never dispatches. */
   plan: Type.Optional(Type.Boolean()),
+  /** R1.3: bounded current-head query filters; each is one indexed/LIKE predicate over the asset or assertion head. */
+  kind: Type.Optional(Type.String({ minLength: 1, maxLength: 80, description: 'Asset kind (keyPrefix needs it)' })),
+  keyPrefix: Type.Optional(Type.String({ minLength: 1, maxLength: 200, description: 'Asset key prefix; needs kind' })),
+  labelContains: Type.Optional(Type.String({ minLength: 1, maxLength: 200, description: 'Asset label substring' })),
+  attributeKey: Type.Optional(Type.String({ minLength: 1, maxLength: 64, description: 'Asset attribute name (with attributeValue)' })),
+  attributeValue: Type.Optional(Type.String({ minLength: 1, maxLength: 500, description: 'Exact attribute value' })),
+  assertionKind: Type.Optional(Type.String({ minLength: 1, maxLength: 40, description: 'fact:<observed|inferred|contract|configuration> or hypothesis' })),
+  statementContains: Type.Optional(Type.String({ minLength: 1, maxLength: 200, description: 'Assertion statement substring' })),
   assetRefs: Type.Optional(Type.Array(Type.Object({ id: Type.String({ pattern: '^asset-[a-f0-9]{24}$' }), revision: Type.Optional(Type.Integer({ minimum: 1 })), variant: Type.Optional(Type.String({ maxLength: 120 })) }, { additionalProperties: false }), { minItems: 1, description: 'Assets the drafted task stands on; copied from the graph, never inferred from a surface string' })),
 }, { additionalProperties: false });
 

@@ -29,6 +29,8 @@ export function graphCeilings(capacity = 1): { assets: number; assertions: numbe
 export const GRAPH_BATCH_ROWS = 128; // includes nested anchors and their ACKs
 export const GRAPH_ROW_BYTES = 8 * 1024;
 export const GRAPH_RESPONSE_BYTES = 24 * 1024;
+/** R1.3: the summary read's own cap. Counts and the sentence always fit; machine rows are dropped tail-first when dense. */
+export const GRAPH_SUMMARY_BYTES = 8 * 1024;
 
 export interface AnchorInput { kind: typeof ANCHOR_KINDS[number]; value: string; locator?: Record<string, string>; artifactId?: string; supersedes?: string }
 export interface AssetInput { kind: typeof ASSET_KINDS[number]; key: string; label?: string; attributes?: Record<string, string>; anchors?: AnchorInput[]; evidenceRefs?: string[]; expectedRevision?: number }

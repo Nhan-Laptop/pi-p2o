@@ -195,4 +195,16 @@ describe('research debt (A6.2)', () => {
     expect(new Set(report.ids.filter(id => id.startsWith('debt-gap-untriaged-'))).size).toBe(25);
     expect(report.gateable).toBeGreaterThanOrEqual(25);
   });
+
+  it('counts a worker hypothesis and an inferred relation as gateable review debt until the owner settles them (R1.4)', () => {
+    const index = indexRecords([], 'run-graph-review');
+    const report = deriveDebt(index, { graph: { hypotheses: [{ entityId: 'assertion-h1', assetId: 'asset-a1', statement: 'the admin path bypasses the gate' }], inferredRelations: 2 } });
+    expect(report.totals.GRAPH_UNREVIEWED).toBe(2);
+    const shown = report.items.filter(item => item.kind === 'GRAPH_UNREVIEWED');
+    expect(shown.every(item => item.gateable && item.id.startsWith('debt-graph-unreviewed-'))).toBe(true);
+    expect(shown[0]!.detail).toContain('the admin path bypasses the gate');
+    expect(shown[1]!.detail).toContain('2 worker-inferred relation(s)');
+    // Settled (or owner-authored) rows never reach the derivation: the store only passes current worker heads.
+    expect(deriveDebt(index, { graph: { hypotheses: [], inferredRelations: 0 } }).totals.GRAPH_UNREVIEWED).toBe(0);
+  });
 });

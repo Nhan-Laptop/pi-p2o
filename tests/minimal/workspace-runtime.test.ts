@@ -496,10 +496,21 @@ describe('canonical owner runtime (inert execution, real SQLite and Unix broker)
       await expect(h.call('p2o_graph',{action:'record',batch:{facts:[{assetId:entityId,kind:'observed',statement:'unbacked claim',confidence:'low'}]}})).rejects.toThrow('same-run evidence receipt');
       expect(await h.call('p2o_graph',{action:'record',batch:{assets:[{asset:{kind:'endpoint',key:'GET /admin'}}]}})).toMatchObject({details:{acks:[{created:false}]}});
       const view=await h.call('p2o_graph',{action:'view',id:entityId});expect(view.details.assertions[0]).toMatchObject({statement:'gate runs server-side',stale:false});
+      // R1.1: view also answers the asset question — facts, gaps and the ledger projections — in the same bounded read.
+      expect(view.details.dossier).toMatchObject({asset:{entityId},gaps:{noClaim:true,noDemonstratedClaim:true,noCoverageCell:true}});
+      expect(view.details.dossier.facts).toEqual([expect.objectContaining({statement:'gate runs server-side'})]);
       const exported=await h.call('p2o_graph',{action:'export',limit:10});expect(exported.details.mermaid).toContain('graph LR');expect(exported.content[0].text).toContain('graph LR');
       await h.command('graph');expect(h.screen()).toContain('Asset graph scope');expect(h.screen()).toContain('GET /admin');
       await h.command(`graph ${entityId}`);expect(h.screen()).toContain('fact');expect(h.screen()).toContain('gate runs server-side');
       await expect(h.call('p2o_graph',{action:'view',id:assetId})).rejects.toThrow('Unknown asset entity');
+      // R1.3: the bounded query answers "which assets/facts match" and summary answers "what changed and what is missing".
+      const queried=await h.call('p2o_graph',{action:'query',kind:'endpoint'});
+      expect(queried.details.rows).toEqual([expect.objectContaining({type:'asset',kind:'endpoint',key:'GET /admin'})]);
+      expect(queried.details.counts).toEqual({assets:1,assertions:0});
+      await expect(h.call('p2o_graph',{action:'query',keyPrefix:'GET'})).rejects.toThrow('keyPrefix needs a kind');
+      const summary=await h.call('p2o_graph',{action:'summary',limit:3});
+      expect(summary.details.counts).toMatchObject({assets:1,newAssets:1,assetsWithoutClaim:1,openHypotheses:0});
+      expect(summary.details.rows.newAssets[0]).toMatchObject({key:'GET /admin'});
       // Worker: assets/facts/anchors allowed over the authenticated broker, owner-only rows denied; replay is ACK-only.
       const worker=(await h.call('p2o_delegate',{focus:'graph fixture',task:'record inert graph rows'})).details,ticket=await h.ticket(worker.workerId),client=new BrokerClient(ticket.socket,ticket.token);
       try {
@@ -509,10 +520,32 @@ describe('canonical owner runtime (inert execution, real SQLite and Unix broker)
         const replay=await client.request('graph_record',{batch:{assets:[{asset:{kind:'file',key:'src/gate.py'}}]}},{requestId:'worker-graph-1'});
         expect(replay.replayed).toBe(true);expect(replay.value).toEqual(first.value);
         await expect(client.request('graph_record',{batch:{assets:[{asset:{kind:'file',key:'src/other.py'}}]}},{requestId:'worker-graph-1'})).rejects.toThrow('IDEMPOTENCY_CONFLICT');
-        await expect(client.request('graph_record',{batch:{hypotheses:[{assetId:first.value[0].entityId,statement:'owner-only',status:'open'}]}})).rejects.toThrow('owner review work');
-        await expect(client.request('graph_record',{batch:{relations:[{kind:'depends_on',fromId:first.value[0].entityId,toId:first.value[0].entityId}]}})).rejects.toThrow('owner review work');
-        const read=await client.request('graph_read',{graphOp:'view',assetId:first.value[0].entityId});expect(read.value.assertions).toEqual([]);
-        const store:AssessmentStore=await h.reader();try{expect(store.events({since:0}).rows.filter(row=>row.kind==='asset.upserted')).toHaveLength(2);}finally{store.close();}
+        // R1.4/D-R1-3: a worker's working memory is an open hypothesis and an inferred relation; a verdict and an observed edge
+        // still belong to owner/planner review. The host stamps the worker's role on the row, and the owner settles it by
+        // superseding that revision (history keeps what the worker recorded).
+        const second=await client.request('graph_record',{batch:{assets:[{asset:{kind:'file',key:'src/second.py'}}]}},{requestId:'worker-graph-2'});
+        const hypothesis=await client.request('graph_record',{batch:{hypotheses:[{assetId:first.value[0].entityId,statement:'worker hypothesis',status:'open'}]}});
+        expect(hypothesis.value[0]).toMatchObject({kind:'hypothesis',created:true});
+        await expect(client.request('graph_record',{batch:{hypotheses:[{assetId:first.value[0].entityId,statement:'settled too early',status:'supported'}]}})).rejects.toThrow('status "open"');
+        const inferred=await client.request('graph_record',{batch:{relations:[{kind:'depends_on',fromId:first.value[0].entityId,toId:second.value[0].entityId}]}});
+        expect(inferred.value[0]).toMatchObject({kind:'relation',created:true});
+        await expect(client.request('graph_record',{batch:{relations:[{kind:'depends_on',fromId:first.value[0].entityId,toId:second.value[0].entityId,basis:'observed'}]}})).rejects.toThrow('Observed relations');
+        const read=await client.request('graph_read',{graphOp:'view',assetId:first.value[0].entityId});
+        expect(read.value.assertions).toEqual([expect.objectContaining({kind:'hypothesis',statement:'worker hypothesis',unverified:true,producerRole:'general'})]);
+        expect(read.value.dossier.hypotheses).toMatchObject({open:1,unreviewed:1});
+        expect(read.value.dossier.gaps).toMatchObject({noClaim:true,noDemonstratedClaim:true,openHypotheses:1});
+        const workerQuery=await client.request('graph_read',{graphOp:'query',kind:'file'});
+        expect(workerQuery.value.rows.map((row:any)=>row.key)).toEqual(expect.arrayContaining(['src/gate.py','src/second.py']));
+        const workerSummary=await client.request('graph_read',{graphOp:'summary',since:0,limit:3});
+        expect(workerSummary.value.counts).toMatchObject({assets:3,openHypotheses:1});
+        expect(workerSummary.value.rows.openHypotheses[0]).toMatchObject({statement:'worker hypothesis'});
+        const store:AssessmentStore=await h.reader();try{
+          expect(store.unreviewedGraph()).toEqual({hypotheses:[{entityId:hypothesis.value[0].entityId,assetId:first.value[0].entityId,statement:'worker hypothesis'}],inferredRelations:1});
+          const settled=await h.call('p2o_graph',{action:'record',batch:{hypotheses:[{assetId:first.value[0].entityId,statement:'worker hypothesis',status:'supported',evidenceRefs:[evidenceId],supersedes:hypothesis.value[0].id}]}});
+          expect(settled.details.acks[0]).toMatchObject({kind:'hypothesis',created:true});
+          expect(store.unreviewedGraph()).toEqual({hypotheses:[],inferredRelations:1});
+          expect(store.events({since:0}).rows.filter(row=>row.kind==='asset.upserted')).toHaveLength(3);
+        }finally{store.close();}
       } finally { client.close(); }
       const reporter=(await h.call('p2o_delegate',{focus:'report',task:'synthesize existing receipts',role:'reporting'})).details,rt=await h.ticket(reporter.workerId),reportClient=new BrokerClient(rt.socket,rt.token);
       try { await reportClient.request('runtime',{model:rt.requestedRuntime.model,thinking:rt.requestedRuntime.thinking});
@@ -665,6 +698,21 @@ describe('canonical owner runtime (inert execution, real SQLite and Unix broker)
       const writer=AssessmentStore.open(join(h.root,'.p2o-state'),id,{readOnly:false});
       try {await h.command(`recover ${id}`);expect(h.ctx.notices.at(-1)).toMatch(/locked|busy/i);} finally {writer.close();}
       const before=h.pi.messages.length;await h.command(`recover ${id}`);expect(h.screen()).toContain('HISTORICAL');expect(h.pi.messages).toHaveLength(before);expect(h.sandboxes).toHaveLength(1);
+    });
+  });
+  it('bounds a dense graph summary to 8 KiB and states the rows it dropped (R1.3)',async()=>{
+    await fixture(async h=>{
+      await h.command('--target ./source');
+      // Twelve long-key, long-label assets and ten open hypotheses: the counts must survive the bound even when the machine
+      // rows cannot, because a planner acts on "2,000 assets without a claim" long before it needs every row.
+      const assets=await h.call('p2o_graph',{action:'record',batch:{assets:Array.from({length:12},(_,index)=>({asset:{kind:'endpoint',key:`GET /dense/${index}/${'k'.repeat(180)}`,label:'L'.repeat(200)}}))}});
+      await h.call('p2o_graph',{action:'record',batch:{hypotheses:assets.details.acks.slice(0,10).map((ack:any)=>({assetId:ack.entityId,statement:`dense hypothesis ${'h'.repeat(500)}`,status:'open'}))}});
+      const summary=await h.call('p2o_graph',{action:'summary',cursor:0,limit:10});
+      expect(Buffer.byteLength(JSON.stringify(summary.details))).toBeLessThanOrEqual(8*1024);
+      expect(summary.details.omittedRows).toBeGreaterThan(0);
+      expect(summary.details.counts).toMatchObject({assets:12,newAssets:12,assetsWithoutClaim:12,openHypotheses:10}); // true totals, not the row window
+      expect(summary.details.text).toContain('machine row(s) omitted');
+      expect(Buffer.byteLength(String(summary.content[0].text))).toBeLessThanOrEqual(8*1024+64);
     });
   });
 });

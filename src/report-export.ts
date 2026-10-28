@@ -17,7 +17,7 @@ import { coverageViews, type CoverageCellView, type CoverageContext, type Covera
 import { safeText } from './evidence.js';
 import type { LedgerIndex } from './records.js';
 import type { FinishPreflight } from './finish-preflight.js';
-import { reportProjection, type ReportProjectionContext } from './report.js';
+import { reportProjection, type ReportAssetBrief, type ReportProjectionContext } from './report.js';
 import type { AuthorityMode } from './authority.js';
 import { awaitingReview, taskFrontier, taskRevisionAt } from './tasks.js';
 import { sha256Hex } from './validate.js';
@@ -98,6 +98,18 @@ const csvRow = (cells: unknown[]) => cells.map(cell => csvCell(cell)).join(',');
 const ids = (values: readonly string[] | undefined, limit = 6) => !values?.length ? 'none' : `${values.slice(0, limit).map(id => mdText(id, 80)).join(', ')}${values.length > limit ? `, … +${values.length - limit}` : ''}`;
 const list = (values: readonly string[] | undefined, limit = 6) => !values?.length ? 'none' : `${values.slice(0, limit).join('; ')}${values.length > limit ? `; … +${values.length - limit}` : ''}`;
 const rows = <T>(items: T[], limit: number) => ({ shown: items.slice(0, limit), omitted: Math.max(0, items.length - limit) });
+/**
+ * R1.6: one cited asset rendered as its recorded identity instead of a bare id. A pin that no longer matches the head is
+ * stated as stale, and an id the current graph scope cannot resolve says so rather than silently reading as a valid asset.
+ */
+export function assetText(ref: { id: string; revision?: number }, assets: Readonly<Record<string, ReportAssetBrief>>): string {
+  const brief = assets[ref.id];
+  if (!brief) return `${mdText(ref.id, 80)} (unresolved in the current graph scope)`;
+  const stale = ref.revision !== undefined && ref.revision !== brief.revision;
+  return `${mdText(brief.kind, 24)} ${mdText(brief.key, 80)}${brief.label ? ` “${mdText(brief.label, 40)}”` : ''} (${mdText(brief.id, 60)}${ref.revision !== undefined ? `@r${ref.revision}` : ''}${stale ? `, stale; current r${brief.revision}` : ''})`;
+}
+const assetIds = (refs: readonly { id: string; revision?: number }[] | undefined, assets: Readonly<Record<string, ReportAssetBrief>> | undefined, limit = 6): string =>
+  !refs?.length ? 'none' : `${refs.slice(0, limit).map(ref => assets ? assetText(ref, assets) : mdText(ref.id, 80)).join(', ')}${refs.length > limit ? `, … +${refs.length - limit}` : ''}`;
 
 
 /** Plain bounded text for JSON/CSV/fenced blocks: redacted, control and invisible characters removed, line breaks kept. Not Markdown-safe on its own. */
@@ -170,13 +182,13 @@ function findingLines(view: CaseView, cells: readonly CoverageCellView[], index:
     ...reproduction(view, index)];
 }
 
-function caseSection(view: CaseView, cells: readonly CoverageCellView[], index?: LedgerIndex, pages: readonly string[] = [], ordinal?: number): string {
+function caseSection(view: CaseView, cells: readonly CoverageCellView[], index?: LedgerIndex, pages: readonly string[] = [], ordinal?: number, assets?: Readonly<Record<string, ReportAssetBrief>>): string {
   const wstg = caseWstgKeys(view.id, view.revision, cells);
   const v2 = ordinal !== undefined;
   return [`### ${v2 ? `F-${ordinal} ` : ''}${mdText(view.title, 160)} — case ${mdText(view.id, 80)} r${view.revision}`,
     `- Verdict **${mdText(view.verdict)}**; review **${mdText(view.reviewStatus)}**; currentness **${mdText(view.currentness)}**; independent validation current: ${view.independentCurrent ? 'yes' : 'no'}${!view.independentCurrent && view.independenceReason ? ` (${mdText(view.independenceReason, 300)})` : ''}`,
     `- Policy: ${mdText(view.policyKey, 160)}${view.rootCauseKey ? `; root cause: ${mdText(view.rootCauseKey, 160)}` : ''}`,
-    `- Assets: ${ids(view.assetRefs.map(ref => ref.id))}; claims: ${ids(view.claimRefs)}; independent evidence: ${ids(view.independentEvidenceRefs)}; tasks: ${ids(view.taskRefs.map(ref => `${ref.taskId}@r${ref.revision ?? '?'}`))}`,
+    `- Assets: ${assetIds(view.assetRefs, assets)}; claims: ${ids(view.claimRefs)}; independent evidence: ${ids(view.independentEvidenceRefs)}; tasks: ${ids(view.taskRefs.map(ref => `${ref.taskId}@r${ref.revision ?? '?'}`))}`,
     `- Contradictions: ${view.contradictions.length ? view.contradictions.slice(0, 6).map(item => `${mdText(item.evidenceRef, 80)} (${mdText(item.status)})`).join(', ') : 'none recorded'}; affected variants: ${list(view.affectedVariants.map(item => mdText(item, 120)))}`,
     ...(wstg.length ? [`- WSTG tests this case addresses (see the WSTG checklist for level): ${wstg.map(key => mdText(key, 40)).join(', ')}`] : []),
     ...(v2 && index ? [...provenanceLines(view, index), ...findingLines(view, cells, index, pages)] : []),
@@ -451,6 +463,20 @@ export function renderReport(index: LedgerIndex, context: ReportProjectionContex
     `| Open gaps | ${open.length} |`, `| Worker claims | ${projection.counts.candidates} |`, `| Worker handoffs | ${projection.counts.reports} |`,
     `| Tasks awaiting owner review | ${awaiting.length} |`, `| Tasks by status | ${Object.entries(status).sort(([a], [b]) => a.localeCompare(b)).map(([name, count]) => `${mdText(name, 24)} ${count}`).join(', ') || 'none'} |`, '');
 
+  // R1.6: the recorded surface, printed only when the caller resolved it (a store with no graph read keeps the old report).
+  // An inventory is a scope statement: it is not a test, not a finding, and its rows are a sample when the total is larger.
+  if (context.inventory) {
+    const inventory = context.inventory;
+    out.push('## Asset inventory — the surface as recorded', '',
+      `Current-scope assets: **${inventory.total}**. An asset is an address or object this run recorded; its presence is not a test, not a finding and not a statement about its safety.${inventory.total > inventory.rows.length ? ` The table lists the ${inventory.rows.length} most recently recorded, so it is a sample.` : ''}`, '');
+    if (inventory.rows.length) {
+      out.push('| Kind | Key | Label | Revision | Id |', '|---|---|---|---|---|');
+      for (const row of inventory.rows) out.push(`| ${mdText(row.kind, 24)} | ${mdText(row.key, 80)} | ${row.label ? mdText(row.label, 60) : '—'} | r${row.revision} | ${mdText(row.id, 60)} |`);
+      if (inventory.total > inventory.rows.length) out.push('', `… ${inventory.total - inventory.rows.length} more asset(s) in this scope; see the graph export.`);
+    } else out.push('No asset is recorded in the current scope, so there is nothing to inventory. That is not a statement about the target.', '');
+    out.push('');
+  }
+
   out.push('## Coverage and gaps — read before the findings', '');
   if (!plans.length) out.push('No coverage plan was recorded. Without a denominator nothing can be called covered.', '');
   for (const plan of plans) {
@@ -460,7 +486,7 @@ export function renderReport(index: LedgerIndex, context: ReportProjectionContex
     const listed = rows(notClean.filter(item => item.plan.id === plan.id), ROWS);
     if (listed.shown.length) {
       out.push('', '| Cell | Asset | Question | Actor / method | Execution | Assessment | Currentness |', '|---|---|---|---|---|---|---|');
-      for (const { cell } of listed.shown) out.push(`| ${mdText(cell.id, 80)} | ${mdText(cell.assetRef.id, 80)} | ${mdText(cell.questionKey, 120)} | ${mdText(`${cell.actorContext} / ${cell.methodFamily}`, 160)} | ${mdText(cell.execution, 24)} | ${mdText(cell.effectiveAssessment, 24)} | ${mdText(cell.currentness, 24)}${cell.staleReasons.length ? ` (${mdText(cell.staleReasons.slice(0, 3).join('; '), 160)})` : ''} |`);
+      for (const { cell } of listed.shown) out.push(`| ${mdText(cell.id, 80)} | ${context.assets ? assetText(cell.assetRef, context.assets) : mdText(cell.assetRef.id, 80)} | ${mdText(cell.questionKey, 120)} | ${mdText(`${cell.actorContext} / ${cell.methodFamily}`, 160)} | ${mdText(cell.execution, 24)} | ${mdText(cell.effectiveAssessment, 24)} | ${mdText(cell.currentness, 24)}${cell.staleReasons.length ? ` (${mdText(cell.staleReasons.slice(0, 3).join('; '), 160)})` : ''} |`);
       if (listed.omitted) out.push('', `… ${listed.omitted} more cells that are not tested or not confirmed; see coverage.csv.`);
     } else out.push('', 'Every cell in this plan is tested and has a non-open assessment. That is a statement about the recorded plan only.');
     out.push('');
@@ -488,7 +514,7 @@ export function renderReport(index: LedgerIndex, context: ReportProjectionContex
   }
   out.push('## Accepted current cases', '');
   if (!accepted.length) out.push(`No case was accepted and current at sequence ${meta.asOfSequence}. This does not mean the target is safe; see the coverage and gaps above.`, '');
-  else { const listed = rows(shownAccepted, CASE_ROWS); for (const [position, view] of listed.shown.entries()) out.push(caseSection(view, everyCell, index, pages, v2 ? position + 1 : undefined), ''); if (listed.omitted) out.push(`… ${listed.omitted} more accepted cases; see cases.csv.`, ''); }
+  else { const listed = rows(shownAccepted, CASE_ROWS); for (const [position, view] of listed.shown.entries()) out.push(caseSection(view, everyCell, index, pages, v2 ? position + 1 : undefined, context.assets), ''); if (listed.omitted) out.push(`… ${listed.omitted} more accepted cases; see cases.csv.`, ''); }
 
   out.push('## Other cases', '');
   if (!others.length) out.push('None.', '');

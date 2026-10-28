@@ -29,7 +29,7 @@ import { capabilityMatches, describeCapability, readCapabilities } from '../../s
 import type { Counted } from '../../src/counts.js';
 import type { CaseListPage, ChainViewPage, TaskListPage, WorkersNavigation } from '../../src/tool-results.js';
 import { assertCounted, counted, countedTail } from '../../src/counts.js';
-import { claimCapabilities, claimNeeds, demonstratedGained, isDemonstrated, isOpenGap, isTestedCell, type ClaimFields } from '../../src/claims.js';
+import { claimAssetRefs, claimCapabilities, claimNeeds, demonstratedGained, isDemonstrated, isOpenGap, isTestedCell, type ClaimFields } from '../../src/claims.js';
 import { appendRecord, appendRecords, indexRecords, observeRecords, readLedger, ledgerPage, recordsSize, summarizeRecords, waitForRecordChange, type AssessmentRecord, type CoverageOutcome, type LedgerPage, type LedgerIndex, type RecordAck, appendGeneratedRecords, recordSurface } from '../../src/records.js';
 import { runtimeIdentity } from '../../src/runtime-digest.js';
 import { withBoundaries } from '../../src/tool-guidelines.js';
@@ -45,9 +45,9 @@ import { PLANNER_PROMPT_SECTION, plannerInstructions, roundWrapDirective, worker
 import { authorityCounters, authorityReport, wakeRoundCount } from '../../src/authority.js';
 import { isWorkPurpose, purposeFromRole, type WorkPurpose } from '../../src/duties.js';
 import { SkillLibrary, packageRoot } from '../../src/skills.js';
-import { EvidenceStore, redact, type Candidate } from '../../src/evidence.js';
+import { EvidenceStore, claimAssetRefsFromWork, redact, type Candidate } from '../../src/evidence.js';
 import { identitySummary, loadIdentityFile, redactSecretBytes, redactSecrets, sealIdentity, secretViews, substituteSecrets, substituteShellSecrets, type IdentityFile } from '../../src/identity.js';
-import { TaskBoard, taskCapsule, taskFrontier, awaitingReview, isSatisfiedTask, terminalState, type TaskDraft, type TaskMethod, type AssessmentTask } from '../../src/tasks.js';
+import { TaskBoard, taskCapsule, taskFrontier, taskHead, awaitingReview, isSatisfiedTask, terminalState, type TaskDraft, type TaskMethod, type AssessmentTask } from '../../src/tasks.js';
 import { planFrontier, PlanBoard, boundPlanRequest, type PlanDraft } from '../../src/planning.js';
 import { PLAN_ACTION_PARAMETERS, PLAN_ACTIONS } from '../../src/work-tool.js';
 import { CaseBoard, boundCaseRequest, boundRatingRequest, needsCaseReview } from '../../src/cases.js';
@@ -96,7 +96,8 @@ import { StateScreen, widgetComponent, renderTaskResult, renderStateEntry } from
 import { uiRefreshDelay } from '../../src/ui/refresh.js';
 import { ARTIFACT_INVALID, AssessmentStore, finalizationReserve, MAX_ARTIFACT_BYTES, type MutationRequest, type StoreFault, type StoreManifest } from '../../src/state/store.js';
 import { bindAssessmentStore } from '../../src/state/adapter.js';
-import { graphObject, type GraphAck, type GraphProducer } from '../../src/state/graph.js';
+import { GRAPH_RESPONSE_BYTES, GRAPH_SUMMARY_BYTES, graphObject, type GraphAck, type GraphProducer } from '../../src/state/graph.js';
+import { assetDossier, type DossierClaim, type DossierCase, type DossierCoverageCell, type DossierFact, type DossierHypothesis, type DossierRelationRow, type DossierTaskRow } from '../../src/graph-dossier.js';
 import { GRAPH_ACTION_PARAMETERS, GRAPH_ACTIONS, graphParameters, normalizeGraphRecord } from '../../src/state/graph-tool.js';
 import { renderReport } from '../../src/report-export.js';
 import { searchLines, searchRecords } from '../../src/search.js';
@@ -198,7 +199,7 @@ interface OwnerRun {
   roundOpened?: { through: number; round: number };
   /** P18.2/D46: the ledger position the previous round opened at, so its own records stay the round window and older material
    *  folds into the briefing's digest instead of disappearing with the replaced session. */
-  roundWindow?: { round: number; records: number };
+  roundWindow?: { round: number; records: number; sequence?: number };
   /** P18.6/D50: what each earlier round closed, oldest first, so routing can prove the two-round escalation streak. A count is
    *  the difference between consecutive round openings, read from the same closures counter the engine judges. */
   roundClosed?: number[];
@@ -524,7 +525,7 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
     const wrote = writeBack({ provenance: current.store.graphSnapshot().provenance, records: index.records,
       findings: new Map([...current.workers.values()].filter(entry => entry.reported).map(entry => [entry.workerId, entry.reported!.findings.length] as const)) });
     const featureAssets = current.store.recordedFeatureAssets();
-    return deriveDebt(index, { coverage: context.coverage, cases: context.cases, features: current.store.recordedFeatureValues(), ...(featureAssets.length ? { featureAssets } : {}), wrote,
+    return deriveDebt(index, { coverage: context.coverage, cases: context.cases, features: current.store.recordedFeatureValues(), ...(featureAssets.length ? { featureAssets } : {}), wrote, graph: current.store.unreviewedGraph(),
       // A6.1/P18/A9: the campaign frame is the same record the prompt and the report read. Every automatic run records one,
       // so a missing record is named as debt instead of being inferred from prose.
       ...(context.campaign ? { campaign: { objective: context.campaign.objective } } : {}),
@@ -587,6 +588,21 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
           leads: leadFrontier(read.index).map(lead => ({ state: lead.state, severity: lead.severity })) });
       } catch { return undefined; }
     })();
+    // R1.7: the graph's movement since the previous round opened, folded into the brief's delta section from the same store and
+    // ledger read. A run without a graph, or a store that cannot answer, keeps the old delta instead of printing a false zero.
+    const graph = (() => {
+      try {
+        const since = current.roundWindow?.sequence ?? 0, delta = current.store.graphChanges(since, 6);
+        const claimAssets = new Set(read.claims.flatMap(claim => claimAssetRefs(claim)).map(ref => ref.id));
+        const findings = new Map<string, number>();
+        for (const item of read.cases) if (item.acceptedFinding) for (const ref of item.assetRefs) findings.set(ref.id, (findings.get(ref.id) ?? 0) + 1);
+        return { since, counts: delta.counts, newAssets: delta.newAssets.slice(0, 3).map(row => ({ kind: row.kind, key: row.key })),
+          assetsWithoutClaim: current.store.assetEntityIds().filter(id => !claimAssets.has(id)).length,
+          acceptedFindingsByAsset: [...findings.entries()].sort((left, right) => right[1] - left[1] || left[0].localeCompare(right[0])).slice(0, 3)
+            .map(([assetId, count]) => ({ assetId, findings: count })),
+          openHypotheses: delta.openHypotheses.slice(0, 2).map(row => ({ statement: row.statement })) };
+      } catch { return undefined; }
+    })();
     const brief = buildRoundBrief({
       ...(current.campaign ? { campaign: current.campaign } : {}),
       completion: read.completion,
@@ -595,7 +611,7 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
       workers: operatorWorkers(current), revisits: current.engine.pendingRevisits(),
       progress: read.progress, previous: current.engine.previousProgress(),
       digest, round: { number: wake.round, budget: current.roundBudget },
-      ...(situation ? { situation } : {}),
+      ...(situation ? { situation } : {}), ...(graph ? { graph } : {}),
     });
     // P18.6/D50: the loadout is routed from the same read, so the round's model and its brief cannot describe different rounds.
     const route = routeRound({
@@ -1130,18 +1146,132 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
     return { workerId, status, paneClosed: closed, ...(taskWithdrawn ? { taskWithdrawn } : {}) };
   }
 
+  /** R1.3: keep a query page inside the graph response bound by dropping trailing rows and accounting for them. */
+  function boundedQueryPage<T extends { rows: unknown[]; omitted: number; truncated: boolean; nextCursor?: number }>(page: T): T {
+    let value = page;
+    while (Buffer.byteLength(JSON.stringify(value)) > GRAPH_RESPONSE_BYTES && value.rows.length > 1)
+      value = { ...value, rows: value.rows.slice(0, -1), omitted: value.omitted + 1, truncated: true };
+    return value;
+  }
+  /**
+   * R1.1: `view` plus the derived dossier. The graph read stays the only source of graph rows; claims/cases/cells/tasks are the
+   * ledger projections the rest of the loop already uses, so the dossier cannot invent a finding. Trailing rows are dropped only
+   * when the encoded response would cross the existing 24 KiB graph bound, and the dossier carries the omission counters.
+   */
+  async function graphViewFor(current: OwnerRun, id: string, options: { since?: number; limit?: number; asOfSequence?: number }) {
+    const view = current.store.assetView(id, options);
+    const head = view.head as unknown as Record<string, unknown>, entityId = view.entityId;
+    const index = await readLedger(current.records, current.runId), claims = claimHeadClaims(index, current.runId), context = current.store.reviewContext();
+    const cases = caseViews(index, context.cases), coverage = coverageViews(index, context.coverage), tasks = taskFrontier(index);
+    const rows = <T extends { superseded?: boolean }>(list: readonly T[]): T[] => list.filter(row => row.superseded !== true);
+    const assertions = rows(view.assertions), relations = rows(view.relations);
+    const facts: DossierFact[] = assertions.filter(row => String(row.kind).startsWith('fact:')).map(row => ({ entityId: String(row.entityId), kind: String(row.kind),
+      statement: String((row as unknown as Record<string, unknown>).statement ?? ''), ...(typeof (row as unknown as Record<string, unknown>).confidence === 'string' ? { confidence: String((row as unknown as Record<string, unknown>).confidence) } : {}),
+      ...(typeof (row as unknown as Record<string, unknown>).producerRole === 'string' ? { producerRole: String((row as unknown as Record<string, unknown>).producerRole) } : {}) }));
+    const hypotheses: DossierHypothesis[] = assertions.filter(row => row.kind === 'hypothesis').map(row => ({ entityId: String(row.entityId),
+      statement: String((row as unknown as Record<string, unknown>).statement ?? ''), status: String((row as unknown as Record<string, unknown>).status ?? 'open'),
+      ...(typeof (row as unknown as Record<string, unknown>).impact === 'string' ? { impact: String((row as unknown as Record<string, unknown>).impact) } : {}),
+      ...(typeof (row as unknown as Record<string, unknown>).producerRole === 'string' ? { producerRole: String((row as unknown as Record<string, unknown>).producerRole) } : {}),
+      ...((row as unknown as Record<string, unknown>).unverified === true ? { unverified: true } : {}) }));
+    const relationRows: DossierRelationRow[] = relations.map(row => {
+      const data = row as unknown as Record<string, unknown>;
+      return { entityId: String(row.entityId), kind: String(row.kind), direction: (data.direction as 'incoming' | 'outgoing') ?? 'outgoing',
+        otherId: String(data.fromId) === entityId ? String(data.toId) : String(data.fromId),
+        ...(typeof data.basis === 'string' ? { basis: data.basis } : {}), ...(data.unverified === true ? { unverified: true } : {}), ...(typeof data.note === 'string' ? { note: data.note } : {}) };
+    });
+    const claimRows: DossierClaim[] = claims.flatMap(claim => {
+      const pinned = claimAssetRefs(claim).filter(ref => ref.id === entityId);
+      if (!pinned.length) return [];
+      return [{ recordId: claim.recordId ?? claim.candidate, candidate: claim.candidate, ...(typeof claim.closure === 'string' ? { closure: claim.closure } : {}),
+        ...(typeof claim.execution === 'string' ? { execution: claim.execution } : {}), ...(typeof claim.proof === 'string' ? { proof: claim.proof } : {}),
+        ...(typeof (claim as unknown as Record<string, unknown>).taskRef === 'string' ? { taskRef: String((claim as unknown as Record<string, unknown>).taskRef) } : {}),
+        assetRevisions: pinned.flatMap(ref => ref.revision === undefined ? [] : [ref.revision]), stale: pinned.some(ref => ref.revision !== view.revision) }];
+    });
+    const caseRows: DossierCase[] = cases.filter(item => item.assetRefs.some(ref => ref.id === entityId)).map(item => ({ id: item.id, title: String(item.title), ...(item.finding?.severity ? { severity: item.finding.severity } : {}),
+      ...(typeof item.reviewStatus === 'string' ? { reviewStatus: item.reviewStatus } : {}), acceptedFinding: item.acceptedFinding, currentness: item.currentness }));
+    const cellRows: DossierCoverageCell[] = coverage.flatMap(plan => plan.cells.filter(cell => cell.assetRef.id === entityId).map(cell => ({ planId: plan.id, questionKey: cell.questionKey,
+      ...(typeof cell.execution === 'string' ? { execution: cell.execution } : {}), ...(typeof cell.assessment === 'string' ? { assessment: cell.assessment } : {}), currentness: cell.currentness })));
+    const taskRows: DossierTaskRow[] = tasks.filter(task => (task.work?.assetRefs ?? []).some(ref => ref.id === entityId)).map(task => ({ id: task.id, status: task.status, ...(typeof task.question === 'string' ? { question: task.question } : {}) }));
+    const dossier = assetDossier({ asset: { entityId, kind: String(head.kind ?? 'other'), key: String(head.key ?? ''), ...(typeof head.label === 'string' ? { label: head.label } : {}), revision: view.revision },
+      counts: view.counts, facts, hypotheses, relations: relationRows, claims: claimRows, cases: caseRows, cells: cellRows, tasks: taskRows });
+    let value: Record<string, unknown> = { ...view, dossier };
+    const trim = (key: 'facts' | 'claims' | 'cases' | 'tasks', list: Array<Record<string, unknown>>) => {
+      if (!list.length) return; dossier.omitted[key] += 1;
+      if (key === 'facts') dossier.facts = dossier.facts.slice(0, -1);
+      if (key === 'claims') dossier.claims = dossier.claims.slice(0, -1);
+      if (key === 'cases') dossier.cases = dossier.cases.slice(0, -1);
+      if (key === 'tasks') dossier.tasks = dossier.tasks.slice(0, -1);
+      value = { ...view, dossier };
+    };
+    for (const key of ['facts', 'claims', 'cases', 'tasks'] as const) {
+      while (Buffer.byteLength(JSON.stringify(value)) > GRAPH_RESPONSE_BYTES && dossier[key].length > 1) trim(key, dossier[key] as unknown as Array<Record<string, unknown>>);
+    }
+    while (Buffer.byteLength(JSON.stringify(value)) > GRAPH_RESPONSE_BYTES && dossier.relations.length > 1) { dossier.omitted.relations += 1; dossier.relations = dossier.relations.slice(0, -1); value = { ...view, dossier }; }
+    while (Buffer.byteLength(JSON.stringify(value)) > GRAPH_RESPONSE_BYTES && dossier.hypotheses.rows.length > 1) { dossier.omitted.hypotheses += 1; dossier.hypotheses.rows = dossier.hypotheses.rows.slice(0, -1); value = { ...view, dossier }; }
+    return value;
+  }
+  /**
+   * R1.3: the one bounded "what changed and what is still missing" read. Graph delta comes from the store; claim attachment,
+   * accepted findings, coverage cells and chain frontier come from the same ledger projections the rest of the loop reads, so
+   * the summary cannot disagree with the dossier or the report. Nothing here is evidence: an accepted finding is still a case.
+   */
+  async function graphSummaryFor(current: OwnerRun, since: number, limit: number) {
+    const delta = current.store.graphChanges(since, 10);
+    const index = await readLedger(current.records, current.runId);
+    const claims = claimHeadClaims(index, current.runId), context = current.store.reviewContext();
+    const cases = caseViews(index, context.cases), coverage = coverageViews(index, context.coverage), tasks = taskFrontier(index), plans = planFrontier(index);
+    const claimAssets = new Set(claims.flatMap(claim => claimAssetRefs(claim)).map(ref => ref.id));
+    const cellAssets = new Set(coverage.flatMap(plan => plan.cells.map(cell => cell.assetRef.id)));
+    const assets = current.store.assetEntityIds();
+    const findings = new Map<string, number>();
+    for (const item of cases) if (item.acceptedFinding) for (const ref of item.assetRefs) findings.set(ref.id, (findings.get(ref.id) ?? 0) + 1);
+    const obligations = chainObligations({ plans, claims, tasks });
+    const withoutClaim = assets.filter(id => !claimAssets.has(id)), withoutCell = assets.filter(id => !cellAssets.has(id));
+    const clip = (value: string, max: number) => value.length > max ? `${value.slice(0, max)}…` : value;
+    const counts = { assets: assets.length, newAssets: delta.counts.newAssets, changedAssets: delta.counts.changedAssets, assetsWithoutClaim: withoutClaim.length,
+      assetsWithoutCell: withoutCell.length, openHypotheses: delta.counts.openHypotheses, inferredRelations: delta.counts.inferredRelations,
+      acceptedFindings: [...findings.values()].reduce((sum, n) => sum + n, 0), chainReady: obligations.ready.length, chainUnchained: obligations.unchained.length };
+    const rows: Record<string, unknown[]> = {
+      newAssets: delta.newAssets.slice(0, limit).map(row => ({ ...row, key: clip(row.key, 200) })),
+      changedAssets: delta.changedAssets.slice(0, limit).map(row => ({ ...row, key: clip(row.key, 200) })),
+      openHypotheses: delta.openHypotheses.slice(0, limit).map(row => ({ ...row, statement: clip(row.statement, 200) })),
+      assetsWithoutClaim: withoutClaim.slice(0, limit), assetsWithoutCell: withoutCell.slice(0, limit),
+      acceptedFindingsByAsset: [...findings.entries()].slice(0, limit).map(([assetId, findings]) => ({ assetId, findings })),
+    };
+    const text = `Graph since ${since} (as of ${delta.asOfSequence}): ${counts.assets} asset(s); ${counts.newAssets} new, ${counts.changedAssets} changed; ${counts.assetsWithoutClaim} without a claim, ${counts.assetsWithoutCell} without a coverage cell; ${counts.openHypotheses} open hypothesis(es), ${counts.inferredRelations} inferred relation(s) awaiting review; ${counts.acceptedFindings} accepted finding(s); chain ${counts.chainReady} ready, ${counts.chainUnchained} unchained primitive(s).`;
+    const summary = { scope: delta.scope, asOfSequence: delta.asOfSequence, since, limit, counts, rows, text };
+    // R1.3: hard 8 KiB bound. The counts and the sentence are what a planner acts on, so a dense graph drops machine rows
+    // tail-first and says how many, instead of shipping an oversized JSON body or silently clipping it. The omission
+    // sentence is part of the projection, so the second pass keeps the bound true after the sentence is added.
+    const order = ['acceptedFindingsByAsset', 'newAssets', 'changedAssets', 'assetsWithoutClaim', 'assetsWithoutCell', 'openHypotheses'];
+    let dropped = 0;
+    for (const key of order) while (Buffer.byteLength(JSON.stringify(summary)) > GRAPH_SUMMARY_BYTES && rows[key]!.length > 0) { rows[key] = rows[key]!.slice(0, -1); dropped += 1; }
+    if (!dropped) return summary;
+    const result = { ...summary, text: `${text} ${dropped} machine row(s) omitted to keep this summary under ${GRAPH_SUMMARY_BYTES} bytes; the counts above are the true totals, and query/export has the rows.`, omittedRows: dropped };
+    for (const key of order) while (Buffer.byteLength(JSON.stringify(result)) > GRAPH_SUMMARY_BYTES && rows[key]!.length > 0) { rows[key] = rows[key]!.slice(0, -1); result.omittedRows += 1; }
+    return result;
+  }
   /** P16.3: what the run already recorded, bounded and labelled background, so a worker starts from the graph. */
   async function graphSlice(current: OwnerRun, surface: string): Promise<string[]> {
     try {
       const index = await readLedger(current.records, current.runId), claims = claimHeadClaims(index, current.runId);
       const ready = chainObligations({ plans: planFrontier(index), claims, tasks: taskFrontier(index) }).ready;
-      const graph = current.store.graphSnapshot();
+      const graph = current.store.graphSnapshot(), cases = caseViews(index, current.store.reviewContext().cases);
+      const findings: Record<string, number> = {};
+      for (const item of cases) if (item.acceptedFinding) for (const ref of item.assetRefs) findings[ref.id] = (findings[ref.id] ?? 0) + 1;
+      const rows = graph.relations as unknown as Array<Record<string, unknown>>;
+      const relations = rows.map(row => ({ entityId: String(row.entityId), ...(typeof row.kind === 'string' ? { kind: row.kind } : {}), fromId: String(row.fromId), toId: String(row.toId),
+        ...(typeof row.basis === 'string' ? { basis: row.basis } : {}), ...(row.unverified === true ? { unverified: true } : {}) }));
+      const hypotheses = (graph.assertions as unknown as Array<Record<string, unknown>>).map(row => ({ entityId: String(row.entityId),
+        ...(typeof row.statement === 'string' ? { statement: row.statement } : {}), ...(typeof row.status === 'string' ? { status: row.status } : {}),
+        ...(typeof row.producerRole === 'string' ? { producerRole: row.producerRole } : {}), ...(row.unverified === true ? { unverified: true } : {}) }));
       return graphSliceLines({
         surface,
         assets: graph.assets as unknown as SliceAssetRow[],
         facts: graph.assertions as unknown as SliceFactRow[],
         gaps: claims.filter(claim => isOpenGap(claim)).map(claim => ({ id: claim.recordId ?? claim.candidate, text: claim.surface ?? claim.candidate })),
         ready: ready.map(step => ({ chain: step.chainOf, step: step.step, needs: [describeCapability(step.need)] })),
+        relations, hypotheses, acceptedFindings: findings,
       });
     } catch { return []; }
   }
@@ -1295,7 +1425,7 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
     const context = store.reviewContext();
     let debt: DebtReport | undefined;
     const featureAssets = store.recordedFeatureAssets();
-    try { debt = deriveDebt(index, { coverage: context.coverage, cases: context.cases, features: store.recordedFeatureValues(), ...(featureAssets.length ? { featureAssets } : {}), ...(wrote.size ? { wrote: [...wrote.values()] } : {}) }); }
+    try { debt = deriveDebt(index, { coverage: context.coverage, cases: context.cases, features: store.recordedFeatureValues(), ...(featureAssets.length ? { featureAssets } : {}), ...(wrote.size ? { wrote: [...wrote.values()] } : {}), graph: store.unreviewedGraph() }); }
     catch { /* Debt is advisory to the report; a failure only means the report does not restate it. */ }
     // A6.6: the campaign frame, the wake counts and a recorded partial reason, from the same ledger the report indexes.
     const recordedCampaign = store.campaign(), partialStop = store.campaignPartial(), counters = authorityCounters(index), wakeTotal = wakeRoundCount(index);
@@ -1356,7 +1486,16 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
       // P1: human interventions recorded in the same ledger, so the report self-evidences them instead of inferring them.
       humanResumes: counters.campaignResumes, stallEscalations: counters.stallEscalations,
       startedAt: recordedCampaign.startedAt, ...(index.records.length ? { endedAt: index.records.at(-1)!.at } : {}), ...(partialStop ? { partialReason: partialStop.reason } : {}) } } : {};
-    const rendered = renderReport(index, context,
+    // R1.6: resolve the asset ids the report cites (accepted cases and coverage cells) to the identity the graph recorded,
+    // and print a bounded current-scope inventory. A store that cannot answer keeps the raw-id rendering the report had before.
+    let assetContext: Pick<ReportProjectionContext, 'assets' | 'inventory'> = {};
+    try {
+      const cited = [...caseViews(index, context.cases).flatMap(view => view.assetRefs.map(ref => ref.id)),
+        ...coverageViews(index, context.coverage).flatMap(plan => plan.cells.map(cell => cell.assetRef.id))];
+      const brief = cited.length ? store.assetBrief(cited) : {}, inventory = store.assetInventory(20);
+      if (Object.keys(brief).length || inventory.total) assetContext = { assets: brief, inventory };
+    } catch { /* Resolution is contextual; the raw ids remain the fallback. */ }
+    const rendered = renderReport(index, { ...context, ...assetContext },
       { runId: manifest.runId, target: manifest.targetDisplay, retention: manifest.retention, historical: store.readOnly, asOfSequence: index.snapshotSequence ?? store.sequence(), storeSchema: store.schemaVersion,
         runtime: { hash: manifest.profile.runtimeHash, version: extra.owner ? runtimeVersion : undefined }, complete: index.complete,
         // A4: the report states the mode that produced the run next to the authority counters and role matrix.
@@ -2275,7 +2414,13 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
     return { value, replayed: Boolean(prior) };
   }
   async function recordCandidate(current: OwnerRun, by: string, candidate: Candidate, taskId?: string) {
-    const record=await track(current,current.evidence.candidate(by, candidate, taskId));
+    // R1.2/D-R1-1: the host, never the model, attaches a claim to the assets its producing task stands on. The claim schema has
+    // no asset field, and an input that smuggles one is refused here rather than stored as an assertion the host did not make.
+    if (Object.prototype.hasOwnProperty.call(candidate as unknown as Record<string, unknown>, 'assetRefs'))
+      throw Error('Claim assets are host-stamped from the executing task: put the pinned assetRefs on the task work identity, not on the claim');
+    const task = taskId ? taskHead(await readLedger(current.records, current.runId), taskId) : undefined;
+    const assets = claimAssetRefsFromWork(task?.work);
+    const record=await track(current,current.evidence.candidate(by, candidate, taskId, assets));
     current.engine.notify(candidate.supersedes?'support-invalidated':'candidate-revised',candidate.candidate,candidate.supersedes?'Exact reviewed support may be stale; inspect cases/coverage before reuse':candidate.closure);
     if (isDemonstrated(candidate)) await hostValidation(current, by, record, candidate, taskId).catch(async error => {
       try { await note({ by:'owner', kind:'lifecycle', text:`auto validation blocked for ${candidate.candidate}: ${cleanText(message(error)).slice(0,400)}` }); } catch { /* The claim is already committed; a note failure must not rewrite it. */ }
@@ -2983,7 +3128,7 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
   });
   registerTool({
     name:'p2o_graph',label:'Asset graph',exposure:'model-only',parameters:graphParameters,
-    description:'Read bounded scoped graph knowledge or record an atomic batch. Record: requestId is a sibling of batch (a batch.requestId is hoisted); an assets[] row is {asset:{kind,key,...},ref?} or the same asset fields directly on the row. Exact kind/key identity is versioned; no implicit URL/path/method normalization, permission or verified finding. Use asset ref labels with @ref within a batch. Records include host-assigned producer/task; duplicate content retains additional producers without duplicate assets. Workers record assets/facts/anchors; hypotheses and relations are coordination work, and reporting is read-only. Claims need same-run evidence (inferred facts stay unverified). Pin assetRevision/expectedRevision and supersedes to refuse stale updates. Secret-bearing identities are refused; use non-secret labels. view/page default20/max100, export default200/max500, encoded reads at most24KiB with exact omissions/cursors; follow cursor and asOfSequence for stable history. chain joins the typed gained/needs capabilities into ready/unmet/frontier (owner coordination); plan:true also returns the exact p2o_task_author draft for the deepest ready step and records one plan todo per step as a linked chain (chainOf/step/claimRefs/needs; readiness is derived from the claims earlier steps cite, so p2o_board board=plans shows the step frontier), dispatching nothing. Identical requestId/payload returns the retained ACK; this never replays target operations.',
+    description:'Read bounded graph knowledge or record a batch. Record: requestId is a batch sibling (a batch.requestId is hoisted); an assets[] row is {asset:{kind,key,...},ref?} or flat fields. Exact kind/key identity is versioned; no implicit URL/path/method normalization, permission or finding. Use @ref within a batch. Host assigns producer/task; duplicates keep producers not assets. Workers record assets/facts/anchors, open hypotheses and basis=inferred relations (unverified); observed relations and settled hypotheses are owner/planner review; reporting is read-only. Claims need same-run evidence (inferred facts stay unverified). Pin revisions/supersedes to refuse stale writes. Secret identities refused. view/page 20/100 default/max, export 200/500, encoded reads ≤24KiB with exact omissions/cursors; cursor+asOfSequence are stable. query filters current heads by kind/keyPrefix/label/attributes/assertionKind/statement; summary returns the since-delta with assets lacking a claim/cell, open hypotheses, findings per asset and chain counts. chain joins gained/needs into ready/unmet/frontier (owner); plan:true returns the p2o_task_author draft for the deepest ready step and records one todo per step (chainOf/step/claimRefs/needs; readiness derives from the cited claims, so p2o_board board=plans shows the frontier), dispatching nothing. Identical requestId/payload returns the retained ACK, never a replay.',
     async execute(_id,params,_signal,_update,ctx){
       const current=run;
       if(!current||current.phase!=='active'||(current.role==='owner'&&current.ctx.cwd!==ctx.cwd))fail('NO_ASSESSMENT','No active p2o assessment in this session');
@@ -3029,6 +3174,18 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
           return textResult(JSON.stringify({acks,replayed:Boolean(prior),warning:'Knowledge recorded, no scope or proof upgrade'}), {acks,replayed:Boolean(prior)});
         })());
       }
+      if(params.action==='query'||params.action==='summary'){
+        const query={kind:params.kind,keyPrefix:params.keyPrefix,labelContains:params.labelContains,attributeKey:params.attributeKey,attributeValue:params.attributeValue,assertionKind:params.assertionKind,statementContains:params.statementContains};
+        if(current.role==='worker'){
+          const response=await worker().client.request<{value:Record<string,unknown>}>('graph_read',{graphOp:params.action,...(params.action==='query'?query:{}),cursor:params.cursor,limit:params.limit},{timeoutMs:30000});
+          return textResult(cleanText(JSON.stringify(response.value)), response.value);
+        }
+        return track(current,(async()=>{
+          assertOwnerActive(current);
+          const value=params.action==='query'?boundedQueryPage(current.store.graphQuery(query,{cursor:params.cursor,limit:params.limit})):await graphSummaryFor(current,params.cursor??0,Math.min(params.limit??5,10));
+          return textResult(cleanText(JSON.stringify(value)), value);
+        })());
+      }
       if(params.action==='view'&&!params.id)fail('INVALID_INPUT','view needs an asset entity ID: use the entityId a page row returns, not the asset key');
       const options={since:params.cursor,limit:params.limit,asOfSequence:params.asOfSequence};
       if(current.role==='worker'){
@@ -3037,7 +3194,7 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
       }
       return track(current,(async()=>{
         assertOwnerActive(current);
-        const value=params.action==='view'?current.store.assetView(params.id!,options):params.action==='export'?current.store.graphExport(options):current.store.graphPage(options);
+        const value=params.action==='view'?await graphViewFor(current,params.id!,options):params.action==='export'?current.store.graphExport(options):current.store.graphPage(options);
         return textResult(cleanText(JSON.stringify(value)), value);
       })());
     },
@@ -3803,7 +3960,12 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
               assertOwnerActive(current);
               if (current.workers.get(registration.workerId)!==registration || !request || request.actorId!==registration.workerId) throw Error('Authenticated graph delivery required');
               if (registration.role==='reporting') throw Error('Reporting role is synthesis-only; graph recording denied');
-              if (batch?.hypotheses?.length || batch?.relations?.length) throw Error('Workers record assets, facts and anchors; hypotheses and relations are owner review work');
+              // R1.4/D-R1-3: a worker may record working memory — an open hypothesis and an inferred relation — while observed
+              // relations and settled hypotheses stay owner/planner review. The refusal names the legal write instead of the wall.
+              const settled = (batch?.hypotheses ?? []).find(h => h && h.status !== 'open');
+              if (settled) throw Error(`A worker hypothesis is a starting point, not a verdict: record status "open" (got "${String(settled.status).slice(0, 20)}"); the owner settles it by superseding with supported, refuted or inconclusive`);
+              const observed = (batch?.relations ?? []).find(r => r && r.basis === 'observed');
+              if (observed) throw Error('Observed relations are fact edges and stay planner/owner work; record basis=inferred for what this assignment inferred, and the owner can promote it');
               return current.store.recordGraph(batch,request,{actorId:registration.workerId,taskId:registration.taskId,role:registration.role,depth:registration.depth});
             })()),
             graphReplay: async (batch, registration, request) => {
@@ -3814,11 +3976,16 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
             graphRead: (op, params, registration) => track(current,(async () => {
               assertOwnerActive(current);
               if (current.workers.get(registration.workerId)!==registration) throw Error('Registered worker required for graph reads');
-              graphObject(params,['id','op','requestId','graphOp','assetId','since','limit','asOfSequence'],'Graph read request');
+              graphObject(params,['id','op','requestId','graphOp','assetId','since','limit','asOfSequence','kind','keyPrefix','labelContains','attributeKey','attributeValue','assertionKind','statementContains'],'Graph read request');
               const options={since:params.since as number|undefined,limit:params.limit as number|undefined,asOfSequence:params.asOfSequence as number|undefined};
-              if (op === 'view') return current.store.assetView(String(params.assetId),options); // RPC id is correlation, not domain identity.
+              if (op === 'view') return graphViewFor(current,String(params.assetId),options); // RPC id is correlation, not domain identity.
               if (op === 'export') return current.store.graphExport(options);
               if (op === 'page') return current.store.graphPage(options);
+              // R1.3: query/summary are reads, so a worker exercises the same bounded code path the owner does.
+              if (op === 'query') return boundedQueryPage(current.store.graphQuery({kind:params.kind as string|undefined,keyPrefix:params.keyPrefix as string|undefined,labelContains:params.labelContains as string|undefined,
+                attributeKey:params.attributeKey as string|undefined,attributeValue:params.attributeValue as string|undefined,assertionKind:params.assertionKind as string|undefined,statementContains:params.statementContains as string|undefined},
+                {cursor:params.since as number|undefined,limit:params.limit as number|undefined}));
+              if (op === 'summary') return graphSummaryFor(current,Number(params.since ?? 0),Math.min(Number(params.limit ?? 5),10));
               throw Error('Unknown graph read operation');
             })()),
             knowledge: (op, request, registration) => readKnowledge(current, op, request, registration.workerId),
@@ -4035,7 +4202,8 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
         // The replacement's `session_start` runs before `withSession`, so the round number must be known by then.
         current.roundSession = { id: '', round: wake.round };
         current.roundOpened = { through: wake.through, round: wake.round };
-        if (briefing) current.roundWindow = { round: wake.round, records: briefing.records };
+        // R1.7: the store sequence this round opened at, so the next round's graph delta starts where this one did.
+        if (briefing) current.roundWindow = { round: wake.round, records: briefing.records, sequence: current.store.sequence() };
         const outcome = await ctx.newSession({
           withSession: async replaced => {
             if (!live()) return;

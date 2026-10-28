@@ -106,6 +106,8 @@ describe('Rounds as fresh sessions (P18.1/D45)',()=>{
       // wake open round 2 exactly as the engine would.
       await h.emit('agent_start');
       await h.emit('context',{messages:[{role:'user',content:h.pi.messages[1]}]});
+      // R1.7: the graph moved during round 1, so the round 2 opening names that movement instead of leaving the lead to ask.
+      const asset=(await h.call('p2o_graph',{action:'record',batch:{assets:[{asset:{kind:'endpoint',key:'/round-two'}}]}})).details.acks[0];
       await h.emit('message_end',{message:{role:'assistant',stopReason:'stop',content:[{type:'text',text:'round one done'}]}});
       await h.emit('agent_settled');
       await until(()=>h.pi.sessions.length===2);
@@ -117,6 +119,10 @@ describe('Rounds as fresh sessions (P18.1/D45)',()=>{
       expect(second.brief).not.toContain('First round:');
       expect(second.brief).toContain('## Older material');
       expect(second.brief).toMatch(/Folded \d+ older record\(s\)/);
+      // R1.7: the asset recorded in round 1 is the round 2 delta, read from the store sequence the round opened at.
+      expect(second.brief).toMatch(/Graph since \d+: 1 new asset\(s\), \d+ changed; \d+ with no claim;/);
+      expect(second.brief).toContain('New assets: endpoint /round-two');
+      expect(asset.entityId).toMatch(/^asset-[a-f0-9]{24}$/);
       expect(Buffer.byteLength(second.brief)).toBeLessThanOrEqual(ROUND_BRIEF_MAX_BYTES);
       expect((await eventRows(h,'planner.round-session')).map(row=>row.data.engine.round)).toEqual([1,2]);
     });

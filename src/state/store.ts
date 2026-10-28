@@ -51,6 +51,17 @@ export interface StoreManifest {
     effectClasses?: CaseEffect[] };
   sourceSnapshotSha256?: string; sourceEntries?: number; sourceSkipped?: number;
 }
+export interface GraphQueryFilters { kind?: string; keyPrefix?: string; labelContains?: string; attributeKey?: string; attributeValue?: string; assertionKind?: string; statementContains?: string }
+export interface GraphQueryRow { type: 'asset' | 'assertion'; entityId: string; revision: number; sequence: number; kind: string;
+  key?: string; label?: string; subjectId?: string; statement?: string; status?: string; confidence?: string; producerRole?: string; unverified?: boolean }
+export interface GraphQueryPage { scope: string; asOfSequence: number; filters: GraphQueryFilters; rows: GraphQueryRow[];
+  counts: { assets: number; assertions: number }; shown: { assets: number; assertions: number }; omitted: number; truncated: boolean; nextCursor?: number }
+export interface GraphAssetBrief { id: string; kind: string; key: string; label?: string; revision: number }
+export interface GraphAssetChange { entityId: string; revision: number; sequence: number; kind: string; key: string; label?: string }
+export interface GraphChanges { scope: string; asOfSequence: number; since: number;
+  newAssets: GraphAssetChange[]; changedAssets: GraphAssetChange[]; openHypotheses: Array<{ entityId: string; assetId: string; statement: string; producerRole?: string }>;
+  counts: { newAssets: number; changedAssets: number; openHypotheses: number; inferredRelations: number } }
+
 export interface MutationRequest { actorId: string; requestId: string; payload: unknown }
 export interface StateEvent {
   sequence: number; eventId: string; schemaVersion: number; runId: string; kind: EventKind;
@@ -661,6 +672,125 @@ export class AssessmentStore {
   /** Current same-scope asset heads: an M6 progress counter (distinct identities, matching `graphSummary().assets`), never a
    *  quota or an authority renewal. Counting retained revisions here would report an update as a new asset. */
   assetCount(): number { this.gate(); return Number(this.db.prepare('SELECT count(DISTINCT entity_id) AS n FROM assets WHERE scope=?').get(this.graphScope())!.n); }
+  /**
+   * R1.4/D-R1-3: current graph rows a worker produced and the owner has not settled. An owner/planner supersede rewrites the
+   * head with `producerRole:'owner'` (and a settled status for a hypothesis), so review discharges the item without deleting
+   * the worker's revision from history. Bounded: at most 20 hypotheses plus one aggregated relation count.
+   */
+  unreviewedGraph(): { hypotheses: Array<{ entityId: string; assetId: string; statement: string }>; inferredRelations: number } {
+    this.gate();
+    const currentHead = (table: string, body: string) => `SELECT body FROM ${table} r WHERE r.sequence=(SELECT MAX(s.sequence) FROM ${table} s WHERE s.entity_id=r.entity_id)`;
+    const hypotheses = (this.db.prepare(`${currentHead('assertions', 'body')} AND kind='hypothesis' AND json_extract(body,'$.status')='open' AND json_extract(body,'$.producerRole') IN ('general','recon','discovery','validation') ORDER BY entity_id LIMIT 20`).all() as Array<{ body: string }>)
+      .map(row => JSON.parse(row.body) as { entityId?: unknown; subjectId?: unknown; statement?: unknown }).flatMap(row => typeof row.entityId === 'string' && typeof row.statement === 'string'
+        ? [{ entityId: row.entityId, assetId: typeof row.subjectId === 'string' ? row.subjectId : '', statement: row.statement }] : []);
+    const inferredRelations = Number((this.db.prepare('SELECT count(*) AS n FROM relations r WHERE r.sequence=(SELECT MAX(s.sequence) FROM relations s WHERE s.entity_id=r.entity_id) AND json_extract(body,\'$.basis\')=\'inferred\' AND json_extract(body,\'$.unverified\')=1').get() as { n: number } | undefined)?.n ?? 0);
+    return { hypotheses, inferredRelations };
+  }
+  /**
+   * R1.3/D-R1-12: bounded prefix/label/attribute/statement query over current heads. SQL, not a scan of the snapshot: every
+   * filter is parameterised, `keyPrefix` rides the (scope,kind,key) index and only exists with a kind, LIKE patterns are
+   * escaped, and paging is by sequence so a cursor is a stable barrier rather than an offset into shifting rows.
+   */
+  graphQuery(filters: GraphQueryFilters = {}, options: { cursor?: number; limit?: number } = {}): GraphQueryPage {
+    this.gate();
+    const limit = options.limit ?? 20;
+    if (!Number.isSafeInteger(limit) || limit < 1 || limit > 50) throw Error('Invalid graph query limit; use 1..50');
+    const asOfSequence = this.sequence(), cursor = options.cursor ?? asOfSequence + 1;
+    if (!Number.isSafeInteger(cursor) || cursor < 1 || cursor > asOfSequence + 1) throw Error('Invalid graph query cursor');
+    const escape = (value: string) => value.replace(/[\\%_]/g, match => `\\${match}`);
+    if (filters.keyPrefix !== undefined && !filters.kind) throw Error('query keyPrefix needs a kind: the identity index is (scope,kind,key), so a bare prefix would scan every asset');
+    if ((filters.attributeKey === undefined) !== (filters.attributeValue === undefined)) throw Error('query attributeKey and attributeValue are one filter: pass both or neither');
+    const assetWhere = ['a.scope=?'], assetArgs: SQLInputValue[] = [this.graphScope()];
+    if (filters.kind !== undefined) { assetWhere.push('a.kind=?'); assetArgs.push(filters.kind); }
+    if (filters.keyPrefix !== undefined) { assetWhere.push("a.key LIKE ? ESCAPE '\\'"); assetArgs.push(`${escape(filters.keyPrefix)}%`); }
+    if (filters.labelContains !== undefined) { assetWhere.push("json_extract(a.body,'$.label') LIKE ? ESCAPE '\\'"); assetArgs.push(`%${escape(filters.labelContains)}%`); }
+    if (filters.attributeKey !== undefined) { assetWhere.push("(json_extract(a.body,'$.attributes') ->> ?) = ?"); assetArgs.push(filters.attributeKey, filters.attributeValue!); }
+    const assertionWhere = ['EXISTS (SELECT 1 FROM assets x WHERE x.entity_id=a.subject_id AND x.scope=?)'], assertionArgs: SQLInputValue[] = [this.graphScope()];
+    if (filters.assertionKind !== undefined) { assertionWhere.push('a.kind=?'); assertionArgs.push(filters.assertionKind); }
+    if (filters.statementContains !== undefined) { assertionWhere.push("json_extract(a.body,'$.statement') LIKE ? ESCAPE '\\'"); assertionArgs.push(`%${escape(filters.statementContains)}%`); }
+    const head = (table: string) => `a.sequence=(SELECT MAX(b.sequence) FROM ${table} b WHERE b.entity_id=a.entity_id)`;
+    const hasAssetFilter = [filters.kind, filters.keyPrefix, filters.labelContains, filters.attributeKey].some(value => value !== undefined);
+    const hasAssertionFilter = filters.assertionKind !== undefined || filters.statementContains !== undefined;
+    const includeAssets = hasAssetFilter || !hasAssertionFilter, includeAssertions = hasAssertionFilter || !hasAssetFilter;
+    const rows: GraphQueryRow[] = [];
+    let assetsTotal = 0, assertionsTotal = 0;
+    if (includeAssets) {
+      const where = `WHERE ${head('assets')} AND ${assetWhere.join(' AND ')}`, base = `FROM assets a ${where}`;
+      assetsTotal = Number(this.db.prepare(`SELECT count(*) AS n ${base}`).get(...assetArgs)!.n);
+      for (const row of this.db.prepare(`SELECT a.entity_id,a.revision,a.sequence,a.kind,a.key,a.body ${base} AND a.sequence<? ORDER BY a.sequence DESC,a.entity_id LIMIT ?`).all(...assetArgs, cursor, limit + 1) as Array<Record<string, unknown>>) {
+        const body = JSON.parse(String(row.body)) as { label?: unknown };
+        rows.push({ type: 'asset', entityId: String(row.entity_id), revision: Number(row.revision), sequence: Number(row.sequence), kind: String(row.kind), key: String(row.key), ...(typeof body.label === 'string' ? { label: body.label } : {}) });
+      }
+    }
+    if (includeAssertions) {
+      const where = `WHERE ${head('assertions')} AND ${assertionWhere.join(' AND ')}`, base = `FROM assertions a ${where}`;
+      assertionsTotal = Number(this.db.prepare(`SELECT count(*) AS n ${base}`).get(...assertionArgs)!.n);
+      for (const row of this.db.prepare(`SELECT a.entity_id,a.subject_id,a.revision,a.sequence,a.kind,a.body ${base} AND a.sequence<? ORDER BY a.sequence DESC,a.entity_id LIMIT ?`).all(...assertionArgs, cursor, limit + 1) as Array<Record<string, unknown>>) {
+        const body = JSON.parse(String(row.body)) as Record<string, unknown>;
+        rows.push({ type: 'assertion', entityId: String(row.entity_id), subjectId: String(row.subject_id), revision: Number(row.revision), sequence: Number(row.sequence), kind: String(row.kind),
+          ...(typeof body.statement === 'string' ? { statement: body.statement } : {}), ...(typeof body.status === 'string' ? { status: body.status } : {}),
+          ...(typeof body.confidence === 'string' ? { confidence: body.confidence } : {}), ...(typeof body.producerRole === 'string' ? { producerRole: body.producerRole } : {}),
+          ...(body.unverified === true ? { unverified: true } : {}) });
+      }
+    }
+    rows.sort((a, b) => b.sequence - a.sequence || (a.entityId < b.entityId ? -1 : a.entityId > b.entityId ? 1 : 0));
+    const shown = rows.slice(0, limit), counts = { assets: assetsTotal, assertions: assertionsTotal }, shownCounts = { assets: shown.filter(row => row.type === 'asset').length, assertions: shown.filter(row => row.type === 'assertion').length };
+    const truncated = assetsTotal + assertionsTotal > shown.length;
+    return { scope: this.graphScope(), asOfSequence, filters, rows: shown, counts, shown: shownCounts, omitted: assetsTotal + assertionsTotal - shown.length, truncated,
+      ...(truncated && shown.length ? { nextCursor: shown[shown.length - 1]!.sequence } : {}) };
+  }
+  /** R1.3: the graph delta a round/summary read needs — new and revised identities and the current open-hypothesis frontier. */
+  graphChanges(since = 0, limit = 10): GraphChanges {
+    this.gate();
+    const asOfSequence = this.sequence();
+    if (!Number.isSafeInteger(since) || since < 0 || since > asOfSequence) throw Error('Invalid graph change barrier');
+    if (!Number.isSafeInteger(limit) || limit < 1 || limit > 50) throw Error('Invalid graph change limit; use 1..50');
+    const firstSeq = '(SELECT MIN(b.sequence) FROM assets b WHERE b.entity_id=a.entity_id)';
+    const head = 'a.sequence=(SELECT MAX(b.sequence) FROM assets b WHERE b.entity_id=a.entity_id)';
+    const readAssets = (sql: string, args: SQLInputValue[]) => (this.db.prepare(sql).all(...args) as Array<Record<string, unknown>>).map(row => {
+      const body = JSON.parse(String(row.body)) as { label?: unknown };
+      return { entityId: String(row.entity_id), revision: Number(row.revision), sequence: Number(row.sequence), kind: String(row.kind), key: String(row.key), ...(typeof body.label === 'string' ? { label: body.label } : {}) };
+    });
+    const base = `SELECT a.entity_id,a.revision,a.sequence,a.kind,a.key,a.body FROM assets a WHERE ${head} AND a.scope=`;
+    const scope = this.graphScope();
+    const newAssets = readAssets(`${base}? AND ${firstSeq}>? ORDER BY a.sequence DESC LIMIT ?`, [scope, since, limit]);
+    const changedAssets = readAssets(`${base}? AND ${firstSeq}<=? AND a.sequence>? ORDER BY a.sequence DESC LIMIT ?`, [scope, since, since, limit]);
+    const newAssetCount = Number(this.db.prepare(`SELECT count(*) AS n FROM assets a WHERE ${head} AND a.scope=? AND ${firstSeq}>?`).get(scope, since)!.n);
+    const changedAssetCount = Number(this.db.prepare(`SELECT count(*) AS n FROM assets a WHERE ${head} AND a.scope=? AND ${firstSeq}<=? AND a.sequence>?`).get(scope, since, since)!.n);
+    const hypothesisBase = `FROM assertions a WHERE a.kind='hypothesis' AND a.sequence=(SELECT MAX(b.sequence) FROM assertions b WHERE b.entity_id=a.entity_id) AND json_extract(a.body,'$.status')='open' AND EXISTS (SELECT 1 FROM assets x WHERE x.entity_id=a.subject_id AND x.scope=?)`;
+    const openHypotheses = (this.db.prepare(`SELECT a.entity_id,a.subject_id,a.body ${hypothesisBase} ORDER BY a.sequence DESC LIMIT ?`).all(scope, limit) as Array<Record<string, unknown>>).flatMap(row => {
+      const body = JSON.parse(String(row.body)) as { statement?: unknown; producerRole?: unknown };
+      return typeof body.statement === 'string' ? [{ entityId: String(row.entity_id), assetId: String(row.subject_id), statement: body.statement, ...(typeof body.producerRole === 'string' ? { producerRole: body.producerRole } : {}) }] : [];
+    });
+    const openHypothesisCount = Number(this.db.prepare(`SELECT count(*) AS n ${hypothesisBase}`).get(scope)!.n);
+    return { scope, asOfSequence, since, newAssets, changedAssets, openHypotheses,
+      counts: { newAssets: newAssetCount, changedAssets: changedAssetCount, openHypotheses: openHypothesisCount, inferredRelations: this.unreviewedGraph().inferredRelations } };
+  }
+  /** R1.6: bounded identity resolution for the report — kind/key/label/revision for the referenced asset ids, current scope only. */
+  assetBrief(ids: readonly string[]): Record<string, GraphAssetBrief> {
+    this.gate();
+    const unique = [...new Set(ids)].slice(0, 200);
+    const out: Record<string, GraphAssetBrief> = {};
+    if (!unique.length) return out;
+    const marks = unique.map(() => '?').join(',');
+    const rows = this.db.prepare(`SELECT entity_id, revision, body FROM assets a WHERE a.scope=? AND a.entity_id IN (${marks})
+      AND a.sequence=(SELECT MAX(b.sequence) FROM assets b WHERE b.entity_id=a.entity_id)`).all(this.graphScope(), ...unique) as Array<Record<string, unknown>>;
+    for (const row of rows) {
+      const body = JSON.parse(String(row.body)) as { kind?: unknown; key?: unknown; label?: unknown };
+      out[String(row.entity_id)] = { id: String(row.entity_id), kind: String(body.kind ?? 'other'), key: String(body.key ?? ''), ...(typeof body.label === 'string' ? { label: body.label } : {}), revision: Number(row.revision) };
+    }
+    return out;
+  }
+  /** R1.6: the report's bounded asset inventory — newest current heads, plus the true total so the omission is printed. */
+  assetInventory(limit = 20): { rows: GraphAssetBrief[]; total: number } {
+    this.gate();
+    if (!Number.isSafeInteger(limit) || limit < 1 || limit > 100) throw Error('Invalid asset inventory limit; use 1..100');
+    const total = Number(this.db.prepare('SELECT count(DISTINCT entity_id) AS n FROM assets WHERE scope=?').get(this.graphScope())!.n);
+    const rows = this.db.prepare(`SELECT a.entity_id, a.revision, a.body FROM assets a WHERE a.scope=? AND a.sequence=(SELECT MAX(b.sequence) FROM assets b WHERE b.entity_id=a.entity_id)
+      ORDER BY a.sequence DESC, a.entity_id LIMIT ?`).all(this.graphScope(), limit) as Array<Record<string, unknown>>;
+    return { total, rows: rows.map(row => { const body = JSON.parse(String(row.body)) as { kind?: unknown; key?: unknown; label?: unknown };
+      return { id: String(row.entity_id), kind: String(body.kind ?? 'other'), key: String(body.key ?? ''), ...(typeof body.label === 'string' ? { label: body.label } : {}), revision: Number(row.revision) }; }) };
+  }
   /** Target/source identity is knowledge scoping, not live origin permission. */
   graphScope(): string {
     this.gate(); const m=this.manifest();
@@ -692,7 +822,7 @@ export class AssessmentStore {
    * Read-only; absent when nothing is owed, so a packet with no debt is byte-identical to one before A6.
    */
   private debtReport(limit = 12): ContextDebt | undefined {
-    const index = indexRecords(this.records(), this.manifest().runId), featureAssets = this.recordedFeatureAssets(), report = deriveDebt(index, { ...this.reviewContext(), features: this.recordedFeatureValues(), ...(featureAssets.length ? { featureAssets } : {}) });
+    const index = indexRecords(this.records(), this.manifest().runId), featureAssets = this.recordedFeatureAssets(), report = deriveDebt(index, { ...this.reviewContext(), features: this.recordedFeatureValues(), ...(featureAssets.length ? { featureAssets } : {}), graph: this.unreviewedGraph() });
     if (!report.total) return undefined;
     const shown = report.items.slice(0, limit), byKind = Object.fromEntries(DEBT_KINDS.filter(kind => report.totals[kind] > 0).map(kind => [kind, report.totals[kind]]));
     const summary = debtSummary(report);
@@ -847,8 +977,10 @@ export class AssessmentStore {
         const h=validateHypothesis(input),subjectId=resolve(input.assetId),subject=this.requireAsset(subjectId,h.assetRevision);
         if(h.status!=='open'&&!h.evidenceRefs.length&&!h.counterevidenceRefs.length)throw Error('A resolved hypothesis needs same-run evidence or counterevidence');
         this.evidenceRefs(h.evidenceRefs,'Hypothesis evidence');this.evidenceRefs(h.counterevidenceRefs,'Hypothesis counterevidence');
+        // R1.4/D-R1-3: a worker hypothesis is marked unverified and carries its producer role; an owner/planner supersede is
+        // how the review settles it, and the dossier/summary/debt read the same fields.
         write('assertions','hypothesis',assertionId(subjectId,'hypothesis',h.statement,h.supersedes),{subjectId},
-          {subjectId,subjectRevision:subject.revision,kind:'hypothesis',statement:h.statement,status:h.status,impact:h.impact,evidenceRefs:h.evidenceRefs,counterevidenceRefs:h.counterevidenceRefs,unverified:true},
+          {subjectId,subjectRevision:subject.revision,kind:'hypothesis',statement:h.statement,status:h.status,impact:h.impact,evidenceRefs:h.evidenceRefs,counterevidenceRefs:h.counterevidenceRefs,unverified:true,producerRole:attribution.role??'owner'},
           'assertion.revised',[...h.evidenceRefs,...h.counterevidenceRefs],h.supersedes);
       }
       for(const input of batch.relations??[]){
@@ -856,8 +988,10 @@ export class AssessmentStore {
         if(fromId===toId)throw Error('A relation cannot point an asset at itself');
         const from=this.requireAsset(fromId,r.fromRevision),to=this.requireAsset(toId,r.toRevision);
         this.evidenceRefs(r.evidenceRefs,'Relation evidence');if(r.basis==='observed'&&!r.evidenceRefs.length)throw Error('Observed relations need same-run evidence');
+        // R1.4/D-R1-3: only observed relations are fact edges; a worker's inferred edge stays marked unverified with its producer
+        // role so a path query and the dossier can treat it as a hypothesis rather than as established structure.
         write('relations','relation',relationEntityId(scope,r.kind,fromId,toId),{kind:r.kind,fromId,toId},
-          {kind:r.kind,fromId,toId,fromRevision:from.revision,toRevision:to.revision,note:r.note,evidenceRefs:r.evidenceRefs,basis:r.basis,status:r.status},'assertion.revised',r.evidenceRefs,r.supersedes);
+          {kind:r.kind,fromId,toId,fromRevision:from.revision,toRevision:to.revision,note:r.note,evidenceRefs:r.evidenceRefs,basis:r.basis,status:r.status,producerRole:attribution.role??'owner',...(attribution.role&&attribution.role!=='owner'?{unverified:true}:{})},'assertion.revised',r.evidenceRefs,r.supersedes);
       }
       for(const item of batch.anchors??[]){graphObject(item,['assetId','assetRevision','anchor'],'Graph anchor row');const assetId=resolve(item.assetId);
         if(item.assetRevision!==undefined&&(!Number.isSafeInteger(item.assetRevision)||item.assetRevision<1))throw Error('Anchor asset revision must be a positive integer');
