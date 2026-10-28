@@ -490,6 +490,8 @@ describe('canonical owner runtime (inert execution, real SQLite and Unix broker)
       expect(recorded.details.acks[0]).toMatchObject({kind:'asset',revision:1,created:true});
       const entityId=recorded.details.acks[0].entityId as string;
       const evidenceId=(await h.call('p2o_note',{kind:'evidence',text:'bounded inert receipt'})).details.recordId as string;
+      // A1: the note kind is optional and omitted means the generic note, recorded without refusing the call.
+      expect((await h.call('p2o_note',{text:'default-kind observation'})).details.kind).toBe('note');
       await h.call('p2o_graph',{action:'record',batch:{facts:[{assetId:entityId,kind:'observed',statement:'gate runs server-side',confidence:'high',evidenceRefs:[evidenceId]}]}});
       await expect(h.call('p2o_graph',{action:'record',batch:{facts:[{assetId:entityId,kind:'observed',statement:'unbacked claim',confidence:'low'}]}})).rejects.toThrow('same-run evidence receipt');
       expect(await h.call('p2o_graph',{action:'record',batch:{assets:[{asset:{kind:'endpoint',key:'GET /admin'}}]}})).toMatchObject({details:{acks:[{created:false}]}});

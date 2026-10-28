@@ -57,7 +57,8 @@ export const TASK_ACTION_PARAMETERS: Readonly<Record<typeof TASK_ACTIONS[number]
  * and REPORT_PROSE_CAPS in broker.ts; at least 4x, never below 2000 characters), so a
  * verbose value reaches the host, which truncates it and returns a `truncated:` warning, instead of Pi's argument validator
  * refusing the whole call and echoing the payload back. Identity-shaped fields (ids, slugs, capability subjects) keep their
- * strict caps: truncating those would silently change what the record means.
+ * strict caps: truncating those would silently change what the record means. The same decision admits a field whose omission
+ * has one conservative meaning: `candidate.closure` omitted is open_proof_gap and `negativeControls` omitted is no control.
  */
 export const surfaceParameters = Type.Object({component:Type.String({minLength:1,maxLength:2000}),entryPoint:Type.String({minLength:1,maxLength:2000}),text:Type.Optional(Type.String({maxLength:4000})),refs:Type.Optional(Type.Array(Type.String({maxLength:80})))},{additionalProperties:false});
 
@@ -71,16 +72,19 @@ export { capabilitySchema };
 
 export const candidateParameters = Type.Object({
       candidate: Type.String({ pattern: '^[a-z0-9][a-z0-9-]{0,79}$' }), surface: Type.String({ minLength: 1, maxLength: 2000 }), risk: Type.String({ minLength: 1, maxLength: 2000, description: 'Grouping label for this claim; it is compared with the task risk and is never read as a severity or a ceiling.' }),
-      closure: choices(CANDIDATE_CLOSURES),
+      // A1 (owner decision 2026-10-28): an omitted closure is a claim that establishes nothing, so the host records
+      // open_proof_gap on the record; the omission is admitted rather than losing the whole call to Pi's validator.
+      closure: Type.Optional(choices(CANDIDATE_CLOSURES, 'Omit while the claim establishes nothing; the host records open_proof_gap')),
       execution: choices(CANDIDATE_EXECUTIONS),
       proof: choices(CANDIDATE_PROOFS),
       evidenceRefs: Type.Array(Type.String({ maxLength: 80 }), { description: 'Owner-generated Evidence ID UUIDs from tool results, not invented labels or probe cell names' }),
-      negativeControls: Type.Array(Type.String({ maxLength: 80 }), { description: 'Evidence ID UUIDs of commands containing the negative-control observations; describe individual control cells in limitations, not in this ID array' }),
+      // A1: "no control ran" is the empty list, so a caller that ran none omits the field and the host records [].
+      negativeControls: Type.Optional(Type.Array(Type.String({ maxLength: 80 }), { description: 'Evidence ID UUIDs of commands containing the negative-control observations; describe individual control cells in limitations, not in this ID array. Omit when no control ran and the host records []' })),
       policyBasis: choices(POLICY_BASES, 'Intended-policy provenance: boundary_invariant only when the effect itself establishes the boundary it breaks; a sibling route, placeholder credential or CVE lead alone is inferred (see your evidence rules)'),
-      expectedPolicy: Type.String({ minLength: 1, maxLength: 1000, description: 'State the violated intended policy/invariant and its provenance; a sibling route difference alone is only inferred' }),
-      limitations: Type.String({ minLength: 1, maxLength: 6000 }), control: Type.Optional(Type.String({ maxLength: 4000 })),
+      expectedPolicy: Type.String({ minLength: 1, maxLength: 4000, description: 'State the violated intended policy/invariant and its provenance; a sibling route difference alone is only inferred. The host stores at most 1000 characters and names the cut' }),
+      limitations: Type.String({ minLength: 1, maxLength: 6000 }), control: Type.Optional(Type.String({ maxLength: 4000, description: 'Required when closure=ruled_out: the specific control observation and where it ran' })),
       resolves: Type.Optional(Type.Array(Type.String({ maxLength: 80 }))),
-      requirement: Type.Optional(Type.String({ minLength: 10, maxLength: 1000, description: 'For blocked execution, describe the wall that actually stopped it: a tool or host that refused, a permission the host enforces, or an approach you exhausted. A missing credential, account or browser is not a wall — provision it and retry. Not a capability ID' })), supersedes: Type.Optional(Type.String({ maxLength: 80 })), independentEvidenceRef: Type.Optional(Type.String({ maxLength: 80 })),
+      requirement: Type.Optional(Type.String({ minLength: 10, maxLength: 1000, description: 'For blocked execution, describe the wall that actually stopped it: a tool or host that refused, a permission the host enforces, or an approach you exhausted. A missing credential, account or browser is not a wall — provision it and retry. Not a capability ID' })), supersedes: Type.Optional(Type.String({ maxLength: 80, description: 'Revision only: the latest record ID for this candidate; a revision cannot change surface or risk, so use a new candidate ID for that' })), independentEvidenceRef: Type.Optional(Type.String({ maxLength: 80, description: 'A receipt a different worker authored, whose own demonstrated claim reproduces this surface/risk; your own receipt cannot make a claim independent' })),
       gained: Type.Optional(Type.Array(capabilitySchema, { description: 'Typed capabilities this primitive hands to a later step, so the lead can join them to another step\'s needs' })),
       needs: Type.Optional(Type.Array(capabilitySchema, { description: 'Typed capabilities this primitive needs from an earlier step or the environment; omit when nothing outside the surface must hold' })),
       note: Type.Optional(Type.String({ maxLength: 2000, description: 'Free text caveat about the capability pair; displayed, never matched' })),
@@ -180,7 +184,7 @@ export const httpParameters = Type.Object({
     });
 
 export const noteParameters = Type.Object({
-      kind: choices(['note', 'coverage', 'observation', 'open']),
+      kind: Type.Optional(choices(['note', 'coverage', 'observation', 'open'], 'Defaults to note; use coverage for a surface × risk × outcome row')),
       text: Type.String({ minLength: 1, maxLength: 8000 }),
       surface: Type.Optional(Type.String({ maxLength: 2000 })),
       risk: Type.Optional(Type.String({ maxLength: 2000, description: 'Grouping label for this coverage row; not a severity, a ceiling or a limit on what may be attempted.' })),
@@ -231,7 +235,7 @@ export const reportParameters = Type.Object({
       evidence: Type.Optional(Type.Array(Type.String({ maxLength: 2000 }))),
       coverage: Type.Optional(Type.Array(Type.Object({ surface: Type.String({ maxLength: 2000 }), risk: Type.String({ maxLength: 2000, description: 'Grouping label for this covered surface; not a severity or a limit.' }), outcome: choices(COVERAGE_OUTCOMES) }))),
       openItems: Type.Optional(Type.Array(Type.String({ maxLength: 4000 }))),
-      confidence: choices(['high', 'medium', 'low']),
+      confidence: Type.Optional(choices(['high', 'medium', 'low'], 'Defaults to low when omitted; state your honest confidence in what the report supports')),
       blocked: Type.Optional(Type.String({ maxLength: 4000 })),
       outcome:Type.Optional(choices(WORKER_OUTCOMES)),
       holdFor: Type.Optional(Type.Object({ brief: Type.String({ minLength: 3, maxLength: 300, description: 'One sentence naming the successor step that continues this exact work' }) },

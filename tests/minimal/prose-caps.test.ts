@@ -64,11 +64,12 @@ describe('prose caps (A1)', () => {
       const store = new EvidenceStore('run-prose', path, 'fixture');
       const record = await store.candidate('worker-a', { candidate: 'prose-claim', surface: 's'.repeat(900), risk: 'r'.repeat(900),
         limitations: 'l'.repeat(4000), control: 'c'.repeat(2500), note: 'n'.repeat(800), closure: 'open_proof_gap', execution: 'not_tested',
-        proof: 'static_trace', policyBasis: 'inferred', expectedPolicy: 'declared boundary', evidenceRefs: [], negativeControls: [] });
+        proof: 'static_trace', policyBasis: 'inferred', expectedPolicy: 'p'.repeat(1500), evidenceRefs: [], negativeControls: [] });
       const data = record.data as Record<string, unknown>;
-      expect(data).toMatchObject({ surface: 's'.repeat(200), risk: 'r'.repeat(200), limitations: 'l'.repeat(1500), control: 'c'.repeat(1000), note: 'n'.repeat(300) });
+      expect(data).toMatchObject({ surface: 's'.repeat(200), risk: 'r'.repeat(200), limitations: 'l'.repeat(1500), control: 'c'.repeat(1000), note: 'n'.repeat(300), expectedPolicy: 'p'.repeat(1000) });
       expect(data.admissionWarnings).toEqual(['truncated:surface (stored 200 of 900 characters)', 'truncated:risk (stored 200 of 900 characters)',
-        'truncated:limitations (stored 1500 of 4000 characters)', 'truncated:control (stored 1000 of 2500 characters)', 'truncated:note (stored 300 of 800 characters)']);
+        'truncated:limitations (stored 1500 of 4000 characters)', 'truncated:control (stored 1000 of 2500 characters)', 'truncated:note (stored 300 of 800 characters)',
+        'truncated:expectedPolicy (stored 1000 of 1500 characters)']);
       const retained = (await readLedger(path, 'run-prose')).byId.get(record.id!)!.data as Record<string, unknown>;
       expect(retained).toMatchObject({ surface: 's'.repeat(200), admissionWarnings: data.admissionWarnings });
     } finally { await rm(root, { recursive: true, force: true }); }

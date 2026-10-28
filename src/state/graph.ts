@@ -194,7 +194,7 @@ export function validateGraphBatch(value: unknown): asserts value is GraphBatch 
   if(Buffer.byteLength(graphCanonical(value))>128*1024)throw Error('Graph mutation payload exceeds 128 KiB');
 }
 export const graphEntityId = (value: unknown, prefix: string): string => {
-  if (typeof value !== 'string' || !new RegExp(`^${prefix}-[a-f0-9]{24}$`).test(value)) throw Error(`Unknown ${prefix} identity`);
+  if (typeof value !== 'string' || !new RegExp(`^${prefix}-[a-f0-9]{24}$`).test(value)) throw Error(`Unknown ${prefix} identity: ${prefix} ids look like ${prefix}-<24 hex>; copy an entityId from a page or view row`);
   return value;
 };
 /** Escape Mermaid label metacharacters, HTML, links and directives as numeric entity text. */

@@ -88,6 +88,11 @@ export class EvidenceStore {
     const task = this.pending.then(async () => {
       // A1: cosmetic prose is clamped at its stored bound with a trace on the record (identity fields keep their strict caps).
       const admissionWarnings = clampProseInPlace(input as unknown as Record<string, unknown>, PROSE_CAPS.candidate);
+      // A1: two omissions have one conservative reading. A claim that ran no control has an empty list, and a claim that
+      // establishes no closure is open; the host records both, so the stored shape is unchanged.
+      const fields = input as unknown as Record<string, unknown>;
+      if (fields.negativeControls === undefined) fields.negativeControls = [];
+      if (fields.closure === undefined) fields.closure = 'open_proof_gap';
       validateCandidate(input);
       // W4: the host, not the caller, stamps which task produced the claim. It is how the automatic validation task names its
       // predecessor and how a case finds the validation of this exact claim.
@@ -210,6 +215,8 @@ function validateCandidate(c: Candidate): void {
 
   if (!(POLICY_BASES as readonly string[]).includes(c.policyBasis ?? '')) throw new Error('Invalid policy basis');
   if (!c.expectedPolicy?.trim()) throw new Error('Name the expected policy and its provenance');
+  // A1: the prose clamp stores at most 1000 characters; a value it left alone (control text) is still refused, never stored over-bound.
+  if (c.expectedPolicy.length > 1000) throw new Error('Invalid expected policy (1..1000 characters)');
   // D35: policy provenance is not a ceiling by itself, but inference is not proof either. An inferred claim stays a hypothesis
   // until the effect itself was tested and observed; only then may it be confirmed while its basis stays inferred.
   if (c.policyBasis === 'inferred' && !isOpenGap(c) && !(isDemonstrated(c) && c.proof !== 'static_trace'))
@@ -227,9 +234,9 @@ function validateCandidate(c: Candidate): void {
   if (c.note !== undefined && (typeof c.note !== 'string' || !c.note.trim() || c.note.length > 300)) throw new Error('Invalid capability note (1..300 characters)');
   // A payload is what ran, so it only makes sense on a claim that ran something; the derived `replayable` reads this field and
   // never a stored flag (P14.2), and P14.3 adds the environment to the same derivation.
-  if (c.payloadRef !== undefined && (typeof c.payloadRef !== 'string' || !isPayloadId(c.payloadRef))) throw new Error('Invalid payload reference');
+  if (c.payloadRef !== undefined && (typeof c.payloadRef !== 'string' || !isPayloadId(c.payloadRef))) throw new Error('Invalid payload reference: expected payload-<uuid> from p2o_lab action=payload');
   if (c.payloadRef !== undefined && c.execution !== 'tested') throw new Error('A payload reference requires tested execution');
-  if (c.environmentRef !== undefined && (typeof c.environmentRef !== 'string' || !isEnvironmentId(c.environmentRef))) throw new Error('Invalid environment reference');
+  if (c.environmentRef !== undefined && (typeof c.environmentRef !== 'string' || !isEnvironmentId(c.environmentRef))) throw new Error('Invalid environment reference: expected env-<uuid> from p2o_lab action=env');
   if (c.environmentRef !== undefined && c.execution !== 'tested') throw new Error('An environment reference requires tested execution');
   if (c.execution === 'blocked' && (c.requirement?.trim().length ?? 0) < 10) throw new Error('blocked needs a descriptive prerequisite reason (10..1000 characters)');
   if (c.execution === 'blocked' && c.closure !== 'open_proof_gap') throw new Error('Blocked execution cannot establish closure');

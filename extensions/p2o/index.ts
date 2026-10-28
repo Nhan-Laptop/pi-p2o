@@ -2645,7 +2645,7 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
   });
   registerTool({
     name: 'p2o_candidate', label: 'Record candidate closure', exposure: 'model-only',
-    description: 'WORKER ONLY: record an attributed candidate claim written from the receipts of your own assignment; the host stamps data.taskRef, which is what lets a validation anchor to it. Include evidence IDs, proof level, negative controls and limitations. Runtime receipts are observations, not automatic proof. Revise with supersedes=latest record ID. Blocked testing must stay open_proof_gap. Policy provenance follows your evidence rules: the effect itself can establish the boundary it breaks (record policyBasis=boundary_invariant with expectedPolicy naming the invariant), while a sibling route, a placeholder credential or a CVE lead alone stays inferred and open_proof_gap.',
+    description: 'WORKER ONLY: record an attributed candidate claim written from the receipts of your own assignment; the host stamps data.taskRef, which is what lets a validation anchor to it. Include evidence IDs, proof level, negative controls when a control ran, and limitations; omit closure while nothing is established and the host records open_proof_gap. A claim is not independent because it cites your own receipt: independentEvidenceRef needs a receipt a different worker authored, and that worker\'s own demonstrated claim must already exist. Runtime receipts are observations, not automatic proof. Revise with supersedes=latest record ID; a revision cannot change surface or risk. Blocked testing must stay open_proof_gap. Policy provenance follows your evidence rules: the effect itself can establish the boundary it breaks (record policyBasis=boundary_invariant with expectedPolicy naming the invariant), while a sibling route, a placeholder credential or a CVE lead alone stays inferred and open_proof_gap.',
     parameters: candidateParameters,
     async execute(_id, params) {
       const current = run;
@@ -2922,13 +2922,13 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
   });
   registerTool({
     name: 'p2o_note', label: 'Record observation', exposure: 'model-only',
-    description: 'Append one entry to the shared assessment ledger: note (fact or rationale), coverage (surface × risk × outcome, including clean surfaces), observation, or open (unresolved item). Record ids are refs for later notes and worker briefs.',
+    description: 'Append one entry to the shared assessment ledger: note (fact or rationale, the default when kind is omitted), coverage (surface × risk × outcome, including clean surfaces), observation, or open (unresolved item). Record ids are refs for later notes and worker briefs.',
     parameters: noteParameters,
     async execute(_id, params) {
       const current = run;
       if (!current) fail('NO_ASSESSMENT', 'No active p2o assessment; start one with /p2o --target …');
       // A1: cosmetic prose is stored at its bound with a trace, never refused for length alone (the broker re-clamps too).
-      const payload = { kind: params.kind, text: params.text, surface: params.surface, risk: params.risk, outcome: params.outcome, refs: params.refs };
+      const payload = { kind: params.kind ?? 'note', text: params.text, surface: params.surface, risk: params.risk, outcome: params.outcome, refs: params.refs };
       const warnings = clampProseInPlace(payload, PROSE_CAPS.note);
       const warning = warnings.length ? ` Admission warnings: ${warnings.join('; ')}` : '';
       if (current.role === 'worker') {
@@ -3029,7 +3029,7 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
           return textResult(JSON.stringify({acks,replayed:Boolean(prior),warning:'Knowledge recorded, no scope or proof upgrade'}), {acks,replayed:Boolean(prior)});
         })());
       }
-      if(params.action==='view'&&!params.id)fail('INVALID_INPUT','view needs an asset entity ID');
+      if(params.action==='view'&&!params.id)fail('INVALID_INPUT','view needs an asset entity ID: use the entityId a page row returns, not the asset key');
       const options={since:params.cursor,limit:params.limit,asOfSequence:params.asOfSequence};
       if(current.role==='worker'){
         const response=await worker().client.request<{value:Record<string,unknown>}>('graph_read',{graphOp:params.action,...options,...(params.action==='view'?{assetId:params.id}:{})},{timeoutMs:30000});
@@ -3211,14 +3211,14 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
   });
   registerTool({
     name: 'p2o_report', label: 'Report to lead', exposure: 'model-only',
-    description: 'WORKER/REPORTER: finish your objective by reporting to the assessment lead. Include what you ran, what you observed, what it supports and what it does not, coverage (including clean surfaces), open items, honest confidence and a blocked reason if you could not complete the task. Then stop working. holdFor.brief (one sentence) keeps this ticket, pane and session alive for follow-up briefs from the lead when the next chain step continues this exact work; holdContinuations (0..3, default 1) sets how many briefs that hold authorizes — 0 names the successor but retires the ticket. It is not a parking spot: the lead must dispatch the successor or release the hold.',
+    description: 'WORKER/REPORTER: finish your objective by reporting to the assessment lead. Include what you ran, what you observed, what it supports and what it does not, coverage (including clean surfaces), open items, honest confidence (defaults to low when omitted) and a blocked reason if you could not complete the task. Then stop working. holdFor.brief (one sentence) keeps this ticket, pane and session alive for follow-up briefs from the lead when the next chain step continues this exact work; holdContinuations (0..3, default 1) sets how many briefs that hold authorizes — 0 names the successor but retires the ticket. It is not a parking spot: the lead must dispatch the successor or release the hold.',
     parameters: reportParameters,
     async execute(_id, params) {
       const current = worker();
       const holdContinuations = params.holdFor ? params.holdContinuations ?? 1 : 0;
       const report: WorkerReport = {
         summary: params.summary, findings: params.findings ?? [], evidence: params.evidence ?? [],
-        coverage: params.coverage ?? [], openItems: params.openItems ?? [], confidence: params.confidence, blocked: params.blocked, outcome:params.outcome,
+        coverage: params.coverage ?? [], openItems: params.openItems ?? [], confidence: params.confidence ?? 'low', blocked: params.blocked, outcome:params.outcome,
         ...(params.holdFor ? { holdFor: params.holdFor } : {}), ...(params.holdFor ? { holdContinuations } : {}),
       };
       // A1: the broker bounds report prose; name each cut instead of letting a silently shorter report look authored.

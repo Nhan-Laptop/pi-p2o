@@ -24,7 +24,7 @@ export function exact(row:Record<string,unknown>,allowed:string[],label:string):
  * the declared bounds in tool-schemas.ts sit well above these stored ones (at least 4x, never below 2000 characters).
  */
 export const PROSE_CAPS = {
-  candidate: { surface: 200, risk: 200, limitations: 1500, control: 1000, note: 300 },
+  candidate: { surface: 200, risk: 200, limitations: 1500, control: 1000, note: 300, expectedPolicy: 1000 },
   note: { text: 2000, surface: 200, risk: 200 },
   surface: { component: 200, entryPoint: 200, text: 1000 },
   finish: { partial: 600 },
