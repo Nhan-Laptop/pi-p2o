@@ -18,6 +18,8 @@ import { completionDemand, completionLine, type Completion } from './completion.
 import { debtDischarge, debtSummary, type DebtReport } from './debt.js';
 import { goalProofRefusal, proofLabel, type ProofCase, type ProofCoverage } from './goal-proof.js';
 import { chainObligations } from './obligations.js';
+import { chainBoard } from './chain-board.js';
+import { chainJoin } from './chain-view.js';
 import { routeMonoculture } from './routes.js';
 import { judgeRound, type RoundBudget, type RoundFacts } from './round-budget.js';
 import { situationLine, type SituationSnapshot } from './situation.js';
@@ -30,7 +32,7 @@ import type { PlanEntry } from './planning.js';
 export const ROUND_BRIEF_MAX_BYTES = 8 * 1024;
 
 export type BriefSectionId =
-  | 'frame' | 'completion' | 'goals' | 'ready' | 'unchained' | 'coverage' | 'review'
+  | 'frame' | 'completion' | 'goals' | 'ready' | 'unchained' | 'coverage' | 'breadth' | 'review'
   | 'workers' | 'delta' | 'learned' | 'debt' | 'revisits' | 'round' | 'digest';
 
 /**
@@ -38,24 +40,24 @@ export type BriefSectionId =
  * sections it drops instead of silently truncating the tail of the brief.
  */
 export const ROUND_BRIEF_SECTION_CAPS = {
-  frame: 1024, completion: 1024, goals: 1024, ready: 1024, unchained: 640, coverage: 768, review: 768,
+  frame: 1024, completion: 1024, goals: 1024, ready: 1024, unchained: 640, coverage: 768, breadth: 768, review: 768,
   workers: 768, delta: 640, learned: 900, debt: 1152, revisits: 448, round: 512, digest: 900,
 } as const satisfies Record<BriefSectionId, number>;
 
 const SECTION_TITLES: Readonly<Record<BriefSectionId, string>> = {
   frame: 'Campaign frame', completion: 'Completion and demand', goals: 'Goals and proof',
-  ready: 'Ready chain steps', unchained: 'Unchained primitives', coverage: 'Coverage and route',
+  ready: 'Ready chain steps', unchained: 'Unchained primitives', coverage: 'Coverage and route', breadth: 'Unplanned work',
   review: 'Awaiting review', workers: 'Workers', delta: 'Delta since the last round', learned: 'Learned this round',
   debt: 'Research debt', revisits: 'Revisit conditions', round: 'Round facts', digest: 'Older material',
 };
 
 /** Display order is D46's list; omission order drops history and pacing detail before obligations. */
 const SECTION_ORDER: readonly BriefSectionId[] = [
-  'frame', 'completion', 'goals', 'ready', 'unchained', 'coverage', 'review',
+  'frame', 'completion', 'goals', 'ready', 'unchained', 'coverage', 'breadth', 'review',
   'workers', 'delta', 'learned', 'debt', 'revisits', 'round', 'digest',
 ];
 const OMIT_ORDER: readonly Exclude<BriefSectionId, 'frame'>[] =
-  ['digest', 'revisits', 'delta', 'workers', 'learned', 'debt', 'review', 'coverage', 'round', 'unchained', 'ready', 'goals', 'completion'];
+  ['digest', 'revisits', 'delta', 'workers', 'learned', 'debt', 'review', 'coverage', 'round', 'unchained', 'ready', 'breadth', 'goals', 'completion'];
 
 /** The campaign fields the frame renders; `CampaignRecord` satisfies this structurally. */
 export type BriefCampaign = Pick<CampaignRecord, 'objective' | 'constraints' | 'mode'>;
@@ -93,6 +95,19 @@ export interface BriefCoveragePlan {
 /** An engine-scheduled revisit (`scheduleRevisit`'s return shape). */
 export interface BriefRevisit { condition: string; at: string }
 
+/**
+ * P21/C1+C6: the breadth projection the round's own reads already produced. Each row carries the exact count plus at most the
+ * three samples the caller read, so a large backlog cannot grow the brief or the prompt. `unmetNeeds` is C6: needed
+ * capabilities no demonstrated claim gains, as `capability <- claim` lines the planner can act on.
+ */
+export interface BriefBreadthRow { count: number; samples?: readonly string[] }
+export interface BriefBreadth {
+  unplannedAssets?: BriefBreadthRow;
+  wstgUnplanned?: BriefBreadthRow;
+  untriagedGaps?: BriefBreadthRow;
+  unmetNeeds?: BriefBreadthRow;
+}
+
 export interface BriefRound {
   number: number;
   /** The model routed for this round; absent means the caller recorded none. */
@@ -119,6 +134,8 @@ export interface RoundBriefInput {
   cases?: readonly BriefCase[];
   coverage?: readonly BriefCoveragePlan[];
   debt?: DebtReport;
+  /** P21/C1+C6: unplanned work and unmet capability needs; omitted means the caller supplied no projection (unknown, not zero). */
+  breadth?: BriefBreadth;
   workers?: readonly BriefWorker[];
   revisits?: readonly BriefRevisit[];
   progress?: BriefProgress;
@@ -311,16 +328,28 @@ function goalsSection(input: RoundBriefInput): Rendered {
   return body('goals', lines);
 }
 
-/** M2: the ready step is what a dispatch can take today, with the provider it must cite. */
+/** M2: the ready step is what a dispatch can take today, with the provider it must cite. P21/C6 adds the waiting frontier
+ * and the unmet capability needs, so a demonstrated primitive either advances the chain or becomes a named capability task. */
 function readySection(input: RoundBriefInput): Rendered {
   const obligations = chainObligations({ plans: input.plans, claims: input.claims, tasks: input.tasks });
-  if (!obligations.ready.length) return body('ready', ['No chain step is ready.']);
-  const byId = new Map(input.plans.map(plan => [plan.id, plan]));
+  const board = chainBoard(input.plans, input.claims), join = chainJoin(input.claims);
+  const waiting = board.flatMap(chain => chain.waiting.map(step => ({ chain: chain.chainOf, step: step.step, title: step.title, waitingOn: step.waitingOn })));
   const lines = [`Ready chain steps: ${obligations.ready.length}.`];
+  if (!obligations.ready.length) lines.push('No chain step is ready.');
+  const byId = new Map(input.plans.map(plan => [plan.id, plan]));
   for (const step of obligations.ready) {
     const row = byId.get(step.planId);
     lines.push(`- chain ${step.chainOf} step ${step.step}${row ? `: ${oneLine(row.title, 120)}` : ''} — consumes ${describeCapability(step.need)} already gained by ${step.provider}`
       + `${step.surface ? ` on ${oneLine(step.surface, 80)}` : ''}`);
+  }
+  if (waiting.length) {
+    lines.push(`Waiting chain steps: ${waiting.length}. ${waiting.slice(0, 3).map(step => `step ${step.step} of chain ${step.chain} (${oneLine(step.title, 80)}) waits on ${step.waitingOn.map(describeCapability).join(', ')}`).join('; ')}`
+      + `${waiting.length > 3 ? `; … +${waiting.length - 3}` : ''}.`);
+  }
+  if (join.unmet.length) {
+    lines.push(`Unmet capability needs: ${join.unmet.length} open claim(s) need a capability nothing demonstrated gains `
+      + `(${join.unmet.slice(0, 3).map(claim => `${claim} needs ${(join.uncovered[claim] ?? []).map(describeCapability).join(', ')}`).join('; ')}). `
+      + 'Take the ready step above, or plan the capability task the need names — not another asset.');
   }
   return body('ready', lines);
 }
@@ -359,6 +388,23 @@ function coverageSection(input: RoundBriefInput): Rendered {
   const mono = routeMonoculture(input.plans, input.claims);
   if (mono) lines.push(`Route monoculture hint: every open step is on route ${mono.route}; plausible elsewhere: ${mono.alternatives.slice(0, 5).join(', ')}. A hint only; the lead decides scope.`);
   return body('coverage', lines);
+}
+
+/** P21/C1: the unplanned work the never-idle rule reads, with its disposition spelled out so a count is actionable. */
+function breadthSection(input: RoundBriefInput): Rendered {
+  const breadth = input.breadth;
+  if (!breadth) return body('breadth', ['No breadth projection was supplied this round; unplanned work is unknown, not zero.']);
+  const rows = [
+    { id: 'unplanned asset', row: breadth.unplannedAssets, lead: 'Unplanned assets (no coverage cell)' },
+    { id: 'uncovered WSTG question', row: breadth.wstgUnplanned, lead: 'Uncovered WSTG questions (recorded feature applies, no live cell)' },
+    { id: 'unmet capability need', row: breadth.unmetNeeds, lead: 'Unmet capability needs (nothing demonstrated gains them)' },
+    { id: 'untriaged gap', row: breadth.untriagedGaps, lead: 'Untriaged gaps (no coverage cell or case cites them)' },
+  ].filter(entry => (entry.row?.count ?? 0) > 0);
+  if (!rows.length) return body('breadth', ['Breadth: no unplanned asset, uncovered WSTG question, untriaged gap or unmet capability need is recorded.']);
+  const lines = rows.map(entry => `- ${entry.lead}: ${entry.row!.count}; ${ids(entry.row!.samples ?? [], 3)}.`);
+  lines.push('Disposition per row: revise the coverage plan, create the intent whose question asks it, or record why it is out of scope. '
+    + 'A non-zero row with none of those is the stalled round the host records.');
+  return body('breadth', lines);
 }
 
 /** The three review queues the finish preflight also names: tasks, confirmed claims without a case, pending cases. */
@@ -527,6 +573,7 @@ export function buildRoundBrief(input: RoundBriefInput): RoundBrief {
     ready: readySection(input),
     unchained: unchainedSection(input.completion),
     coverage: coverageSection(input),
+    breadth: breadthSection(input),
     review: reviewSection(input),
     workers: workersSection(input.workers),
     delta: deltaSection(input, input.completion),

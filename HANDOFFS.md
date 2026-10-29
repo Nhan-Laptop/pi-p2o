@@ -61,6 +61,8 @@ Rules that keep the ledger readable:
 - **A cross-asset link is an assertion** — a relation with `basis=observed` or `basis=inferred` in the same batch — so the planner can read it; it is never a second claim.
 - **Never upgrade a classification silently.** Observed stays observed and inferred stays inferred, and a suspicion is a hypothesis or an inferred fact, never a finding.
 
+**Credential needs.** When an intent needs an identity, use the allowed ladder and record where on it you stopped: public artifacts (JavaScript bundles, source maps, publicly served configuration) that name committed endpoints or secrets; exactly one documented default-credential attempt, named as recorded; self-provisioned registration or tenant when a registration path exists; or an operator-sealed secret through `p2o_secret` (a `${P2O_SECRET:<id>}` placeholder, never a value). Brute force, spraying, credential stuffing, reset abuse and lockout attempts are prohibited. When none of the ladder works, record the capability need on the claim (`needs: cred.secret`) with the acquisition paths tried, so the next round plans the feasible route instead of the operator answering a blank question.
+
 ### Provisional owner review
 
 If an authorized investigation finds unexpected artifacts suggesting a pre-existing incident, stop expanding access and notify the authorized owner/responder. Use the common envelope with minimized, redacted diagnostic/artifact references, collection time/method and integrity provenance, explicit attribution/initial-access unknowns, permitted preservation and containment scope. Do not use credentials or test wider access to resolve attribution.

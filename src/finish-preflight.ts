@@ -11,7 +11,7 @@ import { WSTG_MAP, isWstgKey, wstgKey } from './wstg-map.js';
 import type { WorkerWrites } from './write-back.js';
 import { leadFrontier } from './cve.js';
 import { routeMonoculture } from './routes.js';
-import type { DebtReport } from './debt.js';
+import { debtDischarge, OBLIGATION_KINDS, type DebtKind, type DebtReport } from './debt.js';
 
 /**
  * Deterministic pre-finish check over committed state. Pure: no model, no clock, no target access, no write. It names unfinished
@@ -24,9 +24,13 @@ export type PreflightCode = 'UNREVIEWED_TASK' | 'UNREVIEWED_CLAIM' | 'PENDING_CA
   | 'UNPROMOTED_COVERAGE_NOTE' | 'UNMAPPED_TASK' | 'NO_GOAL_RECORDED' | 'NEGATIVE_MAY_BE_BLOCKED' | 'INTERRUPTED_CELL' | 'PRIMITIVE_UNCHAINED' | 'ADMISSION_REFUSALS' | 'NO_GRAPH_WRITE' | 'LEAD_UNTRIAGED' | 'ROUTE_MONOCULTURE' | 'RESEARCH_DEBT'
   | 'HELD_WITHOUT_SUCCESSOR' | 'IMPACT_UNATTEMPTED';
 export interface PreflightItem { code: PreflightCode; level: 'obligation' | 'advisory'; count: number; ids: string[]; message: string }
+/** P21/C4: one owed research-debt kind with the disposition a settlement record has to give it before the run stops. */
+export interface SettlementItem { kind: DebtKind; count: number; ids: string[]; disposition: string }
 export interface FinishPreflight {
   /** M3: the former `blocking` list. It is a report fact now, not a refusal predicate: nothing refuses a finish. */
   obligations: PreflightItem[]; advisory: PreflightItem[];
+  /** P21/C4: the gateable debt kinds still outstanding, each with its discharge. Empty when the run owes no gateable kind. */
+  settlement: SettlementItem[];
   /** Stable digest of the obligation set, so a reader can tell a re-export from new work arriving. */
   signature: string;
   complete: boolean;
@@ -188,7 +192,23 @@ export function finishPreflight(index: LedgerIndex, context: PreflightContext = 
   const items = [...found.entries()].map(([code, ids]): PreflightItem => ({ code, level: blocks(code) ? 'obligation' : 'advisory', count: ids.length, ids: ids.slice(0, SHOWN), message: MESSAGES[code] }))
     .sort((a, b) => a.code.localeCompare(b.code));
   const obligations = items.filter(item => item.level === 'obligation'), advisory = items.filter(item => item.level === 'advisory');
-  return { obligations, advisory, signature: sha256Hex(obligations.map(item => `${item.code}:${item.count}`).join('|')).slice(0, 16), complete: index.complete };
+  // P21/C4: the same debt report completion reads, turned into the settlement record a stopping lead has to give each kind.
+  // It is a report fact like the items above: nothing here refuses a finish or loosens completion.
+  const settlement: SettlementItem[] = context.debt ? OBLIGATION_KINDS.filter(kind => (context.debt!.totals[kind] ?? 0) > 0).map(kind => ({
+    kind, count: context.debt!.totals[kind],
+    ids: context.debt!.items.filter(item => item.kind === kind).map(item => item.id).slice(0, SHOWN),
+    disposition: debtDischarge(kind) ?? 'plan a task, record it out of scope, or defer it with a revisit condition and the debt ids it answers',
+  })) : [];
+  return { obligations, advisory, settlement, signature: sha256Hex(obligations.map(item => `${item.code}:${item.count}`).join('|')).slice(0, 16), complete: index.complete };
+}
+
+/** The settlement packet the closing turn reads: one line per owed debt kind, or the explicit statement that no kind is owed. */
+function settlementLines(result: FinishPreflight): string[] {
+  if (!result.obligations.length) return [];
+  const lines = ['SETTLEMENT PACKET (P21/C4): before stopping, give each outstanding kind a disposition — plan a task, record it out of scope, or defer it with a revisit condition and debtRefs. A decision row or prose does not discharge one.'];
+  if (!result.settlement.length) lines.push('- no gateable research-debt kind is outstanding; the obligations above are review items.');
+  for (const item of result.settlement) lines.push(`- ${item.kind} (${item.count}): ${item.ids.join(', ')}${item.count > item.ids.length ? ', …' : ''} — ${item.disposition}`);
+  return lines;
 }
 
 /** Block appended to the finish result. Terse by design: at most one line per code, at most five IDs per line. It reports, it never refuses. */
@@ -196,5 +216,5 @@ export function renderPreflight(result: FinishPreflight): string {
   const line = (item: PreflightItem) => `- ${item.code} (${item.count}): ${item.ids.join(', ')}${item.count > item.ids.length ? ', …' : ''} — ${item.message}`;
   if (!result.obligations.length && !result.advisory.length) return `FINISH PREFLIGHT (host check): nothing unfinished found in committed state. This is not a statement that the target is safe.`;
   return [`FINISH PREFLIGHT (host check): ${result.obligations.length} open obligation(s), ${result.advisory.length} advisory. These are unfinished review or coverage items, not findings and not a safety verdict. List any that remain in your report.`,
-    ...result.obligations.map(line), ...result.advisory.map(line), ...(result.complete ? [] : ['- INCOMPLETE ledger scan: no completeness claim.'])].join('\n');
+    ...result.obligations.map(line), ...result.advisory.map(line), ...settlementLines(result), ...(result.complete ? [] : ['- INCOMPLETE ledger scan: no completeness claim.'])].join('\n');
 }

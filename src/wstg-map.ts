@@ -488,3 +488,26 @@ export function unplannedTests(assets: readonly FeatureAsset[], options: { brows
     return { key: wstgKey(test.id), title: test.title, support: test.support, flags, assetIds, detail: `${test.title} (${test.support}${flags ? `, ${flags}` : ''}) applies to recorded feature(s) on ${assetIds.length} asset${assetIds.length === 1 ? '' : 's'}` };
   });
 }
+
+/** A per-asset candidate question: the asset's recorded `feature` made the test apply, and no live cell covers the key yet. */
+export interface WstgQuestion { assetId: string; questionKey: string; test: string; flags: string; expectedObservation: string; planId?: string }
+export const WSTG_QUEUE_LIMIT = 20;
+/**
+ * P21/C2: the per-asset question queue. One row per (asset, uncovered applicable test), derived from the `feature` attribute and the shipped map; the
+ * planner promotes a row by creating a task whose `questionKey` is the test id, and the host keeps deriving cells. Pure and read-only: nothing here is a
+ * cell, a claim, permission or coverage. `omitted` reports the pairs past `limit` so a bounded page cannot read as the whole queue.
+ */
+export function wstgQuestionQueue(assets: readonly FeatureAsset[], options: { covered: ReadonlySet<string>; planId?: string; limit?: number }): { queue: WstgQuestion[]; omitted: number } {
+  const limit = Math.max(0, Math.min(options.limit ?? WSTG_QUEUE_LIMIT, WSTG_QUEUE_LIMIT)), seen = new Set<string>(), pairs: WstgQuestion[] = [];
+  for (const row of unplannedTests(assets, { browser: true, identity: true, covered: options.covered })) {
+    for (const assetId of row.assetIds) {
+      const identity = `${assetId}|${row.key}`;
+      if (seen.has(identity)) continue;
+      seen.add(identity);
+      pairs.push({ assetId, questionKey: row.key, test: row.title, flags: row.flags,
+        expectedObservation: `a reproducible observation of "${row.title}" on this asset, or the named effective control that prevents it`,
+        ...(options.planId ? { planId: options.planId } : {}) });
+    }
+  }
+  return { queue: pairs.slice(0, limit), omitted: pairs.length - Math.min(pairs.length, limit) };
+}

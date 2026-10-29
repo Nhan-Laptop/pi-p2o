@@ -20,10 +20,16 @@ export type WakeReason = 'event' | 'debt' | 'heartbeat';
 export interface PlannerWake { runId: string; epoch: number; through: number; round: number; /** P16.2: the named obligations a stalled-but-unfinished round still owes. */ demand?: string; /** A6.3: what caused this wake; a heartbeat is not an event. */ reason?: WakeReason }
 /**
  * M6: what a round is judged on. Monotone counters, so equality means the round added nothing — no tested cell, no candidate
- * closure, no asset and no chain depth. The owner computes them at its own consumption barrier; the engine only compares.
+ * closure, no asset, no chain depth. The owner computes them at its own consumption barrier; the engine only compares.
  */
 export interface RoundProgress {
   testedCells: number; closures: number; assets: number; chainDepth: number;
+  /**
+   * P21/C3: recorded recon features and the distinct coverage question keys the plan carries. A round that adds either made
+   * progress: a plan revision or a feature attribute is how discovery becomes plannable work, so quiet cannot be declared
+   * while they move. Both are optional so a caller that does not project them keeps the pre-P21 judgement.
+   */
+  features?: number; questions?: number;
   /**
    * P19/C: the number of plan rows that record a wall (a deferred/blocked todo that cites the debt ids it answers). A round
    * that adds one made progress even when every other counter is flat, so the judgement below reads it like the others.
@@ -237,7 +243,7 @@ export class AssessmentEngine {
   /** M6: two quiet rounds in a row have to be explained; nothing here counts commands or time. */
   private quietText(): string | undefined {
     if (this.quiet.length < QUIET_ROUNDS) return;
-    return `rounds ${this.quiet.join(' and ')} added nothing measurable (no tested cell, candidate closure, asset or chain depth)`;
+    return `rounds ${this.quiet.join(' and ')} added nothing measurable (no tested cell, candidate closure, asset, chain depth, feature or question)`;
   }
   /**
    * P16.2 frontier floor: a quiet round does not end an unfinished run. Work owed outranks "added nothing", so the wake
@@ -323,7 +329,9 @@ export class AssessmentEngine {
     const quiet = progress.testedCells === this.progress.testedCells && progress.closures === this.progress.closures
       && progress.assets === this.progress.assets && progress.chainDepth === this.progress.chainDepth
       // P19/C: recording a wall is progress; a round that discharged named debt must not read as "added nothing".
-      && (progress.walls ?? 0) === (this.progress.walls ?? 0);
+      && (progress.walls ?? 0) === (this.progress.walls ?? 0)
+      // P21/C3: a new recorded feature or coverage question is discovery becoming plannable work; the round moved.
+      && (progress.features ?? 0) === (this.progress.features ?? 0) && (progress.questions ?? 0) === (this.progress.questions ?? 0);
     this.progress = { ...progress };
     if (!quiet) { this.quiet = []; return; }
     if (!this.rounds || this.quiet.includes(this.rounds)) return;

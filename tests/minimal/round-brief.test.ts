@@ -46,7 +46,7 @@ const debtReport = (items: readonly DebtItem[]): DebtReport => {
 const situation: SituationSnapshot = {
   open: 2, running: 1, runningRoles: ['validation'], ready: 1, exhausted: 0, blocked: 0, openContradictions: 0,
   chainReady: 1, chainUnmet: 0, chainSteps: 1, chainReadySteps: 1, chainWaitingSteps: 0, pendingRating: 1,
-  replayableClaims: 0, derivedEdges: 0, validationCurrent: 0, unmetNeeds: 0,
+  replayableClaims: 0, derivedEdges: 0, validationCurrent: 0, unmetNeeds: 0, unplannedAssets: 0, unplannedSamples: [], wstgUnplanned: 0, wstgSamples: [], unmetNeedSamples: [], untriagedGaps: 0, untriagedSamples: [],
   coverageTested: 1, coverageCells: 3, coveragePlanned: 1, coverageOmitted: 2, leadsUntriaged: 0, leadsCritical: 0,
   routesOpen: 1, routesDone: 0, routeNames: ['auth'], unprovenNegations: 0, suggested: { purpose: 'validation', score: 65 },
 };
@@ -109,6 +109,14 @@ function fixture(overrides: Partial<RoundBriefInput> = {}): RoundBriefInput {
   return {
     campaign, completion, plans, claims, tasks, cases, coverage, debt, workers, revisits, progress, previous,
     digest: buildRoundDigest(digestRecords, 3), situation,
+    // P21/C1+C6: the breadth projection the caller derives from the coverage, WSTG and debt reads; counts are exact and the
+    // section expands at most three samples.
+    breadth: {
+      unplannedAssets: { count: 4, samples: ['endpoint /api/export', 'service export'] },
+      wstgUnplanned: { count: 1, samples: ['wstg-athz-04'] },
+      unmetNeeds: { count: 1, samples: ['cred.session <- rec-b'] },
+      untriagedGaps: { count: 1, samples: ['gap-1'] },
+    },
     round: { number: 2, model: 'test/model-a', facts: { steps: 5, startedAt: 0, now: 60_000, contextPercent: 41, budget: { ...DEFAULT_ROUND_BUDGET } } },
     ...overrides,
   };
@@ -196,6 +204,13 @@ Denominator backlog: 2 omitted cell(s); 1 discovered unplanned asset(s); 1 unmap
 Gaps: 1 untriaged open gap(s) named by research debt.
 Route monoculture hint: every open step is on route auth; plausible elsewhere: business-logic, deser, injection, path, sqli. A hint only; the lead decides scope.
 
+## Unplanned work
+- Unplanned assets (no coverage cell): 4; endpoint /api/export, service export.
+- Uncovered WSTG questions (recorded feature applies, no live cell): 1; wstg-athz-04.
+- Unmet capability needs (nothing demonstrated gains them): 1; cred.session <- rec-b.
+- Untriaged gaps (no coverage cell or case cites them): 1; gap-1.
+Disposition per row: revise the coverage plan, create the intent whose question asks it, or record why it is out of scope. A non-zero row with none of those is the stalled round the host records.
+
 ## Awaiting review
 Tasks awaiting review: 1; t-1.
 Confirmed claims with no case: 2; rec-a, rec-d.
@@ -243,7 +258,7 @@ describe('round brief (P18.2/D46)', () => {
     const input = fixture();
     const brief = buildRoundBrief(input);
     expect(brief.sections.map(section => section.id)).toEqual([
-      'frame', 'completion', 'goals', 'ready', 'unchained', 'coverage', 'review', 'workers', 'delta', 'learned', 'debt', 'revisits', 'round', 'digest',
+      'frame', 'completion', 'goals', 'ready', 'unchained', 'coverage', 'breadth', 'review', 'workers', 'delta', 'learned', 'debt', 'revisits', 'round', 'digest',
     ]);
     expect(brief.remaining).toBe(input.completion.remaining);
     expect(brief.remaining).toBe(deriveCompletion({

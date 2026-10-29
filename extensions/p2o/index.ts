@@ -55,7 +55,7 @@ import { planFrontier, PlanBoard, boundPlanRequest, type PlanDraft } from '../..
 import { PLAN_ACTION_PARAMETERS, PLAN_ACTIONS } from '../../src/work-tool.js';
 import { CaseBoard, boundCaseRequest, boundRatingRequest, needsCaseReview } from '../../src/cases.js';
 import { validationDraft } from '../../src/validation.js';
-import { CoverageBoard, boundCoverageRequest, coverageViews } from '../../src/coverage.js';
+import { CoverageBoard, boundCoverageRequest, coverageRevisionDemand, coverageViews, type CoveragePlanView } from '../../src/coverage.js';
 import { caseViews } from '../../src/cases.js';
 import { boundRetestRequest } from '../../src/retest.js';
 import type { CaseDraft } from '../../src/case-types.js';
@@ -85,7 +85,7 @@ import { commandPolicy, POLICY_KINDS, type CommandPolicy, type PolicyKind, type 
 import { freezeReport, reportProjection, type ReportProjectionContext } from '../../src/report.js';
 import { finishPreflight, renderPreflight, type FinishPreflight } from '../../src/finish-preflight.js';
 import { debtFor, debtSummary, deriveDebt, wallRows, type DebtReport } from '../../src/debt.js';
-import { WSTG_COMMIT, WSTG_FEATURES, WSTG_MAP, featuresFromAttributeValues, isWstgKey, wstgKey, wstgSuggest } from '../../src/wstg-map.js';
+import { WSTG_COMMIT, WSTG_FEATURES, WSTG_MAP, featuresFromAttributeValues, isWstgKey, unplannedTests, wstgKey, wstgQuestionQueue, wstgSuggest } from '../../src/wstg-map.js';
 import { ProgressState } from '../../src/progress.js';
 import { AssessmentEngine } from '../../src/engine.js';
 import { ExecutorPool } from '../../src/executors.js';
@@ -559,6 +559,25 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
       expectCampaign: true });
   }
   /**
+   * P21/C1+C2: the breadth projection the situation line and the round brief both render, derived from the same store reads the
+   * coverage and debt views already use (no second source, no write). Counts are exact; samples are capped at three. A store that
+   * cannot answer keeps zeros instead of failing a read.
+   */
+  function breadthSamples(current: OwnerRun, coverage: readonly CoveragePlanView[], debt: DebtReport): { unplannedAssets: { count: number; samples: string[] }; wstgUnplanned: { count: number; samples: string[] }; untriagedGaps: { count: number; samples: string[] } } {
+    try {
+      const cells = coverage.flatMap(plan => plan.cells).filter(cell => cell.currentness !== 'retired'), planned = new Set(cells.map(cell => cell.assetRef.id));
+      const unplanned = (current.store.reviewContext().coverage.assetIds?.() ?? []).filter(id => !planned.has(id));
+      const briefs = unplanned.length ? current.store.assetBrief(unplanned.slice(0, 3)) : {};
+      const covered = new Set(cells.filter(cell => isWstgKey(cell.questionKey)).map(cell => cell.questionKey));
+      const wstg = unplannedTests(current.store.recordedFeatureAssets(), { browser: true, identity: true, covered });
+      return {
+        unplannedAssets: { count: new Set(unplanned).size, samples: unplanned.slice(0, 3).map(id => briefs[id] ? `${briefs[id].kind} ${briefs[id].key}` : id) },
+        wstgUnplanned: { count: wstg.length, samples: wstg.slice(0, 3).map(row => row.key) },
+        untriagedGaps: { count: debt.totals.GAP_UNTRIAGED, samples: debt.items.filter(item => item.kind === 'GAP_UNTRIAGED').slice(0, 3).map(item => item.id) },
+      };
+    } catch { return { unplannedAssets: { count: 0, samples: [] }, wstgUnplanned: { count: 0, samples: [] }, untriagedGaps: { count: 0, samples: [] } }; }
+  }
+  /**
    * M6/P18.2: the one read a round is both judged and briefed on. The engine's progress and the opening briefing project
    * these values, so the counters the round is compared on and the sentences it is told cannot disagree (D46).
    */
@@ -587,14 +606,18 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
       closures: index.records.filter(row => row.kind === 'candidate' && isDemonstrated(row.data as ClaimFields)).length,
       testedCells: cells.filter(cell => isTestedCell(cell)).length,
       assets: current.store.assetCount(),
+      // P21/C3: a recorded feature or a distinct coverage question is discovery becoming plannable work; the quiet judgement
+      // reads both, so a round that only mapped features is not "added nothing".
+      features: current.store.recordedFeatureValues().length,
+      questions: new Set(cells.map(cell => cell.questionKey)).size,
       chainDepth: Math.max(0, ...Object.values(chainJoin(claims).depth)),
       walls,
       openIntents,
       remaining: completion.remaining,
       debt: { gateable: debt.gateable, total: debt.total },
-      ...(completion.remaining ? { demand: `${completionDemand(completion, plans) ?? `${completion.remaining} obligation(s) remain`}${monoculture ? `; every open step is on route ${monoculture.route} — plausible elsewhere: ${monoculture.alternatives.slice(0, 4).join(', ')}` : ''}` } : {}),
+      ...(completion.remaining ? { demand: `${completionDemand(completion, plans) ?? `${completion.remaining} obligation(s) remain`}${coverageRevisionDemand(coverage) ? `; ${coverageRevisionDemand(coverage)}` : ''}${monoculture ? `; every open step is on route ${monoculture.route} — plausible elsewhere: ${monoculture.alternatives.slice(0, 4).join(', ')}` : ''}` } : {}),
     };
-    return { index, claims, cases, coverage, plans, tasks, obligations, debt, completion, progress,
+    return { index, claims, cases, coverage, cells, plans, tasks, obligations, debt, completion, progress,
       stall: { openGoal, openIntents, wallRecorded: walls > previousWalls } };
   }
   /**
@@ -615,10 +638,14 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
     // Older material folds at the position the previous round opened at: the last round's own records stay in the current
     // window and everything before them becomes one bounded digest instead of vanishing with the replaced session.
     const digest = buildRoundDigest(read.index.records, current.roundWindow?.records ?? 0);
+    // P21/C1: the breadth projection both the situation line and the brief read; one read, so the count and the samples
+    // cannot come from different states.
+    const breadth = breadthSamples(current, read.coverage, read.debt);
     const situation = (() => {
       try {
         return summarizeSituation({ tasks: read.tasks, cases: read.cases, coverage: read.coverage, claims: read.claims, plans: read.plans,
           derivedEdges: current.store.graphRelationCounts().derived,
+          unplannedAssets: breadth.unplannedAssets, wstgUnplanned: breadth.wstgUnplanned, untriagedGaps: breadth.untriagedGaps,
           leads: leadFrontier(read.index).map(lead => ({ state: lead.state, severity: lead.severity })) });
       } catch { return undefined; }
     })();
@@ -654,6 +681,7 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
       workers: operatorWorkers(current), revisits: current.engine.pendingRevisits(),
       progress: read.progress, previous: current.engine.previousProgress(),
       digest, round: { number: wake.round, budget: current.roundBudget },
+      breadth: { ...breadth, ...(situation && situation.unmetNeeds ? { unmetNeeds: { count: situation.unmetNeeds, samples: situation.unmetNeedSamples } } : {}) },
       ...(situation ? { situation } : {}), ...(graph ? { graph } : {}), ...(learned ? { learned } : {}),
     });
     // P18.6/D50: the loadout is routed from the same read, so the round's model and its brief cannot describe different rounds.
@@ -777,13 +805,18 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
   }
   async function situationSnapshot(current: OwnerRun): Promise<SituationSnapshot | undefined> {
     try {
-      const [tasks, cases, coverage, claims, plans, leads] = await Promise.all([current.board.list(), current.cases.list(), current.coverage.list(), candidateClaims(current), current.plan.list(),
-        readLedger(current.records, current.runId).then(index => leadFrontier(index))]);
+      const index = await readLedger(current.records, current.runId);
+      const [tasks, cases, coverage, claims, plans] = await Promise.all([current.board.list(), current.cases.list(), current.coverage.list(), candidateClaims(current), current.plan.list()]);
       let derivedEdges = 0;
       try { derivedEdges = current.store.graphRelationCounts().derived; } catch { /* a store that cannot answer keeps the counter at zero */ }
+      // P21/C1: the breadth rows the situation line counts are derived once from the store and the debt report the round also
+      // reads, so the line and the brief cannot disagree about unplanned work.
+      const breadth = breadthSamples(current, coverage, runDebt(current, index));
       // M1: the chain segment reads the board, so the line and the plan view count the same steps. P16.4: leads are counted
       // from their frontier, so a triaged lead stops appearing as untriaged work.
-      return summarizeSituation({ tasks, cases, coverage, claims, plans, derivedEdges, leads: leads.map(lead => ({ state: lead.state, severity: lead.severity })) });
+      return summarizeSituation({ tasks, cases, coverage, claims, plans, derivedEdges,
+        unplannedAssets: breadth.unplannedAssets, wstgUnplanned: breadth.wstgUnplanned, untriagedGaps: breadth.untriagedGaps,
+        leads: leadFrontier(index).map(lead => ({ state: lead.state, severity: lead.severity })) });
     } catch { return undefined; }
   }
   /**
@@ -2916,7 +2949,11 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
       const perform=async()=>{if(p.action==='plan-create')return current.coverage.createPlan(p.plan as CoveragePlanDraft,request);if(p.action==='plan-revise')return current.coverage.revisePlan(p.id as string,p.revision as number,p.plan as CoveragePlanDraft,request);const all=await current.coverage.list();assertOwnerActive(current);
         if(p.action==='suggest'){const derived=p.features===undefined?featuresFromAttributeValues(current.store.recordedFeatureValues()):undefined,features=(p.features as string[]|undefined)??(derived!.features.length?derived!.features:['any']),featureSource=p.features!==undefined?'explicit':derived!.features.length?'graph':'default',unknown=features.filter((item:string)=>!(WSTG_FEATURES as readonly string[]).includes(item));if(unknown.length)throw Error(`Unknown recon feature(s) ${unknown.join(', ')}; use: ${WSTG_FEATURES.join(', ')}`);if(p.modes!==undefined&&!/^[SHANB]{1,5}$/.test(p.modes as string))throw Error('modes must be letters of SHANB');const offset=(p.cursor as number|undefined)??0,limit=(p.limit as number|undefined)??20;if(!Number.isSafeInteger(offset)||offset<0||!Number.isInteger(limit)||limit<1||limit>50)throw Error('Invalid suggest cursor/limit (limit 1..50)');
           const covered=new Set(all.flatMap(plan=>plan.cells).filter(cell=>cell.currentness!=='retired'&&isWstgKey(cell.questionKey)).map(cell=>cell.questionKey)),found=wstgSuggest(features,{modes:p.modes as string|undefined,covered,offset,limit});
-          return {total:found.matched,shown:found.suggestions.length,omitted:found.matched-found.suggestions.length,cursor:offset,...(offset+found.suggestions.length<found.matched?{nextCursor:offset+found.suggestions.length}:{}),features,featureSource,...(derived?.ignored.length?{ignoredFeatureWords:derived.ignored}:{}),suggestions:found.suggestions,warning:`Planning aid from the shipped WSTG map pinned to ${WSTG_COMMIT.slice(0,12)}: tests with no live cell whose trigger matches the features listed here (named by you or, when none were named, the feature attributes recorded on current graph assets; see featureSource). Not a finding, not permission and not coverage; a test counts only through a derived cell with its lower-case key as the question key. Support describes the shipped library, never the target.`};}
+           // P21/C2: the per-asset question queue, derived from each current asset's recorded `feature` value and the same live
+           // cell keys. One row per (asset, uncovered test); the planner promotes one by creating a task whose questionKey is the
+           // test id, and the host keeps deriving cells. Nothing here writes a record.
+           const planId=all.filter(plan=>plan.status!=='closed'&&plan.status!=='cancelled').at(-1)?.id,queued=wstgQuestionQueue(current.store.recordedFeatureAssets(),{covered,...(planId?{planId}:{})});
+          return {total:found.matched,shown:found.suggestions.length,omitted:found.matched-found.suggestions.length,cursor:offset,...(offset+found.suggestions.length<found.matched?{nextCursor:offset+found.suggestions.length}:{}),features,featureSource,...(derived?.ignored.length?{ignoredFeatureWords:derived.ignored}:{}),suggestions:found.suggestions,queue:queued.queue,queueOmitted:queued.omitted,queueNote:'Candidate questions per recorded feature asset: one row per (asset, applicable test) with no live cell. Promote a row by creating a task whose questionKey is that test id and that asset; the queue, like a suggestion, is never a finding, permission, coverage or a cell.',warning:`Planning aid from the shipped WSTG map pinned to ${WSTG_COMMIT.slice(0,12)}: tests with no live cell whose trigger matches the features listed here (named by you or, when none were named, the feature attributes recorded on current graph assets; see featureSource). Not a finding, not permission and not coverage; a test counts only through a derived cell with its lower-case key as the question key. Support describes the shipped library, never the target.`};}
         if(p.action==='view'){if(!p.id)throw Error('Coverage view needs a plan ID');const plan=all.find(item=>item.id===p.id);if(!plan)throw Error('Unknown coverage plan ID');
           // P10/TR-H02: a plan can derive more cells than one 24 KiB result holds, so the view pages the cells instead of refusing the
           // read. The totals and counts stay the full denominator; only `cells` is paged, with nextCursor for the rest.

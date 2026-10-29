@@ -154,6 +154,25 @@ path prefix to endpoint across a segment boundary — as `contains` relations la
 an asserted relation wins on the same endpoints. Replay and derived structure are facts about what ran and how assets relate, so
 neither can satisfy a claim, case, coverage cell or goal.
 
+## Research breadth and never-idle (P21/C)
+
+The round brief and the situation line expose the work discovery added but the plan does not cover. `summarizeSituation` takes
+`{count, samples}` rows for unplanned assets, uncovered WSTG questions and untriaged gaps (counts exact, samples capped at
+three), derives unmet capability needs from the same claim/chain join the `chain` segment counts, and renders a `breadth`
+segment only while a count is non-zero. The brief's `Unplanned work` section (768-byte cap) prints each non-zero row with its
+samples and the disposition — revise the coverage plan, create the intent whose `questionKey` asks the question, or record the
+exclusion — and says the projection is unknown rather than zero when the caller supplied none. `p2o_wstg_suggest` gains a
+bounded per-asset `queue` (≤20 deduped `{assetId, questionKey, test, flags, expectedObservation, planId?}` rows, plus
+`queueOmitted` and `queueNote`): it is a planning aid that never writes, so a suggestion cannot become a cell, claim or
+coverage. `coverageRevisionDemand` names the revision a discovery backlog owes, the engine's quiet judgement counts new
+features and new coverage questions as progress, and the brief's ready section renders waiting chain steps beside unmet
+capability needs. `finish-preflight` adds a settlement packet listing each gateable research-debt kind and its disposition
+(plan a task, record out-of-scope, defer with debt refs); it is report text, so completion and the finish gate are unchanged.
+The credential ladder is stated in `shared:recording` (public artifacts, one documented default-credential attempt,
+self-provisioned registration, operator-sealed secrets; brute force, spraying and stuffing prohibited; `needs: cred.secret`
+plus the acquisition paths tried as the fallback), and the planner prompt gains breadth, capability-needs and batch-dispatch
+guidance. Prompt-text ceilings were re-pinned for the planner (16,700, measured 16,193); declaration budgets did not move.
+
 ## Persistence and teardown
 
 - Canonical state is one SQLite file per run (`node:sqlite`, schema 7): records, events, outbox and request results commit

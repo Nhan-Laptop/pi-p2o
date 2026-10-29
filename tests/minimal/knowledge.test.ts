@@ -29,6 +29,14 @@ describe('approved knowledge', () => {
     // reader serves them and every relative link inside the library rewrites to a resolvable p2o-skill: id.
     expect((await library.read('shared:recording')).text).toContain('### Recording what you learned');
     expect((await library.read('shared:recording')).text).toContain('`no-new`');
+    // P21/C5: the credential ladder and its prohibitions are part of the worker's shared recording contract, so the bound is
+    // text the library actually serves rather than an unstated convention.
+    const recording = (await library.read('shared:recording')).text;
+    for (const phrase of ['Credential needs', 'publicly served configuration', 'one documented default-credential attempt',
+      'self-provisioned registration', '${P2O_SECRET:<id>}', 'Brute force, spraying, credential stuffing',
+      'reset abuse and lockout attempts are prohibited', '`needs: cred.secret`', 'acquisition paths tried']) {
+      expect(recording, phrase).toContain(phrase);
+    }
     expect((await library.read('shared:tooling-provenance')).text).toContain('Supplemental reverse-engineering tooling');
     expect((await library.read('shared:evidence-cases')).text).toContain('## Cases: claim, case, finding');
     expect((await library.read('shared:handoffs')).text).toContain('p2o-skill:shared:evidence-cases');

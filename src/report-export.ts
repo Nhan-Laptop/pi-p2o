@@ -696,6 +696,11 @@ export function renderReport(index: LedgerIndex, context: ReportProjectionContex
     if (meta.unresolved && (meta.unresolved.obligations.length || meta.unresolved.advisory.length)) {
       out.push('', `Preflight at ${meta.endReason && meta.endReason !== 'finished' ? 'stop' : 'finish'}: ${meta.unresolved.obligations.length} open obligation code(s), ${meta.unresolved.advisory.length} advisory.`, '', '| Code | Level | Count | Examples | Meaning |', '|---|---|---|---|---|');
       for (const item of [...meta.unresolved.obligations, ...meta.unresolved.advisory]) out.push(`| ${item.code} | ${item.level} | ${item.count} | ${ids(item.ids, 5)} | ${mdText(item.message, 200)} |`);
+      // P21/C4: the settlement a stopping lead owes, by debt kind, so "unfinished" ends in a disposition rather than a count.
+      if (meta.unresolved.settlement.length) {
+        out.push('', 'Settlement required before stopping — plan a task, record the kind out of scope, or defer it with a revisit condition and the debt ids it answers. A decision row or prose does not discharge one.', '', '| Debt kind | Count | Examples | Disposition |', '|---|---|---|---|');
+        for (const item of meta.unresolved.settlement) out.push(`| ${item.kind} | ${item.count} | ${ids(item.ids, 5)} | ${mdText(item.disposition, 240)} |`);
+      }
     }
   }
   out.push('', '## Limits of this report', '',

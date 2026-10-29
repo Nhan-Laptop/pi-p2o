@@ -3,6 +3,7 @@ import type { CaseView } from './cases.js';
 import type { CoveragePlanView } from './coverage.js';
 import { chainJoin } from './chain-view.js';
 import { chainBoard } from './chain-board.js';
+import { describeCapability } from './capabilities.js';
 import type { PlanEntry } from './planning.js';
 import type { ClaimFields } from './claims.js';
 import { isReplayable, isTestedCell } from './claims.js';
@@ -55,6 +56,14 @@ export interface SituationSnapshot {
   validationCurrent: number;
   /** P21/C6: open claims with a need nothing recorded gains; the capability work the chain cannot take yet. */
   unmetNeeds: number;
+  /** P21/C1: graph assets no live coverage plan covers, and up to three `kind key` samples the brief expands. */
+  unplannedAssets: number; unplannedSamples: string[];
+  /** P21/C2: WSTG tests applicable to a recorded feature with no live cell, and up to three test ids. */
+  wstgUnplanned: number; wstgSamples: string[];
+  /** P21/C6: one line per needed capability no demonstrated claim gains (`kind <- claim`). */
+  unmetNeedSamples: string[];
+  /** P21/C1: open gaps no coverage cell or case references, and up to three ids. */
+  untriagedGaps: number; untriagedSamples: string[];
   /** P4: the highest suggested priority among the dispatchable work, with the purpose that scored it. A suggestion only. */
   suggested: { purpose: WorkPurpose; score: number } | null;
 }
@@ -67,7 +76,7 @@ const ANSWERED = new Set(['confirmed_claim', 'ruled_out_bounded', 'accepted']);
 
 // Capabilities are typed (P14.1) and `chainJoin` owns the match, so the same join answers the graph view and this line.
 
-export function summarizeSituation(input: { tasks: readonly AssessmentTask[]; cases: readonly CaseView[]; coverage: readonly CoveragePlanView[]; claims: readonly SituationClaim[]; plans?: readonly PlanEntry[]; leads?: ReadonlyArray<{ state?: string; severity?: string }>; derivedEdges?: number }): SituationSnapshot {
+export function summarizeSituation(input: { tasks: readonly AssessmentTask[]; cases: readonly CaseView[]; coverage: readonly CoveragePlanView[]; claims: readonly SituationClaim[]; plans?: readonly PlanEntry[]; leads?: ReadonlyArray<{ state?: string; severity?: string }>; derivedEdges?: number; unplannedAssets?: { count: number; samples?: readonly string[] }; wstgUnplanned?: { count: number; samples?: readonly string[] }; untriagedGaps?: { count: number; samples?: readonly string[] } }): SituationSnapshot {
   const terminal = terminalCounts(input.tasks);
   const byId = new Map(input.tasks.map(task => [task.id, task]));
   const running = input.tasks.filter(task => EXECUTING.has(task.status));
@@ -80,6 +89,10 @@ export function summarizeSituation(input: { tasks: readonly AssessmentTask[]; ca
   // P16.5/P16.6: routes are counted from the plan board; a negation counts as unproven when its execution never ran.
   const routes = routeCounts(input.plans ?? []);
   const unprovenNegations = input.claims.filter(claim => claim.closure === 'ruled_out' && claim.execution !== 'tested').length;
+  // P21/C1: the caller supplies the count it already derived plus at most the samples it read; the line keeps the count and
+  // the brief expands the samples, so an unbounded backlog cannot grow the snapshot or the 240-character line.
+  const unplanned = input.unplannedAssets, wstg = input.wstgUnplanned, gaps = input.untriagedGaps;
+  const unmetSamples = [...new Set(join.unmet.flatMap(claim => (join.uncovered[claim] ?? []).map(need => `${describeCapability(need)} <- ${claim}`)))].slice(0, 3);
   return {
     open: input.tasks.filter(task => !SETTLED.has(task.status)).length,
     running: running.length,
@@ -99,6 +112,10 @@ export function summarizeSituation(input: { tasks: readonly AssessmentTask[]; ca
     chainSteps: board.reduce((total, chain) => total + chain.ready.length + chain.waiting.length, 0),
     chainReadySteps: board.reduce((total, chain) => total + chain.ready.length, 0),
     chainWaitingSteps: board.reduce((total, chain) => total + chain.waiting.length, 0),
+    unplannedAssets: Math.max(0, Math.trunc(unplanned?.count ?? 0)), unplannedSamples: (unplanned?.samples ?? []).slice(0, 3),
+    wstgUnplanned: Math.max(0, Math.trunc(wstg?.count ?? 0)), wstgSamples: (wstg?.samples ?? []).slice(0, 3),
+    unmetNeedSamples: unmetSamples,
+    untriagedGaps: Math.max(0, Math.trunc(gaps?.count ?? 0)), untriagedSamples: (gaps?.samples ?? []).slice(0, 3),
     routesOpen: routes.open.length, routesDone: routes.done.length, routeNames: routes.open,
     unprovenNegations,
     leadsUntriaged: (input.leads ?? []).filter(lead => (lead.state ?? 'untriaged') === 'untriaged').length,
@@ -147,9 +164,10 @@ export const SEGMENT_FIELDS = {
   exhausted: ['exhausted'],
   blocked: ['blocked'],
   contradictions: ['openContradictions'],
-  chain: ['chainReady', 'chainUnmet', 'chainSteps', 'chainReadySteps', 'chainWaitingSteps', 'unmetNeeds'],
+  chain: ['chainReady', 'chainUnmet', 'chainSteps', 'chainReadySteps', 'chainWaitingSteps', 'unmetNeeds', 'unmetNeedSamples'],
   rating: ['pendingRating'],
   coverage: ['coverageTested', 'coverageCells', 'coveragePlanned', 'coverageOmitted'],
+  breadth: ['unplannedAssets', 'unplannedSamples', 'wstgUnplanned', 'wstgSamples', 'untriagedGaps', 'untriagedSamples'],
   replay: ['replayableClaims', 'derivedEdges', 'validationCurrent'],
   leads: ['leadsUntriaged', 'leadsCritical'],
   routes: ['routesOpen', 'routesDone', 'routeNames'],
@@ -183,6 +201,16 @@ export function situationSegments(snapshot: SituationSnapshot): Array<{ id: Situ
   if (snapshot.pendingRating) segments.push({ id: 'rating', text: `${plural(snapshot.pendingRating, 'case')} pending rating` });
   // M3: the backlog pair keeps "not shown" from reading as "not planned" (ARTEX agent/tools.go:436-440).
   if (snapshot.coverageCells) segments.push({ id: 'coverage', text: `coverage ${snapshot.coverageTested}/${snapshot.coverageCells}${snapshot.coveragePlanned || snapshot.coverageOmitted ? ` (planned ${snapshot.coveragePlanned} unreached, ${snapshot.coverageOmitted} omitted)` : ''}` });
+  // P21/C1: the breadth sentence names unplanned work the round can still settle; the brief expands the samples and the
+  // planner prompt states the disposition rule, so a non-zero count here is never a silent fact.
+  if (snapshot.unplannedAssets || snapshot.wstgUnplanned || snapshot.untriagedGaps) {
+    const parts = [
+      ...(snapshot.unplannedAssets ? [plural(snapshot.unplannedAssets, 'unplanned asset')] : []),
+      ...(snapshot.wstgUnplanned ? [`${snapshot.wstgUnplanned} WSTG question${snapshot.wstgUnplanned === 1 ? '' : 's'}`] : []),
+      ...(snapshot.untriagedGaps ? [plural(snapshot.untriagedGaps, 'untriaged gap')] : []),
+    ];
+    segments.push({ id: 'breadth', text: `breadth: ${parts.join(', ')}` });
+  }
   // P21/A5: the host-recorded facts a run previously could not see: replayable claims, derived structure and current
   // independence. A derived edge is labelled as structure here too, never as evidence.
   if (snapshot.replayableClaims || snapshot.derivedEdges || snapshot.validationCurrent) {
@@ -198,7 +226,7 @@ export function situationSegments(snapshot: SituationSnapshot): Array<{ id: Situ
 
 /** One line, hard-capped: optional tail segments go before the length is allowed to exceed the cap. */
 export function situationLine(snapshot: SituationSnapshot): string {
-  const optional: SituationSegment[] = ['replay', 'coverage', 'rating', 'chain', 'contradictions', 'blocked', 'next'];
+  const optional: SituationSegment[] = ['replay', 'coverage', 'rating', 'chain', 'breadth', 'contradictions', 'blocked', 'next'];
   let segments = situationSegments(snapshot);
   const render = () => `Situation: ${segments.map(segment => segment.text).join(' · ')}.`;
   for (const id of optional) {

@@ -159,6 +159,12 @@ export function coverageViews(index:LedgerIndex,context:CoverageContext):Coverag
 
 export function boundCoverageRequest(action:string,input:unknown,request:MutationRequest):MutationRequest{if(request.actorId!=='owner')throw Error('Coverage mutations require host-bound owner attribution');return {...request,payload:{kind:'coverage-mutation',action,input,submitted:request.payload}};}
 
+/** P21/C3: discovery that outgrew the plan is the revision the planner owes. A surface fact only: the plan stays the denominator. */
+export function coverageRevisionDemand(plans:readonly Pick<CoveragePlanView,'status'|'discoveredUnplannedAssets'>[]):string|undefined{
+  const count=plans.filter(plan=>plan.status!=='closed'&&plan.status!=='cancelled').reduce((total,plan)=>total+(plan.discoveredUnplannedAssets??0),0);
+  return count?`the coverage plan owes a revision for ${count} unplanned asset${count===1?'':'s'} — revise it or record the exclusion`:undefined;
+}
+
 /** Canonical owner matrix service. Records and tasks remain the only writable sources; no execution queue. */
 export class CoverageBoard extends LedgerBoard{
   constructor(runId:string,path:string,active:()=>boolean,private context:CoverageContext,private now=()=>Date.now()){super(runId,path,active,'Coverage','Coverage');}

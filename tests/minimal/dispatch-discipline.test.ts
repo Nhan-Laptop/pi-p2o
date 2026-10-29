@@ -12,7 +12,7 @@ describe('dispatch discipline (P6)', () => {
   it('states the serial-chain rule, the dispatch order and the anti-stall floor', () => {
     for (const prompt of [plannerInstructions(base()), solo()]) {
       expect(prompt).toContain('A chain step that consumes an earlier step’s actual output is its own task with pinned prerequisites');
-      expect(prompt).toMatch(/Dispatch the highest-value intents first; a slot opens as one settles/);
+      expect(prompt).toMatch(/Dispatch the highest-value intents first and several independent tasks per round \(the host accepts up to 25\)/);
       // P15 (R1): a round with no feasible question is not a stall, so the rule names the blocked path instead of demanding work.
       // P11/A11: blocked now means the approaches are exhausted, never "a capability nobody handed me"; the planner may not end
       // a round by asking the operator for a permission the run already grants.
@@ -26,10 +26,12 @@ describe('dispatch discipline (P6)', () => {
     expect(plannerInstructions(base())).not.toMatch(/\bp2o_[a-z_]+\b/);
   });
 
-  it('names no batch size the frontier would have to police', () => {
-    // How many intents a call carries is the lead's judgement: the slots are stated, the batch is not counted.
+  it('names the host batch bound while leaving the dispatch plan the lead’s judgement', () => {
+    // P21/C6: the host accepts 1..25 intents per call, so the prompt states that bound and encourages a batch; how many of the
+    // free slots one call fills is still the lead's decision, and the prompt never turns the bound into a required dispatch size.
     const prompt = plannerInstructions(base());
     expect(prompt).toContain('Available: 3 concurrent worker slots');
+    expect(prompt).toContain('the host accepts up to 25');
     expect(prompt).not.toMatch(/at most \w+ intents per call/);
     expect(prompt).toContain('nothing is dropped');
   });

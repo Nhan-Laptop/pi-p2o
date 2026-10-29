@@ -235,7 +235,12 @@ describe('bounded recon contract', () => {
   // trims (two duplicated lines removed, 905 -> 911 including the brief's finish line) paid for the role contract; the
   // assignment-contract block and the workflow recipe are conditional and measured separately in brief-context.test.ts
   // (contract 1,389; contract+recipe 2,365 with the fixture skill and its recipe), so the pinned no-contract ceiling is unchanged.
-  const PROMPT_CEILINGS = { planner: 15_600, worker: 13_200, validation: 13_500, brief: 1_650, reporter: 2_600 };
+  // 2026-10-30 (P21/C): the planner gained BREADTH BEFORE IDLE (the C1 disposition a non-zero breadth row demands) and
+  // CAPABILITY NEEDS (the C5 typed need, pointing at shared:recording for the ladder and its prohibitions), and the dispatch
+  // line now states the 25-intent batch (C6). No existing line could be removed for them — each states a host rule the lead
+  // otherwise infers — so the measured url/delegated section grew 15,578 -> 16,193; planner ceiling raised 15,600 -> 16,700
+  // (+3%, rounded up). The worker, brief and reporter ceilings are unchanged.
+  const PROMPT_CEILINGS = { planner: 16_700, worker: 13_200, validation: 13_500, brief: 1_650, reporter: 2_600 };
   it('keeps the delegated lead prompt variants inside a recorded size (the solo variants are bounded above)', () => {
     const base = { runId: 'run-recon', sourceSkipped: 2, delegation: { enabled: true, maxWorkers: 3, maxDepth: 2 } };
     const directory = plannerInstructions({ ...base, targetKind: 'directory', targetLabel: '/target' });
@@ -261,7 +266,7 @@ describe('bounded recon contract', () => {
 
   it('renders one bounded situation line when the run has records', () => {
     const snapshot = { open: 6, running: 2, runningRoles: ['discovery', 'validation'], ready: 3, exhausted: 0, leadsUntriaged: 0, leadsCritical: 0, routesOpen: 0, routesDone: 0, routeNames: [], unprovenNegations: 0, blocked: 1, openContradictions: 1,
-      chainReady: 1, chainUnmet: 2, chainSteps: 0, chainReadySteps: 0, chainWaitingSteps: 0, unmetNeeds: 2, replayableClaims: 2, derivedEdges: 3, validationCurrent: 1, pendingRating: 4, coverageTested: 12, coverageCells: 31, coveragePlanned: 0, coverageOmitted: 0, suggested: { purpose: 'validation' as const, score: 85 } };
+      chainReady: 1, chainUnmet: 2, chainSteps: 0, chainReadySteps: 0, chainWaitingSteps: 0, unmetNeeds: 2, unplannedAssets: 0, unplannedSamples: [], wstgUnplanned: 0, wstgSamples: [], unmetNeedSamples: [], untriagedGaps: 0, untriagedSamples: [], replayableClaims: 2, derivedEdges: 3, validationCurrent: 1, pendingRating: 4, coverageTested: 12, coverageCells: 31, coveragePlanned: 0, coverageOmitted: 0, suggested: { purpose: 'validation' as const, score: 85 } };
     const base = { runId: 'run-recon', sourceSkipped: 2, targetKind: 'url' as const, targetLabel: 'https://example.invalid' };
     const solo = plannerInstructions({ ...base, delegation: { enabled: false, maxWorkers: 1, maxDepth: 1 }, situation: snapshot });
     const delegated = plannerInstructions({ ...base, delegation: { enabled: true, maxWorkers: 3, maxDepth: 2 }, situation: snapshot });
@@ -275,7 +280,7 @@ describe('bounded recon contract', () => {
   });
 
   it('says 0 open instead of leaving an empty frontier to be inferred', () => {
-    const idle = { open: 0, running: 0, runningRoles: [], ready: 0, exhausted: 0, leadsUntriaged: 0, leadsCritical: 0, routesOpen: 0, routesDone: 0, routeNames: [], unprovenNegations: 0, blocked: 0, openContradictions: 0, chainReady: 0, chainUnmet: 0, chainSteps: 0, chainReadySteps: 0, chainWaitingSteps: 0, unmetNeeds: 0, replayableClaims: 0, derivedEdges: 0, validationCurrent: 0, pendingRating: 0, coverageTested: 0, coverageCells: 0, coveragePlanned: 0, coverageOmitted: 0, suggested: null };
+    const idle = { open: 0, running: 0, runningRoles: [], ready: 0, exhausted: 0, leadsUntriaged: 0, leadsCritical: 0, routesOpen: 0, routesDone: 0, routeNames: [], unprovenNegations: 0, blocked: 0, openContradictions: 0, chainReady: 0, chainUnmet: 0, chainSteps: 0, chainReadySteps: 0, chainWaitingSteps: 0, unmetNeeds: 0, unplannedAssets: 0, unplannedSamples: [], wstgUnplanned: 0, wstgSamples: [], unmetNeedSamples: [], untriagedGaps: 0, untriagedSamples: [], replayableClaims: 0, derivedEdges: 0, validationCurrent: 0, pendingRating: 0, coverageTested: 0, coverageCells: 0, coveragePlanned: 0, coverageOmitted: 0, suggested: null };
     const text = plannerInstructions({ runId: 'run-recon', sourceSkipped: 2, targetKind: 'directory' as const, targetLabel: '/target', delegation: { enabled: true, maxWorkers: 3, maxDepth: 2 }, situation: idle });
     expect(text).toContain('Situation: 0 open.');
   });

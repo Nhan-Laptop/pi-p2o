@@ -3,6 +3,7 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { blockedNegatives, finishPreflight, receiptLooksBlocked } from '../../src/finish-preflight.js';
 import { indexRecords, type AssessmentRecord } from '../../src/records.js';
+import { debtId } from '../../src/debt.js';
 import { fixture, populate } from './helpers/report-fixture.js';
 
 /** P1: a host check at p2o_finish. Hermetic: inert sandbox, real SQLite store, no model, no target. */
@@ -106,6 +107,30 @@ describe('finish preflight', () => {
   it('does not flag a run with no stated --goal at all', async () => fixture(async h => {
     await h.command('--target ./source');
     expect(finishText(await h.call('p2o_finish', { partial: PARTIAL }))).not.toContain('NO_GOAL_RECORDED');
+  }));
+  // P21/C4: stopping with obligations left shows each owed debt kind and the disposition it needs. The packet is a report
+  // fact like the items above; it never refuses the finish and it does not loosen the completion it reports.
+  it('emits a settlement packet naming each owed debt kind before the finish, without gating it (P21/C4)', async () => fixture(async h => {
+    await h.command('--target ./source');
+    const result = await h.call('p2o_finish', { partial: PARTIAL }), text = finishText(result);
+    expect(text).toContain('SETTLEMENT PACKET (P21/C4)');
+    expect(text).toMatch(/- GOAL_MISSING \(\d+\): debt-goal-missing-[a-f0-9]{12}/);
+    expect(text).toContain('author one goal with bounded criteria and measurable proof on the plan board');
+    const settlement = result.details.preflight.settlement as Array<{ kind: string; disposition: string }>;
+    expect(settlement.map(item => item.kind)).toContain('GOAL_MISSING');
+    expect(settlement.find(item => item.kind === 'GOAL_MISSING')!.disposition).toContain('author one goal');
+    // The incomplete outcome and the debt rules are unchanged: the packet only makes the remaining work actionable.
+    expect(result.details.completion.items.map((item: any) => item.code)).toContain('RESEARCH_DEBT');
+    expect(result.details.completion.state).toBe('incomplete');
+  }));
+  it('drops a kind from the packet once a deferred todo cites its debt id (P21/C4)', async () => fixture(async h => {
+    await h.command('--target ./source');
+    // The debt id rule is stable, so the wall can be recorded before the finish that reads the packet.
+    await h.call('p2o_goal_author', { entry: { kind: 'todo', title: 'Wall the missing goal for this fixture', status: 'deferred',
+      reason: 'The fixture records no goal by design, so this debt is answered as out of scope', debtRefs: [debtId('GOAL_MISSING', 'no-goal')] } });
+    const result = await h.call('p2o_finish', { partial: PARTIAL }), text = finishText(result);
+    expect(result.details.preflight.settlement.map((item: any) => item.kind)).not.toContain('GOAL_MISSING');
+    expect(text).not.toContain('- GOAL_MISSING');
   }));
 });
 

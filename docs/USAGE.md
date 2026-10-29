@@ -224,6 +224,19 @@ một round kết thúc mà không có tool call nào nhận tối đa hai nudge
   `policyBasis=operator_contract` cùng `policyRef=<id>` (sai/thiếu id bị từ chối kèm id hợp lệ); case confirmed accept basis này
   cùng `explicit_contract`/`boundary_invariant`, còn `inferred` vẫn chỉ là observation. Rating depth, scope và authority không đổi;
   một run không `--policy` hành xử y như trước.
+- **Research breadth và never-idle (P21/C):** round brief có section `## Unplanned work` và situation line có segment
+  `breadth`: đếm asset chưa nằm trong cell nào được plan, câu hỏi WSTG chưa hỏi, gap chưa triage và capability need chưa ai
+  đáp (sample ≤3 mỗi row). Một row khác 0 cần disposition: revise coverage plan, tạo intent có `questionKey` hỏi đúng câu đó,
+  hoặc ghi exclusion; demand line nêu `the coverage plan owes a revision for N unplanned asset(s)` khi discovery thêm asset
+  plan chưa cover, và quiet judgement tính feature/câu hỏi coverage mới là progress thay vì tuyên bố quiet. `p2o_wstg_suggest`
+  trả thêm `queue` (≤20 cặp asset × test kèm `expectedObservation`, `planId`) — chỉ là gợi ý, không phải cell/claim/coverage.
+  Section Ready của brief in frontier đang chờ kèm unmet capability needs để planner plan capability task thay vì thêm asset,
+  và planner được khuyến khích dispatch nhiều task độc lập mỗi round (host nhận tới 25 intent mỗi call). Trước finish,
+  preflight in `SETTLEMENT PACKET` cho mỗi debt kind còn nợ với disposition (plan task / out-of-scope / defer + `debtRefs`) —
+  chỉ để thấy việc còn lại trước khi dừng, không gate finish và không đổi completion. Credential ladder nằm trong
+  `shared:recording`: đọc public JS/source map/config được serve công khai, đúng một default-credential attempt có tên như đã
+  ghi, tự đăng ký tenant/account, hoặc dùng `p2o_secret` của operator; cấm brute force, spraying, credential stuffing, reset
+  abuse và lockout; không có cách nào thì ghi `needs: cred.secret` kèm các acquisition path đã thử.
 - `--refer-workspace` chỉ thêm context read-only từ run cũ cùng target (khớp path/origin; `gaps` gồm covered, leftOpen,
   stale, neverReached, unknown) và không bao giờ tính là same-run evidence hay khôi phục authority. Round brief in các count đó
   thành một dòng "Prior run (context only, never evidence)"; muốn xem chi tiết vì sao một plan row tồn tại, planner dùng read

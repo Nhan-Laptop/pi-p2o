@@ -236,6 +236,29 @@ describe('obligation-driven continuation (A6.3)', () => {
     f.engine.stop();
   });
 
+  // P21/C3: a recorded recon feature or a new coverage question is discovery becoming plannable work, so the quiet judgement
+  // reads both counters. The rule adds progress; it does not disable quiet for a round that truly repeated itself.
+  it('counts a new recorded feature or coverage question as progress (P21/C3)', async () => {
+    const f = fixture({});
+    let wakeRound = 0;
+    const admit = (patch: Partial<RoundProgress>) => {
+      f.engine.notify('worker-report', `p${++wakeRound}`);
+      const wake = f.engine.boundary()!;
+      f.engine.consume(wake.through, f.round(patch));
+      return wake;
+    };
+    admit(owed({ features: 1, questions: 1 }));
+    admit(owed({ features: 2, questions: 1 }));
+    expect(f.engine.quietRounds()).toEqual([]);
+    admit(owed({ features: 2, questions: 2 }));
+    expect(f.engine.quietRounds()).toEqual([]);
+    // Unchanged counters after that are still quiet: the new counters widen what counts as progress, not what "nothing" means.
+    admit(owed({ features: 2, questions: 2 }));
+    admit(owed({ features: 2, questions: 2 }));
+    expect(f.engine.quietRounds()).toEqual([4, 5]);
+    f.engine.stop();
+  });
+
   it('keeps a round with a real ready direction quiet when it added nothing (no P19/C regression)', async () => {
     const f = fixture({ heartbeat: 600 });
     const demand = 'step 2 of chain chain-export ready and undispatched';
