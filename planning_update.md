@@ -1,9 +1,10 @@
 # S1 — Surface audit and remediation plan of record (2026-10-29)
 
-Status: **Tranches A, B, B10, C1, C2 and C3 are committed on 2026-10-29 (A `aa87a57`, B `1cf3d8b`, B10 `04f3f23`, C1
-`b7f8574`, C2 `42b0a17`, C3 `4bb48f9`) and Tranche C continues in the working tree: C4 (the deterministic before/after gate) is
-recorded below, so the surface is 35 registered tools / 35 model-visible / 0 hidden / 10 board verbs / planner 23; C5
-(the single ceiling re-pin and the docs pass) remains.** Rev 2 after the
+Status: **Tranches A, B, B10, C1, C2, C3 and C4 are committed on 2026-10-29 (A `aa87a57`, B `1cf3d8b`, B10 `04f3f23`, C1
+`b7f8574`, C2 `42b0a17`, C3 `4bb48f9`, C4 `28386b5`) and C5 (the single ceiling re-pin and the docs pass) is recorded
+below in the working tree pending the owner's commit. The surface is 35 registered tools / 35 model-visible / 0 hidden /
+10 board verbs / planner 23; the ceilings are re-pinned from the after-C measurement (45,500 / 41,400 / 40,500 / 6,500 /
+75,600), so Tranche C is complete.** Rev 2 after the
 2026-10-29 plan review. Base commit `197d6a9` (R3 of the R1 program). The owner's
 `AGENTS.md` edit and the untracked `pi-p2o-defense-vi.pptx` are outside S1. This document replaces the R3 plan of record. That text is unchanged in git at
 `git show 197d6a9:planning_update.md`; the earlier A1 text at `git show bbdfec1:planning_update.md` and the P18 text at
@@ -420,7 +421,7 @@ live run, no target traffic, no paid model call: every test is hermetic. The own
 Acceptance: planner declaration −≥2,500 chars, worker −≥400; no authority widening (the planner never gains a target,
 lab or claim tool); graph tests split by role; `context-budget` re-pinned once with a dated comment (D-S1-5).
 
-**C1 result (working tree, 2026-10-29; uncommitted).** One `p2o_graph` became four registered tools, split by authority
+**C1 result (committed as `b7f8574`, 2026-10-29).** One `p2o_graph` became four registered tools, split by authority
 rather than by feature, all `exposure: 'model-only'`:
 
 - `p2o_graph` (planner + worker + validation) keeps the bounded reads `view|export|query|summary|path`; the broker
@@ -471,7 +472,7 @@ and the doc mappings, as in R0–R3; `partial`/`truncated` both false). No live 
 "use when" clause per remaining verb; the chain branch gets a `GRAPH_RESPONSE_BYTES` guard and the view dossier trimming
 is tested at the byte boundary (F-37). Acceptance: a response-bound test per read verb; description length asserted.
 
-**C2 result (working tree, 2026-10-29; uncommitted).** The declared read bounds are now enforced and proved:
+**C2 result (committed as `42b0a17`, 2026-10-29).** The declared read bounds are now enforced and proved:
 
 - **Description ceiling.** `p2o_graph`'s registered description (boundary included) is **678 chars** — already inside the
   ≤ 900 target — with exactly one clause per remaining verb (`view:` 100 rows, `query:` 50, `summary:` 10 rows / 8 KiB,
@@ -503,7 +504,7 @@ keep `p2o_candidate` flat. Not safe, and explicitly rejected: a single discrimin
 flattens a tool to root properties/required and a root `anyOf` loses all arguments — the plan records this as a decision,
 not a missing idea.
 
-**C3 result (working tree, 2026-10-29; uncommitted).** The bounded consolidation F-43 allows, and nothing beyond it:
+**C3 result (committed as `4bb48f9`, 2026-10-29).** The bounded consolidation F-43 allows, and nothing beyond it:
 
 - **One payload key.** The four planner authoring/rating verbs now carry their payload as `entry`: `p2o_task_author`
   (`draft` → `entry`), `p2o_goal_author` and `p2o_case_author` (already `entry`), and `p2o_case_rate`
@@ -539,7 +540,7 @@ spawned, rounds) from the hermetic fixtures. A live bench run is optional and on
 Acceptance for merging C1–C3: every deterministic metric is unchanged or better, no test is weakened, and the owner
 reviews the before/after table.
 
-**C4 result (working tree, 2026-10-29; uncommitted).** The before column was re-measured, not copied: a detached worktree at
+**C4 result (committed as `28386b5`, 2026-10-29).** The before column was re-measured, not copied: a detached worktree at
 the pre-C commit `04f3f23` was checked out beside the repo, `node_modules` linked, and the same three scripts run in it;
 the after column is HEAD (`4bb48f9`). Full-suite counts come from the recorded tranche runs. No live benchmark was run
 (D-S1-9), so the bench rows are the hermetic harness's own fixture discovery/verification counts.
@@ -585,9 +586,40 @@ Reproduce the before column: `git worktree add --detach .before-c 04f3f23 && ln 
 && (cd .before-c && node scripts/measure-context.mjs --source && node scripts/audit-surface.mjs && node
 ../node_modules/.cache/p2o/decl-budget.mjs) && git worktree remove --force .before-c`; the hermetic bench counts are
 `node scripts/benchmark-skills.mjs plan` and `... verify` (both refuse to call a model without `--live`).
+
 **C5 — Re-pin and record.** After C, update `context-budget.test.ts` ceilings once (measured + 3%, dated comment naming
 what moved), `docs/ARCHITECTURE.md`/`docs/KNOWLEDGE.md`, `docs/ACCEPTANCE_MATRIX.md` (new F-S1 rows), and add one
 `docs/HISTORY.md` row when the tranche is committed. The R3 row and the R3 plan remain in git history.
+
+**C5 result (working tree, 2026-10-29; commit pending).** The ceilings are re-pinned once from the after-C measurement
+(D-S1-5) and the current docs describe the post-C surface:
+
+- **Ceilings, lowered not raised.** `tests/minimal/context-budget.test.ts` now carries `planner 45,500 / worker 41,400 /
+  validation 40,500 / reporter 6,500 / model 75,600`, each the measured total +3% rounded up to the next hundred
+  (44,134 / 40,124 / 39,313 / 6,282 / 73,363), with the dated comment above naming what moved: the C1 split
+  (32 → 35 registered tools and 21 → 23 planner verbs), C2's read bounds and description clause, C3's `entry` key and
+  capability-triple trim. Every number is below the ceiling it replaces (49,300 / 44,100 / 43,300 / 6,800 / 77,900). The
+  `surface-audit` baseline uses the same numbers, and its comment now says the floor was re-pinned rather than carried.
+- **Docs that were still pre-C.** `docs/ARCHITECTURE.md` states 35 registered tools, the 23/20/19/6 role loadouts and the
+  four graph verbs by authority; `docs/KNOWLEDGE.md` names `p2o_graph_review` for the planner's one-row settle,
+  `p2o_graph_record` for the worker/validation batch, `p2o_graph_plan {action:"chain"}` for the chain join (board rows only
+  with `plan:true`, never a dispatch) and `p2o_graph_plan {action:"ingest"}` for the manual artifact retry;
+  `docs/PLANNER_ENGINE.md`'s chain section uses the new verb and the `entry` name; `README.md` prints 23/20/19/6.
+  `docs/ACCEPTANCE_MATRIX.md` gains `F-S1-C-5`, corrects the two R2 rows that still pointed ingest at `p2o_graph`, brings
+  the report role-matrix row to 23/20/19 and dates the L1 count row as the number at that time. `docs/HISTORY.md` gains
+  the tranche-C milestone row.
+- **Recorded, not rewritten.** Rows that were true when an earlier tranche landed keep their number (the L1 row is dated
+  instead of rewritten) and `docs/HISTORY.md` keeps every earlier milestone verbatim; only the documents that describe the
+  current surface were moved forward.
+- **No code changed in C5.** C5 touches tests, docs and this plan only, so the surface, the declarations and the response
+  bounds are exactly what C1–C3 left and the C4 gate numbers stand. Verification: `tsc --noEmit` clean; focused suites
+  (`context-budget`, `surface-audit`, `measure-context`, `acceptance-matrix`, `authority`, `truth`, `recon`,
+  `prompt-roles`) green; full `vitest run` **154 passed / 5 skipped files (159), 1,347 passed / 13 skipped tests (1,360),
+  0 fail**; `npm run build` + `npm run check:build` → build import OK; `git diff --check` clean; `audit-surface` still
+  35/35/0/10 with 0 contradictions and the declarations still 44,134 / 40,124 / 39,313 / 6,282 / 73,363;
+  `detect_changes --scope all` recorded. No live run, no target traffic, no paid model call.
+
+Tranche C is complete with C5; the only step left is the owner's commit of this pass.
 
 ## 7. Budget arithmetic
 
@@ -599,9 +631,12 @@ what moved), `docs/ARCHITECTURE.md`/`docs/KNOWLEDGE.md`, `docs/ACCEPTANCE_MATRIX
 | after C1 (measured 2026-10-29) | 45,055 | 40,577 | 39,766 | 6,282 | 74,737 |
 | after C3 (measured 2026-10-29) | 44,134 | 40,124 | 39,313 | 6,282 | 73,363 |
 | after C (target) | ≤ 45,300 | ≤ 41,500 | ≤ 40,700 | ≤ 6,450 | ≤ 71,500 |
-| ceiling (unchanged until C) | 49,300 | 44,100 | 43,300 | 6,800 | 77,900 |
+| after C5 (ceilings re-pinned 2026-10-29) | 45,500 | 41,400 | 40,500 | 6,500 | 75,600 |
+| ceiling before C (A and B) | 49,300 | 44,100 | 43,300 | 6,800 | 77,900 |
 
-The ceilings are not raised in A or B: the reclaimed bytes are headroom (D-S1-5). C re-pins them once from measurement.
+The ceilings are not raised in A or B: the reclaimed bytes are headroom (D-S1-5). C5 re-pins them once from the after-C
+measurement with the same method (measured +3%, rounded up to the next hundred). The per-role `after C` targets are met;
+the model-union target stays missed and C5 records that instead of widening the row.
 B10 removed only registrations that no role loadout ever held, so no declaration number in this table moved; what changed
 is the registered count (34 → 32, all model-visible) and the board-verb count (11 → 10). C1 moved the batch schema off the
 planner and onto a worker/validation verb, which is why planner/worker/validation drop while the model union rises: the

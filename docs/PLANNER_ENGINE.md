@@ -49,11 +49,11 @@ the rest in the same canonicalize-and-anchor step for both halves:
 |---|---|---|
 | `work.purpose` | role when omitted | recon→mapping, discovery→discovery, validation→validation, exploit→exploitation, reporting→reporting, else investigation |
 | `outputContract` | purpose | fixed shape (mapping→assets/evidence/gaps, discovery→candidates/evidence/controls, validation→evidence/controls/gaps, reporting→coverage/gaps, …) |
-| `decision` | the anchors the draft names | `new` by default, `validate` with `validationOf`, `refine` with a prior task; retest and unanchored refinement need it stated |
+| `decision` | the anchors the `entry` names | `new` by default, `validate` with `validationOf`, `refine` with a prior task; retest and unanchored refinement need it stated |
 
 `create` also runs the duplicate/history preflight on that identity, so an exact active or reusable attempt comes back as a
-match payload instead of a second task (`already_covered_by`, `reuse_candidates`, `partial`, `overlaps`). Limiting the draft
-to the question is the intended path; prose drafts without `work` are a legacy tail.
+match payload instead of a second task (`already_covered_by`, `reuse_candidates`, `partial`, `overlaps`). Limiting the `entry`
+to the question is the intended path; prose entries without `work` are a legacy tail.
 
 **The first intent of a run is always legal:** it is recon/mapping, which needs nothing earlier to cite. A validation in that
 position is refused in both shapes (`PURPOSE_NEEDS_PREDECESSOR`, `legalNext: create a recon task first`), and so is a first
@@ -105,8 +105,8 @@ Details, state table and legacy plans: [EVIDENCE](EVIDENCE.md).
 
 An exploitation chain lives on the plan board: each step is a todo with `chainOf`, `step` (1-based, no maximum),
 `claimRefs` (the claims it stands on), `needs` (typed capabilities it consumes) and an optional `environmentRef`.
-`p2o_graph {action:"chain", plan:true}` writes exactly those rows (done steps as `done`, the next as `open`) and returns the
-draft for the deepest ready step. Readiness is derived, not stored: a step is ready when every `needs` capability is gained
+`p2o_graph_plan {action:"chain", plan:true}` writes exactly those rows (done steps as `done`, the next as `open`) and returns
+the `entry` for the deepest ready step. Readiness is derived, not stored: a step is ready when every `needs` capability is gained
 by a confirmed+tested claim that an earlier step of the same chain cites. `p2o_board board=plans` prints one line per chain:
 
 ```text
@@ -115,7 +115,7 @@ chain <id> 2/4 · next: step 3 (ready) · waiting on: http.request (internal-api
 
 Frontier obligations are enforced where work is opened, not at finish: `p2o_task_author` refuses a new direction on a
 surface that has a ready, undispatched chain step (`CHAIN_READY_UNDISPATCHED`) or a confirmed+tested claim nothing consumes
-(`PRIMITIVE_UNCHAINED`), unless the draft cites the provider or records a deferred/blocked row with a reason. The same
+(`PRIMITIVE_UNCHAINED`), unless the `entry` cites the provider or records a deferred/blocked row with a reason. The same
 condition appears as a `REMAINING WORK` advisory, so "what is left" has one source. Cancelled or expired work never counts
 as having consumed a claim.
 

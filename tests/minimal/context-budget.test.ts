@@ -25,8 +25,16 @@ import { createFakePi, EXTENSION_PATH } from './helpers/fake-pi.js';
  * 2026-10-28 (A1 dedupe): the three execution tool descriptions stopped repeating capability facts the prompts already
  * state, which removes 3,845 chars from the worker and validation declarations (and from the model union). The ceilings
  * stay put: the freed bytes are deliberate headroom, not an entitlement for the surface to grow by.
+ *
+ * 2026-10-29 (S1/C5 re-pin, D-S1-5): tranche C changed what the model is handed — the graph verb was split by authority
+ * (shared reads; a worker/validation batch writer; a planner one-row review; a planner `chain`/`ingest` coordination
+ * verb), taking the surface from 32 to 35 registered tools and the planner from 21 to 23, then every read was bounded
+ * and the four authoring/rating verbs shared one `entry` key while the capability triple lost its duplicated field prose.
+ * Measured after C: planner 44,134; worker 40,124; validation 39,313; reporter 6,282; model 73,363. Every ceiling below
+ * is that measurement +3%, rounded up to the next hundred — the same method as before, so this pass lowers every number
+ * instead of raising one. A later raise still needs a dated comment here naming the tool that grew and why.
  */
-const DECLARATION_CEILINGS = { planner: 49_300, worker: 44_100, validation: 43_300, reporter: 6_800, model: 77_900 };
+const DECLARATION_CEILINGS = { planner: 45_500, worker: 41_400, validation: 40_500, reporter: 6_500, model: 75_600 };
 
 function declarationChars(tools: Map<string, any>, names: readonly string[]): number {
   let total = 0;

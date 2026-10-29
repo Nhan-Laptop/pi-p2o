@@ -8,11 +8,12 @@ import { describe, expect, it } from 'vitest';
  * holding role cannot call. It registers the real extension against a stub Pi API (scripts/audit-surface.mjs), so the
  * text it scans is the final description with its boundary lines, not the authoring string. Never starts a run or a model.
  *
- * The declaration totals are a floor for tranches A and B of planning_update.md S1: the budget may fall, never rise,
- * until the C re-pin.
+ * The declaration totals are a floor for tranches A and B of planning_update.md S1. S1/C5 re-pinned them from the post-C
+ * measurement with the method context-budget.test.ts records (measured +3%, rounded up to the next hundred): the budget
+ * may fall, never rise.
  */
 const root = resolve(import.meta.dirname, '../..');
-const BASELINE = { planner: 47_800, worker: 41_900, validation: 41_100, reporting: 6_450 };
+const BASELINE = { planner: 45_500, worker: 41_400, validation: 40_500, reporting: 6_500 };
 
 import { execFileSync } from 'node:child_process';
 

@@ -17,15 +17,18 @@ same SQLite store as everything else; there is no graph database and no second w
   missing, foreign or imported ids are refused.
 - **Pinning:** `expectedRevision`, `assetRevision`, `fromRevision`/`toRevision` and `supersedes` are checked before commit; a
   stale write rolls back the whole batch and makes dependent claims stale. History and counterevidence are kept.
-- **Who writes what:** the planner records hypotheses, settled hypotheses and observed relations; a worker records assets, facts,
-  anchors, open hypotheses and `basis=inferred` relations (host-stamped `unverified:true` with its producer role — that row is
-  review debt the owner settles by superseding with supported/refuted/inconclusive); the host `extractor` producer writes only
+- **Who writes what:** the planner settles or promotes one retained row at a time with `p2o_graph_review` — it names the
+  row's id and the host derives the identity the supersede needs, so a settle cannot rewrite what it judges; a worker
+  records assets, facts, anchors, open hypotheses and `basis=inferred` relations in one batch through `p2o_graph_record`
+  (host-stamped `unverified:true` with its producer role — that row is review debt the owner settles by superseding with
+  supported/refuted/inconclusive); the host `extractor` producer writes only
   what a bounded parse of a retained artifact yields (see **Extraction** below); the reporter reads only. An owner retest is a note record (`data.caseRetest`), and the project knowledge database is written only by an owner-requested export. A worker brief carries a bounded slice (matching asset, latest facts, open leads/gaps, ready chain steps) labelled
   background, never a finding. The host counts each worker's write-back and shows `NO_GRAPH_WRITE` in `p2o_workers`, the
   report and the preflight as an advisory — not a review or finish condition.
-- `p2o_graph {action:"chain"}` is a read-only join over claims: `ready` (an open step whose `needs` are all gained by a
-  confirmed+tested claim), `unmet` (naming the missing capability kind), `legacy` (free-text edges that match nothing) and
-  `frontier` (shortest primitive-to-claim path). Planner-only, writes nothing, grants nothing.
+- `p2o_graph_plan {action:"chain"}` is the planner-only chain join over claims: `ready` (an open step whose `needs` are
+  all gained by a confirmed+tested claim), `unmet` (naming the missing capability kind), `legacy` (free-text edges that
+  match nothing) and `frontier` (shortest primitive-to-claim path). With `plan:true` it also writes those steps to the
+  plan board and returns the `entry` for the deepest ready step; it never dispatches and grants nothing.
 - `p2o_graph {action:"query"}` answers "which current rows match" with bounded filters (`kind`, `keyPrefix` requiring a
   kind, `labelContains`, `attributeKey`+`attributeValue`, `assertionKind`, `statementContains`); it is SQL over current
   heads with a sequence cursor, true totals and `omitted`/`nextCursor`, and its encoded response is trimmed to ≤24 KiB.
@@ -42,7 +45,7 @@ same SQLite store as everything else; there is no graph database and no second w
   deterministically (URL/route/package key) while the raw value stays in an anchor or attribute — a scoped exception to the
   exact-bytes rule above, recorded as D-R1-2. A nuclei match becomes an **open hypothesis**, never a fact, claim or case.
 - **Ingest path (R2):** a recognized capture artifact of a `shell`/`capture`/`http` receipt is extracted automatically (best
-  effort, ≤50 per run, stdout stream only), and `p2o_graph {action:"ingest", id:"artifact-…"}` retries it by hand. Rows are
+  effort, ≤50 per run, stdout stream only), and `p2o_graph_plan {action:"ingest", id:"artifact-…"}` retries it by hand. Rows are
   written by the host `extractor` producer (depth 0) with the artifact's receipt as `evidenceRefs`; an ingest without a
   same-run receipt is refused. The artifact is recorded as an anchor row on the first ingested asset, so the same bytes
   produce one asset and only add observation lineage on re-ingest. Extracted rows are `unverified` background and do not
