@@ -2,7 +2,7 @@ import { mkdir, mkdtemp, readdir, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { registerP2O } from '../../extensions/p2o/index.js';
+import { registerP2O, testSeamFor } from '../../extensions/p2o/index.js';
 import { readLedger } from '../../src/records.js';
 import { sha256Hex } from '../../src/validate.js';
 import { createContext, createFakePi, createSimpleHerdr, sandboxFactory, EXTENSION_PATH, InertSandbox, type FakePi } from './helpers/fake-pi.js';
@@ -36,8 +36,10 @@ async function harness() {
   await owner.commands.get('p2o').handler('--target ./repo', ownerContext.ctx);
   if (owner.messages.length === 0) throw new Error(`start failed: ${ownerContext.notices.join(' | ') || 'no notice'}`);
   const runDir = async () => join(join(root, 'control'), (await readdir(join(root, 'control'))).find(name => name.startsWith('p2o-run-'))!);
+  // S1/B10: the hidden delegate/task-start verbs are gone; the harness runs their code through the registration seam.
+  const seam = (name: string, params: any) => name === 'p2o_delegate' ? testSeamFor(owner.pi).spawn(params) : name === 'p2o_task_start' ? testSeamFor(owner.pi).startTask(params) : undefined;
   const call = (name: string, params: Record<string, unknown> = {}, which: 'owner' | 'worker' = 'owner') =>
-    (which === 'owner' ? owner : worker).tools.get(name)!.execute('call', params, undefined, undefined, (which === 'owner' ? ownerContext : workerContext).ctx);
+    seam(name, params) ?? (which === 'owner' ? owner : worker).tools.get(name)!.execute('call', params, undefined, undefined, (which === 'owner' ? ownerContext : workerContext).ctx);
   const records = async () => (await readLedger(join(await runDir(), 'records.sqlite'))).records;
   /**
    * The inert sandbox returns a fixed banner; each scenario replaces exec on the class so every executor instance (the shared

@@ -2,7 +2,7 @@ import { readdir, readFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { SkillLibrary } from '../../src/skills.js';
-import { ALL_TOOLS } from '../../src/tool-policy.js';
+import { MODEL_TOOLS } from '../../src/tool-policy.js';
 
 /**
  * S3 (plan): the lead's prompt names no tool, and neither does the knowledge it reads. A skill, a reference, a sidecar or the catalog that names a
@@ -27,7 +27,7 @@ describe('the knowledge layer stays tool-agnostic', () => {
   });
 
   it('lets the shared handoff contract name only tools that exist', async () => {
-    for (const name of tools(await readFile(join(root, 'HANDOFFS.md'), 'utf8'))) expect(ALL_TOOLS, `HANDOFFS.md names ${name}`).toContain(name);
+    for (const name of tools(await readFile(join(root, 'HANDOFFS.md'), 'utf8'))) expect(MODEL_TOOLS, `HANDOFFS.md names ${name}`).toContain(name);
   });
 
   it('serves the two handoff sections skills link to as small documents instead of the whole contract', async () => {

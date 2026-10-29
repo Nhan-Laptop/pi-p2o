@@ -7,7 +7,7 @@ import { registerP2O } from '../../extensions/p2o/index.js';
 import { authorityCounters } from '../../src/authority.js';
 import { indexRecords, type AssessmentRecord } from '../../src/records.js';
 import {
-  ALL_TOOLS, HIDDEN_TOOLS, LAB_TOOLS, MODEL_TOOLS, PLANNER_TOOLS, REPORTER_TOOLS, TARGET_TOOLS, VALIDATION_TOOLS, WORKER_TOOLS,
+  LAB_TOOLS, MODEL_TOOLS, PLANNER_TOOLS, REPORTER_TOOLS, TARGET_TOOLS, VALIDATION_TOOLS, WORKER_TOOLS,
   plannerTools, reporterTools, workerTools,
 } from '../../src/tool-policy.js';
 import { TOOL_BOUNDARIES } from '../../src/tool-guidelines.js';
@@ -21,13 +21,11 @@ import { createContext, createFakePi, createSimpleHerdr, EXTENSION_PATH, InertSa
  * docs and tool boundaries; worker-only candidate; and a parity test that every registered tool belongs to exactly one
  * declared role (or to the explicit hidden-legacy set). No paid run, model call or target contact.
  */
-// Two distinct removal shapes: hidden-but-registered legacy verbs, and verbs deleted from the surface entirely (A3 derives
-// coverage cells in the host, so no model-authored cell verb exists any more).
-const HIDDEN = ['p2o_delegate', 'p2o_task_start'];
-const DELETED = ['p2o_coverage_cell', 'p2o_coverage_cell_retire'];
-const REMOVED = [...HIDDEN, ...DELETED];
+// S1/B10 deleted the two hidden legacy verbs, so the removed surface has one shape now: a deleted verb, never a hidden one
+// (A3 deleted the coverage-cell writers the same way because the host derives the cells).
+const DELETED = ['p2o_delegate', 'p2o_task_start', 'p2o_coverage_cell', 'p2o_coverage_cell_retire'];
 const PLANNER_MUST_NOT_HAVE = [...TARGET_TOOLS, ...LAB_TOOLS, 'p2o_candidate', 'p2o_note', 'p2o_surface', 'p2o_report',
-  'p2o_request_subtask', ...REMOVED];
+  'p2o_request_subtask', ...DELETED];
 const ONE_PATH = ['p2o_task_author', 'p2o_task_dispatch', 'p2o_workers', 'p2o_loop'];
 const mentioned = (text: string) => new Set(text.match(/\bp2o_[a-z_]+\b/g) ?? []);
 const ticket = (role: string) => ({ workerId: 'worker-1', role, depth: 1, parentWorkerId: null, target: { kind: 'directory', label: '/home/x/repo' }, executorMode: 'shared' } as never);
@@ -67,11 +65,9 @@ describe('P0/A1 tool matrices', () => {
     expect([...WORKER_TOOLS].sort()).toEqual(['p2o_artifact', 'p2o_candidate', 'p2o_capture', 'p2o_graph', 'p2o_http', 'p2o_lab', 'p2o_ledger', 'p2o_net', 'p2o_note', 'p2o_report', 'p2o_request_subtask', 'p2o_research', 'p2o_secret', 'p2o_session', 'p2o_shell', 'p2o_skill_list', 'p2o_skill_read', 'p2o_state', 'p2o_surface']);
     expect(VALIDATION_TOOLS).toEqual(WORKER_TOOLS.filter(name => name !== 'p2o_surface'));
     expect([...REPORTER_TOOLS].sort()).toEqual(['p2o_artifact', 'p2o_ledger', 'p2o_report', 'p2o_skill_list', 'p2o_skill_read', 'p2o_state']);
-    expect(HIDDEN_TOOLS).toEqual(HIDDEN);
     expect(MODEL_TOOLS).toHaveLength(32);
-    expect(ALL_TOOLS).toHaveLength(34);
     for (const name of DELETED) {
-      expect(ALL_TOOLS, name).not.toContain(name);
+      expect(MODEL_TOOLS, name).not.toContain(name);
       expect(TOOL_BOUNDARIES[name], name).toBeUndefined();
     }
     expect(plannerTools()).toEqual(PLANNER_TOOLS);
@@ -94,18 +90,17 @@ describe('P0/A1 tool matrices', () => {
     for (const name of [...TARGET_TOOLS, ...LAB_TOOLS, 'p2o_candidate', 'p2o_note', 'p2o_surface', 'p2o_graph', 'p2o_task_author', 'p2o_goal_author', 'p2o_case_author', 'p2o_finish']) expect(REPORTER_TOOLS, name).not.toContain(name);
   });
 
-  it('registers 34 tools: 32 model-visible role tools plus 2 explicitly hidden legacy verbs', () => {
+  it('registers 32 tools, all model-visible: the hidden legacy verbs are gone', () => {
     const tools = registrations();
-    expect([...tools.keys()].sort()).toEqual([...ALL_TOOLS].sort());
-    for (const name of HIDDEN_TOOLS) expect(tools.get(name).exposure, name).toBe('hidden');
-    // A3: the model-authored coverage-cell verbs are gone from the surface, not merely hidden.
+    expect([...tools.keys()].sort()).toEqual([...MODEL_TOOLS].sort());
+    // A3 and S1/B10 deleted their verbs from the surface: none of them is registered, hidden or otherwise.
     for (const name of DELETED) expect(tools.has(name), name).toBe(false);
     for (const name of MODEL_TOOLS) expect(tools.get(name).exposure, name).not.toBe('hidden');
     for (const [name, lines] of Object.entries(TOOL_BOUNDARIES)) {
       expect(MODEL_TOOLS, name).toContain(name);
       for (const named of mentioned(lines.join(' '))) expect(MODEL_TOOLS, `${name} names ${named}`).toContain(named);
     }
-    for (const name of HIDDEN_TOOLS) expect(TOOL_BOUNDARIES[name], name).toBeUndefined();
+    for (const name of DELETED) expect(TOOL_BOUNDARIES[name], name).toBeUndefined();
   });
 });
 
@@ -132,21 +127,23 @@ describe('P0/A1 active surface', () => {
 
   it('keeps the removed verbs out of docs, prompts and tool boundaries', async () => {
     const root = resolve(import.meta.dirname, '../..');
-    const docs = [...(await readdir(join(root, 'docs'))).filter(name => name.endsWith('.md')).map(name => join('docs', name)), 'README.md', 'HANDOFFS.md'];
+    // S1/B10: docs/HISTORY.md is the dated record, not current specification, so it keeps the names of the wrappers it says
+    // were deferred. Every current page, the README and the handoff contract must not name a removed verb.
+    const docs = [...(await readdir(join(root, 'docs'))).filter(name => name.endsWith('.md') && name !== 'HISTORY.md').map(name => join('docs', name)), 'README.md', 'HANDOFFS.md'];
     for (const relative of docs) {
       const text = await readFile(join(root, relative), 'utf8');
-      for (const name of REMOVED) expect(text, `${relative} names ${name}`).not.toContain(name);
+      for (const name of DELETED) expect(text, `${relative} names ${name}`).not.toContain(name);
     }
     for (const relative of ['src/prompts.ts', 'src/tool-guidelines.ts']) {
       const text = await readFile(join(root, relative), 'utf8');
-      for (const name of REMOVED) expect(text, `${relative} names ${name}`).not.toContain(name);
+      for (const name of DELETED) expect(text, `${relative} names ${name}`).not.toContain(name);
     }
     // One model-facing delegation path: the planner prompt names neither removed verb nor a target tool, and the
     // reporter/worker prompts name only tools their own loadout contains.
     const planner = plannerInstructions({ runId: 'run-x', targetLabel: '/home/x/repo', targetKind: 'directory', sourceSkipped: 0, delegation: { enabled: true, maxWorkers: 3, maxDepth: 2 }, phase: 'active', executorMode: 'shared' });
     expect(planner).toMatch(/no target, lab or claim tools/i);
     expect(planner).not.toMatch(/may execute directly/i);
-    for (const name of REMOVED) expect(planner, name).not.toContain(name);
+    for (const name of DELETED) expect(planner, name).not.toContain(name);
     for (const role of ['recon', 'discovery', 'validation', 'reporting', 'general'] as const) {
       const text = role === 'reporting' ? reporterInstructions(ticket(role)) : workerInstructions(ticket(role));
       for (const named of mentioned(text)) expect(workerTools(role), `${role} prompt names ${named}`).toContain(named);

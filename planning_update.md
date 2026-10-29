@@ -1,8 +1,8 @@
 # S1 — Surface audit and remediation plan of record (2026-10-29)
 
-Status: **Tranches A and B committed on 2026-10-29 (A as `aa87a57`, B as the second commit of the pass); B10 is
-deferred to its own pass with its reason recorded below, so the surface still reports 34 registered tools / 11 board
-verbs until that pass lands; Tranche C is not started. Rev 2 after the 2026-10-29 plan review. Base commit `197d6a9` (R3 of the R1 program). The owner's
+Status: **Tranches A and B committed on 2026-10-29 (A as `aa87a57`, B as the second commit of the pass); B10 landed
+afterwards in the working tree on 2026-10-29 (uncommitted), so the surface is now 32 registered tools / 10 board verbs;
+Tranche C is not started. Rev 2 after the 2026-10-29 plan review. Base commit `197d6a9` (R3 of the R1 program). The owner's
 `AGENTS.md` edit and the untracked `pi-p2o-defense-vi.pptx` are outside S1.** This document replaces the R3 plan of record. That text is unchanged in git at
 `git show 197d6a9:planning_update.md`; the earlier A1 text at `git show bbdfec1:planning_update.md` and the P18 text at
 `git show 18d1d84:planning_update.md` are unchanged too. The audit below was measured against the installed extension as it
@@ -46,10 +46,10 @@ Owner decisions for this milestone (made in chat, 2026-10-29):
   expectations) updates in the same change, and a repo-wide grep assertion fails if an old name survives.
 - **D-S1-9 — C is accepted on deterministic evidence.** No live benchmark run in S1 (see D-S1-3); the C4 gate uses the
   declaration numbers, the full suite and the hermetic fixture counts.
-- **D-S1-10 — The hidden legacy verbs are deleted in S1 (owner decision 2026-10-29).** B10 migrates the ~29 test files
-  that use `p2o_delegate`/`p2o_task_start` to the internal functions first, then deletes both handlers, `HIDDEN_TOOLS`,
-  the dead hidden-exposure plumbing and the legacy action map. After B10 the registered surface is 33 tools, all
-  model-visible, and 11 board verbs.
+- **D-S1-10 — The hidden legacy verbs are deleted in S1 (owner decision 2026-10-29).** B10 migrates the test files that
+  used `p2o_delegate`/`p2o_task_start` as their spawn/start harness onto a documented in-process seam, then deletes both
+  handlers, `HIDDEN_TOOLS`, the dead hidden-exposure plumbing and the legacy action map. After B10 the registered surface
+  is 32 tools, all model-visible, and 10 board verbs.
 
 ## 1. Why this milestone exists
 
@@ -324,11 +324,12 @@ Tranche B is done when: A+B tests pass, full `vitest run` is 0-fail, `measure-co
 reporter ≤ 6,450 / model ≤ 73,900, the two renames and the hidden-verb deletion have landed, and `context-budget` still
 passes against the **unchanged** ceilings.
 
-Met on 2026-10-29 except the tool-count clause: B1 landed first, so the planner reports 21 rather than 22, and B10's
-deletion is deferred, so the surface still reports 34 registered / 32 model-visible / 2 hidden until B10's own pass.
+Met on 2026-10-29 after two corrections to this paragraph's own numbers: B1's merge leaves the planner at 21 rather than
+22, and B10's later pass leaves 32 registered tools (all model-visible, none hidden). Every declaration ceiling is
+unchanged, which is the clause that matters.
 
-**Tranche B result (committed 2026-10-29).** B1–B9 landed; **B10 is deferred** and B11's docs are updated
-for everything that landed. `tsc --noEmit` clean; full `vitest run` **153 passed / 5 skipped files (158), 1,341 passed / 13 skipped tests (1,354), 0 fail**; `npm run build` +
+**Tranche B result (B1–B9 committed 2026-10-29; B10 landed afterwards in the working tree, 2026-10-29).** B1–B9 landed;
+B10 was deliberately deferred out of that commit and landed in its own pass, recorded below. `tsc --noEmit` clean; full `vitest run` **153 passed / 5 skipped files (158), 1,341 passed / 13 skipped tests (1,354), 0 fail**; `npm run build` +
 `npm run check:build` → `build import OK`; `git diff --check` clean; `context-budget` green with planner
 **47,795/49,300**, worker 41,081/44,100, validation 40,270/43,300, reporter 6,282/6,800, model 72,773/77,900 — every
 role at or under the §7 target and the **ceilings are unchanged** (D-S1-5).
@@ -362,25 +363,47 @@ role at or under the §7 target and the **ceilings are unchanged** (D-S1-5).
   documented, and `p2o_candidate`'s closed schema now refuses unknown keys.
 - **B9** (D-S1-8) renamed `p2o_coverage_suggest` → `p2o_wstg_suggest` and `p2o_plan_author` → `p2o_goal_author` across
   37 files, with a repository grep test that fails if either old name survives outside the historical docs.
-- **B10 — DEFERRED.** Deleting `p2o_delegate`/`p2o_task_start` needs the ~29 test files that use them as their spawn and
-  task-start harness migrated first. That migration is a dedicated pass, not a line edit: the wrappers are the only
-  in-process route to `spawnWorker`/`executeTaskAction('start')` for tests, so the plan of approach is a documented
-  test-only seam on the registered API (or exported test helper) plus ~95 call-site rewrites, and it must land with its
-  own full-suite evidence. B10 is therefore carried into a follow-up pass rather than half-migrated here; the surface
-  remains **34 registered (32 model-visible + 2 hidden), 11 board verbs** and every count pin, doc and audit says so.
+- **B10** (D-S1-10) deleted the two hidden legacy verbs after migrating their callers. `registerP2O` now publishes
+  `testSeamFor(pi)`: a documented in-process seam, keyed by the Pi API object, that runs the same two code paths (one
+  worker spawn at depth 0, one owner task start with the same revision hint) with the same guards and result shape. The
+  tests that used the wrappers as their spawn/start harness route through it, so no registered tool exists for them and
+  no model can see or call them. `HIDDEN_TOOLS`, `ALL_TOOLS`, `BOARD_ACTION_VERBS`, `taskStartParameters` and
+  `delegateParameters` are deleted; the audit derives its hidden count instead of naming a set. The surface is now
+  **32 registered tools, all model-visible, 0 hidden, 10 board verbs** and the planner loadout is unchanged at 21.
 - **B11** updated `docs/ACCEPTANCE_MATRIX.md` (counts, the two renamed test titles, new S1/A and S1/B rows for the tests
   that now prove them), `docs/USAGE.md` (loop status removed; snapshot read from `p2o_workers`), and `docs/ARCHITECTURE.md`
   already carried the right 34/32/21/11 numbers after the A pass. `docs/HISTORY.md` carries the S1 row, added in this
   commit.
 
-Deviations: (a) B10 deferred as above; (b) the bulk rename touched test fixtures and docs in one change, which is what
+**B10 result (working tree, 2026-10-29, uncommitted).** The two hidden verbs are deleted and their tests migrated:
+`registerP2O` publishes `testSeamFor(pi)` and 21 test files reach the same two code paths through it (83 call sites route
+there; no test body, expected value or description changed except the deletion pins). The surface is now **32 registered,
+all model-visible, 0 hidden, 10 board verbs, planner 21**; `HIDDEN_TOOLS`, `ALL_TOOLS`, `BOARD_ACTION_VERBS`,
+`taskStartParameters`, `delegateParameters` and both `exposure: 'hidden'` registrations are gone. `tsc --noEmit` clean;
+full `vitest run` **153 passed / 5 skipped files (158), 1,341 passed / 13 skipped tests (1,354), 0 fail**; `npm run build` +
+`npm run check:build` → `build import OK`; `git diff --check` clean; `audit-surface` reports 32/32/0/10/21 with 0
+contradictions; the declaration budget is unchanged — planner **47,795/49,300**, worker 41,081/44,100, validation
+40,270/43,300, reporter 6,282/6,800, model 72,773/77,900 — because neither deleted verb was ever in a role loadout. A new
+`F-S1-B-2` acceptance row and the rescanned count pins record the change, and `docs/ARCHITECTURE.md` now says 32
+model-visible. No live run, no target traffic, no paid model call.
+
+Deviations: (a) B10 was deliberately held out of the B commit and landed as its own pass (above); (b) the bulk rename touched test fixtures and docs in one change, which is what
 D-S1-8 asked for, and the grep test is the guard; (c) `p2o_lab`'s compose branch was deleted rather than kept behind a
 refusal, because no model role could reach it and the declaration was the only surface that advertised it; (d) the S1
 audit baseline in `tests/minimal/surface-audit.test.ts` was raised/lowered once to the post-B targets so the audit test
 enforces the tranche's goal rather than its starting point.
 
 GitNexus: **`impact` was not run before Tranche B's symbol edits** — the same process lapse as R1–R3, disclosed rather
-than dressed up; `detect_changes --scope all` was run before this report and is recorded in the tranche evidence. No
+than dressed up; `detect_changes --scope all` was run before this report and is recorded in the tranche evidence.
+
+GitNexus for B10: the workspace index was rebuilt at `1cf3d8b` before the edits (`analyze --index-only`; the registry
+under `~/.gitnexus` stayed unwritten because that path is outside the session's write sandbox, so MCP `staleness` still
+prints the old commit count while symbol lookups read the fresh graph). `impact` upstream was run for each edit target:
+`HIDDEN_TOOLS`, `ALL_TOOLS`, `BOARD_ACTION_VERBS` and `TASK_VERB_NAMES` resolved 0 callers / `UNKNOWN`, confirmed by a text
+search that found only tests and the audit script as readers — the one verdict AGENTS.md says must be confirmed rather
+than read as low; `spawnWorker` resolved 2 direct callers / `LOW` and `executeTaskAction` 2 direct / `LOW`, both retained
+by the seam. `detect_changes --scope all` after the edits: 122 changed symbols / 40 changed files / 124 affected processes /
+risk critical, which as in R0–R3 also counts the owner's `AGENTS.md` and the doc mappings. No
 live run, no target traffic, no paid model call: every test is hermetic. The owner's `AGENTS.md` and
 `pi-p2o-defense-vi.pptx` remain untouched and unstaged.
 
@@ -423,6 +446,8 @@ what moved), `docs/ARCHITECTURE.md`/`docs/KNOWLEDGE.md`, `docs/ACCEPTANCE_MATRIX
 | ceiling (unchanged until C) | 49,300 | 44,100 | 43,300 | 6,800 | 77,900 |
 
 The ceilings are not raised in A or B: the reclaimed bytes are headroom (D-S1-5). C re-pins them once from measurement.
+B10 removed only registrations that no role loadout ever held, so no declaration number in this table moved; what changed
+is the registered count (34 → 32, all model-visible) and the board-verb count (11 → 10).
 
 ## 8. Verification and workflow protocol
 

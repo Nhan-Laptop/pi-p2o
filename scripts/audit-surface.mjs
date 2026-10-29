@@ -46,10 +46,13 @@ const roleTotals = Object.fromEntries(Object.entries(ROLES).map(([role, names]) 
   tools: names.length, chars: names.reduce((sum, name) => sum + chars(name), 0),
 }]));
 const modelTools = [...new Set([...policy.MODEL_TOOLS])];
+const registered = [...tools.keys()];
 const counts = {
   registered: tools.size,
   modelVisible: modelTools.filter(name => tools.has(name)).length,
-  hidden: policy.HIDDEN_TOOLS.filter(name => tools.has(name)).length,
+  // S1/B10: registration and model visibility are the same surface now. Derive the difference instead of naming a hidden
+  // set, so a future hidden verb shows up here without another constant to keep in sync.
+  hidden: registered.filter(name => !modelTools.includes(name)).length,
   boardVerbs: BOARD_VERB_NAMES.length,
   planner: ROLES.planner.length,
 };

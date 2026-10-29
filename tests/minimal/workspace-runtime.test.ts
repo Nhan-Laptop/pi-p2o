@@ -5,7 +5,7 @@ import { randomUUID } from 'node:crypto';
 import { createConnection } from 'node:net';
 import { setTimeout as delay } from 'node:timers/promises';
 import { describe, expect, it } from 'vitest';
-import { registerP2O } from '../../extensions/p2o/index.js';
+import { registerP2O, testSeamFor } from '../../extensions/p2o/index.js';
 import { reporterTools } from '../../src/tool-policy.js';
 import { AssessmentStore, type StoreFault } from '../../src/state/store.js';
 import { BrokerClient } from '../../src/broker.js';
@@ -27,7 +27,9 @@ async function fixture(work:(h:any)=>Promise<void>,storeFault?:StoreFault,provis
     createSandbox:(target:any,profile:SandboxOptions)=>{const sandbox=new InertSandbox(target);if(provisionFails&&sandboxes.length>0)sandbox.failProvision=true;sandboxes.push(sandbox);profiles.push(profile);return sandbox;}};
   registerP2O(pi.pi,options);
   const command=(s:string)=>pi.commands.get('p2o').handler(s,ctx.ctx);
-  const call=(s:string,p:any={})=>pi.tools.get(s).execute(randomUUID(),p,undefined,undefined,ctx.ctx);
+  // S1/B10: the hidden delegate/task-start verbs are gone; the harness runs their code through the registration seam.
+  const seam=(s:string,p:any)=>s==='p2o_delegate'?testSeamFor(pi.pi).spawn(p):s==='p2o_task_start'?testSeamFor(pi.pi).startTask(p):undefined;
+  const call=(s:string,p:any={})=>seam(s,p)??pi.tools.get(s).execute(randomUUID(),p,undefined,undefined,ctx.ctx);
   const runId=async()=> (await readdir(join(root,'.p2o-state')))[0];
   const reader=async()=>AssessmentStore.open(join(root,'.p2o-state'),await runId());
   const ticket=async(id:string)=>{

@@ -197,20 +197,6 @@ export const artifactParameters = Type.Object({id:Type.String({minLength:45,maxL
 
 export const ledgerParameters = Type.Object({ limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 100 })), id: Type.Optional(Type.String({ maxLength: 80 })), cursor: Type.Optional(Type.Integer({ minimum:0 })) });
 
-export const delegateParameters = Type.Object({
-      focus: Type.String({ minLength: 3, maxLength: 60, description: 'Short label, e.g. "idor-checkout"' }),
-      task: Type.String({ minLength: 1, maxLength: 4000, description: 'The objective: what to test/verify, success criteria and stop conditions' }),
-      context: Type.Optional(Type.String({ maxLength: 4000, description: 'Background the worker must not re-derive: known facts, covered surfaces, record ids' })),
-      role: Type.Optional(choices(ROLES)),
-      skills: Type.Optional(Type.Array(Type.String({ maxLength: 64 }))),
-      model: Type.Optional(Type.String({ maxLength: 200 })),
-      workflow: Type.Optional(Type.String({ maxLength: 64, description: 'Optional catalog workflow ID belonging to the selected skills; descriptive prerequisites do not grant permissions' })),
-      thinking: Type.Optional(choices(THINKING_LEVELS)),
-      taskId:Type.Optional(Type.String({maxLength:80,description:'Owner-authored proposed task ID; prerequisites and reservations are checked. Worker requests cannot dispatch owner task IDs.'})),
-      work:Type.Optional(Type.Object({},{additionalProperties:true,description:'Optional structured work identity exactly as in p2o_task_author (with decision and outputContract); enables exact duplicate/history checks. Omitted: identity is unknown.'})),
-      decision:Type.Optional(Type.Object({},{additionalProperties:true})),outputContract:Type.Optional(Type.Object({},{additionalProperties:true})),
-    });
-
 export const subtaskParameters = Type.Object({focus:Type.String({minLength:3,maxLength:60}),task:Type.String({minLength:1,maxLength:4000}),context:Type.Optional(Type.String({maxLength:4000})),role:Type.Optional(choices(ROLES))});
 
 export const loopParameters = Type.Object({action:choices(['wait','blocked','hint','constrain']),reason:Type.Optional(Type.String({minLength:1,maxLength:1000})),

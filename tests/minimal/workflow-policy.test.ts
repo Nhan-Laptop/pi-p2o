@@ -3,7 +3,7 @@ import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { registerP2O } from '../../extensions/p2o/index.js';
 import {
-  ALL_TOOLS, HIDDEN_TOOLS, LAB_TOOLS, MODEL_TOOLS, REPORTER_TOOLS, TARGET_TOOLS, VALIDATION_TOOLS, WORKER_TOOLS,
+  LAB_TOOLS, MODEL_TOOLS, REPORTER_TOOLS, TARGET_TOOLS, VALIDATION_TOOLS, WORKER_TOOLS,
   plannerTools, reporterTools, workerTools,
 } from '../../src/tool-policy.js';
 import { TOOL_BOUNDARIES } from '../../src/tool-guidelines.js';
@@ -38,12 +38,8 @@ describe('tool descriptions carry the boundary (A1: no separate guidance layer)'
       for (const line of TOOL_BOUNDARIES[name] ?? []) expect(tool.description, name).toContain(line);
       expect(tool.promptGuidelines, name).toBeUndefined();
     }
-    // Every registered tool is either model-visible or an explicitly hidden legacy verb; hidden verbs have no boundary.
-    for (const name of HIDDEN_TOOLS) {
-      expect(tools.get(name), name).toBeDefined();
-      expect(tools.get(name).exposure, name).toBe('hidden');
-      expect(TOOL_BOUNDARIES[name], name).toBeUndefined();
-    }
+    // S1/B10: registration and model visibility are the same surface now, so every registered tool is in a role loadout.
+    for (const name of tools.keys()) expect(MODEL_TOOLS, name).toContain(name);
     for (const [name, lines] of Object.entries(TOOL_BOUNDARIES)) for (const named of mentioned(lines.join(' '))) expect(MODEL_TOOLS, `${name} names ${named}`).toContain(named);
     // L1/W2: a verb inherits its family boundary; the legacy family key itself is no longer a tool.
     for (const [name, lines] of Object.entries(TOOL_BOUNDARIES)) {
@@ -85,22 +81,20 @@ describe('authority split: planner intent, worker execution, reporter read (P0/A
   it('gives the planner intent tools and the worker execution tools', () => {
     expect(plannerTools()).toHaveLength(new Set(plannerTools()).size);
     for (const name of ['p2o_task_author', 'p2o_task_dispatch', 'p2o_task_review', 'p2o_workers', 'p2o_loop', 'p2o_finish', 'p2o_goal_author', 'p2o_case_author', 'p2o_coverage_plan']) expect(plannerTools(), name).toContain(name);
-    for (const name of [...TARGET_TOOLS, ...LAB_TOOLS, 'p2o_candidate', 'p2o_note', 'p2o_surface', 'p2o_report', 'p2o_request_subtask', ...HIDDEN_TOOLS]) expect(plannerTools(), name).not.toContain(name);
+    for (const name of [...TARGET_TOOLS, ...LAB_TOOLS, 'p2o_candidate', 'p2o_note', 'p2o_surface', 'p2o_report', 'p2o_request_subtask']) expect(plannerTools(), name).not.toContain(name);
     for (const name of [...TARGET_TOOLS, ...LAB_TOOLS, 'p2o_candidate', 'p2o_note', 'p2o_surface', 'p2o_report']) expect(workerTools('discovery'), name).toContain(name);
-    for (const name of ['p2o_task_author', 'p2o_task_dispatch', 'p2o_task_review', 'p2o_goal_author', 'p2o_case_author', 'p2o_finish', ...HIDDEN_TOOLS]) expect(workerTools('discovery'), name).not.toContain(name);
+    for (const name of ['p2o_task_author', 'p2o_task_dispatch', 'p2o_task_review', 'p2o_goal_author', 'p2o_case_author', 'p2o_finish']) expect(workerTools('discovery'), name).not.toContain(name);
     expect(VALIDATION_TOOLS).toEqual(WORKER_TOOLS.filter(name => name !== 'p2o_surface'));
     expect(workerTools('validation')).toEqual(VALIDATION_TOOLS);
     expect(workerTools('reporting')).toEqual(reporterTools());
     expect(new Set(workerTools('reporting'))).toEqual(new Set(REPORTER_TOOLS));
     for (const name of [...TARGET_TOOLS, ...LAB_TOOLS, 'p2o_candidate', 'p2o_note', 'p2o_surface']) expect(REPORTER_TOOLS, name).not.toContain(name);
-    expect(ALL_TOOLS).toHaveLength(MODEL_TOOLS.length + HIDDEN_TOOLS.length);
-    expect(HIDDEN_TOOLS).toEqual(['p2o_delegate', 'p2o_task_start']);
-    for (const name of HIDDEN_TOOLS) expect(MODEL_TOOLS, name).not.toContain(name);
+    for (const name of ['p2o_delegate', 'p2o_task_start']) expect(MODEL_TOOLS, name).not.toContain(name);
   });
 
   it('keeps removed tool names out of the model prompts and tool boundaries', async () => {
     const promptsSource = await readFile(resolve(import.meta.dirname, '../../src/prompts.ts'), 'utf8');
-    for (const name of HIDDEN_TOOLS) {
+    for (const name of ['p2o_delegate', 'p2o_task_start']) {
       expect(promptsSource, name).not.toContain(name);
       expect(Object.keys(TOOL_BOUNDARIES), name).not.toContain(name);
     }

@@ -22,8 +22,10 @@ describe('scripts/measure-context.mjs', () => {
     expect(report.workers).toHaveLength(12);
     for (const worker of report.workers) { expect(worker.reconBlocks, `${worker.role}/${worker.kind}`).toBe(worker.role === 'reporting' ? 0 : 1); expect(worker.toolNamesOutsideLoadout, `${worker.role}/${worker.kind}`).toEqual([]); expect(worker.total).toBe(worker.system + worker.brief); }
 
-    // Declarations: 34 registered tools (L1/W2: four board bags became 11 verbs after the three authoring pairs merged, R3 added the case-retest verb and S1/B1 merged review/settle; A3 removed the two coverage-cell verbs) and the three loadouts of workflow-policy.test.ts.
-    expect(report.declarations.registered, 'L1/W2 board verbs').toBe(34);
+    // Declarations: 32 registered tools (L1/W2: four board bags became 10 verbs after the three authoring pairs merged and
+    // S1/B1 merged review/settle; A3 removed the two coverage-cell verbs and S1/B10 the two hidden legacy verbs) and the
+    // three loadouts of workflow-policy.test.ts.
+    expect(report.declarations.registered, 'L1/W2 board verbs').toBe(32);
     expect(Object.fromEntries(Object.entries<any>(report.declarations.loadouts).map(([label, item]) => [label, item.tools]))).toEqual({ planner: 21, worker: 19, 'reporting worker': 6 });
     // Skills: the lead pages through the catalog and each role has a default skill whose first page is inlined.
     expect(report.skills.listPages.length).toBeGreaterThanOrEqual(3); expect(report.skills.listTotal).toBe(report.skills.listPages.reduce((sum: number, n: number) => sum + n, 0));

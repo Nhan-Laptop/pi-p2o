@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { randomUUID } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
-import { registerP2O } from '../../extensions/p2o/index.js';
+import { registerP2O, testSeamFor } from '../../extensions/p2o/index.js';
 import { AssessmentStore } from '../../src/state/store.js';
 import { bindAssessmentStore } from '../../src/state/adapter.js';
 import { TaskBoard, type AssessmentTask, type TaskDraft } from '../../src/tasks.js';
@@ -207,9 +207,11 @@ async function extensionFixture(provisionFails = false): Promise<ExtensionHarnes
     const entries = await readdir(join(root, 'control'));
     return join(root, 'control', entries.find(name => name.startsWith('p2o-run-'))!);
   };
+  // S1/B10: the hidden delegate/task-start verbs are gone; the harness runs their code through the registration seam.
+  const seam = (name: string, params: any) => name === 'p2o_delegate' ? testSeamFor(pi.pi).spawn(params) : name === 'p2o_task_start' ? testSeamFor(pi.pi).startTask(params) : undefined;
   return { root, pi, contexts, sandboxes, herdr, runDir,
     command: args => pi.commands.get('p2o')!.handler(args, contexts.ctx),
-    call: (name, params = {}) => pi.tools.get(name)!.execute(randomUUID(), params, undefined, undefined, contexts.ctx) };
+    call: (name, params = {}) => seam(name, params) ?? pi.tools.get(name)!.execute(randomUUID(), params, undefined, undefined, contexts.ctx) };
 }
 
 const RECON_INTENT = { question: 'Which recorded surfaces does the retained fixture expose?', surface: '/fixture', risk: 'mapping', role: 'recon', evidenceIds: [], prerequisites: [] };

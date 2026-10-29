@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { setTimeout as delay } from 'node:timers/promises';
 import { visibleWidth } from '@earendil-works/pi-tui';
-import { registerP2O, resetP2OStateForTests } from '../../extensions/p2o/index.js';
+import { registerP2O, resetP2OStateForTests, testSeamFor } from '../../extensions/p2o/index.js';
 import { plannerTools } from '../../src/tool-policy.js';
 import { appendRecord, observeRecords, readLedger } from '../../src/records.js';
 import { BrokerClient } from '../../src/broker.js';
@@ -21,7 +21,9 @@ async function fixture(work: (h: any) => Promise<void>, args = '') {
   const pi = createFakePi(), ctx = createContext({cwd:root}), herdr = createSimpleHerdr(), sandboxes:InertSandbox[] = [];
   registerP2O(pi.pi, {extensionPath:EXTENSION_PATH,controlRoot:join(root,'control'),settingsPath:join(root,'nonexistent-test-settings.json'),herdr:herdr.client,createSandbox:sandboxFactory(sandboxes)});
   const command = (s:string) => pi.commands.get('p2o').handler(s,ctx.ctx);
-  const call = (s:string,p={}) => pi.tools.get(s).execute('call',p,undefined,undefined,ctx.ctx);
+  // S1/B10: the hidden delegate/task-start verbs are gone; the harness runs their code through the registration seam.
+  const seam=(s:string,p:any)=>s==='p2o_delegate'?testSeamFor(pi.pi).spawn(p):s==='p2o_task_start'?testSeamFor(pi.pi).startTask(p):undefined;
+  const call = (s:string,p={}) => seam(s,p) ?? pi.tools.get(s).execute('call',p,undefined,undefined,ctx.ctx);
   const path = async () => join(root,'control',(await readdir(join(root,'control')))[0],'records.sqlite');
   const screen = () => ctx.screens.at(-1).render(150).join('\n');
   try {await command(`--target ./source ${args}`);expect(pi.messages).toHaveLength(1);

@@ -2,7 +2,7 @@ import { mkdir, mkdtemp, readdir, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { registerP2O } from '../../extensions/p2o/index.js';
+import { registerP2O, testSeamFor } from '../../extensions/p2o/index.js';
 import { Broker, BrokerClient, consumeHeldContinuation, continuationRefusal, normalizeReport, type WorkerRegistration } from '../../src/broker.js';
 import { finishPreflight } from '../../src/finish-preflight.js';
 import { indexRecords } from '../../src/records.js';
@@ -186,6 +186,9 @@ async function chainHarness(): Promise<ChainHarness> {
     return result;
   };
   const call = (name: string, params: any = {}, which: 'owner' | 'worker' = 'owner') => {
+    // S1/B10: the hidden delegate/task-start verbs are gone; the harness runs their code through the registration seam.
+    const seam = name === 'p2o_delegate' ? testSeamFor(owner.pi).spawn(params) : name === 'p2o_task_start' ? testSeamFor(owner.pi).startTask(params) : undefined;
+    if (seam) return seam;
     const pi = which === 'owner' ? owner : worker;
     const ctx = (which === 'owner' ? ownerContext : workerContext).ctx;
     return pi.tools.get(name).execute('call', params, undefined, undefined, ctx);

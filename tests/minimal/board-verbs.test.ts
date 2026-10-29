@@ -3,10 +3,10 @@ import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { registerP2O } from '../../extensions/p2o/index.js';
 import {
-  AUTHORING_VERBS, BOARD_ACTION_VERBS, BOARD_VERB_NAMES, CASE_VERB_NAMES, COVERAGE_VERB_NAMES, PLAN_VERB_NAMES,
+  AUTHORING_VERBS, BOARD_VERB_NAMES, CASE_VERB_NAMES, COVERAGE_VERB_NAMES, PLAN_VERB_NAMES,
   TASK_VERB_NAMES, authoringAction,
 } from '../../src/board-verbs.js';
-import { ALL_TOOLS, HIDDEN_TOOLS, MODEL_TOOLS, PLANNER_TOOLS, REPORTER_TOOLS, VALIDATION_TOOLS, WORKER_TOOLS, workerTools } from '../../src/tool-policy.js';
+import { MODEL_TOOLS, PLANNER_TOOLS, REPORTER_TOOLS, VALIDATION_TOOLS, WORKER_TOOLS, workerTools } from '../../src/tool-policy.js';
 import { TOOL_BOUNDARIES } from '../../src/tool-guidelines.js';
 import { createFakePi, EXTENSION_PATH } from './helpers/fake-pi.js';
 import { fixture, seedImpactGoal } from './helpers/report-fixture.js';
@@ -25,32 +25,19 @@ function parityViolations(names: readonly string[], prose: string): string[] {
 }
 
 describe('L1/W2 board verbs', () => {
-  it('maps every old board action to one verb and composes 11 verbs from 4 bags', () => {
-    expect(TASK_VERB_NAMES).toHaveLength(4);
+  it('composes 10 verbs from 4 bags and keeps every authoring pair on one verb', () => {
+    expect(TASK_VERB_NAMES).toHaveLength(3);
     expect(CASE_VERB_NAMES).toHaveLength(3);
     expect(COVERAGE_VERB_NAMES).toHaveLength(2);
     expect(PLAN_VERB_NAMES).toHaveLength(1);
-    expect(BOARD_VERB_NAMES).toHaveLength(11);
-    expect(new Set(BOARD_VERB_NAMES).size).toBe(11);
+    expect(BOARD_VERB_NAMES).toHaveLength(10);
+    expect(new Set(BOARD_VERB_NAMES).size).toBe(10);
 
-    for (const [oldTool, actions] of Object.entries(BOARD_ACTION_VERBS)) for (const [action, verb] of Object.entries(actions)) {
-      expect(verb, `${oldTool} ${action}`).not.toBeUndefined();
-      if (verb !== null) expect(BOARD_VERB_NAMES, `${oldTool} ${action}`).toContain(verb);
-    }
-    // The authoring pairs share one verb each: both halves name the merged verb and the identity picks the action.
-    expect(BOARD_ACTION_VERBS.p2o_task.create).toBe(AUTHORING_VERBS.task);
-    expect(BOARD_ACTION_VERBS.p2o_task.revise).toBe(AUTHORING_VERBS.task);
-    expect(BOARD_ACTION_VERBS.p2o_case.create).toBe(AUTHORING_VERBS.case);
-    expect(BOARD_ACTION_VERBS.p2o_case.revise).toBe(AUTHORING_VERBS.case);
-    expect(BOARD_ACTION_VERBS.p2o_plan.create).toBe(AUTHORING_VERBS.plan);
-    expect(BOARD_ACTION_VERBS.p2o_plan.revise).toBe(AUTHORING_VERBS.plan);
-    // P8.3: the separate read-only match verb was removed; create performs the same preflight and returns its payload.
-    expect(BOARD_ACTION_VERBS.p2o_task.match).toBeNull();
-    expect(BOARD_ACTION_VERBS.p2o_task.start).toBe('p2o_task_start');
-    expect(BOARD_ACTION_VERBS.p2o_case.view).toBe('p2o_board');
-    expect(BOARD_ACTION_VERBS.p2o_coverage.suggest).toBe('p2o_wstg_suggest');
-    // A3: the host derives coverage cells, so every old cell action is an explicit removed (`null`) mapping.
-    for (const action of ['cell-create', 'cell-revise', 'cell-retire']) expect(BOARD_ACTION_VERBS.p2o_coverage[action], action).toBeNull();
+    // The authoring pairs share one verb each: the identity picks create or revise, never a second action field.
+    for (const verb of Object.values(AUTHORING_VERBS)) expect(BOARD_VERB_NAMES).toContain(verb);
+    // S1/B10 deleted the hidden task-start verb, so the one delegation path is author -> dispatch -> review.
+    expect(TASK_VERB_NAMES).toEqual([AUTHORING_VERBS.task, 'p2o_task_dispatch', 'p2o_task_review']);
+    expect(BOARD_VERB_NAMES).not.toContain('p2o_task_start');
   });
 
   it('derives create from no identity and revise from id+revision, refusing a half identity with the legal verb', () => {
@@ -86,16 +73,14 @@ describe('L1/W2 board verbs', () => {
     expect(VALIDATION_TOOLS).toHaveLength(18);
     expect(REPORTER_TOOLS).toHaveLength(6);
     expect(MODEL_TOOLS).toHaveLength(32);
-    expect(ALL_TOOLS).toHaveLength(34);
-    expect(HIDDEN_TOOLS).toEqual(['p2o_delegate', 'p2o_task_start']);
-    for (const name of HIDDEN_TOOLS) expect(PLANNER_TOOLS).not.toContain(name);
-    for (const name of ['p2o_task', 'p2o_case', 'p2o_coverage', 'p2o_plan']) expect(ALL_TOOLS).not.toContain(name);
+    for (const name of ['p2o_task', 'p2o_case', 'p2o_coverage', 'p2o_plan']) expect(MODEL_TOOLS).not.toContain(name);
 
     const pi = createFakePi();
     registerP2O(pi.pi, { extensionPath: EXTENSION_PATH });
-    expect([...pi.tools.keys()].sort()).toEqual([...ALL_TOOLS].sort());
+    // S1/B10: registration and model visibility are the same surface, so the registered set is the declared model set.
+    expect([...pi.tools.keys()].sort()).toEqual([...MODEL_TOOLS].sort());
     for (const name of Object.keys(TOOL_BOUNDARIES)) expect(MODEL_TOOLS, name).toContain(name);
-    for (const name of HIDDEN_TOOLS) expect(TOOL_BOUNDARIES[name], name).toBeUndefined();
+    for (const name of ['p2o_delegate', 'p2o_task_start']) expect(TOOL_BOUNDARIES[name], name).toBeUndefined();
   });
 
   it('returns the held revision and the legal next verb for a stale revision', async () => {
@@ -149,7 +134,7 @@ describe('L1/W2 board verbs', () => {
     const prompts = await readFile(resolve(import.meta.dirname, '../../src/prompts.ts'), 'utf8');
     expect(parityViolations(MODEL_TOOLS, descriptions)).toEqual([]);
     expect(parityViolations(MODEL_TOOLS, prompts)).toEqual([]);
-    for (const name of ['p2o_delegate', 'p2o_task_start']) { expect(pi.tools.get(name).exposure).toBe('hidden'); expect(prompts).not.toContain(name); }
+    for (const name of ['p2o_delegate', 'p2o_task_start']) { expect(pi.tools.has(name), name).toBe(false); expect(prompts, name).not.toContain(name); }
     // A3 deleted the model-authored coverage-cell verbs: they are neither registered nor mentioned in the prompt surface.
     for (const name of ['p2o_coverage_cell', 'p2o_coverage_cell_retire']) { expect(pi.tools.has(name), name).toBe(false); expect(prompts, name).not.toContain(name); }
   });

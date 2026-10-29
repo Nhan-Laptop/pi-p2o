@@ -3,7 +3,7 @@ import { plannerTools } from '../../src/tool-policy.js';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { registerP2O } from '../../extensions/p2o/index.js';
+import { registerP2O, testSeamFor } from '../../extensions/p2o/index.js';
 import { EvidenceStore } from '../../src/evidence.js';
 import { readLedger } from '../../src/records.js';
 import { createContext, createFakePi, createSimpleHerdr, sandboxFactory, EXTENSION_PATH, InertSandbox, type FakePi } from './helpers/fake-pi.js';
@@ -50,6 +50,10 @@ async function harness(options: { settings?: unknown; herdrAvailable?: boolean }
       return context;
     },
     call(name, params = {}, ctx) {
+      // S1/B10: the hidden delegate/task-start verbs are gone from the surface. The harness runs their two code paths
+      // through the registration seam, which keeps the same result shape, guards and refusals.
+      if (name === 'p2o_delegate') return testSeamFor(pi.pi).spawn(params);
+      if (name === 'p2o_task_start') return testSeamFor(pi.pi).startTask(params);
       return pi.tools.get(name).execute('call', params, undefined, undefined, ctx ?? contextFor().ctx);
     },
     async emit(event, payload = {}, ctx) {
@@ -87,7 +91,7 @@ describe('owner role', () => {
   afterEach(async () => { await h.command('stop'); await rm(h.root, { recursive: true, force: true }); });
 
   it('registers the owner and worker tools plus one command, and does no work before the command', () => {
-    expect([...h.pi.tools.keys()].sort()).toEqual(['p2o_artifact', 'p2o_board', 'p2o_candidate', 'p2o_capture', 'p2o_case_author', 'p2o_case_rate', 'p2o_case_retest', 'p2o_coverage_plan', 'p2o_delegate', 'p2o_finish', 'p2o_goal_author', 'p2o_graph', 'p2o_http', 'p2o_lab', 'p2o_ledger', 'p2o_loop', 'p2o_net', 'p2o_note', 'p2o_report', 'p2o_request_subtask', 'p2o_research', 'p2o_secret', 'p2o_session', 'p2o_shell', 'p2o_skill_list', 'p2o_skill_read', 'p2o_state', 'p2o_surface', 'p2o_task_author', 'p2o_task_dispatch', 'p2o_task_review', 'p2o_task_start', 'p2o_workers', 'p2o_wstg_suggest']);
+    expect([...h.pi.tools.keys()].sort()).toEqual(['p2o_artifact', 'p2o_board', 'p2o_candidate', 'p2o_capture', 'p2o_case_author', 'p2o_case_rate', 'p2o_case_retest', 'p2o_coverage_plan', 'p2o_finish', 'p2o_goal_author', 'p2o_graph', 'p2o_http', 'p2o_lab', 'p2o_ledger', 'p2o_loop', 'p2o_net', 'p2o_note', 'p2o_report', 'p2o_request_subtask', 'p2o_research', 'p2o_secret', 'p2o_session', 'p2o_shell', 'p2o_skill_list', 'p2o_skill_read', 'p2o_state', 'p2o_surface', 'p2o_task_author', 'p2o_task_dispatch', 'p2o_task_review', 'p2o_workers', 'p2o_wstg_suggest']);
     expect(h.pi.messages).toEqual([]);
     expect(h.sandboxes).toEqual([]);
     // P18.1/D45: the round opener is a second, internal command the Engine dispatches; no help surface promises it to operators.
@@ -561,7 +565,7 @@ describe('owner role', () => {
     }
     // A1: the planner loadout holds no target, lab, claim, note, surface or report tool; an injected call is refused by the
     // role guard and never reaches the target.
-    for (const toolName of ['p2o_shell', 'p2o_net', 'p2o_http', 'p2o_capture', 'p2o_lab', 'p2o_candidate', 'p2o_note', 'p2o_surface', 'p2o_report', 'p2o_delegate', 'p2o_task_start', 'p2o_coverage_cell']) {
+    for (const toolName of ['p2o_shell', 'p2o_net', 'p2o_http', 'p2o_capture', 'p2o_lab', 'p2o_candidate', 'p2o_note', 'p2o_surface', 'p2o_report', 'p2o_coverage_cell']) {
       expect(h.pi.active, toolName).not.toContain(toolName);
       expect(await h.emit('tool_call', { toolName }), toolName).toMatchObject({ block: true });
     }
@@ -633,7 +637,7 @@ describe('owner role', () => {
     await h.emit('session_start', {});
     expect(h.pi.active).not.toContain('p2o_shell');
     expect(await h.emit('tool_call', { toolName: 'p2o_shell' })).toMatchObject({ block: true });
-    expect(await h.emit('tool_call', { toolName: 'p2o_delegate' })).toMatchObject({ block: true });
+    expect(await h.emit('tool_call', { toolName: 'p2o_task_author' })).toMatchObject({ block: true });
   });
 
   it('treats fork and tree navigation like a session switch: authority closes before the branch changes and nothing is restored', async () => {

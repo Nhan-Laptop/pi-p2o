@@ -30,24 +30,7 @@ export const COVERAGE_FIXED_ACTIONS = {
   p2o_wstg_suggest: 'suggest',
 } as const;
 
-/** Old action -> new verb. `null` is deliberately removed: `p2o_board` is the only list/view reader, and a task match now
- * happens inside `p2o_task_author` itself, which returns the match payload instead of creating when an exact attempt exists.
- * Both halves of an authoring pair name the same verb, because the action comes from the identity in the parameters. */
-export const BOARD_ACTION_VERBS: Readonly<Record<string, Readonly<Record<string, string | null>>>> = {
-  p2o_task: {
-    create: 'p2o_task_author', revise: 'p2o_task_author', match: null, dispatch: 'p2o_task_dispatch',
-    review: 'p2o_task_review', close: 'p2o_task_review', block: 'p2o_task_review', cancel: 'p2o_task_review',
-    list: 'p2o_board', start: 'p2o_task_start',
-  },
-  p2o_case: { create: 'p2o_case_author', revise: 'p2o_case_author', rate: 'p2o_case_rate', retest: 'p2o_case_retest', list: 'p2o_board', view: 'p2o_board' },
-  p2o_coverage: {
-    'plan-create': 'p2o_coverage_plan', 'plan-revise': 'p2o_coverage_plan', suggest: 'p2o_wstg_suggest',
-    'cell-create': null, 'cell-revise': null, 'cell-retire': null, list: 'p2o_board', view: 'p2o_board',
-  },
-  p2o_plan: { create: 'p2o_goal_author', revise: 'p2o_goal_author', list: 'p2o_board', view: 'p2o_board' },
-};
-
-export const TASK_VERB_NAMES = [AUTHORING_VERBS.task, 'p2o_task_start', 'p2o_task_dispatch', 'p2o_task_review'] as const;
+export const TASK_VERB_NAMES = [AUTHORING_VERBS.task, 'p2o_task_dispatch', 'p2o_task_review'] as const;
 export const CASE_VERB_NAMES = [AUTHORING_VERBS.case, 'p2o_case_rate', 'p2o_case_retest'] as const;
 export const COVERAGE_VERB_NAMES = ['p2o_coverage_plan', ...Object.keys(COVERAGE_FIXED_ACTIONS)] as const;
 export const PLAN_VERB_NAMES = [AUTHORING_VERBS.plan] as const;
@@ -71,7 +54,6 @@ export function authoringAction(kind: AuthoringKind, params: { id?: string; revi
 }
 
 export const taskAuthorParameters = Type.Object({ draft: taskDraftSchema, id: Type.Optional(id()), revision: revision() }, { additionalProperties: false });
-export const taskStartParameters = Type.Object({ id: id() }, { additionalProperties: false });
 export const taskDispatchParameters = Type.Object({
   ids: Type.Optional(Type.Array(id(), { minItems: 1, maxItems: 25 })), id: Type.Optional(id()), priority: Type.Optional(Type.Integer({ minimum: 0, maximum: 100 })),
   /** A7.5/D19: dispatch the successor onto a held worker's ticket, pane and session instead of paying for a new one. */

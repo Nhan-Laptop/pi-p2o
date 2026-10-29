@@ -60,7 +60,7 @@ import type { CaseDraft } from '../../src/case-types.js';
 import type { CoveragePlanDraft } from '../../src/coverage-types.js';
 import { CASE_ACTION_PARAMETERS, CASE_ACTIONS, COVERAGE_ACTION_PARAMETERS, COVERAGE_ACTIONS, COVERAGE_MUTATIONS } from '../../src/case-tool.js';
 import {
-  artifactParameters, candidateParameters, captureParameters, delegateParameters, execParameters, finishParameters, httpParameters, labParameters, ledgerParameters, loopParameters, noteParameters,
+  artifactParameters, candidateParameters, captureParameters, execParameters, finishParameters, httpParameters, labParameters, ledgerParameters, loopParameters, noteParameters,
   reportParameters, researchParameters, secretParameters, sessionParameters, skillListParameters, skillReadParameters, stateParameters, subtaskParameters, surfaceParameters, TASK_ACTION_PARAMETERS, TASK_ACTIONS, workersParameters,
 } from '../../src/tool-schemas.js';
 import {
@@ -71,7 +71,7 @@ import {
   LEGAL_NEXT, authoringAction, boardParameters, boardReadAction, caseAuthorParameters, caseRateParameters, caseRetestParameters,
   coveragePlanParameters, coverageSuggestParameters, COVERAGE_FIXED_ACTIONS,
   planAuthoringAction, planAuthorParameters, settleAction, taskAuthorParameters, taskDispatchParameters,
-  taskReviewParameters, taskStartParameters,
+  taskReviewParameters,
 } from '../../src/board-verbs.js';
 
 import { clampProseInPlace, PROSE_CAPS, sha256Hex } from '../../src/validate.js';
@@ -87,7 +87,7 @@ import { ProgressState } from '../../src/progress.js';
 import { AssessmentEngine } from '../../src/engine.js';
 import { ExecutorPool } from '../../src/executors.js';
 import { plannerWakeMessage, plannerWakePrompt, parseWakePrompt, isWakePrompt, PLANNER_WAKE_TYPE, isPlannerWake, ROUND_COMMAND, roundCommandText, parseRoundCommandArgs, roundBriefPrompt } from '../../src/planner-bridge.js';
-import { ALL_TOOLS, closingTools, plannerTools, workerTools } from '../../src/tool-policy.js';
+import { MODEL_TOOLS, closingTools, plannerTools, workerTools } from '../../src/tool-policy.js';
 import { UsageLedger, compactUsage, usageLines } from '../../src/usage.js';
 import { parseOperatorCommand } from '../../src/ui/operator.js';
 import { parseStateCommand, statusView, stateLines, workerLines, type RoundView, type StatusView, type WorkerView } from '../../src/ui/state.js';
@@ -255,6 +255,26 @@ export interface Options {
   /** `-e` path handed to a spawned worker pane; defaults to `extensionPath` (test/custom loadouts). */
   workerExtensionPath?: string;
   now?: () => number;
+}
+
+/**
+ * S1/B10: the two hidden legacy verbs (`p2o_delegate`, `p2o_task_start`) were a test-only API — no role held them and no
+ * production path called them; every test that used them was reaching one spawn or one owner start. The registrations are
+ * deleted. Those two code paths stay reachable in-process through `testSeamFor(pi)` for hermetic tests, with the same
+ * guards, refusals and result shape, and no model can see or call them.
+ */
+export interface TestSeam {
+  /** The deleted delegate path: spawn one worker at depth 0 (planner only, active phase only). */
+  spawn: (params: any) => Promise<{ content: Array<{ type: 'text'; text: string }>; details: any }>;
+  /** The deleted owner start path: start one proposed task with the same revision hint. */
+  startTask: (params: any) => Promise<any>;
+}
+const TEST_SEAMS = new WeakMap<object, TestSeam>();
+/** The test seam of one registration. Throws when the Pi API object was never registered by `registerP2O`. */
+export function testSeamFor(pi: ExtensionAPI): TestSeam {
+  const seam = TEST_SEAMS.get(pi);
+  if (!seam) throw Error('p2o test seam unavailable: this Pi API object has no registration');
+  return seam;
 }
 
 function output(result: ProcessResult & {operationId?: string; capture?: CaptureReceipt;previewLimit?:number}) {
@@ -2879,10 +2899,9 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
     'PLANNER ONLY: create one bounded intent (no id) or revise it at id+revision. Create: say what to learn; the host derives purpose, contract and decision from the role and anchors. The first intent is recon/mapping and may omit roleReason/expectedTrue/expectedFalse/stopCondition/methodReason; other roles require them. A discovery intent needs work.claimRefs or a reviewed prerequisite; a validation intent needs validationOf (task or claim ID; the host pins the revision). Create returns an exact-work match instead of repeating it.',(params)=>authoringAction('task',params));
   taskVerb('p2o_task_dispatch','Dispatch proposed tasks into the frontier',taskDispatchParameters,
     'PLANNER ONLY: enqueue 1..25 proposed task IDs. The frontier waits for reviewed prerequisites and free worker slots; dispatch is not execution and does not widen scope.',()=> 'dispatch');
-  // A1: removed from the model surface. No owner report path exists after start, so the verb could not produce a reviewed
-  // task anyway; the planner starts work by dispatching an intent. Hidden until A2 deletes the handler.
-  taskVerb('p2o_task_start','Start direct owner work on one task',taskStartParameters,
-    'Start direct owner work on a proposed task when the owner executes it.',()=> 'start',(params)=>params,'hidden');
+  // S1/B10: the hidden legacy verb is gone from the surface. The same owner start path stays reachable for hermetic tests
+  // through testSeamFor(pi).startTask — same revision hint, same refusals, no registered tool.
+  const testStartTask = async (params: any) => { const current = owner(), clean = defined(params); return withRevisionHint(current, 'task', clean.id, () => executeTaskAction('call', { ...clean, action: 'start' })); };
   taskVerb('p2o_task_review','Review a reported task handoff',taskReviewParameters,
     'PLANNER ONLY: review a reported handoff at its current revision from same-run receipts, or settle it with outcome=closed|blocked|cancelled (blocked records the human prerequisite). Review is coordination, not proof; settlement is not a finding. Use the current revision and same-run evidence IDs.',(params)=>params.outcome&&params.outcome!=='reviewed'?settleAction(params.outcome):'review',(params)=>{const {outcome,...rest}=params;return rest;});
   caseVerb('p2o_case_author','Create or revise a canonical case',caseAuthorParameters,
@@ -3388,20 +3407,17 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
       return textResult(cleanText(JSON.stringify(page)), {...page,count:page.records.length});
     },
   });
-  registerTool({
-    // A1/D5: removed from the model surface. One delegation path remains: p2o_task_author -> p2o_task_dispatch -> Engine claim.
-    name: 'p2o_delegate', label: 'Delegate worker', exposure: 'hidden',
-    description: 'Immediately spawn one focused worker when capacity is free. For batches/awaiting dependencies use task dispatch; Engine reuses capacity across successive assignments. Fresh session/ticket each time; shared-serial by default or confirmed isolated profile, never scope widening. Worker requests go to the Planner as proposals, not nested spawns. Purpose (work.purpose, else the role) decides what a finished report must contain and, when skills are omitted, its default skill set: mapping surface, discovery candidate, investigation root cause, refinement narrower claim, validation independent reproduction, retest verdict, exploitation demonstrated effect, chaining composed effect, reporting report.',
-    parameters: delegateParameters,
-    async execute(_id, params) {
-      const current = run;
-      if (!current) fail('NO_ASSESSMENT', 'No active p2o assessment; start one with /p2o --target …');
-      if (current.role === 'worker') fail('PLANNER_ONLY','Workers may propose subtasks, not spawn or dispatch accepted work');
-      if (current.phase !== 'active') fail('NO_ASSESSMENT', 'The assessment is finishing; no new workers');
-      const spawned = await spawnWorker({ focus: params.focus, task: params.task, context: params.context, role: params.role, skills: params.skills, model: params.model, workflow: params.workflow, thinking: params.thinking, taskId:params.taskId, work: params.work as Record<string, unknown> | undefined, decision: params.decision as Record<string, unknown> | undefined, outputContract: params.outputContract as Record<string, unknown> | undefined }, { workerId: null, depth: 0 });
-      return textResult(`Spawned ${spawned.workerId} (${spawned.role}, ${spawned.model ?? 'inherit'}, depth ${spawned.depth}) in a visible pane. ${spawned.workMatch === 'unknown' ? 'Work identity is unknown (no structured work), so exact duplicate and history checks did not run. ' : ''}Review its evidence-linked report; plan other intents or wait for semantic events.`, spawned);
-    },
-  });
+  // S1/B10: the hidden delegate verb is gone from the surface. The same in-process spawn stays reachable for hermetic tests
+  // through testSeamFor(pi).spawn — same guards, same result shape, no registered tool.
+  const testSpawn = async (params: any) => {
+    const current = run;
+    if (!current) fail('NO_ASSESSMENT', 'No active p2o assessment; start one with /p2o --target …');
+    if (current.role === 'worker') fail('PLANNER_ONLY', 'Workers may propose subtasks, not spawn or dispatch accepted work');
+    if (current.phase !== 'active') fail('NO_ASSESSMENT', 'The assessment is finishing; no new workers');
+    const spawned = await spawnWorker({ focus: params.focus, task: params.task, context: params.context, role: params.role, skills: params.skills, model: params.model, workflow: params.workflow, thinking: params.thinking, taskId: params.taskId, work: params.work as Record<string, unknown> | undefined, decision: params.decision as Record<string, unknown> | undefined, outputContract: params.outputContract as Record<string, unknown> | undefined }, { workerId: null, depth: 0 });
+    return textResult(`Spawned ${spawned.workerId} (${spawned.role}, ${spawned.model ?? 'inherit'}, depth ${spawned.depth}) in a visible pane. ${spawned.workMatch === 'unknown' ? 'Work identity is unknown (no structured work), so exact duplicate and history checks did not run. ' : ''}Review its evidence-linked report; plan other intents or wait for semantic events.`, spawned);
+  };
+  TEST_SEAMS.set(pi, { spawn: testSpawn, startTask: testStartTask });
   registerTool({
     name:'p2o_request_subtask',label:'Propose follow-up',exposure:'model-only',
     description:'WORKER ONLY: propose a bounded helper/follow-up question with its reason and known context. Persists an unaccepted ledger proposal and notifies the Planner; never spawns and never opens scope. If blocked on help, report progress and release your slot rather than waiting for a child.',
@@ -4421,7 +4437,7 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
     // replacement session adopts — never a fresh process start, which is what keeps an unrelated instance from inheriting a
     // fixture's run — and the adopted run must still be live.
     if (!run && event.reason !== 'startup' && ownerRun && ownerRun.phase === 'active') run = ownerRun;
-    if (!run) { pi.setActiveTools(pi.getActiveTools().filter(name => !ALL_TOOLS.includes(name))); return; }
+    if (!run) { pi.setActiveTools(pi.getActiveTools().filter(name => !MODEL_TOOLS.includes(name))); return; }
     // The campaign keeps running here: rebind the browser-facing context and restore the planner boundary a fresh session
     // cannot inherit (a new session starts with the host's default tool loadout and no name).
     if (run.role === 'owner') {
@@ -4441,7 +4457,7 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
     if (staleWakeInFlight) return {block:true,reason:'Obsolete automatic wake cancelled; no host or target tools in this turn'};
     const current = run;
     if (!current) {
-      if (ALL_TOOLS.includes(event.toolName)) return { block: true, reason: 'Start a live assessment with /p2o --target … first. Replay grants no sandbox or worker authority.' };
+      if (MODEL_TOOLS.includes(event.toolName)) return { block: true, reason: 'Start a live assessment with /p2o --target … first. Replay grants no sandbox or worker authority.' };
       return;
     }
     // S1/A8 (F-07): the defense-in-depth gate reads the loadout the round is actually on. A wrapping round keeps the

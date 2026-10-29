@@ -42,15 +42,12 @@ describe('scripts/audit-surface.mjs', () => {
     // A registered tool named in a role's own tool text but missing from its loadout is a guaranteed blocked call.
     expect(report.contradictions, 'tool text names a tool its holder role cannot call').toEqual([]);
 
-    // The counts every authority/board test relies on: 35 registered (33 model-visible + 2 hidden legacy verbs), 12 verbs.
-    expect(report.counts).toEqual({ registered: 34, modelVisible: 32, hidden: 2, boardVerbs: 11, planner: 21 });
+    // S1/B10: registration and model visibility are the same surface — 32 registered, all model-visible, 10 board verbs.
+    expect(report.counts).toEqual({ registered: 32, modelVisible: 32, hidden: 0, boardVerbs: 10, planner: 21 });
 
-    // The hidden legacy verbs are registered but in no role loadout (B10 later deletes them; this pin moves with it).
-    for (const hidden of ['p2o_delegate', 'p2o_task_start']) {
-      const tool = report.tools.find((item: { name: string }) => item.name === hidden);
-      expect(tool, `${hidden} must stay registered`).toBeTruthy();
-      expect(tool.holders, `${hidden} must be in no role loadout`).toEqual([]);
-    }
+    // Nothing is registered outside the role loadouts any more: the two hidden legacy verbs are deleted, not hidden.
+    expect(report.tools.every((item: { holders: string[] }) => item.holders.length > 0), 'every registered tool is held by a role').toBe(true);
+    for (const name of ['p2o_delegate', 'p2o_task_start']) expect(report.tools.some((item: { name: string }) => item.name === name), name).toBe(false);
 
     // Tranches A and B may shrink declarations, never grow them past the audited baseline.
     for (const [role, ceiling] of Object.entries(BASELINE)) {

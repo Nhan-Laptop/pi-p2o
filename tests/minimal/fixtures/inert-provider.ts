@@ -62,12 +62,12 @@ export function registerInertProvider(pi: ExtensionAPI, mode: 'owner' | 'worker'
         if (!policy || /\bp2o_[a-z_]+\b|nextOffset|supersedes=|policyBasis=/.test(policy)) throw new Error('lead policy duplicates tool guidance');
         if ((system.match(/<p2o_assessment>/g) ?? []).length !== 1) throw new Error('lead policy duplicated');
         // A1: the planner holds intent/plan/case/coverage-plan/review/read/worker-control only. Target, lab, claim, note,
-        // surface and report tools plus the hidden legacy verbs are never declared, so a model call to one is Pi's
-        // `Tool <name> not found` before any extension handler runs. The task schema pins the one delegation path instead.
+        // surface and report tools are never declared, so a model call to one is Pi's `Tool <name> not found` before any
+        // extension handler runs. The task schema pins the one delegation path instead.
         const plannerMust = ['p2o_task_author', 'p2o_task_dispatch', 'p2o_task_review', 'p2o_goal_author',
           'p2o_case_author', 'p2o_coverage_plan', 'p2o_board', 'p2o_ledger', 'p2o_graph', 'p2o_workers', 'p2o_loop', 'p2o_finish'];
         const plannerMustNot = ['p2o_shell', 'p2o_net', 'p2o_http', 'p2o_capture', 'p2o_lab', 'p2o_candidate', 'p2o_note',
-          'p2o_surface', 'p2o_report', 'p2o_request_subtask', 'p2o_delegate', 'p2o_task_start', 'p2o_coverage_cell',
+          'p2o_surface', 'p2o_report', 'p2o_request_subtask', 'p2o_coverage_cell',
           'p2o_coverage_cell_retire', 'bash', 'read'];
         if (!plannerMust.every(name => tools.includes(name)) || plannerMustNot.some(name => tools.includes(name))) throw new Error(`planner tool loadout was not applied: ${tools.join(',')}`);
         if (!(descriptions.find(tool => tool.name === 'p2o_task_author')?.parameters as any)?.properties?.draft) throw new Error('task create schema lost');

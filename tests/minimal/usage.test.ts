@@ -3,7 +3,7 @@ import { mkdir, mkdtemp, readFile, readdir, rm } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { registerP2O } from '../../extensions/p2o/index.js';
+import { registerP2O, testSeamFor } from '../../extensions/p2o/index.js';
 import { BrokerClient } from '../../src/broker.js';
 import { AssessmentStore } from '../../src/state/store.js';
 import { USAGE_ACTORS, USAGE_REPORTS_PER_ACTOR, UsageLedger, compactUsage, usageDelta, usageLines } from '../../src/usage.js';
@@ -48,7 +48,9 @@ async function fixture(work: (h: any) => Promise<void>, args = '') {
   const root = await mkdtemp(join(tmpdir(), 'p2o-usage-')); await mkdir(join(root, 'source'));
   const pi = createFakePi(), ctx = createContext({ cwd: root }), herdr = createSimpleHerdr(), sandboxes: InertSandbox[] = [];
   registerP2O(pi.pi, { extensionPath: EXTENSION_PATH, controlRoot: join(root, 'control'), settingsPath: join(root, 'settings.json'), herdr: herdr.client, createSandbox: (target: any) => { const sandbox = new InertSandbox(target); sandboxes.push(sandbox); return sandbox; } });
-  const command = (text: string) => pi.commands.get('p2o').handler(text, ctx.ctx), call = (name: string, params: any = {}) => pi.tools.get(name).execute(randomUUID(), params, undefined, undefined, ctx.ctx);
+  // S1/B10: the hidden delegate/task-start verbs are gone; the harness runs their code through the registration seam.
+  const seam = (name: string, params: any) => name === 'p2o_delegate' ? testSeamFor(pi.pi).spawn(params) : name === 'p2o_task_start' ? testSeamFor(pi.pi).startTask(params) : undefined;
+  const command = (text: string) => pi.commands.get('p2o').handler(text, ctx.ctx), call = (name: string, params: any = {}) => seam(name, params) ?? pi.tools.get(name).execute(randomUUID(), params, undefined, undefined, ctx.ctx);
   const screen = () => ctx.screens.at(-1).render(220).join('\n');
   const emit = async (event: string, payload: any) => { for (const handler of pi.events.get(event) ?? []) await handler(payload, ctx.ctx); };
   const assistant = (extra: Record<string, unknown>) => emit('message_end', { message: { role: 'assistant', content: [{ type: 'text', text: 'inert' }], stopReason: 'stop', ...extra } });

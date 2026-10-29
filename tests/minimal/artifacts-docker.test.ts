@@ -9,7 +9,7 @@ import { randomUUID } from 'node:crypto';
 import { Sandbox, IMAGE } from '../../src/sandbox.js';
 import { OutputCapture } from '../../src/artifacts.js';
 import { AssessmentStore } from '../../src/state/store.js';
-import { registerP2O } from '../../extensions/p2o/index.js';
+import { registerP2O, testSeamFor } from '../../extensions/p2o/index.js';
 import { createContext, createFakePi, createSimpleHerdr, EXTENSION_PATH } from './helpers/fake-pi.js';
 import { BrokerClient } from '../../src/broker.js';
 import { mkdir, readFile, readdir, writeFile } from 'node:fs/promises';
@@ -84,7 +84,9 @@ it.skipIf(process.env.P2O_TEST_DOCKER !== '1')('real isolated Docker + authentic
   const root=await mkdtemp(join(tmpdir(),'p2o-scratch-worker-docker-'));await mkdir(join(root,'source'));await writeFile(join(root,'source','approved.txt'),'approved fixture');await writeFile(join(root,'isolated-settings.json'),JSON.stringify({p2o:{artifactCaptureKiB:1}}));
   const pi=createFakePi(),ctx=createContext({cwd:root}),herdr=createSimpleHerdr(),sandboxes:Sandbox[]=[];
   registerP2O(pi.pi,{extensionPath:EXTENSION_PATH,herdr:herdr.client,controlRoot:join(root,'control'),settingsPath:join(root,'isolated-settings.json'),createSandbox:(target,profile)=>{const s=new Sandbox(target,undefined,undefined,profile);sandboxes.push(s);return s;}});
-  const command=(s:string)=>pi.commands.get('p2o').handler(s,ctx.ctx),call=(name:string,params:any)=>pi.tools.get(name).execute(randomUUID(),params,undefined,undefined,ctx.ctx);let client:BrokerClient|undefined;
+  // S1/B10: the hidden delegate/task-start verbs are gone; the harness runs their code through the registration seam.
+  const seam=(name:string,params:any)=>name==='p2o_delegate'?testSeamFor(pi.pi).spawn(params):name==='p2o_task_start'?testSeamFor(pi.pi).startTask(params):undefined;
+  const command=(s:string)=>pi.commands.get('p2o').handler(s,ctx.ctx),call=(name:string,params:any)=>seam(name,params)??pi.tools.get(name).execute(randomUUID(),params,undefined,undefined,ctx.ctx);let client:BrokerClient|undefined;
   try{
     await command('--target ./source --executors isolated --target-ops 2 --workers 2');const actor=(await call('p2o_delegate',{focus:'scratch',task:'capture authorized local fixture'})).details;
     const control=join(root,'control',(await readdir(join(root,'control')))[0]),ticket=JSON.parse(await readFile(join(control,`ticket-${actor.workerId}.json`),'utf8'));client=new BrokerClient(ticket.socket,ticket.token);

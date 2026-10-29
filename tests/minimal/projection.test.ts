@@ -13,8 +13,8 @@ import { TaskBoard, type TaskDraft } from '../../src/tasks.js';
 import { readLedger, type AssessmentRecord } from '../../src/records.js';
 import { reportProjection } from '../../src/report.js';
 import { finishPreflight } from '../../src/finish-preflight.js';
-import { ALL_TOOLS, HIDDEN_TOOLS, MODEL_TOOLS, PLANNER_TOOLS } from '../../src/tool-policy.js';
-import { BOARD_ACTION_VERBS, COVERAGE_VERB_NAMES } from '../../src/board-verbs.js';
+import { MODEL_TOOLS, PLANNER_TOOLS } from '../../src/tool-policy.js';
+import { COVERAGE_VERB_NAMES } from '../../src/board-verbs.js';
 import { TOOL_BOUNDARIES } from '../../src/tool-guidelines.js';
 
 /**
@@ -206,14 +206,11 @@ describe('coverage projection surface (A3)', () => {
   it('exposes no model-facing coverage-cell tool or board verb', () => {
     for (const name of ['p2o_coverage_cell', 'p2o_coverage_cell_retire']) {
       expect(MODEL_TOOLS).not.toContain(name);
-      expect(ALL_TOOLS).not.toContain(name);
-      expect(HIDDEN_TOOLS).not.toContain(name);
       expect(PLANNER_TOOLS).not.toContain(name);
       expect(TOOL_BOUNDARIES[name]).toBeUndefined();
     }
     expect(COVERAGE_VERB_NAMES).toEqual(['p2o_coverage_plan', 'p2o_wstg_suggest']);
-    expect(BOARD_ACTION_VERBS.p2o_coverage['cell-create']).toBeNull();
-    expect(BOARD_ACTION_VERBS.p2o_coverage['cell-revise']).toBeNull();
-    expect(BOARD_ACTION_VERBS.p2o_coverage['cell-retire']).toBeNull();
+    // S1/B10 deleted the migration map with the hidden verbs; the coverage bag still carries no cell-writing verb at all.
+    expect(COVERAGE_VERB_NAMES.some(name => name.includes('cell'))).toBe(false);
   });
 });

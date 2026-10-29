@@ -3,7 +3,7 @@ import { mkdir, mkdtemp, readFile, readdir, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { registerP2O } from '../../extensions/p2o/index.js';
+import { registerP2O, testSeamFor } from '../../extensions/p2o/index.js';
 import { campaignFrom, campaignStartLine, ingressFacts, ingressLines, parseCampaign } from '../../src/campaign.js';
 import type { OutputObserver, RunProcess } from '../../src/process.js';
 import { Sandbox, type SandboxOptions } from '../../src/sandbox.js';
@@ -49,7 +49,9 @@ async function ingressFixture(work: (h: any) => Promise<void>) {
   });
   registerP2O(worker.pi, { extensionPath: EXTENSION_PATH });
   const command = (text: string, which: 'owner' | 'worker' = 'owner') => (which === 'owner' ? pi : worker).commands.get('p2o').handler(text, (which === 'owner' ? ctx : workerCtx).ctx);
-  const call = (name: string, params: any = {}, which: 'owner' | 'worker' = 'owner') => (which === 'owner' ? pi : worker).tools.get(name).execute(randomUUID(), params, undefined, undefined, (which === 'owner' ? ctx : workerCtx).ctx);
+  // S1/B10: the hidden delegate/task-start verbs are gone; the harness runs their code through the registration seam.
+  const seam = (name: string, params: any) => name === 'p2o_delegate' ? testSeamFor(pi.pi).spawn(params) : name === 'p2o_task_start' ? testSeamFor(pi.pi).startTask(params) : undefined;
+  const call = (name: string, params: any = {}, which: 'owner' | 'worker' = 'owner') => seam(name, params) ?? (which === 'owner' ? pi : worker).tools.get(name).execute(randomUUID(), params, undefined, undefined, (which === 'owner' ? ctx : workerCtx).ctx);
   const emit = async (event: string, payload: any = {}, which: 'owner' | 'worker' = 'owner') => {
     const selected = which === 'owner' ? pi : worker, active = (which === 'owner' ? ctx : workerCtx).ctx;
     let result: unknown;

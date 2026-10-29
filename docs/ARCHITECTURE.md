@@ -23,7 +23,7 @@ explicit event-driven consent. Engine/task semantics: [PLANNER_ENGINE](PLANNER_E
 | validation | 18 | the worker set without the surface writer; reproduces another worker's reviewed claim | record new surfaces or widen the question |
 | reporter | 6 | read-only second reader: ledger, artifact, skills, state, report | target operations, candidate authorship, verdicts, plan changes |
 
-The lists live in `src/tool-policy.ts` (34 registered tools: 32 model-visible plus 2 hidden legacy verbs). Enforcement is
+The lists live in `src/tool-policy.ts` (32 registered tools, all model-visible). Enforcement is
 the loadout, not the prompt: a role is restricted by *not activating* a tool, so a model that calls it gets Pi's unknown-tool
 result. Role prompts (`src/prompts.ts`) state the same split in one line each, and dispatch of an intent is the only path to
 target execution. A round that ends with an open goal and no open intent is recorded as a `planner.stalled` report fact.

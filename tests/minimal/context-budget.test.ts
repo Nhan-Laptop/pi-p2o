@@ -45,13 +45,14 @@ const registrations = () => {
 };
 
 describe('model-facing tool declaration budget', () => {
-  it('registers every model-visible loadout entry and keeps the hidden verbs off the model surface', () => {
+  it('registers exactly the model-visible loadout entries', () => {
     const tools = registrations();
     for (const name of MODEL_TOOLS) expect(tools.has(name), `${name} must be registered`).toBe(true);
     for (const role of [PLANNER_TOOLS, WORKER_TOOLS, VALIDATION_TOOLS, REPORTER_TOOLS]) {
       for (const name of role) expect(MODEL_TOOLS, `${name} must be model-visible`).toContain(name);
     }
-    for (const hidden of ['p2o_delegate', 'p2o_task_start']) expect(MODEL_TOOLS, hidden).not.toContain(hidden);
+    // S1/B10: registration is exactly the model surface; the hidden legacy verbs are no longer registered.
+    for (const name of tools.keys()) expect(MODEL_TOOLS, name).toContain(name);
   });
 
   it('keeps each role payload and the whole model surface inside the recorded declaration budget', () => {

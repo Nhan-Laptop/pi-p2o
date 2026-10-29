@@ -2,13 +2,14 @@ import { describe, expect, it } from 'vitest';
 import { mkdtemp, mkdir, readFile, readdir, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { registerP2O } from '../../extensions/p2o/index.js';
+import { registerP2O, testSeamFor } from '../../extensions/p2o/index.js';
 import { AssessmentStore } from '../../src/state/store.js';
 import { BrokerClient } from '../../src/broker.js';
 import { createContext, createFakePi, createSimpleHerdr, sandboxFactory, InertSandbox, EXTENSION_PATH, type FakePi } from './helpers/fake-pi.js';
 
 async function fixture(work:(h:any)=>Promise<void>){const root=await mkdtemp(join(tmpdir(),'p2o-context-runtime-'));await mkdir(join(root,'source'));const pi=createFakePi(),ctx=createContext({cwd:root}),herdr=createSimpleHerdr(),sandboxes:InertSandbox[]=[];registerP2O(pi.pi,{extensionPath:EXTENSION_PATH,settingsPath:join(root,'fixture-settings.json'),controlRoot:join(root,'control'),herdr:herdr.client,createSandbox:sandboxFactory(sandboxes)});
-  const emit=async(event:string,payload:any={},which:FakePi=pi,context=ctx)=>{let result:any;for(const handler of which.events.get(event)??[])result=await handler(payload,context.ctx);return result;},call=(name:string,params:any={},which:FakePi=pi,context=ctx)=>which.tools.get(name).execute('context-fixture',params,undefined,undefined,context.ctx),reader=async()=>AssessmentStore.open(join(root,'.p2o-state'),(await readdir(join(root,'.p2o-state')))[0]),command=(value:string)=>pi.commands.get('p2o').handler(value,ctx.ctx),packet=(result:any)=>JSON.parse(result.messages.find((m:any)=>m.customType==='p2o_knowledge_state').content.split('Delivery cursor is not review. ')[1]);
+  // S1/B10: the hidden delegate/task-start verbs are gone; the harness runs their code through the registration seam.
+  const emit=async(event:string,payload:any={},which:FakePi=pi,context=ctx)=>{let result:any;for(const handler of which.events.get(event)??[])result=await handler(payload,context.ctx);return result;},seam=(name:string,params:any)=>name==='p2o_delegate'?testSeamFor(pi.pi).spawn(params):name==='p2o_task_start'?testSeamFor(pi.pi).startTask(params):undefined,call=(name:string,params:any={},which:FakePi=pi,context=ctx)=>seam(name,params)??which.tools.get(name).execute('context-fixture',params,undefined,undefined,context.ctx),reader=async()=>AssessmentStore.open(join(root,'.p2o-state'),(await readdir(join(root,'.p2o-state')))[0]),command=(value:string)=>pi.commands.get('p2o').handler(value,ctx.ctx),packet=(result:any)=>JSON.parse(result.messages.find((m:any)=>m.customType==='p2o_knowledge_state').content.split('Delivery cursor is not review. ')[1]);
   try{await work({root,pi,ctx,herdr,sandboxes,emit,call,reader,command,packet});}finally{await command('stop');await rm(root,{recursive:true,force:true});}
 }
 const success={message:{role:'assistant',content:[{type:'text',text:'Inert response, not reviewed proof'}],stopReason:'stop'}};

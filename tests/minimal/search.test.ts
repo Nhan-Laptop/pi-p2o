@@ -3,7 +3,7 @@ import { mkdir, mkdtemp, readFile, readdir, rm } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { registerP2O } from '../../extensions/p2o/index.js';
+import { registerP2O, testSeamFor } from '../../extensions/p2o/index.js';
 import { BrokerClient } from '../../src/broker.js';
 import { indexRecords, type AssessmentRecord } from '../../src/records.js';
 import { SEARCH_LIMIT_MAX, SNIPPET_CHARS, normalizeQuery, searchLines, searchRecords } from '../../src/search.js';
@@ -75,7 +75,9 @@ async function fixture(work: (h: any) => Promise<void>) {
   const root = await mkdtemp(join(tmpdir(), 'p2o-search-')); await mkdir(join(root, 'source'));
   const pi = createFakePi(), ctx = createContext({ cwd: root }), herdr = createSimpleHerdr(), sandboxes: InertSandbox[] = [];
   registerP2O(pi.pi, { extensionPath: EXTENSION_PATH, controlRoot: join(root, 'control'), settingsPath: join(root, 'settings.json'), herdr: herdr.client, createSandbox: (target: any) => { const sandbox = new InertSandbox(target); sandboxes.push(sandbox); return sandbox; } });
-  const command = (text: string) => pi.commands.get('p2o').handler(text, ctx.ctx), call = (name: string, params: any = {}) => pi.tools.get(name).execute(randomUUID(), params, undefined, undefined, ctx.ctx);
+  // S1/B10: the hidden delegate/task-start verbs are gone; the harness runs their code through the registration seam.
+  const seam = (name: string, params: any) => name === 'p2o_delegate' ? testSeamFor(pi.pi).spawn(params) : name === 'p2o_task_start' ? testSeamFor(pi.pi).startTask(params) : undefined;
+  const command = (text: string) => pi.commands.get('p2o').handler(text, ctx.ctx), call = (name: string, params: any = {}) => seam(name, params) ?? pi.tools.get(name).execute(randomUUID(), params, undefined, undefined, ctx.ctx);
   const screen = () => ctx.screens.at(-1).render(220).join('\n');
   const ticket = async (id: string) => JSON.parse(await readFile(join(root, 'control', (await readdir(join(root, 'control')))[0], `ticket-${id}.json`), 'utf8'));
   const connect = async (workerId: string) => { const t = await ticket(workerId), client = new BrokerClient(t.socket, t.token); await client.request('runtime', { model: t.requestedRuntime?.model, thinking: t.requestedRuntime?.thinking }); return client; };

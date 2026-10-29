@@ -17,8 +17,8 @@ export const LAB_TOOLS = ['p2o_lab'];
 
 /**
  * Planner loadout: intent, plan, case, coverage-plan, review, read, skill/research, worker control and finish.
- * Deliberately absent: every target/lab tool, p2o_candidate, p2o_note, p2o_surface, p2o_report, p2o_request_subtask,
- * p2o_delegate and p2o_task_start. Coverage cells are host-derived (A3), so no role holds a cell writer.
+ * Deliberately absent: every target/lab tool, p2o_candidate, p2o_note, p2o_surface, p2o_report and p2o_request_subtask.
+ * Coverage cells are host-derived (A3), so no role holds a cell writer.
  * `p2o_graph` stays in the planner loadout for read/query/chain coordination; worker-only write enforcement is in the
  * owner broker (`extensions/p2o/index.ts`), so this loadout does not enforce it by itself.
  */
@@ -55,18 +55,9 @@ export const VALIDATION_TOOLS = WORKER_TOOLS.filter(name => name !== 'p2o_surfac
 /** Read-only second reader for an accepted case: evidence, traces, artifacts, report. No target, lab, claim or plan tool. */
 export const REPORTER_TOOLS = ['p2o_report', 'p2o_ledger', 'p2o_artifact', 'p2o_skill_list', 'p2o_skill_read', 'p2o_state'];
 
-/**
- * Removed from the model surface by A1/A2. They stay registered with `exposure: 'hidden'` so Pi can never declare or activate
- * them (a model call is an unknown tool), while pre-existing internal/ledger/replay paths keep working until their phase
- * deletes the handlers. They are absent from every role matrix and from the tool boundaries. A3 deleted both coverage-cell
- * writers, so no replacement path is left: the cells are derived.
- */
-export const HIDDEN_TOOLS = ['p2o_delegate', 'p2o_task_start'];
-
-/** Every tool the model may ever see, once, across all roles. */
+/** Every tool the model may ever see, once, across all roles. S1/B10 deleted the two hidden legacy verbs, so this set is
+ * also every registered tool: registration and model visibility are the same surface now. */
 export const MODEL_TOOLS = [...new Set([...PLANNER_TOOLS, ...WORKER_TOOLS, ...VALIDATION_TOOLS, ...REPORTER_TOOLS])];
-/** Every registered tool: the model surface plus the hidden legacy verbs. */
-export const ALL_TOOLS = [...new Set([...MODEL_TOOLS, ...HIDDEN_TOOLS])];
 
 export function plannerTools(): string[] { return [...PLANNER_TOOLS]; }
 /** P18.3/D47: the loadout a round uses once it is wrapping up. */

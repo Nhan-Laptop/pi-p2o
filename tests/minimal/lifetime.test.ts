@@ -3,7 +3,7 @@ import { mkdtemp, mkdir, readdir, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
-import { registerP2O } from '../../extensions/p2o/index.js';
+import { registerP2O, testSeamFor } from '../../extensions/p2o/index.js';
 import { Broker, BrokerClient, type WorkerRegistration } from '../../src/broker.js';
 import { runFixed, type RunProcess } from '../../src/process.js';
 import { Sandbox } from '../../src/sandbox.js';
@@ -28,7 +28,7 @@ describe('explicit run ownership, no elapsed-time limits',()=>{
       const lead=await owner.tools.get('p2o_workers').execute('lead',{},undefined,undefined,ctx.ctx);
       expect(lead.details.engine.state).toBe('waiting');
       expect((await owner.tools.get('p2o_shell').execute('lead',{command:'lead executes directly'},undefined,undefined,ctx.ctx)).content[0].text).toContain('INERT_SANDBOX');
-      const delegated=await owner.tools.get('p2o_delegate').execute('delegate',{focus:'late focused question',task:'Inspect this controlled local fixture only',role:'general'},undefined,undefined,ctx.ctx);
+      const delegated=await testSeamFor(owner.pi).spawn({focus:'late focused question',task:'Inspect this controlled local fixture only',role:'general'});
       const workerId=delegated.details.workerId;
       const control=join(root,'control',(await readdir(join(root,'control')))[0]);
       const ticketPath=join(control,`ticket-${workerId}.json`);

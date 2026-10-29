@@ -3,7 +3,7 @@ import { mkdtemp, mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promis
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { setTimeout as delay } from 'node:timers/promises';
-import { registerP2O } from '../../extensions/p2o/index.js';
+import { registerP2O, testSeamFor } from '../../extensions/p2o/index.js';
 import { BrokerClient } from '../../src/broker.js';
 import { readLedger } from '../../src/records.js';
 import { parseRoundCommandArgs, parseWakePrompt, roundBriefPrompt, parseRoundBrief, roundCommandText } from '../../src/planner-bridge.js';
@@ -26,7 +26,9 @@ async function fixture(work:(h:any)=>Promise<void>,args='',options:{settings?:un
   // fake keeps the P17 shape (a follow-up prompt in the current session), which the rest of the extension suite exercises.
   pi.bind(ctx.ctx);
   registerP2O(pi.pi,{extensionPath:EXTENSION_PATH,controlRoot:join(root,'control'),settingsPath,herdr:herdr.client,createSandbox:sandboxFactory(sandboxes)});
-  const call=(name:string,params={})=>pi.tools.get(name).execute('call',params,undefined,undefined,ctx.ctx);
+  // S1/B10: the hidden delegate/task-start verbs are gone; the harness runs their code through the registration seam.
+  const seam=(name:string,params:any)=>name==='p2o_delegate'?testSeamFor(pi.pi).spawn(params):name==='p2o_task_start'?testSeamFor(pi.pi).startTask(params):undefined;
+  const call=(name:string,params={})=>seam(name,params)??pi.tools.get(name).execute('call',params,undefined,undefined,ctx.ctx);
   const emit=async(name:string,event:any={})=>{let result:any;for(const f of pi.events.get(name)??[])result=await f(event,ctx.ctx);return result;};
   const command=(s:string)=>pi.commands.get('p2o').handler(s,ctx.ctx);
   const roundCommand=(argsText:string,commandCtx:any)=>pi.commands.get('p2o-round').handler(argsText,commandCtx);
