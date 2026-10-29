@@ -217,7 +217,11 @@ describe('bounded recon contract', () => {
   // while the campaign stays uncapped. It was paid down first — ~315 chars of duplicated retry/cleanup/first-intent/executor
   // text were removed, so the measured section grew 13,841 -> 14,279 (url, delegated) for the new capability. Planner ceiling
   // raised 14,200 -> 14,400 for it; the other four are unchanged.
-  const PROMPT_CEILINGS = { planner: 14_400, worker: 13_200, validation: 13_500, brief: 1_650, reporter: 2_600 };
+  // 2026-10-29 (P19/C+E): the planner section gained two lines — the measurable GOAL PROOF contract with the blocked settle, and
+  // WALL THE BRANCH naming a recorded wall as progress. Both are new capability, and nothing current could be removed for them
+  // without dropping the anti-stall floor, so the measured section grew 14,279 -> 15,126 (url, delegated); planner ceiling
+  // raised 14,400 -> 15,600 (+3%, rounded up). The worker, brief and reporter ceilings are unchanged.
+  const PROMPT_CEILINGS = { planner: 15_600, worker: 13_200, validation: 13_500, brief: 1_650, reporter: 2_600 };
   it('keeps the delegated lead prompt variants inside a recorded size (the solo variants are bounded above)', () => {
     const base = { runId: 'run-recon', sourceSkipped: 2, delegation: { enabled: true, maxWorkers: 3, maxDepth: 2 } };
     const directory = plannerInstructions({ ...base, targetKind: 'directory', targetLabel: '/target' });

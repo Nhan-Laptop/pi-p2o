@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import { setTimeout as delay } from 'node:timers/promises';
 import { registerP2O, testSeamFor } from '../../extensions/p2o/index.js';
 import { BrokerClient } from '../../src/broker.js';
+import { debtId } from '../../src/debt.js';
 import { readLedger } from '../../src/records.js';
 import { createContext, createFakePi, createSimpleHerdr, sandboxFactory, EXTENSION_PATH, InertSandbox } from './helpers/fake-pi.js';
 import { seedImpactGoal } from './helpers/report-fixture.js';
@@ -56,9 +57,11 @@ describe('Demand floor: wait semantics (P18.4/D48)',()=>{
       expect(refused.terminate).toBe(false);
       expect(refused.details).toMatchObject({refused:'WAIT_REFUSED',remaining:owed.remaining});
       expect(refused.details.demand).toBe(owed.demand);
-      expect(refused.details.legalNext).toHaveLength(2);
-      expect(refused.details.legalNext[0]).toContain('dispatch');
-      expect(refused.details.legalNext[1]).toContain('blocked');
+      // P19/C: recording the wall is a first-class legal answer, named before dispatching a new intent.
+      expect(refused.details.legalNext).toHaveLength(3);
+      expect(refused.details.legalNext[0]).toContain('wall');
+      expect(refused.details.legalNext[1]).toContain('dispatch');
+      expect(refused.details.legalNext[2]).toContain('blocked');
       // The refusal is recorded as a round nudge, so the report can count demand-floor nudges instead of inferring them.
       const nudges=await eventRows(h,'planner.round-nudge');
       expect(nudges).toHaveLength(1);
@@ -82,6 +85,30 @@ describe('Demand floor: wait semantics (P18.4/D48)',()=>{
       expect(blocked.details.state).toBe('blocked');
       expect(blocked.details.paused).toContain('no feasible approach');
       expect(await eventRows(h,'planner.round-nudge')).toEqual([]);
+    });
+  });
+});
+
+describe('Demand floor: a recorded wall is a legal answer (P19/C)', () => {
+  it('accepts the first wait of a round that recorded a wall, and the walled round is not a stall', async () => {
+    await fixture(async h => {
+      await handOff(h);
+      const plans = (await h.call('p2o_board', { board: 'plans', limit: 20 })).details;
+      const goal = plans.entries.find((entry: any) => entry.kind === 'goal' && entry.status === 'active');
+      expect(goal).toBeDefined();
+      // The round answers the demand it cannot dispatch for: a deferred todo citing the debt item it walls.
+      await h.call('p2o_goal_author', { entry: { kind: 'todo', title: 'Wall the exhausted branch', status: 'deferred',
+        reason: 'The bounded approach was exhausted; the next step needs a capability this run does not have',
+        debtRefs: [debtId('GOAL_OPEN', goal.id)] } });
+      // The wall makes the wait legal on the first call: no nudge, no refusal, the round ends legally.
+      const accepted = await h.call('p2o_loop', { action: 'wait', reason: 'the wall records what remains' });
+      expect(accepted.terminate).toBe(true);
+      expect(accepted.details.decision).toMatchObject({ disposition: 'wait' });
+      expect(await eventRows(h, 'planner.round-nudge')).toEqual([]);
+      // The round that recorded the wall made progress, so it is not recorded as a stalled round.
+      await h.emit('context', { messages: [{ role: 'toolResult', content: 'wall recorded' }] });
+      await h.emit('message_end', { message: { role: 'assistant', stopReason: 'stop', content: [{ type: 'text', text: 'round ends' }] } });
+      expect(await eventRows(h, 'planner.stalled')).toEqual([]);
     });
   });
 });

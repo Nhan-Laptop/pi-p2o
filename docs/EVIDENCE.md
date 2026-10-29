@@ -140,10 +140,14 @@ limits. An empty run says "no accepted-current case", never "0 vulnerabilities".
 case rating; the host computes CVSS from the vector and prints CWE, remediation, WSTG, proof level, receipt author,
 redacted reproduction steps and the chain in order with each step's effect, demonstrated impact and stopping point.
 
-**Completion is derived** (`src/completion.ts`): `complete` only when every goal is reviewed/closed with proof still
-holding, no confirmed+tested claim is unconsumed and no chain step is ready without a live task. Remaining obligations carry
-codes (`GOAL_UNSETTLED`, `GOAL_UNPROVEN`, `PRIMITIVE_UNCHAINED`, `CHAIN_READY`, `RESEARCH_DEBT`) and ids, and are printed in
-`## REMAINING WORK` with the finish preflight. The preflight (`src/finish-preflight.ts`) is report material, not a gate:
+**Completion is derived** (`src/completion.ts`): `complete` only when every goal is reviewed/closed with proof still holding
+(or settled `blocked` with its unreachable statement), no confirmed+tested claim is unconsumed and no chain step is ready
+without a live task. Remaining obligations carry codes (`GOAL_UNSETTLED`, `GOAL_UNPROVEN`, `PRIMITIVE_UNCHAINED`,
+`CHAIN_READY`, `RESEARCH_DEBT`) and ids, and are printed in `## REMAINING WORK` with the finish preflight. `RESEARCH_DEBT`
+counts gateable debt only: planning signal (unplanned assets, cells not yet run, WSTG suggestions, unrecorded mappings) is
+reported but is not owed work. A goal settled `blocked` prints as **settled with debt** in the brief, the report and
+`completionLine` instead of disappearing, and leaves the open set. The preflight (`src/finish-preflight.ts`) is report
+material, not a gate:
 obligation codes such as `UNREVIEWED_TASK`, `UNREVIEWED_CLAIM`, `PENDING_CASE`, `STALE_CASE`, `STALE_CELL`,
 `NO_COVERAGE_PLAN`, `NONTERMINAL_CELLS`, `UNRATED_ACCEPTED_CASE`, and advisories such as `STALE_RATING`,
 `ORPHAN_TASK`, `UNPLANNED_ASSETS`, `UNMAPPED_TASK`, `WSTG_APPLICABLE_UNPLANNED`, `FOREIGN_EVIDENCE`,

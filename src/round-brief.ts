@@ -15,7 +15,7 @@ import { describeCapability } from './capabilities.js';
 import { isConfirmedClaim } from './claims.js';
 import { needsCaseReview } from './cases.js';
 import { completionDemand, completionLine, type Completion } from './completion.js';
-import { debtSummary, type DebtReport } from './debt.js';
+import { debtDischarge, debtSummary, type DebtReport } from './debt.js';
 import { goalProofRefusal, proofLabel, type ProofCase, type ProofCoverage } from './goal-proof.js';
 import { chainObligations } from './obligations.js';
 import { routeMonoculture } from './routes.js';
@@ -39,7 +39,7 @@ export type BriefSectionId =
  */
 export const ROUND_BRIEF_SECTION_CAPS = {
   frame: 1024, completion: 1024, goals: 1024, ready: 1024, unchained: 640, coverage: 768, review: 768,
-  workers: 768, delta: 640, debt: 640, revisits: 448, round: 512, digest: 900,
+  workers: 768, delta: 640, debt: 1152, revisits: 448, round: 512, digest: 900,
 } as const satisfies Record<BriefSectionId, number>;
 
 const SECTION_TITLES: Readonly<Record<BriefSectionId, string>> = {
@@ -269,8 +269,10 @@ function goalsSection(input: RoundBriefInput): Rendered {
   const data = { claims: input.claims, cases: proofCases, coverage: proofCoverage };
   const lines = [`Goals: ${goals.length}.`];
   for (const goal of goals) {
+    // P19/E: a goal settled blocked is not silently open, and its proof refusal is no longer the whole story.
     let status: string;
-    if (!goal.proof) status = 'no proof recorded (cannot be settled)';
+    if (goal.status === 'blocked') status = `settled with debt: ${oneLine(goal.reason, 200)}`;
+    else if (!goal.proof) status = 'no proof recorded (cannot be settled)';
     else {
       const refusal = goalProofRefusal(goal.proof, data);
       status = refusal ? `UNPROVEN: ${oneLine(refusal.replace(/^GOAL_UNPROVEN:\s*/, ''), 200)}` : `proof holds: ${proofLabel(goal.proof)}`;
@@ -394,14 +396,19 @@ function deltaSection(input: RoundBriefInput, completion: Completion): Rendered 
   return body('delta', [`Since the last round: ${parts.join('; ')}.`, ...graph]);
 }
 
-/** A6.2: the derived report's own summary, plus citable ids a later plan row can wall. */
+/** A6.2: the derived report's own summary, the citable ids a later plan row can wall, and P19/D: how each owed item is discharged. */
 function debtSection(debt: DebtReport | undefined): Rendered {
   if (!debt) return body('debt', ['No research-debt report was supplied; outstanding research is unknown, not zero.']);
   const summary = debtSummary(debt);
   const lines = [summary ?? 'No research debt is recorded.'];
-  for (const item of debt.items.slice(0, 6)) lines.push(`- ${item.id} ${item.kind}: ${oneLine(item.subject, 120)}`);
+  for (const item of debt.items.slice(0, 6)) {
+    const guidance = item.gateable ? debtDischarge(item.kind) : undefined;
+    lines.push(`- ${item.id} ${item.kind}: ${oneLine(item.subject, 120)}${guidance ? ` — discharge: ${oneLine(guidance, 140)}` : ''}`);
+  }
   if (debt.items.length > 6) lines.push(`... ${debt.items.length - 6} more displayed item(s).`);
   if (summary) lines.push(`Citable debt ids: ${ids(debt.gateableIds)}.`);
+  // P19/C: the wall is a legal end to a round, so the brief that lists the debt also names the record that answers it.
+  if (summary) lines.push('A deferred/blocked todo citing these ids is the wall; a round that records one is progress, not a stall.');
   return body('debt', lines);
 }
 

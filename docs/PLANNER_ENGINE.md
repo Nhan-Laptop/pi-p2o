@@ -86,10 +86,17 @@ Goals, todos and decisions are records on one plan board (`p2o_goal_author` crea
 not a second task queue.
 
 - A goal is a promise about the target and needs proof: `GOAL_UNPROVEN` unless it names a `capability` (a confirmed+tested
-  claim that gained it), a `case` (accepted, confirmed, current) or a `coverage` plan whose remaining cells are terminal.
-  The same resolver runs on the board and in derived completion, so a goal cannot be settled in one and unproven in the other.
+  claim that gained it), a `case` (accepted, confirmed, current) or a `coverage` plan whose remaining cells are terminal. A
+  coverage plan must have a bounded denominator — an empty plan is refused with `GOAL_UNPROVEN` (it proves nothing) and a plan
+  recorded later proves nothing either. The same resolver runs on the board and in derived completion, so a goal cannot be
+  settled in one and unproven in the other.
 - Decisions (`new|reuse|refine|validate|retest|defer`) record direction; they do not dispatch. Todos carry advisory criteria
   and exclusions, never a completion gate. Closing a goal needs an explicit revision and its proof must still hold.
+- A goal the run cannot prove settles `blocked` instead of staying silently open: the revision needs a `reason` and a non-empty
+  `exclusions` stating what would make the proof unreachable (`GOAL_UNREACHABLE` otherwise), so a later round can tell an
+  exhausted branch from a pause. Completion counts it **settled with debt** — it leaves the open set, appears in the brief,
+  the report and `completionLine`, and neither keeps the loop awake nor claims success; `p2o_finish {partial:true}` records the
+  same settlement. A provable goal still cannot settle without its proof.
 - Every mutation is idempotent by `(run, actor, requestId)`: the same payload returns the original acknowledgement, a
   different payload is `IDEMPOTENCY_CONFLICT`.
 
@@ -129,8 +136,9 @@ as having consumed a claim.
 - The round opening is deterministic and bounded (≤ 8 KiB): campaign frame, completion and demand, goals and proof, ready
   chain steps, workers, round facts, the previous round's delta and a digest of older records. The round's own records are the
   live window; everything before the previous opening folds into the digest instead of vanishing with the replaced session.
-- Each engine round keeps monotonic counters (tested cells, confirmed claims, assets, chain depth) plus the host-computed
-  `remaining` obligations. A round is **quiet** when all four counters fail to increase.
+- Each engine round keeps monotonic counters (tested cells, confirmed claims, assets, chain depth, recorded walls) plus the
+  host-computed `remaining` obligations. A round is **quiet** when none of the five counters increases, so a round that only
+  records the wall the demand names is progress.
 - Two quiet rounds with obligations left still get a wake that names the demand (ready step, unreviewed goal, …): the loop is
   not paused while work is owed. Two quiet rounds with nothing owed pause the campaign and say the completion state is
   `complete`.
@@ -145,23 +153,28 @@ as having consumed a claim.
   live workers get up to 90 s to deliver the blocked report their own settle writes before the hard teardown runs. A round
   that misses the bound takes the hard stop.
 - A round that ends without a single tool call while obligations remain gets up to two settlement nudges
-  (`planner.round-nudge kind=settle`). The first demand-floor `wait` of a round while obligations remain is refused once with
-  the demand, the legal next actions and `terminate:false`; the second is accepted (`kind=wait`). Both replace the removed
-  manual mode (P18/D48) with a fixed shape instead of an unbounded polling turn.
+  (`planner.round-nudge kind=settle`). The first demand-floor `wait` of a round is refused once with the demand, the legal
+  next actions and `terminate:false` while work is owed, this round has recorded no wall and an intent is still in flight; the
+  legal answers name the wall first — record the deferred/blocked todo that cites the debt ids, then dispatch, then `blocked`
+  — and the second wait is accepted (`kind=wait`). Both replace the removed manual mode (P18/D48) with a fixed shape instead
+  of an unbounded polling turn.
 - Per-round routing (P18/D50): when `p2o.plannerModels` names a base or escalation model and thinking level, the round is
   routed before its first turn — base for review/mapping/validation demand, escalation for exploitation/chaining, a ready
   chain step, an unchained primitive or two consecutive rounds that closed nothing. A model the host cannot resolve or set
   keeps the current loadout and records `planner.round-model-fallback`; routing never fails a round.
-- A planner round that ends with an open goal, no open/running intent and no `blocked` declaration is recorded as one
-  `planner.stalled` lifecycle fact — report material, never a wake, queue entry, pause or budget. Only engine-admitted rounds
-  count, and only the message that ends the turn can stall (a tool-calling step is not a round). The escalation counter is a
-  streak since the last `/p2o resume`, not a lifetime total; three stalled rounds plus gateable research debt pause and ask a
-  human.
+- A planner round that ends with an open goal, no open/running intent, no `blocked` declaration and no wall recorded this
+  round is recorded as one `planner.stalled` lifecycle fact — report material, never a wake, queue entry, pause or budget. A
+  round that records a wall (a deferred or blocked todo citing current debt ids) is progress: it is not a stalled round and it
+  resets the escalation streak. Only engine-admitted rounds count, and only the message that ends the turn can stall (a
+  tool-calling step is not a round). The escalation counter is a streak since the last `/p2o resume`, not a lifetime total;
+  three stalled rounds plus gateable research debt pause and ask a human.
 - `p2o_loop {action:'wait', reason:'block-decay'|'cooldown-expiry', notBefore}` records one decision and schedules exactly one
   revisit for that condition (future, within 24 h, one pending revisit per condition). `wait` ends a round, not the
   assessment; `blocked` pauses admission and wakes until the operator resumes.
-- The loop is automatic: committed events, owed research debt and the campaign heartbeat wake a new round through Pi's
-  normal message path with a marked extension-origin prompt, and only an admitted round can stall. A provider error pauses
+- The loop is automatic: committed events, gateable research debt and the campaign heartbeat wake a new round through Pi's
+  normal message path with a marked extension-origin prompt, and only an admitted round can stall. Planning-signal backlog
+  (unplanned assets, cells not yet run, WSTG suggestions, unrecorded mappings) is reported in the brief and the report but is
+  not owed work, so it never wakes the loop or keeps the demand floor alive; only gateable debt does. A provider error pauses
   automatic wakes without retry; committed signals coalesce in a fixed 800 ms window, so a burst becomes one round.
 - Every round lifecycle fact rides the existing `lifecycle` kind with `data.engine.event` (no schema bump):
   `planner.round-start`, `round-end` (`reason`: `round-budget`/`operator-stop`), `round-budget` (`state`: `wrap`/`exhausted`),

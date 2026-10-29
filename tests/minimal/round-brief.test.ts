@@ -6,7 +6,7 @@ import {
   type BriefGraphDelta, type BriefWorker, type RoundBriefInput,
 } from '../../src/round-brief.js';
 import { completionLine, deriveCompletion } from '../../src/completion.js';
-import { DEBT_KINDS, debtFor, type DebtItem, type DebtKind, type DebtReport } from '../../src/debt.js';
+import { DEBT_KINDS, SIGNAL_KINDS, debtFor, type DebtItem, type DebtKind, type DebtReport } from '../../src/debt.js';
 import { DEFAULT_ROUND_BUDGET } from '../../src/round-budget.js';
 import type { ChainClaim } from '../../src/chain-view.js';
 import type { PlanEntry } from '../../src/planning.js';
@@ -39,7 +39,8 @@ const debtReport = (items: readonly DebtItem[]): DebtReport => {
   const totals = Object.fromEntries(DEBT_KINDS.map(kind => [kind, 0])) as Record<DebtKind, number>;
   for (const item of items) totals[item.kind] += 1;
   return { items: [...items], ids: items.map(item => item.id), gateableIds: items.filter(item => item.gateable).map(item => item.id),
-    totals, total: items.length, gateable: items.filter(item => item.gateable).length, discharged: 0 };
+    totals, total: items.length, gateable: items.filter(item => item.gateable).length,
+    backlog: items.filter(item => SIGNAL_KINDS.includes(item.kind)).length, discharged: 0 };
 };
 
 const situation: SituationSnapshot = {
@@ -86,7 +87,7 @@ function fixture(overrides: Partial<RoundBriefInput> = {}): RoundBriefInput {
     omittedCells: 2, discoveredUnplannedAssets: 1, unmappedCount: 1,
   }];
   const debt = debtReport([
-    { id: 'debt-cell-not-run-aaaaaaaaaaaa', kind: 'CELL_NOT_RUN', subject: 'cell-2', detail: 'planned and unreviewed', gateable: true },
+    { id: 'debt-cell-not-run-aaaaaaaaaaaa', kind: 'CELL_NOT_RUN', subject: 'cell-2', detail: 'planned and unreviewed', gateable: false },
     { id: 'debt-gap-untriaged-bbbbbbbbbbbb', kind: 'GAP_UNTRIAGED', subject: 'gap-1', detail: 'no cell or case references it', gateable: true },
   ]);
   const workers: BriefWorker[] = [
@@ -95,8 +96,8 @@ function fixture(overrides: Partial<RoundBriefInput> = {}): RoundBriefInput {
     { id: 'worker-c', role: 'recon', state: 'cancelled', stopped: true },
   ];
   const revisits: BriefRevisit[] = [{ condition: 'block-decay', at: '2026-10-28T12:00:00.000Z' }];
-  const progress: BriefProgress = { closures: 2, testedCells: 1, assets: 1, chainDepth: 1, remaining: 5, debt: { gateable: 2, total: 2 } };
-  const previous: BriefProgress = { closures: 1, testedCells: 0, assets: 1, chainDepth: 0, remaining: 6, debt: { gateable: 3, total: 3 } };
+  const progress: BriefProgress = { closures: 2, testedCells: 1, assets: 1, chainDepth: 1, remaining: 4, debt: { gateable: 1, total: 2 } };
+  const previous: BriefProgress = { closures: 1, testedCells: 0, assets: 1, chainDepth: 0, remaining: 6, debt: { gateable: 1, total: 3 } };
   const campaign: BriefCampaign = {
     objective: 'Assess the invoice export API for tenant-boundary mistakes',
     constraints: [{ rule: 'deny', text: 'no availability-loss effects' }, { rule: 'allow', text: 'read-only replay of the export endpoint' }],
@@ -148,7 +149,7 @@ function denseFixture(): RoundBriefInput {
   }];
   const debt = debtReport(Array.from({ length: 8 }, (_, index) => ({
     id: `debt-cell-not-run-${String(index).padStart(12, '0')}`, kind: 'CELL_NOT_RUN' as const,
-    subject: `dense subject ${index} ${'s'.repeat(180)}`, detail: 'derived fixture debt', gateable: true,
+    subject: `dense subject ${index} ${'s'.repeat(180)}`, detail: 'derived fixture debt', gateable: false,
   })));
   const campaign: BriefCampaign = {
     ...base.campaign!,
@@ -172,9 +173,9 @@ Constraints: deny: no availability-loss effects | allow: read-only replay of the
 Mode: exploit
 
 ## Completion and demand
-incomplete: 5 obligation(s) — GOAL_UNSETTLED 1: a goal is not reviewed or closed yet; settlement is a plan revision, not a report; PRIMITIVE_UNCHAINED 1: a confirmed and tested claim has no successor step and no recorded wall; CHAIN_READY 1: a chain step is ready to take and has not been dispatched; RESEARCH_DEBT 2: research debt the host can name is outstanding; a decision row and prose do not discharge it
-Demand: 1 goal(s) not reviewed or closed; 1 demonstrated primitive(s) with no successor step; step 2 of chain chain-export ready and undispatched; 2 research debt item(s) with no discharge
-Obligations: GOAL_UNSETTLED 1; PRIMITIVE_UNCHAINED 1; CHAIN_READY 1; RESEARCH_DEBT 2
+incomplete: 4 obligation(s) — GOAL_UNSETTLED 1: a goal is not reviewed or closed yet; settlement is a plan revision, not a report; PRIMITIVE_UNCHAINED 1: a confirmed and tested claim has no successor step and no recorded wall; CHAIN_READY 1: a chain step is ready to take and has not been dispatched; RESEARCH_DEBT 1: research debt the host can name is outstanding; a decision row and prose do not discharge it
+Demand: 1 goal(s) not reviewed or closed; 1 demonstrated primitive(s) with no successor step; step 2 of chain chain-export ready and undispatched; 1 research debt item(s) with no discharge
+Obligations: GOAL_UNSETTLED 1; PRIMITIVE_UNCHAINED 1; CHAIN_READY 1; RESEARCH_DEBT 1
 
 ## Goals and proof
 Goals: 1.
@@ -206,13 +207,14 @@ Workers: 3 total; 1 live (1 quiet); 1 reported; 1 stopped.
 - worker-c recon [cancelled] stopped
 
 ## Delta since the last round
-Since the last round: closures 1->2 (+1); tested cells 0->1 (+1); assets 1 (no change); chain depth 0->1 (+1); remaining 6->5 (-1); debt (gateable) 3->2 (-1).
+Since the last round: closures 1->2 (+1); tested cells 0->1 (+1); assets 1 (no change); chain depth 0->1 (+1); remaining 6->4 (-2); debt (gateable) 1 (no change).
 
 ## Research debt
-2 research debt item(s): CELL_NOT_RUN 1, GAP_UNTRIAGED 1
+1 research debt item(s): GAP_UNTRIAGED 1; planning signal (not owed work): CELL_NOT_RUN 1
 - debt-cell-not-run-aaaaaaaaaaaa CELL_NOT_RUN: cell-2
-- debt-gap-untriaged-bbbbbbbbbbbb GAP_UNTRIAGED: gap-1
-Citable debt ids: debt-cell-not-run-aaaaaaaaaaaa, debt-gap-untriaged-bbbbbbbbbbbb.
+- debt-gap-untriaged-bbbbbbbbbbbb GAP_UNTRIAGED: gap-1 — discharge: cite the gap from a coverage cell or a case, or wall it in a deferred todo stating why it stays open
+Citable debt ids: debt-gap-untriaged-bbbbbbbbbbbb.
+A deferred/blocked todo citing these ids is the wall; a round that records one is progress, not a stall.
 
 ## Revisit conditions
 Revisits: 1.
@@ -327,7 +329,7 @@ describe('round brief (P18.2/D46)', () => {
     expect(brief.truncated).toBe(true);
     expect(brief.remaining).toBe(input.completion.remaining);
     // A dropped section is reported in the structure, not silently missing from the list.
-    expect(brief.sections.filter(section => section.omitted).map(section => section.id)).toEqual(brief.omitted);
+    expect([...brief.sections.filter(section => section.omitted).map(section => section.id)].sort()).toEqual([...brief.omitted].sort());
     expect(buildRoundBrief(input).text).toBe(brief.text);
   });
 
@@ -383,5 +385,28 @@ describe('the brief carries the graph delta the round opened on (R1.7)', () => {
     expect(capped.text).toMatch(/\[\.\.\. truncated \d+ bytes\]/);
     expect(capped.bytes).toBeLessThanOrEqual(ROUND_BRIEF_MAX_BYTES);
     expect(buildRoundBrief(fixture({ graph: busy })).text).toBe(capped.text);
+  });
+});
+
+describe('the brief separates settled-with-debt goals and planning-signal debt (P19/D, P19/E)', () => {
+  it('names a blocked goal as settled with debt instead of unproven work', () => {
+    const input = fixture();
+    const blocked = plan({ id: 'goal-blocked', kind: 'goal', status: 'blocked', title: 'Reach the never-modeled read',
+      criteria: ['A confirmed and tested claim gains the never-modeled read'],
+      exclusions: ['No fixture actor holds the never-modeled read'],
+      proof: { kind: 'capability', capability: { kind: 'data.read', subject: 'never-modeled' } },
+      reason: 'The executed branch cannot gain the read; no fixture actor provides it' });
+    const brief = buildRoundBrief({ ...input, plans: [...input.plans, blocked] });
+    expect(brief.text).toContain('goal-blocked [blocked] Reach the never-modeled read — settled with debt: The executed branch cannot gain the read; no fixture actor provides it');
+    expect(brief.text).not.toContain('goal-blocked [blocked] Reach the never-modeled read — UNPROVEN');
+  });
+
+  it('names the wall that answers the debt and the discharge sentence for each owed item', () => {
+    const input = fixture();
+    const brief = buildRoundBrief(input);
+    expect(brief.text).toContain('— discharge: cite the gap from a coverage cell or a case, or wall it in a deferred todo stating why it stays open');
+    expect(brief.text).toContain('A deferred/blocked todo citing these ids is the wall; a round that records one is progress, not a stall.');
+    // The planning-signal item stays visible but does not read as owed work.
+    expect(brief.text).toContain('planning signal (not owed work): CELL_NOT_RUN 1');
   });
 });

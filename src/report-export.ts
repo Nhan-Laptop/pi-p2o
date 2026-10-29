@@ -462,11 +462,11 @@ function ladderSection(ladder: LadderView, facts?: ReportMeta['ladderFacts']): s
   return out;
 }
 
-/** A6.2/A6.6: research debt at stop, by kind, with the record-discharged count. A named item is owed work, not a finding. */
+/** A6.2/A6.6: research debt at stop, by kind, with the record-discharged count. Owed work and planning signal are named apart (P19/D). */
 function debtSection(debt: DebtReport): string[] {
   const kinds = DEBT_KINDS.filter(kind => debt.totals[kind] > 0);
   return ['## Research debt at stop', '',
-    `- Remaining: **${debt.gateable}** gateable of **${debt.total}** named item(s); **${debt.discharged}** discharged by a deferred/blocked record. A named item is owed work, not a finding and not a safety claim.`,
+    `- Remaining: **${debt.gateable}** gateable of **${debt.total}** named item(s); **${debt.discharged}** discharged by a deferred/blocked record. ${debt.backlog} item(s) are planning signal, not owed work. A named item is not a finding and not a safety claim.`,
     ...(kinds.length ? ['', '| Kind | Remaining |', '|---|---|', ...kinds.map(kind => `| ${kind} | ${debt.totals[kind]} |`)] : ['', 'The derivation produced no research-debt item from the committed state.']),
     ''];
 }
@@ -661,13 +661,16 @@ export function renderReport(index: LedgerIndex, context: ReportProjectionContex
       out.push('', '| Code | Count | Examples | Meaning |', '|---|---|---|---|');
       for (const item of completion.items) out.push(`| ${item.code} | ${item.count} | ${ids(item.ids, 5)} | ${mdText(item.message, 160)} |`);
     }
+    // P19/E: a goal settled blocked is settled-with-debt; print the debt instead of leaving it to the reader to infer.
+    if (completion.settledBlocked.length) out.push('', `- Settled with debt: ${completion.settledBlocked.map(item => `**${mdText(item.id, 80)}** — ${mdText(item.reason, 400)}`).join('; ')}.`);
     // P16.1: the proof each goal promised to show, and whether it holds, so a reader can tell a status from a demonstration.
     const goals = planFrontier(index).filter(entry => entry.kind === 'goal');
     if (goals.length) {
       out.push('', '| Goal | Status | Proof | Settled |', '|---|---|---|---|');
       for (const goal of goals) {
         const refusal = goal.proof ? goalProofRefusal(goal.proof, proof) : 'GOAL_UNPROVEN: no proof is recorded';
-        out.push(`| ${mdText(goal.id, 80)} ${mdText(goal.title, 160)} | ${mdText(goal.status, 24)} | ${goal.proof ? mdText(proofLabel(goal.proof), 120) : 'none'} | ${refusal ? `no — ${mdText(refusal, 200)}` : 'yes'} |`);
+        const settled = goal.status === 'blocked' ? `settled with debt — ${mdText(goal.reason, 240)}` : refusal ? `no — ${mdText(refusal, 200)}` : 'yes';
+        out.push(`| ${mdText(goal.id, 80)} ${mdText(goal.title, 160)} | ${mdText(goal.status, 24)} | ${goal.proof ? mdText(proofLabel(goal.proof), 120) : 'none'} | ${settled} |`);
       }
     }
     if (meta.unresolved && (meta.unresolved.obligations.length || meta.unresolved.advisory.length)) {

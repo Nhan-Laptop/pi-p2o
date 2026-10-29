@@ -2,6 +2,7 @@ import { readFile, readdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { completionLine, deriveCompletion } from '../../src/completion.js';
+import { goalProofRefusal, type ProofData } from '../../src/goal-proof.js';
 import { chainObligations } from '../../src/obligations.js';
 import { situationLine, summarizeSituation, type SituationSnapshot } from '../../src/situation.js';
 import type { ChainClaim } from '../../src/chain-view.js';
@@ -86,9 +87,9 @@ describe('export writes, ends nothing; stop records the obligation (M3)', () => 
   it('exports a report with one unchained primitive, leaves the run incomplete and still active', async () => fixture(async h => {
     await populate(h);
     const first = await h.call('p2o_finish', { export: true });
-    // A6.2: the one unchained primitive is joined by the four research-debt items the fixture's shape earns
-    // (post-hoc plan, unrun cell, unreferenced gap, and the same primitive named as debt), so 1 + 4.
-    expect(first.details).toMatchObject({ state: 'incomplete', remaining: 5 });
+    // A6.2: the one unchained primitive is joined by the three gateable research-debt items the fixture's shape earns
+    // (post-hoc plan, unreferenced gap, and the same primitive named as debt); the unrun cell is P19/D planning signal, so 1 + 3.
+    expect(first.details).toMatchObject({ state: 'incomplete', remaining: 4 });
     expect(first.details.completion.items[0].code).toBe('PRIMITIVE_UNCHAINED');
     expect(first.details.completion.items.map((item: { code: string }) => item.code)).toContain('RESEARCH_DEBT');
     expect(text(first)).toContain('STATE: incomplete');
@@ -104,21 +105,21 @@ describe('export writes, ends nothing; stop records the obligation (M3)', () => 
   it('reaches complete only once the primitive is walled and every named debt item is discharged', async () => fixture(async h => {
     const built = await populate(h);
     const exported = await h.call('p2o_finish', { export: true });
-    expect(exported.details).toMatchObject({ state: 'incomplete', remaining: 5 });
+    expect(exported.details).toMatchObject({ state: 'incomplete', remaining: 4 });
     const report = await readFile(join(exported.details.reportPath, 'REPORT.md'), 'utf8');
     expect(report).toContain('## REMAINING WORK');
     expect(report).toContain('PRIMITIVE_UNCHAINED');
-    expect(report).toMatch(/- Completion: \*\*incomplete\*\* — 5 obligation\(s\)/);
+    expect(report).toMatch(/- Completion: \*\*incomplete\*\* — 4 obligation\(s\)/);
     const debtItem = exported.details.completion.items.find((item: { code: string }) => item.code === 'RESEARCH_DEBT');
-    expect(debtItem.count).toBe(4);
+    expect(debtItem.count).toBe(3);
     const ids: string[] = [...debtItem.ids];
     // A deferred row naming the claim is the wall M4 asks for; the same row names the debt item it answers.
     const primitive = ids.find(id => id.startsWith('debt-primitive-unchained-'))!;
     await h.call('p2o_goal_author', {entry: { kind: 'todo', title: 'Wall for the fixture claim', status: 'deferred',
       reason: 'Ruled-out successor: the next step needs an actor this fixture does not model', claimRefs: [built.claim.id], debtRefs: [primitive] } });
     const walled = await h.call('p2o_finish', { export: true });
-    // One wall answers one named item: the other three are still owed and still printed by id.
-    expect(walled.details).toMatchObject({ state: 'incomplete', remaining: 3 });
+    // One wall answers one named item: the other two are still owed and still printed by id.
+    expect(walled.details).toMatchObject({ state: 'incomplete', remaining: 2 });
     for (const id of ids.filter(id => id !== primitive)) {
       await h.call('p2o_goal_author', {entry: { kind: 'todo', title: `Discharge ${id}`, status: 'deferred',
         reason: 'Bounded discharge recorded for the fixture: the item is answered by a wall, not by declaring the run done', debtRefs: [id] } });
@@ -173,7 +174,7 @@ describe('export writes, ends nothing; stop records the obligation (M3)', () => 
     try {
       const outcome = store.outcome() as { assessmentOutcome: string; remaining?: string };
       expect(outcome.assessmentOutcome).toBe('cancelled');
-      expect(outcome.remaining).toContain('incomplete: 5 obligation(s)');
+      expect(outcome.remaining).toContain('incomplete: 4 obligation(s)');
       expect(outcome.remaining).toContain('PRIMITIVE_UNCHAINED');
       // A6.2: the stopped outcome carries the derived debt too, so a resume reads the same obligation list the round saw.
       expect(outcome.remaining).toContain('RESEARCH_DEBT');
@@ -198,4 +199,52 @@ describe('no finish-gate symbol survives (M3)', () => {
     await walk(join(root, 'extensions'));
     expect(offenders).toEqual([]);
   });
+});
+describe('P19/E: a goal that cannot be proved settles with debt', () => {
+  const blockedGoal = (overrides: Partial<PlanEntry> = {}) => plan({ kind: 'goal', status: 'blocked', title: 'Reach the never-modeled read',
+    criteria: ['A confirmed and tested claim gains the never-modeled read'], exclusions: ['No actor in this run holds the read'],
+    proof: { kind: 'capability', capability: READ }, reason: 'The executed branch cannot gain the read; no actor provides it', ...overrides } as Partial<PlanEntry>);
+
+  it('counts a blocked goal as settled with debt instead of open work, and keeps the debt visible', () => {
+    const settled = deriveCompletion({ plans: [blockedGoal()], claims: [], tasks: [] });
+    // The goal is no longer owed work: completion moves on, and the run still prints what it settled without proving.
+    expect(settled).toMatchObject({ state: 'complete', remaining: 0 });
+    expect(settled.items.map(item => item.code)).not.toContain('GOAL_UNSETTLED');
+    expect(settled.settledBlocked).toEqual([{ id: 'plan-x', reason: 'The executed branch cannot gain the read; no actor provides it' }]);
+    expect(completionLine(settled)).toContain('settled with debt: plan-x blocked');
+    expect(completionLine(settled)).toContain('no actor provides it');
+    // A blocked settle is not a demonstration: the proof is still what reviewed/closed must show.
+    const reviewed = deriveCompletion({ plans: [blockedGoal({ status: 'reviewed', exclusions: ['none'] })], claims: [], tasks: [] });
+    expect(reviewed.items.map(item => item.code)).toEqual(['GOAL_UNPROVEN']);
+    // An active goal with the same unprovable proof stays open work.
+    expect(deriveCompletion({ plans: [blockedGoal({ status: 'active' })], claims: [], tasks: [] }).items.map(item => item.code)).toEqual(['GOAL_UNSETTLED']);
+  });
+
+  it('refuses an empty coverage denominator as a measurable proof (P19/E)', () => {
+    const empty: ProofData = { claims: [], cases: [], coverage: [{ planId: 'cov-empty', cells: [] }] };
+    expect(goalProofRefusal({ kind: 'coverage', ref: 'cov-empty' }, empty)).toContain('an empty denominator cannot settle a goal');
+    expect(goalProofRefusal({ kind: 'coverage', ref: 'cov-empty' }, { ...empty, coverage: [{ planId: 'cov-empty', cells: [{ id: 'c-1', execution: 'blocked' }] }] })).toBeUndefined();
+  });
+
+  it('settles an unreachable goal blocked with its reason, and a partial finish records it as settled with debt', async () => fixture(async h => {
+    await populate(h);
+    const proof = { kind: 'capability' as const, capability: { kind: 'data.read' as const, subject: 'never-modeled' } };
+    const goal = (await h.call('p2o_goal_author', { entry: { kind: 'goal', title: 'Read a principal the fixture never modeled', status: 'active',
+      criteria: ['A confirmed and tested claim gains the never-modeled read'], proof,
+      reason: 'P19/E fixture: a goal whose proof this run cannot reach' } })).details;
+    // A blocked settle must state what made the proof unreachable; the reason names the observation, the exclusions the condition.
+    await expect(h.call('p2o_goal_author', { id: goal.id, revision: goal.revision, entry: { kind: 'goal', title: goal.title, status: 'blocked',
+      criteria: goal.criteria, proof, reason: 'The executed fixture branch cannot gain the never-modeled read' } }))
+      .rejects.toThrow(/GOAL_UNREACHABLE/);
+    const blocked = (await h.call('p2o_goal_author', { id: goal.id, revision: goal.revision, entry: { kind: 'goal', title: goal.title, status: 'blocked',
+      criteria: goal.criteria, exclusions: ['No fixture actor holds the never-modeled read'], proof,
+      reason: 'The executed fixture branch cannot gain the never-modeled read; no fixture actor provides it' } })).details;
+    expect(blocked.status).toBe('blocked');
+    const finished = await h.call('p2o_finish', { partial: 'The unreachable goal is settled with debt; the remaining obligation is bounded research work' });
+    expect(finished.details.campaignPartial).toContain('unreachable goal');
+    expect(finished.details.completion.settledBlocked).toContainEqual({ id: blocked.id, reason: blocked.reason });
+    expect(finished.details.completion.items.map((item: { code: string }) => item.code)).not.toContain('GOAL_UNSETTLED');
+    expect(text(finished)).toContain('settled with debt');
+    expect(text(finished)).toContain('PARTIAL:');
+  }));
 });

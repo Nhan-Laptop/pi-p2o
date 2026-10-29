@@ -24,6 +24,16 @@ export interface PlannerWake { runId: string; epoch: number; through: number; ro
  */
 export interface RoundProgress {
   testedCells: number; closures: number; assets: number; chainDepth: number;
+  /**
+   * P19/C: the number of plan rows that record a wall (a deferred/blocked todo that cites the debt ids it answers). A round
+   * that adds one made progress even when every other counter is flat, so the judgement below reads it like the others.
+   */
+  walls?: number;
+  /**
+   * A4/P19/C: how many intents are proposed/reserved/running at the barrier. Not a progress counter; carried so the demand
+   * floor can tell "the frontier is empty" from "work is already in flight" without a second read.
+   */
+  openIntents?: number;
   /** P16.3-adjacent P16.2: what the completion still owes at this barrier. Zero pauses; anything else demands by name. */
   remaining: number;
   /** The named obligations, built by the owner from the ledger. The engine never invents work or target prose. */
@@ -31,8 +41,11 @@ export interface RoundProgress {
   /** A6.2: the derived research-debt numbers behind `remaining`; carried so A6.3 can pace a debt wake without re-reading. */
   debt?: { gateable: number; total: number };
 }
-/** A4: what a round's ending looks like to the stall rule. Both facts are read from the ledger by the caller, never invented here. */
-export interface RoundStall { openGoal: boolean; openIntents: number }
+/**
+ * A4: what a round's ending looks like to the stall rule. All facts are read from the ledger by the caller, never invented
+ * here. P19/C: a round that recorded a wall made progress, so it is not a stalled round.
+ */
+export interface RoundStall { openGoal: boolean; openIntents: number; wallRecorded?: boolean }
 const QUIET_ROUNDS = 2;
 export interface EngineDeps {
   active(): boolean;
@@ -277,6 +290,9 @@ export class AssessmentEngine {
     // No admitted round yet: the human command turn that ends before the first wake is not a campaign round, so it can be
     // neither a stalled round nor one of the three escalation steps (P5.1; one automatic loop mode since P18/D48).
     if (this.rounds === 0) return false;
+    // P19/C: a round that recorded a wall answered named debt, so it is progress — never a stalled round, and it breaks the
+    // escalation streak (the loop moved the frontier instead of spinning).
+    if (facts.wallRecorded) { this.stallStreak = 0; return false; }
     this.stallStreak += 1;
     await this.deps.persist(
       'planner.stalled: the round ended with an open goal, no open/running intent and no blocked declaration; recorded as a report fact, never a wake or new budget',
@@ -305,7 +321,9 @@ export class AssessmentEngine {
   /** One judgement per round: a round that repeats the previous counters is quiet, anything else clears the streak. */
   private judge(progress: RoundProgress) {
     const quiet = progress.testedCells === this.progress.testedCells && progress.closures === this.progress.closures
-      && progress.assets === this.progress.assets && progress.chainDepth === this.progress.chainDepth;
+      && progress.assets === this.progress.assets && progress.chainDepth === this.progress.chainDepth
+      // P19/C: recording a wall is progress; a round that discharged named debt must not read as "added nothing".
+      && (progress.walls ?? 0) === (this.progress.walls ?? 0);
     this.progress = { ...progress };
     if (!quiet) { this.quiet = []; return; }
     if (!this.rounds || this.quiet.includes(this.rounds)) return;
@@ -383,6 +401,8 @@ export class AssessmentEngine {
       // P18.4/D48: the demand floor reads these two without a ledger scan: the last judged round's obligation count and the name
       // the owner gave it. `remaining` is always present so a consumer cannot read absence as "unknown".
       remaining:this.progress.remaining,...(this.progress.demand?{demand:this.progress.demand}:{}),
+      // P19/C: the demand floor also asks whether work is already in flight and whether the last round walled debt.
+      openIntents:this.progress.openIntents??0,...(this.progress.walls!==undefined?{walls:this.progress.walls}:{}),
       heartbeat:{seconds:this.heartbeat(),...(this.heartbeatAt!==undefined?{nextAt:new Date(this.heartbeatAt).toISOString()}:{})},lastWake:this.lastWake,
       ...(this.roundStartedAt!==undefined?{roundStartedAt:new Date(this.roundStartedAt).toISOString()}:{}),
       ...(this.deps.roundBudget?.()!==undefined?{roundBudget:this.deps.roundBudget!()}:{}),

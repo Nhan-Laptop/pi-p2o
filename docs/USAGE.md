@@ -147,8 +147,10 @@ tất định ≤8 KiB thay vì nối dài một transcript; round đang chạy 
 route và round fact mới nhất trong `/p2o status`. `p2o_loop` là tool của planner (`wait`/`blocked`,
 thêm `hint`/`constrain` 3–300 ký tự, trần 24 hint và 12 constraint); trạng thái Engine đọc qua `p2o_workers` (snapshot
 `status` đã bị xoá ở S1/B2), và đây không phải slash command; `wait` kết thúc lượt chứ
-không kết thúc assessment — khi campaign còn obligation, `wait` đầu tiên của round bị từ chối một lần kèm demand và legal
-next, lần hai được chấp nhận, và một round kết thúc mà không có tool call nào nhận tối đa hai nudge nhắc ghi lại kết quả;
+không kết thúc assessment — `wait` đầu tiên của round bị từ chối một lần kèm demand và legal next khi campaign còn
+obligation chưa xong, round chưa ghi wall nào và intent vẫn đang chạy (legal next đặt wall trước: todo deferred/blocked dẫn
+debt id, rồi dispatch, rồi `blocked`), lần hai được chấp nhận — một round ghi wall là tiến độ chứ không phải round stalled;
+một round kết thúc mà không có tool call nào nhận tối đa hai nudge nhắc ghi lại kết quả;
 `blocked` là quyết định dừng có chủ đích và chờ `/p2o resume`. Event được coalesce và không bảo
 đảm đánh thức khi có input người đang chờ, run đã pause/stop hoặc campaign đã kết thúc.
 

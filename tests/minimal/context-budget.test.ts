@@ -33,6 +33,9 @@ import { createFakePi, EXTENSION_PATH } from './helpers/fake-pi.js';
  * Measured after C: planner 44,134; worker 40,124; validation 39,313; reporter 6,282; model 73,363. Every ceiling below
  * is that measurement +3%, rounded up to the next hundred — the same method as before, so this pass lowers every number
  * instead of raising one. A later raise still needs a dated comment here naming the tool that grew and why.
+ *
+ * 2026-10-29 (P19/C+E): p2o_goal_author's declaration gained the measurable-proof/unreachable sentence and the wall-as-
+ * progress sentence; measured planner 44,348 (still under the unchanged ceiling), worker/validation/reporter unchanged.
  */
 const DECLARATION_CEILINGS = { planner: 45_500, worker: 41_400, validation: 40_500, reporter: 6_500, model: 75_600 };
 

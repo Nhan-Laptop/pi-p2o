@@ -47,7 +47,7 @@ describe('finish preflight', () => {
     // no exploitation/chaining step was ever admitted; the goal alone is not an attempt, so this is an honest fifth advisory.
     expect(text).toMatch(/0 open obligation\(s\), 5 advisory/);
     expect(text).toMatch(/IMPACT_UNATTEMPTED \(1\):/);
-    expect(text).toMatch(/RESEARCH_DEBT \(4\):/);
+    expect(text).toMatch(/RESEARCH_DEBT \(3\):/);
     expect(text).toMatch(/OPEN_GAP_UNREFERENCED \(1\):/);
     expect(text).toMatch(/ORPHAN_TASK \(1\):/);
     expect(text).toMatch(/PRIMITIVE_UNCHAINED \(1\):/);

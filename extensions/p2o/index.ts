@@ -81,7 +81,7 @@ import type { CaseEffect } from '../../src/cvss.js';
 import { commandPolicy, POLICY_KINDS, type CommandPolicy, type PolicyKind, type PolicyOutcome } from '../../src/policy.js';
 import { freezeReport, reportProjection, type ReportProjectionContext } from '../../src/report.js';
 import { finishPreflight, renderPreflight, type FinishPreflight } from '../../src/finish-preflight.js';
-import { debtFor, debtSummary, deriveDebt, type DebtReport } from '../../src/debt.js';
+import { debtFor, debtSummary, deriveDebt, wallRows, type DebtReport } from '../../src/debt.js';
 import { WSTG_COMMIT, WSTG_FEATURES, WSTG_MAP, featuresFromAttributeValues, isWstgKey, wstgKey, wstgSuggest } from '../../src/wstg-map.js';
 import { ProgressState } from '../../src/progress.js';
 import { AssessmentEngine } from '../../src/engine.js';
@@ -574,6 +574,9 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
     // A4: an open goal is still proposed/active; an open intent is work the planner has not settled (proposed/reserved/running).
     const openGoal = plans.some(plan => plan.kind === 'goal' && ['proposed', 'active'].includes(plan.status)),
       openIntents = tasks.filter(task => ['proposed', 'reserved', 'running'].includes(task.status)).length;
+    // P19/C: a wall is a deferred/blocked todo citing the debt ids it answers. The count is cumulative, so a round's own walls
+    // are a delta against the last judged round — that delta is what makes "this round walled something" a ledger fact.
+    const walls = wallRows(plans).length, previousWalls = current.engine.previousProgress()?.walls ?? 0;
     // P18.6/D50: the ready chain step count is a routing fact as well as a briefing section, so it is read once here.
     const obligations = chainObligations({ plans, claims, tasks });
     // One owner for the literals (P13b): the same predicates the join and the coverage view use decide what counts as progress.
@@ -582,11 +585,14 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
       testedCells: cells.filter(cell => isTestedCell(cell)).length,
       assets: current.store.assetCount(),
       chainDepth: Math.max(0, ...Object.values(chainJoin(claims).depth)),
+      walls,
+      openIntents,
       remaining: completion.remaining,
       debt: { gateable: debt.gateable, total: debt.total },
       ...(completion.remaining ? { demand: `${completionDemand(completion, plans) ?? `${completion.remaining} obligation(s) remain`}${monoculture ? `; every open step is on route ${monoculture.route} — plausible elsewhere: ${monoculture.alternatives.slice(0, 4).join(', ')}` : ''}` } : {}),
     };
-    return { index, claims, cases, coverage, plans, tasks, obligations, debt, completion, progress, stall: { openGoal, openIntents } };
+    return { index, claims, cases, coverage, plans, tasks, obligations, debt, completion, progress,
+      stall: { openGoal, openIntents, wallRecorded: walls > previousWalls } };
   }
   /**
    * M6: what a round is judged on — four monotone counters read from the ledger and the graph the owner already owns. The engine
@@ -2931,7 +2937,7 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
   coverageVerb('p2o_wstg_suggest','Suggest uncovered WSTG tests',coverageSuggestParameters,
     'PLANNER ONLY (read-only): list uncovered WSTG tests matching recon features. Not a finding, permission or coverage; a test counts only through a derived cell with its key. Support describes the library, never the target.','coveragePlan',()=>COVERAGE_FIXED_ACTIONS.p2o_wstg_suggest);
   planVerb('p2o_goal_author','Create or revise a goal, todo or decision',planAuthorParameters,
-    'PLANNER ONLY: create a goal/todo/decision when no id is supplied, or revise one at id+revision (goal review/close is a status change). Goals need criteria and a proof contract; status defaults to active. A todo checklist is advisory and never gates completion; decisions never dispatch tasks.',(params)=>authoringAction('plan',params));
+    'PLANNER ONLY: create a goal/todo/decision when no id is supplied, or revise one at id+revision (goal review/close is a status change). Goals need criteria and a proof contract; status defaults to active. A goal names a proof this run can measure and the exclusions that would make it unreachable; settle an unreachable goal blocked with that reason (completion counts it settled with debt). A todo checklist is advisory and never gates completion; decisions never dispatch tasks.',(params)=>authoringAction('plan',params));
   registerTool({name:'p2o_board',label:'Read the owner board',exposure:'model-only',parameters:boardParameters,
     description:'PLANNER ONLY read: board=tasks, cases, coverage or plans. Without id it lists; with id it returns that record (a coverage id resolves a plan whose cells page with cursor/limit 1..100). The only list/view reader for these boards; p2o_state heads and p2o_ledger records are separate. Summaries grant no authority.',
     async execute(_id:string,params:any){graphObject(params,['board','id','cursor','limit','status','kind'],'Board read');const current=owner();const action=params.board==='tasks'?'list':boardReadAction(params.id as string|undefined);const input:any={action};
@@ -3540,20 +3546,27 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
         return { ...textResult(JSON.stringify(value), value), terminate: true };
       }
       // P18.4/D48 demand floor: the first `wait` that answers a named demand while work is still owed is refused with the demand
-      // and the two legal next actions. A second wait is accepted — the planner may genuinely be at a wall, and the round then ends
-      // with the existing `planner.stalled` fact. The refusal spends one model turn; ending the round in prose costs the same
-      // turn and leaves the obligation unnamed.
+      // and the legal next actions. P19/C: the floor is not "find work at any price" — a wall recorded this round, or an intent
+      // already in flight that can carry the demand, makes the wait legitimate; and recording the wall is the first-class answer
+      // the refusal must name. A second wait is always accepted, and the round then ends with the existing `planner.stalled` fact.
       if (params.action === 'wait' && current.roundState && !current.roundState.waitRefused) {
         const owed = current.engine.snapshot();
-        if (owed.remaining > 0) {
+        // The snapshot carries the last judged round's wall count; the ledger is the only place a wall recorded earlier in this
+        // round exists, so read it once here instead of making the floor judge history it cannot see.
+        const wallsNow = wallRows(planFrontier(await readLedger(current.records, current.runId))).length;
+        const wallRecorded = wallsNow > (owed.walls ?? 0), carryInFlight = (owed.openIntents ?? 0) > 0;
+        if (owed.remaining > 0 && !wallRecorded && !carryInFlight) {
           const state = current.roundState;
           state.waitRefused = true;
           const demand = owed.demand ?? `${owed.remaining} obligation(s) remain`;
           void roundFact(current, 'planner.round-nudge', `planner.round-nudge: round ${state.round} wait refused once; the round still owes ${demand}`,
             { round: state.round, kind: 'wait', demand }).catch(() => { /* the audit row is best effort */ });
-          const value = { refused: 'WAIT_REFUSED', round: state.round, remaining: owed.remaining, demand,
-            legalNext: ['create and dispatch one bounded intent that answers the demand', 'record blocked with the approaches already exhausted and why (a second wait is also accepted and ends the round)'],
-            note: 'The demand floor refuses one wait per round so a round with named work cannot end in prose. This refusal is not an error and changes no authority.' };
+          const value = { refused: 'WAIT_REFUSED', round: state.round, remaining: owed.remaining, demand, walls: wallsNow,
+            openIntents: owed.openIntents ?? 0,
+            legalNext: ['record the wall: author a deferred/blocked todo that cites the debt ids it answers (a round that records a wall is progress, not a stall)',
+              'create and dispatch one bounded intent that answers the demand',
+              'record blocked with the approaches already exhausted and why (a second wait is also accepted and ends the round)'],
+            note: 'The demand floor refuses one wait per round so a round with named work cannot end in prose without answering it. Recording the wall, dispatching one bounded intent, or ending the round with blocked are all legal answers; a wall recorded this round or an intent already in flight makes a wait legal instead.' };
           return { ...textResult(JSON.stringify(value), value), terminate: false };
         }
       }
@@ -4732,7 +4745,7 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
         await roundFact(current, 'planner.round-nudge', `planner.round-nudge: round ${state.round} settlement nudge ${state.nudges}/2; the round owes ${demand}`,
           { round: state.round, kind: 'settle', nudge: state.nudges, demand }).catch(() => { /* the audit row is best effort */ });
         return { entries: [{ type: 'custom_message' as const, customType: 'p2o_round_nudge', display: false, details: { round: state.round, nudge: state.nudges, demand },
-          content: `P2O SETTLEMENT NUDGE (${state.nudges}/2, round ${state.round}): this round has made no tool call while the ledger still owes ${demand}. Act now on one of the two legal next steps: create and dispatch one bounded intent that answers the demand, or record blocked with the approaches already exhausted and why. Ending the round with prose alone leaves the obligation to the next round.` }], continue: true };
+          content: `P2O SETTLEMENT NUDGE (${state.nudges}/2, round ${state.round}): this round has made no tool call while the ledger still owes ${demand}. Act now on one of the legal next steps: record the wall (a deferred/blocked todo citing the debt ids it answers), create and dispatch one bounded intent that answers the demand, or record blocked with the approaches already exhausted and why. Ending the round with prose alone leaves the obligation to the next round.` }], continue: true };
       }
     }
     // P18.3/D47: with rounds-as-sessions the settlement wake is opened by the engine kick as the next round's session, so the

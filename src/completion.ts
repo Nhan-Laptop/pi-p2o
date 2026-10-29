@@ -26,6 +26,11 @@ export interface Completion {
   /** Named for a reader who asks "why is this incomplete" without re-deriving it. */
   reasons: string[];
   unchained: UnchainedPrimitive[];
+  /**
+   * P19/E: goals settled `blocked` with their reason. A blocked goal is settled-with-debt, not silently open: it no longer
+   * keeps `remaining` or the demand floor alive, but the run still prints the debt it carries.
+   */
+  settledBlocked: Array<{ id: string; reason: string }>;
 }
 export interface CompletionInput {
   plans: readonly PlanEntry[]; claims: readonly ChainClaim[]; tasks: readonly AssessmentTask[];
@@ -49,7 +54,10 @@ export function deriveCompletion(input: CompletionInput): Completion {
   // Goals are the run's own denominator: an open goal is remaining work even when every other obligation is settled.
   const goals = input.plans.filter(plan => plan.kind === 'goal');
   const settledGoals = goals.filter(plan => plan.status === 'reviewed' || plan.status === 'closed');
-  const openGoals = goals.filter(plan => plan.status !== 'reviewed' && plan.status !== 'closed');
+  // P19/E: a goal whose proof the run cannot reach is settled `blocked` by a plan revision; it stops being open work here
+  // and is reported as settled-with-debt instead (not as a silent disappearance).
+  const blockedGoals = goals.filter(plan => plan.status === 'blocked');
+  const openGoals = goals.filter(plan => plan.status !== 'reviewed' && plan.status !== 'closed' && plan.status !== 'blocked');
   // P16.1: a reviewed goal whose proof no longer holds (a disputed case, a re-opened coverage plan) is still owed work.
   const unprovenGoals = settledGoals.filter(plan => plan.proof === undefined
     || goalProofRefusal(plan.proof, { claims: input.claims, cases: input.cases ?? [], coverage: input.coverage ?? [] }) !== undefined);
@@ -67,7 +75,8 @@ export function deriveCompletion(input: CompletionInput): Completion {
   if (input.debt && input.debt.gateable > 0) push('RESEARCH_DEBT', [...input.debt.ids]);
   const remaining = items.reduce((total, item) => total + item.count, 0);
   const reasons = items.map(item => `${item.code} ${item.count}: ${item.message}`);
-  return { state: remaining ? 'incomplete' : 'complete', remaining, items, reasons, unchained };
+  return { state: remaining ? 'incomplete' : 'complete', remaining, items, reasons, unchained,
+    settledBlocked: blockedGoals.map(plan => ({ id: plan.id, reason: plan.reason })) };
 }
 
 /**
@@ -89,8 +98,11 @@ export function completionDemand(completion: Completion, plans: readonly PlanEnt
   return parts.join('; ') || `${completion.remaining} obligation(s) remain`;
 }
 
-/** One line for a result or a prompt: what is still owed, and how much of it. */
+/** One line for a result or a prompt: what is still owed, how much of it, and which goal settled with debt (P19/E). */
 export function completionLine(completion: Completion): string {
-  return completion.state === 'complete' ? 'complete: no goal, primitive or ready step is left open'
-    : `incomplete: ${completion.remaining} obligation(s) — ${completion.reasons.join('; ')}`;
+  const blocked = completion.settledBlocked.length
+    ? `; settled with debt: ${completion.settledBlocked.map(item => `${item.id} blocked (${item.reason.slice(0, 160)})`).join('; ')}`
+    : '';
+  return completion.state === 'complete' ? `complete: no goal, primitive or ready step is left open${blocked}`
+    : `incomplete: ${completion.remaining} obligation(s) — ${completion.reasons.join('; ')}${blocked}`;
 }

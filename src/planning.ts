@@ -152,6 +152,9 @@ export class PlanBoard extends LedgerBoard{
   constructor(runId:string,path:string,active:()=>boolean,private now=()=>Date.now(),private debt?:(index:LedgerIndex)=>DebtReport,private cases?:CaseContext){super(runId,path,active,'Plan','Plan');}
   private mutate<T>(work:(index:LedgerIndex,plans:PlanEntry[])=>Promise<T>):Promise<T>{return this.serialized(index=>work(index,planFrontier(index)));}
   private references(draft:PlanDraft,index:LedgerIndex,plans:PlanEntry[]):void{
+    // P19/E: a goal settles blocked only when it can say what makes its proof unreachable. The exclusions are that statement,
+    // so a later round can tell an exhausted branch from a pause; the reason names the observation that showed it.
+    if(draft.kind==='goal'&&draft.status==='blocked'&&!draft.exclusions?.length)throw Error('GOAL_UNREACHABLE: a blocked goal must state in exclusions what would make its proof unreachable, so a later round can tell an exhausted branch from a pause');
     const tasks=taskFrontier(index);for(const taskId of draft.taskIds??[])if(!tasks.some(task=>task.id===taskId))throw Error(`Unknown plan task ${taskId}`);
     for(const goalId of draft.goalIds??[])if(!plans.some(plan=>plan.id===goalId&&plan.kind==='goal'))throw Error(`Unknown plan goal ${goalId}`);
     const edges=new Map(plans.map(plan=>[plan.id,plan.goalIds??[]]));if(draft.id)edges.set(draft.id,draft.goalIds??[]);

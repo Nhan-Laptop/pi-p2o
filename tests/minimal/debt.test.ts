@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { claimHeadClaims } from '../../src/chain-view.js';
 import { completionDemand, completionLine, deriveCompletion } from '../../src/completion.js';
-import { debtFor, debtSummary, deriveDebt, isDebtId, type DebtInput } from '../../src/debt.js';
+import { DEBT_KINDS, OBLIGATION_KINDS, SIGNAL_KINDS, debtDischarge, debtFor, debtSummary, deriveDebt, isDebtId, type DebtInput } from '../../src/debt.js';
 import { finishPreflight } from '../../src/finish-preflight.js';
 import { planFrontier } from '../../src/planning.js';
 import { indexRecords, type AssessmentRecord } from '../../src/records.js';
@@ -206,5 +206,63 @@ describe('research debt (A6.2)', () => {
     expect(shown[1]!.detail).toContain('2 worker-inferred relation(s)');
     // Settled (or owner-authored) rows never reach the derivation: the store only passes current worker heads.
     expect(deriveDebt(index, { graph: { hypotheses: [], inferredRelations: 0 } }).totals.GRAPH_UNREVIEWED).toBe(0);
+  });
+
+  // P19/D: recon keeps recording assets and planned cells, and those observation-derived kinds used to be gateable, so the
+  // completion could never empty while reconnaissance was doing its job. They are a planning signal now: reported and named,
+  // never owed work by themselves, while the kinds a decision row or a wall can answer stay gateable.
+  it('keeps observation-derived backlog out of the owed count while recon grows it (P19/D)', async () => fixture(async h => {
+    await populate(h);
+    const before = (await inspect(h)).report;
+    for (const key of ['GET /recon-a', 'GET /recon-b', 'GET /recon-c']) await h.call('p2o_graph_record', { batch: { assets: [{ asset: { kind: 'endpoint', key } }] } });
+    const after = (await inspect(h)).report;
+    // The backlog is still reported, by kind and by count.
+    expect(after.totals.SCOPE_UNPLANNED_ASSET).toBe(before.totals.SCOPE_UNPLANNED_ASSET + 3);
+    expect(after.total).toBe(before.total + 3);
+    expect(after.backlog).toBe(before.backlog + 3);
+    expect(items(after, 'SCOPE_UNPLANNED_ASSET').map(item => item.gateable)).toEqual([false, false, false]);
+    // It is planning signal, not owed work: the owed count is unchanged and its ids are not citable as obligations.
+    expect(after.gateable).toBe(before.gateable);
+    for (const item of items(after, 'SCOPE_UNPLANNED_ASSET')) expect(after.gateableIds).not.toContain(item.id);
+    const summary = debtSummary(after)!;
+    expect(summary).toContain('planning signal (not owed work):');
+    expect(summary).toContain('SCOPE_UNPLANNED_ASSET 3');
+    expect(summary.split('; planning signal')[0]).not.toContain('SCOPE_UNPLANNED_ASSET');
+    // The preflight keeps naming the un-triageable work but not the backlog, which is not owed.
+    const { completion, preflight } = await inspect(h);
+    const owed = completion.items.find(item => item.code === 'RESEARCH_DEBT')!;
+    expect(owed.count).toBe(after.gateable);
+    const listed = preflight.advisory.find(item => item.code === 'RESEARCH_DEBT')!;
+    expect(listed.count).toBe(after.gateable);
+    for (const item of items(after, 'SCOPE_UNPLANNED_ASSET')) expect(listed.ids).not.toContain(item.id);
+  }));
+
+  it('discharges the branch a wall names, gateable or planning signal (P19/D)', async () => fixture(async h => {
+    await populate(h);
+    const before = (await inspect(h)).report;
+    const gap = before.items.find(item => item.kind === 'GAP_UNTRIAGED')!;
+    expect(gap.gateable).toBe(true);
+    await h.call('p2o_graph_record', { batch: { assets: [{ asset: { kind: 'endpoint', key: 'GET /walled-signal' } }] } });
+    const withSignal = (await inspect(h)).report;
+    const signal = withSignal.items.find(item => item.kind === 'SCOPE_UNPLANNED_ASSET')!;
+    expect(signal.gateable).toBe(false);
+    // One wall row answers the branch it names: the owed item leaves the owed count, the signal item leaves the backlog.
+    await h.call('p2o_goal_author', { entry: { kind: 'todo', title: 'Wall the fixture branch', status: 'deferred',
+      reason: 'Bounded branch ruled out for the fixture: the next step needs a capability this run does not hold', debtRefs: [gap.id, signal.id] } });
+    const after = (await inspect(h)).report;
+    expect(after.ids).not.toContain(gap.id);
+    expect(after.ids).not.toContain(signal.id);
+    expect(after.discharged).toBe(2);
+    expect(after.gateable).toBe(withSignal.gateable - 1);
+    expect(after.backlog).toBe(withSignal.backlog - 1);
+  }));
+
+  it('gives every gateable kind a discharge sentence and none to planning signal (P19/D)', () => {
+    for (const kind of OBLIGATION_KINDS) expect(debtDischarge(kind), kind).toBeTruthy();
+    for (const kind of SIGNAL_KINDS) expect(debtDischarge(kind), kind).toBeUndefined();
+    // The classification is disjoint and covers the vocabulary, so no kind is silently dropped from both sides.
+    expect([...OBLIGATION_KINDS, ...SIGNAL_KINDS, 'FEATURES_MISSING'].sort()).toEqual([...DEBT_KINDS].sort());
+    expect(OBLIGATION_KINDS).toEqual(expect.arrayContaining(['PLAN_MISSING', 'GAP_UNTRIAGED', 'PRIMITIVE_UNCHAINED', 'GOAL_OPEN']));
+    expect(SIGNAL_KINDS).toEqual(['SCOPE_UNPLANNED_ASSET', 'CELL_NOT_RUN', 'WSTG_UNPLANNED', 'MAPPING_UNRECORDED'].filter(kind => (DEBT_KINDS as readonly string[]).includes(kind)));
   });
 });

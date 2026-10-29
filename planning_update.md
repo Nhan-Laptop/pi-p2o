@@ -2,9 +2,11 @@
 
 Status: **P19/A (the validation-dispatch wall), P19/B3 (the runtime-profile wall) and P19/F (dispatch refusals and
 resumability made visible) are implemented, verified and committed together on the owner's instruction (D-P19-5).
-P19/C–P19/E are planned; none is implemented.** Base commit `b43e131` (S1/C5; that plan of record is unchanged in git at
-`git show b43e131:planning_update.md`). The owner's `AGENTS.md` edit and the untracked `pi-p2o-defense-vi.pptx` are outside
-this plan.
+P19/C (a recorded wall is progress), P19/D (research-debt backlog is a planning signal) and P19/E (measurable goal proof
+and the blocked settle) are implemented, verified and committed in the same day's second pass (D-P19-7); the commit and
+push followed the owner's later "commit và push luôn đi" instruction (D-P19-8).** Base commit `b43e131` (S1/C5; that plan
+of record is unchanged in git at `git show b43e131:planning_update.md`). The owner's `AGENTS.md` edit and the untracked
+`pi-p2o-defense-vi.pptx` are outside this plan.
 
 Owner request (2026-10-29, Vietnamese, truncated):
 
@@ -35,6 +37,12 @@ Decisions carried forward:
   per-task `thinking` request instead of reconciling it (B1) or downgrading the mismatch to a note (B2). Trade-off accepted:
   the planner loses per-task thinking tuning, in exchange for never accepting a level the selected model will clamp, which
   is exactly what stranded four live tasks. Model identity stays an exact-match wall.
+- **D-P19-7 — C/D/E are the second pass, after A/B3/F (2026-10-29).** The owner said "ok làm đi P19/C, D, E": implement,
+  cover with hermetic tests and update the plan/matrix; the tranche stayed uncommitted until a later owner instruction,
+  because commits remain owner-initiated (D-P19-3).
+- **D-P19-8 — Commit and push the C/D/E tranche on the owner's instruction (2026-10-29).** The owner said "commit và push
+  luôn đi": one commit for the verified tranche with a plain message, repository identity and no attribution lines, then
+  push. The owner's `AGENTS.md` and the untracked slides are never staged; no live run is authorized by this decision.
 
 ## 1. What the live run shows (evidence first)
 
@@ -222,6 +230,19 @@ observed impact per unit of risk.
   cannot be a quiet round.
 - **Must not change:** the demand floor still names the obligation; a completely idle round with no wall and no intent is
   still a stall.
+- **Implemented (2026-10-29, second pass; verified and committed, D-P19-8).** `walls` is a fifth counter in `RoundProgress` and
+  `judge` (`src/engine.ts`), so a round that adds only a wall clears the quiet streak; `RoundStall.wallRecorded` makes
+  `stallRound` return false and reset the escalation streak instead of recording `planner.stalled`. `roundRead` counts
+  `wallRows(planFrontier(index))` and hands the delta against the last judged round to both paths
+  (`extensions/p2o/index.ts`). The demand floor refuses the first wait only when the round has owed work, no wall recorded
+  this round and no `openIntents`; its `legalNext` names the wall first, then dispatch, then blocked; the same sentence is
+  in the settlement nudge. `src/prompts.ts` gains the `WALL THE BRANCH` line (one recheck, then wall; a walled round is
+  progress, an invented probe is not) and `src/round-brief.ts` states that a deferred/blocked todo citing the ids is the
+  wall. Recorded wall = a `deferred`/`blocked` todo with non-empty `debtRefs` (`wallRows`, `src/debt.ts`).
+- **Acceptance (met):** `engine-campaign.test.ts` proves the walled round is progress, is not stalled, resets the streak
+  and does not escalate across three recon-shaped rounds; `loop-actions.test.ts` proves the wall makes the first wait
+  legal and the walled round writes no `planner.stalled`; the `keeps a round with a real ready direction quiet` test
+  proves the rule cannot sleep through owed work.
 
 ### P19/D — research-debt accounting: separate obligations from backlog
 
@@ -233,6 +254,17 @@ observed impact per unit of risk.
   "how to discharge" sentence in the brief; walling a branch must discharge its own items.
 - **Acceptance:** fixture with prior recon breadth shows gateable debt does not grow when branches are walled; the finish
   preflight still refuses a run with un-triageable existing work; report counts unchanged.
+- **Implemented (2026-10-29, second pass; verified and committed, D-P19-8).** `src/debt.ts` splits the vocabulary into
+  `OBLIGATION_KINDS` / `SIGNAL_KINDS` + `ADVISORY`; `gateable` is true only for obligation kinds, so
+  `gateableIds`/`debtFor`/completion/preflight/demand floor stop counting the four observation-derived kinds. The report
+  keeps them: `items`, `totals`, `total` and the new `backlog` count are unchanged in meaning, and `debtSummary` names
+  `planning signal (not owed work)` separately. Every obligation kind carries a `DEBT_DISCHARGE` sentence; the round
+  brief prints it with each gateable item, plus one sentence naming the wall record. A wall may cite any current id
+  (gateable or signal) — considered and kept, because answering one branch of the map is a legitimate discharge; the
+  preflight/`RESEARCH_DEBT` list follows gateable ids only.
+- **Acceptance (met):** `debt.test.ts` proves three new recon assets grow `total`/`backlog` while `gateable` stays flat,
+  the preflight names only owed ids, one wall row discharges its gateable and signal items, and every obligation kind has
+  a discharge sentence; `round-brief.test.ts` pins the signal line, the discharge sentence and the wall sentence.
 
 ### P19/E — goal economy: author measurable proof, allow a blocked settle
 
@@ -244,6 +276,19 @@ observed impact per unit of risk.
   Keep the transition itself a plan revision (`src/planning.ts` already allows `active → blocked` without proof).
 - **Acceptance:** fixture with an unreachable goal: goal becomes blocked with a reason, completion counts it as
   settled-with-debt, `p2o_finish partial` path works; a provable goal still cannot be settled without proof.
+- **Implemented (2026-10-29, second pass; verified and committed, D-P19-8).** Measurability is enforced where the state can check
+  it: `goalProofRefusal` refuses a coverage plan with no live cells (an empty denominator would hold vacuously), the
+  capability vocabulary is still the closed `capabilityList`, and a `blocked` settle must carry non-empty `exclusions`
+  (`PlanBoard.references` -> `GOAL_UNREACHABLE`); reviewed/closed still require `goalProofRefusal` to hold. Guidance is
+  prompt/tool text: `GOAL PROOF` in `src/prompts.ts`, the `p2o_goal_author` description and its boundary line state the
+  measurable proof and what would make it unreachable. `deriveCompletion` excludes `blocked` goals from `GOAL_UNSETTLED`
+  and returns `settledBlocked` (id + reason); `completionLine` and the report print `settled with debt`, the report's
+  goal table shows the reason instead of "no", and `p2o_finish partial` records the partial reason next to that
+  completion. The settle stays a plan revision (`active -> blocked` was already legal).
+- **Acceptance (met):** `completion.test.ts` proves blocked counts as settled-with-debt (not open work), an empty
+  coverage denominator is refused, and an unreachable goal settles blocked + partial finish records it; a reviewed goal
+  with an unproven capability still lands in `GOAL_UNPROVEN`. `round-brief.test.ts` pins the brief sentence;
+  `dispatch-discipline.test.ts` pins the prompt contract.
 
 ### P19/F — make dispatch walls visible and make resume discoverable (implemented)
 
@@ -272,11 +317,11 @@ No new tools are added in P19.
 
 ## 5. Sequence, budget and gates
 
-Order: **A (done) → B3 (done) → F (done) → C → D → E**. B3 and F were local, testable and unblocked the resume; C/D/E are
-behavioral and carry prompt-budget risk, so they go last with before/after measurements. Every item keeps the S1 verification
-protocol (`tsc`, focused suites, full suite, `build`/`check:build`, `audit-surface` + declaration budget, `git diff --check`,
-GitNexus `impact` before an edit and `detect_changes` before commit). Prompt text changes measure the planner ceiling
-(45,500 chars) and re-pin only from a measured number (D-P19-4).
+Order: **A (done) → B3 (done) → F (done) → C (done) → D (done) → E (done)**. B3 and F were local, testable and unblocked the
+resume; C/D/E are behavioral and carry prompt-budget risk, so they went last with before/after measurements (D-P19-7).
+Every item keeps the S1 verification protocol (`tsc`, focused suites, full suite, `build`/`check:build`, `audit-surface` +
+declaration budget, `git diff --check`, GitNexus `impact` before an edit and `detect_changes` before commit). Prompt text
+changes measure the planner ceiling (45,500 chars) and re-pin only from a measured number (D-P19-4).
 
 ## 6. Owner options
 
@@ -289,7 +334,8 @@ GitNexus `impact` before an edit and `detect_changes` before commit). Prompt tex
    no further code this pass.
 
 **Owner chose option 1 (2026-10-29, "A + B + F ngay"), together with B3 and the commit.** A, B3 and F are committed as one
-tranche; C/D/E remain the next pass with measured prompt changes.
+tranche; the same day's second pass ("ok làm đi P19/C, D, E") implemented C/D/E with the measured prompt changes (D-P19-7),
+and C/D/E were committed after the owner's "commit và push luôn đi" instruction (D-P19-8).
 
 ## 7. Verification record for P19/A + B3 + F
 
@@ -310,6 +356,47 @@ tranche; C/D/E remain the next pass with measured prompt changes.
   doc/test files and the owner's `AGENTS.md` (never staged); no `partial`/`truncated`.
 - Each fix carries a reproducing test: the A test fails when the `hostValidation` resolution is reverted; the B3 tests fail
   against the old per-task/`runtime.thinking` contract; the F tests fail without the ledger fact and the startup hint.
+
+## 7b. Verification record for P19/C + D + E (2026-10-29, second pass)
+
+- `npx tsc --noEmit` — pass.
+- Focused suites (`debt`, `completion`, `engine`, `engine-campaign`, `loop-actions`, `round-brief`, `dispatch-discipline`,
+  `finish-preflight`, `recon`, `context-budget`, `acceptance-matrix`) — pass. The new assertions are the C wall/progress
+  and demand-floor tests, the D backlog/discharge tests and the E blocked-settle/partial-finish tests; the debt fixture
+  expectations moved from 4 to 3 gateable items because the unrun cell is planning signal now.
+- Full suite — 154 files passed, 5 skipped (159); 1,364 tests passed, 13 skipped (1,377); 0 failed (baseline before the
+  tranche: 1,349 passed / 1,362; the tranche adds 15 tests).
+- `npm run build` and `npm run check:build` — pass (`build import OK`); `scripts/audit-surface.mjs` — 35 tools / 0
+  contradictions; declaration budget — planner 44,348 / worker 40,124 / validation 39,313 / reporting 6,282 chars, model
+  union 73,577, all under the unchanged ceilings (planner +380 from the `p2o_goal_author` boundary text); `git diff
+  --check` — clean with the owner's `AGENTS.md` excluded.
+- Prompt ceilings: the planner instruction section grew 14,279 -> 15,126 (url, delegated) for the two new lines, so
+  `tests/minimal/recon.test.ts` re-pins planner 14,400 -> 15,600 from that measured number with a dated comment
+  (D-P19-4). The other four prompt ceilings and all five declaration ceilings are unchanged.
+- GitNexus: `impact` upstream on `deriveDebt`, `debtSummary` and `deriveCompletion` reports CRITICAL at file-edge
+  granularity — the known inflation for exported modules whose every importer appears as a d=1 file — and `stallRound`
+  reports UNKNOWN with 16 receiver-typing call sites dropped (a text search confirms the two real call sites in
+  `extensions/p2o/index.ts`); every concrete change is an opaque counter/read plus a signature narrowing that `tsc`
+  verifies. After the local index rebuild (17,379 nodes / 77,878 edges), `detect_changes --scope all` names the expected
+  symbols — `roundRead` (`walls`, `openIntents`), engine `judge`/`stallRound`/`snapshot`/`RoundProgress`/`RoundStall`,
+  debt `DebtReport.backlog` and `DEBT_DISCHARGE`, completion `settledBlocked`, `PlanBoard.references`, `TOOL_BOUNDARIES`
+  and `registerP2O` — plus the doc/test files and the owner's `AGENTS.md` (never staged); no `partial` or `truncated`.
+- Each fix carries a reproducing test: the C tests fail without the `walls` counter, `wallRecorded` and the demand-floor
+  wall branch; the D tests fail if the four observation-derived kinds are gateable again (the owed count grows with
+  assets); the E tests fail if a blocked goal counts as open or an empty-denominator coverage proof is accepted.
+- Doc truth pass after the code landed (same pass): `docs/ARCHITECTURE.md` (a walled round is progress, not a
+  `planner.stalled`), `docs/PLANNER_ENGINE.md` (five progress counters; the conditional demand floor with wall-first legal
+  answers; a walled round resets the escalation streak; only gateable debt wakes the loop; bounded/blocked goal proof),
+  `docs/EVIDENCE.md` (`RESEARCH_DEBT` counts gateable debt; a blocked goal prints as settled with debt), `docs/WSTG_MAP.md`
+  (`WSTG_UNPLANNED` is planning signal) and `docs/USAGE.md` (conditional wait refusal). After those edits `npx tsc
+  --noEmit`, the doc-sensitive suites (acceptance-matrix, authority, truth, wstg-applicable, knowledge — 37 tests) and the
+  full suite re-ran green with the same counts, and `git diff --check` stayed clean.
+- Commit and push (D-P19-8, after the owner's "commit và push luôn đi"): one commit for the tranche, plain subject/body,
+  repository identity, no attribution lines, `AGENTS.md` and the untracked slides never staged; verified with `git log -n 1
+  --format=%B` before pushing. `detect_changes --scope all` was run again on the final tree (134 changed symbols, 27 changed
+  files, no `partial`/`truncated`) immediately before staging.
+- Not run, deliberately (D-P19-2): no paid model call, no target traffic and no live campaign for the new behaviour; the
+  live-run evidence in §1/§8 is still the pre-fix baseline.
 
 ## 8. How to reproduce the live-run evidence
 
@@ -337,3 +424,11 @@ model are in the installed pi catalog (`@earendil-works/pi-ai/dist/providers/dat
 4. **Live re-run for C/D/E:** not authorized in this pass; C/D/E acceptance stays deterministic/hermetic until the measured
    prompt changes are reviewed. The crashed run can be reopened with `/p2o --resume run-5367910f-7f14-4357-a983-8eaa6ebfde21`
    from `~/tmp/cmp` (knowledge only; no ticket, worker or authority returns).
+5. **P19/C–E implementation (2026-10-29, second pass):** the owner said "ok làm đi P19/C, D, E". Implement, cover with
+   hermetic tests and update the plan/matrix; the commit stayed owner-initiated and was not authorized at that point
+   (D-P19-7). The pass kept all declaration ceilings (measured planner 44,348) and re-pinned only the
+   `recon.test.ts` planner prompt ceiling from a measured number (14,400 -> 15,600, D-P19-4); no live re-run was
+   authorized.
+6. **Commit and push for P19/C–E (2026-10-29):** the owner said "commit và push luôn đi". The verified tranche is one
+   commit with a plain message, repository identity and no attribution lines, then pushed (D-P19-8). The owner's
+   `AGENTS.md` edit and the untracked `pi-p2o-defense-vi.pptx` are never staged. No live run was authorized by the push.

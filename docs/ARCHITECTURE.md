@@ -28,7 +28,8 @@ The lists live in `src/tool-policy.ts` (35 registered tools, all model-visible).
 settle or promote one retained row, and `p2o_graph_plan` is the planner's `chain`/`ingest` coordination verb. Enforcement is
 the loadout, not the prompt: a role is restricted by *not activating* a tool, so a model that calls it gets Pi's unknown-tool
 result. Role prompts (`src/prompts.ts`) state the same split in one line each, and dispatch of an intent is the only path to
-target execution. A round that ends with an open goal and no open intent is recorded as a `planner.stalled` report fact.
+target execution. A round that ends with an open goal, no open intent and no recorded wall is recorded as a `planner.stalled`
+report fact; a round that records a wall (a deferred or blocked todo citing the debt ids it answers) is progress, not a stall.
 
 Only the live owner process holds consent, the broker, executors and cleanup. Transcripts, ledgers and summaries never
 recreate authority after a restart. Worker tickets bind identity, token, run, image, extension bytes and the runtime

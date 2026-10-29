@@ -33,6 +33,19 @@ export const DEBT_KINDS = [
 export type DebtKind = typeof DEBT_KINDS[number];
 /** Kinds that inform the report but never make a run incomplete: a missing feature tag is a prompt gap, not owed work. */
 const ADVISORY: ReadonlySet<DebtKind> = new Set<DebtKind>(['FEATURES_MISSING']);
+/**
+ * P19/D: observation-derived backlog. A recon round records an asset or a planned cell and these kinds grow with it, but no
+ * single decision row or wall can settle the whole backlog: naming each item as owed work made the completion unreachable
+ * while recon was doing its job. They stay in the report, the totals and the brief as a planning signal; they are not
+ * gateable, so they alone cannot keep the demand floor, the completion or the debt wake alive. A wall may still cite one
+ * (`debtRefs` accepts every current id): answering one branch of the map is a legitimate discharge.
+ */
+const SIGNAL: ReadonlySet<DebtKind> = new Set<DebtKind>(['SCOPE_UNPLANNED_ASSET', 'CELL_NOT_RUN', 'WSTG_UNPLANNED', 'MAPPING_UNRECORDED']);
+/** Kinds that make a run incomplete, in report order: a plan revision or a wall answers one. */
+export const OBLIGATION_KINDS: readonly DebtKind[] = DEBT_KINDS.filter(kind => !ADVISORY.has(kind) && !SIGNAL.has(kind));
+/** Kinds that are a planning signal only (P19/D), in report order. */
+export const SIGNAL_KINDS: readonly DebtKind[] = DEBT_KINDS.filter(kind => SIGNAL.has(kind));
+const GATEABLE = new Set<DebtKind>(OBLIGATION_KINDS);
 
 export interface DebtItem { id: string; kind: DebtKind; subject: string; detail: string; gateable: boolean }
 export interface DebtReport {
@@ -43,10 +56,12 @@ export interface DebtReport {
   /** Gateable ids only, in report order; a wall may cite any of them. */
   gateableIds: string[];
   totals: Record<DebtKind, number>;
-  /** All items, including advisory. */
+  /** All items, including advisory and planning signal. */
   total: number;
   /** Items that make a run incomplete. */
   gateable: number;
+  /** P19/D: planning-signal items (a subset of `total`); named so a reader can tell backlog from owed work. */
+  backlog: number;
   /** Items a deferral/blocked record answered this report; they are not in `items` or `total`. */
   discharged: number;
 }
@@ -96,7 +111,7 @@ export function deriveDebt(index: LedgerIndex, input: DebtInput = {}): DebtRepor
   const plans = planFrontier(index), tasks = taskFrontier(index), claims = claimHeadClaims(index);
   const found: DebtItem[] = [];
   const add = (kind: DebtKind, subject: string, detail: string): void => {
-    found.push({ id: debtId(kind, subject), kind, subject, detail, gateable: !ADVISORY.has(kind) });
+    found.push({ id: debtId(kind, subject), kind, subject, detail, gateable: GATEABLE.has(kind) });
   };
   const order = new Map<string, number>();
   index.records.forEach((row, position) => { if (row.id) order.set(row.id, position); });
@@ -195,10 +210,7 @@ export function deriveDebt(index: LedgerIndex, input: DebtInput = {}): DebtRepor
 
   // --- discharge: a deferred/blocked todo with a reason is the only prose wall ---
   const walls = new Set<string>();
-  for (const plan of plans) {
-    if (plan.kind !== 'todo' || (plan.status !== 'deferred' && plan.status !== 'blocked')) continue;
-    for (const ref of plan.debtRefs ?? []) walls.add(ref);
-  }
+  for (const plan of wallRows(plans)) for (const ref of plan.debtRefs ?? []) walls.add(ref);
   const discharged = found.filter(item => !walls.has(item.id));
   const totals = Object.fromEntries(DEBT_KINDS.map(kind => [kind, 0])) as Record<DebtKind, number>;
   for (const item of discharged) totals[item.kind] += 1;
@@ -217,16 +229,48 @@ export function deriveDebt(index: LedgerIndex, input: DebtInput = {}): DebtRepor
     totals,
     total: sorted.length,
     gateable: sorted.filter(item => item.gateable).length,
+    backlog: sorted.filter(item => SIGNAL.has(item.kind)).length,
     discharged: found.length - sorted.length,
   };
 }
 
-/** One sentence for a status line, a demand wake or a report header. Empty when nothing is owed. */
-export function debtSummary(report: DebtReport): string | undefined {
-  if (!report.gateable) return report.total ? `${report.total} advisory research item(s)` : undefined;
-  const parts = DEBT_KINDS.filter(kind => report.totals[kind] > 0 && !ADVISORY.has(kind)).map(kind => `${kind} ${report.totals[kind]}`);
-  return `${report.gateable} research debt item(s): ${parts.join(', ')}`;
+/** P19/C: the rows that wall work, in frontier order — a deferred/blocked todo that cites the debt ids it answers. */
+export function wallRows(plans: readonly PlanEntry[]): PlanEntry[] {
+  return plans.filter(plan => plan.kind === 'todo' && (plan.status === 'deferred' || plan.status === 'blocked') && (plan.debtRefs?.length ?? 0) > 0);
 }
+
+const kindTotals = (report: DebtReport, include: (kind: DebtKind) => boolean): string =>
+  DEBT_KINDS.filter(kind => report.totals[kind] > 0 && include(kind)).map(kind => `${kind} ${report.totals[kind]}`).join(', ');
+
+/** One sentence for a status line, a demand wake or a report header. The backlog is named as a signal, never as owed work. */
+export function debtSummary(report: DebtReport): string | undefined {
+  const parts: string[] = [];
+  if (report.gateable) parts.push(`${report.gateable} research debt item(s): ${kindTotals(report, kind => GATEABLE.has(kind))}`);
+  if (report.backlog) parts.push(`planning signal (not owed work): ${kindTotals(report, kind => SIGNAL.has(kind))}`);
+  const advisory = report.total - report.gateable - report.backlog;
+  if (!parts.length) return advisory ? `${advisory} advisory research item(s)` : undefined;
+  if (advisory) parts.push(`${advisory} advisory research item(s)`);
+  return parts.join('; ');
+}
+
+/**
+ * P19/D: how a decision row or a wall answers one gateable kind. Every gateable item shown in a round brief carries one of
+ * these sentences, so "research debt is outstanding" is actionable instead of a count. Planning-signal and advisory kinds
+ * have no entry: they are not owed work.
+ */
+export const DEBT_DISCHARGE: Readonly<Partial<Record<DebtKind, string>>> = {
+  CAMPAIGN_MISSING: 'record the campaign frame (objective, constraints and heartbeat) so the run has something to plan against',
+  GOAL_MISSING: 'author one goal with bounded criteria and measurable proof on the plan board',
+  GOAL_OPEN: 'settle the goal in a plan revision: reviewed/closed when its proof holds, or blocked with the reason it cannot be reached',
+  PLAN_MISSING: 'record the coverage plan that names the denominator, its exclusions and its unknown scope',
+  GAP_UNTRIAGED: 'cite the gap from a coverage cell or a case, or wall it in a deferred todo stating why it stays open',
+  TASK_UNMAPPED: 'give the task a work identity that names an asset reference, or withdraw it',
+  PRIMITIVE_UNCHAINED: 'add the successor chain step, or wall it in a deferred todo naming the ruled-out successors',
+  CLAIM_UNTRIAGED: 'confirm, rule out or wall the open claim whose task already closed',
+  GRAPH_UNREVIEWED: 'review the worker graph row: supersede it from the owner surface, or record why it stays unpublished',
+};
+/** Why a kind is owed work; undefined for advisory and planning-signal kinds. */
+export function debtDischarge(kind: DebtKind): string | undefined { return DEBT_DISCHARGE[kind]; }
 
 /** The shape completion and the finish preflight need; keeps them from depending on the whole report. */
 export interface DebtSummary { gateable: number; ids: readonly string[]; text?: string }

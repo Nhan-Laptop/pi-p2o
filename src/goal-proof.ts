@@ -45,7 +45,11 @@ export function goalProofRefusal(proof: GoalProof, data: ProofData): string | un
   }
   const plan = data.coverage.find(view => view.planId === proof.ref);
   if (!plan) return `GOAL_UNPROVEN: coverage plan ${proof.ref} is not a same-run plan`;
-  const open = plan.cells.filter(cell => !cell.retired && !TERMINAL_EXECUTION.has(cell.execution));
+  // P19/E: a proof must be something the run can measure. A plan with no cells has an empty denominator, and "every cell is
+  // terminal" would be true before any work: it cannot settle a goal.
+  const live = plan.cells.filter(cell => !cell.retired);
+  if (!live.length) return `GOAL_UNPROVEN: coverage plan ${proof.ref} has no cells; an empty denominator cannot settle a goal`;
+  const open = live.filter(cell => !TERMINAL_EXECUTION.has(cell.execution));
   return open.length ? `GOAL_UNPROVEN: coverage plan ${proof.ref} still has ${open.length} cell(s) not tested, blocked or not-applicable` : undefined;
 }
 

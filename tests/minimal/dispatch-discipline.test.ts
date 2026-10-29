@@ -46,4 +46,23 @@ describe('dispatch discipline (P6)', () => {
       expect(prompt).not.toMatch(/\bp2o_[a-z_]+\b/);
     }
   });
+
+  // P19/C: the demand floor may not make "keep the round busy" the only legal answer. The prompt states the one-recheck-then-
+  // wall discipline where the anti-stall floor lives, and P19/E states what makes a goal proof measurable and unreachable.
+  it('P19/C: states that a recorded wall is progress, not a stall, and the one-recheck-then-wall rule', () => {
+    for (const prompt of [plannerInstructions(base()), solo()]) {
+      expect(prompt).toContain('WALL THE BRANCH');
+      expect(prompt).toContain('recheck the feasible question once');
+      expect(prompt).toContain('A round that records a wall is progress, not a stall');
+      expect(prompt).not.toMatch(/\bp2o_[a-z_]+\b/);
+    }
+  });
+
+  it('P19/E: names a measurable proof and the blocked settlement in the planner policy', () => {
+    const prompt = plannerInstructions(base());
+    expect(prompt).toContain('GOAL PROOF');
+    expect(prompt).toContain('a capability it can gain, an accepted case, or a coverage plan whose denominator is bounded');
+    expect(prompt).toContain('settle the goal blocked with that reason and those exclusions');
+    expect(prompt).toContain('settled with debt');
+  });
 });

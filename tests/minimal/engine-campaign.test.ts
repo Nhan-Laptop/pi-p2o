@@ -209,4 +209,91 @@ describe('obligation-driven continuation (A6.3)', () => {
     expect(f.journal.some(entry => entry.data?.event === 'planner.stall-escalation')).toBe(false);
     f.engine.stop();
   });
+
+  // P19/C: the demand floor used to make "keep the round busy" the only legal answer, so the planner manufactured probes
+  // instead of walling a branch. The engine now reads a recorded wall as progress: it clears the quiet streak, it is never a
+  // stalled round, and a walled round breaks the escalation streak. A demand that still names a ready direction keeps a
+  // no-progress round quiet, so the wall rule cannot be used to sleep through real work.
+  it('reads a recorded wall as progress and never as a stalled round (P19/C)', async () => {
+    const f = fixture({});
+    let wakeRound = 0;
+    const admit = (patch: Partial<RoundProgress>) => {
+      f.engine.notify('worker-report', `w${++wakeRound}`);
+      const wake = f.engine.boundary()!;
+      f.engine.consume(wake.through, f.round(patch));
+      return wake;
+    };
+    admit(owed());
+    admit(owed());
+    // Two rounds with the same counters are quiet even though the demand names the obligation.
+    expect(f.engine.quietRounds()).toEqual([1, 2]);
+    // The third round adds only a wall: that is progress, so the quiet streak clears and the walled round is not a stall.
+    admit({ ...owed(), walls: 1 });
+    expect(f.engine.quietRounds()).toEqual([]);
+    expect(await f.engine.stallRound({ openGoal: true, openIntents: 0, wallRecorded: true })).toBe(false);
+    expect(f.journal.some(entry => entry.data?.event === 'planner.stalled')).toBe(false);
+    expect(f.engine.snapshot()).toMatchObject({ stalls: 0, paused: undefined });
+    f.engine.stop();
+  });
+
+  it('keeps a round with a real ready direction quiet when it added nothing (no P19/C regression)', async () => {
+    const f = fixture({ heartbeat: 600 });
+    const demand = 'step 2 of chain chain-export ready and undispatched';
+    f.engine.consume(0, f.round({ remaining: 2, demand }));
+    f.engine.notify('worker-report', 'w1');
+    const first = f.engine.boundary()!;
+    f.engine.consume(first.through, f.round({ remaining: 2, demand }));
+    f.engine.notify('worker-report', 'w2');
+    const second = f.engine.boundary()!;
+    f.engine.consume(second.through, f.round({ remaining: 2, demand }));
+    expect(f.engine.quietRounds()).toEqual([1, 2]);
+    // The next wake says the round added nothing and still names the ready direction it owed.
+    f.engine.notify('worker-report', 'w3');
+    const wake = f.engine.boundary()!;
+    expect(wake.demand).toContain('quiet rounds 1 and 2 added nothing measurable');
+    expect(wake.demand).toContain(demand);
+    f.engine.stop();
+  });
+
+  it('continues three bounded-negative recon rounds and does not escalate on the walled fourth (P19/C)', async () => {
+    const f = fixture({});
+    let index = 0;
+    const reconRound = (assets: number, total: number) => {
+      f.engine.notify('worker-report', `recon-${++index}`);
+      const wake = f.engine.boundary()!;
+      // Recon maps one more surface and closes nothing; the backlog total grows while the owed count stays at one.
+      f.engine.consume(wake.through, f.round({ testedCells: 0, closures: 0, assets, chainDepth: 0, remaining: 2,
+        demand: '1 goal(s) not reviewed or closed; 1 research debt item(s) with no discharge', debt: { gateable: 1, total } }));
+      return wake;
+    };
+    expect(reconRound(1, 2).reason).toBe('event');
+    expect(reconRound(2, 4).reason).toBe('event');
+    expect(reconRound(3, 6).reason).toBe('event');
+    // The fourth round records the wall instead of inventing a probe: no stall fact, no escalation, no pause.
+    expect(await f.engine.stallRound({ openGoal: true, openIntents: 0, wallRecorded: true })).toBe(false);
+    expect(f.journal.some(entry => entry.data?.event === 'planner.stalled')).toBe(false);
+    expect(f.journal.some(entry => entry.data?.event === 'planner.stall-escalation')).toBe(false);
+    expect(f.engine.snapshot()).toMatchObject({ rounds: 3, stalls: 0, paused: undefined });
+    f.engine.stop();
+  });
+
+  it('starts the escalation streak over after a walled round (P19/C)', async () => {
+    const f = fixture({});
+    f.engine.consume(0, f.round({ remaining: 1, debt: { gateable: 1, total: 1 } }));
+    const wake = f.engine.boundary()!;
+    f.engine.consume(wake.through, f.round({ remaining: 1, debt: { gateable: 1, total: 1 } }));
+    // Two stalled rounds are below the threshold; the walled round must not become the third step.
+    expect(await f.engine.stallRound(stall)).toBe(true);
+    expect(await f.engine.stallRound(stall)).toBe(true);
+    expect(await f.engine.stallRound({ openGoal: true, openIntents: 0, wallRecorded: true })).toBe(false);
+    expect(f.engine.snapshot().stalls).toBe(0);
+    expect(f.engine.snapshot().paused).toBeUndefined();
+    // A resume-grade reset: three *new* stalled rounds are needed after the wall.
+    expect(await f.engine.stallRound(stall)).toBe(true);
+    expect(await f.engine.stallRound(stall)).toBe(true);
+    expect(f.engine.snapshot().paused).toBeUndefined();
+    expect(await f.engine.stallRound(stall)).toBe(true);
+    expect(f.engine.snapshot().paused).toMatch(/three rounds with no open intent while research debt remains/);
+    f.engine.stop();
+  });
 });
