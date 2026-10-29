@@ -1,9 +1,9 @@
 # S1 — Surface audit and remediation plan of record (2026-10-29)
 
-Status: **Tranches A, B, B10, C1 and C2 are committed on 2026-10-29 (A `aa87a57`, B `1cf3d8b`, B10 `04f3f23`, C1 `b7f8574`,
-C2 `42b0a17`) and Tranche C continues in the working tree: C3 (one authoring payload key and the capability-triple dedupe) is
-implemented and green, so the surface is now 35 registered tools / 35 model-visible / 0 hidden / 10 board verbs / planner 23;
-C4–C5 remain.** Rev 2 after the
+Status: **Tranches A, B, B10, C1, C2 and C3 are committed on 2026-10-29 (A `aa87a57`, B `1cf3d8b`, B10 `04f3f23`, C1
+`b7f8574`, C2 `42b0a17`, C3 `4bb48f9`) and Tranche C continues in the working tree: C4 (the deterministic before/after gate) is
+recorded below, so the surface is 35 registered tools / 35 model-visible / 0 hidden / 10 board verbs / planner 23; C5
+(the single ceiling re-pin and the docs pass) remains.** Rev 2 after the
 2026-10-29 plan review. Base commit `197d6a9` (R3 of the R1 program). The owner's
 `AGENTS.md` edit and the untracked `pi-p2o-defense-vi.pptx` are outside S1. This document replaces the R3 plan of record. That text is unchanged in git at
 `git show 197d6a9:planning_update.md`; the earlier A1 text at `git show bbdfec1:planning_update.md` and the P18 text at
@@ -538,6 +538,53 @@ spawned, rounds) from the hermetic fixtures. A live bench run is optional and on
 `bench/README.md` (explicit `--live`, pinned provider/model/thinking; the historical contamination caveat still applies).
 Acceptance for merging C1–C3: every deterministic metric is unchanged or better, no test is weakened, and the owner
 reviews the before/after table.
+
+**C4 result (working tree, 2026-10-29; uncommitted).** The before column was re-measured, not copied: a detached worktree at
+the pre-C commit `04f3f23` was checked out beside the repo, `node_modules` linked, and the same three scripts run in it;
+the after column is HEAD (`4bb48f9`). Full-suite counts come from the recorded tranche runs. No live benchmark was run
+(D-S1-9), so the bench rows are the hermetic harness's own fixture discovery/verification counts.
+
+| metric | pre-S1 `197d6a9` | before C `04f3f23` | after C `4bb48f9` | Δ vs before C |
+| --- | --- | --- | --- | --- |
+| registered / model-visible / hidden | 35 / 33 / 2 | 32 / 32 / 0 | **35 / 35 / 0** | +3 / +3 / 0 (the C1 split) |
+| board verbs | 12 | 10 | **10** | 0 |
+| tools: planner / worker / validation / reporter | 22 / 19 / 18 / 6 | 21 / 19 / 18 / 6 | **23 / 20 / 19 / 6** | +2 / +1 / +1 / 0 |
+| declaration chars: planner | 49,294 | 47,795 | **44,134** | **−3,661** |
+| declaration chars: worker | 42,808 | 41,081 | **40,124** | **−957** |
+| declaration chars: validation | 42,000 | 40,270 | **39,313** | **−957** |
+| declaration chars: reporter | 6,551 | 6,282 | **6,282** | 0 |
+| declaration chars: model union | 75,500 | 72,773 | **73,363** | **+590** (the split's cost) |
+| `measure-context` total bytes | — | 74,536 | **76,672** | +2,136 |
+| `measure-context` planner / worker / reporting bytes | — | 48,961 / 42,110 / 6,605 | **46,335 / 41,664 / 6,605** | −2,626 / −446 / 0 |
+| full suite files | — | 153 passed / 5 skipped (158) | **154 passed / 5 skipped (159)** | +1 file |
+| full suite tests | — | 1,341 passed / 13 skipped (1,354) | **1,347 passed / 13 skipped (1,360)** | **+6 tests, same skips** |
+| bench harness hermetic plan runs | 108 | 108 | **108** | 0 |
+| bench harness hermetic variants verified | 12 | 12 | **12** | 0 |
+| native fixture counts (tasks / worker spawns / rounds) | — | 2 / 0 / 0 | **2 / 0 / 0** | 0 |
+
+Gate verdict, stated plainly:
+
+- **Every per-role metric improved or stayed equal.** The three roles that execute the loop each hold fewer declaration
+  chars with at least as many verbs as before C (planner −3,661, worker −957, validation −957, reporter 0; the same holds
+  against pre-S1: −5,160 / −2,684 / −2,687 / −269). The four `after C` targets in §7 are met for every role.
+- **The tests are stronger, not weaker.** No test file was deleted, `it(` count rose 1,292 → 1,298, the suite gained one
+  file and six tests, the 13 skips are the same pre-existing live/Docker skips, and no `.skip`/`.todo`/`.fails` was added
+  (`git diff 04f3f23..HEAD -- tests` shows 0 added). The new tests are C1's role-split and review-path assertions of
+  `workspace-runtime`, C2's `graph-response-bounds`, and C3's payload-key contract.
+- **Two costs are disclosed, not hidden.** The registered/model-visible count rose 32 → 35 and the model union rose 590
+  chars, because C1 replaced one graph declaration with four; the union is not a role budget — no role pays it — but the
+  §7 `after C` union target (≤71,500) is consequently missed at 73,363. That target row was arithmetic from the pre-C1
+  surface (72,773 − 1,260); C1's split added 1,964 before C3 cut 1,374. C5 re-pins the ceilings from this measurement
+  (D-S1-5) and §7 records the correction, so the miss is recorded rather than re-baselined away.
+- **Fixture counts are unchanged.** The hermetic bench plan still enumerates 108 runs (3 arms × 6 fixtures × 2 variants ×
+  3 reps, seed 1), `verify` still passes 12 fixture variants, and the real-Pi natives still produce exactly 2 tasks, 0
+  worker spawns and 0 rounds — two tasks on the `case` and `work` scripts, none on `graph`, with the duplicate attempt
+  answered by the exact-match payload instead of a second create.
+
+Reproduce the before column: `git worktree add --detach .before-c 04f3f23 && ln -s ../node_modules .before-c/node_modules
+&& (cd .before-c && node scripts/measure-context.mjs --source && node scripts/audit-surface.mjs && node
+../node_modules/.cache/p2o/decl-budget.mjs) && git worktree remove --force .before-c`; the hermetic bench counts are
+`node scripts/benchmark-skills.mjs plan` and `... verify` (both refuse to call a model without `--live`).
 **C5 — Re-pin and record.** After C, update `context-budget.test.ts` ceilings once (measured + 3%, dated comment naming
 what moved), `docs/ARCHITECTURE.md`/`docs/KNOWLEDGE.md`, `docs/ACCEPTANCE_MATRIX.md` (new F-S1 rows), and add one
 `docs/HISTORY.md` row when the tranche is committed. The R3 row and the R3 plan remain in git history.
