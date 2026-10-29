@@ -33,7 +33,7 @@ export const CASE_ACTIONS=['create','revise','rate','retest','list','view'] as c
 /** P13e: exhaustive per action, so dropping `rate`'s requestId cannot slip through a default branch. */
 export const CASE_ACTION_PARAMETERS: Readonly<Record<typeof CASE_ACTIONS[number], readonly string[]>> = {
   create:['action','entry','requestId'], revise:['action','entry','id','revision','requestId'],
-  rate:['action','finding','id','revision','requestId'], retest:['action','id','revision','verdict','reason','evidenceRefs','requestId'],
+  rate:['action','finding','id','revision','requestId'], retest:['action','id','revision','retestOutcome','reason','evidenceRefs','requestId'],
   view:['action','id'], list:['action','cursor','limit','status'],
 };
 /** Root object preserves fields through legacy provider projections. Host enforces action shape. */

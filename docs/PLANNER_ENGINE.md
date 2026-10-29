@@ -81,7 +81,7 @@ reserve moves the task to `blocked` with the missing prerequisite — never a pl
 
 ## Plan board: goals, todos, decisions
 
-Goals, todos and decisions are records on one plan board (`p2o_plan_author` creates with no `id` and revises with
+Goals, todos and decisions are records on one plan board (`p2o_goal_author` creates with no `id` and revises with
 `id`+`revision`; `p2o_board board=plans` reads it),
 not a second task queue.
 

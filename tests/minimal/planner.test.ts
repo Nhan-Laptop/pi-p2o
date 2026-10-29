@@ -87,7 +87,7 @@ describe('Planner/Engine/Worker extension contract',()=>{
     await fixture(async(h)=>{
       h.ctx.setIdle(false);await h.emit('agent_start');
       const s=(await h.call('p2o_delegate',{focus:'delayed-worker',task:'Bounded observation'})).details;
-      const {client}=await h.connect(s.workerId);await client.request('note',{kind:'note',text:'A noisy observation'});expect((await h.call('p2o_loop',{action:'status'})).details.pendingEvents).toBe(0);
+      const {client}=await h.connect(s.workerId);await client.request('note',{kind:'note',text:'A noisy observation'});expect((await h.call('p2o_workers',{})).details.engine.pendingEvents).toBe(0);
       await client.request('report',{report:{summary:'Committed worker handoff',confidence:'low'}});
       const view=(await h.call('p2o_workers')).details;expect(view.workers[0]).toMatchObject({reported:true,live:false});expect(view.engine.pendingEvents).toBe(1);
       expect(await h.emit('agent_before_settle',{outcome:'completed',continue:false,context:{pendingMessages:[{role:'user',content:'Human steer'}]}})).toBeUndefined();
@@ -105,7 +105,7 @@ describe('Planner/Engine/Worker extension contract',()=>{
       const s=(await h.call('p2o_delegate',{focus:'idle-worker',task:'Bounded observation'})).details;const {client}=await h.connect(s.workerId);
       await client.request('report',{report:{summary:'Worker completed after owner idle',confidence:'low'}});await until(()=>h.pi.messages.length===2);
       const prompt=h.pi.messages[1];const wake=plannerWakeMessage(parseWakePrompt(prompt)!);
-      expect((await h.call('p2o_loop',{action:'status'})).details.rounds).toBe(1);
+      expect((await h.call('p2o_workers',{})).details.engine.rounds).toBe(1);
       await h.command('stop');const aborted=h.ctx.aborts;
       expect(await h.emit('input',{source:'extension',text:prompt})).toEqual({action:'handled'});
       await h.emit('context',{messages:[{role:'custom',...wake,timestamp:0}]});expect(h.ctx.aborts).toBe(aborted+1);expect(h.pi.active).toContain('bash');
@@ -120,7 +120,7 @@ describe('Planner/Engine/Worker extension contract',()=>{
       await client.request('report',{report:{summary:'Long assignment finished',confidence:'low'}});
       const next=(await h.call('p2o_delegate',{focus:'renewal',task:'Continue on the next surface'})).details;
       expect(next.workerId).toBeTruthy();
-      expect((await h.call('p2o_loop',{action:'status'})).details.mode).toBe('event-driven');
+      expect((await h.call('p2o_workers',{})).details.engine.mode).toBe('event-driven');
     },'',2);
   });
   it('isolated profile allocates fresh owned executors, leaves peers alive when one is withdrawn, and cleans all leases',async()=>{

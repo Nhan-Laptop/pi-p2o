@@ -75,7 +75,7 @@ describe('Round wrap-up and classified stop (P18.3/D47)',()=>{
       expect(h.pi.active).toEqual(closingTools());
       expect(h.pi.active).not.toContain('p2o_task_author');
       expect(h.pi.active).not.toContain('p2o_task_dispatch');
-      expect(h.pi.active).toContain('p2o_plan_author');
+      expect(h.pi.active).toContain('p2o_goal_author');
       const budget=await eventRows(h,'planner.round-budget');
       expect(budget).toHaveLength(1);
       expect(budget[0].data.engine).toMatchObject({round:1,state:'wrap',steps:34});
@@ -110,7 +110,7 @@ describe('Round wrap-up and classified stop (P18.3/D47)',()=>{
       const end=await eventRows(h,'planner.round-end');
       expect(end).toHaveLength(1);
       expect(end[0].data.engine).toMatchObject({round:1,reason:'round-budget'});
-      expect((await h.call('p2o_loop',{action:'status'})).details.paused).toBeUndefined();
+      expect((await h.call('p2o_workers',{})).details.engine.paused).toBeUndefined();
       // Settlement lets the engine open the next round in a fresh session: the campaign continues, the brief names the frontier.
       await h.emit('agent_settled');
       await until(()=>h.pi.sessions.length===2);
@@ -191,7 +191,7 @@ describe('Round wrap-up and classified stop (P18.3/D47)',()=>{
       const gate=async(toolName:string)=>{let result:any;for(const handler of h.pi.events.get('tool_call')??[])result=(await handler({toolName},h.ctx.ctx))??result;return result;};
       expect(await gate('p2o_task_author')).toMatchObject({block:true});
       expect(await gate('p2o_task_dispatch')).toMatchObject({block:true});
-      expect(await gate('p2o_plan_author')).toBeUndefined();
+      expect(await gate('p2o_goal_author')).toBeUndefined();
       // The wrap refusal is decided before any worker lookup, so a live ticket is not needed to prove it.
       await expect(h.call('p2o_workers',{action:'continue',workerId:'p2o-recon-aaaaaa',brief:'one more narrow look at the same ticket'})).rejects.toThrow(/wrapping up/);
     });

@@ -25,13 +25,13 @@ function parityViolations(names: readonly string[], prose: string): string[] {
 }
 
 describe('L1/W2 board verbs', () => {
-  it('maps every old board action to one verb and composes 12 verbs from 4 bags', () => {
-    expect(TASK_VERB_NAMES).toHaveLength(5);
+  it('maps every old board action to one verb and composes 11 verbs from 4 bags', () => {
+    expect(TASK_VERB_NAMES).toHaveLength(4);
     expect(CASE_VERB_NAMES).toHaveLength(3);
     expect(COVERAGE_VERB_NAMES).toHaveLength(2);
     expect(PLAN_VERB_NAMES).toHaveLength(1);
-    expect(BOARD_VERB_NAMES).toHaveLength(12);
-    expect(new Set(BOARD_VERB_NAMES).size).toBe(12);
+    expect(BOARD_VERB_NAMES).toHaveLength(11);
+    expect(new Set(BOARD_VERB_NAMES).size).toBe(11);
 
     for (const [oldTool, actions] of Object.entries(BOARD_ACTION_VERBS)) for (const [action, verb] of Object.entries(actions)) {
       expect(verb, `${oldTool} ${action}`).not.toBeUndefined();
@@ -48,7 +48,7 @@ describe('L1/W2 board verbs', () => {
     expect(BOARD_ACTION_VERBS.p2o_task.match).toBeNull();
     expect(BOARD_ACTION_VERBS.p2o_task.start).toBe('p2o_task_start');
     expect(BOARD_ACTION_VERBS.p2o_case.view).toBe('p2o_board');
-    expect(BOARD_ACTION_VERBS.p2o_coverage.suggest).toBe('p2o_coverage_suggest');
+    expect(BOARD_ACTION_VERBS.p2o_coverage.suggest).toBe('p2o_wstg_suggest');
     // A3: the host derives coverage cells, so every old cell action is an explicit removed (`null`) mapping.
     for (const action of ['cell-create', 'cell-revise', 'cell-retire']) expect(BOARD_ACTION_VERBS.p2o_coverage[action], action).toBeNull();
   });
@@ -62,7 +62,7 @@ describe('L1/W2 board verbs', () => {
     expect(() => authoringAction('task', { revision: 2 })).toThrow(/^INVALID_INPUT: p2o_task_author got revision=2 without an id/);
     expect(() => authoringAction('task', { revision: 2 })).toThrow(/id=<task id> with revision=<currentRevision>/);
     // id without revision: the refusal names the board read that yields the revision and the merged verb that takes it.
-    for (const [kind, verb] of [['task', 'p2o_task_author'], ['case', 'p2o_case_author'], ['plan', 'p2o_plan_author']] as const) {
+    for (const [kind, verb] of [['task', 'p2o_task_author'], ['case', 'p2o_case_author'], ['plan', 'p2o_goal_author']] as const) {
       expect(() => authoringAction(kind, { id: `${kind}-1` })).toThrow(new RegExp(`^INVALID_INPUT: ${verb} got id=${kind}-1 without a usable revision`));
       expect(() => authoringAction(kind, { id: `${kind}-1` })).toThrow(new RegExp(`p2o_board board=${kind}s id=${kind}-1`));
     }
@@ -71,9 +71,9 @@ describe('L1/W2 board verbs', () => {
   it('pins the planner surface and keeps the worker loadout unchanged (P0/A1)', () => {
     // A1: the planner plans, reviews and proves; it holds no target, lab, claim, note, surface, report or removed verb.
     expect(new Set(PLANNER_TOOLS)).toEqual(new Set([
-      'p2o_task_author', 'p2o_task_dispatch', 'p2o_task_review', 'p2o_task_settle',
-      'p2o_plan_author', 'p2o_case_author', 'p2o_case_rate', 'p2o_case_retest',
-      'p2o_coverage_plan', 'p2o_coverage_suggest', 'p2o_board', 'p2o_ledger', 'p2o_state', 'p2o_artifact', 'p2o_graph',
+      'p2o_task_author', 'p2o_task_dispatch', 'p2o_task_review',
+      'p2o_goal_author', 'p2o_case_author', 'p2o_case_rate', 'p2o_case_retest',
+      'p2o_coverage_plan', 'p2o_wstg_suggest', 'p2o_board', 'p2o_ledger', 'p2o_state', 'p2o_artifact', 'p2o_graph',
       'p2o_skill_list', 'p2o_skill_read', 'p2o_secret', 'p2o_research', 'p2o_workers', 'p2o_loop', 'p2o_finish',
     ]));
     expect(workerTools('discovery')).toEqual(WORKER_LOADOUT);
@@ -81,12 +81,12 @@ describe('L1/W2 board verbs', () => {
     expect(WORKER_TOOLS).toEqual(WORKER_LOADOUT);
     expect(workerTools('validation')).toEqual(WORKER_LOADOUT.filter(name => name !== 'p2o_surface'));
     expect(new Set(workerTools('reporting'))).toEqual(new Set(REPORTER_TOOLS));
-    expect(PLANNER_TOOLS).toHaveLength(22);
+    expect(PLANNER_TOOLS).toHaveLength(21);
     expect(WORKER_TOOLS).toHaveLength(19);
     expect(VALIDATION_TOOLS).toHaveLength(18);
     expect(REPORTER_TOOLS).toHaveLength(6);
-    expect(MODEL_TOOLS).toHaveLength(33);
-    expect(ALL_TOOLS).toHaveLength(35);
+    expect(MODEL_TOOLS).toHaveLength(32);
+    expect(ALL_TOOLS).toHaveLength(34);
     expect(HIDDEN_TOOLS).toEqual(['p2o_delegate', 'p2o_task_start']);
     for (const name of HIDDEN_TOOLS) expect(PLANNER_TOOLS).not.toContain(name);
     for (const name of ['p2o_task', 'p2o_case', 'p2o_coverage', 'p2o_plan']) expect(ALL_TOOLS).not.toContain(name);
@@ -102,9 +102,9 @@ describe('L1/W2 board verbs', () => {
     await fixture(async h => {
       await h.command('--target ./source');
       const entry = { kind: 'goal', title: 'L1 stale revision fixture', status: 'active', reason: 'Explicit local fixture with no target execution', criteria: ['Owner must review the retained limitations'], proof: { kind: 'capability', capability: { kind: 'http.request', subject: 'fixture' } } };
-      const plan = (await h.call('p2o_plan_author', { entry, requestId: 'board-verbs-plan' })).details;
-      await expect(h.call('p2o_plan_author', { id: plan.id, revision: plan.revision + 5, entry: { ...entry, title: 'L1 stale revision fixture revised' } }))
-        .rejects.toThrow(new RegExp(`currentRevision=${plan.revision}.*legalNext=p2o_plan_author`));
+      const plan = (await h.call('p2o_goal_author', { entry, requestId: 'board-verbs-plan' })).details;
+      await expect(h.call('p2o_goal_author', { id: plan.id, revision: plan.revision + 5, entry: { ...entry, title: 'L1 stale revision fixture revised' } }))
+        .rejects.toThrow(new RegExp(`currentRevision=${plan.revision}.*legalNext=p2o_goal_author`));
     });
   });
 
@@ -128,7 +128,7 @@ describe('L1/W2 board verbs', () => {
       await seedImpactGoal(h);
       const draft = { question: 'Does the board verb fixture settle one task?', surface: '/board-verb-fixture', risk: 'coordination', role: 'general', roleReason: 'Bounded local fixture with no target work', expectedTrue: 'The settle verb reaches the cancelled transition', expectedFalse: 'The action bag is required again', stopCondition: 'Stop after one local transition', evidenceIds: [], prerequisites: [], skills: [], methodReason: 'No target or model work' };
       const task = (await h.call('p2o_task_author', { draft })).details;
-      const settled = (await h.call('p2o_task_settle', { outcome: 'cancelled', id: task.id, revision: task.revision, reason: 'Owner cancelled the local board-verb fixture' })).details;
+      const settled = (await h.call('p2o_task_review', { outcome: 'cancelled', id: task.id, revision: task.revision, reason: 'Owner cancelled the local board-verb fixture' })).details;
       expect(settled).toMatchObject({ id: task.id, status: 'cancelled' });
 
       const planInput = { title: 'Board verb coverage fixture', status: 'active', reason: 'One explicit local denominator for the verb fixture', exclusions: [], unknownScope: [] };

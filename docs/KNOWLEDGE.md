@@ -120,7 +120,7 @@ navigation, and reading it changes no authority.
   validation task that names the claim's `needs` gets that claim's ladder instead (D37): replaying the method is
   reproduction, not discovery. The
   3-skill cap is recorded rather than silent: a capped task stores the delivered set and writes the dropped ids as a
-  lifecycle fact, and `p2o_coverage_suggest` returns the map's related skills next to the owner and card. Nine purposes each
+  lifecycle fact, and `p2o_wstg_suggest` returns the map's related skills next to the owner and card. Nine purposes each
   carry a duty line the worker reads.
 - `p2o_research {query}` looks a technique up in the committed corpus (`knowledge/techniques/`) and returns cited entries with
   licence and sha256; `web:false` never touches the network. `action=fetch` retrieves any http(s) URL host-side under a bounded

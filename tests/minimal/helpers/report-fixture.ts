@@ -35,7 +35,7 @@ export async function fixture(work: (h: any) => Promise<void>) {
  * directly authors the same row here. Reporting intents are read-only and need none.
  */
 export async function seedImpactGoal(h: any, title = 'Reach the recorded effect under an impact goal') {
-  return (await h.call('p2o_plan_author', { entry: { kind: 'goal', title, status: 'active', proof: { kind: 'capability', capability: { kind: 'data.read' } },
+  return (await h.call('p2o_goal_author', { entry: { kind: 'goal', title, status: 'active', proof: { kind: 'capability', capability: { kind: 'data.read' } },
     criteria: ['The recorded effect is demonstrated and attributed'], reason: 'A3 fixture prerequisite: exploit mode admits no target-executing intent before its impact goal exists' } })).details;
 }
 
@@ -85,7 +85,7 @@ export async function populate(h: any, titles = { accepted: 'Runtime fixture bou
     outputContract: { kind: 'investigation', required: ['evidence'], partialAllowed: true, artifactPolicy: 'ids-only' } };
   const task = (await h.call('p2o_task_author', { draft: { ...taskDraft, work: work(keys.tested ?? 'question:tested') } })).details;
   const blocked = (await h.call('p2o_task_author', { draft: { ...taskDraft, question: 'Does the second fixture actor stay blocked on its human prerequisite?', work: work(keys.blocked ?? 'question:blocked') } })).details;
-  await h.call('p2o_task_settle', { id: blocked.id, revision: blocked.revision, outcome: 'blocked', reason: 'The second fixture actor needs a human-provided credential, so no observation could run' });
+  await h.call('p2o_task_review', { id: blocked.id, revision: blocked.revision, outcome: 'blocked', reason: 'The second fixture actor needs a human-provided credential, so no observation could run' });
   const running = (await h.call('p2o_task_start', { id: task.id })).details;
   const observation = (await h.call('p2o_shell', { command: 'printf bounded-report-observation' })).details;
   const reviewed = (await h.call('p2o_task_review', {id: task.id, revision: running.revision, reason: 'Owner reviewed the exact inert receipt for bounded coordination', evidenceIds: [observation.evidenceId] })).details;
@@ -98,7 +98,7 @@ export async function populate(h: any, titles = { accepted: 'Runtime fixture bou
   const claim = await seedClaim(h, { candidate: 'report-claim', surface: '/report-fixture', risk: 'authorization', closure: 'confirmed', execution: 'tested', proof: 'offline_reproduction', evidenceRefs: [observation.evidenceId], negativeControls: [], policyBasis: 'boundary_invariant', expectedPolicy: 'Declared fixture actor/object boundary', limitations: 'Only one inert fixture actor and endpoint were reviewed', gained: [{ kind: 'data.read', subject: 'fixture-read' }] }, task.id);
   // P16.1/A3: once the demonstrated claim exists the fixture's goal is reviewed with the proof it promised, so the plan board
   // has no open goal for completion/debt to count as an obligation the fixture never intended to leave behind.
-  const settledGoal = (await h.call('p2o_plan_author', { id: goal.id, revision: goal.revision, entry: { kind: 'goal', title: goal.title, status: 'reviewed',
+  const settledGoal = (await h.call('p2o_goal_author', { id: goal.id, revision: goal.revision, entry: { kind: 'goal', title: goal.title, status: 'reviewed',
     criteria: goal.criteria, proof: { kind: 'capability', capability: { kind: 'data.read' } }, reason: 'A3 fixture: the seeded claim demonstrates the capability this goal promised' } })).details;
   const draft = { title: titles.accepted, policyKey: 'policy:report-case', rootCauseKey: 'root:report-gate', assetRefs: [{ id: asset.entityId, revision: 1 }], claimRefs: [claim.id], independentEvidenceRefs: [], taskRefs: [{ taskId: task.id, revision: reviewed.revision }], reportRefs: [], contradictions: [], affectedVariants: ['variant:read'], relatedCaseIds: [], verdict: 'confirmed', reviewStatus: 'pending', reviewReason: 'Pending exact owner review of current support', limitations: 'Only the retained inert fixture receipt and declared policy are covered', remediation: { status: 'unplanned', reason: 'No remediation was implemented or reviewed in this fixture', evidenceRefs: [] } };
   const first = (await h.call('p2o_case_author', {entry: draft, requestId: 'report-case-1' })).details;

@@ -34,12 +34,12 @@ describe('campaign finish and report semantics (A6.6)', () => {
     const exported = await h.call('p2o_finish', { export: true });
     expect(exported.details.state).toBe('incomplete');
     await expect(h.call('p2o_finish', {})).rejects.toThrow(/CAMPAIGN_FRAME_MISSING/);
-    await expect(h.call('p2o_finish', {})).rejects.toThrow(/p2o_plan_author \{kind:"goal"/);
+    await expect(h.call('p2o_finish', {})).rejects.toThrow(/p2o_goal_author \{kind:"goal"/);
     await expect(h.call('p2o_finish', {})).rejects.toThrow(/p2o_finish \{export:true\}/);
     await expect(h.call('p2o_finish', {})).rejects.toThrow(/p2o_finish \{partial:/);
     // The refusal ends nothing: the run is still active and a goal makes the final path legal.
     expect((await h.call('p2o_board', { board: 'tasks' })).details.total).toBeGreaterThan(0);
-    await h.call('p2o_plan_author', { entry: { kind: 'goal', title: 'Assess one bounded fixture boundary', status: 'proposed',
+    await h.call('p2o_goal_author', { entry: { kind: 'goal', title: 'Assess one bounded fixture boundary', status: 'proposed',
       reason: 'Campaign goal whose proof is the fixture accepted case', criteria: ['The fixture boundary is demonstrated by an accepted current case'],
       proof: { kind: 'case', ref: 'case-fixture' } } });
     const finished = await h.call('p2o_finish', { partial: 'The bounded fixture campaign stops after its declared coverage; the remaining debt is recorded' });
@@ -71,7 +71,7 @@ describe('campaign finish and report semantics (A6.6)', () => {
   it('records campaign.partial once with the reason and prints it as why the run stopped', async () => fixture(async h => {
     await h.command('--target ./source --goal "Assess the fixture boundary"');
     await populate(h);
-    await h.call('p2o_plan_author', { entry: { kind: 'goal', title: 'Assess one bounded fixture boundary', status: 'proposed',
+    await h.call('p2o_goal_author', { entry: { kind: 'goal', title: 'Assess one bounded fixture boundary', status: 'proposed',
       reason: 'Campaign goal whose proof is the fixture accepted case', criteria: ['The fixture boundary is demonstrated by an accepted current case'],
       proof: { kind: 'case', ref: 'case-fixture' } } });
     const reason = 'The operator narrowed the campaign to the reviewed fixture boundary; the remaining WSTG rows are out of scope for this run';

@@ -152,10 +152,10 @@ describe('engagement mode in the run (A7.1)', () => {
       roleReason: 'Reporting is read-only and needs no impact goal', expectedTrue: 'The summary cites reviewed records', expectedFalse: 'The summary names what is missing',
       stopCondition: 'Stop after one summary of the reviewed records', evidenceIds: [], prerequisites: [], methodReason: 'Read-only summary of the reviewed fixture records' };
     expect((await h.call('p2o_task_author', { draft: reportingDraft })).details).toMatchObject({ status: 'proposed' });
-    await h.call('p2o_plan_author', { entry: { kind: 'todo', title: 'A todo is not a goal', status: 'open', reason: 'P7.1 negative control: only a goal authorizes the ladder' } });
+    await h.call('p2o_goal_author', { entry: { kind: 'todo', title: 'A todo is not a goal', status: 'open', reason: 'P7.1 negative control: only a goal authorizes the ladder' } });
     await expect(h.call('p2o_task_author', { draft: exploitationDraft })).rejects.toThrow(/EXPLOIT_MODE_NEEDS_IMPACT_GOAL/);
     // A capability-proof goal opens the ladder; the intent still has to carry its own lineage.
-    await h.call('p2o_plan_author', { entry: { kind: 'goal', title: 'Reach the recorded effect under an impact goal', status: 'active', proof: { kind: 'capability', capability: { kind: 'file.read' } },
+    await h.call('p2o_goal_author', { entry: { kind: 'goal', title: 'Reach the recorded effect under an impact goal', status: 'active', proof: { kind: 'capability', capability: { kind: 'file.read' } },
       criteria: ['The exploitation step runs and is attributed'], reason: 'P7.1 admission fixture: the goal the ladder is settled against' } });
     await h.call('p2o_task_author', { draft: { question: 'Which surfaces does the fixture expose?', surface: '/fixture', risk: 'mapping', role: 'recon', evidenceIds: [], prerequisites: [] } });
     const observation = (await h.call('p2o_shell', { command: 'printf engagement-observation' })).details;

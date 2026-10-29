@@ -64,7 +64,7 @@ export function registerInertProvider(pi: ExtensionAPI, mode: 'owner' | 'worker'
         // A1: the planner holds intent/plan/case/coverage-plan/review/read/worker-control only. Target, lab, claim, note,
         // surface and report tools plus the hidden legacy verbs are never declared, so a model call to one is Pi's
         // `Tool <name> not found` before any extension handler runs. The task schema pins the one delegation path instead.
-        const plannerMust = ['p2o_task_author', 'p2o_task_dispatch', 'p2o_task_review', 'p2o_task_settle', 'p2o_plan_author',
+        const plannerMust = ['p2o_task_author', 'p2o_task_dispatch', 'p2o_task_review', 'p2o_goal_author',
           'p2o_case_author', 'p2o_coverage_plan', 'p2o_board', 'p2o_ledger', 'p2o_graph', 'p2o_workers', 'p2o_loop', 'p2o_finish'];
         const plannerMustNot = ['p2o_shell', 'p2o_net', 'p2o_http', 'p2o_capture', 'p2o_lab', 'p2o_candidate', 'p2o_note',
           'p2o_surface', 'p2o_report', 'p2o_request_subtask', 'p2o_delegate', 'p2o_task_start', 'p2o_coverage_cell',
@@ -76,10 +76,10 @@ export function registerInertProvider(pi: ExtensionAPI, mode: 'owner' | 'worker'
         // round opening then carries the round marker as its only user message, and the branch proves a planner turn ran there.
         if(process.env.P2O_TEST_ROUND_SESSION==='1'){
           const roundPrompt=context.messages.some((m:any)=>m.role==='user'&&(typeof m.content==='string'?m.content:JSON.stringify(m.content??'')).includes('--- p2o round ---'));
-          if(roundPrompt)content=last?[{type:'text',text:'ROUND_SESSION_OPENED: a fresh Planner session read the engine frontier.'}]:[{type:'toolCall',id:'round-open',name:'p2o_loop',arguments:{action:'status',reason:'A fresh round session opened; read the engine frontier before choosing bounded work'}}];
+          if(roundPrompt)content=last?[{type:'text',text:'ROUND_SESSION_OPENED: a fresh Planner session read the engine frontier.'}]:[{type:'toolCall',id:'round-open',name:'p2o_workers',arguments:{}}];
           else if(!last)content=[{type:'toolCall',id:'round-net',name:'p2o_net',arguments:{command:'printf inert-planner-probe'}}];
-          else if(lastTool==='p2o_net')content=[{type:'toolCall',id:'round-goal',name:'p2o_plan_author',arguments:{entry:{kind:'goal',title:'Reach the recorded effect under an impact goal',status:'active',proof:{kind:'capability',capability:{kind:'data.read'}},criteria:['The bounded recon intent is recorded under this goal'],reason:'A3/D32: exploit mode admits no target-executing intent before its impact goal exists'}}}];
-          else if(lastTool==='p2o_plan_author')content=[{type:'toolCall',id:'round-task',name:'p2o_task_author',arguments:{draft:{question:'Inspect /target/code.txt in the sandbox and report what it contains.',surface:'surface-recon',risk:'boundary',role:'recon',roleReason:'A2: the first intent of an empty run is recon/mapping',expectedTrue:'The declared fixture source is the observed input',expectedFalse:'The source copy is unavailable or different',stopCondition:'Stop at this one bounded inert question',evidenceIds:[],prerequisites:[],methodReason:'Controlled source fixture, no target execution'}}}];
+          else if(lastTool==='p2o_net')content=[{type:'toolCall',id:'round-goal',name:'p2o_goal_author',arguments:{entry:{kind:'goal',title:'Reach the recorded effect under an impact goal',status:'active',proof:{kind:'capability',capability:{kind:'data.read'}},criteria:['The bounded recon intent is recorded under this goal'],reason:'A3/D32: exploit mode admits no target-executing intent before its impact goal exists'}}}];
+          else if(lastTool==='p2o_goal_author')content=[{type:'toolCall',id:'round-task',name:'p2o_task_author',arguments:{draft:{question:'Inspect /target/code.txt in the sandbox and report what it contains.',surface:'surface-recon',risk:'boundary',role:'recon',roleReason:'A2: the first intent of an empty run is recon/mapping',expectedTrue:'The declared fixture source is the observed input',expectedFalse:'The source copy is unavailable or different',stopCondition:'Stop at this one bounded inert question',evidenceIds:[],prerequisites:[],methodReason:'Controlled source fixture, no target execution'}}}];
           else if(lastTool==='p2o_task_author')content=[{type:'toolCall',id:'round-dispatch',name:'p2o_task_dispatch',arguments:{ids:[last.details.id]}}];
           else if(lastTool==='p2o_task_dispatch')content=[{type:'toolCall',id:'round-wait',name:'p2o_loop',arguments:{action:'wait',reason:'End the kickoff turn so the committed report reaches an idle host'}}];
           else if(lastTool==='p2o_loop')content=[{type:'text',text:'ROUND_KICKOFF_WAITING: the Engine owns the wait; no model polling.'}];
@@ -100,8 +100,8 @@ export function registerInertProvider(pi: ExtensionAPI, mode: 'owner' | 'worker'
             planInput={title:'Native inert coverage denominator',status:'active',reason:'No model-authored cells; coverage authoring left the planner surface',exclusions:['No undeclared assets or actors'],unknownScope:['Deployment parity is unknown']};
           if(!last)content=[{type:'toolCall',id:'case-net',name:'p2o_net',arguments:{command:'printf inert-planner-probe'}}];
           else if(lastTool==='p2o_net')content=[{type:'toolCall',id:'case-asset',name:'p2o_graph',arguments:{action:'record',batch:{assets:[{asset:{kind:'endpoint',key:'GET /native-case'}}]}}}];
-          else if(lastTool==='p2o_graph')content=[{type:'toolCall',id:'case-goal',name:'p2o_plan_author',arguments:{entry:{kind:'goal',title:'Reach the native fixture effect under an impact goal',status:'active',proof:{kind:'capability',capability:{kind:'data.read'}},criteria:['The scripted worker observation is recorded'],reason:'A3/D32: exploit mode admits no target-executing intent before this impact goal exists'}}}];
-          else if(lastTool==='p2o_plan_author')content=[{type:'toolCall',id:'case-task',name:'p2o_task_author',arguments:{draft}}];
+          else if(lastTool==='p2o_graph')content=[{type:'toolCall',id:'case-goal',name:'p2o_goal_author',arguments:{entry:{kind:'goal',title:'Reach the native fixture effect under an impact goal',status:'active',proof:{kind:'capability',capability:{kind:'data.read'}},criteria:['The scripted worker observation is recorded'],reason:'A3/D32: exploit mode admits no target-executing intent before this impact goal exists'}}}];
+          else if(lastTool==='p2o_goal_author')content=[{type:'toolCall',id:'case-task',name:'p2o_task_author',arguments:{draft}}];
           else if(lastTool==='p2o_task_author')content=[{type:'toolCall',id:'case-dispatch',name:'p2o_task_dispatch',arguments:{ids:[taskResults[0].details.id]}}];
           else if(lastTool==='p2o_task_dispatch')content=[{type:'toolCall',id:'case-wait',name:'p2o_workers',arguments:{waitFor:'all-report',timeoutSeconds:30}}];
           else if(lastTool==='p2o_workers')content=[{type:'toolCall',id:'case-ledger',name:'p2o_ledger',arguments:{limit:100}}];
@@ -120,10 +120,10 @@ export function registerInertProvider(pi: ExtensionAPI, mode: 'owner' | 'worker'
           else throw Error('Unexpected native case fixture turn');
         }
         else if(process.env.P2O_TEST_WORK_OWNER==='1'){
-          const schema=descriptions.find(tool=>tool.name==='p2o_plan_author')?.parameters as any;
+          const schema=descriptions.find(tool=>tool.name==='p2o_goal_author')?.parameters as any;
           if(schema?.type!=='object'||!schema.properties?.entry)throw Error('plan create schema missing in real Pi context');
           if(last?.isError)throw Error('Native work fixture tool rejected: '+JSON.stringify(last));
-          const asset=(results.find((r:any)=>r.toolName==='p2o_graph') as any)?.details.acks[0].entityId,planResults=results.filter((r:any)=>r.toolName==='p2o_plan_author'),
+          const asset=(results.find((r:any)=>r.toolName==='p2o_graph') as any)?.details.acks[0].entityId,planResults=results.filter((r:any)=>r.toolName==='p2o_goal_author'),
             goalEntry={kind:'goal',title:'Review one declared inert policy boundary',status:'active',reason:'Explicit controlled fixture; no investigation claimed',proof:{kind:'capability',capability:{kind:'file.read'}},criteria:['Owner must review attribution and a control']},
             draft={
             question:'Which declared inert policy reaches the consumer?',surface:'fixture-source',risk:'boundary',role:'general',roleReason:'Single inert source-only question',expectedTrue:'Declared fixture gate reaches consumer',expectedFalse:'Effective control does not reach consumer',stopCondition:'Stop at this one bounded inert question',evidenceIds:[],prerequisites:[],skills:[],methodReason:'Controlled source fixture, no target execution',
@@ -131,12 +131,12 @@ export function registerInertProvider(pi: ExtensionAPI, mode: 'owner' | 'worker'
           };
           // A3/D32: the goal must exist before the first target-executing intent, so the scripted owner records it first.
           if(!last)content=[{type:'toolCall',id:'work-asset',name:'p2o_graph',arguments:{action:'record',batch:{assets:[{asset:{kind:'file',key:'src/gate.py'}}]}}}];
-          else if(lastTool==='p2o_graph')content=[{type:'toolCall',id:'work-goal',name:'p2o_plan_author',arguments:{requestId:'native-work-goal',entry:goalEntry}}];
-          else if(lastTool==='p2o_plan_author'&&planResults.length===1)content=[{type:'toolCall',id:'work-task',name:'p2o_task_author',arguments:{draft}}];
-          else if(lastTool==='p2o_task_author'&&planResults.length===1)content=[{type:'toolCall',id:'work-goal-replay',name:'p2o_plan_author',arguments:{requestId:'native-work-goal',entry:goalEntry}}];
+          else if(lastTool==='p2o_graph')content=[{type:'toolCall',id:'work-goal',name:'p2o_goal_author',arguments:{requestId:'native-work-goal',entry:goalEntry}}];
+          else if(lastTool==='p2o_goal_author'&&planResults.length===1)content=[{type:'toolCall',id:'work-task',name:'p2o_task_author',arguments:{draft}}];
+          else if(lastTool==='p2o_task_author'&&planResults.length===1)content=[{type:'toolCall',id:'work-goal-replay',name:'p2o_goal_author',arguments:{requestId:'native-work-goal',entry:goalEntry}}];
           // P8.3: the board match verb is gone; a repeated create is the only duplicate/history preflight and returns the
           // match payload instead of creating a second task.
-          else if(lastTool==='p2o_plan_author')content=[{type:'toolCall',id:'work-duplicate',name:'p2o_task_author',arguments:{draft}}];
+          else if(lastTool==='p2o_goal_author')content=[{type:'toolCall',id:'work-duplicate',name:'p2o_task_author',arguments:{draft}}];
           else if(lastTool==='p2o_task_author')content=[{type:'toolCall',id:'work-finish',name:'p2o_finish',arguments:{}}];
           else if(lastTool==='p2o_finish')content=[{type:'text',text:'OWNER_WORK_DONE: task cancelled by finish, goal retained active; no proof or investigation.'}];
           else throw Error('Unexpected native work fixture turn');
@@ -157,11 +157,11 @@ export function registerInertProvider(pi: ExtensionAPI, mode: 'owner' | 'worker'
         // spawned worker. The real child worker fixture performs the shell/note/candidate/report sequence through the broker.
         else if (!last) content = [{ type: 'toolCall', id: 'surface-probe', name: 'p2o_net', arguments: { command: 'printf inert-planner-probe' } }];
         // A3/D32: in exploit mode the impact goal must be on the plan board before the first target-executing intent.
-        else if (lastTool === 'p2o_net') content = [{ type: 'toolCall', id: 'goal-create', name: 'p2o_plan_author', arguments: { entry: {
+        else if (lastTool === 'p2o_net') content = [{ type: 'toolCall', id: 'goal-create', name: 'p2o_goal_author', arguments: { entry: {
           kind: 'goal', title: 'Reach the recorded effect under an impact goal', status: 'active',
           proof: { kind: 'capability', capability: { kind: 'data.read' } }, criteria: ['The bounded recon intent is recorded under this goal'],
           reason: 'A3/D32: exploit mode admits no target-executing intent before its impact goal exists' } } }];
-        else if (lastTool === 'p2o_plan_author') content = [{ type: 'toolCall', id: 'task-create', name: 'p2o_task_author', arguments: { draft: {
+        else if (lastTool === 'p2o_goal_author') content = [{ type: 'toolCall', id: 'task-create', name: 'p2o_task_author', arguments: { draft: {
           question: 'Inspect /target/code.txt in the sandbox and report what it contains. Success: a command, its output, and coverage for that surface. Stop if the sandbox is unavailable.',
           surface: 'surface-recon', risk: 'boundary', role: 'recon', roleReason: 'A2: the first intent of an empty run is recon/mapping',
           expectedTrue: 'The declared fixture source is the observed input', expectedFalse: 'The source copy is unavailable or different',

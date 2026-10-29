@@ -61,9 +61,9 @@ describe('model-free assessment visibility (canonical runtime + legacy reader)' 
   });
   it('status/log/report never consume Planner signals, call a model or execute target work', async () => {
     await fixture(async h => {
-      const before = (await h.call('p2o_loop',{action:'status'})).details;
+      const before = (await h.call('p2o_workers',{})).details.engine;
       for (const s of ['status','log 0','report']) await h.command(s);
-      const after = (await h.call('p2o_loop',{action:'status'})).details;
+      const after = (await h.call('p2o_workers',{})).details.engine;
       expect(after).toEqual(before);
       expect(h.pi.messages).toHaveLength(1);expect(h.pi.customMessages).toHaveLength(0);
       expect(h.herdr.calls).toHaveLength(0);expect(h.sandboxes[0].commands).toHaveLength(0);
@@ -201,7 +201,7 @@ describe('model-free assessment visibility (canonical runtime + legacy reader)' 
       for (let attempt = 0; attempt < 80 && h.pi.messages.length < 2; attempt += 1) await delay(50);
       expect(h.pi.messages, 'one coalesced reservation, not one per event').toHaveLength(2);
       expect(h.sandboxes.flatMap((s: InertSandbox) => s.commands)).toEqual([]);
-      expect((await h.call('p2o_loop', { action: 'status' })).details).toMatchObject({ mode: 'event-driven', rounds: 1, pendingEvents: 8 });
+      expect((await h.call('p2o_workers', {})).details.engine).toMatchObject({ mode: 'event-driven', rounds: 1, pendingEvents: 8 });
     });
   });
   it('flags corrupt/uncommitted state and never grants authority through navigation', async () => {

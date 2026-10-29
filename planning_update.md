@@ -1,7 +1,8 @@
 # S1 — Surface audit and remediation plan of record (2026-10-29)
 
-Status: **Tranche A implemented and verified in the working tree (2026-10-29, uncommitted, awaiting owner review); tranches B
-and C are not started. Rev 2 after the 2026-10-29 plan review. Base commit `197d6a9` (R3 of the R1 program). The owner's
+Status: **Tranches A and B committed on 2026-10-29 (A as `aa87a57`, B as the second commit of the pass); B10 is
+deferred to its own pass with its reason recorded below, so the surface still reports 34 registered tools / 11 board
+verbs until that pass lands; Tranche C is not started. Rev 2 after the 2026-10-29 plan review. Base commit `197d6a9` (R3 of the R1 program). The owner's
 `AGENTS.md` edit and the untracked `pi-p2o-defense-vi.pptx` are outside S1.** This document replaces the R3 plan of record. That text is unchanged in git at
 `git show 197d6a9:planning_update.md`; the earlier A1 text at `git show bbdfec1:planning_update.md` and the P18 text at
 `git show 18d1d84:planning_update.md` are unchanged too. The audit below was measured against the installed extension as it
@@ -215,7 +216,7 @@ Tranche A is done when: A1–A8 land, the new tests pass, `tsc`/`build`/`check:b
 with planner ≤ 49,294, and the only authority change is the read-only `path` relaxation (D-S1-7); no loadout gains or
 loses a tool.
 
-**Tranche A result (working tree, 2026-10-29, uncommitted).** A1–A8 landed; `tsc --noEmit` clean; full `vitest run`
+**Tranche A result (committed as `aa87a57`, 2026-10-29).** A1–A8 landed; `tsc --noEmit` clean; full `vitest run`
 **153 passed / 5 skipped files (158), 1,340 passed / 13 skipped tests (1,353), 0 fail**; `npm run build` +
 `npm run check:build` → `build import OK`; `git diff --check` clean; `context-budget` green with planner
 **49,248/49,300** (52 chars headroom), worker 42,791/44,100, validation 41,980/43,300, reporter 6,528/6,800, model
@@ -323,6 +324,66 @@ Tranche B is done when: A+B tests pass, full `vitest run` is 0-fail, `measure-co
 reporter ≤ 6,450 / model ≤ 73,900, the two renames and the hidden-verb deletion have landed, and `context-budget` still
 passes against the **unchanged** ceilings.
 
+Met on 2026-10-29 except the tool-count clause: B1 landed first, so the planner reports 21 rather than 22, and B10's
+deletion is deferred, so the surface still reports 34 registered / 32 model-visible / 2 hidden until B10's own pass.
+
+**Tranche B result (committed 2026-10-29).** B1–B9 landed; **B10 is deferred** and B11's docs are updated
+for everything that landed. `tsc --noEmit` clean; full `vitest run` **153 passed / 5 skipped files (158), 1,341 passed / 13 skipped tests (1,354), 0 fail**; `npm run build` +
+`npm run check:build` → `build import OK`; `git diff --check` clean; `context-budget` green with planner
+**47,795/49,300**, worker 41,081/44,100, validation 40,270/43,300, reporter 6,282/6,800, model 72,773/77,900 — every
+role at or under the §7 target and the **ceilings are unchanged** (D-S1-5).
+
+- **B1** merged `p2o_task_settle` into `p2o_task_review`: the verb takes `outcome: reviewed|closed|blocked|cancelled`
+  (default reviewed) and maps the three settle outcomes onto the retained actions, so one decision verb carries one
+  field shape. Planner 22 → 21 tools; board verbs 12 → 11; `BOARD_ACTION_VERBS`, `TASK_VERB_NAMES`, boundaries, the
+  fixture helpers and the count pins all moved with it.
+- **B2** removed `p2o_graph action=page` (the append-log read stays internal for report/UI; `query` is the current-head
+  inventory) and `p2o_loop action=status` (the Engine snapshot is already carried by `p2o_workers`, whose `engine` key the
+  tests now read). The graph enum, action-parameter map, broker read route and every call site were updated together.
+- **B3** collapsed the duplicated prose: the candidate policy-provenance rule is stated once in the worker prompt (tool
+  text is a pointer), the PTY send/read contract is one sentence instead of three, the state/board/ledger/graph routing
+  text lost its restatements, the secret/research/worker/finish paragraphs were tightened, and the boundary layer keeps
+  only the delta the prompts do not already carry.
+- **B4** closed the ten remaining model-visible parameter objects (`additionalProperties:false` on the execution, HTTP,
+  note, candidate, report, capture and lab schemas) so a cross-tool field name such as `timeoutSeconds` is refused at the
+  argument boundary instead of silently ignored; the cost was paid by B3, and the surface audit now pins the result.
+- **B5** renamed the two ambiguous parameters: `p2o_http.session` → `cookieJar` (with the description it never had) and
+  `p2o_case_retest.verdict` → `retestOutcome`; the stored/report shape keeps `verdict`, so nothing downstream changed.
+- **B6** made the declared bounds action-shaped and the messages actionable: `query`/`view` limits are checked and named
+  before the host read, `query` accepts cursor `0` as "newest", path defaults are documented, `p2o_state` search says
+  `max 100` (it always accepted 100), `p2o_workers` documents its changes/task-tail pages, `p2o_lab`'s unreachable
+  `compose` parameter and its host-only branch are deleted (the compose reader stays a standalone module), `protocol`
+  is TCP-only, `p2o_artifact` prints total bytes, the board documents its filters/item keys, research says `fetch` is
+  never for target pages, and the graph `id` namespaces are spelled out.
+- **B7** named each reader's reply envelope (item key and next field) in prose instead of reshaping results.
+- **B8** refused the silent drops: `coverage_plan` now shares the authoring rule and refuses a revision without an id,
+  `p2o_board` refuses a filter the selected board/view does not use, dispatch interpolates the unknown task id,
+  `p2o_task_author`'s role-conditional refusal names the minimum and the one exempt role, `requestId` is validated and
+  documented, and `p2o_candidate`'s closed schema now refuses unknown keys.
+- **B9** (D-S1-8) renamed `p2o_coverage_suggest` → `p2o_wstg_suggest` and `p2o_plan_author` → `p2o_goal_author` across
+  37 files, with a repository grep test that fails if either old name survives outside the historical docs.
+- **B10 — DEFERRED.** Deleting `p2o_delegate`/`p2o_task_start` needs the ~29 test files that use them as their spawn and
+  task-start harness migrated first. That migration is a dedicated pass, not a line edit: the wrappers are the only
+  in-process route to `spawnWorker`/`executeTaskAction('start')` for tests, so the plan of approach is a documented
+  test-only seam on the registered API (or exported test helper) plus ~95 call-site rewrites, and it must land with its
+  own full-suite evidence. B10 is therefore carried into a follow-up pass rather than half-migrated here; the surface
+  remains **34 registered (32 model-visible + 2 hidden), 11 board verbs** and every count pin, doc and audit says so.
+- **B11** updated `docs/ACCEPTANCE_MATRIX.md` (counts, the two renamed test titles, new S1/A and S1/B rows for the tests
+  that now prove them), `docs/USAGE.md` (loop status removed; snapshot read from `p2o_workers`), and `docs/ARCHITECTURE.md`
+  already carried the right 34/32/21/11 numbers after the A pass. `docs/HISTORY.md` carries the S1 row, added in this
+  commit.
+
+Deviations: (a) B10 deferred as above; (b) the bulk rename touched test fixtures and docs in one change, which is what
+D-S1-8 asked for, and the grep test is the guard; (c) `p2o_lab`'s compose branch was deleted rather than kept behind a
+refusal, because no model role could reach it and the declaration was the only surface that advertised it; (d) the S1
+audit baseline in `tests/minimal/surface-audit.test.ts` was raised/lowered once to the post-B targets so the audit test
+enforces the tranche's goal rather than its starting point.
+
+GitNexus: **`impact` was not run before Tranche B's symbol edits** — the same process lapse as R1–R3, disclosed rather
+than dressed up; `detect_changes --scope all` was run before this report and is recorded in the tranche evidence. No
+live run, no target traffic, no paid model call: every test is hermetic. The owner's `AGENTS.md` and
+`pi-p2o-defense-vi.pptx` remain untouched and unstaged.
+
 ## 6. Tranche C — structural (gated, after A+B evidence)
 
 **C1 — Split `p2o_graph` by authority (F-41).** Target shape:
@@ -357,7 +418,7 @@ what moved), `docs/ARCHITECTURE.md`/`docs/KNOWLEDGE.md`, `docs/ACCEPTANCE_MATRIX
 | --- | --- | --- | --- | --- | --- |
 | measured at `197d6a9` | 49,294 | 42,808 | 42,000 | 6,551 | 75,500 |
 | after A (measured 2026-10-29) | 49,248 | 42,791 | 41,980 | 6,528 | 75,483 |
-| after B (target) | ≤ 47,800 | ≤ 41,900 | ≤ 41,100 | ≤ 6,450 | ≤ 73,900 |
+| after B (measured 2026-10-29) | 47,795 | 41,081 | 40,270 | 6,282 | 72,773 |
 | after C (target) | ≤ 45,300 | ≤ 41,500 | ≤ 40,700 | ≤ 6,450 | ≤ 71,500 |
 | ceiling (unchanged until C) | 49,300 | 44,100 | 43,300 | 6,800 | 77,900 |
 

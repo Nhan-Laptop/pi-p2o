@@ -114,13 +114,13 @@ describe('export writes, ends nothing; stop records the obligation (M3)', () => 
     const ids: string[] = [...debtItem.ids];
     // A deferred row naming the claim is the wall M4 asks for; the same row names the debt item it answers.
     const primitive = ids.find(id => id.startsWith('debt-primitive-unchained-'))!;
-    await h.call('p2o_plan_author', {entry: { kind: 'todo', title: 'Wall for the fixture claim', status: 'deferred',
+    await h.call('p2o_goal_author', {entry: { kind: 'todo', title: 'Wall for the fixture claim', status: 'deferred',
       reason: 'Ruled-out successor: the next step needs an actor this fixture does not model', claimRefs: [built.claim.id], debtRefs: [primitive] } });
     const walled = await h.call('p2o_finish', { export: true });
     // One wall answers one named item: the other three are still owed and still printed by id.
     expect(walled.details).toMatchObject({ state: 'incomplete', remaining: 3 });
     for (const id of ids.filter(id => id !== primitive)) {
-      await h.call('p2o_plan_author', {entry: { kind: 'todo', title: `Discharge ${id}`, status: 'deferred',
+      await h.call('p2o_goal_author', {entry: { kind: 'todo', title: `Discharge ${id}`, status: 'deferred',
         reason: 'Bounded discharge recorded for the fixture: the item is answered by a wall, not by declaring the run done', debtRefs: [id] } });
     }
     const settled = await h.call('p2o_finish', { export: true });
@@ -136,10 +136,10 @@ describe('export writes, ends nothing; stop records the obligation (M3)', () => 
     const exported = await h.call('p2o_finish', { export: true });
     const ids: string[] = exported.details.completion.items.find((item: { code: string }) => item.code === 'RESEARCH_DEBT').ids;
     const primitive = ids.find(id => id.startsWith('debt-primitive-unchained-'))!;
-    await h.call('p2o_plan_author', {entry: { kind: 'todo', title: 'Wall for the final-snapshot mismatch', status: 'deferred',
+    await h.call('p2o_goal_author', {entry: { kind: 'todo', title: 'Wall for the final-snapshot mismatch', status: 'deferred',
       reason: 'Ruled-out successor: the next step needs an actor this fixture does not model', claimRefs: [built.claim.id], debtRefs: [primitive] } });
     for (const id of ids.filter(id => id !== primitive)) {
-      await h.call('p2o_plan_author', {entry: { kind: 'todo', title: `Discharge ${id}`, status: 'deferred',
+      await h.call('p2o_goal_author', {entry: { kind: 'todo', title: `Discharge ${id}`, status: 'deferred',
         reason: 'Bounded discharge recorded for the fixture: the item is answered by a wall, not by declaring the run done', debtRefs: [id] } });
     }
     const result = await h.call('p2o_finish', {});
@@ -154,7 +154,7 @@ describe('export writes, ends nothing; stop records the obligation (M3)', () => 
 
   it('prints each goal proof and whether it holds (P16.1)', async () => fixture(async h => {
     await populate(h);
-    await h.call('p2o_plan_author', {entry: { kind: 'goal', title: 'Demonstrate one inert read on the fixture surface', status: 'active',
+    await h.call('p2o_goal_author', {entry: { kind: 'goal', title: 'Demonstrate one inert read on the fixture surface', status: 'active',
       reason: 'Bounded goal whose proof is a capability this fixture does not gain', criteria: ['A confirmed and tested claim gains the read'],
       proof: { kind: 'capability', capability: { kind: 'file.read', subject: 'inert-file' } } } });
     const exported = await h.call('p2o_finish', { export: true });

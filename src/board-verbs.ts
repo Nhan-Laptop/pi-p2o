@@ -16,18 +16,18 @@ import { planEntrySchema } from './work-tool.js';
  * implementation, so validation and stored bytes do not change.
  */
 const id = () => Type.String({ minLength: 1, maxLength: 80 });
-const requestId = () => Type.Optional(id());
+const requestId = () => Type.Optional(Type.String({ minLength: 1, maxLength: 80, pattern: '^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,79}$', description: 'Idempotency key; the same key with the same payload replays, a changed payload conflicts' }));
 const evidenceIds = () => Type.Optional(Type.Array(Type.String({ maxLength: 80 })));
 const revision = () => Type.Optional(Type.Integer({ minimum: 1 }));
 
 /** The three merged authoring verbs, named once so the role loadout, the schemas and the refusals cannot drift apart. */
-export const AUTHORING_VERBS = { task: 'p2o_task_author', case: 'p2o_case_author', plan: 'p2o_plan_author' } as const;
+export const AUTHORING_VERBS = { task: 'p2o_task_author', case: 'p2o_case_author', plan: 'p2o_goal_author' } as const;
 export type AuthoringKind = keyof typeof AUTHORING_VERBS;
 const AUTHORING_BOARDS: Readonly<Record<AuthoringKind, string>> = { task: 'tasks', case: 'cases', plan: 'plans' };
 export const TASK_SETTLE_ACTIONS = { closed: 'close', blocked: 'block', cancelled: 'cancel' } as const;
 /** A3: cells are host-derived, so the coverage bag keeps one read-only verb and the plan write verb. */
 export const COVERAGE_FIXED_ACTIONS = {
-  p2o_coverage_suggest: 'suggest',
+  p2o_wstg_suggest: 'suggest',
 } as const;
 
 /** Old action -> new verb. `null` is deliberately removed: `p2o_board` is the only list/view reader, and a task match now
@@ -36,18 +36,18 @@ export const COVERAGE_FIXED_ACTIONS = {
 export const BOARD_ACTION_VERBS: Readonly<Record<string, Readonly<Record<string, string | null>>>> = {
   p2o_task: {
     create: 'p2o_task_author', revise: 'p2o_task_author', match: null, dispatch: 'p2o_task_dispatch',
-    review: 'p2o_task_review', close: 'p2o_task_settle', block: 'p2o_task_settle', cancel: 'p2o_task_settle',
+    review: 'p2o_task_review', close: 'p2o_task_review', block: 'p2o_task_review', cancel: 'p2o_task_review',
     list: 'p2o_board', start: 'p2o_task_start',
   },
   p2o_case: { create: 'p2o_case_author', revise: 'p2o_case_author', rate: 'p2o_case_rate', retest: 'p2o_case_retest', list: 'p2o_board', view: 'p2o_board' },
   p2o_coverage: {
-    'plan-create': 'p2o_coverage_plan', 'plan-revise': 'p2o_coverage_plan', suggest: 'p2o_coverage_suggest',
+    'plan-create': 'p2o_coverage_plan', 'plan-revise': 'p2o_coverage_plan', suggest: 'p2o_wstg_suggest',
     'cell-create': null, 'cell-revise': null, 'cell-retire': null, list: 'p2o_board', view: 'p2o_board',
   },
-  p2o_plan: { create: 'p2o_plan_author', revise: 'p2o_plan_author', list: 'p2o_board', view: 'p2o_board' },
+  p2o_plan: { create: 'p2o_goal_author', revise: 'p2o_goal_author', list: 'p2o_board', view: 'p2o_board' },
 };
 
-export const TASK_VERB_NAMES = [AUTHORING_VERBS.task, 'p2o_task_start', 'p2o_task_dispatch', 'p2o_task_review', 'p2o_task_settle'] as const;
+export const TASK_VERB_NAMES = [AUTHORING_VERBS.task, 'p2o_task_start', 'p2o_task_dispatch', 'p2o_task_review'] as const;
 export const CASE_VERB_NAMES = [AUTHORING_VERBS.case, 'p2o_case_rate', 'p2o_case_retest'] as const;
 export const COVERAGE_VERB_NAMES = ['p2o_coverage_plan', ...Object.keys(COVERAGE_FIXED_ACTIONS)] as const;
 export const PLAN_VERB_NAMES = [AUTHORING_VERBS.plan] as const;
@@ -81,18 +81,17 @@ export const taskDispatchParameters = Type.Object({
   model: Type.Optional(Type.String({ maxLength: 200, description: 'Worker model for this dispatch; must be one of the configured role models (overrides the task draft runtime for this dispatch)' })),
   thinking: Type.Optional(choices(THINKING_LEVELS)),
 }, { additionalProperties: false });
+/** S1/B1: review and settle are one decision verb; omitting `outcome` reviews, the other three settle the reviewed task. */
+export const TASK_REVIEW_OUTCOMES = ['reviewed', 'closed', 'blocked', 'cancelled'] as const;
 export const taskReviewParameters = Type.Object({
   id: id(), revision: Type.Integer({ minimum: 1 }), reason: Type.Optional(Type.String({ minLength: 5, maxLength: 1000 })),
   evidenceIds: evidenceIds(), externalEvidence: Type.Optional(Type.Boolean()),
-}, { additionalProperties: false });
-export const taskSettleParameters = Type.Object({
-  outcome: choices(['closed', 'blocked', 'cancelled']), id: id(), revision: Type.Integer({ minimum: 1 }),
-  reason: Type.Optional(Type.String({ minLength: 5, maxLength: 1000 })), evidenceIds: evidenceIds(), externalEvidence: Type.Optional(Type.Boolean()),
+  outcome: Type.Optional(choices(TASK_REVIEW_OUTCOMES, 'Defaults to reviewed; closed, blocked and cancelled settle the reviewed task')),
 }, { additionalProperties: false });
 
 export const caseAuthorParameters = Type.Object({ entry: caseEntrySchema, id: Type.Optional(id()), revision: revision(), requestId: requestId() }, { additionalProperties: false });
 export const caseRateParameters = Type.Object({ finding: findingSchema, id: id(), revision: Type.Integer({ minimum: 1 }), requestId: requestId() }, { additionalProperties: false });
-export const caseRetestParameters = Type.Object({ id: id(), revision: Type.Integer({ minimum: 1 }), verdict: choices(CASE_RETEST_VERDICTS), reason: Type.String({ minLength: 10, maxLength: 1000 }), evidenceRefs: evidenceIds(), requestId: requestId() }, { additionalProperties: false });
+export const caseRetestParameters = Type.Object({ id: id(), revision: Type.Integer({ minimum: 1 }), retestOutcome: choices(CASE_RETEST_VERDICTS, 'Owner observation at this case revision; not the case verdict'), reason: Type.String({ minLength: 10, maxLength: 1000 }), evidenceRefs: evidenceIds(), requestId: requestId() }, { additionalProperties: false });
 
 export const coveragePlanParameters = Type.Object({
   plan: coveragePlanSchema, id: Type.Optional(id()), revision: Type.Optional(Type.Integer({ minimum: 1 })), requestId: requestId(),
@@ -111,8 +110,8 @@ export const boardParameters = Type.Object({
   kind: Type.Optional(choices(PLAN_KINDS)),
 }, { additionalProperties: false });
 
-/** Plan authoring selects create vs revise by the presence of the identity, never by a second `action` field. */
-export const planAuthoringAction = (params: { id?: string }): 'plan-create' | 'plan-revise' => params.id ? 'plan-revise' : 'plan-create';
+/** Plan authoring selects create vs revise by the identity, never by a second `action` field; the shared authoring rule also refuses a revision without an id (S1/B8). */
+export const planAuthoringAction = (params: { id?: string; revision?: number; action?: unknown }): 'plan-create' | 'plan-revise' => authoringAction('plan', params) === 'revise' ? 'plan-revise' : 'plan-create';
 export const settleAction = (outcome: keyof typeof TASK_SETTLE_ACTIONS): 'close' | 'block' | 'cancel' => TASK_SETTLE_ACTIONS[outcome];
 export const boardReadAction = (idValue?: string): 'list' | 'view' => idValue ? 'view' : 'list';
 
@@ -121,5 +120,5 @@ export const LEGAL_NEXT: Readonly<Record<string, string>> = {
   task: 'p2o_task_author (same id, revision=<currentRevision>)',
   case: 'p2o_case_author or p2o_case_rate (same id, revision=<currentRevision>)',
   coveragePlan: 'p2o_coverage_plan (id=<id>, revision=<currentRevision>)',
-  plan: 'p2o_plan_author (id=<id>, revision=<currentRevision>)',
+  plan: 'p2o_goal_author (id=<id>, revision=<currentRevision>)',
 };

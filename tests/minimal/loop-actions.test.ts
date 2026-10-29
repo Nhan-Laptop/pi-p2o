@@ -47,7 +47,7 @@ describe('Demand floor: wait semantics (P18.4/D48)',()=>{
   it('refuses the first wait once while a named demand is owed, then accepts a second wait and lets the round end',async()=>{
     await fixture(async h=>{
       await handOff(h);
-      const owed=(await h.call('p2o_loop',{action:'status'})).details;
+      const owed=(await h.call('p2o_workers',{})).details.engine;
       expect(owed.remaining).toBeGreaterThan(0);
       expect(owed.demand).toBeTruthy();
       const refused=await h.call('p2o_loop',{action:'wait',reason:'nothing to do yet'});

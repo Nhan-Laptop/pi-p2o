@@ -144,8 +144,9 @@ Mỗi round là một work package có ngân sách: mặc định 40 step / 900 
 context, dừng cứng ở 92% context. `--round-steps 0 --round-seconds 0` tắt cả hai trục. Ngân sách này **không** giới hạn
 campaign: không có trần round/token/thời gian cho cả chiến dịch. Mặc định mỗi round mở một Pi session mới và nhận briefing
 tất định ≤8 KiB thay vì nối dài một transcript; round đang chạy hiện số round, session, trạng thái ngân sách, model được
-route và round fact mới nhất trong `/p2o status`. `p2o_loop` là tool của planner (`status`/`wait`/`blocked`,
-thêm `hint`/`constrain` 3–300 ký tự, trần 24 hint và 12 constraint), không phải slash command; `wait` kết thúc lượt chứ
+route và round fact mới nhất trong `/p2o status`. `p2o_loop` là tool của planner (`wait`/`blocked`,
+thêm `hint`/`constrain` 3–300 ký tự, trần 24 hint và 12 constraint); trạng thái Engine đọc qua `p2o_workers` (snapshot
+`status` đã bị xoá ở S1/B2), và đây không phải slash command; `wait` kết thúc lượt chứ
 không kết thúc assessment — khi campaign còn obligation, `wait` đầu tiên của round bị từ chối một lần kèm demand và legal
 next, lần hai được chấp nhận, và một round kết thúc mà không có tool call nào nhận tối đa hai nudge nhắc ghi lại kết quả;
 `blocked` là quyết định dừng có chủ đích và chờ `/p2o resume`. Event được coalesce và không bảo

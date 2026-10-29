@@ -208,7 +208,7 @@ describe('A4 extension round ACK', () => {
       await round();
       expect(await stalls()).toHaveLength(0);
       // An active goal with no open/running intent → one durable stall fact.
-      await h.call('p2o_plan_author', { entry: { kind: 'goal', title: 'Bound the fixture question', status: 'active', reason: 'A4 stall fixture goal', criteria: ['one bounded fixture observation'], proof: { kind: 'capability', capability: 'net.egress' } }, requestId: 'a4-goal' });
+      await h.call('p2o_goal_author', { entry: { kind: 'goal', title: 'Bound the fixture question', status: 'active', reason: 'A4 stall fixture goal', criteria: ['one bounded fixture observation'], proof: { kind: 'capability', capability: 'net.egress' } }, requestId: 'a4-goal' });
       await round();
       const first = await stalls();
       expect(first).toHaveLength(1);
@@ -276,6 +276,6 @@ describe('A4 authority counters in report and status', () => {
     const body = rendered.files.find(file => file.name === 'REPORT.md')!.body;
     expect(body).toContain('Authority: planner target operations 1 (must be 0)');
     expect(body).toContain('stalled rounds 1');
-    expect(body).toContain('Mode and role matrix: manual loop / shared executor; planner 22 tools (no target or claim tool), worker 19, validation 18, reporter 6 (read-only)');
+    expect(body).toContain('Mode and role matrix: manual loop / shared executor; planner 21 tools (no target or claim tool), worker 19, validation 18, reporter 6 (read-only)');
   });
 });

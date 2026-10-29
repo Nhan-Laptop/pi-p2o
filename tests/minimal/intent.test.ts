@@ -214,7 +214,7 @@ async function extensionFixture(provisionFails = false): Promise<ExtensionHarnes
 
 const RECON_INTENT = { question: 'Which recorded surfaces does the retained fixture expose?', surface: '/fixture', risk: 'mapping', role: 'recon', evidenceIds: [], prerequisites: [] };
 /** A3/D32: exploit mode admits no target-executing intent before the run holds an impact goal. */
-const seedGoal = (h: ExtensionHarness) => h.call('p2o_plan_author', { entry: { kind: 'goal', title: 'Reach the recorded fixture effect under an impact goal',
+const seedGoal = (h: ExtensionHarness) => h.call('p2o_goal_author', { entry: { kind: 'goal', title: 'Reach the recorded fixture effect under an impact goal',
   status: 'active', proof: { kind: 'capability', capability: { kind: 'data.read' } }, criteria: ['The bounded fixture intent is recorded and attributed'],
   reason: 'A3/D32 fixture prerequisite: exploit mode needs an impact goal before the first target-executing intent' } });
 const WORKER_CLAIM = { candidate: 'fixture-worker-claim', surface: '/fixture', risk: 'authorization', closure: 'open_proof_gap', execution: 'not_tested',

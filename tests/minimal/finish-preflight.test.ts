@@ -100,7 +100,7 @@ describe('finish preflight', () => {
   }));
   it('does not flag it once the stated objective is recorded as a goal', async () => fixture(async h => {
     await h.command('--target ./source --goal "Assess the login boundary for IDOR"');
-    await h.call('p2o_plan_author', {entry: { kind: 'goal', title: 'Assess the login boundary for IDOR', status: 'proposed', reason: 'Operator-stated objective turned into a tracked goal', criteria: ['Login IDOR surface enumerated'], exclusions: ['Out of scope: payment flows'], proof: { kind: 'capability', capability: { kind: 'http.request', subject: 'login' } } } });
+    await h.call('p2o_goal_author', {entry: { kind: 'goal', title: 'Assess the login boundary for IDOR', status: 'proposed', reason: 'Operator-stated objective turned into a tracked goal', criteria: ['Login IDOR surface enumerated'], exclusions: ['Out of scope: payment flows'], proof: { kind: 'capability', capability: { kind: 'http.request', subject: 'login' } } } });
     expect(finishText(await h.call('p2o_finish', {}))).not.toContain('NO_GOAL_RECORDED');
   }));
   it('does not flag a run with no stated --goal at all', async () => fixture(async h => {

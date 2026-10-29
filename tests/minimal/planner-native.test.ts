@@ -46,7 +46,7 @@ it.each(['idle','boundary','human-priority'] as const)('real Pi %s wake preserve
     // A1: the planner can only create/dispatch. Its first scripted call to a worker-only tool is Pi's unknown-tool result;
     // the Engine, not the planner, spawns the worker from the dispatched intent.
     const toolResults=messages.filter((m:any)=>m.role==='toolResult');
-    expect(toolResults.map((m:any)=>m.toolName)).toEqual(['p2o_net','p2o_plan_author','p2o_task_author','p2o_task_dispatch','p2o_loop','p2o_workers','p2o_finish']);
+    expect(toolResults.map((m:any)=>m.toolName)).toEqual(['p2o_net','p2o_goal_author','p2o_task_author','p2o_task_dispatch','p2o_loop','p2o_workers','p2o_finish']);
     expect(toolResults[0].isError).toBe(true);expect(text(toolResults[0])).toContain('not found');
     expect(toolResults.slice(1).every((m:any)=>!m.isError)).toBe(true);
     // A2 intent admission: the first intent of an empty run is recon/mapping.

@@ -59,17 +59,17 @@ async function ownerFixture(): Promise<OwnerFixture> {
 describe('P0/A1 tool matrices', () => {
   it('pins the planner, worker, validation and reporter matrices and the one delegation path', () => {
     expect(new Set(PLANNER_TOOLS)).toEqual(new Set([
-      'p2o_task_author', 'p2o_task_dispatch', 'p2o_task_review', 'p2o_task_settle',
-      'p2o_plan_author', 'p2o_case_author', 'p2o_case_rate', 'p2o_case_retest',
-      'p2o_coverage_plan', 'p2o_coverage_suggest', 'p2o_board', 'p2o_ledger', 'p2o_state', 'p2o_artifact', 'p2o_graph',
+      'p2o_task_author', 'p2o_task_dispatch', 'p2o_task_review',
+      'p2o_goal_author', 'p2o_case_author', 'p2o_case_rate', 'p2o_case_retest',
+      'p2o_coverage_plan', 'p2o_wstg_suggest', 'p2o_board', 'p2o_ledger', 'p2o_state', 'p2o_artifact', 'p2o_graph',
       'p2o_skill_list', 'p2o_skill_read', 'p2o_secret', 'p2o_research', 'p2o_workers', 'p2o_loop', 'p2o_finish',
     ]));
     expect([...WORKER_TOOLS].sort()).toEqual(['p2o_artifact', 'p2o_candidate', 'p2o_capture', 'p2o_graph', 'p2o_http', 'p2o_lab', 'p2o_ledger', 'p2o_net', 'p2o_note', 'p2o_report', 'p2o_request_subtask', 'p2o_research', 'p2o_secret', 'p2o_session', 'p2o_shell', 'p2o_skill_list', 'p2o_skill_read', 'p2o_state', 'p2o_surface']);
     expect(VALIDATION_TOOLS).toEqual(WORKER_TOOLS.filter(name => name !== 'p2o_surface'));
     expect([...REPORTER_TOOLS].sort()).toEqual(['p2o_artifact', 'p2o_ledger', 'p2o_report', 'p2o_skill_list', 'p2o_skill_read', 'p2o_state']);
     expect(HIDDEN_TOOLS).toEqual(HIDDEN);
-    expect(MODEL_TOOLS).toHaveLength(33);
-    expect(ALL_TOOLS).toHaveLength(35);
+    expect(MODEL_TOOLS).toHaveLength(32);
+    expect(ALL_TOOLS).toHaveLength(34);
     for (const name of DELETED) {
       expect(ALL_TOOLS, name).not.toContain(name);
       expect(TOOL_BOUNDARIES[name], name).toBeUndefined();
@@ -91,10 +91,10 @@ describe('P0/A1 tool matrices', () => {
     expect(PLANNER_TOOLS).not.toContain('p2o_candidate');
     expect(REPORTER_TOOLS).not.toContain('p2o_candidate');
     // The reporter is read-only: it cannot execute, claim, plan or finish the run.
-    for (const name of [...TARGET_TOOLS, ...LAB_TOOLS, 'p2o_candidate', 'p2o_note', 'p2o_surface', 'p2o_graph', 'p2o_task_author', 'p2o_plan_author', 'p2o_case_author', 'p2o_finish']) expect(REPORTER_TOOLS, name).not.toContain(name);
+    for (const name of [...TARGET_TOOLS, ...LAB_TOOLS, 'p2o_candidate', 'p2o_note', 'p2o_surface', 'p2o_graph', 'p2o_task_author', 'p2o_goal_author', 'p2o_case_author', 'p2o_finish']) expect(REPORTER_TOOLS, name).not.toContain(name);
   });
 
-  it('registers 35 tools: 33 model-visible role tools plus 2 explicitly hidden legacy verbs', () => {
+  it('registers 34 tools: 32 model-visible role tools plus 2 explicitly hidden legacy verbs', () => {
     const tools = registrations();
     expect([...tools.keys()].sort()).toEqual([...ALL_TOOLS].sort());
     for (const name of HIDDEN_TOOLS) expect(tools.get(name).exposure, name).toBe('hidden');

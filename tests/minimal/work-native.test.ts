@@ -28,7 +28,7 @@ it('real Pi preserves structured work/plan arguments, dedup/replay and historica
     expect((await request('get_state')).success).toBe(true);expect((await request('prompt',{message:'/p2o --target ./source'})).success).toBe(true);
     await until(async()=>((await request('get_messages')).data?.messages??[]).some((message:any)=>text(message).includes('OWNER_WORK_DONE')));await until(async()=>records.some(record=>record.type==='agent_settled'));
     const messages=(await request('get_messages')).data.messages,results=messages.filter((message:any)=>message.role==='toolResult');
-    expect(results.map((result:any)=>result.toolName)).toEqual(['p2o_graph','p2o_plan_author','p2o_task_author','p2o_plan_author','p2o_task_author','p2o_finish']);expect(results.every((result:any)=>!result.isError)).toBe(true);
+    expect(results.map((result:any)=>result.toolName)).toEqual(['p2o_graph','p2o_goal_author','p2o_task_author','p2o_goal_author','p2o_task_author','p2o_finish']);expect(results.every((result:any)=>!result.isError)).toBe(true);
     // A3/D32: the scripted owner records the impact goal before the target-executing intent, then replays the same goal.
     const task=results[2].details,plan=results[1].details;expect(task).toMatchObject({dedupConfidence:'exact',status:'proposed',outputContract:{required:['evidence','gaps']}});
     expect(results[3].details).toMatchObject({id:plan.id,replayed:true});expect(results[4].details).toMatchObject({already_covered_by:[task.id],confidence:'exact'});expect(records.filter(record=>record.type==='extension_error')).toEqual([]);

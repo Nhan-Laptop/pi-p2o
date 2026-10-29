@@ -211,7 +211,7 @@ describe('coverage projection surface (A3)', () => {
       expect(PLANNER_TOOLS).not.toContain(name);
       expect(TOOL_BOUNDARIES[name]).toBeUndefined();
     }
-    expect(COVERAGE_VERB_NAMES).toEqual(['p2o_coverage_plan', 'p2o_coverage_suggest']);
+    expect(COVERAGE_VERB_NAMES).toEqual(['p2o_coverage_plan', 'p2o_wstg_suggest']);
     expect(BOARD_ACTION_VERBS.p2o_coverage['cell-create']).toBeNull();
     expect(BOARD_ACTION_VERBS.p2o_coverage['cell-revise']).toBeNull();
     expect(BOARD_ACTION_VERBS.p2o_coverage['cell-retire']).toBeNull();

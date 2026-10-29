@@ -32,7 +32,7 @@ describe('campaign frame (A6.1)', () => {
       expect(campaign!.targetRevision.length).toBeGreaterThan(0);
       expect(store.campaignRevision()).toBeGreaterThan(0);
       // Recorded once, never rewritten: a later plan write leaves the frame byte-identical.
-      await h.call('p2o_plan_author', { entry: { kind: 'todo', title: 'Campaign step', status: 'open', reason: 'Bounded fixture step for the campaign frame' } });
+      await h.call('p2o_goal_author', { entry: { kind: 'todo', title: 'Campaign step', status: 'open', reason: 'Bounded fixture step for the campaign frame' } });
       expect(store.campaign()).toEqual(campaign);
     } finally { store.close(); }
   }));

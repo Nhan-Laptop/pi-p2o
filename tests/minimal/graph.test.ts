@@ -28,7 +28,7 @@ describe('asset/fact/hypothesis graph (K3, canonical store only)', () => {
     // or a row-level asset field reaches normalizeGraphRecord instead of dying in Pi's argument validator.
     expect(projected.properties.batch).toMatchObject({type:'object'});expect(projected.properties.batch).not.toMatchObject({additionalProperties:false});
     // R2.3 adds the host-side `ingest` verb; it reuses the root `id` as the artifact ID, so the root property set is unchanged.
-    expect(graphParameters).toMatchObject({additionalProperties:false});expect(projected.properties.action).toMatchObject({type:'string',enum:['record','view','page','export','chain','query','summary','ingest','path']});
+    expect(graphParameters).toMatchObject({additionalProperties:false});expect(projected.properties.action).toMatchObject({type:'string',enum:['record','view','export','chain','query','summary','ingest','path']});
     expect(GRAPH_ACTION_PARAMETERS.ingest).toEqual(['action','id']);
     // R3.2/D-R1-11 adds the bounded path read; its fields live in the same root object.
     expect(GRAPH_ACTION_PARAMETERS.path).toEqual(['action','fromId','toId','toKind','effect','maxDepth','maxNodes','kinds']);

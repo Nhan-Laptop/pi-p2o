@@ -78,7 +78,7 @@ async function harness(options: { settings?: unknown; herdrAvailable?: boolean }
 
 
 /** A3/D32: in exploit mode (the default) every target-executing intent needs an impact goal on the plan board first. */
-const seedGoal = (h: Harness) => h.call('p2o_plan_author', { entry: { kind: 'goal', title: 'Reach the recorded fixture effect under an impact goal',
+const seedGoal = (h: Harness) => h.call('p2o_goal_author', { entry: { kind: 'goal', title: 'Reach the recorded fixture effect under an impact goal',
   status: 'active', proof: { kind: 'capability', capability: { kind: 'data.read' } }, criteria: ['The bounded fixture step is recorded and attributed'],
   reason: 'A3/D32 fixture prerequisite: exploit mode admits no target-executing intent before its impact goal exists' } });
 describe('owner role', () => {
@@ -87,7 +87,7 @@ describe('owner role', () => {
   afterEach(async () => { await h.command('stop'); await rm(h.root, { recursive: true, force: true }); });
 
   it('registers the owner and worker tools plus one command, and does no work before the command', () => {
-    expect([...h.pi.tools.keys()].sort()).toEqual(['p2o_artifact', 'p2o_board', 'p2o_candidate', 'p2o_capture', 'p2o_case_author', 'p2o_case_rate', 'p2o_case_retest', 'p2o_coverage_plan', 'p2o_coverage_suggest', 'p2o_delegate', 'p2o_finish', 'p2o_graph', 'p2o_http', 'p2o_lab', 'p2o_ledger', 'p2o_loop', 'p2o_net', 'p2o_note', 'p2o_plan_author', 'p2o_report', 'p2o_request_subtask', 'p2o_research', 'p2o_secret', 'p2o_session', 'p2o_shell', 'p2o_skill_list', 'p2o_skill_read', 'p2o_state', 'p2o_surface', 'p2o_task_author', 'p2o_task_dispatch', 'p2o_task_review', 'p2o_task_settle', 'p2o_task_start', 'p2o_workers']);
+    expect([...h.pi.tools.keys()].sort()).toEqual(['p2o_artifact', 'p2o_board', 'p2o_candidate', 'p2o_capture', 'p2o_case_author', 'p2o_case_rate', 'p2o_case_retest', 'p2o_coverage_plan', 'p2o_delegate', 'p2o_finish', 'p2o_goal_author', 'p2o_graph', 'p2o_http', 'p2o_lab', 'p2o_ledger', 'p2o_loop', 'p2o_net', 'p2o_note', 'p2o_report', 'p2o_request_subtask', 'p2o_research', 'p2o_secret', 'p2o_session', 'p2o_shell', 'p2o_skill_list', 'p2o_skill_read', 'p2o_state', 'p2o_surface', 'p2o_task_author', 'p2o_task_dispatch', 'p2o_task_review', 'p2o_task_start', 'p2o_workers', 'p2o_wstg_suggest']);
     expect(h.pi.messages).toEqual([]);
     expect(h.sandboxes).toEqual([]);
     // P18.1/D45: the round opener is a second, internal command the Engine dispatches; no help surface promises it to operators.
@@ -195,7 +195,7 @@ describe('owner role', () => {
     client.close();
     // The removed manual mode posted a "pending review" nudge and waited for a human message. The automatic loop owns the
     // review instead, so the report is one engine event and no human-only prompt is emitted.
-    expect((await h.call('p2o_loop', { action: 'status' })).details.pendingEvents).toBeGreaterThanOrEqual(1);
+    expect((await h.call('p2o_workers', {})).details.engine.pendingEvents).toBeGreaterThanOrEqual(1);
     expect(h.contexts.notices.join(' ')).not.toContain('awaiting Planner review');
     await h.command('stop');
   });
@@ -614,12 +614,12 @@ describe('owner role', () => {
     await seedGoal(h);
     await h.emit('agent_before_settle', { outcome: 'error' });
     expect(h.sandboxes[0].stopCount).toBe(0);
-    expect((await h.call('p2o_loop',{action:'status'})).details.state).toBe('blocked');
+    expect((await h.call('p2o_workers',{})).details.engine.state).toBe('blocked');
     // A1: dispatch is the one delegation path, and a blocked loop in the Engine holds the intent: no worker is started.
     const task = (await h.call('p2o_task_author', { draft: { question: 'Does the blocked loop start unattended work?', surface: '/surface', risk: 'mapping', role: 'recon', evidenceIds: [], prerequisites: [] } })).details;
     await h.call('p2o_task_dispatch', { ids: [task.id] });
     expect(h.herdr.calls.filter(call => call.op === 'start')).toHaveLength(0);
-    expect((await h.call('p2o_loop',{action:'status'})).details).toMatchObject({ state: 'blocked', pendingIntents: 1 });
+    expect((await h.call('p2o_workers',{})).details.engine).toMatchObject({ state: 'blocked', pendingIntents: 1 });
     await h.command('stop');expect(h.sandboxes[0].stopCount).toBe(1);expect(h.pi.active).toContain('bash');
 
     h = await harness();

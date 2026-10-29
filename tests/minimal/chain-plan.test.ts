@@ -24,7 +24,7 @@ async function chainFixture(h: any) {
   return { built, environment, primitive, consumer };
 }
 
-const impactGoal = (h: any) => h.call('p2o_plan_author', { entry: { kind: 'goal', title: 'Reach the recorded chain effect', status: 'active',
+const impactGoal = (h: any) => h.call('p2o_goal_author', { entry: { kind: 'goal', title: 'Reach the recorded chain effect', status: 'active',
   proof: { kind: 'capability', capability: { kind: 'file.read' } }, criteria: ['The chain step runs and is recorded'],
   reason: 'P7.1 exploit-mode admission: the impact goal the chain ladder is settled against' } });
 describe('chain frontier to task draft (P14.10)', () => {

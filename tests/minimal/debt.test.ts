@@ -83,7 +83,7 @@ describe('research debt (A6.2)', () => {
     await populate(h);
     const before = await inspect(h);
     const primitive = items(before.report, 'PRIMITIVE_UNCHAINED')[0]!;
-    await h.call('p2o_plan_author', {
+    await h.call('p2o_goal_author', {
       entry: {
         kind: 'todo', title: 'Take the demonstrated primitive to a successor step', status: 'deferred',
         reason: 'The successor needs a human-provided credential that the operator has not granted yet, so the link is deferred rather than dropped',
@@ -102,7 +102,7 @@ describe('research debt (A6.2)', () => {
     const before = await inspect(h);
     const primitive = items(before.report, 'PRIMITIVE_UNCHAINED')[0]!;
     // The observed failure at 04:00:41: a decision row recorded and the obligation stayed open.
-    await expect(h.call('p2o_plan_author', {
+    await expect(h.call('p2o_goal_author', {
       entry: {
         kind: 'decision', title: 'Defer the primitive successor until a credential arrives', status: 'recorded',
         reason: 'No successor step is warranted without the human credential the run asked for',
@@ -118,11 +118,11 @@ describe('research debt (A6.2)', () => {
     await populate(h);
     const stale = 'debt-gap-untriaged-000000000000';
     // A wall must cite an id the run currently owes: a stale or mistyped one would otherwise mark arbitrary work discharged.
-    await expect(h.call('p2o_plan_author', {
+    await expect(h.call('p2o_goal_author', {
       entry: { kind: 'todo', title: 'Wall for a stale debt id', status: 'deferred', reason: 'Ruled-out successor recorded for the fixture', debtRefs: [stale] },
     })).rejects.toThrow(/Unknown research debt/);
     // Only a todo holds a wall: the goal/decision link fields stay chain-only.
-    await expect(h.call('p2o_plan_author', {
+    await expect(h.call('p2o_goal_author', {
       entry: { kind: 'goal', title: 'A goal that pretends to wall work', status: 'proposed', reason: 'Fixture goal for the debtRefs refusal',
         criteria: ['bounded'], proof: { kind: 'case', ref: 'case-fixture' }, debtRefs: [stale] },
     })).rejects.toThrow(/Only a todo discharges research debt/);

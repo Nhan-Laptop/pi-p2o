@@ -23,10 +23,10 @@ export const LAB_TOOLS = ['p2o_lab'];
  * owner broker (`extensions/p2o/index.ts`), so this loadout does not enforce it by itself.
  */
 export const PLANNER_TOOLS = [
-  'p2o_task_author', 'p2o_task_dispatch', 'p2o_task_review', 'p2o_task_settle',
-  'p2o_plan_author',
+  'p2o_task_author', 'p2o_task_dispatch', 'p2o_task_review',
+  'p2o_goal_author',
   'p2o_case_author', 'p2o_case_rate', 'p2o_case_retest',
-  'p2o_coverage_plan', 'p2o_coverage_suggest',
+  'p2o_coverage_plan', 'p2o_wstg_suggest',
   'p2o_board', 'p2o_ledger', 'p2o_state', 'p2o_artifact', 'p2o_graph',
   'p2o_skill_list', 'p2o_skill_read', 'p2o_secret', 'p2o_research',
   'p2o_workers', 'p2o_loop', 'p2o_finish',

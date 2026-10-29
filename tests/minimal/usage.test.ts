@@ -68,7 +68,7 @@ describe('usage in a running assessment', () => {
     expect(h.screen()).toContain('planner: 2 message(s): in 1,005 · out 205'); expect(h.screen()).toContain('1 message(s) with no usage reported'); expect(h.screen()).toContain('cost as priced by Pi 0.0200');
     for (let n = 0; n < 50; n++) await h.assistant({ usage: usage({ input: 9e11, output: 9e11, totalTokens: 1.8e12 }) }); // absurd spend is displayed, never acted on
     expect((await h.call('p2o_delegate', { focus: 'still-allowed', task: 'Usage never gates delegation or commands', role: 'discovery' })).details.workerId).toBeTruthy();
-    expect((await h.call('p2o_loop', { action: 'status' })).details.paused).toBeUndefined();
+    expect((await h.call('p2o_workers', {})).details.engine.paused).toBeUndefined();
   }, ''));
 
   it('collects worker usage over the authenticated broker, attributes it by registration, spends no command budget and is allowed for every role', async () => fixture(async h => {

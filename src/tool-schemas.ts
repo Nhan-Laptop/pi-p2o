@@ -79,19 +79,19 @@ export const candidateParameters = Type.Object({
       proof: choices(CANDIDATE_PROOFS),
       evidenceRefs: Type.Array(Type.String({ maxLength: 80 }), { description: 'Owner-generated Evidence ID UUIDs from tool results, not invented labels or probe cell names' }),
       // A1: "no control ran" is the empty list, so a caller that ran none omits the field and the host records [].
-      negativeControls: Type.Optional(Type.Array(Type.String({ maxLength: 80 }), { description: 'Evidence ID UUIDs of commands containing the negative-control observations; describe individual control cells in limitations, not in this ID array. Omit when no control ran and the host records []' })),
-      policyBasis: choices(POLICY_BASES, 'Intended-policy provenance: boundary_invariant only when the effect itself establishes the boundary it breaks; a sibling route, placeholder credential or CVE lead alone is inferred (see your evidence rules)'),
-      expectedPolicy: Type.String({ minLength: 1, maxLength: 4000, description: 'State the violated intended policy/invariant and its provenance; a sibling route difference alone is only inferred. The host stores at most 1000 characters and names the cut' }),
+      negativeControls: Type.Optional(Type.Array(Type.String({ maxLength: 80 }), { description: 'Evidence IDs of commands containing the negative-control observations; describe control cells in limitations. Omit when no control ran (the host records [])' })),
+      policyBasis: choices(POLICY_BASES, 'boundary_invariant only when the effect itself establishes the boundary it breaks; a sibling route, placeholder credential or CVE lead alone is inferred'),
+      expectedPolicy: Type.String({ minLength: 1, maxLength: 4000, description: 'The violated intended policy/invariant and its provenance; a sibling route difference alone is only inferred (the host stores 1000 chars and names the cut)' }),
       limitations: Type.String({ minLength: 1, maxLength: 6000 }), control: Type.Optional(Type.String({ maxLength: 4000, description: 'Required when closure=ruled_out: the specific control observation and where it ran' })),
       resolves: Type.Optional(Type.Array(Type.String({ maxLength: 80 }))),
-      requirement: Type.Optional(Type.String({ minLength: 10, maxLength: 1000, description: 'For blocked execution, describe the wall that actually stopped it: a tool or host that refused, a permission the host enforces, or an approach you exhausted. A missing credential, account or browser is not a wall — provision it and retry. Not a capability ID' })), supersedes: Type.Optional(Type.String({ maxLength: 80, description: 'Revision only: the latest record ID for this candidate; a revision cannot change surface or risk, so use a new candidate ID for that' })), independentEvidenceRef: Type.Optional(Type.String({ maxLength: 80, description: 'A receipt a different worker authored, whose own demonstrated claim reproduces this surface/risk; your own receipt cannot make a claim independent' })),
+      requirement: Type.Optional(Type.String({ minLength: 10, maxLength: 1000, description: 'For blocked execution, describe the wall that actually stopped it: a tool or host that refused, a permission the host enforces, or an approach you exhausted. A missing credential, account or browser is not a wall — provision it and retry. Not a capability ID' })), supersedes: Type.Optional(Type.String({ maxLength: 80, description: 'Revision only: the latest record ID for this candidate; a revision cannot change surface or risk, so use a new candidate ID for that' })), independentEvidenceRef: Type.Optional(Type.String({ maxLength: 80, description: 'A receipt another worker authored whose own demonstrated claim reproduces this surface/risk; your own receipt is not independent' })),
       gained: Type.Optional(Type.Array(capabilitySchema, { description: 'Typed capabilities this primitive hands to a later step, so the lead can join them to another step\'s needs' })),
       needs: Type.Optional(Type.Array(capabilitySchema, { description: 'Typed capabilities this primitive needs from an earlier step or the environment; omit when nothing outside the surface must hold' })),
       note: Type.Optional(Type.String({ maxLength: 2000, description: 'Free text caveat about the capability pair; displayed, never matched' })),
       payloadRef: Type.Optional(Type.String({ maxLength: 80, description: 'Payload artifact ID from p2o_lab for the request, script or command that actually ran; requires tested execution, and the derived replayable flag follows it' })),
       leadRefs: Type.Optional(Type.Array(Type.String({ maxLength: 80 }), { description: 'P16.4: CVE lead record IDs from p2o_research action=cve. A lead can shape a hypothesis but never settle it: policyBasis must be inferred and closure open_proof_gap' })),
       environmentRef: Type.Optional(Type.String({ maxLength: 80, description: 'Environment artifact ID from p2o_lab for the recipe it was demonstrated in; requires tested execution, and replayable needs it as well as payloadRef' })),
-    });
+    }, { additionalProperties: false });
 
 /** planning_update.md P14.2 + P14.3: one tool for the two replayable artifacts — the payload and the environment. */
 export const LAB_ACTIONS = ['payload', 'env', 'verify', 'destroy'] as const;
@@ -110,7 +110,6 @@ export const labParameters = Type.Object({
   body: Type.Optional(Type.String({ minLength: 1, maxLength: PAYLOAD_BYTES, description: 'The exact bytes to keep: runnable as-is, stored verbatim and deliberately not redacted' })),
   id: Type.Optional(Type.String({ maxLength: 80, description: 'Payload or environment ID; stored bytes and the recipe hash are checked before use' })),
   materialize: Type.Optional(Type.Boolean({ description: 'action=payload with id: write the stored bytes into your own sandbox scratch at payload/<id> and return its path, sha256 and byte count instead of the body' })),
-  compose: Type.Optional(Type.Boolean({ description: 'action=env only: deriving the recipe from docker-compose.yml|compose.yaml under /target is a host-internal path no model role can reach (the planner holds no lab tool and a worker is refused), so author setup/services/seed explicitly; refused keys are named' })),
   setup: Type.Optional(Type.Array(Type.String({ minLength: 1, maxLength: 4096 }), { description: 'Commands run in order before services; each must exit 0' })),
   services: Type.Optional(Type.Array(labServiceSchema)),
   seed: Type.Optional(Type.Array(Type.String({ minLength: 1, maxLength: 4096 }), { description: 'Commands run after services are healthy; each must exit 0' })),
@@ -136,7 +135,7 @@ export const researchParameters = Type.Object({
   reason: Type.Optional(Type.String({ minLength: 10, maxLength: 1000, description: 'action=triage: why the lead is tasked or ruled out (required for ruled_out)' })),
 }, { additionalProperties: false });
 
-export const captureParameters = Type.Object({path:Type.String({minLength:1,maxLength:2048}),offset:Type.Optional(Type.Integer({minimum:0})),timeout:Type.Optional(Type.Integer({minimum:0})),maxKiB:Type.Optional(Type.Integer({minimum:1,maximum:8192,description:"Cap this one capture at N KiB of stdout+stderr prefix; never above the run's capture setting (default 1 MiB)"}))});
+export const captureParameters = Type.Object({path:Type.String({minLength:1,maxLength:2048}),offset:Type.Optional(Type.Integer({minimum:0})),timeout:Type.Optional(Type.Integer({minimum:0})),maxKiB:Type.Optional(Type.Integer({minimum:1,maximum:8192,description:"Cap this one capture at N KiB of stdout+stderr prefix; never above the run's capture setting (default 1 MiB)"}))},{additionalProperties:false});
 
 /**
  * A7.3 (planning_update.md P7.4): the shell/network tools gain an interactive form. `session` names a run-owned session
@@ -149,7 +148,7 @@ export const execParameters = Type.Object({
   session: Type.Optional(Type.String({ minLength: 1, maxLength: 64, pattern: '^[a-z0-9][a-z0-9-]{0,63}$', description: 'Run in this open session instead of the run shell' })),
   send: Type.Optional(Type.String({ maxLength: 16 * 1024, description: 'Write these exact bytes to the session PTY (include newline yourself); returns output until it goes quiet or the timeout' })),
   read: Type.Optional(Type.Boolean({ description: 'Return PTY output since the host cursor for the session' })),
-});
+}, { additionalProperties: false });
 
 /** A7.2/A7.8: run-owned persistent sessions. `listen` and the foothold are refused until `--lab-network` exists (P7.7/A17.8). */
 export const sessionParameters = Type.Object({
@@ -160,7 +159,7 @@ export const sessionParameters = Type.Object({
   path: Type.Optional(Type.String({ minLength: 1, maxLength: 2048, description: 'action=upload/download: relative path inside the session scratch' })),
   content: Type.Optional(Type.String({ maxLength: 48 * 1024, description: 'action=upload: UTF-8 bytes to materialize (1..48 KiB)' })),
   port: Type.Optional(Type.Integer({ minimum: 1, maximum: 65535 })),
-  protocol: Type.Optional(choices(['tcp','udp'] as const)),
+  protocol: Type.Optional(choices(['tcp'] as const, 'The in-sandbox catcher is TCP only')),
   text: Type.Optional(Type.String({ minLength: 1, maxLength: FOOTHOLD_TRANSPORT_COMMAND_BYTES })),
   maxBytes: Type.Optional(Type.Integer({ minimum: 1, maximum: FOOTHOLD_PREVIEW_BYTES })),
   timeout: Type.Optional(Type.Integer({ minimum: 0, description: 'action=exec: optional seconds; 0 or omitted means no task timeout' })),
@@ -178,12 +177,12 @@ export const httpParameters = Type.Object({
       body: Type.Optional(Type.String({ maxLength: 48 * 1024 })),
       followRedirects: Type.Optional(Type.Boolean()),
       maxRedirects: Type.Optional(Type.Integer({ minimum: 0, maximum: 20 })),
-      session: Type.Optional(Type.String({ minLength: 1, maxLength: 40, pattern: '^[A-Za-z0-9][A-Za-z0-9._-]{0,39}$' })),
+      cookieJar: Type.Optional(Type.String({ minLength: 1, maxLength: 40, pattern: '^[A-Za-z0-9][A-Za-z0-9._-]{0,39}$', description: 'Principal-local cookie jar this request belongs to (default "default"; "none" disables persistence). Not a container session; p2o_session and p2o_shell name those.' })),
       principal: Type.Optional(Type.String({ minLength: 1, maxLength: 64, pattern: '^[a-z0-9][a-z0-9-]{0,63}$', description: 'A7.4: declared principal whose cookie jar this request belongs to (default "default"); a name, never a credential value' })),
       resetSession: Type.Optional(Type.Boolean()),
       timeout: Type.Optional(Type.Integer({minimum:0,description:'Optional per-hop seconds; 0 or omitted disables the task timeout'})),
       connectTimeout: Type.Optional(Type.Integer({minimum:0,description:'Optional connect seconds; 0 or omitted uses underlying network/library defaults'})),
-    });
+    }, { additionalProperties: false });
 
 export const noteParameters = Type.Object({
       kind: Type.Optional(choices(['note', 'coverage', 'observation', 'open'], 'Defaults to note; use coverage for a surface × risk × outcome row')),
@@ -192,7 +191,7 @@ export const noteParameters = Type.Object({
       risk: Type.Optional(Type.String({ maxLength: 2000, description: 'Grouping label for this coverage row; not a severity, a ceiling or a limit on what may be attempted.' })),
       outcome: Type.Optional(choices(COVERAGE_OUTCOMES)),
       refs: Type.Optional(Type.Array(Type.String({ maxLength: 200 }))),
-    });
+    }, { additionalProperties: false });
 
 export const artifactParameters = Type.Object({id:Type.String({minLength:45,maxLength:45,pattern:'^artifact-[a-f0-9-]{36}$'}),offset:Type.Optional(Type.Integer({minimum:0})),length:Type.Optional(Type.Integer({minimum:1,maximum:48*1024}))});
 
@@ -214,7 +213,7 @@ export const delegateParameters = Type.Object({
 
 export const subtaskParameters = Type.Object({focus:Type.String({minLength:3,maxLength:60}),task:Type.String({minLength:1,maxLength:4000}),context:Type.Optional(Type.String({maxLength:4000})),role:Type.Optional(choices(ROLES))});
 
-export const loopParameters = Type.Object({action:choices(['status','wait','blocked','hint','constrain']),reason:Type.Optional(Type.String({minLength:1,maxLength:1000})),
+export const loopParameters = Type.Object({action:choices(['wait','blocked','hint','constrain']),reason:Type.Optional(Type.String({minLength:1,maxLength:1000})),
   /** A7.9/D23: one bounded operator instruction recorded for the next planner round; constraints narrow absolutely, hints guide. */
   text:Type.Optional(Type.String({minLength:3,maxLength:300,description:'action hint/constrain: one sentence (3..300 characters) recorded append-only and rendered into the next planner prompt'})),
   /** M7: one condition-bounded revisit. With `notBefore`, reason must be `block-decay` or `cooldown-expiry` and the wait is scheduled, not budgeted. */
@@ -243,7 +242,7 @@ export const reportParameters = Type.Object({
       holdFor: Type.Optional(Type.Object({ brief: Type.String({ minLength: 3, maxLength: 300, description: 'One sentence naming the successor step that continues this exact work' }) },
         { description: 'A7.5: keep this worker\'s ticket, pane and session alive for follow-up continuations with this brief; the count is holdContinuations' })),
       holdContinuations: Type.Optional(Type.Integer({ minimum: 0, maximum: 3, description: 'P10/WF-11: how many follow-up briefs this hold authorizes (default 1); 0 names the successor in the report but retires the ticket, pane and session' })),
-    });
+    }, { additionalProperties: false });
 
 export const finishParameters = Type.Object({
   narrative: Type.Optional(Type.String({ maxLength: 6000 })),

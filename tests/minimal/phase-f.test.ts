@@ -162,7 +162,7 @@ describe('the run tells the lead what to research, and records its refusals (M6 
     await h.call('p2o_task_author', {draft: { question: 'Which recorded surfaces does the retained fixture graph expose?', surface: '/report-fixture',
       risk: 'mapping', role: 'recon', evidenceIds: [], prerequisites: [] }});
     // P7.1: exploit mode (the default) needs a capability-proof goal before an exploitation intent is admitted.
-    await h.call('p2o_plan_author', {entry: {kind: 'goal', title: 'Reach the fixture effect under an impact goal', status: 'active',
+    await h.call('p2o_goal_author', {entry: {kind: 'goal', title: 'Reach the fixture effect under an impact goal', status: 'active',
       proof: {kind: 'capability', capability: {kind: 'file.read'}}, criteria: ['The bounded fixture step is recorded'],
       reason: 'P7.1 exploit-mode admission fixture: the impact goal the exploitation intent is settled against'}});
     const created = (await h.call('p2o_task_author', {draft: {

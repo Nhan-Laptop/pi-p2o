@@ -709,8 +709,10 @@ export class AssessmentStore {
     this.gate();
     const limit = options.limit ?? 20;
     if (!Number.isSafeInteger(limit) || limit < 1 || limit > 50) throw Error('Invalid graph query limit; use 1..50');
-    const asOfSequence = this.sequence(), cursor = options.cursor ?? asOfSequence + 1;
-    if (!Number.isSafeInteger(cursor) || cursor < 1 || cursor > asOfSequence + 1) throw Error('Invalid graph query cursor');
+    const asOfSequence = this.sequence(), requestedCursor = options.cursor;
+    // S1/B6: 0 and omitted both mean "newest first"; paging backward uses the returned nextCursor.
+    const cursor = requestedCursor === undefined || requestedCursor === 0 ? asOfSequence + 1 : requestedCursor;
+    if (!Number.isSafeInteger(cursor) || cursor < 1 || cursor > asOfSequence + 1) throw Error('Invalid graph query cursor; use 0 or a nextCursor value');
     const escape = (value: string) => value.replace(/[\\%_]/g, match => `\\${match}`);
     if (filters.keyPrefix !== undefined && !filters.kind) throw Error('query keyPrefix needs a kind: the identity index is (scope,kind,key), so a bare prefix would scan every asset');
     if ((filters.attributeKey === undefined) !== (filters.attributeValue === undefined)) throw Error('query attributeKey and attributeValue are one filter: pass both or neither');

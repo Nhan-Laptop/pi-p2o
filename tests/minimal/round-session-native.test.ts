@@ -69,7 +69,7 @@ it('real Pi opens an automatic round in a replacement session and takes a planne
     expect(Buffer.byteLength(brief.brief)).toBeLessThanOrEqual(ROUND_BRIEF_MAX_BYTES);
     // A real planner turn ran in the replacement: the scripted provider called a planner tool and got its result.
     const actions = session.filter((m: any) => m.role === 'toolResult').map((m: any) => m.toolName);
-    expect(actions).toContain('p2o_loop');
+    expect(actions).toContain('p2o_workers');
     expect(records.filter(r => r.type === 'extension_error')).toEqual([]);
     // The reloaded extension instance adopted the live campaign: a read-only status command in the replacement session reads
     // the same Engine (round count included) and spends no paid request.

@@ -65,8 +65,8 @@ describe('hold and release (inert executor, real broker)', () => {
       expect((await client.request('status')).used).toBe(usedBefore); // refused before the allowance is touched
       expect(h.sandboxes[0].commands.filter((c: any) => c.command === 'during hold')).toHaveLength(0);
       await expect(spawn(h, 'hold-b')).rejects.toThrow('TARGET_OPS_HELD');
-      expect((await h.call('p2o_loop', { action: 'status' })).details.paused).toBeUndefined(); // hold is not pause
-      expect((await h.call('p2o_loop', { action: 'status' })).details.workers ?? true).toBeTruthy();
+      expect((await h.call('p2o_workers', {})).details.engine.paused).toBeUndefined(); // hold is not pause
+      expect((await h.call('p2o_workers', {})).details.workers.length).toBeGreaterThan(0);
       const notes = (await client.request('note', { kind: 'observation', text: 'notes stay open while held' })); expect(notes.ok).toBe(true);
       await h.command('status'); expect(h.screen()).toContain('HOLD: new target commands and worker launches are refused until /p2o release — the target is fragile');
       let widget = ''; for (let i = 0; i < 100 && !widget.includes('HOLD:'); i++) { await delay(20); const factory = h.ctx.widgets.get('p2o-progress'); if (factory) widget = factory().render(120).join('\n'); }
@@ -141,7 +141,7 @@ describe('hold and release (inert executor, real broker)', () => {
     const task = (await h.call('p2o_task_author', {draft })).details;
     await h.call('p2o_task_dispatch', {ids: [task.id] }); await delay(400);
     expect((await h.call('p2o_workers')).details.workers).toHaveLength(0);
-    expect((await h.call('p2o_loop', { action: 'status' })).details.pendingIntents).toBe(1); // still accepted and queued, not invalidated
+    expect((await h.call('p2o_workers', {})).details.engine.pendingIntents).toBe(1); // still accepted and queued, not invalidated
     h.ctx.setConfirm(true); await h.command('release');
     for (let i = 0; i < 100; i++) { if ((await h.call('p2o_workers')).details.workers.length) break; await delay(10); }
     expect((await h.call('p2o_workers')).details.workers).toHaveLength(1);
@@ -157,7 +157,7 @@ describe('hold and release (inert executor, real broker)', () => {
     expect(String(refused)).toMatch(/INTENTS_QUEUED/);
     expect(String(refused)).toContain(`${task.id}@r${task.revision}`);
     // The refusal is not a drain: the accepted intent is still queued, and release admits it.
-    expect((await h.call('p2o_loop', { action: 'status' })).details.pendingIntents).toBe(1);
+    expect((await h.call('p2o_workers', {})).details.engine.pendingIntents).toBe(1);
     h.ctx.setConfirm(true); await h.command('release');
     for (let i = 0; i < 100; i++) { if ((await h.call('p2o_workers')).details.workers.length) break; await delay(10); }
     expect((await h.call('p2o_workers')).details.workers).toHaveLength(1);

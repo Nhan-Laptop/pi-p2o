@@ -35,11 +35,11 @@ const batch = object({
     status: Type.Optional(choices(['active','withdrawn'])), supersedes: supersedes() }))),
   anchors: Type.Optional(Type.Array(object({ assetId: id(), assetRevision: revision(), anchor }))),
 });
-export const GRAPH_ACTIONS = ['record','view','page','export','chain','query','summary','ingest','path'] as const;
-/** P13e: exhaustive per action; `page` and `export` share a shape but are named separately. */
+export const GRAPH_ACTIONS = ['record','view','export','chain','query','summary','ingest','path'] as const;
+/** P13e: exhaustive per action. S1/B2 removed `page`: the append-log read is internal (report/UI), never an inventory verb. */
 export const GRAPH_ACTION_PARAMETERS: Readonly<Record<typeof GRAPH_ACTIONS[number], readonly string[]>> = {
   record: ['action','batch','requestId'], view: ['action','id','cursor','limit','asOfSequence'], chain: ['action','limit','plan','assetRefs','requestId'],
-  page: ['action','cursor','limit','asOfSequence'], export: ['action','cursor','limit','asOfSequence'],
+  export: ['action','cursor','limit','asOfSequence'],
   query: ['action','kind','keyPrefix','labelContains','attributeKey','attributeValue','assertionKind','statementContains','cursor','limit'],
   summary: ['action','cursor','limit'],
   // R2.3: `id` is the retained artifact ID; reusing the root id keeps the declaration budget flat (no second identifier field).

@@ -29,14 +29,17 @@ describe('capped projections state shown against total (P11)', () => {
       expect(Number.isInteger(view.counts[kind]), `graph view counts.${kind}`).toBe(true);
       expect(view.shown[kind], `graph view shown.${kind}`).toBeLessThanOrEqual(view.counts[kind]);
     }
-    pair(details(await h.call('p2o_graph', { action: 'page', limit: 1 })), 'p2o_graph page');
+    // A query row page states per-kind totals against per-kind shown plus its own omission count; it has no scalar `total`.
+    const query: any = details(await h.call('p2o_graph', { action: 'query', limit: 1 }));
+    expect(query.shown.assets + query.shown.assertions).toBeLessThanOrEqual(query.counts.assets + query.counts.assertions);
+    expect(Number.isInteger(query.omitted), 'p2o_graph query omitted').toBe(true);
     const chain: any = details(await h.call('p2o_graph', { action: 'chain', limit: 1 }));
     for (const kind of ['primitives', 'ready', 'unmet', 'frontier'] as const) {
       expect(chain.shown[kind], `chain shown.${kind}`).toBeLessThanOrEqual(chain.counts[kind]);
       expect(Number.isInteger(chain.counts[kind]), `chain counts.${kind}`).toBe(true);
     }
     // The planning suggestion page used to name its denominator `matched`, which made it unreadable as a page.
-    pair(details(await h.call('p2o_coverage_suggest', {features: ['login'] })), 'p2o_coverage_suggest');
+    pair(details(await h.call('p2o_wstg_suggest', {features: ['login'] })), 'p2o_wstg_suggest');
     // p2o_workers carries two lists (recent changes, the task tail) plus a separate reconciliation omission count.
     const state: any = details(await h.call('p2o_workers', { action: 'list' }));
     pair(state.navigation.changes, 'p2o_workers changes');
