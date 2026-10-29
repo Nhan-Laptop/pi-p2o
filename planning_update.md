@@ -394,11 +394,11 @@ Every tranche:
 
 | Tranche | Date | Commit | Commands and results | Not done / next |
 |---|---|---|---|---|
-| A1 | — | — | — | — |
-| A2 | — | — | — | — |
-| A3 | — | — | — | — |
-| A4 | — | — | — | — |
-| A5 | — | — | — | — |
+| A1 | 2026-10-29 | `e91e449` | `npx tsc --noEmit` clean; full suite 159 passed / 5 skipped files (164), 1,412 passed / 13 skipped tests (1,425), 0 fail; `npm run build` and `check:build` green; surface audit 35 registered / 35 model-visible / 0 hidden / 10 board verbs, 0 contradictions, planner 44,570/45,500; `git diff --check` clean; GitNexus `detect_changes --scope all` reach critical on the `executeWithReceipt` hub (265 changed symbols, 266 affected) reviewed as behavior-preserving; `replay-capture.test.ts` 9/9 | A2 unblocked (same commit) |
+| A2 | 2026-10-29 | `e91e449` | A2 landed in the same phase commit and passed the same gate as A1; `replay-capture.test.ts :: accepts a reproduction with one field…` covers the accepted shape plus four refusals, the legacy no-cross-match fix and `independentReceiptCurrent` | A3 in the same commit |
+| A3 | 2026-10-29 | `e91e449` | A3 in the same phase commit and gate; `derived-containment.test.ts` 4/4 green (derived hops, no anchor/no invented host, asserted wins and a revision pin makes the walk stale, export marks DERIVED and counts without evidence) | A4 in the same commit |
+| A4 | 2026-10-29 | `e91e449` | A4 in the same phase commit and gate; `negative-control.test.ts` 4/4 green (warning vs quiet, draft within 1500/1000/1000, no-unit wording, report line) | A5 in the same commit |
+| A5 | 2026-10-29 | `e91e449` | A5 in the same phase commit and gate; `replay-capture.test.ts :: prints the host replay reference…` green; `ACCEPTANCE_MATRIX` (F-P21-A1..A6), USAGE and ARCHITECTURE updated in the same commit; prompt and declaration ceilings untouched because no prompt text moved | Package B next |
 | B1 | — | — | — | — |
 | B2 | — | — | — | — |
 | B3 | — | — | — | — |
