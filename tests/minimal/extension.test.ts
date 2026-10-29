@@ -262,12 +262,15 @@ describe('owner role', () => {
   it('accepts only immutable operator-selected images and forwards the exact binding to workers', async () => {
     h.pi.flags['p2o-image'] = 'sha256:' + 'a'.repeat(64);
     await h.start();
-    await h.call('p2o_delegate', { focus: 'image-binding', task: 'read source', role: 'general', model: 'openai-codex-account-3/gpt-6.1-sol', thinking: 'xhigh' });
+    await h.call('p2o_delegate', { focus: 'image-binding', task: 'read source', role: 'general', model: 'openai-codex-account-3/gpt-6.1-sol' });
     const args = h.herdr.calls.find(call => call.op === 'start')!.args!;
     expect(args[args.indexOf('--p2o-image') + 1]).toBe(h.pi.flags['p2o-image']);
     expect(args[args.indexOf('--model') + 1]).toBe('gpt-6.1-sol');
     expect(args[args.indexOf('--provider') + 1]).toBe('openai-codex-account-3');
-    expect(args[args.indexOf('--thinking') + 1]).toBe('xhigh');
+    // P19/B3: a spawn cannot override the thinking level, so the removed value cannot leak; the launched level is the
+    // role/parent-session configuration (here the fixture session's `off`).
+    expect(args).not.toContain('xhigh');
+    expect(args[args.indexOf('--thinking') + 1]).toBe('off');
     const ticket = JSON.parse(await readFile(join(await h.runDir(), (await h.tickets())[0]), 'utf8'));
     expect(ticket.image).toBe(h.pi.flags['p2o-image']);
     await h.command('stop');

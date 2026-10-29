@@ -394,6 +394,12 @@ describe('A7.5 successor dispatch on a held ticket, pane and session', () => {
       await delay(25);
     }
     expect(refused).toBe(true);
+    // P19/F: the refused dispatch left a ledger fact naming the task and the refusal code, so the stuck `proposed` row is
+    // explainable from the knowledge store instead of only from console history.
+    const refusedRows = (await h.records()).filter((record: any) => record.kind === 'lifecycle' && String(record.text).includes(`dispatch refused for ${another.id}`));
+    expect(refusedRows).toHaveLength(1);
+    expect(refusedRows[0].text).toContain('WORKER_NOT_HELD');
+    expect(refusedRows[0].data?.engine).toMatchObject({ event: 'intent-blocked', taskId: another.id, code: 'WORKER_NOT_HELD' });
     // The refused intent spawned nothing and reserved nothing: the successor task is still proposed.
     expect((await h.call('p2o_board', { board: 'tasks', id: another.id })).details.status).toBe('proposed');
     expect(h.herdr.calls.filter(call => call.op === 'split')).toHaveLength(splits);
@@ -450,6 +456,49 @@ describe('A7.5 validation economy', () => {
         expect(created).toHaveLength(1);
         expect(String(created[0].text)).toContain(validations[0].id);
       } finally { store.close(); }
+    });
+  }, 20000);
+
+  it('gives a host-created validation the method its dispatch resolves', async () => {
+    await reportFixture(async h => {
+      // P19/A: the host declared an empty method while dispatch resolved the needs ladder from the copied work, so the replay
+      // was refused at spawn with TASK_METHOD_STALE and stayed proposed. The task must declare exactly the skills dispatch resolves.
+      await h.command('--target ./source --max-depth 1'); await seedImpactGoal(h);
+      const asset = (await h.call('p2o_graph_record', { batch: { assets: [{ asset: { kind: 'endpoint', key: 'GET /validation-method' } }] } })).details.acks[0];
+      const receipt = (await h.call('p2o_shell', { command: 'printf validation-method-receipt' })).details.evidenceId;
+      const discovery = (await h.call('p2o_task_author', { entry: {
+        question: 'Does the fixture catalog route stay closed without the recorded session?',
+        surface: '/validation-method', risk: 'authorization', role: 'general',
+        roleReason: 'Bounded discovery whose claim needs the session ladder',
+        expectedTrue: 'The claim is recorded with its session requirement', expectedFalse: 'The claim records the contrasting control',
+        stopCondition: 'Stop after one bounded observation', evidenceIds: [], prerequisites: [], skills: [], methodReason: 'One inert observation',
+        work: { assetRefs: [{ id: asset.entityId, revision: 1 }], questionKey: 'question:validation-method', actorContext: 'actor:fixture', tenantContext: 'tenant:fixture', methodFamily: 'offline-observation', purpose: 'investigation', needs: [{ kind: 'cred.session', subject: 'alice' }] },
+        decision: { disposition: 'new', reason: 'First bounded discovery on the fixture surface' },
+        outputContract: { kind: 'investigation', required: ['evidence'], partialAllowed: true, artifactPolicy: 'ids-only' },
+      } })).details;
+      const running = (await h.call('p2o_task_start', { id: discovery.id })).details;
+      const claim = await seedClaim(h, { candidate: 'validation-method', surface: '/validation-method', risk: 'authorization', closure: 'confirmed', execution: 'tested', proof: 'offline_reproduction', evidenceRefs: [receipt], negativeControls: [], policyBasis: 'boundary_invariant', expectedPolicy: 'Declared fixture boundary', limitations: 'One inert fixture step', gained: [{ kind: 'cred.session', subject: 'alice' }] }, discovery.id);
+      await h.call('p2o_task_review', { id: discovery.id, revision: running.revision, reason: 'Owner reviewed the demonstrated fixture claim', evidenceIds: [receipt] });
+      const validations = (await h.call('p2o_board', { board: 'tasks' })).details.tasks.filter((task: any) => task.role === 'validation');
+      expect(validations).toHaveLength(1);
+      const validation = (await h.call('p2o_board', { board: 'tasks', id: validations[0].id })).details;
+      expect(validation).toMatchObject({ role: 'validation', validationOf: discovery.id });
+      expect(validation.work?.claimRefs).toEqual([claim.id]);
+      expect(validation.work?.needs).toEqual([{ kind: 'cred.session', subject: 'alice' }]);
+      // The declared method is the ladder the dispatcher resolves from the same role, purpose and needs. An empty declaration made
+      // spawnWorkerLocked refuse the replay, which is the defect this assertion pins.
+      expect(validation.method.skills.map((skill: any) => skill.id)).toEqual(['exploit-design', 'credential-and-pivot']);
+      expect(validation.method.skills.every((skill: any) => typeof skill.sha256 === 'string' && skill.sha256.length === 64)).toBe(true);
+      // The host enqueues the replay itself; it has to reach the executor instead of dying as an intent-blocked event.
+      let dispatched: any;
+      for (let attempt = 0; attempt < 200; attempt += 1) {
+        dispatched = (await h.call('p2o_board', { board: 'tasks', id: validation.id })).details;
+        if (dispatched.status !== 'proposed') break;
+        await delay(25);
+      }
+      expect(dispatched.status).not.toBe('proposed');
+      expect(String(dispatched.assignee)).toMatch(/^p2o-validation-/);
+      expect(JSON.stringify((await h.call('p2o_workers', {})).details.engine.events)).not.toContain('TASK_METHOD_STALE');
     });
   }, 20000);
 });

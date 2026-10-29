@@ -188,6 +188,12 @@ next, lần hai được chấp nhận, và một round kết thúc mà không c
 - Stop/finish revoke, huỷ thao tác, đóng pane rồi xác minh container đã gỡ. Hard-kill Pi hoặc mất Docker có thể để lại
   container/pane; không có gì tự thu hồi — chạy `/p2o stop` lại, hoặc `docker ps` để kiểm tra.
 - Không start assessment thứ hai trên cùng lúc; stop run đang chạy trước khi `/reload` (ticket bind bytes extension).
+- Pi khởi động lại sau khi crash: nếu workspace còn durable-local run, `session_start` chỉ hiện một hint read-only nêu
+  `runId` và đúng lệnh `/p2o --resume <run-id>`. Chỉ lệnh p2o này mở lại knowledge dưới cùng runId; `pi --resume` chỉ
+  phục hồi transcript, và không ticket, worker hay authority nào trở lại — việc dở phải được dispatch lại.
+- Task kẹt `proposed` sau một dispatch bị từ chối: ledger có lifecycle fact `dispatch refused for <taskId>: <CODE>: …`
+  (`data.engine = {event:'intent-blocked', taskId, code, reason}`) cùng mã lỗi mà planner thấy trong prompt; đây là wall
+  của host, không phải task bị mất — sửa nguyên nhân (model/role setting, executor, prerequisite) rồi dispatch lại.
 - Không có worker backend thì dispatch bị từ chối `DELEGATION_UNAVAILABLE`; pane provisioning lỗi thì task chuyển `blocked`
   kèm prerequisite thiếu.
 - `PI_OFFLINE=1` làm `pi update` không làm gì nhưng vẫn in "Updated": unset biến đó cho lần chạy đó rồi kiểm tra revision.

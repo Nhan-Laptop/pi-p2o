@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { appendRecord, appendRecords, appendGeneratedRecords, readLedger, readWorkHistory, readWorkOverlap, type AssessmentRecord, type LedgerIndex, type RecordAck } from './records.js';
 import { isOpenClaim } from './claims.js';
-import { isRole, THINKING_LEVELS, type Role } from './roles.js';
+import { isRole, type Role } from './roles.js';
 import { purposeFromRole } from './duties.js';
 import { prepareReport } from './report.js';
 import type { WorkerReport } from './broker.js';
@@ -22,9 +22,11 @@ export interface TaskDraft {
   // Omit revision to wait; reserve pins the accepted revision.
   prerequisites: Array<{ taskId: string; revision?: number }>; validationOf?: string; retestOf?:string; parentTaskId?: string;
   method: TaskMethod; work?:WorkSpec; decision?:WorkDecision; outputContract?:TaskOutputContract;
-  /** P10/WF-02/03 (Q28): optional per-task worker model/thinking; the host validates it against the configured set at admission
-   *  and dispatch, and the resolved value is recorded on the ticket so the worker prompt and review see the same runtime. */
-  runtime?: { model?: string; thinking?: string };
+  /** P10/WF-02/03 (Q28), P19/B3: optional per-task worker model; the host validates it against the configured set at admission
+   *  and dispatch, and the resolved value is recorded on the ticket so the worker prompt and review see the same model. A task
+   *  cannot name a thinking level: that axis stays on the configured role so a level the selected model does not support cannot
+   *  be requested per task. */
+  runtime?: { model?: string };
   unknowns?: string[]; missingPrerequisites?: string[]; expectedOutput?: string;
 }
 /** The one declaration of the task vocabulary (P13c): the loader, the situation line and every gate read this array. */
@@ -137,9 +139,8 @@ function validate(input: TaskDraft) {
   // because only the extension holds the operator settings and a refusal must name the configured set.
   if (input.runtime !== undefined) {
     const runtime = input.runtime as unknown as Record<string, unknown>;
-    if (!runtime || typeof runtime !== 'object' || Array.isArray(runtime) || Object.keys(runtime).some(key => !['model','thinking'].includes(key))) throw new Error('Invalid task runtime: only runtime.model and runtime.thinking are accepted');
+    if (!runtime || typeof runtime !== 'object' || Array.isArray(runtime) || Object.keys(runtime).some(key => key !== 'model')) throw new Error('Invalid task runtime: only runtime.model is accepted');
     if (runtime.model !== undefined && (typeof runtime.model !== 'string' || runtime.model.trim().length < 1 || runtime.model.length > 200 || TEXT_CONTROL.test(runtime.model))) throw new Error('Invalid task runtime model');
-    if (runtime.thinking !== undefined && (typeof runtime.thinking !== 'string' || !(THINKING_LEVELS as readonly string[]).includes(runtime.thinking))) throw new Error('Invalid task runtime thinking level');
   }
   if (!input.method || typeof input.method.reason !== 'string' || !Array.isArray(input.method.skills) || input.method.skills.some(s => !s || typeof s.id !== 'string' || s.id.length > 64 || !/^[a-z0-9-]+$/.test(s.id) || !/^[a-f0-9]{64}$/.test(s.sha256))) throw new Error('Invalid task method: draft.skills must name catalog skills (the host stamps their sha256) and draft.methodReason must be a string');
   // P2.3 (measured rerun 2026-10-26): the dominant residual refusal was an omitted `draft.methodReason` for a non-recon

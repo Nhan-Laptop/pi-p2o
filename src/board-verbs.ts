@@ -3,7 +3,6 @@ import { choices } from './schema-kit.js';
 import { CASE_REVIEW_STATUSES } from './case-types.js';
 import { CASE_RETEST_VERDICTS } from './retest.js';
 import { PLAN_KINDS } from './planning.js';
-import { THINKING_LEVELS } from './roles.js';
 import { taskDraftSchema } from './tool-schemas.js';
 import { caseEntrySchema, coveragePlanSchema, findingSchema } from './case-tool.js';
 import { planEntrySchema } from './work-tool.js';
@@ -58,10 +57,10 @@ export const taskDispatchParameters = Type.Object({
   ids: Type.Optional(Type.Array(id(), { minItems: 1, maxItems: 25 })), id: Type.Optional(id()), priority: Type.Optional(Type.Integer({ minimum: 0, maximum: 100 })),
   /** A7.5/D19: dispatch the successor onto a held worker's ticket, pane and session instead of paying for a new one. */
   workerId: Type.Optional(Type.String({ minLength: 3, maxLength: 64, description: 'A held worker to continue with this task: same ticket, pane and session; the task must cite that worker\'s own demonstrated claim in work.claimRefs' })),
-  // P10/WF-02/03 (Q28): one-dispatch runtime override on top of the task draft's runtime. The host validates both against the
-  // configured model set and thinking levels; a held ticket keeps the runtime it was started with.
-  model: Type.Optional(Type.String({ maxLength: 200, description: 'Worker model for this dispatch; must be one of the configured role models (overrides the task draft runtime for this dispatch)' })),
-  thinking: Type.Optional(choices(THINKING_LEVELS)),
+  // P10/WF-02/03 (Q28), P19/B3: one-dispatch model override on top of the task draft's model. The host validates it against the
+  // configured model set; a held ticket keeps the model it was started with. The thinking level is role configuration, not a
+  // per-dispatch choice.
+  model: Type.Optional(Type.String({ maxLength: 200, description: 'Worker model for this dispatch; must be one of the configured role models (overrides the task draft model for this dispatch)' })),
 }, { additionalProperties: false });
 /** S1/B1: review and settle are one decision verb; omitting `outcome` reviews, the other three settle the reviewed task. */
 export const TASK_REVIEW_OUTCOMES = ['reviewed', 'closed', 'blocked', 'cancelled'] as const;

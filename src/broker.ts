@@ -74,7 +74,7 @@ export interface WorkerRegistration {
   effectiveRuntime?: { model?: string; thinking?: string; verified: boolean };
 }
 
-export interface DelegateInput { focus: string; task: string; context?: string; role?: string; skills?: string[]; model?: string; workflow?: string; thinking?: string; taskId?: string; work?: Record<string, unknown>; decision?: Record<string, unknown>; outputContract?: Record<string, unknown>;
+export interface DelegateInput { focus: string; task: string; context?: string; role?: string; skills?: string[]; model?: string; workflow?: string; taskId?: string; work?: Record<string, unknown>; decision?: Record<string, unknown>; outputContract?: Record<string, unknown>;
   /** A7.5/D19: dispatch this successor onto the named held worker's ticket, pane and session instead of spawning a new worker. */
   continueWorkerId?: string }
 export interface DelegateResult { workerId: string; name: string; paneId: string; role: string; model?: string; depth: number }
@@ -568,7 +568,7 @@ export class Broker {
           const worker = await this.deps.delegate({
             focus, task, context: text(request?.context, 4000), role: text(request?.role, 32),
             skills: stringList(request?.skills, 3, 64).filter(skill => /^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(skill)),
-            model: text(request?.model, 200), workflow: text(request?.workflow, 64), thinking: text(request?.thinking, 16), taskId: text(request?.taskId,80),
+            model: text(request?.model, 200), workflow: text(request?.workflow, 64), taskId: text(request?.taskId,80),
           }, registration);
           return { ok: true, worker };
         } catch (error) { return { ok: false, error: errText(error) }; }

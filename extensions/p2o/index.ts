@@ -815,9 +815,14 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
       const ticket = await readTicket(ticketPathValue, { image: selectedImage(), extensionPath, extensionSha: identity.sha256, now: now() });
       run = { role: 'worker', ticket, ctx, phase: 'active', client: new BrokerClient(ticket.socket, ticket.token, { requestMs: 120_000 }), toolsBefore: pi.getActiveTools() };
       pi.setActiveTools(workerTools(ticket.role));
-      const runtime = await run.client.request<{ verified: boolean }>('runtime', { model: sessionModel(ctx), thinking: ctx.thinkingLevel });
+      const model = sessionModel(ctx), thinking = ctx.thinkingLevel;
+      const runtime = await run.client.request<{ verified: boolean }>('runtime', { model, thinking });
       if (!runtime.verified && ticket.requestedRuntime) {
-        await run.client.request('report', { report: { summary: 'Runtime profile mismatch; investigation not started.', blocked: 'Requested model/thinking did not match effective runtime', confidence: 'low', outcome: 'prerequisite-blocked' } });
+        // P19/B3: the blocked report carries both sides, so a mismatch caused by role/settings configuration (the only remaining
+        // source of a thinking level) says which values differed instead of only that one did.
+        const requested = `model ${ticket.requestedRuntime.model ?? 'inherit'}, thinking ${ticket.requestedRuntime.thinking ?? 'inherit'}`;
+        const effective = `model ${model ?? 'unknown'}, thinking ${thinking ?? 'unknown'}`;
+        await run.client.request('report', { report: { summary: `Runtime profile mismatch; investigation not started. Requested ${requested}; the worker started with ${effective}.`, blocked: 'Requested model/thinking did not match effective runtime', confidence: 'low', outcome: 'prerequisite-blocked' } });
         run.phase = 'finished';
         ctx.ui.notify('Worker profile mismatch; blocked report delivered without investigation.', 'error');
         return true;
@@ -934,9 +939,10 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
     const purpose = assigned?.work?.purpose ?? workPurpose(input.work);
     // WF-04: keep the requested list so a silent MAX_SKILLS slice becomes a recorded fact instead of a mystery.
     const requestedSkills = assigned ? assigned.method.skills.map(s => s.id) : input.skills ?? [];
-    // P10/WF-02/03 (Q28): an explicit dispatch runtime wins; otherwise the owner-authored task carries the runtime it was
+    // P10/WF-02/03 (Q28): an explicit dispatch model wins; otherwise the owner-authored task carries the model it was
     // reviewed with. Both are validated against the configured set when the task/dispatch is admitted, so this only resolves.
-    const resolved = resolveRole({ role: assigned?.role ?? input.role, model: input.model ?? assigned?.runtime?.model, thinking: input.thinking ?? assigned?.runtime?.thinking, skills: requestedSkills, purpose, context: { kind: current.target.kind, needs: workNeeds(assigned?.work ?? input.work) }, settings: current.settings, parentModel: sessionModel(current.ctx), parentThinking: current.ctx.thinkingLevel });
+    // P19/B3: the thinking level is never per-task or per-dispatch; resolveRole takes it from the role configuration.
+    const resolved = resolveRole({ role: assigned?.role ?? input.role, model: input.model ?? assigned?.runtime?.model, skills: requestedSkills, purpose, context: { kind: current.target.kind, needs: workNeeds(assigned?.work ?? input.work) }, settings: current.settings, parentModel: sessionModel(current.ctx), parentThinking: current.ctx.thinkingLevel });
     // WF-04: resolveRole already reports the cap (including a derived ladder overflow); do not recompute it locally.
     const droppedSkills = resolved.omittedSkills;
     if (resolved.thinking && !['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'].includes(resolved.thinking)) fail('THINKING_INVALID', 'Unsupported thinking level');
@@ -1074,13 +1080,12 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
     if (!assigned) fail('TASK_UNKNOWN', 'No owner-authored task with that ID');
     if (assigned.role !== registration.role) fail('TASK_ROLE', `task ${assigned.id} needs role ${assigned.role}, but ${workerId} is a ${registration.role} worker; a held ticket keeps its role`);
     if (assigned.status !== 'proposed') fail('TASK_STATE', `successor task ${assigned.id} is ${assigned.status}; only a proposed task can be dispatched`);
-    // P10/WF-02 (Q28): a held ticket keeps the runtime it was started with, so a successor that asks for a different one needs a
-    // new worker instead of silently running on the old model/level.
+    // P10/WF-02 (Q28), P19/B3: a held ticket keeps the model it was started with, so a successor that asks for a different one
+    // needs a new worker instead of silently running on the old model. The thinking level is role configuration, not a task axis,
+    // so there is nothing per-successor to compare.
     const requestedRuntime = registration.requestedRuntime ?? {};
     if (assigned.runtime?.model !== undefined && requestedRuntime.model !== undefined && assigned.runtime.model !== requestedRuntime.model)
       fail('RUNTIME_FIXED', `successor task ${assigned.id} asks for model ${assigned.runtime.model}, but ${workerId} runs ${requestedRuntime.model}; a held ticket keeps its runtime. legalNext: dispatch this task to a new worker, or omit runtime.model to inherit the ticket`);
-    if (assigned.runtime?.thinking !== undefined && requestedRuntime.thinking !== undefined && assigned.runtime.thinking !== requestedRuntime.thinking)
-      fail('RUNTIME_FIXED', `successor task ${assigned.id} asks for thinking ${assigned.runtime.thinking}, but ${workerId} runs ${requestedRuntime.thinking}; a held ticket keeps its runtime. legalNext: dispatch this task to a new worker, or omit runtime.thinking to inherit the ticket`);
     const predecessorClaims = assigned.work?.claimRefs ?? [];
     if (!predecessorClaims.length) fail('SUCCESSOR_NEEDS_PREDECESSOR', `successor task ${assigned.id} cites no worker claim: work.claimRefs must name the demonstrated output ${workerId} produced`);
     // The continuation may only consume what this ticket demonstrated, so the conversation's state is the evidence base.
@@ -1434,7 +1439,7 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
     ])];
     const ingress = ingressFacts(current.campaign);
     const handles = [
-      ...(objective.runtime?.model ? [`requested runtime ${objective.runtime.model}/${objective.runtime.thinking ?? 'inherit'}`] : []),
+      ...(objective.runtime?.model ? [`requested worker model ${objective.runtime.model}`] : []),
       ...(current.executors.mode === 'session' ? ['session executor: one long-lived container on this ticket; open it before target work and keep state there'] : []),
       ...(current.identity ? [`${current.identity.secrets.length} operator-sealed secret id(s): p2o_secret action=list names ids and kinds, never a value`] : []),
       ...(ingress ? [`ingress path: ${ingress.callback ?? 'no callback address recorded'}${ingress.labNetwork ? ` on lab network ${ingress.labNetwork}` : ''}`] : []),
@@ -2655,6 +2660,16 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
       return;
     }
     if (tasks.some(task => task.id === draft.id)) return;
+    // A validation task has to declare the method its dispatch will resolve. Dispatch recomputes the method from the same role,
+    // purpose and `work.needs` and refuses the task with TASK_METHOD_STALE when the declared skills differ, so an empty declaration
+    // would make every needs-bearing replay unstartable. Resolve it once here, through the same functions dispatch uses.
+    try {
+      const resolved = resolveRole({ role: 'validation', skills: [], purpose: 'validation', context: { kind: current.target.kind, needs: workNeeds(draft.work) }, settings: current.settings });
+      draft = { ...draft, method: await prepareMethod(current, resolved.skills, undefined, draft.method.reason) };
+    } catch (error) {
+      await note({ by:'owner', kind:'lifecycle', text:`auto validation blocked for ${candidate.candidate}: the replay method could not be resolved: ${cleanText(message(error)).slice(0,400)}` });
+      return;
+    }
     // No worker backend is a prerequisite gap, not an independence waiver. The task is still visible and blocked by its reason.
     if (!current.delegation.enabled) {
       draft = { ...draft, missingPrerequisites: [`Delegation unavailable: ${current.delegation.reason ?? 'no worker backend'}; create a worker and dispatch ${draft.id}`] };
@@ -2734,14 +2749,15 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
           // A7.5/D19: naming a held worker dispatches the successor onto that ticket, pane and session instead of a new worker.
           const continueWorkerId = typeof p.workerId === 'string' ? p.workerId : undefined;
           if (continueWorkerId && ids.length !== 1) fail('INVALID_INPUT', 'workerId names one held successor ticket, so dispatch exactly one task to it');
-          // P10/WF-02/03 (Q28): an optional dispatch-level runtime override, validated here because this is the host boundary
-          // that holds the operator settings. A held ticket keeps the runtime it was started with (checked in continueHeldWorker).
-          const dispatchRuntime = validateTaskRuntime({...(p.model !== undefined ? {model:p.model as string} : {}),...(p.thinking !== undefined ? {thinking:p.thinking as string} : {})}, current.settings);
+          // P10/WF-02/03 (Q28): an optional dispatch-level model override, validated here because this is the host boundary
+          // that holds the operator settings. A held ticket keeps the model it was started with (checked in continueHeldWorker).
+          // P19/B3: there is no dispatch-level thinking override; the worker level is role configuration.
+          const dispatchRuntime = validateTaskRuntime(p.model !== undefined ? {model:p.model as string} : undefined, current.settings);
           return current.engine.enqueue(ids.map((id:string) => {
             const t = tasks.find(t => t.id === id);
             if (!t) throw Error('Unknown task ID');
             return {taskId:id,priority:p.priority as number|undefined,input:{taskId:id,focus:t.surface.slice(0,60),task:t.question,
-              ...(dispatchRuntime?.model ? {model:dispatchRuntime.model} : {}),...(dispatchRuntime?.thinking ? {thinking:dispatchRuntime.thinking} : {}),...(continueWorkerId ? { continueWorkerId } : {})}};
+              ...(dispatchRuntime?.model ? {model:dispatchRuntime.model} : {}),...(continueWorkerId ? { continueWorkerId } : {})}};
           }));
         }
         let task:AssessmentTask;
@@ -3463,7 +3479,7 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
     if (!current) fail('NO_ASSESSMENT', 'No active p2o assessment; start one with /p2o --target …');
     if (current.role === 'worker') fail('PLANNER_ONLY', 'Workers may propose subtasks, not spawn or dispatch accepted work');
     if (current.phase !== 'active') fail('NO_ASSESSMENT', 'The assessment is finishing; no new workers');
-    const spawned = await spawnWorker({ focus: params.focus, task: params.task, context: params.context, role: params.role, skills: params.skills, model: params.model, workflow: params.workflow, thinking: params.thinking, taskId: params.taskId, work: params.work as Record<string, unknown> | undefined, decision: params.decision as Record<string, unknown> | undefined, outputContract: params.outputContract as Record<string, unknown> | undefined }, { workerId: null, depth: 0 });
+    const spawned = await spawnWorker({ focus: params.focus, task: params.task, context: params.context, role: params.role, skills: params.skills, model: params.model, workflow: params.workflow, taskId: params.taskId, work: params.work as Record<string, unknown> | undefined, decision: params.decision as Record<string, unknown> | undefined, outputContract: params.outputContract as Record<string, unknown> | undefined }, { workerId: null, depth: 0 });
     return textResult(`Spawned ${spawned.workerId} (${spawned.role}, ${spawned.model ?? 'inherit'}, depth ${spawned.depth}) in a visible pane. ${spawned.workMatch === 'unknown' ? 'Work identity is unknown (no structured work), so exact duplicate and history checks did not run. ' : ''}Review its evidence-linked report; plan other intents or wait for semantic events.`, spawned);
   };
   TEST_SEAMS.set(pi, { spawn: testSpawn, startTask: testStartTask });
@@ -4477,6 +4493,26 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
 
   // ---------------------------------------------------------------- lifecycle
 
+  /**
+   * P19/F: a workspace that already stores a durable-local run but has no live owner in this process gets one read-only hint at
+   * startup. It names the run id and the command that reopens it, so a crashed campaign is discoverable instead of looking like
+   * an empty workspace. It never adopts authority, never opens a store writable, and says plainly that tickets/workers do not
+   * come back.
+   */
+  async function durableRunHint(ctx: ExtensionContext): Promise<string | undefined> {
+    let root: string;
+    try { root = await stateRootFor(ctx); } catch { return undefined; }
+    const entries = await readdir(root, { withFileTypes: true }).catch(() => []);
+    const dated = await Promise.all(entries
+      .filter(entry => entry.isDirectory() && /^run-[a-zA-Z0-9-]{1,75}$/.test(entry.name))
+      .map(async entry => {
+        // The store's own file, so a directory this host cannot reopen is not advertised as resumable.
+        try { return { runId: entry.name, mtimeMs: (await stat(join(root, entry.name, 'assessment.sqlite'))).mtimeMs }; } catch { return undefined; }
+      }));
+    const newest = dated.filter((item): item is { runId: string; mtimeMs: number } => item !== undefined).sort((a, b) => b.mtimeMs - a.mtimeMs)[0];
+    return newest ? `Durable run ${newest.runId} is stored in this workspace; continue it with /p2o --resume ${newest.runId} (knowledge only: no tickets, workers or authority are restored).` : undefined;
+  }
+
   pi.on('session_start', async (event, ctx) => {
     pendingTicket = pendingTicket ?? workerTicketFlag(pi);
     // A worker ticket always activates this instance as the worker: it is a separate process in production, and in a test it
@@ -4486,7 +4522,13 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
     // replacement session adopts — never a fresh process start, which is what keeps an unrelated instance from inheriting a
     // fixture's run — and the adopted run must still be live.
     if (!run && event.reason !== 'startup' && ownerRun && ownerRun.phase === 'active') run = ownerRun;
-    if (!run) { pi.setActiveTools(pi.getActiveTools().filter(name => !MODEL_TOOLS.includes(name))); return; }
+    if (!run) {
+      pi.setActiveTools(pi.getActiveTools().filter(name => !MODEL_TOOLS.includes(name)));
+      // P19/F: only a process with no live owner and no worker ticket reaches here; the hint restores no authority.
+      const hint = await durableRunHint(ctx);
+      if (hint && ctx.hasUI) ctx.ui.notify(hint, 'info');
+      return;
+    }
     // The campaign keeps running here: rebind the browser-facing context and restore the planner boundary a fresh session
     // cannot inherit (a new session starts with the host's default tool loadout and no name).
     if (run.role === 'owner') {

@@ -209,6 +209,12 @@ export class AssessmentEngine {
       if (!readiness.ready) {job.reason = readiness.reason; continue;}
       try { await this.deps.spawn(job.input); }
       catch (error) {
+        // P19/F: a refused dispatch used to be a UI notification only, so a task left `proposed` had no ledger row saying why.
+        // The bounded fact is written before the notification, and the "never retry automatically" rule is unchanged.
+        // `fail()` throws Error("CODE: message"), so the message (not String(error)'s "Error: " prefix) carries the code.
+        const raw = error instanceof Error ? error.message : String(error);
+        const reason = raw.slice(0,300), code = /^([A-Z][A-Z0-9_]+):/.exec(reason)?.[1] ?? 'DISPATCH_REFUSED';
+        await this.deps.persist(`dispatch refused for ${job.taskId}: ${reason}`, { event: 'intent-blocked', taskId: job.taskId, code, reason }).catch(() => { /* The fact is best effort; dispatch never retries target/pane launch. */ });
         if (this.live()) this.notify('intent-blocked',job.taskId,String(error));
         // Never retry target/pane launch automatically. Partial spawn is cleaned by the adapter.
       }

@@ -2,7 +2,7 @@ import { Type } from 'typebox';
 import { capabilitySchema, choices } from './schema-kit.js';
 import { KNOWLEDGE_DOMAINS } from './context.js';
 import { COVERAGE_OUTCOMES } from './records.js';
-import { ROLES, THINKING_LEVELS } from './roles.js';
+import { ROLES } from './roles.js';
 import { WORKER_OUTCOMES } from './broker.js';
 import { CANDIDATE_CLOSURES, CANDIDATE_EXECUTIONS, CANDIDATE_PROOFS, POLICY_BASES } from './evidence.js';
 import { PAYLOAD_BYTES, PAYLOAD_KINDS } from './lab.js';
@@ -34,9 +34,9 @@ export const taskDraftSchema = Type.Object({
     prerequisites:Type.Optional(Type.Array(Type.Object({taskId:Type.String({maxLength:80}),revision:Type.Optional(Type.Integer({minimum:1}))}),{description:'Reviewed prerequisite tasks; omit when none and the host records an empty list'})),
     validationOf:Type.Optional(Type.String({maxLength:80})),retestOf:Type.Optional(Type.String({maxLength:80})),parentTaskId:Type.Optional(Type.String({maxLength:80})),
     work:Type.Optional(workSpecSchema),decision:Type.Optional(workDecisionSchema),outputContract:Type.Optional(outputContractSchema),
-    // P10/WF-02/03 (Q28): optional per-task worker runtime. The host validates the model against the configured role models and
-    // the thinking level against THINKING_LEVELS at admission; dispatch model/thinking override it for one dispatch.
-    runtime:Type.Optional(Type.Object({model:Type.Optional(Type.String({maxLength:200,description:'Worker model for this task; must be one of the configured role models (the host lists them in the planner prompt and refuses others)'})),thinking:Type.Optional(choices(THINKING_LEVELS))},{additionalProperties:false,description:'P10/WF-02/03 (Q28): optional per-task worker runtime; the host validates the model against the configured role models and the level against the supported thinking levels at admission, and dispatch-level model/thinking overrides it for that dispatch'})),
+    // P10/WF-02/03 (Q28), P19/B3: optional per-task worker model. The host validates it against the configured role models at
+    // admission; a dispatch may override the model once. The thinking level is role configuration, never a task choice.
+    runtime:Type.Optional(Type.Object({model:Type.Optional(Type.String({maxLength:200,description:'Worker model for this task; must be one of the configured role models (the host lists them in the planner prompt and refuses others)'}))},{additionalProperties:false,description:'P10/WF-02/03 (Q28): optional per-task worker model; the host validates it against the configured role models at admission, and a dispatch-level model overrides it for that dispatch. The worker thinking level comes from the operator role configuration, not the task'})),
     skills:Type.Optional(Type.Array(Type.String({maxLength:64}))),workflow:Type.Optional(Type.String({maxLength:64})),
     // P5.1 measured rerun: the lead omitted this for every discovery intent and could not see why the host refused it.
     methodReason:Type.Optional(Type.String({maxLength:1000,description:'Why this method answers the question. Required (at least 10 characters) for every role except recon; the host refuses the intent when it is missing'})),
@@ -47,7 +47,7 @@ export const TASK_ACTIONS = ['create','revise','list','start','review','close','
 /** P13e: one row per action, so a new action is a type error instead of inheriting a default parameter list. */
 export const TASK_ACTION_PARAMETERS: Readonly<Record<typeof TASK_ACTIONS[number], readonly string[]>> = {
   create: ['action','entry'], revise: ['action','entry','id','revision'], list: ['action','id','cursor','limit'],
-  dispatch: ['action','ids','id','priority','workerId','model','thinking'], start: ['action','id'],
+  dispatch: ['action','ids','id','priority','workerId','model'], start: ['action','id'],
   review: ['action','id','revision','reason','evidenceIds','externalEvidence'], close: ['action','id','revision','reason','evidenceIds','externalEvidence'],
   block: ['action','id','revision','reason','evidenceIds','externalEvidence'], cancel: ['action','id','revision','reason','evidenceIds','externalEvidence'],
 };

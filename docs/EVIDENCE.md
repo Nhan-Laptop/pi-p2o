@@ -77,7 +77,9 @@ same surface and risk. If the author's claim names a payload or environment, the
 sha256 and the same recipe fingerprint (host-stamped values, not prose). A mismatch, an uncited receipt or withdrawn support
 is named in the case's reason; the case can still be rated, but `independentCurrent` stays false. A host-created validation
 task (one per confirmed+tested claim of a worker, after its discovery task is reviewed) is how the independent worker gets
-that work; if no worker backend exists the task is created visibly `blocked` with `missingPrerequisites`.
+that work; the task declares the exact method dispatch will resolve from the same role, purpose and `work.needs`, because a
+declared/recomputed mismatch is refused at spawn; if no worker backend exists the task is created visibly `blocked` with
+`missingPrerequisites`.
 
 **Rating** (`p2o_case_rate`) records a separate note bound to the case revision: `severity` (critical…informational), a
 required `basis`, optional `cvssVector` (the host computes CVSS 3.1 in `src/cvss.ts`), CWE and references, and up to five

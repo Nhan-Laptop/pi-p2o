@@ -76,4 +76,31 @@ describe('resume a historical run', () => {
       await rm(root, { recursive: true, force: true });
     }
   }, 60_000);
+
+  it('P19/F: a startup with no live run names the stored durable run and adopts no authority', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'p2o-resume-hint-')); await mkdir(join(root, 'source'));
+    const settingsPath = join(root, 'settings.json'), controlRoot = join(root, 'control');
+    try {
+      const first = createFakePi(), firstCtx = createContext({ cwd: root });
+      registerP2O(first.pi, { extensionPath: EXTENSION_PATH, controlRoot, settingsPath, herdr: createSimpleHerdr().client, createSandbox: sandboxFactory([]) });
+      await first.commands.get('p2o')!.handler('--target ./source --retention durable-local', firstCtx.ctx);
+      const [runId] = (await readdir(join(root, '.p2o-state'))).filter(name => name.startsWith('run-'));
+      expect(runId).toBeDefined();
+      await first.commands.get('p2o')!.handler('stop', firstCtx.ctx);
+
+      // A fresh process: no live run and no worker ticket. Startup only reports what is stored; it must not adopt, resume or
+      // reopen the store writable, and the hint has to say the ticket/worker/authority state does not come back.
+      const fresh = createFakePi(), freshCtx = createContext({ cwd: root });
+      registerP2O(fresh.pi, { extensionPath: EXTENSION_PATH, controlRoot, settingsPath, herdr: createSimpleHerdr().client, createSandbox: sandboxFactory([]) });
+      await fresh.events.get('session_start')![0]({ type: 'session_start', reason: 'startup' }, freshCtx.ctx);
+      const notices = freshCtx.notices.join(' ');
+      expect(notices).toContain(`Durable run ${runId} is stored in this workspace`);
+      expect(notices).toContain(`/p2o --resume ${runId}`);
+      expect(notices).toContain('knowledge only');
+      expect(fresh.messages).toHaveLength(0);
+      expect(fresh.active).not.toContain('p2o_shell');
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  }, 60_000);
 });

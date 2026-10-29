@@ -61,12 +61,13 @@ describe('tool descriptions carry the boundary (A1: no separate guidance layer)'
     for (const enabled of [true, false]) expect(plannerInstructions(facts(enabled))).not.toMatch(/\bp2o_[a-z_]+\b/);
   });
 
-  it('P10/WF-02 (Q28): names the configured per-task worker runtime only when the host supplies it', () => {
+  it('P10/WF-02 (Q28): names the configured per-task worker model only when the host supplies it', () => {
     const base = facts(true);
     const body = plannerInstructions({ ...base, delegation: { ...base.delegation, runtimeModels: ['opencode-go/deepseek-v4-flash', 'opencode-go/kimi-k3'] } });
     expect(body).toContain('runtime.model to one of opencode-go/deepseek-v4-flash, opencode-go/kimi-k3');
-    expect(body).toContain('runtime.thinking to one of off/minimal/low/medium/high/xhigh/max');
-    expect(body).toContain('a held ticket keeps the runtime it started with');
+    expect(body).toContain('a held ticket keeps the model it started with');
+    // P19/B3: the thinking level is operator role configuration, so the planner prompt never offers it as a task choice.
+    expect(body).not.toContain('runtime.thinking');
     // Without a delegation backend there is no worker runtime to choose, so the line is absent rather than misleading.
     expect(plannerInstructions(base)).not.toContain('runtime.model to one of');
   });

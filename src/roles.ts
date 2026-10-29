@@ -285,22 +285,31 @@ export function plannerModelCatalogue(settings: P2OSettings): string[] {
 
 /**
  * P10/WF-02/03 (Q28): host validation of a per-task runtime request. The host, not the model, decides what is configured:
- * an unconfigured model or an unknown thinking level is refused with the legal set instead of silently inheriting.
+ * an unconfigured model is refused with the legal set instead of silently inheriting.
+ *
+ * P19/B3: a task no longer names a thinking level. Pi clamps a level its model does not support (e.g. `medium` on a
+ * provider whose catalog maps it to null), so a per-task request accepted here could still fail the broker's exact-runtime
+ * check at spawn and strand the task as `proposed`. The level is role configuration, which the operator sets with that
+ * model in view.
  */
-export function validateTaskRuntime(runtime: { model?: string; thinking?: string } | undefined, settings: P2OSettings): { model?: string; thinking?: string } | undefined {
+export function validateTaskRuntime(runtime: { model?: string } | undefined, settings: P2OSettings): { model?: string } | undefined {
   if (!runtime) return undefined;
+  // Refuse rather than silently drop an unknown key (P19/B3 retired `thinking` here): a caller that asked for something the
+  // host will not honour must learn that from the refusal, not from the readable task it just authored.
+  const extra = Object.keys(runtime as Record<string, unknown>).filter(key => key !== 'model');
+  if (extra.length) throw Error(`Invalid task runtime: only runtime.model is accepted (got ${extra.join(', ')})`);
   const model = typeof runtime.model === 'string' ? runtime.model.trim() : undefined;
-  const thinking = typeof runtime.thinking === 'string' ? runtime.thinking.trim() : undefined;
   if (model !== undefined) {
     const allowed = allowedWorkerModels(settings);
     if (!allowed.includes(model)) throw Error(`MODEL_UNAVAILABLE: ${model} is not configured for a worker. legalNext: name one of ${allowed.join(', ')} as runtime.model, or configure p2o.roles.<role>.model`);
   }
-  if (thinking !== undefined && !(THINKING_LEVELS as readonly string[]).includes(thinking)) throw Error(`THINKING_INVALID: ${thinking} is not a thinking level. legalNext: name one of ${THINKING_LEVELS.join(', ')} as runtime.thinking`);
-  return { ...(model ? { model } : {}), ...(thinking ? { thinking } : {}) };
+  return model ? { model } : {};
 }
 
 /**
- * Precedence mirrors pi-herdr: per-spawn override > settings role > package default > parent session model.
+ * Precedence mirrors pi-herdr: per-spawn model override > settings role > package default > parent session model.
+ * P19/B3: the thinking level is always role configuration (settings role, package default, then the parent session),
+ * because a per-task or per-dispatch level can be one the selected model does not support.
  * `skills` is validated by the caller against the installed library before any path is used.
  *
  * P15 (W3/W5): an explicitly supplied purpose speaks even when its list is empty, because [] means "no method default by
@@ -308,7 +317,7 @@ export function validateTaskRuntime(runtime: { model?: string; thinking?: string
  * purpose=validation would start from `source-code-auditing`, which is the P15 regression this rule exists to prevent.
  * `requestedSkills`/`omittedSkills` make the MAX_SKILLS cap observable, so a caller records what it lost instead of guessing.
  */
-export function resolveRole(input: { role?: string; model?: string; thinking?: string; skills?: string[]; purpose?: WorkPurpose; context?: SkillContext; settings: P2OSettings; parentModel?: string; parentThinking?: string }): ResolvedRole {
+export function resolveRole(input: { role?: string; model?: string; skills?: string[]; purpose?: WorkPurpose; context?: SkillContext; settings: P2OSettings; parentModel?: string; parentThinking?: string }): ResolvedRole {
   const role: Role = isRole(input.role) ? input.role : 'general';
   const configured = input.settings.roles[role] ?? {};
   const fallback = ROLE_DEFAULTS[role];
@@ -319,7 +328,7 @@ export function resolveRole(input: { role?: string; model?: string; thinking?: s
   return {
     role,
     model: input.model ?? configured.model ?? fallback.model ?? input.parentModel,
-    thinking: input.thinking ?? configured.thinking ?? fallback.thinking ?? input.parentThinking,
+    thinking: configured.thinking ?? fallback.thinking ?? input.parentThinking,
     skills: source.slice(0, MAX_SKILLS),
     requestedSkills: requested,
     omittedSkills: source.slice(MAX_SKILLS),

@@ -159,7 +159,7 @@ describe('purpose → skill defaults (P7)', () => {
     expect(resolveRole({ role: 'recon', settings })).toMatchObject({ requestedSkills: [], omittedSkills: [] });
   });
 
-  it('P10/WF-02/03 (Q28): validates a per-task worker runtime against the configured role models and thinking levels', () => {
+  it('P10/WF-02/03 (Q28) + P19/B3: validates a per-task worker model and leaves the thinking level to the role', () => {
     // The package role defaults plus every operator-configured role model are the whole allowed set.
     const defaults = allowedWorkerModels(settings);
     expect(defaults).toContain('opencode-go/kimi-k3');
@@ -167,10 +167,11 @@ describe('purpose → skill defaults (P7)', () => {
     const configured = parseSettings({ p2o: { roles: { general: { model: 'fixture/provider-model' } } } });
     expect(allowedWorkerModels(configured)).toContain('fixture/provider-model');
     expect(validateTaskRuntime(undefined, settings)).toBeUndefined();
-    expect(validateTaskRuntime({ model: ' fixture/provider-model ', thinking: 'high' }, configured)).toEqual({ model: 'fixture/provider-model', thinking: 'high' });
+    expect(validateTaskRuntime({ model: ' fixture/provider-model ' }, configured)).toEqual({ model: 'fixture/provider-model' });
     expect(() => validateTaskRuntime({ model: 'nope/model' }, settings)).toThrow(/MODEL_UNAVAILABLE: nope\/model.*legalNext: name one of/);
-    expect(() => validateTaskRuntime({ thinking: 'extreme' }, settings)).toThrow(/THINKING_INVALID: extreme is not a thinking level/);
+    // P19/B3: the thinking axis is role configuration. No per-task request can name it, so the role resolution is its only source.
     expect(THINKING_LEVELS).toEqual(['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max']);
+    expect(resolveRole({ role: 'validation', settings }).thinking).toBeUndefined();
     // An empty runtime is a valid empty request: the host validates the request, it does not fill defaults into the task.
     expect(validateTaskRuntime({}, settings)).toEqual({});
   });

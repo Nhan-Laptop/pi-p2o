@@ -115,24 +115,27 @@ describe('hold and release (inert executor, real broker)', () => {
     } finally { a.close(); b.close(); }
   }, 30_000));
 
-  it('P10/WF-02/03 (Q28): a task or dispatch names the worker model/thinking and the host validates it against the configured set', async () => fixture(async h => {
+  it('P10/WF-02/03 (Q28) + P19/B3: a task or dispatch names the worker model, and the thinking level is not a task choice', async () => fixture(async h => {
     await h.command('--target ./source');
     // A3/D32: exploit mode admits no target-executing intent before the run holds an impact goal.
     await seedImpactGoal(h);
-    const question = { ...draft, question: 'Inspect the fixture boundary for the requested worker runtime' };
-    // Unconfigured models and unknown thinking levels are refused with the legal set, not silently inherited.
+    const question = { ...draft, question: 'Inspect the fixture boundary for the requested worker model' };
+    // Unconfigured models are refused with the legal set, not silently inherited.
     await expect(h.call('p2o_task_author', { entry: { ...question, runtime: { model: 'unconfigured/model' } } })).rejects.toThrow(/MODEL_UNAVAILABLE: unconfigured\/model.*legalNext: name one of/);
-    await expect(h.call('p2o_task_author', { entry: { ...question, runtime: { thinking: 'extreme' } } })).rejects.toThrow(/THINKING_INVALID: extreme/);
-    const task = (await h.call('p2o_task_author', { entry: { ...question, runtime: { model: 'opencode-go/deepseek-v4-flash', thinking: 'high' } } })).details;
-    expect(task.runtime).toEqual({ model: 'opencode-go/deepseek-v4-flash', thinking: 'high' });
-    // A dispatch-level runtime is validated the same way and overrides the task's runtime for this dispatch.
+    // P19/B3: the thinking level is role configuration; a per-task request is not part of the task vocabulary.
+    await expect(h.call('p2o_task_author', { entry: { ...question, runtime: { model: 'opencode-go/deepseek-v4-flash', thinking: 'high' } } })).rejects.toThrow(/Invalid task runtime: only runtime.model is accepted/);
+    const task = (await h.call('p2o_task_author', { entry: { ...question, runtime: { model: 'opencode-go/deepseek-v4-flash' } } })).details;
+    expect(task.runtime).toEqual({ model: 'opencode-go/deepseek-v4-flash' });
+    // A dispatch-level model is validated the same way and overrides the task's model for this dispatch.
     await expect(h.call('p2o_task_dispatch', { ids: [task.id], model: 'unconfigured/model' })).rejects.toThrow(/MODEL_UNAVAILABLE/);
-    await h.call('p2o_task_dispatch', { ids: [task.id], model: 'opencode-go/kimi-k3', thinking: 'low' });
+    // ... and the dispatch cannot name a thinking level either.
+    await expect(h.call('p2o_task_dispatch', { ids: [task.id], thinking: 'low' })).rejects.toThrow(/unknown field\(s\): thinking/);
+    await h.call('p2o_task_dispatch', { ids: [task.id], model: 'opencode-go/kimi-k3' });
     for (let i = 0; i < 100; i++) { if ((await h.call('p2o_workers')).details.workers.length) break; await delay(10); }
-    expect((await h.call('p2o_workers')).details.workers[0]).toMatchObject({ requestedRuntime: { model: 'opencode-go/kimi-k3', thinking: 'low' } });
-    // The task record keeps the runtime the owner authored it with, so review reads it from the ledger rather than the pane.
+    expect((await h.call('p2o_workers')).details.workers[0]).toMatchObject({ requestedRuntime: { model: 'opencode-go/kimi-k3' } });
+    // The task record keeps the model the owner authored it with, so review reads it from the ledger rather than the pane.
     const store: AssessmentStore = await h.reader();
-    try { expect(store.records().filter(row => row.kind === 'task').at(-1)?.data?.task).toMatchObject({ id: task.id, runtime: { model: 'opencode-go/deepseek-v4-flash', thinking: 'high' } }); }
+    try { expect(store.records().filter(row => row.kind === 'task').at(-1)?.data?.task).toMatchObject({ id: task.id, runtime: { model: 'opencode-go/deepseek-v4-flash' } }); }
     finally { store.close(); }
   }));
 

@@ -35,7 +35,10 @@ describe('deterministic frontier and semantic wake loop',()=>{
   it('waits for evidence readiness, invalidates a changed intent and never repeats a failed launch',async()=>{
     const f=fixture();f.readiness.set('task-0','Reviewed receipt prerequisite unavailable');await f.queue([0,1]);f.tasks[1].question='A different question';
     await tick();expect(f.spawns).toEqual([]);expect(f.engine.snapshot().events[0].kind).toBe('intent-invalidated');expect(f.engine.snapshot().intents[0].reason).toContain('prerequisite');
-    f.readiness.delete('task-0');f.deps.spawn=async()=>{throw Error('Pane transport failed');};f.engine.kick();await tick();expect(f.engine.snapshot().pendingIntents).toBe(0);await tick();expect(f.engine.snapshot().events.some(e=>e.kind==='intent-blocked')).toBe(true);f.engine.stop();
+    f.readiness.delete('task-0');f.deps.spawn=async()=>{throw Error('Pane transport failed');};f.engine.kick();await tick();expect(f.engine.snapshot().pendingIntents).toBe(0);await tick();expect(f.engine.snapshot().events.some(e=>e.kind==='intent-blocked')).toBe(true);
+    // P19/F: the refusal is a bounded ledger fact, not only a console notification, so a task left proposed can be explained.
+    expect(f.journal.find(entry=>String((entry as any).text).includes('dispatch refused for task-0'))).toMatchObject({data:{event:'intent-blocked',taskId:'task-0',code:'DISPATCH_REFUSED',reason:'Pane transport failed'}});
+    f.engine.stop();
   });
   it('P10/TR-H12: keeps a queued intent across an identity-preserving revision and invalidates a changed question',async()=>{
     const f=fixture();await f.queue([0]);

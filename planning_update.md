@@ -1,724 +1,339 @@
-# S1 — Surface audit and remediation plan of record (2026-10-29)
-
-Status: **Tranches A, B, B10, C1, C2, C3 and C4 are committed on 2026-10-29 (A `aa87a57`, B `1cf3d8b`, B10 `04f3f23`, C1
-`b7f8574`, C2 `42b0a17`, C3 `4bb48f9`, C4 `28386b5`) and C5 (the single ceiling re-pin and the docs pass) is recorded
-below in the working tree pending the owner's commit. The surface is 35 registered tools / 35 model-visible / 0 hidden /
-10 board verbs / planner 23; the ceilings are re-pinned from the after-C measurement (45,500 / 41,400 / 40,500 / 6,500 /
-75,600), so Tranche C is complete.** Rev 2 after the
-2026-10-29 plan review. Base commit `197d6a9` (R3 of the R1 program). The owner's
-`AGENTS.md` edit and the untracked `pi-p2o-defense-vi.pptx` are outside S1. This document replaces the R3 plan of record. That text is unchanged in git at
-`git show 197d6a9:planning_update.md`; the earlier A1 text at `git show bbdfec1:planning_update.md` and the P18 text at
-`git show 18d1d84:planning_update.md` are unchanged too. The audit below was measured against the installed extension as it
-ships at `197d6a9`, not against source snippets alone.
-
-Owner request (2026-10-29, verbatim, truncated in chat as sent):
-
-> "ok now base on the current plan implemented, i need you make deep inspection to the current tools registered and make a
-> diagnosis that there are any weakness - duplicated feature - any things make the extension more worse, pls carefully
-> analyze."
-
-Owner decisions for this milestone (made in chat, 2026-10-29):
-
-- **D-S1-1 — Scope is C.** P1 remediation, then the budget/contract pass, then the structural tranche: consolidate the
-  authoring surface, split `p2o_graph` by authority and reduce the read verbs. The structural tranche is gated on
-  before/after evidence (see §7 and §9).
-- **D-S1-2 — Foothold is wired, not removed.** The five `foothold-*` actions are implemented, documented, tested and
-  listed in the acceptance matrix; the defect is a missing broker allow-list entry. Fix the wiring and test the worker
-  path rather than deleting a shipped capability.
-- **D-S1-3 — Verification stays deterministic and hermetic.** Every tranche must be provable with `tsc`, the vitest
-  suites, the declaration-budget test, `build`/`check:build` and the measure script. A live benchmark run is **not**
-  part of S1 by default; it requires a separate owner authorization (see §9, bench policy).
-- **D-S1-4 — Authority never widens, with one named exception.** S1 may relabel, split, merge, trim, refuse earlier and
-  fix messages. It may not give a role a target, lab, claim or write capability it does not already hold; the one
-  authorized widening is the **read-only** `p2o_graph action=path` for worker and validation (D-S1-7). The planning role
-  still holds no target or claim tool after the graph split.
-- **D-S1-5 — Pinned ceilings are not raised.** The declaration ceilings in `tests/minimal/context-budget.test.ts` stay
-  where they are through tranches A and B; the bytes S1 reclaims become headroom on purpose, not an entitlement. After
-  tranche C the ceilings are re-pinned once, from the new measured numbers, with a dated comment (the method the test
-  already documents: measured + 3%, rounded up).
-- **D-S1-6 — Commits are owner-initiated.** S1 produces working-tree changes and per-tranche verification evidence; the
-  owner decides when each tranche is committed and pushed. Author identity is the repository's; no attribution lines of
-  any kind (AGENTS.md). The owner's `AGENTS.md` edit and the untracked `.pptx` are never staged.
-
-- **D-S1-7 — Read-only `path` is shared (owner decision 2026-10-29).** In C1 (and in A5 as the interim step) worker and
-  validation may call `p2o_graph action=path`; `chain` and `ingest` stay planner-only. The existing bounds (≤10 paths,
-  ≤6 hops, ≤500 nodes, ≤24 KiB, deterministic order) apply to every role and the action never writes.
-- **D-S1-8 — The two naming renames are in scope (owner decision 2026-10-29).** `p2o_coverage_suggest` becomes
-  `p2o_wstg_suggest` and `p2o_plan_author` becomes `p2o_goal_author`. This is breaking: every reference (prompts,
-  boundaries, loadouts, `*_VERB_NAMES`, skills/knowledge, docs, tests, acceptance-matrix citations, measurement
-  expectations) updates in the same change, and a repo-wide grep assertion fails if an old name survives.
-- **D-S1-9 — C is accepted on deterministic evidence.** No live benchmark run in S1 (see D-S1-3); the C4 gate uses the
-  declaration numbers, the full suite and the hermetic fixture counts.
-- **D-S1-10 — The hidden legacy verbs are deleted in S1 (owner decision 2026-10-29).** B10 migrates the test files that
-  used `p2o_delegate`/`p2o_task_start` as their spawn/start harness onto a documented in-process seam, then deletes both
-  handlers, `HIDDEN_TOOLS`, the dead hidden-exposure plumbing and the legacy action map. After B10 the registered surface
-  is 32 tools, all model-visible, and 10 board verbs.
-
-## 1. Why this milestone exists
-
-R0–R3 added capability (containment, recon ingestion, graph dossier/query/summary, attack paths, ATT&CK, retest, interop,
-project knowledge) while a declaration-budget gate kept the tool text inside fixed ceilings. That gate has now run out of
-room and the surface has accumulated the same three classes of defect the A1/A1.2 audit found in the prompts:
-
-1. **Capabilities that are declared but cannot be reached.** Five `foothold-*` actions have no broker path; three of
-   `p2o_graph`'s nine actions are planner-only but are declared to worker/validation; `p2o_graph` query/summary reject
-   the `cursor` the schema declares for workers; `p2o_research` drops `componentRef` for workers; and ten model-visible
-   boundary sentences tell a role to use a tool that role does not hold.
-2. **Duplicated features and duplicated prose.** `p2o_task_settle` is `p2o_task_review` plus one enum. `p2o_graph`'s
-   `page` is an append-log while `query`/`export` read current heads, and nothing says so. Two different `session`
-   concepts share a parameter name. About 1,500 model-visible characters restate rules the prompts already carry.
-3. **A contract that fails quietly.** 15 of the 33 model-visible schemas do not close their object, so a cross-tool field
-   name (`timeoutSeconds` on `p2o_shell`) is accepted and ignored — the command then runs with no timeout. Several
-   readers use the same words for different pagination semantics, and several error paths lose the field name the model
-   needs to self-correct.
-
-None of this is an architectural failure. The loadout enforcement, the per-action parameter whitelists, the evidence
-ladder and the stale-revision hints are sound; the defects are in the declaration layer and in a handful of handler
-plumbing paths. S1 fixes them while the surface is still small enough to audit.
-
-## 2. Measured state (audit of `197d6a9`)
-
-Measured by registering the real extension against a stub Pi API and summing `description.length +
-JSON.stringify(parameters).length` per role — the same metric and the same method as
-`tests/minimal/context-budget.test.ts`:
-
-| role | tools | declaration chars | ceiling | headroom |
-| --- | --- | --- | --- | --- |
-| planner | 22 | **49,294** | 49,300 | **6** |
-| worker | 19 | 42,808 | 44,100 | 1,292 |
-| validation | 18 | 42,000 | 43,300 | 1,300 |
-| reporting | 6 | 6,551 | 6,800 | 249 |
-| model union | 33 | 75,500 | 77,900 | 2,400 |
-
-Composition, by the same metric:
-
-- The five largest tools are 60.8% of the planner loadout and 60.4% of the worker loadout.
-- `p2o_graph` alone is **8,298 chars = 16.8% of the planner loadout** (1,681 description + 6,617 parameters).
-- The four planner authoring/rating verbs are **21,662 chars = 43.9% of the planner loadout**.
-- The five authoring verbs are 28,336 chars = 37.5% of the model union.
-- 15 of the 33 model-visible schemas do not set `additionalProperties:false` (16 of 35 including the hidden
-  `p2o_delegate`); six tools accept an object that contains **only** an unknown field.
-- About 1,500 model-visible chars across the planner and worker loadouts restate a rule the role prompts already carry
-  (roughly half of them in the planner loadout; see F-18/F-19).
-- Registered but never declared to a model: `p2o_delegate` (2,287 chars) and `p2o_task_start` (298 chars). They cost
-  zero model context and must never be counted as headroom.
-
-Registered surface: 35 tools = 33 model-visible (planner 22 / worker 19 / validation 18 / reporting 6 after role
-filtering) + 2 hidden legacy verbs; 12 board verbs; 78 distinct refusal codes in the owner process.
-
-## 3. Findings register
-
-Severity: **P1** = a declared capability is unusable, or model-visible text directs a guaranteed-blocked call;
-**P2** = real duplication, silent acceptance or inconsistent contract; **P3** = naming, docs, tidiness.
-`Tranche` names the task that closes the finding; `defer` means deliberately not in S1. `EXT:N` abbreviates line `N` of
-`extensions/p2o/index.ts`; every other path is repo-relative.
-
-### 3.1 P1 — declared but unreachable, or text that directs a blocked call (tranche A)
-
-| ID | Finding | Evidence | Action |
-| --- | --- | --- | --- |
-| F-01 | Ten model-visible boundary sentences point at a tool the holding role cannot call: `p2o_graph`/`p2o_state`/`p2o_ledger` say "read through p2o_board" for worker, validation and reporting (which do not hold it); `p2o_note` tells a validation worker to use `p2o_surface` (removed from its loadout); `p2o_surface` cites `p2o_task_author` (worker does not hold it). | `src/tool-guidelines.ts:16,17,30,31,33`, loadouts `src/tool-policy.ts:43,52,56`, gate `EXT:4435`; reproduced by scanning every `p2o_*` token in each tool's final description against the holder's loadout | A1 (new test), A2 (rewrite) |
-| F-02 | All five `foothold-*` actions of `p2o_session` are unreachable: the broker worker RPC allow-list omits them, and the owner branch is unreachable because the planner loadout has no `p2o_session`. The description still sells the foothold (685 of its 2,324 chars) and `text`/`maxBytes` are dead with it. | `src/broker.ts:485` (session allow-list), `src/tool-schemas.ts:156` (enum), `EXT:3106-3108` (prose), handler `EXT:4085-4123`, loadout `src/tool-policy.ts:14,25`, `src/foothold.ts:28` | A3 (wire + test worker path) |
-| F-03 | `chain`, `path` and `ingest` are declared to worker/validation but fail `PLANNER_ONLY`; neither the description nor the boundary says so, while `p2o_board`/`p2o_workers` do carry "PLANNER ONLY". Per D-S1-7 `path` becomes a bounded read for every role, so after A5 only `chain` and `ingest` stay planner-only and both must say so. | `EXT:3281,3308,3358`; holders in `tools-audit.json`; description `EXT:3274` | A5 (relax `path`, label `chain`/`ingest`), C1 (move those two) |
-| F-04 | `scripts/test-installed-holdout.mjs` orders the live model to call `p2o_delegate` (hidden) and `p2o_candidate` (worker-only) as the lead, and its leak assertion keys on `p2o_delegate` tool results — so the "leaked worker" check is vacuous and the run can report `passed`. The file is SHA-pinned in `research/runtime/lean-lead/acceptance.json`. | `scripts/test-installed-holdout.mjs:36,91-97`, `research/runtime/lean-lead/acceptance.json:22` | A4 (objective + non-vacuous assertion + re-pin) |
-| F-05 | Worker `p2o_graph action=query\|summary` with `cursor` fails: the index sends `cursor` to the broker but the broker allow-list has `since` only, and `graphRead` reads `since`. | `EXT:3347` vs `EXT:4151` (`['…','since','limit','asOfSequence',…]`), schema `src/state/graph-tool.ts:57` | A6 (map `cursor`→`since`, + test) |
-| F-06 | Worker `p2o_research action=cve componentRef=…` drops `componentRef` in the worker payload, so the host refuses with "needs a product name" even though a legal package identity was supplied. | payload `EXT:2927-2929`, schema `src/tool-schemas.ts:127`, handler `src/cve.ts:37` | A7 (forward + test) |
-| F-07 | The wrapping-round restriction fails open: `setActiveTools(closingTools())` is inside a `try/catch` that keeps the full loadout on host error; the defensive `tool_call` gate uses `plannerTools()` rather than the closing list; `p2o_workers action=continue` remains in the closing loadout; and the planner prompt claims "authoring and dispatch do not [stay]" although only `p2o_task_author`/`p2o_task_dispatch` are removed. | `EXT:710`, `EXT:4435`, `EXT:3496`, `src/prompts.ts:160`, `src/tool-policy.ts:40` | A8 (gate + narrowing decision) |
-
-### 3.2 P2 — duplication, silent drops and contract drift (tranche B)
-
-| ID | Finding | Evidence | Action |
-| --- | --- | --- | --- |
-| F-08 | `p2o_task_settle` re-declares `p2o_task_review`'s five params verbatim plus `outcome` that maps 1:1 to the internal action — the exact pattern `board-verbs.ts` says the authoring merge removed. A blocked/cancelled task makes the model pick between two identical-field verbs. | `src/board-verbs.ts:84-91,116`; registrations `EXT:2875-2877` | B1 (merge into one verb with `outcome`) |
-| F-09 | `p2o_graph` `page` returns the asset **revision append-log** (all rows in a sequence window, `total` rows + `uniqueAssets`) while `query`/`export` read current heads; nothing model-visible says so, and `page` is the obvious first verb a model picks for "what assets exist". | `src/state/store.ts:1178-1185` vs `:1187-1190,708-760`, description `EXT:3274`, `src/state/graph-tool.ts:39` | B2 (delete `page`; `query` is the inventory) |
-| F-10 | "plan" names two entities in one loadout: `p2o_plan_author` authors `goal\|todo\|decision` (no "plan" kind), `p2o_coverage_plan` authors a versioned coverage plan, and `LEGAL_NEXT` keys both `plan` and `coveragePlan`. "Revise the coverage plan" is a coin flip that fails with "Unknown plan ID". | `EXT:2880-2885`, `src/board-verbs.ts:120-124` | B9 (`p2o_goal_author` rename + disambiguating clause, D-S1-8) |
-| F-11 | Two `session` concepts share one parameter name: `p2o_http.session` is a principal-local **cookie jar** (`^[A-Za-z0-9][A-Za-z0-9._-]{0,39}$`) while `p2o_shell`/`p2o_session.session` is a **container session id** (`^[a-z0-9][a-z0-9-]{0,63}$`). A container id passed to `p2o_http` silently selects an empty jar; a jar name passed to the shell fails at call time. `session=none` is a magic string inside the name param. | `src/tool-schemas.ts:149,157,181`, `src/http-session.ts:36-47`, description `EXT:3194` | B5 (`cookieJar` rename) |
-| F-12 | `verdict` carries two vocabularies on the same case entity: `open\|confirmed\|ruled_out\|inconclusive` (case) and `still_reproducible\|fixed\|cannot_confirm` (retest), both surfaced as `verdict`. A retest with `verdict:"confirmed"` dies in Pi's enum validator before the handler. | `src/case-types.ts:5`, `src/retest.ts:15`, `src/board-verbs.ts:95` | B5 (`retestOutcome` rename) |
-| F-13 | `p2o_graph`'s `cursor` means opposite directions inside one tool: `query` pages backward (`sequence < cursor`, newest first, rejects `cursor=0`), while `page`/`view`/`export` page forward (oldest first). Reusing one action's `nextCursor` in another silently pages wrong. | `src/state/store.ts:712-713,734,745,756-757` vs `:1142,1180-1184,1210-1218` | B6 (state direction; accept 0) |
-| F-14 | The declared `limit` maximum (500) exceeds three host caps and one silent clamp: query ≤50, page/view ≤100, summary silently `min(limit??5,10)`. A declaration-valid `limit=100` is refused or quietly returns 10 rows. | `src/state/graph-tool.ts:56`, `src/state/store.ts:711,1142,1180`, `EXT:3352` | B6 (per-action bounds; action-shaped pre-check) |
-| F-15 | `p2o_state` says search is "limit default 10, max 20" while the code and schema allow 100; the model self-limits and loops. | `EXT:2674`, `src/search.ts:13,43`, `src/tool-schemas.ts:19` | B6 (20→100) |
-| F-16 | `p2o_workers` pages a `changes` list it never mentions (cursor defaults to `total-20`), and its description carries a `holdContinuations` "0..3" claim that belongs to `p2o_report` (no such field in `workersParameters`). | `EXT:3481,3524-3533`, `src/tool-schemas.ts:223-232,227` | B6 (two sentences) |
-| F-17 | `p2o_lab` declares a `compose` parameter (~260 chars of description) that always fails `PLANNER_ONLY`; the owner branch that implements it is unreachable because the planner holds no lab tool. `env` silently ignores `kind`/`body`/`id`, `payload` ignores `compose`/`setup`/`services`/`seed`. | `EXT:2954,2979,2997-3031`, `src/tool-schemas.ts:113` | B6 (delete param; cross-field refusals) |
-| F-18 | `src/truth.ts` states that execution tool descriptions do not repeat a worker-prompt fact, but the boundaries repeat them: NETWORK_TRUTH in `p2o_net` body+boundary, HTTP_TRUTH in the http boundary, BROWSER_TRUTH paraphrased, CREDENTIAL_TRUTH's literal-value clause restated — 600-700 duplicate chars in worker/validation loadouts. | `src/truth.ts:9-11`, `EXT:3103`, `src/tool-guidelines.ts:24,25,27,28`, `src/prompts.ts:240-241` | B3 (boundary keeps the delta) |
-| F-19 | About 1,500 chars restate prompt rules: policy provenance is stated 4× (body 286 + boundary 236 + `policyBasis` 207 + `expectedPolicy` 44) although `prompts.ts:22` says the tool "carries a pointer"; risk label 4×; the state/board/ledger/graph routing table ~500 chars across four boundaries; "blocked records the human prerequisite" twice; "export ends nothing" twice; "continue = same ticket" twice. | `EXT:2936`, `src/tool-guidelines.ts:8,10,22,29,39,40`, `src/tool-schemas.ts:25,74,83-84,192,238`, `src/prompts.ts:22,142` | B3 (one statement per rule) |
-| F-20 | 15 of 33 model-visible schemas are open (`additionalProperties` absent), so unknown fields are silently kept and ignored. Concrete danger: `p2o_shell {command, timeoutSeconds:30}` is accepted and the command runs with **no** timeout, because shell/net name the wait `timeout` while `p2o_workers` uses `timeoutSeconds`. Same class: `timeoutSec` on http, `maxKib` on capture, `notbefore` on loop, `partialReason` on finish. | `src/tool-schemas.ts:139,146-152,174-186,188-195,223-232`, Pi keeps unknown props (`node_modules/@earendil-works/pi-ai/dist/utils/validation.js:283`), `EXT:3068` | B4 (close schemas or named refusals) |
-| F-21 | Result envelopes and pagination are bespoke: `shown` is a number for page/view but an object for query/export; item key is `rows`/`hits`/`records`/`tasks`/`entries`/`plans`/`cells`/`suggestions`; `cursor` is a sequence barrier in graph/state but a row index in ledger/search/board/workers; `offset` is bytes in artifact/capture, rows in skill_list, characters in skill_read; next field is `nextCursor`, `nextOffset`, or unmentioned (state). | `src/state/store.ts:754-757,1150,1184,1216-1218`, `src/records.ts:282-285`, `src/search.ts:41-53`, `src/counts.ts:44-52`, `EXT:3524-3533`, `src/skills.ts:86,128` | B7 (name the item key + direction per reader) |
-| F-22 | `p2o_research {}` passes Pi (all 14 params optional) and fails with "Research query must be a string", never naming the default action or its required field. | `src/tool-schemas.ts:120-137`, `src/research.ts:44` | B6 (actionable message) |
-| F-23 | `p2o_coverage_plan` silently ignores `revision` without `id`, so a would-be revise creates a second plan (the other three authoring verbs refuse this shape). | `src/board-verbs.ts:115` vs `:62-70`, `EXT:2813-2816` | B8 (reuse `authoringAction`) |
-| F-24 | `p2o_board` silently drops `status`/`kind`/`cursor`/`limit` on boards that do not use them (`board=tasks` with a valid case `status` returns an unfiltered list; `board=cases id=… status=…` ignores the status). | `EXT:2892-2902` | B8 (refuse unused field per board) |
-| F-25 | `p2o_task_dispatch` with a bad id fails with bare "Unknown task ID", losing the offending value. | `EXT:2710` | B8 (interpolate the id) |
-| F-26 | `p2o_task_author` role-conditional fields are schema-optional and then refused as "Invalid task roleReason" without the minimum or the exempt role (`methodReason` already has a tailored message). | `src/tool-schemas.ts:27-29`, `src/tasks.ts:122,129,148` | B8 (message) |
-| F-27 | Identity/idempotency is inconsistent: `requestId` exists in six tools but not `p2o_task_author` (a retried unstructured create duplicates); board `requestId` is a bare string while the store requires `validId` and answers "Invalid mutation request identity"; a reused key with a changed payload returns bare `IDEMPOTENCY_CONFLICT`; `p2o_candidate` declares no `id`/`revision` but is open, so they are accepted and stored. | `src/board-verbs.ts:19`, `src/state/store.ts:338,343`, `src/tool-schemas.ts:73-94`, `src/evidence.ts:115`, `EXT:2736` | B8 (named validation; strip unknown candidate keys) |
-| F-28 | `p2o_session protocol:"udp"` is schema-legal but always refused. | `src/tool-schemas.ts:163` vs `EXT:2146` | B6 (enum tcp only) |
-| F-29 | `p2o_artifact`'s 8 KiB default is a wrapper constant while `store.artifact` defaults 16 KiB; the text block never prints total bytes, so remaining size is inferable only from `nextOffset`. | `EXT:2509,3260,3269-3271`, `src/state/store.ts:622` | B6 (print total; align default) |
-| F-30 | `p2o_board` undersells its own surface: declared filters `status`/`kind` are undocumented, default page sizes differ (tasks 10, others 20), item keys are `tasks`/`entries`/`plans`/`cells`. | description `EXT:2891`, `src/board-verbs.ts:107-110`, `src/counts.ts:45`, `EXT:2694` | B6 (one sentence) |
-| F-31 | `p2o_research action=fetch` and `p2o_http` take the same `url` and return the same shape with opposite evidentiary status; a worker that fetches a target page through research bypasses the cookie jar (an authenticated page comes back as a login wall) and its body is not a receipt. | `EXT:2921-2922` ("Citation data, never evidence") vs `EXT:3194` | B6 (one clause: never for target pages) |
-| F-32 | `p2o_coverage_suggest` is named coverage and its own text says it is not coverage; the same drift appears in `p2o_note kind=coverage`, which mirrors `p2o_report.coverage` items yet is downgraded to "display context" by the prompt while `summarizeRecords` still counts it. | `EXT:2887`, `src/board-verbs.ts:29-31`, `src/tool-schemas.ts:189`, `src/prompts.ts:282`, `src/records.ts:347` | B9 (`p2o_wstg_suggest` rename, D-S1-8) |
-| F-33 | `scripts/measure-context.mjs` only scans prompts for tool names, so F-01 is invisible to it; its "declaration total" sums all 35 registered tools and never reaches a model (the real costs are the per-role numbers in §2). | `scripts/measure-context.mjs:36,47,59` | A1 (new audit script + test) |
-
-### 3.3 P3 — naming, docs, tidiness (tranche B, cheapest first)
-
-| ID | Finding | Evidence | Action |
-| --- | --- | --- | --- |
-| F-34 | `docs/ARCHITECTURE.md` is stale: "34 registered tools: 32 model-visible", planner 21 — actual 35/33 and 22; the role table omits `p2o_case_retest`. | `docs/ARCHITECTURE.md:20-26` | B10 (docs) |
-| F-35 | Both hidden legacy verbs are a **test-only API**, not a live path: the Engine spawns through `spawnWorker` directly, so nothing in src/extensions calls the wrappers; 29 test files / ~95 call sites use them, and `BOARD_ACTION_VERBS` (which maps old actions to the hidden `p2o_task_start`) has no production consumer. Per D-S1-10 they are deleted in S1 after the test migration. | `EXT:3389,4036`, `src/board-verbs.ts:36-48` (only `tests/minimal/board-verbs.test.ts` reads it) | B10 (migrate tests → delete) |
-| F-36 | Maintainer notes ship inside model-visible declarations: `p2o_task_start` says "HIDDEN LEGACY: not on the model surface…" and `p2o_delegate` still claims "PLANNER ONLY: immediately spawn…" though no role holds it. | `EXT:2873,3390` | B10 (the declarations are deleted) |
-| F-37 | Secondary bounds are declared but undocumented or unguarded: `asOfSequence`, path defaults (4/200), summary's 8 KiB row trim, ingest's 4 MiB input cap, state search's extra searchable fields; the `chain` branch has no `GRAPH_RESPONSE_BYTES` guard and a `view` dossier is trimmed only inside the dossier lists. | `src/state/graph-tool.ts:57`, `src/state/store.ts:811`, `src/state/graph.ts:33`, `src/extract/types.ts:13`, `EXT:1324-1334,3285-3305` | B6/C2 (guards + prose; tests) |
-| F-38 | Param naming drift: `p2o_state.q` vs `p2o_skill_list.query`; `p2o_task_dispatch` accepts both `ids` and `id` (`ids` wins, `id` silently ignored); `text` means three different payloads (`session` foothold body, `loop` hint, `note` body); four names for "how much to read" (`maxKiB`, `maxBytes`, `length`, `limit`). | `src/tool-schemas.ts:19,65,139,164,197,228`, `EXT:2704` | B6/B9 (document; unify on next rename) |
-| F-39 | `p2o_loop action=status` returns the same `engine.snapshot()` that `p2o_workers list` embeds (redundant); `p2o_secret` spends 746 description chars on a one-action list; `p2o_graph`'s 1,681-char paragraph mixes nine actions with no per-action structure. | `EXT:3475` vs `:1475,3529`; `EXT:3176-3182`; `EXT:3274` | B2/B3 (drop status; trim) |
-| F-40 | `p2o_graph`'s `ingest` reuses root `id` for a retained artifact id while `view` uses `id` for an asset entity id — two namespaces under one param name with no description. | `src/state/graph-tool.ts:45`, description `EXT:3274` | B6 (name both in prose) |
-
-### 3.4 Structural findings (tranche C)
-
-| ID | Finding | Evidence | Action |
-| --- | --- | --- | --- |
-| F-41 | `p2o_graph` carries a 3,972-char write batch into a read-only planner loadout, and three of its actions are planner-only inside a tool held by every role. Authority and declaration are not aligned. | `src/state/graph-tool.ts:26-42,55`, loadouts `src/tool-policy.ts:25-46` | C1 (split by authority) |
-| F-42 | Nine actions in one tool with 24 root params; seven of them are reads with overlapping questions (`view`/`page`/`export`/`query`/`summary`/`chain`/`path`). | `src/state/graph-tool.ts:44-56` | C1/C2 (verbs below) |
-| F-43 | The five authoring payloads repeat 127 leaf names (29 shared by ≥2, 11 by ≥3) and the `{kind,subject,scope}` capability triple is declared 7× = 4,962 chars. A single engine (`executeTaskAction`/`executeCaseAction`/… + `ownerMutation`) already backs all five, but a discriminated union is **not** implementable safely: the Anthropic adapter flattens a tool to root properties/required, and a root `anyOf` loses all arguments. | `EXT:2686,2767,2791,2810,2538`, `src/board-verbs.ts:62-71`, `node_modules/@earendil-works/pi-ai/dist/api/anthropic-messages.js:1265-1281`, `src/state/graph-tool.ts:50-51` | C3 (bounded consolidation only) |
-| F-44 | The declaration budget has no structural margin: planner is 6 chars under its ceiling, so every future planner feature is a trimming exercise. | `tests/minimal/context-budget.test.ts:29` | C1–C3 |
-
-## 4. Tranche A — P1 remediation (small, hermetic, net ≤ 0 chars)
-
-**A1 — Add a surface audit script and its regression test.**
-`scripts/audit-surface.mjs` registers the real extension against a stub Pi API (same pattern as
-`scripts/measure-context.mjs`) and prints per tool: declaration chars, role holders, action list, and every `p2o_*` token
-in its final description (after `withBoundaries`) that the holder role cannot call. `tests/minimal/surface-audit.test.ts`
-pins: (a) zero cross-reference contradictions (F-01 class), (b) the 35/33/12 counts, (c) hidden verbs are in no loadout,
-(d) the per-role declaration numbers in §2 within tolerance. Acceptance: the cross-reference assertion **fails on
-`197d6a9`** (10 pairs) and passes after A2.
-**A2 — Rewrite the ten cross-reference sentences** so each names a verb the holding role actually has, or states the
-split without naming an unheld tool (e.g. "entity boards are planner-read; read records here by id"). Trim the
-`HIDDEN LEGACY` maintainer notes (F-36) in the same edit. Acceptance: A1 test green; no role loadout changes;
-`context-budget` still green; net character delta ≤ 0 measured by the script.
-**A3 — Wire the foothold (D-S1-2).** Import and append `FOOTHOLD_ACTIONS` to the broker session allow-list; keep the
-`validationMayUseSession` gate and the `--lab-network` ingress requirement exactly as they are; add a worker-path test
-(broker stub) for `foothold-open` → `identify` → `send` → `read` → `close`, plus a validation-worker refusal and an
-"unknown action still refused" case. Acceptance: `session.test.ts`/`foothold.test.ts` green including a new worker-role
-test through `BrokerClient`; no declaration growth (the enum and prose already budget for it).
-**A4 — Fix the installed-holdout harness.** The objective stops naming `p2o_delegate`/`p2o_candidate` as lead verbs and
-uses the supported path (`p2o_task_author` → `p2o_task_dispatch` → `p2o_workers` → `p2o_report`); the cleanup assertion
-must fail if zero worker tool results were observed (non-vacuous), and the `acceptance.json` SHA entry is re-pinned in the
-same change. Acceptance: a dry structural check (no live run) proves the objective mentions only loadout-held tools and
-the leak check requires observed worker evidence.
-**A5 — Relax `path`, label what stays planner-only (D-S1-7).** Remove the worker/validation refusal for `path` so the
-bounded read is available to every role; keep `chain` and `ingest` planner-only and say so in the description and the
-boundary. Acceptance: a worker-path `action=path` test (direct and through the broker) succeeds and returns the same
-bounded shape as the planner's, `chain`/`ingest` still refuse for worker and validation, the declaration carries the
-planner-only clause, and the edit is net ≤ 0 chars.
-**A6 — Map `cursor`→`since` for worker graph query/summary (F-05)** and add a worker-path test that a cursor page works
-and advances. Acceptance: new test in `graph.test.ts` (or `graph-native.test.ts`) exercising the broker payload.
-**A7 — Forward `componentRef` in the worker research payload (F-06)** and test that a package asset resolves to a CVE
-query for a worker. Acceptance: `research.test.ts` worker fixture.
-**A8 — Make the wrapping-round restriction real (F-07).** The `tool_call` gate uses `closingTools()` when
-`run.roundState?.wrapSent`; decide and record whether `p2o_workers action=continue` is allowed during wrap (it sends a new
-brief); correct the planner prompt sentence to say "creating or dispatching an intent does not [stay]". Acceptance: a new
-test proves an injected `p2o_task_author`/`p2o_task_dispatch` call is blocked only during wrap and allowed otherwise; the
-prompt text pins the narrower claim.
-
-Tranche A is done when: A1–A8 land, the new tests pass, `tsc`/`build`/`check:build` are clean, `context-budget` is green
-with planner ≤ 49,294, and the only authority change is the read-only `path` relaxation (D-S1-7); no loadout gains or
-loses a tool.
-
-**Tranche A result (committed as `aa87a57`, 2026-10-29).** A1–A8 landed; `tsc --noEmit` clean; full `vitest run`
-**153 passed / 5 skipped files (158), 1,340 passed / 13 skipped tests (1,353), 0 fail**; `npm run build` +
-`npm run check:build` → `build import OK`; `git diff --check` clean; `context-budget` green with planner
-**49,248/49,300** (52 chars headroom), worker 42,791/44,100, validation 41,980/43,300, reporter 6,528/6,800, model
-75,483/77,900 — every role is at or under the pre-A measurement (D-S1-5, ceilings unchanged).
-
-- **A1** added `scripts/audit-surface.mjs` and `tests/minimal/surface-audit.test.ts`: the audit registers the real
-  extension against the stub Pi host, prints per-role declaration totals and the cross-reference contradictions, and the
-  test pins 35 registered / 33 model-visible / 2 hidden / 12 board verbs, the hidden verbs in no loadout, zero
-  contradictions and the per-role baselines. It reproduced **10 contradictions on the unmodified tree** (red) and reports
-  **0** after A2 (green).
-- **A2** rewrote the eight boundary sentences that named an unheld verb (`p2o_graph`, `p2o_state`, `p2o_ledger` → board;
-  `p2o_note` → surface; `p2o_surface` → author) into role-neutral wording, and replaced the two hidden verbs' maintainer
-  notes with plain descriptions. Planner fell 49,294 → 49,248; no loadout changed.
-- **A3** appended `FOOTHOLD_ACTIONS` to the broker session allow-list (`src/broker.ts`), keeping the
-  `validationMayUseSession` gate and the `--lab-network` ingress requirement unchanged; `session.test.ts` gained a
-  broker-path test that every foothold action routes to the ticket-bound session instead of failing as unknown. The five
-  declared actions are now reachable by the only role that holds `p2o_session`.
-- **A4** rewrote the installed-holdout objective off the hidden `p2o_delegate` and the worker-only `p2o_candidate` onto
-  `p2o_plan_author` → `p2o_task_author` → `p2o_task_dispatch` → `p2o_workers` → `p2o_finish`, and replaced the vacuous
-  leak check with two non-vacuous assertions: a run with no `p2o_task_dispatch` tool result fails, and any Herdr pane that
-  appeared during the run counts as a leak. Deviation: the script's SHA entry in
-  `research/runtime/lean-lead/acceptance.json` is **not** re-pinned — that file is a historical receipt tied to
-  `testedInstalledRevision 76602c6` whose hashes are already stale against HEAD; it belongs to a new authorized live run,
-  not to this hermetic edit.
-- **A5** (D-S1-7) shares `p2o_graph action=path`: the walk moved into one `pathWalkFor` helper used by the planner branch
-  and by the broker `graph_read` route, so worker and validation can read bounded reachability (same ≤10 paths / ≤6 hops /
-  ≤500 nodes / 24 KiB bound, never writing). `chain`/`ingest` remain planner-only and the description now says so while
-  still being net −7 chars. Tests cover a worker walk, the unchanged declarations and both refusals.
-- **A6** sends the worker `query`/`summary` cursor as the broker's `since` (the broker had always rejected `cursor` as an
-  unknown field), with a worker test that a cursor page is accepted.
-- **A7** forwards `componentRef` on the worker research call; a worker `action=cve componentRef=<package asset>` test
-  derives the same NVD query and labelled lead the owner path does.
-- **A8** makes the wrap gate read the loadout the round is actually on (`closingTools()` when `wrapSent`), refuses
-  `p2o_workers action=continue` during wrap with an actionable message, and narrows the planner prompt claim to
-  "creating or dispatching an intent does not"; the prompt was paid down by 14 chars (`starts from this ledger`,
-  `finish the thought`) so `recon.test.ts`'s recorded planner ceiling stays at 14,400. A test proves an injected
-  `p2o_task_author`/`p2o_task_dispatch` call is blocked during wrap, `p2o_plan_author` is not, and the brief is refused.
-
-GitNexus: `impact` was run **before** the edits — `registerP2O` 0 callers / `UNKNOWN` (entry point; the index is 6
-commits behind HEAD, so that is unmeasured, not empty), `withBoundaries` 7 impacted / 1 direct / `LOW` / exact,
-`graphParameters` 0 / `UNKNOWN` (inline property reference). `detect_changes --scope all` before reporting: 58 changed
-symbols / 11 changed files / 25 affected processes / risk critical; as in R0–R3 it also sees the owner's `AGENTS.md`
-edit and stale planning-doc mappings. No live run, no target traffic, no paid model call: every new test is hermetic. The
-owner's `AGENTS.md` and `pi-p2o-defense-vi.pptx` remain untouched and unstaged.
-
-## 5. Tranche B — reclaim budget and harden the contract
-
-**B1 — Merge `p2o_task_settle` into `p2o_task_review` (F-08).** One verb takes `outcome: reviewed|closed|blocked|cancelled`
-(default `reviewed`); `reviewed` keeps today's review semantics and the other three map to today's settle actions. Update
-`BOARD_ACTION_VERBS`, `TASK_VERB_NAMES`, `authority`/`board-verbs`/`extension` tests, acceptance-matrix citations and the
-boundary. Expected −620 chars; the planner headroom becomes usable.
-**B2 — Remove `p2o_graph action=page` (F-09) and `p2o_loop action=status` (F-39).** `query` is the current-head
-inventory; `p2o_workers` already carries the engine snapshot. `page`'s append-log read remains available internally where
-it is used (report/ingest paths keep their store call). Update `GRAPH_ACTION_PARAMETERS`, graph tests and the description;
-expected ≈ −780 chars.
-**B3 — One statement per rule (F-18/F-19).** Keep provenance, risk-label, routing, finish and continue rules once — in the
-prompt where the role reads it — and make the tool text a pointer. The boundary keeps only the delta the prompt does not
-carry. Target −1,450 chars across roles; acceptance: `truth.test.ts`, `claims.test.ts` and `report-*` content tests stay
-green, and a new `surface-duplication.test.ts` fails if a rule sentence appears in more than one model-visible source
-(measured by shared 8-grams between declared descriptions and prompts, threshold pinned).
-**B4 — Close the open schemas (F-20).** Either set `additionalProperties:false` (≈ +27 B per tool, paid by B3) or add a
-handler refusal for the known cross-tool aliases (`timeoutSeconds`, `timeoutSec`, `maxKib`, `notbefore`, `partialReason`).
-Prefer closing: the failure becomes a named Pi refusal instead of a silent no-op. A1's argument-validator concern was about
-cosmetic prose caps, not unknown fields. Acceptance: `surface-contract.test.ts` pins the closed set and asserts the shell
-`timeoutSeconds` case is refused by name; `context-budget` green.
-**B5 — Rename the two ambiguous parameters (F-11/F-12).** `p2o_http.session` → `cookieJar` (keep `resetSession`), and
-`p2o_case_retest.verdict` → `retestOutcome`. Zero net chars (the http param gains the description it never had).
-Acceptance: runtime tests and docs updated in the same change; no declaration growth.
-**B6 — Make the declared bounds action-shaped and the messages actionable (F-13/F-14/F-15/F-16/F-17/F-22/F-28/F-29/F-30/F-31).**
-Per action: document and enforce the real limit cap; state the cursor direction and accept `0`; say `summary` is ≤10 rows
-and 8 KiB; state `path` defaults; delete `lab.compose`; make the state limit 100; make the empty research call name the
-action and its field; `protocol` enum `['tcp']`; print artifact total bytes; name the board filters; add the research
-"never for target pages" clause; name both `id` namespaces. Acceptance: each item has either a prose assertion in
-`surface-contract.test.ts` or a handler test with the concrete failing call from §3.
-**B7 — Name the envelope in each reader (F-21).** One sentence per reader: item key, direction and next field. No shape
-unification in S1 (the shapes are consumed by tests and the report); reuse `rows` only where free. Acceptance: prose pins
-in `surface-contract.test.ts`.
-**B8 — Refusals that name the fix (F-23/F-24/F-25/F-26/F-27).** `coverage_plan` reuses `authoringAction`; `board` refuses
-the unused filter per board; `dispatch` interpolates the bad id; `task_author` names the role minimum and the exempt role;
-`requestId` is validated with a named message; `p2o_candidate` strips unknown keys. Acceptance: five handler tests with
-the call shapes from §3.
-**B9 — Rename the two misleading tools (D-S1-8, F-10/F-32/F-38).** `p2o_coverage_suggest` → `p2o_wstg_suggest` and
-`p2o_plan_author` → `p2o_goal_author`; add "not a coverage plan; those live in `p2o_coverage_plan`" now that the names are
-unambiguous; update every reference in one change (prompts, boundaries, `COVERAGE_VERB_NAMES`/`PLAN_VERB_NAMES`, role
-loadouts, skills/knowledge, docs, tests, acceptance-matrix citations) and add a repo-wide grep assertion to
-`surface-audit.test.ts` that no old name survives. Document the remaining param-naming drift in `docs/KNOWLEDGE.md`.
-Acceptance: `grep -rn` for either old name returns only the historical `docs/HISTORY.md` rows and git history; full suite
-green; declaration budget unchanged (tool names are excluded from the metric).
-**B10 — Delete the hidden legacy verbs (D-S1-10, F-35/F-36).** Step 1: migrate the ~29 test files that call
-`p2o_delegate`/`p2o_task_start` (the tests' own helper for spawning/`task start`) onto the internal functions
-(`spawnWorker` and `executeTaskAction('start')`) through the shared test helpers, keeping every behavioural assertion.
-Step 2: delete both `registerTool` blocks, `HIDDEN_TOOLS`, the hidden-exposure plumbing that becomes dead, and
-`BOARD_ACTION_VERBS` (no production consumer). Step 3: update the counts and pins — registered 35→**33** (all
-model-visible, hidden 0), board verbs 12→**11**, `TASK_VERB_NAMES` without `p2o_task_start` — in `authority`,
-`extension`, `measure-context`, `board-verbs`, `prompt-roles`, `workflow-policy` and the acceptance matrix. Acceptance:
-full suite green; no source or test references either hidden verb; `measure-context` reports 33 registered / planner 22 /
-worker 19; declaration budget unchanged.
-
-**B11 — Docs truth (F-34).** Update `docs/ARCHITECTURE.md` (33 model-visible tools, planner 22, 11 board verbs, role
-table including `p2o_case_retest`), the `docs/KNOWLEDGE.md` tool list and "who writes what" note, and add the S1 rows to
-`docs/ACCEPTANCE_MATRIX.md` as the tests land. Add one `docs/HISTORY.md` row when the tranche is committed.
-
-Tranche B is done when: A+B tests pass, full `vitest run` is 0-fail, `measure-context` reports **33 registered** tools
-(planner 22 / worker 19 / validation 18 / reporting 6) with planner ≤ 47,800 / worker ≤ 41,900 / validation ≤ 41,100 /
-reporter ≤ 6,450 / model ≤ 73,900, the two renames and the hidden-verb deletion have landed, and `context-budget` still
-passes against the **unchanged** ceilings.
-
-Met on 2026-10-29 after two corrections to this paragraph's own numbers: B1's merge leaves the planner at 21 rather than
-22, and B10's later pass leaves 32 registered tools (all model-visible, none hidden). Every declaration ceiling is
-unchanged, which is the clause that matters.
-
-**Tranche B result (B1–B9 committed 2026-10-29; B10 landed afterwards in the working tree, 2026-10-29).** B1–B9 landed;
-B10 was deliberately deferred out of that commit and landed in its own pass, recorded below. `tsc --noEmit` clean; full `vitest run` **153 passed / 5 skipped files (158), 1,341 passed / 13 skipped tests (1,354), 0 fail**; `npm run build` +
-`npm run check:build` → `build import OK`; `git diff --check` clean; `context-budget` green with planner
-**47,795/49,300**, worker 41,081/44,100, validation 40,270/43,300, reporter 6,282/6,800, model 72,773/77,900 — every
-role at or under the §7 target and the **ceilings are unchanged** (D-S1-5).
-
-- **B1** merged `p2o_task_settle` into `p2o_task_review`: the verb takes `outcome: reviewed|closed|blocked|cancelled`
-  (default reviewed) and maps the three settle outcomes onto the retained actions, so one decision verb carries one
-  field shape. Planner 22 → 21 tools; board verbs 12 → 11; `BOARD_ACTION_VERBS`, `TASK_VERB_NAMES`, boundaries, the
-  fixture helpers and the count pins all moved with it.
-- **B2** removed `p2o_graph action=page` (the append-log read stays internal for report/UI; `query` is the current-head
-  inventory) and `p2o_loop action=status` (the Engine snapshot is already carried by `p2o_workers`, whose `engine` key the
-  tests now read). The graph enum, action-parameter map, broker read route and every call site were updated together.
-- **B3** collapsed the duplicated prose: the candidate policy-provenance rule is stated once in the worker prompt (tool
-  text is a pointer), the PTY send/read contract is one sentence instead of three, the state/board/ledger/graph routing
-  text lost its restatements, the secret/research/worker/finish paragraphs were tightened, and the boundary layer keeps
-  only the delta the prompts do not already carry.
-- **B4** closed the ten remaining model-visible parameter objects (`additionalProperties:false` on the execution, HTTP,
-  note, candidate, report, capture and lab schemas) so a cross-tool field name such as `timeoutSeconds` is refused at the
-  argument boundary instead of silently ignored; the cost was paid by B3, and the surface audit now pins the result.
-- **B5** renamed the two ambiguous parameters: `p2o_http.session` → `cookieJar` (with the description it never had) and
-  `p2o_case_retest.verdict` → `retestOutcome`; the stored/report shape keeps `verdict`, so nothing downstream changed.
-- **B6** made the declared bounds action-shaped and the messages actionable: `query`/`view` limits are checked and named
-  before the host read, `query` accepts cursor `0` as "newest", path defaults are documented, `p2o_state` search says
-  `max 100` (it always accepted 100), `p2o_workers` documents its changes/task-tail pages, `p2o_lab`'s unreachable
-  `compose` parameter and its host-only branch are deleted (the compose reader stays a standalone module), `protocol`
-  is TCP-only, `p2o_artifact` prints total bytes, the board documents its filters/item keys, research says `fetch` is
-  never for target pages, and the graph `id` namespaces are spelled out.
-- **B7** named each reader's reply envelope (item key and next field) in prose instead of reshaping results.
-- **B8** refused the silent drops: `coverage_plan` now shares the authoring rule and refuses a revision without an id,
-  `p2o_board` refuses a filter the selected board/view does not use, dispatch interpolates the unknown task id,
-  `p2o_task_author`'s role-conditional refusal names the minimum and the one exempt role, `requestId` is validated and
-  documented, and `p2o_candidate`'s closed schema now refuses unknown keys.
-- **B9** (D-S1-8) renamed `p2o_coverage_suggest` → `p2o_wstg_suggest` and `p2o_plan_author` → `p2o_goal_author` across
-  37 files, with a repository grep test that fails if either old name survives outside the historical docs.
-- **B10** (D-S1-10) deleted the two hidden legacy verbs after migrating their callers. `registerP2O` now publishes
-  `testSeamFor(pi)`: a documented in-process seam, keyed by the Pi API object, that runs the same two code paths (one
-  worker spawn at depth 0, one owner task start with the same revision hint) with the same guards and result shape. The
-  tests that used the wrappers as their spawn/start harness route through it, so no registered tool exists for them and
-  no model can see or call them. `HIDDEN_TOOLS`, `ALL_TOOLS`, `BOARD_ACTION_VERBS`, `taskStartParameters` and
-  `delegateParameters` are deleted; the audit derives its hidden count instead of naming a set. The surface is now
-  **32 registered tools, all model-visible, 0 hidden, 10 board verbs** and the planner loadout is unchanged at 21.
-- **B11** updated `docs/ACCEPTANCE_MATRIX.md` (counts, the two renamed test titles, new S1/A and S1/B rows for the tests
-  that now prove them), `docs/USAGE.md` (loop status removed; snapshot read from `p2o_workers`), and `docs/ARCHITECTURE.md`
-  already carried the right 34/32/21/11 numbers after the A pass. `docs/HISTORY.md` carries the S1 row, added in this
-  commit.
-
-**B10 result (committed as `04f3f23`, 2026-10-29).** The two hidden verbs are deleted and their tests migrated:
-`registerP2O` publishes `testSeamFor(pi)` and 21 test files reach the same two code paths through it (83 call sites route
-there; no test body, expected value or description changed except the deletion pins). The surface is now **32 registered,
-all model-visible, 0 hidden, 10 board verbs, planner 21**; `HIDDEN_TOOLS`, `ALL_TOOLS`, `BOARD_ACTION_VERBS`,
-`taskStartParameters`, `delegateParameters` and both `exposure: 'hidden'` registrations are gone. `tsc --noEmit` clean;
-full `vitest run` **153 passed / 5 skipped files (158), 1,341 passed / 13 skipped tests (1,354), 0 fail**; `npm run build` +
-`npm run check:build` → `build import OK`; `git diff --check` clean; `audit-surface` reports 32/32/0/10/21 with 0
-contradictions; the declaration budget is unchanged — planner **47,795/49,300**, worker 41,081/44,100, validation
-40,270/43,300, reporter 6,282/6,800, model 72,773/77,900 — because neither deleted verb was ever in a role loadout. A new
-`F-S1-B-2` acceptance row and the rescanned count pins record the change, and `docs/ARCHITECTURE.md` now says 32
-model-visible. No live run, no target traffic, no paid model call.
-
-Deviations: (a) B10 was deliberately held out of the B commit and landed as its own pass (above); (b) the bulk rename touched test fixtures and docs in one change, which is what
-D-S1-8 asked for, and the grep test is the guard; (c) `p2o_lab`'s compose branch was deleted rather than kept behind a
-refusal, because no model role could reach it and the declaration was the only surface that advertised it; (d) the S1
-audit baseline in `tests/minimal/surface-audit.test.ts` was raised/lowered once to the post-B targets so the audit test
-enforces the tranche's goal rather than its starting point.
-
-GitNexus: **`impact` was not run before Tranche B's symbol edits** — the same process lapse as R1–R3, disclosed rather
-than dressed up; `detect_changes --scope all` was run before this report and is recorded in the tranche evidence.
-
-GitNexus for B10: the workspace index was rebuilt at `1cf3d8b` before the edits (`analyze --index-only`; the registry
-under `~/.gitnexus` stayed unwritten because that path is outside the session's write sandbox, so MCP `staleness` still
-prints the old commit count while symbol lookups read the fresh graph). `impact` upstream was run for each edit target:
-`HIDDEN_TOOLS`, `ALL_TOOLS`, `BOARD_ACTION_VERBS` and `TASK_VERB_NAMES` resolved 0 callers / `UNKNOWN`, confirmed by a text
-search that found only tests and the audit script as readers — the one verdict AGENTS.md says must be confirmed rather
-than read as low; `spawnWorker` resolved 2 direct callers / `LOW` and `executeTaskAction` 2 direct / `LOW`, both retained
-by the seam. `detect_changes --scope all` after the edits: 122 changed symbols / 40 changed files / 124 affected processes /
-risk critical, which as in R0–R3 also counts the owner's `AGENTS.md` and the doc mappings. No
-live run, no target traffic, no paid model call: every test is hermetic. The owner's `AGENTS.md` and
-`pi-p2o-defense-vi.pptx` remain untouched and unstaged.
-
-## 6. Tranche C — structural (gated, after A+B evidence)
-
-**C1 — Split `p2o_graph` by authority (F-41).** Target shape:
-- `p2o_graph` (planner + worker + validation): `view`, `query`, `summary`, `export`, and `path` (read-only reachability,
-  available to all three roles per D-S1-7).
-- a worker/validation write verb carrying the batch schema (`record`) — the planner keeps only a compact review entry
-  point for supersede/promote, so the 3,972-char batch leaves the planner loadout.
-- `chain` (+ `plan`) and `ingest` live in a planner-only tool; `chain`/`ingest` are coordination, not target work.
-Acceptance: planner declaration −≥2,500 chars, worker −≥400; no authority widening (the planner never gains a target,
-lab or claim tool); graph tests split by role; `context-budget` re-pinned once with a dated comment (D-S1-5).
-
-**C1 result (committed as `b7f8574`, 2026-10-29).** One `p2o_graph` became four registered tools, split by authority
-rather than by feature, all `exposure: 'model-only'`:
-
-- `p2o_graph` (planner + worker + validation) keeps the bounded reads `view|export|query|summary|path`; the broker
-  `graph_read` route and the path-sharing decision (D-S1-7) are unchanged. Declaration: 678-char description +
-  2,093-char parameters.
-- `p2o_graph_record` (worker + validation) carries the batch write schema — root `{batch, requestId}`, no action field —
-  so the 4,164-char batch subtree leaves the planner loadout entirely.
-- `p2o_graph_review` (planner only) is the compact supersede/promote entry point: a flat row
-  `{id, outcome: supported|refuted|inconclusive|observed, evidenceRefs?, counterevidenceRefs?, requestId?}` (537 chars).
-  The host derives the retained row from the id (`AssessmentStore.graphReviewRow`, the one new store read), refuses an
-  asset id, refuses `observed` on a non-inferred relation and refuses settling a relation, then settles the hypothesis or
-  promotes the inferred relation. Replay goes through the same `{op:'graph_record',batch}` broker route as the write verb.
-- `p2o_graph_plan` (planner only) holds `chain|ingest` with `{id, limit, plan, requestId, assetRefs}`; both branches moved
-  verbatim, including their `PLANNER_ONLY` guards. `chain`/`ingest` are coordination, so they no longer sit next to the
-  worker's write verb.
-
-Measured (`decl-budget.mjs` + `audit-surface.mjs`, 2026-10-29): surface **35 registered, 35 model-visible, 0 hidden,
-10 board verbs, planner 23**; planner **45,055** (was 47,795 — saved **2,740** ≥ 2,500), worker **40,577** (saved 504
-≥ 400), validation 39,766 (saved 504), reporter 6,282 (unchanged), model union 74,737 (up 1,964: four declarations now
-carry the text one did). The **ceilings are unchanged and every role still passes** (49,300 / 44,100 / 43,300 / 6,800 /
-77,900), and the audit reports 0 cross-reference contradictions. The §7 target for the model union (≤ 71,500) is *not*
-met by C1 — it moves the batch off the planner but adds three descriptions; C3's ~1,260-char capability-triple trim is
-where that target is to be met (C4 confirms). Per D-S1-5 the ceiling re-pin stays in C5, after C2/C3 settle the numbers.
-
-Verification: `tsc --noEmit` clean; full `vitest run` **153 passed / 5 skipped files (158), 1,341 passed / 13 skipped
-tests (1,354), 0 fail**; `npm run build` + `npm run check:build` → `build import OK`; `git diff --check` clean; the three
-real-Pi natives (`graph-native`, `case-native`, `work-native`) are green with the write call routed through
-`p2o_graph_record`. 43 files changed: 6 source, 35 tests/fixtures, `docs/ACCEPTANCE_MATRIX.md` (the three authority
-citations retitled to the 35-tool test) and this file.
-
-Deviations, all disclosed: (a) `p2o_graph_record` is still reachable from the host test path (the owner fixture calls its
-`execute` directly, exactly as the old `p2o_graph action=record` was), which is not a role widening — the planner guard
-refuses it, and `authority.test.ts` pins it in `PLANNER_MUST_NOT_HAVE`; (b) the `tool_call` guard now reads the declared
-active tool set (`pi.getActiveTools()`) instead of recomputing the role loadouts, so declaration stays the single
-authority and the host-only activation used by the natives cannot be model-reached; (c) the natives' owner fixture adds
-`p2o_graph_record` to the active tools from a test-only `before_agent_start` hook, in the same spirit as B10's
-`testSeamFor`; (d) `p2o_graph`'s description is already under C2's 900-char bound (678), so C1 did not need to trim it.
-
-GitNexus: the workspace index was rebuilt at this working tree before the change analysis (`analyze --index-only`;
-17,310 nodes / 76,816 edges / 1,038 flows) and `impact` upstream was run before each symbol edit — `graphParameters`,
-`GRAPH_ACTIONS`, `GRAPH_ACTION_PARAMETERS` resolved 0 callers / `UNKNOWN` and were confirmed by text search to have only
-`extensions/p2o/index.ts`, `src/authority.ts`, tests and the audit script as readers (the AGENTS.md rule for
-`UNKNOWN`); `normalizeGraphRecord` 1 direct caller / `LOW`; `withBoundaries` 7 direct / `LOW`; `PLANNER_TOOLS`,
-`WORKER_TOOLS`, `MODEL_TOOLS`, `TOOL_BOUNDARIES` `UNKNOWN`, likewise text-confirmed. `detect_changes --scope all`: 107
-changed symbols / 44 changed files / 23 affected processes / risk critical (the count includes the owner's `AGENTS.md`
-and the doc mappings, as in R0–R3; `partial`/`truncated` both false). No live run, no target traffic, no paid model call.
-**C2 — Fewer read verbs (F-42).** `page` is gone after B2; `p2o_graph`'s description drops to ≤ 900 chars with one
-"use when" clause per remaining verb; the chain branch gets a `GRAPH_RESPONSE_BYTES` guard and the view dossier trimming
-is tested at the byte boundary (F-37). Acceptance: a response-bound test per read verb; description length asserted.
-
-**C2 result (committed as `42b0a17`, 2026-10-29).** The declared read bounds are now enforced and proved:
-
-- **Description ceiling.** `p2o_graph`'s registered description (boundary included) is **678 chars** — already inside the
-  ≤ 900 target — with exactly one clause per remaining verb (`view:` 100 rows, `query:` 50, `summary:` 10 rows / 8 KiB,
-  `export:` 500, `path:` 6 hops / 500 nodes / 10 paths / 24 KiB). The new test asserts the length and the five clauses
-  and refuses a resurrected `record:`/`chain:`/`ingest:`/`page:` clause, so C1's split cannot regress by prose.
-- **Chain byte guard (F-42).** `fitChainPage` (in `src/chain-view.ts`) trims the page's four sliced lists tail-first
-  against `GRAPH_RESPONSE_BYTES - 1024`, recomputes `shown` so a trimmed row reads as `counts > shown` (the counts stay
-  the true totals), keeps at least one frontier row, and refuses by name when a page cannot fit even at that floor. The
-  `p2o_graph_plan` chain branch now returns the fitted page as both content and details, so the one read the host
-  assembles by hand has the same bound as the store-side reads.
-- **Response-bound tests per read verb (F-42/F-37).** `graph-response-bounds.test.ts` presses each read against its cap:
-  fourteen 2,000-char inferred facts make `view` cross 24 KiB and the dossier trims with `dossier.omitted.facts > 0` while
-  `counts.assertions` stays 14; `query` trims to the 24 KiB bound with `truncated: true` and `omitted > 0`; `summary`
-  stays inside its own 8 KiB cap; `export` and `path` stay inside 24 KiB; the chain page reports `shown` against `counts`.
-  `chain-view.test.ts` unit-tests the fitter's trim order, the true-counts invariant and the named refusal. `page` does
-  not come back: the graph read has five verbs and no sixth.
-
-Verification: `tsc --noEmit` clean; the nine focused suites green (61 tests); full `vitest run` **154 passed / 5 skipped
-files (159), 1,346 passed / 13 skipped tests (1,359), 0 fail**; `npm run build` + `npm run check:build` → `build import
-OK`; `audit-surface` still reports
-**35/35/0/10, planner 23, 0 contradictions** and the declaration numbers are **unchanged** by C2 — planner **45,055**,
-worker 40,577, validation 39,766, reporter 6,282, model union 74,737 — because the guard moves no declared text, and every
-ceiling still passes (49,300 / 44,100 / 43,300 / 6,800 / 77,900). `docs/ACCEPTANCE_MATRIX.md` gained `F-S1-C-1` (the C1
-split) and `F-S1-C-2` (the read bounds), and the duplicate `F-S1-B-2` code was split so the B5/B9 row is `F-S1-B-3`. No
-live run, no target traffic, no paid model call.
-**C3 — Authoring consolidation, bounded by the adapter (F-43).** Safe: one payload key name (`entry`) for the four
-planner authoring/rating verbs; merge review/settle (already B1); trim the repeated capability-triple prose (~1,260 chars);
-keep `p2o_candidate` flat. Not safe, and explicitly rejected: a single discriminated union, because the Anthropic adapter
-flattens a tool to root properties/required and a root `anyOf` loses all arguments — the plan records this as a decision,
-not a missing idea.
-
-**C3 result (committed as `4bb48f9`, 2026-10-29).** The bounded consolidation F-43 allows, and nothing beyond it:
-
-- **One payload key.** The four planner authoring/rating verbs now carry their payload as `entry`: `p2o_task_author`
-  (`draft` → `entry`), `p2o_goal_author` and `p2o_case_author` (already `entry`), and `p2o_case_rate`
-  (`finding` → `entry`). `TASK_ACTION_PARAMETERS`/`CASE_ACTION_PARAMETERS` and both handlers moved with them, the chain
-  plan now returns `entry` (the exact `p2o_task_author` argument, previously `draft`), and the refusal messages name
-  `entry`. `p2o_candidate` stays flat: `gained`/`needs` are its own root fields, not a nested payload.
-- **Capability-triple dedupe.** The `{kind,subject,scope}` shape is declared 7× across the model-visible tool schemas, so
-  its field descriptions were paid seven times; they are removed from the wire schema (the meaning stays in
-  `src/capabilities.ts` and the docs) and the capability-array wrapper descriptions are cut to one clause each. That is
-  the ~1,260-char target and a little more.
-- **What was rejected, on purpose.** A single discriminated union over the five authoring payloads would need a root
-  `anyOf`/`oneOf`, and the Anthropic adapter flattens a tool to root properties/required — root `anyOf` loses every
-  argument. The new contract test asserts no registered tool declares a root `anyOf`/`oneOf`, so a later
-  "simplification" cannot quietly break the adapter.
-
-Measured (`decl-budget.mjs` + `audit-surface.mjs`, 2026-10-29): planner **44,134** (was 45,055 — saved **921**), worker
-**40,124** (saved 453), validation **39,313** (saved 453), reporter 6,282 (unchanged), **model union 73,363** (saved
-**1,374** — the ~1,260 target plus the wrapper trims). Surface unchanged at **35 registered, 35 model-visible, 0 hidden,
-10 board verbs, planner 23**, audit contradictions 0, and every unchanged ceiling still passes (49,300 / 44,100 / 43,300 /
-6,800 / 77,900). The §7 `after C` model-union target (≤71,500) is still not met: that row was arithmetic from the pre-C1
-surface (72,773 − 1,260), and C1's split added three declarations (+1,964) before this trim. C4 records the actual numbers
-and C5 re-pins the ceilings from measurement (D-S1-5), so the target row is corrected rather than gamed.
-
-Verification: `tsc --noEmit` clean; the authoring/board/graph suites migrated to `entry` (23 test files), including the
-real-Pi case and work natives; full `vitest run` **154 passed / 5 skipped files (159), 1,347 passed / 13 skipped tests
-(1,360), 0 fail**; `audit-surface` 35/35/0/10, 0 contradictions; `npm run build` + `npm run check:build` → `build import
-OK`; `git diff --check` clean. 35 files changed: 7 source/extension, 26 tests/fixtures, `docs/ACCEPTANCE_MATRIX.md`
-(new `F-S1-C-3`) and this file. No live run, no target traffic, no paid model call.
-**C4 — Before/after evidence and the gate.** Deterministic evidence is mandatory: declaration chars per role, tool counts,
-`measure-context` output, full suite counts, and the fixture counts the bench harness uses (tasks created, workers
-spawned, rounds) from the hermetic fixtures. A live bench run is optional and only with owner authorization per
-`bench/README.md` (explicit `--live`, pinned provider/model/thinking; the historical contamination caveat still applies).
-Acceptance for merging C1–C3: every deterministic metric is unchanged or better, no test is weakened, and the owner
-reviews the before/after table.
-
-**C4 result (committed as `28386b5`, 2026-10-29).** The before column was re-measured, not copied: a detached worktree at
-the pre-C commit `04f3f23` was checked out beside the repo, `node_modules` linked, and the same three scripts run in it;
-the after column is HEAD (`4bb48f9`). Full-suite counts come from the recorded tranche runs. No live benchmark was run
-(D-S1-9), so the bench rows are the hermetic harness's own fixture discovery/verification counts.
-
-| metric | pre-S1 `197d6a9` | before C `04f3f23` | after C `4bb48f9` | Δ vs before C |
-| --- | --- | --- | --- | --- |
-| registered / model-visible / hidden | 35 / 33 / 2 | 32 / 32 / 0 | **35 / 35 / 0** | +3 / +3 / 0 (the C1 split) |
-| board verbs | 12 | 10 | **10** | 0 |
-| tools: planner / worker / validation / reporter | 22 / 19 / 18 / 6 | 21 / 19 / 18 / 6 | **23 / 20 / 19 / 6** | +2 / +1 / +1 / 0 |
-| declaration chars: planner | 49,294 | 47,795 | **44,134** | **−3,661** |
-| declaration chars: worker | 42,808 | 41,081 | **40,124** | **−957** |
-| declaration chars: validation | 42,000 | 40,270 | **39,313** | **−957** |
-| declaration chars: reporter | 6,551 | 6,282 | **6,282** | 0 |
-| declaration chars: model union | 75,500 | 72,773 | **73,363** | **+590** (the split's cost) |
-| `measure-context` total bytes | — | 74,536 | **76,672** | +2,136 |
-| `measure-context` planner / worker / reporting bytes | — | 48,961 / 42,110 / 6,605 | **46,335 / 41,664 / 6,605** | −2,626 / −446 / 0 |
-| full suite files | — | 153 passed / 5 skipped (158) | **154 passed / 5 skipped (159)** | +1 file |
-| full suite tests | — | 1,341 passed / 13 skipped (1,354) | **1,347 passed / 13 skipped (1,360)** | **+6 tests, same skips** |
-| bench harness hermetic plan runs | 108 | 108 | **108** | 0 |
-| bench harness hermetic variants verified | 12 | 12 | **12** | 0 |
-| native fixture counts (tasks / worker spawns / rounds) | — | 2 / 0 / 0 | **2 / 0 / 0** | 0 |
-
-Gate verdict, stated plainly:
-
-- **Every per-role metric improved or stayed equal.** The three roles that execute the loop each hold fewer declaration
-  chars with at least as many verbs as before C (planner −3,661, worker −957, validation −957, reporter 0; the same holds
-  against pre-S1: −5,160 / −2,684 / −2,687 / −269). The four `after C` targets in §7 are met for every role.
-- **The tests are stronger, not weaker.** No test file was deleted, `it(` count rose 1,292 → 1,298, the suite gained one
-  file and six tests, the 13 skips are the same pre-existing live/Docker skips, and no `.skip`/`.todo`/`.fails` was added
-  (`git diff 04f3f23..HEAD -- tests` shows 0 added). The new tests are C1's role-split and review-path assertions of
-  `workspace-runtime`, C2's `graph-response-bounds`, and C3's payload-key contract.
-- **Two costs are disclosed, not hidden.** The registered/model-visible count rose 32 → 35 and the model union rose 590
-  chars, because C1 replaced one graph declaration with four; the union is not a role budget — no role pays it — but the
-  §7 `after C` union target (≤71,500) is consequently missed at 73,363. That target row was arithmetic from the pre-C1
-  surface (72,773 − 1,260); C1's split added 1,964 before C3 cut 1,374. C5 re-pins the ceilings from this measurement
-  (D-S1-5) and §7 records the correction, so the miss is recorded rather than re-baselined away.
-- **Fixture counts are unchanged.** The hermetic bench plan still enumerates 108 runs (3 arms × 6 fixtures × 2 variants ×
-  3 reps, seed 1), `verify` still passes 12 fixture variants, and the real-Pi natives still produce exactly 2 tasks, 0
-  worker spawns and 0 rounds — two tasks on the `case` and `work` scripts, none on `graph`, with the duplicate attempt
-  answered by the exact-match payload instead of a second create.
-
-Reproduce the before column: `git worktree add --detach .before-c 04f3f23 && ln -s ../node_modules .before-c/node_modules
-&& (cd .before-c && node scripts/measure-context.mjs --source && node scripts/audit-surface.mjs && node
-../node_modules/.cache/p2o/decl-budget.mjs) && git worktree remove --force .before-c`; the hermetic bench counts are
-`node scripts/benchmark-skills.mjs plan` and `... verify` (both refuse to call a model without `--live`).
-
-**C5 — Re-pin and record.** After C, update `context-budget.test.ts` ceilings once (measured + 3%, dated comment naming
-what moved), `docs/ARCHITECTURE.md`/`docs/KNOWLEDGE.md`, `docs/ACCEPTANCE_MATRIX.md` (new F-S1 rows), and add one
-`docs/HISTORY.md` row when the tranche is committed. The R3 row and the R3 plan remain in git history.
-
-**C5 result (working tree, 2026-10-29; commit pending).** The ceilings are re-pinned once from the after-C measurement
-(D-S1-5) and the current docs describe the post-C surface:
-
-- **Ceilings, lowered not raised.** `tests/minimal/context-budget.test.ts` now carries `planner 45,500 / worker 41,400 /
-  validation 40,500 / reporter 6,500 / model 75,600`, each the measured total +3% rounded up to the next hundred
-  (44,134 / 40,124 / 39,313 / 6,282 / 73,363), with the dated comment above naming what moved: the C1 split
-  (32 → 35 registered tools and 21 → 23 planner verbs), C2's read bounds and description clause, C3's `entry` key and
-  capability-triple trim. Every number is below the ceiling it replaces (49,300 / 44,100 / 43,300 / 6,800 / 77,900). The
-  `surface-audit` baseline uses the same numbers, and its comment now says the floor was re-pinned rather than carried.
-- **Docs that were still pre-C.** `docs/ARCHITECTURE.md` states 35 registered tools, the 23/20/19/6 role loadouts and the
-  four graph verbs by authority; `docs/KNOWLEDGE.md` names `p2o_graph_review` for the planner's one-row settle,
-  `p2o_graph_record` for the worker/validation batch, `p2o_graph_plan {action:"chain"}` for the chain join (board rows only
-  with `plan:true`, never a dispatch) and `p2o_graph_plan {action:"ingest"}` for the manual artifact retry;
-  `docs/PLANNER_ENGINE.md`'s chain section uses the new verb and the `entry` name; `README.md` prints 23/20/19/6.
-  `docs/ACCEPTANCE_MATRIX.md` gains `F-S1-C-5`, corrects the two R2 rows that still pointed ingest at `p2o_graph`, brings
-  the report role-matrix row to 23/20/19 and dates the L1 count row as the number at that time. `docs/HISTORY.md` gains
-  the tranche-C milestone row.
-- **Recorded, not rewritten.** Rows that were true when an earlier tranche landed keep their number (the L1 row is dated
-  instead of rewritten) and `docs/HISTORY.md` keeps every earlier milestone verbatim; only the documents that describe the
-  current surface were moved forward.
-- **No code changed in C5.** C5 touches tests, docs and this plan only, so the surface, the declarations and the response
-  bounds are exactly what C1–C3 left and the C4 gate numbers stand. Verification: `tsc --noEmit` clean; focused suites
-  (`context-budget`, `surface-audit`, `measure-context`, `acceptance-matrix`, `authority`, `truth`, `recon`,
-  `prompt-roles`) green; full `vitest run` **154 passed / 5 skipped files (159), 1,347 passed / 13 skipped tests (1,360),
-  0 fail**; `npm run build` + `npm run check:build` → build import OK; `git diff --check` clean; `audit-surface` still
-  35/35/0/10 with 0 contradictions and the declarations still 44,134 / 40,124 / 39,313 / 6,282 / 73,363;
-  `detect_changes --scope all` recorded. No live run, no target traffic, no paid model call.
-
-Tranche C is complete with C5; the only step left is the owner's commit of this pass.
-
-## 7. Budget arithmetic
-
-| point | planner | worker | validation | reporter | model |
-| --- | --- | --- | --- | --- | --- |
-| measured at `197d6a9` | 49,294 | 42,808 | 42,000 | 6,551 | 75,500 |
-| after A (measured 2026-10-29) | 49,248 | 42,791 | 41,980 | 6,528 | 75,483 |
-| after B (measured 2026-10-29) | 47,795 | 41,081 | 40,270 | 6,282 | 72,773 |
-| after C1 (measured 2026-10-29) | 45,055 | 40,577 | 39,766 | 6,282 | 74,737 |
-| after C3 (measured 2026-10-29) | 44,134 | 40,124 | 39,313 | 6,282 | 73,363 |
-| after C (target) | ≤ 45,300 | ≤ 41,500 | ≤ 40,700 | ≤ 6,450 | ≤ 71,500 |
-| after C5 (ceilings re-pinned 2026-10-29) | 45,500 | 41,400 | 40,500 | 6,500 | 75,600 |
-| ceiling before C (A and B) | 49,300 | 44,100 | 43,300 | 6,800 | 77,900 |
-
-The ceilings are not raised in A or B: the reclaimed bytes are headroom (D-S1-5). C5 re-pins them once from the after-C
-measurement with the same method (measured +3%, rounded up to the next hundred). The per-role `after C` targets are met;
-the model-union target stays missed and C5 records that instead of widening the row.
-B10 removed only registrations that no role loadout ever held, so no declaration number in this table moved; what changed
-is the registered count (34 → 32, all model-visible) and the board-verb count (11 → 10). C1 moved the batch schema off the
-planner and onto a worker/validation verb, which is why planner/worker/validation drop while the model union rises: the
-same capability is now described in four declarations instead of one. C3 then cut the capability triple's seven-times-paid
-prose and the task/case authoring payload keys, which lands the union at 73,363 — better than C2, but above the §7 target
-row because that row was arithmetic from the pre-C1 surface. C4 reports the measured truth; C5 re-pins from it.
-
-## 8. Verification and workflow protocol
-
-Per task and per tranche, in this order:
-
-1. `npx tsc --noEmit`.
-2. Focused vitest for the touched area plus the invariants:
-   `tests/minimal/context-budget.test.ts`, `truth.test.ts`, `claims.test.ts`, `acceptance-matrix.test.ts`,
-   `authority.test.ts`, `board-verbs.test.ts`, `extension.test.ts`, `measure-context.test.ts`, and the graph/session/research
-   suites for the task.
-3. `node scripts/measure-context.mjs --source` and `node scripts/audit-surface.mjs` (added by A1); record both outputs.
-4. `npm run build && npm run check:build`.
-5. `git diff --check -- src extensions tests docs planning_update.md`.
-6. Full `npx vitest run`; record files/tests passed/skipped/failed in the tranche evidence.
-7. **GitNexus before editing (mandatory, learned from the R1–R3 lapse):** run `impact` upstream for every symbol about to
-   change — `registerP2O` tool closures for graph/task/verb factories, `graphParameters`/`GRAPH_ACTION_PARAMETERS`,
-   `GRAPH_ACTIONS`, the broker `case 'session'`/`graph_read` handlers, `tool-policy` exports,
-   `withBoundaries`/`TOOL_BOUNDARIES`, and the `prompts.ts` exports. Report callers/processes/risk in the tranche notes;
-   treat `risk: UNKNOWN` as unresolved, not as low. Before each commit, `detect_changes --scope all`.
-8. Commits only on owner instruction, with the repository identity and no attribution lines; never stage `AGENTS.md` or
-   the untracked `.pptx`. Nothing is pushed without an explicit request.
-
-## 9. Invariants that must not change
-
-- The evidence ladder: receipts, claims, cases are the only path to a finding. A graph row, dossier, path, technique id,
-  retest note, project-knowledge row or `p2o_state`/`p2o_ledger` read is background, never evidence.
-- Loadout enforcement is the authority model. S1 may narrow or relabel; it may not widen, **except** the read-only
-  `p2o_graph action=path` sharing recorded in D-S1-7. The planner never gains target, lab or claim tools; a validation
-  worker never gains `p2o_surface`.
-- The graph stays bounded: every new read has a byte/row cap, capacity overflow is reported, never silently dropped.
-- Hidden legacy verbs stay off the model surface until their test migration is done; no second delegation path appears.
-- No new settings; caps are constants. No network in tests, no paid model calls, no live target traffic.
-- Foothold wiring keeps `--lab-network` as the ingress gate: no host port, no tunnel, no pivot.
-- `tests/minimal/context-budget.test.ts` ceilings stay unchanged through A and B; any raise is a separate owner decision.
-- No AI attribution in commits/PRs; author identity is the repository's.
-
-## 10. Risks and non-goals
-
-Risks: (a) the Anthropic adapter flattening constraint blocks any root-`anyOf` merge — C3 is deliberately bounded and the
-rejected option is recorded; (b) test churn — ~10 files in B and ~8 in C, and `acceptance-matrix.test.ts` validates every
-cited `file.test.ts :: title` exactly, so renames must update the matrix in the same change; (c) budget transients while
-tasks land out of order — each task must leave the budget test green, so net-negative tasks land before positive ones;
-(d) the graph split is the one change that can alter role behaviour — it is gated on the deterministic before/after table
-and owner review; (e) renaming tool/param names may break muscle memory in prompts/skills — every rename updates prompts,
-boundaries, docs and tests in one commit.
-
-Non-goals for S1: no new offensive capability, no new evidence rule, no change to the report/export schema, no live
-benchmark run, no attempt to unify result shapes beyond naming them, no second delegation path, and no authority change
-beyond the read-only `path` decision (D-S1-7).
-
-## 11. Review answers (2026-10-29)
-
-The four plan-review questions were asked in chat and answered by the owner; they are decisions now, not open questions.
-
-- **Q1 — Is read-only `p2o_graph action=path` shared with worker/validation?** **Yes.** It stays a bounded, never-writing
-  read; `chain`/`ingest` remain planner-only (D-S1-7). Implemented in A5 as the interim step and kept by the C1 split.
-- **Q2 — Are the two breaking renames in scope?** **Yes, both**, in tranche B: `p2o_coverage_suggest`→`p2o_wstg_suggest`
-  and `p2o_plan_author`→`p2o_goal_author`, with every reference and the acceptance matrix updated in the same change
-  (D-S1-8, B9).
-- **Q3 — Is a live benchmark authorized for the C gate?** **No.** C is accepted on the deterministic evidence in §6/C4
-  (declaration numbers, full suite, hermetic fixture counts); a live run would need a separate explicit authorization
-  (D-S1-9).
-- **Q4 — When are `p2o_delegate`/`p2o_task_start` deleted?** **In S1.** B10 migrates the ~29 test files to the internal
-  functions, then deletes both handlers, `HIDDEN_TOOLS`, the dead hidden-exposure plumbing and the legacy action map; the
-  surface becomes 33 model-visible tools and 11 board verbs (D-S1-10).
-
-Nothing in §12 changes; the audit evidence and its reproduction method stay as recorded.
-
-## 12. Appendix — how the audit numbers were produced
-
-The audit registered the real extension against a stub Pi API (the same pattern as `scripts/measure-context.mjs`) and
-dumped, for all 35 tools: name, exposure, full description, full parameter schema, declaration chars by the budget
-metric, action enum, role holders and the policy loadouts. Two temporary analysis scripts also walked the nested schemas
-(leaf-name overlap, field-description bytes) and ran `Value.Check` per schema for the empty-object and unknown-field
-cases. The artifacts live under `node_modules/.cache/p2o/` (`tools-audit.json`, `measure.json`) and are not committed;
-A1 turns the durable part into `scripts/audit-surface.mjs`. Three read-only cross-checks were run independently against
-source (authority/dead surface, feature overlap, prose drift and pagination), and a fourth covered schema/handler contract
-drift; every finding above cites the code line or the measured artifact that proves it. Nothing in this file was inferred
-from memory; where a claim is unverified it is labelled as such in the finding.
+# P19 — Phase progression, evidence independence and the dispatch walls (plan of record, 2026-10-29)
+
+Status: **P19/A (the validation-dispatch wall), P19/B3 (the runtime-profile wall) and P19/F (dispatch refusals and
+resumability made visible) are implemented, verified and committed together on the owner's instruction (D-P19-5).
+P19/C–P19/E are planned; none is implemented.** Base commit `b43e131` (S1/C5; that plan of record is unchanged in git at
+`git show b43e131:planning_update.md`). The owner's `AGENTS.md` edit and the untracked `pi-p2o-defense-vi.pptx` are outside
+this plan.
+
+Owner request (2026-10-29, Vietnamese, truncated):
+
+> "nghiên cứu lại cách mà ARTEX hoạt động như thế nào đối với phase recon và các phase tiếp theo, từ đó tổng hợp so với
+> điểm nghẻn hiện tại, và cả A. Sửa bug validation dispatch. Từ đó giúp tôi hoạch định để có thể update được project để
+> sửa những lỗi sai hiện tại."
+
+Research inputs: the owner's local **ARTEX snapshot** under `my_references/ARTEX/` (untracked and gitignored;
+AGPL-3.0; Go backend + `norma` SDK, snapshot labelled 0.3.15) and the local analysis
+`my_references/ARTEX/ARTEX_AGENTIC_CORE.vi.md`; the live run below. No ARTEX target was contacted and no model was run for
+this research.
+
+Decisions carried forward:
+
+- **D-P19-1 — ARTEX is a reference, not a target.** P19 borrows mechanisms (wake discipline, wall semantics, walling
+  negative branches) and compares behaviour; it does not copy code or weaken p2o's deterministic evidence ladder.
+- **D-P19-2 — Verification stays deterministic and hermetic** (S1/D-S1-3). No live benchmark run in P19 unless separately
+  authorized; every item is proven with `tsc`, the vitest suites, `build`/`check:build`, the declaration budget and
+  `detect_changes`.
+- **D-P19-3 — Commits remain owner-initiated** (AGENTS.md); identity is the repository's and no attribution lines are
+  added.
+- **D-P19-4 — The pinned prompt/declaration ceilings are not raised casually.** A prompt change that exceeds the pinned
+  ceiling is re-pinned only from a measured number with a dated comment (S1/D-S1-5 precedent).
+- **D-P19-5 — The owner chose option 1 (§6) and one commit (2026-10-29).** Fix the two observed dispatch walls (A and B3)
+  plus visibility/resume (F) now; C/D/E wait for the next pass so their prompt changes are measured. The three fixes are
+  committed together under the owner's explicit "commit it" instruction; commit identity/attribution rules are unchanged.
+- **D-P19-6 — B3, not B1/B2.** Thinking is role configuration, not a per-task or per-dispatch choice. The host refuses a
+  per-task `thinking` request instead of reconciling it (B1) or downgrading the mismatch to a note (B2). Trade-off accepted:
+  the planner loses per-task thinking tuning, in exchange for never accepting a level the selected model will clamp, which
+  is exactly what stranded four live tasks. Model identity stays an exact-match wall.
+
+## 1. What the live run shows (evidence first)
+
+Run `run-5367910f-7f14-4357-a983-8eaa6ebfde21`: `https://ise.uit.edu.vn/vi`, durable-local, 2026-10-29
+06:21:19Z–07:34:50Z (73 minutes), **7 planner rounds**, ledger `assessment.sqlite` (read-only queries in §8).
+
+**1.1 The round shape.** 21 tasks were authored: 13 recon, 6 validation, 2 discovery. Final status: 7 closed, 4 blocked,
+1 reviewed, 1 running, **8 still proposed**. 10 candidate claims, 3 cases pending (never accepted), 2 goals still
+`active`. Research debt was **3 → 119 → 196 → 212 → 222** across rounds; every round's wait was refused with the same
+sentence: "the round still owes 2 goal(s) not reviewed or closed; 222 research debt item(s) with no discharge".
+
+**1.2 The recon loop is breadth creep, not repetition.** Recon questions were each new: Next.js/NextAuth build ids →
+`/api/admin-*` routes → admin segments → build-debug artefacts → OPTIONS/TRACE → admin namespace reachability →
+NextAuth CSRF-mint behaviour → RSC-prefetch differential → a second worker re-observing the same surface. No single step
+repeated; the loop repeats the *decision* "probe one more anonymous variant" because that is the only action the round
+demand leaves open. Mechanism in p2o: the demand floor refuses one `wait` while completion work is owed
+(`extensions/p2o/index.ts` ~3538, fact `planner.round-nudge`), and research debt is derived from unplanned assets, unrun
+cells and WSTG-mapping gaps (`src/debt.ts`). Each new asset and each new recon observation adds debt instead of
+discharging any, so the demand never clears and the planner answers with another probe.
+
+**1.3 Validation never started (wall A).** All 6 validation tasks are `proposed` and were never reserved (task ids
+`validation-734eed3c…`, `validation-9cef3166…`, `validation-72fb38c0…`, `validation-2996ffd5…`, `validation-d4c5a16f…`,
+`task-553a06d7…`). The planner's own round-close record names it: "Fresh spawns and host validation keep failing
+(DELEGATION_SPAWN_FAILED, TASK_METHOD_STALE), so blocked rows have no receipts to review and cases stay pending until an
+independent replay lands." Consequence: three cases cannot earn independence (`src/cases.ts`), so the planner keeps
+authoring recon peers to "independently" re-observe — the observable recon treadmill.
+
+Root cause (fixed in P19/A): `validationDraft` declares `method.skills: []` (`src/validation.ts:40`) while dispatch
+recomputes the method from the same purpose and `work.needs`, which is non-empty because the draft copies the discovery
+work (`src/roles.ts:119`: a validation with needs gets the exploitation ladder). The dispatch guard compares the declared
+and resolved skill hashes (`extensions/p2o/index.ts:945`) and refuses with `TASK_METHOD_STALE`, so the auto-enqueued
+replay never spawns. The defect was latent on recon-only discoveries (no needs) and fired on every needs-bearing claim.
+
+**1.4 Spawn wall B (runtime profile mismatch).** Four tasks were blocked with outcome "Runtime profile mismatch;
+investigation not started."; all four carried `runtime.thinking: "medium"`. Every worker that did start ran with
+thinking `max` or `high`. Pi's own model catalog for `opencode-go/deepseek-v4.1-flash` maps only `low/high/max`
+(`thinkingLevelMap`; `medium` is null and is clamped), while the worker's runtime check requires thinking to be exactly
+equal to the requested level and otherwise reports "prerequisite-blocked" (`src/broker.ts:413`,
+`extensions/p2o/index.ts:816-823`). The host validates `runtime.thinking` only against the generic seven-level list
+(`src/roles.ts:298`), not against the level the selected model actually supports, so a legal-looking planner choice can
+brick a task.
+
+**1.5 Goal economy.** Both goals stayed `active` because their proofs were not reachable by the branches the run
+took: goal `goal-d2bbefdb…` proof is coverage of the whole anonymous surface; goal `goal-b82462b4…` proof is
+`data.read` capability. `GOAL_OPEN` is itself a completion obligation and keeps the demand floor live forever; nothing
+in the run walled a goal whose proof the target cannot produce, and `p2o_finish partial` was never reached.
+
+**1.6 Dispatch failures are invisible after the fact.** The Engine catches a failed spawn and only raises an in-memory
+UI notification (`src/engine.ts:210`); no ledger record names the refusal. The planner inferred `TASK_METHOD_STALE` from
+a tool error and wrote it in prose. A resumed run cannot explain why a task stayed `proposed` from its own ledger.
+
+**1.7 Crash and resume.** The durable-local store survived the crash, but `pi --resume` restores only a transcript and
+`session_start` deliberately strips the p2o tools when no in-process run exists; the supported path is
+`/p2o --resume <runId>` from the same working directory (`docs/USAGE.md:93`, `tests/minimal/resume.test.ts`). Nothing in
+session start points at the recoverable run, which is the UX half of the owner's report.
+
+## 2. How ARTEX runs recon and the phases after it (reference model)
+
+**2.1 There is no phase state machine.** ARTEX decomposes the goal into **final, verifiable outcomes**, and its goals
+agent is explicitly told that information gathering, reconnaissance and endpoint scanning are **not** goals
+(`agent/goals.go:19`); scope extraction is a separate code-owned tail. A task then runs one `plannerLoop` plus N
+`workerLoop`s (`server/engine.go`); the planner is the sole intent generator and a worker owns exactly one intent
+(`agent/worker.go:230`). "Recon", "exploitation", "validation" are therefore emergent labels on intents, not stages the
+engine advances through.
+
+**2.2 Wake discipline — the mechanism p2o lacks.** ARTEX's planner prompt (`agent/planner.go:298`) makes a zero-intent
+wake the normal case: the hard baseline requires at least one intent only when the goal is unmet **and** the frontier and
+running sets are both empty; otherwise 0 intents is legal with a stated reason — already covered, or waiting on a
+dependency that is currently running. The README states it plainly: "most wakes dispatch 0 intents — no new direction
+means stop". p2o instead treats a zero-intent round as a stall and refuses the wait while any obligation remains, so the
+planner is pushed to manufacture the cheapest admissible action.
+
+**2.3 Recon is emergent and time-boxed.** At the start the planner may run at most a few read-only probes itself, and
+only to sharpen an intent description; once any worker fact exists it may not probe, and enumeration/exploitation is
+worker work. After that, recon intents are just the first round of the same loop.
+
+**2.4 Negative-observation discipline (prevents breadth creep).** ARTEX treats a worker's negative result as an
+observation, not a verdict: the planner must read the evidence, trust the branch as closed only when the observation is
+`observed` and the means were exhausted, and may re-check a negative direction **at most once** before respecting it and
+stopping. p2o has `ruled_out` and `CHAIN OR WALL` (`src/prompts.ts`) but no "one re-check then wall" rule, so a bounded
+negative does not stop the next variant.
+
+**2.5 The later "phases" are the same loop under different policies.** Depth over breadth; 2–3 mechanism families; a
+serial exploitation chain is written once into the planner's persistent todolist and only the next step whose
+prerequisite fact exists is dispatched; `prove_goal` checks quantitative acceptance before marking met; the last met goal
+ends the task and cancels workers. Separate agents handle the post-work phases: a **report writer** on finding
+(`agent/promptcatalog.go`), a **retester** with reproduced/fixed/inconclusive verdicts (`agent/retester.go`); when a
+budget runs out the run enters a **settlement phase** with its own wrap-up prompt, and an exhausted intent is retried or
+re-routed by the planner rather than treated as a failure (`agent/wrapup.go`).
+
+**2.6 Two graphs, and what coverage means there.** The asset graph is global (six asset types); the exploration graph is
+per task (`goal/intent/fact/finding/hint/digest`, edges `spawns/derived_from/yields/proves`) and is linked to assets by
+`exploration_anchors` (`db/exploration.go`). Coverage is a projection of anchors/facts used as a **planner signal**, not
+an obligation that can keep a task alive. Context is a bounded overview projection plus cold digests, never the whole
+graph.
+
+**2.7 Boundaries of the borrowing.** ARTEX has no deterministic completion checker (goal proof is model-judged), no
+durable per-round ledger or durable todolist (the todo store is in-process), and no independent-replay requirement for
+claims. p2o's evidence ladder and replay independence are deliberately stricter; P19 must not trade them away.
+
+## 3. ARTEX vs p2o at the decision points
+
+| Decision | ARTEX | p2o today |
+|---|---|---|
+| Unit of continuity | per-task exploration graph + in-process planner todo | durable ledger + plan board + round brief |
+| Wake discipline | zero intents normal; hard baseline only when no open/running intent | zero-intent round recorded as stall; one wait refused per round while work is owed |
+| Recon | emergent first intents; planner probes ≤ a few times at start only | mapping/recon is an admitted role and the cheapest action the round demand leaves |
+| Negative branch | evidence-checked, one re-check maximum, then walled | `ruled_out` exists; no one-recheck-then-wall rule |
+| Serial chain | persistent planner todolist, next step gated on prerequisite fact | plan board + chain steps with pinned prerequisites and claim citations |
+| Coverage | planner signal from fact/asset anchors | derived coverage cells; unplanned cells become gateable research debt |
+| Goal settlement | judge by planner with quantitative check; last goal ends task | host-verified proof; open/unprovable goal keeps completion incomplete |
+| Independence | not modeled | independent replay required by the evidence ladder (stricter) |
+| Failure semantics | exhausted = resume/re-route; blocked = retry or change mechanism | task `exhausted`/`blocked` records exist; dispatch refusals are UI-only |
+| Memory/context | bounded overview + cold digests + trace retrieval | bounded round brief + ledger + graph reads |
+
+Already borrowed from ARTEX in earlier passes (keep): `DEPTH OVER BREADTH`, `MECHANISM FAMILIES`, `CHAIN OR WALL` and
+round hygiene (`src/prompts.ts:170-177`, comments cite ARTEX `agent/planner.go:304-331`).
+
+## 4. Plan of record
+
+Each item states the defect, the smallest change, actual acceptance, and what must not change. Items are ordered by
+observed impact per unit of risk.
+
+### P19/A — validation dispatch (implemented; committed with B3 and F)
+
+- **Defect:** host validation declares `method.skills: []` (`src/validation.ts:40`) while dispatch resolves the needs
+  ladder (`src/roles.ts:119`) and the staleness guard refuses the replay (`extensions/p2o/index.ts:945`).
+- **Change:** in `hostValidation`, resolve `resolveRole({role:'validation', purpose:'validation', context:{kind, needs:
+  workNeeds(draft.work)}})` and `prepareMethod` once, and store that method on the draft before `board.create`. Creation
+  and dispatch now compute the same skills and hashes; the guard is not weakened and manual validation authoring is
+  unchanged.
+- **Acceptance (met):** a new hermetic test in `tests/minimal/chain-economy.test.ts` seeds a needs-bearing discovery
+  claim, reviews it, asserts the host validation declares the resolved ladder
+  (`['exploit-design','credential-and-pivot']` with 64-hex hashes), then lets the host's own enqueue dispatch it and
+  asserts the task leaves `proposed` with a `p2o-validation-*` assignee and no `TASK_METHOD_STALE` event. With the fix
+  stashed the test fails on the method assertion; with the fix it passes. `docs/EVIDENCE.md` and the acceptance matrix
+  (row 14b) were updated in the same change, so the dispatched replay has a pinned citation. Full suite: 154 files /
+  1,348 tests passed, 13 skipped; `tsc`, `build`, `check:build`, `audit-surface` (0 contradictions) and the declaration
+  budget are unchanged (44,134 / 40,124 / 39,313 / 6,282).
+- **Must not change:** the evidence ladder, the replay independence rules, the authoring path, and the pinned ceilings.
+
+### P19/B — remove the per-task thinking axis (B3; implemented)
+
+- **Defect:** a planner-authored `runtime.thinking` level the selected model does not support (e.g. `medium` on
+  `opencode-go/deepseek-v4.1-flash`) is clamped by pi, and the worker then reports `prerequisite-blocked` with no
+  investigation (four live tasks).
+- **Owner decision (D-P19-6):** B3 — remove per-task and per-dispatch thinking overrides; the worker level is role
+  configuration (`settings.roles.*.thinking` → package default → planner session). B1 (catalog clamp) and B2 (verified-with-
+  note) were rejected because both keep accepting a level the model may not run.
+- **Change:**
+  - `src/tasks.ts`: the task runtime vocabulary is `{model?}`; an unknown key (including `thinking`) is refused.
+  - `src/roles.ts`: `validateTaskRuntime` validates the model only and refuses extra keys rather than silently dropping one;
+    `resolveRole` no longer takes a per-spawn thinking input, so the level is always
+    `settings.roles.<role>.thinking` → package default → parent session.
+  - `src/tool-schemas.ts`, `src/board-verbs.ts`: the task-author runtime and the dispatch parameters drop `thinking`; the
+    planner prompt names the configured model list only (`src/prompts.ts`).
+  - `extensions/p2o/index.ts`: spawn, dispatch and held-continuation paths drop the thinking override; a runtime mismatch
+    report now carries the requested and effective model/thinking so a role-settings mistake is explainable; the worker task
+    brief says `requested worker model`.
+  - `src/broker.ts`: `DelegateInput.thinking` is gone; `requestedRuntime`/`effectiveRuntime` and the exact broker
+    verification stay, because role-level thinking still reaches the worker through `--thinking`.
+- **Acceptance (met):** `roles.test.ts` and `operator-controls.test.ts` prove a task/dispatch cannot name a thinking level
+  (refused, not silently stripped) while the model path still validates and a dispatch still overrides the model;
+  `workflow-policy.test.ts` proves the planner prompt offers the model list only; `extension.test.ts` proves a spawn carries
+  no per-spawn thinking override and launches the role/parent level.
+- **Must not change:** the broker's exact model match (a wrong model still blocks); role-configured thinking still launches
+  the worker and is still verified.
+- **Residual risk:** an operator role setting naming a level the role model does not support still fails the broker's exact
+  check; B3 makes that failure name both sides instead of removing the class. A catalog-aware clamp is B1's rejected scope
+  and can return if operator configuration proves to be the failure source.
+
+### P19/C — wake demand: let a wall count as progress
+
+- **Defect:** the demand floor refuses the wait whenever completion work is owed, and the only legal next actions it
+  names are "create and dispatch" or "blocked" (recorded as a stall). The planner therefore manufactures probes instead
+  of walling a branch.
+- **Change (behavioral, no new tool):** make "record the wall" a first-class legal response in the round: a
+  `deferred`/`blocked` todo that cites the debt ids it answers discharges that debt (`src/planning.ts` already requires
+  `debtRefs` for discharge). In the engine/demand path, a round that records such a wall is progress, not a stall; the
+  hard baseline stays the ARTEX one — dispatch an intent only when the goal is unmet and no open/running intent can carry
+  the work, and the frontier is genuinely empty. Prompt text must state the same rule and the one-recheck-then-wall
+  discipline (P19/C2).
+- **Acceptance:** a hermetic scenario test with three bounded-negative recon variants and one walled todo shows debt
+  stable (not growing) across rounds and the engine does not escalate a stall; a round with a real ready direction still
+  cannot be a quiet round.
+- **Must not change:** the demand floor still names the obligation; a completely idle round with no wall and no intent is
+  still a stall.
+
+### P19/D — research-debt accounting: separate obligations from backlog
+
+- **Defect:** debt kinds are all gateable; observation-derived backlog (unplanned assets, unrun cells, WSTG gaps) grows
+  with every recon asset and no admissible task can close it in one decision, so completion can never be reached.
+- **Change:** classify debt kinds that a decision row/wall can discharge (goal, plan, chain, triage) from kinds that are
+  a planning signal only (`SCOPE_UNPLANNED_ASSET`, `CELL_NOT_RUN`, `WSTG_UNPLANNED`, `MAPPING_UNRECORDED`); the latter
+  stay in the report and the brief but do not alone keep the demand floor alive. Give every gateable item a
+  "how to discharge" sentence in the brief; walling a branch must discharge its own items.
+- **Acceptance:** fixture with prior recon breadth shows gateable debt does not grow when branches are walled; the finish
+  preflight still refuses a run with un-triageable existing work; report counts unchanged.
+
+### P19/E — goal economy: author measurable proof, allow a blocked settle
+
+- **Defect:** two live goals proved impossible to satisfy by the executed branches (whole-surface coverage; a
+  `data.read` capability) yet stayed `active`, so completion could never be reached and the demand floor never slept.
+- **Change:** goal authoring guidance and validation require a proof the run can actually measure (bounded
+  denominator/known target capability) and state what would make it unreachable; allow a goal to settle `blocked` with a
+  reason when its proof is unreachable, and account that as settled-with-debt in completion rather than silently open.
+  Keep the transition itself a plan revision (`src/planning.ts` already allows `active → blocked` without proof).
+- **Acceptance:** fixture with an unreachable goal: goal becomes blocked with a reason, completion counts it as
+  settled-with-debt, `p2o_finish partial` path works; a provable goal still cannot be settled without proof.
+
+### P19/F — make dispatch walls visible and make resume discoverable (implemented)
+
+- **Defect:** engine spawn refusals were UI-only (`src/engine.ts`), and a crashed run's durable state was not surfaced at
+  session start.
+- **Change:**
+  - `src/engine.ts`: the drain catch now persists a bounded lifecycle fact before the notification:
+    `dispatch refused for <taskId>: <CODE>: <reason>` with `data.engine = {event:'intent-blocked', taskId, code, reason}`.
+    The code is read from `Error.message`'s `CODE:` prefix (`fail()` throws `CODE: message`) and falls back to
+    `DISPATCH_REFUSED`; the no-automatic-retry rule and the existing UI event are unchanged.
+  - `extensions/p2o/index.ts`: `durableRunHint` reads the newest `run-*/assessment.sqlite` under the workspace state root. A
+    `session_start` with no live run and no ticket notifies once with the run id and `/p2o --resume <runId>`, stating that
+    only knowledge returns. It never adopts authority, never opens a store writable and never resumes.
+  - `docs/USAGE.md` troubleshooting: the resume command (not `pi --resume`) and the ledger fact a stuck `proposed` task
+    carries.
+- **Acceptance (met):** `engine.test.ts` and `chain-economy.test.ts` prove a failed spawn leaves exactly that fact (generic
+  failure and the realistic `WORKER_NOT_HELD`); `resume.test.ts` proves a startup in a workspace with a durable run names it
+  and adopts nothing; the docs authority scan and acceptance matrix stay clean.
+
+### P19/G — explicitly out of scope
+
+ARTEX's cross-worker trace search (`search_all_worker_traces`, `get_worker_trace`) does not map onto p2o today: p2o
+workers are token-bounded model turns, not recorded sessions with a step store; the equivalent evidence is the ledger's
+candidate claims, receipts/artifacts and worker reports. Revisit only if a session/step store becomes a requirement.
+No new tools are added in P19.
+
+## 5. Sequence, budget and gates
+
+Order: **A (done) → B3 (done) → F (done) → C → D → E**. B3 and F were local, testable and unblocked the resume; C/D/E are
+behavioral and carry prompt-budget risk, so they go last with before/after measurements. Every item keeps the S1 verification
+protocol (`tsc`, focused suites, full suite, `build`/`check:build`, `audit-surface` + declaration budget, `git diff --check`,
+GitNexus `impact` before an edit and `detect_changes` before commit). Prompt text changes measure the planner ceiling
+(45,500 chars) and re-pin only from a measured number (D-P19-4).
+
+## 6. Owner options
+
+1. **Recommended — A + B + F now.** Fix the two observed dispatch walls and make the failure/resume visible; smallest
+   diff, all hermetic, unblocks the crashed run and any future needs-bearing validation. C/D/E next pass with measured
+   prompt changes.
+2. **Full behavior pass — A + B + C + D + E.** Also changes the wake/debt/goal economy now; larger behavioral surface,
+   needs new scenario tests for "quiet round is legal" and more review time; higher risk of a lazy campaign.
+3. **Stop at A.** Commit only the validation fix, resume the run, finish it partial, and let the report record the walls;
+   no further code this pass.
+
+**Owner chose option 1 (2026-10-29, "A + B + F ngay"), together with B3 and the commit.** A, B3 and F are committed as one
+tranche; C/D/E remain the next pass with measured prompt changes.
+
+## 7. Verification record for P19/A + B3 + F
+
+- `npx tsc --noEmit` — pass.
+- Focused suites (`roles`, `operator-controls`, `chain-economy`, `engine`, `resume`, `extension`, `workflow-policy`,
+  `prompt-roles`, `acceptance-matrix`, `authority`, `context-budget`, `recon`, `truth`, `surface-audit`) — pass. The
+  per-task-thinking and spawn-override tests were rewritten against B3, and the two dispatch-refusal facts plus the resume
+  hint are new assertions.
+- Full suite — 154 files passed, 5 skipped (159); 1,349 tests passed, 13 skipped (1,362); 0 failed.
+- `npm run build` and `npm run check:build` — pass; `scripts/audit-surface.mjs` — 35 tools / 0 contradictions; declaration
+  budget — planner 43,968 / worker 40,124 / validation 39,313 / reporting 6,282 chars (planner −166 from the removed
+  `runtime.thinking` schema text; model union 73,197), all under the pinned ceilings; `git diff --check` — clean.
+- GitNexus: `impact` upstream on `validateTaskRuntime`, `resolveRole` and `spawnWorkerLocked` reports CRITICAL at file-edge
+  granularity — every importer of the shared modules shows up as a d=1 file, the known inflation for exported helpers; the
+  concrete change is a signature narrowing that `tsc` verifies, plus the focused suites. `detect_changes --scope all`
+  names the expected symbols (`resolveRole`, `validateTaskRuntime`, `spawnWorkerLocked`, `continueHeldWorker`,
+  `executeTaskAction`, engine `drain`, `activateWorker`, the new `durableRunHint`) with the round/resume processes, plus the
+  doc/test files and the owner's `AGENTS.md` (never staged); no `partial`/`truncated`.
+- Each fix carries a reproducing test: the A test fails when the `hostValidation` resolution is reverted; the B3 tests fail
+  against the old per-task/`runtime.thinking` contract; the F tests fail without the ledger fact and the startup hint.
+
+## 8. How to reproduce the live-run evidence
+
+Read-only SQLite queries against the crashed run's durable store (no writes, no target contact):
+
+```sh
+RUN=~/tmp/cmp/.p2o-state/run-5367910f-7f14-4357-a983-8eaa6ebfde21/assessment.sqlite
+sqlite3 "file:$RUN?mode=ro" "SELECT json_extract(body,'\$.data.task.role'), json_extract(body,'\$.data.task.status'),
+  COUNT(*) FROM records WHERE kind='task' GROUP BY 1,2;"
+sqlite3 "file:$RUN?mode=ro" "SELECT json_extract(body,'\$.data.task.outcome') FROM records WHERE kind='task'
+  AND json_extract(body,'\$.data.task.status')='blocked' AND json_extract(body,'\$.data.task.outcome') LIKE '%Runtime profile%';"
+sqlite3 "file:$RUN?mode=ro" "SELECT json_extract(body,'\$.text') FROM records WHERE kind='lifecycle'
+  AND json_extract(body,'\$.text') LIKE 'planner.round-nudge%' ORDER BY sequence DESC LIMIT 3;"
+```
+
+The blocked-task `runtime.thinking` values come from the same records; the supported thinking levels for the configured
+model are in the installed pi catalog (`@earendil-works/pi-ai/dist/providers/data/opencode-go.json`).
+
+## 9. Owner decisions (answered in chat, 2026-10-29)
+
+1. **Option and sequence (§6):** option 1 — A + B + F now.
+2. **Commit:** yes — one commit for A + B3 + F, plain message, repository identity, no attribution lines; verified with
+   `git log -n 1 --format=%B` and never staging the owner's `AGENTS.md` or the untracked slides.
+3. **P19/B choice:** B3 — remove per-task thinking overrides and keep the configured role level.
+4. **Live re-run for C/D/E:** not authorized in this pass; C/D/E acceptance stays deterministic/hermetic until the measured
+   prompt changes are reviewed. The crashed run can be reopened with `/p2o --resume run-5367910f-7f14-4357-a983-8eaa6ebfde21`
+   from `~/tmp/cmp` (knowledge only; no ticket, worker or authority returns).
