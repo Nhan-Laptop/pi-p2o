@@ -7,6 +7,7 @@ import { claimCapabilities, isDemonstrated, isOpenGap, type ClaimFields } from '
 import { capabilityMatches, isTypedCapability, type Capability } from './capabilities.js';
 import { isEnvironmentId } from './lab.js';
 import type { LedgerIndex } from './records.js';
+import { GRAPH_RESPONSE_BYTES } from './state/graph.js';
 
 export interface ChainClaim extends ClaimFields {
   candidate: string;
@@ -117,6 +118,31 @@ export function chainJoin(claims: readonly ChainClaim[]): ChainJoin {
     ready: [...ready].sort(), unmet: [...unmet].sort(), uncovered, legacy, frontier,
     depth: Object.fromEntries([...depth.entries()].sort(([left], [right]) => left.localeCompare(right))),
   };
+}
+
+/** The shape `fitChainPage` bounds: the four sliced lists it may trim, plus the `shown` denominators it keeps honest. */
+export interface BoundedChainPage {
+  primitives: unknown[]; ready: unknown[]; unmet: unknown[]; frontier: unknown[];
+  shown: { primitives: number; ready: number; unmet: number; frontier: number };
+}
+
+/**
+ * S1/C2 (F-42): every graph read is bounded by `GRAPH_RESPONSE_BYTES`, and the chain page is the one read the host assembles
+ * after slicing, so a long path or a large join could still overflow it. Trim the listed rows tail-first and recompute
+ * `shown`, so a trimmed row reads as `counts > shown` instead of disappearing silently; `counts` stay the true totals and
+ * are never rewritten here. A page that cannot fit even at the floor (one frontier row) is refused by name rather than
+ * handed to the model over the bound.
+ */
+export function fitChainPage<T extends BoundedChainPage>(page: T, budget = GRAPH_RESPONSE_BYTES - 1024): T {
+  const value: T = { ...page, shown: { ...page.shown } };
+  const lists = ['frontier', 'ready', 'unmet', 'primitives'] as const;
+  while (Buffer.byteLength(JSON.stringify(value)) > budget) {
+    const key = lists.find(item => (value[item] as unknown[]).length > (item === 'frontier' ? 1 : 0));
+    if (!key) throw Error(`Chain response cannot fit the ${budget}-byte graph bound; narrow it with limit`);
+    (value[key] as unknown[]).pop();
+    value.shown = { ...value.shown, [key]: (value[key] as unknown[]).length };
+  }
+  return value;
 }
 
 /**

@@ -1,8 +1,8 @@
 # S1 — Surface audit and remediation plan of record (2026-10-29)
 
-Status: **Tranches A, B and B10 are committed on 2026-10-29 (A `aa87a57`, B `1cf3d8b`, B10 `04f3f23`) and Tranche C is in
-progress in the working tree: C1 (the `p2o_graph` authority split) is implemented and green, so the surface is now
-35 registered tools / 35 model-visible / 0 hidden / 10 board verbs / planner 23; C2–C5 remain.** Rev 2 after the
+Status: **Tranches A, B, B10 and C1 are committed on 2026-10-29 (A `aa87a57`, B `1cf3d8b`, B10 `04f3f23`, C1 `b7f8574`) and
+Tranche C continues in the working tree: C2 (read bounds and the description ceiling) is implemented and green, so the
+surface is now 35 registered tools / 35 model-visible / 0 hidden / 10 board verbs / planner 23; C3–C5 remain.** Rev 2 after the
 2026-10-29 plan review. Base commit `197d6a9` (R3 of the R1 program). The owner's
 `AGENTS.md` edit and the untracked `pi-p2o-defense-vi.pptx` are outside S1. This document replaces the R3 plan of record. That text is unchanged in git at
 `git show 197d6a9:planning_update.md`; the earlier A1 text at `git show bbdfec1:planning_update.md` and the P18 text at
@@ -469,6 +469,33 @@ and the doc mappings, as in R0–R3; `partial`/`truncated` both false). No live 
 **C2 — Fewer read verbs (F-42).** `page` is gone after B2; `p2o_graph`'s description drops to ≤ 900 chars with one
 "use when" clause per remaining verb; the chain branch gets a `GRAPH_RESPONSE_BYTES` guard and the view dossier trimming
 is tested at the byte boundary (F-37). Acceptance: a response-bound test per read verb; description length asserted.
+
+**C2 result (working tree, 2026-10-29; uncommitted).** The declared read bounds are now enforced and proved:
+
+- **Description ceiling.** `p2o_graph`'s registered description (boundary included) is **678 chars** — already inside the
+  ≤ 900 target — with exactly one clause per remaining verb (`view:` 100 rows, `query:` 50, `summary:` 10 rows / 8 KiB,
+  `export:` 500, `path:` 6 hops / 500 nodes / 10 paths / 24 KiB). The new test asserts the length and the five clauses
+  and refuses a resurrected `record:`/`chain:`/`ingest:`/`page:` clause, so C1's split cannot regress by prose.
+- **Chain byte guard (F-42).** `fitChainPage` (in `src/chain-view.ts`) trims the page's four sliced lists tail-first
+  against `GRAPH_RESPONSE_BYTES - 1024`, recomputes `shown` so a trimmed row reads as `counts > shown` (the counts stay
+  the true totals), keeps at least one frontier row, and refuses by name when a page cannot fit even at that floor. The
+  `p2o_graph_plan` chain branch now returns the fitted page as both content and details, so the one read the host
+  assembles by hand has the same bound as the store-side reads.
+- **Response-bound tests per read verb (F-42/F-37).** `graph-response-bounds.test.ts` presses each read against its cap:
+  fourteen 2,000-char inferred facts make `view` cross 24 KiB and the dossier trims with `dossier.omitted.facts > 0` while
+  `counts.assertions` stays 14; `query` trims to the 24 KiB bound with `truncated: true` and `omitted > 0`; `summary`
+  stays inside its own 8 KiB cap; `export` and `path` stay inside 24 KiB; the chain page reports `shown` against `counts`.
+  `chain-view.test.ts` unit-tests the fitter's trim order, the true-counts invariant and the named refusal. `page` does
+  not come back: the graph read has five verbs and no sixth.
+
+Verification: `tsc --noEmit` clean; the nine focused suites green (61 tests); full `vitest run` **154 passed / 5 skipped
+files (159), 1,346 passed / 13 skipped tests (1,359), 0 fail**; `npm run build` + `npm run check:build` → `build import
+OK`; `audit-surface` still reports
+**35/35/0/10, planner 23, 0 contradictions** and the declaration numbers are **unchanged** by C2 — planner **45,055**,
+worker 40,577, validation 39,766, reporter 6,282, model union 74,737 — because the guard moves no declared text, and every
+ceiling still passes (49,300 / 44,100 / 43,300 / 6,800 / 77,900). `docs/ACCEPTANCE_MATRIX.md` gained `F-S1-C-1` (the C1
+split) and `F-S1-C-2` (the read bounds), and the duplicate `F-S1-B-2` code was split so the B5/B9 row is `F-S1-B-3`. No
+live run, no target traffic, no paid model call.
 **C3 — Authoring consolidation, bounded by the adapter (F-43).** Safe: one payload key name (`entry`) for the four
 planner authoring/rating verbs; merge review/settle (already B1); trim the repeated capability-triple prose (~1,260 chars);
 keep `p2o_candidate` flat. Not safe, and explicitly rejected: a single discriminated union, because the Anthropic adapter

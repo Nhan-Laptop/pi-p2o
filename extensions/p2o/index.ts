@@ -13,7 +13,7 @@ import { Foothold, FOOTHOLD_PREVIEW_BYTES, isFootholdAction, validationMayUseSes
 import { Broker, BrokerClient, consumeHeldContinuation, reportProseWarnings, type WorkerRegistration, type WorkerReport, type DelegateInput, normalizeReport } from '../../src/broker.js';
 import { summarizeSituation, type SituationSnapshot } from '../../src/situation.js';
 import { continuationRefusal } from '../../src/broker.js';
-import { chainJoin, claimHeadClaims, type ChainClaim, type ChainPath } from '../../src/chain-view.js';
+import { chainJoin, claimHeadClaims, fitChainPage, type ChainClaim, type ChainPath } from '../../src/chain-view.js';
 import { proofViews } from '../../src/goal-proof.js';
 import type { PlannerWake, RoundProgress, RoundStall } from '../../src/engine.js';
 import { transitionHint } from '../../src/research.js';
@@ -3427,10 +3427,15 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
           // M8: a link that blocks says what to research — the transition, not a topic — and which procedure owns it.
           const research=join.unmet.slice(0,3).map(id=>{const claim=claims.find(item=>item.candidate===id),gained=claim?claimCapabilities(claim as never).gained:[];
             const need=join.uncovered[id]?.[0];return need?{claimId:id,...transitionHint(need,gained as never,claim?.surface)}:undefined;}).filter((hint):hint is NonNullable<typeof hint>=>hint!==undefined);
-          const result=plan?{...value,...plan,...(research.length?{research}:{})}:{...value,...(research.length?{research}:{})};
-          return textResult(cleanText(JSON.stringify(result)),{...result,counts:{primitives:join.primitives.length,ready:join.ready.length,unmet:join.unmet.length,frontier:join.frontier.length},shown:{primitives:value.primitives.length,ready:value.ready.length,unmet:value.unmet.length,frontier:value.frontier.length},next:next?`${next.claimId}${next.recordId?` [${next.recordId}]`:''} at depth ${next.depth} (${next.path.join(' → ')})`
+          const counts={primitives:join.primitives.length,ready:join.ready.length,unmet:join.unmet.length,frontier:join.frontier.length};
+          const nextLine=next?`${next.claimId}${next.recordId?` [${next.recordId}]`:''} at depth ${next.depth} (${next.path.join(' → ')})`
             :join.legacy.length?`none ready; ${join.legacy.length} claim(s) still carry pre-P14 capability text and join to nothing`
-            :'none ready'});
+            :'none ready';
+          // S1/C2 (F-42): the assembled page is trimmed to the same 24 KiB bound as every other read; `shown` against `counts`
+          // keeps the omission visible instead of dropping rows silently.
+          const page=fitChainPage({...value,...(plan??{}),...(research.length?{research}:{}),counts,
+            shown:{primitives:value.primitives.length,ready:value.ready.length,unmet:value.unmet.length,frontier:value.frontier.length},next:nextLine});
+          return textResult(cleanText(JSON.stringify(page)),page);
         })());
       }
       // R2.3: the rows are host-written knowledge, so the model may trigger the retry but cannot hand in rows of its own.

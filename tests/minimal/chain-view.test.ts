@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { chainJoin } from '../../src/chain-view.js';
+import { chainJoin, fitChainPage } from '../../src/chain-view.js';
 import { fixture, populate, seedClaim } from './helpers/report-fixture.js';
 import type { Capability, CapabilityKind } from '../../src/capabilities.js';
 
@@ -95,4 +95,34 @@ describe('chain join (P5, typed by P14.1)', () => {
     expect((await h.call('p2o_graph_plan', { action: 'chain', limit: 1 })).details.ready).toHaveLength(1);
     await expect(h.call('p2o_graph_plan', { action: 'chain', cursor: 1 })).rejects.toThrow(/Graph plan action/);
   }));
+});
+
+describe('chain page bound (S1/C2, F-42)', () => {
+  const page = (overrides: Record<string, unknown> = {}) => ({ primitives: ['p1', 'p2'], ready: ['r1', 'r2'], unmet: ['u1', 'u2'],
+    frontier: [{ claimId: 'f1', depth: 1, path: ['a', 'b'] }, { claimId: 'f2', depth: 2, path: ['a', 'c'] }],
+    counts: { primitives: 5, ready: 5, unmet: 5, frontier: 5 }, shown: { primitives: 2, ready: 2, unmet: 2, frontier: 2 },
+    next: 'f1', ...overrides });
+
+  it('trims listed rows tail-first, keeps the true counts and lowers only shown', () => {
+    const whole = page();
+    const total = Buffer.byteLength(JSON.stringify(whole));
+    const fitted = fitChainPage(whole, total - 20);
+    expect(Buffer.byteLength(JSON.stringify(fitted))).toBeLessThanOrEqual(total - 20);
+    expect(fitted.counts).toEqual(whole.counts);
+    expect(fitted.frontier).toEqual([whole.frontier[0]]);
+    expect(fitted.shown.frontier).toBe(1);
+  });
+
+  it('leaves a page that already fits untouched, and keeps at least one frontier row before refusing', () => {
+    const whole = page();
+    expect(fitChainPage(whole)).toEqual(whole);
+    const crowded = page({ primitives: Array.from({ length: 6 }, (_, index) => ({ id: `p${index}`, pad: 'x'.repeat(400) })),
+      ready: Array.from({ length: 6 }, (_, index) => ({ id: `r${index}`, pad: 'x'.repeat(400) })) });
+    const fitted = fitChainPage(crowded, 1_200);
+    expect(Buffer.byteLength(JSON.stringify(fitted))).toBeLessThanOrEqual(1_200);
+    expect(fitted.counts).toEqual(crowded.counts);
+    expect(fitted.frontier).toHaveLength(1);
+    expect(fitted.shown.ready).toBeLessThanOrEqual(crowded.shown.ready);
+    expect(() => fitChainPage(page({ frontier: [{ claimId: 'x'.repeat(400) }] }), 120)).toThrow(/cannot fit/);
+  });
 });
