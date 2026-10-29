@@ -497,7 +497,8 @@ hành vi trên store thật; không target traffic, không model trả phí.
 
 Giới hạn của P20/D: đây là truth pass trên tài liệu và message, không đổi behavior; nó không chứng minh target effectiveness và
 không thay đổi authority, evidence ladder hay coverage derivation. HISTORY và ACCEPTANCE_MATRIX được miễn khỏi phép quét verb vì
-chúng ghi lại tên verb của revision lịch sử (đó là mục đích của chúng); D không đụng P20/C nên C vẫn chưa có row nào.
+chúng ghi lại tên verb của revision lịch sử (đó là mục đích của chúng); D không đụng P20/C nên C vẫn chưa có row nào. P20/D đã
+được commit theo lệnh owner (`2891f73`) và push lên `origin/main`.
 
 ## R0 — Containment/correctness pass của chương trình R1 — bằng chứng hermetic
 

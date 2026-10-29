@@ -1,12 +1,12 @@
 # P20 — The knowledge projection layer: lineage, learnings and the write-back contract (plan of record, 2026-10-29)
 
-Status: **planned, nothing implemented yet.** P19 is delivered (three commits, §0) and its documentation pass is written but
-still uncommitted (§0.3). P20 addresses the second half of the owner's original question — "why can ARTEX run for hours?" —
+Status: **planned and partly delivered (2026-10-29).** P19 is delivered (three commits, §0) and its documentation pass is
+committed as `9c6d3d8`; P20/A (`39d698d`), P20/B (`95756d2`) and P20/D (`2891f73`) are committed and pushed, and P20/C
+(provenance) is not started. P20 addresses the second half of the owner's original question — "why can ARTEX run for hours?" —
 now that the first half (a fresh session per round, P18.1/D45 + P19/H) is done. The owner chose to plan **A + B + C** with
 schema changes allowed where the projection genuinely cannot be derived, and to treat **both** multi-hour continuity and
-cross-run readiness as priorities (D-P20-1..3). No live or paid run is authorized (D-P20-4). Base commit `46db381` plus the
-uncommitted P19 documentation pass; the owner's `AGENTS.md` edit and the untracked `pi-p2o-defense-vi.pptx` are outside this
-plan.
+cross-run readiness as priorities (D-P20-1..3). No live or paid run is authorized (D-P20-4). Base commit `46db381`; the
+owner's `AGENTS.md` edit and the untracked `pi-p2o-defense-vi.pptx` are outside this plan.
 
 Owner request that produced this plan (2026-10-29, Vietnamese, abridged):
 
@@ -40,10 +40,10 @@ teaching layer, cross-checked by the lead against the code. Every file:line belo
    was corrected to P19/H after the commit, and history is not rewritten for that). Acceptance rows F-P19-* and the P19 rows
    in [docs/HISTORY.md](docs/HISTORY.md) carry the details; the P19 verification numbers (tsc, 154 files / 1,365 tests, build,
    audit-surface, GitNexus) are in git at `46db381:planning_update.md` §7.
-3. **Uncommitted documentation pass (D-P19-10).** The round-session model, the `roundSessions` setting, the debt split, the
-   blocked-goal settlement and the P19/H crash symptom were added to `docs/USAGE.md`, `docs/HISTORY.md`,
+3. **Documentation pass (D-P19-10), committed as `9c6d3d8`.** The round-session model, the `roundSessions` setting, the debt
+   split, the blocked-goal settlement and the P19/H crash symptom were added to `docs/USAGE.md`, `docs/HISTORY.md`,
    `docs/PLANNER_ENGINE.md`, `docs/ACCEPTANCE_MATRIX.md`, plus comment-only renames in `extensions/p2o/index.ts` and two test
-   files. It is verified (doc suites green) but **not committed**: the next commit needs its own owner instruction (D-P20-4).
+   files. It was verified (doc suites green) and committed on the owner's instruction, which also carried this plan file.
    This file replaces that pass's `planning_update.md` edits and keeps their substance in this section.
 
 ---
@@ -202,7 +202,8 @@ todo store is in-process and dies on restart (`agent/planner.go:44-48`); coverag
 - **D-P20-3 — Both acceptance bars apply.** Multi-hour continuity (the projection answers "what was learned / why this intent"
   without tool spelunking) **and** cross-run readiness (referenced prior runs are visible, labelled context-only).
 - **D-P20-4 — No live or paid run; no commit or push without a fresh owner instruction.** This inherits P19's D-P19-3/D-P19-10.
-  The P19 documentation pass stays uncommitted until that instruction exists.
+  The P19 documentation pass (`9c6d3d8`) and each P20 tranche (`39d698d`, `95756d2`, `2891f73`) were committed only on their
+  own owner instruction, and pushed only on its own push instruction.
 - **D-P20-5 — p2o's evidence layer is not traded away.** The evidence ladder, independent replay, deterministic goal proof,
   host-derived coverage and the immutable ledger stay exactly as strict after P20 as before it (inherits D-P19-1). ARTEX
   parity never justifies a model assertion replacing a host check.
@@ -331,8 +332,8 @@ of risk; A can land without B, C only after A proves where derivation stops.
 
 **Status 2026-10-29 (after the P20/D pass):** steps 1–5 and 7 landed — P20/A (A1, A2, A3, A5 and the A4 bounded read) is
 committed as `39d698d` with the P19 documentation pass as `9c6d3d8`, and P20/B (B1–B5) as `95756d2`; the three commits are
-pushed to `origin/main`. P20/D (this documentation truth pass) is implemented and verified in the working tree, awaiting a
-commit instruction. Step 6 (P20/C, provenance) is not started. The verification record is §8.
+pushed to `origin/main`. P20/D (this documentation truth pass) is committed as `2891f73` and pushed. Step 6 (P20/C,
+provenance) is not started. The verification record is §8.
 
 Every step: `npx tsc --noEmit`, the targeted vitest files, the full hermetic suite before a tranche closes,
 `scripts/audit-surface.mjs`, `git diff --check`, and `detect_changes --scope all` before any commit. Commit and push happen
@@ -407,11 +408,11 @@ authorized (D-P20-4).
   derivation, completion, debt gateability, authority and the tool count. A learned/lineage/prior-run row can satisfy nothing.
 - **Committed:** as `39d698d` ("Project what the run learned, and why a row exists (P20/A)") after the owner's commit
   instruction; the P19 documentation pass landed as `9c6d3d8` ("Document the P19 pass and record the P20 knowledge-projection
-  plan"). Neither commit was pushed (no push instruction). Both carry the repository identity and no attribution line.
-- **Not done / next:** P20/B is implemented and verified below, uncommitted pending a fresh owner instruction (D-P20-4);
-  P20/C (provenance) is not started; push awaits a future instruction.
+  plan"). Both were later pushed to `origin/main` together with P20/B on the owner's push instruction. Both carry the
+  repository identity and no attribution line.
+- **Not done / next:** P20/B and P20/D are recorded below; only P20/C (provenance) is still not started.
 
-### P20/B — landed 2026-10-29 (uncommitted)
+### P20/B — landed 2026-10-29 (committed `95756d2`)
 
 - **Code:** `HANDOFFS.md` new `### Recording what you learned` section (~1.5 KB) plus the catalog document `shared:recording`;
   `docs/EVIDENCE.md`'s `## Cases: claim → case → finding` heading was reworded to `## Cases: claim, case, finding` so the
@@ -458,7 +459,7 @@ authorized (D-P20-4).
   and carry the repository identity with no attribution line.
 - **Not done / next:** P20/C (provenance) is not started.
 
-### P20/D — landed 2026-10-29 (uncommitted)
+### P20/D — landed 2026-10-29 (committed `2891f73`)
 
 - **Code and docs:** `docs/KNOWLEDGE.md`'s "Who writes what" paragraph now says what the review verb does — `supported`,
   `refuted` and `inconclusive` settle a **hypothesis**, `observed` promotes an **inferred relation** to an observed edge, and an
@@ -492,8 +493,9 @@ authorized (D-P20-4).
   USAGE/ARCHITECTURE text), each citing an existing test title; `docs/HISTORY.md` row for P20/D after the P20/B row.
 - **Not changed:** every tool declaration, loadout, authority rule, coverage derivation, admission/review semantics, evidence
   ladder, brief cap and declaration baseline. Only model-facing preflight text and prose moved.
-- **Not done / next:** uncommitted in the working tree — commit and push await a fresh owner instruction (D-P20-4). P20/C
-  (provenance) is still not started.
+- **Committed and pushed:** as `2891f73` ("Correct what the docs say the review, reporter and preflight do (P20/D)") on the
+  owner's instruction; `origin/main` is at that commit, with the repository identity and no attribution line.
+- **Not done / next:** P20/C (provenance) is still not started.
 
 ---
 
@@ -502,8 +504,8 @@ authorized (D-P20-4).
 1. **Scope:** A + B + C — all three tranches, not just the projection.
 2. **Schema:** allowed if genuinely needed (additive, same store), with derived-on-read tried first.
 3. **Priority:** both — multi-hour continuity and cross-run readiness are acceptance bars, not alternatives.
-4. **Commit/push/live run:** none authorized by this plan; each needs a fresh owner instruction. The P19 documentation pass
-   therefore stays uncommitted until then.
+4. **Commit/push/live run:** none authorized by this plan; each needs a fresh owner instruction. Every commit named above
+   (`9c6d3d8`, `39d698d`, `95756d2`, `2891f73`) was made and pushed only after its own instruction.
 5. **Open questions** are raised in chat and are not decided or recorded here.
 
 ---
