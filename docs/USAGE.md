@@ -105,6 +105,7 @@ kiểu/ngoài khoảng quay về mặc định. Hộp xác nhận luôn xuất h
 |---|---|---|
 | `maxWorkers` / `maxDepth` | 3 / 2 | như `--workers` / `--max-depth` |
 | `plannerRound` | `{steps:40,seconds:900,wrapSteps:6,contextWrapPercent:80,contextHardPercent:92}` | ngân sách một round; `0` tắt từng trục; `--round-steps`/`--round-seconds` override cho run đó |
+| `roundSessions` | `true` | mỗi round planner mở một Pi session mới và nhận round brief ≤8 KiB tất định (campaign frame, completion/demand, goals & proof, ready chain, workers, round facts, delta round trước, learned trong window, digest phần cũ) thay vì nối transcript — "bộ nhớ" của planner là ledger + brief, không phải hội thoại. `false` = round đến như follow-up trong session hiện tại: giữ được transcript nhưng context phình/compaction và brief tất định không còn là cơ chế chính. Settings chỉ đọc lúc start run mới |
 | `plannerModels` | — | `{base?, escalate?, thinkingBase?, thinkingEscalate?}`, model id dạng `provider/model`. Round được route trước lượt đầu: base cho review/mapping/validation, escalate cho exploitation/chaining, chain step đã ready, primitive chưa nối hoặc hai round liền không đóng gì; model không resolve/set được thì giữ loadout hiện tại và ghi `planner.round-model-fallback` |
 | `executorMode` | `shared` | `shared` \| `isolated` \| `session` |
 | `maxTargetOperations` | 3 | trần target-op cho isolated/session; shared mặc định 1 và settings **không** tự nới shared của run mới |
@@ -140,11 +141,22 @@ lượt planner trả phí; pause/stop hoặc input người đang chờ chặn 
 và prerequisite đã review. Polling bị cấm: planner kết thúc lượt bằng `wait` thay vì giữ lượt chờ, và heartbeat campaign
 (mặc định 600 s) là wake có nhịp khi campaign còn nợ việc.
 
+Planner **không giữ hội thoại giữa các round**: mặc định mỗi round mở một Pi session mới, round mở bằng round brief ≤8 KiB
+tất định — campaign frame, completion & demand, goals/proof, ready chain, workers, round facts, delta round trước, section
+"Learned this round" (claim/case/wall mà window vừa ghi, kèm source task + asset; có `--refer-workspace` thì thêm một dòng
+prior-run context-only) và digest các record cũ hơn. Một round mở mỗi wake (worker report/proposal đã commit, debt gateable, heartbeat) hoặc sau round trước;
+khi host đang stream hoặc có input người đang chờ thì round ở lại session hiện tại và ghi `planner.round-session-fallback`.
+Đổi session không làm mất dữ liệu: mọi record đã commit vẫn ở `<cwd>/.p2o-state/<run-id>/`; cái không mang sang là mạch suy
+luận tự do và output tool không được ghi thành record. Backlog recon (asset chưa lập kế hoạch, cell chưa chạy, WSTG
+suggestion, mapping chưa ghi) chỉ là planning signal chứ không phải việc owed, nên không tự mở round. Lưu ý: session của
+round **cũng chính là session anh đang chat trong TUI**, nên mỗi round TUI mở một session mới; transcript cũ vẫn nằm trên đĩa
+và `pi --resume` mở lại được để đọc, nhưng campaign không quay lại nó — muốn giữ mạch chat liền thì đặt `roundSessions:
+false` (đánh đổi ở bảng cấu hình).
+
 Mỗi round là một work package có ngân sách: mặc định 40 step / 900 s, bắt đầu wrap ở 6 step cuối, 90% thời gian hoặc 80%
 context, dừng cứng ở 92% context. `--round-steps 0 --round-seconds 0` tắt cả hai trục. Ngân sách này **không** giới hạn
-campaign: không có trần round/token/thời gian cho cả chiến dịch. Mặc định mỗi round mở một Pi session mới và nhận briefing
-tất định ≤8 KiB thay vì nối dài một transcript; round đang chạy hiện số round, session, trạng thái ngân sách, model được
-route và round fact mới nhất trong `/p2o status`. `p2o_loop` là tool của planner (`wait`/`blocked`,
+campaign: không có trần round/token/thời gian cho cả chiến dịch. Round đang chạy hiện số round, session, trạng thái ngân sách,
+model được route và round fact mới nhất trong `/p2o status`. `p2o_loop` là tool của planner (`wait`/`blocked`,
 thêm `hint`/`constrain` 3–300 ký tự, trần 24 hint và 12 constraint); trạng thái Engine đọc qua `p2o_workers` (snapshot
 `status` đã bị xoá ở S1/B2), và đây không phải slash command; `wait` kết thúc lượt chứ
 không kết thúc assessment — `wait` đầu tiên của round bị từ chối một lần kèm demand và legal next khi campaign còn
@@ -182,8 +194,15 @@ một round kết thúc mà không có tool call nào nhận tối đa hai nudge
   `wstg-checklist.csv` khi có) từ state đã commit, không gọi model, không chạm target, ghi vào thư mục mới. Bản tự động lúc
   cleanup nằm ở `.p2o-reports/report-<run-id>-final/`; bản export tay mặc định `report-<run-id>/`. Thư mục nằm trong project
   nên **đừng commit**. Chi tiết nội dung/ladder/completion: [EVIDENCE](EVIDENCE.md).
+- **Research debt** trong brief/report tách hai nhóm. **Nghĩa vụ gateable** (goal/plan/chain/triage… — 9 kind) là việc còn nợ:
+  giữ completion, demand floor, debt wake và finish preflight sống, và mỗi item trong brief có một câu "discharge". **Planning
+  signal** (`SCOPE_UNPLANNED_ASSET`, `CELL_NOT_RUN`, `WSTG_UNPLANNED`, `MAPPING_UNRECORDED`) chỉ là tín hiệu lập kế hoạch sinh
+  ra từ recon: vẫn hiện trong report nhưng không phải việc owed và không tự đánh thức loop. Một goal mà run không thể chứng
+  minh được settle `blocked` kèm lý do + exclusions, và report ghi **settled with debt** thay vì coi là goal còn mở.
 - `--refer-workspace` chỉ thêm context read-only từ run cũ cùng target (khớp path/origin; `gaps` gồm covered, leftOpen,
-  stale, neverReached, unknown) và không bao giờ tính là same-run evidence hay khôi phục authority.
+  stale, neverReached, unknown) và không bao giờ tính là same-run evidence hay khôi phục authority. Round brief in các count đó
+  thành một dòng "Prior run (context only, never evidence)"; muốn xem chi tiết vì sao một plan row tồn tại, planner dùng read
+  bounded `p2o_board board=lineage id=<planId|recordId>` (row ≤24 KiB, background, không phải evidence).
 
 ## Dọn dẹp và sự cố
 
@@ -193,6 +212,9 @@ một round kết thúc mà không có tool call nào nhận tối đa hai nudge
 - Pi khởi động lại sau khi crash: nếu workspace còn durable-local run, `session_start` chỉ hiện một hint read-only nêu
   `runId` và đúng lệnh `/p2o --resume <run-id>`. Chỉ lệnh p2o này mở lại knowledge dưới cùng runId; `pi --resume` chỉ
   phục hồi transcript, và không ticket, worker hay authority nào trở lại — việc dở phải được dispatch lại.
+- Pi thoát giữa lúc chuyển round với `This extension ctx is stale after session replacement or reload`: đó là bug của
+  progress widget rơi đúng cửa sổ đổi session (P19/H, sửa ở commit `46db381`). Cập nhật extension rồi chạy campaign mới;
+  run đã crash không khôi phục ticket/worker/authority, chỉ mở để đọc bằng `/p2o --resume <run-id>`.
 - Task kẹt `proposed` sau một dispatch bị từ chối: ledger có lifecycle fact `dispatch refused for <taskId>: <CODE>: …`
   (`data.engine = {event:'intent-blocked', taskId, code, reason}`) cùng mã lỗi mà planner thấy trong prompt; đây là wall
   của host, không phải task bị mất — sửa nguyên nhân (model/role setting, executor, prerequisite) rồi dispatch lại.

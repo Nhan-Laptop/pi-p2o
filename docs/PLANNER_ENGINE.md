@@ -134,10 +134,17 @@ as having consumed a claim.
   stays in the current session as a marked follow-up prompt and `planner.round-session-fallback` records why; the same wake
   is never dispatched twice.
 - The round opening is deterministic and bounded (≤ 8 KiB): campaign frame, completion and demand, goals and proof, ready
-  chain steps, workers, round facts, the previous round's delta and a digest of older records. The round's own records are the
-  live window; everything before the previous opening folds into the digest instead of vanishing with the replaced session.
+  chain steps, workers, round facts, the previous round's delta, a **learned** section (what the window recorded: claims with
+  their source task and pinned asset, owner-accepted cases, walls with their debt ids, plus one prior-run context line when the
+  run started with `--refer-workspace`) and a digest of older records. The round's own records are the live window; everything
+  before the previous opening folds into the digest instead of vanishing with the replaced session. Learned rows are
+  background: they never satisfy a claim, a coverage cell or a goal.
+- When the brief is not enough, `p2o_board board=lineage id=<planId|recordId>` answers why a row exists: a plan id returns the
+  row, its goals, cited claims and source tasks plus its upstream walk; any other knowledge record id returns its upstream and
+  downstream walk. The page is bounded (≤ 24 KiB, rows trimmed tail-first and `truncated` set) and derived on read from the same
+  records — no second store, no authority and no evidence upgrade.
 - A session replacement invalidates the outgoing Pi context before the replacement binds, and its getters throw instead of
-  returning undefined (P19/G). The progress widget's ledger scan is paced but not bounded in duration, so a repaint scheduled
+  returning undefined (P19/H). The progress widget's ledger scan is paced but not bounded in duration, so a repaint scheduled
   before a switch can straddle it. Every UI read goes through a stale-tolerant guard: a scan that crosses a replacement skips
   the repaint and stays silent, the pending timer is cleared before `ctx.newSession`, and the replacement's `session_start`
   schedules the next render on the bound context. Rendering never changes authority and never raises.
