@@ -127,6 +127,21 @@ describe('P7.0 truth pass', () => {
     }
   });
 
+  // P20/B4a: a coverage note is display context, never the cell itself. The prompt sentence that said so was removed with the
+  // batch write-back example, so the rule now lives where the model reads it with the verb: the description and the boundary.
+  it('states on the p2o_note surface that a coverage note derives no cell', () => {
+    const note = registrations().get('p2o_note')!.description as string;
+    expect(note).toContain('derives no coverage cell');
+    expect(note).not.toContain('coverage (surface × risk × outcome, including clean surfaces)');
+    expect(noteParameters.properties.kind.description).toContain('derives no coverage cell');
+    expect(TOOL_BOUNDARIES.p2o_note.join(' ')).toContain('the host derives coverage cells from reviewed claims, never from a coverage note');
+    // The worker prompt still routes coverage through the claim/surface path; it only stopped repeating the cell sentence.
+    const worker = workerInstructions({ workerId: 'worker-test', role: 'recon', runId: 'run-test', depth: 1, parentWorkerId: null,
+      lifetime: 'until-stopped', target: { kind: 'url', label: 'https://example.invalid' } } as never);
+    expect(worker).toContain('Record coverage with p2o_surface for a component and entry point');
+    expect(worker).toContain('with a p2o_candidate claim and its closure for an outcome');
+  });
+
   it('gives the planner and worker the same facts, including the risk-label definition', () => {
     const planner = plannerInstructions(plannerFacts());
     expect(planner).toContain(SANDBOX_TRUTH);

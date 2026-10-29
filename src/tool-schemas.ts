@@ -185,7 +185,7 @@ export const httpParameters = Type.Object({
     }, { additionalProperties: false });
 
 export const noteParameters = Type.Object({
-      kind: Type.Optional(choices(['note', 'coverage', 'observation', 'open'], 'Defaults to note; use coverage for a surface × risk × outcome row')),
+      kind: Type.Optional(choices(['note', 'coverage', 'observation', 'open'], 'Defaults to note; coverage is a display row for a surface × risk × outcome and derives no coverage cell')),
       text: Type.String({ minLength: 1, maxLength: 8000 }),
       surface: Type.Optional(Type.String({ maxLength: 2000 })),
       risk: Type.Optional(Type.String({ maxLength: 2000, description: 'Grouping label for this coverage row; not a severity, a ceiling or a limit on what may be attempted.' })),

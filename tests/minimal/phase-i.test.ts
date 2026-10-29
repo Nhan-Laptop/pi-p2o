@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
+import { Value } from 'typebox/value';
 import { graphSliceLines } from '../../src/graph-slice.js';
+import { graphRecordParameters } from '../../src/state/graph-tool.js';
 import { writeBack, writeBackLine } from '../../src/write-back.js';
 import { finishPreflight } from '../../src/finish-preflight.js';
 import { renderReport } from '../../src/report-export.js';
@@ -78,12 +80,28 @@ describe('the brief carries a bounded graph slice (P16.3)', () => {
     expect(workerBrief({ ticket: ticket(), focus: '/login', task: 'Map the login boundary' })).not.toContain('Graph context');
   });
 
-  it('tells the worker to write back as it goes, with the no-new exit', () => {
+  it('tells the worker to write back as it goes, with the batch example and the no-new exit (P20/B)', () => {
     const text = workerInstructions(ticket());
     expect(text).toContain('Write back as you go');
     expect(text).toContain('fact:observed or fact:inferred assertion with its evidence');
     expect(text).toContain('`no-new`');
     expect(text).toContain('has not finished');
+    // P20/B1/B2: the one sentence became the literal shape the host accepts (assets first because their IDs are what a fact
+    // row needs), so a worker does not have to infer the batch contract from a paragraph.
+    expect(text).toContain('batch what one intent learned into one call');
+    expect(text).toContain('p2o_graph_record {batch:{assets:[{asset:{kind:"route",key:"/login"');
+    expect(text).toContain('kind:"observed",statement:"…",confidence:"high",evidenceRefs:["ev-…"]');
+    expect(text).toContain('hypotheses:[{assetId:"asset-…",statement:"…",status:"open"}]');
+    expect(text).toContain('a claim closure is p2o_candidate');
+    expect(text).toContain('A suspicion is a hypothesis or an inferred fact, never a finding');
+    expect(text).toContain('a cross-asset link is an assertion the lead can read');
+    // The batch example is valid against the verb's own schema: the shapes named in the prompt are what graphRecordParameters
+    // accepts, so an example that drifts from the tool fails here instead of in a paid run.
+    expect(Value.Check(graphRecordParameters, { batch: { assets: [{ asset: { kind: 'route', key: '/login', attributes: { feature: 'login,session' } } }] } })).toBe(true);
+    expect(Value.Check(graphRecordParameters, { batch: { facts: [{ assetId: 'asset-x', kind: 'observed', statement: 'x', confidence: 'high', evidenceRefs: ['ev-1'] }] } })).toBe(true);
+    expect(Value.Check(graphRecordParameters, { batch: { hypotheses: [{ assetId: 'asset-x', statement: 'x', status: 'open' }] } })).toBe(true);
+    // The shared document that holds the whole contract is named in the knowledge line, not in a second prose copy.
+    expect(text).toContain('shared:handoffs, shared:recording and shared:scope are available');
     // A1: the reporter is read-only and writes no record, so the write-back rule stops at the executing roles.
     expect(workerInstructions(ticket('reporting'))).not.toContain('Write back as you go');
   });

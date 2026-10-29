@@ -65,4 +65,18 @@ describe('dispatch discipline (P6)', () => {
     expect(prompt).toContain('settle the goal blocked with that reason and those exclusions');
     expect(prompt).toContain('settled with debt');
   });
+
+  // P20/B2: the learned projection only pays for itself when the next round reads it instead of re-deriving it, and a WSTG
+  // intent only shares a coverage identity with the map when its question key is the lower-case test id.
+  it('P20/B2: points the planner at the learned section and names the WSTG question-key convention', () => {
+    for (const prompt of [plannerInstructions(base()), solo()]) {
+      expect(prompt).toContain('READ THE LEDGER');
+      expect(prompt).toContain('the brief’s learned section lists the round’s new claims, accepted cases and walls with record ids');
+      expect(prompt).toContain('never re-derive them');
+      expect(prompt).toContain('WSTG QUESTION KEY');
+      expect(prompt).toContain('set questionKey to its lower-case test id (e.g. wstg-athz-04)');
+      expect(prompt).toContain('the workflow id as the method family');
+      expect(prompt).not.toMatch(/\bp2o_[a-z_]+\b/);
+    }
+  });
 });

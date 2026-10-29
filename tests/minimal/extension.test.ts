@@ -338,6 +338,15 @@ describe('owner role', () => {
     await h.call('p2o_delegate', { focus: 'surface-enumeration', task: 'Enumerate the recorded surface', taskId: discovery.id });
     expect(await ticketBudget(h)).toMatchObject({ purpose: 'discovery' });
     expect(await ticketBudget(h)).not.toHaveProperty('commandBudget');
+    // P20/B3: a task-dispatched brief carries the capsule fields the worker acts on — the pinned asset, both predictions and
+    // the stop condition — derived from the owner-authored task record rather than restated by the planner in prose.
+    const brief = String(h.herdr.calls.filter(call => call.op === 'prompt').at(-1)!.text);
+    expect(brief).toContain('== Assignment contract (owner-authored coordination; background) ==');
+    expect(brief).toContain(`ASSETS: ${asset.entityId}@r1`);
+    expect(brief).toContain('IF TRUE: The enumeration returns the recorded observation set');
+    expect(brief).toContain('IF FALSE: The enumeration returns nothing and the receipt says so');
+    expect(brief).toContain('STOP: Stop after one bounded command');
+    expect(brief).toContain('PREREQUISITES: none');
   });
 
   it('asks for confirmation with the worker plan, and declining starts nothing', async () => {

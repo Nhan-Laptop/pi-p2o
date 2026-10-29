@@ -138,9 +138,16 @@ describe('bounded recon contract', () => {
   // EXPLOITATION STANCE block. Both instruction hashes and both brief hashes moved on purpose; the brief hashes moved because
   // its AUTHORIZATION paragraph is now the short anchor instead of the full truth. The planner body changes are covered by the
   // size assertion further down.
+  // 2026-10-29 (P20/B teaching layer): the worker prompt's one write-back sentence became a literal batch example (assets, then
+  // facts/hypotheses with evidence refs, then the claim/no-new exits) and the knowledge-catalog line now names
+  // shared:recording; the coverage-note sentence moved to the p2o_note description and its boundary line, which is where the
+  // model sees it with the verb, paying for the example instead of growing the section. workerBrief gained the role contract,
+  // the conditional assignment-contract block (assets/expectedTrue/expectedFalse/stopCondition/prerequisites from the task
+  // capsule) and the workflow recipe, and lost two lines the worker system prompt already states. Both instruction hashes and
+  // both brief hashes therefore moved on purpose.
   it.each([
-    ['url', 'cb4b16b0145214be06588b81dd484ecd5747e435a74305fc2c56ee1c6d655e17', '9cfd0c6e094e00eb8fcd27325a93ed3b355bc60c959953c6c152fcef0170b6c5'],
-    ['directory', 'adb7ff5d7f231187d7143b6c8b09d89783be9c07e092a7111cd3033ad681df2a', 'f55cca810efda3781871d1131f4a05d8eb34949b138811ef1d90cf7b4cbe8f44'],
+    ['url', 'fb2707a434d51e13f203191905e133d1b8d2111fb9fa517531e800afe97760a0', '4e1bb760fa0ff90dd5bf9b5b63550b30f4615568cbcf502f2aaa507450984143'],
+    ['directory', 'bc5cd2df077961b8f542af794641cc69997955af465a5a9d190580a8e5eca154', '252e2464b2b399add97f2e10e1eabb317cc49385c54b5f9429302256a9f7d700'],
   ])('pins %s worker guidance for the Planner/frontier revision; historical acceptance artifacts are not rewritten', (kind, instructionHash, briefHash) => {
     const ticket = { workerId: 'worker-test', role: 'recon', runId: 'run-test', depth: 1, parentWorkerId: null,
       lifetime: 'until-stopped', target: { kind, label: kind === 'url' ? 'https://example.invalid' : '/target' } } as Ticket;
@@ -221,6 +228,13 @@ describe('bounded recon contract', () => {
   // WALL THE BRANCH naming a recorded wall as progress. Both are new capability, and nothing current could be removed for them
   // without dropping the anti-stall floor, so the measured section grew 14,279 -> 15,126 (url, delegated); planner ceiling
   // raised 14,400 -> 15,600 (+3%, rounded up). The worker, brief and reporter ceilings are unchanged.
+  // 2026-10-29 (P20/B teaching layer): the planner gained the learned-section and WSTG-question-key lines (measured url, delegated
+  // 15,135 -> 15,578 of the same 15,600 ceiling: no raise, and the planner's no-tool-name rule still holds). The worker prompt
+  // grew with the batch write-back example and paid for it by moving the coverage-note rule to the p2o_note surface it belongs
+  // to (12,653 -> 13,121 of 13,200); validation is 13,460 of 13,500 because it shares the write-back rule. The brief's envelope
+  // trims (two duplicated lines removed, 905 -> 911 including the brief's finish line) paid for the role contract; the
+  // assignment-contract block and the workflow recipe are conditional and measured separately in brief-context.test.ts
+  // (contract 1,389; contract+recipe 2,365 with the fixture skill and its recipe), so the pinned no-contract ceiling is unchanged.
   const PROMPT_CEILINGS = { planner: 15_600, worker: 13_200, validation: 13_500, brief: 1_650, reporter: 2_600 };
   it('keeps the delegated lead prompt variants inside a recorded size (the solo variants are bounded above)', () => {
     const base = { runId: 'run-recon', sourceSkipped: 2, delegation: { enabled: true, maxWorkers: 3, maxDepth: 2 } };

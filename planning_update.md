@@ -257,19 +257,22 @@ of risk; A can land without B, C only after A proves where derivation stops.
      destinations (asset via `p2o_graph_record`; assertion `fact:observed|inferred`/hypothesis with evidence; claim via
      `p2o_candidate` plus a `no-new` note), one merged conclusion per intent, incremental-only, no re-recording an existing
      row, suspicion is a hypothesis or an inferred fact and never a finding, a cross-asset link is an assertion the planner
-     can read.
+     can read. **Shipped.**
   2. Replace the single write-back sentence in `src/prompts.ts:288` with a literal batch example (~900 B) and add two planner
      lines: read the learned section, settle what evidence allows with `p2o_graph_review`, do not re-derive what the section
      lists; name the lower-case WSTG id as `questionKey` when the question is a WSTG test (the `feature` attribute vocabulary
-     is already in `src/prompts.ts:52`).
+     is already in `src/prompts.ts:52`). **Shipped.**
   3. Pass `taskCapsule` (`src/tasks.ts:569-572`) into `workerBrief`: asset ids, expectedTrue/expectedFalse/stopCondition and
-     prerequisites, plus the catalog workflow's `steps/observe/wall` when present.
+     prerequisites, plus the catalog workflow's `steps/observe/wall` when present. The capsule's JSON state blob is not copied
+     into the brief: `briefContract` derives the actionable fields and the renderer clips them. **Shipped.**
   4. Fix the observable defects: `p2o_note kind=coverage` no longer suggests it creates a cell; the nine
      `research/TOOLING.md` skill links and the catalog `HANDOFFS.md`'s `docs/EVIDENCE.md` link become handles the model can
      actually open (catalog document or a sectioned shared doc) or are removed; and the role contract HANDOFFS.md holds is
-     injected into the worker brief instead of depending on the model choosing to open it.
+     injected into the worker brief instead of depending on the model choosing to open it. **Shipped.**
   5. Keep every prompt inside the pinned ceilings (measured before P20: planner prompt 44,348 chars of 45,500, model union
      73,577 of 75,600): trim duplicates first, then record the measured delta; a ceiling increase is a separate owner decision.
+     **Shipped without a declaration-ceiling raise:** the one prompt-text ceiling that moved is the conditional brief envelope,
+     recorded as a new measured bound in `brief-context.test.ts` (see §8).
 - **Acceptance:** prompt-parity tests pin the new contract lines and the worker-brief capsule fields; a link check proves every
   referenced document is reachable; the surface audit still reports the same tool count and no contradiction; no authority,
   capability or evidence rule changes.
@@ -315,8 +318,9 @@ of risk; A can land without B, C only after A proves where derivation stops.
 6. **C1 → C2 → C3 → C4** — each with its migration/read test; C4 (the per-asset question projection and the feature signal) can land independently of C1–C3.
 7. **D** — documentation pass last, in the same change as the behavior it describes.
 
-**Status 2026-10-29:** steps 1–3 landed (A1, A2, A3, A5, and the A4 bounded read); the verification record is §8. B, C and
-the rest of D are still to do.
+**Status 2026-10-29:** steps 1–5 landed — P20/A (A1, A2, A3, A5 and the A4 bounded read) is committed as `39d698d` with the
+P19 documentation pass as `9c6d3d8`; P20/B (B1–B5) is implemented and verified in the working tree, awaiting a commit
+instruction. C and the rest of D are still to do. The verification record is §8.
 
 Every step: `npx tsc --noEmit`, the targeted vitest files, the full hermetic suite before a tranche closes,
 `scripts/audit-surface.mjs`, `git diff --check`, and `detect_changes --scope all` before any commit. Commit and push happen
@@ -362,7 +366,7 @@ audit-surface tool count and declaration chars, `git diff --check`, GitNexus `de
 partial/truncated flags), and the commit hash once the owner authorizes one. Do not record a live run here until one is
 authorized (D-P20-4).
 
-### P20/A — landed 2026-10-29 (uncommitted)
+### P20/A — landed 2026-10-29 (committed 39d698d; docs commit 9c6d3d8)
 
 - **Code:** `src/context.ts` (candidate `task`/`asset` links, plan `claim` links), new `src/exploration-view.ts`
   (`recentLearnings`, `lineageOf`, `whyPlanRow`, `priorRunContext`, `lineagePage`), `src/round-brief.ts` (learned section,
@@ -389,8 +393,55 @@ authorized (D-P20-4).
   `p2o_graph` declares one clause per read verb under a 900-char pin and the board already owns record reads.
 - **Not changed:** brief total cap (8 KiB) and every existing section cap; declaration ceilings; evidence ladder, coverage
   derivation, completion, debt gateability, authority and the tool count. A learned/lineage/prior-run row can satisfy nothing.
-- **Not done / next:** commit and push await a fresh owner instruction (D-P20-4); the P19 documentation pass is still
-  uncommitted in the same working tree. P20/B (write-back contract and teaching layer) and P20/C (provenance) are not started.
+- **Committed:** as `39d698d` ("Project what the run learned, and why a row exists (P20/A)") after the owner's commit
+  instruction; the P19 documentation pass landed as `9c6d3d8` ("Document the P19 pass and record the P20 knowledge-projection
+  plan"). Neither commit was pushed (no push instruction). Both carry the repository identity and no attribution line.
+- **Not done / next:** P20/B is implemented and verified below, uncommitted pending a fresh owner instruction (D-P20-4);
+  P20/C (provenance) is not started; push awaits a future instruction.
+
+### P20/B — landed 2026-10-29 (uncommitted)
+
+- **Code:** `HANDOFFS.md` new `### Recording what you learned` section (~1.5 KB) plus the catalog document `shared:recording`;
+  `docs/EVIDENCE.md`'s `## Cases: claim → case → finding` heading was reworded to `## Cases: claim, case, finding` so the
+  runtime section slugger and the Python library validator produce the same anchor, and the dead `HANDOFFS.md` link now points
+  at it; new catalog documents `shared:tooling-provenance` (`research/TOOLING.md`) and `shared:evidence-cases`
+  (`docs/EVIDENCE.md#cases-claim-case-finding`) turn the nine dead `../../research/TOOLING.md` skill links and the dead
+  evidence link into resolvable `p2o-skill:` handles. `src/prompts.ts`: the worker/validation write-back sentence became the
+  literal batch example (assets first, then facts/hypotheses with `evidenceRefs`, then the claim/`no-new` exits); the
+  knowledge line names `shared:recording`; the planner gained `READ THE LEDGER` and `WSTG QUESTION KEY` (neither names a
+  tool); the brief gained `briefRole` (worker and read-only reporting variants), `briefContractBlock` (pinned asset ids,
+  `IF TRUE`/`IF FALSE`, `STOP`, `PREREQUISITES`, each clipped) and `recipeBlock` (`STEPS`/`OBSERVE`/`WALL` when the selected
+  catalog workflow has them), with workflow types extended. `src/tasks.ts`: `briefContract(task)` derives the capsule fields
+  (undefined when the dispatch had no task record) and `TaskMethod.workflow` types the recipe. `extensions/p2o/index.ts`:
+  dispatch passes `contract: briefContract(assigned)`; the `p2o_note` description and the `kind` schema description now say a
+  coverage note is a display row that derives no cell.
+- **Tests:** new five `brief-context.test.ts` cases (role contract incl. reporting; capsule block with pinned revisions and
+  absent-when-no-task; `not recorded` + clipping; recipe present/absent; conditional envelope bounds); `phase-i.test.ts`'s
+  write-back test pins the batch example and validates its shapes with `Value.Check(graphRecordParameters, …)`;
+  `dispatch-discipline.test.ts` +1 pins both planner lines and the no-tool-name rule; `truth.test.ts` +1 pins the `p2o_note`
+  surface; `extension.test.ts`'s dispatch test asserts the brief's derived contract against the authored task record;
+  `knowledge.test.ts` resolves the three new documents and the rewritten handles; `recon.test.ts` instruction/brief hash pins
+  moved on purpose with a dated comment.
+- **Commands and results (repo root, 2026-10-29):** `npx tsc --noEmit` clean; `npx vitest run` → **155 passed / 5 skipped
+  files (160), 1,391 passed / 13 skipped tests (1,404), 0 fail** (+7 tests against A, no deleted or skipped test); `npm run
+  build` and `npm run check:build` → `build import OK`; `node scripts/audit-surface.mjs` → 35 registered / 35 model-visible /
+  0 hidden / 10 board verbs, 0 contradictions, planner 44,570 of 45,500 (unchanged), worker 40,234, validation 39,423,
+  reporting 6,282 (all under their baselines); `python3 scripts/validate_library.py` → PASS 38 skills, 336 registered
+  documents (+3), 81 catalog entries; `git diff --check` clean; prompt-text ceilings: planner 15,578/15,600, worker
+  13,121/13,200, validation 13,460/13,500, reporter 2,329/2,600, plain brief 911/1,650; GitNexus `detect_changes --scope all`
+  → 50 changed symbols / 19 files / 7 affected processes, `risk_level: high` from the `spawnWorkerLocked`/`workerBrief` hub,
+  no `partial`/`truncated` flag (the index predates this pass, so its file set also carries the earlier uncommitted work and
+  `AGENTS.md`, owned by the repo owner).
+- **Ceiling decision (B5):** no declaration ceiling and no pinned prompt-text ceiling was raised. The planner paid for its two
+  lines inside the 15,600 it already had (22 chars of headroom); the worker/validation prompt paid for the batch example by
+  moving the coverage-note sentence to the `p2o_note` surface B4a fixes anyway; the brief removed two lines the worker system
+  prompt already states and the new conditional envelope (assignment contract + workflow recipe) is outside the pinned
+  no-contract measurement, so it got its own measured bound (plain 911/1,650; contract+recipe ≤2,400) in
+  `brief-context.test.ts` instead of a raised ceiling.
+- **Not changed:** authority split, tool count (35), evidence ladder, coverage derivation, admission/review semantics, brief
+  total cap (8 KiB) and every section cap, declaration baselines. Capsule/recipe/role text is background derived from the same
+  task record and satisfies nothing.
+- **Not done / next:** commit and push await a fresh owner instruction (D-P20-4); P20/C (provenance) is not started.
 
 ---
 

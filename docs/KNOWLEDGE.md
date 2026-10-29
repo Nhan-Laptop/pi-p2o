@@ -110,7 +110,11 @@ navigation, and reading it changes no authority.
 
 - Catalog ids are not host paths: every component is opened relative to a held directory FD without following symlinks, and
   only registered documents are reachable. `p2o_skill_list` pages 8 playbooks/overlays at a time; `p2o_skill_read` follows
-  `nextOffset` and covers skills, references, recipes, scripts, `shared:scope`, `shared:handoffs` and `shared:wstg-map`.
+  `nextOffset` and covers skills, references, recipes, scripts, `shared:scope`, `shared:handoffs` (including the
+  `shared:recording` write-back contract), `shared:evidence-cases`, `shared:tooling-provenance` and `shared:wstg-map`. A
+  worker's write-back contract lives in `shared:recording`: one merged conclusion per intent, assets before the facts that
+  cite them, an assertion that carries its evidence refs, a claim closure or a `no-new` note as the exit, and a suspicion
+  recorded as a hypothesis or inferred fact — never a finding.
   `materialize: true` copies a registered skill script into the caller's own scratch and returns path/hash/size (hash
   mismatch or denied write fails closed).
 - `skills/catalog.json` separates technique, playbook and overlay, and lists descriptive workflow prerequisites; a draft's

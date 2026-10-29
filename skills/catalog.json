@@ -1499,6 +1499,11 @@
       "section": "provisional-owner-review"
     },
     {
+      "id": "shared:recording",
+      "path": "HANDOFFS.md",
+      "section": "recording-what-you-learned"
+    },
+    {
       "id": "shared:scope",
       "path": "README.md",
       "section": "start-here"
@@ -1516,6 +1521,15 @@
     {
       "id": "shared:wstg-provenance",
       "path": "research/WSTG_PROVENANCE.md"
+    },
+    {
+      "id": "shared:tooling-provenance",
+      "path": "research/TOOLING.md"
+    },
+    {
+      "id": "shared:evidence-cases",
+      "path": "docs/EVIDENCE.md",
+      "section": "cases-claim-case-finding"
     },
     {
       "id": "evidence:b001",

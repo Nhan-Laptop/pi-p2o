@@ -39,6 +39,14 @@ page is the operator-facing contract for tasks, rounds and the plan board.
 - **Reporter — a read-only second reader.** Reads an accepted case, its evidence and artifacts and writes the report; no
   target, lab or claim tool.
 
+A dispatched worker's brief is a bounded handoff, not a second task description: the planner's focus, the task question, a
+graph slice, the selected skills inlined, the operator frame and — derived from the same task record the planner reads — the
+pinned asset ids, both expected observations, the stop condition, the pinned prerequisites, and the selected catalog
+workflow's `steps/observe/wall` when it has a recipe (P20/B3). The brief also states the role contract (workers are the only
+executors and claim/note authors; reporting is read-only) instead of depending on the model opening `HANDOFFS.md`, and the
+worker prompt states the write-back contract once: an asset first because a fact row needs its ID, every assertion carries the
+evidence refs that support it, and the exits are a claim closure or a note whose text starts with `no-new` (P20/B1/B2/B4).
+
 ## Tasks are intents
 
 `p2o_task_author` stores an intent, not a work order: no `id` creates one, `id`+`revision` revises the existing one. The planner
@@ -69,7 +77,10 @@ structured discovery/exploitation/chaining/retest. After recon the anchor rules 
 | validation, retest | `validationOf` (a reviewed task ID or a worker claim ID) |
 
 `validationOf` accepts a worker claim because the host stamped `data.taskRef` on it: the host resolves the claim to its
-discovery task, pins the reviewed revision, rewrites the link and derives `decision=validate`. A validation is never
+discovery task, pins the reviewed revision, rewrites the link and derives `decision=validate`. When the question is one of the
+OWASP WSTG tests the planner names it by its lower-case test id (for example `wstg-athz-04`) as `work.questionKey` and the
+workflow id as the method family, so the same test on the same asset and context is the same work in the coverage projection;
+the recorded `feature` attribute is what decides a test's applicability (P20/B2). A validation is never
 revalidated, and each confirmed+tested claim produces exactly one host-created validation task. `p2o_candidate` is
 worker-only: a planner call is refused with `WORKER_ONLY` and a legal next.
 
@@ -139,6 +150,9 @@ as having consumed a claim.
   run started with `--refer-workspace`) and a digest of older records. The round's own records are the live window; everything
   before the previous opening folds into the digest instead of vanishing with the replaced session. Learned rows are
   background: they never satisfy a claim, a coverage cell or a goal.
+- The round prompt says what to do with the learned section: open the record ids it lists, settle an unread hypothesis or
+  inferred relation through owner review, and never re-derive what the section states. The same prompt names the WSTG
+  question-key convention, so the planner does not have to infer it from the coverage board (P20/B2).
 - When the brief is not enough, `p2o_board board=lineage id=<planId|recordId>` answers why a row exists: a plan id returns the
   row, its goals, cited claims and source tasks plus its upstream walk; any other knowledge record id returns its upstream and
   downstream walk. The page is bounded (≤ 24 KiB, rows trimmed tail-first and `truncated` set) and derived on read from the same

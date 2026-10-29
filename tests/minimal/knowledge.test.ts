@@ -25,6 +25,16 @@ describe('approved knowledge', () => {
     }
     expect((await library.read('source-code-auditing')).text).toContain('p2o-skill:shared:handoffs');
     expect((await library.read('source-code-auditing')).text).toContain('p2o-skill:evidence:b068');
+    // P20/B4b: the write-back contract and the two handles that pointed at unregistered files are catalog documents now, so the
+    // reader serves them and every relative link inside the library rewrites to a resolvable p2o-skill: id.
+    expect((await library.read('shared:recording')).text).toContain('### Recording what you learned');
+    expect((await library.read('shared:recording')).text).toContain('`no-new`');
+    expect((await library.read('shared:tooling-provenance')).text).toContain('Supplemental reverse-engineering tooling');
+    expect((await library.read('shared:evidence-cases')).text).toContain('## Cases: claim, case, finding');
+    expect((await library.read('shared:handoffs')).text).toContain('p2o-skill:shared:evidence-cases');
+    for (const skill of ['patch-diff-analysis', 'data-flow-analysis', 'binary-auditing', 'memory-safety-auditing', 'dynamic-analysis']) {
+      expect((await library.read(skill)).text, skill).toContain('p2o-skill:shared:tooling-provenance');
+    }
     const list = await library.list();
     expect(list.nextOffset).toBe(8);
     expect(list.entries[0].kind).toBe('playbook');

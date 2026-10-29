@@ -450,7 +450,35 @@ Giới hạn của P20/A: đây là projection **derived** — nó không chứn
 in hai lần); graph assertion→asset chưa đi vào walk vì ledger descriptor không mang graph edge — đó là việc của P20/B/C nếu cần.
 Wall/claim hiển thị theo page nên một window rất dày vẫn có thể bị cắt, và marker + `shown`/`omitted` nói rõ. `board=lineage` là
 read của planner, không thêm authority hay target operation; prior run là context của run khác, không bao giờ là same-run evidence.
-Chưa có live run (D-P20-4); A chưa được commit (working tree cùng pass tài liệu P19 đang chờ lệnh owner).
+Chưa có live run (D-P20-4). P20/A đã được commit theo lệnh owner (`39d698d`, cùng pass tài liệu P19 `9c6d3d8`); P20/B landed
+trong working tree và chờ lệnh commit tiếp theo.
+
+## P20/B — Write-back và navigation contract (teaching layer) — bằng chứng hermetic
+
+Phần này ghi lại **P20/B** (`planning_update.md` §4/B): worker trước đây được dặn "write back as you go" bằng một câu trừu
+tượng, không có ví dụ batch nào; worker brief chỉ có focus/task và không mang các trường của task record (asset id, hai dự đoán,
+stop condition, prerequisite) cũng như không mang recipe `steps/observe/wall` của workflow; role contract trong `HANDOFFS.md`
+chỉ tới được worker nếu model tự chọn mở tài liệu; và 9 link `research/TOOLING.md` cùng link `docs/EVIDENCE.md#...` trong
+HANDOFFS trỏ tới file **không đăng ký catalog**, nên `p2o_skill_read` không mở được. B sửa ở tầng dạy học: một tài liệu ghi
+chép dùng chung, một ví dụ batch chữ đúng schema, brief mang contract + recipe lấy từ record, role contract nằm ngay trong brief,
+và các handle chết thành catalog document đọc được. Không đổi authority, capability, evidence rule hay ngữ nghĩa coverage.
+Bằng chứng là **cơ chế**: unit test prompt/brief, test catalog, fixture store/broker thật cho dispatch; không target traffic,
+không model trả phí, không live run.
+
+| Mã | Kịch bản → kỳ vọng | Bằng chứng | Mức |
+|---|---|---|---|
+| F-P20-7 | P20/B1: một tài liệu ghi chép dùng chung `shared:recording` (~1,5 KB) nằm trong `HANDOFFS.md` và đọc được qua skill reader; nó nêu đúng ba đích ghi (asset, assertion `fact:observed|inferred`/hypothesis, claim kèm `no-new` note), một kết luận gộp mỗi intent, chỉ ghi tăng dần, không ghi lại row cũ, nghi ngờ là hypothesis/inferred fact chứ không phải finding, và cross-asset link là assertion planner đọc được; dòng knowledge của worker prompt nêu `shared:recording` | `knowledge.test.ts :: reads every document and resolves handoffs, scope and evidence links` (U)<br>`phase-i.test.ts :: tells the worker to write back as it goes, with the batch example and the no-new exit (P20/B)` (U) | Covered |
+| F-P20-8 | P20/B2: câu write-back duy nhất trong worker/validation prompt thành ví dụ batch chữ (assets trước để lấy ID, rồi facts/hypotheses kèm `evidenceRefs`) đúng schema `graphRecordParameters`; planner thêm hai dòng READ THE LEDGER và WSTG QUESTION KEY mà không nêu tên tool; đo được planner 15.578/15.600, worker 13.121/13.200, validation 13.460/13.500 | `phase-i.test.ts :: tells the worker to write back as it goes, with the batch example and the no-new exit (P20/B)` (U)<br>`dispatch-discipline.test.ts :: P20/B2: points the planner at the learned section and names the WSTG question-key convention` (U)<br>`recon.test.ts :: keeps the worker, brief and reporter prompts inside the same recorded budget` (U/R) | Covered |
+| F-P20-9 | P20/B3: worker brief mang các trường capsule suy từ task record — asset id kèm revision đã pin, IF TRUE/IF FALSE, STOP, PREREQUISITES — và cắt mỗi trường dài để brief không phình; dispatch không có task record (legacy delegate/structured) thì block vắng mặt và brief giữ nguyên hình dạng cũ | `extension.test.ts :: gives every ticket its purpose and no command allowance, so nothing the worker starts can be cut short` (R)<br>`brief-context.test.ts :: renders the capsule fields with pinned revisions, and stays absent when no task record exists` (U)<br>`brief-context.test.ts :: says "not recorded" for absent capsule fields and clips an over-long prediction instead of growing the brief` (U) | Covered |
+| F-P20-10 | P20/B3: recipe `steps/observe/wall` của workflow catalog được render cùng WORKFLOW khi workflow được chọn có recipe, bị cắt theo từng list; workflow không có recipe thì không render block nào | `brief-context.test.ts :: renders the workflow recipe when the catalog workflow has one, and nothing when it does not` (U) | Covered |
+| F-P20-11 | P20/B4: role contract của HANDOFFS nằm ngay trong brief (bản worker và bản read-only cho reporting); `p2o_note` description và kind description nói coverage là display row, derives no cell; các handle chết thành catalog document — 9 link `../../research/TOOLING.md` rewrite thành `p2o-skill:shared:tooling-provenance` và link `HANDOFFS.md` tới `docs/EVIDENCE.md` thành `p2o-skill:shared:evidence-cases` (heading EVIDENCE đổi sang slug một gạch để cả runtime lẫn validator cùng thấy section) | `brief-context.test.ts :: carries the role contract in every brief, with the read-only variant for a reporting worker` (U)<br>`truth.test.ts :: states on the p2o_note surface that a coverage note derives no cell` (U)<br>`knowledge.test.ts :: reads every document and resolves handoffs, scope and evidence links` (U)<br>`surface-audit.test.ts :: gives every role only tools it holds and keeps every declaration total at or under its S1 baseline` (R) | Covered |
+| F-P20-12 | P20/B5: không nâng declaration ceiling nào; planner/worker/validation/reporter vẫn trong prompt-text ceiling đã pin, riêng brief có thêm một bound đo được cho envelope có điều kiện (plain ≤1.650, contract+recipe ≤2.400) thay vì nâng ceiling cũ; hash pin của worker instruction/brief được cập nhật kèm comment ngày | `recon.test.ts :: keeps the worker, brief and reporter prompts inside the same recorded budget` (U)<br>`brief-context.test.ts :: keeps the conditional envelope inside a recorded bound: plain 1,650, contract+recipe ≤2,400` (U)<br>`surface-audit.test.ts :: gives every role only tools it holds and keeps every declaration total at or under its S1 baseline` (R) | Covered |
+
+Giới hạn của P20/B: đây là tầng dạy học, không chứng minh target effectiveness; capsule/recipe hiển thị background của task record
+chứ không thêm quyền, không đổi admission và không thay review. Một số workflow (16/95) mới có `steps/observe/wall`, nên phần lớn
+brief không tăng thêm block nào; recipe bị cắt theo từng list nên text dài không thể làm phình brief. `p2o_note kind=coverage`
+vẫn ghi vào ledger như trước — nó chỉ không còn bị mô tả như nguồn tạo coverage cell. Chưa có live run (D-P20-4); B landed trong
+working tree, chưa commit và chưa push (chờ lệnh owner).
 
 ## R0 — Containment/correctness pass của chương trình R1 — bằng chứng hermetic
 

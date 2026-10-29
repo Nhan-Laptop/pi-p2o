@@ -23,7 +23,7 @@ state and proof level through `p2o_candidate`: source traces, offline reproducti
 not interchangeable. State intended-policy provenance (`explicit_contract`, `boundary_invariant`, or `inferred`);
 an inferred policy remains an open proof gap. Revisions name the superseded candidate ID, and evidence-backed
 closure may resolve named open-item IDs without erasing their history. Independence is defined in the [evidence
-contract](docs/EVIDENCE.md#cases-claim--case--finding): a different worker's matching reproduction with its own receipt,
+contract](docs/EVIDENCE.md#cases-claim-case-finding): a different worker's matching reproduction with its own receipt,
 never metadata.
 
 Retention is confirmed at start: `durable-local` (default) keeps the redacted ledger and artifacts under
@@ -41,6 +41,25 @@ During P2O, only the planner’s host-side task board accepts task packets and r
 Review the validator’s **current** conclusion and receipt, including withdrawal and controls. A reported/closed coordination task does not close a security candidate; reporting creates no proof. Missing actor, control or provenance returns the smallest unanswered question. A URL, authenticated or browser method is not a gap: the target is a starting label, any host the sandbox routes to is reachable, any method/header/body is accepted, the image carries the browser transport, and a principal is provisioned by the worker itself when the operator did not seal one. Only a tool or host that actually refuses remains a gap.
 
 When a question is one of the OWASP WSTG tests, name it by its lower-case test ID (for example `wstg-athz-04`) as the question key of the task, and use the skill workflow id as the method family, so the same test on the same asset in the same context is recognised as the same work. The [WSTG test map](docs/WSTG_MAP.md#wstg-map-table) shows which tests the shipped skills cover by name (D) or only through general techniques (T), which they do not cover (N), and which are outside this tool's scope (O). A map entry is library knowledge, not a result: the host derives the coverage cell for a test from reviewed work — the reviewed task, its worker claim and the current accepted case — and a task whose work identity names no asset is an unmapped gap, never a cell (the model has no cell verb); its evidence is recorded as for any other question.
+
+### Recording what you learned
+
+Write back while you work, not at the end: the ledger, not the transcript, is what the next worker and the next planner round read. A worker that learned something and wrote nothing has not finished.
+
+One intent produces one merged conclusion, aimed at one of three destinations:
+
+- **An asset** — the node a receipt actually showed (route, service, binary, endpoint), with the `feature` attribute when a WSTG test could apply to it, and the evidence refs that revealed it.
+- **An assertion** — `fact:observed` when a same-run receipt shows it; `fact:inferred` when you reasoned from receipts; an open `hypothesis` when you only suspect. Each row carries its evidence refs, and a settled hypothesis or inferred relation is left for the planner's owner review.
+- **A claim** — `p2o_candidate`, one closure per claim: confirmed with evidence, `ruled_out` naming the specific effective control, or `open_proof_gap` with its requirement. A claim is attributed evidence; it is not a finding, a case or a severity.
+
+When the intent concluded that the surface added nothing, write one note whose text starts with `no-new` instead of inventing a row.
+
+Rules that keep the ledger readable:
+
+- **One merged conclusion per intent.** Do not re-record an existing row; `supersedes` only when the new observation contradicts the retained one, and state what changed.
+- **Incremental only.** A partial observation with its receipt beats a complete story with none; unknowns, controls and failed assumptions are as valuable as an effect.
+- **A cross-asset link is an assertion** — a relation with `basis=observed` or `basis=inferred` in the same batch — so the planner can read it; it is never a second claim.
+- **Never upgrade a classification silently.** Observed stays observed and inferred stays inferred, and a suspicion is a hypothesis or an inferred fact, never a finding.
 
 ### Provisional owner review
 

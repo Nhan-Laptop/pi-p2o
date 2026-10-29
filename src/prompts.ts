@@ -8,7 +8,7 @@ import { situationLine, type SituationSnapshot } from './situation.js';
 
 export const PLANNER_PROMPT_SECTION = 'p2o_assessment';
 
-const KNOWLEDGE_CATALOG = 'Use p2o_skill_list (paginate nextOffset) and p2o_skill_read {id, offset?} for approved knowledge. A selected skill is inlined up to one 24 KiB page in your brief; a longer document continues at the nextOffset the brief names. linked p2o-skill: IDs resolve with p2o_skill_read. shared:handoffs and shared:scope are available.';
+const KNOWLEDGE_CATALOG = 'Use p2o_skill_list (paginate nextOffset) and p2o_skill_read {id, offset?} for approved knowledge. A selected skill is inlined up to one 24 KiB page in your brief; a longer document continues at the nextOffset the brief names. linked p2o-skill: IDs resolve with p2o_skill_read. shared:handoffs, shared:recording and shared:scope are available.';
 const KNOWLEDGE_HASHES = 'Document hashes identify the package text, not target evidence.';
 const KNOWLEDGE_TOOL_DESCRIPTIONS = 'Active tool descriptions specify execution limits, not installed binaries.';
 const KNOWLEDGE_SANDBOX_INSTALL = 'When a selected task needs a tool the image does not provide, install it inside your own sandbox scratch and record the receipt; never run universal startup probes and never treat an install as target evidence.';
@@ -161,6 +161,10 @@ export function plannerInstructions(facts: PlannerPromptFacts): string {
     // A6.5: round hygiene. The observed run lived its whole campaign in one turn and ended with 0 rounds because the planner
     // waited inside it; ending the round is what lets the ledger (not the transcript) be the unit of work.
     'ROUND HYGIENE — after dispatching or reviewing, end the round explicitly with the loop wait action rather than keeping the turn open. Use a worker join only for a bounded join you act on in this turn; a long wait keeps the campaign in one conversation that cannot be rebuilt from the ledger.',
+    // P20/B2: the learnings projection is only worth its bytes if the next round reads it instead of re-deriving it, and a
+    // WSTG question is only the same work when its key and method family match the map's vocabulary.
+    'READ THE LEDGER — the brief’s learned section lists the round’s new claims, accepted cases and walls with record ids; open them, settle an unread hypothesis or inferred relation through owner review, and never re-derive them.',
+    'WSTG QUESTION KEY — when an intent asks an OWASP WSTG test, set questionKey to its lower-case test id (e.g. wstg-athz-04) and the workflow id as the method family, so the same test on the same asset is the same work.',
     'FIRST ROUND — before the first task dispatch, record the goal (criteria and proof), the coverage plan (denominator, exclusions, unknown scope) and one todo per campaign phase; a dispatch no todo references is admitted as research debt instead of silently becoming the plan.',
     // P19/E: the goal economy. The defect was two goals kept active although the executed branches proved the proof unreachable, so
     // completion could never settle and the demand floor never slept; the prompt now states measurable proof and the blocked settle.
@@ -284,8 +288,8 @@ export function workerInstructions(ticket: Ticket): string {
     ...(ticket.requestedRuntime === undefined ? [] : [`Requested runtime: model ${ticket.requestedRuntime.model ?? 'inherit'}, thinking ${ticket.requestedRuntime.thinking ?? 'inherit'}.`]),
     'TACTICAL AUTONOMY: choose the steps/tools for your intent, and take the next step only when this step\u2019s actual output is its input and your duty covers that purpose; otherwise report the link. Record material observations and counterevidence incrementally. You do not choose new run strategy or accept/spawn subtasks. If a prerequisite needs help, propose it and report partial progress instead of holding your slot waiting for a child.',
     'Work bounded: read the ledger (p2o_ledger) before repeating a search, keep your scratch in your own working directory, and stop launching commands on a host that does not answer.',
-    `Reporting discipline: commands/requests verbatim, what you observed, what it supports, and what it does NOT support. Record coverage ${validation ? '' : 'with p2o_surface for a component and entry point, '}with a p2o_candidate claim and its closure for an outcome, and p2o_note kind=open for anything unresolved; a coverage note is display context and the host derives cells from reviewed claims, never from the note. Give each candidate one closure state: confirmed (reproduced), ruled_out (name the specific control), or open_proof_gap. Follow a chain as far as the evidence takes it and record each link\u2019s gained/needs; report the link that needs another worker or a capability you did not reach, and say how far you took it.`,
-    'Write back as you go: an asset with p2o_graph_record, a fact:observed or fact:inferred assertion with its evidence, or a note whose text starts with `no-new` when the surface added nothing. A worker that learned something and wrote nothing has not finished; the host counts what you wrote and the lead sees it.',
+    `Reporting discipline: commands/requests verbatim, what you observed, what it supports, and what it does NOT support. Record coverage ${validation ? '' : 'with p2o_surface for a component and entry point, '}with a p2o_candidate claim and its closure for an outcome, and p2o_note kind=open for anything unresolved. Give each candidate one closure state: confirmed (reproduced), ruled_out (name the specific control), or open_proof_gap. Follow a chain as far as the evidence takes it and record each link\u2019s gained/needs; report the link that needs another worker or a capability you did not reach, and say how far you took it.`,
+    'Write back as you go, and batch what one intent learned into one call. Assets first: `p2o_graph_record {batch:{assets:[{asset:{kind:"route",key:"/login",attributes:{feature:"login,session"}}}]}}` returns their IDs; then the same verb records them, e.g. `{batch:{facts:[{assetId:"asset-…",kind:"observed",statement:"…",confidence:"high",evidenceRefs:["ev-…"]}],hypotheses:[{assetId:"asset-…",statement:"…",status:"open"}]}}`. Three destinations: an asset, a fact:observed or fact:inferred assertion with its evidence, or a note whose text starts with `no-new` when the surface added nothing; a claim closure is p2o_candidate. A suspicion is a hypothesis or an inferred fact, never a finding; a cross-asset link is an assertion the lead can read. A worker that learned something and wrote nothing has not finished; the host counts what you wrote and the lead sees it.',
     'Before reporting a finding, argue the strongest case against it, set confidence honestly, and keep severity to demonstrated impact. Distinguish reviewed, tested, ruled-out, blocked and untested surfaces. A blocked result is a valid outcome; an invented finding is not.',
     'Finish by calling p2o_report with summary, findings, evidence, coverage, open items, confidence and (if applicable) blocked. Then stop working — the owner takes over from your report.',
     // Per-worker text goes last so sibling workers share the whole static body as a cacheable prompt prefix.
@@ -315,6 +319,53 @@ export interface ExploitBriefFacts {
   stopCondition: string;
 }
 const notRecorded = (value: string): string => (value.trim() ? value.trim() : 'not recorded');
+/**
+ * P20/B3: the part of `taskCapsule` (src/tasks.ts) a brief acts on. The capsule itself is one JSON state blob sized for a
+ * planner read tool; a brief carries the fields a worker can act on and clips them, so a long question cannot push the
+ * brief past its recorded budget. `src/tasks.ts:briefContract` derives it.
+ */
+export interface BriefContract {
+  assets: readonly string[];
+  expectedTrue: string;
+  expectedFalse: string;
+  stopCondition: string;
+  prerequisites: readonly string[];
+}
+const CONTRACT_TEXT = 100;
+const clipText = (text: string, cap: number): string => (text.length <= cap ? text : `${text.slice(0, cap - 1).trimEnd()}…`);
+const clipBrief = (value: string): string => clipText(value.trim(), CONTRACT_TEXT);
+const briefContractBlock = (contract: BriefContract): string[] => [
+  '',
+  '== Assignment contract (owner-authored coordination; background) ==',
+  `ASSETS: ${contract.assets.length ? contract.assets.slice(0, 6).join(' | ') : 'not recorded'}`,
+  `IF TRUE: ${notRecorded(clipBrief(contract.expectedTrue))} | IF FALSE: ${notRecorded(clipBrief(contract.expectedFalse))}`,
+  `STOP: ${notRecorded(clipBrief(contract.stopCondition))}`,
+  `PREREQUISITES: ${contract.prerequisites.length ? contract.prerequisites.slice(0, 6).join(' | ') : 'none'}`,
+  'A field that says "not recorded" is a gap to report, not a fact to invent.',
+  '== End of assignment contract ==',
+];
+/** P20/B3: the catalog workflow fields a brief renders; `steps/observe/wall` are the recipe the method family carries when present. */
+export interface BriefWorkflow { id: string; description: string; prerequisites?: string[]; steps?: string[]; observe?: string[]; wall?: string[] }
+/** P20/B3: the workflow's own recipe, bounded. A workflow without recipe fields renders nothing. */
+const recipeBlock = (workflow: BriefWorkflow): string[] => {
+  if (!workflow.steps?.length && !workflow.observe?.length && !workflow.wall?.length) return [];
+  return [
+    '',
+    '== Workflow recipe (the method family, not a script) ==',
+    ...(workflow.steps?.length ? [`STEPS: ${clipText(workflow.steps.map((step, index) => `${index + 1}) ${step}`).join(' '), 300)}`] : []),
+    ...(workflow.observe?.length ? [`OBSERVE: ${clipText(workflow.observe.join(' | '), 120)}`] : []),
+    ...(workflow.wall?.length ? [`WALL: ${clipText(workflow.wall.join(' | '), 120)}`] : []),
+    '== End of workflow recipe ==',
+  ];
+};
+/**
+ * P20/B4c: the role contract HANDOFFS.md holds, stated in the brief every worker reads. It grants nothing — the loadout is the
+ * enforcement — but it removes the outcome where a worker waits for a planner that cannot run target work, and it keeps the
+ * read-only reader from being told it authors records.
+ */
+const briefRole = (role: string): string => role === 'reporting'
+  ? 'ROLE: reporting is a read-only second reader: it reads records another worker produced and authors no claim; the planner cannot execute and owns the assessment.'
+  : 'ROLE: workers are the only executors and the only claim/note authors; the planner cannot execute and plans from what you record, so report what only you can observe.';
 function exploitBriefBlock(facts: ExploitBriefFacts): string[] {
   const listed = (values: readonly string[]): string => values.length ? values.join(' | ') : 'not recorded';
   return [
@@ -331,22 +382,23 @@ function exploitBriefBlock(facts: ExploitBriefFacts): string[] {
     '== End of exploit context ==',
   ];
 }
-export function workerBrief(input: { ticket: Ticket; focus: string; task: string; context?: string; skills?: Array<{ name: string; body: string }>; workflow?: { id: string; description: string; prerequisites?: string[] }; constraints?: readonly string[]; hints?: readonly string[]; objective?: string; permissions?: readonly string[]; slice?: readonly string[]; exploit?: ExploitBriefFacts }): string {
-  const { ticket, focus, task, context, skills, workflow, constraints, hints, objective, permissions, slice, exploit } = input;
+export function workerBrief(input: { ticket: Ticket; focus: string; task: string; context?: string; skills?: Array<{ name: string; body: string }>; workflow?: BriefWorkflow; contract?: BriefContract; constraints?: readonly string[]; hints?: readonly string[]; objective?: string; permissions?: readonly string[]; slice?: readonly string[]; exploit?: ExploitBriefFacts }): string {
+  const { ticket, focus, task, context, skills, workflow, contract, constraints, hints, objective, permissions, slice, exploit } = input;
   return [
     `[p2o worker ${ticket.workerId} · role ${ticket.role} · depth ${ticket.depth} · run ${ticket.runId}]`,
-    `You are ${ticket.workerId}; the assessment lead is your parent. Maintain your own identity and call p2o_report when your task is complete.`,
+    `You are ${ticket.workerId}; the assessment lead is your parent. Finish with p2o_report and an honest confidence.`,
     '',
     'AUTHORIZATION: blanket for the whole run — no per-action consent exists, so never end this task by asking a human for a permission. The full rule is in your system instructions.',
+    briefRole(ticket.role),
     '',
     `FOCUS: ${focus}`,
-    `SCOPE: ${ticket.target.label} — a starting label, not a boundary: any host the sandbox can route to, any method/header/body.`,
+    `SCOPE: ${ticket.target.label} — a starting label, not a boundary: any host, method/header/body.`,
     `LIMITS: no command, elapsed-time or per-action-permission ceiling. The operator's recorded constraints and explicit stop conditions still apply.`,
+    ...(contract ? briefContractBlock(contract) : []),
     '',
     '== Inherited context from the lead (background only) ==',
     context?.trim() ? context.trim() : '(none supplied)',
     '== End of inherited context ==',
-    'Use the above as background only; do not continue the lead\u2019s work or redo what it says is already known.',
     ...(slice?.length ? ['', '== Graph context from this run (recorded state, background, never a finding) ==', ...slice, '== End of graph context =='] : []),
     ...(exploit ? exploitBriefBlock(exploit) : []),
     ...(skills?.length ? [
@@ -357,6 +409,7 @@ export function workerBrief(input: { ticket: Ticket; focus: string; task: string
       ...(workflow ? [
         `WORKFLOW: ${workflow.id} — ${workflow.description}`,
         ...(workflow.prerequisites?.length ? [`Prerequisites: ${workflow.prerequisites.join('; ')}`] : []),
+        ...recipeBlock(workflow),
       ] : []),
     ] : []),
     ...(objective ? [

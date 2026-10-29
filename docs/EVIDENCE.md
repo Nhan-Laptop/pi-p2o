@@ -56,7 +56,7 @@ anchor to the task that produced it. A planner call is refused with `WORKER_ONLY
   fingerprint for a second worker); an id created in another sandbox must be registered locally with the same recipe first.
   `destroy` stops those processes. Nothing here is a privilege boundary: the sandbox has no Docker daemon or socket.
 
-## Cases: claim → case → finding
+## Cases: claim, case, finding
 
 1. A worker claim is attributed evidence, not a finding. `confirmed` on a claim only means "claimed confirmed — pending
    review".

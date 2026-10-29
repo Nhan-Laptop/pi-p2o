@@ -49,7 +49,7 @@ import { isWorkPurpose, purposeFromRole, type WorkPurpose } from '../../src/duti
 import { SkillLibrary, packageRoot } from '../../src/skills.js';
 import { EvidenceStore, claimAssetRefsFromWork, redact, type Candidate } from '../../src/evidence.js';
 import { identitySummary, loadIdentityFile, redactSecretBytes, redactSecrets, sealIdentity, secretViews, substituteSecrets, substituteShellSecrets, type IdentityFile } from '../../src/identity.js';
-import { TaskBoard, taskCapsule, taskFrontier, taskHead, awaitingReview, isSatisfiedTask, terminalState, type TaskDraft, type TaskMethod, type AssessmentTask } from '../../src/tasks.js';
+import { TaskBoard, briefContract, taskCapsule, taskFrontier, taskHead, awaitingReview, isSatisfiedTask, terminalState, type TaskDraft, type TaskMethod, type AssessmentTask } from '../../src/tasks.js';
 import { planFrontier, PlanBoard, boundPlanRequest, type PlanDraft } from '../../src/planning.js';
 import { PLAN_ACTION_PARAMETERS, PLAN_ACTIONS } from '../../src/work-tool.js';
 import { CaseBoard, boundCaseRequest, boundRatingRequest, needsCaseReview } from '../../src/cases.js';
@@ -1062,7 +1062,7 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
       // A17.3/D34: the grey-box handoff travels with a chain successor only; every other brief is unchanged.
       const exploit = ticketPurpose === 'exploitation' || ticketPurpose === 'chaining' ? await exploitBriefFacts(current, objective, slice) : undefined;
       await herdr.prompt({ name: workerId, text: workerBrief({ ticket, focus: input.focus, task: assigned?.question ?? input.task, context: input.context, skills: skillDocs, workflow: method.workflow,
-        constraints: [...(current.avoid ?? []), ...steering.constraints], hints: steering.hints, objective: current.statedObjective,
+        contract: briefContract(assigned), constraints: [...(current.avoid ?? []), ...steering.constraints], hints: steering.hints, objective: current.statedObjective,
         permissions: current.campaign?.constraints.filter(entry => entry.rule === 'allow').map(entry => entry.text),
         slice, ...(exploit ? { exploit } : {}) }) });
       // A fresh pane can still read "idle" while the brief is being submitted, so liveness is decided by
@@ -3284,7 +3284,7 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
   });
   registerTool({
     name: 'p2o_note', label: 'Record observation', exposure: 'model-only',
-    description: 'Append one entry to the shared assessment ledger: note (fact or rationale, the default when kind is omitted), coverage (surface × risk × outcome, including clean surfaces), observation, or open (unresolved item). Record ids are refs for later notes and worker briefs.',
+    description: 'Append one entry to the shared assessment ledger: note (fact or rationale, the default when kind is omitted), coverage (a surface × risk × outcome display row, including clean surfaces — it records display context and derives no coverage cell), observation, or open (unresolved item). Record ids are refs for later notes and worker briefs.',
     parameters: noteParameters,
     async execute(_id, params) {
       const current = run;
