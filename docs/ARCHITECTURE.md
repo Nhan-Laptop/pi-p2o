@@ -131,6 +131,15 @@ shell-quoted for shell/net, raw for PTY `send`, request-side for HTTP. Every use
 redacted text only, and redaction is best-effort (a worker can print or encode a value). Sealing is convenience, not a
 ceiling: a worker provisions a disposable principal when the work needs one (see [HTTP transport](HTTP_TRANSPORT.md)).
 
+**Policy baseline (P21/B).** `--policy <absolute-path>` or `--policy standard:<name>` records one bounded artifact at start
+(file: regular UTF-8 file ≤256 KiB, read once and sha256'd; standard: one of the three named standards) in the campaign frame as
+`{kind, id, sha256, bytes}`. The body stays host-side — never copied into the ledger, a prompt or the report — while the start
+confirmation and the report print the source and digest. A demonstrated claim that violates recorded policy cites
+`policyBasis=operator_contract` with `policyRef=<id>`; the host resolves that reference against the run's frame at write time and
+refuses an unknown or missing one with the legal id named. Case acceptance takes the basis beside `explicit_contract` and
+`boundary_invariant`, an `inferred` basis still cannot carry a confirmed case, and none of this changes the evidence ladder,
+demonstrated depth or rating ceiling.
+
 ## Host-recorded evidence and derived containment
 
 After an admitted target operation, `executeWithReceipt` writes a canonical replay unit to the run's private payload store

@@ -607,3 +607,27 @@ không nói chỗ đó có lỗi; asserted relation thắng nên graph vẫn có
 worker, không phải nguồn độc lập thứ hai: host chỉ kiểm actor, surface/risk, claim gốc demonstrated, receipt tested riêng và payload sha
 khớp — chưa kiểm ngữ nghĩa của replay, nên câu hỏi mechanism được đẩy vào validation brief thay vì tự chấm. Không có live run hay target
 traffic trong A; authority, evidence ladder, depth/rating ceiling và cell writer không đổi (D-P21-2).
+
+## P21/B — Operator policy baseline — bằng chứng hermetic
+
+Phần này ghi lại **P21/B** (`planning_update.md` §6, D-P21-4): run được đo cho thấy claim confirmed vẫn không land được vì
+không có policy nào được ghi, nên finding wall lại ở inference. B cho operator ghi policy baseline ngay lúc start — một file
+UTF-8 bounded 256 KiB được băm, hoặc một standard có tên (`standard:OWASP-ASVS-L2|OWASP-WSTG|OWASP-Top10`) — và campaign
+frame giữ `{kind, id, sha256, bytes}` chứ không giữ body; claim demonstrated vi phạm policy cites `policyBasis=operator_contract`
+cùng `policyRef=<id>`, host chỉ nhận đúng id đã record. Case acceptance nhận basis này cùng `explicit_contract`/`boundary_invariant`,
+còn `inferred` vẫn bị từ chối; report in policy source; goal-proof nói coverage proof cần terminal cell dưới policy, không có
+policy thì proof đo được là mapping. Đây là bằng chứng **cơ chế**: parser thuần, loader file thật, store SQLite thật và extension
+in-process trên fake Pi; không target traffic và không model trả phí.
+
+| Mã | Kịch bản → kỳ vọng | Bằng chứng | Mức |
+|---|---|---|---|
+| F-P21-B1 | P21/B1: `--policy <absolute-path>` hoặc `--policy standard:<name>` được parse đúng một lần; path tương đối, standard lạ, thiếu value và duplicate bị từ chối ở parser; loader chỉ đọc regular file UTF-8 ≤256 KiB (không symlink) và trả `{kind,id,sha256,bytes}` với sha của đúng bytes, standard có identity ổn định và không có body. Campaign frame ghi artifact và start preview in source + sha; body không xuất hiện trong confirmation hay prompt; run không `--policy` giữ nguyên frame và wording | `policy-baseline.test.ts :: parses one --policy source and refuses a duplicate, a relative path and an unknown standard` (U)<br>`policy-baseline.test.ts :: loads a bounded file artifact with its exact digest and gives a standard one stable identity` (U)<br>`policy-baseline.test.ts :: records the policy source in the campaign frame and prints the source, never the body, in the confirmation and the prompt` (R)<br>`policy-baseline.test.ts :: keeps a run without --policy unchanged: no policy wording in the confirmation or the frame` (R) | Covered |
+| F-P21-B2 | P21/B2: `operator_contract` chỉ được nhận khi `policyRef` đúng artifact của run; sai id bị từ chối với `POLICY_REFERENCE_UNKNOWN` nêu id hợp lệ, thiếu `policyRef` bị từ chối với `POLICY_UNRECORDED`, `policyRef` gắn với basis khác bị từ chối, run không có policy từ chối mọi `operator_contract`. Claim được lưu giữ đúng `policyBasis`/`policyRef` và vẫn demonstrated theo evidence ladder; rule của `inferred` không đổi | `policy-baseline.test.ts :: admits an operator_contract claim only with the recorded artifact id, and names the legal id when it is wrong` (R)<br>`policy-baseline.test.ts :: refuses operator_contract on a run with no policy and leaves the inferred rules untouched` (R) | Covered |
+| F-P21-B3 | P21/B3: case confirmed được accept khi claim cited demonstrated và mang `operator_contract` với policyRef hiện hành; claim demonstrated mang policyRef của artifact khác (seed trực tiếp, bỏ qua write-time check) không đỡ được case; case chỉ có claim `inferred` demonstrated vẫn bị từ chối. Report in `Operator policy:` trong campaign section và `Operator policy provenance:` cạnh case; goal-proof rule ("terminal cell under the recorded policy… without one the measurable proof is mapping") có trong prompt | `policy-baseline.test.ts :: accepts a case backed by an operator_contract claim and refuses one whose policyRef is not the run policy` (R)<br>`policy-baseline.test.ts :: refuses a confirmed case supported only by an inferred demonstrated claim` (R)<br>`policy-baseline.test.ts :: prints the policy source in the campaign section and in the case provenance of the report` (R)<br>`policy-baseline.test.ts :: records the policy source in the campaign frame and prints the source, never the body, in the confirmation and the prompt` (R) | Covered |
+
+Giới hạn của P21/B: policy artifact là **provenance**, không phải proof — host chỉ kiểm claim cites đúng artifact đã record, chứ
+không đọc policy để tự phán một effect có vi phạm hay không, và operator_contract không làm claim tested hay nâng depth. File policy
+chỉ host đọc một lần lúc start; body không vào ledger, prompt hay report, nhưng hash/source thì vào cả ba, nên operator nên xem
+source trước khi confirm. Một run resume giữ campaign frame đã ghi (existing record wins); parser không nhận `--policy` cùng
+`--resume`, nên policy không thể đổi giữa run. `standard:*` là vocabulary đo, không phải permission hay checklist bắt buộc.
+Không có live run hay target traffic trong B; authority, evidence ladder, depth/rating ceiling và cell writer không đổi.

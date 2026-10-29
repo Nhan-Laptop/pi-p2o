@@ -1,4 +1,5 @@
 import { CASE_EFFECTS, type CaseEffect } from './cvss.js';
+import { policyPromptClause, policySourceLabel, parsePolicyArtifact, type PolicyArtifact } from './policy-artifact.js';
 import { CONTROL } from './validate.js';
 
 /**
@@ -49,14 +50,23 @@ export interface CampaignRecord {
   callback?: string;
   /** A7.8/D22: the operator's throwaway docker network the sandbox joins, so the target can route back to a listener. */
   labNetwork?: string;
+  /**
+   * P21/B1: the policy baseline the operator recorded at start (D-P21-4). The frame keeps the source identity and digest only —
+   * the body never enters the ledger, a prompt or the report — and a claim cites this artifact through `policyRef`.
+   */
+  policy?: PolicyArtifact;
 }
 
 const OBJECTIVE_MAX = 600;
 const CONSTRAINT_MAX = 300;
 const CONSTRAINT_LIMIT = 12;
 const REVISION_MAX = 200;
-/** The prompt block stays strictly below this so it cannot crowd out the rest of the planner prompt. */
-const PROMPT_MAX = 600;
+/**
+ * The prompt block stays strictly below this so it cannot crowd out the rest of the planner prompt. P21/B3 raised it from 600
+ * for two conditional lines the goal economy needs: the coverage-proof rule (always) and the recorded policy citation (only
+ * when the operator recorded one). Each line names a rule, not a tool or a body, so the block stays one bounded paragraph.
+ */
+const PROMPT_MAX = 1000;
 /** Deterministic stand-in when a caller supplies no usable `startedAt`; this module never reads a clock. */
 const EPOCH = '1970-01-01T00:00:00.000Z';
 const ALL_CONTROL = new RegExp(CONTROL.source, 'g');
@@ -244,7 +254,10 @@ export function parseCampaign(value: unknown): CampaignRecord | undefined {
   let callback: string | undefined, labNetwork: string | undefined;
   if (row.callback !== undefined) { callback = parseCallbackUrl(row.callback); if (callback === undefined) return undefined; }
   if (row.labNetwork !== undefined) { labNetwork = parseLabNetwork(row.labNetwork); if (labNetwork === undefined) return undefined; }
-  return { ...base, mode, effectClasses, ...(callback ? { callback } : {}), ...(labNetwork ? { labNetwork } : {}) };
+  // P21/B1: a stored policy artifact is validated like the flag; a malformed one makes the record unreadable, never silently policy-less.
+  let policy: PolicyArtifact | undefined;
+  if (row.policy !== undefined) { policy = parsePolicyArtifact(row.policy); if (policy === undefined) return undefined; }
+  return { ...base, mode, effectClasses, ...(callback ? { callback } : {}), ...(labNetwork ? { labNetwork } : {}), ...(policy ? { policy } : {}) };
 }
 
 /**
@@ -252,7 +265,7 @@ export function parseCampaign(value: unknown): CampaignRecord | undefined {
  * this call carries a different goal, target or heartbeat. `0` disables heartbeats; a non-zero value below
  * {@link MIN_HEARTBEAT_SECONDS} clamps up to the floor rather than silently doing nothing.
  */
-export function campaignFrom(args: { goal?: string; avoid?: readonly string[]; allow?: readonly string[]; heartbeatSeconds?: number; targetRevision?: string; target: string; at: string; mode?: EngagementMode; effectClasses?: readonly CaseEffect[]; callback?: string; labNetwork?: string }, existing?: CampaignRecord): CampaignRecord {
+export function campaignFrom(args: { goal?: string; avoid?: readonly string[]; allow?: readonly string[]; heartbeatSeconds?: number; targetRevision?: string; target: string; at: string; mode?: EngagementMode; effectClasses?: readonly CaseEffect[]; callback?: string; labNetwork?: string; policy?: PolicyArtifact }, existing?: CampaignRecord): CampaignRecord {
   if (existing) return existing;
   const input = args ?? ({} as typeof args);
   const goal = typeof input.goal === 'string' ? clip(singleLine(input.goal), OBJECTIVE_MAX) : '';
@@ -273,6 +286,8 @@ export function campaignFrom(args: { goal?: string; avoid?: readonly string[]; a
     // A7.8: ingress is recorded verbatim only when it parsed; a malformed value is not guessed into the frame.
     ...(parseCallbackUrl(input.callback) ? { callback: parseCallbackUrl(input.callback)! } : {}),
     ...(parseLabNetwork(input.labNetwork) ? { labNetwork: parseLabNetwork(input.labNetwork)! } : {}),
+    // P21/B1: a policy artifact is recorded only when it parses; the body never reaches this frame.
+    ...(parsePolicyArtifact(input.policy) ? { policy: parsePolicyArtifact(input.policy)! } : {}),
   };
 }
 
@@ -299,33 +314,52 @@ export function campaignStartLine(campaign: CampaignRecord): string {
     : `heartbeat ${campaign.heartbeatSeconds}s (heartbeats consume paid rounds; each wake starts a planner round, and --heartbeat-seconds 0 disables them)`;
   const ingress = ingressFacts(campaign);
   const ingressLine = ingress ? ` | ingress: ${[ingress.callback ? `callback ${ascii(ingress.callback)}` : '', ingress.labNetwork ? `lab network ${ascii(ingress.labNetwork)}` : ''].filter(Boolean).join(', ')}` : '';
-  return `Campaign "${ascii(campaign.objective)}" | ${engagementLine(campaign.mode, campaign.effectClasses)} | constraints: ${deny} deny, ${allow} allow | ${heartbeatLine} | started ${ascii(campaign.startedAt)} | created by ${campaign.createdBy}${ingressLine}`;
+  const policyLine = campaign.policy ? ` | policy: ${policySourceLabel(campaign.policy)}` : '';
+  return `Campaign "${ascii(campaign.objective)}" | ${engagementLine(campaign.mode, campaign.effectClasses)} | constraints: ${deny} deny, ${allow} allow | ${heartbeatLine} | started ${ascii(campaign.startedAt)} | created by ${campaign.createdBy}${ingressLine}${policyLine}`;
 }
 
 const WIDEN = "The planner may widen the operator objective within the operator's authorization but must not silently narrow or replace it; report a blocking constraint instead of bypassing it.";
 
-function promptLine(objective: string, constraints: readonly CampaignConstraint[], omitted: number): string {
+function promptLine(objective: string, constraints: readonly CampaignConstraint[], omitted: number, extras: readonly string[]): string {
   const parts = constraints.map(constraint => `${constraint.rule} "${constraint.text}"`);
   if (omitted > 0) parts.push(`${omitted} more recorded constraint${omitted === 1 ? '' : 's'} omitted here; read the campaign record`);
-  return `CAMPAIGN objective "${objective}" | constraints (deny = absolute; allow = permission only): ${parts.length ? parts.join('; ') : 'none recorded'} | ${WIDEN}`;
+  return `CAMPAIGN objective "${objective}" | constraints (deny = absolute; allow = permission only): ${parts.length ? parts.join('; ') : 'none recorded'} | ${WIDEN}${extras.map(extra => ` | ${extra}`).join('')}`;
 }
 
 /**
- * The planner-prompt block: objective, recorded constraints in order (`deny` absolute, `allow` a permission), and the
- * widen-not-narrow rule. One line under {@link PROMPT_MAX} characters with ASCII framing; operator text stays verbatim.
- * When a pathological record cannot fit, the objective is shortened first and leading constraints are kept, with the
- * remainder counted rather than dropped silently.
+ * The planner-prompt block: objective, recorded constraints in order (`deny` absolute, `allow` a permission), the
+ * widen-not-narrow rule, the coverage-proof rule and — only when the operator recorded one — the policy citation line.
+ * One line under {@link PROMPT_MAX} characters with ASCII framing; operator text stays verbatim. When a pathological record
+ * cannot fit, the objective is shortened first and leading constraints are kept, with the remainder counted rather than
+ * dropped silently.
  */
 export function campaignPromptBlock(campaign: CampaignRecord): string {
   // Producers already record canonical one-line text; normalising again keeps a hand-built record from breaking the line.
   const objective = singleLine(campaign.objective);
   const constraints = campaign.constraints.map(constraint => ({ rule: constraint.rule, text: singleLine(constraint.text) }));
-  const full = promptLine(objective, constraints, 0);
+  // P21/B3: the goal economy's proof rule rides the campaign frame because every run records one; it names the measure, not a tool.
+  const extras = ['GOAL PROOF: with a recorded operator policy a coverage-plan proof needs a terminal cell under it; without one the measurable proof is mapping', ...(campaign.policy ? [policyPromptClause(campaign.policy)] : [])];
+  const full = promptLine(objective, constraints, 0, extras);
   if (full.length < PROMPT_MAX) return full;
   const shortened = clip(objective, 160);
   for (let included = constraints.length; included >= 0; included -= 1) {
-    const line = promptLine(shortened, constraints.slice(0, included), constraints.length - included);
+    const line = promptLine(shortened, constraints.slice(0, included), constraints.length - included, extras);
     if (line.length < PROMPT_MAX) return line;
   }
-  return clip(promptLine('', [], constraints.length), PROMPT_MAX - 1);
+  return clip(promptLine('', [], constraints.length, extras), PROMPT_MAX - 1);
+}
+
+/**
+ * P21/B1: the campaign frame a ledger already holds, folded from its lifecycle rows (last one wins). The store keeps its own
+ * database-side fold; this reader exists for the pure paths that already hold a ledger index (claim validation, case
+ * acceptance and the report), so they agree with the frame the planner prompt printed.
+ */
+export function campaignFromRecords(records: readonly { kind?: string; data?: Record<string, unknown> | undefined }[]): CampaignRecord | undefined {
+  for (let index = records.length - 1; index >= 0; index -= 1) {
+    const row = records[index];
+    if (row?.kind !== 'lifecycle') continue;
+    const campaign = parseCampaign((row.data as { campaign?: unknown } | undefined)?.campaign);
+    if (campaign) return campaign;
+  }
+  return undefined;
 }

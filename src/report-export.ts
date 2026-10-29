@@ -5,7 +5,8 @@ import { writeBackLine, type WorkerWrites } from './write-back.js';
 import { leadFrontier } from './cve.js';
 import { routeCounts } from './routes.js';
 import { cvssScore, type CaseEffect } from './cvss.js';
-import { engagementLine, type EngagementMode } from './campaign.js';
+import { campaignFromRecords, engagementLine, type CampaignRecord, type EngagementMode } from './campaign.js';
+import { policySourceLabel, type PolicyArtifact } from './policy-artifact.js';
 import { deriveLadder, type LadderCaseInput, type LadderView } from './ladder.js';
 import { policyAudit } from './policy.js';
 import { FINDING_SEVERITIES } from './case-types.js';
@@ -79,6 +80,8 @@ export interface ReportMeta {
     rounds: number; wakeReasons: { event: number; debt: number; heartbeat: number };
     /** P1: ledger counts of human `/p2o resume` records and recorded stall escalations, printed with the campaign frame. */
     humanResumes: number; stallEscalations: number;
+    /** P21/B1: the policy baseline the operator recorded at start; the report prints its source, never its body. */
+    policy?: PolicyArtifact;
     startedAt: string; endedAt?: string; partialReason?: string;
   };
 }
@@ -165,12 +168,20 @@ function provenanceLines(view: CaseView, index: LedgerIndex): string[] {
     const authors = [...new Set(task!.evidenceIds.map(id => index.byId.get(id)?.by ?? 'unknown'))], note = task!.reviewIntegrity;
     return `${mdText(task!.id, 80)} (${task!.evidenceIds.length} receipt(s) by ${authors.map(name => mdText(name, 60)).join(', ') || 'none'}${note?.foreignEvidence.length ? `; ${note.foreignEvidence.length} not authored by the assignee${note.externalAcknowledged ? ', acknowledged as external' : ''}` : ''}${note?.contractGap.length ? `; output fields with no record: ${note.contractGap.join(', ')}` : ''})`;
   });
+  // P21/B3: a claim whose provenance is the operator policy artifact names that source beside the case policy key, so a
+  // reader can tell recorded policy from a declared contract or an inference (the rating flag already says when inferred).
+  const policyProvenance = [...new Set(view.claimRefs.flatMap(ref => {
+    const data = index.byId.get(ref)?.data;
+    return data?.policyBasis === 'operator_contract' && typeof data.policyRef === 'string' ? [data.policyRef] : [];
+  }))];
+  const recordedPolicy = campaignFromRecords(index.records)?.policy;
   // P21/A4: a negative observation without a discriminating control stays reviewable, but the case page must say it.
   const warnings = [...new Set(view.claimRefs.flatMap(ref => {
     const data = index.byId.get(ref)?.data;
     return Array.isArray(data?.admissionWarnings) ? (data.admissionWarnings as unknown[]).filter((item): item is string => typeof item === 'string') : [];
   }))];
   return [`- Proof level of the cited claims: ${proofs.length ? proofs.map(item => mdText(item, 40)).join(', ') : 'not recorded'}${proofs.every(item => item === 'static_trace') && proofs.length ? ' (static trace only; no runtime reproduction)' : ''}`,
+    ...(policyProvenance.length ? [`- Operator policy provenance: ${recordedPolicy ? mdText(policySourceLabel(recordedPolicy), 300) : `cited ${mdText(policyProvenance.join(', '), 200)}, but this run recorded no policy artifact`}`] : []),
     ...(reviews.length ? [`- Review receipts: ${reviews.join('; ')}`] : []),
     ...(warnings.length ? [`- Claim admission warnings: ${warnings.slice(0, 4).map(item => mdText(item, 240)).join('; ')}`] : [])];
 }
@@ -414,6 +425,7 @@ function campaignSection(campaign: NonNullable<ReportMeta['campaign']>): string[
     `- Objective (operator-supplied, unverified; it neither widens nor narrows the authorized scope): ${mdText(campaign.objective, 600)}`,
     `- Recorded constraints: ${campaign.constraints} (${campaign.deny} deny = absolute, ${campaign.allow} allow = permission only). This report does not re-check them against the work below.`,
     `- Heartbeat: ${campaign.heartbeatSeconds === 0 ? 'disabled (0s)' : `${campaign.heartbeatSeconds}s`}; automatic rounds: ${campaign.rounds}; wake reasons: ${reasons}.`,
+    ...(campaign.policy ? [`- Operator policy: ${mdText(policySourceLabel(campaign.policy), 300)}. A claim under operator_contract cites this artifact id; the body was hashed at start and never copied into the ledger or a prompt.`] : []),
     `- Human resumes: ${campaign.humanResumes}; stall escalations: ${campaign.stallEscalations}.`,
     `- Campaign started: ${mdText(campaign.startedAt, 64)}${campaign.endedAt ? `; last committed record: ${mdText(campaign.endedAt, 64)}` : ''}`,
     ...(campaign.partialReason ? ['', '### Why the run stopped', '',

@@ -5,6 +5,7 @@ import { resolve } from 'node:path';
 import { homedir } from 'node:os';
 import { CASE_EFFECTS, type CaseEffect } from './cvss.js';
 import { parseCallbackUrl, parseLabNetwork, type EngagementMode } from './campaign.js';
+import { parsePolicyOption } from './policy-artifact.js';
 import { MAX_DEPTH, MAX_WORKERS, type RetentionMode } from './roles.js';
 import { MAX_ROUND_SECONDS, MAX_ROUND_STEPS } from './round-budget.js';
 import { TEXT_CONTROL } from './validate.js';
@@ -17,7 +18,7 @@ export const hasSource = (target: Target): target is Extract<Target, { path: str
 export const hasOrigin = (target: Target): target is Extract<Target, { origin: string }> => target.kind !== 'directory';
 /** 'latest'/'all' pick by eligibility at run start; an explicit id list (≤10, `run-<chars>` shape) names runs directly. Never grants authority — see planning_update.md. */
 export type ReferWorkspaceOption = 'latest' | 'all' | readonly string[];
-export interface StartOptions { workers?: number; maxDepth?: number; export?: boolean; /** P18/A9: per-round overrides; `0` disables that round-budget axis (the campaign stays uncapped). */ roundSteps?: number; roundSeconds?: number; executorMode?: 'shared' | 'isolated' | 'session'; /** A7.2: an explicit `--executors session:N`; defaults to, and may never exceed, the target-operation cap. */ sessionLimit?: number; maxTargetOperations?: number; retention?: RetentionMode; goal?: string; avoid?: string[]; /** A6.1: campaign heartbeat in seconds; `0` disables it. */ heartbeatSeconds?: number; /** D15: `exploit` (default) authorizes the access ladder; `assess` is the opt-in read-only shape. */ mode?: EngagementMode; /** D15/Q9: the effect classes `--effect` authorized; the host defaults to every class except `availability-loss`. */ effectClasses?: CaseEffect[]; /** A7.4: one operator-supplied JSON identity file; the host seals a copy and never shows a value to a model. */ identityPath?: string; origin?: string; /** A7.8: the operator's out-of-band callback destination the target may reach (recorded, never a listener). */ callback?: string; /** A7.8: the operator's throwaway docker network the sandbox joins, so the target can route back to a listener. */ labNetwork?: string; /** A7.9/D23: recorded permissions; a deny still wins, an allow never widens the target. */ allow?: string[]; referWorkspace?: ReferWorkspaceOption }
+export interface StartOptions { workers?: number; maxDepth?: number; export?: boolean; /** P18/A9: per-round overrides; `0` disables that round-budget axis (the campaign stays uncapped). */ roundSteps?: number; roundSeconds?: number; executorMode?: 'shared' | 'isolated' | 'session'; /** A7.2: an explicit `--executors session:N`; defaults to, and may never exceed, the target-operation cap. */ sessionLimit?: number; maxTargetOperations?: number; retention?: RetentionMode; goal?: string; avoid?: string[]; /** A6.1: campaign heartbeat in seconds; `0` disables it. */ heartbeatSeconds?: number; /** D15: `exploit` (default) authorizes the access ladder; `assess` is the opt-in read-only shape. */ mode?: EngagementMode; /** D15/Q9: the effect classes `--effect` authorized; the host defaults to every class except `availability-loss`. */ effectClasses?: CaseEffect[]; /** A7.4: one operator-supplied JSON identity file; the host seals a copy and never shows a value to a model. */ identityPath?: string; origin?: string; /** A7.8: the operator's out-of-band callback destination the target may reach (recorded, never a listener). */ callback?: string; /** A7.8: the operator's throwaway docker network the sandbox joins, so the target can route back to a listener. */ labNetwork?: string; /** P21/B1: one operator policy baseline (absolute file path or standard:<name>), recorded in the campaign frame and cited by a claim. */ policy?: string; /** A7.9/D23: recorded permissions; a deny still wins, an allow never widens the target. */ allow?: string[]; referWorkspace?: ReferWorkspaceOption }
 export type Command = { action: 'help' } | { action: 'stop' } | { action: 'pause' } | { action: 'resume' }
   /** A7.7: the operator resolves one pending policy ask. The decision is written as an owner-attributed record. */
   | { action: 'approve' | 'deny'; id: string }
@@ -103,6 +104,14 @@ export function parseCommand(args: string): Command {
         if (options.identityPath !== undefined) throw Error('--identity may be given only once');
         options.identityPath = value; continue;
       }
+      if (token === '--policy') {
+        // P21/B1: the operator's policy baseline is recorded at start and cited by a claim; a typo fails the start, it never
+        // becomes a quiet absence of policy that a later inference could fill in.
+        const value = tokens[++index];
+        if (value === undefined) throw Error('--policy needs one absolute path to the operator policy artifact, or standard:<name>');
+        if (options.policy !== undefined) throw Error('--policy may be given only once');
+        options.policy = parsePolicyOption(value); continue;
+      }
       if (token === '--origin') {
         const value = tokens[++index]?.trim();
         if (!value || value.length > 2048 || !/^https?:\/\//i.test(value) || TEXT_CONTROL.test(value) || /[\x00-\x1f\x7f\s]/.test(value)) throw Error('--origin needs one http(s) URL without whitespace or control characters');
@@ -160,7 +169,7 @@ export function parseCommand(args: string): Command {
         options.referWorkspace = value === 'latest' || value === 'all' ? value : value.split(',');
         continue;
       }
-      if (token !== '--workers' && token !== '--max-depth' && token !== '--target-ops') throw new Error(`Unknown option ${token.slice(0, 40)}; usage: /p2o --target <directory|http(s)-URL> [--workers N] [--max-depth D] [--round-steps N] [--round-seconds N] [--goal "text"] [--avoid "text"] [--allow "text"] [--mode assess|exploit] [--effect <class>]... [--heartbeat-seconds N] [--callback <http(s)-URL>] [--lab-network <name>]`);
+      if (token !== '--workers' && token !== '--max-depth' && token !== '--target-ops') throw new Error(`Unknown option ${token.slice(0, 40)}; usage: /p2o --target <directory|http(s)-URL> [--workers N] [--max-depth D] [--round-steps N] [--round-seconds N] [--goal "text"] [--avoid "text"] [--allow "text"] [--mode assess|exploit] [--effect <class>]... [--heartbeat-seconds N] [--callback <http(s)-URL>] [--lab-network <name>] [--policy <absolute-path|standard:NAME>]`);
       const value = tokens[index + 1];
       if (!value || !/^\d+$/.test(value)) throw new Error(`${token} needs an integer value`);
       index += 1;

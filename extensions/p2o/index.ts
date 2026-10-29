@@ -49,6 +49,7 @@ import { isWorkPurpose, purposeFromRole, type WorkPurpose } from '../../src/duti
 import { SkillLibrary, packageRoot } from '../../src/skills.js';
 import { EvidenceStore, claimAssetRefsFromWork, redact, type Candidate } from '../../src/evidence.js';
 import { identitySummary, loadIdentityFile, redactSecretBytes, redactSecrets, sealIdentity, secretViews, substituteSecrets, substituteShellSecrets, type IdentityFile } from '../../src/identity.js';
+import { loadPolicyArtifact } from '../../src/policy-artifact.js';
 import { TaskBoard, briefContract, taskCapsule, taskFrontier, taskHead, awaitingReview, isSatisfiedTask, terminalState, type TaskDraft, type TaskMethod, type AssessmentTask } from '../../src/tasks.js';
 import { planFrontier, PlanBoard, boundPlanRequest, type PlanDraft } from '../../src/planning.js';
 import { PLAN_ACTION_PARAMETERS, PLAN_ACTIONS } from '../../src/work-tool.js';
@@ -1649,7 +1650,7 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
     const identityMeta = sealedRecord && typeof sealedRecord.count === 'number'
       ? { count: sealedRecord.count, ...(typeof sealedRecord.sha256 === 'string' ? { sha256: sealedRecord.sha256 } : {}) }
       : undefined;
-    const campaignMeta = recordedCampaign ? { campaign: { objective: recordedCampaign.objective, mode: recordedCampaign.mode, effectClasses: recordedCampaign.effectClasses, constraints: recordedCampaign.constraints.length,
+    const campaignMeta = recordedCampaign ? { campaign: { objective: recordedCampaign.objective, ...(recordedCampaign.policy ? { policy: recordedCampaign.policy } : {}), mode: recordedCampaign.mode, effectClasses: recordedCampaign.effectClasses, constraints: recordedCampaign.constraints.length,
       deny: recordedCampaign.constraints.filter(constraint => constraint.rule === 'deny').length, allow: recordedCampaign.constraints.filter(constraint => constraint.rule === 'allow').length,
       heartbeatSeconds: recordedCampaign.heartbeatSeconds, rounds: extra.owner ? extra.owner.engine.snapshot().rounds : wakeTotal,
       wakeReasons: { event: Math.max(0, wakeTotal - counters.debtWakes - counters.heartbeatWakes), debt: counters.debtWakes, heartbeat: counters.heartbeatWakes },
@@ -4025,6 +4026,11 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
           const declaredIdentity = command.options.identityPath
             ? await loadIdentityFile(command.options.identityPath).catch(error => { throw new Error(`--identity: ${message(error)}`); })
             : undefined;
+          // P21/B1: validate the operator policy artifact before the operator confirms. A typo fails the start instead of
+          // recording a run whose policy silently does not exist; the body is bounded to 256 KiB and stays host-side.
+          const declaredPolicy = command.options.policy
+            ? await loadPolicyArtifact(command.options.policy).catch(error => { throw new Error(`--policy: ${message(error)}`); })
+            : undefined;
           // Part XI S8: `--resume` reopens one durable-local store and rebuilds the live run around it. The stored target and
           // profile decide what is continued; the human still confirms, and no earlier ticket or worker is restored.
           let resumeManifest: ReturnType<AssessmentStore['manifest']> | undefined, resumeCampaign: CampaignRecord | undefined, target: Target;
@@ -4084,7 +4090,7 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
           const referenceNotice = selectedPriorRuns.length ? `\nReferencing ${selectedPriorRuns.length} prior workspace run${selectedPriorRuns.length === 1 ? '' : 's'} on this same target: ${selectedPriorRuns.map(found => found.runId).join(', ')}. Tagged as prior-run context only; never counted as same-run evidence, and no scope, worker or ticket authority is restored.` : referWorkspace ? '\nNo prior workspace run on this same target was found for --refer-workspace; starting with no referenced context.' : '';
           // A6.1: disclose the campaign frame before confirmation, including that a non-zero heartbeat spends paid rounds.
           // P18/A9: every run is the automatic loop, so a campaign frame is always recorded; the flags fill it in.
-          const campaignPreview = `${campaignStartLine(campaignFrom({ ...(command.options.goal ? { goal: command.options.goal } : {}), ...(command.options.avoid?.length ? { avoid: command.options.avoid } : {}), ...(command.options.allow?.length ? { allow: command.options.allow } : {}), ...(command.options.heartbeatSeconds !== undefined ? { heartbeatSeconds: command.options.heartbeatSeconds } : {}), ...(command.options.callback ? { callback: command.options.callback } : {}), ...(command.options.labNetwork ? { labNetwork: command.options.labNetwork } : {}), mode, effectClasses, target: targetLabel(target), at: new Date(now()).toISOString() }))}\n`;
+          const campaignPreview = `${campaignStartLine(campaignFrom({ ...(command.options.goal ? { goal: command.options.goal } : {}), ...(command.options.avoid?.length ? { avoid: command.options.avoid } : {}), ...(command.options.allow?.length ? { allow: command.options.allow } : {}), ...(command.options.heartbeatSeconds !== undefined ? { heartbeatSeconds: command.options.heartbeatSeconds } : {}), ...(command.options.callback ? { callback: command.options.callback } : {}), ...(command.options.labNetwork ? { labNetwork: command.options.labNetwork } : {}), ...(declaredPolicy ? { policy: declaredPolicy } : {}), mode, effectClasses, target: targetLabel(target), at: new Date(now()).toISOString() }))}\n`;
           // A7.8: the ingress path is disclosed before confirmation, with what it can and cannot prove.
           const ingressPreview = command.options.callback || command.options.labNetwork
             ? `Ingress: ${[command.options.callback ? `operator callback ${cleanText(command.options.callback)} (a destination the target reaches out to, not a listener)` : '', command.options.labNetwork ? `sandbox joins operator lab network "${cleanText(command.options.labNetwork)}" (verified with docker network inspect at start; no host port is published)` : ''].filter(Boolean).join('; ')}\n`
@@ -4150,7 +4156,7 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
           // A6.1/P18/A9: the campaign frame is recorded once and never rewritten. A resumed run folds the stored record; a
           // fresh automatic run always records one, so the heartbeat and the prompt block exist without a campaign flag.
           {
-            const stored = storedCampaign, campaign = campaignFrom({ ...(command.options.goal ? { goal: command.options.goal } : {}), ...(command.options.avoid?.length ? { avoid: command.options.avoid } : {}), ...(command.options.allow?.length ? { allow: command.options.allow } : {}), ...(command.options.heartbeatSeconds !== undefined ? { heartbeatSeconds: command.options.heartbeatSeconds } : {}), ...(command.options.callback ? { callback: command.options.callback } : {}), ...(command.options.labNetwork ? { labNetwork: command.options.labNetwork } : {}), mode, effectClasses, target: targetLabel(target), targetRevision: store.graphScope(), at: new Date(now()).toISOString() }, stored);
+            const stored = storedCampaign, campaign = campaignFrom({ ...(command.options.goal ? { goal: command.options.goal } : {}), ...(command.options.avoid?.length ? { avoid: command.options.avoid } : {}), ...(command.options.allow?.length ? { allow: command.options.allow } : {}), ...(command.options.heartbeatSeconds !== undefined ? { heartbeatSeconds: command.options.heartbeatSeconds } : {}), ...(command.options.callback ? { callback: command.options.callback } : {}), ...(command.options.labNetwork ? { labNetwork: command.options.labNetwork } : {}), ...(declaredPolicy ? { policy: declaredPolicy } : {}), mode, effectClasses, target: targetLabel(target), targetRevision: store.graphScope(), at: new Date(now()).toISOString() }, stored);
             current.campaign = campaign;
             if (!stored) await appendRecord(records, { at: new Date(now()).toISOString(), runId, by: 'owner', kind: 'lifecycle',
               text: `campaign.created: ${campaign.objective} (${campaign.constraints.length} constraint(s), heartbeat ${campaign.heartbeatSeconds}s, ${campaign.createdBy})`,

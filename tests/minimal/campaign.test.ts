@@ -129,7 +129,7 @@ describe('campaign frame (A6.1)', () => {
     expect(block).toContain('operator objective');
     expect(block).toContain('must not silently narrow');
     expect(block.indexOf('No payment flows')).toBeLessThan(block.indexOf('Use the staging tenant'));
-    expect(block.length).toBeLessThan(600);
+    expect(block.length).toBeLessThan(1000);
     expect(block).not.toContain('\n');
     expect(block).toMatch(/^[\x20-\x7e]+$/);
     expect(block.toLowerCase()).not.toContain('worker');
@@ -137,13 +137,15 @@ describe('campaign frame (A6.1)', () => {
     expect(campaignPromptBlock({ ...withPermissions, objective: 'two\nlines' })).not.toContain('\n');
   });
 
+  // P21/B3 (2026-10-29): the block gained the conditional goal-proof rule and the recorded-policy citation, so its one-line
+  // bound rose 600 -> 1000 (still one bounded paragraph; measured with a policy artifact in policy-baseline.test.ts).
   it('keeps an oversized block under the cap with an explicit omitted count', () => {
     const campaign = build({
       goal: 'x'.repeat(600),
       avoid: Array.from({ length: 12 }, (_, index) => `rule ${index} ${'y'.repeat(290)}`),
     });
     const block = campaignPromptBlock(campaign);
-    expect(block.length).toBeLessThan(600);
+    expect(block.length).toBeLessThan(1000);
     expect(block).toContain('may widen');
     expect(block).toMatch(/omitted/);
   });

@@ -80,7 +80,9 @@ export const candidateParameters = Type.Object({
       evidenceRefs: Type.Array(Type.String({ maxLength: 80 }), { description: 'Owner-generated Evidence ID UUIDs from tool results, not invented labels or probe cell names' }),
       // A1: "no control ran" is the empty list, so a caller that ran none omits the field and the host records [].
       negativeControls: Type.Optional(Type.Array(Type.String({ maxLength: 80 }), { description: 'Evidence IDs of commands containing the negative-control observations; describe control cells in limitations. Omit when no control ran (the host records [])' })),
-      policyBasis: choices(POLICY_BASES, 'boundary_invariant only when the effect itself establishes the boundary it breaks; a sibling route, placeholder credential or CVE lead alone is inferred'),
+      policyBasis: choices(POLICY_BASES, 'boundary_invariant only when the effect itself establishes the boundary it breaks; operator_contract only with the run policy artifact named by policyRef; a sibling route, placeholder credential or CVE lead alone is inferred'),
+      // P21/B1: the run policy artifact a claim cites; the host records it only when the campaign frame holds that artifact.
+      policyRef: Type.Optional(Type.String({ maxLength: 1024, description: 'P21/B1: the run policy artifact id recorded from --policy (its absolute path, or a standard name). Required with policyBasis operator_contract; the host names the recorded id in its refusal' })),
       expectedPolicy: Type.String({ minLength: 1, maxLength: 4000, description: 'The violated intended policy/invariant and its provenance; a sibling route difference alone is only inferred (the host stores 1000 chars and names the cut)' }),
       limitations: Type.String({ minLength: 1, maxLength: 6000 }), control: Type.Optional(Type.String({ maxLength: 4000, description: 'Required when closure=ruled_out: the specific control observation and where it ran' })),
       resolves: Type.Optional(Type.Array(Type.String({ maxLength: 80 }))),

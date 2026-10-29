@@ -84,6 +84,7 @@ command-policy ask đang chờ, quyết định gắn với đúng hash request 
 | `--goal "text"` | — | 1–600 ký tự, không ký tự điều khiển | mục tiêu bằng lời của operator; vào confirmation, prompt planner (dạng dữ liệu trích dẫn) và REPORT.md; không mở/thu hẹp scope |
 | `--avoid "text"` / `--allow "text"` | — | lặp lại, tổng cộng ≤5 lần, mỗi lần 1–300 ký tự | `avoid` là constraint gửi kèm brief (guidance, không enforcement); `allow` là permission được ghi, deny vẫn thắng |
 | `--identity <abs path>` | — | 1 đường dẫn tuyệt đối tới JSON, ≤64 KiB, ≤256 secret | kênh credential operator niêm phong; model chỉ thấy id/kind/label/scope. Là tiện lợi, không phải trần — xem [HTTP_TRANSPORT](HTTP_TRANSPORT.md) |
+| `--policy <abs-path\|standard:NAME>` | — | 1 đường dẫn tuyệt đối tới file UTF-8 ≤256 KiB, hoặc `standard:OWASP-ASVS-L2\|OWASP-WSTG\|OWASP-Top10` | policy baseline operator ghi vào campaign frame `{kind,id,sha256,bytes}` lúc start; body ở lại host (không vào ledger/prompt/report), start preview và report in source + sha để operator đối chiếu. Claim demonstrated vi phạm policy cites `policyBasis=operator_contract` + `policyRef=<id>`; host chỉ nhận đúng id đã record. Standard là vocabulary đo, không phải permission hay checklist bắt buộc |
 | `--callback <http(s)-URL>` | — | 1 URL tuyệt đối ≤2048 ký tự, không credential/fragment | fact về điểm đến ngoài băng mà target được kỳ vọng gọi; không mở listener |
 | `--lab-network <name>` | — | tên docker network do operator tạo, 1–64 ký tự `[a-zA-Z0-9_.-]` | sandbox join network để listener trong session nhận được traffic target; không publish port, không tunnel |
 | `--heartbeat-seconds N` | — | `0` (tắt) hoặc ≥120 | heartbeat trả phí: mỗi wake mở một planner round trong campaign frame |
@@ -217,6 +218,12 @@ một round kết thúc mà không có tool call nào nhận tối đa hai nudge
   claim gốc, đòi actor khác, cùng surface/risk, claim gốc demonstrated, receipt tested riêng và payload sha khớp. Containment
   suy từ anchor (host ← route ← endpoint) được đánh dấu `derived` trong graph/export và không phải evidence; claim negative
   không có control chỉ nhận warning `admissionWarnings` cạnh claims table, không bị từ chối.
+- **Policy baseline (P21/B):** operator có thể ghi policy ngay lúc start bằng `--policy <abs-path>` hoặc `--policy standard:<name>`;
+  host băm file (bounded 256 KiB, đọc một lần) và campaign frame giữ `{kind,id,sha256,bytes}`, không giữ body — body không vào
+  ledger, prompt hay report, chỉ source + sha được in ở confirmation và report. Claim demonstrated vi phạm policy đã ghi cites
+  `policyBasis=operator_contract` cùng `policyRef=<id>` (sai/thiếu id bị từ chối kèm id hợp lệ); case confirmed accept basis này
+  cùng `explicit_contract`/`boundary_invariant`, còn `inferred` vẫn chỉ là observation. Rating depth, scope và authority không đổi;
+  một run không `--policy` hành xử y như trước.
 - `--refer-workspace` chỉ thêm context read-only từ run cũ cùng target (khớp path/origin; `gaps` gồm covered, leftOpen,
   stale, neverReached, unknown) và không bao giờ tính là same-run evidence hay khôi phục authority. Round brief in các count đó
   thành một dòng "Prior run (context only, never evidence)"; muốn xem chi tiết vì sao một plan row tồn tại, planner dùng read

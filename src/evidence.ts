@@ -6,6 +6,8 @@ import { join } from 'node:path';
 import { appendRecord, readLedger, type AssessmentRecord } from './records.js';
 import { isConfirmedClaim, isDemonstrated, isOpenGap, isRuledOutClaim, isTestedClaim } from './claims.js';
 import { capabilityKey, readCapabilities } from './capabilities.js';
+import { campaignFromRecords } from './campaign.js';
+import { policySourceLabel } from './policy-artifact.js';
 import { cleanText, type ProcessResult } from './process.js';
 import { redactArtifactPrefix, type CaptureReceipt } from './artifacts.js';
 import { capabilityList, type Capability } from './capabilities.js';
@@ -15,7 +17,7 @@ import type { ReplayStamp } from './replay.js';
 export const CANDIDATE_CLOSURES = ['confirmed', 'ruled_out', 'open_proof_gap'] as const;
 export const CANDIDATE_EXECUTIONS = ['tested', 'not_tested', 'blocked', 'not_applicable'] as const;
 export const CANDIDATE_PROOFS = ['static_trace', 'offline_reproduction', 'live_reproduction'] as const;
-export const POLICY_BASES = ['explicit_contract', 'boundary_invariant', 'inferred'] as const;
+export const POLICY_BASES = ['explicit_contract', 'boundary_invariant', 'operator_contract', 'inferred'] as const;
 export interface Candidate {
   candidate: string; surface: string; risk: string;
   closure: typeof CANDIDATE_CLOSURES[number];
@@ -30,6 +32,11 @@ export interface Candidate {
    * receipt internally. It is an alternative to `independentEvidenceRef`, never a pair.
    */
   reproduces?: string;
+  /**
+   * P21/B1: the run policy artifact id a claim under `operator_contract` cites. The host records it only when the campaign
+   * frame holds that artifact; it is provenance, never proof, and no basis makes a claim tested.
+   */
+  policyRef?: string;
   /** Capabilities this primitive hands to a later step, and the ones it needs from an earlier step or the environment (P14.1:
    *  typed, so a chain link is a match rather than a shared word). */
   gained?: Capability[]; needs?: Capability[];
@@ -167,6 +174,13 @@ export class EvidenceStore {
       const index = await readLedger(this.path, this.runId);
       if (!index.complete) throw new Error('Ledger reconciliation incomplete; candidate closure is blocked');
       const records = index.records;
+      // P21/B1: an operator-contract claim cites the policy artifact this run actually recorded. The host refuses a source it
+      // cannot resolve and names the recorded id, so the next attempt is not a guess; the artifact body is not read here.
+      if (input.policyBasis === 'operator_contract') {
+        const policy = campaignFromRecords(records)?.policy;
+        if (!policy) throw new Error('POLICY_UNRECORDED: this run recorded no operator policy artifact (--policy), so operator_contract has nothing to cite; legalNext: cite explicit_contract or boundary_invariant when the effect establishes the boundary itself, or keep the claim inferred and open');
+        if (input.policyRef !== policy.id) throw new Error(`POLICY_REFERENCE_UNKNOWN: this run recorded ${policySourceLabel(policy)}; cite policyRef=${policy.id} with policyBasis=operator_contract`);
+      }
       const evidence = records.filter(r => r.kind === 'evidence' && r.runId === this.runId);
       const references = [...input.evidenceRefs, ...input.negativeControls];
       for (const id of references) if (!evidence.some(r => r.id === id)) throw new Error(`Unknown same-run evidence ID: ${id}`);
@@ -347,6 +361,14 @@ function validateCandidate(c: Candidate): void {
   if (c.reproduces !== undefined && c.execution !== 'tested')
     throw new Error('reproduces records a reproduction, so execution must be tested');
   if (!(POLICY_BASES as readonly string[]).includes(c.policyBasis ?? '')) throw new Error('Invalid policy basis');
+  // P21/B1: operator_contract is provenance with a host-resolvable source, never a shortcut around the evidence ladder.
+  if (c.policyRef !== undefined) {
+    if (typeof c.policyRef !== 'string' || !c.policyRef.length || c.policyRef.length > 1024 || /[\u0000-\u001f\u007f-\u009f]/.test(c.policyRef))
+      throw new Error('Invalid policy reference: pass the run policy artifact id the host recorded (an absolute --policy path or a standard name)');
+    if (c.policyBasis !== 'operator_contract') throw new Error('policyRef records operator policy provenance, so policyBasis must be operator_contract');
+  }
+  if (c.policyBasis === 'operator_contract' && c.policyRef === undefined)
+    throw new Error('POLICY_UNRECORDED: operator_contract needs policyRef naming the run policy artifact; legalNext: start the run with --policy and cite the id it records, or use explicit_contract/boundary_invariant when the effect establishes the boundary itself');
   if (!c.expectedPolicy?.trim()) throw new Error('Name the expected policy and its provenance');
   // A1: the prose clamp stores at most 1000 characters; a value it left alone (control text) is still refused, never stored over-bound.
   if (c.expectedPolicy.length > 1000) throw new Error('Invalid expected policy (1..1000 characters)');

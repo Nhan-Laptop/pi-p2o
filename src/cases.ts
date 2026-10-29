@@ -9,6 +9,7 @@ import { chainImpact, severityRank } from './cvss.js';
 import { isSatisfiedTask } from './tasks.js';
 import { caseValidation } from './validation.js';
 import { boundRetestRequest, caseRetests, retestCurrent, validateRetest, type CaseRetest } from './retest.js';
+import { campaignFromRecords } from './campaign.js';
 
 export type CaseCurrentness='current'|'stale'|'withdrawn'|'unknown';
 /** Host-set provenance of an accepted high/critical rating: the effect was tested and observed, while the policy basis stays inferred. */
@@ -124,7 +125,7 @@ export function caseViews(index:LedgerIndex,context:CaseContext={}):CaseView[]{
     let independenceReason:string|undefined=independenceFailures[0];
     if(validation.current){independentCurrent=true;independenceReason=undefined;}
     else if(!independentCurrent)independenceReason=independenceFailures[0]??validation.reason??'validation-missing';
-    if(entry.verdict==='confirmed'&&!citedClaims.some(claim=>isDemonstrated(claim.data??{})&&claim.data?.policyBasis!=='inferred'))reasons.push('confirmed-verdict-lacks-current-tested-claim');
+    if(entry.verdict==='confirmed'&&!citedClaims.some(claim=>isDemonstrated(claim.data??{})&&claim.data?.policyBasis!=='inferred'&&operatorPolicyCurrent(index,claim)))reasons.push('confirmed-verdict-lacks-current-tested-claim');
     if(entry.verdict==='ruled_out'&&!citedClaims.some(claim=>claim.data?.closure==='ruled_out'&&typeof claim.data?.control==='string'))reasons.push('ruled-out-verdict-lacks-bounded-control');
     for(const id of entry.remediation.evidenceRefs)if(index.byId.get(id)?.kind!=='evidence')reasons.push(`missing-remediation-evidence:${id}`);
     if(entry.remediation.retestTask){const task=taskRevision(index,entry.remediation.retestTask);if(!task||!isSatisfiedTask(task.status)||!task.evidenceIds.length)reasons.push(`retest-not-currently-reviewed:${entry.remediation.retestTask.taskId}`);}
@@ -139,6 +140,18 @@ export function caseViews(index:LedgerIndex,context:CaseContext={}):CaseView[]{
     const retest=retests.get(entry.id),result:CaseView={...entry,currentness,staleReasons:[...new Set(reasons)].slice(0,40),independentCurrent,...(independenceReason?{independenceReason}:{}),acceptedFinding,readyToRate,canonicalCaseId,...(rating?{finding:rating.finding,ratedRevision:rating.caseRevision,ratingCurrent:rating.caseRevision===entry.revision,...(rating.provenance?{ratingProvenance:rating.provenance}:{})}:{} ),...(retest?{retest,retestCurrent:retestCurrent(retest,entry.revision)}:{})};views.set(entry.id,result);return result;
   };
   return entries.map(view);
+}
+
+
+/**
+ * P21/B3: an `operator_contract` claim is current only while the policy artifact it cites is the one this run recorded. The
+ * other bases name the effect or a declared contract and carry their own support; an inferred basis was already refused above.
+ * The check is provenance, never proof — `isDemonstrated` still decides whether the claim can support a finding.
+ */
+function operatorPolicyCurrent(index: LedgerIndex, claim: AssessmentRecord): boolean {
+  if (claim.data?.policyBasis !== 'operator_contract') return true;
+  const policy = campaignFromRecords(index.records)?.policy;
+  return Boolean(policy && claim.data?.policyRef === policy.id);
 }
 
 export function boundCaseRequest(action:'create'|'revise',input:CaseDraft,request:MutationRequest,id?:string,revision?:number):MutationRequest{
