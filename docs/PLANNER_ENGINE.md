@@ -136,6 +136,11 @@ as having consumed a claim.
 - The round opening is deterministic and bounded (≤ 8 KiB): campaign frame, completion and demand, goals and proof, ready
   chain steps, workers, round facts, the previous round's delta and a digest of older records. The round's own records are the
   live window; everything before the previous opening folds into the digest instead of vanishing with the replaced session.
+- A session replacement invalidates the outgoing Pi context before the replacement binds, and its getters throw instead of
+  returning undefined (P19/G). The progress widget's ledger scan is paced but not bounded in duration, so a repaint scheduled
+  before a switch can straddle it. Every UI read goes through a stale-tolerant guard: a scan that crosses a replacement skips
+  the repaint and stays silent, the pending timer is cleared before `ctx.newSession`, and the replacement's `session_start`
+  schedules the next render on the bound context. Rendering never changes authority and never raises.
 - Each engine round keeps monotonic counters (tested cells, confirmed claims, assets, chain depth, recorded walls) plus the
   host-computed `remaining` obligations. A round is **quiet** when none of the five counters increases, so a round that only
   records the wall the demand names is progress.

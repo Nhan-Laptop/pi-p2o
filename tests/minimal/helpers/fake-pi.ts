@@ -31,6 +31,9 @@ export interface FakePi {
   /** Bind the command context a dispatched command runs in and that `newSession` replaces. Unbound fakes have no command
    * dispatch, so a wake falls back to the in-session prompt exactly as it did before P18.1. */
   bind: (ctx: ExtensionCommandContext) => void;
+  /** P19/G: hold the replacement inside the window where the outgoing context is invalidated but `session_start` has not bound
+   * the new one; the stale getters are what a background render can hit across a round switch. */
+  holdSessionSwitch?: () => Promise<void>;
   setContextPercent: (percent: number | null) => void;
   allowWorkerFlag: (value: string) => void;
 }
@@ -84,12 +87,14 @@ export function createFakePi(options: { active?: string[] } = {}): FakePi {
     session.getContextUsage = () => contextPercent === null ? undefined : { tokens: Math.round(contextPercent), contextWindow: 100, percent: contextPercent };
     session.compact = () => { compactions += 1; };
     // The replaced context is a live view of the same extension state (ui, model registry, abort signal) with its own session
-    // identity and message senders, so a rebind in `withSession` behaves like Pi's ReplacedSessionContext.
-    const replaced = (id: string) => {
+    // identity and message senders, so a rebind in `withSession` behaves like Pi's ReplacedSessionContext. P19/G: the guarded
+    // surfaces are copied before the outgoing context is invalidated, because the replacement must stay readable.
+    const replaced = (id: string, surface: { ui: any; mode: any; hasUI: any }) => {
       const view: any = Object.create(session);
       view.sessionManager = { getSessionId: () => id, getBranch: () => [] };
       view.sendUserMessage = (text: string, sendOptions?: any) => api.sendUserMessage(text, sendOptions);
       view.sendMessage = (message: any, sendOptions: any) => api.sendMessage(message, sendOptions);
+      Object.defineProperties(view, { ui: { value: surface.ui }, mode: { value: surface.mode }, hasUI: { value: surface.hasUI } });
       return view;
     };
     session.newSession = async (sessionOptions: { setup?: (sessionManager: any) => Promise<void>; withSession?: (ctx: any) => Promise<void> } = {}) => {
@@ -97,17 +102,29 @@ export function createFakePi(options: { active?: string[] } = {}): FakePi {
         const result = await handler({ type: 'session_before_switch', reason: 'new' }, session);
         if (result?.cancel === true || result?.cancelled === true) return { cancelled: true };
       }
+      // Read the surfaces the replacement keeps before the outgoing context becomes stale, exactly as the host hands the
+      // replacement its own live context object.
+      const surface = { ui: session.ui, mode: session.mode, hasUI: session.hasUI };
       // Pi tears the outgoing session down (session_shutdown with the replacement's reason) before the new one exists.
       for (const handler of events.get('session_shutdown') ?? []) await handler({ type: 'session_shutdown', reason: 'new' }, session);
+      // P19/G: the outgoing context is invalid from here until `session_start("new")` rebinds the run; a stale getter throws.
+      session.markStale?.();
+      if (fake.holdSessionSwitch) await fake.holdSessionSwitch();
       sessionCounter += 1;
-      const replacedCtx = replaced(`session-${sessionCounter}`);
+      const replacedCtx = replaced(`session-${sessionCounter}`, surface);
       if (sessionOptions.setup) await sessionOptions.setup({ setSessionName: () => {}, getSessionId: () => `session-${sessionCounter}` });
       sessions.push({ ctx: replacedCtx });
       // P18.1/D45: a real host re-runs the extension factory for the replacement and fires session_start("new") before
       // withSession. The fake keeps one instance, but firing the same event is what lets the extension restore its boundary.
       for (const handler of events.get('session_start') ?? []) await handler({ type: 'session_start', reason: 'new' }, replacedCtx);
       try { if (sessionOptions.withSession) await sessionOptions.withSession(replacedCtx); }
-      finally { commandContext = replacedCtx; }
+      finally {
+        commandContext = replacedCtx;
+        // A real host hands every command a fresh context object; this fake keeps one instance, so the fixture's own command
+        // channel (teardown included) reads the original object again once the switch has rebound the run. The invalidation
+        // window above is what the P19/G test needs, not a permanently dead handle.
+        session.revive?.();
+      }
       return { cancelled: false };
     };
   };
@@ -138,6 +155,8 @@ export interface FakeContext {
   setContextUsage: (percent: number | null) => void;
   /** P18.6/D50: the models `ctx.modelRegistry.find` may resolve; the extension resolves a routed id through this. */
   setModels: (list: Array<{ provider: string; id: string }>) => void;
+  /** P19/G: invalidate the outgoing context the way Pi does once a replacement starts; its getters then throw. */
+  markStale: () => void;
 }
 
 export function createContext(options: { cwd: string; hasUI?: boolean; model?: { provider: string; id: string } | null; confirm?: boolean } ): FakeContext {
@@ -182,6 +201,19 @@ export function createContext(options: { cwd: string; hasUI?: boolean; model?: {
     },
     sessionManager: { getBranch: () => [], getSessionId: () => 'session-0' },
   } as unknown as ExtensionCommandContext;
+  // P19/G: Pi's context getters assert once a session replacement invalidates them. The fake reproduces exactly that on the
+  // three surfaces a background render reads, so a test can hold the invalidation window open and prove the extension skips
+  // the repaint instead of throwing out of a timer or a promise chain. The setter stays writable because tests switch `mode`
+  // between TUI and RPC after creation.
+  let stale = false;
+  for (const key of ['ui', 'mode', 'hasUI'] as const) {
+    let value = (ctx as any)[key];
+    Object.defineProperty(ctx, key, { enumerable: true, configurable: true,
+      get: () => { if (stale) throw new Error('This extension ctx is stale after session replacement or reload. Do not use a captured pi or command ctx after ctx.newSession().'); return value; },
+      set: (next: any) => { value = next; } });
+  }
+  (ctx as any).markStale = () => { stale = true; };
+  (ctx as any).revive = () => { stale = false; };
   return {
     ctx, notices, dialogs, confirmBodies, screens, overlays, widgets, get renderRequests() { return renderRequests; }, get aborts() { return aborts; }, get waitForIdleCalls() { return waitForIdleCalls; },
     setConfirm: (value: boolean) => { confirmed = value; },
@@ -189,6 +221,7 @@ export function createContext(options: { cwd: string; hasUI?: boolean; model?: {
     setPendingMessages: (value: boolean) => { pendingMessages = value; },
     setContextUsage: (percent: number | null) => { contextPercent = percent; },
     setModels: (list: Array<{ provider: string; id: string }>) => { models.splice(0, models.length, ...list); },
+    markStale: (ctx as any).markStale,
   } as FakeContext;
 }
 

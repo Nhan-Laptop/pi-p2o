@@ -266,6 +266,25 @@ describe('Rounds as fresh sessions (P18.1/D45)',()=>{
       expect(await eventRows(h,'planner.round-model')).toEqual([]);
     },'',{settings:{p2o:{plannerModels}},models:[{provider:'fixture',id:'base'}]});
   });
+  it('skips a progress render that lands before the replacement binds the new context (P19/G)',async()=>{
+    await fixture(async h=>{
+      // Pi invalidates the outgoing ctx when the replacement starts and binds the new one only in `session_start`. Hold the
+      // switch inside that window: an event that refreshes the progress widget must skip the repaint, not read the stale
+      // context (on the timer path that second read escapes the promise chain and exits pi).
+      let windowOpen!: () => void; const inWindow = new Promise<void>(resolve => { windowOpen = resolve; });
+      let release!: () => void; const held = new Promise<void>(resolve => { release = resolve; });
+      h.pi.holdSessionSwitch = async () => { windowOpen(); await held; };
+      await handOff(h);
+      await until(()=>h.pi.dispatches.length===1);
+      await inWindow;
+      await h.emit('agent_settled');
+      expect(h.ctx.notices.filter((text:string)=>text.includes('Progress view unavailable'))).toEqual([]);
+      release();
+      await until(()=>h.pi.sessions.length===1);
+      expect(await eventRows(h,'planner.round-session')).toHaveLength(1);
+      expect(await eventRows(h,'planner.round-start')).toHaveLength(1);
+    });
+  });
   it('publishes the round opening as a user message whose marker and briefing survive a parse round-trip',async()=>{
     const wake={runId:'run-x',epoch:0,through:7,round:3,reason:'heartbeat' as const};
     const prompt=roundBriefPrompt(wake,'# Round 3 brief\n- one obligation');

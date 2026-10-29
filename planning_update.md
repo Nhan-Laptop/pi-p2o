@@ -4,7 +4,9 @@ Status: **P19/A (the validation-dispatch wall), P19/B3 (the runtime-profile wall
 resumability made visible) are implemented, verified and committed together on the owner's instruction (D-P19-5).
 P19/C (a recorded wall is progress), P19/D (research-debt backlog is a planning signal) and P19/E (measurable goal proof
 and the blocked settle) are implemented, verified and committed in the same day's second pass (D-P19-7); the commit and
-push followed the owner's later "commit và push luôn đi" instruction (D-P19-8).** Base commit `b43e131` (S1/C5; that plan
+push followed the owner's later "commit và push luôn đi" instruction (D-P19-8). A live crash in the first post-commit run
+(the progress render that straddles a round's session replacement) is fixed and reproduced hermetically as P19/G
+(D-P19-9, §7c) and is not committed yet.** Base commit `b43e131` (S1/C5; that plan
 of record is unchanged in git at `git show b43e131:planning_update.md`). The owner's `AGENTS.md` edit and the untracked
 `pi-p2o-defense-vi.pptx` are outside this plan.
 
@@ -43,6 +45,12 @@ Decisions carried forward:
 - **D-P19-8 — Commit and push the C/D/E tranche on the owner's instruction (2026-10-29).** The owner said "commit và push
   luôn đi": one commit for the verified tranche with a plain message, repository identity and no attribution lines, then
   push. The owner's `AGENTS.md` and the untracked slides are never staged; no live run is authorized by this decision.
+- **D-P19-9 — Fix the live session-switch crash before anything else (2026-10-29).** The owner's live run after the push
+  exited on `This extension ctx is stale after session replacement or reload` at `extensions/p2o/index.ts` (the progress
+  widget's error path). This is a P18/D45 interaction, not a C/D/E regression: the outgoing context is invalidated before
+  the replacement binds, and a paced ledger scan can straddle that window. Fix it hermetically (guarded surface reads, silent
+  stale skip, timer cleared before `ctx.newSession`), reproduce it with a test that holds the invalidation window, and do not
+  commit or re-run live without a fresh owner instruction.
 
 ## 1. What the live run shows (evidence first)
 
@@ -397,6 +405,39 @@ and C/D/E were committed after the owner's "commit và push luôn đi" instructi
   files, no `partial`/`truncated`) immediately before staging.
 - Not run, deliberately (D-P19-2): no paid model call, no target traffic and no live campaign for the new behaviour; the
   live-run evidence in §1/§8 is still the pre-fix baseline.
+
+## 7c. Live-crash follow-up: the progress render across a session switch (P19/G, D-P19-9)
+
+The owner's first live run after the C/D/E push exited during recon with
+`Error: This extension ctx is stale after session replacement or reload …` at the progress widget's `ctx.ui` read
+(`extensions/p2o/index.ts`, the `.catch` of the refresh work), and `pi` reported `uncaughtException`.
+
+- **Cause, not a C/D/E regression.** P18.1/D45 opens every round in a fresh Pi session: the wake dispatches `p2o-round`,
+  which calls `ctx.newSession`. Pi invalidates the outgoing context as soon as the replacement starts and only rebinds the
+  run in the replacement's `session_start`. The outgoing context's getters assert instead of returning undefined. The
+  progress widget schedules a paced full-ledger scan (`refreshVisibility`: 25 ms coalescing, or 4× the last measured scan).
+  A round ending during recon refreshes the widget, the round switch starts while the scan is still awaiting, and the
+  repaint then read `ctx.ui` on the invalidated context. The `.catch` error path read the same stale `ctx.ui` to notify,
+  so instead of one skipped repaint the process got an uncaught rejection and exited. Nothing in C/D/E changed this code
+  path; recon simply gave the scan a long enough ledger to straddle the switch.
+- **Fix (hermetic, `extensions/p2o/index.ts`).** `tuiBound`/`boundUi` read the two surfaces through a `try`/`catch`, so a
+  stale generation returns "no TUI" / `undefined` instead of throwing; the scan re-checks after its awaits and skips the
+  repaint; the stale error is dropped silently (it is not a completeness claim); and the pending render timer is cleared
+  immediately before `ctx.newSession`, so the scan cannot start across the switch. The replacement's `session_start` keeps
+  scheduling the next render on the bound context, and `closeVisibility` uses the same guard. No authority, ledger or
+  count changes.
+- **Verification.** `tests/minimal/round-session.test.ts` gains a reproducing test that holds the fake host inside the
+  invalidation window (`holdSessionSwitch`) and emits `agent_settled` there: without the fix it fails at the same
+  `index.ts:793:63` frame as the live crash; with the fix the refresh is skipped silently and the round still opens. The
+  fake context now models Pi's stale getters (`markStale`/`revive`), and the fake host revives the fixture's command handle
+  after the switch, since this harness keeps one registration instance where the real host hands out a fresh context.
+  `npx tsc --noEmit` — pass; full suite — 154 files passed / 5 skipped (159), 1,365 tests passed / 13 skipped (1,378), 0
+  failed (baseline before the follow-up: 1,364/1,377; the P19/G test is the +1); `npm run build` and `check:build` — pass;
+  `scripts/audit-surface.mjs` — 35 tools, 0 contradictions, declaration chars unchanged (planner 44,348); `git diff
+  --check` — clean; GitNexus index rebuilt (17,390 nodes / 77,908 edges) and `detect_changes --scope all` — 7 changed
+  files, 37 symbols, 11 affected execution flows, risk high on the touched command handler, no `partial`/`truncated`.
+- **Not done:** no commit, no push and no re-run live (D-P19-9); the fix is proven hermetic, the live campaign still needs a
+  fresh run before the report can cite it.
 
 ## 8. How to reproduce the live-run evidence
 

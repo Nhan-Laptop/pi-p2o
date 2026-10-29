@@ -771,10 +771,20 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
       return summarizeSituation({ tasks, cases, coverage, claims, plans, leads: leads.map(lead => ({ state: lead.state, severity: lead.severity })) });
     } catch { return undefined; }
   }
+  /**
+   * P19/G: Pi invalidates the outgoing `ctx` as soon as a session replacement starts, and every getter on it throws
+   * (`This extension ctx is stale after session replacement or reload …`) instead of returning undefined. A progress scan
+   * scheduled before a round switch can await past that invalidation, and its own error path would then read the same stale
+   * context again — the second throw escapes the promise chain and pi exits on the uncaught rejection. Rendering is never
+   * allowed to end the process, so the two reads the widget needs are guarded: a stale generation skips the repaint and the
+   * replacement's `session_start` schedules a fresh one on the bound context.
+   */
+  function tuiBound(current: OwnerRun): boolean { try { return current.ctx.mode === 'tui'; } catch { return false; } }
+  function boundUi(current: OwnerRun): ExtensionContext['ui'] | undefined { try { return current.ctx.ui; } catch { return undefined; } }
   function refreshVisibility(current: OwnerRun) {
     if (run !== current || current.phase === 'finished' || current.uiClosed) return;
     // The progress widget exists only in the TUI. RPC/JSON/print have no consumer, so a full-ledger scan there is discarded work.
-    if (current.ctx.mode !== 'tui') return;
+    if (!tuiBound(current)) return;
     current.uiDirty = true;
     if (current.uiTimer || current.uiRefresh) return;
     // UI-only pacing: the 25 ms coalescing window, or 4x the last measured scan (capped at 5 s) so history length cannot keep the
@@ -782,15 +792,19 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
     current.uiTimer = setTimeout(() => {
       current.uiTimer = undefined; current.uiDirty = false;
       const work = (async () => {
-        if (current.ctx.mode !== 'tui') return;
+        if (!tuiBound(current)) return;
         const started = performance.now();
         const index = await readLedger(current.records, current.runId);
         const view = await currentStatus(current, undefined, index);
         current.uiScanMs = performance.now() - started;
         if (run !== current || current.phase === 'finished' || current.uiClosed) return;
-        current.ctx.ui.setWidget('p2o-progress', () => widgetComponent(view.widget));
+        // The scan awaited: a round switch can invalidate the bound surface meanwhile, so the repaint takes it again or skips.
+        boundUi(current)?.setWidget('p2o-progress', () => widgetComponent(view.widget));
       })().catch(error => {
-        if (run === current && !current.uiClosed) current.ctx.ui.notify(`Progress view unavailable: ${message(error)}; no completeness claim.`, 'warning');
+        // A scan that a session switch interrupts is expected; the replacement's `session_start` schedules the next render, and
+        // a skipped repaint is not worth a notice that claims anything about completeness.
+        if (/stale after session replacement/.test(message(error))) return;
+        if (run === current && !current.uiClosed) boundUi(current)?.notify(`Progress view unavailable: ${message(error)}; no completeness claim.`, 'warning');
       }).finally(() => {
         current.uiRefresh = undefined;
         if (current.uiDirty && !current.uiClosed) refreshVisibility(current);
@@ -804,7 +818,8 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
     current.unobserve?.(); current.unobserve = undefined;
     clearTimeout(current.uiTimer); current.uiTimer = undefined;
     await current.uiRefresh;
-    try { current.ctx.ui.setWidget('p2o-progress', undefined); } catch { /* Cleanup authority never depends on rendering. */ }
+    // P19/G: cleanup can run while the bound context is already stale; the guard keeps the teardown path from throwing.
+    try { boundUi(current)?.setWidget('p2o-progress', undefined); } catch { /* Cleanup authority never depends on rendering. */ }
   }
 
   // Pi applies extension flag values after load and before the session starts, so the ticket is read
@@ -4482,6 +4497,9 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
         current.roundOpened = { through: wake.through, round: wake.round };
         // R1.7: the store sequence this round opened at, so the next round's graph delta starts where this one did.
         if (briefing) current.roundWindow = { round: wake.round, records: briefing.records, sequence: current.store.sequence() };
+        // P19/G: a pending progress render belongs to the outgoing session. Stop it before the switch so the scan cannot start
+        // across the invalidation; the replacement's `session_start` schedules the next render on the bound context.
+        clearTimeout(current.uiTimer); current.uiTimer = undefined;
         const outcome = await ctx.newSession({
           withSession: async replaced => {
             if (!live()) return;
