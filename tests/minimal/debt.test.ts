@@ -146,7 +146,7 @@ describe('research debt (A6.2)', () => {
 
   it('names the WSTG tests the per-asset recorded features make applicable (A6.4 matrix)', async () => fixture(async h => {
     await populate(h);
-    await h.call('p2o_graph', { action: 'record', batch: { assets: [{ asset: { kind: 'endpoint', key: 'GET /feature-fixture', attributes: { feature: 'cors, api' } } }] } });
+    await h.call('p2o_graph_record', { batch: { assets: [{ asset: { kind: 'endpoint', key: 'GET /feature-fixture', attributes: { feature: 'cors, api' } } }] } });
     // `cors` triggers a browser-transport row (flags B). P11/A11: the shipped run carries that transport, so the default read
     // includes it instead of needing a caller grant.
     const { report } = await inspect(h);
@@ -160,7 +160,7 @@ describe('research debt (A6.2)', () => {
 
   it('counts the browser and identity rows in the shipped matrix without a caller grant (P11/A11)', async () => fixture(async h => {
     await populate(h);
-    await h.call('p2o_graph', { action: 'record', batch: { assets: [{ asset: { kind: 'endpoint', key: 'GET /autonomy-fixture', attributes: { feature: 'cors, api' } } }] } });
+    await h.call('p2o_graph_record', { batch: { assets: [{ asset: { kind: 'endpoint', key: 'GET /autonomy-fixture', attributes: { feature: 'cors, api' } } }] } });
     const full = items((await inspect(h)).report, 'WSTG_UNPLANNED').map(item => item.subject);
     // B row (cors) and I row (api,roles) are owed work out of the box: the image installs the browser and a worker provisions
     // its own principal, so neither flag is a reason to drop the row from the denominator.
@@ -173,7 +173,7 @@ describe('research debt (A6.2)', () => {
 
   it('names a discovered asset that no derived cell covers', async () => fixture(async h => {
     await populate(h);
-    await h.call('p2o_graph', { action: 'record', batch: { assets: [{ asset: { kind: 'endpoint', key: 'GET /unplanned' } }] } });
+    await h.call('p2o_graph_record', { batch: { assets: [{ asset: { kind: 'endpoint', key: 'GET /unplanned' } }] } });
     const { report } = await inspect(h);
     expect(items(report, 'SCOPE_UNPLANNED_ASSET')).toHaveLength(1);
     expect(items(report, 'SCOPE_UNPLANNED_ASSET')[0]!.detail).toMatch(/no derived coverage cell/);

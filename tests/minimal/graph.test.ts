@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest';
 import { AssessmentStore, type StoreManifest } from '../../src/state/store.js';
 import type { AssessmentRecord } from '../../src/records.js';
 import { GRAPH_RESPONSE_BYTES, applyGraphEvents, graphCeilings } from '../../src/state/graph.js';
-import { GRAPH_ACTION_PARAMETERS, graphParameters } from '../../src/state/graph-tool.js';
+import { GRAPH_PLAN_ACTIONS, GRAPH_PLAN_PARAMETERS, GRAPH_READ_PARAMETERS, graphReadParameters, graphRecordParameters, graphReviewParameters } from '../../src/state/graph-tool.js';
 
 const manifest = (runId: string, targetIdentity = 'fixture-target'): StoreManifest => ({ runId, retention: 'durable-local', targetKind: 'directory',
   targetIdentity, targetDisplay: 'inert fixture', profile: { runtimeHash: 'fixture', image: 'fixture', loopMode: 'manual', executorMode: 'shared' } });
@@ -21,17 +21,29 @@ async function fixture(work: (store: AssessmentStore, root: string) => void | Pr
 
 describe('asset/fact/hypothesis graph (K3, canonical store only)', () => {
   it('keeps tool arguments in a root object so legacy Pi provider projection does not silently erase them',()=>{
-    const projected={type:'object',properties:graphParameters.properties??{},required:graphParameters.required??[]};
-    // P14.10 added `plan` and `assetRefs` for the chain-to-draft step; both are root properties for the same reason as the rest.
-    expect(graphParameters.type).toBe('object');expect(projected.required).toContain('action');expect(Object.keys(projected.properties)).toEqual(['action','batch','id','requestId','cursor','limit','asOfSequence','plan','kind','keyPrefix','labelContains','attributeKey','attributeValue','assertionKind','statementContains','assetRefs','fromId','toId','toKind','effect','maxDepth','maxNodes','kinds']);
-    // A1: the root stays closed, but the batch subtree is deliberately open at the schema layer so a misplaced requestId
-    // or a row-level asset field reaches normalizeGraphRecord instead of dying in Pi's argument validator.
-    expect(projected.properties.batch).toMatchObject({type:'object'});expect(projected.properties.batch).not.toMatchObject({additionalProperties:false});
-    // R2.3 adds the host-side `ingest` verb; it reuses the root `id` as the artifact ID, so the root property set is unchanged.
-    expect(graphParameters).toMatchObject({additionalProperties:false});expect(projected.properties.action).toMatchObject({type:'string',enum:['record','view','export','chain','query','summary','ingest','path']});
-    expect(GRAPH_ACTION_PARAMETERS.ingest).toEqual(['action','id']);
-    // R3.2/D-R1-11 adds the bounded path read; its fields live in the same root object.
-    expect(GRAPH_ACTION_PARAMETERS.path).toEqual(['action','fromId','toId','toKind','effect','maxDepth','maxNodes','kinds']);
+    // S1/C1 split the single graph verb by authority. The read root stays closed and flat for the same reason as before:
+    // Pi's legacy Anthropic adapter reads only root properties/required, so a root union would silently erase every argument.
+    const read={type:'object',properties:graphReadParameters.properties??{},required:graphReadParameters.required??[]};
+    expect(graphReadParameters.type).toBe('object');expect(read.required).toContain('action');
+    expect(Object.keys(read.properties)).toEqual(['action','id','cursor','limit','asOfSequence','kind','keyPrefix','labelContains','attributeKey','attributeValue','assertionKind','statementContains','fromId','toId','toKind','effect','maxDepth','maxNodes','kinds']);
+    expect(graphReadParameters).toMatchObject({additionalProperties:false});
+    expect(read.properties.action).toMatchObject({type:'string',enum:['view','export','query','summary','path']});
+    // R3.2/D-R1-11: the bounded path read still lives in the same root object, and the query filter names its kind.
+    expect(GRAPH_READ_PARAMETERS.path).toEqual(['action','fromId','toId','toKind','effect','maxDepth','maxNodes','kinds']);
+    expect(GRAPH_READ_PARAMETERS.query).toContain('kind');
+    // The record verb IS the action, so it has no action field, and the batch subtree stays open at the schema layer so a
+    // misplaced requestId or a row-level asset field reaches normalizeGraphRecord instead of Pi's argument validator.
+    const record={type:'object',properties:graphRecordParameters.properties??{},required:graphRecordParameters.required??[]};
+    expect(graphRecordParameters.type).toBe('object');expect(record.required).toEqual(['batch']);
+    expect(Object.keys(record.properties)).toEqual(['batch','requestId']);
+    expect(record.properties.batch).toMatchObject({type:'object'});expect(record.properties.batch).not.toMatchObject({additionalProperties:false});
+    // P14.10/R2.3 moved `plan`, `assetRefs` and the ingest artifact id to the planner-only coordination verb.
+    expect(GRAPH_PLAN_ACTIONS).toEqual(['chain','ingest']);
+    expect(GRAPH_PLAN_PARAMETERS.chain).toEqual(['action','limit','plan','assetRefs','requestId']);
+    expect(GRAPH_PLAN_PARAMETERS.ingest).toEqual(['action','id']);
+    // The owner review names one retained row (id + outcome) instead of re-typing the identity it judges.
+    const review=graphReviewParameters as unknown as {properties:Record<string,unknown>};
+    expect(Object.keys(review.properties)).toEqual(['id','outcome','evidenceRefs','counterevidenceRefs','requestId']);
   });
   it('scales the run graph ceilings with the configured graphCapacity and refuses a bad capacity (P9/B, Q29)', async () => {
     // The base ceilings are the library default; the run setting multiplies them so a large engagement grows without a code edit.

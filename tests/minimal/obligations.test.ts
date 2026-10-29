@@ -79,7 +79,7 @@ describe('the frontier obligation refuses at create, not at finish (M2 + M4)', (
 
   it('refuses a mapping task on a surface with a ready step and accepts it once the provider is cited or the link is deferred', async () => fixture(async h => {
     await h.command('--target ./source');
-    const asset = (await h.call('p2o_graph', { action: 'record', batch: { assets: [{ asset: { kind: 'endpoint', key: 'GET /report-fixture' } }] } })).details.acks[0];
+    const asset = (await h.call('p2o_graph_record', { batch: { assets: [{ asset: { kind: 'endpoint', key: 'GET /report-fixture' } }] } })).details.acks[0];
     const observation = (await h.call('p2o_shell', { command: 'printf obligation-observation' })).details;
     const put = record(h, observation);
     const primitive = await put('obligation-primitive', { closure: 'confirmed', execution: 'tested', proof: 'live_reproduction', policyBasis: 'boundary_invariant', gained: [READ] });

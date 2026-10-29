@@ -79,7 +79,7 @@ export async function populate(h: any, titles = { accepted: 'Runtime fixture bou
   await h.command('--target ./source');
   // A3/D32: the run defaults to exploit mode, so the impact goal has to exist before the fixture's first task intent.
   const goal = await seedImpactGoal(h);
-  const asset = (await h.call('p2o_graph', { action: 'record', batch: { assets: [{ asset: { kind: 'endpoint', key: 'GET /report-fixture' } }] } })).details.acks[0];
+  const asset = (await h.call('p2o_graph_record', { batch: { assets: [{ asset: { kind: 'endpoint', key: 'GET /report-fixture' } }] } })).details.acks[0];
   // The work identity is what places a task in the denominator; the reviewed or blocked status then decides the axes on read.
   const work = (questionKey: string) => ({ assetRefs: [{ id: asset.entityId, revision: 1 }], questionKey, policyKey: 'policy:report-case', actorContext: 'actor:fixture', tenantContext: 'tenant:fixture', methodFamily: 'offline-observation', purpose: 'investigation' });
   const taskDraft = { question: 'Does the bounded fixture observation match the declared policy?', surface: '/report-fixture', risk: 'authorization', role: 'general', roleReason: 'Bounded inert observation for report export', expectedTrue: 'Receipt records the expected policy observation', expectedFalse: 'Receipt records the contrasting control', stopCondition: 'Stop after one inert command and owner review', evidenceIds: [], prerequisites: [], skills: [], methodReason: 'One inert command with no external target',

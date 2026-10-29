@@ -19,15 +19,16 @@ export const LAB_TOOLS = ['p2o_lab'];
  * Planner loadout: intent, plan, case, coverage-plan, review, read, skill/research, worker control and finish.
  * Deliberately absent: every target/lab tool, p2o_candidate, p2o_note, p2o_surface, p2o_report and p2o_request_subtask.
  * Coverage cells are host-derived (A3), so no role holds a cell writer.
- * `p2o_graph` stays in the planner loadout for read/query/chain coordination; worker-only write enforcement is in the
- * owner broker (`extensions/p2o/index.ts`), so this loadout does not enforce it by itself.
+ * S1/C1 split `p2o_graph` by authority: `p2o_graph` is the bounded read every role may use, `p2o_graph_review` is the
+ * owner's compact settle/promote entry point, `p2o_graph_plan` carries the planner-only chain/ingest coordination, and the
+ * 3,982-char record batch left the planner loadout for the worker/validation `p2o_graph_record` verb.
  */
 export const PLANNER_TOOLS = [
   'p2o_task_author', 'p2o_task_dispatch', 'p2o_task_review',
   'p2o_goal_author',
   'p2o_case_author', 'p2o_case_rate', 'p2o_case_retest',
   'p2o_coverage_plan', 'p2o_wstg_suggest',
-  'p2o_board', 'p2o_ledger', 'p2o_state', 'p2o_artifact', 'p2o_graph',
+  'p2o_board', 'p2o_ledger', 'p2o_state', 'p2o_artifact', 'p2o_graph', 'p2o_graph_review', 'p2o_graph_plan',
   'p2o_skill_list', 'p2o_skill_read', 'p2o_secret', 'p2o_research',
   'p2o_workers', 'p2o_loop', 'p2o_finish',
 ];
@@ -39,10 +40,13 @@ export const PLANNER_TOOLS = [
  */
 export const CLOSING_TOOLS = PLANNER_TOOLS.filter(name => name !== 'p2o_task_dispatch' && name !== 'p2o_task_author');
 
-/** Executing worker loadout: one intent, target tools, write-back and report. Workers never create or dispatch work. */
+/**
+ * Executing worker loadout: one intent, target tools, write-back and report. Workers never create or dispatch work.
+ * S1/C1: the batch write is its own verb (`p2o_graph_record`); `p2o_graph` keeps the bounded reads, including `path`.
+ */
 export const WORKER_TOOLS = [
   'p2o_skill_list', 'p2o_skill_read', 'p2o_secret', 'p2o_research', 'p2o_candidate', ...LAB_TOOLS, ...TARGET_TOOLS,
-  'p2o_note', 'p2o_surface', 'p2o_ledger', 'p2o_state', 'p2o_graph', 'p2o_artifact', 'p2o_request_subtask', 'p2o_report',
+  'p2o_note', 'p2o_surface', 'p2o_ledger', 'p2o_state', 'p2o_graph', 'p2o_graph_record', 'p2o_artifact', 'p2o_request_subtask', 'p2o_report',
 ];
 
 /**

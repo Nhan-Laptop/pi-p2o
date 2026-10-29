@@ -119,7 +119,7 @@ describe('the run tells the lead what to research, and records its refusals (M6 
     await seedClaim(h, { candidate: 'blocked-link', surface: '/report-fixture', risk: 'authorization', closure: 'open_proof_gap', execution: 'not_tested',
       proof: 'static_trace', negativeControls: [], policyBasis: 'inferred', expectedPolicy: 'Declared fixture actor/object boundary', limitations: 'Nothing executed in this step yet',
       evidenceRefs: [observation.evidenceId], needs: [{ kind: 'net.egress', subject: 'internal-api' }], gained: [{ kind: 'exec.code', subject: 'app-host' }] });
-    const join = (await h.call('p2o_graph', { action: 'chain' })).details;
+    const join = (await h.call('p2o_graph_plan', { action: 'chain' })).details;
     expect(join.unmet).toContain('blocked-link');
     // The hint names the transition it needs (`needs X → gained Y`), not a topic, and the skill that owns it.
     expect(join.research).toEqual([{ claimId: 'blocked-link', tool: 'p2o_research', needs: 'net.egress (internal-api)', gained: 'exec.code (app-host)',
@@ -153,7 +153,7 @@ describe('the run tells the lead what to research, and records its refusals (M6 
     await h.command('--target ./source');
     // A3/D32: the impact goal must exist before the first target-executing intent, which is still this run's recon intent.
     await seedImpactGoal(h);
-    const asset = (await h.call('p2o_graph', { action: 'record', batch: { assets: [{ asset: { kind: 'endpoint', key: 'GET /report-fixture' } }] } })).details.acks[0];
+    const asset = (await h.call('p2o_graph_record', { batch: { assets: [{ asset: { kind: 'endpoint', key: 'GET /report-fixture' } }] } })).details.acks[0];
     const observation = (await h.call('p2o_shell', { command: 'printf purpose-observation' })).details;
     const parent = await seedClaim(h, { candidate: 'purpose-parent', surface: '/report-fixture', risk: 'authorization', closure: 'open_proof_gap',
       execution: 'not_tested', proof: 'static_trace', negativeControls: [], policyBasis: 'inferred', expectedPolicy: 'Declared fixture actor/object boundary',

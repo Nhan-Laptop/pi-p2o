@@ -35,7 +35,7 @@ describe('A17.2/D32 impact goal versus attempt', () => {
       closure: 'open_proof_gap', execution: 'not_tested', proof: 'static_trace',
       evidenceRefs: [(await h.call('p2o_shell', { command: 'printf impact-attempt' })).details.evidenceId],
       negativeControls: [], policyBasis: 'inferred', expectedPolicy: 'Declared fixture boundary', limitations: 'Nothing executed yet' });
-    const asset = (await h.call('p2o_graph', { action: 'record', batch: { assets: [{ asset: { kind: 'endpoint', key: 'GET /impact-attempt' } }] } })).details.acks[0];
+    const asset = (await h.call('p2o_graph_record', { batch: { assets: [{ asset: { kind: 'endpoint', key: 'GET /impact-attempt' } }] } })).details.acks[0];
     await h.call('p2o_task_author', { draft: {
       question: 'Does the recorded primitive reach the effect the goal names?', surface: '/impact-fixture', risk: 'authorization', role: 'exploit',
       roleReason: 'A17.2 fixture takes the recorded primitive one rung further', expectedTrue: 'The bounded effect is demonstrated',

@@ -14,6 +14,7 @@ describe('reporting is a read-only second reader (P0/A1)', () => {
     expect(workerTools('reporting')).toEqual(reporterTools());
     expect(new Set(workerTools('reporting'))).toEqual(new Set(REPORTER_TOOLS));
     for (const name of [...TARGET_TOOLS, ...LAB_TOOLS, 'p2o_candidate', 'p2o_note', 'p2o_surface', 'p2o_graph',
+      'p2o_graph_plan', 'p2o_graph_record', 'p2o_graph_review',
       'p2o_task_author', 'p2o_task_dispatch', 'p2o_goal_author', 'p2o_case_author', 'p2o_coverage_plan', 'p2o_finish', 'p2o_request_subtask']) {
       expect(REPORTER_TOOLS, name).not.toContain(name);
     }

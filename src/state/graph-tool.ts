@@ -16,7 +16,7 @@ const anchor = object({ kind: choices(ANCHOR_KINDS), value: Type.String({ minLen
  * `requestId` inside the batch, carries `evidenceRefs` on the asset row, or spells an asset flat is accepted here and folded
  * into the canonical shape by `normalizeGraphRecord`; the host still validates every row before any state mutation
  * (`graphObject`/`validateGraphBatch`), so unknown or producer-owned fields are refused with a message naming the fields
- * that are allowed instead of losing the whole call to Pi's argument validator. The root stays strict (action/batch/requestId).
+ * that are allowed instead of losing the whole call to Pi's argument validator. The root stays strict (batch/requestId).
  */
 const assetFields = {
   kind: choices(ASSET_KINDS), key: Type.String({ minLength: 1, maxLength: 500 }),
@@ -35,28 +35,29 @@ const batch = object({
     status: Type.Optional(choices(['active','withdrawn'])), supersedes: supersedes() }))),
   anchors: Type.Optional(Type.Array(object({ assetId: id(), assetRevision: revision(), anchor }))),
 });
-export const GRAPH_ACTIONS = ['record','view','export','chain','query','summary','ingest','path'] as const;
-/** P13e: exhaustive per action. S1/B2 removed `page`: the append-log read is internal (report/UI), never an inventory verb. */
-export const GRAPH_ACTION_PARAMETERS: Readonly<Record<typeof GRAPH_ACTIONS[number], readonly string[]>> = {
-  record: ['action','batch','requestId'], view: ['action','id','cursor','limit','asOfSequence'], chain: ['action','limit','plan','assetRefs','requestId'],
-  export: ['action','cursor','limit','asOfSequence'],
-  query: ['action','kind','keyPrefix','labelContains','attributeKey','attributeValue','assertionKind','statementContains','cursor','limit'],
-  summary: ['action','cursor','limit'],
-  // R2.3: `id` is the retained artifact ID; reusing the root id keeps the declaration budget flat (no second identifier field).
-  ingest: ['action','id'],
+
+/**
+ * S1/C1 split the one graph verb by authority. Reads stay in `p2o_graph` for planner, worker and validation; the batch write
+ * moved to `p2o_graph_record` (worker/validation loadout), owner review to `p2o_graph_review` (planner) and the planner-only
+ * coordination actions to `p2o_graph_plan`. The host field lists below are the per-action contract the root schema cannot
+ * express, exactly as they were in the single verb.
+ */
+export const GRAPH_READ_ACTIONS = ['view', 'export', 'query', 'summary', 'path'] as const;
+export const GRAPH_READ_PARAMETERS: Readonly<Record<typeof GRAPH_READ_ACTIONS[number], readonly string[]>> = {
+  view: ['action', 'id', 'cursor', 'limit', 'asOfSequence'],
+  export: ['action', 'cursor', 'limit', 'asOfSequence'],
+  query: ['action', 'kind', 'keyPrefix', 'labelContains', 'attributeKey', 'attributeValue', 'assertionKind', 'statementContains', 'cursor', 'limit'],
+  summary: ['action', 'cursor', 'limit'],
   // R3.2/D-R1-11: a bounded reachability read; fromId is required, every other field narrows it.
-  path: ['action','fromId','toId','toKind','effect','maxDepth','maxNodes','kinds'],
+  path: ['action', 'fromId', 'toId', 'toKind', 'effect', 'maxDepth', 'maxNodes', 'kinds'],
 };
 /** Keep a root object: Pi's legacy Anthropic adapter reads only root properties/required.
  * A root anyOf silently loses all tool arguments there. Host enforces action-specific fields/limits.
  */
-export const graphParameters = object({
-  action: choices(GRAPH_ACTIONS), batch: Type.Optional(batch), id: Type.Optional(id()),
-  requestId: Type.Optional(Type.String({ minLength: 1, maxLength: 80, pattern: '^[a-zA-Z0-9][a-zA-Z0-9._:-]*$' })),
+export const graphReadParameters = object({
+  action: choices(GRAPH_READ_ACTIONS), id: Type.Optional(id()),
   cursor: Type.Optional(Type.Integer({ minimum: 0 })), limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 500 })),
   asOfSequence: Type.Optional(Type.Integer({ minimum: 0 })),
-  /** P14.10: `chain` can also hand back the next task draft and record the chain as todos; it never dispatches. */
-  plan: Type.Optional(Type.Boolean()),
   /** R1.3: bounded current-head query filters; each is one indexed/LIKE predicate over the asset or assertion head. */
   kind: Type.Optional(Type.String({ minLength: 1, maxLength: 80, description: 'Asset kind (keyPrefix needs it)' })),
   keyPrefix: Type.Optional(Type.String({ minLength: 1, maxLength: 200, description: 'Asset key prefix; needs kind' })),
@@ -65,7 +66,6 @@ export const graphParameters = object({
   attributeValue: Type.Optional(Type.String({ minLength: 1, maxLength: 500, description: 'Exact attribute value' })),
   assertionKind: Type.Optional(Type.String({ minLength: 1, maxLength: 40, description: 'fact:<observed|inferred|contract|configuration> or hypothesis' })),
   statementContains: Type.Optional(Type.String({ minLength: 1, maxLength: 200, description: 'Assertion statement substring' })),
-  assetRefs: Type.Optional(Type.Array(Type.Object({ id: Type.String({ pattern: '^asset-[a-f0-9]{24}$' }), revision: Type.Optional(Type.Integer({ minimum: 1 })), variant: Type.Optional(Type.String({ maxLength: 120 })) }, { additionalProperties: false }), { minItems: 1, description: 'Assets the drafted task stands on; copied from the graph, never inferred from a surface string' })),
   /** R3.2: `path` walks current relation heads from one asset; the rest of the fields narrow the walk. */
   fromId: Type.Optional(Type.String({ minLength: 1, maxLength: 80, pattern: '^asset-[a-f0-9]{24}$', description: 'Path start asset entity ID' })),
   toId: Type.Optional(Type.String({ minLength: 1, maxLength: 80, pattern: '^asset-[a-f0-9]{24}$', description: 'Optional target asset ID' })),
@@ -73,6 +73,40 @@ export const graphParameters = object({
   effect: Type.Optional(Type.String({ minLength: 1, maxLength: 40, description: 'Optional typed capability the path should reach (e.g. data.read, db.query, host.shell)' })),
   maxDepth: Type.Optional(Type.Integer({ minimum: 1, maximum: 6 })), maxNodes: Type.Optional(Type.Integer({ minimum: 1, maximum: 500 })),
   kinds: Type.Optional(Type.Array(choices(RELATION_KINDS), { minItems: 1, maxItems: 16, description: 'Only walk these relation kinds' })),
+}, { additionalProperties: false });
+
+/** The write half of the old verb: one batch, no action field because the verb is the action. */
+export const graphRecordParameters = object({
+  batch,
+  requestId: Type.Optional(Type.String({ minLength: 1, maxLength: 80, pattern: '^[a-zA-Z0-9][a-zA-Z0-9._:-]*$' })),
+}, { additionalProperties: false });
+
+/**
+ * Owner review names the retained row instead of re-typing it: the host reads the current assertion or relation and derives
+ * the identity the supersede needs (statement, subject, kind, endpoints), so a settle cannot silently rewrite what it judges.
+ */
+export const REVIEW_OUTCOMES = ['supported', 'refuted', 'inconclusive', 'observed'] as const;
+export const graphReviewParameters = object({
+  id: Type.String({ minLength: 1, maxLength: 160 }),
+  outcome: choices(REVIEW_OUTCOMES),
+  evidenceRefs: refs(), counterevidenceRefs: refs(),
+  requestId: Type.Optional(Type.String({ minLength: 1, maxLength: 80, pattern: '^[a-zA-Z0-9][a-zA-Z0-9._:-]*$' })),
+}, { additionalProperties: false });
+
+/** Planner-only coordination: the chain join (plus its plan write) and the manual artifact-ingest retry. */
+export const GRAPH_PLAN_ACTIONS = ['chain', 'ingest'] as const;
+export const GRAPH_PLAN_PARAMETERS: Readonly<Record<typeof GRAPH_PLAN_ACTIONS[number], readonly string[]>> = {
+  chain: ['action', 'limit', 'plan', 'assetRefs', 'requestId'],
+  // R2.3: `id` is the retained artifact ID; reusing the root id keeps the declaration budget flat (no second identifier field).
+  ingest: ['action', 'id'],
+};
+export const graphPlanParameters = object({
+  action: choices(GRAPH_PLAN_ACTIONS), id: Type.Optional(id()),
+  limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 500 })),
+  /** P14.10: `chain` can also hand back the next task draft and record the chain as todos; it never dispatches. */
+  plan: Type.Optional(Type.Boolean()),
+  requestId: Type.Optional(Type.String({ minLength: 1, maxLength: 80, pattern: '^[a-zA-Z0-9][a-zA-Z0-9._:-]*$' })),
+  assetRefs: Type.Optional(Type.Array(Type.Object({ id: Type.String({ pattern: '^asset-[a-f0-9]{24}$' }), revision: Type.Optional(Type.Integer({ minimum: 1 })) }, { additionalProperties: false }), { minItems: 1, description: 'Assets the drafted task stands on; copied from the graph, never inferred from a surface string' })),
 }, { additionalProperties: false });
 
 /** Fields an asset may carry on its row instead of inside the nested `asset` object. */

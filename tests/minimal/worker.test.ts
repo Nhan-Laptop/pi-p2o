@@ -101,7 +101,7 @@ describe('worker role', () => {
     worker.flags['p2o-worker'] = join(await h.runDir(), `ticket-${workerId}.json`);
     const freshContext = createContext({ cwd: h.root });
     await worker.events.get('session_start')![0]({}, freshContext.ctx);
-    expect(worker.active).toEqual(['p2o_skill_list', 'p2o_skill_read', 'p2o_secret', 'p2o_research', 'p2o_candidate', 'p2o_lab', 'p2o_shell', 'p2o_net', 'p2o_http', 'p2o_capture', 'p2o_session', 'p2o_note', 'p2o_surface', 'p2o_ledger', 'p2o_state', 'p2o_graph', 'p2o_artifact', 'p2o_request_subtask', 'p2o_report']);
+    expect(worker.active).toEqual(['p2o_skill_list', 'p2o_skill_read', 'p2o_secret', 'p2o_research', 'p2o_candidate', 'p2o_lab', 'p2o_shell', 'p2o_net', 'p2o_http', 'p2o_capture', 'p2o_session', 'p2o_note', 'p2o_surface', 'p2o_ledger', 'p2o_state', 'p2o_graph', 'p2o_graph_record', 'p2o_artifact', 'p2o_request_subtask', 'p2o_report']);
     expect(freshContext.notices.join('\n')).not.toContain('rejected');
 
     // Host tools are blocked; sandbox tools run in the owner's container with the worker's own scratch.
@@ -231,15 +231,19 @@ describe('worker role', () => {
   });
 
   it('walks bounded graph reachability and pages the summary through the broker for a worker', async () => {
-    // S1/A5+A6 (D-S1-7, planning_update.md F-03/F-05): reachability is a bounded read now available to a worker, the
-    // query/summary cursor travels as the broker's `since`, and chain/ingest stay planner-only.
+    // S1/A5+A6+C1 (D-S1-7, planning_update.md F-03/F-05/F-41): reachability is a bounded read available to a worker, the
+    // query/summary cursor travels as the broker's `since`, the batch write is the worker's own verb, and the planner-only
+    // chain/ingest coordination verb is not in the worker loadout at all.
     const workerId = await h.delegate();
-    const first = (await h.call('p2o_graph', { action: 'record', batch: { assets: [{ asset: { kind: 'host', key: 'host-a' } }] } })).details.acks[0];
-    const second = (await h.call('p2o_graph', { action: 'record', batch: { assets: [{ asset: { kind: 'service', key: 'web' } }] } })).details.acks[0];
-    await h.call('p2o_graph', { action: 'record', batch: { relations: [{ kind: 'hosts', fromId: first.entityId, toId: second.entityId, fromRevision: 1, toRevision: 1, basis: 'inferred' }] } });
+    const first = (await h.call('p2o_graph_record', { batch: { assets: [{ asset: { kind: 'host', key: 'host-a' } }] } })).details.acks[0];
+    const second = (await h.call('p2o_graph_record', { batch: { assets: [{ asset: { kind: 'service', key: 'web' } }] } })).details.acks[0];
+    await h.call('p2o_graph_record', { batch: { relations: [{ kind: 'hosts', fromId: first.entityId, toId: second.entityId, fromRevision: 1, toRevision: 1, basis: 'inferred' }] } });
     await h.activate(join(await h.runDir(), `ticket-${workerId}.json`));
-    const description = String(h.worker.tools.get('p2o_graph')!.description);
-    expect(description).toContain('planner-only');
+    // The worker holds the reads and the write; the owner's review verb and the planner's coordination verb stay absent
+    // from the active loadout even though both are registered for the roles that hold them.
+    expect(h.worker.active).toContain('p2o_graph_record');
+    expect(h.worker.active).not.toContain('p2o_graph_plan');
+    expect(h.worker.active).not.toContain('p2o_graph_review');
     const walk = (await h.call('p2o_graph', { action: 'path', fromId: first.entityId }, 'worker')).details as any;
     expect(walk.paths).toHaveLength(1);
     expect(walk.paths[0].hops[0].relation).toMatchObject({ kind: 'hosts', fromId: first.entityId, toId: second.entityId });
@@ -248,8 +252,8 @@ describe('worker role', () => {
     expect(summary.counts.assets).toBeGreaterThanOrEqual(2);
     const paged = (await h.call('p2o_graph', { action: 'query', kind: 'host', cursor: 1 }, 'worker')).details as any;
     expect(Array.isArray(paged.rows)).toBe(true);
-    await expect(h.call('p2o_graph', { action: 'chain' }, 'worker')).rejects.toThrow('PLANNER_ONLY');
-    await expect(h.call('p2o_graph', { action: 'ingest', id: 'artifact-00000000-0000-0000-0000-000000000000' }, 'worker')).rejects.toThrow('PLANNER_ONLY');
+    await expect(h.call('p2o_graph_plan', { action: 'chain' }, 'worker')).rejects.toThrow('PLANNER_ONLY');
+    await expect(h.call('p2o_graph_plan', { action: 'ingest', id: 'artifact-00000000-0000-0000-0000-000000000000' }, 'worker')).rejects.toThrow('PLANNER_ONLY');
   });
 
   it('never activates a worker gate from session replay alone', async () => {

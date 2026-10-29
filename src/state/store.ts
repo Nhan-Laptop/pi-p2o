@@ -1022,6 +1022,14 @@ export class AssessmentStore {
   graphResult(batch:GraphBatch,request:MutationRequest,producer?:GraphProducer):GraphAck[]|undefined {
     return this.mutationResult(request,{graph:batch,producer:this.graphProducer(request,producer)}) as GraphAck[]|undefined;
   }
+  /** S1/C1: the retained row an owner settle/promote judges, by the id a read returned. Assets are not review targets. */
+  graphReviewRow(id:string):{table:'assertions'|'relations';row:GraphRow}|undefined {
+    this.gate();
+    for(const table of ['assertions','relations'] as const){
+      const found=this.db.prepare(`SELECT body FROM ${table} WHERE id=?`).get(id);
+      if(found)return {table,row:JSON.parse(String(found.body)) as GraphRow};
+    }
+  }
   /** One owner transaction. Effective row cap includes nested anchors, so the ACK fits the broker. */
   recordGraph(batch:GraphBatch,request?:MutationRequest,producer?:GraphProducer):GraphAck[] {
     validateGraphBatch(batch);const attribution=this.graphProducer(request,producer);

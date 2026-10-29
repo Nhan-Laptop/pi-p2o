@@ -22,7 +22,7 @@ export interface CaseListPage extends Counted {
   warning: string;
 }
 
-/** `p2o_graph {action:"chain"}`: the join plus the per-list denominators that make the page self-describing. */
+/** `p2o_graph_plan {action:"chain"}`: the join plus the per-list denominators that make the page self-describing. */
 export interface ChainViewPage extends ChainJoin {
   counts: { primitives: number; ready: number; unmet: number; frontier: number };
   shown: { primitives: number; ready: number; unmet: number; frontier: number };

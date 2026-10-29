@@ -95,9 +95,9 @@ import { StateScreen, widgetComponent, renderTaskResult, renderStateEntry } from
 import { uiRefreshDelay } from '../../src/ui/refresh.js';
 import { ARTIFACT_INVALID, AssessmentStore, finalizationReserve, MAX_ARTIFACT_BYTES, type ArtifactManifest, type MutationRequest, type StoreFault, type StoreManifest } from '../../src/state/store.js';
 import { bindAssessmentStore } from '../../src/state/adapter.js';
-import { GRAPH_RESPONSE_BYTES, GRAPH_SUMMARY_BYTES, graphObject, type GraphAck, type GraphProducer } from '../../src/state/graph.js';
+import { GRAPH_RESPONSE_BYTES, GRAPH_SUMMARY_BYTES, graphObject, type GraphAck, type GraphBatch, type GraphProducer } from '../../src/state/graph.js';
 import { assetDossier, type DossierClaim, type DossierCase, type DossierCoverageCell, type DossierFact, type DossierHypothesis, type DossierRelationRow, type DossierTaskRow } from '../../src/graph-dossier.js';
-import { GRAPH_ACTION_PARAMETERS, GRAPH_ACTIONS, graphParameters, normalizeGraphRecord } from '../../src/state/graph-tool.js';
+import { GRAPH_PLAN_ACTIONS, GRAPH_PLAN_PARAMETERS, GRAPH_READ_ACTIONS, GRAPH_READ_PARAMETERS, graphPlanParameters, graphReadParameters, graphRecordParameters, graphReviewParameters, normalizeGraphRecord } from '../../src/state/graph-tool.js';
 import { boundedText as boundExtractText, extract, EXTRACT_FORMATS, EXTRACT_MAX_INPUT_BYTES } from '../../src/extract/index.js';
 import { ingestExtract } from '../../src/graph-ingest.js';
 import { annotatePathEffect } from '../../src/path-view.js';
@@ -3289,16 +3289,124 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
     },
   });
   registerTool({
-    name:'p2o_graph',label:'Asset graph',exposure:'model-only',parameters:graphParameters,
-    description:'Bounded reads, a record batch or ingest. Record: requestId may sit on the batch; asset rows are {asset,ref?} or flat. Identity is versioned; nothing here is permission or finding, and the host assigns producer/task. Workers record assets, facts, anchors, open hypotheses and inferred relations (unverified); observed relations and settled hypotheses are owner review. Claims need same-run evidence; pin revisions to refuse stale writes, and secret identities are refused. view<=100, export<=500, query<=50, reads<=24KiB; query pages backward (cursor 0 or omitted = newest), view/export forward; path defaults depth 4/nodes 200. Replies name their item key; id is an asset entityId for view and an artifact id for ingest. summary is the since-delta. chain joins gained/needs into ready/unmet/frontier with the starting asset of each ready step; plan:true files a task draft and one todo per step, dispatching nothing (planner-only). path walks current relations; effect names the supplied or missing hop. ingest extracts a retained artifact into unverified rows (never claims); planner-only. Identical requestId/payload replays the retained ACK.',
+    name:'p2o_graph',label:'Asset graph',exposure:'model-only',parameters:graphReadParameters,
+    description:'Bounded reads over current graph heads. view: one asset dossier by entity ID, at most 100 rows. query: which current rows match bounded filters, newest first (cursor 0 = newest), at most 50. summary: what changed since a cursor plus the gaps, at most 10 rows per list and 8 KiB. export: a snapshot, at most 500. path: the shortest relation walk from one asset (at most 6 hops, 500 nodes, 10 paths, 24 KiB) naming the hop that supplies or misses an effect. Every read is background data: never a finding, permission or proof, and no read spends authority.',
     async execute(_id,params,_signal,_update,ctx){
       const current=run;
       if(!current||current.phase!=='active'||(current.role==='owner'&&current.ctx.cwd!==ctx.cwd))fail('NO_ASSESSMENT','No active p2o assessment in this session');
-      if(!GRAPH_ACTIONS.includes(params.action))fail('INVALID_INPUT','Unknown graph action');
-      graphObject(params,GRAPH_ACTION_PARAMETERS[params.action],'Graph action');
+      if(!GRAPH_READ_ACTIONS.includes(params.action))fail('INVALID_INPUT','Unknown graph read action');
+      graphObject(params,GRAPH_READ_PARAMETERS[params.action],'Graph read action');
       // S1/B6: the declaration allows 1..500 for every action, so name each action's real page bound before the host read.
       if(params.action==='query'&&params.limit!==undefined&&params.limit>50)fail('INVALID_INPUT','query limit is 1..50; narrow the filter instead of paging wider');
       if(params.action==='view'&&params.limit!==undefined&&params.limit>100)fail('INVALID_INPUT','view limit is 1..100');
+      if(params.action==='path'){
+        // S1/A5 (D-S1-7): reachability is a bounded read every role may use; it never writes.
+        const fromId=params.fromId;if(!fromId)fail('INVALID_INPUT','path needs fromId: the asset entity ID a walk starts from');
+        if(current.role==='worker'){
+          const response=await worker().client.request<{value:Record<string,unknown>}>('graph_read',{graphOp:'path',fromId,
+            ...(params.toId!==undefined?{toId:params.toId}:{}),...(params.toKind!==undefined?{toKind:params.toKind}:{}),...(params.effect!==undefined?{effect:params.effect}:{}),
+            ...(params.maxDepth!==undefined?{maxDepth:params.maxDepth}:{}),...(params.maxNodes!==undefined?{maxNodes:params.maxNodes}:{}),...(params.kinds?.length?{kinds:params.kinds}:{})},{timeoutMs:30000});
+          return textResult(cleanText(JSON.stringify(response.value)), response.value);
+        }
+        return track(current,(async()=>{
+          assertOwnerActive(current);
+          const value=await pathWalkFor(current,fromId,params as Record<string,unknown>);
+          return textResult(cleanText(JSON.stringify(value)),value);
+        })());
+      }
+      if(params.action==='query'||params.action==='summary'){
+        const query={kind:params.kind,keyPrefix:params.keyPrefix,labelContains:params.labelContains,attributeKey:params.attributeKey,attributeValue:params.attributeValue,assertionKind:params.assertionKind,statementContains:params.statementContains};
+        if(current.role==='worker'){
+          // S1/A6 (F-05): the broker read names the cursor `since`; sending `cursor` was rejected as an unknown field.
+          const response=await worker().client.request<{value:Record<string,unknown>}>('graph_read',{graphOp:params.action,...(params.action==='query'?query:{}),since:params.cursor,limit:params.limit},{timeoutMs:30000});
+          return textResult(cleanText(JSON.stringify(response.value)), response.value);
+        }
+        return track(current,(async()=>{
+          assertOwnerActive(current);
+          const value=params.action==='query'?boundedQueryPage(current.store.graphQuery(query,{cursor:params.cursor,limit:params.limit})):await graphSummaryFor(current,params.cursor??0,Math.min(params.limit??5,10));
+          return textResult(cleanText(JSON.stringify(value)), value);
+        })());
+      }
+      if(params.action==='view'&&!params.id)fail('INVALID_INPUT','view needs an asset entity ID: use the entityId a query row returns, not the asset key');
+      const options={since:params.cursor,limit:params.limit,asOfSequence:params.asOfSequence};
+      if(current.role==='worker'){
+        const response=await worker().client.request<{value:Record<string,unknown>}>('graph_read',{graphOp:params.action,...options,...(params.action==='view'?{assetId:params.id}:{})},{timeoutMs:30000});
+        return textResult(cleanText(JSON.stringify(response.value)), response.value);
+      }
+      return track(current,(async()=>{
+        assertOwnerActive(current);
+        const value=params.action==='view'?await graphViewFor(current,params.id!,options):current.store.graphExport(options);
+        return textResult(cleanText(JSON.stringify(value)), value);
+      })());
+    },
+  });
+  registerTool({
+    name:'p2o_graph_record',label:'Record graph rows',exposure:'model-only',parameters:graphRecordParameters,
+    description:'Batch the assets, facts, anchors, open hypotheses and inferred relations of one observation into one call. The host stamps producer/task and versioned identity, so a row is knowledge, never permission or a finding. Same-run evidence is required for observed facts and relations; record status=open hypotheses and basis=inferred relations for owner review. Identical requestId replays the retained ACK.',
+    async execute(_id,params){
+      const current=run;
+      if(!current||current.phase!=='active')fail('NO_ASSESSMENT','No active p2o assessment in this session');
+      const stray=Object.keys(params).filter(key=>key!=='batch'&&key!=='requestId');
+      if(stray.length)fail('INVALID_INPUT',`p2o_graph_record got unknown field(s): ${stray.join(', ')}; it holds only batch and requestId`);
+      if(!params.batch)fail('INVALID_INPUT','record needs a batch');
+      // ARTEX-style boundary: the schema tolerates the drift agents actually produce, and one host-owned
+      // normalizer folds it into the canonical batch (requestId hoisted, row-level asset fields folded)
+      // before either path stores anything. Semantic/security validation stays in validateGraphBatch.
+      let normalized: ReturnType<typeof normalizeGraphRecord>;
+      try { normalized = normalizeGraphRecord(params.batch,params.requestId); }
+      catch(error){ fail('INVALID_INPUT',message(error)); }
+      const {batch,requestId:recordRequestId}=normalized;
+      if(current.role==='worker'){
+        if(current.ticket.role==='reporting')fail('SYNTHESIS_ONLY','Reporting role is synthesis-only; graph recording denied');
+        const response=await worker().client.request<{value:GraphAck[];replayed?:boolean}>('graph_record',{batch},{timeoutMs:30000,requestId:recordRequestId});
+        return textResult(JSON.stringify({acks:response.value,replayed:response.replayed??false,warning:'Attributed knowledge, no scope or proof upgrade'}), {acks:response.value,replayed:response.replayed??false});
+      }
+      return track(current,(async()=>{
+        assertOwnerActive(current);
+        const request={actorId:'owner',requestId:recordRequestId??randomUUID(),payload:{op:'graph_record',batch}},producer:GraphProducer={actorId:'owner',taskId:current.currentTaskId,role:'owner',depth:0};
+        const prior=current.store.graphResult(batch,request,producer);
+        const acks=prior??current.store.recordGraph(batch,request,producer);
+        return textResult(JSON.stringify({acks,replayed:Boolean(prior),warning:'Knowledge recorded, no scope or proof upgrade'}), {acks,replayed:Boolean(prior)});
+      })());
+    },
+  });
+  registerTool({
+    name:'p2o_graph_review',label:'Review graph row',exposure:'model-only',parameters:graphReviewParameters,
+    description:'Planner review of one retained row. outcome=supported, refuted or inconclusive settles a hypothesis by superseding it; outcome=observed promotes an inferred relation to an observed fact edge. The host reads the retained row, derives its identity, and refuses a stale supersede naming the held revision; same-run evidence (or counterevidence) is checked by the store. Review judges a worker row: it never re-accepts a case, proves a remediation or creates a finding.',
+    async execute(_id,params,_signal,_update,ctx){
+      const current=run;
+      if(!current||current.phase!=='active'||(current.role==='owner'&&current.ctx.cwd!==ctx.cwd))fail('NO_ASSESSMENT','No active p2o assessment in this session');
+      if(current.role==='worker')fail('PLANNER_ONLY','Owner review is planner-only: record an open hypothesis or an inferred relation with p2o_graph_record and let the lead settle it');
+      graphObject(params,['id','outcome','evidenceRefs','counterevidenceRefs','requestId'],'Graph review');
+      const target=current.store.graphReviewRow(params.id);
+      if(!target)fail('INVALID_INPUT',`No retained assertion or relation row with id ${String(params.id).slice(0,160)}; read it first with p2o_graph action=query or view and copy its id`);
+      const row=target.row as unknown as Record<string,unknown>,id=target.row.id;
+      const batch:GraphBatch=params.outcome==='observed'
+        ? (target.table==='relations'
+          ? (row.basis==='inferred'
+            ? {relations:[{kind:row.kind as never,fromId:String(row.fromId),toId:String(row.toId),basis:'observed',evidenceRefs:params.evidenceRefs??[],supersedes:id}]}
+            : fail('INVALID_INPUT','Only an inferred relation can be promoted: this relation is already observed'))
+          : fail('INVALID_INPUT','outcome=observed promotes an inferred relation; this id names an assertion, so settle it with supported, refuted or inconclusive'))
+        : (target.table==='assertions'&&row.kind==='hypothesis'
+          ? {hypotheses:[{assetId:String(row.subjectId),statement:String(row.statement),status:params.outcome,...(typeof row.impact==='string'?{impact:row.impact}:{}),evidenceRefs:params.evidenceRefs??[],counterevidenceRefs:params.counterevidenceRefs??[],supersedes:id}]}
+          : fail('INVALID_INPUT','Settling a hypothesis needs a hypothesis row from p2o_graph query (assertionKind=hypothesis); this id names a relation, so promote it only with outcome=observed'));
+      return track(current,(async()=>{
+        assertOwnerActive(current);
+        const request={actorId:'owner',requestId:params.requestId??randomUUID(),payload:{op:'graph_record',batch}},producer:GraphProducer={actorId:'owner',taskId:current.currentTaskId,role:'owner',depth:0};
+        const prior=current.store.graphResult(batch,request,producer);
+        const acks=prior??current.store.recordGraph(batch,request,producer);
+        return textResult(JSON.stringify({acks,replayed:Boolean(prior),warning:'Owner review recorded; knowledge only, no scope or proof upgrade'}), {acks,replayed:Boolean(prior)});
+      })());
+    },
+  });
+  registerTool({
+    name:'p2o_graph_plan',label:'Plan over graph',exposure:'model-only',parameters:graphPlanParameters,
+    description:'Planner-only graph coordination. chain joins claim needs and gains into ready, unmet, legacy and frontier lists, naming the asset each ready step starts from; plan:true files one task draft and one todo per step and dispatches nothing. ingest retries the host-side extractor on a retained artifact id, recording attributed unverified rows and never claims. Limits do not cut the reported counts. This is coordination only: it starts no target work and proves nothing.',
+    async execute(_id,params):Promise<any>{
+      const current=run;
+      if(!current||current.phase!=='active')fail('NO_ASSESSMENT','No active p2o assessment in this session');
+      if(!GRAPH_PLAN_ACTIONS.includes(params.action))fail('INVALID_INPUT','Unknown graph plan action');
+      graphObject(params,GRAPH_PLAN_PARAMETERS[params.action],'Graph plan action');
       if(params.action==='chain'){
         if(current.role==='worker')fail('PLANNER_ONLY','Chain view is coordination: record gained/needs on the claim and let the lead read the join');
         return track(current,(async()=>{
@@ -3325,73 +3433,9 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
             :'none ready'});
         })());
       }
-      if(params.action==='path'){
-        // S1/A5 (D-S1-7): reachability is a bounded read every role may use; it never writes. chain/ingest stay planner-only.
-        const fromId=params.fromId;if(!fromId)fail('INVALID_INPUT','path needs fromId: the asset entity ID a walk starts from');
-        if(current.role==='worker'){
-          const response=await worker().client.request<{value:Record<string,unknown>}>('graph_read',{graphOp:'path',fromId,
-            ...(params.toId!==undefined?{toId:params.toId}:{}),...(params.toKind!==undefined?{toKind:params.toKind}:{}),...(params.effect!==undefined?{effect:params.effect}:{}),
-            ...(params.maxDepth!==undefined?{maxDepth:params.maxDepth}:{}),...(params.maxNodes!==undefined?{maxNodes:params.maxNodes}:{}),...(params.kinds?.length?{kinds:params.kinds}:{})},{timeoutMs:30000});
-          return textResult(cleanText(JSON.stringify(response.value)), response.value);
-        }
-        return track(current,(async()=>{
-          assertOwnerActive(current);
-          const value=await pathWalkFor(current,fromId,params as Record<string,unknown>);
-          return textResult(cleanText(JSON.stringify(value)),value);
-        })());
-      }
-      if(params.action==='record'){
-        if(!params.batch)fail('INVALID_INPUT','record needs a batch');
-        // ARTEX-style boundary: the schema tolerates the drift agents actually produce, and one host-owned
-        // normalizer folds it into the canonical batch (requestId hoisted, row-level asset fields folded)
-        // before either path stores anything. Semantic/security validation stays in validateGraphBatch.
-        let normalized: ReturnType<typeof normalizeGraphRecord>;
-        try { normalized = normalizeGraphRecord(params.batch,params.requestId); }
-        catch(error){ fail('INVALID_INPUT',message(error)); }
-        const {batch,requestId:recordRequestId}=normalized;
-        if(current.role==='worker'){
-          if(current.ticket.role==='reporting')fail('SYNTHESIS_ONLY','Reporting role is synthesis-only; graph recording denied');
-          const response=await worker().client.request<{value:GraphAck[];replayed?:boolean}>('graph_record',{batch},{timeoutMs:30000,requestId:recordRequestId});
-          return textResult(JSON.stringify({acks:response.value,replayed:response.replayed??false,warning:'Attributed knowledge, no scope or proof upgrade'}), {acks:response.value,replayed:response.replayed??false});
-        }
-        return track(current,(async()=>{
-          assertOwnerActive(current);
-          const request={actorId:'owner',requestId:recordRequestId??randomUUID(),payload:{op:'graph_record',batch}},producer:GraphProducer={actorId:'owner',taskId:current.currentTaskId,role:'owner',depth:0};
-          const prior=current.store.graphResult(batch,request,producer);
-          
-          const acks=prior??current.store.recordGraph(batch,request,producer);
-          return textResult(JSON.stringify({acks,replayed:Boolean(prior),warning:'Knowledge recorded, no scope or proof upgrade'}), {acks,replayed:Boolean(prior)});
-        })());
-      }
-      if(params.action==='query'||params.action==='summary'){
-        const query={kind:params.kind,keyPrefix:params.keyPrefix,labelContains:params.labelContains,attributeKey:params.attributeKey,attributeValue:params.attributeValue,assertionKind:params.assertionKind,statementContains:params.statementContains};
-        if(current.role==='worker'){
-          // S1/A6 (F-05): the broker read names the cursor `since`; sending `cursor` was rejected as an unknown field.
-          const response=await worker().client.request<{value:Record<string,unknown>}>('graph_read',{graphOp:params.action,...(params.action==='query'?query:{}),since:params.cursor,limit:params.limit},{timeoutMs:30000});
-          return textResult(cleanText(JSON.stringify(response.value)), response.value);
-        }
-        return track(current,(async()=>{
-          assertOwnerActive(current);
-          const value=params.action==='query'?boundedQueryPage(current.store.graphQuery(query,{cursor:params.cursor,limit:params.limit})):await graphSummaryFor(current,params.cursor??0,Math.min(params.limit??5,10));
-          return textResult(cleanText(JSON.stringify(value)), value);
-        })());
-      }
-      if(params.action==='ingest'){
-        // R2.3: the rows are host-written knowledge, so the model may trigger the retry but cannot hand in rows of its own.
-        if(current.role==='worker')fail('PLANNER_ONLY','Artifact ingestion is host-side: the capture that retained the artifact already ran, so ask the lead to ingest it and read the graph');
-        return track(current,(async()=>{ assertOwnerActive(current); const value=await ingestArtifact(current,params.id); return textResult(cleanText(JSON.stringify(value)), value); })());
-      }
-      if(params.action==='view'&&!params.id)fail('INVALID_INPUT','view needs an asset entity ID: use the entityId a query row returns, not the asset key');
-      const options={since:params.cursor,limit:params.limit,asOfSequence:params.asOfSequence};
-      if(current.role==='worker'){
-        const response=await worker().client.request<{value:Record<string,unknown>}>('graph_read',{graphOp:params.action,...options,...(params.action==='view'?{assetId:params.id}:{})},{timeoutMs:30000});
-        return textResult(cleanText(JSON.stringify(response.value)), response.value);
-      }
-      return track(current,(async()=>{
-        assertOwnerActive(current);
-        const value=params.action==='view'?await graphViewFor(current,params.id!,options):current.store.graphExport(options);
-        return textResult(cleanText(JSON.stringify(value)), value);
-      })());
+      // R2.3: the rows are host-written knowledge, so the model may trigger the retry but cannot hand in rows of its own.
+      if(current.role==='worker')fail('PLANNER_ONLY','Artifact ingestion is host-side: the capture that retained the artifact already ran, so ask the lead to ingest it and read the graph');
+      return track(current,(async()=>{ assertOwnerActive(current); const value=await ingestArtifact(current,params.id); return textResult(cleanText(JSON.stringify(value)), value); })());
     },
   });
   registerTool({
@@ -4462,7 +4506,10 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
     }
     // S1/A8 (F-07): the defense-in-depth gate reads the loadout the round is actually on. A wrapping round keeps the
     // closing set, so an injected p2o_task_author/p2o_task_dispatch call is blocked here even if start-work text arrives.
-    const allowed = current.role === 'owner' ? (current.roundState?.wrapSent ? closingTools() : plannerTools()) : workerTools(current.ticket.role);
+    // S1/C1: it reads the live declaration rather than re-deriving the loadout, because the declaration is the authority —
+    // production active tools are exactly the role loadout, while a host-only fixture that activates one extra verb must not
+    // be treatable as a model capability either way. A model cannot widen this list; only host code can.
+    const allowed = pi.getActiveTools();
     if (current.phase === 'active' && allowed.includes(event.toolName)) return;
     // Defense in depth for a tool injected back into a turn: name the legal next verb, never offer a lead-exec escape hatch.
     if (current.role === 'owner') return { block: true, reason: 'Target execution, candidate claims and surface notes belong to a worker task. Create and dispatch an intent (p2o_task_author, then p2o_task_dispatch); the planner reviews the handoff and does not take over. Use /p2o stop to restore ordinary tools.' };

@@ -34,7 +34,7 @@ it('real Pi executes graph tools, unwraps retained ACKs, and reads retained grap
     await until(async()=>((await request('get_messages')).data?.messages??[]).some((m:any)=>text(m).includes('OWNER_GRAPH_DONE')));
     await until(async()=>records.some(r=>r.type==='agent_settled'));
     const messages=(await request('get_messages')).data.messages,results=messages.filter((m:any)=>m.role==='toolResult');
-    expect(results.map((r:any)=>r.toolName)).toEqual(['p2o_graph','p2o_graph','p2o_graph','p2o_graph','p2o_finish']);
+    expect(results.map((r:any)=>r.toolName)).toEqual(['p2o_graph_record','p2o_graph_record','p2o_graph','p2o_graph','p2o_finish']);
     expect(results.every((r:any)=>!r.isError)).toBe(true);expect(results[1].details).toMatchObject({replayed:true,acks:results[0].details.acks});
     const id=results[0].details.acks[0].entityId;expect(results[2].details).toMatchObject({entityId:id,counts:{revisions:1,assertions:1,provenance:2}});
     expect(results[3].details.mermaid).toContain('graph LR');expect(records.filter(r=>r.type==='extension_error')).toEqual([]);

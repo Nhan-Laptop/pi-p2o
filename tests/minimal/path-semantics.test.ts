@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { RELATION_KINDS } from '../../src/state/graph.js';
-import { GRAPH_ACTIONS, GRAPH_ACTION_PARAMETERS, graphParameters } from '../../src/state/graph-tool.js';
+import { GRAPH_READ_ACTIONS, GRAPH_READ_PARAMETERS, graphReadParameters } from '../../src/state/graph-tool.js';
 import { RELATION_ROLE, annotatePathEffect, effectCapability, isConditional, isTraversable, relationRole, traverseDecision } from '../../src/path-view.js';
 import { CAPABILITY_KINDS } from '../../src/capabilities.js';
 
@@ -38,11 +38,11 @@ describe('relation kinds have exactly one traversal classification (R3.1)', () =
 
 describe('the path action is a bounded root read (R3.2)', () => {
   it('declares the action and its parameters without changing the root-closed shape', () => {
-    expect(GRAPH_ACTIONS).toContain('path');
-    expect(GRAPH_ACTION_PARAMETERS.path).toEqual(['action', 'fromId', 'toId', 'toKind', 'effect', 'maxDepth', 'maxNodes', 'kinds']);
-    const properties = (graphParameters as unknown as { properties: Record<string, unknown> }).properties;
+    expect(GRAPH_READ_ACTIONS).toContain('path');
+    expect(GRAPH_READ_PARAMETERS.path).toEqual(['action', 'fromId', 'toId', 'toKind', 'effect', 'maxDepth', 'maxNodes', 'kinds']);
+    const properties = (graphReadParameters as unknown as { properties: Record<string, unknown> }).properties;
     for (const field of ['fromId', 'toId', 'toKind', 'effect', 'maxDepth', 'maxNodes', 'kinds']) expect(properties[field], field).toBeDefined();
-    expect(graphParameters).toMatchObject({ additionalProperties: false });
+    expect(graphReadParameters).toMatchObject({ additionalProperties: false });
   });
 });
 

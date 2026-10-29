@@ -1,9 +1,10 @@
 # S1 — Surface audit and remediation plan of record (2026-10-29)
 
-Status: **Tranches A and B committed on 2026-10-29 (A as `aa87a57`, B as the second commit of the pass); B10 landed
-afterwards in the working tree on 2026-10-29 (uncommitted), so the surface is now 32 registered tools / 10 board verbs;
-Tranche C is not started. Rev 2 after the 2026-10-29 plan review. Base commit `197d6a9` (R3 of the R1 program). The owner's
-`AGENTS.md` edit and the untracked `pi-p2o-defense-vi.pptx` are outside S1.** This document replaces the R3 plan of record. That text is unchanged in git at
+Status: **Tranches A, B and B10 are committed on 2026-10-29 (A `aa87a57`, B `1cf3d8b`, B10 `04f3f23`) and Tranche C is in
+progress in the working tree: C1 (the `p2o_graph` authority split) is implemented and green, so the surface is now
+35 registered tools / 35 model-visible / 0 hidden / 10 board verbs / planner 23; C2–C5 remain.** Rev 2 after the
+2026-10-29 plan review. Base commit `197d6a9` (R3 of the R1 program). The owner's
+`AGENTS.md` edit and the untracked `pi-p2o-defense-vi.pptx` are outside S1. This document replaces the R3 plan of record. That text is unchanged in git at
 `git show 197d6a9:planning_update.md`; the earlier A1 text at `git show bbdfec1:planning_update.md` and the P18 text at
 `git show 18d1d84:planning_update.md` are unchanged too. The audit below was measured against the installed extension as it
 ships at `197d6a9`, not against source snippets alone.
@@ -375,7 +376,7 @@ role at or under the §7 target and the **ceilings are unchanged** (D-S1-5).
   already carried the right 34/32/21/11 numbers after the A pass. `docs/HISTORY.md` carries the S1 row, added in this
   commit.
 
-**B10 result (working tree, 2026-10-29, uncommitted).** The two hidden verbs are deleted and their tests migrated:
+**B10 result (committed as `04f3f23`, 2026-10-29).** The two hidden verbs are deleted and their tests migrated:
 `registerP2O` publishes `testSeamFor(pi)` and 21 test files reach the same two code paths through it (83 call sites route
 there; no test body, expected value or description changed except the deletion pins). The surface is now **32 registered,
 all model-visible, 0 hidden, 10 board verbs, planner 21**; `HIDDEN_TOOLS`, `ALL_TOOLS`, `BOARD_ACTION_VERBS`,
@@ -417,6 +418,54 @@ live run, no target traffic, no paid model call: every test is hermetic. The own
 - `chain` (+ `plan`) and `ingest` live in a planner-only tool; `chain`/`ingest` are coordination, not target work.
 Acceptance: planner declaration −≥2,500 chars, worker −≥400; no authority widening (the planner never gains a target,
 lab or claim tool); graph tests split by role; `context-budget` re-pinned once with a dated comment (D-S1-5).
+
+**C1 result (working tree, 2026-10-29; uncommitted).** One `p2o_graph` became four registered tools, split by authority
+rather than by feature, all `exposure: 'model-only'`:
+
+- `p2o_graph` (planner + worker + validation) keeps the bounded reads `view|export|query|summary|path`; the broker
+  `graph_read` route and the path-sharing decision (D-S1-7) are unchanged. Declaration: 678-char description +
+  2,093-char parameters.
+- `p2o_graph_record` (worker + validation) carries the batch write schema — root `{batch, requestId}`, no action field —
+  so the 4,164-char batch subtree leaves the planner loadout entirely.
+- `p2o_graph_review` (planner only) is the compact supersede/promote entry point: a flat row
+  `{id, outcome: supported|refuted|inconclusive|observed, evidenceRefs?, counterevidenceRefs?, requestId?}` (537 chars).
+  The host derives the retained row from the id (`AssessmentStore.graphReviewRow`, the one new store read), refuses an
+  asset id, refuses `observed` on a non-inferred relation and refuses settling a relation, then settles the hypothesis or
+  promotes the inferred relation. Replay goes through the same `{op:'graph_record',batch}` broker route as the write verb.
+- `p2o_graph_plan` (planner only) holds `chain|ingest` with `{id, limit, plan, requestId, assetRefs}`; both branches moved
+  verbatim, including their `PLANNER_ONLY` guards. `chain`/`ingest` are coordination, so they no longer sit next to the
+  worker's write verb.
+
+Measured (`decl-budget.mjs` + `audit-surface.mjs`, 2026-10-29): surface **35 registered, 35 model-visible, 0 hidden,
+10 board verbs, planner 23**; planner **45,055** (was 47,795 — saved **2,740** ≥ 2,500), worker **40,577** (saved 504
+≥ 400), validation 39,766 (saved 504), reporter 6,282 (unchanged), model union 74,737 (up 1,964: four declarations now
+carry the text one did). The **ceilings are unchanged and every role still passes** (49,300 / 44,100 / 43,300 / 6,800 /
+77,900), and the audit reports 0 cross-reference contradictions. The §7 target for the model union (≤ 71,500) is *not*
+met by C1 — it moves the batch off the planner but adds three descriptions; C3's ~1,260-char capability-triple trim is
+where that target is to be met (C4 confirms). Per D-S1-5 the ceiling re-pin stays in C5, after C2/C3 settle the numbers.
+
+Verification: `tsc --noEmit` clean; full `vitest run` **153 passed / 5 skipped files (158), 1,341 passed / 13 skipped
+tests (1,354), 0 fail**; `npm run build` + `npm run check:build` → `build import OK`; `git diff --check` clean; the three
+real-Pi natives (`graph-native`, `case-native`, `work-native`) are green with the write call routed through
+`p2o_graph_record`. 43 files changed: 6 source, 35 tests/fixtures, `docs/ACCEPTANCE_MATRIX.md` (the three authority
+citations retitled to the 35-tool test) and this file.
+
+Deviations, all disclosed: (a) `p2o_graph_record` is still reachable from the host test path (the owner fixture calls its
+`execute` directly, exactly as the old `p2o_graph action=record` was), which is not a role widening — the planner guard
+refuses it, and `authority.test.ts` pins it in `PLANNER_MUST_NOT_HAVE`; (b) the `tool_call` guard now reads the declared
+active tool set (`pi.getActiveTools()`) instead of recomputing the role loadouts, so declaration stays the single
+authority and the host-only activation used by the natives cannot be model-reached; (c) the natives' owner fixture adds
+`p2o_graph_record` to the active tools from a test-only `before_agent_start` hook, in the same spirit as B10's
+`testSeamFor`; (d) `p2o_graph`'s description is already under C2's 900-char bound (678), so C1 did not need to trim it.
+
+GitNexus: the workspace index was rebuilt at this working tree before the change analysis (`analyze --index-only`;
+17,310 nodes / 76,816 edges / 1,038 flows) and `impact` upstream was run before each symbol edit — `graphParameters`,
+`GRAPH_ACTIONS`, `GRAPH_ACTION_PARAMETERS` resolved 0 callers / `UNKNOWN` and were confirmed by text search to have only
+`extensions/p2o/index.ts`, `src/authority.ts`, tests and the audit script as readers (the AGENTS.md rule for
+`UNKNOWN`); `normalizeGraphRecord` 1 direct caller / `LOW`; `withBoundaries` 7 direct / `LOW`; `PLANNER_TOOLS`,
+`WORKER_TOOLS`, `MODEL_TOOLS`, `TOOL_BOUNDARIES` `UNKNOWN`, likewise text-confirmed. `detect_changes --scope all`: 107
+changed symbols / 44 changed files / 23 affected processes / risk critical (the count includes the owner's `AGENTS.md`
+and the doc mappings, as in R0–R3; `partial`/`truncated` both false). No live run, no target traffic, no paid model call.
 **C2 — Fewer read verbs (F-42).** `page` is gone after B2; `p2o_graph`'s description drops to ≤ 900 chars with one
 "use when" clause per remaining verb; the chain branch gets a `GRAPH_RESPONSE_BYTES` guard and the view dossier trimming
 is tested at the byte boundary (F-37). Acceptance: a response-bound test per read verb; description length asserted.
@@ -442,12 +491,15 @@ what moved), `docs/ARCHITECTURE.md`/`docs/KNOWLEDGE.md`, `docs/ACCEPTANCE_MATRIX
 | measured at `197d6a9` | 49,294 | 42,808 | 42,000 | 6,551 | 75,500 |
 | after A (measured 2026-10-29) | 49,248 | 42,791 | 41,980 | 6,528 | 75,483 |
 | after B (measured 2026-10-29) | 47,795 | 41,081 | 40,270 | 6,282 | 72,773 |
+| after C1 (measured 2026-10-29) | 45,055 | 40,577 | 39,766 | 6,282 | 74,737 |
 | after C (target) | ≤ 45,300 | ≤ 41,500 | ≤ 40,700 | ≤ 6,450 | ≤ 71,500 |
 | ceiling (unchanged until C) | 49,300 | 44,100 | 43,300 | 6,800 | 77,900 |
 
 The ceilings are not raised in A or B: the reclaimed bytes are headroom (D-S1-5). C re-pins them once from measurement.
 B10 removed only registrations that no role loadout ever held, so no declaration number in this table moved; what changed
-is the registered count (34 → 32, all model-visible) and the board-verb count (11 → 10).
+is the registered count (34 → 32, all model-visible) and the board-verb count (11 → 10). C1 moved the batch schema off the
+planner and onto a worker/validation verb, which is why planner/worker/validation drop while the model union rises: the
+same capability is now described in four declarations instead of one. The union target is C3's job, not C1's.
 
 ## 8. Verification and workflow protocol
 

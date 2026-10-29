@@ -331,7 +331,7 @@ describe('A7.5 successor dispatch on a held ticket, pane and session', () => {
     // Held: the predecessor's ticket, pane, container and session are still state the successor can reuse.
     expect(await h.tickets()).toHaveLength(1);
     expect((await h.call('p2o_session', { action: 'snapshot' })).details.openSessions).toEqual([session]);
-    const asset = (await h.call('p2o_graph', { action: 'record', batch: { assets: [{ asset: { kind: 'endpoint', key: 'GET /chain-successor' } }] } })).details.acks[0];
+    const asset = (await h.call('p2o_graph_record', { batch: { assets: [{ asset: { kind: 'endpoint', key: 'GET /chain-successor' } }] } })).details.acks[0];
     const splits = h.herdr.calls.filter(call => call.op === 'split').length;
     const starts = h.herdr.calls.filter(call => call.op === 'start').length;
     const successor = (await h.call('p2o_task_author', {
@@ -406,7 +406,7 @@ describe('A7.5 validation economy', () => {
     await reportFixture(async h => {
       // P18/D48: a start without worker admission is refused, so the fixture keeps delegation enabled and never dispatches.
       await h.command('--target ./source --max-depth 1');await seedImpactGoal(h);
-      const asset = (await h.call('p2o_graph', { action: 'record', batch: { assets: [{ asset: { kind: 'endpoint', key: 'GET /chain-fixture' } }] } })).details.acks[0];
+      const asset = (await h.call('p2o_graph_record', { batch: { assets: [{ asset: { kind: 'endpoint', key: 'GET /chain-fixture' } }] } })).details.acks[0];
       const receipt = (await h.call('p2o_shell', { command: 'printf chain-receipt' })).details.evidenceId;
       const draft = (questionKey: string, question: string) => ({
         question, surface: '/chain-fixture', risk: 'authorization', role: 'general',

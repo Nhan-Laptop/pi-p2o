@@ -34,4 +34,13 @@ export default async function (pi: ExtensionAPI) {
     ...(process.env.P2O_TEST_CONTROL_ROOT ? { controlRoot: process.env.P2O_TEST_CONTROL_ROOT } : {}),
     ...(process.env.P2O_TEST_WORKER_EXT ? { workerExtensionPath: process.env.P2O_TEST_WORKER_EXT } : {}),
   });
+  // S1/C1 test-only opt-in: `p2o_graph_record` is a worker/validation verb and never part of the production planner
+  // loadout, but the three inert owner fixtures record graph rows as part of their scripted flow. Activate it for their
+  // turns only; authority.test.ts and context-budget.test.ts pin the real loadouts, so this cannot widen the shipped surface.
+  if (['P2O_TEST_GRAPH_OWNER', 'P2O_TEST_CASE_OWNER', 'P2O_TEST_WORK_OWNER'].some(key => process.env[key] === '1')) {
+    pi.on('before_agent_start', () => {
+      const active = pi.getActiveTools();
+      if (!active.includes('p2o_graph_record')) pi.setActiveTools([...active, 'p2o_graph_record']);
+    });
+  }
 }

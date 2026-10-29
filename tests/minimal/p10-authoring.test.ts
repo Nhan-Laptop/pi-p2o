@@ -206,7 +206,7 @@ describe('P10 paged coverage plan view (TR-H02)', () => {
   it('P10/TR-H02: a large plan pages its derived cells with stable totals and a nextCursor walk', async () => {
     await fixture(async h => {
       await h.command('--target ./source');
-      const asset = (await h.call('p2o_graph', { action: 'record', batch: { assets: [{ asset: { kind: 'endpoint', key: 'GET /p10-pages' } }] } })).details.acks[0],
+      const asset = (await h.call('p2o_graph_record', { batch: { assets: [{ asset: { kind: 'endpoint', key: 'GET /p10-pages' } }] } })).details.acks[0],
         run = await h.runId(), reader = await h.reader(), targetRevision = reader.graphScope();
       // The extension holds the writable store; its private broker alias is bound to that same store, so a canonical append here is
       // a same-run record the tools read. A pre-A3 stored plan is the only way to hold this many cells without 80 reviewed tasks.

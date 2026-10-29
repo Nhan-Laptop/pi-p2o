@@ -128,6 +128,9 @@ describe('bounded recon contract', () => {
   // ceiling again. The validation worker lost its second, contradictory AUTHORIZATION paragraph, and the reporter now reads
   // evidence standards instead of the recon/investigation contract it cannot execute. The recon worker prompt is
   // byte-identical, so both pinned instruction hashes above and both brief hashes are unchanged.
+  // 2026-10-29 (S1/C1 graph split): the worker/validation loadout line names the read verb and the batch write verb
+  // (`p2o_graph` reads, `p2o_graph_record` writes), so both worker instruction hashes moved on purpose again; the brief
+  // carries no tool line, so both brief hashes are unchanged.
   // 2026-10-27 (P17.0/P17.2/P17.3 exploitation-capability pass): the worker prompt's authorization rule absorbed the clauses
   // the full AUTHORIZATION_TRUTH used to carry (the truth text is now composed into the planner only, plus a short anchor in
   // the loadout line and in the brief), the one-intent rule moved to the p2o_report boundary it belongs to, and EVIDENCE_TAIL
@@ -136,8 +139,8 @@ describe('bounded recon contract', () => {
   // its AUTHORIZATION paragraph is now the short anchor instead of the full truth. The planner body changes are covered by the
   // size assertion further down.
   it.each([
-    ['url', '9d640b8592d439363d83e5a2177f2b179518c1852e7640773d17d9f8cf9debf7', '9cfd0c6e094e00eb8fcd27325a93ed3b355bc60c959953c6c152fcef0170b6c5'],
-    ['directory', 'aa6cdff4b985197eb806211610dc7b2f356a3760d0115ed3759d5d02c01818b5', 'f55cca810efda3781871d1131f4a05d8eb34949b138811ef1d90cf7b4cbe8f44'],
+    ['url', 'cb4b16b0145214be06588b81dd484ecd5747e435a74305fc2c56ee1c6d655e17', '9cfd0c6e094e00eb8fcd27325a93ed3b355bc60c959953c6c152fcef0170b6c5'],
+    ['directory', 'adb7ff5d7f231187d7143b6c8b09d89783be9c07e092a7111cd3033ad681df2a', 'f55cca810efda3781871d1131f4a05d8eb34949b138811ef1d90cf7b4cbe8f44'],
   ])('pins %s worker guidance for the Planner/frontier revision; historical acceptance artifacts are not rewritten', (kind, instructionHash, briefHash) => {
     const ticket = { workerId: 'worker-test', role: 'recon', runId: 'run-test', depth: 1, parentWorkerId: null,
       lifetime: 'until-stopped', target: { kind, label: kind === 'url' ? 'https://example.invalid' : '/target' } } as Ticket;

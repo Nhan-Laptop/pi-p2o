@@ -42,8 +42,9 @@ describe('scripts/audit-surface.mjs', () => {
     // A registered tool named in a role's own tool text but missing from its loadout is a guaranteed blocked call.
     expect(report.contradictions, 'tool text names a tool its holder role cannot call').toEqual([]);
 
-    // S1/B10: registration and model visibility are the same surface — 32 registered, all model-visible, 10 board verbs.
-    expect(report.counts).toEqual({ registered: 32, modelVisible: 32, hidden: 0, boardVerbs: 10, planner: 21 });
+    // S1/B10 and S1/C1: registration and model visibility are the same surface — 35 registered, all model-visible, 10 board
+    // verbs, and the planner holds the two graph review/coordination verbs next to the shared read.
+    expect(report.counts).toEqual({ registered: 35, modelVisible: 35, hidden: 0, boardVerbs: 10, planner: 23 });
 
     // Nothing is registered outside the role loadouts any more: the two hidden legacy verbs are deleted, not hidden.
     expect(report.tools.every((item: { holders: string[] }) => item.holders.length > 0), 'every registered tool is held by a role').toBe(true);

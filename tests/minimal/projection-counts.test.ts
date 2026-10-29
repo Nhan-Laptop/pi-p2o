@@ -33,7 +33,7 @@ describe('capped projections state shown against total (P11)', () => {
     const query: any = details(await h.call('p2o_graph', { action: 'query', limit: 1 }));
     expect(query.shown.assets + query.shown.assertions).toBeLessThanOrEqual(query.counts.assets + query.counts.assertions);
     expect(Number.isInteger(query.omitted), 'p2o_graph query omitted').toBe(true);
-    const chain: any = details(await h.call('p2o_graph', { action: 'chain', limit: 1 }));
+    const chain: any = details(await h.call('p2o_graph_plan', { action: 'chain', limit: 1 }));
     for (const kind of ['primitives', 'ready', 'unmet', 'frontier'] as const) {
       expect(chain.shown[kind], `chain shown.${kind}`).toBeLessThanOrEqual(chain.counts[kind]);
       expect(Number.isInteger(chain.counts[kind]), `chain counts.${kind}`).toBe(true);
@@ -81,8 +81,8 @@ describe('action parameter tables are exhaustive (P13e)', () => {
     const { TASK_ACTIONS, TASK_ACTION_PARAMETERS } = await import('../../src/tool-schemas.js');
     const { CASE_ACTIONS, CASE_ACTION_PARAMETERS, COVERAGE_ACTIONS, COVERAGE_ACTION_PARAMETERS } = await import('../../src/case-tool.js');
     const { PLAN_ACTIONS, PLAN_ACTION_PARAMETERS } = await import('../../src/work-tool.js');
-    const { GRAPH_ACTIONS, GRAPH_ACTION_PARAMETERS } = await import('../../src/state/graph-tool.js');
-    for (const [actions, table] of [[TASK_ACTIONS, TASK_ACTION_PARAMETERS], [CASE_ACTIONS, CASE_ACTION_PARAMETERS], [COVERAGE_ACTIONS, COVERAGE_ACTION_PARAMETERS], [PLAN_ACTIONS, PLAN_ACTION_PARAMETERS], [GRAPH_ACTIONS, GRAPH_ACTION_PARAMETERS]] as const) {
+    const { GRAPH_PLAN_ACTIONS, GRAPH_PLAN_PARAMETERS, GRAPH_READ_ACTIONS, GRAPH_READ_PARAMETERS } = await import('../../src/state/graph-tool.js');
+    for (const [actions, table] of [[TASK_ACTIONS, TASK_ACTION_PARAMETERS], [CASE_ACTIONS, CASE_ACTION_PARAMETERS], [COVERAGE_ACTIONS, COVERAGE_ACTION_PARAMETERS], [PLAN_ACTIONS, PLAN_ACTION_PARAMETERS], [GRAPH_READ_ACTIONS, GRAPH_READ_PARAMETERS], [GRAPH_PLAN_ACTIONS, GRAPH_PLAN_PARAMETERS]] as const) {
       expect(Object.keys(table).sort()).toEqual([...actions].sort());
       for (const action of actions) {
         const allowed = (table as Record<string, readonly string[]>)[action];
@@ -94,7 +94,8 @@ describe('action parameter tables are exhaustive (P13e)', () => {
     // The two behaviours the old default branch used to hide, stated explicitly.
     expect(TASK_ACTION_PARAMETERS.dispatch).toContain('ids');
     expect(TASK_ACTION_PARAMETERS.list).toContain('cursor');
-    expect(GRAPH_ACTION_PARAMETERS.chain).not.toContain('cursor');
+    // The chain action moved to the planner coordination verb in S1/C1; its field list still excludes the read cursor.
+    expect(GRAPH_PLAN_PARAMETERS.chain).not.toContain('cursor');
   });
 });
 
@@ -105,7 +106,7 @@ describe('action parameter tables are exhaustive (P13e)', () => {
 describe('declared result shapes match what the tools send (P13h)', () => {
   it('keeps every declared field present in the live payloads', async () => fixture(async h => {
     await populate(h);
-    const chain: any = details(await h.call('p2o_graph', { action: 'chain' }));
+    const chain: any = details(await h.call('p2o_graph_plan', { action: 'chain' }));
     for (const key of ['primitives', 'ready', 'unmet', 'uncovered', 'frontier', 'depth', 'counts', 'shown', 'next']) expect(chain).toHaveProperty(key);
     expect(Object.keys(chain.counts).sort()).toEqual(Object.keys(chain.shown).sort());
     const workers: any = details(await h.call('p2o_workers', {}));

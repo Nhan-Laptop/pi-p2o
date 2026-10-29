@@ -109,7 +109,7 @@ describe('Rounds as fresh sessions (P18.1/D45)',()=>{
       await h.emit('agent_start');
       await h.emit('context',{messages:[{role:'user',content:h.pi.messages[1]}]});
       // R1.7: the graph moved during round 1, so the round 2 opening names that movement instead of leaving the lead to ask.
-      const asset=(await h.call('p2o_graph',{action:'record',batch:{assets:[{asset:{kind:'endpoint',key:'/round-two'}}]}})).details.acks[0];
+      const asset=(await h.call('p2o_graph_record',{batch:{assets:[{asset:{kind:'endpoint',key:'/round-two'}}]}})).details.acks[0];
       await h.emit('message_end',{message:{role:'assistant',stopReason:'stop',content:[{type:'text',text:'round one done'}]}});
       await h.emit('agent_settled');
       await until(()=>h.pi.sessions.length===2);

@@ -71,14 +71,14 @@ describe('recon features derived from the graph (U4)', () => {
     const suggest = async (extra: Record<string, unknown> = {}) => (await h.call('p2o_wstg_suggest', {limit: 50, ...extra })).details;
     expect(await suggest()).toMatchObject({ features: ['any'], featureSource: 'default' });
     const baseline = (await suggest()).total;
-    await (h.call('p2o_graph', { action: 'record', batch: { assets: [{ asset: { kind: 'endpoint', key: 'POST /session', attributes: { feature: 'Login, jwt' } } }, { asset: { kind: 'endpoint', key: 'GET /app.js', attributes: { feature: 'client-js telepathy', status: '200' } } }] } }));
+    await (h.call('p2o_graph_record', { batch: { assets: [{ asset: { kind: 'endpoint', key: 'POST /session', attributes: { feature: 'Login, jwt' } } }, { asset: { kind: 'endpoint', key: 'GET /app.js', attributes: { feature: 'client-js telepathy', status: '200' } } }] } }));
     const derived = await suggest();
     expect(derived).toMatchObject({ features: ['login', 'jwt', 'client-js'], featureSource: 'graph', ignoredFeatureWords: ['telepathy'] });
     expect(derived.total).toBeGreaterThan(baseline);
     expect(derived.suggestions.map((item: any) => item.key)).toEqual(expect.arrayContaining(WSTG_MAP.filter(test => test.trigger.includes('login')).slice(0, 3).map(test => wstgKey(test.id))));
     expect(await suggest({ features: ['api'] })).toMatchObject({ features: ['api'], featureSource: 'explicit' });
     expect((await suggest({ features: ['api'] })).ignoredFeatureWords).toBeUndefined();
-    await h.call('p2o_graph', { action: 'record', batch: { assets: [{ asset: { kind: 'endpoint', key: 'POST /session', attributes: { status: '200' }, expectedRevision: 1 } }, { asset: { kind: 'endpoint', key: 'GET /app.js', attributes: { status: '200' }, expectedRevision: 1 } }] } });
+    await h.call('p2o_graph_record', { batch: { assets: [{ asset: { kind: 'endpoint', key: 'POST /session', attributes: { status: '200' }, expectedRevision: 1 } }, { asset: { kind: 'endpoint', key: 'GET /app.js', attributes: { status: '200' }, expectedRevision: 1 } }] } });
     expect(await suggest()).toMatchObject({ features: ['any'], featureSource: 'default', total: baseline });
   }));
 });

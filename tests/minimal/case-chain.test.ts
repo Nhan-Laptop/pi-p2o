@@ -98,7 +98,7 @@ describe('chain identities agree (P13a)', () => {
     const built = await populate(h);
     const primitive = await seedClaim(h, { candidate: 'identity-primitive', surface: '/report-fixture', risk: 'authorization', closure: 'confirmed', execution: 'tested', proof: 'live_reproduction', evidenceRefs: [built.observation.evidenceId], negativeControls: [], policyBasis: 'boundary_invariant', expectedPolicy: 'Declared fixture actor/object boundary', limitations: 'One inert fixture actor only', gained: [{ kind: 'cred.session', subject: 'fixture-actor' }] });
     await seedClaim(h, { candidate: 'identity-consumer', surface: '/report-fixture', risk: 'authorization', closure: 'open_proof_gap', execution: 'not_tested', proof: 'static_trace', evidenceRefs: [built.observation.evidenceId], negativeControls: [], policyBasis: 'inferred', expectedPolicy: 'Declared fixture actor/object boundary', limitations: 'Nothing executed yet', needs: [{ kind: 'cred.session', subject: 'fixture-actor' }], requirement: 'Reach the consumer with an authenticated fixture session' });
-    const join = (await h.call('p2o_graph', { action: 'chain' })).details;
+    const join = (await h.call('p2o_graph_plan', { action: 'chain' })).details;
     const consumer = join.frontier.find((entry: any) => entry.claimId === 'identity-consumer');
     expect(consumer).toMatchObject({ claimId: 'identity-consumer', depth: 1, path: ['identity-primitive', 'identity-consumer'] });
     expect(typeof consumer.recordId, 'the frontier states the record id a rating cites').toBe('string');

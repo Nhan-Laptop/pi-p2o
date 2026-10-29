@@ -83,7 +83,7 @@ describe('canonical owner runtime (inert execution, real SQLite and Unix broker)
   it('--refer-workspace tags prior same-target runs as context only, never same-run evidence, and ignores runs on a different target',async()=>{
     await fixture(async h=>{
       await h.command('--target ./source');await seedImpactGoal(h);const firstRunId=await h.runId();
-      const asset=(await h.call('p2o_graph',{action:'record',batch:{assets:[{asset:{kind:'endpoint',key:'GET /refer-fixture'}}]}})).details.acks[0];
+      const asset=(await h.call('p2o_graph_record',{batch:{assets:[{asset:{kind:'endpoint',key:'GET /refer-fixture'}}]}})).details.acks[0];
       const taskDraft={question:'Does the refer-fixture observation match the declared policy?',surface:'/refer-fixture',risk:'authorization',role:'general',roleReason:'Bounded inert observation for the refer-workspace fixture',expectedTrue:'Receipt records the expected policy observation',expectedFalse:'Receipt records the contrasting control',stopCondition:'Stop after one inert command and owner review',evidenceIds:[],prerequisites:[],skills:[],methodReason:'One inert command with no external target',
         // A3: the work identity is what places this reviewed intent in the prior run's derived coverage denominator.
         work:{assetRefs:[{id:asset.entityId,revision:1}],questionKey:'wstg-info-01',policyKey:'policy:refer',actorContext:'actor:fixture',tenantContext:'tenant:fixture',methodFamily:'offline-observation',purpose:'mapping'}};
@@ -488,15 +488,15 @@ describe('canonical owner runtime (inert execution, real SQLite and Unix broker)
     await fixture(async h=>{
       await h.command('--target ./source');
       const assetId='asset-'+'0'.repeat(24),before=await h.call('p2o_graph',{action:'query'});
-      const recorded=await h.call('p2o_graph',{action:'record',batch:{assets:[{asset:{kind:'endpoint',key:'GET /admin'}}]}});
+      const recorded=await h.call('p2o_graph_record',{batch:{assets:[{asset:{kind:'endpoint',key:'GET /admin'}}]}});
       expect(recorded.details.acks[0]).toMatchObject({kind:'asset',revision:1,created:true});
       const entityId=recorded.details.acks[0].entityId as string;
       const evidenceId=(await h.call('p2o_note',{kind:'evidence',text:'bounded inert receipt'})).details.recordId as string;
       // A1: the note kind is optional and omitted means the generic note, recorded without refusing the call.
       expect((await h.call('p2o_note',{text:'default-kind observation'})).details.kind).toBe('note');
-      await h.call('p2o_graph',{action:'record',batch:{facts:[{assetId:entityId,kind:'observed',statement:'gate runs server-side',confidence:'high',evidenceRefs:[evidenceId]}]}});
-      await expect(h.call('p2o_graph',{action:'record',batch:{facts:[{assetId:entityId,kind:'observed',statement:'unbacked claim',confidence:'low'}]}})).rejects.toThrow('same-run evidence receipt');
-      expect(await h.call('p2o_graph',{action:'record',batch:{assets:[{asset:{kind:'endpoint',key:'GET /admin'}}]}})).toMatchObject({details:{acks:[{created:false}]}});
+      await h.call('p2o_graph_record',{batch:{facts:[{assetId:entityId,kind:'observed',statement:'gate runs server-side',confidence:'high',evidenceRefs:[evidenceId]}]}});
+      await expect(h.call('p2o_graph_record',{batch:{facts:[{assetId:entityId,kind:'observed',statement:'unbacked claim',confidence:'low'}]}})).rejects.toThrow('same-run evidence receipt');
+      expect(await h.call('p2o_graph_record',{batch:{assets:[{asset:{kind:'endpoint',key:'GET /admin'}}]}})).toMatchObject({details:{acks:[{created:false}]}});
       const view=await h.call('p2o_graph',{action:'view',id:entityId});expect(view.details.assertions[0]).toMatchObject({statement:'gate runs server-side',stale:false});
       // R1.1: view also answers the asset question — facts, gaps and the ledger projections — in the same bounded read.
       expect(view.details.dossier).toMatchObject({asset:{entityId},gaps:{noClaim:true,noDemonstratedClaim:true,noCoverageCell:true}});
@@ -543,9 +543,16 @@ describe('canonical owner runtime (inert execution, real SQLite and Unix broker)
         expect(workerSummary.value.rows.openHypotheses[0]).toMatchObject({statement:'worker hypothesis'});
         const store:AssessmentStore=await h.reader();try{
           expect(store.unreviewedGraph()).toEqual({hypotheses:[{entityId:hypothesis.value[0].entityId,assetId:first.value[0].entityId,statement:'worker hypothesis'}],inferredRelations:1});
-          const settled=await h.call('p2o_graph',{action:'record',batch:{hypotheses:[{assetId:first.value[0].entityId,statement:'worker hypothesis',status:'supported',evidenceRefs:[evidenceId],supersedes:hypothesis.value[0].id}]}});
+          // S1/C1: the owner settles the worker's open hypothesis through the compact review verb, which names the retained
+          // row instead of re-typing its identity, and promotes the worker's inferred relation with the same verb.
+          const settled=await h.call('p2o_graph_review',{id:hypothesis.value[0].id,outcome:'supported',evidenceRefs:[evidenceId]});
           expect(settled.details.acks[0]).toMatchObject({kind:'hypothesis',created:true});
           expect(store.unreviewedGraph()).toEqual({hypotheses:[],inferredRelations:1});
+          await expect(h.call('p2o_graph_review',{id:inferred.value[0].id,outcome:'supported',evidenceRefs:[evidenceId]})).rejects.toThrow('hypothesis row');
+          const promoted=await h.call('p2o_graph_review',{id:inferred.value[0].id,outcome:'observed',evidenceRefs:[evidenceId]});
+          expect(promoted.details.acks[0]).toMatchObject({kind:'relation',created:true});
+          expect(store.unreviewedGraph()).toEqual({hypotheses:[],inferredRelations:0});
+          await expect(h.call('p2o_graph_review',{id:inferred.value[0].id,outcome:'observed',evidenceRefs:[evidenceId]})).rejects.toThrow('STALE_GRAPH_REFERENCE');
           expect(store.events({since:0}).rows.filter(row=>row.kind==='asset.upserted')).toHaveLength(3);
         }finally{store.close();}
       } finally { client.close(); }
@@ -586,7 +593,7 @@ describe('canonical owner runtime (inert execution, real SQLite and Unix broker)
     const call=(name:string,p:any)=>worker.tools.get(name).execute(randomUUID(),p,undefined,undefined,ctx.ctx);
     try{
       const read=await call('p2o_graph',{action:'query',limit:5});expect(read.details).toMatchObject({counts:{assets:0,assertions:0},rows:[]});expect(read.content[0].text).toContain('counts');
-      await expect(call('p2o_graph',{action:'record',batch:{assets:[{asset:{kind:'file',key:'forbidden'}}]}})).rejects.toThrow('synthesis-only');
+      await expect(call('p2o_graph_record',{batch:{assets:[{asset:{kind:'file',key:'forbidden'}}]}})).rejects.toThrow('synthesis-only');
       await expect(h.call('p2o_graph',{action:'view'})).rejects.toThrow('view needs');await expect(h.call('p2o_graph',{action:'export',batch:{assets:[]}})).rejects.toThrow('host-owned');
       await call('p2o_report',{summary:'read-only synthesis, no findings',findings:[],evidence:[],coverage:[],openItems:[],confidence:'low'});
       await expect(call('p2o_graph',{action:'query'})).rejects.toThrow(/No active|worker/);
@@ -595,7 +602,7 @@ describe('canonical owner runtime (inert execution, real SQLite and Unix broker)
     const w=(await h.call('p2o_delegate',{focus:'graph write',task:'record a bounded file observation'})).details;
     const pi=createFakePi(),context=createContext({cwd:h.root});registerP2O(pi.pi,{extensionPath:EXTENSION_PATH});pi.flags['p2o-worker']=join(h.root,'control',(await readdir(join(h.root,'control')))[0],`ticket-${w.workerId}.json`);
     await pi.events.get('session_start')![0]({},context.ctx);
-    try{const result=await pi.tools.get('p2o_graph').execute(randomUUID(),{action:'record',batch:{assets:[{asset:{kind:'file',key:'src/gate.py'}}]}},undefined,undefined,context.ctx);
+    try{const result=await pi.tools.get('p2o_graph_record').execute(randomUUID(),{batch:{assets:[{asset:{kind:'file',key:'src/gate.py'}}]}},undefined,undefined,context.ctx);
       expect(result.details.acks).toHaveLength(1);const id=result.details.acks[0].entityId;
       const read=await pi.tools.get('p2o_graph').execute(randomUUID(),{action:'view',id},undefined,undefined,context.ctx);expect(read.details.entityId).toBe(id);expect(read.details.counts.provenance).toBe(1);
     }finally{for(const fn of pi.events.get('session_shutdown')??[])await fn({},context.ctx);}
@@ -603,7 +610,7 @@ describe('canonical owner runtime (inert execution, real SQLite and Unix broker)
   }));
   it('matches exact work before dispatch, keeps owner-only plans, and reads human cards without extra model/target work',async()=>fixture(async h=>{
     await h.command('--target ./source');await seedImpactGoal(h);expect(h.pi.active).toContain('p2o_goal_author');
-    const asset=(await h.call('p2o_graph',{action:'record',batch:{assets:[{asset:{kind:'endpoint',key:'GET /fixture'}}]}})).details.acks[0];
+    const asset=(await h.call('p2o_graph_record',{batch:{assets:[{asset:{kind:'endpoint',key:'GET /fixture'}}]}})).details.acks[0];
     const draft={question:'Does the declared fixture gate reach the consumer?',surface:'/fixture',risk:'boundary',role:'general',roleReason:'Bounded inert source comparison only',expectedTrue:'Declared actor reaches the consumer',expectedFalse:'Control actor cannot reach the consumer',stopCondition:'Stop after one bounded observation or a concrete gap',evidenceIds:[],prerequisites:[],skills:[],methodReason:'Smallest inert source observation, no live target',
       work:{assetRefs:[{id:asset.entityId,revision:1}],questionKey:'policy:fixture',actorContext:'actor:fixture',tenantContext:'tenant:fixture',methodFamily:'source-trace',purpose:'investigation'},decision:{disposition:'new',reason:'No prior matching structured attempt exists'},outputContract:{kind:'investigation',required:['evidence','gaps'],partialAllowed:true,artifactPolicy:'ids-only'}};
     const task=(await h.call('p2o_task_author',{draft})).details,goal={kind:'goal',title:'Review one declared fixture boundary',status:'active',reason:'Explicit bounded inert planning fixture only',criteria:['Owner must inspect attribution and an effective control'],taskIds:[task.id],proof:{kind:'capability',capability:{kind:'http.request',subject:'fixture'}}};
@@ -624,7 +631,7 @@ describe('canonical owner runtime (inert execution, real SQLite and Unix broker)
   }));
   it('reviews canonical cases and proof-aware coverage without merging claims, widening scope or adding target/model work',async()=>fixture(async h=>{
     await h.command('--target ./source');await seedImpactGoal(h);expect(h.pi.active).toEqual(expect.arrayContaining(['p2o_case_author','p2o_coverage_plan']));
-    const asset=(await h.call('p2o_graph',{action:'record',batch:{assets:[{asset:{kind:'endpoint',key:'GET /case-fixture'}}]}})).details.acks[0],taskDraft={question:'Does the bounded fixture observation match the declared policy?',surface:'/case-fixture',risk:'authorization',role:'general',roleReason:'Bounded inert observation for case review only',expectedTrue:'Receipt records the expected policy observation',expectedFalse:'Receipt records the contrasting control',stopCondition:'Stop after one inert command and owner review',evidenceIds:[],prerequisites:[],skills:[],methodReason:'One inert command with no external target',
+    const asset=(await h.call('p2o_graph_record',{batch:{assets:[{asset:{kind:'endpoint',key:'GET /case-fixture'}}]}})).details.acks[0],taskDraft={question:'Does the bounded fixture observation match the declared policy?',surface:'/case-fixture',risk:'authorization',role:'general',roleReason:'Bounded inert observation for case review only',expectedTrue:'Receipt records the expected policy observation',expectedFalse:'Receipt records the contrasting control',stopCondition:'Stop after one inert command and owner review',evidenceIds:[],prerequisites:[],skills:[],methodReason:'One inert command with no external target',
       // A3: one structured work identity is the whole denominator entry; the host derives its axes from reviewed work.
       work:{assetRefs:[{id:asset.entityId,revision:1}],questionKey:'question:runtime-case',policyKey:'policy:runtime-case',actorContext:'actor:fixture',tenantContext:'tenant:fixture',methodFamily:'offline-observation',purpose:'investigation'}};
     const task=(await h.call('p2o_task_author',{draft:taskDraft})).details,running=(await h.call('p2o_task_start',{id:task.id})).details,observation=(await h.call('p2o_shell',{command:'printf bounded-case-observation'})).details,reviewed=(await h.call('p2o_task_review',{id:task.id,revision:running.revision,reason:'Owner reviewed the exact inert receipt for bounded coordination',evidenceIds:[observation.evidenceId]})).details;
@@ -687,7 +694,7 @@ describe('canonical owner runtime (inert execution, real SQLite and Unix broker)
         const batch={assets:[{asset:{kind:'file',key:'committed.py'}}]},first=await c.request('graph_record',{batch},{requestId:'lost-graph-ack'});
         expect(first).toMatchObject({replayed:true,value:[{created:true}]});expect(await c.request('graph_record',{batch},{requestId:'lost-graph-ack'})).toMatchObject({replayed:true,value:first.value});
         const reader:AssessmentStore=await h.reader();try{expect(reader.graphSummary().assets).toBe(1);}finally{reader.close();}
-        mode='storage';await expect(h.call('p2o_graph',{action:'record',batch:{assets:[{asset:{kind:'file',key:'must-not-commit.py'}}]}})).rejects.toThrow('graph SQLite fault');
+        mode='storage';await expect(h.call('p2o_graph_record',{batch:{assets:[{asset:{kind:'file',key:'must-not-commit.py'}}]}})).rejects.toThrow('graph SQLite fault');
         expect(h.ctx.notices.join('\n')).toContain('execution authority closed immediately');await expect(h.call('p2o_delegate',{focus:'denied',task:'no execution after fault'})).rejects.toThrow(/No active|finishing|stopping/);
       }finally{c.close();}
       await h.command('stop');const final:AssessmentStore=await h.reader();try{expect(final.graphSummary().assets).toBe(1);expect(final.outcome()).toMatchObject({assessmentOutcome:'blocked',resourceOutcome:'cleaned'});}finally{final.close();}
@@ -707,8 +714,8 @@ describe('canonical owner runtime (inert execution, real SQLite and Unix broker)
       await h.command('--target ./source');
       // Twelve long-key, long-label assets and ten open hypotheses: the counts must survive the bound even when the machine
       // rows cannot, because a planner acts on "2,000 assets without a claim" long before it needs every row.
-      const assets=await h.call('p2o_graph',{action:'record',batch:{assets:Array.from({length:12},(_,index)=>({asset:{kind:'endpoint',key:`GET /dense/${index}/${'k'.repeat(180)}`,label:'L'.repeat(200)}}))}});
-      await h.call('p2o_graph',{action:'record',batch:{hypotheses:assets.details.acks.slice(0,10).map((ack:any)=>({assetId:ack.entityId,statement:`dense hypothesis ${'h'.repeat(500)}`,status:'open'}))}});
+      const assets=await h.call('p2o_graph_record',{batch:{assets:Array.from({length:12},(_,index)=>({asset:{kind:'endpoint',key:`GET /dense/${index}/${'k'.repeat(180)}`,label:'L'.repeat(200)}}))}});
+      await h.call('p2o_graph_record',{batch:{hypotheses:assets.details.acks.slice(0,10).map((ack:any)=>({assetId:ack.entityId,statement:`dense hypothesis ${'h'.repeat(500)}`,status:'open'}))}});
       const summary=await h.call('p2o_graph',{action:'summary',cursor:0,limit:10});
       expect(Buffer.byteLength(JSON.stringify(summary.details))).toBeLessThanOrEqual(8*1024);
       expect(summary.details.omittedRows).toBeGreaterThan(0);

@@ -86,13 +86,13 @@ describe('chain join (P5, typed by P14.1)', () => {
       negativeControls: [], policyBasis: 'boundary_invariant', expectedPolicy: 'Declared fixture actor/object boundary', limitations: 'One inert fixture actor only', ...params });
     await claim({ candidate: 'chain-primitive', closure: 'confirmed', execution: 'tested', proof: 'live_reproduction', gained: [{ kind: 'data.read', subject: 'object-identity' }] });
     await claim({ candidate: 'chain-consumer', closure: 'open_proof_gap', execution: 'not_tested', proof: 'static_trace', needs: [{ kind: 'data.read', subject: 'object-identity' }] });
-    const view = (await h.call('p2o_graph', { action: 'chain' })).details;
+    const view = (await h.call('p2o_graph_plan', { action: 'chain' })).details;
     expect(view.counts.ready).toBe(1);
     expect(view.primitives).toContain('chain-primitive');
     expect(view.ready).toEqual(['chain-consumer']);
     expect(view.frontier[0]).toMatchObject({ claimId: 'chain-consumer', depth: 1 });
     expect(view.frontier[0].path).toEqual(['chain-primitive', 'chain-consumer']);
-    expect((await h.call('p2o_graph', { action: 'chain', limit: 1 })).details.ready).toHaveLength(1);
-    await expect(h.call('p2o_graph', { action: 'chain', cursor: 1 })).rejects.toThrow(/Graph action/);
+    expect((await h.call('p2o_graph_plan', { action: 'chain', limit: 1 })).details.ready).toHaveLength(1);
+    await expect(h.call('p2o_graph_plan', { action: 'chain', cursor: 1 })).rejects.toThrow(/Graph plan action/);
   }));
 });

@@ -13,7 +13,7 @@ import { fixture, seedImpactGoal } from './helpers/report-fixture.js';
 
 const WORKER_LOADOUT = [
   'p2o_skill_list', 'p2o_skill_read', 'p2o_secret', 'p2o_research', 'p2o_candidate', 'p2o_lab', 'p2o_shell', 'p2o_net', 'p2o_http',
-  'p2o_capture', 'p2o_session', 'p2o_note', 'p2o_surface', 'p2o_ledger', 'p2o_state', 'p2o_graph', 'p2o_artifact', 'p2o_request_subtask', 'p2o_report',
+  'p2o_capture', 'p2o_session', 'p2o_note', 'p2o_surface', 'p2o_ledger', 'p2o_state', 'p2o_graph', 'p2o_graph_record', 'p2o_artifact', 'p2o_request_subtask', 'p2o_report',
 ];
 
 /** A removal guard that fails for either a removed action bag or the old solo vocabulary. */
@@ -61,6 +61,7 @@ describe('L1/W2 board verbs', () => {
       'p2o_task_author', 'p2o_task_dispatch', 'p2o_task_review',
       'p2o_goal_author', 'p2o_case_author', 'p2o_case_rate', 'p2o_case_retest',
       'p2o_coverage_plan', 'p2o_wstg_suggest', 'p2o_board', 'p2o_ledger', 'p2o_state', 'p2o_artifact', 'p2o_graph',
+      'p2o_graph_review', 'p2o_graph_plan',
       'p2o_skill_list', 'p2o_skill_read', 'p2o_secret', 'p2o_research', 'p2o_workers', 'p2o_loop', 'p2o_finish',
     ]));
     expect(workerTools('discovery')).toEqual(WORKER_LOADOUT);
@@ -68,11 +69,11 @@ describe('L1/W2 board verbs', () => {
     expect(WORKER_TOOLS).toEqual(WORKER_LOADOUT);
     expect(workerTools('validation')).toEqual(WORKER_LOADOUT.filter(name => name !== 'p2o_surface'));
     expect(new Set(workerTools('reporting'))).toEqual(new Set(REPORTER_TOOLS));
-    expect(PLANNER_TOOLS).toHaveLength(21);
-    expect(WORKER_TOOLS).toHaveLength(19);
-    expect(VALIDATION_TOOLS).toHaveLength(18);
+    expect(PLANNER_TOOLS).toHaveLength(23);
+    expect(WORKER_TOOLS).toHaveLength(20);
+    expect(VALIDATION_TOOLS).toHaveLength(19);
     expect(REPORTER_TOOLS).toHaveLength(6);
-    expect(MODEL_TOOLS).toHaveLength(32);
+    expect(MODEL_TOOLS).toHaveLength(35);
     for (const name of ['p2o_task', 'p2o_case', 'p2o_coverage', 'p2o_plan']) expect(MODEL_TOOLS).not.toContain(name);
 
     const pi = createFakePi();

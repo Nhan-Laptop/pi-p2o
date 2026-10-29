@@ -52,7 +52,7 @@ describe('the report inventories the recorded surface (R1.6)', () => {
 
   it('marks the cited pin stale when the recorded asset moved on, and only when the graph moved', async () => fixture(async h => {
     await populate(h);
-    const again = await h.call('p2o_graph', { action: 'record', batch: { assets: [{ asset: { kind: 'endpoint', key: 'GET /report-fixture', label: 'Report fixture login form', expectedRevision: 1 } }] } });
+    const again = await h.call('p2o_graph_record', { batch: { assets: [{ asset: { kind: 'endpoint', key: 'GET /report-fixture', label: 'Report fixture login form', expectedRevision: 1 } }] } });
     expect(again.details.acks[0].revision).toBe(2);
     h.ctx.setConfirm(true); await h.command(`report export ${join(h.root, 'out')}`);
     const report = (await h.read(join(h.root, 'out')))['REPORT.md'];

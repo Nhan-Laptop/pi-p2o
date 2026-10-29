@@ -25,7 +25,7 @@ import { createContext, createFakePi, createSimpleHerdr, EXTENSION_PATH, InertSa
 // (A3 deleted the coverage-cell writers the same way because the host derives the cells).
 const DELETED = ['p2o_delegate', 'p2o_task_start', 'p2o_coverage_cell', 'p2o_coverage_cell_retire'];
 const PLANNER_MUST_NOT_HAVE = [...TARGET_TOOLS, ...LAB_TOOLS, 'p2o_candidate', 'p2o_note', 'p2o_surface', 'p2o_report',
-  'p2o_request_subtask', ...DELETED];
+  'p2o_request_subtask', 'p2o_graph_record', ...DELETED];
 const ONE_PATH = ['p2o_task_author', 'p2o_task_dispatch', 'p2o_workers', 'p2o_loop'];
 const mentioned = (text: string) => new Set(text.match(/\bp2o_[a-z_]+\b/g) ?? []);
 const ticket = (role: string) => ({ workerId: 'worker-1', role, depth: 1, parentWorkerId: null, target: { kind: 'directory', label: '/home/x/repo' }, executorMode: 'shared' } as never);
@@ -60,12 +60,13 @@ describe('P0/A1 tool matrices', () => {
       'p2o_task_author', 'p2o_task_dispatch', 'p2o_task_review',
       'p2o_goal_author', 'p2o_case_author', 'p2o_case_rate', 'p2o_case_retest',
       'p2o_coverage_plan', 'p2o_wstg_suggest', 'p2o_board', 'p2o_ledger', 'p2o_state', 'p2o_artifact', 'p2o_graph',
+      'p2o_graph_review', 'p2o_graph_plan',
       'p2o_skill_list', 'p2o_skill_read', 'p2o_secret', 'p2o_research', 'p2o_workers', 'p2o_loop', 'p2o_finish',
     ]));
-    expect([...WORKER_TOOLS].sort()).toEqual(['p2o_artifact', 'p2o_candidate', 'p2o_capture', 'p2o_graph', 'p2o_http', 'p2o_lab', 'p2o_ledger', 'p2o_net', 'p2o_note', 'p2o_report', 'p2o_request_subtask', 'p2o_research', 'p2o_secret', 'p2o_session', 'p2o_shell', 'p2o_skill_list', 'p2o_skill_read', 'p2o_state', 'p2o_surface']);
+    expect([...WORKER_TOOLS].sort()).toEqual(['p2o_artifact', 'p2o_candidate', 'p2o_capture', 'p2o_graph', 'p2o_graph_record', 'p2o_http', 'p2o_lab', 'p2o_ledger', 'p2o_net', 'p2o_note', 'p2o_report', 'p2o_request_subtask', 'p2o_research', 'p2o_secret', 'p2o_session', 'p2o_shell', 'p2o_skill_list', 'p2o_skill_read', 'p2o_state', 'p2o_surface']);
     expect(VALIDATION_TOOLS).toEqual(WORKER_TOOLS.filter(name => name !== 'p2o_surface'));
     expect([...REPORTER_TOOLS].sort()).toEqual(['p2o_artifact', 'p2o_ledger', 'p2o_report', 'p2o_skill_list', 'p2o_skill_read', 'p2o_state']);
-    expect(MODEL_TOOLS).toHaveLength(32);
+    expect(MODEL_TOOLS).toHaveLength(35);
     for (const name of DELETED) {
       expect(MODEL_TOOLS, name).not.toContain(name);
       expect(TOOL_BOUNDARIES[name], name).toBeUndefined();
@@ -87,10 +88,17 @@ describe('P0/A1 tool matrices', () => {
     expect(PLANNER_TOOLS).not.toContain('p2o_candidate');
     expect(REPORTER_TOOLS).not.toContain('p2o_candidate');
     // The reporter is read-only: it cannot execute, claim, plan or finish the run.
-    for (const name of [...TARGET_TOOLS, ...LAB_TOOLS, 'p2o_candidate', 'p2o_note', 'p2o_surface', 'p2o_graph', 'p2o_task_author', 'p2o_goal_author', 'p2o_case_author', 'p2o_finish']) expect(REPORTER_TOOLS, name).not.toContain(name);
+    for (const name of [...TARGET_TOOLS, ...LAB_TOOLS, 'p2o_candidate', 'p2o_note', 'p2o_surface', 'p2o_graph', 'p2o_graph_plan', 'p2o_graph_record', 'p2o_graph_review', 'p2o_task_author', 'p2o_goal_author', 'p2o_case_author', 'p2o_finish']) expect(REPORTER_TOOLS, name).not.toContain(name);
+    // S1/C1: the graph split narrowed the planner (no batch write) and never widened it (review and coordination are
+    // planner-only, and the record verb stays a worker/validation capability).
+    expect(PLANNER_TOOLS).toContain('p2o_graph_review');
+    expect(PLANNER_TOOLS).toContain('p2o_graph_plan');
+    expect(PLANNER_TOOLS).not.toContain('p2o_graph_record');
+    for (const name of ['p2o_graph_record']) { expect(WORKER_TOOLS).toContain(name); expect(VALIDATION_TOOLS).toContain(name); }
+    for (const name of ['p2o_graph_plan', 'p2o_graph_review']) { expect(WORKER_TOOLS).not.toContain(name); expect(VALIDATION_TOOLS).not.toContain(name); }
   });
 
-  it('registers 32 tools, all model-visible: the hidden legacy verbs are gone', () => {
+  it('registers 35 tools, all model-visible: the hidden legacy verbs are gone', () => {
     const tools = registrations();
     expect([...tools.keys()].sort()).toEqual([...MODEL_TOOLS].sort());
     // A3 and S1/B10 deleted their verbs from the surface: none of them is registered, hidden or otherwise.

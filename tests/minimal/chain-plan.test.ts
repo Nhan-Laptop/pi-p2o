@@ -30,14 +30,14 @@ const impactGoal = (h: any) => h.call('p2o_goal_author', { entry: { kind: 'goal'
 describe('chain frontier to task draft (P14.10)', () => {
   it('drafts the exact p2o_task_author argument for the deepest ready step and records one todo per step', async () => fixture(async h => {
     const { built, environment, primitive, consumer } = await chainFixture(h);
-    const join = (await h.call('p2o_graph', { action: 'chain' })).details;
+    const join = (await h.call('p2o_graph_plan', { action: 'chain' })).details;
     const next = join.frontier.find((entry: any) => entry.claimId === 'chain-consumer');
     // The frontier states what the step consumes, which recorded claims provide it, and where it was demonstrated.
     expect(next).toMatchObject({ claimId: 'chain-consumer', depth: 1, path: ['chain-primitive', 'chain-consumer'], providers: [primitive.id], needs: [{ kind: 'http.request', subject: 'internal-api' }], environmentRef: environment.id,
       // R3.3: the ready step names where it starts (the deepest provider's resolved asset), so the lead does not need a second read.
       startingAsset: { id: built.asset.entityId, kind: 'endpoint', key: 'GET /report-fixture', revision: 1 } });
 
-    const planned = (await h.call('p2o_graph', { action: 'chain', plan: true, assetRefs: [{ id: built.asset.entityId, revision: 1 }], requestId: 'chain-plan-1' })).details;
+    const planned = (await h.call('p2o_graph_plan', { action: 'chain', plan: true, assetRefs: [{ id: built.asset.entityId, revision: 1 }], requestId: 'chain-plan-1' })).details;
     expect(planned.draft).toMatchObject({
       role: 'exploit', surface: '/report-fixture', risk: 'authorization',
       work: { purpose: 'exploitation', methodFamily: 'chain-step', questionKey: 'chain:chain-consumer', needs: [{ kind: 'http.request', subject: 'internal-api' }],
@@ -68,7 +68,7 @@ describe('chain frontier to task draft (P14.10)', () => {
 
   it('replays a plan request into the same todos instead of duplicating them', async () => fixture(async h => {
     const { built } = await chainFixture(h);
-    const call = () => h.call('p2o_graph', { action: 'chain', plan: true, assetRefs: [{ id: built.asset.entityId, revision: 1 }], requestId: 'chain-plan-replay' });
+    const call = () => h.call('p2o_graph_plan', { action: 'chain', plan: true, assetRefs: [{ id: built.asset.entityId, revision: 1 }], requestId: 'chain-plan-replay' });
     const first = (await call()).details, again = (await call()).details;
     expect(again.todos.map((todo: any) => todo.id)).toEqual(first.todos.map((todo: any) => todo.id));
     expect((await h.call('p2o_board', { board: 'plans', kind: 'todo', limit: 20 })).details.total).toBe(2);
@@ -79,17 +79,17 @@ describe('chain frontier to task draft (P14.10)', () => {
     const blocked = await seedClaim(h, { candidate: 'chain-blocked', surface: '/report-fixture', risk: 'authorization', closure: 'open_proof_gap', execution: 'not_tested', proof: 'static_trace',
       negativeControls: [], policyBasis: 'inferred', expectedPolicy: 'Declared fixture actor/object boundary', limitations: 'Nothing executed yet',
       evidenceRefs: [built.observation.evidenceId], needs: [{ kind: 'host.shell' }] });
-    const join = (await h.call('p2o_graph', { action: 'chain' })).details;
+    const join = (await h.call('p2o_graph_plan', { action: 'chain' })).details;
     expect(join.frontier).toEqual([]); expect(join.unmet).toContain('chain-blocked');
     expect(join.uncovered['chain-blocked']).toEqual([{ kind: 'host.shell' }]);
-    await expect(h.call('p2o_graph', { action: 'chain', plan: true, requestId: 'chain-plan-none' })).rejects.toThrow(/Nothing ready to plan/);
+    await expect(h.call('p2o_graph_plan', { action: 'chain', plan: true, requestId: 'chain-plan-none' })).rejects.toThrow(/Nothing ready to plan/);
     expect((await h.call('p2o_board', { board: 'plans', kind: 'todo', limit: 20 })).details.total).toBe(0);
     expect(blocked.id).toBeDefined();
   }));
 
   it('says why a draft has no work identity instead of inventing an asset', async () => fixture(async h => {
     await chainFixture(h);
-    const planned = (await h.call('p2o_graph', { action: 'chain', plan: true, requestId: 'chain-plan-bare' })).details;
+    const planned = (await h.call('p2o_graph_plan', { action: 'chain', plan: true, requestId: 'chain-plan-bare' })).details;
     expect(planned.draft.work).toBeUndefined();
     expect(planned.planNote).toMatch(/no asset refs were supplied/);
     // P7.1: exploit mode (the default) gates on the impact goal first, so the fixture records one before asserting M2.

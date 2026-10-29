@@ -162,7 +162,7 @@ describe('engagement mode in the run (A7.1)', () => {
     const claim = await seedClaim(h, { candidate: 'engagement-primitive', surface: '/fixture', risk: 'authorization', closure: 'open_proof_gap', execution: 'not_tested',
       proof: 'static_trace', evidenceRefs: [observation.evidenceId], negativeControls: [], policyBasis: 'inferred', expectedPolicy: 'Declared fixture boundary',
       limitations: 'Nothing executed yet' });
-    const asset = (await h.call('p2o_graph', { action: 'record', batch: { assets: [{ asset: { kind: 'endpoint', key: 'GET /fixture' } }] } })).details.acks[0];
+    const asset = (await h.call('p2o_graph_record', { batch: { assets: [{ asset: { kind: 'endpoint', key: 'GET /fixture' } }] } })).details.acks[0];
     const created = await h.call('p2o_task_author', { draft: { ...exploitationDraft, work: {
       assetRefs: [{ id: asset.entityId, revision: 1 }], questionKey: 'engagement:fixture', policyKey: 'policy:fixture', actorContext: 'actor:fixture',
       tenantContext: 'tenant:fixture', methodFamily: 'chain-step', purpose: 'exploitation', claimRefs: [claim.id] },

@@ -105,7 +105,7 @@ describe('capture → graph rows without model authoring (R2.3)', () => {
     await h.shell('cat /work/scan.xml');
     const page = (await h.call('p2o_graph', { action: 'query', kind: 'host' })).details as any;
     expect(page.rows[0]).toMatchObject({ revision: 1, key: '10.0.0.5' });
-    const retry = (await h.call('p2o_graph', { action: 'ingest', id: first.capture.artifacts[0].id })).details as any;
+    const retry = (await h.call('p2o_graph_plan', { action: 'ingest', id: first.capture.artifacts[0].id })).details as any;
     expect(retry).toMatchObject({ action: 'ingest', ingested: true, extractor: 'nmap', counts: { assets: 2, facts: 2 } });
     const again = (await h.call('p2o_graph', { action: 'query', kind: 'host' })).details as any;
     expect(again.rows[0].revision).toBe(1);
@@ -116,11 +116,11 @@ describe('capture → graph rows without model authoring (R2.3)', () => {
     const h = await scenario(cleanup);
     h.capture('plain log line one\nplain log line two\n');
     const shell = (await h.shell('cat /work/notes.log')).details as any;
-    const untouched = (await h.call('p2o_graph', { action: 'ingest', id: shell.capture.artifacts[0].id })).details as any;
+    const untouched = (await h.call('p2o_graph_plan', { action: 'ingest', id: shell.capture.artifacts[0].id })).details as any;
     expect(untouched).toMatchObject({ action: 'ingest', ingested: false });
     expect(untouched.note).toMatch(/No extractor recognized this artifact/);
-    await expect(h.call('p2o_graph', { action: 'ingest', id: 'artifact-00000000-0000-0000-0000-000000000000' })).rejects.toThrow(/Unknown artifact|artifact/i);
-    await expect(h.call('p2o_graph', { action: 'ingest', id: 'not-an-artifact' })).rejects.toThrow(/retained artifact ID/);
+    await expect(h.call('p2o_graph_plan', { action: 'ingest', id: 'artifact-00000000-0000-0000-0000-000000000000' })).rejects.toThrow(/Unknown artifact|artifact/i);
+    await expect(h.call('p2o_graph_plan', { action: 'ingest', id: 'not-an-artifact' })).rejects.toThrow(/retained artifact ID/);
     const empty = (await h.call('p2o_graph', { action: 'query' })).details as any;
     expect(empty.counts.assets).toBe(0);
   }, 60_000);

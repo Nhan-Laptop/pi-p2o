@@ -1,13 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { Value } from 'typebox/value';
-import { GRAPH_ACTION_PARAMETERS, graphParameters, normalizeGraphRecord } from '../../src/state/graph-tool.js';
+import { graphReadParameters, graphRecordParameters, normalizeGraphRecord } from '../../src/state/graph-tool.js';
 import { validateGraphBatch } from '../../src/state/graph.js';
 
 const receipt = '11111111-1111-1111-1111-111111111111';
 const asset = { kind: 'file' as const, key: 'src/gate.py' };
 /** Shapes observed in real worker sessions (Oct 28): they must pass Pi's argument validator and reach the host fold. */
 const drifted = {
-  action: 'record',
   requestId: 'record-1',
   batch: {
     requestId: 'record-1',
@@ -19,21 +18,22 @@ const drifted = {
   },
 };
 
-describe('p2o_graph record argument tolerance (A1)', () => {
+describe('p2o_graph_record argument tolerance (A1)', () => {
   it('accepts the drifted placements at the Pi schema boundary while keeping the root object closed', () => {
-    expect(Value.Check(graphParameters, drifted)).toBe(true);
+    expect(Value.Check(graphRecordParameters, drifted)).toBe(true);
     // Tolerating placement drift is not tolerating wrong types: the batch still has to be the canonical object.
-    expect(Value.Check(graphParameters, { action: 'record', batch: { assets: { asset } } })).toBe(false);
-    expect(Value.Check(graphParameters, { action: 'record', batch: { facts: [{ kind: 'observed', statement: 'x' }] } })).toBe(false);
-    expect(Value.Check(graphParameters, { ...drifted, bogus: 'file' })).toBe(false);
-    // R1.3 added the bounded query filters to the shared root (Pi's legacy adapter reads root properties only), so the
-    // per-action refusal lives in GRAPH_ACTION_PARAMETERS and the host's field check, not in the Pi schema.
-    expect(GRAPH_ACTION_PARAMETERS.record).not.toContain('kind');
-    expect(GRAPH_ACTION_PARAMETERS.query).toContain('kind');
+    expect(Value.Check(graphRecordParameters, { batch: { assets: { asset } } })).toBe(false);
+    expect(Value.Check(graphRecordParameters, { batch: { facts: [{ kind: 'observed', statement: 'x' }] } })).toBe(false);
+    expect(Value.Check(graphRecordParameters, { ...drifted, bogus: 'file' })).toBe(false);
+    // S1/C1: the write verb carries no action field and no read filter, so a read argument cannot ride in unnoticed; the
+    // read verb is closed too and has no batch, which is what keeps the 3,982-char batch out of the planner loadout.
+    expect(Value.Check(graphRecordParameters, { ...drifted, action: 'record' })).toBe(false);
+    expect(Value.Check(graphRecordParameters, { ...drifted, kind: 'file' })).toBe(false);
+    expect((graphReadParameters as unknown as { properties: Record<string, unknown> }).properties).not.toHaveProperty('batch');
     // R0: the documented ten-reference cap is enforced at the Pi boundary too.
     const refs = (length: number) => Array.from({ length }, () => receipt);
-    expect(Value.Check(graphParameters, { action: 'record', batch: { facts: [{ assetId: '@a', kind: 'inferred', statement: 'x', confidence: 'low', evidenceRefs: refs(10) }] } })).toBe(true);
-    expect(Value.Check(graphParameters, { action: 'record', batch: { facts: [{ assetId: '@a', kind: 'inferred', statement: 'x', confidence: 'low', evidenceRefs: refs(11) }] } })).toBe(false);
+    expect(Value.Check(graphRecordParameters, { batch: { facts: [{ assetId: '@a', kind: 'inferred', statement: 'x', confidence: 'low', evidenceRefs: refs(10) }] } })).toBe(true);
+    expect(Value.Check(graphRecordParameters, { batch: { facts: [{ assetId: '@a', kind: 'inferred', statement: 'x', confidence: 'low', evidenceRefs: refs(11) }] } })).toBe(false);
   });
 
   it('folds requestId, row-level asset fields and flat rows into one canonical batch the host accepts', () => {
