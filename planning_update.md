@@ -162,6 +162,11 @@ todo store is in-process and dies on restart (`agent/planner.go:44-48`); coverag
   only" (the reporter has no `p2o_graph`, `src/tool-policy.ts:60`), and `src/finish-preflight.ts:53,55` tells the model to
   revise/retire a stale cell although projected cells have no model-facing writer (`src/tool-policy.ts:21`;
   `src/coverage.ts:171`).
+  **Closed by P20/D (2026-10-29):** `docs/KNOWLEDGE.md` now says review settles a hypothesis or promotes an inferred relation
+  and that the reporter is read-only over the ledger/artifacts/skills and holds no graph read; the four cell-directed finish
+  preflight messages (stale, non-terminal, WSTG-applicable and interrupted cells) now name the reviewed task the cell
+  projects from and say the cell is host-derived; `tests/minimal/docs-truth.test.ts` ties each sentence to the code that makes
+  it true and scans every current-facing doc for a verb the model cannot call (D-P20-7).
 
 ### 2.8 The measured gaps this plan closes
 
@@ -303,8 +308,14 @@ of risk; A can land without B, C only after A proves where derivation stops.
 ### P20/D — Documentation truth pass (supporting)
 
 - Close the three inaccuracies in §2.7 in the same change that makes each statement true (or reword it before the code lands).
+  **Shipped:** the two `docs/KNOWLEDGE.md` claims now match the review verb and the reporter loadout, and the four
+  cell-directed finish-preflight messages point at the reviewed task a projected cell derives from instead of asking for a
+  cell write no role can make.
 - When each tranche lands, add its `docs/ACCEPTANCE_MATRIX.md` rows (F-P20-*), `docs/HISTORY.md` row and the USAGE/architecture
-  text; no doc claims an unimplemented verb (D-P20-7).
+  text; no doc claims an unimplemented verb (D-P20-7). **Shipped:** A, B and D each carry their matrix rows and HISTORY row;
+  `docs/USAGE.md` gained the worker-handoff/write-back text and `docs/ARCHITECTURE.md` the teaching-layer paragraph; the new
+  `docs-truth.test.ts` scans README, HANDOFFS and every current-facing doc (historical rows excepted) against the model's tool
+  surface, so a doc naming an unimplemented verb fails the suite.
 
 ---
 
@@ -318,9 +329,10 @@ of risk; A can land without B, C only after A proves where derivation stops.
 6. **C1 → C2 → C3 → C4** — each with its migration/read test; C4 (the per-asset question projection and the feature signal) can land independently of C1–C3.
 7. **D** — documentation pass last, in the same change as the behavior it describes.
 
-**Status 2026-10-29:** steps 1–5 landed — P20/A (A1, A2, A3, A5 and the A4 bounded read) is committed as `39d698d` with the
-P19 documentation pass as `9c6d3d8`; P20/B (B1–B5) is implemented and verified in the working tree, awaiting a commit
-instruction. C and the rest of D are still to do. The verification record is §8.
+**Status 2026-10-29 (after the P20/D pass):** steps 1–5 and 7 landed — P20/A (A1, A2, A3, A5 and the A4 bounded read) is
+committed as `39d698d` with the P19 documentation pass as `9c6d3d8`, and P20/B (B1–B5) as `95756d2`; the three commits are
+pushed to `origin/main`. P20/D (this documentation truth pass) is implemented and verified in the working tree, awaiting a
+commit instruction. Step 6 (P20/C, provenance) is not started. The verification record is §8.
 
 Every step: `npx tsc --noEmit`, the targeted vitest files, the full hermetic suite before a tranche closes,
 `scripts/audit-surface.mjs`, `git diff --check`, and `detect_changes --scope all` before any commit. Commit and push happen
@@ -441,7 +453,47 @@ authorized (D-P20-4).
 - **Not changed:** authority split, tool count (35), evidence ladder, coverage derivation, admission/review semantics, brief
   total cap (8 KiB) and every section cap, declaration baselines. Capsule/recipe/role text is background derived from the same
   task record and satisfies nothing.
-- **Not done / next:** commit and push await a fresh owner instruction (D-P20-4); P20/C (provenance) is not started.
+- **Committed and pushed:** as `95756d2` ("Teach the write-back contract, the task handoff and the workflow recipe (P20/B)")
+  on the owner's instruction, together with the two earlier commits (`9c6d3d8`, `39d698d`); all three are on `origin/main`
+  and carry the repository identity with no attribution line.
+- **Not done / next:** P20/C (provenance) is not started.
+
+### P20/D — landed 2026-10-29 (uncommitted)
+
+- **Code and docs:** `docs/KNOWLEDGE.md`'s "Who writes what" paragraph now says what the review verb does — `supported`,
+  `refuted` and `inconclusive` settle a **hypothesis**, `observed` promotes an **inferred relation** to an observed edge, and an
+  observed or configuration fact is not re-judged by review (the receipt is bound at write time) — and that the reporter is
+  read-only over the ledger, retained artifacts and skills while holding no graph read, because its loadout has no `p2o_graph`;
+  the old "settles or promotes one retained row" and "the reporter reads only" sentences are gone. In `src/finish-preflight.ts`
+  the four cell-directed messages (`STALE_CELL`, `NONTERMINAL_CELLS`, `WSTG_APPLICABLE_UNPLANNED`, `INTERRUPTED_CELL`) now send
+  the model to the reviewed task or claim a projected cell derives from, or to the plan/review action that produces one, and
+  state that the cell itself is host-derived and has no model-facing writer, instead of asking it to revise, retire or finish a
+  cell. The same pass added the current-facing text the B layer needed: a "Worker nhận gì và ghi gì" bullet in `docs/USAGE.md`
+  (brief contract fields, workflow recipe, delivered role contract, batch write-back example, `shared:recording`, the
+  display-only coverage note) and a teaching-layer paragraph in `docs/ARCHITECTURE.md` after the `src/truth.ts` description.
+- **Tests:** new `tests/minimal/docs-truth.test.ts` (4 tests) ties each claim to the code's own fact — `REVIEW_OUTCOMES` and
+  `reporterTools()` for the two prose claims, the preflight message map for the cell messages (retired phrases absent, the four
+  replacements present) — and enforces D-P20-7 by scanning README, HANDOFFS and every current-facing `docs/*.md` (HISTORY and
+  ACCEPTANCE_MATRIX excepted as historical records) for `p2o_*` tokens outside `MODEL_TOOLS`, plus the two renamed verbs. The two
+  behavioral message assertions were extended in place (`coverage.test.ts` INTERRUPTED_CELL, `finish-preflight.test.ts` WSTG);
+  the two retired legacy verb names are assembled rather than written out so `surface-audit.test.ts`'s repository-wide rename
+  grep keeps working. `truth.test.ts` also needed a one-line type cast for the `p2o_note` `kind` schema description it reads
+  (B's test addition had left `tsc --noEmit` failing; behavior unchanged).
+- **Commands and results (repo root, 2026-10-29):** `npx tsc --noEmit` clean; `npx vitest run` → **156 passed / 5 skipped
+  files (161), 1,395 passed / 13 skipped tests (1,408), 0 fail** (+1 file, +4 tests against B, none deleted or skipped);
+  `npm run build` and `npm run check:build` → `build import OK`; `node scripts/audit-surface.mjs` → 35 registered / 35
+  model-visible / 0 hidden / 10 board verbs, 0 contradictions, planner 44,570 of 45,500, worker 40,234, validation 39,423,
+  reporting 6,282 (identical to B — D declares no tool); prompt-text ceilings unchanged (`recon.test.ts` green); `python3
+  scripts/validate_library.py` → PASS 38 skills, 336 registered documents, 81 catalog entries; `git diff --check` clean;
+  GitNexus `detect_changes --scope all` → 36 changed symbols / 11 files / 0 affected processes, `risk_level: low`, no
+  `partial`/`truncated` (the file set also carries the owner's `AGENTS.md` edit, which is never staged).
+- **Acceptance records:** `docs/ACCEPTANCE_MATRIX.md` new section `## P20/D — Documentation truth pass — bằng chứng hermetic`
+  with F-P20-13 (review/reporter claims), F-P20-14 (the four cell messages) and F-P20-15 (D-P20-7 verb scan plus the
+  USAGE/ARCHITECTURE text), each citing an existing test title; `docs/HISTORY.md` row for P20/D after the P20/B row.
+- **Not changed:** every tool declaration, loadout, authority rule, coverage derivation, admission/review semantics, evidence
+  ladder, brief cap and declaration baseline. Only model-facing preflight text and prose moved.
+- **Not done / next:** uncommitted in the working tree — commit and push await a fresh owner instruction (D-P20-4). P20/C
+  (provenance) is still not started.
 
 ---
 

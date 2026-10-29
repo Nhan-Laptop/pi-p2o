@@ -477,8 +477,27 @@ không model trả phí, không live run.
 Giới hạn của P20/B: đây là tầng dạy học, không chứng minh target effectiveness; capsule/recipe hiển thị background của task record
 chứ không thêm quyền, không đổi admission và không thay review. Một số workflow (16/95) mới có `steps/observe/wall`, nên phần lớn
 brief không tăng thêm block nào; recipe bị cắt theo từng list nên text dài không thể làm phình brief. `p2o_note kind=coverage`
-vẫn ghi vào ledger như trước — nó chỉ không còn bị mô tả như nguồn tạo coverage cell. Chưa có live run (D-P20-4); B landed trong
-working tree, chưa commit và chưa push (chờ lệnh owner).
+vẫn ghi vào ledger như trước — nó chỉ không còn bị mô tả như nguồn tạo coverage cell. Chưa có live run (D-P20-4). P20/B đã được commit theo lệnh owner
+(`95756d2`) và push cùng hai commit trước đó lên `origin/main`.
+
+## P20/D — Documentation truth pass — bằng chứng hermetic
+
+Phần này ghi lại **P20/D** (`planning_update.md` §4/D, D-P20-7): §2.7 của plan ghi ba câu tài liệu mâu thuẫn code — KNOWLEDGE
+nói planner "settles" một fact (chỉ hypothesis hoặc inferred relation mới settle được), nói reporter "reads only" (reporter
+không giữ `p2o_graph`), và finish preflight bảo model revise/retire một coverage cell trong khi cell do host derive và không
+role nào có writer. D sửa đúng ba câu đó ở nơi model đọc, thêm text USAGE/ARCHITECTURE cho teaching layer của B, và thêm một
+test quét mọi tài liệu hiện hành để không tài liệu nào nêu verb chưa tồn tại. Bằng chứng là **cơ chế**: test đọc file + test
+hành vi trên store thật; không target traffic, không model trả phí.
+
+| Mã | Kịch bản → kỳ vọng | Bằng chứng | Mức |
+|---|---|---|---|
+| F-P20-13 | P20/D: `docs/KNOWLEDGE.md` nói đúng ngữ nghĩa review — `supported`/`refuted`/`inconclusive` settle một **hypothesis**, `observed` promote một **inferred relation** thành observed edge, còn observed/configuration fact không bị review xét lại (cần receipt same-run lúc ghi); và reporter là read-only trên ledger/artifact/skills, **không giữ graph read** — câu "the reporter reads only" đã bị bỏ | `docs-truth.test.ts :: describes graph review as settling a hypothesis or promoting an inferred relation, never a fact` (U)<br>`docs-truth.test.ts :: says the reporter reads the ledger, artifacts and skills, and records that it holds no graph read` (U) | Covered |
+| F-P20-14 | P20/D: bốn message finish preflight hướng-cell (stale, non-terminal, WSTG-applicable, interrupted) không còn bảo model revise/retire/finish cell; chúng chỉ vào reviewed task mà cell chiếu từ đó và nói cell do host derive — vì không role nào có cell writer | `docs-truth.test.ts :: never tells the model to write a coverage cell, which no role can do` (U)<br>`coverage.test.ts :: downgrades a stored verdict to attempted/open_gap and reports it as the interrupted cell it is` (R)<br>`finish-preflight.test.ts :: names the always-applicable WSTG tests with no cell, but only for a run that addresses WSTG tests at all` (R) | Covered |
+| F-P20-15 | P20/D (D-P20-7): mọi verb `p2o_*` xuất hiện trong tài liệu hiện hành (README, HANDOFFS, `docs/` trừ HISTORY và ACCEPTANCE_MATRIX đã là bản ghi lịch sử) đều nằm trên model surface; hai verb đã rename không quay lại prose hiện hành; tài liệu USAGE có text worker handoff/write-back và ARCHITECTURE có paragraph teaching layer | `docs-truth.test.ts :: keeps every p2o_ verb named by a current-facing doc on the model surface (D-P20-7)` (U)<br>`surface-audit.test.ts :: gives every role only tools it holds and keeps every declaration total at or under its S1 baseline` (R) | Covered |
+
+Giới hạn của P20/D: đây là truth pass trên tài liệu và message, không đổi behavior; nó không chứng minh target effectiveness và
+không thay đổi authority, evidence ladder hay coverage derivation. HISTORY và ACCEPTANCE_MATRIX được miễn khỏi phép quét verb vì
+chúng ghi lại tên verb của revision lịch sử (đó là mục đích của chúng); D không đụng P20/C nên C vẫn chưa có row nào.
 
 ## R0 — Containment/correctness pass của chương trình R1 — bằng chứng hermetic
 

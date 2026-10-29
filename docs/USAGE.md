@@ -199,6 +199,14 @@ một round kết thúc mà không có tool call nào nhận tối đa hai nudge
   signal** (`SCOPE_UNPLANNED_ASSET`, `CELL_NOT_RUN`, `WSTG_UNPLANNED`, `MAPPING_UNRECORDED`) chỉ là tín hiệu lập kế hoạch sinh
   ra từ recon: vẫn hiện trong report nhưng không phải việc owed và không tự đánh thức loop. Một goal mà run không thể chứng
   minh được settle `blocked` kèm lý do + exclusions, và report ghi **settled with debt** thay vì coi là goal còn mở.
+- **Worker nhận gì và ghi gì:** brief của task đã dispatch mang thêm contract suy từ chính task record (asset id kèm revision
+  đã pin, hai dự đoán IF TRUE/IF FALSE, stop condition, prerequisite), recipe `steps/observe/wall` của workflow được chọn khi
+  catalog có, và role contract (worker là executor/author duy nhất; reporting là read-only) — tất cả là background của task
+  record, không thêm quyền. Worker/validation prompt có ví dụ batch literal cho `p2o_graph_record` (assets trước vì fact cần
+  `assetId`, assertion kèm `evidenceRefs`); luật ghi chép đầy đủ nằm ở `shared:recording` (một kết luận gộp mỗi intent, nghi
+  ngờ là hypothesis/inferred fact chứ không phải finding, cross-asset link là assertion planner đọc được). `p2o_note`
+  kind=coverage chỉ là display row: host derive coverage cell từ reviewed work, không từ note. Muốn tra vì sao một row tồn tại:
+  `p2o_board board=lineage id=<planId|recordId>`; muốn xem projection "run vừa học gì": section learned trong round brief.
 - `--refer-workspace` chỉ thêm context read-only từ run cũ cùng target (khớp path/origin; `gaps` gồm covered, leftOpen,
   stale, neverReached, unknown) và không bao giờ tính là same-run evidence hay khôi phục authority. Round brief in các count đó
   thành một dòng "Prior run (context only, never evidence)"; muốn xem chi tiết vì sao một plan row tồn tại, planner dùng read

@@ -208,6 +208,9 @@ describe('proof-aware coverage projection (A3)', () => {
     const index = await readLedger(path, runId);
     const interrupted = finishPreflight(index, { cases: { assetRevision: () => undefined }, coverage: { targetRevision: () => store.graphScope(), assetRevision: () => 1 }, integrity: 'annotate' }).advisory.find(item => item.code === 'INTERRUPTED_CELL');
     expect(interrupted).toMatchObject({ count: 1, ids: [cell.id] });
+    // P20/D: the message directs the reviewed task the cell projects from, not a cell write no role can make.
     expect(interrupted?.message).toContain('stays attempted');
+    expect(interrupted?.message).toContain('re-dispatch the task');
+    expect(interrupted?.message).toContain('the cell itself is host-derived');
   }));
 });

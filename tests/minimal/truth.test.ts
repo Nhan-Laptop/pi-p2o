@@ -133,7 +133,8 @@ describe('P7.0 truth pass', () => {
     const note = registrations().get('p2o_note')!.description as string;
     expect(note).toContain('derives no coverage cell');
     expect(note).not.toContain('coverage (surface × risk × outcome, including clean surfaces)');
-    expect(noteParameters.properties.kind.description).toContain('derives no coverage cell');
+    const kind = (noteParameters as never as { properties: Record<string, { description?: string }> }).properties.kind;
+    expect(kind.description).toContain('derives no coverage cell');
     expect(TOOL_BOUNDARIES.p2o_note.join(' ')).toContain('the host derives coverage cells from reviewed claims, never from a coverage note');
     // The worker prompt still routes coverage through the claim/surface path; it only stopped repeating the cell sentence.
     const worker = workerInstructions({ workerId: 'worker-test', role: 'recon', runId: 'run-test', depth: 1, parentWorkerId: null,

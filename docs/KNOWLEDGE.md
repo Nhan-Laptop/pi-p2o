@@ -17,13 +17,17 @@ same SQLite store as everything else; there is no graph database and no second w
   missing, foreign or imported ids are refused.
 - **Pinning:** `expectedRevision`, `assetRevision`, `fromRevision`/`toRevision` and `supersedes` are checked before commit; a
   stale write rolls back the whole batch and makes dependent claims stale. History and counterevidence are kept.
-- **Who writes what:** the planner settles or promotes one retained row at a time with `p2o_graph_review` — it names the
-  row's id and the host derives the identity the supersede needs, so a settle cannot rewrite what it judges; a worker
-  records assets, facts, anchors, open hypotheses and `basis=inferred` relations in one batch through `p2o_graph_record`
-  (host-stamped `unverified:true` with its producer role — that row is review debt the owner settles by superseding with
-  supported/refuted/inconclusive); the host `extractor` producer writes only
-  what a bounded parse of a retained artifact yields (see **Extraction** below); the reporter reads only. An owner retest is a note record (`data.caseRetest`), and the project knowledge database is written only by an owner-requested export. A worker brief carries a bounded slice (matching asset, latest facts, open leads/gaps, ready chain steps) labelled
-  background, never a finding. The host counts each worker's write-back and shows `NO_GRAPH_WRITE` in `p2o_workers`, the
+- **Who writes what:** the planner judges one retained row at a time with `p2o_graph_review`: `supported`, `refuted` or
+  `inconclusive` settles a **hypothesis**, and `observed` promotes an **inferred relation** to an observed edge. It names the
+  row's id and the host derives the identity the supersede needs, so a settle cannot rewrite what it judges; an observed or
+  configuration fact is not re-judged by review — it needs its same-run receipt at record time. A worker records assets, facts,
+  anchors, open hypotheses and `basis=inferred` relations in one batch through `p2o_graph_record` (host-stamped
+  `unverified:true` with its producer role; the open hypotheses and inferred relations are the review debt above). The host
+  `extractor` producer writes only what a bounded parse of a retained artifact yields (see **Extraction** below); the reporter
+  is read-only over the ledger, retained artifacts and skills and **holds no graph read** (`p2o_graph` is not in its loadout,
+  so it reads what a worker recorded through the ledger and artifacts). An owner retest is a note record (`data.caseRetest`),
+  and the project knowledge database is written only by an owner-requested export. A worker brief carries a bounded slice
+  (matching asset, latest facts, open leads/gaps, ready chain steps) labelled background, never a finding. The host counts each worker's write-back and shows `NO_GRAPH_WRITE` in `p2o_workers`, the
   report and the preflight as an advisory — not a review or finish condition.
 - `p2o_graph_plan {action:"chain"}` is the planner-only chain join over claims: `ready` (an open step whose `needs` are
   all gained by a confirmed+tested claim), `unmet` (naming the missing capability kind), `legacy` (free-text edges that

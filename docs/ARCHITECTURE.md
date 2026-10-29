@@ -40,6 +40,13 @@ One module states the instrument: `src/truth.ts` carries the network, HTTP, cred
 risk-label facts. Tool descriptions, planner/worker prompts, worker briefs and the consent text compose the same facts, so
 no surface can quietly restore a ceiling another surface dropped (`tests/minimal/truth.test.ts` pins it).
 
+The write-back teaching layer is equally explicit: the worker prompt states the contract once — an asset before the fact
+that needs its ID, an assertion that carries its evidence refs, and a claim closure or a note starting with `no-new` as the
+exits — and `shared:recording` carries the full contract. A task-dispatched brief adds the capsule's actionable fields
+(pinned asset ids, both predictions, stop condition, prerequisites), the selected workflow's `steps/observe/wall` recipe
+when it has one, and the role contract, so the split does not depend on the model choosing to open a shared document
+(`tests/minimal/brief-context.test.ts`, `phase-i.test.ts`).
+
 ## Execution
 
 - **Shared executor (default):** `Sandbox.enqueue` serializes target operations. An explicit `--target-ops N` (N>1) lifts
