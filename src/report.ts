@@ -7,7 +7,7 @@ import type { MutationRequest } from './state/store.js';
 import { normalizeReport, type WorkerReport } from './broker.js';
 import { redact } from './evidence.js';
 import { taskFrontier } from './tasks.js';
-import { caseViews, needsCaseReview, type CaseContext } from './cases.js';
+import { caseViews, independentReceiptCurrent, needsCaseReview, type CaseContext } from './cases.js';
 import { coverageViews, type CoverageContext, type CoveragePlanView } from './coverage.js';
 import { authorityReport, type AuthorityMode } from './authority.js';
 
@@ -88,6 +88,9 @@ export function reportProjection(index: LedgerIndex, context:ReportProjectionCon
   for (const row of candidates) {
     const ref = row.data?.independentEvidenceRef;
     if (typeof ref !== 'string') continue;
+    // P21/A2: a reproduction claim names its target, so currentness is the same predicate the case view uses rather than the
+    // legacy "latest claim by the receipt's author sharing this slug" lookup, which cannot find a cross-actor reproduction.
+    if (row.data?.reproducedClaimRef !== undefined) { if (!independentReceiptCurrent(index, row, ref).ok) staleIndependent.push(row.id!); continue; }
     const evidence = index.byId.get(ref), latest = currentByActor.get(JSON.stringify([evidence?.by,row.data?.candidate]));
     if (!evidence?.workerId || evidence.by === row.by || !latest || latest.data?.closure !== 'confirmed' || latest.data?.execution !== 'tested' || latest.data?.proof === 'static_trace' || latest.surface !== row.surface || latest.risk !== row.risk || !latest.refs?.includes(ref)) staleIndependent.push(row.id!);
   }
@@ -96,6 +99,10 @@ export function reportProjection(index: LedgerIndex, context:ReportProjectionCon
   const frontier = candidates.map(r => ({id:r.id,candidate:r.data?.candidate,surface:r.surface,risk:r.risk,closure:r.data?.closure,execution:r.data?.execution,proof:r.data?.proof,
     policyBasis:r.data?.policyBasis,controls:r.data?.negativeControls,evidenceRefs:r.refs,control:short(r.data?.control),limitations:short(r.data?.limitations),blocked:short(r.data?.requirement),
     payloadRef:typeof r.data?.payloadRef === 'string' ? r.data.payloadRef : undefined,replayable:isReplayable(r.data ?? {}),
+    replaySha256:typeof r.data?.payloadSha256 === 'string' ? r.data.payloadSha256 : undefined,
+    replayUnits:Array.isArray(r.data?.replayUnits) ? r.data.replayUnits.length : 0,
+    warnings:Array.isArray(r.data?.admissionWarnings) ? (r.data.admissionWarnings as unknown[]).filter((item): item is string => typeof item === 'string').slice(0, 4) : [],
+    reproducedClaimRef:typeof r.data?.reproducedClaimRef === 'string' ? r.data.reproducedClaimRef : undefined,
     independentCurrent:typeof r.data?.independentEvidenceRef === 'string' ? !stale.has(r.id!) : undefined}));
   const latestReports = new Map<string,typeof recovered.reports[number]>();
   for (const report of recovered.reports) latestReports.set(report.workerId ?? report.id,report);

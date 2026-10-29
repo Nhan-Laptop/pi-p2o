@@ -4,12 +4,13 @@ import { constants } from 'node:fs';
 import { mkdir, open } from 'node:fs/promises';
 import { join } from 'node:path';
 import { appendRecord, readLedger, type AssessmentRecord } from './records.js';
-import { isConfirmedClaim, isDemonstrated, isOpenGap, isRuledOutClaim } from './claims.js';
+import { isConfirmedClaim, isDemonstrated, isOpenGap, isRuledOutClaim, isTestedClaim } from './claims.js';
 import { capabilityKey, readCapabilities } from './capabilities.js';
 import { cleanText, type ProcessResult } from './process.js';
 import { redactArtifactPrefix, type CaptureReceipt } from './artifacts.js';
 import { capabilityList, type Capability } from './capabilities.js';
 import { EnvironmentStore, PayloadStore, environmentExists, isEnvironmentId, isPayloadId, payloadExists } from './lab.js';
+import type { ReplayStamp } from './replay.js';
 
 export const CANDIDATE_CLOSURES = ['confirmed', 'ruled_out', 'open_proof_gap'] as const;
 export const CANDIDATE_EXECUTIONS = ['tested', 'not_tested', 'blocked', 'not_applicable'] as const;
@@ -23,6 +24,12 @@ export interface Candidate {
   evidenceRefs: string[]; negativeControls: string[]; limitations: string;
   policyBasis?: typeof POLICY_BASES[number]; expectedPolicy?: string;
   control?: string; requirement?: string; supersedes?: string; independentEvidenceRef?: string; resolves?: string[];
+  /**
+   * P21/A2: one-field validation write-back. The validation worker names the claim (record id or slug) its own receipts
+   * reproduce; the host resolves it, checks actor, surface/risk and the recorded replay hash, and stamps the independent
+   * receipt internally. It is an alternative to `independentEvidenceRef`, never a pair.
+   */
+  reproduces?: string;
   /** Capabilities this primitive hands to a later step, and the ones it needs from an earlier step or the environment (P14.1:
    *  typed, so a chain link is a match rather than a shared word). */
   gained?: Capability[]; needs?: Capability[];
@@ -75,10 +82,38 @@ const bounded = (s: string, n: number) => {
   return result;
 };
 
+/** P21/A1/A2: one host-recorded replay unit as inherited from a cited receipt. */
+interface HostReplayUnit { sha256: string; payloadRef: string; environmentFingerprint: string; receiptId: string }
+/**
+ * P21/A2: the replay units a claim's cited receipts recorded, deduped by hash in citation order. The first unit is the claim's
+ * canonical replay (the first piece of evidence it stands on); every distinct unit stays listed so a reviewer can see the whole
+ * replay surface. A receipt that recorded no unit (capture, PTY, research) contributes nothing.
+ */
+function hostReplayUnits(evidence: readonly AssessmentRecord[], refs: readonly string[]): HostReplayUnit[] {
+  const units = new Map<string, HostReplayUnit>();
+  for (const id of refs) {
+    const replay = evidence.find(row => row.id === id)?.data?.replay as Record<string, unknown> | undefined;
+    if (!replay || replay.captured !== true) continue;
+    const sha256 = typeof replay.sha256 === 'string' ? replay.sha256 : undefined;
+    const payloadRef = typeof replay.payloadRef === 'string' ? replay.payloadRef : undefined;
+    const environmentFingerprint = typeof replay.environmentFingerprint === 'string' ? replay.environmentFingerprint : undefined;
+    if (!sha256 || !payloadRef || !environmentFingerprint || units.has(sha256)) continue;
+    units.set(sha256, { sha256, payloadRef, environmentFingerprint, receiptId: id });
+  }
+  return [...units.values()];
+}
+const hostHash = (value: unknown): string => typeof value === 'string' && value.length >= 16 ? value : '';
+/** The negative classes the run measured: a limiter/enumeration/uniform-error/absent-session observation needs a positive control. */
+const NEGATIVE_CLAIM = /throttl|rate.?limit|enumerat|uniform|no.?session|lockout|limiter|no (?:cookie|jwt|token)/i;
+
 export class EvidenceStore {
   private pending: Promise<unknown> = Promise.resolve();
   constructor(readonly runId: string, readonly path: string, readonly target: string) {}
-  async receipt(by: string, operation: string, input: string, result: ProcessResult, startedAt: string, capture?: CaptureReceipt): Promise<string> {
+  /**
+   * P21/A1: `replay` is the host-captured admitted unit for this operation. It is a separate argument, not an input field: no
+   * caller can write a replay reference by hand, and a receipt recorded by an older path simply has none.
+   */
+  async receipt(by: string, operation: string, input: string, result: ProcessResult, startedAt: string, capture?: CaptureReceipt, replay?: ReplayStamp): Promise<string> {
     const id = randomUUID();
     await appendRecord(this.path, { id, runId: this.runId, at: new Date().toISOString(), by, workerId: by === 'owner' ? undefined : by,
       kind: 'evidence', text: `${operation} exit ${result.code}; untrusted observation, not a finding`,
@@ -88,6 +123,7 @@ export class EvidenceStore {
         ...(result.hops ? { http: { hops: result.hops.slice(0,6).map(hop => bounded(hop, 256)), session: result.session,
           redirectStopped: result.redirectStopped ? bounded(result.redirectStopped, 1000) : undefined, cookieWarning: result.cookieWarning } } : {}),
         ...(capture ? {capture} : {}),
+        ...(replay ? { replay } : {}),
         outputSha256Scope: 'visible-excerpt-before-redaction',
         outputSha256: createHash('sha256').update(result.stdout).update(result.stderr).digest('hex'),
         truncated: result.truncated || result.stdout.length > RECEIPT_STDOUT_BYTES || result.stderr.length > RECEIPT_STDERR_BYTES,
@@ -134,6 +170,13 @@ export class EvidenceStore {
       const evidence = records.filter(r => r.kind === 'evidence' && r.runId === this.runId);
       const references = [...input.evidenceRefs, ...input.negativeControls];
       for (const id of references) if (!evidence.some(r => r.id === id)) throw new Error(`Unknown same-run evidence ID: ${id}`);
+      // P21/A2: the replay unit is inherited from the claim's own receipts instead of being stored by the model. The first
+      // captured unit is the canonical replay the claim names; every distinct unit still stays recorded. An explicit p2o_lab
+      // payload or environment keeps precedence: a stored script's bytes are not the command line that ran it, so they are not
+      // compared, but the one field the caller did not name is filled from the host stamp.
+      const replayUnits = hostReplayUnits(evidence, input.evidenceRefs);
+      const inheritedPayload = isTestedClaim(input) && input.payloadRef === undefined ? replayUnits[0] : undefined;
+      const inheritedEnvironment = isTestedClaim(input) && input.environmentRef === undefined ? replayUnits[0] : undefined;
       for (const id of input.resolves ?? []) {
         if (!records.some(r => r.id === id && r.kind === 'open')) throw new Error(`Unknown open-item ID: ${id}`);
         if (isOpenGap(input)) throw new Error('Resolving an open item needs a closed candidate with evidence');
@@ -158,15 +201,56 @@ export class EvidenceStore {
       if (previous && (previous.surface !== input.surface || previous.risk !== input.risk)) throw Error('Candidate revision cannot change surface/risk; use a new candidate ID');
       if (previous && input.supersedes !== previous.id) throw new Error(`Candidate revision must supersede latest ID ${previous.id}`);
       if (input.supersedes && (!previous || input.supersedes !== previous.id)) throw new Error('Invalid candidate revision');
-      if (input.independentEvidenceRef) {
+      // P21/A2: one-field validation write-back. `reproduces` names the claim this worker replayed; the host resolves it and
+      // stamps the author receipt internally, so the validator never has to assemble the old ref/citation pair (the run's six
+      // refusals were all bookkeeping). The legacy independentEvidenceRef path below keeps working unchanged.
+      let reproduction: { reproducedClaimRef: string; independentEvidenceRef?: string; matched?: HostReplayUnit } | undefined;
+      if (input.reproduces !== undefined) {
+        const target = records.find(r => r.id === input.reproduces && r.kind === 'candidate')
+          ?? records.filter(r => r.kind === 'candidate' && r.data?.candidate === input.reproduces).at(-1);
+        if (!target) throw new Error(`Unknown reproduced claim ${input.reproduces.slice(0, 80)}: pass the claim record id or slug from the validation brief`);
+        const targetSlug = String(target.data?.candidate ?? target.id);
+        if (!target.workerId || target.by === by)
+          throw new Error(`A claim you recorded cannot be reproduced by you: ${targetSlug} was recorded by ${target.by}; reproduces names another worker's demonstrated claim`);
+        if (target.surface !== input.surface || target.risk !== input.risk)
+          throw new Error(`A reproduction keeps the claim's surface and risk: ${targetSlug} is ${target.surface} / ${target.risk}, this claim says ${input.surface} / ${input.risk}`);
+        if (!isDemonstrated(input) || input.proof === 'static_trace')
+          throw new Error('reproduces records a reproduction, so closure=confirmed, execution=tested and a non-static proof are required; a failed attempt is an open claim without reproduces');
+        if (!isDemonstrated(target.data ?? {}))
+          throw new Error(`Claim ${targetSlug} is not a demonstrated claim (closure ${String(target.data?.closure ?? 'unrecorded')}), so it has no effect to reproduce`);
+        // The replayer needs at least one receipt it authored: a reproduction without its own evidence is a copy, not a replay.
+        const own = input.evidenceRefs.map(id => evidence.find(row => row.id === id)).filter((row): row is AssessmentRecord => !!row && row.by === by && !!row.workerId);
+        if (!own.length) {
+          const authorRefs = (target.refs ?? []).filter(id => evidence.some(row => row.id === id && row.by === target.by));
+          throw new Error(`A reproduction needs your own receipt: cite the receipt you ran in evidenceRefs. ${targetSlug} cites ${authorRefs.slice(0, 3).join(', ') || 'no author receipt'}, which belong to the other worker`);
+        }
+        const ownUnits = hostReplayUnits(evidence, own.map(row => row.id!));
+        const targetUnits = Array.isArray(target.data?.replayUnits) ? target.data.replayUnits as Array<Record<string, unknown>> : [];
+        const expected = [...new Set([hostHash(target.data?.payloadSha256), ...targetUnits.map(unit => typeof unit?.sha256 === 'string' ? unit.sha256 : ''), ...hostReplayUnits(evidence, target.refs ?? []).map(unit => unit.sha256)].filter(sha => sha.length >= 16))];
+        const matched = expected.length ? ownUnits.find(unit => expected.includes(unit.sha256)) : undefined;
+        if (expected.length && !matched)
+          throw new Error(`The replay did not run the claim's payload: ${targetSlug} recorded ${expected.slice(0, 2).map(sha => sha.slice(0, 12)).join(' or ')}${expected.length > 2 ? ` (+${expected.length - 2})` : ''}, your receipts recorded ${ownUnits.length ? ownUnits.slice(0, 2).map(unit => unit.sha256.slice(0, 12)).join(', ') : 'no replay unit'}. Replay the exact request with p2o_http (same method, URL, headers and body), or repeat the exact admitted command; a shell replay of a materialized payload records a different unit`);
+        // The author's own receipt is what the case's independence check names. A legacy claim that cites none cannot be stamped.
+        const authorReceipt = (target.refs ?? []).map(id => evidence.find(row => row.id === id)).find(row => row?.by === target.by && row.workerId)?.id;
+        if (!authorReceipt) admissionWarnings.push(`Claim ${targetSlug} cites no receipt by its author, so the case independence path cannot name one; record the reproduction anyway and the limitation stays visible.`);
+        reproduction = { reproducedClaimRef: target.id!, ...(authorReceipt ? { independentEvidenceRef: authorReceipt } : {}), ...(matched ? { matched } : {}) };
+      } else if (input.independentEvidenceRef) {
         const independent = evidence.find(r => r.id === input.independentEvidenceRef);
-        if (!independent?.workerId || independent.by === by || !references.includes(input.independentEvidenceRef)) throw new Error('Independent validation needs a cited receipt from a different worker');
-        // P14.12: the other worker's claim is whichever claim *it* recorded against that receipt — not a copy of this claim's slug,
-        // which could only be produced by superseding this claim.
-        const latest = records.filter(r => r.kind === 'candidate' && r.by === independent.by && r.workerId && r.refs?.includes(independent.id!)).at(-1);
-        const reproduced = latest && latest.surface === input.surface && latest.risk === input.risk && isDemonstrated(latest.data ?? {})
-          && latest.data?.proof !== 'static_trace';
-        if (!reproduced) throw new Error('Independent claim needs the other worker\'s own demonstrated claim and the receipt it cites');
+        if (!independent) throw new Error(`The independent receipt is not one of your cited evidence IDs: add ${input.independentEvidenceRef} to evidenceRefs`);
+        if (!independent.workerId) throw new Error('An owner receipt cannot be independent evidence for a worker claim: independence needs a receipt a different worker authored');
+        if (independent.by === by) throw new Error(`Receipt ${independent.id} is your own; independence needs a receipt a different worker authored. Record your own reproduction with reproduces=<claim id from the validation brief>`);
+        if (!references.includes(input.independentEvidenceRef)) throw new Error(`The independent receipt must also be cited in evidenceRefs: add ${input.independentEvidenceRef}`);
+        // P14.12 + P21/A2: the other worker's claim is whichever claim *it* recorded against that receipt, matching this
+        // surface/risk. Filtering by surface/risk first is what stops two claims by one author citing one receipt from
+        // cross-matching: the latest claim for a shared receipt is not necessarily the claim this reproduction belongs to.
+        const candidates = records.filter(r => r.kind === 'candidate' && r.by === independent.by && r.workerId && r.refs?.includes(independent.id!));
+        // Match this surface/risk first: with two claims by one author on one receipt, the latest claim for a *different* surface is
+        // not this reproduction's target. Then the latest matching claim decides, so a later non-demonstrated claim is a withdrawal
+        // of support rather than a note the older demonstrated claim can talk past.
+        const latest = candidates.filter(r => r.surface === input.surface && r.risk === input.risk).at(-1);
+        if (!latest) throw new Error(`Independent claim needs the other worker's own demonstrated claim for ${input.surface} / ${input.risk} citing receipt ${independent.id}; record reproduces=<claim id from the validation brief> instead when you are replaying it`);
+        if (!isDemonstrated(latest.data ?? {}) || latest.data?.proof === 'static_trace')
+          throw new Error(`Independent claim needs the other worker's own demonstrated claim and the receipt it cites: the latest matching claim for ${input.surface} / ${input.risk} is ${String(latest.data?.closure ?? 'unrecorded')} / ${String(latest.data?.execution ?? 'unrecorded')}`);
         // Independence means the same effect was reproduced: same payload bytes and same environment recipe, or the claim is refused.
         // A claim that names no artifact has nothing to replay, so its independence stays the peer's own demonstrated claim above.
         if (payloadRef || environmentRef) {
@@ -176,12 +260,32 @@ export class EvidenceStore {
           if (latest.data?.environmentFingerprint !== environmentRef.fingerprint) throw new Error(`Independent replay environment drifted: ${String(latest.data?.environmentFingerprint ?? 'unrecorded').slice(0, 12)} vs ${environmentRef.fingerprint.slice(0, 12)}`);
         }
       }
+      // P21/A2 host stamps: explicit artifacts win; otherwise the canonical host unit supplies the payload hash and the host-derived
+      // environment fingerprint, so an http/net claim is replayable with no p2o_lab calls. Every distinct unit is recorded either way.
+      const hostStamp: Record<string, unknown> = {};
+      if (replayUnits.length) hostStamp.replayUnits = replayUnits.slice(0, 8);
+      if (payloadRef) hostStamp.payloadSha256 = payloadRef.sha256;
+      else if (inheritedPayload) { hostStamp.payloadSha256 = inheritedPayload.sha256; hostStamp.payloadRef = inheritedPayload.payloadRef; }
+      if (environmentRef) hostStamp.environmentFingerprint = environmentRef.fingerprint;
+      else if (inheritedEnvironment) hostStamp.environmentFingerprint = inheritedEnvironment.environmentFingerprint;
+      if (reproduction) {
+        hostStamp.reproducedClaimRef = reproduction.reproducedClaimRef;
+        if (reproduction.independentEvidenceRef) hostStamp.independentEvidenceRef = reproduction.independentEvidenceRef;
+        if (reproduction.matched) { hostStamp.payloadSha256 = reproduction.matched.sha256; hostStamp.payloadRef = reproduction.matched.payloadRef; hostStamp.environmentFingerprint = reproduction.matched.environmentFingerprint; }
+      }
+      if (isTestedClaim(input) && input.evidenceRefs.length && !replayUnits.length && input.payloadRef === undefined)
+        admissionWarnings.push('No cited receipt recorded a replay unit, so this claim is not replayable: cite the target-operation receipt that ran it (capture- and PTY-only receipts record no unit), or store the exact bytes with p2o_lab.');
+      // P21/A4: a negative observation without a discriminating control cannot tell "the guard held" from "the request never
+      // reached the guard". The run's no-throttle claim sent identifier-less bodies that hit NextAuth's missing-credential
+      // short-circuit and was disputed at review. A warning, not a refusal: the evidence ladder does not change.
+      if (isDemonstrated(input) && input.negativeControls.length === 0 && NEGATIVE_CLAIM.test(`${input.candidate} ${input.surface} ${input.risk} ${input.expectedPolicy ?? ''}`))
+        admissionWarnings.push('negative claim without a discriminating control: name the positive control that proves the request reached the claimed mechanism, not a short-circuit before it');
       const record: AssessmentRecord = { id: randomUUID(), version: 2, runId: this.runId, at: new Date().toISOString(), by,
         workerId: by === 'owner' ? undefined : by, kind: 'candidate', text: `${input.candidate}: ${input.closure} (${input.execution}, ${input.proof}); agent claim, not automatic verification`,
         surface: input.surface, risk: input.risk, outcome: input.closure, refs: input.evidenceRefs,
         supersedes: input.supersedes, resolves: input.resolves,
         // Stamped after the spread, so a caller cannot claim a payload hash or origin task it did not run.
-        data: { ...storedInput, ...(admissionWarnings.length ? { admissionWarnings } : {}), ...(taskRef ? { taskRef } : {}), ...(claimAssets.length ? { assetRefs: claimAssets } : {}), ...(payloadRef ? { payloadSha256: payloadRef.sha256 } : {}), ...(environmentRef ? { environmentFingerprint: environmentRef.fingerprint } : {}) } };
+        data: { ...storedInput, ...(admissionWarnings.length ? { admissionWarnings } : {}), ...(taskRef ? { taskRef } : {}), ...(claimAssets.length ? { assetRefs: claimAssets } : {}), ...hostStamp } };
       await appendRecord(this.path, record);
       return record;
     });
@@ -235,6 +339,13 @@ function validateCandidate(c: Candidate): void {
     if (c.leadRefs.length && c.policyBasis !== 'inferred') throw new Error('A CVE lead is not intended-policy provenance: cite it as policyBasis "inferred"');
   }
 
+  // P21/A2: `reproduces` is the one-field validation write-back, so its shape is validated here and resolved in `candidate()`.
+  if (c.reproduces !== undefined && (typeof c.reproduces !== 'string' || !/^[a-z0-9][a-z0-9-]{0,79}$/.test(c.reproduces)))
+    throw new Error('Invalid reproduced claim: pass the claim record id or its candidate slug');
+  if (c.reproduces !== undefined && c.independentEvidenceRef !== undefined)
+    throw new Error('Record one independence path: reproduces names the claim you replayed, independentEvidenceRef cites a peer receipt; they are alternatives');
+  if (c.reproduces !== undefined && c.execution !== 'tested')
+    throw new Error('reproduces records a reproduction, so execution must be tested');
   if (!(POLICY_BASES as readonly string[]).includes(c.policyBasis ?? '')) throw new Error('Invalid policy basis');
   if (!c.expectedPolicy?.trim()) throw new Error('Name the expected policy and its provenance');
   // A1: the prose clamp stores at most 1000 characters; a value it left alone (control text) is still refused, never stored over-bound.

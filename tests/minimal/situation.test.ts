@@ -4,10 +4,10 @@ import { SEGMENT_FIELDS, SITUATION_LIMIT, situationLine, situationSegments, summ
 // planning_update.md P3: one bounded line about the run, computed from records so the lead does not infer the frontier
 // from an empty list, and testable without an engine.
 const full: SituationSnapshot = { open: 6, running: 2, runningRoles: ['discovery', 'validation'], ready: 3, exhausted: 0, leadsUntriaged: 2, leadsCritical: 1, routesOpen: 2, routesDone: 1, routeNames: ['auth'], unprovenNegations: 1, blocked: 1,
-  openContradictions: 1, chainReady: 1, chainUnmet: 2, chainSteps: 0, chainReadySteps: 0, chainWaitingSteps: 0, pendingRating: 4, coverageTested: 12, coverageCells: 31, coveragePlanned: 0, coverageOmitted: 0,
+  openContradictions: 1, chainReady: 1, chainUnmet: 2, chainSteps: 0, chainReadySteps: 0, chainWaitingSteps: 0, unmetNeeds: 2, replayableClaims: 3, derivedEdges: 2, validationCurrent: 1, pendingRating: 4, coverageTested: 12, coverageCells: 31, coveragePlanned: 0, coverageOmitted: 0,
   suggested: { purpose: 'validation', score: 65 } };
 const idle: SituationSnapshot = { open: 0, running: 0, runningRoles: [], ready: 0, exhausted: 0, leadsUntriaged: 0, leadsCritical: 0, routesOpen: 0, routesDone: 0, routeNames: [], unprovenNegations: 0, blocked: 0, openContradictions: 0,
-  chainReady: 0, chainUnmet: 0, chainSteps: 0, chainReadySteps: 0, chainWaitingSteps: 0, pendingRating: 0, coverageTested: 0, coverageCells: 0, coveragePlanned: 0, coverageOmitted: 0, suggested: null };
+  chainReady: 0, chainUnmet: 0, chainSteps: 0, chainReadySteps: 0, chainWaitingSteps: 0, unmetNeeds: 0, replayableClaims: 0, derivedEdges: 0, validationCurrent: 0, pendingRating: 0, coverageTested: 0, coverageCells: 0, coveragePlanned: 0, coverageOmitted: 0, suggested: null };
 
 const task = (id: string, status: string, extra: Record<string, unknown> = {}) => ({ id, status, role: 'discovery', prerequisites: [], ...extra }) as never;
 const view = (extra: Record<string, unknown>) => ({ verdict: 'open', reviewStatus: 'pending', contradictions: [], ...extra }) as never;

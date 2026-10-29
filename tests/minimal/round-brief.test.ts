@@ -46,6 +46,7 @@ const debtReport = (items: readonly DebtItem[]): DebtReport => {
 const situation: SituationSnapshot = {
   open: 2, running: 1, runningRoles: ['validation'], ready: 1, exhausted: 0, blocked: 0, openContradictions: 0,
   chainReady: 1, chainUnmet: 0, chainSteps: 1, chainReadySteps: 1, chainWaitingSteps: 0, pendingRating: 1,
+  replayableClaims: 0, derivedEdges: 0, validationCurrent: 0, unmetNeeds: 0,
   coverageTested: 1, coverageCells: 3, coveragePlanned: 1, coverageOmitted: 2, leadsUntriaged: 0, leadsCritical: 0,
   routesOpen: 1, routesDone: 0, routeNames: ['auth'], unprovenNegations: 0, suggested: { purpose: 'validation', score: 65 },
 };

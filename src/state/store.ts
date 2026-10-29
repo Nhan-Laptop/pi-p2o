@@ -25,7 +25,7 @@ import { DEBT_KINDS, debtSummary, deriveDebt } from '../debt.js';
 import { campaignPromptBlock, parseCampaign, type CampaignRecord, type EngagementMode } from '../campaign.js';
 import type { CaseEffect } from '../cvss.js';
 import { describeKnowledgeRecord, KNOWLEDGE_DOMAINS, type ContextDebt, type KnowledgeIndexSnapshot, type ContextCursor, type ContextItem, type ContextPacket, type KnowledgeDomain, type KnowledgePage } from '../context.js';
-import { ASSET_KINDS, RELATION_KINDS, anchorEntityId, assetEntityId, assertionEntityId, graphEntityId, relationEntityId, renderGraph, scopeOf, validateAnchor, validateAsset, validateFact, validateHypothesis, validateRelation,
+import { ASSET_KINDS, RELATION_KINDS, anchorEntityId, assetEntityId, assertionEntityId, deriveContainment, graphEntityId, relationEntityId, renderGraph, scopeOf, validateAnchor, validateAsset, validateFact, validateHypothesis, validateRelation,
   graphCanonical, graphObject, validateGraphBatch, graphCeilings, GRAPH_IDENTITY_VERSION, GRAPH_ROW_BYTES, GRAPH_RESPONSE_BYTES,
   type AnchorInput, type GraphAck, type GraphBatch, type GraphProducer, type GraphRow, type GraphTable, type GraphSnapshot, type GraphObservation } from './graph.js';
 
@@ -61,7 +61,9 @@ export interface GraphQueryPage { scope: string; asOfSequence: number; filters: 
 export interface GraphAssetBrief { id: string; kind: string; key: string; label?: string; revision: number }
 /** R3.2: one walked edge, already reduced to what a path reader needs (no row hash or producer internals). */
 export interface GraphPathRelation { entityId: string; revision: number; kind: string; fromId: string; toId: string;
-  basis?: string; status: string; note?: string; evidenceRefs: string[]; traversable: boolean; conditional: boolean }
+  basis?: string; status: string; note?: string; evidenceRefs: string[]; traversable: boolean; conditional: boolean;
+  /** P21/A3: host-derived from anchors (structural only); absent on every model-asserted relation. */
+  derived?: boolean }
 export interface GraphPathHop { relation: GraphPathRelation; from: GraphAssetBrief; to: GraphAssetBrief }
 export interface GraphPathWalk {
   scope: string; asOfSequence: number; from: GraphAssetBrief; to?: GraphAssetBrief; toKind?: string;
@@ -861,7 +863,7 @@ export class AssessmentStore {
           if (!seen.has(toId) && seen.size >= maxNodes) { truncated = true; continue; }
           seen.add(toId);
           const hops = [...state.hops, { relation: { entityId: String(body.entityId), revision: Number(body.revision), kind, fromId: state.tail, toId,
-            ...(typeof body.basis === 'string' ? { basis: body.basis } : {}), status: typeof body.status === 'string' ? body.status : 'active',
+            ...(typeof body.basis === 'string' ? { basis: body.basis } : {}), ...(body.derived === true ? { derived: true } : {}), status: typeof body.status === 'string' ? body.status : 'active',
             ...(typeof body.note === 'string' ? { note: body.note } : {}), evidenceRefs: Array.isArray(body.evidenceRefs) ? body.evidenceRefs as string[] : [],
             traversable: true, conditional: isConditional(kind) }, from: fromBrief, to: toBrief }];
           const isTarget = toAsset !== undefined ? toId === toAsset.entityId : input.toKind !== undefined ? toKind === input.toKind : false;
@@ -1034,7 +1036,7 @@ export class AssessmentStore {
   recordGraph(batch:GraphBatch,request?:MutationRequest,producer?:GraphProducer):GraphAck[] {
     validateGraphBatch(batch);const attribution=this.graphProducer(request,producer);
     return this.atomically(()=>{
-      const scope=this.graphScope(),actorId=attribution.actorId,occurredAt=new Date().toISOString(),acks:GraphAck[]=[],local=new Map<string,string>();
+      const scope=this.graphScope(),actorId=attribution.actorId,occurredAt=new Date().toISOString(),acks:GraphAck[]=[],local=new Map<string,string>(),touched=new Set<string>();
       const limits={assets:this.graphLimits.assets,assertions:this.graphLimits.assertions,relations:this.graphLimits.relations,anchors:this.graphLimits.anchors};
       const insert={
         assets:'INSERT INTO assets VALUES (?,?,?,?,?,?,?,?,?)',assertions:'INSERT INTO assertions VALUES (?,?,?,?,?,?,?,?)',
@@ -1090,6 +1092,7 @@ export class AssessmentStore {
         this.evidenceRefs(asset.evidenceRefs,'Asset evidence');
         for(const anchor of item.asset.anchors??[])if(anchor.artifactId&&!this.artifactExists(anchor.artifactId))throw Error(`Anchor artifact ${anchor.artifactId} is not retained in this run`);
         write('assets','asset',entityId,{scope,kind:asset.kind,key:asset.key},{kind:asset.kind,key:asset.key,...asset.body,evidenceRefs:asset.evidenceRefs},'asset.upserted',asset.evidenceRefs);
+        touched.add(entityId);
         for(const anchor of item.asset.anchors??[])anchorWrite(entityId,anchor);
       }
       // R0/W6: a superseding revision keeps the prior entity id, so the id is the assertion's lineage identity, not a hash of
@@ -1130,11 +1133,42 @@ export class AssessmentStore {
       }
       for(const item of batch.anchors??[]){graphObject(item,['assetId','assetRevision','anchor'],'Graph anchor row');const assetId=resolve(item.assetId);
         if(item.assetRevision!==undefined&&(!Number.isSafeInteger(item.assetRevision)||item.assetRevision<1))throw Error('Anchor asset revision must be a positive integer');
-        this.requireAsset(assetId,item.assetRevision);anchorWrite(assetId,item.anchor);}
+        this.requireAsset(assetId,item.assetRevision);anchorWrite(assetId,item.anchor);touched.add(assetId);}
+      // P21/A3/D-P21-10: derive the containment the written anchors already state. The pass is structural, host-written
+      // (basis 'derived'), and conservative: an existing relation row always wins (asserted or already derived), a full relation
+      // capacity skips the pass instead of failing the batch, and derived rows are not returned as batch deliveries.
+      const batchAcks=acks.length;
+      if(touched.size&&this.graphCount('relations')<limits.relations){
+        const heads=this.db.prepare(`SELECT body FROM assets a WHERE a.sequence=(SELECT MAX(b.sequence) FROM assets b WHERE b.entity_id=a.entity_id) AND a.scope=?`).all(scope)
+          .map(row=>JSON.parse(String(row.body)) as GraphRow),assetIds=new Set(heads.map(row=>String(row.entityId))),revisions=new Map(heads.map(row=>[String(row.entityId),{revision:Number(row.revision),kind:String(row.kind),key:String(row.key)}]));
+        const anchors=this.db.prepare(`SELECT body FROM anchors a WHERE a.sequence=(SELECT MAX(b.sequence) FROM anchors b WHERE b.entity_id=a.entity_id)`).all()
+          .map(row=>JSON.parse(String(row.body)) as GraphRow).filter(row=>assetIds.has(String(row.assetEntity)));
+        const edges=deriveContainment({assets:[...revisions].map(([entityId,value])=>({entityId,kind:value.kind,key:value.key})),
+          anchors:anchors.map(row=>({assetEntity:String(row.assetEntity),kind:String(row.kind),value:String(row.value)})),touched:[...touched]}).slice(0,128);
+        for(const edge of edges){
+          if(this.graphCount('relations')>=limits.relations)break;
+          const entityId=relationEntityId(scope,edge.kind,edge.fromId,edge.toId);
+          if(this.graphHead('relations',entityId))continue; // an asserted row always wins; a prior derived row is already there
+          const from=revisions.get(edge.fromId),to=revisions.get(edge.toId);
+          if(!from||!to)continue;
+          try{write('relations','relation',entityId,{kind:edge.kind,fromId:edge.fromId,toId:edge.toId},
+            {kind:edge.kind,fromId:edge.fromId,toId:edge.toId,fromRevision:from.revision,toRevision:to.revision,basis:'derived',derived:true,via:'anchor',rule:edge.rule,producerRole:'extractor'},'assertion.revised');}
+          catch{/* a bounded derivation may be partial; it must never fail the graph write it describes */}
+        }
+      }
+      acks.length=batchAcks;
       return acks;
     },request,{graph:batch,producer:attribution});
   }
   private artifactExists(id:string):boolean {return Boolean(this.db.prepare('SELECT id FROM artifacts WHERE id=?').get(id));}
+  /** P21/A3: relation heads, and how many of them the host derived from anchors. A count of structure, never of evidence. */
+  graphRelationCounts(asOfSequence=this.sequence()):{relations:number;derived:number}{
+    this.gate();
+    if(!Number.isSafeInteger(asOfSequence)||asOfSequence<0||asOfSequence>this.sequence())throw Error('Invalid graph barrier');
+    const head='r.sequence=(SELECT MAX(s.sequence) FROM relations s WHERE s.entity_id=r.entity_id)';
+    return {relations:Number(this.db.prepare(`SELECT count(*) AS n FROM relations r WHERE ${head} AND r.sequence<=?`).get(asOfSequence)!.n),
+      derived:Number(this.db.prepare(`SELECT count(*) AS n FROM relations r WHERE ${head} AND r.sequence<=? AND json_extract(r.body,'$.derived')=1`).get(asOfSequence)!.n)};
+  }
   graphSnapshot(asOfSequence=this.sequence()):GraphSnapshot {
     this.gate();if(!Number.isSafeInteger(asOfSequence)||asOfSequence<0||asOfSequence>this.sequence())throw Error('Invalid graph snapshot barrier');
     const rows=(table:GraphTable|'graph_provenance')=>this.db.prepare(`SELECT body FROM ${table} WHERE sequence<=? ORDER BY sequence,id`).all(asOfSequence).map(r=>JSON.parse(String(r.body)));

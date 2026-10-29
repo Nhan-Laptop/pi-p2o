@@ -68,6 +68,7 @@ import {
   EnvironmentStore, PayloadStore, materializePayload, normalizeRecipe, runEnvironment, stopEnvironment,
   type EnvironmentExec, type EnvironmentRecipe, type EnvironmentRef, type EnvironmentRun, type MaterializedPayload, type PayloadRecord, type PayloadRef,
 } from '../../src/lab.js';
+import { replayCommandUnit, replayEnvironmentFingerprint, replayRequestUnit, storeReplayUnit, type ReplayStamp } from '../../src/replay.js';
 import {
   LEGAL_NEXT, authoringAction, boardParameters, boardReadAction, caseAuthorParameters, caseRateParameters, caseRetestParameters,
   coveragePlanParameters, coverageSuggestParameters, COVERAGE_FIXED_ACTIONS,
@@ -616,6 +617,7 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
     const situation = (() => {
       try {
         return summarizeSituation({ tasks: read.tasks, cases: read.cases, coverage: read.coverage, claims: read.claims, plans: read.plans,
+          derivedEdges: current.store.graphRelationCounts().derived,
           leads: leadFrontier(read.index).map(lead => ({ state: lead.state, severity: lead.severity })) });
       } catch { return undefined; }
     })();
@@ -776,9 +778,11 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
     try {
       const [tasks, cases, coverage, claims, plans, leads] = await Promise.all([current.board.list(), current.cases.list(), current.coverage.list(), candidateClaims(current), current.plan.list(),
         readLedger(current.records, current.runId).then(index => leadFrontier(index))]);
+      let derivedEdges = 0;
+      try { derivedEdges = current.store.graphRelationCounts().derived; } catch { /* a store that cannot answer keeps the counter at zero */ }
       // M1: the chain segment reads the board, so the line and the plan view count the same steps. P16.4: leads are counted
       // from their frontier, so a triaged lead stops appearing as untriaged work.
-      return summarizeSituation({ tasks, cases, coverage, claims, plans, leads: leads.map(lead => ({ state: lead.state, severity: lead.severity })) });
+      return summarizeSituation({ tasks, cases, coverage, claims, plans, derivedEdges, leads: leads.map(lead => ({ state: lead.state, severity: lead.severity })) });
     } catch { return undefined; }
   }
   /**
@@ -2300,6 +2304,19 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
     return { request: { ...request, url: apply(request.url), ...(headers ? { headers } : {}), ...(request.body === undefined ? {} : { body: apply(request.body) }) }, used: [...used].sort() };
   }
   /**
+   * P21/A1: the host records the admitted replay unit at the one dispatch seam. `options.http` is the pre-substitution request
+   * and `input` the pre-substitution command, so an operator placeholder is stored as a placeholder (D-P21-5). Only an operation
+   * a replay can actually repeat is captured; a unit the payload store refuses comes back as `captured:false` with its reason.
+   */
+  async function captureReplayFor(current: OwnerRun, by: string, operation: string, input: string, options: { http?: HttpRequest; substitute?: 'shell' | 'raw' }): Promise<ReplayStamp | undefined> {
+    if (operation !== 'shell' && operation !== 'net' && operation !== 'http') return undefined;
+    if (options.substitute === 'raw') return undefined;
+    const environmentFingerprint = replayEnvironmentFingerprint({ runtime: runtimeVersion, extensionSha: current.extensionSha, image: current.image, executorMode: current.executors.mode });
+    if (operation === 'http' && !options.http) return { captured: false, environmentFingerprint, reason: 'the admitted request was not available to the host at the executor seam' };
+    const unit = operation === 'http' ? replayRequestUnit(options.http!) : replayCommandUnit(operation, input);
+    return storeReplayUnit(current.records, by, unit, environmentFingerprint);
+  }
+  /**
    * The one dispatch seam. `options.http` marks an HTTP request (substituted field by field); `options.substitute='raw'` marks
    * raw PTY bytes (a sudo prompt reads the value verbatim, so shell quoting would change it). Every shell/net command is quoted.
    */
@@ -2324,6 +2341,9 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
         } catch (error) { fail('SECRET_SUBSTITUTION', `${message(error)}. Nothing was executed and no value was recorded.`); }
       }
       if (usedSecrets.length) await auditSecretUse(current, by, operation, usedSecrets);
+      // P21/A1: capture after the policy allowed the operation and before dispatch, so the recorded unit is exactly what ran
+      // (pre-substitution on purpose) and a denied request never leaves a stored payload behind.
+      const replay = await captureReplayFor(current, by, operation, input, options);
       const started = new Date().toISOString(), operationId = `operation-${randomUUID()}`;
       const taskId = by === 'owner' ? current.currentTaskId : current.workers.get(by)?.taskId;
       let running = false, returned = false, retentionAttempted = false;
@@ -2376,7 +2396,7 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
           : raw;
         scratchSource=result.scratchSnapshot;current.progress.record(by,'returned',operation);
         retain('returned');
-        const evidenceId = await current.evidence.receipt(by,operation,input,result,started,captureReceipt);
+        const evidenceId = await current.evidence.receipt(by,operation,input,result,started,captureReceipt,replay);
         // R2.3/D-R1-5: a recognized scanner/source capture becomes attributed knowledge here, between the receipt and the
         // operation.returned event, so the rows cite a receipt that already exists. Best effort: autoIngest swallows its own
         // failures, because an extraction that cannot run must never turn a successful target operation into a tool error.
@@ -2401,7 +2421,7 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
         } catch (retentionError) { storageFailure(current,retentionError); }
         storageFailure(current,error);
         // Do not fabricate a failed target result when only retention failed after a known return.
-        if (!returned) await current.evidence.receipt(by,operation,input,{code:-1,stdout:'',stderr:secretText(current,message(error)),truncated:false},started,captureReceipt).catch(cause => storageFailure(current,cause,true));
+        if (!returned) await current.evidence.receipt(by,operation,input,{code:-1,stdout:'',stderr:secretText(current,message(error)),truncated:false},started,captureReceipt,replay).catch(cause => storageFailure(current,cause,true));
         throw error;
       } finally {capture.dispose();}
     })();

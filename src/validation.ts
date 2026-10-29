@@ -14,6 +14,25 @@ export function validationKey(runId: string, claim: AssessmentRecord, discovery:
 
 const bounded = (value: string, max: number): string => value.length > max ? value.slice(0, max) : value;
 
+/**
+ * P21/A4: the replay facts a validation worker would otherwise have to guess. The run's validation workers reproduced the
+ * effect but could not state what they had run; the brief now names the claim record, its receipts, the host replay unit and
+ * how to materialize it, and asks whether the replay exercises the claimed mechanism or a short-circuit before it.
+ */
+function replayBrief(claim: AssessmentRecord): string {
+  const units = Array.isArray(claim.data?.replayUnits) ? claim.data.replayUnits as Array<Record<string, unknown>> : [];
+  const canonical = units[0];
+  const payloadRef = typeof claim.data?.payloadRef === 'string' ? claim.data.payloadRef : typeof canonical?.payloadRef === 'string' ? canonical.payloadRef : undefined;
+  const sha256 = typeof claim.data?.payloadSha256 === 'string' ? claim.data.payloadSha256 : typeof canonical?.sha256 === 'string' ? canonical.sha256 : undefined;
+  const refs = (claim.refs ?? []).slice(0, 4);
+  const parts = [`claim record ${claim.id}`];
+  if (refs.length) parts.push(`its receipts: ${refs.join(', ')}`);
+  parts.push(payloadRef
+    ? `replay unit ${payloadRef}${sha256 ? ` sha256 ${sha256.slice(0, 16)}` : ''}; materialize it with p2o_lab action=payload id=${payloadRef} materialize=true`
+    : 'no host replay unit was recorded for it');
+  return parts.join('; ');
+}
+
 /** The one task-shaped draft an automatic validation uses; manual validation still goes through the same TaskBoard admission. */
 export function validationDraft(claim: AssessmentRecord, candidate: Candidate, discovery: AssessmentTask): TaskDraft {
   const claimId = claim.id;
@@ -23,15 +42,15 @@ export function validationDraft(claim: AssessmentRecord, candidate: Candidate, d
   // validation stays a legacy task too: validationOf + prerequisites are still checked, and the host does not invent an asset.
   const structured = discovery.work !== undefined && discovery.outputContract !== undefined;
   const work = structured ? { ...discovery.work!, purpose: 'validation' as const, claimRefs: [claimId] } : undefined;
-  const expectation = candidate.expectedPolicy?.trim() ?? 'the claimed effect', control = candidate.control?.trim();
+  const expectation = candidate.expectedPolicy?.trim() ?? 'the claimed effect', control = candidate.control?.trim(), brief = replayBrief(claim);
   return {
     id: validationKey(discovery.runId, claim, discovery),
-    question: bounded(`Independently reproduce ${name} with a fresh worker and its own receipt.`, 1500),
+    question: bounded(`Independently reproduce ${name} with a fresh worker and its own receipt (${brief}). Decide whether the replay exercises the claimed mechanism or a short-circuit before it, then record one candidate with reproduces=${claimId}, your own receipts in evidenceRefs, and the same surface and risk.`, 1500),
     surface: discovery.surface,
     risk: discovery.risk,
     role: 'validation',
     roleReason: 'Host-created independent validation for a confirmed tested claim; a different worker must reproduce it',
-    expectedTrue: bounded(`A different worker replays ${name} and observes: ${expectation}.`, 1000),
+    expectedTrue: bounded(`A different worker replays ${name} and observes: ${expectation}. The replay exercises the claimed mechanism, not a short-circuit before it, and is recorded with reproduces=${claimId}.`, 1000),
     expectedFalse: bounded(`The replay does not reproduce ${name}${control ? ` (control: ${control})` : ''}; record the mismatch and keep the claim unreviewed.`, 1000),
     stopCondition: 'Stop after one independent replay or a concrete prerequisite gap; no retry loop.',
     evidenceIds: [],

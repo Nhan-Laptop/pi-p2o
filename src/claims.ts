@@ -31,6 +31,14 @@ export interface ClaimFields {
   /** Run-scoped payload artifact (P14.2) and environment recipe (P14.3). */
   payloadRef?: unknown;
   environmentRef?: unknown;
+  /**
+   * P21/A2: the host-derived replay surface. `replayUnits` is stamped from the claim's cited receipts (one per distinct
+   * admitted unit), and `payloadSha256`/`environmentFingerprint` are the canonical unit's identity. The model writes none of
+   * them, so a claim is replayable without a `p2o_lab` call.
+   */
+  replayUnits?: unknown;
+  payloadSha256?: unknown;
+  environmentFingerprint?: unknown;
   control?: unknown;
   policyBasis?: unknown;
   proof?: unknown;
@@ -59,6 +67,9 @@ export function isDemonstrated(claim: ClaimFields): boolean {
   return claim.closure === DEMONSTRATED_CLOSURE && claim.execution === DEMONSTRATED_EXECUTION;
 }
 
+/** The execution half of `isDemonstrated`: the primitive ran. Host derivation (P21/A2) reads it without re-spelling the literal. */
+export function isTestedClaim(claim: ClaimFields): boolean { return claim.execution === 'tested' satisfies ClaimExecution; }
+
 /** A primitive that is still a claim to be exercised. `ruled_out` and untested claims are neither provider nor open gap. */
 export function isOpenGap(claim: ClaimFields): boolean { return claim.closure === OPEN_CLOSURE; }
 
@@ -86,12 +97,17 @@ export function demonstratedGained(claim: ClaimFields): Capability[] {
 export function claimNeeds(claim: ClaimFields): Capability[] { return claimCapabilities(claim).needs; }
 
 /**
- * planning_update.md P14.2/P14.3: whether another worker can replay this claim's demonstrated effect, derived and never stored.
- * The conjunction is the point: a payload without the environment it was demonstrated in is not reproducible, and an
- * environment without the payload does not say what to run. A report uses it to say "not replayable" instead of implying a
- * second worker can reproduce what only the author's receipt shows.
+ * planning_update.md P14.2/P14.3 + P21/A2: whether another worker can replay this claim's demonstrated effect, derived and never
+ * stored. The conjunctions are the point: a payload without the environment it ran in is not reproducible, and an environment
+ * without the payload does not say what to run. Before P21 the pair had to be stored by hand; now the host stamps the admitted
+ * unit on the receipt, the claim inherits it, and a network claim's environment is the runtime identity rather than a compose
+ * recipe. A report prints the reference instead of implying a second worker can reproduce what only the author's receipt shows.
  */
-export function isReplayable(claim: ClaimFields): boolean { return isPayloadId(claim.payloadRef) && isEnvironmentId(claim.environmentRef); }
+export function isReplayable(claim: ClaimFields): boolean {
+  const units = claim.replayUnits;
+  if (Array.isArray(units) && units.some(unit => { const sha256 = (unit as Record<string, unknown> | null)?.sha256; return typeof sha256 === 'string' && sha256.length >= 16; })) return true;
+  return isPayloadId(claim.payloadRef) && (isEnvironmentId(claim.environmentRef) || (typeof claim.environmentFingerprint === 'string' && claim.environmentFingerprint.length >= 16));
+}
 
 /** Coverage-cell domain: the cell's own `execution` reached `tested`. Never call this on a claim, or `isDemonstrated` on a cell. */
 /**

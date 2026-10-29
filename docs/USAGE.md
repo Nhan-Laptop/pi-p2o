@@ -207,6 +207,16 @@ một round kết thúc mà không có tool call nào nhận tối đa hai nudge
   ngờ là hypothesis/inferred fact chứ không phải finding, cross-asset link là assertion planner đọc được). `p2o_note`
   kind=coverage chỉ là display row: host derive coverage cell từ reviewed work, không từ note. Muốn tra vì sao một row tồn tại:
   `p2o_board board=lineage id=<planId|recordId>`; muốn xem projection "run vừa học gì": section learned trong round brief.
+- **Bằng chứng host ghi lại (P21/A):** sau mỗi operation target được admit, host ghi replay unit — method, final URL, header
+  (sort), body, hoặc command text thực sự được admit — vào file riêng 0600 của run, **trước** khi operator placeholder được
+  thay, nên ledger chỉ giữ `{payloadRef, sha256, bytes, environmentFingerprint}` và không bao giờ giữ secret hay byte payload
+  trong export; unit quá trần 48 KiB hoặc chứa control character là gap thấy được (`captured:false` kèm lý do), không làm hỏng
+  request. Claim kế thừa stamp này từ receipt được cite, nên report in `host replay \`payload-…\`` thay vì "not replayable", và
+  situation line có counter `replay: N replayable claim(s), M derived edges, K validation current` cùng `unmet needs`. Muốn
+  validation độc lập, worker replay đúng request rồi ghi claim của mình với `reproduces=<claim-id|slug>` — host tự resolve
+  claim gốc, đòi actor khác, cùng surface/risk, claim gốc demonstrated, receipt tested riêng và payload sha khớp. Containment
+  suy từ anchor (host ← route ← endpoint) được đánh dấu `derived` trong graph/export và không phải evidence; claim negative
+  không có control chỉ nhận warning `admissionWarnings` cạnh claims table, không bị từ chối.
 - `--refer-workspace` chỉ thêm context read-only từ run cũ cùng target (khớp path/origin; `gaps` gồm covered, leftOpen,
   stale, neverReached, unknown) và không bao giờ tính là same-run evidence hay khôi phục authority. Round brief in các count đó
   thành một dòng "Prior run (context only, never evidence)"; muốn xem chi tiết vì sao một plan row tồn tại, planner dùng read

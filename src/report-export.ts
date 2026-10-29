@@ -165,8 +165,14 @@ function provenanceLines(view: CaseView, index: LedgerIndex): string[] {
     const authors = [...new Set(task!.evidenceIds.map(id => index.byId.get(id)?.by ?? 'unknown'))], note = task!.reviewIntegrity;
     return `${mdText(task!.id, 80)} (${task!.evidenceIds.length} receipt(s) by ${authors.map(name => mdText(name, 60)).join(', ') || 'none'}${note?.foreignEvidence.length ? `; ${note.foreignEvidence.length} not authored by the assignee${note.externalAcknowledged ? ', acknowledged as external' : ''}` : ''}${note?.contractGap.length ? `; output fields with no record: ${note.contractGap.join(', ')}` : ''})`;
   });
+  // P21/A4: a negative observation without a discriminating control stays reviewable, but the case page must say it.
+  const warnings = [...new Set(view.claimRefs.flatMap(ref => {
+    const data = index.byId.get(ref)?.data;
+    return Array.isArray(data?.admissionWarnings) ? (data.admissionWarnings as unknown[]).filter((item): item is string => typeof item === 'string') : [];
+  }))];
   return [`- Proof level of the cited claims: ${proofs.length ? proofs.map(item => mdText(item, 40)).join(', ') : 'not recorded'}${proofs.every(item => item === 'static_trace') && proofs.length ? ' (static trace only; no runtime reproduction)' : ''}`,
-    ...(reviews.length ? [`- Review receipts: ${reviews.join('; ')}`] : [])];
+    ...(reviews.length ? [`- Review receipts: ${reviews.join('; ')}`] : []),
+    ...(warnings.length ? [`- Claim admission warnings: ${warnings.slice(0, 4).map(item => mdText(item, 240)).join('; ')}`] : [])];
 }
 
 function findingLines(view: CaseView, cells: readonly CoverageCellView[], index: LedgerIndex, pages: readonly string[]): string[] {
@@ -619,7 +625,9 @@ export function renderReport(index: LedgerIndex, context: ReportProjectionContex
   if (!claims.shown.length) out.push('No claim is recorded.', '');
   else {
     out.push('| Claim | Candidate | Surface / self-reported risk (unevaluated) | Closure | Execution | Proof | Replayable | Independent validation current |', '|---|---|---|---|---|---|---|---|');
-    for (const claim of claims.shown) out.push(`| ${mdText(claim.id, 80)} | ${mdText(claim.candidate, 160)} | ${mdText(`${claim.surface ?? ''} / ${claim.risk ?? ''}`, 160)} | ${mdText(claim.closure, 24)} | ${mdText(claim.execution, 24)} | ${mdText(claim.proof, 40)} | ${claim.replayable ? `payload \`${mdText(claim.payloadRef, 80)}\`` : 'not replayable'} | ${claim.independentCurrent === undefined ? 'not claimed' : claim.independentCurrent ? 'yes' : 'no'} |`);
+    for (const claim of claims.shown) out.push(`| ${mdText(claim.id, 80)} | ${mdText(claim.candidate, 160)} | ${mdText(`${claim.surface ?? ''} / ${claim.risk ?? ''}`, 160)} | ${mdText(claim.closure, 24)} | ${mdText(claim.execution, 24)} | ${mdText(claim.proof, 40)} | ${claim.replayable ? claim.replayUnits ? `host replay \`${mdText((claim.payloadRef ?? claim.replaySha256 ?? '').slice(0, 80), 80)}\`${claim.replayUnits > 1 ? ` (+${claim.replayUnits - 1} more units)` : ''}` : `payload \`${mdText(claim.payloadRef, 80)}\`` : 'not replayable'} | ${claim.independentCurrent === undefined ? 'not claimed' : claim.independentCurrent ? 'yes' : 'no'} |`);
+    const warned = claims.shown.filter(claim => (claim.warnings ?? []).length);
+    if (warned.length) out.push('', `Admission warnings: ${warned.slice(0, 6).map(claim => `\`${mdText(claim.candidate, 80)}\` — ${mdText(claim.warnings![0]!, 240)}`).join('; ')}.`);
     out.push('');
   }
   // P16.5: routes are a dimension of the report, so a single-route run is visible next to its advisory.

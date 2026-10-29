@@ -131,6 +131,20 @@ shell-quoted for shell/net, raw for PTY `send`, request-side for HTTP. Every use
 redacted text only, and redaction is best-effort (a worker can print or encode a value). Sealing is convenience, not a
 ceiling: a worker provisions a disposable principal when the work needs one (see [HTTP transport](HTTP_TRANSPORT.md)).
 
+## Host-recorded evidence and derived containment
+
+After an admitted target operation, `executeWithReceipt` writes a canonical replay unit to the run's private payload store
+(0600, never mounted into the sandbox, never exported): method, final URL, case-folded headers and body for HTTP, and the command
+text actually admitted for shell/net. The unit is captured before secret substitution, so an operator placeholder is stored and
+the substituted value never is; the receipt carries only `{payloadRef, sha256, bytes, environmentFingerprint}`, and a unit over the
+48 KiB payload bound (or carrying a control character) is a visible `captured:false` gap rather than a failed request. A claim
+inherits the stamp from the receipts it cites; a validation worker's `p2o_candidate reproduces=<claim>` resolves the author's claim
+and requires a different actor, the same surface/risk, a demonstrated author claim and the replayer's own tested receipts with a
+matching payload sha, then records both ids. Graph writes derive the containment the anchor rows already state — URL host, and
+path prefix to endpoint across a segment boundary — as `contains` relations labelled `derived:true` with their rule and producer;
+an asserted relation wins on the same endpoints. Replay and derived structure are facts about what ran and how assets relate, so
+neither can satisfy a claim, case, coverage cell or goal.
+
 ## Persistence and teardown
 
 - Canonical state is one SQLite file per run (`node:sqlite`, schema 7): records, events, outbox and request results commit

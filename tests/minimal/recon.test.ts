@@ -261,7 +261,7 @@ describe('bounded recon contract', () => {
 
   it('renders one bounded situation line when the run has records', () => {
     const snapshot = { open: 6, running: 2, runningRoles: ['discovery', 'validation'], ready: 3, exhausted: 0, leadsUntriaged: 0, leadsCritical: 0, routesOpen: 0, routesDone: 0, routeNames: [], unprovenNegations: 0, blocked: 1, openContradictions: 1,
-      chainReady: 1, chainUnmet: 2, chainSteps: 0, chainReadySteps: 0, chainWaitingSteps: 0, pendingRating: 4, coverageTested: 12, coverageCells: 31, coveragePlanned: 0, coverageOmitted: 0, suggested: { purpose: 'validation' as const, score: 85 } };
+      chainReady: 1, chainUnmet: 2, chainSteps: 0, chainReadySteps: 0, chainWaitingSteps: 0, unmetNeeds: 2, replayableClaims: 2, derivedEdges: 3, validationCurrent: 1, pendingRating: 4, coverageTested: 12, coverageCells: 31, coveragePlanned: 0, coverageOmitted: 0, suggested: { purpose: 'validation' as const, score: 85 } };
     const base = { runId: 'run-recon', sourceSkipped: 2, targetKind: 'url' as const, targetLabel: 'https://example.invalid' };
     const solo = plannerInstructions({ ...base, delegation: { enabled: false, maxWorkers: 1, maxDepth: 1 }, situation: snapshot });
     const delegated = plannerInstructions({ ...base, delegation: { enabled: true, maxWorkers: 3, maxDepth: 2 }, situation: snapshot });
@@ -275,7 +275,7 @@ describe('bounded recon contract', () => {
   });
 
   it('says 0 open instead of leaving an empty frontier to be inferred', () => {
-    const idle = { open: 0, running: 0, runningRoles: [], ready: 0, exhausted: 0, leadsUntriaged: 0, leadsCritical: 0, routesOpen: 0, routesDone: 0, routeNames: [], unprovenNegations: 0, blocked: 0, openContradictions: 0, chainReady: 0, chainUnmet: 0, chainSteps: 0, chainReadySteps: 0, chainWaitingSteps: 0, pendingRating: 0, coverageTested: 0, coverageCells: 0, coveragePlanned: 0, coverageOmitted: 0, suggested: null };
+    const idle = { open: 0, running: 0, runningRoles: [], ready: 0, exhausted: 0, leadsUntriaged: 0, leadsCritical: 0, routesOpen: 0, routesDone: 0, routeNames: [], unprovenNegations: 0, blocked: 0, openContradictions: 0, chainReady: 0, chainUnmet: 0, chainSteps: 0, chainReadySteps: 0, chainWaitingSteps: 0, unmetNeeds: 0, replayableClaims: 0, derivedEdges: 0, validationCurrent: 0, pendingRating: 0, coverageTested: 0, coverageCells: 0, coveragePlanned: 0, coverageOmitted: 0, suggested: null };
     const text = plannerInstructions({ runId: 'run-recon', sourceSkipped: 2, targetKind: 'directory' as const, targetLabel: '/target', delegation: { enabled: true, maxWorkers: 3, maxDepth: 2 }, situation: idle });
     expect(text).toContain('Situation: 0 open.');
   });

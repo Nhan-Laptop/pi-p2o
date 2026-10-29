@@ -10,7 +10,7 @@ import { plannerInstructions, type PlannerPromptFacts } from '../../src/prompts.
  * segment that is never emitted, or a prompt that rewrites the line all have to fail this file.
  */
 const base: SituationSnapshot = { open: 0, running: 0, runningRoles: [], ready: 0, exhausted: 0, leadsUntriaged: 0, leadsCritical: 0, routesOpen: 0, routesDone: 0, routeNames: [], unprovenNegations: 0, blocked: 0, openContradictions: 0,
-  chainReady: 0, chainUnmet: 0, chainSteps: 0, chainReadySteps: 0, chainWaitingSteps: 0, pendingRating: 0, coverageTested: 0, coverageCells: 0, coveragePlanned: 0, coverageOmitted: 0, suggested: null };
+  chainReady: 0, chainUnmet: 0, chainSteps: 0, chainReadySteps: 0, chainWaitingSteps: 0, unmetNeeds: 0, replayableClaims: 0, derivedEdges: 0, validationCurrent: 0, pendingRating: 0, coverageTested: 0, coverageCells: 0, coveragePlanned: 0, coverageOmitted: 0, suggested: null };
 
 /** One snapshot per declared segment: the smallest state in which that segment is the thing being said. */
 const triggers: Record<keyof typeof SEGMENT_FIELDS, Partial<SituationSnapshot>> = {
@@ -27,6 +27,7 @@ const triggers: Record<keyof typeof SEGMENT_FIELDS, Partial<SituationSnapshot>> 
   negation: { open: 0, unprovenNegations: 1 },
   rating: { open: 0, pendingRating: 1 },
   coverage: { open: 0, coverageTested: 3, coverageCells: 9, coveragePlanned: 4, coverageOmitted: 2 },
+  replay: { open: 0, replayableClaims: 2, derivedEdges: 3, validationCurrent: 1 },
 };
 
 const ids = (snapshot: SituationSnapshot) => situationSegments(snapshot).map(segment => segment.id);

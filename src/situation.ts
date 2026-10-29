@@ -5,7 +5,7 @@ import { chainJoin } from './chain-view.js';
 import { chainBoard } from './chain-board.js';
 import type { PlanEntry } from './planning.js';
 import type { ClaimFields } from './claims.js';
-import { isTestedCell } from './claims.js';
+import { isReplayable, isTestedCell } from './claims.js';
 import { isExecutingTask, isSatisfiedTask, isSettledTask, terminalCounts } from './tasks.js';
 import { purposeFromRole, type WorkPurpose } from './duties.js';
 import { suggestPriority } from './priority.js';
@@ -47,6 +47,14 @@ export interface SituationSnapshot {
   routesOpen: number; routesDone: number; routeNames: string[];
   /** P16.6: a `ruled_out` claim recorded without tested execution is a negation nobody checked. */
   unprovenNegations: number;
+  /** P21/A2/A5: claims whose effect another worker can replay from the host-recorded unit, with no model bookkeeping. */
+  replayableClaims: number;
+  /** P21/A3: host-derived containment edges (structure, never evidence). */
+  derivedEdges: number;
+  /** P21/A2: accepted/pending cases whose independence is current (a reproduction the host could verify). */
+  validationCurrent: number;
+  /** P21/C6: open claims with a need nothing recorded gains; the capability work the chain cannot take yet. */
+  unmetNeeds: number;
   /** P4: the highest suggested priority among the dispatchable work, with the purpose that scored it. A suggestion only. */
   suggested: { purpose: WorkPurpose; score: number } | null;
 }
@@ -59,7 +67,7 @@ const ANSWERED = new Set(['confirmed_claim', 'ruled_out_bounded', 'accepted']);
 
 // Capabilities are typed (P14.1) and `chainJoin` owns the match, so the same join answers the graph view and this line.
 
-export function summarizeSituation(input: { tasks: readonly AssessmentTask[]; cases: readonly CaseView[]; coverage: readonly CoveragePlanView[]; claims: readonly SituationClaim[]; plans?: readonly PlanEntry[]; leads?: ReadonlyArray<{ state?: string; severity?: string }> }): SituationSnapshot {
+export function summarizeSituation(input: { tasks: readonly AssessmentTask[]; cases: readonly CaseView[]; coverage: readonly CoveragePlanView[]; claims: readonly SituationClaim[]; plans?: readonly PlanEntry[]; leads?: ReadonlyArray<{ state?: string; severity?: string }>; derivedEdges?: number }): SituationSnapshot {
   const terminal = terminalCounts(input.tasks);
   const byId = new Map(input.tasks.map(task => [task.id, task]));
   const running = input.tasks.filter(task => EXECUTING.has(task.status));
@@ -83,6 +91,10 @@ export function summarizeSituation(input: { tasks: readonly AssessmentTask[]; ca
     openContradictions: input.cases.reduce((total, item) => total + item.contradictions.filter(contradiction => contradiction.status === 'open').length, 0),
     chainReady: join.ready.length,
     chainUnmet: join.unmet.length,
+    unmetNeeds: join.unmet.length,
+    replayableClaims: input.claims.filter(claim => isReplayable(claim)).length,
+    derivedEdges: Math.max(0, Math.trunc(input.derivedEdges ?? 0)),
+    validationCurrent: input.cases.filter(item => item.independentCurrent).length,
     // A settled step (done/cancelled) is not open work, so it does not count toward the live board.
     chainSteps: board.reduce((total, chain) => total + chain.ready.length + chain.waiting.length, 0),
     chainReadySteps: board.reduce((total, chain) => total + chain.ready.length, 0),
@@ -135,9 +147,10 @@ export const SEGMENT_FIELDS = {
   exhausted: ['exhausted'],
   blocked: ['blocked'],
   contradictions: ['openContradictions'],
-  chain: ['chainReady', 'chainUnmet', 'chainSteps', 'chainReadySteps', 'chainWaitingSteps'],
+  chain: ['chainReady', 'chainUnmet', 'chainSteps', 'chainReadySteps', 'chainWaitingSteps', 'unmetNeeds'],
   rating: ['pendingRating'],
   coverage: ['coverageTested', 'coverageCells', 'coveragePlanned', 'coverageOmitted'],
+  replay: ['replayableClaims', 'derivedEdges', 'validationCurrent'],
   leads: ['leadsUntriaged', 'leadsCritical'],
   routes: ['routesOpen', 'routesDone', 'routeNames'],
   negation: ['unprovenNegations'],
@@ -160,8 +173,8 @@ export function situationSegments(snapshot: SituationSnapshot): Array<{ id: Situ
   }
   if (snapshot.openContradictions) segments.push({ id: 'contradictions', text: plural(snapshot.openContradictions, 'open contradiction') });
   // M1: when the plan carries a chain, the board decides the sentence; the candidate-level join answers only when no step is planned.
-  if (snapshot.chainSteps) segments.push({ id: 'chain', text: `chain: ${plural(snapshot.chainReadySteps, 'step')} ready, ${snapshot.chainWaitingSteps} waiting` });
-  else if (snapshot.chainReady || snapshot.chainUnmet) segments.push({ id: 'chain', text: `chain: ${plural(snapshot.chainReady, 'step')} ready, ${snapshot.chainUnmet} unmet needs` });
+  if (snapshot.chainSteps) segments.push({ id: 'chain', text: `chain: ${plural(snapshot.chainReadySteps, 'step')} ready, ${snapshot.chainWaitingSteps} waiting${snapshot.unmetNeeds ? `, ${snapshot.unmetNeeds} unmet needs` : ''}` });
+  else if (snapshot.chainReady || snapshot.chainUnmet) segments.push({ id: 'chain', text: `chain: ${plural(snapshot.chainReady, 'step')} ready, ${snapshot.unmetNeeds} unmet needs` });
   // P16.5: the route sentence makes concentration visible; P16.6 names a negation nobody tested.
   if (snapshot.routesOpen || snapshot.routesDone) segments.push({ id: 'routes', text: `routes: ${snapshot.routesOpen} open${snapshot.routeNames.length ? ` (${snapshot.routeNames.join(', ')})` : ''}, ${snapshot.routesDone} done` });
   if (snapshot.unprovenNegations) segments.push({ id: 'negation', text: `${snapshot.unprovenNegations} unproven-negation` });
@@ -170,12 +183,22 @@ export function situationSegments(snapshot: SituationSnapshot): Array<{ id: Situ
   if (snapshot.pendingRating) segments.push({ id: 'rating', text: `${plural(snapshot.pendingRating, 'case')} pending rating` });
   // M3: the backlog pair keeps "not shown" from reading as "not planned" (ARTEX agent/tools.go:436-440).
   if (snapshot.coverageCells) segments.push({ id: 'coverage', text: `coverage ${snapshot.coverageTested}/${snapshot.coverageCells}${snapshot.coveragePlanned || snapshot.coverageOmitted ? ` (planned ${snapshot.coveragePlanned} unreached, ${snapshot.coverageOmitted} omitted)` : ''}` });
+  // P21/A5: the host-recorded facts a run previously could not see: replayable claims, derived structure and current
+  // independence. A derived edge is labelled as structure here too, never as evidence.
+  if (snapshot.replayableClaims || snapshot.derivedEdges || snapshot.validationCurrent) {
+    const parts = [
+      ...(snapshot.replayableClaims ? [plural(snapshot.replayableClaims, 'replayable claim')] : []),
+      ...(snapshot.derivedEdges ? [`${snapshot.derivedEdges} derived edges`] : []),
+      ...(snapshot.validationCurrent ? [`${snapshot.validationCurrent} validation current`] : []),
+    ];
+    segments.push({ id: 'replay', text: `replay: ${parts.join(', ')}` });
+  }
   return segments;
 }
 
 /** One line, hard-capped: optional tail segments go before the length is allowed to exceed the cap. */
 export function situationLine(snapshot: SituationSnapshot): string {
-  const optional: SituationSegment[] = ['coverage', 'rating', 'chain', 'contradictions', 'blocked', 'next'];
+  const optional: SituationSegment[] = ['replay', 'coverage', 'rating', 'chain', 'contradictions', 'blocked', 'next'];
   let segments = situationSegments(snapshot);
   const render = () => `Situation: ${segments.map(segment => segment.text).join(' · ')}.`;
   for (const id of optional) {

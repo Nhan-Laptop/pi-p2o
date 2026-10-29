@@ -40,6 +40,15 @@ export interface RelationInput { kind: typeof RELATION_KINDS[number]; fromId: st
 export interface GraphBatch { assets?: Array<{asset: AssetInput; ref?: string}>; facts?: FactInput[]; hypotheses?: HypothesisInput[]; relations?: RelationInput[]; anchors?: Array<{assetId: string; assetRevision?: number; anchor: AnchorInput}> }
 /** Supplied only by the host's current assignment registry, not a model batch. */
 export interface GraphProducer { actorId: string; taskId?: string; role?: string; depth?: number }
+/**
+ * P21/A3/D-P21-10: structural containment the host derives from anchors when graph rows are written.
+ * It records only what an anchor already states: a URL anchor names the serving host, a path anchor names a route prefix.
+ * It never guesses from names or version strings, and it never satisfies a claim, case, cell or goal (the relation is read-only
+ * structure; only claims and cases carry evidence).
+ */
+export interface DerivedContainment { kind: 'contains'; fromId: string; toId: string; rule: 'url-host' | 'path-prefix' }
+export interface ContainmentAsset { entityId: string; kind: string; key: string }
+export interface ContainmentAnchor { assetEntity: string; kind: string; value: string }
 export interface GraphAck { kind: string; entityId: string; id: string; revision: number; sequence: number; created: boolean; observationSequence: number; storeVersion: number }
 export type GraphTable = 'assets' | 'assertions' | 'relations' | 'anchors';
 export type GraphRow = Record<string, unknown> & { id: string; entityId: string; revision: number; sequence: number };
@@ -236,7 +245,7 @@ export function renderGraph(input: {scope:string;assets:GraphRow[];assertions:Gr
     lines.push(`  ${node(String(assertion.subjectId))} -.->|"${label(assertion.kind)}${assertion.stale?' STALE':''}"| ${node(assertion.entityId)}`);
   }
   for(const relation of input.relations)if(ids.has(String(relation.fromId))&&ids.has(String(relation.toId)))
-    lines.push(`  ${node(String(relation.fromId))} -- "${label(relation.kind)}${relation.stale?' STALE':''}${relation.status==='withdrawn'?' WITHDRAWN':''}" --> ${node(String(relation.toId))}`);
+    lines.push(`  ${node(String(relation.fromId))} -- "${label(relation.kind)}${relation.stale?' STALE':''}${relation.status==='withdrawn'?' WITHDRAWN':''}${relation.derived===true?' DERIVED':''}" --> ${node(String(relation.toId))}`);
   lines.push('```');return {json,mermaid:lines.join('\n')};
 }
 /** Read-only replay of committed graph deltas. Never calls a store, broker, worker or target. */
@@ -251,4 +260,67 @@ export function applyGraphEvents(snapshot: GraphSnapshot, events: Array<{sequenc
     if(delta.observation){const row={...delta.observation,sequence:event.sequence};if(!result.provenance.some(r=>r.id===row.id))result.provenance.push(row);}
   }
   for(const event of events)result.asOfSequence=Math.max(result.asOfSequence,event.sequence);return result;
+}
+
+// ---------------------------------------------------------------- P21/A3 derived containment
+
+/** A path anchor as a prefix: query/fragment dropped, one trailing slash removed, non-absolute values state nothing. */
+function containmentPath(value: string): string {
+  const path = value.split(/[?#]/)[0] ?? '';
+  if (!path.startsWith('/')) return '';
+  return path.length > 1 && path.endsWith('/') ? path.slice(0, -1) : path;
+}
+/** A prefix contains a longer path only across a segment boundary, and never itself. */
+function containsPath(prefix: string, candidate: string): boolean {
+  if (!prefix || candidate === prefix) return false;
+  return prefix === '/' ? candidate.startsWith('/') : candidate.startsWith(`${prefix}/`);
+}
+const firstSegment = (path: string): string => path.split('/').filter(Boolean)[0] ?? '';
+
+/**
+ * Pure derivation, so the store and a test see the same edges. `touched` keeps a batch's cost proportional to what it wrote;
+ * without it every anchored asset is considered, which is what a read-only rebuild would ask for.
+ */
+export function deriveContainment(input: { assets: readonly ContainmentAsset[]; anchors: readonly ContainmentAnchor[]; touched?: readonly string[] }): DerivedContainment[] {
+  const assets = new Map(input.assets.map(asset => [asset.entityId, asset]));
+  const anchorsBy = new Map<string, ContainmentAnchor[]>();
+  for (const anchor of input.anchors) { const list = anchorsBy.get(anchor.assetEntity) ?? []; list.push(anchor); anchorsBy.set(anchor.assetEntity, list); }
+  const anchorsOf = (entityId: string): ContainmentAnchor[] => anchorsBy.get(entityId) ?? [];
+  const pathsOf = (entityId: string): string[] => anchorsOf(entityId).filter(anchor => anchor.kind === 'path').map(anchor => containmentPath(anchor.value)).filter(Boolean);
+  const hosts = new Map<string, string>();
+  for (const asset of input.assets) if (asset.kind === 'host') hosts.set(asset.key.toLowerCase(), asset.entityId);
+  const routes = input.assets.filter(asset => asset.kind === 'route').map(asset => ({ id: asset.entityId, paths: pathsOf(asset.entityId) }));
+  const endpoints = input.assets.filter(asset => asset.kind === 'endpoint').map(asset => ({ id: asset.entityId, paths: pathsOf(asset.entityId) }));
+  // Bucket by first path segment so a touched endpoint does not scan every route in a large graph; '/' routes match everything.
+  const routeBuckets = new Map<string, typeof routes>();
+  for (const route of routes) for (const prefix of route.paths) {
+    const bucket = prefix === '/' ? '' : firstSegment(prefix);
+    const list = routeBuckets.get(bucket) ?? []; list.push(route); routeBuckets.set(bucket, list);
+  }
+  const touched = input.touched ? new Set(input.touched) : undefined;
+  const edges = new Map<string, DerivedContainment>();
+  const add = (fromId: string, toId: string, rule: DerivedContainment['rule']): void => {
+    if (fromId === toId || !assets.has(fromId) || !assets.has(toId)) return;
+    edges.set(`${fromId}\u0000${toId}`, { kind: 'contains', fromId, toId, rule });
+  };
+  for (const asset of input.assets) {
+    if (touched && !touched.has(asset.entityId)) continue;
+    if (asset.kind !== 'route' && asset.kind !== 'endpoint' && asset.kind !== 'host' && asset.kind !== 'service') continue;
+    // The URL anchor names the host that serves this route/endpoint; the host asset must already exist (no invented host key).
+    if (asset.kind === 'route' || asset.kind === 'endpoint') for (const anchor of anchorsOf(asset.entityId)) if (anchor.kind === 'url') {
+      try {
+        const host = new URL(anchor.value).hostname.toLowerCase().replace(/^\[|\]$/g, '');
+        const hostId = hosts.get(host);
+        if (hostId) add(hostId, asset.entityId, 'url-host');
+      } catch { /* a URL anchor that is not a URL states no host */ }
+    }
+    if (asset.kind === 'route') for (const prefix of pathsOf(asset.entityId)) for (const endpoint of endpoints)
+      for (const candidate of endpoint.paths) if (containsPath(prefix, candidate)) add(asset.entityId, endpoint.id, 'path-prefix');
+    if (asset.kind === 'endpoint') for (const candidate of pathsOf(asset.entityId)) {
+      if (!candidate) continue;
+      const candidates = [...(routeBuckets.get('') ?? []), ...(routeBuckets.get(firstSegment(candidate)) ?? [])];
+      for (const route of new Set(candidates)) for (const prefix of route.paths) if (containsPath(prefix, candidate)) add(route.id, asset.entityId, 'path-prefix');
+    }
+  }
+  return [...edges.values()].sort((left, right) => left.rule.localeCompare(right.rule) || left.fromId.localeCompare(right.fromId) || left.toId.localeCompare(right.toId));
 }

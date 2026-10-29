@@ -56,7 +56,7 @@ export const caseFrontier=(index:LedgerIndex):CaseEntry[]=>ownerNoteFrontier(ind
  * demonstrated claim against the receipt it cites, running the same payload bytes (sha256 stamped at write time) in an environment with the
  * same recipe fingerprint. A mismatch is named, because "not independent" without a reason is the annotation this phase removes.
  */
-function independentReceiptCurrent(index:LedgerIndex,claim:AssessmentRecord,evidenceId:string):{ok:boolean;reason?:string}{
+export function independentReceiptCurrent(index:LedgerIndex,claim:AssessmentRecord,evidenceId:string):{ok:boolean;reason?:string}{
   const evidence=index.byId.get(evidenceId);
   if(evidence?.kind!=='evidence'||!evidence.workerId)return {ok:false,reason:`independent-receipt-missing:${evidenceId}`};
   if(evidence.by===claim.by)return {ok:false,reason:`independent-receipt-not-independent:${evidenceId}`};
@@ -66,6 +66,19 @@ function independentReceiptCurrent(index:LedgerIndex,claim:AssessmentRecord,evid
   if(!isDemonstrated(validator.data??{})||validator.data?.proof==='static_trace')return {ok:false,reason:`independent-receipt-withdrawn:${evidenceId}`};
   if(validator.surface!==claim.surface||validator.risk!==claim.risk)return {ok:false,reason:`independent-receipt-different-surface:${evidenceId}`};
   const ran=claim.data??{},replayed=validator.data??{},hash=(value:unknown)=>typeof value==='string'&&value.length>=12?value:'';
+  // P21/A2: a reproduction claim names the claim it replayed, so the byte comparison is against *that* claim's recorded replay
+  // hash instead of guessing from whichever claim the author recorded last against the receipt. A legacy target with no host
+  // hash keeps the old rule: the peer's own demonstrated claim is the independence.
+  if(claim.data?.reproducedClaimRef!==undefined){
+    const target=typeof claim.data.reproducedClaimRef==='string'?index.byId.get(claim.data.reproducedClaimRef):undefined;
+    if(!target||target.kind!=='candidate')return {ok:false,reason:`independent-target-missing:${String(claim.data.reproducedClaimRef).slice(0,80)}`};
+    if(!isDemonstrated(target.data??{})||target.data?.proof==='static_trace')return {ok:false,reason:`independent-target-withdrawn:${target.id}`};
+    if(target.surface!==claim.surface||target.risk!==claim.risk)return {ok:false,reason:`independent-target-different-surface:${target.id}`};
+    const targetSha=hash(target.data?.payloadSha256),claimSha=hash(claim.data?.payloadSha256),targetEnv=hash(target.data?.environmentFingerprint),claimEnv=hash(claim.data?.environmentFingerprint);
+    if(targetSha&&targetSha!==claimSha)return {ok:false,reason:`independent-payload-mismatch:${targetSha.slice(0,12)}!=${claimSha.slice(0,12)||'none'}`};
+    if(targetEnv&&targetEnv!==claimEnv)return {ok:false,reason:`independent-environment-mismatch:${targetEnv.slice(0,12)}!=${claimEnv.slice(0,12)||'none'}`};
+    return {ok:true};
+  }
   // An effect with no stored artifact has nothing to replay, and its independence stays what it always was: a peer's own demonstrated claim
   // against the receipt it cites. Once the author names a payload or an environment, the peer must match it exactly.
   if(!hash(ran.payloadSha256)&&!hash(ran.environmentFingerprint))return {ok:true};
