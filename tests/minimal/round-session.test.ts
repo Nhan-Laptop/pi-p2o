@@ -68,7 +68,9 @@ describe('Rounds as fresh sessions (P18.1/D45)',()=>{
       const brief=parseRoundBrief(opening)!;
       expect(brief.brief.startsWith('P2O round brief: round 1')).toBe(true);
       expect(Buffer.byteLength(brief.brief)).toBeLessThanOrEqual(ROUND_BRIEF_MAX_BYTES);
-      for(const section of ['## Campaign frame','## Completion and demand','## Goals and proof','## Ready chain steps','## Workers','## Round facts']) expect(brief.brief).toContain(section);
+      for(const section of ['## Campaign frame','## Completion and demand','## Goals and proof','## Ready chain steps','## Workers','## Round facts','## Learned this round']) expect(brief.brief).toContain(section);
+      // P20/A3: the learned section is projected from the same ledger read, so it says what the window holds instead of staying silent.
+      expect(brief.brief).toMatch(/Nothing recorded since ledger position 0 \(\d+ record\(s\) in the window\): no claim, accepted case or wall is in the window\./);
       expect(brief.brief).toContain('Objective:');
       expect(h.pi.sessions[0].name).toBe(`p2o ${wake!.runId} round 1`);
       // The planner loadout is re-applied to the fresh session before its first turn; the run never keeps target tools.
@@ -120,6 +122,8 @@ describe('Rounds as fresh sessions (P18.1/D45)',()=>{
       expect(second.brief).toContain('Since the last round:');
       expect(second.brief).not.toContain('First round:');
       expect(second.brief).toContain('## Older material');
+      // P20/A3: every round opening carries the learned projection, and it is derived rather than cached from round 1.
+      expect(second.brief).toContain('## Learned this round');
       expect(second.brief).toMatch(/Folded \d+ older record\(s\)/);
       // R1.7: the asset recorded in round 1 is the round 2 delta, read from the store sequence the round opened at.
       expect(second.brief).toMatch(/Graph since \d+: 1 new asset\(s\), \d+ changed; \d+ with no claim;/);
@@ -266,7 +270,7 @@ describe('Rounds as fresh sessions (P18.1/D45)',()=>{
       expect(await eventRows(h,'planner.round-model')).toEqual([]);
     },'',{settings:{p2o:{plannerModels}},models:[{provider:'fixture',id:'base'}]});
   });
-  it('skips a progress render that lands before the replacement binds the new context (P19/G)',async()=>{
+  it('skips a progress render that lands before the replacement binds the new context (P19/H)',async()=>{
     await fixture(async h=>{
       // Pi invalidates the outgoing ctx when the replacement starts and binds the new one only in `session_start`. Hold the
       // switch inside that window: an event that refreshes the progress widget must skip the repaint, not read the stale

@@ -31,7 +31,7 @@ export interface FakePi {
   /** Bind the command context a dispatched command runs in and that `newSession` replaces. Unbound fakes have no command
    * dispatch, so a wake falls back to the in-session prompt exactly as it did before P18.1. */
   bind: (ctx: ExtensionCommandContext) => void;
-  /** P19/G: hold the replacement inside the window where the outgoing context is invalidated but `session_start` has not bound
+  /** P19/H: hold the replacement inside the window where the outgoing context is invalidated but `session_start` has not bound
    * the new one; the stale getters are what a background render can hit across a round switch. */
   holdSessionSwitch?: () => Promise<void>;
   setContextPercent: (percent: number | null) => void;
@@ -87,7 +87,7 @@ export function createFakePi(options: { active?: string[] } = {}): FakePi {
     session.getContextUsage = () => contextPercent === null ? undefined : { tokens: Math.round(contextPercent), contextWindow: 100, percent: contextPercent };
     session.compact = () => { compactions += 1; };
     // The replaced context is a live view of the same extension state (ui, model registry, abort signal) with its own session
-    // identity and message senders, so a rebind in `withSession` behaves like Pi's ReplacedSessionContext. P19/G: the guarded
+    // identity and message senders, so a rebind in `withSession` behaves like Pi's ReplacedSessionContext. P19/H: the guarded
     // surfaces are copied before the outgoing context is invalidated, because the replacement must stay readable.
     const replaced = (id: string, surface: { ui: any; mode: any; hasUI: any }) => {
       const view: any = Object.create(session);
@@ -107,7 +107,7 @@ export function createFakePi(options: { active?: string[] } = {}): FakePi {
       const surface = { ui: session.ui, mode: session.mode, hasUI: session.hasUI };
       // Pi tears the outgoing session down (session_shutdown with the replacement's reason) before the new one exists.
       for (const handler of events.get('session_shutdown') ?? []) await handler({ type: 'session_shutdown', reason: 'new' }, session);
-      // P19/G: the outgoing context is invalid from here until `session_start("new")` rebinds the run; a stale getter throws.
+      // P19/H: the outgoing context is invalid from here until `session_start("new")` rebinds the run; a stale getter throws.
       session.markStale?.();
       if (fake.holdSessionSwitch) await fake.holdSessionSwitch();
       sessionCounter += 1;
@@ -122,7 +122,7 @@ export function createFakePi(options: { active?: string[] } = {}): FakePi {
         commandContext = replacedCtx;
         // A real host hands every command a fresh context object; this fake keeps one instance, so the fixture's own command
         // channel (teardown included) reads the original object again once the switch has rebound the run. The invalidation
-        // window above is what the P19/G test needs, not a permanently dead handle.
+        // window above is what the P19/H test needs, not a permanently dead handle.
         session.revive?.();
       }
       return { cancelled: false };
@@ -155,7 +155,7 @@ export interface FakeContext {
   setContextUsage: (percent: number | null) => void;
   /** P18.6/D50: the models `ctx.modelRegistry.find` may resolve; the extension resolves a routed id through this. */
   setModels: (list: Array<{ provider: string; id: string }>) => void;
-  /** P19/G: invalidate the outgoing context the way Pi does once a replacement starts; its getters then throw. */
+  /** P19/H: invalidate the outgoing context the way Pi does once a replacement starts; its getters then throw. */
   markStale: () => void;
 }
 
@@ -201,7 +201,7 @@ export function createContext(options: { cwd: string; hasUI?: boolean; model?: {
     },
     sessionManager: { getBranch: () => [], getSessionId: () => 'session-0' },
   } as unknown as ExtensionCommandContext;
-  // P19/G: Pi's context getters assert once a session replacement invalidates them. The fake reproduces exactly that on the
+  // P19/H: Pi's context getters assert once a session replacement invalidates them. The fake reproduces exactly that on the
   // three surfaces a background render reads, so a test can hold the invalidation window open and prove the extension skips
   // the repaint instead of throwing out of a timer or a promise chain. The setter stays writable because tests switch `mode`
   // between TUI and RPC after creation.

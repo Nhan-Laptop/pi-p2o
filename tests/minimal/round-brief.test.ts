@@ -3,7 +3,7 @@ import {
   ROUND_BRIEF_MAX_BYTES, ROUND_BRIEF_SECTION_CAPS, ROUND_DIGEST_MAX_BYTES,
   buildRoundBrief, buildRoundDigest,
   type BriefCampaign, type BriefCase, type BriefCoveragePlan, type BriefProgress, type BriefRevisit,
-  type BriefGraphDelta, type BriefWorker, type RoundBriefInput,
+  type BriefGraphDelta, type BriefLearned, type BriefLearnedClaim, type BriefWorker, type RoundBriefInput,
 } from '../../src/round-brief.js';
 import { completionLine, deriveCompletion } from '../../src/completion.js';
 import { DEBT_KINDS, SIGNAL_KINDS, debtFor, type DebtItem, type DebtKind, type DebtReport } from '../../src/debt.js';
@@ -209,6 +209,9 @@ Workers: 3 total; 1 live (1 quiet); 1 reported; 1 stopped.
 ## Delta since the last round
 Since the last round: closures 1->2 (+1); tested cells 0->1 (+1); assets 1 (no change); chain depth 0->1 (+1); remaining 6->4 (-2); debt (gateable) 1 (no change).
 
+## Learned this round
+No learned projection was supplied this round; what the run recorded is unknown, not zero.
+
 ## Research debt
 1 research debt item(s): GAP_UNTRIAGED 1; planning signal (not owed work): CELL_NOT_RUN 1
 - debt-cell-not-run-aaaaaaaaaaaa CELL_NOT_RUN: cell-2
@@ -239,7 +242,7 @@ describe('round brief (P18.2/D46)', () => {
     const input = fixture();
     const brief = buildRoundBrief(input);
     expect(brief.sections.map(section => section.id)).toEqual([
-      'frame', 'completion', 'goals', 'ready', 'unchained', 'coverage', 'review', 'workers', 'delta', 'debt', 'revisits', 'round', 'digest',
+      'frame', 'completion', 'goals', 'ready', 'unchained', 'coverage', 'review', 'workers', 'delta', 'learned', 'debt', 'revisits', 'round', 'digest',
     ]);
     expect(brief.remaining).toBe(input.completion.remaining);
     expect(brief.remaining).toBe(deriveCompletion({
@@ -408,5 +411,57 @@ describe('the brief separates settled-with-debt goals and planning-signal debt (
     expect(brief.text).toContain('A deferred/blocked todo citing these ids is the wall; a round that records one is progress, not a stall.');
     // The planning-signal item stays visible but does not read as owed work.
     expect(brief.text).toContain('planning signal (not owed work): CELL_NOT_RUN 1');
+  });
+});
+
+
+describe('the brief carries what the run just learned (P20/A3, P20/A5)', () => {
+  const learned = (overrides: Partial<BriefLearned> = {}): BriefLearned => ({
+    since: 12, window: 3,
+    claims: [{ recordId: 'record-claim-1', candidate: 'export-claim', closure: 'confirmed', execution: 'tested',
+      proof: 'offline_reproduction', taskId: 'task-9', assetIds: ['asset-aaaaaaaaaaaaaaaaaaaaaaaa'] }],
+    cases: [{ recordId: 'record-case-1', caseId: 'case-boundary', verdict: 'confirmed', assetIds: ['asset-aaaaaaaaaaaaaaaaaaaaaaaa'] }],
+    walls: [{ planId: 'wall-rec-d', recordId: 'record-wall-d', title: 'Wall the primitive', status: 'blocked', debtRefs: ['debt-gap-untriaged-bbbbbbbbbbbb'] }],
+    counts: { claims: 2, cases: 1, walls: 1 }, ...overrides,
+  });
+
+  it('names a new claim with its source task and pinned asset, and reports shown against the true count', () => {
+    const brief = buildRoundBrief(fixture({ learned: learned() }));
+    expect(brief.text).toContain('## Learned this round');
+    expect(brief.text).toContain('Recorded since ledger position 12 (3 record(s) in the window): 2 claim(s) (showing 1), 1 accepted case(s) (showing 1), 1 wall(s) (showing 1). Background only: never proof, never a coverage cell.');
+    expect(brief.text).toContain('- claim record-claim-1 export-claim confirmed/tested, proof offline_reproduction, via task task-9, on asset-aaaaaaaaaaaaaaaaaaaaaaaa');
+    expect(brief.text).toContain('- accepted case case-boundary (confirmed) on asset-aaaaaaaaaaaaaaaaaaaaaaaa');
+    expect(brief.text).toContain('- wall wall-rec-d [blocked] answers debt-gap-untriaged-bbbbbbbbbbbb');
+    expect(brief.text).toContain('Omitted beyond this page: 1 claim(s), 0 case(s), 0 wall(s).');
+    const section = brief.sections.find(item => item.id === 'learned')!;
+    expect(section.bytes).toBeLessThanOrEqual(ROUND_BRIEF_SECTION_CAPS.learned);
+    expect(section.bytes).toBeGreaterThan(0);
+    expect(brief.bytes).toBeLessThanOrEqual(ROUND_BRIEF_MAX_BYTES);
+    // Nothing in the section is a link, a truth label or an authority claim.
+    expect(brief.text).not.toMatch(/https?:\/\//);
+  });
+
+  it('renders the prior-run reference as context only, and says the projection is unknown when it was not supplied', () => {
+    const withPrior = buildRoundBrief(fixture({ learned: learned({ claims: [], cases: [], walls: [], counts: { claims: 0, cases: 0, walls: 0 },
+      priorRun: { runs: 2, covered: 11, leftOpen: 3, stale: 4, neverReached: 37, unknown: 1 } }) }));
+    expect(withPrior.text).toContain('Nothing recorded since ledger position 12 (3 record(s) in the window): no claim, accepted case or wall is in the window.');
+    expect(withPrior.text).toContain('Prior run (context only, never evidence): 2 run(s); covered 11, left open 3, stale 4, never reached 37, unknown 1.');
+    const absent = buildRoundBrief(fixture());
+    expect(absent.text).toContain('No learned projection was supplied this round; what the run recorded is unknown, not zero.');
+    expect(absent.text).not.toContain('Prior run (context only');
+  });
+
+  it('bounds the learned page and marks the cut instead of growing the brief', () => {
+    const many: BriefLearnedClaim[] = Array.from({ length: 9 }, (_, index) => ({
+      recordId: `record-claim-${index}`, candidate: `candidate ${index} ${'detail '.repeat(14)}`,
+      closure: 'confirmed', execution: 'tested', proof: 'offline_reproduction', taskId: 'task-9',
+      assetIds: ['asset-aaaaaaaaaaaaaaaaaaaaaaaa'],
+    }));
+    const brief = buildRoundBrief(fixture({ learned: learned({ claims: many, cases: [], walls: [], counts: { claims: 9, cases: 0, walls: 0 } }) }));
+    expect(brief.text).toContain('9 claim(s) (showing 5)');
+    expect(brief.sections.find(item => item.id === 'learned')!.truncated).toBe(true);
+    expect(brief.text).toMatch(/\[\.\.\. truncated \d+ bytes\]/);
+    expect(brief.bytes).toBeLessThanOrEqual(ROUND_BRIEF_MAX_BYTES);
+    expect(buildRoundBrief(fixture({ learned: learned({ claims: many, cases: [], walls: [], counts: { claims: 9, cases: 0, walls: 0 } }) })).text).toBe(brief.text);
   });
 });

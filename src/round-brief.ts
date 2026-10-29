@@ -31,7 +31,7 @@ export const ROUND_BRIEF_MAX_BYTES = 8 * 1024;
 
 export type BriefSectionId =
   | 'frame' | 'completion' | 'goals' | 'ready' | 'unchained' | 'coverage' | 'review'
-  | 'workers' | 'delta' | 'debt' | 'revisits' | 'round' | 'digest';
+  | 'workers' | 'delta' | 'learned' | 'debt' | 'revisits' | 'round' | 'digest';
 
 /**
  * Per-section caps. The sum deliberately exceeds the total cap: the aggregate guard has a real job, and it names the
@@ -39,23 +39,23 @@ export type BriefSectionId =
  */
 export const ROUND_BRIEF_SECTION_CAPS = {
   frame: 1024, completion: 1024, goals: 1024, ready: 1024, unchained: 640, coverage: 768, review: 768,
-  workers: 768, delta: 640, debt: 1152, revisits: 448, round: 512, digest: 900,
+  workers: 768, delta: 640, learned: 900, debt: 1152, revisits: 448, round: 512, digest: 900,
 } as const satisfies Record<BriefSectionId, number>;
 
 const SECTION_TITLES: Readonly<Record<BriefSectionId, string>> = {
   frame: 'Campaign frame', completion: 'Completion and demand', goals: 'Goals and proof',
   ready: 'Ready chain steps', unchained: 'Unchained primitives', coverage: 'Coverage and route',
-  review: 'Awaiting review', workers: 'Workers', delta: 'Delta since the last round', debt: 'Research debt',
-  revisits: 'Revisit conditions', round: 'Round facts', digest: 'Older material',
+  review: 'Awaiting review', workers: 'Workers', delta: 'Delta since the last round', learned: 'Learned this round',
+  debt: 'Research debt', revisits: 'Revisit conditions', round: 'Round facts', digest: 'Older material',
 };
 
 /** Display order is D46's list; omission order drops history and pacing detail before obligations. */
 const SECTION_ORDER: readonly BriefSectionId[] = [
   'frame', 'completion', 'goals', 'ready', 'unchained', 'coverage', 'review',
-  'workers', 'delta', 'debt', 'revisits', 'round', 'digest',
+  'workers', 'delta', 'learned', 'debt', 'revisits', 'round', 'digest',
 ];
 const OMIT_ORDER: readonly Exclude<BriefSectionId, 'frame'>[] =
-  ['digest', 'revisits', 'delta', 'workers', 'debt', 'review', 'coverage', 'round', 'unchained', 'ready', 'goals', 'completion'];
+  ['digest', 'revisits', 'delta', 'workers', 'learned', 'debt', 'review', 'coverage', 'round', 'unchained', 'ready', 'goals', 'completion'];
 
 /** The campaign fields the frame renders; `CampaignRecord` satisfies this structurally. */
 export type BriefCampaign = Pick<CampaignRecord, 'objective' | 'constraints' | 'mode'>;
@@ -126,6 +126,8 @@ export interface RoundBriefInput {
   digest?: RoundDigest;
   /** R1.7: the graph's movement since the previous round opened, so the brief names it instead of leaving it to the tool. */
   graph?: BriefGraphDelta;
+  /** P20/A3: what the run recorded in this window; omitted means the projection was not supplied and the brief says unknown. */
+  learned?: BriefLearned;
   round: BriefRound;
   /** The same situation snapshot `/p2o status` reads; rendered as one line under the title when supplied. */
   situation?: SituationSnapshot;
@@ -151,6 +153,33 @@ export interface BriefGraphDelta {
   acceptedFindingsByAsset?: readonly { assetId: string; findings: number }[];
   /** Open hypotheses recorded by a worker, waiting for owner review. */
   openHypotheses?: readonly { statement: string }[];
+}
+
+/**
+ * P20/A3: what the run recorded in this window, reduced by the caller from `recentLearnings` (`src/exploration-view.ts`). Rows are
+ * plain values with their record ids, so the section still cannot fetch a value the caller did not derive, and nothing here is
+ * promoted: a learned claim is read back as background, not proof. Absent means the caller supplied no projection — the brief then
+ * says unknown rather than zero.
+ */
+export interface BriefLearnedClaim {
+  recordId?: string; candidate: string; closure?: string; execution?: string; proof?: string;
+  taskId?: string; assetIds?: readonly string[]; surface?: string;
+}
+export interface BriefLearnedCase { recordId?: string; caseId: string; verdict?: string; reviewStatus?: string; assetIds?: readonly string[] }
+export interface BriefLearnedWall { planId: string; recordId?: string; title?: string; status?: string; debtRefs?: readonly string[] }
+/** P20/A5: the run-start reference counts; context from a prior run, never same-run evidence. */
+export interface BriefLearnedPriorRun { runs: number; covered: number; leftOpen: number; stale: number; neverReached: number; unknown: number }
+
+export interface BriefLearned {
+  /** Ledger position the window starts at, and how many records it covers; absent means the caller did not say. */
+  since?: number;
+  window?: number;
+  claims: readonly BriefLearnedClaim[];
+  cases: readonly BriefLearnedCase[];
+  walls: readonly BriefLearnedWall[];
+  /** True totals; the section renders a bounded page and reports the difference. */
+  counts?: { claims: number; cases: number; walls: number };
+  priorRun?: BriefLearnedPriorRun;
 }
 
 export interface RoundBrief {
@@ -396,6 +425,48 @@ function deltaSection(input: RoundBriefInput, completion: Completion): Rendered 
   return body('delta', [`Since the last round: ${parts.join('; ')}.`, ...graph]);
 }
 
+/** P20/A3: the round's recorded learning, with the intent and asset behind each row, plus the prior-run context line (A5). */
+function learnedSection(learned: BriefLearned | undefined): Rendered {
+  if (!learned) return body('learned', ['No learned projection was supplied this round; what the run recorded is unknown, not zero.']);
+  const counts = learned.counts ?? { claims: learned.claims.length, cases: learned.cases.length, walls: learned.walls.length };
+  const claims = learned.claims.slice(0, 5), cases = learned.cases.slice(0, 3), walls = learned.walls.slice(0, 3);
+  const window = `${learned.since !== undefined ? ` since ledger position ${learned.since}` : ''}${learned.window !== undefined ? ` (${learned.window} record(s) in the window)` : ''}`;
+  const first = (values: readonly string[] | undefined, max: number): string => values?.length
+    ? `${oneLine(values[0], max)}${values.length > 1 ? ` (+${values.length - 1})` : ''}` : '';
+  const recorded = counts.claims + counts.cases + counts.walls;
+  const lines: string[] = [];
+  if (!recorded) lines.push(`Nothing recorded${window}: no claim, accepted case or wall is in the window.`);
+  else lines.push(`Recorded${window}: ${counts.claims} claim(s) (showing ${claims.length}), ${counts.cases} accepted case(s) (showing ${cases.length}), `
+    + `${counts.walls} wall(s) (showing ${walls.length}). Background only: never proof, never a coverage cell.`);
+  for (const claim of claims) {
+    const asset = first(claim.assetIds, 30);
+    lines.push(`- claim ${oneLine(claim.recordId ?? claim.candidate, 80)} ${oneLine(claim.candidate, 56)} `
+      + `${oneLine(claim.closure ?? 'unknown', 24)}/${oneLine(claim.execution ?? 'unknown', 24)}`
+      + `${claim.proof ? `, proof ${oneLine(claim.proof, 24)}` : ''}`
+      + `${claim.taskId ? `, via task ${oneLine(claim.taskId, 32)}` : ', no recorded task'}`
+      + `${asset ? `, on ${asset}` : ', no pinned asset'}`);
+  }
+  for (const item of cases) {
+    const asset = first(item.assetIds, 30);
+    lines.push(`- accepted case ${oneLine(item.caseId, 60)}${item.verdict ? ` (${oneLine(item.verdict, 24)})` : ''}${asset ? ` on ${asset}` : ''}`);
+  }
+  for (const wall of walls) {
+    const debt = first(wall.debtRefs, 40);
+    lines.push(`- wall ${oneLine(wall.planId, 60)} [${oneLine(wall.status ?? 'unknown', 24)}] answers ${debt || 'no recorded debt id'}`);
+  }
+  const omitted = { claims: counts.claims - claims.length, cases: counts.cases - cases.length, walls: counts.walls - walls.length };
+  if (omitted.claims > 0 || omitted.cases > 0 || omitted.walls > 0) {
+    lines.push(`Omitted beyond this page: ${omitted.claims} claim(s), ${omitted.cases} case(s), ${omitted.walls} wall(s).`);
+  }
+  // P20/A5: a prior run's project knowledge is a lookup hint; this line can never be read as same-run evidence.
+  if (learned.priorRun) {
+    const prior = learned.priorRun;
+    lines.push(`Prior run (context only, never evidence): ${prior.runs} run(s); covered ${prior.covered}, left open ${prior.leftOpen}, `
+      + `stale ${prior.stale}, never reached ${prior.neverReached}, unknown ${prior.unknown}.`);
+  }
+  return body('learned', lines);
+}
+
 /** A6.2: the derived report's own summary, the citable ids a later plan row can wall, and P19/D: how each owed item is discharged. */
 function debtSection(debt: DebtReport | undefined): Rendered {
   if (!debt) return body('debt', ['No research-debt report was supplied; outstanding research is unknown, not zero.']);
@@ -459,6 +530,7 @@ export function buildRoundBrief(input: RoundBriefInput): RoundBrief {
     review: reviewSection(input),
     workers: workersSection(input.workers),
     delta: deltaSection(input, input.completion),
+    learned: learnedSection(input.learned),
     debt: debtSection(input.debt),
     revisits: revisitsSection(input.revisits),
     round: roundSection(input.round),

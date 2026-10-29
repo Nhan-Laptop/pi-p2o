@@ -41,6 +41,7 @@ import { createHerdrClient, type HerdrClient } from '../../src/herdr.js';
 import { allowedWorkerModels, loadSettings, MAX_SKILLS, resolveRole, validateTaskRuntime, type P2OSettings, type RetentionMode } from '../../src/roles.js';
 import { DEFAULT_ROUND_BUDGET, judgeRound, type RoundBudget } from '../../src/round-budget.js';
 import { buildRoundBrief, buildRoundDigest, type RoundBrief } from '../../src/round-brief.js';
+import { lineagePage, priorRunContext, recentLearnings } from '../../src/exploration-view.js';
 import { routeRound, type RoundDemand, type RoundRoute } from '../../src/round-model.js';
 import { PLANNER_PROMPT_SECTION, plannerInstructions, roundWrapDirective, workerBrief, workerInstructions, type ExploitBriefFacts } from '../../src/prompts.js';
 import { authorityCounters, authorityReport, wakeRoundCount } from '../../src/authority.js';
@@ -633,6 +634,15 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
           openHypotheses: delta.openHypotheses.slice(0, 2).map(row => ({ statement: row.statement })) };
       } catch { return undefined; }
     })();
+    // P20/A3+A5: the learning projection and the prior-run reference, read from the same index the round is judged on. A failed
+    // projection leaves the brief saying unknown instead of blocking a planning round.
+    const learned = (() => {
+      try {
+        const recent = recentLearnings(read.index, { since: current.roundWindow?.records ?? 0 });
+        const prior = priorRunContext(read.index);
+        return { ...recent, ...(prior ? { priorRun: { runs: prior.runs.length, ...prior.gaps } } : {}) };
+      } catch { return undefined; }
+    })();
     const brief = buildRoundBrief({
       ...(current.campaign ? { campaign: current.campaign } : {}),
       completion: read.completion,
@@ -641,7 +651,7 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
       workers: operatorWorkers(current), revisits: current.engine.pendingRevisits(),
       progress: read.progress, previous: current.engine.previousProgress(),
       digest, round: { number: wake.round, budget: current.roundBudget },
-      ...(situation ? { situation } : {}), ...(graph ? { graph } : {}),
+      ...(situation ? { situation } : {}), ...(graph ? { graph } : {}), ...(learned ? { learned } : {}),
     });
     // P18.6/D50: the loadout is routed from the same read, so the round's model and its brief cannot describe different rounds.
     const route = routeRound({
@@ -772,7 +782,7 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
     } catch { return undefined; }
   }
   /**
-   * P19/G: Pi invalidates the outgoing `ctx` as soon as a session replacement starts, and every getter on it throws
+   * P19/H: Pi invalidates the outgoing `ctx` as soon as a session replacement starts, and every getter on it throws
    * (`This extension ctx is stale after session replacement or reload …`) instead of returning undefined. A progress scan
    * scheduled before a round switch can await past that invalidation, and its own error path would then read the same stale
    * context again — the second throw escapes the promise chain and pi exits on the uncaught rejection. Rendering is never
@@ -818,7 +828,7 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
     current.unobserve?.(); current.unobserve = undefined;
     clearTimeout(current.uiTimer); current.uiTimer = undefined;
     await current.uiRefresh;
-    // P19/G: cleanup can run while the bound context is already stale; the guard keeps the teardown path from throwing.
+    // P19/H: cleanup can run while the bound context is already stale; the guard keeps the teardown path from throwing.
     try { boundUi(current)?.setWidget('p2o-progress', undefined); } catch { /* Cleanup authority never depends on rendering. */ }
   }
 
@@ -2954,8 +2964,16 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
   planVerb('p2o_goal_author','Create or revise a goal, todo or decision',planAuthorParameters,
     'PLANNER ONLY: create a goal/todo/decision when no id is supplied, or revise one at id+revision (goal review/close is a status change). Goals need criteria and a proof contract; status defaults to active. A goal names a proof this run can measure and the exclusions that would make it unreachable; settle an unreachable goal blocked with that reason (completion counts it settled with debt). A todo checklist is advisory and never gates completion; decisions never dispatch tasks.',(params)=>authoringAction('plan',params));
   registerTool({name:'p2o_board',label:'Read the owner board',exposure:'model-only',parameters:boardParameters,
-    description:'PLANNER ONLY read: board=tasks, cases, coverage or plans. Without id it lists; with id it returns that record (a coverage id resolves a plan whose cells page with cursor/limit 1..100). The only list/view reader for these boards; p2o_state heads and p2o_ledger records are separate. Summaries grant no authority.',
-    async execute(_id:string,params:any){graphObject(params,['board','id','cursor','limit','status','kind'],'Board read');const current=owner();const action=params.board==='tasks'?'list':boardReadAction(params.id as string|undefined);const input:any={action};
+    description:'PLANNER ONLY read: board=tasks, cases, coverage or plans. Without id it lists; with id it returns that record (a coverage id resolves a plan whose cells page with cursor/limit 1..100). board=lineage needs id: it walks why that plan row or knowledge record exists (upstream it stands on and downstream that stands on it; limit bounds each direction) and is background, never evidence or authority. The only list/view reader for these boards; p2o_state heads and p2o_ledger records are separate. Summaries grant no authority.',
+    async execute(_id:string,params:any){graphObject(params,['board','id','cursor','limit','status','kind'],'Board read');const current=owner();
+      // P20/A4: the lineage read is derived on demand from the run ledger; it stores nothing and grants nothing.
+      if(params.board==='lineage'){
+        if(typeof params.id!=='string')throw Error('Board read lineage needs id: a plan row id or a knowledge record id');
+        const index=await readLedger(current.records,current.runId),page=lineagePage(index,params.id,{limit:params.limit as number|undefined});
+        if(!page)throw Error(`No plan row or knowledge record ${params.id} is in this run's ledger`);
+        return textResult(cleanText(JSON.stringify(page,null,2)),page);
+      }
+      const action=params.board==='tasks'?'list':boardReadAction(params.id as string|undefined);const input:any={action};
       if(params.id!==undefined)input.id=params.id;
       // P10/TR-H02: a coverage plan view pages its derived cells, so a cursor/limit travels with the id for exactly that board read.
       const coverageView=params.board==='coverage'&&params.id!==undefined;
@@ -4497,7 +4515,7 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
         current.roundOpened = { through: wake.through, round: wake.round };
         // R1.7: the store sequence this round opened at, so the next round's graph delta starts where this one did.
         if (briefing) current.roundWindow = { round: wake.round, records: briefing.records, sequence: current.store.sequence() };
-        // P19/G: a pending progress render belongs to the outgoing session. Stop it before the switch so the scan cannot start
+        // P19/H: a pending progress render belongs to the outgoing session. Stop it before the switch so the scan cannot start
         // across the invalidation; the replacement's `session_start` schedules the next render on the bound context.
         clearTimeout(current.uiTimer); current.uiTimer = undefined;
         const outcome = await ctx.newSession({

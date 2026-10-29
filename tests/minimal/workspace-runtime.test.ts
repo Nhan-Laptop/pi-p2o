@@ -15,6 +15,8 @@ import { parseWorkspaceCommand } from '../../src/ui/workspace.js';
 import { bundlePath } from '../../src/state/bundle.js';
 import { createContext, createFakePi, createSimpleHerdr, EXTENSION_PATH, InertSandbox } from './helpers/fake-pi.js';
 import { seedClaim, seedImpactGoal } from './helpers/report-fixture.js';
+import { priorRunContext } from '../../src/exploration-view.js';
+import { indexRecords } from '../../src/records.js';
 import type { SandboxOptions } from '../../src/sandbox.js';
 import { runFixed } from '../../src/process.js';
 import { scratchPrefixHash, type ScratchSnapshot } from '../../src/scratch.js';
@@ -116,10 +118,38 @@ describe('canonical owner runtime (inert execution, real SQLite and Unix broker)
         expect(gaps.leftOpen).toMatchObject([{kind:'candidate',runId:firstRunId,candidate:'refer-observed-claim'},{kind:'candidate',runId:firstRunId,candidate:'refer-leftover-claim'}]);
         expect(gaps.stale).toEqual([]);expect(gaps.unknown).toEqual([]);
         expect(gaps.neverReached).not.toContain('wstg-info-01');expect(gaps.neverReached).toContain('wstg-info-02');
+        // P20/A5: the one bounded projection the round brief carries reduces this record to counts a planner can read; the run
+        // identities stay lookup hints and none of it can be read as same-run evidence.
+        const prior=priorRunContext(indexRecords(store.records(),secondRunId))!;
+        expect(prior.runs).toMatchObject([{runId:firstRunId,currency:'current'}]);
+        expect(prior.gaps).toMatchObject({covered:1,leftOpen:2,stale:0,unknown:0});
+        expect(prior.gaps.neverReached).toBeGreaterThan(0);
       } finally {store.close();}
       const heads=(await h.call('p2o_state',{action:'heads',domain:'reference'})).details;
       expect(heads.rows).toHaveLength(1);expect(heads.rows[0]).toMatchObject({domain:'reference',status:'current'});
       await h.pi.commands.get('p2o').handler('stop',fresh.ctx);
+    });
+  });
+  it('p2o_board board=lineage answers why a plan row or knowledge record exists, bounded and labelled (P20/A4)',async()=>{
+    await fixture(async h=>{
+      await h.command('--target ./source');
+      const goal=(await h.call('p2o_goal_author',{entry:{kind:'goal',title:'Lineage fixture goal',status:'active',criteria:['The bounded fixture observation is recorded'],proof:{kind:'capability',capability:{kind:'data.read'}},reason:'Lineage fixture needs one goal row for the walk'}})).details;
+      const todo=(await h.call('p2o_goal_author',{entry:{kind:'todo',title:'Lineage fixture todo',status:'open',goalIds:[goal.id],reason:'Lineage fixture needs one todo row that cites its goal'}})).details;
+      const why=(await h.call('p2o_board',{board:'lineage',id:todo.id})).details;
+      expect(why.label).toMatch(/background projection/);
+      expect(why.plan).toMatchObject({id:todo.id,kind:'todo'});
+      expect(why.goals).toEqual([goal.id]);
+      expect(why.lineage.root).toMatchObject({domain:'todo',entityId:todo.id});
+      expect(why.truncated).toBe(false);
+      expect(Buffer.byteLength(JSON.stringify(why))).toBeLessThanOrEqual(24*1024);
+      // A record id (not a plan id) returns its own walk: the goal record's downstream is the todo that cites it.
+      const recordView=(await h.call('p2o_board',{board:'lineage',id:goal.recordId})).details;
+      expect(recordView.plan).toBeUndefined();
+      expect(recordView.lineage.root).toMatchObject({domain:'goal',entityId:goal.id});
+      expect(recordView.lineage.downstream).toEqual(expect.arrayContaining([expect.objectContaining({relation:'goal',domain:'todo',entityId:todo.id})]));
+      // The read is derived and bounded: it refuses a missing identity and an id that is not in the ledger by name.
+      await expect(h.call('p2o_board',{board:'lineage'})).rejects.toThrow(/needs id/);
+      await expect(h.call('p2o_board',{board:'lineage',id:'missing-record'})).rejects.toThrow(/No plan row or knowledge record/);
     });
   });
   it('p2o_state names the action that filters when search is called with domain/status (A1 host-shape fix)',async()=>{
