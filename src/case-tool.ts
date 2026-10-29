@@ -25,7 +25,7 @@ export const findingSchema=Type.Object({severity:choices(FINDING_SEVERITIES),bas
   references:Type.Optional(Type.Array(Type.String(),{maxItems:5})),reproductionEvidenceRefs:Type.Optional(Type.Array(Type.String(),{maxItems:5})),reproductionSteps:Type.Optional(Type.Array(Type.Object({ref:Type.String(),role:choices(REPRODUCTION_ROLES),note:Type.Optional(Type.String({maxLength:200}))},{additionalProperties:false}),{minItems:1,maxItems:5})),independenceWaiver:Type.Optional(Type.String({maxLength:300})),
   limitations:Type.Optional(Type.String({maxLength:2000,description:'Required for a high/critical rating on observed inferred-policy provenance: name what the inference still leaves unproven'})),
   chain:Type.Optional(Type.Object({objective:Type.String({maxLength:600}),steps:Type.Array(Type.Object({order:Type.Integer(),step:Type.String({minLength:5,maxLength:400}),claimRef:Type.Optional(id()),
-      gained:Type.Optional(Type.Array(capabilitySchema,{maxItems:10,description:'Typed capabilities this step hands to the next one; prose is not joined'})),
+      gained:Type.Optional(Type.Array(capabilitySchema,{maxItems:10,description:'Typed capabilities this step hands to the next one'})),
       needs:Type.Optional(Type.Array(capabilitySchema,{maxItems:10,description:'Typed capabilities this step needs from an earlier step'})),
       effect:Type.Optional(effectSchema),
       reach:Type.Optional(Type.Object({AV:choices(CHAIN_REACH_METRICS.AV),AC:choices(CHAIN_REACH_METRICS.AC),AT:choices(CHAIN_REACH_METRICS.AT),PR:choices(CHAIN_REACH_METRICS.PR),UI:choices(CHAIN_REACH_METRICS.UI)},{additionalProperties:false,description:'How the attacker reached this step. The chain scores at the easiest reach any executed step reported; unreported reach scores at the least favourable values, so missing evidence can only lower the score'}))},{additionalProperties:false}),{minItems:1,maxItems:8}),demonstratedThrough:Type.Optional(Type.Integer())},{additionalProperties:false}))},{additionalProperties:false});
@@ -33,7 +33,7 @@ export const CASE_ACTIONS=['create','revise','rate','retest','list','view'] as c
 /** P13e: exhaustive per action, so dropping `rate`'s requestId cannot slip through a default branch. */
 export const CASE_ACTION_PARAMETERS: Readonly<Record<typeof CASE_ACTIONS[number], readonly string[]>> = {
   create:['action','entry','requestId'], revise:['action','entry','id','revision','requestId'],
-  rate:['action','finding','id','revision','requestId'], retest:['action','id','revision','retestOutcome','reason','evidenceRefs','requestId'],
+  rate:['action','entry','id','revision','requestId'], retest:['action','id','revision','retestOutcome','reason','evidenceRefs','requestId'],
   view:['action','id'], list:['action','cursor','limit','status'],
 };
 /** Root object preserves fields through legacy provider projections. Host enforces action shape. */

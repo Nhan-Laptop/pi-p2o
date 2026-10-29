@@ -1,8 +1,9 @@
 # S1 — Surface audit and remediation plan of record (2026-10-29)
 
-Status: **Tranches A, B, B10 and C1 are committed on 2026-10-29 (A `aa87a57`, B `1cf3d8b`, B10 `04f3f23`, C1 `b7f8574`) and
-Tranche C continues in the working tree: C2 (read bounds and the description ceiling) is implemented and green, so the
-surface is now 35 registered tools / 35 model-visible / 0 hidden / 10 board verbs / planner 23; C3–C5 remain.** Rev 2 after the
+Status: **Tranches A, B, B10, C1 and C2 are committed on 2026-10-29 (A `aa87a57`, B `1cf3d8b`, B10 `04f3f23`, C1 `b7f8574`,
+C2 `42b0a17`) and Tranche C continues in the working tree: C3 (one authoring payload key and the capability-triple dedupe) is
+implemented and green, so the surface is now 35 registered tools / 35 model-visible / 0 hidden / 10 board verbs / planner 23;
+C4–C5 remain.** Rev 2 after the
 2026-10-29 plan review. Base commit `197d6a9` (R3 of the R1 program). The owner's
 `AGENTS.md` edit and the untracked `pi-p2o-defense-vi.pptx` are outside S1. This document replaces the R3 plan of record. That text is unchanged in git at
 `git show 197d6a9:planning_update.md`; the earlier A1 text at `git show bbdfec1:planning_update.md` and the P18 text at
@@ -501,6 +502,36 @@ planner authoring/rating verbs; merge review/settle (already B1); trim the repea
 keep `p2o_candidate` flat. Not safe, and explicitly rejected: a single discriminated union, because the Anthropic adapter
 flattens a tool to root properties/required and a root `anyOf` loses all arguments — the plan records this as a decision,
 not a missing idea.
+
+**C3 result (working tree, 2026-10-29; uncommitted).** The bounded consolidation F-43 allows, and nothing beyond it:
+
+- **One payload key.** The four planner authoring/rating verbs now carry their payload as `entry`: `p2o_task_author`
+  (`draft` → `entry`), `p2o_goal_author` and `p2o_case_author` (already `entry`), and `p2o_case_rate`
+  (`finding` → `entry`). `TASK_ACTION_PARAMETERS`/`CASE_ACTION_PARAMETERS` and both handlers moved with them, the chain
+  plan now returns `entry` (the exact `p2o_task_author` argument, previously `draft`), and the refusal messages name
+  `entry`. `p2o_candidate` stays flat: `gained`/`needs` are its own root fields, not a nested payload.
+- **Capability-triple dedupe.** The `{kind,subject,scope}` shape is declared 7× across the model-visible tool schemas, so
+  its field descriptions were paid seven times; they are removed from the wire schema (the meaning stays in
+  `src/capabilities.ts` and the docs) and the capability-array wrapper descriptions are cut to one clause each. That is
+  the ~1,260-char target and a little more.
+- **What was rejected, on purpose.** A single discriminated union over the five authoring payloads would need a root
+  `anyOf`/`oneOf`, and the Anthropic adapter flattens a tool to root properties/required — root `anyOf` loses every
+  argument. The new contract test asserts no registered tool declares a root `anyOf`/`oneOf`, so a later
+  "simplification" cannot quietly break the adapter.
+
+Measured (`decl-budget.mjs` + `audit-surface.mjs`, 2026-10-29): planner **44,134** (was 45,055 — saved **921**), worker
+**40,124** (saved 453), validation **39,313** (saved 453), reporter 6,282 (unchanged), **model union 73,363** (saved
+**1,374** — the ~1,260 target plus the wrapper trims). Surface unchanged at **35 registered, 35 model-visible, 0 hidden,
+10 board verbs, planner 23**, audit contradictions 0, and every unchanged ceiling still passes (49,300 / 44,100 / 43,300 /
+6,800 / 77,900). The §7 `after C` model-union target (≤71,500) is still not met: that row was arithmetic from the pre-C1
+surface (72,773 − 1,260), and C1's split added three declarations (+1,964) before this trim. C4 records the actual numbers
+and C5 re-pins the ceilings from measurement (D-S1-5), so the target row is corrected rather than gamed.
+
+Verification: `tsc --noEmit` clean; the authoring/board/graph suites migrated to `entry` (23 test files), including the
+real-Pi case and work natives; full `vitest run` **154 passed / 5 skipped files (159), 1,347 passed / 13 skipped tests
+(1,360), 0 fail**; `audit-surface` 35/35/0/10, 0 contradictions; `npm run build` + `npm run check:build` → `build import
+OK`; `git diff --check` clean. 35 files changed: 7 source/extension, 26 tests/fixtures, `docs/ACCEPTANCE_MATRIX.md`
+(new `F-S1-C-3`) and this file. No live run, no target traffic, no paid model call.
 **C4 — Before/after evidence and the gate.** Deterministic evidence is mandatory: declaration chars per role, tool counts,
 `measure-context` output, full suite counts, and the fixture counts the bench harness uses (tasks created, workers
 spawned, rounds) from the hermetic fixtures. A live bench run is optional and only with owner authorization per
@@ -519,6 +550,7 @@ what moved), `docs/ARCHITECTURE.md`/`docs/KNOWLEDGE.md`, `docs/ACCEPTANCE_MATRIX
 | after A (measured 2026-10-29) | 49,248 | 42,791 | 41,980 | 6,528 | 75,483 |
 | after B (measured 2026-10-29) | 47,795 | 41,081 | 40,270 | 6,282 | 72,773 |
 | after C1 (measured 2026-10-29) | 45,055 | 40,577 | 39,766 | 6,282 | 74,737 |
+| after C3 (measured 2026-10-29) | 44,134 | 40,124 | 39,313 | 6,282 | 73,363 |
 | after C (target) | ≤ 45,300 | ≤ 41,500 | ≤ 40,700 | ≤ 6,450 | ≤ 71,500 |
 | ceiling (unchanged until C) | 49,300 | 44,100 | 43,300 | 6,800 | 77,900 |
 
@@ -526,7 +558,9 @@ The ceilings are not raised in A or B: the reclaimed bytes are headroom (D-S1-5)
 B10 removed only registrations that no role loadout ever held, so no declaration number in this table moved; what changed
 is the registered count (34 → 32, all model-visible) and the board-verb count (11 → 10). C1 moved the batch schema off the
 planner and onto a worker/validation verb, which is why planner/worker/validation drop while the model union rises: the
-same capability is now described in four declarations instead of one. The union target is C3's job, not C1's.
+same capability is now described in four declarations instead of one. C3 then cut the capability triple's seven-times-paid
+prose and the task/case authoring payload keys, which lands the union at 73,363 — better than C2, but above the §7 target
+row because that row was arithmetic from the pre-C1 surface. C4 reports the measured truth; C5 re-pins from it.
 
 ## 8. Verification and workflow protocol
 

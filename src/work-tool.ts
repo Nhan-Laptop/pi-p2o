@@ -11,7 +11,7 @@ export const workSpecSchema = Type.Object({
   questionKey: key(), policyKey: Type.Optional(key()), actorContext: Type.Optional(key()), tenantContext: Type.Optional(key()),
   methodFamily: key(), purpose: choices(WORK_PURPOSES),
   claimRefs: Type.Optional(Type.Array(Type.String({ maxLength: 80 }), { minItems: 1, uniqueItems: true })),
-  needs: Type.Optional(Type.Array(capabilitySchema, { minItems: 1, description: 'Typed capability this step consumes; copy it from the chain frontier rather than describing it' })),
+  needs: Type.Optional(Type.Array(capabilitySchema, { minItems: 1, description: 'Typed capability this step consumes; copy it from the chain frontier' })),
   environmentRef: Type.Optional(Type.String({ pattern: '^env-[a-f0-9-]{36}$', description: 'Recorded environment this step must run in (p2o_lab env); a task without one is a task nobody can replay' })),
 }, { additionalProperties: false });
 export const workDecisionSchema = Type.Object({
@@ -38,7 +38,7 @@ export const planEntrySchema = Type.Object({
   route: Type.Optional(Type.String({ pattern: '^[a-z0-9][a-z0-9-]{0,31}$', description: 'P16.5: mechanism family this step tries (upload, auth, sqli, deser, ssrf, path, injection, business-logic); defaults from the cited claim\'s risk/capability' })),
   // M1: a chain step names the claims it stands on and the capabilities it consumes; readiness is derived from those, never stored.
   claimRefs: Type.Optional(Type.Array(Type.String({ minLength: 1, maxLength: 80 }), { minItems: 1, uniqueItems: true, description: 'Same-run candidate record IDs this step stands on; a chain step must cite at least one' })),
-  needs: Type.Optional(Type.Array(capabilitySchema, { minItems: 1, description: 'Typed capabilities this step consumes; copy them from the chain frontier' })),
+  needs: Type.Optional(Type.Array(capabilitySchema, { minItems: 1, description: 'Typed capabilities this step consumes' })),
   environmentRef: Type.Optional(Type.String({ pattern: '^env-[a-f0-9-]{36}$', description: 'Recorded environment this step runs in (p2o_lab env)' })),
   chainOf: Type.Optional(Type.String({ minLength: 1, maxLength: 80, pattern: '^[a-z0-9][a-z0-9-]*$', description: 'Chain identity shared by its steps' })),
   step: Type.Optional(Type.Integer({ minimum: 1, description: '1-based position in the chain' })),

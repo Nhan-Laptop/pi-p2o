@@ -222,7 +222,7 @@ describe('A4 extension round ACK', () => {
       await round();
       expect(await stalls()).toHaveLength(2);
       // A proposed intent is open work, so the same round is not a stall.
-      await h.call('p2o_task_author', { draft: { question: 'Does the bounded fixture observation match the declared policy?', surface: '/a', risk: 'authorization', role: 'recon', evidenceIds: [], prerequisites: [] } });
+      await h.call('p2o_task_author', { entry: { question: 'Does the bounded fixture observation match the declared policy?', surface: '/a', risk: 'authorization', role: 'recon', evidenceIds: [], prerequisites: [] } });
       await round();
       expect(await stalls()).toHaveLength(2);
     } finally { await h.command('stop').catch(() => {}); await rm(h.root, { recursive: true, force: true }); }

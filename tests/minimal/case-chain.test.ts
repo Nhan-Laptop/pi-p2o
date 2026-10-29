@@ -5,7 +5,7 @@ import { fixture, populate, seedClaim, evidenceFor } from './helpers/report-fixt
 /** Chain capability: an owner rating may carry the ordered links actually built, bounded by the last step whose claim ran. Inert sandbox, real store. */
 const OBJECTIVE = 'Reach the fixture object of another actor through the recorded selector and the recorded read primitive';
 const rate = (h: any, built: any, extra: Record<string, unknown> = {}) => h.call('p2o_case_rate', {id: built.accepted.id, revision: built.accepted.revision,
-  finding: { severity: 'medium', basis: 'Confirmed boundary deviation reaching only the tested identity’s own object in the fixture', ...extra },
+  entry: { severity: 'medium', basis: 'Confirmed boundary deviation reaching only the tested identity’s own object in the fixture', ...extra },
 });
 const step = (order: number, text: string, extra: Record<string, unknown> = {}) => ({ order, step: text, ...extra });
 

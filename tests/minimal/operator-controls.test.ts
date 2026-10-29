@@ -121,9 +121,9 @@ describe('hold and release (inert executor, real broker)', () => {
     await seedImpactGoal(h);
     const question = { ...draft, question: 'Inspect the fixture boundary for the requested worker runtime' };
     // Unconfigured models and unknown thinking levels are refused with the legal set, not silently inherited.
-    await expect(h.call('p2o_task_author', { draft: { ...question, runtime: { model: 'unconfigured/model' } } })).rejects.toThrow(/MODEL_UNAVAILABLE: unconfigured\/model.*legalNext: name one of/);
-    await expect(h.call('p2o_task_author', { draft: { ...question, runtime: { thinking: 'extreme' } } })).rejects.toThrow(/THINKING_INVALID: extreme/);
-    const task = (await h.call('p2o_task_author', { draft: { ...question, runtime: { model: 'opencode-go/deepseek-v4-flash', thinking: 'high' } } })).details;
+    await expect(h.call('p2o_task_author', { entry: { ...question, runtime: { model: 'unconfigured/model' } } })).rejects.toThrow(/MODEL_UNAVAILABLE: unconfigured\/model.*legalNext: name one of/);
+    await expect(h.call('p2o_task_author', { entry: { ...question, runtime: { thinking: 'extreme' } } })).rejects.toThrow(/THINKING_INVALID: extreme/);
+    const task = (await h.call('p2o_task_author', { entry: { ...question, runtime: { model: 'opencode-go/deepseek-v4-flash', thinking: 'high' } } })).details;
     expect(task.runtime).toEqual({ model: 'opencode-go/deepseek-v4-flash', thinking: 'high' });
     // A dispatch-level runtime is validated the same way and overrides the task's runtime for this dispatch.
     await expect(h.call('p2o_task_dispatch', { ids: [task.id], model: 'unconfigured/model' })).rejects.toThrow(/MODEL_UNAVAILABLE/);
@@ -140,7 +140,7 @@ describe('hold and release (inert executor, real broker)', () => {
     await h.command('--target ./source');
     await seedImpactGoal(h);
     await h.command('hold');
-    const task = (await h.call('p2o_task_author', {draft })).details;
+    const task = (await h.call('p2o_task_author', {entry: draft })).details;
     await h.call('p2o_task_dispatch', {ids: [task.id] }); await delay(400);
     expect((await h.call('p2o_workers')).details.workers).toHaveLength(0);
     expect((await h.call('p2o_workers', {})).details.engine.pendingIntents).toBe(1); // still accepted and queued, not invalidated
@@ -153,7 +153,7 @@ describe('hold and release (inert executor, real broker)', () => {
     await h.command('--target ./source');
     await seedImpactGoal(h);
     await h.command('hold');
-    const task = (await h.call('p2o_task_author', { draft })).details;
+    const task = (await h.call('p2o_task_author', { entry: draft })).details;
     await h.call('p2o_task_dispatch', { ids: [task.id] }); await delay(150);
     const refused = await h.call('p2o_finish', {}).then(() => undefined, (error: unknown) => error);
     expect(String(refused)).toMatch(/INTENTS_QUEUED/);

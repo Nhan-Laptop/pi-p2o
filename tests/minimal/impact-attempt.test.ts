@@ -30,13 +30,13 @@ describe('A17.2/D32 impact goal versus attempt', () => {
     await h.command('--target ./source');
     await seedImpactGoal(h);
     // The exploitation anchor rule (P7.1) needs a recon intent before the run can cite a primitive.
-    await h.call('p2o_task_author', { draft: { question: 'Which surfaces does the fixture expose?', surface: '/fixture', risk: 'mapping', role: 'recon', evidenceIds: [], prerequisites: [] } });
+    await h.call('p2o_task_author', { entry: { question: 'Which surfaces does the fixture expose?', surface: '/fixture', risk: 'mapping', role: 'recon', evidenceIds: [], prerequisites: [] } });
     const claim = await seedClaim(h, { candidate: 'impact-attempt-primitive', surface: '/fixture', risk: 'authorization',
       closure: 'open_proof_gap', execution: 'not_tested', proof: 'static_trace',
       evidenceRefs: [(await h.call('p2o_shell', { command: 'printf impact-attempt' })).details.evidenceId],
       negativeControls: [], policyBasis: 'inferred', expectedPolicy: 'Declared fixture boundary', limitations: 'Nothing executed yet' });
     const asset = (await h.call('p2o_graph_record', { batch: { assets: [{ asset: { kind: 'endpoint', key: 'GET /impact-attempt' } }] } })).details.acks[0];
-    await h.call('p2o_task_author', { draft: {
+    await h.call('p2o_task_author', { entry: {
       question: 'Does the recorded primitive reach the effect the goal names?', surface: '/impact-fixture', risk: 'authorization', role: 'exploit',
       roleReason: 'A17.2 fixture takes the recorded primitive one rung further', expectedTrue: 'The bounded effect is demonstrated',
       expectedFalse: 'The effect is not demonstrated and the wall is recorded', stopCondition: 'Stop after one bounded attempt',

@@ -53,7 +53,7 @@ export function authoringAction(kind: AuthoringKind, params: { id?: string; revi
   return 'revise';
 }
 
-export const taskAuthorParameters = Type.Object({ draft: taskDraftSchema, id: Type.Optional(id()), revision: revision() }, { additionalProperties: false });
+export const taskAuthorParameters = Type.Object({ entry: taskDraftSchema, id: Type.Optional(id()), revision: revision() }, { additionalProperties: false });
 export const taskDispatchParameters = Type.Object({
   ids: Type.Optional(Type.Array(id(), { minItems: 1, maxItems: 25 })), id: Type.Optional(id()), priority: Type.Optional(Type.Integer({ minimum: 0, maximum: 100 })),
   /** A7.5/D19: dispatch the successor onto a held worker's ticket, pane and session instead of paying for a new one. */
@@ -72,7 +72,7 @@ export const taskReviewParameters = Type.Object({
 }, { additionalProperties: false });
 
 export const caseAuthorParameters = Type.Object({ entry: caseEntrySchema, id: Type.Optional(id()), revision: revision(), requestId: requestId() }, { additionalProperties: false });
-export const caseRateParameters = Type.Object({ finding: findingSchema, id: id(), revision: Type.Integer({ minimum: 1 }), requestId: requestId() }, { additionalProperties: false });
+export const caseRateParameters = Type.Object({ entry: findingSchema, id: id(), revision: Type.Integer({ minimum: 1 }), requestId: requestId() }, { additionalProperties: false });
 export const caseRetestParameters = Type.Object({ id: id(), revision: Type.Integer({ minimum: 1 }), retestOutcome: choices(CASE_RETEST_VERDICTS, 'Owner observation at this case revision; not the case verdict'), reason: Type.String({ minLength: 10, maxLength: 1000 }), evidenceRefs: evidenceIds(), requestId: requestId() }, { additionalProperties: false });
 
 export const coveragePlanParameters = Type.Object({

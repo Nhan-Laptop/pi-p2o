@@ -46,7 +46,7 @@ export const taskDraftSchema = Type.Object({
 export const TASK_ACTIONS = ['create','revise','list','start','review','close','block','cancel','dispatch'] as const;
 /** P13e: one row per action, so a new action is a type error instead of inheriting a default parameter list. */
 export const TASK_ACTION_PARAMETERS: Readonly<Record<typeof TASK_ACTIONS[number], readonly string[]>> = {
-  create: ['action','draft'], revise: ['action','draft','id','revision'], list: ['action','id','cursor','limit'],
+  create: ['action','entry'], revise: ['action','entry','id','revision'], list: ['action','id','cursor','limit'],
   dispatch: ['action','ids','id','priority','workerId','model','thinking'], start: ['action','id'],
   review: ['action','id','revision','reason','evidenceIds','externalEvidence'], close: ['action','id','revision','reason','evidenceIds','externalEvidence'],
   block: ['action','id','revision','reason','evidenceIds','externalEvidence'], cancel: ['action','id','revision','reason','evidenceIds','externalEvidence'],
@@ -85,8 +85,8 @@ export const candidateParameters = Type.Object({
       limitations: Type.String({ minLength: 1, maxLength: 6000 }), control: Type.Optional(Type.String({ maxLength: 4000, description: 'Required when closure=ruled_out: the specific control observation and where it ran' })),
       resolves: Type.Optional(Type.Array(Type.String({ maxLength: 80 }))),
       requirement: Type.Optional(Type.String({ minLength: 10, maxLength: 1000, description: 'For blocked execution, describe the wall that actually stopped it: a tool or host that refused, a permission the host enforces, or an approach you exhausted. A missing credential, account or browser is not a wall — provision it and retry. Not a capability ID' })), supersedes: Type.Optional(Type.String({ maxLength: 80, description: 'Revision only: the latest record ID for this candidate; a revision cannot change surface or risk, so use a new candidate ID for that' })), independentEvidenceRef: Type.Optional(Type.String({ maxLength: 80, description: 'A receipt another worker authored whose own demonstrated claim reproduces this surface/risk; your own receipt is not independent' })),
-      gained: Type.Optional(Type.Array(capabilitySchema, { description: 'Typed capabilities this primitive hands to a later step, so the lead can join them to another step\'s needs' })),
-      needs: Type.Optional(Type.Array(capabilitySchema, { description: 'Typed capabilities this primitive needs from an earlier step or the environment; omit when nothing outside the surface must hold' })),
+      gained: Type.Optional(Type.Array(capabilitySchema, { description: 'Typed capabilities this primitive hands to a later step' })),
+      needs: Type.Optional(Type.Array(capabilitySchema, { description: 'Typed capabilities this primitive needs from an earlier step' })),
       note: Type.Optional(Type.String({ maxLength: 2000, description: 'Free text caveat about the capability pair; displayed, never matched' })),
       payloadRef: Type.Optional(Type.String({ maxLength: 80, description: 'Payload artifact ID from p2o_lab for the request, script or command that actually ran; requires tested execution, and the derived replayable flag follows it' })),
       leadRefs: Type.Optional(Type.Array(Type.String({ maxLength: 80 }), { description: 'P16.4: CVE lead record IDs from p2o_research action=cve. A lead can shape a hypothesis but never settle it: policyBasis must be inferred and closure open_proof_gap' })),

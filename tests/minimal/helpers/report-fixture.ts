@@ -85,8 +85,8 @@ export async function populate(h: any, titles = { accepted: 'Runtime fixture bou
   const taskDraft = { question: 'Does the bounded fixture observation match the declared policy?', surface: '/report-fixture', risk: 'authorization', role: 'general', roleReason: 'Bounded inert observation for report export', expectedTrue: 'Receipt records the expected policy observation', expectedFalse: 'Receipt records the contrasting control', stopCondition: 'Stop after one inert command and owner review', evidenceIds: [], prerequisites: [], skills: [], methodReason: 'One inert command with no external target',
     // The fixture's exact output is one receipt; the default investigation contract also asks for controls and gaps nobody recorded.
     outputContract: { kind: 'investigation', required: ['evidence'], partialAllowed: true, artifactPolicy: 'ids-only' } };
-  const task = (await h.call('p2o_task_author', { draft: { ...taskDraft, work: work(keys.tested ?? 'question:tested') } })).details;
-  const blocked = (await h.call('p2o_task_author', { draft: { ...taskDraft, question: 'Does the second fixture actor stay blocked on its human prerequisite?', work: work(keys.blocked ?? 'question:blocked') } })).details;
+  const task = (await h.call('p2o_task_author', { entry: { ...taskDraft, work: work(keys.tested ?? 'question:tested') } })).details;
+  const blocked = (await h.call('p2o_task_author', { entry: { ...taskDraft, question: 'Does the second fixture actor stay blocked on its human prerequisite?', work: work(keys.blocked ?? 'question:blocked') } })).details;
   await h.call('p2o_task_review', { id: blocked.id, revision: blocked.revision, outcome: 'blocked', reason: 'The second fixture actor needs a human-provided credential, so no observation could run' });
   const running = (await h.call('p2o_task_start', { id: task.id })).details;
   const observation = (await h.call('p2o_shell', { command: 'printf bounded-report-observation' })).details;

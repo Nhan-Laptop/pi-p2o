@@ -81,7 +81,7 @@ describe('round hygiene and campaign memory (A6.5)', () => {
     // 2026-10-27 (A3/D32): the exploit-mode admission gate now refuses this dispatch, but the A6.5 design boundary is still
     // tested on the debt side: the skipped frame is named by the same derivation the loop and the report read, and the
     // refusal itself is recorded as an admission fact instead of vanishing into the transcript.
-    await expect(h.call('p2o_task_author', { draft: { question: 'Does the fixture boundary hold for the first recon intent?', surface: '/fixture', risk: 'mapping', role: 'recon',
+    await expect(h.call('p2o_task_author', { entry: { question: 'Does the fixture boundary hold for the first recon intent?', surface: '/fixture', risk: 'mapping', role: 'recon',
       roleReason: 'First-round contract fixture', expectedTrue: 'The recorded fixture exposes the declared boundary', expectedFalse: 'The fixture records nothing and the receipt says so',
       stopCondition: 'Stop after one inert mapping intent', evidenceIds: [], prerequisites: [], skills: [], methodReason: 'No target or model work' } }))
       .rejects.toThrow(/EXPLOIT_MODE_NEEDS_IMPACT_GOAL/);

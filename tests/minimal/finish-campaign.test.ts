@@ -27,7 +27,7 @@ describe('campaign finish and report semantics (A6.6)', () => {
     await h.command('--target ./source --goal "Assess the fixture boundary"');
     // 2026-10-27 (A3/D32): the populated fixture now carries the reviewed impact goal, so this case keeps its no-goal premise
     // by starting a bare run and recording only read-only reporting work (which needs no impact goal under A3).
-    await h.call('p2o_task_author', { draft: { question: 'Summarize the records this run holds?', surface: '/report-fixture', risk: 'reporting', role: 'reporting',
+    await h.call('p2o_task_author', { entry: { question: 'Summarize the records this run holds?', surface: '/report-fixture', risk: 'reporting', role: 'reporting',
       roleReason: 'Read-only fixture intent so the run holds work to keep', expectedTrue: 'The report reads committed records', expectedFalse: 'The report records the gap instead',
       stopCondition: 'Stop after one read-only intent', evidenceIds: [], prerequisites: [], skills: [], methodReason: 'Read-only report of committed fixture state' } });
     // The export path stays unconditional: writing the report ends nothing and is one of the legal next calls.

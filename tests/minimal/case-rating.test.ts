@@ -4,7 +4,7 @@ import { evidenceFor, fixture, populate, seedClaim } from './helpers/report-fixt
 
 /** P3: an owner rating is its own note against an exact case revision. Hermetic: inert sandbox, real SQLite store. */
 const finding = (extra: Record<string, unknown> = {}) => ({ severity: 'medium', basis: 'Confirmed boundary deviation reaching only the tested identity’s own object in the fixture', ...extra });
-const rate = (h: any, built: any, value: unknown, extra: Record<string, unknown> = {}) => h.call('p2o_case_rate', {id: built.accepted.id, revision: built.accepted.revision, finding: value, ...extra });
+const rate = (h: any, built: any, value: unknown, extra: Record<string, unknown> = {}) => h.call('p2o_case_rate', {id: built.accepted.id, revision: built.accepted.revision, entry: value, ...extra });
 
 describe('case rating', () => {
   it('records a rating without touching the verdict, the review status, the revision or the coverage cells that pin the case', async () => fixture(async h => {
@@ -36,8 +36,8 @@ describe('case rating', () => {
     await reject(finding({ severity: 'severe' }), /severity/); await reject(finding({ cwe: ['CWE-0'] }), /CWE/); await reject(finding({ cwe: ['cwe-79'] }), /CWE/); await reject(finding({ cvssVector: 'CVSS:3.0/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H' }), /CVSS/);
     await reject(finding({ references: ['javascript:alert(1)'] }), /references/); await reject(finding({ references: ['http://plain.example/x'] }), /references/); await reject(finding({ basis: 'short' }), /basis/);
     await reject(finding({ unexpected: true }), /Case finding|unknown|exact/i); await reject(finding({ reproductionEvidenceRefs: ['evidence-that-does-not-exist'] }), /reproduction evidence/);
-    await expect(h.call('p2o_case_rate', {id: built.accepted.id, revision: built.accepted.revision + 5, finding: finding() })).rejects.toThrow(/stale case revision/);
-    await expect(h.call('p2o_case_rate', {id: built.accepted.id, revision: 1 })).rejects.toThrow(/needs a finding/);
+    await expect(h.call('p2o_case_rate', {id: built.accepted.id, revision: built.accepted.revision + 5, entry: finding() })).rejects.toThrow(/stale case revision/);
+    await expect(h.call('p2o_case_rate', {id: built.accepted.id, revision: 1 })).rejects.toThrow(/needs an entry/);
     const store = await h.reader(); try { expect(store.records().filter((row: any) => row.data?.caseRating).length).toBe(0); } finally { store.close(); }
   }));
 
@@ -62,9 +62,9 @@ describe('case rating', () => {
     const claim = await seedClaim(h, { candidate: 'inferred-claim', surface: '/report-fixture', risk: 'authorization', closure: 'open_proof_gap', execution: 'not_tested', proof: 'static_trace', evidenceRefs: [], negativeControls: [], policyBasis: 'inferred', expectedPolicy: 'Policy inferred from names only', limitations: 'No declared policy was found for this fixture' });
     const draft = { title: 'Inferred policy hypothesis case', policyKey: 'policy:inferred', assetRefs: [{ id: built.asset.entityId, revision: 1 }], claimRefs: [claim.id], independentEvidenceRefs: [], taskRefs: [], reportRefs: [], contradictions: [], affectedVariants: [], relatedCaseIds: [], verdict: 'open', reviewStatus: 'pending', reviewReason: 'Pending: policy is only inferred', limitations: 'Policy was inferred, not declared', remediation: { status: 'unplanned', reason: 'No remediation was reviewed for the inferred case', evidenceRefs: [] } };
     const created = (await h.call('p2o_case_author', {entry: draft })).details;
-    await expect(h.call('p2o_case_rate', {id: created.id, revision: created.revision, finding: finding({ severity: 'critical' }) })).rejects.toThrow(/inferred policy basis cannot be rated above medium/);
-    await expect(h.call('p2o_case_rate', {id: created.id, revision: created.revision, finding: finding({ severity: 'high' }) })).rejects.toThrow(/inferred/);
-    expect((await h.call('p2o_case_rate', {id: created.id, revision: created.revision, finding: finding({ severity: 'medium' }) })).details.finding.severity).toBe('medium');
+    await expect(h.call('p2o_case_rate', {id: created.id, revision: created.revision, entry: finding({ severity: 'critical' }) })).rejects.toThrow(/inferred policy basis cannot be rated above medium/);
+    await expect(h.call('p2o_case_rate', {id: created.id, revision: created.revision, entry: finding({ severity: 'high' }) })).rejects.toThrow(/inferred/);
+    expect((await h.call('p2o_case_rate', {id: created.id, revision: created.revision, entry: finding({ severity: 'medium' }) })).details.finding.severity).toBe('medium');
   }));
 
   it('rates a tested and observed cross-tenant effect high on inferred provenance with the INFERRED_POLICY flag and a required limitation', async () => fixture(async h => {
@@ -80,7 +80,7 @@ describe('case rating', () => {
     const created = (await h.call('p2o_case_author', { entry: draft })).details;
     const accepted = (await h.call('p2o_case_author', { id: created.id, revision: created.revision, entry: { ...draft, reviewStatus: 'accepted', reviewReason: 'Owner reviewed the observed cross-tenant effect and the inferred policy provenance' } })).details;
     const limitations = 'Policy basis is inferred from the sibling route; the cross-tenant read was reproduced live, but the tenant ownership contract remains unverified';
-    const rated = (await h.call('p2o_case_rate', { id: accepted.id, revision: accepted.revision, finding: finding({ severity: 'high', limitations }) })).details;
+    const rated = (await h.call('p2o_case_rate', { id: accepted.id, revision: accepted.revision, entry: finding({ severity: 'high', limitations }) })).details;
     expect(rated).toMatchObject({ caseId: accepted.id, caseRevision: accepted.revision, provenance: 'INFERRED_POLICY' });
     expect(rated.finding).toMatchObject({ severity: 'high', limitations });
     const view = (await h.call('p2o_board', { board: 'cases', id: accepted.id })).details;
@@ -90,8 +90,8 @@ describe('case rating', () => {
     const report = (await h.read(join(h.root, 'inferred-out')))['REPORT.md'];
     expect(report).toContain('provenance **INFERRED_POLICY**'); expect(report).toContain(`- Rating limitation: ${limitations}`);
     // The flag is not a waiver: without the required limitation the same rating is refused and nothing is written.
-    await expect(h.call('p2o_case_rate', { id: accepted.id, revision: accepted.revision, finding: finding({ severity: 'high', limitations: '   ' }) })).rejects.toThrow(/INFERRED_POLICY/);
-    await expect(h.call('p2o_case_rate', { id: accepted.id, revision: accepted.revision, finding: finding({ severity: 'high' }) })).rejects.toThrow(/INFERRED_POLICY/);
+    await expect(h.call('p2o_case_rate', { id: accepted.id, revision: accepted.revision, entry: finding({ severity: 'high', limitations: '   ' }) })).rejects.toThrow(/INFERRED_POLICY/);
+    await expect(h.call('p2o_case_rate', { id: accepted.id, revision: accepted.revision, entry: finding({ severity: 'high' }) })).rejects.toThrow(/INFERRED_POLICY/);
     const after = await h.reader(); try { expect(after.records().filter((item: any) => item.data?.caseRating).length).toBe(1); } finally { after.close(); }
   }));
 

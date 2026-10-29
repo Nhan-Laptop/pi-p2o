@@ -38,7 +38,7 @@ describe('chain frontier to task draft (P14.10)', () => {
       startingAsset: { id: built.asset.entityId, kind: 'endpoint', key: 'GET /report-fixture', revision: 1 } });
 
     const planned = (await h.call('p2o_graph_plan', { action: 'chain', plan: true, assetRefs: [{ id: built.asset.entityId, revision: 1 }], requestId: 'chain-plan-1' })).details;
-    expect(planned.draft).toMatchObject({
+    expect(planned.entry).toMatchObject({
       role: 'exploit', surface: '/report-fixture', risk: 'authorization',
       work: { purpose: 'exploitation', methodFamily: 'chain-step', questionKey: 'chain:chain-consumer', needs: [{ kind: 'http.request', subject: 'internal-api' }],
         environmentRef: environment.id, claimRefs: [next.providers[0], consumer.id].sort(), assetRefs: [{ id: built.asset.entityId, revision: 1 }] },
@@ -60,7 +60,7 @@ describe('chain frontier to task draft (P14.10)', () => {
     // P7.1: exploit mode (the default) admits an exploitation intent only under a capability-proof goal.
     await impactGoal(h);
     // The draft is accepted unchanged, and the work identity it carries names what the step stands on and where it runs.
-    const created = (await h.call('p2o_task_author', {draft: planned.draft })).details;
+    const created = (await h.call('p2o_task_author', {entry: planned.entry })).details;
     expect(created).toMatchObject({ status: 'proposed', role: 'exploit' });
     expect(created.work).toMatchObject({ purpose: 'exploitation', needs: [{ kind: 'http.request', subject: 'internal-api' }], environmentRef: environment.id });
     expect(created.work.claimRefs).toEqual([next.providers[0], consumer.id].sort());
@@ -90,14 +90,14 @@ describe('chain frontier to task draft (P14.10)', () => {
   it('says why a draft has no work identity instead of inventing an asset', async () => fixture(async h => {
     await chainFixture(h);
     const planned = (await h.call('p2o_graph_plan', { action: 'chain', plan: true, requestId: 'chain-plan-bare' })).details;
-    expect(planned.draft.work).toBeUndefined();
+    expect(planned.entry.work).toBeUndefined();
     expect(planned.planNote).toMatch(/no asset refs were supplied/);
     // P7.1: exploit mode (the default) gates on the impact goal first, so the fixture records one before asserting M2.
     await impactGoal(h);
     // M2: a draft with no work identity cannot cite the provider, so on this surface it is refused — that is the whole point of the
     // obligation, and the refusal names the step to take instead.
-    await expect(h.call('p2o_task_author', {draft: planned.draft })).rejects.toThrow(/CHAIN_READY_UNDISPATCHED: step 2 of chain chain-/);
+    await expect(h.call('p2o_task_author', {entry: planned.entry })).rejects.toThrow(/CHAIN_READY_UNDISPATCHED: step 2 of chain chain-/);
     // The scope rule is per surface: the same shape elsewhere is still a task, so the obligation cannot freeze the run.
-    expect((await h.call('p2o_task_author', {draft: { ...planned.draft, surface: '/elsewhere' } })).details.status).toBe('proposed');
+    expect((await h.call('p2o_task_author', {entry: { ...planned.entry, surface: '/elsewhere' } })).details.status).toBe('proposed');
   }));
 });

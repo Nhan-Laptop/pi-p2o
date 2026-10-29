@@ -97,7 +97,7 @@ describe('access ladder in the report (A7.6/Q18)', () => {
     // The rating may not exceed what the chain demonstrated, so the fixture rates at exactly the demonstrated band.
     const demonstrated = chainImpact(steps as unknown as ChainImpactStep[], 3)!;
     const rated = (await h.call('p2o_case_rate', { id: built.accepted.id, revision: built.accepted.revision,
-      finding: { severity: demonstrated.severity, basis: 'Confirmed boundary deviation reproduced on the inert fixture service', chain: { objective: OBJECTIVE, demonstratedThrough: 3, steps } } })).details;
+      entry: { severity: demonstrated.severity, basis: 'Confirmed boundary deviation reproduced on the inert fixture service', chain: { objective: OBJECTIVE, demonstratedThrough: 3, steps } } })).details;
     expect(rated.finding.chain.impact).toMatchObject({ effect: 'code-execution', severity: demonstrated.severity });
     h.ctx.setConfirm(true);
     await h.command(`report export ${join(h.root, 'out')}`);
@@ -144,7 +144,7 @@ describe('access ladder in the report (A7.6/Q18)', () => {
       { available: true, maxBytes: 8 * 1024 * 1024, observedBytes: 64000, capturedBytes: 16384, artifacts: [artifact] });
     // The receipt for the retained capture is admissible where the case records its reproduction evidence.
     const rated = (await h.call('p2o_case_rate', { id: built.accepted.id, revision: built.accepted.revision,
-      finding: { severity: 'medium', basis: 'Reproduced against the inert fixture with the retained capture as the reproduction record', reproductionEvidenceRefs: [captureReceipt] } })).details;
+      entry: { severity: 'medium', basis: 'Reproduced against the inert fixture with the retained capture as the reproduction record', reproductionEvidenceRefs: [captureReceipt] } })).details;
     expect(rated.finding.reproductionEvidenceRefs).toEqual([captureReceipt]);
     h.ctx.setConfirm(true);
     await h.command(`report export ${join(h.root, 'capture-out')}`);
@@ -163,6 +163,6 @@ describe('access ladder in the report (A7.6/Q18)', () => {
     expect(claimRung(inferred.data)).toBe('observed');
     const draft = { title: 'Inferred policy ladder case', policyKey: 'policy:ladder-inferred', assetRefs: [{ id: built.asset.entityId, revision: 1 }], claimRefs: [inferred.id], independentEvidenceRefs: [], taskRefs: [], reportRefs: [], contradictions: [], affectedVariants: [], relatedCaseIds: [], verdict: 'open', reviewStatus: 'pending', reviewReason: 'Pending: policy is only inferred', limitations: 'Policy was inferred, not declared', remediation: { status: 'unplanned', reason: 'No remediation was reviewed for this fixture', evidenceRefs: [] } };
     const created = (await h.call('p2o_case_author', { entry: draft, requestId: 'ladder-inferred-case' })).details;
-    await expect(h.call('p2o_case_rate', { id: created.id, revision: created.revision, finding: { severity: 'high', basis: 'Inferred policy only' } })).rejects.toThrow(/inferred policy basis cannot be rated above medium/);
+    await expect(h.call('p2o_case_rate', { id: created.id, revision: created.revision, entry: { severity: 'high', basis: 'Inferred policy only' } })).rejects.toThrow(/inferred policy basis cannot be rated above medium/);
   }));
 });

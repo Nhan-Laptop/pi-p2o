@@ -133,7 +133,7 @@ describe('P10 host defaults (TR-L05/L06)', () => {
       const draft = { question: 'Does the bounded P10 fixture record empty task arrays?', surface: '/p10-fixture', risk: 'coordination', role: 'general',
         roleReason: 'Bounded local fixture with no target work', expectedTrue: 'The host records empty arrays', expectedFalse: 'The caller must restate none',
         stopCondition: 'Stop after one local admission', skills: [], methodReason: 'No target or model work' };
-      const task = (await h.call('p2o_task_author', { draft })).details;
+      const task = (await h.call('p2o_task_author', { entry: draft })).details;
       expect(task.evidenceIds).toEqual([]); expect(task.prerequisites).toEqual([]);
       const stored = (await h.reader()).records().find((row: any) => row.data?.task?.id === task.id) as any;
       expect(stored.data.task).toMatchObject({ evidenceIds: [], prerequisites: [] });

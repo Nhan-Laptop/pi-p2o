@@ -89,7 +89,7 @@ describe('report v2 content', () => {
   const rated = async (h: any, extra: Record<string, unknown> = {}) => {
     const built = await populate(h, { accepted: 'Boundary case with <b>markup</b> `tick`', pending: 'Second pending case' }, { tested: 'wstg-athz-04', blocked: 'wstg-sess-05' });
     const hostile = (await h.call('p2o_shell', { command: `printf '${HOSTILE.replace(/'/g, '')}'` })).details;
-    await h.call('p2o_case_rate', {id: built.accepted.id, revision: built.accepted.revision, finding: finding({ likelihood: HOSTILE, impact: HOSTILE, remediationSteps: `Check ownership before returning the object. ${HOSTILE}`, cvssVector: 'CVSS:3.1/AV:N/AC:L/PR:L/UI:N/S:U/C:L/I:N/A:N', cwe: ['CWE-639', 'CWE-285'], references: ['wstg-athz-04'], reproductionEvidenceRefs: [built.observation.evidenceId, hostile.evidenceId], independenceWaiver: 'Solo run: no second actor was available to repeat it', ...extra }) });
+    await h.call('p2o_case_rate', {id: built.accepted.id, revision: built.accepted.revision, entry: finding({ likelihood: HOSTILE, impact: HOSTILE, remediationSteps: `Check ownership before returning the object. ${HOSTILE}`, cvssVector: 'CVSS:3.1/AV:N/AC:L/PR:L/UI:N/S:U/C:L/I:N/A:N', cwe: ['CWE-639', 'CWE-285'], references: ['wstg-athz-04'], reproductionEvidenceRefs: [built.observation.evidenceId, hostile.evidenceId], independenceWaiver: 'Solo run: no second actor was available to repeat it', ...extra }) });
     return built;
   };
   const outsideFences = (text: string) => { const kept: string[] = []; let fence = 0; for (const line of text.split('\n')) { const open = /^ *(`{3,})text$/.exec(line); if (!fence && open) { fence = open[1].length; continue; } if (fence && line.trim() === '`'.repeat(fence)) { fence = 0; continue; } if (!fence) kept.push(line); } expect(fence, 'every fence is closed').toBe(0); return kept.join('\n'); };
@@ -114,7 +114,7 @@ describe('report v2 content', () => {
 
   it('prints reproduction steps in order with their roles and notes, in REPORT.md and findings.json, only when steps were recorded (U8)', async () => fixture(async h => {
     const built = await populate(h), control = (await h.call('p2o_shell', { command: 'printf control-request' })).details.evidenceId, proof = built.observation.evidenceId;
-    await h.call('p2o_case_rate', {id: built.accepted.id, revision: built.accepted.revision, finding: finding({ reproductionSteps: [{ ref: control, role: 'baseline', note: 'Control without the session <b>x</b>' }, { ref: proof, role: 'proof' }], independenceWaiver: 'Solo run: no second actor was available' }) });
+    await h.call('p2o_case_rate', {id: built.accepted.id, revision: built.accepted.revision, entry: finding({ reproductionSteps: [{ ref: control, role: 'baseline', note: 'Control without the session <b>x</b>' }, { ref: proof, role: 'proof' }], independenceWaiver: 'Solo run: no second actor was available' }) });
     h.ctx.setConfirm(true); await h.command(`report export ${join(h.root, 'out')}`);
     const files = await h.read(join(h.root, 'out')), report = files['REPORT.md'];
     expect(report).toContain('Reproduction steps, in the order to follow (roles are the owner’s labels for the reader, not proof levels)');

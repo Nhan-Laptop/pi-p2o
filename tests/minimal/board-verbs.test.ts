@@ -8,6 +8,7 @@ import {
 } from '../../src/board-verbs.js';
 import { MODEL_TOOLS, PLANNER_TOOLS, REPORTER_TOOLS, VALIDATION_TOOLS, WORKER_TOOLS, workerTools } from '../../src/tool-policy.js';
 import { TOOL_BOUNDARIES } from '../../src/tool-guidelines.js';
+import { capabilitySchema } from '../../src/schema-kit.js';
 import { createFakePi, EXTENSION_PATH } from './helpers/fake-pi.js';
 import { fixture, seedImpactGoal } from './helpers/report-fixture.js';
 
@@ -113,7 +114,7 @@ describe('L1/W2 board verbs', () => {
       await h.command('--target ./source');
       await seedImpactGoal(h);
       const draft = { question: 'Does the board verb fixture settle one task?', surface: '/board-verb-fixture', risk: 'coordination', role: 'general', roleReason: 'Bounded local fixture with no target work', expectedTrue: 'The settle verb reaches the cancelled transition', expectedFalse: 'The action bag is required again', stopCondition: 'Stop after one local transition', evidenceIds: [], prerequisites: [], skills: [], methodReason: 'No target or model work' };
-      const task = (await h.call('p2o_task_author', { draft })).details;
+      const task = (await h.call('p2o_task_author', { entry: draft })).details;
       const settled = (await h.call('p2o_task_review', { outcome: 'cancelled', id: task.id, revision: task.revision, reason: 'Owner cancelled the local board-verb fixture' })).details;
       expect(settled).toMatchObject({ id: task.id, status: 'cancelled' });
 
@@ -139,4 +140,31 @@ describe('L1/W2 board verbs', () => {
     // A3 deleted the model-authored coverage-cell verbs: they are neither registered nor mentioned in the prompt surface.
     for (const name of ['p2o_coverage_cell', 'p2o_coverage_cell_retire']) { expect(pi.tools.has(name), name).toBe(false); expect(prompts, name).not.toContain(name); }
   });
+  it('declares one entry payload key for the authoring verbs, keeps p2o_candidate flat and needs no root anyOf (S1/C3)', () => {
+    const pi = createFakePi();
+    registerP2O(pi.pi, { extensionPath: EXTENSION_PATH });
+    const parameters = (name: string) => pi.tools.get(name)!.parameters as any;
+    // Four planner authoring/rating verbs carry their payload under the same key name, so one shape is learned once.
+    for (const name of ['p2o_task_author', 'p2o_goal_author', 'p2o_case_author', 'p2o_case_rate']) {
+      expect(parameters(name).properties?.entry, name).toBeDefined();
+      expect(parameters(name).required ?? [], name).toContain('entry');
+    }
+    expect(parameters('p2o_task_author').properties).not.toHaveProperty('draft');
+    expect(parameters('p2o_case_rate').properties).not.toHaveProperty('finding');
+    // The worker primitive verb stays flat: gained/needs are its own root fields, not a nested payload.
+    expect(parameters('p2o_candidate').properties).not.toHaveProperty('entry');
+    expect(parameters('p2o_candidate').properties).toHaveProperty('gained');
+    // The Anthropic adapter flattens a tool to root properties/required, so a root anyOf would silently erase every argument.
+    for (const name of MODEL_TOOLS) {
+      expect(parameters(name).type, name).toBe('object');
+      expect(parameters(name), name).not.toHaveProperty('anyOf');
+      expect(parameters(name), name).not.toHaveProperty('oneOf');
+    }
+    // F-43: the {kind,subject,scope} triple is declared seven times across the surface, so it carries no prose paid seven times.
+    const serialized = JSON.stringify(capabilitySchema);
+    expect(serialized).not.toContain('"description"');
+    const declarations = MODEL_TOOLS.map(name => JSON.stringify(parameters(name))).join('\n');
+    expect(declarations.split(serialized).length - 1).toBe(7);
+  });
+
 });

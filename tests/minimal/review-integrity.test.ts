@@ -20,7 +20,7 @@ async function started(h: any, required: string[]) {
   // A3/D32: the default exploit mode admits no target-executing intent before the run holds an impact goal.
   await seedImpactGoal(h);
   const asset = (await h.call('p2o_graph_record', { batch: { assets: [{ asset: { kind: 'endpoint', key: 'GET /integrity-fixture' } }] } })).details.acks[0];
-  const task = (await h.call('p2o_task_author', {draft: draft(asset.entityId, required) })).details, running = (await h.call('p2o_task_start', {id: task.id })).details;
+  const task = (await h.call('p2o_task_author', {entry: draft(asset.entityId, required) })).details, running = (await h.call('p2o_task_start', {id: task.id })).details;
   const own = (await h.call('p2o_shell', { command: 'printf integrity-own' })).details;
   return { asset, task, running, own };
 }

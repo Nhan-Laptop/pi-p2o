@@ -28,10 +28,11 @@ export interface ChainViewPage extends ChainJoin {
   shown: { primitives: number; ready: number; unmet: number; frontier: number };
   next: string;
   /**
-   * P14.10: present only when the owner asked to plan. The draft is exactly the `p2o_task_author` argument for the deepest ready step, and
-   * `todos` are the plan entries already recorded for the chain — this tool never dispatches, so a draft is a proposal and a list is navigation.
+   * P14.10/S1/C3: present only when the owner asked to plan. The entry is exactly the `p2o_task_author` argument for the deepest ready step
+   * (S1/C3 renamed the root payload key `draft` to `entry`), and `todos` are the plan entries already recorded for the chain — this tool never
+   * dispatches, so an entry is a proposal and a list is navigation.
    */
-  draft?: Record<string, unknown>;
+  entry?: Record<string, unknown>;
   todos?: Array<{ id: string; revision: number; title: string }>;
   planNote?: string;
 }

@@ -536,7 +536,7 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
       const created = await current.plan.create(entry, { actorId: 'owner', requestId: `${baseRequestId}-step-${index + 1}`.slice(0, 80), payload: { op: 'plan', submitted: { action: 'create', entry } } });
       todos.push({ id: created.id, revision: created.revision, title: created.title });
     }
-    return { draft, todos, chainOf: linked ? chainOf : undefined, planNote: work ? 'Draft and todos recorded. Nothing was dispatched; create the task when you decide to run it.'
+    return { entry: draft, todos, chainOf: linked ? chainOf : undefined, planNote: work ? 'Entry and todos recorded. Nothing was dispatched; create the task when you decide to run it.'
       : claimRefs.length ? 'Todos recorded. The draft has no work identity because no asset refs were supplied: pass assetRefs to get a draft that names what the step stands on and where it runs.'
       : 'Todos recorded. The draft has no work identity because the ready step has no same-run claim record to cite.' };
   }
@@ -2748,8 +2748,8 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
         // WF-04: the selection cap is a recorded fact, not a silent truncation; the ladder and purpose defaults can overflow too.
         let omittedSkills: string[] = [], deliveredSkills: string[] = [];
         if (p.action === 'create' || p.action === 'revise') {
-          if (!p.draft) throw Error('Task draft is required');
-          const draft = p.draft as Record<string,any> & {skills?:string[];workflow?:string;methodReason?:string};
+          if (!p.entry) throw Error('Task entry is required');
+          const draft = p.entry as Record<string,any> & {skills?:string[];workflow?:string;methodReason?:string};
           const {skills:names,workflow,methodReason,...draftFields} = draft;
           const role = resolveRole({role:draft.role,skills:names,settings:current.settings,purpose:workPurpose(draft.work),context:{kind:current.target.kind,needs:workNeeds(draft.work)}});
           omittedSkills = role.omittedSkills; deliveredSkills = role.skills;
@@ -2822,13 +2822,13 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
 
   const executeCaseAction = async (_id:string, q:Record<string,any>) => { const p:any=q;const current=owner();if(!CASE_ACTIONS.includes(p.action))fail('INVALID_INPUT','Unknown case action');
       graphObject(p,(CASE_ACTION_PARAMETERS as any)[p.action],'Case action');
-      if((p.action==='create'||p.action==='revise')&&!p.entry)throw Error('Case entry is required');if((['revise','rate','retest'] as string[]).includes(p.action as string)&&(!p.id||!Number.isSafeInteger(p.revision)||(p.revision as number)<1))throw Error('Case revise/rate/retest needs ID and expected revision');if(p.action==='rate'&&!p.finding)throw Error('Case rate needs a finding');if(p.action==='retest'&&(p.retestOutcome===undefined||p.reason===undefined))throw Error('Case retest needs a retestOutcome and a reason');
+      if((p.action==='create'||p.action==='revise')&&!p.entry)throw Error('Case entry is required');if((['revise','rate','retest'] as string[]).includes(p.action as string)&&(!p.id||!Number.isSafeInteger(p.revision)||(p.revision as number)<1))throw Error('Case revise/rate/retest needs ID and expected revision');if(p.action==='rate'&&!p.entry)throw Error('Case rate needs an entry');if(p.action==='retest'&&(p.retestOutcome===undefined||p.reason===undefined))throw Error('Case retest needs a retestOutcome and a reason');
       // A retest input is the observation only; its case identity is host-bound, so the binder never sees action/id/revision.
       const retestInput = (): any => ({verdict:p.retestOutcome,reason:p.reason,evidenceRefs:p.evidenceRefs});
       const request=p.action==='create'||p.action==='revise'||p.action==='rate'||p.action==='retest'?{actorId:'owner',requestId:(p.requestId as string|undefined)??randomUUID(),payload:{op:'case',submitted:p}}:undefined,
-        lookup=request?(p.action==='rate'?boundRatingRequest(p.id as string,p.revision as number,p.finding as any,request):p.action==='retest'?boundRetestRequest(p.id as string,p.revision as number,retestInput(),request):boundCaseRequest(p.action as 'create'|'revise',p.entry as CaseDraft,request,p.id as string|undefined,p.revision as number|undefined)):undefined;
+        lookup=request?(p.action==='rate'?boundRatingRequest(p.id as string,p.revision as number,p.entry as any,request):p.action==='retest'?boundRetestRequest(p.id as string,p.revision as number,retestInput(),request):boundCaseRequest(p.action as 'create'|'revise',p.entry as CaseDraft,request,p.id as string|undefined,p.revision as number|undefined)):undefined;
       const retained=(acks:RecordAck[])=>{const row=current.store.record(acks[0].recordId);if(p.action==='rate'){if(!row?.data?.caseRating)throw Error('Retained rating detail unavailable');return {...row.data.caseRating as Record<string,unknown>,recordId:row.id,replayed:true};}if(p.action==='retest'){if(!row?.data?.caseRetest)throw Error('Retained retest detail unavailable');return {...row.data.caseRetest as Record<string,unknown>,recordId:row.id,replayed:true};}if(!row?.data?.case)throw Error('Retained case detail unavailable');return {...row.data.case as unknown as CaseDraft,recordId:row.id,replayed:true};};
-      const perform=async()=>{if(p.action==='create')return current.cases.create(p.entry as CaseDraft,request);if(p.action==='revise')return current.cases.revise(p.id as string,p.revision as number,p.entry as CaseDraft,request);if(p.action==='rate')return current.cases.rate(p.id as string,p.revision as number,p.finding as any,request);if(p.action==='retest')return current.cases.retest(p.id as string,p.revision as number,retestInput(),request);const all=await current.cases.list();assertOwnerActive(current);
+      const perform=async()=>{if(p.action==='create')return current.cases.create(p.entry as CaseDraft,request);if(p.action==='revise')return current.cases.revise(p.id as string,p.revision as number,p.entry as CaseDraft,request);if(p.action==='rate')return current.cases.rate(p.id as string,p.revision as number,p.entry as any,request);if(p.action==='retest')return current.cases.retest(p.id as string,p.revision as number,retestInput(),request);const all=await current.cases.list();assertOwnerActive(current);
         if(p.action==='view'){if(!p.id)throw Error('Case view needs ID');const value=all.find(entry=>entry.id===p.id);if(!value)throw Error('Unknown case ID');return value;}
         const page:CaseListPage=listPage(all.filter(entry=>!p.status||entry.reviewStatus===p.status),q,{label:'case',warning:'Current owner review queue; Worker claims, duplicate submissions and unique accepted current cases are separate counts. No goal completion.',project:(entry):CaseListPage['entries'][number]=>({id:entry.id,recordId:entry.recordId,revision:entry.revision,title:entry.title.slice(0,200),verdict:entry.verdict,reviewStatus:entry.reviewStatus,currentness:entry.currentness,acceptedFinding:entry.acceptedFinding,readyToRate:entry.readyToRate,independentCurrent:entry.independentCurrent,canonicalCaseId:entry.canonicalCaseId,...(entry.finding?{severity:entry.finding.severity}:{}),staleReasons:entry.staleReasons.slice(0,5)})});
         return page;};

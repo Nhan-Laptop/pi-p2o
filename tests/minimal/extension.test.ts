@@ -152,12 +152,12 @@ describe('owner role', () => {
     await h.start('--target https://example.com');
     await seedGoal(h);
     const draft:any={question:'What can the approved anonymous baseline establish?',surface:'/surface',risk:'authorization',role:'general',roleReason:'Lead chose a bounded source-policy question',expectedTrue:'Known permitted observation is available',expectedFalse:'Required identity contrast is unavailable',stopCondition:'Stop at the missing transport prerequisite',evidenceIds:[],prerequisites:[],skills:['web-object-authorization'],methodReason:'Trace policy before selecting an unavailable identity comparison'};
-    await expect(h.call('p2o_task_author',{draft:{...draft,workflow:'not-a-workflow'}})).rejects.toThrow('WORKFLOW_UNKNOWN');
-    await expect(h.call('p2o_task_author',{draft:{...draft,skills:['not-a-skill']}})).rejects.toThrow(/SKILL_UNKNOWN|unknown/i);
-    const blocked=(await h.call('p2o_task_author',{draft:{...draft,workflow:'controlled-identity-comparison',missingPrerequisites:['Authenticated comparison transport is not authorized in this URL scope']}})).details;
+    await expect(h.call('p2o_task_author',{entry:{...draft,workflow:'not-a-workflow'}})).rejects.toThrow('WORKFLOW_UNKNOWN');
+    await expect(h.call('p2o_task_author',{entry:{...draft,skills:['not-a-skill']}})).rejects.toThrow(/SKILL_UNKNOWN|unknown/i);
+    const blocked=(await h.call('p2o_task_author',{entry:{...draft,workflow:'controlled-identity-comparison',missingPrerequisites:['Authenticated comparison transport is not authorized in this URL scope']}})).details;
     expect(blocked.status).toBe('blocked');await expect(h.call('p2o_delegate',{focus:'blocked',task:'Do not broaden access',taskId:blocked.id})).rejects.toThrow('available');
     expect(h.herdr.calls.filter(c=>c.op==='start')).toHaveLength(0);expect(h.pi.active).not.toContain('agent_browser');
-    const task=(await h.call('p2o_task_author',{draft:{...draft,surface:'/other'}})).details;
+    const task=(await h.call('p2o_task_author',{entry:{...draft,surface:'/other'}})).details;
     const {appendRecord}=await import('../../src/records.js');
     await appendRecord(join(await h.runDir(),'records.sqlite'),{at:'2030',runId:task.runId,by:'owner',kind:'task',text:'Controlled hash fault',supersedes:task.recordId,data:{task:{...task,revision:task.revision+1,method:{...task.method,skills:task.method.skills.map((s:any)=>({...s,sha256:'0'.repeat(64)}))}}}});
     await expect(h.call('p2o_delegate',{focus:'fault',task:'Do not use stale method',taskId:task.id})).rejects.toThrow('TASK_METHOD_STALE');
@@ -169,9 +169,9 @@ describe('owner role', () => {
     await h.start('--target ./repo');
     await seedGoal(h);
     const lean: any = { question: 'What does this endpoint expose?', surface: '/surface', risk: 'mapping', role: 'recon', evidenceIds: [], prerequisites: [] };
-    const recon = (await h.call('p2o_task_author', {draft: lean })).details;
+    const recon = (await h.call('p2o_task_author', {entry: lean })).details;
     expect(recon.roleReason).toBe(''); expect(recon.expectedTrue).toBe(''); expect(recon.expectedFalse).toBe(''); expect(recon.stopCondition).toBe(''); expect(recon.method.reason).toBe('');
-    await expect(h.call('p2o_task_author', {draft: { ...lean, role: 'general' } })).rejects.toThrow('Invalid task roleReason');
+    await expect(h.call('p2o_task_author', {entry: { ...lean, role: 'general' } })).rejects.toThrow('Invalid task roleReason');
     await h.command('stop');
   });
 
@@ -190,7 +190,7 @@ describe('owner role', () => {
     await h.start('--target ./repo');
     await seedGoal(h);
     const draft: any = { question: 'What does this surface expose?', surface: '/surface', risk: 'mapping', role: 'recon', evidenceIds: [], prerequisites: [] };
-    const task = (await h.call('p2o_task_author', {draft })).details;
+    const task = (await h.call('p2o_task_author', {entry: draft })).details;
     const worker = (await h.call('p2o_delegate', { focus: 'recon', task: 'map the surface', taskId: task.id })).details;
     const { BrokerClient } = await import('../../src/broker.js');
     const ticket = JSON.parse(await readFile(join(await h.runDir(), `ticket-${worker.workerId}.json`), 'utf8'));
@@ -210,7 +210,7 @@ describe('owner role', () => {
     const makeDraft = (role: string, prerequisites: any[] = [], validationOf?: string) => ({question:'Which actor reaches the controlled consumer?',surface:'/surface',risk:'authorization',role,
       roleReason:'Lead selected this role from the current unanswered question',expectedTrue:'Known baseline reaches the intended consumer',expectedFalse:'Contrasting observation refutes the boundary hypothesis',
       stopCondition:'Stop after the contrast, a missing prerequisite or explicit owner withdrawal',evidenceIds:[],prerequisites,validationOf,methodReason:'Bounded offline method; no deployment claims'});
-    const recon = (await h.call('p2o_task_author',{draft:makeDraft('recon')})).details;
+    const recon = (await h.call('p2o_task_author',{entry:makeDraft('recon')})).details;
     // Part XI: the lead holds target tools; this fixture still delegates the task to a worker.
     const reconWorker = (await h.call('p2o_delegate',{focus:'controlled-recon',task:'Observe the bounded fixture',taskId:recon.id})).details;
     const {BrokerClient:ReconClient}=await import('../../src/broker.js');
@@ -220,7 +220,7 @@ describe('owner role', () => {
     await rc.request('report',{report:{summary:'Bounded recon packet',evidence:[observation.evidenceId],confidence:'low'}});rc.close();
     const lead={details:{evidenceId:observation.evidenceId}};
     const accepted = (await h.call('p2o_task_review',{id:recon.id,reason:'Lead accepts this bounded source observation, not deployment proof',evidenceIds:[lead.details.evidenceId]})).details;
-    const discovery = (await h.call('p2o_task_author',{draft:makeDraft('discovery',[{taskId:recon.id,revision:accepted.revision}])})).details;
+    const discovery = (await h.call('p2o_task_author',{entry:makeDraft('discovery',[{taskId:recon.id,revision:accepted.revision}])})).details;
     const context = await h.emit('context',{messages:[{role:'compactionSummary',summary:'compact fixture',tokensBefore:1000,timestamp:0}]});
     expect(context.messages.filter((m:any)=>m.customType==='p2o_objective_state')).toHaveLength(1);
     expect(JSON.stringify(context.messages)).toContain(discovery.id);
@@ -236,7 +236,7 @@ describe('owner role', () => {
       await first.request('report',{report:{summary:'Discovery packet; source-only boundary remains unknown',evidence:[obs.evidenceId],confidence:'low',outcome:'completed'}});
       await expect(first.request('exec',{command:'true'})).rejects.toThrow('stopped');
       const reviewed=(await h.call('p2o_task_review',{id:discovery.id,reason:'Lead accepts the packet for a contrasting validation question',evidenceIds:[obs.evidenceId]})).details;
-      const validation=(await h.call('p2o_task_author',{draft:makeDraft('validation',[{taskId:discovery.id,revision:reviewed.revision}],discovery.id)})).details;
+      const validation=(await h.call('p2o_task_author',{entry:makeDraft('validation',[{taskId:discovery.id,revision:reviewed.revision}],discovery.id)})).details;
       const b=(await h.call('p2o_delegate',{focus:'validation',task:'Follow the separate validation objective',taskId:validation.id})).details;
       const second=await connect(b.workerId);
       try {
@@ -280,7 +280,7 @@ describe('owner role', () => {
     // P14.11: the ticket is what the broker enforces, so the allowance class has to reach it.
     const ticketBudget = async (h: any) => JSON.parse(await readFile(join(await h.runDir(), (await h.tickets())[0]), 'utf8'));
     // A2: the first intent of a fresh run is recon/mapping; a later structured intent anchors to the claim the run holds.
-    const minimalRecon = (h: any) => h.call('p2o_task_author', { draft: {
+    const minimalRecon = (h: any) => h.call('p2o_task_author', { entry: {
       question: 'Which recorded surfaces does the fixture expose?', surface: '/fixture', risk: 'mapping', role: 'recon', evidenceIds: [], prerequisites: [] } });
     const primitiveClaim = { candidate: 'fixture-primitive', surface: '/fixture', risk: 'authorization', closure: 'open_proof_gap', execution: 'not_tested',
       proof: 'static_trace', evidenceRefs: [], negativeControls: [], policyBasis: 'inferred', expectedPolicy: 'Declared fixture boundary', limitations: 'Nothing executed yet' };
@@ -289,7 +289,7 @@ describe('owner role', () => {
       await minimalRecon(h);
       // P14.5: an exploitation task has to cite the primitive it takes further, so the fixture seeds the worker claim first.
       const primitive = await h.seedClaim(primitiveClaim);
-      const task = (await h.call('p2o_task_author', {draft: {
+      const task = (await h.call('p2o_task_author', {entry: {
         question: 'Does the recorded primitive reach the effect the chain claims?', surface: '/fixture', risk: 'authorization', role: 'exploit',
         roleReason: 'Chain frontier step with every capability already demonstrated', expectedTrue: 'The step runs and is recorded as confirmed and tested',
         expectedFalse: 'The step is refused and the restriction is recorded as a gap', stopCondition: 'Stop after one bounded attempt', evidenceIds: [], prerequisites: [],
@@ -324,7 +324,7 @@ describe('owner role', () => {
     const asset = (await h.call('p2o_graph_record', { batch: { assets: [{ asset: { kind: 'endpoint', key: 'GET /fixture' } }] } })).details.acks[0];
     await minimalRecon(h);
     const discoveryClaim = await h.seedClaim({ ...primitiveClaim, candidate: 'fixture-discovery-anchor' });
-    const discovery = (await h.call('p2o_task_author', {draft: {
+    const discovery = (await h.call('p2o_task_author', {entry: {
       question: 'Which bounded observations describe the recorded fixture?', surface: '/fixture', risk: 'authorization', role: 'discovery',
       roleReason: 'Bounded enumeration of one recorded surface', expectedTrue: 'The enumeration returns the recorded observation set', expectedFalse: 'The enumeration returns nothing and the receipt says so',
       stopCondition: 'Stop after one bounded command', evidenceIds: [], prerequisites: [], methodReason: 'One bounded command against the recorded surface', skills: [],
@@ -620,7 +620,7 @@ describe('owner role', () => {
     expect(h.sandboxes[0].stopCount).toBe(0);
     expect((await h.call('p2o_workers',{})).details.engine.state).toBe('blocked');
     // A1: dispatch is the one delegation path, and a blocked loop in the Engine holds the intent: no worker is started.
-    const task = (await h.call('p2o_task_author', { draft: { question: 'Does the blocked loop start unattended work?', surface: '/surface', risk: 'mapping', role: 'recon', evidenceIds: [], prerequisites: [] } })).details;
+    const task = (await h.call('p2o_task_author', { entry: { question: 'Does the blocked loop start unattended work?', surface: '/surface', risk: 'mapping', role: 'recon', evidenceIds: [], prerequisites: [] } })).details;
     await h.call('p2o_task_dispatch', { ids: [task.id] });
     expect(h.herdr.calls.filter(call => call.op === 'start')).toHaveLength(0);
     expect((await h.call('p2o_workers',{})).details.engine).toMatchObject({ state: 'blocked', pendingIntents: 1 });

@@ -33,7 +33,7 @@ describe('finish preflight', () => {
 
   it('reports a clean block once every item is resolved', async () => fixture(async h => {
     const built = await populate(h);
-    await h.call('p2o_case_rate', {id: built.accepted.id, revision: built.accepted.revision, finding: rating });
+    await h.call('p2o_case_rate', {id: built.accepted.id, revision: built.accepted.revision, entry: rating });
     const pending = (await h.call('p2o_board', { board: 'cases', id: built.pending.id })).details;
     const { currentness, staleReasons, independentCurrent, independenceReason, acceptedFinding, readyToRate, canonicalCaseId, recordId, runId, revision, ...draft } = pending;
     await h.call('p2o_case_author', {id: built.pending.id, revision, entry: { ...draft, reviewStatus: 'withdrawn', reviewReason: 'Withdrawn: duplicate of the accepted fixture case' } });
@@ -61,13 +61,13 @@ describe('finish preflight', () => {
 
   it('lists a High finding with no independent validation as advisory, and drops it once a waiver is recorded', async () => fixture(async h => {
     const built = await populate(h), high = { severity: 'high', basis: 'Confirmed boundary deviation reaching beyond the tested identity’s own object in the fixture' };
-    await h.call('p2o_case_rate', {id: built.accepted.id, revision: built.accepted.revision, finding: high });
+    await h.call('p2o_case_rate', {id: built.accepted.id, revision: built.accepted.revision, entry: high });
     const block = (text: string) => text.slice(text.indexOf('FINISH PREFLIGHT'));
     expect(block(finishText(await h.call('p2o_finish', {})))).toMatch(/- HIGH_WITHOUT_INDEPENDENCE \(1\)/);
   }));
   it('does not list it when the rating carries an independence waiver', async () => fixture(async h => {
     const built = await populate(h);
-    await h.call('p2o_case_rate', {id: built.accepted.id, revision: built.accepted.revision, finding: { severity: 'high', basis: 'Confirmed boundary deviation reaching beyond the tested identity’s own object in the fixture', independenceWaiver: 'Solo run: no second actor was available to repeat it' } });
+    await h.call('p2o_case_rate', {id: built.accepted.id, revision: built.accepted.revision, entry: { severity: 'high', basis: 'Confirmed boundary deviation reaching beyond the tested identity’s own object in the fixture', independenceWaiver: 'Solo run: no second actor was available to repeat it' } });
     expect(finishText(await h.call('p2o_finish', {}))).not.toContain('HIGH_WITHOUT_INDEPENDENCE');
   }));
 
