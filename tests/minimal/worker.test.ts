@@ -227,6 +227,28 @@ describe('worker role', () => {
     expect((await h.call('p2o_workers')).details.workers[0].reported).toBe(false);
   });
 
+  it('walks bounded graph reachability and pages the summary through the broker for a worker', async () => {
+    // S1/A5+A6 (D-S1-7, planning_update.md F-03/F-05): reachability is a bounded read now available to a worker, the
+    // query/summary cursor travels as the broker's `since`, and chain/ingest stay planner-only.
+    const workerId = await h.delegate();
+    const first = (await h.call('p2o_graph', { action: 'record', batch: { assets: [{ asset: { kind: 'host', key: 'host-a' } }] } })).details.acks[0];
+    const second = (await h.call('p2o_graph', { action: 'record', batch: { assets: [{ asset: { kind: 'service', key: 'web' } }] } })).details.acks[0];
+    await h.call('p2o_graph', { action: 'record', batch: { relations: [{ kind: 'hosts', fromId: first.entityId, toId: second.entityId, fromRevision: 1, toRevision: 1, basis: 'inferred' }] } });
+    await h.activate(join(await h.runDir(), `ticket-${workerId}.json`));
+    const description = String(h.worker.tools.get('p2o_graph')!.description);
+    expect(description).toContain('planner-only');
+    const walk = (await h.call('p2o_graph', { action: 'path', fromId: first.entityId }, 'worker')).details as any;
+    expect(walk.paths).toHaveLength(1);
+    expect(walk.paths[0].hops[0].relation).toMatchObject({ kind: 'hosts', fromId: first.entityId, toId: second.entityId });
+    // A cursor was a legal declaration but an unknown broker field before A6; summary now accepts it and still bounds rows.
+    const summary = (await h.call('p2o_graph', { action: 'summary', cursor: 0, limit: 2 }, 'worker')).details as any;
+    expect(summary.counts.assets).toBeGreaterThanOrEqual(2);
+    const paged = (await h.call('p2o_graph', { action: 'query', kind: 'host', cursor: 1 }, 'worker')).details as any;
+    expect(Array.isArray(paged.rows)).toBe(true);
+    await expect(h.call('p2o_graph', { action: 'chain' }, 'worker')).rejects.toThrow('PLANNER_ONLY');
+    await expect(h.call('p2o_graph', { action: 'ingest', id: 'artifact-00000000-0000-0000-0000-000000000000' }, 'worker')).rejects.toThrow('PLANNER_ONLY');
+  });
+
   it('never activates a worker gate from session replay alone', async () => {
     const replay = createFakePi();
     registerP2O(replay.pi, { extensionPath: EXTENSION_PATH });

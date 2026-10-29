@@ -7,6 +7,7 @@ import type { ProcessResult } from './process.js';
 import { httpRequest, taskTimeout, type HttpRequest } from './target.js';
 import { isOutcome, isRecordKind, type AssessmentRecord, type CoverageOutcome, type LedgerPage, type RecordAck } from './records.js';
 import { scratchOffset, scratchPath } from './scratch.js';
+import { FOOTHOLD_ACTIONS } from './foothold.js';
 import { graphObject, validateGraphBatch, type GraphAck, type GraphBatch } from './state/graph.js';
 import type { ContextCursor, ContextPacket } from './context.js';
 import type { AssessmentTask } from './tasks.js';
@@ -482,7 +483,9 @@ export class Broker {
       case 'session': {
         if (!this.deps.session) return { ok: false, error: 'Session service unavailable' };
         const action = request?.action;
-        if (!['open', 'list', 'exec', 'snapshot', 'close', 'upload', 'download', 'listen'].includes(action)) return { ok: false, error: 'Unknown session action' };
+        // A17.8/S1-A3: the foothold actions are part of the session surface too; leaving them out of this list made the
+        // declaration unusable for the only role that holds the tool (planning_update.md F-02).
+        if (!['open', 'list', 'exec', 'snapshot', 'close', 'upload', 'download', 'listen', ...FOOTHOLD_ACTIONS].includes(action)) return { ok: false, error: 'Unknown session action' };
         // The ticket binds exactly one session; anything but opening a new one must name a session this ticket holds.
         let session: string | undefined;
         if (action !== 'open') {

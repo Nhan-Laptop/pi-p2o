@@ -1,825 +1,443 @@
-# R3 update — attack paths, red-team technique map, retest, interop (A+B+C)
+# S1 — Surface audit and remediation plan of record (2026-10-29)
 
-Status: **approved 2026-10-28; R0 committed as `1d79ec9`; R1 committed as `35176ae`; R2 committed as `d27346b`; R3
-implemented and verified in the working tree (2026-10-29, uncommitted, awaiting owner review).** The owner approved the A+B+C program and chose to start
-with R0; each remaining phase is implemented only after the previous phase's verification and owner review. This document
-is the plan of record and replaces the A1 text; that text is unchanged in git at `git show bbdfec1:planning_update.md`
-(and the P18 text at `git show 18d1d84:planning_update.md`). Baseline: HEAD at plan time was `bbdfec1` ("Audit the whole
-tool surface and default conservative omissions (A1.2)"); R0–R2 are committed (`1d79ec9`, `35176ae`, `d27346b`) and R3 is
-implemented in the working tree without a commit. The owner's `AGENTS.md` edit and untracked `pi-p2o-defense-vi.pptx` are not part of these
-milestones and are not touched.
+Status: **Tranche A implemented and verified in the working tree (2026-10-29, uncommitted, awaiting owner review); tranches B
+and C are not started. Rev 2 after the 2026-10-29 plan review. Base commit `197d6a9` (R3 of the R1 program). The owner's
+`AGENTS.md` edit and the untracked `pi-p2o-defense-vi.pptx` are outside S1.** This document replaces the R3 plan of record. That text is unchanged in git at
+`git show 197d6a9:planning_update.md`; the earlier A1 text at `git show bbdfec1:planning_update.md` and the P18 text at
+`git show 18d1d84:planning_update.md` are unchanged too. The audit below was measured against the installed extension as it
+ships at `197d6a9`, not against source snippets alone.
 
-Owner request (2026-10-28, verbatim):
+Owner request (2026-10-29, verbatim, truncated in chat as sent):
 
-> "ok now I need you make a deeply analyze, inspect the current extension's assets/ vulns graph, from that find any
-> weakness either or anythings to enhance to project pentes's capabilities of pentesting - exploit - research red team.
-> You should take a ref at ARTEX, the revalent knowledge in the internet, after that combine then to compare with our tech
-> so that can improve - enhance project. let's do it"
+> "ok now base on the current plan implemented, i need you make deep inspection to the current tools registered and make a
+> diagnosis that there are any weakness - duplicated feature - any things make the extension more worse, pls carefully
+> analyze."
 
-Owner decisions for this milestone (made in chat, 2026-10-28):
+Owner decisions for this milestone (made in chat, 2026-10-29):
 
-- Scope: **A + B + C** (full program), staged so each phase is shippable and reviewable on its own.
-- Implementation: **approved; start with R0** (containment/correctness), then R1, R2, R3, R4.
-- D-R1-3: **hypothesis + `basis=inferred` relations** (workers may write both; observed relations stay planner/owner).
-- D-R1-4: **bounded host fetcher** (not sandbox execution).
-- D-R1-5: **auto-ingest on capture + `p2o_graph action=ingest`**, no new tool.
-- D-R1-8: **project-level DB with auto-merge** (not a read-only pack); safeguards described in R3.9.
-- D-R1-9: **SARIF + STIX both in R3**.
-- D-R1-10: **offline CI bench + live run only with authorization and a cost cap**; the owner supplied the live target
-  `https://hcmussh.edu.vn/` and a **USD 2** cap, gated on the owner's authorization for that host.
+- **D-S1-1 — Scope is C.** P1 remediation, then the budget/contract pass, then the structural tranche: consolidate the
+  authoring surface, split `p2o_graph` by authority and reduce the read verbs. The structural tranche is gated on
+  before/after evidence (see §7 and §9).
+- **D-S1-2 — Foothold is wired, not removed.** The five `foothold-*` actions are implemented, documented, tested and
+  listed in the acceptance matrix; the defect is a missing broker allow-list entry. Fix the wiring and test the worker
+  path rather than deleting a shipped capability.
+- **D-S1-3 — Verification stays deterministic and hermetic.** Every tranche must be provable with `tsc`, the vitest
+  suites, the declaration-budget test, `build`/`check:build` and the measure script. A live benchmark run is **not**
+  part of S1 by default; it requires a separate owner authorization (see §9, bench policy).
+- **D-S1-4 — Authority never widens, with one named exception.** S1 may relabel, split, merge, trim, refuse earlier and
+  fix messages. It may not give a role a target, lab, claim or write capability it does not already hold; the one
+  authorized widening is the **read-only** `p2o_graph action=path` for worker and validation (D-S1-7). The planning role
+  still holds no target or claim tool after the graph split.
+- **D-S1-5 — Pinned ceilings are not raised.** The declaration ceilings in `tests/minimal/context-budget.test.ts` stay
+  where they are through tranches A and B; the bytes S1 reclaims become headroom on purpose, not an entitlement. After
+  tranche C the ceilings are re-pinned once, from the new measured numbers, with a dated comment (the method the test
+  already documents: measured + 3%, rounded up).
+- **D-S1-6 — Commits are owner-initiated.** S1 produces working-tree changes and per-tranche verification evidence; the
+  owner decides when each tranche is committed and pushed. Author identity is the repository's; no attribution lines of
+  any kind (AGENTS.md). The owner's `AGENTS.md` edit and the untracked `.pptx` are never staged.
 
----
+- **D-S1-7 — Read-only `path` is shared (owner decision 2026-10-29).** In C1 (and in A5 as the interim step) worker and
+  validation may call `p2o_graph action=path`; `chain` and `ingest` stay planner-only. The existing bounds (≤10 paths,
+  ≤6 hops, ≤500 nodes, ≤24 KiB, deterministic order) apply to every role and the action never writes.
+- **D-S1-8 — The two naming renames are in scope (owner decision 2026-10-29).** `p2o_coverage_suggest` becomes
+  `p2o_wstg_suggest` and `p2o_plan_author` becomes `p2o_goal_author`. This is breaking: every reference (prompts,
+  boundaries, loadouts, `*_VERB_NAMES`, skills/knowledge, docs, tests, acceptance-matrix citations, measurement
+  expectations) updates in the same change, and a repo-wide grep assertion fails if an old name survives.
+- **D-S1-9 — C is accepted on deterministic evidence.** No live benchmark run in S1 (see D-S1-3); the C4 gate uses the
+  declaration numbers, the full suite and the hermetic fixture counts.
+- **D-S1-10 — The hidden legacy verbs are deleted in S1 (owner decision 2026-10-29).** B10 migrates the ~29 test files
+  that use `p2o_delegate`/`p2o_task_start` to the internal functions first, then deletes both handlers, `HIDDEN_TOOLS`,
+  the dead hidden-exposure plumbing and the legacy action map. After B10 the registered surface is 33 tools, all
+  model-visible, and 11 board verbs.
 
-## 0. Scope and non-goals
+## 1. Why this milestone exists
 
-**Goal.** Turn the revisioned asset/fact graph from a passive knowledge store into the working memory of the
-recon→discovery→exploit→validate→report loop, and add the missing offensive-analysis layers: deterministic recon
-ingestion, component/CVE/exploitability joins, bounded attack-path queries, a red-team technique crosswalk, a retest
-lifecycle, and machine-readable interop. Preserve the evidence ladder, role authority and sandbox containment that make
-the project stronger than the reference tools.
+R0–R3 added capability (containment, recon ingestion, graph dossier/query/summary, attack paths, ATT&CK, retest, interop,
+project knowledge) while a declaration-budget gate kept the tool text inside fixed ceilings. That gate has now run out of
+room and the surface has accumulated the same three classes of defect the A1/A1.2 audit found in the prompts:
 
-**Non-goals, this milestone:**
+1. **Capabilities that are declared but cannot be reached.** Five `foothold-*` actions have no broker path; three of
+   `p2o_graph`'s nine actions are planner-only but are declared to worker/validation; `p2o_graph` query/summary reject
+   the `cursor` the schema declares for workers; `p2o_research` drops `componentRef` for workers; and ten model-visible
+   boundary sentences tell a role to use a tool that role does not hold.
+2. **Duplicated features and duplicated prose.** `p2o_task_settle` is `p2o_task_review` plus one enum. `p2o_graph`'s
+   `page` is an append-log while `query`/`export` read current heads, and nothing says so. Two different `session`
+   concepts share a parameter name. About 1,500 model-visible characters restate rules the prompts already carry.
+3. **A contract that fails quietly.** 15 of the 33 model-visible schemas do not close their object, so a cross-tool field
+   name (`timeoutSeconds` on `p2o_shell`) is accepted and ignored — the command then runs with no timeout. Several
+   readers use the same words for different pagination semantics, and several error paths lose the field name the model
+   needs to self-correct.
 
-- No weakening of the evidence ladder: a scanner result, a CVE lead, an extracted fact or a hypothesis is never a claim,
-  a case or a finding by itself.
-- No change to the sandbox containment (no pivot, tunnel, C2, OAST listener, AD attack execution, credential harvesting
-  beyond the existing sealed-literal path). Internal-network depth is a separate owner decision.
-- No live benchmark run until the owner confirms authorization for the target host; the approved live target and cap are
-  recorded in D-R1-10 (`https://hcmussh.edu.vn/`, USD 2).
-- No cross-run evidence reuse: a project-DB asset/finding is suggested context only, never same-run evidence for a case
-  or cell.
-- No changes to `AGENTS.md`, `pi-p2o-defense-vi.pptx`, or any owner file.
-- No unrelated refactor: every changed line must trace to a phase below.
+None of this is an architectural failure. The loadout enforcement, the per-action parameter whitelists, the evidence
+ladder and the stale-revision hints are sound; the defects are in the declaration layer and in a handful of handler
+plumbing paths. S1 fixes them while the surface is still small enough to audit.
 
-**Why the full program and not just quick wins.** The references and the public state of the art agree that the ceiling is
-not retrieval quality but planning/commitment and the absence of a durable, checkable state that a planner can act on
-(ARTEX dual graph + intent frontier; Strix's validator-first reports; the 2026 PentestGPT comparison where a memory layer
-improved neither system because the agents never committed a hypothesis to a concrete test). We already have the checkable
-evidence ledger; what is missing is the graph-side state and the offensive analysis on top of it.
+## 2. Measured state (audit of `197d6a9`)
 
----
+Measured by registering the real extension against a stub Pi API and summing `description.length +
+JSON.stringify(parameters).length` per role — the same metric and the same method as
+`tests/minimal/context-budget.test.ts`:
 
-## 1. Verified baseline
+| role | tools | declaration chars | ceiling | headroom |
+| --- | --- | --- | --- | --- |
+| planner | 22 | **49,294** | 49,300 | **6** |
+| worker | 19 | 42,808 | 44,100 | 1,292 |
+| validation | 18 | 42,000 | 43,300 | 1,300 |
+| reporting | 6 | 6,551 | 6,800 | 249 |
+| model union | 33 | 75,500 | 77,900 | 2,400 |
 
-### 1.1 What the graph is today
+Composition, by the same metric:
 
-Five SQLite tables in the run store: `assets`, `assertions`, `relations`, `anchors`, `graph_provenance`
-(`src/state/store.ts:768-863`). Identity and versioning:
+- The five largest tools are 60.8% of the planner loadout and 60.4% of the worker loadout.
+- `p2o_graph` alone is **8,298 chars = 16.8% of the planner loadout** (1,681 description + 6,617 parameters).
+- The four planner authoring/rating verbs are **21,662 chars = 43.9% of the planner loadout**.
+- The five authoring verbs are 28,336 chars = 37.5% of the model union.
+- 15 of the 33 model-visible schemas do not set `additionalProperties:false` (16 of 35 including the hidden
+  `p2o_delegate`); six tools accept an object that contains **only** an unknown field.
+- About 1,500 model-visible chars across the planner and worker loadouts restate a rule the role prompts already carry
+  (roughly half of them in the planner loadout; see F-18/F-19).
+- Registered but never declared to a model: `p2o_delegate` (2,287 chars) and `p2o_task_start` (298 chars). They cost
+  zero model context and must never be counted as headroom.
 
-| Row | Current shape |
-| --- | --- |
-| asset | 12 kinds; exact NFC `key` ≤500 (no URL/path/method normalization, `src/state/graph.ts:5,114-124`); label; attributes ≤16×500; anchors ≤10; evidenceRefs; `asset-<sha(scope,kind,key)[:24]>`; revision `rN`; content hash decides whether a write is a new revision |
-| assertion | one table for facts (`observed|inferred|contract|configuration`) and hypotheses (`open|supported|refuted|inconclusive`, impact, counterevidenceRefs); host-stamped `unverified:true`; content-addressed `assertion-<24hex>` |
-| relation | 16 kinds; `fromId/toId` + revisions; `basis observed|inferred`; `status active|withdrawn`; host-stamped provenance |
-| anchor | 7 kinds (path, symbol, url, header, config, commit, artifact); attaches to an **asset only** |
-| provenance | actor/task/role/depth/revision; host-owned producer; repeated identical writes add an observation, not a revision |
+Registered surface: 35 tools = 33 model-visible (planner 22 / worker 19 / validation 18 / reporting 6 after role
+filtering) + 2 hidden legacy verbs; 12 board verbs; 78 distinct refusal codes in the owner process.
 
-Limits (`src/state/graph.ts:13-31`): 5,000 asset revisions / 10,000 assertions / 2,000 relations / 20,000 anchors,
-multiplied by `graphCapacity` 1–4; 128 rows and 128 KiB per batch; 7 KiB per row enforced (`store.ts:789`); 24 KiB per
-read response; `page`/`export` return assets only; `export` ≤500 rows, `page` ≤100. Staleness is a read-time flag
-(assertion subject revision, relation endpoint revision, case pins, coverage pins) and is never stored.
+## 3. Findings register
 
-### 1.2 What the rest of the loop already is
+Severity: **P1** = a declared capability is unusable, or model-visible text directs a guaranteed-blocked call;
+**P2** = real duplication, silent acceptance or inconsistent contract; **P3** = naming, docs, tidiness.
+`Tranche` names the task that closes the finding; `defer` means deliberately not in S1. `EXT:N` abbreviates line `N` of
+`extensions/p2o/index.ts`; every other path is repo-relative.
 
-- Claims: `src/evidence.ts` candidate records with typed `closure`/`execution`/`proof`, typed capabilities
-  (`src/capabilities.ts`), payload/environment replay, independent validation, `ruled_out` one-recheck rule. Claims
-  carry `surface`/`risk` text and an optional host-stamped `taskRef`; **no asset field** (`src/evidence.ts:18-44,87-168`).
-- Cases: `src/case-types.ts` with `assetRefs` (≤10, pinned), `claimRefs`, `hypothesis {id,revision}`, contradictions,
-  remediation/retest task, rating (CVSS 3.1 from owner vector; CVSS 4.0 impact from demonstrated depth), review state.
-- Chain: `src/chain-view.ts` joins typed `gained`/`needs` into ready/unmet/frontier; `chain` action can draft a task.
-- Coverage: host-derived cells from reviewed task work + claims + cases + pinned asset (`src/coverage.ts:103-127`); WSTG
-  108-test map; L0–L3; unmapped tasks are gaps.
-- Policy/sandbox: `/target` read-only, no ingress by default, `--lab-network` opt-in, sealed secrets, effect classes,
-  deterministic report with manifest hashes.
-- Report: `REPORT.md`, `cases.csv`, `coverage.csv`, `findings.json/csv`, `wstg-checklist.csv`. `report-export.ts` imports
-  no store/graph module and prints raw `asset-…` ids (verified: imports at `src/report-export.ts:1-20`, asset lines at
-  `:179`, `:288`).
+### 3.1 P1 — declared but unreachable, or text that directs a blocked call (tranche A)
 
-### 1.3 Measured weaknesses from the A1/A1.2 audit
-
-- `p2o_graph` was the **top failure source**: 104 failures / 216 KiB of error text across the audited sessions; 29
-  argument-schema + 37 secret-guard + semantic. In the 11 current-surface sessions: 15 failures / 85.8 KiB
-  (`planning_update.md` at `bbdfec1` §1.2).
-- The reference session the owner pointed at made 5 `p2o_graph` calls; 4 were refused (row-level `evidenceRefs`, two
-  `requestId` misplacements, a cookie **name** refused as a secret), and the remaining call was refused with
-  "Workers record assets, facts and anchors; hypotheses and relations are owner review work" — i.e. the model tried to
-  use the graph as working memory and the role boundary refused it (§1.3).
-- A1 fixed the mechanical classes; A1.2 fixed 21 conservative defaults. Neither changed the fact that the graph is
-  **manual, hard to query, and disconnected from the finding ledger**.
-
-### 1.4 Independent audit findings accepted into this plan
-
-A read-only code audit of the graph/pentest loop (2026-10-28) confirmed and added to the analysis:
-
-| ID | Finding | Evidence |
-| --- | --- | --- |
-| W1 | Asset graph and claim/case ledger are two disconnected stores; claims carry no asset ref and the chain join runs on claims alone | `src/evidence.ts:18-44`; `chain-view.ts:126-139` |
-| W2 | The report cannot see the graph: no asset inventory, no resolved identities, no facts/relations/attack-path section | `src/report-export.ts:1-20,179,288` |
-| W3 | `graphExport`/`page` select relations only when **both** endpoints are on the page (`from_id IN … AND to_id IN …`), count the same subset, and give no edge cursor; cross-page edges are unreachable from the page | `src/state/store.ts:930-955` |
-| W4 | `assetEntityIds()` has no `WHERE scope=?` although every other reader filters scope; it feeds `discoveredUnplannedAssets` | `store.ts:730-733`; `coverage.ts:155` |
-| W5 | `refs()` error says "at most 10" but never checks length; the tool schema has no `maxItems` | `src/state/graph.ts:137-141`; `graph-tool.ts:6` |
-| W6 | An assertion revision can retain the old entity id while the statement no longer hashes to it; re-recording the new statement without `supersedes` creates a second entity | `store.ts:829-834,846` |
-| W7 | Hypotheses are write-mostly: no model-facing query, no summary, no consumer in the loop | `docs/KNOWLEDGE.md:20`; `graph-slice.ts:28-40` |
-| W8 | Relations are invisible to workers; no transitive/path query; `alias_of` has no consumer | `graph-slice.ts:28-40`; `graph.ts:212` |
-| W9 | Anchors attach to assets only; a fact/hypothesis cannot be pinned to `file:line`/symbol | `graph.ts:50`; `store.ts:807-808` |
-| W10 | Research fetch runs in the owner process with no allowlist and **no response cap**; `cve.ts` still has a stale "only hosts a CVE fetch may reach" comment contradicted below it | `extensions/p2o/index.ts:2098-2104`; `src/cve.ts:12-14,39-44`; `src/tool-schemas.ts:123` |
-| W11 | Lead lifecycle is thin: no task id on `tasked`, no dedupe, no version-range match against the asset's recorded version, no EPSS/KEV | `extensions/p2o/index.ts:2138-2151`; `src/cve.ts:15,119-146` |
-| W12 | Derived coverage cells have no stored history (`revision:1`, fingerprint id), so "tested at sequence N" needs ledger replay | `coverage.ts:151` |
-| W13 | Manual graph authoring remains expensive even after A1/A1.2 | §1.3 above |
-| W14 | No effectiveness measurement; bench protocol is "ready but NOT run"; historical campaigns contaminated | `bench/README.md:11-22`; `docs/ACCEPTANCE_MATRIX.md:376` |
-| W15 | Worker write enforcement is in the broker; the planner still holds `p2o_graph` and can author hypotheses/relations; `tool-policy.ts:22` still says "follows in A2" | `extensions/p2o/index.ts:3806`; `tool-policy.ts:18-24` |
-
-Additional ergonomics confirmed by measurement: the tool surface is 32 model-visible tools with strict declaration
-budgets (planner 48,245/49,300; worker 41,120/44,100; validation 40,312/43,300; reporter 6,786/6,800; model
-74,451/77,900 — the reporter has **14 characters** of headroom). Any new declaration text must fit or be traded out;
-internal changes (report fields, storage, export) are free of this budget.
-
----
-
-## 2. Comparison and prior art
-
-### 2.1 Reference behaviour (local snapshots)
-
-| Dimension | ARTEX | Strix | pi-p2o today |
+| ID | Finding | Evidence | Action |
 | --- | --- | --- | --- |
-| Asset model | 6 types, natural-key dedupe, containment derived at read time, no `asset_edges` | threat model + report state; no real asset graph | **12 kinds, revisioned, 16 relations, anchors, provenance** (richest) |
-| Exploration model | `goal/intent/fact/finding/hint/digest` nodes + `spawns/derived_from/yields/proves/covers` edges + `exploration_anchors` | 35-field finding record + coverage ledger + per-agent todos | task/plan board + claim ledger + coverage cells; **no finding/claim in graph** |
-| Evidence | traffic role `baseline|proof|verification|supporting`, but evidence optional, severity free text, no CVSS | PoC required, counterevidence required, closure 3 states | **typed receipt→claim→case, independence replay, CVSS host-computed, report hash** (strongest) |
-| Planning | intent frontier, dispatch-zero legal only with a reason, anti-repeat prompt, shared todolist, one serial chain step per wake | LLM root + specialists, cost budget, tool-gated finish | planner-first tasks/plans + chain readiness + completion obligations |
-| Graph query | `list_assets` DSL, `list_untested_assets`, `node_detail`, cross-worker trace search | coverage/notes/report-state tools | page/view/export/chain only; no search/filter/aggregate |
-| Attack path | edges exist, **nothing computes a path** | none | chain join on capabilities, no relation traversal |
-| Retest | retester agent with `reproduced|fixed|inconclusive`, evidence version pin | dedupe/re-run | in-run `remediation.retestTask` only |
-| Interop | markdown/report/UI | SARIF + markdown + CVSS | `findings.json/csv` proprietary; no SARIF/STIX/ATT&CK |
-| Measurement | no in-tree harness | XBEN 104 challenges (vendor-reported) | none; docs say UNVERIFIED |
+| F-01 | Ten model-visible boundary sentences point at a tool the holding role cannot call: `p2o_graph`/`p2o_state`/`p2o_ledger` say "read through p2o_board" for worker, validation and reporting (which do not hold it); `p2o_note` tells a validation worker to use `p2o_surface` (removed from its loadout); `p2o_surface` cites `p2o_task_author` (worker does not hold it). | `src/tool-guidelines.ts:16,17,30,31,33`, loadouts `src/tool-policy.ts:43,52,56`, gate `EXT:4435`; reproduced by scanning every `p2o_*` token in each tool's final description against the holder's loadout | A1 (new test), A2 (rewrite) |
+| F-02 | All five `foothold-*` actions of `p2o_session` are unreachable: the broker worker RPC allow-list omits them, and the owner branch is unreachable because the planner loadout has no `p2o_session`. The description still sells the foothold (685 of its 2,324 chars) and `text`/`maxBytes` are dead with it. | `src/broker.ts:485` (session allow-list), `src/tool-schemas.ts:156` (enum), `EXT:3106-3108` (prose), handler `EXT:4085-4123`, loadout `src/tool-policy.ts:14,25`, `src/foothold.ts:28` | A3 (wire + test worker path) |
+| F-03 | `chain`, `path` and `ingest` are declared to worker/validation but fail `PLANNER_ONLY`; neither the description nor the boundary says so, while `p2o_board`/`p2o_workers` do carry "PLANNER ONLY". Per D-S1-7 `path` becomes a bounded read for every role, so after A5 only `chain` and `ingest` stay planner-only and both must say so. | `EXT:3281,3308,3358`; holders in `tools-audit.json`; description `EXT:3274` | A5 (relax `path`, label `chain`/`ingest`), C1 (move those two) |
+| F-04 | `scripts/test-installed-holdout.mjs` orders the live model to call `p2o_delegate` (hidden) and `p2o_candidate` (worker-only) as the lead, and its leak assertion keys on `p2o_delegate` tool results — so the "leaked worker" check is vacuous and the run can report `passed`. The file is SHA-pinned in `research/runtime/lean-lead/acceptance.json`. | `scripts/test-installed-holdout.mjs:36,91-97`, `research/runtime/lean-lead/acceptance.json:22` | A4 (objective + non-vacuous assertion + re-pin) |
+| F-05 | Worker `p2o_graph action=query\|summary` with `cursor` fails: the index sends `cursor` to the broker but the broker allow-list has `since` only, and `graphRead` reads `since`. | `EXT:3347` vs `EXT:4151` (`['…','since','limit','asOfSequence',…]`), schema `src/state/graph-tool.ts:57` | A6 (map `cursor`→`since`, + test) |
+| F-06 | Worker `p2o_research action=cve componentRef=…` drops `componentRef` in the worker payload, so the host refuses with "needs a product name" even though a legal package identity was supplied. | payload `EXT:2927-2929`, schema `src/tool-schemas.ts:127`, handler `src/cve.ts:37` | A7 (forward + test) |
+| F-07 | The wrapping-round restriction fails open: `setActiveTools(closingTools())` is inside a `try/catch` that keeps the full loadout on host error; the defensive `tool_call` gate uses `plannerTools()` rather than the closing list; `p2o_workers action=continue` remains in the closing loadout; and the planner prompt claims "authoring and dispatch do not [stay]" although only `p2o_task_author`/`p2o_task_dispatch` are removed. | `EXT:710`, `EXT:4435`, `EXT:3496`, `src/prompts.ts:160`, `src/tool-policy.ts:40` | A8 (gate + narrowing decision) |
 
-Sources: `my_references/ARTEX/db/schema.sql:170-258`, `db/exploration.go:1136-1181`, `agent/planner.go:298-345`,
-`db/finding_retests.go:183-186`, `agent/tools.go:1219-1233` (finding evidence optional), `report/report.go:46-90` (no CVSS);
-`my_references/strix/report/state.py:69-114`, `tools/reporting/tool.py:1009-1105`, `report/sarif.py:1127-1135`,
-`tools/coverage/tools.py:40-48`, `benchmarks/README.md:20-45`. ARTEX snapshot is a community mirror; upstream is 404, so
-it is used as a design reference, not as a claims source.
+### 3.2 P2 — duplication, silent drops and contract drift (tranche B)
 
-### 2.2 Industry patterns that shape this plan
-
-- Dual graph + anchors (global asset identity separate from per-engagement exploration, joined by an anchor table) —
-  ARTEX; matches our asset graph + ledger, missing only the join.
-- Edge semantics in the schema: BloodHound splits traversable vs informational edges; ATT&CK models `targets`
-  (attack-pattern → asset). A path query is only trustworthy if traversal is a property of the edge kind, not of a prompt.
-- CVSS as a stored vector, computed score; EPSS/KEV as separate decaying exploitability signals; standard IDs (CWE, CVE,
-  CPE, ATT&CK, WSTG) as join keys instead of new taxonomies.
-- Candidate claims vs findings: a validator or programmatic proof turns a candidate into a finding; ARTEX/Strix both
-  converge there, and neither publishes a typed claim→evidence→verdict ledger — our design space.
-- Planning, not memory, is the ceiling (2026 PentestGPT comparison: a coverage-memory layer helped neither system; agents
-  held evidence and never committed to a test). That argues for explicit hypothesis objects with prerequisites, which is
-  what R1/R3 add.
-- Skill/capability split: capabilities stay typed and policy-gated; skills stay prose and reference them by ID.
-
-URLs: [XBOW](https://xbow.com/blog/top-1-how-xbow-did-it), [BloodHound traversable edges](https://bloodhound.specterops.io/resources/edges/traversable-edges),
-[ATT&CK relationship types](https://mitre-attack.github.io/attack-data-model/schemas/relationship-types/),
-[CVSS v4](https://www.first.org/cvss/v4.0/specification-document), [EPSS](https://www.first.org/epss/),
-[Cybench](https://arxiv.org/abs/2408.08926), [AutoPenBench](https://arxiv.org/abs/2410.03225),
-[PentAGI memory](https://pentagi.com/docs/concepts/memory/), [Anthropic tool guidance](https://www.anthropic.com/research/writing-tools-for-agents).
-
-### 2.3 What we deliberately do not copy
-
-- ARTEX: free-text severity, optional evidence, `confirmed` for `inferred` facts, coverage as "asset has a fact" proxy.
-- Strix: one Kali container per scan with NET_ADMIN; LLM-judge dedupe as the primary gate (we keep deterministic keys +
-  owner review; an LLM judge would add a non-reproducible decision to the evidence path).
-- Industry: no unbounded graph traversal, no LLM-only path scoring, no silent heuristics in the report.
-
----
-
-## 3. Design decisions for owner approval
-
-Each decision lists the alternatives considered. **Recommended** is what the plan assumes; the owner may change any of
-them before implementation starts.
-
-| ID | Decision | Options and trade-offs | Recommendation |
+| ID | Finding | Evidence | Action |
 | --- | --- | --- | --- |
-| D-R1-1 | Where findings live | (a) **Derived projection** of the existing claim/case ledger onto asset reads; no new table | (b) new persisted `finding` rows (duplicates the ledger, needs its own staleness) | (c) hybrid (persist only accepted cases) | **(a)**: one source of truth, no migration, staleness already computed; the dossier is bounded and can be recomputed on read |
-| D-R1-2 | Extraction identity normalization | (a) extractor canonicalizes URL/route/package keys deterministically at parse time and records the raw value in an anchor/attribute | (b) keep exact-bytes identity and let the model submit normalized keys | (c) add a normalization pass over the whole graph | **(a)**, scoped to extractor-produced assets only; documented deviation from the graph's no-implicit-normalization rule; raw value retained for audit |
-| D-R1-3 | Worker graph writes | (a) hypotheses only; relations remain planner/owner | (b) keep owner-only | (c) hypotheses + `basis=inferred` relations; observed relations stay planner/owner | **(c) chosen by the owner**: workers gain working memory; inferred relations are review debt and path queries flag `basis=inferred`; observed relations remain curated |
-| D-R1-4 | Research fetch containment | (a) bounded host fetcher (timeout 15 s, 4 MiB body, ≤5 redirects, resolve DNS and deny loopback/link-local/cloud-metadata even after redirects, text/json/xml content types) | (b) move the fetch into the sandbox executor and return a bounded preview + artifact | (c) keep unbounded host fetch and only document it | **(a) chosen**: fixes the SSRF/host-memory hole without reversing the Part XI "any http(s) source" decision; (b) remains a later owner decision |
-| D-R1-5 | Ingestion trigger | (a) automatic extraction when a recognized capture/artifact is stored, plus `p2o_graph action=ingest` for manual retry | (b) explicit tool call only | (c) new `p2o_ingest` tool | **(a) chosen**: no new model-visible tool (declaration budget), recognized types only, bounded, provenance `extractor` |
-| D-R1-6 | Exploitability enrichment | (a) NVD (existing) + CISA KEV + FIRST EPSS, cached with `retrievedAt`/sha256, offline fallback = unknown | (b) NVD only | (c) add exploit-db/Metasploit lookups | **(a)**: public, deterministic, provenance-friendly; (c) is scraping/licence/availability risk and is not needed to rank |
-| D-R1-7 | ATT&CK scope | (a) curated subset 40–60 techniques for infra/AD/cloud + WSTG→ATT&CK crosswalk, pinned version | (b) full matrix | (c) none | **(a)**: useful for red-team reporting, maintainable; full matrix is taxonomy work without a measured use |
-| D-R1-8 | Cross-run knowledge | (a) read-only knowledge pack per workspace (asset keys + finding fingerprints + status), imported as `reference` context only | (b) project-level DB with auto-merge | (c) none | **(b) chosen by the owner**: retest/recurrence across runs; safeguards in R3.9 — tenant/scope isolation, append-only provenance, `suggested` rows only, no same-run evidence |
-| D-R1-9 | Interop | (a) SARIF now, STIX later | (b) both now | (c) SARIF only | **(b) chosen**: SARIF 2.1.0 and STIX 2.1 both in R3 |
-| D-R1-10 | Live benchmark | (a) offline fixture bench in CI; live runs only with authorization and a budget cap | (b) run live by default | (c) no benchmark | **(a) chosen with the owner-supplied live target `https://hcmussh.edu.vn/` and USD 2 cap**; the live run is gated on the owner's authorization for that host and is never part of CI |
-| D-R1-11 | Traversable-edge representation | (a) a code constant mapping relation kind → traversable/informational, exposed on read | (b) stored flag per relation row | **(a)**: no migration; semantics stay reviewable in one file; stored flags drift |
-| D-R1-12 | Graph query implementation | (a) bounded prefix/label/attribute SQL queries first; FTS5 only if measurements show the need | (b) add FTS5 now | **(a)**: no schema migration in R1; SQLite JSON1 is enough for ≤5,000 assets; FTS is a later measured optimization |
-
-All other decisions (existing evidence rules, role authority, limits, no settings by default) stay as recorded in the
-A1 and P18 decisions; this plan does not reopen them.
-
----
-
-## 4. Phases
-
-Each phase is independently shippable, gated by the verification table in §5, and ends with an owner review point.
-Phases are ordered by dependency: R0 correctness and containment, R1 graph-as-state, R2 recon/inventory/exploitability,
-R3 attack paths/technique/retest/interop, R4 measurement. If the owner wants a smaller first bite, **R0 + R1** is the
-quick-win slice.
-
-### R0 — Correctness and containment (S/M, one pass)
-
-**Goal.** Fix the defects that would otherwise be baked into the new layers, and close the host-side research-fetch hole.
-
-1. **Research/CVE fetch containment (D-R1-4).**
-   - Replace `fetchPage` (`extensions/p2o/index.ts:2098-2104`) with a bounded fetcher (`src/research-fetch.ts`): resolve
-     the hostname and check **every** returned address on every hop (including each redirect target) before the request;
-     deny loopback, link-local, private, CGNAT, multicast, reserved, documentation, NAT64/6to4 and cloud-metadata addresses;
-     timeout; response byte cap (4 MiB) with truncation marker; redirect cap; content-type allowlist for research text;
-     retain a bounded body on the record and the existing artifact path for larger text.
-   - Fix the stale comment at `src/cve.ts:12-14` and the tool description text (`src/tool-schemas.ts:123`), and update
-     the containment sentence in `src/prompts.ts:129` to say exactly what is true after the change.
-   - Tests: metadata/loopback/link-local refused; redirect to a denied host refused; oversized body truncated with a
-     marker; timeout; normal NVD fetch still works (mocked); no unbounded body in memory.
-2. **Graph export relation accounting (W3).**
-   - Count and expose relations whose **either** endpoint is in the selected set, with `countScope` and
-     `omittedByKind.relations` accurate; add `omittedRelationEndpoints` or a follow-up cursor so a caller can discover an
-     edge to an asset outside the page. Keep the 24 KiB response bound and the existing rollback on overflow.
-   - Alternative if the response grows: a dedicated relation page cursor (edge sequence) instead of widening the asset
-     page. The plan allows either; choose at implementation time based on the measured response size.
-   - Tests: edge with one endpoint on the page is counted/found; cross-page edge is reported honestly; truncation marker;
-     response ≤24 KiB.
-3. **`assetEntityIds()` scope predicate (W4).** Add `WHERE scope=?` to the identity query (`store.ts:730-733`). Test with
-   a store containing a stale-scope asset row (sealed bundle path) that must not inflate `discoveredUnplannedAssets`.
-4. **`refs()` length cap (W5).** Reject >10 on write with the message the code already prints; add `maxItems: 10` to
-   `evidenceRefs`/`counterevidenceRefs` in the record schema; reads stay lenient for legacy rows. Tests: 11 ids refused
-   with a one-line message; 10 accepted; legacy row with more still readable.
-5. **Small contract drifts.** `tool-policy.ts:22` stale A2 sentence; `assetCount` doc/behaviour mismatch
-   (`store.ts:661-662`); assertion id drift (W6) documented as intentional entity-id retention with a test pinning the
-   current behaviour (do **not** re-hash/migrate in R0).
-
-**Acceptance R0.** All new tests green; full suite green; `tsc` clean; no schema migration; no authority change; the
-research/CVE containment test proves the host cannot be steered to loopback/metadata and cannot allocate an unbounded
-body from a model-chosen URL.
-
-**Verified 2026-10-28 (working tree).** `tsc --noEmit` clean; focused suites green (`research-fetch-containment` 7,
-`research` 11, `truth` 8, `graph` 24, `graph-record-shape` 5, `recon` 15, `acceptance-matrix` 3); full `vitest run`
-**137 passed / 5 skipped files (142), 1,215 passed / 13 skipped tests (1,228), 0 fail**; `npm run build` +
-`npm run check:build` → `build import OK`; `git diff --check` clean; `detect_changes --scope all` reviewed (87 changed
-symbols / 18 files / 40 processes, risk critical because it also sees the owner's `AGENTS.md` edit and a stale
-`planning_update.md` mapping — index is 2 commits behind HEAD and cannot be rebuilt under the sandbox EROFS, so the
-staleness is reported, not hidden). Python gates untouched by R0 and not rerun.
-
-**Delivered (working tree, 2026-10-28).**
-
-- `src/research-fetch.ts` (new): `fetchBounded` with `isBlockedAddress`/`isTextContentType`, 15 s timeout raced against
-  the transport, 4 MiB cap, ≤5 redirects, per-hop destination check, truncation marker. `fetchPage` delegates to it.
-  Description/prompt/`docs/KNOWLEDGE.md` now state the bounds; the stale `cve.ts` "only hosts" comment is gone.
-- `graphExport`/`page` relations are selected by **either** endpoint, `countScope.relations` says so, and the warning
-  explains that a cross-page edge is in JSON but not in Mermaid; counts/omittedByKind use the same predicate.
-- `assetEntityIds()` filters by `scope`; `refs()` refuses >10 on write and the Pi schema declares `maxItems: 10`; the
-  assertion entity-id retention is documented as intentional; the stale `tool-policy` A2 sentence is corrected.
-- `assetCount()` now counts current same-scope asset **heads** (`count(DISTINCT entity_id)`), which is what the M6 progress
-  counter and `graphSummary().assets` mean; it used to count retained revisions, so an update was reported as a new asset.
-  The R0 test pins the two-revision and new-identity cases.
-- Tests: `tests/minimal/research-fetch-containment.test.ts` (7); `research.test.ts` updated to mock the bounded fetcher and
-  adds the cap-marker case; `truth.test.ts` pins the bounded fetch description; `graph.test.ts` adds cross-page relation,
-  refs-cap, foreign-scope identity and asset-head-counter cases; `graph-record-shape.test.ts` pins the schema cap; the
-  acceptance matrix gained an R0 evidence section, and the P8/P9 rows now record that R0 superseded the "uncapped" premise.
-- **Deviation, accepted:** the fetch checks each hop's addresses but does not pin the IP for the request (global fetch
-  resolves again), so a DNS-rebinding host remains a residual risk for a **citation** URL; the target path stays in the
-  sandbox, and the recommendation to pin or move the fetch into the sandbox is recorded as a residual risk in §6.
-
-### R1 — Graph as working memory (M, one to two passes)
-
-**Goal.** One bounded read answers "what do we know and what is confirmed on this asset?", the graph becomes queryable by
-planner/worker, and a worker can record its hypothesis without waiting for the owner.
-
-1. **Asset dossier (`src/graph-dossier.ts`, new; read-only projection).** The graph `view` result gains derived sections
-   for one asset, computed from the ledger + graph on read, never stored:
-   - accepted/current cases (id, revision, severity, reviewStatus, currentness, rating current?);
-   - claims touching the asset (id, closure, execution, proof, demonstrated?, capabilities, taskRef, currentness);
-   - coverage cells (questionKey, execution, assessment, currentness), plus "no cell" as an explicit gap;
-   - tasks that touched it (id, status, question);
-   - hypotheses (open/supported/refuted counts + ≤5 open statements) and immediate relations (≤20) — a short version is
-     also added to the worker slice (R1.5);
-   - open gaps/leads; each section carries an omission counter and the response stays ≤24 KiB.
-   - Wiring: handler in `extensions/p2o/index.ts` (owner path around `:2985-3043`, worker path around `:3819`); the store
-     remains graph-only, so the dossier cannot become a second source of truth.
-   - Tests: fixture with asset + fact + hypothesis + claim + accepted case + coverage cell; dossier returns all sections;
-     stale pins shown as stale; truncation counter; secret-bearing strings redacted; deterministic ordering.
-2. **Claim asset stamping (D-R1-1).** The host derives the claim's `assetRefs` from the executing task's `work.assetRefs`
-   (pinned via the store) and stamps them on the candidate record (`src/evidence.ts` candidate path,
-   `extensions/p2o/index.ts` call site). The model never supplies asset ids on a claim; legacy claims stay asset-less;
-   cases keep deriving from task refs. Tests: host-stamped refs present and pinned; a model-supplied ref is ignored or
-   refused; a claim with no task ref is legal but has no asset; stale claim refs appear in the dossier as stale.
-3. **Graph query and summary actions (D-R1-12).**
-   - `p2o_graph action=query`: bounded filters `kind`, `keyPrefix`, `labelContains`, `attributeKey`+`attributeValue`,
-     `assertionKind`, `statementContains`; returns ≤20 rows + `counts` + `nextCursor`; keyPrefix requires a kind; no
-     unbounded scan; same redaction as reads.
-   - `p2o_graph action=summary`: since-sequence delta for the planner — new/changed assets, assets with no claim, assets
-     with no coverage cell, open hypotheses, accepted findings by asset, chain frontier counts; ≤8 KiB, both a compact
-     text block and machine rows.
-   - No change to `p2o_state` knowledge domains in R1 (the graph query lives where the data is; this avoids coupling the
-     record index to the graph store). Revisit only if measurements show the planner still cannot find things.
-   - Tests: query matches kind/prefix/label/attribute/statement; empty result; cursor; limit cap; secret shape refused;
-     summary counts match fixtures; response bounds.
-4. **Worker hypotheses and inferred relations (D-R1-3).** The worker may write `hypotheses` and relations with
-   `basis=inferred` only; relations with `basis=observed` stay planner/owner-only because a path query treats observed
-   edges as fact. A worker row is host-stamped `unverified:true` with producer role, appears in the dossier and summary,
-   and creates a review debt the owner can settle by superseding it with `supported|refuted|inconclusive`. Keep the
-   existing broker check with a message that names what a worker *can* write. Tests: worker hypothesis accepted; worker
-   inferred relation accepted; worker observed relation still refused (message names planner/owner); owner writes
-   unchanged; supersede review path; a hypothesis/relation cannot satisfy a claim/case obligation.
-5. **Worker graph slice (W7/W8).** `src/graph-slice.ts` adds immediate relations (≤20) and open hypotheses (≤5), plus a
-   one-line "accepted findings on this asset" count from the dossier; total slice ≤8 KiB. Tests: relations/hypotheses
-   present; cap/omission counters; no claim/case evidence leaks into the worker context.
-6. **Report resolves assets (W2).** Pass a bounded `assetBrief(ids)` from the extension into the report projection; the
-   report prints `kind key label (asset-id@rN, stale?)` for every finding asset and coverage cell, and adds an "Asset
-   inventory" section (top N with kinds/keys/labels and counts, omission line). No facts dump (size). Tests: identity
-   resolved, stale marked, unavailable id marked, secret/redaction, report size bound, manifest hash changes.
-7. **Round brief delta (E2).** `round-brief.ts`/`situation.ts` add a short graph-delta section (new/changed assets,
-   assets without claims, accepted findings by asset top N, open hypotheses) sourced from the store, within the existing
-   brief caps. Tests: section present when data exists; omitted when empty; cap enforcement.
-
-**Acceptance R1.** A single `view` answers the asset question; `query`/`summary` are bounded and useful; a worker can
-record a hypothesis and an owner can review it; the report no longer prints unresolved ids; declaration budgets still
-pass (any description text must fit; the reporter's 14-character headroom means no new `p2o_report` declaration text).
-
-**Verified 2026-10-28 (working tree).** `tsc --noEmit` clean; focused suites green (`graph`, `graph-dossier` 4,
-`claim-asset-stamp` 4, `debt` 12, `phase-i` 9, `workspace-runtime` 41, `report-assets` 6, the report suites,
-`round-brief` 8, `round-session` 12, `context-budget`, `recon`, `truth` 8, `acceptance-matrix`); full `vitest run`
-**140 passed / 5 skipped files (145), 1,237 passed / 13 skipped tests (1,250), 0 fail** (R0 baseline: 142 files /
-1,228 tests); `npm run build` +
-`npm run check:build` → `build import OK`; `git diff --check -- src extensions tests docs planning_update.md` clean;
-declaration and prompt-ceiling tests green (measured planner 49,297/49,300, worker 42,172/44,100, validation
-41,364/43,300, reporter 6,786/6,800, model 75,503/77,900 — the planner has **3 characters** of headroom after the
-`p2o_graph` description was compressed to fit `query`/`summary`, so no further model-facing text may grow without a
-trade); GitNexus `impact` on the report renderer reports risk **CRITICAL** with the comparable shared axes LOW — a hub
-read path reached by 48 processes — and the R1 change there is an optional section behind a context field covered by both
-renderings in the report suites; `detect_changes` was reviewed before reporting with the stale-index caveat in §5.1. No
-live run and no target traffic: every R1 test is hermetic.
-
-**Delivered (working tree, 2026-10-28).**
-
-- **R1.1 asset dossier** — `src/graph-dossier.ts` (new) defines the bounded projection (facts, hypothesis counts/rows,
-  relations, claims with `stale`/`demonstrated`, cases, coverage cells including an explicit `noCell`, tasks, `gaps`,
-  omission counters, redacted text lines, deterministic order, default limits 10/5/20/10/10/10/10); the extension composes
-  it in `graphViewFor` from `store.assetView` plus the ledger projections the rest of the loop already reads and trims
-  lists until the encoded response is ≤24 KiB (`GRAPH_RESPONSE_BYTES`), counting what it omitted. The store stays
-  graph-only, so the dossier is a derived read and never a second source of truth.
-- **R1.2 claim asset stamping (D-R1-1)** — the host derives a claim's pinned assets from the executing task's
-  `work.assetRefs` (`claimAssetRefsFromWork` in `src/evidence.ts`), stamps them on the candidate `data.assetRefs` (≤10,
-  revision kept) and refuses or drops anything the model supplied: `p2o_candidate` has no asset field, the owner tool
-  refuses a smuggled `assetRefs`, and `candidate()` deletes it from the stored input. `src/claims.ts` gained
-  `claimAssetRefs(claim)` and `proof`/`taskRef` on `ClaimFields` for consumers; legacy claims stay asset-less.
-- **R1.3 query and summary (D-R1-12)** — `store.graphQuery(filters, {cursor, limit})` is SQL over current heads with
-  parameterised `kind`, `keyPrefix` (kind-required), `labelContains`, `attributeKey`+`attributeValue`, `assertionKind` and
-  `statementContains`, a sequence cursor, true totals, `omitted`/`truncated`/`nextCursor`, and a 1..50 row window
-  (default 20); `boundedQueryPage` trims the encoded response to the existing 24 KiB `GRAPH_RESPONSE_BYTES` bound.
-  `store.graphChanges(since, limit)` returns new/changed assets and the open-hypothesis frontier; the extension's
-  `graphSummaryFor` composes counts (assets, new/changed, without claim/cell, open hypotheses, inferred relations,
-  accepted findings, chain ready/unchained) plus ≤10 rows per list and enforces an explicit **8 KiB**
-  `GRAPH_SUMMARY_BYTES` bound by dropping machine rows tail-first and stating `omittedRows` while the counts stay true.
-  Both verbs are owner and worker reads, and the tool description names them inside the unchanged declaration budget.
-- **R1.4 worker hypotheses and inferred relations (D-R1-3)** — the broker gate now accepts an **open** hypothesis and a
-  relation with `basis=inferred`, and refuses any other hypothesis status (the owner settles by superseding) and any
-  `basis=observed` relation (planner/owner work). The store stamps `producerRole` on both and `unverified:true` on a
-  non-owner row; `store.unreviewedGraph()` returns the current worker rows and `src/debt.ts` adds one gateable debt kind
-  `GRAPH_UNREVIEWED` (≤20 named hypotheses plus one aggregated inferred-relation item), so an unreviewed worker row is
-  visible research debt the owner can discharge by superseding it — never a claim, case or finding. `docs/KNOWLEDGE.md`
-  states the worker write role.
-- **R1.5 worker slice** — `src/graph-slice.ts` carries ≤20 immediate relations (filtered to the selected assets), ≤5 open
-  hypotheses and one "accepted findings on these assets: N (reviewed cases, not evidence)" line inside its 8 KiB cap; the
-  extension supplies them from the graph snapshot and the case views.
-- **R1.6 report resolves assets (W2)** — the extension computes `store.assetBrief(ids)` for the ids an accepted case or a
-  coverage cell cites plus `store.assetInventory(20)` (both new store reads) and passes them as optional context. The
-  report prints `kind key "label" (asset-id@rN[, stale; current rM])`, says `(unresolved in the current graph scope)` for
-  an id the scope cannot resolve, resolves the coverage table's asset column the same way, and adds a bounded
-  `## Asset inventory` section (current-scope total, newest ≤20 rows, omission line, explicit "not a test, not a finding")
-  before the coverage section. With no resolution map the renderer keeps the old raw-id output byte for byte, so
-  historical and draft exports are unchanged and the existing report tests do not move.
-- **R1.7 round-brief delta (E2)** — the existing `delta` section gains the graph's movement since the previous round opened
-  (the owner run now records the store sequence at each round opening): new/changed counts, assets with no claim, ≤3 new
-  asset kind/key rows with a `(+N)` total, accepted findings on the busiest ≤3 assets, and ≤2 open hypotheses, all inside
-  the section's 640-byte cap. A run without a graph delta prints nothing about it instead of claiming zero movement, and
-  the D46 section list and omission order are unchanged.
-- **Tests.** New `tests/minimal/claim-asset-stamp.test.ts` (4), `graph-dossier.test.ts` (4) and `report-assets.test.ts`
-  (6); additions to `graph.test.ts` (query/cursor/limits, changes delta), `debt.test.ts` (`GRAPH_UNREVIEWED`),
-  `phase-i.test.ts` (slice), `workspace-runtime.test.ts` (worker hypothesis/inferred relation, owner and worker
-  query+summary, dossier in `view`, dense-summary 8 KiB bound), `round-brief.test.ts` (present/absent/cap) and
-  `round-session.test.ts` (round 2 carries the graph delta). The acceptance matrix gained an R1 evidence section; §5.3
-  records the actual files.
-- **Deviations, recorded.** (1) The query row window is 1..50 (default 20) rather than a hard 20, with the 24 KiB
-  response bound as the real ceiling; the summary has its own 8 KiB bound. (2) Review debt is a new **gateable** debt kind
-  (`GRAPH_UNREVIEWED`), so an unreviewed worker hypothesis adds a `RESEARCH_DEBT` obligation the owner settles by
-  superseding it; the plan named the debt but not its kind. (3) The round delta rides the existing `delta` section instead
-  of adding a new section, so the D46 list and omission order are untouched. (4) Report asset resolution is contextual
-  (absent map = old rendering), which preserves R0's report bytes and historical exports. (5) The `p2o_graph` declaration
-  description was compressed to fit the two verbs and the new root filters; the declaration ceilings were not raised.
-
-
-
-### R2 — Recon ingestion, inventory, exploitability (M/L, two to three passes)
-
-**Goal.** Stop paying the model to hand-author the graph: recognized scanner/source artifacts populate assets/facts/
-components deterministically, and component versions join CVE/EPSS/KEV.
-
-1. **Extraction framework.** `src/extract/` pure, deterministic parsers with a registry:
-   `parse(artifactId, bytes, contentType) -> {assets, facts, components, hypotheses, warnings, omitted}`. Bounds: input
-   ≤4 MiB per artifact, ≤200 assets / ≤1,000 facts / ≤200 components per ingest, 7 KiB per row; no network, no shell, no
-   eval; malformed input returns a warning, never throws into the model call.
-2. **Parsers (first set).**
-   - nmap XML: host/IP, ports, service names/product/version, OS hints; facts with receipt/artifact evidence.
-   - httpx JSON/JSONL: URL, status, title, tech, TLS/headers; dedupe per host; cap.
-   - nuclei JSONL: `matched-at`, template id, severity, classification (CVE/CWE); **recorded as an open hypothesis with
-     the receipt/artifact as evidence, never as a claim/case**. This is the evidence-ladder boundary.
-   - HTTP response: security-relevant headers, forms/links (≤50), JS API path regexes (≤50), cookies by **name**;
-     endpoint/route assets with extractor-normalized keys (D-R1-2) and raw values in attributes/anchors.
-   - OpenAPI/Swagger JSON: routes/methods, parameters, auth schemes; bounded.
-   - Package manifests: `package-lock.json`, `pnpm-lock.yaml`, `requirements.txt` (best effort), `go.mod`, `Cargo.lock`,
-     `Gemfile.lock`, `pom.xml`; package assets with `name/version/ecosystem` attributes.
-3. **Ingestion path (D-R1-5).** Automatic extraction on a recognized capture/artifact, plus
-   `p2o_graph action=ingest {artifactId}` for manual retry. Rows are written by a host `extractor` producer (new role in
-   the producer whitelist, depth 0), carry evidenceRefs/artifactId, and are `unverified:true`. No claims, no cases.
-   Dedupe uses the graph's content-hash rule; identical re-ingest only adds an observation. Re-ingest after a new
-   artifact revision creates new assertions, not duplicates. Tests: capture→rows, dedupe, provenance role, capacity guard,
-   omit counters.
-4. **Component inventory.** `package` assets validate `name`, `version`, `ecosystem`, optional `cpe`; a
-   `components` query mode returns component → asset → version; `summary` reports components without a CVE query. Tests:
-   invalid version/ecosystem refused; duplicate package/version merges; inventory query.
-5. **CVE/exploitability join (D-R1-6).**
-   - Derive the NVD query from a component (product/vendor/version); create a lead with `assetRefs` + version and
-     dedupe on `(cve, version, source.sha256)`; record `taskId` on `tasked` so the lead has a work link; version-range
-     match against the recorded version is a labelled **suggestion**, never proof.
-   - Add KEV + EPSS enrichment: public JSON/API, cached per run with `retrievedAt`/sha256, offline fallback = `unknown`
-     (never fabricated). Expose on the component/lead and in the report.
-   - `p2o_research action=cve` accepts an optional `componentRef` (asset id) and fills the query from the inventory;
-     manual fields still work.
-   - Tests: mocked NVD/KEV/EPSS responses, dedupe, offline fallback, suggestion label, no network in tests.
-6. **Exploitability surfacing.** Report findings gain `exploitability {kev, epss, source, retrievedAt}` when a CVE is
-   known; the board/report sorts/annotates by KEV then EPSS but never changes severity. Tests: KEV/EPSS shown, missing =
-   unknown, severity untouched.
-7. **Backlog.** `summary` reports per-asset "discovered but unplanned" and "components unqueried"; the planner can use it
-   to author work. No automatic task creation. Tests: counts match fixtures.
-
-**Acceptance R2.** A captured nmap/httpx/nuclei/lockfile artifact produces graph rows without model authoring; a component
-gets a CVE lead with KEV/EPSS; the report shows inventory and exploitability; all bounds and no-network tests pass; the
-evidence ladder is unchanged (nuclei → hypothesis, CVE → lead).
-
-**Delivered R2 (committed `d27346b`, 2026-10-28).** Shipped: `src/extract/` (registry + `nmap`/`httpx`/`nuclei`/HTTP-response/
-OpenAPI/package-manifest parsers, every bound in one `types.ts`), `src/graph-ingest.ts` (bounded attributed batches,
-artifact anchor row, evidence-ref refusal), `src/exploitability.ts` (CISA KEV + FIRST EPSS with cached provenance and
-offline `unknown`), `package` asset validation plus `componentInventory`/`component` reads in `src/state/store.ts`,
-auto-ingest after a receipt and `p2o_graph action=ingest` in `extensions/p2o/index.ts`, `componentRef` and KEV/EPSS
-enrichment on `p2o_research action=cve`, `versionMatch`/`exploitability` on leads, KEV→EPSS lead ordering with new LEADS
-columns in `src/report-export.ts`, and the `summary` component backlog. Tests: `extract.test.ts` 13,
-`exploitability.test.ts` 11, `graph-ingest.test.ts` 9, `artifact-ingest.test.ts` 6, plus focused updates to
-`graph.test.ts` and `phase-j.test.ts` (§5.3).
-
-Deviations, recorded:
-1. The artifact anchor is a separate anchor row on the first ingested asset, not asset content: an identical capture keeps
-   one asset identity and a re-ingest only adds observation lineage.
-2. `p2o_graph action=ingest` reuses the root `id` as the artifact ID (no new parameter); the `p2o_graph`/`p2o_research`
-   declarations were trimmed to pay for it under the unchanged planner ceiling.
-3. The component inventory read ships as `p2o_graph action=query {kind:"package"}` (+`attributes`) and the `summary`
-   backlog, not a new `components` verb (declaration budget).
-4. Exploitability is attached to leads (LEADS columns, research reply, lead `data`), not to case findings: a case has no
-   structured CVE field and adding one would change `p2o_case_author` schema text.
-5. Extractor-written hypotheses are deliberately excluded from `GRAPH_UNREVIEWED` debt so automatic ingestion cannot flood
-   the owner's review queue; they stay `unverified:true` with their producer role.
-6. Auto-ingest covers stdout artifacts of `shell`, `capture` and `http` receipts only, skips research-fetch citations, and
-   is capped at 50 per run.
-7. NVD affected ranges now encode exclusive boundaries (`2.5.0..<2.5.28`); inferred relations and leads keep their
-   `unverified`/`lead` status.
-8. EPSS `percentile` is stored as the API's 0..1 fraction and printed as a percentage.
-
-### R3 — Attack paths, red-team technique map, retest, interop (L, two to three passes)
-
-**Goal.** Answer the question a red team actually asks — "from this entry point, what can I reach, through which edges,
-and what is the missing capability?" — and make findings survive across a retest and integrate with trackers.
-
-1. **Traversable-edge semantics (D-R1-11).** `src/path-view.ts` (new) holds the one constant:
-   traversable / informational / conditional per relation kind, with a comment per kind. Expose the classification on
-   read rows (`traversable: true|false`) without schema change. Tests: each of the 16 kinds classified once; unknown kind
-   rejected by the existing validator; classification stable.
-2. **Path query.** `p2o_graph action=path {fromId, toId?, toKind?, effect?, maxDepth≤6, maxNodes≤500, kinds?}`:
-   recursive CTE over active, non-stale relations; deterministic ordering; returns ≤10 shortest paths, ≤6 hops each, with
-   asset briefs, relation kind/basis, evidence refs, stale/withdrawn flags, and a `truncated`/`noPath`/`cycle` marker.
-   If `effect` (a capability such as `data.read`, `db.query`, `host.shell`) is given, annotate which hop supplies it from
-   demonstrated claims/cases and which is missing (the "missing hop"). Response ≤24 KiB; no unbounded traversal.
-   Tests: linear chain, cycle, stale edge excluded/flagged, withdrawn edge, depth cap, node cap, effect satisfied by a
-   demonstrated claim, missing capability reported, deterministic order.
-3. **Chain/path integration.** `chain` accepts `assetRefs` (already validated) and annotates each ready step with the
-   asset it starts from; `path` reuses `chainJoin` for capability labels. Tests: ready step linked to asset; unmet need
-   shown as missing hop; no claim re-evaluation.
-4. **ATT&CK crosswalk (D-R1-7).** New `src/attack-map.ts` + `docs/ATTACK_MAP.md`: curated 40–60 techniques for
-   infra/AD/cloud, a WSTG→ATT&CK crosswalk, pinned version and source URL. Cases' finding gains `techniques` (≤5,
-   validated against the map) and the report/cases.csv show the IDs; no tool-declaration growth (field is internal to
-   `p2o_case_author`? if it must be model-writable, it costs schema text — prefer deriving from `policyKey`/`wstg` and
-   exposing the mapping in the report first, then decide). Tests: unknown technique refused; mapping covers the shipped
-   WSTG keys; report renders IDs.
-5. **Retest lifecycle.** New owner/planner case action `retest` with verdict
-   `still_reproducible|fixed|cannot_confirm`, `caseRef` + pinned revision, evidenceRefs (required except
-   `cannot_confirm`), one write per case revision, only accepted-current case; report shows retest status and the retest
-   evidence. Cross-run retest links resolve through the project DB (D-R1-8) but the verdict's evidence must be same-run.
-   Tests: transitions, second write refused, stale case refused, evidence requirement, report rendering.
-6. **Stable finding fingerprint.** `findingId = sha256(scope, policyKey, rootCauseKey, sorted asset kind/key)[:32]`,
-   derived and printed in `findings.json`/SARIF; used for cross-run dedupe suggestions. Tests: same finding across
-   revisions yields the same id; different asset/root cause differs; no secret in the hash input (asset keys are
-   non-secret by the graph rule).
-7. **SARIF 2.1.0 export (D-R1-9).** `p2o_finish`/export adds `findings.sarif`: rules keyed by `policyKey`, locations from
-   anchors (url/path/header), properties CVSS/CWE/WSTG/ATT&CK/findingId, fingerprints stable. Validate structurally in
-   tests (required keys, version, results non-empty, deterministic order); add to manifest hashes. No new dependency.
-8. **STIX 2.1 (D-R1-9, chosen).** Findings as `vulnerability` SDO + `relationship` to asset `identity` and ATT&CK
-   `attack-pattern`; deterministic ordering and manifest hash; opt-in export flag, never the default report bundle.
-9. **Project-level knowledge DB with auto-merge (D-R1-8).** A project-scoped SQLite store (one per workspace/project,
-   not per run) keyed by tenant + target identity, containing asset kind/key identity, finding fingerprints/status and
-   retest links. Writes are host-only, append-only with provenance (runId, retrievedAt, source scope); imported rows
-   surface as `suggested` context in the planner and in the report as prior knowledge, never as graph facts and never as
-   same-run evidence for a claim or cell. Merge rules: exact identity + scope match; conflicts keep both and are surfaced
-   for review; a changed target scope marks rows stale rather than deleting. Concurrency: single-writer actor + WAL, the
-   same pattern as the run store. Tests: round-trip, tenant/scope isolation, import cannot satisfy a claim/cell, conflict
-   surfaced, retest links by findingId, stale scope.
-
-**Acceptance R3.** A path query from an entry asset to an effect returns a bounded, evidence-annotated path with the
-missing hop; traversable-edge semantics are in code and tested; cases/report carry ATT&CK IDs; a retest verdict is
-recorded and rendered; SARIF validates structurally; cross-run context cannot become same-run evidence.
-
-**Delivered R3 (working tree, 2026-10-29, uncommitted).** Shipped: `src/path-view.ts` (one relation-role constant plus
-`effectCapability`/`annotatePathEffect`), `src/state/store.ts` `graphPath` (BFS over current relation heads with stale/
-withdrawn accounting, depth/node caps, deterministic order, `GRAPH_RESPONSE_BYTES` bound) and `traversable`/`conditional` on
-relation read rows, `p2o_graph action=path` (planner-only; `effect` reports the supplying or missing hop) and a
-`startingAsset` on each ready `chain` step (deepest provider's host-stamped asset refs, resolved to the current head),
-`src/attack-map.ts` + `docs/ATTACK_MAP.md` (59 curated ATT&CK v18.1 techniques, 104/104 in-scope WSTG tests mapped, pure
-derivation helpers), `src/retest.ts` + `CaseBoard.retest` + `p2o_case_retest` (owner note against one accepted case
-revision, evidence-required except `cannot_confirm`, one write per revision), `src/finding-fingerprint.ts`
-(`findingId = sha256(scope, policyKey, rootCauseKey, sorted asset kind/key)[:32]`), `src/report-interop.ts`
-(`sarifLog`/`stixBundle`), `src/project-knowledge-db.ts` (append-only project-scoped history with tenant/target scope,
-conflict surfacing and stale-not-deleted marks), report wiring for `findings.sarif` (always in v2), opt-in
-`findings.stix.json` (`--stix`), opt-in `prior-knowledge.json` (`--project-knowledge`), the derived ATT&CK line and retest
-line in the case section, `findingId`/`techniques`/`retest` in `findings.json`/`findings.csv`, and the declaration
-reconciliation that keeps the planner under 49,300. Tests: `path-semantics.test.ts` 7, `graph-path.test.ts` 10,
-`attack-map.test.ts` 9, `case-retest.test.ts` 5, `finding-fingerprint.test.ts` 5, `report-sarif.test.ts` 9,
-`report-stix.test.ts` 7, `project-knowledge-db.test.ts` 7 (59 new tests), with focused updates to `graph.test.ts`,
-`graph-record-shape.test.ts`, `chain-plan.test.ts`, `report-export.test.ts`, `report-auto.test.ts`,
-`authority.test.ts`, `board-verbs.test.ts` and `docs/ACCEPTANCE_MATRIX.md` (F-R3-1…12).
-
-Deviations, recorded:
-1. Traversable-edge classification is exposed on read rows as a boolean pair rather than a schema field; no migration.
-2. Path is planner/owner-only (a worker gets `PLANNER_ONLY`): reachability is coordination, the worker records the relation.
-3. Conditional edges are traversed and marked; informational edges are never walked, which is what makes a "path" a route.
-4. The path result order is sorted by (length, node kind/key) and not by discovery order, so the same graph yields the same
-   bytes; the fixture pins the diamond and the cycle cases.
-5. ATT&CK ids are derived from the WSTG keys a case already carries; no model-writable `techniques` case field exists, so
-   the crosswalk costs no schema text and cannot be asserted by a model.
-6. Retest is a `note` record (`data.caseRetest`), like a rating, not a case revision: it does not stale the coverage cells
-   that pin the case and it cannot re-accept or re-rate it.
-7. `cannot_confirm` may cite no evidence by design; the other two verdicts need a same-run receipt, since a cross-run
-   observation is a suggestion, not the run's evidence.
-8. Finding identity uses asset `kind:key` (per-run asset ids excluded) so a re-run against the same target derives the same
-   id; a store that cannot resolve an id keeps the raw id and the report says the id is then run-scoped.
-9. SARIF ships with every v2 report; STIX and the project database are opt-in flags on `/p2o report export`, so the default
-   bundle keeps its shape and nothing outside the report directory is written unless the operator asks.
-10. The project database stores identity, provenance and disposition only (no free text beyond label/keys) and its rows are
-    `suggested: true`; the report prints them under a "suggested context, not evidence" heading.
-11. The declaration budget was paid by trimming planner/shared descriptions and boundaries (net −1,934 chars against the
-    R3 additions), not by raising a ceiling; the measured totals are in §5.1.
-
-### R4 — Measurement (L, gated)
-
-**Goal.** Make capability claims checkable.
-
-1. **Offline fixture benchmark** (`bench/graph/`, `npm run check:bench-graph`): deterministic dataset of receipts/
-   artifacts (nmap/httpx/nuclei/openapi/lockfile) with expected extraction, dossier, query, path and report assertions;
-   runs in CI with no network and no provider tokens; measures parser precision/recall, dedupe, path correctness,
-   report resolution. This is the regression gate for R1–R3.
-2. **Live benchmark (D-R1-10).** Owner-approved live target `https://hcmussh.edu.vn/` with a hard **USD 2** budget cap,
-   plus optional labeled lab targets; run only after the owner confirms authorization for the host and only from the
-   sandbox with the normal scope declaration; metrics: candidate claim precision/recall, accepted-case precision,
-   coverage, chain completion, tokens/cost. Results recorded in `docs/BENCH_RESULTS.md` (not committed without owner
-   consent) and used to rank future work. If authorization is not confirmed, the live run is skipped and the offline
-   bench remains the gate.
-3. **Baseline after R2, final after R3.** Record the offline bench and (if authorized) one live baseline; never present a
-   mechanical completion as effectiveness.
-
-**Acceptance R4.** Offline bench is green in CI and deterministic; live bench exists but is off by default and requires
-an explicit flag + cap; results are reproducible from the recorded manifest.
-
----
-
-## 5. Verification
-
-### 5.1 Gates (must pass at the end of every phase)
-
-| Gate | Baseline today (`bbdfec1`) | Requirement |
-| --- | --- | --- |
-| `./node_modules/.bin/tsc --noEmit` | clean | clean |
-| Focused suites for the phase | — | green, with new tests listed in §5.3 |
-| `./node_modules/.bin/vitest run` (full) | 136 files passed / 5 skipped (141), 1,203 tests passed / 13 skipped | green, no unexplained skips; count grows with the phase |
-| `npm run build` + `npm run check:build` | `build import OK` | OK |
-| Declaration budgets (`tests/minimal/context-budget.test.ts`) | planner 48,245/49,300; worker 41,120/44,100; validation 40,312/43,300; reporter 6,786/6,800; model 74,451/77,900 | inside every ceiling; the reporter has 14 chars of headroom, so no `p2o_report` declaration growth without a trade or an owner-approved ceiling change |
-| `git diff --check -- src extensions tests docs` | clean | clean |
-| GitNexus | index one commit behind HEAD (sandbox EROFS on `~/.gitnexus/registry.json`); `detect_changes` usable | run `impact` before editing a symbol and `detect_changes` before any commit; report `partial`/`truncated`/UNKNOWN honestly; note index staleness |
-| Python gates | 159 run: 157 pass, 1 skipped, 1 pre-existing hash failure for gitignored `my_references/strix` | unchanged; do not "fix" the pre-existing failure |
-| Owner files | `AGENTS.md` dirty, `pi-p2o-defense-vi.pptx` untracked | never staged, never touched |
-
-**R0 result (working tree, 2026-10-28).** `tsc --noEmit` clean; full `vitest run` **137 passed / 5 skipped files (142),
-1,215 passed / 13 skipped tests (1,228), 0 fail**; `npm run build` + `npm run check:build` → `build import OK`;
-`git diff --check -- src extensions tests docs planning_update.md` clean; declaration and prompt-ceiling tests
-(`context-budget`, `recon`) green inside that full run. GitNexus: `impact` ran before the symbol edits that needed it
-(`graphExport` LOW, `assetEntityIds` LOW/exact, `fetchPage` **CRITICAL** — 2 direct callers / 7 impacted / 5 processes,
-`refs` **HIGH** — 4 direct, all bounded additions reviewed); `assetCount` returned UNKNOWN (0 resolved callers) and a
-text search confirmed the one production caller in the round-progress read. `detect_changes --scope all`: 87 changed
-symbols / 18 files / 40 processes, risk **critical**, and it includes the owner's `AGENTS.md` edit plus the plan's own
-stale P18 section mapping; the index is 2 commits behind HEAD (GitNexus reindex blocked by the sandbox EROFS on
-`~/.gitnexus/registry.json`), so reach is reported as a signal, not as behavioural proof. Python gates were not needed by
-R0 and were not rerun; the owner's `AGENTS.md` edit and untracked `pi-p2o-defense-vi.pptx` remain untouched and unstaged.
-
-**R1 result (working tree, 2026-10-28).** `tsc --noEmit` clean; full `vitest run` **140 passed / 5 skipped files
-(145), 1,237 passed / 13 skipped tests (1,250), 0 fail**; `npm run build` + `npm run check:build` → `build import OK`;
-`git diff --check -- src extensions tests docs planning_update.md` clean; `context-budget` and `recon` prompt ceilings
-green. GitNexus: `impact` on `renderReport` reports risk **CRITICAL** (shared axes LOW; 1 direct caller, 48 processes
-reached) — the edit behind it is an optional report section, and both the resolved and unresolved renderings are pinned;
-the index is 3 commits behind HEAD (GitNexus reindex blocked by the sandbox EROFS on `~/.gitnexus/registry.json`), so
-reach is a signal, not behavioural proof. `detect_changes --scope all` was reviewed before reporting: 294 changed symbols
-/ 23 files / 377 affected / risk critical, and like R0 it also sees the owner's `AGENTS.md` edit and this plan's own
-stale section mappings. No live run, no
-target traffic, no paid model call: every R1 test is hermetic (extension + real SQLite store + Unix broker + inert
-sandbox). The owner's `AGENTS.md` edit and untracked `pi-p2o-defense-vi.pptx` remain untouched and unstaged.
-
-**R2 result (committed `d27346b`, 2026-10-28).** `tsc --noEmit` clean; full `vitest run` **144 passed / 5 skipped files
-(149), 1,276 passed / 13 skipped tests (1,289), 0 fail**; `npm run build` + `npm run check:build` → `build import OK`;
-`git diff --check -- src extensions tests docs planning_update.md` clean; `context-budget` and `recon` ceilings green
-(the declaration edits that pay for `ingest`/`componentRef` are net −3 chars, so the planner stays under 49,300). GitNexus:
-**`impact` was not run before this phase's symbol edits** — disclosed rather than dressed up, the same lapse as R1; the
-run after the edits reports `renderReport` **CRITICAL** (1 direct caller / 48 processes), `leadFrontier` **CRITICAL**
-(5 direct / 57 processes) and `validateGraphBatch` **HIGH** (2 direct), all `epistemic: exact`; the tool reports the index
-is **4 commits behind HEAD**, and R2's new files are untracked and therefore unindexed, so reach is a signal, not
-behavioural proof. `detect_changes --scope all` was reviewed before reporting: 158 changed symbols / 14 files / 98
-affected / risk critical, and like R0/R1 it also sees the owner's `AGENTS.md` edit and this plan's own stale section
-mappings. No live run, no target traffic, no paid model call: every R2 test is hermetic (parsers over fixtures, a real
-SQLite store, mocked NVD/KEV/EPSS transport). The owner's `AGENTS.md` edit and untracked `pi-p2o-defense-vi.pptx` remain
-untouched and unstaged.
-
-**R3 result (working tree, 2026-10-29, uncommitted).** `tsc --noEmit` clean; full `vitest run`
-**152 passed / 5 skipped files (157), 1,335 passed / 13 skipped tests (1,348), 0 fail**; `npm run build` + `npm run check:build` → `build import OK`;
-`git diff --check -- src extensions tests docs planning_update.md` clean; `context-budget` green with planner
-**49,294/49,300**, worker 42,808/44,100, validation 42,000/43,300, reporter 6,551/6,800, model 75,500/77,900 — the R3
-additions (`p2o_graph` path params, `p2o_case_retest`) were paid for by trimming planner/shared descriptions and
-boundaries, not by raising a ceiling, and the planner now has only 6 chars of headroom. GitNexus: `impact` was again
-**not run before this phase's symbol edits** (the same lapse as R1/R2, disclosed rather than dressed up); run after the
-fact, on an index **5 commits behind HEAD**, it reports `renderReport` **CRITICAL** (1 direct caller / 48 processes) and
-`caseViews` **CRITICAL** (14 direct / 68 processes), both `epistemic: exact`, while the R3-only symbols (`graphPath`,
-`ProjectKnowledge`) are **absent from that index** → `UNKNOWN`, which means unmeasured, not empty. So reach is a signal,
-not behavioural proof.
-`detect_changes --scope all` was reviewed before reporting (see §9). No live run, no target traffic, no paid model call:
-every R3 test is hermetic (pure helpers, real SQLite store, inert sandbox, mocked NVD/KEV/EPSS). The owner's `AGENTS.md`
-edit and untracked `pi-p2o-defense-vi.pptx` remain untouched and unstaged.
-
-### 5.2 Invariants that must not change
-
-- A scanner output, extracted fact, CVE lead, dossier row or hypothesis is **not** evidence for a claim/case; only a
-  receipt + demonstrated claim can satisfy the ladder.
-- A project-DB row is `suggested` context only; it can never satisfy a same-run claim or coverage cell.
-- Role authority changes only by D-R1-3; no other tool gains target or review power.
-- The graph stays bounded: every new read has a byte/row cap and every new write is within the existing batch/row
-  limits; capacity overflow is reported, never silently dropped.
-- A graph read (dossier, summary, query result, round-brief delta, report inventory) is background, never evidence: no
-  read can satisfy a claim, case or coverage cell, and a worker hypothesis or inferred relation stays `unverified` until
-  the owner supersedes it.
-- No new settings by default; caps are constants (P9 decision).
-- No network in tests; no paid provider calls in CI; no attribution lines in commits (AGENTS.md).
-
-### 5.3 New test files (planned)
-
-| Phase | Files |
-| --- | --- |
-| R0 | `tests/minimal/research-fetch-containment.test.ts` (new, 7 tests), plus focused additions to `graph.test.ts` (cross-page relation, refs cap, foreign-scope identities, asset-head counter), `graph-record-shape.test.ts` (schema `maxItems: 10`), `truth.test.ts` (bounded fetch description), `research.test.ts` (cap marker under the mocked bounded fetcher) |
-| R1 | `tests/minimal/claim-asset-stamp.test.ts` (new, 4), `graph-dossier.test.ts` (new, 4), `report-assets.test.ts` (new, 6); additions to `graph.test.ts` (query filters/cursor/limits, `graphChanges` delta), `debt.test.ts` (`GRAPH_UNREVIEWED`), `phase-i.test.ts` (slice relations/hypotheses/findings count), `workspace-runtime.test.ts` (worker hypothesis + inferred relation, owner/worker `query`+`summary`, dossier in `view`, dense-summary 8 KiB bound), `round-brief.test.ts` (graph delta present/absent/cap), `round-session.test.ts` (round 2 carries the delta). The planned `graph-query`/`graph-summary`/`worker-hypothesis`/`report-asset-resolution` files were folded into the existing suites so each area keeps one fixture |
-| R2 | Delivered as `tests/minimal/extract.test.ts` (13), `exploitability.test.ts` (11), `graph-ingest.test.ts` (9), `artifact-ingest.test.ts` (6), with focused additions to `graph.test.ts` (ingest verb/params) and `phase-j.test.ts` (exclusive range text). The planned per-parser files were folded into one `extract.test.ts` so every parser shares one fixture; `ingest-dedupe`, `component-inventory` and `cve-enrich` live in `graph-ingest`, `exploitability` and `artifact-ingest` |
-| R3 | Delivered as `path-semantics.test.ts` (7), `graph-path.test.ts` (10), `attack-map.test.ts` (9), `case-retest.test.ts` (5), `finding-fingerprint.test.ts` (5), `report-sarif.test.ts` (9), `report-stix.test.ts` (7), `project-knowledge-db.test.ts` (7) — 59 new tests — with focused updates to `graph.test.ts`, `graph-record-shape.test.ts`, `chain-plan.test.ts`, `report-export.test.ts`, `report-auto.test.ts`, `authority.test.ts` and `board-verbs.test.ts`. The planned `report-sarif`/`report-stix` split was kept because the two formats have different contracts; `path-semantics` and `graph-path` split pure classification from the store query |
-| R4 | `bench/graph/*` + `tests/minimal/bench-graph.test.ts` |
-
-### 5.4 Verification honesty
-
-The A1/A1.2 passes proved mechanism, not offensive effectiveness. This milestone must keep that distinction: the offline
-bench proves parser/path/report correctness; only an authorized live run can speak to detection quality, and its result
-is labelled as such. No claim in this plan depends on a benchmark that has not run.
-
----
-
-## 6. Risks and mitigations
-
-| Risk | Mitigation |
-| --- | --- |
-| Scope creep: A+B+C is large | phase gates; each phase shippable; R0+R1 is a valid stopping point; C is split into C1–C4 |
-| Extractor becomes an attack surface (target-controlled bytes) | pure parsers, strict bounds, no eval/shell/network, fuzz-style malformed fixtures, artifact bytes only |
-| Graph pollution from auto-ingest | producer role + `unverified:true` + evidence refs; no claims/cases; dedupe by content hash; capacity guard; review debt |
-| Worker rows become backlog rather than review (R1.4) | an open worker hypothesis and an inferred relation are stamped `unverified` with their producer role, an observed relation or a settled status is still refused, and every unreviewed row becomes a gateable `GRAPH_UNREVIEWED` debt the owner settles by superseding it |
-| The new graph reads make an export or a brief too large | each read has its own byte cap (24 KiB graph response, 8 KiB summary, 8 KiB worker slice, 640-byte delta section) and the report's resolution context is optional, so a missing map keeps the old bytes; the declaration-budget test gates the model-facing text |
-| Path query blow-up | hard depth/node/response caps, deterministic order, explicit truncation, no query without an anchor |
-| Taxonomy maintenance (ATT&CK/WSTG) | curated subset, pinned version, one map file, tests pin coverage of shipped WSTG keys |
-| Cross-run contamination | project DB is tenant/scope-keyed, append-only, `suggested`-only import; cannot satisfy claims/cells; owner review for retest links |
-| Research-fetch change breaks Part XI expectations | keep "any http(s)" for public sources; only deny loopback/link-local/metadata and add caps; document in the tool description; D-R1-4 |
-| Residual DNS rebinding on the citation fetch | R0 checks every hop's addresses but does not pin the IP global fetch finally connects to; the target path is unaffected (sandbox), and a later phase can pin the address or move the citation fetch into the sandbox. Accepted R0 deviation, recorded in the R0 block and the tool description |
-| Declaration budget exhaustion (reporter 14 chars) | internal fields only where possible; any new model-facing field requires a trade; budget test is the gate |
-| Stale GitNexus index | run `impact`/`detect_changes` anyway, report staleness, never treat UNKNOWN as low risk |
-| Owner-file/attribution violation | explicit checklist in §5.1; no commit/push without owner request |
-
----
-
-## 7. Files map (expected)
-
-New: `src/graph-dossier.ts`, `src/extract/{index,nmap,http,openapi,packages,nuclei}.ts`, `src/attack-map.ts`,
-`src/path-view.ts`, `src/finding-fingerprint.ts`, `src/project-knowledge-db.ts`, `docs/ATTACK_MAP.md`, `bench/graph/*`;
-R0 already added `src/research-fetch.ts`.
-R1 delivered: new `src/graph-dossier.ts` and the three test files above; touched `src/state/store.ts`
-(`graphQuery`/`graphChanges`/`assetBrief`/`assetInventory`/`unreviewedGraph`, `producerRole`/`unverified` stamps),
-`src/state/graph-tool.ts` (query/summary verbs and root filters), `src/state/graph.ts` (`GRAPH_SUMMARY_BYTES`),
-`src/claims.ts`, `src/evidence.ts` (claim asset stamp), `src/debt.ts` (`GRAPH_UNREVIEWED`), `src/graph-slice.ts`,
-`src/report.ts`, `src/report-export.ts` (asset resolution, inventory), `src/round-brief.ts` (graph delta),
-`extensions/p2o/index.ts` (handlers, worker gate, report context, round-delta read), `docs/KNOWLEDGE.md`,
-`docs/ACCEPTANCE_MATRIX.md`, `docs/HISTORY.md`.
-R2 delivered: new `src/extract/{index,types,sanitize,nmap,httpx,nuclei,http-response,openapi,packages}.ts`,
-`src/graph-ingest.ts`, `src/exploitability.ts` and the four test files above; touched `src/state/graph.ts` (package
-validation), `src/state/store.ts` (`componentInventory`/`component`, package `attributes` on query rows, producer role),
-`src/state/graph-tool.ts` (ingest verb/params), `src/cve.ts` (`versionMatch`, `enrichLeads`, `componentQuery`, range
-boundaries), `src/report-export.ts` (LEADS ordering and columns), `src/tool-schemas.ts` (`componentRef`),
-`extensions/p2o/index.ts` (auto-ingest, ingest action, summary backlog, KEV/EPSS enrichment), `docs/KNOWLEDGE.md`,
-`docs/ACCEPTANCE_MATRIX.md`, `docs/HISTORY.md`.
-
-R3 delivered (uncommitted working tree): new `src/path-view.ts`, `src/attack-map.ts`, `src/retest.ts`,
-`src/finding-fingerprint.ts`, `src/report-interop.ts`, `src/project-knowledge-db.ts`, `docs/ATTACK_MAP.md` and the eight
-R3 test files; touched `src/state/store.ts` (`graphPath`, traversable/conditional relations), `src/state/graph-tool.ts`
-(path action/params), `src/cases.ts` + `src/retest.ts` (retest note, derived retest view), `src/case-tool.ts` +
-`src/board-verbs.ts` + `src/tool-policy.ts` + `src/tool-guidelines.ts` (`p2o_case_retest` verb, loadout, boundary),
-`src/report-export.ts` (ATT&CK/retest lines, `findingId`, `findings.sarif`, opt-in STIX and prior knowledge, project merge),
-`src/ui/workspace.ts` (`--stix`/`--project-knowledge` flags), `extensions/p2o/index.ts` (path action, chain startingAsset,
-retest handler, export flags, meta split), `planning_update.md`, `docs/KNOWLEDGE.md`, `docs/ACCEPTANCE_MATRIX.md`,
-`docs/HISTORY.md`. No store schema migration (schema stays 7), no authority change, no new settings; the only model-facing
-additions are the `p2o_graph` path parameters and the `p2o_case_retest` verb, inside the unchanged declaration ceilings.
-
-Touched: `src/state/store.ts` (query/summary/path/dossier reads, scope filter, relation accounting), `src/state/graph.ts`
-(refs cap, relation classification exposure, identity retention note), `src/state/graph-tool.ts` (actions/params),
-`src/graph-slice.ts`, `src/round-brief.ts`, `src/situation.ts`, `src/evidence.ts` (claim asset stamp), `src/case-types.ts`
-/`src/cases.ts` (techniques, retest, fingerprint), `src/report-export.ts`/`src/report.ts` (asset resolution, inventory,
-exploitability, SARIF, ATT&CK), `src/cve.ts` (+`src/cve-enrich.ts` new), `extensions/p2o/index.ts` (handlers, worker
-hypothesis gate, ingest, fetch), `src/prompts.ts` (containment wording), `src/tool-schemas.ts` (only if a model-facing
-field is unavoidable), `src/tool-policy.ts` (stale note), `docs/KNOWLEDGE.md`, `docs/EVIDENCE.md`, `docs/ARCHITECTURE.md`,
-`planning_update.md`.
-
-Not touched: owner files, `src/truth.ts` semantics, role loadouts beyond D-R1-3, sandbox/containment settings.
-
----
-
-## 8. Sequence and owner gates
-
-| Gate | Deliverable | Owner decision needed |
-| --- | --- | --- |
-| G0 | This plan approved (or amended) | D-R1-1…D-R1-12 |
-| G1 | R0 implemented + verified (delivered 2026-10-28 in the working tree, awaiting owner review) | none if the plan is approved; research-fetch wording reviewed |
-| G2 | R1 implemented + verified | D-R1-3 (hypothesis write) exercised in the delivered UX |
-| G3 | R2 committed as `d27346b` (2026-10-28) | D-R1-6 sources and D-R1-5 ingestion behaviour reviewed |
-| G4 | R3 implemented + verified in the working tree (2026-10-29), uncommitted and awaiting owner review | D-R1-7 map reviewed; D-R1-8 project DB reviewed; SARIF + STIX verification; whether to commit R3 |
-| G5 | R4 offline bench green; live run optional | explicit authorization + budget cap for any live run |
-
-Sequencing for the quick-win slice if the owner wants to stop early: **G1 + G2**, then reassess. The full program is
-expected to touch the graph, extraction, CVE, reporting and test surfaces for several passes; each phase starts only
-after the previous phase's verification and the owner's review.
-
----
-
-## 9. Recovery and provenance
-
-- Plan of record for A1/A1.2 (replaced by this file): `git show bbdfec1:planning_update.md`; P18 text:
-  `git show 18d1d84:planning_update.md`.
-- A1 commit: `00092d4` ("Cut tool-call refusals and repeated prompt facts (A1)"); A1.2 commit: `bbdfec1` ("Audit the whole
-  tool surface and default conservative omissions (A1.2)"). Nothing pushed.
-- The planning pass wrote this plan only. The **R0 pass** (2026-10-28) then changed, in the working tree and without a
-  commit: `src/research-fetch.ts` (new), `extensions/p2o/index.ts` (`fetchPage` delegates, research result fields),
-  `src/state/store.ts` (export relation predicate/countScope, `assetEntityIds` scope, `assetCount` heads, assertion
-  retention note), `src/state/graph.ts` + `graph-tool.ts` (`refs` cap), `src/cve.ts`, `src/prompts.ts`,
-  `src/tool-schemas.ts`, `src/tool-policy.ts`, `docs/KNOWLEDGE.md`, `docs/HISTORY.md`, `docs/ACCEPTANCE_MATRIX.md`,
-  `planning_update.md`, and the R0 tests listed in §5.3. No schema migration, no authority change, no settings added;
-  no commit, push or attribution is made or implied (AGENTS.md).
-- **R0 was committed** on 2026-10-28 as `1d79ec9` ("Bound the host research fetch and fix graph export accounting
-  (R0)"): 19 files, the owner's `AGENTS.md` edit and the untracked `pi-p2o-defense-vi.pptx` excluded, no attribution line.
-  Nothing was pushed.
-- The **R1 pass was committed** on owner instruction as `35176ae` ("Make the asset graph the loop's working memory
-  (R1)"); nothing was pushed and no attribution line was added. The owner then asked to continue with R2.
-- The **R2 pass was committed** on owner instruction as `d27346b` ("Make captured recon artifacts populate the asset
-  graph (R2)"): 28 files, the owner's `AGENTS.md` edit and the untracked `pi-p2o-defense-vi.pptx` excluded, no attribution
-  line and nothing pushed. It changed the files listed in §7 under "R2 delivered", plus `planning_update.md`,
-  `docs/KNOWLEDGE.md`, `docs/ACCEPTANCE_MATRIX.md`, `docs/HISTORY.md`, and the R2 tests in §5.3. No schema migration (store
-  schema stays 7), no authority change, no new settings and no new model-visible tool; the model-facing text added is the
-  `ingest` verb, `componentRef` and the trimmed `p2o_graph`/`p2o_research` descriptions, inside the unchanged declaration
-  budgets. No live run and no target traffic — KEV, EPSS and NVD are mocked in every test.
-- The **R3 pass** (2026-10-28) then changed, in the working tree and **without a commit**: `src/path-view.ts`,
-  `src/attack-map.ts`, `src/finding-fingerprint.ts`, `src/project-knowledge-db.ts` (new), path/chain reads in
-  `src/state/{store,graph-tool}.ts`, case retest/techniques in `src/{case-types,cases}.ts`, SARIF/STIX in
-  `src/report-export.ts` (or `src/report-interop.ts`), the extension handlers, `docs/ATTACK_MAP.md` (new),
-  `docs/KNOWLEDGE.md`, `docs/ACCEPTANCE_MATRIX.md`, `docs/HISTORY.md`, and the R3 tests in §5.3.
-- R0 verification is the §5.1 result block: tsc clean, full suite 1,215 passed / 13 skipped (1,228), build/`check:build`
-  green, `git diff --check` clean, GitNexus impact/detect_changes reviewed with the stale-index caveat. The live benchmark
-  was **not** run and no target traffic was generated: R0 only mocks the bounded fetcher and uses inert stores.
-- Evidence for the analysis: local code reads (paths/lines above), `planning_update.md` at `bbdfec1` §1.2–1.6, the
-  read-only audit of 2026-10-28, and the reference snapshots in `my_references/ARTEX` and `my_references/strix`; external
-  URLs are cited in §2.2. Where a claim is a judgement (e.g. "ATT&CK subset is enough"), it is labelled as a decision, not
-  a measurement.
-- Owner decisions A+B+C, plan approval and the six policy answers (D-R1-3/4/5/8/9/10) were made in chat on 2026-10-28 and
-  are recorded at the top of this file. The live target and USD 2 cap come from the owner; authorization for that host
-  is still required before any live run.
+| F-08 | `p2o_task_settle` re-declares `p2o_task_review`'s five params verbatim plus `outcome` that maps 1:1 to the internal action — the exact pattern `board-verbs.ts` says the authoring merge removed. A blocked/cancelled task makes the model pick between two identical-field verbs. | `src/board-verbs.ts:84-91,116`; registrations `EXT:2875-2877` | B1 (merge into one verb with `outcome`) |
+| F-09 | `p2o_graph` `page` returns the asset **revision append-log** (all rows in a sequence window, `total` rows + `uniqueAssets`) while `query`/`export` read current heads; nothing model-visible says so, and `page` is the obvious first verb a model picks for "what assets exist". | `src/state/store.ts:1178-1185` vs `:1187-1190,708-760`, description `EXT:3274`, `src/state/graph-tool.ts:39` | B2 (delete `page`; `query` is the inventory) |
+| F-10 | "plan" names two entities in one loadout: `p2o_plan_author` authors `goal\|todo\|decision` (no "plan" kind), `p2o_coverage_plan` authors a versioned coverage plan, and `LEGAL_NEXT` keys both `plan` and `coveragePlan`. "Revise the coverage plan" is a coin flip that fails with "Unknown plan ID". | `EXT:2880-2885`, `src/board-verbs.ts:120-124` | B9 (`p2o_goal_author` rename + disambiguating clause, D-S1-8) |
+| F-11 | Two `session` concepts share one parameter name: `p2o_http.session` is a principal-local **cookie jar** (`^[A-Za-z0-9][A-Za-z0-9._-]{0,39}$`) while `p2o_shell`/`p2o_session.session` is a **container session id** (`^[a-z0-9][a-z0-9-]{0,63}$`). A container id passed to `p2o_http` silently selects an empty jar; a jar name passed to the shell fails at call time. `session=none` is a magic string inside the name param. | `src/tool-schemas.ts:149,157,181`, `src/http-session.ts:36-47`, description `EXT:3194` | B5 (`cookieJar` rename) |
+| F-12 | `verdict` carries two vocabularies on the same case entity: `open\|confirmed\|ruled_out\|inconclusive` (case) and `still_reproducible\|fixed\|cannot_confirm` (retest), both surfaced as `verdict`. A retest with `verdict:"confirmed"` dies in Pi's enum validator before the handler. | `src/case-types.ts:5`, `src/retest.ts:15`, `src/board-verbs.ts:95` | B5 (`retestOutcome` rename) |
+| F-13 | `p2o_graph`'s `cursor` means opposite directions inside one tool: `query` pages backward (`sequence < cursor`, newest first, rejects `cursor=0`), while `page`/`view`/`export` page forward (oldest first). Reusing one action's `nextCursor` in another silently pages wrong. | `src/state/store.ts:712-713,734,745,756-757` vs `:1142,1180-1184,1210-1218` | B6 (state direction; accept 0) |
+| F-14 | The declared `limit` maximum (500) exceeds three host caps and one silent clamp: query ≤50, page/view ≤100, summary silently `min(limit??5,10)`. A declaration-valid `limit=100` is refused or quietly returns 10 rows. | `src/state/graph-tool.ts:56`, `src/state/store.ts:711,1142,1180`, `EXT:3352` | B6 (per-action bounds; action-shaped pre-check) |
+| F-15 | `p2o_state` says search is "limit default 10, max 20" while the code and schema allow 100; the model self-limits and loops. | `EXT:2674`, `src/search.ts:13,43`, `src/tool-schemas.ts:19` | B6 (20→100) |
+| F-16 | `p2o_workers` pages a `changes` list it never mentions (cursor defaults to `total-20`), and its description carries a `holdContinuations` "0..3" claim that belongs to `p2o_report` (no such field in `workersParameters`). | `EXT:3481,3524-3533`, `src/tool-schemas.ts:223-232,227` | B6 (two sentences) |
+| F-17 | `p2o_lab` declares a `compose` parameter (~260 chars of description) that always fails `PLANNER_ONLY`; the owner branch that implements it is unreachable because the planner holds no lab tool. `env` silently ignores `kind`/`body`/`id`, `payload` ignores `compose`/`setup`/`services`/`seed`. | `EXT:2954,2979,2997-3031`, `src/tool-schemas.ts:113` | B6 (delete param; cross-field refusals) |
+| F-18 | `src/truth.ts` states that execution tool descriptions do not repeat a worker-prompt fact, but the boundaries repeat them: NETWORK_TRUTH in `p2o_net` body+boundary, HTTP_TRUTH in the http boundary, BROWSER_TRUTH paraphrased, CREDENTIAL_TRUTH's literal-value clause restated — 600-700 duplicate chars in worker/validation loadouts. | `src/truth.ts:9-11`, `EXT:3103`, `src/tool-guidelines.ts:24,25,27,28`, `src/prompts.ts:240-241` | B3 (boundary keeps the delta) |
+| F-19 | About 1,500 chars restate prompt rules: policy provenance is stated 4× (body 286 + boundary 236 + `policyBasis` 207 + `expectedPolicy` 44) although `prompts.ts:22` says the tool "carries a pointer"; risk label 4×; the state/board/ledger/graph routing table ~500 chars across four boundaries; "blocked records the human prerequisite" twice; "export ends nothing" twice; "continue = same ticket" twice. | `EXT:2936`, `src/tool-guidelines.ts:8,10,22,29,39,40`, `src/tool-schemas.ts:25,74,83-84,192,238`, `src/prompts.ts:22,142` | B3 (one statement per rule) |
+| F-20 | 15 of 33 model-visible schemas are open (`additionalProperties` absent), so unknown fields are silently kept and ignored. Concrete danger: `p2o_shell {command, timeoutSeconds:30}` is accepted and the command runs with **no** timeout, because shell/net name the wait `timeout` while `p2o_workers` uses `timeoutSeconds`. Same class: `timeoutSec` on http, `maxKib` on capture, `notbefore` on loop, `partialReason` on finish. | `src/tool-schemas.ts:139,146-152,174-186,188-195,223-232`, Pi keeps unknown props (`node_modules/@earendil-works/pi-ai/dist/utils/validation.js:283`), `EXT:3068` | B4 (close schemas or named refusals) |
+| F-21 | Result envelopes and pagination are bespoke: `shown` is a number for page/view but an object for query/export; item key is `rows`/`hits`/`records`/`tasks`/`entries`/`plans`/`cells`/`suggestions`; `cursor` is a sequence barrier in graph/state but a row index in ledger/search/board/workers; `offset` is bytes in artifact/capture, rows in skill_list, characters in skill_read; next field is `nextCursor`, `nextOffset`, or unmentioned (state). | `src/state/store.ts:754-757,1150,1184,1216-1218`, `src/records.ts:282-285`, `src/search.ts:41-53`, `src/counts.ts:44-52`, `EXT:3524-3533`, `src/skills.ts:86,128` | B7 (name the item key + direction per reader) |
+| F-22 | `p2o_research {}` passes Pi (all 14 params optional) and fails with "Research query must be a string", never naming the default action or its required field. | `src/tool-schemas.ts:120-137`, `src/research.ts:44` | B6 (actionable message) |
+| F-23 | `p2o_coverage_plan` silently ignores `revision` without `id`, so a would-be revise creates a second plan (the other three authoring verbs refuse this shape). | `src/board-verbs.ts:115` vs `:62-70`, `EXT:2813-2816` | B8 (reuse `authoringAction`) |
+| F-24 | `p2o_board` silently drops `status`/`kind`/`cursor`/`limit` on boards that do not use them (`board=tasks` with a valid case `status` returns an unfiltered list; `board=cases id=… status=…` ignores the status). | `EXT:2892-2902` | B8 (refuse unused field per board) |
+| F-25 | `p2o_task_dispatch` with a bad id fails with bare "Unknown task ID", losing the offending value. | `EXT:2710` | B8 (interpolate the id) |
+| F-26 | `p2o_task_author` role-conditional fields are schema-optional and then refused as "Invalid task roleReason" without the minimum or the exempt role (`methodReason` already has a tailored message). | `src/tool-schemas.ts:27-29`, `src/tasks.ts:122,129,148` | B8 (message) |
+| F-27 | Identity/idempotency is inconsistent: `requestId` exists in six tools but not `p2o_task_author` (a retried unstructured create duplicates); board `requestId` is a bare string while the store requires `validId` and answers "Invalid mutation request identity"; a reused key with a changed payload returns bare `IDEMPOTENCY_CONFLICT`; `p2o_candidate` declares no `id`/`revision` but is open, so they are accepted and stored. | `src/board-verbs.ts:19`, `src/state/store.ts:338,343`, `src/tool-schemas.ts:73-94`, `src/evidence.ts:115`, `EXT:2736` | B8 (named validation; strip unknown candidate keys) |
+| F-28 | `p2o_session protocol:"udp"` is schema-legal but always refused. | `src/tool-schemas.ts:163` vs `EXT:2146` | B6 (enum tcp only) |
+| F-29 | `p2o_artifact`'s 8 KiB default is a wrapper constant while `store.artifact` defaults 16 KiB; the text block never prints total bytes, so remaining size is inferable only from `nextOffset`. | `EXT:2509,3260,3269-3271`, `src/state/store.ts:622` | B6 (print total; align default) |
+| F-30 | `p2o_board` undersells its own surface: declared filters `status`/`kind` are undocumented, default page sizes differ (tasks 10, others 20), item keys are `tasks`/`entries`/`plans`/`cells`. | description `EXT:2891`, `src/board-verbs.ts:107-110`, `src/counts.ts:45`, `EXT:2694` | B6 (one sentence) |
+| F-31 | `p2o_research action=fetch` and `p2o_http` take the same `url` and return the same shape with opposite evidentiary status; a worker that fetches a target page through research bypasses the cookie jar (an authenticated page comes back as a login wall) and its body is not a receipt. | `EXT:2921-2922` ("Citation data, never evidence") vs `EXT:3194` | B6 (one clause: never for target pages) |
+| F-32 | `p2o_coverage_suggest` is named coverage and its own text says it is not coverage; the same drift appears in `p2o_note kind=coverage`, which mirrors `p2o_report.coverage` items yet is downgraded to "display context" by the prompt while `summarizeRecords` still counts it. | `EXT:2887`, `src/board-verbs.ts:29-31`, `src/tool-schemas.ts:189`, `src/prompts.ts:282`, `src/records.ts:347` | B9 (`p2o_wstg_suggest` rename, D-S1-8) |
+| F-33 | `scripts/measure-context.mjs` only scans prompts for tool names, so F-01 is invisible to it; its "declaration total" sums all 35 registered tools and never reaches a model (the real costs are the per-role numbers in §2). | `scripts/measure-context.mjs:36,47,59` | A1 (new audit script + test) |
+
+### 3.3 P3 — naming, docs, tidiness (tranche B, cheapest first)
+
+| ID | Finding | Evidence | Action |
+| --- | --- | --- | --- |
+| F-34 | `docs/ARCHITECTURE.md` is stale: "34 registered tools: 32 model-visible", planner 21 — actual 35/33 and 22; the role table omits `p2o_case_retest`. | `docs/ARCHITECTURE.md:20-26` | B10 (docs) |
+| F-35 | Both hidden legacy verbs are a **test-only API**, not a live path: the Engine spawns through `spawnWorker` directly, so nothing in src/extensions calls the wrappers; 29 test files / ~95 call sites use them, and `BOARD_ACTION_VERBS` (which maps old actions to the hidden `p2o_task_start`) has no production consumer. Per D-S1-10 they are deleted in S1 after the test migration. | `EXT:3389,4036`, `src/board-verbs.ts:36-48` (only `tests/minimal/board-verbs.test.ts` reads it) | B10 (migrate tests → delete) |
+| F-36 | Maintainer notes ship inside model-visible declarations: `p2o_task_start` says "HIDDEN LEGACY: not on the model surface…" and `p2o_delegate` still claims "PLANNER ONLY: immediately spawn…" though no role holds it. | `EXT:2873,3390` | B10 (the declarations are deleted) |
+| F-37 | Secondary bounds are declared but undocumented or unguarded: `asOfSequence`, path defaults (4/200), summary's 8 KiB row trim, ingest's 4 MiB input cap, state search's extra searchable fields; the `chain` branch has no `GRAPH_RESPONSE_BYTES` guard and a `view` dossier is trimmed only inside the dossier lists. | `src/state/graph-tool.ts:57`, `src/state/store.ts:811`, `src/state/graph.ts:33`, `src/extract/types.ts:13`, `EXT:1324-1334,3285-3305` | B6/C2 (guards + prose; tests) |
+| F-38 | Param naming drift: `p2o_state.q` vs `p2o_skill_list.query`; `p2o_task_dispatch` accepts both `ids` and `id` (`ids` wins, `id` silently ignored); `text` means three different payloads (`session` foothold body, `loop` hint, `note` body); four names for "how much to read" (`maxKiB`, `maxBytes`, `length`, `limit`). | `src/tool-schemas.ts:19,65,139,164,197,228`, `EXT:2704` | B6/B9 (document; unify on next rename) |
+| F-39 | `p2o_loop action=status` returns the same `engine.snapshot()` that `p2o_workers list` embeds (redundant); `p2o_secret` spends 746 description chars on a one-action list; `p2o_graph`'s 1,681-char paragraph mixes nine actions with no per-action structure. | `EXT:3475` vs `:1475,3529`; `EXT:3176-3182`; `EXT:3274` | B2/B3 (drop status; trim) |
+| F-40 | `p2o_graph`'s `ingest` reuses root `id` for a retained artifact id while `view` uses `id` for an asset entity id — two namespaces under one param name with no description. | `src/state/graph-tool.ts:45`, description `EXT:3274` | B6 (name both in prose) |
+
+### 3.4 Structural findings (tranche C)
+
+| ID | Finding | Evidence | Action |
+| --- | --- | --- | --- |
+| F-41 | `p2o_graph` carries a 3,972-char write batch into a read-only planner loadout, and three of its actions are planner-only inside a tool held by every role. Authority and declaration are not aligned. | `src/state/graph-tool.ts:26-42,55`, loadouts `src/tool-policy.ts:25-46` | C1 (split by authority) |
+| F-42 | Nine actions in one tool with 24 root params; seven of them are reads with overlapping questions (`view`/`page`/`export`/`query`/`summary`/`chain`/`path`). | `src/state/graph-tool.ts:44-56` | C1/C2 (verbs below) |
+| F-43 | The five authoring payloads repeat 127 leaf names (29 shared by ≥2, 11 by ≥3) and the `{kind,subject,scope}` capability triple is declared 7× = 4,962 chars. A single engine (`executeTaskAction`/`executeCaseAction`/… + `ownerMutation`) already backs all five, but a discriminated union is **not** implementable safely: the Anthropic adapter flattens a tool to root properties/required, and a root `anyOf` loses all arguments. | `EXT:2686,2767,2791,2810,2538`, `src/board-verbs.ts:62-71`, `node_modules/@earendil-works/pi-ai/dist/api/anthropic-messages.js:1265-1281`, `src/state/graph-tool.ts:50-51` | C3 (bounded consolidation only) |
+| F-44 | The declaration budget has no structural margin: planner is 6 chars under its ceiling, so every future planner feature is a trimming exercise. | `tests/minimal/context-budget.test.ts:29` | C1–C3 |
+
+## 4. Tranche A — P1 remediation (small, hermetic, net ≤ 0 chars)
+
+**A1 — Add a surface audit script and its regression test.**
+`scripts/audit-surface.mjs` registers the real extension against a stub Pi API (same pattern as
+`scripts/measure-context.mjs`) and prints per tool: declaration chars, role holders, action list, and every `p2o_*` token
+in its final description (after `withBoundaries`) that the holder role cannot call. `tests/minimal/surface-audit.test.ts`
+pins: (a) zero cross-reference contradictions (F-01 class), (b) the 35/33/12 counts, (c) hidden verbs are in no loadout,
+(d) the per-role declaration numbers in §2 within tolerance. Acceptance: the cross-reference assertion **fails on
+`197d6a9`** (10 pairs) and passes after A2.
+**A2 — Rewrite the ten cross-reference sentences** so each names a verb the holding role actually has, or states the
+split without naming an unheld tool (e.g. "entity boards are planner-read; read records here by id"). Trim the
+`HIDDEN LEGACY` maintainer notes (F-36) in the same edit. Acceptance: A1 test green; no role loadout changes;
+`context-budget` still green; net character delta ≤ 0 measured by the script.
+**A3 — Wire the foothold (D-S1-2).** Import and append `FOOTHOLD_ACTIONS` to the broker session allow-list; keep the
+`validationMayUseSession` gate and the `--lab-network` ingress requirement exactly as they are; add a worker-path test
+(broker stub) for `foothold-open` → `identify` → `send` → `read` → `close`, plus a validation-worker refusal and an
+"unknown action still refused" case. Acceptance: `session.test.ts`/`foothold.test.ts` green including a new worker-role
+test through `BrokerClient`; no declaration growth (the enum and prose already budget for it).
+**A4 — Fix the installed-holdout harness.** The objective stops naming `p2o_delegate`/`p2o_candidate` as lead verbs and
+uses the supported path (`p2o_task_author` → `p2o_task_dispatch` → `p2o_workers` → `p2o_report`); the cleanup assertion
+must fail if zero worker tool results were observed (non-vacuous), and the `acceptance.json` SHA entry is re-pinned in the
+same change. Acceptance: a dry structural check (no live run) proves the objective mentions only loadout-held tools and
+the leak check requires observed worker evidence.
+**A5 — Relax `path`, label what stays planner-only (D-S1-7).** Remove the worker/validation refusal for `path` so the
+bounded read is available to every role; keep `chain` and `ingest` planner-only and say so in the description and the
+boundary. Acceptance: a worker-path `action=path` test (direct and through the broker) succeeds and returns the same
+bounded shape as the planner's, `chain`/`ingest` still refuse for worker and validation, the declaration carries the
+planner-only clause, and the edit is net ≤ 0 chars.
+**A6 — Map `cursor`→`since` for worker graph query/summary (F-05)** and add a worker-path test that a cursor page works
+and advances. Acceptance: new test in `graph.test.ts` (or `graph-native.test.ts`) exercising the broker payload.
+**A7 — Forward `componentRef` in the worker research payload (F-06)** and test that a package asset resolves to a CVE
+query for a worker. Acceptance: `research.test.ts` worker fixture.
+**A8 — Make the wrapping-round restriction real (F-07).** The `tool_call` gate uses `closingTools()` when
+`run.roundState?.wrapSent`; decide and record whether `p2o_workers action=continue` is allowed during wrap (it sends a new
+brief); correct the planner prompt sentence to say "creating or dispatching an intent does not [stay]". Acceptance: a new
+test proves an injected `p2o_task_author`/`p2o_task_dispatch` call is blocked only during wrap and allowed otherwise; the
+prompt text pins the narrower claim.
+
+Tranche A is done when: A1–A8 land, the new tests pass, `tsc`/`build`/`check:build` are clean, `context-budget` is green
+with planner ≤ 49,294, and the only authority change is the read-only `path` relaxation (D-S1-7); no loadout gains or
+loses a tool.
+
+**Tranche A result (working tree, 2026-10-29, uncommitted).** A1–A8 landed; `tsc --noEmit` clean; full `vitest run`
+**153 passed / 5 skipped files (158), 1,340 passed / 13 skipped tests (1,353), 0 fail**; `npm run build` +
+`npm run check:build` → `build import OK`; `git diff --check` clean; `context-budget` green with planner
+**49,248/49,300** (52 chars headroom), worker 42,791/44,100, validation 41,980/43,300, reporter 6,528/6,800, model
+75,483/77,900 — every role is at or under the pre-A measurement (D-S1-5, ceilings unchanged).
+
+- **A1** added `scripts/audit-surface.mjs` and `tests/minimal/surface-audit.test.ts`: the audit registers the real
+  extension against the stub Pi host, prints per-role declaration totals and the cross-reference contradictions, and the
+  test pins 35 registered / 33 model-visible / 2 hidden / 12 board verbs, the hidden verbs in no loadout, zero
+  contradictions and the per-role baselines. It reproduced **10 contradictions on the unmodified tree** (red) and reports
+  **0** after A2 (green).
+- **A2** rewrote the eight boundary sentences that named an unheld verb (`p2o_graph`, `p2o_state`, `p2o_ledger` → board;
+  `p2o_note` → surface; `p2o_surface` → author) into role-neutral wording, and replaced the two hidden verbs' maintainer
+  notes with plain descriptions. Planner fell 49,294 → 49,248; no loadout changed.
+- **A3** appended `FOOTHOLD_ACTIONS` to the broker session allow-list (`src/broker.ts`), keeping the
+  `validationMayUseSession` gate and the `--lab-network` ingress requirement unchanged; `session.test.ts` gained a
+  broker-path test that every foothold action routes to the ticket-bound session instead of failing as unknown. The five
+  declared actions are now reachable by the only role that holds `p2o_session`.
+- **A4** rewrote the installed-holdout objective off the hidden `p2o_delegate` and the worker-only `p2o_candidate` onto
+  `p2o_plan_author` → `p2o_task_author` → `p2o_task_dispatch` → `p2o_workers` → `p2o_finish`, and replaced the vacuous
+  leak check with two non-vacuous assertions: a run with no `p2o_task_dispatch` tool result fails, and any Herdr pane that
+  appeared during the run counts as a leak. Deviation: the script's SHA entry in
+  `research/runtime/lean-lead/acceptance.json` is **not** re-pinned — that file is a historical receipt tied to
+  `testedInstalledRevision 76602c6` whose hashes are already stale against HEAD; it belongs to a new authorized live run,
+  not to this hermetic edit.
+- **A5** (D-S1-7) shares `p2o_graph action=path`: the walk moved into one `pathWalkFor` helper used by the planner branch
+  and by the broker `graph_read` route, so worker and validation can read bounded reachability (same ≤10 paths / ≤6 hops /
+  ≤500 nodes / 24 KiB bound, never writing). `chain`/`ingest` remain planner-only and the description now says so while
+  still being net −7 chars. Tests cover a worker walk, the unchanged declarations and both refusals.
+- **A6** sends the worker `query`/`summary` cursor as the broker's `since` (the broker had always rejected `cursor` as an
+  unknown field), with a worker test that a cursor page is accepted.
+- **A7** forwards `componentRef` on the worker research call; a worker `action=cve componentRef=<package asset>` test
+  derives the same NVD query and labelled lead the owner path does.
+- **A8** makes the wrap gate read the loadout the round is actually on (`closingTools()` when `wrapSent`), refuses
+  `p2o_workers action=continue` during wrap with an actionable message, and narrows the planner prompt claim to
+  "creating or dispatching an intent does not"; the prompt was paid down by 14 chars (`starts from this ledger`,
+  `finish the thought`) so `recon.test.ts`'s recorded planner ceiling stays at 14,400. A test proves an injected
+  `p2o_task_author`/`p2o_task_dispatch` call is blocked during wrap, `p2o_plan_author` is not, and the brief is refused.
+
+GitNexus: `impact` was run **before** the edits — `registerP2O` 0 callers / `UNKNOWN` (entry point; the index is 6
+commits behind HEAD, so that is unmeasured, not empty), `withBoundaries` 7 impacted / 1 direct / `LOW` / exact,
+`graphParameters` 0 / `UNKNOWN` (inline property reference). `detect_changes --scope all` before reporting: 58 changed
+symbols / 11 changed files / 25 affected processes / risk critical; as in R0–R3 it also sees the owner's `AGENTS.md`
+edit and stale planning-doc mappings. No live run, no target traffic, no paid model call: every new test is hermetic. The
+owner's `AGENTS.md` and `pi-p2o-defense-vi.pptx` remain untouched and unstaged.
+
+## 5. Tranche B — reclaim budget and harden the contract
+
+**B1 — Merge `p2o_task_settle` into `p2o_task_review` (F-08).** One verb takes `outcome: reviewed|closed|blocked|cancelled`
+(default `reviewed`); `reviewed` keeps today's review semantics and the other three map to today's settle actions. Update
+`BOARD_ACTION_VERBS`, `TASK_VERB_NAMES`, `authority`/`board-verbs`/`extension` tests, acceptance-matrix citations and the
+boundary. Expected −620 chars; the planner headroom becomes usable.
+**B2 — Remove `p2o_graph action=page` (F-09) and `p2o_loop action=status` (F-39).** `query` is the current-head
+inventory; `p2o_workers` already carries the engine snapshot. `page`'s append-log read remains available internally where
+it is used (report/ingest paths keep their store call). Update `GRAPH_ACTION_PARAMETERS`, graph tests and the description;
+expected ≈ −780 chars.
+**B3 — One statement per rule (F-18/F-19).** Keep provenance, risk-label, routing, finish and continue rules once — in the
+prompt where the role reads it — and make the tool text a pointer. The boundary keeps only the delta the prompt does not
+carry. Target −1,450 chars across roles; acceptance: `truth.test.ts`, `claims.test.ts` and `report-*` content tests stay
+green, and a new `surface-duplication.test.ts` fails if a rule sentence appears in more than one model-visible source
+(measured by shared 8-grams between declared descriptions and prompts, threshold pinned).
+**B4 — Close the open schemas (F-20).** Either set `additionalProperties:false` (≈ +27 B per tool, paid by B3) or add a
+handler refusal for the known cross-tool aliases (`timeoutSeconds`, `timeoutSec`, `maxKib`, `notbefore`, `partialReason`).
+Prefer closing: the failure becomes a named Pi refusal instead of a silent no-op. A1's argument-validator concern was about
+cosmetic prose caps, not unknown fields. Acceptance: `surface-contract.test.ts` pins the closed set and asserts the shell
+`timeoutSeconds` case is refused by name; `context-budget` green.
+**B5 — Rename the two ambiguous parameters (F-11/F-12).** `p2o_http.session` → `cookieJar` (keep `resetSession`), and
+`p2o_case_retest.verdict` → `retestOutcome`. Zero net chars (the http param gains the description it never had).
+Acceptance: runtime tests and docs updated in the same change; no declaration growth.
+**B6 — Make the declared bounds action-shaped and the messages actionable (F-13/F-14/F-15/F-16/F-17/F-22/F-28/F-29/F-30/F-31).**
+Per action: document and enforce the real limit cap; state the cursor direction and accept `0`; say `summary` is ≤10 rows
+and 8 KiB; state `path` defaults; delete `lab.compose`; make the state limit 100; make the empty research call name the
+action and its field; `protocol` enum `['tcp']`; print artifact total bytes; name the board filters; add the research
+"never for target pages" clause; name both `id` namespaces. Acceptance: each item has either a prose assertion in
+`surface-contract.test.ts` or a handler test with the concrete failing call from §3.
+**B7 — Name the envelope in each reader (F-21).** One sentence per reader: item key, direction and next field. No shape
+unification in S1 (the shapes are consumed by tests and the report); reuse `rows` only where free. Acceptance: prose pins
+in `surface-contract.test.ts`.
+**B8 — Refusals that name the fix (F-23/F-24/F-25/F-26/F-27).** `coverage_plan` reuses `authoringAction`; `board` refuses
+the unused filter per board; `dispatch` interpolates the bad id; `task_author` names the role minimum and the exempt role;
+`requestId` is validated with a named message; `p2o_candidate` strips unknown keys. Acceptance: five handler tests with
+the call shapes from §3.
+**B9 — Rename the two misleading tools (D-S1-8, F-10/F-32/F-38).** `p2o_coverage_suggest` → `p2o_wstg_suggest` and
+`p2o_plan_author` → `p2o_goal_author`; add "not a coverage plan; those live in `p2o_coverage_plan`" now that the names are
+unambiguous; update every reference in one change (prompts, boundaries, `COVERAGE_VERB_NAMES`/`PLAN_VERB_NAMES`, role
+loadouts, skills/knowledge, docs, tests, acceptance-matrix citations) and add a repo-wide grep assertion to
+`surface-audit.test.ts` that no old name survives. Document the remaining param-naming drift in `docs/KNOWLEDGE.md`.
+Acceptance: `grep -rn` for either old name returns only the historical `docs/HISTORY.md` rows and git history; full suite
+green; declaration budget unchanged (tool names are excluded from the metric).
+**B10 — Delete the hidden legacy verbs (D-S1-10, F-35/F-36).** Step 1: migrate the ~29 test files that call
+`p2o_delegate`/`p2o_task_start` (the tests' own helper for spawning/`task start`) onto the internal functions
+(`spawnWorker` and `executeTaskAction('start')`) through the shared test helpers, keeping every behavioural assertion.
+Step 2: delete both `registerTool` blocks, `HIDDEN_TOOLS`, the hidden-exposure plumbing that becomes dead, and
+`BOARD_ACTION_VERBS` (no production consumer). Step 3: update the counts and pins — registered 35→**33** (all
+model-visible, hidden 0), board verbs 12→**11**, `TASK_VERB_NAMES` without `p2o_task_start` — in `authority`,
+`extension`, `measure-context`, `board-verbs`, `prompt-roles`, `workflow-policy` and the acceptance matrix. Acceptance:
+full suite green; no source or test references either hidden verb; `measure-context` reports 33 registered / planner 22 /
+worker 19; declaration budget unchanged.
+
+**B11 — Docs truth (F-34).** Update `docs/ARCHITECTURE.md` (33 model-visible tools, planner 22, 11 board verbs, role
+table including `p2o_case_retest`), the `docs/KNOWLEDGE.md` tool list and "who writes what" note, and add the S1 rows to
+`docs/ACCEPTANCE_MATRIX.md` as the tests land. Add one `docs/HISTORY.md` row when the tranche is committed.
+
+Tranche B is done when: A+B tests pass, full `vitest run` is 0-fail, `measure-context` reports **33 registered** tools
+(planner 22 / worker 19 / validation 18 / reporting 6) with planner ≤ 47,800 / worker ≤ 41,900 / validation ≤ 41,100 /
+reporter ≤ 6,450 / model ≤ 73,900, the two renames and the hidden-verb deletion have landed, and `context-budget` still
+passes against the **unchanged** ceilings.
+
+## 6. Tranche C — structural (gated, after A+B evidence)
+
+**C1 — Split `p2o_graph` by authority (F-41).** Target shape:
+- `p2o_graph` (planner + worker + validation): `view`, `query`, `summary`, `export`, and `path` (read-only reachability,
+  available to all three roles per D-S1-7).
+- a worker/validation write verb carrying the batch schema (`record`) — the planner keeps only a compact review entry
+  point for supersede/promote, so the 3,972-char batch leaves the planner loadout.
+- `chain` (+ `plan`) and `ingest` live in a planner-only tool; `chain`/`ingest` are coordination, not target work.
+Acceptance: planner declaration −≥2,500 chars, worker −≥400; no authority widening (the planner never gains a target,
+lab or claim tool); graph tests split by role; `context-budget` re-pinned once with a dated comment (D-S1-5).
+**C2 — Fewer read verbs (F-42).** `page` is gone after B2; `p2o_graph`'s description drops to ≤ 900 chars with one
+"use when" clause per remaining verb; the chain branch gets a `GRAPH_RESPONSE_BYTES` guard and the view dossier trimming
+is tested at the byte boundary (F-37). Acceptance: a response-bound test per read verb; description length asserted.
+**C3 — Authoring consolidation, bounded by the adapter (F-43).** Safe: one payload key name (`entry`) for the four
+planner authoring/rating verbs; merge review/settle (already B1); trim the repeated capability-triple prose (~1,260 chars);
+keep `p2o_candidate` flat. Not safe, and explicitly rejected: a single discriminated union, because the Anthropic adapter
+flattens a tool to root properties/required and a root `anyOf` loses all arguments — the plan records this as a decision,
+not a missing idea.
+**C4 — Before/after evidence and the gate.** Deterministic evidence is mandatory: declaration chars per role, tool counts,
+`measure-context` output, full suite counts, and the fixture counts the bench harness uses (tasks created, workers
+spawned, rounds) from the hermetic fixtures. A live bench run is optional and only with owner authorization per
+`bench/README.md` (explicit `--live`, pinned provider/model/thinking; the historical contamination caveat still applies).
+Acceptance for merging C1–C3: every deterministic metric is unchanged or better, no test is weakened, and the owner
+reviews the before/after table.
+**C5 — Re-pin and record.** After C, update `context-budget.test.ts` ceilings once (measured + 3%, dated comment naming
+what moved), `docs/ARCHITECTURE.md`/`docs/KNOWLEDGE.md`, `docs/ACCEPTANCE_MATRIX.md` (new F-S1 rows), and add one
+`docs/HISTORY.md` row when the tranche is committed. The R3 row and the R3 plan remain in git history.
+
+## 7. Budget arithmetic
+
+| point | planner | worker | validation | reporter | model |
+| --- | --- | --- | --- | --- | --- |
+| measured at `197d6a9` | 49,294 | 42,808 | 42,000 | 6,551 | 75,500 |
+| after A (measured 2026-10-29) | 49,248 | 42,791 | 41,980 | 6,528 | 75,483 |
+| after B (target) | ≤ 47,800 | ≤ 41,900 | ≤ 41,100 | ≤ 6,450 | ≤ 73,900 |
+| after C (target) | ≤ 45,300 | ≤ 41,500 | ≤ 40,700 | ≤ 6,450 | ≤ 71,500 |
+| ceiling (unchanged until C) | 49,300 | 44,100 | 43,300 | 6,800 | 77,900 |
+
+The ceilings are not raised in A or B: the reclaimed bytes are headroom (D-S1-5). C re-pins them once from measurement.
+
+## 8. Verification and workflow protocol
+
+Per task and per tranche, in this order:
+
+1. `npx tsc --noEmit`.
+2. Focused vitest for the touched area plus the invariants:
+   `tests/minimal/context-budget.test.ts`, `truth.test.ts`, `claims.test.ts`, `acceptance-matrix.test.ts`,
+   `authority.test.ts`, `board-verbs.test.ts`, `extension.test.ts`, `measure-context.test.ts`, and the graph/session/research
+   suites for the task.
+3. `node scripts/measure-context.mjs --source` and `node scripts/audit-surface.mjs` (added by A1); record both outputs.
+4. `npm run build && npm run check:build`.
+5. `git diff --check -- src extensions tests docs planning_update.md`.
+6. Full `npx vitest run`; record files/tests passed/skipped/failed in the tranche evidence.
+7. **GitNexus before editing (mandatory, learned from the R1–R3 lapse):** run `impact` upstream for every symbol about to
+   change — `registerP2O` tool closures for graph/task/verb factories, `graphParameters`/`GRAPH_ACTION_PARAMETERS`,
+   `GRAPH_ACTIONS`, the broker `case 'session'`/`graph_read` handlers, `tool-policy` exports,
+   `withBoundaries`/`TOOL_BOUNDARIES`, and the `prompts.ts` exports. Report callers/processes/risk in the tranche notes;
+   treat `risk: UNKNOWN` as unresolved, not as low. Before each commit, `detect_changes --scope all`.
+8. Commits only on owner instruction, with the repository identity and no attribution lines; never stage `AGENTS.md` or
+   the untracked `.pptx`. Nothing is pushed without an explicit request.
+
+## 9. Invariants that must not change
+
+- The evidence ladder: receipts, claims, cases are the only path to a finding. A graph row, dossier, path, technique id,
+  retest note, project-knowledge row or `p2o_state`/`p2o_ledger` read is background, never evidence.
+- Loadout enforcement is the authority model. S1 may narrow or relabel; it may not widen, **except** the read-only
+  `p2o_graph action=path` sharing recorded in D-S1-7. The planner never gains target, lab or claim tools; a validation
+  worker never gains `p2o_surface`.
+- The graph stays bounded: every new read has a byte/row cap, capacity overflow is reported, never silently dropped.
+- Hidden legacy verbs stay off the model surface until their test migration is done; no second delegation path appears.
+- No new settings; caps are constants. No network in tests, no paid model calls, no live target traffic.
+- Foothold wiring keeps `--lab-network` as the ingress gate: no host port, no tunnel, no pivot.
+- `tests/minimal/context-budget.test.ts` ceilings stay unchanged through A and B; any raise is a separate owner decision.
+- No AI attribution in commits/PRs; author identity is the repository's.
+
+## 10. Risks and non-goals
+
+Risks: (a) the Anthropic adapter flattening constraint blocks any root-`anyOf` merge — C3 is deliberately bounded and the
+rejected option is recorded; (b) test churn — ~10 files in B and ~8 in C, and `acceptance-matrix.test.ts` validates every
+cited `file.test.ts :: title` exactly, so renames must update the matrix in the same change; (c) budget transients while
+tasks land out of order — each task must leave the budget test green, so net-negative tasks land before positive ones;
+(d) the graph split is the one change that can alter role behaviour — it is gated on the deterministic before/after table
+and owner review; (e) renaming tool/param names may break muscle memory in prompts/skills — every rename updates prompts,
+boundaries, docs and tests in one commit.
+
+Non-goals for S1: no new offensive capability, no new evidence rule, no change to the report/export schema, no live
+benchmark run, no attempt to unify result shapes beyond naming them, no second delegation path, and no authority change
+beyond the read-only `path` decision (D-S1-7).
+
+## 11. Review answers (2026-10-29)
+
+The four plan-review questions were asked in chat and answered by the owner; they are decisions now, not open questions.
+
+- **Q1 — Is read-only `p2o_graph action=path` shared with worker/validation?** **Yes.** It stays a bounded, never-writing
+  read; `chain`/`ingest` remain planner-only (D-S1-7). Implemented in A5 as the interim step and kept by the C1 split.
+- **Q2 — Are the two breaking renames in scope?** **Yes, both**, in tranche B: `p2o_coverage_suggest`→`p2o_wstg_suggest`
+  and `p2o_plan_author`→`p2o_goal_author`, with every reference and the acceptance matrix updated in the same change
+  (D-S1-8, B9).
+- **Q3 — Is a live benchmark authorized for the C gate?** **No.** C is accepted on the deterministic evidence in §6/C4
+  (declaration numbers, full suite, hermetic fixture counts); a live run would need a separate explicit authorization
+  (D-S1-9).
+- **Q4 — When are `p2o_delegate`/`p2o_task_start` deleted?** **In S1.** B10 migrates the ~29 test files to the internal
+  functions, then deletes both handlers, `HIDDEN_TOOLS`, the dead hidden-exposure plumbing and the legacy action map; the
+  surface becomes 33 model-visible tools and 11 board verbs (D-S1-10).
+
+Nothing in §12 changes; the audit evidence and its reproduction method stay as recorded.
+
+## 12. Appendix — how the audit numbers were produced
+
+The audit registered the real extension against a stub Pi API (the same pattern as `scripts/measure-context.mjs`) and
+dumped, for all 35 tools: name, exposure, full description, full parameter schema, declaration chars by the budget
+metric, action enum, role holders and the policy loadouts. Two temporary analysis scripts also walked the nested schemas
+(leaf-name overlap, field-description bytes) and ran `Value.Check` per schema for the empty-object and unknown-field
+cases. The artifacts live under `node_modules/.cache/p2o/` (`tools-audit.json`, `measure.json`) and are not committed;
+A1 turns the durable part into `scripts/audit-surface.mjs`. Three read-only cross-checks were run independently against
+source (authority/dead surface, feature overlap, prose drift and pagination), and a fourth covered schema/handler contract
+drift; every finding above cites the code line or the measured artifact that proves it. Nothing in this file was inferred
+from memory; where a claim is unverified it is labelled as such in the finding.

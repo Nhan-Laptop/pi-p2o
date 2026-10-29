@@ -1249,6 +1249,21 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
    * ledger projections the rest of the loop already uses, so the dossier cannot invent a finding. Trailing rows are dropped only
    * when the encoded response would cross the existing 24 KiB graph bound, and the dossier carries the omission counters.
    */
+  /**
+   * S1/A5 (D-S1-7): one bounded reachability walk shared by the planner branch and the worker broker route. It is a read:
+   * it never writes, never re-evaluates a claim and applies the same 24 KiB bound to every caller.
+   */
+  async function pathWalkFor(current: OwnerRun, fromId: string, params: Record<string, any>) {
+    const walk = current.store.graphPath({ fromId,
+      ...(params.toId !== undefined ? { toId: String(params.toId) } : {}), ...(params.toKind !== undefined ? { toKind: String(params.toKind) } : {}),
+      ...(Array.isArray(params.kinds) && params.kinds.length ? { kinds: params.kinds as Parameters<OwnerRun['store']['graphPath']>[0]['kinds'] } : {}),
+      ...(params.maxDepth !== undefined ? { maxDepth: Number(params.maxDepth) } : {}), ...(params.maxNodes !== undefined ? { maxNodes: Number(params.maxNodes) } : {}) });
+    const effect = params.effect === undefined ? undefined : annotatePathEffect(walk.paths.map(path => path.hops.map(hop => ({ relationEntityId: hop.relation.entityId, fromId: hop.relation.fromId, toId: hop.relation.toId }))),
+      (await candidateClaims(current)).map(claim => ({ claimId: claim.candidate, claim })), String(params.effect));
+    if (effect && Buffer.byteLength(JSON.stringify({ ...walk, effect })) > 24 * 1024) fail('INVALID_INPUT', 'Path response exceeded the 24 KiB bound; narrow it with kinds or maxDepth');
+    return { ...walk, ...(effect ? { effect } : {}) };
+  }
+
   async function graphViewFor(current: OwnerRun, id: string, options: { since?: number; limit?: number; asOfSequence?: number }) {
     const view = current.store.assetView(id, options);
     const head = view.head as unknown as Record<string, unknown>, entityId = view.entityId;
@@ -2870,7 +2885,7 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
   // A1: removed from the model surface. No owner report path exists after start, so the verb could not produce a reviewed
   // task anyway; the planner starts work by dispatching an intent. Hidden until A2 deletes the handler.
   taskVerb('p2o_task_start','Start direct owner work on one task',taskStartParameters,
-    'HIDDEN LEGACY: not on the model surface. Start direct owner work on a proposed task when the owner executes it.',()=> 'start',(params)=>params,'hidden');
+    'Start direct owner work on a proposed task when the owner executes it.',()=> 'start',(params)=>params,'hidden');
   taskVerb('p2o_task_review','Review a reported task handoff',taskReviewParameters,
     'PLANNER ONLY: review a reported handoff at its current revision from same-run receipts. Review is coordination, not proof; it never accepts a case or completes a goal.',()=> 'review');
   taskVerb('p2o_task_settle','Settle a task as closed, blocked or cancelled',taskSettleParameters,
@@ -2925,7 +2940,7 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
       if (!current || current.phase !== 'active') fail('NO_ASSESSMENT', 'No active assessment');
       const value = current.role === 'worker'
         ? (await worker().client.request('research', { action: params.action, query: params.query, web: params.web, limit: params.limit, url: params.url,
-            product: params.product, version: params.version, vendor: params.vendor, cpe: params.cpe, assetRefs: params.assetRefs,
+            product: params.product, version: params.version, vendor: params.vendor, cpe: params.cpe, componentRef: params.componentRef, assetRefs: params.assetRefs,
             leadId: params.leadId, state: params.state, reason: params.reason })).value
         : await research(current, params as Record<string, unknown>, 'owner');
       return textResult(cleanText(JSON.stringify(value, null, 2)), value);
@@ -3237,7 +3252,7 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
   });
   registerTool({
     name: 'p2o_surface', label: 'Record recon surface', exposure: 'model-only',
-    description: 'Append one recon surface-inventory entry (component + entryPoint). A cheap non-blocking duplicate hint: duplicate=true means a prior entry with the same normalized component/entryPoint already exists in this run, not a block — keep mapping or move to a bounded question either way. Not the exact work identity p2o_task_author checks before creating.',
+    description: 'Append one recon surface-inventory entry (component + entryPoint). A cheap non-blocking duplicate hint: duplicate=true means a prior entry with the same normalized component/entryPoint already exists in this run, not a block — keep mapping or move to a bounded question either way. Not the exact work identity the planner checks before creating a task.',
     parameters: surfaceParameters,
     async execute(_id, params) {
       const current = run;
@@ -3271,7 +3286,7 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
   });
   registerTool({
     name:'p2o_graph',label:'Asset graph',exposure:'model-only',parameters:graphParameters,
-    description:'Bounded graph reads, a record batch or artifact ingest. Record: requestId may sit on the batch; assets[] rows are {asset:{kind,key,...},ref?} or flat. Exact kind/key identity is versioned; no implicit normalization, permission or finding. Host assigns producer/task. Workers record assets/facts/anchors, open hypotheses and inferred relations (unverified); observed relations and settled hypotheses are owner review; reporting is read-only. Claims need same-run evidence. Pin revisions/supersedes to refuse stale writes; secret identities refused. view/page 20/100, export 200/500, reads ≤24KiB with omissions/cursors. query filters current heads by kind/keyPrefix/label/attributes/assertionKind/statement; summary is the since-delta plus assets lacking a claim/cell, open hypotheses, findings per asset, chain counts. chain joins gained/needs into ready/unmet/frontier and names the starting asset of each ready step; plan:true fills the task draft and records one todo per step, dispatching nothing. path fromId walks current relation heads (depth<=6, nodes<=500, optional toId/toKind/kinds); effect:capability names the demonstrated hop that supplies it or the missing one. ingest id=retained artifact extracts recognized nmap/httpx/nuclei/HTTP/OpenAPI/lockfile captures into unverified extractor rows (assets, facts, open hypotheses; never claims). Identical requestId/payload replays the retained ACK.',
+    description:'Bounded graph reads, a record batch or artifact ingest. Record: requestId may sit on the batch; assets[] rows are {asset:{kind,key,...},ref?} or flat. Exact kind/key identity is versioned; no implicit normalization, permission or finding. Host assigns producer/task. Workers record assets, facts, anchors, open hypotheses and inferred relations (unverified); observed relations and settled hypotheses are owner review; reporting is read-only. Claims need same-run evidence. Pin revisions/supersedes to refuse stale writes; secret identities refused. view/page 20/100, export 200/500, reads <=24KiB with omissions/cursors. query filters current heads by kind/keyPrefix/label/attributes/assertionKind/statement; summary is the since-delta plus assets lacking a claim/cell, open hypotheses, findings per asset, chain counts. chain joins gained/needs into ready/unmet/frontier and names the starting asset of each ready step; plan:true fills the task draft and records one todo per step, dispatching nothing (planner-only). path fromId walks current relation heads (depth<=6, nodes<=500; toId/toKind/kinds narrow it); effect names the supplied or missing hop (any role). ingest id=retained artifact extracts nmap/httpx/nuclei/HTTP/OpenAPI/lockfile captures into unverified extractor rows (assets, facts, open hypotheses; never claims); planner-only. Identical requestId/payload replays the retained ACK.',
     async execute(_id,params,_signal,_update,ctx){
       const current=run;
       if(!current||current.phase!=='active'||(current.role==='owner'&&current.ctx.cwd!==ctx.cwd))fail('NO_ASSESSMENT','No active p2o assessment in this session');
@@ -3304,17 +3319,17 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
         })());
       }
       if(params.action==='path'){
-        // R3.2/D-R1-11: reachability is coordination, so a worker records relations and the lead reads the walk.
-        if(current.role==='worker')fail('PLANNER_ONLY','Path view is coordination: record the relation and let the lead read reachability');
+        // S1/A5 (D-S1-7): reachability is a bounded read every role may use; it never writes. chain/ingest stay planner-only.
         const fromId=params.fromId;if(!fromId)fail('INVALID_INPUT','path needs fromId: the asset entity ID a walk starts from');
+        if(current.role==='worker'){
+          const response=await worker().client.request<{value:Record<string,unknown>}>('graph_read',{graphOp:'path',fromId,
+            ...(params.toId!==undefined?{toId:params.toId}:{}),...(params.toKind!==undefined?{toKind:params.toKind}:{}),...(params.effect!==undefined?{effect:params.effect}:{}),
+            ...(params.maxDepth!==undefined?{maxDepth:params.maxDepth}:{}),...(params.maxNodes!==undefined?{maxNodes:params.maxNodes}:{}),...(params.kinds?.length?{kinds:params.kinds}:{})},{timeoutMs:30000});
+          return textResult(cleanText(JSON.stringify(response.value)), response.value);
+        }
         return track(current,(async()=>{
           assertOwnerActive(current);
-          const walk=current.store.graphPath({fromId,...(params.toId?{toId:params.toId}:{}),...(params.toKind?{toKind:params.toKind}:{}),
-            ...(params.maxDepth!==undefined?{maxDepth:params.maxDepth}:{}),...(params.maxNodes!==undefined?{maxNodes:params.maxNodes}:{}),...(params.kinds?.length?{kinds:params.kinds}:{})});
-          const effect=params.effect===undefined?undefined:annotatePathEffect(walk.paths.map(path=>path.hops.map(hop=>({relationEntityId:hop.relation.entityId,fromId:hop.relation.fromId,toId:hop.relation.toId}))),
-            (await candidateClaims(current)).map(claim=>({claimId:claim.candidate,claim})),params.effect);
-          if(effect&&Buffer.byteLength(JSON.stringify({...walk,effect}))>24*1024)fail('INVALID_INPUT','Path response exceeded the 24 KiB bound; narrow it with kinds or maxDepth');
-          const value={...walk,...(effect?{effect}:{})};
+          const value=await pathWalkFor(current,fromId,params as Record<string,unknown>);
           return textResult(cleanText(JSON.stringify(value)),value);
         })());
       }
@@ -3344,7 +3359,8 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
       if(params.action==='query'||params.action==='summary'){
         const query={kind:params.kind,keyPrefix:params.keyPrefix,labelContains:params.labelContains,attributeKey:params.attributeKey,attributeValue:params.attributeValue,assertionKind:params.assertionKind,statementContains:params.statementContains};
         if(current.role==='worker'){
-          const response=await worker().client.request<{value:Record<string,unknown>}>('graph_read',{graphOp:params.action,...(params.action==='query'?query:{}),cursor:params.cursor,limit:params.limit},{timeoutMs:30000});
+          // S1/A6 (F-05): the broker read names the cursor `since`; sending `cursor` was rejected as an unknown field.
+          const response=await worker().client.request<{value:Record<string,unknown>}>('graph_read',{graphOp:params.action,...(params.action==='query'?query:{}),since:params.cursor,limit:params.limit},{timeoutMs:30000});
           return textResult(cleanText(JSON.stringify(response.value)), response.value);
         }
         return track(current,(async()=>{
@@ -3387,7 +3403,7 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
   registerTool({
     // A1/D5: removed from the model surface. One delegation path remains: p2o_task_author -> p2o_task_dispatch -> Engine claim.
     name: 'p2o_delegate', label: 'Delegate worker', exposure: 'hidden',
-    description: 'PLANNER ONLY: immediately spawn one focused worker when capacity is free. For batches/awaiting dependencies use task dispatch; Engine reuses capacity across successive assignments. Fresh session/ticket each time; shared-serial by default or confirmed isolated profile, never scope widening. Worker requests go to the Planner as proposals, not nested spawns. Purpose (work.purpose, else the role) decides what a finished report must contain and, when skills are omitted, its default skill set: mapping surface, discovery candidate, investigation root cause, refinement narrower claim, validation independent reproduction, retest verdict, exploitation demonstrated effect, chaining composed effect, reporting report.',
+    description: 'Immediately spawn one focused worker when capacity is free. For batches/awaiting dependencies use task dispatch; Engine reuses capacity across successive assignments. Fresh session/ticket each time; shared-serial by default or confirmed isolated profile, never scope widening. Worker requests go to the Planner as proposals, not nested spawns. Purpose (work.purpose, else the role) decides what a finished report must contain and, when skills are omitted, its default skill set: mapping surface, discovery candidate, investigation root cause, refinement narrower claim, validation independent reproduction, retest verdict, exploitation demonstrated effect, chaining composed effect, reporting report.',
     parameters: delegateParameters,
     async execute(_id, params) {
       const current = run;
@@ -3482,6 +3498,9 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
     parameters: workersParameters,
     async execute(_id, params, signal) {
       const action = params.action ?? 'list';
+      // S1/A8 (F-07): a wrapping round may write back and end, not hand a live worker a new untracked brief. The next
+      // round continues held work with p2o_task_dispatch workerId, which records a task instead of an invisible instruction.
+      if (action === 'continue' && run?.role === 'owner' && run.roundState?.wrapSent) fail('INVALID_INPUT', 'The round is wrapping up: write back now and end it with p2o_loop action=wait. The next round continues held work with p2o_task_dispatch workerId=<id>, which records a task instead of an untracked brief.');
       if (action === 'steer') {
         if (!params.workerId || !params.message) fail('BAD_PARAMS', 'action steer needs workerId and message');
         const current = owner();
@@ -4148,12 +4167,17 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
             graphRead: (op, params, registration) => track(current,(async () => {
               assertOwnerActive(current);
               if (current.workers.get(registration.workerId)!==registration) throw Error('Registered worker required for graph reads');
-              graphObject(params,['id','op','requestId','graphOp','assetId','since','limit','asOfSequence','kind','keyPrefix','labelContains','attributeKey','attributeValue','assertionKind','statementContains'],'Graph read request');
+              graphObject(params,['id','op','requestId','graphOp','assetId','since','limit','asOfSequence','kind','keyPrefix','labelContains','attributeKey','attributeValue','assertionKind','statementContains','fromId','toId','toKind','effect','maxDepth','maxNodes','kinds'],'Graph read request');
               const options={since:params.since as number|undefined,limit:params.limit as number|undefined,asOfSequence:params.asOfSequence as number|undefined};
               if (op === 'view') return graphViewFor(current,String(params.assetId),options); // RPC id is correlation, not domain identity.
               if (op === 'export') return current.store.graphExport(options);
               if (op === 'page') return current.store.graphPage(options);
               // R1.3: query/summary are reads, so a worker exercises the same bounded code path the owner does.
+              // S1/A5 (D-S1-7): read-only reachability is available to every role; the walk keeps its own byte bound.
+              if (op === 'path') {
+                if (params.fromId === undefined) throw Error('path needs fromId: the asset entity ID a walk starts from');
+                return pathWalkFor(current, String(params.fromId), params as Record<string, any>);
+              }
               if (op === 'query') return boundedQueryPage(current.store.graphQuery({kind:params.kind as string|undefined,keyPrefix:params.keyPrefix as string|undefined,labelContains:params.labelContains as string|undefined,
                 attributeKey:params.attributeKey as string|undefined,attributeValue:params.attributeValue as string|undefined,assertionKind:params.assertionKind as string|undefined,statementContains:params.statementContains as string|undefined},
                 {cursor:params.since as number|undefined,limit:params.limit as number|undefined}));
@@ -4432,7 +4456,9 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
       if (ALL_TOOLS.includes(event.toolName)) return { block: true, reason: 'Start a live assessment with /p2o --target … first. Replay grants no sandbox or worker authority.' };
       return;
     }
-    const allowed = current.role === 'owner' ? plannerTools() : workerTools(current.ticket.role);
+    // S1/A8 (F-07): the defense-in-depth gate reads the loadout the round is actually on. A wrapping round keeps the
+    // closing set, so an injected p2o_task_author/p2o_task_dispatch call is blocked here even if start-work text arrives.
+    const allowed = current.role === 'owner' ? (current.roundState?.wrapSent ? closingTools() : plannerTools()) : workerTools(current.ticket.role);
     if (current.phase === 'active' && allowed.includes(event.toolName)) return;
     // Defense in depth for a tool injected back into a turn: name the legal next verb, never offer a lead-exec escape hatch.
     if (current.role === 'owner') return { block: true, reason: 'Target execution, candidate claims and surface notes belong to a worker task. Create and dispatch an intent (p2o_task_author, then p2o_task_dispatch); the planner reviews the handoff and does not take over. Use /p2o stop to restore ordinary tools.' };

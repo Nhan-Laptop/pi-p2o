@@ -611,6 +611,20 @@ describe('A7.2 ticket-bound sessions (broker)', () => {
     } finally { client.close(); await f.close(); }
   });
 
+  it('routes every foothold action through the ticket-bound session instead of refusing it as unknown', async () => {
+    // S1/A3 (planning_update.md F-02): the broker allow-list omitted FOOTHOLD_ACTIONS, so the only role that holds
+    // p2o_session could not reach five declared actions. The whitelist now forwards them to the same ticket-bound session.
+    const f = await brokerFixture({ session: 'session-11111111' });
+    const client = new BrokerClient(f.socket, 'c'.repeat(32), { requestMs: 2000 });
+    try {
+      for (const [action, extra] of [['foothold-open', { port: 4444 }], ['foothold-identify', {}], ['foothold-send', { text: 'id' }], ['foothold-read', {}], ['foothold-close', {}]] as const) {
+        const result = await client.request('session', { action, ...extra });
+        expect(result.ok, action).toBe(true);
+        expect(f.calls, action).toContain(`session ${action} session-11111111 p2o-recon-aaaaaa`);
+      }
+    } finally { client.close(); await f.close(); }
+  });
+
   it('refuses session I/O when the ticket holds no session yet', async () => {
     const f = await brokerFixture();
     const client = new BrokerClient(f.socket, 'c'.repeat(32), { requestMs: 2000 });

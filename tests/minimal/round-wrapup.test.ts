@@ -178,6 +178,24 @@ describe('Round wrap-up and classified stop (P18.3/D47)',()=>{
       expect(await eventRows(h,'planner.round-nudge')).toEqual([]);
     });
   });
+  it('blocks an injected authoring verb and an untracked worker brief while the round wraps',async()=>{
+    // S1/A8 (planning_update.md F-07): the closing loadout is the contract of a wrapping round, so the defense-in-depth
+    // tool gate must read it too, and a brief to a live worker is new untracked work rather than write-back.
+    await fixture(async h=>{
+      await handOff(h);
+      await until(()=>h.pi.sessions.length===1);
+      await h.emit('agent_start');
+      await steps(h,34);
+      await contextTurn(h);
+      expect(h.pi.active).toEqual(closingTools());
+      const gate=async(toolName:string)=>{let result:any;for(const handler of h.pi.events.get('tool_call')??[])result=(await handler({toolName},h.ctx.ctx))??result;return result;};
+      expect(await gate('p2o_task_author')).toMatchObject({block:true});
+      expect(await gate('p2o_task_dispatch')).toMatchObject({block:true});
+      expect(await gate('p2o_plan_author')).toBeUndefined();
+      // The wrap refusal is decided before any worker lookup, so a live ticket is not needed to prove it.
+      await expect(h.call('p2o_workers',{action:'continue',workerId:'p2o-recon-aaaaaa',brief:'one more narrow look at the same ticket'})).rejects.toThrow(/wrapping up/);
+    });
+  });
   it('leaves an unbounded round open when the step axis is disabled',async()=>{
     await fixture(async h=>{
       await handOff(h);

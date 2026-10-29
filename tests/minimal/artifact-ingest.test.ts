@@ -163,6 +163,25 @@ describe('capture → graph rows without model authoring (R2.3)', () => {
     expect(research.data).toMatchObject({ action: 'cve', enrichment: { kev: { status: 'ok' }, epss: { status: 'ok' } } });
   }, 60_000);
 
+  it('keeps componentRef on the worker research path instead of dropping it before the host', async () => {
+    // S1/A7 (planning_update.md F-06): the schema and the description both promise that a package asset can supply the CVE
+    // query, but the worker payload omitted componentRef, so the host refused a legal identity. The worker call travels the
+    // same broker request the live worker uses.
+    const h = await scenario(cleanup);
+    h.capture(lockfile);
+    await h.shell('cat /work/package-lock.json');
+    const lodash = ((await h.call('p2o_graph', { action: 'query', kind: 'package' })).details as any).rows.find((row: any) => row.key === 'npm:lodash@4.17.21');
+    boundedFetch.fn.mockImplementation(async (url: string) => {
+      const body = url.includes('services.nvd.nist.gov') ? nvdBody : url.includes('cisa.gov') ? kevBody : epssBody;
+      return { status: 200, body, sha256: sha256Hex(body), bytes: Buffer.byteLength(body), contentType: 'application/json', finalUrl: url, truncated: false };
+    });
+    const result = (await h.call('p2o_research', { action: 'cve', componentRef: lodash.entityId }, 'worker')).details as any;
+    expect(result.query).toMatchObject({ product: 'lodash', version: '4.17.21' });
+    expect(result.leads).toHaveLength(1);
+    expect(result.leads[0]).toMatchObject({ cve: 'CVE-2024-9999', versionMatch: 'in-range' });
+    expect(result.assets).toEqual([expect.objectContaining({ id: lodash.entityId })]);
+  }, 60_000);
+
   it('keeps the exploitability context unknown when the public feeds cannot be read', async () => {
     const h = await scenario(cleanup);
     h.capture(lockfile);
