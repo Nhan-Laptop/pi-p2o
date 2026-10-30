@@ -15,6 +15,9 @@ export interface ChainClaim extends ClaimFields {
   surface?: string; risk?: string;
   /** Ledger record id of the candidate head; the identity `CaseFinding.chain.steps[].claimRef` cites (P13a). */
   recordId?: string;
+  /** Every ledger record id this claim slug was recorded under, oldest first. A plan row may cite a superseded row, and the
+   *  citation still names the same claim: readiness and the chain brief resolve through this identity, not only the head id. */
+  recordIds?: readonly string[];
 }
 export interface ChainPath {
   claimId: string; depth: number; path: string[];
@@ -150,16 +153,20 @@ export function fitChainPage<T extends BoundedChainPage>(page: T, budget = GRAPH
  * One reader for the situation counts, the graph view, the plan board and the dispatch obligation, so those four cannot drift.
  */
 export function claimHeadClaims(index: LedgerIndex, runId?: string): Array<ChainClaim & { closure: string }> {
-  const heads = new Map<string, Record<string, unknown>>(), ids = new Map<string, string>();
+  const heads = new Map<string, Record<string, unknown>>(), ids = new Map<string, string>(), history = new Map<string, string[]>();
   for (const row of index.records) {
     // The ledger file is already run-scoped; a caller that holds the run id filters anyway, so a detached index cannot mix runs.
     if (row.kind !== 'candidate' || (runId !== undefined && row.runId !== runId) || typeof row.data?.candidate !== 'string') continue;
     heads.set(row.data.candidate, row.data as Record<string, unknown>);
-    if (row.id) ids.set(row.data.candidate, row.id);
+    if (row.id) {
+      ids.set(row.data.candidate, row.id);
+      const seen = history.get(row.data.candidate) ?? []; if (!seen.includes(row.id)) seen.push(row.id);
+      history.set(row.data.candidate, seen);
+    }
   }
   const text = (value: unknown) => typeof value === 'string' ? value : undefined;
   return [...heads.values()].map(data => ({ candidate: String(data.candidate), closure: text(data.closure) ?? '', execution: text(data.execution),
     ...(text(data.surface) ? { surface: text(data.surface) } : {}), ...(text(data.risk) ? { risk: text(data.risk) } : {}),
     ...claimCapabilities(data as ClaimFields), ...(data.environmentRef === undefined ? {} : { environmentRef: data.environmentRef }),
-    recordId: ids.get(String(data.candidate)) }));
+    recordId: ids.get(String(data.candidate)), recordIds: history.get(String(data.candidate)) ?? [] }));
 }

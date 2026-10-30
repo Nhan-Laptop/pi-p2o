@@ -399,8 +399,8 @@ function exploitBriefBlock(facts: ExploitBriefFacts): string[] {
     '== End of exploit context ==',
   ];
 }
-export function workerBrief(input: { ticket: Ticket; focus: string; task: string; context?: string; skills?: Array<{ name: string; body: string }>; workflow?: BriefWorkflow; contract?: BriefContract; constraints?: readonly string[]; hints?: readonly string[]; objective?: string; permissions?: readonly string[]; slice?: readonly string[]; exploit?: ExploitBriefFacts }): string {
-  const { ticket, focus, task, context, skills, workflow, contract, constraints, hints, objective, permissions, slice, exploit } = input;
+export function workerBrief(input: { ticket: Ticket; focus: string; task: string; context?: string; skills?: Array<{ name: string; body: string }>; workflow?: BriefWorkflow; contract?: BriefContract; constraints?: readonly string[]; hints?: readonly string[]; objective?: string; permissions?: readonly string[]; slice?: readonly string[]; exploit?: ExploitBriefFacts; chain?: ChainBriefFacts }): string {
+  const { ticket, focus, task, context, skills, workflow, contract, constraints, hints, objective, permissions, slice, exploit, chain } = input;
   return [
     `[p2o worker ${ticket.workerId} · role ${ticket.role} · depth ${ticket.depth} · run ${ticket.runId}]`,
     `You are ${ticket.workerId}; the assessment lead is your parent. Finish with p2o_report and an honest confidence.`,
@@ -417,7 +417,7 @@ export function workerBrief(input: { ticket: Ticket; focus: string; task: string
     context?.trim() ? context.trim() : '(none supplied)',
     '== End of inherited context ==',
     ...(slice?.length ? ['', '== Graph context from this run (recorded state, background, never a finding) ==', ...slice, '== End of graph context =='] : []),
-    ...(exploit ? exploitBriefBlock(exploit) : []),
+    ...(exploit ? exploitBriefBlock(exploit) : chain ? ['', '== CHAIN CONTEXT (the link this attempt belongs to; derived from the run records, never a finding) ==', ...chainBriefLines(chain), '== End of chain context =='] : []),
     ...(skills?.length ? [
       '',
       '== Given skills (already loaded for you; follow them) ==',

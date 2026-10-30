@@ -61,6 +61,29 @@ describe('EXPLOIT CONTEXT brief block (A17.3)', () => {
     expect(withFacts).toContain('== EXPLOIT CONTEXT');
   });
 
+  it('carries the three chain lines for a chain-owned task dispatched under a non-exploit purpose (P23/C2-fix-2)', () => {
+    // Measured on run-38e983c0: the successor was authored as a discovery task, so the exploit-only gate dropped the chain block
+    // even though the plan board owned the task. The chain is record-derived, so the three lines travel with the task anyway.
+    const chain: ChainBriefFacts = { chainOf: 'cms-forwarder-chain', step: 2, total: 2, state: 'ready', path: '1. Primitive (done) | 2. Successor (this attempt)', nextLink: 'not recorded; this is the last recorded step' };
+    const brief = workerBrief({ ticket: ticket('discovery'), focus: 'residual vectors', task: 'Probe the forwarder', chain });
+    expect(brief).toContain('== CHAIN CONTEXT (the link this attempt belongs to; derived from the run records, never a finding) ==');
+    expect(brief).toContain('CHAIN: cms-forwarder-chain step 2/2 (ready)');
+    expect(brief).toContain('CHAIN PATH: 1. Primitive (done) | 2. Successor (this attempt)');
+    expect(brief).toContain('NEXT LINK: not recorded; this is the last recorded step');
+    expect(brief).toContain('== End of chain context ==');
+    // The full grey-box handoff still belongs to exploitation/chaining briefs only.
+    expect(brief).not.toContain('EXPLOIT CONTEXT');
+    const block = brief.slice(brief.indexOf('== CHAIN CONTEXT'), brief.indexOf('== End of chain context =='));
+    expect(block.length).toBeLessThanOrEqual(720);
+  });
+
+  it('does not duplicate the chain lines when the exploit appendix already carries them', () => {
+    const chain: ChainBriefFacts = { chainOf: 'chain-x', step: 1, total: 1, state: 'ready', path: '1. Step (this attempt)' };
+    const brief = workerBrief({ ticket: ticket('exploitation'), focus: 'f', task: 't', exploit: facts({ chain }), chain });
+    expect(brief.match(/CHAIN PATH:/g)).toHaveLength(1);
+    expect(brief).not.toContain('== CHAIN CONTEXT');
+  });
+
   it('keeps the non-exploit brief inside the recorded ceiling while the exploit appendix is bounded', () => {
     const plain = workerBrief({ ticket: ticket('recon'), focus: 'surface-recon', task: 'Map authorized inputs', context: 'No previous work' });
     expect(plain.length).toBeLessThanOrEqual(1_650);

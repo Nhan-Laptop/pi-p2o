@@ -23,7 +23,7 @@ import { ExploitabilityLookup, type Exploitability } from '../../src/exploitabil
 import { routeMonoculture } from '../../src/routes.js';
 import { completionDemand, completionLine, deriveCompletion, type Completion } from '../../src/completion.js';
 import { chainBoard, chainLines } from '../../src/chain-board.js';
-import { chainBriefFor } from '../../src/chain-brief.js';
+import { chainBriefFor, type ChainBriefFacts } from '../../src/chain-brief.js';
 import { projectCaseChains } from '../../src/case-chain-view.js';
 import { chainObligations } from '../../src/obligations.js';
 import { graphSliceLines, type SliceAssetRow, type SliceFactRow } from '../../src/graph-slice.js';
@@ -504,13 +504,18 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
   async function candidateClaims(current: OwnerRun): Promise<Array<ChainClaim & { closure: string; assetRefs: Array<{ id: string; revision?: number }> }>> {
     const index = await readLedger(current.records, current.runId), heads = new Map<string, Record<string, unknown>>();
     for (const row of index.records) if (row.kind === 'candidate' && typeof row.data?.candidate === 'string') heads.set(row.data.candidate, row.data as Record<string, unknown>);
-    const text = (value: unknown) => typeof value === 'string' ? value : undefined, ids = new Map<string, string>();
-    for (const row of index.records) if (row.kind === 'candidate' && typeof row.data?.candidate === 'string' && row.id) ids.set(row.data.candidate, row.id);
-    // Both identities travel together: the join keys on the slug, a rating cites the record id (P13a).
+    const text = (value: unknown) => typeof value === 'string' ? value : undefined, ids = new Map<string, string>(), history = new Map<string, string[]>();
+    for (const row of index.records) if (row.kind === 'candidate' && typeof row.data?.candidate === 'string' && row.id) {
+      ids.set(row.data.candidate, row.id);
+      const seen = history.get(row.data.candidate) ?? []; if (!seen.includes(row.id)) seen.push(row.id);
+      history.set(row.data.candidate, seen);
+    }
+    // Both identities travel together: the join keys on the slug, a rating cites the record id (P13a). Every record id the slug
+    // was recorded under travels too (P23/C2-fix-1): a plan row may cite an earlier record of the same claim.
     return [...heads.values()].map(data => ({ candidate: String(data.candidate), closure: text(data.closure) ?? '', execution: text(data.execution),
       ...(text(data.surface) ? { surface: text(data.surface) } : {}), ...(text(data.risk) ? { risk: text(data.risk) } : {}),
       ...claimCapabilities(data as ClaimFields), ...(data.environmentRef === undefined ? {} : { environmentRef: data.environmentRef }),
-      assetRefs: claimAssetRefs(data as ClaimFields), recordId: ids.get(String(data.candidate)) }));
+      assetRefs: claimAssetRefs(data as ClaimFields), recordId: ids.get(String(data.candidate)), recordIds: history.get(String(data.candidate)) ?? [] }));
   }
   /**
    * P14.10: turn the frontier into the next owner decision, never into a dispatch. It returns the exact `p2o_task_author` argument for the
@@ -1121,10 +1126,11 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
       const slice = await graphSlice(current, objective.surface ?? input.focus);
       // A17.3/D34: the grey-box handoff travels with a chain successor only; every other brief is unchanged.
       const exploit = ticketPurpose === 'exploitation' || ticketPurpose === 'chaining' ? await exploitBriefFacts(current, objective, slice) : undefined;
+      const chain = exploit ? undefined : await chainBriefFacts(current, objective);
       await herdr.prompt({ name: workerId, text: workerBrief({ ticket, focus: input.focus, task: assigned?.question ?? input.task, context: input.context, skills: skillDocs, workflow: method.workflow,
         contract: briefContract(assigned), constraints: [...(current.avoid ?? []), ...steering.constraints], hints: steering.hints, objective: current.statedObjective,
         permissions: current.campaign?.constraints.filter(entry => entry.rule === 'allow').map(entry => entry.text),
-        slice, ...(exploit ? { exploit } : {}) }) });
+        slice, ...(exploit ? { exploit } : {}), ...(chain ? { chain } : {}) }) });
       // A fresh pane can still read "idle" while the brief is being submitted, so liveness is decided by
       // reports, never by that transient status. Wait briefly only to report a worker that never starts.
       const startDeadline = now() + 15_000;
@@ -1539,6 +1545,20 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
     // task the block stays exactly as A17.3 wrote it, so a non-chain exploitation brief is unchanged.
     const chain = chainBriefFor({ plans: planFrontier(index), claims, task: objective });
     return { primitive, ...(chain ? { chain } : {}), targetFacts: slice.slice(0, 5), knownControls, needs, handles, expectedObservation: objective.expectedTrue ?? '', stopCondition: objective.stopCondition ?? '' };
+  }
+
+  /**
+   * P23/C2-fix-2 (measured on run-38e983c0): the A17.3 grey-box block was gated on the ticket purpose, so a chain successor the
+   * planner authored as a discovery task reached the worker with no chain context even though the plan board named it. Chain
+   * identity is derived from the same records as the board, so a task the board owns gets the three lines regardless of purpose;
+   * the full exploit block still belongs to exploitation/chaining briefs only.
+   */
+  async function chainBriefFacts(current: OwnerRun, objective: AssessmentTask): Promise<ChainBriefFacts | undefined> {
+    if (!((objective.work as { claimRefs?: unknown } | undefined)?.claimRefs)) return undefined;
+    try {
+      const index = await readLedger(current.records, current.runId);
+      return chainBriefFor({ plans: planFrontier(index), claims: claimHeadClaims(index, current.runId), task: objective });
+    } catch { return undefined; } // A failed read drops the appendix; it never blocks a dispatch.
   }
 
   /** A7.5: the holds a finish/stop would force-release, captured before cleanup clears them. */

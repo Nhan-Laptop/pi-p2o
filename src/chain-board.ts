@@ -79,7 +79,10 @@ export function chainBoard(plans: readonly PlanEntry[], claims: readonly ChainCl
   const gained = new Map<string, Capability[]>();
   for (const claim of claims) {
     if (!claim.recordId || !isDemonstrated(claim)) continue;
-    gained.set(claim.recordId, claimCapabilities(claim).gained.filter(isTypedCapability));
+    const caps = claimCapabilities(claim).gained.filter(isTypedCapability);
+    // P23/C2-fix-1: a plan row may cite an earlier record of the same claim; the demonstrated primitive is the claim, not one
+    // record id, so every id the slug was recorded under resolves to the same gained capabilities.
+    for (const ref of claim.recordIds ?? [claim.recordId]) gained.set(ref, caps);
   }
   const progress: ChainProgress[] = [];
   for (const [chainOf, rows] of [...chainRows(plans)].sort(([left], [right]) => left.localeCompare(right))) {

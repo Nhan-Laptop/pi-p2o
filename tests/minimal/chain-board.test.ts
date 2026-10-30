@@ -25,6 +25,19 @@ const READ = { kind: 'http.request', subject: 'internal-api' } as const;
 const ADMIN = { kind: 'cred.session', subject: 'internal-api' } as const;
 
 describe('chain board: readiness is derived from earlier steps (M1)', () => {
+  it('resolves a plan row that cites a superseded record of a demonstrated claim (P23/C2-fix-1)', () => {
+    // Measured on run-38e983c0: the planner authored the chain link citing `0dda6d86`, then the worker re-recorded the same claim
+    // slug as `4cb7cc43`. The plan row stays the same citation and the claim is still demonstrated, so readiness must not fall back
+    // to `waiting` because the recorded id moved.
+    const plans = [plan(1, { claimRefs: ['rec-old'], status: 'done' }), plan(2, { needs: [READ] })];
+    const claims = [claim('rec-new', { candidate: 'claim-slug', closure: 'confirmed', execution: 'tested', gained: [READ], recordIds: ['rec-old', 'rec-new'] } as Partial<ChainClaim>)];
+    const board = chainBoard(plans, claims);
+    expect(board[0]!.steps.map(step => step.state)).toEqual(['done', 'ready']);
+    // The provenance still names the citation the plan row made; readiness resolves it through the claim identity.
+    expect(Object.values(board[0]!.steps[1]!.satisfiedBy)).toEqual(['rec-old']);
+    expect(board[0]!.steps[1]!.waitingOn).toEqual([]);
+  });
+
   it('calls a step with no needs ready, and a step whose needs nothing gains yet waiting', () => {
     const board = chainBoard([plan(1), plan(2, { needs: [READ] })], [claim('rec-claim-1'), claim('rec-claim-2')]);
     expect(board).toHaveLength(1);

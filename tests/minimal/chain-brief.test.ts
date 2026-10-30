@@ -37,6 +37,23 @@ describe('chain brief: which link this attempt is (P22/A2)', () => {
     expect(facts!.nextLink).toBe('3. Chain step 3 consumes cred.session (internal-api)');
   });
 
+  it('identifies the ready link when the plan row cites a superseded record of the claim the task cites (P23/C2-fix-1)', () => {
+    // Measured on run-38e983c0: link cites `0dda6d86`, task cites the current head `4cb7cc43` of the same claim slug. One claim,
+    // so the successor is still the step that consumes the primitive — otherwise the brief loses CHAIN/CHAIN PATH/NEXT LINK.
+    const plans = [plan(1, { claimRefs: ['rec-old'], status: 'done' }), plan(2, { needs: [READ] }), plan(3, { needs: [ADMIN] })];
+    const claims = [claim('rec-new', { candidate: 'claim-slug', closure: 'confirmed', execution: 'tested', gained: [READ], recordIds: ['rec-old', 'rec-new'] } as Partial<ChainClaim>)];
+    const facts = chainBriefFor({ plans, claims, task: task({ claimRefs: ['rec-new'] }) });
+    expect(facts).toMatchObject({ step: 2, state: 'ready' });
+    expect(facts!.path).toBe('1. Chain step 1 (done) | 2. Chain step 2 (this attempt) | 3. Chain step 3 (waiting)');
+  });
+
+  it('falls back to the step whose claim the task stands on through the same claim identity (P23/C2-fix-1)', () => {
+    const plans = [plan(1, { claimRefs: ['rec-old'], status: 'done' }), plan(2, { claimRefs: ['rec-new'] }), plan(3, { needs: [ADMIN] })];
+    const claims = [claim('rec-new', { candidate: 'claim-slug', closure: 'confirmed', execution: 'tested', gained: [READ], recordIds: ['rec-old', 'rec-new'] } as Partial<ChainClaim>)];
+    const facts = chainBriefFor({ plans, claims, task: task({ claimRefs: ['rec-new'] }) });
+    expect(facts).toMatchObject({ step: 2 });
+  });
+
   it('prefers the plan row that lists the task over any claim overlap', () => {
     const plans = [plan(1), plan(2, { needs: [READ], taskIds: ['task-1'] }), plan(3, { needs: [ADMIN] })];
     const claims = [demonstrated('rec-claim-1', [READ])];

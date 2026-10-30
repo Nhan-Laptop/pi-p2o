@@ -53,6 +53,11 @@ export function chainBriefFor(input: {
   const board = chainBoard(input.plans, input.claims);
   if (!board.length) return undefined;
   const cited = new Set(input.task.work?.claimRefs ?? []);
+  // P23/C2-fix-1 (measured on run-38e983c0): a task cites the claim head while the plan row it belongs to cites an earlier
+  // record of the same claim. That is one claim, not two, so both identities resolve through the slug the ledger recorded.
+  const slugOf = new Map<string, string>();
+  for (const claim of input.claims) for (const ref of claim.recordIds ?? (claim.recordId ? [claim.recordId] : [])) slugOf.set(ref, claim.candidate);
+  const cites = (ref: string): boolean => cited.has(ref) || (slugOf.has(ref) && [...cited].some(other => slugOf.get(other) === slugOf.get(ref)));
   const taskId = input.task.id;
   const planById = new Map(input.plans.map(plan => [plan.id, plan]));
   const steps = board.flatMap(chain => chain.steps);
@@ -60,9 +65,9 @@ export function chainBriefFor(input: {
   const linked = steps.filter(step => taskId !== undefined && (planById.get(step.planId)?.taskIds ?? []).includes(taskId));
   // 2. A ready step whose providers this task cites: the task is taking that step, whether or not the row lists it.
   const taking = steps.filter(step => step.state === 'ready' && step.needs.length > 0
-    && step.needs.every(need => { const provider = step.satisfiedBy[capabilityKey(need)]; return provider !== undefined && cited.has(provider); }));
+    && step.needs.every(need => { const provider = step.satisfiedBy[capabilityKey(need)]; return provider !== undefined && cites(provider); }));
   // 3. The step whose claim the task stands on: the last link whose claim is cited, so the next link is what it feeds.
-  const standing = steps.filter(step => step.claimRefs.some(ref => cited.has(ref)));
+  const standing = steps.filter(step => step.claimRefs.some(ref => cites(ref)));
   // A task that cites providers for two ready links is taking the lowest one: a chain advances one link at a time.
   const step = single(linked, 'high') ?? single(taking, 'low') ?? single(standing, 'high');
   if (!step) return undefined;
