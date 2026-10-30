@@ -173,6 +173,22 @@ self-provisioned registration, operator-sealed secrets; brute force, spraying an
 plus the acquisition paths tried as the fallback), and the planner prompt gains breadth, capability-needs and batch-dispatch
 guidance. Prompt-text ceilings were re-pinned for the planner (16,700, measured 16,193); declaration budgets did not move.
 
+## Chain-aware exploitation (P22/A)
+
+A chain link now branches as well as extends. `chainBoard` satisfies a step's `needs` from a confirmed+tested claim cited by
+an earlier step of the same chain (as before) or by the step itself (P22/A1), so a new `chainOf` may start from a primitive
+demonstrated elsewhere; the earlier-row provider keeps precedence, only a demonstrated claim counts, and a citation the run
+recorded is the only thing that links, so nothing is deduced from capability names. `chainObligations` surfaces the branch step
+with the same provider, and the `CHAIN_READY_UNDISPATCHED` refusal names it, so a branch is dispatched like any other link.
+
+The exploitation handoff names the link, not only the primitive (P22/A2): an exploitation or chaining brief's `EXPLOIT
+CONTEXT` block gains `CHAIN` (id, step/total, derived state), `CHAIN PATH` (a window of one link either side of this attempt,
+the attempt marked and clipped ends as an ellipsis) and `NEXT LINK` (the nearest recorded successor and the typed capabilities
+it consumes). The facts are derived at dispatch time from the plan board and the claim heads; the step is identified from the
+plan row that lists the task, the ready step whose providers the task cites, or the step whose claim the task cites, and an
+ambiguous identity omits the lines rather than guessing. The block stays inside its 1,200-character bound, the non-chain brief
+is unchanged, and none of the lines can satisfy a claim, case, coverage cell or goal.
+
 ## Persistence and teardown
 
 - Canonical state is one SQLite file per run (`node:sqlite`, schema 7): records, events, outbox and request results commit

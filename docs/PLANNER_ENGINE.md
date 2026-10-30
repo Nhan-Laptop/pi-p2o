@@ -46,6 +46,12 @@ workflow's `steps/observe/wall` when it has a recipe (P20/B3). The brief also st
 executors and claim/note authors; reporting is read-only) instead of depending on the model opening `HANDOFFS.md`, and the
 worker prompt states the write-back contract once: an asset first because a fact row needs its ID, every assertion carries the
 evidence refs that support it, and the exits are a claim closure or a note whose text starts with `no-new` (P20/B1/B2/B4).
+An exploitation or chaining ticket also carries the chain link its task stands on (P22/A2): `CHAIN` names the chain id, the
+step position and the derived state, `CHAIN PATH` shows one link either side of this attempt with the attempt marked and
+clipped ends as an ellipsis, and `NEXT LINK` names the nearest recorded successor and the typed capabilities it consumes. The
+facts are derived at dispatch time from the plan board and claim heads; a task whose chain identity is absent or ambiguous gets
+no chain lines instead of a guessed one, the block stays within its 1,200-character bound, and nothing in it can satisfy a
+claim, case, cell or goal.
 
 ## Tasks are intents
 
@@ -125,7 +131,11 @@ An exploitation chain lives on the plan board: each step is a todo with `chainOf
 `claimRefs` (the claims it stands on), `needs` (typed capabilities it consumes) and an optional `environmentRef`.
 `p2o_graph_plan {action:"chain", plan:true}` writes exactly those rows (done steps as `done`, the next as `open`) and returns
 the `entry` for the deepest ready step. Readiness is derived, not stored: a step is ready when every `needs` capability is gained
-by a confirmed+tested claim that an earlier step of the same chain cites. `p2o_board board=plans` prints one line per chain:
+by a confirmed+tested claim that an earlier step of the same chain cites, or — P22/A1 — by a confirmed+tested claim the step
+itself cites in its `claimRefs`. The second rule is how a chain branches: a new `chainOf` may start from a primitive demonstrated
+elsewhere by citing it, so an attack path is a tree of chains rather than one line. An earlier-row provider keeps precedence
+when both exist, only a demonstrated claim counts, and no citation means no readiness — nothing is deduced from capability
+names or a surface. `p2o_board board=plans` prints one line per chain:
 
 ```text
 chain <id> 2/4 · next: step 3 (ready) · waiting on: http.request (internal-api)

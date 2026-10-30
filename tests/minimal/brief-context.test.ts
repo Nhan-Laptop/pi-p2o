@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { workerBrief, type BriefContract, type ExploitBriefFacts } from '../../src/prompts.js';
+import type { ChainBriefFacts } from '../../src/chain-brief.js';
 import type { Ticket } from '../../src/ticket.js';
 
 /**
@@ -66,6 +67,34 @@ describe('EXPLOIT CONTEXT brief block (A17.3)', () => {
     const exploit = workerBrief({ ticket: ticket('exploitation'), focus: 'cross-tenant-read', task: 'Read one foreign order', exploit: facts() });
     // 1,650 (the pinned recon ceiling) + 1,200 (the block bound) is the hard bound for the longest brief this pass can produce.
     expect(exploit.length).toBeLessThanOrEqual(2_850);
+  });
+
+  const chain: ChainBriefFacts = {
+    chainOf: 'chain-abc123', step: 2, total: 3, state: 'ready',
+    path: '1. demo-login (done) | 2. idor-order (this attempt) | 3. foreign-read (waiting)',
+    nextLink: '3. foreign-read consumes http.request (internal-api)',
+  };
+
+  it('names the chain link and the next link this attempt feeds, as one bounded appendix (P22/A2)', () => {
+    const brief = workerBrief({ ticket: ticket('exploitation'), focus: 'cross-tenant-read', task: 'Read one foreign order', exploit: facts({ chain }) });
+    expect(brief).toContain('CHAIN: chain-abc123 step 2/3 (ready)');
+    expect(brief).toContain('CHAIN PATH: 1. demo-login (done) | 2. idor-order (this attempt) | 3. foreign-read (waiting)');
+    expect(brief).toContain('NEXT LINK: 3. foreign-read consumes http.request (internal-api)');
+    // The link belongs to the handoff, next to the primitive it stands on, and before the surface facts it acts on.
+    expect(brief.indexOf('PRIMITIVE:')).toBeLessThan(brief.indexOf('CHAIN:'));
+    expect(brief.indexOf('CHAIN:')).toBeLessThan(brief.indexOf('TARGET FACTS:'));
+    expect(brief.indexOf('NEXT LINK:')).toBeLessThan(brief.indexOf('== End of exploit context =='));
+    // Adding the link must not turn the appendix into a second task description.
+    const block = brief.slice(brief.indexOf('== EXPLOIT CONTEXT'), brief.indexOf('== End of exploit context =='));
+    expect(block.length).toBeLessThanOrEqual(1_200);
+  });
+
+  it('says the last step has no recorded successor and stays absent when no chain was derived', () => {
+    const last = workerBrief({ ticket: ticket('chaining'), focus: 'f', task: 't',
+      exploit: facts({ chain: { ...chain, step: 3, total: 3, nextLink: undefined, path: '2. idor-order (done) | 3. foreign-read (this attempt)' } }) });
+    expect(last).toContain('NEXT LINK: not recorded; this is the last recorded step');
+    const plain = workerBrief({ ticket: ticket('exploitation'), focus: 'f', task: 't', exploit: facts() });
+    expect(plain).not.toContain('CHAIN:');
   });
 });
 

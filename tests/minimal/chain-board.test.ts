@@ -77,6 +77,46 @@ describe('chain board: readiness is derived from earlier steps (M1)', () => {
   });
 });
 
+describe('chain board: a link may stand on a demonstrated claim it cites itself (P22/A1)', () => {
+  it('is ready when the attempt cites a demonstrated provider no earlier row supplies', () => {
+    const external = demonstrated('rec-external', [READ]);
+    const board = chainBoard([plan(1, { chainOf: 'chain-branch', claimRefs: ['rec-external', 'rec-claim-1'], needs: [READ] })], [external, claim('rec-claim-1')]);
+    expect(board[0]!.steps[0]).toMatchObject({ state: 'ready', satisfiedBy: { 'http.request\u0000internal-api\u0000': 'rec-external' } });
+    // A branch chain is a chain like any other: the line names the ready step and no waiting need.
+    expect(board[0]!.line).toBe('chain chain-branch 0/1 · next: step 1 (ready)');
+  });
+
+  it('stays waiting when the cited claim is not demonstrated: citation alone is not a provider', () => {
+    const board = chainBoard([plan(1, { chainOf: 'chain-branch', claimRefs: ['rec-external', 'rec-claim-1'], needs: [READ] })],
+      [claim('rec-external', { gained: [READ] } as Partial<ChainClaim>), claim('rec-claim-1')]);
+    expect(board[0]!.steps[0]).toMatchObject({ state: 'waiting', waitingOn: [READ], satisfiedBy: {} });
+  });
+
+  it('keeps the earlier-row provider when both the earlier row and the step itself cite one', () => {
+    const board = chainBoard([plan(1), plan(2, { needs: [READ], claimRefs: ['rec-external', 'rec-claim-2'] })],
+      [demonstrated('rec-claim-1', [READ]), demonstrated('rec-external', [READ])]);
+    // Provenance stays the closest link of this chain, not the step's own citation: the ordinary chain's reading does not move.
+    expect(board[0]!.steps[1]!.satisfiedBy).toEqual({ 'http.request\u0000internal-api\u0000': 'rec-claim-1' });
+  });
+
+  it('makes a branch chain ready from a primitive another chain demonstrated (P22/A1)', async () => fixture(async h => {
+    await h.command('--target ./source');
+    const observation = (await h.call('p2o_shell', { command: 'printf chain-branch-observation' })).details;
+    const record = (candidate: string, extra: Record<string, unknown> = {}) => seedClaim(h, {
+      candidate, surface: '/report-fixture', risk: 'authorization', closure: 'open_proof_gap', execution: 'not_tested', proof: 'static_trace',
+      negativeControls: [], policyBasis: 'inferred', expectedPolicy: 'Declared fixture actor/object boundary', limitations: 'Nothing executed in this step yet',
+      evidenceRefs: [observation.evidenceId], ...extra });
+    const primitive = await record('branch-primitive', { closure: 'confirmed', execution: 'tested', proof: 'live_reproduction', policyBasis: 'boundary_invariant', gained: [READ] });
+    const next = await record('branch-next', { needs: [READ] });
+    // The origin chain demonstrated the primitive; the branch is a new chain whose first link consumes it and cites it.
+    await h.call('p2o_goal_author', {entry: { kind: 'todo', title: 'Origin primitive', status: 'done', reason: 'Demonstrated primitive of the origin chain', chainOf: 'chain-origin', step: 1, claimRefs: [primitive.id] } });
+    await h.call('p2o_goal_author', {entry: { kind: 'todo', title: 'Branch link', status: 'open', reason: 'Branch that reuses the demonstrated primitive instead of extending the origin chain', chainOf: 'chain-branch', step: 1, claimRefs: [primitive.id, next.id], needs: [READ] } });
+    const board = (await h.call('p2o_board', { board: 'plans', kind: 'todo', limit: 20 })).details;
+    expect(board.chains).toContain('chain chain-branch 0/1 · next: step 1 (ready)');
+    expect(board.chains).toContain('chain chain-origin 1/1 · settled');
+  }));
+});
+
 describe('chain plan rows: one lineage, one position (M1)', () => {
   it('refuses a chain row with no lineage and a half-declared position', async () => fixture(async h => {
     await h.command('--target ./source');

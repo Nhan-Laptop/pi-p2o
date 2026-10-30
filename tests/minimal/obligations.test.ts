@@ -44,6 +44,16 @@ describe('dispatch obligations are derived, per surface (M2 + M4)', () => {
     expect(dispatchRefusal({ draft: draft('/y') as unknown as TaskDraft, obligations, plans })).toBeUndefined();
   });
 
+  it('surfaces a ready branch step whose provider the step itself cites (P22/A1)', () => {
+    const plans = [todo({ id: 'todo-branch', step: 1, chainOf: 'chain-branch', claimRefs: ['rec-primitive', 'rec-next'], needs: [READ] })];
+    const claims = [demonstrated('rec-primitive'), claim('rec-next')];
+    const obligations = chainObligations({ plans, claims, tasks: [] });
+    expect(obligations.ready).toEqual([expect.objectContaining({ chainOf: 'chain-branch', step: 1, provider: 'rec-primitive', need: READ, surface: '/x' })]);
+    // The refusal names the same provider the board named, so "cite it as a parent" is the legal next step on the branch.
+    expect(dispatchRefusal({ draft: draft('/x') as unknown as TaskDraft, obligations, plans }))
+      .toBe('CHAIN_READY_UNDISPATCHED: step 1 of chain chain-branch consumes http.request (internal-api) that claim rec-primitive already gains; dispatch it, cite it as a parent, or defer it with a reason');
+  });
+
   it('accepts the breadth draft when a deferred row records why the link is not taken', () => {
     const plans = [todo({ id: 'todo-1', step: 1, chainOf: 'chain-m2', claimRefs: ['rec-primitive'] }), todo({ id: 'todo-2', step: 2, chainOf: 'chain-m2', claimRefs: ['rec-ready'], needs: [READ] })];
     const claims = [demonstrated('rec-primitive'), claim('rec-ready')];

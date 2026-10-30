@@ -23,6 +23,7 @@ import { ExploitabilityLookup, type Exploitability } from '../../src/exploitabil
 import { routeMonoculture } from '../../src/routes.js';
 import { completionDemand, completionLine, deriveCompletion, type Completion } from '../../src/completion.js';
 import { chainBoard, chainLines } from '../../src/chain-board.js';
+import { chainBriefFor } from '../../src/chain-brief.js';
 import { chainObligations } from '../../src/obligations.js';
 import { graphSliceLines, type SliceAssetRow, type SliceFactRow } from '../../src/graph-slice.js';
 import { writeBack, writeBackLine } from '../../src/write-back.js';
@@ -1513,7 +1514,10 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
       ...(current.identity ? [`${current.identity.secrets.length} operator-sealed secret id(s): p2o_secret action=list names ids and kinds, never a value`] : []),
       ...(ingress ? [`ingress path: ${ingress.callback ?? 'no callback address recorded'}${ingress.labNetwork ? ` on lab network ${ingress.labNetwork}` : ''}`] : []),
     ];
-    return { primitive, targetFacts: slice.slice(0, 5), knownControls, needs, handles, expectedObservation: objective.expectedTrue ?? '', stopCondition: objective.stopCondition ?? '' };
+    // P22/A2: the ordered link this attempt is. Derived from the same plan board the planner reads; when no chain owns the
+    // task the block stays exactly as A17.3 wrote it, so a non-chain exploitation brief is unchanged.
+    const chain = chainBriefFor({ plans: planFrontier(index), claims, task: objective });
+    return { primitive, ...(chain ? { chain } : {}), targetFacts: slice.slice(0, 5), knownControls, needs, handles, expectedObservation: objective.expectedTrue ?? '', stopCondition: objective.stopCondition ?? '' };
   }
 
   /** A7.5: the holds a finish/stop would force-release, captured before cleanup clears them. */

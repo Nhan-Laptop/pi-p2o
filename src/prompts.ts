@@ -5,6 +5,7 @@ import type { CaseEffect } from './cvss.js';
 import { WSTG_FEATURES } from './wstg-map.js';
 import { AUTHORIZATION_TRUTH, BROWSER_TRUTH, CREDENTIAL_TRUTH, HTTP_TRUTH, NETWORK_TRUTH, RISK_LABEL_TRUTH, SANDBOX_TRUTH } from './truth.js';
 import { situationLine, type SituationSnapshot } from './situation.js';
+import type { ChainBriefFacts } from './chain-brief.js';
 
 export const PLANNER_PROMPT_SECTION = 'p2o_assessment';
 
@@ -308,11 +309,14 @@ export function workerInstructions(ticket: Ticket): string {
  * A17.3/D34 (owner decision A2/A3 pass): the grey-box handoff a chain successor needs. Every field is derived from records the
  * run already holds; the renderer prints "not recorded" for an absent field instead of guessing, so a worker reports a gap in
  * the handoff rather than inventing the fact. The exploit block is rendered only when the dispatcher passes the facts
- * (exploitation/chaining tickets); every other brief is byte-identical to before.
+ * (exploitation/chaining tickets); every other brief is byte-identical to before. P22/A2 adds the chain link the attempt is
+ * (ordered path, next link): the block still carries one bounded appendix per ticket, never a second task description.
  */
 export interface ExploitBriefFacts {
   /** One sentence per cited primitive: closure/execution/proof and the typed gained/needs pair. */
   primitive: string;
+  /** P22/A2: the chain link this attempt is, derived from the plan board; omitted when no chain owns the task. */
+  chain?: ChainBriefFacts;
   /** Graph facts for this surface (revision, build, mitigations, unknowns), already labelled inference. */
   targetFacts: readonly string[];
   /** Controls and limitations the cited claims recorded. */
@@ -372,12 +376,19 @@ const recipeBlock = (workflow: BriefWorkflow): string[] => {
 const briefRole = (role: string): string => role === 'reporting'
   ? 'ROLE: reporting is a read-only second reader: it reads records another worker produced and authors no claim; the planner cannot execute and owns the assessment.'
   : 'ROLE: workers are the only executors and the only claim/note authors; the planner cannot execute and plans from what you record, so report what only you can observe.';
+/** P22/A2: the ordered link, not a second task description. Absent facts print "not recorded" like every other handoff field. */
+const chainBriefLines = (chain: ChainBriefFacts): string[] => [
+  `CHAIN: ${chain.chainOf} step ${chain.step}/${chain.total} (${chain.state})`,
+  `CHAIN PATH: ${notRecorded(chain.path)}`,
+  `NEXT LINK: ${notRecorded(chain.nextLink ?? 'not recorded; this is the last recorded step')}`,
+];
 function exploitBriefBlock(facts: ExploitBriefFacts): string[] {
   const listed = (values: readonly string[]): string => values.length ? values.join(' | ') : 'not recorded';
   return [
     '',
     '== EXPLOIT CONTEXT (grey-box handoff for this attempt; derived from the run records, never a finding) ==',
     `PRIMITIVE: ${notRecorded(facts.primitive)}`,
+    ...(facts.chain ? chainBriefLines(facts.chain) : []),
     `TARGET FACTS: ${listed(facts.targetFacts)}`,
     `KNOWN CONTROLS AND LIMITATIONS: ${listed(facts.knownControls)}`,
     `NEEDS FRONTIER: ${listed(facts.needs)}`,

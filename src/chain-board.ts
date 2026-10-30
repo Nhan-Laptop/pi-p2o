@@ -8,6 +8,11 @@
  *
  * Nothing here writes: readiness is a read over plans plus candidate heads, so closing a step is one plan revision and the
  * next view re-derives the frontier. A step with no `needs` is ready by definition: it is the primitive the chain starts from.
+ *
+ * P22/A1: a need may also be satisfied by a demonstrated claim the step cites in its own `claimRefs`, not only by one cited
+ * by an earlier row. That is how a chain branches: a link that consumes a primitive demonstrated elsewhere starts a new chain
+ * by citing it, so the attack path does not have to grow as one line. Earlier rows keep precedence, so the provenance of an
+ * ordinary chain is unchanged; the link is still a citation the run recorded, never a capability lookup.
  */
 import { capabilityKey, capabilityMatches, describeCapability, isTypedCapability, type Capability } from './capabilities.js';
 import { isDemonstrated } from './claims.js';
@@ -88,7 +93,11 @@ export function chainBoard(plans: readonly PlanEntry[], claims: readonly ChainCl
       for (const need of needs) {
         // First earlier step whose cited claim gains the need, so the provenance names the closest link rather than any link.
         const provider = earlier.find(other => (other.claimRefs ?? []).some(ref => (gained.get(ref) ?? []).some(have => capabilityMatches(need, have))));
-        const recordId = provider?.claimRefs?.find(ref => (gained.get(ref) ?? []).some(have => capabilityMatches(need, have)));
+        const earlierRecord = provider?.claimRefs?.find(ref => (gained.get(ref) ?? []).some(have => capabilityMatches(need, have)));
+        // P22/A1: a step that cites a demonstrated provider itself may stand on it, so a new chain can branch from a
+        // demonstrated primitive. Only the citation links: this never searches claims the row did not cite.
+        const ownRecord = (row.claimRefs ?? []).find(ref => (gained.get(ref) ?? []).some(have => capabilityMatches(need, have)));
+        const recordId = earlierRecord ?? ownRecord;
         if (recordId) satisfiedBy[capabilityKey(need)] = recordId;
         else waitingOn.push(need);
       }
