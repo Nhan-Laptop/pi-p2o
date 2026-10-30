@@ -1,433 +1,393 @@
-# P21 — From a measured run to red-team research depth: host-recorded evidence, findings that can land, and breadth that keeps going (plan of record, 2026-10-29)
+# P22 — A chain-aware exploitation layer: readiness that can branch, briefs that name the link, and an attack path the report shows (plan of record, 2026-10-30)
 
-Status: **planned, nothing implemented yet.** This file replaces the P19/P20 plan of record by owner instruction (2026-10-29).
-That plan, and the decisions D-P19-* / D-P20-* that shaped it, are preserved at `git show 2e22b5c:planning_update.md`; its
-delivered rows remain in [docs/HISTORY.md](docs/HISTORY.md) and [docs/ACCEPTANCE_MATRIX.md](docs/ACCEPTANCE_MATRIX.md). Where
-those pages cite `planning_update.md` §4/A, §4/B, §4/D, §R0, §R1, Part III/IV or an appendix, they describe that revision of the
-file, not this one.
+Status: **A2 implemented in the working tree (uncommitted); A1, A3, A4 and A5 planned.** This file replaces the P21 plan of
+record by owner instruction (2026-10-30). That plan, and the decisions D-P21-* that shaped it, are preserved at
+`git show 5763d46:planning_update.md`; its delivered rows remain in [docs/HISTORY.md](docs/HISTORY.md) and
+[docs/ACCEPTANCE_MATRIX.md](docs/ACCEPTANCE_MATRIX.md). Where those pages cite `planning_update.md` §4/A, §4/B, §4/D, §R0, §R1,
+Part III/IV or an appendix, they describe that revision of the file, not this one.
 
 Basis for this plan:
 
-- the live run `run-42c447d6-cb8a-4c65-85a7-6f4036014ef6` (2026-10-29 14:35–15:29 UTC, 54 minutes), durable store under
-  `~/tmp/cmp/.p2o-state/run-42c447d6-cb8a-4c65-85a7-6f4036014ef6` and report under
-  `~/tmp/cmp/.p2o-reports/report-run-42c447d6-cb8a-4c65-85a7-6f4036014ef6-final`;
-- the reference implementation ARTEX 0.3.15 at `~/tmp/ARTEX` (commit `e6ec569`, AGPL-3.0, read-only);
-- p2o at commit `2e22b5c`.
+- p2o at commit `5763d46`, where P21 A+B+C are delivered (161 test files / 1,434 tests / 13 skipped, 0 fail), and the P22/A2
+  working-tree change (+1 source module, +2 test files touched, +10 tests, full suite 162 files / 1,444 tests);
+- the ARTEX 0.3.15 snapshot at `my_references/ARTEX` (upstream commit `e6ec569`, AGPL-3.0, read-only, gitignored) and the
+  1,364-line analysis `my_references/ARTEX/ARTEX_AGENTIC_CORE.vi.md` (gitignored);
+- the owner's question of 2026-10-30 — ARTEX exposes an asset/vulns graph and "take attack chain từng phần"; does p2o's
+  exploitation optimize the chain built on its graph the same way? — and the owner's decision to take this plan's option A
+  (a chain-aware exploitation layer);
+- the owner's live-run authorization for `https://ise.uit.edu.vn/`, assess mode first, run and confirmed from the owner's own
+  TUI (A5). No target traffic has been sent yet.
 
-The run is a measurement, not a benchmark: it says what the machinery did in one hour against one host, not how effective
-pentesting is. Every claim below is a mechanism claim that a hermetic test can hold.
+**Measurement stance.** §0 is a code-and-test measurement, not a target measurement: no live run of this plan exists yet. The
+P21 run (`run-42c447d6-…`, 2026-10-29) measured evidence, policy and breadth behaviour; it did not exercise a chain-aware
+brief or a branching readiness rule, so its numbers are not reused here as effectiveness evidence.
 
-## 0. What the run measured
+## 0. What the analysis measured
 
-| Measure | Value |
+| Measure | Value (2026-10-30) |
 |---|---|
-| Wall time / planner rounds / tasks | 54 min / 7 / 7 (1 recon, 4 discovery, 2 validation) |
-| Target receipts | 98 (net 55, shell 25, http 15, capture 3) |
-| Graph | 87 assets (51 route, 32 endpoint, 3 service, 1 host), 197 assertions (168 observed, 24 hypothesis, 5 inferred), 93 anchors, **0 relations** |
-| Claims / cases / accepted findings | 13 / 2 / **0** (1 pending, 1 disputed; 13/13 "not replayable") |
-| Coverage | 1 plan (revision 1), 19 cells: 9 tested/open_gap, 10 planned/unreviewed |
-| Debt at finish | 48 obligations: GOAL_OPEN 2, SCOPE_UNPLANNED_ASSET 68, CELL_NOT_RUN 19, GAP_UNTRIAGED 45, WSTG_UNPLANNED 71, TASK_UNMAPPED 1 |
-| Model usage | 243 messages, 8.66 M tokens, $0.38 |
+| Chain representations in p2o | 4: plan-board rows (`chainOf`/`step`, `src/planning.ts:21-37`), the claim capability join (`src/chain-view.ts`), the case chain (`src/case-types.ts:21-40`), and the derived access ladder (`src/ladder.ts`) |
+| Readiness inputs | plan frontier + claim heads only (`src/chain-board.ts:72`); case chains and accepted findings never enter |
+| Readiness provider scope | claims cited by **earlier rows of the same chain** (`src/chain-board.ts:84-94`); a step's own `claimRefs` are not consulted |
+| Exploit brief (A17.3) | per-claim fields only: primitive, target facts, controls, needs, handles, expected observation, stop condition; measured base block 749 chars, rendered bound 1,200; brief bound 2,850 |
+| Plan-row vocabulary | 19 fields, none for the effect or rung a link is after (`src/planning.ts:21-37`) |
+| Case chain | a rating record: `CaseFinding.chain` validated at write (`src/case-types.ts:21-40,95`), read only by the ladder and the report (`src/ladder.ts:129-145`, `src/report-export.ts:198-200`) |
+| Report attack path | the ladder renders **the deepest chain only** (`src/report-export.ts:439-474`); other recorded chains appear only as remaining-work debt |
+| Chain authoring guidance | `CHAIN OR WALL` and the frontier lines only (`src/prompts.ts:181,189,191`); no authoring tactic and no effect target |
+| Baseline gates | tsc clean; `npm run build` + `check:build` green; surface audit 35 registered / 35 model-visible / 0 hidden / 10 board verbs, 0 contradictions, planner 44,705/45,500, worker 40,935/41,400, validation 40,124/40,500 |
+| A2 working-tree delta | `src/chain-brief.ts` (79 lines, new), `tests/minimal/chain-brief.test.ts` (8 tests), `src/prompts.ts` +12, `extensions/p2o/index.ts` +5, `tests/minimal/brief-context.test.ts` +29 lines (2 tests); 162 files / 1,444 tests / 13 skipped, 0 fail |
 
-Two validation workers **did reproduce** both confirmed claims from their own receipts (report texts `VALIDATION RESULT:
-REPRODUCED`; open items `7b7a626d`, `7f01c8af`, `d084614f`) and still ended with no independent claim, no covered cell and no
-accepted finding. That gap between what the run observed and what the ledger could record is what this plan closes.
+**What the run could not tell us.** No p2o run has yet been measured while the chain-aware brief exists, and no run has ever
+been measured on graph work that branches a new chain from an already demonstrated primitive. A5 is the measurement that
+closes that gap; until it lands, every statement here is a mechanism claim a hermetic test can hold.
 
 ## 1. How to read this plan
 
-- **A seam** is a place where the host could observe or derive a fact but today asks the model to assert it instead; an
-  unasserted item becomes a silent zero.
-- **Host-recorded** means the host stamps a fact at write or execution time (receipts, payload hashes, containment, policy
-  provenance); **derived** means computed on read and never stored as evidence.
-- Each package (A, B, C) is a set of tranches with their own tests and acceptance rows; the order is A → B → C
-  (D-P21-3). A tranche is not "done" until its matrix rows, HISTORY row and measured gates land with it.
+- **A seam** is a place where the host already owns the facts a worker needs (a plan chain, a demonstrated claim, a rated case
+  chain) but hands the worker a fragment and asks it to rebuild the rest.
+- **Derived** means computed on read from records the run owns (plan rows, claim heads, accepted cases) and never stored as a
+  second edge store or evidence; **host-recorded** keeps its P21 meaning (a fact stamped at write or execution time).
+- A **link** is one ordered chain step: the claim it stands on, the typed capabilities it consumes, the capability it hands on,
+  and (A4) the effect class it is after. A chain is a list of links plus the objective that names what the last one is for.
+- Each package row below is a tranche with its own tests and a row in §10's verification table. A tranche is not "done" until
+  its matrix rows (F-P22-*), HISTORY row and measured gates land with it (D-P22-9).
+- Nothing in this plan moves authority. Derived chain facts never satisfy a claim, case, coverage cell or goal; they only make
+  the work the records already describe visible to the model that must act on it (D-P22-2).
 
 ## 2. Diagnosis — six seams
 
-### 2.1 S1 — Evidence: replay is a model memory, so 13/13 claims are not replayable
+### 2.1 S1 — An accepted finding is an endpoint, not a new starting point
 
-A receipt is a bounded, redacted excerpt (`RECEIPT_INPUT_BYTES` 2000, stdout 16 KiB, stderr 4 KiB; `src/evidence.ts:67-96`).
-The replayable unit is a separate artifact the model must store itself with `p2o_lab` (`src/lab.ts`), and a claim is replayable
-only when it names both `payloadRef` and `environmentRef` (`src/claims.ts:91-94`). In the run, 3 claims stored a payload and
-**0 created an environment** — for HTTP-only claims the docker-compose-style environment recipe has no meaning — so every claim
-reported "not replayable" and no validation could be byte-exact.
+Accepted cases feed counters, priority and goal proof, and nothing else: `summarizeSituation` counts accepted findings and
+scores their assets (`src/situation.ts:123,141`), `src/priority.ts:35` gives an asset with an accepted finding +10 (a suggestion
+the lead may override), `src/goal-proof.ts:42` accepts a case as a goal proof. The three planning readers take only `plans`,
+`claims` and `tasks`
+(`chainObligations` signature, `src/obligations.ts:63`; `chainBoard`, `src/chain-board.ts:72`; `chainJoin`, `src/chain-view.ts`).
+So the run can rate a chain, print it in the report, and then plan as if that chain did not exist: no chain view names it, no
+successor obligation is derived from it, and the planner re-derives the same fact from raw claims at best. The case chain is a
+rating record with typed links already on disk; it is simply not projected into the planning read side.
 
-### 2.2 S2 — Validation: the write-back cannot be expressed, and the host picks the wrong claim
+### 2.2 S2 — A chain link cannot stand on a demonstrated claim it cites itself
 
-Validation workers tried six times to record the reproduction and were refused by bookkeeping:
+Readiness looks for each declared need only among claims cited by **earlier rows of the same chain**
+(`src/chain-board.ts:84-94`): `earlier.flatMap(other => other.claimRefs…)`. A row that cites a demonstrated provider in its own
+`claimRefs` still waits forever, and `chainPlan` writes every row with only its own claim cited
+(`extensions/p2o/index.ts:531-541`), so the shape cannot even be produced by the host draft. The consequence is that attack
+paths cannot branch: once a primitive is demonstrated, a second chain (or a second branch of the same attack tree) that starts
+from that primitive is unrepresentable, and the planner's only legal move is to extend the original chain. ARTEX's equivalent
+(a finding that spawns a new intent) is a fresh exploration node (`db/exploration.go:1136-1180`); p2o has the demonstrated claim
+and the citation vocabulary, but its readiness rule refuses to look at them.
 
-- `independentEvidenceRef` must also be listed in `evidenceRefs`; the refusal says "needs a cited receipt from a different
-  worker" even when the real missing piece is the citation (`src/evidence.ts:161-163`).
-- the host then looks for the *latest* claim by that author citing the receipt (`src/evidence.ts:165-166`, `.at(-1)`); when one
-  author cites the same receipt from two claims (the OpenAPI claim `b64350ae` and the admin-API claim `d3f20083` both cited
-  `8c41e41e`), the wrong claim is compared and surface/risk mismatch refuses a correct replay.
-- `resolves` takes open-item IDs; passing a claim ID answers "Unknown open-item ID" with no legal next step.
-- the same actor may not validate its own claim, and the host requires an independent path to be recorded as a peer claim or a
-  reviewed validation task; the peer-claim field exists, but the run's workers could not reach it.
+### 2.3 S3 — The exploit brief hands over a primitive, not a link
 
-Open items: `7f01c8af` (six refusals), `d084614f` (three attempts, named legal next), `7b7a626d` (reproduced but unrecorded).
-Result: two reviewed validation tasks with own receipts and **no claim**, so the host keeps their cells "planned/unreviewed"
-(`src/coverage.ts:93`) and case independence never completes.
+A17.3's block carries the cited claims, the surface facts, the controls, the needs frontier, the handles, the expected
+observation and the stop condition (`src/prompts.ts:315-330,380-401`; built in `extensions/p2o/index.ts:1489-1522`). What it
+cannot say is *where in a chain this attempt sits*: which link is being taken, what the earlier links already demonstrated,
+what the next link consumes, or what to feed it. The worker is expected to rebuild that path from the graph slice, so "take
+the chain in parts" is prompt discipline rather than a handoff. Measured base block: 749 characters; the row that names the
+link is missing while 451 characters of the 1,200-char bound sit unused.
 
-### 2.3 S3 — Graph: containment is a model assertion, so the graph has no edges
+### 2.4 S4 — A plan row cannot state the effect it is after, and no effect ↔ capability bridge exists
 
-The asset graph stores 87 assets, 197 assertions and 93 anchors but `relations` only through the model-submitted
-`p2o_graph_record` batch (`src/state/graph.ts:39`, `src/state/graph-tool.ts:33`). No worker asserted an edge, so the run's graph
-is flat: 0 relations, `Chain: none recorded`, and the chain/attack-map machinery has nothing to walk. ARTEX never has this
-state: containment is a typed parent column (`root_domain`/`domain`/`ip`/`url`/`method`, `db/schema.sql:40-91`) and exploration
-edges are side effects of the write verbs, not a separate action (`agent/tools.go:1032-1088`, `db/finding_traffic.go:375-379`).
+`CaseEffect` is the vocabulary a case chain rates (`src/cvss.ts:38`) and the ladder turns it into a rung
+(`src/ladder.ts:30-32`: crossing effects, impact effects). It exists only on case chain steps (`src/case-types.ts:95`). Plan
+rows have no effect target at all (`src/planning.ts:21-37`), and no rule translates a typed capability (`CAPABILITY_KINDS`,
+`src/capabilities.ts:10-13`) into an effect class, so a plan chain cannot say "this link is after code execution" and the report
+cannot say which effect a planned (unrated) link is climbing toward. The planner prompt states the chain-or-wall obligation
+(`src/prompts.ts:189,191`) but teaches no authoring tactic: when to extend a chain, when to branch a new `chainOf`, how to
+choose `needs`, or that a row may name its target effect.
 
-### 2.4 S4 — Policy: a confirmed claim has nowhere to land
+### 2.5 S5 — The attack path is a by-product of a rated finding, not a report section
 
-`src/cases.ts:114` refuses a confirmed case unless a cited demonstrated claim has `policyBasis != inferred`. Both confirmed
-claims in the run are `inferred` (no documented anti-automation requirement; public API docs may be intended), so case 2 stays
-pending with `confirmed-verdict-lacks-current-tested-claim`, and the planner's own decision row `907b5b37` names the wall: a
-confirmed case needs a tested claim with a non-inferred policy basis. The rating path already allows an inferred-basis case at
-demonstrated depth with the `INFERRED_POLICY` flag (`src/cases.ts:226-238`), but a case that cannot be accepted can never be
-rated. A black-box read-only run with no operator policy therefore cannot produce a finding, and goal 1 (`every cell terminal`)
-is blocked by construction: cell terminal needs an accepted finding, which needs policy, which needs the operator who is not in
-the loop.
+The report has two chain surfaces and both are lossy. A finding's chain prints its steps and demonstrated effect
+(`src/report-export.ts:198-200`), and the ladder prints exactly one chain — `chainViews[0]`, the deepest one
+(`src/report-export.ts:439-474`) — so a run that recorded three chains reports one ladder path and loses the other two to the
+remaining-work section. Plan-board chains (open work, not yet rated) appear only as obligations: `chainLines` caps the plan page
+at 10 (`src/chain-board.ts:125`), and the graph path read is bounded to 6 hops (`src/state/graph-tool.ts`, `path.maxDepth`).
+An operator reading the report cannot see the attack path the run was actually taking, only the deepest rated fragment of it.
 
-### 2.5 S5 — Planning: discovery never returns to the denominator
+### 2.6 S6 — No measured live run of chain-aware behaviour
 
-The coverage plan was created once (revision 1, 14:35) and never revised, although `p2o_coverage_plan` supports `revise` and
-discovery recorded 87 assets. 68 assets sit outside every plan (`SCOPE_UNPLANNED_ASSET`), 71 applicable WSTG tests were never
-planned (`WSTG_UNPLANNED`), 45 gaps stayed untriaged, and only two question families were ever asked (Strapi public-role gate;
-NextAuth/auth boundary). Rounds 4–5 were judged quiet ("no tested cell, candidate closure, asset or chain depth",
-`src/engine.ts:238-241,321-330`) while those 68 assets and 71 tests were known; round 6 demand named 52 debts and the lead
-finished at round 7 with 48 obligations. Research breadth is not a model-capability problem here: the host already knows the
-unplanned work and the brief does not put it in front of the planner as work.
-
-### 2.6 S6 — Loop and claim quality: no settlement, and a negative claim without a control
-
-- **No settlement step.** The run finished with 48 named obligations and 158 planning signals. ARTEX forces a wrap-up turn that
-  writes back identified-but-unwritten results before a stop (`agent/wrapup.go:94-100`) and separates `exhausted` from `done`;
-  p2o's finish records the incomplete outcome honestly but leaves the identified work unwritten.
-- **No claim-quality discriminator.** The "no throttle" claim sent identifier-less bodies, which hit NextAuth's
-  missing-credential short-circuit rather than the backend verification path; validation replayed the same payload and
-  "reproduced" the void path. Only a later task with an identifier+password payload exposed it, and case 1 was disputed at r2.
-  `negativeControls` was empty. Nothing in admission, the validation brief or review asked "does this payload exercise the
-  claimed mechanism?".
-- **Throughput.** 7 tasks in 54 minutes, two concurrent at most; model cost is not the limit ($0.38) and the round budget is
-  not the limit. The limit is that a single question family takes 12–25 minutes and the loop does not fan out.
+P21's runs measured evidence capture, policy and breadth; none measured the chain-aware machinery on a live target, and no run
+has been measured since the chain-aware brief exists. There is no data on which reader the planner actually uses, whether it
+branches chains or keeps extending one, where a ready link is left undispatched, or which of the seams above the run hits
+first. The owner authorized one assess-mode run of `https://ise.uit.edu.vn/` for exactly this measurement; without it, A1–A4
+are designed from the code and not from the machinery under load.
 
 ## 3. What ARTEX does that this plan borrows (and what it does not)
 
 | ARTEX mechanism | Where | What p2o adopts |
 |---|---|---|
-| Recording transport: every Bash/WebFetch exchange captured, bodies hashed and addressable, index rows only in the model | `agent/worker.go:204-224,437-453`, `traffic/traffic.go:85-87`, `evidence/store.go:43-116` | A1: the host records the admitted request/command on the executor and stamps its hash on the receipt; the model never stores the replay by hand |
-| Admit cheap, confirm separately: finding binds real exchanges (baseline/proof/verification/supporting), then reporter + retester with version guard | `db/schema.sql:1146-1174`, `db/finding_traffic.go:366-379`, `agent/retester.go:9-12` | A2: claim admission derives replay from receipts; validation records a reproduction in one field; B keeps the policy gate separate from proof |
-| Containment derived from typed keys, no asset edge table; edges are side effects of verbs | `db/schema.sql:40-91`, `agent/tools.go:1032-1088,1347,1183` | A3: host derives containment edges from anchors at write time; asserted relations remain an optional second layer |
-| Never-idle: hard floor (emit ≥1 intent when nothing is open or running), heartbeat, `exhausted ≠ done`, per-task todo survives wakes | `agent/planner.go:457-461,108-117,433,462`, `engine.go:1135-1145` | C1/C3/C4: the brief names unplanned work, quiet cannot be declared while it exists, settlement writes dispositions before finish |
-| Wrap-up/settlement turn forces write-back before a stop | `agent/wrapup.go:94-100`, `engine_timeout.go:14-21` | C4: settlement packet, without loosening completion |
-| Per-unit transcript + resume, boot recovery `running→open` | `agent/worker.go:500-514`, `db/exploration.go:312` | Not adopted in P21 (p2o's round-session model and durable ledger already cover restart); revisit only if a later measurement shows lost work |
-| Skills as a small catalog + on-demand body | `norma/skill/skill.go:94-97,133-160` | Not adopted; p2o's catalog and WSTG map are already stronger |
-| Credentials | `assets.auth JSONB[]`, `tools_insert.go:183-188` | Nothing to copy: p2o's `p2o_secret` is ahead; C5 only fixes the run's own ladder |
+| An attack chain is a **projection over a dependency DAG**, not a stored path: an exploration node with 5 edge kinds (`spawns`, `derived_from`, `yields`, `proves`, `covers`); a "finding" is one node kind; the UI's chain is an ancestor traversal | `db/schema.sql:184,248,256`, `db/exploration.go:1027-1071,1136-1180`, `db/finding_traffic.go:366-388` | A2/A3/A4: p2o keeps its three chain records (plan board, claim join, case chain) as the store and derives the *projections* the model reads: ordered path + next link in the brief, accepted-case chains in the planning read, and the whole attack path in the report |
+| Chain staging is prompt discipline plus a per-task todo list plus event-driven replan: dispatch one prerequisite step at a time, mark it completed, let the next wake pick the successor | `agent/planner.go:333,142,206-210,303-331` | Nothing new to copy: p2o already enforces M1/M2/M4 (readiness derived from rows, create-time refusal, debt). A4 adds the authoring text the model still lacks; no scheduler change |
+| A finding binds the recorded traffic that proves it and the goal it serves | `db/finding_traffic.go:366-388` | Not adopted: p2o's claim closure + accepted case + evidence ladder is stronger; a finding stays a claim closure plus a rated case (D-P22-4) |
+| Depth over breadth, route diversity and anti-stall floors keep the loop moving | `agent/planner.go:303,330,331` | Already adopted in P20/P21 (prompt lines exist); A5 measures whether they fire on a chain-bearing run |
+| The asset graph is six typed asset tables with no finding kind; the "vulns graph" is a UI projection over findings | `db/schema.sql:42-44` | p2o does not add a finding/vuln asset kind or an edge table: a finding is not an asset (non-goal, §8) |
 
-Two things p2o must not copy: ARTEX-style admission without a verifiable receipt (p2o keeps the evidence ladder) and a global
-MITM proxy (p2o's executor boundary is its sandbox; A1 records what the tool already received).
+Two things p2o must not copy: prompt-only chain staging without host enforcement (p2o keeps the board-derived readiness and the
+create-time refusals), and a second attack-path store next to the records that already carry it.
 
 ## 4. Decisions
 
-- **D-P21-1 — Scope.** Three packages, A (host-recorded evidence and derived containment), B (operator policy baseline),
-  C (research breadth and never-idle), in that order (owner, 2026-10-29).
-- **D-P21-2 — Authority does not move.** No tool, loadout or role change: planner still has no target/claim tool, worker is
-  still the only claim author, no role holds a cell writer, review is still not proof. Every new fact is host-recorded at write
-  time or derived on read, and a derived or host-stamped fact can never satisfy a claim, case, cell or goal.
-- **D-P21-3 — Sequence.** A → B → C. A2 depends on A1; A3 is independent and may land first; B tranches are additive; C starts
-  only after A and B are measured.
-- **D-P21-4 — Evidence stance (owner chose B2).** The shortcut "accept a confirmed case on an inferred policy basis" (B1) is
-  **rejected** for this plan. A finding still needs recorded policy: `explicit_contract`, `boundary_invariant`, or the new
-  `operator_contract` backed by a run-start policy artifact. Inferred-basis confirmed claims stay recorded observations and are
-  ratable at demonstrated depth under the existing `INFERRED_POLICY` rule only once accepted through policy; nothing in the
-  depth ladder, evidence ladder or rating ceiling is lowered.
-- **D-P21-5 — Replay capture is private and byte-exact.** The host stores the replay unit in the run's private control directory
-  (0600, not exported, removed with the run — the existing `p2o_lab` contract); the ledger keeps only the reference and hash.
-  A request that contains a substituted operator secret keeps the placeholder, never the value.
-- **D-P21-6 — Credential ladder bounds (owner-approved).** Allowed in-run: public artifacts (JS bundles, source maps, publicly
-  served config) for committed endpoints/secrets; exactly one attempt with the product's documented default-credential set,
-  named and recorded; self-provisioned registration/tenant when a registration path exists; operator-sealed secrets via
-  `p2o_secret`. Prohibited: brute force, spraying, stuffing, reset abuse, lockout attempts. Operator constraints stay absolute.
-  Assess mode stays read-only.
-- **D-P21-7 — No live or paid run in this phase; no commit or push without a fresh owner instruction.** All tests hermetic with
-  inert executors; no target traffic.
-- **D-P21-8 — Documentation truth.** Each tranche lands its `docs/ACCEPTANCE_MATRIX.md` rows (F-P21-*), `docs/HISTORY.md` row and
-  the USAGE/ARCHITECTURE text in the same change that makes the statement true; no current doc names an unimplemented verb
-  (inherits D-P20-7).
-- **D-P21-9 — Prompt and brief budgets are measured, never raised blindly.** Every added teaching line is paid for inside a
-  measured ceiling, or the ceiling is re-pinned from a fresh measurement with the method `tests/minimal/context-budget.test.ts`
-  records. Declaration baselines may fall, never rise casually.
-- **D-P21-10 — Derived containment is structural, not evidential.** A derived relation records what an anchor already says
-  (host contains path; path prefix contains endpoint), is labelled `derived` with its rule and actor, and is read-only truth about
-  structure. Asserted relations stay the model's layer; on conflict the asserted row wins. Neither satisfies anything.
-- **D-P21-11 — The old plan is retired.** This file is the only plan of record; the previous revision stays recoverable at
-  `2e22b5c` and in the HISTORY/matrix rows that describe it.
+- **D-P22-1 — Scope (owner, 2026-10-30).** One package, A (a chain-aware exploitation layer), in five tranches: A1 cross-chain
+  supply, A2 chain-aware exploit brief, A3 accepted-case chain projection, A4 attack-path report + chain authoring, A5 live-run
+  measurement and defect closure. The alternative packages (B: chain as a first-class stored record; C: live-run-first) were
+  rejected: B would duplicate the plan board and the case chain, and C would measure a brief that does not name the link yet.
+- **D-P22-2 — Authority does not move.** No tool, loadout, role or board-verb change; the planner still holds no target/claim
+  tool, the worker is still the only claim author, no role holds a cell writer, review is still not proof. Every new chain fact
+  is derived on read (or host-stamped, as A2's brief facts are) and can never satisfy a claim, case, cell or goal.
+- **D-P22-3 — Readiness extends by citation, never by inference.** A step may be ready on a demonstrated claim it cites in its
+  own `claimRefs` when no earlier row supplies that need; earlier-row providers keep precedence and the closest provider is the
+  one recorded in `satisfiedBy`. Nothing is deduced from capability names, surface text or the claim join: an un-cited
+  provider never makes a step ready, and no step is dispatched automatically.
+- **D-P22-4 — One chain truth.** The plan board plus the claim heads remain the only readiness inputs; the case chain remains a
+  rating record and is projected into the planning read side read-only (A3). No second edge table, no stored path, no new
+  record kind.
+- **D-P22-5 — Effect target is a goal, never a rating.** A plan row may name the effect class it is after (A4); a derived
+  capability→effect label may be printed beside a link. Both are labelled derived/target and never touch `src/ladder.ts`
+  scoring, case acceptance, the depth ladder or goal proof: only an executed case chain step still establishes an effect.
+- **D-P22-6 — The report shows the whole attack path, bounded.** All recorded chains (plan and case) render in one bounded
+  attack-path section with omission counts; a plan-only link is labelled "not executed", and no sentence implies evidence for
+  it. The ladder's deepest-chain rendering stays for the rung; it stops being the only view.
+- **D-P22-7 — Live measurement (owner, 2026-10-30).** `https://ise.uit.edu.vn/` is authorized for one assess-mode run; the
+  owner starts and confirms it from their own TUI. Proposed budget: workers 2, target-ops 2, round-steps 30; provider cost is
+  the owner's. Assess mode stays read-only: no exploitation intent, no target state change. Exploit-mode chain testing is done
+  on the owner's local lab afterwards, and any defect the live run exposes lands as a named fix with a hermetic test.
+- **D-P22-8 — Commit, push and paid runs stay owner-initiated.** A2 sits uncommitted until the owner says otherwise; the plan
+  file itself is written now on the owner's request. No push without a fresh owner instruction (inherits D-P21-7).
+- **D-P22-9 — Documentation truth and measured budgets.** Each landed tranche carries its F-P22-* acceptance-matrix rows, its
+  HISTORY row and the USAGE/ARCHITECTURE text in the same change; every added prompt or brief line is paid for inside a
+  measured ceiling or the ceiling is re-pinned from a fresh measurement (inherits D-P21-8/D-P21-9).
+- **D-P22-10 — The P21 plan is retired.** This file is the only plan of record; the P21 revision stays recoverable at
+  `5763d46` and in the HISTORY/matrix rows that describe it.
 
-## 5. Package A — host-recorded evidence and derived containment
+## 5. Package A — chain-aware exploitation
 
-Goal: remove the three silent zeros measured in §2 — 13/13 claims not replayable, 0 recorded validation closures, 0 relation
-edges — without widening a single authority.
+Goal: make the chain the run already holds the thing the model is briefed on, can extend, and the operator can read — without
+moving an authority or storing a second path.
 
-### A1 — Record the replay unit on the executor
+### A1 — A chain link may stand on the claim it cites
 
-- **Where:** receipt creation in `src/evidence.ts` (`receipt()`), the exec/HTTP receipt path in `extensions/p2o/index.ts`
-  (~2331–2404), the broker operations `exec`/`net` (`src/broker.ts:445-468`) and `http` (`:521-534`), and the existing
-  `PayloadStore` (`src/lab.ts`).
-- **What:** after an admitted target operation runs, the host derives a canonical replay unit and stores it with
-  `PayloadStore.put`: for `p2o_http` the method, final URL, request headers (with operator-secret placeholders intact), body
-  bytes and cookie header as sent; for `p2o_net`/`p2o_shell` the command text actually admitted plus workdir/session. A unit
-  larger than the payload bound (48 KiB) is not stored; the receipt records `replay: {captured:false, reason, bytes}` so the
-  gap is visible instead of silent.
-- **Stamp:** the receipt's `data` gains `replay {payloadRef, sha256, kind, bytes, environmentFingerprint}`. The environment
-  fingerprint is host-derived from the runtime image identity and executor mode, so a network claim no longer needs a
-  docker-compose recipe; `p2o_lab action=env` stays for service/seed setups and, when a claim names one, it wins.
-- **Non-goals:** no MITM proxy, no response-body capture beyond what the tool already returned, no new tool, no new authority.
-- **Tests:** each target tool's receipt carries a replay reference; a >48 KiB unit fails closed with a named reason; the
-  fingerprint is stable within a run and changes with the runtime identity; an export never contains payload bytes.
+- **Where:** `src/chain-board.ts` (provider derivation in `chainBoard`), `src/obligations.ts` (ready step + provider surfaced
+  to the dispatch refusal), `src/situation.ts` and `src/round-brief.ts` read the board unchanged, tests `chain-board.test.ts`,
+  `obligations.test.ts`, `chain-brief.test.ts`.
+- **What:** for each declared need, find the provider in this order: (1) earlier rows of the same chain that cite a
+  demonstrated claim gaining it (today's rule), then (2) the row's own `claimRefs`. `satisfiedBy` records the closest provider
+  found; `waitingOn` keeps only needs nothing demonstrated gains. The M1 doc comment changes with the rule: a chain step may
+  branch from any demonstrated claim it cites, so a new `chainOf` can start from an existing primitive. A2's brief matcher
+  reads `satisfiedBy`, so it picks the new provider up without a change.
+- **Non-goals:** provider discovery by capability or surface alone (the citation is the lineage); auto-creating a row; letting a
+  step stand on its own *open* claim (only demonstrated claims count, unchanged).
+- **Tests:** a root step with needs that cites an external demonstrated provider is `ready` and `satisfiedBy` names it; the same
+  step citing an open claim stays `waiting`; an earlier-row provider wins over a self-cited one; `chainObligations` returns the
+  ready step with that provider; every existing chain-board test stays green.
+- **Acceptance:** a `p2o_plan` todo row that starts a new `chainOf`, declares a need and cites the demonstrated provider (plus
+  the open claim it is to prove) is `ready` and the dispatch refusal names that provider; the host draft (`chainPlan`) keeps its
+  current row shape, so branching is an explicit authoring decision, never an automatic rewrite.
 
-### A2 — Claim replay inheritance and a validation write-back that cannot be refused
+### A2 — Chain-aware exploit brief (implemented in the working tree)
 
-- **Claim:** `candidate()` (`src/evidence.ts:113-190`) stamps `payloadSha256`/`environmentFingerprint` from the cited receipts'
-  replay stamps when the caller did not name `p2o_lab` artifacts; explicit references keep precedence and must match the host
-  stamp. `isReplayable` (`src/claims.ts:91-94`) then becomes true with no model bookkeeping, and the report's replay column
-  prints the host-derived reference instead of "not replayable".
-- **Validation write-back:** new optional `reproduces` on `p2o_candidate` (candidate record id or slug; any worker, intended for
-  the validation role). The host resolves the claim, requires a different actor, matches surface/risk against **that** claim
-  (fixing the `.at(-1)` latest-claim bug at `src/evidence.ts:165-166`), requires the replaying claim's own tested receipts and a
-  matching host payload sha, and records the resolved claim id plus the author receipt internally. This replaces the three-step
-  ref field dance that failed six times in the run.
-- **Messages:** the three refusals become actionable: name the required evidence refs, list the legal ids (the claim's receipt
-  ids), say which receipt is the author's and which are the replayer's, and offer `reproduces` as the legal next step.
-- **Legacy:** the `independentEvidenceRef` path keeps working unchanged; the new field is additive.
-- **Acceptance:** a validation worker that replayed an http/net claim records one independent claim with its own receipts and
-  `reproduces`, and `caseViews().independentCurrent` turns true for the case that cites it.
-- **Tests:** accepted replay claim; same-actor refused; wrong surface refused with a message naming the claim; two claims by one
-  author citing one receipt no longer cross-match; coverage sees the validation claim on the validation task.
+- **Where:** `src/chain-brief.ts` (new pure module), `src/prompts.ts` (`ExploitBriefFacts.chain`, `exploitBriefBlock`),
+  `extensions/p2o/index.ts` (`exploitBriefFacts`), tests `tests/minimal/chain-brief.test.ts`,
+  `tests/minimal/brief-context.test.ts`.
+- **What:** for an exploitation/chaining ticket the exploit block gains the link it is:
+  - `CHAIN: <id> step n/total (state)`;
+  - `CHAIN PATH:` a window of one link either side of this attempt, each `n. title (state)`, the attempt marked
+    `(this attempt)`, clipped ends shown as `…`, whole line bounded;
+  - `NEXT LINK:` the nearest recorded successor and the typed capabilities it consumes, or an explicit "this is the last
+    recorded step".
+  The step is identified strongest-first: a plan row whose `taskIds` lists the task; a ready step whose satisfying providers the
+  task cites; the step whose claim the task cites. Evidence spanning several chains returns nothing rather than guessing.
+  Rendered only when a chain owns the task, so every other brief is byte-identical.
+- **Bounds:** block stays ≤1,200 chars (base 749), exploit brief ≤2,850, chain path window ≤180 chars and every title clipped;
+  ambiguity, absent facts and clipped ends are stated, never invented.
+- **Tests:** 8 chain-brief tests (provider match, `taskIds` precedence, claim fallback, cross-chain ambiguity returns nothing,
+  no-chain returns nothing, long-chain window and clipping, whitespace collapse, lowest-ready-link preference) and 2 brief
+  render/absence/bound tests; focused files 19/19, full suite green.
+- **Status:** implemented 2026-10-30 in the working tree, uncommitted (D-P22-8). Gate: `npx tsc --noEmit` clean; full suite
+  162 files / 1,444 passed / 13 skipped, 0 fail; `npm run build` + `check:build` green; surface audit unchanged (35/35/0/10,
+  declarations unchanged because no tool schema moved).
 
-### A3 — Derive containment from anchors at write time
+### A3 — Project an accepted case's chain into the planning read side (read-only)
 
-- **Where:** the graph write callback (`extensions/p2o/index.ts:4266`) and the graph batch validation
-  (`src/state/graph.ts:200-245`), reading the anchor rows written with each asset (`src/state/schema.ts` `anchors`).
-- **What:** when assets and anchors are written, the host derives the edges the anchors already state: host asset ← URL/path
-  anchor of a route; path-prefix route ← endpoint; artifact anchor → asset; header anchor → endpoint. Stored as `relations` rows
-  with kind `contains` or `anchors`, body `{derived:true, via:'anchor', rule}`, actor host/extractor, and no evidence
-  requirement; model-submitted relations keep their current shape and win on conflict.
-- **Read side:** `p2o_graph path`, the chain/attack map and the brief's chain counts read derived and asserted rows with the
-  derived ones labelled. Derived rows are structural only (D-P21-10).
-- **Non-goals:** no guessed edges from names or version strings; nothing that an anchor does not directly state; no
-  auto-satisfaction.
-- **Tests:** every anchored endpoint is reachable from its host through a derived path; no edge without an anchor; an asserted
-  relation overrides a derived one; export marks derived rows; the graph views count them without claiming evidence.
+- **Where:** new pure module `src/case-chain-view.ts`; caller `extensions/p2o/index.ts` where it builds the round brief
+  (`buildRoundBrief`, `src/round-brief.ts:125-151,567-601`); rendered as a bounded `Case chains (derived)` sub-block of the
+  existing `ready` section (its 1,024-byte cap is re-measured from the rendered text). Inputs: `caseViews` (`src/cases.ts:102`)
+  and `claimHeadClaims`.
+- **What:** for accepted, confirmed cases with a recorded `chain`, derive a bounded projection: objective, `demonstratedThrough`
+  of the chain, one line per executed link (order, claim slug, effect, gained/needs), and the capabilities the executed links
+  handed on that no later executed link consumes. The brief renders it labelled "derived from case <id> r<n> — a rating record,
+  not a plan": the planner sees that the chain is already rated and which capability is left hanging, so it can author the
+  successor row (or wall it) instead of re-planning the same links. A3 writes nothing; the plans it implies are authored through
+  the existing verbs.
+- **Non-goals:** no auto-created plan row, task or case; no successor task draft (that is `p2o_graph_plan action=chain`'s job
+  from the claim frontier, unchanged); the case chain does not become a readiness input (D-P22-4).
+- **Tests:** executed-only links projected and `demonstratedThrough` respected; an unaccepted case excluded (or labelled, if a
+  pending row is useful) and never read as a finding; projection bounded/deduped/ordered; round brief inside its 8 KiB bound and
+  the section cap re-measured; a derived case line satisfies no goal, claim or coverage cell.
 
-### A4 — A negative observation needs a discriminating control
+### A4 — Attack-path report and a chain authoring tactic
 
-- **Claim admission:** when `closure=confirmed`, `execution=tested` and `negativeControls` is empty while the claim is a
-  negative class (throttle, enumeration, uniform error, no-session/cookie absence), record an `admissionWarnings` entry
-  "negative claim without a discriminating control" and surface it in case review, the validation brief and the report. A
-  warning, not a refusal: the evidence ladder does not change.
-- **Validation draft:** `src/validation.ts:validationDraft` gains the original claim's record id and slug, surface/risk, cited
-  receipt ids, replay payload reference and hash, a materialize hint (`p2o_lab` read/id), and the mechanism question — "does the
-  replay exercise the claimed mechanism, or a short-circuit before it?" — so the replay is semantic, not only byte-identical.
-- **Tests:** the no-throttle claim class shows the warning; the validation draft carries the refs and hash; the draft stays
-  inside its byte bound.
+- **Where:** `src/report-export.ts` (a new bounded attack-path section beside the ladder, `~439-474`), `src/planning.ts`
+  (`PlanDraft.effect`, validator), `src/work-tool.ts` / `src/tool-schemas.ts` (plan schema description), `src/prompts.ts`
+  (planner chain-authoring tactic), a new table in `src/effects.ts` (or `src/cvss.ts`) for the derived label.
+- **What:**
+  1. **Effect target on a chain row:** `PlanDraft.effect?: CaseEffect`, accepted only on a row that carries `chainOf`/`step`,
+     described as the class this link is after; it never gates readiness, completion or rating.
+  2. **Derived capability→effect label:** an explicit, incomplete table from typed capability kinds to effect classes
+     (`data.read|db.query|file.read` → confidentiality-read; `file.write` → integrity-write; `exec.code|host.shell|deserialize`
+     → code-execution; `auth.bypass` → authentication-bypass; `cred.session` and `cred.secret` map to nothing because possession
+     of a session or a secret is not a demonstrated bypass; the transport kinds map to nothing). The label is printed as "derived
+     suggestion, not a rating" and is never input to the ladder, a case rating or goal proof.
+  3. **Attack path in the report:** one bounded section listing every recorded plan chain (state, per-link claim, needs,
+     providers, target effect when recorded, derived effect label) and every accepted case chain (demonstrated-through, effects),
+     with explicit omission counts; a plan-only link says "not executed". The ladder keeps its deepest-chain rendering for the
+     rung, so the report stops losing other chains.
+  4. **Authoring tactic:** a planner line beside the chain rules: a link names its position, the claim it stands on, the typed
+     needs it consumes and optionally its target effect; extend the chain when the new link consumes the previous output, start a
+     new `chainOf` when it reuses a demonstrated claim it cites, and never write a link whose needs nothing demonstrated can gain.
+- **Non-goals:** no finding/vuln asset kind; no change to the depth ladder, rating ceiling or case acceptance; no new store or
+  tool; no re-pin of a prompt ceiling without a fresh measurement.
+- **Tests:** effect accepted on a chain row and refused on a non-chain row or an unknown class; the capability→effect table
+  pinned case by case and the ladder/rating tests unchanged by it; a report with ≥2 plan chains and ≥1 case chain shows every
+  path with omission counts, a plan-only link marked not executed, and no evidence wording; prompt-text pin and a re-measured
+  planner ceiling (currently 16,700).
 
-### A5 — Read surfaces that make the new facts visible
+### A5 — Live measurement and defect closure
 
-- **Situation line** (`src/situation.ts`): replayable claims, derived edges, validation-current count and unmet needs, all
-  bounded names-only counters.
-- **Report** (`src/report-export.ts`): the claims table prints the host replay reference; derived relations are labelled where
-  chains or paths are shown.
-- **Tests:** situation/report render inside their caps with the new counters, and neither says a derived fact is evidence.
+- **Where:** the owner-run TUI session described in §13; the ledger and exported report under the run's cwd; fixes land in the
+  module the measurement names, each with a hermetic test.
+- **What:** run assess mode against `https://ise.uit.edu.vn/` with the proposed budget (§13) under the owner's own confirmation,
+  then read the committed state and report: whether chain rows were authored at all, whether A2's `CHAIN`/`NEXT LINK` lines appear
+  in exploitation/chaining briefs, which links were ready but undispatched, where the planner stalled or repeated a question,
+  and which seam (§2) the run actually hit. Every defect becomes a named entry (`A5-fix-1`, …) with the fix and its test; every
+  fix is re-gated with the same commands as A1–A4.
+- **Non-goals:** no exploit-mode run against the target; no scope widening; no benchmark or effectiveness claim; the run is one
+  measurement on one host, and it says what the machinery did, not what p2o can do.
+- **Acceptance:** a written measurement (run id, cwd, budget, chain/readiness counts, brief-usage evidence, defect list) and at
+  least one defect fixed with a hermetic test before the tranche closes. If the run produces no chain-bearing activity at all,
+  that is the finding: the defect is in what the run was asked to do, and it is recorded as one.
 
-## 6. Package B — operator policy baseline: findings that can land
+## 6. Sequence and gates
 
-Goal: a black-box run can produce an accepted finding **without** weakening the evidence ladder, by recording intended policy
-up front and letting a claim cite it (owner chose B2, not the inferred-acceptance shortcut).
-
-### B1 — Run-start policy artifact
-
-- **Where:** `src/target.ts` start-option parser, `src/campaign.ts` campaign frame, the start preview and the report provenance.
-- **What:** `--policy <absolute-path>` (bounded JSON or text, hashed, never shown to models whole) or
-  `--policy standard:OWASP-ASVS-L2|standard:OWASP-WSTG|standard:OWASP-Top10` (a named standard, not a blanket permission). The
-  campaign frame records `{kind, id, sha256, standard?, bytes}`; the start preview and the report print the source; a run
-  without `--policy` behaves exactly as today.
-- **Tests:** parse and refuse duplicates/unknown standards; campaign records the hash; no-policy behavior unchanged; the policy
-  body never enters a prompt beyond a bounded excerpt.
-
-### B2 — Claim provenance `operator_contract`
-
-- **Where:** `POLICY_BASES` (`src/evidence.ts:17`), `candidate()` validation, the candidate schema description
-  (`src/tool-schemas.ts:83`).
-- **What:** new basis `operator_contract`, valid only when the claim names `policyRef` (the run's policy artifact id) and the run
-  has that policy; a claim under it stays at demonstrated depth and may cite a standard test id in `expectedPolicy`.
-  `inferred` rules are untouched; a CVE lead stays `inferred`; no basis makes a claim tested.
-- **Teaching:** one worker/planner line naming the policy source and how to cite it; `p2o_wstg_suggest` rows already name test
-  ids, so `standard:OWASP-WSTG` maps to the same vocabulary.
-- **Tests:** admitted with policyRef; refused without it with a legal next; inferred behavior unchanged; policyRef cannot hide a
-  static trace.
-
-### B3 — Acceptance, rating and goal proof
-
-- **Case acceptance** (`src/cases.ts:114`): a confirmed case is acceptable when a cited demonstrated claim has
-  `explicit_contract`, `boundary_invariant` or `operator_contract` (with a current policyRef); `inferred` stays refused, so the
-  run's two claims would still be observations, not findings, unless the operator supplied policy.
-- **Report:** case and finding provenance print the policy source and mark the `INFERRED_POLICY` flag only where the existing
-  rating rule applies.
-- **Goal proof:** the host hints (and the planner prompt states) that a coverage-plan proof needs a route to a terminal cell
-  under the run's policy; with no policy the measurable proof is mapping, so the run cannot author a goal that is blocked by
-  construction.
-- **Tests:** accepted with operator policy; refused for inferred; goal-proof hint rendered; rating depth unchanged.
-
-## 7. Package C — research breadth, question queue and never-idle
-
-Goal: a run does not finish while known, feasible questions remain, and it plans them without a human wake-up.
-
-### C1 — The brief names the unplanned work
-
-- **Where:** `src/situation.ts` snapshot and the round brief renderer, `src/engine.ts` demand text.
-- **What:** the snapshot gains `unplannedAssets` (count + up to three kind/path/feature samples), `wstgUnplanned` (count + three
-  test ids), `unmetNeeds` (capability kinds + the claims that need them) and `untriagedGaps` (count + samples). The planner
-  prompt says: when any of them is non-zero, the round's work is to revise the coverage plan, plan the question, or record the
-  exclusion.
-- **Tests:** bounded samples; brief cap measured; a zero-intent round with these counters is recorded as a stall (host already
-  records stalled rounds).
-
-### C2 — Per-asset question queue (suggestions, never cells)
-
-- **Where:** `p2o_wstg_suggest` (planner-only read) and the `WSTG_MAP`/asset `feature` attribute.
-- **What:** the host derives candidate questions from an asset's recorded `feature` values and the WSTG map (feature → test ids),
-  with asset id, test id, one-line expected observation and the plan that would cover it. The planner promotes a question by
-  creating a task whose `questionKey` is the test id (the convention P20/D already teaches); cells stay host-derived.
-- **Tests:** queue bounded and deduped; a suggestion never satisfies anything; question keys are valid `questionKey` values.
-
-### C3 — Coverage-plan revision and honest quiet
-
-- **Where:** `p2o_coverage_plan` revise path (exists), `src/engine.ts` quiet judgement and demand line, planner prompt.
-- **What:** when discovery adds assets the plan does not cover, the demand line names the revision owed and the brief samples the
-  assets; the quiet judgement counts new assets/features/questions as progress so "quiet" cannot be declared while 68 unplanned
-  assets exist. The plan stays the operator-facing denominator; revision never widens authority.
-- **Tests:** quiet false with unplanned assets; demand names the revision; a revision keeps old cells' derivation stable.
-
-### C4 — Settlement before finish
-
-- **Where:** `src/finish-preflight.ts`, the closing loadout, the report's remaining-work section.
-- **What:** when obligations remain, the preflight emits a settlement packet naming each debt kind and the disposition required:
-  plan a task, record out-of-scope, or defer with a revisit condition and debt refs. The existing incomplete outcome and debt
-  rules do not change — this only makes the identified work visible and actionable before the lead stops.
-- **Tests:** the packet names the run's kinds; a decision row discharges a kind; finish still reports incomplete; no completion
-  loosening.
-
-### C5 — Credential ladder (owner-approved bounds)
-
-- **Where:** worker prompt/shared recording document, planner capability-needs line; no tool change.
-- **What:** state the allowed ladder (public JS bundles/source maps/config for committed endpoints or secrets; one named
-  default-credential attempt; self-provisioned registration/tenant when a registration path exists; operator-sealed secrets via
-  `p2o_secret`), the prohibited moves (brute force, spraying, stuffing, reset abuse, lockout attempts), and the fallback: when
-  none works, record the capability need (`needs: cred.secret`) with the acquisition paths tried so C1 can plan the next feasible
-  route.
-- **Tests:** prompt-text pins for the ladder and the prohibitions; the needs shape unchanged; ceilings re-measured.
-
-### C6 — Chain queue and dispatch batching
-
-- **Where:** situation/brief chain counters (exist), planner dispatch guidance.
-- **What:** render the chain frontier (ready/waiting) together with unmet needs so a demonstrated primitive either advances or
-  becomes a named capability task; allow and encourage dispatching several independent tasks per round (the host already accepts
-  `p2o_task_dispatch` up to 25) instead of one question per round.
-- **Tests:** both counters render; a batch dispatch is admitted; no scheduler change beyond guidance.
-
-## 8. Sequence and gates
-
-Order: A1 → A2 → A3 → A4 → A5, then B1 → B2 → B3, then C1 → C2 → C3 → C4 → C5 → C6. A3 may land before A2; B may start once
-A1/A2 are measured; C starts only after A and B.
+Order: A2 (landed in the working tree) → A1 → A3 → A4 → A5. A1 and A3 are independent and may land in either order; A4 depends
+on A1 (branching rows) and A3 (case chain rows) for its report inputs; A5 starts once A1/A3/A4 are in, and its fixes re-enter
+the sequence where the measurement points.
 
 Every tranche:
 
 1. `npx tsc --noEmit`, the targeted vitest files, then the full hermetic suite (`npx vitest run`);
 2. `npm run build` and `npm run check:build`; `node scripts/audit-surface.mjs` (registered/model-visible/hidden/board counts and
-   contradictions must not move, declarations may not rise past their baselines);
+   contradictions must not move; declarations may not rise past their baselines — if a tool schema changes, re-pin from a fresh
+   measurement);
 3. `python3 scripts/validate_library.py` when documents change; prompt/brief ceilings re-measured wherever teaching text moves;
-4. `git diff --check`, `detect_changes --scope all` before any commit, `git status` audited (never stage the owner's `AGENTS.md`
-   edit or `pi-p2o-defense-vi.pptx`);
-5. docs rows in the same change: `docs/ACCEPTANCE_MATRIX.md` F-P21-*, `docs/HISTORY.md` row, USAGE/ARCHITECTURE text where the
+4. `git diff --check`, GitNexus `detect_changes --scope all` before any commit, `git status` audited (never stage the owner's
+   `AGENTS.md` edit or `pi-p2o-defense-vi.pptx`);
+5. docs rows in the same change: `docs/ACCEPTANCE_MATRIX.md` F-P22-*, `docs/HISTORY.md` row, USAGE/ARCHITECTURE text where the
    model-facing behavior changed;
 6. commit and push only on a fresh owner instruction, with the repository identity and no attribution lines.
 
-## 9. Acceptance bars (mechanism, not pentest effectiveness)
+A2's existing gate already ran steps 1–4 for the working-tree change; step 5 lands with its commit, which stays owner-initiated.
 
-- **A:** a tested claim from an http/net operation is replayable with **zero** model `p2o_lab` calls; a validation worker records
-  its reproduction with one field and the case's independence becomes current; every anchored endpoint has a derived
-  containment path and asserted rows still override; derived facts satisfy nothing.
-- **B:** with `--policy`, a confirmed tested claim under `operator_contract` produces an accepted current case and a rating at
-  demonstrated depth; without `--policy` the same claim stays refused exactly as today; goal-proof hints stop an
-  unprovable-by-construction goal.
-- **C:** the brief names unplanned assets, unplanned WSTG tests and unmet needs; quiet cannot be declared while they exist; a
-  settlement packet names each debt kind before finish; the credential ladder is bounded by text and pinned by a test.
-- Never a claim about real-world effectiveness: no live run in this phase, and the report still says an assessment is not a
-  safety statement.
+## 7. Acceptance bars (mechanism, not pentest effectiveness)
 
-## 10. Non-goals and refusals
+- **A1:** a plan chain can branch from a demonstrated primitive: the new root link cites it, the board calls it ready and names
+  the provider, and the dispatch refusal names the same provider; no readiness appears without a citation.
+- **A2:** an exploitation/chaining worker's brief names its chain link, the ordered window around it and the next link's typed
+  needs; a task whose chain cannot be identified gets no chain lines instead of a guessed one; the exploit block and the whole
+  brief stay inside their recorded bounds.
+- **A3:** an accepted case's chain appears in the round brief as a bounded derived projection with its demonstrated-through depth
+  and the capability left hanging; no plan/task/case is written by the projection, and the line satisfies nothing.
+- **A4:** a report over ≥2 chains shows every recorded attack path with omission counts, plan-only links marked not executed,
+  and a derived effect label that never changes a rung, rating or case verdict; a plan row's target effect survives a revision.
+- **A5:** one assess-mode live run is written down with its run id and measurements, and at least one measured defect lands with
+  a hermetic test; if the run shows no chain activity, that absence is the recorded finding.
+- Never a claim about real-world effectiveness: assess mode demonstrates no effect, and the report still says an assessment is
+  not a safety statement.
 
-- No authority, loadout or tool-count change; no planner target/claim tool; no cell writer; review is not proof.
-- No acceptance of inferred-policy confirmed cases (B1 rejected); no lowering of the depth ladder, rating ceiling or evidence
-  ladder; no "derived edge proves reach".
-- No MITM proxy or traffic interception; the executor records what the tool already received.
-- No credential vault or brute-force path; C5 is bounded text plus the existing sealed-secret mechanism.
-- No schema mutation of existing rows (additive columns/tables only), no change to export redaction.
-- No live or paid run; no benchmark claim.
+## 8. Non-goals and refusals
 
-## 11. Risks
+- No authority, loadout, tool-count or board-verb change; no planner target/claim tool; no cell writer; review is not proof.
+- No finding/vuln asset kind and no second attack-path store: findings stay claim closures plus accepted cases.
+- No automatic plan/task/case writing from a chain projection; no auto-dispatch; no readiness deduced from names or surfaces.
+- No lowering of the depth ladder, rating ceiling or evidence ladder; a derived effect label and a plan target effect satisfy
+  nothing.
+- No exploit-mode run against the live target in this plan; the exploit chain is measured on the owner's local lab.
+- No schema mutation of existing records (additive optional fields only), no export-redaction change, no MITM or traffic
+  interception.
 
-- **Payload capture holds credentials by design.** Mitigation: the private control directory only (0600), never exported,
-  removed with the run; receipts and exports keep only the reference/hash; an operator-secret placeholder is stored, never the
-  substituted value.
-- **Derived edges read as claims.** Mitigation: labelled rows, D-P21-10, tests that graph projections satisfy no claim, case,
-  cell or goal.
-- **A standard name as a rubber stamp.** Mitigation: the policy artifact is hashed and shown in the report, a standard maps to
-  named tests, and `operator_contract` still requires a demonstrated claim at demonstrated depth.
-- **Prompt/brief ceilings.** Mitigation: measure every tranche and re-pin only from a fresh measurement; the model union may
-  fall, never rise casually.
-- **`reproduces` overlapping the legacy field.** Mitigation: one path per attempt, tests pin both, the legacy field stays.
-- **Batching raising worker concurrency.** Mitigation: dispatch guidance only; worker and target-operation caps do not move in
-  this plan.
+## 9. Risks
 
-## 12. Verification record (to be filled as tranches land)
+- **Readiness becomes too permissive.** Mitigation: the citation is mandatory, only demonstrated claims count, earlier-row
+  providers keep precedence, and a test pins that an un-cited or open claim never makes a step ready.
+- **A projected case chain is read as evidence.** Mitigation: the brief line is labelled derived and the projection never
+  appears in the ladder, a goal proof or a case rating; tests assert it satisfies nothing.
+- **A derived effect label becomes a rating.** Mitigation: explicit incomplete table, labelled suggestion, ladder and rating
+  tests pinned unchanged; A4's non-goal list names it.
+- **The report attack path grows without bound.** Mitigation: per-chain step cap, chain cap with omission counts, and a measured
+  bound in the report size test; the section drops rows rather than the whole report.
+- **Prompt and brief ceilings.** Mitigation: measure every tranche and re-pin only from a fresh measurement; a deleted line pays
+  for an added one where possible (inherits D-P21-9).
+- **The live run measures the wrong thing.** Mitigation: A5 names the evidence it needs before the run (chain rows, brief lines,
+  readiness/dispatch history) and records an empty result as a finding instead of inventing a success.
+- **A2 is uncommitted while A1 edits the same readiness path.** Mitigation: A1's change is additive in `chainBoard`; A2's
+  matcher reads `satisfiedBy`, so the two are tested together before either is committed; the owner's commit instruction can take
+  them as one phase.
+
+## 10. Verification record (to be filled as tranches land)
 
 | Tranche | Date | Commit | Commands and results | Not done / next |
 |---|---|---|---|---|
-| A1 | 2026-10-29 | `e91e449` | `npx tsc --noEmit` clean; full suite 159 passed / 5 skipped files (164), 1,412 passed / 13 skipped tests (1,425), 0 fail; `npm run build` and `check:build` green; surface audit 35 registered / 35 model-visible / 0 hidden / 10 board verbs, 0 contradictions, planner 44,570/45,500; `git diff --check` clean; GitNexus `detect_changes --scope all` reach critical on the `executeWithReceipt` hub (265 changed symbols, 266 affected) reviewed as behavior-preserving; `replay-capture.test.ts` 9/9 | A2 unblocked (same commit) |
-| A2 | 2026-10-29 | `e91e449` | A2 landed in the same phase commit and passed the same gate as A1; `replay-capture.test.ts :: accepts a reproduction with one field…` covers the accepted shape plus four refusals, the legacy no-cross-match fix and `independentReceiptCurrent` | A3 in the same commit |
-| A3 | 2026-10-29 | `e91e449` | A3 in the same phase commit and gate; `derived-containment.test.ts` 4/4 green (derived hops, no anchor/no invented host, asserted wins and a revision pin makes the walk stale, export marks DERIVED and counts without evidence) | A4 in the same commit |
-| A4 | 2026-10-29 | `e91e449` | A4 in the same phase commit and gate; `negative-control.test.ts` 4/4 green (warning vs quiet, draft within 1500/1000/1000, no-unit wording, report line) | A5 in the same commit |
-| A5 | 2026-10-29 | `e91e449` | A5 in the same phase commit and gate; `replay-capture.test.ts :: prints the host replay reference…` green; `ACCEPTANCE_MATRIX` (F-P21-A1..A6), USAGE and ARCHITECTURE updated in the same commit; prompt and declaration ceilings untouched because no prompt text moved | Package B next |
-| B1 | 2026-10-29 | `7980a4a` | `--policy <absolute-path|standard:NAME>` parsed once and refused when malformed; file loader bounded 256 KiB, regular file only, exact sha; campaign frame carries `{kind,id,sha256,bytes}` and the preview prints source + digest; body never in confirmation, prompt or report; no-policy run unchanged. `npx tsc --noEmit` clean; full suite 160 passed / 5 skipped files (165), 1,421 passed / 13 skipped tests (1,434), 0 fail (+1 file, +9 tests); build/`check:build` green; surface audit planner 44,705/45,500, worker 40,935/41,400, validation 40,124/40,500, 0 contradictions; `git diff --check` clean; GitNexus `detect_changes --scope all` 69 changed symbols, critical on the case/report hubs reviewed as behavior-preserving; campaign block bound raised 600→1000 with the measured rationale | B2/B3 in same commit |
-| B2 | 2026-10-29 | `7980a4a` | `operator_contract` added to POLICY_BASES with `policyRef`; host resolves the id against the campaign frame at write time (`POLICY_UNRECORDED` with legal next when no artifact exists, `POLICY_REFERENCE_UNKNOWN` naming the recorded id on mismatch, refusal when `policyRef` arrives with another basis); `inferred` rules and the evidence ladder untouched; candidate declaration grew but every role stayed under its ceiling | B3 in same commit |
-| B3 | 2026-10-29 | `7980a4a` | case acceptance accepts `operator_contract` only while its `policyRef` is the recorded artifact, refuses a stale `policyRef` and an inferred-basis claim; report prints `Operator policy:` in the campaign section and `Operator policy provenance:` beside the case; campaign block states the coverage-proof/mapping rule and the goal-author guidance repeats it | Package C next |
-| C1 | 2026-10-30 | `e01fadd` | `summarizeSituation` nhận thêm rows `{count, samples}` cho `unplannedAssets`/`wstgUnplanned`/`untriagedGaps` và suy `unmetNeedSamples` từ đúng chain join mà segment `chain` đếm; segment mới `breadth` render count chính xác (samples ≤3) và biến mất khi mọi row bằng 0; round brief có section `## Unplanned work` (cap 768) kèm câu disposition (revise coverage plan / tạo intent có `questionKey` / ghi exclusion) và nói "unknown, not zero" khi caller không cung cấp projection; `research-breadth.test.ts` 4 test C1 xanh, golden brief `round-brief.test.ts` cập nhật | C2 trong cùng commit |
-| C2 | 2026-10-30 | `e01fadd` | `wstgQuestionQueue` trả `queue` ≤20 row dedupe theo `assetId|questionKey` (mỗi row có `expectedObservation` và `planId` của coverage plan live mới nhất) kèm `queueOmitted`/`queueNote`; `p2o_wstg_suggest` chỉ đọc — một lần suggest/đọc queue không dispatch, không cell, không claim, không coverage — và questionKey sinh ra hợp lệ để planner tạo task | C3 trong cùng commit |
-| C3 | 2026-10-30 | `e01fadd` | `RoundProgress` thêm `features`/`questions` và quiet judgement so sánh cả hai (quiet text liệt kê "feature or question"); `coverageRevisionDemand` trả `the coverage plan owes a revision for N unplanned asset(s) — revise it or record the exclusion`, chỉ append vào demand khi `remaining>0` và bỏ plan closed/cancelled; `engine-campaign` +1 test và `research-breadth` test demand | C4 trong cùng commit |
-| C4 | 2026-10-30 | `e01fadd` | `FinishPreflight.settlement` cho từng gateable debt kind còn nợ (count, ids, disposition từ `debtDischarge`), `renderPreflight` in `SETTLEMENT PACKET (P21/C4)` chỉ khi có obligation, report thêm bảng settlement trong REMAINING WORK; deferred/blocked todo cite debt id rút kind khỏi packet, signature/complete không đổi; `finish-preflight` +2 test | C5 trong cùng commit |
-| C5 | 2026-10-30 | `e01fadd` | `shared:recording` có paragraph `**Credential needs.**` nêu allowed ladder, prohibitions và fallback `needs: cred.secret` + acquisition paths tried; planner prompt có dòng `CAPABILITY NEEDS`; `knowledge.test.ts` assert các phrase; prompt-text ceiling planner re-pin 15,600→16,700 từ số đo 16,193 (+3%, comment ngày) trong `recon.test.ts`; không tool hay declaration change | C6 trong cùng commit |
-| C6 | 2026-10-30 | `e01fadd` | Section ready của brief in `Waiting chain steps` + `Unmet capability needs`, planner prompt nêu breadth disposition và batch ≤25 intent; `dispatch-discipline` test batch retitle, `research-breadth` test frontier/prompt/batch. Gate phase: `npx tsc --noEmit` clean; full suite 161 passed / 5 skipped files (166), 1,434 passed / 13 skipped tests (1,447), 0 fail (+1 file, +13 test, không xoá hay skip mới); `npm run build` + `check:build` green; surface audit 35 registered / 35 model-visible / 0 hidden / 10 board verbs, 0 contradictions, planner 44,705/45,500, worker 40,935/41,400, validation 40,124/40,500; `validate_library.py` PASS 336 documents; `git diff --check` clean; GitNexus `detect_changes --scope all` 138 changed symbols / 22 files / 39 affected processes, `critical` trên hub `roundBriefing`/`renderReport` (index cũ) reviewed là behavior-preserving; docs guard test xanh | Hết plan P21 (A+B+C); owner quyết push — chưa push |
+| A1 | — | — | not started | waits for P22/A2 commit decision or the owner's go-ahead |
+| A2 | 2026-10-30 | — (working tree) | `npx tsc --noEmit` clean; focused `vitest run tests/minimal/chain-brief.test.ts tests/minimal/brief-context.test.ts` 19/19; full suite 162 passed / 5 skipped files (167), 1,444 passed / 13 skipped tests (1,457), 0 fail; `npm run build` + `check:build` green; surface audit 35 registered / 35 model-visible / 0 hidden / 10 board verbs, 0 contradictions, declarations unchanged; `git diff --check` clean for A2's files (the owner's pre-existing `AGENTS.md` edit carries trailing whitespace and is never staged) | A1 next; A2's F-P22-* and HISTORY rows land with its commit (owner-initiated) |
+| A3 | — | — | not started | after A1/A2 |
+| A4 | — | — | not started | after A1 and A3 |
+| A5 | — | — | not started | owner-run TUI measurement (§13) |
 
-## 13. Owner decisions recorded (answered in chat, 2026-10-29)
+## 11. Owner decisions recorded (answered in chat, 2026-10-30)
 
-1. **Scope:** A + B + C.
-2. **Evidence stance (B):** B2 — an operator policy baseline (`--policy file|standard`) with `policyBasis=operator_contract`;
-   the inferred-acceptance shortcut is rejected.
-3. **Sequence:** A → B → C.
-4. **Credential ladder (C5):** allowed — public artifacts (JS/source maps/config) plus one documented default-credential
-   attempt; no brute force/spray.
-5. **This file replaces the P19/P20 plan of record**; the old content stays recoverable in git at `2e22b5c`.
-6. Commit, push and any live run remain owner-initiated, one request at a time.
+1. **Scope:** option A — a chain-aware exploitation layer (A1–A5); options B (chain as a stored record) and C (live-run-first)
+   were not taken. A2 was implemented ahead of the plan because it was additive and needed no target.
+2. **Live run:** `https://ise.uit.edu.vn/` is authorized; the owner runs it from their own TUI and confirms the single consent
+   dialog; assess mode first, read-only; proposed budget workers 2 / target-ops 2 / round-steps 30; provider cost is
+   the owner's. Exploit-mode chain testing stays on the local lab.
+3. **Commit and push:** owner-initiated only. A2 stays uncommitted until the owner decides how to phase it with A1.
+4. **Plan of record:** this file replaces P21; the P21 revision stays recoverable at `5763d46`.
+5. **Analysis basis:** the owner's question about ARTEX's asset/vulns graph and "take attack chain từng phần" is answered by
+   §2 and §3; the plan targets the chain handoff, the branching readiness rule and the report, not a new graph.
 
-## 14. Evidence and reproduction
+## 12. Evidence and reproduction
 
-- **Run:** `run-42c447d6-cb8a-4c65-85a7-6f4036014ef6`; store `~/tmp/cmp/.p2o-state/<runId>/assessment.sqlite`; report
-  `~/tmp/cmp/.p2o-reports/report-<runId>-final/REPORT.md` and `coverage.csv`. The numbers in §0 come from the SQLite tables
-  (`records`, `assertions`, `assets`, `relations`, `anchors`, `events`) and the exported report; the refusal texts are open items
-  `7f01c8af`, `d084614f`, `7b7a626d`; the policy wall is decision `907b5b37`.
-- **ARTEX snapshot:** `~/tmp/ARTEX` at `e6ec569`; the comparison in §3 reads `db/schema.sql`, `agent/tools.go`,
-  `db/finding_traffic.go`, `db/task_scope.go`, `agent/planner.go`, `agent/wrapup.go`, `agent/retester.go`,
-  `traffic/traffic.go`, `evidence/store.go`.
-- **Previous plan:** `git show 2e22b5c:planning_update.md` (P19/P20 plan of record plus the verification record and owner
-  decisions D-P19-*, D-P20-*).
+- **Baseline:** `git log -1` = `5763d46` (P21/C doc record). Baseline suite at that commit: 161 passed / 5 skipped files (166),
+  1,434 passed / 13 skipped tests (1,447), 0 fail; P21's delivered gate numbers are in §10 of the revision at `5763d46`.
+- **A2 working tree:** `git status --short` shows `src/chain-brief.ts` and `tests/minimal/chain-brief.test.ts` untracked plus
+  edits to `src/prompts.ts`, `extensions/p2o/index.ts` and `tests/minimal/brief-context.test.ts`; the tracked A2 diff is three
+  files at +46/−2 (`extensions/p2o/index.ts` +5/−1, `src/prompts.ts` +12/−1, `tests/minimal/brief-context.test.ts` +29/−0). The
+  `AGENTS.md` change in `git status` is the owner's edit and is not part of A2.
+- **ARTEX snapshot:** `my_references/ARTEX` (0.3.15, upstream commit `e6ec569`, AGPL-3.0, gitignored). §3 reads
+  `db/schema.sql`, `db/exploration.go`, `db/finding_traffic.go`, `agent/planner.go`, `agent/worker.go`, `agent/tools.go` and
+  `agent/promptcatalog.go`; the longer analysis is `my_references/ARTEX/ARTEX_AGENTIC_CORE.vi.md` (1,364 lines).
+- **Live run:** none yet; the runbook and the evidence A5 will read are in §13. The P21 run
+  `run-42c447d6-cb8a-4c65-85a7-6f4036014ef6` is evidence for the P21 plan only, not for this one.
+- **Previous plans:** `git show 2e22b5c:planning_update.md` (P19/P20) and `git show 5763d46:planning_update.md` (P21).
+
+## 13. Appendix — live-run runbook (A5)
+
+Run from a scratch cwd so the durable store and the report do not land in the repository:
+
+```bash
+mkdir -p /tmp/p2o-live/ise-uit && cd /tmp/p2o-live/ise-uit
+~/.pi/agent/bin/pi --no-extensions -e /home/nhanlaptop/project/pi-p2o
+```
+
+In the TUI (the owner confirms the consent dialog; the agent does not confirm it on the owner's behalf):
+
+```text
+/p2o --target https://ise.uit.edu.vn/ --mode assess --goal "Map the external attack surface of ise.uit.edu.vn: reachable services, exposed routes, authentication boundaries and exposure gaps, each with recorded evidence" --workers 2 --target-ops 2 --round-steps 30 --export
+```
+
+While it runs: `/p2o status`, `/p2o digest`, `/p2o report`; `/p2o pause` then `/p2o stop` stops scheduling and cleanly ends the
+run. A5 reads, in this order: `.p2o-state/<runId>/assessment.sqlite` (records, graph, plan rows, claims, cases, events),
+`.p2o-reports/report-<runId>/` and `-final/REPORT.md`, and the run id the owner reports. The measurement targets S1–S6 and A1–
+A4 specifically: chain rows authored, A2 lines present in exploitation/chaining briefs, ready links left undispatched, repeated
+questions, and which chain representation the planner actually used.
