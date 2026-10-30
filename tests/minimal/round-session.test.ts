@@ -72,6 +72,9 @@ describe('Rounds as fresh sessions (P18.1/D45)',()=>{
       // P20/A3: the learned section is projected from the same ledger read, so it says what the window holds instead of staying silent.
       expect(brief.brief).toMatch(/Nothing recorded since ledger position 0 \(\d+ record\(s\) in the window\): no claim, accepted case or wall is in the window\./);
       expect(brief.brief).toContain('Objective:');
+      // P22/A3: the extension projects the accepted case chains into the ready section from this run's own case read; with none
+      // accepted it says the projection is empty rather than unsupplied.
+      expect(brief.brief).toContain('Case chains (derived): no accepted, current-rated case records a chain.');
       expect(h.pi.sessions[0].name).toBe(`p2o ${wake!.runId} round 1`);
       // The planner loadout is re-applied to the fresh session before its first turn; the run never keeps target tools.
       expect(h.pi.active).not.toContain('p2o_shell');

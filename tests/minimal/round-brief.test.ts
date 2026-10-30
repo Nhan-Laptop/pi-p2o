@@ -3,8 +3,9 @@ import {
   ROUND_BRIEF_MAX_BYTES, ROUND_BRIEF_SECTION_CAPS, ROUND_DIGEST_MAX_BYTES,
   buildRoundBrief, buildRoundDigest,
   type BriefCampaign, type BriefCase, type BriefCoveragePlan, type BriefProgress, type BriefRevisit,
-  type BriefGraphDelta, type BriefLearned, type BriefLearnedClaim, type BriefWorker, type RoundBriefInput,
+  type BriefGraphDelta, type BriefLearned, type BriefLearnedClaim, type BriefWorker, type RoundBrief, type RoundBriefInput,
 } from '../../src/round-brief.js';
+import { projectCaseChains, type CaseChainSource } from '../../src/case-chain-view.js';
 import { completionLine, deriveCompletion } from '../../src/completion.js';
 import { DEBT_KINDS, SIGNAL_KINDS, debtFor, type DebtItem, type DebtKind, type DebtReport } from '../../src/debt.js';
 import { DEFAULT_ROUND_BUDGET } from '../../src/round-budget.js';
@@ -193,6 +194,7 @@ Goals: 1.
 ## Ready chain steps
 Ready chain steps: 1.
 - chain chain-export step 2: Take the export read one step further — consumes http.request already gained by rec-a on /api/export
+Case chains (derived): no projection was supplied this round; whether an accepted case records a current rated chain is unknown, not zero.
 
 ## Unchained primitives
 Unchained primitives: 1.
@@ -479,5 +481,90 @@ describe('the brief carries what the run just learned (P20/A3, P20/A5)', () => {
     expect(brief.text).toMatch(/\[\.\.\. truncated \d+ bytes\]/);
     expect(brief.bytes).toBeLessThanOrEqual(ROUND_BRIEF_MAX_BYTES);
     expect(buildRoundBrief(fixture({ learned: learned({ claims: many, cases: [], walls: [], counts: { claims: 9, cases: 0, walls: 0 } }) })).text).toBe(brief.text);
+  });
+});
+
+/**
+ * P22/A3: the ready section also names the accepted case chains the run already rated. The projection is derived from the
+ * case read and the claim heads, labelled "a rating record, not a plan", and it can never become a readiness input: the
+ * obligations, goals and completion of the same brief are unchanged by adding it.
+ */
+describe('the ready section names the accepted case chain it was given (P22/A3)', () => {
+  const tested = (index: number): CaseChainSource => ({ id: `case-export-${index}`, revision: 3, acceptedFinding: true, ratingCurrent: true, finding: { chain: {
+    objective: 'Reach the foreign invoice object through the recorded selector and then extend it to a write',
+    demonstratedThrough: 2,
+    steps: [
+      { order: 1, step: 'Select a foreign invoice identity through the recorded parameter', claimRef: `rec-claim-${index}-1`,
+        gained: [{ kind: 'data.read', subject: 'selected-object' }], needs: [] },
+      { order: 2, step: 'Read the foreign invoice field with the recorded session', claimRef: `rec-claim-${index}-2`,
+        gained: [{ kind: 'cred.session', subject: 'tenant-admin' }], needs: [{ kind: 'data.read', subject: 'selected-object' }], effect: 'confidentiality-read' as const },
+    ],
+  } } });
+  const notAccepted: CaseChainSource = { id: 'case-unaccepted', revision: 1, acceptedFinding: false, ratingCurrent: true, finding: { chain: {
+    objective: 'A chain whose case is not accepted must never be briefed', demonstratedThrough: 1,
+    steps: [{ order: 1, step: 'Do the unaccepted thing', claimRef: 'rec-claim-9', gained: [], needs: [] }],
+  } } };
+  const projection = () => projectCaseChains({ cases: [tested(1), notAccepted],
+    claims: [{ candidate: 'export-session-primitive', recordId: 'rec-claim-1-2' }] });
+  const sectionText = (brief: RoundBrief, title: string): string => {
+    const start = brief.text.indexOf(`## ${title}`);
+    return brief.text.slice(start, brief.text.indexOf('\n## ', start + 1));
+  };
+  const ready = (brief: RoundBrief) => sectionText(brief, 'Ready chain steps');
+
+  it('prints the executed links and the capability the rated chain leaves hanging, labelled derived', () => {
+    const brief = buildRoundBrief(fixture({ caseChains: projection() }));
+    const text = ready(brief);
+    expect(text).toContain('Case chains (derived): 1 of 1 accepted rated chain(s) shown.');
+    expect(text).toContain('- derived from case case-export-1 r3 (a rating record, not a plan): Reach the foreign invoice object');
+    expect(text).toContain('executed through step 2 of 2.');
+    // The actionable line is the join, not a guess: only the typed capability no later executed link consumes is left hanging.
+    expect(text).toContain('left to chain: cred.session (tenant-admin) — gained by an executed link, consumed by no later executed link; author the successor row or wall it.');
+    expect(text).toContain('1. Select a foreign invoice identity through the recorded pa... — claim rec-claim-1-1; gained data.read (selected-object)');
+    expect(text).toContain('2. Read the foreign invoice field with the recorded session — claim export-session-primitive; effect confidentiality-read; gained cred.session (tenant-admin); needs data.read (selected-object)');
+    // An accepted finding is required: the same chain on an unaccepted case is never printed.
+    expect(text).not.toContain('case-unaccepted');
+    expect(brief.sections.find(section => section.id === 'ready')!.truncated).toBe(false);
+    expect(brief.bytes).toBeLessThanOrEqual(ROUND_BRIEF_MAX_BYTES);
+  });
+
+  it('says the case-chain projection is unknown, not zero, when the caller supplied none', () => {
+    expect(ready(buildRoundBrief(fixture())))
+      .toContain('Case chains (derived): no projection was supplied this round; whether an accepted case records a current rated chain is unknown, not zero.');
+  });
+
+  it('changes no goal, completion or readiness fact: the projected chain is a record, not a plan', () => {
+    const plain = buildRoundBrief(fixture()), derived = buildRoundBrief(fixture({ caseChains: projection() }));
+    for (const title of ['Goals and proof', 'Completion and demand', 'Unchained primitives']) expect(sectionText(derived, title)).toBe(sectionText(plain, title));
+    expect(derived.remaining).toBe(plain.remaining);
+    expect(ready(derived).startsWith(ready(plain).trimEnd().split('\n').slice(0, -1).join('\n'))).toBe(true);
+    // Only the derived block and its continuation lines follow the same ready lines; the count and obligation rows did not change.
+    const own = (brief: RoundBrief) => ready(brief).split('\n').filter(line => !line.startsWith('Case chains') && !line.startsWith('- derived from case') && !line.startsWith('  ') && !line.startsWith('  ...'));
+    expect(own(derived)).toEqual(own(plain));
+  });
+
+  it('bounds the chains inside the re-measured ready cap without cutting the hanging capability', () => {
+    const busy = (index: number): CaseChainSource => ({ id: `case-busy-${index}`, revision: 4, acceptedFinding: true, ratingCurrent: true, finding: { chain: {
+      objective: 'Reach the foreign invoice object through the recorded selector and then extend it to a write',
+      demonstratedThrough: 3,
+      steps: [
+        { order: 1, step: 'Read the selected invoice object through the recorded export endpoint', claimRef: `rec-busy-${index}-1`,
+          gained: [{ kind: 'data.read', subject: 'selected-object' }], needs: [] },
+        { order: 2, step: 'Read the foreign invoice field with the recorded session', claimRef: `rec-busy-${index}-2`,
+          gained: [{ kind: 'cred.session', subject: 'tenant-admin' }], needs: [{ kind: 'data.read', subject: 'selected-object' }], effect: 'confidentiality-read' as const },
+        { order: 3, step: 'Write the tenant configuration with the recorded session', claimRef: `rec-busy-${index}-3`,
+          gained: [{ kind: 'file.write', subject: 'tenant-config' }], needs: [{ kind: 'cred.session', subject: 'tenant-admin' }] },
+      ],
+    } } });
+    const caseChains = projectCaseChains({ cases: [busy(1), busy(2), busy(3)] }), section = buildRoundBrief(fixture({ caseChains })).sections.find(item => item.id === 'ready')!;
+    expect(section.truncated).toBe(false);
+    expect(section.bytes).toBeLessThanOrEqual(ROUND_BRIEF_SECTION_CAPS.ready);
+    const brief = buildRoundBrief(fixture({ caseChains }));
+    expect(brief.text).toContain('Case chains (derived): 2 of 3 accepted rated chain(s) shown.');
+    expect(brief.text).toContain('left to chain: file.write (tenant-config)');
+    expect(brief.text).toContain('+1 more accepted rated chain(s) not shown');
+    // The deep links are windowed: the two last executed links print and the earlier one is counted, not dropped silently.
+    expect(brief.text).toContain('(+1 earlier executed link(s) not shown)');
+    expect(brief.bytes).toBeLessThanOrEqual(ROUND_BRIEF_MAX_BYTES);
   });
 });

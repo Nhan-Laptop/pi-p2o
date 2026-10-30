@@ -145,7 +145,11 @@ và prerequisite đã review. Polling bị cấm: planner kết thúc lượt b�
 Planner **không giữ hội thoại giữa các round**: mặc định mỗi round mở một Pi session mới, round mở bằng round brief ≤8 KiB
 tất định — campaign frame, completion & demand, goals/proof, ready chain, workers, round facts, delta round trước, section
 "Learned this round" (claim/case/wall mà window vừa ghi, kèm source task + asset; có `--refer-workspace` thì thêm một dòng
-prior-run context-only) và digest các record cũ hơn. Một round mở mỗi wake (worker report/proposal đã commit, debt gateable, heartbeat) hoặc sau round trước;
+prior-run context-only) và digest các record cũ hơn. Section ready còn in `Case chains (derived)` (P22/A3): chain của case đã
+accepted + rated đúng revision hiện tại, kèm các link đã chạy (claim, effect, gained/needs) và typed capability mà link đã chạy
+để lại chưa link nào sau đó consume — câu "left to chain" để planner viết successor row hoặc wall. Khối này là **rating
+record, không phải plan**: nó không tạo plan row/task/case, không phải readiness input và không thỏa claim/cell/goal nào.
+Một round mở mỗi wake (worker report/proposal đã commit, debt gateable, heartbeat) hoặc sau round trước;
 khi host đang stream hoặc có input người đang chờ thì round ở lại session hiện tại và ghi `planner.round-session-fallback`.
 Đổi session không làm mất dữ liệu: mọi record đã commit vẫn ở `<cwd>/.p2o-state/<run-id>/`; cái không mang sang là mạch suy
 luận tự do và output tool không được ghi thành record. Backlog recon (asset chưa lập kế hoạch, cell chưa chạy, WSTG

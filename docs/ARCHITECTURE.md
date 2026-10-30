@@ -189,6 +189,17 @@ plan row that lists the task, the ready step whose providers the task cites, or 
 ambiguous identity omits the lines rather than guessing. The block stays inside its 1,200-character bound, the non-chain brief
 is unchanged, and none of the lines can satisfy a claim, case, coverage cell or goal.
 
+The round that plans a successor also sees the chains the run already rated (P22/A3). The ready section gains a bounded
+`Case chains (derived)` block: for an accepted, confirmed case whose latest owner rating is recorded against the current
+revision, `src/case-chain-view.ts` projects the chain objective, the depth demonstrated, the last two executed links (claim,
+effect, gained/needs) and the typed capabilities an executed link gained that no later executed link consumes. That
+"left to chain" line is the one the planner answers with a successor row or a wall, so it is printed before the evidence
+lines and survives a section cut. The block is labelled "a rating record, not a plan", reports shown against the true count
+(two chains, two links each) and never becomes a plan row, task, case or readiness input: an unaccepted case, a rating
+against an older revision and pre-P14 prose are not projected, a claim reference the ledger no longer resolves as a head is
+printed as recorded, and the derived lines cannot satisfy a claim, coverage cell or goal. The `ready` section cap was
+re-measured for it (1,024 -> 2,560 bytes; two full chains render 1,745 bytes) while the whole brief stays ≤ 8 KiB.
+
 ## Persistence and teardown
 
 - Canonical state is one SQLite file per run (`node:sqlite`, schema 7): records, events, outbox and request results commit

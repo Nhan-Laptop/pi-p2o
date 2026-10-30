@@ -24,6 +24,7 @@ import { routeMonoculture } from '../../src/routes.js';
 import { completionDemand, completionLine, deriveCompletion, type Completion } from '../../src/completion.js';
 import { chainBoard, chainLines } from '../../src/chain-board.js';
 import { chainBriefFor } from '../../src/chain-brief.js';
+import { projectCaseChains } from '../../src/case-chain-view.js';
 import { chainObligations } from '../../src/obligations.js';
 import { graphSliceLines, type SliceAssetRow, type SliceFactRow } from '../../src/graph-slice.js';
 import { writeBack, writeBackLine } from '../../src/write-back.js';
@@ -674,11 +675,15 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
         return { ...recent, ...(prior ? { priorRun: { runs: prior.runs.length, ...prior.gaps } } : {}) };
       } catch { return undefined; }
     })();
+    // P22/A3: the accepted case chains the ready section prints, projected read-only from the same case and claim read the
+    // round is judged on. A projection names the capability a rated chain left hanging; it is never a readiness input and
+    // cannot satisfy a claim, case, cell or goal.
+    const caseChains = projectCaseChains({ cases: read.cases, claims: read.claims });
     const brief = buildRoundBrief({
       ...(current.campaign ? { campaign: current.campaign } : {}),
       completion: read.completion,
       ...(wake.demand ? { demand: wake.demand } : {}),
-      plans: read.plans, claims: read.claims, tasks: read.tasks, cases: read.cases, coverage: read.coverage, debt: read.debt,
+      plans: read.plans, claims: read.claims, tasks: read.tasks, cases: read.cases, caseChains, coverage: read.coverage, debt: read.debt,
       workers: operatorWorkers(current), revisits: current.engine.pendingRevisits(),
       progress: read.progress, previous: current.engine.previousProgress(),
       digest, round: { number: wake.round, budget: current.roundBudget },

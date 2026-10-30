@@ -159,7 +159,13 @@ as having consumed a claim.
   their source task and pinned asset, owner-accepted cases, walls with their debt ids, plus one prior-run context line when the
   run started with `--refer-workspace`) and a digest of older records. The round's own records are the live window; everything
   before the previous opening folds into the digest instead of vanishing with the replaced session. Learned rows are
-  background: they never satisfy a claim, a coverage cell or a goal.
+  background: they never satisfy a claim, a coverage cell or a goal. The ready section also carries the accepted case chains
+  (P22/A3): for a case whose latest owner rating is recorded against its current accepted revision, the brief prints the chain
+  objective, the depth demonstrated, the last two executed links (claim, effect, gained/needs) and the typed capabilities an
+  executed link gained that no later executed link consumes — the "left to chain" line the planner answers with a successor
+  row or a wall. The block is labelled "a rating record, not a plan", reports shown against the true count, and is never a
+  plan row, task, case or readiness input: an unaccepted case, a rating against an older revision and pre-P14 prose are not
+  projected, and the derived lines cannot satisfy a claim, cell or goal.
 - The round prompt says what to do with the learned section: open the record ids it lists, settle an unread hypothesis or
   inferred relation through owner review, and never re-derive what the section states. The same prompt names the WSTG
   question-key convention, so the planner does not have to infer it from the coverage board (P20/B2).

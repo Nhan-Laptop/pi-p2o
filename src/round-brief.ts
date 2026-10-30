@@ -11,8 +11,9 @@
  * Nothing here writes target prose: every sentence is a label plus a value the host supplied. A missing input says so
  * ("unknown, not clean") instead of being read as zero.
  */
-import { describeCapability } from './capabilities.js';
+import { describeCapability, type Capability } from './capabilities.js';
 import { isConfirmedClaim } from './claims.js';
+import type { CaseChainProjection } from './case-chain-view.js';
 import { needsCaseReview } from './cases.js';
 import { completionDemand, completionLine, type Completion } from './completion.js';
 import { debtDischarge, debtSummary, type DebtReport } from './debt.js';
@@ -40,7 +41,10 @@ export type BriefSectionId =
  * sections it drops instead of silently truncating the tail of the brief.
  */
 export const ROUND_BRIEF_SECTION_CAPS = {
-  frame: 1024, completion: 1024, goals: 1024, ready: 1024, unchained: 640, coverage: 768, breadth: 768, review: 768,
+  // P22/A3: `ready` carries the accepted case chains (labelled derived, bounded at CASE_CHAIN_MAX_CHAINS chains x 2 executed
+  // links). Re-measured: the two-full-chain fixture renders 1,745 bytes, so 2,560 leaves the round's own ready/waiting/unmet
+  // rows their old headroom instead of making the chain block crowd them out.
+  frame: 1024, completion: 1024, goals: 1024, ready: 2560, unchained: 640, coverage: 768, breadth: 768, review: 768,
   workers: 768, delta: 640, learned: 900, debt: 1152, revisits: 448, round: 512, digest: 900,
 } as const satisfies Record<BriefSectionId, number>;
 
@@ -132,6 +136,8 @@ export interface RoundBriefInput {
   claims: readonly ChainClaim[];
   tasks: readonly AssessmentTask[];
   cases?: readonly BriefCase[];
+  /** P22/A3: the accepted case chains, projected read-only; omitted means the caller supplied none (unknown, not zero). */
+  caseChains?: CaseChainProjection;
   coverage?: readonly BriefCoveragePlan[];
   debt?: DebtReport;
   /** P21/C1+C6: unplanned work and unmet capability needs; omitted means the caller supplied no projection (unknown, not zero). */
@@ -269,6 +275,11 @@ const body = (id: BriefSectionId, lines: readonly string[]): Rendered => finish(
 const ids = (values: readonly string[], limit = 8): string =>
   values.length ? `${values.slice(0, limit).join(', ')}${values.length > limit ? `, ... (+${values.length - limit})` : ''}` : 'none';
 
+/** P22/A3: typed capability descriptions, capped per line so one link cannot crowd out the rest of its section. */
+const capabilityText = (capabilities: readonly Capability[], limit: number): string =>
+  `${capabilities.slice(0, limit).map(capability => oneLine(describeCapability(capability), 40)).join(', ')}`
+  + `${capabilities.length > limit ? `, +${capabilities.length - limit} more` : ''}`;
+
 const signed = (before: number, after: number): string => before === after ? `${before} (no change)` : `${before}->${after} (${after > before ? '+' : ''}${after - before})`;
 const delta = (label: string, before: number, after: number): string => `${label} ${signed(before, after)}`;
 
@@ -328,8 +339,41 @@ function goalsSection(input: RoundBriefInput): Rendered {
   return body('goals', lines);
 }
 
+/**
+ * P22/A3: the accepted case chains, projected read-only. Every row is labelled derived and "a rating record, not a plan", so a
+ * rated chain can never be read as a readiness fact or as evidence for a new finding; the shown/total pair keeps the bounded
+ * page honest. Absent means the caller supplied no projection: the brief says unknown rather than zero.
+ */
+function caseChainLines(projection: CaseChainProjection | undefined): string[] {
+  if (!projection) return ['Case chains (derived): no projection was supplied this round; whether an accepted case records a current rated chain is unknown, not zero.'];
+  if (!projection.total) return ['Case chains (derived): no accepted, current-rated case records a chain.'];
+  const lines = [`Case chains (derived): ${projection.chains.length} of ${projection.total} accepted rated chain(s) shown.`];
+  for (const chain of projection.chains) {
+    const depth = chain.demonstratedThrough !== undefined
+      ? `executed through step ${chain.demonstratedThrough} of ${chain.totalSteps}`
+      : `no step executed — reasoned only (${chain.totalSteps} step(s) recorded)`;
+    lines.push(`- derived from case ${oneLine(chain.caseId, 80)} r${chain.revision} (a rating record, not a plan): ${oneLine(chain.objective, 80)} — ${depth}.`);
+    // The actionable line comes before the evidence lines: if the section cap fires, it cuts link detail, never the capability
+    // left hanging that the next row has to answer.
+    lines.push(chain.demonstratedThrough === undefined
+      ? '  left to chain: nothing — no link executed, so no capability was demonstrated; the chain is reasoned only.'
+      : chain.leftover.length
+        ? `  left to chain: ${capabilityText(chain.leftover, 3)} — gained by an executed link, consumed by no later executed link; author the successor row or wall it.`
+        : '  left to chain: nothing typed — every capability the executed links gained is consumed by a later executed link.');
+    for (const link of chain.links) {
+      lines.push(`  ${link.order}. ${oneLine(link.step, 60)}${link.claim ? ` — claim ${oneLine(link.claim, 40)}` : ''}${link.effect ? `; effect ${link.effect}` : ''}`
+        + `${link.gained.length ? `; gained ${capabilityText(link.gained, 2)}` : ''}${link.needs.length ? `; needs ${capabilityText(link.needs, 2)}` : ''}`);
+    }
+    if (chain.omittedLinks) lines.push(`  (+${chain.omittedLinks} earlier executed link(s) not shown)`);
+  }
+  if (projection.total > projection.chains.length) lines.push(`  ... +${projection.total - projection.chains.length} more accepted rated chain(s) not shown; the case board holds the full chain.`);
+  return lines;
+}
+
 /** M2: the ready step is what a dispatch can take today, with the provider it must cite. P21/C6 adds the waiting frontier
- * and the unmet capability needs, so a demonstrated primitive either advances the chain or becomes a named capability task. */
+ * and the unmet capability needs, so a demonstrated primitive either advances the chain or becomes a named capability task.
+ * P22/A3 adds the accepted case chains read-only: a rated chain names the capability it left hanging, so the lead authors the
+ * successor row (or walls it) instead of re-planning links the run already demonstrated. */
 function readySection(input: RoundBriefInput): Rendered {
   const obligations = chainObligations({ plans: input.plans, claims: input.claims, tasks: input.tasks });
   const board = chainBoard(input.plans, input.claims), join = chainJoin(input.claims);
@@ -351,6 +395,7 @@ function readySection(input: RoundBriefInput): Rendered {
       + `(${join.unmet.slice(0, 3).map(claim => `${claim} needs ${(join.uncovered[claim] ?? []).map(describeCapability).join(', ')}`).join('; ')}). `
       + 'Take the ready step above, or plan the capability task the need names — not another asset.');
   }
+  lines.push(...caseChainLines(input.caseChains));
   return body('ready', lines);
 }
 
